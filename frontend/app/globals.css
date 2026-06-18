@@ -65,7 +65,20 @@ a {
 .topbar-brand {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+}
+
+.brandMark {
+  display: block;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+}
+
+.brandCopy {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
 }
 
 .logo-text {
@@ -440,14 +453,25 @@ h2 {
   color: var(--text-primary);
 }
 
-.clipInfo span {
+.copyTitleButton {
+  display: inline-flex;
   flex: 0 0 auto;
-  color: var(--text-secondary);
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  color: var(--primary);
   font-size: 12px;
+  font-weight: 700;
   background: var(--bg);
-  padding: 4px 8px;
+  padding: 6px 10px;
   border-radius: 6px;
   border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.copyTitleButton:hover {
+  background: #EFF6FF;
+  border-color: #BFDBFE;
 }
 
 .clipActions {
@@ -737,14 +761,39 @@ h2 {
 
 @media (max-width: 520px) {
   .topbar {
-    flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
+    gap: 12px;
   }
   
   .topbar-brand {
+    min-width: 0;
+    gap: 10px;
+  }
+
+  .brandCopy {
     flex-direction: column;
     align-items: flex-start;
-    gap: 4px;
+    gap: 2px;
+  }
+
+  .brandMark {
+    width: 36px;
+    height: 36px;
+  }
+
+  .logo-text {
+    font-size: 22px;
+  }
+
+  .tagline {
+    font-size: 13px;
+    line-height: 1.35;
+  }
+
+  .topbar .iconButton {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
   }
 
   .gridFields {

@@ -1,4 +1,4 @@
-# yt-clip frontend
+# ClipForge frontend
 
 Next.js UI untuk menjalankan backend clipper lokal.
 

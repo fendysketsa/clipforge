@@ -9,8 +9,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "yt-clip",
-  description: "Local YouTube clip generator",
+  title: "ClipForge",
+  description: "Turn long videos into ready-to-post clips",
   icons: {
     icon: "/favicon.svg",
   },

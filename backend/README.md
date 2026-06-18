@@ -1,4 +1,4 @@
-# yt-clip
+# ClipForge
 
 CLI lokal untuk membuat clip vertical 9:16 dari YouTube video berdasarkan transcript dan scoring sederhana.
 

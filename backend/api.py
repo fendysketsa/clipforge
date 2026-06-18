@@ -72,7 +72,7 @@ class ClipJob(BaseModel):
     error: str | None = None
 
 
-app = FastAPI(title="yt-clip API", version="0.1.0")
+app = FastAPI(title="ClipForge API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],

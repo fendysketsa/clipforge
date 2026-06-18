@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
+  Clipboard,
   Clock3,
   Download,
   ExternalLink,
@@ -33,11 +34,6 @@ const statusIcon = {
   failed: XCircle,
 };
 
-function formatBytes(value: number) {
-  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
-  return `${(value / 1024 / 1024).toFixed(1)} MB`;
-}
-
 function clipTitle(name: string) {
   return name.replace(/\.mp4$/i, "").replace(/^clip_\d+_/, "").replace(/-/g, " ");
 }
@@ -64,6 +60,11 @@ async function handleDownload(url: string, filename: string) {
   }).catch(() => {
     window.open(url, "_blank");
   });
+}
+
+async function handleCopyTitle(title: string) {
+  await navigator.clipboard.writeText(title);
+  toast.success("Judul klip berhasil disalin");
 }
 
 export const ClipperWorkspace = () => {
@@ -182,8 +183,11 @@ export const ClipperWorkspace = () => {
     <main className="shell">
       <section className="topbar">
         <div className="topbar-brand">
-          <h1 className="logo-text">yt-clip</h1>
-          <p className="tagline">Turn long YouTube videos into ready-to-post clips.</p>
+          <img className="brandMark" src="/logo.svg" alt="" aria-hidden="true" />
+          <div className="brandCopy">
+            <h1 className="logo-text">ClipForge</h1>
+            <p className="tagline">Turn long videos into ready-to-post clips.</p>
+          </div>
         </div>
         <button className="iconButton" type="button" onClick={() => loadJobs()} title="Refresh data">
           <RefreshCw size={18} />
@@ -303,7 +307,15 @@ export const ClipperWorkspace = () => {
                 <video controls preload="metadata" src={getOutputUrl(clip.url)} />
                 <div className="clipInfo">
                   <h3>{clipTitle(clip.name)}</h3>
-                  <span>{formatBytes(clip.size_bytes)}</span>
+                  <button
+                    className="copyTitleButton"
+                    type="button"
+                    onClick={() => handleCopyTitle(clipTitle(clip.name))}
+                    title="Salin judul klip"
+                  >
+                    <Clipboard size={14} />
+                    Copy
+                  </button>
                 </div>
                 <div className="clipActions">
                   <a href={getOutputUrl(clip.url)} target="_blank" rel="noreferrer">

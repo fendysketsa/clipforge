@@ -1,4 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">ClipForge logo</title>
+  <desc id="desc">A blue rounded square with a forged play mark and clipping sparks.</desc>
   <defs>
     <linearGradient id="bg" x1="14" y1="8" x2="50" y2="58" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#60A5FA"/>
