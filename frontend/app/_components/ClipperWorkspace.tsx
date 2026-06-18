@@ -12,6 +12,9 @@ import {
   Scissors,
   Settings2,
   XCircle,
+  Activity,
+  History,
+  Video
 } from "lucide-react";
 import { createJob, exportJob, getJob, getJobs, getOutputUrl } from "../../lib/apiClient";
 import type { ClipJob, JobStatus } from "../../types/clip.type";
@@ -96,7 +99,7 @@ export const ClipperWorkspace = () => {
   async function handleStartJob() {
     setError("");
     if (!url.trim()) {
-      setError("YouTube URL is required");
+      setError("Link YouTube tidak boleh kosong.");
       return;
     }
     setIsSubmitting(true);
@@ -118,7 +121,7 @@ export const ClipperWorkspace = () => {
       setSelectedCandidates([]);
       await loadJobs();
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Failed to create job");
+      setError(submitError instanceof Error ? submitError.message : "Gagal memulai proses.");
     } finally {
       setIsSubmitting(false);
     }
@@ -133,22 +136,22 @@ export const ClipperWorkspace = () => {
       setJob(nextJob);
       await loadJobs();
     } catch (exportError) {
-      setError(exportError instanceof Error ? exportError.message : "Failed to export selected candidates");
+      setError(exportError instanceof Error ? exportError.message : "Gagal mengekspor klip yang dipilih.");
     } finally {
       setIsExporting(false);
     }
   }
 
-  const StatusIcon = job ? statusIcon[job.status] : Clock3;
+  const StatusIcon = job ? statusIcon[job.status] : Activity;
 
   return (
     <main className="shell">
       <section className="topbar">
-        <div>
-          <p className="eyebrow">Local clip workstation</p>
-          <h1>yt-clip</h1>
+        <div className="topbar-brand">
+          <h1 className="logo-text">yt-clip</h1>
+          <p className="tagline">Turn long YouTube videos into ready-to-post clips.</p>
         </div>
-        <button className="iconButton" type="button" onClick={() => loadJobs()} title="Refresh jobs">
+        <button className="iconButton" type="button" onClick={() => loadJobs()} title="Refresh data">
           <RefreshCw size={18} />
         </button>
       </section>
@@ -156,27 +159,28 @@ export const ClipperWorkspace = () => {
       <section className="workspace">
         <section className="panel controlPanel">
           <div className="panelHeader">
-            <Scissors size={19} />
-            <h2>Create clips</h2>
+            <Scissors size={20} />
+            <h2>Potong Video YouTube</h2>
           </div>
 
           <label className="field wide">
-            <span>YouTube URL</span>
+            <span>Link Video YouTube</span>
             <input
               value={url}
               onChange={(event) => setUrl(event.target.value)}
-              placeholder="https://youtu.be/..."
+              placeholder="https://www.youtube.com/watch?v=..."
               required
             />
+            <p className="field-help">Pastikan video memiliki percakapan yang jelas untuk hasil transkripsi terbaik.</p>
           </label>
 
           <div className="gridFields">
             <label className="field">
-              <span>Clip count</span>
+              <span>Jumlah Klip</span>
               <input min={1} max={12} type="number" value={top} onChange={(event) => setTop(Number(event.target.value))} />
             </label>
             <label className="field">
-              <span>Min seconds</span>
+              <span>Durasi Minimum</span>
               <input
                 min={5}
                 max={600}
@@ -186,7 +190,7 @@ export const ClipperWorkspace = () => {
               />
             </label>
             <label className="field">
-              <span>Max seconds</span>
+              <span>Durasi Maksimum</span>
               <input
                 min={10}
                 max={600}
@@ -196,60 +200,63 @@ export const ClipperWorkspace = () => {
               />
             </label>
             <label className="field">
-              <span>Test seconds</span>
+              <span>Mode Analisis (Detik)</span>
               <input
                 min={10}
                 max={7200}
                 type="number"
                 value={analyzeSeconds}
                 onChange={(event) => setAnalyzeSeconds(event.target.value)}
-                placeholder="Full"
+                placeholder="Full video"
               />
             </label>
           </div>
 
           <div className="optionRow">
-            <Settings2 size={17} />
             <label className="check">
               <input type="checkbox" checked={force} onChange={(event) => setForce(event.target.checked)} />
-              Regenerate cached files
+              Buat ulang cache
             </label>
             <label className="check">
               <input type="checkbox" checked={reviewOnly} onChange={(event) => setReviewOnly(event.target.checked)} />
-              Review before export
+              Review sebelum export
             </label>
           </div>
 
           {error ? <p className="error">{error}</p> : null}
 
-          <button className="primary" type="button" disabled={isSubmitting || isBusy} onClick={handleStartJob}>
+          <button className="primary" type="button" disabled={isSubmitting || isBusy || !url.trim()} onClick={handleStartJob}>
             {isSubmitting || isBusy ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
-            {isSubmitting || isBusy ? "Processing" : "Start job"}
+            {isSubmitting || isBusy ? "Sedang Memproses..." : "Mulai Potong Video"}
           </button>
         </section>
 
         <section className="panel statusPanel">
           <div className="panelHeader">
-            <StatusIcon className={job?.status === "running" ? "spin" : ""} size={19} />
-            <h2>{job ? statusCopy[job.status] : "No active job"}</h2>
+            <StatusIcon className={job?.status === "running" ? "spin" : ""} size={20} />
+            <h2>Aktivitas</h2>
           </div>
 
           {job ? (
             <>
               <div className="jobMeta">
-                <span>{job.request.top} clips</span>
-                <span>{job.request.min_duration}-{job.request.max_duration}s</span>
-                <span>{job.request.analyze_seconds ? `${job.request.analyze_seconds}s test` : "full video"}</span>
+                <span>{job.request.top} klip target</span>
+                <span>{job.request.min_duration}s - {job.request.max_duration}s</span>
+                <span>{job.request.analyze_seconds ? `Test: ${job.request.analyze_seconds}s` : "Full video"}</span>
               </div>
 
               <div className="logBox">
-                {latestLogs.length ? latestLogs.map((line, index) => <p key={`${line}-${index}`}>{line}</p>) : <p>Waiting for logs...</p>}
+                {latestLogs.length ? latestLogs.map((line, index) => <p key={`${line}-${index}`}>{line}</p>) : <p>Memulai proses pipeline...</p>}
               </div>
 
-              {job.error ? <p className="error">{job.error}</p> : null}
+              {job.error ? <p className="error" style={{marginTop: "16px"}}>{job.error}</p> : null}
             </>
           ) : (
-            <p className="muted">Submit a YouTube link to start clipping. Results will appear here when the backend finishes.</p>
+            <div className="emptyState">
+              <Activity size={32} style={{ marginBottom: "12px", opacity: 0.5 }} />
+              <p>Belum ada proses berjalan.</p>
+              <p style={{ fontSize: "13px", marginTop: "4px" }}>Masukkan link YouTube, lalu klik <strong>Mulai Potong Video</strong> untuk memulai.</p>
+            </div>
           )}
         </section>
       </section>
@@ -257,14 +264,14 @@ export const ClipperWorkspace = () => {
       {job?.candidates.length ? (
         <section className="review">
           <div className="sectionHeader">
-            <h2>Review candidates</h2>
-            <span>{job.candidates.length} found</span>
+            <h2>Review Kandidat Klip</h2>
+            <span className="sectionBadge">{job.candidates.length} klip ditemukan</span>
           </div>
           <div className="candidateList">
             {job.candidates.map((candidate) => {
               const checked = selectedCandidates.includes(candidate.index);
               return (
-                <article className="candidateCard" key={candidate.index}>
+                <article className="candidateCard" key={candidate.index} style={{ borderColor: checked ? "var(--primary)" : "" }}>
                   <label className="candidateCheck">
                     <input
                       type="checkbox"
@@ -277,12 +284,12 @@ export const ClipperWorkspace = () => {
                         );
                       }}
                     />
-                    <strong>Clip {candidate.index}</strong>
+                    Klip {candidate.index}
                   </label>
                   <div className="candidateMeta">
-                    <span>{formatTime(candidate.start)}-{formatTime(candidate.end)}</span>
+                    <span>{formatTime(candidate.start)} - {formatTime(candidate.end)}</span>
                     <span>{Math.round(candidate.duration)}s</span>
-                    <span>score {candidate.score}</span>
+                    <span style={{ color: "var(--primary)" }}>Skor: {candidate.score}</span>
                   </div>
                   <h3>{candidate.title}</h3>
                   <p className="candidateReason">{candidate.reason}</p>
@@ -298,15 +305,15 @@ export const ClipperWorkspace = () => {
             onClick={handleExportSelected}
           >
             {isExporting || isBusy ? <Loader2 className="spin" size={18} /> : <Scissors size={18} />}
-            Export selected
+            Export Klip Terpilih
           </button>
         </section>
       ) : null}
 
       <section className="results">
         <div className="sectionHeader">
-          <h2>Generated clips</h2>
-          <span>{job?.clips.length ?? 0} current</span>
+          <h2>Klip Siap Digunakan</h2>
+          <span className="sectionBadge">{job?.clips.length ?? 0} klip siap</span>
         </div>
 
         {job?.clips.length ? (
@@ -321,25 +328,28 @@ export const ClipperWorkspace = () => {
                 <div className="clipActions">
                   <a href={getOutputUrl(clip.url)} target="_blank" rel="noreferrer">
                     <ExternalLink size={16} />
-                    Open
+                    Buka
                   </a>
                   <a href={getOutputUrl(clip.url)} download>
                     <Download size={16} />
-                    Download
+                    Unduh
                   </a>
                 </div>
               </article>
             ))}
           </div>
         ) : (
-          <div className="emptyState">Completed clips will show as playable 9:16 videos.</div>
+          <div className="emptyState">
+            <Video size={32} style={{ marginBottom: "12px", opacity: 0.5 }} />
+            <p>Klip vertikal 9:16 yang selesai diproses akan muncul di sini.</p>
+          </div>
         )}
       </section>
 
       <section className="history">
         <div className="sectionHeader">
-          <h2>Recent jobs</h2>
-          <span>{jobs.length}</span>
+          <h2>Riwayat Proses</h2>
+          <span className="sectionBadge">{jobs.length} total</span>
         </div>
         <div className="jobList">
           {jobs.map((item) => {
@@ -354,9 +364,11 @@ export const ClipperWorkspace = () => {
                   setJob(item);
                 }}
               >
-                <Icon className={item.status === "running" ? "spin" : ""} size={17} />
+                <div className={`jobRow-status status-${item.status}`}>
+                  <Icon className={item.status === "running" ? "spin" : ""} size={18} />
+                </div>
                 <span>{statusCopy[item.status]}</span>
-                <strong>{item.clips.length ? `${item.clips.length} clips` : `${item.candidates.length} candidates`}</strong>
+                <strong>{item.clips.length ? `${item.clips.length} klip` : `${item.candidates.length} kandidat`}</strong>
               </button>
             );
           })}
