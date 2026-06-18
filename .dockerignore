@@ -1,0 +1,10 @@
+.git
+.gitignore
+**/__pycache__
+**/.venv
+**/.next
+**/node_modules
+**/.env
+backend/outputs
+backend/jobs.json
+frontend/bun.lock

@@ -1,0 +1,26 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: clipforge-backend
+    ports:
+      - "${BACKEND_PORT:-8010}:8010"
+    volumes:
+      - ./backend/outputs:/app/outputs
+      - ./backend/jobs.json:/app/jobs.json
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8010}
+    container_name: clipforge-frontend
+    environment:
+      BACKEND_API_BASE: http://backend:8010
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8010}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
