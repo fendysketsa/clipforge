@@ -145,8 +145,30 @@ h2 {
   border-bottom: 1px solid var(--border);
 }
 
-.panelHeader svg {
+.statusPanel .panelHeader {
+  justify-content: space-between;
+}
+
+.panelHeaderTitle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.panelHeader svg,
+.panelHeaderTitle svg {
   color: var(--primary);
+}
+
+.cancelJobButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--danger);
+}
+
+.cancelJobButton svg {
+  color: currentColor;
 }
 
 .controlPanel {
@@ -666,6 +688,7 @@ h2 {
 .status-completed { color: var(--success); }
 .status-running { color: var(--warning); }
 .status-failed { color: var(--danger); }
+.status-cancelled { color: var(--danger); }
 .status-queued { color: var(--text-secondary); }
 
 .jobRow strong {
@@ -927,6 +950,53 @@ h2 {
   margin-top: 4px;
 }
 
+.llmPresetGrid,
+.localProviderList {
+  display: grid;
+  gap: 8px;
+}
+
+.llmPresetGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.llmPresetGrid button,
+.localProviderList button {
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #FFFFFF;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.llmPresetGrid button.active,
+.localProviderList button.active {
+  border-color: rgba(37, 99, 235, 0.45);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--primary);
+}
+
+.localProviderList {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.localProviderList button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 12px;
+  text-align: left;
+}
+
+.localProviderList span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .captionFields {
   display: flex;
   flex-direction: column;
@@ -977,8 +1047,8 @@ h2 {
 
 .captionPreviewText {
   position: absolute;
-  left: 17%;
-  right: 17%;
+  left: 23%;
+  right: 23%;
   text-align: center;
   font-weight: 700;
   line-height: 1.2;
@@ -987,6 +1057,10 @@ h2 {
 .captionPreviewText--center {
   top: 50%;
   transform: translateY(-50%);
+}
+
+.captionPreviewText--upper {
+  top: 24%;
 }
 
 .captionPreviewText--bottom {
@@ -1162,4 +1236,9 @@ h2 {
 .loadModelsButton:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.discoverModelsButton {
+  justify-content: center;
+  min-height: 40px;
 }

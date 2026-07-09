@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from llm import extract_json, resolve_base_url, _content_from_response
+from llm import extract_json, normalize_openai_base_url, resolve_base_url, _content_from_response
 
 
 def test_extract_json_plain():
@@ -63,3 +63,8 @@ def test_resolve_base_url_in_docker(monkeypatch):
     monkeypatch.setenv("IN_DOCKER", "1")
     assert resolve_base_url("http://localhost:20128/v1") == "http://host.docker.internal:20128/v1"
     assert resolve_base_url("http://127.0.0.1:20128/v1") == "http://host.docker.internal:20128/v1"
+
+
+def test_normalize_openai_base_url_adds_v1_for_local_providers():
+    assert normalize_openai_base_url("http://localhost:11434") == "http://localhost:11434/v1"
+    assert normalize_openai_base_url("http://localhost:1234/v1") == "http://localhost:1234/v1"

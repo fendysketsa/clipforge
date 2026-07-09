@@ -7,13 +7,13 @@ export const DEFAULT_MODEL = "Systran/faster-whisper-small";
 export const DEFAULT_LANGUAGE = "id";
 export const DEFAULT_AI_BASE_URL = "http://localhost:20128/v1";
 export const DEFAULT_AI_MODEL = "tr/MiniMax-M3";
-export const DEFAULT_CAPTION_FONT_SIZE = 30;
-export const DEFAULT_CAPTION_POSITION = "center";
+export const DEFAULT_CAPTION_FONT_SIZE = 18;
+export const DEFAULT_CAPTION_POSITION = "upper";
 export const DEFAULT_CAPTION_COLOR = "#FFFFFF";
 export const CAPTION_FONT_SIZE_MIN = 8;
 export const CAPTION_FONT_SIZE_MAX = 60;
 export const DEFAULT_CAPTION_FONT = "DejaVu Sans";
-export const DEFAULT_CAPTION_OUTLINE = 2;
+export const DEFAULT_CAPTION_OUTLINE = 1.5;
 export const DEFAULT_CAPTION_OUTLINE_COLOR = "#000000";
 // Maps backend font family -> a CSS stack for the live preview.
 export const CAPTION_FONTS = [
@@ -25,12 +25,21 @@ export const CAPTION_FONTS = [
 ] as const;
 export const JOB_POLL_INTERVAL_MS = 2200;
 export const RECENT_LOG_LIMIT = 10;
+export const MAX_REQUESTED_CLIPS = 12;
+export const LOCAL_LLM_PRESETS = [
+  { label: "Ollama", baseUrl: "http://localhost:11434/v1" },
+  { label: "LM Studio", baseUrl: "http://localhost:1234/v1" },
+  { label: "Jan", baseUrl: "http://localhost:1337/v1" },
+  { label: "LocalAI", baseUrl: "http://localhost:8080/v1" },
+  { label: "Custom", baseUrl: "http://localhost:20128/v1" },
+] as const;
 
 export const statusCopy: Record<JobStatus, string> = {
   queued: "Queued",
   running: "Processing",
   completed: "Completed",
   failed: "Failed",
+  cancelled: "Dibatalkan",
 };
 
 export const statusIcon: Record<JobStatus, LucideIcon> = {
@@ -38,4 +47,5 @@ export const statusIcon: Record<JobStatus, LucideIcon> = {
   running: Loader2,
   completed: CheckCircle2,
   failed: XCircle,
+  cancelled: XCircle,
 };

@@ -7,15 +7,24 @@ const proxyRequest = async (request: NextRequest, path: string[]) => {
   target.search = request.nextUrl.search;
 
   const isBodyless = request.method === "GET" || request.method === "HEAD";
-  const response = await fetch(target, {
-    method: request.method,
-    headers: {
-      "content-type": request.headers.get("content-type") ?? "application/json",
-    },
-    // Forward the raw bytes; decoding as text corrupts binary uploads.
-    body: isBodyless ? undefined : await request.arrayBuffer(),
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(target, {
+      method: request.method,
+      headers: {
+        "content-type": request.headers.get("content-type") ?? "application/json",
+      },
+      // Forward the raw bytes; decoding as text corrupts binary uploads.
+      body: isBodyless ? undefined : await request.arrayBuffer(),
+      cache: "no-store",
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown proxy error";
+    return Response.json(
+      { detail: `Backend API is not reachable at ${BACKEND_API_BASE}: ${message}` },
+      { status: 502 },
+    );
+  }
 
   return new Response(response.body, {
     status: response.status,

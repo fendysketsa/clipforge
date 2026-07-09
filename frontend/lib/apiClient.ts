@@ -3,6 +3,12 @@ import type { ClipJob, CreateClipJobInput } from "../types/clip.type";
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8010";
 const CLIENT_API_BASE = "";
 
+export type LocalLlmProvider = {
+  label: string;
+  base_url: string;
+  models: string[];
+};
+
 export const uploadVideo = async (file: File) => {
   const form = new FormData();
   form.append("file", file);
@@ -36,6 +42,16 @@ export const fetchModels = async (baseUrl: string, apiKey: string) => {
   return data.models;
 };
 
+export const discoverLocalLlms = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/local-llm/discover`, {
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error("Failed to discover local LLMs");
+  }
+  return (await response.json()) as LocalLlmProvider[];
+};
+
 export const probeUrlDuration = async (url: string) => {
   const response = await fetch(`${API_BASE}/api/probe?url=${encodeURIComponent(url)}`, {
     cache: "no-store",
@@ -59,6 +75,16 @@ export const deleteJobs = async () => {
   const response = await fetch(`${CLIENT_API_BASE}/api/jobs`, { method: "DELETE" });
   if (!response.ok) {
     throw new Error("Failed to delete jobs");
+  }
+};
+
+export const cancelJob = async (jobId: string) => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}/cancel`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error("Failed to cancel job");
   }
 };
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -13,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
+import urllib.request
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,15 +26,25 @@ from yt_dlp import YoutubeDL
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUTS_DIR = BASE_DIR / "outputs"
 UPLOADS_DIR = BASE_DIR / "uploads"
-JOBS_PATH = BASE_DIR / "jobs.json"
+_configured_jobs_path = Path(os.environ.get("JOBS_PATH", BASE_DIR / "jobs.json"))
+JOBS_PATH = _configured_jobs_path / "jobs.json" if _configured_jobs_path.is_dir() else _configured_jobs_path
 ALLOWED_UPLOAD_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"}
 SECONDS_PER_TARGET_CLIP = 360
 MIN_AUTO_CLIPS = 2
 MAX_AUTO_CLIPS = 8
+MAX_REQUESTED_CLIPS = 12
 FULL_ANALYSIS_LIMIT_SECONDS = 30 * 60
-LONG_VIDEO_ANALYSIS_RATIO = 0.55
-MAX_AUTO_ANALYSIS_SECONDS = 60 * 60
+LONG_VIDEO_ANALYSIS_RATIO = 0.35
+MAX_AUTO_ANALYSIS_SECONDS = 20 * 60
 CLIP_BUDGET_RATIO = 0.8
+CANCEL_GRACE_SECONDS = 8
+LOCAL_LLM_PRESETS = [
+    {"label": "Ollama", "base_url": "http://localhost:11434/v1"},
+    {"label": "LM Studio", "base_url": "http://localhost:1234/v1"},
+    {"label": "Jan", "base_url": "http://localhost:1337/v1"},
+    {"label": "LocalAI", "base_url": "http://localhost:8080/v1"},
+    {"label": "OpenAI-compatible", "base_url": "http://localhost:20128/v1"},
+]
 
 
 class ClipJobRequest(BaseModel):
@@ -47,13 +59,13 @@ class ClipJobRequest(BaseModel):
     burn_subtitles: bool = True
     crop_mode: Literal["center", "person", "streamer"] = "center"
     cam_corner: Literal["auto", "br", "bl", "tr", "tl"] = "auto"
-    caption_font_size: int = Field(default=30, ge=6, le=120)
-    caption_position: Literal["center", "bottom"] = "center"
+    caption_font_size: int = Field(default=18, ge=6, le=120)
+    caption_position: Literal["upper", "center", "bottom"] = "upper"
     caption_color: str = "#FFFFFF"
     caption_font: Literal[
         "DejaVu Sans", "DejaVu Serif", "Liberation Sans", "Liberation Serif", "Noto Sans"
     ] = "DejaVu Sans"
-    caption_outline: float = Field(default=2.0, ge=0, le=8)
+    caption_outline: float = Field(default=1.5, ge=0, le=8)
     caption_outline_color: str = "#000000"
     required_hashtags: list[str] = Field(default_factory=list)
     ai_enabled: bool = False
@@ -92,7 +104,7 @@ class ClipFile(BaseModel):
 
 class ClipJob(BaseModel):
     id: str
-    status: Literal["queued", "running", "completed", "failed"]
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
     request: ClipJobRequest
     created_at: str
     updated_at: str
@@ -113,6 +125,7 @@ app.add_middleware(
 
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+JOBS_PATH.parent.mkdir(parents=True, exist_ok=True)
 app.mount("/outputs", StaticFiles(directory=OUTPUTS_DIR), name="outputs")
 
 
@@ -132,10 +145,17 @@ def now_iso() -> str:
 
 
 def load_jobs() -> dict[str, ClipJob]:
-    if not JOBS_PATH.exists():
+    if not JOBS_PATH.exists() or JOBS_PATH.is_dir():
         return {}
 
-    payload = json.loads(JOBS_PATH.read_text(encoding="utf-8"))
+    try:
+        raw_payload = JOBS_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
+        return {}
+    if not raw_payload:
+        return {}
+
+    payload = json.loads(raw_payload)
     loaded: dict[str, ClipJob] = {}
     for item in payload:
         job = ClipJob(**item)
@@ -153,6 +173,7 @@ def save_jobs_unlocked() -> None:
     jobs_list = sorted(jobs.values(), key=lambda job: job.created_at, reverse=True)
     payload = [job.model_dump() for job in jobs_list]
     data = json.dumps(payload, indent=2, ensure_ascii=False)
+    JOBS_PATH.parent.mkdir(parents=True, exist_ok=True)
     try:
         temp_path = JOBS_PATH.with_suffix(".json.tmp")
         temp_path.write_text(data, encoding="utf-8")
@@ -193,6 +214,9 @@ def clear_uploads_dir() -> int:
 jobs: dict[str, ClipJob] = load_jobs()
 jobs_lock = threading.Lock()
 job_secrets: dict[str, str] = {}
+job_processes: dict[str, subprocess.Popen[str]] = {}
+cancelled_job_ids: set[str] = set()
+process_lock = threading.Lock()
 
 
 def clip_url(path: Path) -> str:
@@ -242,7 +266,9 @@ def discover_candidates(started_at: float) -> list[ClipCandidate]:
 
 def set_job(job_id: str, **updates) -> None:
     with jobs_lock:
-        job = jobs[job_id]
+        job = jobs.get(job_id)
+        if job is None:
+            return
         data = job.model_dump()
         data.update(updates)
         data["updated_at"] = now_iso()
@@ -306,6 +332,40 @@ def choose_auto_analyze_seconds(duration: float | None) -> float | None:
     return min(MAX_AUTO_ANALYSIS_SECONDS, max(FULL_ANALYSIS_LIMIT_SECONDS, duration * LONG_VIDEO_ANALYSIS_RATIO))
 
 
+def cleanup_job_artifacts(started_at: float) -> int:
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+    removed = 0
+    for item in OUTPUTS_DIR.iterdir():
+        try:
+            if item.stat().st_mtime + 2 < started_at:
+                continue
+            if item.is_dir():
+                shutil.rmtree(item)
+            else:
+                item.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
+def cancel_process(job_id: str) -> bool:
+    cancelled_job_ids.add(job_id)
+    with process_lock:
+        process = job_processes.get(job_id)
+
+    if process is None or process.poll() is not None:
+        return False
+
+    process.terminate()
+    try:
+        process.wait(timeout=CANCEL_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=CANCEL_GRACE_SECONDS)
+    return True
+
+
 def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
     if request.source_file:
         duration = probe_media_duration(Path(request.source_file))
@@ -319,7 +379,9 @@ def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
     # Enforce: min_duration * target_clips <= 80% of the video length.
     budget_cap = max_clips_for_duration(duration, request.min_duration)
     if budget_cap is not None and data["top"] is not None:
-        data["top"] = max(1, min(int(data["top"]), budget_cap))
+        data["top"] = max(1, min(int(data["top"]), MAX_REQUESTED_CLIPS, budget_cap))
+    elif data["top"] is not None:
+        data["top"] = max(1, min(int(data["top"]), MAX_REQUESTED_CLIPS))
 
     if request.analyze_seconds is None:
         data["analyze_seconds"] = choose_auto_analyze_seconds(duration)
@@ -385,6 +447,18 @@ def run_job(job_id: str) -> None:
         request = request.model_copy(update={"ai_api_key": secret})
 
     started_at = time.time()
+    if job_id in cancelled_job_ids:
+        set_job(
+            job_id,
+            status="cancelled",
+            clips=[],
+            candidates=[],
+            error="Proses dibatalkan sebelum worker berjalan.",
+        )
+        cancelled_job_ids.discard(job_id)
+        job_secrets.pop(job_id, None)
+        return
+
     set_job(job_id, status="running", error=None)
     command = build_clipper_command(request)
 
@@ -398,45 +472,64 @@ def run_job(job_id: str) -> None:
         errors="replace",
         bufsize=1,
     )
+    with process_lock:
+        job_processes[job_id] = process
 
     logs: list[str] = []
-    assert process.stdout is not None
-    for line in process.stdout:
-        cleaned = line.rstrip()
-        if cleaned:
-            logs.append(cleaned)
-            set_job(job_id, logs=logs[-120:])
+    try:
+        assert process.stdout is not None
+        for line in process.stdout:
+            cleaned = line.rstrip()
+            if cleaned:
+                logs.append(cleaned)
+                set_job(job_id, logs=logs[-120:])
 
-    code = process.wait()
-    clips = discover_clips(started_at)
-    candidates = discover_candidates(started_at)
-    if code == 0:
-        updates = {"status": "completed", "logs": logs[-120:]}
-        if clips:
-            updates["clips"] = clips
-        if candidates:
-            updates["candidates"] = candidates
-        set_job(job_id, **updates)
-    else:
-        set_job(
-            job_id,
-            status="failed",
-            clips=clips,
-            candidates=candidates,
-            logs=logs[-120:],
-            error=f"clipper.py exited with code {code}",
-        )
-    job_secrets.pop(job_id, None)
+        code = process.wait()
+        if job_id in cancelled_job_ids:
+            removed = cleanup_job_artifacts(started_at)
+            set_job(
+                job_id,
+                status="cancelled",
+                clips=[],
+                candidates=[],
+                logs=logs[-120:],
+                error=f"Proses dibatalkan. {removed} data output sementara dihapus.",
+            )
+            return
 
-    # An uploaded source is only needed during processing; remove it afterwards
-    # so large videos don't accumulate in uploads/.
-    if request.source_file:
-        upload_path = resolve_upload_path(request.source_file)
-        if upload_path is not None:
-            try:
-                upload_path.unlink()
-            except OSError:
-                pass
+        clips = discover_clips(started_at)
+        candidates = discover_candidates(started_at)
+        if code == 0:
+            updates = {"status": "completed", "logs": logs[-120:]}
+            if clips:
+                updates["clips"] = clips
+            if candidates:
+                updates["candidates"] = candidates
+            set_job(job_id, **updates)
+        else:
+            set_job(
+                job_id,
+                status="failed",
+                clips=clips,
+                candidates=candidates,
+                logs=logs[-120:],
+                error=f"clipper.py exited with code {code}",
+            )
+    finally:
+        with process_lock:
+            job_processes.pop(job_id, None)
+        job_secrets.pop(job_id, None)
+        cancelled_job_ids.discard(job_id)
+
+        # An uploaded source is only needed during processing; remove it afterwards
+        # so large videos don't accumulate in uploads/.
+        if request.source_file:
+            upload_path = resolve_upload_path(request.source_file)
+            if upload_path is not None:
+                try:
+                    upload_path.unlink()
+                except OSError:
+                    pass
 
 
 @app.get("/api/health")
@@ -449,35 +542,108 @@ class ModelsQuery(BaseModel):
     api_key: str = ""
 
 
+class LocalModelProvider(BaseModel):
+    label: str
+    base_url: str
+    models: list[str]
+
+
+def resolve_local_base_url(base_url: str) -> str:
+    base = base_url.strip()
+    if not base:
+        return ""
+    if os.environ.get("IN_DOCKER") == "1":
+        base = base.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal")
+    return base
+
+
+def _request_json(url: str, api_key: str = "", timeout: float = 4.0) -> object:
+    request = urllib.request.Request(url, method="GET")
+    request.add_header("Accept", "application/json")
+    if api_key.strip():
+        request.add_header("Authorization", f"Bearer {api_key.strip()}")
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _models_from_payload(payload: object) -> list[str]:
+    if not isinstance(payload, dict):
+        return []
+
+    data = payload.get("data")
+    if isinstance(data, list):
+        models = [
+            item["id"]
+            for item in data
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        ]
+        return sorted(set(models))
+
+    # Ollama native /api/tags shape.
+    native_models = payload.get("models")
+    if isinstance(native_models, list):
+        models = [
+            item["name"]
+            for item in native_models
+            if isinstance(item, dict) and isinstance(item.get("name"), str)
+        ]
+        return sorted(set(models))
+
+    return []
+
+
+def load_models_from_base(base_url: str, api_key: str = "", timeout: float = 4.0) -> list[str]:
+    base = resolve_local_base_url(base_url).rstrip("/")
+    if not base:
+        return []
+
+    urls = [base + "/models"]
+    if not base.endswith("/v1"):
+        urls.append(base + "/v1/models")
+        urls.append(base + "/api/tags")
+    elif base.endswith(":11434/v1") or ":11434/" in base:
+        urls.append(base.removesuffix("/v1") + "/api/tags")
+
+    for url in urls:
+        try:
+            models = _models_from_payload(_request_json(url, api_key=api_key, timeout=timeout))
+        except Exception:
+            continue
+        if models:
+            return models
+    return []
+
+
 @app.post("/api/models")
 def list_models(query: ModelsQuery) -> dict[str, list[str]]:
-    import urllib.request
-
     base = query.base_url.strip()
     if not base:
         raise HTTPException(status_code=400, detail="base_url is required")
 
-    base = base.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal")
-    url = base.rstrip("/") + "/models"
-    request = urllib.request.Request(url, method="GET")
-    request.add_header("Accept", "application/json")
-    if query.api_key.strip():
-        request.add_header("Authorization", f"Bearer {query.api_key.strip()}")
-
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+        models = load_models_from_base(base, api_key=query.api_key, timeout=20)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Failed to reach LLM endpoint: {exc}")
-
-    data = payload.get("data") if isinstance(payload, dict) else None
-    models = [
-        item["id"]
-        for item in (data or [])
-        if isinstance(item, dict) and isinstance(item.get("id"), str)
-    ]
-    models.sort()
+    if not models:
+        raise HTTPException(status_code=502, detail="No models found at LLM endpoint")
     return {"models": models}
+
+
+@app.get("/api/local-llm/discover", response_model=list[LocalModelProvider])
+def discover_local_llms() -> list[LocalModelProvider]:
+    providers: list[LocalModelProvider] = []
+    for preset in LOCAL_LLM_PRESETS:
+        base_url = preset["base_url"]
+        models = load_models_from_base(base_url, timeout=2.5)
+        if models:
+            providers.append(
+                LocalModelProvider(
+                    label=preset["label"],
+                    base_url=base_url,
+                    models=models,
+                )
+            )
+    return providers
 
 
 @app.post("/api/uploads")
@@ -557,6 +723,11 @@ def list_jobs() -> list[ClipJob]:
 
 @app.delete("/api/jobs")
 def delete_all_jobs() -> dict[str, str | int]:
+    with process_lock:
+        active_job_ids = list(job_processes)
+    for job_id in active_job_ids:
+        cancel_process(job_id)
+
     with jobs_lock:
         jobs.clear()
         job_secrets.clear()
@@ -573,3 +744,25 @@ def get_job(job_id: str) -> ClipJob:
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str) -> dict[str, str | bool]:
+    with jobs_lock:
+        job = jobs.get(job_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status not in {"queued", "running"}:
+        return {"status": job.status, "cancelled": False}
+
+    stopped = cancel_process(job_id)
+    if not stopped:
+        set_job(
+            job_id,
+            status="cancelled",
+            clips=[],
+            candidates=[],
+            error="Proses dibatalkan sebelum worker berjalan.",
+        )
+    return {"status": "cancelled", "cancelled": True}

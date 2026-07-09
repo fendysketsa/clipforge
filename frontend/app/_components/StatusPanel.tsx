@@ -1,20 +1,31 @@
-import { Activity } from "lucide-react";
+import { Activity, XCircle } from "lucide-react";
 import { statusIcon } from "../../lib/constants";
+import { isActiveJob } from "../../lib/utils";
 import type { ClipJob } from "../../types/clip.type";
 
 type StatusPanelProps = {
   job: ClipJob | null;
   latestLogs: string[];
+  onCancelJob: () => void;
 };
 
-export function StatusPanel({ job, latestLogs }: StatusPanelProps) {
+export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) {
   const StatusIcon = job ? statusIcon[job.status] : Activity;
+  const canCancel = isActiveJob(job);
 
   return (
     <section className="panel statusPanel">
       <div className="panelHeader">
-        <StatusIcon className={job?.status === "running" ? "spin" : ""} size={20} />
-        <h2>Aktivitas</h2>
+        <div className="panelHeaderTitle">
+          <StatusIcon className={job?.status === "running" ? "spin" : ""} size={20} />
+          <h2>Aktivitas</h2>
+        </div>
+        {canCancel ? (
+          <button className="ghostButton cancelJobButton" type="button" onClick={onCancelJob}>
+            <XCircle size={15} />
+            Batalkan
+          </button>
+        ) : null}
       </div>
 
       {job ? (
@@ -24,7 +35,7 @@ export function StatusPanel({ job, latestLogs }: StatusPanelProps) {
             <span>
               {job.request.min_duration}s - {job.request.max_duration}s
             </span>
-            <span>{job.request.analyze_seconds ? `Test: ${job.request.analyze_seconds}s` : "Full video"}</span>
+            <span>{job.request.analyze_seconds ? `Analisis: ${job.request.analyze_seconds}s` : "Full video"}</span>
             <span>{job.request.crop_mode === "person" ? "Follow person" : "Center crop"}</span>
           </div>
 

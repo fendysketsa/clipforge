@@ -125,6 +125,20 @@ def clamp_even(value: float, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, bounded))
 
 
+def make_cv2_cascade(cv2_module, filename: str):
+    if not hasattr(cv2_module, "CascadeClassifier"):
+        return None
+
+    cascade_dir = getattr(getattr(cv2_module, "data", None), "haarcascades", "")
+    if not cascade_dir:
+        return None
+
+    cascade = cv2_module.CascadeClassifier(str(Path(cascade_dir) / filename))
+    if hasattr(cascade, "empty") and cascade.empty():
+        return None
+    return cascade
+
+
 def detect_person_focus_x(video_path: Path, clip: ClipCandidate) -> tuple[float, tuple[int, int]] | None:
     try:
         import cv2
@@ -150,10 +164,16 @@ def detect_person_focus_x(video_path: Path, clip: ClipCandidate) -> tuple[float,
         step = duration / (sample_count + 1)
         offsets = [step * (index + 1) for index in range(sample_count)]
 
-    hog = cv2.HOGDescriptor()
-    hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
-    face_cascade = cv2.CascadeClassifier(str(Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"))
-    profile_cascade = cv2.CascadeClassifier(str(Path(cv2.data.haarcascades) / "haarcascade_profileface.xml"))
+    hog = None
+    if hasattr(cv2, "HOGDescriptor") and hasattr(cv2, "HOGDescriptor_getDefaultPeopleDetector"):
+        hog = cv2.HOGDescriptor()
+        hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+    else:
+        console.print("[yellow]OpenCV HOG people detector unavailable; using face detection only.[/yellow]")
+
+    can_make_gray = hasattr(cv2, "cvtColor") and hasattr(cv2, "COLOR_BGR2GRAY")
+    face_cascade = make_cv2_cascade(cv2, "haarcascade_frontalface_default.xml") if can_make_gray else None
+    profile_cascade = make_cv2_cascade(cv2, "haarcascade_profileface.xml") if can_make_gray else None
     yunet = None
     if YUNET_MODEL_PATH.exists() and hasattr(cv2, "FaceDetectorYN_create"):
         yunet = cv2.FaceDetectorYN_create(
@@ -164,6 +184,11 @@ def detect_person_focus_x(video_path: Path, clip: ClipCandidate) -> tuple[float,
             0.3,
             5000,
         )
+
+    if hog is None and face_cascade is None and profile_cascade is None and yunet is None:
+        capture.release()
+        console.print("[yellow]OpenCV object detectors unavailable; using center crop.[/yellow]")
+        return None
 
     face_weighted_sum = 0.0
     face_total_weight = 0.0
@@ -182,7 +207,11 @@ def detect_person_focus_x(video_path: Path, clip: ClipCandidate) -> tuple[float,
         else:
             resized = frame
 
-        gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+        gray = (
+            cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+            if face_cascade is not None or profile_cascade is not None
+            else None
+        )
         face_detections: list[tuple[float, float, float]] = []
         person_detections: list[tuple[float, float, float]] = []
 
@@ -197,39 +226,43 @@ def detect_person_focus_x(video_path: Path, clip: ClipCandidate) -> tuple[float,
                     center_x = (x + w / 2) / resize_scale
                     face_detections.append((center_x, max(w, h) / resize_scale, confidence * 3.0))
 
-        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(36, 36))
-        for x, y, w, h in faces:
-            center_x = (x + w / 2) / resize_scale
-            face_detections.append((center_x, max(w, h) / resize_scale, 2.0))
+        if face_cascade is not None and gray is not None:
+            faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(36, 36))
+            for x, y, w, h in faces:
+                center_x = (x + w / 2) / resize_scale
+                face_detections.append((center_x, max(w, h) / resize_scale, 2.0))
 
-        profiles = profile_cascade.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=4, minSize=(34, 34))
-        for x, y, w, h in profiles:
-            center_x = (x + w / 2) / resize_scale
-            face_detections.append((center_x, max(w, h) / resize_scale, 1.8))
+        if profile_cascade is not None and gray is not None:
+            profiles = profile_cascade.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=4, minSize=(34, 34))
+            for x, y, w, h in profiles:
+                center_x = (x + w / 2) / resize_scale
+                face_detections.append((center_x, max(w, h) / resize_scale, 1.8))
 
-        flipped_gray = cv2.flip(gray, 1)
-        flipped_profiles = profile_cascade.detectMultiScale(
-            flipped_gray,
-            scaleFactor=1.08,
-            minNeighbors=4,
-            minSize=(34, 34),
-        )
-        resized_width = resized.shape[1]
-        for x, y, w, h in flipped_profiles:
-            original_x = resized_width - x - w
-            center_x = (original_x + w / 2) / resize_scale
-            face_detections.append((center_x, max(w, h) / resize_scale, 1.8))
+            if hasattr(cv2, "flip"):
+                flipped_gray = cv2.flip(gray, 1)
+                flipped_profiles = profile_cascade.detectMultiScale(
+                    flipped_gray,
+                    scaleFactor=1.08,
+                    minNeighbors=4,
+                    minSize=(34, 34),
+                )
+                resized_width = resized.shape[1]
+                for x, y, w, h in flipped_profiles:
+                    original_x = resized_width - x - w
+                    center_x = (original_x + w / 2) / resize_scale
+                    face_detections.append((center_x, max(w, h) / resize_scale, 1.8))
 
-        people, weights = hog.detectMultiScale(
-            resized,
-            winStride=(8, 8),
-            padding=(16, 16),
-            scale=1.05,
-        )
-        for index, (x, _, w, _) in enumerate(people):
-            confidence = float(weights[index]) if len(weights) > index else 1.0
-            center_x = (x + w / 2) / resize_scale
-            person_detections.append((center_x, w / resize_scale, max(0.25, confidence)))
+        if hog is not None:
+            people, weights = hog.detectMultiScale(
+                resized,
+                winStride=(8, 8),
+                padding=(16, 16),
+                scale=1.05,
+            )
+            for index, (x, _, w, _) in enumerate(people):
+                confidence = float(weights[index]) if len(weights) > index else 1.0
+                center_x = (x + w / 2) / resize_scale
+                person_detections.append((center_x, w / resize_scale, max(0.25, confidence)))
 
         if face_detections:
             center_x, box_width, confidence = max(face_detections, key=lambda item: item[1] * item[2])
@@ -307,7 +340,14 @@ def detect_webcam_corner(video_path: Path, clip: ClipCandidate) -> CamCorner | N
     capture = cv2.VideoCapture(str(video_path.resolve()))
     if not capture.isOpened():
         return None
-    face_cascade = cv2.CascadeClassifier(str(Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"))
+    if not (hasattr(cv2, "cvtColor") and hasattr(cv2, "COLOR_BGR2GRAY")):
+        capture.release()
+        return None
+
+    face_cascade = make_cv2_cascade(cv2, "haarcascade_frontalface_default.xml")
+    if face_cascade is None:
+        capture.release()
+        return None
 
     duration = max(0.1, clip.end - clip.start)
     offsets = [duration * frac for frac in (0.2, 0.4, 0.6, 0.8)]
@@ -738,12 +778,16 @@ def segments_for_clip(segments: Iterable[TranscriptSegment], clip: ClipCandidate
     return [item for item in segments if item.end > clip.start and item.start < clip.end]
 
 
-def wrap_subtitle(text: str, max_chars: int = 32, max_lines: int = 2) -> str:
+SUBTITLE_MAX_CHARS = 24
+SUBTITLE_MAX_LINES = 2
+
+
+def wrap_subtitle(text: str, max_chars: int = SUBTITLE_MAX_CHARS, max_lines: int = SUBTITLE_MAX_LINES) -> str:
     chunks = split_subtitle_text(text, max_chars=max_chars, max_lines=max_lines)
     return chunks[0] if chunks else ""
 
 
-def split_subtitle_text(text: str, max_chars: int = 32, max_lines: int = 2) -> list[str]:
+def split_subtitle_text(text: str, max_chars: int = SUBTITLE_MAX_CHARS, max_lines: int = SUBTITLE_MAX_LINES) -> list[str]:
     words = text.split()
     chunks: list[str] = []
     lines: list[str] = []
@@ -794,7 +838,7 @@ def write_srt(path: Path, segments: list[TranscriptSegment], offset: float, clip
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-CaptionPosition = Literal["center", "bottom"]
+CaptionPosition = Literal["upper", "center", "bottom"]
 
 
 # Fonts installed in the backend container (see Dockerfile). Map the FE choice
@@ -807,15 +851,17 @@ AVAILABLE_FONTS = {
     "Noto Sans": "Noto Sans",
 }
 DEFAULT_FONT = "DejaVu Sans"
+SOFT_CAPTION_BACK_COLOR = "&H90000000"
+SOFT_CAPTION_SHADOW = 0.6
 
 
 @dataclass
 class CaptionStyle:
-    font_size: int = 30
-    position: CaptionPosition = "center"
+    font_size: int = 18
+    position: CaptionPosition = "upper"
     color: str = "#FFFFFF"
     font_family: str = DEFAULT_FONT
-    outline_width: float = 2.0
+    outline_width: float = 1.5
     outline_color: str = "#000000"
 
 
@@ -838,18 +884,22 @@ def build_subtitle_style(caption: CaptionStyle) -> str:
     font_name = AVAILABLE_FONTS.get(caption.font_family, DEFAULT_FONT)
     # libass margins use the default script resolution (PlayResY=288), so these
     # values are in ~288-unit space, not raw pixels of the 1920px frame.
-    # Alignment: 2 = bottom-center, 10 = middle-center (ASS numbering, where 5
-    # is actually top-center, not the visual middle).
+    # Alignment: 2 = bottom-center, 8 = top-center, 10 = middle-center (ASS
+    # numbering in libass; 5 is not the visual middle here).
     if caption.position == "bottom":
         alignment = 2
         margin_v = 24
+    elif caption.position == "upper":
+        alignment = 8
+        margin_v = 70
     else:
         alignment = 10
         margin_v = 0
     return (
         f"FontName={font_name},FontSize={font_size},Bold=1,PrimaryColour={primary},"
-        f"OutlineColour={outline_color},BorderStyle=1,Outline={outline},Shadow=1,"
-        f"Alignment={alignment},MarginL=60,MarginR=60,MarginV={margin_v}"
+        f"OutlineColour={outline_color},BackColour={SOFT_CAPTION_BACK_COLOR},"
+        f"BorderStyle=3,Outline={outline},Shadow={SOFT_CAPTION_SHADOW},"
+        f"Alignment={alignment},MarginL=90,MarginR=90,MarginV={margin_v},WrapStyle=0"
     )
 
 
@@ -1253,16 +1303,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ai-base-url", default="", help="OpenAI-compatible base URL, e.g. http://localhost:20128/v1")
     parser.add_argument("--ai-model", default="", help="LLM model name for the clip agent")
     parser.add_argument("--ai-api-key", default="", help="API key for the LLM endpoint")
-    parser.add_argument("--caption-font-size", type=int, default=30, help="Burned caption font size (10-120)")
+    parser.add_argument("--caption-font-size", type=int, default=18, help="Burned caption font size (10-120)")
     parser.add_argument(
         "--caption-position",
-        choices=["center", "bottom"],
-        default="center",
+        choices=["upper", "center", "bottom"],
+        default="upper",
         help="Burned caption vertical position",
     )
     parser.add_argument("--caption-color", default="#FFFFFF", help="Burned caption text color, hex e.g. #FFFFFF")
     parser.add_argument("--caption-font", default=DEFAULT_FONT, help="Burned caption font family")
-    parser.add_argument("--caption-outline", type=float, default=2.0, help="Caption border/outline width (0-8)")
+    parser.add_argument("--caption-outline", type=float, default=1.5, help="Caption border/outline width (0-8)")
     parser.add_argument("--caption-outline-color", default="#000000", help="Caption border color, hex")
     parser.add_argument(
         "--keep-intermediate",

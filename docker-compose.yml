@@ -8,9 +8,10 @@ services:
     volumes:
       - ./backend/outputs:/app/outputs
       - ./backend/uploads:/app/uploads
-      - ./backend/jobs.json:/app/jobs.json
+      - ./backend/data:/app/data
     environment:
       IN_DOCKER: "1"
+      JOBS_PATH: /app/data/jobs.json
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

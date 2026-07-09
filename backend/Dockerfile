@@ -23,9 +23,11 @@ COPY requirements.txt .
 RUN python -m pip install --upgrade pip \
     && python -m pip install -r requirements.txt
 
+RUN python -c "import cv2, sys; missing = [name for name in ('VideoCapture', 'CascadeClassifier', 'HOGDescriptor') if not hasattr(cv2, name)]; print(f'OpenCV install is incomplete, missing: {missing}' if missing else f'OpenCV {cv2.__version__} ready'); sys.exit(1 if missing else 0)"
+
 COPY . .
 
-RUN mkdir -p outputs
+RUN mkdir -p outputs uploads data
 
 EXPOSE 8010
 

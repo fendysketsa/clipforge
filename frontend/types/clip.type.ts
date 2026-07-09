@@ -1,7 +1,7 @@
-export type JobStatus = "queued" | "running" | "completed" | "failed";
+export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export type CropMode = "center" | "person" | "streamer";
 export type CamCorner = "auto" | "br" | "bl" | "tr" | "tl";
-export type CaptionPosition = "center" | "bottom";
+export type CaptionPosition = "upper" | "center" | "bottom";
 export type CaptionFont =
   | "DejaVu Sans"
   | "DejaVu Serif"

@@ -3,13 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import {
+  cancelJob,
   createJob,
   deleteJobs,
+  discoverLocalLlms,
   fetchModels,
   getJob,
   getJobs,
   probeUrlDuration,
   uploadVideo,
+  type LocalLlmProvider,
 } from "../lib/apiClient";
 import {
   DEFAULT_AI_BASE_URL,
@@ -25,6 +28,7 @@ import {
   DEFAULT_MIN_DURATION,
   DEFAULT_MODEL,
   JOB_POLL_INTERVAL_MS,
+  MAX_REQUESTED_CLIPS,
   RECENT_LOG_LIMIT,
 } from "../lib/constants";
 import { isActiveJob } from "../lib/utils";
@@ -40,7 +44,6 @@ import { ControlPanel } from "./_components/ControlPanel";
 import { DeleteAllToast } from "./_components/DeleteAllToast";
 import { HistorySection } from "./_components/HistorySection";
 import { ResultsSection } from "./_components/ResultsSection";
-import { SiteFooter } from "./_components/SiteFooter";
 import { StatusPanel } from "./_components/StatusPanel";
 import { Topbar } from "./_components/Topbar";
 
@@ -71,6 +74,8 @@ export default function HomePage() {
   const [requiredHashtags, setRequiredHashtags] = useState("");
   const [aiModels, setAiModels] = useState<string[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [localLlmProviders, setLocalLlmProviders] = useState<LocalLlmProvider[]>([]);
+  const [isDiscoveringLlms, setIsDiscoveringLlms] = useState(false);
   const [job, setJob] = useState<ClipJob | null>(null);
   const [jobs, setJobs] = useState<ClipJob[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -82,9 +87,15 @@ export default function HomePage() {
 
   // min_duration * target_clips must fit within 80% of the video length.
   const maxClips = useMemo(() => {
-    if (!videoDuration || minDuration <= 0) return null;
-    return Math.max(1, Math.floor((videoDuration * 0.8) / minDuration));
+    if (!videoDuration || minDuration <= 0) return MAX_REQUESTED_CLIPS;
+    return Math.min(MAX_REQUESTED_CLIPS, Math.max(1, Math.floor((videoDuration * 0.8) / minDuration)));
   }, [videoDuration, minDuration]);
+
+  useEffect(() => {
+    if (targetClips > maxClips) {
+      setTargetClips(maxClips);
+    }
+  }, [maxClips, targetClips]);
 
   useEffect(() => {
     if (sourceMode !== "url") return;
@@ -119,13 +130,39 @@ export default function HomePage() {
       const nextJob = await getJob(activeJobId);
       setJob(nextJob);
 
-      if (nextJob.status === "completed" || nextJob.status === "failed") {
+      if (nextJob.status === "completed" || nextJob.status === "failed" || nextJob.status === "cancelled") {
         loadJobs().catch(() => undefined);
       }
     }, JOB_POLL_INTERVAL_MS);
 
     return () => window.clearInterval(interval);
   }, [activeJobId, loadJobs]);
+
+  useEffect(() => {
+    if (!activeJobId || !isBusy) return;
+
+    const message = "Proses clip masih berjalan. Jika halaman ditutup atau direload, proses akan dibatalkan dan output sementara akan dihapus.";
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = message;
+      return message;
+    };
+    const cancelOnLeave = () => {
+      const endpoint = `/api/jobs/${activeJobId}/cancel`;
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(endpoint, new Blob([], { type: "text/plain" }));
+        return;
+      }
+      fetch(endpoint, { method: "POST", keepalive: true }).catch(() => undefined);
+    };
+
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    window.addEventListener("pagehide", cancelOnLeave);
+    return () => {
+      window.removeEventListener("beforeunload", warnBeforeUnload);
+      window.removeEventListener("pagehide", cancelOnLeave);
+    };
+  }, [activeJobId, isBusy]);
 
   const handleLoadModels = useCallback(async () => {
     const base = aiBaseUrl.trim();
@@ -146,10 +183,68 @@ export default function HomePage() {
     }
   }, [aiBaseUrl, aiApiKey]);
 
+  const handleDiscoverLocalLlms = useCallback(async () => {
+    setIsDiscoveringLlms(true);
+    try {
+      const providers = await discoverLocalLlms();
+      setLocalLlmProviders(providers);
+      if (!providers.length) {
+        toast.error("Belum menemukan LLM lokal. Pastikan Ollama/LM Studio/Jan sedang berjalan.");
+        return;
+      }
+
+      const first = providers[0];
+      setAiBaseUrl(first.base_url);
+      setAiModels(first.models);
+      if (first.models[0]) {
+        setAiModel(first.models[0]);
+      }
+      toast.success(`${providers.length} provider LLM lokal ditemukan`);
+    } catch (discoverError) {
+      toast.error(discoverError instanceof Error ? discoverError.message : "Gagal mencari LLM lokal");
+    } finally {
+      setIsDiscoveringLlms(false);
+    }
+  }, []);
+
+  const handleAiEnabledChange = useCallback(
+    (value: boolean) => {
+      setAiEnabled(value);
+      if (value && !localLlmProviders.length && !isDiscoveringLlms) {
+        handleDiscoverLocalLlms().catch(() => undefined);
+      }
+    },
+    [handleDiscoverLocalLlms, isDiscoveringLlms, localLlmProviders.length],
+  );
+
+  const handleSelectLocalProvider = useCallback((provider: LocalLlmProvider) => {
+    setAiBaseUrl(provider.base_url);
+    setAiModels(provider.models);
+    if (provider.models[0]) {
+      setAiModel(provider.models[0]);
+    }
+  }, []);
+
+  const handleAiBaseUrlChange = useCallback((value: string) => {
+    setAiBaseUrl((current) => {
+      if (current !== value) {
+        setAiModels([]);
+      }
+      return value;
+    });
+  }, []);
+
   const handleSourceModeChange = useCallback((mode: SourceMode) => {
     setSourceMode(mode);
     setError("");
   }, []);
+
+  const handleTargetClipsChange = useCallback(
+    (value: number) => {
+      setTargetClips(Math.max(0, Math.min(MAX_REQUESTED_CLIPS, maxClips, value)));
+    },
+    [maxClips],
+  );
 
   const handleUploadFileChange = useCallback(async (file: File | null) => {
     setError("");
@@ -282,6 +377,18 @@ export default function HomePage() {
     });
   }, [handleDeleteAllConfirmed]);
 
+  const handleCancelJob = useCallback(async () => {
+    if (!activeJobId || !isBusy) return;
+    await toast.promise(cancelJob(activeJobId), {
+      loading: "Membatalkan proses...",
+      success: "Proses dibatalkan dan output sementara dihapus.",
+      error: "Gagal membatalkan proses",
+    });
+    const nextJob = await getJob(activeJobId).catch(() => null);
+    if (nextJob) setJob(nextJob);
+    await loadJobs();
+  }, [activeJobId, isBusy, loadJobs]);
+
   return (
     <main className="shell">
       <Topbar onRefresh={loadJobs} />
@@ -305,7 +412,7 @@ export default function HomePage() {
           targetClips={targetClips}
           maxClips={maxClips}
           videoDuration={videoDuration}
-          onTargetClipsChange={setTargetClips}
+          onTargetClipsChange={handleTargetClipsChange}
           burnSubtitles={burnSubtitles}
           captionFontSize={captionFontSize}
           captionPosition={captionPosition}
@@ -322,7 +429,11 @@ export default function HomePage() {
           aiApiKey={aiApiKey}
           aiModels={aiModels}
           isLoadingModels={isLoadingModels}
+          isDiscoveringLlms={isDiscoveringLlms}
+          localLlmProviders={localLlmProviders}
           onLoadModels={handleLoadModels}
+          onDiscoverLocalLlms={handleDiscoverLocalLlms}
+          onSelectLocalProvider={handleSelectLocalProvider}
           requiredHashtags={requiredHashtags}
           onRequiredHashtagsChange={setRequiredHashtags}
           onCropModeChange={setCropMode}
@@ -332,20 +443,19 @@ export default function HomePage() {
           onCaptionFontSizeChange={setCaptionFontSize}
           onCaptionPositionChange={setCaptionPosition}
           onCaptionColorChange={setCaptionColor}
-          onAiEnabledChange={setAiEnabled}
-          onAiBaseUrlChange={setAiBaseUrl}
+          onAiEnabledChange={handleAiEnabledChange}
+          onAiBaseUrlChange={handleAiBaseUrlChange}
           onAiModelChange={setAiModel}
           onAiApiKeyChange={setAiApiKey}
           onStartJob={handleStartJob}
           onUrlChange={setUrl}
           url={url}
         />
-        <StatusPanel job={job} latestLogs={latestLogs} />
+        <StatusPanel job={job} latestLogs={latestLogs} onCancelJob={handleCancelJob} />
       </section>
 
       <ResultsSection clips={job?.clips ?? []} />
       <HistorySection jobs={jobs} onDeleteAll={handleDeleteAll} onSelectJob={setJob} />
-      <SiteFooter />
     </main>
   );
 }

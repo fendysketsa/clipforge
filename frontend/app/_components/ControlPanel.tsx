@@ -1,5 +1,6 @@
 import { Link2, Loader2, Play, RefreshCw, Scissors, Sparkles, Type, Upload } from "lucide-react";
-import { CAPTION_FONT_SIZE_MAX, CAPTION_FONT_SIZE_MIN, CAPTION_FONTS } from "../../lib/constants";
+import type { LocalLlmProvider } from "../../lib/apiClient";
+import { CAPTION_FONT_SIZE_MAX, CAPTION_FONT_SIZE_MIN, CAPTION_FONTS, LOCAL_LLM_PRESETS } from "../../lib/constants";
 import type { CamCorner, CaptionFont, CaptionPosition, CropMode, SourceMode } from "../../types/clip.type";
 import { CaptionPreview } from "./CaptionPreview";
 
@@ -46,7 +47,11 @@ type ControlPanelProps = {
   aiApiKey: string;
   aiModels: string[];
   isLoadingModels: boolean;
+  isDiscoveringLlms: boolean;
+  localLlmProviders: LocalLlmProvider[];
   onLoadModels: () => void;
+  onDiscoverLocalLlms: () => void;
+  onSelectLocalProvider: (provider: LocalLlmProvider) => void;
   requiredHashtags: string;
   onRequiredHashtagsChange: (value: string) => void;
   onCropModeChange: (mode: CropMode) => void;
@@ -94,7 +99,11 @@ export function ControlPanel({
   aiApiKey,
   aiModels,
   isLoadingModels,
+  isDiscoveringLlms,
+  localLlmProviders,
   onLoadModels,
+  onDiscoverLocalLlms,
+  onSelectLocalProvider,
   requiredHashtags,
   onRequiredHashtagsChange,
   onCropModeChange,
@@ -313,6 +322,13 @@ export function ControlPanel({
                 <span>Posisi</span>
                 <div className="segmentedControl" role="group" aria-label="Posisi caption">
                   <button
+                    className={captionPosition === "upper" ? "active" : ""}
+                    type="button"
+                    onClick={() => onCaptionPositionChange("upper")}
+                  >
+                    Atas aman
+                  </button>
+                  <button
                     className={captionPosition === "center" ? "active" : ""}
                     type="button"
                     onClick={() => onCaptionPositionChange("center")}
@@ -414,6 +430,18 @@ export function ControlPanel({
 
         {aiEnabled ? (
           <div className="aiFields">
+            <div className="llmPresetGrid" role="group" aria-label="Preset LLM lokal">
+              {LOCAL_LLM_PRESETS.map((preset) => (
+                <button
+                  key={preset.baseUrl}
+                  className={aiBaseUrl === preset.baseUrl ? "active" : ""}
+                  type="button"
+                  onClick={() => onAiBaseUrlChange(preset.baseUrl)}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
             <label className="field wide">
               <span>Endpoint (Base URL)</span>
               <input
@@ -421,7 +449,34 @@ export function ControlPanel({
                 onChange={(event) => onAiBaseUrlChange(event.target.value)}
                 placeholder="http://localhost:20128/v1"
               />
+              <p className="field-help">
+                Jika aplikasi berjalan di Docker, endpoint localhost laptop otomatis diarahkan ke host.docker.internal.
+              </p>
             </label>
+            <button
+              type="button"
+              className="loadModelsButton discoverModelsButton"
+              onClick={onDiscoverLocalLlms}
+              disabled={isDiscoveringLlms}
+            >
+              {isDiscoveringLlms ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}
+              Cari LLM Lokal
+            </button>
+            {localLlmProviders.length > 0 ? (
+              <div className="localProviderList">
+                {localLlmProviders.map((provider) => (
+                  <button
+                    key={provider.base_url}
+                    type="button"
+                    onClick={() => onSelectLocalProvider(provider)}
+                    className={aiBaseUrl === provider.base_url ? "active" : ""}
+                  >
+                    <strong>{provider.label}</strong>
+                    <span>{provider.models.length} model</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <label className="field wide">
               <span>API Key</span>
               <input

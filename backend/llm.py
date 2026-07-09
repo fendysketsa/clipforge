@@ -5,6 +5,7 @@ import os
 import re
 import urllib.request
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 
 @dataclass
@@ -19,9 +20,18 @@ class AIConfig:
 def resolve_base_url(base_url: str) -> str:
     # Inside Docker, localhost points at the container, not the host. Rewrite to
     # host.docker.internal so a user-supplied localhost endpoint still works.
+    base_url = normalize_openai_base_url(base_url)
     if os.environ.get("IN_DOCKER") != "1":
         return base_url
     return base_url.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal")
+
+
+def normalize_openai_base_url(base_url: str) -> str:
+    base = base_url.strip().rstrip("/")
+    parsed = urlparse(base)
+    if parsed.port in {11434, 1234, 1337, 8080, 20128} and not parsed.path.rstrip("/").endswith("/v1"):
+        return base + "/v1"
+    return base
 
 
 def chat_completion(config: AIConfig, messages: list[dict]) -> str:

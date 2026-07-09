@@ -11,11 +11,9 @@ type CaptionPreviewProps = {
 };
 
 const PREVIEW_HEIGHT = 320;
-// Calibrated against real ffmpeg output: at backend FontSize=30 the rendered
-// glyph cap-height is ~6.5% of the 1920px frame. This factor maps the backend
-// font size to an equivalent CSS px on the preview so they match visually.
+// Maps the backend ASS font size to a close CSS preview size.
 const FONT_CALIBRATION = 0.96;
-const SAMPLE_TEXT = "Contoh caption di video kamu";
+const SAMPLE_TEXT = "Contoh caption rapi di layar";
 
 function outlineShadow(width: number, color: string): string {
   if (width <= 0) return "none";
