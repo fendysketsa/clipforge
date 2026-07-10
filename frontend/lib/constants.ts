@@ -1,10 +1,11 @@
 import { CheckCircle2, Clock3, Loader2, XCircle, type LucideIcon } from "lucide-react";
-import type { JobStatus } from "../types/clip.type";
+import type { JobStatus, VideoQuality } from "../types/clip.type";
 
 export const DEFAULT_MIN_DURATION = 35;
 export const DEFAULT_MAX_DURATION = 180;
 export const DEFAULT_MODEL = "Systran/faster-whisper-small";
 export const DEFAULT_LANGUAGE = "id";
+export const DEFAULT_VIDEO_QUALITY: VideoQuality = "high";
 export const DEFAULT_AI_BASE_URL = "http://localhost:20128/v1";
 export const DEFAULT_AI_MODEL = "tr/MiniMax-M3";
 export const DEFAULT_CAPTION_FONT_SIZE = 18;
@@ -26,6 +27,11 @@ export const CAPTION_FONTS = [
 export const JOB_POLL_INTERVAL_MS = 2200;
 export const RECENT_LOG_LIMIT = 10;
 export const MAX_REQUESTED_CLIPS = 12;
+export const VIDEO_QUALITY_OPTIONS: { value: VideoQuality; label: string; help: string }[] = [
+  { value: "standard", label: "Standar", help: "Lebih cepat, ukuran file lebih kecil." },
+  { value: "high", label: "Jernih", help: "Detail lebih tajam untuk Reels/Shorts." },
+  { value: "max", label: "Maksimal", help: "Paling jernih, proses dan file lebih besar." },
+];
 export const LOCAL_LLM_PRESETS = [
   { label: "Ollama", baseUrl: "http://localhost:11434/v1" },
   { label: "LM Studio", baseUrl: "http://localhost:1234/v1" },

@@ -56,6 +56,7 @@ class ClipJobRequest(BaseModel):
     model: str = "Systran/faster-whisper-small"
     language: str = "id"
     analyze_seconds: float | None = Field(default=None, ge=10, le=7200)
+    video_quality: Literal["standard", "high", "max"] = "high"
     burn_subtitles: bool = True
     crop_mode: Literal["center", "person", "streamer"] = "center"
     cam_corner: Literal["auto", "br", "bl", "tr", "tl"] = "auto"
@@ -412,6 +413,7 @@ def build_clipper_command(request: ClipJobRequest) -> list[str]:
 
     if request.analyze_seconds:
         command.extend(["--analyze-seconds", str(request.analyze_seconds)])
+    command.extend(["--video-quality", request.video_quality])
     if not request.burn_subtitles:
         command.append("--no-burn-subtitles")
     command.extend(["--crop-mode", request.crop_mode])

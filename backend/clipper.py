@@ -77,7 +77,42 @@ WEAK_STARTS = {
 }
 
 CropMode = Literal["center", "person", "streamer"]
+VideoQuality = Literal["standard", "high", "max"]
 YUNET_MODEL_PATH = Path(__file__).resolve().parent / "models" / "face_detection_yunet_2023mar.onnx"
+
+VIDEO_QUALITY_PRESETS = {
+    "standard": {
+        "label": "standard",
+        "crf": "20",
+        "preset": "veryfast",
+        "profile": "high",
+        "level": "4.2",
+        "audio_bitrate": "160k",
+        "max_download_height": 1080,
+        "sharpen": "",
+    },
+    "high": {
+        "label": "high quality",
+        "crf": "17",
+        "preset": "medium",
+        "profile": "high",
+        "level": "4.2",
+        "audio_bitrate": "192k",
+        "max_download_height": 2160,
+        "sharpen": "unsharp=5:5:0.35:3:3:0.15",
+    },
+    "max": {
+        "label": "maximum quality",
+        "crf": "15",
+        "preset": "slow",
+        "profile": "high",
+        "level": "4.2",
+        "audio_bitrate": "256k",
+        "max_download_height": 2160,
+        "sharpen": "unsharp=5:5:0.45:3:3:0.20",
+    },
+}
+SCALE_QUALITY_FLAGS = "flags=lanczos"
 
 TRANSCRIPT_REPLACEMENTS = {
     r"\binkam\b": "income",
@@ -123,6 +158,20 @@ def clamp_even(value: float, minimum: int, maximum: int) -> int:
     if bounded % 2:
         bounded -= 1
     return max(minimum, min(maximum, bounded))
+
+
+def quality_preset(video_quality: VideoQuality) -> dict[str, str | int]:
+    return VIDEO_QUALITY_PRESETS.get(video_quality, VIDEO_QUALITY_PRESETS["high"])
+
+
+def scale_filter(width: int | str, height: int | str, *, force_increase: bool = False) -> str:
+    force = ":force_original_aspect_ratio=increase" if force_increase else ""
+    return f"scale={width}:{height}{force}:{SCALE_QUALITY_FLAGS}"
+
+
+def add_quality_sharpen(vf: str, video_quality: VideoQuality) -> str:
+    sharpen = str(quality_preset(video_quality)["sharpen"])
+    return f"{vf},{sharpen}" if sharpen else vf
 
 
 def make_cv2_cascade(cv2_module, filename: str):
@@ -285,7 +334,7 @@ def detect_person_focus_x(video_path: Path, clip: ClipCandidate) -> tuple[float,
 
 
 def vertical_crop_filter(video_path: Path, clip: ClipCandidate, crop_mode: CropMode) -> str:
-    center_filter = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1"
+    center_filter = f"{scale_filter(1080, 1920, force_increase=True)},crop=1080:1920,setsar=1"
     if crop_mode == "center":
         return center_filter
 
@@ -301,7 +350,7 @@ def vertical_crop_filter(video_path: Path, clip: ClipCandidate, crop_mode: CropM
     crop_x = clamp_even((focus_x * scaled_width) - 540, 0, scaled_width - 1080)
     crop_y = clamp_even((scaled_height - 1920) / 2, 0, scaled_height - 1920)
     console.print(f"[green]Person crop[/green] clip {clip.index}: focus x={focus_x:.2f}, crop x={crop_x}")
-    return f"scale={scaled_width}:{scaled_height},crop=1080:1920:{crop_x}:{crop_y},setsar=1"
+    return f"{scale_filter(scaled_width, scaled_height)},crop=1080:1920:{crop_x}:{crop_y},setsar=1"
 
 
 CamCorner = Literal["br", "bl", "tr", "tl"]
@@ -405,17 +454,17 @@ def streamer_stack_filter(source_width: int, source_height: int, corner: CamCorn
     return (
         "split=2[cam][game];"
         f"[cam]crop={cam_w}:{cam_h}:{cam_x}:{cam_y},"
-        f"scale=1080:{STREAMER_CAM_HEIGHT}:force_original_aspect_ratio=increase,"
+        f"{scale_filter(1080, STREAMER_CAM_HEIGHT, force_increase=True)},"
         f"crop=1080:{STREAMER_CAM_HEIGHT},setsar=1[ctop];"
         f"[game]crop={game_w}:{game_h}:{game_x}:{game_y},"
-        f"scale=1080:{STREAMER_GAME_HEIGHT}:force_original_aspect_ratio=increase,"
+        f"{scale_filter(1080, STREAMER_GAME_HEIGHT, force_increase=True)},"
         f"crop=1080:{STREAMER_GAME_HEIGHT},setsar=1[gbot];"
         "[ctop][gbot]vstack=inputs=2,setsar=1"
     )
 
 
 def streamer_crop_filter(video_path: Path, clip: ClipCandidate, cam_corner: str) -> str:
-    center_filter = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1"
+    center_filter = f"{scale_filter(1080, 1920, force_increase=True)},crop=1080:1920,setsar=1"
     size = get_video_size(video_path)
     if size is None:
         console.print(f"[yellow]Streamer layout unavailable for clip {clip.index}; using center crop.[/yellow]")
@@ -473,17 +522,23 @@ def fetch_metadata(url: str) -> dict:
         return sanitize_metadata(ydl.extract_info(url, download=False))
 
 
-def download_video(url: str, work_dir: Path, force: bool = False) -> tuple[Path, dict]:
+def download_video(
+    url: str,
+    work_dir: Path,
+    force: bool = False,
+    video_quality: VideoQuality = "high",
+) -> tuple[Path, dict]:
     info_path = work_dir / "metadata.json"
     existing = sorted(work_dir.glob("source.*"))
     if existing and info_path.exists() and not force:
         return existing[0], load_json(info_path)
 
+    max_height = int(quality_preset(video_quality)["max_download_height"])
     ydl_opts = {
         "format": (
-            "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/"
-            "bestvideo[height<=1080]+bestaudio/"
-            "best[height<=1080]/best"
+            f"bestvideo[height<={max_height}][ext=mp4]+bestaudio[ext=m4a]/"
+            f"bestvideo[height<={max_height}]+bestaudio/"
+            f"best[height<={max_height}]/best"
         ),
         "outtmpl": str(work_dir / "source.%(ext)s"),
         "merge_output_format": "mp4",
@@ -1070,6 +1125,7 @@ def export_clip(
     ai_config: AIConfig | None = None,
     cam_corner: str = "auto",
     required_hashtags: list[str] | None = None,
+    video_quality: VideoQuality = "high",
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     base_name = f"clip_{clip.index:02}_{slugify(clip.title)[:42] or 'auto'}"
@@ -1087,6 +1143,7 @@ def export_clip(
         vf = streamer_crop_filter(video_path, clip, cam_corner)
     else:
         vf = vertical_crop_filter(video_path, clip, crop_mode)
+    vf = add_quality_sharpen(vf, video_quality)
     if burn_subtitles and clip_segments:
         style = build_subtitle_style(caption or CaptionStyle())
         vf = (
@@ -1108,6 +1165,7 @@ def export_clip(
         "-i",
         str(video_path.resolve()),
     ]
+    quality = quality_preset(video_quality)
 
     run(
         [
@@ -1120,13 +1178,13 @@ def export_clip(
             "-c:v",
             "libx264",
             "-profile:v",
-            "baseline",
+            str(quality["profile"]),
             "-level",
-            "4.0",
+            str(quality["level"]),
             "-preset",
-            "veryfast",
+            str(quality["preset"]),
             "-crf",
-            "18",
+            str(quality["crf"]),
             "-pix_fmt",
             "yuv420p",
             str(temp_video_path.name),
@@ -1175,7 +1233,7 @@ def export_clip(
             "-profile:a",
             "aac_low",
             "-b:a",
-            "160k",
+            str(quality["audio_bitrate"]),
             "-ar",
             "48000",
             "-ac",
@@ -1196,6 +1254,7 @@ def export_clip(
         cwd=clips_dir,
     )
     temp_video_path.unlink(missing_ok=True)
+    temp_audio_path.unlink(missing_ok=True)
 
     thumb_path = clips_dir / f"{base_name}_thumb.jpg"
     prompt_path = clips_dir / f"{base_name}_thumb.txt"
@@ -1283,6 +1342,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--language", default="id", help="Transcription language code")
     parser.add_argument("--output", default="outputs", help="Output directory")
     parser.add_argument("--analyze-seconds", type=float, help="Only transcribe the first N seconds; useful for quick tests")
+    parser.add_argument(
+        "--video-quality",
+        choices=["standard", "high", "max"],
+        default="high",
+        help="Output clarity preset: standard is faster, high is the default, max is slower with larger files",
+    )
     parser.add_argument("--review-only", action="store_true", help="Stop after generating clip candidates")
     parser.add_argument("--export-indexes", help="Comma-separated candidate indexes to export, e.g. 1,3,5")
     parser.add_argument("--no-burn-subtitles", action="store_true", help="Create SRT files but do not burn subtitles into MP4")
@@ -1355,7 +1420,12 @@ def main() -> int:
         work_dir.mkdir(parents=True, exist_ok=True)
 
         console.print("[bold]Fetching video...[/bold]")
-        final_video_path, metadata = download_video(args.url, work_dir, force=args.force)
+        final_video_path, metadata = download_video(
+            args.url,
+            work_dir,
+            force=args.force,
+            video_quality=args.video_quality,
+        )
     save_json(work_dir / "metadata.json", metadata)
 
     cache_suffix = f"_{int(args.analyze_seconds)}s" if args.analyze_seconds else ""
@@ -1437,6 +1507,7 @@ def main() -> int:
                 ai_config,
                 args.cam_corner,
                 required_hashtags,
+                args.video_quality,
             )
         )
 

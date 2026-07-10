@@ -1,5 +1,6 @@
 export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export type CropMode = "center" | "person" | "streamer";
+export type VideoQuality = "standard" | "high" | "max";
 export type CamCorner = "auto" | "br" | "bl" | "tr" | "tl";
 export type CaptionPosition = "upper" | "center" | "bottom";
 export type CaptionFont =
@@ -47,6 +48,7 @@ export type ClipJob = {
     model: string;
     language: string;
     analyze_seconds: number | null;
+    video_quality: VideoQuality;
     burn_subtitles: boolean;
     crop_mode: CropMode;
     cam_corner: CamCorner;
@@ -71,6 +73,7 @@ export type CreateClipJobInput = {
   model: string;
   language: string;
   analyze_seconds?: number | null;
+  video_quality?: VideoQuality;
   burn_subtitles: boolean;
   crop_mode: CropMode;
   cam_corner?: CamCorner;

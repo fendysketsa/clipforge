@@ -27,6 +27,7 @@ import {
   DEFAULT_MAX_DURATION,
   DEFAULT_MIN_DURATION,
   DEFAULT_MODEL,
+  DEFAULT_VIDEO_QUALITY,
   JOB_POLL_INTERVAL_MS,
   MAX_REQUESTED_CLIPS,
   RECENT_LOG_LIMIT,
@@ -39,6 +40,7 @@ import type {
   ClipJob,
   CropMode,
   SourceMode,
+  VideoQuality,
 } from "../types/clip.type";
 import { ControlPanel } from "./_components/ControlPanel";
 import { DeleteAllToast } from "./_components/DeleteAllToast";
@@ -57,6 +59,7 @@ export default function HomePage() {
   const [maxDuration, setMaxDuration] = useState(DEFAULT_MAX_DURATION);
   const [targetClips, setTargetClips] = useState(0);
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
+  const [videoQuality, setVideoQuality] = useState<VideoQuality>(DEFAULT_VIDEO_QUALITY);
   const [uploadPreviewUrl, setUploadPreviewUrl] = useState("");
   const [cropMode, setCropMode] = useState<CropMode>("person");
   const [camCorner, setCamCorner] = useState<CamCorner>("auto");
@@ -304,6 +307,7 @@ export default function HomePage() {
           max_duration: maxDuration,
           model: DEFAULT_MODEL,
           language: DEFAULT_LANGUAGE,
+          video_quality: videoQuality,
           burn_subtitles: burnSubtitles,
           crop_mode: cropMode,
           cam_corner: camCorner,
@@ -358,6 +362,7 @@ export default function HomePage() {
     targetClips,
     uploadToken,
     url,
+    videoQuality,
   ]);
 
   const handleDeleteAllConfirmed = useCallback(async () => {
@@ -412,6 +417,8 @@ export default function HomePage() {
           targetClips={targetClips}
           maxClips={maxClips}
           videoDuration={videoDuration}
+          videoQuality={videoQuality}
+          onVideoQualityChange={setVideoQuality}
           onTargetClipsChange={handleTargetClipsChange}
           burnSubtitles={burnSubtitles}
           captionFontSize={captionFontSize}

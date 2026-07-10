@@ -1,7 +1,20 @@
 import { Link2, Loader2, Play, RefreshCw, Scissors, Sparkles, Type, Upload } from "lucide-react";
 import type { LocalLlmProvider } from "../../lib/apiClient";
-import { CAPTION_FONT_SIZE_MAX, CAPTION_FONT_SIZE_MIN, CAPTION_FONTS, LOCAL_LLM_PRESETS } from "../../lib/constants";
-import type { CamCorner, CaptionFont, CaptionPosition, CropMode, SourceMode } from "../../types/clip.type";
+import {
+  CAPTION_FONT_SIZE_MAX,
+  CAPTION_FONT_SIZE_MIN,
+  CAPTION_FONTS,
+  LOCAL_LLM_PRESETS,
+  VIDEO_QUALITY_OPTIONS,
+} from "../../lib/constants";
+import type {
+  CamCorner,
+  CaptionFont,
+  CaptionPosition,
+  CropMode,
+  SourceMode,
+  VideoQuality,
+} from "../../types/clip.type";
 import { CaptionPreview } from "./CaptionPreview";
 
 const CAM_CORNER_OPTIONS: { value: CamCorner; label: string }[] = [
@@ -30,6 +43,8 @@ type ControlPanelProps = {
   targetClips: number;
   maxClips: number | null;
   videoDuration: number | null;
+  videoQuality: VideoQuality;
+  onVideoQualityChange: (value: VideoQuality) => void;
   onTargetClipsChange: (value: number) => void;
   burnSubtitles: boolean;
   captionFontSize: number;
@@ -88,6 +103,8 @@ export function ControlPanel({
   targetClips,
   maxClips,
   videoDuration,
+  videoQuality,
+  onVideoQualityChange,
   onTargetClipsChange,
   burnSubtitles,
   captionFontSize,
@@ -231,6 +248,26 @@ export function ControlPanel({
             : ""}
         </p>
       </label>
+
+      <div className="segmentedField">
+        <span>Kualitas Output</span>
+        <div className="segmentedControl" role="group" aria-label="Kualitas output video">
+          {VIDEO_QUALITY_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              className={videoQuality === option.value ? "active" : ""}
+              type="button"
+              onClick={() => onVideoQualityChange(option.value)}
+              title={option.help}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <p className="field-help">
+          {VIDEO_QUALITY_OPTIONS.find((option) => option.value === videoQuality)?.help}
+        </p>
+      </div>
 
       <div className="segmentedField">
         <span>Mode Crop</span>
