@@ -18,6 +18,7 @@ export type ClipFile = {
   thumbnail_url?: string | null;
   thumbnail_prompt?: string | null;
   social_caption?: string | null;
+  is_correct: boolean;
 };
 
 export type ClipCandidate = {

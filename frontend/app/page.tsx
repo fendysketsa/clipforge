@@ -7,12 +7,14 @@ import {
   createJob,
   deleteFailedJobs,
   deleteJob,
+  deleteJobClip,
   deleteJobs,
   discoverLocalLlms,
   fetchModels,
   getJob,
   getJobs,
   probeUrlDuration,
+  updateJobClipStatus,
   uploadVideo,
   type LocalLlmProvider,
 } from "../lib/apiClient";
@@ -39,6 +41,7 @@ import type {
   CamCorner,
   CaptionFont,
   CaptionPosition,
+  ClipFile,
   ClipJob,
   CropMode,
   SourceMode,
@@ -454,6 +457,64 @@ export default function HomePage() {
     ), { duration: Infinity });
   }, [handleDeleteFailedConfirmed]);
 
+  const handleDeleteClipConfirmed = useCallback(
+    async (jobId: string, clip: ClipFile) => {
+      const nextJob = await toast.promise(deleteJobClip(jobId, clip.url), {
+        loading: "Menghapus file output...",
+        success: "File output berhasil dihapus.",
+        error: "Gagal menghapus file output",
+      });
+
+      setJob((current) => (current?.id === nextJob.id ? nextJob : current));
+      await loadJobs();
+    },
+    [loadJobs],
+  );
+
+  const handleDeleteClip = useCallback(
+    (clip: ClipFile) => {
+      if (!job) return;
+      const jobId = job.id;
+      toast((item) => (
+        <DeleteAllToast
+          toastId={item.id}
+          title={`Hapus ${clip.name}?`}
+          description="File clip dan file pendukungnya di folder outputs akan dihapus."
+          confirmLabel="Hapus File"
+          onConfirm={() => handleDeleteClipConfirmed(jobId, clip)}
+        />
+      ), { duration: Infinity });
+    },
+    [handleDeleteClipConfirmed, job],
+  );
+
+  const handleToggleClipCorrect = useCallback(
+    async (clip: ClipFile, isCorrect: boolean) => {
+      if (!job) return;
+
+      const previousJob = job;
+      setJob((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          clips: current.clips.map((item) =>
+            item.url === clip.url ? { ...item, is_correct: isCorrect } : item,
+          ),
+        };
+      });
+
+      try {
+        const nextJob = await updateJobClipStatus(job.id, clip.url, isCorrect);
+        setJob((current) => (current?.id === nextJob.id ? nextJob : current));
+        await loadJobs();
+      } catch (updateError) {
+        setJob(previousJob);
+        toast.error(updateError instanceof Error ? updateError.message : "Gagal menyimpan status clip");
+      }
+    },
+    [job, loadJobs],
+  );
+
   const handleCancelJob = useCallback(async () => {
     if (!activeJobId || !isBusy) return;
     await toast.promise(cancelJob(activeJobId), {
@@ -533,7 +594,11 @@ export default function HomePage() {
         <StatusPanel job={job} latestLogs={latestLogs} onCancelJob={handleCancelJob} />
       </section>
 
-      <ResultsSection clips={job?.clips ?? []} />
+      <ResultsSection
+        clips={job?.clips ?? []}
+        onDeleteClip={handleDeleteClip}
+        onToggleClipCorrect={handleToggleClipCorrect}
+      />
       <HistorySection
         jobs={jobs}
         selectedJobIds={selectedHistoryJobIds}

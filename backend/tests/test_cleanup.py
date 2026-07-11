@@ -1,6 +1,7 @@
 import tempfile
 from pathlib import Path
 
+from api import ClipFile, cleanup_clip_files
 from clipper import cleanup_intermediate, friendly_youtube_error, prepare_uploaded_source
 
 
@@ -51,3 +52,33 @@ def test_friendly_youtube_error_explains_network_failure():
 
     assert "Upload Video" in message
     assert "membaca metadata" in message
+
+
+def test_cleanup_clip_files_removes_output_artifacts(monkeypatch):
+    import api
+
+    outputs = Path(tempfile.mkdtemp())
+    clip_dir = outputs / "work" / "clips"
+    clip_dir.mkdir(parents=True)
+    clip_path = clip_dir / "clip_01.mp4"
+    thumb_path = clip_dir / "clip_01_thumb.jpg"
+    prompt_path = clip_dir / "clip_01_thumb.txt"
+    caption_path = clip_dir / "clip_01_caption.txt"
+    for path in (clip_path, thumb_path, prompt_path, caption_path):
+        path.write_bytes(b"x")
+
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+
+    clip = ClipFile(
+        name="clip_01.mp4",
+        url="/outputs/work/clips/clip_01.mp4",
+        size_bytes=1,
+        thumbnail_url="/outputs/work/clips/clip_01_thumb.jpg",
+    )
+
+    assert cleanup_clip_files(clip) == 6
+    assert not clip_path.exists()
+    assert not thumb_path.exists()
+    assert not prompt_path.exists()
+    assert not caption_path.exists()
+    assert not clip_dir.exists()

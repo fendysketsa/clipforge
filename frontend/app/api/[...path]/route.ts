@@ -40,5 +40,8 @@ export const GET = (request: NextRequest, context: { params: Promise<{ path: str
 export const POST = (request: NextRequest, context: { params: Promise<{ path: string[] }> }) =>
   context.params.then(({ path }) => proxyRequest(request, path));
 
+export const PATCH = (request: NextRequest, context: { params: Promise<{ path: string[] }> }) =>
+  context.params.then(({ path }) => proxyRequest(request, path));
+
 export const DELETE = (request: NextRequest, context: { params: Promise<{ path: string[] }> }) =>
   context.params.then(({ path }) => proxyRequest(request, path));

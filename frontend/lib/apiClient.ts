@@ -103,6 +103,29 @@ export const deleteJob = async (jobId: string) => {
   }
 };
 
+export const deleteJobClip = async (jobId: string, clipUrl: string) => {
+  const response = await fetch(
+    `${CLIENT_API_BASE}/api/jobs/${jobId}/clips?clip_url=${encodeURIComponent(clipUrl)}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to delete clip"));
+  }
+  return (await response.json()) as ClipJob;
+};
+
+export const updateJobClipStatus = async (jobId: string, clipUrl: string, isCorrect: boolean) => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}/clips`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: clipUrl, is_correct: isCorrect }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to update clip"));
+  }
+  return (await response.json()) as ClipJob;
+};
+
 export const cancelJob = async (jobId: string) => {
   const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}/cancel`, {
     method: "POST",

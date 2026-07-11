@@ -1,4 +1,4 @@
-import { Clipboard, Download, ExternalLink, Video } from "lucide-react";
+import { CheckCircle2, Clipboard, Download, ExternalLink, Trash2, Video } from "lucide-react";
 import { getOutputUrl } from "../../lib/apiClient";
 import { clipTitle, handleCopyTitle, handleDownload } from "../../lib/utils";
 import type { ClipFile } from "../../types/clip.type";
@@ -6,9 +6,11 @@ import { ThumbnailPrompt } from "./ThumbnailPrompt";
 
 type ResultsSectionProps = {
   clips: ClipFile[];
+  onDeleteClip: (clip: ClipFile) => void;
+  onToggleClipCorrect: (clip: ClipFile, isCorrect: boolean) => void;
 };
 
-export function ResultsSection({ clips }: ResultsSectionProps) {
+export function ResultsSection({ clips, onDeleteClip, onToggleClipCorrect }: ResultsSectionProps) {
   return (
     <section className="results">
       <div className="sectionHeader">
@@ -23,7 +25,7 @@ export function ResultsSection({ clips }: ResultsSectionProps) {
             const url = getOutputUrl(clip.url);
 
             return (
-              <article className="clipCard" key={clip.url}>
+              <article className={`clipCard ${clip.is_correct ? "clipCardCorrect" : ""}`} key={clip.url}>
                 <video controls preload="metadata" src={url} />
                 <div className="clipInfo">
                   <h3>{title}</h3>
@@ -37,6 +39,17 @@ export function ResultsSection({ clips }: ResultsSectionProps) {
                     Copy
                   </button>
                 </div>
+                <label className="clipValidation">
+                  <input
+                    checked={clip.is_correct}
+                    type="checkbox"
+                    onChange={(event) => onToggleClipCorrect(clip, event.target.checked)}
+                  />
+                  <span>
+                    <CheckCircle2 size={16} />
+                    Terclip benar
+                  </span>
+                </label>
                 <div className="clipActions">
                   <a href={url} target="_blank" rel="noreferrer">
                     <ExternalLink size={16} />
@@ -45,6 +58,10 @@ export function ResultsSection({ clips }: ResultsSectionProps) {
                   <button type="button" onClick={() => handleDownload(url, clip.name)}>
                     <Download size={16} />
                     Unduh
+                  </button>
+                  <button className="clipDeleteButton" type="button" onClick={() => onDeleteClip(clip)}>
+                    <Trash2 size={16} />
+                    Hapus
                   </button>
                 </div>
                 <ThumbnailPrompt clip={clip} />

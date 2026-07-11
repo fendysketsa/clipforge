@@ -122,6 +122,7 @@ class ClipFile(BaseModel):
     thumbnail_url: str | None = None
     thumbnail_prompt: str | None = None
     social_caption: str | None = None
+    is_correct: bool = False
 
 
 class ClipJob(BaseModel):
@@ -134,6 +135,11 @@ class ClipJob(BaseModel):
     clips: list[ClipFile] = []
     candidates: list[ClipCandidate] = []
     error: str | None = None
+
+
+class ClipStatusUpdate(BaseModel):
+    url: str
+    is_correct: bool
 
 
 app = FastAPI(title="ClipForge API", version="0.1.0")
@@ -259,21 +265,25 @@ def remove_empty_output_parents(path: Path) -> int:
     return removed
 
 
-def cleanup_job_files(job: "ClipJob") -> int:
-    removed = 0
+def clip_artifact_paths(clip: ClipFile) -> set[Path]:
     paths: set[Path] = set()
-    for clip in job.clips:
-        clip_path = output_path_from_url(clip.url)
-        if clip_path is None:
-            continue
-        paths.add(clip_path)
-        paths.add(clip_path.with_name(f"{clip_path.stem}_thumb.jpg"))
-        paths.add(clip_path.with_name(f"{clip_path.stem}_thumb.txt"))
-        paths.add(clip_path.with_name(f"{clip_path.stem}_caption.txt"))
-        if clip.thumbnail_url:
-            thumb_path = output_path_from_url(clip.thumbnail_url)
-            if thumb_path is not None:
-                paths.add(thumb_path)
+    clip_path = output_path_from_url(clip.url)
+    if clip_path is None:
+        return paths
+
+    paths.add(clip_path)
+    paths.add(clip_path.with_name(f"{clip_path.stem}_thumb.jpg"))
+    paths.add(clip_path.with_name(f"{clip_path.stem}_thumb.txt"))
+    paths.add(clip_path.with_name(f"{clip_path.stem}_caption.txt"))
+    if clip.thumbnail_url:
+        thumb_path = output_path_from_url(clip.thumbnail_url)
+        if thumb_path is not None:
+            paths.add(thumb_path)
+    return paths
+
+
+def remove_output_paths(paths: set[Path]) -> int:
+    removed = 0
 
     for path in sorted(paths, key=lambda item: len(item.parts), reverse=True):
         try:
@@ -284,6 +294,17 @@ def cleanup_job_files(job: "ClipJob") -> int:
         except OSError:
             pass
     return removed
+
+
+def cleanup_clip_files(clip: ClipFile) -> int:
+    return remove_output_paths(clip_artifact_paths(clip))
+
+
+def cleanup_job_files(job: "ClipJob") -> int:
+    paths: set[Path] = set()
+    for clip in job.clips:
+        paths.update(clip_artifact_paths(clip))
+    return remove_output_paths(paths)
 
 
 jobs: dict[str, ClipJob] = load_jobs()
@@ -862,6 +883,59 @@ def delete_failed_jobs() -> dict[str, str | int]:
             removed_jobs += 1
         save_jobs_unlocked()
     return {"status": "ok", "removed_jobs": removed_jobs, "removed_outputs": removed_outputs}
+
+
+@app.patch("/api/jobs/{job_id}/clips", response_model=ClipJob)
+def update_job_clip_status(job_id: str, update: ClipStatusUpdate) -> ClipJob:
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        clip_found = False
+        clips: list[ClipFile] = []
+        for clip in job.clips:
+            if clip.url == update.url:
+                clips.append(clip.model_copy(update={"is_correct": update.is_correct}))
+                clip_found = True
+            else:
+                clips.append(clip)
+
+        if not clip_found:
+            raise HTTPException(status_code=404, detail="Clip not found")
+
+        data = job.model_dump()
+        data["clips"] = clips
+        data["updated_at"] = now_iso()
+        next_job = ClipJob(**data)
+        jobs[job_id] = next_job
+        save_jobs_unlocked()
+        return next_job
+
+
+@app.delete("/api/jobs/{job_id}/clips", response_model=ClipJob)
+def delete_job_clip(job_id: str, clip_url: str) -> ClipJob:
+    with process_lock:
+        is_running = job_id in job_processes
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job.status in {"queued", "running"} or is_running:
+            raise HTTPException(status_code=409, detail="Batalkan proses aktif sebelum menghapus output")
+
+        target_clip = next((clip for clip in job.clips if clip.url == clip_url), None)
+        if target_clip is None:
+            raise HTTPException(status_code=404, detail="Clip not found")
+
+        cleanup_clip_files(target_clip)
+        data = job.model_dump()
+        data["clips"] = [clip for clip in job.clips if clip.url != clip_url]
+        data["updated_at"] = now_iso()
+        next_job = ClipJob(**data)
+        jobs[job_id] = next_job
+        save_jobs_unlocked()
+        return next_job
 
 
 @app.get("/api/jobs/{job_id}", response_model=ClipJob)

@@ -449,6 +449,10 @@ h2 {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
+.clipCardCorrect {
+  border-color: rgba(22, 163, 74, 0.45);
+}
+
 .clipCard:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
@@ -497,6 +501,40 @@ h2 {
   border-color: #BFDBFE;
 }
 
+.clipValidation {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 16px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  user-select: none;
+}
+
+.clipValidation input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--success);
+  cursor: pointer;
+}
+
+.clipValidation span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.clipValidation span svg {
+  color: var(--success);
+}
+
+.clipCardCorrect .clipValidation {
+  color: var(--success);
+}
+
 .clipActions {
   border-top: 1px solid var(--border);
 }
@@ -507,7 +545,8 @@ h2 {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: 50%;
+  flex: 1 1 0;
+  min-width: 0;
   min-height: 48px;
   color: var(--text-secondary);
   font-size: 13px;
@@ -523,6 +562,15 @@ h2 {
 .clipActions button:hover {
   background: var(--bg);
   color: var(--primary);
+}
+
+.clipActions .clipDeleteButton {
+  color: var(--danger);
+}
+
+.clipActions .clipDeleteButton:hover {
+  background: #FEF2F2;
+  color: var(--danger);
 }
 
 .clipActions a + a,
