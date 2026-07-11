@@ -87,6 +87,7 @@ export default function HomePage() {
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [localLlmProviders, setLocalLlmProviders] = useState<LocalLlmProvider[]>([]);
   const [isDiscoveringLlms, setIsDiscoveringLlms] = useState(false);
+  const [activeJob, setActiveJob] = useState<ClipJob | null>(null);
   const [job, setJob] = useState<ClipJob | null>(null);
   const [jobs, setJobs] = useState<ClipJob[]>([]);
   const [selectedHistoryJobIds, setSelectedHistoryJobIds] = useState<string[]>([]);
@@ -94,9 +95,10 @@ export default function HomePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const activeJobId = job?.id;
-  const isBusy = isActiveJob(job);
-  const latestLogs = useMemo(() => job?.logs.slice(-RECENT_LOG_LIMIT) ?? [], [job]);
+  const activeJobId = activeJob?.id;
+  const isBusy = isActiveJob(activeJob);
+  const activityJob = isBusy ? activeJob : job;
+  const latestLogs = useMemo(() => activityJob?.logs.slice(-RECENT_LOG_LIMIT) ?? [], [activityJob]);
 
   // min_duration * target_clips must fit within 80% of the video length.
   const maxClips = useMemo(() => {
@@ -137,6 +139,15 @@ export default function HomePage() {
   }, [loadJobs]);
 
   useEffect(() => {
+    if (isActiveJob(activeJob)) return;
+
+    const runningJob = jobs.find(isActiveJob);
+    if (runningJob) {
+      setActiveJob(runningJob);
+    }
+  }, [activeJob, jobs]);
+
+  useEffect(() => {
     setSelectedHistoryJobIds((current) =>
       current.filter((id) =>
         jobs.some((item) => item.id === id && item.status !== "queued" && item.status !== "running"),
@@ -149,19 +160,20 @@ export default function HomePage() {
   }, [job]);
 
   useEffect(() => {
-    if (!activeJobId) return;
+    if (!activeJobId || !isBusy) return;
 
     const interval = window.setInterval(async () => {
       const nextJob = await getJob(activeJobId);
-      setJob(nextJob);
+      setActiveJob(nextJob);
 
       if (nextJob.status === "completed" || nextJob.status === "failed" || nextJob.status === "cancelled") {
+        setJob((current) => (current?.id === nextJob.id || current === null ? nextJob : current));
         loadJobs().catch(() => undefined);
       }
     }, JOB_POLL_INTERVAL_MS);
 
     return () => window.clearInterval(interval);
-  }, [activeJobId, loadJobs]);
+  }, [activeJobId, isBusy, loadJobs]);
 
   useEffect(() => {
     if (!activeJobId || !isBusy) return;
@@ -308,6 +320,10 @@ export default function HomePage() {
     const trimmedUrl = url.trim();
     setError("");
 
+    if (isActiveJob(activeJob)) {
+      setError("Proses clipping masih berjalan. Tunggu selesai atau batalkan sebelum memulai proses baru.");
+      return;
+    }
     if (sourceMode === "url" && !trimmedUrl) {
       setError("Link YouTube tidak boleh kosong.");
       return;
@@ -355,6 +371,7 @@ export default function HomePage() {
         },
       );
 
+      setActiveJob(nextJob);
       setJob(nextJob);
       await loadJobs();
     } catch (submitError) {
@@ -367,6 +384,7 @@ export default function HomePage() {
     aiBaseUrl,
     aiEnabled,
     aiModel,
+    activeJob,
     burnSubtitles,
     camCorner,
     captionColor,
@@ -394,6 +412,7 @@ export default function HomePage() {
       error: "Gagal menghapus riwayat",
     });
 
+    setActiveJob(null);
     setJob(null);
     setSelectedHistoryJobIds([]);
     await loadJobs();
@@ -422,6 +441,7 @@ export default function HomePage() {
     });
 
     setSelectedHistoryJobIds([]);
+    setActiveJob((current) => (current && ids.includes(current.id) ? null : current));
     setJob((current) => (current && ids.includes(current.id) ? null : current));
     await loadJobs();
   }, [loadJobs, selectedHistoryJobIds]);
@@ -447,6 +467,9 @@ export default function HomePage() {
     });
 
     setSelectedHistoryJobIds([]);
+    setActiveJob((current) =>
+      current && (current.status === "failed" || current.status === "cancelled") ? null : current,
+    );
     setJob((current) =>
       current && (current.status === "failed" || current.status === "cancelled") ? null : current,
     );
@@ -467,6 +490,7 @@ export default function HomePage() {
 
   const applyClipDeleteResult = useCallback(
     async (jobId: string, result: ClipDeleteResult) => {
+      setActiveJob((current) => (current?.id === jobId ? result.job : current));
       setJob((current) => (current?.id === jobId ? result.job : current));
       setSelectedClipUrls((current) =>
         result.job ? current.filter((url) => result.job?.clips.some((clip) => clip.url === url)) : [],
@@ -615,7 +639,10 @@ export default function HomePage() {
       error: "Gagal membatalkan proses",
     });
     const nextJob = await getJob(activeJobId).catch(() => null);
-    if (nextJob) setJob(nextJob);
+    if (nextJob) {
+      setActiveJob(nextJob);
+      setJob((current) => (current?.id === nextJob.id || current === null ? nextJob : current));
+    }
     await loadJobs();
   }, [activeJobId, isBusy, loadJobs]);
 
@@ -683,7 +710,7 @@ export default function HomePage() {
           onUrlChange={setUrl}
           url={url}
         />
-        <StatusPanel job={job} latestLogs={latestLogs} onCancelJob={handleCancelJob} />
+        <StatusPanel job={activityJob} latestLogs={latestLogs} onCancelJob={handleCancelJob} />
       </section>
 
       <ResultsSection
