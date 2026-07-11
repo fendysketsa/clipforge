@@ -6,16 +6,30 @@ import { ThumbnailPrompt } from "./ThumbnailPrompt";
 
 type ResultsSectionProps = {
   clips: ClipFile[];
+  onDeleteAllClips: () => void;
   onDeleteClip: (clip: ClipFile) => void;
   onToggleClipCorrect: (clip: ClipFile, isCorrect: boolean) => void;
 };
 
-export function ResultsSection({ clips, onDeleteClip, onToggleClipCorrect }: ResultsSectionProps) {
+export function ResultsSection({
+  clips,
+  onDeleteAllClips,
+  onDeleteClip,
+  onToggleClipCorrect,
+}: ResultsSectionProps) {
   return (
     <section className="results">
       <div className="sectionHeader">
         <h2>Klip Siap Digunakan</h2>
-        <span className="sectionBadge">{clips.length} klip siap</span>
+        <div className="resultsActions">
+          <span className="sectionBadge">{clips.length} klip siap</span>
+          {clips.length > 0 ? (
+            <button type="button" onClick={onDeleteAllClips} className="ghostButton dangerTextButton">
+              <Trash2 size={15} />
+              Hapus semua klip
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {clips.length ? (

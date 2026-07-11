@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import {
   cancelJob,
   createJob,
+  deleteAllJobClips,
   deleteFailedJobs,
   deleteJob,
   deleteJobClip,
@@ -488,6 +489,36 @@ export default function HomePage() {
     [handleDeleteClipConfirmed, job],
   );
 
+  const handleDeleteAllClipsConfirmed = useCallback(
+    async (jobId: string, clipCount: number) => {
+      const nextJob = await toast.promise(deleteAllJobClips(jobId), {
+        loading: "Menghapus semua klip sukses...",
+        success: `${clipCount} klip sukses berhasil dihapus.`,
+        error: "Gagal menghapus semua klip sukses",
+      });
+
+      setJob((current) => (current?.id === nextJob.id ? nextJob : current));
+      await loadJobs();
+    },
+    [loadJobs],
+  );
+
+  const handleDeleteAllClips = useCallback(() => {
+    if (!job || !job.clips.length) return;
+
+    const jobId = job.id;
+    const clipCount = job.clips.length;
+    toast((item) => (
+      <DeleteAllToast
+        toastId={item.id}
+        title={`Hapus ${clipCount} klip sukses?`}
+        description="Semua file clip di hasil job ini beserta thumbnail, prompt, dan caption pendukungnya akan dihapus dari outputs."
+        confirmLabel="Hapus Semua Klip"
+        onConfirm={() => handleDeleteAllClipsConfirmed(jobId, clipCount)}
+      />
+    ), { duration: Infinity });
+  }, [handleDeleteAllClipsConfirmed, job]);
+
   const handleToggleClipCorrect = useCallback(
     async (clip: ClipFile, isCorrect: boolean) => {
       if (!job) return;
@@ -596,6 +627,7 @@ export default function HomePage() {
 
       <ResultsSection
         clips={job?.clips ?? []}
+        onDeleteAllClips={handleDeleteAllClips}
         onDeleteClip={handleDeleteClip}
         onToggleClipCorrect={handleToggleClipCorrect}
       />

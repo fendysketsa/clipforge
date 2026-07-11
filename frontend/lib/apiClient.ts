@@ -114,6 +114,14 @@ export const deleteJobClip = async (jobId: string, clipUrl: string) => {
   return (await response.json()) as ClipJob;
 };
 
+export const deleteAllJobClips = async (jobId: string) => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}/clips/all`, { method: "DELETE" });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to delete clips"));
+  }
+  return (await response.json()) as ClipJob;
+};
+
 export const updateJobClipStatus = async (jobId: string, clipUrl: string, isCorrect: boolean) => {
   const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}/clips`, {
     method: "PATCH",

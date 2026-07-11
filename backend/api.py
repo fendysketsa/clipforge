@@ -938,6 +938,27 @@ def delete_job_clip(job_id: str, clip_url: str) -> ClipJob:
         return next_job
 
 
+@app.delete("/api/jobs/{job_id}/clips/all", response_model=ClipJob)
+def delete_all_job_clips(job_id: str) -> ClipJob:
+    with process_lock:
+        is_running = job_id in job_processes
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job.status in {"queued", "running"} or is_running:
+            raise HTTPException(status_code=409, detail="Batalkan proses aktif sebelum menghapus output")
+
+        cleanup_job_files(job)
+        data = job.model_dump()
+        data["clips"] = []
+        data["updated_at"] = now_iso()
+        next_job = ClipJob(**data)
+        jobs[job_id] = next_job
+        save_jobs_unlocked()
+        return next_job
+
+
 @app.get("/api/jobs/{job_id}", response_model=ClipJob)
 def get_job(job_id: str) -> ClipJob:
     with jobs_lock:
