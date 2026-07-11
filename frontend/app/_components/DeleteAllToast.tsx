@@ -1,16 +1,25 @@
 import toast from "react-hot-toast";
 
 type DeleteAllToastProps = {
+  confirmLabel?: string;
+  description?: string;
   onConfirm: () => Promise<void>;
+  title?: string;
   toastId: string;
 };
 
-export function DeleteAllToast({ onConfirm, toastId }: DeleteAllToastProps) {
+export function DeleteAllToast({
+  confirmLabel = "Hapus Semua",
+  description = "Semua job dan file video di folder outputs akan dihapus.",
+  onConfirm,
+  title = "Hapus seluruh riwayat dan output?",
+  toastId,
+}: DeleteAllToastProps) {
   return (
     <div className="confirmToast">
       <div className="confirmToast-copy">
-        <strong>Hapus seluruh riwayat dan output?</strong>
-        <p>Semua job dan file video di folder outputs akan dihapus.</p>
+        <strong>{title}</strong>
+        <p>{description}</p>
       </div>
       <div className="confirmToast-actions">
         <button className="ghostButton" type="button" onClick={() => toast.dismiss(toastId)}>
@@ -24,7 +33,7 @@ export function DeleteAllToast({ onConfirm, toastId }: DeleteAllToastProps) {
             await onConfirm();
           }}
         >
-          Hapus Semua
+          {confirmLabel}
         </button>
       </div>
     </div>

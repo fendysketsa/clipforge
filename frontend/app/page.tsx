@@ -5,6 +5,8 @@ import toast from "react-hot-toast";
 import {
   cancelJob,
   createJob,
+  deleteFailedJobs,
+  deleteJob,
   deleteJobs,
   discoverLocalLlms,
   fetchModels,
@@ -81,6 +83,7 @@ export default function HomePage() {
   const [isDiscoveringLlms, setIsDiscoveringLlms] = useState(false);
   const [job, setJob] = useState<ClipJob | null>(null);
   const [jobs, setJobs] = useState<ClipJob[]>([]);
+  const [selectedHistoryJobIds, setSelectedHistoryJobIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -125,6 +128,14 @@ export default function HomePage() {
   useEffect(() => {
     loadJobs().catch(() => undefined);
   }, [loadJobs]);
+
+  useEffect(() => {
+    setSelectedHistoryJobIds((current) =>
+      current.filter((id) =>
+        jobs.some((item) => item.id === id && (item.status === "failed" || item.status === "cancelled")),
+      ),
+    );
+  }, [jobs]);
 
   useEffect(() => {
     if (!activeJobId) return;
@@ -373,6 +384,7 @@ export default function HomePage() {
     });
 
     setJob(null);
+    setSelectedHistoryJobIds([]);
     await loadJobs();
   }, [loadJobs]);
 
@@ -381,6 +393,66 @@ export default function HomePage() {
       duration: Infinity,
     });
   }, [handleDeleteAllConfirmed]);
+
+  const handleToggleHistoryJobSelection = useCallback((jobId: string) => {
+    setSelectedHistoryJobIds((current) =>
+      current.includes(jobId) ? current.filter((id) => id !== jobId) : [...current, jobId],
+    );
+  }, []);
+
+  const handleDeleteSelectedConfirmed = useCallback(async () => {
+    const ids = selectedHistoryJobIds;
+    if (!ids.length) return;
+
+    await toast.promise(Promise.all(ids.map((id) => deleteJob(id))), {
+      loading: "Menghapus riwayat terpilih...",
+      success: `${ids.length} riwayat berhasil dihapus.`,
+      error: "Gagal menghapus riwayat terpilih",
+    });
+
+    setSelectedHistoryJobIds([]);
+    setJob((current) => (current && ids.includes(current.id) ? null : current));
+    await loadJobs();
+  }, [loadJobs, selectedHistoryJobIds]);
+
+  const handleDeleteSelected = useCallback(() => {
+    if (!selectedHistoryJobIds.length) return;
+    toast((item) => (
+      <DeleteAllToast
+        toastId={item.id}
+        title={`Hapus ${selectedHistoryJobIds.length} riwayat terpilih?`}
+        description="Riwayat failed/dibatalkan yang dicentang akan dihapus dari daftar."
+        confirmLabel="Hapus Terpilih"
+        onConfirm={handleDeleteSelectedConfirmed}
+      />
+    ), { duration: Infinity });
+  }, [handleDeleteSelectedConfirmed, selectedHistoryJobIds.length]);
+
+  const handleDeleteFailedConfirmed = useCallback(async () => {
+    await toast.promise(deleteFailedJobs(), {
+      loading: "Membersihkan riwayat gagal...",
+      success: "Riwayat gagal berhasil dibersihkan.",
+      error: "Gagal membersihkan riwayat gagal",
+    });
+
+    setSelectedHistoryJobIds([]);
+    setJob((current) =>
+      current && (current.status === "failed" || current.status === "cancelled") ? null : current,
+    );
+    await loadJobs();
+  }, [loadJobs]);
+
+  const handleDeleteFailed = useCallback(() => {
+    toast((item) => (
+      <DeleteAllToast
+        toastId={item.id}
+        title="Hapus semua riwayat gagal?"
+        description="Semua proses failed dan dibatalkan akan dihapus supaya riwayat tetap bersih."
+        confirmLabel="Hapus Gagal"
+        onConfirm={handleDeleteFailedConfirmed}
+      />
+    ), { duration: Infinity });
+  }, [handleDeleteFailedConfirmed]);
 
   const handleCancelJob = useCallback(async () => {
     if (!activeJobId || !isBusy) return;
@@ -462,7 +534,15 @@ export default function HomePage() {
       </section>
 
       <ResultsSection clips={job?.clips ?? []} />
-      <HistorySection jobs={jobs} onDeleteAll={handleDeleteAll} onSelectJob={setJob} />
+      <HistorySection
+        jobs={jobs}
+        selectedJobIds={selectedHistoryJobIds}
+        onDeleteAll={handleDeleteAll}
+        onDeleteFailed={handleDeleteFailed}
+        onDeleteSelected={handleDeleteSelected}
+        onSelectJob={setJob}
+        onToggleJobSelection={handleToggleHistoryJobSelection}
+      />
     </main>
   );
 }

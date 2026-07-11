@@ -22,6 +22,33 @@ from llm import AIConfig, chat_completion, extract_json
 console = Console()
 
 
+class UserFacingError(RuntimeError):
+    """Error message that is safe and useful to show in the UI."""
+
+
+NETWORK_ERROR_PATTERNS = (
+    "errno 101",
+    "network is unreachable",
+    "no route to host",
+    "temporary failure in name resolution",
+    "name or service not known",
+    "failed to resolve",
+    "connection timed out",
+    "timed out",
+    "connection refused",
+    "cannot assign requested address",
+)
+
+YTDLP_HTTP_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/126.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+}
+
+
 @dataclass
 class TranscriptSegment:
     start: float
@@ -146,6 +173,51 @@ def run(command: list[str], cwd: Path | None = None) -> None:
 
 def ffmpeg_path() -> str:
     return imageio_ffmpeg.get_ffmpeg_exe()
+
+
+def ytdlp_base_options(**overrides) -> dict:
+    options = {
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "socket_timeout": 25,
+        "retries": 5,
+        "fragment_retries": 5,
+        "extractor_retries": 3,
+        "file_access_retries": 3,
+        "continuedl": True,
+        "concurrent_fragment_downloads": 4,
+        "http_headers": YTDLP_HTTP_HEADERS,
+        # Prefer IPv4 on hosts where IPv6 routes exist but cannot reach YouTube.
+        "source_address": "0.0.0.0",
+    }
+    options.update(overrides)
+    return options
+
+
+def is_network_error(message: str) -> bool:
+    lowered = message.lower()
+    return any(pattern in lowered for pattern in NETWORK_ERROR_PATTERNS)
+
+
+def friendly_youtube_error(exc: Exception, stage: str) -> str:
+    message = str(exc).strip()
+    if is_network_error(message):
+        return (
+            f"Koneksi server ke YouTube gagal saat {stage}. "
+            "Pastikan server/container punya akses internet keluar. "
+            "Kalau jaringan hosting memblokir YouTube, gunakan tab Upload Video sebagai fallback."
+        )
+    if "private video" in message.lower():
+        return "Video YouTube bersifat privat, jadi tidak bisa diproses dari link publik."
+    if "sign in" in message.lower() or "login" in message.lower():
+        return (
+            "YouTube meminta login atau verifikasi untuk video ini. "
+            "Gunakan video publik lain atau upload file videonya langsung."
+        )
+    if "unsupported url" in message.lower():
+        return "Link video tidak dikenali. Gunakan URL YouTube penuh atau link youtu.be yang valid."
+    return f"Gagal mengambil video dari YouTube saat {stage}: {message}"
 
 
 def make_even(value: float, minimum: int) -> int:
@@ -513,13 +585,12 @@ def clean_transcript_text(text: str) -> str:
 
 
 def fetch_metadata(url: str) -> dict:
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-    }
-    with YoutubeDL(ydl_opts) as ydl:
-        return sanitize_metadata(ydl.extract_info(url, download=False))
+    ydl_opts = ytdlp_base_options(skip_download=True)
+    try:
+        with YoutubeDL(ydl_opts) as ydl:
+            return sanitize_metadata(ydl.extract_info(url, download=False))
+    except Exception as exc:
+        raise UserFacingError(friendly_youtube_error(exc, "membaca metadata")) from exc
 
 
 def download_video(
@@ -534,25 +605,25 @@ def download_video(
         return existing[0], load_json(info_path)
 
     max_height = int(quality_preset(video_quality)["max_download_height"])
-    ydl_opts = {
-        "format": (
+    ydl_opts = ytdlp_base_options(
+        format=(
             f"bestvideo[height<={max_height}][ext=mp4]+bestaudio[ext=m4a]/"
             f"bestvideo[height<={max_height}]+bestaudio/"
             f"best[height<={max_height}]/best"
         ),
-        "outtmpl": str(work_dir / "source.%(ext)s"),
-        "merge_output_format": "mp4",
-        "noplaylist": True,
-        "quiet": True,
-        "noprogress": True,
-        "no_warnings": True,
-        "ffmpeg_location": ffmpeg_path(),
-    }
+        outtmpl=str(work_dir / "source.%(ext)s"),
+        merge_output_format="mp4",
+        noprogress=True,
+        ffmpeg_location=ffmpeg_path(),
+    )
 
     work_dir.mkdir(parents=True, exist_ok=True)
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        file_path = Path(ydl.prepare_filename(info))
+    try:
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            file_path = Path(ydl.prepare_filename(info))
+    except Exception as exc:
+        raise UserFacingError(friendly_youtube_error(exc, "mengunduh video")) from exc
 
     if not file_path.exists():
         downloaded = sorted(work_dir.glob("source.*"))
@@ -1526,6 +1597,9 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         console.print("\n[yellow]Cancelled.[/yellow]")
         raise SystemExit(130)
+    except UserFacingError as exc:
+        console.print(f"[red]USER_ERROR:[/red] {exc}")
+        raise SystemExit(2)
     except Exception as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise SystemExit(1)

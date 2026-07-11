@@ -13,7 +13,7 @@ from math import ceil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 import urllib.request
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -45,6 +45,27 @@ LOCAL_LLM_PRESETS = [
     {"label": "LocalAI", "base_url": "http://localhost:8080/v1"},
     {"label": "OpenAI-compatible", "base_url": "http://localhost:20128/v1"},
 ]
+NETWORK_ERROR_PATTERNS = (
+    "errno 101",
+    "network is unreachable",
+    "no route to host",
+    "temporary failure in name resolution",
+    "name or service not known",
+    "failed to resolve",
+    "connection timed out",
+    "timed out",
+    "connection refused",
+    "cannot assign requested address",
+)
+YTDLP_HTTP_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/126.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+}
+CLI_USER_ERROR_PREFIX = "USER_ERROR:"
 
 
 class ClipJobRequest(BaseModel):
@@ -212,6 +233,59 @@ def clear_uploads_dir() -> int:
     return removed
 
 
+def output_path_from_url(url: str | None) -> Path | None:
+    if not url or not url.startswith("/outputs/"):
+        return None
+
+    relative = unquote(url.removeprefix("/outputs/"))
+    candidate = (OUTPUTS_DIR / relative).resolve()
+    root = OUTPUTS_DIR.resolve()
+    if candidate == root or root not in candidate.parents:
+        return None
+    return candidate
+
+
+def remove_empty_output_parents(path: Path) -> int:
+    removed = 0
+    root = OUTPUTS_DIR.resolve()
+    parent = path.parent
+    while parent != root and root in parent.parents:
+        try:
+            parent.rmdir()
+            removed += 1
+        except OSError:
+            break
+        parent = parent.parent
+    return removed
+
+
+def cleanup_job_files(job: "ClipJob") -> int:
+    removed = 0
+    paths: set[Path] = set()
+    for clip in job.clips:
+        clip_path = output_path_from_url(clip.url)
+        if clip_path is None:
+            continue
+        paths.add(clip_path)
+        paths.add(clip_path.with_name(f"{clip_path.stem}_thumb.jpg"))
+        paths.add(clip_path.with_name(f"{clip_path.stem}_thumb.txt"))
+        paths.add(clip_path.with_name(f"{clip_path.stem}_caption.txt"))
+        if clip.thumbnail_url:
+            thumb_path = output_path_from_url(clip.thumbnail_url)
+            if thumb_path is not None:
+                paths.add(thumb_path)
+
+    for path in sorted(paths, key=lambda item: len(item.parts), reverse=True):
+        try:
+            if path.is_file():
+                path.unlink()
+                removed += 1
+                removed += remove_empty_output_parents(path)
+        except OSError:
+            pass
+    return removed
+
+
 jobs: dict[str, ClipJob] = load_jobs()
 jobs_lock = threading.Lock()
 job_secrets: dict[str, str] = {}
@@ -281,15 +355,45 @@ def clamp(value: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, value))
 
 
-def fetch_video_duration(url: str) -> float | None:
-    ydl_opts = {
+def ytdlp_probe_options() -> dict:
+    return {
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
         "skip_download": True,
+        "socket_timeout": 15,
+        "retries": 2,
+        "extractor_retries": 2,
+        "http_headers": YTDLP_HTTP_HEADERS,
+        "source_address": "0.0.0.0",
     }
+
+
+def is_network_error(message: str) -> bool:
+    lowered = message.lower()
+    return any(pattern in lowered for pattern in NETWORK_ERROR_PATTERNS)
+
+
+def friendly_network_error() -> str:
+    return (
+        "Koneksi server ke YouTube tidak tersedia. "
+        "Pastikan server/container punya akses internet keluar, atau gunakan tab Upload Video."
+    )
+
+
+def user_error_from_logs(logs: list[str]) -> str | None:
+    for line in reversed(logs):
+        if CLI_USER_ERROR_PREFIX in line:
+            return line.split(CLI_USER_ERROR_PREFIX, 1)[1].strip()
+    for line in reversed(logs):
+        if is_network_error(line):
+            return friendly_network_error()
+    return None
+
+
+def fetch_video_duration(url: str) -> float | None:
     try:
-        with YoutubeDL(ydl_opts) as ydl:
+        with YoutubeDL(ytdlp_probe_options()) as ydl:
             info = ydl.extract_info(url, download=False)
     except Exception:
         return None
@@ -509,13 +613,14 @@ def run_job(job_id: str) -> None:
                 updates["candidates"] = candidates
             set_job(job_id, **updates)
         else:
+            friendly_error = user_error_from_logs(logs)
             set_job(
                 job_id,
                 status="failed",
                 clips=clips,
                 candidates=candidates,
                 logs=logs[-120:],
-                error=f"clipper.py exited with code {code}",
+                error=friendly_error or f"clipper.py exited with code {code}",
             )
     finally:
         with process_lock:
@@ -739,6 +844,26 @@ def delete_all_jobs() -> dict[str, str | int]:
     return {"status": "ok", "removed_outputs": removed_outputs}
 
 
+@app.delete("/api/jobs/failed")
+def delete_failed_jobs() -> dict[str, str | int]:
+    removed_jobs = 0
+    removed_outputs = 0
+    with jobs_lock:
+        removable_ids = [
+            job_id
+            for job_id, job in jobs.items()
+            if job.status in {"failed", "cancelled"}
+        ]
+        for job_id in removable_ids:
+            job = jobs.pop(job_id)
+            removed_outputs += cleanup_job_files(job)
+            job_secrets.pop(job_id, None)
+            cancelled_job_ids.discard(job_id)
+            removed_jobs += 1
+        save_jobs_unlocked()
+    return {"status": "ok", "removed_jobs": removed_jobs, "removed_outputs": removed_outputs}
+
+
 @app.get("/api/jobs/{job_id}", response_model=ClipJob)
 def get_job(job_id: str) -> ClipJob:
     with jobs_lock:
@@ -746,6 +871,25 @@ def get_job(job_id: str) -> ClipJob:
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+@app.delete("/api/jobs/{job_id}")
+def delete_job(job_id: str) -> dict[str, str | int]:
+    with process_lock:
+        is_running = job_id in job_processes
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job.status in {"queued", "running"} or is_running:
+            raise HTTPException(status_code=409, detail="Batalkan proses aktif sebelum menghapus riwayatnya")
+
+        removed_outputs = cleanup_job_files(job)
+        jobs.pop(job_id, None)
+        job_secrets.pop(job_id, None)
+        cancelled_job_ids.discard(job_id)
+        save_jobs_unlocked()
+    return {"status": "ok", "removed_jobs": 1, "removed_outputs": removed_outputs}
 
 
 @app.post("/api/jobs/{job_id}/cancel")

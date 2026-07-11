@@ -6,6 +6,7 @@ from api import (
     choose_auto_analyze_seconds,
     max_clips_for_duration,
     normalize_job_request,
+    user_error_from_logs,
 )
 
 
@@ -79,3 +80,18 @@ def test_caption_color_rejects_injection():
 
     with pytest.raises(ValidationError):
         ClipJobRequest(url="https://youtu.be/x", caption_color="white' rm -rf")
+
+
+def test_user_error_from_logs_prefers_cli_message():
+    logs = [
+        "Fetching metadata...",
+        "USER_ERROR: Koneksi server ke YouTube gagal saat membaca metadata.",
+    ]
+
+    assert user_error_from_logs(logs) == "Koneksi server ke YouTube gagal saat membaca metadata."
+
+
+def test_user_error_from_logs_detects_network_error():
+    logs = ["ERROR: [download] Got error: [Errno 101] Network is unreachable"]
+
+    assert "Upload Video" in (user_error_from_logs(logs) or "")

@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 
-from clipper import cleanup_intermediate, prepare_uploaded_source
+from clipper import cleanup_intermediate, friendly_youtube_error, prepare_uploaded_source
 
 
 def test_cleanup_removes_source_and_audio_keeps_clips():
@@ -44,3 +44,10 @@ def test_cleanup_does_not_delete_external_upload():
     cleanup_intermediate(work, upload)
 
     assert upload.exists()
+
+
+def test_friendly_youtube_error_explains_network_failure():
+    message = friendly_youtube_error(RuntimeError("[Errno 101] Network is unreachable"), "membaca metadata")
+
+    assert "Upload Video" in message
+    assert "membaca metadata" in message

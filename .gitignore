@@ -17,6 +17,7 @@ frontend/next-env.d.ts
 frontend/.env
 frontend/.env.*
 !frontend/.env.example
+*.tsbuildinfo
 
 *.log
 .DS_Store

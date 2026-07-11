@@ -9,6 +9,19 @@ export type LocalLlmProvider = {
   models: string[];
 };
 
+const responseErrorMessage = async (response: Response, fallback: string) => {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    const payload = (await response.json().catch(() => null)) as { detail?: unknown } | null;
+    if (typeof payload?.detail === "string" && payload.detail.trim()) {
+      return payload.detail;
+    }
+  }
+
+  const detail = await response.text().catch(() => "");
+  return detail || fallback;
+};
+
 export const uploadVideo = async (file: File) => {
   const form = new FormData();
   form.append("file", file);
@@ -18,8 +31,7 @@ export const uploadVideo = async (file: File) => {
     body: form,
   });
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || "Failed to upload video");
+    throw new Error(await responseErrorMessage(response, "Failed to upload video"));
   }
   return (await response.json()) as {
     source_file: string;
@@ -35,8 +47,7 @@ export const fetchModels = async (baseUrl: string, apiKey: string) => {
     body: JSON.stringify({ base_url: baseUrl, api_key: apiKey }),
   });
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || "Failed to load models");
+    throw new Error(await responseErrorMessage(response, "Failed to load models"));
   }
   const data = (await response.json()) as { models: string[] };
   return data.models;
@@ -74,7 +85,21 @@ export const getJobs = async () => {
 export const deleteJobs = async () => {
   const response = await fetch(`${CLIENT_API_BASE}/api/jobs`, { method: "DELETE" });
   if (!response.ok) {
-    throw new Error("Failed to delete jobs");
+    throw new Error(await responseErrorMessage(response, "Failed to delete jobs"));
+  }
+};
+
+export const deleteFailedJobs = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/jobs/failed`, { method: "DELETE" });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to delete failed jobs"));
+  }
+};
+
+export const deleteJob = async (jobId: string) => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}`, { method: "DELETE" });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to delete job"));
   }
 };
 
@@ -104,8 +129,7 @@ export const createJob = async (input: CreateClipJobInput) => {
   });
 
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || "Failed to create job");
+    throw new Error(await responseErrorMessage(response, "Failed to create job"));
   }
 
   return (await response.json()) as ClipJob;
