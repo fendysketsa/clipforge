@@ -139,7 +139,7 @@ export default function HomePage() {
   useEffect(() => {
     setSelectedHistoryJobIds((current) =>
       current.filter((id) =>
-        jobs.some((item) => item.id === id && (item.status === "failed" || item.status === "cancelled")),
+        jobs.some((item) => item.id === id && item.status !== "queued" && item.status !== "running"),
       ),
     );
   }, [jobs]);
@@ -432,7 +432,7 @@ export default function HomePage() {
       <DeleteAllToast
         toastId={item.id}
         title={`Hapus ${selectedHistoryJobIds.length} riwayat terpilih?`}
-        description="Riwayat failed/dibatalkan yang dicentang akan dihapus dari daftar."
+        description="Riwayat yang dicentang akan dihapus dari daftar beserta file output yang terkait."
         confirmLabel="Hapus Terpilih"
         onConfirm={handleDeleteSelectedConfirmed}
       />

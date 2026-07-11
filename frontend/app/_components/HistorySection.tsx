@@ -59,7 +59,7 @@ export function HistorySection({
         {jobs.map((item) => {
           const Icon = statusIcon[item.status];
           const count = item.clips.length ? `${item.clips.length} klip` : `${item.candidates.length} kandidat`;
-          const canSelectForDelete = item.status === "failed" || item.status === "cancelled";
+          const canSelectForDelete = item.status !== "queued" && item.status !== "running";
           const isSelected = selectedJobIds.includes(item.id);
 
           return (
