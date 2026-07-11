@@ -142,6 +142,16 @@ class ClipStatusUpdate(BaseModel):
     is_correct: bool
 
 
+class ClipSelectionDeleteRequest(BaseModel):
+    urls: list[str]
+
+
+class ClipDeleteResponse(BaseModel):
+    job: ClipJob | None = None
+    removed_job: bool = False
+    removed_clips: int = 0
+
+
 app = FastAPI(title="ClipForge API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -282,6 +292,18 @@ def clip_artifact_paths(clip: ClipFile) -> set[Path]:
     return paths
 
 
+def clip_output_work_dir(clip: ClipFile) -> Path | None:
+    clip_path = output_path_from_url(clip.url)
+    if clip_path is None:
+        return None
+
+    root = OUTPUTS_DIR.resolve()
+    candidate = clip_path.parent.parent if clip_path.parent.name == "clips" else clip_path.parent
+    if candidate == root or root not in candidate.parents:
+        return None
+    return candidate
+
+
 def remove_output_paths(paths: set[Path]) -> int:
     removed = 0
 
@@ -296,6 +318,28 @@ def remove_output_paths(paths: set[Path]) -> int:
     return removed
 
 
+def cleanup_output_work_dirs(clips: list[ClipFile], protected_dirs: set[Path] | None = None) -> int:
+    root = OUTPUTS_DIR.resolve()
+    protected = {path.resolve() for path in (protected_dirs or set())}
+    removed = 0
+    dirs = {
+        work_dir.resolve()
+        for clip in clips
+        if (work_dir := clip_output_work_dir(clip)) is not None
+    }
+
+    for work_dir in sorted(dirs, key=lambda item: len(item.parts), reverse=True):
+        if work_dir in protected or work_dir == root or root not in work_dir.parents:
+            continue
+        try:
+            if work_dir.is_dir():
+                shutil.rmtree(work_dir)
+                removed += 1
+        except OSError:
+            pass
+    return removed
+
+
 def cleanup_clip_files(clip: ClipFile) -> int:
     return remove_output_paths(clip_artifact_paths(clip))
 
@@ -304,7 +348,16 @@ def cleanup_job_files(job: "ClipJob") -> int:
     paths: set[Path] = set()
     for clip in job.clips:
         paths.update(clip_artifact_paths(clip))
-    return remove_output_paths(paths)
+    removed = remove_output_paths(paths)
+    protected_dirs = {
+        work_dir
+        for other_job_id, other_job in jobs.items()
+        if other_job_id != job.id
+        for clip in other_job.clips
+        if (work_dir := clip_output_work_dir(clip)) is not None
+    }
+    removed += cleanup_output_work_dirs(job.clips, protected_dirs)
+    return removed
 
 
 jobs: dict[str, ClipJob] = load_jobs()
@@ -913,8 +966,7 @@ def update_job_clip_status(job_id: str, update: ClipStatusUpdate) -> ClipJob:
         return next_job
 
 
-@app.delete("/api/jobs/{job_id}/clips", response_model=ClipJob)
-def delete_job_clip(job_id: str, clip_url: str) -> ClipJob:
+def delete_job_clips_by_url(job_id: str, clip_urls: set[str]) -> ClipDeleteResponse:
     with process_lock:
         is_running = job_id in job_processes
     with jobs_lock:
@@ -924,22 +976,53 @@ def delete_job_clip(job_id: str, clip_url: str) -> ClipJob:
         if job.status in {"queued", "running"} or is_running:
             raise HTTPException(status_code=409, detail="Batalkan proses aktif sebelum menghapus output")
 
-        target_clip = next((clip for clip in job.clips if clip.url == clip_url), None)
-        if target_clip is None:
+        target_clips = [clip for clip in job.clips if clip.url in clip_urls]
+        if not target_clips:
             raise HTTPException(status_code=404, detail="Clip not found")
 
-        cleanup_clip_files(target_clip)
+        for clip in target_clips:
+            cleanup_clip_files(clip)
+
+        remaining_clips = [clip for clip in job.clips if clip.url not in clip_urls]
+        if not remaining_clips:
+            protected_dirs = {
+                work_dir
+                for other_job_id, other_job in jobs.items()
+                if other_job_id != job.id
+                for clip in other_job.clips
+                if (work_dir := clip_output_work_dir(clip)) is not None
+            }
+            cleanup_output_work_dirs(job.clips, protected_dirs)
+            jobs.pop(job_id, None)
+            job_secrets.pop(job_id, None)
+            cancelled_job_ids.discard(job_id)
+            save_jobs_unlocked()
+            return ClipDeleteResponse(job=None, removed_job=True, removed_clips=len(target_clips))
+
         data = job.model_dump()
-        data["clips"] = [clip for clip in job.clips if clip.url != clip_url]
+        data["clips"] = remaining_clips
         data["updated_at"] = now_iso()
         next_job = ClipJob(**data)
         jobs[job_id] = next_job
         save_jobs_unlocked()
-        return next_job
+        return ClipDeleteResponse(job=next_job, removed_job=False, removed_clips=len(target_clips))
 
 
-@app.delete("/api/jobs/{job_id}/clips/all", response_model=ClipJob)
-def delete_all_job_clips(job_id: str) -> ClipJob:
+@app.delete("/api/jobs/{job_id}/clips", response_model=ClipDeleteResponse)
+def delete_job_clip(job_id: str, clip_url: str) -> ClipDeleteResponse:
+    return delete_job_clips_by_url(job_id, {clip_url})
+
+
+@app.delete("/api/jobs/{job_id}/clips/selected", response_model=ClipDeleteResponse)
+def delete_selected_job_clips(job_id: str, request: ClipSelectionDeleteRequest) -> ClipDeleteResponse:
+    clip_urls = {url for url in request.urls if url}
+    if not clip_urls:
+        raise HTTPException(status_code=400, detail="Select at least one clip")
+    return delete_job_clips_by_url(job_id, clip_urls)
+
+
+@app.delete("/api/jobs/{job_id}/clips/all", response_model=ClipDeleteResponse)
+def delete_all_job_clips(job_id: str) -> ClipDeleteResponse:
     with process_lock:
         is_running = job_id in job_processes
     with jobs_lock:
@@ -949,14 +1032,13 @@ def delete_all_job_clips(job_id: str) -> ClipJob:
         if job.status in {"queued", "running"} or is_running:
             raise HTTPException(status_code=409, detail="Batalkan proses aktif sebelum menghapus output")
 
+        removed_clips = len(job.clips)
         cleanup_job_files(job)
-        data = job.model_dump()
-        data["clips"] = []
-        data["updated_at"] = now_iso()
-        next_job = ClipJob(**data)
-        jobs[job_id] = next_job
+        jobs.pop(job_id, None)
+        job_secrets.pop(job_id, None)
+        cancelled_job_ids.discard(job_id)
         save_jobs_unlocked()
-        return next_job
+        return ClipDeleteResponse(job=None, removed_job=True, removed_clips=removed_clips)
 
 
 @app.get("/api/jobs/{job_id}", response_model=ClipJob)

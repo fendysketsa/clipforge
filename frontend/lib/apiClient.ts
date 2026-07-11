@@ -9,6 +9,12 @@ export type LocalLlmProvider = {
   models: string[];
 };
 
+export type ClipDeleteResult = {
+  job: ClipJob | null;
+  removed_job: boolean;
+  removed_clips: number;
+};
+
 const responseErrorMessage = async (response: Response, fallback: string) => {
   const contentType = response.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
@@ -111,7 +117,7 @@ export const deleteJobClip = async (jobId: string, clipUrl: string) => {
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response, "Failed to delete clip"));
   }
-  return (await response.json()) as ClipJob;
+  return (await response.json()) as ClipDeleteResult;
 };
 
 export const deleteAllJobClips = async (jobId: string) => {
@@ -119,7 +125,19 @@ export const deleteAllJobClips = async (jobId: string) => {
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response, "Failed to delete clips"));
   }
-  return (await response.json()) as ClipJob;
+  return (await response.json()) as ClipDeleteResult;
+};
+
+export const deleteSelectedJobClips = async (jobId: string, clipUrls: string[]) => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}/clips/selected`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ urls: clipUrls }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to delete selected clips"));
+  }
+  return (await response.json()) as ClipDeleteResult;
 };
 
 export const updateJobClipStatus = async (jobId: string, clipUrl: string, isCorrect: boolean) => {

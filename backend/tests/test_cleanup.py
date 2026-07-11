@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 
-from api import ClipFile, cleanup_clip_files
+from api import ClipFile, ClipJob, ClipJobRequest, cleanup_clip_files, cleanup_job_files
 from clipper import cleanup_intermediate, friendly_youtube_error, prepare_uploaded_source
 
 
@@ -82,3 +82,37 @@ def test_cleanup_clip_files_removes_output_artifacts(monkeypatch):
     assert not prompt_path.exists()
     assert not caption_path.exists()
     assert not clip_dir.exists()
+
+
+def test_cleanup_job_files_removes_related_output_folder(monkeypatch):
+    import api
+
+    outputs = Path(tempfile.mkdtemp())
+    clip_dir = outputs / "video-title" / "clips"
+    clip_dir.mkdir(parents=True)
+    (outputs / "video-title" / "metadata.json").write_text("{}")
+    (outputs / "video-title" / "candidates.json").write_text("[]")
+    clip_path = clip_dir / "clip_01.mp4"
+    clip_path.write_bytes(b"x")
+
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "jobs", {})
+
+    job = ClipJob(
+        id="job-1",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/x"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[
+            ClipFile(
+                name="clip_01.mp4",
+                url="/outputs/video-title/clips/clip_01.mp4",
+                size_bytes=1,
+            )
+        ],
+    )
+
+    cleanup_job_files(job)
+
+    assert not (outputs / "video-title").exists()

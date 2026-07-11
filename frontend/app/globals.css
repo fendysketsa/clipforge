@@ -445,6 +445,7 @@ h2 {
 }
 
 .clipCard {
+  position: relative;
   overflow: hidden;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
@@ -453,9 +454,38 @@ h2 {
   border-color: rgba(22, 163, 74, 0.45);
 }
 
+.clipCard.selected {
+  border-color: rgba(239, 68, 68, 0.55);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.08), var(--shadow-sm);
+}
+
 .clipCard:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
+}
+
+.clipSelect {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.clipSelect input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: var(--danger);
+  cursor: pointer;
 }
 
 .clipCard video {
@@ -706,6 +736,25 @@ h2 {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 12px;
+}
+
+.selectAllClips {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.selectAllClips input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--danger);
+  cursor: pointer;
 }
 
 .dangerTextButton,

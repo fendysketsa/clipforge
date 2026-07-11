@@ -6,17 +6,28 @@ import { ThumbnailPrompt } from "./ThumbnailPrompt";
 
 type ResultsSectionProps = {
   clips: ClipFile[];
+  selectedClipUrls: string[];
   onDeleteAllClips: () => void;
   onDeleteClip: (clip: ClipFile) => void;
+  onDeleteSelectedClips: () => void;
+  onToggleAllClipSelection: () => void;
+  onToggleClipSelection: (clipUrl: string) => void;
   onToggleClipCorrect: (clip: ClipFile, isCorrect: boolean) => void;
 };
 
 export function ResultsSection({
   clips,
+  selectedClipUrls,
   onDeleteAllClips,
   onDeleteClip,
+  onDeleteSelectedClips,
+  onToggleAllClipSelection,
+  onToggleClipSelection,
   onToggleClipCorrect,
 }: ResultsSectionProps) {
+  const selectedCount = selectedClipUrls.length;
+  const allClipsSelected = clips.length > 0 && selectedCount === clips.length;
+
   return (
     <section className="results">
       <div className="sectionHeader">
@@ -24,10 +35,22 @@ export function ResultsSection({
         <div className="resultsActions">
           <span className="sectionBadge">{clips.length} klip siap</span>
           {clips.length > 0 ? (
-            <button type="button" onClick={onDeleteAllClips} className="ghostButton dangerTextButton">
-              <Trash2 size={15} />
-              Hapus semua klip
-            </button>
+            <>
+              <label className="selectAllClips">
+                <input checked={allClipsSelected} type="checkbox" onChange={onToggleAllClipSelection} />
+                Pilih semua
+              </label>
+              {selectedCount > 0 ? (
+                <button type="button" onClick={onDeleteSelectedClips} className="dangerButton historyDeleteSelected">
+                  <Trash2 size={15} />
+                  Hapus terpilih ({selectedCount})
+                </button>
+              ) : null}
+              <button type="button" onClick={onDeleteAllClips} className="ghostButton dangerTextButton">
+                <Trash2 size={15} />
+                Hapus semua klip
+              </button>
+            </>
           ) : null}
         </div>
       </div>
@@ -37,9 +60,21 @@ export function ResultsSection({
           {clips.map((clip) => {
             const title = clipTitle(clip.name);
             const url = getOutputUrl(clip.url);
+            const isSelected = selectedClipUrls.includes(clip.url);
 
             return (
-              <article className={`clipCard ${clip.is_correct ? "clipCardCorrect" : ""}`} key={clip.url}>
+              <article
+                className={`clipCard ${clip.is_correct ? "clipCardCorrect" : ""} ${isSelected ? "selected" : ""}`}
+                key={clip.url}
+              >
+                <label className="clipSelect">
+                  <input
+                    aria-label={`Pilih ${title} untuk dihapus`}
+                    checked={isSelected}
+                    type="checkbox"
+                    onChange={() => onToggleClipSelection(clip.url)}
+                  />
+                </label>
                 <video controls preload="metadata" src={url} />
                 <div className="clipInfo">
                   <h3>{title}</h3>

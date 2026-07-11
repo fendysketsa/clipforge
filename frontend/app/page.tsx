@@ -9,6 +9,7 @@ import {
   deleteFailedJobs,
   deleteJob,
   deleteJobClip,
+  deleteSelectedJobClips,
   deleteJobs,
   discoverLocalLlms,
   fetchModels,
@@ -17,6 +18,7 @@ import {
   probeUrlDuration,
   updateJobClipStatus,
   uploadVideo,
+  type ClipDeleteResult,
   type LocalLlmProvider,
 } from "../lib/apiClient";
 import {
@@ -88,6 +90,7 @@ export default function HomePage() {
   const [job, setJob] = useState<ClipJob | null>(null);
   const [jobs, setJobs] = useState<ClipJob[]>([]);
   const [selectedHistoryJobIds, setSelectedHistoryJobIds] = useState<string[]>([]);
+  const [selectedClipUrls, setSelectedClipUrls] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -140,6 +143,10 @@ export default function HomePage() {
       ),
     );
   }, [jobs]);
+
+  useEffect(() => {
+    setSelectedClipUrls((current) => current.filter((url) => job?.clips.some((clip) => clip.url === url)));
+  }, [job]);
 
   useEffect(() => {
     if (!activeJobId) return;
@@ -458,18 +465,28 @@ export default function HomePage() {
     ), { duration: Infinity });
   }, [handleDeleteFailedConfirmed]);
 
+  const applyClipDeleteResult = useCallback(
+    async (jobId: string, result: ClipDeleteResult) => {
+      setJob((current) => (current?.id === jobId ? result.job : current));
+      setSelectedClipUrls((current) =>
+        result.job ? current.filter((url) => result.job?.clips.some((clip) => clip.url === url)) : [],
+      );
+      await loadJobs();
+    },
+    [loadJobs],
+  );
+
   const handleDeleteClipConfirmed = useCallback(
     async (jobId: string, clip: ClipFile) => {
-      const nextJob = await toast.promise(deleteJobClip(jobId, clip.url), {
+      const result = await toast.promise(deleteJobClip(jobId, clip.url), {
         loading: "Menghapus file output...",
         success: "File output berhasil dihapus.",
         error: "Gagal menghapus file output",
       });
 
-      setJob((current) => (current?.id === nextJob.id ? nextJob : current));
-      await loadJobs();
+      await applyClipDeleteResult(jobId, result);
     },
-    [loadJobs],
+    [applyClipDeleteResult],
   );
 
   const handleDeleteClip = useCallback(
@@ -491,16 +508,15 @@ export default function HomePage() {
 
   const handleDeleteAllClipsConfirmed = useCallback(
     async (jobId: string, clipCount: number) => {
-      const nextJob = await toast.promise(deleteAllJobClips(jobId), {
+      const result = await toast.promise(deleteAllJobClips(jobId), {
         loading: "Menghapus semua klip sukses...",
-        success: `${clipCount} klip sukses berhasil dihapus.`,
+        success: `${clipCount} klip sukses dan riwayatnya berhasil dihapus.`,
         error: "Gagal menghapus semua klip sukses",
       });
 
-      setJob((current) => (current?.id === nextJob.id ? nextJob : current));
-      await loadJobs();
+      await applyClipDeleteResult(jobId, result);
     },
-    [loadJobs],
+    [applyClipDeleteResult],
   );
 
   const handleDeleteAllClips = useCallback(() => {
@@ -518,6 +534,51 @@ export default function HomePage() {
       />
     ), { duration: Infinity });
   }, [handleDeleteAllClipsConfirmed, job]);
+
+  const handleToggleClipSelection = useCallback((clipUrl: string) => {
+    setSelectedClipUrls((current) =>
+      current.includes(clipUrl) ? current.filter((url) => url !== clipUrl) : [...current, clipUrl],
+    );
+  }, []);
+
+  const handleToggleAllClipSelection = useCallback(() => {
+    setSelectedClipUrls((current) => {
+      const clipUrls = job?.clips.map((clip) => clip.url) ?? [];
+      if (clipUrls.length > 0 && current.length === clipUrls.length) {
+        return [];
+      }
+      return clipUrls;
+    });
+  }, [job]);
+
+  const handleDeleteSelectedClipsConfirmed = useCallback(
+    async (jobId: string, clipUrls: string[]) => {
+      const result = await toast.promise(deleteSelectedJobClips(jobId, clipUrls), {
+        loading: "Menghapus klip terpilih...",
+        success: `${clipUrls.length} klip terpilih berhasil dihapus.`,
+        error: "Gagal menghapus klip terpilih",
+      });
+
+      await applyClipDeleteResult(jobId, result);
+    },
+    [applyClipDeleteResult],
+  );
+
+  const handleDeleteSelectedClips = useCallback(() => {
+    if (!job || !selectedClipUrls.length) return;
+
+    const jobId = job.id;
+    const clipUrls = selectedClipUrls;
+    toast((item) => (
+      <DeleteAllToast
+        toastId={item.id}
+        title={`Hapus ${clipUrls.length} klip terpilih?`}
+        description="Klip yang dicentang beserta file thumbnail, prompt, dan caption pendukungnya akan dihapus dari outputs. Jika semua klip job ini habis, riwayatnya ikut dihapus."
+        confirmLabel="Hapus Terpilih"
+        onConfirm={() => handleDeleteSelectedClipsConfirmed(jobId, clipUrls)}
+      />
+    ), { duration: Infinity });
+  }, [handleDeleteSelectedClipsConfirmed, job, selectedClipUrls]);
 
   const handleToggleClipCorrect = useCallback(
     async (clip: ClipFile, isCorrect: boolean) => {
@@ -627,8 +688,12 @@ export default function HomePage() {
 
       <ResultsSection
         clips={job?.clips ?? []}
+        selectedClipUrls={selectedClipUrls}
         onDeleteAllClips={handleDeleteAllClips}
         onDeleteClip={handleDeleteClip}
+        onDeleteSelectedClips={handleDeleteSelectedClips}
+        onToggleAllClipSelection={handleToggleAllClipSelection}
+        onToggleClipSelection={handleToggleClipSelection}
         onToggleClipCorrect={handleToggleClipCorrect}
       />
       <HistorySection
