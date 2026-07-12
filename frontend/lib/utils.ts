@@ -1,5 +1,5 @@
 import toast from "react-hot-toast";
-import type { ClipJob } from "../types/clip.type";
+import type { ClipFile, ClipJob } from "../types/clip.type";
 
 export function isActiveJob(job: ClipJob | null) {
   return job?.status === "queued" || job?.status === "running";
@@ -7,6 +7,10 @@ export function isActiveJob(job: ClipJob | null) {
 
 export function clipTitle(name: string) {
   return name.replace(/\.mp4$/i, "").replace(/^clip_\d+_/, "").replace(/-/g, " ");
+}
+
+export function clipDisplayTitle(clip: ClipFile) {
+  return clip.title?.trim() || clipTitle(clip.name);
 }
 
 async function downloadClip(url: string, filename: string) {

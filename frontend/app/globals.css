@@ -496,23 +496,23 @@ h2 {
 }
 
 .clipInfo {
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 10px;
   padding: 16px;
 }
 
 .clipInfo h3 {
   font-size: 14px;
   line-height: 1.4;
-  text-transform: capitalize;
   font-weight: 600;
   color: var(--text-primary);
+  overflow-wrap: anywhere;
 }
 
 .copyTitleButton {
   display: inline-flex;
-  flex: 0 0 auto;
+  width: fit-content;
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;

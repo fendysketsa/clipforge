@@ -1312,7 +1312,7 @@ def export_clip(
     video_quality: VideoQuality = "high",
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
-    base_name = f"clip_{clip.index:02}_{slugify(clip.title)[:42] or 'auto'}"
+    base_name = f"clip_{clip.index:02}_{slugify(clip.title)[:72] or 'auto'}"
     srt_path = clips_dir / f"{base_name}.srt"
     json_path = clips_dir / f"{base_name}.json"
     out_path = clips_dir / f"{base_name}.mp4"

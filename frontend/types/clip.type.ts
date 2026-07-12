@@ -15,6 +15,7 @@ export type ClipFile = {
   name: string;
   url: string;
   size_bytes: number;
+  title?: string | null;
   thumbnail_url?: string | null;
   thumbnail_prompt?: string | null;
   social_caption?: string | null;

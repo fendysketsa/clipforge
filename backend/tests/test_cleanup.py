@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 
-from api import ClipFile, ClipJob, ClipJobRequest, cleanup_clip_files, cleanup_job_files
+from api import ClipCandidate, ClipFile, ClipJob, ClipJobRequest, cleanup_clip_files, cleanup_job_files
 from clipper import cleanup_intermediate, friendly_youtube_error, prepare_uploaded_source
 
 
@@ -82,6 +82,66 @@ def test_cleanup_clip_files_removes_output_artifacts(monkeypatch):
     assert not prompt_path.exists()
     assert not caption_path.exists()
     assert not clip_dir.exists()
+
+
+def test_clip_sidecar_title_reads_full_title(monkeypatch):
+    import api
+
+    outputs = Path(tempfile.mkdtemp())
+    clip_dir = outputs / "work" / "clips"
+    clip_dir.mkdir(parents=True)
+    clip_path = clip_dir / "clip_01_saya-tidak-condong-tidak-setuju-kepada-buy.mp4"
+    clip_path.write_bytes(b"x")
+    clip_path.with_suffix(".json").write_text(
+        '{"title": "Saya Tidak Condong, Tidak Setuju Kepada Buyut Saya"}',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+
+    clip = ClipFile(
+        name=clip_path.name,
+        url="/outputs/work/clips/clip_01_saya-tidak-condong-tidak-setuju-kepada-buy.mp4",
+        size_bytes=1,
+    )
+
+    assert api.clip_sidecar_title(clip) == "Saya Tidak Condong, Tidak Setuju Kepada Buyut Saya"
+
+
+def test_enrich_clip_title_from_candidate_index_when_sidecar_missing(monkeypatch):
+    import api
+
+    outputs = Path(tempfile.mkdtemp())
+    clip_dir = outputs / "work" / "clips"
+    clip_dir.mkdir(parents=True)
+    clip_path = clip_dir / "clip_09_saya-tidak-condong-tidak-setuju-kepada-buy.mp4"
+    clip_path.write_bytes(b"x")
+
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+
+    clips = [
+        ClipFile(
+            name=clip_path.name,
+            url="/outputs/work/clips/clip_09_saya-tidak-condong-tidak-setuju-kepada-buy.mp4",
+            size_bytes=1,
+        )
+    ]
+    candidates = [
+        ClipCandidate(
+            index=9,
+            start=0,
+            end=10,
+            duration=10,
+            score=90,
+            title="Saya Tidak Condong Tidak Setuju Kepada Buya Arrazi",
+            reason="test",
+            text="test",
+        )
+    ]
+
+    enriched = api.enrich_clips_with_candidate_titles(clips, candidates)
+
+    assert enriched[0].title == "Saya Tidak Condong Tidak Setuju Kepada Buya Arrazi"
 
 
 def test_cleanup_job_files_removes_related_output_folder(monkeypatch):

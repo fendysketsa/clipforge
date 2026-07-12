@@ -121,6 +121,7 @@ class ClipFile(BaseModel):
     name: str
     url: str
     size_bytes: int
+    title: str | None = None
     thumbnail_url: str | None = None
     thumbnail_prompt: str | None = None
     social_caption: str | None = None
@@ -199,6 +200,7 @@ def load_jobs() -> dict[str, ClipJob]:
     loaded: dict[str, ClipJob] = {}
     for item in payload:
         job = ClipJob(**item)
+        job = enrich_job_clip_titles(job)
         if job.status in {"queued", "running"}:
             data = job.model_dump()
             data["status"] = "failed"
@@ -294,6 +296,57 @@ def clip_artifact_paths(clip: ClipFile) -> set[Path]:
     return paths
 
 
+def clip_sidecar_title(clip: ClipFile) -> str | None:
+    if clip.title and clip.title.strip():
+        return clip.title.strip()
+
+    clip_path = output_path_from_url(clip.url)
+    if clip_path is None:
+        return None
+
+    json_path = clip_path.with_suffix(".json")
+    if not json_path.is_file():
+        return None
+
+    try:
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    title = payload.get("title") if isinstance(payload, dict) else None
+    return title.strip() if isinstance(title, str) and title.strip() else None
+
+
+def clip_index_from_name(name: str) -> int | None:
+    match = re.match(r"clip_(\d+)", name)
+    return int(match.group(1)) if match else None
+
+
+def enrich_clips_with_candidate_titles(
+    clips: list[ClipFile],
+    candidates: list[ClipCandidate],
+) -> list[ClipFile]:
+    titles_by_index = {
+        candidate.index: candidate.title.strip()
+        for candidate in candidates
+        if candidate.title.strip()
+    }
+    enriched: list[ClipFile] = []
+    for clip in clips:
+        title = clip_sidecar_title(clip)
+        if not title:
+            index = clip_index_from_name(clip.name)
+            title = titles_by_index.get(index) if index is not None else None
+        enriched.append(clip.model_copy(update={"title": title}) if title else clip)
+    return enriched
+
+
+def enrich_job_clip_titles(job: "ClipJob") -> "ClipJob":
+    clips = enrich_clips_with_candidate_titles(job.clips, job.candidates)
+    if clips == job.clips:
+        return job
+    return job.model_copy(update={"clips": clips})
+
+
 def clip_output_work_dir(clip: ClipFile) -> Path | None:
     clip_path = output_path_from_url(clip.url)
     if clip_path is None:
@@ -383,11 +436,22 @@ def discover_clips(started_at: float) -> list[ClipFile]:
         thumb_path = path.with_name(f"{path.stem}_thumb.jpg")
         prompt_path = path.with_name(f"{path.stem}_thumb.txt")
         caption_path = path.with_name(f"{path.stem}_caption.txt")
+        json_path = path.with_suffix(".json")
+        title: str | None = None
+        if json_path.exists():
+            try:
+                payload = json.loads(json_path.read_text(encoding="utf-8"))
+                candidate_title = payload.get("title") if isinstance(payload, dict) else None
+                if isinstance(candidate_title, str) and candidate_title.strip():
+                    title = candidate_title.strip()
+            except (OSError, json.JSONDecodeError):
+                title = None
         clips.append(
             ClipFile(
                 name=path.name,
                 url=clip_url(path),
                 size_bytes=path.stat().st_size,
+                title=title,
                 thumbnail_url=clip_url(thumb_path) if thumb_path.exists() else None,
                 thumbnail_prompt=(
                     prompt_path.read_text(encoding="utf-8") if prompt_path.exists() else None
@@ -692,6 +756,8 @@ def run_job(job_id: str) -> None:
 
         clips = discover_clips(started_at)
         candidates = discover_candidates(started_at)
+        if clips and candidates:
+            clips = enrich_clips_with_candidate_titles(clips, candidates)
         if code == 0:
             updates = {"status": "completed", "logs": logs[-120:]}
             if clips:

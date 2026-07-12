@@ -1,6 +1,6 @@
 import { CheckCircle2, Clipboard, Download, ExternalLink, Trash2, Video } from "lucide-react";
 import { getOutputUrl } from "../../lib/apiClient";
-import { clipTitle, handleCopyTitle, handleDownload } from "../../lib/utils";
+import { clipDisplayTitle, handleCopyTitle, handleDownload } from "../../lib/utils";
 import type { ClipFile } from "../../types/clip.type";
 import { ThumbnailPrompt } from "./ThumbnailPrompt";
 
@@ -58,7 +58,7 @@ export function ResultsSection({
       {clips.length ? (
         <div className="clipGrid">
           {clips.map((clip) => {
-            const title = clipTitle(clip.name);
+            const title = clipDisplayTitle(clip);
             const url = getOutputUrl(clip.url);
             const isSelected = selectedClipUrls.includes(clip.url);
 
