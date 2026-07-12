@@ -23,6 +23,7 @@ import {
 } from "../lib/apiClient";
 import {
   DEFAULT_AI_BASE_URL,
+  DEFAULT_AI_ENABLED,
   DEFAULT_AI_MODEL,
   DEFAULT_CAPTION_COLOR,
   DEFAULT_CAPTION_FONT,
@@ -78,7 +79,7 @@ export default function HomePage() {
   const [captionFont, setCaptionFont] = useState<CaptionFont>(DEFAULT_CAPTION_FONT);
   const [captionOutline, setCaptionOutline] = useState(DEFAULT_CAPTION_OUTLINE);
   const [captionOutlineColor, setCaptionOutlineColor] = useState(DEFAULT_CAPTION_OUTLINE_COLOR);
-  const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(DEFAULT_AI_ENABLED);
   const [aiBaseUrl, setAiBaseUrl] = useState(DEFAULT_AI_BASE_URL);
   const [aiModel, setAiModel] = useState(DEFAULT_AI_MODEL);
   const [aiApiKey, setAiApiKey] = useState("");
@@ -87,6 +88,7 @@ export default function HomePage() {
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [localLlmProviders, setLocalLlmProviders] = useState<LocalLlmProvider[]>([]);
   const [isDiscoveringLlms, setIsDiscoveringLlms] = useState(false);
+  const [hasAutoDiscoveredLlms, setHasAutoDiscoveredLlms] = useState(false);
   const [activeJob, setActiveJob] = useState<ClipJob | null>(null);
   const [job, setJob] = useState<ClipJob | null>(null);
   const [jobs, setJobs] = useState<ClipJob[]>([]);
@@ -220,13 +222,15 @@ export default function HomePage() {
     }
   }, [aiBaseUrl, aiApiKey]);
 
-  const handleDiscoverLocalLlms = useCallback(async () => {
+  const handleDiscoverLocalLlms = useCallback(async (silent = false) => {
     setIsDiscoveringLlms(true);
     try {
       const providers = await discoverLocalLlms();
       setLocalLlmProviders(providers);
       if (!providers.length) {
-        toast.error("Belum menemukan LLM lokal. Pastikan Ollama/LM Studio/Jan sedang berjalan.");
+        if (!silent) {
+          toast.error("Belum menemukan LLM lokal. Pastikan Ollama/LM Studio/Jan sedang berjalan.");
+        }
         return;
       }
 
@@ -236,13 +240,29 @@ export default function HomePage() {
       if (first.models[0]) {
         setAiModel(first.models[0]);
       }
-      toast.success(`${providers.length} provider LLM lokal ditemukan`);
+      if (!silent) {
+        toast.success(`${providers.length} provider LLM lokal ditemukan`);
+      }
     } catch (discoverError) {
-      toast.error(discoverError instanceof Error ? discoverError.message : "Gagal mencari LLM lokal");
+      if (!silent) {
+        toast.error(discoverError instanceof Error ? discoverError.message : "Gagal mencari LLM lokal");
+      }
     } finally {
       setIsDiscoveringLlms(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!aiEnabled || hasAutoDiscoveredLlms || localLlmProviders.length || isDiscoveringLlms) return;
+    setHasAutoDiscoveredLlms(true);
+    handleDiscoverLocalLlms(true).catch(() => undefined);
+  }, [
+    aiEnabled,
+    handleDiscoverLocalLlms,
+    hasAutoDiscoveredLlms,
+    isDiscoveringLlms,
+    localLlmProviders.length,
+  ]);
 
   const handleAiEnabledChange = useCallback(
     (value: boolean) => {
@@ -256,6 +276,7 @@ export default function HomePage() {
 
   const handleSelectLocalProvider = useCallback((provider: LocalLlmProvider) => {
     setAiBaseUrl(provider.base_url);
+    setAiApiKey("");
     setAiModels(provider.models);
     if (provider.models[0]) {
       setAiModel(provider.models[0]);
@@ -269,6 +290,9 @@ export default function HomePage() {
       }
       return value;
     });
+    if (/localhost:(11434|1234|1337|8080)|127\.0\.0\.1:(11434|1234|1337|8080)/.test(value)) {
+      setAiApiKey("");
+    }
   }, []);
 
   const handleSourceModeChange = useCallback((mode: SourceMode) => {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import urllib.request
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -26,6 +27,25 @@ def resolve_base_url(base_url: str) -> str:
     return base_url.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal")
 
 
+def candidate_base_urls(base_url: str) -> list[str]:
+    base = normalize_openai_base_url(base_url).strip().rstrip("/")
+    if not base:
+        return []
+
+    candidates: list[str] = []
+    for item in (
+        resolve_base_url(base),
+        base,
+        base.replace("localhost", "127.0.0.1"),
+        base.replace("127.0.0.1", "localhost"),
+        base.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal"),
+    ):
+        cleaned = item.strip().rstrip("/")
+        if cleaned and cleaned not in candidates:
+            candidates.append(cleaned)
+    return candidates
+
+
 def normalize_openai_base_url(base_url: str) -> str:
     base = base_url.strip().rstrip("/")
     parsed = urlparse(base)
@@ -35,7 +55,6 @@ def normalize_openai_base_url(base_url: str) -> str:
 
 
 def chat_completion(config: AIConfig, messages: list[dict]) -> str:
-    url = resolve_base_url(config.base_url).rstrip("/") + "/chat/completions"
     body = json.dumps(
         {
             "model": config.model,
@@ -45,15 +64,59 @@ def chat_completion(config: AIConfig, messages: list[dict]) -> str:
         }
     ).encode("utf-8")
 
-    request = urllib.request.Request(url, data=body, method="POST")
-    request.add_header("Content-Type", "application/json")
-    request.add_header("Accept", "application/json")
-    if config.api_key:
-        request.add_header("Authorization", f"Bearer {config.api_key}")
+    last_error: Exception | None = None
+    for base_url in candidate_base_urls(config.base_url):
+        url = base_url + "/chat/completions"
+        request = urllib.request.Request(url, data=body, method="POST")
+        request.add_header("Content-Type", "application/json")
+        request.add_header("Accept", "application/json")
+        if config.api_key:
+            request.add_header("Authorization", f"Bearer {config.api_key}")
 
-    with urllib.request.urlopen(request, timeout=config.timeout) as response:
-        raw = response.read().decode("utf-8")
-    return _content_from_response(raw)
+        try:
+            with urllib.request.urlopen(request, timeout=config.timeout) as response:
+                raw = response.read().decode("utf-8")
+            return _content_from_response(raw)
+        except Exception as exc:
+            last_error = exc
+            continue
+    if _is_ollama_base_url(config.base_url):
+        return _ollama_cli_chat_completion(config, messages)
+    if last_error is not None:
+        raise last_error
+    raise ValueError("LLM base_url is not set")
+
+
+def _is_ollama_base_url(base_url: str) -> bool:
+    return ":11434" in base_url
+
+
+def _messages_to_prompt(messages: list[dict]) -> str:
+    parts: list[str] = []
+    for message in messages:
+        role = str(message.get("role") or "user").upper()
+        content = str(message.get("content") or "").strip()
+        if content:
+            parts.append(f"{role}:\n{content}")
+    parts.append("ASSISTANT:\nReturn only the requested strict JSON.")
+    return "\n\n".join(parts)
+
+
+def _ollama_cli_chat_completion(config: AIConfig, messages: list[dict]) -> str:
+    if not config.model:
+        raise ValueError("Ollama model is not set")
+    result = subprocess.run(
+        ["ollama", "run", config.model],
+        input=_messages_to_prompt(messages),
+        capture_output=True,
+        text=True,
+        timeout=config.timeout,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        raise ValueError(f"Ollama CLI failed: {detail or result.returncode}")
+    return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", result.stdout).strip()
 
 
 def _content_from_response(raw: str) -> str:

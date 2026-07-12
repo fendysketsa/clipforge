@@ -1,7 +1,7 @@
 import type { ClipJob, CreateClipJobInput } from "../types/clip.type";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8010";
-const CLIENT_API_BASE = "";
+const CLIENT_API_BASE = API_BASE;
 
 export type LocalLlmProvider = {
   label: string;

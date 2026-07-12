@@ -147,6 +147,10 @@ export function ControlPanel({
   const hasSource = sourceMode === "url" ? Boolean(url.trim()) : Boolean(uploadFileName);
   const isStartDisabled = isSubmitting || isBusy || isUploading || !hasSource;
   const isProcessing = isSubmitting || isBusy;
+  const localNoKeyBaseUrls = new Set<string>(
+    LOCAL_LLM_PRESETS.filter((preset) => preset.label !== "Custom").map((preset) => preset.baseUrl),
+  );
+  const shouldShowApiKey = Boolean(aiApiKey.trim()) || !localNoKeyBaseUrls.has(aiBaseUrl);
 
   return (
     <section className="panel controlPanel">
@@ -493,7 +497,7 @@ export function ControlPanel({
             <button
               type="button"
               className="loadModelsButton discoverModelsButton"
-              onClick={onDiscoverLocalLlms}
+              onClick={() => onDiscoverLocalLlms()}
               disabled={isDiscoveringLlms}
             >
               {isDiscoveringLlms ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}
@@ -514,16 +518,18 @@ export function ControlPanel({
                 ))}
               </div>
             ) : null}
-            <label className="field wide">
-              <span>API Key</span>
-              <input
-                type="password"
-                value={aiApiKey}
-                onChange={(event) => onAiApiKeyChange(event.target.value)}
-                placeholder="sk-..."
-                autoComplete="off"
-              />
-            </label>
+            {shouldShowApiKey ? (
+              <label className="field wide">
+                <span>API Key</span>
+                <input
+                  type="password"
+                  value={aiApiKey}
+                  onChange={(event) => onAiApiKeyChange(event.target.value)}
+                  placeholder="sk-..."
+                  autoComplete="off"
+                />
+              </label>
+            ) : null}
             <label className="field wide">
               <span>Model</span>
               <div className="modelRow">
@@ -544,7 +550,7 @@ export function ControlPanel({
                   <input
                     value={aiModel}
                     onChange={(event) => onAiModelChange(event.target.value)}
-                    placeholder="tr/MiniMax-M3"
+                    placeholder="Muat atau isi model Ollama"
                   />
                 )}
                 <button

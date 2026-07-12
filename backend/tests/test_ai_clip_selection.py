@@ -1,0 +1,69 @@
+import json
+
+import clipper
+from clipper import AIConfig, ClipCandidate, ai_rescore_candidates, select_candidates
+
+
+def make_candidate(index: int, start: float, score: int, text: str) -> ClipCandidate:
+    return ClipCandidate(
+        index=index,
+        start=start,
+        end=start + 60,
+        duration=60,
+        score=score,
+        title=f"Candidate {index}",
+        reason="heuristic",
+        text=text,
+    )
+
+
+def test_ai_ranked_candidate_beats_higher_heuristic_score(monkeypatch):
+    generic = make_candidate(0, 0, 95, "Pembukaan biasa dan konteks umum.")
+    fyp_point = make_candidate(
+        0,
+        90,
+        62,
+        "Ternyata cara ini salah. Masalahnya bukan di tools, tapi di keputusan pertama.",
+    )
+
+    def fake_chat_completion(config, messages):
+        return json.dumps(
+            {
+                "clips": [
+                    {
+                        "id": 1,
+                        "score": 92,
+                        "title": "Kesalahan Pertama",
+                        "reason": "Ada tension dan payoff yang jelas.",
+                        "pov": "Penonton merasa sedang diingatkan sebelum rugi.",
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(clipper, "chat_completion", fake_chat_completion)
+
+    rescored = ai_rescore_candidates(
+        [generic, fyp_point],
+        AIConfig(enabled=True, base_url="http://localhost:20128/v1", model="local-model"),
+        target_count=1,
+    )
+    selected = select_candidates(rescored, 1)
+
+    assert selected[0].title == "Kesalahan Pertama"
+    assert selected[0].score == 100
+    assert selected[0].reason.startswith("AI FYP:")
+    assert generic.score < selected[0].score
+
+
+def test_ai_rescore_keeps_heuristics_when_endpoint_is_missing():
+    candidate = make_candidate(0, 0, 77, "Intinya ini contoh kandidat.")
+
+    rescored = ai_rescore_candidates(
+        [candidate],
+        AIConfig(enabled=True, base_url="", model=""),
+        target_count=1,
+    )
+
+    assert rescored == [candidate]
+    assert candidate.score == 77

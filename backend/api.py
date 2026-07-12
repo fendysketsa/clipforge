@@ -45,6 +45,8 @@ LOCAL_LLM_PRESETS = [
     {"label": "LocalAI", "base_url": "http://localhost:8080/v1"},
     {"label": "OpenAI-compatible", "base_url": "http://localhost:20128/v1"},
 ]
+DEFAULT_AI_BASE_URL = os.environ.get("DEFAULT_AI_BASE_URL", "http://localhost:11434/v1")
+DEFAULT_AI_MODEL = os.environ.get("DEFAULT_AI_MODEL", "")
 NETWORK_ERROR_PATTERNS = (
     "errno 101",
     "network is unreachable",
@@ -90,9 +92,9 @@ class ClipJobRequest(BaseModel):
     caption_outline: float = Field(default=1.5, ge=0, le=8)
     caption_outline_color: str = "#000000"
     required_hashtags: list[str] = Field(default_factory=list)
-    ai_enabled: bool = False
-    ai_base_url: str = ""
-    ai_model: str = ""
+    ai_enabled: bool = True
+    ai_base_url: str = DEFAULT_AI_BASE_URL
+    ai_model: str = DEFAULT_AI_MODEL
     ai_api_key: str = ""
 
     @field_validator("caption_color", "caption_outline_color")
@@ -565,6 +567,17 @@ def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
     if request.analyze_seconds is None:
         data["analyze_seconds"] = choose_auto_analyze_seconds(duration)
 
+    if request.ai_enabled:
+        data["ai_base_url"] = (request.ai_base_url or DEFAULT_AI_BASE_URL).strip()
+        if not request.ai_model.strip():
+            models = load_models_from_base(
+                data["ai_base_url"],
+                api_key=request.ai_api_key,
+                timeout=4,
+            )
+            if models:
+                data["ai_model"] = models[0]
+
     return ClipJobRequest(**data)
 
 
@@ -738,6 +751,25 @@ def resolve_local_base_url(base_url: str) -> str:
     return base
 
 
+def candidate_local_base_urls(base_url: str) -> list[str]:
+    base = base_url.strip().rstrip("/")
+    if not base:
+        return []
+
+    candidates: list[str] = []
+    for item in (
+        resolve_local_base_url(base),
+        base,
+        base.replace("localhost", "127.0.0.1"),
+        base.replace("127.0.0.1", "localhost"),
+        base.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal"),
+    ):
+        cleaned = item.strip().rstrip("/")
+        if cleaned and cleaned not in candidates:
+            candidates.append(cleaned)
+    return candidates
+
+
 def _request_json(url: str, api_key: str = "", timeout: float = 4.0) -> object:
     request = urllib.request.Request(url, method="GET")
     request.add_header("Accept", "application/json")
@@ -773,25 +805,58 @@ def _models_from_payload(payload: object) -> list[str]:
     return []
 
 
-def load_models_from_base(base_url: str, api_key: str = "", timeout: float = 4.0) -> list[str]:
-    base = resolve_local_base_url(base_url).rstrip("/")
-    if not base:
+def _is_ollama_base_url(base_url: str) -> bool:
+    return ":11434" in base_url
+
+
+def _models_from_ollama_cli(timeout: float = 4.0) -> list[str]:
+    try:
+        result = subprocess.run(
+            ["ollama", "list"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except Exception:
+        return []
+    if result.returncode != 0:
         return []
 
-    urls = [base + "/models"]
-    if not base.endswith("/v1"):
-        urls.append(base + "/v1/models")
-        urls.append(base + "/api/tags")
-    elif base.endswith(":11434/v1") or ":11434/" in base:
-        urls.append(base.removesuffix("/v1") + "/api/tags")
+    models: list[str] = []
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line or line.lower().startswith("name "):
+            continue
+        name = line.split()[0]
+        if name and name not in models:
+            models.append(name)
+    return models
+
+
+def load_models_from_base(base_url: str, api_key: str = "", timeout: float = 4.0) -> list[str]:
+    bases = candidate_local_base_urls(base_url)
+    if not bases:
+        return []
+
+    urls: list[str] = []
+    for base in bases:
+        urls.append(base + "/models")
+        if not base.endswith("/v1"):
+            urls.append(base + "/v1/models")
+            urls.append(base + "/api/tags")
+        elif base.endswith(":11434/v1") or ":11434/" in base:
+            urls.append(base.removesuffix("/v1") + "/api/tags")
 
     for url in urls:
         try:
-            models = _models_from_payload(_request_json(url, api_key=api_key, timeout=timeout))
+            models = _models_from_payload(_request_json(url, api_key=api_key, timeout=min(timeout, 4.0)))
         except Exception:
             continue
         if models:
             return models
+    if _is_ollama_base_url(base_url):
+        return _models_from_ollama_cli(timeout=timeout)
     return []
 
 

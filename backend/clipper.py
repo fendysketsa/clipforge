@@ -88,6 +88,19 @@ HOOK_WORDS = {
     "jadi",
     "kalau",
     "misalnya",
+    "fakta",
+    "viral",
+    "aneh",
+    "gila",
+    "wow",
+    "kok",
+    "bongkar",
+    "bukti",
+    "mungkin",
+    "sebenarnya",
+    "bayangin",
+    "percuma",
+    "wajib",
 }
 
 WEAK_STARTS = {
@@ -101,6 +114,36 @@ WEAK_STARTS = {
     "em",
     "eh",
     "ya",
+}
+
+PAYOFF_WORDS = {
+    "hasilnya",
+    "akhirnya",
+    "solusinya",
+    "jawabannya",
+    "buktinya",
+    "makanya",
+    "itulah",
+    "terbukti",
+    "berubah",
+    "berhasil",
+    "gagal",
+}
+
+TENSION_WORDS = {
+    "tapi",
+    "namun",
+    "padahal",
+    "ternyata",
+    "masalah",
+    "risiko",
+    "bahaya",
+    "salah",
+    "jangan",
+    "bukan",
+    "beda",
+    "versus",
+    "vs",
 }
 
 CropMode = Literal["center", "person", "streamer"]
@@ -713,6 +756,8 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
     words = re.findall(r"[\w']+", text.lower())
     first_word = words[0] if words else ""
     hook_hits = sorted(HOOK_WORDS.intersection(words))
+    payoff_hits = sorted(PAYOFF_WORDS.intersection(words))
+    tension_hits = sorted(TENSION_WORDS.intersection(words))
 
     score = 35
     reasons: list[str] = []
@@ -728,6 +773,22 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
         bump = min(24, len(hook_hits) * 6)
         score += bump
         reasons.append("ada keyword hook: " + ", ".join(hook_hits[:4]))
+
+    if tension_hits:
+        score += min(14, len(tension_hits) * 4)
+        reasons.append("ada konflik/tension: " + ", ".join(tension_hits[:3]))
+
+    if payoff_hits:
+        score += min(12, len(payoff_hits) * 4)
+        reasons.append("ada payoff: " + ", ".join(payoff_hits[:3]))
+
+    if "?" in text:
+        score += 7
+        reasons.append("memancing rasa penasaran")
+
+    if re.search(r"\b\d+(?:[.,]\d+)?\b", text):
+        score += 5
+        reasons.append("ada angka konkret")
 
     word_count = len(words)
     density = word_count / max(duration, 1)
@@ -822,22 +883,28 @@ def select_candidates(candidates: list[ClipCandidate], limit: int) -> list[ClipC
 
 AI_RESCORE_POOL_LIMIT = 40
 AI_SYSTEM_PROMPT = (
-    "You are an expert short-form video editor for TikTok, Reels, and YouTube Shorts. "
-    "You are given candidate transcript windows from a longer video. "
-    "Judge each candidate on how powerful it would be as a standalone vertical clip: "
-    "strong hook, emotional or surprising payoff, self-contained meaning, and clear value. "
+    "You are an expert Indonesian short-form video editor for TikTok FYP, Reels, and YouTube Shorts. "
+    "Your job is to choose the strongest POV moments from transcript windows, not to divide the video evenly. "
+    "Prioritize clips with a strong first-3-second hook, open loop, tension or controversy, practical value, "
+    "surprising/emotional payoff, and self-contained meaning. Penalize intros, outros, filler, repeated ideas, "
+    "generic motivation, and clips that need earlier context. "
     "Return ONLY strict JSON, no markdown, no prose."
 )
 
 
-def ai_rescore_candidates(candidates: list[ClipCandidate], config: AIConfig) -> list[ClipCandidate]:
+def ai_rescore_candidates(
+    candidates: list[ClipCandidate],
+    config: AIConfig,
+    target_count: int | None = None,
+) -> list[ClipCandidate]:
     if not config.enabled or not candidates:
         return candidates
     if not config.base_url or not config.model:
         console.print("[yellow]AI agent skipped:[/yellow] base_url/model not set.")
         return candidates
 
-    pool = sorted(candidates, key=lambda item: item.score, reverse=True)[:AI_RESCORE_POOL_LIMIT]
+    pool_limit = max(AI_RESCORE_POOL_LIMIT, min(len(candidates), (target_count or 0) * 12))
+    pool = sorted(candidates, key=lambda item: item.score, reverse=True)[:pool_limit]
     items = [
         {
             "id": idx,
@@ -849,12 +916,22 @@ def ai_rescore_candidates(candidates: list[ClipCandidate], config: AIConfig) -> 
         }
         for idx, candidate in enumerate(pool)
     ]
+    count_instruction = (
+        f"Pick and rank the best {target_count} candidates for export."
+        if target_count
+        else "Pick and rank only the candidates that deserve to become clips."
+    )
     user_prompt = (
-        "Score each candidate from 0-100 on standalone clip potential.\n"
+        f"{count_instruction}\n"
+        "This is for Indonesian short-form FYP. Choose POV moments people would stop scrolling for, "
+        "not merely complete transcript chunks.\n"
+        "For each chosen candidate, score 0-100 on viral standalone clip potential.\n"
+        "Return clips sorted from strongest to weakest. Use fewer clips if the rest are weak.\n"
         "Respond with JSON shaped exactly like:\n"
         '{"clips": [{"id": <int>, "score": <int 0-100>, '
         '"title": "<catchy hook title, max 8 words>", '
-        '"reason": "<short why this clip works>"}]}\n\n'
+        '"reason": "<short why this has FYP potential>", '
+        '"pov": "<short POV angle for viewers>"}]}\n\n'
         "Candidates:\n" + json.dumps(items, ensure_ascii=False)
     )
 
@@ -877,26 +954,62 @@ def ai_rescore_candidates(candidates: list[ClipCandidate], config: AIConfig) -> 
         console.print("[yellow]AI agent returned no usable clips; keeping heuristic scores.[/yellow]")
         return candidates
 
-    applied = 0
+    ranked_entries: list[tuple[int, dict]] = []
+    seen_ids: set[int] = set()
     for entry in scored:
         if not isinstance(entry, dict):
             continue
         cid = entry.get("id")
         if not isinstance(cid, int) or cid < 0 or cid >= len(pool):
             continue
+        if cid in seen_ids:
+            continue
+        seen_ids.add(cid)
+        ranked_entries.append((cid, entry))
+
+    if not ranked_entries:
+        console.print("[yellow]AI agent returned no valid candidate ids; keeping heuristic scores.[/yellow]")
+        return candidates
+
+    selected_candidate_ids = {id(pool[cid]) for cid, _ in ranked_entries}
+    original_scores = {id(candidate): candidate.score for candidate in pool}
+    for candidate in pool:
+        if id(candidate) not in selected_candidate_ids:
+            # Keep unchosen LLM-pool candidates available as fallback, but push
+            # them below explicit AI picks so final export follows the AI ranking.
+            candidate.score = max(1, min(70, int(round(candidate.score * 0.75))))
+
+    applied = 0
+    max_rank_score = 100
+    for rank, (cid, entry) in enumerate(ranked_entries):
         candidate = pool[cid]
         ai_score = entry.get("score")
         if isinstance(ai_score, (int, float)):
-            candidate.score = max(1, min(100, int(round(ai_score))))
+            normalized_ai_score = max(1, min(100, int(round(ai_score))))
+            rank_score = max_rank_score - rank
+            candidate.score = max(1, min(100, max(normalized_ai_score, rank_score)))
+        else:
+            candidate.score = max(1, max_rank_score - rank)
         title = entry.get("title")
         if isinstance(title, str) and title.strip():
             candidate.title = title.strip()[:80]
         reason = entry.get("reason")
+        pov = entry.get("pov")
+        reason_parts: list[str] = []
         if isinstance(reason, str) and reason.strip():
-            candidate.reason = "AI: " + reason.strip()[:160]
+            reason_parts.append(reason.strip())
+        if isinstance(pov, str) and pov.strip():
+            reason_parts.append("POV: " + pov.strip())
+        if reason_parts:
+            candidate.reason = "AI FYP: " + " | ".join(reason_parts)[:180]
         applied += 1
 
-    console.print(f"[green]AI agent rescored[/green] {applied} candidates.")
+    if applied:
+        console.print(f"[green]AI agent selected[/green] {applied} FYP-focused candidates.")
+    else:
+        for candidate in pool:
+            candidate.score = original_scores[id(candidate)]
+        console.print("[yellow]AI agent returned no usable clips; keeping heuristic scores.[/yellow]")
     return candidates
 
 
@@ -1526,7 +1639,7 @@ def main() -> int:
         model=args.ai_model,
         api_key=args.ai_api_key,
     )
-    pool = ai_rescore_candidates(pool, ai_config)
+    pool = ai_rescore_candidates(pool, ai_config, target_count=args.top)
     candidates = select_candidates(pool, args.top)
     if not candidates:
         console.print("[red]No clip candidates found. Try lowering --min or increasing --max.[/red]")
