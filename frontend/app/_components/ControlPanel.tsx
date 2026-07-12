@@ -569,7 +569,7 @@ export function ControlPanel({
               <input
                 value={requiredHashtags}
                 onChange={(event) => onRequiredHashtagsChange(event.target.value)}
-                placeholder="clipforge, viral, fyp"
+                placeholder="fendyclipper, viral, fyp"
               />
               <p className="field-help">
                 Hashtag ini selalu ditambahkan ke caption yang digenerate. Pisahkan dengan koma.

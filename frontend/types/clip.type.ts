@@ -38,12 +38,16 @@ export type ClipJob = {
   status: JobStatus;
   created_at: string;
   updated_at: string;
+  source_title?: string | null;
+  source_url?: string | null;
+  source_uploader?: string | null;
   logs: string[];
   clips: ClipFile[];
   candidates: ClipCandidate[];
   error: string | null;
   request: {
     url: string;
+    source_file: string;
     top: number | null;
     min_duration: number;
     max_duration: number;

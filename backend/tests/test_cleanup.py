@@ -144,6 +144,43 @@ def test_enrich_clip_title_from_candidate_index_when_sidecar_missing(monkeypatch
     assert enriched[0].title == "Saya Tidak Condong Tidak Setuju Kepada Buya Arrazi"
 
 
+def test_enrich_job_source_metadata_from_output_metadata(monkeypatch):
+    import api
+
+    outputs = Path(tempfile.mkdtemp())
+    clip_dir = outputs / "video-title" / "clips"
+    clip_dir.mkdir(parents=True)
+    clip_path = clip_dir / "clip_01.mp4"
+    clip_path.write_bytes(b"x")
+    (outputs / "video-title" / "metadata.json").write_text(
+        '{"title": "Judul Video Asli", "webpage_url": "https://youtu.be/demo", "uploader": "Channel Demo"}',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+
+    job = ClipJob(
+        id="job-1",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/fallback"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[
+            ClipFile(
+                name="clip_01.mp4",
+                url="/outputs/video-title/clips/clip_01.mp4",
+                size_bytes=1,
+            )
+        ],
+    )
+
+    enriched = api.enrich_job_source_metadata(job)
+
+    assert enriched.source_title == "Judul Video Asli"
+    assert enriched.source_url == "https://youtu.be/demo"
+    assert enriched.source_uploader == "Channel Demo"
+
+
 def test_cleanup_job_files_removes_related_output_folder(monkeypatch):
     import api
 

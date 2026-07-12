@@ -95,6 +95,7 @@ export default function HomePage() {
   const [selectedHistoryJobIds, setSelectedHistoryJobIds] = useState<string[]>([]);
   const [selectedClipUrls, setSelectedClipUrls] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRefreshingData, setIsRefreshingData] = useState(false);
   const [error, setError] = useState("");
 
   const activeJobId = activeJob?.id;
@@ -135,6 +136,26 @@ export default function HomePage() {
   const loadJobs = useCallback(async () => {
     setJobs(await getJobs());
   }, []);
+
+  const handleSyncData = useCallback(async () => {
+    if (isRefreshingData) return;
+    setIsRefreshingData(true);
+    try {
+      await loadJobs();
+      if (activeJobId) {
+        const nextJob = await getJob(activeJobId).catch(() => null);
+        if (nextJob) {
+          setActiveJob(nextJob);
+          setJob((current) => (current?.id === nextJob.id || current === null ? nextJob : current));
+        }
+      }
+      toast.success("Data job, riwayat, dan klip sudah disinkronkan");
+    } catch (syncError) {
+      toast.error(syncError instanceof Error ? syncError.message : "Gagal sinkronisasi data");
+    } finally {
+      setIsRefreshingData(false);
+    }
+  }, [activeJobId, isRefreshingData, loadJobs]);
 
   useEffect(() => {
     loadJobs().catch(() => undefined);
@@ -672,7 +693,7 @@ export default function HomePage() {
 
   return (
     <main className="shell">
-      <Topbar onRefresh={loadJobs} />
+      <Topbar isRefreshing={isRefreshingData} onRefresh={handleSyncData} />
 
       <section className="workspace">
         <ControlPanel

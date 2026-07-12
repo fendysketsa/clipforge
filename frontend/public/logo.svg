@@ -1,18 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
-  <title id="title">ClipForge logo</title>
-  <desc id="desc">A blue rounded square with a forged play mark and clipping sparks.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 96" role="img" aria-labelledby="title desc">
+  <title id="title">Fendy Clipper logo</title>
+  <desc id="desc">A dark green wordmark reading FENDY CLIPPER with an FC monogram.</desc>
   <defs>
-    <linearGradient id="bg" x1="14" y1="8" x2="50" y2="58" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#60A5FA"/>
-      <stop offset="1" stop-color="#2563EB"/>
+    <linearGradient id="mark" x1="16" y1="10" x2="82" y2="86" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6EE7B7"/>
+      <stop offset="1" stop-color="#047857"/>
     </linearGradient>
-    <linearGradient id="spark" x1="44" y1="12" x2="56" y2="28" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#A7F3D0"/>
-      <stop offset="1" stop-color="#22C55E"/>
+    <linearGradient id="panel" x1="0" y1="0" x2="360" y2="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B2A20"/>
+      <stop offset="1" stop-color="#03130E"/>
     </linearGradient>
   </defs>
-  <rect x="6" y="6" width="52" height="52" rx="14" fill="url(#bg)"/>
-  <path d="M24 20.5v23c0 2.4 2.7 3.8 4.7 2.5l17.2-11.5c1.8-1.2 1.8-3.8 0-5L28.7 18c-2-1.3-4.7.1-4.7 2.5Z" fill="#FFFFFF"/>
-  <path d="M18 17.5h8.5M18 46.5h8.5" stroke="#DBEAFE" stroke-width="4" stroke-linecap="round"/>
-  <path d="M47.5 11.5l1.9 5.1 5.1 1.9-5.1 1.9-1.9 5.1-1.9-5.1-5.1-1.9 5.1-1.9 1.9-5.1Z" fill="url(#spark)"/>
+  <rect width="360" height="96" rx="18" fill="url(#panel)"/>
+  <rect x="18" y="18" width="60" height="60" rx="14" fill="url(#mark)"/>
+  <path d="M34 62V34h25v8H44v5h13v8H44v7H34Zm28 0h-9V34h9v10h8v8h-8v10Z" fill="#03130E"/>
+  <text x="96" y="45" fill="#6EE7B7" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" letter-spacing="1">FENDY</text>
+  <text x="96" y="70" fill="#ECFDF5" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" letter-spacing="1">CLIPPER</text>
 </svg>

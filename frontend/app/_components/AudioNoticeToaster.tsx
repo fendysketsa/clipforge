@@ -9,11 +9,44 @@ const toastOptions = {
   style: {
     border: "1px solid var(--border)",
     borderRadius: "12px",
+    background: "rgba(4, 18, 14, 0.96)",
     boxShadow: "var(--shadow-md)",
-    color: "var(--text-primary)",
+    color: "#ECFDF5",
     fontSize: "14px",
-    fontWeight: 500,
-    padding: "12px 14px",
+    fontWeight: 700,
+    lineHeight: 1.45,
+    maxWidth: "min(520px, calc(100vw - 32px))",
+    padding: "13px 15px",
+  },
+  success: {
+    iconTheme: {
+      primary: "#4ADE80",
+      secondary: "#03130E",
+    },
+    style: {
+      borderColor: "rgba(74, 222, 128, 0.38)",
+      color: "#ECFDF5",
+    },
+  },
+  error: {
+    iconTheme: {
+      primary: "#FB7185",
+      secondary: "#03130E",
+    },
+    style: {
+      borderColor: "rgba(251, 113, 133, 0.42)",
+      color: "#FFE4E6",
+    },
+  },
+  loading: {
+    iconTheme: {
+      primary: "#5EEAD4",
+      secondary: "#03130E",
+    },
+    style: {
+      borderColor: "rgba(94, 234, 212, 0.35)",
+      color: "#CCFBF1",
+    },
   },
 };
 

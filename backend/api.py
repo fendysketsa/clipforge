@@ -134,6 +134,9 @@ class ClipJob(BaseModel):
     request: ClipJobRequest
     created_at: str
     updated_at: str
+    source_title: str | None = None
+    source_url: str | None = None
+    source_uploader: str | None = None
     logs: list[str] = []
     clips: list[ClipFile] = []
     candidates: list[ClipCandidate] = []
@@ -155,7 +158,7 @@ class ClipDeleteResponse(BaseModel):
     removed_clips: int = 0
 
 
-app = FastAPI(title="ClipForge API", version="0.1.0")
+app = FastAPI(title="Fendy Clipper API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -200,13 +203,14 @@ def load_jobs() -> dict[str, ClipJob]:
     loaded: dict[str, ClipJob] = {}
     for item in payload:
         job = ClipJob(**item)
-        job = enrich_job_clip_titles(job)
+        job = enrich_job_for_display(job)
         if job.status in {"queued", "running"}:
             data = job.model_dump()
             data["status"] = "failed"
             data["updated_at"] = now_iso()
             data["error"] = "Backend restarted before this job finished"
             job = ClipJob(**data)
+            job = enrich_job_for_display(job)
         loaded[job.id] = job
     return loaded
 
@@ -345,6 +349,58 @@ def enrich_job_clip_titles(job: "ClipJob") -> "ClipJob":
     if clips == job.clips:
         return job
     return job.model_copy(update={"clips": clips})
+
+
+def output_work_dirs_for_job(job: "ClipJob") -> list[Path]:
+    dirs: list[Path] = []
+    for clip in job.clips:
+        work_dir = clip_output_work_dir(clip)
+        if work_dir is not None and work_dir not in dirs:
+            dirs.append(work_dir)
+    return dirs
+
+
+def metadata_for_job(job: "ClipJob") -> dict:
+    for work_dir in output_work_dirs_for_job(job):
+        metadata_path = work_dir / "metadata.json"
+        if not metadata_path.is_file():
+            continue
+        try:
+            payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return {}
+
+
+def enrich_job_source_metadata(job: "ClipJob") -> "ClipJob":
+    metadata = metadata_for_job(job)
+    title = metadata.get("title")
+    url = metadata.get("webpage_url")
+    uploader = metadata.get("uploader")
+
+    source_title = title.strip() if isinstance(title, str) and title.strip() else job.source_title
+    source_url = url.strip() if isinstance(url, str) and url.strip() else job.source_url
+    source_uploader = uploader.strip() if isinstance(uploader, str) and uploader.strip() else job.source_uploader
+
+    if not source_url:
+        source_url = job.request.url.strip() or None
+    if not source_title and job.request.source_file:
+        source_title = Path(job.request.source_file).stem
+
+    updates = {
+        "source_title": source_title,
+        "source_url": source_url,
+        "source_uploader": source_uploader,
+    }
+    if all(getattr(job, key) == value for key, value in updates.items()):
+        return job
+    return job.model_copy(update=updates)
+
+
+def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
+    return enrich_job_source_metadata(enrich_job_clip_titles(job))
 
 
 def clip_output_work_dir(clip: ClipFile) -> Path | None:
@@ -764,6 +820,22 @@ def run_job(job_id: str) -> None:
                 updates["clips"] = clips
             if candidates:
                 updates["candidates"] = candidates
+            preview_job = ClipJob(
+                id=job_id,
+                status="completed",
+                request=request,
+                created_at=now_iso(),
+                updated_at=now_iso(),
+                clips=clips,
+                candidates=candidates,
+            )
+            preview_job = enrich_job_source_metadata(preview_job)
+            if preview_job.source_title:
+                updates["source_title"] = preview_job.source_title
+            if preview_job.source_url:
+                updates["source_url"] = preview_job.source_url
+            if preview_job.source_uploader:
+                updates["source_uploader"] = preview_job.source_uploader
             set_job(job_id, **updates)
         else:
             friendly_error = user_error_from_logs(logs)

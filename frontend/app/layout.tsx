@@ -3,7 +3,7 @@ import { AudioNoticeToaster } from "./_components/AudioNoticeToaster";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ClipForge",
+  title: "Fendy Clipper",
   description: "Turn long videos into ready-to-post clips",
   icons: {
     icon: "/favicon.svg",
