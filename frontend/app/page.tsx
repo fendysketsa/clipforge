@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
   cancelJob,
@@ -97,6 +97,7 @@ export default function HomePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRefreshingData, setIsRefreshingData] = useState(false);
   const [error, setError] = useState("");
+  const browserStartedJobId = useRef<string | null>(null);
 
   const activeJobId = activeJob?.id;
   const isBusy = isActiveJob(activeJob);
@@ -190,6 +191,9 @@ export default function HomePage() {
       setActiveJob(nextJob);
 
       if (nextJob.status === "completed" || nextJob.status === "failed" || nextJob.status === "cancelled") {
+        if (browserStartedJobId.current === nextJob.id) {
+          browserStartedJobId.current = null;
+        }
         setJob((current) => (current?.id === nextJob.id || current === null ? nextJob : current));
         loadJobs().catch(() => undefined);
       }
@@ -199,7 +203,7 @@ export default function HomePage() {
   }, [activeJobId, isBusy, loadJobs]);
 
   useEffect(() => {
-    if (!activeJobId || !isBusy) return;
+    if (!activeJobId || !isBusy || browserStartedJobId.current !== activeJobId) return;
 
     const message = "Proses clip masih berjalan. Jika halaman ditutup atau direload, proses akan dibatalkan dan output sementara akan dihapus.";
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -418,6 +422,7 @@ export default function HomePage() {
 
       setActiveJob(nextJob);
       setJob(nextJob);
+      browserStartedJobId.current = nextJob.id;
       await loadJobs();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Gagal memulai proses.");
@@ -459,6 +464,7 @@ export default function HomePage() {
 
     setActiveJob(null);
     setJob(null);
+    browserStartedJobId.current = null;
     setSelectedHistoryJobIds([]);
     await loadJobs();
   }, [loadJobs]);
@@ -688,6 +694,7 @@ export default function HomePage() {
       setActiveJob(nextJob);
       setJob((current) => (current?.id === nextJob.id || current === null ? nextJob : current));
     }
+    browserStartedJobId.current = null;
     await loadJobs();
   }, [activeJobId, isBusy, loadJobs]);
 

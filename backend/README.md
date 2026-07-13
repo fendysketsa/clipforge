@@ -40,6 +40,20 @@ DELETE /api/jobs
 GET  /outputs/<generated-file>
 ```
 
+## Telegram Bot
+
+Run the bot after the API is available:
+
+```powershell
+$env:TELEGRAM_BOT_TOKEN="<token>"
+$env:TELEGRAM_OWNER_ID="<numeric-user-id>"
+$env:BACKEND_API_BASE="http://127.0.0.1:8010"
+.\.venv\Scripts\python.exe telegram_bot.py
+```
+
+The Docker Compose setup starts this process automatically. Access is checked
+against `TELEGRAM_OWNER_ID` for every message and button callback.
+
 Common CLI options:
 
 ```powershell

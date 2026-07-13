@@ -1,4 +1,5 @@
 from api import (
+    ClipJob,
     ClipJobRequest,
     MAX_AUTO_ANALYSIS_SECONDS,
     MAX_REQUESTED_CLIPS,
@@ -95,3 +96,24 @@ def test_user_error_from_logs_detects_network_error():
     logs = ["ERROR: [download] Got error: [Errno 101] Network is unreachable"]
 
     assert "Upload Video" in (user_error_from_logs(logs) or "")
+
+
+def test_create_job_rejects_when_another_job_is_active(monkeypatch):
+    import api
+    import pytest
+    from fastapi import HTTPException
+
+    active = ClipJob(
+        id="active-job",
+        status="running",
+        request=ClipJobRequest(url="https://youtu.be/active"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    monkeypatch.setattr(api, "jobs", {active.id: active})
+
+    with pytest.raises(HTTPException) as error:
+        api.create_job(ClipJobRequest(url="https://youtu.be/new"))
+
+    assert error.value.status_code == 409
+    assert "aktif" in str(error.value.detail)

@@ -31,3 +31,23 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
+
+  telegram-bot:
+    build:
+      context: ./backend
+    container_name: clipforge-telegram-bot
+    command: ["python", "telegram_bot.py"]
+    network_mode: host
+    volumes:
+      - ./backend/outputs:/app/outputs:ro
+      - ./backend/data:/app/data
+    environment:
+      BACKEND_API_BASE: http://127.0.0.1:8010
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_OWNER_ID: ${TELEGRAM_OWNER_ID:-}
+      TELEGRAM_PUBLIC_BASE_URL: ${TELEGRAM_PUBLIC_BASE_URL:-}
+      TELEGRAM_MAX_UPLOAD_MB: ${TELEGRAM_MAX_UPLOAD_MB:-49}
+    depends_on:
+      - backend
+    init: true
+    restart: unless-stopped

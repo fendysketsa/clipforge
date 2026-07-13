@@ -15,6 +15,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Burn subtitles into clips by default.
 - Crop center or shift crop toward detected faces/people.
 - Manage jobs and generated clips from a Next.js UI.
+- Start jobs and receive complete results from a private Telegram bot.
 - Run locally with Python/Node or with Docker Compose.
 
 ## Requirements
@@ -35,12 +36,15 @@ Copy the Docker env example:
 Copy-Item .env.docker.example .env
 ```
 
-For local Docker usage, defaults are enough:
+For web-only local usage, the first three values are enough. Fill the Telegram
+values to enable the private bot:
 
 ```env
 FRONTEND_PORT=3000
 BACKEND_PORT=8010
 NEXT_PUBLIC_API_BASE=http://localhost:8010
+TELEGRAM_BOT_TOKEN=123456789:replace-with-botfather-token
+TELEGRAM_OWNER_ID=123456789
 ```
 
 Build and run:
@@ -56,12 +60,43 @@ frontend: http://localhost:3000
 backend:  http://localhost:8010
 ```
 
+The Telegram bot starts with the same Compose command. Open the bot, send
+`/start`, then send a YouTube URL. Only the numeric ID configured in
+`TELEGRAM_OWNER_ID` can use it.
+
 Persistent local data:
 
 ```text
 backend/outputs -> /app/outputs
-backend/jobs.json -> /app/jobs.json
+backend/data -> /app/data
 ```
+
+## Telegram Bot
+
+The private bot provides clickable menus for clipping settings, live status,
+cancellation, history, and resending completed jobs. A YouTube link is confirmed
+before processing. When a job completes, the bot sends every clip followed by
+its thumbnail, full title, social caption, and thumbnail prompt.
+
+Required configuration:
+
+```env
+TELEGRAM_BOT_TOKEN=<token from BotFather>
+TELEGRAM_OWNER_ID=<your numeric Telegram user ID>
+```
+
+Optional configuration:
+
+```env
+# Public backend URL used as a download fallback for files over Telegram's limit.
+TELEGRAM_PUBLIC_BASE_URL=https://api.example.com
+TELEGRAM_MAX_UPLOAD_MB=49
+```
+
+Bot state is persisted in `backend/data/telegram_bot_state.json`, so completed
+jobs can continue being monitored after a bot container restart. Telegram's
+hosted Bot API accepts uploads up to 50 MB; oversized clips remain available in
+the web dashboard or through `TELEGRAM_PUBLIC_BASE_URL` when configured.
 
 ## Local Development
 
@@ -138,13 +173,14 @@ Do not expose the backend publicly without authentication, rate limits, request 
 backend/
   api.py                 FastAPI job API
   clipper.py             download/transcribe/score/export pipeline
+  telegram_bot.py        owner-only Telegram bot and result delivery
   models/                optional crop detection model
   outputs/               generated local files, ignored by git
 frontend/
   app/                   Next.js app router UI
   lib/apiClient.ts       API client helpers
   types/clip.type.ts     shared frontend types
-docker-compose.yml       local two-service stack
+docker-compose.yml       local app and Telegram bot stack
 ```
 
 ## License

@@ -1106,6 +1106,13 @@ def create_job(request: ClipJobRequest) -> ClipJob:
     if not request.url and not request.source_file:
         raise HTTPException(status_code=400, detail="Provide a YouTube URL or upload a video first")
 
+    with jobs_lock:
+        if any(job.status in {"queued", "running"} for job in jobs.values()):
+            raise HTTPException(
+                status_code=409,
+                detail="Masih ada proses clipping aktif. Tunggu selesai atau batalkan terlebih dahulu.",
+            )
+
     if request.source_file:
         upload_path = resolve_upload_path(request.source_file)
         if upload_path is None:
@@ -1129,6 +1136,12 @@ def create_job(request: ClipJobRequest) -> ClipJob:
         updated_at=now_iso(),
     )
     with jobs_lock:
+        if any(item.status in {"queued", "running"} for item in jobs.values()):
+            job_secrets.pop(job_id, None)
+            raise HTTPException(
+                status_code=409,
+                detail="Proses clipping lain baru saja dimulai. Coba lagi setelah proses tersebut selesai.",
+            )
         jobs[job_id] = job
         save_jobs_unlocked()
 
