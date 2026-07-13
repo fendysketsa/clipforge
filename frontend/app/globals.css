@@ -424,6 +424,9 @@ h2 {
 }
 
 .jobMeta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;

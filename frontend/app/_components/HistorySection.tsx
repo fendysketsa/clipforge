@@ -1,5 +1,6 @@
-import { CalendarClock, ExternalLink, Film, Link2, Trash2 } from "lucide-react";
+import { CalendarClock, Clock3, ExternalLink, Film, Link2, Trash2 } from "lucide-react";
 import { statusCopy, statusIcon } from "../../lib/constants";
+import { formatDuration, jobElapsedSeconds } from "../../lib/utils";
 import type { ClipJob } from "../../types/clip.type";
 
 type HistorySectionProps = {
@@ -81,6 +82,7 @@ export function HistorySection({
           const canSelectForDelete = item.status !== "queued" && item.status !== "running";
           const isSelected = selectedJobIds.includes(item.id);
           const url = sourceUrl(item);
+          const elapsedSeconds = jobElapsedSeconds(item);
 
           return (
             <div className={`jobRow ${isSelected ? "selected" : ""}`} key={item.id}>
@@ -115,6 +117,12 @@ export function HistorySection({
                     {formatDate(item.created_at)}
                   </span>
                   {item.source_uploader ? <span>{item.source_uploader}</span> : null}
+                  {elapsedSeconds !== null ? (
+                    <span>
+                      <Clock3 size={13} />
+                      {formatDuration(elapsedSeconds)}
+                    </span>
+                  ) : null}
                   <span>{item.request.crop_mode}</span>
                   <span>{item.request.video_quality}</span>
                   {item.request.ai_enabled ? <span>AI: {item.request.ai_model || "local"}</span> : <span>AI off</span>}

@@ -134,6 +134,9 @@ class ClipJob(BaseModel):
     request: ClipJobRequest
     created_at: str
     updated_at: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    duration_seconds: float | None = None
     source_title: str | None = None
     source_url: str | None = None
     source_uploader: str | None = None
@@ -188,6 +191,21 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def elapsed_seconds(started_at: float) -> float:
+    return round(max(0.0, time.perf_counter() - started_at), 2)
+
+
+def duration_between_iso(started_at: str | None, finished_at: str) -> float:
+    if not started_at:
+        return 0.0
+    try:
+        started = datetime.fromisoformat(started_at)
+        finished = datetime.fromisoformat(finished_at)
+    except ValueError:
+        return 0.0
+    return round(max(0.0, (finished - started).total_seconds()), 2)
+
+
 def load_jobs() -> dict[str, ClipJob]:
     if not JOBS_PATH.exists() or JOBS_PATH.is_dir():
         return {}
@@ -205,9 +223,12 @@ def load_jobs() -> dict[str, ClipJob]:
         job = ClipJob(**item)
         job = enrich_job_for_display(job)
         if job.status in {"queued", "running"}:
+            finished_at = now_iso()
             data = job.model_dump()
             data["status"] = "failed"
-            data["updated_at"] = now_iso()
+            data["updated_at"] = finished_at
+            data["finished_at"] = finished_at
+            data["duration_seconds"] = duration_between_iso(job.started_at, finished_at)
             data["error"] = "Backend restarted before this job finished"
             job = ClipJob(**data)
             job = enrich_job_for_display(job)
@@ -547,6 +568,13 @@ def set_job(job_id: str, **updates) -> None:
         save_jobs_unlocked()
 
 
+def finish_job_updates(started_perf: float) -> dict[str, str | float]:
+    return {
+        "finished_at": now_iso(),
+        "duration_seconds": elapsed_seconds(started_perf),
+    }
+
+
 def clamp(value: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, value))
 
@@ -760,10 +788,14 @@ def run_job(job_id: str) -> None:
         request = request.model_copy(update={"ai_api_key": secret})
 
     started_at = time.time()
+    started_perf = time.perf_counter()
+    started_at_iso = now_iso()
     if job_id in cancelled_job_ids:
         set_job(
             job_id,
             status="cancelled",
+            started_at=started_at_iso,
+            **finish_job_updates(started_perf),
             clips=[],
             candidates=[],
             error="Proses dibatalkan sebelum worker berjalan.",
@@ -772,7 +804,14 @@ def run_job(job_id: str) -> None:
         job_secrets.pop(job_id, None)
         return
 
-    set_job(job_id, status="running", error=None)
+    set_job(
+        job_id,
+        status="running",
+        started_at=started_at_iso,
+        finished_at=None,
+        duration_seconds=None,
+        error=None,
+    )
     command = build_clipper_command(request)
 
     process = subprocess.Popen(
@@ -803,6 +842,7 @@ def run_job(job_id: str) -> None:
             set_job(
                 job_id,
                 status="cancelled",
+                **finish_job_updates(started_perf),
                 clips=[],
                 candidates=[],
                 logs=logs[-120:],
@@ -815,7 +855,7 @@ def run_job(job_id: str) -> None:
         if clips and candidates:
             clips = enrich_clips_with_candidate_titles(clips, candidates)
         if code == 0:
-            updates = {"status": "completed", "logs": logs[-120:]}
+            updates = {"status": "completed", "logs": logs[-120:], **finish_job_updates(started_perf)}
             if clips:
                 updates["clips"] = clips
             if candidates:
@@ -842,6 +882,7 @@ def run_job(job_id: str) -> None:
             set_job(
                 job_id,
                 status="failed",
+                **finish_job_updates(started_perf),
                 clips=clips,
                 candidates=candidates,
                 logs=logs[-120:],
@@ -1284,9 +1325,13 @@ def cancel_job(job_id: str) -> dict[str, str | bool]:
 
     stopped = cancel_process(job_id)
     if not stopped:
+        finished_at = now_iso()
         set_job(
             job_id,
             status="cancelled",
+            started_at=job.started_at or finished_at,
+            finished_at=finished_at,
+            duration_seconds=duration_between_iso(job.started_at, finished_at),
             clips=[],
             candidates=[],
             error="Proses dibatalkan sebelum worker berjalan.",

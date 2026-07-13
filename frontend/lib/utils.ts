@@ -5,6 +5,39 @@ export function isActiveJob(job: ClipJob | null) {
   return job?.status === "queued" || job?.status === "running";
 }
 
+export function formatDuration(totalSeconds: number | null | undefined) {
+  if (totalSeconds === null || totalSeconds === undefined || !Number.isFinite(totalSeconds)) {
+    return "-";
+  }
+
+  const roundedSeconds = Math.max(0, Math.round(totalSeconds));
+  const hours = Math.floor(roundedSeconds / 3600);
+  const minutes = Math.floor((roundedSeconds % 3600) / 60);
+  const seconds = roundedSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}j ${minutes}m ${seconds}d`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}d`;
+  }
+
+  return `${seconds}d`;
+}
+
+export function jobElapsedSeconds(job: ClipJob | null, now = Date.now()) {
+  if (!job) return null;
+  if (job.duration_seconds !== null && job.duration_seconds !== undefined) {
+    return job.duration_seconds;
+  }
+  if (!isActiveJob(job) || !job.started_at) return null;
+
+  const startedAt = new Date(job.started_at).getTime();
+  if (!Number.isFinite(startedAt)) return null;
+  return Math.max(0, (now - startedAt) / 1000);
+}
+
 export function clipTitle(name: string) {
   return name.replace(/\.mp4$/i, "").replace(/^clip_\d+_/, "").replace(/-/g, " ");
 }
