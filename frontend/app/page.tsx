@@ -16,11 +16,13 @@ import {
   deleteJobs,
   discoverLocalLlms,
   fetchModels,
+  getAutoViralCampaign,
   getJob,
   getJobs,
   getYouTubeConfig,
   getYouTubeUploads,
   probeUrlDuration,
+  startAutoViralCampaign,
   updateJobClipStatus,
   uploadVideo,
   type ClipDeleteResult,
@@ -47,6 +49,7 @@ import {
 } from "../lib/constants";
 import { isActiveJob } from "../lib/utils";
 import type {
+  AutoViralRun,
   CamCorner,
   CaptionFont,
   CaptionPosition,
@@ -64,6 +67,9 @@ import { HistorySection } from "./_components/HistorySection";
 import { ResultsSection } from "./_components/ResultsSection";
 import { StatusPanel } from "./_components/StatusPanel";
 import { Topbar } from "./_components/Topbar";
+
+const isProcessJob = (item: ClipJob | null) =>
+  item?.status === "queued" || item?.status === "running" || item?.status === "failed" || item?.status === "cancelled";
 
 export default function HomePage() {
   const [url, setUrl] = useState("");
@@ -103,6 +109,7 @@ export default function HomePage() {
   const [jobs, setJobs] = useState<ClipJob[]>([]);
   const [youtubeConfig, setYoutubeConfig] = useState<YouTubeConfig | null>(null);
   const [youtubeUploads, setYoutubeUploads] = useState<YouTubeUploadJob[]>([]);
+  const [autoViralRun, setAutoViralRun] = useState<AutoViralRun | null>(null);
   const [isYouTubeLoginActive, setIsYouTubeLoginActive] = useState(false);
   const [selectedHistoryJobIds, setSelectedHistoryJobIds] = useState<string[]>([]);
   const [selectedClipUrls, setSelectedClipUrls] = useState<string[]>([]);
@@ -110,10 +117,12 @@ export default function HomePage() {
   const [isRefreshingData, setIsRefreshingData] = useState(false);
   const [error, setError] = useState("");
   const browserStartedJobId = useRef<string | null>(null);
+  const notifiedAutoViralRunId = useRef<string | null>(null);
 
   const activeJobId = activeJob?.id;
   const isBusy = isActiveJob(activeJob);
   const activityJob = isBusy ? activeJob : job;
+  const isAutoViralRunning = autoViralRun?.status === "queued" || autoViralRun?.status === "running";
   const latestLogs = useMemo(() => activityJob?.logs.slice(-RECENT_LOG_LIMIT) ?? [], [activityJob]);
   const hasActiveYouTubeUpload = youtubeUploads.some((upload) => upload.status === "queued" || upload.status === "running");
 
@@ -189,6 +198,26 @@ export default function HomePage() {
     }, JOB_POLL_INTERVAL_MS);
     return () => window.clearInterval(interval);
   }, [hasActiveYouTubeUpload, loadYouTubeUploads]);
+
+  useEffect(() => {
+    if (!autoViralRun || (autoViralRun.status !== "queued" && autoViralRun.status !== "running")) return;
+    const interval = window.setInterval(async () => {
+      const nextRun = await getAutoViralCampaign(autoViralRun.id).catch(() => null);
+      if (!nextRun) return;
+      setAutoViralRun(nextRun);
+      if ((nextRun.status === "completed" || nextRun.status === "failed") && notifiedAutoViralRunId.current !== nextRun.id) {
+        notifiedAutoViralRunId.current = nextRun.id;
+        if (nextRun.status === "completed") {
+          toast.success("Auto Viral CC selesai. Alert Telegram sudah dikirim bila token tersedia.");
+        } else {
+          toast.error(nextRun.message || "Auto Viral CC gagal", { duration: 9000 });
+        }
+        loadJobs().catch(() => undefined);
+        loadYouTubeUploads().catch(() => undefined);
+      }
+    }, JOB_POLL_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [autoViralRun, loadJobs, loadYouTubeUploads]);
 
   useEffect(() => {
     if (isActiveJob(activeJob)) return;
@@ -489,20 +518,28 @@ export default function HomePage() {
 
   const handleDeleteAllConfirmed = useCallback(async () => {
     await toast.promise(deleteJobs(), {
-      loading: "Menghapus riwayat...",
-      success: "Seluruh riwayat berhasil dihapus!",
-      error: "Gagal menghapus riwayat",
+      loading: "Membatalkan job aktif dan menghapus catatan proses...",
+      success: "Catatan job proses berhasil dihapus. Clips tetap aman.",
+      error: "Gagal menghapus job proses",
     });
 
     setActiveJob(null);
-    setJob(null);
+    setJob((current) => (isProcessJob(current) ? null : current));
     browserStartedJobId.current = null;
     setSelectedHistoryJobIds([]);
     await loadJobs();
   }, [loadJobs]);
 
   const handleDeleteAll = useCallback(() => {
-    toast((item) => <DeleteAllToast toastId={item.id} onConfirm={handleDeleteAllConfirmed} />, {
+    toast((item) => (
+      <DeleteAllToast
+        toastId={item.id}
+        title="Hapus job proses?"
+        description="Catatan job queued, running, failed, dan cancelled akan dihapus. Job completed, clips, dan file hasil video tidak akan dihapus."
+        confirmLabel="Hapus Job Proses"
+        onConfirm={handleDeleteAllConfirmed}
+      />
+    ), {
       duration: Infinity,
     });
   }, [handleDeleteAllConfirmed]);
@@ -752,6 +789,16 @@ export default function HomePage() {
   }, [job, loadYouTubeUploads, youtubeConfig?.auto_upload_count]);
 
   const handleStartYouTubeLogin = useCallback(async () => {
+    const usesChromeDebugging = /remote debugging|cdp/i.test(youtubeConfig?.auth_status_message ?? "");
+    if (usesChromeDebugging) {
+      const command = "./scripts/reset-youtube-cdp-profile.sh";
+      navigator.clipboard?.writeText(command).catch(() => undefined);
+      toast(
+        "Login harus di window Chrome CDP dari terminal, bukan tab dashboard. Command sudah disalin: ./scripts/reset-youtube-cdp-profile.sh",
+        { duration: 12000 },
+      );
+      return;
+    }
     window.open("https://studio.youtube.com", "_blank", "noopener,noreferrer");
     setIsYouTubeLoginActive(true);
     toast(
@@ -762,9 +809,20 @@ export default function HomePage() {
       setIsYouTubeLoginActive(false);
       loadYouTubeUploads().catch(() => undefined);
     }, 12000);
-  }, [loadYouTubeUploads]);
+  }, [loadYouTubeUploads, youtubeConfig?.auth_status_message]);
 
   const handleCaptureYouTubeSession = useCallback(async () => {
+    const usesChromeDebugging = /remote debugging|cdp/i.test(youtubeConfig?.auth_status_message ?? "");
+    if (usesChromeDebugging) {
+      const command = "./scripts/recreate-compose-up.sh --watch-chrome";
+      navigator.clipboard?.writeText(command).catch(() => undefined);
+      toast(
+        "Untuk cek Chrome CDP, jalankan command yang sudah disalin: ./scripts/recreate-compose-up.sh --watch-chrome",
+        { duration: 12000 },
+      );
+      loadYouTubeUploads().catch(() => undefined);
+      return;
+    }
     try {
       await toast.promise(captureYouTubeBrowserSession(), {
         loading: "Menyinkronkan session dari browser...",
@@ -777,23 +835,77 @@ export default function HomePage() {
         duration: 9000,
       });
     }
-  }, [loadYouTubeUploads]);
+  }, [loadYouTubeUploads, youtubeConfig?.auth_status_message]);
 
-  const handleCancelJob = useCallback(async () => {
-    if (!activeJobId || !isBusy) return;
-    await toast.promise(cancelJob(activeJobId), {
+  const handleCancelJob = useCallback(async (jobId = activeJobId ?? "") => {
+    if (!jobId) return;
+    const targetJob = jobs.find((item) => item.id === jobId);
+    if (targetJob && !isActiveJob(targetJob)) return;
+
+    await toast.promise(cancelJob(jobId), {
       loading: "Membatalkan proses...",
-      success: "Proses dibatalkan dan output sementara dihapus.",
+      success: "Proses distop. Clip yang sudah selesai tetap aman.",
       error: "Gagal membatalkan proses",
     });
-    const nextJob = await getJob(activeJobId).catch(() => null);
+    const nextJob = await getJob(jobId).catch(() => null);
     if (nextJob) {
       setActiveJob(nextJob);
       setJob((current) => (current?.id === nextJob.id || current === null ? nextJob : current));
     }
-    browserStartedJobId.current = null;
+    if (activeJobId === jobId) {
+      browserStartedJobId.current = null;
+    }
     await loadJobs();
-  }, [activeJobId, isBusy, loadJobs]);
+  }, [activeJobId, jobs, loadJobs]);
+
+  const handleStartAutoViral = useCallback(async () => {
+    if (isAutoViralRunning) return;
+    if (!youtubeConfig?.enabled) {
+      toast.error(youtubeConfig?.auth_status_message ?? "Uploader YouTube belum siap untuk auto viral.");
+      return;
+    }
+
+    try {
+      const run = await toast.promise(
+        startAutoViralCampaign({
+          video_count: 3,
+          clips_per_video: Math.min(5, youtubeConfig.auto_upload_count || 3),
+          top: targetClips || null,
+          min_duration: minDuration,
+          max_duration: maxDuration,
+          video_quality: videoQuality,
+          crop_mode: cropMode,
+          burn_subtitles: burnSubtitles,
+          ai_enabled: aiEnabled,
+          ai_base_url: aiBaseUrl,
+          ai_model: aiModel,
+          ai_api_key: aiApiKey,
+        }),
+        {
+          loading: "Memulai Auto Viral CC...",
+          success: "Auto Viral CC berjalan di background.",
+          error: "Gagal memulai Auto Viral CC",
+        },
+      );
+      notifiedAutoViralRunId.current = null;
+      setAutoViralRun(run);
+    } catch (autoError) {
+      toast.error(autoError instanceof Error ? autoError.message : "Gagal memulai Auto Viral CC", { duration: 9000 });
+    }
+  }, [
+    aiApiKey,
+    aiBaseUrl,
+    aiEnabled,
+    aiModel,
+    burnSubtitles,
+    cropMode,
+    isAutoViralRunning,
+    maxDuration,
+    minDuration,
+    targetClips,
+    videoQuality,
+    youtubeConfig,
+  ]);
 
   return (
     <main className="shell">
@@ -805,6 +917,7 @@ export default function HomePage() {
           error={error}
           isBusy={isBusy}
           isSubmitting={isSubmitting}
+          isAutoViralRunning={isAutoViralRunning}
           sourceMode={sourceMode}
           uploadFileName={uploadFileName}
           uploadPreviewUrl={uploadPreviewUrl}
@@ -859,8 +972,10 @@ export default function HomePage() {
           onAiBaseUrlChange={handleAiBaseUrlChange}
           onAiModelChange={setAiModel}
           onAiApiKeyChange={setAiApiKey}
+          onStartAutoViral={handleStartAutoViral}
           onStartJob={handleStartJob}
           onUrlChange={setUrl}
+          autoViralMessage={autoViralRun?.message ?? ""}
           url={url}
         />
         <StatusPanel job={activityJob} latestLogs={latestLogs} onCancelJob={handleCancelJob} />
@@ -892,6 +1007,7 @@ export default function HomePage() {
         onDeleteFailed={handleDeleteFailed}
         onDeleteSelected={handleDeleteSelected}
         onSelectJob={setJob}
+        onStopJob={handleCancelJob}
         onToggleJobSelection={handleToggleHistoryJobSelection}
       />
     </main>

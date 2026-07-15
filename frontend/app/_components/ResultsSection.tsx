@@ -24,6 +24,24 @@ type ResultsSectionProps = {
   onToggleClipCorrect: (clip: ClipFile, isCorrect: boolean) => void;
 };
 
+function friendlyYouTubeUploadError(message: string, usesChromeDebugging: boolean) {
+  const clean = message.trim();
+  const lowered = clean.toLowerCase();
+  if (lowered.includes("connect_over_cdp") || lowered.includes("econnrefused")) {
+    return "Chrome remote debugging belum aktif di port 9222. Jalankan ./scripts/recreate-compose-up.sh dan biarkan Chrome Studio tetap terbuka.";
+  }
+  if (lowered.includes("python youtube_uploader.py login")) {
+    return "Card ini masih membawa error lama dari storage-state. Upload sekarang memakai Chrome remote debugging; jalankan ./scripts/recreate-compose-up.sh, pastikan Chrome Studio login, lalu klik Retry YouTube.";
+  }
+  if (
+    usesChromeDebugging
+    && (lowered.includes("sesi youtube belum login") || lowered.includes("youtube studio meminta login"))
+  ) {
+    return "Chrome CDP belum login ke akun target. Login harus di window Chrome yang dibuka command terminal, bukan tab dashboard. Klik Salin Command Login.";
+  }
+  return clean;
+}
+
 export function ResultsSection({
   clips,
   selectedClipUrls,
@@ -45,6 +63,9 @@ export function ResultsSection({
 }: ResultsSectionProps) {
   const selectedCount = selectedClipUrls.length;
   const allClipsSelected = clips.length > 0 && selectedCount === clips.length;
+  const usesChromeDebugging = /remote debugging|cdp/i.test(youtubeStatusMessage);
+  const openStudioLabel = usesChromeDebugging ? "Salin Command Login" : "Buka Login YouTube";
+  const openStudioWaitingLabel = usesChromeDebugging ? "Menyalin command..." : "Menunggu login...";
 
   return (
     <section className="results">
@@ -94,10 +115,10 @@ export function ResultsSection({
                     type="button"
                     onClick={onCaptureYouTubeSession}
                     className="ghostButton youtubeButton"
-                    title="Simpan session dari Chrome remote debugging ke Playwright storage state"
+                    title={usesChromeDebugging ? "Buka dan cek Chrome Studio remote debugging" : "Simpan session dari Chrome remote debugging ke Playwright storage state"}
                   >
                     <RefreshCw size={15} />
-                    Sync Session
+                    {usesChromeDebugging ? "Salin Cek Chrome" : "Sync Session"}
                   </button>
                 </>
               ) : null}
@@ -118,7 +139,8 @@ export function ResultsSection({
             const isSelected = selectedClipUrls.includes(clip.url);
             const latestUpload = youtubeUploads.find((upload) => upload.clip_url === clip.url);
             const isUploadingToYouTube = latestUpload?.status === "queued" || latestUpload?.status === "running";
-            const uploadError = latestUpload?.error || latestUpload?.logs?.at(-1) || "";
+            const rawUploadError = latestUpload?.error || latestUpload?.logs?.at(-1) || "";
+            const uploadError = friendlyYouTubeUploadError(rawUploadError, usesChromeDebugging);
             const youtubeButtonTitle = youtubeEnabled
               ? uploadError
                 ? `Upload ulang ke YouTube. Error terakhir: ${uploadError}`
@@ -205,10 +227,10 @@ export function ResultsSection({
                     <strong>Upload gagal</strong>
                     <span>{uploadError}</span>
                     <button type="button" onClick={onStartYouTubeLogin} disabled={isYouTubeLoginActive}>
-                      {isYouTubeLoginActive ? "Menunggu login..." : "Buka Login YouTube"}
+                      {isYouTubeLoginActive ? openStudioWaitingLabel : openStudioLabel}
                     </button>
                     <button type="button" onClick={onCaptureYouTubeSession}>
-                      Sync Session Browser
+                      {usesChromeDebugging ? "Salin Cek Chrome" : "Sync Session Browser"}
                     </button>
                   </div>
                 ) : null}

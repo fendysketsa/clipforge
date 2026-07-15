@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import importlib.util
 import os
@@ -10,18 +11,21 @@ import sys
 import threading
 import time
 import uuid
-from math import ceil
+from math import ceil, log10
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import quote, unquote
 import urllib.request
 
+import imageio_ffmpeg
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from yt_dlp import YoutubeDL
+
+from llm import AIConfig, chat_completion, extract_json
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -39,6 +43,8 @@ YOUTUBE_PLAYWRIGHT_STATE = Path(os.environ.get("YOUTUBE_PLAYWRIGHT_STATE", BASE_
 YOUTUBE_CHROMIUM_USER_DATA_DIR = os.environ.get("YOUTUBE_CHROMIUM_USER_DATA_DIR", "").strip()
 YOUTUBE_CHROMIUM_PROFILE_DIRECTORY = os.environ.get("YOUTUBE_CHROMIUM_PROFILE_DIRECTORY", "").strip()
 YOUTUBE_CDP_URL = os.environ.get("YOUTUBE_CDP_URL", "http://127.0.0.1:9222").strip()
+YOUTUBE_CDP_STAGING_DIR = Path(os.environ.get("YOUTUBE_CDP_STAGING_DIR", BASE_DIR / "data" / "youtube_cdp_uploads"))
+DEFAULT_YOUTUBE_MAX_UPLOAD_MB = 45
 ALLOWED_UPLOAD_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"}
 SECONDS_PER_TARGET_CLIP = 360
 MIN_AUTO_CLIPS = 2
@@ -84,7 +90,9 @@ YOUTUBE_VIDEO_URL_PREFIX = "VIDEO_URL:"
 DEFAULT_YOUTUBE_PLAYLIST = "Islam"
 DEFAULT_YOUTUBE_TARGET_CHANNEL = "ryuundy8812"
 DEFAULT_YOUTUBE_TARGET_EMAIL = "fendysketsa@gmail.com"
+DEFAULT_YOUTUBE_TARGET_CHANNEL_ID = "UCAOZF9Qzj6DYoXKtLnP4UUQ"
 DEFAULT_YOUTUBE_AUTO_UPLOAD_COUNT = 3
+DEFAULT_YOUTUBE_AI_FALLBACK_MODELS = ["llama3:latest"]
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -224,9 +232,9 @@ class YouTubeUploadRequest(BaseModel):
     description: str = ""
     thumbnail_url: str | None = None
     visibility: Literal["private", "unlisted", "public"] = Field(
-        default_factory=lambda: os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "private")
-        if os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "private") in {"private", "unlisted", "public"}
-        else "private"
+        default_factory=lambda: os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "public")
+        if os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "public") in {"private", "unlisted", "public"}
+        else "public"
     )
     made_for_kids: bool = Field(default_factory=lambda: env_bool("YOUTUBE_MADE_FOR_KIDS", False))
     tags: list[str] = Field(default_factory=lambda: env_csv("YOUTUBE_DEFAULT_TAGS"))
@@ -267,9 +275,9 @@ class YouTubeUploadRequest(BaseModel):
 class YouTubeBatchUploadRequest(BaseModel):
     clip_urls: list[str] = Field(default_factory=list)
     visibility: Literal["private", "unlisted", "public"] = Field(
-        default_factory=lambda: os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "private")
-        if os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "private") in {"private", "unlisted", "public"}
-        else "private"
+        default_factory=lambda: os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "public")
+        if os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "public") in {"private", "unlisted", "public"}
+        else "public"
     )
     made_for_kids: bool = Field(default_factory=lambda: env_bool("YOUTUBE_MADE_FOR_KIDS", False))
     tags: list[str] = Field(default_factory=lambda: env_csv("YOUTUBE_DEFAULT_TAGS"))
@@ -318,6 +326,59 @@ class YouTubeLoginStatus(BaseModel):
     started_at: str | None = None
     finished_at: str | None = None
     error: str | None = None
+    logs: list[str] = Field(default_factory=list)
+
+
+def default_auto_viral_queries() -> list[str]:
+    configured = env_csv("AUTO_VIRAL_SEARCH_QUERIES")
+    if configured:
+        return configured
+    return [
+        "viral indonesia creative commons",
+        "trending indonesia creative commons",
+        "ceramah islam creative commons indonesia",
+        "motivasi indonesia creative commons",
+        "podcast indonesia creative commons",
+    ]
+
+
+class AutoViralRequest(BaseModel):
+    queries: list[str] = Field(default_factory=default_auto_viral_queries)
+    video_count: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_VIDEO_COUNT", 3), ge=1, le=5)
+    clips_per_video: int = Field(default_factory=youtube_auto_upload_count, ge=1, le=5)
+    search_limit_per_query: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_SEARCH_LIMIT", 12), ge=3, le=30)
+    min_source_duration: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MIN_SOURCE_SECONDS", 60), ge=30, le=7200)
+    max_source_duration: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MAX_SOURCE_SECONDS", 3600), ge=60, le=14400)
+    min_views: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MIN_VIEWS", 1000), ge=0)
+    top: int | None = Field(default=None, ge=1, le=MAX_REQUESTED_CLIPS)
+    min_duration: float = Field(default=35, ge=5, le=600)
+    max_duration: float = Field(default=180, ge=10, le=600)
+    video_quality: Literal["standard", "high", "max"] = "high"
+    crop_mode: Literal["center", "person", "streamer"] = "person"
+    burn_subtitles: bool = True
+    ai_enabled: bool = True
+    ai_base_url: str = DEFAULT_AI_BASE_URL
+    ai_model: str = DEFAULT_AI_MODEL
+    ai_api_key: str = ""
+
+    @field_validator("queries")
+    @classmethod
+    def _clean_queries(cls, value: list[str]) -> list[str]:
+        cleaned = [re.sub(r"\s+", " ", item).strip() for item in value if item.strip()]
+        return cleaned[:10] or default_auto_viral_queries()
+
+
+class AutoViralRun(BaseModel):
+    id: str
+    status: Literal["queued", "running", "completed", "failed"]
+    created_at: str
+    updated_at: str
+    finished_at: str | None = None
+    request: AutoViralRequest
+    message: str = ""
+    selected_sources: list[dict[str, Any]] = Field(default_factory=list)
+    processed: list[dict[str, Any]] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
     logs: list[str] = Field(default_factory=list)
 
 
@@ -428,7 +489,7 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
     loaded: dict[str, YouTubeUploadJob] = {}
     for item in payload:
         upload = YouTubeUploadJob(**item)
-        if upload.status in {"queued", "running"}:
+        if upload.status == "running":
             finished_at = now_iso()
             upload = upload.model_copy(
                 update={
@@ -707,9 +768,13 @@ youtube_upload_processes: dict[str, subprocess.Popen[str]] = {}
 youtube_login_process: subprocess.Popen[str] | None = None
 youtube_login_status = YouTubeLoginStatus(active=False)
 cancelled_job_ids: set[str] = set()
+preserve_job_files_on_cancel: set[str] = set()
 process_lock = threading.Lock()
 youtube_worker_lock = threading.Lock()
 youtube_worker_running = False
+auto_viral_runs: dict[str, AutoViralRun] = {}
+auto_viral_lock = threading.Lock()
+auto_viral_active_run_id: str | None = None
 
 
 def clip_url(path: Path) -> str:
@@ -735,13 +800,21 @@ def youtube_profile_upload_allowed() -> bool:
     return env_bool("YOUTUBE_ALLOW_CHROMIUM_PROFILE_UPLOAD", False)
 
 
+def youtube_upload_uses_cdp() -> bool:
+    return env_bool("YOUTUBE_UPLOAD_USE_CDP", False)
+
+
 def youtube_upload_auth_ready() -> bool:
-    return youtube_auth_state_exists() or (youtube_profile_upload_allowed() and youtube_chromium_profile_ready())
+    return (
+        youtube_auth_state_exists()
+        or youtube_upload_uses_cdp()
+        or (youtube_profile_upload_allowed() and youtube_chromium_profile_ready())
+    )
 
 
 def youtube_default_visibility() -> Literal["private", "unlisted", "public"]:
-    value = os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "private").strip().lower()
-    return value if value in {"private", "unlisted", "public"} else "private"  # type: ignore[return-value]
+    value = os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "public").strip().lower()
+    return value if value in {"private", "unlisted", "public"} else "public"  # type: ignore[return-value]
 
 
 def active_youtube_upload_id() -> str | None:
@@ -758,7 +831,10 @@ def youtube_config_payload() -> YouTubeConfig:
     allow_profile_upload = youtube_profile_upload_allowed()
     auth_path = str(YOUTUBE_PLAYWRIGHT_STATE if has_state else YOUTUBE_CHROMIUM_USER_DATA_DIR)
     auth_status_message = None
-    if has_state:
+    if youtube_upload_uses_cdp():
+        auth_status_message = f"Upload memakai Chrome remote debugging: {YOUTUBE_CDP_URL}"
+        auth_path = YOUTUBE_CDP_URL
+    elif has_state:
         auth_status_message = f"Playwright storage state siap: {auth_path}"
     elif has_chromium_profile and allow_profile_upload:
         auth_status_message = f"Chromium profile siap untuk upload langsung: {auth_path}"
@@ -795,8 +871,8 @@ def require_youtube_ready() -> None:
         raise HTTPException(
             status_code=409,
             detail=(
-                "Sesi YouTube background belum siap. Buka YouTube Studio di Chrome yang berjalan dengan "
-                "remote debugging, lalu tekan Sync Session Browser sampai storage state tersimpan."
+                "Uploader YouTube belum siap. Jalankan ./scripts/recreate-compose-up.sh, "
+                "pastikan Chrome Studio remote debugging terbuka dan sudah login, lalu Retry YouTube."
             ),
         )
 
@@ -804,7 +880,180 @@ def require_youtube_ready() -> None:
 def youtube_upload_error_from_logs(logs: list[str]) -> str | None:
     for line in reversed(logs):
         if YOUTUBE_UPLOAD_ERROR_PREFIX in line:
-            return line.split(YOUTUBE_UPLOAD_ERROR_PREFIX, 1)[1].strip()
+            return normalize_youtube_upload_error(line.split(YOUTUBE_UPLOAD_ERROR_PREFIX, 1)[1].strip())
+    return None
+
+
+def normalize_youtube_upload_error(error: str) -> str:
+    clean = error.strip()
+    lowered = clean.lower()
+    if "connect_over_cdp" in lowered or "econnrefused" in lowered:
+        return (
+            f"Chrome remote debugging belum aktif di {YOUTUBE_CDP_URL}. "
+            "Jalankan ./scripts/recreate-compose-up.sh dan biarkan Chrome Studio tetap terbuka."
+        )
+    if youtube_upload_uses_cdp() and (
+        "sesi youtube belum login" in lowered
+        or "youtube studio meminta login" in lowered
+        or "python youtube_uploader.py login" in lowered
+    ):
+        return (
+            "Chrome Studio di remote debugging belum login ke akun target. "
+            "Login sekali di window Chrome yang dibuka script, lalu klik Retry YouTube."
+        )
+    return clean
+
+
+def media_duration_seconds(path: Path) -> float:
+    try:
+        result = subprocess.run(
+            [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-i", str(path)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            check=False,
+        )
+    except Exception:
+        return 0.0
+    match = re.search(
+        r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)",
+        f"{result.stderr}\n{result.stdout}",
+    )
+    if not match:
+        return 0.0
+    hours, minutes, seconds = match.groups()
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+
+
+def youtube_max_upload_bytes() -> int:
+    max_mb = (
+        os.environ.get("YOUTUBE_MAX_UPLOAD_MB", "").strip()
+        or os.environ.get("YOUTUBE_CDP_MAX_UPLOAD_MB", "").strip()
+        or str(DEFAULT_YOUTUBE_MAX_UPLOAD_MB)
+    )
+    try:
+        mb = float(max_mb)
+    except ValueError:
+        mb = DEFAULT_YOUTUBE_MAX_UPLOAD_MB
+    return max(1, int(mb * 1024 * 1024))
+
+
+def prepare_limited_upload_file(source_path: Path, max_bytes: int) -> Path:
+    if source_path.stat().st_size <= max_bytes:
+        return source_path
+
+    duration = media_duration_seconds(source_path)
+    if duration <= 0:
+        raise RuntimeError(
+            f"File {source_path.name} melebihi limit upload {max_bytes // 1024 // 1024} MB "
+            "dan durasinya tidak bisa dibaca untuk kompresi upload."
+        )
+
+    source_stat = source_path.stat()
+    digest = hashlib.sha1(
+        f"{source_path.resolve()}:{source_stat.st_mtime_ns}:{source_stat.st_size}:{max_bytes}".encode("utf-8")
+    ).hexdigest()[:12]
+    safe_stem = re.sub(r"[^a-zA-Z0-9_-]+", "-", source_path.stem)[:80].strip("-") or "clip"
+    target_path = YOUTUBE_CDP_STAGING_DIR / f"{safe_stem}-{digest}.mp4"
+    if target_path.is_file() and target_path.stat().st_size <= max_bytes:
+        return target_path
+
+    YOUTUBE_CDP_STAGING_DIR.mkdir(parents=True, exist_ok=True)
+    temp_path = target_path.with_suffix(".tmp.mp4")
+    target_total_bps = max(450_000, int((max_bytes * 0.88 * 8) / duration))
+    audio_bps = 96_000
+    base_video_bps = max(300_000, target_total_bps - audio_bps)
+    vf = (
+        "scale=720:1280:force_original_aspect_ratio=decrease,"
+        "pad=720:1280:(ow-iw)/2:(oh-ih)/2,setsar=1"
+    )
+
+    last_error = ""
+    for factor in (1.0, 0.82, 0.68, 0.55):
+        video_bps = max(260_000, int(base_video_bps * factor))
+        temp_path.unlink(missing_ok=True)
+        command = [
+            imageio_ffmpeg.get_ffmpeg_exe(),
+            "-y",
+            "-i",
+            str(source_path),
+            "-vf",
+            vf,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-b:v",
+            str(video_bps),
+            "-maxrate",
+            str(video_bps),
+            "-bufsize",
+            str(video_bps * 2),
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            f"{audio_bps // 1000}k",
+            "-movflags",
+            "+faststart",
+            str(temp_path),
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=max(180, int(duration * 5)),
+                check=False,
+            )
+        except Exception as exc:
+            last_error = str(exc)
+            continue
+        if result.returncode != 0:
+            last_error = (result.stderr or result.stdout)[-1200:]
+            continue
+        if temp_path.is_file() and temp_path.stat().st_size <= max_bytes:
+            temp_path.replace(target_path)
+            return target_path
+        size_mb = temp_path.stat().st_size / 1024 / 1024 if temp_path.is_file() else 0
+        last_error = f"Hasil kompresi masih {size_mb:.1f} MB"
+
+    temp_path.unlink(missing_ok=True)
+    raise RuntimeError(
+        f"Gagal menyiapkan file upload di bawah {max_bytes // 1024 // 1024} MB: {last_error}"
+    )
+
+
+def normalize_youtube_video_url(value: str) -> str | None:
+    clean = (value or "").strip().strip(".,;)'\"<>")
+    if not clean:
+        return None
+    if clean.startswith("//"):
+        clean = f"https:{clean}"
+    elif clean.startswith("/watch") or clean.startswith("/shorts/"):
+        clean = f"https://www.youtube.com{clean}"
+    elif clean.startswith("youtube.com/"):
+        clean = f"https://{clean}"
+    elif clean.startswith("www.youtube.com/"):
+        clean = f"https://{clean}"
+    elif clean.startswith("youtu.be/"):
+        clean = f"https://{clean}"
+
+    match = re.search(
+        r"(?:https?://)?(?:www\.)?youtube\.com/(?:watch\?v=|shorts/)([A-Za-z0-9_-]{6,})",
+        clean,
+        re.I,
+    )
+    if match:
+        return f"https://www.youtube.com/watch?v={match.group(1)}"
+    match = re.search(r"(?:https?://)?youtu\.be/([A-Za-z0-9_-]{6,})", clean, re.I)
+    if match:
+        return f"https://www.youtube.com/watch?v={match.group(1)}"
     return None
 
 
@@ -812,8 +1061,9 @@ def youtube_video_url_from_logs(logs: list[str]) -> str | None:
     for line in reversed(logs):
         if YOUTUBE_VIDEO_URL_PREFIX in line:
             value = line.split(YOUTUBE_VIDEO_URL_PREFIX, 1)[1].strip()
-            if value:
-                return value
+            video_url = normalize_youtube_video_url(value)
+            if video_url:
+                return video_url
     return None
 
 
@@ -856,7 +1106,16 @@ def strip_hashtag_lines(value: str) -> str:
 def default_youtube_title(job: ClipJob, clip: ClipFile, index: int) -> str:
     title = clip_sidecar_title(clip) or clip.title or job.source_title or f"Clip {index}"
     clean = re.sub(r"\s+", " ", title).strip()
-    return clean[:100] or f"Clip {index}"
+    return youtube_shorts_title(clean or f"Clip {index}")
+
+
+def youtube_shorts_title(value: str) -> str:
+    clean = re.sub(r"\s+", " ", value).strip()
+    clean = re.sub(r"\s+#shorts\b", "", clean, flags=re.I).strip()
+    suffix = " #Shorts"
+    if len(clean) + len(suffix) > 100:
+        clean = clean[: 100 - len(suffix)].rsplit(" ", 1)[0].rstrip() or clean[: 100 - len(suffix)].rstrip()
+    return f"{clean}{suffix}"[:100] if clean else "Clip #Shorts"
 
 
 def default_youtube_description(job: ClipJob, clip: ClipFile) -> str:
@@ -864,15 +1123,13 @@ def default_youtube_description(job: ClipJob, clip: ClipFile) -> str:
     short_caption = strip_hashtag_lines(caption)
     if len(short_caption) > 650:
         short_caption = short_caption[:650].rsplit(" ", 1)[0].rstrip() + "..."
-    parts = [short_caption] if short_caption else []
-    source = job.source_url or job.request.url
-    if source:
-        parts.append(f"Sumber: {source}")
-    if job.source_uploader:
-        parts.append(f"Channel sumber: {job.source_uploader}")
+    if not short_caption:
+        title = clip_sidecar_title(clip) or clip.title or job.source_title or "Cuplikan pilihan"
+        short_caption = f"{title.strip()}."
+    parts = [short_caption]
     tags = default_youtube_tags(job, clip)
     if tags:
-        parts.append(" ".join(f"#{tag.replace(' ', '')}" for tag in tags))
+        parts.append(" ".join(f"#{tag.replace(' ', '')}" for tag in tags[:3]))
     return "\n\n".join(parts)[:5000]
 
 
@@ -889,6 +1146,185 @@ def default_youtube_tags(job: ClipJob, clip: ClipFile) -> list[str]:
             seen.add(clean.lower())
             deduped.append(clean)
     return deduped[:15]
+
+
+YOUTUBE_METADATA_SYSTEM_PROMPT = (
+    "You are an Indonesian YouTube Shorts metadata writer. Write concise, natural titles, descriptions, "
+    "and hashtags for Islamic/motivational short clips. Use Bahasa Indonesia, make it engaging but not "
+    "clickbait, do not mention source URLs or source channels, use only 2-3 hashtags, and return strict JSON only."
+)
+
+
+def clip_candidate_text(job: ClipJob, clip: ClipFile) -> str:
+    clip_index = clip_index_from_name(clip.name)
+    if clip_index is None:
+        return ""
+    for candidate in job.candidates:
+        if candidate.index == clip_index and candidate.text.strip():
+            return candidate.text.strip()
+    return ""
+
+
+def youtube_description_ai_config(job: ClipJob) -> AIConfig:
+    telegram_base_url = os.environ.get("TELEGRAM_AI_BASE_URL", "").strip()
+    telegram_model = os.environ.get("TELEGRAM_AI_MODEL", "").strip()
+    base_url = (
+        os.environ.get("YOUTUBE_DESCRIPTION_AI_BASE_URL", "").strip()
+        or telegram_base_url
+        or (job.request.ai_base_url or DEFAULT_AI_BASE_URL).strip()
+    )
+    model = (
+        os.environ.get("YOUTUBE_DESCRIPTION_AI_MODEL", "").strip()
+        or telegram_model
+        or (job.request.ai_model or DEFAULT_AI_MODEL).strip()
+    )
+    enabled_default = bool(base_url and model) or job.request.ai_enabled
+    return AIConfig(
+        enabled=env_bool("YOUTUBE_DESCRIPTION_AI_ENABLED", enabled_default),
+        base_url=base_url,
+        model=model,
+        api_key=(
+            os.environ.get("YOUTUBE_DESCRIPTION_AI_API_KEY", "").strip()
+            or os.environ.get("TELEGRAM_AI_API_KEY", "").strip()
+            or job.request.ai_api_key.strip()
+        ),
+        timeout=float(os.environ.get("YOUTUBE_DESCRIPTION_AI_TIMEOUT_SECONDS", "45")),
+    )
+
+
+def youtube_metadata_model_candidates(primary_model: str) -> list[str]:
+    configured = [
+        *env_csv("YOUTUBE_DESCRIPTION_AI_FALLBACK_MODELS"),
+        *env_csv("TELEGRAM_AI_FALLBACK_MODELS"),
+    ]
+    candidates: list[str] = []
+    for model in [primary_model, *configured, *DEFAULT_YOUTUBE_AI_FALLBACK_MODELS]:
+        clean = model.strip()
+        if clean and clean not in candidates:
+            candidates.append(clean)
+    return candidates
+
+
+def clean_ai_hashtags(values: list[str]) -> list[str]:
+    hashtags: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        tag = str(raw).strip().lstrip("#")
+        tag = re.sub(r"\s+", "", tag)[:30]
+        if tag and tag.lower() not in seen:
+            seen.add(tag.lower())
+            hashtags.append(tag)
+    return hashtags[:15]
+
+
+def first_metadata_string(payload: dict, keys: list[str]) -> str:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return re.sub(r"\s+", " ", value).strip()
+    return ""
+
+
+def metadata_hashtag_values(payload: dict) -> list[str]:
+    for key in ("hashtags", "hashtag", "tagar", "tags", "tag"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [str(item) for item in value]
+        if isinstance(value, str) and value.strip():
+            matches = re.findall(r"#[\w\d_]+", value, flags=re.UNICODE)
+            if matches:
+                return matches
+            return [item for item in re.split(r"[\s,;]+", value) if item.strip()]
+    return []
+
+
+def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> dict[str, str | list[str]] | None:
+    config = youtube_description_ai_config(job)
+    if not config.enabled or not config.base_url or not config.model:
+        return None
+
+    title = clip_sidecar_title(clip) or clip.title or job.source_title or "Cuplikan pilihan"
+    caption = sidecar_social_caption(clip)
+    transcript = clip_candidate_text(job, clip)
+    tag_values = [f"#{tag.strip().lstrip('#').replace(' ', '')}" for tag in tags if tag.strip()]
+    user_prompt = (
+        "Buat metadata YouTube Shorts untuk clip ini.\n"
+        "Aturan:\n"
+        "- Title singkat, natural, maksimal 85 karakter, tanpa hashtag.\n"
+        "- Description 1 sampai 2 kalimat pendek.\n"
+        "- Bahasa Indonesia.\n"
+        "- Jangan tulis URL sumber, nama channel sumber, atau label 'Sumber'.\n"
+        "- Buat hanya 2 sampai 3 hashtag baru yang relevan dari isi clip.\n"
+        "- Hashtag referensi boleh dipakai kalau cocok, tapi jangan sekadar menyalin semua hashtag lama.\n"
+        "- Wajib isi semua field JSON: title, description, hashtags.\n"
+        'Return JSON exactly like {"title": "...", "description": "...", "hashtags": ["#tag1", "#tag2"]}.\n\n'
+        f"Judul clip: {title}\n"
+        f"Caption lama bila ada: {caption[:900]}\n"
+        f"Transkrip clip: {transcript[:1400]}\n"
+        f"Hashtag referensi: {' '.join(tag_values)}"
+    )
+    parsed = None
+    last_error = ""
+    for model in youtube_metadata_model_candidates(config.model):
+        active_config = AIConfig(
+            enabled=config.enabled,
+            base_url=config.base_url,
+            model=model,
+            api_key=config.api_key,
+            timeout=config.timeout,
+        )
+        try:
+            content = chat_completion(
+                active_config,
+                [
+                    {"role": "system", "content": YOUTUBE_METADATA_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+            parsed = extract_json(content)
+            if model != config.model:
+                print(f"YouTube metadata AI memakai fallback model Ollama: {model}", flush=True)
+            break
+        except Exception as exc:
+            last_error = f"{model}: {exc}"
+            print(f"YouTube metadata AI gagal dengan model {model}: {exc}", flush=True)
+            continue
+    if parsed is None:
+        print(f"YouTube metadata AI gagal semua model. Terakhir: {last_error}", flush=True)
+        return None
+
+    if not isinstance(parsed, dict):
+        return None
+    clean_title = first_metadata_string(parsed, ["title", "judul", "headline"])
+    description = first_metadata_string(parsed, ["description", "deskripsi", "caption", "keterangan"])
+    if not clean_title or not description:
+        print(
+            "YouTube metadata AI format tidak lengkap. "
+            f"Keys: {', '.join(str(key) for key in parsed.keys())}",
+            flush=True,
+        )
+        return None
+    text = description
+    ai_hashtags = clean_ai_hashtags(metadata_hashtag_values(parsed))
+    if not ai_hashtags:
+        ai_hashtags = clean_ai_hashtags(hashtags_from_text(f"{clean_title}\n{text}"))
+    reference_hashtags = clean_ai_hashtags(tag_values)
+    hashtags = (ai_hashtags or ([] if env_bool("YOUTUBE_REQUIRE_AI_METADATA", True) else reference_hashtags))[:3]
+    if env_bool("YOUTUBE_REQUIRE_AI_METADATA", True) and not hashtags:
+        return None
+    if hashtags:
+        text = f"{strip_hashtag_lines(text)}\n\n{' '.join(f'#{tag}' for tag in hashtags)}"
+    return {
+        "title": youtube_shorts_title(clean_title),
+        "description": text[:5000],
+        "hashtags": hashtags,
+    }
+
+
+def generate_youtube_description(job: ClipJob, clip: ClipFile, tags: list[str]) -> str | None:
+    metadata = generate_youtube_metadata(job, clip, tags)
+    description = metadata.get("description") if isinstance(metadata, dict) else None
+    return description if isinstance(description, str) and description.strip() else None
 
 
 def find_job_clip(job_id: str, clip_url: str) -> tuple[ClipJob, ClipFile, int]:
@@ -916,8 +1352,35 @@ def best_youtube_clip_urls(job: ClipJob, count: int = DEFAULT_YOUTUBE_AUTO_UPLOA
     return [clip.url for _, _, _, clip in ranked[: max(1, count)]]
 
 
+def existing_active_youtube_upload(job_id: str, clip_url: str) -> YouTubeUploadJob | None:
+    with youtube_uploads_lock:
+        for upload in youtube_uploads.values():
+            if (
+                upload.source_job_id == job_id
+                and upload.clip_url == clip_url
+                and upload.status in {"queued", "running"}
+            ):
+                return upload
+    return None
+
+
+def active_youtube_uploads_for_job(job_id: str, clip_urls: set[str] | None = None) -> list[YouTubeUploadJob]:
+    with youtube_uploads_lock:
+        return [
+            upload
+            for upload in youtube_uploads.values()
+            if upload.source_job_id == job_id
+            and upload.status in {"queued", "running"}
+            and (clip_urls is None or upload.clip_url in clip_urls)
+        ]
+
+
 def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> YouTubeUploadJob:
     job, clip, index = find_job_clip(job_id, request.clip_url)
+    existing = existing_active_youtube_upload(job_id, clip.url)
+    if existing is not None:
+        return existing
+
     clip_path = output_path_from_url(clip.url)
     if clip_path is None or not clip_path.is_file():
         raise HTTPException(status_code=404, detail="File clip tidak ditemukan di outputs")
@@ -925,6 +1388,33 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
     thumbnail_url = request.thumbnail_url or clip.thumbnail_url
     thumbnail_path = output_path_from_url(thumbnail_url) if thumbnail_url else None
     safe_thumbnail_url = thumbnail_url if thumbnail_path is not None and thumbnail_path.is_file() else None
+    fallback_tags = request.tags or default_youtube_tags(job, clip)
+    ai_metadata = generate_youtube_metadata(job, clip, fallback_tags)
+    if env_bool("YOUTUBE_REQUIRE_AI_METADATA", True) and not isinstance(ai_metadata, dict):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Ollama belum berhasil membuat judul, deskripsi, dan hashtag baru. "
+                "Upload dibatalkan agar tidak memakai metadata lama."
+            ),
+        )
+    ai_title = ai_metadata.get("title") if isinstance(ai_metadata, dict) else None
+    ai_description = ai_metadata.get("description") if isinstance(ai_metadata, dict) else None
+    ai_hashtags = ai_metadata.get("hashtags") if isinstance(ai_metadata, dict) else None
+    tags = clean_ai_hashtags(ai_hashtags if isinstance(ai_hashtags, list) else []) or fallback_tags
+    if env_bool("YOUTUBE_REQUIRE_AI_METADATA", True) and not clean_ai_hashtags(
+        ai_hashtags if isinstance(ai_hashtags, list) else []
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Ollama belum menghasilkan hashtag baru. Upload dibatalkan agar tidak memakai hashtag lama.",
+        )
+    title = (ai_title if isinstance(ai_title, str) and ai_title.strip() else "") or request.title or default_youtube_title(job, clip, index)
+    description = (
+        (ai_description if isinstance(ai_description, str) and ai_description.strip() else "")
+        or request.description
+        or default_youtube_description(job, clip)
+    )
     upload_id = uuid.uuid4().hex
     now = now_iso()
     return YouTubeUploadJob(
@@ -935,12 +1425,12 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         status="queued",
         created_at=now,
         updated_at=now,
-        title=request.title or default_youtube_title(job, clip, index),
-        description=request.description or default_youtube_description(job, clip),
+        title=youtube_shorts_title(title),
+        description=description,
         thumbnail_url=safe_thumbnail_url,
         visibility=request.visibility,
         made_for_kids=request.made_for_kids,
-        tags=request.tags or default_youtube_tags(job, clip),
+        tags=tags,
         playlist=request.playlist,
         target_channel=request.target_channel,
         dry_run=request.dry_run,
@@ -979,7 +1469,8 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
 def queue_youtube_upload_jobs(uploads: list[YouTubeUploadJob]) -> None:
     with youtube_uploads_lock:
         for upload in uploads:
-            youtube_uploads[upload.id] = upload
+            if upload.id not in youtube_uploads:
+                youtube_uploads[upload.id] = upload
         save_youtube_uploads_unlocked()
     start_youtube_worker_if_needed()
 
@@ -1013,11 +1504,14 @@ def build_youtube_upload_command(upload: YouTubeUploadJob) -> list[str]:
     clip_path = output_path_from_url(upload.clip_url)
     if clip_path is None:
         raise RuntimeError("Clip path is invalid")
+    use_cdp = env_bool("YOUTUBE_UPLOAD_USE_CDP", False)
+    max_upload_bytes = youtube_max_upload_bytes()
+    upload_path = prepare_limited_upload_file(clip_path, max_upload_bytes)
     command = [
         sys.executable,
         "youtube_uploader.py",
         "upload",
-        str(clip_path),
+        str(upload_path),
         "--state",
         str(YOUTUBE_PLAYWRIGHT_STATE),
         "--title",
@@ -1027,7 +1521,7 @@ def build_youtube_upload_command(upload: YouTubeUploadJob) -> list[str]:
         "--visibility",
         upload.visibility,
         "--timeout",
-        os.environ.get("YOUTUBE_UPLOAD_TIMEOUT_SECONDS", "1800"),
+        os.environ.get("YOUTUBE_UPLOAD_TIMEOUT_SECONDS", "900"),
     ]
     if upload.thumbnail_url:
         thumbnail_path = output_path_from_url(upload.thumbnail_url)
@@ -1042,8 +1536,17 @@ def build_youtube_upload_command(upload: YouTubeUploadJob) -> list[str]:
     target_email = os.environ.get("YOUTUBE_TARGET_EMAIL", DEFAULT_YOUTUBE_TARGET_EMAIL).strip()
     if target_email:
         command.extend(["--target-email", target_email])
+    target_channel_id = os.environ.get("YOUTUBE_TARGET_CHANNEL_ID", DEFAULT_YOUTUBE_TARGET_CHANNEL_ID).strip()
+    if target_channel_id:
+        command.extend(["--target-channel-id", target_channel_id])
+    studio_url = os.environ.get("YOUTUBE_STUDIO_URL", "").strip()
+    if studio_url:
+        command.extend(["--studio-url", studio_url])
+    if use_cdp:
+        command.extend(["--use-cdp", "--cdp-url", YOUTUBE_CDP_URL])
     use_chromium_profile = (
         not youtube_auth_state_exists()
+        and not use_cdp
         and youtube_profile_upload_allowed()
         and bool(YOUTUBE_CHROMIUM_USER_DATA_DIR)
     )
@@ -1075,11 +1578,14 @@ def build_youtube_login_command() -> list[str]:
         command.extend(["--chromium-user-data-dir", YOUTUBE_CHROMIUM_USER_DATA_DIR])
         if YOUTUBE_CHROMIUM_PROFILE_DIRECTORY:
             command.extend(["--chromium-profile-directory", YOUTUBE_CHROMIUM_PROFILE_DIRECTORY])
+    studio_url = os.environ.get("YOUTUBE_STUDIO_URL", "").strip()
+    if studio_url:
+        command.extend(["--studio-url", studio_url])
     return command
 
 
 def build_youtube_capture_command() -> list[str]:
-    return [
+    command = [
         sys.executable,
         "youtube_uploader.py",
         "capture-session",
@@ -1091,7 +1597,13 @@ def build_youtube_capture_command() -> list[str]:
         os.environ.get("YOUTUBE_TARGET_CHANNEL", DEFAULT_YOUTUBE_TARGET_CHANNEL).strip(),
         "--target-email",
         os.environ.get("YOUTUBE_TARGET_EMAIL", DEFAULT_YOUTUBE_TARGET_EMAIL).strip(),
+        "--target-channel-id",
+        os.environ.get("YOUTUBE_TARGET_CHANNEL_ID", DEFAULT_YOUTUBE_TARGET_CHANNEL_ID).strip(),
     ]
+    studio_url = os.environ.get("YOUTUBE_STUDIO_URL", "").strip()
+    if studio_url:
+        command.extend(["--studio-url", studio_url])
+    return command
 
 
 def set_youtube_login_status(**updates) -> None:
@@ -1249,6 +1761,14 @@ def start_youtube_worker_if_needed() -> None:
             return
         youtube_worker_running = True
     threading.Thread(target=youtube_upload_worker_loop, daemon=True).start()
+
+
+@app.on_event("startup")
+def resume_queued_youtube_uploads() -> None:
+    with youtube_uploads_lock:
+        has_queued = any(upload.status == "queued" for upload in youtube_uploads.values())
+    if has_queued:
+        start_youtube_worker_if_needed()
 
 
 def discover_clips(started_at: float) -> list[ClipFile]:
@@ -1513,7 +2033,7 @@ def build_clipper_command(request: ClipJobRequest) -> list[str]:
         cleaned = [tag.strip().lstrip("#") for tag in request.required_hashtags if tag.strip()]
         if cleaned:
             command.extend(["--required-hashtags", ",".join(cleaned)])
-    if request.require_creative_commons and request.url:
+    if request.url:
         command.append("--require-creative-commons")
 
     if request.ai_enabled:
@@ -1529,7 +2049,13 @@ def build_clipper_command(request: ClipJobRequest) -> list[str]:
 
 def run_job(job_id: str) -> None:
     with jobs_lock:
-        request = jobs[job_id].request
+        job = jobs.get(job_id)
+        if job is None:
+            cancelled_job_ids.discard(job_id)
+            preserve_job_files_on_cancel.discard(job_id)
+            job_secrets.pop(job_id, None)
+            return
+        request = job.request
 
     secret = job_secrets.get(job_id)
     if secret:
@@ -1549,6 +2075,7 @@ def run_job(job_id: str) -> None:
             error="Proses dibatalkan sebelum worker berjalan.",
         )
         cancelled_job_ids.discard(job_id)
+        preserve_job_files_on_cancel.discard(job_id)
         job_secrets.pop(job_id, None)
         return
 
@@ -1586,7 +2113,13 @@ def run_job(job_id: str) -> None:
 
         code = process.wait()
         if job_id in cancelled_job_ids:
-            removed = cleanup_job_artifacts(started_at)
+            preserve_files = job_id in preserve_job_files_on_cancel
+            removed = 0 if preserve_files else cleanup_job_artifacts(started_at)
+            error = (
+                "Proses dibatalkan dan catatan job dihapus. File output tidak dihapus."
+                if preserve_files
+                else f"Proses dibatalkan. {removed} data output sementara dihapus."
+            )
             set_job(
                 job_id,
                 status="cancelled",
@@ -1594,7 +2127,7 @@ def run_job(job_id: str) -> None:
                 clips=[],
                 candidates=[],
                 logs=logs[-120:],
-                error=f"Proses dibatalkan. {removed} data output sementara dihapus.",
+                error=error,
             )
             return
 
@@ -1643,6 +2176,7 @@ def run_job(job_id: str) -> None:
             job_processes.pop(job_id, None)
         job_secrets.pop(job_id, None)
         cancelled_job_ids.discard(job_id)
+        preserve_job_files_on_cancel.discard(job_id)
 
         # An uploaded source is only needed during processing; remove it afterwards
         # so large videos don't accumulate in uploads/.
@@ -1653,6 +2187,387 @@ def run_job(job_id: str) -> None:
                     upload_path.unlink()
                 except OSError:
                     pass
+
+
+def update_auto_viral_run(run_id: str, **updates) -> None:
+    with auto_viral_lock:
+        current = auto_viral_runs.get(run_id)
+        if current is None:
+            return
+        data = current.model_dump()
+        data.update(updates)
+        data["updated_at"] = now_iso()
+        auto_viral_runs[run_id] = AutoViralRun(**data)
+
+
+def append_auto_viral_log(run_id: str, message: str) -> None:
+    with auto_viral_lock:
+        current = auto_viral_runs.get(run_id)
+        if current is None:
+            return
+        logs = [*current.logs, f"{datetime.now().strftime('%H:%M:%S')} {message}"][-160:]
+        auto_viral_runs[run_id] = current.model_copy(update={"logs": logs, "updated_at": now_iso()})
+
+
+def append_auto_viral_error(run_id: str, message: str) -> None:
+    with auto_viral_lock:
+        current = auto_viral_runs.get(run_id)
+        if current is None:
+            return
+        errors = [*current.errors, message][-80:]
+        logs = [*current.logs, f"{datetime.now().strftime('%H:%M:%S')} ERROR: {message}"][-160:]
+        auto_viral_runs[run_id] = current.model_copy(update={"errors": errors, "logs": logs, "updated_at": now_iso()})
+
+
+def youtube_watch_url(info: dict[str, Any]) -> str:
+    webpage_url = info.get("webpage_url")
+    if isinstance(webpage_url, str) and webpage_url.startswith("http"):
+        return webpage_url
+    url = info.get("url")
+    if isinstance(url, str) and url.startswith("http"):
+        return url
+    video_id = str(info.get("id") or "").strip()
+    return f"https://www.youtube.com/watch?v={video_id}" if video_id else ""
+
+
+def is_creative_commons_info(info: dict[str, Any]) -> bool:
+    license_text = str(info.get("license") or "").lower()
+    return "creative commons" in license_text or "cc-by" in license_text or "reuse allowed" in license_text
+
+
+def upload_age_days(info: dict[str, Any]) -> int | None:
+    raw = str(info.get("upload_date") or "")
+    if not re.fullmatch(r"\d{8}", raw):
+        return None
+    try:
+        uploaded = datetime.strptime(raw, "%Y%m%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    return max(0, (datetime.now(timezone.utc) - uploaded).days)
+
+
+def auto_viral_candidate_score(info: dict[str, Any]) -> float:
+    views = max(0, int(info.get("view_count") or 0))
+    likes = max(0, int(info.get("like_count") or 0))
+    duration = float(info.get("duration") or 0)
+    age_days = upload_age_days(info)
+    view_score = log10(views + 1) * 35
+    like_score = log10(likes + 1) * 12
+    recency_score = 25 if age_days is None else max(0, 25 - min(age_days, 365) / 365 * 25)
+    duration_score = 15 if 180 <= duration <= 1800 else 8 if 60 <= duration <= 3600 else 0
+    return round(view_score + like_score + recency_score + duration_score, 2)
+
+
+def compact_source_payload(info: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "url": youtube_watch_url(info),
+        "title": str(info.get("title") or "Video tanpa judul")[:180],
+        "uploader": str(info.get("uploader") or "")[:120],
+        "duration": info.get("duration"),
+        "views": info.get("view_count"),
+        "likes": info.get("like_count"),
+        "upload_date": info.get("upload_date"),
+        "license": info.get("license"),
+        "score": auto_viral_candidate_score(info),
+    }
+
+
+def fetch_youtube_metadata(url: str) -> dict[str, Any]:
+    with YoutubeDL(ytdlp_probe_options()) as ydl:
+        result = ydl.extract_info(url, download=False)
+    return result if isinstance(result, dict) else {}
+
+
+def search_auto_viral_sources(request: AutoViralRequest, run_id: str) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    candidates: list[dict[str, Any]] = []
+    for query in request.queries:
+        append_auto_viral_log(run_id, f"Mencari kandidat YouTube: {query}")
+        try:
+            with YoutubeDL(ytdlp_probe_options()) as ydl:
+                result = ydl.extract_info(f"ytsearch{request.search_limit_per_query}:{query}", download=False)
+        except Exception as exc:
+            append_auto_viral_error(run_id, f"Search gagal untuk '{query}': {exc}")
+            continue
+
+        entries = result.get("entries", []) if isinstance(result, dict) else []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            url = youtube_watch_url(entry)
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            try:
+                metadata = fetch_youtube_metadata(url)
+            except Exception as exc:
+                append_auto_viral_error(run_id, f"Metadata gagal untuk {url}: {exc}")
+                continue
+
+            duration = float(metadata.get("duration") or 0)
+            views = int(metadata.get("view_count") or 0)
+            if duration < request.min_source_duration or duration > request.max_source_duration:
+                continue
+            if views < request.min_views:
+                continue
+            if not is_creative_commons_info(metadata):
+                append_auto_viral_log(run_id, f"Skip non-CC: {metadata.get('title') or url}")
+                continue
+            candidates.append(compact_source_payload(metadata))
+
+    candidates.sort(key=lambda item: float(item.get("score") or 0), reverse=True)
+    return candidates
+
+
+def wait_for_no_active_clipping_job(timeout_seconds: int = 3600) -> None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        with jobs_lock:
+            has_active = any(job.status in {"queued", "running"} for job in jobs.values())
+        if not has_active:
+            return
+        time.sleep(3)
+    raise RuntimeError("Masih ada job clipping aktif terlalu lama")
+
+
+def create_auto_viral_clip_job(source: dict[str, Any], request: AutoViralRequest) -> ClipJob:
+    wait_for_no_active_clipping_job()
+    job_request = ClipJobRequest(
+        url=str(source["url"]),
+        top=request.top,
+        min_duration=request.min_duration,
+        max_duration=request.max_duration,
+        video_quality=request.video_quality,
+        burn_subtitles=request.burn_subtitles,
+        crop_mode=request.crop_mode,
+        require_creative_commons=True,
+        auto_upload_youtube=False,
+        ai_enabled=request.ai_enabled,
+        ai_base_url=request.ai_base_url,
+        ai_model=request.ai_model,
+        ai_api_key=request.ai_api_key,
+    )
+    if job_request.max_duration <= job_request.min_duration:
+        raise RuntimeError("max_duration must be greater than min_duration")
+    job_request = normalize_job_request(job_request)
+    secret = job_request.ai_api_key
+    job_id = uuid.uuid4().hex
+    if secret:
+        job_secrets[job_id] = secret
+    job_request = job_request.model_copy(update={"ai_api_key": ""})
+    job = ClipJob(
+        id=job_id,
+        status="queued",
+        request=job_request,
+        created_at=now_iso(),
+        updated_at=now_iso(),
+    )
+    with jobs_lock:
+        if any(item.status in {"queued", "running"} for item in jobs.values()):
+            job_secrets.pop(job_id, None)
+            raise RuntimeError("Proses clipping lain baru saja dimulai")
+        jobs[job_id] = job
+        save_jobs_unlocked()
+    return job
+
+
+def wait_for_uploads(upload_ids: list[str], timeout_seconds: int = 7200) -> list[YouTubeUploadJob]:
+    terminal = {"completed", "failed", "cancelled"}
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        with youtube_uploads_lock:
+            uploads = [youtube_uploads[upload_id] for upload_id in upload_ids if upload_id in youtube_uploads]
+        if len(uploads) == len(upload_ids) and all(upload.status in terminal for upload in uploads):
+            return uploads
+        time.sleep(5)
+    raise RuntimeError("Upload YouTube belum selesai sampai batas waktu")
+
+
+def send_telegram_alert(text: str) -> None:
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = os.environ.get("AUTO_VIRAL_TELEGRAM_CHAT_ID", os.environ.get("TELEGRAM_OWNER_ID", "")).strip()
+    if not token or not chat_id:
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    chunks = [text[index:index + 3800] for index in range(0, len(text), 3800)] or [text]
+    for chunk in chunks:
+        payload = json.dumps({"chat_id": chat_id, "text": chunk, "disable_web_page_preview": True}).encode("utf-8")
+        request = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=15):
+            pass
+
+
+def auto_viral_summary(run: AutoViralRun) -> str:
+    lines = [
+        "Auto Viral Creative Commons selesai",
+        f"Run: {run.id}",
+        f"Status: {run.status}",
+        f"Target: {run.request.video_count} video, {run.request.clips_per_video} clip/video",
+        f"Sukses: {sum(1 for item in run.processed if item.get('status') == 'completed')}",
+        "",
+        "Sumber dipilih:",
+    ]
+    for index, source in enumerate(run.selected_sources[: run.request.video_count], start=1):
+        lines.append(
+            f"{index}. {source.get('title')} | score {source.get('score')} | views {source.get('views')} | {source.get('url')}"
+        )
+    lines.append("")
+    lines.append("Hasil proses:")
+    for index, item in enumerate(run.processed, start=1):
+        uploads = item.get("uploads") if isinstance(item.get("uploads"), list) else []
+        lines.append(
+            f"{index}. {item.get('title')} | {item.get('status')} | clips {item.get('clip_count')} | uploaded {len(uploads)} | cleanup {item.get('cleanup') or '-'}"
+        )
+        for upload in uploads[:5]:
+            lines.append(f"   - {upload.get('status')}: {upload.get('title')} {upload.get('video_url') or ''}")
+        if item.get("error"):
+            lines.append(f"   Error: {item.get('error')}")
+    if run.errors:
+        lines.append("")
+        lines.append("Catatan error:")
+        lines.extend(f"- {error}" for error in run.errors[-10:])
+    return "\n".join(lines)[:12000]
+
+
+def run_auto_viral_campaign(run_id: str) -> None:
+    global auto_viral_active_run_id
+    try:
+        with auto_viral_lock:
+            run = auto_viral_runs[run_id]
+        update_auto_viral_run(run_id, status="running", message="Mencari video Creative Commons viral")
+        append_auto_viral_log(run_id, "Automation dimulai")
+        try:
+            require_youtube_ready()
+        except HTTPException as exc:
+            raise RuntimeError(str(exc.detail)) from exc
+
+        sources = search_auto_viral_sources(run.request, run_id)
+        if not sources:
+            raise RuntimeError("Tidak menemukan kandidat video Creative Commons yang memenuhi filter")
+        update_auto_viral_run(run_id, selected_sources=sources[: max(run.request.video_count, 1) * 3])
+
+        completed_count = 0
+        processed: list[dict[str, Any]] = []
+        for source in sources:
+            if completed_count >= run.request.video_count:
+                break
+            append_auto_viral_log(run_id, f"Mulai clipping: {source.get('title')}")
+            item: dict[str, Any] = {
+                "source": source,
+                "title": source.get("title"),
+                "url": source.get("url"),
+                "status": "running",
+            }
+            try:
+                job = create_auto_viral_clip_job(source, run.request)
+                item["job_id"] = job.id
+                run_job(job.id)
+                with jobs_lock:
+                    finished_job = jobs.get(job.id)
+                if finished_job is None:
+                    raise RuntimeError("Job hilang setelah clipping")
+                item["job_status"] = finished_job.status
+                item["clip_count"] = len(finished_job.clips)
+                if finished_job.status != "completed" or not finished_job.clips:
+                    raise RuntimeError(finished_job.error or f"Job selesai dengan status {finished_job.status}")
+
+                uploads = create_youtube_upload_batch_records(
+                    finished_job.id,
+                    YouTubeBatchUploadRequest(best_count=run.request.clips_per_video),
+                )
+                queue_youtube_upload_jobs(uploads)
+                append_auto_viral_log(run_id, f"{len(uploads)} upload YouTube masuk antrean untuk job {finished_job.id[:10]}")
+                finished_uploads = wait_for_uploads([upload.id for upload in uploads])
+                item["uploads"] = [
+                    {
+                        "id": upload.id,
+                        "status": upload.status,
+                        "title": upload.title,
+                        "video_url": upload.video_url,
+                        "error": upload.error,
+                    }
+                    for upload in finished_uploads
+                ]
+                if not finished_uploads or any(upload.status != "completed" for upload in finished_uploads):
+                    failed = [upload.error or upload.status for upload in finished_uploads if upload.status != "completed"]
+                    raise RuntimeError("Upload belum sukses semua: " + "; ".join(failed))
+
+                cleanup = delete_all_job_clips(finished_job.id)
+                item["cleanup"] = f"{cleanup.removed_clips} clip dihapus"
+                item["status"] = "completed"
+                completed_count += 1
+            except Exception as exc:
+                item["status"] = "failed"
+                item["error"] = str(exc)
+                append_auto_viral_error(run_id, f"{source.get('title')}: {exc}")
+            processed.append(item)
+            update_auto_viral_run(run_id, processed=processed, message=f"{completed_count}/{run.request.video_count} video sukses")
+
+        if completed_count < run.request.video_count:
+            raise RuntimeError(f"Hanya {completed_count}/{run.request.video_count} video yang berhasil clip dan upload")
+
+        with auto_viral_lock:
+            run = auto_viral_runs[run_id]
+        update_auto_viral_run(run_id, status="completed", finished_at=now_iso(), message="Automation selesai")
+        with auto_viral_lock:
+            final_run = auto_viral_runs[run_id]
+        try:
+            send_telegram_alert(auto_viral_summary(final_run))
+        except Exception as telegram_exc:
+            append_auto_viral_error(run_id, f"Telegram alert gagal: {telegram_exc}")
+    except Exception as exc:
+        append_auto_viral_error(run_id, str(exc))
+        update_auto_viral_run(run_id, status="failed", finished_at=now_iso(), message=str(exc))
+        with auto_viral_lock:
+            failed_run = auto_viral_runs[run_id]
+        try:
+            send_telegram_alert(auto_viral_summary(failed_run))
+        except Exception as telegram_exc:
+            append_auto_viral_error(run_id, f"Telegram alert gagal: {telegram_exc}")
+    finally:
+        with auto_viral_lock:
+            if auto_viral_active_run_id == run_id:
+                auto_viral_active_run_id = None
+
+
+@app.post("/api/automation/viral-cc", response_model=AutoViralRun)
+def start_auto_viral_campaign(request: AutoViralRequest) -> AutoViralRun:
+    global auto_viral_active_run_id
+    if request.max_duration <= request.min_duration:
+        raise HTTPException(status_code=400, detail="max_duration must be greater than min_duration")
+    with auto_viral_lock:
+        if auto_viral_active_run_id:
+            active = auto_viral_runs.get(auto_viral_active_run_id)
+            if active and active.status in {"queued", "running"}:
+                raise HTTPException(status_code=409, detail=f"Automation masih berjalan: {active.id}")
+        run_id = uuid.uuid4().hex
+        run = AutoViralRun(
+            id=run_id,
+            status="queued",
+            created_at=now_iso(),
+            updated_at=now_iso(),
+            request=request,
+            message="Menunggu worker automation",
+        )
+        auto_viral_runs[run_id] = run
+        auto_viral_active_run_id = run_id
+    threading.Thread(target=run_auto_viral_campaign, args=(run_id,), daemon=True).start()
+    return run
+
+
+@app.get("/api/automation/viral-cc", response_model=list[AutoViralRun])
+def list_auto_viral_campaigns() -> list[AutoViralRun]:
+    with auto_viral_lock:
+        return sorted(auto_viral_runs.values(), key=lambda item: item.created_at, reverse=True)
+
+
+@app.get("/api/automation/viral-cc/{run_id}", response_model=AutoViralRun)
+def get_auto_viral_campaign(run_id: str) -> AutoViralRun:
+    with auto_viral_lock:
+        run = auto_viral_runs.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Automation run not found")
+    return run
 
 
 @app.get("/api/health")
@@ -1952,6 +2867,8 @@ def create_job(request: ClipJobRequest) -> ClipJob:
         if upload_path is None:
             raise HTTPException(status_code=400, detail="Uploaded video not found; upload it again")
         request = request.model_copy(update={"source_file": str(upload_path)})
+    elif request.url:
+        request = request.model_copy(update={"require_creative_commons": True})
 
     request = normalize_job_request(request)
     job_id = uuid.uuid4().hex
@@ -1995,24 +2912,37 @@ def list_jobs() -> list[ClipJob]:
 
 @app.delete("/api/jobs")
 def delete_all_jobs() -> dict[str, str | int]:
+    with jobs_lock:
+        removable_ids = [
+            job_id
+            for job_id, job in jobs.items()
+            if job.status in {"queued", "running", "failed", "cancelled"}
+        ]
+        active_job_ids = [
+            job_id
+            for job_id, job in jobs.items()
+            if job.status in {"queued", "running"}
+        ]
     with process_lock:
-        active_job_ids = list(job_processes)
+        active_job_ids = sorted(set(active_job_ids) | set(job_processes))
+    preserve_job_files_on_cancel.update(active_job_ids)
     for job_id in active_job_ids:
         cancel_process(job_id)
 
     with jobs_lock:
-        jobs.clear()
-        job_secrets.clear()
+        removed_jobs = 0
+        for job_id in removable_ids:
+            if jobs.pop(job_id, None) is not None:
+                removed_jobs += 1
+            job_secrets.pop(job_id, None)
+            cancelled_job_ids.discard(job_id)
         save_jobs_unlocked()
-        removed_outputs = clear_outputs_dir()
-        clear_uploads_dir()
-    return {"status": "ok", "removed_outputs": removed_outputs}
+    return {"status": "ok", "removed_jobs": removed_jobs, "removed_outputs": 0}
 
 
 @app.delete("/api/jobs/failed")
 def delete_failed_jobs() -> dict[str, str | int]:
     removed_jobs = 0
-    removed_outputs = 0
     with jobs_lock:
         removable_ids = [
             job_id
@@ -2020,13 +2950,12 @@ def delete_failed_jobs() -> dict[str, str | int]:
             if job.status in {"failed", "cancelled"}
         ]
         for job_id in removable_ids:
-            job = jobs.pop(job_id)
-            removed_outputs += cleanup_job_files(job)
+            jobs.pop(job_id)
             job_secrets.pop(job_id, None)
             cancelled_job_ids.discard(job_id)
             removed_jobs += 1
         save_jobs_unlocked()
-    return {"status": "ok", "removed_jobs": removed_jobs, "removed_outputs": removed_outputs}
+    return {"status": "ok", "removed_jobs": removed_jobs, "removed_outputs": 0}
 
 
 @app.patch("/api/jobs/{job_id}/clips", response_model=ClipJob)
@@ -2066,6 +2995,12 @@ def delete_job_clips_by_url(job_id: str, clip_urls: set[str]) -> ClipDeleteRespo
             raise HTTPException(status_code=404, detail="Job not found")
         if job.status in {"queued", "running"} or is_running:
             raise HTTPException(status_code=409, detail="Batalkan proses aktif sebelum menghapus output")
+        active_uploads = active_youtube_uploads_for_job(job_id, clip_urls)
+        if active_uploads:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Tunggu {len(active_uploads)} upload YouTube aktif selesai sebelum menghapus clip",
+            )
 
         target_clips = [clip for clip in job.clips if clip.url in clip_urls]
         if not target_clips:
@@ -2122,6 +3057,12 @@ def delete_all_job_clips(job_id: str) -> ClipDeleteResponse:
             raise HTTPException(status_code=404, detail="Job not found")
         if job.status in {"queued", "running"} or is_running:
             raise HTTPException(status_code=409, detail="Batalkan proses aktif sebelum menghapus output")
+        active_uploads = active_youtube_uploads_for_job(job_id)
+        if active_uploads:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Tunggu {len(active_uploads)} upload YouTube aktif selesai sebelum menghapus semua clip",
+            )
 
         removed_clips = len(job.clips)
         cleanup_job_files(job)
@@ -2151,6 +3092,12 @@ def delete_job(job_id: str) -> dict[str, str | int]:
             raise HTTPException(status_code=404, detail="Job not found")
         if job.status in {"queued", "running"} or is_running:
             raise HTTPException(status_code=409, detail="Batalkan proses aktif sebelum menghapus riwayatnya")
+        active_uploads = active_youtube_uploads_for_job(job_id)
+        if active_uploads:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Tunggu {len(active_uploads)} upload YouTube aktif selesai sebelum menghapus job",
+            )
 
         removed_outputs = cleanup_job_files(job)
         jobs.pop(job_id, None)

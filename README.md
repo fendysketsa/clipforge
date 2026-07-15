@@ -92,6 +92,8 @@ Optional configuration:
 # Public backend URL used as a download fallback for files over Telegram's limit.
 TELEGRAM_PUBLIC_BASE_URL=https://api.example.com
 TELEGRAM_MAX_UPLOAD_MB=49
+TELEGRAM_AI_BASE_URL=http://127.0.0.1:11434/v1
+TELEGRAM_AI_MODEL=deepseek-v4-flash:cloud
 ```
 
 Bot state is persisted in `backend/data/telegram_bot_state.json`, so completed
@@ -118,15 +120,49 @@ target YouTube channel by setting:
 YOUTUBE_CHROMIUM_USER_DATA_DIR=/path/inside/container/to/chromium-user-data
 YOUTUBE_CHROMIUM_PROFILE_DIRECTORY=Default
 YOUTUBE_CDP_URL=http://127.0.0.1:9222
+YOUTUBE_UPLOAD_USE_CDP=false
+YOUTUBE_CDP_MAX_UPLOAD_MB=45
 YOUTUBE_TARGET_CHANNEL=ryuundy8812
 YOUTUBE_TARGET_EMAIL=fendysketsa@gmail.com
+YOUTUBE_TARGET_CHANNEL_ID=UCAOZF9Qzj6DYoXKtLnP4UUQ
+YOUTUBE_STUDIO_URL=https://studio.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ
 ```
 
 When running with Docker, the browser profile must be mounted into the backend
-container first. The safer flow is to open Chrome with remote debugging, log in
-to YouTube Studio, then press **Sync Session Browser** so ClipForge writes
-`backend/data/youtube_storage_state.json`. Background uploads use that storage
-state by default. Direct upload from the mounted full profile is disabled unless
+container first. The safer recreate flow is:
+
+```bash
+./scripts/recreate-compose-up.sh
+```
+
+Use `./scripts/recreate-compose-up.sh --down-first` when you also want to run
+`docker compose down` before recreating services. Use
+`./scripts/recreate-compose-up.sh --reset-profile` only when the Chrome CDP
+profile is broken and YouTube keeps asking for login; it deletes the saved CDP
+profile and opens a fresh one. The wrapper starts
+`scripts/open-youtube-login-chrome.sh` in the background, keeps
+`http://127.0.0.1:9222` open with
+`google-chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --user-data-dir=$HOME/.config/clipforge/youtube-chrome-profile https://studio.youtube.com`,
+and sends Chrome GPU/Skia logs to `/tmp/clipforge-youtube-chrome.log`. The Chrome
+profile is stored under `$HOME/.config/clipforge/youtube-chrome-profile`, so YouTube login
+survives container recreate. By default, the wrapper syncs that profile from
+`YOUTUBE_CHROMIUM_HOST_USER_DATA_DIR` in `.env` (`/home/fcn88/.config/google-chrome`)
+so it can reuse the desktop Chrome session that is already logged in. To reuse
+another existing Chrome session/profile, run the wrapper with
+`YOUTUBE_LOGIN_SOURCE_PROFILE_DIR=/path/to/profile ./scripts/recreate-compose-up.sh`.
+Keep that Chrome window open while uploads run. CDP upload is enabled by default;
+clips above the CDP transfer limit are staged as compressed upload copies under
+`backend/data/youtube_cdp_uploads` without modifying the original dashboard clips.
+If you want the recreate command to keep watching Chrome instead of returning to
+the prompt, use `./scripts/recreate-compose-up.sh --watch-chrome`.
+For laptop startup/supervisor, use the example config at
+`deploy/supervisor/clipforge-youtube.conf`; it runs
+`./scripts/recreate-compose-up.sh --watch-chrome` and deliberately does not reset
+the profile. The legacy `./scripts/reset-youtube-cdp-profile.sh` command now
+delegates to `./scripts/recreate-compose-up.sh --reset-profile --watch-chrome`
+and starts the Chrome CDP window minimized by default
+(`YOUTUBE_CHROME_START_MINIMIZED=true`).
+Direct upload from the mounted full profile is disabled unless
 `YOUTUBE_ALLOW_CHROMIUM_PROFILE_UPLOAD=true` because full desktop profiles often
 fail in headless Playwright. Uploads are cancelled before file selection if the
 session does not appear to belong to `ryuundy8812` or `fendysketsa@gmail.com`.
@@ -160,15 +196,27 @@ YOUTUBE_CHROMIUM_USER_DATA_DIR=
 YOUTUBE_CHROMIUM_PROFILE_DIRECTORY=Default
 YOUTUBE_ALLOW_CHROMIUM_PROFILE_UPLOAD=false
 YOUTUBE_CDP_URL=http://127.0.0.1:9222
+YOUTUBE_UPLOAD_USE_CDP=false
+YOUTUBE_CDP_MAX_UPLOAD_MB=45
 YOUTUBE_DEFAULT_VISIBILITY=private
 YOUTUBE_MADE_FOR_KIDS=false
 YOUTUBE_DEFAULT_TAGS=shorts,clipforge
 YOUTUBE_DEFAULT_PLAYLIST=Islam
 YOUTUBE_TARGET_CHANNEL=ryuundy8812
 YOUTUBE_TARGET_EMAIL=fendysketsa@gmail.com
+YOUTUBE_TARGET_CHANNEL_ID=UCAOZF9Qzj6DYoXKtLnP4UUQ
+YOUTUBE_STUDIO_URL=https://studio.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ
 YOUTUBE_AUTO_UPLOAD_COUNT=3
 YOUTUBE_REQUIRE_COPYRIGHT_CHECKS=true
-YOUTUBE_CHECKS_TIMEOUT_SECONDS=300
+YOUTUBE_CHECKS_TIMEOUT_SECONDS=600
+YOUTUBE_MANUAL_SUBTITLE_TEXT=RYUUNDY
+YOUTUBE_SUBTITLE_TYPE_DELAY_MS=120
+YOUTUBE_SUBTITLE_EDITOR_READY_DELAY_MS=2500
+YOUTUBE_SUBTITLE_SEGMENT_READY_DELAY_MS=30000
+YOUTUBE_SUBTITLE_AFTER_TYPE_DELAY_MS=2000
+YOUTUBE_UPLOAD_TIMEOUT_SECONDS=900
+YOUTUBE_DIRECT_UPLOAD_NAV_TIMEOUT_MS=18000
+YOUTUBE_DIRECT_UPLOAD_INPUT_TIMEOUT_MS=5000
 YOUTUBE_DRY_RUN=false
 ```
 

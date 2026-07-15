@@ -30,6 +30,7 @@ type ControlPanelProps = {
   error: string;
   isBusy: boolean;
   isSubmitting: boolean;
+  isAutoViralRunning: boolean;
   sourceMode: SourceMode;
   uploadFileName: string;
   uploadPreviewUrl: string;
@@ -84,8 +85,10 @@ type ControlPanelProps = {
   onAiBaseUrlChange: (value: string) => void;
   onAiModelChange: (value: string) => void;
   onAiApiKeyChange: (value: string) => void;
+  onStartAutoViral: () => void;
   onStartJob: () => void;
   onUrlChange: (value: string) => void;
+  autoViralMessage: string;
   url: string;
 };
 
@@ -94,6 +97,7 @@ export function ControlPanel({
   error,
   isBusy,
   isSubmitting,
+  isAutoViralRunning,
   sourceMode,
   uploadFileName,
   uploadPreviewUrl,
@@ -148,8 +152,10 @@ export function ControlPanel({
   onAiBaseUrlChange,
   onAiModelChange,
   onAiApiKeyChange,
+  onStartAutoViral,
   onStartJob,
   onUrlChange,
+  autoViralMessage,
   url,
 }: ControlPanelProps) {
   const hasSource = sourceMode === "url" ? Boolean(url.trim()) : Boolean(uploadFileName);
@@ -210,7 +216,7 @@ export function ControlPanel({
               ? "Mengunggah video..."
               : uploadFileName
                 ? `Siap: ${uploadFileName}`
-                : "Format didukung: MP4, MOV, MKV, WEBM, M4V, AVI."}
+                : "Format didukung: MP4, MOV, MKV, WEBM, M4V, AVI. Gunakan video milik sendiri atau yang sudah punya izin."}
           </p>
           {uploadPreviewUrl ? (
             <video className="uploadPreview" src={uploadPreviewUrl} controls preload="metadata" />
@@ -227,11 +233,12 @@ export function ControlPanel({
             </span>
             <input
               type="checkbox"
-              checked={requireCreativeCommons}
+              checked={requireCreativeCommons || sourceMode === "url"}
+              disabled
               onChange={(event) => onRequireCreativeCommonsChange(event.target.checked)}
             />
           </label>
-          <p className="field-help">Video non-CC akan dibatalkan sebelum download agar sumber lebih aman untuk dimodifikasi.</p>
+          <p className="field-help">Dikunci aktif: video non-CC akan dibatalkan sebelum download agar sumber lebih aman untuk dimodifikasi.</p>
         </div>
       ) : null}
 
@@ -622,6 +629,16 @@ export function ControlPanel({
       </div>
 
       {error ? <p className="error">{error}</p> : null}
+
+      <div className="aiBlock">
+        <button className="ghostButton autoViralButton" type="button" disabled={isAutoViralRunning || isProcessing} onClick={onStartAutoViral}>
+          {isAutoViralRunning ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
+          {isAutoViralRunning ? "Auto Viral Berjalan..." : "Auto Viral CC"}
+        </button>
+        <p className="field-help">
+          {autoViralMessage || "Cari video Creative Commons viral, proses 3 sumber, upload clip terbaik, cleanup clips, lalu kirim alert Telegram."}
+        </p>
+      </div>
 
       <button className="primary" type="button" disabled={isStartDisabled} onClick={onStartJob}>
         {isProcessing ? <Loader2 className="spin" size={18} /> : <Play size={18} />}

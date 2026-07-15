@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import re
 import subprocess
 import sys
@@ -216,6 +217,78 @@ def run(command: list[str], cwd: Path | None = None) -> None:
 
 def ffmpeg_path() -> str:
     return imageio_ffmpeg.get_ffmpeg_exe()
+
+
+def configured_clip_max_bytes() -> int:
+    raw = os.environ.get("CLIP_MAX_MB") or os.environ.get("YOUTUBE_MAX_UPLOAD_MB") or os.environ.get("YOUTUBE_CDP_MAX_UPLOAD_MB") or "45"
+    try:
+        mb = float(raw)
+    except ValueError:
+        mb = 45
+    return max(1, int(mb * 1024 * 1024))
+
+
+def enforce_clip_size_limit(path: Path, duration: float, max_bytes: int | None = None) -> Path:
+    limit = max_bytes or configured_clip_max_bytes()
+    if path.stat().st_size <= limit:
+        return path
+    if duration <= 0:
+        raise RuntimeError(f"Clip {path.name} lebih dari {limit // 1024 // 1024} MB dan durasinya tidak valid.")
+
+    temp_path = path.with_suffix(".size_tmp.mp4")
+    target_total_bps = max(420_000, int((limit * 0.88 * 8) / duration))
+    audio_bps = 96_000
+    base_video_bps = max(260_000, target_total_bps - audio_bps)
+    last_error = ""
+
+    console.print(f"[yellow]Compressing[/yellow] {path.name} to stay under {limit // 1024 // 1024} MB.")
+    for factor in (1.0, 0.82, 0.68, 0.55, 0.42):
+        video_bps = max(220_000, int(base_video_bps * factor))
+        temp_path.unlink(missing_ok=True)
+        process = subprocess.run(
+            [
+                ffmpeg_path(),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(path),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-b:v",
+                str(video_bps),
+                "-maxrate",
+                str(video_bps),
+                "-bufsize",
+                str(video_bps * 2),
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                f"{audio_bps // 1000}k",
+                "-movflags",
+                "+faststart",
+                str(temp_path),
+            ],
+            text=True,
+            capture_output=True,
+        )
+        if process.returncode != 0:
+            last_error = (process.stderr or process.stdout or "").strip()[-1000:]
+            continue
+        if temp_path.is_file() and temp_path.stat().st_size <= limit:
+            temp_path.replace(path)
+            console.print(f"[green]Clip size OK[/green] {path.name} ({path.stat().st_size / 1024 / 1024:.1f} MB).")
+            return path
+        size_mb = temp_path.stat().st_size / 1024 / 1024 if temp_path.is_file() else 0
+        last_error = f"hasil kompresi masih {size_mb:.1f} MB"
+
+    temp_path.unlink(missing_ok=True)
+    raise RuntimeError(f"Gagal membuat clip di bawah {limit // 1024 // 1024} MB: {last_error}")
 
 
 def ytdlp_base_options(**overrides) -> dict:
@@ -1455,6 +1528,7 @@ def export_clip(
     )
     temp_video_path.unlink(missing_ok=True)
     temp_audio_path.unlink(missing_ok=True)
+    enforce_clip_size_limit(out_path, duration)
 
     thumb_path = clips_dir / f"{base_name}_thumb.jpg"
     prompt_path = clips_dir / f"{base_name}_thumb.txt"

@@ -1,9 +1,11 @@
 from api import (
+    ClipFile,
     ClipJob,
     ClipJobRequest,
     MAX_AUTO_ANALYSIS_SECONDS,
     MAX_REQUESTED_CLIPS,
     _models_from_payload,
+    build_clipper_command,
     choose_auto_analyze_seconds,
     max_clips_for_duration,
     normalize_job_request,
@@ -117,3 +119,85 @@ def test_create_job_rejects_when_another_job_is_active(monkeypatch):
 
     assert error.value.status_code == 409
     assert "aktif" in str(error.value.detail)
+
+
+def test_build_clipper_command_forces_creative_commons_for_url_jobs():
+    request = ClipJobRequest(url="https://youtu.be/source", require_creative_commons=False)
+
+    command = build_clipper_command(request)
+
+    assert "--require-creative-commons" in command
+
+
+def test_build_clipper_command_does_not_require_creative_commons_for_uploaded_files():
+    request = ClipJobRequest(source_file="/tmp/source.mp4", require_creative_commons=False)
+
+    command = build_clipper_command(request)
+
+    assert "--require-creative-commons" not in command
+
+
+def test_delete_all_jobs_removes_only_process_jobs_and_preserves_clips(monkeypatch, tmp_path):
+    import api
+
+    outputs = tmp_path / "outputs"
+    clip_path = outputs / "finished" / "clips" / "clip_01.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"done")
+
+    queued = ClipJob(
+        id="queued-job",
+        status="queued",
+        request=ClipJobRequest(url="https://youtu.be/queued"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    failed = ClipJob(
+        id="failed-job",
+        status="failed",
+        request=ClipJobRequest(url="https://youtu.be/failed"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[
+            ClipFile(
+                name="clip_01.mp4",
+                url="/outputs/finished/clips/clip_01.mp4",
+                size_bytes=4,
+            )
+        ],
+    )
+    completed = ClipJob(
+        id="completed-job",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/completed"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[
+            ClipFile(
+                name="clip_01.mp4",
+                url="/outputs/finished/clips/clip_01.mp4",
+                size_bytes=4,
+            )
+        ],
+    )
+
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "UPLOADS_DIR", tmp_path / "uploads")
+    monkeypatch.setattr(api, "JOBS_PATH", tmp_path / "jobs.json")
+    monkeypatch.setattr(api, "jobs", {queued.id: queued, failed.id: failed, completed.id: completed})
+    monkeypatch.setattr(api, "job_processes", {})
+    monkeypatch.setattr(api, "job_secrets", {queued.id: "secret"})
+    monkeypatch.setattr(api, "cancelled_job_ids", set())
+    monkeypatch.setattr(api, "preserve_job_files_on_cancel", set())
+
+    result = api.delete_all_jobs()
+
+    assert result["status"] == "ok"
+    assert result["removed_jobs"] == 2
+    assert result["removed_outputs"] == 0
+    assert api.jobs == {completed.id: completed}
+    assert api.job_secrets == {}
+    assert clip_path.exists()
+
+    api.run_job(queued.id)
+    assert queued.id not in api.cancelled_job_ids

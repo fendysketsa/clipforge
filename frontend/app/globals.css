@@ -879,7 +879,8 @@ h2 {
 }
 
 .dangerTextButton,
-.historyDeleteSelected {
+.historyDeleteSelected,
+.historyDeleteAll {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -891,7 +892,8 @@ h2 {
 }
 
 .dangerTextButton svg,
-.historyDeleteSelected svg {
+.historyDeleteSelected svg,
+.historyDeleteAll svg {
   flex: 0 0 auto;
 }
 
@@ -985,6 +987,25 @@ h2 {
   font-weight: 800;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+
+.stopJobRowButton {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 9px;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.stopJobRowButton svg {
+  flex: 0 0 auto;
+  color: currentColor;
 }
 
 .jobSourceLine {

@@ -1,4 +1,12 @@
-import type { ClipJob, CreateClipJobInput, YouTubeConfig, YouTubeLoginStatus, YouTubeUploadJob } from "../types/clip.type";
+import type {
+  AutoViralRequest,
+  AutoViralRun,
+  ClipJob,
+  CreateClipJobInput,
+  YouTubeConfig,
+  YouTubeLoginStatus,
+  YouTubeUploadJob,
+} from "../types/clip.type";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8010";
 const CLIENT_API_BASE = API_BASE;
@@ -238,6 +246,26 @@ export const createYouTubeUploadBatch = async (jobId: string, clipUrls: string[]
     throw new Error(await responseErrorMessage(response, "Failed to queue YouTube uploads"));
   }
   return (await response.json()) as YouTubeUploadJob[];
+};
+
+export const startAutoViralCampaign = async (input: AutoViralRequest = {}) => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/automation/viral-cc`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to start auto viral campaign"));
+  }
+  return (await response.json()) as AutoViralRun;
+};
+
+export const getAutoViralCampaign = async (runId: string) => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/automation/viral-cc/${runId}`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to load auto viral campaign"));
+  }
+  return (await response.json()) as AutoViralRun;
 };
 
 export const createJob = async (input: CreateClipJobInput) => {

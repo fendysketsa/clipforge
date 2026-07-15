@@ -1,4 +1,4 @@
-import { CalendarClock, Clock3, ExternalLink, Film, Link2, Trash2 } from "lucide-react";
+import { CalendarClock, Clock3, ExternalLink, Film, Link2, StopCircle, Trash2 } from "lucide-react";
 import { statusCopy, statusIcon } from "../../lib/constants";
 import { formatDuration, jobElapsedSeconds } from "../../lib/utils";
 import type { ClipJob } from "../../types/clip.type";
@@ -10,6 +10,7 @@ type HistorySectionProps = {
   onDeleteFailed: () => void;
   onDeleteSelected: () => void;
   onSelectJob: (job: ClipJob) => void;
+  onStopJob: (jobId: string) => void;
   onToggleJobSelection: (jobId: string) => void;
 };
 
@@ -20,9 +21,13 @@ export function HistorySection({
   onDeleteFailed,
   onDeleteSelected,
   onSelectJob,
+  onStopJob,
   onToggleJobSelection,
 }: HistorySectionProps) {
   const failedJobs = jobs.filter((item) => item.status === "failed" || item.status === "cancelled");
+  const processJobs = jobs.filter(
+    (item) => item.status === "queued" || item.status === "running" || item.status === "failed" || item.status === "cancelled",
+  );
   const selectedCount = selectedJobIds.length;
   const formatDate = (value: string) =>
     new Intl.DateTimeFormat("id-ID", {
@@ -62,14 +67,15 @@ export function HistorySection({
               Hapus terpilih ({selectedCount})
             </button>
           ) : null}
-          {jobs.length > 0 ? (
+          {processJobs.length > 0 ? (
             <button
               type="button"
               onClick={onDeleteAll}
-              className="iconButton dangerIconButton"
-              title="Hapus Semua Riwayat"
+              className="dangerButton historyDeleteAll"
+              title="Hapus catatan job queued, running, failed, dan cancelled"
             >
               <Trash2 size={16} />
+              Hapus job proses ({processJobs.length})
             </button>
           ) : null}
         </div>
@@ -80,6 +86,7 @@ export function HistorySection({
           const Icon = statusIcon[item.status];
           const count = item.clips.length ? `${item.clips.length} klip` : `${item.candidates.length} kandidat`;
           const canSelectForDelete = item.status !== "queued" && item.status !== "running";
+          const canStop = item.status === "queued" || item.status === "running";
           const isSelected = selectedJobIds.includes(item.id);
           const url = sourceUrl(item);
           const elapsedSeconds = jobElapsedSeconds(item);
@@ -134,6 +141,17 @@ export function HistorySection({
                   </span>
                 ) : null}
               </button>
+              {canStop ? (
+                <button
+                  className="ghostButton stopJobRowButton"
+                  type="button"
+                  onClick={() => onStopJob(item.id)}
+                  title="Stop proses running/queued"
+                >
+                  <StopCircle size={15} />
+                  Stop
+                </button>
+              ) : null}
             </div>
           );
         })}

@@ -152,3 +152,36 @@ export type YouTubeLoginStatus = {
   error?: string | null;
   logs: string[];
 };
+
+export type AutoViralRequest = {
+  video_count?: number;
+  clips_per_video?: number;
+  search_limit_per_query?: number;
+  min_source_duration?: number;
+  max_source_duration?: number;
+  min_views?: number;
+  top?: number | null;
+  min_duration?: number;
+  max_duration?: number;
+  video_quality?: VideoQuality;
+  crop_mode?: CropMode;
+  burn_subtitles?: boolean;
+  ai_enabled?: boolean;
+  ai_base_url?: string;
+  ai_model?: string;
+  ai_api_key?: string;
+};
+
+export type AutoViralRun = {
+  id: string;
+  status: "queued" | "running" | "completed" | "failed";
+  created_at: string;
+  updated_at: string;
+  finished_at?: string | null;
+  request: AutoViralRequest;
+  message: string;
+  selected_sources: Record<string, unknown>[];
+  processed: Record<string, unknown>[];
+  errors: string[];
+  logs: string[];
+};
