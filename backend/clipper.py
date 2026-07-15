@@ -636,6 +636,22 @@ def fetch_metadata(url: str) -> dict:
         raise UserFacingError(friendly_youtube_error(exc, "membaca metadata")) from exc
 
 
+def is_creative_commons_metadata(metadata: dict) -> bool:
+    license_text = str(metadata.get("license") or "").lower()
+    return "creative commons" in license_text or "cc-by" in license_text or "reuse allowed" in license_text
+
+
+def require_creative_commons_metadata(metadata: dict) -> None:
+    if is_creative_commons_metadata(metadata):
+        return
+    license_text = metadata.get("license") or "tidak tersedia"
+    raise UserFacingError(
+        "Video sumber tidak terdeteksi sebagai Creative Commons. "
+        f"Lisensi terdeteksi: {license_text}. "
+        "Gunakan video dengan filter Creative Commons agar clipping lebih aman untuk dimodifikasi."
+    )
+
+
 def download_video(
     url: str,
     work_dir: Path,
@@ -679,7 +695,7 @@ def download_video(
 
 
 def sanitize_metadata(info: dict) -> dict:
-    keys = ["id", "title", "uploader", "duration", "webpage_url", "ext"]
+    keys = ["id", "title", "uploader", "duration", "webpage_url", "ext", "license"]
     return {key: info.get(key) for key in keys}
 
 
@@ -1573,6 +1589,11 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Comma-separated hashtags always appended to generated captions, e.g. clipforge,viral",
     )
+    parser.add_argument(
+        "--require-creative-commons",
+        action="store_true",
+        help="Reject YouTube URLs whose metadata is not Creative Commons/reuse allowed.",
+    )
     return parser.parse_args()
 
 
@@ -1599,6 +1620,9 @@ def main() -> int:
     else:
         console.print("[bold]Fetching metadata...[/bold]")
         metadata = fetch_metadata(args.url)
+        if args.require_creative_commons:
+            require_creative_commons_metadata(metadata)
+            console.print(f"[green]Creative Commons license detected:[/green] {metadata.get('license') or '-'}")
         title = metadata.get("title") or metadata.get("id") or "youtube-video"
         work_dir = root / slugify(title)[:80]
         work_dir.mkdir(parents=True, exist_ok=True)
@@ -1613,6 +1637,7 @@ def main() -> int:
     save_json(work_dir / "metadata.json", metadata)
 
     cache_suffix = f"_{int(args.analyze_seconds)}s" if args.analyze_seconds else ""
+    console.print("[bold]Extracting audio...[/bold]")
     audio_path = extract_audio(
         final_video_path,
         work_dir / f"audio{cache_suffix}.wav",

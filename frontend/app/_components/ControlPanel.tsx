@@ -1,4 +1,4 @@
-import { Link2, Loader2, Play, RefreshCw, Scissors, Sparkles, Type, Upload } from "lucide-react";
+import { Link2, Loader2, Play, RefreshCw, Scissors, ShieldCheck, Sparkles, Type, Upload, UploadCloud } from "lucide-react";
 import type { LocalLlmProvider } from "../../lib/apiClient";
 import {
   CAPTION_FONT_SIZE_MAX,
@@ -68,7 +68,11 @@ type ControlPanelProps = {
   onDiscoverLocalLlms: () => void;
   onSelectLocalProvider: (provider: LocalLlmProvider) => void;
   requiredHashtags: string;
+  requireCreativeCommons: boolean;
+  autoUploadYoutube: boolean;
   onRequiredHashtagsChange: (value: string) => void;
+  onRequireCreativeCommonsChange: (value: boolean) => void;
+  onAutoUploadYoutubeChange: (value: boolean) => void;
   onCropModeChange: (mode: CropMode) => void;
   onMaxDurationChange: (value: number) => void;
   onMinDurationChange: (value: number) => void;
@@ -122,7 +126,11 @@ export function ControlPanel({
   onDiscoverLocalLlms,
   onSelectLocalProvider,
   requiredHashtags,
+  requireCreativeCommons,
+  autoUploadYoutube,
   onRequiredHashtagsChange,
+  onRequireCreativeCommonsChange,
+  onAutoUploadYoutubeChange,
   onCropModeChange,
   onMaxDurationChange,
   onMinDurationChange,
@@ -209,6 +217,23 @@ export function ControlPanel({
           ) : null}
         </label>
       )}
+
+      {sourceMode === "url" ? (
+        <div className="aiBlock">
+          <label className="aiToggle">
+            <span className="aiToggleLabel">
+              <ShieldCheck size={16} />
+              Wajib Creative Commons
+            </span>
+            <input
+              type="checkbox"
+              checked={requireCreativeCommons}
+              onChange={(event) => onRequireCreativeCommonsChange(event.target.checked)}
+            />
+          </label>
+          <p className="field-help">Video non-CC akan dibatalkan sebelum download agar sumber lebih aman untuk dimodifikasi.</p>
+        </div>
+      ) : null}
 
       <div className="gridFields">
         <label className="field">
@@ -577,6 +602,23 @@ export function ControlPanel({
             </label>
           </div>
         ) : null}
+      </div>
+
+      <div className="aiBlock">
+        <label className="aiToggle">
+          <span className="aiToggleLabel">
+            <UploadCloud size={16} />
+            Auto Upload YouTube
+          </span>
+          <input
+            type="checkbox"
+            checked={autoUploadYoutube}
+            onChange={(event) => onAutoUploadYoutubeChange(event.target.checked)}
+          />
+        </label>
+        <p className="field-help">
+          Selesai clipping langsung antrekan 3 klip terbaik ke playlist Islam dengan judul, deskripsi singkat, dan hashtag otomatis.
+        </p>
       </div>
 
       {error ? <p className="error">{error}</p> : null}

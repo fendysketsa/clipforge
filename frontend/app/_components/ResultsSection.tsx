@@ -1,15 +1,24 @@
-import { CheckCircle2, Clipboard, Download, ExternalLink, Trash2, Video } from "lucide-react";
+import { CheckCircle2, Clipboard, Download, ExternalLink, RefreshCw, Trash2, UploadCloud, Video } from "lucide-react";
 import { getOutputUrl } from "../../lib/apiClient";
 import { clipDisplayTitle, handleCopyTitle, handleDownload } from "../../lib/utils";
-import type { ClipFile } from "../../types/clip.type";
+import type { ClipFile, YouTubeUploadJob } from "../../types/clip.type";
 import { ThumbnailPrompt } from "./ThumbnailPrompt";
 
 type ResultsSectionProps = {
   clips: ClipFile[];
   selectedClipUrls: string[];
+  youtubeEnabled: boolean;
+  youtubeStatusMessage: string;
+  youtubeAutoUploadCount: number;
+  youtubeUploads: YouTubeUploadJob[];
+  isYouTubeLoginActive: boolean;
   onDeleteAllClips: () => void;
   onDeleteClip: (clip: ClipFile) => void;
   onDeleteSelectedClips: () => void;
+  onCaptureYouTubeSession: () => void;
+  onStartYouTubeLogin: () => void;
+  onUploadAllToYouTube: () => void;
+  onUploadClipToYouTube: (clip: ClipFile) => void;
   onToggleAllClipSelection: () => void;
   onToggleClipSelection: (clipUrl: string) => void;
   onToggleClipCorrect: (clip: ClipFile, isCorrect: boolean) => void;
@@ -18,9 +27,18 @@ type ResultsSectionProps = {
 export function ResultsSection({
   clips,
   selectedClipUrls,
+  youtubeEnabled,
+  youtubeStatusMessage,
+  youtubeAutoUploadCount,
+  youtubeUploads,
+  isYouTubeLoginActive,
   onDeleteAllClips,
   onDeleteClip,
   onDeleteSelectedClips,
+  onCaptureYouTubeSession,
+  onStartYouTubeLogin,
+  onUploadAllToYouTube,
+  onUploadClipToYouTube,
   onToggleAllClipSelection,
   onToggleClipSelection,
   onToggleClipCorrect,
@@ -46,6 +64,43 @@ export function ResultsSection({
                   Hapus terpilih ({selectedCount})
                 </button>
               ) : null}
+              <button
+                type="button"
+                onClick={onUploadAllToYouTube}
+                className="ghostButton youtubeButton"
+                disabled={!youtubeEnabled}
+                title={
+                  youtubeEnabled
+                    ? `Auto upload ${Math.min(youtubeAutoUploadCount, clips.length)} klip terbaik ke YouTube`
+                    : youtubeStatusMessage
+                }
+              >
+                <UploadCloud size={15} />
+                Upload {Math.min(youtubeAutoUploadCount, clips.length)} terbaik
+              </button>
+              {!youtubeEnabled ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={onStartYouTubeLogin}
+                    className="ghostButton youtubeButton"
+                    disabled={isYouTubeLoginActive}
+                    title={youtubeStatusMessage}
+                  >
+                    <ExternalLink size={15} />
+                    Login YouTube
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onCaptureYouTubeSession}
+                    className="ghostButton youtubeButton"
+                    title="Simpan session dari Chrome remote debugging ke Playwright storage state"
+                  >
+                    <RefreshCw size={15} />
+                    Sync Session
+                  </button>
+                </>
+              ) : null}
               <button type="button" onClick={onDeleteAllClips} className="ghostButton dangerTextButton">
                 <Trash2 size={15} />
                 Hapus semua klip
@@ -61,6 +116,14 @@ export function ResultsSection({
             const title = clipDisplayTitle(clip);
             const url = getOutputUrl(clip.url);
             const isSelected = selectedClipUrls.includes(clip.url);
+            const latestUpload = youtubeUploads.find((upload) => upload.clip_url === clip.url);
+            const isUploadingToYouTube = latestUpload?.status === "queued" || latestUpload?.status === "running";
+            const uploadError = latestUpload?.error || latestUpload?.logs?.at(-1) || "";
+            const youtubeButtonTitle = youtubeEnabled
+              ? uploadError
+                ? `Upload ulang ke YouTube. Error terakhir: ${uploadError}`
+                : "Upload klip ini ke YouTube"
+              : youtubeStatusMessage;
 
             return (
               <article
@@ -108,11 +171,47 @@ export function ResultsSection({
                     <Download size={16} />
                     Unduh
                   </button>
+                  <button
+                    type="button"
+                    className="youtubeUploadButton"
+                    onClick={() => onUploadClipToYouTube(clip)}
+                    disabled={!youtubeEnabled || isUploadingToYouTube}
+                    title={youtubeButtonTitle}
+                  >
+                    <UploadCloud size={16} />
+                    {isUploadingToYouTube ? "Uploading" : latestUpload?.status === "failed" ? "Retry YouTube" : "YouTube"}
+                  </button>
                   <button className="clipDeleteButton" type="button" onClick={() => onDeleteClip(clip)}>
                     <Trash2 size={16} />
                     Hapus
                   </button>
                 </div>
+                {latestUpload ? (
+                  <div className={`youtubeUploadStatus status-${latestUpload.status}`}>
+                    <UploadCloud size={14} />
+                    <span>
+                      YouTube: {latestUpload.status}
+                      {latestUpload.video_url ? (
+                        <>
+                          {" "}
+                          · <a href={latestUpload.video_url} target="_blank" rel="noreferrer">buka</a>
+                        </>
+                      ) : null}
+                    </span>
+                  </div>
+                ) : null}
+                {latestUpload?.status === "failed" && uploadError ? (
+                  <div className="youtubeUploadError" title={uploadError}>
+                    <strong>Upload gagal</strong>
+                    <span>{uploadError}</span>
+                    <button type="button" onClick={onStartYouTubeLogin} disabled={isYouTubeLoginActive}>
+                      {isYouTubeLoginActive ? "Menunggu login..." : "Buka Login YouTube"}
+                    </button>
+                    <button type="button" onClick={onCaptureYouTubeSession}>
+                      Sync Session Browser
+                    </button>
+                  </div>
+                ) : null}
                 <ThumbnailPrompt clip={clip} />
               </article>
             );

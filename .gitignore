@@ -5,6 +5,7 @@
 
 backend/.venv/
 backend/outputs/
+backend/data/
 backend/jobs.json
 backend/jobs.json.tmp
 backend/__pycache__/

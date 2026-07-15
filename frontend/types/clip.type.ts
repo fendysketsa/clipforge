@@ -1,4 +1,5 @@
 export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+export type YouTubeVisibility = "private" | "unlisted" | "public";
 export type CropMode = "center" | "person" | "streamer";
 export type VideoQuality = "standard" | "high" | "max";
 export type CamCorner = "auto" | "br" | "bl" | "tr" | "tl";
@@ -67,6 +68,8 @@ export type ClipJob = {
     caption_font: CaptionFont;
     caption_outline: number;
     caption_outline_color: string;
+    require_creative_commons: boolean;
+    auto_upload_youtube: boolean;
     ai_enabled: boolean;
     ai_base_url: string;
     ai_model: string;
@@ -93,8 +96,59 @@ export type CreateClipJobInput = {
   caption_outline?: number;
   caption_outline_color?: string;
   required_hashtags?: string[];
+  require_creative_commons?: boolean;
+  auto_upload_youtube?: boolean;
   ai_enabled?: boolean;
   ai_base_url?: string;
   ai_model?: string;
   ai_api_key?: string;
+};
+
+export type YouTubeConfig = {
+  enabled: boolean;
+  playwright_installed: boolean;
+  auth_state_exists: boolean;
+  auth_state_path: string;
+  auth_status_message?: string | null;
+  default_visibility: YouTubeVisibility;
+  default_made_for_kids: boolean;
+  default_tags: string[];
+  default_playlist: string;
+  target_channel: string;
+  target_email: string;
+  auto_upload_count: number;
+  active_upload_id?: string | null;
+};
+
+export type YouTubeUploadJob = {
+  id: string;
+  source_job_id: string;
+  clip_url: string;
+  clip_name: string;
+  status: JobStatus;
+  created_at: string;
+  updated_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  duration_seconds?: number | null;
+  title: string;
+  description: string;
+  thumbnail_url?: string | null;
+  visibility: YouTubeVisibility;
+  made_for_kids: boolean;
+  tags: string[];
+  playlist: string;
+  target_channel: string;
+  dry_run: boolean;
+  video_url?: string | null;
+  logs: string[];
+  error?: string | null;
+};
+
+export type YouTubeLoginStatus = {
+  active: boolean;
+  started_at?: string | null;
+  finished_at?: string | null;
+  error?: string | null;
+  logs: string[];
 };

@@ -21,6 +21,7 @@ STATE_PATH = Path(
 )
 BACKEND_API_BASE = os.environ.get("BACKEND_API_BASE", "http://127.0.0.1:8010").rstrip("/")
 PUBLIC_OUTPUT_BASE_URL = os.environ.get("TELEGRAM_PUBLIC_BASE_URL", "").rstrip("/")
+YOUTUBE_STUDIO_URL = os.environ.get("YOUTUBE_STUDIO_URL", "https://studio.youtube.com")
 POLL_TIMEOUT_SECONDS = 3
 MAX_UPLOAD_BYTES = min(
     49 * 1024 * 1024,
@@ -45,6 +46,30 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "caption_position": "upper",
     "caption_font_size": 18,
 }
+
+CLIPPING_STAGE_ALERTS: list[tuple[str, str, str, tuple[str, ...]]] = [
+    ("queued", "Menyiapkan antrean", "Job masuk antrean backend.", ()),
+    ("metadata", "Membaca informasi video", "Backend sedang membaca metadata video sumber.", ("fetching metadata",)),
+    (
+        "creative_commons",
+        "Lisensi Creative Commons terverifikasi",
+        "Sumber terdeteksi Creative Commons/reuse allowed sebelum download dilanjutkan.",
+        ("creative commons license detected",),
+    ),
+    ("download", "Mengunduh video sumber", "Video sumber mulai diunduh untuk diproses.", ("fetching video",)),
+    ("audio", "Mengekstrak audio", "Audio sedang disiapkan untuk transkripsi.", ("extract", "audio")),
+    ("transcribe", "Mentranskripsi percakapan", "Model transkripsi berjalan untuk membaca isi video.", ("loading model", "transcrib")),
+    ("score", "Menyeleksi momen terbaik", "Transcript sedang dinilai untuk mencari kandidat clip terkuat.", ("scoring candidate",)),
+    ("ai_score", "AI menilai kandidat", "AI agent sedang meranking kandidat clip.", ("agent scoring",)),
+    ("export", "Mengekspor video vertikal", "Clip terpilih sedang dirender ke format vertikal.", ("exporting vertical clips",)),
+    ("done", "Clipping selesai", "Render selesai. Bot akan menyiapkan pengiriman hasil.", ("done.", "exported:")),
+    (
+        "auto_youtube",
+        "Auto upload YouTube",
+        "3 clip terbaik masuk antrean upload YouTube dengan judul, deskripsi singkat, hashtag otomatis, dan playlist Islam.",
+        ("auto upload youtube:",),
+    ),
+]
 
 
 class ServiceError(RuntimeError):
@@ -125,6 +150,7 @@ def default_state() -> dict[str, Any]:
         "active_job_id": None,
         "settings": DEFAULT_SETTINGS.copy(),
         "jobs": {},
+        "youtube_uploads": {},
     }
 
 
@@ -142,6 +168,8 @@ def normalize_state(value: object) -> dict[str, Any]:
     state["settings"] = normalize_settings(value.get("settings"))
     if isinstance(value.get("jobs"), dict):
         state["jobs"] = value["jobs"]
+    if isinstance(value.get("youtube_uploads"), dict):
+        state["youtube_uploads"] = value["youtube_uploads"]
     return state
 
 
@@ -170,6 +198,7 @@ def build_job_payload(url: str, settings: dict[str, Any]) -> dict[str, Any]:
         "video_quality": clean["video_quality"],
         "burn_subtitles": clean["burn_subtitles"],
         "crop_mode": clean["crop_mode"],
+        "require_creative_commons": True,
         "ai_enabled": clean["ai_enabled"],
         "caption_position": clean["caption_position"],
         "caption_font_size": clean["caption_font_size"],
@@ -235,6 +264,22 @@ def progress_stage(job: dict[str, Any]) -> str:
     if "fetching metadata" in logs:
         return "Membaca informasi video"
     return "Menyiapkan proses clipping"
+
+
+def clipping_stage_alerts(job: dict[str, Any], sent_stage_ids: set[str]) -> list[tuple[str, str, str]]:
+    status = str(job.get("status") or "")
+    logs = "\n".join(str(line) for line in job.get("logs", [])[-120:]).lower()
+    alerts: list[tuple[str, str, str]] = []
+    for stage_id, label, detail, patterns in CLIPPING_STAGE_ALERTS:
+        if stage_id in sent_stage_ids:
+            continue
+        if stage_id == "queued":
+            matched = status in ACTIVE_STATUSES
+        else:
+            matched = any(pattern in logs for pattern in patterns)
+        if matched:
+            alerts.append((stage_id, label, detail))
+    return alerts
 
 
 def clip_title(clip: dict[str, Any], index: int) -> str:
@@ -352,6 +397,45 @@ class BackendClient:
         )
         return result if isinstance(result, dict) else {}
 
+    def youtube_config(self) -> dict[str, Any]:
+        result = _json_request(f"{self.base_url}/api/youtube/config", timeout=15)
+        return result if isinstance(result, dict) else {}
+
+    def get_youtube_upload(self, upload_id: str) -> dict[str, Any]:
+        result = _json_request(f"{self.base_url}/api/youtube/uploads/{upload_id}", timeout=15)
+        if not isinstance(result, dict):
+            raise ServiceError("Data upload YouTube tidak valid")
+        return result
+
+    def create_youtube_upload(self, job_id: str, clip_url: str) -> dict[str, Any]:
+        result = _json_request(
+            f"{self.base_url}/api/jobs/{job_id}/youtube-uploads",
+            method="POST",
+            payload={"clip_url": clip_url},
+            timeout=30,
+        )
+        if not isinstance(result, dict):
+            raise ServiceError("Backend tidak mengembalikan upload YouTube")
+        return result
+
+    def create_youtube_upload_batch(self, job_id: str, clip_urls: list[str] | None = None) -> list[dict[str, Any]]:
+        result = _json_request(
+            f"{self.base_url}/api/jobs/{job_id}/youtube-uploads/batch",
+            method="POST",
+            payload={"clip_urls": clip_urls or []},
+            timeout=45,
+        )
+        return result if isinstance(result, list) else []
+
+    def capture_youtube_session(self) -> dict[str, Any]:
+        result = _json_request(
+            f"{self.base_url}/api/youtube/session/capture",
+            method="POST",
+            payload={},
+            timeout=45,
+        )
+        return result if isinstance(result, dict) else {}
+
 
 class TelegramApi:
     def __init__(self, token: str):
@@ -408,6 +492,7 @@ def main_menu_keyboard() -> dict[str, Any]:
         [
             [button("🎬 Mulai Clipping", "menu:new")],
             [button("📊 Status", "menu:status"), button("📚 Riwayat", "menu:history")],
+            [button("⬆️ Status Upload YouTube", "menu:youtube")],
             [button("⚙️ Pengaturan", "menu:settings"), button("❓ Bantuan", "menu:help")],
         ]
     )
@@ -555,8 +640,9 @@ class ClipForgeTelegramBot:
             "1. Kirim link YouTube ke bot.\n"
             "2. Periksa pengaturan yang ditampilkan.\n"
             "3. Tekan Proses Sekarang.\n"
-            "4. Bot akan mengirim seluruh hasil saat selesai.\n\n"
-            "Perintah: /clip, /status, /settings, /history, /cancel, /menu",
+            "4. Bot akan mengirim seluruh hasil saat selesai.\n"
+            "5. Tekan Upload ke YouTube pada clip pilihan atau Upload 3 Terbaik.\n\n"
+            "Perintah: /clip, /status, /settings, /history, /youtube, /cancel, /menu",
             main_menu_keyboard(),
         )
 
@@ -592,6 +678,7 @@ class ClipForgeTelegramBot:
             rows.append([button("🔄 Perbarui", f"refresh:{job_id}"), button("⏹ Batalkan", f"cancelask:{job_id}")])
         elif status == "completed" and job.get("clips"):
             rows.append([button("📤 Kirim Semua Hasil", f"deliver:{job_id}")])
+            rows.append([button("⬆️ Upload 3 Terbaik ke YouTube", f"ytall:{job_id}")])
         rows.append([button("📚 Riwayat", "menu:history"), button("🏠 Menu", "menu:home")])
         return keyboard(rows)
 
@@ -657,6 +744,119 @@ class ClipForgeTelegramBot:
         rows.append([button("🏠 Menu Utama", "menu:home")])
         self.send_message(chat_id, "\n".join(lines), keyboard(rows))
 
+    def youtube_upload_status_text(self, upload: dict[str, Any]) -> str:
+        status = str(upload.get("status", "unknown"))
+        status_label = {
+            "queued": "Menunggu antrean",
+            "running": "Sedang upload",
+            "completed": "Selesai",
+            "failed": "Gagal",
+            "cancelled": "Dibatalkan",
+        }.get(status, status)
+        lines = [
+            f"Upload YouTube: {status_label}",
+            f"Clip: {upload.get('clip_name') or '-'}",
+            f"Judul: {str(upload.get('title') or '-')[:160]}",
+            f"Deskripsi: {str(upload.get('description') or '-')[:220]}",
+            f"Playlist: {upload.get('playlist') or '-'}",
+            f"Hashtag/Tags: {', '.join(upload.get('tags') or []) or '-'}",
+            f"Visibilitas: {upload.get('visibility') or '-'}",
+        ]
+        if upload.get("video_url"):
+            lines.append(f"URL: {upload['video_url']}")
+        if upload.get("error"):
+            lines.append(f"Keterangan: {str(upload['error'])[:1600]}")
+        logs = upload.get("logs")
+        if isinstance(logs, list) and logs:
+            lines.append(f"Log terakhir: {str(logs[-1])[:1000]}")
+        return "\n".join(lines)
+
+    def youtube_upload_keyboard(self, upload: dict[str, Any]) -> dict[str, Any]:
+        rows: list[list[dict[str, str]]] = []
+        status = str(upload.get("status") or "")
+        if upload.get("video_url"):
+            rows.append([button("🔗 Buka Video YouTube", str(upload["video_url"]))])
+        if status == "failed":
+            rows.append([button("🔐 Buka Login YouTube", YOUTUBE_STUDIO_URL)])
+            rows.append([button("🔄 Sync Session Browser", "ytsync")])
+            upload_id = upload.get("id")
+            if isinstance(upload_id, str) and upload_id:
+                rows.append([button("🔁 Retry Upload Clip", f"ytretry:{upload_id}")])
+            rows.append([button("📊 Status Upload YouTube", "menu:youtube")])
+        rows.append([button("📚 Riwayat", "menu:history"), button("🏠 Menu", "menu:home")])
+        return keyboard(rows)
+
+    def show_youtube_status(self, chat_id: int) -> None:
+        try:
+            config = self.backend.youtube_config()
+        except ServiceError as exc:
+            self.send_message(chat_id, f"Gagal memeriksa uploader YouTube: {exc}", main_menu_keyboard())
+            return
+        lines = [
+            "Status uploader YouTube",
+            f"Playwright: {'siap' if config.get('playwright_installed') else 'belum terpasang'}",
+            f"Sesi login: {'ada' if config.get('auth_state_exists') else 'belum ada'}",
+            f"Default visibility: {config.get('default_visibility') or 'private'}",
+        ]
+        if config.get("active_upload_id"):
+            lines.append(f"Upload aktif: {str(config['active_upload_id'])[:10]}")
+        if not config.get("enabled"):
+            lines.append(
+                "\nLogin sekali dari server dengan:\n"
+                "cd backend && python youtube_uploader.py login"
+            )
+        self.send_message(chat_id, "\n".join(lines), main_menu_keyboard())
+
+    def youtube_record(self, upload_id: str, chat_id: int) -> dict[str, Any]:
+        uploads = self.state.setdefault("youtube_uploads", {})
+        record = uploads.setdefault(upload_id, {"chat_id": chat_id, "terminal_notified": False})
+        record["chat_id"] = chat_id
+        return record
+
+    def remember_youtube_uploads(self, chat_id: int, uploads: list[dict[str, Any]]) -> None:
+        for upload in uploads:
+            upload_id = upload.get("id")
+            if isinstance(upload_id, str) and upload_id:
+                self.youtube_record(upload_id, chat_id)
+        self.persist()
+
+    def start_youtube_upload_for_clip(self, chat_id: int, job_id: str, clip_index: int) -> None:
+        try:
+            job = self.backend.get_job(job_id)
+            clips = job.get("clips", [])
+            if job.get("status") != "completed" or not isinstance(clips, list):
+                self.send_message(chat_id, "Job belum selesai atau tidak punya clip.", self.job_keyboard(job))
+                return
+            if clip_index < 1 or clip_index > len(clips):
+                self.send_message(chat_id, "Clip yang dipilih tidak ditemukan.", self.job_keyboard(job))
+                return
+            clip = clips[clip_index - 1]
+            upload = self.backend.create_youtube_upload(job_id, str(clip.get("url", "")))
+            self.remember_youtube_uploads(chat_id, [upload])
+            self.send_message(chat_id, "Upload YouTube dimasukkan ke antrean.\n\n" + self.youtube_upload_status_text(upload))
+        except ServiceError as exc:
+            self.send_message(chat_id, f"Gagal membuat upload YouTube: {exc}", main_menu_keyboard())
+
+    def start_youtube_upload_for_url(self, chat_id: int, job_id: str, clip_url: str) -> None:
+        try:
+            upload = self.backend.create_youtube_upload(job_id, clip_url)
+            self.remember_youtube_uploads(chat_id, [upload])
+            self.send_message(chat_id, "Retry upload YouTube dimasukkan ke antrean.\n\n" + self.youtube_upload_status_text(upload))
+        except ServiceError as exc:
+            self.send_message(chat_id, f"Gagal retry upload YouTube: {exc}", main_menu_keyboard())
+
+    def start_youtube_upload_all(self, chat_id: int, job_id: str) -> None:
+        try:
+            uploads = self.backend.create_youtube_upload_batch(job_id)
+            self.remember_youtube_uploads(chat_id, uploads)
+            self.send_message(
+                chat_id,
+                f"{len(uploads)} clip terbaik dimasukkan ke antrean upload YouTube.",
+                keyboard([[button("📊 Status Upload YouTube", "menu:youtube")], [button("🏠 Menu", "menu:home")]]),
+            )
+        except ServiceError as exc:
+            self.send_message(chat_id, f"Gagal membuat batch upload YouTube: {exc}", main_menu_keyboard())
+
     def receive_url(self, chat_id: int, value: str) -> None:
         url = value.strip()
         if not is_supported_video_url(url):
@@ -698,11 +898,12 @@ class ClipForgeTelegramBot:
             "chat_id": chat_id,
             "terminal_notified": False,
             "delivery": {"summary": False, "clips": {}},
+            "stage_alerts": ["queued"],
         }
         self.persist()
         status_message = self.send_message(
             chat_id,
-            "Proses clipping berhasil dimulai. Bot akan mengirim semua hasil secara otomatis saat selesai.",
+            "Proses clipping berhasil dimulai. Alert tahap demi tahap aktif, dan bot akan mengirim semua hasil otomatis saat selesai.",
             self.job_keyboard(job),
         )
         self.state["jobs"][job_id]["status_message_id"] = status_message.get("message_id")
@@ -781,6 +982,7 @@ class ClipForgeTelegramBot:
             },
         )
         record["chat_id"] = chat_id
+        record.setdefault("stage_alerts", [])
         delivery = record.setdefault("delivery", {"summary": False, "clips": {}})
         delivery.setdefault("summary", False)
         delivery.setdefault("clips", {})
@@ -847,6 +1049,11 @@ class ClipForgeTelegramBot:
 
             if not artifact["metadata"]:
                 self.send_long_message(chat_id, self.clip_metadata_text(clip, index, len(clips)))
+                self.send_message(
+                    chat_id,
+                    f"Aksi untuk Clip {index}/{len(clips)}",
+                    keyboard([[button("⬆️ Upload Clip Ini ke YouTube", f"ytup:{job_id}:{index}")]]),
+                )
                 artifact["metadata"] = True
                 self.persist()
 
@@ -857,6 +1064,7 @@ class ClipForgeTelegramBot:
             f"Semua hasil job {job_id[:10]} sudah dikirim.",
             keyboard(
                 [
+                    [button("⬆️ Upload 3 Terbaik ke YouTube", f"ytall:{job_id}")],
                     [button("🎬 Clipping Baru", "menu:new")],
                     [button("📚 Riwayat", "menu:history"), button("🏠 Menu", "menu:home")],
                 ]
@@ -881,6 +1089,24 @@ class ClipForgeTelegramBot:
             record["terminal_notified"] = True
             self.persist()
 
+    def notify_stage_alerts(self, job_id: str, record: dict[str, Any], job: dict[str, Any]) -> None:
+        chat_id = int(record.get("chat_id") or self.owner_id)
+        sent_raw = record.setdefault("stage_alerts", [])
+        sent = {str(item) for item in sent_raw if isinstance(item, str)}
+        alerts = clipping_stage_alerts(job, sent)
+        if not alerts:
+            return
+
+        source = str(job.get("source_title") or job.get("request", {}).get("url") or "Video")[:120]
+        for stage_id, label, detail in alerts:
+            self.send_message(
+                chat_id,
+                f"Tahap clipping: {label}\n\n{detail}\n\nSumber: {source}\nJob: {job_id[:10]}",
+            )
+            sent.add(stage_id)
+        record["stage_alerts"] = list(sent)
+        self.persist()
+
     def monitor_jobs(self) -> None:
         for job_id, record in list(self.state.get("jobs", {}).items()):
             if not isinstance(record, dict) or record.get("terminal_notified"):
@@ -889,6 +1115,13 @@ class ClipForgeTelegramBot:
                 job = self.backend.get_job(job_id)
             except ServiceError:
                 continue
+            try:
+                self.notify_stage_alerts(job_id, record, job)
+            except ServiceError as exc:
+                now = time.monotonic()
+                if now - self.last_backend_warning > 60:
+                    print(f"Pengiriman alert Telegram tertunda: {exc}", flush=True)
+                    self.last_backend_warning = now
             if job.get("status") in ACTIVE_STATUSES:
                 updated_at = float(record.get("last_status_update", 0) or 0)
                 status_message_id = record.get("status_message_id")
@@ -911,6 +1144,35 @@ class ClipForgeTelegramBot:
                     if now - self.last_backend_warning > 60:
                         print(f"Pengiriman hasil Telegram tertunda: {exc}", flush=True)
                         self.last_backend_warning = now
+
+    def monitor_youtube_uploads(self) -> None:
+        uploads_state = self.state.setdefault("youtube_uploads", {})
+        for upload_id, record in list(uploads_state.items()):
+            if not isinstance(record, dict) or record.get("terminal_notified"):
+                continue
+            try:
+                upload = self.backend.get_youtube_upload(upload_id)
+            except ServiceError:
+                continue
+            if upload.get("status") in ACTIVE_STATUSES:
+                if upload.get("status") == "running" and not record.get("running_notified"):
+                    chat_id = int(record.get("chat_id") or self.owner_id)
+                    self.send_message(
+                        chat_id,
+                        "Upload YouTube dimulai\n\n" + self.youtube_upload_status_text(upload),
+                    )
+                    record["running_notified"] = True
+                    self.persist()
+                continue
+            if upload.get("status") in TERMINAL_STATUSES:
+                chat_id = int(record.get("chat_id") or self.owner_id)
+                self.send_message(
+                    chat_id,
+                    self.youtube_upload_status_text(upload),
+                    self.youtube_upload_keyboard(upload),
+                )
+                record["terminal_notified"] = True
+                self.persist()
 
     def handle_message(self, message: dict[str, Any]) -> None:
         sender_id = message.get("from", {}).get("id")
@@ -939,6 +1201,8 @@ class ClipForgeTelegramBot:
             self.show_status(chat_id)
         elif command == "/history":
             self.show_history(chat_id)
+        elif command == "/youtube":
+            self.show_youtube_status(chat_id)
         elif command == "/help":
             self.show_help(chat_id)
         elif command == "/cancel":
@@ -1043,6 +1307,8 @@ class ClipForgeTelegramBot:
             self.show_status(chat_id)
         elif data == "menu:history":
             self.show_history(chat_id)
+        elif data == "menu:youtube":
+            self.show_youtube_status(chat_id)
         elif data == "menu:help":
             self.show_help(chat_id)
         elif data == "pending:cancel":
@@ -1146,6 +1412,33 @@ class ClipForgeTelegramBot:
                     self.deliver_job(chat_id, job, force=True)
             except ServiceError as exc:
                 self.send_message(chat_id, f"Pengiriman hasil gagal: {exc}", main_menu_keyboard())
+        elif data.startswith("ytup:"):
+            parts = data.split(":")
+            if len(parts) == 3 and parts[2].isdigit():
+                self.start_youtube_upload_for_clip(chat_id, parts[1], int(parts[2]))
+            else:
+                self.send_message(chat_id, "Data upload YouTube tidak valid.", main_menu_keyboard())
+        elif data.startswith("ytall:"):
+            self.start_youtube_upload_all(chat_id, data.split(":", 1)[1])
+        elif data.startswith("ytretry:"):
+            upload_id = data.split(":", 1)[1]
+            try:
+                upload = self.backend.get_youtube_upload(upload_id)
+            except ServiceError as exc:
+                self.send_message(chat_id, f"Gagal membuka data upload lama: {exc}", main_menu_keyboard())
+                return
+            source_job_id = upload.get("source_job_id")
+            clip_url = upload.get("clip_url")
+            if isinstance(source_job_id, str) and isinstance(clip_url, str):
+                self.start_youtube_upload_for_url(chat_id, source_job_id, clip_url)
+            else:
+                self.send_message(chat_id, "Data retry upload YouTube tidak valid.", main_menu_keyboard())
+        elif data == "ytsync":
+            try:
+                self.backend.capture_youtube_session()
+                self.send_message(chat_id, "Session YouTube berhasil disinkronkan dari browser. Silakan tekan Retry Upload Clip.")
+            except ServiceError as exc:
+                self.send_message(chat_id, f"Gagal sync session browser: {exc}", main_menu_keyboard())
 
     def handle_update(self, update: dict[str, Any]) -> None:
         if isinstance(update.get("callback_query"), dict):
@@ -1172,6 +1465,7 @@ class ClipForgeTelegramBot:
                     {"command": "status", "description": "Lihat proses yang sedang berjalan"},
                     {"command": "settings", "description": "Atur hasil clipping"},
                     {"command": "history", "description": "Lihat riwayat dan kirim ulang hasil"},
+                    {"command": "youtube", "description": "Cek status uploader YouTube"},
                     {"command": "cancel", "description": "Batalkan proses aktif"},
                     {"command": "menu", "description": "Buka menu utama"},
                 ]
@@ -1208,6 +1502,7 @@ class ClipForgeTelegramBot:
                         self.state["update_offset"] = update_id + 1
                         self.persist()
                 self.monitor_jobs()
+                self.monitor_youtube_uploads()
             except ServiceError as exc:
                 print(f"Koneksi Telegram tertunda: {exc}", flush=True)
                 time.sleep(3)

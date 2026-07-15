@@ -1,4 +1,4 @@
-import type { ClipJob, CreateClipJobInput } from "../types/clip.type";
+import type { ClipJob, CreateClipJobInput, YouTubeConfig, YouTubeLoginStatus, YouTubeUploadJob } from "../types/clip.type";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8010";
 const CLIENT_API_BASE = API_BASE;
@@ -168,6 +168,76 @@ export const getJob = async (jobId: string) => {
     throw new Error("Failed to load job");
   }
   return (await response.json()) as ClipJob;
+};
+
+export const getYouTubeConfig = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/youtube/config`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to load YouTube config"));
+  }
+  return (await response.json()) as YouTubeConfig;
+};
+
+export const getYouTubeUploads = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/youtube/uploads`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to load YouTube uploads"));
+  }
+  return (await response.json()) as YouTubeUploadJob[];
+};
+
+export const getYouTubeLoginStatus = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/youtube/login`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to load YouTube login status"));
+  }
+  return (await response.json()) as YouTubeLoginStatus;
+};
+
+export const startYouTubeLogin = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/youtube/login/start`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to start YouTube login"));
+  }
+  return (await response.json()) as YouTubeLoginStatus;
+};
+
+export const captureYouTubeBrowserSession = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/youtube/session/capture`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to sync YouTube browser session"));
+  }
+  return (await response.json()) as YouTubeLoginStatus;
+};
+
+export const createYouTubeUpload = async (jobId: string, clipUrl: string) => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}/youtube-uploads`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ clip_url: clipUrl }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to queue YouTube upload"));
+  }
+  return (await response.json()) as YouTubeUploadJob;
+};
+
+export const createYouTubeUploadBatch = async (jobId: string, clipUrls: string[] = [], bestCount = 3) => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}/youtube-uploads/batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ clip_urls: clipUrls, best_count: bestCount }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to queue YouTube uploads"));
+  }
+  return (await response.json()) as YouTubeUploadJob[];
 };
 
 export const createJob = async (input: CreateClipJobInput) => {

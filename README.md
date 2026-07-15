@@ -16,6 +16,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Crop center or shift crop toward detected faces/people.
 - Manage jobs and generated clips from a Next.js UI.
 - Start jobs and receive complete results from a private Telegram bot.
+- Queue completed clips for YouTube Studio upload through Playwright.
 - Run locally with Python/Node or with Docker Compose.
 
 ## Requirements
@@ -98,6 +99,82 @@ jobs can continue being monitored after a bot container restart. Telegram's
 hosted Bot API accepts uploads up to 50 MB; oversized clips remain available in
 the web dashboard or through `TELEGRAM_PUBLIC_BASE_URL` when configured.
 
+## YouTube Studio Upload
+
+ClipForge can upload completed clips to YouTube Studio with Playwright. The
+uploader uses a saved browser session, so you log in manually once and the
+dashboard or Telegram bot can queue uploads afterwards.
+
+Docker login:
+
+```powershell
+docker compose exec backend python youtube_uploader.py login
+```
+
+Alternatively, reuse a Chromium/Chrome profile that is already logged in to the
+target YouTube channel by setting:
+
+```env
+YOUTUBE_CHROMIUM_USER_DATA_DIR=/path/inside/container/to/chromium-user-data
+YOUTUBE_CHROMIUM_PROFILE_DIRECTORY=Default
+YOUTUBE_CDP_URL=http://127.0.0.1:9222
+YOUTUBE_TARGET_CHANNEL=ryuundy8812
+YOUTUBE_TARGET_EMAIL=fendysketsa@gmail.com
+```
+
+When running with Docker, the browser profile must be mounted into the backend
+container first. The safer flow is to open Chrome with remote debugging, log in
+to YouTube Studio, then press **Sync Session Browser** so ClipForge writes
+`backend/data/youtube_storage_state.json`. Background uploads use that storage
+state by default. Direct upload from the mounted full profile is disabled unless
+`YOUTUBE_ALLOW_CHROMIUM_PROFILE_UPLOAD=true` because full desktop profiles often
+fail in headless Playwright. Uploads are cancelled before file selection if the
+session does not appear to belong to `ryuundy8812` or `fendysketsa@gmail.com`.
+
+Local login:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe youtube_uploader.py login
+```
+
+Enable **Auto Upload YouTube** before starting a clipping job to automatically
+queue the highest-scored clips when processing finishes. After a job completes,
+you can also use **Upload 3 terbaik** or the per-clip YouTube button in the
+dashboard. In Telegram, use **Upload Clip Ini ke YouTube** or **Upload 3
+Terbaik ke YouTube**. Batch uploads automatically pick the highest-scored clips,
+select the configured playlist, and verify the saved session appears to be the
+configured target channel before uploading. Uploads are processed one at a time
+and persisted in `backend/data/youtube_uploads.json`.
+
+For safer reuse, URL jobs require Creative Commons metadata by default before
+download. During upload, Playwright waits for YouTube Studio Checks and cancels
+before publish if copyright or restriction issues are detected. This reduces
+risk but cannot guarantee a video will never receive a future claim.
+
+Optional YouTube upload configuration:
+
+```env
+YOUTUBE_HEADLESS=true
+YOUTUBE_CHROMIUM_USER_DATA_DIR=
+YOUTUBE_CHROMIUM_PROFILE_DIRECTORY=Default
+YOUTUBE_ALLOW_CHROMIUM_PROFILE_UPLOAD=false
+YOUTUBE_CDP_URL=http://127.0.0.1:9222
+YOUTUBE_DEFAULT_VISIBILITY=private
+YOUTUBE_MADE_FOR_KIDS=false
+YOUTUBE_DEFAULT_TAGS=shorts,clipforge
+YOUTUBE_DEFAULT_PLAYLIST=Islam
+YOUTUBE_TARGET_CHANNEL=ryuundy8812
+YOUTUBE_TARGET_EMAIL=fendysketsa@gmail.com
+YOUTUBE_AUTO_UPLOAD_COUNT=3
+YOUTUBE_REQUIRE_COPYRIGHT_CHECKS=true
+YOUTUBE_CHECKS_TIMEOUT_SECONDS=300
+YOUTUBE_DRY_RUN=false
+```
+
+Use `YOUTUBE_DRY_RUN=true` to test the Playwright flow without pressing the
+final publish/save button.
+
 ## Local Development
 
 Start backend:
@@ -144,6 +221,10 @@ POST   /api/jobs
 GET    /api/jobs
 GET    /api/jobs/{job_id}
 DELETE /api/jobs
+GET    /api/youtube/config
+GET    /api/youtube/uploads
+POST   /api/jobs/{job_id}/youtube-uploads
+POST   /api/jobs/{job_id}/youtube-uploads/batch
 GET    /outputs/<generated-file>
 ```
 

@@ -4,7 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
   cancelJob,
+  captureYouTubeBrowserSession,
   createJob,
+  createYouTubeUpload,
+  createYouTubeUploadBatch,
   deleteAllJobClips,
   deleteFailedJobs,
   deleteJob,
@@ -15,6 +18,8 @@ import {
   fetchModels,
   getJob,
   getJobs,
+  getYouTubeConfig,
+  getYouTubeUploads,
   probeUrlDuration,
   updateJobClipStatus,
   uploadVideo,
@@ -50,6 +55,8 @@ import type {
   CropMode,
   SourceMode,
   VideoQuality,
+  YouTubeConfig,
+  YouTubeUploadJob,
 } from "../types/clip.type";
 import { ControlPanel } from "./_components/ControlPanel";
 import { DeleteAllToast } from "./_components/DeleteAllToast";
@@ -84,6 +91,8 @@ export default function HomePage() {
   const [aiModel, setAiModel] = useState(DEFAULT_AI_MODEL);
   const [aiApiKey, setAiApiKey] = useState("");
   const [requiredHashtags, setRequiredHashtags] = useState("");
+  const [requireCreativeCommons, setRequireCreativeCommons] = useState(true);
+  const [autoUploadYoutube, setAutoUploadYoutube] = useState(false);
   const [aiModels, setAiModels] = useState<string[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [localLlmProviders, setLocalLlmProviders] = useState<LocalLlmProvider[]>([]);
@@ -92,6 +101,9 @@ export default function HomePage() {
   const [activeJob, setActiveJob] = useState<ClipJob | null>(null);
   const [job, setJob] = useState<ClipJob | null>(null);
   const [jobs, setJobs] = useState<ClipJob[]>([]);
+  const [youtubeConfig, setYoutubeConfig] = useState<YouTubeConfig | null>(null);
+  const [youtubeUploads, setYoutubeUploads] = useState<YouTubeUploadJob[]>([]);
+  const [isYouTubeLoginActive, setIsYouTubeLoginActive] = useState(false);
   const [selectedHistoryJobIds, setSelectedHistoryJobIds] = useState<string[]>([]);
   const [selectedClipUrls, setSelectedClipUrls] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -103,6 +115,7 @@ export default function HomePage() {
   const isBusy = isActiveJob(activeJob);
   const activityJob = isBusy ? activeJob : job;
   const latestLogs = useMemo(() => activityJob?.logs.slice(-RECENT_LOG_LIMIT) ?? [], [activityJob]);
+  const hasActiveYouTubeUpload = youtubeUploads.some((upload) => upload.status === "queued" || upload.status === "running");
 
   // min_duration * target_clips must fit within 80% of the video length.
   const maxClips = useMemo(() => {
@@ -138,11 +151,17 @@ export default function HomePage() {
     setJobs(await getJobs());
   }, []);
 
+  const loadYouTubeUploads = useCallback(async () => {
+    const [config, uploads] = await Promise.all([getYouTubeConfig(), getYouTubeUploads()]);
+    setYoutubeConfig(config);
+    setYoutubeUploads(uploads);
+  }, []);
+
   const handleSyncData = useCallback(async () => {
     if (isRefreshingData) return;
     setIsRefreshingData(true);
     try {
-      await loadJobs();
+      await Promise.all([loadJobs(), loadYouTubeUploads()]);
       if (activeJobId) {
         const nextJob = await getJob(activeJobId).catch(() => null);
         if (nextJob) {
@@ -156,11 +175,20 @@ export default function HomePage() {
     } finally {
       setIsRefreshingData(false);
     }
-  }, [activeJobId, isRefreshingData, loadJobs]);
+  }, [activeJobId, isRefreshingData, loadJobs, loadYouTubeUploads]);
 
   useEffect(() => {
     loadJobs().catch(() => undefined);
-  }, [loadJobs]);
+    loadYouTubeUploads().catch(() => undefined);
+  }, [loadJobs, loadYouTubeUploads]);
+
+  useEffect(() => {
+    if (!hasActiveYouTubeUpload) return;
+    const interval = window.setInterval(() => {
+      loadYouTubeUploads().catch(() => undefined);
+    }, JOB_POLL_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [hasActiveYouTubeUpload, loadYouTubeUploads]);
 
   useEffect(() => {
     if (isActiveJob(activeJob)) return;
@@ -408,6 +436,8 @@ export default function HomePage() {
             .split(",")
             .map((tag) => tag.trim())
             .filter(Boolean),
+          require_creative_commons: requireCreativeCommons,
+          auto_upload_youtube: autoUploadYoutube,
           ai_enabled: aiEnabled,
           ai_base_url: aiBaseUrl.trim(),
           ai_model: aiModel.trim(),
@@ -435,6 +465,7 @@ export default function HomePage() {
     aiEnabled,
     aiModel,
     activeJob,
+    autoUploadYoutube,
     burnSubtitles,
     camCorner,
     captionColor,
@@ -447,6 +478,7 @@ export default function HomePage() {
     loadJobs,
     maxDuration,
     minDuration,
+    requireCreativeCommons,
     requiredHashtags,
     sourceMode,
     targetClips,
@@ -682,6 +714,71 @@ export default function HomePage() {
     [job, loadJobs],
   );
 
+  const handleUploadClipToYouTube = useCallback(
+    async (clip: ClipFile) => {
+      if (!job) return;
+      try {
+        const upload = await toast.promise(createYouTubeUpload(job.id, clip.url), {
+          loading: "Memasukkan upload YouTube ke antrean...",
+          success: "Upload YouTube masuk antrean.",
+          error: "Gagal membuat upload YouTube",
+        });
+        setYoutubeUploads((current) => [upload, ...current.filter((item) => item.id !== upload.id)]);
+        loadYouTubeUploads().catch(() => undefined);
+      } catch (uploadError) {
+        toast.error(uploadError instanceof Error ? uploadError.message : "Gagal membuat upload YouTube");
+      }
+    },
+    [job, loadYouTubeUploads],
+  );
+
+  const handleUploadAllToYouTube = useCallback(async () => {
+    if (!job || !job.clips.length) return;
+    const bestCount = youtubeConfig?.auto_upload_count ?? 3;
+    try {
+      const uploads = await toast.promise(createYouTubeUploadBatch(job.id, [], bestCount), {
+        loading: `Memasukkan ${Math.min(bestCount, job.clips.length)} klip terbaik ke antrean YouTube...`,
+        success: (uploads) => `${uploads.length} klip terbaik masuk antrean YouTube.`,
+        error: "Gagal membuat batch upload YouTube",
+      });
+      setYoutubeUploads((current) => {
+        const nextIds = new Set(uploads.map((upload) => upload.id));
+        return [...uploads, ...current.filter((item) => !nextIds.has(item.id))];
+      });
+      loadYouTubeUploads().catch(() => undefined);
+    } catch (uploadError) {
+      toast.error(uploadError instanceof Error ? uploadError.message : "Gagal membuat batch upload YouTube");
+    }
+  }, [job, loadYouTubeUploads, youtubeConfig?.auto_upload_count]);
+
+  const handleStartYouTubeLogin = useCallback(async () => {
+    window.open("https://studio.youtube.com", "_blank", "noopener,noreferrer");
+    setIsYouTubeLoginActive(true);
+    toast(
+      "Login ke akun fendysketsa@gmail.com / channel ryuundy8812. Setelah dashboard tampil, klik Sync Session Browser dulu, baru Retry/Upload YouTube.",
+      { duration: 11000 },
+    );
+    window.setTimeout(() => {
+      setIsYouTubeLoginActive(false);
+      loadYouTubeUploads().catch(() => undefined);
+    }, 12000);
+  }, [loadYouTubeUploads]);
+
+  const handleCaptureYouTubeSession = useCallback(async () => {
+    try {
+      await toast.promise(captureYouTubeBrowserSession(), {
+        loading: "Menyinkronkan session dari browser...",
+        success: "Session YouTube tersimpan. Klik Retry YouTube.",
+        error: "Gagal sync session browser",
+      });
+      loadYouTubeUploads().catch(() => undefined);
+    } catch (captureError) {
+      toast.error(captureError instanceof Error ? captureError.message : "Gagal sync session browser", {
+        duration: 9000,
+      });
+    }
+  }, [loadYouTubeUploads]);
+
   const handleCancelJob = useCallback(async () => {
     if (!activeJobId || !isBusy) return;
     await toast.promise(cancelJob(activeJobId), {
@@ -746,7 +843,11 @@ export default function HomePage() {
           onDiscoverLocalLlms={handleDiscoverLocalLlms}
           onSelectLocalProvider={handleSelectLocalProvider}
           requiredHashtags={requiredHashtags}
+          requireCreativeCommons={requireCreativeCommons}
+          autoUploadYoutube={autoUploadYoutube}
           onRequiredHashtagsChange={setRequiredHashtags}
+          onRequireCreativeCommonsChange={setRequireCreativeCommons}
+          onAutoUploadYoutubeChange={setAutoUploadYoutube}
           onCropModeChange={setCropMode}
           onMaxDurationChange={setMaxDuration}
           onMinDurationChange={setMinDuration}
@@ -768,9 +869,18 @@ export default function HomePage() {
       <ResultsSection
         clips={job?.clips ?? []}
         selectedClipUrls={selectedClipUrls}
+        youtubeEnabled={Boolean(youtubeConfig?.enabled)}
+        youtubeStatusMessage={youtubeConfig?.auth_status_message ?? "Login YouTube Playwright belum siap"}
+        youtubeAutoUploadCount={youtubeConfig?.auto_upload_count ?? 3}
+        youtubeUploads={youtubeUploads}
+        isYouTubeLoginActive={isYouTubeLoginActive}
         onDeleteAllClips={handleDeleteAllClips}
         onDeleteClip={handleDeleteClip}
         onDeleteSelectedClips={handleDeleteSelectedClips}
+        onCaptureYouTubeSession={handleCaptureYouTubeSession}
+        onStartYouTubeLogin={handleStartYouTubeLogin}
+        onUploadAllToYouTube={handleUploadAllToYouTube}
+        onUploadClipToYouTube={handleUploadClipToYouTube}
         onToggleAllClipSelection={handleToggleAllClipSelection}
         onToggleClipSelection={handleToggleClipSelection}
         onToggleClipCorrect={handleToggleClipCorrect}

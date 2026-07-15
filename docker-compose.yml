@@ -8,9 +8,27 @@ services:
       - ./backend/outputs:/app/outputs
       - ./backend/uploads:/app/uploads
       - ./backend/data:/app/data
+      - ${YOUTUBE_CHROMIUM_HOST_USER_DATA_DIR:-./backend/data/chromium-youtube}:${YOUTUBE_CHROMIUM_USER_DATA_DIR:-/app/data/chromium-youtube}
     environment:
       IN_DOCKER: "1"
       JOBS_PATH: /app/data/jobs.json
+      YOUTUBE_UPLOADS_PATH: /app/data/youtube_uploads.json
+      YOUTUBE_PLAYWRIGHT_STATE: /app/data/youtube_storage_state.json
+      YOUTUBE_CHROMIUM_USER_DATA_DIR: ${YOUTUBE_CHROMIUM_USER_DATA_DIR:-}
+      YOUTUBE_CHROMIUM_PROFILE_DIRECTORY: ${YOUTUBE_CHROMIUM_PROFILE_DIRECTORY:-}
+      YOUTUBE_ALLOW_CHROMIUM_PROFILE_UPLOAD: ${YOUTUBE_ALLOW_CHROMIUM_PROFILE_UPLOAD:-false}
+      YOUTUBE_CDP_URL: ${YOUTUBE_CDP_URL:-http://127.0.0.1:9222}
+      YOUTUBE_HEADLESS: ${YOUTUBE_HEADLESS:-true}
+      YOUTUBE_DEFAULT_VISIBILITY: ${YOUTUBE_DEFAULT_VISIBILITY:-private}
+      YOUTUBE_MADE_FOR_KIDS: ${YOUTUBE_MADE_FOR_KIDS:-false}
+      YOUTUBE_DEFAULT_TAGS: ${YOUTUBE_DEFAULT_TAGS:-}
+      YOUTUBE_DEFAULT_PLAYLIST: ${YOUTUBE_DEFAULT_PLAYLIST:-Islam}
+      YOUTUBE_TARGET_CHANNEL: ${YOUTUBE_TARGET_CHANNEL:-ryuundy8812}
+      YOUTUBE_TARGET_EMAIL: ${YOUTUBE_TARGET_EMAIL:-fendysketsa@gmail.com}
+      YOUTUBE_AUTO_UPLOAD_COUNT: ${YOUTUBE_AUTO_UPLOAD_COUNT:-3}
+      YOUTUBE_REQUIRE_COPYRIGHT_CHECKS: ${YOUTUBE_REQUIRE_COPYRIGHT_CHECKS:-true}
+      YOUTUBE_CHECKS_TIMEOUT_SECONDS: ${YOUTUBE_CHECKS_TIMEOUT_SECONDS:-300}
+      YOUTUBE_DRY_RUN: ${YOUTUBE_DRY_RUN:-false}
       DEFAULT_AI_BASE_URL: http://127.0.0.1:11434/v1
     restart: unless-stopped
 
@@ -47,6 +65,7 @@ services:
       TELEGRAM_OWNER_ID: ${TELEGRAM_OWNER_ID:-}
       TELEGRAM_PUBLIC_BASE_URL: ${TELEGRAM_PUBLIC_BASE_URL:-}
       TELEGRAM_MAX_UPLOAD_MB: ${TELEGRAM_MAX_UPLOAD_MB:-49}
+      YOUTUBE_STUDIO_URL: ${YOUTUBE_STUDIO_URL:-https://studio.youtube.com}
     depends_on:
       - backend
     init: true
