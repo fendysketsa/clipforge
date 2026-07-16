@@ -4,6 +4,8 @@ import type {
   ClipJob,
   CreateClipJobInput,
   YouTubeConfig,
+  YouTubeCdpRepairStatus,
+  YouTubeCdpRefreshStatus,
   YouTubeLoginStatus,
   YouTubeUploadJob,
 } from "../types/clip.type";
@@ -222,6 +224,39 @@ export const captureYouTubeBrowserSession = async () => {
     throw new Error(await responseErrorMessage(response, "Failed to sync YouTube browser session"));
   }
   return (await response.json()) as YouTubeLoginStatus;
+};
+
+export const refreshYouTubeCdpChrome = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/youtube/cdp/refresh`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to refresh YouTube CDP Chrome"));
+  }
+  return (await response.json()) as YouTubeCdpRefreshStatus;
+};
+
+export const repairYouTubeCdpSession = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/youtube/cdp/repair`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to repair YouTube CDP session"));
+  }
+  return (await response.json()) as YouTubeCdpRepairStatus;
+};
+
+export const syncYouTubeCdpSession = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/youtube/cdp/sync`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to sync YouTube CDP session"));
+  }
+  return (await response.json()) as YouTubeCdpRepairStatus;
 };
 
 export const createYouTubeUpload = async (jobId: string, clipUrl: string) => {

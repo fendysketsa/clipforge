@@ -169,6 +169,77 @@ def save_debug_artifacts(page, label: str) -> None:
         log(f"Gagal menyimpan debug YouTube Studio: {exc}")
 
 
+def hydrate_context_from_storage_state(context, state_path: Path) -> bool:
+    if not state_path.is_file():
+        return False
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        log(f"Storage state YouTube tidak bisa dibaca untuk CDP: {exc}")
+        return False
+    cookies = payload.get("cookies") if isinstance(payload, dict) else None
+    if not isinstance(cookies, list) or not cookies:
+        return False
+    origins = payload.get("origins") if isinstance(payload, dict) else []
+    local_storage_by_origin = {}
+    if isinstance(origins, list):
+        for origin_entry in origins:
+            if not isinstance(origin_entry, dict):
+                continue
+            origin = origin_entry.get("origin")
+            local_storage = origin_entry.get("localStorage")
+            if not isinstance(origin, str) or not isinstance(local_storage, list):
+                continue
+            values = {
+                str(item.get("name")): str(item.get("value"))
+                for item in local_storage
+                if isinstance(item, dict) and item.get("name") is not None and item.get("value") is not None
+            }
+            if values:
+                local_storage_by_origin[origin] = values
+    try:
+        if local_storage_by_origin:
+            storage_json = json.dumps(local_storage_by_origin)
+            context.add_init_script(
+                """
+                (() => {
+                  const stores = __STORES__;
+                  const values = stores[window.location.origin];
+                  if (!values) return;
+                  for (const [key, value] of Object.entries(values)) {
+                    try {
+                      window.localStorage.setItem(key, value);
+                    } catch (_) {}
+                  }
+                })();
+                """.replace("__STORES__", storage_json)
+            )
+        context.add_cookies(cookies)
+        log(f"Storage-state YouTube dimasukkan ke Chrome CDP: {state_path}")
+        return True
+    except Exception as exc:
+        log(f"Cookie storage-state gagal dimasukkan ke Chrome CDP: {exc}")
+        return False
+
+
+def hydrate_context_and_open_studio_page(context, state_path: Path, studio_url: str = ""):
+    hydrated = hydrate_context_from_storage_state(context, state_path)
+    if not hydrated:
+        return None
+    page = context.new_page()
+    install_browser_dialog_guard(page)
+    try:
+        goto_studio(page, studio_url=studio_url)
+        try:
+            page.wait_for_load_state("networkidle", timeout=20000)
+        except Exception:
+            pass
+        log("Tab baru YouTube Studio dibuka setelah hydrate storage-state ke Chrome CDP.")
+    except Exception as exc:
+        log(f"Buka tab Studio setelah hydrate storage-state gagal: {exc}")
+    return page
+
+
 def find_file_input(page, timeout_ms: int = 10000):
     deadline = time.monotonic() + timeout_ms / 1000
     last_error: Exception | None = None
@@ -415,10 +486,23 @@ def normalized_page_text(page) -> str:
     return normalize_channel_text(page_identity_text(page))
 
 
-def page_matches_allowed_identity(page, target_channel: str, target_email: str) -> bool:
+def page_url_matches_channel_id(page, target_channel_id: str) -> bool:
+    expected_channel_id = target_channel_id.strip().lower()
+    if not expected_channel_id:
+        return False
+    try:
+        return studio_channel_id_from_url(page.url).strip().lower() == expected_channel_id
+    except Exception:
+        return False
+
+
+def page_matches_allowed_identity(page, target_channel: str, target_email: str, target_channel_id: str = "") -> bool:
+    if page_url_matches_channel_id(page, target_channel_id):
+        return True
     expected_channel = normalize_channel_text(target_channel)
     expected_email = normalize_channel_text(target_email)
-    if not expected_channel and not expected_email:
+    expected_channel_id = normalize_channel_text(target_channel_id)
+    if not expected_channel and not expected_email and not expected_channel_id:
         return True
     body = normalized_page_text(page)
     return bool(
@@ -426,6 +510,7 @@ def page_matches_allowed_identity(page, target_channel: str, target_email: str) 
         and (
             (expected_channel and expected_channel in body)
             or (expected_email and expected_email in body)
+            or (expected_channel_id and expected_channel_id in body)
         )
     )
 
@@ -452,17 +537,50 @@ def google_account_matches_target(page, target_email: str) -> bool:
                 pass
 
 
-def identity_label(target_channel: str, target_email: str) -> str:
-    parts = [value for value in (target_channel.strip(), target_email.strip()) if value]
+def resolve_google_account_chooser(page, target_email: str, studio_url: str = "", timeout_ms: int = 15000) -> bool:
+    if "accounts.google.com" not in page.url.lower():
+        return False
+    expected_email = target_email.strip()
+    if not expected_email:
+        return False
+    log("Google account chooser terdeteksi; mencoba memilih akun target.")
+    deadline = time.monotonic() + timeout_ms / 1000
+    while time.monotonic() < deadline:
+        try:
+            locator = page.get_by_text(re.compile(re.escape(expected_email), re.I)).first
+            if locator.count() and locator.is_visible(timeout=700):
+                locator.click(timeout=2500)
+                time.sleep(2)
+                if studio_url and "studio.youtube.com" not in page.url.lower():
+                    goto_studio(page, studio_url=studio_url)
+                try:
+                    page.wait_for_load_state("domcontentloaded", timeout=10000)
+                except Exception:
+                    pass
+                if "accounts.google.com" not in page.url.lower():
+                    log("Akun target dipilih dari Google account chooser.")
+                    return True
+        except Exception:
+            pass
+        time.sleep(0.5)
+    return False
+
+
+def identity_label(target_channel: str, target_email: str, target_channel_id: str = "") -> str:
+    parts = [value for value in (target_channel.strip(), target_email.strip(), target_channel_id.strip()) if value]
     return " / ".join(parts) or "tidak dikonfigurasi"
 
 
-def ensure_target_identity(page, target_channel: str, target_email: str) -> None:
-    label = identity_label(target_channel, target_email)
+def ensure_target_identity(page, target_channel: str, target_email: str, target_channel_id: str = "") -> None:
+    label = identity_label(target_channel, target_email, target_channel_id)
     if label == "tidak dikonfigurasi":
         return
 
-    if page_matches_allowed_identity(page, target_channel, target_email):
+    if page_url_matches_channel_id(page, target_channel_id):
+        log(f"URL YouTube Studio channel target terdeteksi: {target_channel_id}.")
+        return
+
+    if page_matches_allowed_identity(page, target_channel, target_email, target_channel_id):
         log(f"Identitas YouTube target terdeteksi: {label}.")
         return
 
@@ -479,7 +597,7 @@ def ensure_target_identity(page, target_channel: str, target_email: str) -> None
                 locator.click(timeout=2500)
                 clicked_menu = True
                 time.sleep(0.8)
-                if page_matches_allowed_identity(page, target_channel, target_email):
+                if page_matches_allowed_identity(page, target_channel, target_email, target_channel_id):
                     log(f"Identitas YouTube target terdeteksi: {label}.")
                     page.keyboard.press("Escape")
                     return
@@ -738,9 +856,8 @@ def ensure_logged_in(page) -> None:
     if "accounts.google.com" in url or "signin" in url:
         save_debug_artifacts(page, "youtube-login-required")
         raise UploadError(
-            "Chrome CDP belum login ke YouTube Studio. Login harus dilakukan di window Chrome "
-            "yang dibuka oleh ./scripts/recreate-compose-up.sh atau ./scripts/reset-youtube-cdp-profile.sh, "
-            "bukan di tab browser dashboard."
+            "Chrome CDP belum login ke YouTube Studio. Backend perlu refresh ulang profil Chrome CDP "
+            "dari YOUTUBE_CDP_REFRESH_COMMAND sebelum upload di-retry."
         )
     text = normalized_page_text(page)
     login_page_patterns = (
@@ -754,9 +871,8 @@ def ensure_logged_in(page) -> None:
     if any(pattern in text for pattern in login_page_patterns):
         save_debug_artifacts(page, "youtube-login-required")
         raise UploadError(
-            "Chrome CDP belum login ke YouTube Studio. Login harus dilakukan di window Chrome "
-            "yang dibuka oleh ./scripts/recreate-compose-up.sh atau ./scripts/reset-youtube-cdp-profile.sh, "
-            "bukan di tab browser dashboard."
+            "Chrome CDP belum login ke YouTube Studio. Backend perlu refresh ulang profil Chrome CDP "
+            "dari YOUTUBE_CDP_REFRESH_COMMAND sebelum upload di-retry."
         )
 
 
@@ -809,25 +925,72 @@ def studio_start_url(configured_url: str = "") -> str:
 def goto_studio(page, timeout_ms: int = 30000, studio_url: str = "") -> None:
     last_error = ""
     target_url = studio_start_url(studio_url)
-    for attempt in range(2):
+    urls = [target_url]
+    channel_id = studio_channel_id_from_url(target_url) or DEFAULT_TARGET_CHANNEL_ID
+    if channel_id:
+        urls.extend(
+            [
+                f"https://studio.youtube.com/channel/{channel_id}/videos",
+                f"https://studio.youtube.com/channel/{channel_id}",
+            ]
+        )
+    urls.append("https://studio.youtube.com")
+
+    seen = set()
+    unique_urls = []
+    for url in urls:
+        if url not in seen:
+            seen.add(url)
+            unique_urls.append(url)
+
+    nav_timeout = max(timeout_ms, int(os.environ.get("YOUTUBE_STUDIO_NAV_TIMEOUT_MS", "60000")))
+    for url in unique_urls:
         try:
-            page.goto(target_url, wait_until="domcontentloaded", timeout=timeout_ms)
-            page.wait_for_load_state("domcontentloaded", timeout=min(timeout_ms, 10000))
+            log(f"Membuka YouTube Studio: {url}")
+            page.goto(url, wait_until="domcontentloaded", timeout=nav_timeout)
+            page.wait_for_load_state("domcontentloaded", timeout=min(nav_timeout, 15000))
             ensure_supported_studio_browser(page)
             return
         except Exception as exc:
             last_error = str(exc)
-            if attempt == 0:
-                time.sleep(2)
+            time.sleep(1.5)
     raise UploadError(
-        f"Browser Playwright tidak bisa membuka {target_url}. "
-        "Pastikan Chrome Studio remote debugging terbuka dan sudah login, lalu Retry. "
+        f"Browser Playwright tidak bisa membuka YouTube Studio dari beberapa URL awal. "
+        "Backend akan mencoba halaman upload langsung jika fallback diaktifkan. "
         f"Detail: {last_error}"
     )
 
 
 def wait_for_file_input(page, timeout_ms: int = 10000) -> bool:
     return find_file_input(page, timeout_ms=timeout_ms) is not None
+
+
+def wait_for_upload_surface(page, timeout_ms: int = 30000) -> bool:
+    deadline = time.monotonic() + timeout_ms / 1000
+    markers = (
+        "selectfiles",
+        "pilihfile",
+        "pilihvideo",
+        "uploadvideos",
+        "uploadvideo",
+        "unggahvideo",
+        "draganddropvideofiles",
+        "tarikdanlepaskanfilevideo",
+    )
+    while time.monotonic() < deadline:
+        dismiss_reload_prompt(page, timeout_ms=250)
+        if wait_for_file_input(page, timeout_ms=600):
+            return True
+        try:
+            if page.locator("ytcp-uploads-dialog").count() > 0:
+                return True
+        except Exception:
+            pass
+        text = normalized_page_text(page)
+        if any(marker in text for marker in markers):
+            return True
+        time.sleep(0.5)
+    return False
 
 
 def upload_metadata_form_ready(page, timeout_ms: int = 1000) -> bool:
@@ -923,7 +1086,7 @@ def select_video_file(page, video_path: Path, timeout_ms: int = 30000) -> None:
     raise UploadError("Input file upload YouTube Studio tidak muncul setelah dialog dibuka.")
 
 
-def goto_upload_page(page, channel_id: str = "") -> None:
+def goto_upload_page(page, channel_id: str = "", target_email: str = "", studio_url: str = "") -> None:
     last_error = ""
     resolved_channel_id = effective_channel_id(page, channel_id)
     channel_urls = (
@@ -936,29 +1099,55 @@ def goto_upload_page(page, channel_id: str = "") -> None:
         else ()
     )
     direct_timeout = max(8000, int(os.environ.get("YOUTUBE_DIRECT_UPLOAD_NAV_TIMEOUT_MS", "18000")))
-    input_timeout = max(2000, int(os.environ.get("YOUTUBE_DIRECT_UPLOAD_INPUT_TIMEOUT_MS", "5000")))
+    input_timeout = max(15000, int(os.environ.get("YOUTUBE_DIRECT_UPLOAD_INPUT_TIMEOUT_MS", "20000")))
     urls = (
         *channel_urls,
         "https://studio.youtube.com/upload",
     )
     for url in urls:
-        try:
-            log(f"Membuka halaman upload langsung: {url}")
-            page.goto(url, wait_until="domcontentloaded", timeout=direct_timeout)
-            page.wait_for_load_state("domcontentloaded", timeout=min(direct_timeout, 8000))
-            ensure_supported_studio_browser(page)
-            if wait_for_file_input(page, timeout_ms=input_timeout):
-                log("Dialog upload siap.")
-                return
-            if click_select_files_entry(page, timeout_ms=2500) and wait_for_file_input(page, timeout_ms=input_timeout):
-                log("Dialog upload siap.")
-                return
-            if click_create_upload_by_topbar_position(page):
-                if wait_for_file_input(page, timeout_ms=input_timeout):
+        for attempt in range(2):
+            try:
+                if attempt:
+                    log("UI upload belum muncul; reload halaman upload langsung.")
+                    page.reload(wait_until="domcontentloaded", timeout=direct_timeout)
+                else:
+                    log(f"Membuka halaman upload langsung: {url}")
+                    page.goto(url, wait_until="domcontentloaded", timeout=direct_timeout)
+                page.wait_for_load_state("domcontentloaded", timeout=min(direct_timeout, 10000))
+                try:
+                    page.wait_for_load_state("networkidle", timeout=min(direct_timeout, 20000))
+                except Exception:
+                    pass
+                ensure_supported_studio_browser(page)
+                if "accounts.google.com" in page.url.lower():
+                    if resolve_google_account_chooser(page, target_email, studio_url=studio_url):
+                        continue
+                    last_error = "Google account chooser/login muncul saat membuka halaman upload langsung."
+                    break
+                if wait_for_upload_surface(page, timeout_ms=input_timeout):
+                    if wait_for_file_input(page, timeout_ms=3000):
+                        log("Dialog upload siap.")
+                        return
+                    if click_select_files_entry(page, timeout_ms=5000) and wait_for_file_input(
+                        page, timeout_ms=input_timeout
+                    ):
+                        log("Dialog upload siap.")
+                        return
+                if click_select_files_entry(page, timeout_ms=5000) and wait_for_file_input(
+                    page, timeout_ms=input_timeout
+                ):
                     log("Dialog upload siap.")
                     return
-        except Exception as exc:
-            last_error = str(exc)
+                if click_create_upload_by_topbar_position(page) and wait_for_file_input(
+                    page, timeout_ms=input_timeout
+                ):
+                    log("Dialog upload siap.")
+                    return
+            except UploadError:
+                raise
+            except Exception as exc:
+                last_error = str(exc)
+                break
     save_debug_artifacts(page, "upload-page-input-not-found")
     raise UploadError(
         "Halaman upload YouTube Studio tidak bisa dibuka atau input file tidak ditemukan. "
@@ -1071,12 +1260,26 @@ def open_upload_dialog(
             page.wait_for_load_state("domcontentloaded", timeout=8000)
         except Exception:
             pass
+        if target_channel_id and not page_url_matches_channel_id(page, target_channel_id):
+            log("Tab Studio belum berada di channel target; membuka Studio channel target.")
+            goto_studio(page, studio_url=studio_url or f"https://studio.youtube.com/channel/{target_channel_id}")
     else:
         log("Membuka YouTube Studio...")
-        goto_studio(page, studio_url=studio_url)
+        try:
+            goto_studio(page, studio_url=studio_url)
+        except UploadError as exc:
+            if env_bool("YOUTUBE_ALLOW_DIRECT_UPLOAD_PAGE_FALLBACK", True):
+                log(f"Dashboard Studio tidak terbuka normal; mencoba halaman upload langsung. Detail: {exc}")
+                goto_upload_page(page, target_channel_id, target_email, studio_url)
+                resolve_google_account_chooser(page, target_email, studio_url=studio_url)
+                ensure_logged_in(page)
+                ensure_target_identity(page, target_channel, target_email, target_channel_id)
+                return
+            raise
     dismiss_reload_prompt(page)
+    resolve_google_account_chooser(page, target_email, studio_url=studio_url)
     ensure_logged_in(page)
-    ensure_target_identity(page, target_channel, target_email)
+    ensure_target_identity(page, target_channel, target_email, target_channel_id)
 
     if upload_metadata_form_ready(page, timeout_ms=1500):
         log("Form detail upload sudah terbuka; lanjut dari tab ini tanpa reload.")
@@ -1149,7 +1352,7 @@ def open_upload_dialog(
 
     if env_bool("YOUTUBE_ALLOW_DIRECT_UPLOAD_PAGE_FALLBACK", False):
         log("Tombol Create/Buat tidak tersedia; memakai halaman upload langsung.")
-        goto_upload_page(page, target_channel_id)
+        goto_upload_page(page, target_channel_id, target_email, studio_url)
         return
 
     save_debug_artifacts(page, "dashboard-upload-modal-not-open")
@@ -3518,16 +3721,24 @@ def run_capture_session(args: argparse.Namespace) -> None:
         if page is None:
             context = contexts[0]
             page = context.pages[0] if context.pages else context.new_page()
+        hydrated_page = hydrate_context_and_open_studio_page(page.context, state_path, args.studio_url)
+        hydrated = hydrated_page is not None
+        if hydrated_page is not None:
+            page = hydrated_page
         install_browser_dialog_guard(page)
-        if "studio.youtube.com" not in page.url.lower():
+        if not hydrated and "studio.youtube.com" not in page.url.lower():
             goto_studio(page, studio_url=args.studio_url)
         else:
             try:
                 page.wait_for_load_state("domcontentloaded", timeout=15000)
             except Exception:
                 pass
+            if args.target_channel_id and not page_url_matches_channel_id(page, args.target_channel_id):
+                log("Tab Studio CDP belum berada di channel target; membuka Studio channel target.")
+                goto_studio(page, studio_url=args.studio_url)
+        resolve_google_account_chooser(page, args.target_email, studio_url=args.studio_url)
         ensure_logged_in(page)
-        ensure_target_identity(page, args.target_channel, args.target_email)
+        ensure_target_identity(page, args.target_channel, args.target_email, args.target_channel_id)
         page.context.storage_state(path=str(state_path))
         browser.close()
     log(f"Sesi YouTube dari browser tersimpan: {state_path}")
@@ -3570,7 +3781,11 @@ def run_upload(args: argparse.Namespace) -> None:
                 install_context_dialog_guard(item)
             context = contexts[0]
             studio_pages = [item for ctx in contexts for item in ctx.pages if "studio.youtube.com" in item.url.lower()]
-            page = studio_pages[0] if studio_pages else context.new_page()
+            target_pages = [item for item in studio_pages if page_url_matches_channel_id(item, args.target_channel_id)]
+            page = target_pages[0] if target_pages else (studio_pages[0] if studio_pages else context.new_page())
+            hydrated_page = hydrate_context_and_open_studio_page(context, state_path, args.studio_url)
+            if hydrated_page is not None:
+                page = hydrated_page
         elif chromium_user_data_dir is not None:
             log(f"Menggunakan profile Chromium: {chromium_user_data_dir}")
             context = playwright.chromium.launch_persistent_context(

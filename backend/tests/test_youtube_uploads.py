@@ -9,6 +9,8 @@ from api import (
     generate_youtube_description,
     generate_youtube_metadata,
     delete_all_job_clips,
+    start_youtube_cdp_refresh_process,
+    sync_youtube_cdp,
     youtube_video_url_from_logs,
 )
 from youtube_uploader import normalized_upload_metadata, studio_start_url
@@ -153,6 +155,75 @@ def test_youtube_video_url_from_logs_accepts_shorts_links():
     assert youtube_video_url_from_logs(["VIDEO_URL: https://youtube.com/shorts/abcDEF12345?feature=share"]) == (
         "https://www.youtube.com/watch?v=abcDEF12345"
     )
+
+
+def test_start_youtube_cdp_refresh_process_uses_configured_command(monkeypatch, tmp_path):
+    import api
+
+    calls = []
+
+    class FakePopen:
+        def __init__(self, command, **kwargs):
+            calls.append((command, kwargs))
+
+        def poll(self):
+            return None
+
+    monkeypatch.setenv("YOUTUBE_CDP_REFRESH_COMMAND", "/bin/echo refresh")
+    monkeypatch.setattr(api, "YOUTUBE_CDP_REFRESH_LOG", tmp_path / "chrome-refresh.log")
+    monkeypatch.setattr(api, "YOUTUBE_CDP_REFRESH_STARTUP_GRACE_SECONDS", 0)
+    monkeypatch.setattr(api, "youtube_cdp_ready", lambda: True)
+    monkeypatch.setattr(api.subprocess, "Popen", FakePopen)
+
+    status = start_youtube_cdp_refresh_process()
+
+    assert status.started is True
+    assert status.cdp_ready is True
+    assert status.command == ["/bin/echo", "refresh"]
+    assert status.log_path == str(tmp_path / "chrome-refresh.log")
+    assert calls[0][0] == ["/bin/echo", "refresh"]
+    assert calls[0][1]["start_new_session"] is True
+
+
+def test_sync_youtube_cdp_requires_existing_cdp(monkeypatch):
+    import api
+
+    capture_called = False
+
+    def fake_capture():
+        nonlocal capture_called
+        capture_called = True
+        return 0, [], None
+
+    monkeypatch.setattr(api, "playwright_installed", lambda: True)
+    monkeypatch.setattr(api, "youtube_cdp_ready", lambda: False)
+    monkeypatch.setattr(api, "run_youtube_capture_once", fake_capture)
+
+    status = sync_youtube_cdp()
+
+    assert status.ok is False
+    assert status.cdp_ready is False
+    assert status.session_ready is False
+    assert capture_called is False
+
+
+def test_sync_youtube_cdp_validates_existing_cdp(monkeypatch):
+    import api
+
+    monkeypatch.setattr(api, "playwright_installed", lambda: True)
+    monkeypatch.setattr(api, "youtube_cdp_ready", lambda: True)
+    monkeypatch.setattr(
+        api,
+        "run_youtube_capture_once",
+        lambda: (0, ["Storage-state YouTube dimasukkan ke Chrome CDP: /tmp/state.json"], None),
+    )
+
+    status = sync_youtube_cdp()
+
+    assert status.ok is True
+    assert status.cdp_ready is True
+    assert status.session_ready is True
+    assert status.hydrated is True
 
 
 def test_default_youtube_description_uses_ai_caption_and_hashtags_only():

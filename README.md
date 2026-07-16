@@ -120,7 +120,8 @@ target YouTube channel by setting:
 YOUTUBE_CHROMIUM_USER_DATA_DIR=/path/inside/container/to/chromium-user-data
 YOUTUBE_CHROMIUM_PROFILE_DIRECTORY=Default
 YOUTUBE_CDP_URL=http://127.0.0.1:9222
-YOUTUBE_UPLOAD_USE_CDP=false
+YOUTUBE_UPLOAD_USE_CDP=true
+YOUTUBE_UPLOAD_FORCE_CDP=true
 YOUTUBE_CDP_MAX_UPLOAD_MB=45
 YOUTUBE_TARGET_CHANNEL=ryuundy8812
 YOUTUBE_TARGET_EMAIL=fendysketsa@gmail.com
@@ -162,6 +163,29 @@ the profile. The legacy `./scripts/reset-youtube-cdp-profile.sh` command now
 delegates to `./scripts/recreate-compose-up.sh --reset-profile --watch-chrome`
 and starts the Chrome CDP window minimized by default
 (`YOUTUBE_CHROME_START_MINIMIZED=true`).
+Uploads use Chrome CDP by default because YouTube Studio can reject the bundled
+Playwright browser as old or unsupported. Keep `YOUTUBE_UPLOAD_FORCE_CDP=true`
+when the backend must not fall back to Playwright storage state after a CDP
+refresh.
+The dashboard and Telegram **Run CDP** button calls the backend endpoint
+`POST /api/youtube/cdp/refresh`. By default the backend looks for
+`scripts/open-youtube-login-chrome.sh`; in Docker, `docker-compose.yml` mounts
+that folder at `/app/scripts`. If Chrome is controlled by the host desktop
+session instead of the backend container, keep the supervisor above running on
+the host or start Chrome CDP from outside, then use **Sync CDP**. For custom
+deployments, set `YOUTUBE_CDP_REFRESH_COMMAND` to the launcher command that is
+valid from the backend process. The Docker backend also sets
+`YOUTUBE_CHROME_HEADLESS=true`, `YOUTUBE_LOGIN_SOURCE_PROFILE_DIR=/app/data/chromium-youtube`,
+and `YOUTUBE_LOGIN_PROFILE_DIR=/app/data/youtube-chrome-profile` so the Run CDP
+button can start a Playwright Chromium CDP process without depending on an
+unlocked desktop display. **Sync CDP** calls `POST /api/youtube/cdp/sync`; it
+does not start or restart Chrome, and only hydrates/validates the session after
+remote debugging is already active. When a queued upload starts and CDP is not
+responding, the backend runs the refresh command automatically before invoking
+the YouTube uploader, so Telegram retry can recover while the laptop is locked
+or AFK. The Telegram Run CDP button waits for CDP readiness before sending the
+success notification; increase `TELEGRAM_YOUTUBE_CDP_REFRESH_TIMEOUT_SECONDS` if
+the launcher needs more time to open Chrome.
 Direct upload from the mounted full profile is disabled unless
 `YOUTUBE_ALLOW_CHROMIUM_PROFILE_UPLOAD=true` because full desktop profiles often
 fail in headless Playwright. Uploads are cancelled before file selection if the
@@ -196,7 +220,8 @@ YOUTUBE_CHROMIUM_USER_DATA_DIR=
 YOUTUBE_CHROMIUM_PROFILE_DIRECTORY=Default
 YOUTUBE_ALLOW_CHROMIUM_PROFILE_UPLOAD=false
 YOUTUBE_CDP_URL=http://127.0.0.1:9222
-YOUTUBE_UPLOAD_USE_CDP=false
+YOUTUBE_UPLOAD_USE_CDP=true
+YOUTUBE_UPLOAD_FORCE_CDP=true
 YOUTUBE_CDP_MAX_UPLOAD_MB=45
 YOUTUBE_DEFAULT_VISIBILITY=private
 YOUTUBE_MADE_FOR_KIDS=false
@@ -215,8 +240,10 @@ YOUTUBE_SUBTITLE_EDITOR_READY_DELAY_MS=2500
 YOUTUBE_SUBTITLE_SEGMENT_READY_DELAY_MS=30000
 YOUTUBE_SUBTITLE_AFTER_TYPE_DELAY_MS=2000
 YOUTUBE_UPLOAD_TIMEOUT_SECONDS=900
-YOUTUBE_DIRECT_UPLOAD_NAV_TIMEOUT_MS=18000
+YOUTUBE_STUDIO_NAV_TIMEOUT_MS=60000
+YOUTUBE_DIRECT_UPLOAD_NAV_TIMEOUT_MS=60000
 YOUTUBE_DIRECT_UPLOAD_INPUT_TIMEOUT_MS=5000
+YOUTUBE_ALLOW_DIRECT_UPLOAD_PAGE_FALLBACK=true
 YOUTUBE_DRY_RUN=false
 ```
 

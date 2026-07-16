@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -39,8 +39,30 @@ ACTIVE_STATUSES = {"queued", "running"}
 ALLOWED_QUALITY = {"standard", "high", "max"}
 ALLOWED_CROP = {"center", "person", "streamer"}
 ALLOWED_CAPTION_POSITIONS = {"upper", "center", "bottom"}
+ALLOWED_CAPTION_FONT_SIZES = {7, 9, 10, 12, 14, 18, 20, 24}
 ALLOWED_TOP = {None, 3, 5, 8, 10, 12}
 ALLOWED_DURATION_PRESETS = {(15, 60), (35, 180), (60, 180)}
+SETTINGS_SCHEMA_VERSION = 2
+
+
+def env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+
+
+YOUTUBE_CDP_REFRESH_HTTP_TIMEOUT = max(
+    45.0,
+    env_float(
+        "TELEGRAM_YOUTUBE_CDP_REFRESH_TIMEOUT_SECONDS",
+        env_float("YOUTUBE_CDP_REFRESH_READY_TIMEOUT_SECONDS", 30.0) + 20.0,
+    ),
+)
+YOUTUBE_SESSION_CAPTURE_HTTP_TIMEOUT = max(
+    90.0,
+    env_float("TELEGRAM_YOUTUBE_SESSION_CAPTURE_TIMEOUT_SECONDS", YOUTUBE_CDP_REFRESH_HTTP_TIMEOUT + 60.0),
+)
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "top": None,
@@ -53,7 +75,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "ai_base_url": DEFAULT_TELEGRAM_AI_BASE_URL,
     "ai_model": DEFAULT_TELEGRAM_AI_MODEL,
     "caption_position": "upper",
-    "caption_font_size": 18,
+    "caption_font_size": 9,
 }
 
 CLIPPING_STAGE_ALERTS: list[tuple[str, str, str, tuple[str, ...]]] = [
@@ -163,6 +185,29 @@ def is_supported_video_url(value: str) -> bool:
     return host in {"youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"}
 
 
+def canonical_youtube_url(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    try:
+        parsed = urlparse(value.strip())
+    except ValueError:
+        return ""
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    video_id = ""
+    if host == "youtu.be":
+        video_id = parsed.path.strip("/").split("/", 1)[0]
+    elif host in {"youtube.com", "m.youtube.com", "music.youtube.com"}:
+        if parsed.path == "/watch":
+            video_id = parse_qs(parsed.query).get("v", [""])[0]
+        elif parsed.path.startswith("/shorts/"):
+            video_id = parsed.path.split("/shorts/", 1)[1].split("/", 1)[0]
+        elif parsed.path.startswith("/embed/"):
+            video_id = parsed.path.split("/embed/", 1)[1].split("/", 1)[0]
+    if not video_id:
+        return ""
+    return f"https://www.youtube.com/watch?v={video_id}"
+
+
 def normalize_settings(value: object) -> dict[str, Any]:
     settings = DEFAULT_SETTINGS.copy()
     if not isinstance(value, dict):
@@ -197,7 +242,7 @@ def normalize_settings(value: object) -> dict[str, Any]:
         settings["caption_position"] = position
 
     font_size = value.get("caption_font_size")
-    if font_size in {14, 18, 24}:
+    if font_size in ALLOWED_CAPTION_FONT_SIZES:
         settings["caption_font_size"] = font_size
     return settings
 
@@ -208,9 +253,12 @@ def default_state() -> dict[str, Any]:
         "waiting_for_url": False,
         "pending_url": "",
         "active_job_id": None,
+        "settings_schema_version": SETTINGS_SCHEMA_VERSION,
         "settings": DEFAULT_SETTINGS.copy(),
         "jobs": {},
         "youtube_uploads": {},
+        "viral_video_suggestions": {},
+        "viral_video_seen_urls": [],
     }
 
 
@@ -226,10 +274,26 @@ def normalize_state(value: object) -> dict[str, Any]:
     if isinstance(value.get("active_job_id"), str):
         state["active_job_id"] = value["active_job_id"]
     state["settings"] = normalize_settings(value.get("settings"))
+    if int(value.get("settings_schema_version") or 1) < SETTINGS_SCHEMA_VERSION:
+        raw_settings = value.get("settings") if isinstance(value.get("settings"), dict) else {}
+        if raw_settings.get("caption_font_size") == 18:
+            state["settings"]["caption_font_size"] = DEFAULT_SETTINGS["caption_font_size"]
+    state["settings_schema_version"] = SETTINGS_SCHEMA_VERSION
     if isinstance(value.get("jobs"), dict):
         state["jobs"] = value["jobs"]
     if isinstance(value.get("youtube_uploads"), dict):
         state["youtube_uploads"] = value["youtube_uploads"]
+    if isinstance(value.get("viral_video_suggestions"), dict):
+        state["viral_video_suggestions"] = value["viral_video_suggestions"]
+    if isinstance(value.get("viral_video_seen_urls"), list):
+        seen_urls: list[str] = []
+        seen_set: set[str] = set()
+        for item in value["viral_video_seen_urls"]:
+            normalized = canonical_youtube_url(item)
+            if normalized and normalized not in seen_set:
+                seen_urls.append(normalized)
+                seen_set.add(normalized)
+        state["viral_video_seen_urls"] = seen_urls[-500:]
     return state
 
 
@@ -500,6 +564,22 @@ class BackendClient:
             raise ServiceError("Backend tidak mengembalikan job")
         return result
 
+    def search_viral_cc_sources(self, exclude_urls: list[str] | None = None) -> list[dict[str, Any]]:
+        result = _json_request(
+            f"{self.base_url}/api/automation/viral-cc/sources",
+            method="POST",
+            payload={
+                "video_count": 3,
+                "search_limit_per_query": 10,
+                "min_source_duration": 60,
+                "max_source_duration": 1800,
+                "min_views": 1000,
+                "exclude_urls": exclude_urls or [],
+            },
+            timeout=180,
+        )
+        return result if isinstance(result, list) else []
+
     def cancel_job(self, job_id: str) -> dict[str, Any]:
         result = _json_request(
             f"{self.base_url}/api/jobs/{job_id}/cancel",
@@ -548,7 +628,43 @@ class BackendClient:
             f"{self.base_url}/api/youtube/session/capture",
             method="POST",
             payload={},
-            timeout=45,
+            timeout=YOUTUBE_SESSION_CAPTURE_HTTP_TIMEOUT,
+        )
+        return result if isinstance(result, dict) else {}
+
+    def refresh_youtube_cdp(self) -> dict[str, Any]:
+        result = _json_request(
+            f"{self.base_url}/api/youtube/cdp/refresh",
+            method="POST",
+            payload={},
+            timeout=YOUTUBE_CDP_REFRESH_HTTP_TIMEOUT,
+        )
+        return result if isinstance(result, dict) else {}
+
+    def repair_youtube_cdp(self) -> dict[str, Any]:
+        result = _json_request(
+            f"{self.base_url}/api/youtube/cdp/repair",
+            method="POST",
+            payload={},
+            timeout=YOUTUBE_SESSION_CAPTURE_HTTP_TIMEOUT,
+        )
+        return result if isinstance(result, dict) else {}
+
+    def sync_youtube_cdp(self) -> dict[str, Any]:
+        result = _json_request(
+            f"{self.base_url}/api/youtube/cdp/sync",
+            method="POST",
+            payload={},
+            timeout=YOUTUBE_SESSION_CAPTURE_HTTP_TIMEOUT,
+        )
+        return result if isinstance(result, dict) else {}
+
+    def stop_youtube_cdp(self) -> dict[str, Any]:
+        result = _json_request(
+            f"{self.base_url}/api/youtube/cdp/stop",
+            method="POST",
+            payload={},
+            timeout=20,
         )
         return result if isinstance(result, dict) else {}
 
@@ -611,6 +727,7 @@ def main_menu_keyboard() -> dict[str, Any]:
     return keyboard(
         [
             [button("🎬 Mulai Clipping", "menu:new")],
+            [button("🔥 Cari Viral CC", "viral:refresh")],
             [button("📊 Status", "menu:status"), button("📚 Riwayat", "menu:history")],
             [button("⬆️ Status Upload YouTube", "menu:youtube"), button("🧪 Debug", "menu:debug")],
             [button("⚙️ Pengaturan", "menu:settings"), button("❓ Bantuan", "menu:help")],
@@ -663,6 +780,32 @@ def confirmation_keyboard() -> dict[str, Any]:
             [button("⚙️ Ubah Pengaturan", "menu:settings"), button("❌ Batal", "pending:cancel")],
         ]
     )
+
+
+def viral_source_text(source: dict[str, Any], index: int) -> str:
+    title = str(source.get("title") or "Video tanpa judul")[:140]
+    uploader = str(source.get("uploader") or "-")[:80]
+    duration = format_duration(source.get("duration"))
+    views = source.get("views")
+    views_text = f"{int(views):,}".replace(",", ".") if isinstance(views, (int, float)) else "-"
+    score = source.get("score")
+    license_text = str(source.get("license") or "Creative Commons")[:80]
+    return (
+        f"{index}. {title}\n"
+        f"Channel: {uploader}\n"
+        f"Durasi: {duration} · Views: {views_text} · Score: {score or '-'}\n"
+        f"Lisensi: {license_text}"
+    )
+
+
+def viral_sources_keyboard(sources: list[dict[str, Any]], suggestions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    rows: list[list[dict[str, str]]] = []
+    for index, source in enumerate(sources, start=1):
+        suggestion_id = uuid.uuid4().hex[:10]
+        suggestions[suggestion_id] = source
+        rows.append([button(f"✅ Proses #{index}", f"viralpick:{suggestion_id}")])
+    rows.append([button("🔄 Cari Lagi", "viral:refresh"), button("🏠 Menu", "menu:home")])
+    return keyboard(rows)
 
 
 class ClipForgeTelegramBot:
@@ -736,6 +879,33 @@ class ClipForgeTelegramBot:
         for chunk in split_text(text):
             self.send_message(chat_id, chunk)
 
+    def viral_exclude_urls(self) -> list[str]:
+        urls: list[str] = []
+        for item in self.state.get("viral_video_seen_urls", []):
+            urls.append(str(item))
+        pending_url = canonical_youtube_url(self.state.get("pending_url"))
+        if pending_url:
+            urls.append(pending_url)
+        jobs_state = self.state.get("jobs")
+        if isinstance(jobs_state, dict):
+            for record in jobs_state.values():
+                if not isinstance(record, dict):
+                    continue
+                job = record.get("job") if isinstance(record.get("job"), dict) else record
+                request = job.get("request") if isinstance(job, dict) else None
+                if isinstance(request, dict):
+                    urls.append(str(request.get("url") or ""))
+                if isinstance(job, dict):
+                    urls.append(str(job.get("source_url") or ""))
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for url in urls:
+            candidate = canonical_youtube_url(url)
+            if candidate and candidate not in seen:
+                normalized.append(candidate)
+                seen.add(candidate)
+        return normalized[-500:]
+
     def show_home(self, chat_id: int, first_name: str = "") -> None:
         greeting = f"Halo {first_name}, " if first_name else "Halo, "
         self.send_message(
@@ -777,9 +947,47 @@ class ClipForgeTelegramBot:
             "3. Tekan Proses Sekarang.\n"
             "4. Bot akan mengirim seluruh hasil saat selesai.\n"
             "5. Tekan Upload ke YouTube pada clip pilihan atau Upload 3 Terbaik.\n\n"
-            "Perintah: /clip, /status, /settings, /history, /youtube, /debug, /ping, /cancel, /menu",
+            "Perintah: /clip, /getvideosviral, /status, /settings, /history, /youtube, /debug, /ping, /cancel, /menu",
             main_menu_keyboard(),
         )
+
+    def show_viral_video_suggestions(self, chat_id: int) -> None:
+        exclude_urls = self.viral_exclude_urls()
+        self.send_message(
+            chat_id,
+            "Mencari 3 video viral Creative Commons bertema Islam/ceramah/pesan baik, durasi kurang dari 30 menit..."
+            + (f"\nSkip video yang sudah pernah diambil: {len(exclude_urls)}" if exclude_urls else ""),
+        )
+        try:
+            sources = self.backend.search_viral_cc_sources(exclude_urls)
+        except ServiceError as exc:
+            self.send_message(chat_id, f"Gagal mencari video viral Creative Commons: {exc}", main_menu_keyboard())
+            return
+        if not sources:
+            self.send_message(
+                chat_id,
+                "Belum menemukan kandidat yang memenuhi filter Creative Commons dan durasi < 30 menit. Coba lagi nanti.",
+                main_menu_keyboard(),
+            )
+            return
+
+        suggestions: dict[str, dict[str, Any]] = {}
+        lines = [
+            "Top 3 video viral Creative Commons",
+            "Tema: Islam, ceramah, motivasi, pesan baik",
+            "Filter: Creative Commons, durasi < 30 menit",
+            "",
+        ]
+        for index, source in enumerate(sources[:3], start=1):
+            lines.append(viral_source_text(source, index))
+            url = source.get("url")
+            if isinstance(url, str) and url:
+                lines.append(url)
+            lines.append("")
+        markup = viral_sources_keyboard(sources[:3], suggestions)
+        self.state["viral_video_suggestions"] = suggestions
+        self.send_message(chat_id, "\n".join(lines).strip(), markup)
+        self.persist()
 
     def show_debug(self, chat_id: int) -> None:
         lines = [
@@ -942,14 +1150,24 @@ class ClipForgeTelegramBot:
         if upload.get("video_url"):
             rows.append([url_button("🔗 Buka Video YouTube", str(upload["video_url"]))])
         if status == "failed":
-            rows.append([url_button("🔐 Buka Login YouTube", YOUTUBE_STUDIO_URL)])
-            rows.append([button("🔄 Sync Session Browser", "ytsync")])
             upload_id = upload.get("id")
             if isinstance(upload_id, str) and upload_id:
-                rows.append([button("🔁 Retry Upload Clip", f"ytretry:{upload_id}")])
+                rows.append([button("🔁 Retry Upload", f"ytretry:{upload_id}")])
+            rows.append([button("▶️ Run CDP", "ytcdp"), button("🔁 Sync CDP", "ytsync")])
+            rows.append([button("⏹ Stop CDP", "ytcdpstop")])
+            rows.append([url_button("🔐 Buka Studio", YOUTUBE_STUDIO_URL)])
             rows.append([button("📊 Status Upload YouTube", "menu:youtube")])
         rows.append([button("📚 Riwayat", "menu:history"), button("🏠 Menu", "menu:home")])
         return keyboard(rows)
+
+    def youtube_control_keyboard(self) -> dict[str, Any]:
+        return keyboard(
+            [
+                [button("▶️ Run CDP", "ytcdp"), button("🔁 Sync CDP", "ytsync")],
+                [button("⏹ Stop CDP", "ytcdpstop")],
+                [button("📚 Riwayat", "menu:history"), button("🏠 Menu", "menu:home")],
+            ]
+        )
 
     def show_youtube_status(self, chat_id: int) -> None:
         try:
@@ -961,16 +1179,16 @@ class ClipForgeTelegramBot:
             "Status uploader YouTube",
             f"Playwright: {'siap' if config.get('playwright_installed') else 'belum terpasang'}",
             f"Sesi login: {'ada' if config.get('auth_state_exists') else 'belum ada'}",
+            f"Mode: {config.get('auth_status_message') or '-'}",
             f"Default visibility: {config.get('default_visibility') or 'private'}",
         ]
         if config.get("active_upload_id"):
             lines.append(f"Upload aktif: {str(config['active_upload_id'])[:10]}")
         if not config.get("enabled"):
             lines.append(
-                "\nLogin sekali dari server dengan:\n"
-                "cd backend && python youtube_uploader.py login"
+                "\nUploader belum siap. Tekan Run CDP dulu, lalu Sync CDP setelah remote debugging aktif."
             )
-        self.send_message(chat_id, "\n".join(lines), main_menu_keyboard())
+        self.send_message(chat_id, "\n".join(lines), self.youtube_control_keyboard())
 
     def youtube_record(self, upload_id: str, chat_id: int) -> dict[str, Any]:
         uploads = self.state.setdefault("youtube_uploads", {})
@@ -1071,7 +1289,134 @@ class ClipForgeTelegramBot:
         if changed:
             self.persist()
 
-    def start_youtube_upload_for_clip(self, chat_id: int, job_id: str, clip_index: int) -> None:
+    def repair_youtube_cdp_session(self, chat_id: int, *, reason: str = "upload") -> bool:
+        self.send_message(
+            chat_id,
+            f"Menyiapkan Chrome CDP untuk {reason}.\n\n"
+            "Backend akan stop CDP lama, start CDP baru, hydrate session, lalu validasi Studio target.",
+        )
+        try:
+            repair = self.backend.repair_youtube_cdp()
+        except ServiceError as exc:
+            self.send_message(
+                chat_id,
+                "Repair Chrome CDP gagal dari bot.\n\n"
+                f"Alasan: {exc}\n"
+                "Upload belum dilanjutkan agar tidak gagal berulang.",
+                self.youtube_control_keyboard(),
+            )
+            return False
+
+        logs = repair.get("logs") if isinstance(repair, dict) else []
+        visible_logs = [str(line) for line in logs[-5:]] if isinstance(logs, list) else []
+        last_log = visible_logs[-1][:700] if visible_logs else ""
+        cdp_ready = bool(repair.get("cdp_ready"))
+        session_ready = bool(repair.get("session_ready"))
+        hydrated = bool(repair.get("hydrated"))
+        if not repair.get("ok"):
+            detail = str(repair.get("error") or repair.get("message") or "Session CDP belum valid")[:1200]
+            lines = [
+                "Chrome CDP belum siap untuk upload.",
+                "",
+                f"Remote debugging: {'aktif' if cdp_ready else 'tidak aktif'}",
+                f"Session target: {'valid' if session_ready else 'belum valid'}",
+                f"Hydrate storage-state: {'terpakai' if hydrated else 'tidak'}",
+                f"Alasan: {detail}",
+            ]
+            if last_log:
+                lines.append(f"Log terakhir: {last_log}")
+            self.send_message(
+                chat_id,
+                "\n".join(lines),
+                self.youtube_control_keyboard(),
+            )
+            return False
+
+        lines = [
+            "Chrome CDP siap dipakai dari bot.",
+            "",
+            f"Remote debugging: {'aktif' if cdp_ready else 'tidak aktif'}",
+            f"Session target: {'valid' if session_ready else 'belum valid'}",
+            f"Hydrate storage-state: {'terpakai' if hydrated else 'tidak'}",
+            str(repair.get("message") or "Session YouTube berhasil divalidasi."),
+        ]
+        if last_log:
+            lines.append(f"Log: {last_log}")
+        self.send_message(chat_id, "\n".join(lines))
+        return True
+
+    def run_youtube_cdp_launcher(self, chat_id: int) -> None:
+        self.send_message(chat_id, "Menjalankan Chrome CDP dari backend. Setelah aktif, tekan Sync CDP.")
+        try:
+            result = self.backend.refresh_youtube_cdp()
+        except ServiceError as exc:
+            self.send_message(
+                chat_id,
+                f"Run CDP gagal dari bot.\n\nAlasan: {exc}\n\n"
+                "Jika Chrome CDP dijalankan dari luar, biarkan window Studio terbuka lalu tekan Sync CDP.",
+                self.youtube_control_keyboard(),
+            )
+            return
+        lines = [
+            str(result.get("message") or "Launcher Chrome CDP sudah dijalankan."),
+            "",
+            f"Remote debugging: {'aktif' if result.get('cdp_ready') else 'belum aktif'}",
+        ]
+        if result.get("log_path"):
+            lines.append(f"Log: {result['log_path']}")
+        self.send_message(chat_id, "\n".join(lines), self.youtube_control_keyboard())
+
+    def sync_youtube_cdp_session(self, chat_id: int, *, reason: str = "manual") -> bool:
+        self.send_message(
+            chat_id,
+            f"Sync Chrome CDP untuk {reason}.\n\n"
+            "Backend akan memakai CDP yang sudah aktif, hydrate storage-state bila ada, lalu validasi akun/channel target.",
+        )
+        try:
+            result = self.backend.sync_youtube_cdp()
+        except ServiceError as exc:
+            self.send_message(
+                chat_id,
+                f"Sync CDP gagal dari bot.\n\nAlasan: {exc}",
+                self.youtube_control_keyboard(),
+            )
+            return False
+
+        logs = result.get("logs") if isinstance(result, dict) else []
+        visible_logs = [str(line) for line in logs[-5:]] if isinstance(logs, list) else []
+        last_log = visible_logs[-1][:700] if visible_logs else ""
+        cdp_ready = bool(result.get("cdp_ready"))
+        session_ready = bool(result.get("session_ready"))
+        hydrated = bool(result.get("hydrated"))
+        if not result.get("ok"):
+            detail = str(result.get("error") or result.get("message") or "Session CDP belum valid")[:1200]
+            lines = [
+                "Chrome CDP belum valid untuk upload.",
+                "",
+                f"Remote debugging: {'aktif' if cdp_ready else 'tidak aktif'}",
+                f"Session target: {'valid' if session_ready else 'belum valid'}",
+                f"Hydrate storage-state: {'terpakai' if hydrated else 'tidak'}",
+                f"Alasan: {detail}",
+            ]
+            if last_log:
+                lines.append(f"Log terakhir: {last_log}")
+            self.send_message(chat_id, "\n".join(lines), self.youtube_control_keyboard())
+            return False
+
+        lines = [
+            "Chrome CDP tersinkron dan aman untuk upload.",
+            "",
+            f"Remote debugging: {'aktif' if cdp_ready else 'tidak aktif'}",
+            f"Session target: {'valid' if session_ready else 'belum valid'}",
+            f"Hydrate storage-state: {'terpakai' if hydrated else 'tidak'}",
+            str(result.get("message") or "Session YouTube berhasil divalidasi."),
+        ]
+        if last_log:
+            lines.append(f"Log: {last_log}")
+        self.send_message(chat_id, "\n".join(lines), self.youtube_control_keyboard())
+        return True
+
+    def start_youtube_upload_for_clip(self, chat_id: int, job_id: str, clip_index: int, *, preflight: bool = False) -> None:
         try:
             job = self.backend.get_job(job_id)
             clips = job.get("clips", [])
@@ -1082,22 +1427,28 @@ class ClipForgeTelegramBot:
                 self.send_message(chat_id, "Clip yang dipilih tidak ditemukan.", self.job_keyboard(job))
                 return
             clip = clips[clip_index - 1]
+            if preflight and not self.repair_youtube_cdp_session(chat_id, reason="upload clip"):
+                return
             upload = self.backend.create_youtube_upload(job_id, str(clip.get("url", "")))
             self.remember_youtube_uploads(chat_id, [upload], announce_queued=True)
             self.send_message(chat_id, "Status awal upload YouTube\n\n" + self.youtube_upload_status_text(upload))
         except ServiceError as exc:
             self.send_message(chat_id, f"Gagal membuat upload YouTube: {exc}", main_menu_keyboard())
 
-    def start_youtube_upload_for_url(self, chat_id: int, job_id: str, clip_url: str) -> None:
+    def start_youtube_upload_for_url(self, chat_id: int, job_id: str, clip_url: str, *, preflight: bool = False) -> None:
         try:
+            if preflight and not self.repair_youtube_cdp_session(chat_id, reason="retry upload"):
+                return
             upload = self.backend.create_youtube_upload(job_id, clip_url)
             self.remember_youtube_uploads(chat_id, [upload], announce_queued=True)
             self.send_message(chat_id, "Status awal retry upload YouTube\n\n" + self.youtube_upload_status_text(upload))
         except ServiceError as exc:
             self.send_message(chat_id, f"Gagal retry upload YouTube: {exc}", main_menu_keyboard())
 
-    def start_youtube_upload_all(self, chat_id: int, job_id: str) -> None:
+    def start_youtube_upload_all(self, chat_id: int, job_id: str, *, preflight: bool = False) -> None:
         try:
+            if preflight and not self.repair_youtube_cdp_session(chat_id, reason="batch upload"):
+                return
             uploads = self.backend.create_youtube_upload_batch(job_id)
             self.remember_youtube_uploads(chat_id, uploads, announce_queued=True)
             self.send_message(
@@ -1537,6 +1888,8 @@ class ClipForgeTelegramBot:
         elif command == "/youtube":
             self.send_message(chat_id, "Mengecek status uploader YouTube...")
             self.show_youtube_status(chat_id)
+        elif command == "/getvideosviral":
+            self.show_viral_video_suggestions(chat_id)
         elif command == "/debug":
             self.show_debug(chat_id)
         elif command == "/ping":
@@ -1603,7 +1956,7 @@ class ClipForgeTelegramBot:
             settings["ai_enabled"] = not settings["ai_enabled"]
         elif name == "position" and value in ALLOWED_CAPTION_POSITIONS:
             settings["caption_position"] = value
-        elif name == "fontsize" and value.isdigit() and int(value) in {14, 18, 24}:
+        elif name == "fontsize" and value.isdigit() and int(value) in ALLOWED_CAPTION_FONT_SIZES:
             settings["caption_font_size"] = int(value)
         else:
             return False
@@ -1657,6 +2010,25 @@ class ClipForgeTelegramBot:
             self.show_debug(chat_id)
         elif data == "menu:help":
             self.show_help(chat_id)
+        elif data == "viral:refresh":
+            self.show_viral_video_suggestions(chat_id)
+        elif data.startswith("viralpick:"):
+            suggestion_id = data.split(":", 1)[1]
+            suggestions = self.state.get("viral_video_suggestions")
+            source = suggestions.get(suggestion_id) if isinstance(suggestions, dict) else None
+            url = source.get("url") if isinstance(source, dict) else None
+            normalized_url = canonical_youtube_url(url)
+            if normalized_url and is_supported_video_url(normalized_url):
+                seen_urls = self.state.setdefault("viral_video_seen_urls", [])
+                if isinstance(seen_urls, list) and normalized_url not in seen_urls:
+                    seen_urls.append(normalized_url)
+                    self.state["viral_video_seen_urls"] = seen_urls[-500:]
+                self.state["pending_url"] = normalized_url
+                self.state["waiting_for_url"] = False
+                self.persist()
+                self.show_pending(chat_id)
+            else:
+                self.send_message(chat_id, "Pilihan video sudah tidak tersedia. Tekan Cari Lagi.", keyboard([[button("🔄 Cari Lagi", "viral:refresh")], [button("🏠 Menu", "menu:home")]]))
         elif data == "pending:cancel":
             self.state["waiting_for_url"] = False
             self.state["pending_url"] = ""
@@ -1723,7 +2095,8 @@ class ClipForgeTelegramBot:
                 keyboard(
                     [
                         [button("Atas", "set:position:upper"), button("Tengah", "set:position:center"), button("Bawah", "set:position:bottom")],
-                        [button("14px", "set:fontsize:14"), button("18px", "set:fontsize:18"), button("24px", "set:fontsize:24")],
+                        [button("7px", "set:fontsize:7"), button("9px", "set:fontsize:9"), button("10px", "set:fontsize:10"), button("12px", "set:fontsize:12")],
+                        [button("14px", "set:fontsize:14"), button("18px", "set:fontsize:18"), button("20px", "set:fontsize:20"), button("24px", "set:fontsize:24")],
                         [button("⬅️ Kembali", "menu:settings")],
                     ]
                 ),
@@ -1764,13 +2137,13 @@ class ClipForgeTelegramBot:
         elif data.startswith("ytup:"):
             parts = data.split(":")
             if len(parts) == 3 and parts[2].isdigit():
-                self.send_message(chat_id, "Perintah upload clip ke YouTube diterima. Membuat antrean upload...")
-                self.start_youtube_upload_for_clip(chat_id, parts[1], int(parts[2]))
+                self.send_message(chat_id, "Perintah upload clip ke YouTube diterima. Bot menyiapkan CDP dulu...")
+                self.start_youtube_upload_for_clip(chat_id, parts[1], int(parts[2]), preflight=True)
             else:
                 self.send_message(chat_id, "Data upload YouTube tidak valid.", main_menu_keyboard())
         elif data.startswith("ytall:"):
-            self.send_message(chat_id, "Perintah upload 3 terbaik ke YouTube diterima. Membuat antrean batch...")
-            self.start_youtube_upload_all(chat_id, data.split(":", 1)[1])
+            self.send_message(chat_id, "Perintah upload 3 terbaik ke YouTube diterima. Bot menyiapkan CDP dulu...")
+            self.start_youtube_upload_all(chat_id, data.split(":", 1)[1], preflight=True)
         elif data.startswith("ytretry:"):
             upload_id = data.split(":", 1)[1]
             try:
@@ -1782,16 +2155,25 @@ class ClipForgeTelegramBot:
             source_job_id = upload.get("source_job_id")
             clip_url = upload.get("clip_url")
             if isinstance(source_job_id, str) and isinstance(clip_url, str):
-                self.start_youtube_upload_for_url(chat_id, source_job_id, clip_url)
+                self.start_youtube_upload_for_url(chat_id, source_job_id, clip_url, preflight=True)
             else:
                 self.send_message(chat_id, "Data retry upload YouTube tidak valid.", main_menu_keyboard())
         elif data == "ytsync":
+            self.sync_youtube_cdp_session(chat_id, reason="manual")
+        elif data == "ytcdp":
+            self.run_youtube_cdp_launcher(chat_id)
+        elif data == "ytcdpstop":
             try:
-                self.send_message(chat_id, "Sync session browser dimulai. Backend sedang membaca session YouTube...")
-                self.backend.capture_youtube_session()
-                self.send_message(chat_id, "Session YouTube berhasil disinkronkan dari browser. Silakan tekan Retry Upload Clip.")
+                self.send_message(chat_id, "Mengirim perintah stop Chrome CDP ke backend...")
+                result = self.backend.stop_youtube_cdp()
+                self.send_message(
+                    chat_id,
+                    f"{result.get('message') or 'Perintah stop CDP selesai.'}\n\n"
+                    f"Remote debugging aktif: {'ya' if result.get('cdp_ready') else 'tidak'}",
+                    self.youtube_control_keyboard(),
+                )
             except ServiceError as exc:
-                self.send_message(chat_id, f"Gagal sync session browser: {exc}", main_menu_keyboard())
+                self.send_message(chat_id, f"Gagal stop Chrome CDP: {exc}", self.youtube_control_keyboard())
         else:
             self.send_message(chat_id, f"Fungsi tombol belum dikenali: {data or '-'}", main_menu_keyboard())
 
@@ -1838,6 +2220,7 @@ class ClipForgeTelegramBot:
                     {
                         "commands": [
                             {"command": "clip", "description": "Mulai clipping dari link YouTube"},
+                            {"command": "getvideosviral", "description": "Cari 3 video viral CC tema Islam"},
                             {"command": "status", "description": "Lihat proses yang sedang berjalan"},
                             {"command": "settings", "description": "Atur hasil clipping"},
                             {"command": "history", "description": "Lihat riwayat dan kirim ulang hasil"},

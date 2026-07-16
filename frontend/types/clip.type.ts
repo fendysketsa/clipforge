@@ -153,6 +153,28 @@ export type YouTubeLoginStatus = {
   logs: string[];
 };
 
+export type YouTubeCdpRefreshStatus = {
+  started: boolean;
+  cdp_ready: boolean;
+  started_at: string;
+  command: string[];
+  log_path: string;
+  message: string;
+  logs: string[];
+};
+
+export type YouTubeCdpRepairStatus = {
+  ok: boolean;
+  cdp_ready: boolean;
+  session_ready: boolean;
+  hydrated: boolean;
+  started_at: string;
+  message: string;
+  refresh?: YouTubeCdpRefreshStatus | null;
+  error?: string | null;
+  logs: string[];
+};
+
 export type AutoViralRequest = {
   video_count?: number;
   clips_per_video?: number;

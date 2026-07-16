@@ -4,6 +4,7 @@ from pathlib import Path
 from telegram_bot import (
     DEFAULT_SETTINGS,
     build_job_payload,
+    canonical_youtube_url,
     format_duration,
     is_supported_video_url,
     load_state,
@@ -24,6 +25,16 @@ def test_rejects_non_youtube_and_invalid_urls():
     assert not is_supported_video_url("https://example.com/video")
     assert not is_supported_video_url("javascript:alert(1)")
     assert not is_supported_video_url("youtube.com/watch?v=demo")
+
+
+def test_canonical_youtube_url_normalizes_common_forms():
+    assert canonical_youtube_url("https://youtu.be/abcDEF12345") == "https://www.youtube.com/watch?v=abcDEF12345"
+    assert canonical_youtube_url("https://www.youtube.com/watch?v=abcDEF12345&t=30") == (
+        "https://www.youtube.com/watch?v=abcDEF12345"
+    )
+    assert canonical_youtube_url("https://youtube.com/shorts/abcDEF12345") == (
+        "https://www.youtube.com/watch?v=abcDEF12345"
+    )
 
 
 def test_normalize_settings_keeps_only_clickable_options():
@@ -76,7 +87,7 @@ def test_build_job_payload_matches_backend_contract():
     assert payload["top"] == 5
     assert payload["crop_mode"] == "center"
     assert payload["min_duration"] == 35
-    assert payload["caption_font_size"] == 18
+    assert payload["caption_font_size"] == 9
 
 
 def test_output_path_is_confined_to_outputs(tmp_path: Path):

@@ -28,16 +28,23 @@ function friendlyYouTubeUploadError(message: string, usesChromeDebugging: boolea
   const clean = message.trim();
   const lowered = clean.toLowerCase();
   if (lowered.includes("connect_over_cdp") || lowered.includes("econnrefused")) {
-    return "Chrome remote debugging belum aktif di port 9222. Jalankan ./scripts/recreate-compose-up.sh dan biarkan Chrome Studio tetap terbuka.";
+    return "CDP belum aktif. Klik Retry YouTube; sistem akan menyiapkan CDP otomatis.";
   }
   if (lowered.includes("python youtube_uploader.py login")) {
-    return "Card ini masih membawa error lama dari storage-state. Upload sekarang memakai Chrome remote debugging; jalankan ./scripts/recreate-compose-up.sh, pastikan Chrome Studio login, lalu klik Retry YouTube.";
+    return "Session lama tidak dipakai. Klik Retry YouTube; sistem akan menyiapkan CDP otomatis.";
   }
   if (
     usesChromeDebugging
     && (lowered.includes("sesi youtube belum login") || lowered.includes("youtube studio meminta login"))
   ) {
-    return "Chrome CDP belum login ke akun target. Login harus di window Chrome yang dibuka command terminal, bukan tab dashboard. Klik Salin Command Login.";
+    return "CDP belum valid. Klik Retry YouTube; sistem akan buka Chrome Studio dan sync otomatis.";
+  }
+  if (
+    usesChromeDebugging
+    && lowered.includes("playlist")
+    && (lowered.includes("tidak ditemukan") || lowered.includes("not found"))
+  ) {
+    return "Studio belum siap membaca playlist. Klik Retry YouTube; sistem akan refresh CDP otomatis.";
   }
   return clean;
 }
@@ -64,8 +71,8 @@ export function ResultsSection({
   const selectedCount = selectedClipUrls.length;
   const allClipsSelected = clips.length > 0 && selectedCount === clips.length;
   const usesChromeDebugging = /remote debugging|cdp/i.test(youtubeStatusMessage);
-  const openStudioLabel = usesChromeDebugging ? "Salin Command Login" : "Buka Login YouTube";
-  const openStudioWaitingLabel = usesChromeDebugging ? "Menyalin command..." : "Menunggu login...";
+  const openStudioLabel = usesChromeDebugging ? "Run CDP" : "Buka Login YouTube";
+  const openStudioWaitingLabel = usesChromeDebugging ? "Menjalankan CDP..." : "Menunggu login...";
 
   return (
     <section className="results">
@@ -99,7 +106,29 @@ export function ResultsSection({
                 <UploadCloud size={15} />
                 Upload {Math.min(youtubeAutoUploadCount, clips.length)} terbaik
               </button>
-              {!youtubeEnabled ? (
+              {usesChromeDebugging ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={onStartYouTubeLogin}
+                    className="ghostButton youtubeButton"
+                    disabled={isYouTubeLoginActive}
+                    title="Jalankan Chrome CDP saja, tanpa sync/validasi session"
+                  >
+                    <RefreshCw size={15} />
+                    Run CDP
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onCaptureYouTubeSession}
+                    className="ghostButton youtubeButton"
+                    title="Sync CDP yang sudah aktif, hydrate session, dan validasi Studio target"
+                  >
+                    <RefreshCw size={15} />
+                    Sync CDP
+                  </button>
+                </>
+              ) : !youtubeEnabled ? (
                 <>
                   <button
                     type="button"
@@ -115,10 +144,10 @@ export function ResultsSection({
                     type="button"
                     onClick={onCaptureYouTubeSession}
                     className="ghostButton youtubeButton"
-                    title={usesChromeDebugging ? "Buka dan cek Chrome Studio remote debugging" : "Simpan session dari Chrome remote debugging ke Playwright storage state"}
+                    title="Simpan session dari Chrome remote debugging ke Playwright storage state"
                   >
                     <RefreshCw size={15} />
-                    {usesChromeDebugging ? "Salin Cek Chrome" : "Sync Session"}
+                    Sync Session
                   </button>
                 </>
               ) : null}
@@ -230,7 +259,7 @@ export function ResultsSection({
                       {isYouTubeLoginActive ? openStudioWaitingLabel : openStudioLabel}
                     </button>
                     <button type="button" onClick={onCaptureYouTubeSession}>
-                      {usesChromeDebugging ? "Salin Cek Chrome" : "Sync Session Browser"}
+                      {usesChromeDebugging ? "Sync CDP" : "Sync Session Browser"}
                     </button>
                   </div>
                 ) : null}
