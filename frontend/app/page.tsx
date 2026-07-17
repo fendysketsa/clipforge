@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
+  autoLoginYouTubeCdp,
   cancelJob,
   captureYouTubeBrowserSession,
   createJob,
@@ -15,16 +16,18 @@ import {
   deleteSelectedJobClips,
   deleteJobs,
   discoverLocalLlms,
+  enableYouTubeDirectProfileUpload,
   fetchModels,
   getAutoViralCampaign,
   getJob,
   getJobs,
   getYouTubeConfig,
   getYouTubeUploads,
+  importYouTubeCdpCookies,
   probeUrlDuration,
-  refreshYouTubeCdpChrome,
+  setupYouTubeOneTimeLogin,
+  startYouTubeLogin,
   startAutoViralCampaign,
-  syncYouTubeCdpSession,
   updateJobClipStatus,
   uploadVideo,
   type ClipDeleteResult,
@@ -753,30 +756,39 @@ export default function HomePage() {
     [job, loadJobs],
   );
 
-  const requireValidCdpSession = useCallback((result: { ok: boolean; error?: string | null; message?: string | null }) => {
+  const requireValidYouTubeSession = useCallback(<T extends { ok: boolean; error?: string | null; message?: string | null }>(result: T) => {
     if (!result.ok) {
-      throw new Error(result.error || result.message || "Chrome CDP belum valid");
+      throw new Error(result.error || result.message || "Session YouTube belum valid");
     }
     return result;
   }, []);
+
+  const usesChromeDebugging = useCallback(
+    () => Boolean(youtubeConfig?.upload_uses_cdp ?? /remote debugging|cdp/i.test(youtubeConfig?.auth_status_message ?? "")),
+    [youtubeConfig?.auth_status_message, youtubeConfig?.upload_uses_cdp],
+  );
+
+  const prepareYouTubeUpload = useCallback(
+    async (successMessage: string) => {
+      const result = await toast.promise(setupYouTubeOneTimeLogin(), {
+        loading: "Menyiapkan session Playwright...",
+        success: (result) => result.ok ? successMessage : result.message,
+        error: (error) => error instanceof Error ? error.message : "Session YouTube belum siap",
+      });
+      requireValidYouTubeSession(result);
+      loadYouTubeUploads().catch(() => undefined);
+    },
+    [
+      loadYouTubeUploads,
+      requireValidYouTubeSession,
+    ],
+  );
 
   const handleUploadClipToYouTube = useCallback(
     async (clip: ClipFile) => {
       if (!job) return;
       try {
-        const usesChromeDebugging = /remote debugging|cdp/i.test(youtubeConfig?.auth_status_message ?? "");
-        if (usesChromeDebugging) {
-          await toast.promise(
-            refreshYouTubeCdpChrome()
-              .then(() => syncYouTubeCdpSession())
-              .then(requireValidCdpSession),
-            {
-              loading: "Menyiapkan Chrome CDP...",
-              success: "Chrome CDP siap. Upload dimasukkan antrean.",
-              error: "CDP belum siap. Chrome Studio sudah dibuka, login di window itu lalu klik Retry.",
-            },
-          );
-        }
+        await prepareYouTubeUpload("Session Playwright siap. Upload dimasukkan antrean.");
         const upload = await toast.promise(createYouTubeUpload(job.id, clip.url), {
           loading: "Memasukkan upload YouTube ke antrean...",
           success: "Upload YouTube masuk antrean.",
@@ -788,26 +800,14 @@ export default function HomePage() {
         // toast.promise already displayed the actionable status.
       }
     },
-    [job, loadYouTubeUploads, requireValidCdpSession, youtubeConfig?.auth_status_message],
+    [job, loadYouTubeUploads, prepareYouTubeUpload],
   );
 
   const handleUploadAllToYouTube = useCallback(async () => {
     if (!job || !job.clips.length) return;
     const bestCount = youtubeConfig?.auto_upload_count ?? 3;
     try {
-      const usesChromeDebugging = /remote debugging|cdp/i.test(youtubeConfig?.auth_status_message ?? "");
-      if (usesChromeDebugging) {
-        await toast.promise(
-          refreshYouTubeCdpChrome()
-            .then(() => syncYouTubeCdpSession())
-            .then(requireValidCdpSession),
-          {
-            loading: "Menyiapkan Chrome CDP...",
-            success: "Chrome CDP siap. Batch upload dimasukkan antrean.",
-            error: "CDP belum siap. Chrome Studio sudah dibuka, login di window itu lalu klik Retry.",
-          },
-        );
-      }
+      await prepareYouTubeUpload("Session Playwright siap. Batch upload dimasukkan antrean.");
       const uploads = await toast.promise(createYouTubeUploadBatch(job.id, [], bestCount), {
         loading: `Memasukkan ${Math.min(bestCount, job.clips.length)} klip terbaik ke antrean YouTube...`,
         success: (uploads) => `${uploads.length} klip terbaik masuk antrean YouTube.`,
@@ -821,19 +821,15 @@ export default function HomePage() {
     } catch {
       // toast.promise already displayed the actionable status.
     }
-  }, [job, loadYouTubeUploads, requireValidCdpSession, youtubeConfig?.auth_status_message, youtubeConfig?.auto_upload_count]);
+  }, [job, loadYouTubeUploads, prepareYouTubeUpload, youtubeConfig?.auto_upload_count]);
 
   const handleStartYouTubeLogin = useCallback(async () => {
-    const usesChromeDebugging = /remote debugging|cdp/i.test(youtubeConfig?.auth_status_message ?? "");
-    if (usesChromeDebugging) {
+    if (usesChromeDebugging()) {
       try {
-        await toast.promise(refreshYouTubeCdpChrome(), {
-          loading: "Menjalankan Chrome CDP...",
-          success: (result) =>
-            result.cdp_ready
-              ? "Chrome CDP aktif. Sekarang klik Sync CDP untuk validasi akun target."
-              : result.message || "Launcher CDP berjalan. Tunggu sebentar, lalu klik Sync CDP.",
-          error: (error) => error instanceof Error ? error.message : "Gagal menjalankan Chrome CDP",
+        await toast.promise(setupYouTubeOneTimeLogin().then(requireValidYouTubeSession), {
+          loading: "Menyiapkan login sekali...",
+          success: "Login sekali aktif. Upload berikutnya memakai Playwright storage-state.",
+          error: (error) => error instanceof Error ? error.message : "Gagal menyiapkan login sekali",
         });
         loadYouTubeUploads().catch(() => undefined);
       } catch {
@@ -841,35 +837,30 @@ export default function HomePage() {
       }
       return;
     }
-    window.open("https://studio.youtube.com", "_blank", "noopener,noreferrer");
-    setIsYouTubeLoginActive(true);
-    toast(
-      "Login ke akun fendysketsa@gmail.com / channel ryuundy8812. Setelah dashboard tampil, klik Sync Session Browser dulu, baru Retry/Upload YouTube.",
-      { duration: 11000 },
-    );
-    window.setTimeout(() => {
-      setIsYouTubeLoginActive(false);
-      loadYouTubeUploads().catch(() => undefined);
-    }, 12000);
-  }, [loadYouTubeUploads, youtubeConfig?.auth_status_message]);
+    try {
+      await toast.promise(startYouTubeLogin(), {
+        loading: "Membuka login YouTube Playwright...",
+        success: "Proses login Playwright dimulai. Setelah Studio tampil, session akan disimpan otomatis.",
+        error: (error) => error instanceof Error ? error.message : "Gagal membuka login Playwright",
+      });
+      setIsYouTubeLoginActive(true);
+      window.setTimeout(() => {
+        setIsYouTubeLoginActive(false);
+        loadYouTubeUploads().catch(() => undefined);
+      }, 12000);
+    } catch {
+      // toast.promise already displayed the backend error.
+    }
+  }, [loadYouTubeUploads, requireValidYouTubeSession, usesChromeDebugging]);
 
   const handleCaptureYouTubeSession = useCallback(async () => {
-    const usesChromeDebugging = /remote debugging|cdp/i.test(youtubeConfig?.auth_status_message ?? "");
-    if (usesChromeDebugging) {
+    if (usesChromeDebugging()) {
       try {
-        await toast.promise(
-          refreshYouTubeCdpChrome()
-            .then(() => syncYouTubeCdpSession())
-            .then(requireValidCdpSession),
-          {
-            loading: "Menyiapkan dan sync Chrome CDP...",
-            success: (result) =>
-              result.ok
-                ? "Chrome CDP tersinkron dan akun target valid. Aman untuk Retry YouTube."
-                : result.error || result.message || "Chrome CDP belum valid.",
-            error: "CDP belum siap. Chrome Studio sudah dibuka, login di window itu lalu klik Retry.",
-          },
-        );
+        await toast.promise(autoLoginYouTubeCdp().then(requireValidYouTubeSession), {
+          loading: "Auto-login Chrome CDP...",
+          success: "Chrome CDP login otomatis dan akun target valid. Aman untuk Retry YouTube.",
+          error: (error) => error instanceof Error ? error.message : "CDP belum siap",
+        });
       } catch {
         // toast.promise already displayed the backend error.
       }
@@ -888,7 +879,56 @@ export default function HomePage() {
         duration: 9000,
       });
     }
-  }, [loadYouTubeUploads, requireValidCdpSession, youtubeConfig?.auth_status_message]);
+  }, [loadYouTubeUploads, requireValidYouTubeSession, usesChromeDebugging]);
+
+  const handleImportYouTubeCdpCookies = useCallback(async () => {
+    try {
+      await toast.promise(importYouTubeCdpCookies().then(requireValidYouTubeSession), {
+        loading: "Mengambil cookies dari Chrome CDP...",
+        success: (result) =>
+          `Cookies Chrome tersimpan (${result.youtube_cookie_count ?? 0} cookies YouTube/Google).`,
+        error: (error) => error instanceof Error ? error.message : "Gagal mengambil cookies Chrome CDP",
+      });
+      loadYouTubeUploads().catch(() => undefined);
+    } catch {
+      // toast.promise already displayed the backend error.
+    }
+  }, [loadYouTubeUploads, requireValidYouTubeSession]);
+
+  const handleSetupYouTubeOneTimeLogin = useCallback(async () => {
+    try {
+      const result = await toast.promise(setupYouTubeOneTimeLogin(), {
+        loading: "Menyiapkan login sekali...",
+        success: (result) =>
+          result.login_required
+            ? result.message
+            : `Login sekali aktif (${result.youtube_cookie_count ?? 0} cookies YouTube/Google). Upload berikutnya otomatis.`,
+        error: (error) => error instanceof Error ? error.message : "Gagal menyiapkan login sekali",
+      });
+      if (!result.login_required) requireValidYouTubeSession(result);
+      setIsYouTubeLoginActive(Boolean(result.login_required));
+      loadYouTubeUploads().catch(() => undefined);
+    } catch {
+      // toast.promise already displayed the backend error.
+    }
+  }, [loadYouTubeUploads, requireValidYouTubeSession]);
+
+  const handleEnableNoCdpMode = useCallback(async () => {
+    try {
+      const config = await toast.promise(enableYouTubeDirectProfileUpload(), {
+        loading: "Mengaktifkan mode tanpa CDP...",
+        success: (config) =>
+          config.enabled
+            ? "Mode tanpa CDP aktif. Upload akan memakai browser/profile backend."
+            : "Mode tanpa CDP aktif, tapi profile belum terdeteksi.",
+        error: (error) => error instanceof Error ? error.message : "Gagal mengaktifkan mode tanpa CDP",
+      });
+      setYoutubeConfig(config);
+      loadYouTubeUploads().catch(() => undefined);
+    } catch {
+      // toast.promise already displayed the backend error.
+    }
+  }, [loadYouTubeUploads]);
 
   const handleCancelJob = useCallback(async (jobId = activeJobId ?? "") => {
     if (!jobId) return;
@@ -921,7 +961,6 @@ export default function HomePage() {
     try {
       const run = await toast.promise(
         startAutoViralCampaign({
-          video_count: 3,
           clips_per_video: Math.min(5, youtubeConfig.auto_upload_count || 3),
           top: targetClips || null,
           min_duration: minDuration,
@@ -1046,6 +1085,9 @@ export default function HomePage() {
         onDeleteClip={handleDeleteClip}
         onDeleteSelectedClips={handleDeleteSelectedClips}
         onCaptureYouTubeSession={handleCaptureYouTubeSession}
+        onEnableNoCdpMode={handleEnableNoCdpMode}
+        onImportYouTubeCdpCookies={handleImportYouTubeCdpCookies}
+        onSetupYouTubeOneTimeLogin={handleSetupYouTubeOneTimeLogin}
         onStartYouTubeLogin={handleStartYouTubeLogin}
         onUploadAllToYouTube={handleUploadAllToYouTube}
         onUploadClipToYouTube={handleUploadClipToYouTube}

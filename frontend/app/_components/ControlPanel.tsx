@@ -636,7 +636,7 @@ export function ControlPanel({
           {isAutoViralRunning ? "Auto Viral Berjalan..." : "Auto Viral CC"}
         </button>
         <p className="field-help">
-          {autoViralMessage || "Cari video Creative Commons viral, proses 3 sumber, upload clip terbaik, cleanup clips, lalu kirim alert Telegram."}
+          {autoViralMessage || "Cari video Creative Commons viral sesuai jumlah konfigurasi, upload clip terbaik, cleanup clips, lalu kirim alert Telegram."}
         </p>
       </div>
 

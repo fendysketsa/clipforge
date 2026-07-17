@@ -119,9 +119,11 @@ target YouTube channel by setting:
 ```env
 YOUTUBE_CHROMIUM_USER_DATA_DIR=/path/inside/container/to/chromium-user-data
 YOUTUBE_CHROMIUM_PROFILE_DIRECTORY=Default
+YOUTUBE_ALLOW_CHROMIUM_PROFILE_UPLOAD=true
 YOUTUBE_CDP_URL=http://127.0.0.1:9222
-YOUTUBE_UPLOAD_USE_CDP=true
-YOUTUBE_UPLOAD_FORCE_CDP=true
+YOUTUBE_UPLOAD_USE_CDP=false
+YOUTUBE_UPLOAD_FORCE_CDP=false
+YOUTUBE_UPLOAD_STORAGE_STATE_FIRST=true
 YOUTUBE_CDP_MAX_UPLOAD_MB=45
 YOUTUBE_TARGET_CHANNEL=ryuundy8812
 YOUTUBE_TARGET_EMAIL=fendysketsa@gmail.com
@@ -129,67 +131,20 @@ YOUTUBE_TARGET_CHANNEL_ID=UCAOZF9Qzj6DYoXKtLnP4UUQ
 YOUTUBE_STUDIO_URL=https://studio.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ
 ```
 
-When running with Docker, the browser profile must be mounted into the backend
-container first. The safer recreate flow is:
+The recommended flow is one-time login, then normal Playwright uploads:
 
-```bash
-./scripts/recreate-compose-up.sh
-```
+1. Mount or point `YOUTUBE_CHROMIUM_USER_DATA_DIR` to a Chromium/Chrome profile
+   that is already logged in, or run the login command once.
+2. Click **Login Sekali** in the dashboard/Telegram. The backend validates the
+   account/channel and saves `YOUTUBE_PLAYWRIGHT_STATE`.
+3. Uploads run with Playwright storage-state first, without supervisor/CDP.
 
-Use `./scripts/recreate-compose-up.sh --down-first` when you also want to run
-`docker compose down` before recreating services. Use
-`./scripts/recreate-compose-up.sh --reset-profile` only when the Chrome CDP
-profile is broken and YouTube keeps asking for login; it deletes the saved CDP
-profile and opens a fresh one. The wrapper starts
-`scripts/open-youtube-login-chrome.sh` in the background, keeps
-`http://127.0.0.1:9222` open with
-`google-chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --user-data-dir=$HOME/.config/clipforge/youtube-chrome-profile https://studio.youtube.com`,
-and sends Chrome GPU/Skia logs to `/tmp/clipforge-youtube-chrome.log`. The Chrome
-profile is stored under `$HOME/.config/clipforge/youtube-chrome-profile`, so YouTube login
-survives container recreate. By default, the wrapper syncs that profile from
-`YOUTUBE_CHROMIUM_HOST_USER_DATA_DIR` in `.env` (`/home/fcn88/.config/google-chrome`)
-so it can reuse the desktop Chrome session that is already logged in. To reuse
-another existing Chrome session/profile, run the wrapper with
-`YOUTUBE_LOGIN_SOURCE_PROFILE_DIR=/path/to/profile ./scripts/recreate-compose-up.sh`.
-Keep that Chrome window open while uploads run. CDP upload is enabled by default;
-clips above the CDP transfer limit are staged as compressed upload copies under
-`backend/data/youtube_cdp_uploads` without modifying the original dashboard clips.
-If you want the recreate command to keep watching Chrome instead of returning to
-the prompt, use `./scripts/recreate-compose-up.sh --watch-chrome`.
-For laptop startup/supervisor, use the example config at
-`deploy/supervisor/clipforge-youtube.conf`; it runs
-`./scripts/recreate-compose-up.sh --watch-chrome` and deliberately does not reset
-the profile. The legacy `./scripts/reset-youtube-cdp-profile.sh` command now
-delegates to `./scripts/recreate-compose-up.sh --reset-profile --watch-chrome`
-and starts the Chrome CDP window minimized by default
-(`YOUTUBE_CHROME_START_MINIMIZED=true`).
-Uploads use Chrome CDP by default because YouTube Studio can reject the bundled
-Playwright browser as old or unsupported. Keep `YOUTUBE_UPLOAD_FORCE_CDP=true`
-when the backend must not fall back to Playwright storage state after a CDP
-refresh.
-The dashboard and Telegram **Run CDP** button calls the backend endpoint
-`POST /api/youtube/cdp/refresh`. By default the backend looks for
-`scripts/open-youtube-login-chrome.sh`; in Docker, `docker-compose.yml` mounts
-that folder at `/app/scripts`. If Chrome is controlled by the host desktop
-session instead of the backend container, keep the supervisor above running on
-the host or start Chrome CDP from outside, then use **Sync CDP**. For custom
-deployments, set `YOUTUBE_CDP_REFRESH_COMMAND` to the launcher command that is
-valid from the backend process. The Docker backend also sets
-`YOUTUBE_CHROME_HEADLESS=true`, `YOUTUBE_LOGIN_SOURCE_PROFILE_DIR=/app/data/chromium-youtube`,
-and `YOUTUBE_LOGIN_PROFILE_DIR=/app/data/youtube-chrome-profile` so the Run CDP
-button can start a Playwright Chromium CDP process without depending on an
-unlocked desktop display. **Sync CDP** calls `POST /api/youtube/cdp/sync`; it
-does not start or restart Chrome, and only hydrates/validates the session after
-remote debugging is already active. When a queued upload starts and CDP is not
-responding, the backend runs the refresh command automatically before invoking
-the YouTube uploader, so Telegram retry can recover while the laptop is locked
-or AFK. The Telegram Run CDP button waits for CDP readiness before sending the
-success notification; increase `TELEGRAM_YOUTUBE_CDP_REFRESH_TIMEOUT_SECONDS` if
-the launcher needs more time to open Chrome.
-Direct upload from the mounted full profile is disabled unless
-`YOUTUBE_ALLOW_CHROMIUM_PROFILE_UPLOAD=true` because full desktop profiles often
-fail in headless Playwright. Uploads are cancelled before file selection if the
-session does not appear to belong to `ryuundy8812` or `fendysketsa@gmail.com`.
+CDP is optional now. Use **Ambil Cookies CDP** only if you intentionally want to
+copy cookies from an already-open Chrome remote debugging session. The legacy
+`./scripts/recreate-compose-up.sh` and `./scripts/reset-youtube-cdp-profile.sh`
+helpers remain available for CDP recovery, but normal uploads no longer depend
+on them. Uploads are cancelled before file selection if the session does not
+appear to belong to `ryuundy8812` or `fendysketsa@gmail.com`.
 
 Local login:
 
@@ -218,10 +173,11 @@ Optional YouTube upload configuration:
 YOUTUBE_HEADLESS=true
 YOUTUBE_CHROMIUM_USER_DATA_DIR=
 YOUTUBE_CHROMIUM_PROFILE_DIRECTORY=Default
-YOUTUBE_ALLOW_CHROMIUM_PROFILE_UPLOAD=false
+YOUTUBE_ALLOW_CHROMIUM_PROFILE_UPLOAD=true
 YOUTUBE_CDP_URL=http://127.0.0.1:9222
-YOUTUBE_UPLOAD_USE_CDP=true
-YOUTUBE_UPLOAD_FORCE_CDP=true
+YOUTUBE_UPLOAD_USE_CDP=false
+YOUTUBE_UPLOAD_FORCE_CDP=false
+YOUTUBE_UPLOAD_STORAGE_STATE_FIRST=true
 YOUTUBE_CDP_MAX_UPLOAD_MB=45
 YOUTUBE_DEFAULT_VISIBILITY=private
 YOUTUBE_MADE_FOR_KIDS=false
@@ -233,16 +189,21 @@ YOUTUBE_TARGET_CHANNEL_ID=UCAOZF9Qzj6DYoXKtLnP4UUQ
 YOUTUBE_STUDIO_URL=https://studio.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ
 YOUTUBE_AUTO_UPLOAD_COUNT=3
 YOUTUBE_REQUIRE_COPYRIGHT_CHECKS=true
+YOUTUBE_CONTINUE_WHEN_CHECKS_STUCK=false
 YOUTUBE_CHECKS_TIMEOUT_SECONDS=600
-YOUTUBE_MANUAL_SUBTITLE_TEXT=RYUUNDY
+YOUTUBE_PRE_PUBLISH_REVIEW_TIMEOUT_SECONDS=300
+YOUTUBE_RELOAD_AFTER_PUBLISH=true
+YOUTUBE_RELOAD_AFTER_PUBLISH_DELAY_SECONDS=10
+YOUTUBE_MANUAL_SUBTITLE_TEXT=FCN
+YOUTUBE_ADD_MANUAL_SUBTITLE=true
 YOUTUBE_SUBTITLE_TYPE_DELAY_MS=120
 YOUTUBE_SUBTITLE_EDITOR_READY_DELAY_MS=2500
 YOUTUBE_SUBTITLE_SEGMENT_READY_DELAY_MS=30000
 YOUTUBE_SUBTITLE_AFTER_TYPE_DELAY_MS=2000
 YOUTUBE_UPLOAD_TIMEOUT_SECONDS=900
-YOUTUBE_STUDIO_NAV_TIMEOUT_MS=60000
-YOUTUBE_DIRECT_UPLOAD_NAV_TIMEOUT_MS=60000
-YOUTUBE_DIRECT_UPLOAD_INPUT_TIMEOUT_MS=5000
+YOUTUBE_STUDIO_NAV_TIMEOUT_MS=30000
+YOUTUBE_DIRECT_UPLOAD_NAV_TIMEOUT_MS=18000
+YOUTUBE_DIRECT_UPLOAD_INPUT_TIMEOUT_MS=15000
 YOUTUBE_ALLOW_DIRECT_UPLOAD_PAGE_FALLBACK=true
 YOUTUBE_DRY_RUN=false
 ```

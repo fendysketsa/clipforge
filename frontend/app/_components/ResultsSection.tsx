@@ -16,6 +16,9 @@ type ResultsSectionProps = {
   onDeleteClip: (clip: ClipFile) => void;
   onDeleteSelectedClips: () => void;
   onCaptureYouTubeSession: () => void;
+  onEnableNoCdpMode: () => void;
+  onImportYouTubeCdpCookies: () => void;
+  onSetupYouTubeOneTimeLogin: () => void;
   onStartYouTubeLogin: () => void;
   onUploadAllToYouTube: () => void;
   onUploadClipToYouTube: (clip: ClipFile) => void;
@@ -28,23 +31,23 @@ function friendlyYouTubeUploadError(message: string, usesChromeDebugging: boolea
   const clean = message.trim();
   const lowered = clean.toLowerCase();
   if (lowered.includes("connect_over_cdp") || lowered.includes("econnrefused")) {
-    return "CDP belum aktif. Klik Retry YouTube; sistem akan menyiapkan CDP otomatis.";
+    return "CDP belum aktif. Klik Login Sekali agar upload memakai Playwright storage-state tanpa CDP.";
   }
   if (lowered.includes("python youtube_uploader.py login")) {
-    return "Session lama tidak dipakai. Klik Retry YouTube; sistem akan menyiapkan CDP otomatis.";
+    return "Session YouTube belum tersimpan. Klik Login Sekali, lalu Retry YouTube.";
   }
   if (
     usesChromeDebugging
     && (lowered.includes("sesi youtube belum login") || lowered.includes("youtube studio meminta login"))
   ) {
-    return "CDP belum valid. Klik Retry YouTube; sistem akan buka Chrome Studio dan sync otomatis.";
+    return "Session YouTube belum valid. Klik Login Sekali agar Playwright menyimpan ulang storage-state.";
   }
   if (
     usesChromeDebugging
     && lowered.includes("playlist")
     && (lowered.includes("tidak ditemukan") || lowered.includes("not found"))
   ) {
-    return "Studio belum siap membaca playlist. Klik Retry YouTube; sistem akan refresh CDP otomatis.";
+    return "Studio belum siap membaca playlist. Klik Login Sekali untuk refresh session, lalu Retry YouTube.";
   }
   return clean;
 }
@@ -61,6 +64,9 @@ export function ResultsSection({
   onDeleteClip,
   onDeleteSelectedClips,
   onCaptureYouTubeSession,
+  onEnableNoCdpMode,
+  onImportYouTubeCdpCookies,
+  onSetupYouTubeOneTimeLogin,
   onStartYouTubeLogin,
   onUploadAllToYouTube,
   onUploadClipToYouTube,
@@ -71,8 +77,7 @@ export function ResultsSection({
   const selectedCount = selectedClipUrls.length;
   const allClipsSelected = clips.length > 0 && selectedCount === clips.length;
   const usesChromeDebugging = /remote debugging|cdp/i.test(youtubeStatusMessage);
-  const openStudioLabel = usesChromeDebugging ? "Run CDP" : "Buka Login YouTube";
-  const openStudioWaitingLabel = usesChromeDebugging ? "Menjalankan CDP..." : "Menunggu login...";
+  const openStudioWaitingLabel = usesChromeDebugging ? "Menyiapkan..." : "Menunggu login...";
 
   return (
     <section className="results">
@@ -110,26 +115,53 @@ export function ResultsSection({
                 <>
                   <button
                     type="button"
-                    onClick={onStartYouTubeLogin}
+                    onClick={onSetupYouTubeOneTimeLogin}
                     className="ghostButton youtubeButton"
-                    disabled={isYouTubeLoginActive}
-                    title="Jalankan Chrome CDP saja, tanpa sync/validasi session"
+                    title="Ambil cookies/session sekali lalu upload berikutnya memakai storage-state tanpa CDP"
                   >
                     <RefreshCw size={15} />
-                    Run CDP
+                    Login Sekali
                   </button>
                   <button
                     type="button"
                     onClick={onCaptureYouTubeSession}
                     className="ghostButton youtubeButton"
-                    title="Sync CDP yang sudah aktif, hydrate session, dan validasi Studio target"
+                    disabled={isYouTubeLoginActive}
+                    title="Cadangan: start CDP, hydrate login, dan validasi akun/channel target"
                   >
                     <RefreshCw size={15} />
-                    Sync CDP
+                    CDP Opsional
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onEnableNoCdpMode}
+                    className="ghostButton youtubeButton"
+                    title="Matikan CDP dan upload memakai Playwright/profile backend langsung"
+                  >
+                    <RefreshCw size={15} />
+                    Tanpa CDP
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onImportYouTubeCdpCookies}
+                    className="ghostButton youtubeButton"
+                    title="Ambil cookies langsung dari Chrome CDP yang sudah login dan simpan ke storage-state"
+                  >
+                    <RefreshCw size={15} />
+                    Ambil Cookies
                   </button>
                 </>
               ) : !youtubeEnabled ? (
                 <>
+                  <button
+                    type="button"
+                    onClick={onSetupYouTubeOneTimeLogin}
+                    className="ghostButton youtubeButton"
+                    title="Ambil cookies/session sekali dari Chrome/profile yang sudah login"
+                  >
+                    <RefreshCw size={15} />
+                    Login Sekali
+                  </button>
                   <button
                     type="button"
                     onClick={onStartYouTubeLogin}
@@ -144,7 +176,7 @@ export function ResultsSection({
                     type="button"
                     onClick={onCaptureYouTubeSession}
                     className="ghostButton youtubeButton"
-                    title="Simpan session dari Chrome remote debugging ke Playwright storage state"
+                    title="Simpan session browser ke Playwright storage-state"
                   >
                     <RefreshCw size={15} />
                     Sync Session
@@ -255,12 +287,22 @@ export function ResultsSection({
                   <div className="youtubeUploadError" title={uploadError}>
                     <strong>Upload gagal</strong>
                     <span>{uploadError}</span>
-                    <button type="button" onClick={onStartYouTubeLogin} disabled={isYouTubeLoginActive}>
-                      {isYouTubeLoginActive ? openStudioWaitingLabel : openStudioLabel}
+                    <button type="button" onClick={onSetupYouTubeOneTimeLogin} disabled={isYouTubeLoginActive}>
+                      {isYouTubeLoginActive ? openStudioWaitingLabel : "Login Sekali"}
                     </button>
                     <button type="button" onClick={onCaptureYouTubeSession}>
-                      {usesChromeDebugging ? "Sync CDP" : "Sync Session Browser"}
+                      {usesChromeDebugging ? "CDP Opsional" : "Sync Session Browser"}
                     </button>
+                    {usesChromeDebugging ? (
+                      <>
+                        <button type="button" onClick={onImportYouTubeCdpCookies}>
+                          Ambil Cookies
+                        </button>
+                        <button type="button" onClick={onEnableNoCdpMode}>
+                          Tanpa CDP
+                        </button>
+                      </>
+                    ) : null}
                   </div>
                 ) : null}
                 <ThumbnailPrompt clip={clip} />

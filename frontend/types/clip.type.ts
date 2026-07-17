@@ -110,6 +110,10 @@ export type YouTubeConfig = {
   auth_state_exists: boolean;
   auth_state_path: string;
   auth_status_message?: string | null;
+  upload_uses_cdp?: boolean;
+  direct_profile_upload?: boolean;
+  chromium_profile_ready?: boolean;
+  chromium_profile_path?: string;
   default_visibility: YouTubeVisibility;
   default_made_for_kids: boolean;
   default_tags: string[];
@@ -168,6 +172,14 @@ export type YouTubeCdpRepairStatus = {
   cdp_ready: boolean;
   session_ready: boolean;
   hydrated: boolean;
+  profile_sync_requested?: boolean;
+  source_profile_ready?: boolean;
+  source_profile_path?: string;
+  cookies_imported?: boolean;
+  cookie_count?: number;
+  youtube_cookie_count?: number;
+  storage_state_path?: string;
+  login_required?: boolean;
   started_at: string;
   message: string;
   refresh?: YouTubeCdpRefreshStatus | null;

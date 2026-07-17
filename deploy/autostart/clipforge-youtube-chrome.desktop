@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ClipForge YouTube Chrome
+Comment=Start the persistent YouTube Studio browser used by ClipForge uploads
+Exec=/www/wwwroot/clipper/clipforge/scripts/open-youtube-login-chrome.sh --headed --minimized --foreground
+Icon=google-chrome
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=8

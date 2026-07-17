@@ -16,7 +16,8 @@ from math import ceil, log10
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import quote, unquote
+from urllib.parse import quote, urlencode, unquote, urlparse
+from urllib.error import HTTPError, URLError
 import urllib.request
 
 import imageio_ffmpeg
@@ -42,7 +43,17 @@ YOUTUBE_UPLOADS_PATH = (
 )
 YOUTUBE_PLAYWRIGHT_STATE = Path(os.environ.get("YOUTUBE_PLAYWRIGHT_STATE", BASE_DIR / "data" / "youtube_storage_state.json"))
 YOUTUBE_CHROMIUM_USER_DATA_DIR = os.environ.get("YOUTUBE_CHROMIUM_USER_DATA_DIR", "").strip()
+if not YOUTUBE_CHROMIUM_USER_DATA_DIR and os.environ.get("IN_DOCKER", "").strip().lower() in {"1", "true", "yes", "on"}:
+    YOUTUBE_CHROMIUM_USER_DATA_DIR = "/app/data/youtube-playwright-profile"
 YOUTUBE_CHROMIUM_PROFILE_DIRECTORY = os.environ.get("YOUTUBE_CHROMIUM_PROFILE_DIRECTORY", "").strip()
+YOUTUBE_LOGIN_PROFILE_DIR = os.environ.get(
+    "YOUTUBE_LOGIN_PROFILE_DIR",
+    YOUTUBE_CHROMIUM_USER_DATA_DIR or str(BASE_DIR / "data" / "youtube-playwright-profile"),
+).strip()
+YOUTUBE_LOGIN_PROFILE_DIRECTORY = os.environ.get(
+    "YOUTUBE_LOGIN_PROFILE_DIRECTORY",
+    YOUTUBE_CHROMIUM_PROFILE_DIRECTORY or "Default",
+).strip()
 YOUTUBE_CDP_URL = os.environ.get("YOUTUBE_CDP_URL", "http://127.0.0.1:9222").strip()
 YOUTUBE_CDP_STAGING_DIR = Path(os.environ.get("YOUTUBE_CDP_STAGING_DIR", BASE_DIR / "data" / "youtube_cdp_uploads"))
 DEFAULT_YOUTUBE_MAX_UPLOAD_MB = 45
@@ -131,6 +142,18 @@ def env_bool(name: str, default: bool = False) -> bool:
 
 def env_csv(name: str) -> list[str]:
     return [item.strip().lstrip("#") for item in os.environ.get(name, "").split(",") if item.strip()]
+
+
+def env_search_queries(*names: str) -> list[str]:
+    for name in names:
+        raw_value = os.environ.get(name, "")
+        if raw_value.strip():
+            return [
+                item.strip().lstrip("#")
+                for item in re.split(r"[,|]", raw_value)
+                if item.strip()
+            ]
+    return []
 
 
 def env_int(name: str, default: int) -> int:
@@ -243,6 +266,10 @@ class YouTubeConfig(BaseModel):
     auth_state_exists: bool
     auth_state_path: str
     auth_status_message: str | None = None
+    upload_uses_cdp: bool = False
+    direct_profile_upload: bool = False
+    chromium_profile_ready: bool = False
+    chromium_profile_path: str = ""
     default_visibility: Literal["private", "unlisted", "public"]
     default_made_for_kids: bool
     default_tags: list[str]
@@ -371,6 +398,14 @@ class YouTubeCdpRepairStatus(BaseModel):
     cdp_ready: bool
     session_ready: bool
     hydrated: bool = False
+    profile_sync_requested: bool = False
+    source_profile_ready: bool = False
+    source_profile_path: str = ""
+    cookies_imported: bool = False
+    cookie_count: int = 0
+    youtube_cookie_count: int = 0
+    storage_state_path: str = ""
+    login_required: bool = False
     started_at: str
     message: str
     refresh: YouTubeCdpRefreshStatus | None = None
@@ -378,42 +413,51 @@ class YouTubeCdpRepairStatus(BaseModel):
     logs: list[str] = Field(default_factory=list)
 
 
+class YouTubeLiveChromeRequest(BaseModel):
+    cdp_url: str = "http://127.0.0.1:9333"
+
+    @field_validator("cdp_url")
+    @classmethod
+    def validate_cdp_url(cls, value: str) -> str:
+        parsed = urlparse(value.strip())
+        if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}:
+            raise ValueError("CDP URL harus memakai Chrome lokal http://127.0.0.1:<port>")
+        if parsed.port is None or not 1024 <= parsed.port <= 65535:
+            raise ValueError("Port CDP tidak valid")
+        return f"http://127.0.0.1:{parsed.port}"
+
+
 def default_auto_viral_queries() -> list[str]:
-    configured = env_csv("AUTO_VIRAL_SEARCH_QUERIES")
+    configured = env_search_queries("AUTO_VIRAL_SEARCH_QUERIES", "AUTOPILOT_KEYWORDS")
     if configured:
         return configured
     return [
-        "viral indonesia creative commons",
-        "trending indonesia creative commons",
-        "ceramah islam creative commons indonesia",
-        "motivasi indonesia creative commons",
-        "podcast indonesia creative commons",
+        "podcast indonesia",
+        "dakwah",
+        "kajian",
+        "ceramah",
     ]
 
 
 def default_viral_video_search_queries() -> list[str]:
-    configured = env_csv("VIRAL_CC_SEARCH_QUERIES")
+    configured = env_search_queries("VIRAL_CC_SEARCH_QUERIES", "AUTOPILOT_KEYWORDS")
     if configured:
         return configured
     return [
-        "islam indonesia creative commons",
-        "ceramah islam indonesia creative commons",
-        "pesan baik creative commons indonesia",
-        "motivasi nasihat baik creative commons indonesia",
-        "podcast pesan baik creative commons indonesia",
-        "podcast agama indonesia creative commons",
-        "obrolan daging tentang agama creative commons",
-        "kajian singkat islam creative commons",
+        "podcast indonesia",
+        "dakwah",
+        "kajian",
+        "ceramah",
     ]
 
 
 class AutoViralRequest(BaseModel):
     queries: list[str] = Field(default_factory=default_auto_viral_queries)
-    video_count: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_VIDEO_COUNT", 3), ge=1, le=5)
+    video_count: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_VIDEO_COUNT", 5), ge=1, le=7)
     clips_per_video: int = Field(default_factory=youtube_auto_upload_count, ge=1, le=5)
     search_limit_per_query: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_SEARCH_LIMIT", 12), ge=3, le=30)
     min_source_duration: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MIN_SOURCE_SECONDS", 60), ge=30, le=7200)
-    max_source_duration: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MAX_SOURCE_SECONDS", 3600), ge=60, le=14400)
+    max_source_duration: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MAX_SOURCE_SECONDS", 7200), ge=60, le=14400)
     min_views: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MIN_VIEWS", 1000), ge=0)
     top: int | None = Field(default=None, ge=1, le=MAX_REQUESTED_CLIPS)
     min_duration: float = Field(default=35, ge=5, le=600)
@@ -449,11 +493,16 @@ class AutoViralRun(BaseModel):
 
 class ViralVideoSearchRequest(BaseModel):
     queries: list[str] = Field(default_factory=default_viral_video_search_queries)
-    video_count: int = Field(default=3, ge=1, le=5)
-    search_limit_per_query: int = Field(default=10, ge=3, le=30)
+    video_count: int = Field(default_factory=lambda: env_int("VIRAL_CC_VIDEO_COUNT", 5), ge=1, le=7)
+    search_limit_per_query: int = Field(default_factory=lambda: env_int("VIRAL_CC_SEARCH_LIMIT", 5), ge=3, le=30)
     min_source_duration: int = Field(default=60, ge=30, le=7200)
-    max_source_duration: int = Field(default=1800, ge=60, le=1800)
-    min_views: int = Field(default=1000, ge=0)
+    max_source_duration: int = Field(
+        default_factory=lambda: env_int("VIRAL_CC_MAX_SOURCE_SECONDS", 7200),
+        ge=60,
+        le=14400,
+    )
+    min_views: int = Field(default_factory=lambda: env_int("VIRAL_CC_MIN_VIEWS", 1000), ge=0)
+    max_metadata_checks: int = Field(default_factory=lambda: env_int("VIRAL_CC_MAX_METADATA_CHECKS", 25), ge=3, le=100)
     exclude_urls: list[str] = Field(default_factory=list)
 
     @field_validator("queries")
@@ -883,10 +932,40 @@ def youtube_auth_state_exists() -> bool:
     return YOUTUBE_PLAYWRIGHT_STATE.is_file() and YOUTUBE_PLAYWRIGHT_STATE.stat().st_size > 0
 
 
+def youtube_storage_cookie_counts() -> tuple[int, int]:
+    try:
+        payload = json.loads(YOUTUBE_PLAYWRIGHT_STATE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0, 0
+    cookies = payload.get("cookies") if isinstance(payload, dict) else None
+    if not isinstance(cookies, list):
+        return 0, 0
+    youtube_cookie_count = 0
+    for cookie in cookies:
+        if not isinstance(cookie, dict):
+            continue
+        domain = str(cookie.get("domain") or "").lower()
+        if "youtube.com" in domain or "google.com" in domain:
+            youtube_cookie_count += 1
+    return len(cookies), youtube_cookie_count
+
+
 def youtube_chromium_profile_ready() -> bool:
     if not YOUTUBE_CHROMIUM_USER_DATA_DIR:
         return False
     return Path(YOUTUBE_CHROMIUM_USER_DATA_DIR).expanduser().is_dir()
+
+
+def youtube_login_source_profile_dir() -> str:
+    return (
+        os.environ.get("YOUTUBE_LOGIN_SOURCE_PROFILE_DIR", "").strip()
+        or YOUTUBE_CHROMIUM_USER_DATA_DIR
+    )
+
+
+def youtube_login_source_profile_ready() -> bool:
+    source = youtube_login_source_profile_dir()
+    return bool(source and Path(source).expanduser().is_dir())
 
 
 def youtube_profile_upload_allowed() -> bool:
@@ -899,6 +978,18 @@ def youtube_upload_uses_cdp() -> bool:
 
 def youtube_upload_force_cdp() -> bool:
     return env_bool("YOUTUBE_UPLOAD_FORCE_CDP", False)
+
+
+def youtube_upload_last_resort_fallback_allowed() -> bool:
+    return env_bool("YOUTUBE_UPLOAD_ALLOW_LAST_RESORT_FALLBACK", True)
+
+
+def youtube_upload_storage_state_first() -> bool:
+    return env_bool("YOUTUBE_UPLOAD_STORAGE_STATE_FIRST", True)
+
+
+def youtube_upload_prefers_chromium_profile() -> bool:
+    return env_bool("YOUTUBE_UPLOAD_PREFER_CHROMIUM_PROFILE", False)
 
 
 def youtube_upload_prefers_cdp() -> bool:
@@ -930,9 +1021,16 @@ def youtube_config_payload() -> YouTubeConfig:
     has_state = youtube_auth_state_exists()
     has_chromium_profile = youtube_chromium_profile_ready()
     allow_profile_upload = youtube_profile_upload_allowed()
+    use_cdp = youtube_upload_uses_cdp()
+    direct_profile_upload = (
+        not use_cdp
+        and allow_profile_upload
+        and has_chromium_profile
+        and youtube_upload_prefers_chromium_profile()
+    )
     auth_path = str(YOUTUBE_PLAYWRIGHT_STATE if has_state else YOUTUBE_CHROMIUM_USER_DATA_DIR)
     auth_status_message = None
-    if youtube_upload_uses_cdp():
+    if use_cdp:
         auth_path = YOUTUBE_CDP_URL
         if has_state:
             auth_status_message = (
@@ -941,6 +1039,12 @@ def youtube_config_payload() -> YouTubeConfig:
             )
         else:
             auth_status_message = f"Upload memakai Chrome remote debugging: {YOUTUBE_CDP_URL}"
+    elif direct_profile_upload:
+        auth_path = YOUTUBE_CHROMIUM_USER_DATA_DIR
+        auth_status_message = (
+            "Upload tanpa CDP aktif. Backend akan membuka browser/profile Chromium sendiri "
+            f"dan memproses tab YouTube Studio dari profile: {auth_path}"
+        )
     elif has_state:
         auth_status_message = (
             f"Playwright storage state siap untuk upload: {auth_path}."
@@ -962,6 +1066,10 @@ def youtube_config_payload() -> YouTubeConfig:
         auth_state_exists=youtube_upload_auth_ready(),
         auth_state_path=auth_path,
         auth_status_message=auth_status_message,
+        upload_uses_cdp=use_cdp,
+        direct_profile_upload=direct_profile_upload,
+        chromium_profile_ready=has_chromium_profile,
+        chromium_profile_path=YOUTUBE_CHROMIUM_USER_DATA_DIR,
         default_visibility=youtube_default_visibility(),
         default_made_for_kids=env_bool("YOUTUBE_MADE_FOR_KIDS", False),
         default_tags=env_csv("YOUTUBE_DEFAULT_TAGS"),
@@ -980,8 +1088,8 @@ def require_youtube_ready() -> None:
         raise HTTPException(
             status_code=409,
             detail=(
-                "Uploader YouTube belum siap. Jalankan ./scripts/recreate-compose-up.sh, "
-                "pastikan Chrome Studio remote debugging terbuka dan sudah login, lalu Retry YouTube."
+                "Uploader YouTube belum siap. Klik Login Sekali untuk menyimpan session Playwright, "
+                "atau set YOUTUBE_CHROMIUM_USER_DATA_DIR ke profile Chromium/Chrome yang sudah login."
             ),
         )
 
@@ -1003,10 +1111,23 @@ def youtube_login_refresh_needed(error: str) -> bool:
         or "upload dibatalkan agar tidak salah akun" in lowered
         or "sesi youtube belum login" in lowered
         or "sesi youtube belum login atau sudah kedaluwarsa" in lowered
+        or "session youtube studio belum login" in lowered
         or "youtube studio meminta login" in lowered
         or "refresh ulang profil chrome cdp" in lowered
         or "signintoyoutube" in lowered
         or "accounts.google.com" in lowered
+    )
+
+
+def youtube_cdp_start_needed(error: str) -> bool:
+    lowered = error.lower()
+    return (
+        "chrome remote debugging belum aktif" in lowered
+        or "remote debugging belum aktif" in lowered
+        or "connect_over_cdp" in lowered
+        or "econnrefused" in lowered
+        or "connection refused" in lowered
+        or "cannot connect" in lowered
     )
 
 
@@ -1015,7 +1136,8 @@ def normalize_youtube_upload_error(error: str) -> str:
     lowered = clean.lower()
     if "connect_over_cdp" in lowered or "econnrefused" in lowered:
         return (
-            "CDP belum aktif. Klik Retry YouTube; sistem akan menyiapkan Chrome CDP otomatis."
+            "Chrome CDP belum aktif. Jalur utama sekarang Playwright storage-state; klik Login Sekali, "
+            "atau pakai Ambil Cookies CDP hanya jika ingin mengambil session dari Chrome CDP."
         )
     if youtube_upload_uses_cdp() and (
         "sesi youtube belum login" in lowered
@@ -1026,13 +1148,13 @@ def normalize_youtube_upload_error(error: str) -> str:
         or "python youtube_uploader.py login" in lowered
     ):
         return (
-            "CDP belum valid. Klik Retry YouTube; sistem akan buka Chrome Studio dan sync otomatis."
+            "Session YouTube belum valid. Klik Login Sekali agar Playwright menyimpan ulang storage-state."
         )
     if youtube_upload_uses_cdp() and "playlist" in lowered and (
         "tidak ditemukan" in lowered or "not found" in lowered
     ):
         return (
-            "Studio belum siap membaca playlist. Klik Retry YouTube; sistem akan refresh CDP otomatis."
+            "Studio belum siap membaca playlist. Klik Login Sekali untuk refresh session, lalu Retry YouTube."
         )
     return clean
 
@@ -1633,7 +1755,12 @@ def set_youtube_upload(upload_id: str, **updates) -> None:
         save_youtube_uploads_unlocked()
 
 
-def build_youtube_upload_command(upload: YouTubeUploadJob, *, use_cdp_override: bool | None = None) -> list[str]:
+def build_youtube_upload_command(
+    upload: YouTubeUploadJob,
+    *,
+    use_cdp_override: bool | None = None,
+    force_chromium_profile: bool = False,
+) -> list[str]:
     clip_path = output_path_from_url(upload.clip_url)
     if clip_path is None:
         raise RuntimeError("Clip path is invalid")
@@ -1678,10 +1805,10 @@ def build_youtube_upload_command(upload: YouTubeUploadJob, *, use_cdp_override: 
     if use_cdp:
         command.extend(["--use-cdp", "--cdp-url", YOUTUBE_CDP_URL])
     use_chromium_profile = (
-        not youtube_auth_state_exists()
-        and not use_cdp
+        not use_cdp
         and youtube_profile_upload_allowed()
         and bool(YOUTUBE_CHROMIUM_USER_DATA_DIR)
+        and (force_chromium_profile or youtube_upload_prefers_chromium_profile() or not youtube_auth_state_exists())
     )
     if use_chromium_profile:
         command.extend(["--chromium-user-data-dir", YOUTUBE_CHROMIUM_USER_DATA_DIR])
@@ -1696,7 +1823,7 @@ def build_youtube_upload_command(upload: YouTubeUploadJob, *, use_cdp_override: 
     return command
 
 
-def build_youtube_login_command() -> list[str]:
+def build_youtube_login_command(*, timeout_seconds: str | None = None) -> list[str]:
     command = [
         sys.executable,
         "youtube_uploader.py",
@@ -1705,19 +1832,43 @@ def build_youtube_login_command() -> list[str]:
         str(YOUTUBE_PLAYWRIGHT_STATE),
         "--auto-close",
         "--timeout",
-        os.environ.get("YOUTUBE_LOGIN_TIMEOUT_SECONDS", "600"),
+        timeout_seconds or os.environ.get("YOUTUBE_LOGIN_TIMEOUT_SECONDS", "600"),
     ]
-    if YOUTUBE_CHROMIUM_USER_DATA_DIR:
-        command.extend(["--chromium-user-data-dir", YOUTUBE_CHROMIUM_USER_DATA_DIR])
-        if YOUTUBE_CHROMIUM_PROFILE_DIRECTORY:
-            command.extend(["--chromium-profile-directory", YOUTUBE_CHROMIUM_PROFILE_DIRECTORY])
+    if YOUTUBE_LOGIN_PROFILE_DIR:
+        command.extend(["--chromium-user-data-dir", YOUTUBE_LOGIN_PROFILE_DIR])
+        if YOUTUBE_LOGIN_PROFILE_DIRECTORY:
+            command.extend(["--chromium-profile-directory", YOUTUBE_LOGIN_PROFILE_DIRECTORY])
     studio_url = os.environ.get("YOUTUBE_STUDIO_URL", "").strip()
     if studio_url:
         command.extend(["--studio-url", studio_url])
     return command
 
 
-def build_youtube_capture_command() -> list[str]:
+def build_youtube_check_login_command(*, use_chromium_profile: bool = False) -> list[str]:
+    command = [
+        sys.executable,
+        "youtube_uploader.py",
+        "check-login",
+        "--state",
+        str(YOUTUBE_PLAYWRIGHT_STATE),
+        "--target-channel",
+        os.environ.get("YOUTUBE_TARGET_CHANNEL", DEFAULT_YOUTUBE_TARGET_CHANNEL).strip(),
+        "--target-email",
+        os.environ.get("YOUTUBE_TARGET_EMAIL", DEFAULT_YOUTUBE_TARGET_EMAIL).strip(),
+        "--target-channel-id",
+        os.environ.get("YOUTUBE_TARGET_CHANNEL_ID", DEFAULT_YOUTUBE_TARGET_CHANNEL_ID).strip(),
+    ]
+    if use_chromium_profile and YOUTUBE_LOGIN_PROFILE_DIR:
+        command.extend(["--chromium-user-data-dir", YOUTUBE_LOGIN_PROFILE_DIR])
+        if YOUTUBE_LOGIN_PROFILE_DIRECTORY:
+            command.extend(["--chromium-profile-directory", YOUTUBE_LOGIN_PROFILE_DIRECTORY])
+    studio_url = os.environ.get("YOUTUBE_STUDIO_URL", "").strip()
+    if studio_url:
+        command.extend(["--studio-url", studio_url])
+    return command
+
+
+def build_youtube_capture_command(*, hydrate_storage_state: bool = True) -> list[str]:
     command = [
         sys.executable,
         "youtube_uploader.py",
@@ -1736,13 +1887,39 @@ def build_youtube_capture_command() -> list[str]:
     studio_url = os.environ.get("YOUTUBE_STUDIO_URL", "").strip()
     if studio_url:
         command.extend(["--studio-url", studio_url])
+    if not hydrate_storage_state:
+        command.append("--no-hydrate-storage-state")
     return command
 
 
-def run_youtube_capture_once() -> tuple[int, list[str], str | None]:
+def run_youtube_check_login_once(*, use_chromium_profile: bool = False) -> tuple[int, list[str], str | None]:
+    check_logs: list[str] = []
+    process_env = os.environ.copy()
+    process_env["YOUTUBE_LOGIN_HEADLESS"] = os.environ.get("YOUTUBE_PROFILE_LOGIN_HEADLESS", "true")
+    process = subprocess.Popen(
+        build_youtube_check_login_command(use_chromium_profile=use_chromium_profile),
+        cwd=BASE_DIR,
+        env=process_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    assert process.stdout is not None
+    for line in process.stdout:
+        cleaned = line.rstrip()
+        if cleaned:
+            check_logs.append(cleaned)
+    check_code = process.wait()
+    check_error = youtube_upload_error_from_logs(check_logs) if check_code else None
+    return check_code, check_logs, check_error
+
+
+def run_youtube_capture_once(*, hydrate_storage_state: bool = True) -> tuple[int, list[str], str | None]:
     capture_logs: list[str] = []
     process = subprocess.Popen(
-        build_youtube_capture_command(),
+        build_youtube_capture_command(hydrate_storage_state=hydrate_storage_state),
         cwd=BASE_DIR,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -1760,6 +1937,30 @@ def run_youtube_capture_once() -> tuple[int, list[str], str | None]:
     return capture_code, capture_logs, capture_error
 
 
+def run_youtube_profile_login_once(*, timeout_seconds: str | None = None) -> tuple[int, list[str], str | None]:
+    login_logs: list[str] = []
+    process_env = os.environ.copy()
+    process_env["YOUTUBE_LOGIN_HEADLESS"] = os.environ.get("YOUTUBE_PROFILE_LOGIN_HEADLESS", "true")
+    process = subprocess.Popen(
+        build_youtube_login_command(timeout_seconds=timeout_seconds),
+        cwd=BASE_DIR,
+        env=process_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    assert process.stdout is not None
+    for line in process.stdout:
+        cleaned = line.rstrip()
+        if cleaned:
+            login_logs.append(cleaned)
+    login_code = process.wait()
+    login_error = youtube_upload_error_from_logs(login_logs) if login_code else None
+    return login_code, login_logs, login_error
+
+
 def tail_text_file(path: Path, limit: int = 80) -> list[str]:
     try:
         return path.read_text(encoding="utf-8", errors="replace").splitlines()[-limit:]
@@ -1767,9 +1968,10 @@ def tail_text_file(path: Path, limit: int = 80) -> list[str]:
         return []
 
 
-def youtube_cdp_ready() -> bool:
+def youtube_cdp_ready(cdp_url: str | None = None) -> bool:
+    target_url = (cdp_url or YOUTUBE_CDP_URL).rstrip("/")
     try:
-        with urllib.request.urlopen(f"{YOUTUBE_CDP_URL.rstrip('/')}/json/version", timeout=2) as response:
+        with urllib.request.urlopen(f"{target_url}/json/version", timeout=2) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except Exception:
         return False
@@ -1872,7 +2074,7 @@ def start_youtube_cdp_refresh_process(
                         log_path=str(YOUTUBE_CDP_REFRESH_LOG),
                         message=(
                             "Launcher Chrome CDP sudah dijalankan dari bot dan remote debugging sudah aktif. "
-                            "Silakan klik Retry Upload Clip."
+                            "Session bisa disinkronkan/diupload dari bot."
                         ),
                         logs=tail_text_file(YOUTUBE_CDP_REFRESH_LOG, 40),
                     )
@@ -1913,7 +2115,7 @@ def start_youtube_cdp_refresh_process(
         log_path=str(YOUTUBE_CDP_REFRESH_LOG),
         message=(
             "Launcher Chrome CDP sudah dijalankan di background. "
-            "Tunggu beberapa detik, lalu klik Retry Upload Clip."
+            "Tunggu beberapa detik sampai remote debugging aktif."
         ),
         logs=tail_text_file(YOUTUBE_CDP_REFRESH_LOG, 40),
     )
@@ -1930,9 +2132,23 @@ def run_youtube_login_process() -> None:
     global youtube_login_process
     logs: list[str] = []
     try:
+        process_env = os.environ.copy()
+        process_env["YOUTUBE_LOGIN_HEADLESS"] = "false"
+        host_runtime_dir = Path(process_env.get("YOUTUBE_HOST_RUNTIME_DIR", "/run/clipforge-host-user"))
+        if host_runtime_dir.is_dir():
+            authority_files = sorted(
+                host_runtime_dir.glob(".mutter-Xwaylandauth.*"),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            )
+            if authority_files:
+                process_env["XAUTHORITY"] = str(authority_files[0])
+            if (host_runtime_dir / "bus").exists():
+                process_env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={host_runtime_dir / 'bus'}"
         process = subprocess.Popen(
             build_youtube_login_command(),
             cwd=BASE_DIR,
+            env=process_env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -1991,7 +2207,22 @@ def run_youtube_upload(upload_id: str) -> None:
 
     logs: list[str] = []
     try:
+        fallback_to_storage_state = False
+        fallback_to_cdp = False
+        fallback_to_chromium_profile = False
+        one_time_login_refresh_attempted = False
+        force_chromium_profile_for_attempt = False
         use_cdp_for_attempt = youtube_upload_prefers_cdp()
+        if youtube_upload_storage_state_first() and not youtube_upload_force_cdp():
+            if youtube_auth_state_exists():
+                if use_cdp_for_attempt:
+                    logs.append("Mode login sekali aktif: upload memakai storage-state dulu, bukan Chrome CDP.")
+                use_cdp_for_attempt = False
+            elif youtube_profile_upload_allowed() and youtube_chromium_profile_ready():
+                if use_cdp_for_attempt:
+                    logs.append("Mode login sekali aktif: upload memakai profile Chromium backend dulu, bukan Chrome CDP.")
+                use_cdp_for_attempt = False
+                force_chromium_profile_for_attempt = True
         if use_cdp_for_attempt and not youtube_cdp_ready():
             logs.append(
                 f"Chrome remote debugging belum aktif di {YOUTUBE_CDP_URL}; menjalankan YOUTUBE_CDP_REFRESH_COMMAND..."
@@ -2010,15 +2241,25 @@ def run_youtube_upload(upload_id: str) -> None:
         if not use_cdp_for_attempt and youtube_auth_state_exists():
             logs.append(f"Upload memakai Playwright storage state: {YOUTUBE_PLAYWRIGHT_STATE}")
             set_youtube_upload(upload_id, logs=logs[-160:])
-        fallback_to_storage_state = False
-        fallback_to_cdp = False
-        max_attempts = 4 if youtube_upload_uses_cdp() else 1
+        cdp_repair_attempts = 0
+        max_cdp_repairs = max(1, env_int("YOUTUBE_CDP_UPLOAD_REPAIR_ATTEMPTS", 3))
+        default_max_attempts = 6 if (use_cdp_for_attempt or youtube_auth_state_exists() or youtube_chromium_profile_ready()) else 1
+        max_attempts = max(1, env_int("YOUTUBE_CDP_UPLOAD_MAX_ATTEMPTS", default_max_attempts))
         for attempt in range(1, max_attempts + 1):
             if attempt > 1:
-                mode = "storage state Playwright" if not use_cdp_for_attempt else "Chrome CDP"
+                if use_cdp_for_attempt:
+                    mode = "Chrome CDP"
+                elif force_chromium_profile_for_attempt:
+                    mode = "profile Chromium langsung"
+                else:
+                    mode = "storage state Playwright"
                 logs.append(f"Retry upload attempt {attempt} memakai {mode}.")
                 set_youtube_upload(upload_id, logs=logs[-160:])
-            command = build_youtube_upload_command(upload, use_cdp_override=use_cdp_for_attempt)
+            command = build_youtube_upload_command(
+                upload,
+                use_cdp_override=use_cdp_for_attempt,
+                force_chromium_profile=force_chromium_profile_for_attempt,
+            )
             process = subprocess.Popen(
                 command,
                 cwd=BASE_DIR,
@@ -2051,32 +2292,108 @@ def run_youtube_upload(upload_id: str) -> None:
                 )
                 return
             if attempt < max_attempts and youtube_login_refresh_needed(error):
-                if use_cdp_for_attempt and attempt == 1:
-                    logs.append(
-                        "CDP belum login ke akun target; memaksa restart CDP dan refresh ulang profil Chrome dari source profile."
-                    )
+                if not use_cdp_for_attempt and not one_time_login_refresh_attempted:
+                    one_time_login_refresh_attempted = True
+                    logs.append("Session storage-state belum valid; backend menjalankan Login Sekali otomatis lalu retry.")
                     set_youtube_upload(upload_id, logs=logs[-160:], error=normalize_youtube_upload_error(error))
                     try:
-                        refresh_status = start_youtube_cdp_refresh_process(
-                            force_profile_refresh=True,
-                            force_restart=True,
-                        )
+                        login_status = setup_youtube_one_time_login()
+                    except HTTPException as exc:
+                        logs.append(f"Login Sekali otomatis gagal: {exc.detail}")
+                    else:
+                        logs.extend(login_status.logs[-40:])
+                        logs.append(login_status.message)
+                        if login_status.error:
+                            logs.append(f"Login Sekali otomatis belum valid: {login_status.error}")
+                        if login_status.ok:
+                            force_chromium_profile_for_attempt = False
+                            use_cdp_for_attempt = False
+                            set_youtube_upload(upload_id, logs=logs[-160:], error=None)
+                            continue
+                    set_youtube_upload(upload_id, logs=logs[-160:], error=normalize_youtube_upload_error(error))
+                if (
+                    use_cdp_for_attempt
+                    and youtube_auth_state_exists()
+                    and not fallback_to_storage_state
+                ):
+                    logs.append(
+                        f"CDP belum login; mode login sekali fallback ke Playwright storage state: "
+                        f"{YOUTUBE_PLAYWRIGHT_STATE}"
+                    )
+                    fallback_to_storage_state = True
+                    force_chromium_profile_for_attempt = False
+                    use_cdp_for_attempt = False
+                    set_youtube_upload(upload_id, logs=logs[-160:], error=normalize_youtube_upload_error(error))
+                    continue
+                if (
+                    use_cdp_for_attempt
+                    and youtube_profile_upload_allowed()
+                    and youtube_chromium_profile_ready()
+                    and not fallback_to_chromium_profile
+                ):
+                    logs.append(
+                        "CDP belum login; mode login sekali fallback ke profile Chromium backend langsung."
+                    )
+                    fallback_to_chromium_profile = True
+                    force_chromium_profile_for_attempt = True
+                    use_cdp_for_attempt = False
+                    set_youtube_upload(upload_id, logs=logs[-160:], error=normalize_youtube_upload_error(error))
+                    continue
+                if use_cdp_for_attempt and cdp_repair_attempts < max_cdp_repairs:
+                    cdp_repair_attempts += 1
+                    logs.append(
+                        "CDP belum login ke akun target; backend menjalankan auto-login/repair "
+                        f"{cdp_repair_attempts}/{max_cdp_repairs} dari profile/storage-state."
+                    )
+                    set_youtube_upload(upload_id, logs=logs[-160:], error=normalize_youtube_upload_error(error))
+                    if youtube_chromium_profile_ready():
+                        login_code, login_logs, login_error = run_youtube_profile_login_once()
+                        logs.extend(login_logs[-40:])
+                        if login_code == 0:
+                            logs.append("Profile Chromium berhasil divalidasi ulang sebelum repair CDP.")
+                        else:
+                            login_failure = login_error or f"exit code {login_code}"
+                            logs.append(
+                                "Validasi profile Chromium sebelum repair CDP belum berhasil: "
+                                f"{login_failure}"
+                            )
+                        set_youtube_upload(upload_id, logs=logs[-160:])
+                    try:
+                        repair_status = repair_youtube_cdp(profile_sync_requested=True)
                     except HTTPException as exc:
                         raise RuntimeError(str(exc.detail)) from exc
-                    logs.append(refresh_status.message)
-                    set_youtube_upload(upload_id, logs=logs[-160:])
+                    logs.extend(repair_status.logs[-40:])
+                    logs.append(repair_status.message)
+                    if repair_status.error:
+                        logs.append(f"Repair CDP belum valid: {repair_status.error}")
+                    set_youtube_upload(upload_id, logs=logs[-160:], error=repair_status.error)
+                    continue
+                if (
+                    not use_cdp_for_attempt
+                    and youtube_profile_upload_allowed()
+                    and youtube_chromium_profile_ready()
+                    and not fallback_to_chromium_profile
+                ):
+                    logs.append(
+                        "Storage-state belum login; fallback ke profile Chromium backend langsung."
+                    )
+                    fallback_to_chromium_profile = True
+                    force_chromium_profile_for_attempt = True
+                    use_cdp_for_attempt = False
+                    set_youtube_upload(upload_id, logs=logs[-160:], error=normalize_youtube_upload_error(error))
                     continue
                 if (
                     use_cdp_for_attempt
                     and youtube_auth_state_exists()
                     and not fallback_to_storage_state
-                    and not youtube_upload_force_cdp()
+                    and (not youtube_upload_force_cdp() or youtube_upload_last_resort_fallback_allowed())
                 ):
                     logs.append(
                         f"CDP masih belum login pada attempt {attempt}; fallback ke Playwright storage state: "
                         f"{YOUTUBE_PLAYWRIGHT_STATE}"
                     )
                     fallback_to_storage_state = True
+                    force_chromium_profile_for_attempt = False
                     use_cdp_for_attempt = False
                     set_youtube_upload(upload_id, logs=logs[-160:], error=normalize_youtube_upload_error(error))
                     continue
@@ -2085,14 +2402,17 @@ def run_youtube_upload(upload_id: str) -> None:
                     and youtube_upload_uses_cdp()
                     and not fallback_to_cdp
                     and youtube_upload_force_cdp()
+                    and youtube_upload_last_resort_fallback_allowed()
+                    and not force_chromium_profile_for_attempt
                 ):
                     logs.append("Storage-state belum login; mencoba fallback paksa ke Chrome CDP.")
                     fallback_to_cdp = True
+                    force_chromium_profile_for_attempt = False
                     use_cdp_for_attempt = True
                     set_youtube_upload(upload_id, logs=logs[-160:], error=normalize_youtube_upload_error(error))
                     continue
                 logs.append(
-                    f"Session YouTube masih belum login pada attempt {attempt}; tidak ada fallback login lain yang valid."
+                    f"Session YouTube masih belum login pada attempt {attempt}. Jalankan Login Sekali untuk menyegarkan storage-state/profile."
                 )
                 set_youtube_upload(upload_id, logs=logs[-160:], error=normalize_youtube_upload_error(error))
             set_youtube_upload(
@@ -2647,7 +2967,7 @@ def auto_viral_candidate_score(info: dict[str, Any]) -> float:
 
 def compact_source_payload(info: dict[str, Any]) -> dict[str, Any]:
     return {
-        "url": youtube_watch_url(info),
+        "url": normalize_youtube_video_url(youtube_watch_url(info)) or youtube_watch_url(info),
         "title": str(info.get("title") or "Video tanpa judul")[:180],
         "uploader": str(info.get("uploader") or "")[:120],
         "duration": info.get("duration"),
@@ -2665,10 +2985,178 @@ def fetch_youtube_metadata(url: str) -> dict[str, Any]:
     return result if isinstance(result, dict) else {}
 
 
-def search_auto_viral_sources(request: AutoViralRequest, run_id: str) -> list[dict[str, Any]]:
-    seen: set[str] = set()
+def parse_youtube_iso_duration(value: str) -> int:
+    match = re.fullmatch(
+        r"P(?:(?P<days>\d+)D)?(?:T(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?(?:(?P<seconds>\d+)S)?)?",
+        value or "",
+    )
+    if not match:
+        return 0
+    return (
+        int(match.group("days") or 0) * 86400
+        + int(match.group("hours") or 0) * 3600
+        + int(match.group("minutes") or 0) * 60
+        + int(match.group("seconds") or 0)
+    )
+
+
+def youtube_data_api_get(path: str, params: dict[str, Any]) -> dict[str, Any]:
+    api_key = os.environ.get("YOUTUBE_DATA_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("YOUTUBE_DATA_API_KEY belum diset")
+    clean_params = {key: value for key, value in params.items() if value not in {None, ""}}
+    clean_params["key"] = api_key
+    url = f"https://www.googleapis.com/youtube/v3/{path}?{urlencode(clean_params)}"
+    request = urllib.request.Request(url, headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        detail = exc.reason
+        try:
+            payload = json.loads(exc.read().decode("utf-8"))
+            error = payload.get("error") if isinstance(payload, dict) else None
+            if isinstance(error, dict):
+                message = error.get("message")
+                errors = error.get("errors")
+                reason = ""
+                if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+                    reason = str(errors[0].get("reason") or "")
+                detail = f"{message or detail}" + (f" ({reason})" if reason else "")
+        except Exception:
+            pass
+        raise RuntimeError(f"YouTube Data API HTTP {exc.code}: {detail}") from exc
+    except (URLError, TimeoutError, OSError) as exc:
+        raise RuntimeError(f"YouTube Data API request gagal: {exc}") from exc
+
+
+def youtube_data_api_video_payload(item: dict[str, Any]) -> dict[str, Any]:
+    video_id = str(item.get("id") or "")
+    snippet = item.get("snippet") if isinstance(item.get("snippet"), dict) else {}
+    stats = item.get("statistics") if isinstance(item.get("statistics"), dict) else {}
+    content = item.get("contentDetails") if isinstance(item.get("contentDetails"), dict) else {}
+    status = item.get("status") if isinstance(item.get("status"), dict) else {}
+    published_at = str(snippet.get("publishedAt") or "")
+    upload_date = re.sub(r"[^0-9]", "", published_at[:10])
+    license_value = str(status.get("license") or "")
+    return {
+        "id": video_id,
+        "webpage_url": f"https://www.youtube.com/watch?v={video_id}" if video_id else "",
+        "title": snippet.get("title") or "Video tanpa judul",
+        "uploader": snippet.get("channelTitle") or "",
+        "duration": parse_youtube_iso_duration(str(content.get("duration") or "")),
+        "view_count": int(stats.get("viewCount") or 0),
+        "like_count": int(stats.get("likeCount") or 0),
+        "upload_date": upload_date if len(upload_date) == 8 else "",
+        "license": "Creative Commons" if license_value == "creativeCommon" else license_value,
+    }
+
+
+def search_youtube_data_api_viral_sources(
+    request: AutoViralRequest,
+    run_id: str,
+    *,
+    exclude_urls: set[str] | None = None,
+    stop_after: int | None = None,
+) -> list[dict[str, Any]]:
+    if not os.environ.get("YOUTUBE_DATA_API_KEY", "").strip():
+        return []
+    seen: set[str] = set(exclude_urls or set())
     candidates: list[dict[str, Any]] = []
+    region_code = os.environ.get("VIRAL_CC_REGION_CODE", "ID").strip() or "ID"
+    relevance_language = os.environ.get("VIRAL_CC_RELEVANCE_LANGUAGE", "id").strip() or "id"
+    topic_id = os.environ.get("VIRAL_CC_TOPIC_ID", "").strip()
+    api_error_count = 0
+    api_query_count = 0
+    last_api_error = ""
     for query in request.queries:
+        if stop_after is not None and len(candidates) >= stop_after:
+            break
+        append_auto_viral_log(run_id, f"YouTube Data API search: {query}")
+        search_params: dict[str, Any] = {
+            "part": "snippet",
+            "q": query,
+            "type": "video",
+            "videoLicense": "creativeCommon",
+            "order": os.environ.get("VIRAL_CC_YOUTUBE_API_ORDER", "viewCount").strip() or "viewCount",
+            "maxResults": request.search_limit_per_query,
+            "regionCode": region_code,
+            "relevanceLanguage": relevance_language,
+            "safeSearch": "moderate",
+        }
+        if topic_id:
+            search_params["topicId"] = topic_id
+        try:
+            search_result = youtube_data_api_get("search", search_params)
+        except Exception as exc:
+            api_error_count += 1
+            last_api_error = str(exc)
+            append_auto_viral_error(run_id, f"YouTube Data API search gagal untuk '{query}': {exc}")
+            continue
+        api_query_count += 1
+        video_ids: list[str] = []
+        for item in search_result.get("items", []):
+            if not isinstance(item, dict):
+                continue
+            item_id = item.get("id") if isinstance(item.get("id"), dict) else {}
+            video_id = str(item_id.get("videoId") or "")
+            url = f"https://www.youtube.com/watch?v={video_id}" if video_id else ""
+            normalized_url = normalize_youtube_video_url(url) or url
+            if video_id and normalized_url not in seen:
+                seen.add(normalized_url)
+                video_ids.append(video_id)
+        if not video_ids:
+            continue
+        try:
+            detail_result = youtube_data_api_get(
+                "videos",
+                {
+                    "part": "snippet,statistics,contentDetails,status",
+                    "id": ",".join(video_ids),
+                },
+            )
+        except Exception as exc:
+            api_error_count += 1
+            last_api_error = str(exc)
+            append_auto_viral_error(run_id, f"YouTube Data API videos.list gagal untuk '{query}': {exc}")
+            continue
+        for item in detail_result.get("items", []):
+            if not isinstance(item, dict):
+                continue
+            payload = youtube_data_api_video_payload(item)
+            duration = float(payload.get("duration") or 0)
+            views = int(payload.get("view_count") or 0)
+            if duration < request.min_source_duration or duration > request.max_source_duration:
+                continue
+            if views < request.min_views:
+                continue
+            if not is_creative_commons_info(payload):
+                continue
+            candidates.append(compact_source_payload(payload))
+            if stop_after is not None and len(candidates) >= stop_after:
+                break
+    if api_query_count == 0 and api_error_count > 0:
+        raise RuntimeError(last_api_error or "Semua request YouTube Data API gagal")
+    candidates.sort(key=lambda item: float(item.get("score") or 0), reverse=True)
+    return candidates
+
+
+def search_auto_viral_sources(
+    request: AutoViralRequest,
+    run_id: str,
+    *,
+    exclude_urls: set[str] | None = None,
+    stop_after: int | None = None,
+    max_metadata_checks: int | None = None,
+) -> list[dict[str, Any]]:
+    seen: set[str] = set(exclude_urls or set())
+    candidates: list[dict[str, Any]] = []
+    metadata_checks = 0
+    for query in request.queries:
+        if stop_after is not None and len(candidates) >= stop_after:
+            break
+        if max_metadata_checks is not None and metadata_checks >= max_metadata_checks:
+            break
         append_auto_viral_log(run_id, f"Mencari kandidat YouTube: {query}")
         try:
             with YoutubeDL(ytdlp_probe_options()) as ydl:
@@ -2685,6 +3173,9 @@ def search_auto_viral_sources(request: AutoViralRequest, run_id: str) -> list[di
             if not url or url in seen:
                 continue
             seen.add(url)
+            if max_metadata_checks is not None and metadata_checks >= max_metadata_checks:
+                break
+            metadata_checks += 1
             try:
                 metadata = fetch_youtube_metadata(url)
             except Exception as exc:
@@ -2701,6 +3192,8 @@ def search_auto_viral_sources(request: AutoViralRequest, run_id: str) -> list[di
                 append_auto_viral_log(run_id, f"Skip non-CC: {metadata.get('title') or url}")
                 continue
             candidates.append(compact_source_payload(metadata))
+            if stop_after is not None and len(candidates) >= stop_after:
+                break
 
     candidates.sort(key=lambda item: float(item.get("score") or 0), reverse=True)
     return candidates
@@ -2736,11 +3229,28 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
         auto_viral_runs[run_id] = run
     try:
         excluded_urls = set(request.exclude_urls)
-        sources = [
-            source
-            for source in search_auto_viral_sources(search_request, run_id)
-            if normalize_youtube_video_url(str(source.get("url") or "")) not in excluded_urls
-        ]
+        require_youtube_api = env_bool("VIRAL_CC_REQUIRE_YOUTUBE_DATA_API", False)
+        if require_youtube_api and not os.environ.get("YOUTUBE_DATA_API_KEY", "").strip():
+            raise RuntimeError("YOUTUBE_DATA_API_KEY belum diset untuk pencarian viral via YouTube Data API")
+        sources = search_youtube_data_api_viral_sources(
+            search_request,
+            run_id,
+            exclude_urls=excluded_urls,
+            stop_after=request.video_count,
+        )
+        if len(sources) < request.video_count and not require_youtube_api:
+            if os.environ.get("YOUTUBE_DATA_API_KEY", "").strip():
+                append_auto_viral_log(run_id, "YouTube Data API belum cukup hasil CC valid; lanjut fallback yt-dlp terbatas.")
+            else:
+                append_auto_viral_log(run_id, "YOUTUBE_DATA_API_KEY kosong; fallback yt-dlp terbatas.")
+            fallback_sources = search_auto_viral_sources(
+                search_request,
+                run_id,
+                exclude_urls={*excluded_urls, *(normalize_youtube_video_url(str(item.get("url") or "")) or "" for item in sources)},
+                stop_after=request.video_count - len(sources),
+                max_metadata_checks=request.max_metadata_checks,
+            )
+            sources = [*sources, *fallback_sources]
         selected = sources[: request.video_count]
         update_auto_viral_run(
             run_id,
@@ -3025,6 +3535,34 @@ def get_youtube_config() -> YouTubeConfig:
     return youtube_config_payload()
 
 
+@app.post("/api/youtube/upload-mode/direct-profile", response_model=YouTubeConfig)
+def enable_youtube_direct_profile_upload() -> YouTubeConfig:
+    os.environ["YOUTUBE_UPLOAD_USE_CDP"] = "false"
+    os.environ["YOUTUBE_UPLOAD_FORCE_CDP"] = "false"
+    os.environ["YOUTUBE_ALLOW_CHROMIUM_PROFILE_UPLOAD"] = "true"
+    os.environ["YOUTUBE_UPLOAD_PREFER_CHROMIUM_PROFILE"] = "true"
+    return youtube_config_payload()
+
+
+@app.post("/api/youtube/upload-mode/live-chrome", response_model=YouTubeConfig)
+def enable_youtube_live_chrome_upload(request: YouTubeLiveChromeRequest) -> YouTubeConfig:
+    global YOUTUBE_CDP_URL
+    if not youtube_cdp_ready(request.cdp_url):
+        raise HTTPException(status_code=409, detail=f"Chrome login belum aktif di {request.cdp_url}")
+    YOUTUBE_CDP_URL = request.cdp_url
+    os.environ["YOUTUBE_CDP_URL"] = request.cdp_url
+    os.environ["YOUTUBE_UPLOAD_USE_CDP"] = "true"
+    os.environ["YOUTUBE_UPLOAD_FORCE_CDP"] = "true"
+    os.environ["YOUTUBE_UPLOAD_PREFER_CHROMIUM_PROFILE"] = "false"
+    return youtube_config_payload()
+
+
+def enable_youtube_storage_state_upload_mode() -> None:
+    os.environ["YOUTUBE_UPLOAD_USE_CDP"] = "false"
+    os.environ["YOUTUBE_UPLOAD_FORCE_CDP"] = "false"
+    os.environ["YOUTUBE_UPLOAD_PREFER_CHROMIUM_PROFILE"] = "false"
+
+
 @app.get("/api/youtube/uploads", response_model=list[YouTubeUploadJob])
 def list_youtube_uploads() -> list[YouTubeUploadJob]:
     with youtube_uploads_lock:
@@ -3052,16 +3590,45 @@ def start_youtube_login() -> YouTubeLoginStatus:
     return start_youtube_login_if_needed()
 
 
+@app.post("/api/youtube/login/stop", response_model=YouTubeLoginStatus)
+def stop_youtube_login() -> YouTubeLoginStatus:
+    global youtube_login_process
+    with process_lock:
+        process = youtube_login_process
+    if process is not None and process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+    with process_lock:
+        youtube_login_process = None
+    set_youtube_login_status(active=False, finished_at=now_iso(), error=None)
+    return youtube_login_status
+
+
 @app.post("/api/youtube/session/capture", response_model=YouTubeLoginStatus)
 def capture_youtube_session() -> YouTubeLoginStatus:
     if not playwright_installed():
         raise HTTPException(status_code=503, detail="Playwright belum terpasang di backend")
 
     code, logs, error = run_youtube_capture_once()
-    if code != 0 and error and youtube_login_refresh_needed(error):
+    if code != 0 and error and (youtube_cdp_start_needed(error) or youtube_login_refresh_needed(error)):
         try:
-            refresh_status = start_youtube_cdp_refresh_process(force_profile_refresh=True, force_restart=True)
-            logs = [*logs[-70:], refresh_status.message]
+            force_restart = youtube_login_refresh_needed(error)
+            refresh_status = start_youtube_cdp_refresh_process(
+                force_profile_refresh=True,
+                force_restart=force_restart,
+            )
+            logs = [
+                *logs[-68:],
+                (
+                    "CDP belum aktif; backend menjalankan launcher Chrome otomatis di background."
+                    if youtube_cdp_start_needed(error)
+                    else "Session perlu refresh; backend menjalankan launcher Chrome otomatis di background."
+                ),
+                refresh_status.message,
+            ]
             code, retry_logs, error = run_youtube_capture_once()
             logs = [*logs, *retry_logs]
         except HTTPException:
@@ -3102,15 +3669,19 @@ def sync_youtube_cdp() -> YouTubeCdpRepairStatus:
     if not playwright_installed():
         raise HTTPException(status_code=503, detail="Playwright belum terpasang di backend")
     started_at = now_iso()
+    source_profile_path = youtube_login_source_profile_dir()
+    source_profile_ready = youtube_login_source_profile_ready()
     if not youtube_cdp_ready():
         return YouTubeCdpRepairStatus(
             ok=False,
             cdp_ready=False,
             session_ready=False,
+            source_profile_ready=source_profile_ready,
+            source_profile_path=source_profile_path,
             started_at=started_at,
             message=(
                 f"Chrome CDP belum aktif di {YOUTUBE_CDP_URL}. "
-                "Jalankan Run CDP dari dashboard/bot atau start Chrome CDP dari luar, lalu klik Sync CDP lagi."
+                "Jalankan Run + Sync CDP dari bot/dashboard, atau start Chrome CDP dari luar lalu sync ulang."
             ),
             logs=tail_text_file(YOUTUBE_CDP_REFRESH_LOG, 40),
         )
@@ -3123,6 +3694,8 @@ def sync_youtube_cdp() -> YouTubeCdpRepairStatus:
             cdp_ready=youtube_cdp_ready(),
             session_ready=True,
             hydrated=hydrated,
+            source_profile_ready=source_profile_ready,
+            source_profile_path=source_profile_path,
             started_at=started_at,
             message="Chrome CDP aktif dan session YouTube target berhasil divalidasi.",
             logs=logs[-80:],
@@ -3134,6 +3707,8 @@ def sync_youtube_cdp() -> YouTubeCdpRepairStatus:
         cdp_ready=youtube_cdp_ready(),
         session_ready=False,
         hydrated=hydrated,
+        source_profile_ready=source_profile_ready,
+        source_profile_path=source_profile_path,
         started_at=started_at,
         message="Chrome CDP aktif tetapi session YouTube target belum valid.",
         error=normalized_error,
@@ -3141,13 +3716,240 @@ def sync_youtube_cdp() -> YouTubeCdpRepairStatus:
     )
 
 
-@app.post("/api/youtube/cdp/repair", response_model=YouTubeCdpRepairStatus)
-def repair_youtube_cdp() -> YouTubeCdpRepairStatus:
+@app.post("/api/youtube/cdp/import-cookies", response_model=YouTubeCdpRepairStatus)
+def import_youtube_cdp_cookies() -> YouTubeCdpRepairStatus:
     if not playwright_installed():
         raise HTTPException(status_code=503, detail="Playwright belum terpasang di backend")
     started_at = now_iso()
     logs: list[str] = []
     refresh_status: YouTubeCdpRefreshStatus | None = None
+    source_profile_path = youtube_login_source_profile_dir()
+    source_profile_ready = youtube_login_source_profile_ready()
+
+    if not youtube_cdp_ready():
+        try:
+            refresh_status = start_youtube_cdp_refresh_process()
+            logs.extend(refresh_status.logs[-30:])
+            logs.append(refresh_status.message)
+        except HTTPException as exc:
+            return YouTubeCdpRepairStatus(
+                ok=False,
+                cdp_ready=youtube_cdp_ready(),
+                session_ready=False,
+                source_profile_ready=source_profile_ready,
+                source_profile_path=source_profile_path,
+                storage_state_path=str(YOUTUBE_PLAYWRIGHT_STATE),
+                started_at=started_at,
+                message="Chrome CDP belum aktif dan launcher gagal dijalankan.",
+                refresh=refresh_status,
+                error=str(exc.detail),
+                logs=[*logs, *tail_text_file(YOUTUBE_CDP_REFRESH_LOG, 40)][-80:],
+            )
+
+    code, capture_logs, error = run_youtube_capture_once(hydrate_storage_state=False)
+    logs.extend(capture_logs)
+
+    if code != 0 and error and (youtube_cdp_start_needed(error) or youtube_login_refresh_needed(error)):
+        try:
+            refresh_status = start_youtube_cdp_refresh_process(
+                force_profile_refresh=youtube_login_refresh_needed(error),
+                force_restart=youtube_login_refresh_needed(error),
+            )
+            logs.append(
+                "Import cookies CDP belum valid; backend refresh Chrome dari profile login lalu mencoba lagi."
+                if youtube_login_refresh_needed(error)
+                else "CDP belum aktif; backend menjalankan launcher lalu mencoba import cookies lagi."
+            )
+            logs.extend(refresh_status.logs[-30:])
+            logs.append(refresh_status.message)
+            code, retry_logs, error = run_youtube_capture_once(hydrate_storage_state=False)
+            logs.extend(retry_logs)
+        except HTTPException as exc:
+            cookie_count, youtube_cookie_count = youtube_storage_cookie_counts()
+            return YouTubeCdpRepairStatus(
+                ok=False,
+                cdp_ready=youtube_cdp_ready(),
+                session_ready=False,
+                source_profile_ready=source_profile_ready,
+                source_profile_path=source_profile_path,
+                cookie_count=cookie_count,
+                youtube_cookie_count=youtube_cookie_count,
+                storage_state_path=str(YOUTUBE_PLAYWRIGHT_STATE),
+                started_at=started_at,
+                message="Import cookies CDP belum berhasil.",
+                refresh=refresh_status,
+                error=str(exc.detail),
+                logs=logs[-80:],
+            )
+
+    cookie_count, youtube_cookie_count = youtube_storage_cookie_counts()
+    ok = code == 0 and youtube_cookie_count > 0
+    normalized_error = None
+    if not ok:
+        normalized_error = error or (
+            f"capture-session exited with code {code}"
+            if code
+            else "Cookies YouTube/Google tidak ditemukan"
+        )
+    return YouTubeCdpRepairStatus(
+        ok=ok,
+        cdp_ready=youtube_cdp_ready(),
+        session_ready=code == 0,
+        hydrated=False,
+        source_profile_ready=source_profile_ready,
+        source_profile_path=source_profile_path,
+        cookies_imported=ok,
+        cookie_count=cookie_count,
+        youtube_cookie_count=youtube_cookie_count,
+        storage_state_path=str(YOUTUBE_PLAYWRIGHT_STATE),
+        started_at=started_at,
+        message=(
+            f"Cookies dari Chrome CDP berhasil diambil dan disimpan ke storage-state ({youtube_cookie_count} cookies YouTube/Google)."
+            if ok
+            else "Chrome CDP terbaca tetapi cookies YouTube/Google belum berhasil diambil."
+        ),
+        refresh=refresh_status,
+        error=normalized_error,
+        logs=logs[-80:],
+    )
+
+
+@app.post("/api/youtube/login/once", response_model=YouTubeCdpRepairStatus)
+def setup_youtube_one_time_login() -> YouTubeCdpRepairStatus:
+    if not playwright_installed():
+        raise HTTPException(status_code=503, detail="Playwright belum terpasang di backend")
+
+    started_at = now_iso()
+    logs: list[str] = []
+    source_profile_path = YOUTUBE_LOGIN_PROFILE_DIR
+    source_profile_ready = bool(source_profile_path and Path(source_profile_path).is_dir())
+
+    if youtube_upload_prefers_cdp() and youtube_cdp_ready():
+        code, capture_logs, capture_error = run_youtube_capture_once(hydrate_storage_state=False)
+        logs.extend(capture_logs[-60:])
+        cookie_count, youtube_cookie_count = youtube_storage_cookie_counts()
+        if code == 0:
+            return YouTubeCdpRepairStatus(
+                ok=True,
+                cdp_ready=True,
+                session_ready=True,
+                source_profile_ready=source_profile_ready,
+                source_profile_path=source_profile_path,
+                cookies_imported=True,
+                cookie_count=cookie_count,
+                youtube_cookie_count=youtube_cookie_count,
+                storage_state_path=str(YOUTUBE_PLAYWRIGHT_STATE),
+                started_at=started_at,
+                message="Chrome login aktif dan akun YouTube target valid. Upload otomatis memakai browser ini.",
+                logs=logs[-80:],
+            )
+        logs.append(f"Validasi Chrome login gagal: {capture_error or f'exit code {code}'}")
+
+    cookie_count, youtube_cookie_count = youtube_storage_cookie_counts()
+    if youtube_cookie_count > 0:
+        logs.append(
+            f"Storage-state punya {youtube_cookie_count} cookies YouTube/Google; memvalidasi login Studio dulu."
+        )
+        check_code, check_logs, check_error = run_youtube_check_login_once(use_chromium_profile=False)
+        logs.extend(check_logs[-50:])
+        cookie_count, youtube_cookie_count = youtube_storage_cookie_counts()
+        if check_code == 0 and youtube_cookie_count > 0:
+            enable_youtube_storage_state_upload_mode()
+            return YouTubeCdpRepairStatus(
+                ok=True,
+                cdp_ready=youtube_cdp_ready(),
+                session_ready=True,
+                hydrated=False,
+                source_profile_ready=source_profile_ready,
+                source_profile_path=source_profile_path,
+                cookies_imported=True,
+                cookie_count=cookie_count,
+                youtube_cookie_count=youtube_cookie_count,
+                storage_state_path=str(YOUTUBE_PLAYWRIGHT_STATE),
+                started_at=started_at,
+                message=(
+                    "Storage-state YouTube sudah divalidasi. Login sekali aktif; upload berikutnya memakai "
+                    "session tersimpan tanpa CDP/supervisor."
+                ),
+                logs=logs[-80:],
+            )
+        check_failure = check_error or f"exit code {check_code}"
+        logs.append(f"Storage-state lama tidak valid: {check_failure}")
+
+    if youtube_login_status.active:
+        logs.extend(youtube_login_status.logs[-20:])
+        return YouTubeCdpRepairStatus(
+            ok=False,
+            cdp_ready=youtube_cdp_ready(),
+            session_ready=False,
+            source_profile_ready=source_profile_ready,
+            source_profile_path=source_profile_path,
+            cookie_count=cookie_count,
+            youtube_cookie_count=youtube_cookie_count,
+            storage_state_path=str(YOUTUBE_PLAYWRIGHT_STATE),
+            login_required=True,
+            started_at=started_at,
+            message=(
+                "Jendela login YouTube sedang terbuka. Selesaikan login sampai dashboard Studio tampil; "
+                "session akan disimpan otomatis."
+            ),
+            logs=logs[-80:],
+        )
+
+    if source_profile_ready:
+        logs.append("Memeriksa profile login Playwright khusus.")
+        login_code, login_logs, login_error = run_youtube_check_login_once(use_chromium_profile=True)
+        logs.extend(login_logs[-30:])
+        cookie_count, youtube_cookie_count = youtube_storage_cookie_counts()
+        if login_code == 0 and youtube_cookie_count > 0:
+            enable_youtube_storage_state_upload_mode()
+            return YouTubeCdpRepairStatus(
+                ok=True,
+                cdp_ready=youtube_cdp_ready(),
+                session_ready=True,
+                source_profile_ready=True,
+                source_profile_path=source_profile_path,
+                cookies_imported=True,
+                cookie_count=cookie_count,
+                youtube_cookie_count=youtube_cookie_count,
+                storage_state_path=str(YOUTUBE_PLAYWRIGHT_STATE),
+                started_at=started_at,
+                message=(
+                    "Profile login Playwright sudah valid. Session tersimpan dan upload berikutnya berjalan tanpa CDP."
+                ),
+                logs=logs[-80:],
+            )
+        logs.append(f"Profile belum login: {login_error or f'exit code {login_code}'}")
+
+    login_status = start_youtube_login_if_needed()
+    logs.extend(login_status.logs[-20:])
+    return YouTubeCdpRepairStatus(
+        ok=False,
+        cdp_ready=youtube_cdp_ready(),
+        session_ready=False,
+        source_profile_ready=source_profile_ready,
+        source_profile_path=source_profile_path,
+        cookie_count=cookie_count,
+        youtube_cookie_count=youtube_cookie_count,
+        storage_state_path=str(YOUTUBE_PLAYWRIGHT_STATE),
+        login_required=True,
+        started_at=started_at,
+        message=(
+            "Jendela login YouTube sudah dibuka. Login sampai dashboard YouTube Studio tampil; "
+            "session akan tersimpan otomatis dan jendela akan tertutup sendiri."
+        ),
+        logs=logs[-80:],
+    )
+
+@app.post("/api/youtube/cdp/repair", response_model=YouTubeCdpRepairStatus)
+def repair_youtube_cdp(profile_sync_requested: bool = True) -> YouTubeCdpRepairStatus:
+    if not playwright_installed():
+        raise HTTPException(status_code=503, detail="Playwright belum terpasang di backend")
+    started_at = now_iso()
+    logs: list[str] = []
+    refresh_status: YouTubeCdpRefreshStatus | None = None
+    source_profile_path = youtube_login_source_profile_dir()
+    source_profile_ready = youtube_login_source_profile_ready()
     try:
         refresh_status = start_youtube_cdp_refresh_process(force_profile_refresh=True, force_restart=True)
         logs.extend(refresh_status.logs[-30:])
@@ -3157,6 +3959,9 @@ def repair_youtube_cdp() -> YouTubeCdpRepairStatus:
             ok=False,
             cdp_ready=youtube_cdp_ready(),
             session_ready=False,
+            profile_sync_requested=profile_sync_requested,
+            source_profile_ready=source_profile_ready,
+            source_profile_path=source_profile_path,
             started_at=started_at,
             message="Refresh Chrome CDP gagal dari backend.",
             error=str(exc.detail),
@@ -3172,6 +3977,9 @@ def repair_youtube_cdp() -> YouTubeCdpRepairStatus:
             cdp_ready=youtube_cdp_ready(),
             session_ready=True,
             hydrated=hydrated,
+            profile_sync_requested=profile_sync_requested,
+            source_profile_ready=source_profile_ready,
+            source_profile_path=source_profile_path,
             started_at=started_at,
             message="Chrome CDP aktif dan session YouTube target berhasil divalidasi.",
             refresh=refresh_status,
@@ -3184,6 +3992,9 @@ def repair_youtube_cdp() -> YouTubeCdpRepairStatus:
         cdp_ready=youtube_cdp_ready(),
         session_ready=False,
         hydrated=hydrated,
+        profile_sync_requested=profile_sync_requested,
+        source_profile_ready=source_profile_ready,
+        source_profile_path=source_profile_path,
         started_at=started_at,
         message=(
             "Chrome CDP aktif tetapi session YouTube target belum valid."
@@ -3194,6 +4005,82 @@ def repair_youtube_cdp() -> YouTubeCdpRepairStatus:
         error=normalized_error,
         logs=logs[-80:],
     )
+
+
+@app.post("/api/youtube/cdp/profile-sync", response_model=YouTubeCdpRepairStatus)
+def sync_youtube_cdp_from_profile() -> YouTubeCdpRepairStatus:
+    if not playwright_installed():
+        raise HTTPException(status_code=503, detail="Playwright belum terpasang di backend")
+    started_at = now_iso()
+    source_profile_path = youtube_login_source_profile_dir()
+    source_profile_ready = youtube_login_source_profile_ready()
+    if not source_profile_ready:
+        return YouTubeCdpRepairStatus(
+            ok=False,
+            cdp_ready=youtube_cdp_ready(),
+            session_ready=False,
+            profile_sync_requested=True,
+            source_profile_ready=False,
+            source_profile_path=source_profile_path,
+            started_at=started_at,
+            message="Source profile Chrome yang sudah login belum ditemukan.",
+            error=(
+                "Set YOUTUBE_LOGIN_SOURCE_PROFILE_DIR atau YOUTUBE_CHROMIUM_HOST_USER_DATA_DIR "
+                "ke user-data-dir Chrome/Chromium yang sudah login YouTube."
+            ),
+            logs=tail_text_file(YOUTUBE_CDP_REFRESH_LOG, 40),
+        )
+    return repair_youtube_cdp(profile_sync_requested=True)
+
+
+@app.post("/api/youtube/cdp/auto-login", response_model=YouTubeCdpRepairStatus)
+def auto_login_youtube_cdp() -> YouTubeCdpRepairStatus:
+    if not playwright_installed():
+        raise HTTPException(status_code=503, detail="Playwright belum terpasang di backend")
+    started_at = now_iso()
+    source_profile_path = youtube_login_source_profile_dir()
+    source_profile_ready = youtube_login_source_profile_ready() or youtube_chromium_profile_ready()
+    if not source_profile_ready and not youtube_auth_state_exists():
+        return YouTubeCdpRepairStatus(
+            ok=False,
+            cdp_ready=youtube_cdp_ready(),
+            session_ready=False,
+            profile_sync_requested=True,
+            source_profile_ready=False,
+            source_profile_path=source_profile_path,
+            started_at=started_at,
+            message="Auto login CDP belum bisa berjalan karena profile login belum ditemukan.",
+            error=(
+                "Set YOUTUBE_CHROMIUM_USER_DATA_DIR / YOUTUBE_LOGIN_SOURCE_PROFILE_DIR "
+                "ke Chrome user-data-dir yang sudah login YouTube Studio."
+            ),
+            logs=tail_text_file(YOUTUBE_CDP_REFRESH_LOG, 40),
+        )
+
+    login_logs: list[str] = []
+    if youtube_chromium_profile_ready():
+        login_code, login_logs, login_error = run_youtube_profile_login_once()
+        if login_code != 0:
+            return YouTubeCdpRepairStatus(
+                ok=False,
+                cdp_ready=youtube_cdp_ready(),
+                session_ready=False,
+                profile_sync_requested=True,
+                source_profile_ready=source_profile_ready,
+                source_profile_path=source_profile_path,
+                started_at=started_at,
+                message="Auto login dari profile Chrome belum berhasil.",
+                error=login_error or f"youtube_uploader.py login exited with code {login_code}",
+                logs=login_logs[-80:],
+            )
+
+    repair = repair_youtube_cdp(profile_sync_requested=True)
+    data = repair.model_dump()
+    data["started_at"] = started_at
+    data["logs"] = [*login_logs[-40:], *repair.logs][-80:]
+    if repair.ok:
+        data["message"] = "Chrome CDP otomatis login ke YouTube Studio dari profile/storage-state."
+    return YouTubeCdpRepairStatus(**data)
 
 
 @app.post("/api/youtube/cdp/stop")
@@ -3657,8 +4544,10 @@ def delete_job(job_id: str) -> dict[str, str | int]:
         job = jobs.get(job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        if job.status in {"queued", "running"} or is_running:
+        if job.status == "running" or is_running:
             raise HTTPException(status_code=409, detail="Batalkan proses aktif sebelum menghapus riwayatnya")
+        if job.status == "queued":
+            cancelled_job_ids.add(job_id)
         active_uploads = active_youtube_uploads_for_job(job_id)
         if active_uploads:
             raise HTTPException(

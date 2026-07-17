@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from telegram_bot import (
+    ClipForgeTelegramBot,
     DEFAULT_SETTINGS,
     build_job_payload,
     canonical_youtube_url,
@@ -131,3 +132,60 @@ def test_text_and_duration_formatting():
     assert format_duration(65) == "1m 5d"
     assert format_duration(8) == "8d"
     assert split_text("satu dua tiga empat", 10) == ["satu dua", "tiga empat"]
+
+
+def test_youtube_control_keyboard_includes_merge_session():
+    class DummyBot:
+        def latest_retryable_youtube_upload_id(self):
+            return None
+
+    markup = ClipForgeTelegramBot.youtube_control_keyboard(DummyBot())
+    callbacks = [
+        button["callback_data"]
+        for row in markup["inline_keyboard"]
+        for button in row
+        if "callback_data" in button
+    ]
+
+    assert "ytcdp" in callbacks
+    assert "ytsync" in callbacks
+    assert "ytnocdp" in callbacks
+    assert "ytprofile" in callbacks
+    assert "ytsession" in callbacks
+
+
+def test_youtube_session_capture_lines_reports_success():
+    lines = ClipForgeTelegramBot.youtube_session_capture_lines(
+        object(),
+        {"logs": ["Sesi YouTube dari browser tersimpan: /tmp/youtube_storage_state.json"]},
+    )
+
+    assert lines[0] == "Merge session YouTube selesai."
+    assert "Storage-state: tersimpan/terbarui" in lines
+
+
+def test_job_keyboard_allows_delete_for_failed_and_queued_jobs():
+    failed_markup = ClipForgeTelegramBot.job_keyboard(
+        object(),
+        {"id": "failed-job", "status": "failed", "clips": []},
+    )
+    queued_markup = ClipForgeTelegramBot.job_keyboard(
+        object(),
+        {"id": "queued-job", "status": "queued", "clips": []},
+    )
+
+    failed_callbacks = [
+        button["callback_data"]
+        for row in failed_markup["inline_keyboard"]
+        for button in row
+        if "callback_data" in button
+    ]
+    queued_callbacks = [
+        button["callback_data"]
+        for row in queued_markup["inline_keyboard"]
+        for button in row
+        if "callback_data" in button
+    ]
+
+    assert "deleteask:failed-job" in failed_callbacks
+    assert "deleteask:queued-job" in queued_callbacks

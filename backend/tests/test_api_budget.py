@@ -9,6 +9,7 @@ from api import (
     choose_auto_analyze_seconds,
     max_clips_for_duration,
     normalize_job_request,
+    youtube_cdp_start_needed,
     user_error_from_logs,
 )
 
@@ -201,3 +202,37 @@ def test_delete_all_jobs_removes_only_process_jobs_and_preserves_clips(monkeypat
 
     api.run_job(queued.id)
     assert queued.id not in api.cancelled_job_ids
+
+
+def test_delete_job_allows_queued_job_that_is_not_running(monkeypatch, tmp_path):
+    import api
+
+    queued = ClipJob(
+        id="queued-job",
+        status="queued",
+        request=ClipJobRequest(url="https://youtu.be/queued"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+
+    monkeypatch.setattr(api, "OUTPUTS_DIR", tmp_path / "outputs")
+    monkeypatch.setattr(api, "UPLOADS_DIR", tmp_path / "uploads")
+    monkeypatch.setattr(api, "JOBS_PATH", tmp_path / "jobs.json")
+    monkeypatch.setattr(api, "jobs", {queued.id: queued})
+    monkeypatch.setattr(api, "job_processes", {})
+    monkeypatch.setattr(api, "job_secrets", {queued.id: "secret"})
+    monkeypatch.setattr(api, "cancelled_job_ids", set())
+
+    result = api.delete_job(queued.id)
+
+    assert result["status"] == "ok"
+    assert result["removed_jobs"] == 1
+    assert queued.id not in api.jobs
+    assert queued.id not in api.job_secrets
+
+
+def test_youtube_cdp_start_needed_detects_remote_debugging_error():
+    assert youtube_cdp_start_needed(
+        "Chrome remote debugging belum aktif. Jalur utama upload memakai Playwright storage-state"
+    )
+    assert youtube_cdp_start_needed("connect_over_cdp failed: ECONNREFUSED")

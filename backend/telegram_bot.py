@@ -63,6 +63,16 @@ YOUTUBE_SESSION_CAPTURE_HTTP_TIMEOUT = max(
     90.0,
     env_float("TELEGRAM_YOUTUBE_SESSION_CAPTURE_TIMEOUT_SECONDS", YOUTUBE_CDP_REFRESH_HTTP_TIMEOUT + 60.0),
 )
+YOUTUBE_ONE_TIME_LOGIN_HTTP_TIMEOUT = max(
+    YOUTUBE_SESSION_CAPTURE_HTTP_TIMEOUT,
+    env_float("TELEGRAM_YOUTUBE_ONE_TIME_LOGIN_TIMEOUT_SECONDS", 180.0),
+)
+VIRAL_CC_SEARCH_HTTP_TIMEOUT = max(180.0, env_float("VIRAL_CC_SEARCH_HTTP_TIMEOUT_SECONDS", 420.0))
+VIRAL_CC_VIDEO_COUNT = max(1, min(7, int(env_float("VIRAL_CC_VIDEO_COUNT", 5))))
+VIRAL_CC_MAX_SOURCE_SECONDS = max(
+    60,
+    min(14400, int(env_float("VIRAL_CC_MAX_SOURCE_SECONDS", 7200))),
+)
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "top": None,
@@ -569,14 +579,15 @@ class BackendClient:
             f"{self.base_url}/api/automation/viral-cc/sources",
             method="POST",
             payload={
-                "video_count": 3,
-                "search_limit_per_query": 10,
+                "video_count": VIRAL_CC_VIDEO_COUNT,
+                "search_limit_per_query": int(env_float("VIRAL_CC_SEARCH_LIMIT", 5)),
                 "min_source_duration": 60,
-                "max_source_duration": 1800,
-                "min_views": 1000,
+                "max_source_duration": VIRAL_CC_MAX_SOURCE_SECONDS,
+                "min_views": int(env_float("VIRAL_CC_MIN_VIEWS", 1000)),
+                "max_metadata_checks": int(env_float("VIRAL_CC_MAX_METADATA_CHECKS", 25)),
                 "exclude_urls": exclude_urls or [],
             },
-            timeout=180,
+            timeout=VIRAL_CC_SEARCH_HTTP_TIMEOUT,
         )
         return result if isinstance(result, list) else []
 
@@ -589,8 +600,42 @@ class BackendClient:
         )
         return result if isinstance(result, dict) else {}
 
+    def delete_job(self, job_id: str) -> dict[str, Any]:
+        result = _json_request(
+            f"{self.base_url}/api/jobs/{job_id}",
+            method="DELETE",
+            timeout=30,
+        )
+        return result if isinstance(result, dict) else {}
+
+    def delete_failed_jobs(self) -> dict[str, Any]:
+        result = _json_request(
+            f"{self.base_url}/api/jobs/failed",
+            method="DELETE",
+            timeout=30,
+        )
+        return result if isinstance(result, dict) else {}
+
     def youtube_config(self) -> dict[str, Any]:
         result = _json_request(f"{self.base_url}/api/youtube/config", timeout=15)
+        return result if isinstance(result, dict) else {}
+
+    def enable_youtube_direct_profile_upload(self) -> dict[str, Any]:
+        result = _json_request(
+            f"{self.base_url}/api/youtube/upload-mode/direct-profile",
+            method="POST",
+            payload={},
+            timeout=15,
+        )
+        return result if isinstance(result, dict) else {}
+
+    def setup_youtube_one_time_login(self) -> dict[str, Any]:
+        result = _json_request(
+            f"{self.base_url}/api/youtube/login/once",
+            method="POST",
+            payload={},
+            timeout=YOUTUBE_ONE_TIME_LOGIN_HTTP_TIMEOUT,
+        )
         return result if isinstance(result, dict) else {}
 
     def get_youtube_upload(self, upload_id: str) -> dict[str, Any]:
@@ -644,6 +689,33 @@ class BackendClient:
     def repair_youtube_cdp(self) -> dict[str, Any]:
         result = _json_request(
             f"{self.base_url}/api/youtube/cdp/repair",
+            method="POST",
+            payload={},
+            timeout=YOUTUBE_SESSION_CAPTURE_HTTP_TIMEOUT,
+        )
+        return result if isinstance(result, dict) else {}
+
+    def auto_login_youtube_cdp(self) -> dict[str, Any]:
+        result = _json_request(
+            f"{self.base_url}/api/youtube/cdp/auto-login",
+            method="POST",
+            payload={},
+            timeout=YOUTUBE_SESSION_CAPTURE_HTTP_TIMEOUT,
+        )
+        return result if isinstance(result, dict) else {}
+
+    def import_youtube_cdp_cookies(self) -> dict[str, Any]:
+        result = _json_request(
+            f"{self.base_url}/api/youtube/cdp/import-cookies",
+            method="POST",
+            payload={},
+            timeout=YOUTUBE_SESSION_CAPTURE_HTTP_TIMEOUT,
+        )
+        return result if isinstance(result, dict) else {}
+
+    def sync_youtube_cdp_from_profile(self) -> dict[str, Any]:
+        result = _json_request(
+            f"{self.base_url}/api/youtube/cdp/profile-sync",
             method="POST",
             payload={},
             timeout=YOUTUBE_SESSION_CAPTURE_HTTP_TIMEOUT,
@@ -947,15 +1019,20 @@ class ClipForgeTelegramBot:
             "3. Tekan Proses Sekarang.\n"
             "4. Bot akan mengirim seluruh hasil saat selesai.\n"
             "5. Tekan Upload ke YouTube pada clip pilihan atau Upload 3 Terbaik.\n\n"
-            "Perintah: /clip, /getvideosviral, /status, /settings, /history, /youtube, /debug, /ping, /cancel, /menu",
+            "YouTube: /youtube untuk panel uploader, /loginsekali untuk simpan session Playwright sekali, "
+            "/nocdp untuk upload tanpa CDP, /cookies untuk ambil cookies CDP opsional, /cdp untuk recovery CDP.\n\n"
+            "Perintah: /clip, /getvideosviral, /status, /settings, /history, /youtube, /cdp, "
+            "/loginsekali, /cookies, /nocdp, /profilelogin, /syncsession, /capturesession, /hapusgagal, /debug, /ping, /cancel, /menu",
             main_menu_keyboard(),
         )
 
     def show_viral_video_suggestions(self, chat_id: int) -> None:
         exclude_urls = self.viral_exclude_urls()
+        max_minutes = VIRAL_CC_MAX_SOURCE_SECONDS // 60
         self.send_message(
             chat_id,
-            "Mencari 3 video viral Creative Commons bertema Islam/ceramah/pesan baik, durasi kurang dari 30 menit..."
+            f"Mencari {VIRAL_CC_VIDEO_COUNT} video viral Creative Commons dengan keyword "
+            f"podcast Indonesia/dakwah/kajian/ceramah, durasi maksimal {max_minutes} menit..."
             + (f"\nSkip video yang sudah pernah diambil: {len(exclude_urls)}" if exclude_urls else ""),
         )
         try:
@@ -966,25 +1043,27 @@ class ClipForgeTelegramBot:
         if not sources:
             self.send_message(
                 chat_id,
-                "Belum menemukan kandidat yang memenuhi filter Creative Commons dan durasi < 30 menit. Coba lagi nanti.",
+                f"Belum menemukan kandidat yang memenuhi filter Creative Commons dan durasi maksimal "
+                f"{max_minutes} menit. Coba lagi nanti.",
                 main_menu_keyboard(),
             )
             return
 
         suggestions: dict[str, dict[str, Any]] = {}
+        selected_sources = sources[:VIRAL_CC_VIDEO_COUNT]
         lines = [
-            "Top 3 video viral Creative Commons",
-            "Tema: Islam, ceramah, motivasi, pesan baik",
-            "Filter: Creative Commons, durasi < 30 menit",
+            f"Top {len(selected_sources)} video viral Creative Commons",
+            "Keyword: podcast Indonesia | dakwah | kajian | ceramah",
+            f"Filter: Creative Commons, durasi maksimal {max_minutes} menit",
             "",
         ]
-        for index, source in enumerate(sources[:3], start=1):
+        for index, source in enumerate(selected_sources, start=1):
             lines.append(viral_source_text(source, index))
             url = source.get("url")
             if isinstance(url, str) and url:
                 lines.append(url)
             lines.append("")
-        markup = viral_sources_keyboard(sources[:3], suggestions)
+        markup = viral_sources_keyboard(selected_sources, suggestions)
         self.state["viral_video_suggestions"] = suggestions
         self.send_message(chat_id, "\n".join(lines).strip(), markup)
         self.persist()
@@ -1041,13 +1120,15 @@ class ClipForgeTelegramBot:
 
     def job_keyboard(self, job: dict[str, Any]) -> dict[str, Any]:
         job_id = str(job.get("id", ""))
-        status = job.get("status")
+        status = str(job.get("status") or "")
         rows: list[list[dict[str, str]]] = []
         if status in ACTIVE_STATUSES:
             rows.append([button("🔄 Perbarui", f"refresh:{job_id}"), button("⏹ Batalkan", f"cancelask:{job_id}")])
         elif status == "completed" and job.get("clips"):
             rows.append([button("📤 Kirim Semua Hasil", f"deliver:{job_id}")])
             rows.append([button("⬆️ Upload 3 Terbaik ke YouTube", f"ytall:{job_id}")])
+        if status in {"queued", "failed", "cancelled"}:
+            rows.append([button("🗑 Hapus Job", f"deleteask:{job_id}")])
         rows.append([button("📚 Riwayat", "menu:history"), button("🏠 Menu", "menu:home")])
         return keyboard(rows)
 
@@ -1110,9 +1191,21 @@ class ClipForgeTelegramBot:
         for index, job in enumerate(jobs, start=1):
             title = job.get("source_title") or job.get("request", {}).get("url") or "Video"
             title = str(title).replace("\n", " ")[:60]
-            status = labels.get(str(job.get("status")), str(job.get("status")))
+            raw_status = str(job.get("status") or "")
+            status = labels.get(raw_status, raw_status)
             lines.append(f"\n{index}. {status} · {len(job.get('clips', []))} clip\n{title}")
-            rows.append([button(f"Lihat #{index} · {status}", f"view:{job.get('id')}")])
+            job_id = str(job.get("id") or "")
+            if raw_status in {"queued", "failed", "cancelled"}:
+                rows.append(
+                    [
+                        button(f"Lihat #{index} · {status}", f"view:{job_id}"),
+                        button("🗑 Hapus", f"deleteask:{job_id}"),
+                    ]
+                )
+            else:
+                rows.append([button(f"Lihat #{index} · {status}", f"view:{job_id}")])
+        if any(str(job.get("status") or "") in {"failed", "cancelled"} for job in jobs):
+            rows.append([button("🧹 Hapus Gagal/Dibatalkan", "deletefailedask")])
         rows.append([button("🏠 Menu Utama", "menu:home")])
         self.send_message(chat_id, "\n".join(lines), keyboard(rows))
 
@@ -1153,21 +1246,148 @@ class ClipForgeTelegramBot:
             upload_id = upload.get("id")
             if isinstance(upload_id, str) and upload_id:
                 rows.append([button("🔁 Retry Upload", f"ytretry:{upload_id}")])
-            rows.append([button("▶️ Run CDP", "ytcdp"), button("🔁 Sync CDP", "ytsync")])
+            rows.append([button("✅ Login Sekali", "ytoncelogin"), button("🍪 Ambil Cookies CDP", "ytcookies")])
+            rows.append([button("🔐 CDP Opsional", "ytcdp")])
+            rows.append([button("🔁 Sync/Repair CDP", "ytsync"), button("🪟 Mode Tanpa CDP", "ytnocdp")])
+            rows.append([button("🔐 Sync dari Profile Login", "ytprofile")])
+            rows.append([button("🔀 Merge Session", "ytsession")])
             rows.append([button("⏹ Stop CDP", "ytcdpstop")])
             rows.append([url_button("🔐 Buka Studio", YOUTUBE_STUDIO_URL)])
             rows.append([button("📊 Status Upload YouTube", "menu:youtube")])
         rows.append([button("📚 Riwayat", "menu:history"), button("🏠 Menu", "menu:home")])
         return keyboard(rows)
 
+    def latest_retryable_youtube_upload_id(self) -> str | None:
+        try:
+            uploads = self.backend.list_youtube_uploads()
+        except ServiceError:
+            uploads = []
+        retryable: list[dict[str, Any]] = []
+        for upload in uploads:
+            upload_id = upload.get("id")
+            if (
+                isinstance(upload_id, str)
+                and upload_id
+                and str(upload.get("status") or "") == "failed"
+                and isinstance(upload.get("source_job_id"), str)
+                and isinstance(upload.get("clip_url"), str)
+            ):
+                retryable.append(upload)
+        retryable.sort(
+            key=lambda item: str(item.get("finished_at") or item.get("updated_at") or item.get("created_at") or ""),
+            reverse=True,
+        )
+        if retryable:
+            return str(retryable[0]["id"])
+        uploads_state = self.state.get("youtube_uploads")
+        if isinstance(uploads_state, dict):
+            for upload_id in reversed(list(uploads_state.keys())):
+                if isinstance(upload_id, str) and upload_id:
+                    return upload_id
+        return None
+
+    def youtube_cdp_result_lines(self, result: dict[str, Any], *, success_title: str, failure_title: str) -> list[str]:
+        logs = result.get("logs") if isinstance(result, dict) else []
+        visible_logs = [str(line) for line in logs[-5:]] if isinstance(logs, list) else []
+        last_log = visible_logs[-1][:700] if visible_logs else ""
+        cdp_ready = bool(result.get("cdp_ready"))
+        session_ready = bool(result.get("session_ready"))
+        hydrated = bool(result.get("hydrated"))
+        ok = bool(result.get("ok"))
+        lines = [
+            success_title if ok else failure_title,
+            "",
+            f"Remote debugging: {'aktif' if cdp_ready else 'tidak aktif'}",
+            f"Session target: {'valid' if session_ready else 'belum valid'}",
+            f"Hydrate storage-state: {'terpakai' if hydrated else 'tidak'}",
+        ]
+        if result.get("cookies_imported") or result.get("cookie_count") is not None:
+            lines.append(
+                "Cookies tersimpan: "
+                f"{int(result.get('youtube_cookie_count') or 0)} YouTube/Google "
+                f"dari {int(result.get('cookie_count') or 0)} total"
+            )
+            storage_state_path = str(result.get("storage_state_path") or "").strip()
+            if storage_state_path:
+                lines.append(f"Storage-state: {storage_state_path[:700]}")
+        if result.get("profile_sync_requested") or result.get("source_profile_path"):
+            source_profile = str(result.get("source_profile_path") or "-")
+            lines.append(f"Source profile: {'terdeteksi' if result.get('source_profile_ready') else 'belum ditemukan'}")
+            lines.append(f"Path profile: {source_profile[:700]}")
+        detail = str(result.get("error") or result.get("message") or "").strip()
+        if detail:
+            lines.append(f"{'Info' if ok else 'Alasan'}: {detail[:1200]}")
+        if last_log:
+            lines.append(f"Log terakhir: {last_log}")
+        return lines
+
+    def youtube_session_capture_lines(self, result: dict[str, Any]) -> list[str]:
+        logs = result.get("logs") if isinstance(result, dict) else []
+        visible_logs = [str(line) for line in logs[-5:]] if isinstance(logs, list) else []
+        last_log = visible_logs[-1][:700] if visible_logs else ""
+        error = str(result.get("error") or "").strip()
+        lines = [
+            "Merge session YouTube selesai." if not error else "Merge session YouTube belum berhasil.",
+            "",
+            f"Storage-state: {'tersimpan/terbarui' if not error else 'belum valid'}",
+        ]
+        if error:
+            lines.append(f"Alasan: {error[:1200]}")
+        else:
+            lines.append("Session dari Chrome CDP sudah dicapture untuk dipakai upload otomatis.")
+        if last_log:
+            lines.append(f"Log terakhir: {last_log}")
+        return lines
+
+    def youtube_one_time_login_lines(self, result: dict[str, Any]) -> list[str]:
+        logs = result.get("logs") if isinstance(result, dict) else []
+        visible_logs = [str(line) for line in logs[-5:]] if isinstance(logs, list) else []
+        last_log = visible_logs[-1][:700] if visible_logs else ""
+        ok = bool(result.get("ok"))
+        error = str(result.get("error") or result.get("message") or "").strip()
+        login_required = bool(result.get("login_required"))
+        lines = [
+            (
+                "Jendela login YouTube sudah dibuka."
+                if login_required
+                else "Login sekali aktif. Upload berikutnya otomatis."
+                if ok
+                else "Login sekali belum berhasil."
+            ),
+            "",
+            "Mode: Playwright tanpa CDP",
+            f"Session tersimpan: {'ya' if ok else 'belum'}",
+            "Cookies tersimpan: "
+            f"{int(result.get('youtube_cookie_count') or 0)} YouTube/Google "
+            f"dari {int(result.get('cookie_count') or 0)} total",
+        ]
+        storage_state_path = str(result.get("storage_state_path") or "").strip()
+        if storage_state_path:
+            lines.append(f"Storage-state: {storage_state_path[:700]}")
+        if error:
+            lines.append(f"{'Info' if ok or login_required else 'Alasan'}: {error[:1200]}")
+        if last_log:
+            lines.append(f"Log terakhir: {last_log}")
+        return lines
+
     def youtube_control_keyboard(self) -> dict[str, Any]:
-        return keyboard(
+        rows: list[list[dict[str, str]]] = [
+            [button("✅ Login Sekali", "ytoncelogin"), button("🍪 Ambil Cookies CDP", "ytcookies")],
+            [button("🔐 CDP Opsional", "ytcdp")],
+            [button("🔁 Sync/Repair CDP", "ytsync"), button("🪟 Mode Tanpa CDP", "ytnocdp")],
+            [button("🔐 Sync dari Profile Login", "ytprofile")],
+            [button("🔀 Merge Session", "ytsession")],
+        ]
+        retry_upload_id = self.latest_retryable_youtube_upload_id()
+        if retry_upload_id:
+            rows.append([button("🔁 Retry Upload", f"ytretry:{retry_upload_id}")])
+        rows.extend(
             [
-                [button("▶️ Run CDP", "ytcdp"), button("🔁 Sync CDP", "ytsync")],
                 [button("⏹ Stop CDP", "ytcdpstop")],
                 [button("📚 Riwayat", "menu:history"), button("🏠 Menu", "menu:home")],
             ]
         )
+        return keyboard(rows)
 
     def show_youtube_status(self, chat_id: int) -> None:
         try:
@@ -1186,7 +1406,7 @@ class ClipForgeTelegramBot:
             lines.append(f"Upload aktif: {str(config['active_upload_id'])[:10]}")
         if not config.get("enabled"):
             lines.append(
-                "\nUploader belum siap. Tekan Run CDP dulu, lalu Sync CDP setelah remote debugging aktif."
+                "\nUploader belum siap. Tekan Login Sekali agar bot menyimpan session Playwright dari storage/profile."
             )
         self.send_message(chat_id, "\n".join(lines), self.youtube_control_keyboard())
 
@@ -1307,24 +1527,12 @@ class ClipForgeTelegramBot:
             )
             return False
 
-        logs = repair.get("logs") if isinstance(repair, dict) else []
-        visible_logs = [str(line) for line in logs[-5:]] if isinstance(logs, list) else []
-        last_log = visible_logs[-1][:700] if visible_logs else ""
-        cdp_ready = bool(repair.get("cdp_ready"))
-        session_ready = bool(repair.get("session_ready"))
-        hydrated = bool(repair.get("hydrated"))
         if not repair.get("ok"):
-            detail = str(repair.get("error") or repair.get("message") or "Session CDP belum valid")[:1200]
-            lines = [
-                "Chrome CDP belum siap untuk upload.",
-                "",
-                f"Remote debugging: {'aktif' if cdp_ready else 'tidak aktif'}",
-                f"Session target: {'valid' if session_ready else 'belum valid'}",
-                f"Hydrate storage-state: {'terpakai' if hydrated else 'tidak'}",
-                f"Alasan: {detail}",
-            ]
-            if last_log:
-                lines.append(f"Log terakhir: {last_log}")
+            lines = self.youtube_cdp_result_lines(
+                repair,
+                success_title="Chrome CDP siap dipakai dari bot.",
+                failure_title="Chrome CDP belum siap untuk upload.",
+            )
             self.send_message(
                 chat_id,
                 "\n".join(lines),
@@ -1332,89 +1540,241 @@ class ClipForgeTelegramBot:
             )
             return False
 
-        lines = [
-            "Chrome CDP siap dipakai dari bot.",
-            "",
-            f"Remote debugging: {'aktif' if cdp_ready else 'tidak aktif'}",
-            f"Session target: {'valid' if session_ready else 'belum valid'}",
-            f"Hydrate storage-state: {'terpakai' if hydrated else 'tidak'}",
-            str(repair.get("message") or "Session YouTube berhasil divalidasi."),
-        ]
-        if last_log:
-            lines.append(f"Log: {last_log}")
-        self.send_message(chat_id, "\n".join(lines))
+        lines = self.youtube_cdp_result_lines(
+            repair,
+            success_title="Chrome CDP siap dipakai dari bot.",
+            failure_title="Chrome CDP belum siap untuk upload.",
+        )
+        self.send_message(chat_id, "\n".join(lines), self.youtube_control_keyboard())
         return True
 
     def run_youtube_cdp_launcher(self, chat_id: int) -> None:
-        self.send_message(chat_id, "Menjalankan Chrome CDP dari backend. Setelah aktif, tekan Sync CDP.")
+        self.send_message(
+            chat_id,
+            "Auto login Chrome CDP otomatis.\n\n"
+            "Bot akan ambil session dari profile/storage-state, start CDP, hydrate login, lalu validasi YouTube Studio target.",
+        )
         try:
-            result = self.backend.refresh_youtube_cdp()
+            result = self.backend.auto_login_youtube_cdp()
         except ServiceError as exc:
             self.send_message(
                 chat_id,
-                f"Run CDP gagal dari bot.\n\nAlasan: {exc}\n\n"
-                "Jika Chrome CDP dijalankan dari luar, biarkan window Studio terbuka lalu tekan Sync CDP.",
+                f"Auto login CDP gagal dari bot.\n\nAlasan: {exc}\n\n"
+                "Pastikan profile Chrome yang sudah login sudah di-mount/terdeteksi.",
                 self.youtube_control_keyboard(),
             )
             return
-        lines = [
-            str(result.get("message") or "Launcher Chrome CDP sudah dijalankan."),
-            "",
-            f"Remote debugging: {'aktif' if result.get('cdp_ready') else 'belum aktif'}",
-        ]
-        if result.get("log_path"):
-            lines.append(f"Log: {result['log_path']}")
+        lines = self.youtube_cdp_result_lines(
+            result,
+            success_title="Chrome CDP otomatis login dan siap.",
+            failure_title="Chrome CDP auto-login belum siap.",
+        )
         self.send_message(chat_id, "\n".join(lines), self.youtube_control_keyboard())
 
-    def sync_youtube_cdp_session(self, chat_id: int, *, reason: str = "manual") -> bool:
+    def import_youtube_cdp_cookies_from_bot(self, chat_id: int) -> None:
+        self.send_message(
+            chat_id,
+            "Mengambil cookies dari Chrome CDP.\n\n"
+            "Bot akan akses Chrome remote debugging yang sudah login, tanpa hydrate storage-state lama, lalu menyimpan cookies baru.",
+        )
+        try:
+            result = self.backend.import_youtube_cdp_cookies()
+        except ServiceError as exc:
+            self.send_message(
+                chat_id,
+                f"Ambil cookies CDP gagal.\n\nAlasan: {exc}",
+                self.youtube_control_keyboard(),
+            )
+            return
+        lines = self.youtube_cdp_result_lines(
+            result,
+            success_title="Cookies Chrome CDP berhasil diambil.",
+            failure_title="Cookies Chrome CDP belum berhasil diambil.",
+        )
+        self.send_message(chat_id, "\n".join(lines), self.youtube_control_keyboard())
+
+    def setup_youtube_one_time_login_from_bot(self, chat_id: int) -> None:
+        self.send_message(
+            chat_id,
+            "Menyiapkan login sekali YouTube.\n\n"
+            "Bot akan ambil cookies/session dari Chrome/profile yang sudah login, simpan storage-state, lalu upload berikutnya jalan tanpa CDP.",
+        )
+        try:
+            result = self.backend.setup_youtube_one_time_login()
+        except ServiceError as exc:
+            self.send_message(
+                chat_id,
+                f"Login sekali belum berhasil.\n\nAlasan: {exc}",
+                self.youtube_control_keyboard(),
+            )
+            return
+        lines = self.youtube_one_time_login_lines(result)
+        self.send_message(chat_id, "\n".join(lines), self.youtube_control_keyboard())
+
+    def sync_youtube_cdp_from_profile(self, chat_id: int) -> bool:
+        self.send_message(
+            chat_id,
+            "Sync YouTube dari profile Chrome yang sudah login.\n\n"
+            "Bot akan copy source profile ke profile CDP, start Chrome tanpa perlu window login, lalu capture session.",
+        )
+        try:
+            result = self.backend.sync_youtube_cdp_from_profile()
+        except ServiceError as exc:
+            self.send_message(
+                chat_id,
+                f"Sync dari profile login gagal.\n\nAlasan: {exc}",
+                self.youtube_control_keyboard(),
+            )
+            return False
+        lines = self.youtube_cdp_result_lines(
+            result,
+            success_title="Session YouTube berhasil diambil dari profile login.",
+            failure_title="Session dari profile login belum valid.",
+        )
+        if not result.get("ok") and not result.get("source_profile_ready"):
+            lines.append(
+                "Pastikan .env mengarah ke user-data-dir Chrome yang sudah login, bukan folder Profile saja."
+            )
+        self.send_message(chat_id, "\n".join(lines), self.youtube_control_keyboard())
+        return bool(result.get("ok"))
+
+    def enable_youtube_direct_profile_mode(self, chat_id: int) -> bool:
+        try:
+            config = self.backend.enable_youtube_direct_profile_upload()
+        except ServiceError as exc:
+            self.send_message(chat_id, f"Gagal mengaktifkan mode tanpa CDP: {exc}", self.youtube_control_keyboard())
+            return False
+        lines = [
+            "Mode upload tanpa CDP aktif.",
+            "",
+            "Backend akan launch browser/profile sendiri, buka tab YouTube Studio, lalu proses upload dari situ.",
+            f"Profile: {config.get('chromium_profile_path') or config.get('auth_state_path') or '-'}",
+            f"Profile terdeteksi: {'ya' if config.get('chromium_profile_ready') else 'tidak'}",
+        ]
+        if not config.get("enabled"):
+            lines.append("Uploader belum siap. Pastikan path profile Chromium/Chrome yang sudah login sudah benar.")
+        self.send_message(chat_id, "\n".join(lines), self.youtube_control_keyboard())
+        return bool(config.get("enabled"))
+
+    def prepare_youtube_upload_session(self, chat_id: int, *, reason: str) -> bool:
+        try:
+            config = self.backend.youtube_config()
+        except ServiceError as exc:
+            self.send_message(chat_id, f"Gagal memeriksa uploader YouTube: {exc}", self.youtube_control_keyboard())
+            return False
+        self.send_message(
+            chat_id,
+            f"Menyiapkan session Playwright untuk {reason}.\n\n"
+            "Bot akan validasi Login Sekali dulu supaya storage-state tidak basi.",
+            self.youtube_control_keyboard(),
+        )
+        try:
+            result = self.backend.setup_youtube_one_time_login()
+        except ServiceError as exc:
+            self.send_message(chat_id, f"Login sekali belum berhasil.\n\nAlasan: {exc}", self.youtube_control_keyboard())
+            return False
+        if result.get("ok"):
+            self.send_message(chat_id, "\n".join(self.youtube_one_time_login_lines(result)), self.youtube_control_keyboard())
+            return True
+        self.send_message(chat_id, "\n".join(self.youtube_one_time_login_lines(result)), self.youtube_control_keyboard())
+        return False
+        if config.get("upload_uses_cdp"):
+            return False
+        if config.get("enabled"):
+            if config.get("direct_profile_upload"):
+                self.send_message(chat_id, "Mode profile aktif, tapi Login Sekali belum valid. Upload dibatalkan dulu agar tidak salah akun/session.", self.youtube_control_keyboard())
+                return False
+            return True
+        self.send_message(
+            chat_id,
+            "Uploader YouTube belum siap. Tekan Login Sekali untuk menyimpan session Playwright, atau Mode Tanpa CDP jika ingin memakai profile backend langsung.",
+            self.youtube_control_keyboard(),
+        )
+        return False
+
+    def sync_youtube_cdp_session(self, chat_id: int, *, reason: str = "manual", auto_repair: bool = True) -> bool:
         self.send_message(
             chat_id,
             f"Sync Chrome CDP untuk {reason}.\n\n"
-            "Backend akan memakai CDP yang sudah aktif, hydrate storage-state bila ada, lalu validasi akun/channel target.",
+            "Bot akan memakai CDP yang sudah aktif. Kalau belum aktif atau session belum valid, bot lanjut repair otomatis.",
         )
         try:
             result = self.backend.sync_youtube_cdp()
         except ServiceError as exc:
-            self.send_message(
-                chat_id,
-                f"Sync CDP gagal dari bot.\n\nAlasan: {exc}",
-                self.youtube_control_keyboard(),
-            )
-            return False
+            if not auto_repair:
+                self.send_message(
+                    chat_id,
+                    f"Sync CDP gagal dari bot.\n\nAlasan: {exc}",
+                    self.youtube_control_keyboard(),
+                )
+                return False
+            self.send_message(chat_id, "Sync biasa gagal. Bot lanjut repair CDP otomatis...")
+            try:
+                result = self.backend.repair_youtube_cdp()
+            except ServiceError as repair_exc:
+                self.send_message(
+                    chat_id,
+                    f"Repair CDP otomatis gagal.\n\nAlasan: {repair_exc}",
+                    self.youtube_control_keyboard(),
+                )
+                return False
 
-        logs = result.get("logs") if isinstance(result, dict) else []
-        visible_logs = [str(line) for line in logs[-5:]] if isinstance(logs, list) else []
-        last_log = visible_logs[-1][:700] if visible_logs else ""
-        cdp_ready = bool(result.get("cdp_ready"))
-        session_ready = bool(result.get("session_ready"))
-        hydrated = bool(result.get("hydrated"))
+        if not result.get("ok") and auto_repair:
+            self.send_message(chat_id, "Session belum valid. Bot lanjut start/restart CDP dan sync otomatis...")
+            try:
+                result = self.backend.repair_youtube_cdp()
+            except ServiceError as repair_exc:
+                self.send_message(
+                    chat_id,
+                    f"Repair CDP otomatis gagal.\n\nAlasan: {repair_exc}",
+                    self.youtube_control_keyboard(),
+                )
+                return False
+
         if not result.get("ok"):
-            detail = str(result.get("error") or result.get("message") or "Session CDP belum valid")[:1200]
-            lines = [
-                "Chrome CDP belum valid untuk upload.",
-                "",
-                f"Remote debugging: {'aktif' if cdp_ready else 'tidak aktif'}",
-                f"Session target: {'valid' if session_ready else 'belum valid'}",
-                f"Hydrate storage-state: {'terpakai' if hydrated else 'tidak'}",
-                f"Alasan: {detail}",
-            ]
-            if last_log:
-                lines.append(f"Log terakhir: {last_log}")
+            lines = self.youtube_cdp_result_lines(
+                result,
+                success_title="Chrome CDP tersinkron dan aman untuk upload.",
+                failure_title="Chrome CDP belum valid untuk upload.",
+            )
             self.send_message(chat_id, "\n".join(lines), self.youtube_control_keyboard())
             return False
 
-        lines = [
-            "Chrome CDP tersinkron dan aman untuk upload.",
-            "",
-            f"Remote debugging: {'aktif' if cdp_ready else 'tidak aktif'}",
-            f"Session target: {'valid' if session_ready else 'belum valid'}",
-            f"Hydrate storage-state: {'terpakai' if hydrated else 'tidak'}",
-            str(result.get("message") or "Session YouTube berhasil divalidasi."),
-        ]
-        if last_log:
-            lines.append(f"Log: {last_log}")
+        lines = self.youtube_cdp_result_lines(
+            result,
+            success_title="Chrome CDP tersinkron dan aman untuk upload.",
+            failure_title="Chrome CDP belum valid untuk upload.",
+        )
         self.send_message(chat_id, "\n".join(lines), self.youtube_control_keyboard())
         return True
+
+    def capture_youtube_session_from_bot(self, chat_id: int, *, auto_repair: bool = True) -> bool:
+        self.send_message(
+            chat_id,
+            "Merge session YouTube dari bot.\n\n"
+            "Bot akan mengambil session dari Chrome CDP yang aktif dan menyimpan storage-state untuk upload otomatis.",
+        )
+        try:
+            result = self.backend.capture_youtube_session()
+        except ServiceError as exc:
+            if not auto_repair:
+                self.send_message(
+                    chat_id,
+                    f"Merge session gagal dari bot.\n\nAlasan: {exc}",
+                    self.youtube_control_keyboard(),
+                )
+                return False
+            self.send_message(chat_id, "Merge session belum berhasil. Bot lanjut recovery CDP opsional...")
+            return self.repair_youtube_cdp_session(chat_id, reason="merge session")
+
+        lines = self.youtube_session_capture_lines(result)
+        ok = not result.get("error")
+        if not ok and auto_repair:
+            self.send_message(chat_id, "\n".join(lines), self.youtube_control_keyboard())
+            self.send_message(chat_id, "Bot lanjut repair CDP otomatis supaya session bisa dipakai...")
+            return self.repair_youtube_cdp_session(chat_id, reason="merge session")
+        self.send_message(chat_id, "\n".join(lines), self.youtube_control_keyboard())
+        return ok
 
     def start_youtube_upload_for_clip(self, chat_id: int, job_id: str, clip_index: int, *, preflight: bool = False) -> None:
         try:
@@ -1427,7 +1787,7 @@ class ClipForgeTelegramBot:
                 self.send_message(chat_id, "Clip yang dipilih tidak ditemukan.", self.job_keyboard(job))
                 return
             clip = clips[clip_index - 1]
-            if preflight and not self.repair_youtube_cdp_session(chat_id, reason="upload clip"):
+            if preflight and not self.prepare_youtube_upload_session(chat_id, reason="upload clip"):
                 return
             upload = self.backend.create_youtube_upload(job_id, str(clip.get("url", "")))
             self.remember_youtube_uploads(chat_id, [upload], announce_queued=True)
@@ -1437,7 +1797,7 @@ class ClipForgeTelegramBot:
 
     def start_youtube_upload_for_url(self, chat_id: int, job_id: str, clip_url: str, *, preflight: bool = False) -> None:
         try:
-            if preflight and not self.repair_youtube_cdp_session(chat_id, reason="retry upload"):
+            if preflight and not self.prepare_youtube_upload_session(chat_id, reason="retry upload"):
                 return
             upload = self.backend.create_youtube_upload(job_id, clip_url)
             self.remember_youtube_uploads(chat_id, [upload], announce_queued=True)
@@ -1447,7 +1807,7 @@ class ClipForgeTelegramBot:
 
     def start_youtube_upload_all(self, chat_id: int, job_id: str, *, preflight: bool = False) -> None:
         try:
-            if preflight and not self.repair_youtube_cdp_session(chat_id, reason="batch upload"):
+            if preflight and not self.prepare_youtube_upload_session(chat_id, reason="batch upload"):
                 return
             uploads = self.backend.create_youtube_upload_batch(job_id)
             self.remember_youtube_uploads(chat_id, uploads, announce_queued=True)
@@ -1885,9 +2245,25 @@ class ClipForgeTelegramBot:
             self.show_status(chat_id)
         elif command == "/history":
             self.show_history(chat_id)
+        elif command in {"/hapusgagal", "/cleanupjobs"}:
+            self.request_delete_failed_jobs(chat_id)
         elif command == "/youtube":
             self.send_message(chat_id, "Mengecek status uploader YouTube...")
             self.show_youtube_status(chat_id)
+        elif command in {"/cdp", "/youtubecdp"}:
+            self.run_youtube_cdp_launcher(chat_id)
+        elif command in {"/loginsekali", "/oncelogin", "/setlogin"}:
+            self.setup_youtube_one_time_login_from_bot(chat_id)
+        elif command in {"/cookies", "/cdpcookies", "/ambilcookies"}:
+            self.import_youtube_cdp_cookies_from_bot(chat_id)
+        elif command in {"/nocdp", "/directprofile"}:
+            self.enable_youtube_direct_profile_mode(chat_id)
+        elif command in {"/profilelogin", "/syncprofile"}:
+            self.sync_youtube_cdp_from_profile(chat_id)
+        elif command in {"/syncsession", "/ytsync"}:
+            self.sync_youtube_cdp_session(chat_id, reason="command")
+        elif command in {"/capturesession", "/mergesession"}:
+            self.capture_youtube_session_from_bot(chat_id)
         elif command == "/getvideosviral":
             self.show_viral_video_suggestions(chat_id)
         elif command == "/debug":
@@ -1925,6 +2301,89 @@ class ClipForgeTelegramBot:
                 ]
             ),
         )
+
+    def forget_job_state(self, job_id: str) -> None:
+        if self.state.get("active_job_id") == job_id:
+            self.state["active_job_id"] = None
+        jobs_state = self.state.get("jobs")
+        if isinstance(jobs_state, dict):
+            jobs_state.pop(job_id, None)
+        self.persist()
+
+    def request_delete_job(self, chat_id: int, job_id: str) -> None:
+        try:
+            job = self.backend.get_job(job_id)
+        except ServiceError as exc:
+            self.send_message(chat_id, f"Gagal memeriksa job: {exc}", main_menu_keyboard())
+            return
+        status = str(job.get("status") or "")
+        if status == "running":
+            self.send_message(chat_id, "Job sedang berjalan. Batalkan dulu sebelum menghapus.", self.job_keyboard(job))
+            return
+        if status not in {"queued", "failed", "cancelled"}:
+            self.send_message(chat_id, "Job ini tidak termasuk failed/queued yang bisa dihapus dari bot.", self.job_keyboard(job))
+            return
+        label = {
+            "queued": "menunggu antrean",
+            "failed": "gagal",
+            "cancelled": "dibatalkan",
+        }.get(status, status)
+        self.send_message(
+            chat_id,
+            f"Hapus job {label} ini dari riwayat?\n\nJob: {job_id[:10]}",
+            keyboard(
+                [
+                    [button("Ya, Hapus Job", f"deletejob:{job_id}")],
+                    [button("Kembali", f"refresh:{job_id}")],
+                ]
+            ),
+        )
+
+    def delete_job_from_bot(self, chat_id: int, job_id: str) -> None:
+        try:
+            result = self.backend.delete_job(job_id)
+        except ServiceError as exc:
+            self.send_message(chat_id, f"Gagal menghapus job: {exc}", main_menu_keyboard())
+            return
+        self.forget_job_state(job_id)
+        removed_outputs = int(result.get("removed_outputs") or 0)
+        extra = f"\nOutput terhapus: {removed_outputs}" if removed_outputs else ""
+        self.send_message(chat_id, f"Job sudah dihapus dari riwayat.{extra}", main_menu_keyboard())
+
+    def request_delete_failed_jobs(self, chat_id: int) -> None:
+        self.send_message(
+            chat_id,
+            "Hapus semua job gagal/dibatalkan dari riwayat?\n\nJob completed dan running tidak ikut dihapus.",
+            keyboard(
+                [
+                    [button("Ya, Hapus Gagal/Dibatalkan", "deletefailed")],
+                    [button("Kembali", "menu:history")],
+                ]
+            ),
+        )
+
+    def delete_failed_jobs_from_bot(self, chat_id: int) -> None:
+        try:
+            result = self.backend.delete_failed_jobs()
+        except ServiceError as exc:
+            self.send_message(chat_id, f"Gagal menghapus job gagal/dibatalkan: {exc}", main_menu_keyboard())
+            return
+        removed = int(result.get("removed_jobs") or 0)
+        if removed:
+            try:
+                remaining_ids = {str(job.get("id")) for job in self.backend.list_jobs() if job.get("id")}
+            except ServiceError:
+                remaining_ids = set()
+            jobs_state = self.state.get("jobs")
+            if isinstance(jobs_state, dict):
+                for known_id in list(jobs_state):
+                    if known_id not in remaining_ids:
+                        jobs_state.pop(known_id, None)
+            active_id = self.state.get("active_job_id")
+            if isinstance(active_id, str) and active_id and active_id not in remaining_ids:
+                self.state["active_job_id"] = None
+            self.persist()
+        self.send_message(chat_id, f"{removed} job gagal/dibatalkan sudah dihapus.", main_menu_keyboard())
 
     def apply_setting_callback(self, data: str) -> bool:
         parts = data.split(":")
@@ -2123,6 +2582,14 @@ class ClipForgeTelegramBot:
                 self.send_message(chat_id, "Permintaan pembatalan sudah dikirim.", main_menu_keyboard())
             except ServiceError as exc:
                 self.send_message(chat_id, f"Gagal membatalkan job: {exc}", main_menu_keyboard())
+        elif data.startswith("deleteask:"):
+            self.request_delete_job(chat_id, data.split(":", 1)[1])
+        elif data.startswith("deletejob:"):
+            self.delete_job_from_bot(chat_id, data.split(":", 1)[1])
+        elif data == "deletefailedask":
+            self.request_delete_failed_jobs(chat_id)
+        elif data == "deletefailed":
+            self.delete_failed_jobs_from_bot(chat_id)
         elif data.startswith("deliver:"):
             job_id = data.split(":", 1)[1]
             try:
@@ -2137,12 +2604,12 @@ class ClipForgeTelegramBot:
         elif data.startswith("ytup:"):
             parts = data.split(":")
             if len(parts) == 3 and parts[2].isdigit():
-                self.send_message(chat_id, "Perintah upload clip ke YouTube diterima. Bot menyiapkan CDP dulu...")
+                self.send_message(chat_id, "Perintah upload clip ke YouTube diterima. Bot menyiapkan session Playwright...")
                 self.start_youtube_upload_for_clip(chat_id, parts[1], int(parts[2]), preflight=True)
             else:
                 self.send_message(chat_id, "Data upload YouTube tidak valid.", main_menu_keyboard())
         elif data.startswith("ytall:"):
-            self.send_message(chat_id, "Perintah upload 3 terbaik ke YouTube diterima. Bot menyiapkan CDP dulu...")
+            self.send_message(chat_id, "Perintah upload 3 terbaik ke YouTube diterima. Bot menyiapkan session Playwright...")
             self.start_youtube_upload_all(chat_id, data.split(":", 1)[1], preflight=True)
         elif data.startswith("ytretry:"):
             upload_id = data.split(":", 1)[1]
@@ -2162,6 +2629,16 @@ class ClipForgeTelegramBot:
             self.sync_youtube_cdp_session(chat_id, reason="manual")
         elif data == "ytcdp":
             self.run_youtube_cdp_launcher(chat_id)
+        elif data == "ytoncelogin":
+            self.setup_youtube_one_time_login_from_bot(chat_id)
+        elif data == "ytcookies":
+            self.import_youtube_cdp_cookies_from_bot(chat_id)
+        elif data == "ytnocdp":
+            self.enable_youtube_direct_profile_mode(chat_id)
+        elif data == "ytprofile":
+            self.sync_youtube_cdp_from_profile(chat_id)
+        elif data == "ytsession":
+            self.capture_youtube_session_from_bot(chat_id)
         elif data == "ytcdpstop":
             try:
                 self.send_message(chat_id, "Mengirim perintah stop Chrome CDP ke backend...")
@@ -2220,11 +2697,22 @@ class ClipForgeTelegramBot:
                     {
                         "commands": [
                             {"command": "clip", "description": "Mulai clipping dari link YouTube"},
-                            {"command": "getvideosviral", "description": "Cari 3 video viral CC tema Islam"},
+                            {
+                                "command": "getvideosviral",
+                                "description": f"Cari {VIRAL_CC_VIDEO_COUNT} video viral CC dakwah/podcast",
+                            },
                             {"command": "status", "description": "Lihat proses yang sedang berjalan"},
                             {"command": "settings", "description": "Atur hasil clipping"},
                             {"command": "history", "description": "Lihat riwayat dan kirim ulang hasil"},
+                            {"command": "hapusgagal", "description": "Hapus job gagal/dibatalkan"},
                             {"command": "youtube", "description": "Cek status uploader YouTube"},
+                            {"command": "loginsekali", "description": "Simpan session Playwright YouTube"},
+                            {"command": "nocdp", "description": "Aktifkan upload tanpa CDP"},
+                            {"command": "cdp", "description": "Recovery Chrome CDP YouTube"},
+                            {"command": "cookies", "description": "Ambil cookies dari Chrome CDP login"},
+                            {"command": "profilelogin", "description": "Ambil session dari profile login"},
+                            {"command": "syncsession", "description": "Sync/repair session YouTube CDP"},
+                            {"command": "capturesession", "description": "Merge session browser YouTube"},
                             {"command": "debug", "description": "Diagnosis koneksi bot dan backend"},
                             {"command": "ping", "description": "Cek bot aktif"},
                             {"command": "cancel", "description": "Batalkan proses aktif"},

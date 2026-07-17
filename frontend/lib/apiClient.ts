@@ -188,6 +188,17 @@ export const getYouTubeConfig = async () => {
   return (await response.json()) as YouTubeConfig;
 };
 
+export const enableYouTubeDirectProfileUpload = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/youtube/upload-mode/direct-profile`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to enable direct profile upload"));
+  }
+  return (await response.json()) as YouTubeConfig;
+};
+
 export const getYouTubeUploads = async () => {
   const response = await fetch(`${CLIENT_API_BASE}/api/youtube/uploads`, { cache: "no-store" });
   if (!response.ok) {
@@ -244,6 +255,39 @@ export const repairYouTubeCdpSession = async () => {
   });
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response, "Failed to repair YouTube CDP session"));
+  }
+  return (await response.json()) as YouTubeCdpRepairStatus;
+};
+
+export const autoLoginYouTubeCdp = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/youtube/cdp/auto-login`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to auto-login YouTube CDP"));
+  }
+  return (await response.json()) as YouTubeCdpRepairStatus;
+};
+
+export const importYouTubeCdpCookies = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/youtube/cdp/import-cookies`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to import YouTube CDP cookies"));
+  }
+  return (await response.json()) as YouTubeCdpRepairStatus;
+};
+
+export const setupYouTubeOneTimeLogin = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/youtube/login/once`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to setup one-time YouTube login"));
   }
   return (await response.json()) as YouTubeCdpRepairStatus;
 };

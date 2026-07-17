@@ -856,8 +856,8 @@ def ensure_logged_in(page) -> None:
     if "accounts.google.com" in url or "signin" in url:
         save_debug_artifacts(page, "youtube-login-required")
         raise UploadError(
-            "Chrome CDP belum login ke YouTube Studio. Backend perlu refresh ulang profil Chrome CDP "
-            "dari YOUTUBE_CDP_REFRESH_COMMAND sebelum upload di-retry."
+            "Session YouTube Studio belum login. Jalankan Login Sekali untuk menyimpan ulang cookies/storage-state "
+            "atau pakai Ambil Cookies CDP jika memang ingin mengambil session dari Chrome CDP."
         )
     text = normalized_page_text(page)
     login_page_patterns = (
@@ -871,8 +871,8 @@ def ensure_logged_in(page) -> None:
     if any(pattern in text for pattern in login_page_patterns):
         save_debug_artifacts(page, "youtube-login-required")
         raise UploadError(
-            "Chrome CDP belum login ke YouTube Studio. Backend perlu refresh ulang profil Chrome CDP "
-            "dari YOUTUBE_CDP_REFRESH_COMMAND sebelum upload di-retry."
+            "Session YouTube Studio belum login. Jalankan Login Sekali untuk menyimpan ulang cookies/storage-state "
+            "atau pakai Ambil Cookies CDP jika memang ingin mengambil session dari Chrome CDP."
         )
 
 
@@ -888,7 +888,7 @@ def ensure_supported_studio_browser(page) -> None:
     if any(pattern in text for pattern in unsupported_patterns):
         raise UploadError(
             "YouTube Studio menolak browser otomatis backend sebagai browser lama/tidak didukung. "
-            "Gunakan Chrome remote debugging aktif (YOUTUBE_UPLOAD_USE_CDP=true) atau update browser backend."
+            "Update browser Playwright/backend, atau pakai Ambil Cookies CDP sebagai fallback session."
         )
 
 
@@ -1434,9 +1434,13 @@ def set_visibility(page, visibility: str) -> None:
         for (const element of exactMatches) {
           const target = clickable(element);
           if (!isVisible(element) && !isVisible(target)) continue;
-          if (selected(element) || selected(target)) return { already: true };
           const rect = target.getBoundingClientRect();
-          return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, exact: true };
+          return {
+            already: selected(element) || selected(target),
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+            exact: true,
+          };
         }
 
         const elements = root.querySelectorAll
@@ -1450,9 +1454,13 @@ def set_visibility(page, visibility: str) -> None:
           const label = labelOf(element) + '\\n' + labelOf(target);
           if (!regexes.some((regex) => regex.test(label))) continue;
           if (/learn more|pelajari lebih lanjut/i.test(label)) continue;
-          if (selected(element) || selected(target)) return { already: true };
           const rect = target.getBoundingClientRect();
-          candidates.push({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, score: rect.top });
+          candidates.push({
+            already: selected(element) || selected(target),
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+            score: rect.top,
+          });
         }
       }
       candidates.sort((a, b) => a.score - b.score);
@@ -1464,9 +1472,6 @@ def set_visibility(page, visibility: str) -> None:
         dismiss_reload_prompt(page, timeout_ms=300)
         try:
             target = page.evaluate(script, {"patterns": labels, "radioName": radio_name})
-            if isinstance(target, dict) and target.get("already"):
-                log(f"Visibilitas sudah dipilih: {visibility}.")
-                return
             if isinstance(target, dict) and target.get("x") is not None and target.get("y") is not None:
                 page.mouse.move(float(target["x"]), float(target["y"]))
                 page.mouse.down()
@@ -1475,7 +1480,7 @@ def set_visibility(page, visibility: str) -> None:
                 time.sleep(0.8)
                 verify = page.evaluate(script, {"patterns": labels, "radioName": radio_name})
                 if isinstance(verify, dict) and verify.get("already"):
-                    log(f"Visibilitas dipilih: {visibility}.")
+                    log(f"Visibilitas diklik dan terverifikasi: {visibility}.")
                     return
         except Exception:
             pass
@@ -1621,85 +1626,77 @@ def visibility_is_selected(page, visibility: str) -> bool:
         return False
 
 
-def wait_for_review_checks_safe_before_publish(page, timeout_ms: int = 300000) -> None:
-    log("Memastikan review/checks aman sebelum publish...")
-    deadline = time.monotonic() + timeout_ms / 1000
-    issue_patterns = (
-        r"copyright claim",
-        r"copyright issue",
-        r"restrictions? found",
-        r"checks? found",
-        r"klaim hak cipta",
-        r"masalah hak cipta",
-        r"pembatasan.*ditemukan",
-        r"ditemukan masalah",
-    )
-    checking_patterns = (
-        r"sedang memeriksa",
-        r"checking",
-        r"checks?.*(started|running|in progress)",
-        r"progress",
-        r"memeriksa masalah (hak cipta|pedoman komunitas|copyright|community)",
-        r"pedoman komunitas.*sedang memeriksa",
-        r"community guidelines.*checking",
-    )
-    safe_patterns = (
-        r"tidak ditemukan masalah",
-        r"tidak ada masalah",
-        r"no issues found",
-        r"no copyright issues? found",
-        r"pemeriksaan hak cipta selesai",
-        r"pemeriksaan selesai",
-        r"checks complete",
-    )
-    last_body = ""
-    ready_script = """
-    () => {
+def final_action_button_is_ready(page, visibility: str) -> bool:
+    patterns = [r"publish", r"publikasikan"] if visibility == "public" else [r"save", r"done", r"simpan", r"selesai"]
+    script = """
+    ({ patterns }) => {
       const dialog = document.querySelector('ytcp-uploads-dialog');
       if (!dialog || String(dialog.getAttribute('workflow-step') || '').toUpperCase() !== 'REVIEW') return false;
-      const done = dialog.querySelector('#done-button');
-      if (!done) return false;
-      const button = done.querySelector?.('button') || done;
+      const host = dialog.querySelector('#done-button');
+      const button = host?.querySelector?.('button') || host;
+      if (!host || !button) return false;
+      const label = [
+        host.innerText,
+        host.textContent,
+        host.getAttribute?.('aria-label'),
+        button.innerText,
+        button.textContent,
+        button.getAttribute?.('aria-label'),
+      ].filter(Boolean).join('\\n');
       const disabled =
-        done.getAttribute?.('aria-disabled') === 'true' ||
-        button.getAttribute?.('aria-disabled') === 'true' ||
-        done.disabled ||
-        button.disabled;
-      return !disabled;
+        host.disabled ||
+        button.disabled ||
+        host.getAttribute?.('aria-disabled') === 'true' ||
+        button.getAttribute?.('aria-disabled') === 'true';
+      const rect = button.getBoundingClientRect();
+      const style = window.getComputedStyle(button);
+      const visible = rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      return visible && !disabled && patterns.some((pattern) => new RegExp(pattern, 'i').test(label));
     }
     """
+    try:
+        return bool(page.evaluate(script, {"patterns": patterns}))
+    except Exception:
+        return False
+
+
+def wait_for_review_checks_safe_before_publish(page, timeout_ms: int = 300000) -> None:
+    log("Memastikan step Visibilitas dan tombol Publikasikan siap...")
+    deadline = time.monotonic() + timeout_ms / 1000
+    last_body = ""
     while time.monotonic() < deadline:
         dismiss_reload_prompt(page, timeout_ms=300)
+        if (
+            get_upload_workflow_step(page) == "REVIEW"
+            and visibility_is_selected(page, "public")
+            and final_action_button_is_ready(page, "public")
+        ):
+            log("Public tercentang dan tombol Publikasikan aktif.")
+            return
         try:
             body = page.locator("ytcp-uploads-dialog").inner_text(timeout=3000)
-        except Exception:
-            time.sleep(1)
-            continue
-        lowered = body.lower()
-        last_body = re.sub(r"\s+", " ", body).strip()[:700]
-        if any(re.search(pattern, lowered, re.I) for pattern in safe_patterns):
-            log("Review/checks aman sebelum publish.")
-            return
-        if any(re.search(pattern, lowered, re.I) for pattern in checking_patterns):
-            log("Review/checks masih berjalan; menunggu sebelum publish.")
-            time.sleep(5)
-            continue
-        if any(re.search(pattern, lowered, re.I) for pattern in issue_patterns):
-            save_debug_artifacts(page, "review-checks-issue-before-publish")
-            raise UploadError(f"Review/checks menemukan masalah sebelum publish. Cuplikan modal: {last_body}")
-        try:
-            if page.evaluate(ready_script):
-                log("Review siap dan tombol publish aktif; lanjut publish.")
-                return
+            last_body = re.sub(r"\s+", " ", body).strip()[:700]
         except Exception:
             pass
-        time.sleep(3)
+        time.sleep(1)
 
-    save_debug_artifacts(page, "review-checks-not-safe-before-publish")
-    raise UploadError(f"Review/checks belum aman sebelum publish. Cuplikan modal: {last_body}")
+    save_debug_artifacts(page, "publish-button-not-ready")
+    raise UploadError(f"Public atau tombol Publikasikan belum siap. Cuplikan modal: {last_body}")
 
 
 def click_final_upload_action(page, visibility: str, timeout_ms: int = 30000) -> None:
+    active_step = get_upload_workflow_step(page)
+    if active_step != "REVIEW":
+        save_debug_artifacts(page, "final-action-outside-visibility-step")
+        raise UploadError(
+            "Tombol final tidak boleh diklik sebelum step Visibilitas benar-benar aktif. "
+            f"Step aktif: {active_step or 'tidak terbaca'}."
+        )
+    if not visibility_is_selected(page, visibility):
+        save_debug_artifacts(page, "final-visibility-not-selected")
+        raise UploadError(
+            f"Visibilitas '{visibility}' belum benar-benar tercentang; upload tidak dipublikasikan."
+        )
     if visibility == "public":
         patterns = [r"publish", r"publikasikan"]
         label = "Publish/Publikasikan"
@@ -1809,8 +1806,13 @@ def click_final_upload_action(page, visibility: str, timeout_ms: int = 30000) ->
                 page.mouse.down()
                 time.sleep(0.08)
                 page.mouse.up()
-                log(f"Tombol final diklik: {label}.")
-                return
+                accepted_deadline = time.monotonic() + 4
+                while time.monotonic() < accepted_deadline:
+                    if not final_action_button_is_ready(page, visibility):
+                        log(f"Tombol final diklik dan diterima: {label}.")
+                        return
+                    time.sleep(0.4)
+                log(f"Klik {label} belum diterima UI; mencoba klik ulang.")
         except Exception:
             pass
         time.sleep(0.4)
@@ -3144,7 +3146,7 @@ def force_fill_subtitle_textarea(page, text: str) -> bool:
 
 
 def type_subtitle_text(page, subtitle_text: str, timeout_ms: int = 15000) -> bool:
-    subtitle_text = os.environ.get("YOUTUBE_MANUAL_SUBTITLE_TEXT", subtitle_text).strip() or subtitle_text or "RYUUNDY"
+    subtitle_text = os.environ.get("YOUTUBE_MANUAL_SUBTITLE_TEXT", subtitle_text).strip() or subtitle_text or "FCN"
     add_patterns = (r"^tambahkan teks$", r"^add text$", r"^tambahkan subtitle$", r"^add subtitle$")
     ready_delay_ms = max(0, int(os.environ.get("YOUTUBE_SUBTITLE_EDITOR_READY_DELAY_MS", "2500")))
     if ready_delay_ms:
@@ -3378,9 +3380,13 @@ def close_subtitle_editor(page, timeout_ms: int = 5000) -> bool:
         return False
 
 
-def add_manual_subtitle(page, subtitle_text: str = "RYUUNDY") -> bool:
-    subtitle_text = os.environ.get("YOUTUBE_MANUAL_SUBTITLE_TEXT", subtitle_text).strip() or subtitle_text or "RYUUNDY"
+def add_manual_subtitle(page, subtitle_text: str = "FCN") -> bool:
+    subtitle_text = os.environ.get("YOUTUBE_MANUAL_SUBTITLE_TEXT", subtitle_text).strip() or subtitle_text or "FCN"
     subtitle_required = env_bool("YOUTUBE_MANUAL_SUBTITLE_REQUIRED", False)
+    subtitle_enabled = env_bool("YOUTUBE_ADD_MANUAL_SUBTITLE", subtitle_required)
+    if not subtitle_enabled:
+        log("Subtitle manual dilewati agar upload lebih cepat.")
+        return False
     add_timeout_ms = int(os.environ.get("YOUTUBE_SUBTITLE_ADD_TIMEOUT_MS", "5000" if not subtitle_required else "10000"))
     mode_timeout_ms = int(os.environ.get("YOUTUBE_SUBTITLE_MODE_TIMEOUT_MS", "5000" if not subtitle_required else "10000"))
     type_timeout_ms = int(os.environ.get("YOUTUBE_SUBTITLE_TEXT_TIMEOUT_MS", "8000" if not subtitle_required else "15000"))
@@ -3405,20 +3411,18 @@ def add_manual_subtitle(page, subtitle_text: str = "RYUUNDY") -> bool:
     time.sleep(1)
     subtitle_filled = type_subtitle_text(page, subtitle_text, timeout_ms=type_timeout_ms)
     if not subtitle_filled:
+        log(f"Subtitle '{subtitle_text}' belum terverifikasi; mencoba force-fill terakhir.")
+        subtitle_filled = force_fill_subtitle_textarea(page, subtitle_text)
+        if subtitle_filled:
+            log(f"Subtitle force-fill terverifikasi: {subtitle_text}.")
+            time.sleep(0.5)
+    if not subtitle_filled:
         save_debug_artifacts(page, "subtitle-textbox-not-found")
-        log("Isi subtitle dari env gagal; mencoba isi fallback 'FCN'.")
-        if force_fill_subtitle_textarea(page, "FCN"):
-            subtitle_filled = True
-            log("Subtitle fallback 'FCN' diisi.")
-        else:
-            try:
-                focus_subtitle_textarea(page)
-                page.keyboard.insert_text("FCN")
-                time.sleep(0.5)
-                subtitle_filled = True
-                log("Subtitle fallback 'FCN' dikirim.")
-            except Exception:
-                log("Fallback subtitle 'FCN' juga gagal; subtitle akan dilewati.")
+        if subtitle_required:
+            raise UploadError(
+                f"Kolom subtitle ditemukan tetapi teks '{subtitle_text}' belum berhasil diisi dan diverifikasi."
+            )
+        log(f"Subtitle '{subtitle_text}' gagal diisi; subtitle akan dilewati.")
     after_type_delay_ms = max(0, int(os.environ.get("YOUTUBE_SUBTITLE_AFTER_TYPE_DELAY_MS", "2000")))
     if after_type_delay_ms:
         log(f"Menunggu {after_type_delay_ms}ms setelah subtitle selesai diisi.")
@@ -3426,6 +3430,9 @@ def add_manual_subtitle(page, subtitle_text: str = "RYUUNDY") -> bool:
     if click_subtitle_done(page, timeout_ms=done_timeout_ms):
         time.sleep(0.5)
         return subtitle_filled
+    if subtitle_required:
+        save_debug_artifacts(page, "subtitle-done-not-found")
+        raise UploadError("Tombol Selesai subtitle tidak ditemukan; upload dihentikan agar subtitle tidak terlewati.")
     if not close_subtitle_editor(page, timeout_ms=done_timeout_ms):
         save_debug_artifacts(page, "subtitle-done-not-found")
         message = "Tombol Selesai subtitle tidak ditemukan; subtitle dilewati agar upload tetap lanjut."
@@ -3489,9 +3496,11 @@ def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True
             all(re.search(pattern, lowered, re.I) for pattern in pattern_group)
             for pattern_group in all_clear_patterns
         )
-        if has_complete:
-            log("YouTube Studio Checks selesai: tidak ada masalah terdeteksi.")
-            return
+        if any(re.search(pattern, lowered, re.I) for pattern in issue_patterns):
+            raise UploadError(
+                "YouTube Studio mendeteksi potensi copyright/restriction pada clip ini. "
+                "Upload dibatalkan sebelum publish agar channel tetap aman."
+            )
         if has_checking:
             log("Checks masih berjalan; menunggu sampai semua centang aman.")
             time.sleep(5)
@@ -3499,22 +3508,21 @@ def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True
         if has_all_clear:
             log("YouTube Studio Checks aman: hak cipta dan pedoman komunitas sudah centang.")
             return
-        if any(re.search(pattern, lowered, re.I) for pattern in issue_patterns):
-            raise UploadError(
-                "YouTube Studio mendeteksi potensi copyright/restriction pada clip ini. "
-                "Upload dibatalkan sebelum publish agar channel tetap aman."
-            )
+        if has_complete:
+            log("YouTube Studio Checks selesai: tidak ada masalah terdeteksi.")
+            return
         time.sleep(2)
 
     if require_checks:
-        if env_bool("YOUTUBE_CONTINUE_WHEN_CHECKS_STUCK", True):
+        if env_bool("YOUTUBE_CONTINUE_WHEN_CHECKS_STUCK", False):
             log(
                 "Checks belum terkonfirmasi sampai timeout, tetapi tidak ada issue eksplisit; "
                 "lanjut ke Visibilitas sesuai konfigurasi."
             )
             return
+        save_debug_artifacts(page, "checks-not-complete")
         raise UploadError(
-            "YouTube Studio Checks tidak dapat dikonfirmasi sebelum timeout. "
+            "Step 3 Checks belum selesai/tercentang sebelum timeout; upload tidak dilanjutkan ke Visibilitas. "
             f"Upload dibatalkan demi keamanan. Cuplikan halaman: {last_body}"
         )
     log("Checks belum terkonfirmasi; melanjutkan karena require checks dinonaktifkan.")
@@ -3582,8 +3590,8 @@ def wait_for_final_upload_confirmation(page, timeout_ms: int, video_url: str = "
         r"video (published|uploaded)",
         r"upload complete",
         r"processing will begin shortly",
-        r"dipublikasikan",
-        r"telah dipublikasikan",
+        r"video (berhasil )?(telah )?dipublikasikan",
+        r"berhasil dipublikasikan",
         r"upload selesai",
     )
     last_body = ""
@@ -3597,7 +3605,7 @@ def wait_for_final_upload_confirmation(page, timeout_ms: int, video_url: str = "
         except Exception:
             pass
         try:
-            body = page.locator("body").inner_text(timeout=3000)
+            body = page.locator("ytcp-uploads-dialog").inner_text(timeout=3000)
             last_body = re.sub(r"\s+", " ", body).strip()[:500]
             if any(re.search(pattern, body, re.I) for pattern in done_patterns):
                 log("Konfirmasi final upload terdeteksi.")
@@ -3613,13 +3621,13 @@ def wait_for_final_upload_confirmation(page, timeout_ms: int, video_url: str = "
 
 def reload_after_publish(page) -> None:
     if not env_bool("YOUTUBE_RELOAD_AFTER_PUBLISH", True):
+        log("Reload otomatis setelah publish dinonaktifkan.")
         return
     try:
         delay_seconds = max(0, int(os.environ.get("YOUTUBE_RELOAD_AFTER_PUBLISH_DELAY_SECONDS", "10")))
         if delay_seconds:
-            log(f"Menunggu {delay_seconds} detik setelah publish sebelum reload.")
+            log(f"Publish sudah diterima; menunggu {delay_seconds} detik sebelum reload terakhir.")
             time.sleep(delay_seconds)
-        log("Reload page setelah publish selesai.")
 
         def accept_once(dialog) -> None:
             try:
@@ -3632,8 +3640,10 @@ def reload_after_publish(page) -> None:
         except Exception:
             pass
         page.reload(wait_until="domcontentloaded", timeout=30000)
+        log("Page direload sekali; proses upload selesai.")
     except Exception as exc:
-        log(f"Reload page setelah publish gagal atau dibatalkan: {exc}")
+        save_debug_artifacts(page, "reload-after-publish-failed")
+        raise UploadError(f"Publish sudah diklik, tetapi reload terakhir gagal: {exc}") from exc
 
 
 def run_login(args: argparse.Namespace) -> None:
@@ -3710,8 +3720,8 @@ def run_capture_session(args: argparse.Namespace) -> None:
             browser = playwright.chromium.connect_over_cdp(args.cdp_url, timeout=15000)
         except Exception as exc:
             raise UploadError(
-                "Chrome remote debugging belum aktif. Jalankan ./scripts/recreate-compose-up.sh "
-                "dan biarkan Chrome Studio tetap terbuka."
+                "Chrome remote debugging belum aktif. Jalur utama upload memakai Playwright storage-state; "
+                "pakai Login Sekali dulu, atau aktifkan CDP hanya untuk Ambil Cookies CDP."
             ) from exc
         contexts = browser.contexts or [browser.new_context()]
         for context in contexts:
@@ -3721,7 +3731,11 @@ def run_capture_session(args: argparse.Namespace) -> None:
         if page is None:
             context = contexts[0]
             page = context.pages[0] if context.pages else context.new_page()
-        hydrated_page = hydrate_context_and_open_studio_page(page.context, state_path, args.studio_url)
+        hydrated_page = (
+            hydrate_context_and_open_studio_page(page.context, state_path, args.studio_url)
+            if args.hydrate_storage_state
+            else None
+        )
         hydrated = hydrated_page is not None
         if hydrated_page is not None:
             page = hydrated_page
@@ -3742,6 +3756,55 @@ def run_capture_session(args: argparse.Namespace) -> None:
         page.context.storage_state(path=str(state_path))
         browser.close()
     log(f"Sesi YouTube dari browser tersimpan: {state_path}")
+
+
+def run_check_login(args: argparse.Namespace) -> None:
+    sync_playwright, _ = import_playwright()
+    state_path = Path(args.state).expanduser().resolve()
+    chromium_user_data_dir = Path(args.chromium_user_data_dir).expanduser().resolve() if args.chromium_user_data_dir else None
+    if chromium_user_data_dir is not None and not chromium_user_data_dir.is_dir():
+        raise UploadError(f"Folder profile Chromium tidak ditemukan: {chromium_user_data_dir}")
+    if chromium_user_data_dir is None and not state_path.is_file():
+        raise UploadError(f"File sesi YouTube belum ada: {state_path}")
+
+    headless = env_bool("YOUTUBE_LOGIN_HEADLESS", True)
+    slow_mo = int(os.environ.get("YOUTUBE_BROWSER_SLOW_MO_MS", "0"))
+    launch_args = []
+    if chromium_user_data_dir is not None and args.chromium_profile_directory:
+        launch_args.append(f"--profile-directory={args.chromium_profile_directory}")
+    with sync_playwright() as playwright:
+        browser = None
+        if chromium_user_data_dir is not None:
+            log(f"Validasi login memakai profile Chromium: {chromium_user_data_dir}")
+            context = playwright.chromium.launch_persistent_context(
+                str(chromium_user_data_dir),
+                headless=headless,
+                slow_mo=slow_mo,
+                locale=os.environ.get("YOUTUBE_BROWSER_LOCALE", "en-US"),
+                viewport={"width": 1440, "height": 1000},
+                args=launch_args,
+            )
+            page = context.pages[0] if context.pages else context.new_page()
+        else:
+            log(f"Validasi login memakai Playwright storage-state: {state_path}")
+            browser = playwright.chromium.launch(headless=headless, slow_mo=slow_mo, args=launch_args)
+            context = browser.new_context(
+                locale=os.environ.get("YOUTUBE_BROWSER_LOCALE", "en-US"),
+                storage_state=str(state_path),
+                viewport={"width": 1440, "height": 1000},
+            )
+            page = context.new_page()
+        install_context_dialog_guard(context)
+        install_browser_dialog_guard(page)
+        goto_studio(page, studio_url=args.studio_url)
+        page.wait_for_load_state("domcontentloaded", timeout=30000)
+        ensure_logged_in(page)
+        ensure_target_identity(page, args.target_channel, args.target_email, args.target_channel_id)
+        context.storage_state(path=str(state_path))
+        context.close()
+        if browser is not None:
+            browser.close()
+    log(f"Session YouTube valid dan tersimpan: {state_path}")
 
 
 def run_upload(args: argparse.Namespace) -> None:
@@ -3853,7 +3916,7 @@ def run_upload(args: argparse.Namespace) -> None:
 
             click_next_upload_step(page, timeout_ms=20000, expected_step="VIDEO_ELEMENTS")
             log("Masuk ke tab Elemen video.")
-            subtitle_text = os.environ.get("YOUTUBE_MANUAL_SUBTITLE_TEXT", "RYUUNDY").strip() or "RYUUNDY"
+            subtitle_text = os.environ.get("YOUTUBE_MANUAL_SUBTITLE_TEXT", "FCN").strip() or "FCN"
             add_manual_subtitle(page, subtitle_text)
 
             click_next_upload_step(page, timeout_ms=20000, expected_step="CHECKS")
@@ -3863,30 +3926,34 @@ def run_upload(args: argparse.Namespace) -> None:
                 min(timeout_ms, int(os.environ.get("YOUTUBE_CHECKS_TIMEOUT_SECONDS", "600")) * 1000),
                 args.require_copyright_checks,
             )
+            log("Step 3 Checks sudah selesai dan aman; lanjut ke Visibilitas.")
 
             click_next_upload_step(page, timeout_ms=20000, expected_step="REVIEW")
             log("Masuk ke tab Visibilitas.")
             wait_for_visibility_step(page, timeout_ms=20000)
 
             set_visibility(page, args.visibility)
+            time.sleep(0.8)
+            if not visibility_is_selected(page, args.visibility):
+                save_debug_artifacts(page, "visibility-not-selected-before-final-action")
+                raise UploadError(
+                    f"Visibilitas '{args.visibility}' belum tercentang sebelum aksi final."
+                )
+            log(f"Step 4 Visibilitas terverifikasi: {args.visibility}.")
             if args.visibility == "public":
                 review_timeout_ms = int(os.environ.get("YOUTUBE_PRE_PUBLISH_REVIEW_TIMEOUT_SECONDS", "300")) * 1000
                 wait_for_review_checks_safe_before_publish(page, timeout_ms=review_timeout_ms)
-                if not visibility_is_selected(page, "public"):
-                    save_debug_artifacts(page, "public-visibility-not-selected-before-publish")
-                    raise UploadError("Visibilitas Public/Publik belum tercentang sebelum publish.")
 
             if args.dry_run:
                 log("Dry-run aktif; proses berhenti sebelum publish/save final.")
                 return
 
-            click_final_upload_action(page, args.visibility, timeout_ms=30000)
             uploaded_video_url = extract_video_url(page)
-            log("Menunggu konfirmasi upload...")
-            final_url = wait_for_final_upload_confirmation(page, timeout_ms, uploaded_video_url)
+            click_final_upload_action(page, args.visibility, timeout_ms=30000)
+            reload_after_publish(page)
+            final_url = uploaded_video_url or extract_video_url(page)
             if final_url:
                 log(f"VIDEO_URL: {final_url}")
-            reload_after_publish(page)
             context.storage_state(path=str(state_path))
         finally:
             if using_cdp:
@@ -3919,6 +3986,16 @@ def build_parser() -> argparse.ArgumentParser:
     capture.add_argument("--target-email", default=DEFAULT_TARGET_EMAIL)
     capture.add_argument("--target-channel-id", default=DEFAULT_TARGET_CHANNEL_ID)
     capture.add_argument("--studio-url", default=DEFAULT_STUDIO_URL)
+    capture.add_argument("--hydrate-storage-state", action=argparse.BooleanOptionalAction, default=True)
+
+    check_login = subparsers.add_parser("check-login", help="Validasi sesi YouTube dan simpan ulang storage-state.")
+    check_login.add_argument("--state", default=str(DEFAULT_STATE_PATH))
+    check_login.add_argument("--chromium-user-data-dir", default="")
+    check_login.add_argument("--chromium-profile-directory", default=DEFAULT_CHROMIUM_PROFILE_DIRECTORY)
+    check_login.add_argument("--target-channel", default=os.environ.get("YOUTUBE_TARGET_CHANNEL", "ryuundy8812"))
+    check_login.add_argument("--target-email", default=DEFAULT_TARGET_EMAIL)
+    check_login.add_argument("--target-channel-id", default=DEFAULT_TARGET_CHANNEL_ID)
+    check_login.add_argument("--studio-url", default=DEFAULT_STUDIO_URL)
 
     upload = subparsers.add_parser("upload", help="Upload satu file video ke YouTube Studio.")
     upload.add_argument("video")
@@ -3957,6 +4034,8 @@ def main() -> int:
             run_login(args)
         elif args.command == "capture-session":
             run_capture_session(args)
+        elif args.command == "check-login":
+            run_check_login(args)
         elif args.command == "upload":
             run_upload(args)
         else:  # pragma: no cover
