@@ -88,7 +88,7 @@ def test_build_job_payload_matches_backend_contract():
     assert payload["top"] == 5
     assert payload["crop_mode"] == "center"
     assert payload["min_duration"] == 35
-    assert payload["caption_font_size"] == 9
+    assert payload["caption_font_size"] == 10
 
 
 def test_output_path_is_confined_to_outputs(tmp_path: Path):

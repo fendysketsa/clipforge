@@ -173,6 +173,8 @@ class ClipJobRequest(BaseModel):
     top: int | None = Field(default=None, ge=1, le=50)
     min_duration: float = Field(default=35, ge=5, le=600)
     max_duration: float = Field(default=180, ge=10, le=600)
+    clip_mode: Literal["short", "highlight_5m"] = "short"
+    compilation_target_seconds: float = Field(default=300, ge=240, le=360)
     model: str = "Systran/faster-whisper-small"
     language: str = "id"
     analyze_seconds: float | None = Field(default=None, ge=10, le=7200)
@@ -180,7 +182,7 @@ class ClipJobRequest(BaseModel):
     burn_subtitles: bool = True
     crop_mode: Literal["center", "person", "streamer"] = "center"
     cam_corner: Literal["auto", "br", "bl", "tr", "tl"] = "auto"
-    caption_font_size: int = Field(default=18, ge=6, le=120)
+    caption_font_size: int = Field(default=10, ge=6, le=120)
     caption_position: Literal["upper", "center", "bottom"] = "upper"
     caption_color: str = "#FFFFFF"
     caption_font: Literal[
@@ -1361,7 +1363,15 @@ def strip_hashtag_lines(value: str) -> str:
 def default_youtube_title(job: ClipJob, clip: ClipFile, index: int) -> str:
     title = clip_sidecar_title(clip) or clip.title or job.source_title or f"Clip {index}"
     clean = re.sub(r"\s+", " ", title).strip()
+    if job.request.clip_mode == "highlight_5m":
+        return youtube_long_form_title(clean or f"Highlight {index}")
     return youtube_shorts_title(clean or f"Clip {index}")
+
+
+def youtube_long_form_title(value: str) -> str:
+    clean = re.sub(r"\s+", " ", value).strip()
+    clean = re.sub(r"\s+#shorts\b", "", clean, flags=re.I).strip()
+    return clean[:100].rstrip() or "Highlight Pilihan"
 
 
 def youtube_shorts_title(value: str) -> str:
@@ -1391,8 +1401,10 @@ def default_youtube_description(job: ClipJob, clip: ClipFile) -> str:
 def default_youtube_tags(job: ClipJob, clip: ClipFile) -> list[str]:
     caption = sidecar_social_caption(clip)
     tags = [*env_csv("YOUTUBE_DEFAULT_TAGS"), *hashtags_from_text(caption)]
+    if job.request.clip_mode == "highlight_5m":
+        tags = [tag for tag in tags if tag.strip().lower().lstrip("#") != "shorts"]
     if not tags:
-        tags = ["islam", "shorts"]
+        tags = ["islam", "highlight"] if job.request.clip_mode == "highlight_5m" else ["islam", "shorts"]
     deduped: list[str] = []
     seen: set[str] = set()
     for tag in tags:
@@ -1412,11 +1424,21 @@ YOUTUBE_METADATA_SYSTEM_PROMPT = (
 
 def clip_candidate_text(job: ClipJob, clip: ClipFile) -> str:
     clip_index = clip_index_from_name(clip.name)
-    if clip_index is None:
-        return ""
-    for candidate in job.candidates:
-        if candidate.index == clip_index and candidate.text.strip():
-            return candidate.text.strip()
+    if clip_index is not None:
+        for candidate in job.candidates:
+            if candidate.index == clip_index and candidate.text.strip():
+                return candidate.text.strip()
+
+    clip_path = output_path_from_url(clip.url)
+    json_path = clip_path.with_suffix(".json") if clip_path is not None else None
+    if json_path is not None and json_path.is_file():
+        try:
+            payload = json.loads(json_path.read_text(encoding="utf-8"))
+            text = payload.get("text") if isinstance(payload, dict) else None
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+        except (OSError, json.JSONDecodeError):
+            pass
     return ""
 
 
@@ -1502,8 +1524,21 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
     caption = sidecar_social_caption(clip)
     transcript = clip_candidate_text(job, clip)
     tag_values = [f"#{tag.strip().lstrip('#').replace(' ', '')}" for tag in tags if tag.strip()]
+    is_compilation = job.request.clip_mode == "highlight_5m"
+    format_name = "video kompilasi highlight sekitar lima menit" if is_compilation else "YouTube Shorts"
+    system_prompt = (
+        YOUTUBE_METADATA_SYSTEM_PROMPT.replace(
+            "YouTube Shorts metadata writer",
+            "YouTube long-form highlight metadata writer",
+        ).replace(
+            "short clips",
+            "five-minute highlight videos",
+        )
+        if is_compilation
+        else YOUTUBE_METADATA_SYSTEM_PROMPT
+    )
     user_prompt = (
-        "Buat metadata YouTube Shorts untuk clip ini.\n"
+        f"Buat metadata {format_name} untuk video ini.\n"
         "Aturan:\n"
         "- Title singkat, natural, maksimal 85 karakter, tanpa hashtag.\n"
         "- Description 1 sampai 2 kalimat pendek.\n"
@@ -1532,7 +1567,7 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
             content = chat_completion(
                 active_config,
                 [
-                    {"role": "system", "content": YOUTUBE_METADATA_SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
             )
@@ -1564,13 +1599,16 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
     if not ai_hashtags:
         ai_hashtags = clean_ai_hashtags(hashtags_from_text(f"{clean_title}\n{text}"))
     reference_hashtags = clean_ai_hashtags(tag_values)
+    if is_compilation:
+        ai_hashtags = [tag for tag in ai_hashtags if tag.lower() != "shorts"]
+        reference_hashtags = [tag for tag in reference_hashtags if tag.lower() != "shorts"]
     hashtags = (ai_hashtags or ([] if env_bool("YOUTUBE_REQUIRE_AI_METADATA", True) else reference_hashtags))[:3]
     if env_bool("YOUTUBE_REQUIRE_AI_METADATA", True) and not hashtags:
         return None
     if hashtags:
         text = f"{strip_hashtag_lines(text)}\n\n{' '.join(f'#{tag}' for tag in hashtags)}"
     return {
-        "title": youtube_shorts_title(clean_title),
+        "title": youtube_long_form_title(clean_title) if is_compilation else youtube_shorts_title(clean_title),
         "description": text[:5000],
         "hashtags": hashtags,
     }
@@ -1680,7 +1718,11 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         status="queued",
         created_at=now,
         updated_at=now,
-        title=youtube_shorts_title(title),
+        title=(
+            youtube_long_form_title(title)
+            if job.request.clip_mode == "highlight_5m"
+            else youtube_shorts_title(title)
+        ),
         description=description,
         thumbnail_url=safe_thumbnail_url,
         visibility=request.visibility,
@@ -2716,6 +2758,10 @@ def build_clipper_command(request: ClipJobRequest) -> list[str]:
             str(request.min_duration),
             "--max",
             str(request.max_duration),
+            "--clip-mode",
+            request.clip_mode,
+            "--compilation-target",
+            str(request.compilation_target_seconds),
             "--model",
             request.model,
             "--language",

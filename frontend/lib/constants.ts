@@ -1,19 +1,21 @@
 import { CheckCircle2, Clock3, Loader2, XCircle, type LucideIcon } from "lucide-react";
-import type { JobStatus, VideoQuality } from "../types/clip.type";
+import type { ClipMode, JobStatus, VideoQuality } from "../types/clip.type";
 
 export const DEFAULT_MIN_DURATION = 35;
 export const DEFAULT_MAX_DURATION = 180;
 export const DEFAULT_MODEL = "Systran/faster-whisper-small";
 export const DEFAULT_LANGUAGE = "id";
 export const DEFAULT_VIDEO_QUALITY: VideoQuality = "high";
+export const DEFAULT_CLIP_MODE: ClipMode = "short";
+export const COMPILATION_TARGET_SECONDS = 300;
 export const DEFAULT_AI_ENABLED = true;
 export const DEFAULT_AI_BASE_URL = "http://localhost:11434/v1";
 export const DEFAULT_AI_MODEL = "";
-export const DEFAULT_CAPTION_FONT_SIZE = 18;
+export const DEFAULT_CAPTION_FONT_SIZE = 10;
 export const DEFAULT_CAPTION_POSITION = "upper";
 export const DEFAULT_CAPTION_COLOR = "#FFFFFF";
 export const CAPTION_FONT_SIZE_MIN = 8;
-export const CAPTION_FONT_SIZE_MAX = 60;
+export const CAPTION_FONT_SIZE_MAX = 36;
 export const DEFAULT_CAPTION_FONT = "DejaVu Sans";
 export const DEFAULT_CAPTION_OUTLINE = 1.5;
 export const DEFAULT_CAPTION_OUTLINE_COLOR = "#000000";

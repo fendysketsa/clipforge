@@ -1,7 +1,13 @@
 import json
 
 import clipper
-from clipper import AIConfig, ClipCandidate, ai_rescore_candidates, select_candidates
+from clipper import (
+    AIConfig,
+    ClipCandidate,
+    ai_rescore_candidates,
+    select_candidates,
+    select_compilation_candidates,
+)
 
 
 def make_candidate(index: int, start: float, score: int, text: str) -> ClipCandidate:
@@ -67,3 +73,20 @@ def test_ai_rescore_keeps_heuristics_when_endpoint_is_missing():
 
     assert rescored == [candidate]
     assert candidate.score == 77
+
+
+def test_compilation_selection_reaches_five_minutes_without_overlap():
+    candidates = [
+        make_candidate(0, start, 95 - index, f"Poin penting {index}")
+        for index, start in enumerate((0, 70, 140, 210, 280, 350))
+    ]
+
+    selected = select_compilation_candidates(candidates, target_duration=300)
+
+    assert sum(item.duration for item in selected) == 300
+    assert len(selected) == 5
+    assert selected == sorted(selected, key=lambda item: item.start)
+    assert all(
+        left.end <= right.start
+        for left, right in zip(selected, selected[1:])
+    )

@@ -2,6 +2,7 @@ export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancell
 export type YouTubeVisibility = "private" | "unlisted" | "public";
 export type CropMode = "center" | "person" | "streamer";
 export type VideoQuality = "standard" | "high" | "max";
+export type ClipMode = "short" | "highlight_5m";
 export type CamCorner = "auto" | "br" | "bl" | "tr" | "tl";
 export type CaptionPosition = "upper" | "center" | "bottom";
 export type CaptionFont =
@@ -55,6 +56,8 @@ export type ClipJob = {
     top: number | null;
     min_duration: number;
     max_duration: number;
+    clip_mode: ClipMode;
+    compilation_target_seconds: number;
     model: string;
     language: string;
     analyze_seconds: number | null;
@@ -82,6 +85,8 @@ export type CreateClipJobInput = {
   top?: number;
   min_duration: number;
   max_duration: number;
+  clip_mode?: ClipMode;
+  compilation_target_seconds?: number;
   model: string;
   language: string;
   analyze_seconds?: number | null;

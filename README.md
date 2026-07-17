@@ -13,6 +13,8 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Score transcript windows for clip candidates.
 - Export vertical 9:16 MP4 clips with SRT files.
 - Burn subtitles into clips by default.
+- Keep captions compact with a soft gradient-blur background by default.
+- Build one chronological, FYP-focused highlight compilation of about five minutes.
 - Crop center or shift crop toward detected faces/people.
 - Manage jobs and generated clips from a Next.js UI.
 - Start jobs and receive complete results from a private Telegram bot.
@@ -245,6 +247,12 @@ Quick test on the first 180 seconds:
 
 ```powershell
 .\.venv\Scripts\python.exe clipper.py "https://www.youtube.com/watch?v=..." --model Systran/faster-whisper-base --analyze-seconds 180 --top 1
+```
+
+Create one non-Short highlight compilation targeting five minutes:
+
+```powershell
+.\.venv\Scripts\python.exe clipper.py "URL" --clip-mode highlight_5m --compilation-target 300 --min 30 --max 75 --ai-enabled
 ```
 
 Outputs are written under `backend/outputs/`.

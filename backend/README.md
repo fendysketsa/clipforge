@@ -87,8 +87,15 @@ Default output video:
 - H.264 MP4, CRF 18
 - source download mencoba HD sampai 1080p (`bestvideo+bestaudio`)
 - subtitle burned-in
+- caption ringkas dengan background gradient-blur
 - transcript lokal via `Systran/faster-whisper-small`
 - durasi clip dinamis, maksimal 3 menit secara default
+
+Untuk membuat satu kompilasi highlight sekitar lima menit (bukan Short):
+
+```powershell
+.\.venv\Scripts\python.exe clipper.py "URL" --clip-mode highlight_5m --compilation-target 300 --min 30 --max 75 --ai-enabled
+```
 
 If CPU feels too slow, use a smaller model:
 

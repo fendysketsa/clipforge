@@ -3,6 +3,7 @@ from clipper import (
     CaptionStyle,
     _hex_to_ass_color,
     build_subtitle_style,
+    caption_gradient_blur_filter,
     split_subtitle_text,
 )
 
@@ -26,16 +27,17 @@ def test_hex_to_ass_color_invalid_falls_back():
 
 def test_build_subtitle_style_upper_default():
     style = build_subtitle_style(CaptionStyle())
-    assert "Alignment=8" in style
+    assert "Alignment=6" in style
     assert "FontName=DejaVu Sans" in style
-    assert "FontSize=18" in style
-    assert "MarginL=90" in style
-    assert "MarginR=90" in style
+    assert "FontSize=10" in style
+    assert "MarginL=36" in style
+    assert "MarginR=36" in style
     assert "MarginV=70" in style
-    assert "BackColour=&H90000000" in style
-    assert "BorderStyle=3" in style
+    assert "BackColour=&HC8000000" in style
+    assert "BorderStyle=1" in style
     assert "Outline=1.5" in style
-    assert "Shadow=0.6" in style
+    assert "Shadow=0.35" in style
+    assert "Blur=0.35" in style
     assert "WrapStyle=0" in style
 
 
@@ -81,3 +83,13 @@ def test_split_subtitle_text_keeps_default_lines_compact():
 def test_available_fonts_has_defaults():
     assert "DejaVu Sans" in AVAILABLE_FONTS
     assert "Noto Sans" in AVAILABLE_FONTS
+
+
+def test_caption_gradient_blur_filter_tracks_caption_position():
+    upper = caption_gradient_blur_filter("upper")
+    bottom = caption_gradient_blur_filter("bottom")
+
+    assert "gblur=sigma=24" in upper
+    assert "geq=" in upper
+    assert "overlay=0:280" in upper
+    assert "overlay=0:1450" in bottom

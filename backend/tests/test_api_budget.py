@@ -138,6 +138,19 @@ def test_build_clipper_command_does_not_require_creative_commons_for_uploaded_fi
     assert "--require-creative-commons" not in command
 
 
+def test_build_clipper_command_includes_five_minute_highlight_mode():
+    request = ClipJobRequest(
+        source_file="/tmp/source.mp4",
+        clip_mode="highlight_5m",
+        compilation_target_seconds=300,
+    )
+
+    command = build_clipper_command(request)
+
+    assert command[command.index("--clip-mode") + 1] == "highlight_5m"
+    assert command[command.index("--compilation-target") + 1] == "300.0"
+
+
 def test_delete_all_jobs_removes_only_process_jobs_and_preserves_clips(monkeypatch, tmp_path):
     import api
 

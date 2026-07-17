@@ -120,7 +120,18 @@ def normalized_upload_metadata(video_path: Path, title: str, description: str) -
         clean_title = sidecar_title(video_path) or filename_title(video_path)
     if not clean_description:
         clean_description = sidecar_caption(video_path)
-    return youtube_shorts_title(clean_title), clean_description[:5000]
+    normalized_title = (
+        youtube_long_form_title(clean_title)
+        if video_path.name.startswith("highlight_5menit_")
+        else youtube_shorts_title(clean_title)
+    )
+    return normalized_title, clean_description[:5000]
+
+
+def youtube_long_form_title(value: str) -> str:
+    clean = re.sub(r"\s+", " ", value).strip()
+    clean = re.sub(r"\s+#shorts\b", "", clean, flags=re.I).strip()
+    return clean[:100].rstrip() or "Highlight Pilihan"
 
 
 def youtube_shorts_title(value: str) -> str:

@@ -43,11 +43,13 @@ import {
   DEFAULT_CAPTION_OUTLINE,
   DEFAULT_CAPTION_OUTLINE_COLOR,
   DEFAULT_CAPTION_POSITION,
+  DEFAULT_CLIP_MODE,
   DEFAULT_LANGUAGE,
   DEFAULT_MAX_DURATION,
   DEFAULT_MIN_DURATION,
   DEFAULT_MODEL,
   DEFAULT_VIDEO_QUALITY,
+  COMPILATION_TARGET_SECONDS,
   JOB_POLL_INTERVAL_MS,
   MAX_REQUESTED_CLIPS,
   RECENT_LOG_LIMIT,
@@ -58,6 +60,7 @@ import type {
   CamCorner,
   CaptionFont,
   CaptionPosition,
+  ClipMode,
   ClipFile,
   ClipJob,
   CropMode,
@@ -87,6 +90,7 @@ export default function HomePage() {
   const [targetClips, setTargetClips] = useState(0);
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
   const [videoQuality, setVideoQuality] = useState<VideoQuality>(DEFAULT_VIDEO_QUALITY);
+  const [clipMode, setClipMode] = useState<ClipMode>(DEFAULT_CLIP_MODE);
   const [uploadPreviewUrl, setUploadPreviewUrl] = useState("");
   const [cropMode, setCropMode] = useState<CropMode>("person");
   const [camCorner, setCamCorner] = useState<CamCorner>("auto");
@@ -142,6 +146,18 @@ export default function HomePage() {
       setTargetClips(maxClips);
     }
   }, [maxClips, targetClips]);
+
+  const handleClipModeChange = useCallback((value: ClipMode) => {
+    setClipMode(value);
+    setTargetClips(0);
+    if (value === "highlight_5m") {
+      setMinDuration(30);
+      setMaxDuration(75);
+    } else {
+      setMinDuration(DEFAULT_MIN_DURATION);
+      setMaxDuration(DEFAULT_MAX_DURATION);
+    }
+  }, []);
 
   useEffect(() => {
     if (sourceMode !== "url") return;
@@ -451,9 +467,11 @@ export default function HomePage() {
         createJob({
           url: sourceMode === "url" ? trimmedUrl : "",
           source_file: sourceMode === "upload" ? uploadToken : "",
-          top: targetClips > 0 ? targetClips : undefined,
+          top: clipMode === "short" && targetClips > 0 ? targetClips : undefined,
           min_duration: minDuration,
           max_duration: maxDuration,
+          clip_mode: clipMode,
+          compilation_target_seconds: COMPILATION_TARGET_SECONDS,
           model: DEFAULT_MODEL,
           language: DEFAULT_LANGUAGE,
           video_quality: videoQuality,
@@ -508,6 +526,7 @@ export default function HomePage() {
     captionOutline,
     captionOutlineColor,
     captionPosition,
+    clipMode,
     cropMode,
     loadJobs,
     maxDuration,
@@ -1005,6 +1024,8 @@ export default function HomePage() {
 
       <section className="workspace">
         <ControlPanel
+          clipMode={clipMode}
+          onClipModeChange={handleClipModeChange}
           cropMode={cropMode}
           error={error}
           isBusy={isBusy}

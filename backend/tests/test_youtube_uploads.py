@@ -6,6 +6,8 @@ from api import (
     YouTubeUploadJob,
     best_youtube_clip_urls,
     default_youtube_description,
+    default_youtube_tags,
+    default_youtube_title,
     generate_youtube_description,
     generate_youtube_metadata,
     delete_all_job_clips,
@@ -251,6 +253,43 @@ def test_default_youtube_description_uses_ai_caption_and_hashtags_only():
     assert "#islam #shorts" in description
     assert "Sumber:" not in description
     assert "Channel sumber:" not in description
+
+
+def test_five_minute_highlight_metadata_is_not_marked_as_short():
+    clip = ClipFile(
+        name="highlight_5menit_poin-penting.mp4",
+        url="/outputs/demo/clips/highlight_5menit_poin-penting.mp4",
+        size_bytes=1,
+        title="Lima Poin Penting #Shorts",
+        social_caption="Ringkasan poin paling penting.\n\n#islam #shorts",
+    )
+    job = ClipJob(
+        id="job-highlight",
+        status="completed",
+        request=ClipJobRequest(
+            url="https://youtu.be/demo",
+            clip_mode="highlight_5m",
+        ),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+
+    assert default_youtube_title(job, clip, 1) == "Lima Poin Penting"
+    assert "shorts" not in {tag.lower() for tag in default_youtube_tags(job, clip)}
+
+
+def test_uploader_preserves_long_form_highlight_title(tmp_path):
+    video = tmp_path / "highlight_5menit_poin-penting.mp4"
+    video.write_bytes(b"x")
+
+    title, _description = normalized_upload_metadata(
+        video,
+        "Lima Poin Penting #Shorts",
+        "Ringkasan video.",
+    )
+
+    assert title == "Lima Poin Penting"
 
 
 def test_generate_youtube_description_uses_llm(monkeypatch):

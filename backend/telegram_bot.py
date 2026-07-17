@@ -38,11 +38,12 @@ TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 ACTIVE_STATUSES = {"queued", "running"}
 ALLOWED_QUALITY = {"standard", "high", "max"}
 ALLOWED_CROP = {"center", "person", "streamer"}
+ALLOWED_CLIP_MODES = {"short", "highlight_5m"}
 ALLOWED_CAPTION_POSITIONS = {"upper", "center", "bottom"}
 ALLOWED_CAPTION_FONT_SIZES = {7, 9, 10, 12, 14, 18, 20, 24}
 ALLOWED_TOP = {None, 3, 5, 8, 10, 12}
-ALLOWED_DURATION_PRESETS = {(15, 60), (35, 180), (60, 180)}
-SETTINGS_SCHEMA_VERSION = 2
+ALLOWED_DURATION_PRESETS = {(15, 60), (30, 75), (35, 180), (60, 180)}
+SETTINGS_SCHEMA_VERSION = 3
 
 
 def env_float(name: str, default: float) -> float:
@@ -75,6 +76,7 @@ VIRAL_CC_MAX_SOURCE_SECONDS = max(
 )
 
 DEFAULT_SETTINGS: dict[str, Any] = {
+    "clip_mode": "short",
     "top": None,
     "min_duration": 35,
     "max_duration": 180,
@@ -85,7 +87,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "ai_base_url": DEFAULT_TELEGRAM_AI_BASE_URL,
     "ai_model": DEFAULT_TELEGRAM_AI_MODEL,
     "caption_position": "upper",
-    "caption_font_size": 9,
+    "caption_font_size": 10,
 }
 
 CLIPPING_STAGE_ALERTS: list[tuple[str, str, str, tuple[str, ...]]] = [
@@ -102,7 +104,12 @@ CLIPPING_STAGE_ALERTS: list[tuple[str, str, str, tuple[str, ...]]] = [
     ("transcribe", "Mentranskripsi percakapan", "Model transkripsi berjalan untuk membaca isi video.", ("loading model", "transcrib")),
     ("score", "Menyeleksi momen terbaik", "Transcript sedang dinilai untuk mencari kandidat clip terkuat.", ("scoring candidate",)),
     ("ai_score", "AI menilai kandidat", "AI agent sedang meranking kandidat clip.", ("agent scoring",)),
-    ("export", "Mengekspor video vertikal", "Clip terpilih sedang dirender ke format vertikal.", ("exporting vertical clips",)),
+    (
+        "export",
+        "Mengekspor video vertikal",
+        "Clip terpilih sedang dirender ke format vertikal.",
+        ("exporting vertical video", "exporting vertical clips"),
+    ),
     ("done", "Clipping selesai", "Render selesai. Bot akan menyiapkan pengiriman hasil.", ("done.", "exported:")),
     (
         "auto_youtube",
@@ -226,6 +233,10 @@ def normalize_settings(value: object) -> dict[str, Any]:
     top = value.get("top")
     settings["top"] = top if top in ALLOWED_TOP else None
 
+    clip_mode = value.get("clip_mode")
+    if clip_mode in ALLOWED_CLIP_MODES:
+        settings["clip_mode"] = clip_mode
+
     duration = (value.get("min_duration"), value.get("max_duration"))
     if duration in ALLOWED_DURATION_PRESETS:
         settings["min_duration"], settings["max_duration"] = duration
@@ -286,7 +297,7 @@ def normalize_state(value: object) -> dict[str, Any]:
     state["settings"] = normalize_settings(value.get("settings"))
     if int(value.get("settings_schema_version") or 1) < SETTINGS_SCHEMA_VERSION:
         raw_settings = value.get("settings") if isinstance(value.get("settings"), dict) else {}
-        if raw_settings.get("caption_font_size") == 18:
+        if raw_settings.get("caption_font_size") in {9, 12, 14, 18}:
             state["settings"]["caption_font_size"] = DEFAULT_SETTINGS["caption_font_size"]
     state["settings_schema_version"] = SETTINGS_SCHEMA_VERSION
     if isinstance(value.get("jobs"), dict):
@@ -326,7 +337,9 @@ def build_job_payload(url: str, settings: dict[str, Any]) -> dict[str, Any]:
     clean = normalize_settings(settings)
     return {
         "url": url.strip(),
-        "top": clean["top"],
+        "top": clean["top"] if clean["clip_mode"] == "short" else None,
+        "clip_mode": clean["clip_mode"],
+        "compilation_target_seconds": 300,
         "min_duration": clean["min_duration"],
         "max_duration": clean["max_duration"],
         "video_quality": clean["video_quality"],
@@ -810,10 +823,12 @@ def main_menu_keyboard() -> dict[str, Any]:
 def settings_summary(settings: dict[str, Any]) -> str:
     clean = normalize_settings(settings)
     top = "Otomatis" if clean["top"] is None else str(clean["top"])
+    mode = "Clip Pendek" if clean["clip_mode"] == "short" else "Highlight 5 Menit"
     quality = {"standard": "Standar", "high": "Jernih", "max": "Maksimal"}[clean["video_quality"]]
     crop = {"center": "Center", "person": "Follow Person", "streamer": "Streamer"}[clean["crop_mode"]]
     position = {"upper": "Atas", "center": "Tengah", "bottom": "Bawah"}[clean["caption_position"]]
     return (
+        f"Model clip: {mode}\n"
         f"Target clip: {top}\n"
         f"Durasi: {clean['min_duration']}–{clean['max_duration']} detik\n"
         f"Kualitas: {quality}\n"
@@ -829,6 +844,7 @@ def settings_keyboard(settings: dict[str, Any], *, has_pending_url: bool = False
     clean = normalize_settings(settings)
     top = "auto" if clean["top"] is None else clean["top"]
     rows = [
+            [button(f"Model · {'Pendek' if clean['clip_mode'] == 'short' else 'Highlight 5m'}", "settings:mode")],
             [button(f"Jumlah Clip · {top}", "settings:top")],
             [button(f"Durasi · {clean['min_duration']}–{clean['max_duration']}d", "settings:duration")],
             [button(f"Kualitas · {clean['video_quality']}", "settings:quality")],
@@ -2398,6 +2414,13 @@ class ClipForgeTelegramBot:
                 settings["top"] = int(value)
             else:
                 return False
+        elif name == "mode" and value in ALLOWED_CLIP_MODES:
+            settings["clip_mode"] = value
+            settings["top"] = None
+            if value == "highlight_5m":
+                settings["min_duration"], settings["max_duration"] = 30, 75
+            else:
+                settings["min_duration"], settings["max_duration"] = 35, 180
         elif name == "duration" and len(parts) == 4:
             if not value.isdigit() or not parts[3].isdigit():
                 return False
@@ -2512,12 +2535,24 @@ class ClipForgeTelegramBot:
                     ]
                 ),
             )
+        elif data == "settings:mode":
+            show_panel(
+                "Pilih model hasil video",
+                keyboard(
+                    [
+                        [button("Clip Pendek", "set:mode:short")],
+                        [button("Highlight ±5 Menit (bukan Short)", "set:mode:highlight_5m")],
+                        [button("⬅️ Kembali", "menu:settings")],
+                    ]
+                ),
+            )
         elif data == "settings:duration":
             show_panel(
                 "Pilih rentang durasi setiap clip",
                 keyboard(
                     [
                         [button("15–60 detik", "set:duration:15:60")],
+                        [button("30–75 detik (bagian highlight)", "set:duration:30:75")],
                         [button("35–180 detik", "set:duration:35:180")],
                         [button("60–180 detik", "set:duration:60:180")],
                         [button("⬅️ Kembali", "menu:settings")],

@@ -5,6 +5,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
@@ -149,6 +150,7 @@ TENSION_WORDS = {
 
 CropMode = Literal["center", "person", "streamer"]
 VideoQuality = Literal["standard", "high", "max"]
+ClipMode = Literal["short", "highlight_5m"]
 YUNET_MODEL_PATH = Path(__file__).resolve().parent / "models" / "face_detection_yunet_2023mar.onnx"
 
 VIDEO_QUALITY_PRESETS = {
@@ -970,6 +972,66 @@ def select_candidates(candidates: list[ClipCandidate], limit: int) -> list[ClipC
     return picked
 
 
+def select_compilation_candidates(
+    candidates: list[ClipCandidate],
+    target_duration: float = 300,
+    max_parts: int = 12,
+) -> list[ClipCandidate]:
+    """Pick strong, non-overlapping moments until a highlight reel is ~target_duration."""
+    if target_duration <= 0:
+        return []
+
+    remaining = candidates[:]
+    remaining.sort(
+        key=lambda item: (
+            item.score - abs(item.duration - 60) * 0.05,
+            -item.start,
+        ),
+        reverse=True,
+    )
+    picked: list[ClipCandidate] = []
+    total = 0.0
+
+    while remaining and len(picked) < max_parts and total < target_duration:
+        best: ClipCandidate | None = None
+        best_adjusted = -1_000.0
+        for candidate in remaining:
+            if any(not (candidate.end <= item.start or candidate.start >= item.end) for item in picked):
+                continue
+            # Favor concise, high-scoring sections so the final five minutes stay dense.
+            adjusted = candidate.score - abs(candidate.duration - 60) * 0.05
+            if adjusted > best_adjusted:
+                best = candidate
+                best_adjusted = adjusted
+
+        if best is None:
+            break
+        remaining.remove(best)
+
+        seconds_left = target_duration - total
+        if seconds_left < 8:
+            break
+        render_duration = best.end - best.start
+        if render_duration > seconds_left >= 8:
+            best = ClipCandidate(
+                index=best.index,
+                start=best.start,
+                end=best.start + seconds_left,
+                duration=seconds_left,
+                score=best.score,
+                title=best.title,
+                reason=best.reason,
+                text=best.text,
+            )
+        picked.append(best)
+        total += best.end - best.start
+
+    picked.sort(key=lambda item: item.start)
+    for idx, candidate in enumerate(picked, start=1):
+        candidate.index = idx
+    return picked
+
+
 AI_RESCORE_POOL_LIMIT = 40
 AI_SYSTEM_PROMPT = (
     "You are an expert Indonesian short-form video editor for TikTok FYP, Reels, and YouTube Shorts. "
@@ -985,6 +1047,7 @@ def ai_rescore_candidates(
     candidates: list[ClipCandidate],
     config: AIConfig,
     target_count: int | None = None,
+    compilation: bool = False,
 ) -> list[ClipCandidate]:
     if not config.enabled or not candidates:
         return candidates
@@ -1010,11 +1073,17 @@ def ai_rescore_candidates(
         if target_count
         else "Pick and rank only the candidates that deserve to become clips."
     )
+    format_instruction = (
+        "This is for one five-minute vertical highlight compilation. Choose complementary key points "
+        "that remain engaging in chronological order; avoid repeated ideas and low-value filler."
+        if compilation
+        else "This is for Indonesian short-form FYP. Choose POV moments people would stop scrolling for, "
+        "not merely complete transcript chunks."
+    )
     user_prompt = (
         f"{count_instruction}\n"
-        "This is for Indonesian short-form FYP. Choose POV moments people would stop scrolling for, "
-        "not merely complete transcript chunks.\n"
-        "For each chosen candidate, score 0-100 on viral standalone clip potential.\n"
+        f"{format_instruction}\n"
+        "For each chosen candidate, score 0-100 on viewer-retention and FYP potential.\n"
         "Return clips sorted from strongest to weakest. Use fewer clips if the rest are weak.\n"
         "Respond with JSON shaped exactly like:\n"
         '{"clips": [{"id": <int>, "score": <int 0-100>, '
@@ -1106,7 +1175,7 @@ def segments_for_clip(segments: Iterable[TranscriptSegment], clip: ClipCandidate
     return [item for item in segments if item.end > clip.start and item.start < clip.end]
 
 
-SUBTITLE_MAX_CHARS = 24
+SUBTITLE_MAX_CHARS = 22
 SUBTITLE_MAX_LINES = 2
 
 
@@ -1179,13 +1248,13 @@ AVAILABLE_FONTS = {
     "Noto Sans": "Noto Sans",
 }
 DEFAULT_FONT = "DejaVu Sans"
-SOFT_CAPTION_BACK_COLOR = "&H90000000"
-SOFT_CAPTION_SHADOW = 0.6
+SOFT_CAPTION_BACK_COLOR = "&HC8000000"
+SOFT_CAPTION_SHADOW = 0.35
 
 
 @dataclass
 class CaptionStyle:
-    font_size: int = 18
+    font_size: int = 10
     position: CaptionPosition = "upper"
     color: str = "#FFFFFF"
     font_family: str = DEFAULT_FONT
@@ -1212,13 +1281,13 @@ def build_subtitle_style(caption: CaptionStyle) -> str:
     font_name = AVAILABLE_FONTS.get(caption.font_family, DEFAULT_FONT)
     # libass margins use the default script resolution (PlayResY=288), so these
     # values are in ~288-unit space, not raw pixels of the 1920px frame.
-    # Alignment: 2 = bottom-center, 8 = top-center, 10 = middle-center (ASS
-    # numbering in libass; 5 is not the visual middle here).
+    # FFmpeg's SRT-to-ASS bridge uses legacy SSA alignment codes:
+    # 2 = bottom-center, 6 = top-center, 10 = middle-center.
     if caption.position == "bottom":
         alignment = 2
         margin_v = 24
     elif caption.position == "upper":
-        alignment = 8
+        alignment = 6
         margin_v = 70
     else:
         alignment = 10
@@ -1226,8 +1295,27 @@ def build_subtitle_style(caption: CaptionStyle) -> str:
     return (
         f"FontName={font_name},FontSize={font_size},Bold=1,PrimaryColour={primary},"
         f"OutlineColour={outline_color},BackColour={SOFT_CAPTION_BACK_COLOR},"
-        f"BorderStyle=3,Outline={outline},Shadow={SOFT_CAPTION_SHADOW},"
-        f"Alignment={alignment},MarginL=90,MarginR=90,MarginV={margin_v},WrapStyle=0"
+        f"BorderStyle=1,Outline={outline},Shadow={SOFT_CAPTION_SHADOW},Blur=0.35,"
+        f"Alignment={alignment},MarginL=36,MarginR=36,MarginV={margin_v},WrapStyle=0"
+    )
+
+
+def caption_gradient_blur_filter(position: CaptionPosition) -> str:
+    """Return a soft blurred video band with a vertical alpha gradient behind captions."""
+    band_height = 380
+    if position == "bottom":
+        band_y = 1450
+    elif position == "center":
+        band_y = 770
+    else:
+        band_y = 280
+    alpha = "255*0.88*(1-pow(abs(Y-H/2)/(H/2),2))"
+    return (
+        "split=2[caption_base][caption_blur];"
+        f"[caption_blur]crop=1080:{band_height}:0:{band_y},"
+        "gblur=sigma=24,drawbox=color=black@0.24:t=fill,format=rgba,"
+        f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{alpha}'[caption_band];"
+        f"[caption_base][caption_band]overlay=0:{band_y}"
     )
 
 
@@ -1399,9 +1487,12 @@ def export_clip(
     cam_corner: str = "auto",
     required_hashtags: list[str] | None = None,
     video_quality: VideoQuality = "high",
+    generate_assets: bool = True,
+    enforce_size: bool = True,
+    base_name_override: str = "",
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
-    base_name = f"clip_{clip.index:02}_{slugify(clip.title)[:72] or 'auto'}"
+    base_name = base_name_override or f"clip_{clip.index:02}_{slugify(clip.title)[:72] or 'auto'}"
     srt_path = clips_dir / f"{base_name}.srt"
     json_path = clips_dir / f"{base_name}.json"
     out_path = clips_dir / f"{base_name}.mp4"
@@ -1420,7 +1511,8 @@ def export_clip(
     if burn_subtitles and clip_segments:
         style = build_subtitle_style(caption or CaptionStyle())
         vf = (
-            f"{vf},subtitles='{srt_path.name}'"
+            f"{vf},{caption_gradient_blur_filter((caption or CaptionStyle()).position)},"
+            f"subtitles='{srt_path.name}'"
             ":original_size=1080x1920"
             f":force_style='{style}'"
         )
@@ -1528,22 +1620,153 @@ def export_clip(
     )
     temp_video_path.unlink(missing_ok=True)
     temp_audio_path.unlink(missing_ok=True)
-    enforce_clip_size_limit(out_path, duration)
+    if enforce_size:
+        enforce_clip_size_limit(out_path, duration)
 
-    thumb_path = clips_dir / f"{base_name}_thumb.jpg"
+    if generate_assets:
+        thumb_path = clips_dir / f"{base_name}_thumb.jpg"
+        prompt_path = clips_dir / f"{base_name}_thumb.txt"
+        if grab_best_frame(video_path, clip, thumb_path) is not None:
+            thumb_prompt = generate_thumbnail_prompt(clip, ai_config or AIConfig())
+            if thumb_prompt:
+                prompt_path.write_text(
+                    f"HOOK: {thumb_prompt['hook_text']}\n\n{thumb_prompt['prompt']}\n",
+                    encoding="utf-8",
+                )
+
+        social_caption = generate_social_caption(clip, ai_config or AIConfig(), required_hashtags)
+        if social_caption:
+            (clips_dir / f"{base_name}_caption.txt").write_text(social_caption + "\n", encoding="utf-8")
+
+    return out_path
+
+
+def write_compilation_srt(
+    path: Path,
+    transcript: list[TranscriptSegment],
+    candidates: list[ClipCandidate],
+) -> float:
+    timeline: list[TranscriptSegment] = []
+    cursor = 0.0
+    for candidate in candidates:
+        duration = candidate.end - candidate.start
+        for item in segments_for_clip(transcript, candidate):
+            start = cursor + max(0.0, item.start - candidate.start)
+            end = cursor + min(duration, max(0.2, item.end - candidate.start))
+            if start < cursor + duration:
+                timeline.append(TranscriptSegment(start=start, end=end, text=item.text))
+        cursor += duration
+    write_srt(path, timeline, 0, cursor)
+    return cursor
+
+
+def export_compilation(
+    video_path: Path,
+    candidates: list[ClipCandidate],
+    transcript: list[TranscriptSegment],
+    clips_dir: Path,
+    burn_subtitles: bool,
+    crop_mode: CropMode,
+    caption: CaptionStyle,
+    ai_config: AIConfig,
+    cam_corner: str,
+    required_hashtags: list[str],
+    video_quality: VideoQuality,
+) -> Path:
+    clips_dir.mkdir(parents=True, exist_ok=True)
+    parts_dir = clips_dir / ".compilation_parts"
+    shutil.rmtree(parts_dir, ignore_errors=True)
+    parts_dir.mkdir(parents=True, exist_ok=True)
+
+    strongest = max(candidates, key=lambda item: item.score)
+    base_name = f"highlight_5menit_{slugify(strongest.title)[:60] or 'pilihan-terbaik'}"
+    out_path = clips_dir / f"{base_name}.mp4"
+    srt_path = clips_dir / f"{base_name}.srt"
+    json_path = clips_dir / f"{base_name}.json"
     prompt_path = clips_dir / f"{base_name}_thumb.txt"
-    if grab_best_frame(video_path, clip, thumb_path) is not None:
-        thumb_prompt = generate_thumbnail_prompt(clip, ai_config or AIConfig())
+    thumb_path = clips_dir / f"{base_name}_thumb.jpg"
+
+    part_paths: list[Path] = []
+    try:
+        for idx, candidate in enumerate(candidates, start=1):
+            part_paths.append(
+                export_clip(
+                    video_path,
+                    candidate,
+                    segments_for_clip(transcript, candidate),
+                    parts_dir,
+                    burn_subtitles,
+                    crop_mode,
+                    caption,
+                    ai_config,
+                    cam_corner,
+                    required_hashtags,
+                    video_quality,
+                    generate_assets=False,
+                    enforce_size=False,
+                    base_name_override=f"part_{idx:02}",
+                )
+            )
+
+        concat_path = parts_dir / "concat.txt"
+        concat_path.write_text(
+            "\n".join(f"file '{path.name}'" for path in part_paths) + "\n",
+            encoding="utf-8",
+        )
+        run(
+            [
+                ffmpeg_path(),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                concat_path.name,
+                "-c",
+                "copy",
+                "-movflags",
+                "+faststart",
+                str(out_path.resolve()),
+            ],
+            cwd=parts_dir,
+        )
+    finally:
+        shutil.rmtree(parts_dir, ignore_errors=True)
+
+    total_duration = write_compilation_srt(srt_path, transcript, candidates)
+    compilation = ClipCandidate(
+        index=1,
+        start=min(item.start for item in candidates),
+        end=max(item.end for item in candidates),
+        duration=total_duration,
+        score=round(sum(item.score for item in candidates) / len(candidates)),
+        title=f"Highlight Terpenting: {strongest.title}"[:80],
+        reason=f"Kompilasi {len(candidates)} poin penting, dipilih untuk hook, value, dan payoff.",
+        text=" ".join(item.text for item in candidates),
+    )
+    save_json(
+        json_path,
+        {
+            **asdict(compilation),
+            "mode": "highlight_5m",
+            "parts": [asdict(item) for item in candidates],
+        },
+    )
+
+    if grab_best_frame(video_path, strongest, thumb_path) is not None:
+        thumb_prompt = generate_thumbnail_prompt(compilation, ai_config)
         if thumb_prompt:
             prompt_path.write_text(
                 f"HOOK: {thumb_prompt['hook_text']}\n\n{thumb_prompt['prompt']}\n",
                 encoding="utf-8",
             )
-
-    social_caption = generate_social_caption(clip, ai_config or AIConfig(), required_hashtags)
+    social_caption = generate_social_caption(compilation, ai_config, required_hashtags)
     if social_caption:
         (clips_dir / f"{base_name}_caption.txt").write_text(social_caption + "\n", encoding="utf-8")
-
     return out_path
 
 
@@ -1606,12 +1829,24 @@ def cleanup_intermediate(work_dir: Path, source_video: Path) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Local YouTube auto clipper for short vertical videos.")
+    parser = argparse.ArgumentParser(description="Local YouTube auto clipper for vertical videos.")
     parser.add_argument("url", nargs="?", default="", help="YouTube URL")
     parser.add_argument("--source-file", default="", help="Use a local video file instead of downloading from a URL")
     parser.add_argument("--top", type=int, default=5, help="Number of clips to export")
     parser.add_argument("--min", type=float, default=35, help="Minimum clip duration in seconds")
     parser.add_argument("--max", type=float, default=180, help="Maximum clip duration in seconds")
+    parser.add_argument(
+        "--clip-mode",
+        choices=["short", "highlight_5m"],
+        default="short",
+        help="Export separate short clips or one five-minute highlight compilation",
+    )
+    parser.add_argument(
+        "--compilation-target",
+        type=float,
+        default=300,
+        help="Target duration in seconds for highlight_5m mode",
+    )
     parser.add_argument("--model", default="Systran/faster-whisper-small", help="faster-whisper model name")
     parser.add_argument("--language", default="id", help="Transcription language code")
     parser.add_argument("--output", default="outputs", help="Output directory")
@@ -1642,7 +1877,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ai-base-url", default="", help="OpenAI-compatible base URL, e.g. http://localhost:20128/v1")
     parser.add_argument("--ai-model", default="", help="LLM model name for the clip agent")
     parser.add_argument("--ai-api-key", default="", help="API key for the LLM endpoint")
-    parser.add_argument("--caption-font-size", type=int, default=18, help="Burned caption font size (10-120)")
+    parser.add_argument("--caption-font-size", type=int, default=10, help="Burned caption font size (6-120)")
     parser.add_argument(
         "--caption-position",
         choices=["upper", "center", "bottom"],
@@ -1738,8 +1973,22 @@ def main() -> int:
         model=args.ai_model,
         api_key=args.ai_api_key,
     )
-    pool = ai_rescore_candidates(pool, ai_config, target_count=args.top)
-    candidates = select_candidates(pool, args.top)
+    ai_target_count = (
+        min(12, max(4, math.ceil(args.compilation_target / 60)))
+        if args.clip_mode == "highlight_5m"
+        else args.top
+    )
+    pool = ai_rescore_candidates(
+        pool,
+        ai_config,
+        target_count=ai_target_count,
+        compilation=args.clip_mode == "highlight_5m",
+    )
+    candidates = (
+        select_compilation_candidates(pool, args.compilation_target)
+        if args.clip_mode == "highlight_5m"
+        else select_candidates(pool, args.top)
+    )
     if not candidates:
         console.print("[red]No clip candidates found. Try lowering --min or increasing --max.[/red]")
         return 1
@@ -1773,16 +2022,14 @@ def main() -> int:
 
     required_hashtags = [tag for tag in args.required_hashtags.split(",") if tag.strip()]
 
-    console.print("[bold]Exporting vertical clips...[/bold]")
+    console.print("[bold]Exporting vertical video...[/bold]")
     clips_dir = work_dir / "clips"
-    exported: list[Path] = []
-    for candidate in candidates:
-        clip_segments = segments_for_clip(transcript, candidate)
-        exported.append(
-            export_clip(
+    if args.clip_mode == "highlight_5m":
+        exported = [
+            export_compilation(
                 final_video_path,
-                candidate,
-                clip_segments,
+                candidates,
+                transcript,
                 clips_dir,
                 not args.no_burn_subtitles,
                 args.crop_mode,
@@ -1792,7 +2039,26 @@ def main() -> int:
                 required_hashtags,
                 args.video_quality,
             )
-        )
+        ]
+    else:
+        exported = []
+        for candidate in candidates:
+            clip_segments = segments_for_clip(transcript, candidate)
+            exported.append(
+                export_clip(
+                    final_video_path,
+                    candidate,
+                    clip_segments,
+                    clips_dir,
+                    not args.no_burn_subtitles,
+                    args.crop_mode,
+                    caption_style,
+                    ai_config,
+                    args.cam_corner,
+                    required_hashtags,
+                    args.video_quality,
+                )
+            )
 
     if not args.keep_intermediate:
         cleanup_intermediate(work_dir, final_video_path)

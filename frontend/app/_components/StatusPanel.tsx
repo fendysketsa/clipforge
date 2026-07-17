@@ -42,7 +42,11 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
       {job ? (
         <div className="activityContent">
           <div className="jobMeta">
-            <span>{job.request.top ?? "Auto"} klip target</span>
+            <span>
+              {job.request.clip_mode === "highlight_5m"
+                ? "Highlight ±5 menit"
+                : `${job.request.top ?? "Auto"} klip target`}
+            </span>
             <span>
               {job.request.min_duration}s - {job.request.max_duration}s
             </span>

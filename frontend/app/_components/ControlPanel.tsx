@@ -11,6 +11,7 @@ import type {
   CamCorner,
   CaptionFont,
   CaptionPosition,
+  ClipMode,
   CropMode,
   SourceMode,
   VideoQuality,
@@ -26,6 +27,8 @@ const CAM_CORNER_OPTIONS: { value: CamCorner; label: string }[] = [
 ];
 
 type ControlPanelProps = {
+  clipMode: ClipMode;
+  onClipModeChange: (value: ClipMode) => void;
   cropMode: CropMode;
   error: string;
   isBusy: boolean;
@@ -93,6 +96,8 @@ type ControlPanelProps = {
 };
 
 export function ControlPanel({
+  clipMode,
+  onClipModeChange,
   cropMode,
   error,
   isBusy,
@@ -242,6 +247,31 @@ export function ControlPanel({
         </div>
       ) : null}
 
+      <div className="segmentedField">
+        <span>Model Clip</span>
+        <div className="segmentedControl" role="group" aria-label="Model clip">
+          <button
+            className={clipMode === "short" ? "active" : ""}
+            type="button"
+            onClick={() => onClipModeChange("short")}
+          >
+            Clip Pendek
+          </button>
+          <button
+            className={clipMode === "highlight_5m" ? "active" : ""}
+            type="button"
+            onClick={() => onClipModeChange("highlight_5m")}
+          >
+            Highlight 5 Menit
+          </button>
+        </div>
+        <p className="field-help">
+          {clipMode === "highlight_5m"
+            ? "Bukan Short: AI memilih poin terpenting, menyusunnya kronologis, lalu menggabungkan menjadi satu video sekitar 5 menit."
+            : "Membuat beberapa clip vertikal pendek yang berdiri sendiri."}
+        </p>
+      </div>
+
       <div className="gridFields">
         <label className="field">
           <span>Durasi Minimum</span>
@@ -265,25 +295,36 @@ export function ControlPanel({
         </label>
       </div>
 
-      <label className="field wide">
-        <span>Target Jumlah Clip</span>
-        <input
-          min={0}
-          max={maxClips ?? 50}
-          type="number"
-          value={targetClips || ""}
-          placeholder="Auto (kosongkan = otomatis)"
-          onChange={(event) => onTargetClipsChange(Math.max(0, Number(event.target.value)))}
-        />
-        <p className="field-help">
-          {videoDuration
-            ? `Durasi video ~${Math.round(videoDuration)}s. Maks ${maxClips} clip (durasi min × jumlah ≤ 80% video).`
-            : "Kosongkan untuk otomatis. Akan disesuaikan dengan panjang video."}
-          {maxClips !== null && targetClips > maxClips
-            ? ` Target ${targetClips} melebihi batas, akan dipangkas ke ${maxClips}.`
-            : ""}
-        </p>
-      </label>
+      {clipMode === "short" ? (
+        <label className="field wide">
+          <span>Target Jumlah Clip</span>
+          <input
+            min={0}
+            max={maxClips ?? 50}
+            type="number"
+            value={targetClips || ""}
+            placeholder="Auto (kosongkan = otomatis)"
+            onChange={(event) => onTargetClipsChange(Math.max(0, Number(event.target.value)))}
+          />
+          <p className="field-help">
+            {videoDuration
+              ? `Durasi video ~${Math.round(videoDuration)}s. Maks ${maxClips} clip (durasi min × jumlah ≤ 80% video).`
+              : "Kosongkan untuk otomatis. Akan disesuaikan dengan panjang video."}
+            {maxClips !== null && targetClips > maxClips
+              ? ` Target ${targetClips} melebihi batas, akan dipangkas ke ${maxClips}.`
+              : ""}
+          </p>
+        </label>
+      ) : (
+        <div className="modeNotice">
+          <strong>Target output: ±5:00 menit</strong>
+          <span>
+            {videoDuration && videoDuration < 300
+              ? "Video sumber kurang dari 5 menit, sehingga hasil bisa lebih pendek."
+              : "Bagian filler, intro panjang, dan pengulangan akan dilewati."}
+          </span>
+        </div>
+      )}
 
       <div className="segmentedField">
         <span>Kualitas Output</span>
@@ -365,7 +406,9 @@ export function ControlPanel({
             onChange={(event) => onBurnSubtitlesChange(event.target.checked)}
           />
         </label>
-        <p className="field-help">Tempelkan teks transkrip langsung ke dalam video.</p>
+        <p className="field-help">
+          Teks dibuat ringkas dan proporsional, dengan background gradient-blur aktif secara default.
+        </p>
 
         {burnSubtitles ? (
           <div className="captionFields">
