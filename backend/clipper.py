@@ -8,7 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Iterable, Literal
 
@@ -84,9 +84,15 @@ class ClipCandidate:
     title: str
     reason: str
     text: str
+    hook: str = ""
+    pov: str = ""
+    fyp_label: str = ""
+    strengths: list[str] = field(default_factory=list)
+    weaknesses: list[str] = field(default_factory=list)
+    improvement_ideas: list[str] = field(default_factory=list)
 
 
-ReactionKind = Literal["laugh", "shock", "think", "pray", "warning", "heart"]
+ReactionKind = Literal["laugh", "shock", "think", "pray", "warning", "heart", "important"]
 
 
 @dataclass
@@ -98,7 +104,16 @@ class ReactionCue:
     trigger: str
 
 
-SoundEffectKind = Literal["laugh", "shock", "think", "pray", "warning", "heart", "emphasis"]
+SoundEffectKind = Literal[
+    "laugh",
+    "shock",
+    "think",
+    "pray",
+    "warning",
+    "heart",
+    "important",
+    "emphasis",
+]
 
 
 @dataclass
@@ -308,6 +323,19 @@ HEART_WORDS = {
     "sayang",
     "sedih",
     "terharu",
+}
+
+IMPORTANT_WORDS = {
+    "faktanya",
+    "ingat",
+    "inti",
+    "intinya",
+    "kunci",
+    "kesimpulannya",
+    "penting",
+    "rahasia",
+    "solusinya",
+    "wajib",
 }
 
 CropMode = Literal["center", "person", "streamer"]
@@ -592,6 +620,72 @@ def scale_filter(width: int | str, height: int | str, *, force_increase: bool = 
 def add_quality_sharpen(vf: str, video_quality: VideoQuality) -> str:
     sharpen = str(quality_preset(video_quality)["sharpen"])
     return f"{vf},{sharpen}" if sharpen else vf
+
+
+def probe_video_resolution(path: Path) -> tuple[int, int]:
+    ffmpeg_binary = Path(ffmpeg_path())
+    ffprobe_candidates = [
+        os.environ.get("FFPROBE_BINARY", "").strip(),
+        shutil.which("ffprobe") or "",
+        str(ffmpeg_binary.with_name("ffprobe")),
+    ]
+    for candidate in ffprobe_candidates:
+        if not candidate:
+            continue
+        try:
+            process = subprocess.run(
+                [
+                    candidate,
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=width,height",
+                    "-of",
+                    "json",
+                    str(path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            payload = json.loads(process.stdout or "{}")
+            streams = payload.get("streams")
+            if process.returncode == 0 and isinstance(streams, list) and streams:
+                width = int(streams[0].get("width") or 0)
+                height = int(streams[0].get("height") or 0)
+                if width > 0 and height > 0:
+                    return width, height
+        except (OSError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired):
+            continue
+
+    try:
+        import cv2
+    except ImportError as exc:
+        raise RuntimeError(f"Tidak dapat memverifikasi resolusi hasil clip: {path.name}") from exc
+
+    capture = cv2.VideoCapture(str(path))
+    try:
+        width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    finally:
+        capture.release()
+    if width <= 0 or height <= 0:
+        raise RuntimeError(f"Tidak dapat memverifikasi resolusi hasil clip: {path.name}")
+    return width, height
+
+
+def ensure_minimum_hd_output(path: Path) -> tuple[int, int]:
+    """Reject an export if its encoded frame is below vertical 720p."""
+    width, height = probe_video_resolution(path)
+    short_side, long_side = sorted((width, height))
+    if short_side < 720 or long_side < 1280:
+        raise RuntimeError(
+            f"Hasil clip {path.name} hanya {width}x{height}; minimal HD 720x1280. "
+            "Export dibatalkan agar video pecah tidak ikut dipakai."
+        )
+    return width, height
 
 
 def remove_running_text_filter(crop_bottom: int = 160) -> str:
@@ -1102,10 +1196,142 @@ def first_sentence(text: str, max_words: int = 8) -> str:
     return " ".join(words[:max_words]).capitalize() or "Auto clip"
 
 
+def fyp_score_label(score: int) -> str:
+    if score >= 88:
+        return "Sangat kuat"
+    if score >= 78:
+        return "Kuat"
+    if score >= 65:
+        return "Menjanjikan"
+    if score >= 50:
+        return "Perlu dipoles"
+    return "Lemah"
+
+
+def fallback_pov_angle(text: str) -> str:
+    lowered = text.lower()
+    if set(re.findall(r"[\w']+", lowered)).intersection(MYSTERY_WORDS):
+        return "Kamu ikut membongkar cerita ini sampai fakta dan hikmahnya terlihat."
+    if set(re.findall(r"[\w']+", lowered)).intersection(ISLAMIC_WORDS):
+        return "Kamu sedang diajak melihat masalah ini dari sisi hikmah dan kehati-hatian."
+    if set(re.findall(r"[\w']+", lowered)).intersection(TENSION_WORDS):
+        return "Kamu baru sadar ada risiko yang selama ini sering dianggap sepele."
+    if "?" in text:
+        return "Kamu punya pertanyaan yang sama dan ingin tahu jawaban akhirnya."
+    return "Kamu menemukan satu sudut pandang yang bisa langsung dipakai atau direnungkan."
+
+
+def candidate_fyp_analysis(
+    items: list[TranscriptSegment],
+    duration: float,
+    score: int,
+) -> dict[str, str | list[str]]:
+    """Explain the score using the opening hook, first 30 seconds, value, and payoff."""
+    text = " ".join(item.text for item in items).strip()
+    window_start = items[0].start if items else 0.0
+    opening_text = " ".join(
+        item.text for item in items if item.start < window_start + 3.5
+    ).strip()
+    first_30_text = " ".join(
+        item.text for item in items if item.start < window_start + 30.0
+    ).strip()
+    opening_words = set(re.findall(r"[\w']+", opening_text.lower()))
+    first_30_words = re.findall(r"[\w']+", first_30_text.lower())
+    all_words = set(re.findall(r"[\w']+", text.lower()))
+    opening_has_hook = bool(
+        opening_words.intersection(HOOK_WORDS | TENSION_WORDS | MYSTERY_WORDS)
+        or "?" in opening_text
+    )
+    first_30_signals = {
+        "hook": bool(set(first_30_words).intersection(HOOK_WORDS)),
+        "tension": bool(set(first_30_words).intersection(TENSION_WORDS | MYSTERY_WORDS)),
+        "payoff": bool(set(first_30_words).intersection(PAYOFF_WORDS)),
+        "value": bool(set(first_30_words).intersection(IMPORTANT_WORDS)),
+    }
+    first_30_density = len(first_30_words) / max(1.0, min(duration, 30.0))
+    has_payoff = bool(all_words.intersection(PAYOFF_WORDS))
+    has_question = "?" in text
+    complete_ending = text.rstrip().endswith((".", "!", "?"))
+    loop_stop_words = {
+        "ada", "akan", "atau", "dan", "di", "dengan", "ini", "itu", "jadi",
+        "juga", "karena", "ke", "kita", "mereka", "pada", "saya", "sebuah",
+        "tidak", "untuk", "yang",
+    }
+    opening_concepts = opening_words - loop_stop_words
+    window_end = items[-1].end if items else duration
+    ending_text = " ".join(
+        item.text for item in items if item.end > window_end - 8.0
+    )
+    ending_words = set(re.findall(r"[\w']+", ending_text.lower()))
+    loop_overlap = opening_concepts.intersection(ending_words - loop_stop_words)
+
+    strengths: list[str] = []
+    weaknesses: list[str] = []
+    ideas: list[str] = []
+
+    if opening_has_hook:
+        strengths.append("3 detik awal punya pemicu rasa penasaran")
+    else:
+        weaknesses.append("3 detik awal belum cukup menghentikan scroll")
+        ideas.append("Buka langsung dengan pertanyaan, konflik, atau fakta paling mengejutkan")
+
+    active_first_30_signals = sum(first_30_signals.values())
+    if active_first_30_signals >= 3:
+        strengths.append("30 detik awal berisi hook, konflik/value, dan arah payoff")
+    elif active_first_30_signals >= 2:
+        strengths.append("30 detik awal cukup padat dan memiliki arah cerita")
+    else:
+        weaknesses.append("alur 30 detik awal masih datar atau terlalu lama membangun konteks")
+        ideas.append("Padatkan 30 detik awal menjadi hook → konteks singkat → janji jawaban")
+
+    if first_30_density >= 1.6:
+        strengths.append("tempo bicara padat untuk short-form")
+    elif first_30_density < 0.9:
+        weaknesses.append("tempo informasi awal berisiko terasa lambat")
+        ideas.append("Potong jeda dan pengulangan; pertahankan satu ide baru tiap 5–8 detik")
+
+    if has_payoff:
+        strengths.append("memiliki payoff atau kesimpulan yang bisa ditunggu")
+    else:
+        weaknesses.append("payoff akhir belum terasa tegas")
+        ideas.append("Akhiri dengan jawaban, pelajaran, atau perubahan sudut pandang yang jelas")
+
+    if has_question:
+        strengths.append("memancing penonton ikut menjawab")
+    if not complete_ending:
+        weaknesses.append("ending terasa menggantung tanpa penutup yang disengaja")
+        ideas.append("Tutup dengan kalimat final yang tuntas, bukan potongan percakapan")
+    if len(loop_overlap) >= 2:
+        strengths.append("ending terhubung kembali ke hook dan berpotensi memicu rewatch")
+    else:
+        ideas.append("Kaitkan kalimat penutup kembali ke hook agar transisi ulang terasa natural")
+
+    if not ideas:
+        ideas.append("Pertahankan hook; tambahkan pattern interrupt visual hanya pada poin terpenting")
+
+    return {
+        "hook": first_sentence(opening_text or text, max_words=8),
+        "pov": fallback_pov_angle(first_30_text or text),
+        "fyp_label": fyp_score_label(score),
+        "strengths": strengths[:4],
+        "weaknesses": weaknesses[:3],
+        "improvement_ideas": ideas[:3],
+    }
+
+
 def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, list[str]]:
     text = " ".join(item.text for item in items)
     words = re.findall(r"[\w']+", text.lower())
     first_word = words[0] if words else ""
+    window_start = items[0].start if items else 0.0
+    opening_text = " ".join(
+        item.text for item in items if item.start < window_start + 3.5
+    )
+    first_30_text = " ".join(
+        item.text for item in items if item.start < window_start + 30.0
+    )
+    opening_words = set(re.findall(r"[\w']+", opening_text.lower()))
+    first_30_words = re.findall(r"[\w']+", first_30_text.lower())
     hook_hits = sorted(HOOK_WORDS.intersection(words))
     payoff_hits = sorted(PAYOFF_WORDS.intersection(words))
     tension_hits = sorted(TENSION_WORDS.intersection(words))
@@ -1117,7 +1343,7 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
         or re.search(r"(?:^|\W)(?:ha){2,}(?:\W|$)|w+k+w+k+|he(?:he)+", text.lower())
     )
 
-    score = 35
+    score = 24
     reasons: list[str] = []
 
     if 45 <= duration <= 120:
@@ -1128,7 +1354,7 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
         reasons.append("durasi masih oke")
 
     if hook_hits:
-        bump = min(24, len(hook_hits) * 6)
+        bump = min(18, len(hook_hits) * 5)
         score += bump
         reasons.append("ada keyword hook: " + ", ".join(hook_hits[:4]))
 
@@ -1181,6 +1407,58 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
         score -= 10
         reasons.append("awal agak menggantung")
 
+    opening_has_hook = bool(
+        opening_words.intersection(HOOK_WORDS | TENSION_WORDS | MYSTERY_WORDS)
+        or "?" in opening_text
+    )
+    if opening_has_hook:
+        score += 12
+        reasons.append("hook 3 detik awal kuat")
+    else:
+        score -= 8
+        reasons.append("hook 3 detik awal perlu diperkuat")
+
+    first_30_set = set(first_30_words)
+    first_30_signal_count = sum(
+        (
+            bool(first_30_set.intersection(HOOK_WORDS)),
+            bool(first_30_set.intersection(TENSION_WORDS | MYSTERY_WORDS)),
+            bool(first_30_set.intersection(PAYOFF_WORDS)),
+            bool(first_30_set.intersection(IMPORTANT_WORDS)),
+        )
+    )
+    first_30_density = len(first_30_words) / max(1.0, min(duration, 30.0))
+    if first_30_signal_count >= 3:
+        score += 10
+        reasons.append("alur 30 detik awal kuat")
+    elif first_30_signal_count >= 2:
+        score += 5
+        reasons.append("alur 30 detik awal cukup")
+    else:
+        score -= 6
+        reasons.append("30 detik awal masih datar")
+    if first_30_density >= 1.6:
+        score += 5
+        reasons.append("tempo awal padat")
+    elif first_30_density < 0.9:
+        score -= 5
+        reasons.append("tempo awal lambat")
+
+    loop_stop_words = {
+        "ada", "akan", "atau", "dan", "di", "dengan", "ini", "itu", "jadi",
+        "juga", "karena", "ke", "kita", "mereka", "pada", "saya", "sebuah",
+        "tidak", "untuk", "yang",
+    }
+    opening_concepts = opening_words - loop_stop_words
+    window_end = items[-1].end if items else duration
+    ending_text = " ".join(
+        item.text for item in items if item.end > window_end - 8.0
+    )
+    ending_words = set(re.findall(r"[\w']+", ending_text.lower()))
+    if len(opening_concepts.intersection(ending_words - loop_stop_words)) >= 2:
+        score += 4
+        reasons.append("ending nyambung ke hook")
+
     if word_count < 55:
         score -= 12
         reasons.append("terlalu sedikit konteks")
@@ -1215,6 +1493,7 @@ def build_candidate_pool(
 
             text = " ".join(part.text for part in window)
             score, reasons = score_window(window, duration)
+            fyp_analysis = candidate_fyp_analysis(window, duration, score)
             previous_is_branding = start_idx > 0 and branding_flags[start_idx - 1]
             next_is_branding = end_idx + 1 < len(segments) and branding_flags[end_idx + 1]
             # Whisper timestamps can bleed a few frames across segment edges.
@@ -1234,6 +1513,12 @@ def build_candidate_pool(
                     title=first_sentence(text),
                     reason=", ".join(reasons) or "segmen stabil",
                     text=text,
+                    hook=str(fyp_analysis["hook"]),
+                    pov=str(fyp_analysis["pov"]),
+                    fyp_label=str(fyp_analysis["fyp_label"]),
+                    strengths=list(fyp_analysis["strengths"]),
+                    weaknesses=list(fyp_analysis["weaknesses"]),
+                    improvement_ideas=list(fyp_analysis["improvement_ideas"]),
                 )
             )
     return candidates
@@ -1320,6 +1605,12 @@ def select_compilation_candidates(
                 title=best.title,
                 reason=best.reason,
                 text=best.text,
+                hook=best.hook,
+                pov=best.pov,
+                fyp_label=best.fyp_label,
+                strengths=list(best.strengths),
+                weaknesses=list(best.weaknesses),
+                improvement_ideas=list(best.improvement_ideas),
             )
         picked.append(best)
         total += best.end - best.start
@@ -1382,6 +1673,8 @@ def ai_rescore_candidates(
             "end": round(candidate.end, 1),
             "duration": round(candidate.duration, 1),
             "heuristic_score": candidate.score,
+            "heuristic_strengths": candidate.strengths,
+            "heuristic_weaknesses": candidate.weaknesses,
             "text": candidate.text[:1200],
         }
         for idx, candidate in enumerate(pool)
@@ -1401,13 +1694,19 @@ def ai_rescore_candidates(
     user_prompt = (
         f"{count_instruction}\n"
         f"{format_instruction}\n"
-        "For each chosen candidate, score 0-100 on viewer-retention and FYP potential.\n"
+        "For each chosen candidate, score 0-100 honestly on viewer-retention and FYP potential. "
+        "Judge the first 3 seconds, the first 30-second hook arc, POV clarity, information density, "
+        "pattern-interrupt opportunities, payoff, and rewatch/share potential.\n"
         "Return clips sorted from strongest to weakest. Use fewer clips if the rest are weak.\n"
         "Respond with JSON shaped exactly like:\n"
         '{"clips": [{"id": <int>, "score": <int 0-100>, '
         '"title": "<catchy hook title, max 8 words>", '
+        '"hook": "<scroll-stopping opening, max 8 words>", '
         '"reason": "<short why this has FYP potential>", '
-        '"pov": "<short POV angle for viewers>"}]}\n\n'
+        '"pov": "<short POV angle for viewers>", '
+        '"strengths": ["<max 3 concrete strengths>"], '
+        '"weaknesses": ["<max 3 concrete weaknesses>"], '
+        '"improvement_ideas": ["<max 3 specific edit/content fixes>"]}]}\n\n'
         "Candidates:\n" + json.dumps(items, ensure_ascii=False)
     )
 
@@ -1457,16 +1756,18 @@ def ai_rescore_candidates(
             candidate.score = max(1, min(70, int(round(candidate.score * 0.75))))
 
     applied = 0
-    max_rank_score = 100
     for rank, (cid, entry) in enumerate(ranked_entries):
         candidate = pool[cid]
         ai_score = entry.get("score")
         if isinstance(ai_score, (int, float)):
             normalized_ai_score = max(1, min(100, int(round(ai_score))))
-            rank_score = max_rank_score - rank
-            candidate.score = max(1, min(100, max(normalized_ai_score, rank_score)))
+            heuristic_score = original_scores[id(candidate)]
+            candidate.score = max(
+                1,
+                min(100, int(round(normalized_ai_score * 0.75 + heuristic_score * 0.25))),
+            )
         else:
-            candidate.score = max(1, max_rank_score - rank)
+            candidate.score = original_scores[id(candidate)]
         title = entry.get("title")
         if (
             isinstance(title, str)
@@ -1474,6 +1775,13 @@ def ai_rescore_candidates(
             and not is_source_branding_segment(title)
         ):
             candidate.title = title.strip()[:80]
+        hook = entry.get("hook")
+        if (
+            isinstance(hook, str)
+            and hook.strip()
+            and not is_source_branding_segment(hook)
+        ):
+            candidate.hook = first_sentence(hook, max_words=8)[:80]
         reason = entry.get("reason")
         pov = entry.get("pov")
         reason_parts: list[str] = []
@@ -1481,11 +1789,34 @@ def ai_rescore_candidates(
             reason_parts.append(reason.strip())
         if isinstance(pov, str) and pov.strip():
             reason_parts.append("POV: " + pov.strip())
+            candidate.pov = pov.strip()[:220]
         if reason_parts:
             candidate.reason = "AI FYP: " + " | ".join(reason_parts)[:180]
+        for field_name in ("strengths", "weaknesses", "improvement_ideas"):
+            raw_values = entry.get(field_name)
+            if not isinstance(raw_values, list):
+                continue
+            clean_values = [
+                re.sub(r"\s+", " ", str(value)).strip()[:180]
+                for value in raw_values
+                if isinstance(value, str) and value.strip()
+            ][:3]
+            if clean_values:
+                setattr(candidate, field_name, clean_values)
+        candidate.fyp_label = fyp_score_label(candidate.score)
+        if not candidate.hook:
+            candidate.hook = first_sentence(candidate.title, max_words=8)
+        if not candidate.pov:
+            candidate.pov = fallback_pov_angle(candidate.text)
         applied += 1
 
     if applied:
+        for candidate in pool:
+            candidate.fyp_label = fyp_score_label(candidate.score)
+            if not candidate.hook:
+                candidate.hook = first_sentence(candidate.title, max_words=8)
+            if not candidate.pov:
+                candidate.pov = fallback_pov_angle(candidate.text)
         console.print(f"[green]AI agent selected[/green] {applied} FYP-focused candidates.")
     else:
         for candidate in pool:
@@ -1539,9 +1870,16 @@ def split_subtitle_text(text: str, max_chars: int = SUBTITLE_MAX_CHARS, max_line
 
 
 def hook_banner_text(clip: ClipCandidate) -> str:
-    title = first_sentence(clip.title, max_words=8).upper()
+    title = first_sentence(clip.hook or clip.title, max_words=8).upper()
     chunks = split_subtitle_text(title, max_chars=24, max_lines=2)
     return (chunks[0] if chunks else title)[:80]
+
+
+def pov_banner_text(clip: ClipCandidate) -> str:
+    pov = re.sub(r"^\s*pov\s*:\s*", "", clip.pov or fallback_pov_angle(clip.text), flags=re.I)
+    short_pov = first_sentence(pov, max_words=12)
+    chunks = split_subtitle_text(short_pov, max_chars=48, max_lines=2)
+    return (chunks[0] if chunks else short_pov)[:110]
 
 
 def detect_visual_theme(clip: ClipCandidate) -> VisualTheme:
@@ -1666,6 +2004,9 @@ def detect_reaction_cues(
         elif words.intersection(PRAYER_WORDS):
             kind = "pray"
             trigger = next(iter(sorted(words.intersection(PRAYER_WORDS))))
+        elif words.intersection(IMPORTANT_WORDS):
+            kind = "important"
+            trigger = next(iter(sorted(words.intersection(IMPORTANT_WORDS))))
         elif "?" in segment.text or words.intersection(
             {"apa", "apakah", "bagaimana", "benarkah", "bukankah", "gimana", "kenapa", "kok", "masa"}
         ):
@@ -1706,7 +2047,7 @@ REACTION_ASSET_DIR = Path(__file__).resolve().parent / "assets" / "reactions"
 def reaction_overlay_filter(cue: ReactionCue, index: int) -> str:
     asset_path = (REACTION_ASSET_DIR / f"{cue.kind}.svg").resolve()
     escaped_path = str(asset_path).replace("\\", "/").replace(":", r"\:").replace("'", r"\'")
-    size = 184 if cue.kind in {"laugh", "shock"} else 166
+    size = 184 if cue.kind in {"laugh", "shock"} else 176 if cue.kind == "important" else 166
     base_x = 828 if cue.side == "right" else 68
     direction = -1 if cue.side == "right" else 1
     base_label = f"reaction_base_{index}"
@@ -1717,7 +2058,8 @@ def reaction_overlay_filter(cue: ReactionCue, index: int) -> str:
         f"{base_x - direction * 120}+{direction * 545:.1f}*(t-{cue.start:.3f}),"
         f"{base_x}+10*sin(9*(t-{cue.start:.3f})))"
     )
-    y_expression = f"1190-32*abs(sin(5*(t-{cue.start:.3f})))"
+    base_y = 1060 if cue.kind == "important" else 1190
+    y_expression = f"{base_y}-32*abs(sin(5*(t-{cue.start:.3f})))"
     return (
         f"null[{base_label}];"
         f"movie='{escaped_path}',scale={size}:{size}:flags=lanczos,format=rgba[{sticker_label}];"
@@ -1735,6 +2077,7 @@ SOUND_EFFECT_PROFILES: dict[SoundEffectKind, tuple[int, float, float]] = {
     "pray": (840, 0.38, 0.065),
     "warning": (155, 0.28, 0.15),
     "heart": (740, 0.34, 0.065),
+    "important": (560, 0.18, 0.085),
     "emphasis": (480, 0.13, 0.075),
 }
 
@@ -1790,7 +2133,7 @@ def contextual_audio_mix_filter(base_filter: str, cues: list[SoundEffectCue]) ->
         f"[0:a:0]{base_filter},aformat=sample_rates=48000:channel_layouts=stereo[voice]"
     ]
     mix_inputs = ["[voice]"]
-    chime_kinds = {"laugh", "think", "pray", "heart", "emphasis"}
+    chime_kinds = {"laugh", "think", "pray", "heart", "important", "emphasis"}
     for index, cue in enumerate(cues, start=1):
         label = f"sfx_{index}"
         fade_in = min(0.018, cue.duration * 0.15)
@@ -1820,16 +2163,32 @@ def contextual_audio_mix_filter(base_filter: str, cues: list[SoundEffectCue]) ->
     return ";".join(chains)
 
 
+def modern_blurred_video_frame_filter(accent: str, secondary: str) -> str:
+    """Place the sharp clip over a moving blurred copy with a cinematic glow rim."""
+    return (
+        "split=2[modern_bg_src][modern_fg_src];"
+        "[modern_bg_src]scale=360:640:flags=bilinear,gblur=sigma=18,"
+        "scale=1080:1920:flags=lanczos,"
+        "eq=brightness=-0.11:contrast=1.04:saturation=1.24,"
+        "drawbox=x=0:y=0:w=iw:h=ih:color=black@0.16:t=fill,"
+        "drawbox=x=46:y=81:w=1000:h=1778:color=black@0.42:t=fill,"
+        f"drawbox=x=30:y=61:w=1020:h=1798:color={secondary}@0.24:t=fill,"
+        f"drawbox=x=35:y=66:w=1010:h=1788:color={accent}@0.34:t=fill[modern_bg];"
+        "[modern_fg_src]scale=1000:1778:flags=lanczos[modern_fg];"
+        "[modern_bg][modern_fg]overlay=40:71:shortest=1:eof_action=pass"
+    )
+
+
 def modern_gradient_border_filters(accent: str, secondary: str) -> list[str]:
-    """Build a restrained dual-tone inner border with a soft depth gradient."""
+    """Build a restrained dual-tone glow around the inset sharp video panel."""
     return [
-        f"drawbox=x=10:y=10:w=1060:h=1900:color={secondary}@0.16:t=14",
-        f"drawbox=x=17:y=17:w=1046:h=1886:color={accent}@0.48:t=7",
-        "drawbox=x=23:y=23:w=1034:h=1874:color=white@0.16:t=2",
-        f"drawbox=x=17:y=17:w=520:h=7:color={secondary}@0.90:t=fill",
-        f"drawbox=x=543:y=1896:w=520:h=7:color={secondary}@0.82:t=fill",
-        f"drawbox=x=17:y=950:w=7:h=946:color={secondary}@0.74:t=fill",
-        f"drawbox=x=1056:y=17:w=7:h=946:color={secondary}@0.74:t=fill",
+        f"drawbox=x=30:y=61:w=1020:h=1798:color={secondary}@0.20:t=12",
+        f"drawbox=x=35:y=66:w=1010:h=1788:color={accent}@0.62:t=7",
+        "drawbox=x=39:y=70:w=1002:h=1780:color=white@0.22:t=2",
+        f"drawbox=x=35:y=66:w=505:h=7:color={secondary}@0.94:t=fill",
+        f"drawbox=x=540:y=1847:w=505:h=7:color={secondary}@0.86:t=fill",
+        f"drawbox=x=35:y=960:w=7:h=894:color={secondary}@0.78:t=fill",
+        f"drawbox=x=1038:y=66:w=7:h=894:color={secondary}@0.78:t=fill",
     ]
 
 
@@ -1837,6 +2196,7 @@ def enhanced_edit_filter(
     duration: float,
     hook_text_filename: str,
     *,
+    pov_text_filename: str = "",
     show_progress: bool = True,
     theme_profile: dict[str, str] | None = None,
     emphasis_times: list[float] | None = None,
@@ -1882,46 +2242,100 @@ def enhanced_edit_filter(
         "vignette=PI/9",
         "fade=t=in:st=0:d=0.18",
         f"fade=t=out:st={fade_out_start:.3f}:d=0.24",
+        modern_blurred_video_frame_filter(accent, accent_secondary),
     ]
     filters.extend(modern_gradient_border_filters(accent, accent_secondary))
     if show_text_overlays:
         filters.extend(
             [
                 f"drawbox=x=48:y=62:w={badge_width}:h=48:color={accent}@0.92:t=fill:"
-                "enable='between(t,0.06,3.20)'",
+                "enable='between(t,0.06,3.80)'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                 f"text='{badge}':expansion=none:fontcolor=white:fontsize=23:"
-                "x=68:y=73:enable='between(t,0.06,3.20)'",
+                "x=68:y=73:enable='between(t,0.06,3.80)'",
                 "drawbox=x=48:y=120:w=984:h=250:color=black@0.62:t=fill:"
-                "enable='between(t,0.10,3.20)'",
+                "enable='between(t,0.10,3.80)'",
                 f"drawbox=x=48:y=120:w=14:h=250:color={accent}@0.98:t=fill:"
-                "enable='between(t,0.10,3.20)'",
+                "enable='between(t,0.10,3.80)'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                 f"textfile='{hook_text_filename}':reload=0:expansion=none:"
                 "fontcolor=white:fontsize=48:line_spacing=10:borderw=2:bordercolor=black@0.85:"
                 "x='if(lt(t,0.48),-text_w+(t-0.10)*(76+text_w)/0.38,76)':y=168:"
-                "enable='between(t,0.10,3.20)'",
+                "enable='between(t,0.10,3.80)'",
             ]
         )
-    for timestamp in emphasis_times or []:
+        if pov_text_filename:
+            pov_end = min(safe_duration, 9.2)
+            if pov_end > 4.2:
+                filters.extend(
+                    [
+                        "drawbox=x=78:y=126:w=924:h=116:color=black@0.68:t=fill:"
+                        f"enable='between(t,4.20,{pov_end:.3f})'",
+                        f"drawbox=x=78:y=126:w=9:h=116:color={accent_secondary}@0.96:t=fill:"
+                        f"enable='between(t,4.20,{pov_end:.3f})'",
+                        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                        f"text='POV':expansion=none:fontcolor={accent_secondary}:fontsize=20:"
+                        f"x=108:y=144:enable='between(t,4.20,{pov_end:.3f})'",
+                        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+                        f"textfile='{pov_text_filename}':reload=0:expansion=none:"
+                        "fontcolor=white:fontsize=27:line_spacing=5:borderw=1:bordercolor=black@0.82:"
+                        f"x=108:y=176:enable='between(t,4.20,{pov_end:.3f})'",
+                    ]
+                )
+        # Subtle pattern interrupts inside the first 30 seconds. These are
+        # intentionally brief so the edit feels alive without covering speech.
+        for retention_time in (12.0, 24.0):
+            if retention_time >= safe_duration - 1.0:
+                continue
+            retention_end = min(safe_duration, retention_time + 0.32)
+            filters.extend(
+                [
+                    f"drawbox=x=35:y=66:w=1010:h=7:color={accent_secondary}@0.96:t=fill:"
+                    f"enable='between(t,{retention_time:.3f},{retention_end:.3f})'",
+                    f"drawbox=x=35:y=1847:w=1010:h=7:color={accent}@0.88:t=fill:"
+                    f"enable='between(t,{retention_time:.3f},{retention_end:.3f})'",
+                ]
+            )
+    visual_emphasis_times = list(emphasis_times or [])
+    for cue in reaction_cues or []:
+        if cue.kind == "important" and all(
+            abs(cue.start - timestamp) >= 1.0
+            for timestamp in visual_emphasis_times
+        ):
+            visual_emphasis_times.append(cue.start)
+    visual_emphasis_times = sorted(visual_emphasis_times)[:4]
+
+    for timestamp in visual_emphasis_times:
         pulse_end = min(safe_duration, timestamp + 0.42)
-        label_end = min(safe_duration, timestamp + 1.15)
+        label_end = min(safe_duration, timestamp + 1.35)
         filters.extend(
             [
-                f"drawbox=x=18:y=18:w=1044:h=1884:color={accent}@0.58:t=5:"
+                f"drawbox=x=30:y=61:w=1020:h=1798:color={accent}@0.68:t=7:"
                 f"enable='between(t,{timestamp:.3f},{pulse_end:.3f})'",
-                f"drawbox=x=30:y=30:w=1020:h=1860:color=white@0.18:t=2:"
+                f"drawbox=x=39:y=70:w=1002:h=1780:color=white@0.26:t=3:"
                 f"enable='between(t,{timestamp:.3f},{pulse_end:.3f})'",
             ]
         )
         if show_text_overlays:
             filters.extend(
                 [
-                    f"drawbox=x=706:y=400:w=326:h=58:color={accent}@0.94:t=fill:"
+                    "drawbox=x=594:y=382:w=438:h=108:color=black@0.74:t=fill:"
+                    f"enable='between(t,{timestamp:.3f},{label_end:.3f})'",
+                    f"drawbox=x=594:y=382:w=438:h=7:color={accent}@0.98:t=fill:"
+                    f"enable='between(t,{timestamp:.3f},{label_end:.3f})'",
+                    f"drawbox=x=612:y=408:w=58:h=58:color={accent}@0.98:t=fill:"
                     f"enable='between(t,{timestamp:.3f},{label_end:.3f})'",
                     "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-                    f"text='{emphasis_label}':expansion=none:fontcolor=white:fontsize=23:"
-                    f"x='1008-text_w':y=415:enable='between(t,{timestamp:.3f},{label_end:.3f})'",
+                    "text='!':expansion=none:fontcolor=white:fontsize=38:"
+                    f"x=634:y=411:enable='between(t,{timestamp:.3f},{label_end:.3f})'",
+                    "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                    f"text='NOTICE':expansion=none:fontcolor={accent_secondary}:fontsize=17:"
+                    f"x=690:y=400:enable='between(t,{timestamp:.3f},{label_end:.3f})'",
+                    "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                    f"text='{emphasis_label}':expansion=none:fontcolor=white:fontsize=25:"
+                    f"x=690:y=426:enable='between(t,{timestamp:.3f},{label_end:.3f})'",
+                    f"drawbox=x=594:y=484:w=438:h=3:color={accent_secondary}@0.74:t=fill:"
+                    f"enable='between(t,{timestamp:.3f},{label_end:.3f})'",
                 ]
             )
     if show_reactions:
@@ -2315,6 +2729,8 @@ def export_clip(
     temp_video_path = clips_dir / f"{base_name}.video_tmp.mp4"
     temp_audio_path = clips_dir / f"{base_name}.audio_tmp.wav"
     hook_text_path = clips_dir / f"{base_name}.hook.txt"
+    pov_text_path = clips_dir / f"{base_name}.pov.txt"
+    json_path.unlink(missing_ok=True)
 
     duration = clip.end - clip.start
     theme_profile = visual_theme_profile(clip)
@@ -2333,21 +2749,19 @@ def export_clip(
         and all((REACTION_ASSET_DIR / f"{cue.kind}.svg").is_file() for cue in reaction_cues)
     )
     write_srt(srt_path, clip_segments, clip.start, duration)
-    save_json(
-        json_path,
-        {
-            **asdict(clip),
-            "enhanced_edit": enhanced_edit,
-            "remove_running_text": remove_running_text,
-            "visual_theme": theme_profile["theme"],
-            "emphasis_times": emphasis_times,
-            "reaction_cues": [asdict(cue) for cue in reaction_cues],
-            "sound_effect_cues": [asdict(cue) for cue in sound_effect_cues],
-            "drawtext_supported": drawtext_supported,
-            "subtitles_supported": subtitles_supported,
-            "reaction_overlays_supported": reaction_overlays_supported,
-        },
-    )
+    sidecar_payload = {
+        **asdict(clip),
+        "enhanced_edit": enhanced_edit,
+        "remove_running_text": remove_running_text,
+        "visual_theme": theme_profile["theme"],
+        "emphasis_times": emphasis_times,
+        "reaction_cues": [asdict(cue) for cue in reaction_cues],
+        "sound_effect_cues": [asdict(cue) for cue in sound_effect_cues],
+        "drawtext_supported": drawtext_supported,
+        "subtitles_supported": subtitles_supported,
+        "reaction_overlays_supported": reaction_overlays_supported,
+        "video_quality": video_quality,
+    }
 
     if crop_mode == "streamer":
         vf = streamer_crop_filter(video_path, clip, cam_corner)
@@ -2359,6 +2773,7 @@ def export_clip(
     if enhanced_edit:
         if drawtext_supported:
             hook_text_path.write_text(hook_banner_text(clip) + "\n", encoding="utf-8")
+            pov_text_path.write_text(pov_banner_text(clip) + "\n", encoding="utf-8")
         else:
             console.print(
                 "[yellow]FFmpeg tidak memiliki drawtext; hook teks dilewati, "
@@ -2374,6 +2789,7 @@ def export_clip(
             f"{enhanced_edit_filter(
                 duration,
                 hook_text_path.name,
+                pov_text_filename=pov_text_path.name if drawtext_supported else "",
                 show_progress=generate_assets,
                 theme_profile=theme_profile,
                 emphasis_times=emphasis_times,
@@ -2439,6 +2855,7 @@ def export_clip(
         )
     finally:
         hook_text_path.unlink(missing_ok=True)
+        pov_text_path.unlink(missing_ok=True)
     audio_filter = (
         "highpass=f=70,lowpass=f=15000,"
         "acompressor=threshold=0.125:ratio=2.5:attack=20:release=250:makeup=1.35,"
@@ -2541,6 +2958,15 @@ def export_clip(
     temp_audio_path.unlink(missing_ok=True)
     if enforce_size:
         enforce_clip_size_limit(out_path, duration)
+    output_width, output_height = ensure_minimum_hd_output(out_path)
+    sidecar_payload.update(
+        {
+            "output_width": output_width,
+            "output_height": output_height,
+            "output_resolution": f"{output_width}x{output_height}",
+        }
+    )
+    save_json(json_path, sidecar_payload)
 
     if generate_assets:
         thumb_path = clips_dir / f"{base_name}_thumb.jpg"
@@ -2660,16 +3086,33 @@ def export_compilation(
     finally:
         shutil.rmtree(parts_dir, ignore_errors=True)
 
+    output_width, output_height = ensure_minimum_hd_output(out_path)
     total_duration = write_compilation_srt(srt_path, transcript, candidates)
+    compilation_score = round(sum(item.score for item in candidates) / len(candidates))
+    combined_strengths = list(
+        dict.fromkeys(value for item in candidates for value in item.strengths)
+    )[:4]
+    combined_weaknesses = list(
+        dict.fromkeys(value for item in candidates for value in item.weaknesses)
+    )[:3]
+    combined_ideas = list(
+        dict.fromkeys(value for item in candidates for value in item.improvement_ideas)
+    )[:3]
     compilation = ClipCandidate(
         index=1,
         start=min(item.start for item in candidates),
         end=max(item.end for item in candidates),
         duration=total_duration,
-        score=round(sum(item.score for item in candidates) / len(candidates)),
+        score=compilation_score,
         title=f"Highlight Terpenting: {strongest.title}"[:80],
         reason=f"Kompilasi {len(candidates)} poin penting, dipilih untuk hook, value, dan payoff.",
         text=" ".join(item.text for item in candidates),
+        hook=strongest.hook or strongest.title,
+        pov=strongest.pov or fallback_pov_angle(strongest.text),
+        fyp_label=fyp_score_label(compilation_score),
+        strengths=combined_strengths,
+        weaknesses=combined_weaknesses,
+        improvement_ideas=combined_ideas,
     )
     save_json(
         json_path,
@@ -2679,6 +3122,10 @@ def export_compilation(
             "enhanced_edit": enhanced_edit,
             "remove_running_text": remove_running_text,
             "parts": [asdict(item) for item in candidates],
+            "video_quality": video_quality,
+            "output_width": output_width,
+            "output_height": output_height,
+            "output_resolution": f"{output_width}x{output_height}",
         },
     )
 
@@ -2696,13 +3143,14 @@ def export_compilation(
 
 
 def print_candidates(candidates: list[ClipCandidate]) -> None:
-    table = Table(title="Clip candidates")
+    table = Table(title="Clip candidates · FYP potential")
     table.add_column("#", justify="right")
     table.add_column("Start")
     table.add_column("End")
-    table.add_column("Score", justify="right")
+    table.add_column("FYP", justify="right")
+    table.add_column("Potensi")
     table.add_column("Title")
-    table.add_column("Reason")
+    table.add_column("Kurang / Ide Codex")
 
     for item in candidates:
         table.add_row(
@@ -2710,8 +3158,9 @@ def print_candidates(candidates: list[ClipCandidate]) -> None:
             seconds_to_stamp(item.start),
             seconds_to_stamp(item.end),
             str(item.score),
+            item.fyp_label or fyp_score_label(item.score),
             item.title,
-            item.reason,
+            " | ".join([*(item.weaknesses[:1] or ["siap diuji"]), *item.improvement_ideas[:1]]),
         )
     console.print(table)
 

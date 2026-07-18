@@ -1,4 +1,16 @@
-import { CheckCircle2, Clipboard, Download, ExternalLink, RefreshCw, Trash2, UploadCloud, Video } from "lucide-react";
+import {
+  CheckCircle2,
+  Clipboard,
+  Download,
+  ExternalLink,
+  Lightbulb,
+  RefreshCw,
+  Sparkles,
+  Target,
+  Trash2,
+  UploadCloud,
+  Video,
+} from "lucide-react";
 import { getOutputUrl } from "../../lib/apiClient";
 import { clipDisplayTitle, handleCopyTitle, handleDownload } from "../../lib/utils";
 import type { ClipFile, YouTubeUploadJob } from "../../types/clip.type";
@@ -50,6 +62,13 @@ function friendlyYouTubeUploadError(message: string, usesChromeDebugging: boolea
     return "Studio belum siap membaca playlist. Klik Login Sekali untuk refresh session, lalu Retry YouTube.";
   }
   return clean;
+}
+
+function fypScoreTone(score: number) {
+  if (score >= 88) return "excellent";
+  if (score >= 78) return "strong";
+  if (score >= 65) return "promising";
+  return "polish";
 }
 
 export function ResultsSection({
@@ -234,6 +253,50 @@ export function ResultsSection({
                     Copy
                   </button>
                 </div>
+                {clip.fyp_score !== null && clip.fyp_score !== undefined ? (
+                  <div className="fypAnalysis">
+                    <div className="fypScoreRow">
+                      <span className={`fypScore fypScore-${fypScoreTone(clip.fyp_score)}`}>
+                        <Sparkles size={15} />
+                        FYP {Math.round(clip.fyp_score)}/100
+                      </span>
+                      <strong>{clip.fyp_label || "Sudah dinilai"}</strong>
+                      {clip.output_resolution ? (
+                        <span className="resolutionBadge">{clip.output_resolution} HD</span>
+                      ) : null}
+                    </div>
+                    {clip.hook ? (
+                      <div className="analysisLine">
+                        <Target size={15} />
+                        <span><b>Hook:</b> {clip.hook}</span>
+                      </div>
+                    ) : null}
+                    {clip.pov ? (
+                      <div className="analysisLine">
+                        <Video size={15} />
+                        <span><b>POV:</b> {clip.pov}</span>
+                      </div>
+                    ) : null}
+                    {clip.strengths?.length ? (
+                      <div className="analysisBlock analysisStrength">
+                        <b>Kekuatan</b>
+                        <ul>{clip.strengths.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul>
+                      </div>
+                    ) : null}
+                    {clip.weaknesses?.length ? (
+                      <div className="analysisBlock analysisWeakness">
+                        <b>Yang masih kurang</b>
+                        <ul>{clip.weaknesses.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul>
+                      </div>
+                    ) : null}
+                    {clip.improvement_ideas?.length ? (
+                      <div className="analysisBlock analysisIdea">
+                        <b><Lightbulb size={14} /> Ide Codex</b>
+                        <ul>{clip.improvement_ideas.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 <label className="clipValidation">
                   <input
                     checked={clip.is_correct}

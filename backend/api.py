@@ -226,6 +226,12 @@ class ClipCandidate(BaseModel):
     title: str
     reason: str
     text: str
+    hook: str = ""
+    pov: str = ""
+    fyp_label: str = ""
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    improvement_ideas: list[str] = Field(default_factory=list)
 
 
 class ClipFile(BaseModel):
@@ -236,6 +242,15 @@ class ClipFile(BaseModel):
     thumbnail_url: str | None = None
     thumbnail_prompt: str | None = None
     social_caption: str | None = None
+    fyp_score: int | None = None
+    fyp_label: str | None = None
+    fyp_reason: str | None = None
+    hook: str | None = None
+    pov: str | None = None
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    improvement_ideas: list[str] = Field(default_factory=list)
+    output_resolution: str | None = None
     is_correct: bool = False
 
 
@@ -2764,14 +2779,29 @@ def discover_clips(started_at: float) -> list[ClipFile]:
         caption_path = path.with_name(f"{path.stem}_caption.txt")
         json_path = path.with_suffix(".json")
         title: str | None = None
+        sidecar: dict[str, Any] = {}
         if json_path.exists():
             try:
                 payload = json.loads(json_path.read_text(encoding="utf-8"))
+                sidecar = payload if isinstance(payload, dict) else {}
                 candidate_title = payload.get("title") if isinstance(payload, dict) else None
                 if isinstance(candidate_title, str) and candidate_title.strip():
                     title = candidate_title.strip()
             except (OSError, json.JSONDecodeError):
                 title = None
+                sidecar = {}
+        def sidecar_list(key: str) -> list[str]:
+            value = sidecar.get(key)
+            if not isinstance(value, list):
+                return []
+            return [str(item).strip() for item in value if isinstance(item, str) and item.strip()][:4]
+
+        raw_score = sidecar.get("score")
+        fyp_score = (
+            max(1, min(100, int(round(raw_score))))
+            if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool)
+            else None
+        )
         clips.append(
             ClipFile(
                 name=path.name,
@@ -2784,6 +2814,27 @@ def discover_clips(started_at: float) -> list[ClipFile]:
                 ),
                 social_caption=(
                     caption_path.read_text(encoding="utf-8") if caption_path.exists() else None
+                ),
+                fyp_score=fyp_score,
+                fyp_label=(
+                    str(sidecar.get("fyp_label")).strip()
+                    if sidecar.get("fyp_label")
+                    else None
+                ),
+                fyp_reason=(
+                    str(sidecar.get("reason")).strip()
+                    if sidecar.get("reason")
+                    else None
+                ),
+                hook=str(sidecar.get("hook")).strip() if sidecar.get("hook") else None,
+                pov=str(sidecar.get("pov")).strip() if sidecar.get("pov") else None,
+                strengths=sidecar_list("strengths"),
+                weaknesses=sidecar_list("weaknesses"),
+                improvement_ideas=sidecar_list("improvement_ideas"),
+                output_resolution=(
+                    str(sidecar.get("output_resolution")).strip()
+                    if sidecar.get("output_resolution")
+                    else None
                 ),
             )
         )

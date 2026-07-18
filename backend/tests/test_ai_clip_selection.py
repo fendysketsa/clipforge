@@ -58,7 +58,9 @@ def test_ai_ranked_candidate_beats_higher_heuristic_score(monkeypatch):
     selected = select_candidates(rescored, 1)
 
     assert selected[0].title == "Kesalahan Pertama"
-    assert selected[0].score == 100
+    assert selected[0].score == 84
+    assert selected[0].fyp_label == "Kuat"
+    assert selected[0].pov == "Penonton merasa sedang diingatkan sebelum rugi."
     assert selected[0].reason.startswith("AI FYP:")
     assert generic.score < selected[0].score
 

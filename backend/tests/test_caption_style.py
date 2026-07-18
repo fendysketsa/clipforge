@@ -8,6 +8,7 @@ from clipper import (
     _hex_to_ass_color,
     build_candidate_pool,
     build_subtitle_style,
+    candidate_fyp_analysis,
     caption_gradient_blur_filter,
     contextual_audio_mix_filter,
     contextual_sound_effect_cues,
@@ -18,8 +19,11 @@ from clipper import (
     fallback_social_caption,
     hook_banner_text,
     is_source_branding_segment,
+    modern_blurred_video_frame_filter,
     modern_gradient_border_filters,
+    pov_banner_text,
     remove_running_text_filter,
+    score_window,
     segments_for_clip,
     split_subtitle_text,
     visual_theme_profile,
@@ -122,24 +126,98 @@ def test_running_text_cleanup_crops_bottom_and_preserves_vertical_aspect():
 
 
 def test_enhanced_edit_filter_adds_motion_hook_transition_and_progress():
-    value = enhanced_edit_filter(60, "clip.hook.txt")
+    value = enhanced_edit_filter(60, "clip.hook.txt", pov_text_filename="clip.pov.txt")
 
     assert "scale=1120:1992" in value
     assert "vignette=PI/9" in value
     assert "fade=t=in" in value
     assert "textfile='clip.hook.txt'" in value
+    assert "textfile='clip.pov.txt'" in value
+    assert "text='POV'" in value
+    assert "between(t,12.000,12.320)" in value
+    assert "between(t,24.000,24.320)" in value
     assert "iw*t/60.000" in value
-    assert "#22D3EE@0.16" in value
+    assert "gblur=sigma=18" in value
+    assert "[modern_bg][modern_fg]overlay=40:71" in value
+    assert "#22D3EE@0.24" in value
+
+
+def test_fyp_analysis_explains_hook_first_30_seconds_and_codex_ideas():
+    segments = [
+        TranscriptSegment(0, 3, "Tahukah kamu kenapa cara ini berbahaya?"),
+        TranscriptSegment(3, 12, "Masalahnya ternyata ada pada keputusan pertama."),
+        TranscriptSegment(12, 24, "Intinya ada satu kunci yang wajib diingat."),
+        TranscriptSegment(24, 32, "Solusinya sederhana dan ini kesimpulannya."),
+    ]
+
+    analysis = candidate_fyp_analysis(segments, 32, 89)
+
+    assert analysis["fyp_label"] == "Sangat kuat"
+    assert "3 detik awal punya pemicu rasa penasaran" in analysis["strengths"]
+    assert any("30 detik awal" in item for item in analysis["strengths"])
+    assert analysis["pov"]
+    assert analysis["improvement_ideas"]
+
+
+def test_fyp_score_rewards_strong_opening_and_first_30_second_arc():
+    strong = [
+        TranscriptSegment(0, 3, "Tahukah kamu kenapa keputusan ini berbahaya?"),
+        TranscriptSegment(3, 12, "Masalahnya ternyata bukan pada alat, tetapi langkah pertama."),
+        TranscriptSegment(12, 22, "Intinya ada kunci penting yang wajib dipahami sebelum terlambat."),
+        TranscriptSegment(22, 30, "Solusinya adalah memeriksa risiko lalu mengambil keputusan."),
+        TranscriptSegment(30, 55, "Dengan cara itu masalah selesai dan hasilnya bisa dijelaskan dengan jelas."),
+    ]
+    weak = [
+        TranscriptSegment(0, 12, "Nah jadi sebelumnya kita akan membahas beberapa hal terlebih dahulu."),
+        TranscriptSegment(12, 28, "Kemudian ada bagian lain yang masih akan kita jelaskan nanti."),
+        TranscriptSegment(28, 55, "Lalu pembicaraan berlanjut dengan konteks umum lainnya tanpa kesimpulan"),
+    ]
+
+    strong_score, _ = score_window(strong, 55)
+    weak_score, _ = score_window(weak, 55)
+
+    assert strong_score >= weak_score + 20
+
+
+def test_pov_banner_is_compact_and_uses_candidate_angle():
+    clip = ClipCandidate(
+        1,
+        0,
+        60,
+        60,
+        85,
+        "Judul",
+        "test",
+        "Isi",
+        pov="POV: Kamu baru sadar keputusan kecil ini punya dampak yang sangat besar.",
+    )
+
+    value = pov_banner_text(clip)
+
+    assert "POV:" not in value
+    assert len(value.split()) <= 12
+
+
+def test_modern_blurred_frame_keeps_sharp_inset_over_moving_background():
+    value = modern_blurred_video_frame_filter("#22C55E", "#FACC15")
+
+    assert "split=2[modern_bg_src][modern_fg_src]" in value
+    assert "scale=360:640" in value
+    assert "gblur=sigma=18" in value
+    assert "scale=1000:1778" in value
+    assert "#FACC15@0.24" in value
+    assert "#22C55E@0.34" in value
+    assert "overlay=40:71" in value
 
 
 def test_modern_gradient_border_uses_dual_tone_glow_layers():
     filters = modern_gradient_border_filters("#22C55E", "#FACC15")
     value = ",".join(filters)
 
-    assert "#22C55E@0.48" in value
-    assert "#FACC15@0.16" in value
-    assert "color=white@0.16" in value
-    assert "x=17:y=17:w=520:h=7" in value
+    assert "#22C55E@0.62" in value
+    assert "#FACC15@0.20" in value
+    assert "color=white@0.22" in value
+    assert "x=35:y=66:w=505:h=7" in value
 
 
 def test_enhanced_edit_filter_falls_back_without_drawtext():
@@ -152,7 +230,7 @@ def test_enhanced_edit_filter_falls_back_without_drawtext():
 
     assert "drawtext=" not in value
     assert "textfile=" not in value
-    assert "drawbox=x=18:y=18" in value
+    assert "drawbox=x=30:y=61" in value
     assert "iw*t/60.000" in value
 
 
@@ -231,6 +309,23 @@ def test_reaction_svg_overlay_is_added_to_filter():
     assert "movie=" in value
     assert "overlay=" in value
     assert "between(t,5.000,6.850)" in value
+
+
+def test_important_words_get_notice_sticker_and_matching_sound():
+    clip = ClipCandidate(1, 0, 30, 30, 95, "Kunci Utama", "test", "Intinya ini penting.")
+    segments = [
+        TranscriptSegment(5, 8, "Intinya ini adalah kunci yang penting."),
+    ]
+
+    reactions = detect_reaction_cues(clip, segments)
+    sounds = contextual_sound_effect_cues(30, reactions, emphasis_times=[])
+    value = enhanced_edit_filter(30, "clip.hook.txt", reaction_cues=reactions)
+
+    assert [cue.kind for cue in reactions] == ["important"]
+    assert [cue.kind for cue in sounds] == ["important"]
+    assert "important.svg" in value
+    assert "text='NOTICE'" in value
+    assert "text='!'" in value
 
 
 def test_contextual_sound_effects_follow_reactions_and_avoid_duplicate_emphasis():

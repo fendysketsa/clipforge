@@ -21,6 +21,15 @@ export type ClipFile = {
   thumbnail_url?: string | null;
   thumbnail_prompt?: string | null;
   social_caption?: string | null;
+  fyp_score?: number | null;
+  fyp_label?: string | null;
+  fyp_reason?: string | null;
+  hook?: string | null;
+  pov?: string | null;
+  strengths?: string[];
+  weaknesses?: string[];
+  improvement_ideas?: string[];
+  output_resolution?: string | null;
   is_correct: boolean;
 };
 
@@ -33,6 +42,12 @@ export type ClipCandidate = {
   title: string;
   reason: string;
   text: string;
+  hook?: string;
+  pov?: string;
+  fyp_label?: string;
+  strengths?: string[];
+  weaknesses?: string[];
+  improvement_ideas?: string[];
 };
 
 export type ClipJob = {

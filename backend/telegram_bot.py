@@ -2107,6 +2107,37 @@ class ClipForgeTelegramBot:
     def clip_metadata_text(self, clip: dict[str, Any], index: int, total: int) -> str:
         result_label = "Kompilasi Maks. 5 Menit" if is_compilation_result(clip) else "Clip Pendek"
         parts = [f"Detail {result_label}", f"Judul:\n{clip_title(clip, index)}"]
+        score = clip.get("fyp_score")
+        label = str(clip.get("fyp_label") or "").strip()
+        if isinstance(score, (int, float)) and not isinstance(score, bool):
+            parts.append(f"Potensi FYP: {int(round(score))}/100 · {label or 'Dinilai'}")
+        hook = clip.get("hook")
+        if isinstance(hook, str) and hook.strip():
+            parts.append("Hook:\n" + hook.strip())
+        pov = clip.get("pov")
+        if isinstance(pov, str) and pov.strip():
+            parts.append("POV penonton:\n" + pov.strip())
+        strengths = clip.get("strengths")
+        if isinstance(strengths, list) and strengths:
+            parts.append(
+                "Kekuatan:\n"
+                + "\n".join(f"✅ {str(item).strip()}" for item in strengths[:3] if str(item).strip())
+            )
+        weaknesses = clip.get("weaknesses")
+        if isinstance(weaknesses, list) and weaknesses:
+            parts.append(
+                "Yang masih kurang:\n"
+                + "\n".join(f"⚠️ {str(item).strip()}" for item in weaknesses[:3] if str(item).strip())
+            )
+        ideas = clip.get("improvement_ideas")
+        if isinstance(ideas, list) and ideas:
+            parts.append(
+                "Ide Codex:\n"
+                + "\n".join(f"💡 {str(item).strip()}" for item in ideas[:3] if str(item).strip())
+            )
+        resolution = clip.get("output_resolution")
+        if isinstance(resolution, str) and resolution.strip():
+            parts.append(f"Kualitas output: {resolution.strip()} · HD terverifikasi")
         social_caption = clip.get("social_caption")
         if isinstance(social_caption, str) and social_caption.strip():
             parts.append("Caption sosial:\n" + social_caption.strip())
