@@ -4,13 +4,18 @@ from pathlib import Path
 from telegram_bot import (
     ClipForgeTelegramBot,
     DEFAULT_SETTINGS,
+    TELEGRAM_COMPILATION_MAX_SECONDS,
+    battery_status_text,
     build_job_payload,
     canonical_youtube_url,
     format_duration,
     is_supported_video_url,
+    is_compilation_result,
     load_state,
     normalize_settings,
     output_path_from_url,
+    parse_battery_alert_levels,
+    read_battery_status,
     save_state,
     split_text,
 )
@@ -89,6 +94,24 @@ def test_build_job_payload_matches_backend_contract():
     assert payload["crop_mode"] == "center"
     assert payload["min_duration"] == 35
     assert payload["caption_font_size"] == 10
+    assert payload["clip_mode"] == "short"
+    assert payload["compilation_target_seconds"] == TELEGRAM_COMPILATION_MAX_SECONDS == 300
+    assert payload["remove_running_text"] is True
+
+
+def test_telegram_cta_migrates_highlight_only_state_to_combined_mode():
+    settings = normalize_settings({"clip_mode": "highlight_5m", "top": 5})
+    payload = build_job_payload("https://youtu.be/demo", settings)
+
+    assert settings["clip_mode"] == "short"
+    assert payload["clip_mode"] == "short"
+    assert payload["top"] == 5
+    assert payload["compilation_target_seconds"] == 300
+
+
+def test_compilation_result_is_detected_from_export_name():
+    assert is_compilation_result({"name": "highlight_5menit_poin-penting.mp4"})
+    assert not is_compilation_result({"name": "clip_01_poin-penting.mp4"})
 
 
 def test_output_path_is_confined_to_outputs(tmp_path: Path):
@@ -132,6 +155,75 @@ def test_text_and_duration_formatting():
     assert format_duration(65) == "1m 5d"
     assert format_duration(8) == "8d"
     assert split_text("satu dua tiga empat", 10) == ["satu dua", "tiga empat"]
+
+
+def test_reads_linux_battery_status(tmp_path: Path):
+    battery = tmp_path / "BAT1"
+    mains = tmp_path / "AC"
+    battery.mkdir()
+    mains.mkdir()
+    (battery / "type").write_text("Battery\n", encoding="utf-8")
+    (battery / "capacity").write_text("27\n", encoding="utf-8")
+    (battery / "status").write_text("Charging\n", encoding="utf-8")
+    (mains / "type").write_text("Mains\n", encoding="utf-8")
+
+    status = read_battery_status(tmp_path)
+
+    assert status == {
+        "percent": 27,
+        "status": "Charging",
+        "device": "BAT1",
+        "batteries": [{"device": "BAT1", "percent": 27, "status": "Charging"}],
+    }
+    assert "Sisa: 27%" in battery_status_text(status)
+    assert "Sedang diisi" in battery_status_text(status)
+
+
+def test_battery_reader_returns_none_when_no_battery_exists(tmp_path: Path):
+    assert read_battery_status(tmp_path) is None
+
+
+def test_battery_alert_levels_are_valid_unique_and_descending():
+    assert parse_battery_alert_levels("5, 20,10,20,bad,0,101") == (20, 10, 5)
+
+
+def test_viral_exclusions_include_every_displayed_suggestion():
+    bot = object.__new__(ClipForgeTelegramBot)
+    bot.state = {
+        "viral_video_seen_urls": ["https://youtu.be/alreadySeen1"],
+        "viral_video_suggestions": {
+            "a": {"url": "https://youtu.be/displayed01"},
+            "b": {"url": "https://www.youtube.com/watch?v=displayed02"},
+        },
+        "jobs": {},
+        "pending_url": "",
+    }
+
+    assert ClipForgeTelegramBot.viral_exclude_urls(bot) == [
+        "https://www.youtube.com/watch?v=alreadySeen1",
+        "https://www.youtube.com/watch?v=displayed01",
+        "https://www.youtube.com/watch?v=displayed02",
+    ]
+
+
+def test_remember_viral_sources_marks_all_results_not_only_selected_one():
+    bot = object.__new__(ClipForgeTelegramBot)
+    bot.state = {"viral_video_seen_urls": ["https://youtu.be/alreadySeen1"]}
+
+    ClipForgeTelegramBot.remember_viral_sources(
+        bot,
+        [
+            {"url": "https://youtu.be/newVideo001"},
+            {"url": "https://www.youtube.com/watch?v=newVideo002"},
+            {"url": "https://youtu.be/newVideo001"},
+        ],
+    )
+
+    assert bot.state["viral_video_seen_urls"] == [
+        "https://www.youtube.com/watch?v=alreadySeen1",
+        "https://www.youtube.com/watch?v=newVideo001",
+        "https://www.youtube.com/watch?v=newVideo002",
+    ]
 
 
 def test_youtube_control_keyboard_includes_merge_session():

@@ -1,10 +1,25 @@
 from clipper import (
     AVAILABLE_FONTS,
     CaptionStyle,
+    ClipCandidate,
+    ReactionCue,
+    TranscriptSegment,
     _hex_to_ass_color,
+    build_candidate_pool,
     build_subtitle_style,
     caption_gradient_blur_filter,
+    detect_visual_theme,
+    detect_reaction_cues,
+    emphasis_timestamps,
+    enhanced_edit_filter,
+    fallback_social_caption,
+    hook_banner_text,
+    is_source_branding_segment,
+    modern_gradient_border_filters,
+    remove_running_text_filter,
+    segments_for_clip,
     split_subtitle_text,
+    visual_theme_profile,
 )
 
 
@@ -93,3 +108,196 @@ def test_caption_gradient_blur_filter_tracks_caption_position():
     assert "geq=" in upper
     assert "overlay=0:280" in upper
     assert "overlay=0:1450" in bottom
+
+
+def test_running_text_cleanup_crops_bottom_and_preserves_vertical_aspect():
+    value = remove_running_text_filter()
+
+    assert value.startswith("crop=990:1760:45:0")
+    assert "scale=1080:1920" in value
+    assert "setsar=1" in value
+
+
+def test_enhanced_edit_filter_adds_motion_hook_transition_and_progress():
+    value = enhanced_edit_filter(60, "clip.hook.txt")
+
+    assert "scale=1120:1992" in value
+    assert "vignette=PI/9" in value
+    assert "fade=t=in" in value
+    assert "textfile='clip.hook.txt'" in value
+    assert "iw*t/60.000" in value
+    assert "#22D3EE@0.16" in value
+
+
+def test_modern_gradient_border_uses_dual_tone_glow_layers():
+    filters = modern_gradient_border_filters("#22C55E", "#FACC15")
+    value = ",".join(filters)
+
+    assert "#22C55E@0.48" in value
+    assert "#FACC15@0.16" in value
+    assert "color=white@0.16" in value
+    assert "x=17:y=17:w=520:h=7" in value
+
+
+def test_enhanced_edit_filter_falls_back_without_drawtext():
+    value = enhanced_edit_filter(
+        60,
+        "clip.hook.txt",
+        emphasis_times=[10],
+        show_text_overlays=False,
+    )
+
+    assert "drawtext=" not in value
+    assert "textfile=" not in value
+    assert "drawbox=x=18:y=18" in value
+    assert "iw*t/60.000" in value
+
+
+def test_mystery_islamic_theme_adds_context_badge_and_emphasis():
+    clip = ClipCandidate(
+        index=2,
+        start=10,
+        end=30,
+        duration=20,
+        score=95,
+        title="Misteri Jin dan Hikmah Dalam Islam",
+        reason="test",
+        text="Ternyata tidak semua mitos boleh dipercaya menurut Islam.",
+    )
+    segments = [
+        TranscriptSegment(10, 13, "Kisah ini bermula."),
+        TranscriptSegment(15, 18, "Ternyata tidak semua mitos boleh dipercaya."),
+        TranscriptSegment(22, 26, "Namun ada hikmah penting dalam Islam."),
+    ]
+
+    assert detect_visual_theme(clip) == "mystery"
+    profile = visual_theme_profile(clip)
+    assert profile["badge"] == "MISTERI / HIKMAH"
+    times = emphasis_timestamps(clip, segments)
+    assert times == [5, 12]
+
+    value = enhanced_edit_filter(
+        20,
+        "clip.hook.txt",
+        theme_profile=profile,
+        emphasis_times=times,
+        variation=1,
+    )
+
+    assert "scale=1140:2028" in value
+    assert "MISTERI / HIKMAH" in value
+    assert "CEK FAKTANYA" in value
+    assert "between(t,5.000,5.420)" in value
+    assert "#A855F7" in value
+
+
+def test_reaction_cues_follow_conversation_and_stay_sparse():
+    clip = ClipCandidate(
+        index=1,
+        start=100,
+        end=140,
+        duration=40,
+        score=95,
+        title="Obrolan Lucu dan Penuh Hikmah",
+        reason="test",
+        text="Percakapan lucu lalu ada kejutan dan rasa syukur.",
+    )
+    segments = [
+        TranscriptSegment(101, 103, "Pembukaan dulu."),
+        TranscriptSegment(105, 108, "Hahaha ini lucu banget sampai ngakak."),
+        TranscriptSegment(109, 112, "Ternyata serius juga."),
+        TranscriptSegment(114, 117, "Wow ternyata mengejutkan."),
+        TranscriptSegment(124, 127, "Alhamdulillah ada hikmahnya."),
+        TranscriptSegment(133, 136, "Kenapa bisa begitu?"),
+    ]
+
+    cues = detect_reaction_cues(clip, segments)
+
+    assert [cue.kind for cue in cues] == ["laugh", "shock", "pray", "think"]
+    assert cues[0].side == "right"
+    assert cues[1].side == "left"
+    assert all(b.start - a.start >= 5.5 for a, b in zip(cues, cues[1:]))
+
+
+def test_reaction_svg_overlay_is_added_to_filter():
+    cue = ReactionCue("laugh", 5, 6.85, "right", "lucu")
+
+    value = enhanced_edit_filter(20, "clip.hook.txt", reaction_cues=[cue])
+
+    assert "laugh.svg" in value
+    assert "movie=" in value
+    assert "overlay=" in value
+    assert "between(t,5.000,6.850)" in value
+
+
+def test_social_caption_has_safe_relevant_fallback_without_ai():
+    clip = ClipCandidate(
+        index=1,
+        start=0,
+        end=60,
+        duration=60,
+        score=90,
+        title="Mitos Jin yang Sering Dipercaya",
+        reason="test",
+        text="Kisah misteri jin dalam Islam ini perlu dilihat konteksnya.",
+    )
+
+    caption = fallback_social_caption(clip, ["Dakwah"])
+
+    assert "Bedakan kisah, mitos, pengalaman, dan fakta" in caption
+    assert "#Dakwah" in caption
+    assert "#Misteri" in caption
+    assert "#MitosAtauFakta" in caption
+
+
+def test_source_channel_promos_are_boundaries_not_clip_content():
+    segments = [
+        TranscriptSegment(0, 20, "Ini penjelasan penting yang punya konteks lengkap."),
+        TranscriptSegment(20, 40, "Ternyata jawabannya memberi pelajaran yang jelas."),
+        TranscriptSegment(40, 44, "Terima kasih kepada LDTV dan jangan lupa subscribe."),
+        TranscriptSegment(44, 65, "Sekarang masuk ke pembahasan berbeda yang bermanfaat."),
+        TranscriptSegment(65, 86, "Intinya kita perlu memeriksa fakta sebelum percaya."),
+    ]
+
+    candidates = build_candidate_pool(segments, min_duration=18, max_duration=50)
+
+    assert candidates
+    assert is_source_branding_segment(segments[2])
+    assert not is_source_branding_segment("Ikuti langkah berikut agar hasilnya benar.")
+    assert all("LDTV" not in candidate.text for candidate in candidates)
+    assert all(candidate.end <= 40 or candidate.start >= 44 for candidate in candidates)
+
+
+def test_source_channel_promos_are_removed_from_export_subtitles():
+    segments = [
+        TranscriptSegment(0, 5, "Poin utama yang bermanfaat."),
+        TranscriptSegment(5, 8, "Silakan follow channel kami."),
+        TranscriptSegment(8, 14, "Penjelasan dilanjutkan."),
+    ]
+    clip = ClipCandidate(1, 0, 14, 14, 90, "Poin Utama", "test", "test")
+
+    clean = segments_for_clip(segments, clip)
+
+    assert [segment.text for segment in clean] == [
+        "Poin utama yang bermanfaat.",
+        "Penjelasan dilanjutkan.",
+    ]
+
+
+def test_hook_banner_text_is_short_uppercase_and_wrapped():
+    clip = ClipCandidate(
+        index=1,
+        start=0,
+        end=60,
+        duration=60,
+        score=90,
+        title="Inilah alasan penting kenapa keputusan pertama harus benar",
+        reason="test",
+        text="test",
+    )
+
+    value = hook_banner_text(clip)
+
+    assert value == value.upper()
+    assert len(value.splitlines()) <= 2
+    assert all(len(line) <= 24 for line in value.splitlines())

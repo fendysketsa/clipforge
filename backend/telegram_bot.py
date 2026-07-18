@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import re
 import signal
 import time
 import uuid
@@ -39,6 +40,7 @@ ACTIVE_STATUSES = {"queued", "running"}
 ALLOWED_QUALITY = {"standard", "high", "max"}
 ALLOWED_CROP = {"center", "person", "streamer"}
 ALLOWED_CLIP_MODES = {"short", "highlight_5m"}
+TELEGRAM_COMPILATION_MAX_SECONDS = 300
 ALLOWED_CAPTION_POSITIONS = {"upper", "center", "bottom"}
 ALLOWED_CAPTION_FONT_SIZES = {7, 9, 10, 12, 14, 18, 20, 24}
 ALLOWED_TOP = {None, 3, 5, 8, 10, 12}
@@ -51,6 +53,45 @@ def env_float(name: str, default: float) -> float:
         return float(os.environ.get(name, str(default)))
     except ValueError:
         return default
+
+
+def env_bool(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def parse_battery_alert_levels(value: str) -> tuple[int, ...]:
+    levels: set[int] = set()
+    for item in value.split(","):
+        try:
+            level = int(item.strip())
+        except ValueError:
+            continue
+        if 1 <= level <= 100:
+            levels.add(level)
+    return tuple(sorted(levels, reverse=True))
+
+
+BATTERY_POWER_SUPPLY_PATH = Path(
+    os.environ.get(
+        "TELEGRAM_BATTERY_POWER_SUPPLY_PATH",
+        (
+            "/host/sys/class/power_supply"
+            if Path("/host/sys/class/power_supply").is_dir()
+            else "/sys/class/power_supply"
+        ),
+    )
+)
+BATTERY_ALERT_ENABLED = env_bool("TELEGRAM_BATTERY_ALERT_ENABLED", True)
+BATTERY_ALERT_LEVELS = parse_battery_alert_levels(
+    os.environ.get("TELEGRAM_BATTERY_ALERT_LEVELS", "20,10,5")
+)
+BATTERY_CHECK_INTERVAL = max(
+    15.0,
+    env_float("TELEGRAM_BATTERY_CHECK_INTERVAL_SECONDS", 60.0),
+)
 
 
 YOUTUBE_CDP_REFRESH_HTTP_TIMEOUT = max(
@@ -68,7 +109,7 @@ YOUTUBE_ONE_TIME_LOGIN_HTTP_TIMEOUT = max(
     YOUTUBE_SESSION_CAPTURE_HTTP_TIMEOUT,
     env_float("TELEGRAM_YOUTUBE_ONE_TIME_LOGIN_TIMEOUT_SECONDS", 180.0),
 )
-VIRAL_CC_SEARCH_HTTP_TIMEOUT = max(180.0, env_float("VIRAL_CC_SEARCH_HTTP_TIMEOUT_SECONDS", 420.0))
+VIRAL_CC_SEARCH_HTTP_TIMEOUT = max(600.0, env_float("VIRAL_CC_SEARCH_HTTP_TIMEOUT_SECONDS", 900.0))
 VIRAL_CC_VIDEO_COUNT = max(1, min(7, int(env_float("VIRAL_CC_VIDEO_COUNT", 5))))
 VIRAL_CC_MAX_SOURCE_SECONDS = max(
     60,
@@ -105,10 +146,22 @@ CLIPPING_STAGE_ALERTS: list[tuple[str, str, str, tuple[str, ...]]] = [
     ("score", "Menyeleksi momen terbaik", "Transcript sedang dinilai untuk mencari kandidat clip terkuat.", ("scoring candidate",)),
     ("ai_score", "AI menilai kandidat", "AI agent sedang meranking kandidat clip.", ("agent scoring",)),
     (
+        "effects",
+        "Menambahkan edit dan reaction kontekstual",
+        "Hook, gerakan kamera, reaction lucu/terkejut/hikmah, transisi, dan elemen penegas sedang diterapkan sesuai percakapan.",
+        ("applying enhanced motion graphics",),
+    ),
+    (
         "export",
-        "Mengekspor video vertikal",
-        "Clip terpilih sedang dirender ke format vertikal.",
-        ("exporting vertical video", "exporting vertical clips"),
+        "Mengekspor clip pendek",
+        "Clip pendek dengan motion graphics sedang dirender ke format vertikal.",
+        ("exporting vertical video", "exporting vertical clips", "exporting vertical short clips"),
+    ),
+    (
+        "compilation",
+        "Menyusun video kompilasi",
+        "Momen terbaik sedang digabungkan menjadi satu video highlight agak panjang.",
+        ("exporting vertical highlight compilation",),
     ),
     ("done", "Clipping selesai", "Render selesai. Bot akan menyiapkan pengiriman hasil.", ("done.", "exported:")),
     (
@@ -191,6 +244,73 @@ def format_size(size_bytes: int | float | None) -> str:
     return f"{value:.1f} GB"
 
 
+def read_battery_status(power_supply_path: Path = BATTERY_POWER_SUPPLY_PATH) -> dict[str, Any] | None:
+    try:
+        supplies = sorted(power_supply_path.iterdir(), key=lambda item: item.name)
+    except OSError:
+        return None
+
+    batteries: list[dict[str, Any]] = []
+    for supply in supplies:
+        try:
+            if (supply / "type").read_text(encoding="utf-8").strip().lower() != "battery":
+                continue
+            present_path = supply / "present"
+            if present_path.is_file() and present_path.read_text(encoding="utf-8").strip() == "0":
+                continue
+            percent = int((supply / "capacity").read_text(encoding="utf-8").strip())
+            status = (supply / "status").read_text(encoding="utf-8").strip()
+        except (OSError, ValueError):
+            continue
+        batteries.append(
+            {
+                "device": supply.name,
+                "percent": max(0, min(100, percent)),
+                "status": status or "Unknown",
+            }
+        )
+
+    if not batteries:
+        return None
+    percent = round(sum(item["percent"] for item in batteries) / len(batteries))
+    statuses = {str(item["status"]).lower() for item in batteries}
+    if "discharging" in statuses:
+        status = "Discharging"
+    elif "charging" in statuses:
+        status = "Charging"
+    elif statuses == {"full"}:
+        status = "Full"
+    else:
+        status = str(batteries[0]["status"])
+    return {
+        "percent": percent,
+        "status": status,
+        "device": ", ".join(str(item["device"]) for item in batteries),
+        "batteries": batteries,
+    }
+
+
+def battery_status_text(battery: dict[str, Any]) -> str:
+    percent = max(0, min(100, int(battery.get("percent") or 0)))
+    status = str(battery.get("status") or "Unknown")
+    status_label = {
+        "charging": "Sedang diisi",
+        "discharging": "Menggunakan baterai",
+        "full": "Penuh",
+        "not charging": "Terhubung, tidak mengisi",
+        "unknown": "Tidak diketahui",
+    }.get(status.lower(), status)
+    filled = round(percent / 10)
+    gauge = "█" * filled + "░" * (10 - filled)
+    return (
+        "Status baterai device\n\n"
+        f"🔋 Sisa: {percent}%\n"
+        f"[{gauge}]\n"
+        f"⚡ Status: {status_label}\n"
+        f"Device: {battery.get('device') or '-'}"
+    )
+
+
 def is_supported_video_url(value: str) -> bool:
     try:
         parsed = urlparse(value.strip())
@@ -233,9 +353,9 @@ def normalize_settings(value: object) -> dict[str, Any]:
     top = value.get("top")
     settings["top"] = top if top in ALLOWED_TOP else None
 
-    clip_mode = value.get("clip_mode")
-    if clip_mode in ALLOWED_CLIP_MODES:
-        settings["clip_mode"] = clip_mode
+    # Telegram CTA always creates short clips plus one compilation. This also
+    # migrates persisted state from the removed "highlight only" option.
+    settings["clip_mode"] = "short"
 
     duration = (value.get("min_duration"), value.get("max_duration"))
     if duration in ALLOWED_DURATION_PRESETS:
@@ -280,6 +400,7 @@ def default_state() -> dict[str, Any]:
         "youtube_uploads": {},
         "viral_video_suggestions": {},
         "viral_video_seen_urls": [],
+        "battery_alerted_levels": [],
     }
 
 
@@ -314,7 +435,13 @@ def normalize_state(value: object) -> dict[str, Any]:
             if normalized and normalized not in seen_set:
                 seen_urls.append(normalized)
                 seen_set.add(normalized)
-        state["viral_video_seen_urls"] = seen_urls[-500:]
+        state["viral_video_seen_urls"] = seen_urls[-5000:]
+    if isinstance(value.get("battery_alerted_levels"), list):
+        state["battery_alerted_levels"] = [
+            level
+            for level in BATTERY_ALERT_LEVELS
+            if level in value["battery_alerted_levels"]
+        ]
     return state
 
 
@@ -337,13 +464,14 @@ def build_job_payload(url: str, settings: dict[str, Any]) -> dict[str, Any]:
     clean = normalize_settings(settings)
     return {
         "url": url.strip(),
-        "top": clean["top"] if clean["clip_mode"] == "short" else None,
-        "clip_mode": clean["clip_mode"],
-        "compilation_target_seconds": 300,
+        "top": clean["top"],
+        "clip_mode": "short",
+        "compilation_target_seconds": TELEGRAM_COMPILATION_MAX_SECONDS,
         "min_duration": clean["min_duration"],
         "max_duration": clean["max_duration"],
         "video_quality": clean["video_quality"],
         "burn_subtitles": clean["burn_subtitles"],
+        "remove_running_text": True,
         "crop_mode": clean["crop_mode"],
         "require_creative_commons": True,
         "ai_enabled": clean["ai_enabled"],
@@ -491,6 +619,11 @@ def clip_title(clip: dict[str, Any], index: int) -> str:
     return stem.replace("-", " ").replace("_", " ").strip().title() or f"Clip {index}"
 
 
+def is_compilation_result(clip: dict[str, Any]) -> bool:
+    name = str(clip.get("name") or "").lower()
+    return name.startswith("highlight_5menit_")
+
+
 def _json_request(
     url: str,
     *,
@@ -593,11 +726,15 @@ class BackendClient:
             method="POST",
             payload={
                 "video_count": VIRAL_CC_VIDEO_COUNT,
-                "search_limit_per_query": int(env_float("VIRAL_CC_SEARCH_LIMIT", 5)),
+                "search_limit_per_query": max(25, int(env_float("VIRAL_CC_SEARCH_LIMIT", 25))),
                 "min_source_duration": 60,
                 "max_source_duration": VIRAL_CC_MAX_SOURCE_SECONDS,
                 "min_views": int(env_float("VIRAL_CC_MIN_VIEWS", 1000)),
-                "max_metadata_checks": int(env_float("VIRAL_CC_MAX_METADATA_CHECKS", 25)),
+                "max_age_days": 30,
+                "max_metadata_checks": max(
+                    200,
+                    int(env_float("VIRAL_CC_MAX_METADATA_CHECKS", 200)),
+                ),
                 "exclude_urls": exclude_urls or [],
             },
             timeout=VIRAL_CC_SEARCH_HTTP_TIMEOUT,
@@ -811,9 +948,10 @@ def keyboard(rows: list[list[dict[str, str]]]) -> dict[str, Any]:
 def main_menu_keyboard() -> dict[str, Any]:
     return keyboard(
         [
-            [button("🎬 Mulai Clipping", "menu:new")],
+            [button("🎬 Buat Clip + Kompilasi", "menu:new")],
             [button("🔥 Cari Viral CC", "viral:refresh")],
             [button("📊 Status", "menu:status"), button("📚 Riwayat", "menu:history")],
+            [button("🔋 Baterai Device", "menu:battery")],
             [button("⬆️ Status Upload YouTube", "menu:youtube"), button("🧪 Debug", "menu:debug")],
             [button("⚙️ Pengaturan", "menu:settings"), button("❓ Bantuan", "menu:help")],
         ]
@@ -823,12 +961,12 @@ def main_menu_keyboard() -> dict[str, Any]:
 def settings_summary(settings: dict[str, Any]) -> str:
     clean = normalize_settings(settings)
     top = "Otomatis" if clean["top"] is None else str(clean["top"])
-    mode = "Clip Pendek" if clean["clip_mode"] == "short" else "Highlight 5 Menit"
     quality = {"standard": "Standar", "high": "Jernih", "max": "Maksimal"}[clean["video_quality"]]
     crop = {"center": "Center", "person": "Follow Person", "streamer": "Streamer"}[clean["crop_mode"]]
     position = {"upper": "Atas", "center": "Tengah", "bottom": "Bawah"}[clean["caption_position"]]
     return (
-        f"Model clip: {mode}\n"
+        "Output: Clip pendek + 1 kompilasi otomatis\n"
+        "Kompilasi panjang: maksimal 5 menit\n"
         f"Target clip: {top}\n"
         f"Durasi: {clean['min_duration']}–{clean['max_duration']} detik\n"
         f"Kualitas: {quality}\n"
@@ -844,7 +982,7 @@ def settings_keyboard(settings: dict[str, Any], *, has_pending_url: bool = False
     clean = normalize_settings(settings)
     top = "auto" if clean["top"] is None else clean["top"]
     rows = [
-            [button(f"Model · {'Pendek' if clean['clip_mode'] == 'short' else 'Highlight 5m'}", "settings:mode")],
+            [button("Output · Clip + Kompilasi ≤5m", "settings:output")],
             [button(f"Jumlah Clip · {top}", "settings:top")],
             [button(f"Durasi · {clean['min_duration']}–{clean['max_duration']}d", "settings:duration")],
             [button(f"Kualitas · {clean['video_quality']}", "settings:quality")],
@@ -864,7 +1002,7 @@ def settings_keyboard(settings: dict[str, Any], *, has_pending_url: bool = False
 def confirmation_keyboard() -> dict[str, Any]:
     return keyboard(
         [
-            [button("✅ Proses Sekarang", "job:confirm")],
+            [button("🚀 Buat Clip + Kompilasi", "job:confirm")],
             [button("⚙️ Ubah Pengaturan", "menu:settings"), button("❌ Batal", "pending:cancel")],
         ]
     )
@@ -876,12 +1014,31 @@ def viral_source_text(source: dict[str, Any], index: int) -> str:
     duration = format_duration(source.get("duration"))
     views = source.get("views")
     views_text = f"{int(views):,}".replace(",", ".") if isinstance(views, (int, float)) else "-"
+    views_per_day = source.get("views_per_day")
+    velocity_text = (
+        f"{int(views_per_day):,}".replace(",", ".")
+        if isinstance(views_per_day, (int, float))
+        else "-"
+    )
     score = source.get("score")
+    age_days = source.get("age_days")
+    age_text = (
+        f"{max(0, int(age_days))} hari lalu"
+        if isinstance(age_days, (int, float)) and not isinstance(age_days, bool)
+        else "umur tidak diketahui"
+    )
+    upload_date = re.sub(r"[^0-9]", "", str(source.get("upload_date") or ""))
+    published = (
+        f"{upload_date[6:8]}/{upload_date[4:6]}/{upload_date[0:4]}"
+        if len(upload_date) == 8
+        else "-"
+    )
     license_text = str(source.get("license") or "Creative Commons")[:80]
     return (
         f"{index}. {title}\n"
         f"Channel: {uploader}\n"
-        f"Durasi: {duration} · Views: {views_text} · Score: {score or '-'}\n"
+        f"Terbit: {published} · {age_text}\n"
+        f"Durasi: {duration} · Views: {views_text} · {velocity_text}/hari · Score: {score or '-'}\n"
         f"Lisensi: {license_text}"
     )
 
@@ -906,6 +1063,8 @@ class ClipForgeTelegramBot:
         self.last_backend_warning = 0.0
         self.last_persist_warning = 0.0
         self.last_youtube_upload_discovery = 0.0
+        self.last_battery_check = 0.0
+        self.last_battery_status: dict[str, Any] | None = None
 
     def persist(self) -> None:
         try:
@@ -971,6 +1130,11 @@ class ClipForgeTelegramBot:
         urls: list[str] = []
         for item in self.state.get("viral_video_seen_urls", []):
             urls.append(str(item))
+        suggestions = self.state.get("viral_video_suggestions")
+        if isinstance(suggestions, dict):
+            for source in suggestions.values():
+                if isinstance(source, dict):
+                    urls.append(str(source.get("url") or ""))
         pending_url = canonical_youtube_url(self.state.get("pending_url"))
         if pending_url:
             urls.append(pending_url)
@@ -992,7 +1156,25 @@ class ClipForgeTelegramBot:
             if candidate and candidate not in seen:
                 normalized.append(candidate)
                 seen.add(candidate)
-        return normalized[-500:]
+        return normalized[-5000:]
+
+    def remember_viral_sources(self, sources: list[dict[str, Any]]) -> None:
+        combined = [
+            *(
+                self.state.get("viral_video_seen_urls", [])
+                if isinstance(self.state.get("viral_video_seen_urls"), list)
+                else []
+            ),
+            *(source.get("url") for source in sources if isinstance(source, dict)),
+        ]
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for value in combined:
+            url = canonical_youtube_url(value)
+            if url and url not in seen:
+                normalized.append(url)
+                seen.add(url)
+        self.state["viral_video_seen_urls"] = normalized[-5000:]
 
     def show_home(self, chat_id: int, first_name: str = "") -> None:
         greeting = f"Halo {first_name}, " if first_name else "Halo, "
@@ -1022,7 +1204,7 @@ class ClipForgeTelegramBot:
             "Link siap diproses\n\n"
             f"{url}\n\n"
             + settings_summary(self.state["settings"])
-            + "\n\nTekan Proses Sekarang untuk memulai.",
+            + "\n\nSekali proses menghasilkan clip pendek dan satu kompilasi maksimal 5 menit.",
             confirmation_keyboard(),
         )
 
@@ -1032,15 +1214,29 @@ class ClipForgeTelegramBot:
             "Cara menggunakan Fendy Clipper\n\n"
             "1. Kirim link YouTube ke bot.\n"
             "2. Periksa pengaturan yang ditampilkan.\n"
-            "3. Tekan Proses Sekarang.\n"
-            "4. Bot akan mengirim seluruh hasil saat selesai.\n"
-            "5. Tekan Upload ke YouTube pada clip pilihan atau Upload 3 Terbaik.\n\n"
+            "3. Tekan Buat Clip + Kompilasi.\n"
+            "4. Bot otomatis membuat clip pendek dan satu kompilasi maksimal lima menit.\n"
+            "5. Bot akan mengirim seluruh hasil saat selesai.\n"
+            "6. Tekan Upload ke YouTube pada video pilihan atau Upload 3 Terbaik.\n\n"
             "YouTube: /youtube untuk panel uploader, /loginsekali untuk simpan session Playwright sekali, "
             "/nocdp untuk upload tanpa CDP, /cookies untuk ambil cookies CDP opsional, /cdp untuk recovery CDP.\n\n"
-            "Perintah: /clip, /getvideosviral, /status, /settings, /history, /youtube, /cdp, "
+            "Baterai: /battery untuk melihat sisa daya device. Alert otomatis dikirim saat baterai melewati ambang rendah.\n\n"
+            "Perintah: /clip, /getvideosviral, /status, /battery, /settings, /history, /youtube, /cdp, "
             "/loginsekali, /cookies, /nocdp, /profilelogin, /syncsession, /capturesession, /hapusgagal, /debug, /ping, /cancel, /menu",
             main_menu_keyboard(),
         )
+
+    def show_battery(self, chat_id: int) -> None:
+        battery = read_battery_status()
+        self.last_battery_status = battery
+        if battery is None:
+            self.send_message(
+                chat_id,
+                "Baterai tidak terdeteksi. Jika bot berjalan di Docker, pastikan `/sys` host dipasang read-only ke `/host/sys`.",
+                main_menu_keyboard(),
+            )
+            return
+        self.send_message(chat_id, battery_status_text(battery), main_menu_keyboard())
 
     def show_viral_video_suggestions(self, chat_id: int) -> None:
         exclude_urls = self.viral_exclude_urls()
@@ -1048,8 +1244,11 @@ class ClipForgeTelegramBot:
         self.send_message(
             chat_id,
             f"Mencari {VIRAL_CC_VIDEO_COUNT} video viral Creative Commons dengan keyword "
-            f"podcast Indonesia/dakwah/kajian/ceramah, durasi maksimal {max_minutes} menit..."
-            + (f"\nSkip video yang sudah pernah diambil: {len(exclude_urls)}" if exclude_urls else ""),
+            f"podcast, kajian, inspirasi, misteri Islam, mitos/fakta, kisah gaib, horor, "
+            f"sejarah, keluarga, bisnis halal, dan 70+ variasi tema. "
+            f"Prioritas 30 hari terbaru; jika kurang, pencarian otomatis diperluas sampai 180 hari. "
+            f"Durasi maksimal {max_minutes} menit..."
+            + (f"\nSkip permanen sumber yang pernah ditampilkan/diproses: {len(exclude_urls)}" if exclude_urls else ""),
         )
         try:
             sources = self.backend.search_viral_cc_sources(exclude_urls)
@@ -1059,8 +1258,8 @@ class ClipForgeTelegramBot:
         if not sources:
             self.send_message(
                 chat_id,
-                f"Belum menemukan kandidat yang memenuhi filter Creative Commons dan durasi maksimal "
-                f"{max_minutes} menit. Coba lagi nanti.",
+                f"Belum menemukan kandidat baru setelah pencarian diperluas dan seluruh video lama dilewati. "
+                f"Filter Creative Commons serta durasi maksimal {max_minutes} menit tetap dipertahankan.",
                 main_menu_keyboard(),
             )
             return
@@ -1069,8 +1268,8 @@ class ClipForgeTelegramBot:
         selected_sources = sources[:VIRAL_CC_VIDEO_COUNT]
         lines = [
             f"Top {len(selected_sources)} video viral Creative Commons",
-            "Keyword: podcast Indonesia | dakwah | kajian | ceramah",
-            f"Filter: Creative Commons, durasi maksimal {max_minutes} menit",
+            "Pencarian luas: 35+ variasi tema Indonesia",
+            f"Filter: Creative Commons, prioritas ≤30 hari/fallback ≤180 hari, durasi maksimal {max_minutes} menit",
             "",
         ]
         for index, source in enumerate(selected_sources, start=1):
@@ -1080,9 +1279,10 @@ class ClipForgeTelegramBot:
                 lines.append(url)
             lines.append("")
         markup = viral_sources_keyboard(selected_sources, suggestions)
+        self.remember_viral_sources(selected_sources)
         self.state["viral_video_suggestions"] = suggestions
-        self.send_message(chat_id, "\n".join(lines).strip(), markup)
         self.persist()
+        self.send_message(chat_id, "\n".join(lines).strip(), markup)
 
     def show_debug(self, chat_id: int) -> None:
         lines = [
@@ -1095,6 +1295,14 @@ class ClipForgeTelegramBot:
             f"Job dipantau: {len(self.state.get('jobs', {}))}",
             f"Upload YouTube dipantau: {len(self.state.get('youtube_uploads', {}))}",
         ]
+        battery = read_battery_status()
+        self.last_battery_status = battery
+        if battery:
+            lines.append(
+                f"Baterai: {battery['percent']}% ({battery['status']}, {battery['device']})"
+            )
+        else:
+            lines.append(f"Baterai: tidak terdeteksi ({BATTERY_POWER_SUPPLY_PATH})")
         try:
             health = self.backend.health()
             lines.append(f"Backend health: OK ({health.get('status') or 'ready'})")
@@ -1124,12 +1332,15 @@ class ClipForgeTelegramBot:
             f"Status: {status_label}",
             f"Sumber: {title}",
             f"Job: {str(job.get('id', ''))[:10]}",
+            "Output: clip pendek + kompilasi maks. 5 menit",
             f"Durasi proses: {format_duration(elapsed_for_job(job))}",
         ]
         if status in ACTIVE_STATUSES:
             lines.insert(2, f"Tahap: {progress_stage(job)}")
         if status == "completed":
-            lines.append(f"Hasil: {len(job.get('clips', []))} clip")
+            clips = job.get("clips", [])
+            compilation_count = sum(1 for clip in clips if is_compilation_result(clip))
+            lines.append(f"Hasil: {len(clips) - compilation_count} clip pendek + {compilation_count} kompilasi")
         if status in {"failed", "cancelled"} and job.get("error"):
             lines.append(f"Keterangan: {str(job['error'])[:2000]}")
         return "\n".join(lines)
@@ -1881,14 +2092,16 @@ class ClipForgeTelegramBot:
         self.persist()
         status_message = self.send_message(
             chat_id,
-            "Proses clipping berhasil dimulai. Alert tahap demi tahap aktif, dan bot akan mengirim semua hasil otomatis saat selesai.",
+            "Proses dimulai: bot membuat clip pendek sekaligus satu kompilasi maksimal 5 menit. "
+            "Alert tahap demi tahap aktif dan semua hasil akan dikirim otomatis.",
             self.job_keyboard(job),
         )
         self.state["jobs"][job_id]["status_message_id"] = status_message.get("message_id")
         self.persist()
 
     def clip_metadata_text(self, clip: dict[str, Any], index: int, total: int) -> str:
-        parts = [f"Detail Clip {index}/{total}", f"Judul:\n{clip_title(clip, index)}"]
+        result_label = "Kompilasi Maks. 5 Menit" if is_compilation_result(clip) else "Clip Pendek"
+        parts = [f"Detail {result_label}", f"Judul:\n{clip_title(clip, index)}"]
         social_caption = clip.get("social_caption")
         if isinstance(social_caption, str) and social_caption.strip():
             parts.append("Caption sosial:\n" + social_caption.strip())
@@ -1975,6 +2188,8 @@ class ClipForgeTelegramBot:
             self.persist()
         delivery = record["delivery"]
         clips = job.get("clips", [])
+        compilation_count = sum(1 for clip in clips if is_compilation_result(clip))
+        short_count = len(clips) - compilation_count
         if not delivery["summary"]:
             source = job.get("source_title") or job.get("request", {}).get("url") or "Video"
             uploader = job.get("source_uploader")
@@ -1982,7 +2197,9 @@ class ClipForgeTelegramBot:
                 "Clipping selesai\n\n"
                 f"Sumber: {source}\n"
                 + (f"Channel: {uploader}\n" if uploader else "")
-                + f"Jumlah hasil: {len(clips)} clip\n"
+                + f"Clip pendek: {short_count}\n"
+                + f"Kompilasi maksimal 5 menit: {compilation_count}\n"
+                + f"Total hasil: {len(clips)} video\n"
                 + f"Durasi proses: {format_duration(job.get('duration_seconds'))}\n\n"
                 + "Bot mulai mengirim video dan materi pendukung satu per satu."
             )
@@ -1990,6 +2207,7 @@ class ClipForgeTelegramBot:
             delivery["summary"] = True
             self.persist()
 
+        short_position = 0
         for index, clip in enumerate(clips, start=1):
             clip_url = str(clip.get("url", ""))
             artifact = delivery["clips"].setdefault(
@@ -1997,6 +2215,11 @@ class ClipForgeTelegramBot:
             )
             path = output_path_from_url(clip_url)
             title = clip_title(clip, index)
+            if is_compilation_result(clip):
+                result_label = "Kompilasi Maks. 5 Menit"
+            else:
+                short_position += 1
+                result_label = f"Clip Pendek {short_position}/{short_count}"
             if not artifact["video"]:
                 if path is None or not path.is_file():
                     self.send_message(chat_id, f"Clip {index}/{len(clips)} tidak ditemukan di penyimpanan: {title}")
@@ -2006,7 +2229,7 @@ class ClipForgeTelegramBot:
                         "sendVideo",
                         "video",
                         path,
-                        f"Clip {index}/{len(clips)}\n{title}\n{format_size(path.stat().st_size)}",
+                        f"{result_label}\n{title}\n{format_size(path.stat().st_size)}",
                     )
                 artifact["video"] = True
                 self.persist()
@@ -2020,7 +2243,7 @@ class ClipForgeTelegramBot:
                         "sendPhoto",
                         "photo",
                         thumb_path,
-                        f"Thumbnail Clip {index}/{len(clips)} · {title}",
+                        f"Thumbnail {result_label} · {title}",
                     )
                 artifact["thumbnail"] = True
                 self.persist()
@@ -2029,7 +2252,7 @@ class ClipForgeTelegramBot:
                 self.send_long_message(chat_id, self.clip_metadata_text(clip, index, len(clips)))
                 self.send_message(
                     chat_id,
-                    f"Aksi untuk Clip {index}/{len(clips)}",
+                    f"Aksi untuk {result_label}",
                     keyboard([[button("⬆️ Upload Clip Ini ke YouTube", f"ytup:{job_id}:{index}")]]),
                 )
                 artifact["metadata"] = True
@@ -2259,6 +2482,8 @@ class ClipForgeTelegramBot:
         elif command == "/status":
             self.send_message(chat_id, "Mengecek status ClipForge...")
             self.show_status(chat_id)
+        elif command in {"/battery", "/baterai"}:
+            self.show_battery(chat_id)
         elif command == "/history":
             self.show_history(chat_id)
         elif command in {"/hapusgagal", "/cleanupjobs"}:
@@ -2415,12 +2640,9 @@ class ClipForgeTelegramBot:
             else:
                 return False
         elif name == "mode" and value in ALLOWED_CLIP_MODES:
-            settings["clip_mode"] = value
+            settings["clip_mode"] = "short"
             settings["top"] = None
-            if value == "highlight_5m":
-                settings["min_duration"], settings["max_duration"] = 30, 75
-            else:
-                settings["min_duration"], settings["max_duration"] = 35, 180
+            settings["min_duration"], settings["max_duration"] = 35, 180
         elif name == "duration" and len(parts) == 4:
             if not value.isdigit() or not parts[3].isdigit():
                 return False
@@ -2483,6 +2705,8 @@ class ClipForgeTelegramBot:
         elif data == "menu:status":
             self.send_message(chat_id, "Mengecek status ClipForge...")
             self.show_status(chat_id)
+        elif data == "menu:battery":
+            self.show_battery(chat_id)
         elif data == "menu:history":
             self.show_history(chat_id)
         elif data == "menu:youtube":
@@ -2522,7 +2746,10 @@ class ClipForgeTelegramBot:
             else:
                 self.send_message(chat_id, "Link belum tersedia. Kirim link YouTube terlebih dahulu.", main_menu_keyboard())
         elif data == "job:confirm":
-            self.send_message(chat_id, "Perintah clipping diterima. Backend sedang membuat job...")
+            self.send_message(
+                chat_id,
+                "Perintah diterima. Backend menyiapkan clip pendek + kompilasi maksimal 5 menit...",
+            )
             self.start_job(chat_id)
         elif data == "settings:top":
             show_panel(
@@ -2537,14 +2764,22 @@ class ClipForgeTelegramBot:
             )
         elif data == "settings:mode":
             show_panel(
-                "Pilih model hasil video",
+                "Output Telegram dibuat otomatis dalam satu tahap.",
                 keyboard(
                     [
-                        [button("Clip Pendek", "set:mode:short")],
-                        [button("Highlight ±5 Menit (bukan Short)", "set:mode:highlight_5m")],
+                        [button("✅ Clip Pendek + Kompilasi Maks. 5 Menit", "set:mode:short")],
                         [button("⬅️ Kembali", "menu:settings")],
                     ]
                 ),
+            )
+        elif data == "settings:output":
+            show_panel(
+                "Output otomatis\n\n"
+                "• Beberapa clip pendek terbaik\n"
+                "• Satu kompilasi vertikal\n"
+                "• Durasi kompilasi tidak lebih dari 5 menit\n"
+                "• Semua dibuat dalam satu proses",
+                keyboard([[button("⬅️ Kembali", "menu:settings")]]),
             )
         elif data == "settings:duration":
             show_panel(
@@ -2723,6 +2958,45 @@ class ClipForgeTelegramBot:
                 print(f"Menunggu backend ClipForge: {exc}", flush=True)
                 time.sleep(3)
 
+    def monitor_battery(self, *, force: bool = False) -> None:
+        if not BATTERY_ALERT_ENABLED or not BATTERY_ALERT_LEVELS:
+            return
+        now = time.monotonic()
+        if not force and now - self.last_battery_check < BATTERY_CHECK_INTERVAL:
+            return
+        self.last_battery_check = now
+        battery = read_battery_status()
+        self.last_battery_status = battery
+        if battery is None:
+            return
+
+        percent = int(battery["percent"])
+        previous = {
+            level
+            for level in self.state.get("battery_alerted_levels", [])
+            if level in BATTERY_ALERT_LEVELS
+        }
+        alerted = {level for level in previous if percent <= level}
+        should_alert = str(battery.get("status") or "").lower() not in {"charging", "full"}
+        crossed = [
+            level
+            for level in BATTERY_ALERT_LEVELS
+            if percent <= level and level not in alerted
+        ]
+        if should_alert and crossed:
+            severity = "KRITIS" if percent <= min(BATTERY_ALERT_LEVELS) else "RENDAH"
+            self.send_message(
+                self.owner_id,
+                f"⚠️ BATERAI {severity}\n\n"
+                + battery_status_text(battery)
+                + "\n\nSegera hubungkan charger.",
+                main_menu_keyboard(),
+            )
+            alerted.update(crossed)
+        if alerted != previous:
+            self.state["battery_alerted_levels"] = sorted(alerted, reverse=True)
+            self.persist()
+
     def setup(self) -> None:
         while self.running:
             try:
@@ -2737,6 +3011,7 @@ class ClipForgeTelegramBot:
                                 "description": f"Cari {VIRAL_CC_VIDEO_COUNT} video viral CC dakwah/podcast",
                             },
                             {"command": "status", "description": "Lihat proses yang sedang berjalan"},
+                            {"command": "battery", "description": "Cek sisa baterai device"},
                             {"command": "settings", "description": "Atur hasil clipping"},
                             {"command": "history", "description": "Lihat riwayat dan kirim ulang hasil"},
                             {"command": "hapusgagal", "description": "Hapus job gagal/dibatalkan"},
@@ -2794,6 +3069,7 @@ class ClipForgeTelegramBot:
                         self.persist()
                 self.monitor_jobs()
                 self.monitor_youtube_uploads()
+                self.monitor_battery()
             except ServiceError as exc:
                 print(f"Koneksi Telegram tertunda: {exc}", flush=True)
                 time.sleep(3)

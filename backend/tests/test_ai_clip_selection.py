@@ -1,12 +1,13 @@
 import json
 
 import clipper
+from llm import AIConfig, LLMUnavailableError
 from clipper import (
-    AIConfig,
     ClipCandidate,
     ai_rescore_candidates,
     select_candidates,
     select_compilation_candidates,
+    select_short_and_compilation_candidates,
 )
 
 
@@ -75,6 +76,31 @@ def test_ai_rescore_keeps_heuristics_when_endpoint_is_missing():
     assert candidate.score == 77
 
 
+def test_ai_rescore_disables_offline_provider_for_rest_of_job(monkeypatch, capsys):
+    candidate = make_candidate(0, 0, 77, "Intinya ini contoh kandidat.")
+    config = AIConfig(
+        enabled=True,
+        base_url="http://127.0.0.1:11434/v1",
+        model="missing-model",
+    )
+    monkeypatch.setattr(clipper, "_AI_UNAVAILABLE_NOTICE_PRINTED", False)
+    monkeypatch.setattr(
+        clipper,
+        "chat_completion",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            LLMUnavailableError("offline")
+        ),
+    )
+
+    rescored = ai_rescore_candidates([candidate], config, target_count=1)
+
+    assert rescored == [candidate]
+    assert config.enabled is False
+    output = capsys.readouterr().out
+    assert "fallback lokal" in output
+    assert "AI agent failed" not in output
+
+
 def test_compilation_selection_reaches_five_minutes_without_overlap():
     candidates = [
         make_candidate(0, start, 95 - index, f"Poin penting {index}")
@@ -90,3 +116,20 @@ def test_compilation_selection_reaches_five_minutes_without_overlap():
         left.end <= right.start
         for left, right in zip(selected, selected[1:])
     )
+
+
+def test_short_mode_builds_short_clips_and_one_compilation_selection():
+    candidates = [
+        make_candidate(0, start, 95 - index, f"Poin penting {index}")
+        for index, start in enumerate((0, 70, 140, 210, 280, 350))
+    ]
+
+    shorts, compilation = select_short_and_compilation_candidates(
+        candidates,
+        short_limit=3,
+        compilation_target=300,
+    )
+
+    assert len(shorts) == 3
+    assert sum(item.duration for item in compilation) == 300
+    assert all(short is not compilation_part for short in shorts for compilation_part in compilation)

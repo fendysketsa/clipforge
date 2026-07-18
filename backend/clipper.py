@@ -18,10 +18,26 @@ from rich.table import Table
 from slugify import slugify
 from yt_dlp import YoutubeDL
 
-from llm import AIConfig, chat_completion, extract_json
+from llm import AIConfig, chat_completion, extract_json, is_llm_unavailable_error
 
 
 console = Console()
+_AI_UNAVAILABLE_NOTICE_PRINTED = False
+
+
+def disable_unavailable_ai(config: AIConfig, exc: BaseException) -> bool:
+    """Open the circuit once so one offline provider does not spam every generated asset."""
+    global _AI_UNAVAILABLE_NOTICE_PRINTED
+    if not is_llm_unavailable_error(exc):
+        return False
+    config.enabled = False
+    if not _AI_UNAVAILABLE_NOTICE_PRINTED:
+        console.print(
+            "[yellow]AI service tidak tersedia; job dilanjutkan dengan scoring, "
+            "thumbnail prompt, dan caption fallback lokal.[/yellow]"
+        )
+        _AI_UNAVAILABLE_NOTICE_PRINTED = True
+    return True
 
 
 class UserFacingError(RuntimeError):
@@ -68,6 +84,18 @@ class ClipCandidate:
     title: str
     reason: str
     text: str
+
+
+ReactionKind = Literal["laugh", "shock", "think", "pray", "warning", "heart"]
+
+
+@dataclass
+class ReactionCue:
+    kind: ReactionKind
+    start: float
+    end: float
+    side: Literal["left", "right"]
+    trigger: str
 
 
 HOOK_WORDS = {
@@ -148,9 +176,131 @@ TENSION_WORDS = {
     "vs",
 }
 
+MYSTERY_WORDS = {
+    "angker",
+    "arwah",
+    "gaib",
+    "hantu",
+    "horor",
+    "jin",
+    "kematian",
+    "kubur",
+    "merinding",
+    "mistis",
+    "misteri",
+    "mitos",
+    "ruqyah",
+    "setan",
+    "siluman",
+    "tumbal",
+}
+
+ISLAMIC_WORDS = {
+    "akhirat",
+    "allah",
+    "alquran",
+    "dakwah",
+    "doa",
+    "hadis",
+    "hadits",
+    "hijrah",
+    "hikmah",
+    "ibadah",
+    "iman",
+    "islam",
+    "kajian",
+    "masjid",
+    "muslim",
+    "nabi",
+    "neraka",
+    "quran",
+    "sedekah",
+    "shalat",
+    "surga",
+    "ustadz",
+}
+
+INSPIRING_WORDS = {
+    "bangkit",
+    "bahagia",
+    "berkah",
+    "harapan",
+    "inspirasi",
+    "ikhlas",
+    "memaafkan",
+    "motivasi",
+    "sabar",
+    "semangat",
+    "sukses",
+    "syukur",
+}
+
+LAUGH_WORDS = {
+    "becanda",
+    "bercanda",
+    "gokil",
+    "jokes",
+    "kocak",
+    "ketawa",
+    "lawak",
+    "lucu",
+    "ngakak",
+}
+
+SHOCK_WORDS = {
+    "astaga",
+    "gila",
+    "horor",
+    "kaget",
+    "merinding",
+    "mengejutkan",
+    "parah",
+    "serius",
+    "ternyata",
+    "wow",
+}
+
+PRAYER_WORDS = {
+    "aamiin",
+    "alhamdulillah",
+    "allah",
+    "amin",
+    "berkah",
+    "doa",
+    "insyaallah",
+    "masyaallah",
+    "subhanallah",
+    "syukur",
+}
+
+WARNING_WORDS = {
+    "awas",
+    "bahaya",
+    "dilarang",
+    "jangan",
+    "risiko",
+    "waspada",
+}
+
+HEART_WORDS = {
+    "ayah",
+    "bahagia",
+    "cinta",
+    "haru",
+    "ibu",
+    "ikhlas",
+    "keluarga",
+    "maaf",
+    "sabar",
+    "sayang",
+    "sedih",
+    "terharu",
+}
+
 CropMode = Literal["center", "person", "streamer"]
 VideoQuality = Literal["standard", "high", "max"]
 ClipMode = Literal["short", "highlight_5m"]
+VisualTheme = Literal["mystery", "islamic", "warning", "inspiring", "knowledge"]
 YUNET_MODEL_PATH = Path(__file__).resolve().parent / "models" / "face_detection_yunet_2023mar.onnx"
 
 VIDEO_QUALITY_PRESETS = {
@@ -210,6 +360,20 @@ TRANSCRIPT_REPLACEMENTS = {
     r"\bmenyerahanakan\b": "menyederhanakan",
 }
 
+SOURCE_BRANDING_PATTERNS = (
+    r"\b(?:terima\s*kasih|makasih|thanks?)\s+(?:kepada|buat|untuk)\b",
+    r"\b(?:jangan\s+lupa\s+)?(?:subscribe|subrek|follow)\b",
+    r"\bikuti\s+(?:channel|kanal|akun|kami|kita|youtube|instagram|tiktok)\b",
+    r"\b(?:like|komen|comment|share)\s+(?:dan\s+)?(?:subscribe|follow|video\s+ini)\b",
+    r"\baktifkan\s+(?:tombol\s+)?lonceng\b",
+    r"\b(?:selamat\s+datang|kembali\s+lagi)\s+(?:di|ke|bersama)\b",
+    r"\b(?:channel|kanal)\s+(?:ini|kami|kita|youtube|resmi)\b",
+    r"\b(?:youtube|instagram|tiktok)\s+(?:channel|kanal|kami|kita)\b",
+    r"\b(?:saksikan|tonton)\s+(?:terus|selengkapnya|video\s+lain|kami)\b",
+    r"\b(?:dipersembahkan|disponsori|didukung)\s+oleh\b",
+    r"\b(?:supported|sponsored|presented)\s+by\b",
+)
+
 
 def run(command: list[str], cwd: Path | None = None) -> None:
     process = subprocess.run(command, cwd=cwd, text=True)
@@ -217,8 +381,61 @@ def run(command: list[str], cwd: Path | None = None) -> None:
         raise RuntimeError(f"Command failed with exit code {process.returncode}: {' '.join(command)}")
 
 
+_FFMPEG_PATH_CACHE: str | None = None
+_FFMPEG_FILTER_CACHE: dict[tuple[str, str], bool] = {}
+
+
 def ffmpeg_path() -> str:
-    return imageio_ffmpeg.get_ffmpeg_exe()
+    """Prefer a full system FFmpeg; imageio's minimal binary may lack text/libass filters."""
+    global _FFMPEG_PATH_CACHE
+    if _FFMPEG_PATH_CACHE:
+        return _FFMPEG_PATH_CACHE
+
+    configured = os.environ.get("FFMPEG_BINARY", "").strip()
+    candidates = [
+        configured,
+        shutil.which("ffmpeg") or "",
+        imageio_ffmpeg.get_ffmpeg_exe(),
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            result = subprocess.run(
+                [candidate, "-version"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=8,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if result.returncode == 0:
+            _FFMPEG_PATH_CACHE = candidate
+            return candidate
+    raise RuntimeError("FFmpeg tidak ditemukan atau tidak dapat dijalankan.")
+
+
+def ffmpeg_has_filter(name: str) -> bool:
+    binary = ffmpeg_path()
+    cache_key = (binary, name)
+    if cache_key in _FFMPEG_FILTER_CACHE:
+        return _FFMPEG_FILTER_CACHE[cache_key]
+    try:
+        result = subprocess.run(
+            [binary, "-hide_banner", "-filters"],
+            capture_output=True,
+            text=True,
+            timeout=12,
+        )
+        output = f"{result.stdout}\n{result.stderr}"
+        supported = result.returncode == 0 and re.search(
+            rf"(?m)^\s*[TSC.]+\s+{re.escape(name)}\s",
+            output,
+        ) is not None
+    except (OSError, subprocess.TimeoutExpired):
+        supported = False
+    _FFMPEG_FILTER_CACHE[cache_key] = supported
+    return supported
 
 
 def configured_clip_max_bytes() -> int:
@@ -362,6 +579,20 @@ def scale_filter(width: int | str, height: int | str, *, force_increase: bool = 
 def add_quality_sharpen(vf: str, video_quality: VideoQuality) -> str:
     sharpen = str(quality_preset(video_quality)["sharpen"])
     return f"{vf},{sharpen}" if sharpen else vf
+
+
+def remove_running_text_filter(crop_bottom: int = 160) -> str:
+    """Crop a source footer/ticker and rescale without changing the 9:16 aspect ratio."""
+    safe_crop = max(80, min(260, int(crop_bottom)))
+    crop_height = 1920 - safe_crop
+    crop_width = int(round(crop_height * 9 / 16))
+    if crop_width % 2:
+        crop_width += 1
+    crop_x = max(0, (1080 - crop_width) // 2)
+    return (
+        f"crop={crop_width}:{crop_height}:{crop_x}:0,"
+        "scale=1080:1920:flags=lanczos,setsar=1"
+    )
 
 
 def make_cv2_cascade(cv2_module, filename: str):
@@ -702,6 +933,20 @@ def clean_transcript_text(text: str) -> str:
     return cleaned.strip()
 
 
+def source_branding_reason(text: str) -> str | None:
+    """Detect source-channel promos without treating ordinary proper names as branding."""
+    normalized = re.sub(r"\s+", " ", text).strip().lower()
+    for pattern in SOURCE_BRANDING_PATTERNS:
+        if re.search(pattern, normalized, flags=re.IGNORECASE):
+            return pattern
+    return None
+
+
+def is_source_branding_segment(segment: TranscriptSegment | str) -> bool:
+    text = segment.text if isinstance(segment, TranscriptSegment) else str(segment)
+    return source_branding_reason(text) is not None
+
+
 def fetch_metadata(url: str) -> dict:
     ydl_opts = ytdlp_base_options(skip_download=True)
     try:
@@ -741,6 +986,8 @@ def download_video(
     max_height = int(quality_preset(video_quality)["max_download_height"])
     ydl_opts = ytdlp_base_options(
         format=(
+            f"bestvideo[height<={max_height}][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
+            f"bestvideo[height<={max_height}][vcodec^=avc1]+bestaudio/"
             f"bestvideo[height<={max_height}][ext=mp4]+bestaudio[ext=m4a]/"
             f"bestvideo[height<={max_height}]+bestaudio/"
             f"best[height<={max_height}]/best"
@@ -849,6 +1096,13 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
     hook_hits = sorted(HOOK_WORDS.intersection(words))
     payoff_hits = sorted(PAYOFF_WORDS.intersection(words))
     tension_hits = sorted(TENSION_WORDS.intersection(words))
+    mystery_hits = sorted(MYSTERY_WORDS.intersection(words))
+    islamic_hits = sorted(ISLAMIC_WORDS.intersection(words))
+    laugh_hits = sorted(LAUGH_WORDS.intersection(words))
+    has_laughter = bool(
+        laugh_hits
+        or re.search(r"(?:^|\W)(?:ha){2,}(?:\W|$)|w+k+w+k+|he(?:he)+", text.lower())
+    )
 
     score = 35
     reasons: list[str] = []
@@ -872,6 +1126,22 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
     if payoff_hits:
         score += min(12, len(payoff_hits) * 4)
         reasons.append("ada payoff: " + ", ".join(payoff_hits[:3]))
+
+    if mystery_hits:
+        score += min(10, len(mystery_hits) * 3)
+        reasons.append("punya unsur misteri: " + ", ".join(mystery_hits[:3]))
+
+    if islamic_hits:
+        score += min(8, len(islamic_hits) * 2)
+        reasons.append("punya konteks Islami: " + ", ".join(islamic_hits[:3]))
+
+    if mystery_hits and islamic_hits:
+        score += 5
+        reasons.append("misteri tetap terhubung dengan hikmah Islami")
+
+    if has_laughter:
+        score += 10
+        reasons.append("punya momen humor/tertawa yang natural")
 
     if "?" in text:
         score += 7
@@ -914,9 +1184,15 @@ def build_candidate_pool(
     if not segments:
         return candidates
 
+    branding_flags = [is_source_branding_segment(item) for item in segments]
     for start_idx, first in enumerate(segments):
+        if branding_flags[start_idx]:
+            continue
         window: list[TranscriptSegment] = []
-        for item in segments[start_idx:]:
+        for end_idx in range(start_idx, len(segments)):
+            if branding_flags[end_idx]:
+                break
+            item = segments[end_idx]
             window.append(item)
             duration = window[-1].end - first.start
             if duration < min_duration:
@@ -926,12 +1202,21 @@ def build_candidate_pool(
 
             text = " ".join(part.text for part in window)
             score, reasons = score_window(window, duration)
+            previous_is_branding = start_idx > 0 and branding_flags[start_idx - 1]
+            next_is_branding = end_idx + 1 < len(segments) and branding_flags[end_idx + 1]
+            # Whisper timestamps can bleed a few frames across segment edges.
+            # Keep a small inward guard around removed promos so their audio tail
+            # cannot leak into an otherwise clean export.
+            safe_start = first.start + (0.45 if previous_is_branding else -0.35)
+            safe_end = window[-1].end - (0.35 if next_is_branding else -0.25)
+            safe_start = max(0, safe_start)
+            safe_end = max(safe_start + 0.2, safe_end)
             candidates.append(
                 ClipCandidate(
                     index=0,
-                    start=max(0, first.start - 0.35),
-                    end=window[-1].end + 0.25,
-                    duration=duration,
+                    start=safe_start,
+                    end=safe_end,
+                    duration=safe_end - safe_start,
                     score=score,
                     title=first_sentence(text),
                     reason=", ".join(reasons) or "segmen stabil",
@@ -1032,13 +1317,33 @@ def select_compilation_candidates(
     return picked
 
 
+def select_short_and_compilation_candidates(
+    candidates: list[ClipCandidate],
+    short_limit: int,
+    compilation_target: float = 300,
+) -> tuple[list[ClipCandidate], list[ClipCandidate]]:
+    """Build independent short and compilation selections from one scored pool."""
+    short_pool = [ClipCandidate(**asdict(item)) for item in candidates]
+    compilation_pool = [ClipCandidate(**asdict(item)) for item in candidates]
+    return (
+        select_candidates(short_pool, short_limit),
+        select_compilation_candidates(compilation_pool, compilation_target),
+    )
+
+
 AI_RESCORE_POOL_LIMIT = 40
 AI_SYSTEM_PROMPT = (
     "You are an expert Indonesian short-form video editor for TikTok FYP, Reels, and YouTube Shorts. "
     "Your job is to choose the strongest POV moments from transcript windows, not to divide the video evenly. "
     "Prioritize clips with a strong first-3-second hook, open loop, tension or controversy, practical value, "
     "surprising/emotional payoff, and self-contained meaning. Penalize intros, outros, filler, repeated ideas, "
-    "generic motivation, and clips that need earlier context. "
+    "generic motivation, and clips that need earlier context. Islamic insight, mystery, myth-versus-fact, "
+    "history, supernatural stories, and relevant horror are valuable niches when genuinely present in the "
+    "transcript. Authentic humor, witty answers, and naturally funny reactions are also high-value retention "
+    "moments. Reject source-channel intros, outros, credits, sponsor mentions, requests to subscribe/follow, "
+    "and thanks addressed to another channel or media brand. Never put a source channel or media brand in "
+    "the clip title. Never turn myths, folklore, or supernatural claims into established Islamic facts; "
+    "frame them accurately as stories, claims, questions, or lessons. "
     "Return ONLY strict JSON, no markdown, no prose."
 )
 
@@ -1104,7 +1409,8 @@ def ai_rescore_candidates(
         )
         parsed = extract_json(content)
     except Exception as exc:
-        console.print(f"[yellow]AI agent failed, using heuristic scores:[/yellow] {exc}")
+        if not disable_unavailable_ai(config, exc):
+            console.print(f"[yellow]AI agent failed, using heuristic scores:[/yellow] {exc}")
         return candidates
 
     scored = parsed.get("clips") if isinstance(parsed, dict) else None
@@ -1149,7 +1455,11 @@ def ai_rescore_candidates(
         else:
             candidate.score = max(1, max_rank_score - rank)
         title = entry.get("title")
-        if isinstance(title, str) and title.strip():
+        if (
+            isinstance(title, str)
+            and title.strip()
+            and not is_source_branding_segment(title)
+        ):
             candidate.title = title.strip()[:80]
         reason = entry.get("reason")
         pov = entry.get("pov")
@@ -1172,7 +1482,13 @@ def ai_rescore_candidates(
 
 
 def segments_for_clip(segments: Iterable[TranscriptSegment], clip: ClipCandidate) -> list[TranscriptSegment]:
-    return [item for item in segments if item.end > clip.start and item.start < clip.end]
+    return [
+        item
+        for item in segments
+        if item.end > clip.start
+        and item.start < clip.end
+        and not is_source_branding_segment(item)
+    ]
 
 
 SUBTITLE_MAX_CHARS = 22
@@ -1207,6 +1523,315 @@ def split_subtitle_text(text: str, max_chars: int = SUBTITLE_MAX_CHARS, max_line
         chunks.append("\n".join(lines))
 
     return chunks
+
+
+def hook_banner_text(clip: ClipCandidate) -> str:
+    title = first_sentence(clip.title, max_words=8).upper()
+    chunks = split_subtitle_text(title, max_chars=24, max_lines=2)
+    return (chunks[0] if chunks else title)[:80]
+
+
+def detect_visual_theme(clip: ClipCandidate) -> VisualTheme:
+    words = set(re.findall(r"[\w']+", f"{clip.title} {clip.text}".lower()))
+    if words.intersection(MYSTERY_WORDS):
+        return "mystery"
+    if words.intersection(ISLAMIC_WORDS):
+        return "islamic"
+    if words.intersection(TENSION_WORDS):
+        return "warning"
+    if words.intersection(INSPIRING_WORDS):
+        return "inspiring"
+    return "knowledge"
+
+
+def visual_theme_profile(clip: ClipCandidate) -> dict[str, str]:
+    theme = detect_visual_theme(clip)
+    has_islamic_context = bool(
+        set(re.findall(r"[\w']+", f"{clip.title} {clip.text}".lower())).intersection(ISLAMIC_WORDS)
+    )
+    profiles: dict[VisualTheme, dict[str, str]] = {
+        "mystery": {
+            "accent": "#A855F7",
+            "accent_secondary": "#22D3EE",
+            "badge": "MISTERI / HIKMAH" if has_islamic_context else "KISAH / MISTERI",
+            "emphasis_label": "CEK FAKTANYA",
+            "grade": (
+                "eq=contrast=1.08:brightness=-0.018:saturation=0.90:gamma=0.98,"
+                "colorbalance=bs=.035:rs=-.018"
+            ),
+        },
+        "islamic": {
+            "accent": "#22C55E",
+            "accent_secondary": "#FACC15",
+            "badge": "RENUNGAN / HIKMAH",
+            "emphasis_label": "AMBIL HIKMAH",
+            "grade": (
+                "eq=contrast=1.045:brightness=0.008:saturation=1.06:gamma=1.015,"
+                "colorbalance=gs=.018:rs=.008"
+            ),
+        },
+        "warning": {
+            "accent": "#F97316",
+            "accent_secondary": "#EF4444",
+            "badge": "JANGAN ABAIKAN",
+            "emphasis_label": "PERHATIKAN",
+            "grade": "eq=contrast=1.07:brightness=-0.006:saturation=1.04:gamma=0.995",
+        },
+        "inspiring": {
+            "accent": "#38BDF8",
+            "accent_secondary": "#A78BFA",
+            "badge": "PESAN PENTING",
+            "emphasis_label": "INGAT INI",
+            "grade": (
+                "eq=contrast=1.04:brightness=0.012:saturation=1.08:gamma=1.02,"
+                "colorbalance=bs=.012:rs=.008"
+            ),
+        },
+        "knowledge": {
+            "accent": "#FACC15",
+            "accent_secondary": "#22D3EE",
+            "badge": "FAKTA / PELAJARAN",
+            "emphasis_label": "POIN PENTING",
+            "grade": "eq=contrast=1.05:brightness=0.004:saturation=1.04:gamma=1.01",
+        },
+    }
+    return {"theme": theme, **profiles[theme]}
+
+
+def emphasis_timestamps(
+    clip: ClipCandidate,
+    clip_segments: list[TranscriptSegment],
+    *,
+    limit: int = 3,
+) -> list[float]:
+    """Find spaced transcript moments worth a restrained visual emphasis pulse."""
+    interesting_words = HOOK_WORDS | PAYOFF_WORDS | TENSION_WORDS | MYSTERY_WORDS
+    duration = max(0.1, clip.end - clip.start)
+    timestamps: list[float] = []
+    for segment in clip_segments:
+        words = set(re.findall(r"[\w']+", segment.text.lower()))
+        if not words.intersection(interesting_words):
+            continue
+        relative = max(0.0, segment.start - clip.start)
+        if relative < 3.4 or relative > duration - 1.0:
+            continue
+        if timestamps and relative - timestamps[-1] < 4.0:
+            continue
+        timestamps.append(round(relative, 3))
+        if len(timestamps) >= limit:
+            break
+    if not timestamps and duration >= 14:
+        timestamps.append(round(min(duration - 1.0, max(5.0, duration * 0.42)), 3))
+    return timestamps
+
+
+def detect_reaction_cues(
+    clip: ClipCandidate,
+    clip_segments: list[TranscriptSegment],
+    *,
+    limit: int = 4,
+    min_gap: float = 5.5,
+) -> list[ReactionCue]:
+    """Choose sparse, transcript-grounded reaction stickers instead of random emoji spam."""
+    duration = max(0.1, clip.end - clip.start)
+    cues: list[ReactionCue] = []
+    for segment in clip_segments:
+        text = segment.text.lower()
+        words = set(re.findall(r"[\w']+", text))
+        kind: ReactionKind | None = None
+        trigger = ""
+        laugh_pattern = re.search(r"(?:^|\W)(?:ha){2,}(?:\W|$)|w+k+w+k+|he(?:he)+", text)
+        if words.intersection(LAUGH_WORDS) or laugh_pattern:
+            kind = "laugh"
+            trigger = next(iter(sorted(words.intersection(LAUGH_WORDS))), "tertawa")
+        elif words.intersection(SHOCK_WORDS):
+            kind = "shock"
+            trigger = next(iter(sorted(words.intersection(SHOCK_WORDS))))
+        elif words.intersection(WARNING_WORDS):
+            kind = "warning"
+            trigger = next(iter(sorted(words.intersection(WARNING_WORDS))))
+        elif words.intersection(PRAYER_WORDS):
+            kind = "pray"
+            trigger = next(iter(sorted(words.intersection(PRAYER_WORDS))))
+        elif "?" in segment.text or words.intersection(
+            {"apa", "apakah", "bagaimana", "benarkah", "bukankah", "gimana", "kenapa", "kok", "masa"}
+        ):
+            kind = "think"
+            trigger = "pertanyaan"
+        elif words.intersection(HEART_WORDS):
+            kind = "heart"
+            trigger = next(iter(sorted(words.intersection(HEART_WORDS))))
+        if kind is None:
+            continue
+
+        relative = max(0.0, segment.start - clip.start)
+        relative += min(0.55, max(0.1, (segment.end - segment.start) * 0.25))
+        if relative < 3.45 or relative > duration - 0.75:
+            continue
+        if cues and relative - cues[-1].start < min_gap:
+            continue
+        end = min(duration - 0.05, relative + 1.85)
+        if end <= relative:
+            continue
+        cues.append(
+            ReactionCue(
+                kind=kind,
+                start=round(relative, 3),
+                end=round(end, 3),
+                side="right" if len(cues) % 2 == 0 else "left",
+                trigger=trigger[:40],
+            )
+        )
+        if len(cues) >= limit:
+            break
+    return cues
+
+
+REACTION_ASSET_DIR = Path(__file__).resolve().parent / "assets" / "reactions"
+
+
+def reaction_overlay_filter(cue: ReactionCue, index: int) -> str:
+    asset_path = (REACTION_ASSET_DIR / f"{cue.kind}.svg").resolve()
+    escaped_path = str(asset_path).replace("\\", "/").replace(":", r"\:").replace("'", r"\'")
+    size = 184 if cue.kind in {"laugh", "shock"} else 166
+    base_x = 828 if cue.side == "right" else 68
+    direction = -1 if cue.side == "right" else 1
+    base_label = f"reaction_base_{index}"
+    sticker_label = f"reaction_sticker_{index}"
+    slide_start = cue.start + 0.22
+    x_expression = (
+        f"if(lt(t,{slide_start:.3f}),"
+        f"{base_x - direction * 120}+{direction * 545:.1f}*(t-{cue.start:.3f}),"
+        f"{base_x}+10*sin(9*(t-{cue.start:.3f})))"
+    )
+    y_expression = f"1190-32*abs(sin(5*(t-{cue.start:.3f})))"
+    return (
+        f"null[{base_label}];"
+        f"movie='{escaped_path}',scale={size}:{size}:flags=lanczos,format=rgba[{sticker_label}];"
+        f"[{base_label}][{sticker_label}]overlay="
+        f"x='{x_expression}':y='{y_expression}':eof_action=repeat:"
+        f"enable='between(t,{cue.start:.3f},{cue.end:.3f})'"
+    )
+
+
+def modern_gradient_border_filters(accent: str, secondary: str) -> list[str]:
+    """Build a restrained dual-tone inner border with a soft depth gradient."""
+    return [
+        f"drawbox=x=10:y=10:w=1060:h=1900:color={secondary}@0.16:t=14",
+        f"drawbox=x=17:y=17:w=1046:h=1886:color={accent}@0.48:t=7",
+        "drawbox=x=23:y=23:w=1034:h=1874:color=white@0.16:t=2",
+        f"drawbox=x=17:y=17:w=520:h=7:color={secondary}@0.90:t=fill",
+        f"drawbox=x=543:y=1896:w=520:h=7:color={secondary}@0.82:t=fill",
+        f"drawbox=x=17:y=950:w=7:h=946:color={secondary}@0.74:t=fill",
+        f"drawbox=x=1056:y=17:w=7:h=946:color={secondary}@0.74:t=fill",
+    ]
+
+
+def enhanced_edit_filter(
+    duration: float,
+    hook_text_filename: str,
+    *,
+    show_progress: bool = True,
+    theme_profile: dict[str, str] | None = None,
+    emphasis_times: list[float] | None = None,
+    variation: int = 0,
+    show_text_overlays: bool = True,
+    reaction_cues: list[ReactionCue] | None = None,
+    show_reactions: bool = True,
+) -> str:
+    """Add context-aware motion graphics while keeping faces and captions readable."""
+    safe_duration = max(0.1, duration)
+    fade_out_start = max(0.0, safe_duration - 0.24)
+    profile = theme_profile or {
+        "theme": "knowledge",
+        "accent": "#FACC15",
+        "accent_secondary": "#22D3EE",
+        "badge": "FAKTA / PELAJARAN",
+        "emphasis_label": "POIN PENTING",
+        "grade": "eq=contrast=1.05:brightness=0.004:saturation=1.04:gamma=1.01",
+    }
+    accent = profile["accent"]
+    accent_secondary = profile.get("accent_secondary", "#22D3EE")
+    badge = profile["badge"]
+    emphasis_label = profile["emphasis_label"]
+    grade = profile["grade"]
+    motion_variant = max(0, variation) % 3
+    scale_width = 1120 + motion_variant * 20
+    scale_height = int(round(scale_width * 16 / 9))
+    if scale_height % 2:
+        scale_height += 1
+    center_x = (scale_width - 1080) / 2
+    center_y = (scale_height - 1920) / 2
+    amp_x = min(12.0, max(4.0, center_x - 2))
+    amp_y = min(16.0, max(6.0, center_y - 2))
+    x_period = 7 - motion_variant
+    y_period = 5 + motion_variant
+    badge_width = min(430, max(250, len(badge) * 17 + 60))
+    filters = [
+        grade,
+        f"scale={scale_width}:{scale_height}:flags=lanczos",
+        "crop=1080:1920:"
+        f"x='{center_x:.1f}+{amp_x:.1f}*sin(2*PI*t/{x_period})':"
+        f"y='{center_y:.1f}+{amp_y:.1f}*sin(2*PI*t/{y_period})'",
+        "vignette=PI/9",
+        "fade=t=in:st=0:d=0.18",
+        f"fade=t=out:st={fade_out_start:.3f}:d=0.24",
+    ]
+    filters.extend(modern_gradient_border_filters(accent, accent_secondary))
+    if show_text_overlays:
+        filters.extend(
+            [
+                f"drawbox=x=48:y=62:w={badge_width}:h=48:color={accent}@0.92:t=fill:"
+                "enable='between(t,0.06,3.20)'",
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                f"text='{badge}':expansion=none:fontcolor=white:fontsize=23:"
+                "x=68:y=73:enable='between(t,0.06,3.20)'",
+                "drawbox=x=48:y=120:w=984:h=250:color=black@0.62:t=fill:"
+                "enable='between(t,0.10,3.20)'",
+                f"drawbox=x=48:y=120:w=14:h=250:color={accent}@0.98:t=fill:"
+                "enable='between(t,0.10,3.20)'",
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                f"textfile='{hook_text_filename}':reload=0:expansion=none:"
+                "fontcolor=white:fontsize=48:line_spacing=10:borderw=2:bordercolor=black@0.85:"
+                "x='if(lt(t,0.48),-text_w+(t-0.10)*(76+text_w)/0.38,76)':y=168:"
+                "enable='between(t,0.10,3.20)'",
+            ]
+        )
+    for timestamp in emphasis_times or []:
+        pulse_end = min(safe_duration, timestamp + 0.42)
+        label_end = min(safe_duration, timestamp + 1.15)
+        filters.extend(
+            [
+                f"drawbox=x=18:y=18:w=1044:h=1884:color={accent}@0.58:t=5:"
+                f"enable='between(t,{timestamp:.3f},{pulse_end:.3f})'",
+                f"drawbox=x=30:y=30:w=1020:h=1860:color=white@0.18:t=2:"
+                f"enable='between(t,{timestamp:.3f},{pulse_end:.3f})'",
+            ]
+        )
+        if show_text_overlays:
+            filters.extend(
+                [
+                    f"drawbox=x=706:y=400:w=326:h=58:color={accent}@0.94:t=fill:"
+                    f"enable='between(t,{timestamp:.3f},{label_end:.3f})'",
+                    "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                    f"text='{emphasis_label}':expansion=none:fontcolor=white:fontsize=23:"
+                    f"x='1008-text_w':y=415:enable='between(t,{timestamp:.3f},{label_end:.3f})'",
+                ]
+            )
+    if show_reactions:
+        filters.extend(
+            reaction_overlay_filter(cue, index)
+            for index, cue in enumerate(reaction_cues or [], start=1)
+        )
+    if show_progress:
+        filters.extend(
+            [
+                "drawbox=x=0:y=1888:w=iw:h=12:color=black@0.45:t=fill",
+                f"drawbox=x=0:y=1888:w='max(2,iw*t/{safe_duration:.3f})':"
+                f"h=12:color={accent}@0.96:t=fill",
+            ]
+        )
+    return ",".join(filters)
 
 
 def write_srt(path: Path, segments: list[TranscriptSegment], offset: float, clip_duration: float) -> None:
@@ -1322,7 +1947,11 @@ def caption_gradient_blur_filter(position: CaptionPosition) -> str:
 THUMBNAIL_SYSTEM_PROMPT = (
     "You write prompts for an AI image generator that will ONLY add a text overlay onto a "
     "provided screenshot. The screenshot is the thumbnail background and must NOT be redrawn, "
-    "restyled, or replaced. Reply ONLY with strict JSON, no markdown."
+    "restyled, or replaced. Make the hook intriguing but faithful to the transcript. For mystery, "
+    "myth, supernatural, or horror topics, never present an unverified claim as religious fact. "
+    "Never mention, thank, credit, or promote the source channel, another channel, TV station, "
+    "media brand, uploader, or sponsor in either the hook or prompt. "
+    "Reply ONLY with strict JSON, no markdown."
 )
 
 
@@ -1390,7 +2019,8 @@ def generate_thumbnail_prompt(clip: ClipCandidate, config: AIConfig) -> dict | N
         )
         parsed = extract_json(content)
     except Exception as exc:
-        console.print(f"[yellow]Thumbnail prompt failed for clip {clip.index}, using fallback:[/yellow] {exc}")
+        if not disable_unavailable_ai(config, exc):
+            console.print(f"[yellow]Thumbnail prompt failed for clip {clip.index}, using fallback:[/yellow] {exc}")
         return {
             "hook_text": fallback_hook,
             "prompt": (
@@ -1405,8 +2035,23 @@ def generate_thumbnail_prompt(clip: ClipCandidate, config: AIConfig) -> dict | N
     prompt = parsed.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip():
         return None
+    if is_source_branding_segment(prompt):
+        return {
+            "hook_text": fallback_hook,
+            "prompt": (
+                f'Add a bold thumbnail text overlay reading "{fallback_hook}" onto the provided '
+                "screenshot, keeping the screenshot background unchanged."
+            ),
+        }
+    safe_hook = (
+        hook
+        if isinstance(hook, str)
+        and hook.strip()
+        and not is_source_branding_segment(hook)
+        else fallback_hook
+    )
     return {
-        "hook_text": (hook if isinstance(hook, str) and hook.strip() else fallback_hook).strip()[:80],
+        "hook_text": safe_hook.strip()[:80],
         "prompt": prompt.strip()[:1500],
     }
 
@@ -1415,7 +2060,11 @@ SOCIAL_CAPTION_SYSTEM_PROMPT = (
     "You are a viral social media copywriter for TikTok, Instagram Reels, and YouTube Shorts. "
     "You write short, scroll-stopping captions in Indonesian that make people want to watch and read. "
     "Open with a strong hook, keep it punchy, add a soft call-to-action, a few relevant emojis, "
-    "and 5-8 niche hashtags. Reply ONLY with strict JSON, no markdown."
+    "and 5-8 niche hashtags. For Islamic mystery, myth, supernatural, and horror content, keep the "
+    "distinction between religious teaching, story, folklore, personal experience, and verified fact. "
+    "Do not invent certainty. Never mention, thank, promote, credit, or ask viewers to follow the source "
+    "channel, another channel, TV station, media brand, uploader, or sponsor. Reply ONLY with strict JSON, "
+    "no markdown."
 )
 
 
@@ -1424,11 +2073,61 @@ def _normalize_hashtag(tag: str) -> str:
     return f"#{cleaned}" if cleaned else ""
 
 
+def clip_topic_hashtags(clip: ClipCandidate) -> list[str]:
+    words = set(re.findall(r"[\w']+", f"{clip.title} {clip.text}".lower()))
+    tags: list[str] = []
+    if words.intersection(ISLAMIC_WORDS):
+        tags.extend(["#Islam", "#Hikmah"])
+    if words.intersection(MYSTERY_WORDS):
+        tags.extend(["#Misteri", "#KisahNyata"])
+    if "mitos" in words:
+        tags.append("#MitosAtauFakta")
+    if "horor" in words or "hantu" in words or "angker" in words:
+        tags.append("#HororIndonesia")
+    if words.intersection(INSPIRING_WORDS):
+        tags.append("#Inspirasi")
+    if not tags:
+        tags.extend(["#PelajaranHidup", "#FaktaMenarik"])
+    return tags
+
+
+def fallback_social_caption(
+    clip: ClipCandidate,
+    required_hashtags: list[str] | None = None,
+) -> str:
+    theme = detect_visual_theme(clip)
+    hook = first_sentence(clip.title, max_words=8).rstrip(" .!?")
+    if theme == "mystery":
+        body = (
+            "Simak konteksnya sampai selesai. Bedakan kisah, mitos, pengalaman, dan fakta—"
+            "lalu ambil hikmah tanpa langsung mempercayai klaim yang belum jelas."
+        )
+        emoji = "🌙"
+    elif theme == "islamic":
+        body = "Simak sampai selesai dan ambil hikmah yang paling relevan untuk kehidupan sehari-hari."
+        emoji = "🤲"
+    elif theme == "warning":
+        body = "Jangan berhenti di bagian awal—poin terpentingnya ada pada penjelasan lengkapnya."
+        emoji = "⚠️"
+    else:
+        body = "Tonton sampai selesai, lalu tulis bagian mana yang paling membuka sudut pandangmu."
+        emoji = "💡"
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for raw in [*(required_hashtags or []), *clip_topic_hashtags(clip), "#Shorts"]:
+        tag = _normalize_hashtag(str(raw))
+        if tag and tag.casefold() not in seen:
+            ordered.append(tag)
+            seen.add(tag.casefold())
+    return f"{emoji} {hook}\n\n{body}\n\n{' '.join(ordered[:8])}"[:2000]
+
+
 def generate_social_caption(
     clip: ClipCandidate, config: AIConfig, required_hashtags: list[str] | None = None
-) -> str | None:
+) -> str:
     if not config.enabled or not config.base_url or not config.model:
-        return None
+        return fallback_social_caption(clip, required_hashtags)
 
     user_prompt = (
         "Write a social media post caption (Bahasa Indonesia) for this short clip. "
@@ -1449,15 +2148,24 @@ def generate_social_caption(
         )
         parsed = extract_json(content)
     except Exception as exc:
-        console.print(f"[yellow]Social caption failed for clip {clip.index}:[/yellow] {exc}")
-        return None
+        if not disable_unavailable_ai(config, exc):
+            console.print(f"[yellow]Social caption failed for clip {clip.index}:[/yellow] {exc}")
+        return fallback_social_caption(clip, required_hashtags)
 
     if not isinstance(parsed, dict):
-        return None
+        return fallback_social_caption(clip, required_hashtags)
     caption = parsed.get("caption")
     if not isinstance(caption, str) or not caption.strip():
-        return None
+        return fallback_social_caption(clip, required_hashtags)
     text = caption.strip()
+    clean_lines = [
+        line
+        for line in text.splitlines()
+        if not is_source_branding_segment(line)
+    ]
+    text = "\n".join(clean_lines).strip()
+    if not text:
+        return fallback_social_caption(clip, required_hashtags)
 
     # Required hashtags always come first, then the AI-generated ones (deduped,
     # case-insensitive). Required tags are guaranteed to be present.
@@ -1490,6 +2198,8 @@ def export_clip(
     generate_assets: bool = True,
     enforce_size: bool = True,
     base_name_override: str = "",
+    enhanced_edit: bool = True,
+    remove_running_text: bool = True,
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     base_name = base_name_override or f"clip_{clip.index:02}_{slugify(clip.title)[:72] or 'auto'}"
@@ -1498,23 +2208,81 @@ def export_clip(
     out_path = clips_dir / f"{base_name}.mp4"
     temp_video_path = clips_dir / f"{base_name}.video_tmp.mp4"
     temp_audio_path = clips_dir / f"{base_name}.audio_tmp.wav"
+    hook_text_path = clips_dir / f"{base_name}.hook.txt"
 
     duration = clip.end - clip.start
+    theme_profile = visual_theme_profile(clip)
+    emphasis_times = emphasis_timestamps(clip, clip_segments)
+    reaction_cues = detect_reaction_cues(clip, clip_segments)
+    drawtext_supported = ffmpeg_has_filter("drawtext")
+    subtitles_supported = ffmpeg_has_filter("subtitles")
+    reaction_overlays_supported = (
+        ffmpeg_has_filter("movie")
+        and ffmpeg_has_filter("overlay")
+        and all((REACTION_ASSET_DIR / f"{cue.kind}.svg").is_file() for cue in reaction_cues)
+    )
     write_srt(srt_path, clip_segments, clip.start, duration)
-    save_json(json_path, asdict(clip))
+    save_json(
+        json_path,
+        {
+            **asdict(clip),
+            "enhanced_edit": enhanced_edit,
+            "remove_running_text": remove_running_text,
+            "visual_theme": theme_profile["theme"],
+            "emphasis_times": emphasis_times,
+            "reaction_cues": [asdict(cue) for cue in reaction_cues],
+            "drawtext_supported": drawtext_supported,
+            "subtitles_supported": subtitles_supported,
+            "reaction_overlays_supported": reaction_overlays_supported,
+        },
+    )
 
     if crop_mode == "streamer":
         vf = streamer_crop_filter(video_path, clip, cam_corner)
     else:
         vf = vertical_crop_filter(video_path, clip, crop_mode)
+    if remove_running_text:
+        vf = f"{vf},{remove_running_text_filter()}"
     vf = add_quality_sharpen(vf, video_quality)
-    if burn_subtitles and clip_segments:
+    if enhanced_edit:
+        if drawtext_supported:
+            hook_text_path.write_text(hook_banner_text(clip) + "\n", encoding="utf-8")
+        else:
+            console.print(
+                "[yellow]FFmpeg tidak memiliki drawtext; hook teks dilewati, "
+                "motion/color/pulse tetap diterapkan.[/yellow]"
+            )
+        if reaction_cues and not reaction_overlays_supported:
+            console.print(
+                "[yellow]FFmpeg tidak mendukung movie/overlay SVG; reaction sticker dilewati "
+                "agar export tetap berjalan.[/yellow]"
+            )
+        vf = (
+            f"{vf},"
+            f"{enhanced_edit_filter(
+                duration,
+                hook_text_path.name,
+                show_progress=generate_assets,
+                theme_profile=theme_profile,
+                emphasis_times=emphasis_times,
+                variation=max(0, clip.index - 1),
+                show_text_overlays=drawtext_supported,
+                reaction_cues=reaction_cues,
+                show_reactions=reaction_overlays_supported,
+            )}"
+        )
+    if burn_subtitles and clip_segments and subtitles_supported:
         style = build_subtitle_style(caption or CaptionStyle())
         vf = (
             f"{vf},{caption_gradient_blur_filter((caption or CaptionStyle()).position)},"
             f"subtitles='{srt_path.name}'"
             ":original_size=1080x1920"
             f":force_style='{style}'"
+        )
+    elif burn_subtitles and clip_segments:
+        console.print(
+            "[yellow]FFmpeg tidak memiliki filter subtitles; file SRT tetap dibuat "
+            "dan export video dilanjutkan tanpa burn subtitle.[/yellow]"
         )
 
     common_input = [
@@ -1532,30 +2300,44 @@ def export_clip(
     ]
     quality = quality_preset(video_quality)
 
-    run(
-        [
-            *common_input,
-            "-map",
-            "0:v:0",
-            "-an",
-            "-vf",
-            vf,
-            "-c:v",
-            "libx264",
-            "-profile:v",
-            str(quality["profile"]),
-            "-level",
-            str(quality["level"]),
-            "-preset",
-            str(quality["preset"]),
-            "-crf",
-            str(quality["crf"]),
-            "-pix_fmt",
-            "yuv420p",
-            str(temp_video_path.name),
-        ],
-        cwd=clips_dir,
+    try:
+        run(
+            [
+                *common_input,
+                "-map",
+                "0:v:0",
+                "-an",
+                "-vf",
+                vf,
+                "-c:v",
+                "libx264",
+                "-profile:v",
+                str(quality["profile"]),
+                "-level",
+                str(quality["level"]),
+                "-preset",
+                str(quality["preset"]),
+                "-crf",
+                str(quality["crf"]),
+                "-pix_fmt",
+                "yuv420p",
+                str(temp_video_path.name),
+            ],
+            cwd=clips_dir,
+        )
+    finally:
+        hook_text_path.unlink(missing_ok=True)
+    audio_filter = (
+        "highpass=f=70,lowpass=f=15000,"
+        "acompressor=threshold=0.125:ratio=2.5:attack=20:release=250:makeup=1.35,"
+        "loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000"
     )
+    if enhanced_edit:
+        audio_fade_out_start = max(0.0, duration - 0.14)
+        audio_filter += (
+            ",afade=t=in:st=0:d=0.10"
+            f",afade=t=out:st={audio_fade_out_start:.3f}:d=0.14"
+        )
     run(
         [
             *common_input,
@@ -1563,7 +2345,7 @@ def export_clip(
             "0:a:0?",
             "-vn",
             "-af",
-            "loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000",
+            audio_filter,
             "-ac",
             "2",
             "-ar",
@@ -1672,6 +2454,8 @@ def export_compilation(
     cam_corner: str,
     required_hashtags: list[str],
     video_quality: VideoQuality,
+    enhanced_edit: bool = True,
+    remove_running_text: bool = True,
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     parts_dir = clips_dir / ".compilation_parts"
@@ -1705,6 +2489,8 @@ def export_compilation(
                     generate_assets=False,
                     enforce_size=False,
                     base_name_override=f"part_{idx:02}",
+                    enhanced_edit=enhanced_edit,
+                    remove_running_text=remove_running_text,
                 )
             )
 
@@ -1753,6 +2539,8 @@ def export_compilation(
         {
             **asdict(compilation),
             "mode": "highlight_5m",
+            "enhanced_edit": enhanced_edit,
+            "remove_running_text": remove_running_text,
             "parts": [asdict(item) for item in candidates],
         },
     )
@@ -1839,7 +2627,7 @@ def parse_args() -> argparse.Namespace:
         "--clip-mode",
         choices=["short", "highlight_5m"],
         default="short",
-        help="Export separate short clips or one five-minute highlight compilation",
+        help="Export short clips plus one compilation, or only one five-minute compilation",
     )
     parser.add_argument(
         "--compilation-target",
@@ -1888,6 +2676,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--caption-font", default=DEFAULT_FONT, help="Burned caption font family")
     parser.add_argument("--caption-outline", type=float, default=1.5, help="Caption border/outline width (0-8)")
     parser.add_argument("--caption-outline-color", default="#000000", help="Caption border color, hex")
+    parser.add_argument(
+        "--no-enhanced-edit",
+        action="store_true",
+        help="Disable animated hook, motion, transitions, vignette, and progress graphics",
+    )
+    parser.add_argument(
+        "--keep-running-text",
+        action="store_true",
+        help="Keep the source footer/running text instead of cropping it from vertical exports",
+    )
     parser.add_argument(
         "--keep-intermediate",
         action="store_true",
@@ -1976,7 +2774,7 @@ def main() -> int:
     ai_target_count = (
         min(12, max(4, math.ceil(args.compilation_target / 60)))
         if args.clip_mode == "highlight_5m"
-        else args.top
+        else min(12, max(args.top, math.ceil(args.compilation_target / 60)))
     )
     pool = ai_rescore_candidates(
         pool,
@@ -1984,11 +2782,16 @@ def main() -> int:
         target_count=ai_target_count,
         compilation=args.clip_mode == "highlight_5m",
     )
-    candidates = (
-        select_compilation_candidates(pool, args.compilation_target)
-        if args.clip_mode == "highlight_5m"
-        else select_candidates(pool, args.top)
-    )
+    compilation_candidates: list[ClipCandidate]
+    if args.clip_mode == "highlight_5m":
+        candidates = select_compilation_candidates(pool, args.compilation_target)
+        compilation_candidates = candidates
+    else:
+        candidates, compilation_candidates = select_short_and_compilation_candidates(
+            pool,
+            args.top,
+            args.compilation_target,
+        )
     if not candidates:
         console.print("[red]No clip candidates found. Try lowering --min or increasing --max.[/red]")
         return 1
@@ -2022,13 +2825,15 @@ def main() -> int:
 
     required_hashtags = [tag for tag in args.required_hashtags.split(",") if tag.strip()]
 
-    console.print("[bold]Exporting vertical video...[/bold]")
     clips_dir = work_dir / "clips"
+    if not args.no_enhanced_edit:
+        console.print("[bold]Applying enhanced motion graphics...[/bold]")
     if args.clip_mode == "highlight_5m":
+        console.print("[bold]Exporting vertical highlight compilation...[/bold]")
         exported = [
             export_compilation(
                 final_video_path,
-                candidates,
+                compilation_candidates,
                 transcript,
                 clips_dir,
                 not args.no_burn_subtitles,
@@ -2038,9 +2843,12 @@ def main() -> int:
                 args.cam_corner,
                 required_hashtags,
                 args.video_quality,
+                not args.no_enhanced_edit,
+                not args.keep_running_text,
             )
         ]
     else:
+        console.print("[bold]Exporting vertical short clips...[/bold]")
         exported = []
         for candidate in candidates:
             clip_segments = segments_for_clip(transcript, candidate)
@@ -2057,6 +2865,27 @@ def main() -> int:
                     args.cam_corner,
                     required_hashtags,
                     args.video_quality,
+                    enhanced_edit=not args.no_enhanced_edit,
+                    remove_running_text=not args.keep_running_text,
+                )
+            )
+        if compilation_candidates:
+            console.print("[bold]Exporting vertical highlight compilation...[/bold]")
+            exported.append(
+                export_compilation(
+                    final_video_path,
+                    compilation_candidates,
+                    transcript,
+                    clips_dir,
+                    not args.no_burn_subtitles,
+                    args.crop_mode,
+                    caption_style,
+                    ai_config,
+                    args.cam_corner,
+                    required_hashtags,
+                    args.video_quality,
+                    not args.no_enhanced_edit,
+                    not args.keep_running_text,
                 )
             )
 

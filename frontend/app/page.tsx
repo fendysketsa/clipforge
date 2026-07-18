@@ -981,6 +981,7 @@ export default function HomePage() {
       const run = await toast.promise(
         startAutoViralCampaign({
           clips_per_video: Math.min(5, youtubeConfig.auto_upload_count || 3),
+          max_age_days: 30,
           top: targetClips || null,
           min_duration: minDuration,
           max_duration: maxDuration,

@@ -255,7 +255,7 @@ def test_default_youtube_description_uses_ai_caption_and_hashtags_only():
     assert "Channel sumber:" not in description
 
 
-def test_five_minute_highlight_metadata_is_not_marked_as_short():
+def test_combined_job_highlight_metadata_is_not_marked_as_short():
     clip = ClipFile(
         name="highlight_5menit_poin-penting.mp4",
         url="/outputs/demo/clips/highlight_5menit_poin-penting.mp4",
@@ -268,7 +268,7 @@ def test_five_minute_highlight_metadata_is_not_marked_as_short():
         status="completed",
         request=ClipJobRequest(
             url="https://youtu.be/demo",
-            clip_mode="highlight_5m",
+            clip_mode="short",
         ),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",

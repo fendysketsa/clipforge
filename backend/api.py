@@ -13,7 +13,7 @@ import threading
 import time
 import uuid
 from math import ceil, log10
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote, urlencode, unquote, urlparse
@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from yt_dlp import YoutubeDL
 
-from llm import AIConfig, chat_completion, extract_json
+from llm import AIConfig, chat_completion, extract_json, is_llm_unavailable_error
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -40,6 +40,12 @@ YOUTUBE_UPLOADS_PATH = (
     _configured_youtube_uploads_path / "youtube_uploads.json"
     if _configured_youtube_uploads_path.is_dir()
     else _configured_youtube_uploads_path
+)
+PROCESSED_SOURCE_HISTORY_PATH = Path(
+    os.environ.get(
+        "PROCESSED_SOURCE_HISTORY_PATH",
+        BASE_DIR / "data" / "processed_source_urls.json",
+    )
 )
 YOUTUBE_PLAYWRIGHT_STATE = Path(os.environ.get("YOUTUBE_PLAYWRIGHT_STATE", BASE_DIR / "data" / "youtube_storage_state.json"))
 YOUTUBE_CHROMIUM_USER_DATA_DIR = os.environ.get("YOUTUBE_CHROMIUM_USER_DATA_DIR", "").strip()
@@ -66,6 +72,8 @@ FULL_ANALYSIS_LIMIT_SECONDS = 30 * 60
 LONG_VIDEO_ANALYSIS_RATIO = 0.35
 MAX_AUTO_ANALYSIS_SECONDS = 20 * 60
 CLIP_BUDGET_RATIO = 0.8
+FRESH_VIRAL_MAX_AGE_DAYS = 30
+MAX_VIRAL_FALLBACK_AGE_DAYS = 365
 CANCEL_GRACE_SECONDS = 8
 LOCAL_LLM_PRESETS = [
     {"label": "Ollama", "base_url": "http://localhost:11434/v1"},
@@ -100,7 +108,7 @@ CLI_USER_ERROR_PREFIX = "USER_ERROR:"
 YOUTUBE_UPLOAD_ERROR_PREFIX = "USER_ERROR:"
 YOUTUBE_VIDEO_URL_PREFIX = "VIDEO_URL:"
 DEFAULT_YOUTUBE_PLAYLIST = "Islam"
-DEFAULT_YOUTUBE_TARGET_CHANNEL = "ryuundy8812"
+DEFAULT_YOUTUBE_TARGET_CHANNEL = "ryuundyofficial"
 DEFAULT_YOUTUBE_TARGET_EMAIL = "fendysketsa@gmail.com"
 DEFAULT_YOUTUBE_TARGET_CHANNEL_ID = "UCAOZF9Qzj6DYoXKtLnP4UUQ"
 DEFAULT_YOUTUBE_AUTO_UPLOAD_COUNT = 3
@@ -180,6 +188,8 @@ class ClipJobRequest(BaseModel):
     analyze_seconds: float | None = Field(default=None, ge=10, le=7200)
     video_quality: Literal["standard", "high", "max"] = "high"
     burn_subtitles: bool = True
+    enhanced_edit: bool = True
+    remove_running_text: bool = True
     crop_mode: Literal["center", "person", "streamer"] = "center"
     cam_corner: Literal["auto", "br", "bl", "tr", "tl"] = "auto"
     caption_font_size: int = Field(default=10, ge=6, le=120)
@@ -429,38 +439,130 @@ class YouTubeLiveChromeRequest(BaseModel):
         return f"http://127.0.0.1:{parsed.port}"
 
 
+BROAD_VIRAL_SEARCH_QUERIES = [
+    "podcast indonesia terbaru",
+    "podcast islam indonesia",
+    "podcast inspiratif indonesia",
+    "podcast kehidupan indonesia",
+    "obrolan tokoh indonesia",
+    "wawancara inspiratif indonesia",
+    "kajian islam terbaru",
+    "ceramah terbaru indonesia",
+    "tausiyah singkat indonesia",
+    "khutbah jumat indonesia",
+    "nasihat kehidupan islam",
+    "kisah inspiratif muslim",
+    "kisah hijrah indonesia",
+    "kisah mualaf indonesia",
+    "kisah nabi dan sahabat",
+    "motivasi islami",
+    "rezeki dan sedekah",
+    "doa dan amalan harian",
+    "keluarga parenting islam",
+    "rumah tangga islami",
+    "pendidikan anak muslim",
+    "kesehatan mental islam",
+    "psikologi islam indonesia",
+    "bisnis halal",
+    "usaha umkm muslim",
+    "keuangan syariah indonesia",
+    "hijrah indonesia",
+    "pemuda muslim indonesia",
+    "wanita muslimah indonesia",
+    "quran dan hadits",
+    "sejarah islam indonesia",
+    "dakwah indonesia",
+    "ngaji indonesia terbaru",
+    "tanya jawab islam",
+    "kajian ustadz indonesia",
+    "inspirasi kehidupan indonesia",
+    "self improvement indonesia",
+    "pelajaran hidup podcast",
+]
+
+MYSTERY_ISLAMIC_SEARCH_QUERIES = [
+    "misteri dalam islam",
+    "kisah misteri islami",
+    "mitos dan fakta menurut islam",
+    "jin dalam islam",
+    "alam gaib menurut islam",
+    "kisah nyata horor islami",
+    "pengalaman ruqyah nyata",
+    "kisah ruqyah indonesia",
+    "gangguan jin dan doa",
+    "kisah pesantren misteri",
+    "misteri sejarah islam",
+    "tanda akhir zaman",
+    "kisah akhirat dan kematian",
+    "renungan kematian islam",
+    "azab dan hikmah kehidupan",
+    "misteri penciptaan dalam islam",
+    "fakta unik sejarah islam",
+    "kisah ulama penuh hikmah",
+    "legenda nusantara menurut islam",
+    "mitos jawa menurut islam",
+    "cerita horor indonesia",
+    "podcast horor indonesia",
+    "kisah mistis indonesia",
+    "pengalaman gaib nyata",
+    "urban legend indonesia",
+    "misteri nusantara",
+    "fakta menyeramkan indonesia",
+    "misteri gunung indonesia",
+    "misteri laut indonesia",
+    "sejarah kelam indonesia",
+    "kisah nyata penuh misteri",
+    "cerita rakyat misteri indonesia",
+    "tempat angker dan sejarah indonesia",
+    "fenomena aneh indonesia",
+    "kisah survival menyeramkan",
+    "podcast kisah nyata indonesia",
+]
+
+
+def merge_unique_queries(*groups: list[str]) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for item in group:
+            clean = re.sub(r"\s+", " ", item).strip()
+            key = clean.casefold()
+            if clean and key not in seen:
+                merged.append(clean)
+                seen.add(key)
+    return merged
+
+
+def prioritized_viral_queries(configured: list[str]) -> list[str]:
+    # Keep the user's strongest custom themes first, then deliberately diversify
+    # early API/search calls before appending the remaining general pool.
+    return merge_unique_queries(
+        configured[:6],
+        MYSTERY_ISLAMIC_SEARCH_QUERIES,
+        configured[6:],
+        BROAD_VIRAL_SEARCH_QUERIES,
+    )
+
+
 def default_auto_viral_queries() -> list[str]:
     configured = env_search_queries("AUTO_VIRAL_SEARCH_QUERIES", "AUTOPILOT_KEYWORDS")
-    if configured:
-        return configured
-    return [
-        "podcast indonesia",
-        "dakwah",
-        "kajian",
-        "ceramah",
-    ]
+    return prioritized_viral_queries(configured)
 
 
 def default_viral_video_search_queries() -> list[str]:
     configured = env_search_queries("VIRAL_CC_SEARCH_QUERIES", "AUTOPILOT_KEYWORDS")
-    if configured:
-        return configured
-    return [
-        "podcast indonesia",
-        "dakwah",
-        "kajian",
-        "ceramah",
-    ]
+    return prioritized_viral_queries(configured)
 
 
 class AutoViralRequest(BaseModel):
     queries: list[str] = Field(default_factory=default_auto_viral_queries)
     video_count: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_VIDEO_COUNT", 5), ge=1, le=7)
     clips_per_video: int = Field(default_factory=youtube_auto_upload_count, ge=1, le=5)
-    search_limit_per_query: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_SEARCH_LIMIT", 12), ge=3, le=30)
+    search_limit_per_query: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_SEARCH_LIMIT", 25), ge=3, le=50)
     min_source_duration: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MIN_SOURCE_SECONDS", 60), ge=30, le=7200)
     max_source_duration: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MAX_SOURCE_SECONDS", 7200), ge=60, le=14400)
     min_views: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MIN_VIEWS", 1000), ge=0)
+    max_age_days: int = Field(default=FRESH_VIRAL_MAX_AGE_DAYS, ge=1, le=MAX_VIRAL_FALLBACK_AGE_DAYS)
     top: int | None = Field(default=None, ge=1, le=MAX_REQUESTED_CLIPS)
     min_duration: float = Field(default=35, ge=5, le=600)
     max_duration: float = Field(default=180, ge=10, le=600)
@@ -476,7 +578,7 @@ class AutoViralRequest(BaseModel):
     @classmethod
     def _clean_queries(cls, value: list[str]) -> list[str]:
         cleaned = [re.sub(r"\s+", " ", item).strip() for item in value if item.strip()]
-        return cleaned[:10] or default_auto_viral_queries()
+        return prioritized_viral_queries(cleaned)[:80]
 
 
 class AutoViralRun(BaseModel):
@@ -496,7 +598,7 @@ class AutoViralRun(BaseModel):
 class ViralVideoSearchRequest(BaseModel):
     queries: list[str] = Field(default_factory=default_viral_video_search_queries)
     video_count: int = Field(default_factory=lambda: env_int("VIRAL_CC_VIDEO_COUNT", 5), ge=1, le=7)
-    search_limit_per_query: int = Field(default_factory=lambda: env_int("VIRAL_CC_SEARCH_LIMIT", 5), ge=3, le=30)
+    search_limit_per_query: int = Field(default_factory=lambda: env_int("VIRAL_CC_SEARCH_LIMIT", 25), ge=3, le=50)
     min_source_duration: int = Field(default=60, ge=30, le=7200)
     max_source_duration: int = Field(
         default_factory=lambda: env_int("VIRAL_CC_MAX_SOURCE_SECONDS", 7200),
@@ -504,14 +606,15 @@ class ViralVideoSearchRequest(BaseModel):
         le=14400,
     )
     min_views: int = Field(default_factory=lambda: env_int("VIRAL_CC_MIN_VIEWS", 1000), ge=0)
-    max_metadata_checks: int = Field(default_factory=lambda: env_int("VIRAL_CC_MAX_METADATA_CHECKS", 25), ge=3, le=100)
+    max_age_days: int = Field(default=FRESH_VIRAL_MAX_AGE_DAYS, ge=1, le=MAX_VIRAL_FALLBACK_AGE_DAYS)
+    max_metadata_checks: int = Field(default_factory=lambda: env_int("VIRAL_CC_MAX_METADATA_CHECKS", 200), ge=3, le=500)
     exclude_urls: list[str] = Field(default_factory=list)
 
     @field_validator("queries")
     @classmethod
     def _clean_queries(cls, value: list[str]) -> list[str]:
         cleaned = [re.sub(r"\s+", " ", item).strip() for item in value if item.strip()]
-        return cleaned[:10] or default_viral_video_search_queries()
+        return prioritized_viral_queries(cleaned)[:80]
 
     @field_validator("exclude_urls")
     @classmethod
@@ -523,7 +626,7 @@ class ViralVideoSearchRequest(BaseModel):
             if normalized and normalized not in seen:
                 cleaned.append(normalized)
                 seen.add(normalized)
-        return cleaned[:500]
+        return cleaned[:5000]
 
 
 app = FastAPI(title="Fendy Clipper API", version="0.1.0")
@@ -539,6 +642,7 @@ OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 JOBS_PATH.parent.mkdir(parents=True, exist_ok=True)
 YOUTUBE_UPLOADS_PATH.parent.mkdir(parents=True, exist_ok=True)
+PROCESSED_SOURCE_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
 YOUTUBE_PLAYWRIGHT_STATE.parent.mkdir(parents=True, exist_ok=True)
 app.mount("/outputs", StaticFiles(directory=OUTPUTS_DIR), name="outputs")
 
@@ -601,6 +705,16 @@ def load_jobs() -> dict[str, ClipJob]:
             job = enrich_job_for_display(job)
         loaded[job.id] = job
     return loaded
+
+
+def load_processed_source_history() -> set[str]:
+    try:
+        payload = json.loads(PROCESSED_SOURCE_HISTORY_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set()
+    if not isinstance(payload, list):
+        return set()
+    return {str(item).strip() for item in payload if isinstance(item, str) and item.strip()}
 
 
 def save_jobs_unlocked() -> None:
@@ -756,6 +870,13 @@ def clip_index_from_name(name: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def is_compilation_clip(job: "ClipJob", clip: ClipFile) -> bool:
+    return (
+        job.request.clip_mode == "highlight_5m"
+        or clip.name.lower().startswith("highlight_5menit_")
+    )
+
+
 def enrich_clips_with_candidate_titles(
     clips: list[ClipFile],
     candidates: list[ClipCandidate],
@@ -903,8 +1024,17 @@ def cleanup_job_files(job: "ClipJob") -> int:
 
 
 jobs: dict[str, ClipJob] = load_jobs()
+processed_source_history: set[str] = load_processed_source_history()
+processed_source_history.update(
+    str(value)
+    for job in jobs.values()
+    if job.status == "completed"
+    for value in (job.request.url, job.source_url)
+    if value
+)
 youtube_uploads: dict[str, YouTubeUploadJob] = load_youtube_uploads()
 jobs_lock = threading.Lock()
+processed_source_history_lock = threading.Lock()
 youtube_uploads_lock = threading.Lock()
 job_secrets: dict[str, str] = {}
 job_processes: dict[str, subprocess.Popen[str]] = {}
@@ -1363,7 +1493,7 @@ def strip_hashtag_lines(value: str) -> str:
 def default_youtube_title(job: ClipJob, clip: ClipFile, index: int) -> str:
     title = clip_sidecar_title(clip) or clip.title or job.source_title or f"Clip {index}"
     clean = re.sub(r"\s+", " ", title).strip()
-    if job.request.clip_mode == "highlight_5m":
+    if is_compilation_clip(job, clip):
         return youtube_long_form_title(clean or f"Highlight {index}")
     return youtube_shorts_title(clean or f"Clip {index}")
 
@@ -1401,10 +1531,11 @@ def default_youtube_description(job: ClipJob, clip: ClipFile) -> str:
 def default_youtube_tags(job: ClipJob, clip: ClipFile) -> list[str]:
     caption = sidecar_social_caption(clip)
     tags = [*env_csv("YOUTUBE_DEFAULT_TAGS"), *hashtags_from_text(caption)]
-    if job.request.clip_mode == "highlight_5m":
+    is_compilation = is_compilation_clip(job, clip)
+    if is_compilation:
         tags = [tag for tag in tags if tag.strip().lower().lstrip("#") != "shorts"]
     if not tags:
-        tags = ["islam", "highlight"] if job.request.clip_mode == "highlight_5m" else ["islam", "shorts"]
+        tags = ["islam", "highlight"] if is_compilation else ["islam", "shorts"]
     deduped: list[str] = []
     seen: set[str] = set()
     for tag in tags:
@@ -1417,8 +1548,10 @@ def default_youtube_tags(job: ClipJob, clip: ClipFile) -> list[str]:
 
 YOUTUBE_METADATA_SYSTEM_PROMPT = (
     "You are an Indonesian YouTube Shorts metadata writer. Write concise, natural titles, descriptions, "
-    "and hashtags for Islamic/motivational short clips. Use Bahasa Indonesia, make it engaging but not "
-    "clickbait, do not mention source URLs or source channels, use only 2-3 hashtags, and return strict JSON only."
+    "and hashtags for Islamic, motivational, mystery, myth-versus-fact, history, and relevant horror clips. "
+    "Use Bahasa Indonesia, make it engaging but not deceptive clickbait, and never state folklore, personal "
+    "experiences, myths, or supernatural claims as verified religious facts. Do not mention source URLs or "
+    "source channels, use only 2-3 hashtags, and return strict JSON only."
 )
 
 
@@ -1524,7 +1657,7 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
     caption = sidecar_social_caption(clip)
     transcript = clip_candidate_text(job, clip)
     tag_values = [f"#{tag.strip().lstrip('#').replace(' ', '')}" for tag in tags if tag.strip()]
-    is_compilation = job.request.clip_mode == "highlight_5m"
+    is_compilation = is_compilation_clip(job, clip)
     format_name = "video kompilasi highlight sekitar lima menit" if is_compilation else "YouTube Shorts"
     system_prompt = (
         YOUTUBE_METADATA_SYSTEM_PROMPT.replace(
@@ -1577,10 +1710,17 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
             break
         except Exception as exc:
             last_error = f"{model}: {exc}"
+            if is_llm_unavailable_error(exc):
+                print(
+                    "YouTube metadata AI offline; metadata fallback lokal digunakan.",
+                    flush=True,
+                )
+                break
             print(f"YouTube metadata AI gagal dengan model {model}: {exc}", flush=True)
             continue
     if parsed is None:
-        print(f"YouTube metadata AI gagal semua model. Terakhir: {last_error}", flush=True)
+        if last_error and "fallback lokal digunakan" not in last_error.lower():
+            print(f"YouTube metadata AI gagal semua model. Terakhir: {last_error}", flush=True)
         return None
 
     if not isinstance(parsed, dict):
@@ -1720,7 +1860,7 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         updated_at=now,
         title=(
             youtube_long_form_title(title)
-            if job.request.clip_mode == "highlight_5m"
+            if is_compilation_clip(job, clip)
             else youtube_shorts_title(title)
         ),
         description=description,
@@ -2627,6 +2767,14 @@ def user_error_from_logs(logs: list[str]) -> str | None:
     for line in reversed(logs):
         if is_network_error(line):
             return friendly_network_error()
+    combined = "\n".join(logs[-120:]).lower()
+    if "no such filter: 'drawtext'" in combined or "no such filter: 'subtitles'" in combined:
+        return (
+            "FFmpeg backend belum memiliki filter teks/subtitle yang dibutuhkan. "
+            "Build ulang container backend agar memakai FFmpeg sistem lengkap."
+        )
+    if "error initializing a simple filtergraph" in combined or "filter not found" in combined:
+        return "Filter video FFmpeg tidak tersedia atau tidak kompatibel. Build ulang backend lalu coba lagi."
     return None
 
 
@@ -2774,6 +2922,10 @@ def build_clipper_command(request: ClipJobRequest) -> list[str]:
     command.extend(["--video-quality", request.video_quality])
     if not request.burn_subtitles:
         command.append("--no-burn-subtitles")
+    if not request.enhanced_edit:
+        command.append("--no-enhanced-edit")
+    if not request.remove_running_text:
+        command.append("--keep-running-text")
     command.extend(["--crop-mode", request.crop_mode])
     command.extend(["--cam-corner", request.cam_corner])
     command.extend(["--caption-font-size", str(request.caption_font_size)])
@@ -2911,6 +3063,7 @@ def run_job(job_id: str) -> None:
             if preview_job.source_uploader:
                 updates["source_uploader"] = preview_job.source_uploader
             set_job(job_id, **updates)
+            remember_processed_source(preview_job.source_url or request.url)
             if request.auto_upload_youtube:
                 auto_queue_youtube_uploads_for_job(job_id, logs)
         else:
@@ -2999,25 +3152,43 @@ def upload_age_days(info: dict[str, Any]) -> int | None:
     return max(0, (datetime.now(timezone.utc) - uploaded).days)
 
 
+def is_fresh_viral_upload(info: dict[str, Any], max_age_days: int = FRESH_VIRAL_MAX_AGE_DAYS) -> bool:
+    age_days = upload_age_days(info)
+    return age_days is not None and age_days <= min(max_age_days, MAX_VIRAL_FALLBACK_AGE_DAYS)
+
+
+def youtube_published_after(max_age_days: int = FRESH_VIRAL_MAX_AGE_DAYS) -> str:
+    safe_days = min(max(1, max_age_days), MAX_VIRAL_FALLBACK_AGE_DAYS)
+    threshold = datetime.now(timezone.utc) - timedelta(days=safe_days)
+    return threshold.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
 def auto_viral_candidate_score(info: dict[str, Any]) -> float:
     views = max(0, int(info.get("view_count") or 0))
     likes = max(0, int(info.get("like_count") or 0))
     duration = float(info.get("duration") or 0)
     age_days = upload_age_days(info)
-    view_score = log10(views + 1) * 35
-    like_score = log10(likes + 1) * 12
-    recency_score = 25 if age_days is None else max(0, 25 - min(age_days, 365) / 365 * 25)
+    effective_age = max(1, age_days if age_days is not None else FRESH_VIRAL_MAX_AGE_DAYS)
+    views_per_day = views / effective_age
+    view_score = log10(views + 1) * 22
+    velocity_score = log10(views_per_day + 1) * 28
+    like_score = log10(likes + 1) * 10
+    recency_score = max(5, 35 - min(effective_age, FRESH_VIRAL_MAX_AGE_DAYS))
     duration_score = 15 if 180 <= duration <= 1800 else 8 if 60 <= duration <= 3600 else 0
-    return round(view_score + like_score + recency_score + duration_score, 2)
+    return round(view_score + velocity_score + like_score + recency_score + duration_score, 2)
 
 
 def compact_source_payload(info: dict[str, Any]) -> dict[str, Any]:
+    age_days = upload_age_days(info)
+    views = int(info.get("view_count") or 0)
     return {
         "url": normalize_youtube_video_url(youtube_watch_url(info)) or youtube_watch_url(info),
         "title": str(info.get("title") or "Video tanpa judul")[:180],
         "uploader": str(info.get("uploader") or "")[:120],
         "duration": info.get("duration"),
-        "views": info.get("view_count"),
+        "views": views,
+        "views_per_day": round(views / max(1, age_days or 1)),
+        "age_days": age_days,
         "likes": info.get("like_count"),
         "upload_date": info.get("upload_date"),
         "license": info.get("license"),
@@ -3115,7 +3286,8 @@ def search_youtube_data_api_viral_sources(
     api_error_count = 0
     api_query_count = 0
     last_api_error = ""
-    for query in request.queries:
+    max_api_queries = max(1, min(20, env_int("VIRAL_CC_MAX_API_QUERIES", 12)))
+    for query in request.queries[:max_api_queries]:
         if stop_after is not None and len(candidates) >= stop_after:
             break
         append_auto_viral_log(run_id, f"YouTube Data API search: {query}")
@@ -3129,8 +3301,9 @@ def search_youtube_data_api_viral_sources(
             "regionCode": region_code,
             "relevanceLanguage": relevance_language,
             "safeSearch": "moderate",
+            "publishedAfter": youtube_published_after(request.max_age_days),
         }
-        if topic_id:
+        if topic_id and env_bool("VIRAL_CC_ENFORCE_TOPIC_ID", False):
             search_params["topicId"] = topic_id
         try:
             search_result = youtube_data_api_get("search", search_params)
@@ -3176,6 +3349,8 @@ def search_youtube_data_api_viral_sources(
                 continue
             if views < request.min_views:
                 continue
+            if not is_fresh_viral_upload(payload, request.max_age_days):
+                continue
             if not is_creative_commons_info(payload):
                 continue
             candidates.append(compact_source_payload(payload))
@@ -3198,6 +3373,13 @@ def search_auto_viral_sources(
     seen: set[str] = set(exclude_urls or set())
     candidates: list[dict[str, Any]] = []
     metadata_checks = 0
+    max_metadata_per_query = max(
+        2,
+        min(20, env_int("VIRAL_CC_METADATA_PER_QUERY", 6)),
+    )
+    search_mode = os.environ.get("VIRAL_CC_YTDLP_SEARCH_MODE", "ytsearchdate").strip().lower()
+    if search_mode not in {"ytsearch", "ytsearchdate"}:
+        search_mode = "ytsearchdate"
     for query in request.queries:
         if stop_after is not None and len(candidates) >= stop_after:
             break
@@ -3206,12 +3388,16 @@ def search_auto_viral_sources(
         append_auto_viral_log(run_id, f"Mencari kandidat YouTube: {query}")
         try:
             with YoutubeDL(ytdlp_probe_options()) as ydl:
-                result = ydl.extract_info(f"ytsearch{request.search_limit_per_query}:{query}", download=False)
+                result = ydl.extract_info(
+                    f"{search_mode}{request.search_limit_per_query}:{query}",
+                    download=False,
+                )
         except Exception as exc:
             append_auto_viral_error(run_id, f"Search gagal untuk '{query}': {exc}")
             continue
 
         entries = result.get("entries", []) if isinstance(result, dict) else []
+        query_metadata_checks = 0
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
@@ -3221,7 +3407,10 @@ def search_auto_viral_sources(
             seen.add(url)
             if max_metadata_checks is not None and metadata_checks >= max_metadata_checks:
                 break
+            if query_metadata_checks >= max_metadata_per_query:
+                break
             metadata_checks += 1
+            query_metadata_checks += 1
             try:
                 metadata = fetch_youtube_metadata(url)
             except Exception as exc:
@@ -3234,6 +3423,13 @@ def search_auto_viral_sources(
                 continue
             if views < request.min_views:
                 continue
+            if not is_fresh_viral_upload(metadata, request.max_age_days):
+                append_auto_viral_log(
+                    run_id,
+                    f"Skip tidak fresh (> {request.max_age_days} hari/tanggal tidak tersedia): "
+                    f"{metadata.get('title') or url}",
+                )
+                continue
             if not is_creative_commons_info(metadata):
                 append_auto_viral_log(run_id, f"Skip non-CC: {metadata.get('title') or url}")
                 continue
@@ -3243,6 +3439,46 @@ def search_auto_viral_sources(
 
     candidates.sort(key=lambda item: float(item.get("score") or 0), reverse=True)
     return candidates
+
+
+def remember_processed_source(value: str) -> None:
+    normalized = normalize_youtube_video_url(value)
+    if not normalized:
+        return
+    with processed_source_history_lock:
+        if normalized in processed_source_history:
+            return
+        processed_source_history.add(normalized)
+        payload = sorted(processed_source_history)[-5000:]
+        processed_source_history.clear()
+        processed_source_history.update(payload)
+        try:
+            temp_path = PROCESSED_SOURCE_HISTORY_PATH.with_suffix(".json.tmp")
+            temp_path.write_text(
+                json.dumps(payload, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            temp_path.replace(PROCESSED_SOURCE_HISTORY_PATH)
+        except OSError as exc:
+            print(f"Gagal menyimpan riwayat sumber clipping: {exc}", flush=True)
+
+
+def processed_job_source_urls() -> set[str]:
+    with processed_source_history_lock:
+        history = list(processed_source_history)
+    excluded: set[str] = {
+        normalized
+        for value in history
+        if (normalized := normalize_youtube_video_url(value))
+    }
+    with jobs_lock:
+        existing_jobs = list(jobs.values())
+    for job in existing_jobs:
+        for value in (job.request.url, job.source_url):
+            normalized = normalize_youtube_video_url(str(value or ""))
+            if normalized:
+                excluded.add(normalized)
+    return excluded
 
 
 def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[str, Any]]:
@@ -3255,6 +3491,7 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
         min_source_duration=request.min_source_duration,
         max_source_duration=request.max_source_duration,
         min_views=request.min_views,
+        max_age_days=request.max_age_days,
         top=3,
         min_duration=35,
         max_duration=180,
@@ -3269,30 +3506,77 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
         created_at=now_iso(),
         updated_at=now_iso(),
         request=search_request,
-        message="Mencari kandidat video viral Creative Commons",
+        message="Mencari kandidat CC baru; prioritas 30 hari lalu diperluas bila hasil kurang",
     )
     with auto_viral_lock:
         auto_viral_runs[run_id] = run
     try:
-        excluded_urls = set(request.exclude_urls)
-        require_youtube_api = env_bool("VIRAL_CC_REQUIRE_YOUTUBE_DATA_API", False)
-        if require_youtube_api and not os.environ.get("YOUTUBE_DATA_API_KEY", "").strip():
-            raise RuntimeError("YOUTUBE_DATA_API_KEY belum diset untuk pencarian viral via YouTube Data API")
-        sources = search_youtube_data_api_viral_sources(
-            search_request,
+        excluded_urls = {*request.exclude_urls, *processed_job_source_urls()}
+        append_auto_viral_log(
             run_id,
-            exclude_urls=excluded_urls,
-            stop_after=request.video_count,
+            f"Mengecualikan {len(excluded_urls)} sumber yang pernah ditampilkan/diproses.",
         )
-        if len(sources) < request.video_count and not require_youtube_api:
-            if os.environ.get("YOUTUBE_DATA_API_KEY", "").strip():
-                append_auto_viral_log(run_id, "YouTube Data API belum cukup hasil CC valid; lanjut fallback yt-dlp terbatas.")
-            else:
-                append_auto_viral_log(run_id, "YOUTUBE_DATA_API_KEY kosong; fallback yt-dlp terbatas.")
-            fallback_sources = search_auto_viral_sources(
-                search_request,
+        sources: list[dict[str, Any]] = []
+        prefer_youtube_api = env_bool("VIRAL_CC_REQUIRE_YOUTUBE_DATA_API", True)
+        if prefer_youtube_api and os.environ.get("YOUTUBE_DATA_API_KEY", "").strip():
+            try:
+                sources = search_youtube_data_api_viral_sources(
+                    search_request,
+                    run_id,
+                    exclude_urls=excluded_urls,
+                    stop_after=request.video_count,
+                )
+            except Exception as exc:
+                append_auto_viral_error(
+                    run_id,
+                    f"YouTube Data API belum memberi hasil; lanjut pencarian yt-dlp: {exc}",
+                )
+        elif prefer_youtube_api:
+            append_auto_viral_log(
                 run_id,
-                exclude_urls={*excluded_urls, *(normalize_youtube_video_url(str(item.get("url") or "")) or "" for item in sources)},
+                "YouTube Data API key kosong; langsung memakai pencarian yt-dlp terverifikasi.",
+            )
+        else:
+            append_auto_viral_log(run_id, "YouTube Data API dinonaktifkan; memakai pencarian yt-dlp terverifikasi.")
+
+        if len(sources) < request.video_count:
+            fallback_age_days = max(
+                request.max_age_days,
+                min(
+                    MAX_VIRAL_FALLBACK_AGE_DAYS,
+                    env_int("VIRAL_CC_FALLBACK_MAX_AGE_DAYS", 180),
+                ),
+            )
+            fallback_min_views = min(
+                request.min_views,
+                max(0, env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", 100)),
+            )
+            fallback_request = search_request.model_copy(
+                update={
+                    "queries": default_viral_video_search_queries(),
+                    "search_limit_per_query": max(
+                        request.search_limit_per_query,
+                        min(50, env_int("VIRAL_CC_SEARCH_LIMIT", 25)),
+                    ),
+                    "min_views": fallback_min_views,
+                    "max_age_days": fallback_age_days,
+                }
+            )
+            append_auto_viral_log(
+                run_id,
+                f"Hasil terbaru baru {len(sources)}/{request.video_count}; memperluas pencarian "
+                f"hingga {fallback_age_days} hari, min. {fallback_min_views} views, "
+                f"{len(fallback_request.queries)} variasi keyword.",
+            )
+            found_urls = {
+                normalize_youtube_video_url(str(item.get("url") or ""))
+                for item in sources
+                if normalize_youtube_video_url(str(item.get("url") or ""))
+            }
+            fallback_sources = search_auto_viral_sources(
+                fallback_request,
+                run_id,
+                exclude_urls={*excluded_urls, *found_urls},
                 stop_after=request.video_count - len(sources),
                 max_metadata_checks=request.max_metadata_checks,
             )
@@ -3427,16 +3711,78 @@ def run_auto_viral_campaign(run_id: str) -> None:
     try:
         with auto_viral_lock:
             run = auto_viral_runs[run_id]
-        update_auto_viral_run(run_id, status="running", message="Mencari video Creative Commons viral")
+        update_auto_viral_run(
+            run_id,
+            status="running",
+            message="Mencari video Creative Commons viral; prioritas 30 hari, lalu perluas hingga 180 hari",
+        )
         append_auto_viral_log(run_id, "Automation dimulai")
         try:
             require_youtube_ready()
         except HTTPException as exc:
             raise RuntimeError(str(exc.detail)) from exc
 
-        sources = search_auto_viral_sources(run.request, run_id)
+        source_pool_target = max(run.request.video_count * 3, run.request.video_count)
+        excluded_sources = processed_job_source_urls()
+        append_auto_viral_log(
+            run_id,
+            f"Mengecualikan {len(excluded_sources)} sumber yang sudah pernah masuk proses clipping",
+        )
+        sources = search_auto_viral_sources(
+            run.request,
+            run_id,
+            exclude_urls=excluded_sources,
+            stop_after=source_pool_target,
+            max_metadata_checks=env_int("VIRAL_CC_MAX_METADATA_CHECKS", 200),
+        )
+        if len(sources) < source_pool_target:
+            fallback_age_days = max(
+                run.request.max_age_days,
+                min(
+                    MAX_VIRAL_FALLBACK_AGE_DAYS,
+                    env_int("VIRAL_CC_FALLBACK_MAX_AGE_DAYS", 180),
+                ),
+            )
+            fallback_min_views = min(
+                run.request.min_views,
+                max(0, env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", 100)),
+            )
+            fallback_request = run.request.model_copy(
+                update={
+                    "queries": default_auto_viral_queries(),
+                    "search_limit_per_query": max(run.request.search_limit_per_query, 25),
+                    "min_views": fallback_min_views,
+                    "max_age_days": fallback_age_days,
+                }
+            )
+            append_auto_viral_log(
+                run_id,
+                f"Kandidat baru belum cukup; memperluas pencarian hingga {fallback_age_days} hari "
+                f"dengan minimal {fallback_min_views} views",
+            )
+            update_auto_viral_run(
+                run_id,
+                message=f"Memperluas pencarian Creative Commons hingga {fallback_age_days} hari",
+            )
+            sources.extend(
+                search_auto_viral_sources(
+                    fallback_request,
+                    run_id,
+                    exclude_urls=excluded_sources | {
+                        normalized
+                        for source in sources
+                        if (normalized := normalize_youtube_video_url(str(source.get("url") or "")))
+                    },
+                    stop_after=source_pool_target - len(sources),
+                    max_metadata_checks=env_int("VIRAL_CC_MAX_METADATA_CHECKS", 200),
+                )
+            )
+            sources.sort(key=lambda item: float(item.get("score") or 0), reverse=True)
         if not sources:
-            raise RuntimeError("Tidak menemukan kandidat video Creative Commons yang memenuhi filter")
+            raise RuntimeError(
+                "Tidak menemukan kandidat Creative Commons setelah pencarian diperluas; "
+                "semua sumber yang pernah diproses tetap dilewati"
+            )
         update_auto_viral_run(run_id, selected_sources=sources[: max(run.request.video_count, 1) * 3])
 
         completed_count = 0

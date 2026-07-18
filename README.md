@@ -13,8 +13,15 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Score transcript windows for clip candidates.
 - Export vertical 9:16 MP4 clips with SRT files.
 - Burn subtitles into clips by default.
+- Apply context-aware cinematic editing by default: theme color grading, animated hooks, varied camera motion, transcript-synced emphasis pulses, transitions, vignette, and progress bar.
+- Add sparse conversation-aware reaction stickers for laughter, surprise, questions, prayer/gratitude, warnings, and emotional moments.
+- Crop the source footer/running-text strip from vertical exports by default before adding fresh captions and graphics.
+- Enhance voice clarity and generate safe, niche-aware social captions even when the AI service is unavailable.
 - Keep captions compact with a soft gradient-blur background by default.
-- Build one chronological, FYP-focused highlight compilation of about five minutes.
+- Generate short clips and one chronological, FYP-focused compilation of about five minutes in the same job.
+- Telegram's primary CTA always requests both outputs in one job and caps the compilation at 300 seconds.
+- Search 70+ Creative Commons themes, including Islamic insight, mystery, myth/fact, history, and relevant horror; prioritize the last 30 days and expand to 180 days when needed.
+- Permanently skip YouTube source URLs that have already completed clipping.
 - Crop center or shift crop toward detected faces/people.
 - Manage jobs and generated clips from a Next.js UI.
 - Start jobs and receive complete results from a private Telegram bot.
@@ -27,6 +34,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Node.js 22+
 - npm
 - Network access for YouTube downloads and model downloads
+- A full FFmpeg build with `drawtext`, `subtitles`/libass, and libx264 (included in the Docker image)
 - Enough CPU, disk, and time for transcription and video encoding
 
 Docker users only need Docker and Docker Compose.
@@ -96,12 +104,21 @@ TELEGRAM_PUBLIC_BASE_URL=https://api.example.com
 TELEGRAM_MAX_UPLOAD_MB=49
 TELEGRAM_AI_BASE_URL=http://127.0.0.1:11434/v1
 TELEGRAM_AI_MODEL=deepseek-v4-flash:cloud
+TELEGRAM_BATTERY_ALERT_ENABLED=true
+TELEGRAM_BATTERY_ALERT_LEVELS=20,10,5
+TELEGRAM_BATTERY_CHECK_INTERVAL_SECONDS=60
 ```
 
 Bot state is persisted in `backend/data/telegram_bot_state.json`, so completed
 jobs can continue being monitored after a bot container restart. Telegram's
 hosted Bot API accepts uploads up to 50 MB; oversized clips remain available in
 the web dashboard or through `TELEGRAM_PUBLIC_BASE_URL` when configured.
+
+Gunakan `/battery` atau tombol **Baterai Device** untuk melihat sisa daya.
+Pada Linux, bot juga mengirim satu alert saat baterai yang tidak sedang diisi
+melewati ambang 20%, 10%, dan 5%. Docker Compose memasang `/sys` host secara
+read-only agar container dapat membaca status baterai; ambang dan interval cek
+dapat diubah melalui variabel di atas.
 
 ## YouTube Studio Upload
 
@@ -127,7 +144,7 @@ YOUTUBE_UPLOAD_USE_CDP=false
 YOUTUBE_UPLOAD_FORCE_CDP=false
 YOUTUBE_UPLOAD_STORAGE_STATE_FIRST=true
 YOUTUBE_CDP_MAX_UPLOAD_MB=45
-YOUTUBE_TARGET_CHANNEL=ryuundy8812
+YOUTUBE_TARGET_CHANNEL=ryuundyofficial
 YOUTUBE_TARGET_EMAIL=fendysketsa@gmail.com
 YOUTUBE_TARGET_CHANNEL_ID=UCAOZF9Qzj6DYoXKtLnP4UUQ
 YOUTUBE_STUDIO_URL=https://studio.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ
@@ -146,7 +163,7 @@ copy cookies from an already-open Chrome remote debugging session. The legacy
 `./scripts/recreate-compose-up.sh` and `./scripts/reset-youtube-cdp-profile.sh`
 helpers remain available for CDP recovery, but normal uploads no longer depend
 on them. Uploads are cancelled before file selection if the session does not
-appear to belong to `ryuundy8812` or `fendysketsa@gmail.com`.
+appear to belong to `ryuundyofficial` or `fendysketsa@gmail.com`.
 
 Local login:
 
@@ -185,7 +202,7 @@ YOUTUBE_DEFAULT_VISIBILITY=private
 YOUTUBE_MADE_FOR_KIDS=false
 YOUTUBE_DEFAULT_TAGS=shorts,clipforge
 YOUTUBE_DEFAULT_PLAYLIST=Islam
-YOUTUBE_TARGET_CHANNEL=ryuundy8812
+YOUTUBE_TARGET_CHANNEL=ryuundyofficial
 YOUTUBE_TARGET_EMAIL=fendysketsa@gmail.com
 YOUTUBE_TARGET_CHANNEL_ID=UCAOZF9Qzj6DYoXKtLnP4UUQ
 YOUTUBE_STUDIO_URL=https://studio.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ

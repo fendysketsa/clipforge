@@ -44,12 +44,14 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
           <div className="jobMeta">
             <span>
               {job.request.clip_mode === "highlight_5m"
-                ? "Highlight ±5 menit"
-                : `${job.request.top ?? "Auto"} klip target`}
+                ? "Hanya highlight ±5 menit"
+                : `${job.request.top ?? "Auto"} klip pendek + 1 kompilasi`}
             </span>
             <span>
               {job.request.min_duration}s - {job.request.max_duration}s
             </span>
+            <span>{job.request.enhanced_edit ? "Edit adaptif sinematik aktif" : "Edit standar"}</span>
+            <span>{job.request.remove_running_text ? "Running text bawah dipotong" : "Footer sumber dipertahankan"}</span>
             <span>{job.request.analyze_seconds ? `Analisis: ${job.request.analyze_seconds}s` : "Full video"}</span>
             <span>{job.request.crop_mode === "person" ? "Follow person" : "Center crop"}</span>
             <span>

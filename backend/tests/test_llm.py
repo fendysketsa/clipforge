@@ -1,8 +1,18 @@
 import json
+import urllib.error
 
 import pytest
 
-from llm import extract_json, normalize_openai_base_url, resolve_base_url, _content_from_response
+import llm
+from llm import (
+    AIConfig,
+    LLMUnavailableError,
+    _content_from_response,
+    chat_completion,
+    extract_json,
+    normalize_openai_base_url,
+    resolve_base_url,
+)
 
 
 def test_extract_json_plain():
@@ -68,3 +78,31 @@ def test_resolve_base_url_in_docker(monkeypatch):
 def test_normalize_openai_base_url_adds_v1_for_local_providers():
     assert normalize_openai_base_url("http://localhost:11434") == "http://localhost:11434/v1"
     assert normalize_openai_base_url("http://localhost:1234/v1") == "http://localhost:1234/v1"
+
+
+def test_offline_ollama_without_cli_uses_unavailable_error(monkeypatch):
+    monkeypatch.setattr(
+        llm.urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            urllib.error.URLError("[Errno 111] Connection refused")
+        ),
+    )
+    monkeypatch.setattr(llm.shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        llm.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Ollama CLI must not run when executable is missing")
+        ),
+    )
+
+    with pytest.raises(LLMUnavailableError, match="fallback lokal digunakan"):
+        chat_completion(
+            AIConfig(
+                enabled=True,
+                base_url="http://127.0.0.1:11434/v1",
+                model="demo",
+            ),
+            [{"role": "user", "content": "test"}],
+        )

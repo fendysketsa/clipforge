@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import urllib.request
 from dataclasses import dataclass
@@ -16,6 +17,26 @@ class AIConfig:
     model: str = ""
     api_key: str = ""
     timeout: float = 120.0
+
+
+class LLMUnavailableError(ConnectionError):
+    """The configured LLM service and its optional local CLI are unavailable."""
+
+
+def is_llm_unavailable_error(exc: BaseException) -> bool:
+    if isinstance(exc, LLMUnavailableError):
+        return True
+    if isinstance(exc, FileNotFoundError) and getattr(exc, "filename", "") == "ollama":
+        return True
+    text = str(exc).lower()
+    return (
+        "connection refused" in text
+        or "failed to establish a new connection" in text
+        or "no route to host" in text
+        or "name or service not known" in text
+        or "temporary failure in name resolution" in text
+        or "ollama cli is not installed" in text
+    )
 
 
 def resolve_base_url(base_url: str) -> str:
@@ -81,7 +102,13 @@ def chat_completion(config: AIConfig, messages: list[dict]) -> str:
             last_error = exc
             continue
     if _is_ollama_base_url(config.base_url):
-        return _ollama_cli_chat_completion(config, messages)
+        if shutil.which("ollama"):
+            return _ollama_cli_chat_completion(config, messages)
+        detail = f" ({last_error})" if last_error is not None else ""
+        raise LLMUnavailableError(
+            "Ollama API tidak terjangkau dan Ollama CLI tidak terpasang; fallback lokal digunakan"
+            + detail
+        )
     if last_error is not None:
         raise last_error
     raise ValueError("LLM base_url is not set")
@@ -105,14 +132,19 @@ def _messages_to_prompt(messages: list[dict]) -> str:
 def _ollama_cli_chat_completion(config: AIConfig, messages: list[dict]) -> str:
     if not config.model:
         raise ValueError("Ollama model is not set")
-    result = subprocess.run(
-        ["ollama", "run", config.model],
-        input=_messages_to_prompt(messages),
-        capture_output=True,
-        text=True,
-        timeout=config.timeout,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            ["ollama", "run", config.model],
+            input=_messages_to_prompt(messages),
+            capture_output=True,
+            text=True,
+            timeout=config.timeout,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise LLMUnavailableError(
+            "Ollama CLI tidak terpasang; fallback lokal digunakan"
+        ) from exc
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
         raise ValueError(f"Ollama CLI failed: {detail or result.returncode}")

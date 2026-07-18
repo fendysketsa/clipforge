@@ -255,7 +255,7 @@ export function ControlPanel({
             type="button"
             onClick={() => onClipModeChange("short")}
           >
-            Clip Pendek
+            Pendek + Kompilasi
           </button>
           <button
             className={clipMode === "highlight_5m" ? "active" : ""}
@@ -267,8 +267,8 @@ export function ControlPanel({
         </div>
         <p className="field-help">
           {clipMode === "highlight_5m"
-            ? "Bukan Short: AI memilih poin terpenting, menyusunnya kronologis, lalu menggabungkan menjadi satu video sekitar 5 menit."
-            : "Membuat beberapa clip vertikal pendek yang berdiri sendiri."}
+            ? "Hanya kompilasi: AI memilih poin terpenting, menyusunnya kronologis, lalu menggabungkan menjadi satu video sekitar 5 menit."
+            : "Satu proses menghasilkan beberapa clip vertikal pendek sekaligus satu video kompilasi sekitar 5 menit."}
         </p>
       </div>
 
@@ -679,7 +679,7 @@ export function ControlPanel({
           {isAutoViralRunning ? "Auto Viral Berjalan..." : "Auto Viral CC"}
         </button>
         <p className="field-help">
-          {autoViralMessage || "Cari video Creative Commons viral sesuai jumlah konfigurasi, upload clip terbaik, cleanup clips, lalu kirim alert Telegram."}
+          {autoViralMessage || "Cari luas 70+ tema Creative Commons—Islam, inspirasi, misteri, mitos/fakta, sejarah, dan horor relevan; prioritaskan 30 hari terbaru dan selalu lewati sumber lama."}
         </p>
       </div>
 

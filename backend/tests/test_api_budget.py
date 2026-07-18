@@ -1,16 +1,24 @@
+from datetime import datetime, timedelta, timezone
+
 from api import (
     ClipFile,
     ClipJob,
     ClipJobRequest,
     MAX_AUTO_ANALYSIS_SECONDS,
     MAX_REQUESTED_CLIPS,
+    ViralVideoSearchRequest,
     _models_from_payload,
+    auto_viral_candidate_score,
     build_clipper_command,
     choose_auto_analyze_seconds,
+    default_viral_video_search_queries,
+    is_fresh_viral_upload,
     max_clips_for_duration,
     normalize_job_request,
+    processed_job_source_urls,
     youtube_cdp_start_needed,
     user_error_from_logs,
+    youtube_published_after,
 )
 
 
@@ -63,6 +71,90 @@ def test_auto_analyze_seconds_for_long_video_is_capped():
     assert choose_auto_analyze_seconds(7200) == MAX_AUTO_ANALYSIS_SECONDS
 
 
+def test_viral_search_only_accepts_uploads_from_last_30_days():
+    today = datetime.now(timezone.utc)
+    fresh = {"upload_date": (today - timedelta(days=30)).strftime("%Y%m%d")}
+    stale = {"upload_date": (today - timedelta(days=31)).strftime("%Y%m%d")}
+
+    assert is_fresh_viral_upload(fresh, 30) is True
+    assert is_fresh_viral_upload(stale, 30) is False
+    assert is_fresh_viral_upload({"upload_date": ""}, 30) is False
+
+
+def test_youtube_published_after_uses_requested_search_window():
+    threshold = datetime.fromisoformat(youtube_published_after(30).replace("Z", "+00:00"))
+    age = datetime.now(timezone.utc) - threshold
+
+    assert timedelta(days=29, hours=23) < age < timedelta(days=30, minutes=1)
+    fallback_threshold = datetime.fromisoformat(youtube_published_after(180).replace("Z", "+00:00"))
+    fallback_age = datetime.now(timezone.utc) - fallback_threshold
+    assert timedelta(days=179, hours=23) < fallback_age < timedelta(days=180, minutes=1)
+
+
+def test_viral_search_is_broad_and_supports_staged_fallback():
+    import pytest
+    from pydantic import ValidationError
+
+    queries = default_viral_video_search_queries()
+    assert len(queries) >= 70
+    assert "misteri dalam islam" in queries
+    assert "podcast horor indonesia" in queries
+    assert "mitos dan fakta menurut islam" in queries
+    assert ViralVideoSearchRequest().search_limit_per_query == 25
+    assert ViralVideoSearchRequest().max_metadata_checks == 200
+    assert ViralVideoSearchRequest(max_age_days=180).max_age_days == 180
+    with pytest.raises(ValidationError):
+        ViralVideoSearchRequest(max_age_days=366)
+
+
+def test_configured_viral_queries_are_extended_not_replaced(monkeypatch):
+    monkeypatch.setenv("VIRAL_CC_SEARCH_QUERIES", "topik khusus|podcast indonesia terbaru")
+
+    queries = default_viral_video_search_queries()
+
+    assert queries[0] == "topik khusus"
+    assert queries.count("podcast indonesia terbaru") == 1
+    assert len(queries) >= 70
+    assert queries.index("misteri dalam islam") < 10
+
+
+def test_processed_job_sources_are_always_excluded(monkeypatch):
+    import api
+
+    job = ClipJob(
+        id="processed-job",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/abcDEF12345"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        source_url="https://www.youtube.com/watch?v=secondID6789",
+    )
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "processed_source_history", {"https://youtu.be/permanent77"})
+
+    assert processed_job_source_urls() == {
+        "https://www.youtube.com/watch?v=abcDEF12345",
+        "https://www.youtube.com/watch?v=secondID6789",
+        "https://www.youtube.com/watch?v=permanent77",
+    }
+
+
+def test_viral_score_prefers_faster_recent_growth():
+    today = datetime.now(timezone.utc)
+    recent = {
+        "upload_date": (today - timedelta(days=2)).strftime("%Y%m%d"),
+        "view_count": 100_000,
+        "like_count": 5_000,
+        "duration": 600,
+    }
+    older = {
+        **recent,
+        "upload_date": (today - timedelta(days=25)).strftime("%Y%m%d"),
+    }
+
+    assert auto_viral_candidate_score(recent) > auto_viral_candidate_score(older)
+
+
 def test_models_from_openai_compatible_payload():
     payload = {"data": [{"id": "qwen2.5"}, {"id": "llama3.1"}]}
     assert _models_from_payload(payload) == ["llama3.1", "qwen2.5"]
@@ -99,6 +191,15 @@ def test_user_error_from_logs_detects_network_error():
     logs = ["ERROR: [download] Got error: [Errno 101] Network is unreachable"]
 
     assert "Upload Video" in (user_error_from_logs(logs) or "")
+
+
+def test_user_error_from_logs_detects_missing_ffmpeg_text_filter():
+    logs = [
+        "[AVFilterGraph] No such filter: 'drawtext'",
+        "Error initializing a simple filtergraph",
+    ]
+
+    assert "FFmpeg backend" in (user_error_from_logs(logs) or "")
 
 
 def test_create_job_rejects_when_another_job_is_active(monkeypatch):
@@ -149,6 +250,39 @@ def test_build_clipper_command_includes_five_minute_highlight_mode():
 
     assert command[command.index("--clip-mode") + 1] == "highlight_5m"
     assert command[command.index("--compilation-target") + 1] == "300.0"
+
+
+def test_build_clipper_command_enables_enhanced_edit_by_default():
+    command = build_clipper_command(
+        ClipJobRequest(source_file="/tmp/source.mp4", require_creative_commons=False)
+    )
+
+    assert "--no-enhanced-edit" not in command
+    assert "--keep-running-text" not in command
+
+
+def test_build_clipper_command_can_disable_enhanced_edit():
+    command = build_clipper_command(
+        ClipJobRequest(
+            source_file="/tmp/source.mp4",
+            require_creative_commons=False,
+            enhanced_edit=False,
+        )
+    )
+
+    assert "--no-enhanced-edit" in command
+
+
+def test_build_clipper_command_can_keep_source_running_text():
+    command = build_clipper_command(
+        ClipJobRequest(
+            source_file="/tmp/source.mp4",
+            require_creative_commons=False,
+            remove_running_text=False,
+        )
+    )
+
+    assert "--keep-running-text" in command
 
 
 def test_delete_all_jobs_removes_only_process_jobs_and_preserves_clips(monkeypatch, tmp_path):

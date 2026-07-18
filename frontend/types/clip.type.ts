@@ -63,6 +63,8 @@ export type ClipJob = {
     analyze_seconds: number | null;
     video_quality: VideoQuality;
     burn_subtitles: boolean;
+    enhanced_edit: boolean;
+    remove_running_text: boolean;
     crop_mode: CropMode;
     cam_corner: CamCorner;
     caption_font_size: number;
@@ -92,6 +94,8 @@ export type CreateClipJobInput = {
   analyze_seconds?: number | null;
   video_quality?: VideoQuality;
   burn_subtitles: boolean;
+  enhanced_edit?: boolean;
+  remove_running_text?: boolean;
   crop_mode: CropMode;
   cam_corner?: CamCorner;
   caption_font_size?: number;
@@ -199,6 +203,7 @@ export type AutoViralRequest = {
   min_source_duration?: number;
   max_source_duration?: number;
   min_views?: number;
+  max_age_days?: number;
   top?: number | null;
   min_duration?: number;
   max_duration?: number;
