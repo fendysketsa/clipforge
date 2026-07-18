@@ -31,6 +31,7 @@ DEFAULT_TELEGRAM_AI_MODEL = os.environ.get("TELEGRAM_AI_MODEL", "llama3.2-id:lat
 POLL_TIMEOUT_SECONDS = 3
 YOUTUBE_UPLOAD_DISCOVERY_INTERVAL = 5.0
 YOUTUBE_UPLOAD_RECENT_TERMINAL_SECONDS = 600.0
+UNUPLOADED_CLIPS_PAGE_SIZE = 6
 MAX_UPLOAD_BYTES = min(
     49 * 1024 * 1024,
     max(1, int(float(os.environ.get("TELEGRAM_MAX_UPLOAD_MB", "49")) * 1024 * 1024)),
@@ -629,6 +630,145 @@ def is_compilation_result(clip: dict[str, Any]) -> bool:
     return name.startswith("highlight_5menit_")
 
 
+def telegram_fyp_label(score: int) -> str:
+    if score >= 88:
+        return "Sangat kuat"
+    if score >= 78:
+        return "Kuat"
+    if score >= 65:
+        return "Menjanjikan"
+    if score >= 50:
+        return "Perlu dipoles"
+    return "Lemah"
+
+
+def clip_index_from_result(clip: dict[str, Any], fallback: int) -> int:
+    match = re.match(r"clip_(\d+)", str(clip.get("name") or ""), flags=re.I)
+    return int(match.group(1)) if match else fallback
+
+
+def clip_sidecar_payload(
+    clip: dict[str, Any],
+    outputs_dir: Path = OUTPUTS_DIR,
+) -> tuple[Path | None, dict[str, Any]]:
+    clip_path = output_path_from_url(str(clip.get("url") or ""), outputs_dir)
+    if clip_path is None or not clip_path.is_file():
+        return clip_path, {}
+    sidecar_path = clip_path.with_suffix(".json")
+    try:
+        payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        payload = {}
+    return clip_path, payload if isinstance(payload, dict) else {}
+
+
+def collect_unuploaded_clip_entries(
+    jobs: list[dict[str, Any]],
+    uploads: list[dict[str, Any]],
+    outputs_dir: Path = OUTPUTS_DIR,
+) -> list[dict[str, Any]]:
+    """List existing output files that have never reached completed on YouTube."""
+    completed_urls = {
+        str(upload.get("clip_url") or "").strip()
+        for upload in uploads
+        if str(upload.get("status") or "") == "completed"
+        and str(upload.get("clip_url") or "").strip()
+    }
+    latest_upload_by_url: dict[str, dict[str, Any]] = {}
+    for upload in sorted(
+        uploads,
+        key=lambda item: str(
+            item.get("updated_at")
+            or item.get("finished_at")
+            or item.get("created_at")
+            or ""
+        ),
+        reverse=True,
+    ):
+        clip_url = str(upload.get("clip_url") or "").strip()
+        if clip_url and clip_url not in latest_upload_by_url:
+            latest_upload_by_url[clip_url] = upload
+
+    sorted_jobs = sorted(
+        (job for job in jobs if str(job.get("status") or "") == "completed"),
+        key=lambda item: str(item.get("finished_at") or item.get("updated_at") or ""),
+        reverse=True,
+    )
+    entries: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for job in sorted_jobs:
+        clips = job.get("clips")
+        if not isinstance(clips, list):
+            continue
+        candidates = job.get("candidates")
+        candidate_by_index = {
+            int(candidate["index"]): candidate
+            for candidate in candidates
+            if isinstance(candidate, dict)
+            and isinstance(candidate.get("index"), int)
+        } if isinstance(candidates, list) else {}
+        for fallback_index, clip in enumerate(clips, start=1):
+            if not isinstance(clip, dict):
+                continue
+            clip_url = str(clip.get("url") or "").strip()
+            if not clip_url or clip_url in completed_urls or clip_url in seen_urls:
+                continue
+            clip_path, sidecar = clip_sidecar_payload(clip, outputs_dir)
+            if clip_path is None or not clip_path.is_file():
+                continue
+            seen_urls.add(clip_url)
+            clip_index = clip_index_from_result(clip, fallback_index)
+            candidate = candidate_by_index.get(clip_index, {})
+            raw_score = clip.get("fyp_score")
+            if not isinstance(raw_score, (int, float)) or isinstance(raw_score, bool):
+                raw_score = sidecar.get("score")
+            if not isinstance(raw_score, (int, float)) or isinstance(raw_score, bool):
+                raw_score = candidate.get("score")
+            fyp_score = (
+                max(1, min(100, int(round(raw_score))))
+                if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool)
+                else None
+            )
+            label = (
+                str(clip.get("fyp_label") or "").strip()
+                or str(sidecar.get("fyp_label") or "").strip()
+                or str(candidate.get("fyp_label") or "").strip()
+                or (telegram_fyp_label(fyp_score) if fyp_score is not None else "Belum dinilai")
+            )
+            try:
+                relative_folder = clip_path.parent.resolve().relative_to(outputs_dir.resolve())
+                folder = f"outputs/{relative_folder.as_posix()}"
+            except ValueError:
+                folder = "outputs"
+            entries.append(
+                {
+                    "job_id": str(job.get("id") or ""),
+                    "clip_index": fallback_index,
+                    "clip_url": clip_url,
+                    "clip_name": str(clip.get("name") or clip_path.name),
+                    "title": clip_title(clip, fallback_index),
+                    "folder": folder,
+                    "fyp_score": fyp_score,
+                    "fyp_label": label,
+                    "is_compilation": is_compilation_result(clip),
+                    "latest_upload": latest_upload_by_url.get(clip_url),
+                }
+            )
+    return entries
+
+
+def unuploaded_clip_status(entry: dict[str, Any]) -> str:
+    upload = entry.get("latest_upload")
+    if not isinstance(upload, dict):
+        return "Belum pernah diupload"
+    return {
+        "queued": "Menunggu antrean",
+        "running": "Sedang diupload",
+        "failed": "Upload gagal",
+        "cancelled": "Upload dibatalkan",
+    }.get(str(upload.get("status") or ""), "Belum selesai")
+
+
 def _json_request(
     url: str,
     *,
@@ -955,6 +1095,7 @@ def main_menu_keyboard() -> dict[str, Any]:
         [
             [button("🎬 Buat Clip + Kompilasi", "menu:new")],
             [button("🔥 Cari Viral CC", "viral:refresh")],
+            [button("📂 Clip Belum Upload YouTube", "menu:unuploaded")],
             [button("📊 Status", "menu:status"), button("📚 Riwayat", "menu:history")],
             [button("🔋 Baterai Device", "menu:battery")],
             [button("⬆️ Status Upload YouTube", "menu:youtube"), button("🧪 Debug", "menu:debug")],
@@ -1223,10 +1364,12 @@ class ClipForgeTelegramBot:
             "4. Bot otomatis membuat clip pendek dan satu kompilasi maksimal lima menit.\n"
             "5. Bot akan mengirim seluruh hasil saat selesai.\n"
             "6. Tekan Upload ke YouTube pada video pilihan atau Upload 3 Terbaik.\n\n"
+            "Hasil belum upload: /hasil menampilkan folder, file, skor FYP, dan hanya clip "
+            "yang belum pernah mencapai status upload YouTube completed.\n\n"
             "YouTube: /youtube untuk panel uploader, /loginsekali untuk simpan session Playwright sekali, "
             "/nocdp untuk upload tanpa CDP, /cookies untuk ambil cookies CDP opsional, /cdp untuk recovery CDP.\n\n"
             "Baterai: /battery untuk melihat sisa daya device. Alert otomatis dikirim saat baterai melewati ambang rendah.\n\n"
-            "Perintah: /clip, /getvideosviral, /status, /battery, /settings, /history, /youtube, /cdp, "
+            "Perintah: /clip, /getvideosviral, /status, /battery, /settings, /history, /hasil, /youtube, /cdp, "
             "/loginsekali, /cookies, /nocdp, /profilelogin, /syncsession, /capturesession, /hapusgagal, /debug, /ping, /cancel, /menu",
             main_menu_keyboard(),
         )
@@ -1359,6 +1502,7 @@ class ClipForgeTelegramBot:
         elif status == "completed" and job.get("clips"):
             rows.append([button("📤 Kirim Semua Hasil", f"deliver:{job_id}")])
             rows.append([button("⬆️ Upload 3 Terbaik ke YouTube", f"ytall:{job_id}")])
+            rows.append([button("📂 Lihat Semua yang Belum Upload", "menu:unuploaded")])
         if status in {"queued", "failed", "cancelled"}:
             rows.append([button("🗑 Hapus Job", f"deleteask:{job_id}")])
         rows.append([button("📚 Riwayat", "menu:history"), button("🏠 Menu", "menu:home")])
@@ -1440,6 +1584,117 @@ class ClipForgeTelegramBot:
             rows.append([button("🧹 Hapus Gagal/Dibatalkan", "deletefailedask")])
         rows.append([button("🏠 Menu Utama", "menu:home")])
         self.send_message(chat_id, "\n".join(lines), keyboard(rows))
+
+    def unuploaded_clips_keyboard(
+        self,
+        entries: list[dict[str, Any]],
+        page: int,
+    ) -> dict[str, Any]:
+        total_pages = max(1, (len(entries) + UNUPLOADED_CLIPS_PAGE_SIZE - 1) // UNUPLOADED_CLIPS_PAGE_SIZE)
+        safe_page = max(0, min(page, total_pages - 1))
+        start = safe_page * UNUPLOADED_CLIPS_PAGE_SIZE
+        visible = entries[start : start + UNUPLOADED_CLIPS_PAGE_SIZE]
+        rows: list[list[dict[str, str]]] = []
+        for offset, entry in enumerate(visible, start=start + 1):
+            score = entry.get("fyp_score")
+            score_text = str(score) if isinstance(score, int) else "-"
+            upload = entry.get("latest_upload")
+            status = str(upload.get("status") or "") if isinstance(upload, dict) else ""
+            upload_id = str(upload.get("id") or "") if isinstance(upload, dict) else ""
+            if status == "failed" and upload_id:
+                action = button(f"🔁 #{offset} Retry · FYP {score_text}", f"ytretry:{upload_id}")
+            elif status in ACTIVE_STATUSES and upload_id:
+                action = button(f"📊 #{offset} Status · FYP {score_text}", f"ytview:{upload_id}")
+            else:
+                action = button(
+                    f"⬆️ #{offset} Upload · FYP {score_text}",
+                    f"ytup:{entry['job_id']}:{entry['clip_index']}",
+                )
+            rows.append([action])
+        navigation: list[dict[str, str]] = []
+        if safe_page > 0:
+            navigation.append(button("⬅️ Sebelumnya", f"unuploaded:{safe_page - 1}"))
+        if safe_page + 1 < total_pages:
+            navigation.append(button("Berikutnya ➡️", f"unuploaded:{safe_page + 1}"))
+        if navigation:
+            rows.append(navigation)
+        rows.append(
+            [
+                button("🔄 Refresh", f"unuploaded:{safe_page}"),
+                button("🏠 Menu", "menu:home"),
+            ]
+        )
+        return keyboard(rows)
+
+    def show_unuploaded_clips(
+        self,
+        chat_id: int,
+        page: int = 0,
+        message_id: int | None = None,
+    ) -> None:
+        try:
+            jobs = self.backend.list_jobs()
+            uploads = self.backend.list_youtube_uploads()
+        except ServiceError as exc:
+            self.send_message(
+                chat_id,
+                f"Gagal membaca daftar hasil clip: {exc}",
+                main_menu_keyboard(),
+            )
+            return
+        entries = collect_unuploaded_clip_entries(jobs, uploads, OUTPUTS_DIR)
+        if not entries:
+            text = (
+                "📂 Clip Belum Upload YouTube\n\n"
+                "Tidak ada clip tersisa. Semua file hasil yang masih tersedia sudah memiliki "
+                "upload YouTube berstatus completed."
+            )
+            markup = keyboard(
+                [
+                    [button("🔄 Refresh", "unuploaded:0")],
+                    [button("🏠 Menu Utama", "menu:home")],
+                ]
+            )
+            if message_id is not None:
+                self.edit_message(chat_id, message_id, text, markup)
+            else:
+                self.send_message(chat_id, text, markup)
+            return
+
+        total_pages = max(1, (len(entries) + UNUPLOADED_CLIPS_PAGE_SIZE - 1) // UNUPLOADED_CLIPS_PAGE_SIZE)
+        safe_page = max(0, min(page, total_pages - 1))
+        start = safe_page * UNUPLOADED_CLIPS_PAGE_SIZE
+        visible = entries[start : start + UNUPLOADED_CLIPS_PAGE_SIZE]
+        lines = [
+            "📂 Hasil Clip Belum Upload YouTube",
+            "",
+            "Filter: clip yang belum pernah mencapai status completed.",
+            f"Total: {len(entries)} clip · Halaman {safe_page + 1}/{total_pages}",
+        ]
+        current_folder = ""
+        for number, entry in enumerate(visible, start=start + 1):
+            folder = str(entry.get("folder") or "outputs")
+            if folder != current_folder:
+                current_folder = folder
+                lines.extend(["", f"📁 {folder}"])
+            score = entry.get("fyp_score")
+            score_text = f"{score}/100" if isinstance(score, int) else "-/100"
+            kind = "Kompilasi" if entry.get("is_compilation") else "Clip pendek"
+            lines.extend(
+                [
+                    "",
+                    f"{number}. {kind} · FYP {score_text} · {entry.get('fyp_label') or 'Belum dinilai'}",
+                    str(entry.get("title") or "Tanpa judul")[:120],
+                    f"File: {entry.get('clip_name') or '-'}",
+                    f"YouTube: {unuploaded_clip_status(entry)}",
+                ]
+            )
+        markup = self.unuploaded_clips_keyboard(entries, safe_page)
+        text = "\n".join(lines)
+        if message_id is not None:
+            self.edit_message(chat_id, message_id, text, markup)
+        else:
+            self.send_message(chat_id, text, markup)
 
     def youtube_upload_status_text(self, upload: dict[str, Any]) -> str:
         status = str(upload.get("status", "unknown"))
@@ -2522,6 +2777,8 @@ class ClipForgeTelegramBot:
             self.show_battery(chat_id)
         elif command == "/history":
             self.show_history(chat_id)
+        elif command in {"/hasil", "/clips", "/belumupload"}:
+            self.show_unuploaded_clips(chat_id)
         elif command in {"/hapusgagal", "/cleanupjobs"}:
             self.request_delete_failed_jobs(chat_id)
         elif command == "/youtube":
@@ -2745,6 +3002,8 @@ class ClipForgeTelegramBot:
             self.show_battery(chat_id)
         elif data == "menu:history":
             self.show_history(chat_id)
+        elif data == "menu:unuploaded":
+            self.show_unuploaded_clips(chat_id)
         elif data == "menu:youtube":
             self.send_message(chat_id, "Mengecek status uploader YouTube...")
             self.show_youtube_status(chat_id)
@@ -2771,6 +3030,14 @@ class ClipForgeTelegramBot:
                 self.show_pending(chat_id)
             else:
                 self.send_message(chat_id, "Pilihan video sudah tidak tersedia. Tekan Cari Lagi.", keyboard([[button("🔄 Cari Lagi", "viral:refresh")], [button("🏠 Menu", "menu:home")]]))
+        elif data.startswith("unuploaded:"):
+            raw_page = data.split(":", 1)[1]
+            page = int(raw_page) if raw_page.isdigit() else 0
+            self.show_unuploaded_clips(
+                chat_id,
+                page,
+                message_id if isinstance(message_id, int) else None,
+            )
         elif data == "pending:cancel":
             self.state["waiting_for_url"] = False
             self.state["pending_url"] = ""
@@ -2931,6 +3198,17 @@ class ClipForgeTelegramBot:
                 self.start_youtube_upload_for_url(chat_id, source_job_id, clip_url, preflight=True)
             else:
                 self.send_message(chat_id, "Data retry upload YouTube tidak valid.", main_menu_keyboard())
+        elif data.startswith("ytview:"):
+            upload_id = data.split(":", 1)[1]
+            try:
+                upload = self.backend.get_youtube_upload(upload_id)
+                self.send_message(
+                    chat_id,
+                    self.youtube_upload_status_text(upload),
+                    self.youtube_upload_keyboard(upload),
+                )
+            except ServiceError as exc:
+                self.send_message(chat_id, f"Gagal membuka status upload: {exc}", main_menu_keyboard())
         elif data == "ytsync":
             self.sync_youtube_cdp_session(chat_id, reason="manual")
         elif data == "ytcdp":
@@ -3050,6 +3328,10 @@ class ClipForgeTelegramBot:
                             {"command": "battery", "description": "Cek sisa baterai device"},
                             {"command": "settings", "description": "Atur hasil clipping"},
                             {"command": "history", "description": "Lihat riwayat dan kirim ulang hasil"},
+                            {
+                                "command": "hasil",
+                                "description": "List clip belum upload YouTube + skor FYP",
+                            },
                             {"command": "hapusgagal", "description": "Hapus job gagal/dibatalkan"},
                             {"command": "youtube", "description": "Cek status uploader YouTube"},
                             {"command": "loginsekali", "description": "Simpan session Playwright YouTube"},

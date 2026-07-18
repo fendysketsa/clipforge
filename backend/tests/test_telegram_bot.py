@@ -8,6 +8,7 @@ from telegram_bot import (
     battery_status_text,
     build_job_payload,
     canonical_youtube_url,
+    collect_unuploaded_clip_entries,
     format_duration,
     is_supported_video_url,
     is_compilation_result,
@@ -18,6 +19,7 @@ from telegram_bot import (
     read_battery_status,
     save_state,
     split_text,
+    unuploaded_clip_status,
 )
 
 
@@ -59,6 +61,7 @@ def test_normalize_settings_keeps_only_clickable_options():
     )
 
     assert settings == {
+        "clip_mode": "short",
         "top": 8,
         "min_duration": 15,
         "max_duration": 60,
@@ -66,6 +69,8 @@ def test_normalize_settings_keeps_only_clickable_options():
         "crop_mode": "streamer",
         "burn_subtitles": False,
         "ai_enabled": False,
+        "ai_base_url": DEFAULT_SETTINGS["ai_base_url"],
+        "ai_model": DEFAULT_SETTINGS["ai_model"],
         "caption_position": "bottom",
         "caption_font_size": 24,
     }
@@ -122,6 +127,116 @@ def test_output_path_is_confined_to_outputs(tmp_path: Path):
     assert output_path_from_url("/outputs/video/clips/clip_01.mp4", tmp_path) == clip
     assert output_path_from_url("/outputs/../secret.txt", tmp_path) is None
     assert output_path_from_url("/api/jobs", tmp_path) is None
+
+
+def test_unuploaded_clip_list_filters_completed_and_keeps_score_and_folder(tmp_path: Path):
+    clips_dir = tmp_path / "kajian-malam" / "clips"
+    clips_dir.mkdir(parents=True)
+    for name, score in (
+        ("clip_01_sudah.mp4", 91),
+        ("clip_02_gagal.mp4", 82),
+        ("highlight_5menit_pilihan.mp4", 76),
+    ):
+        path = clips_dir / name
+        path.write_bytes(b"video")
+        path.with_suffix(".json").write_text(
+            json.dumps({"score": score, "fyp_label": "Kuat"}),
+            encoding="utf-8",
+        )
+    clips = [
+        {
+            "name": "clip_01_sudah.mp4",
+            "url": "/outputs/kajian-malam/clips/clip_01_sudah.mp4",
+            "title": "Sudah Upload",
+        },
+        {
+            "name": "clip_02_gagal.mp4",
+            "url": "/outputs/kajian-malam/clips/clip_02_gagal.mp4",
+            "title": "Upload Gagal",
+        },
+        {
+            "name": "highlight_5menit_pilihan.mp4",
+            "url": "/outputs/kajian-malam/clips/highlight_5menit_pilihan.mp4",
+            "title": "Kompilasi Pilihan",
+        },
+    ]
+    jobs = [
+        {
+            "id": "job-1",
+            "status": "completed",
+            "finished_at": "2026-07-19T10:00:00+07:00",
+            "clips": clips,
+            "candidates": [],
+        }
+    ]
+    uploads = [
+        {
+            "id": "done",
+            "clip_url": clips[0]["url"],
+            "status": "completed",
+            "updated_at": "2026-07-19T11:00:00+07:00",
+        },
+        {
+            "id": "failed-after-done",
+            "clip_url": clips[0]["url"],
+            "status": "failed",
+            "updated_at": "2026-07-19T12:00:00+07:00",
+        },
+        {
+            "id": "failed",
+            "clip_url": clips[1]["url"],
+            "status": "failed",
+            "updated_at": "2026-07-19T12:00:00+07:00",
+        },
+    ]
+
+    entries = collect_unuploaded_clip_entries(jobs, uploads, tmp_path)
+
+    assert [entry["clip_name"] for entry in entries] == [
+        "clip_02_gagal.mp4",
+        "highlight_5menit_pilihan.mp4",
+    ]
+    assert entries[0]["folder"] == "outputs/kajian-malam/clips"
+    assert entries[0]["fyp_score"] == 82
+    assert unuploaded_clip_status(entries[0]) == "Upload gagal"
+    assert entries[1]["is_compilation"] is True
+    assert unuploaded_clip_status(entries[1]) == "Belum pernah diupload"
+
+
+def test_unuploaded_clip_keyboard_uses_retry_status_and_upload_actions():
+    entries = [
+        {
+            "job_id": "job-a",
+            "clip_index": 1,
+            "fyp_score": 81,
+            "latest_upload": {"id": "upload-failed", "status": "failed"},
+        },
+        {
+            "job_id": "job-a",
+            "clip_index": 2,
+            "fyp_score": 74,
+            "latest_upload": {"id": "upload-running", "status": "running"},
+        },
+        {
+            "job_id": "job-a",
+            "clip_index": 3,
+            "fyp_score": 68,
+            "latest_upload": None,
+        },
+    ]
+
+    markup = ClipForgeTelegramBot.unuploaded_clips_keyboard(object(), entries, 0)
+    callbacks = [
+        item["callback_data"]
+        for row in markup["inline_keyboard"]
+        for item in row
+        if "callback_data" in item
+    ]
+
+    assert "ytretry:upload-failed" in callbacks
+    assert "ytview:upload-running" in callbacks
+    assert "ytup:job-a:3" in callbacks
+    assert "unuploaded:0" in callbacks
 
 
 def test_state_round_trip_and_recovery(tmp_path: Path):
