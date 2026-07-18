@@ -20,6 +20,9 @@ from clipper import (
     fallback_social_caption,
     hook_banner_text,
     is_source_branding_segment,
+    landscape_caption_gradient_blur_filter,
+    landscape_compilation_edit_filter,
+    landscape_compilation_frame_filter,
     modern_blurred_video_frame_filter,
     modern_gradient_border_filters,
     pov_banner_text,
@@ -124,6 +127,38 @@ def test_running_text_cleanup_crops_bottom_and_preserves_vertical_aspect():
     assert value.startswith("crop=990:1760:45:0")
     assert "scale=1080:1920" in value
     assert "setsar=1" in value
+
+
+def test_landscape_compilation_frame_is_full_hd_and_preserves_source_aspect():
+    value = landscape_compilation_frame_filter("#FACC15", "#22D3EE")
+
+    assert "crop=iw:trunc(ih*0.92/2)*2" in value
+    assert "scale=1920:1080:force_original_aspect_ratio=increase" in value
+    assert "scale=1840:1000:force_original_aspect_ratio=decrease" in value
+    assert "[wide_canvas][wide_fg]overlay=(W-w)/2:(H-h)/2" in value
+
+
+def test_landscape_compilation_edit_uses_chapters_and_sparse_emphasis():
+    value = landscape_compilation_edit_filter(
+        60,
+        "part.hook.txt",
+        section_number=2,
+        section_count=5,
+        emphasis_times=[12.0],
+    )
+
+    assert "text='POIN 02'" in value
+    assert "text='BAGIAN 02 / 05'" in value
+    assert "textfile='part.hook.txt'" in value
+    assert "between(t,12.000" in value
+    assert "y=1072" in value
+
+
+def test_landscape_caption_blur_uses_16_by_9_canvas():
+    value = landscape_caption_gradient_blur_filter("bottom")
+
+    assert "crop=1920:250" in value
+    assert "overlay=0:760" in value
 
 
 def test_enhanced_edit_filter_adds_motion_hook_transition_and_progress():
@@ -399,6 +434,24 @@ def test_social_caption_has_safe_relevant_fallback_without_ai():
     assert "#Dakwah" in caption
     assert "#Misteri" in caption
     assert "#MitosAtauFakta" in caption
+
+
+def test_landscape_compilation_caption_is_not_tagged_as_short():
+    clip = ClipCandidate(
+        index=1,
+        start=0,
+        end=300,
+        duration=300,
+        score=90,
+        title="Lima Pelajaran Penting",
+        reason="test",
+        text="Rangkuman pembahasan yang memiliki konteks lengkap.",
+    )
+
+    caption = fallback_social_caption(clip, ["Hikmah"], long_form=True)
+
+    assert "#Hikmah" in caption
+    assert "#Shorts" not in caption
 
 
 def test_source_channel_promos_are_boundaries_not_clip_content():

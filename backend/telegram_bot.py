@@ -168,9 +168,9 @@ CLIPPING_STAGE_ALERTS: list[tuple[str, str, str, tuple[str, ...]]] = [
     ),
     (
         "compilation",
-        "Menyusun video kompilasi",
-        "Momen terbaik sedang digabungkan menjadi satu video highlight agak panjang.",
-        ("exporting vertical highlight compilation",),
+        "Mengekspor kompilasi 16:9",
+        "Momen terbaik sedang dirender menjadi video landscape sinematik maksimal lima menit.",
+        ("exporting 16:9 landscape cinematic highlight compilation",),
     ),
     ("done", "Clipping selesai", "Render selesai. Bot akan menyiapkan pengiriman hasil.", ("done.", "exported:")),
     (
@@ -553,6 +553,8 @@ def seconds_since_iso(value: object) -> float | None:
 
 def progress_stage(job: dict[str, Any]) -> str:
     logs = "\n".join(str(line) for line in job.get("logs", [])[-30:]).lower()
+    if "exporting 16:9 landscape" in logs:
+        return "Mengekspor kompilasi landscape 16:9"
     if "exporting vertical clips" in logs or "person crop" in logs or "streamer stack" in logs:
         return "Mengekspor video vertikal"
     if "scoring candidate" in logs or "agent scoring" in logs:
@@ -1119,7 +1121,7 @@ def settings_summary(settings: dict[str, Any]) -> str:
     crop = {"center": "Center", "person": "Follow Person", "streamer": "Streamer"}[clean["crop_mode"]]
     position = {"upper": "Atas", "center": "Tengah", "bottom": "Bawah"}[clean["caption_position"]]
     return (
-        "Output: Clip pendek + 1 kompilasi otomatis\n"
+        "Output: Clip pendek + 1 kompilasi landscape 16:9 otomatis\n"
         "Kompilasi panjang: maksimal 5 menit\n"
         f"Target clip: {top}\n"
         f"Durasi: {clean['min_duration']}–{clean['max_duration']} detik\n"
@@ -1136,7 +1138,7 @@ def settings_keyboard(settings: dict[str, Any], *, has_pending_url: bool = False
     clean = normalize_settings(settings)
     top = "auto" if clean["top"] is None else clean["top"]
     rows = [
-            [button("Output · Clip + Kompilasi ≤5m", "settings:output")],
+            [button("Output · Shorts + Kompilasi 16:9", "settings:output")],
             [button(f"Jumlah Clip · {top}", "settings:top")],
             [button(f"Durasi · {clean['min_duration']}–{clean['max_duration']}d", "settings:duration")],
             [button(f"Kualitas · {clean['video_quality']}", "settings:quality")],
@@ -1358,7 +1360,7 @@ class ClipForgeTelegramBot:
             "Link siap diproses\n\n"
             f"{url}\n\n"
             + settings_summary(self.state["settings"])
-            + "\n\nSekali proses menghasilkan clip pendek dan satu kompilasi maksimal 5 menit.",
+            + "\n\nSekali proses menghasilkan clip pendek vertikal dan satu kompilasi landscape 16:9 maksimal 5 menit.",
             confirmation_keyboard(),
         )
 
@@ -1369,7 +1371,7 @@ class ClipForgeTelegramBot:
             "1. Kirim link YouTube ke bot.\n"
             "2. Periksa pengaturan yang ditampilkan.\n"
             "3. Tekan Buat Clip + Kompilasi.\n"
-            "4. Bot otomatis membuat clip pendek dan satu kompilasi maksimal lima menit.\n"
+            "4. Bot otomatis membuat clip pendek dan satu kompilasi landscape 16:9 maksimal lima menit.\n"
             "5. Bot akan mengirim seluruh hasil saat selesai.\n"
             "6. Tekan Upload ke YouTube pada video pilihan atau Upload 3 Terbaik.\n\n"
             "Hasil belum upload: /hasil menampilkan folder, file, skor FYP, dan hanya clip "
@@ -1488,7 +1490,7 @@ class ClipForgeTelegramBot:
             f"Status: {status_label}",
             f"Sumber: {title}",
             f"Job: {str(job.get('id', ''))[:10]}",
-            "Output: clip pendek + kompilasi maks. 5 menit",
+            "Output: clip pendek + kompilasi landscape 16:9 maks. 5 menit",
             f"Durasi proses: {format_duration(elapsed_for_job(job))}",
         ]
         if status in ACTIVE_STATUSES:
@@ -2351,7 +2353,7 @@ class ClipForgeTelegramBot:
         self.persist()
         status_message = self.send_message(
             chat_id,
-            "Proses dimulai: bot membuat clip pendek sekaligus satu kompilasi maksimal 5 menit. "
+            "Proses dimulai: bot membuat clip pendek sekaligus satu kompilasi landscape 16:9 maksimal 5 menit. "
             "Alert tahap demi tahap aktif dan semua hasil akan dikirim otomatis.",
             self.job_keyboard(job),
         )
@@ -2359,7 +2361,7 @@ class ClipForgeTelegramBot:
         self.persist()
 
     def clip_metadata_text(self, clip: dict[str, Any], index: int, total: int) -> str:
-        result_label = "Kompilasi Maks. 5 Menit" if is_compilation_result(clip) else "Clip Pendek"
+        result_label = "Kompilasi 16:9 Maks. 5 Menit" if is_compilation_result(clip) else "Clip Pendek"
         parts = [f"Detail {result_label}", f"Judul:\n{clip_title(clip, index)}"]
         score = clip.get("fyp_score")
         label = str(clip.get("fyp_label") or "").strip()
@@ -2488,7 +2490,7 @@ class ClipForgeTelegramBot:
                 f"Sumber: {source}\n"
                 + (f"Channel: {uploader}\n" if uploader else "")
                 + f"Clip pendek: {short_count}\n"
-                + f"Kompilasi maksimal 5 menit: {compilation_count}\n"
+                + f"Kompilasi landscape 16:9 maksimal 5 menit: {compilation_count}\n"
                 + f"Total hasil: {len(clips)} video\n"
                 + f"Durasi proses: {format_duration(job.get('duration_seconds'))}\n\n"
                 + "Bot mulai mengirim video dan materi pendukung satu per satu."
@@ -2506,7 +2508,7 @@ class ClipForgeTelegramBot:
             path = output_path_from_url(clip_url)
             title = clip_title(clip, index)
             if is_compilation_result(clip):
-                result_label = "Kompilasi Maks. 5 Menit"
+                result_label = "Kompilasi 16:9 Maks. 5 Menit"
             else:
                 short_position += 1
                 result_label = f"Clip Pendek {short_position}/{short_count}"
@@ -3050,7 +3052,7 @@ class ClipForgeTelegramBot:
         elif data == "job:confirm":
             self.send_message(
                 chat_id,
-                "Perintah diterima. Backend menyiapkan clip pendek + kompilasi maksimal 5 menit...",
+                "Perintah diterima. Backend menyiapkan clip pendek + kompilasi landscape 16:9 maksimal 5 menit...",
             )
             self.start_job(chat_id)
         elif data == "settings:top":
@@ -3069,7 +3071,7 @@ class ClipForgeTelegramBot:
                 "Output Telegram dibuat otomatis dalam satu tahap.",
                 keyboard(
                     [
-                        [button("✅ Clip Pendek + Kompilasi Maks. 5 Menit", "set:mode:short")],
+                        [button("✅ Shorts + Kompilasi 16:9 Maks. 5 Menit", "set:mode:short")],
                         [button("⬅️ Kembali", "menu:settings")],
                     ]
                 ),
@@ -3078,8 +3080,9 @@ class ClipForgeTelegramBot:
             show_panel(
                 "Output otomatis\n\n"
                 "• Beberapa clip pendek terbaik\n"
-                "• Satu kompilasi vertikal\n"
+                "• Satu kompilasi landscape 16:9 sinematik\n"
                 "• Durasi kompilasi tidak lebih dari 5 menit\n"
+                "• Renderer dan gaya edit berbeda dari Shorts\n"
                 "• Semua dibuat dalam satu proses",
                 keyboard([[button("⬅️ Kembali", "menu:settings")]]),
             )

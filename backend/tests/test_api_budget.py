@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from api import (
     ClipFile,
@@ -17,6 +18,7 @@ from api import (
     normalize_job_request,
     processed_job_source_urls,
     youtube_cdp_start_needed,
+    youtube_upload_staging_filter,
     user_error_from_logs,
     youtube_published_after,
 )
@@ -34,6 +36,20 @@ def test_max_clips_short_video():
 
 def test_max_clips_none_duration():
     assert max_clips_for_duration(None, 35) is None
+
+
+def test_upload_staging_keeps_compilation_landscape():
+    value = youtube_upload_staging_filter(Path("highlight_5menit_pilihan.mp4"))
+
+    assert "scale=1280:720" in value
+    assert "pad=1280:720" in value
+
+
+def test_upload_staging_keeps_short_vertical():
+    value = youtube_upload_staging_filter(Path("clip_01_pilihan.mp4"))
+
+    assert "scale=720:1280" in value
+    assert "pad=720:1280" in value
 
 
 def test_max_clips_at_least_one():

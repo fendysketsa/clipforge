@@ -358,6 +358,7 @@ IMPORTANT_WORDS = {
 CropMode = Literal["center", "person", "streamer"]
 VideoQuality = Literal["standard", "high", "max"]
 ClipMode = Literal["short", "highlight_5m"]
+OutputFormat = Literal["vertical_short", "landscape_compilation"]
 VisualTheme = Literal["mystery", "islamic", "warning", "inspiring", "knowledge"]
 YUNET_MODEL_PATH = Path(__file__).resolve().parent / "models" / "face_detection_yunet_2023mar.onnx"
 
@@ -1702,8 +1703,9 @@ def ai_rescore_candidates(
         else "Pick and rank only the candidates that deserve to become clips."
     )
     format_instruction = (
-        "This is for one five-minute vertical highlight compilation. Choose complementary key points "
-        "that remain engaging in chronological order; avoid repeated ideas and low-value filler."
+        "This is for one five-minute 16:9 landscape long-form highlight compilation. Choose complementary "
+        "key points that build a coherent narrative in chronological order; open with the strongest hook, "
+        "avoid repeated ideas and low-value filler, and favor sections that benefit from full context."
         if compilation
         else "This is for Indonesian short-form FYP. Choose POV moments people would stop scrolling for, "
         "not merely complete transcript chunks."
@@ -2196,6 +2198,117 @@ def modern_blurred_video_frame_filter(accent: str, secondary: str) -> str:
     )
 
 
+def landscape_compilation_frame_filter(
+    accent: str,
+    secondary: str,
+    *,
+    remove_running_text: bool = True,
+) -> str:
+    """Preserve the source framing inside a cinematic 1920x1080 long-form layout."""
+    source_cleanup = "crop=iw:trunc(ih*0.92/2)*2:0:0," if remove_running_text else ""
+    return (
+        f"{source_cleanup}setsar=1,split=2[wide_bg_src][wide_fg_src];"
+        "[wide_bg_src]scale=1920:1080:force_original_aspect_ratio=increase:"
+        "force_divisible_by=2:flags=lanczos,crop=1920:1080,"
+        "gblur=sigma=36,eq=brightness=-0.20:contrast=1.08:saturation=1.18,"
+        "drawbox=x=0:y=0:w=iw:h=ih:color=black@0.24:t=fill[wide_bg];"
+        "[wide_fg_src]scale=1840:1000:force_original_aspect_ratio=decrease:"
+        "force_divisible_by=2:flags=lanczos[wide_fg];"
+        "[wide_bg]drawbox=x=28:y=18:w=1864:h=1044:color=black@0.54:t=fill,"
+        f"drawbox=x=32:y=22:w=1856:h=1036:color={secondary}@0.24:t=fill,"
+        f"drawbox=x=36:y=26:w=1848:h=1028:color={accent}@0.32:t=fill[wide_canvas];"
+        "[wide_canvas][wide_fg]overlay=(W-w)/2:(H-h)/2:shortest=1:eof_action=pass,"
+        f"drawbox=x=32:y=22:w=1856:h=1036:color={secondary}@0.42:t=5,"
+        f"drawbox=x=37:y=27:w=1846:h=1026:color={accent}@0.68:t=3,"
+        "drawbox=x=41:y=31:w=1838:h=1018:color=white@0.18:t=2"
+    )
+
+
+def landscape_compilation_edit_filter(
+    duration: float,
+    hook_text_filename: str,
+    *,
+    section_number: int,
+    section_count: int,
+    theme_profile: dict[str, str] | None = None,
+    emphasis_times: list[float] | None = None,
+    show_text_overlays: bool = True,
+) -> str:
+    """Long-form motion language: chapter cards, sparse emphasis, and cinematic grading."""
+    safe_duration = max(0.1, duration)
+    fade_out_start = max(0.0, safe_duration - 0.30)
+    profile = theme_profile or {
+        "accent": "#FACC15",
+        "accent_secondary": "#22D3EE",
+        "badge": "RANGKUMAN UTAMA",
+        "emphasis_label": "POIN PENTING",
+        "grade": "eq=contrast=1.05:brightness=0.004:saturation=1.04:gamma=1.01",
+    }
+    accent = profile["accent"]
+    secondary = profile.get("accent_secondary", "#22D3EE")
+    badge = "HOOK UTAMA" if section_number == 1 else f"POIN {section_number:02}"
+    section_text = f"BAGIAN {section_number:02} / {section_count:02}"
+    filters = [
+        profile["grade"],
+        "vignette=PI/12",
+        "fade=t=in:st=0:d=0.28",
+        f"fade=t=out:st={fade_out_start:.3f}:d=0.30",
+    ]
+    intro_end = min(safe_duration, 4.8)
+    if show_text_overlays and intro_end > 0.6:
+        filters.extend(
+            [
+                "drawbox=x=74:y=64:w=660:h=196:color=black@0.72:t=fill:"
+                f"enable='between(t,0.10,{intro_end:.3f})'",
+                f"drawbox=x=74:y=64:w=12:h=196:color={accent}@0.98:t=fill:"
+                f"enable='between(t,0.10,{intro_end:.3f})'",
+                f"drawbox=x=98:y=82:w=190:h=42:color={accent}@0.94:t=fill:"
+                f"enable='between(t,0.10,{intro_end:.3f})'",
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                f"text='{badge}':expansion=none:fontcolor=white:fontsize=22:x=116:y=91:"
+                f"enable='between(t,0.10,{intro_end:.3f})'",
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+                f"text='{section_text}':expansion=none:fontcolor={secondary}:fontsize=19:x=310:y=92:"
+                f"enable='between(t,0.10,{intro_end:.3f})'",
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                f"textfile='{hook_text_filename}':reload=0:expansion=none:"
+                "fontcolor=white:fontsize=38:line_spacing=8:borderw=2:bordercolor=black@0.82:"
+                f"x=108:y=145:enable='between(t,0.10,{intro_end:.3f})'",
+            ]
+        )
+
+    for timestamp in sorted(emphasis_times or [])[:3]:
+        if timestamp >= safe_duration - 0.5:
+            continue
+        pulse_end = min(safe_duration, timestamp + 0.38)
+        label_end = min(safe_duration, timestamp + 1.45)
+        filters.extend(
+            [
+                f"drawbox=x=32:y=22:w=1856:h=1036:color={accent}@0.62:t=5:"
+                f"enable='between(t,{timestamp:.3f},{pulse_end:.3f})'",
+                "drawbox=x=1430:y=86:w=398:h=88:color=black@0.72:t=fill:"
+                f"enable='between(t,{timestamp:.3f},{label_end:.3f})'",
+                f"drawbox=x=1430:y=86:w=8:h=88:color={accent}@0.98:t=fill:"
+                f"enable='between(t,{timestamp:.3f},{label_end:.3f})'",
+            ]
+        )
+        if show_text_overlays:
+            filters.append(
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                f"text='{profile['emphasis_label']}':expansion=none:fontcolor=white:fontsize=25:"
+                f"x=1462:y=115:enable='between(t,{timestamp:.3f},{label_end:.3f})'"
+            )
+
+    filters.extend(
+        [
+            "drawbox=x=0:y=1072:w=iw:h=8:color=black@0.45:t=fill",
+            f"drawbox=x=0:y=1072:w='max(2,iw*t/{safe_duration:.3f})':"
+            f"h=8:color={accent}@0.94:t=fill",
+        ]
+    )
+    return ",".join(filters)
+
+
 def modern_gradient_border_filters(accent: str, secondary: str) -> list[str]:
     """Build a restrained dual-tone glow around the inset sharp video panel."""
     return [
@@ -2481,6 +2594,25 @@ def caption_gradient_blur_filter(position: CaptionPosition) -> str:
     )
 
 
+def landscape_caption_gradient_blur_filter(position: CaptionPosition) -> str:
+    """Add a restrained readable band sized for a 1920x1080 long-form canvas."""
+    band_height = 250
+    if position == "bottom":
+        band_y = 760
+    elif position == "center":
+        band_y = 415
+    else:
+        band_y = 105
+    alpha = "255*0.82*(1-pow(abs(Y-H/2)/(H/2),2))"
+    return (
+        "split=2[wide_caption_base][wide_caption_blur];"
+        f"[wide_caption_blur]crop=1920:{band_height}:0:{band_y},"
+        "gblur=sigma=28,drawbox=color=black@0.28:t=fill,format=rgba,"
+        f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{alpha}'[wide_caption_band];"
+        f"[wide_caption_base][wide_caption_band]overlay=0:{band_y}"
+    )
+
+
 THUMBNAIL_SYSTEM_PROMPT = (
     "You write prompts for an AI image generator that will ONLY add a text overlay onto a "
     "provided screenshot. The screenshot is the thumbnail background and must NOT be redrawn, "
@@ -2492,9 +2624,13 @@ THUMBNAIL_SYSTEM_PROMPT = (
 )
 
 
-def grab_best_frame(video_path: Path, clip: ClipCandidate, thumb_path: Path) -> Path | None:
-    # Best moment heuristic: sample the clip's middle, where the payoff usually lands.
-    timestamp = clip.start + max(0.0, (clip.end - clip.start) * 0.5)
+def grab_frame_at(
+    video_path: Path,
+    timestamp: float,
+    thumb_path: Path,
+    *,
+    label: str,
+) -> Path | None:
     thumb_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         run(
@@ -2517,26 +2653,38 @@ def grab_best_frame(video_path: Path, clip: ClipCandidate, thumb_path: Path) -> 
             cwd=thumb_path.parent,
         )
     except RuntimeError as exc:
-        console.print(f"[yellow]Thumbnail frame failed for clip {clip.index}:[/yellow] {exc}")
+        console.print(f"[yellow]Thumbnail frame failed for {label}:[/yellow] {exc}")
         return None
     return thumb_path if thumb_path.exists() else None
 
 
-def generate_thumbnail_prompt(clip: ClipCandidate, config: AIConfig) -> dict | None:
+def grab_best_frame(video_path: Path, clip: ClipCandidate, thumb_path: Path) -> Path | None:
+    # Best moment heuristic: sample the clip's middle, where the payoff usually lands.
+    timestamp = clip.start + max(0.0, (clip.end - clip.start) * 0.5)
+    return grab_frame_at(video_path, timestamp, thumb_path, label=f"clip {clip.index}")
+
+
+def generate_thumbnail_prompt(
+    clip: ClipCandidate,
+    config: AIConfig,
+    *,
+    long_form: bool = False,
+) -> dict | None:
     fallback_hook = first_sentence(clip.title, max_words=6).upper()
+    format_name = "16:9 long-form YouTube" if long_form else "short-form video"
     if not config.enabled or not config.base_url or not config.model:
         return {
             "hook_text": fallback_hook,
             "prompt": (
-                f'Add a bold short-form video thumbnail text overlay reading "{fallback_hook}" '
+                f'Add a bold {format_name} thumbnail text overlay reading "{fallback_hook}" '
                 "onto the provided screenshot. Keep the screenshot itself untouched as the background. "
-                "Place large high-contrast bold text (white fill, thick dark outline) in the upper third, "
+                "Place large high-contrast bold text (white fill, thick dark outline) with strong 16:9 composition, "
                 "do not cover faces, do not redraw or restyle the background image."
             ),
         }
 
     user_prompt = (
-        "Create a viral thumbnail text overlay plan for this clip. The user already has a screenshot "
+        f"Create a compelling {format_name} thumbnail text overlay plan for this clip. The user already has a screenshot "
         "(the best moment) and will feed it plus your prompt to an image generator that only writes text.\n"
         "Return JSON exactly like:\n"
         '{"hook_text": "<3-6 word punchy hook, ALL CAPS>", '
@@ -2633,6 +2781,8 @@ def clip_topic_hashtags(clip: ClipCandidate) -> list[str]:
 def fallback_social_caption(
     clip: ClipCandidate,
     required_hashtags: list[str] | None = None,
+    *,
+    long_form: bool = False,
 ) -> str:
     theme = detect_visual_theme(clip)
     hook = first_sentence(clip.title, max_words=8).rstrip(" .!?")
@@ -2654,7 +2804,13 @@ def fallback_social_caption(
 
     ordered: list[str] = []
     seen: set[str] = set()
-    for raw in [*(required_hashtags or []), *clip_topic_hashtags(clip), "#Shorts"]:
+    format_tags = [] if long_form else ["#Shorts"]
+    requested_tags = [
+        raw
+        for raw in (required_hashtags or [])
+        if not long_form or str(raw).strip().lstrip("#").casefold() != "shorts"
+    ]
+    for raw in [*requested_tags, *clip_topic_hashtags(clip), *format_tags]:
         tag = _normalize_hashtag(str(raw))
         if tag and tag.casefold() not in seen:
             ordered.append(tag)
@@ -2663,13 +2819,29 @@ def fallback_social_caption(
 
 
 def generate_social_caption(
-    clip: ClipCandidate, config: AIConfig, required_hashtags: list[str] | None = None
+    clip: ClipCandidate,
+    config: AIConfig,
+    required_hashtags: list[str] | None = None,
+    *,
+    long_form: bool = False,
 ) -> str:
     if not config.enabled or not config.base_url or not config.model:
-        return fallback_social_caption(clip, required_hashtags)
+        return fallback_social_caption(clip, required_hashtags, long_form=long_form)
 
+    format_name = "video kompilasi YouTube 16:9" if long_form else "short clip"
+    system_prompt = (
+        SOCIAL_CAPTION_SYSTEM_PROMPT.replace(
+            "TikTok, Instagram Reels, and YouTube Shorts",
+            "YouTube long-form landscape videos",
+        ).replace(
+            "short, scroll-stopping captions",
+            "concise, compelling long-form video descriptions",
+        )
+        if long_form
+        else SOCIAL_CAPTION_SYSTEM_PROMPT
+    )
     user_prompt = (
-        "Write a social media post caption (Bahasa Indonesia) for this short clip. "
+        f"Write a social media post caption (Bahasa Indonesia) for this {format_name}. "
         "Make the first line a hook that stops the scroll and makes people curious to read more.\n"
         "Return JSON exactly like:\n"
         '{"caption": "<hook line\\n\\nbody 1-2 sentences with emojis\\n\\nsoft CTA>", '
@@ -2681,7 +2853,7 @@ def generate_social_caption(
         content = chat_completion(
             config,
             [
-                {"role": "system", "content": SOCIAL_CAPTION_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
         )
@@ -2689,13 +2861,13 @@ def generate_social_caption(
     except Exception as exc:
         if not disable_unavailable_ai(config, exc):
             console.print(f"[yellow]Social caption failed for clip {clip.index}:[/yellow] {exc}")
-        return fallback_social_caption(clip, required_hashtags)
+        return fallback_social_caption(clip, required_hashtags, long_form=long_form)
 
     if not isinstance(parsed, dict):
-        return fallback_social_caption(clip, required_hashtags)
+        return fallback_social_caption(clip, required_hashtags, long_form=long_form)
     caption = parsed.get("caption")
     if not isinstance(caption, str) or not caption.strip():
-        return fallback_social_caption(clip, required_hashtags)
+        return fallback_social_caption(clip, required_hashtags, long_form=long_form)
     text = caption.strip()
     clean_lines = [
         line
@@ -2704,7 +2876,7 @@ def generate_social_caption(
     ]
     text = "\n".join(clean_lines).strip()
     if not text:
-        return fallback_social_caption(clip, required_hashtags)
+        return fallback_social_caption(clip, required_hashtags, long_form=long_form)
 
     # Required hashtags always come first, then the AI-generated ones (deduped,
     # case-insensitive). Required tags are guaranteed to be present.
@@ -2718,6 +2890,8 @@ def generate_social_caption(
             seen.add(tag.lower())
             ordered.append(tag)
     if ordered:
+        if long_form:
+            ordered = [tag for tag in ordered if tag.casefold() != "#shorts"]
         text = f"{text}\n\n{' '.join(ordered)}"
     return text[:2000]
 
@@ -2739,6 +2913,9 @@ def export_clip(
     base_name_override: str = "",
     enhanced_edit: bool = True,
     remove_running_text: bool = True,
+    output_format: OutputFormat = "vertical_short",
+    compilation_part_number: int = 1,
+    compilation_part_count: int = 1,
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     base_name = base_name_override or f"clip_{clip.index:02}_{slugify(clip.title)[:72] or 'auto'}"
@@ -2755,14 +2932,20 @@ def export_clip(
     theme_profile = visual_theme_profile(clip)
     emphasis_times = emphasis_timestamps(clip, clip_segments)
     reaction_cues = detect_reaction_cues(clip, clip_segments)
-    sound_effect_cues = contextual_sound_effect_cues(
-        duration,
-        reaction_cues,
-        emphasis_times,
-    ) if enhanced_edit else []
+    sound_effect_cues = (
+        contextual_sound_effect_cues(
+            duration,
+            reaction_cues,
+            emphasis_times,
+            limit=3 if output_format == "landscape_compilation" else 5,
+            min_gap=7.0 if output_format == "landscape_compilation" else 3.0,
+        )
+        if enhanced_edit
+        else []
+    )
     drawtext_supported = ffmpeg_has_filter("drawtext")
     subtitles_supported = ffmpeg_has_filter("subtitles")
-    reaction_overlays_supported = (
+    reaction_overlays_supported = output_format == "vertical_short" and (
         ffmpeg_has_filter("movie")
         and ffmpeg_has_filter("overlay")
         and all((REACTION_ASSET_DIR / f"{cue.kind}.svg").is_file() for cue in reaction_cues)
@@ -2780,13 +2963,21 @@ def export_clip(
         "subtitles_supported": subtitles_supported,
         "reaction_overlays_supported": reaction_overlays_supported,
         "video_quality": video_quality,
+        "output_format": output_format,
+        "aspect_ratio": "16:9" if output_format == "landscape_compilation" else "9:16",
     }
 
-    if crop_mode == "streamer":
+    if output_format == "landscape_compilation":
+        vf = landscape_compilation_frame_filter(
+            theme_profile["accent"],
+            theme_profile.get("accent_secondary", "#22D3EE"),
+            remove_running_text=remove_running_text,
+        )
+    elif crop_mode == "streamer":
         vf = streamer_crop_filter(video_path, clip, cam_corner)
     else:
         vf = vertical_crop_filter(video_path, clip, crop_mode)
-    if remove_running_text:
+    if remove_running_text and output_format == "vertical_short":
         vf = f"{vf},{remove_running_text_filter()}"
     vf = add_quality_sharpen(vf, video_quality)
     if enhanced_edit:
@@ -2798,34 +2989,60 @@ def export_clip(
                 "[yellow]FFmpeg tidak memiliki drawtext; hook teks dilewati, "
                 "motion/color/pulse tetap diterapkan.[/yellow]"
             )
-        if reaction_cues and not reaction_overlays_supported:
+        if (
+            reaction_cues
+            and output_format == "vertical_short"
+            and not reaction_overlays_supported
+        ):
             console.print(
                 "[yellow]FFmpeg tidak mendukung movie/overlay SVG; reaction sticker dilewati "
                 "agar export tetap berjalan.[/yellow]"
             )
-        vf = (
-            f"{vf},"
-            f"{enhanced_edit_filter(
-                duration,
-                hook_text_path.name,
-                pov_text_filename=pov_text_path.name if drawtext_supported else "",
-                show_progress=generate_assets,
-                theme_profile=theme_profile,
-                emphasis_times=emphasis_times,
-                variation=max(0, clip.index - 1),
-                show_text_overlays=drawtext_supported,
-                reaction_cues=reaction_cues,
-                show_reactions=reaction_overlays_supported,
-            )}"
-        )
+        if output_format == "landscape_compilation":
+            vf = (
+                f"{vf},"
+                f"{landscape_compilation_edit_filter(
+                    duration,
+                    hook_text_path.name,
+                    section_number=compilation_part_number,
+                    section_count=compilation_part_count,
+                    theme_profile=theme_profile,
+                    emphasis_times=emphasis_times,
+                    show_text_overlays=drawtext_supported,
+                )}"
+            )
+        else:
+            vf = (
+                f"{vf},"
+                f"{enhanced_edit_filter(
+                    duration,
+                    hook_text_path.name,
+                    pov_text_filename=pov_text_path.name if drawtext_supported else "",
+                    show_progress=generate_assets,
+                    theme_profile=theme_profile,
+                    emphasis_times=emphasis_times,
+                    variation=max(0, clip.index - 1),
+                    show_text_overlays=drawtext_supported,
+                    reaction_cues=reaction_cues,
+                    show_reactions=reaction_overlays_supported,
+                )}"
+            )
     if burn_subtitles and clip_segments and subtitles_supported:
         style = build_subtitle_style(caption or CaptionStyle())
-        vf = (
-            f"{vf},{caption_gradient_blur_filter((caption or CaptionStyle()).position)},"
-            f"subtitles='{srt_path.name}'"
-            ":original_size=1080x1920"
-            f":force_style='{style}'"
-        )
+        if output_format == "landscape_compilation":
+            vf = (
+                f"{vf},{landscape_caption_gradient_blur_filter((caption or CaptionStyle()).position)},"
+                f"subtitles='{srt_path.name}'"
+                ":original_size=1920x1080"
+                f":force_style='{style}'"
+            )
+        else:
+            vf = (
+                f"{vf},{caption_gradient_blur_filter((caption or CaptionStyle()).position)},"
+                f"subtitles='{srt_path.name}'"
+                ":original_size=1080x1920"
+                f":force_style='{style}'"
+            )
     elif burn_subtitles and clip_segments:
         console.print(
             "[yellow]FFmpeg tidak memiliki filter subtitles; file SRT tetap dibuat "
@@ -3073,6 +3290,9 @@ def export_compilation(
                     base_name_override=f"part_{idx:02}",
                     enhanced_edit=enhanced_edit,
                     remove_running_text=remove_running_text,
+                    output_format="landscape_compilation",
+                    compilation_part_number=idx,
+                    compilation_part_count=len(candidates),
                 )
             )
 
@@ -3138,6 +3358,9 @@ def export_compilation(
         {
             **asdict(compilation),
             "mode": "highlight_5m",
+            "output_format": "landscape_compilation",
+            "aspect_ratio": "16:9",
+            "layout": "cinematic_blurred_frame_with_chapter_cards",
             "enhanced_edit": enhanced_edit,
             "remove_running_text": remove_running_text,
             "parts": [asdict(item) for item in candidates],
@@ -3148,14 +3371,29 @@ def export_compilation(
         },
     )
 
-    if grab_best_frame(video_path, strongest, thumb_path) is not None:
-        thumb_prompt = generate_thumbnail_prompt(compilation, ai_config)
+    strongest_offset = sum(
+        item.end - item.start
+        for item in candidates[: candidates.index(strongest)]
+    )
+    strongest_timestamp = strongest_offset + (strongest.end - strongest.start) * 0.5
+    if grab_frame_at(
+        out_path,
+        strongest_timestamp,
+        thumb_path,
+        label="kompilasi landscape",
+    ) is not None:
+        thumb_prompt = generate_thumbnail_prompt(compilation, ai_config, long_form=True)
         if thumb_prompt:
             prompt_path.write_text(
                 f"HOOK: {thumb_prompt['hook_text']}\n\n{thumb_prompt['prompt']}\n",
                 encoding="utf-8",
             )
-    social_caption = generate_social_caption(compilation, ai_config, required_hashtags)
+    social_caption = generate_social_caption(
+        compilation,
+        ai_config,
+        required_hashtags,
+        long_form=True,
+    )
     if social_caption:
         (clips_dir / f"{base_name}_caption.txt").write_text(social_caption + "\n", encoding="utf-8")
     return out_path
@@ -3222,7 +3460,9 @@ def cleanup_intermediate(work_dir: Path, source_video: Path) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Local YouTube auto clipper for vertical videos.")
+    parser = argparse.ArgumentParser(
+        description="Local YouTube auto clipper for vertical Shorts and 16:9 landscape compilations."
+    )
     parser.add_argument("url", nargs="?", default="", help="YouTube URL")
     parser.add_argument("--source-file", default="", help="Use a local video file instead of downloading from a URL")
     parser.add_argument("--top", type=int, default=5, help="Number of clips to export")
@@ -3232,7 +3472,7 @@ def parse_args() -> argparse.Namespace:
         "--clip-mode",
         choices=["short", "highlight_5m"],
         default="short",
-        help="Export short clips plus one compilation, or only one five-minute compilation",
+        help="Export vertical short clips plus one 16:9 compilation, or only one five-minute landscape compilation",
     )
     parser.add_argument(
         "--compilation-target",
@@ -3434,7 +3674,7 @@ def main() -> int:
     if not args.no_enhanced_edit:
         console.print("[bold]Applying enhanced motion graphics...[/bold]")
     if args.clip_mode == "highlight_5m":
-        console.print("[bold]Exporting vertical highlight compilation...[/bold]")
+        console.print("[bold]Exporting 16:9 landscape cinematic highlight compilation...[/bold]")
         exported = [
             export_compilation(
                 final_video_path,
@@ -3475,7 +3715,7 @@ def main() -> int:
                 )
             )
         if compilation_candidates:
-            console.print("[bold]Exporting vertical highlight compilation...[/bold]")
+            console.print("[bold]Exporting 16:9 landscape cinematic highlight compilation...[/bold]")
             exported.append(
                 export_compilation(
                     final_video_path,

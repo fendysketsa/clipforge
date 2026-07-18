@@ -1407,6 +1407,19 @@ def youtube_max_upload_bytes() -> int:
     return max(1, int(mb * 1024 * 1024))
 
 
+def youtube_upload_staging_filter(source_path: Path) -> str:
+    """Keep long-form compilations landscape when upload-size compression is needed."""
+    if source_path.name.lower().startswith("highlight_5menit_"):
+        return (
+            "scale=1280:720:force_original_aspect_ratio=decrease,"
+            "pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1"
+        )
+    return (
+        "scale=720:1280:force_original_aspect_ratio=decrease,"
+        "pad=720:1280:(ow-iw)/2:(oh-ih)/2,setsar=1"
+    )
+
+
 def prepare_limited_upload_file(source_path: Path, max_bytes: int) -> Path:
     if source_path.stat().st_size <= max_bytes:
         return source_path
@@ -1432,10 +1445,7 @@ def prepare_limited_upload_file(source_path: Path, max_bytes: int) -> Path:
     target_total_bps = max(450_000, int((max_bytes * 0.88 * 8) / duration))
     audio_bps = 96_000
     base_video_bps = max(300_000, target_total_bps - audio_bps)
-    vf = (
-        "scale=720:1280:force_original_aspect_ratio=decrease,"
-        "pad=720:1280:(ow-iw)/2:(oh-ih)/2,setsar=1"
-    )
+    vf = youtube_upload_staging_filter(source_path)
 
     last_error = ""
     for factor in (1.0, 0.82, 0.68, 0.55):
