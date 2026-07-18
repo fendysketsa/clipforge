@@ -1,3 +1,5 @@
+import pytest
+
 from api import (
     ClipCandidate,
     ClipFile,
@@ -10,12 +12,21 @@ from api import (
     default_youtube_title,
     generate_youtube_description,
     generate_youtube_metadata,
+    normalized_generated_metadata,
+    youtube_metadata_provider_configs,
     delete_all_job_clips,
     start_youtube_cdp_refresh_process,
     sync_youtube_cdp,
     youtube_video_url_from_logs,
 )
 from youtube_uploader import normalized_upload_metadata, studio_start_url
+
+
+@pytest.fixture(autouse=True)
+def isolate_openrouter_env(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
 
 
 def make_clip(index: int) -> ClipFile:
@@ -323,19 +334,19 @@ def test_generate_youtube_description_uses_llm(monkeypatch):
     def fake_chat_completion(config, messages):
         assert config.base_url == "http://127.0.0.1:11434/v1"
         assert config.model == "deepseek-v4-flash:cloud"
-        assert "Judul clip: Judul Clip" in messages[-1]["content"]
-        return '{"title": "Nasihat Singkat Tentang Asef", "description": "Ini deskripsi baru dari AI.", "hashtags": ["#islam", "#shorts"]}'
+        assert "Judul kerja klip (hanya petunjuk, wajib ditulis ulang): Judul Clip" in messages[-1]["content"]
+        return '{"title": "Nasihat Singkat Tentang Asef", "description": "Klip ini menjelaskan nasihat penting dengan konteks yang mudah dipahami. Simak poin utamanya agar pesan yang disampaikan dapat diterapkan dengan tepat.", "hashtags": ["#islam", "#nasihat", "#hikmah", "#shorts"]}'
 
     monkeypatch.setattr(api, "chat_completion", fake_chat_completion)
 
     assert generate_youtube_description(job, clip, ["islam", "shorts"]) == (
-        "Ini deskripsi baru dari AI.\n\n#islam #shorts"
+        "Klip ini menjelaskan nasihat penting dengan konteks yang mudah dipahami. Simak poin utamanya agar pesan yang disampaikan dapat diterapkan dengan tepat.\n\n#islam #nasihat #hikmah #shorts"
     )
 
     assert generate_youtube_metadata(job, clip, ["islam", "shorts"]) == {
         "title": "Nasihat Singkat Tentang Asef #Shorts",
-        "description": "Ini deskripsi baru dari AI.\n\n#islam #shorts",
-        "hashtags": ["islam", "shorts"],
+        "description": "Klip ini menjelaskan nasihat penting dengan konteks yang mudah dipahami. Simak poin utamanya agar pesan yang disampaikan dapat diterapkan dengan tepat.\n\n#islam #nasihat #hikmah #shorts",
+        "hashtags": ["islam", "nasihat", "hikmah", "shorts"],
     }
 
 
@@ -362,13 +373,13 @@ def test_generate_youtube_metadata_accepts_indonesian_ollama_keys(monkeypatch):
     monkeypatch.setattr(
         api,
         "chat_completion",
-        lambda config, messages: '{"judul": "Pelajaran Rezeki Hari Ini", "deskripsi": "Renungan singkat tentang rezeki dan rasa syukur.", "tagar": "#rezeki #syukur #islam"}',
+        lambda config, messages: '{"judul": "Pelajaran Rezeki Hari Ini", "deskripsi": "Renungan ini membahas makna rezeki dan pentingnya rasa syukur dalam kehidupan. Pesannya mengajak kita melihat nikmat dengan hati yang lebih jernih.", "tagar": "#rezeki #syukur #islam #shorts"}',
     )
 
     assert generate_youtube_metadata(job, clip, ["islam", "shorts"]) == {
         "title": "Pelajaran Rezeki Hari Ini #Shorts",
-        "description": "Renungan singkat tentang rezeki dan rasa syukur.\n\n#rezeki #syukur #islam",
-        "hashtags": ["rezeki", "syukur", "islam"],
+        "description": "Renungan ini membahas makna rezeki dan pentingnya rasa syukur dalam kehidupan. Pesannya mengajak kita melihat nikmat dengan hati yang lebih jernih.\n\n#rezeki #syukur #islam #shorts",
+        "hashtags": ["rezeki", "syukur", "islam", "shorts"],
     }
 
 
@@ -392,12 +403,115 @@ def test_generate_youtube_metadata_falls_back_when_primary_model_fails(monkeypat
         if config.model == "deepseek-v4-flash:cloud":
             raise ValueError("this model requires a subscription")
         assert config.model == "llama3:latest"
-        return '{"title": "Nasihat Baru", "description": "Deskripsi baru dari fallback.", "hashtags": ["#nasihat", "#islam"]}'
+        return '{"title": "Nasihat Baru yang Layak Diperhatikan", "description": "Model fallback menjelaskan inti nasihat secara segar berdasarkan konteks klip. Deskripsi ini tetap ringkas, informatif, dan tidak mengambil metadata lama.", "hashtags": ["#nasihat", "#islam", "#hikmah", "#shorts"]}'
 
     monkeypatch.setattr(api, "chat_completion", fake_chat_completion)
 
     assert generate_youtube_metadata(job, clip, ["islam"]) == {
-        "title": "Nasihat Baru #Shorts",
-        "description": "Deskripsi baru dari fallback.\n\n#nasihat #islam",
-        "hashtags": ["nasihat", "islam"],
+        "title": "Nasihat Baru yang Layak Diperhatikan #Shorts",
+        "description": "Model fallback menjelaskan inti nasihat secara segar berdasarkan konteks klip. Deskripsi ini tetap ringkas, informatif, dan tidak mengambil metadata lama.\n\n#nasihat #islam #hikmah #shorts",
+        "hashtags": ["nasihat", "islam", "hikmah", "shorts"],
+    }
+
+
+def test_generate_youtube_metadata_retries_incomplete_output_then_uses_fallback(monkeypatch):
+    import api
+
+    clip = ClipFile(name="clip_01.mp4", url="/outputs/demo/clips/clip_01.mp4", size_bytes=1, title="Judul Kerja")
+    monkeypatch.setenv("TELEGRAM_AI_BASE_URL", "http://127.0.0.1:11434/v1")
+    monkeypatch.setenv("TELEGRAM_AI_MODEL", "primary-model")
+    monkeypatch.setenv("TELEGRAM_AI_FALLBACK_MODELS", "indonesian-local")
+    job = ClipJob(
+        id="job-1",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/demo", ai_enabled=True),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    calls: list[str] = []
+
+    def fake_chat_completion(config, messages):
+        calls.append(config.model)
+        if config.model == "primary-model":
+            return '{"title": "Terlalu Pendek", "description": "Pendek.", "hashtags": []}'
+        return (
+            '{"title": "Hikmah Kesabaran Saat Ujian Terasa Berat", '
+            '"description": "Klip ini mengajak kita memahami kesabaran ketika ujian terasa berat. '
+            'Pesannya menunjukkan bahwa proses sulit tetap dapat menyimpan hikmah yang bermakna.", '
+            '"hashtags": ["#Sabar", "#UjianHidup", "#Hikmah", "#Shorts"]}'
+        )
+
+    monkeypatch.setattr(api, "chat_completion", fake_chat_completion)
+
+    result = generate_youtube_metadata(job, clip, [])
+
+    assert calls[:2] == ["primary-model", "primary-model"]
+    assert "indonesian-local" in calls
+    assert result is not None
+    assert result["hashtags"] == ["Sabar", "UjianHidup", "Hikmah", "Shorts"]
+
+
+def test_openrouter_is_first_and_ollama_is_metadata_fallback(monkeypatch):
+    import api
+
+    clip = ClipFile(name="clip_01.mp4", url="/outputs/demo/clips/clip_01.mp4", size_bytes=1, title="Judul Kerja")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+    monkeypatch.setenv("OPENROUTER_MODEL", "google/gemini-test")
+    monkeypatch.setenv("TELEGRAM_AI_BASE_URL", "http://127.0.0.1:11434/v1")
+    monkeypatch.setenv("TELEGRAM_AI_MODEL", "llama-local")
+    monkeypatch.setenv("TELEGRAM_AI_FALLBACK_MODELS", "llama-local")
+    job = ClipJob(
+        id="job-1",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/demo", ai_enabled=True),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    calls: list[tuple[str, str]] = []
+
+    def fake_chat_completion(config, messages):
+        calls.append((config.base_url, config.model))
+        if "openrouter.ai" in config.base_url:
+            raise ValueError("OpenRouter temporary failure")
+        return (
+            '{"title": "Pelajaran Penting dari Konteks Klip Ini", '
+            '"description": "AI lokal membaca konteks klip dan menuliskan kembali inti pesannya secara akurat. '
+            'Hasil ini dipakai hanya setelah OpenRouter tidak dapat menyelesaikan permintaan.", '
+            '"hashtags": ["#Pelajaran", "#KonteksVideo", "#Hikmah", "#Shorts"]}'
+        )
+
+    monkeypatch.setattr(api, "chat_completion", fake_chat_completion)
+
+    providers = youtube_metadata_provider_configs(job)
+    result = generate_youtube_metadata(job, clip, [])
+
+    assert [name for name, _config, _models in providers] == ["OpenRouter", "Ollama"]
+    assert calls[0] == ("https://openrouter.ai/api/v1", "google/gemini-test")
+    assert calls[1] == ("http://127.0.0.1:11434/v1", "llama-local")
+    assert result is not None
+    assert result["hashtags"] == ["Pelajaran", "KonteksVideo", "Hikmah", "Shorts"]
+
+
+def test_normalized_generated_metadata_accepts_nested_ollama_payload():
+    payload = {
+        "metadata": {
+            "judul_video": "Sabar Saat Ujian Mengubah Cara Kita Melihat Hidup",
+            "deskripsi_video": (
+                "Klip ini membahas bagaimana kesabaran menjaga hati ketika ujian datang. "
+                "Pesannya mengajak penonton memahami hikmah tanpa mengabaikan proses yang berat."
+            ),
+            "tags": ["#Sabar", "#UjianHidup", "#HikmahIslam", "#Shorts"],
+        }
+    }
+
+    assert normalized_generated_metadata(payload, is_compilation=False) == {
+        "title": "Sabar Saat Ujian Mengubah Cara Kita Melihat Hidup #Shorts",
+        "description": (
+            "Klip ini membahas bagaimana kesabaran menjaga hati ketika ujian datang. "
+            "Pesannya mengajak penonton memahami hikmah tanpa mengabaikan proses yang berat."
+            "\n\n#Sabar #UjianHidup #HikmahIslam #Shorts"
+        ),
+        "hashtags": ["Sabar", "UjianHidup", "HikmahIslam", "Shorts"],
     }

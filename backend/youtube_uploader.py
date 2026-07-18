@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -12,7 +13,7 @@ from typing import Iterable
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_STATE_PATH = Path(os.environ.get("YOUTUBE_PLAYWRIGHT_STATE", BASE_DIR / "data" / "youtube_storage_state.json"))
-DEFAULT_TIMEOUT_SECONDS = int(os.environ.get("YOUTUBE_UPLOAD_TIMEOUT_SECONDS", "900"))
+DEFAULT_TIMEOUT_SECONDS = int(os.environ.get("YOUTUBE_UPLOAD_TIMEOUT_SECONDS", "5400"))
 DEFAULT_CHROMIUM_USER_DATA_DIR = os.environ.get("YOUTUBE_CHROMIUM_USER_DATA_DIR", "").strip()
 DEFAULT_CHROMIUM_PROFILE_DIRECTORY = os.environ.get("YOUTUBE_CHROMIUM_PROFILE_DIRECTORY", "").strip()
 DEFAULT_TARGET_EMAIL = os.environ.get("YOUTUBE_TARGET_EMAIL", "fendysketsa@gmail.com").strip()
@@ -3458,6 +3459,16 @@ def add_manual_subtitle(page, subtitle_text: str = "FCN") -> bool:
 def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True) -> None:
     log("Menunggu YouTube Studio Checks sampai semua pemeriksaan aman...")
     deadline = time.monotonic() + timeout_ms / 1000
+    long_running_extension_seconds = max(
+        0,
+        int(os.environ.get("YOUTUBE_CHECKS_LONG_RUNNING_EXTENSION_SECONDS", "1800")),
+    )
+    progress_log_interval_seconds = max(
+        15,
+        int(os.environ.get("YOUTUBE_CHECKS_PROGRESS_LOG_INTERVAL_SECONDS", "60")),
+    )
+    long_running_extended = False
+    next_progress_log_at = 0.0
     issue_patterns = (
         r"copyright claim",
         r"copyright issue",
@@ -3480,6 +3491,18 @@ def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True
         r"(hak cipta|pedoman komunitas).*memeriksa masalah",
         r"pedoman komunitas.*sedang memeriksa",
         r"community guidelines.*checking",
+        r"masih memeriksa",
+        r"still checking",
+        r"perlu waktu lebih lama",
+        r"taking longer",
+        r"takes longer",
+    )
+    long_running_patterns = (
+        r"perlu waktu lebih lama",
+        r"membutuhkan waktu lebih lama",
+        r"taking longer",
+        r"takes longer",
+        r"still processing",
     )
     complete_patterns = (
         r"checks complete",
@@ -3491,7 +3514,10 @@ def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True
     )
 
     last_body = ""
-    while time.monotonic() < deadline:
+    while True:
+        now = time.monotonic()
+        if now >= deadline:
+            break
         dismiss_reload_prompt(page, timeout_ms=300)
         try:
             dialog = page.locator("ytcp-uploads-dialog")
@@ -3502,6 +3528,7 @@ def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True
         lowered = body.lower()
         last_body = re.sub(r"\s+", " ", body).strip()[:500]
         has_checking = any(re.search(pattern, lowered, re.I) for pattern in checking_patterns)
+        has_long_running = any(re.search(pattern, lowered, re.I) for pattern in long_running_patterns)
         has_complete = any(re.search(pattern, lowered, re.I) for pattern in complete_patterns)
         has_all_clear = any(
             all(re.search(pattern, lowered, re.I) for pattern in pattern_group)
@@ -3512,8 +3539,21 @@ def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True
                 "YouTube Studio mendeteksi potensi copyright/restriction pada clip ini. "
                 "Upload dibatalkan sebelum publish agar channel tetap aman."
             )
+        if has_long_running and not long_running_extended and long_running_extension_seconds:
+            deadline += long_running_extension_seconds
+            long_running_extended = True
+            log(
+                "YouTube menyatakan Checks perlu waktu lebih lama; "
+                f"batas tunggu ditambah {long_running_extension_seconds // 60} menit."
+            )
         if has_checking:
-            log("Checks masih berjalan; menunggu sampai semua centang aman.")
+            if now >= next_progress_log_at:
+                remaining_minutes = max(1, math.ceil((deadline - now) / 60))
+                log(
+                    "Checks masih berjalan; menunggu sampai semua centang aman "
+                    f"(maksimal sekitar {remaining_minutes} menit lagi)."
+                )
+                next_progress_log_at = now + progress_log_interval_seconds
             time.sleep(5)
             continue
         if has_all_clear:
@@ -3533,7 +3573,8 @@ def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True
             return
         save_debug_artifacts(page, "checks-not-complete")
         raise UploadError(
-            "Step 3 Checks belum selesai/tercentang sebelum timeout; upload tidak dilanjutkan ke Visibilitas. "
+            "Step 3 Checks belum selesai/tercentang setelah waktu tunggu panjang; "
+            "upload tidak dilanjutkan ke Visibilitas. "
             f"Upload dibatalkan demi keamanan. Cuplikan halaman: {last_body}"
         )
     log("Checks belum terkonfirmasi; melanjutkan karena require checks dinonaktifkan.")
@@ -3934,7 +3975,7 @@ def run_upload(args: argparse.Namespace) -> None:
             log("Masuk ke tab Pemeriksaan awal.")
             wait_for_copyright_checks(
                 page,
-                min(timeout_ms, int(os.environ.get("YOUTUBE_CHECKS_TIMEOUT_SECONDS", "600")) * 1000),
+                min(timeout_ms, int(os.environ.get("YOUTUBE_CHECKS_TIMEOUT_SECONDS", "3600")) * 1000),
                 args.require_copyright_checks,
             )
             log("Step 3 Checks sudah selesai dan aman; lanjut ke Visibilitas.")
@@ -3952,7 +3993,7 @@ def run_upload(args: argparse.Namespace) -> None:
                 )
             log(f"Step 4 Visibilitas terverifikasi: {args.visibility}.")
             if args.visibility == "public":
-                review_timeout_ms = int(os.environ.get("YOUTUBE_PRE_PUBLISH_REVIEW_TIMEOUT_SECONDS", "300")) * 1000
+                review_timeout_ms = int(os.environ.get("YOUTUBE_PRE_PUBLISH_REVIEW_TIMEOUT_SECONDS", "900")) * 1000
                 wait_for_review_checks_safe_before_publish(page, timeout_ms=review_timeout_ms)
 
             if args.dry_run:

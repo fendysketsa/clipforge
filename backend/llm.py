@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import urllib.request
 from dataclasses import dataclass
+from urllib.error import HTTPError
 from urllib.parse import urlparse
 
 
@@ -86,6 +87,7 @@ def chat_completion(config: AIConfig, messages: list[dict]) -> str:
     ).encode("utf-8")
 
     last_error: Exception | None = None
+    last_response_error: HTTPError | None = None
     for base_url in candidate_base_urls(config.base_url):
         url = base_url + "/chat/completions"
         request = urllib.request.Request(url, data=body, method="POST")
@@ -93,6 +95,14 @@ def chat_completion(config: AIConfig, messages: list[dict]) -> str:
         request.add_header("Accept", "application/json")
         if config.api_key:
             request.add_header("Authorization", f"Bearer {config.api_key}")
+        if "openrouter.ai" in base_url:
+            request.add_header(
+                "X-OpenRouter-Title",
+                os.environ.get("OPENROUTER_APP_TITLE", "ClipForge").strip() or "ClipForge",
+            )
+            referer = os.environ.get("OPENROUTER_HTTP_REFERER", "").strip()
+            if referer:
+                request.add_header("HTTP-Referer", referer)
 
         try:
             with urllib.request.urlopen(request, timeout=config.timeout) as response:
@@ -100,8 +110,15 @@ def chat_completion(config: AIConfig, messages: list[dict]) -> str:
             return _content_from_response(raw)
         except Exception as exc:
             last_error = exc
+            if isinstance(exc, HTTPError):
+                # The server is reachable but rejected this model/request. Keep
+                # that distinction so callers can try a different model instead
+                # of incorrectly treating Ollama as offline.
+                last_response_error = exc
             continue
     if _is_ollama_base_url(config.base_url):
+        if last_response_error is not None:
+            raise last_response_error
         if shutil.which("ollama"):
             return _ollama_cli_chat_completion(config, messages)
         detail = f" ({last_error})" if last_error is not None else ""

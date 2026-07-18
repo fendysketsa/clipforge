@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from yt_dlp import YoutubeDL
 
-from llm import AIConfig, chat_completion, extract_json, is_llm_unavailable_error
+from llm import AIConfig, chat_completion, extract_json
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -112,7 +112,7 @@ DEFAULT_YOUTUBE_TARGET_CHANNEL = "ryuundyofficial"
 DEFAULT_YOUTUBE_TARGET_EMAIL = "fendysketsa@gmail.com"
 DEFAULT_YOUTUBE_TARGET_CHANNEL_ID = "UCAOZF9Qzj6DYoXKtLnP4UUQ"
 DEFAULT_YOUTUBE_AUTO_UPLOAD_COUNT = 3
-DEFAULT_YOUTUBE_AI_FALLBACK_MODELS = ["llama3:latest"]
+DEFAULT_YOUTUBE_AI_FALLBACK_MODELS = ["llama3.2-id:latest", "llama3:latest"]
 ROOT_DIR = BASE_DIR.parent
 YOUTUBE_CDP_REFRESH_LOG = Path(
     os.environ.get("YOUTUBE_CDP_REFRESH_LOG", "/tmp/clipforge-youtube-chrome-launcher.log")
@@ -1547,11 +1547,12 @@ def default_youtube_tags(job: ClipJob, clip: ClipFile) -> list[str]:
 
 
 YOUTUBE_METADATA_SYSTEM_PROMPT = (
-    "You are an Indonesian YouTube Shorts metadata writer. Write concise, natural titles, descriptions, "
-    "and hashtags for Islamic, motivational, mystery, myth-versus-fact, history, and relevant horror clips. "
-    "Use Bahasa Indonesia, make it engaging but not deceptive clickbait, and never state folklore, personal "
-    "experiences, myths, or supernatural claims as verified religious facts. Do not mention source URLs or "
-    "source channels, use only 2-3 hashtags, and return strict JSON only."
+    "You are a creative Indonesian YouTube metadata editor. For EACH clip, infer its specific central idea "
+    "from that clip's transcript and write fresh metadata—not a generic template and not copied old metadata. "
+    "Make the title modern, emotionally engaging, natural, and honest. Write an informative description that "
+    "is concise but substantial. Use Bahasa Indonesia and never state folklore, personal experiences, myths, "
+    "or supernatural claims as verified religious facts. Never mention source URLs, source channels, other "
+    "channels, uploaders, TV stations, sponsors, or credits. Return strict JSON only."
 )
 
 
@@ -1602,6 +1603,47 @@ def youtube_description_ai_config(job: ClipJob) -> AIConfig:
     )
 
 
+def openrouter_youtube_metadata_config() -> AIConfig | None:
+    api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if not api_key:
+        return None
+    base_url = os.environ.get(
+        "OPENROUTER_BASE_URL",
+        "https://openrouter.ai/api/v1",
+    ).strip()
+    model = os.environ.get(
+        "OPENROUTER_MODEL",
+        "openrouter/free",
+    ).strip()
+    if not base_url or not model:
+        return None
+    return AIConfig(
+        enabled=True,
+        base_url=base_url,
+        model=model,
+        api_key=api_key,
+        timeout=float(os.environ.get("OPENROUTER_TIMEOUT_SECONDS", "60")),
+    )
+
+
+def youtube_metadata_provider_configs(job: ClipJob) -> list[tuple[str, AIConfig, list[str]]]:
+    providers: list[tuple[str, AIConfig, list[str]]] = []
+    openrouter = openrouter_youtube_metadata_config()
+    if openrouter is not None:
+        providers.append(("OpenRouter", openrouter, [openrouter.model]))
+
+    ollama = youtube_description_ai_config(job)
+    if ollama.enabled and ollama.base_url and ollama.model:
+        providers.append(
+            (
+                "Ollama",
+                ollama,
+                youtube_metadata_model_candidates(ollama.model),
+            )
+        )
+    return providers
+
+
 def youtube_metadata_model_candidates(primary_model: str) -> list[str]:
     configured = [
         *env_csv("YOUTUBE_DESCRIPTION_AI_FALLBACK_MODELS"),
@@ -1648,15 +1690,65 @@ def metadata_hashtag_values(payload: dict) -> list[str]:
     return []
 
 
+def unwrap_metadata_payload(payload: dict) -> dict:
+    for key in ("metadata", "youtube_metadata", "hasil", "result", "data"):
+        nested = payload.get(key)
+        if isinstance(nested, dict):
+            return nested
+    return payload
+
+
+def normalized_generated_metadata(payload: dict, *, is_compilation: bool) -> dict[str, str | list[str]] | None:
+    payload = unwrap_metadata_payload(payload)
+    clean_title = first_metadata_string(
+        payload,
+        ["title", "judul", "headline", "judul_video", "video_title"],
+    )
+    description = first_metadata_string(
+        payload,
+        ["description", "deskripsi", "caption", "keterangan", "deskripsi_video", "video_description"],
+    )
+    clean_title = re.sub(r"https?://\S+", "", clean_title).strip(" -|")
+    description_lines = [
+        line.strip()
+        for line in description.splitlines()
+        if line.strip()
+        and not re.search(r"https?://|^\s*(?:sumber|source|channel\s+sumber)\s*:", line, flags=re.I)
+    ]
+    description = strip_hashtag_lines("\n".join(description_lines))
+    if not clean_title or len(description) < 70:
+        return None
+
+    ai_hashtags = clean_ai_hashtags(metadata_hashtag_values(payload))
+    if not ai_hashtags:
+        ai_hashtags = clean_ai_hashtags(hashtags_from_text(f"{clean_title}\n{description}"))
+    if is_compilation:
+        ai_hashtags = [tag for tag in ai_hashtags if tag.lower() != "shorts"]
+    if len(ai_hashtags) < 3:
+        return None
+    ai_hashtags = ai_hashtags[:6]
+
+    # Keep the description readable: enough context to be useful, but still
+    # compact for Shorts and a five-minute highlight.
+    if len(description) > 650:
+        description = description[:650].rsplit(" ", 1)[0].rstrip(" ,;:-") + "…"
+    text = f"{description}\n\n{' '.join(f'#{tag}' for tag in ai_hashtags)}"
+    return {
+        "title": youtube_long_form_title(clean_title) if is_compilation else youtube_shorts_title(clean_title),
+        "description": text[:5000],
+        "hashtags": ai_hashtags,
+    }
+
+
 def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> dict[str, str | list[str]] | None:
-    config = youtube_description_ai_config(job)
-    if not config.enabled or not config.base_url or not config.model:
+    providers = youtube_metadata_provider_configs(job)
+    if not providers:
         return None
 
     title = clip_sidecar_title(clip) or clip.title or job.source_title or "Cuplikan pilihan"
-    caption = sidecar_social_caption(clip)
+    caption = strip_hashtag_lines(sidecar_social_caption(clip))
     transcript = clip_candidate_text(job, clip)
-    tag_values = [f"#{tag.strip().lstrip('#').replace(' ', '')}" for tag in tags if tag.strip()]
+    clip_context = transcript or caption or title
     is_compilation = is_compilation_clip(job, clip)
     format_name = "video kompilasi highlight sekitar lima menit" if is_compilation else "YouTube Shorts"
     system_prompt = (
@@ -1670,88 +1762,87 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
         if is_compilation
         else YOUTUBE_METADATA_SYSTEM_PROMPT
     )
+    format_hashtag_rule = (
+        "- Jangan gunakan hashtag #Shorts untuk video kompilasi.\n"
+        if is_compilation
+        else "- Sertakan #Shorts sebagai salah satu hashtag.\n"
+    )
     user_prompt = (
         f"Buat metadata {format_name} untuk video ini.\n"
         "Aturan:\n"
-        "- Title singkat, natural, maksimal 85 karakter, tanpa hashtag.\n"
-        "- Description 1 sampai 2 kalimat pendek.\n"
+        "- Pahami konteks transkrip klip ini saja; jangan memakai metadata video sumber.\n"
+        "- Title baru harus kuat, modern, natural, 35-75 karakter, maksimal 85 karakter, tanpa hashtag.\n"
+        "- Perbaiki salah dengar transkrip yang jelas; jangan menyalin kata acak atau kalimat pembuka yang rusak.\n"
+        "- Hindari ALL CAPS dan clickbait generik; tonjolkan manfaat, konflik, kejutan, atau hikmah yang benar-benar ada.\n"
+        "- Description baru 2-3 kalimat informatif, sekitar 180-450 karakter; bangun rasa penasaran tanpa menyesatkan.\n"
+        "- Description boleh memakai maksimal 2 emoji yang benar-benar relevan.\n"
         "- Bahasa Indonesia.\n"
-        "- Jangan tulis URL sumber, nama channel sumber, atau label 'Sumber'.\n"
-        "- Buat hanya 2 sampai 3 hashtag baru yang relevan dari isi clip.\n"
-        "- Hashtag referensi boleh dipakai kalau cocok, tapi jangan sekadar menyalin semua hashtag lama.\n"
+        "- Jangan tulis URL, nama channel, uploader, TV, sponsor, kredit, atau label 'Sumber'.\n"
+        "- Buat 4-6 hashtag baru yang spesifik dan relevan dengan isi klip, bukan hashtag generik berulang.\n"
+        f"{format_hashtag_rule}"
         "- Wajib isi semua field JSON: title, description, hashtags.\n"
         'Return JSON exactly like {"title": "...", "description": "...", "hashtags": ["#tag1", "#tag2"]}.\n\n'
-        f"Judul clip: {title}\n"
-        f"Caption lama bila ada: {caption[:900]}\n"
-        f"Transkrip clip: {transcript[:1400]}\n"
-        f"Hashtag referensi: {' '.join(tag_values)}"
+        f"Judul kerja klip (hanya petunjuk, wajib ditulis ulang): {title}\n"
+        f"Konteks/transkrip klip:\n{clip_context[:2400]}"
     )
-    parsed = None
     last_error = ""
-    for model in youtube_metadata_model_candidates(config.model):
-        active_config = AIConfig(
-            enabled=config.enabled,
-            base_url=config.base_url,
-            model=model,
-            api_key=config.api_key,
-            timeout=config.timeout,
-        )
-        try:
-            content = chat_completion(
-                active_config,
-                [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
+    for provider_index, (provider_name, config, models) in enumerate(providers):
+        for model in models:
+            active_config = AIConfig(
+                enabled=config.enabled,
+                base_url=config.base_url,
+                model=model,
+                api_key=config.api_key,
+                timeout=config.timeout,
             )
-            parsed = extract_json(content)
-            if model != config.model:
-                print(f"YouTube metadata AI memakai fallback model Ollama: {model}", flush=True)
-            break
-        except Exception as exc:
-            last_error = f"{model}: {exc}"
-            if is_llm_unavailable_error(exc):
+            previous_content = ""
+            for attempt in range(2):
+                repair_note = (
+                    "\n\nRespons sebelumnya belum memenuhi format/panjang/konteks. "
+                    "Perbaiki dan kembalikan satu objek JSON lengkap saja:\n"
+                    + previous_content[:1200]
+                    if attempt and previous_content
+                    else ""
+                )
+                try:
+                    content = chat_completion(
+                        active_config,
+                        [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt + repair_note},
+                        ],
+                    )
+                    previous_content = content
+                    parsed = extract_json(content)
+                except Exception as exc:
+                    last_error = f"{provider_name}/{model}: {exc}"
+                    print(
+                        f"YouTube metadata AI {provider_name} gagal dengan model {model}: {exc}",
+                        flush=True,
+                    )
+                    break
+
+                metadata = (
+                    normalized_generated_metadata(parsed, is_compilation=is_compilation)
+                    if isinstance(parsed, dict)
+                    else None
+                )
+                if metadata is not None:
+                    if provider_name == "OpenRouter":
+                        print(f"YouTube metadata AI dibuat oleh OpenRouter: {model}", flush=True)
+                    elif provider_index > 0 or model != config.model:
+                        print(f"YouTube metadata AI memakai fallback Ollama: {model}", flush=True)
+                    return metadata
+                keys = ", ".join(str(key) for key in parsed.keys()) if isinstance(parsed, dict) else "-"
                 print(
-                    "YouTube metadata AI offline; metadata fallback lokal digunakan.",
+                    f"YouTube metadata AI format belum lengkap "
+                    f"({provider_name}/{model}, percobaan {attempt + 1}); keys: {keys}",
                     flush=True,
                 )
-                break
-            print(f"YouTube metadata AI gagal dengan model {model}: {exc}", flush=True)
-            continue
-    if parsed is None:
-        if last_error and "fallback lokal digunakan" not in last_error.lower():
-            print(f"YouTube metadata AI gagal semua model. Terakhir: {last_error}", flush=True)
-        return None
 
-    if not isinstance(parsed, dict):
-        return None
-    clean_title = first_metadata_string(parsed, ["title", "judul", "headline"])
-    description = first_metadata_string(parsed, ["description", "deskripsi", "caption", "keterangan"])
-    if not clean_title or not description:
-        print(
-            "YouTube metadata AI format tidak lengkap. "
-            f"Keys: {', '.join(str(key) for key in parsed.keys())}",
-            flush=True,
-        )
-        return None
-    text = description
-    ai_hashtags = clean_ai_hashtags(metadata_hashtag_values(parsed))
-    if not ai_hashtags:
-        ai_hashtags = clean_ai_hashtags(hashtags_from_text(f"{clean_title}\n{text}"))
-    reference_hashtags = clean_ai_hashtags(tag_values)
-    if is_compilation:
-        ai_hashtags = [tag for tag in ai_hashtags if tag.lower() != "shorts"]
-        reference_hashtags = [tag for tag in reference_hashtags if tag.lower() != "shorts"]
-    hashtags = (ai_hashtags or ([] if env_bool("YOUTUBE_REQUIRE_AI_METADATA", True) else reference_hashtags))[:3]
-    if env_bool("YOUTUBE_REQUIRE_AI_METADATA", True) and not hashtags:
-        return None
-    if hashtags:
-        text = f"{strip_hashtag_lines(text)}\n\n{' '.join(f'#{tag}' for tag in hashtags)}"
-    return {
-        "title": youtube_long_form_title(clean_title) if is_compilation else youtube_shorts_title(clean_title),
-        "description": text[:5000],
-        "hashtags": hashtags,
-    }
+    if last_error:
+        print(f"YouTube metadata AI gagal semua model. Terakhir: {last_error}", flush=True)
+    return None
 
 
 def generate_youtube_description(job: ClipJob, clip: ClipFile, tags: list[str]) -> str | None:
@@ -1827,8 +1918,8 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         raise HTTPException(
             status_code=409,
             detail=(
-                "Ollama belum berhasil membuat judul, deskripsi, dan hashtag baru. "
-                "Upload dibatalkan agar tidak memakai metadata lama."
+                "AI belum berhasil membuat metadata baru setelah mencoba model utama dan model lokal. "
+                "Pastikan Ollama aktif, lalu coba upload lagi; upload belum dimulai dan metadata lama tidak dipakai."
             ),
         )
     ai_title = ai_metadata.get("title") if isinstance(ai_metadata, dict) else None
@@ -1840,7 +1931,10 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
     ):
         raise HTTPException(
             status_code=409,
-            detail="Ollama belum menghasilkan hashtag baru. Upload dibatalkan agar tidak memakai hashtag lama.",
+            detail=(
+                "AI belum menghasilkan minimal 3 hashtag kontekstual. "
+                "Coba upload lagi; metadata lama tidak dipakai."
+            ),
         )
     title = (ai_title if isinstance(ai_title, str) and ai_title.strip() else "") or request.title or default_youtube_title(job, clip, index)
     description = (
@@ -1963,7 +2057,7 @@ def build_youtube_upload_command(
         "--visibility",
         upload.visibility,
         "--timeout",
-        os.environ.get("YOUTUBE_UPLOAD_TIMEOUT_SECONDS", "900"),
+        os.environ.get("YOUTUBE_UPLOAD_TIMEOUT_SECONDS", "5400"),
     ]
     if upload.thumbnail_url:
         thumbnail_path = output_path_from_url(upload.thumbnail_url)

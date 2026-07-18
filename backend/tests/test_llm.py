@@ -106,3 +106,31 @@ def test_offline_ollama_without_cli_uses_unavailable_error(monkeypatch):
             ),
             [{"role": "user", "content": "test"}],
         )
+
+
+def test_reachable_ollama_model_error_is_not_reported_as_offline(monkeypatch):
+    model_error = urllib.error.HTTPError(
+        "http://127.0.0.1:11434/v1/chat/completions",
+        402,
+        "subscription required",
+        {},
+        None,
+    )
+    monkeypatch.setattr(
+        llm.urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(model_error),
+    )
+    monkeypatch.setattr(llm.shutil, "which", lambda name: None)
+
+    with pytest.raises(urllib.error.HTTPError) as raised:
+        chat_completion(
+            AIConfig(
+                enabled=True,
+                base_url="http://127.0.0.1:11434/v1",
+                model="cloud-model",
+            ),
+            [{"role": "user", "content": "test"}],
+        )
+
+    assert raised.value.code == 402

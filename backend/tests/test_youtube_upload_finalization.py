@@ -25,6 +25,17 @@ class TextPage:
         return self.body
 
 
+class SequenceTextPage(TextPage):
+    def __init__(self, bodies):
+        super().__init__(bodies[-1])
+        self.bodies = list(bodies)
+
+    def inner_text(self, **_kwargs):
+        if len(self.bodies) > 1:
+            return self.bodies.pop(0)
+        return self.bodies[0]
+
+
 class PendingPublishPage:
     def locator(self, selector):
         if selector == "body":
@@ -62,6 +73,35 @@ def test_checks_wait_when_one_item_is_safe_but_another_is_checking(monkeypatch):
 
     with pytest.raises(UploadError, match="Step 3 Checks belum selesai"):
         wait_for_copyright_checks(page, timeout_ms=100, require_checks=True)
+
+
+def test_checks_extend_wait_when_youtube_says_it_needs_longer(monkeypatch):
+    clock = iter((0.0, 0.0, 1.0))
+    logs = []
+    monkeypatch.setenv("YOUTUBE_CHECKS_LONG_RUNNING_EXTENSION_SECONDS", "10")
+    monkeypatch.setenv("YOUTUBE_CHECKS_PROGRESS_LOG_INTERVAL_SECONDS", "60")
+    monkeypatch.setattr(youtube_uploader.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "log", logs.append)
+    page = SequenceTextPage(
+        [
+            (
+                "Hak cipta Tidak ditemukan masalah\n"
+                "Pedoman Komunitas Masih memeriksa\n"
+                "Perlu waktu lebih lama untuk menyelesaikan pemeriksaan"
+            ),
+            (
+                "Hak cipta Tidak ditemukan masalah\n"
+                "Pedoman Komunitas Tidak ditemukan masalah"
+            ),
+        ]
+    )
+
+    wait_for_copyright_checks(page, timeout_ms=100, require_checks=True)
+
+    assert any("ditambah" in message for message in logs)
+    assert any("sudah centang" in message for message in logs)
 
 
 def test_review_safe_text_does_not_trigger_false_issue(monkeypatch):

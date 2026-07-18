@@ -27,7 +27,7 @@ DEFAULT_TELEGRAM_AI_BASE_URL = os.environ.get(
     "TELEGRAM_AI_BASE_URL",
     os.environ.get("DEFAULT_AI_BASE_URL", "http://127.0.0.1:11434/v1"),
 ).strip()
-DEFAULT_TELEGRAM_AI_MODEL = os.environ.get("TELEGRAM_AI_MODEL", "deepseek-v4-flash:cloud").strip()
+DEFAULT_TELEGRAM_AI_MODEL = os.environ.get("TELEGRAM_AI_MODEL", "llama3.2-id:latest").strip()
 POLL_TIMEOUT_SECONDS = 3
 YOUTUBE_UPLOAD_DISCOVERY_INTERVAL = 5.0
 YOUTUBE_UPLOAD_RECENT_TERMINAL_SECONDS = 600.0
@@ -45,7 +45,7 @@ ALLOWED_CAPTION_POSITIONS = {"upper", "center", "bottom"}
 ALLOWED_CAPTION_FONT_SIZES = {7, 9, 10, 12, 14, 18, 20, 24}
 ALLOWED_TOP = {None, 3, 5, 8, 10, 12}
 ALLOWED_DURATION_PRESETS = {(15, 60), (30, 75), (35, 180), (60, 180)}
-SETTINGS_SCHEMA_VERSION = 3
+SETTINGS_SCHEMA_VERSION = 4
 
 
 def env_float(name: str, default: float) -> float:
@@ -420,6 +420,11 @@ def normalize_state(value: object) -> dict[str, Any]:
         raw_settings = value.get("settings") if isinstance(value.get("settings"), dict) else {}
         if raw_settings.get("caption_font_size") in {9, 12, 14, 18}:
             state["settings"]["caption_font_size"] = DEFAULT_SETTINGS["caption_font_size"]
+        if raw_settings.get("ai_model") == "deepseek-v4-flash:cloud":
+            # This cloud preset requires a paid Ollama subscription. Existing
+            # installations are migrated to the available Indonesian local
+            # model so clipping and upload metadata keep using AI.
+            state["settings"]["ai_model"] = DEFAULT_TELEGRAM_AI_MODEL
     state["settings_schema_version"] = SETTINGS_SCHEMA_VERSION
     if isinstance(value.get("jobs"), dict):
         state["jobs"] = value["jobs"]

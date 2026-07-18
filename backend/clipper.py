@@ -98,6 +98,19 @@ class ReactionCue:
     trigger: str
 
 
+SoundEffectKind = Literal["laugh", "shock", "think", "pray", "warning", "heart", "emphasis"]
+
+
+@dataclass
+class SoundEffectCue:
+    kind: SoundEffectKind
+    start: float
+    duration: float
+    frequency: int
+    volume: float
+    trigger: str
+
+
 HOOK_WORDS = {
     "intinya",
     "ternyata",
@@ -1714,6 +1727,99 @@ def reaction_overlay_filter(cue: ReactionCue, index: int) -> str:
     )
 
 
+SOUND_EFFECT_PROFILES: dict[SoundEffectKind, tuple[int, float, float]] = {
+    # frequency (Hz), duration (seconds), mix volume
+    "laugh": (920, 0.20, 0.10),
+    "shock": (105, 0.34, 0.18),
+    "think": (620, 0.18, 0.07),
+    "pray": (840, 0.38, 0.065),
+    "warning": (155, 0.28, 0.15),
+    "heart": (740, 0.34, 0.065),
+    "emphasis": (480, 0.13, 0.075),
+}
+
+
+def contextual_sound_effect_cues(
+    duration: float,
+    reaction_cues: list[ReactionCue],
+    emphasis_times: list[float],
+    *,
+    limit: int = 5,
+    min_gap: float = 3.0,
+) -> list[SoundEffectCue]:
+    """Turn transcript-grounded reactions/emphasis into sparse, non-spammy sound cues."""
+    safe_duration = max(0.1, duration)
+    raw: list[tuple[float, SoundEffectKind, str]] = [
+        (cue.start, cue.kind, cue.trigger)
+        for cue in reaction_cues
+        if 0.15 <= cue.start < safe_duration - 0.1
+    ]
+    for timestamp in emphasis_times:
+        if not 0.15 <= timestamp < safe_duration - 0.1:
+            continue
+        if any(abs(timestamp - cue.start) < 1.5 for cue in reaction_cues):
+            continue
+        raw.append((timestamp, "emphasis", "kata penegas"))
+
+    selected: list[SoundEffectCue] = []
+    for start, kind, trigger in sorted(raw, key=lambda item: item[0]):
+        if selected and start - selected[-1].start < min_gap:
+            continue
+        frequency, effect_duration, volume = SOUND_EFFECT_PROFILES[kind]
+        selected.append(
+            SoundEffectCue(
+                kind=kind,
+                start=round(start, 3),
+                duration=effect_duration,
+                frequency=frequency,
+                volume=volume,
+                trigger=trigger[:40],
+            )
+        )
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def contextual_audio_mix_filter(base_filter: str, cues: list[SoundEffectCue]) -> str:
+    """Mix original synthetic micro-SFX under speech and cap peaks safely."""
+    if not cues:
+        return f"[0:a:0]{base_filter},aformat=sample_rates=48000:channel_layouts=stereo[audio_out]"
+
+    chains = [
+        f"[0:a:0]{base_filter},aformat=sample_rates=48000:channel_layouts=stereo[voice]"
+    ]
+    mix_inputs = ["[voice]"]
+    chime_kinds = {"laugh", "think", "pray", "heart", "emphasis"}
+    for index, cue in enumerate(cues, start=1):
+        label = f"sfx_{index}"
+        fade_in = min(0.018, cue.duration * 0.15)
+        fade_out_start = max(fade_in, cue.duration * 0.28)
+        fade_out_duration = max(0.04, cue.duration - fade_out_start)
+        delay_ms = max(0, int(round(cue.start * 1000)))
+        filters = (
+            f"sine=frequency={cue.frequency}:sample_rate=48000:duration={cue.duration:.3f},"
+            f"volume={cue.volume:.3f},"
+            f"afade=t=in:st=0:d={fade_in:.3f},"
+            f"afade=t=out:st={fade_out_start:.3f}:d={fade_out_duration:.3f}"
+        )
+        if cue.kind in chime_kinds:
+            filters += ",aecho=0.8:0.22:35:0.18"
+        filters += (
+            ",aformat=sample_rates=48000:channel_layouts=stereo,"
+            f"adelay=delays={delay_ms}:all=1[{label}]"
+        )
+        chains.append(filters)
+        mix_inputs.append(f"[{label}]")
+
+    chains.append(
+        "".join(mix_inputs)
+        + f"amix=inputs={len(mix_inputs)}:duration=first:dropout_transition=0:normalize=0,"
+        "alimiter=limit=0.95:attack=5:release=50[audio_out]"
+    )
+    return ";".join(chains)
+
+
 def modern_gradient_border_filters(accent: str, secondary: str) -> list[str]:
     """Build a restrained dual-tone inner border with a soft depth gradient."""
     return [
@@ -2214,6 +2320,11 @@ def export_clip(
     theme_profile = visual_theme_profile(clip)
     emphasis_times = emphasis_timestamps(clip, clip_segments)
     reaction_cues = detect_reaction_cues(clip, clip_segments)
+    sound_effect_cues = contextual_sound_effect_cues(
+        duration,
+        reaction_cues,
+        emphasis_times,
+    ) if enhanced_edit else []
     drawtext_supported = ffmpeg_has_filter("drawtext")
     subtitles_supported = ffmpeg_has_filter("subtitles")
     reaction_overlays_supported = (
@@ -2231,6 +2342,7 @@ def export_clip(
             "visual_theme": theme_profile["theme"],
             "emphasis_times": emphasis_times,
             "reaction_cues": [asdict(cue) for cue in reaction_cues],
+            "sound_effect_cues": [asdict(cue) for cue in sound_effect_cues],
             "drawtext_supported": drawtext_supported,
             "subtitles_supported": subtitles_supported,
             "reaction_overlays_supported": reaction_overlays_supported,
@@ -2338,24 +2450,49 @@ def export_clip(
             ",afade=t=in:st=0:d=0.10"
             f",afade=t=out:st={audio_fade_out_start:.3f}:d=0.14"
         )
-    run(
-        [
-            *common_input,
-            "-map",
-            "0:a:0?",
-            "-vn",
-            "-af",
-            audio_filter,
-            "-ac",
-            "2",
-            "-ar",
-            "48000",
-            "-c:a",
-            "pcm_s16le",
-            str(temp_audio_path.name),
-        ],
-        cwd=clips_dir,
-    )
+    plain_audio_command = [
+        *common_input,
+        "-map",
+        "0:a:0?",
+        "-vn",
+        "-af",
+        audio_filter,
+        "-ac",
+        "2",
+        "-ar",
+        "48000",
+        "-c:a",
+        "pcm_s16le",
+        str(temp_audio_path.name),
+    ]
+    if sound_effect_cues:
+        try:
+            run(
+                [
+                    *common_input,
+                    "-filter_complex",
+                    contextual_audio_mix_filter(audio_filter, sound_effect_cues),
+                    "-map",
+                    "[audio_out]",
+                    "-vn",
+                    "-ac",
+                    "2",
+                    "-ar",
+                    "48000",
+                    "-c:a",
+                    "pcm_s16le",
+                    str(temp_audio_path.name),
+                ],
+                cwd=clips_dir,
+            )
+        except RuntimeError as exc:
+            temp_audio_path.unlink(missing_ok=True)
+            console.print(
+                f"[yellow]Sound effect kontekstual dilewati; audio dialog tetap dipakai:[/yellow] {exc}"
+            )
+            run(plain_audio_command, cwd=clips_dir)
+    else:
+        run(plain_audio_command, cwd=clips_dir)
     run(
         [
             ffmpeg_path(),

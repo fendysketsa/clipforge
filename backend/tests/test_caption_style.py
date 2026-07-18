@@ -3,11 +3,14 @@ from clipper import (
     CaptionStyle,
     ClipCandidate,
     ReactionCue,
+    SoundEffectCue,
     TranscriptSegment,
     _hex_to_ass_color,
     build_candidate_pool,
     build_subtitle_style,
     caption_gradient_blur_filter,
+    contextual_audio_mix_filter,
+    contextual_sound_effect_cues,
     detect_visual_theme,
     detect_reaction_cues,
     emphasis_timestamps,
@@ -228,6 +231,41 @@ def test_reaction_svg_overlay_is_added_to_filter():
     assert "movie=" in value
     assert "overlay=" in value
     assert "between(t,5.000,6.850)" in value
+
+
+def test_contextual_sound_effects_follow_reactions_and_avoid_duplicate_emphasis():
+    reactions = [
+        ReactionCue("laugh", 5, 6.85, "right", "lucu"),
+        ReactionCue("shock", 12, 13.85, "left", "wow"),
+        ReactionCue("pray", 20, 21.85, "right", "alhamdulillah"),
+    ]
+
+    cues = contextual_sound_effect_cues(
+        30,
+        reactions,
+        emphasis_times=[5.5, 8.5, 16.0],
+    )
+
+    assert [cue.kind for cue in cues] == ["laugh", "emphasis", "shock", "emphasis", "pray"]
+    assert all(right.start - left.start >= 3 for left, right in zip(cues, cues[1:]))
+    assert all(0 < cue.volume <= 0.18 for cue in cues)
+
+
+def test_contextual_audio_filter_mixes_sfx_under_voice_with_limiter():
+    cues = [
+        SoundEffectCue("shock", 4.5, 0.34, 105, 0.18, "wow"),
+        SoundEffectCue("pray", 11, 0.38, 840, 0.065, "alhamdulillah"),
+    ]
+
+    value = contextual_audio_mix_filter("highpass=f=70,aresample=48000", cues)
+
+    assert "[0:a:0]highpass=f=70" in value
+    assert "sine=frequency=105" in value
+    assert "adelay=delays=4500:all=1" in value
+    assert "aecho=" in value
+    assert "amix=inputs=3" in value
+    assert "alimiter=limit=0.95" in value
+    assert value.endswith("[audio_out]")
 
 
 def test_social_caption_has_safe_relevant_fallback_without_ai():
