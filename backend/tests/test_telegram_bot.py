@@ -29,6 +29,30 @@ def test_accepts_supported_youtube_urls():
     assert is_supported_video_url("https://m.youtube.com/shorts/demo")
 
 
+def test_upload_preflight_queues_without_blocking_login_once():
+    messages = []
+
+    class Backend:
+        def youtube_config(self):
+            return {
+                "playwright_installed": True,
+                "enabled": True,
+                "upload_uses_cdp": False,
+                "direct_profile_upload": False,
+            }
+
+        def setup_youtube_one_time_login(self):
+            raise AssertionError("preflight must not run the long Login Sekali request")
+
+    bot = object.__new__(ClipForgeTelegramBot)
+    bot.backend = Backend()
+    bot.send_message = lambda chat_id, text, markup=None: messages.append((chat_id, text, markup))
+    bot.youtube_control_keyboard = lambda: {}
+
+    assert bot.prepare_youtube_upload_session(123, reason="retry upload") is True
+    assert "Antrean dibuat sekarang" in messages[-1][1]
+
+
 def test_rejects_non_youtube_and_invalid_urls():
     assert not is_supported_video_url("https://example.com/video")
     assert not is_supported_video_url("javascript:alert(1)")

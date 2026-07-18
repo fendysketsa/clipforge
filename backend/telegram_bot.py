@@ -110,6 +110,14 @@ YOUTUBE_ONE_TIME_LOGIN_HTTP_TIMEOUT = max(
     YOUTUBE_SESSION_CAPTURE_HTTP_TIMEOUT,
     env_float("TELEGRAM_YOUTUBE_ONE_TIME_LOGIN_TIMEOUT_SECONDS", 180.0),
 )
+YOUTUBE_CREATE_UPLOAD_HTTP_TIMEOUT = max(
+    90.0,
+    env_float("TELEGRAM_YOUTUBE_CREATE_UPLOAD_TIMEOUT_SECONDS", 600.0),
+)
+YOUTUBE_CREATE_UPLOAD_BATCH_HTTP_TIMEOUT = max(
+    YOUTUBE_CREATE_UPLOAD_HTTP_TIMEOUT,
+    env_float("TELEGRAM_YOUTUBE_CREATE_UPLOAD_BATCH_TIMEOUT_SECONDS", 1800.0),
+)
 VIRAL_CC_SEARCH_HTTP_TIMEOUT = max(600.0, env_float("VIRAL_CC_SEARCH_HTTP_TIMEOUT_SECONDS", 900.0))
 VIRAL_CC_VIDEO_COUNT = max(1, min(7, int(env_float("VIRAL_CC_VIDEO_COUNT", 5))))
 VIRAL_CC_MAX_SOURCE_SECONDS = max(
@@ -948,7 +956,7 @@ class BackendClient:
             f"{self.base_url}/api/jobs/{job_id}/youtube-uploads",
             method="POST",
             payload={"clip_url": clip_url},
-            timeout=30,
+            timeout=YOUTUBE_CREATE_UPLOAD_HTTP_TIMEOUT,
         )
         if not isinstance(result, dict):
             raise ServiceError("Backend tidak mengembalikan upload YouTube")
@@ -959,7 +967,7 @@ class BackendClient:
             f"{self.base_url}/api/jobs/{job_id}/youtube-uploads/batch",
             method="POST",
             payload={"clip_urls": clip_urls or []},
-            timeout=45,
+            timeout=YOUTUBE_CREATE_UPLOAD_BATCH_HTTP_TIMEOUT,
         )
         return result if isinstance(result, list) else []
 
@@ -1392,8 +1400,8 @@ class ClipForgeTelegramBot:
         self.send_message(
             chat_id,
             f"Mencari {VIRAL_CC_VIDEO_COUNT} video viral Creative Commons dengan keyword "
-            f"podcast, kajian, inspirasi, misteri Islam, mitos/fakta, kisah gaib, horor, "
-            f"sejarah, keluarga, bisnis halal, dan 70+ variasi tema. "
+            f"podcast, kajian, inspirasi, misteri Islam, mitos/fakta, podcast horor, cerita seram, "
+            f"kisah nyata gaib, pendakian, kos/rumah sakit angker, urban legend, sejarah, dan 100+ variasi tema. "
             f"Prioritas 30 hari terbaru; jika kurang, pencarian otomatis diperluas sampai 180 hari. "
             f"Durasi maksimal {max_minutes} menit..."
             + (f"\nSkip permanen sumber yang pernah ditampilkan/diproses: {len(exclude_urls)}" if exclude_urls else ""),
@@ -2149,32 +2157,23 @@ class ClipForgeTelegramBot:
         except ServiceError as exc:
             self.send_message(chat_id, f"Gagal memeriksa uploader YouTube: {exc}", self.youtube_control_keyboard())
             return False
-        self.send_message(
-            chat_id,
-            f"Menyiapkan session Playwright untuk {reason}.\n\n"
-            "Bot akan validasi Login Sekali dulu supaya storage-state tidak basi.",
-            self.youtube_control_keyboard(),
-        )
-        try:
-            result = self.backend.setup_youtube_one_time_login()
-        except ServiceError as exc:
-            self.send_message(chat_id, f"Login sekali belum berhasil.\n\nAlasan: {exc}", self.youtube_control_keyboard())
-            return False
-        if result.get("ok"):
-            self.send_message(chat_id, "\n".join(self.youtube_one_time_login_lines(result)), self.youtube_control_keyboard())
-            return True
-        self.send_message(chat_id, "\n".join(self.youtube_one_time_login_lines(result)), self.youtube_control_keyboard())
-        return False
-        if config.get("upload_uses_cdp"):
-            return False
-        if config.get("enabled"):
-            if config.get("direct_profile_upload"):
-                self.send_message(chat_id, "Mode profile aktif, tapi Login Sekali belum valid. Upload dibatalkan dulu agar tidak salah akun/session.", self.youtube_control_keyboard())
-                return False
+        if config.get("playwright_installed") and config.get("enabled"):
+            mode = (
+                "Chrome CDP"
+                if config.get("upload_uses_cdp")
+                else ("profile Chromium" if config.get("direct_profile_upload") else "storage-state Playwright")
+            )
+            self.send_message(
+                chat_id,
+                f"Session {mode} terdeteksi untuk {reason}.\n\n"
+                "Antrean dibuat sekarang. Worker akan memvalidasi session dan menjalankan recovery otomatis bila diperlukan.",
+                self.youtube_control_keyboard(),
+            )
             return True
         self.send_message(
             chat_id,
-            "Uploader YouTube belum siap. Tekan Login Sekali untuk menyimpan session Playwright, atau Mode Tanpa CDP jika ingin memakai profile backend langsung.",
+            "Uploader YouTube belum siap. Tekan Login Sekali untuk menyimpan session Playwright, "
+            "atau Mode Tanpa CDP jika ingin memakai profile backend langsung.",
             self.youtube_control_keyboard(),
         )
         return False

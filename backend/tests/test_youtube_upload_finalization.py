@@ -4,6 +4,7 @@ import youtube_uploader
 from youtube_uploader import (
     UploadError,
     click_final_upload_action,
+    next_upload_step_timeout_ms,
     reload_after_publish,
     wait_for_copyright_checks,
     wait_for_final_upload_confirmation,
@@ -60,6 +61,18 @@ def test_required_checks_do_not_continue_after_timeout_by_default(monkeypatch):
 
     with pytest.raises(UploadError, match="Step 3 Checks belum selesai"):
         wait_for_copyright_checks(object(), timeout_ms=0, require_checks=True)
+
+
+def test_next_step_wait_defaults_to_fifteen_minutes(monkeypatch):
+    monkeypatch.delenv("YOUTUBE_NEXT_STEP_TIMEOUT_SECONDS", raising=False)
+
+    assert next_upload_step_timeout_ms(5_400_000) == 900_000
+
+
+def test_next_step_wait_never_exceeds_total_upload_timeout(monkeypatch):
+    monkeypatch.setenv("YOUTUBE_NEXT_STEP_TIMEOUT_SECONDS", "1800")
+
+    assert next_upload_step_timeout_ms(600_000) == 600_000
 
 
 def test_checks_wait_when_one_item_is_safe_but_another_is_checking(monkeypatch):

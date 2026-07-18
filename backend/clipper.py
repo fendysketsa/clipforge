@@ -208,19 +208,33 @@ MYSTERY_WORDS = {
     "angker",
     "arwah",
     "gaib",
+    "genderuwo",
     "hantu",
     "horor",
     "jin",
+    "kerasukan",
     "kematian",
+    "kuntilanak",
     "kubur",
+    "leak",
+    "mencekam",
     "merinding",
     "mistis",
     "misteri",
     "mitos",
+    "paranormal",
+    "penampakan",
+    "pesugihan",
+    "pocong",
     "ruqyah",
+    "santet",
+    "seram",
     "setan",
     "siluman",
+    "supranatural",
+    "teror",
     "tumbal",
+    "urban",
 }
 
 ISLAMIC_WORDS = {
@@ -280,10 +294,13 @@ SHOCK_WORDS = {
     "gila",
     "horor",
     "kaget",
+    "mencekam",
     "merinding",
     "mengejutkan",
     "parah",
     "serius",
+    "seram",
+    "teror",
     "ternyata",
     "wow",
 }
@@ -2602,7 +2619,9 @@ def clip_topic_hashtags(clip: ClipCandidate) -> list[str]:
         tags.extend(["#Misteri", "#KisahNyata"])
     if "mitos" in words:
         tags.append("#MitosAtauFakta")
-    if "horor" in words or "hantu" in words or "angker" in words:
+    if words.intersection(
+        {"angker", "genderuwo", "hantu", "horor", "kuntilanak", "leak", "mistis", "pocong", "seram"}
+    ):
         tags.append("#HororIndonesia")
     if words.intersection(INSPIRING_WORDS):
         tags.append("#Inspirasi")

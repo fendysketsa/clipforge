@@ -2549,6 +2549,7 @@ def click_next_upload_step(page, timeout_ms: int = 20000, expected_step=None) ->
     """
     deadline = time.monotonic() + timeout_ms / 1000
     last_reason = ""
+    next_progress_log_at = time.monotonic() + 30
     while time.monotonic() < deadline:
         dismiss_reload_prompt(page, timeout_ms=300)
         if expected_step and get_upload_workflow_step(page) == expected_step:
@@ -2588,10 +2589,24 @@ def click_next_upload_step(page, timeout_ms: int = 20000, expected_step=None) ->
                     return
         except Exception:
             pass
+        if time.monotonic() >= next_progress_log_at:
+            log(
+                "Tombol Berikutnya masih disabled; menunggu upload/pemeriksaan awal "
+                "YouTube selesai sebelum berpindah tahap."
+            )
+            next_progress_log_at = time.monotonic() + 30
         time.sleep(0.4)
     save_debug_artifacts(page, "next-upload-button-not-found")
     suffix = f" Terakhir: {last_reason}" if last_reason else ""
     raise UploadError(f"Tombol Berikutnya/Next modal upload tidak ditemukan atau masih disabled.{suffix}")
+
+
+def next_upload_step_timeout_ms(total_timeout_ms: int) -> int:
+    try:
+        configured_seconds = int(os.environ.get("YOUTUBE_NEXT_STEP_TIMEOUT_SECONDS", "900"))
+    except ValueError:
+        configured_seconds = 900
+    return min(total_timeout_ms, max(60_000, configured_seconds * 1000))
 
 
 def click_add_subtitle(page, timeout_ms: int = 10000) -> bool:
@@ -3966,12 +3981,13 @@ def run_upload(args: argparse.Namespace) -> None:
             if args.tags:
                 log("Kolom Tags lanjutan dilewati; hashtag sudah dimasukkan ke deskripsi.")
 
-            click_next_upload_step(page, timeout_ms=20000, expected_step="VIDEO_ELEMENTS")
+            next_step_timeout_ms = next_upload_step_timeout_ms(timeout_ms)
+            click_next_upload_step(page, timeout_ms=next_step_timeout_ms, expected_step="VIDEO_ELEMENTS")
             log("Masuk ke tab Elemen video.")
             subtitle_text = os.environ.get("YOUTUBE_MANUAL_SUBTITLE_TEXT", "FCN").strip() or "FCN"
             add_manual_subtitle(page, subtitle_text)
 
-            click_next_upload_step(page, timeout_ms=20000, expected_step="CHECKS")
+            click_next_upload_step(page, timeout_ms=next_step_timeout_ms, expected_step="CHECKS")
             log("Masuk ke tab Pemeriksaan awal.")
             wait_for_copyright_checks(
                 page,
@@ -3980,7 +3996,7 @@ def run_upload(args: argparse.Namespace) -> None:
             )
             log("Step 3 Checks sudah selesai dan aman; lanjut ke Visibilitas.")
 
-            click_next_upload_step(page, timeout_ms=20000, expected_step="REVIEW")
+            click_next_upload_step(page, timeout_ms=next_step_timeout_ms, expected_step="REVIEW")
             log("Masuk ke tab Visibilitas.")
             wait_for_visibility_step(page, timeout_ms=20000)
 

@@ -96,9 +96,14 @@ def test_viral_search_is_broad_and_supports_staged_fallback():
     from pydantic import ValidationError
 
     queries = default_viral_video_search_queries()
-    assert len(queries) >= 70
+    assert len(queries) >= 120
     assert "misteri dalam islam" in queries
     assert "podcast horor indonesia" in queries
+    assert "podcast cerita seram indonesia" in queries
+    assert "cerita horor pendakian gunung" in queries
+    assert "cerita horor kos angker" in queries
+    assert "urban legend kalimantan" in queries
+    assert queries.index("podcast horor indonesia") < 12
     assert "mitos dan fakta menurut islam" in queries
     assert ViralVideoSearchRequest().search_limit_per_query == 25
     assert ViralVideoSearchRequest().max_metadata_checks == 200
@@ -114,8 +119,9 @@ def test_configured_viral_queries_are_extended_not_replaced(monkeypatch):
 
     assert queries[0] == "topik khusus"
     assert queries.count("podcast indonesia terbaru") == 1
-    assert len(queries) >= 70
+    assert len(queries) >= 120
     assert queries.index("misteri dalam islam") < 10
+    assert queries.index("podcast horor indonesia") < 12
 
 
 def test_processed_job_sources_are_always_excluded(monkeypatch):

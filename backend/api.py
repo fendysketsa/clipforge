@@ -534,6 +534,68 @@ MYSTERY_ISLAMIC_SEARCH_QUERIES = [
     "podcast kisah nyata indonesia",
 ]
 
+HORROR_PODCAST_SEARCH_QUERIES = [
+    "podcast horor indonesia",
+    "podcast cerita seram indonesia",
+    "cerita seram podcast indonesia",
+    "podcast horor kisah nyata",
+    "podcast pengalaman mistis",
+    "podcast misteri nusantara",
+    "podcast urban legend indonesia",
+    "podcast paranormal indonesia",
+    "podcast investigasi tempat angker",
+    "podcast cerita hantu indonesia",
+    "cerita horor kisah nyata indonesia",
+    "kisah nyata pengalaman gaib",
+    "cerita seram narasi indonesia",
+    "cerita horor malam indonesia",
+    "cerita horor pendakian gunung",
+    "pengalaman mistis pendakian",
+    "cerita seram camping di hutan",
+    "kisah horor tersesat di hutan",
+    "misteri gunung dan jalur pendakian",
+    "cerita horor kos angker",
+    "cerita seram rumah kontrakan",
+    "kisah rumah kosong angker",
+    "cerita horor rumah sakit",
+    "cerita seram sekolah angker",
+    "cerita horor pabrik terbengkalai",
+    "cerita horor hotel angker",
+    "cerita seram kantor malam",
+    "cerita horor perjalanan malam",
+    "cerita mistis sopir malam",
+    "cerita horor ojek online",
+    "kisah seram penjaga malam",
+    "kisah horor desa terpencil",
+    "misteri kampung dan desa angker",
+    "cerita seram pesantren",
+    "kisah mistis makam dan kuburan",
+    "cerita horor laut dan nelayan",
+    "kisah misteri pantai selatan",
+    "cerita misteri danau indonesia",
+    "urban legend jawa",
+    "urban legend sumatera",
+    "urban legend kalimantan",
+    "urban legend sulawesi",
+    "urban legend bali",
+    "legenda hantu nusantara",
+    "kisah kuntilanak indonesia",
+    "kisah pocong nyata",
+    "misteri genderuwo jawa",
+    "kisah leak bali",
+    "cerita santet dan pesugihan",
+    "cerita tumbal dan ritual misteri",
+    "pengalaman kerasukan nyata",
+    "penampakan hantu kisah nyata",
+    "fenomena supranatural indonesia",
+    "mitos horor dan fakta",
+    "misteri sejarah tempat angker",
+    "cerita rakyat seram indonesia",
+    "audio drama horor indonesia",
+    "radio cerita horor indonesia",
+    "kompilasi cerita seram indonesia",
+]
+
 
 def merge_unique_queries(*groups: list[str]) -> list[str]:
     merged: list[str] = []
@@ -550,11 +612,14 @@ def merge_unique_queries(*groups: list[str]) -> list[str]:
 
 def prioritized_viral_queries(configured: list[str]) -> list[str]:
     # Keep the user's strongest custom themes first, then deliberately diversify
-    # early API/search calls before appending the remaining general pool.
+    # the first 12 API calls with Islamic mystery and horror-podcast formats.
     return merge_unique_queries(
-        configured[:6],
-        MYSTERY_ISLAMIC_SEARCH_QUERIES,
-        configured[6:],
+        configured[:4],
+        MYSTERY_ISLAMIC_SEARCH_QUERIES[:4],
+        HORROR_PODCAST_SEARCH_QUERIES[:12],
+        configured[4:],
+        MYSTERY_ISLAMIC_SEARCH_QUERIES[4:],
+        HORROR_PODCAST_SEARCH_QUERIES[12:],
         BROAD_VIRAL_SEARCH_QUERIES,
     )
 

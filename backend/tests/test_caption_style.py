@@ -10,6 +10,7 @@ from clipper import (
     build_subtitle_style,
     candidate_fyp_analysis,
     caption_gradient_blur_filter,
+    clip_topic_hashtags,
     contextual_audio_mix_filter,
     contextual_sound_effect_cues,
     detect_visual_theme,
@@ -270,6 +271,23 @@ def test_mystery_islamic_theme_adds_context_badge_and_emphasis():
     assert "CEK FAKTANYA" in value
     assert "between(t,5.000,5.420)" in value
     assert "#A855F7" in value
+
+
+def test_seram_podcast_terms_use_mystery_theme_and_horror_hashtag():
+    clip = ClipCandidate(
+        index=1,
+        start=0,
+        end=60,
+        duration=60,
+        score=82,
+        title="Podcast Cerita Seram Pendakian",
+        reason="test",
+        text="Penampakan pocong membuat suasana mencekam, tetapi ini adalah pengalaman narasumber.",
+    )
+
+    assert detect_visual_theme(clip) == "mystery"
+    assert "#Misteri" in clip_topic_hashtags(clip)
+    assert "#HororIndonesia" in clip_topic_hashtags(clip)
 
 
 def test_reaction_cues_follow_conversation_and_stay_sparse():
