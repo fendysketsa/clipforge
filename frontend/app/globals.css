@@ -699,9 +699,44 @@ h2 {
   background: rgba(250, 204, 21, 0.055);
 }
 
-.analysisIdea > b,
+.analysisIdeaHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.analysisIdeaHeader > b {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #fde047;
+}
+
+.analysisIdeaHeader > span {
+  color: rgba(253, 224, 71, 0.72);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.analysisIdea ol {
+  margin: 7px 0 0;
+  padding-left: 20px;
+}
+
+.analysisIdea li {
+  padding-left: 2px;
+}
+
+.analysisIdea li + li {
+  margin-top: 5px;
+}
+
 .analysisIdea li::marker {
   color: #fde047;
+  font-weight: 800;
 }
 
 .clipValidation {

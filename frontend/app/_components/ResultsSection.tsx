@@ -291,8 +291,11 @@ export function ResultsSection({
                     ) : null}
                     {clip.improvement_ideas?.length ? (
                       <div className="analysisBlock analysisIdea">
-                        <b><Lightbulb size={14} /> Ide Codex</b>
-                        <ul>{clip.improvement_ideas.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul>
+                        <div className="analysisIdeaHeader">
+                          <b><Lightbulb size={14} /> Ide Codex</b>
+                          <span>Prioritas edit</span>
+                        </div>
+                        <ol>{clip.improvement_ideas.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ol>
                       </div>
                     ) : null}
                   </div>

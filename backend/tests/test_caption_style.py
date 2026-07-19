@@ -193,6 +193,26 @@ def test_fyp_analysis_explains_hook_first_30_seconds_and_codex_ideas():
     assert any("30 detik awal" in item for item in analysis["strengths"])
     assert analysis["pov"]
     assert analysis["improvement_ideas"]
+    assert all(" — " in item for item in analysis["improvement_ideas"])
+
+
+def test_codex_ideas_are_contextual_and_do_not_repeat_ending_fixes():
+    segments = [
+        TranscriptSegment(0, 8, "Nah jadi sebelumnya kita membahas hal lainnya."),
+        TranscriptSegment(8, 18, "Masalah terbesar ternyata ada pada keputusan pertama."),
+        TranscriptSegment(18, 28, "Kemudian pembahasannya masih berlanjut tanpa jawaban"),
+    ]
+
+    analysis = candidate_fyp_analysis(segments, 28, 58)
+    ideas = analysis["improvement_ideas"]
+
+    assert any(
+        item.startswith("Hook —") and "Masalah terbesar ternyata" in item
+        for item in ideas
+    )
+    assert sum(item.startswith("Ending —") for item in ideas) == 1
+    assert not any(item.startswith("Loop —") for item in ideas)
+    assert len(ideas) <= 3
 
 
 def test_fyp_score_rewards_strong_opening_and_first_30_second_arc():

@@ -1239,6 +1239,19 @@ def fallback_pov_angle(text: str) -> str:
     return "Kamu menemukan satu sudut pandang yang bisa langsung dipakai atau direnungkan."
 
 
+def strongest_advice_line(items: list[TranscriptSegment]) -> str:
+    """Pick a compact transcript line that can anchor a concrete edit suggestion."""
+    signal_words = HOOK_WORDS | TENSION_WORDS | MYSTERY_WORDS | PAYOFF_WORDS | IMPORTANT_WORDS
+
+    def line_score(item: TranscriptSegment) -> tuple[int, int]:
+        words = re.findall(r"[\w']+", item.text.lower())
+        signals = len(set(words).intersection(signal_words))
+        return signals * 5 + int("?" in item.text) * 3, min(len(words), 14)
+
+    strongest = max(items, key=line_score, default=None)
+    return first_sentence(strongest.text, max_words=10) if strongest else ""
+
+
 def candidate_fyp_analysis(
     items: list[TranscriptSegment],
     duration: float,
@@ -1256,12 +1269,13 @@ def candidate_fyp_analysis(
     opening_words = set(re.findall(r"[\w']+", opening_text.lower()))
     first_30_words = re.findall(r"[\w']+", first_30_text.lower())
     all_words = set(re.findall(r"[\w']+", text.lower()))
+    strong_hook_words = HOOK_WORDS - WEAK_STARTS
     opening_has_hook = bool(
-        opening_words.intersection(HOOK_WORDS | TENSION_WORDS | MYSTERY_WORDS)
+        opening_words.intersection(strong_hook_words | TENSION_WORDS | MYSTERY_WORDS)
         or "?" in opening_text
     )
     first_30_signals = {
-        "hook": bool(set(first_30_words).intersection(HOOK_WORDS)),
+        "hook": bool(set(first_30_words).intersection(strong_hook_words)),
         "tension": bool(set(first_30_words).intersection(TENSION_WORDS | MYSTERY_WORDS)),
         "payoff": bool(set(first_30_words).intersection(PAYOFF_WORDS)),
         "value": bool(set(first_30_words).intersection(IMPORTANT_WORDS)),
@@ -1282,6 +1296,10 @@ def candidate_fyp_analysis(
     )
     ending_words = set(re.findall(r"[\w']+", ending_text.lower()))
     loop_overlap = opening_concepts.intersection(ending_words - loop_stop_words)
+    strongest_line = strongest_advice_line(items)
+    hook_reference = first_sentence(opening_text or text, max_words=6)
+    if not opening_has_hook and strongest_line:
+        hook_reference = strongest_line
 
     strengths: list[str] = []
     weaknesses: list[str] = []
@@ -1291,41 +1309,80 @@ def candidate_fyp_analysis(
         strengths.append("3 detik awal punya pemicu rasa penasaran")
     else:
         weaknesses.append("3 detik awal belum cukup menghentikan scroll")
-        ideas.append("Buka langsung dengan pertanyaan, konflik, atau fakta paling mengejutkan")
+        if strongest_line:
+            ideas.append(
+                f'Hook — pindahkan potongan terkuat “{strongest_line}” ke 3 detik pertama, '
+                "baru beri konteks."
+            )
+        else:
+            ideas.append("Hook — buka langsung dengan konflik atau fakta utama sebelum konteks.")
 
     active_first_30_signals = sum(first_30_signals.values())
     if active_first_30_signals >= 3:
         strengths.append("30 detik awal berisi hook, konflik/value, dan arah payoff")
     elif active_first_30_signals >= 2:
         strengths.append("30 detik awal cukup padat dan memiliki arah cerita")
-    else:
-        weaknesses.append("alur 30 detik awal masih datar atau terlalu lama membangun konteks")
-        ideas.append("Padatkan 30 detik awal menjadi hook → konteks singkat → janji jawaban")
 
     if first_30_density >= 1.6:
         strengths.append("tempo bicara padat untuk short-form")
+    if active_first_30_signals < 2 and first_30_density < 0.9:
+        weaknesses.append("alur 30 detik awal masih datar dan tempo informasinya lambat")
+    elif active_first_30_signals < 2:
+        weaknesses.append("alur 30 detik awal masih datar atau terlalu lama membangun konteks")
     elif first_30_density < 0.9:
         weaknesses.append("tempo informasi awal berisiko terasa lambat")
-        ideas.append("Potong jeda dan pengulangan; pertahankan satu ide baru tiap 5–8 detik")
+    if active_first_30_signals < 2 and first_30_density < 0.9:
+        ideas.append(
+            "Ritme — pangkas jeda dan konteks berulang; susun 30 detik awal menjadi "
+            "hook → konflik → janji jawaban."
+        )
+    elif active_first_30_signals < 2:
+        ideas.append(
+            "Alur — ringkas konteks awal dan munculkan konflik serta janji jawaban "
+            "sebelum detik ke-10."
+        )
+    elif first_30_density < 0.9:
+        ideas.append(
+            "Tempo — buang jeda dan pengulangan agar setiap 5–8 detik membawa satu informasi baru."
+        )
 
-    if has_payoff:
+    if has_payoff and complete_ending:
         strengths.append("memiliki payoff atau kesimpulan yang bisa ditunggu")
+    elif not has_payoff and not complete_ending:
+        weaknesses.append("payoff dan ending belum terasa tuntas")
     else:
-        weaknesses.append("payoff akhir belum terasa tegas")
-        ideas.append("Akhiri dengan jawaban, pelajaran, atau perubahan sudut pandang yang jelas")
+        weaknesses.append(
+            "payoff akhir belum terasa tegas"
+            if not has_payoff
+            else "ending terasa menggantung tanpa penutup yang disengaja"
+        )
 
     if has_question:
         strengths.append("memancing penonton ikut menjawab")
-    if not complete_ending:
-        weaknesses.append("ending terasa menggantung tanpa penutup yang disengaja")
-        ideas.append("Tutup dengan kalimat final yang tuntas, bukan potongan percakapan")
-    if len(loop_overlap) >= 2:
+    if not has_payoff or not complete_ending:
+        callback = (
+            f', lalu sebut kembali inti hook “{hook_reference}”'
+            if hook_reference
+            else ""
+        )
+        ideas.append(
+            "Ending — sisakan jawaban atau pelajaran paling tegas sebagai kalimat terakhir"
+            f"{callback}."
+        )
+    elif len(loop_overlap) >= 2:
         strengths.append("ending terhubung kembali ke hook dan berpotensi memicu rewatch")
     else:
-        ideas.append("Kaitkan kalimat penutup kembali ke hook agar transisi ulang terasa natural")
+        ideas.append(
+            f'Loop — ulang kata kunci dari hook “{hook_reference}” di penutup agar '
+            "transisi rewatch terasa natural."
+        )
 
     if not ideas:
-        ideas.append("Pertahankan hook; tambahkan pattern interrupt visual hanya pada poin terpenting")
+        visual_anchor = strongest_line or hook_reference
+        ideas.append(
+            f'Visual — pertahankan struktur; beri pattern interrupt saat “{visual_anchor}” '
+            "agar poin utama lebih menempel."
+        )
 
     return {
         "hook": first_sentence(opening_text or text, max_words=8),
@@ -1426,7 +1483,7 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
         reasons.append("awal agak menggantung")
 
     opening_has_hook = bool(
-        opening_words.intersection(HOOK_WORDS | TENSION_WORDS | MYSTERY_WORDS)
+        opening_words.intersection((HOOK_WORDS - WEAK_STARTS) | TENSION_WORDS | MYSTERY_WORDS)
         or "?" in opening_text
     )
     if opening_has_hook:
@@ -1439,7 +1496,7 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
     first_30_set = set(first_30_words)
     first_30_signal_count = sum(
         (
-            bool(first_30_set.intersection(HOOK_WORDS)),
+            bool(first_30_set.intersection(HOOK_WORDS - WEAK_STARTS)),
             bool(first_30_set.intersection(TENSION_WORDS | MYSTERY_WORDS)),
             bool(first_30_set.intersection(PAYOFF_WORDS)),
             bool(first_30_set.intersection(IMPORTANT_WORDS)),
@@ -1716,6 +1773,13 @@ def ai_rescore_candidates(
         "For each chosen candidate, score 0-100 honestly on viewer-retention and FYP potential. "
         "Judge the first 3 seconds, the first 30-second hook arc, POV clarity, information density, "
         "pattern-interrupt opportunities, payoff, and rewatch/share potential.\n"
+        "Every improvement idea must solve one stated weakness and be directly executable by an editor. "
+        "Write every viewer-facing field in clear, natural Indonesian. "
+        "Write it as '<area> — <specific action>', for example "
+        "'Hook — pindahkan klaim terkuat ke detik 0'. "
+        "When useful, quote a short phrase from the transcript as the exact edit anchor. Do not give generic "
+        "advice, repeat the same fix in different words, or invent facts/dialogue not present in the transcript. "
+        "Prefer trims, reorder suggestions, on-screen text, visual emphasis, and a precise ending treatment.\n"
         "Return clips sorted from strongest to weakest. Use fewer clips if the rest are weak.\n"
         "Respond with JSON shaped exactly like:\n"
         '{"clips": [{"id": <int>, "score": <int 0-100>, '
