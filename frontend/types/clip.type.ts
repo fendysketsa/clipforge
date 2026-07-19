@@ -29,6 +29,7 @@ export type ClipFile = {
   strengths?: string[];
   weaknesses?: string[];
   improvement_ideas?: string[];
+  applied_edits?: string[];
   output_resolution?: string | null;
   is_correct: boolean;
 };
@@ -48,6 +49,7 @@ export type ClipCandidate = {
   strengths?: string[];
   weaknesses?: string[];
   improvement_ideas?: string[];
+  applied_edits?: string[];
 };
 
 export type ClipJob = {

@@ -6,11 +6,14 @@ from clipper import (
     SoundEffectCue,
     TranscriptSegment,
     _hex_to_ass_color,
+    apply_codex_audio_cues,
+    apply_codex_structural_edit,
     build_candidate_pool,
     build_subtitle_style,
     candidate_fyp_analysis,
     caption_gradient_blur_filter,
     clip_topic_hashtags,
+    codex_edit_plan,
     contextual_audio_mix_filter,
     contextual_sound_effect_cues,
     detect_visual_theme,
@@ -213,6 +216,81 @@ def test_codex_ideas_are_contextual_and_do_not_repeat_ending_fixes():
     assert sum(item.startswith("Ending —") for item in ideas) == 1
     assert not any(item.startswith("Loop —") for item in ideas)
     assert len(ideas) <= 3
+
+
+def test_codex_structural_edit_trims_weak_intro_and_completes_ending():
+    transcript = [
+        TranscriptSegment(0, 4, "Nah jadi sebelumnya ada konteks panjang."),
+        TranscriptSegment(4, 10, "Masalah terbesar ternyata ada pada keputusan pertama."),
+        TranscriptSegment(10, 18, "Penjelasan ini masih berjalan tanpa penutup"),
+        TranscriptSegment(18, 24, "Jawabannya akhirnya jelas dan bisa langsung diterapkan."),
+    ]
+    clip = ClipCandidate(
+        1,
+        0,
+        18,
+        18,
+        62,
+        "Keputusan Pertama",
+        "test",
+        " ".join(item.text for item in transcript[:3]),
+        weaknesses=[
+            "3 detik awal belum cukup menghentikan scroll",
+            "payoff dan ending belum terasa tuntas",
+        ],
+        improvement_ideas=[
+            "Hook — pindahkan potongan terkuat ke awal.",
+            "Ending — lanjutkan sampai jawaban tuntas.",
+        ],
+    )
+
+    apply_codex_structural_edit(
+        clip,
+        transcript,
+        min_duration=10,
+        max_duration=30,
+    )
+
+    assert 3.8 <= clip.start <= 4
+    assert clip.end > 24
+    assert any("Pembuka lemah dipangkas" in item for item in clip.applied_edits)
+    assert any("Ending diperpanjang" in item for item in clip.applied_edits)
+    assert clip.text.startswith("Masalah terbesar ternyata")
+    assert clip.text.endswith("diterapkan.")
+
+
+def test_codex_render_plan_drives_hook_tempo_payoff_and_audio():
+    clip = ClipCandidate(
+        1,
+        0,
+        30,
+        30,
+        65,
+        "Poin Utama",
+        "test",
+        "test",
+        weaknesses=[
+            "3 detik awal belum cukup menghentikan scroll",
+            "tempo informasi awal berisiko terasa lambat",
+            "payoff akhir belum terasa tegas",
+        ],
+    )
+    plan = codex_edit_plan(clip)
+
+    value = enhanced_edit_filter(
+        30,
+        "clip.hook.txt",
+        payoff_text_filename="clip.payoff.txt",
+        codex_plan=plan,
+    )
+    sounds = apply_codex_audio_cues([], 30, plan)
+
+    assert plan.hook_boost and plan.tempo_boost and plan.ending_boost
+    assert "between(t,0.05,0.58)" in value
+    assert "between(t,7.000,7.320)" in value
+    assert "text='INTI / PAYOFF'" in value
+    assert "textfile='clip.payoff.txt'" in value
+    assert [cue.trigger for cue in sounds] == ["hook Codex", "payoff Codex"]
 
 
 def test_fyp_score_rewards_strong_opening_and_first_30_second_arc():

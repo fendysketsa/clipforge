@@ -289,6 +289,12 @@ export function ResultsSection({
                         <ul>{clip.weaknesses.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul>
                       </div>
                     ) : null}
+                    {clip.applied_edits?.length ? (
+                      <div className="analysisBlock analysisApplied">
+                        <b><CheckCircle2 size={14} /> Diterapkan Codex</b>
+                        <ul>{clip.applied_edits.slice(0, 4).map((item) => <li key={item}>{item}</li>)}</ul>
+                      </div>
+                    ) : null}
                     {clip.improvement_ideas?.length ? (
                       <div className="analysisBlock analysisIdea">
                         <div className="analysisIdeaHeader">

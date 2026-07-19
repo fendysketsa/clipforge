@@ -2385,6 +2385,16 @@ class ClipForgeTelegramBot:
                 "Yang masih kurang:\n"
                 + "\n".join(f"⚠️ {str(item).strip()}" for item in weaknesses[:3] if str(item).strip())
             )
+        applied_edits = clip.get("applied_edits")
+        if isinstance(applied_edits, list) and applied_edits:
+            parts.append(
+                "Diterapkan Codex:\n"
+                + "\n".join(
+                    f"✅ {str(item).strip()}"
+                    for item in applied_edits[:4]
+                    if str(item).strip()
+                )
+            )
         ideas = clip.get("improvement_ideas")
         if isinstance(ideas, list) and ideas:
             parts.append(

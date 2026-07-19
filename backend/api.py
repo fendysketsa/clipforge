@@ -232,6 +232,7 @@ class ClipCandidate(BaseModel):
     strengths: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
     improvement_ideas: list[str] = Field(default_factory=list)
+    applied_edits: list[str] = Field(default_factory=list)
 
 
 class ClipFile(BaseModel):
@@ -250,6 +251,7 @@ class ClipFile(BaseModel):
     strengths: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
     improvement_ideas: list[str] = Field(default_factory=list)
+    applied_edits: list[str] = Field(default_factory=list)
     output_resolution: str | None = None
     is_correct: bool = False
 
@@ -2906,6 +2908,7 @@ def discover_clips(started_at: float) -> list[ClipFile]:
                 strengths=sidecar_list("strengths"),
                 weaknesses=sidecar_list("weaknesses"),
                 improvement_ideas=sidecar_list("improvement_ideas"),
+                applied_edits=sidecar_list("applied_edits"),
                 output_resolution=(
                     str(sidecar.get("output_resolution")).strip()
                     if sidecar.get("output_resolution")

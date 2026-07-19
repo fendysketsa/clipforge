@@ -90,6 +90,17 @@ class ClipCandidate:
     strengths: list[str] = field(default_factory=list)
     weaknesses: list[str] = field(default_factory=list)
     improvement_ideas: list[str] = field(default_factory=list)
+    applied_edits: list[str] = field(default_factory=list)
+
+
+@dataclass
+class CodexEditPlan:
+    """Concrete export treatments derived from the clip analysis."""
+
+    hook_boost: bool = False
+    tempo_boost: bool = False
+    ending_boost: bool = False
+    loop_boost: bool = False
 
 
 ReactionKind = Literal["laugh", "shock", "think", "pray", "warning", "heart", "important"]
@@ -1918,6 +1929,136 @@ def segments_for_clip(segments: Iterable[TranscriptSegment], clip: ClipCandidate
     ]
 
 
+def codex_edit_plan(clip: ClipCandidate) -> CodexEditPlan:
+    """Translate analysis prose into deterministic editing behavior."""
+    weaknesses = " ".join(clip.weaknesses).casefold()
+    ideas = " ".join(clip.improvement_ideas).casefold()
+    analysis = f"{weaknesses} {ideas}"
+    return CodexEditPlan(
+        hook_boost=any(token in analysis for token in ("3 detik", "hook —", "pembuka")),
+        tempo_boost=any(token in analysis for token in ("tempo", "ritme", "alur —", "30 detik")),
+        ending_boost=any(token in weaknesses for token in ("ending", "payoff"))
+        or "ending —" in ideas,
+        loop_boost="loop —" in analysis or "transisi ulang" in analysis or "rewatch" in analysis,
+    )
+
+
+def _segment_hook_score(segment: TranscriptSegment) -> tuple[int, int]:
+    words = re.findall(r"[\w']+", segment.text.lower())
+    word_set = set(words)
+    strong_signals = (HOOK_WORDS - WEAK_STARTS) | TENSION_WORDS | MYSTERY_WORDS | IMPORTANT_WORDS
+    return (
+        len(word_set.intersection(strong_signals)) * 5
+        + int("?" in segment.text) * 4
+        + int(bool(word_set.intersection(PAYOFF_WORDS))) * 2
+        - int(bool(words and words[0] in WEAK_STARTS)) * 4,
+        min(len(words), 16),
+    )
+
+
+def apply_codex_structural_edit(
+    clip: ClipCandidate,
+    transcript: list[TranscriptSegment],
+    *,
+    min_duration: float,
+    max_duration: float,
+    hard_end: float | None = None,
+) -> ClipCandidate:
+    """Trim a weak lead-in and extend an unfinished ending when the transcript allows it."""
+    original_plan = codex_edit_plan(clip)
+    original_start = clip.start
+    original_end = clip.end
+    min_safe_duration = max(5.0, min_duration)
+    max_safe_end = clip.start + max(max_duration, min_safe_duration)
+    if hard_end is not None:
+        max_safe_end = min(max_safe_end, hard_end)
+
+    current_segments = segments_for_clip(transcript, clip)
+    if original_plan.hook_boost and current_segments:
+        search_end = min(original_end, original_start + min(12.0, max(5.0, clip.duration * 0.25)))
+        hook_options = [
+            segment
+            for segment in current_segments
+            if segment.start < search_end and segment.start > original_start + 0.55
+        ]
+        if hook_options:
+            strongest = max(hook_options, key=_segment_hook_score)
+            proposed_start = max(original_start, strongest.start - 0.12)
+            trim_seconds = proposed_start - original_start
+            if (
+                _segment_hook_score(strongest)[0] > 0
+                and 0.65 <= trim_seconds <= 8.0
+                and original_end - proposed_start >= min_safe_duration
+            ):
+                clip.start = proposed_start
+                clip.applied_edits.append(
+                    f"Pembuka lemah dipangkas {trim_seconds:.1f} detik; klip dimulai dari klaim terkuat."
+                )
+
+    if original_plan.ending_boost and max_safe_end > original_end + 0.25:
+        current_text = " ".join(segment.text for segment in current_segments).rstrip()
+        needs_sentence_close = not current_text.endswith((".", "!", "?"))
+        for segment in transcript:
+            if segment.end <= original_end + 0.2:
+                continue
+            if segment.start >= max_safe_end:
+                break
+            if is_source_branding_segment(segment):
+                break
+            words = set(re.findall(r"[\w']+", segment.text.lower()))
+            has_resolution = bool(words.intersection(PAYOFF_WORDS | IMPORTANT_WORDS))
+            sentence_closed = segment.text.rstrip().endswith((".", "!", "?"))
+            if (has_resolution and sentence_closed) or (needs_sentence_close and sentence_closed):
+                proposed_end = min(max_safe_end, segment.end + 0.12)
+                if proposed_end > original_end + 0.25:
+                    clip.end = proposed_end
+                    clip.applied_edits.append(
+                        f"Ending diperpanjang {proposed_end - original_end:.1f} detik sampai kalimat tuntas."
+                    )
+                break
+            if segment.end - original_end >= 8.0:
+                break
+
+    if clip.start != original_start or clip.end != original_end:
+        refreshed_segments = segments_for_clip(transcript, clip)
+        clip.duration = clip.end - clip.start
+        clip.text = " ".join(segment.text for segment in refreshed_segments).strip()
+        heuristic_score, _ = score_window(refreshed_segments, clip.duration)
+        clip.score = max(1, min(100, round(clip.score * 0.75 + heuristic_score * 0.25)))
+        refreshed = candidate_fyp_analysis(refreshed_segments, clip.duration, clip.score)
+        clip.hook = str(refreshed["hook"])
+        clip.pov = str(refreshed["pov"])
+        clip.fyp_label = fyp_score_label(clip.score)
+        clip.strengths = list(refreshed["strengths"])
+        clip.weaknesses = list(refreshed["weaknesses"])
+        clip.improvement_ideas = list(refreshed["improvement_ideas"])
+    return clip
+
+
+def apply_codex_edits_to_candidates(
+    candidates: list[ClipCandidate],
+    transcript: list[TranscriptSegment],
+    *,
+    min_duration: float,
+    max_duration: float,
+) -> list[ClipCandidate]:
+    """Apply structural edits without allowing neighboring selected clips to overlap."""
+    ordered = sorted(candidates, key=lambda item: item.start)
+    original_starts = [item.start for item in ordered]
+    for index, clip in enumerate(ordered):
+        next_start = original_starts[index + 1] if index + 1 < len(original_starts) else None
+        hard_end = next_start - 0.05 if next_start is not None else None
+        apply_codex_structural_edit(
+            clip,
+            transcript,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            hard_end=hard_end,
+        )
+        clip.index = index + 1
+    return ordered
+
+
 SUBTITLE_MAX_CHARS = 22
 SUBTITLE_MAX_LINES = 2
 
@@ -1963,6 +2104,14 @@ def pov_banner_text(clip: ClipCandidate) -> str:
     short_pov = first_sentence(pov, max_words=12)
     chunks = split_subtitle_text(short_pov, max_chars=48, max_lines=2)
     return (chunks[0] if chunks else short_pov)[:110]
+
+
+def payoff_banner_text(clip: ClipCandidate, clip_segments: list[TranscriptSegment]) -> str:
+    """Use the actual closing transcript as the payoff card—never invented copy."""
+    ending = clip_segments[-1].text if clip_segments else clip.text
+    value = first_sentence(ending, max_words=10).upper()
+    chunks = split_subtitle_text(value, max_chars=30, max_lines=2)
+    return (chunks[0] if chunks else value)[:100]
 
 
 def detect_visual_theme(clip: ClipCandidate) -> VisualTheme:
@@ -2207,6 +2356,48 @@ def contextual_sound_effect_cues(
     return selected
 
 
+def apply_codex_audio_cues(
+    cues: list[SoundEffectCue],
+    duration: float,
+    plan: CodexEditPlan,
+) -> list[SoundEffectCue]:
+    """Add restrained impact accents only where the analysis calls for them."""
+    additions: list[SoundEffectCue] = []
+    if plan.hook_boost and duration > 2.0:
+        frequency, effect_duration, volume = SOUND_EFFECT_PROFILES["emphasis"]
+        additions.append(
+            SoundEffectCue(
+                kind="emphasis",
+                start=0.18,
+                duration=effect_duration,
+                frequency=frequency,
+                volume=min(0.09, volume + 0.01),
+                trigger="hook Codex",
+            )
+        )
+    if plan.ending_boost and duration > 7.0:
+        frequency, effect_duration, volume = SOUND_EFFECT_PROFILES["important"]
+        additions.append(
+            SoundEffectCue(
+                kind="important",
+                start=round(max(1.0, duration - 2.65), 3),
+                duration=effect_duration,
+                frequency=frequency,
+                volume=min(0.09, volume),
+                trigger="payoff Codex",
+            )
+        )
+
+    merged: list[SoundEffectCue] = []
+    for cue in sorted([*cues, *additions], key=lambda item: item.start):
+        if merged and cue.start - merged[-1].start < 1.25:
+            if cue.trigger.endswith("Codex"):
+                merged[-1] = cue
+            continue
+        merged.append(cue)
+    return merged[:6]
+
+
 def contextual_audio_mix_filter(base_filter: str, cues: list[SoundEffectCue]) -> str:
     """Mix original synthetic micro-SFX under speech and cap peaks safely."""
     if not cues:
@@ -2398,6 +2589,8 @@ def enhanced_edit_filter(
     show_text_overlays: bool = True,
     reaction_cues: list[ReactionCue] | None = None,
     show_reactions: bool = True,
+    codex_plan: CodexEditPlan | None = None,
+    payoff_text_filename: str = "",
 ) -> str:
     """Add context-aware motion graphics while keeping faces and captions readable."""
     safe_duration = max(0.1, duration)
@@ -2427,6 +2620,7 @@ def enhanced_edit_filter(
     x_period = 7 - motion_variant
     y_period = 5 + motion_variant
     badge_width = min(430, max(250, len(badge) * 17 + 60))
+    adaptive_plan = codex_plan or CodexEditPlan()
     filters = [
         grade,
         f"scale={scale_width}:{scale_height}:flags=lanczos",
@@ -2439,6 +2633,15 @@ def enhanced_edit_filter(
         modern_blurred_video_frame_filter(accent, accent_secondary),
     ]
     filters.extend(modern_gradient_border_filters(accent, accent_secondary))
+    if adaptive_plan.hook_boost:
+        filters.extend(
+            [
+                f"drawbox=x=24:y=55:w=1032:h=1810:color={accent}@0.88:t=10:"
+                "enable='between(t,0.05,0.58)'",
+                "drawbox=x=0:y=0:w=iw:h=ih:color=white@0.08:t=fill:"
+                "enable='between(t,0.08,0.20)'",
+            ]
+        )
     if show_text_overlays:
         filters.extend(
             [
@@ -2478,7 +2681,8 @@ def enhanced_edit_filter(
                 )
         # Subtle pattern interrupts inside the first 30 seconds. These are
         # intentionally brief so the edit feels alive without covering speech.
-        for retention_time in (12.0, 24.0):
+        retention_times = (7.0, 14.0, 22.0) if adaptive_plan.tempo_boost else (12.0, 24.0)
+        for retention_time in retention_times:
             if retention_time >= safe_duration - 1.0:
                 continue
             retention_end = min(safe_duration, retention_time + 0.32)
@@ -2532,6 +2736,30 @@ def enhanced_edit_filter(
                     f"enable='between(t,{timestamp:.3f},{label_end:.3f})'",
                 ]
             )
+    if show_text_overlays and payoff_text_filename and (
+        adaptive_plan.ending_boost or adaptive_plan.loop_boost
+    ):
+        card_start = max(0.2, safe_duration - 2.75)
+        card_end = max(card_start + 0.2, safe_duration - 0.18)
+        card_label = "INTI / PAYOFF" if adaptive_plan.ending_boost else "KEMBALI KE HOOK"
+        card_text_file = payoff_text_filename if adaptive_plan.ending_boost else hook_text_filename
+        filters.extend(
+            [
+                "drawbox=x=48:y=124:w=984:h=224:color=black@0.76:t=fill:"
+                f"enable='between(t,{card_start:.3f},{card_end:.3f})'",
+                f"drawbox=x=48:y=124:w=14:h=224:color={accent_secondary}@0.98:t=fill:"
+                f"enable='between(t,{card_start:.3f},{card_end:.3f})'",
+                f"drawbox=x=76:y=142:w=244:h=42:color={accent}@0.94:t=fill:"
+                f"enable='between(t,{card_start:.3f},{card_end:.3f})'",
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                f"text='{card_label}':expansion=none:fontcolor=white:fontsize=20:x=94:y=151:"
+                f"enable='between(t,{card_start:.3f},{card_end:.3f})'",
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                f"textfile='{card_text_file}':reload=0:expansion=none:"
+                "fontcolor=white:fontsize=39:line_spacing=8:borderw=2:bordercolor=black@0.86:"
+                f"x=82:y=210:enable='between(t,{card_start:.3f},{card_end:.3f})'",
+            ]
+        )
     if show_reactions:
         filters.extend(
             reaction_overlay_filter(cue, index)
@@ -2990,9 +3218,11 @@ def export_clip(
     temp_audio_path = clips_dir / f"{base_name}.audio_tmp.wav"
     hook_text_path = clips_dir / f"{base_name}.hook.txt"
     pov_text_path = clips_dir / f"{base_name}.pov.txt"
+    payoff_text_path = clips_dir / f"{base_name}.payoff.txt"
     json_path.unlink(missing_ok=True)
 
     duration = clip.end - clip.start
+    adaptive_plan = codex_edit_plan(clip)
     theme_profile = visual_theme_profile(clip)
     emphasis_times = emphasis_timestamps(clip, clip_segments)
     reaction_cues = detect_reaction_cues(clip, clip_segments)
@@ -3007,7 +3237,28 @@ def export_clip(
         if enhanced_edit
         else []
     )
+    if enhanced_edit:
+        sound_effect_cues = apply_codex_audio_cues(sound_effect_cues, duration, adaptive_plan)
     drawtext_supported = ffmpeg_has_filter("drawtext")
+    applied_edits = list(clip.applied_edits)
+    if enhanced_edit and output_format == "vertical_short":
+        if adaptive_plan.hook_boost:
+            applied_edits.append("Hook diberi impact pulse dan accent audio pada detik pertama.")
+        if adaptive_plan.tempo_boost:
+            applied_edits.append("Pattern interrupt dipercepat pada detik 7, 14, dan 22.")
+        if adaptive_plan.ending_boost:
+            applied_edits.append(
+                "Penutup diberi kartu payoff dari kalimat asli dan accent audio."
+                if drawtext_supported
+                else "Penutup diberi accent audio untuk menegaskan payoff."
+            )
+        elif adaptive_plan.loop_boost:
+            applied_edits.append(
+                "Hook dipanggil kembali pada penutup untuk mendorong rewatch."
+                if drawtext_supported
+                else "Penutup diberi accent visual untuk mendorong rewatch."
+            )
+    applied_edits = list(dict.fromkeys(applied_edits))
     subtitles_supported = ffmpeg_has_filter("subtitles")
     reaction_overlays_supported = output_format == "vertical_short" and (
         ffmpeg_has_filter("movie")
@@ -3026,6 +3277,8 @@ def export_clip(
         "drawtext_supported": drawtext_supported,
         "subtitles_supported": subtitles_supported,
         "reaction_overlays_supported": reaction_overlays_supported,
+        "applied_edits": applied_edits,
+        "codex_edit_plan": asdict(adaptive_plan),
         "video_quality": video_quality,
         "output_format": output_format,
         "aspect_ratio": "16:9" if output_format == "landscape_compilation" else "9:16",
@@ -3048,6 +3301,10 @@ def export_clip(
         if drawtext_supported:
             hook_text_path.write_text(hook_banner_text(clip) + "\n", encoding="utf-8")
             pov_text_path.write_text(pov_banner_text(clip) + "\n", encoding="utf-8")
+            payoff_text_path.write_text(
+                payoff_banner_text(clip, clip_segments) + "\n",
+                encoding="utf-8",
+            )
         else:
             console.print(
                 "[yellow]FFmpeg tidak memiliki drawtext; hook teks dilewati, "
@@ -3089,6 +3346,8 @@ def export_clip(
                     show_text_overlays=drawtext_supported,
                     reaction_cues=reaction_cues,
                     show_reactions=reaction_overlays_supported,
+                    codex_plan=adaptive_plan,
+                    payoff_text_filename=payoff_text_path.name if drawtext_supported else "",
                 )}"
             )
     if burn_subtitles and clip_segments and subtitles_supported:
@@ -3156,6 +3415,7 @@ def export_clip(
     finally:
         hook_text_path.unlink(missing_ok=True)
         pov_text_path.unlink(missing_ok=True)
+        payoff_text_path.unlink(missing_ok=True)
     audio_filter = (
         "highpass=f=70,lowpass=f=15000,"
         "acompressor=threshold=0.125:ratio=2.5:attack=20:release=250:makeup=1.35,"
@@ -3401,6 +3661,9 @@ def export_compilation(
     combined_ideas = list(
         dict.fromkeys(value for item in candidates for value in item.improvement_ideas)
     )[:3]
+    combined_applied_edits = list(
+        dict.fromkeys(value for item in candidates for value in item.applied_edits)
+    )[:4]
     compilation = ClipCandidate(
         index=1,
         start=min(item.start for item in candidates),
@@ -3416,6 +3679,7 @@ def export_compilation(
         strengths=combined_strengths,
         weaknesses=combined_weaknesses,
         improvement_ideas=combined_ideas,
+        applied_edits=combined_applied_edits,
     )
     save_json(
         json_path,
@@ -3704,6 +3968,24 @@ def main() -> int:
     if not candidates:
         console.print("[red]No clip candidates found. Try lowering --min or increasing --max.[/red]")
         return 1
+
+    if not args.no_enhanced_edit:
+        console.print("[bold]Applying Codex structural edits to hook and ending...[/bold]")
+        candidates = apply_codex_edits_to_candidates(
+            candidates,
+            transcript,
+            min_duration=args.min,
+            max_duration=args.max,
+        )
+        if args.clip_mode == "highlight_5m":
+            compilation_candidates = candidates
+        else:
+            compilation_candidates = apply_codex_edits_to_candidates(
+                compilation_candidates,
+                transcript,
+                min_duration=args.min,
+                max_duration=args.max,
+            )
 
     save_json(work_dir / f"candidates{cache_suffix}.json", [asdict(item) for item in candidates])
     print_candidates(candidates)
