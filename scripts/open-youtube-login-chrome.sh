@@ -95,6 +95,7 @@ YOUTUBE_CHROME_LOG="${YOUTUBE_CHROME_LOG:-/tmp/clipforge-youtube-chrome.log}"
 YOUTUBE_CHROME_START_MINIMIZED="${YOUTUBE_CHROME_START_MINIMIZED:-false}"
 YOUTUBE_CHROME_HEADLESS="${YOUTUBE_CHROME_HEADLESS:-false}"
 YOUTUBE_CHROME_BACKGROUND="${YOUTUBE_CHROME_BACKGROUND:-false}"
+YOUTUBE_HOST_RUNTIME_DIR="${YOUTUBE_HOST_RUNTIME_DIR:-/run/clipforge-host-user}"
 
 if [[ "${IN_DOCKER:-}" != "1" ]]; then
   if [[ "$YOUTUBE_LOGIN_PROFILE_DIR" == /app/data/* ]]; then
@@ -259,11 +260,38 @@ if [[ "$CLI_YOUTUBE_USE_DESKTOP_PROFILE" != "true" ]]; then
   find "$YOUTUBE_LOGIN_PROFILE_DIR" -maxdepth 2 -name 'Singleton*' -delete 2>/dev/null || true
 fi
 
+# The backend container mounts the host desktop runtime read-only. Chrome needs
+# the same Xauthority/DBus values already used by the Playwright login flow;
+# without these it exits with code 1 before its CDP port becomes reachable.
+if [[ "$YOUTUBE_CHROME_HEADLESS" != "true" && -d "$YOUTUBE_HOST_RUNTIME_DIR" ]]; then
+  if [[ -z "${XAUTHORITY:-}" || ! -r "${XAUTHORITY:-}" ]]; then
+    shopt -s nullglob
+    authority_files=("$YOUTUBE_HOST_RUNTIME_DIR"/.mutter-Xwaylandauth.*)
+    shopt -u nullglob
+    if (( ${#authority_files[@]} > 0 )); then
+      XAUTHORITY="${authority_files[0]}"
+      for authority_file in "${authority_files[@]:1}"; do
+        if [[ "$authority_file" -nt "$XAUTHORITY" ]]; then
+          XAUTHORITY="$authority_file"
+        fi
+      done
+      export XAUTHORITY
+    fi
+  fi
+  if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "$YOUTUBE_HOST_RUNTIME_DIR/bus" ]]; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=$YOUTUBE_HOST_RUNTIME_DIR/bus"
+  fi
+fi
+
 echo "Opening Chrome for YouTube login/sync..."
 echo "CDP: http://127.0.0.1:${YOUTUBE_CDP_PORT}"
 echo "Profile: ${YOUTUBE_LOGIN_PROFILE_DIR}"
 echo "Profile directory: ${YOUTUBE_LOGIN_PROFILE_DIRECTORY}"
 echo "Chrome log: ${YOUTUBE_CHROME_LOG}"
+if [[ "$YOUTUBE_CHROME_HEADLESS" != "true" ]]; then
+  echo "Display: ${DISPLAY:-not-set}"
+  echo "Xauthority: ${XAUTHORITY:-not-set}"
+fi
 if [[ "$CLI_YOUTUBE_USE_DESKTOP_PROFILE" == "true" && -e "$YOUTUBE_LOGIN_PROFILE_DIR/SingletonLock" ]]; then
   echo "Warning: desktop Chrome profile sedang dipakai. Jika CDP tidak aktif, tutup semua window Chrome dulu lalu jalankan command ini lagi."
 fi

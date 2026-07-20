@@ -395,6 +395,26 @@ def test_youtube_session_capture_lines_reports_success():
     assert "Storage-state: tersimpan/terbarui" in lines
 
 
+def test_youtube_cdp_result_lines_reports_browser_login_fallback_as_in_progress():
+    lines = ClipForgeTelegramBot.youtube_cdp_result_lines(
+        object(),
+        {
+            "ok": False,
+            "cdp_ready": False,
+            "session_ready": False,
+            "login_required": True,
+            "message": "Selesaikan login; koneksi ulang berjalan otomatis.",
+            "logs": [],
+        },
+        success_title="Session siap.",
+        failure_title="Session gagal.",
+    )
+
+    assert lines[0] == "Jendela login YouTube sudah dibuka."
+    assert "Info: Selesaikan login; koneksi ulang berjalan otomatis." in lines
+    assert not any(line.startswith("Alasan:") for line in lines)
+
+
 def test_job_keyboard_allows_delete_for_failed_and_queued_jobs():
     failed_markup = ClipForgeTelegramBot.job_keyboard(
         object(),

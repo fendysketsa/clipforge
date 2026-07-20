@@ -239,6 +239,89 @@ def test_sync_youtube_cdp_validates_existing_cdp(monkeypatch):
     assert status.hydrated is True
 
 
+def test_profile_sync_opens_login_fallback_and_requests_automatic_reconnect(monkeypatch, tmp_path):
+    import api
+
+    reconnect_requests = []
+    monkeypatch.setattr(api, "playwright_installed", lambda: True)
+    monkeypatch.setattr(api, "youtube_login_source_profile_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(api, "youtube_login_source_profile_ready", lambda: True)
+    monkeypatch.setattr(
+        api,
+        "repair_youtube_cdp",
+        lambda profile_sync_requested=True: api.YouTubeCdpRepairStatus(
+            ok=False,
+            cdp_ready=False,
+            session_ready=False,
+            profile_sync_requested=profile_sync_requested,
+            source_profile_ready=True,
+            source_profile_path=str(tmp_path),
+            started_at="2026-01-01T00:00:00+00:00",
+            message="Refresh Chrome CDP gagal dari backend.",
+            error="Launcher Chrome CDP exit code 1",
+            logs=["launcher failed"],
+        ),
+    )
+
+    def fake_start_login(*, reconnect_cdp=False):
+        reconnect_requests.append(reconnect_cdp)
+        return api.YouTubeLoginStatus(active=True, logs=["browser opened"])
+
+    monkeypatch.setattr(api, "start_youtube_login_if_needed", fake_start_login)
+
+    status = api.sync_youtube_cdp_from_profile()
+
+    assert status.ok is False
+    assert status.login_required is True
+    assert status.error is None
+    assert reconnect_requests == [True]
+    assert "browser login YouTube dibuka" in status.message
+    assert "browser opened" in status.logs
+
+
+def test_completed_fallback_login_restarts_cdp_and_validates_session(monkeypatch):
+    import api
+
+    refresh_calls = []
+
+    class FakeLoginProcess:
+        stdout = iter(["Sesi YouTube tersimpan: /tmp/youtube-state.json\n"])
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(api.subprocess, "Popen", lambda *args, **kwargs: FakeLoginProcess())
+    monkeypatch.setattr(
+        api,
+        "start_youtube_cdp_refresh_process",
+        lambda **kwargs: (
+            refresh_calls.append(kwargs)
+            or api.YouTubeCdpRefreshStatus(
+                started=True,
+                cdp_ready=True,
+                started_at="2026-01-01T00:00:00+00:00",
+                command=["chrome"],
+                log_path="/tmp/chrome.log",
+                message="CDP ready",
+                logs=["launcher ready"],
+            )
+        ),
+    )
+    monkeypatch.setattr(api, "run_youtube_capture_once", lambda: (0, ["target valid"], None))
+    monkeypatch.setattr(api, "youtube_login_process", None)
+    monkeypatch.setattr(api, "youtube_login_reconnect_cdp", True)
+    monkeypatch.setattr(api, "youtube_login_status", api.YouTubeLoginStatus(active=True))
+
+    api.run_youtube_login_process()
+
+    assert refresh_calls == [{"force_restart": True}]
+    assert api.youtube_login_status.active is False
+    assert api.youtube_login_status.error is None
+    assert "RECONNECT_CDP_SUCCESS" in api.youtube_login_status.logs[-1]
+    assert api.youtube_login_process is None
+    assert api.youtube_login_reconnect_cdp is False
+
+
 def test_default_youtube_description_uses_ai_caption_and_hashtags_only():
     clip = ClipFile(
         name="clip_01.mp4",

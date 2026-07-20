@@ -1123,6 +1123,7 @@ job_processes: dict[str, subprocess.Popen[str]] = {}
 youtube_upload_processes: dict[str, subprocess.Popen[str]] = {}
 youtube_login_process: subprocess.Popen[str] | None = None
 youtube_login_status = YouTubeLoginStatus(active=False)
+youtube_login_reconnect_cdp = False
 cancelled_job_ids: set[str] = set()
 preserve_job_files_on_cancel: set[str] = set()
 process_lock = threading.Lock()
@@ -2497,7 +2498,7 @@ def set_youtube_login_status(**updates) -> None:
 
 
 def run_youtube_login_process() -> None:
-    global youtube_login_process
+    global youtube_login_process, youtube_login_reconnect_cdp
     logs: list[str] = []
     try:
         process_env = os.environ.copy()
@@ -2534,6 +2535,23 @@ def run_youtube_login_process() -> None:
                 set_youtube_login_status(logs=logs[-80:])
         code = process.wait()
         error = youtube_upload_error_from_logs(logs) if code != 0 else None
+        with process_lock:
+            reconnect_cdp = youtube_login_reconnect_cdp
+        if code == 0 and reconnect_cdp:
+            logs.append("Login berhasil; mengaktifkan kembali Chrome remote debugging secara otomatis.")
+            set_youtube_login_status(logs=logs[-80:])
+            try:
+                refresh_status = start_youtube_cdp_refresh_process(force_restart=True)
+                logs.extend(refresh_status.logs[-20:])
+                logs.append(refresh_status.message)
+                capture_code, capture_logs, capture_error = run_youtube_capture_once()
+                logs.extend(capture_logs[-40:])
+                if capture_code != 0:
+                    error = capture_error or f"capture-session exited with code {capture_code}"
+                else:
+                    logs.append("RECONNECT_CDP_SUCCESS: Login selesai, CDP aktif, dan session target valid.")
+            except HTTPException as exc:
+                error = f"Login tersimpan, tetapi koneksi ulang Chrome CDP gagal: {exc.detail}"
         set_youtube_login_status(
             active=False,
             finished_at=now_iso(),
@@ -2545,11 +2563,14 @@ def run_youtube_login_process() -> None:
     finally:
         with process_lock:
             youtube_login_process = None
+            youtube_login_reconnect_cdp = False
 
 
-def start_youtube_login_if_needed() -> YouTubeLoginStatus:
-    global youtube_login_process
+def start_youtube_login_if_needed(*, reconnect_cdp: bool = False) -> YouTubeLoginStatus:
+    global youtube_login_process, youtube_login_reconnect_cdp
     with process_lock:
+        if reconnect_cdp:
+            youtube_login_reconnect_cdp = True
         if youtube_login_process is not None and youtube_login_process.poll() is None:
             return youtube_login_status
         started_at = now_iso()
@@ -4207,7 +4228,7 @@ def start_youtube_login() -> YouTubeLoginStatus:
 
 @app.post("/api/youtube/login/stop", response_model=YouTubeLoginStatus)
 def stop_youtube_login() -> YouTubeLoginStatus:
-    global youtube_login_process
+    global youtube_login_process, youtube_login_reconnect_cdp
     with process_lock:
         process = youtube_login_process
     if process is not None and process.poll() is None:
@@ -4218,6 +4239,7 @@ def stop_youtube_login() -> YouTubeLoginStatus:
             process.kill()
     with process_lock:
         youtube_login_process = None
+        youtube_login_reconnect_cdp = False
     set_youtube_login_status(active=False, finished_at=now_iso(), error=None)
     return youtube_login_status
 
@@ -4645,7 +4667,30 @@ def sync_youtube_cdp_from_profile() -> YouTubeCdpRepairStatus:
             ),
             logs=tail_text_file(YOUTUBE_CDP_REFRESH_LOG, 40),
         )
-    return repair_youtube_cdp(profile_sync_requested=True)
+    repair = repair_youtube_cdp(profile_sync_requested=True)
+    if repair.ok:
+        return repair
+
+    original_error = repair.error or repair.message
+    login_status = start_youtube_login_if_needed(reconnect_cdp=True)
+    data = repair.model_dump()
+    data.update(
+        {
+            "login_required": True,
+            "message": (
+                "Sync profile belum valid, jadi browser login YouTube dibuka sebagai fallback. "
+                "Selesaikan login sampai dashboard Studio tampil. Browser akan tertutup, lalu backend "
+                "mengaktifkan CDP dan memvalidasi ulang session secara otomatis."
+            ),
+            "error": None,
+            "logs": [
+                *repair.logs[-55:],
+                f"Fallback browser login dijalankan karena: {original_error}",
+                *login_status.logs[-20:],
+            ][-80:],
+        }
+    )
+    return YouTubeCdpRepairStatus(**data)
 
 
 @app.post("/api/youtube/cdp/auto-login", response_model=YouTubeCdpRepairStatus)

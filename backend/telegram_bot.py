@@ -1791,8 +1791,9 @@ class ClipForgeTelegramBot:
         session_ready = bool(result.get("session_ready"))
         hydrated = bool(result.get("hydrated"))
         ok = bool(result.get("ok"))
+        login_required = bool(result.get("login_required"))
         lines = [
-            success_title if ok else failure_title,
+            "Jendela login YouTube sudah dibuka." if login_required else success_title if ok else failure_title,
             "",
             f"Remote debugging: {'aktif' if cdp_ready else 'tidak aktif'}",
             f"Session target: {'valid' if session_ready else 'belum valid'}",
@@ -1813,7 +1814,7 @@ class ClipForgeTelegramBot:
             lines.append(f"Path profile: {source_profile[:700]}")
         detail = str(result.get("error") or result.get("message") or "").strip()
         if detail:
-            lines.append(f"{'Info' if ok else 'Alasan'}: {detail[:1200]}")
+            lines.append(f"{'Info' if ok or login_required else 'Alasan'}: {detail[:1200]}")
         if last_log:
             lines.append(f"Log terakhir: {last_log}")
         return lines
