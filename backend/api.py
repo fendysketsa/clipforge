@@ -179,8 +179,8 @@ class ClipJobRequest(BaseModel):
     url: str = ""
     source_file: str = ""
     top: int | None = Field(default=None, ge=1, le=50)
-    min_duration: float = Field(default=35, ge=5, le=600)
-    max_duration: float = Field(default=180, ge=10, le=600)
+    min_duration: float = Field(default=15, ge=5, le=600)
+    max_duration: float = Field(default=60, ge=10, le=600)
     clip_mode: Literal["short", "highlight_5m"] = "short"
     compilation_target_seconds: float = Field(default=300, ge=240, le=360)
     model: str = "Systran/faster-whisper-small"
@@ -646,8 +646,8 @@ class AutoViralRequest(BaseModel):
     min_views: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MIN_VIEWS", 1000), ge=0)
     max_age_days: int = Field(default=FRESH_VIRAL_MAX_AGE_DAYS, ge=1, le=MAX_VIRAL_FALLBACK_AGE_DAYS)
     top: int | None = Field(default=None, ge=1, le=MAX_REQUESTED_CLIPS)
-    min_duration: float = Field(default=35, ge=5, le=600)
-    max_duration: float = Field(default=180, ge=10, le=600)
+    min_duration: float = Field(default=15, ge=5, le=600)
+    max_duration: float = Field(default=60, ge=10, le=600)
     video_quality: Literal["standard", "high", "max"] = "high"
     crop_mode: Literal["center", "person", "streamer"] = "person"
     burn_subtitles: bool = True
@@ -3108,6 +3108,8 @@ def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
     else:
         duration = fetch_video_duration(request.url)
     data = request.model_dump()
+    if request.clip_mode == "short":
+        data["max_duration"] = min(60.0, request.max_duration)
 
     if request.top is None:
         data["top"] = choose_auto_top(duration)
@@ -3149,7 +3151,7 @@ def build_clipper_command(request: ClipJobRequest) -> list[str]:
             "--min",
             str(request.min_duration),
             "--max",
-            str(request.max_duration),
+            str(min(60.0, request.max_duration) if request.clip_mode == "short" else request.max_duration),
             "--clip-mode",
             request.clip_mode,
             "--compilation-target",
@@ -3737,8 +3739,8 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
         min_views=request.min_views,
         max_age_days=request.max_age_days,
         top=3,
-        min_duration=35,
-        max_duration=180,
+        min_duration=15,
+        max_duration=60,
         video_quality="high",
         crop_mode="person",
         burn_subtitles=True,
@@ -4118,6 +4120,11 @@ def start_auto_viral_campaign(request: AutoViralRequest) -> AutoViralRun:
     global auto_viral_active_run_id
     if request.max_duration <= request.min_duration:
         raise HTTPException(status_code=400, detail="max_duration must be greater than min_duration")
+    if request.min_duration >= 60:
+        raise HTTPException(
+            status_code=400,
+            detail="Durasi minimum clip pendek harus di bawah 60 detik",
+        )
     with auto_viral_lock:
         if auto_viral_active_run_id:
             active = auto_viral_runs.get(auto_viral_active_run_id)
@@ -4965,6 +4972,11 @@ def probe_url(url: str) -> dict[str, float | None]:
 def create_job(request: ClipJobRequest) -> ClipJob:
     if request.max_duration <= request.min_duration:
         raise HTTPException(status_code=400, detail="max_duration must be greater than min_duration")
+    if request.clip_mode == "short" and request.min_duration >= 60:
+        raise HTTPException(
+            status_code=400,
+            detail="Durasi minimum clip pendek harus di bawah 60 detik",
+        )
 
     if not request.url and not request.source_file:
         raise HTTPException(status_code=400, detail="Provide a YouTube URL or upload a video first")

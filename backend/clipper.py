@@ -124,6 +124,7 @@ SoundEffectKind = Literal[
     "heart",
     "important",
     "emphasis",
+    "loop",
 ]
 
 
@@ -1432,10 +1433,10 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
     score = 24
     reasons: list[str] = []
 
-    if 45 <= duration <= 120:
+    if 28 <= duration <= 60:
         score += 18
         reasons.append("durasi pas")
-    elif 35 <= duration <= 180:
+    elif 15 <= duration <= 75:
         score += 12
         reasons.append("durasi masih oke")
 
@@ -1589,6 +1590,7 @@ def build_candidate_pool(
             safe_end = window[-1].end - (0.35 if next_is_branding else -0.25)
             safe_start = max(0, safe_start)
             safe_end = max(safe_start + 0.2, safe_end)
+            safe_end = min(safe_end, safe_start + max_duration)
             candidates.append(
                 ClipCandidate(
                     index=0,
@@ -1612,7 +1614,11 @@ def build_candidate_pool(
 
 def select_candidates(candidates: list[ClipCandidate], limit: int) -> list[ClipCandidate]:
     candidates = candidates[:]
-    candidates.sort(key=lambda item: (item.score - abs(item.duration - 85) * 0.04), reverse=True)
+    target_duration = 42
+    candidates.sort(
+        key=lambda item: (item.score - abs(item.duration - target_duration) * 0.04),
+        reverse=True,
+    )
     picked: list[ClipCandidate] = []
     remaining = candidates[:]
     while remaining and len(picked) < limit:
@@ -1624,7 +1630,11 @@ def select_candidates(candidates: list[ClipCandidate], limit: int) -> list[ClipC
                 continue
             duration_similarity = min((abs(candidate.duration - item.duration) for item in picked), default=999)
             diversity_bonus = 8 if duration_similarity > 18 else 0
-            adjusted = candidate.score - abs(candidate.duration - 85) * 0.04 + diversity_bonus
+            adjusted = (
+                candidate.score
+                - abs(candidate.duration - target_duration) * 0.04
+                + diversity_bonus
+            )
             if adjusted > best_adjusted:
                 best = candidate
                 best_adjusted = adjusted
@@ -1707,18 +1717,19 @@ def select_compilation_candidates(
     return picked
 
 
-def select_short_and_compilation_candidates(
+def select_output_candidates(
     candidates: list[ClipCandidate],
+    *,
+    clip_mode: Literal["short", "highlight_5m"],
     short_limit: int,
     compilation_target: float = 300,
 ) -> tuple[list[ClipCandidate], list[ClipCandidate]]:
-    """Build independent short and compilation selections from one scored pool."""
-    short_pool = [ClipCandidate(**asdict(item)) for item in candidates]
-    compilation_pool = [ClipCandidate(**asdict(item)) for item in candidates]
-    return (
-        select_candidates(short_pool, short_limit),
-        select_compilation_candidates(compilation_pool, compilation_target),
-    )
+    """Keep short and compilation renders mutually exclusive."""
+    pool = [ClipCandidate(**asdict(item)) for item in candidates]
+    if clip_mode == "highlight_5m":
+        compilation = select_compilation_candidates(pool, compilation_target)
+        return compilation, compilation
+    return select_candidates(pool, short_limit), []
 
 
 AI_RESCORE_POOL_LIMIT = 40
@@ -1935,11 +1946,13 @@ def codex_edit_plan(clip: ClipCandidate) -> CodexEditPlan:
     ideas = " ".join(clip.improvement_ideas).casefold()
     analysis = f"{weaknesses} {ideas}"
     return CodexEditPlan(
-        hook_boost=any(token in analysis for token in ("3 detik", "hook —", "pembuka")),
+        # A strong opening and loop callback are the house style for every short.
+        # Analysis still decides whether tempo/payoff need extra work.
+        hook_boost=True,
         tempo_boost=any(token in analysis for token in ("tempo", "ritme", "alur —", "30 detik")),
         ending_boost=any(token in weaknesses for token in ("ending", "payoff"))
         or "ending —" in ideas,
-        loop_boost="loop —" in analysis or "transisi ulang" in analysis or "rewatch" in analysis,
+        loop_boost=True,
     )
 
 
@@ -2311,6 +2324,7 @@ SOUND_EFFECT_PROFILES: dict[SoundEffectKind, tuple[int, float, float]] = {
     "heart": (740, 0.34, 0.065),
     "important": (560, 0.18, 0.085),
     "emphasis": (480, 0.13, 0.075),
+    "loop": (720, 0.22, 0.075),
 }
 
 
@@ -2387,6 +2401,18 @@ def apply_codex_audio_cues(
                 trigger="payoff Codex",
             )
         )
+    if plan.loop_boost and duration > 4.0:
+        frequency, effect_duration, volume = SOUND_EFFECT_PROFILES["loop"]
+        additions.append(
+            SoundEffectCue(
+                kind="loop",
+                start=round(max(1.0, duration - 0.42), 3),
+                duration=effect_duration,
+                frequency=frequency,
+                volume=volume,
+                trigger="loop Codex",
+            )
+        )
 
     merged: list[SoundEffectCue] = []
     for cue in sorted([*cues, *additions], key=lambda item: item.start):
@@ -2395,7 +2421,12 @@ def apply_codex_audio_cues(
                 merged[-1] = cue
             continue
         merged.append(cue)
-    return merged[:6]
+    max_cues = 7
+    if len(merged) <= max_cues:
+        return merged
+    mandatory = [cue for cue in merged if cue.trigger.endswith("Codex")]
+    optional = [cue for cue in merged if not cue.trigger.endswith("Codex")]
+    return sorted([*mandatory, *optional[: max_cues - len(mandatory)]], key=lambda item: item.start)
 
 
 def contextual_audio_mix_filter(base_filter: str, cues: list[SoundEffectCue]) -> str:
@@ -2407,7 +2438,7 @@ def contextual_audio_mix_filter(base_filter: str, cues: list[SoundEffectCue]) ->
         f"[0:a:0]{base_filter},aformat=sample_rates=48000:channel_layouts=stereo[voice]"
     ]
     mix_inputs = ["[voice]"]
-    chime_kinds = {"laugh", "think", "pray", "heart", "important", "emphasis"}
+    chime_kinds = {"laugh", "think", "pray", "heart", "important", "emphasis", "loop"}
     for index, cue in enumerate(cues, start=1):
         label = f"sfx_{index}"
         fade_in = min(0.018, cue.duration * 0.15)
@@ -2594,7 +2625,6 @@ def enhanced_edit_filter(
 ) -> str:
     """Add context-aware motion graphics while keeping faces and captions readable."""
     safe_duration = max(0.1, duration)
-    fade_out_start = max(0.0, safe_duration - 0.24)
     profile = theme_profile or {
         "theme": "knowledge",
         "accent": "#FACC15",
@@ -2629,7 +2659,6 @@ def enhanced_edit_filter(
         f"y='{center_y:.1f}+{amp_y:.1f}*sin(2*PI*t/{y_period})'",
         "vignette=PI/9",
         "fade=t=in:st=0:d=0.18",
-        f"fade=t=out:st={fade_out_start:.3f}:d=0.24",
         modern_blurred_video_frame_filter(accent, accent_secondary),
     ]
     filters.extend(modern_gradient_border_filters(accent, accent_secondary))
@@ -2736,13 +2765,9 @@ def enhanced_edit_filter(
                     f"enable='between(t,{timestamp:.3f},{label_end:.3f})'",
                 ]
             )
-    if show_text_overlays and payoff_text_filename and (
-        adaptive_plan.ending_boost or adaptive_plan.loop_boost
-    ):
-        card_start = max(0.2, safe_duration - 2.75)
-        card_end = max(card_start + 0.2, safe_duration - 0.18)
-        card_label = "INTI / PAYOFF" if adaptive_plan.ending_boost else "KEMBALI KE HOOK"
-        card_text_file = payoff_text_filename if adaptive_plan.ending_boost else hook_text_filename
+    if show_text_overlays and payoff_text_filename and adaptive_plan.ending_boost:
+        card_start = max(0.2, safe_duration - 3.35)
+        card_end = max(card_start + 0.2, safe_duration - 1.28)
         filters.extend(
             [
                 "drawbox=x=48:y=124:w=984:h=224:color=black@0.76:t=fill:"
@@ -2752,12 +2777,34 @@ def enhanced_edit_filter(
                 f"drawbox=x=76:y=142:w=244:h=42:color={accent}@0.94:t=fill:"
                 f"enable='between(t,{card_start:.3f},{card_end:.3f})'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-                f"text='{card_label}':expansion=none:fontcolor=white:fontsize=20:x=94:y=151:"
+                "text='INTI / PAYOFF':expansion=none:fontcolor=white:fontsize=20:x=94:y=151:"
                 f"enable='between(t,{card_start:.3f},{card_end:.3f})'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-                f"textfile='{card_text_file}':reload=0:expansion=none:"
+                f"textfile='{payoff_text_filename}':reload=0:expansion=none:"
                 "fontcolor=white:fontsize=39:line_spacing=8:borderw=2:bordercolor=black@0.86:"
                 f"x=82:y=210:enable='between(t,{card_start:.3f},{card_end:.3f})'",
+            ]
+        )
+    if show_text_overlays and adaptive_plan.loop_boost:
+        # Reuse the opening promise while the source frame stays visible. When
+        # autoplay returns to t=0 there is no black-frame interruption.
+        loop_start = max(0.2, safe_duration - 1.22)
+        loop_end = max(loop_start + 0.1, safe_duration - 0.03)
+        filters.extend(
+            [
+                "drawbox=x=48:y=120:w=984:h=250:color=black@0.72:t=fill:"
+                f"enable='between(t,{loop_start:.3f},{loop_end:.3f})'",
+                f"drawbox=x=48:y=120:w=14:h=250:color={accent}@0.98:t=fill:"
+                f"enable='between(t,{loop_start:.3f},{loop_end:.3f})'",
+                f"drawbox=x=76:y=140:w=224:h=42:color={accent_secondary}@0.96:t=fill:"
+                f"enable='between(t,{loop_start:.3f},{loop_end:.3f})'",
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                "text='MASIH INGAT INI?':expansion=none:fontcolor=white:fontsize=20:x=94:y=149:"
+                f"enable='between(t,{loop_start:.3f},{loop_end:.3f})'",
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                f"textfile='{hook_text_filename}':reload=0:expansion=none:"
+                "fontcolor=white:fontsize=42:line_spacing=9:borderw=2:bordercolor=black@0.86:"
+                f"x=82:y=210:enable='between(t,{loop_start:.3f},{loop_end:.3f})'",
             ]
         )
     if show_reactions:
@@ -3252,11 +3299,11 @@ def export_clip(
                 if drawtext_supported
                 else "Penutup diberi accent audio untuk menegaskan payoff."
             )
-        elif adaptive_plan.loop_boost:
+        if adaptive_plan.loop_boost:
             applied_edits.append(
-                "Hook dipanggil kembali pada penutup untuk mendorong rewatch."
+                "Penutup memanggil kembali hook tanpa fade hitam agar loop menyambung."
                 if drawtext_supported
-                else "Penutup diberi accent visual untuk mendorong rewatch."
+                else "Penutup diberi accent audio agar loop terasa menyambung."
             )
     applied_edits = list(dict.fromkeys(applied_edits))
     subtitles_supported = ffmpeg_has_filter("subtitles")
@@ -3422,11 +3469,9 @@ def export_clip(
         "loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000"
     )
     if enhanced_edit:
-        audio_fade_out_start = max(0.0, duration - 0.14)
-        audio_filter += (
-            ",afade=t=in:st=0:d=0.10"
-            f",afade=t=out:st={audio_fade_out_start:.3f}:d=0.14"
-        )
+        # Keep the last spoken beat alive; the loop cue hands it back to the
+        # opening hook without fading to silence.
+        audio_filter += ",afade=t=in:st=0:d=0.10"
     plain_audio_command = [
         *common_input,
         "-map",
@@ -3794,13 +3839,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("url", nargs="?", default="", help="YouTube URL")
     parser.add_argument("--source-file", default="", help="Use a local video file instead of downloading from a URL")
     parser.add_argument("--top", type=int, default=5, help="Number of clips to export")
-    parser.add_argument("--min", type=float, default=35, help="Minimum clip duration in seconds")
-    parser.add_argument("--max", type=float, default=180, help="Maximum clip duration in seconds")
+    parser.add_argument("--min", type=float, default=15, help="Minimum clip duration in seconds")
+    parser.add_argument("--max", type=float, default=60, help="Maximum clip duration in seconds")
     parser.add_argument(
         "--clip-mode",
         choices=["short", "highlight_5m"],
         default="short",
-        help="Export vertical short clips plus one 16:9 compilation, or only one five-minute landscape compilation",
+        help="Export vertical shorts only, or one separate five-minute landscape compilation",
     )
     parser.add_argument(
         "--compilation-target",
@@ -3880,6 +3925,10 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
 
+    if args.clip_mode == "short" and args.max > 60:
+        console.print("[yellow]Short clip maximum capped at 60 seconds.[/yellow]")
+        args.max = 60.0
+
     if args.min <= 0 or args.max <= args.min:
         console.print("[red]Invalid duration range.[/red]")
         return 2
@@ -3947,7 +3996,7 @@ def main() -> int:
     ai_target_count = (
         min(12, max(4, math.ceil(args.compilation_target / 60)))
         if args.clip_mode == "highlight_5m"
-        else min(12, max(args.top, math.ceil(args.compilation_target / 60)))
+        else min(12, max(1, args.top))
     )
     pool = ai_rescore_candidates(
         pool,
@@ -3955,16 +4004,12 @@ def main() -> int:
         target_count=ai_target_count,
         compilation=args.clip_mode == "highlight_5m",
     )
-    compilation_candidates: list[ClipCandidate]
-    if args.clip_mode == "highlight_5m":
-        candidates = select_compilation_candidates(pool, args.compilation_target)
-        compilation_candidates = candidates
-    else:
-        candidates, compilation_candidates = select_short_and_compilation_candidates(
-            pool,
-            args.top,
-            args.compilation_target,
-        )
+    candidates, compilation_candidates = select_output_candidates(
+        pool,
+        clip_mode=args.clip_mode,
+        short_limit=args.top,
+        compilation_target=args.compilation_target,
+    )
     if not candidates:
         console.print("[red]No clip candidates found. Try lowering --min or increasing --max.[/red]")
         return 1
@@ -3979,13 +4024,6 @@ def main() -> int:
         )
         if args.clip_mode == "highlight_5m":
             compilation_candidates = candidates
-        else:
-            compilation_candidates = apply_codex_edits_to_candidates(
-                compilation_candidates,
-                transcript,
-                min_duration=args.min,
-                max_duration=args.max,
-            )
 
     save_json(work_dir / f"candidates{cache_suffix}.json", [asdict(item) for item in candidates])
     print_candidates(candidates)
@@ -4058,25 +4096,6 @@ def main() -> int:
                     args.video_quality,
                     enhanced_edit=not args.no_enhanced_edit,
                     remove_running_text=not args.keep_running_text,
-                )
-            )
-        if compilation_candidates:
-            console.print("[bold]Exporting 16:9 landscape cinematic highlight compilation...[/bold]")
-            exported.append(
-                export_compilation(
-                    final_video_path,
-                    compilation_candidates,
-                    transcript,
-                    clips_dir,
-                    not args.no_burn_subtitles,
-                    args.crop_mode,
-                    caption_style,
-                    ai_config,
-                    args.cam_corner,
-                    required_hashtags,
-                    args.video_quality,
-                    not args.no_enhanced_edit,
-                    not args.keep_running_text,
                 )
             )
 

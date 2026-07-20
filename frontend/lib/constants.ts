@@ -1,8 +1,8 @@
 import { CheckCircle2, Clock3, Loader2, XCircle, type LucideIcon } from "lucide-react";
 import type { ClipMode, JobStatus, VideoQuality } from "../types/clip.type";
 
-export const DEFAULT_MIN_DURATION = 35;
-export const DEFAULT_MAX_DURATION = 180;
+export const DEFAULT_MIN_DURATION = 15;
+export const DEFAULT_MAX_DURATION = 60;
 export const DEFAULT_MODEL = "Systran/faster-whisper-small";
 export const DEFAULT_LANGUAGE = "id";
 export const DEFAULT_VIDEO_QUALITY: VideoQuality = "high";

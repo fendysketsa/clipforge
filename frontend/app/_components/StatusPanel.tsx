@@ -45,7 +45,7 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
             <span>
               {job.request.clip_mode === "highlight_5m"
                 ? "Hanya highlight ±5 menit"
-                : `${job.request.top ?? "Auto"} klip pendek + 1 kompilasi`}
+                : `${job.request.top ?? "Auto"} clip pendek maks. 60 detik`}
             </span>
             <span>
               {job.request.min_duration}s - {job.request.max_duration}s

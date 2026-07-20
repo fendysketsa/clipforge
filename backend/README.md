@@ -57,7 +57,7 @@ against `TELEGRAM_OWNER_ID` for every message and button callback.
 Common CLI options:
 
 ```powershell
-.\.venv\Scripts\python.exe clipper.py "URL" --top 5 --min 35 --max 180
+.\.venv\Scripts\python.exe clipper.py "URL" --top 5 --min 15 --max 60
 ```
 
 Test cepat tanpa transcribe full video:
@@ -88,8 +88,11 @@ Default output video:
 - source download mencoba HD sampai 1080p (`bestvideo+bestaudio`)
 - subtitle burned-in
 - caption ringkas dengan background gradient-blur
+- hook visual/audio, reaction kontekstual, dan pattern interrupt
+- payoff transcript lalu callback hook tanpa fade hitam agar loop menyambung
 - transcript lokal via `Systran/faster-whisper-small`
-- durasi clip dinamis, maksimal 3 menit secara default
+- durasi clip pendek dinamis, maksimal 60 detik
+- mode `short` tidak merender kompilasi tambahan
 
 Untuk membuat satu kompilasi highlight sekitar lima menit (bukan Short):
 

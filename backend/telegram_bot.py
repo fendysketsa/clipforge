@@ -45,8 +45,8 @@ TELEGRAM_COMPILATION_MAX_SECONDS = 300
 ALLOWED_CAPTION_POSITIONS = {"upper", "center", "bottom"}
 ALLOWED_CAPTION_FONT_SIZES = {7, 9, 10, 12, 14, 18, 20, 24}
 ALLOWED_TOP = {None, 3, 5, 8, 10, 12}
-ALLOWED_DURATION_PRESETS = {(15, 60), (30, 75), (35, 180), (60, 180)}
-SETTINGS_SCHEMA_VERSION = 4
+ALLOWED_DURATION_PRESETS = {(15, 45), (15, 60), (30, 60)}
+SETTINGS_SCHEMA_VERSION = 5
 
 
 def env_float(name: str, default: float) -> float:
@@ -128,8 +128,8 @@ VIRAL_CC_MAX_SOURCE_SECONDS = max(
 DEFAULT_SETTINGS: dict[str, Any] = {
     "clip_mode": "short",
     "top": None,
-    "min_duration": 35,
-    "max_duration": 180,
+    "min_duration": 15,
+    "max_duration": 60,
     "video_quality": "high",
     "crop_mode": "person",
     "burn_subtitles": True,
@@ -362,8 +362,7 @@ def normalize_settings(value: object) -> dict[str, Any]:
     top = value.get("top")
     settings["top"] = top if top in ALLOWED_TOP else None
 
-    # Telegram CTA always creates short clips plus one compilation. This also
-    # migrates persisted state from the removed "highlight only" option.
+    # Telegram CTA creates short clips only. Compilation stays a separate mode.
     settings["clip_mode"] = "short"
 
     duration = (value.get("min_duration"), value.get("max_duration"))
@@ -427,6 +426,9 @@ def normalize_state(value: object) -> dict[str, Any]:
     state["settings"] = normalize_settings(value.get("settings"))
     if int(value.get("settings_schema_version") or 1) < SETTINGS_SCHEMA_VERSION:
         raw_settings = value.get("settings") if isinstance(value.get("settings"), dict) else {}
+        if (raw_settings.get("min_duration"), raw_settings.get("max_duration")) not in ALLOWED_DURATION_PRESETS:
+            state["settings"]["min_duration"] = DEFAULT_SETTINGS["min_duration"]
+            state["settings"]["max_duration"] = DEFAULT_SETTINGS["max_duration"]
         if raw_settings.get("caption_font_size") in {9, 12, 14, 18}:
             state["settings"]["caption_font_size"] = DEFAULT_SETTINGS["caption_font_size"]
         if raw_settings.get("ai_model") == "deepseek-v4-flash:cloud":
@@ -1103,7 +1105,7 @@ def keyboard(rows: list[list[dict[str, str]]]) -> dict[str, Any]:
 def main_menu_keyboard() -> dict[str, Any]:
     return keyboard(
         [
-            [button("🎬 Buat Clip + Kompilasi", "menu:new")],
+            [button("🎬 Buat Clip Pendek", "menu:new")],
             [button("🔥 Cari Viral CC", "viral:refresh")],
             [button("📂 Clip Belum Upload YouTube", "menu:unuploaded")],
             [button("📊 Status", "menu:status"), button("📚 Riwayat", "menu:history")],
@@ -1121,8 +1123,8 @@ def settings_summary(settings: dict[str, Any]) -> str:
     crop = {"center": "Center", "person": "Follow Person", "streamer": "Streamer"}[clean["crop_mode"]]
     position = {"upper": "Atas", "center": "Tengah", "bottom": "Bawah"}[clean["caption_position"]]
     return (
-        "Output: Clip pendek + 1 kompilasi landscape 16:9 otomatis\n"
-        "Kompilasi panjang: maksimal 5 menit\n"
+        "Output: Clip vertikal pendek tanpa kompilasi tambahan\n"
+        "Gaya: hook + animasi/SFX + payoff + penutup loop\n"
         f"Target clip: {top}\n"
         f"Durasi: {clean['min_duration']}–{clean['max_duration']} detik\n"
         f"Kualitas: {quality}\n"
@@ -1138,7 +1140,7 @@ def settings_keyboard(settings: dict[str, Any], *, has_pending_url: bool = False
     clean = normalize_settings(settings)
     top = "auto" if clean["top"] is None else clean["top"]
     rows = [
-            [button("Output · Shorts + Kompilasi 16:9", "settings:output")],
+            [button("Output · Shorts Maks. 60 Detik", "settings:output")],
             [button(f"Jumlah Clip · {top}", "settings:top")],
             [button(f"Durasi · {clean['min_duration']}–{clean['max_duration']}d", "settings:duration")],
             [button(f"Kualitas · {clean['video_quality']}", "settings:quality")],
@@ -1158,7 +1160,7 @@ def settings_keyboard(settings: dict[str, Any], *, has_pending_url: bool = False
 def confirmation_keyboard() -> dict[str, Any]:
     return keyboard(
         [
-            [button("🚀 Buat Clip + Kompilasi", "job:confirm")],
+            [button("🚀 Buat Clip Pendek", "job:confirm")],
             [button("⚙️ Ubah Pengaturan", "menu:settings"), button("❌ Batal", "pending:cancel")],
         ]
     )
@@ -1360,7 +1362,7 @@ class ClipForgeTelegramBot:
             "Link siap diproses\n\n"
             f"{url}\n\n"
             + settings_summary(self.state["settings"])
-            + "\n\nSekali proses menghasilkan clip pendek vertikal dan satu kompilasi landscape 16:9 maksimal 5 menit.",
+            + "\n\nSekali proses hanya menghasilkan clip vertikal maksimal 60 detik; kompilasi tidak ikut dirender.",
             confirmation_keyboard(),
         )
 
@@ -1370,8 +1372,8 @@ class ClipForgeTelegramBot:
             "Cara menggunakan Fendy Clipper\n\n"
             "1. Kirim link YouTube ke bot.\n"
             "2. Periksa pengaturan yang ditampilkan.\n"
-            "3. Tekan Buat Clip + Kompilasi.\n"
-            "4. Bot otomatis membuat clip pendek dan satu kompilasi landscape 16:9 maksimal lima menit.\n"
+            "3. Tekan Buat Clip Pendek.\n"
+            "4. Bot membuat clip maksimal 60 detik dengan hook, animasi/SFX, payoff, dan penutup loop.\n"
             "5. Bot akan mengirim seluruh hasil saat selesai.\n"
             "6. Tekan Upload ke YouTube pada video pilihan atau Upload 3 Terbaik.\n\n"
             "Hasil belum upload: /hasil menampilkan folder, file, skor FYP, dan hanya clip "
@@ -1490,7 +1492,7 @@ class ClipForgeTelegramBot:
             f"Status: {status_label}",
             f"Sumber: {title}",
             f"Job: {str(job.get('id', ''))[:10]}",
-            "Output: clip pendek + kompilasi landscape 16:9 maks. 5 menit",
+            "Output: clip pendek maks. 60 detik tanpa kompilasi tambahan",
             f"Durasi proses: {format_duration(elapsed_for_job(job))}",
         ]
         if status in ACTIVE_STATUSES:
@@ -1498,7 +1500,10 @@ class ClipForgeTelegramBot:
         if status == "completed":
             clips = job.get("clips", [])
             compilation_count = sum(1 for clip in clips if is_compilation_result(clip))
-            lines.append(f"Hasil: {len(clips) - compilation_count} clip pendek + {compilation_count} kompilasi")
+            if compilation_count:
+                lines.append(f"Hasil: {len(clips) - compilation_count} clip pendek + {compilation_count} kompilasi")
+            else:
+                lines.append(f"Hasil: {len(clips)} clip pendek")
         if status in {"failed", "cancelled"} and job.get("error"):
             lines.append(f"Keterangan: {str(job['error'])[:2000]}")
         return "\n".join(lines)
@@ -2354,8 +2359,8 @@ class ClipForgeTelegramBot:
         self.persist()
         status_message = self.send_message(
             chat_id,
-            "Proses dimulai: bot membuat clip pendek sekaligus satu kompilasi landscape 16:9 maksimal 5 menit. "
-            "Alert tahap demi tahap aktif dan semua hasil akan dikirim otomatis.",
+            "Proses dimulai: bot membuat clip vertikal maksimal 60 detik tanpa render kompilasi tambahan. "
+            "Hook, animasi/SFX, payoff, dan penutup loop aktif; semua hasil akan dikirim otomatis.",
             self.job_keyboard(job),
         )
         self.state["jobs"][job_id]["status_message_id"] = status_message.get("message_id")
@@ -2501,7 +2506,11 @@ class ClipForgeTelegramBot:
                 f"Sumber: {source}\n"
                 + (f"Channel: {uploader}\n" if uploader else "")
                 + f"Clip pendek: {short_count}\n"
-                + f"Kompilasi landscape 16:9 maksimal 5 menit: {compilation_count}\n"
+                + (
+                    f"Kompilasi landscape 16:9 maksimal 5 menit: {compilation_count}\n"
+                    if compilation_count
+                    else ""
+                )
                 + f"Total hasil: {len(clips)} video\n"
                 + f"Durasi proses: {format_duration(job.get('duration_seconds'))}\n\n"
                 + "Bot mulai mengirim video dan materi pendukung satu per satu."
@@ -2947,7 +2956,7 @@ class ClipForgeTelegramBot:
         elif name == "mode" and value in ALLOWED_CLIP_MODES:
             settings["clip_mode"] = "short"
             settings["top"] = None
-            settings["min_duration"], settings["max_duration"] = 35, 180
+            settings["min_duration"], settings["max_duration"] = 15, 60
         elif name == "duration" and len(parts) == 4:
             if not value.isdigit() or not parts[3].isdigit():
                 return False
@@ -3063,7 +3072,7 @@ class ClipForgeTelegramBot:
         elif data == "job:confirm":
             self.send_message(
                 chat_id,
-                "Perintah diterima. Backend menyiapkan clip pendek + kompilasi landscape 16:9 maksimal 5 menit...",
+                "Perintah diterima. Backend menyiapkan clip pendek maksimal 60 detik...",
             )
             self.start_job(chat_id)
         elif data == "settings:top":
@@ -3079,10 +3088,10 @@ class ClipForgeTelegramBot:
             )
         elif data == "settings:mode":
             show_panel(
-                "Output Telegram dibuat otomatis dalam satu tahap.",
+                "Output Telegram dibuat otomatis tanpa kompilasi tambahan.",
                 keyboard(
                     [
-                        [button("✅ Shorts + Kompilasi 16:9 Maks. 5 Menit", "set:mode:short")],
+                        [button("✅ Shorts Maks. 60 Detik", "set:mode:short")],
                         [button("⬅️ Kembali", "menu:settings")],
                     ]
                 ),
@@ -3090,11 +3099,11 @@ class ClipForgeTelegramBot:
         elif data == "settings:output":
             show_panel(
                 "Output otomatis\n\n"
-                "• Beberapa clip pendek terbaik\n"
-                "• Satu kompilasi landscape 16:9 sinematik\n"
-                "• Durasi kompilasi tidak lebih dari 5 menit\n"
-                "• Renderer dan gaya edit berbeda dari Shorts\n"
-                "• Semua dibuat dalam satu proses",
+                "• Beberapa clip vertikal maksimal 60 detik\n"
+                "• Hook kuat pada setiap clip\n"
+                "• Animasi, reaction, dan sound effect kontekstual\n"
+                "• Payoff lalu callback hook agar loop menyambung\n"
+                "• Kompilasi dipisahkan supaya proses lebih cepat",
                 keyboard([[button("⬅️ Kembali", "menu:settings")]]),
             )
         elif data == "settings:duration":
@@ -3102,10 +3111,9 @@ class ClipForgeTelegramBot:
                 "Pilih rentang durasi setiap clip",
                 keyboard(
                     [
+                        [button("15–45 detik", "set:duration:15:45")],
                         [button("15–60 detik", "set:duration:15:60")],
-                        [button("30–75 detik (bagian highlight)", "set:duration:30:75")],
-                        [button("35–180 detik", "set:duration:35:180")],
-                        [button("60–180 detik", "set:duration:60:180")],
+                        [button("30–60 detik", "set:duration:30:60")],
                         [button("⬅️ Kembali", "menu:settings")],
                     ]
                 ),

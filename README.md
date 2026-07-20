@@ -15,11 +15,14 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Burn subtitles into clips by default.
 - Apply context-aware cinematic editing by default: theme color grading, animated hooks, varied camera motion, transcript-synced emphasis pulses, transitions, vignette, and progress bar.
 - Add sparse conversation-aware reaction stickers for laughter, surprise, questions, prayer/gratitude, warnings, and emotional moments.
+- Mix restrained transcript-synced sound effects under normalized dialogue.
+- Close each short by calling back its opening hook without fading to black, so autoplay loops cleanly.
 - Crop the source footer/running-text strip from vertical exports by default before adding fresh captions and graphics.
 - Enhance voice clarity and generate safe, niche-aware social captions even when the AI service is unavailable.
 - Keep captions compact with a soft gradient-blur background by default.
-- Generate short clips and one chronological, FYP-focused compilation of about five minutes in the same job.
-- Telegram's primary CTA always requests both outputs in one job and caps the compilation at 300 seconds.
+- Generate short clips up to 60 seconds without an extra compilation render.
+- Keep the chronological five-minute compilation available as a separate mode.
+- Telegram's primary CTA requests short clips only for a faster turnaround.
 - Search 70+ Creative Commons themes, including Islamic insight, mystery, myth/fact, history, and relevant horror; prioritize the last 30 days and expand to 180 days when needed.
 - Permanently skip YouTube source URLs that have already completed clipping.
 - Crop center or shift crop toward detected faces/people.
@@ -261,7 +264,7 @@ The backend can also run without the UI:
 
 ```powershell
 cd backend
-.\.venv\Scripts\python.exe clipper.py "https://www.youtube.com/watch?v=..." --top 5 --min 35 --max 180
+.\.venv\Scripts\python.exe clipper.py "https://www.youtube.com/watch?v=..." --top 5 --min 15 --max 60
 ```
 
 Quick test on the first 180 seconds:

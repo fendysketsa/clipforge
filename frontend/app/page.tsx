@@ -445,6 +445,7 @@ export default function HomePage() {
 
   const handleStartJob = useCallback(async () => {
     const trimmedUrl = url.trim();
+    const effectiveMaxDuration = clipMode === "short" ? Math.min(60, maxDuration) : maxDuration;
     setError("");
 
     if (isActiveJob(activeJob)) {
@@ -459,6 +460,14 @@ export default function HomePage() {
       setError("Unggah file video terlebih dahulu.");
       return;
     }
+    if (effectiveMaxDuration <= minDuration) {
+      setError(
+        clipMode === "short"
+          ? "Durasi minimum clip pendek harus di bawah 60 detik."
+          : "Durasi maksimum harus lebih besar dari durasi minimum.",
+      );
+      return;
+    }
 
     setIsSubmitting(true);
 
@@ -469,7 +478,7 @@ export default function HomePage() {
           source_file: sourceMode === "upload" ? uploadToken : "",
           top: clipMode === "short" && targetClips > 0 ? targetClips : undefined,
           min_duration: minDuration,
-          max_duration: maxDuration,
+          max_duration: effectiveMaxDuration,
           clip_mode: clipMode,
           compilation_target_seconds: COMPILATION_TARGET_SECONDS,
           model: DEFAULT_MODEL,
@@ -984,7 +993,7 @@ export default function HomePage() {
           max_age_days: 30,
           top: targetClips || null,
           min_duration: minDuration,
-          max_duration: maxDuration,
+          max_duration: Math.min(60, maxDuration),
           video_quality: videoQuality,
           crop_mode: cropMode,
           burn_subtitles: burnSubtitles,

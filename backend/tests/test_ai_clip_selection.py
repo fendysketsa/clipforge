@@ -7,7 +7,7 @@ from clipper import (
     ai_rescore_candidates,
     select_candidates,
     select_compilation_candidates,
-    select_short_and_compilation_candidates,
+    select_output_candidates,
 )
 
 
@@ -120,18 +120,35 @@ def test_compilation_selection_reaches_five_minutes_without_overlap():
     )
 
 
-def test_short_mode_builds_short_clips_and_one_compilation_selection():
+def test_short_mode_does_not_build_a_compilation_selection():
     candidates = [
         make_candidate(0, start, 95 - index, f"Poin penting {index}")
         for index, start in enumerate((0, 70, 140, 210, 280, 350))
     ]
 
-    shorts, compilation = select_short_and_compilation_candidates(
+    shorts, compilation = select_output_candidates(
         candidates,
+        clip_mode="short",
         short_limit=3,
         compilation_target=300,
     )
 
     assert len(shorts) == 3
+    assert compilation == []
+
+
+def test_highlight_mode_builds_only_the_compilation_selection():
+    candidates = [
+        make_candidate(0, start, 95 - index, f"Poin penting {index}")
+        for index, start in enumerate((0, 70, 140, 210, 280, 350))
+    ]
+
+    selected, compilation = select_output_candidates(
+        candidates,
+        clip_mode="highlight_5m",
+        short_limit=3,
+        compilation_target=300,
+    )
+
+    assert selected is compilation
     assert sum(item.duration for item in compilation) == 300
-    assert all(short is not compilation_part for short in shorts for compilation_part in compilation)

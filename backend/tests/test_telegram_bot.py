@@ -121,14 +121,15 @@ def test_build_job_payload_matches_backend_contract():
     assert payload["url"] == "https://youtu.be/demo"
     assert payload["top"] == 5
     assert payload["crop_mode"] == "center"
-    assert payload["min_duration"] == 35
+    assert payload["min_duration"] == 15
+    assert payload["max_duration"] == 60
     assert payload["caption_font_size"] == 10
     assert payload["clip_mode"] == "short"
     assert payload["compilation_target_seconds"] == TELEGRAM_COMPILATION_MAX_SECONDS == 300
     assert payload["remove_running_text"] is True
 
 
-def test_telegram_cta_migrates_highlight_only_state_to_combined_mode():
+def test_telegram_cta_migrates_highlight_state_to_short_only_mode():
     settings = normalize_settings({"clip_mode": "highlight_5m", "top": 5})
     payload = build_job_payload("https://youtu.be/demo", settings)
 

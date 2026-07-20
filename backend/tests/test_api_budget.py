@@ -63,6 +63,14 @@ def test_normalize_clamps_target_to_budget(monkeypatch):
     req = ClipJobRequest(source_file="fake.mp4", top=20, min_duration=35, max_duration=180)
     out = normalize_job_request(req)
     assert out.top == 2  # clamped from 20 to budget cap
+    assert out.max_duration == 60
+
+
+def test_short_defaults_are_fast_fyp_length():
+    request = ClipJobRequest(source_file="fake.mp4")
+
+    assert request.min_duration == 15
+    assert request.max_duration == 60
 
 
 def test_normalize_keeps_under_budget_target(monkeypatch):
@@ -281,6 +289,18 @@ def test_build_clipper_command_enables_enhanced_edit_by_default():
 
     assert "--no-enhanced-edit" not in command
     assert "--keep-running-text" not in command
+
+
+def test_build_clipper_command_caps_short_render_at_one_minute():
+    command = build_clipper_command(
+        ClipJobRequest(
+            source_file="/tmp/source.mp4",
+            min_duration=35,
+            max_duration=180,
+        )
+    )
+
+    assert command[command.index("--max") + 1] == "60.0"
 
 
 def test_build_clipper_command_can_disable_enhanced_edit():

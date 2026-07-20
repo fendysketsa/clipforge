@@ -290,7 +290,27 @@ def test_codex_render_plan_drives_hook_tempo_payoff_and_audio():
     assert "between(t,7.000,7.320)" in value
     assert "text='INTI / PAYOFF'" in value
     assert "textfile='clip.payoff.txt'" in value
-    assert [cue.trigger for cue in sounds] == ["hook Codex", "payoff Codex"]
+    assert [cue.trigger for cue in sounds] == ["hook Codex", "payoff Codex", "loop Codex"]
+
+
+def test_codex_render_plan_always_hooks_and_closes_with_a_seamless_loop():
+    clip = ClipCandidate(1, 0, 30, 30, 90, "Hook Utama", "test", "Isi penting.")
+    plan = codex_edit_plan(clip)
+
+    value = enhanced_edit_filter(
+        30,
+        "clip.hook.txt",
+        payoff_text_filename="clip.payoff.txt",
+        codex_plan=plan,
+    )
+    sounds = apply_codex_audio_cues([], 30, plan)
+
+    assert plan.hook_boost is True
+    assert plan.loop_boost is True
+    assert "text='MASIH INGAT INI?'" in value
+    assert "between(t,28.780,29.970)" in value
+    assert "fade=t=out" not in value
+    assert [cue.kind for cue in sounds] == ["emphasis", "loop"]
 
 
 def test_fyp_score_rewards_strong_opening_and_first_30_second_arc():
@@ -568,6 +588,18 @@ def test_source_channel_promos_are_boundaries_not_clip_content():
     assert not is_source_branding_segment("Ikuti langkah berikut agar hasilnya benar.")
     assert all("LDTV" not in candidate.text for candidate in candidates)
     assert all(candidate.end <= 40 or candidate.start >= 44 for candidate in candidates)
+
+
+def test_candidate_guard_frames_never_push_a_short_past_one_minute():
+    segments = [
+        TranscriptSegment(0, 30, "Tahukah kamu kenapa poin pertama ini penting?"),
+        TranscriptSegment(30, 60, "Jawabannya memberi payoff yang jelas dan bermanfaat."),
+    ]
+
+    candidates = build_candidate_pool(segments, min_duration=15, max_duration=60)
+
+    assert candidates
+    assert all(candidate.duration <= 60 for candidate in candidates)
 
 
 def test_source_channel_promos_are_removed_from_export_subtitles():

@@ -255,7 +255,7 @@ export function ControlPanel({
             type="button"
             onClick={() => onClipModeChange("short")}
           >
-            Pendek + Kompilasi
+            Clip Pendek
           </button>
           <button
             className={clipMode === "highlight_5m" ? "active" : ""}
@@ -268,7 +268,7 @@ export function ControlPanel({
         <p className="field-help">
           {clipMode === "highlight_5m"
             ? "Hanya kompilasi: AI memilih poin terpenting, menyusunnya kronologis, lalu menggabungkan menjadi satu video sekitar 5 menit."
-            : "Satu proses menghasilkan beberapa clip vertikal pendek sekaligus satu video kompilasi sekitar 5 menit."}
+            : "Hanya membuat clip vertikal maksimal 60 detik. Hook, animasi, sound effect, payoff, dan penutup loop diterapkan dalam satu render."}
         </p>
       </div>
 
@@ -277,7 +277,7 @@ export function ControlPanel({
           <span>Durasi Minimum</span>
           <input
             min={5}
-            max={600}
+            max={clipMode === "short" ? 59 : 600}
             type="number"
             value={minDuration}
             onChange={(event) => onMinDurationChange(Number(event.target.value))}
@@ -287,7 +287,7 @@ export function ControlPanel({
           <span>Durasi Maksimum</span>
           <input
             min={10}
-            max={600}
+            max={clipMode === "short" ? 60 : 600}
             type="number"
             value={maxDuration}
             onChange={(event) => onMaxDurationChange(Number(event.target.value))}
