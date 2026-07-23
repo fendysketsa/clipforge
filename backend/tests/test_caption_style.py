@@ -11,6 +11,7 @@ from clipper import (
     build_candidate_pool,
     build_subtitle_style,
     candidate_fyp_analysis,
+    candidate_story_metrics,
     caption_gradient_blur_filter,
     clip_topic_hashtags,
     codex_edit_plan,
@@ -21,6 +22,7 @@ from clipper import (
     emphasis_timestamps,
     enhanced_edit_filter,
     fallback_social_caption,
+    ffmpeg_clean_metadata_args,
     hook_banner_text,
     is_source_branding_segment,
     landscape_caption_gradient_blur_filter,
@@ -290,11 +292,22 @@ def test_codex_render_plan_drives_hook_tempo_payoff_and_audio():
     assert "between(t,7.000,7.320)" in value
     assert "text='INTI / PAYOFF'" in value
     assert "textfile='clip.payoff.txt'" in value
-    assert [cue.trigger for cue in sounds] == ["hook Codex", "payoff Codex", "loop Codex"]
+    assert [cue.trigger for cue in sounds] == ["hook Codex", "payoff Codex"]
 
 
 def test_codex_render_plan_always_hooks_and_closes_with_a_seamless_loop():
-    clip = ClipCandidate(1, 0, 30, 30, 90, "Hook Utama", "test", "Isi penting.")
+    clip = ClipCandidate(
+        1,
+        0,
+        30,
+        30,
+        90,
+        "Hook Utama",
+        "test",
+        "Kenapa langkah ini penting? Jawabannya karena hasilnya berubah.",
+        loop_score=65,
+        boundary_quality="payoff_tuntas",
+    )
     plan = codex_edit_plan(clip)
 
     value = enhanced_edit_filter(
@@ -307,10 +320,72 @@ def test_codex_render_plan_always_hooks_and_closes_with_a_seamless_loop():
 
     assert plan.hook_boost is True
     assert plan.loop_boost is True
-    assert "text='MASIH INGAT INI?'" in value
-    assert "between(t,28.780,29.970)" in value
+    assert "MASIH INGAT INI?" not in value
+    assert "between(t,29.720,29.970)" in value
     assert "fade=t=out" not in value
     assert [cue.kind for cue in sounds] == ["emphasis", "loop"]
+
+
+def test_codex_render_plan_does_not_force_an_unrelated_loop():
+    clip = ClipCandidate(
+        1,
+        0,
+        30,
+        30,
+        78,
+        "Penjelasan Umum",
+        "test",
+        "Pembahasan selesai tetapi tidak kembali ke pembuka.",
+        loop_score=12,
+        boundary_quality="kalimat_tuntas",
+    )
+
+    plan = codex_edit_plan(clip)
+    sounds = apply_codex_audio_cues([], 30, plan)
+
+    assert plan.loop_boost is False
+    assert [cue.kind for cue in sounds] == ["emphasis"]
+
+
+def test_story_metrics_reward_a_key_point_with_question_to_payoff_loop():
+    strong = [
+        TranscriptSegment(0, 4, "Kenapa keputusan pertama ini sangat penting?"),
+        TranscriptSegment(4, 16, "Masalahnya satu kesalahan kecil membuat semua langkah berikutnya gagal."),
+        TranscriptSegment(16, 26, "Jawabannya, periksa keputusan pertama agar hasilnya berhasil."),
+    ]
+    filler = [
+        TranscriptSegment(0, 10, "Pada kesempatan kali ini kita akan membahas beberapa hal."),
+        TranscriptSegment(10, 26, "Dan lain sebagainya masih akan dijelaskan pada bagian berikutnya"),
+    ]
+
+    strong_metrics = candidate_story_metrics(strong, 26)
+    filler_metrics = candidate_story_metrics(filler, 26)
+
+    assert strong_metrics["key_point_score"] > filler_metrics["key_point_score"]
+    assert strong_metrics["loop_score"] >= 45
+    assert strong_metrics["boundary_quality"] == "payoff_tuntas"
+
+
+def test_candidate_pool_skips_arbitrary_mid_sentence_end():
+    segments = [
+        TranscriptSegment(0, 8, "Kenapa keputusan ini berbahaya?"),
+        TranscriptSegment(8, 20, "Masalahnya terjadi ketika langkah pertama dibiarkan tanpa"),
+        TranscriptSegment(20, 31, "Jawabannya adalah memeriksa risiko sampai hasilnya jelas."),
+    ]
+
+    candidates = build_candidate_pool(segments, min_duration=15, max_duration=40)
+
+    assert candidates
+    assert all(not (19.5 <= candidate.end <= 20.5) for candidate in candidates)
+    assert any(candidate.boundary_quality == "payoff_tuntas" for candidate in candidates)
+
+
+def test_ffmpeg_output_metadata_is_explicitly_sanitized():
+    args = ffmpeg_clean_metadata_args()
+
+    assert args[:4] == ["-map_metadata", "-1", "-map_chapters", "-1"]
+    assert "license=" in args
+    assert "copyright=" in args
 
 
 def test_fyp_score_rewards_strong_opening_and_first_30_second_arc():

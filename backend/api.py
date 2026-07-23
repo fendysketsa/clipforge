@@ -12,7 +12,7 @@ import sys
 import threading
 import time
 import uuid
-from math import ceil, log10
+from math import ceil, exp, log10
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -233,6 +233,9 @@ class ClipCandidate(BaseModel):
     weaknesses: list[str] = Field(default_factory=list)
     improvement_ideas: list[str] = Field(default_factory=list)
     applied_edits: list[str] = Field(default_factory=list)
+    key_point_score: int = 0
+    loop_score: int = 0
+    boundary_quality: str = ""
 
 
 class ClipFile(BaseModel):
@@ -252,6 +255,9 @@ class ClipFile(BaseModel):
     weaknesses: list[str] = Field(default_factory=list)
     improvement_ideas: list[str] = Field(default_factory=list)
     applied_edits: list[str] = Field(default_factory=list)
+    key_point_score: int | None = None
+    loop_score: int | None = None
+    boundary_quality: str | None = None
     output_resolution: str | None = None
     is_correct: bool = False
 
@@ -1423,6 +1429,30 @@ def youtube_upload_staging_filter(source_path: Path) -> str:
     )
 
 
+def youtube_upload_clean_metadata_args() -> list[str]:
+    """Do not copy source provenance tags into a size-limited upload render."""
+    return [
+        "-map_metadata",
+        "-1",
+        "-map_chapters",
+        "-1",
+        "-metadata",
+        "title=",
+        "-metadata",
+        "artist=",
+        "-metadata",
+        "comment=",
+        "-metadata",
+        "description=",
+        "-metadata",
+        "copyright=",
+        "-metadata",
+        "license=",
+        "-metadata",
+        "encoder=",
+    ]
+
+
 def prepare_limited_upload_file(source_path: Path, max_bytes: int) -> Path:
     if source_path.stat().st_size <= max_bytes:
         return source_path
@@ -1477,6 +1507,7 @@ def prepare_limited_upload_file(source_path: Path, max_bytes: int) -> Path:
             "aac",
             "-b:a",
             f"{audio_bps // 1000}k",
+            *youtube_upload_clean_metadata_args(),
             "-movflags",
             "+faststart",
             str(temp_path),
@@ -1958,8 +1989,15 @@ def find_job_clip(job_id: str, clip_url: str) -> tuple[ClipJob, ClipFile, int]:
 
 
 def best_youtube_clip_urls(job: ClipJob, count: int = DEFAULT_YOUTUBE_AUTO_UPLOAD_COUNT) -> list[str]:
-    scores_by_index = {candidate.index: candidate.score for candidate in job.candidates}
-    ranked: list[tuple[int, int, int, ClipFile]] = []
+    scores_by_index = {
+        candidate.index: (
+            candidate.score
+            + candidate.key_point_score * 0.10
+            + candidate.loop_score * 0.05
+        )
+        for candidate in job.candidates
+    }
+    ranked: list[tuple[float, int, int, ClipFile]] = []
     for position, clip in enumerate(job.clips):
         clip_index = clip_index_from_name(clip.name)
         score = scores_by_index.get(clip_index, -1) if clip_index is not None else -1
@@ -2900,6 +2938,12 @@ def discover_clips(started_at: float) -> list[ClipFile]:
             if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool)
             else None
         )
+        def sidecar_score(key: str) -> int | None:
+            value = sidecar.get(key)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                return None
+            return max(0, min(100, int(round(value))))
+
         clips.append(
             ClipFile(
                 name=path.name,
@@ -2930,6 +2974,13 @@ def discover_clips(started_at: float) -> list[ClipFile]:
                 weaknesses=sidecar_list("weaknesses"),
                 improvement_ideas=sidecar_list("improvement_ideas"),
                 applied_edits=sidecar_list("applied_edits"),
+                key_point_score=sidecar_score("key_point_score"),
+                loop_score=sidecar_score("loop_score"),
+                boundary_quality=(
+                    str(sidecar.get("boundary_quality")).strip()
+                    if sidecar.get("boundary_quality")
+                    else None
+                ),
                 output_resolution=(
                     str(sidecar.get("output_resolution")).strip()
                     if sidecar.get("output_resolution")
@@ -3383,8 +3434,35 @@ def youtube_watch_url(info: dict[str, Any]) -> str:
 
 
 def is_creative_commons_info(info: dict[str, Any]) -> bool:
-    license_text = str(info.get("license") or "").lower()
-    return "creative commons" in license_text or "cc-by" in license_text or "reuse allowed" in license_text
+    license_text = re.sub(r"\s+", " ", str(info.get("license") or "")).strip().casefold()
+    return bool(
+        "creative commons" in license_text
+        or "creativecommon" in license_text
+        or re.search(r"\bcc[\s-]?by(?:[\s-]\d(?:\.\d)?)?\b", license_text)
+    )
+
+
+def viral_source_rejection_reason(info: dict[str, Any]) -> str | None:
+    """Reject risky/unavailable sources before they enter clipping automation."""
+    if not is_creative_commons_info(info):
+        return "lisensi Creative Commons tidak terverifikasi"
+    availability = str(info.get("availability") or "public").casefold()
+    if availability not in {"", "public"}:
+        return f"akses sumber bukan publik ({availability})"
+    live_status = str(
+        info.get("live_status")
+        or info.get("liveBroadcastContent")
+        or ""
+    ).casefold()
+    if info.get("is_live") or live_status in {"is_live", "live", "is_upcoming", "upcoming"}:
+        return "video live/upcoming tidak dipakai"
+    try:
+        age_limit = int(info.get("age_limit") or 0)
+    except (TypeError, ValueError):
+        age_limit = 0
+    if age_limit >= 18:
+        return "video berusia terbatas tidak dipakai"
+    return None
 
 
 def upload_age_days(info: dict[str, Any]) -> int | None:
@@ -3416,12 +3494,22 @@ def auto_viral_candidate_score(info: dict[str, Any]) -> float:
     age_days = upload_age_days(info)
     effective_age = max(1, age_days if age_days is not None else FRESH_VIRAL_MAX_AGE_DAYS)
     views_per_day = views / effective_age
+    engagement_rate = likes / max(views, 1)
     view_score = log10(views + 1) * 22
     velocity_score = log10(views_per_day + 1) * 28
-    like_score = log10(likes + 1) * 10
-    recency_score = max(5, 35 - min(effective_age, FRESH_VIRAL_MAX_AGE_DAYS))
+    like_score = log10(likes + 1) * 7
+    engagement_score = min(24, engagement_rate * 420)
+    recency_score = 36 * exp(-effective_age / 21)
     duration_score = 15 if 180 <= duration <= 1800 else 8 if 60 <= duration <= 3600 else 0
-    return round(view_score + velocity_score + like_score + recency_score + duration_score, 2)
+    return round(
+        view_score
+        + velocity_score
+        + like_score
+        + engagement_score
+        + recency_score
+        + duration_score,
+        2,
+    )
 
 
 def compact_source_payload(info: dict[str, Any]) -> dict[str, Any]:
@@ -3434,10 +3522,12 @@ def compact_source_payload(info: dict[str, Any]) -> dict[str, Any]:
         "duration": info.get("duration"),
         "views": views,
         "views_per_day": round(views / max(1, age_days or 1)),
+        "engagement_rate": round(float(info.get("like_count") or 0) / max(views, 1), 5),
         "age_days": age_days,
         "likes": info.get("like_count"),
         "upload_date": info.get("upload_date"),
         "license": info.get("license"),
+        "rights_verified": is_creative_commons_info(info),
         "score": auto_viral_candidate_score(info),
     }
 
@@ -3512,6 +3602,8 @@ def youtube_data_api_video_payload(item: dict[str, Any]) -> dict[str, Any]:
         "like_count": int(stats.get("likeCount") or 0),
         "upload_date": upload_date if len(upload_date) == 8 else "",
         "license": "Creative Commons" if license_value == "creativeCommon" else license_value,
+        "availability": "public",
+        "live_status": snippet.get("liveBroadcastContent") or "none",
     }
 
 
@@ -3546,7 +3638,7 @@ def search_youtube_data_api_viral_sources(
             "maxResults": request.search_limit_per_query,
             "regionCode": region_code,
             "relevanceLanguage": relevance_language,
-            "safeSearch": "moderate",
+            "safeSearch": "strict",
             "publishedAfter": youtube_published_after(request.max_age_days),
         }
         if topic_id and env_bool("VIRAL_CC_ENFORCE_TOPIC_ID", False):
@@ -3597,7 +3689,12 @@ def search_youtube_data_api_viral_sources(
                 continue
             if not is_fresh_viral_upload(payload, request.max_age_days):
                 continue
-            if not is_creative_commons_info(payload):
+            rejection_reason = viral_source_rejection_reason(payload)
+            if rejection_reason:
+                append_auto_viral_log(
+                    run_id,
+                    f"Skip sumber tidak aman ({rejection_reason}): {payload.get('title') or '-'}",
+                )
                 continue
             candidates.append(compact_source_payload(payload))
             if stop_after is not None and len(candidates) >= stop_after:
@@ -3676,8 +3773,12 @@ def search_auto_viral_sources(
                     f"{metadata.get('title') or url}",
                 )
                 continue
-            if not is_creative_commons_info(metadata):
-                append_auto_viral_log(run_id, f"Skip non-CC: {metadata.get('title') or url}")
+            rejection_reason = viral_source_rejection_reason(metadata)
+            if rejection_reason:
+                append_auto_viral_log(
+                    run_id,
+                    f"Skip sumber tidak aman ({rejection_reason}): {metadata.get('title') or url}",
+                )
                 continue
             candidates.append(compact_source_payload(metadata))
             if stop_after is not None and len(candidates) >= stop_after:

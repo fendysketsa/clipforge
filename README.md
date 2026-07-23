@@ -11,12 +11,13 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Download a single YouTube video with `yt-dlp`.
 - Transcribe locally with `faster-whisper`.
 - Score transcript windows for clip candidates.
+- End candidates on complete key-point/payoff boundaries and suppress near-duplicate ideas.
 - Export vertical 9:16 MP4 clips with SRT files.
 - Burn subtitles into clips by default.
 - Apply context-aware cinematic editing by default: theme color grading, animated hooks, varied camera motion, transcript-synced emphasis pulses, transitions, vignette, and progress bar.
 - Add sparse conversation-aware reaction stickers for laughter, surprise, questions, prayer/gratitude, warnings, and emotional moments.
 - Mix restrained transcript-synced sound effects under normalized dialogue.
-- Close each short by calling back its opening hook without fading to black, so autoplay loops cleanly.
+- Apply loop treatment only when the payoff semantically reconnects to the opening hook.
 - Crop the source footer/running-text strip from vertical exports by default before adding fresh captions and graphics.
 - Enhance voice clarity and generate safe, niche-aware social captions even when the AI service is unavailable.
 - Keep captions compact with a soft gradient-blur background by default.
@@ -186,8 +187,11 @@ select the configured playlist, and verify the saved session appears to be the
 configured target channel before uploading. Uploads are processed one at a time
 and persisted in `backend/data/youtube_uploads.json`.
 
-For safer reuse, URL jobs require Creative Commons metadata by default before
-download. During upload, Playwright waits for YouTube Studio Checks and cancels
+For safer reuse, URL jobs require explicit Creative Commons metadata by default
+before download. Viral search also rejects live/upcoming, age-restricted, and
+non-public sources. Verified rights data remains in local provenance records,
+while rendered MP4 files do not inherit source container metadata or chapters.
+During upload, Playwright waits for YouTube Studio Checks and cancels
 before publish if copyright or restriction issues are detected. This reduces
 risk but cannot guarantee a video will never receive a future claim.
 

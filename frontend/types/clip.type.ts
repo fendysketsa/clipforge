@@ -30,6 +30,9 @@ export type ClipFile = {
   weaknesses?: string[];
   improvement_ideas?: string[];
   applied_edits?: string[];
+  key_point_score?: number | null;
+  loop_score?: number | null;
+  boundary_quality?: string | null;
   output_resolution?: string | null;
   is_correct: boolean;
 };
@@ -50,6 +53,9 @@ export type ClipCandidate = {
   weaknesses?: string[];
   improvement_ideas?: string[];
   applied_edits?: string[];
+  key_point_score?: number;
+  loop_score?: number;
+  boundary_quality?: string;
 };
 
 export type ClipJob = {

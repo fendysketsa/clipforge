@@ -89,7 +89,9 @@ Default output video:
 - subtitle burned-in
 - caption ringkas dengan background gradient-blur
 - hook visual/audio, reaction kontekstual, dan pattern interrupt
-- payoff transcript lalu callback hook tanpa fade hitam agar loop menyambung
+- kandidat wajib punya point utama, batas kalimat tuntas, dan payoff dekat ending
+- treatment loop hanya aktif saat payoff benar-benar terhubung ke hook
+- metadata/chapter container sumber tidak diwariskan ke MP4 hasil; bukti lisensi tetap disimpan lokal
 - transcript lokal via `Systran/faster-whisper-small`
 - durasi clip pendek dinamis, maksimal 60 detik
 - mode `short` tidak merender kompilasi tambahan

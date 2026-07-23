@@ -261,6 +261,12 @@ export function ResultsSection({
                         FYP {Math.round(clip.fyp_score)}/100
                       </span>
                       <strong>{clip.fyp_label || "Sudah dinilai"}</strong>
+                      {clip.key_point_score !== null && clip.key_point_score !== undefined ? (
+                        <span className="resolutionBadge">Point {clip.key_point_score}/100</span>
+                      ) : null}
+                      {clip.loop_score !== null && clip.loop_score !== undefined ? (
+                        <span className="resolutionBadge">Loop {clip.loop_score}/100</span>
+                      ) : null}
                       {clip.output_resolution ? (
                         <span className="resolutionBadge">{clip.output_resolution} HD</span>
                       ) : null}

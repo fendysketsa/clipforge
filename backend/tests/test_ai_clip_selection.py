@@ -78,6 +78,32 @@ def test_ai_rescore_keeps_heuristics_when_endpoint_is_missing():
     assert candidate.score == 77
 
 
+def test_short_selection_deduplicates_the_same_main_point():
+    first = make_candidate(
+        0,
+        0,
+        95,
+        "Masalah terbesar ada pada keputusan pertama dan solusinya memeriksa risiko.",
+    )
+    duplicate = make_candidate(
+        0,
+        90,
+        94,
+        "Masalah terbesar ada pada keputusan pertama, solusinya adalah memeriksa risiko.",
+    )
+    different = make_candidate(
+        0,
+        180,
+        90,
+        "Ternyata angka pertumbuhan menunjukkan peluang pasar yang baru.",
+    )
+
+    selected = select_candidates([first, duplicate, different], 2)
+
+    assert different in selected
+    assert sum(item is first or item is duplicate for item in selected) == 1
+
+
 def test_ai_rescore_disables_offline_provider_for_rest_of_job(monkeypatch, capsys):
     candidate = make_candidate(0, 0, 77, "Intinya ini contoh kandidat.")
     config = AIConfig(

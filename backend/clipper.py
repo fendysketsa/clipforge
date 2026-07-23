@@ -91,6 +91,9 @@ class ClipCandidate:
     weaknesses: list[str] = field(default_factory=list)
     improvement_ideas: list[str] = field(default_factory=list)
     applied_edits: list[str] = field(default_factory=list)
+    key_point_score: int = 0
+    loop_score: int = 0
+    boundary_quality: str = ""
 
 
 @dataclass
@@ -367,6 +370,45 @@ IMPORTANT_WORDS = {
     "wajib",
 }
 
+LOOP_STOP_WORDS = {
+    "ada",
+    "adalah",
+    "akan",
+    "aku",
+    "atau",
+    "dan",
+    "dari",
+    "di",
+    "dia",
+    "dengan",
+    "ini",
+    "itu",
+    "jadi",
+    "juga",
+    "kami",
+    "karena",
+    "ke",
+    "kita",
+    "mereka",
+    "pada",
+    "saya",
+    "sebuah",
+    "sudah",
+    "tapi",
+    "tidak",
+    "untuk",
+    "yang",
+}
+
+FILLER_PHRASES = (
+    "seperti yang sudah dijelaskan",
+    "kita akan membahas",
+    "sebelum kita mulai",
+    "pada kesempatan kali ini",
+    "kurang lebih seperti itu",
+    "dan lain sebagainya",
+)
+
 CropMode = Literal["center", "person", "streamer"]
 VideoQuality = Literal["standard", "high", "max"]
 ClipMode = Literal["short", "highlight_5m"]
@@ -560,6 +602,7 @@ def enforce_clip_size_limit(path: Path, duration: float, max_bytes: int | None =
                 "aac",
                 "-b:a",
                 f"{audio_bps // 1000}k",
+                *ffmpeg_clean_metadata_args(),
                 "-movflags",
                 "+faststart",
                 str(temp_path),
@@ -650,6 +693,34 @@ def scale_filter(width: int | str, height: int | str, *, force_increase: bool = 
 def add_quality_sharpen(vf: str, video_quality: VideoQuality) -> str:
     sharpen = str(quality_preset(video_quality)["sharpen"])
     return f"{vf},{sharpen}" if sharpen else vf
+
+
+def ffmpeg_clean_metadata_args() -> list[str]:
+    """Prevent source container tags/chapters from leaking into rendered deliverables."""
+    return [
+        "-map_metadata",
+        "-1",
+        "-map_chapters",
+        "-1",
+        "-metadata",
+        "title=",
+        "-metadata",
+        "artist=",
+        "-metadata",
+        "album=",
+        "-metadata",
+        "comment=",
+        "-metadata",
+        "description=",
+        "-metadata",
+        "synopsis=",
+        "-metadata",
+        "copyright=",
+        "-metadata",
+        "license=",
+        "-metadata",
+        "encoder=",
+    ]
 
 
 def probe_video_resolution(path: Path) -> tuple[int, int]:
@@ -1094,8 +1165,12 @@ def fetch_metadata(url: str) -> dict:
 
 
 def is_creative_commons_metadata(metadata: dict) -> bool:
-    license_text = str(metadata.get("license") or "").lower()
-    return "creative commons" in license_text or "cc-by" in license_text or "reuse allowed" in license_text
+    license_text = re.sub(r"\s+", " ", str(metadata.get("license") or "")).strip().casefold()
+    return bool(
+        "creative commons" in license_text
+        or "creativecommon" in license_text
+        or re.search(r"\bcc[\s-]?by(?:[\s-]\d(?:\.\d)?)?\b", license_text)
+    )
 
 
 def require_creative_commons_metadata(metadata: dict) -> None:
@@ -1264,6 +1339,106 @@ def strongest_advice_line(items: list[TranscriptSegment]) -> str:
     return first_sentence(strongest.text, max_words=10) if strongest else ""
 
 
+def _content_words(text: str) -> set[str]:
+    return {
+        word
+        for word in re.findall(r"[\w']+", text.casefold())
+        if len(word) >= 4 and word not in LOOP_STOP_WORDS
+    }
+
+
+def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> dict[str, int | bool | str]:
+    """Measure whether a window contains one useful idea and a deliberate loop point."""
+    if not items:
+        return {
+            "key_point_score": 0,
+            "loop_score": 0,
+            "boundary_quality": "lemah",
+            "payoff_near_end": False,
+            "complete_ending": False,
+        }
+
+    start = items[0].start
+    end = items[-1].end
+    text = " ".join(item.text for item in items).strip()
+    opening = " ".join(item.text for item in items if item.start < start + 4.5).strip()
+    closing_span = max(7.0, min(12.0, duration * 0.25))
+    closing = " ".join(item.text for item in items if item.end > end - closing_span).strip()
+    all_words = set(re.findall(r"[\w']+", text.casefold()))
+    closing_words = set(re.findall(r"[\w']+", closing.casefold()))
+    opening_words = set(re.findall(r"[\w']+", opening.casefold()))
+    signal_words = HOOK_WORDS | TENSION_WORDS | PAYOFF_WORDS | IMPORTANT_WORDS
+    signal_hits = all_words.intersection(signal_words)
+    payoff_near_end = bool(closing_words.intersection(PAYOFF_WORDS | IMPORTANT_WORDS))
+    complete_ending = text.rstrip().endswith((".", "!", "?"))
+    opening_hook = bool(
+        opening_words.intersection((HOOK_WORDS - WEAK_STARTS) | TENSION_WORDS)
+        or "?" in opening
+    )
+    filler_hits = sum(phrase in text.casefold() for phrase in FILLER_PHRASES)
+    word_count = len(re.findall(r"[\w']+", text))
+    density = word_count / max(1.0, duration)
+
+    key_point_score = 18
+    key_point_score += min(30, len(signal_hits) * 5)
+    key_point_score += 12 if opening_hook else 0
+    key_point_score += 15 if payoff_near_end else 0
+    key_point_score += 8 if re.search(r"\b\d+(?:[.,]\d+)?\b", text) else 0
+    key_point_score += 7 if "?" in text else 0
+    key_point_score += 8 if density >= 1.25 else 3 if density >= 0.9 else -8
+    key_point_score -= filler_hits * 12
+    if not complete_ending:
+        key_point_score -= 10
+
+    opening_concepts = _content_words(opening)
+    closing_concepts = _content_words(closing)
+    concept_overlap = opening_concepts.intersection(closing_concepts)
+    question_to_payoff = "?" in opening and payoff_near_end
+    hook_to_payoff = opening_hook and payoff_near_end
+    loop_score = min(45, len(concept_overlap) * 15)
+    loop_score += 35 if question_to_payoff else 20 if hook_to_payoff else 0
+    loop_score += 12 if complete_ending else -12
+    if not opening_concepts:
+        loop_score -= 10
+
+    boundary_quality = (
+        "payoff_tuntas"
+        if complete_ending and payoff_near_end
+        else "kalimat_tuntas"
+        if complete_ending
+        else "menggantung"
+    )
+    return {
+        "key_point_score": max(0, min(100, round(key_point_score))),
+        "loop_score": max(0, min(100, round(loop_score))),
+        "boundary_quality": boundary_quality,
+        "payoff_near_end": payoff_near_end,
+        "complete_ending": complete_ending,
+    }
+
+
+def is_meaningful_candidate_end(
+    window: list[TranscriptSegment],
+    *,
+    end_idx: int,
+    segments: list[TranscriptSegment],
+    branding_flags: list[bool],
+    max_duration: float,
+) -> bool:
+    """Avoid emitting arbitrary cuts in the middle of a thought."""
+    last = window[-1]
+    last_words = set(re.findall(r"[\w']+", last.text.casefold()))
+    natural_sentence = last.text.rstrip().endswith((".", "!", "?"))
+    explicit_resolution = bool(last_words.intersection(PAYOFF_WORDS | IMPORTANT_WORDS))
+    is_last = end_idx + 1 >= len(segments)
+    next_is_boundary = not is_last and branding_flags[end_idx + 1]
+    next_exceeds_limit = (
+        not is_last
+        and segments[end_idx + 1].end - window[0].start > max_duration
+    )
+    return natural_sentence or explicit_resolution or is_last or next_is_boundary or next_exceeds_limit
+
+
 def candidate_fyp_analysis(
     items: list[TranscriptSegment],
     duration: float,
@@ -1296,18 +1471,7 @@ def candidate_fyp_analysis(
     has_payoff = bool(all_words.intersection(PAYOFF_WORDS))
     has_question = "?" in text
     complete_ending = text.rstrip().endswith((".", "!", "?"))
-    loop_stop_words = {
-        "ada", "akan", "atau", "dan", "di", "dengan", "ini", "itu", "jadi",
-        "juga", "karena", "ke", "kita", "mereka", "pada", "saya", "sebuah",
-        "tidak", "untuk", "yang",
-    }
-    opening_concepts = opening_words - loop_stop_words
-    window_end = items[-1].end if items else duration
-    ending_text = " ".join(
-        item.text for item in items if item.end > window_end - 8.0
-    )
-    ending_words = set(re.findall(r"[\w']+", ending_text.lower()))
-    loop_overlap = opening_concepts.intersection(ending_words - loop_stop_words)
+    story_metrics = candidate_story_metrics(items, duration)
     strongest_line = strongest_advice_line(items)
     hook_reference = first_sentence(opening_text or text, max_words=6)
     if not opening_has_hook and strongest_line:
@@ -1381,12 +1545,12 @@ def candidate_fyp_analysis(
             "Ending — sisakan jawaban atau pelajaran paling tegas sebagai kalimat terakhir"
             f"{callback}."
         )
-    elif len(loop_overlap) >= 2:
-        strengths.append("ending terhubung kembali ke hook dan berpotensi memicu rewatch")
+    elif int(story_metrics["loop_score"]) >= 45:
+        strengths.append("payoff terhubung kembali ke hook dan punya titik loop alami")
     else:
         ideas.append(
-            f'Loop — ulang kata kunci dari hook “{hook_reference}” di penutup agar '
-            "transisi rewatch terasa natural."
+            f'Loop — akhiri pada jawaban yang kembali ke pertanyaan “{hook_reference}”; '
+            "jangan paksa callback jika maknanya tidak nyambung."
         )
 
     if not ideas:
@@ -1531,20 +1695,24 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
         score -= 5
         reasons.append("tempo awal lambat")
 
-    loop_stop_words = {
-        "ada", "akan", "atau", "dan", "di", "dengan", "ini", "itu", "jadi",
-        "juga", "karena", "ke", "kita", "mereka", "pada", "saya", "sebuah",
-        "tidak", "untuk", "yang",
-    }
-    opening_concepts = opening_words - loop_stop_words
-    window_end = items[-1].end if items else duration
-    ending_text = " ".join(
-        item.text for item in items if item.end > window_end - 8.0
-    )
-    ending_words = set(re.findall(r"[\w']+", ending_text.lower()))
-    if len(opening_concepts.intersection(ending_words - loop_stop_words)) >= 2:
-        score += 4
-        reasons.append("ending nyambung ke hook")
+    story_metrics = candidate_story_metrics(items, duration)
+    key_point_score = int(story_metrics["key_point_score"])
+    loop_score = int(story_metrics["loop_score"])
+    if key_point_score >= 75:
+        score += 8
+        reasons.append("satu point penting terbentuk jelas")
+    elif key_point_score < 40:
+        score -= 14
+        reasons.append("point utama belum cukup jelas")
+    if story_metrics["payoff_near_end"]:
+        score += 10
+        reasons.append("payoff ditempatkan dekat ending")
+    elif payoff_hits:
+        score -= 4
+        reasons.append("payoff muncul terlalu awal lalu melebar")
+    if loop_score >= 45:
+        score += 5
+        reasons.append("hook dan payoff membentuk loop semantik")
 
     if word_count < 55:
         score -= 12
@@ -1577,9 +1745,18 @@ def build_candidate_pool(
                 continue
             if duration > max_duration:
                 break
+            if not is_meaningful_candidate_end(
+                window,
+                end_idx=end_idx,
+                segments=segments,
+                branding_flags=branding_flags,
+                max_duration=max_duration,
+            ):
+                continue
 
             text = " ".join(part.text for part in window)
             score, reasons = score_window(window, duration)
+            story_metrics = candidate_story_metrics(window, duration)
             fyp_analysis = candidate_fyp_analysis(window, duration, score)
             previous_is_branding = start_idx > 0 and branding_flags[start_idx - 1]
             next_is_branding = end_idx + 1 < len(segments) and branding_flags[end_idx + 1]
@@ -1607,16 +1784,36 @@ def build_candidate_pool(
                     strengths=list(fyp_analysis["strengths"]),
                     weaknesses=list(fyp_analysis["weaknesses"]),
                     improvement_ideas=list(fyp_analysis["improvement_ideas"]),
+                    key_point_score=int(story_metrics["key_point_score"]),
+                    loop_score=int(story_metrics["loop_score"]),
+                    boundary_quality=str(story_metrics["boundary_quality"]),
                 )
             )
     return candidates
 
 
+def candidate_topic_similarity(left: ClipCandidate, right: ClipCandidate) -> float:
+    left_words = _content_words(left.text)
+    right_words = _content_words(right.text)
+    if not left_words or not right_words:
+        return 0.0
+    return len(left_words.intersection(right_words)) / len(left_words.union(right_words))
+
+
+def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0) -> float:
+    return (
+        candidate.score
+        + candidate.key_point_score * 0.10
+        + candidate.loop_score * 0.05
+        - abs(candidate.duration - target_duration) * 0.05
+    )
+
+
 def select_candidates(candidates: list[ClipCandidate], limit: int) -> list[ClipCandidate]:
     candidates = candidates[:]
-    target_duration = 42
+    target_duration = 38
     candidates.sort(
-        key=lambda item: (item.score - abs(item.duration - target_duration) * 0.04),
+        key=lambda item: candidate_rank_score(item, target_duration),
         reverse=True,
     )
     picked: list[ClipCandidate] = []
@@ -1625,16 +1822,17 @@ def select_candidates(candidates: list[ClipCandidate], limit: int) -> list[ClipC
         best: ClipCandidate | None = None
         best_adjusted = -1_000.0
         for candidate in remaining:
-            overlaps = any(not (candidate.end < item.start or candidate.start > item.end) for item in picked)
+            overlaps = any(not (candidate.end <= item.start or candidate.start >= item.end) for item in picked)
             if overlaps:
                 continue
-            duration_similarity = min((abs(candidate.duration - item.duration) for item in picked), default=999)
-            diversity_bonus = 8 if duration_similarity > 18 else 0
-            adjusted = (
-                candidate.score
-                - abs(candidate.duration - target_duration) * 0.04
-                + diversity_bonus
+            max_topic_similarity = max(
+                (candidate_topic_similarity(candidate, item) for item in picked),
+                default=0.0,
             )
+            if max_topic_similarity >= 0.64:
+                continue
+            diversity_bonus = 5.0 if picked and max_topic_similarity < 0.22 else 0.0
+            adjusted = candidate_rank_score(candidate, target_duration) + diversity_bonus
             if adjusted > best_adjusted:
                 best = candidate
                 best_adjusted = adjusted
@@ -1707,6 +1905,10 @@ def select_compilation_candidates(
                 strengths=list(best.strengths),
                 weaknesses=list(best.weaknesses),
                 improvement_ideas=list(best.improvement_ideas),
+                applied_edits=list(best.applied_edits),
+                key_point_score=best.key_point_score,
+                loop_score=best.loop_score,
+                boundary_quality=best.boundary_quality,
             )
         picked.append(best)
         total += best.end - best.start
@@ -1737,8 +1939,10 @@ AI_SYSTEM_PROMPT = (
     "You are an expert Indonesian short-form video editor for TikTok FYP, Reels, and YouTube Shorts. "
     "Your job is to choose the strongest POV moments from transcript windows, not to divide the video evenly. "
     "Prioritize clips with a strong first-3-second hook, open loop, tension or controversy, practical value, "
-    "surprising/emotional payoff, and self-contained meaning. Penalize intros, outros, filler, repeated ideas, "
-    "generic motivation, and clips that need earlier context. Islamic insight, mystery, myth-versus-fact, "
+    "surprising/emotional payoff, and self-contained meaning. A clip must contain one identifiable key point; "
+    "its end must land after the answer/payoff on a complete sentence, not at an arbitrary duration. Only call "
+    "something a loop when the ending semantically answers or reconnects to the opening. Penalize intros, outros, "
+    "filler, repeated ideas, generic motivation, and clips that need earlier context. Islamic insight, mystery, myth-versus-fact, "
     "history, supernatural stories, and relevant horror are valuable niches when genuinely present in the "
     "transcript. Authentic humor, witty answers, and naturally funny reactions are also high-value retention "
     "moments. Reject source-channel intros, outros, credits, sponsor mentions, requests to subscribe/follow, "
@@ -1794,7 +1998,8 @@ def ai_rescore_candidates(
         f"{format_instruction}\n"
         "For each chosen candidate, score 0-100 honestly on viewer-retention and FYP potential. "
         "Judge the first 3 seconds, the first 30-second hook arc, POV clarity, information density, "
-        "pattern-interrupt opportunities, payoff, and rewatch/share potential.\n"
+        "pattern-interrupt opportunities, one clear key point, payoff placement, sentence-complete boundaries, "
+        "and rewatch/share potential. Do not select two windows that communicate the same main idea.\n"
         "Every improvement idea must solve one stated weakness and be directly executable by an editor. "
         "Write every viewer-facing field in clear, natural Indonesian. "
         "Write it as '<area> — <specific action>', for example "
@@ -1945,14 +2150,18 @@ def codex_edit_plan(clip: ClipCandidate) -> CodexEditPlan:
     weaknesses = " ".join(clip.weaknesses).casefold()
     ideas = " ".join(clip.improvement_ideas).casefold()
     analysis = f"{weaknesses} {ideas}"
+    loop_is_earned = clip.loop_score >= 45 or any(
+        "loop alami" in strength.casefold() for strength in clip.strengths
+    )
     return CodexEditPlan(
-        # A strong opening and loop callback are the house style for every short.
-        # Analysis still decides whether tempo/payoff need extra work.
         hook_boost=True,
         tempo_boost=any(token in analysis for token in ("tempo", "ritme", "alur —", "30 detik")),
         ending_boost=any(token in weaknesses for token in ("ending", "payoff"))
-        or "ending —" in ideas,
-        loop_boost=True,
+        or "ending —" in ideas
+        or clip.boundary_quality in {"", "menggantung"},
+        # A callback card without semantic continuity feels artificial. Only
+        # enable the loop treatment when hook and payoff actually connect.
+        loop_boost=loop_is_earned,
     )
 
 
@@ -2039,12 +2248,16 @@ def apply_codex_structural_edit(
         heuristic_score, _ = score_window(refreshed_segments, clip.duration)
         clip.score = max(1, min(100, round(clip.score * 0.75 + heuristic_score * 0.25)))
         refreshed = candidate_fyp_analysis(refreshed_segments, clip.duration, clip.score)
+        story_metrics = candidate_story_metrics(refreshed_segments, clip.duration)
         clip.hook = str(refreshed["hook"])
         clip.pov = str(refreshed["pov"])
         clip.fyp_label = fyp_score_label(clip.score)
         clip.strengths = list(refreshed["strengths"])
         clip.weaknesses = list(refreshed["weaknesses"])
         clip.improvement_ideas = list(refreshed["improvement_ideas"])
+        clip.key_point_score = int(story_metrics["key_point_score"])
+        clip.loop_score = int(story_metrics["loop_score"])
+        clip.boundary_quality = str(story_metrics["boundary_quality"])
     return clip
 
 
@@ -2786,25 +2999,14 @@ def enhanced_edit_filter(
             ]
         )
     if show_text_overlays and adaptive_plan.loop_boost:
-        # Reuse the opening promise while the source frame stays visible. When
-        # autoplay returns to t=0 there is no black-frame interruption.
-        loop_start = max(0.2, safe_duration - 1.22)
+        # Keep the payoff visible. A brief frame accent marks the semantic loop;
+        # autoplay itself reveals the hook again without a forced callback card.
+        loop_start = max(0.2, safe_duration - 0.28)
         loop_end = max(loop_start + 0.1, safe_duration - 0.03)
         filters.extend(
             [
-                "drawbox=x=48:y=120:w=984:h=250:color=black@0.72:t=fill:"
-                f"enable='between(t,{loop_start:.3f},{loop_end:.3f})'",
-                f"drawbox=x=48:y=120:w=14:h=250:color={accent}@0.98:t=fill:"
-                f"enable='between(t,{loop_start:.3f},{loop_end:.3f})'",
-                f"drawbox=x=76:y=140:w=224:h=42:color={accent_secondary}@0.96:t=fill:"
-                f"enable='between(t,{loop_start:.3f},{loop_end:.3f})'",
-                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-                "text='MASIH INGAT INI?':expansion=none:fontcolor=white:fontsize=20:x=94:y=149:"
-                f"enable='between(t,{loop_start:.3f},{loop_end:.3f})'",
-                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-                f"textfile='{hook_text_filename}':reload=0:expansion=none:"
-                "fontcolor=white:fontsize=42:line_spacing=9:borderw=2:bordercolor=black@0.86:"
-                f"x=82:y=210:enable='between(t,{loop_start:.3f},{loop_end:.3f})'",
+                f"drawbox=x=30:y=61:w=1020:h=1798:color={accent}@0.72:t=7:"
+                f"enable='between(t,{loop_start:.3f},{loop_end:.3f})'"
             ]
         )
     if show_reactions:
@@ -3301,9 +3503,9 @@ def export_clip(
             )
         if adaptive_plan.loop_boost:
             applied_edits.append(
-                "Penutup memanggil kembali hook tanpa fade hitam agar loop menyambung."
+                "Titik akhir dipertahankan pada payoff yang terhubung ke hook, tanpa kartu callback atau fade hitam."
                 if drawtext_supported
-                else "Penutup diberi accent audio agar loop terasa menyambung."
+                else "Payoff dan hook terhubung secara semantik agar autoplay loop terasa natural."
             )
     applied_edits = list(dict.fromkeys(applied_edits))
     subtitles_supported = ffmpeg_has_filter("subtitles")
@@ -3329,6 +3531,7 @@ def export_clip(
         "video_quality": video_quality,
         "output_format": output_format,
         "aspect_ratio": "16:9" if output_format == "landscape_compilation" else "9:16",
+        "source_metadata_embedded": False,
     }
 
     if output_format == "landscape_compilation":
@@ -3455,6 +3658,7 @@ def export_clip(
                 str(quality["crf"]),
                 "-pix_fmt",
                 "yuv420p",
+                *ffmpeg_clean_metadata_args(),
                 str(temp_video_path.name),
             ],
             cwd=clips_dir,
@@ -3546,6 +3750,7 @@ def export_clip(
             "2",
             "-disposition:a:0",
             "default",
+            *ffmpeg_clean_metadata_args(),
             "-shortest",
             "-brand",
             "mp42",
@@ -3685,6 +3890,7 @@ def export_compilation(
                 concat_path.name,
                 "-c",
                 "copy",
+                *ffmpeg_clean_metadata_args(),
                 "-movflags",
                 "+faststart",
                 str(out_path.resolve()),
@@ -3736,6 +3942,7 @@ def export_compilation(
             "layout": "cinematic_blurred_frame_with_chapter_cards",
             "enhanced_edit": enhanced_edit,
             "remove_running_text": remove_running_text,
+            "source_metadata_embedded": False,
             "parts": [asdict(item) for item in candidates],
             "video_quality": video_quality,
             "output_width": output_width,

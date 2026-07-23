@@ -13,6 +13,7 @@ from api import (
     build_clipper_command,
     choose_auto_analyze_seconds,
     default_viral_video_search_queries,
+    is_creative_commons_info,
     is_fresh_viral_upload,
     max_clips_for_duration,
     normalize_job_request,
@@ -20,6 +21,8 @@ from api import (
     youtube_cdp_start_needed,
     youtube_upload_staging_filter,
     user_error_from_logs,
+    viral_source_rejection_reason,
+    youtube_upload_clean_metadata_args,
     youtube_published_after,
 )
 
@@ -183,6 +186,44 @@ def test_viral_score_prefers_faster_recent_growth():
     }
 
     assert auto_viral_candidate_score(recent) > auto_viral_candidate_score(older)
+
+
+def test_viral_score_rewards_real_engagement_not_views_alone():
+    today = datetime.now(timezone.utc)
+    base = {
+        "upload_date": (today - timedelta(days=3)).strftime("%Y%m%d"),
+        "view_count": 100_000,
+        "duration": 600,
+    }
+
+    assert auto_viral_candidate_score({**base, "like_count": 8_000}) > auto_viral_candidate_score(
+        {**base, "like_count": 100}
+    )
+
+
+def test_viral_license_must_be_explicit_creative_commons():
+    assert is_creative_commons_info({"license": "Creative Commons Attribution license"})
+    assert is_creative_commons_info({"license": "CC-BY-4.0"})
+    assert not is_creative_commons_info({"license": "reuse allowed"})
+    assert not is_creative_commons_info({"license": ""})
+
+
+def test_viral_source_rejects_live_restricted_or_non_public_video():
+    base = {"license": "Creative Commons", "availability": "public"}
+
+    assert viral_source_rejection_reason(base) is None
+    assert "live" in (viral_source_rejection_reason({**base, "is_live": True}) or "")
+    assert "berusia" in (viral_source_rejection_reason({**base, "age_limit": 18}) or "")
+    assert "publik" in (
+        viral_source_rejection_reason({**base, "availability": "subscriber_only"}) or ""
+    )
+
+
+def test_upload_staging_drops_source_metadata():
+    args = youtube_upload_clean_metadata_args()
+
+    assert args[:4] == ["-map_metadata", "-1", "-map_chapters", "-1"]
+    assert "license=" in args
 
 
 def test_models_from_openai_compatible_payload():
