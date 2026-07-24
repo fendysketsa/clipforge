@@ -1,4 +1,4 @@
-import { Clipboard, Download, ImageIcon, MessageSquareText } from "lucide-react";
+import { ChevronDown, Clipboard, Download, ImageIcon, MessageSquareText } from "lucide-react";
 import { getOutputUrl } from "../../lib/apiClient";
 import { handleCopyText, handleDownload } from "../../lib/utils";
 import type { ClipFile } from "../../types/clip.type";
@@ -18,53 +18,65 @@ export function ThumbnailPrompt({ clip }: ThumbnailPromptProps) {
   const caption = clip.social_caption?.trim() ?? "";
 
   return (
-    <div className="thumbBlock">
-      <div className="thumbBlockHeader">
-        <ImageIcon size={14} />
-        <span>Thumbnail</span>
-      </div>
+    <details className="thumbBlock">
+      <summary>
+        <span className="detailsSummaryIcon">
+          <ImageIcon size={16} />
+        </span>
+        <span className="thumbSummaryCopy">
+          <strong>Materi posting</strong>
+          <small>
+            {[thumbUrl ? "thumbnail" : "", prompt ? "prompt" : "", caption ? "caption" : ""]
+              .filter(Boolean)
+              .join(" · ")}
+          </small>
+        </span>
+        <ChevronDown className="detailsChevron" size={18} />
+      </summary>
 
-      {thumbUrl ? (
-        <div className="thumbPreview">
-          <img src={thumbUrl} alt="Screenshot best moment" />
-          <button type="button" onClick={() => handleDownload(thumbUrl, thumbName)}>
-            <Download size={14} />
-            Unduh SS
-          </button>
-        </div>
-      ) : null}
-
-      {prompt ? (
-        <div className="thumbPromptBox">
-          <pre>{prompt}</pre>
-          <button
-            type="button"
-            onClick={() => handleCopyText(prompt, "Prompt thumbnail disalin")}
-          >
-            <Clipboard size={14} />
-            Copy Prompt
-          </button>
-        </div>
-      ) : null}
-
-      {caption ? (
-        <>
-          <div className="thumbBlockHeader">
-            <MessageSquareText size={14} />
-            <span>Caption Post</span>
-          </div>
-          <div className="thumbPromptBox">
-            <pre>{caption}</pre>
-            <button
-              type="button"
-              onClick={() => handleCopyText(caption, "Caption post disalin")}
-            >
-              <Clipboard size={14} />
-              Copy Caption
+      <div className="thumbContent">
+        {thumbUrl ? (
+          <div className="thumbPreview">
+            <div className="thumbBlockHeader">
+              <ImageIcon size={14} />
+              <span>Thumbnail</span>
+            </div>
+            <img src={thumbUrl} alt="Screenshot momen terbaik untuk thumbnail" />
+            <button type="button" onClick={() => handleDownload(thumbUrl, thumbName)}>
+              <Download size={15} />
+              <span>Unduh thumbnail</span>
             </button>
           </div>
-        </>
-      ) : null}
-    </div>
+        ) : null}
+
+        {prompt ? (
+          <div className="thumbPromptBox">
+            <div className="thumbBlockHeader">
+              <Clipboard size={14} />
+              <span>Prompt thumbnail</span>
+            </div>
+            <pre>{prompt}</pre>
+            <button type="button" onClick={() => handleCopyText(prompt, "Prompt thumbnail disalin")}>
+              <Clipboard size={15} />
+              <span>Salin prompt</span>
+            </button>
+          </div>
+        ) : null}
+
+        {caption ? (
+          <div className="thumbPromptBox">
+            <div className="thumbBlockHeader">
+              <MessageSquareText size={14} />
+              <span>Caption posting</span>
+            </div>
+            <pre>{caption}</pre>
+            <button type="button" onClick={() => handleCopyText(caption, "Caption post disalin")}>
+              <Clipboard size={15} />
+              <span>Salin caption</span>
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </details>
   );
 }

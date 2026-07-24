@@ -2001,6 +2001,7 @@ def ai_rescore_candidates(
         "pattern-interrupt opportunities, one clear key point, payoff placement, sentence-complete boundaries, "
         "and rewatch/share potential. Do not select two windows that communicate the same main idea.\n"
         "Every improvement idea must solve one stated weakness and be directly executable by an editor. "
+        "Start each idea with exactly one supported area: Hook, Ritme, Ending, Loop, Visual, or Audio. "
         "Write every viewer-facing field in clear, natural Indonesian. "
         "Write it as '<area> — <specific action>', for example "
         "'Hook — pindahkan klaim terkuat ke detik 0'. "
@@ -2155,14 +2156,96 @@ def codex_edit_plan(clip: ClipCandidate) -> CodexEditPlan:
     )
     return CodexEditPlan(
         hook_boost=True,
-        tempo_boost=any(token in analysis for token in ("tempo", "ritme", "alur —", "30 detik")),
+        tempo_boost=any(
+            token in analysis
+            for token in (
+                "tempo",
+                "ritme",
+                "alur",
+                "30 detik",
+                "pangkas",
+                "potong",
+                "trim",
+                "jeda",
+                "pengulangan",
+            )
+        ),
         ending_boost=any(token in weaknesses for token in ("ending", "payoff"))
         or "ending —" in ideas
+        or "ending -" in ideas
+        or "penutup" in ideas
+        or "payoff" in ideas
         or clip.boundary_quality in {"", "menggantung"},
         # A callback card without semantic continuity feels artificial. Only
         # enable the loop treatment when hook and payoff actually connect.
         loop_boost=loop_is_earned,
     )
+
+
+def _codex_idea_area(idea: str) -> str:
+    """Normalize an editor idea into one of the treatments supported by the renderer."""
+    prefix = re.split(r"\s*(?:—|–|:|\s-\s)\s*", idea.casefold(), maxsplit=1)[0][:48]
+    categories = (
+        ("hook", ("hook", "pembuka", "opening")),
+        ("tempo", ("tempo", "ritme", "alur", "cut", "potong", "pangkas", "trim")),
+        ("ending", ("ending", "penutup", "payoff", "kesimpulan")),
+        ("loop", ("loop", "callback")),
+        ("visual", ("visual", "teks", "overlay", "b-roll", "frame", "emphasis")),
+        ("audio", ("audio", "sfx", "suara", "sound")),
+    )
+    for category, tokens in categories:
+        if any(token in prefix for token in tokens):
+            return category
+    return ""
+
+
+def resolve_codex_ideas(
+    ideas: list[str],
+    plan: CodexEditPlan,
+    *,
+    enhanced_edit: bool,
+    output_format: OutputFormat,
+    drawtext_supported: bool,
+) -> tuple[list[str], list[str]]:
+    """Move executable Codex ideas to applied edits after their render treatment is active."""
+    if not enhanced_edit or output_format != "vertical_short":
+        return list(ideas), []
+
+    remaining: list[str] = []
+    applied: list[str] = []
+    for idea in ideas:
+        area = _codex_idea_area(idea)
+        if area == "hook" and plan.hook_boost:
+            applied.append(
+                "Arahan hook diterapkan: opening dipertegas dengan hook card, impact pulse, dan accent audio."
+            )
+        elif area == "tempo" and plan.tempo_boost:
+            applied.append(
+                "Arahan ritme diterapkan: ritme visual dipadatkan dengan pattern interrupt yang lebih cepat."
+            )
+        elif area == "ending" and plan.ending_boost:
+            applied.append(
+                "Arahan ending diterapkan: kalimat penutup sumber dijadikan payoff terakhir"
+                + (" dengan kartu teks dan accent audio." if drawtext_supported else " dengan accent audio.")
+            )
+        elif area == "loop":
+            applied.append(
+                "Arahan loop diterapkan pada titik payoff yang kembali ke hook."
+                if plan.loop_boost
+                else "Arahan loop ditinjau: callback tidak dipaksakan karena hook dan payoff belum terhubung secara alami."
+            )
+        elif area == "visual":
+            applied.append(
+                "Arahan visual diterapkan: poin utama diberi emphasis pulse dan aksen frame."
+            )
+        elif area == "audio":
+            applied.append(
+                "Arahan audio diterapkan: SFX kontekstual dipasang secara selektif tanpa menutup dialog."
+            )
+        else:
+            remaining.append(idea)
+
+    return remaining, list(dict.fromkeys(applied))
 
 
 def _segment_hook_score(segment: TranscriptSegment) -> tuple[int, int]:
@@ -2217,6 +2300,12 @@ def apply_codex_structural_edit(
                     f"Pembuka lemah dipangkas {trim_seconds:.1f} detik; klip dimulai dari klaim terkuat."
                 )
 
+    # Trimming a weak intro creates an equal amount of room for a complete
+    # answer at the end while the final clip still respects max_duration.
+    max_safe_end = clip.start + max(max_duration, min_safe_duration)
+    if hard_end is not None:
+        max_safe_end = min(max_safe_end, hard_end)
+
     if original_plan.ending_boost and max_safe_end > original_end + 0.25:
         current_text = " ".join(segment.text for segment in current_segments).rstrip()
         needs_sentence_close = not current_text.endswith((".", "!", "?"))
@@ -2238,9 +2327,6 @@ def apply_codex_structural_edit(
                         f"Ending diperpanjang {proposed_end - original_end:.1f} detik sampai kalimat tuntas."
                     )
                 break
-            if segment.end - original_end >= 8.0:
-                break
-
     if clip.start != original_start or clip.end != original_end:
         refreshed_segments = segments_for_clip(transcript, clip)
         clip.duration = clip.end - clip.start
@@ -3507,6 +3593,14 @@ def export_clip(
                 if drawtext_supported
                 else "Payoff dan hook terhubung secara semantik agar autoplay loop terasa natural."
             )
+    remaining_ideas, resolved_idea_edits = resolve_codex_ideas(
+        clip.improvement_ideas,
+        adaptive_plan,
+        enhanced_edit=enhanced_edit,
+        output_format=output_format,
+        drawtext_supported=drawtext_supported,
+    )
+    applied_edits.extend(resolved_idea_edits)
     applied_edits = list(dict.fromkeys(applied_edits))
     subtitles_supported = ffmpeg_has_filter("subtitles")
     reaction_overlays_supported = output_format == "vertical_short" and (
@@ -3526,7 +3620,9 @@ def export_clip(
         "drawtext_supported": drawtext_supported,
         "subtitles_supported": subtitles_supported,
         "reaction_overlays_supported": reaction_overlays_supported,
+        "improvement_ideas": remaining_ideas,
         "applied_edits": applied_edits,
+        "codex_ideas_resolved": len(clip.improvement_ideas) - len(remaining_ideas),
         "codex_edit_plan": asdict(adaptive_plan),
         "video_quality": video_quality,
         "output_format": output_format,

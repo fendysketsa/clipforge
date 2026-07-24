@@ -74,7 +74,9 @@ import { DeleteAllToast } from "./_components/DeleteAllToast";
 import { HistorySection } from "./_components/HistorySection";
 import { ResultsSection } from "./_components/ResultsSection";
 import { StatusPanel } from "./_components/StatusPanel";
+import { SiteFooter } from "./_components/SiteFooter";
 import { Topbar } from "./_components/Topbar";
+import { WorkflowBar } from "./_components/WorkflowBar";
 
 const isProcessJob = (item: ClipJob | null) =>
   item?.status === "queued" || item?.status === "running" || item?.status === "failed" || item?.status === "cancelled";
@@ -1032,7 +1034,13 @@ export default function HomePage() {
     <main className="shell">
       <Topbar isRefreshing={isRefreshingData} onRefresh={handleSyncData} />
 
-      <section className="workspace">
+      <WorkflowBar
+        hasSource={sourceMode === "url" ? Boolean(url.trim()) : Boolean(uploadFileName)}
+        isProcessing={isBusy || isSubmitting}
+        hasResults={Boolean(job?.clips.length)}
+      />
+
+      <section className="workspace" id="workspace">
         <ControlPanel
           clipMode={clipMode}
           onClipModeChange={handleClipModeChange}
@@ -1136,6 +1144,7 @@ export default function HomePage() {
         onStopJob={handleCancelJob}
         onToggleJobSelection={handleToggleHistoryJobSelection}
       />
+      <SiteFooter />
     </main>
   );
 }

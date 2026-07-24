@@ -2,6 +2,7 @@ from clipper import (
     AVAILABLE_FONTS,
     CaptionStyle,
     ClipCandidate,
+    CodexEditPlan,
     ReactionCue,
     SoundEffectCue,
     TranscriptSegment,
@@ -32,6 +33,7 @@ from clipper import (
     modern_gradient_border_filters,
     pov_banner_text,
     remove_running_text_filter,
+    resolve_codex_ideas,
     score_window,
     segments_for_clip,
     split_subtitle_text,
@@ -261,6 +263,45 @@ def test_codex_structural_edit_trims_weak_intro_and_completes_ending():
     assert clip.text.endswith("diterapkan.")
 
 
+def test_codex_intro_trim_creates_room_for_payoff_without_exceeding_max_duration():
+    transcript = [
+        TranscriptSegment(0, 4, "Nah jadi sebelumnya ada konteks panjang."),
+        TranscriptSegment(4, 10, "Masalah terbesar ternyata ada pada keputusan pertama."),
+        TranscriptSegment(10, 20, "Penjelasan ini masih berjalan tanpa jawaban"),
+        TranscriptSegment(20, 23.5, "Jawabannya jelas dan inilah kesimpulannya."),
+    ]
+    clip = ClipCandidate(
+        1,
+        0,
+        20,
+        20,
+        62,
+        "Keputusan Pertama",
+        "test",
+        " ".join(item.text for item in transcript[:3]),
+        weaknesses=[
+            "3 detik awal belum cukup menghentikan scroll",
+            "payoff dan ending belum terasa tuntas",
+        ],
+        improvement_ideas=[
+            "Hook — pindahkan klaim terkuat ke awal.",
+            "Ending — lanjutkan sampai jawaban tuntas.",
+        ],
+    )
+
+    apply_codex_structural_edit(
+        clip,
+        transcript,
+        min_duration=10,
+        max_duration=20,
+    )
+
+    assert clip.start >= 3.8
+    assert clip.end >= 23.5
+    assert clip.duration <= 20
+    assert clip.text.endswith("kesimpulannya.")
+
+
 def test_codex_render_plan_drives_hook_tempo_payoff_and_audio():
     clip = ClipCandidate(
         1,
@@ -345,6 +386,49 @@ def test_codex_render_plan_does_not_force_an_unrelated_loop():
 
     assert plan.loop_boost is False
     assert [cue.kind for cue in sounds] == ["emphasis"]
+
+
+def test_codex_ideas_move_to_applied_feedback_after_render_treatments():
+    ideas = [
+        "Hook — pindahkan klaim terkuat ke detik 0.",
+        "Alur — ringkas konteks sebelum konflik.",
+        "Ending — jadikan pelajaran sebagai kalimat terakhir.",
+        "Loop — kembalikan jawaban ke pertanyaan awal.",
+        "Visual — beri emphasis pada poin utama.",
+        "Audio — beri accent pada payoff.",
+    ]
+
+    remaining, applied = resolve_codex_ideas(
+        ideas,
+        CodexEditPlan(
+            hook_boost=True,
+            tempo_boost=True,
+            ending_boost=True,
+            loop_boost=False,
+        ),
+        enhanced_edit=True,
+        output_format="vertical_short",
+        drawtext_supported=True,
+    )
+
+    assert remaining == []
+    assert len(applied) == 6
+    assert any("tidak dipaksakan" in item for item in applied)
+
+
+def test_codex_ideas_stay_manual_when_enhanced_edit_is_disabled():
+    ideas = ["Ending — lanjutkan sampai payoff tuntas."]
+
+    remaining, applied = resolve_codex_ideas(
+        ideas,
+        CodexEditPlan(ending_boost=True),
+        enhanced_edit=False,
+        output_format="vertical_short",
+        drawtext_supported=True,
+    )
+
+    assert remaining == ideas
+    assert applied == []
 
 
 def test_story_metrics_reward_a_key_point_with_question_to_payoff_loop():

@@ -18,6 +18,7 @@ from api import (
     max_clips_for_duration,
     normalize_job_request,
     processed_job_source_urls,
+    unresolved_codex_ideas,
     youtube_cdp_start_needed,
     youtube_upload_staging_filter,
     user_error_from_logs,
@@ -39,6 +40,26 @@ def test_max_clips_short_video():
 
 def test_max_clips_none_duration():
     assert max_clips_for_duration(None, 35) is None
+
+
+def test_legacy_codex_ideas_are_hidden_when_saved_plan_already_resolved_them():
+    sidecar = {
+        "enhanced_edit": True,
+        "output_format": "vertical_short",
+        "codex_edit_plan": {
+            "hook_boost": True,
+            "tempo_boost": True,
+            "ending_boost": True,
+            "loop_boost": False,
+        },
+    }
+    ideas = [
+        "Alur — ringkas konteks awal.",
+        "Ending — sisakan jawaban paling tegas.",
+        "Loop — buat callback ke hook.",
+    ]
+
+    assert unresolved_codex_ideas(sidecar, ideas) == []
 
 
 def test_upload_staging_keeps_compilation_landscape():

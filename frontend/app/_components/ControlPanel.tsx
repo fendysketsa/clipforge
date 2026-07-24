@@ -174,80 +174,104 @@ export function ControlPanel({
   return (
     <section className="panel controlPanel">
       <div className="panelHeader">
-        <Scissors size={20} />
-        <h2>Potong Video</h2>
-      </div>
-
-      <div className="segmentedField">
-        <span>Sumber Video</span>
-        <div className="segmentedControl" role="group" aria-label="Sumber video">
-          <button
-            className={sourceMode === "url" ? "active" : ""}
-            type="button"
-            onClick={() => onSourceModeChange("url")}
-          >
-            <Link2 size={15} /> Link YouTube
-          </button>
-          <button
-            className={sourceMode === "upload" ? "active" : ""}
-            type="button"
-            onClick={() => onSourceModeChange("upload")}
-          >
-            <Upload size={15} /> Upload Video
-          </button>
+        <span className="panelHeaderIcon">
+          <Scissors size={18} />
+        </span>
+        <div className="panelTitleCopy">
+          <span className="panelEyebrow">Clip builder</span>
+          <h2>Buat Klip Baru</h2>
         </div>
       </div>
 
-      {sourceMode === "url" ? (
-        <label className="field wide">
-          <span>Link Video YouTube</span>
-          <input
-            value={url}
-            onChange={(event) => onUrlChange(event.target.value)}
-            placeholder="https://www.youtube.com/watch?v=..."
-          />
-          <p className="field-help">Pastikan video memiliki percakapan yang jelas untuk hasil transkripsi terbaik.</p>
-        </label>
-      ) : (
-        <label className="field wide">
-          <span>Upload File Video</span>
-          <input
-            type="file"
-            accept="video/mp4,video/quicktime,video/x-matroska,video/webm,.mp4,.mov,.mkv,.webm,.m4v,.avi"
-            onChange={(event) => onUploadFileChange(event.target.files?.[0] ?? null)}
-          />
-          <p className="field-help">
-            {isUploading
-              ? "Mengunggah video..."
-              : uploadFileName
-                ? `Siap: ${uploadFileName}`
-                : "Format didukung: MP4, MOV, MKV, WEBM, M4V, AVI. Gunakan video milik sendiri atau yang sudah punya izin."}
-          </p>
-          {uploadPreviewUrl ? (
-            <video className="uploadPreview" src={uploadPreviewUrl} controls preload="metadata" />
-          ) : null}
-        </label>
-      )}
+      <div className="controlSection">
+        <div className="controlSectionHeading">
+          <span>01</span>
+          <div>
+            <h3>Pilih sumber video</h3>
+            <p>Tempel link YouTube atau upload file dari perangkat.</p>
+          </div>
+        </div>
 
-      {sourceMode === "url" ? (
-        <div className="aiBlock">
-          <label className="aiToggle">
-            <span className="aiToggleLabel">
-              <ShieldCheck size={16} />
-              Wajib Creative Commons
-            </span>
+        <div className="segmentedField">
+          <span>Sumber Video</span>
+          <div className="segmentedControl" role="group" aria-label="Sumber video">
+            <button
+              className={sourceMode === "url" ? "active" : ""}
+              type="button"
+              onClick={() => onSourceModeChange("url")}
+            >
+              <Link2 size={15} /> Link YouTube
+            </button>
+            <button
+              className={sourceMode === "upload" ? "active" : ""}
+              type="button"
+              onClick={() => onSourceModeChange("upload")}
+            >
+              <Upload size={15} /> Upload Video
+            </button>
+          </div>
+        </div>
+
+        {sourceMode === "url" ? (
+          <label className="field wide">
+            <span>Link Video YouTube</span>
             <input
-              type="checkbox"
-              checked={requireCreativeCommons || sourceMode === "url"}
-              disabled
-              onChange={(event) => onRequireCreativeCommonsChange(event.target.checked)}
+              value={url}
+              onChange={(event) => onUrlChange(event.target.value)}
+              placeholder="https://www.youtube.com/watch?v=..."
             />
+            <p className="field-help">Pastikan video memiliki percakapan yang jelas untuk hasil transkripsi terbaik.</p>
           </label>
-          <p className="field-help">Dikunci aktif: video non-CC akan dibatalkan sebelum download agar sumber lebih aman untuk dimodifikasi.</p>
-        </div>
-      ) : null}
+        ) : (
+          <label className="field wide">
+            <span>Upload File Video</span>
+            <input
+              type="file"
+              accept="video/mp4,video/quicktime,video/x-matroska,video/webm,.mp4,.mov,.mkv,.webm,.m4v,.avi"
+              onChange={(event) => onUploadFileChange(event.target.files?.[0] ?? null)}
+            />
+            <p className="field-help">
+              {isUploading
+                ? "Mengunggah video..."
+                : uploadFileName
+                  ? `Siap: ${uploadFileName}`
+                  : "Format didukung: MP4, MOV, MKV, WEBM, M4V, AVI. Gunakan video milik sendiri atau yang sudah punya izin."}
+            </p>
+            {uploadPreviewUrl ? (
+              <video className="uploadPreview" src={uploadPreviewUrl} controls preload="metadata" />
+            ) : null}
+          </label>
+        )}
 
-      <div className="segmentedField">
+        {sourceMode === "url" ? (
+          <div className="aiBlock compactBlock">
+            <label className="aiToggle">
+              <span className="aiToggleLabel">
+                <ShieldCheck size={16} />
+                Wajib Creative Commons
+              </span>
+              <input
+                type="checkbox"
+                checked={requireCreativeCommons || sourceMode === "url"}
+                disabled
+                onChange={(event) => onRequireCreativeCommonsChange(event.target.checked)}
+              />
+            </label>
+            <p className="field-help">Dikunci aktif: video non-CC akan dibatalkan sebelum download agar sumber lebih aman untuk dimodifikasi.</p>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="controlSection">
+        <div className="controlSectionHeading">
+          <span>02</span>
+          <div>
+            <h3>Atur format output</h3>
+            <p>Tentukan panjang, kualitas, dan fokus visual klip.</p>
+          </div>
+        </div>
+
+        <div className="segmentedField">
         <span>Model Clip</span>
         <div className="segmentedControl" role="group" aria-label="Model clip">
           <button
@@ -373,7 +397,7 @@ export function ControlPanel({
         </div>
       </div>
 
-      {cropMode === "streamer" ? (
+        {cropMode === "streamer" ? (
         <div className="segmentedField">
           <span>Posisi Webcam di Sumber</span>
           <div className="segmentedControl segmentedControl--grid" role="group" aria-label="Posisi webcam">
@@ -392,9 +416,19 @@ export function ControlPanel({
             Webcam di-crop dari pojok ini lalu ditumpuk di atas gameplay (vertikal 9:16).
           </p>
         </div>
-      ) : null}
+        ) : null}
+      </div>
 
-      <div className="aiBlock">
+      <div className="controlSection">
+        <div className="controlSectionHeading">
+          <span>03</span>
+          <div>
+            <h3>Poles secara otomatis</h3>
+            <p>Aktifkan hanya fitur tambahan yang Anda butuhkan.</p>
+          </div>
+        </div>
+
+        <div className="aiBlock">
         <label className="aiToggle">
           <span className="aiToggleLabel">
             <Type size={16} />
@@ -528,7 +562,7 @@ export function ControlPanel({
         ) : null}
       </div>
 
-      <div className="aiBlock">
+        <div className="aiBlock">
         <label className="aiToggle">
           <span className="aiToggleLabel">
             <Sparkles size={16} />
@@ -654,7 +688,7 @@ export function ControlPanel({
         ) : null}
       </div>
 
-      <div className="aiBlock">
+        <div className="aiBlock">
         <label className="aiToggle">
           <span className="aiToggleLabel">
             <UploadCloud size={16} />
@@ -669,24 +703,28 @@ export function ControlPanel({
         <p className="field-help">
           Selesai clipping langsung antrekan 3 klip terbaik ke playlist Islam dengan judul, deskripsi singkat, dan hashtag otomatis.
         </p>
+        </div>
       </div>
 
-      {error ? <p className="error">{error}</p> : null}
+      <div className="controlActions">
+        {error ? <p className="error">{error}</p> : null}
 
-      <div className="aiBlock">
-        <button className="ghostButton autoViralButton" type="button" disabled={isAutoViralRunning || isProcessing} onClick={onStartAutoViral}>
-          {isAutoViralRunning ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
-          {isAutoViralRunning ? "Auto Viral Berjalan..." : "Auto Viral CC"}
+        <div className="aiBlock viralBlock">
+          <button className="ghostButton autoViralButton" type="button" disabled={isAutoViralRunning || isProcessing} onClick={onStartAutoViral}>
+            {isAutoViralRunning ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
+            {isAutoViralRunning ? "Auto Viral Berjalan..." : "Auto Viral CC"}
+          </button>
+          <p className="field-help">
+            {autoViralMessage || "Atau biarkan sistem mencari konten Creative Commons yang relevan secara otomatis."}
+          </p>
+        </div>
+
+        <button className="primary" type="button" disabled={isStartDisabled} onClick={onStartJob}>
+          {isProcessing ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
+          {isProcessing ? "Sedang Memproses..." : "Mulai Potong Video"}
         </button>
-        <p className="field-help">
-          {autoViralMessage || "Cari luas 70+ tema Creative Commons—Islam, inspirasi, misteri, mitos/fakta, sejarah, dan horor relevan; prioritaskan 30 hari terbaru dan selalu lewati sumber lama."}
-        </p>
+        {!hasSource ? <p className="startHint">Tambahkan sumber video untuk mulai memproses.</p> : null}
       </div>
-
-      <button className="primary" type="button" disabled={isStartDisabled} onClick={onStartJob}>
-        {isProcessing ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
-        {isProcessing ? "Sedang Memproses..." : "Mulai Potong Video"}
-      </button>
     </section>
   );
 }

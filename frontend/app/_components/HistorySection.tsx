@@ -1,4 +1,4 @@
-import { CalendarClock, Clock3, ExternalLink, Film, Link2, StopCircle, Trash2 } from "lucide-react";
+import { CalendarClock, Clock3, ExternalLink, Film, History, Link2, StopCircle, Trash2 } from "lucide-react";
 import { statusCopy, statusIcon } from "../../lib/constants";
 import { formatDuration, jobElapsedSeconds } from "../../lib/utils";
 import type { ClipJob } from "../../types/clip.type";
@@ -50,32 +50,36 @@ export function HistorySection({
   const sourceUrl = (job: ClipJob) => job.source_url || job.request.url;
 
   return (
-    <section className="history">
+    <section className="history" id="history">
       <div className="sectionHeader">
-        <h2>Riwayat Proses</h2>
+        <div className="sectionTitle">
+          <span className="sectionEyebrow">Workspace</span>
+          <h2>Riwayat Proses</h2>
+          <p>Lihat kembali proses dan buka hasil klip sebelumnya.</p>
+        </div>
         <div className="historyActions">
           <span className="sectionBadge">{jobs.length} total</span>
           {failedJobs.length > 0 ? (
-            <button type="button" onClick={onDeleteFailed} className="ghostButton dangerTextButton">
-              <Trash2 size={15} />
-              Hapus gagal
+            <button type="button" onClick={onDeleteFailed} className="uiButton uiButton--ghostDanger">
+              <Trash2 size={16} />
+              <span>Hapus gagal</span>
             </button>
           ) : null}
           {selectedCount > 0 ? (
-            <button type="button" onClick={onDeleteSelected} className="dangerButton historyDeleteSelected">
-              <Trash2 size={15} />
-              Hapus terpilih ({selectedCount})
+            <button type="button" onClick={onDeleteSelected} className="uiButton uiButton--danger">
+              <Trash2 size={16} />
+              <span>Hapus terpilih ({selectedCount})</span>
             </button>
           ) : null}
           {processJobs.length > 0 ? (
             <button
               type="button"
               onClick={onDeleteAll}
-              className="dangerButton historyDeleteAll"
+              className="uiButton uiButton--danger"
               title="Hapus catatan job queued, running, failed, dan cancelled"
             >
               <Trash2 size={16} />
-              Hapus job proses ({processJobs.length})
+              <span>Hapus job proses ({processJobs.length})</span>
             </button>
           ) : null}
         </div>
@@ -143,19 +147,26 @@ export function HistorySection({
               </button>
               {canStop ? (
                 <button
-                  className="ghostButton stopJobRowButton"
+                  className="uiButton uiButton--ghostDanger stopJobRowButton"
                   type="button"
                   onClick={() => onStopJob(item.id)}
                   title="Stop proses running/queued"
                 >
                   <StopCircle size={15} />
-                  Stop
+                  <span>Stop</span>
                 </button>
               ) : null}
             </div>
           );
         })}
       </div>
+      {!jobs.length ? (
+        <div className="emptyState historyEmptyState">
+          <History className="emptyStateIcon" size={30} />
+          <p>Belum ada riwayat proses.</p>
+          <p className="emptyStateHint">Job yang Anda jalankan akan tersimpan dan tampil di bagian ini.</p>
+        </div>
+      ) : null}
     </section>
   );
 }

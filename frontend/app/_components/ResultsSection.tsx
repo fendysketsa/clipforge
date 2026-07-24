@@ -1,10 +1,13 @@
 import {
+  BarChart3,
   CheckCircle2,
+  ChevronDown,
   Clipboard,
   Download,
   ExternalLink,
   Lightbulb,
   RefreshCw,
+  Settings2,
   Sparkles,
   Target,
   Trash2,
@@ -99,27 +102,31 @@ export function ResultsSection({
   const openStudioWaitingLabel = usesChromeDebugging ? "Menyiapkan..." : "Menunggu login...";
 
   return (
-    <section className="results">
+    <section className="results" id="results">
       <div className="sectionHeader">
-        <h2>Klip Siap Digunakan</h2>
+        <div className="sectionTitle">
+          <span className="sectionEyebrow">Output</span>
+          <h2>Klip Siap Digunakan</h2>
+          <p>Review, unduh, atau kirim langsung ke YouTube.</p>
+        </div>
         <div className="resultsActions">
           <span className="sectionBadge">{clips.length} klip siap</span>
           {clips.length > 0 ? (
             <>
               <label className="selectAllClips">
                 <input checked={allClipsSelected} type="checkbox" onChange={onToggleAllClipSelection} />
-                Pilih semua
+                <span>Pilih semua</span>
               </label>
               {selectedCount > 0 ? (
-                <button type="button" onClick={onDeleteSelectedClips} className="dangerButton historyDeleteSelected">
-                  <Trash2 size={15} />
-                  Hapus terpilih ({selectedCount})
+                <button type="button" onClick={onDeleteSelectedClips} className="uiButton uiButton--danger">
+                  <Trash2 size={16} />
+                  <span>Hapus terpilih ({selectedCount})</span>
                 </button>
               ) : null}
               <button
                 type="button"
                 onClick={onUploadAllToYouTube}
-                className="ghostButton youtubeButton"
+                className="uiButton uiButton--youtube"
                 disabled={!youtubeEnabled}
                 title={
                   youtubeEnabled
@@ -127,89 +134,88 @@ export function ResultsSection({
                     : youtubeStatusMessage
                 }
               >
-                <UploadCloud size={15} />
-                Upload {Math.min(youtubeAutoUploadCount, clips.length)} terbaik
+                <UploadCloud size={16} />
+                <span>Upload {Math.min(youtubeAutoUploadCount, clips.length)} terbaik</span>
               </button>
-              {usesChromeDebugging ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={onSetupYouTubeOneTimeLogin}
-                    className="ghostButton youtubeButton"
-                    title="Ambil cookies/session sekali lalu upload berikutnya memakai storage-state tanpa CDP"
-                  >
-                    <RefreshCw size={15} />
-                    Login Sekali
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onCaptureYouTubeSession}
-                    className="ghostButton youtubeButton"
-                    disabled={isYouTubeLoginActive}
-                    title="Cadangan: start CDP, hydrate login, dan validasi akun/channel target"
-                  >
-                    <RefreshCw size={15} />
-                    CDP Opsional
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onEnableNoCdpMode}
-                    className="ghostButton youtubeButton"
-                    title="Matikan CDP dan upload memakai Playwright/profile backend langsung"
-                  >
-                    <RefreshCw size={15} />
-                    Tanpa CDP
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onImportYouTubeCdpCookies}
-                    className="ghostButton youtubeButton"
-                    title="Ambil cookies langsung dari Chrome CDP yang sudah login dan simpan ke storage-state"
-                  >
-                    <RefreshCw size={15} />
-                    Ambil Cookies
-                  </button>
-                </>
-              ) : !youtubeEnabled ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={onSetupYouTubeOneTimeLogin}
-                    className="ghostButton youtubeButton"
-                    title="Ambil cookies/session sekali dari Chrome/profile yang sudah login"
-                  >
-                    <RefreshCw size={15} />
-                    Login Sekali
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onStartYouTubeLogin}
-                    className="ghostButton youtubeButton"
-                    disabled={isYouTubeLoginActive}
-                    title={youtubeStatusMessage}
-                  >
-                    <ExternalLink size={15} />
-                    Login YouTube
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onCaptureYouTubeSession}
-                    className="ghostButton youtubeButton"
-                    title="Simpan session browser ke Playwright storage-state"
-                  >
-                    <RefreshCw size={15} />
-                    Sync Session
-                  </button>
-                </>
-              ) : null}
-              <button type="button" onClick={onDeleteAllClips} className="ghostButton dangerTextButton">
-                <Trash2 size={15} />
-                Hapus semua klip
+              <button type="button" onClick={onDeleteAllClips} className="uiButton uiButton--ghostDanger">
+                <Trash2 size={16} />
+                <span>Hapus semua</span>
               </button>
             </>
           ) : null}
         </div>
       </div>
+
+      {clips.length > 0 && (usesChromeDebugging || !youtubeEnabled) ? (
+        <details className="youtubeSetupPanel">
+          <summary>
+            <span className="youtubeSetupIcon">
+              <Settings2 size={17} />
+            </span>
+            <span className="youtubeSetupCopy">
+              <strong>Pengaturan koneksi YouTube</strong>
+              <small>{youtubeStatusMessage}</small>
+            </span>
+            <ChevronDown className="detailsChevron" size={18} />
+          </summary>
+          <div className="youtubeSetupActions">
+            <button
+              type="button"
+              onClick={onSetupYouTubeOneTimeLogin}
+              className="uiButton uiButton--secondary"
+              title="Ambil cookies/session sekali lalu upload berikutnya memakai storage-state"
+            >
+              <RefreshCw size={16} />
+              <span>Login Sekali</span>
+            </button>
+            {usesChromeDebugging ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onCaptureYouTubeSession}
+                  className="uiButton uiButton--secondary"
+                  disabled={isYouTubeLoginActive}
+                >
+                  <RefreshCw size={16} />
+                  <span>CDP Opsional</span>
+                </button>
+                <button type="button" onClick={onEnableNoCdpMode} className="uiButton uiButton--secondary">
+                  <Settings2 size={16} />
+                  <span>Gunakan tanpa CDP</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onImportYouTubeCdpCookies}
+                  className="uiButton uiButton--secondary"
+                >
+                  <Download size={16} />
+                  <span>Ambil Cookies</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onStartYouTubeLogin}
+                  className="uiButton uiButton--secondary"
+                  disabled={isYouTubeLoginActive}
+                >
+                  <ExternalLink size={16} />
+                  <span>Login YouTube</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onCaptureYouTubeSession}
+                  className="uiButton uiButton--secondary"
+                >
+                  <RefreshCw size={16} />
+                  <span>Sinkronkan Session</span>
+                </button>
+              </>
+            )}
+          </div>
+        </details>
+      ) : null}
 
       {clips.length ? (
         <div className="clipGrid">
@@ -232,17 +238,29 @@ export function ResultsSection({
                 className={`clipCard ${clip.is_correct ? "clipCardCorrect" : ""} ${isSelected ? "selected" : ""}`}
                 key={clip.url}
               >
-                <label className="clipSelect">
-                  <input
-                    aria-label={`Pilih ${title} untuk dihapus`}
-                    checked={isSelected}
-                    type="checkbox"
-                    onChange={() => onToggleClipSelection(clip.url)}
-                  />
-                </label>
-                <video controls preload="metadata" src={url} />
+                <div className="clipMedia">
+                  <label className="clipSelect">
+                    <input
+                      aria-label={`Pilih ${title} untuk dihapus`}
+                      checked={isSelected}
+                      type="checkbox"
+                      onChange={() => onToggleClipSelection(clip.url)}
+                    />
+                    <span>{isSelected ? "Dipilih" : "Pilih"}</span>
+                  </label>
+                  {clip.fyp_score !== null && clip.fyp_score !== undefined ? (
+                    <span className={`clipScoreBadge fypScore-${fypScoreTone(clip.fyp_score)}`}>
+                      <Sparkles size={14} />
+                      {Math.round(clip.fyp_score)}
+                    </span>
+                  ) : null}
+                  <video controls preload="metadata" src={url} />
+                </div>
                 <div className="clipInfo">
-                  <h3>{title}</h3>
+                  <div className="clipTitleBlock">
+                    <span className="clipEyebrow">Klip siap posting</span>
+                    <h3>{title}</h3>
+                  </div>
                   <button
                     className="copyTitleButton"
                     type="button"
@@ -250,139 +268,162 @@ export function ResultsSection({
                     title="Salin judul klip"
                   >
                     <Clipboard size={14} />
-                    Copy
+                    <span>Salin judul</span>
                   </button>
                 </div>
                 {clip.fyp_score !== null && clip.fyp_score !== undefined ? (
-                  <div className="fypAnalysis">
-                    <div className="fypScoreRow">
-                      <span className={`fypScore fypScore-${fypScoreTone(clip.fyp_score)}`}>
-                        <Sparkles size={15} />
-                        FYP {Math.round(clip.fyp_score)}/100
+                  <>
+                    <div className="clipMetrics">
+                      <span className="clipMetric clipMetric--score">
+                        <Sparkles size={13} />
+                        FYP {Math.round(clip.fyp_score)}
                       </span>
-                      <strong>{clip.fyp_label || "Sudah dinilai"}</strong>
                       {clip.key_point_score !== null && clip.key_point_score !== undefined ? (
-                        <span className="resolutionBadge">Point {clip.key_point_score}/100</span>
+                        <span className="clipMetric">Point {clip.key_point_score}</span>
                       ) : null}
                       {clip.loop_score !== null && clip.loop_score !== undefined ? (
-                        <span className="resolutionBadge">Loop {clip.loop_score}/100</span>
+                        <span className="clipMetric">Loop {clip.loop_score}</span>
                       ) : null}
-                      {clip.output_resolution ? (
-                        <span className="resolutionBadge">{clip.output_resolution} HD</span>
-                      ) : null}
+                      {clip.output_resolution ? <span className="clipMetric">{clip.output_resolution}</span> : null}
                     </div>
-                    {clip.hook ? (
-                      <div className="analysisLine">
-                        <Target size={15} />
-                        <span><b>Hook:</b> {clip.hook}</span>
+                    <details className="clipAnalysisDetails">
+                      <summary>
+                        <span className="detailsSummaryIcon">
+                          <BarChart3 size={16} />
+                        </span>
+                        <span>
+                          <strong>Analisis & perbaikan</strong>
+                          <small>{clip.fyp_label || "Sudah dinilai"} · lihat detail kualitas klip</small>
+                        </span>
+                        <ChevronDown className="detailsChevron" size={18} />
+                      </summary>
+                      <div className="fypAnalysis">
+                        {clip.hook ? (
+                          <div className="analysisLine">
+                            <Target size={15} />
+                            <span><b>Hook:</b> {clip.hook}</span>
+                          </div>
+                        ) : null}
+                        {clip.pov ? (
+                          <div className="analysisLine">
+                            <Video size={15} />
+                            <span><b>POV:</b> {clip.pov}</span>
+                          </div>
+                        ) : null}
+                        {clip.strengths?.length ? (
+                          <div className="analysisBlock analysisStrength">
+                            <b>Kekuatan</b>
+                            <ul>{clip.strengths.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul>
+                          </div>
+                        ) : null}
+                        {clip.weaknesses?.length ? (
+                          <div className="analysisBlock analysisWeakness">
+                            <b>Temuan awal</b>
+                            <ul>{clip.weaknesses.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul>
+                          </div>
+                        ) : null}
+                        {clip.applied_edits?.length ? (
+                          <div className="analysisBlock analysisApplied">
+                            <b><CheckCircle2 size={14} /> Perbaikan diterapkan</b>
+                            <ul>{clip.applied_edits.map((item) => <li key={item}>{item}</li>)}</ul>
+                          </div>
+                        ) : null}
+                        {clip.improvement_ideas?.length ? (
+                          <div className="analysisBlock analysisIdea">
+                            <div className="analysisIdeaHeader">
+                              <b><Lightbulb size={14} /> Perlu tindakan manual</b>
+                              <span>Belum otomatis</span>
+                            </div>
+                            <ol>{clip.improvement_ideas.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ol>
+                          </div>
+                        ) : null}
                       </div>
-                    ) : null}
-                    {clip.pov ? (
-                      <div className="analysisLine">
-                        <Video size={15} />
-                        <span><b>POV:</b> {clip.pov}</span>
-                      </div>
-                    ) : null}
-                    {clip.strengths?.length ? (
-                      <div className="analysisBlock analysisStrength">
-                        <b>Kekuatan</b>
-                        <ul>{clip.strengths.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul>
-                      </div>
-                    ) : null}
-                    {clip.weaknesses?.length ? (
-                      <div className="analysisBlock analysisWeakness">
-                        <b>Yang masih kurang</b>
-                        <ul>{clip.weaknesses.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul>
-                      </div>
-                    ) : null}
-                    {clip.applied_edits?.length ? (
-                      <div className="analysisBlock analysisApplied">
-                        <b><CheckCircle2 size={14} /> Diterapkan Codex</b>
-                        <ul>{clip.applied_edits.slice(0, 4).map((item) => <li key={item}>{item}</li>)}</ul>
-                      </div>
-                    ) : null}
-                    {clip.improvement_ideas?.length ? (
-                      <div className="analysisBlock analysisIdea">
-                        <div className="analysisIdeaHeader">
-                          <b><Lightbulb size={14} /> Ide Codex</b>
-                          <span>Prioritas edit</span>
-                        </div>
-                        <ol>{clip.improvement_ideas.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ol>
-                      </div>
-                    ) : null}
-                  </div>
+                    </details>
+                  </>
                 ) : null}
-                <label className="clipValidation">
-                  <input
-                    checked={clip.is_correct}
-                    type="checkbox"
-                    onChange={(event) => onToggleClipCorrect(clip, event.target.checked)}
-                  />
-                  <span>
-                    <CheckCircle2 size={16} />
-                    Terclip benar
-                  </span>
-                </label>
-                <div className="clipActions">
-                  <a href={url} target="_blank" rel="noreferrer">
-                    <ExternalLink size={16} />
-                    Buka
-                  </a>
-                  <button type="button" onClick={() => handleDownload(url, clip.name)}>
-                    <Download size={16} />
-                    Unduh
-                  </button>
-                  <button
-                    type="button"
-                    className="youtubeUploadButton"
-                    onClick={() => onUploadClipToYouTube(clip)}
-                    disabled={!youtubeEnabled || isUploadingToYouTube}
-                    title={youtubeButtonTitle}
-                  >
-                    <UploadCloud size={16} />
-                    {isUploadingToYouTube ? "Uploading" : latestUpload?.status === "failed" ? "Retry YouTube" : "YouTube"}
-                  </button>
-                  <button className="clipDeleteButton" type="button" onClick={() => onDeleteClip(clip)}>
-                    <Trash2 size={16} />
-                    Hapus
-                  </button>
-                </div>
-                {latestUpload ? (
-                  <div className={`youtubeUploadStatus status-${latestUpload.status}`}>
-                    <UploadCloud size={14} />
+                <div className="clipCardFooter">
+                  <label className="clipValidation">
+                    <input
+                      checked={clip.is_correct}
+                      type="checkbox"
+                      onChange={(event) => onToggleClipCorrect(clip, event.target.checked)}
+                    />
                     <span>
-                      YouTube: {latestUpload.status}
-                      {latestUpload.video_url ? (
+                      <CheckCircle2 size={16} />
+                      Hasil klip sudah benar
+                    </span>
+                  </label>
+                  <div className="clipActions">
+                    <a href={url} target="_blank" rel="noreferrer">
+                      <ExternalLink size={16} />
+                      <span>Buka klip</span>
+                    </a>
+                    <button type="button" className="clipDownloadButton" onClick={() => handleDownload(url, clip.name)}>
+                      <Download size={16} />
+                      <span>Unduh</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="youtubeUploadButton"
+                      onClick={() => onUploadClipToYouTube(clip)}
+                      disabled={!youtubeEnabled || isUploadingToYouTube}
+                      title={youtubeButtonTitle}
+                    >
+                      <UploadCloud size={16} />
+                      <span>
+                        {isUploadingToYouTube
+                          ? "Mengupload..."
+                          : latestUpload?.status === "failed"
+                            ? "Ulangi YouTube"
+                            : "Kirim YouTube"}
+                      </span>
+                    </button>
+                    <button className="clipDeleteButton" type="button" onClick={() => onDeleteClip(clip)}>
+                      <Trash2 size={16} />
+                      <span>Hapus</span>
+                    </button>
+                  </div>
+                  {latestUpload ? (
+                    <div className={`youtubeUploadStatus status-${latestUpload.status}`}>
+                      <UploadCloud size={14} />
+                      <span>
+                        YouTube: {latestUpload.status}
+                        {latestUpload.video_url ? (
+                          <>
+                            {" "}
+                            · <a href={latestUpload.video_url} target="_blank" rel="noreferrer">buka</a>
+                          </>
+                        ) : null}
+                      </span>
+                    </div>
+                  ) : null}
+                  {latestUpload?.status === "failed" && uploadError ? (
+                    <div className="youtubeUploadError" title={uploadError}>
+                      <strong>Upload gagal</strong>
+                      <span>{uploadError}</span>
+                      <button type="button" onClick={onSetupYouTubeOneTimeLogin} disabled={isYouTubeLoginActive}>
+                        <RefreshCw size={14} />
+                        <span>{isYouTubeLoginActive ? openStudioWaitingLabel : "Login Sekali"}</span>
+                      </button>
+                      <button type="button" onClick={onCaptureYouTubeSession}>
+                        <RefreshCw size={14} />
+                        <span>{usesChromeDebugging ? "CDP Opsional" : "Sync Session Browser"}</span>
+                      </button>
+                      {usesChromeDebugging ? (
                         <>
-                          {" "}
-                          · <a href={latestUpload.video_url} target="_blank" rel="noreferrer">buka</a>
+                          <button type="button" onClick={onImportYouTubeCdpCookies}>
+                            <Download size={14} />
+                            <span>Ambil Cookies</span>
+                          </button>
+                          <button type="button" onClick={onEnableNoCdpMode}>
+                            <Settings2 size={14} />
+                            <span>Tanpa CDP</span>
+                          </button>
                         </>
                       ) : null}
-                    </span>
-                  </div>
-                ) : null}
-                {latestUpload?.status === "failed" && uploadError ? (
-                  <div className="youtubeUploadError" title={uploadError}>
-                    <strong>Upload gagal</strong>
-                    <span>{uploadError}</span>
-                    <button type="button" onClick={onSetupYouTubeOneTimeLogin} disabled={isYouTubeLoginActive}>
-                      {isYouTubeLoginActive ? openStudioWaitingLabel : "Login Sekali"}
-                    </button>
-                    <button type="button" onClick={onCaptureYouTubeSession}>
-                      {usesChromeDebugging ? "CDP Opsional" : "Sync Session Browser"}
-                    </button>
-                    {usesChromeDebugging ? (
-                      <>
-                        <button type="button" onClick={onImportYouTubeCdpCookies}>
-                          Ambil Cookies
-                        </button>
-                        <button type="button" onClick={onEnableNoCdpMode}>
-                          Tanpa CDP
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
-                ) : null}
+                    </div>
+                  ) : null}
+                </div>
                 <ThumbnailPrompt clip={clip} />
               </article>
             );

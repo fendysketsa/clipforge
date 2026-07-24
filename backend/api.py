@@ -765,6 +765,44 @@ def duration_between_iso(started_at: str | None, finished_at: str) -> float:
     return round(max(0.0, (finished - started).total_seconds()), 2)
 
 
+def codex_idea_area(value: str) -> str:
+    prefix = re.split(r"\s*(?:—|–|:|\s-\s)\s*", value.casefold(), maxsplit=1)[0][:48]
+    categories = (
+        ("hook", ("hook", "pembuka", "opening")),
+        ("tempo", ("tempo", "ritme", "alur", "cut", "potong", "pangkas", "trim")),
+        ("ending", ("ending", "penutup", "payoff", "kesimpulan")),
+        ("loop", ("loop", "callback")),
+        ("visual", ("visual", "teks", "overlay", "b-roll", "frame", "emphasis")),
+        ("audio", ("audio", "sfx", "suara", "sound")),
+    )
+    for category, tokens in categories:
+        if any(token in prefix for token in tokens):
+            return category
+    return ""
+
+
+def unresolved_codex_ideas(sidecar: dict[str, Any], ideas: list[str]) -> list[str]:
+    """Hide legacy ideas when the saved render plan already applied or reviewed them."""
+    if not sidecar.get("enhanced_edit") or sidecar.get("output_format", "vertical_short") != "vertical_short":
+        return ideas
+    plan = sidecar.get("codex_edit_plan")
+    if not isinstance(plan, dict):
+        return ideas
+
+    remaining: list[str] = []
+    for idea in ideas:
+        area = codex_idea_area(idea)
+        resolved = (
+            (area == "hook" and bool(plan.get("hook_boost")))
+            or (area == "tempo" and bool(plan.get("tempo_boost")))
+            or (area == "ending" and bool(plan.get("ending_boost")))
+            or area in {"loop", "visual", "audio"}
+        )
+        if not resolved:
+            remaining.append(idea)
+    return remaining
+
+
 def load_jobs() -> dict[str, ClipJob]:
     if not JOBS_PATH.exists() or JOBS_PATH.is_dir():
         return {}
@@ -991,6 +1029,33 @@ def enrich_job_clip_titles(job: "ClipJob") -> "ClipJob":
     return job.model_copy(update={"clips": clips})
 
 
+def enrich_job_codex_feedback(job: "ClipJob") -> "ClipJob":
+    clips: list[ClipFile] = []
+    changed = False
+    for clip in job.clips:
+        clip_path = output_path_from_url(clip.url)
+        json_path = clip_path.with_suffix(".json") if clip_path is not None else None
+        try:
+            payload = json.loads(json_path.read_text(encoding="utf-8")) if json_path and json_path.is_file() else {}
+        except (OSError, json.JSONDecodeError):
+            payload = {}
+        sidecar = payload if isinstance(payload, dict) else {}
+        remaining = unresolved_codex_ideas(sidecar, clip.improvement_ideas)
+        raw_applied = sidecar.get("applied_edits")
+        applied = (
+            [str(item).strip() for item in raw_applied if isinstance(item, str) and item.strip()][:8]
+            if isinstance(raw_applied, list)
+            else clip.applied_edits
+        )
+        if remaining != clip.improvement_ideas or applied != clip.applied_edits:
+            clip = clip.model_copy(
+                update={"improvement_ideas": remaining, "applied_edits": applied}
+            )
+            changed = True
+        clips.append(clip)
+    return job.model_copy(update={"clips": clips}) if changed else job
+
+
 def output_work_dirs_for_job(job: "ClipJob") -> list[Path]:
     dirs: list[Path] = []
     for clip in job.clips:
@@ -1040,7 +1105,9 @@ def enrich_job_source_metadata(job: "ClipJob") -> "ClipJob":
 
 
 def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
-    return enrich_job_source_metadata(enrich_job_clip_titles(job))
+    return enrich_job_source_metadata(
+        enrich_job_codex_feedback(enrich_job_clip_titles(job))
+    )
 
 
 def clip_output_work_dir(clip: ClipFile) -> Path | None:
@@ -2926,11 +2993,13 @@ def discover_clips(started_at: float) -> list[ClipFile]:
             except (OSError, json.JSONDecodeError):
                 title = None
                 sidecar = {}
-        def sidecar_list(key: str) -> list[str]:
+        def sidecar_list(key: str, limit: int = 4) -> list[str]:
             value = sidecar.get(key)
             if not isinstance(value, list):
                 return []
-            return [str(item).strip() for item in value if isinstance(item, str) and item.strip()][:4]
+            return [str(item).strip() for item in value if isinstance(item, str) and item.strip()][:limit]
+
+        improvement_ideas = unresolved_codex_ideas(sidecar, sidecar_list("improvement_ideas"))
 
         raw_score = sidecar.get("score")
         fyp_score = (
@@ -2972,8 +3041,8 @@ def discover_clips(started_at: float) -> list[ClipFile]:
                 pov=str(sidecar.get("pov")).strip() if sidecar.get("pov") else None,
                 strengths=sidecar_list("strengths"),
                 weaknesses=sidecar_list("weaknesses"),
-                improvement_ideas=sidecar_list("improvement_ideas"),
-                applied_edits=sidecar_list("applied_edits"),
+                improvement_ideas=improvement_ideas,
+                applied_edits=sidecar_list("applied_edits", limit=8),
                 key_point_score=sidecar_score("key_point_score"),
                 loop_score=sidecar_score("loop_score"),
                 boundary_quality=(
@@ -5134,7 +5203,12 @@ def create_job(request: ClipJobRequest) -> ClipJob:
 @app.get("/api/jobs", response_model=list[ClipJob])
 def list_jobs() -> list[ClipJob]:
     with jobs_lock:
-        return sorted(jobs.values(), key=lambda job: job.created_at, reverse=True)
+        snapshot = list(jobs.values())
+    return sorted(
+        (enrich_job_for_display(job) for job in snapshot),
+        key=lambda job: job.created_at,
+        reverse=True,
+    )
 
 
 @app.delete("/api/jobs")
@@ -5306,7 +5380,7 @@ def get_job(job_id: str) -> ClipJob:
         job = jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job
+    return enrich_job_for_display(job)
 
 
 @app.delete("/api/jobs/{job_id}")

@@ -28,19 +28,27 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
     <section className="panel statusPanel">
       <div className="panelHeader">
         <div className="panelHeaderTitle">
-          <StatusIcon className={job?.status === "running" ? "spin" : ""} size={20} />
-          <h2>Aktivitas</h2>
+          <span className="panelHeaderIcon">
+            <StatusIcon className={job?.status === "running" ? "spin" : ""} size={18} />
+          </span>
+          <div className="panelTitleCopy">
+            <span className="panelEyebrow">Monitor proses</span>
+            <h2>Aktivitas</h2>
+          </div>
         </div>
         {canCancel ? (
-          <button className="ghostButton cancelJobButton" type="button" onClick={onCancelJob}>
-            <XCircle size={15} />
-            Batalkan
+          <button className="uiButton uiButton--ghostDanger cancelJobButton" type="button" onClick={onCancelJob}>
+            <XCircle size={16} />
+            <span>Batalkan</span>
           </button>
         ) : null}
       </div>
 
       {job ? (
         <div className="activityContent">
+          <div className={`statusProgress statusProgress--${job.status}`} aria-label={`Status job: ${job.status}`}>
+            <span />
+          </div>
           <div className="jobMeta">
             <span>
               {job.request.clip_mode === "highlight_5m"
