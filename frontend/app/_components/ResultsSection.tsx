@@ -130,7 +130,7 @@ export function ResultsSection({
                 disabled={!youtubeEnabled}
                 title={
                   youtubeEnabled
-                    ? `Auto upload ${Math.min(youtubeAutoUploadCount, clips.length)} klip terbaik ke YouTube`
+                    ? `Upload ${Math.min(youtubeAutoUploadCount, clips.length)} klip terbaik sebagai Private untuk pemeriksaan klaim`
                     : youtubeStatusMessage
                 }
               >

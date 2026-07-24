@@ -700,6 +700,10 @@ def ffmpeg_clean_metadata_args() -> list[str]:
     return [
         "-map_metadata",
         "-1",
+        "-map_metadata:s:v",
+        "-1",
+        "-map_metadata:s:a",
+        "-1",
         "-map_chapters",
         "-1",
         "-metadata",
@@ -720,6 +724,14 @@ def ffmpeg_clean_metadata_args() -> list[str]:
         "license=",
         "-metadata",
         "encoder=",
+        "-metadata:s:v",
+        "handler_name=",
+        "-metadata:s:v",
+        "vendor_id=",
+        "-metadata:s:a",
+        "handler_name=",
+        "-metadata:s:a",
+        "vendor_id=",
     ]
 
 

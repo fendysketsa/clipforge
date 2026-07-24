@@ -467,7 +467,10 @@ def test_candidate_pool_skips_arbitrary_mid_sentence_end():
 def test_ffmpeg_output_metadata_is_explicitly_sanitized():
     args = ffmpeg_clean_metadata_args()
 
-    assert args[:4] == ["-map_metadata", "-1", "-map_chapters", "-1"]
+    assert args[:2] == ["-map_metadata", "-1"]
+    assert "-map_metadata:s:v" in args
+    assert "-map_metadata:s:a" in args
+    assert "handler_name=" in args
     assert "license=" in args
     assert "copyright=" in args
 

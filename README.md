@@ -192,8 +192,10 @@ before download. Viral search also rejects live/upcoming, age-restricted, and
 non-public sources. Verified rights data remains in local provenance records,
 while rendered MP4 files do not inherit source container metadata or chapters.
 During upload, Playwright waits for YouTube Studio Checks and cancels
-before publish if copyright or restriction issues are detected. This reduces
-risk but cannot guarantee a video will never receive a future claim.
+before save if copyright or restriction issues are detected. Auto uploads are
+kept Private by default, because Content ID can also apply a later claim after
+the initial Checks finish. Review the Restrictions column before publishing.
+This reduces risk but cannot guarantee a video will never receive a future claim.
 
 Optional YouTube upload configuration:
 
@@ -208,6 +210,7 @@ YOUTUBE_UPLOAD_FORCE_CDP=false
 YOUTUBE_UPLOAD_STORAGE_STATE_FIRST=true
 YOUTUBE_CDP_MAX_UPLOAD_MB=45
 YOUTUBE_DEFAULT_VISIBILITY=private
+YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD=false
 YOUTUBE_MADE_FOR_KIDS=false
 YOUTUBE_DEFAULT_TAGS=shorts,clipforge
 YOUTUBE_DEFAULT_PLAYLIST=Islam

@@ -152,6 +152,16 @@ def env_csv(name: str) -> list[str]:
     return [item.strip().lstrip("#") for item in os.environ.get(name, "").split(",") if item.strip()]
 
 
+def safe_youtube_visibility(
+    requested: str | None = None,
+) -> Literal["private", "unlisted", "public"]:
+    value = (requested or os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "private")).strip().lower()
+    visibility = value if value in {"private", "unlisted", "public"} else "private"
+    if visibility == "public" and not env_bool("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", False):
+        return "private"
+    return visibility  # type: ignore[return-value]
+
+
 def env_search_queries(*names: str) -> list[str]:
     for name in names:
         raw_value = os.environ.get(name, "")
@@ -321,9 +331,7 @@ class YouTubeUploadRequest(BaseModel):
     description: str = ""
     thumbnail_url: str | None = None
     visibility: Literal["private", "unlisted", "public"] = Field(
-        default_factory=lambda: os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "public")
-        if os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "public") in {"private", "unlisted", "public"}
-        else "public"
+        default_factory=safe_youtube_visibility
     )
     made_for_kids: bool = Field(default_factory=lambda: env_bool("YOUTUBE_MADE_FOR_KIDS", False))
     tags: list[str] = Field(default_factory=lambda: env_csv("YOUTUBE_DEFAULT_TAGS"))
@@ -364,9 +372,7 @@ class YouTubeUploadRequest(BaseModel):
 class YouTubeBatchUploadRequest(BaseModel):
     clip_urls: list[str] = Field(default_factory=list)
     visibility: Literal["private", "unlisted", "public"] = Field(
-        default_factory=lambda: os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "public")
-        if os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "public") in {"private", "unlisted", "public"}
-        else "public"
+        default_factory=safe_youtube_visibility
     )
     made_for_kids: bool = Field(default_factory=lambda: env_bool("YOUTUBE_MADE_FOR_KIDS", False))
     tags: list[str] = Field(default_factory=lambda: env_csv("YOUTUBE_DEFAULT_TAGS"))
@@ -1293,8 +1299,7 @@ def youtube_upload_auth_ready() -> bool:
 
 
 def youtube_default_visibility() -> Literal["private", "unlisted", "public"]:
-    value = os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "public").strip().lower()
-    return value if value in {"private", "unlisted", "public"} else "public"  # type: ignore[return-value]
+    return safe_youtube_visibility()
 
 
 def active_youtube_upload_id() -> str | None:
@@ -1501,6 +1506,10 @@ def youtube_upload_clean_metadata_args() -> list[str]:
     return [
         "-map_metadata",
         "-1",
+        "-map_metadata:s:v",
+        "-1",
+        "-map_metadata:s:a",
+        "-1",
         "-map_chapters",
         "-1",
         "-metadata",
@@ -1517,6 +1526,14 @@ def youtube_upload_clean_metadata_args() -> list[str]:
         "license=",
         "-metadata",
         "encoder=",
+        "-metadata:s:v",
+        "handler_name=",
+        "-metadata:s:v",
+        "vendor_id=",
+        "-metadata:s:a",
+        "handler_name=",
+        "-metadata:s:a",
+        "vendor_id=",
     ]
 
 
@@ -2157,7 +2174,7 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         ),
         description=description,
         thumbnail_url=safe_thumbnail_url,
-        visibility=request.visibility,
+        visibility=safe_youtube_visibility(request.visibility),
         made_for_kids=request.made_for_kids,
         tags=tags,
         playlist=request.playlist,

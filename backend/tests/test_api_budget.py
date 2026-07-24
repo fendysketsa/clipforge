@@ -18,6 +18,7 @@ from api import (
     max_clips_for_duration,
     normalize_job_request,
     processed_job_source_urls,
+    safe_youtube_visibility,
     unresolved_codex_ideas,
     youtube_cdp_start_needed,
     youtube_upload_staging_filter,
@@ -243,8 +244,22 @@ def test_viral_source_rejects_live_restricted_or_non_public_video():
 def test_upload_staging_drops_source_metadata():
     args = youtube_upload_clean_metadata_args()
 
-    assert args[:4] == ["-map_metadata", "-1", "-map_chapters", "-1"]
+    assert args[:2] == ["-map_metadata", "-1"]
+    assert "-map_metadata:s:v" in args
+    assert "-map_metadata:s:a" in args
+    assert "handler_name=" in args
     assert "license=" in args
+
+
+def test_youtube_auto_upload_is_private_unless_public_is_explicitly_allowed(monkeypatch):
+    monkeypatch.setenv("YOUTUBE_DEFAULT_VISIBILITY", "public")
+    monkeypatch.delenv("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", raising=False)
+
+    assert safe_youtube_visibility() == "private"
+    assert safe_youtube_visibility("public") == "private"
+
+    monkeypatch.setenv("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", "true")
+    assert safe_youtube_visibility("public") == "public"
 
 
 def test_models_from_openai_compatible_payload():

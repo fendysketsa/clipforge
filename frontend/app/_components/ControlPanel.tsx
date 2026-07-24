@@ -701,7 +701,7 @@ export function ControlPanel({
           />
         </label>
         <p className="field-help">
-          Selesai clipping langsung antrekan 3 klip terbaik ke playlist Islam dengan judul, deskripsi singkat, dan hashtag otomatis.
+          Selesai clipping langsung antrekan 3 klip terbaik sebagai Private. Publikasikan hanya setelah kolom Pembatasan bebas klaim.
         </p>
         </div>
       </div>

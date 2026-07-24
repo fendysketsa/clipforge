@@ -4,8 +4,10 @@ import youtube_uploader
 from youtube_uploader import (
     UploadError,
     click_final_upload_action,
+    copyright_issue_detected,
     next_upload_step_timeout_ms,
     reload_after_publish,
+    safe_upload_visibility,
     wait_for_copyright_checks,
     wait_for_final_upload_confirmation,
     wait_for_review_checks_safe_before_publish,
@@ -117,6 +119,59 @@ def test_checks_extend_wait_when_youtube_says_it_needs_longer(monkeypatch):
     assert any("sudah centang" in message for message in logs)
 
 
+def test_checks_block_exact_indonesian_claim_notice_from_studio(monkeypatch):
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
+    page = TextPage(
+        "Konten yang diklaim ditemukan di video ini. "
+        "Klaim ini tidak memengaruhi visibilitas atau fitur video Anda."
+    )
+
+    with pytest.raises(UploadError, match="Content ID"):
+        wait_for_copyright_checks(page, timeout_ms=100, require_checks=True)
+
+
+def test_generic_checks_complete_is_not_treated_as_explicitly_safe(monkeypatch):
+    clock = iter((0.0, 0.0, 1.0))
+    monkeypatch.delenv("YOUTUBE_CONTINUE_WHEN_CHECKS_STUCK", raising=False)
+    monkeypatch.setattr(youtube_uploader.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
+
+    with pytest.raises(UploadError, match="Step 3 Checks belum selesai"):
+        wait_for_copyright_checks(TextPage("Pemeriksaan selesai."), timeout_ms=100, require_checks=True)
+
+
+def test_review_blocks_claim_before_publication(monkeypatch):
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "get_upload_workflow_step", lambda _page: "REVIEW")
+    monkeypatch.setattr(youtube_uploader, "visibility_is_selected", lambda *_args: True)
+    monkeypatch.setattr(youtube_uploader, "final_action_button_is_ready", lambda *_args: True)
+    monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
+
+    with pytest.raises(UploadError, match="tidak dipublikasikan"):
+        wait_for_review_checks_safe_before_publish(
+            TextPage("Konten yang diklaim ditemukan di video ini"),
+            100,
+        )
+
+
+def test_claim_detector_accepts_common_english_content_id_copy():
+    assert copyright_issue_detected("Copyright-protected content found during checks")
+    assert copyright_issue_detected("This video has a Content ID claim")
+    assert not copyright_issue_detected("Copyright: No issues found")
+
+
+def test_uploader_forces_public_request_to_private_by_default(monkeypatch):
+    monkeypatch.delenv("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", raising=False)
+    assert safe_upload_visibility("public") == "private"
+    assert safe_upload_visibility("unlisted") == "unlisted"
+
+    monkeypatch.setenv("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", "true")
+    assert safe_upload_visibility("public") == "public"
+
+
 def test_review_safe_text_does_not_trigger_false_issue(monkeypatch):
     monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(youtube_uploader, "get_upload_workflow_step", lambda _page: "REVIEW")
@@ -164,3 +219,15 @@ def test_final_action_requires_selected_visibility(monkeypatch):
 
     with pytest.raises(UploadError, match="belum benar-benar tercentang"):
         click_final_upload_action(object(), "public")
+
+
+def test_final_action_rechecks_claim_notice_immediately_before_click(monkeypatch):
+    monkeypatch.setattr(youtube_uploader, "get_upload_workflow_step", lambda _page: "REVIEW")
+    monkeypatch.setattr(youtube_uploader, "visibility_is_selected", lambda *_args: True)
+    monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
+
+    with pytest.raises(UploadError, match="tepat sebelum aksi final"):
+        click_final_upload_action(
+            TextPage("Konten yang diklaim ditemukan di video ini"),
+            "public",
+        )

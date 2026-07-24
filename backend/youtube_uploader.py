@@ -37,6 +37,13 @@ def env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def safe_upload_visibility(requested: str) -> str:
+    visibility = requested if requested in {"private", "unlisted", "public"} else "private"
+    if visibility == "public" and not env_bool("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", False):
+        return "private"
+    return visibility
+
+
 def log(message: str) -> None:
     print(message, flush=True)
 
@@ -1673,23 +1680,31 @@ def final_action_button_is_ready(page, visibility: str) -> bool:
 
 
 def wait_for_review_checks_safe_before_publish(page, timeout_ms: int = 300000) -> None:
-    log("Memastikan step Visibilitas dan tombol Publikasikan siap...")
+    log("Memastikan tidak ada klaim dan tombol Publikasikan siap...")
     deadline = time.monotonic() + timeout_ms / 1000
     last_body = ""
     while time.monotonic() < deadline:
         dismiss_reload_prompt(page, timeout_ms=300)
+        try:
+            body = page.locator("ytcp-uploads-dialog").inner_text(timeout=3000)
+            last_body = re.sub(r"\s+", " ", body).strip()[:700]
+            if copyright_issue_detected(body):
+                save_debug_artifacts(page, "copyright-claim-before-publish")
+                raise UploadError(
+                    "Klaim Content ID/copyright muncul pada review akhir. "
+                    "Video tidak dipublikasikan agar channel tetap aman."
+                )
+        except UploadError:
+            raise
+        except Exception:
+            pass
         if (
             get_upload_workflow_step(page) == "REVIEW"
             and visibility_is_selected(page, "public")
             and final_action_button_is_ready(page, "public")
         ):
-            log("Public tercentang dan tombol Publikasikan aktif.")
+            log("Tidak ada klaim terdeteksi; Public tercentang dan tombol Publikasikan aktif.")
             return
-        try:
-            body = page.locator("ytcp-uploads-dialog").inner_text(timeout=3000)
-            last_body = re.sub(r"\s+", " ", body).strip()[:700]
-        except Exception:
-            pass
         time.sleep(1)
 
     save_debug_artifacts(page, "publish-button-not-ready")
@@ -1708,6 +1723,16 @@ def click_final_upload_action(page, visibility: str, timeout_ms: int = 30000) ->
         save_debug_artifacts(page, "final-visibility-not-selected")
         raise UploadError(
             f"Visibilitas '{visibility}' belum benar-benar tercentang; upload tidak dipublikasikan."
+        )
+    try:
+        body = page.locator("ytcp-uploads-dialog").inner_text(timeout=3000)
+    except Exception:
+        body = ""
+    if copyright_issue_detected(body):
+        save_debug_artifacts(page, "copyright-claim-at-final-action")
+        raise UploadError(
+            "Klaim Content ID/copyright terdeteksi tepat sebelum aksi final. "
+            "Upload dibatalkan agar channel tetap aman."
         )
     if visibility == "public":
         patterns = [r"publish", r"publikasikan"]
@@ -3471,6 +3496,41 @@ def add_manual_subtitle(page, subtitle_text: str = "FCN") -> bool:
     return subtitle_filled
 
 
+COPYRIGHT_ISSUE_PATTERNS = (
+    r"copyright claim",
+    r"copyright issue",
+    r"content id claim",
+    r"claimed content",
+    r"copyright(?:ed|-protected)? content (?:was )?found",
+    r"restrictions? found",
+    r"klaim hak cipta",
+    r"masalah hak cipta",
+    r"konten yang diklaim",
+    r"konten berhak cipta (?:telah )?ditemukan",
+    r"klaim (?:telah )?ditemukan",
+    r"pembatasan.*ditemukan",
+    r"masalah ditemukan",
+)
+
+COPYRIGHT_ALL_CLEAR_PATTERNS = (
+    (r"hak cipta\s+tidak ditemukan masalah", r"pedoman komunitas\s+tidak ditemukan masalah"),
+    (r"copyright\s+no issues found", r"community guidelines\s+no issues found"),
+)
+
+
+def copyright_issue_detected(body: str) -> bool:
+    normalized = re.sub(r"\s+", " ", body or "").casefold()
+    return any(re.search(pattern, normalized, re.I) for pattern in COPYRIGHT_ISSUE_PATTERNS)
+
+
+def copyright_checks_all_clear(body: str) -> bool:
+    normalized = re.sub(r"\s+", " ", body or "").casefold()
+    return any(
+        all(re.search(pattern, normalized, re.I) for pattern in pattern_group)
+        for pattern_group in COPYRIGHT_ALL_CLEAR_PATTERNS
+    )
+
+
 def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True) -> None:
     log("Menunggu YouTube Studio Checks sampai semua pemeriksaan aman...")
     deadline = time.monotonic() + timeout_ms / 1000
@@ -3484,15 +3544,6 @@ def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True
     )
     long_running_extended = False
     next_progress_log_at = 0.0
-    issue_patterns = (
-        r"copyright claim",
-        r"copyright issue",
-        r"restrictions? found",
-        r"klaim hak cipta",
-        r"masalah hak cipta",
-        r"pembatasan.*ditemukan",
-        r"masalah ditemukan",
-    )
     checking_patterns = (
         r"sedang memeriksa",
         r"checking",
@@ -3519,15 +3570,6 @@ def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True
         r"takes longer",
         r"still processing",
     )
-    complete_patterns = (
-        r"checks complete",
-        r"pemeriksaan selesai",
-    )
-    all_clear_patterns = (
-        (r"hak cipta\s+tidak ditemukan masalah", r"pedoman komunitas\s+tidak ditemukan masalah"),
-        (r"copyright\s+no issues found", r"community guidelines\s+no issues found"),
-    )
-
     last_body = ""
     while True:
         now = time.monotonic()
@@ -3544,14 +3586,11 @@ def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True
         last_body = re.sub(r"\s+", " ", body).strip()[:500]
         has_checking = any(re.search(pattern, lowered, re.I) for pattern in checking_patterns)
         has_long_running = any(re.search(pattern, lowered, re.I) for pattern in long_running_patterns)
-        has_complete = any(re.search(pattern, lowered, re.I) for pattern in complete_patterns)
-        has_all_clear = any(
-            all(re.search(pattern, lowered, re.I) for pattern in pattern_group)
-            for pattern_group in all_clear_patterns
-        )
-        if any(re.search(pattern, lowered, re.I) for pattern in issue_patterns):
+        has_all_clear = copyright_checks_all_clear(body)
+        if copyright_issue_detected(body):
+            save_debug_artifacts(page, "copyright-claim-detected")
             raise UploadError(
-                "YouTube Studio mendeteksi potensi copyright/restriction pada clip ini. "
+                "YouTube Studio mendeteksi klaim Content ID/copyright pada clip ini. "
                 "Upload dibatalkan sebelum publish agar channel tetap aman."
             )
         if has_long_running and not long_running_extended and long_running_extension_seconds:
@@ -3573,9 +3612,6 @@ def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True
             continue
         if has_all_clear:
             log("YouTube Studio Checks aman: hak cipta dan pedoman komunitas sudah centang.")
-            return
-        if has_complete:
-            log("YouTube Studio Checks selesai: tidak ada masalah terdeteksi.")
             return
         time.sleep(2)
 
@@ -3890,6 +3926,14 @@ def run_upload(args: argparse.Namespace) -> None:
             "atau set YOUTUBE_CHROMIUM_USER_DATA_DIR ke profile Chromium yang sudah login."
         )
 
+    requested_visibility = args.visibility
+    args.visibility = safe_upload_visibility(args.visibility)
+    if requested_visibility != args.visibility:
+        log(
+            "Mode aman aktif: upload otomatis disimpan Private. "
+            "Publikasikan manual hanya setelah kolom Pembatasan bebas klaim."
+        )
+
     upload_title, upload_description = normalized_upload_metadata(video_path, args.title, args.description)
 
     headless = args.headless if args.headless is not None else env_bool("YOUTUBE_HEADLESS", True)
@@ -4071,7 +4115,7 @@ def build_parser() -> argparse.ArgumentParser:
     upload.add_argument("--title", required=True)
     upload.add_argument("--description", default="")
     upload.add_argument("--thumbnail", default="")
-    upload.add_argument("--visibility", choices=["private", "unlisted", "public"], default=os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "public"))
+    upload.add_argument("--visibility", choices=["private", "unlisted", "public"], default=os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "private"))
     upload.add_argument("--tags", default="")
     upload.add_argument("--playlist", default=os.environ.get("YOUTUBE_DEFAULT_PLAYLIST", "Islam"))
     upload.add_argument("--target-channel", default=os.environ.get("YOUTUBE_TARGET_CHANNEL", "ryuundyofficial"))
