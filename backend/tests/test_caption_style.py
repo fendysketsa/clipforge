@@ -8,6 +8,7 @@ from clipper import (
     TranscriptSegment,
     _hex_to_ass_color,
     apply_codex_audio_cues,
+    analyze_text_heavy_backdrop,
     apply_codex_structural_edit,
     build_candidate_pool,
     build_subtitle_style,
@@ -29,6 +30,7 @@ from clipper import (
     landscape_caption_gradient_blur_filter,
     landscape_compilation_edit_filter,
     landscape_compilation_frame_filter,
+    landscape_speaker_split_filter,
     modern_blurred_video_frame_filter,
     modern_gradient_border_filters,
     pov_banner_text,
@@ -62,13 +64,13 @@ def test_build_subtitle_style_upper_default():
     style = build_subtitle_style(CaptionStyle())
     assert "Alignment=6" in style
     assert "FontName=DejaVu Sans" in style
-    assert "FontSize=10" in style
+    assert "FontSize=8" in style
     assert "MarginL=36" in style
     assert "MarginR=36" in style
     assert "MarginV=70" in style
     assert "BackColour=&HC8000000" in style
     assert "BorderStyle=1" in style
-    assert "Outline=1.5" in style
+    assert "Outline=0.5" in style
     assert "Shadow=0.35" in style
     assert "Blur=0.35" in style
     assert "WrapStyle=0" in style
@@ -143,6 +145,52 @@ def test_landscape_compilation_frame_is_full_hd_and_preserves_source_aspect():
     assert "scale=1920:1080:force_original_aspect_ratio=increase" in value
     assert "scale=1840:1000:force_original_aspect_ratio=decrease" in value
     assert "[wide_canvas][wide_fg]overlay=(W-w)/2:(H-h)/2" in value
+
+
+def test_landscape_speaker_split_has_two_bordered_panels_and_active_pulses():
+    value = landscape_speaker_split_filter(
+        1920,
+        1080,
+        (0.27, 0.74),
+        "#FACC15",
+        "#22D3EE",
+        emphasis_times=[12.0, 24.0],
+    )
+
+    assert "split=3[split_bg_src][split_left_src][split_right_src]" in value
+    assert "[split_bg][split_left]overlay=60:70" in value
+    assert "[split_stage_1][split_right]overlay=1010:70" in value
+    assert "x=55:y=65:w=860:h=950" in value
+    assert "x=1005:y=65:w=860:h=950" in value
+    assert "between(t,12.000,12.720)" in value
+    assert "between(t,24.000,24.720)" in value
+
+
+def test_auto_background_detects_uniform_event_banner_with_text():
+    import cv2
+    import numpy as np
+
+    frame = np.full((720, 1280, 3), (126, 82, 62), dtype=np.uint8)
+    for index, text in enumerate(
+        ("UNIVERSITAS DAN PESANTREN", "KAJIAN ISLAM TERBUKA", "23 DZULQADAH 1441 H"),
+    ):
+        cv2.putText(
+            frame,
+            text,
+            (55, 120 + index * 95),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.45,
+            (235, 238, 205),
+            5,
+            cv2.LINE_AA,
+        )
+    cv2.ellipse(frame, (690, 350), (125, 170), 0, 0, 360, (170, 190, 220), -1)
+
+    profile = analyze_text_heavy_backdrop(frame)
+
+    assert profile is not None
+    assert profile.dominant_ratio >= 0.30
+    assert profile.aligned_component_count >= 5
 
 
 def test_landscape_compilation_edit_uses_chapters_and_sparse_emphasis():
@@ -641,6 +689,7 @@ def test_reaction_svg_overlay_is_added_to_filter():
     assert "laugh.svg" in value
     assert "movie=" in value
     assert "overlay=" in value
+    assert "rotate=" in value
     assert "between(t,5.000,6.850)" in value
 
 

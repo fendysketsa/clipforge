@@ -141,6 +141,15 @@ class SoundEffectCue:
     trigger: str
 
 
+@dataclass
+class BackdropProfile:
+    dominant_lab: tuple[float, float, float]
+    color_threshold: float
+    confidence: float
+    dominant_ratio: float
+    aligned_component_count: int
+
+
 HOOK_WORDS = {
     "intinya",
     "ternyata",
@@ -413,8 +422,14 @@ CropMode = Literal["center", "person", "streamer"]
 VideoQuality = Literal["standard", "high", "max"]
 ClipMode = Literal["short", "highlight_5m"]
 OutputFormat = Literal["vertical_short", "landscape_compilation"]
+VisualMode = Literal["auto_fyp", "cinematic", "speaker_split"]
+BackgroundMode = Literal["auto_clean", "keep", "mosque"]
 VisualTheme = Literal["mystery", "islamic", "warning", "inspiring", "knowledge"]
 YUNET_MODEL_PATH = Path(__file__).resolve().parent / "models" / "face_detection_yunet_2023mar.onnx"
+MOSQUE_BACKGROUND_PATH = (
+    Path(__file__).resolve().parent / "assets" / "backgrounds" / "grand_mosque_neutral.png"
+)
+SOURCE_VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".webm"}
 
 VIDEO_QUALITY_PRESETS = {
     "standard": {
@@ -789,6 +804,92 @@ def probe_video_resolution(path: Path) -> tuple[int, int]:
     return width, height
 
 
+def probe_media_stream_types(path: Path) -> set[str]:
+    """Return available codec stream types without decoding the whole media file."""
+    if not path.is_file() or path.stat().st_size <= 0:
+        return set()
+    ffmpeg_binary = Path(ffmpeg_path())
+    ffprobe_candidates = [
+        os.environ.get("FFPROBE_BINARY", "").strip(),
+        shutil.which("ffprobe") or "",
+        str(ffmpeg_binary.with_name("ffprobe")),
+    ]
+    for candidate in dict.fromkeys(value for value in ffprobe_candidates if value):
+        try:
+            process = subprocess.run(
+                [
+                    candidate,
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "stream=codec_type",
+                    "-of",
+                    "json",
+                    str(path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            payload = json.loads(process.stdout or "{}")
+            streams = payload.get("streams")
+            if process.returncode == 0 and isinstance(streams, list):
+                return {
+                    str(item.get("codec_type") or "").strip()
+                    for item in streams
+                    if isinstance(item, dict) and item.get("codec_type")
+                }
+        except (OSError, json.JSONDecodeError, subprocess.TimeoutExpired):
+            continue
+
+    try:
+        process = subprocess.run(
+            [ffmpeg_path(), "-hide_banner", "-i", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    details = f"{process.stdout}\n{process.stderr}"
+    streams: set[str] = set()
+    if re.search(r"Stream #.*Video:", details):
+        streams.add("video")
+    if re.search(r"Stream #.*Audio:", details):
+        streams.add("audio")
+    return streams
+
+
+def source_media_candidates(work_dir: Path) -> list[Path]:
+    """List only finalized source video files; yt-dlp partials must never be reused."""
+    candidates: list[Path] = []
+    for path in work_dir.glob("source*"):
+        lowered = path.name.casefold()
+        if (
+            not path.is_file()
+            or path.suffix.casefold() not in SOURCE_VIDEO_EXTENSIONS
+            or ".part" in lowered
+            or lowered.endswith(".ytdl")
+            or lowered.endswith(".tmp")
+        ):
+            continue
+        candidates.append(path)
+    return sorted(
+        candidates,
+        key=lambda item: (
+            item.name.casefold() not in {"source.mp4", "source.mkv", "source.webm"},
+            -item.stat().st_mtime,
+        ),
+    )
+
+
+def select_usable_source_media(work_dir: Path) -> Path | None:
+    for path in source_media_candidates(work_dir):
+        if {"video", "audio"}.issubset(probe_media_stream_types(path)):
+            return path
+    return None
+
+
 def ensure_minimum_hd_output(path: Path) -> tuple[int, int]:
     """Reject an export if its encoded frame is below vertical 720p."""
     width, height = probe_video_resolution(path)
@@ -972,6 +1073,448 @@ def detect_person_focus_x(video_path: Path, clip: ClipCandidate) -> tuple[float,
         return person_weighted_sum / person_total_weight, (width, height)
     if face_total_weight <= 0 and person_total_weight <= 0:
         return None
+
+
+def detect_speaker_focus_points(
+    video_path: Path,
+    clip: ClipCandidate,
+) -> tuple[tuple[float, float], tuple[int, int]] | None:
+    """Find two consistently separated face positions for a speaker split-screen."""
+    try:
+        import cv2
+    except Exception:
+        return None
+
+    capture = cv2.VideoCapture(str(video_path.resolve()))
+    if not capture.isOpened():
+        return None
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    if width <= 0 or height <= 0:
+        capture.release()
+        return None
+
+    can_make_gray = hasattr(cv2, "cvtColor") and hasattr(cv2, "COLOR_BGR2GRAY")
+    face_cascade = make_cv2_cascade(cv2, "haarcascade_frontalface_default.xml") if can_make_gray else None
+    yunet = None
+    if YUNET_MODEL_PATH.exists() and hasattr(cv2, "FaceDetectorYN_create"):
+        yunet = cv2.FaceDetectorYN_create(
+            str(YUNET_MODEL_PATH),
+            "",
+            (320, 320),
+            0.35,
+            0.3,
+            5000,
+        )
+    if face_cascade is None and yunet is None:
+        capture.release()
+        return None
+
+    duration = max(0.1, clip.end - clip.start)
+    sample_count = min(14, max(6, int(duration // 6)))
+    step = duration / (sample_count + 1)
+    observations: list[tuple[float, float]] = []
+    frames_with_pair = 0
+
+    for index in range(sample_count):
+        capture.set(cv2.CAP_PROP_POS_MSEC, (clip.start + step * (index + 1)) * 1000)
+        ok, frame = capture.read()
+        if not ok:
+            continue
+        resize_scale = min(1.0, 720 / max(frame.shape[:2]))
+        resized = (
+            cv2.resize(frame, None, fx=resize_scale, fy=resize_scale, interpolation=cv2.INTER_AREA)
+            if resize_scale < 1
+            else frame
+        )
+        detected: list[tuple[float, float]] = []
+        if yunet is not None:
+            resized_height, resized_width = resized.shape[:2]
+            yunet.setInputSize((resized_width, resized_height))
+            _, faces = yunet.detect(resized)
+            if faces is not None:
+                for face in faces:
+                    x, _, face_width, face_height = face[:4]
+                    confidence = float(face[-1])
+                    center_x = (x + face_width / 2) / max(1.0, resized_width)
+                    detected.append((center_x, max(1.0, face_width * face_height * confidence)))
+        elif face_cascade is not None:
+            gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+            faces = face_cascade.detectMultiScale(
+                gray,
+                scaleFactor=1.08,
+                minNeighbors=5,
+                minSize=(36, 36),
+            )
+            resized_width = resized.shape[1]
+            for x, _, face_width, face_height in faces:
+                detected.append(
+                    ((x + face_width / 2) / max(1.0, resized_width), float(face_width * face_height))
+                )
+
+        strongest = sorted(detected, key=lambda item: item[1], reverse=True)[:3]
+        if len(strongest) >= 2:
+            ordered = sorted(strongest, key=lambda item: item[0])
+            if ordered[-1][0] - ordered[0][0] >= 0.18:
+                frames_with_pair += 1
+        observations.extend(strongest)
+
+    capture.release()
+    if len(observations) < 4:
+        return None
+
+    left_center = min(item[0] for item in observations)
+    right_center = max(item[0] for item in observations)
+    if right_center - left_center < 0.18:
+        return None
+    left_group: list[tuple[float, float]] = []
+    right_group: list[tuple[float, float]] = []
+    for _ in range(6):
+        left_group = []
+        right_group = []
+        for item in observations:
+            target = left_group if abs(item[0] - left_center) <= abs(item[0] - right_center) else right_group
+            target.append(item)
+        if not left_group or not right_group:
+            return None
+        left_center = sum(x * weight for x, weight in left_group) / sum(weight for _, weight in left_group)
+        right_center = sum(x * weight for x, weight in right_group) / sum(weight for _, weight in right_group)
+
+    if right_center - left_center < 0.20:
+        return None
+    if frames_with_pair == 0 and (len(left_group) < 2 or len(right_group) < 2):
+        return None
+    return (left_center, right_center), (width, height)
+
+
+def analyze_text_heavy_backdrop(frame, *, force: bool = False) -> BackdropProfile | None:
+    """Detect a mostly uniform event banner with rows of contrasting text."""
+    try:
+        import cv2
+        import numpy as np
+    except Exception:
+        return None
+    if frame is None or not getattr(frame, "size", 0):
+        return None
+
+    height, width = frame.shape[:2]
+    scale = min(1.0, 480 / max(1, width))
+    small = (
+        cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        if scale < 1
+        else frame.copy()
+    )
+    small_height, small_width = small.shape[:2]
+    upper_height = max(40, int(small_height * 0.72))
+    upper = small[:upper_height]
+    lab = cv2.cvtColor(upper, cv2.COLOR_BGR2LAB).astype(np.float32)
+
+    strip_y = max(4, int(upper_height * 0.10))
+    strip_x = max(4, int(small_width * 0.07))
+    border_pixels = np.concatenate(
+        [
+            lab[:strip_y].reshape(-1, 3),
+            lab[:, :strip_x].reshape(-1, 3),
+            lab[:, -strip_x:].reshape(-1, 3),
+        ],
+        axis=0,
+    )
+    sample_step = max(1, len(border_pixels) // 12000)
+    samples = border_pixels[::sample_step].astype(np.float32)
+    if len(samples) < 20:
+        return None
+
+    cv2.setRNGSeed(17)
+    _compactness, labels, centers = cv2.kmeans(
+        samples,
+        3,
+        None,
+        (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.5),
+        3,
+        cv2.KMEANS_PP_CENTERS,
+    )
+    counts = np.bincount(labels.ravel(), minlength=3)
+    dominant_index = int(np.argmax(counts))
+    dominant = centers[dominant_index]
+    dominant_samples = samples[labels.ravel() == dominant_index]
+    sample_distances = np.linalg.norm(dominant_samples - dominant, axis=1)
+    threshold = float(np.clip(np.percentile(sample_distances, 90) + 10.0, 18.0, 38.0))
+
+    distance = np.linalg.norm(lab - dominant.reshape(1, 1, 3), axis=2)
+    background_mask = (distance <= threshold).astype(np.uint8) * 255
+    background_mask = cv2.morphologyEx(
+        background_mask,
+        cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_RECT, (7, 5)),
+        iterations=1,
+    )
+    dominant_ratio = float(np.count_nonzero(background_mask)) / float(background_mask.size)
+
+    foreground = cv2.bitwise_not(background_mask)
+    component_count, _labels, stats, centroids = cv2.connectedComponentsWithStats(foreground, 8)
+    upper_area = upper_height * small_width
+    row_bins: dict[int, int] = {}
+    small_components = 0
+    row_size = max(10, upper_height // 28)
+    for index in range(1, component_count):
+        x, y, component_width, component_height, area = stats[index]
+        if not (10 <= area <= upper_area * 0.0045):
+            continue
+        if component_width < 3 or component_height < 3:
+            continue
+        aspect = component_width / max(1, component_height)
+        if not 0.12 <= aspect <= 8.0:
+            continue
+        small_components += 1
+        row = int(centroids[index][1] // row_size)
+        row_bins[row] = row_bins.get(row, 0) + 1
+    aligned_components = max(row_bins.values(), default=0)
+    edges = cv2.Canny(cv2.cvtColor(upper, cv2.COLOR_BGR2GRAY), 70, 160)
+    edge_density = float(np.count_nonzero(edges)) / float(edges.size)
+    confidence = (
+        dominant_ratio * 0.55
+        + min(1.0, aligned_components / 12.0) * 0.25
+        + min(1.0, edge_density / 0.08) * 0.20
+    )
+    if not force and (
+        dominant_ratio < 0.30
+        or aligned_components < 5
+        or small_components < 8
+        or confidence < 0.42
+    ):
+        return None
+    if force and dominant_ratio < 0.18:
+        threshold = min(48.0, threshold + 8.0)
+
+    return BackdropProfile(
+        dominant_lab=tuple(float(value) for value in dominant),
+        color_threshold=threshold,
+        confidence=round(confidence, 3),
+        dominant_ratio=round(dominant_ratio, 3),
+        aligned_component_count=aligned_components,
+    )
+
+
+def _cover_resize_background(image, width: int, height: int):
+    import cv2
+
+    source_height, source_width = image.shape[:2]
+    scale = max(width / max(1, source_width), height / max(1, source_height))
+    resized_width = max(width, int(round(source_width * scale)))
+    resized_height = max(height, int(round(source_height * scale)))
+    resized = cv2.resize(
+        image,
+        (resized_width, resized_height),
+        interpolation=cv2.INTER_CUBIC,
+    )
+    x = max(0, (resized_width - width) // 2)
+    y = max(0, (resized_height - height) // 2)
+    plate = resized[y : y + height, x : x + width]
+    return cv2.GaussianBlur(plate, (0, 0), sigmaX=1.4, sigmaY=1.4)
+
+
+def _backdrop_replacement_mask(
+    frame,
+    profile: BackdropProfile,
+    face_cascade,
+    *,
+    detect_face: bool,
+    previous_face: tuple[int, int, int, int] | None,
+):
+    import cv2
+    import numpy as np
+
+    height, width = frame.shape[:2]
+    scale = min(1.0, 480 / max(1, width))
+    small = (
+        cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        if scale < 1
+        else frame.copy()
+    )
+    small_height, small_width = small.shape[:2]
+    upper_height = max(40, int(small_height * 0.74))
+    upper = small[:upper_height]
+    lab = cv2.cvtColor(upper, cv2.COLOR_BGR2LAB).astype(np.float32)
+    dominant = np.asarray(profile.dominant_lab, dtype=np.float32).reshape(1, 1, 3)
+    distance = np.linalg.norm(lab - dominant, axis=2)
+    mask_upper = (distance <= profile.color_threshold).astype(np.uint8) * 255
+    mask_upper = cv2.morphologyEx(
+        mask_upper,
+        cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 7)),
+        iterations=2,
+    )
+
+    inverse = cv2.bitwise_not(mask_upper)
+    component_count, labels, stats, _centroids = cv2.connectedComponentsWithStats(inverse, 8)
+    upper_area = upper_height * small_width
+    for index in range(1, component_count):
+        _x, _y, component_width, component_height, area = stats[index]
+        aspect = max(component_width, component_height) / max(1, min(component_width, component_height))
+        preserve_thin_object = aspect >= 7.0 and area >= upper_area * 0.00035
+        if area <= upper_area * 0.006 and not preserve_thin_object:
+            mask_upper[labels == index] = 255
+
+    face = previous_face
+    if detect_face and face_cascade is not None:
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(
+            gray,
+            scaleFactor=1.08,
+            minNeighbors=5,
+            minSize=(32, 32),
+        )
+        if len(faces):
+            face = max(faces, key=lambda box: int(box[2]) * int(box[3]))
+    if face is not None:
+        x, y, face_width, face_height = (int(value) for value in face)
+        center = (
+            int(x + face_width * 0.5),
+            int(y + face_height * 0.52),
+        )
+        axes = (
+            max(12, int(face_width * 0.62)),
+            max(14, int(face_height * 0.70)),
+        )
+        cv2.ellipse(mask_upper, center, axes, 0, 0, 360, 0, -1)
+
+    mask_small = np.zeros((small_height, small_width), dtype=np.uint8)
+    mask_small[:upper_height] = mask_upper
+    fade_start = int(small_height * 0.57)
+    fade_end = min(upper_height, int(small_height * 0.74))
+    if fade_end > fade_start:
+        gradient = np.linspace(1.0, 0.0, fade_end - fade_start, dtype=np.float32)
+        mask_small[fade_start:fade_end] = (
+            mask_small[fade_start:fade_end].astype(np.float32) * gradient[:, None]
+        ).astype(np.uint8)
+    mask_small[fade_end:] = 0
+    mask_small = cv2.GaussianBlur(mask_small, (0, 0), sigmaX=3.2, sigmaY=3.2)
+    mask = cv2.resize(mask_small, (width, height), interpolation=cv2.INTER_LINEAR)
+    return mask, face
+
+
+def render_clean_background_segment(
+    video_path: Path,
+    clip: ClipCandidate,
+    output_path: Path,
+    mode: BackgroundMode,
+) -> tuple[Path | None, BackdropProfile | None]:
+    """Replace a text-heavy static backdrop while preserving the foreground subject."""
+    if mode == "keep" or not MOSQUE_BACKGROUND_PATH.is_file():
+        return None, None
+    try:
+        import cv2
+        import numpy as np
+    except Exception as exc:
+        console.print(f"[yellow]Background cleanup unavailable:[/yellow] {exc}")
+        return None, None
+
+    capture = cv2.VideoCapture(str(video_path.resolve()))
+    if not capture.isOpened():
+        return None, None
+    capture.set(cv2.CAP_PROP_POS_MSEC, clip.start * 1000)
+    ok, first_frame = capture.read()
+    if not ok:
+        capture.release()
+        return None, None
+
+    profile = analyze_text_heavy_backdrop(first_frame, force=mode == "mosque")
+    if profile is None:
+        capture.release()
+        console.print("[dim]Background bersih: backdrop tidak terdeteksi penuh tulisan; sumber dipertahankan.[/dim]")
+        return None, None
+
+    background = cv2.imread(str(MOSQUE_BACKGROUND_PATH), cv2.IMREAD_COLOR)
+    if background is None:
+        capture.release()
+        return None, None
+    height, width = first_frame.shape[:2]
+    plate = _cover_resize_background(background, width, height)
+    fps = float(capture.get(cv2.CAP_PROP_FPS) or 0)
+    if not math.isfinite(fps) or fps <= 1:
+        fps = 30.0
+    max_frames = max(1, int(math.ceil((clip.end - clip.start) * fps)))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.unlink(missing_ok=True)
+    command = [
+        ffmpeg_path(),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "bgr24",
+        "-s",
+        f"{width}x{height}",
+        "-r",
+        f"{fps:.6f}",
+        "-i",
+        "pipe:0",
+        "-an",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-crf",
+        "14",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        str(output_path),
+    ]
+    process = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    face_cascade = make_cv2_cascade(cv2, "haarcascade_frontalface_default.xml")
+    previous_face: tuple[int, int, int, int] | None = None
+    previous_mask = None
+    frame = first_frame
+    written = 0
+    error_text = ""
+    try:
+        while written < max_frames and frame is not None:
+            mask, previous_face = _backdrop_replacement_mask(
+                frame,
+                profile,
+                face_cascade,
+                detect_face=written % 8 == 0,
+                previous_face=previous_face,
+            )
+            if previous_mask is not None:
+                mask = cv2.addWeighted(previous_mask, 0.35, mask, 0.65, 0)
+            previous_mask = mask
+            alpha = mask.astype(np.float32)[:, :, None] / 255.0
+            composited = np.clip(
+                frame.astype(np.float32) * (1.0 - alpha)
+                + plate.astype(np.float32) * alpha,
+                0,
+                255,
+            ).astype(np.uint8)
+            assert process.stdin is not None
+            process.stdin.write(composited.tobytes())
+            written += 1
+            ok, next_frame = capture.read()
+            frame = next_frame if ok else None
+    except (BrokenPipeError, OSError) as exc:
+        error_text = str(exc)
+    finally:
+        capture.release()
+        if process.stdin is not None and not process.stdin.closed:
+            process.stdin.close()
+        if process.stderr is not None:
+            error_text = (process.stderr.read() or b"").decode("utf-8", errors="replace") or error_text
+        return_code = process.wait()
+
+    if return_code != 0 or written == 0 or not output_path.is_file():
+        output_path.unlink(missing_ok=True)
+        console.print(f"[yellow]Background cleanup dilewati:[/yellow] {error_text or 'render gagal'}")
+        return None, None
+    console.print(
+        "[green]Background bersih aktif:[/green] "
+        f"backdrop teks diganti masjid netral (confidence={profile.confidence:.2f})."
+    )
+    return output_path, profile
 
 
 def vertical_crop_filter(video_path: Path, clip: ClipCandidate, crop_mode: CropMode) -> str:
@@ -1203,9 +1746,10 @@ def download_video(
     video_quality: VideoQuality = "high",
 ) -> tuple[Path, dict]:
     info_path = work_dir / "metadata.json"
-    existing = sorted(work_dir.glob("source.*"))
-    if existing and info_path.exists() and not force:
-        return existing[0], load_json(info_path)
+    existing = select_usable_source_media(work_dir)
+    if existing is not None and info_path.exists() and not force:
+        console.print(f"[green]Reusing verified source:[/green] {existing.name}")
+        return existing, load_json(info_path)
 
     max_height = int(quality_preset(video_quality)["max_download_height"])
     ydl_opts = ytdlp_base_options(
@@ -1223,18 +1767,48 @@ def download_video(
     )
 
     work_dir.mkdir(parents=True, exist_ok=True)
+    info: dict
     try:
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            file_path = Path(ydl.prepare_filename(info))
     except Exception as exc:
         raise UserFacingError(friendly_youtube_error(exc, "mengunduh video")) from exc
 
-    if not file_path.exists():
-        downloaded = sorted(work_dir.glob("source.*"))
-        if not downloaded:
-            raise FileNotFoundError("Downloaded video was not found.")
-        file_path = downloaded[0]
+    file_path = select_usable_source_media(work_dir)
+    if file_path is None:
+        console.print(
+            "[yellow]Hasil download utama belum memiliki audio lengkap; "
+            "mencoba format audio-video kompatibel...[/yellow]"
+        )
+        fallback_opts = ytdlp_base_options(
+            format=(
+                f"best[height<={max_height}][vcodec!=none][acodec!=none]/"
+                "best[vcodec!=none][acodec!=none]"
+            ),
+            outtmpl=str(work_dir / "source_fallback.%(ext)s"),
+            noprogress=True,
+            ffmpeg_location=ffmpeg_path(),
+        )
+        try:
+            with YoutubeDL(fallback_opts) as ydl:
+                fallback_info = ydl.extract_info(url, download=True)
+                if isinstance(fallback_info, dict):
+                    info = fallback_info
+        except Exception as exc:
+            console.print(f"[yellow]Fallback audio-video gagal:[/yellow] {exc}")
+        file_path = select_usable_source_media(work_dir)
+
+    if file_path is None:
+        candidates = source_media_candidates(work_dir)
+        stream_summary = ", ".join(
+            f"{path.name}={'+'.join(sorted(probe_media_stream_types(path))) or 'tidak valid'}"
+            for path in candidates
+        )
+        detail = f" File ditemukan: {stream_summary}." if stream_summary else ""
+        raise UserFacingError(
+            "Video berhasil diunduh tetapi track audio tidak tersedia atau download belum lengkap."
+            f"{detail} Coba jalankan lagi untuk melanjutkan download, atau upload file MP4 yang memiliki audio."
+        )
 
     save_json(info_path, sanitize_metadata(info))
     return file_path, sanitize_metadata(info)
@@ -1246,8 +1820,15 @@ def sanitize_metadata(info: dict) -> dict:
 
 
 def extract_audio(video_path: Path, audio_path: Path, force: bool = False, limit_seconds: float | None = None) -> Path:
-    if audio_path.exists() and not force:
+    if audio_path.exists() and not force and "audio" in probe_media_stream_types(audio_path):
         return audio_path
+    if audio_path.exists():
+        audio_path.unlink(missing_ok=True)
+    if "audio" not in probe_media_stream_types(video_path):
+        raise UserFacingError(
+            f"Video sumber {video_path.name} tidak memiliki track audio yang dapat dibaca. "
+            "Download otomatis sudah mencoba format cadangan; coba ulangi job atau upload video yang memiliki suara."
+        )
 
     audio_path.parent.mkdir(parents=True, exist_ok=True)
     command = [
@@ -1269,7 +1850,17 @@ def extract_audio(video_path: Path, audio_path: Path, force: bool = False, limit
     if limit_seconds:
         command.extend(["-t", f"{limit_seconds:.3f}"])
     command.append(str(audio_path))
-    run(command)
+    try:
+        run(command)
+    except RuntimeError as exc:
+        audio_path.unlink(missing_ok=True)
+        raise UserFacingError(
+            "Audio video tidak dapat diekstrak. Coba ulangi job agar sumber diunduh kembali, "
+            "atau upload file MP4 dengan track audio AAC."
+        ) from exc
+    if "audio" not in probe_media_stream_types(audio_path):
+        audio_path.unlink(missing_ok=True)
+        raise UserFacingError("Hasil ekstraksi audio kosong atau rusak; proses dihentikan sebelum transkripsi.")
     return audio_path
 
 
@@ -1850,7 +2441,21 @@ def select_candidates(candidates: list[ClipCandidate], limit: int) -> list[ClipC
                 best_adjusted = adjusted
 
         if best is None:
-            break
+            # Diversity is preferred, but it must not silently reduce an
+            # explicit clip target when enough non-overlapping moments exist.
+            best = next(
+                (
+                    candidate
+                    for candidate in remaining
+                    if not any(
+                        not (candidate.end <= item.start or candidate.start >= item.end)
+                        for item in picked
+                    )
+                ),
+                None,
+            )
+            if best is None:
+                break
         best.index = len(picked) + 1
         picked.append(best)
         remaining.remove(best)
@@ -2149,13 +2754,15 @@ def ai_rescore_candidates(
 
 
 def segments_for_clip(segments: Iterable[TranscriptSegment], clip: ClipCandidate) -> list[TranscriptSegment]:
-    return [
-        item
-        for item in segments
-        if item.end > clip.start
-        and item.start < clip.end
-        and not is_source_branding_segment(item)
-    ]
+    selected: list[TranscriptSegment] = []
+    for item in segments:
+        overlap = min(item.end, clip.end) - max(item.start, clip.start)
+        segment_duration = max(0.1, item.end - item.start)
+        minimum_overlap = min(0.35, max(0.08, segment_duration * 0.12))
+        if overlap < minimum_overlap or is_source_branding_segment(item):
+            continue
+        selected.append(item)
+    return selected
 
 
 def codex_edit_plan(clip: ClipCandidate) -> CodexEditPlan:
@@ -2573,6 +3180,8 @@ def detect_reaction_cues(
             trigger = next(iter(sorted(words.intersection(HEART_WORDS))))
         if kind is None:
             continue
+        if any(existing.kind == kind for existing in cues):
+            continue
 
         relative = max(0.0, segment.start - clip.start)
         relative += min(0.55, max(0.1, (segment.end - segment.start) * 0.25))
@@ -2618,7 +3227,9 @@ def reaction_overlay_filter(cue: ReactionCue, index: int) -> str:
     y_expression = f"{base_y}-32*abs(sin(5*(t-{cue.start:.3f})))"
     return (
         f"null[{base_label}];"
-        f"movie='{escaped_path}',scale={size}:{size}:flags=lanczos,format=rgba[{sticker_label}];"
+        f"movie='{escaped_path}',scale={size}:{size}:flags=lanczos,format=rgba,"
+        f"rotate='0.075*sin(7*t+{index})':ow=rotw(iw):oh=roth(ih):c=none,"
+        f"colorchannelmixer=aa=0.96[{sticker_label}];"
         f"[{base_label}][{sticker_label}]overlay="
         f"x='{x_expression}':y='{y_expression}':eof_action=repeat:"
         f"enable='between(t,{cue.start:.3f},{cue.end:.3f})'"
@@ -2819,6 +3430,66 @@ def landscape_compilation_frame_filter(
         f"drawbox=x=37:y=27:w=1846:h=1026:color={accent}@0.68:t=3,"
         "drawbox=x=41:y=31:w=1838:h=1018:color=white@0.18:t=2"
     )
+
+
+def landscape_speaker_split_filter(
+    source_width: int,
+    source_height: int,
+    focus_points: tuple[float, float],
+    accent: str,
+    secondary: str,
+    *,
+    emphasis_times: list[float] | None = None,
+    remove_running_text: bool = True,
+) -> str:
+    """Build two bordered close-up panels and pulse the active side on key speech beats."""
+    clean_height = make_even(source_height * (0.92 if remove_running_text else 1.0), 2)
+    panel_width = 850
+    panel_height = 940
+    panel_aspect = panel_width / panel_height
+    crop_height = clean_height
+    crop_width = make_even(crop_height * panel_aspect, 2)
+    if crop_width > source_width:
+        crop_width = make_even(source_width, 2)
+        crop_height = make_even(crop_width / panel_aspect, 2)
+    crop_y = max(0, (clean_height - crop_height) // 2)
+
+    crop_positions: list[int] = []
+    for focus_x in focus_points:
+        center_x = focus_x * source_width
+        crop_positions.append(
+            int(clamp_even(center_x - crop_width / 2, 0, source_width - crop_width))
+        )
+    left_x, right_x = crop_positions
+    filters = (
+        f"crop={source_width}:{clean_height}:0:0,setsar=1,"
+        "split=3[split_bg_src][split_left_src][split_right_src];"
+        "[split_bg_src]scale=1920:1080:force_original_aspect_ratio=increase:"
+        "force_divisible_by=2:flags=lanczos,crop=1920:1080,gblur=sigma=34,"
+        "eq=brightness=-0.22:contrast=1.08:saturation=1.16,"
+        "drawbox=x=0:y=0:w=iw:h=ih:color=black@0.28:t=fill[split_bg];"
+        f"[split_left_src]crop={crop_width}:{crop_height}:{left_x}:{crop_y},"
+        f"scale={panel_width}:{panel_height}:flags=lanczos,setsar=1[split_left];"
+        f"[split_right_src]crop={crop_width}:{crop_height}:{right_x}:{crop_y},"
+        f"scale={panel_width}:{panel_height}:flags=lanczos,setsar=1[split_right];"
+        "[split_bg][split_left]overlay=60:70:shortest=1:eof_action=pass[split_stage_1];"
+        "[split_stage_1][split_right]overlay=1010:70:shortest=1:eof_action=pass,"
+        "drawbox=x=52:y=62:w=866:h=956:color=black@0.68:t=8,"
+        f"drawbox=x=55:y=65:w=860:h=950:color={accent}@0.82:t=5,"
+        "drawbox=x=1002:y=62:w=866:h=956:color=black@0.68:t=8,"
+        f"drawbox=x=1005:y=65:w=860:h=950:color={secondary}@0.82:t=5,"
+        "drawbox=x=954:y=70:w=12:h=940:color=white@0.16:t=fill"
+    )
+    pulses: list[str] = []
+    for index, timestamp in enumerate(sorted(emphasis_times or [])[:4]):
+        end = timestamp + 0.72
+        x = 55 if index % 2 == 0 else 1005
+        color = accent if index % 2 == 0 else secondary
+        pulses.append(
+            f"drawbox=x={x}:y=65:w=860:h=950:color={color}@0.98:t=10:"
+            f"enable='between(t,{timestamp:.3f},{end:.3f})'"
+        )
+    return ",".join([filters, *pulses])
 
 
 def landscape_compilation_edit_filter(
@@ -3168,11 +3839,11 @@ SOFT_CAPTION_SHADOW = 0.35
 
 @dataclass
 class CaptionStyle:
-    font_size: int = 10
+    font_size: int = 8
     position: CaptionPosition = "upper"
     color: str = "#FFFFFF"
     font_family: str = DEFAULT_FONT
-    outline_width: float = 1.5
+    outline_width: float = 0.5
     outline_color: str = "#000000"
 
 
@@ -3553,6 +4224,8 @@ def export_clip(
     enhanced_edit: bool = True,
     remove_running_text: bool = True,
     output_format: OutputFormat = "vertical_short",
+    visual_mode: VisualMode = "auto_fyp",
+    background_mode: BackgroundMode = "auto_clean",
     compilation_part_number: int = 1,
     compilation_part_count: int = 1,
 ) -> Path:
@@ -3566,6 +4239,7 @@ def export_clip(
     hook_text_path = clips_dir / f"{base_name}.hook.txt"
     pov_text_path = clips_dir / f"{base_name}.pov.txt"
     payoff_text_path = clips_dir / f"{base_name}.payoff.txt"
+    clean_background_path = clips_dir / f"{base_name}.background_tmp.mp4"
     json_path.unlink(missing_ok=True)
 
     duration = clip.end - clip.start
@@ -3615,9 +4289,11 @@ def export_clip(
     applied_edits.extend(resolved_idea_edits)
     applied_edits = list(dict.fromkeys(applied_edits))
     subtitles_supported = ffmpeg_has_filter("subtitles")
-    reaction_overlays_supported = output_format == "vertical_short" and (
+    reaction_overlays_supported = visual_mode != "cinematic" and output_format == "vertical_short" and (
         ffmpeg_has_filter("movie")
         and ffmpeg_has_filter("overlay")
+        and ffmpeg_has_filter("rotate")
+        and ffmpeg_has_filter("colorchannelmixer")
         and all((REACTION_ASSET_DIR / f"{cue.kind}.svg").is_file() for cue in reaction_cues)
     )
     write_srt(srt_path, clip_segments, clip.start, duration)
@@ -3638,16 +4314,43 @@ def export_clip(
         "codex_edit_plan": asdict(adaptive_plan),
         "video_quality": video_quality,
         "output_format": output_format,
+        "visual_mode": visual_mode,
+        "background_mode": background_mode,
         "aspect_ratio": "16:9" if output_format == "landscape_compilation" else "9:16",
         "source_metadata_embedded": False,
     }
 
     if output_format == "landscape_compilation":
-        vf = landscape_compilation_frame_filter(
-            theme_profile["accent"],
-            theme_profile.get("accent_secondary", "#22D3EE"),
-            remove_running_text=remove_running_text,
+        should_try_split = visual_mode == "speaker_split" or (
+            visual_mode == "auto_fyp"
+            and compilation_part_count >= 3
+            and compilation_part_number % 3 == 0
         )
+        split_focus = detect_speaker_focus_points(video_path, clip) if should_try_split else None
+        if split_focus is not None:
+            focus_points, (source_width, source_height) = split_focus
+            vf = landscape_speaker_split_filter(
+                source_width,
+                source_height,
+                focus_points,
+                theme_profile["accent"],
+                theme_profile.get("accent_secondary", "#22D3EE"),
+                emphasis_times=emphasis_times,
+                remove_running_text=remove_running_text,
+            )
+            sidecar_payload["layout"] = "speaker_aware_split"
+            applied_edits.append(
+                "Split-screen kanan–kiri diterapkan pada dua pembicara terdeteksi, dengan border aktif mengikuti beat percakapan."
+            )
+        else:
+            vf = landscape_compilation_frame_filter(
+                theme_profile["accent"],
+                theme_profile.get("accent_secondary", "#22D3EE"),
+                remove_running_text=remove_running_text,
+            )
+            sidecar_payload["layout"] = "cinematic_bordered_frame"
+            if should_try_split:
+                sidecar_payload["split_fallback_reason"] = "two_speakers_not_detected"
     elif crop_mode == "streamer":
         vf = streamer_crop_filter(video_path, clip, cam_corner)
     else:
@@ -3730,7 +4433,44 @@ def export_clip(
             "dan export video dilanjutkan tanpa burn subtitle.[/yellow]"
         )
 
-    common_input = [
+    visual_source = video_path
+    visual_start = clip.start
+    clean_source, backdrop_profile = render_clean_background_segment(
+        video_path,
+        clip,
+        clean_background_path,
+        background_mode,
+    )
+    if clean_source is not None and backdrop_profile is not None:
+        visual_source = clean_source
+        visual_start = 0.0
+        sidecar_payload["background_replaced"] = True
+        sidecar_payload["background_replacement"] = {
+            "asset": MOSQUE_BACKGROUND_PATH.name,
+            "confidence": backdrop_profile.confidence,
+            "dominant_ratio": backdrop_profile.dominant_ratio,
+            "aligned_component_count": backdrop_profile.aligned_component_count,
+        }
+        applied_edits.append(
+            "Backdrop bertulisan/tanggal diganti interior masjid netral tanpa logo agar fokus tetap pada pembicara."
+        )
+    else:
+        sidecar_payload["background_replaced"] = False
+
+    video_input = [
+        ffmpeg_path(),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-ss",
+        f"{visual_start:.3f}",
+        "-t",
+        f"{duration:.3f}",
+        "-i",
+        str(visual_source.resolve()),
+    ]
+    audio_input = [
         ffmpeg_path(),
         "-hide_banner",
         "-loglevel",
@@ -3748,7 +4488,7 @@ def export_clip(
     try:
         run(
             [
-                *common_input,
+                *video_input,
                 "-map",
                 "0:v:0",
                 "-an",
@@ -3775,6 +4515,7 @@ def export_clip(
         hook_text_path.unlink(missing_ok=True)
         pov_text_path.unlink(missing_ok=True)
         payoff_text_path.unlink(missing_ok=True)
+        clean_background_path.unlink(missing_ok=True)
     audio_filter = (
         "highpass=f=70,lowpass=f=15000,"
         "acompressor=threshold=0.125:ratio=2.5:attack=20:release=250:makeup=1.35,"
@@ -3785,7 +4526,7 @@ def export_clip(
         # opening hook without fading to silence.
         audio_filter += ",afade=t=in:st=0:d=0.10"
     plain_audio_command = [
-        *common_input,
+        *audio_input,
         "-map",
         "0:a:0?",
         "-vn",
@@ -3803,7 +4544,7 @@ def export_clip(
         try:
             run(
                 [
-                    *common_input,
+                    *audio_input,
                     "-filter_complex",
                     contextual_audio_mix_filter(audio_filter, sound_effect_cues),
                     "-map",
@@ -3935,6 +4676,8 @@ def export_compilation(
     cam_corner: str,
     required_hashtags: list[str],
     video_quality: VideoQuality,
+    visual_mode: VisualMode = "auto_fyp",
+    background_mode: BackgroundMode = "auto_clean",
     enhanced_edit: bool = True,
     remove_running_text: bool = True,
 ) -> Path:
@@ -3973,6 +4716,8 @@ def export_compilation(
                     enhanced_edit=enhanced_edit,
                     remove_running_text=remove_running_text,
                     output_format="landscape_compilation",
+                    visual_mode=visual_mode,
+                    background_mode=background_mode,
                     compilation_part_number=idx,
                     compilation_part_count=len(candidates),
                 )
@@ -4023,6 +4768,10 @@ def export_compilation(
     combined_applied_edits = list(
         dict.fromkeys(value for item in candidates for value in item.applied_edits)
     )[:4]
+    if visual_mode in {"auto_fyp", "speaker_split"}:
+        combined_applied_edits.append(
+            "Kompilasi memakai border sinematik dan split dua pembicara secara selektif saat deteksi wajah mendukung."
+        )
     compilation = ClipCandidate(
         index=1,
         start=min(item.start for item in candidates),
@@ -4047,7 +4796,13 @@ def export_compilation(
             "mode": "highlight_5m",
             "output_format": "landscape_compilation",
             "aspect_ratio": "16:9",
-            "layout": "cinematic_blurred_frame_with_chapter_cards",
+            "layout": (
+                "adaptive_speaker_split_with_chapter_cards"
+                if visual_mode in {"auto_fyp", "speaker_split"}
+                else "cinematic_blurred_frame_with_chapter_cards"
+            ),
+            "visual_mode": visual_mode,
+            "background_mode": background_mode,
             "enhanced_edit": enhanced_edit,
             "remove_running_text": remove_running_text,
             "source_metadata_embedded": False,
@@ -4193,12 +4948,24 @@ def parse_args() -> argparse.Namespace:
         default="auto",
         help="Webcam corner in the source for streamer mode (auto-detect by default)",
     )
+    parser.add_argument(
+        "--visual-mode",
+        choices=["auto_fyp", "cinematic", "speaker_split"],
+        default="auto_fyp",
+        help="Adaptive FYP visuals, stable cinematic frame, or speaker split-screen",
+    )
+    parser.add_argument(
+        "--background-mode",
+        choices=["auto_clean", "keep", "mosque"],
+        default="auto_clean",
+        help="Auto-clean text-heavy backdrops, keep the source, or force a neutral mosque background",
+    )
     parser.add_argument("--force", action="store_true", help="Redo download, audio extraction, and transcription")
     parser.add_argument("--ai-enabled", action="store_true", help="Use an LLM agent to rescore clip candidates")
     parser.add_argument("--ai-base-url", default="", help="OpenAI-compatible base URL, e.g. http://localhost:20128/v1")
     parser.add_argument("--ai-model", default="", help="LLM model name for the clip agent")
     parser.add_argument("--ai-api-key", default="", help="API key for the LLM endpoint")
-    parser.add_argument("--caption-font-size", type=int, default=10, help="Burned caption font size (6-120)")
+    parser.add_argument("--caption-font-size", type=int, default=8, help="Burned caption font size (6-120)")
     parser.add_argument(
         "--caption-position",
         choices=["upper", "center", "bottom"],
@@ -4207,7 +4974,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--caption-color", default="#FFFFFF", help="Burned caption text color, hex e.g. #FFFFFF")
     parser.add_argument("--caption-font", default=DEFAULT_FONT, help="Burned caption font family")
-    parser.add_argument("--caption-outline", type=float, default=1.5, help="Caption border/outline width (0-8)")
+    parser.add_argument("--caption-outline", type=float, default=0.5, help="Caption border/outline width (0-8)")
     parser.add_argument("--caption-outline-color", default="#000000", help="Caption border color, hex")
     parser.add_argument(
         "--no-enhanced-edit",
@@ -4387,6 +5154,8 @@ def main() -> int:
                 args.cam_corner,
                 required_hashtags,
                 args.video_quality,
+                args.visual_mode,
+                args.background_mode,
                 not args.no_enhanced_edit,
                 not args.keep_running_text,
             )
@@ -4411,6 +5180,8 @@ def main() -> int:
                     args.video_quality,
                     enhanced_edit=not args.no_enhanced_edit,
                     remove_running_text=not args.keep_running_text,
+                    visual_mode=args.visual_mode,
+                    background_mode=args.background_mode,
                 )
             )
 

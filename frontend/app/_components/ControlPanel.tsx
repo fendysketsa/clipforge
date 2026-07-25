@@ -9,12 +9,14 @@ import {
 } from "../../lib/constants";
 import type {
   CamCorner,
+  BackgroundMode,
   CaptionFont,
   CaptionPosition,
   ClipMode,
   CropMode,
   SourceMode,
   VideoQuality,
+  VisualMode,
 } from "../../types/clip.type";
 import { CaptionPreview } from "./CaptionPreview";
 
@@ -48,7 +50,11 @@ type ControlPanelProps = {
   maxClips: number | null;
   videoDuration: number | null;
   videoQuality: VideoQuality;
+  visualMode: VisualMode;
+  backgroundMode: BackgroundMode;
   onVideoQualityChange: (value: VideoQuality) => void;
+  onVisualModeChange: (value: VisualMode) => void;
+  onBackgroundModeChange: (value: BackgroundMode) => void;
   onTargetClipsChange: (value: number) => void;
   burnSubtitles: boolean;
   captionFontSize: number;
@@ -117,7 +123,11 @@ export function ControlPanel({
   maxClips,
   videoDuration,
   videoQuality,
+  visualMode,
+  backgroundMode,
   onVideoQualityChange,
+  onVisualModeChange,
+  onBackgroundModeChange,
   onTargetClipsChange,
   burnSubtitles,
   captionFontSize,
@@ -341,11 +351,11 @@ export function ControlPanel({
         </label>
       ) : (
         <div className="modeNotice">
-          <strong>Target output: ±5:00 menit</strong>
+          <strong>Landscape otomatis · 16:9 · target ±5:00 menit</strong>
           <span>
             {videoDuration && videoDuration < 300
               ? "Video sumber kurang dari 5 menit, sehingga hasil bisa lebih pendek."
-              : "Bagian filler, intro panjang, dan pengulangan akan dilewati."}
+              : "Bagian filler, intro panjang, dan pengulangan dilewati; orientasi dikunci landscape."}
           </span>
         </div>
       )}
@@ -371,52 +381,133 @@ export function ControlPanel({
       </div>
 
       <div className="segmentedField">
-        <span>Mode Crop</span>
-        <div className="segmentedControl" role="group" aria-label="Mode crop video">
+        <span>Gaya Visual</span>
+        <div className="segmentedControl" role="group" aria-label="Gaya visual video">
           <button
-            className={cropMode === "center" ? "active" : ""}
+            className={visualMode === "auto_fyp" ? "active" : ""}
             type="button"
-            onClick={() => onCropModeChange("center")}
+            onClick={() => onVisualModeChange("auto_fyp")}
           >
-            Center
+            Auto FYP
           </button>
           <button
-            className={cropMode === "person" ? "active" : ""}
+            className={visualMode === "cinematic" ? "active" : ""}
             type="button"
-            onClick={() => onCropModeChange("person")}
+            onClick={() => onVisualModeChange("cinematic")}
           >
-            Follow Person
+            Frame Sinematik
           </button>
-          <button
-            className={cropMode === "streamer" ? "active" : ""}
-            type="button"
-            onClick={() => onCropModeChange("streamer")}
-          >
-            Streamer
-          </button>
+          {clipMode === "highlight_5m" ? (
+            <button
+              className={visualMode === "speaker_split" ? "active" : ""}
+              type="button"
+              onClick={() => onVisualModeChange("speaker_split")}
+            >
+              Split Speaker
+            </button>
+          ) : null}
         </div>
+        <p className="field-help">
+          {visualMode === "auto_fyp"
+            ? `Direkomendasikan: border adaptif dan motion seperlunya${
+                clipMode === "highlight_5m" ? ", plus split kanan–kiri saat dua pembicara terdeteksi" : ""
+              }.`
+            : visualMode === "speaker_split"
+              ? "Memprioritaskan dua panel pembicara; otomatis kembali ke frame sinematik bila wajah tidak cukup jelas."
+              : "Frame premium tetap stabil dengan border di dalam area video."}
+        </p>
       </div>
 
-        {cropMode === "streamer" ? (
-        <div className="segmentedField">
-          <span>Posisi Webcam di Sumber</span>
-          <div className="segmentedControl segmentedControl--grid" role="group" aria-label="Posisi webcam">
-            {CAM_CORNER_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                className={camCorner === option.value ? "active" : ""}
-                type="button"
-                onClick={() => onCamCornerChange(option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-          <p className="field-help">
-            Webcam di-crop dari pojok ini lalu ditumpuk di atas gameplay (vertikal 9:16).
-          </p>
+      <div className="segmentedField">
+        <span>Background Video</span>
+        <div className="segmentedControl" role="group" aria-label="Pembersihan background video">
+          <button
+            className={backgroundMode === "auto_clean" ? "active" : ""}
+            type="button"
+            onClick={() => onBackgroundModeChange("auto_clean")}
+          >
+            Auto Bersih
+          </button>
+          <button
+            className={backgroundMode === "mosque" ? "active" : ""}
+            type="button"
+            onClick={() => onBackgroundModeChange("mosque")}
+          >
+            Masjid Megah
+          </button>
+          <button
+            className={backgroundMode === "keep" ? "active" : ""}
+            type="button"
+            onClick={() => onBackgroundModeChange("keep")}
+          >
+            Pertahankan
+          </button>
         </div>
-        ) : null}
+        <p className="field-help">
+          {backgroundMode === "auto_clean"
+            ? "Otomatis mengganti backdrop penuh tulisan, tanggal, atau logo dengan interior masjid netral tanpa teks."
+            : backgroundMode === "mosque"
+              ? "Selalu mencoba virtual background masjid; pembicara, meja, dan mikrofon tetap dipertahankan."
+              : "Tidak mengubah background asli selain crop dan frame visual."}
+        </p>
+      </div>
+
+      {clipMode === "short" ? (
+        <>
+          <div className="segmentedField">
+            <span>Mode Crop</span>
+            <div className="segmentedControl" role="group" aria-label="Mode crop video">
+              <button
+                className={cropMode === "center" ? "active" : ""}
+                type="button"
+                onClick={() => onCropModeChange("center")}
+              >
+                Center
+              </button>
+              <button
+                className={cropMode === "person" ? "active" : ""}
+                type="button"
+                onClick={() => onCropModeChange("person")}
+              >
+                Follow Person
+              </button>
+              <button
+                className={cropMode === "streamer" ? "active" : ""}
+                type="button"
+                onClick={() => onCropModeChange("streamer")}
+              >
+                Streamer
+              </button>
+            </div>
+          </div>
+
+          {cropMode === "streamer" ? (
+            <div className="segmentedField">
+              <span>Posisi Webcam di Sumber</span>
+              <div className="segmentedControl segmentedControl--grid" role="group" aria-label="Posisi webcam">
+                {CAM_CORNER_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    className={camCorner === option.value ? "active" : ""}
+                    type="button"
+                    onClick={() => onCamCornerChange(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <p className="field-help">
+                Webcam di-crop dari pojok ini lalu ditumpuk di atas gameplay (vertikal 9:16).
+              </p>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div className="modeNotice">
+          <strong>Komposisi pembicara otomatis</strong>
+          <span>Frame tetap 16:9; sistem mencari dua wajah dan memusatkan panel kiri–kanan tanpa crop manual.</span>
+        </div>
+      )}
       </div>
 
       <div className="controlSection">
@@ -551,6 +642,7 @@ export function ControlPanel({
             </div>
 
             <CaptionPreview
+              clipMode={clipMode}
               fontSize={captionFontSize}
               position={captionPosition}
               color={captionColor}

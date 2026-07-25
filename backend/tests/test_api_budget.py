@@ -309,6 +309,17 @@ def test_user_error_from_logs_detects_missing_ffmpeg_text_filter():
     assert "FFmpeg backend" in (user_error_from_logs(logs) or "")
 
 
+def test_user_error_from_logs_explains_incomplete_audio_download():
+    logs = [
+        "[out#0/wav] Output file does not contain any stream",
+        "Error opening output files: Invalid argument",
+    ]
+
+    message = user_error_from_logs(logs) or ""
+    assert "Track audio sumber belum terunduh lengkap" in message
+    assert "ulangi job" in message
+
+
 def test_create_job_rejects_when_another_job_is_active(monkeypatch):
     import api
     import pytest
@@ -357,6 +368,8 @@ def test_build_clipper_command_includes_five_minute_highlight_mode():
 
     assert command[command.index("--clip-mode") + 1] == "highlight_5m"
     assert command[command.index("--compilation-target") + 1] == "300.0"
+    assert command[command.index("--visual-mode") + 1] == "auto_fyp"
+    assert command[command.index("--background-mode") + 1] == "auto_clean"
 
 
 def test_build_clipper_command_enables_enhanced_edit_by_default():

@@ -123,7 +123,10 @@ def test_build_job_payload_matches_backend_contract():
     assert payload["crop_mode"] == "center"
     assert payload["min_duration"] == 15
     assert payload["max_duration"] == 60
-    assert payload["caption_font_size"] == 10
+    assert payload["caption_font_size"] == 8
+    assert payload["caption_outline"] == 0.5
+    assert payload["visual_mode"] == "auto_fyp"
+    assert payload["background_mode"] == "auto_clean"
     assert payload["clip_mode"] == "short"
     assert payload["compilation_target_seconds"] == TELEGRAM_COMPILATION_MAX_SECONDS == 300
     assert payload["remove_running_text"] is True

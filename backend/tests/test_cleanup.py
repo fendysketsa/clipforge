@@ -2,7 +2,15 @@ import tempfile
 from pathlib import Path
 
 from api import ClipCandidate, ClipFile, ClipJob, ClipJobRequest, cleanup_clip_files, cleanup_job_files
-from clipper import cleanup_intermediate, friendly_youtube_error, prepare_uploaded_source
+from clipper import (
+    UserFacingError,
+    cleanup_intermediate,
+    extract_audio,
+    friendly_youtube_error,
+    prepare_uploaded_source,
+    select_usable_source_media,
+    source_media_candidates,
+)
 
 
 def test_cleanup_removes_source_and_audio_keeps_clips():
@@ -45,6 +53,42 @@ def test_cleanup_does_not_delete_external_upload():
     cleanup_intermediate(work, upload)
 
     assert upload.exists()
+
+
+def test_source_media_candidates_never_reuses_ytdlp_partials(tmp_path):
+    (tmp_path / "source.f137.mp4.part").write_bytes(b"incomplete")
+    final = tmp_path / "source.mp4"
+    final.write_bytes(b"complete")
+
+    assert source_media_candidates(tmp_path) == [final]
+
+
+def test_select_usable_source_skips_video_only_and_uses_audio_video(monkeypatch, tmp_path):
+    import clipper
+
+    video_only = tmp_path / "source.mp4"
+    fallback = tmp_path / "source_fallback.webm"
+    video_only.write_bytes(b"x" * 2048)
+    fallback.write_bytes(b"y" * 2048)
+    monkeypatch.setattr(
+        clipper,
+        "probe_media_stream_types",
+        lambda path: {"video"} if path == video_only else {"video", "audio"},
+    )
+
+    assert select_usable_source_media(tmp_path) == fallback
+
+
+def test_extract_audio_rejects_missing_track_before_running_ffmpeg(monkeypatch, tmp_path):
+    import pytest
+    import clipper
+
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"x" * 2048)
+    monkeypatch.setattr(clipper, "probe_media_stream_types", lambda _path: {"video"})
+
+    with pytest.raises(UserFacingError, match="tidak memiliki track audio"):
+        extract_audio(source, tmp_path / "audio.wav")
 
 
 def test_friendly_youtube_error_explains_network_failure():

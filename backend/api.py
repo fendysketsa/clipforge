@@ -197,18 +197,20 @@ class ClipJobRequest(BaseModel):
     language: str = "id"
     analyze_seconds: float | None = Field(default=None, ge=10, le=7200)
     video_quality: Literal["standard", "high", "max"] = "high"
+    visual_mode: Literal["auto_fyp", "cinematic", "speaker_split"] = "auto_fyp"
+    background_mode: Literal["auto_clean", "keep", "mosque"] = "auto_clean"
     burn_subtitles: bool = True
     enhanced_edit: bool = True
     remove_running_text: bool = True
     crop_mode: Literal["center", "person", "streamer"] = "center"
     cam_corner: Literal["auto", "br", "bl", "tr", "tl"] = "auto"
-    caption_font_size: int = Field(default=10, ge=6, le=120)
+    caption_font_size: int = Field(default=8, ge=6, le=120)
     caption_position: Literal["upper", "center", "bottom"] = "upper"
     caption_color: str = "#FFFFFF"
     caption_font: Literal[
         "DejaVu Sans", "DejaVu Serif", "Liberation Sans", "Liberation Serif", "Noto Sans"
     ] = "DejaVu Sans"
-    caption_outline: float = Field(default=1.5, ge=0, le=8)
+    caption_outline: float = Field(default=0.5, ge=0, le=8)
     caption_outline_color: str = "#000000"
     required_hashtags: list[str] = Field(default_factory=list)
     require_creative_commons: bool = True
@@ -3154,6 +3156,15 @@ def user_error_from_logs(logs: list[str]) -> str | None:
             "FFmpeg backend belum memiliki filter teks/subtitle yang dibutuhkan. "
             "Build ulang container backend agar memakai FFmpeg sistem lengkap."
         )
+    if (
+        "output file does not contain any stream" in combined
+        or "does not contain any stream" in combined
+        or "matches no streams" in combined
+    ):
+        return (
+            "Track audio sumber belum terunduh lengkap. Sistem tidak akan memakai file .part lagi; "
+            "ulangi job untuk melanjutkan download audio secara otomatis."
+        )
     if "error initializing a simple filtergraph" in combined or "filter not found" in combined:
         return "Filter video FFmpeg tidak tersedia atau tidak kompatibel. Build ulang backend lalu coba lagi."
     return None
@@ -3303,6 +3314,8 @@ def build_clipper_command(request: ClipJobRequest) -> list[str]:
     if request.analyze_seconds:
         command.extend(["--analyze-seconds", str(request.analyze_seconds)])
     command.extend(["--video-quality", request.video_quality])
+    command.extend(["--visual-mode", request.visual_mode])
+    command.extend(["--background-mode", request.background_mode])
     if not request.burn_subtitles:
         command.append("--no-burn-subtitles")
     if not request.enhanced_edit:

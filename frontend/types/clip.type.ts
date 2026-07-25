@@ -3,6 +3,8 @@ export type YouTubeVisibility = "private" | "unlisted" | "public";
 export type CropMode = "center" | "person" | "streamer";
 export type VideoQuality = "standard" | "high" | "max";
 export type ClipMode = "short" | "highlight_5m";
+export type VisualMode = "auto_fyp" | "cinematic" | "speaker_split";
+export type BackgroundMode = "auto_clean" | "keep" | "mosque";
 export type CamCorner = "auto" | "br" | "bl" | "tr" | "tl";
 export type CaptionPosition = "upper" | "center" | "bottom";
 export type CaptionFont =
@@ -85,6 +87,8 @@ export type ClipJob = {
     language: string;
     analyze_seconds: number | null;
     video_quality: VideoQuality;
+    visual_mode: VisualMode;
+    background_mode: BackgroundMode;
     burn_subtitles: boolean;
     enhanced_edit: boolean;
     remove_running_text: boolean;
@@ -116,6 +120,8 @@ export type CreateClipJobInput = {
   language: string;
   analyze_seconds?: number | null;
   video_quality?: VideoQuality;
+  visual_mode?: VisualMode;
+  background_mode?: BackgroundMode;
   burn_subtitles: boolean;
   enhanced_edit?: boolean;
   remove_running_text?: boolean;

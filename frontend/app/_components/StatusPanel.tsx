@@ -59,6 +59,13 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
               {job.request.min_duration}s - {job.request.max_duration}s
             </span>
             <span>{job.request.enhanced_edit ? "Edit adaptif sinematik aktif" : "Edit standar"}</span>
+            <span>
+              {job.request.background_mode === "keep"
+                ? "Background asli"
+                : job.request.background_mode === "mosque"
+                  ? "Virtual background masjid"
+                  : "Background bersih otomatis"}
+            </span>
             <span>{job.request.remove_running_text ? "Running text bawah dipotong" : "Footer sumber dipertahankan"}</span>
             <span>{job.request.analyze_seconds ? `Analisis: ${job.request.analyze_seconds}s` : "Full video"}</span>
             <span>{job.request.crop_mode === "person" ? "Follow person" : "Center crop"}</span>

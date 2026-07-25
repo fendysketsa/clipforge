@@ -43,10 +43,10 @@ ALLOWED_CROP = {"center", "person", "streamer"}
 ALLOWED_CLIP_MODES = {"short", "highlight_5m"}
 TELEGRAM_COMPILATION_MAX_SECONDS = 300
 ALLOWED_CAPTION_POSITIONS = {"upper", "center", "bottom"}
-ALLOWED_CAPTION_FONT_SIZES = {7, 9, 10, 12, 14, 18, 20, 24}
+ALLOWED_CAPTION_FONT_SIZES = {8, 9, 10, 12, 14, 18, 20, 24}
 ALLOWED_TOP = {None, 3, 5, 8, 10, 12}
 ALLOWED_DURATION_PRESETS = {(15, 45), (15, 60), (30, 60)}
-SETTINGS_SCHEMA_VERSION = 5
+SETTINGS_SCHEMA_VERSION = 6
 
 
 def env_float(name: str, default: float) -> float:
@@ -137,7 +137,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "ai_base_url": DEFAULT_TELEGRAM_AI_BASE_URL,
     "ai_model": DEFAULT_TELEGRAM_AI_MODEL,
     "caption_position": "upper",
-    "caption_font_size": 10,
+    "caption_font_size": 8,
 }
 
 CLIPPING_STAGE_ALERTS: list[tuple[str, str, str, tuple[str, ...]]] = [
@@ -429,7 +429,7 @@ def normalize_state(value: object) -> dict[str, Any]:
         if (raw_settings.get("min_duration"), raw_settings.get("max_duration")) not in ALLOWED_DURATION_PRESETS:
             state["settings"]["min_duration"] = DEFAULT_SETTINGS["min_duration"]
             state["settings"]["max_duration"] = DEFAULT_SETTINGS["max_duration"]
-        if raw_settings.get("caption_font_size") in {9, 12, 14, 18}:
+        if raw_settings.get("caption_font_size") in {7, 9, 10, 12, 14, 18}:
             state["settings"]["caption_font_size"] = DEFAULT_SETTINGS["caption_font_size"]
         if raw_settings.get("ai_model") == "deepseek-v4-flash:cloud":
             # This cloud preset requires a paid Ollama subscription. Existing
@@ -486,6 +486,8 @@ def build_job_payload(url: str, settings: dict[str, Any]) -> dict[str, Any]:
         "min_duration": clean["min_duration"],
         "max_duration": clean["max_duration"],
         "video_quality": clean["video_quality"],
+        "visual_mode": "auto_fyp",
+        "background_mode": "auto_clean",
         "burn_subtitles": clean["burn_subtitles"],
         "remove_running_text": True,
         "crop_mode": clean["crop_mode"],
@@ -495,6 +497,7 @@ def build_job_payload(url: str, settings: dict[str, Any]) -> dict[str, Any]:
         "ai_model": clean["ai_model"],
         "caption_position": clean["caption_position"],
         "caption_font_size": clean["caption_font_size"],
+        "caption_outline": 0.5,
     }
 
 
@@ -3148,7 +3151,7 @@ class ClipForgeTelegramBot:
                 keyboard(
                     [
                         [button("Atas", "set:position:upper"), button("Tengah", "set:position:center"), button("Bawah", "set:position:bottom")],
-                        [button("7px", "set:fontsize:7"), button("9px", "set:fontsize:9"), button("10px", "set:fontsize:10"), button("12px", "set:fontsize:12")],
+                        [button("8px", "set:fontsize:8"), button("9px", "set:fontsize:9"), button("10px", "set:fontsize:10"), button("12px", "set:fontsize:12")],
                         [button("14px", "set:fontsize:14"), button("18px", "set:fontsize:18"), button("20px", "set:fontsize:20"), button("24px", "set:fontsize:24")],
                         [button("⬅️ Kembali", "menu:settings")],
                     ]

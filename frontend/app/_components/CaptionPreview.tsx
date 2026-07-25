@@ -1,7 +1,8 @@
 import { CAPTION_FONTS } from "../../lib/constants";
-import type { CaptionFont, CaptionPosition } from "../../types/clip.type";
+import type { CaptionFont, CaptionPosition, ClipMode } from "../../types/clip.type";
 
 type CaptionPreviewProps = {
+  clipMode: ClipMode;
   fontSize: number;
   position: CaptionPosition;
   color: string;
@@ -30,6 +31,7 @@ function outlineShadow(width: number, color: string): string {
 }
 
 export function CaptionPreview({
+  clipMode,
   fontSize,
   position,
   color,
@@ -44,8 +46,11 @@ export function CaptionPreview({
     <div className="captionPreview">
       <span className="captionPreviewLabel">Preview</span>
       <div
-        className="captionPreviewStage"
-        style={{ height: PREVIEW_HEIGHT, aspectRatio: "9 / 16" }}
+        className={`captionPreviewStage ${clipMode === "highlight_5m" ? "captionPreviewStage--landscape" : ""}`}
+        style={{
+          height: clipMode === "highlight_5m" ? 190 : PREVIEW_HEIGHT,
+          aspectRatio: clipMode === "highlight_5m" ? "16 / 9" : "9 / 16",
+        }}
       >
         <div
           className={`captionPreviewText captionPreviewText--${position}`}

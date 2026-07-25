@@ -1628,6 +1628,11 @@ h2 {
   bottom: 6%;
 }
 
+.captionPreviewStage--landscape .captionPreviewText {
+  left: 12%;
+  right: 12%;
+}
+
 .field input[type="file"] {
   padding: 8px 10px;
   cursor: pointer;

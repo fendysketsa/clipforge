@@ -57,6 +57,7 @@ import {
 import { isActiveJob } from "../lib/utils";
 import type {
   AutoViralRun,
+  BackgroundMode,
   CamCorner,
   CaptionFont,
   CaptionPosition,
@@ -66,6 +67,7 @@ import type {
   CropMode,
   SourceMode,
   VideoQuality,
+  VisualMode,
   YouTubeConfig,
   YouTubeUploadJob,
 } from "../types/clip.type";
@@ -92,6 +94,8 @@ export default function HomePage() {
   const [targetClips, setTargetClips] = useState(0);
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
   const [videoQuality, setVideoQuality] = useState<VideoQuality>(DEFAULT_VIDEO_QUALITY);
+  const [visualMode, setVisualMode] = useState<VisualMode>("auto_fyp");
+  const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>("auto_clean");
   const [clipMode, setClipMode] = useState<ClipMode>(DEFAULT_CLIP_MODE);
   const [uploadPreviewUrl, setUploadPreviewUrl] = useState("");
   const [cropMode, setCropMode] = useState<CropMode>("person");
@@ -152,6 +156,9 @@ export default function HomePage() {
   const handleClipModeChange = useCallback((value: ClipMode) => {
     setClipMode(value);
     setTargetClips(0);
+    setVisualMode("auto_fyp");
+    setCaptionFontSize(8);
+    setCaptionOutline(0.5);
     if (value === "highlight_5m") {
       setMinDuration(30);
       setMaxDuration(75);
@@ -486,6 +493,8 @@ export default function HomePage() {
           model: DEFAULT_MODEL,
           language: DEFAULT_LANGUAGE,
           video_quality: videoQuality,
+          visual_mode: visualMode,
+          background_mode: backgroundMode,
           burn_subtitles: burnSubtitles,
           crop_mode: cropMode,
           cam_corner: camCorner,
@@ -530,6 +539,7 @@ export default function HomePage() {
     activeJob,
     autoUploadYoutube,
     burnSubtitles,
+    backgroundMode,
     camCorner,
     captionColor,
     captionFont,
@@ -549,6 +559,7 @@ export default function HomePage() {
     uploadToken,
     url,
     videoQuality,
+    visualMode,
   ]);
 
   const handleDeleteAllConfirmed = useCallback(async () => {
@@ -1063,7 +1074,11 @@ export default function HomePage() {
           maxClips={maxClips}
           videoDuration={videoDuration}
           videoQuality={videoQuality}
+          visualMode={visualMode}
+          backgroundMode={backgroundMode}
           onVideoQualityChange={setVideoQuality}
+          onVisualModeChange={setVisualMode}
+          onBackgroundModeChange={setBackgroundMode}
           onTargetClipsChange={handleTargetClipsChange}
           burnSubtitles={burnSubtitles}
           captionFontSize={captionFontSize}

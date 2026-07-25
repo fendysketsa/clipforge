@@ -11,13 +11,13 @@ export const COMPILATION_TARGET_SECONDS = 300;
 export const DEFAULT_AI_ENABLED = true;
 export const DEFAULT_AI_BASE_URL = "http://localhost:11434/v1";
 export const DEFAULT_AI_MODEL = "";
-export const DEFAULT_CAPTION_FONT_SIZE = 10;
+export const DEFAULT_CAPTION_FONT_SIZE = 8;
 export const DEFAULT_CAPTION_POSITION = "upper";
 export const DEFAULT_CAPTION_COLOR = "#FFFFFF";
 export const CAPTION_FONT_SIZE_MIN = 8;
 export const CAPTION_FONT_SIZE_MAX = 36;
 export const DEFAULT_CAPTION_FONT = "DejaVu Sans";
-export const DEFAULT_CAPTION_OUTLINE = 1.5;
+export const DEFAULT_CAPTION_OUTLINE = 0.5;
 export const DEFAULT_CAPTION_OUTLINE_COLOR = "#000000";
 // Maps backend font family -> a CSS stack for the live preview.
 export const CAPTION_FONTS = [
