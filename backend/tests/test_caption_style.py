@@ -8,6 +8,8 @@ from clipper import (
     TranscriptSegment,
     _hex_to_ass_color,
     apply_codex_audio_cues,
+    animated_3d_fallback_filter,
+    animated_3d_look_filter,
     analyze_text_heavy_backdrop,
     apply_codex_structural_edit,
     build_candidate_pool,
@@ -572,6 +574,36 @@ def test_modern_blurred_frame_keeps_sharp_inset_over_moving_background():
     assert "#FACC15@0.24" in value
     assert "#22C55E@0.34" in value
     assert "overlay=40:71" in value
+
+
+def test_animated_3d_look_has_smoothing_depth_color_and_outline():
+    value = animated_3d_look_filter()
+
+    assert "hqdn3d=" in value
+    assert "curves=master=" in value
+    assert "colorbalance=" in value
+    assert "edgedetect=" in value
+    assert "blend=all_mode=multiply" in value
+    assert "vignette=" in value
+
+
+def test_animated_3d_look_has_safe_color_grade_fallback():
+    value = animated_3d_look_filter(with_outline=False)
+
+    assert "hqdn3d=" in value
+    assert "curves=master=" in value
+    assert "edgedetect=" not in value
+    assert "blend=" not in value
+
+
+def test_animated_3d_basic_fallback_uses_widely_available_filters():
+    value = animated_3d_fallback_filter()
+
+    assert value.startswith("eq=")
+    assert "unsharp=" in value
+    assert "vignette=" in value
+    assert "hqdn3d=" not in value
+    assert "curves=" not in value
 
 
 def test_modern_gradient_border_uses_dual_tone_glow_layers():

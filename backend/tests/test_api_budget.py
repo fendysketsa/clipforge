@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from api import (
+    AutoViralRequest,
     ClipFile,
     ClipJob,
     ClipJobRequest,
@@ -159,6 +160,11 @@ def test_viral_search_is_broad_and_supports_staged_fallback():
     assert ViralVideoSearchRequest(max_age_days=180).max_age_days == 180
     with pytest.raises(ValidationError):
         ViralVideoSearchRequest(max_age_days=366)
+
+
+def test_new_jobs_default_to_animated_3d_visuals():
+    assert ClipJobRequest(source_file="/tmp/source.mp4").visual_mode == "animated_3d"
+    assert AutoViralRequest().visual_mode == "animated_3d"
 
 
 def test_configured_viral_queries_are_extended_not_replaced(monkeypatch):
@@ -368,7 +374,7 @@ def test_build_clipper_command_includes_five_minute_highlight_mode():
 
     assert command[command.index("--clip-mode") + 1] == "highlight_5m"
     assert command[command.index("--compilation-target") + 1] == "300.0"
-    assert command[command.index("--visual-mode") + 1] == "auto_fyp"
+    assert command[command.index("--visual-mode") + 1] == "animated_3d"
     assert command[command.index("--background-mode") + 1] == "auto_clean"
 
 

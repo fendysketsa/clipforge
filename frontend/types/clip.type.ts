@@ -3,7 +3,7 @@ export type YouTubeVisibility = "private" | "unlisted" | "public";
 export type CropMode = "center" | "person" | "streamer";
 export type VideoQuality = "standard" | "high" | "max";
 export type ClipMode = "short" | "highlight_5m";
-export type VisualMode = "auto_fyp" | "cinematic" | "speaker_split";
+export type VisualMode = "auto_fyp" | "cinematic" | "speaker_split" | "animated_3d";
 export type BackgroundMode = "auto_clean" | "keep" | "mosque";
 export type CamCorner = "auto" | "br" | "bl" | "tr" | "tl";
 export type CaptionPosition = "upper" | "center" | "bottom";
@@ -237,6 +237,8 @@ export type AutoViralRequest = {
   min_duration?: number;
   max_duration?: number;
   video_quality?: VideoQuality;
+  visual_mode?: VisualMode;
+  background_mode?: BackgroundMode;
   crop_mode?: CropMode;
   burn_subtitles?: boolean;
   ai_enabled?: boolean;

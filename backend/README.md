@@ -89,6 +89,7 @@ Default output video:
 - subtitle burned-in
 - caption ringkas dengan background gradient-blur
 - hook visual/audio, reaction kontekstual, dan pattern interrupt
+- mode visual `animated_3d` aktif secara default untuk look film animasi 3D lokal yang tetap mempertahankan wajah dan gerakan sumber
 - kandidat wajib punya point utama, batas kalimat tuntas, dan payoff dekat ending
 - treatment loop hanya aktif saat payoff benar-benar terhubung ke hook
 - metadata/chapter container sumber tidak diwariskan ke MP4 hasil; bukti lisensi tetap disimpan lokal

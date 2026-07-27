@@ -136,6 +136,7 @@ export function HistorySection({
                   ) : null}
                   <span>{item.request.crop_mode}</span>
                   <span>{item.request.video_quality}</span>
+                  <span>{item.request.visual_mode === "animated_3d" ? "3D Animated" : item.request.visual_mode}</span>
                   {item.request.ai_enabled ? <span>AI: {item.request.ai_model || "local"}</span> : <span>AI off</span>}
                 </div>
                 {url ? (

@@ -422,7 +422,7 @@ CropMode = Literal["center", "person", "streamer"]
 VideoQuality = Literal["standard", "high", "max"]
 ClipMode = Literal["short", "highlight_5m"]
 OutputFormat = Literal["vertical_short", "landscape_compilation"]
-VisualMode = Literal["auto_fyp", "cinematic", "speaker_split"]
+VisualMode = Literal["auto_fyp", "cinematic", "speaker_split", "animated_3d"]
 BackgroundMode = Literal["auto_clean", "keep", "mosque"]
 VisualTheme = Literal["mystery", "islamic", "warning", "inspiring", "knowledge"]
 YUNET_MODEL_PATH = Path(__file__).resolve().parent / "models" / "face_detection_yunet_2023mar.onnx"
@@ -3406,6 +3406,42 @@ def modern_blurred_video_frame_filter(accent: str, secondary: str) -> str:
     )
 
 
+def animated_3d_look_filter(*, with_outline: bool = True) -> str:
+    """Create a warm, dimensional animated-film look without changing identity or motion."""
+    color_grade = (
+        "eq=contrast=1.08:brightness=0.018:saturation=1.32:gamma=0.96,"
+        "curves=master='0/0 0.18/0.12 0.48/0.56 0.78/0.88 1/1',"
+        "colorbalance=rs=0.035:gs=0.015:bs=-0.025:"
+        "rm=0.018:gm=0.008:bm=-0.012,"
+        "unsharp=5:5:0.42:3:3:0.16"
+    )
+    if not with_outline:
+        return (
+            "hqdn3d=1.8:1.4:4.5:3.5,"
+            f"{color_grade},"
+            "vignette=PI/14"
+        )
+    return (
+        "hqdn3d=1.8:1.4:4.5:3.5,"
+        "split=2[animated_color_src][animated_edge_src];"
+        f"[animated_color_src]{color_grade}[animated_color];"
+        "[animated_edge_src]edgedetect=low=0.045:high=0.16,"
+        "negate,eq=contrast=1.22:brightness=0.08:saturation=0[animated_ink];"
+        "[animated_color][animated_ink]"
+        "blend=all_mode=multiply:all_opacity=0.16,"
+        "vignette=PI/14"
+    )
+
+
+def animated_3d_fallback_filter() -> str:
+    """Use only widely available filters when the full animated stack is unavailable."""
+    return (
+        "eq=contrast=1.07:brightness=0.015:saturation=1.24:gamma=0.97,"
+        "unsharp=5:5:0.32:3:3:0.12,"
+        "vignette=PI/15"
+    )
+
+
 def landscape_compilation_frame_filter(
     accent: str,
     secondary: str,
@@ -4224,7 +4260,7 @@ def export_clip(
     enhanced_edit: bool = True,
     remove_running_text: bool = True,
     output_format: OutputFormat = "vertical_short",
-    visual_mode: VisualMode = "auto_fyp",
+    visual_mode: VisualMode = "animated_3d",
     background_mode: BackgroundMode = "auto_clean",
     compilation_part_number: int = 1,
     compilation_part_count: int = 1,
@@ -4289,7 +4325,7 @@ def export_clip(
     applied_edits.extend(resolved_idea_edits)
     applied_edits = list(dict.fromkeys(applied_edits))
     subtitles_supported = ffmpeg_has_filter("subtitles")
-    reaction_overlays_supported = visual_mode != "cinematic" and output_format == "vertical_short" and (
+    reaction_overlays_supported = visual_mode not in {"cinematic", "animated_3d"} and output_format == "vertical_short" and (
         ffmpeg_has_filter("movie")
         and ffmpeg_has_filter("overlay")
         and ffmpeg_has_filter("rotate")
@@ -4357,6 +4393,34 @@ def export_clip(
         vf = vertical_crop_filter(video_path, clip, crop_mode)
     if remove_running_text and output_format == "vertical_short":
         vf = f"{vf},{remove_running_text_filter()}"
+    if visual_mode == "animated_3d":
+        core_supported = all(
+            ffmpeg_has_filter(name)
+            for name in ("hqdn3d", "curves", "colorbalance")
+        )
+        outline_supported = core_supported and all(
+            ffmpeg_has_filter(name) for name in ("edgedetect", "blend")
+        )
+        animated_filter = (
+            animated_3d_look_filter(with_outline=outline_supported)
+            if core_supported
+            else animated_3d_fallback_filter()
+        )
+        vf = f"{vf},{animated_filter}"
+        sidecar_payload["animated_3d"] = {
+            "enabled": True,
+            "outline": outline_supported,
+            "method": (
+                "local_ffmpeg_stylization"
+                if core_supported
+                else "local_ffmpeg_basic_fallback"
+            ),
+        }
+        applied_edits.append(
+            "Look 3D animated diterapkan: skin smoothing terkontrol, warna hangat, depth contrast, dan outline sinematik."
+            if outline_supported
+            else "Look 3D animated ringan diterapkan dengan smoothing, warna hangat, dan depth contrast."
+        )
     vf = add_quality_sharpen(vf, video_quality)
     if enhanced_edit:
         if drawtext_supported:
@@ -4676,7 +4740,7 @@ def export_compilation(
     cam_corner: str,
     required_hashtags: list[str],
     video_quality: VideoQuality,
-    visual_mode: VisualMode = "auto_fyp",
+    visual_mode: VisualMode = "animated_3d",
     background_mode: BackgroundMode = "auto_clean",
     enhanced_edit: bool = True,
     remove_running_text: bool = True,
@@ -4772,6 +4836,10 @@ def export_compilation(
         combined_applied_edits.append(
             "Kompilasi memakai border sinematik dan split dua pembicara secara selektif saat deteksi wajah mendukung."
         )
+    elif visual_mode == "animated_3d":
+        combined_applied_edits.append(
+            "Seluruh bagian memakai look 3D animated lokal dengan warna hangat, depth contrast, dan outline sinematik."
+        )
     compilation = ClipCandidate(
         index=1,
         start=min(item.start for item in candidates),
@@ -4799,6 +4867,8 @@ def export_compilation(
             "layout": (
                 "adaptive_speaker_split_with_chapter_cards"
                 if visual_mode in {"auto_fyp", "speaker_split"}
+                else "animated_3d_cinematic_frame"
+                if visual_mode == "animated_3d"
                 else "cinematic_blurred_frame_with_chapter_cards"
             ),
             "visual_mode": visual_mode,
@@ -4950,9 +5020,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--visual-mode",
-        choices=["auto_fyp", "cinematic", "speaker_split"],
-        default="auto_fyp",
-        help="Adaptive FYP visuals, stable cinematic frame, or speaker split-screen",
+        choices=["auto_fyp", "cinematic", "speaker_split", "animated_3d"],
+        default="animated_3d",
+        help="Adaptive FYP visuals, stable cinematic frame, speaker split-screen, or a local 3D animated look",
     )
     parser.add_argument(
         "--background-mode",

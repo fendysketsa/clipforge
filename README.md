@@ -15,6 +15,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Export vertical 9:16 MP4 clips with SRT files.
 - Burn subtitles into clips by default.
 - Apply context-aware cinematic editing by default: theme color grading, animated hooks, varied camera motion, transcript-synced emphasis pulses, transitions, vignette, and progress bar.
+- Offer a default **3D Animated** visual mode with local skin smoothing, warm animated-film color, depth contrast, and restrained cinematic outlines; no external video-generation service is required.
 - Add sparse conversation-aware reaction stickers for laughter, surprise, questions, prayer/gratitude, warnings, and emotional moments.
 - Mix restrained transcript-synced sound effects under normalized dialogue.
 - Apply loop treatment only when the payoff semantically reconnects to the opening hook.

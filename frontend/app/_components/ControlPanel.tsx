@@ -397,6 +397,13 @@ export function ControlPanel({
           >
             Frame Sinematik
           </button>
+          <button
+            className={visualMode === "animated_3d" ? "active" : ""}
+            type="button"
+            onClick={() => onVisualModeChange("animated_3d")}
+          >
+            3D Animated
+          </button>
           {clipMode === "highlight_5m" ? (
             <button
               className={visualMode === "speaker_split" ? "active" : ""}
@@ -412,6 +419,8 @@ export function ControlPanel({
             ? `Direkomendasikan: border adaptif dan motion seperlunya${
                 clipMode === "highlight_5m" ? ", plus split kanan–kiri saat dua pembicara terdeteksi" : ""
               }.`
+            : visualMode === "animated_3d"
+              ? "Look film animasi 3D lokal: warna hangat, skin smoothing terkontrol, depth contrast, dan outline sinematik. Wajah serta gerakan asli tetap konsisten."
             : visualMode === "speaker_split"
               ? "Memprioritaskan dua panel pembicara; otomatis kembali ke frame sinematik bila wajah tidak cukup jelas."
               : "Frame premium tetap stabil dengan border di dalam area video."}

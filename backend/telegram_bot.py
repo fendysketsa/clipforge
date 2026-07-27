@@ -486,7 +486,7 @@ def build_job_payload(url: str, settings: dict[str, Any]) -> dict[str, Any]:
         "min_duration": clean["min_duration"],
         "max_duration": clean["max_duration"],
         "video_quality": clean["video_quality"],
-        "visual_mode": "auto_fyp",
+        "visual_mode": "animated_3d",
         "background_mode": "auto_clean",
         "burn_subtitles": clean["burn_subtitles"],
         "remove_running_text": True,

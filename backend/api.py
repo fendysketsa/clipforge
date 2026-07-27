@@ -197,7 +197,7 @@ class ClipJobRequest(BaseModel):
     language: str = "id"
     analyze_seconds: float | None = Field(default=None, ge=10, le=7200)
     video_quality: Literal["standard", "high", "max"] = "high"
-    visual_mode: Literal["auto_fyp", "cinematic", "speaker_split"] = "auto_fyp"
+    visual_mode: Literal["auto_fyp", "cinematic", "speaker_split", "animated_3d"] = "animated_3d"
     background_mode: Literal["auto_clean", "keep", "mosque"] = "auto_clean"
     burn_subtitles: bool = True
     enhanced_edit: bool = True
@@ -663,6 +663,8 @@ class AutoViralRequest(BaseModel):
     min_duration: float = Field(default=15, ge=5, le=600)
     max_duration: float = Field(default=60, ge=10, le=600)
     video_quality: Literal["standard", "high", "max"] = "high"
+    visual_mode: Literal["auto_fyp", "cinematic", "speaker_split", "animated_3d"] = "animated_3d"
+    background_mode: Literal["auto_clean", "keep", "mosque"] = "auto_clean"
     crop_mode: Literal["center", "person", "streamer"] = "person"
     burn_subtitles: bool = True
     ai_enabled: bool = True
@@ -4061,6 +4063,8 @@ def create_auto_viral_clip_job(source: dict[str, Any], request: AutoViralRequest
         min_duration=request.min_duration,
         max_duration=request.max_duration,
         video_quality=request.video_quality,
+        visual_mode=request.visual_mode,
+        background_mode=request.background_mode,
         burn_subtitles=request.burn_subtitles,
         crop_mode=request.crop_mode,
         require_creative_commons=True,

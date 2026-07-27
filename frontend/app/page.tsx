@@ -94,7 +94,7 @@ export default function HomePage() {
   const [targetClips, setTargetClips] = useState(0);
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
   const [videoQuality, setVideoQuality] = useState<VideoQuality>(DEFAULT_VIDEO_QUALITY);
-  const [visualMode, setVisualMode] = useState<VisualMode>("auto_fyp");
+  const [visualMode, setVisualMode] = useState<VisualMode>("animated_3d");
   const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>("auto_clean");
   const [clipMode, setClipMode] = useState<ClipMode>(DEFAULT_CLIP_MODE);
   const [uploadPreviewUrl, setUploadPreviewUrl] = useState("");
@@ -156,7 +156,7 @@ export default function HomePage() {
   const handleClipModeChange = useCallback((value: ClipMode) => {
     setClipMode(value);
     setTargetClips(0);
-    setVisualMode("auto_fyp");
+    setVisualMode("animated_3d");
     setCaptionFontSize(8);
     setCaptionOutline(0.5);
     if (value === "highlight_5m") {
@@ -1008,6 +1008,8 @@ export default function HomePage() {
           min_duration: minDuration,
           max_duration: Math.min(60, maxDuration),
           video_quality: videoQuality,
+          visual_mode: visualMode,
+          background_mode: backgroundMode,
           crop_mode: cropMode,
           burn_subtitles: burnSubtitles,
           ai_enabled: aiEnabled,

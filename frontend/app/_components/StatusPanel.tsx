@@ -60,6 +60,15 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
             </span>
             <span>{job.request.enhanced_edit ? "Edit adaptif sinematik aktif" : "Edit standar"}</span>
             <span>
+              {job.request.visual_mode === "animated_3d"
+                ? "Visual 3D Animated"
+                : job.request.visual_mode === "speaker_split"
+                  ? "Visual split speaker"
+                  : job.request.visual_mode === "cinematic"
+                    ? "Frame sinematik"
+                    : "Visual Auto FYP"}
+            </span>
+            <span>
               {job.request.background_mode === "keep"
                 ? "Background asli"
                 : job.request.background_mode === "mosque"
