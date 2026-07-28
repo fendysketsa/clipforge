@@ -420,7 +420,7 @@ export function ControlPanel({
                 clipMode === "highlight_5m" ? ", plus split kanan–kiri saat dua pembicara terdeteksi" : ""
               }.`
             : visualMode === "animated_3d"
-              ? "Look film animasi 3D lokal: warna hangat, skin smoothing terkontrol, depth contrast, dan outline sinematik. Wajah serta gerakan asli tetap konsisten."
+              ? "Look film animasi 3D lokal yang lebih jernih: denoise ringan, warna hangat, detail adaptif, depth contrast, dan outline halus. Wajah serta gerakan asli tetap konsisten."
             : visualMode === "speaker_split"
               ? "Memprioritaskan dua panel pembicara; otomatis kembali ke frame sinematik bila wajah tidak cukup jelas."
               : "Frame premium tetap stabil dengan border di dalam area video."}
@@ -454,7 +454,7 @@ export function ControlPanel({
         </div>
         <p className="field-help">
           {backgroundMode === "auto_clean"
-            ? "Otomatis mengganti backdrop penuh tulisan, tanggal, atau logo dengan interior masjid netral tanpa teks."
+            ? "Backdrop penuh tulisan dibersihkan otomatis. Pada clip vertikal, visual berpindah halus ke split 50/50: pembicara di atas dan air pantai 3D bergerak samar di bawah."
             : backgroundMode === "mosque"
               ? "Selalu mencoba virtual background masjid; pembicara, meja, dan mikrofon tetap dipertahankan."
               : "Tidak mengubah background asli selain crop dan frame visual."}

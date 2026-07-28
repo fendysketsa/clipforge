@@ -7,6 +7,7 @@ from clipper import (
     SoundEffectCue,
     TranscriptSegment,
     _hex_to_ass_color,
+    adaptive_text_backdrop_split_filter,
     apply_codex_audio_cues,
     animated_3d_fallback_filter,
     animated_3d_look_filter,
@@ -132,12 +133,30 @@ def test_caption_gradient_blur_filter_tracks_caption_position():
     assert "overlay=0:1450" in bottom
 
 
-def test_running_text_cleanup_crops_bottom_and_preserves_vertical_aspect():
+def test_running_text_cleanup_naturally_blurs_footer_without_changing_framing():
     value = remove_running_text_filter()
 
-    assert value.startswith("crop=990:1760:45:0")
-    assert "scale=1080:1920" in value
+    assert value.startswith("split=2[footer_base][footer_blur_src]")
+    assert "crop=1080:280:0:1640" in value
+    assert "gblur=sigma=44:sigmaV=20:steps=3" in value
+    assert "geq=" in value
+    assert "overlay=0:1640" in value
+    assert "scale=" not in value
     assert "setsar=1" in value
+
+
+def test_text_backdrop_split_uses_moving_water_and_a_feathered_midpoint():
+    value = adaptive_text_backdrop_split_filter(40)
+
+    assert "beach-water-3d-v1.png" in value
+    assert "zoompan=" in value
+    assert "scroll=horizontal=0.00035:vertical=0.00015" in value
+    assert "gblur=sigma=7:sigmaV=4:steps=2" in value
+    assert "s=1080x1080" in value
+    assert "pad=1080:1920:0:840" in value
+    assert "a='255*min(1,max(0,(H-Y)/240))'" in value
+    assert "fade=t=in:st=4.800:d=0.720:alpha=1" in value
+    assert "fade=t=out:st=37.600:d=0.720:alpha=1" in value
 
 
 def test_landscape_compilation_frame_is_full_hd_and_preserves_source_aspect():
@@ -594,6 +613,14 @@ def test_animated_3d_look_has_safe_color_grade_fallback():
     assert "curves=master=" in value
     assert "edgedetect=" not in value
     assert "blend=" not in value
+
+
+def test_animated_3d_look_can_add_adaptive_clarity():
+    value = animated_3d_look_filter(with_adaptive_sharpen=True)
+
+    assert "hqdn3d=1.05:0.80:2.20:1.70" in value
+    assert "blend=all_mode=multiply:all_opacity=0.11" in value
+    assert value.endswith("cas=strength=0.22")
 
 
 def test_animated_3d_basic_fallback_uses_widely_available_filters():

@@ -429,6 +429,9 @@ YUNET_MODEL_PATH = Path(__file__).resolve().parent / "models" / "face_detection_
 MOSQUE_BACKGROUND_PATH = (
     Path(__file__).resolve().parent / "assets" / "backgrounds" / "grand_mosque_neutral.png"
 )
+BEACH_WATER_BACKGROUND_PATH = (
+    Path(__file__).resolve().parent / "assets" / "backgrounds" / "beach-water-3d-v1.png"
+)
 SOURCE_VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".webm"}
 
 VIDEO_QUALITY_PRESETS = {
@@ -902,17 +905,76 @@ def ensure_minimum_hd_output(path: Path) -> tuple[int, int]:
     return width, height
 
 
-def remove_running_text_filter(crop_bottom: int = 160) -> str:
-    """Crop a source footer/ticker and rescale without changing the 9:16 aspect ratio."""
-    safe_crop = max(80, min(260, int(crop_bottom)))
-    crop_height = 1920 - safe_crop
-    crop_width = int(round(crop_height * 9 / 16))
-    if crop_width % 2:
-        crop_width += 1
-    crop_x = max(0, (1080 - crop_width) // 2)
+def remove_running_text_filter(crop_bottom: int = 280) -> str:
+    """Naturally obscure a source footer/ticker without zooming or changing framing."""
+    # Keep the legacy argument name for callers that passed crop_bottom by keyword;
+    # it now controls the height of the feathered blur instead of a destructive crop.
+    safe_height = max(160, min(420, int(crop_bottom)))
+    footer_y = 1920 - safe_height
+    # The fourth-power alpha ramp makes the upper blur boundary feather in
+    # quickly while leaving no hard horizontal seam over the source footage.
+    alpha = "255*(1-pow(1-Y/H,4))"
     return (
-        f"crop={crop_width}:{crop_height}:{crop_x}:0,"
-        "scale=1080:1920:flags=lanczos,setsar=1"
+        "split=2[footer_base][footer_blur_src];"
+        f"[footer_blur_src]crop=1080:{safe_height}:0:{footer_y},"
+        "gblur=sigma=44:sigmaV=20:steps=3,"
+        "drawbox=color=black@0.07:t=fill,format=rgba,"
+        f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{alpha}'[footer_blur];"
+        f"[footer_base][footer_blur]overlay=0:{footer_y}:shortest=1:eof_action=pass,"
+        "setsar=1"
+    )
+
+
+def adaptive_text_backdrop_split_filter(
+    duration: float,
+    asset_path: Path = BEACH_WATER_BACKGROUND_PATH,
+) -> str:
+    """Crossfade a text-heavy vertical clip into a soft 50/50 water split."""
+    safe_duration = max(3.0, float(duration))
+    fade_duration = min(0.85, max(0.55, safe_duration * 0.018))
+    split_start = min(
+        safe_duration * 0.35,
+        min(6.0, max(2.0, safe_duration * 0.12)),
+    )
+    split_end = min(
+        safe_duration - 0.25,
+        max(split_start + (fade_duration * 2) + 0.8, safe_duration - 2.4),
+    )
+    escaped_path = (
+        str(asset_path.resolve())
+        .replace("\\", "/")
+        .replace(":", r"\:")
+        .replace("'", r"\'")
+    )
+    # Water begins above the mathematical midpoint and the subject fades across
+    # the same overlap. The visible 50/50 boundary therefore has no hard seam.
+    return (
+        "split=2[adaptive_full][adaptive_subject_src];"
+        "[adaptive_subject_src]"
+        "crop=1080:1080:0:'max(0,(ih-oh)/2-90)',"
+        "scale=1080:1080:flags=lanczos,format=rgba,"
+        "geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+        "a='255*min(1,max(0,(H-Y)/240))'[adaptive_subject];"
+        f"movie='{escaped_path}':loop=0,"
+        "scale=1260:1120:force_original_aspect_ratio=increase:flags=lanczos,"
+        "crop=1260:1120,"
+        "zoompan=z='1.045+0.010*sin(on/78)':"
+        "x='(iw-iw/zoom)/2+18*sin(on/67)':"
+        "y='(ih-ih/zoom)/2+12*cos(on/83)':"
+        "d=1:s=1080x1080:fps=25,"
+        "scroll=horizontal=0.00035:vertical=0.00015,"
+        "gblur=sigma=7:sigmaV=4:steps=2,"
+        "eq=contrast=0.95:brightness=-0.05:saturation=0.84,"
+        "setsar=1[adaptive_water];"
+        "[adaptive_water]pad=1080:1920:0:840:color=#07191A[adaptive_canvas];"
+        "[adaptive_canvas][adaptive_subject]"
+        "overlay=0:0:shortest=1:eof_action=repeat,"
+        "format=rgba,"
+        f"fade=t=in:st={split_start:.3f}:d={fade_duration:.3f}:alpha=1,"
+        f"fade=t=out:st={split_end:.3f}:d={fade_duration:.3f}:alpha=1"
+        "[adaptive_split];"
+        "[adaptive_full][adaptive_split]"
+        "overlay=0:0:shortest=1:eof_action=repeat"
     )
 
 
@@ -3406,39 +3468,45 @@ def modern_blurred_video_frame_filter(accent: str, secondary: str) -> str:
     )
 
 
-def animated_3d_look_filter(*, with_outline: bool = True) -> str:
-    """Create a warm, dimensional animated-film look without changing identity or motion."""
+def animated_3d_look_filter(
+    *,
+    with_outline: bool = True,
+    with_adaptive_sharpen: bool = False,
+) -> str:
+    """Create a clear, dimensional animated-film look without changing identity or motion."""
     color_grade = (
-        "eq=contrast=1.08:brightness=0.018:saturation=1.32:gamma=0.96,"
-        "curves=master='0/0 0.18/0.12 0.48/0.56 0.78/0.88 1/1',"
-        "colorbalance=rs=0.035:gs=0.015:bs=-0.025:"
-        "rm=0.018:gm=0.008:bm=-0.012,"
-        "unsharp=5:5:0.42:3:3:0.16"
+        "eq=contrast=1.06:brightness=0.012:saturation=1.24:gamma=0.985,"
+        "curves=master='0/0 0.18/0.14 0.48/0.54 0.78/0.86 1/1',"
+        "colorbalance=rs=0.028:gs=0.012:bs=-0.018:"
+        "rm=0.014:gm=0.006:bm=-0.009,"
+        "unsharp=7:7:0.38:5:5:0.12"
     )
+    clarity = ",cas=strength=0.22" if with_adaptive_sharpen else ""
     if not with_outline:
         return (
-            "hqdn3d=1.8:1.4:4.5:3.5,"
+            "hqdn3d=1.05:0.80:2.20:1.70,"
             f"{color_grade},"
-            "vignette=PI/14"
+            f"vignette=PI/16{clarity}"
         )
     return (
-        "hqdn3d=1.8:1.4:4.5:3.5,"
+        "hqdn3d=1.05:0.80:2.20:1.70,"
         "split=2[animated_color_src][animated_edge_src];"
         f"[animated_color_src]{color_grade}[animated_color];"
-        "[animated_edge_src]edgedetect=low=0.045:high=0.16,"
-        "negate,eq=contrast=1.22:brightness=0.08:saturation=0[animated_ink];"
+        "[animated_edge_src]edgedetect=low=0.055:high=0.19,"
+        "negate,eq=contrast=1.16:brightness=0.06:saturation=0[animated_ink];"
         "[animated_color][animated_ink]"
-        "blend=all_mode=multiply:all_opacity=0.16,"
-        "vignette=PI/14"
+        "blend=all_mode=multiply:all_opacity=0.11,"
+        f"vignette=PI/16{clarity}"
     )
 
 
-def animated_3d_fallback_filter() -> str:
+def animated_3d_fallback_filter(*, with_adaptive_sharpen: bool = False) -> str:
     """Use only widely available filters when the full animated stack is unavailable."""
+    clarity = ",cas=strength=0.18" if with_adaptive_sharpen else ""
     return (
-        "eq=contrast=1.07:brightness=0.015:saturation=1.24:gamma=0.97,"
-        "unsharp=5:5:0.32:3:3:0.12,"
-        "vignette=PI/15"
+        "eq=contrast=1.055:brightness=0.012:saturation=1.20:gamma=0.985,"
+        "unsharp=7:7:0.36:5:5:0.10,"
+        f"vignette=PI/16{clarity}"
     )
 
 
@@ -4356,6 +4424,51 @@ def export_clip(
         "source_metadata_embedded": False,
     }
 
+    visual_source = video_path
+    visual_start = clip.start
+    clean_source, backdrop_profile = render_clean_background_segment(
+        video_path,
+        clip,
+        clean_background_path,
+        background_mode,
+    )
+    if clean_source is not None and backdrop_profile is not None:
+        visual_source = clean_source
+        visual_start = 0.0
+        sidecar_payload["background_replaced"] = True
+        sidecar_payload["background_replacement"] = {
+            "asset": MOSQUE_BACKGROUND_PATH.name,
+            "confidence": backdrop_profile.confidence,
+            "dominant_ratio": backdrop_profile.dominant_ratio,
+            "aligned_component_count": backdrop_profile.aligned_component_count,
+        }
+        applied_edits.append(
+            "Backdrop bertulisan/tanggal diganti interior masjid netral tanpa logo agar fokus tetap pada pembicara."
+        )
+    else:
+        sidecar_payload["background_replaced"] = False
+
+    split_filters_supported = all(
+        ffmpeg_has_filter(name)
+        for name in (
+            "fade",
+            "geq",
+            "gblur",
+            "movie",
+            "overlay",
+            "pad",
+            "scroll",
+            "zoompan",
+        )
+    )
+    adaptive_text_split_enabled = (
+        output_format == "vertical_short"
+        and background_mode == "auto_clean"
+        and backdrop_profile is not None
+        and BEACH_WATER_BACKGROUND_PATH.is_file()
+        and split_filters_supported
+    )
+
     if output_format == "landscape_compilation":
         should_try_split = visual_mode == "speaker_split" or (
             visual_mode == "auto_fyp"
@@ -4393,6 +4506,32 @@ def export_clip(
         vf = vertical_crop_filter(video_path, clip, crop_mode)
     if remove_running_text and output_format == "vertical_short":
         vf = f"{vf},{remove_running_text_filter()}"
+    if adaptive_text_split_enabled:
+        vf = f"{vf},{adaptive_text_backdrop_split_filter(duration)}"
+        sidecar_payload["layout"] = "adaptive_text_water_split"
+        sidecar_payload["adaptive_text_split"] = {
+            "enabled": True,
+            "asset": BEACH_WATER_BACKGROUND_PATH.name,
+            "trigger": "text_heavy_backdrop",
+            "ratio": "50/50",
+            "transition": "feathered_crossfade",
+        }
+        applied_edits.append(
+            "Backdrop penuh tulisan memicu split adaptif 50/50: pembicara di atas dan air pantai bergerak samar di bawah dengan sambungan gradasi."
+        )
+        console.print(
+            "[green]Split adaptif aktif:[/green] pembicara 50% atas + air pantai bergerak "
+            "50% bawah dengan feathered crossfade."
+        )
+    else:
+        sidecar_payload["adaptive_text_split"] = {
+            "enabled": False,
+            "reason": (
+                "not_text_heavy"
+                if backdrop_profile is None
+                else "unsupported_output_or_filters"
+            ),
+        }
     if visual_mode == "animated_3d":
         core_supported = all(
             ffmpeg_has_filter(name)
@@ -4401,15 +4540,22 @@ def export_clip(
         outline_supported = core_supported and all(
             ffmpeg_has_filter(name) for name in ("edgedetect", "blend")
         )
+        adaptive_sharpen_supported = ffmpeg_has_filter("cas")
         animated_filter = (
-            animated_3d_look_filter(with_outline=outline_supported)
+            animated_3d_look_filter(
+                with_outline=outline_supported,
+                with_adaptive_sharpen=adaptive_sharpen_supported,
+            )
             if core_supported
-            else animated_3d_fallback_filter()
+            else animated_3d_fallback_filter(
+                with_adaptive_sharpen=adaptive_sharpen_supported,
+            )
         )
         vf = f"{vf},{animated_filter}"
         sidecar_payload["animated_3d"] = {
             "enabled": True,
             "outline": outline_supported,
+            "adaptive_sharpen": adaptive_sharpen_supported,
             "method": (
                 "local_ffmpeg_stylization"
                 if core_supported
@@ -4417,9 +4563,9 @@ def export_clip(
             ),
         }
         applied_edits.append(
-            "Look 3D animated diterapkan: skin smoothing terkontrol, warna hangat, depth contrast, dan outline sinematik."
+            "Look 3D animated jernih diterapkan: denoise ringan, warna hangat, detail adaptif, depth contrast, dan outline halus."
             if outline_supported
-            else "Look 3D animated ringan diterapkan dengan smoothing, warna hangat, dan depth contrast."
+            else "Look 3D animated jernih diterapkan dengan denoise ringan, warna hangat, dan detail adaptif."
         )
     vf = add_quality_sharpen(vf, video_quality)
     if enhanced_edit:
@@ -4496,30 +4642,6 @@ def export_clip(
             "[yellow]FFmpeg tidak memiliki filter subtitles; file SRT tetap dibuat "
             "dan export video dilanjutkan tanpa burn subtitle.[/yellow]"
         )
-
-    visual_source = video_path
-    visual_start = clip.start
-    clean_source, backdrop_profile = render_clean_background_segment(
-        video_path,
-        clip,
-        clean_background_path,
-        background_mode,
-    )
-    if clean_source is not None and backdrop_profile is not None:
-        visual_source = clean_source
-        visual_start = 0.0
-        sidecar_payload["background_replaced"] = True
-        sidecar_payload["background_replacement"] = {
-            "asset": MOSQUE_BACKGROUND_PATH.name,
-            "confidence": backdrop_profile.confidence,
-            "dominant_ratio": backdrop_profile.dominant_ratio,
-            "aligned_component_count": backdrop_profile.aligned_component_count,
-        }
-        applied_edits.append(
-            "Backdrop bertulisan/tanggal diganti interior masjid netral tanpa logo agar fokus tetap pada pembicara."
-        )
-    else:
-        sidecar_payload["background_replaced"] = False
 
     video_input = [
         ffmpeg_path(),
@@ -4838,7 +4960,7 @@ def export_compilation(
         )
     elif visual_mode == "animated_3d":
         combined_applied_edits.append(
-            "Seluruh bagian memakai look 3D animated lokal dengan warna hangat, depth contrast, dan outline sinematik."
+            "Seluruh bagian memakai look 3D animated lokal yang lebih jernih dengan denoise ringan, detail adaptif, depth contrast, dan outline halus."
         )
     compilation = ClipCandidate(
         index=1,
@@ -5054,7 +5176,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--keep-running-text",
         action="store_true",
-        help="Keep the source footer/running text instead of cropping it from vertical exports",
+        help="Keep the source footer/running text instead of naturally blurring it in vertical exports",
     )
     parser.add_argument(
         "--keep-intermediate",
