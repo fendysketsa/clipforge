@@ -28,6 +28,7 @@ export type ClipFile = {
   fyp_reason?: string | null;
   hook?: string | null;
   pov?: string | null;
+  core_message?: string | null;
   strengths?: string[];
   weaknesses?: string[];
   improvement_ideas?: string[];

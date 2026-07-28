@@ -1,8 +1,11 @@
+from pathlib import Path
+
 from clipper import (
     AVAILABLE_FONTS,
     CaptionStyle,
     ClipCandidate,
     CodexEditPlan,
+    EmbeddedSplitProfile,
     ReactionCue,
     SoundEffectCue,
     TranscriptSegment,
@@ -11,6 +14,7 @@ from clipper import (
     apply_codex_audio_cues,
     animated_3d_fallback_filter,
     animated_3d_look_filter,
+    analyze_embedded_split_frame,
     analyze_text_heavy_backdrop,
     apply_codex_structural_edit,
     build_candidate_pool,
@@ -24,6 +28,7 @@ from clipper import (
     contextual_sound_effect_cues,
     detect_visual_theme,
     detect_reaction_cues,
+    embedded_split_subject_filter,
     emphasis_timestamps,
     enhanced_edit_filter,
     fallback_social_caption,
@@ -36,6 +41,7 @@ from clipper import (
     landscape_speaker_split_filter,
     modern_blurred_video_frame_filter,
     modern_gradient_border_filters,
+    payoff_banner_text,
     pov_banner_text,
     remove_running_text_filter,
     resolve_codex_ideas,
@@ -157,6 +163,80 @@ def test_text_backdrop_split_uses_moving_water_and_a_feathered_midpoint():
     assert "a='255*min(1,max(0,(H-Y)/240))'" in value
     assert "fade=t=in:st=4.800:d=0.720:alpha=1" in value
     assert "fade=t=out:st=37.600:d=0.720:alpha=1" in value
+
+
+def test_embedded_speaker_banner_frame_is_detected_for_mandatory_auto_split():
+    import cv2
+    import numpy as np
+
+    frame = np.full((360, 640, 3), (176, 170, 164), dtype=np.uint8)
+    cv2.rectangle(frame, (0, 214), (639, 359), (170, 92, 34), -1)
+    for x in range(0, 640, 24):
+        cv2.line(frame, (x, 214), (max(0, x - 70), 359), (210, 142, 70), 3)
+    cv2.ellipse(frame, (445, 116), (44, 62), 0, 0, 360, (205, 220, 232), -1)
+    cv2.putText(
+        frame,
+        "CERAMAH LUCU",
+        (96, 282),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1.05,
+        (255, 255, 255),
+        4,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        frame,
+        "USTADZ PILIHAN",
+        (78, 332),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1.05,
+        (255, 255, 255),
+        4,
+        cv2.LINE_AA,
+    )
+
+    profile = analyze_embedded_split_frame(frame)
+
+    assert profile is not None
+    assert 0.56 <= profile.boundary_ratio <= 0.62
+    assert profile.lower_text_component_count >= 7
+
+
+def test_normal_horizon_without_lower_title_does_not_trigger_embedded_split():
+    import cv2
+    import numpy as np
+
+    frame = np.full((360, 640, 3), (205, 184, 148), dtype=np.uint8)
+    cv2.rectangle(frame, (0, 215), (639, 359), (70, 118, 74), -1)
+    for x in range(0, 640, 40):
+        cv2.line(frame, (x, 250), (min(639, x + 18), 359), (52, 92, 58), 2)
+    cv2.ellipse(frame, (320, 140), (42, 60), 0, 0, 360, (170, 190, 210), -1)
+
+    assert analyze_embedded_split_frame(frame) is None
+
+
+def test_embedded_split_subject_filter_removes_lower_panel_and_follows_face(monkeypatch):
+    import clipper as clipper_module
+
+    monkeypatch.setattr(
+        clipper_module,
+        "detect_person_focus_x",
+        lambda *_args, **_kwargs: (0.72, (640, 360)),
+    )
+    profile = EmbeddedSplitProfile(
+        boundary_ratio=0.6,
+        confidence=0.88,
+        lower_text_component_count=18,
+        source_width=640,
+        source_height=360,
+    )
+    clip = ClipCandidate(1, 0, 30, 30, 90, "Poin", "test", "test")
+
+    value = embedded_split_subject_filter(Path("source.mp4"), clip, profile)
+
+    assert value.startswith("crop=640:216:0:0")
+    assert "scale=5690:1920" in value
+    assert "crop=1080:1920:" in value
 
 
 def test_landscape_compilation_frame_is_full_hd_and_preserves_source_aspect():
@@ -400,7 +480,7 @@ def test_codex_render_plan_drives_hook_tempo_payoff_and_audio():
     assert plan.hook_boost and plan.tempo_boost and plan.ending_boost
     assert "between(t,0.05,0.58)" in value
     assert "between(t,7.000,7.320)" in value
-    assert "text='INTI / PAYOFF'" in value
+    assert "text='INTISARI'" in value
     assert "textfile='clip.payoff.txt'" in value
     assert [cue.trigger for cue in sounds] == ["hook Codex", "payoff Codex"]
 
@@ -905,3 +985,29 @@ def test_hook_banner_text_is_short_uppercase_and_wrapped():
     assert value == value.upper()
     assert len(value.splitlines()) <= 2
     assert all(len(line) <= 24 for line in value.splitlines())
+
+
+def test_intisari_prefers_explicit_key_message_from_spoken_transcript():
+    clip = ClipCandidate(1, 0, 20, 20, 90, "Judul", "test", "test")
+    segments = [
+        TranscriptSegment(0, 5, "Ada banyak cerita yang dibahas."),
+        TranscriptSegment(5, 12, "Intinya kita harus memeriksa informasi sebelum percaya."),
+        TranscriptSegment(12, 20, "Terima kasih semuanya."),
+    ]
+
+    value = payoff_banner_text(clip, segments)
+
+    assert "MEMERIKSA\nINFORMASI" in value
+    assert "TERIMA KASIH" not in value
+
+
+def test_intisari_card_is_rendered_even_without_an_ending_boost():
+    value = enhanced_edit_filter(
+        30,
+        "clip.hook.txt",
+        payoff_text_filename="clip.payoff.txt",
+        codex_plan=CodexEditPlan(),
+    )
+
+    assert "text='INTISARI'" in value
+    assert "textfile='clip.payoff.txt'" in value

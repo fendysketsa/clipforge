@@ -150,6 +150,17 @@ class BackdropProfile:
     aligned_component_count: int
 
 
+@dataclass
+class EmbeddedSplitProfile:
+    """Persistent source layout with a speaker panel above a text/media banner."""
+
+    boundary_ratio: float
+    confidence: float
+    lower_text_component_count: int
+    source_width: int
+    source_height: int
+
+
 HOOK_WORDS = {
     "intinya",
     "ternyata",
@@ -1357,6 +1368,158 @@ def analyze_text_heavy_backdrop(frame, *, force: bool = False) -> BackdropProfil
     )
 
 
+def analyze_embedded_split_frame(frame) -> EmbeddedSplitProfile | None:
+    """Detect a hard horizontal speaker/banner composition embedded in the source."""
+    try:
+        import cv2
+        import numpy as np
+    except Exception:
+        return None
+    if frame is None or not getattr(frame, "size", 0):
+        return None
+
+    source_height, source_width = frame.shape[:2]
+    if source_width < 160 or source_height < 120:
+        return None
+    scale = min(1.0, 640 / max(1, source_width))
+    small = (
+        cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        if scale < 1
+        else frame.copy()
+    )
+    height, width = small.shape[:2]
+    lab = cv2.cvtColor(small, cv2.COLOR_BGR2LAB).astype(np.float32)
+    gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+
+    search_start = max(8, int(height * 0.34))
+    search_end = min(height - 8, int(height * 0.76))
+    if search_end <= search_start:
+        return None
+
+    # A precomposed banner changes most columns at one stable horizontal row.
+    # Compare narrow strips instead of individual rows so camera noise and
+    # clothing edges do not look like a layout boundary.
+    strengths: list[float] = []
+    for y in range(search_start, search_end):
+        above = lab[max(0, y - 4) : y].mean(axis=0)
+        below = lab[y : min(height, y + 4)].mean(axis=0)
+        strengths.append(float(np.mean(np.linalg.norm(above - below, axis=1))))
+    if not strengths:
+        return None
+    best_offset = int(np.argmax(strengths))
+    boundary_y = search_start + best_offset
+    boundary_strength = strengths[best_offset]
+    baseline = float(np.percentile(strengths, 65))
+    if boundary_strength < max(8.0, baseline * 1.75):
+        return None
+
+    lower = gray[boundary_y + 2 :]
+    if lower.shape[0] < max(28, int(height * 0.18)):
+        return None
+    # Edge components capture bright or dark lettering without depending on
+    # the banner's color or language. A tiny dilation joins both sides of each
+    # glyph while keeping neighboring letters separate.
+    strokes = cv2.Canny(lower, 55, 145)
+    strokes = cv2.dilate(
+        strokes,
+        cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2)),
+        iterations=1,
+    )
+    count, _labels, stats, centroids = cv2.connectedComponentsWithStats(strokes, 8)
+    lower_area = lower.shape[0] * lower.shape[1]
+    row_size = max(8, lower.shape[0] // 14)
+    row_bins: dict[int, int] = {}
+    text_components = 0
+    for index in range(1, count):
+        _x, _y, component_width, component_height, area = stats[index]
+        if not (6 <= area <= lower_area * 0.018):
+            continue
+        if not (2 <= component_width <= width * 0.24):
+            continue
+        if not (3 <= component_height <= lower.shape[0] * 0.36):
+            continue
+        aspect = component_width / max(1, component_height)
+        if not 0.10 <= aspect <= 8.0:
+            continue
+        text_components += 1
+        row = int(centroids[index][1] // row_size)
+        row_bins[row] = row_bins.get(row, 0) + 1
+    aligned_components = max(row_bins.values(), default=0)
+    if text_components < 7 or aligned_components < 4:
+        return None
+
+    upper_mean = lab[max(0, boundary_y - max(8, height // 12)) : boundary_y].mean(axis=(0, 1))
+    lower_mean = lab[
+        boundary_y : min(height, boundary_y + max(8, height // 12))
+    ].mean(axis=(0, 1))
+    color_separation = float(np.linalg.norm(upper_mean - lower_mean))
+    relative_strength = boundary_strength / max(1.0, baseline)
+    confidence = min(
+        1.0,
+        0.38
+        + min(0.26, max(0.0, relative_strength - 1.7) * 0.13)
+        + min(0.20, aligned_components / 40.0)
+        + min(0.16, color_separation / 160.0),
+    )
+    if confidence < 0.52:
+        return None
+    return EmbeddedSplitProfile(
+        boundary_ratio=round(boundary_y / height, 4),
+        confidence=round(confidence, 3),
+        lower_text_component_count=text_components,
+        source_width=source_width,
+        source_height=source_height,
+    )
+
+
+def detect_embedded_split_layout(
+    video_path: Path,
+    clip: ClipCandidate,
+    *,
+    sample_count: int = 3,
+) -> EmbeddedSplitProfile | None:
+    """Require the same embedded split across multiple clip frames."""
+    try:
+        import cv2
+        import numpy as np
+    except Exception:
+        return None
+
+    capture = cv2.VideoCapture(str(video_path.resolve()))
+    if not capture.isOpened():
+        return None
+    duration = max(0.1, clip.end - clip.start)
+    profiles: list[EmbeddedSplitProfile] = []
+    try:
+        for index in range(max(2, sample_count)):
+            fraction = (index + 1) / (max(2, sample_count) + 1)
+            capture.set(cv2.CAP_PROP_POS_MSEC, (clip.start + duration * fraction) * 1000)
+            ok, frame = capture.read()
+            if not ok:
+                continue
+            profile = analyze_embedded_split_frame(frame)
+            if profile is not None:
+                profiles.append(profile)
+    finally:
+        capture.release()
+    required = max(2, math.ceil(max(2, sample_count) * 0.6))
+    if len(profiles) < required:
+        return None
+    ratios = [profile.boundary_ratio for profile in profiles]
+    if max(ratios) - min(ratios) > 0.055:
+        return None
+    best = max(profiles, key=lambda item: item.confidence)
+    return EmbeddedSplitProfile(
+        boundary_ratio=round(float(np.median(ratios)), 4),
+        confidence=round(sum(item.confidence for item in profiles) / len(profiles), 3),
+        lower_text_component_count=max(
+            item.lower_text_component_count for item in profiles
+        ),
+        source_width=best.source_width,
+        source_height=best.source_height,
+    )
+
+
 def _cover_resize_background(image, width: int, height: int):
     import cv2
 
@@ -1597,6 +1760,33 @@ def vertical_crop_filter(video_path: Path, clip: ClipCandidate, crop_mode: CropM
     crop_y = clamp_even((scaled_height - 1920) / 2, 0, scaled_height - 1920)
     console.print(f"[green]Person crop[/green] clip {clip.index}: focus x={focus_x:.2f}, crop x={crop_x}")
     return f"{scale_filter(scaled_width, scaled_height)},crop=1080:1920:{crop_x}:{crop_y},setsar=1"
+
+
+def embedded_split_subject_filter(
+    video_path: Path,
+    clip: ClipCandidate,
+    profile: EmbeddedSplitProfile,
+) -> str:
+    """Remove the source banner and build a face-aware portrait from its upper panel."""
+    source_width = profile.source_width
+    source_height = profile.source_height
+    subject_height = clamp_even(
+        source_height * profile.boundary_ratio,
+        2,
+        max(2, source_height - 2),
+    )
+    focus = detect_person_focus_x(video_path, clip)
+    focus_x = focus[0] if focus is not None else 0.5
+    scale = max(1080 / max(1, source_width), 1920 / max(1, subject_height))
+    scaled_width = make_even(source_width * scale, 1080)
+    scaled_height = make_even(subject_height * scale, 1920)
+    crop_x = clamp_even((focus_x * scaled_width) - 540, 0, scaled_width - 1080)
+    crop_y = clamp_even((scaled_height - 1920) / 2, 0, scaled_height - 1920)
+    return (
+        f"crop={source_width}:{subject_height}:0:0,"
+        f"{scale_filter(scaled_width, scaled_height)},"
+        f"crop=1080:1920:{crop_x}:{crop_y},setsar=1"
+    )
 
 
 CamCorner = Literal["br", "bl", "tr", "tl"]
@@ -3100,9 +3290,27 @@ def pov_banner_text(clip: ClipCandidate) -> str:
 
 
 def payoff_banner_text(clip: ClipCandidate, clip_segments: list[TranscriptSegment]) -> str:
-    """Use the actual closing transcript as the payoff card—never invented copy."""
-    ending = clip_segments[-1].text if clip_segments else clip.text
-    value = first_sentence(ending, max_words=10).upper()
+    """Extract an explicit takeaway from the transcript without inventing copy."""
+    key_markers = (
+        "intinya",
+        "kesimpulannya",
+        "jadi",
+        "artinya",
+        "pelajarannya",
+        "hikmahnya",
+        "yang penting",
+        "kuncinya",
+        "jawabannya",
+    )
+    source_segments = clip_segments or [TranscriptSegment(0, 0, clip.text)]
+    search_pool = source_segments[max(0, len(source_segments) // 3) :]
+    marked = [
+        segment.text
+        for segment in search_pool
+        if any(marker in segment.text.casefold() for marker in key_markers)
+    ]
+    takeaway = marked[-1] if marked else source_segments[-1].text
+    value = first_sentence(takeaway, max_words=10).upper()
     chunks = split_subtitle_text(value, max_chars=30, max_lines=2)
     return (chunks[0] if chunks else value)[:100]
 
@@ -3851,7 +4059,7 @@ def enhanced_edit_filter(
                     f"enable='between(t,{timestamp:.3f},{label_end:.3f})'",
                 ]
             )
-    if show_text_overlays and payoff_text_filename and adaptive_plan.ending_boost:
+    if show_text_overlays and payoff_text_filename:
         card_start = max(0.2, safe_duration - 3.35)
         card_end = max(card_start + 0.2, safe_duration - 1.28)
         filters.extend(
@@ -3863,7 +4071,7 @@ def enhanced_edit_filter(
                 f"drawbox=x=76:y=142:w=244:h=42:color={accent}@0.94:t=fill:"
                 f"enable='between(t,{card_start:.3f},{card_end:.3f})'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-                "text='INTI / PAYOFF':expansion=none:fontcolor=white:fontsize=20:x=94:y=151:"
+                "text='INTISARI':expansion=none:fontcolor=white:fontsize=20:x=94:y=151:"
                 f"enable='between(t,{card_start:.3f},{card_end:.3f})'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                 f"textfile='{payoff_text_filename}':reload=0:expansion=none:"
@@ -4350,6 +4558,7 @@ def export_clip(
     adaptive_plan = codex_edit_plan(clip)
     theme_profile = visual_theme_profile(clip)
     emphasis_times = emphasis_timestamps(clip, clip_segments)
+    core_message = payoff_banner_text(clip, clip_segments)
     reaction_cues = detect_reaction_cues(clip, clip_segments)
     sound_effect_cues = (
         contextual_sound_effect_cues(
@@ -4422,16 +4631,25 @@ def export_clip(
         "background_mode": background_mode,
         "aspect_ratio": "16:9" if output_format == "landscape_compilation" else "9:16",
         "source_metadata_embedded": False,
+        "core_message": core_message.replace("\n", " ").strip(),
     }
 
     visual_source = video_path
     visual_start = clip.start
-    clean_source, backdrop_profile = render_clean_background_segment(
-        video_path,
-        clip,
-        clean_background_path,
-        background_mode,
+    embedded_split_profile = (
+        detect_embedded_split_layout(video_path, clip)
+        if output_format == "vertical_short" and background_mode == "auto_clean"
+        else None
     )
+    clean_source: Path | None = None
+    backdrop_profile: BackdropProfile | None = None
+    if embedded_split_profile is None:
+        clean_source, backdrop_profile = render_clean_background_segment(
+            video_path,
+            clip,
+            clean_background_path,
+            background_mode,
+        )
     if clean_source is not None and backdrop_profile is not None:
         visual_source = clean_source
         visual_start = 0.0
@@ -4464,7 +4682,7 @@ def export_clip(
     adaptive_text_split_enabled = (
         output_format == "vertical_short"
         and background_mode == "auto_clean"
-        and backdrop_profile is not None
+        and (backdrop_profile is not None or embedded_split_profile is not None)
         and BEACH_WATER_BACKGROUND_PATH.is_file()
         and split_filters_supported
     )
@@ -4500,11 +4718,32 @@ def export_clip(
             sidecar_payload["layout"] = "cinematic_bordered_frame"
             if should_try_split:
                 sidecar_payload["split_fallback_reason"] = "two_speakers_not_detected"
+    elif embedded_split_profile is not None:
+        vf = embedded_split_subject_filter(
+            video_path,
+            clip,
+            embedded_split_profile,
+        )
+        sidecar_payload["source_embedded_split"] = {
+            "detected": True,
+            "boundary_ratio": embedded_split_profile.boundary_ratio,
+            "confidence": embedded_split_profile.confidence,
+            "lower_text_component_count": (
+                embedded_split_profile.lower_text_component_count
+            ),
+        }
+        applied_edits.append(
+            "Panel judul bawaan sumber terdeteksi dan dibuang; wajah pembicara dipusatkan otomatis sebelum split."
+        )
     elif crop_mode == "streamer":
         vf = streamer_crop_filter(video_path, clip, cam_corner)
     else:
         vf = vertical_crop_filter(video_path, clip, crop_mode)
-    if remove_running_text and output_format == "vertical_short":
+    if (
+        remove_running_text
+        and output_format == "vertical_short"
+        and embedded_split_profile is None
+    ):
         vf = f"{vf},{remove_running_text_filter()}"
     if adaptive_text_split_enabled:
         vf = f"{vf},{adaptive_text_backdrop_split_filter(duration)}"
@@ -4512,12 +4751,22 @@ def export_clip(
         sidecar_payload["adaptive_text_split"] = {
             "enabled": True,
             "asset": BEACH_WATER_BACKGROUND_PATH.name,
-            "trigger": "text_heavy_backdrop",
+            "trigger": (
+                "embedded_speaker_banner"
+                if embedded_split_profile is not None
+                else "text_heavy_backdrop"
+            ),
             "ratio": "50/50",
-            "transition": "feathered_crossfade",
+            "transition": "animated_blur_feathered_crossfade",
         }
         applied_edits.append(
-            "Backdrop penuh tulisan memicu split adaptif 50/50: pembicara di atas dan air pantai bergerak samar di bawah dengan sambungan gradasi."
+            (
+                "Frame dua panel memicu split adaptif 50/50: panel judul bawaan dibuang, "
+                "pembicara dipusatkan di atas, dan air pantai bergerak samar di bawah."
+                if embedded_split_profile is not None
+                else "Backdrop penuh tulisan memicu split adaptif 50/50: pembicara di atas "
+                "dan air pantai bergerak samar di bawah dengan sambungan gradasi."
+            )
         )
         console.print(
             "[green]Split adaptif aktif:[/green] pembicara 50% atas + air pantai bergerak "
@@ -4527,8 +4776,8 @@ def export_clip(
         sidecar_payload["adaptive_text_split"] = {
             "enabled": False,
             "reason": (
-                "not_text_heavy"
-                if backdrop_profile is None
+                "not_text_heavy_or_embedded_split"
+                if backdrop_profile is None and embedded_split_profile is None
                 else "unsupported_output_or_filters"
             ),
         }
@@ -4572,10 +4821,11 @@ def export_clip(
         if drawtext_supported:
             hook_text_path.write_text(hook_banner_text(clip) + "\n", encoding="utf-8")
             pov_text_path.write_text(pov_banner_text(clip) + "\n", encoding="utf-8")
-            payoff_text_path.write_text(
-                payoff_banner_text(clip, clip_segments) + "\n",
-                encoding="utf-8",
-            )
+            payoff_text_path.write_text(core_message + "\n", encoding="utf-8")
+            if output_format == "vertical_short":
+                applied_edits.append(
+                    "Intisari ucapan asli ditampilkan menjelang akhir agar makna klip langsung terbaca."
+                )
         else:
             console.print(
                 "[yellow]FFmpeg tidak memiliki drawtext; hook teks dilewati, "

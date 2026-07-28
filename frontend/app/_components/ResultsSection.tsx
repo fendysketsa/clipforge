@@ -310,6 +310,12 @@ export function ResultsSection({
                             <span><b>POV:</b> {clip.pov}</span>
                           </div>
                         ) : null}
+                        {clip.core_message ? (
+                          <div className="analysisLine">
+                            <Target size={15} />
+                            <span><b>Intisari:</b> {clip.core_message}</span>
+                          </div>
+                        ) : null}
                         {clip.strengths?.length ? (
                           <div className="analysisBlock analysisStrength">
                             <b>Kekuatan</b>

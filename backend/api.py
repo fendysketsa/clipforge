@@ -263,6 +263,7 @@ class ClipFile(BaseModel):
     fyp_reason: str | None = None
     hook: str | None = None
     pov: str | None = None
+    core_message: str | None = None
     strengths: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
     improvement_ideas: list[str] = Field(default_factory=list)
@@ -3060,6 +3061,11 @@ def discover_clips(started_at: float) -> list[ClipFile]:
                 ),
                 hook=str(sidecar.get("hook")).strip() if sidecar.get("hook") else None,
                 pov=str(sidecar.get("pov")).strip() if sidecar.get("pov") else None,
+                core_message=(
+                    str(sidecar.get("core_message")).strip()
+                    if sidecar.get("core_message")
+                    else None
+                ),
                 strengths=sidecar_list("strengths"),
                 weaknesses=sidecar_list("weaknesses"),
                 improvement_ideas=improvement_ideas,
