@@ -73,7 +73,7 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
                 ? "Background asli"
                 : job.request.background_mode === "mosque"
                   ? "Virtual background masjid"
-                  : "Auto clean + split air adaptif"}
+                  : "Auto clean + jamaah adaptif"}
             </span>
             <span>{job.request.remove_running_text ? "Tulisan footer diblur natural" : "Footer sumber dipertahankan"}</span>
             <span>{job.request.analyze_seconds ? `Analisis: ${job.request.analyze_seconds}s` : "Full video"}</span>

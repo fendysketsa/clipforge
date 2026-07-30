@@ -175,16 +175,16 @@ def test_running_text_cleanup_naturally_blurs_footer_without_changing_framing():
     assert "setsar=1" in value
 
 
-def test_text_backdrop_split_uses_moving_water_and_a_feathered_midpoint():
+def test_text_backdrop_split_uses_a_speaker_dominant_congregation_panel():
     value = adaptive_text_backdrop_split_filter(40)
 
-    assert "beach-water-3d-v1.png" in value
+    assert "mosque-congregation-v1.png" in value
     assert "zoompan=" in value
-    assert "scroll=horizontal=0.00035:vertical=0.00015" in value
-    assert "gblur=sigma=7:sigmaV=4:steps=2" in value
-    assert "s=1080x1080" in value
-    assert "pad=1080:1920:0:840" in value
-    assert "a='255*min(1,max(0,(H-Y)/240))'" in value
+    assert "gblur=sigma=1.2:sigmaV=0.8:steps=1" in value
+    assert "s=1080x760" in value
+    assert "pad=1080:1920:0:1160:color=black@0" in value
+    assert "a='255*min(1,max(0,(H-Y)/180))'" in value
+    assert "a='255*min(1,max(0,Y/160))'" in value
     assert "fade=t=in:st=4.800:d=0.720:alpha=1" in value
     assert "fade=t=out:st=37.600:d=0.720:alpha=1" in value
 
@@ -239,7 +239,7 @@ def test_normal_horizon_without_lower_title_does_not_trigger_embedded_split():
     assert analyze_embedded_split_frame(frame) is None
 
 
-def test_embedded_split_subject_filter_removes_lower_panel_and_follows_face(monkeypatch):
+def test_embedded_split_subject_filter_removes_lower_panel_without_extreme_zoom(monkeypatch):
     import clipper as clipper_module
 
     monkeypatch.setattr(
@@ -259,8 +259,12 @@ def test_embedded_split_subject_filter_removes_lower_panel_and_follows_face(monk
     value = embedded_split_subject_filter(Path("source.mp4"), clip, profile)
 
     assert value.startswith("crop=640:216:0:0")
-    assert "scale=5690:1920" in value
-    assert "crop=1080:1920:" in value
+    assert "split=2[embedded_bg_src][embedded_fg_src]" in value
+    assert "scale=3496:1180" in value
+    assert "crop=1080:1180:" in value
+    assert "a='255*min(1,max(0,(H-Y)/140))'" in value
+    assert "pad=1080:1320:0:0:color=black@0" in value
+    assert "pad=1080:1920:0:0:color=#061512" in value
 
 
 def test_landscape_compilation_frame_is_full_hd_and_preserves_source_aspect():

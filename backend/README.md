@@ -90,7 +90,7 @@ Default output video:
 - caption ringkas dengan gradient shade face-safe tanpa memburamkan piksel sumber
 - hook visual/audio, reaction kontekstual, dan pattern interrupt
 - mode visual `animated_3d` aktif secara default untuk look film animasi 3D lokal yang lebih jernih dengan denoise ringan, detail adaptif, dan outline halus sambil tetap mempertahankan wajah serta gerakan sumber
-- backdrop penuh tulisan atau video yang sudah memiliki panel judul/media di bawah memicu transisi split 50/50 adaptif: panel bawaan dibuang, close-up pembicara dipusatkan di atas, dan air pantai 3D bergerak samar di bawah, disambung animated blur serta feathered gradient tanpa garis potong
+- backdrop penuh tulisan atau video yang sudah memiliki panel judul/media di bawah memicu komposisi adaptif speaker-dominan: panel bawaan dibuang, pembicara dipusatkan di area utama, dan jamaah masjid ditampilkan pada panel bawah yang lebih pendek dengan overlap gradasi sinematik tanpa garis potong
 - intisari dari ucapan asli selalu ditampilkan menjelang akhir clip dan ikut disimpan di metadata hasil agar maknanya mudah dipahami
 - kandidat wajib punya point utama, batas kalimat tuntas, dan payoff dekat ending
 - treatment loop hanya aktif saat payoff benar-benar terhubung ke hook

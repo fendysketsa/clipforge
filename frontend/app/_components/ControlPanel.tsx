@@ -454,7 +454,7 @@ export function ControlPanel({
         </div>
         <p className="field-help">
           {backgroundMode === "auto_clean"
-            ? "Backdrop penuh tulisan dibersihkan otomatis. Pada clip vertikal, visual berpindah halus ke split 50/50: pembicara di atas dan air pantai 3D bergerak samar di bawah."
+            ? "Backdrop penuh tulisan dibersihkan otomatis. Pada clip vertikal, pembicara tetap dominan dengan panel jamaah masjid di bawah dan transisi gradasi sinematik."
             : backgroundMode === "mosque"
               ? "Selalu mencoba virtual background masjid; pembicara, meja, dan mikrofon tetap dipertahankan."
               : "Tidak mengubah background asli selain crop dan frame visual."}

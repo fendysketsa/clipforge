@@ -442,8 +442,11 @@ YUNET_MODEL_PATH = Path(__file__).resolve().parent / "models" / "face_detection_
 MOSQUE_BACKGROUND_PATH = (
     Path(__file__).resolve().parent / "assets" / "backgrounds" / "grand_mosque_neutral.png"
 )
-BEACH_WATER_BACKGROUND_PATH = (
-    Path(__file__).resolve().parent / "assets" / "backgrounds" / "beach-water-3d-v1.png"
+MOSQUE_CONGREGATION_PATH = (
+    Path(__file__).resolve().parent
+    / "assets"
+    / "backgrounds"
+    / "mosque-congregation-v1.png"
 )
 SOURCE_VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".webm"}
 
@@ -938,9 +941,9 @@ def remove_running_text_filter(crop_bottom: int = 280) -> str:
 
 def adaptive_text_backdrop_split_filter(
     duration: float,
-    asset_path: Path = BEACH_WATER_BACKGROUND_PATH,
+    asset_path: Path = MOSQUE_CONGREGATION_PATH,
 ) -> str:
-    """Crossfade a text-heavy vertical clip into a soft 50/50 water split."""
+    """Blend a dominant speaker portrait over a restrained congregation panel."""
     safe_duration = max(3.0, float(duration))
     fade_duration = min(0.85, max(0.55, safe_duration * 0.018))
     split_start = min(
@@ -957,34 +960,42 @@ def adaptive_text_backdrop_split_filter(
         .replace(":", r"\:")
         .replace("'", r"\'")
     )
-    # Water begins above the mathematical midpoint and the subject fades across
-    # the same overlap. The visible 50/50 boundary therefore has no hard seam.
+    # Keep the speaker dominant and let the congregation enter only in the
+    # lower 40%. Opposing alpha ramps overlap around y=1160..1320 so there is
+    # no hard horizontal divider or abrupt half-and-half collage.
     return (
-        "split=2[adaptive_full][adaptive_subject_src];"
+        "split=3[adaptive_original][adaptive_stage_base][adaptive_subject_src];"
         "[adaptive_subject_src]"
-        "crop=1080:1080:0:'max(0,(ih-oh)/2-90)',"
-        "scale=1080:1080:flags=lanczos,format=rgba,"
+        "crop=1080:1320:0:0,"
+        "scale=1080:1320:flags=lanczos,format=rgba,"
         "geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
-        "a='255*min(1,max(0,(H-Y)/240))'[adaptive_subject];"
+        "a='255*min(1,max(0,(H-Y)/180))'[adaptive_subject];"
         f"movie='{escaped_path}':loop=0,"
-        "scale=1260:1120:force_original_aspect_ratio=increase:flags=lanczos,"
-        "crop=1260:1120,"
-        "zoompan=z='1.045+0.010*sin(on/78)':"
-        "x='(iw-iw/zoom)/2+18*sin(on/67)':"
-        "y='(ih-ih/zoom)/2+12*cos(on/83)':"
-        "d=1:s=1080x1080:fps=25,"
-        "scroll=horizontal=0.00035:vertical=0.00015,"
-        "gblur=sigma=7:sigmaV=4:steps=2,"
-        "eq=contrast=0.95:brightness=-0.05:saturation=0.84,"
-        "setsar=1[adaptive_water];"
-        "[adaptive_water]pad=1080:1920:0:840:color=#07191A[adaptive_canvas];"
-        "[adaptive_canvas][adaptive_subject]"
+        "scale=1320:820:force_original_aspect_ratio=increase:flags=lanczos,"
+        "crop=1320:820,"
+        "zoompan=z='1.025+0.008*sin(on/92)':"
+        "x='(iw-iw/zoom)/2+10*sin(on/84)':"
+        "y='(ih-ih/zoom)/2+6*cos(on/105)':"
+        "d=1:s=1080x760:fps=25,"
+        "gblur=sigma=1.2:sigmaV=0.8:steps=1,"
+        "eq=contrast=1.02:brightness=-0.045:saturation=0.88,"
+        "vignette=PI/10,"
+        "drawbox=x=0:y=0:w=iw:h=ih:color=#03130E@0.12:t=fill,"
+        "format=rgba,"
+        "geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+        "a='255*min(1,max(0,Y/160))',"
+        "setsar=1[adaptive_jamaah];"
+        "[adaptive_jamaah]"
+        "pad=1080:1920:0:1160:color=black@0[adaptive_jamaah_canvas];"
+        "[adaptive_stage_base][adaptive_jamaah_canvas]"
+        "overlay=0:0:shortest=1:eof_action=repeat[adaptive_stage];"
+        "[adaptive_stage][adaptive_subject]"
         "overlay=0:0:shortest=1:eof_action=repeat,"
         "format=rgba,"
         f"fade=t=in:st={split_start:.3f}:d={fade_duration:.3f}:alpha=1,"
         f"fade=t=out:st={split_end:.3f}:d={fade_duration:.3f}:alpha=1"
         "[adaptive_split];"
-        "[adaptive_full][adaptive_split]"
+        "[adaptive_original][adaptive_split]"
         "overlay=0:0:shortest=1:eof_action=repeat"
     )
 
@@ -1767,7 +1778,7 @@ def embedded_split_subject_filter(
     clip: ClipCandidate,
     profile: EmbeddedSplitProfile,
 ) -> str:
-    """Remove the source banner and build a face-aware portrait from its upper panel."""
+    """Remove the source banner without turning its speaker into an extreme close-up."""
     source_width = profile.source_width
     source_height = profile.source_height
     subject_height = clamp_even(
@@ -1777,15 +1788,30 @@ def embedded_split_subject_filter(
     )
     focus = detect_person_focus_x(video_path, clip)
     focus_x = focus[0] if focus is not None else 0.5
-    scale = max(1080 / max(1, source_width), 1920 / max(1, subject_height))
+    panel_height = 1180
+    scale = max(1080 / max(1, source_width), panel_height / max(1, subject_height))
     scaled_width = make_even(source_width * scale, 1080)
-    scaled_height = make_even(subject_height * scale, 1920)
+    scaled_height = make_even(subject_height * scale, panel_height)
     crop_x = clamp_even((focus_x * scaled_width) - 540, 0, scaled_width - 1080)
-    crop_y = clamp_even((scaled_height - 1920) / 2, 0, scaled_height - 1920)
+    crop_y = clamp_even((scaled_height - panel_height) / 2, 0, scaled_height - panel_height)
     return (
         f"crop={source_width}:{subject_height}:0:0,"
-        f"{scale_filter(scaled_width, scaled_height)},"
-        f"crop=1080:1920:{crop_x}:{crop_y},setsar=1"
+        "split=2[embedded_bg_src][embedded_fg_src];"
+        "[embedded_bg_src]"
+        "scale=1080:1320:force_original_aspect_ratio=increase:flags=lanczos,"
+        "crop=1080:1320,"
+        "gblur=sigma=36:sigmaV=24:steps=3,"
+        "eq=brightness=-0.04:saturation=0.78[embedded_bg];"
+        "[embedded_fg_src]"
+        f"scale={scaled_width}:{scaled_height}:flags=lanczos,"
+        f"crop=1080:{panel_height}:{crop_x}:{crop_y},"
+        "format=rgba,"
+        "geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+        "a='255*min(1,max(0,(H-Y)/140))',"
+        "pad=1080:1320:0:0:color=black@0[embedded_fg];"
+        "[embedded_bg][embedded_fg]"
+        "overlay=0:0:shortest=1:eof_action=repeat,"
+        "pad=1080:1920:0:0:color=#061512,setsar=1"
     )
 
 
@@ -4905,7 +4931,7 @@ def export_clip(
             "movie",
             "overlay",
             "pad",
-            "scroll",
+            "vignette",
             "zoompan",
         )
     )
@@ -4913,7 +4939,7 @@ def export_clip(
         output_format == "vertical_short"
         and background_mode == "auto_clean"
         and (backdrop_profile is not None or embedded_split_profile is not None)
-        and BEACH_WATER_BACKGROUND_PATH.is_file()
+        and MOSQUE_CONGREGATION_PATH.is_file()
         and split_filters_supported
     )
 
@@ -4977,30 +5003,30 @@ def export_clip(
         vf = f"{vf},{remove_running_text_filter()}"
     if adaptive_text_split_enabled:
         vf = f"{vf},{adaptive_text_backdrop_split_filter(duration)}"
-        sidecar_payload["layout"] = "adaptive_text_water_split"
+        sidecar_payload["layout"] = "adaptive_text_congregation_split"
         sidecar_payload["adaptive_text_split"] = {
             "enabled": True,
-            "asset": BEACH_WATER_BACKGROUND_PATH.name,
+            "asset": MOSQUE_CONGREGATION_PATH.name,
             "trigger": (
                 "embedded_speaker_banner"
                 if embedded_split_profile is not None
                 else "text_heavy_backdrop"
             ),
-            "ratio": "50/50",
-            "transition": "animated_blur_feathered_crossfade",
+            "ratio": "64/36_speaker_dominant",
+            "transition": "overlapping_gradient_cinematic_crossfade",
         }
         applied_edits.append(
             (
-                "Frame dua panel memicu split adaptif 50/50: panel judul bawaan dibuang, "
-                "pembicara dipusatkan di atas, dan air pantai bergerak samar di bawah."
+                "Frame dua panel dibenahi menjadi komposisi speaker-dominan: panel judul "
+                "bawaan dibuang, pembicara dipusatkan, dan jamaah masjid hadir lembut di bawah."
                 if embedded_split_profile is not None
-                else "Backdrop penuh tulisan memicu split adaptif 50/50: pembicara di atas "
-                "dan air pantai bergerak samar di bawah dengan sambungan gradasi."
+                else "Backdrop penuh tulisan memicu komposisi speaker-dominan dengan "
+                "jamaah masjid di panel bawah dan sambungan gradasi sinematik."
             )
         )
         console.print(
-            "[green]Split adaptif aktif:[/green] pembicara 50% atas + air pantai bergerak "
-            "50% bawah dengan feathered crossfade."
+            "[green]Split adaptif aktif:[/green] pembicara dominan + jamaah masjid "
+            "di panel bawah dengan overlapping gradient."
         )
     else:
         sidecar_payload["adaptive_text_split"] = {
