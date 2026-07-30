@@ -22,13 +22,15 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Apply loop treatment only when the payoff semantically reconnects to the opening hook.
 - Naturally blur the source footer/running-text strip in vertical exports by default before adding fresh captions and graphics.
 - Enhance voice clarity and generate safe, niche-aware social captions even when the AI service is unavailable.
-- Keep captions compact with a soft gradient-blur background by default.
+- Keep captions compact with a face-safe gradient shade that never blurs source pixels.
 - Generate short clips up to 60 seconds without an extra compilation render.
 - Keep the chronological five-minute compilation available as a separate mode.
 - Telegram's primary CTA requests short clips only for a faster turnaround.
 - Search 70+ Creative Commons themes, including Islamic insight, mystery, myth/fact, history, and relevant horror; prioritize the last 30 days and expand to 180 days when needed.
 - Permanently skip YouTube source URLs that have already completed clipping.
 - Crop center or shift crop toward detected faces/people.
+- Use an accuracy-first Indonesian transcription preset (`faster-whisper-medium`,
+  beam search, VAD, and word timestamps) and invalidate stale lower-quality transcript caches.
 - Manage jobs and generated clips from a Next.js UI.
 - Start jobs and receive complete results from a private Telegram bot.
 - Queue completed clips for YouTube Studio upload through Playwright.

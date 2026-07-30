@@ -541,7 +541,7 @@ export function ControlPanel({
           />
         </label>
         <p className="field-help">
-          Teks dibuat ringkas dan proporsional, dengan background gradient-blur aktif secara default.
+          Teks dibuat ringkas di safe-zone bawah dengan gradient gelap tanpa memburamkan wajah.
         </p>
 
         {burnSubtitles ? (

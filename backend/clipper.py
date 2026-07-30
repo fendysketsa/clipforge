@@ -436,6 +436,8 @@ OutputFormat = Literal["vertical_short", "landscape_compilation"]
 VisualMode = Literal["auto_fyp", "cinematic", "speaker_split", "animated_3d"]
 BackgroundMode = Literal["auto_clean", "keep", "mosque"]
 VisualTheme = Literal["mystery", "islamic", "warning", "inspiring", "knowledge"]
+DEFAULT_TRANSCRIPTION_MODEL = "Systran/faster-whisper-medium"
+TRANSCRIPTION_CACHE_VERSION = 2
 YUNET_MODEL_PATH = Path(__file__).resolve().parent / "models" / "face_detection_yunet_2023mar.onnx"
 MOSQUE_BACKGROUND_PATH = (
     Path(__file__).resolve().parent / "assets" / "backgrounds" / "grand_mosque_neutral.png"
@@ -491,9 +493,7 @@ TRANSCRIPT_REPLACEMENTS = {
     r"\bsoftware- and wealth\b": "sovereign wealth",
     r"\bsoftware and wealth\b": "sovereign wealth",
     r"\bterperakap\b": "terperangkap",
-    r"\bhana kan\b": "menggunakan",
     r"\bpengatahuan\b": "pengetahuan",
-    r"\bbarang-barang\b": "bareng-bareng",
     r"\bdimasa\b": "di masa",
     r"\bribuk\b": "ribu",
     r"\bseraksud\b": "seratus",
@@ -2096,6 +2096,8 @@ def extract_audio(video_path: Path, audio_path: Path, force: bool = False, limit
         "1",
         "-ar",
         "16000",
+        "-af",
+        "highpass=f=65,lowpass=f=7800,dynaudnorm=f=250:g=7:p=0.90:m=6",
         "-c:a",
         "pcm_s16le",
     ]
@@ -2116,8 +2118,61 @@ def extract_audio(video_path: Path, audio_path: Path, force: bool = False, limit
     return audio_path
 
 
+def transcription_decode_options(language: str) -> dict:
+    """Accuracy-first Whisper settings for clear Indonesian speech and names."""
+    options: dict = {
+        "language": language,
+        "task": "transcribe",
+        "vad_filter": True,
+        "vad_parameters": {
+            "threshold": 0.45,
+            "min_speech_duration_ms": 250,
+            "max_speech_duration_s": 30,
+            "min_silence_duration_ms": 450,
+            "speech_pad_ms": 250,
+        },
+        "beam_size": 5,
+        "best_of": 5,
+        "patience": 1.2,
+        "temperature": 0.0,
+        "word_timestamps": True,
+        "condition_on_previous_text": True,
+        "compression_ratio_threshold": 2.4,
+        "no_speech_threshold": 0.55,
+        "hallucination_silence_threshold": 1.5,
+        "initial_prompt": (
+            "Transkripsi percakapan bahasa Indonesia. Pertahankan nama orang, istilah asing, "
+            "angka, dan istilah agama sesuai ucapan. Gunakan ejaan serta tanda baca baku; "
+            "jangan menambah kata yang tidak diucapkan."
+        ),
+    }
+    hotwords = os.environ.get("CLIPFORGE_TRANSCRIPTION_HOTWORDS", "").strip()
+    if hotwords:
+        options["hotwords"] = hotwords
+    return options
+
+
+def transcript_cache_metadata_path(transcript_path: Path) -> Path:
+    return transcript_path.with_name(f"{transcript_path.stem}.meta.json")
+
+
+def transcript_cache_matches(transcript_path: Path, model_name: str, language: str) -> bool:
+    meta_path = transcript_cache_metadata_path(transcript_path)
+    if not transcript_path.exists() or not meta_path.exists():
+        return False
+    try:
+        metadata = load_json(meta_path)
+    except (OSError, ValueError, TypeError):
+        return False
+    return (
+        metadata.get("version") == TRANSCRIPTION_CACHE_VERSION
+        and metadata.get("model") == model_name
+        and metadata.get("language") == language
+    )
+
+
 def transcribe(audio_path: Path, transcript_path: Path, model_name: str, language: str, force: bool = False) -> list[TranscriptSegment]:
-    if transcript_path.exists() and not force:
+    if not force and transcript_cache_matches(transcript_path, model_name, language):
         return [
             TranscriptSegment(
                 start=float(item["start"]),
@@ -2131,13 +2186,7 @@ def transcribe(audio_path: Path, transcript_path: Path, model_name: str, languag
 
     console.print(f"[bold]Loading model:[/bold] {model_name}")
     model = WhisperModel(model_name, device="cpu", compute_type="int8")
-    segments, info = model.transcribe(
-        str(audio_path),
-        language=language,
-        vad_filter=True,
-        beam_size=1,
-        best_of=1,
-    )
+    segments, info = model.transcribe(str(audio_path), **transcription_decode_options(language))
 
     rows: list[TranscriptSegment] = []
     for segment in segments:
@@ -2146,6 +2195,15 @@ def transcribe(audio_path: Path, transcript_path: Path, model_name: str, languag
             rows.append(TranscriptSegment(float(segment.start), float(segment.end), text))
 
     save_json(transcript_path, [asdict(item) for item in rows])
+    save_json(
+        transcript_cache_metadata_path(transcript_path),
+        {
+            "version": TRANSCRIPTION_CACHE_VERSION,
+            "model": model_name,
+            "language": language,
+            "decode": "accuracy_first_beam_5",
+        },
+    )
     console.print(f"[green]Transcribed[/green] {len(rows)} segments. Detected language: {getattr(info, 'language', language)}")
     return rows
 
@@ -3681,39 +3739,39 @@ def animated_3d_look_filter(
     with_outline: bool = True,
     with_adaptive_sharpen: bool = False,
 ) -> str:
-    """Create a clear, dimensional animated-film look without changing identity or motion."""
+    """Create a dimensional look while retaining fine facial detail."""
     color_grade = (
         "eq=contrast=1.06:brightness=0.012:saturation=1.24:gamma=0.985,"
         "curves=master='0/0 0.18/0.14 0.48/0.54 0.78/0.86 1/1',"
         "colorbalance=rs=0.028:gs=0.012:bs=-0.018:"
         "rm=0.014:gm=0.006:bm=-0.009,"
-        "unsharp=7:7:0.38:5:5:0.12"
+        "unsharp=5:5:0.30:3:3:0.10"
     )
-    clarity = ",cas=strength=0.22" if with_adaptive_sharpen else ""
+    clarity = ",cas=strength=0.30" if with_adaptive_sharpen else ""
     if not with_outline:
         return (
-            "hqdn3d=1.05:0.80:2.20:1.70,"
+            "hqdn3d=0.42:0.32:0.85:0.65,"
             f"{color_grade},"
             f"vignette=PI/16{clarity}"
         )
     return (
-        "hqdn3d=1.05:0.80:2.20:1.70,"
+        "hqdn3d=0.42:0.32:0.85:0.65,"
         "split=2[animated_color_src][animated_edge_src];"
         f"[animated_color_src]{color_grade}[animated_color];"
-        "[animated_edge_src]edgedetect=low=0.055:high=0.19,"
+        "[animated_edge_src]edgedetect=low=0.070:high=0.22,"
         "negate,eq=contrast=1.16:brightness=0.06:saturation=0[animated_ink];"
         "[animated_color][animated_ink]"
-        "blend=all_mode=multiply:all_opacity=0.11,"
+        "blend=all_mode=multiply:all_opacity=0.07,"
         f"vignette=PI/16{clarity}"
     )
 
 
 def animated_3d_fallback_filter(*, with_adaptive_sharpen: bool = False) -> str:
     """Use only widely available filters when the full animated stack is unavailable."""
-    clarity = ",cas=strength=0.18" if with_adaptive_sharpen else ""
+    clarity = ",cas=strength=0.26" if with_adaptive_sharpen else ""
     return (
         "eq=contrast=1.055:brightness=0.012:saturation=1.20:gamma=0.985,"
-        "unsharp=7:7:0.36:5:5:0.10,"
+        "unsharp=5:5:0.30:3:3:0.10,"
         f"vignette=PI/16{clarity}"
     )
 
@@ -3968,19 +4026,19 @@ def enhanced_edit_filter(
     if show_text_overlays:
         filters.extend(
             [
-                f"drawbox=x=48:y=62:w={badge_width}:h=48:color={accent}@0.92:t=fill:"
+                f"drawbox=x=48:y=1092:w={badge_width}:h=48:color={accent}@0.92:t=fill:"
                 "enable='between(t,0.06,3.80)'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                 f"text='{badge}':expansion=none:fontcolor=white:fontsize=23:"
-                "x=68:y=73:enable='between(t,0.06,3.80)'",
-                "drawbox=x=48:y=120:w=984:h=250:color=black@0.62:t=fill:"
+                "x=68:y=1103:enable='between(t,0.06,3.80)'",
+                "drawbox=x=48:y=1150:w=984:h=220:color=black@0.46:t=fill:"
                 "enable='between(t,0.10,3.80)'",
-                f"drawbox=x=48:y=120:w=14:h=250:color={accent}@0.98:t=fill:"
+                f"drawbox=x=48:y=1150:w=14:h=220:color={accent}@0.98:t=fill:"
                 "enable='between(t,0.10,3.80)'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                 f"textfile='{hook_text_filename}':reload=0:expansion=none:"
                 "fontcolor=white:fontsize=48:line_spacing=10:borderw=2:bordercolor=black@0.85:"
-                "x='if(lt(t,0.48),-text_w+(t-0.10)*(76+text_w)/0.38,76)':y=168:"
+                "x='if(lt(t,0.48),-text_w+(t-0.10)*(76+text_w)/0.38,76)':y=1192:"
                 "enable='between(t,0.10,3.80)'",
             ]
         )
@@ -3989,17 +4047,17 @@ def enhanced_edit_filter(
             if pov_end > 4.2:
                 filters.extend(
                     [
-                        "drawbox=x=78:y=126:w=924:h=116:color=black@0.68:t=fill:"
+                        "drawbox=x=78:y=1138:w=924:h=116:color=black@0.52:t=fill:"
                         f"enable='between(t,4.20,{pov_end:.3f})'",
-                        f"drawbox=x=78:y=126:w=9:h=116:color={accent_secondary}@0.96:t=fill:"
+                        f"drawbox=x=78:y=1138:w=9:h=116:color={accent_secondary}@0.96:t=fill:"
                         f"enable='between(t,4.20,{pov_end:.3f})'",
                         "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                         f"text='POV':expansion=none:fontcolor={accent_secondary}:fontsize=20:"
-                        f"x=108:y=144:enable='between(t,4.20,{pov_end:.3f})'",
+                        f"x=108:y=1156:enable='between(t,4.20,{pov_end:.3f})'",
                         "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
                         f"textfile='{pov_text_filename}':reload=0:expansion=none:"
                         "fontcolor=white:fontsize=27:line_spacing=5:borderw=1:bordercolor=black@0.82:"
-                        f"x=108:y=176:enable='between(t,4.20,{pov_end:.3f})'",
+                        f"x=108:y=1188:enable='between(t,4.20,{pov_end:.3f})'",
                     ]
                 )
         # Subtle pattern interrupts inside the first 30 seconds. These are
@@ -4064,19 +4122,19 @@ def enhanced_edit_filter(
         card_end = max(card_start + 0.2, safe_duration - 1.28)
         filters.extend(
             [
-                "drawbox=x=48:y=124:w=984:h=224:color=black@0.76:t=fill:"
+                "drawbox=x=48:y=1138:w=984:h=224:color=black@0.56:t=fill:"
                 f"enable='between(t,{card_start:.3f},{card_end:.3f})'",
-                f"drawbox=x=48:y=124:w=14:h=224:color={accent_secondary}@0.98:t=fill:"
+                f"drawbox=x=48:y=1138:w=14:h=224:color={accent_secondary}@0.98:t=fill:"
                 f"enable='between(t,{card_start:.3f},{card_end:.3f})'",
-                f"drawbox=x=76:y=142:w=244:h=42:color={accent}@0.94:t=fill:"
+                f"drawbox=x=76:y=1156:w=244:h=42:color={accent}@0.94:t=fill:"
                 f"enable='between(t,{card_start:.3f},{card_end:.3f})'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-                "text='INTISARI':expansion=none:fontcolor=white:fontsize=20:x=94:y=151:"
+                "text='INTISARI':expansion=none:fontcolor=white:fontsize=20:x=94:y=1165:"
                 f"enable='between(t,{card_start:.3f},{card_end:.3f})'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                 f"textfile='{payoff_text_filename}':reload=0:expansion=none:"
                 "fontcolor=white:fontsize=39:line_spacing=8:borderw=2:bordercolor=black@0.86:"
-                f"x=82:y=210:enable='between(t,{card_start:.3f},{card_end:.3f})'",
+                f"x=82:y=1224:enable='between(t,{card_start:.3f},{card_end:.3f})'",
             ]
         )
     if show_text_overlays and adaptive_plan.loop_boost:
@@ -4152,7 +4210,7 @@ SOFT_CAPTION_SHADOW = 0.35
 @dataclass
 class CaptionStyle:
     font_size: int = 8
-    position: CaptionPosition = "upper"
+    position: CaptionPosition = "bottom"
     color: str = "#FFFFFF"
     font_family: str = DEFAULT_FONT
     outline_width: float = 0.5
@@ -4198,7 +4256,7 @@ def build_subtitle_style(caption: CaptionStyle) -> str:
 
 
 def caption_gradient_blur_filter(position: CaptionPosition) -> str:
-    """Return a soft blurred video band with a vertical alpha gradient behind captions."""
+    """Add a face-safe gradient shade without blurring source pixels."""
     band_height = 380
     if position == "bottom":
         band_y = 1450
@@ -4208,16 +4266,15 @@ def caption_gradient_blur_filter(position: CaptionPosition) -> str:
         band_y = 280
     alpha = "255*0.88*(1-pow(abs(Y-H/2)/(H/2),2))"
     return (
-        "split=2[caption_base][caption_blur];"
-        f"[caption_blur]crop=1080:{band_height}:0:{band_y},"
-        "gblur=sigma=24,drawbox=color=black@0.24:t=fill,format=rgba,"
-        f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{alpha}'[caption_band];"
+        "split=2[caption_base][caption_shade_src];"
+        f"[caption_shade_src]crop=1080:{band_height}:0:{band_y},format=rgba,"
+        f"geq=r='0':g='0':b='0':a='{alpha}*0.28'[caption_band];"
         f"[caption_base][caption_band]overlay=0:{band_y}"
     )
 
 
 def landscape_caption_gradient_blur_filter(position: CaptionPosition) -> str:
-    """Add a restrained readable band sized for a 1920x1080 long-form canvas."""
+    """Add a face-safe caption shade sized for a 1920x1080 canvas."""
     band_height = 250
     if position == "bottom":
         band_y = 760
@@ -4227,10 +4284,9 @@ def landscape_caption_gradient_blur_filter(position: CaptionPosition) -> str:
         band_y = 105
     alpha = "255*0.82*(1-pow(abs(Y-H/2)/(H/2),2))"
     return (
-        "split=2[wide_caption_base][wide_caption_blur];"
-        f"[wide_caption_blur]crop=1920:{band_height}:0:{band_y},"
-        "gblur=sigma=28,drawbox=color=black@0.28:t=fill,format=rgba,"
-        f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{alpha}'[wide_caption_band];"
+        "split=2[wide_caption_base][wide_caption_shade_src];"
+        f"[wide_caption_shade_src]crop=1920:{band_height}:0:{band_y},format=rgba,"
+        f"geq=r='0':g='0':b='0':a='{alpha}*0.32'[wide_caption_band];"
         f"[wide_caption_base][wide_caption_band]overlay=0:{band_y}"
     )
 
@@ -5365,7 +5421,7 @@ def parse_args() -> argparse.Namespace:
         default=300,
         help="Target duration in seconds for highlight_5m mode",
     )
-    parser.add_argument("--model", default="Systran/faster-whisper-small", help="faster-whisper model name")
+    parser.add_argument("--model", default=DEFAULT_TRANSCRIPTION_MODEL, help="faster-whisper model name")
     parser.add_argument("--language", default="id", help="Transcription language code")
     parser.add_argument("--output", default="outputs", help="Output directory")
     parser.add_argument("--analyze-seconds", type=float, help="Only transcribe the first N seconds; useful for quick tests")
@@ -5381,7 +5437,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--crop-mode",
         choices=["center", "person", "streamer"],
-        default="center",
+        default="person",
         help="center, person-focused, or streamer (webcam stacked over gameplay)",
     )
     parser.add_argument(
@@ -5411,7 +5467,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--caption-position",
         choices=["upper", "center", "bottom"],
-        default="upper",
+        default="bottom",
         help="Burned caption vertical position",
     )
     parser.add_argument("--caption-color", default="#FFFFFF", help="Burned caption text color, hex e.g. #FFFFFF")

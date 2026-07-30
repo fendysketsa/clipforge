@@ -48,6 +48,7 @@ from clipper import (
     score_window,
     segments_for_clip,
     split_subtitle_text,
+    transcription_decode_options,
     visual_theme_profile,
 )
 
@@ -69,8 +70,8 @@ def test_hex_to_ass_color_invalid_falls_back():
     assert _hex_to_ass_color("nonsense") == "&H00FFFFFF"
 
 
-def test_build_subtitle_style_upper_default():
-    style = build_subtitle_style(CaptionStyle())
+def test_build_subtitle_style_upper():
+    style = build_subtitle_style(CaptionStyle(position="upper"))
     assert "Alignment=6" in style
     assert "FontName=DejaVu Sans" in style
     assert "FontSize=8" in style
@@ -93,6 +94,13 @@ def test_build_subtitle_style_center():
 
 def test_build_subtitle_style_bottom():
     style = build_subtitle_style(CaptionStyle(position="bottom"))
+    assert "Alignment=2" in style
+    assert "MarginV=24" in style
+
+
+def test_build_subtitle_style_defaults_to_face_safe_bottom():
+    style = build_subtitle_style(CaptionStyle())
+
     assert "Alignment=2" in style
     assert "MarginV=24" in style
 
@@ -129,11 +137,12 @@ def test_available_fonts_has_defaults():
     assert "Noto Sans" in AVAILABLE_FONTS
 
 
-def test_caption_gradient_blur_filter_tracks_caption_position():
+def test_caption_gradient_backdrop_tracks_position_without_blurring_faces():
     upper = caption_gradient_blur_filter("upper")
     bottom = caption_gradient_blur_filter("bottom")
 
-    assert "gblur=sigma=24" in upper
+    assert "gblur=" not in upper
+    assert "geq=r='0':g='0':b='0'" in upper
     assert "geq=" in upper
     assert "overlay=0:280" in upper
     assert "overlay=0:1450" in bottom
@@ -310,11 +319,12 @@ def test_landscape_compilation_edit_uses_chapters_and_sparse_emphasis():
     assert "y=1072" in value
 
 
-def test_landscape_caption_blur_uses_16_by_9_canvas():
+def test_landscape_caption_backdrop_uses_16_by_9_canvas_without_face_blur():
     value = landscape_caption_gradient_blur_filter("bottom")
 
     assert "crop=1920:250" in value
     assert "overlay=0:760" in value
+    assert "gblur=" not in value
 
 
 def test_enhanced_edit_filter_adds_motion_hook_transition_and_progress():
@@ -326,6 +336,8 @@ def test_enhanced_edit_filter_adds_motion_hook_transition_and_progress():
     assert "textfile='clip.hook.txt'" in value
     assert "textfile='clip.pov.txt'" in value
     assert "text='POV'" in value
+    assert "drawbox=x=48:y=1150" in value
+    assert ":y=1192:" in value
     assert "between(t,12.000,12.320)" in value
     assert "between(t,24.000,24.320)" in value
     assert "iw*t/60.000" in value
@@ -698,9 +710,22 @@ def test_animated_3d_look_has_safe_color_grade_fallback():
 def test_animated_3d_look_can_add_adaptive_clarity():
     value = animated_3d_look_filter(with_adaptive_sharpen=True)
 
-    assert "hqdn3d=1.05:0.80:2.20:1.70" in value
-    assert "blend=all_mode=multiply:all_opacity=0.11" in value
-    assert value.endswith("cas=strength=0.22")
+    assert "hqdn3d=0.42:0.32:0.85:0.65" in value
+    assert "blend=all_mode=multiply:all_opacity=0.07" in value
+    assert value.endswith("cas=strength=0.30")
+
+
+def test_accuracy_first_transcription_decode_uses_beam_search_and_word_timestamps(monkeypatch):
+    monkeypatch.setenv("CLIPFORGE_TRANSCRIPTION_HOTWORDS", "Ustaz Abdul Somad, Al-Qur'an")
+
+    options = transcription_decode_options("id")
+
+    assert options["language"] == "id"
+    assert options["beam_size"] == 5
+    assert options["best_of"] == 5
+    assert options["word_timestamps"] is True
+    assert options["condition_on_previous_text"] is True
+    assert options["hotwords"] == "Ustaz Abdul Somad, Al-Qur'an"
 
 
 def test_animated_3d_basic_fallback_uses_widely_available_filters():

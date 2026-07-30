@@ -87,7 +87,7 @@ Default output video:
 - H.264 MP4, CRF 18
 - source download mencoba HD sampai 1080p (`bestvideo+bestaudio`)
 - subtitle burned-in
-- caption ringkas dengan background gradient-blur
+- caption ringkas dengan gradient shade face-safe tanpa memburamkan piksel sumber
 - hook visual/audio, reaction kontekstual, dan pattern interrupt
 - mode visual `animated_3d` aktif secara default untuk look film animasi 3D lokal yang lebih jernih dengan denoise ringan, detail adaptif, dan outline halus sambil tetap mempertahankan wajah serta gerakan sumber
 - backdrop penuh tulisan atau video yang sudah memiliki panel judul/media di bawah memicu transisi split 50/50 adaptif: panel bawaan dibuang, close-up pembicara dipusatkan di atas, dan air pantai 3D bergerak samar di bawah, disambung animated blur serta feathered gradient tanpa garis potong
@@ -95,7 +95,10 @@ Default output video:
 - kandidat wajib punya point utama, batas kalimat tuntas, dan payoff dekat ending
 - treatment loop hanya aktif saat payoff benar-benar terhubung ke hook
 - metadata/chapter container sumber tidak diwariskan ke MP4 hasil; bukti lisensi tetap disimpan lokal
-- transcript lokal via `Systran/faster-whisper-small`
+- transcript lokal accuracy-first via `Systran/faster-whisper-medium`, beam search,
+  VAD, word timestamps, dan cache yang terikat model/bahasa
+- nama orang/brand/istilah khusus dapat diprioritaskan melalui
+  `CLIPFORGE_TRANSCRIPTION_HOTWORDS` (pisahkan dengan koma)
 - durasi clip pendek dinamis, maksimal 60 detik
 - mode `short` tidak merender kompilasi tambahan
 

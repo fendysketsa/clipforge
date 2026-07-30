@@ -193,7 +193,7 @@ class ClipJobRequest(BaseModel):
     max_duration: float = Field(default=60, ge=10, le=600)
     clip_mode: Literal["short", "highlight_5m"] = "short"
     compilation_target_seconds: float = Field(default=300, ge=240, le=360)
-    model: str = "Systran/faster-whisper-small"
+    model: str = "Systran/faster-whisper-medium"
     language: str = "id"
     analyze_seconds: float | None = Field(default=None, ge=10, le=7200)
     video_quality: Literal["standard", "high", "max"] = "high"
@@ -202,10 +202,10 @@ class ClipJobRequest(BaseModel):
     burn_subtitles: bool = True
     enhanced_edit: bool = True
     remove_running_text: bool = True
-    crop_mode: Literal["center", "person", "streamer"] = "center"
+    crop_mode: Literal["center", "person", "streamer"] = "person"
     cam_corner: Literal["auto", "br", "bl", "tr", "tl"] = "auto"
     caption_font_size: int = Field(default=8, ge=6, le=120)
-    caption_position: Literal["upper", "center", "bottom"] = "upper"
+    caption_position: Literal["upper", "center", "bottom"] = "bottom"
     caption_color: str = "#FFFFFF"
     caption_font: Literal[
         "DejaVu Sans", "DejaVu Serif", "Liberation Sans", "Liberation Serif", "Noto Sans"

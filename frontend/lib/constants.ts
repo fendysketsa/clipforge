@@ -3,7 +3,7 @@ import type { ClipMode, JobStatus, VideoQuality } from "../types/clip.type";
 
 export const DEFAULT_MIN_DURATION = 15;
 export const DEFAULT_MAX_DURATION = 60;
-export const DEFAULT_MODEL = "Systran/faster-whisper-small";
+export const DEFAULT_MODEL = "Systran/faster-whisper-medium";
 export const DEFAULT_LANGUAGE = "id";
 export const DEFAULT_VIDEO_QUALITY: VideoQuality = "high";
 export const DEFAULT_CLIP_MODE: ClipMode = "short";
@@ -12,7 +12,7 @@ export const DEFAULT_AI_ENABLED = true;
 export const DEFAULT_AI_BASE_URL = "http://localhost:11434/v1";
 export const DEFAULT_AI_MODEL = "";
 export const DEFAULT_CAPTION_FONT_SIZE = 8;
-export const DEFAULT_CAPTION_POSITION = "upper";
+export const DEFAULT_CAPTION_POSITION = "bottom";
 export const DEFAULT_CAPTION_COLOR = "#FFFFFF";
 export const CAPTION_FONT_SIZE_MIN = 8;
 export const CAPTION_FONT_SIZE_MAX = 36;

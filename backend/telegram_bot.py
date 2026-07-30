@@ -136,7 +136,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "ai_enabled": True,
     "ai_base_url": DEFAULT_TELEGRAM_AI_BASE_URL,
     "ai_model": DEFAULT_TELEGRAM_AI_MODEL,
-    "caption_position": "upper",
+    "caption_position": "bottom",
     "caption_font_size": 8,
 }
 

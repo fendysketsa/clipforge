@@ -97,6 +97,9 @@ def test_short_defaults_are_fast_fyp_length():
 
     assert request.min_duration == 15
     assert request.max_duration == 60
+    assert request.model == "Systran/faster-whisper-medium"
+    assert request.crop_mode == "person"
+    assert request.caption_position == "bottom"
 
 
 def test_normalize_keeps_under_budget_target(monkeypatch):
