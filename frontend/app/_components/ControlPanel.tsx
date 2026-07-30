@@ -420,7 +420,7 @@ export function ControlPanel({
                 clipMode === "highlight_5m" ? ", plus split kanan–kiri saat dua pembicara terdeteksi" : ""
               }.`
             : visualMode === "animated_3d"
-              ? "Look film animasi 3D lokal yang lebih jernih: denoise ringan, warna hangat, detail adaptif, depth contrast, dan outline halus. Wajah serta gerakan asli tetap konsisten."
+              ? "Look 3D sekaligus sinematik: depth, warna, dan outline tetap konsisten; kamera melakukan zoom/reframe halus ke posisi bervariasi hanya saat momen POV terdeteksi."
             : visualMode === "speaker_split"
               ? "Memprioritaskan dua panel pembicara; otomatis kembali ke frame sinematik bila wajah tidak cukup jelas."
               : "Frame premium tetap stabil dengan border di dalam area video."}

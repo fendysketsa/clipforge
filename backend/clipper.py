@@ -3467,6 +3467,57 @@ def emphasis_timestamps(
     return timestamps
 
 
+def cinematic_pov_windows(
+    clip: ClipCandidate,
+    clip_segments: list[TranscriptSegment],
+    *,
+    limit: int = 3,
+) -> list[tuple[float, float]]:
+    """Find sparse direct-POV moments for a brief cinematic camera reframe."""
+    direct_words = {
+        "aku",
+        "anda",
+        "bayangkan",
+        "coba",
+        "cobalah",
+        "kalian",
+        "kamu",
+        "pernahkah",
+        "rasakan",
+        "saya",
+    }
+    direct_phrases = (
+        "kalau kita",
+        "ketika kita",
+        "menurut saya",
+        "pernah tidak",
+        "coba lihat",
+        "coba pikir",
+    )
+    duration = max(0.1, clip.end - clip.start)
+    windows: list[tuple[float, float]] = []
+    for segment in clip_segments:
+        text = segment.text.casefold()
+        words = set(re.findall(r"[\w']+", text))
+        if not words.intersection(direct_words) and not any(
+            phrase in text for phrase in direct_phrases
+        ):
+            continue
+        start = max(0.0, segment.start - clip.start)
+        if start < 1.8 or start >= duration - 2.0:
+            continue
+        if windows and start - windows[-1][1] < 3.2:
+            continue
+        window_duration = max(0.9, min(1.55, segment.end - segment.start))
+        end = min(duration - 0.25, start + window_duration)
+        if end - start < 0.65:
+            continue
+        windows.append((round(start, 3), round(end, 3)))
+        if len(windows) >= limit:
+            break
+    return windows
+
+
 def detect_reaction_cues(
     clip: ClipCandidate,
     clip_segments: list[TranscriptSegment],
@@ -3948,15 +3999,65 @@ def landscape_compilation_edit_filter(
 
 
 def modern_gradient_border_filters(accent: str, secondary: str) -> list[str]:
-    """Build a restrained dual-tone glow around the inset sharp video panel."""
+    """Build a dual-tone frame with a light tracer that runs around its edge."""
     return [
         f"drawbox=x=30:y=61:w=1020:h=1798:color={secondary}@0.20:t=12",
         f"drawbox=x=35:y=66:w=1010:h=1788:color={accent}@0.62:t=7",
         "drawbox=x=39:y=70:w=1002:h=1780:color=white@0.22:t=2",
-        f"drawbox=x=35:y=66:w=505:h=7:color={secondary}@0.94:t=fill",
-        f"drawbox=x=540:y=1847:w=505:h=7:color={secondary}@0.86:t=fill",
-        f"drawbox=x=35:y=960:w=7:h=894:color={secondary}@0.78:t=fill",
-        f"drawbox=x=1038:y=66:w=7:h=894:color={secondary}@0.78:t=fill",
+        (
+            "drawbox=x='35+775*mod(t,4.8)/1.2':y=66:w=225:h=7:"
+            f"color={secondary}@0.98:t=fill:enable='between(mod(t,4.8),0,1.2)'"
+        ),
+        (
+            "drawbox=x=1038:y='66+1521*(mod(t,4.8)-1.2)/1.2':w=7:h=260:"
+            f"color={accent}@0.98:t=fill:enable='between(mod(t,4.8),1.2,2.4)'"
+        ),
+        (
+            "drawbox=x='810-775*(mod(t,4.8)-2.4)/1.2':y=1847:w=225:h=7:"
+            f"color={secondary}@0.98:t=fill:enable='between(mod(t,4.8),2.4,3.6)'"
+        ),
+        (
+            "drawbox=x=35:y='1587-1521*(mod(t,4.8)-3.6)/1.2':w=7:h=260:"
+            f"color={accent}@0.98:t=fill:enable='between(mod(t,4.8),3.6,4.8)'"
+        ),
+    ]
+
+
+def intro_particle_burst_filters(accent: str, secondary: str) -> list[str]:
+    """Add a brief edge-safe sparkle burst during the opening zoom-out."""
+    return [
+        (
+            "drawbox=x='86+150*t':y='92+105*t':w=9:h=9:"
+            f"color={accent}@0.92:t=fill:enable='between(t,0.04,0.72)'"
+        ),
+        (
+            "drawbox=x='246+70*t':y='76+178*t':w=5:h=5:"
+            f"color={secondary}@0.88:t=fill:enable='between(t,0.10,0.64)'"
+        ),
+        (
+            "drawbox=x='950-130*t':y='102+130*t':w=7:h=7:"
+            "color=white@0.82:t=fill:enable='between(t,0.08,0.68)'"
+        ),
+        (
+            "drawbox=x='1010-165*t':y='370+72*t':w=11:h=11:"
+            f"color={accent}@0.86:t=fill:enable='between(t,0.16,0.78)'"
+        ),
+        (
+            "drawbox=x='72+155*t':y='1480-95*t':w=6:h=6:"
+            "color=white@0.78:t=fill:enable='between(t,0.12,0.66)'"
+        ),
+        (
+            "drawbox=x='995-145*t':y='1600-120*t':w=8:h=8:"
+            f"color={secondary}@0.90:t=fill:enable='between(t,0.18,0.82)'"
+        ),
+        (
+            "drawbox=x='210+92*t':y='1810-155*t':w=10:h=10:"
+            f"color={accent}@0.82:t=fill:enable='between(t,0.22,0.84)'"
+        ),
+        (
+            "drawbox=x='828-76*t':y='1828-188*t':w=5:h=5:"
+            f"color={secondary}@0.88:t=fill:enable='between(t,0.14,0.70)'"
+        ),
     ]
 
 
@@ -3974,6 +4075,7 @@ def enhanced_edit_filter(
     show_reactions: bool = True,
     codex_plan: CodexEditPlan | None = None,
     payoff_text_filename: str = "",
+    cinematic_pov_windows: list[tuple[float, float]] | None = None,
 ) -> str:
     """Add context-aware motion graphics while keeping faces and captions readable."""
     safe_duration = max(0.1, duration)
@@ -4001,19 +4103,60 @@ def enhanced_edit_filter(
     amp_y = min(16.0, max(6.0, center_y - 2))
     x_period = 7 - motion_variant
     y_period = 5 + motion_variant
+    intro_zoom_pixels = 70 + motion_variant * 8
+    pov_zoom_terms: list[str] = []
+    pov_x_terms: list[str] = []
+    pov_y_terms: list[str] = []
+    camera_positions = (
+        (12, -8),
+        (-12, -6),
+        (10, 12),
+        (-10, 10),
+        (14, 2),
+        (-14, 4),
+    )
+    for index, (start, end) in enumerate(cinematic_pov_windows or []):
+        if end <= start:
+            continue
+        duration_value = end - start
+        phase = f"sin(PI*(t-{start:.3f})/{duration_value:.3f})"
+        x_offset, y_offset = camera_positions[
+            (motion_variant * 3 + index * 2) % len(camera_positions)
+        ]
+        zoom_pixels = 24 + ((motion_variant + index) % 3) * 4
+        active = f"between(t,{start:.3f},{end:.3f})"
+        pov_zoom_terms.append(f"if({active},{zoom_pixels}*{phase},0)")
+        pov_x_terms.append(f"if({active},{x_offset}*{phase},0)")
+        pov_y_terms.append(f"if({active},{y_offset}*{phase},0)")
+    scale_expression = (
+        f"{scale_width}+{intro_zoom_pixels}*max(0,1-t/0.72)"
+        + "".join(f"+{term}" for term in pov_zoom_terms)
+    )
+    if cinematic_pov_windows is None:
+        x_motion = f"{amp_x:.1f}*sin(2*PI*t/{x_period})"
+        y_motion = f"{amp_y:.1f}*sin(2*PI*t/{y_period})"
+    else:
+        x_motion = "+".join(pov_x_terms) or "0"
+        y_motion = "+".join(pov_y_terms) or "0"
     badge_width = min(430, max(250, len(badge) * 17 + 60))
     adaptive_plan = codex_plan or CodexEditPlan()
     filters = [
         grade,
-        f"scale={scale_width}:{scale_height}:flags=lanczos",
+        (
+            "scale=w="
+            f"'trunc(({scale_expression})/2)*2':"
+            "h=-2:eval=frame:flags=lanczos"
+        ),
         "crop=1080:1920:"
-        f"x='{center_x:.1f}+{amp_x:.1f}*sin(2*PI*t/{x_period})':"
-        f"y='{center_y:.1f}+{amp_y:.1f}*sin(2*PI*t/{y_period})'",
+        f"x='(iw-ow)/2+{x_motion}':"
+        f"y='(ih-oh)/2+{y_motion}'",
+        "setsar=1",
         "vignette=PI/9",
         "fade=t=in:st=0:d=0.18",
         modern_blurred_video_frame_filter(accent, accent_secondary),
     ]
     filters.extend(modern_gradient_border_filters(accent, accent_secondary))
+    filters.extend(intro_particle_burst_filters(accent, accent_secondary))
     if adaptive_plan.hook_boost:
         filters.extend(
             [
@@ -4203,6 +4346,7 @@ AVAILABLE_FONTS = {
     "Noto Sans": "Noto Sans",
 }
 DEFAULT_FONT = "DejaVu Sans"
+CHANNEL_WATERMARK = "@ryuundyofficial"
 SOFT_CAPTION_BACK_COLOR = "&HC8000000"
 SOFT_CAPTION_SHADOW = 0.35
 
@@ -4252,6 +4396,27 @@ def build_subtitle_style(caption: CaptionStyle) -> str:
         f"OutlineColour={outline_color},BackColour={SOFT_CAPTION_BACK_COLOR},"
         f"BorderStyle=1,Outline={outline},Shadow={SOFT_CAPTION_SHADOW},Blur=0.35,"
         f"Alignment={alignment},MarginL=36,MarginR=36,MarginV={margin_v},WrapStyle=0"
+    )
+
+
+def channel_watermark_filter(output_format: str) -> str:
+    """Render a small, readable channel signature away from captions and faces."""
+    if output_format == "landscape_compilation":
+        x_position = "w-text_w-42"
+        y_position = "38"
+        font_size = 22
+    else:
+        x_position = "w-text_w-62"
+        y_position = "98"
+        font_size = 24
+    return (
+        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+        f"text='{CHANNEL_WATERMARK}':expansion=none:"
+        f"fontcolor=white@0.90:fontsize={font_size}:"
+        "borderw=1:bordercolor=black@0.82:"
+        "box=1:boxcolor=black@0.38:boxborderw=9:"
+        "shadowcolor=black@0.78:shadowx=2:shadowy=2:"
+        f"x='{x_position}':y={y_position}"
     )
 
 
@@ -4614,6 +4779,11 @@ def export_clip(
     adaptive_plan = codex_edit_plan(clip)
     theme_profile = visual_theme_profile(clip)
     emphasis_times = emphasis_timestamps(clip, clip_segments)
+    pov_windows = (
+        cinematic_pov_windows(clip, clip_segments)
+        if visual_mode == "animated_3d" and output_format == "vertical_short"
+        else None
+    )
     core_message = payoff_banner_text(clip, clip_segments)
     reaction_cues = detect_reaction_cues(clip, clip_segments)
     sound_effect_cues = (
@@ -4672,6 +4842,10 @@ def export_clip(
         "remove_running_text": remove_running_text,
         "visual_theme": theme_profile["theme"],
         "emphasis_times": emphasis_times,
+        "cinematic_pov_windows": [
+            {"start": start, "end": end}
+            for start, end in (pov_windows or [])
+        ],
         "reaction_cues": [asdict(cue) for cue in reaction_cues],
         "sound_effect_cues": [asdict(cue) for cue in sound_effect_cues],
         "drawtext_supported": drawtext_supported,
@@ -4925,8 +5099,38 @@ def export_clip(
                     show_reactions=reaction_overlays_supported,
                     codex_plan=adaptive_plan,
                     payoff_text_filename=payoff_text_path.name if drawtext_supported else "",
+                    cinematic_pov_windows=pov_windows,
                 )}"
             )
+            sidecar_payload["motion_impact"] = {
+                "animated_border": True,
+                "intro_zoom_out": True,
+                "intro_edge_particles": True,
+                "particle_duration_seconds": 0.84,
+            }
+            applied_edits.append(
+                "Border neon bergerak, zoom-out pembuka, dan bintik cahaya singkat ditambahkan untuk memperkuat hook."
+            )
+            if pov_windows:
+                applied_edits.append(
+                    f"Look 3D dipadukan dengan {len(pov_windows)} reframe sinematik pada momen POV terdeteksi."
+                )
+    if drawtext_supported:
+        vf = f"{vf},{channel_watermark_filter(output_format)}"
+        sidecar_payload["channel_watermark"] = {
+            "enabled": True,
+            "text": CHANNEL_WATERMARK,
+            "position": "top_right",
+        }
+        applied_edits.append(
+            f"Watermark channel {CHANNEL_WATERMARK} ditambahkan di pojok kanan atas."
+        )
+    else:
+        sidecar_payload["channel_watermark"] = {
+            "enabled": False,
+            "text": CHANNEL_WATERMARK,
+            "reason": "ffmpeg_drawtext_unavailable",
+        }
     if burn_subtitles and clip_segments and subtitles_supported:
         style = build_subtitle_style(caption or CaptionStyle())
         if output_format == "landscape_compilation":

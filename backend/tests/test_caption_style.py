@@ -22,6 +22,8 @@ from clipper import (
     candidate_fyp_analysis,
     candidate_story_metrics,
     caption_gradient_blur_filter,
+    channel_watermark_filter,
+    cinematic_pov_windows,
     clip_topic_hashtags,
     codex_edit_plan,
     contextual_audio_mix_filter,
@@ -34,6 +36,7 @@ from clipper import (
     fallback_social_caption,
     ffmpeg_clean_metadata_args,
     hook_banner_text,
+    intro_particle_burst_filters,
     is_source_branding_segment,
     landscape_caption_gradient_blur_filter,
     landscape_compilation_edit_filter,
@@ -123,6 +126,18 @@ def test_build_subtitle_style_outline_clamped():
 def test_build_subtitle_style_font_size_clamped():
     assert "FontSize=6" in build_subtitle_style(CaptionStyle(font_size=2))
     assert "FontSize=120" in build_subtitle_style(CaptionStyle(font_size=500))
+
+
+def test_channel_watermark_is_small_visible_and_top_right():
+    vertical = channel_watermark_filter("vertical_short")
+    landscape = channel_watermark_filter("landscape_compilation")
+
+    assert "text='@ryuundyofficial'" in vertical
+    assert "fontcolor=white@0.90:fontsize=24" in vertical
+    assert "x='w-text_w-62':y=98" in vertical
+    assert "boxcolor=black@0.38" in vertical
+    assert "fontcolor=white@0.90:fontsize=22" in landscape
+    assert "x='w-text_w-42':y=38" in landscape
 
 
 def test_split_subtitle_text_keeps_default_lines_compact():
@@ -330,7 +345,9 @@ def test_landscape_caption_backdrop_uses_16_by_9_canvas_without_face_blur():
 def test_enhanced_edit_filter_adds_motion_hook_transition_and_progress():
     value = enhanced_edit_filter(60, "clip.hook.txt", pov_text_filename="clip.pov.txt")
 
-    assert "scale=1120:1992" in value
+    assert "scale=w='trunc((1120+70*max(0,1-t/0.72))/2)*2'" in value
+    assert "crop=1080:1920:x='(iw-ow)/2" in value
+    assert "setsar=1" in value
     assert "vignette=PI/9" in value
     assert "fade=t=in" in value
     assert "textfile='clip.hook.txt'" in value
@@ -675,6 +692,33 @@ def test_pov_banner_is_compact_and_uses_candidate_angle():
     assert len(value.split()) <= 12
 
 
+def test_cinematic_pov_windows_only_select_direct_viewpoint_moments():
+    clip = ClipCandidate(1, 10, 35, 25, 85, "Judul", "test", "Isi")
+    segments = [
+        TranscriptSegment(10, 12, "Pembahasan ini dimulai dari sebuah kejadian."),
+        TranscriptSegment(14, 16, "Bayangkan kamu berada di posisi tersebut."),
+        TranscriptSegment(18, 20, "Lalu pembahasan kembali menjadi umum."),
+        TranscriptSegment(23, 25, "Menurut saya keputusan itu mengubah semuanya."),
+        TranscriptSegment(33, 35, "Kamu harus ingat penutup ini."),
+    ]
+
+    assert cinematic_pov_windows(clip, segments) == [(4, 5.55), (13, 14.55)]
+
+
+def test_animated_3d_cinematic_motion_reframes_only_inside_pov_windows():
+    value = enhanced_edit_filter(
+        30,
+        "clip.hook.txt",
+        variation=1,
+        cinematic_pov_windows=[(5.0, 6.4), (14.0, 15.2)],
+    )
+
+    assert "if(between(t,5.000,6.400),28*sin(PI*(t-5.000)/1.400),0)" in value
+    assert "if(between(t,14.000,15.200),32*sin(PI*(t-14.000)/1.200),0)" in value
+    assert "x='(iw-ow)/2+-10*sin(PI*(t-5.000)/1.400)" in value
+    assert "sin(2*PI*t/6)" not in value
+
+
 def test_modern_blurred_frame_keeps_sharp_inset_over_moving_background():
     value = modern_blurred_video_frame_filter("#22C55E", "#FACC15")
 
@@ -745,7 +789,19 @@ def test_modern_gradient_border_uses_dual_tone_glow_layers():
     assert "#22C55E@0.62" in value
     assert "#FACC15@0.20" in value
     assert "color=white@0.22" in value
-    assert "x=35:y=66:w=505:h=7" in value
+    assert "x='35+775*mod(t,4.8)/1.2'" in value
+    assert "between(mod(t,4.8),3.6,4.8)" in value
+
+
+def test_intro_particle_burst_stays_brief_and_near_the_frame_edges():
+    filters = intro_particle_burst_filters("#22C55E", "#FACC15")
+    value = ",".join(filters)
+
+    assert len(filters) == 8
+    assert "between(t,0.04,0.72)" in value
+    assert "between(t,0.22,0.84)" in value
+    assert "#22C55E@0.92" in value
+    assert "#FACC15@0.88" in value
 
 
 def test_enhanced_edit_filter_falls_back_without_drawtext():
@@ -793,7 +849,7 @@ def test_mystery_islamic_theme_adds_context_badge_and_emphasis():
         variation=1,
     )
 
-    assert "scale=1140:2028" in value
+    assert "scale=w='trunc((1140+78*max(0,1-t/0.72))/2)*2'" in value
     assert "MISTERI / HIKMAH" in value
     assert "CEK FAKTANYA" in value
     assert "between(t,5.000,5.420)" in value
