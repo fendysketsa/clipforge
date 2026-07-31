@@ -1043,7 +1043,7 @@ h2 {
   border-radius: inherit;
   background: linear-gradient(90deg, #2dd4bf, #34d399);
   box-shadow: 0 0 12px rgba(52, 211, 153, 0.35);
-  transition: width 900ms linear;
+  transition: width 160ms linear;
 }
 
 .uploadCleanupTooltip ul {
@@ -1059,7 +1059,7 @@ h2 {
 
 .uploadCleanupSteps li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 7px;
   transition:
     color 180ms ease,
@@ -1086,7 +1086,28 @@ h2 {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
+  padding-top: 1px;
   color: #5eead4;
+}
+
+.uploadCleanupStepCopy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.uploadCleanupStepCopy small {
+  color: #729a92;
+  font-size: 8px;
+  font-weight: 600;
+}
+
+.uploadCleanupSteps li.isComplete .uploadCleanupStepCopy small {
+  color: #6fbd91;
+}
+
+.uploadCleanupSteps li.isRunning .uploadCleanupStepCopy small {
+  color: #55cbbb;
 }
 
 .uploadCleanupSteps li.isComplete .uploadCleanupStepIcon {

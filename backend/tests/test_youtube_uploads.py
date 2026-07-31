@@ -1,5 +1,6 @@
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -141,6 +142,29 @@ def test_queue_positions_follow_oldest_queued_first():
     assert positioned["queued-2"].queue_position == 2
     assert positioned["queued-2"].queue_total == 2
     assert positioned["running"].queue_position is None
+
+
+def test_youtube_cleanup_countdown_uses_backend_clock():
+    now = datetime.now(timezone.utc)
+    upload = YouTubeUploadJob(
+        id="cleanup",
+        source_job_id="job-1",
+        clip_url="/outputs/demo/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="completed",
+        created_at=now.isoformat(),
+        updated_at=now.isoformat(),
+        finished_at=now.isoformat(),
+        title="Cleanup",
+        video_url="https://www.youtube.com/watch?v=abcDEF12345",
+        clip_delete_after=(now + timedelta(seconds=30)).isoformat(),
+    )
+
+    positioned = youtube_uploads_with_queue_positions([upload])[0]
+
+    assert positioned.backend_now is not None
+    assert positioned.clip_delete_remaining_seconds is not None
+    assert 29 <= positioned.clip_delete_remaining_seconds <= 30
 
 
 def test_identical_completed_clip_is_not_uploaded_again(monkeypatch, tmp_path):
@@ -336,6 +360,7 @@ def test_completed_upload_cleanup_deletes_real_file_and_updates_job(monkeypatch,
     clip_two_path = clip_dir / clip_two.name
     clip_one_path.write_bytes(b"video")
     clip_two_path.write_bytes(b"keep")
+    clip_one_path.with_name("clip_01_thumb.jpg").write_bytes(b"thumbnail")
     clip_one_path.with_suffix(".json").write_text('{"title": "Uploaded"}', encoding="utf-8")
     clip_one_path.with_name("clip_01_caption.txt").write_text("caption", encoding="utf-8")
 
@@ -366,15 +391,28 @@ def test_completed_upload_cleanup_deletes_real_file_and_updates_job(monkeypatch,
     cleanup_events = []
     original_set_cleanup_step = api.set_youtube_cleanup_step
 
-    def record_cleanup_step(upload_id, step, completed_steps):
+    def record_cleanup_step(upload_id, step, completed_steps, step_details=None):
         cleanup_events.append((step, tuple(completed_steps)))
-        original_set_cleanup_step(upload_id, step, completed_steps)
+        original_set_cleanup_step(upload_id, step, completed_steps, step_details)
 
     monkeypatch.setattr(api, "set_youtube_cleanup_step", record_cleanup_step)
 
-    removed, removed_job = delete_completed_youtube_upload_clip(upload.id)
+    removed, removed_job = delete_completed_youtube_upload_clip(
+        upload.id,
+        steps=("thumbnail",),
+    )
+    assert not clip_one_path.with_name("clip_01_thumb.jpg").exists()
+    assert clip_one_path.exists()
+    assert api.youtube_uploads[upload.id].clip_cleanup_completed_steps == ["thumbnail"]
 
-    assert removed >= 3
+    for step in ("metadata", "video", "workspace", "job_sync"):
+        step_removed, removed_job = delete_completed_youtube_upload_clip(
+            upload.id,
+            steps=(step,),
+        )
+        removed += step_removed
+
+    assert removed >= 4
     assert removed_job is False
     assert not clip_one_path.exists()
     assert not clip_one_path.with_suffix(".json").exists()
@@ -382,15 +420,19 @@ def test_completed_upload_cleanup_deletes_real_file_and_updates_job(monkeypatch,
     assert clip_two_path.exists()
     assert [clip.url for clip in api.jobs[job.id].clips] == [clip_two.url]
     assert [event[0] for event in cleanup_events if event[0]] == [
-        "video",
         "thumbnail",
         "metadata",
+        "video",
         "workspace",
         "job_sync",
     ]
     assert api.youtube_uploads[upload.id].clip_cleanup_completed_steps == list(
         api.YOUTUBE_CLEANUP_STEPS
     )
+    step_details = api.youtube_uploads[upload.id].clip_cleanup_step_details
+    assert list(step_details) == list(api.YOUTUBE_CLEANUP_STEPS)
+    assert all(item.completed_at for item in step_details.values())
+    assert all(item.duration_ms is not None for item in step_details.values())
 
 
 def test_completed_upload_cleanup_refuses_unverified_upload(monkeypatch):

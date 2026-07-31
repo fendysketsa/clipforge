@@ -74,12 +74,19 @@ LONG_VIDEO_ANALYSIS_RATIO = 0.35
 MAX_AUTO_ANALYSIS_SECONDS = 20 * 60
 CLIP_BUDGET_RATIO = 0.8
 YOUTUBE_CLEANUP_STEPS = (
-    "video",
     "thumbnail",
     "metadata",
+    "video",
     "workspace",
     "job_sync",
 )
+YOUTUBE_CLEANUP_STEP_RATIOS = {
+    "thumbnail": 0.25,
+    "metadata": 0.50,
+    "video": 1.0,
+    "workspace": 1.0,
+    "job_sync": 1.0,
+}
 FRESH_VIRAL_MAX_AGE_DAYS = 30
 MAX_VIRAL_FALLBACK_AGE_DAYS = 365
 CANCEL_GRACE_SECONDS = 8
@@ -402,6 +409,13 @@ class YouTubeBatchUploadRequest(BaseModel):
         return re.sub(r"\s+", " ", value).strip()[:100]
 
 
+class YouTubeCleanupStepProgress(BaseModel):
+    started_at: str
+    completed_at: str | None = None
+    duration_ms: int | None = None
+    removed_items: int = 0
+
+
 class YouTubeUploadJob(BaseModel):
     id: str
     source_job_id: str
@@ -432,6 +446,9 @@ class YouTubeUploadJob(BaseModel):
     clip_cleanup_started_at: str | None = None
     clip_cleanup_current_step: str | None = None
     clip_cleanup_completed_steps: list[str] = Field(default_factory=list)
+    clip_cleanup_step_details: dict[str, YouTubeCleanupStepProgress] = Field(default_factory=dict)
+    backend_now: str | None = None
+    clip_delete_remaining_seconds: float | None = None
     logs: list[str] = []
     error: str | None = None
 
@@ -2197,21 +2214,36 @@ def active_youtube_uploads_for_job(job_id: str, clip_urls: set[str] | None = Non
 def youtube_uploads_with_queue_positions(
     uploads: list[YouTubeUploadJob],
 ) -> list[YouTubeUploadJob]:
+    backend_time = datetime.now(timezone.utc)
+    backend_now = backend_time.isoformat()
     queued = sorted(
         (upload for upload in uploads if upload.status == "queued"),
         key=lambda item: item.created_at,
     )
     positions = {upload.id: index for index, upload in enumerate(queued, start=1)}
     queue_total = len(queued)
-    return [
-        upload.model_copy(
-            update={
-                "queue_position": positions.get(upload.id),
-                "queue_total": queue_total if upload.status == "queued" else None,
-            }
+    positioned: list[YouTubeUploadJob] = []
+    for upload in uploads:
+        remaining_seconds: float | None = None
+        if upload.clip_delete_after and not upload.clip_deleted_at:
+            try:
+                delete_at = datetime.fromisoformat(upload.clip_delete_after)
+                if delete_at.tzinfo is None:
+                    delete_at = delete_at.replace(tzinfo=timezone.utc)
+                remaining_seconds = max(0.0, (delete_at - backend_time).total_seconds())
+            except ValueError:
+                remaining_seconds = 0.0
+        positioned.append(
+            upload.model_copy(
+                update={
+                    "queue_position": positions.get(upload.id),
+                    "queue_total": queue_total if upload.status == "queued" else None,
+                    "backend_now": backend_now,
+                    "clip_delete_remaining_seconds": remaining_seconds,
+                }
+            )
         )
-        for upload in uploads
-    ]
+    return positioned
 
 
 def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> YouTubeUploadJob:
@@ -2253,6 +2285,7 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
                 "clip_cleanup_started_at": None,
                 "clip_cleanup_current_step": None,
                 "clip_cleanup_completed_steps": [],
+                "clip_cleanup_step_details": {},
                 "logs": [
                     "Upload dilewati: fingerprint file identik sudah terupload dan URL YouTube terverifikasi.",
                     f"File duplikat lokal akan dibersihkan otomatis setelah {max(1, env_int('YOUTUBE_DELETE_UPLOADED_CLIP_DELAY_SECONDS', 30))} detik.",
@@ -2972,22 +3005,16 @@ def start_youtube_login_if_needed(*, reconnect_cdp: bool = False) -> YouTubeLogi
     return youtube_login_status
 
 
-def cleanup_step_delay_seconds() -> float:
-    try:
-        configured = float(os.environ.get("YOUTUBE_CLEANUP_STEP_DISPLAY_SECONDS", "0.7"))
-    except ValueError:
-        configured = 0.7
-    return max(0.0, min(configured, 2.0))
-
-
 def set_youtube_cleanup_step(
     upload_id: str,
     step: str | None,
     completed_steps: list[str],
+    step_details: dict[str, YouTubeCleanupStepProgress] | None = None,
 ) -> None:
     with youtube_uploads_lock:
         upload = youtube_uploads.get(upload_id)
         started_at = upload.clip_cleanup_started_at if upload else None
+        persisted_details = upload.clip_cleanup_step_details if upload else {}
     set_youtube_upload(
         upload_id,
         clip_cleanup_started_at=started_at or now_iso(),
@@ -2995,13 +3022,14 @@ def set_youtube_cleanup_step(
         clip_cleanup_completed_steps=[
             item for item in YOUTUBE_CLEANUP_STEPS if item in completed_steps
         ],
+        clip_cleanup_step_details=step_details if step_details is not None else persisted_details,
     )
 
 
 def delete_completed_youtube_upload_clip(
     upload_id: str,
     *,
-    step_delay_seconds: float = 0.0,
+    steps: tuple[str, ...] | None = None,
 ) -> tuple[int, bool]:
     """Delete one confirmed-uploaded clip and atomically remove it from its source job."""
     with youtube_uploads_lock:
@@ -3012,10 +3040,14 @@ def delete_completed_youtube_upload_clip(
         raise RuntimeError("Upload YouTube belum terkonfirmasi selesai; file tidak dihapus")
 
     completed_steps = list(upload.clip_cleanup_completed_steps)
+    step_details = dict(upload.clip_cleanup_step_details)
+    selected_steps = set(steps or YOUTUBE_CLEANUP_STEPS)
 
     def complete_file_step(step: str, paths: set[Path]) -> int:
-        already_completed = step in completed_steps
-        set_youtube_cleanup_step(upload_id, step, completed_steps)
+        started_perf = time.perf_counter()
+        started_at = now_iso()
+        step_details[step] = YouTubeCleanupStepProgress(started_at=started_at)
+        set_youtube_cleanup_step(upload_id, step, completed_steps, step_details)
         removed_count = remove_output_paths(paths)
         remaining = sorted(str(path) for path in paths if path.exists())
         if remaining:
@@ -3024,9 +3056,13 @@ def delete_completed_youtube_upload_clip(
             )
         if step not in completed_steps:
             completed_steps.append(step)
-        set_youtube_cleanup_step(upload_id, None, completed_steps)
-        if not already_completed and step_delay_seconds > 0:
-            time.sleep(step_delay_seconds)
+        step_details[step] = YouTubeCleanupStepProgress(
+            started_at=started_at,
+            completed_at=now_iso(),
+            duration_ms=max(0, round((time.perf_counter() - started_perf) * 1000)),
+            removed_items=removed_count,
+        )
+        set_youtube_cleanup_step(upload_id, None, completed_steps, step_details)
         return removed_count
 
     with jobs_lock:
@@ -3066,28 +3102,48 @@ def delete_completed_youtube_upload_clip(
             if thumbnail_path is not None:
                 thumbnail_paths.add(thumbnail_path)
 
-        removed = complete_file_step("video", video_paths)
-        removed += complete_file_step("thumbnail", thumbnail_paths)
-        removed += complete_file_step("metadata", metadata_paths)
+        removed = 0
+        if "thumbnail" in selected_steps:
+            removed += complete_file_step("thumbnail", thumbnail_paths)
+        if "metadata" in selected_steps:
+            removed += complete_file_step("metadata", metadata_paths)
+        if "video" in selected_steps:
+            removed += complete_file_step("video", video_paths)
 
         remaining_clips = [clip for clip in job.clips if clip.url != target_clip.url]
-        set_youtube_cleanup_step(upload_id, "workspace", completed_steps)
-        if not remaining_clips:
-            protected_dirs = {
-                work_dir
-                for other_job_id, other_job in jobs.items()
-                if other_job_id != job.id
-                for clip in other_job.clips
-                if (work_dir := clip_output_work_dir(clip)) is not None
-            }
-            removed += cleanup_output_work_dirs(job.clips, protected_dirs)
-        if "workspace" not in completed_steps:
-            completed_steps.append("workspace")
-        set_youtube_cleanup_step(upload_id, None, completed_steps)
-        if step_delay_seconds > 0:
-            time.sleep(step_delay_seconds)
+        if "workspace" in selected_steps:
+            workspace_started_perf = time.perf_counter()
+            workspace_started_at = now_iso()
+            step_details["workspace"] = YouTubeCleanupStepProgress(started_at=workspace_started_at)
+            set_youtube_cleanup_step(upload_id, "workspace", completed_steps, step_details)
+            workspace_removed = 0
+            if not remaining_clips:
+                protected_dirs = {
+                    work_dir
+                    for other_job_id, other_job in jobs.items()
+                    if other_job_id != job.id
+                    for clip in other_job.clips
+                    if (work_dir := clip_output_work_dir(clip)) is not None
+                }
+                workspace_removed = cleanup_output_work_dirs(job.clips, protected_dirs)
+                removed += workspace_removed
+            if "workspace" not in completed_steps:
+                completed_steps.append("workspace")
+            step_details["workspace"] = YouTubeCleanupStepProgress(
+                started_at=workspace_started_at,
+                completed_at=now_iso(),
+                duration_ms=max(0, round((time.perf_counter() - workspace_started_perf) * 1000)),
+                removed_items=workspace_removed,
+            )
+            set_youtube_cleanup_step(upload_id, None, completed_steps, step_details)
 
-        set_youtube_cleanup_step(upload_id, "job_sync", completed_steps)
+        if "job_sync" not in selected_steps:
+            return removed, False
+
+        sync_started_perf = time.perf_counter()
+        sync_started_at = now_iso()
+        step_details["job_sync"] = YouTubeCleanupStepProgress(started_at=sync_started_at)
+        set_youtube_cleanup_step(upload_id, "job_sync", completed_steps, step_details)
         if not remaining_clips:
             jobs.pop(job.id, None)
             job_secrets.pop(job.id, None)
@@ -3095,7 +3151,12 @@ def delete_completed_youtube_upload_clip(
             save_jobs_unlocked()
             if "job_sync" not in completed_steps:
                 completed_steps.append("job_sync")
-            set_youtube_cleanup_step(upload_id, None, completed_steps)
+            step_details["job_sync"] = YouTubeCleanupStepProgress(
+                started_at=sync_started_at,
+                completed_at=now_iso(),
+                duration_ms=max(0, round((time.perf_counter() - sync_started_perf) * 1000)),
+            )
+            set_youtube_cleanup_step(upload_id, None, completed_steps, step_details)
             return removed, True
 
         data = job.model_dump()
@@ -3105,7 +3166,12 @@ def delete_completed_youtube_upload_clip(
         save_jobs_unlocked()
         if "job_sync" not in completed_steps:
             completed_steps.append("job_sync")
-        set_youtube_cleanup_step(upload_id, None, completed_steps)
+        step_details["job_sync"] = YouTubeCleanupStepProgress(
+            started_at=sync_started_at,
+            completed_at=now_iso(),
+            duration_ms=max(0, round((time.perf_counter() - sync_started_perf) * 1000)),
+        )
+        set_youtube_cleanup_step(upload_id, None, completed_steps, step_details)
         return removed, False
 
 
@@ -3117,6 +3183,7 @@ def schedule_completed_upload_cleanup(upload_id: str) -> None:
 
     def cleanup_worker() -> None:
         retry_count = 0
+        removed_job = False
         try:
             while True:
                 with youtube_uploads_lock:
@@ -3137,47 +3204,78 @@ def schedule_completed_upload_cleanup(upload_id: str) -> None:
                     delete_at = datetime.now(timezone.utc)
                 if delete_at.tzinfo is None:
                     delete_at = delete_at.replace(tzinfo=timezone.utc)
-                remaining = (delete_at - datetime.now(timezone.utc)).total_seconds()
+                try:
+                    cleanup_started_at = datetime.fromisoformat(
+                        upload.finished_at or upload.updated_at
+                    )
+                except ValueError:
+                    cleanup_started_at = delete_at - timedelta(
+                        seconds=max(1, env_int("YOUTUBE_DELETE_UPLOADED_CLIP_DELAY_SECONDS", 30))
+                    )
+                if cleanup_started_at.tzinfo is None:
+                    cleanup_started_at = cleanup_started_at.replace(tzinfo=timezone.utc)
+                cleanup_window = max(
+                    1.0,
+                    (delete_at - cleanup_started_at).total_seconds(),
+                )
+                pending_steps = [
+                    step
+                    for step in YOUTUBE_CLEANUP_STEPS
+                    if step not in upload.clip_cleanup_completed_steps
+                ]
+                if not pending_steps:
+                    deleted_at = now_iso()
+                    removed = sum(
+                        detail.removed_items
+                        for detail in upload.clip_cleanup_step_details.values()
+                    )
+                    message = (
+                        f"File klip dan pendukungnya terhapus otomatis ({removed} item); "
+                        + ("job sumber ikut dibersihkan." if removed_job else "job sumber diperbarui.")
+                    )
+                    set_youtube_upload(
+                        upload_id,
+                        clip_delete_after=None,
+                        clip_deleted_at=deleted_at,
+                        clip_delete_error=None,
+                        clip_cleanup_current_step=None,
+                        clip_cleanup_completed_steps=list(YOUTUBE_CLEANUP_STEPS),
+                        logs=[*upload.logs, message][-160:],
+                    )
+                    return
+
+                next_step = pending_steps[0]
+                step_at = cleanup_started_at + timedelta(
+                    seconds=cleanup_window * YOUTUBE_CLEANUP_STEP_RATIOS[next_step]
+                )
+                remaining = (step_at - datetime.now(timezone.utc)).total_seconds()
                 if remaining > 0:
                     time.sleep(min(remaining, 60))
                     continue
 
                 try:
-                    removed, removed_job = delete_completed_youtube_upload_clip(
+                    _, step_removed_job = delete_completed_youtube_upload_clip(
                         upload_id,
-                        step_delay_seconds=cleanup_step_delay_seconds(),
+                        steps=(next_step,),
                     )
+                    removed_job = removed_job or step_removed_job
                 except Exception as exc:
                     retry_count += 1
                     retry_delay = min(300, 30 * (2 ** min(retry_count - 1, 3)))
-                    retry_at = (
-                        datetime.now(timezone.utc) + timedelta(seconds=retry_delay)
-                    ).isoformat()
-                    message = f"Auto-delete file belum berhasil, retry {retry_delay} detik: {exc}"
+                    message = (
+                        f"Tahap cleanup {next_step} belum berhasil, "
+                        f"retry {retry_delay} detik: {exc}"
+                    )
                     set_youtube_upload(
                         upload_id,
-                        clip_delete_after=retry_at,
                         clip_delete_error=str(exc),
                         clip_cleanup_current_step=None,
                         logs=[*upload.logs, message][-160:],
                     )
+                    time.sleep(retry_delay)
                     continue
-
-                deleted_at = now_iso()
-                message = (
-                    f"File klip dan pendukungnya terhapus otomatis ({removed} item); "
-                    + ("job sumber ikut dibersihkan." if removed_job else "job sumber diperbarui.")
-                )
-                set_youtube_upload(
-                    upload_id,
-                    clip_delete_after=None,
-                    clip_deleted_at=deleted_at,
-                    clip_delete_error=None,
-                    clip_cleanup_current_step=None,
-                    clip_cleanup_completed_steps=list(YOUTUBE_CLEANUP_STEPS),
-                    logs=[*upload.logs, message][-160:],
-                )
-                return
+                retry_count = 0
+                set_youtube_upload(upload_id, clip_delete_error=None)
         finally:
             with youtube_cleanup_lock:
                 youtube_cleanup_scheduled.discard(upload_id)
@@ -3206,6 +3304,7 @@ def complete_youtube_upload_as_duplicate(
         clip_cleanup_started_at=None if local_file_exists else completed_at,
         clip_cleanup_current_step=None,
         clip_cleanup_completed_steps=[] if local_file_exists else list(YOUTUBE_CLEANUP_STEPS),
+        clip_cleanup_step_details={},
         logs=[
             "Upload dilewati oleh worker: fingerprint/file sudah memiliki upload YouTube terverifikasi.",
             f"Referensi upload: {duplicate.id[:10]} · {duplicate.video_url}",
@@ -3400,6 +3499,7 @@ def run_youtube_upload(upload_id: str) -> None:
                     clip_cleanup_started_at=None,
                     clip_cleanup_current_step=None,
                     clip_cleanup_completed_steps=[],
+                    clip_cleanup_step_details={},
                 )
                 if delete_after:
                     schedule_completed_upload_cleanup(upload_id)

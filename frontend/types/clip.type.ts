@@ -193,6 +193,14 @@ export type YouTubeUploadJob = {
   clip_cleanup_started_at?: string | null;
   clip_cleanup_current_step?: string | null;
   clip_cleanup_completed_steps?: string[];
+  clip_cleanup_step_details?: Record<string, {
+    started_at: string;
+    completed_at?: string | null;
+    duration_ms?: number | null;
+    removed_items: number;
+  }>;
+  backend_now?: string | null;
+  clip_delete_remaining_seconds?: number | null;
   logs: string[];
   error?: string | null;
 };

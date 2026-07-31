@@ -26,9 +26,9 @@ import { ThumbnailPrompt } from "./ThumbnailPrompt";
 const COMPLETED_UPLOAD_STATUS_TTL_MS = 30_000;
 const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
 const CLEANUP_ITEMS = [
-  { id: "video", label: "Video utama MP4 hasil klip" },
   { id: "thumbnail", label: "Thumbnail dan prompt thumbnail" },
   { id: "metadata", label: "Caption serta metadata JSON" },
+  { id: "video", label: "Video utama MP4 hasil klip" },
   { id: "workspace", label: "File sementara dan folder kosong" },
   { id: "job_sync", label: "Card klip dan riwayat job disinkronkan" },
 ];
@@ -102,6 +102,9 @@ function completedUploadStatusIsVisible(upload: YouTubeUploadJob, now: number) {
 
 function uploadCleanupCountdown(upload: YouTubeUploadJob, now: number) {
   if (!upload.clip_delete_after || upload.clip_deleted_at) return null;
+  if (typeof upload.clip_delete_remaining_seconds === "number") {
+    return Math.max(0, Math.ceil(upload.clip_delete_remaining_seconds));
+  }
   const deleteAt = Date.parse(upload.clip_delete_after);
   if (Number.isNaN(deleteAt)) return null;
   return Math.max(0, Math.ceil((deleteAt - now) / 1000));
@@ -112,7 +115,11 @@ function uploadCleanupProgress(upload: YouTubeUploadJob, now: number) {
   const deleteAt = Date.parse(upload.clip_delete_after);
   const startedAt = Date.parse(upload.finished_at || upload.updated_at);
   if (Number.isNaN(deleteAt) || Number.isNaN(startedAt) || deleteAt <= startedAt) return 0;
-  return Math.max(0, Math.min(12, ((now - startedAt) / (deleteAt - startedAt)) * 12));
+  const totalSeconds = (deleteAt - startedAt) / 1000;
+  const elapsedSeconds = typeof upload.clip_delete_remaining_seconds === "number"
+    ? totalSeconds - upload.clip_delete_remaining_seconds
+    : (now - startedAt) / 1000;
+  return Math.max(0, Math.min(12, (elapsedSeconds / totalSeconds) * 12));
 }
 
 export function ResultsSection({
@@ -535,7 +542,7 @@ export function ResultsSection({
                               : " · mencoba ulang penghapusan file"
                             : cleanupPending
                               ? cleanupCountdown > 0
-                                ? ` · hapus file dalam ${cleanupCountdown} detik`
+                                ? ` · cleanup bertahap selesai dalam ${cleanupCountdown} detik`
                                 : " · sedang menghapus file..."
                               : cleanupComplete
                                 ? " · semua file lokal terhapus"
@@ -599,7 +606,7 @@ export function ResultsSection({
                                       ? `Menghapus: ${currentCleanupLabel}`
                                     : cleanupCountdown === 0
                                     ? "Sedang membersihkan file lokal"
-                                    : `Auto-cleanup dalam ${cleanupCountdown} detik`}
+                                    : `Auto-cleanup bertahap · ${cleanupCountdown} detik`}
                                 </strong>
                                 <small>
                                   {cleanupComplete
@@ -615,6 +622,7 @@ export function ResultsSection({
                               {CLEANUP_ITEMS.map((item) => {
                                 const stepComplete = cleanupComplete || completedCleanupSteps.has(item.id);
                                 const stepRunning = !stepComplete && cleanupCurrentStep === item.id;
+                                const stepDetail = latestUpload.clip_cleanup_step_details?.[item.id];
                                 return (
                                   <li
                                     className={stepComplete ? "isComplete" : stepRunning ? "isRunning" : "isWaiting"}
@@ -629,7 +637,19 @@ export function ResultsSection({
                                         <Clock3 size={12} />
                                       )}
                                     </span>
-                                    <span>{item.label}</span>
+                                    <span className="uploadCleanupStepCopy">
+                                      <span>{item.label}</span>
+                                      <small>
+                                        {stepRunning
+                                          ? "Sedang dieksekusi backend"
+                                          : stepComplete && stepDetail?.duration_ms !== null
+                                            && stepDetail?.duration_ms !== undefined
+                                            ? `Selesai nyata · ${stepDetail.duration_ms} ms · ${stepDetail.removed_items} item`
+                                            : stepComplete
+                                              ? "Selesai dan terverifikasi backend"
+                                              : "Menunggu giliran backend"}
+                                      </small>
+                                    </span>
                                   </li>
                                 );
                               })}

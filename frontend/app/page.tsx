@@ -83,7 +83,7 @@ import { WorkflowBar } from "./_components/WorkflowBar";
 const isProcessJob = (item: ClipJob | null) =>
   item?.status === "queued" || item?.status === "running" || item?.status === "failed" || item?.status === "cancelled";
 const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
-const CLEANUP_PROGRESS_POLL_MS = 400;
+const CLEANUP_PROGRESS_POLL_MS = 250;
 
 export default function HomePage() {
   const [url, setUrl] = useState("");
