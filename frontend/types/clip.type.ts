@@ -184,6 +184,9 @@ export type YouTubeUploadJob = {
   target_channel: string;
   dry_run: boolean;
   video_url?: string | null;
+  clip_delete_after?: string | null;
+  clip_deleted_at?: string | null;
+  clip_delete_error?: string | null;
   logs: string[];
   error?: string | null;
 };

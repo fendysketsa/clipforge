@@ -24,6 +24,7 @@ DEFAULT_STUDIO_URL = os.environ.get(
 ).strip()
 DEFAULT_CDP_URL = os.environ.get("YOUTUBE_CDP_URL", "http://127.0.0.1:9222").strip()
 DEBUG_DIR = Path(os.environ.get("YOUTUBE_UPLOAD_DEBUG_DIR", BASE_DIR / "data" / "youtube_debug"))
+CLIPFORGE_UPLOAD_PAGE_NAME = "clipforge-youtube-upload"
 
 
 class UploadError(RuntimeError):
@@ -1254,8 +1255,8 @@ def click_dashboard_upload_entry(page, timeout_ms: int = 12000) -> bool:
     return False
 
 
-def close_upload_tab(page) -> None:
-    if not env_bool("YOUTUBE_CLOSE_UPLOAD_TAB", False):
+def close_upload_tab(page, *, force: bool = False) -> None:
+    if not force and not env_bool("YOUTUBE_CLOSE_UPLOAD_TAB", True):
         log("Tab upload YouTube dibiarkan terbuka agar tidak memicu prompt reload/leave.")
         return
     try:
@@ -1264,6 +1265,61 @@ def close_upload_tab(page) -> None:
             log("Tab upload YouTube ditutup.")
     except Exception:
         log("Tab upload YouTube tidak dapat ditutup otomatis.")
+
+
+def mark_clipforge_upload_tab(page) -> None:
+    try:
+        page.evaluate(f"window.name = {json.dumps(CLIPFORGE_UPLOAD_PAGE_NAME)}")
+    except Exception:
+        pass
+
+
+def is_clipforge_upload_tab(page) -> bool:
+    try:
+        return page.evaluate("window.name") == CLIPFORGE_UPLOAD_PAGE_NAME
+    except Exception:
+        return False
+
+
+def close_idle_clipforge_upload_tabs(pages: Iterable) -> int:
+    closed = 0
+    for page in pages:
+        if not is_clipforge_upload_tab(page):
+            continue
+        try:
+            if not page.is_closed():
+                page.close()
+                closed += 1
+        except Exception:
+            continue
+    if closed:
+        log(f"{closed} tab upload ClipForge yang idle ditutup.")
+    return closed
+
+
+def close_duplicate_target_studio_tabs(pages: Iterable, keep_page, target_channel_id: str) -> int:
+    """Close duplicate target-channel Studio tabs while preserving one primary tab."""
+    closed = 0
+    for page in pages:
+        if page is keep_page:
+            continue
+        try:
+            url = page.url.lower()
+        except Exception:
+            continue
+        if "studio.youtube.com" not in url:
+            continue
+        if target_channel_id and not page_url_matches_channel_id(page, target_channel_id):
+            continue
+        try:
+            if not page.is_closed():
+                page.close()
+                closed += 1
+        except Exception:
+            continue
+    if closed:
+        log(f"{closed} tab YouTube Studio target yang duplikat/idle ditutup.")
+    return closed
 
 
 def open_upload_dialog(
@@ -3953,13 +4009,27 @@ def run_upload(args: argparse.Namespace) -> None:
             contexts = browser.contexts or [browser.new_context()]
             for item in contexts:
                 install_context_dialog_guard(item)
-            context = contexts[0]
-            studio_pages = [item for ctx in contexts for item in ctx.pages if "studio.youtube.com" in item.url.lower()]
+            existing_pages = [item for ctx in contexts for item in ctx.pages]
+            close_idle_clipforge_upload_tabs(existing_pages)
+            existing_pages = [item for ctx in contexts for item in ctx.pages]
+            studio_pages = [item for item in existing_pages if "studio.youtube.com" in item.url.lower()]
             target_pages = [item for item in studio_pages if page_url_matches_channel_id(item, args.target_channel_id)]
-            page = target_pages[0] if target_pages else (studio_pages[0] if studio_pages else context.new_page())
+            primary_studio_page = target_pages[0] if target_pages else (studio_pages[0] if studio_pages else None)
+            if primary_studio_page is not None:
+                close_duplicate_target_studio_tabs(
+                    studio_pages,
+                    primary_studio_page,
+                    args.target_channel_id,
+                )
+                context = primary_studio_page.context
+            else:
+                context = contexts[0]
             hydrated_page = hydrate_context_and_open_studio_page(context, state_path, args.studio_url)
             if hydrated_page is not None:
                 page = hydrated_page
+            else:
+                page = context.new_page()
+            mark_clipforge_upload_tab(page)
         elif chromium_user_data_dir is not None:
             log(f"Menggunakan profile Chromium: {chromium_user_data_dir}")
             context = playwright.chromium.launch_persistent_context(
@@ -4068,10 +4138,7 @@ def run_upload(args: argparse.Namespace) -> None:
                 log(f"VIDEO_URL: {final_url}")
             context.storage_state(path=str(state_path))
         finally:
-            if using_cdp:
-                log("Mode CDP aktif; tab Chrome manual dibiarkan terbuka.")
-            else:
-                close_upload_tab(page)
+            close_upload_tab(page, force=using_cdp)
             if not using_cdp:
                 context.close()
             if browser is not None and not using_cdp:

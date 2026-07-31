@@ -2,9 +2,14 @@ import pytest
 
 import youtube_uploader
 from youtube_uploader import (
+    CLIPFORGE_UPLOAD_PAGE_NAME,
     UploadError,
     click_final_upload_action,
+    close_duplicate_target_studio_tabs,
+    close_idle_clipforge_upload_tabs,
+    close_upload_tab,
     copyright_issue_detected,
+    mark_clipforge_upload_tab,
     next_upload_step_timeout_ms,
     reload_after_publish,
     safe_upload_visibility,
@@ -55,6 +60,27 @@ class ReloadPage:
 
     def reload(self, **kwargs):
         self.reload_calls.append(kwargs)
+
+
+class BrowserPage:
+    def __init__(self, url="", window_name=""):
+        self.url = url
+        self.window_name = window_name
+        self.closed = False
+
+    def evaluate(self, script):
+        if script == "window.name":
+            return self.window_name
+        if script.startswith("window.name = "):
+            self.window_name = CLIPFORGE_UPLOAD_PAGE_NAME
+            return None
+        raise AssertionError(f"Unexpected script: {script}")
+
+    def is_closed(self):
+        return self.closed
+
+    def close(self):
+        self.closed = True
 
 
 def test_required_checks_do_not_continue_after_timeout_by_default(monkeypatch):
@@ -202,6 +228,47 @@ def test_reload_runs_once_after_ten_second_publish_delay(monkeypatch):
 
     assert delays == [10]
     assert page.reload_calls == [{"wait_until": "domcontentloaded", "timeout": 30000}]
+
+
+def test_owned_upload_tab_is_marked_and_force_closed_even_when_setting_is_disabled(monkeypatch):
+    page = BrowserPage("https://studio.youtube.com/channel/target")
+    monkeypatch.setenv("YOUTUBE_CLOSE_UPLOAD_TAB", "false")
+
+    mark_clipforge_upload_tab(page)
+    close_upload_tab(page, force=True)
+
+    assert page.window_name == CLIPFORGE_UPLOAD_PAGE_NAME
+    assert page.closed is True
+
+
+def test_idle_cleanup_only_closes_marked_clipforge_tabs():
+    idle_upload = BrowserPage(window_name=CLIPFORGE_UPLOAD_PAGE_NAME)
+    user_tab = BrowserPage("https://studio.youtube.com/channel/target")
+
+    closed = close_idle_clipforge_upload_tabs([idle_upload, user_tab])
+
+    assert closed == 1
+    assert idle_upload.closed is True
+    assert user_tab.closed is False
+
+
+def test_duplicate_cleanup_preserves_primary_and_unrelated_tabs():
+    primary = BrowserPage("https://studio.youtube.com/channel/target")
+    duplicate = BrowserPage("https://studio.youtube.com/channel/target/videos")
+    other_channel = BrowserPage("https://studio.youtube.com/channel/other")
+    unrelated = BrowserPage("https://www.youtube.com/watch?v=demo")
+
+    closed = close_duplicate_target_studio_tabs(
+        [primary, duplicate, other_channel, unrelated],
+        primary,
+        "target",
+    )
+
+    assert closed == 1
+    assert primary.closed is False
+    assert duplicate.closed is True
+    assert other_channel.closed is False
+    assert unrelated.closed is False
 
 
 def test_final_action_requires_visibility_step(monkeypatch):

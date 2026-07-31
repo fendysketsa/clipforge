@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 import pytest
 
 from api import (
@@ -10,8 +13,11 @@ from api import (
     default_youtube_description,
     default_youtube_tags,
     default_youtube_title,
+    delete_completed_youtube_upload_clip,
     generate_youtube_description,
     generate_youtube_metadata,
+    completed_upload_cleanup_after,
+    monitor_youtube_upload_process,
     normalized_generated_metadata,
     youtube_metadata_provider_configs,
     delete_all_job_clips,
@@ -168,6 +174,105 @@ def test_youtube_video_url_from_logs_accepts_shorts_links():
     assert youtube_video_url_from_logs(["VIDEO_URL: https://youtube.com/shorts/abcDEF12345?feature=share"]) == (
         "https://www.youtube.com/watch?v=abcDEF12345"
     )
+
+
+def test_completed_upload_cleanup_delay_defaults_to_thirty_seconds(monkeypatch):
+    monkeypatch.delenv("YOUTUBE_DELETE_UPLOADED_CLIP_DELAY_SECONDS", raising=False)
+
+    delete_after = completed_upload_cleanup_after("2026-01-01T00:00:00+00:00")
+
+    assert delete_after == "2026-01-01T00:00:30+00:00"
+
+
+def test_completed_upload_cleanup_deletes_real_file_and_updates_job(monkeypatch, tmp_path):
+    import api
+
+    outputs = tmp_path / "outputs"
+    clip_dir = outputs / "demo" / "clips"
+    clip_dir.mkdir(parents=True)
+    clip_one = make_clip(1)
+    clip_two = make_clip(2)
+    clip_one_path = clip_dir / clip_one.name
+    clip_two_path = clip_dir / clip_two.name
+    clip_one_path.write_bytes(b"video")
+    clip_two_path.write_bytes(b"keep")
+    clip_one_path.with_suffix(".json").write_text('{"title": "Uploaded"}', encoding="utf-8")
+    clip_one_path.with_name("clip_01_caption.txt").write_text("caption", encoding="utf-8")
+
+    job = ClipJob(
+        id="job-1",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/demo"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip_one, clip_two],
+    )
+    upload = YouTubeUploadJob(
+        id="upload-1",
+        source_job_id=job.id,
+        clip_url=clip_one.url,
+        clip_name=clip_one.name,
+        status="completed",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:01:00+00:00",
+        finished_at="2026-01-01T00:01:00+00:00",
+        title="Uploaded",
+        video_url="https://www.youtube.com/watch?v=abcDEF12345",
+    )
+
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+
+    removed, removed_job = delete_completed_youtube_upload_clip(upload.id)
+
+    assert removed >= 3
+    assert removed_job is False
+    assert not clip_one_path.exists()
+    assert not clip_one_path.with_suffix(".json").exists()
+    assert not clip_one_path.with_name("clip_01_caption.txt").exists()
+    assert clip_two_path.exists()
+    assert [clip.url for clip in api.jobs[job.id].clips] == [clip_two.url]
+
+
+def test_completed_upload_cleanup_refuses_unverified_upload(monkeypatch):
+    import api
+
+    upload = YouTubeUploadJob(
+        id="upload-1",
+        source_job_id="job-1",
+        clip_url="/outputs/demo/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="completed",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:01:00+00:00",
+        title="No URL",
+        video_url=None,
+    )
+    monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+
+    with pytest.raises(RuntimeError, match="belum terkonfirmasi"):
+        delete_completed_youtube_upload_clip(upload.id)
+
+
+def test_upload_watchdog_terminates_silent_process():
+    process = subprocess.Popen(
+        [sys.executable, "-u", "-c", "import time; print('started'); time.sleep(10)"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    logs = []
+
+    code, stalled = monitor_youtube_upload_process(
+        process,
+        logs.append,
+        stall_timeout_seconds=0.1,
+    )
+
+    assert stalled is True
+    assert code != 0
+    assert logs == ["started"]
 
 
 def test_start_youtube_cdp_refresh_process_uses_configured_command(monkeypatch, tmp_path):

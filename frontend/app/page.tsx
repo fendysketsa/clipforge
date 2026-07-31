@@ -139,7 +139,12 @@ export default function HomePage() {
   const activityJob = isBusy ? activeJob : job;
   const isAutoViralRunning = autoViralRun?.status === "queued" || autoViralRun?.status === "running";
   const latestLogs = useMemo(() => activityJob?.logs.slice(-RECENT_LOG_LIMIT) ?? [], [activityJob]);
-  const hasActiveYouTubeUpload = youtubeUploads.some((upload) => upload.status === "queued" || upload.status === "running");
+  const hasActiveYouTubeUpload = youtubeUploads.some(
+    (upload) =>
+      upload.status === "queued"
+      || upload.status === "running"
+      || Boolean(upload.clip_delete_after && !upload.clip_deleted_at),
+  );
 
   // min_duration * target_clips must fit within 80% of the video length.
   const maxClips = useMemo(() => {
@@ -187,7 +192,9 @@ export default function HomePage() {
   }, [url, sourceMode]);
 
   const loadJobs = useCallback(async () => {
-    setJobs(await getJobs());
+    const nextJobs = await getJobs();
+    setJobs(nextJobs);
+    return nextJobs;
   }, []);
 
   const loadYouTubeUploads = useCallback(async () => {
@@ -223,11 +230,16 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!hasActiveYouTubeUpload) return;
-    const interval = window.setInterval(() => {
-      loadYouTubeUploads().catch(() => undefined);
+    const interval = window.setInterval(async () => {
+      const result = await Promise.all([loadYouTubeUploads(), loadJobs()]).catch(() => null);
+      if (!result) return;
+      const selectedJobId = job?.id;
+      if (!selectedJobId) return;
+      const nextJob = result[1].find((item) => item.id === selectedJobId) ?? null;
+      setJob((current) => (current?.id === selectedJobId ? nextJob : current));
     }, JOB_POLL_INTERVAL_MS);
     return () => window.clearInterval(interval);
-  }, [hasActiveYouTubeUpload, loadYouTubeUploads]);
+  }, [hasActiveYouTubeUpload, job?.id, loadJobs, loadYouTubeUploads]);
 
   useEffect(() => {
     if (!autoViralRun || (autoViralRun.status !== "queued" && autoViralRun.status !== "running")) return;
@@ -809,30 +821,13 @@ export default function HomePage() {
     [youtubeConfig?.auth_status_message, youtubeConfig?.upload_uses_cdp],
   );
 
-  const prepareYouTubeUpload = useCallback(
-    async (successMessage: string) => {
-      const result = await toast.promise(setupYouTubeOneTimeLogin(), {
-        loading: "Menyiapkan session Playwright...",
-        success: (result) => result.ok ? successMessage : result.message,
-        error: (error) => error instanceof Error ? error.message : "Session YouTube belum siap",
-      });
-      requireValidYouTubeSession(result);
-      loadYouTubeUploads().catch(() => undefined);
-    },
-    [
-      loadYouTubeUploads,
-      requireValidYouTubeSession,
-    ],
-  );
-
   const handleUploadClipToYouTube = useCallback(
     async (clip: ClipFile) => {
       if (!job) return;
       try {
-        await prepareYouTubeUpload("Session Playwright siap. Upload dimasukkan antrean.");
         const upload = await toast.promise(createYouTubeUpload(job.id, clip.url), {
           loading: "Memasukkan upload YouTube ke antrean...",
-          success: "Upload YouTube masuk antrean.",
+          success: "Upload masuk antrean. Session akan disinkronkan otomatis bila diperlukan.",
           error: (error) => error instanceof Error ? error.message : "Gagal membuat upload YouTube",
         });
         setYoutubeUploads((current) => [upload, ...current.filter((item) => item.id !== upload.id)]);
@@ -841,17 +836,17 @@ export default function HomePage() {
         // toast.promise already displayed the actionable status.
       }
     },
-    [job, loadYouTubeUploads, prepareYouTubeUpload],
+    [job, loadYouTubeUploads],
   );
 
   const handleUploadAllToYouTube = useCallback(async () => {
     if (!job || !job.clips.length) return;
     const bestCount = youtubeConfig?.auto_upload_count ?? 3;
     try {
-      await prepareYouTubeUpload("Session Playwright siap. Batch upload dimasukkan antrean.");
       const uploads = await toast.promise(createYouTubeUploadBatch(job.id, [], bestCount), {
         loading: `Memasukkan ${Math.min(bestCount, job.clips.length)} klip terbaik ke antrean YouTube...`,
-        success: (uploads) => `${uploads.length} klip terbaik masuk antrean YouTube.`,
+        success: (uploads) =>
+          `${uploads.length} klip masuk antrean. Session akan disinkronkan otomatis bila diperlukan.`,
         error: (error) => error instanceof Error ? error.message : "Gagal membuat batch upload YouTube",
       });
       setYoutubeUploads((current) => {
@@ -862,7 +857,7 @@ export default function HomePage() {
     } catch {
       // toast.promise already displayed the actionable status.
     }
-  }, [job, loadYouTubeUploads, prepareYouTubeUpload, youtubeConfig?.auto_upload_count]);
+  }, [job, loadYouTubeUploads, youtubeConfig?.auto_upload_count]);
 
   const handleStartYouTubeLogin = useCallback(async () => {
     if (usesChromeDebugging()) {

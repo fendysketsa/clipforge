@@ -4,6 +4,7 @@ import hashlib
 import json
 import importlib.util
 import os
+import queue
 import re
 import shlex
 import shutil
@@ -415,6 +416,9 @@ class YouTubeUploadJob(BaseModel):
     target_channel: str = ""
     dry_run: bool = False
     video_url: str | None = None
+    clip_delete_after: str | None = None
+    clip_deleted_at: str | None = None
+    clip_delete_error: str | None = None
     logs: list[str] = []
     error: str | None = None
 
@@ -975,6 +979,7 @@ def clip_artifact_paths(clip: ClipFile) -> set[Path]:
     paths.add(clip_path.with_name(f"{clip_path.stem}_thumb.jpg"))
     paths.add(clip_path.with_name(f"{clip_path.stem}_thumb.txt"))
     paths.add(clip_path.with_name(f"{clip_path.stem}_caption.txt"))
+    paths.add(clip_path.with_suffix(".json"))
     if clip.thumbnail_url:
         thumb_path = output_path_from_url(clip.thumbnail_url)
         if thumb_path is not None:
@@ -1213,6 +1218,8 @@ preserve_job_files_on_cancel: set[str] = set()
 process_lock = threading.Lock()
 youtube_worker_lock = threading.Lock()
 youtube_worker_running = False
+youtube_cleanup_lock = threading.Lock()
+youtube_cleanup_scheduled: set[str] = set()
 auto_viral_runs: dict[str, AutoViralRun] = {}
 auto_viral_lock = threading.Lock()
 auto_viral_active_run_id: str | None = None
@@ -2251,6 +2258,104 @@ def set_youtube_upload(upload_id: str, **updates) -> None:
         save_youtube_uploads_unlocked()
 
 
+def terminate_youtube_upload_process(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=CANCEL_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=CANCEL_GRACE_SECONDS)
+
+
+def monitor_youtube_upload_process(
+    process: subprocess.Popen[str],
+    on_line,
+    *,
+    stall_timeout_seconds: float,
+) -> tuple[int, bool]:
+    """Stream output without allowing a silent uploader subprocess to hang forever."""
+    if process.stdout is None:
+        raise RuntimeError("YouTube uploader stdout is unavailable")
+
+    output_queue: queue.Queue[str | None] = queue.Queue()
+
+    def read_output() -> None:
+        try:
+            for line in process.stdout:
+                output_queue.put(line)
+        finally:
+            output_queue.put(None)
+
+    threading.Thread(target=read_output, daemon=True).start()
+    last_progress = time.monotonic()
+    timeout = max(0.1, float(stall_timeout_seconds))
+
+    while True:
+        remaining = timeout - (time.monotonic() - last_progress)
+        if remaining <= 0:
+            terminate_youtube_upload_process(process)
+            return process.wait(), True
+        try:
+            line = output_queue.get(timeout=min(1.0, remaining))
+        except queue.Empty:
+            continue
+        if line is None:
+            return process.wait(), False
+        cleaned = line.rstrip()
+        if cleaned:
+            last_progress = time.monotonic()
+            on_line(cleaned)
+
+
+def auto_sync_youtube_upload_session(use_cdp: bool) -> tuple[bool, list[str], str | None]:
+    logs: list[str] = []
+    try:
+        if use_cdp:
+            sync_status = sync_youtube_cdp()
+            logs.extend(sync_status.logs[-40:])
+            logs.append(sync_status.message)
+            if sync_status.ok:
+                return True, logs, None
+
+            logs.append("Sinkronisasi ringan belum berhasil; menjalankan repair Chrome CDP.")
+            repair_status = repair_youtube_cdp(profile_sync_requested=True)
+            logs.extend(repair_status.logs[-40:])
+            logs.append(repair_status.message)
+            return repair_status.ok, logs, repair_status.error
+
+        login_status = setup_youtube_one_time_login()
+        logs.extend(login_status.logs[-40:])
+        logs.append(login_status.message)
+        return login_status.ok, logs, login_status.error
+    except HTTPException as exc:
+        return False, logs, str(exc.detail)
+    except Exception as exc:
+        return False, logs, str(exc)
+
+
+def completed_upload_cleanup_after(completed_at: str) -> str:
+    delay_seconds = max(1, env_int("YOUTUBE_DELETE_UPLOADED_CLIP_DELAY_SECONDS", 30))
+    try:
+        completed = datetime.fromisoformat(completed_at)
+    except ValueError:
+        completed = datetime.now(timezone.utc)
+    return (completed + timedelta(seconds=delay_seconds)).isoformat()
+
+
+def cleanup_youtube_staging_file(upload_path: Path, source_path: Path | None) -> bool:
+    try:
+        resolved = upload_path.resolve()
+        staging_root = YOUTUBE_CDP_STAGING_DIR.resolve()
+        if resolved == source_path or staging_root not in resolved.parents:
+            return False
+        resolved.unlink(missing_ok=True)
+        return not resolved.exists()
+    except OSError:
+        return False
+
+
 def build_youtube_upload_command(
     upload: YouTubeUploadJob,
     *,
@@ -2402,13 +2507,19 @@ def run_youtube_check_login_once(*, use_chromium_profile: bool = False) -> tuple
         encoding="utf-8",
         errors="replace",
     )
-    assert process.stdout is not None
-    for line in process.stdout:
-        cleaned = line.rstrip()
-        if cleaned:
-            check_logs.append(cleaned)
-    check_code = process.wait()
-    check_error = youtube_upload_error_from_logs(check_logs) if check_code else None
+    check_code, stalled = monitor_youtube_upload_process(
+        process,
+        check_logs.append,
+        stall_timeout_seconds=max(
+            30,
+            env_int("YOUTUBE_SESSION_SYNC_STALL_TIMEOUT_SECONDS", 90),
+        ),
+    )
+    check_error = (
+        "Validasi session YouTube tersendat dan dihentikan otomatis."
+        if stalled
+        else youtube_upload_error_from_logs(check_logs) if check_code else None
+    )
     return check_code, check_logs, check_error
 
 
@@ -2423,13 +2534,19 @@ def run_youtube_capture_once(*, hydrate_storage_state: bool = True) -> tuple[int
         encoding="utf-8",
         errors="replace",
     )
-    assert process.stdout is not None
-    for line in process.stdout:
-        cleaned = line.rstrip()
-        if cleaned:
-            capture_logs.append(cleaned)
-    capture_code = process.wait()
-    capture_error = youtube_upload_error_from_logs(capture_logs) if capture_code else None
+    capture_code, stalled = monitor_youtube_upload_process(
+        process,
+        capture_logs.append,
+        stall_timeout_seconds=max(
+            30,
+            env_int("YOUTUBE_SESSION_SYNC_STALL_TIMEOUT_SECONDS", 90),
+        ),
+    )
+    capture_error = (
+        "Sinkronisasi session YouTube tersendat dan dihentikan otomatis."
+        if stalled
+        else youtube_upload_error_from_logs(capture_logs) if capture_code else None
+    )
     return capture_code, capture_logs, capture_error
 
 
@@ -2706,6 +2823,130 @@ def start_youtube_login_if_needed(*, reconnect_cdp: bool = False) -> YouTubeLogi
     return youtube_login_status
 
 
+def delete_completed_youtube_upload_clip(upload_id: str) -> tuple[int, bool]:
+    """Delete one confirmed-uploaded clip and atomically remove it from its source job."""
+    with youtube_uploads_lock:
+        upload = youtube_uploads.get(upload_id)
+    if upload is None:
+        raise RuntimeError("Catatan upload YouTube tidak ditemukan")
+    if upload.status != "completed" or not upload.video_url or upload.dry_run:
+        raise RuntimeError("Upload YouTube belum terkonfirmasi selesai; file tidak dihapus")
+
+    with jobs_lock:
+        job = jobs.get(upload.source_job_id)
+        if job is None:
+            return 0, True
+
+        target_clip = next((clip for clip in job.clips if clip.url == upload.clip_url), None)
+        if target_clip is None:
+            return 0, not job.clips
+
+        active_uploads = active_youtube_uploads_for_job(job.id, {target_clip.url})
+        if active_uploads:
+            raise RuntimeError("Masih ada upload aktif untuk file klip yang sama")
+
+        artifact_paths = clip_artifact_paths(target_clip)
+        removed = cleanup_clip_files(target_clip)
+        remaining_files = sorted(str(path) for path in artifact_paths if path.exists())
+        if remaining_files:
+            raise RuntimeError(
+                "File output belum seluruhnya terhapus: " + ", ".join(remaining_files[:3])
+            )
+
+        remaining_clips = [clip for clip in job.clips if clip.url != target_clip.url]
+        if not remaining_clips:
+            protected_dirs = {
+                work_dir
+                for other_job_id, other_job in jobs.items()
+                if other_job_id != job.id
+                for clip in other_job.clips
+                if (work_dir := clip_output_work_dir(clip)) is not None
+            }
+            removed += cleanup_output_work_dirs(job.clips, protected_dirs)
+            jobs.pop(job.id, None)
+            job_secrets.pop(job.id, None)
+            cancelled_job_ids.discard(job.id)
+            save_jobs_unlocked()
+            return removed, True
+
+        data = job.model_dump()
+        data["clips"] = remaining_clips
+        data["updated_at"] = now_iso()
+        jobs[job.id] = ClipJob(**data)
+        save_jobs_unlocked()
+        return removed, False
+
+
+def schedule_completed_upload_cleanup(upload_id: str) -> None:
+    with youtube_cleanup_lock:
+        if upload_id in youtube_cleanup_scheduled:
+            return
+        youtube_cleanup_scheduled.add(upload_id)
+
+    def cleanup_worker() -> None:
+        retry_count = 0
+        try:
+            while True:
+                with youtube_uploads_lock:
+                    upload = youtube_uploads.get(upload_id)
+                if (
+                    upload is None
+                    or upload.status != "completed"
+                    or not upload.video_url
+                    or upload.dry_run
+                    or upload.clip_deleted_at
+                    or not upload.clip_delete_after
+                ):
+                    return
+
+                try:
+                    delete_at = datetime.fromisoformat(upload.clip_delete_after)
+                except ValueError:
+                    delete_at = datetime.now(timezone.utc)
+                if delete_at.tzinfo is None:
+                    delete_at = delete_at.replace(tzinfo=timezone.utc)
+                remaining = (delete_at - datetime.now(timezone.utc)).total_seconds()
+                if remaining > 0:
+                    time.sleep(min(remaining, 60))
+                    continue
+
+                try:
+                    removed, removed_job = delete_completed_youtube_upload_clip(upload_id)
+                except Exception as exc:
+                    retry_count += 1
+                    retry_delay = min(300, 30 * (2 ** min(retry_count - 1, 3)))
+                    retry_at = (
+                        datetime.now(timezone.utc) + timedelta(seconds=retry_delay)
+                    ).isoformat()
+                    message = f"Auto-delete file belum berhasil, retry {retry_delay} detik: {exc}"
+                    set_youtube_upload(
+                        upload_id,
+                        clip_delete_after=retry_at,
+                        clip_delete_error=str(exc),
+                        logs=[*upload.logs, message][-160:],
+                    )
+                    continue
+
+                deleted_at = now_iso()
+                message = (
+                    f"File klip dan pendukungnya terhapus otomatis ({removed} item); "
+                    + ("job sumber ikut dibersihkan." if removed_job else "job sumber diperbarui.")
+                )
+                set_youtube_upload(
+                    upload_id,
+                    clip_delete_after=None,
+                    clip_deleted_at=deleted_at,
+                    clip_delete_error=None,
+                    logs=[*upload.logs, message][-160:],
+                )
+                return
+        finally:
+            with youtube_cleanup_lock:
+                youtube_cleanup_scheduled.discard(upload_id)
+
+    threading.Thread(target=cleanup_worker, daemon=True).start()
+
+
 def run_youtube_upload(upload_id: str) -> None:
     with youtube_uploads_lock:
         upload = youtube_uploads.get(upload_id)
@@ -2758,7 +2999,10 @@ def run_youtube_upload(upload_id: str) -> None:
             logs.append(f"Upload memakai Playwright storage state: {YOUTUBE_PLAYWRIGHT_STATE}")
             set_youtube_upload(upload_id, logs=logs[-160:])
         cdp_repair_attempts = 0
+        stall_repair_attempts = 0
         max_cdp_repairs = max(1, env_int("YOUTUBE_CDP_UPLOAD_REPAIR_ATTEMPTS", 3))
+        max_stall_repairs = max(1, env_int("YOUTUBE_UPLOAD_STALL_REPAIR_ATTEMPTS", 2))
+        stall_timeout_seconds = max(30, env_int("YOUTUBE_UPLOAD_STALL_TIMEOUT_SECONDS", 180))
         default_max_attempts = 6 if (use_cdp_for_attempt or youtube_auth_state_exists() or youtube_chromium_profile_ready()) else 1
         max_attempts = max(1, env_int("YOUTUBE_CDP_UPLOAD_MAX_ATTEMPTS", default_max_attempts))
         for attempt in range(1, max_attempts + 1):
@@ -2788,25 +3032,81 @@ def run_youtube_upload(upload_id: str) -> None:
             )
             with process_lock:
                 youtube_upload_processes[upload_id] = process
-            assert process.stdout is not None
-            for line in process.stdout:
-                cleaned = line.rstrip()
-                if cleaned:
-                    logs.append(cleaned)
-                    set_youtube_upload(upload_id, logs=logs[-160:], video_url=youtube_video_url_from_logs(logs))
-            code = process.wait()
+
+            def record_upload_log(cleaned: str) -> None:
+                logs.append(cleaned)
+                set_youtube_upload(
+                    upload_id,
+                    logs=logs[-160:],
+                    video_url=youtube_video_url_from_logs(logs),
+                )
+
+            code, stalled = monitor_youtube_upload_process(
+                process,
+                record_upload_log,
+                stall_timeout_seconds=stall_timeout_seconds,
+            )
+            command_upload_path = Path(command[3]).resolve()
+            source_clip_path = output_path_from_url(upload.clip_url)
+            if cleanup_youtube_staging_file(command_upload_path, source_clip_path):
+                logs.append("File staging upload sementara dibersihkan.")
+
             video_url = youtube_video_url_from_logs(logs)
-            error = youtube_upload_error_from_logs(logs) or f"youtube_uploader.py exited with code {code}"
+            error = (
+                f"Uploader tidak mengirim progres selama {stall_timeout_seconds} detik."
+                if stalled
+                else youtube_upload_error_from_logs(logs) or f"youtube_uploader.py exited with code {code}"
+            )
             if code == 0:
+                completed_at = now_iso()
+                delete_after = None
+                if video_url and not upload.dry_run:
+                    delete_after = completed_upload_cleanup_after(completed_at)
+                    logs.append(
+                        "Upload dan URL YouTube terverifikasi; file lokal akan dihapus otomatis "
+                        f"dalam {max(1, env_int('YOUTUBE_DELETE_UPLOADED_CLIP_DELAY_SECONDS', 30))} detik."
+                    )
+                elif upload.dry_run:
+                    logs.append("Dry-run selesai; file lokal tidak dijadwalkan untuk dihapus.")
+                else:
+                    logs.append(
+                        "Upload selesai tetapi URL YouTube belum terverifikasi; file lokal tidak dihapus."
+                    )
                 set_youtube_upload(
                     upload_id,
                     status="completed",
                     logs=logs[-160:],
                     video_url=video_url,
-                    finished_at=now_iso(),
+                    finished_at=completed_at,
                     duration_seconds=elapsed_seconds(started_perf),
+                    clip_delete_after=delete_after,
+                    clip_deleted_at=None,
+                    clip_delete_error=None,
                 )
+                if delete_after:
+                    schedule_completed_upload_cleanup(upload_id)
                 return
+            if stalled and attempt < max_attempts and stall_repair_attempts < max_stall_repairs:
+                stall_repair_attempts += 1
+                logs.append(
+                    "Watchdog mendeteksi upload tersendat; menjalankan sinkronisasi session otomatis "
+                    f"{stall_repair_attempts}/{max_stall_repairs} sebelum retry."
+                )
+                set_youtube_upload(upload_id, logs=logs[-160:], error=error)
+                sync_ok, sync_logs, sync_error = auto_sync_youtube_upload_session(use_cdp_for_attempt)
+                logs.extend(sync_logs[-80:])
+                if sync_ok:
+                    logs.append("Auto-sync berhasil; upload dilanjutkan dengan percobaan baru.")
+                    set_youtube_upload(upload_id, logs=logs[-160:], error=None)
+                else:
+                    logs.append(f"Auto-sync belum valid: {sync_error or 'session belum siap'}")
+                    if use_cdp_for_attempt and youtube_auth_state_exists():
+                        logs.append("Retry dialihkan ke Playwright storage-state agar antrean tetap berjalan.")
+                        fallback_to_storage_state = True
+                        force_chromium_profile_for_attempt = False
+                        use_cdp_for_attempt = False
+                    set_youtube_upload(upload_id, logs=logs[-160:], error=sync_error or error)
+                continue
             if attempt < max_attempts and youtube_login_refresh_needed(error):
                 if not use_cdp_for_attempt and not one_time_login_refresh_attempted:
                     one_time_login_refresh_attempted = True
@@ -2990,8 +3290,19 @@ def start_youtube_worker_if_needed() -> None:
 def resume_queued_youtube_uploads() -> None:
     with youtube_uploads_lock:
         has_queued = any(upload.status == "queued" for upload in youtube_uploads.values())
+        pending_cleanup_ids = [
+            upload.id
+            for upload in youtube_uploads.values()
+            if upload.status == "completed"
+            and upload.video_url
+            and upload.clip_delete_after
+            and not upload.clip_deleted_at
+            and not upload.dry_run
+        ]
     if has_queued:
         start_youtube_worker_if_needed()
+    for upload_id in pending_cleanup_ids:
+        schedule_completed_upload_cleanup(upload_id)
 
 
 def discover_clips(started_at: float) -> list[ClipFile]:

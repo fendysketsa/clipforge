@@ -3,9 +3,12 @@ import {
   CheckCircle2,
   ChevronDown,
   Clipboard,
+  Clock3,
   Download,
   ExternalLink,
+  Info,
   Lightbulb,
+  LoaderCircle,
   RefreshCw,
   Settings2,
   Sparkles,
@@ -14,10 +17,13 @@ import {
   UploadCloud,
   Video,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { getOutputUrl } from "../../lib/apiClient";
 import { clipDisplayTitle, handleCopyTitle, handleDownload } from "../../lib/utils";
 import type { ClipFile, YouTubeUploadJob } from "../../types/clip.type";
 import { ThumbnailPrompt } from "./ThumbnailPrompt";
+
+const COMPLETED_UPLOAD_STATUS_TTL_MS = 30_000;
 
 type ResultsSectionProps = {
   clips: ClipFile[];
@@ -74,6 +80,29 @@ function fypScoreTone(score: number) {
   return "polish";
 }
 
+function completedUploadStatusIsVisible(upload: YouTubeUploadJob, now: number) {
+  if (upload.status !== "completed") return true;
+  if (!upload.video_url || upload.clip_delete_error) return true;
+  if (upload.clip_delete_after && !upload.clip_deleted_at) return true;
+  const completedAt = Date.parse(upload.finished_at || upload.updated_at);
+  return Number.isNaN(completedAt) || now - completedAt < COMPLETED_UPLOAD_STATUS_TTL_MS;
+}
+
+function uploadCleanupCountdown(upload: YouTubeUploadJob, now: number) {
+  if (!upload.clip_delete_after || upload.clip_deleted_at) return null;
+  const deleteAt = Date.parse(upload.clip_delete_after);
+  if (Number.isNaN(deleteAt)) return null;
+  return Math.max(0, Math.ceil((deleteAt - now) / 1000));
+}
+
+function uploadCleanupProgress(upload: YouTubeUploadJob, now: number) {
+  if (!upload.clip_delete_after) return 0;
+  const deleteAt = Date.parse(upload.clip_delete_after);
+  const startedAt = Date.parse(upload.finished_at || upload.updated_at);
+  if (Number.isNaN(deleteAt) || Number.isNaN(startedAt) || deleteAt <= startedAt) return 0;
+  return Math.max(0, Math.min(100, ((now - startedAt) / (deleteAt - startedAt)) * 100));
+}
+
 export function ResultsSection({
   clips,
   selectedClipUrls,
@@ -96,10 +125,40 @@ export function ResultsSection({
   onToggleClipSelection,
   onToggleClipCorrect,
 }: ResultsSectionProps) {
+  const [uploadStatusNow, setUploadStatusNow] = useState(() => Date.now());
   const selectedCount = selectedClipUrls.length;
   const allClipsSelected = clips.length > 0 && selectedCount === clips.length;
   const usesChromeDebugging = /remote debugging|cdp/i.test(youtubeStatusMessage);
   const openStudioWaitingLabel = usesChromeDebugging ? "Menyiapkan..." : "Menunggu login...";
+  const hasCleanupCountdown = youtubeUploads.some(
+    (upload) => Boolean(upload.clip_delete_after && !upload.clip_deleted_at),
+  );
+
+  useEffect(() => {
+    if (!hasCleanupCountdown) return;
+    setUploadStatusNow(Date.now());
+    const interval = window.setInterval(() => setUploadStatusNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [hasCleanupCountdown]);
+
+  useEffect(() => {
+    const now = Date.now();
+    const nextExpiry = youtubeUploads.reduce<number | null>((nearest, upload) => {
+      if (upload.status !== "completed") return nearest;
+      const completedAt = Date.parse(upload.finished_at || upload.updated_at);
+      if (Number.isNaN(completedAt)) return nearest;
+      const expiresAt = completedAt + COMPLETED_UPLOAD_STATUS_TTL_MS;
+      if (expiresAt <= now) return nearest;
+      return nearest === null ? expiresAt : Math.min(nearest, expiresAt);
+    }, null);
+
+    if (nextExpiry === null) return;
+    const timer = window.setTimeout(
+      () => setUploadStatusNow(Date.now()),
+      Math.max(0, nextExpiry - now + 50),
+    );
+    return () => window.clearTimeout(timer);
+  }, [uploadStatusNow, youtubeUploads]);
 
   return (
     <section className="results" id="results">
@@ -225,6 +284,17 @@ export function ResultsSection({
             const isSelected = selectedClipUrls.includes(clip.url);
             const latestUpload = youtubeUploads.find((upload) => upload.clip_url === clip.url);
             const isUploadingToYouTube = latestUpload?.status === "queued" || latestUpload?.status === "running";
+            const showLatestUploadStatus = Boolean(
+              latestUpload && completedUploadStatusIsVisible(latestUpload, uploadStatusNow),
+            );
+            const cleanupCountdown = latestUpload
+              ? uploadCleanupCountdown(latestUpload, uploadStatusNow)
+              : null;
+            const cleanupProgress = latestUpload
+              ? uploadCleanupProgress(latestUpload, uploadStatusNow)
+              : 0;
+            const cleanupPending = cleanupCountdown !== null;
+            const cleanupTooltipId = latestUpload ? `cleanup-tooltip-${latestUpload.id}` : undefined;
             const rawUploadError = latestUpload?.error || latestUpload?.logs?.at(-1) || "";
             const uploadError = friendlyYouTubeUploadError(rawUploadError, usesChromeDebugging);
             const youtubeButtonTitle = youtubeEnabled
@@ -389,11 +459,33 @@ export function ResultsSection({
                       <span>Hapus</span>
                     </button>
                   </div>
-                  {latestUpload ? (
-                    <div className={`youtubeUploadStatus status-${latestUpload.status}`}>
+                  {latestUpload && showLatestUploadStatus ? (
+                    <div
+                      aria-describedby={cleanupPending ? cleanupTooltipId : undefined}
+                      aria-label={
+                        cleanupPending
+                          ? `Upload YouTube selesai. File lokal akan dihapus otomatis dalam ${cleanupCountdown} detik.`
+                          : undefined
+                      }
+                      className={`youtubeUploadStatus status-${latestUpload.status} ${cleanupPending ? "youtubeUploadStatus--cleanup" : ""}`}
+                      tabIndex={cleanupPending ? 0 : undefined}
+                    >
                       <UploadCloud size={14} />
-                      <span>
+                      <span className="youtubeUploadStatusText">
                         YouTube: {latestUpload.status}
+                        {latestUpload.status === "completed"
+                          ? latestUpload.clip_delete_error
+                            ? cleanupCountdown && cleanupCountdown > 0
+                              ? ` · retry hapus dalam ${cleanupCountdown} detik`
+                              : " · mencoba ulang penghapusan file"
+                            : cleanupPending
+                              ? cleanupCountdown > 0
+                                ? ` · hapus file dalam ${cleanupCountdown} detik`
+                                : " · sedang menghapus file..."
+                              : !latestUpload.video_url
+                                ? " · file dipertahankan karena URL belum terverifikasi"
+                                : null
+                          : null}
                         {latestUpload.video_url ? (
                           <>
                             {" "}
@@ -401,6 +493,49 @@ export function ResultsSection({
                           </>
                         ) : null}
                       </span>
+                      {cleanupPending ? (
+                        <>
+                          <span className={`cleanupCountdownBadge ${cleanupCountdown === 0 ? "isDeleting" : ""}`}>
+                            {cleanupCountdown === 0 ? (
+                              <LoaderCircle className="spin" size={13} />
+                            ) : (
+                              <Clock3 size={13} />
+                            )}
+                            {cleanupCountdown === 0 ? "Cleanup" : `${cleanupCountdown}s`}
+                          </span>
+                          <Info className="cleanupInfoIcon" size={14} aria-hidden="true" />
+                          <div className="uploadCleanupTooltip" id={cleanupTooltipId} role="tooltip">
+                            <div className="uploadCleanupTooltipHeader">
+                              <span className="uploadCleanupTooltipIcon">
+                                {cleanupCountdown === 0 ? (
+                                  <LoaderCircle className="spin" size={17} />
+                                ) : (
+                                  <Trash2 size={17} />
+                                )}
+                              </span>
+                              <span>
+                                <strong>
+                                  {cleanupCountdown === 0
+                                    ? "Sedang membersihkan file lokal"
+                                    : `Auto-cleanup dalam ${cleanupCountdown} detik`}
+                                </strong>
+                                <small>Upload dan URL YouTube sudah terverifikasi aman.</small>
+                              </span>
+                            </div>
+                            <div className="uploadCleanupProgress" aria-hidden="true">
+                              <span style={{ width: `${cleanupProgress}%` }} />
+                            </div>
+                            <ul>
+                              <li>Video utama MP4 hasil klip</li>
+                              <li>Thumbnail dan prompt thumbnail</li>
+                              <li>Caption serta metadata JSON</li>
+                              <li>File staging sementara dan folder kosong</li>
+                              <li>Card klip dan riwayat job disinkronkan</li>
+                            </ul>
+                            <p>Jika penghapusan gagal, backend akan retry otomatis tanpa menghapus video YouTube.</p>
+                          </div>
+                        </>
+                      ) : null}
                     </div>
                   ) : null}
                   {latestUpload?.status === "failed" && uploadError ? (
