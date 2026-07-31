@@ -4101,7 +4101,7 @@ def run_upload(args: argparse.Namespace) -> None:
                     set_thumbnail(page, thumbnail_path)
                 else:
                     log(
-                        "Thumbnail Shorts memakai cover moment POV di dalam video; "
+                        "Thumbnail Shorts memakai cover CTR ber-keyframe di dalam video; "
                         "YouTube Studio desktop tidak menerima gambar thumbnail custom untuk Shorts."
                     )
 

@@ -3443,13 +3443,16 @@ def thumbnail_story_copy(
         headline_lines = 2
         support_words = 10
     else:
-        headline_source = raw_pov
-        support_source = raw_hook
-        eyebrow = "POV"
-        headline_words = 10
+        # Lead with the analyzed hook. A concrete promise/question is easier to
+        # scan in a Shorts grid than a longer POV sentence; the POV remains as
+        # truthful context underneath it.
+        headline_source = raw_hook
+        support_source = raw_pov
+        eyebrow = "WAJIB TAHU"
+        headline_words = 8
         headline_chars = 22
         headline_lines = 3
-        support_words = 6
+        support_words = 10
 
     headline = first_sentence(headline_source, max_words=headline_words).upper()
     headline_chunks = split_subtitle_text(
@@ -3479,8 +3482,8 @@ def thumbnail_story_copy(
 
 
 def shorts_cover_frame_timestamp(duration: float) -> float:
-    """Pick a stable frame inside the opening cover moment."""
-    return min(max(0.1, duration - 0.05), 0.62)
+    """Pick a stable, keyframe-friendly instant inside the opening cover moment."""
+    return min(max(0.1, duration - 0.05), 0.78)
 
 
 def payoff_banner_text(clip: ClipCandidate, clip_segments: list[TranscriptSegment]) -> str:
@@ -4291,6 +4294,7 @@ def enhanced_edit_filter(
     *,
     pov_text_filename: str = "",
     cover_text_filename: str = "",
+    cover_support_text_filename: str = "",
     show_progress: bool = True,
     theme_profile: dict[str, str] | None = None,
     emphasis_times: list[float] | None = None,
@@ -4392,27 +4396,52 @@ def enhanced_edit_filter(
             ]
         )
     if show_text_overlays:
-        cover_end = min(safe_duration, 0.95)
-        hook_start = 1.02 if cover_text_filename and cover_end >= 0.4 else 0.10
+        # Keep the cover moving with the source audio instead of inserting a
+        # dead still. The 1.35 s window is long enough to be readable and easy
+        # for a platform frame extractor to sample, but short enough to retain
+        # the spoken opening hook.
+        cover_end = min(safe_duration, 1.35)
+        hook_start = 1.42 if cover_text_filename and cover_end >= 0.4 else 0.10
         if cover_text_filename and cover_end >= 0.4:
             filters.extend(
                 [
-                    "drawbox=x=44:y=982:w=992:h=452:color=black@0.58:t=fill:"
+                    "drawbox=x=34:y=926:w=1012:h=720:color=black@0.34:t=fill:"
                     f"enable='between(t,0.08,{cover_end:.3f})'",
-                    f"drawbox=x=44:y=982:w=14:h=452:color={accent}@0.98:t=fill:"
+                    "drawbox=x=44:y=944:w=992:h=682:color=black@0.68:t=fill:"
                     f"enable='between(t,0.08,{cover_end:.3f})'",
-                    f"drawbox=x=76:y=1010:w=166:h=58:color={accent}@0.96:t=fill:"
+                    f"drawbox=x=44:y=944:w=15:h=682:color={accent}@0.98:t=fill:"
+                    f"enable='between(t,0.08,{cover_end:.3f})'",
+                    f"drawbox=x=44:y=944:w=992:h=7:color={accent_secondary}@0.86:t=fill:"
+                    f"enable='between(t,0.08,{cover_end:.3f})'",
+                    f"drawbox=x=78:y=982:w=252:h=62:color={accent}@0.98:t=fill:"
                     f"enable='between(t,0.08,{cover_end:.3f})'",
                     "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-                    "text='POV':expansion=none:fontcolor=white:fontsize=29:x=124:y=1023:"
+                    "text='WAJIB TAHU':expansion=none:fontcolor=white:fontsize=27:x=104:y=998:"
                     f"enable='between(t,0.08,{cover_end:.3f})'",
                     "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                     f"textfile='{cover_text_filename}':reload=0:expansion=none:"
-                    "fontcolor=white:fontsize=52:line_spacing=11:borderw=3:bordercolor=black@0.90:"
-                    "shadowcolor=black@0.85:shadowx=3:shadowy=3:x=78:y=1100:"
+                    "fontcolor=white:fontsize=60:line_spacing=12:borderw=3:bordercolor=black@0.92:"
+                    "shadowcolor=black@0.88:shadowx=4:shadowy=4:x=78:y=1080:"
                     f"enable='between(t,0.08,{cover_end:.3f})'",
-                    f"drawbox=x=76:y=1394:w=610:h=7:color={accent_secondary}@0.96:t=fill:"
+                    f"drawbox=x=78:y=1396:w=666:h=7:color={accent_secondary}@0.98:t=fill:"
                     f"enable='between(t,0.08,{cover_end:.3f})'",
+                ]
+            )
+            if cover_support_text_filename:
+                filters.append(
+                    "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+                    f"textfile='{cover_support_text_filename}':reload=0:expansion=none:"
+                    "fontcolor=white@0.96:fontsize=30:line_spacing=7:borderw=2:"
+                    "bordercolor=black@0.86:x=80:y=1432:"
+                    f"enable='between(t,0.08,{cover_end:.3f})'"
+                )
+            filters.extend(
+                [
+                    f"drawbox=x=78:y=1550:w=392:h=50:color={accent_secondary}@0.94:t=fill:"
+                    f"enable='between(t,0.08,{cover_end:.3f})'",
+                    "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                    "text='LIHAT PENJELASANNYA':expansion=none:fontcolor=white:fontsize=20:"
+                    f"x=100:y=1563:enable='between(t,0.08,{cover_end:.3f})'",
                 ]
             )
         filters.extend(
@@ -4793,21 +4822,26 @@ def designed_thumbnail_filter(
         [
             "scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos",
             "crop=1080:1920",
-            "eq=contrast=1.07:brightness=-0.012:saturation=1.09",
-            "drawbox=x=36:y=960:w=1008:h=650:color=black@0.58:t=fill",
-            f"drawbox=x=36:y=960:w=15:h=650:color={accent}@0.98:t=fill",
-            f"drawbox=x=74:y=1000:w=174:h=60:color={accent}@0.96:t=fill",
-            f"drawtext=fontfile={font_bold}:text='POV':expansion=none:"
-            "fontcolor=white:fontsize=31:x=124:y=1014",
+            "eq=contrast=1.09:brightness=-0.018:saturation=1.11",
+            "drawbox=x=34:y=926:w=1012:h=720:color=black@0.34:t=fill",
+            "drawbox=x=44:y=944:w=992:h=682:color=black@0.68:t=fill",
+            f"drawbox=x=44:y=944:w=15:h=682:color={accent}@0.98:t=fill",
+            f"drawbox=x=44:y=944:w=992:h=7:color={accent_secondary}@0.86:t=fill",
+            f"drawbox=x=78:y=982:w=252:h=62:color={accent}@0.98:t=fill",
+            f"drawtext=fontfile={font_bold}:text='WAJIB TAHU':expansion=none:"
+            "fontcolor=white:fontsize=27:x=104:y=998",
             f"drawtext=fontfile={font_bold}:textfile='{headline_filename}':reload=0:"
-            "expansion=none:fontcolor=white:fontsize=58:line_spacing=12:"
-            "borderw=3:bordercolor=black@0.92:shadowcolor=black@0.86:"
-            "shadowx=3:shadowy=3:x=76:y=1105",
-            f"drawbox=x=76:y=1456:w=660:h=7:color={accent_secondary}@0.96:t=fill",
+            "expansion=none:fontcolor=white:fontsize=60:line_spacing=12:"
+            "borderw=3:bordercolor=black@0.92:shadowcolor=black@0.88:"
+            "shadowx=4:shadowy=4:x=78:y=1080",
+            f"drawbox=x=78:y=1396:w=666:h=7:color={accent_secondary}@0.98:t=fill",
             f"drawtext=fontfile={font_regular}:textfile='{support_filename}':reload=0:"
-            "expansion=none:fontcolor=white@0.94:fontsize=31:line_spacing=7:"
-            "borderw=2:bordercolor=black@0.84:x=78:y=1492",
-            f"drawbox=x=30:y=60:w=1020:h=1800:color={accent_secondary}@0.34:t=6",
+            "expansion=none:fontcolor=white@0.96:fontsize=30:line_spacing=7:"
+            "borderw=2:bordercolor=black@0.86:x=80:y=1432",
+            f"drawbox=x=78:y=1550:w=392:h=50:color={accent_secondary}@0.94:t=fill",
+            f"drawtext=fontfile={font_bold}:text='LIHAT PENJELASANNYA':expansion=none:"
+            "fontcolor=white:fontsize=20:x=100:y=1563",
+            f"drawbox=x=30:y=60:w=1020:h=1800:color={accent_secondary}@0.42:t=6",
         ]
     )
 
@@ -5136,6 +5170,7 @@ def export_clip(
     hook_text_path = clips_dir / f"{base_name}.hook.txt"
     pov_text_path = clips_dir / f"{base_name}.pov.txt"
     cover_text_path = clips_dir / f"{base_name}.cover.txt"
+    cover_support_text_path = clips_dir / f"{base_name}.cover_support.txt"
     payoff_text_path = clips_dir / f"{base_name}.payoff.txt"
     clean_background_path = clips_dir / f"{base_name}.background_tmp.mp4"
     json_path.unlink(missing_ok=True)
@@ -5257,6 +5292,16 @@ def export_clip(
         "thumbnail_eyebrow": cover_copy["eyebrow"],
         "thumbnail_headline": cover_copy["headline"].replace("\n", " "),
         "thumbnail_support": cover_copy["support"].replace("\n", " "),
+        "embedded_cover_window_seconds": (
+            round(min(duration, 1.35), 3)
+            if output_format == "vertical_short" and enhanced_edit and drawtext_supported
+            else None
+        ),
+        "thumbnail_keyframe_seconds": (
+            round(shorts_cover_frame_timestamp(duration), 3)
+            if output_format == "vertical_short" and enhanced_edit and drawtext_supported
+            else None
+        ),
     }
 
     visual_source = video_path
@@ -5447,13 +5492,14 @@ def export_clip(
             hook_text_path.write_text(hook_banner_text(clip) + "\n", encoding="utf-8")
             pov_text_path.write_text(pov_banner_text(clip) + "\n", encoding="utf-8")
             cover_text_path.write_text(cover_copy["headline"] + "\n", encoding="utf-8")
+            cover_support_text_path.write_text(cover_copy["support"] + "\n", encoding="utf-8")
             payoff_text_path.write_text(core_message + "\n", encoding="utf-8")
             if output_format == "vertical_short":
                 applied_edits.append(
                     "Intisari ucapan asli ditampilkan menjelang akhir agar makna klip langsung terbaca."
                 )
                 applied_edits.append(
-                    "Cover moment POV bergerak ditampilkan pada detik pertama dan dipakai sebagai thumbnail Shorts."
+                    "Cover CTR bergerak dengan hook utama ditampilkan pada 1,35 detik pertama dan ditandai keyframe untuk thumbnail Shorts."
                 )
         else:
             console.print(
@@ -5491,6 +5537,11 @@ def export_clip(
                     pov_text_filename=pov_text_path.name if drawtext_supported else "",
                     cover_text_filename=(
                         cover_text_path.name
+                        if drawtext_supported and output_format == "vertical_short"
+                        else ""
+                    ),
+                    cover_support_text_filename=(
+                        cover_support_text_path.name
                         if drawtext_supported and output_format == "vertical_short"
                         else ""
                     ),
@@ -5622,6 +5673,14 @@ def export_clip(
                 str(quality["crf"]),
                 "-pix_fmt",
                 "yuv420p",
+                *(
+                    [
+                        "-force_key_frames",
+                        f"0,{shorts_cover_frame_timestamp(duration):.3f},{min(duration, 1.35):.3f}",
+                    ]
+                    if output_format == "vertical_short" and enhanced_edit
+                    else []
+                ),
                 *ffmpeg_clean_metadata_args(),
                 str(temp_video_path.name),
             ],
@@ -5631,6 +5690,7 @@ def export_clip(
         hook_text_path.unlink(missing_ok=True)
         pov_text_path.unlink(missing_ok=True)
         cover_text_path.unlink(missing_ok=True)
+        cover_support_text_path.unlink(missing_ok=True)
         payoff_text_path.unlink(missing_ok=True)
         clean_background_path.unlink(missing_ok=True)
     audio_filter = (

@@ -16,6 +16,7 @@ export function ThumbnailPrompt({ clip }: ThumbnailPromptProps) {
   const thumbName = clip.name.replace(/\.mp4$/i, "_thumb.jpg");
   const prompt = clip.thumbnail_prompt?.trim() ?? "";
   const caption = clip.social_caption?.trim() ?? "";
+  const isShort = !clip.name.toLowerCase().startsWith("highlight_5menit_");
 
   return (
     <details className="thumbBlock">
@@ -24,9 +25,14 @@ export function ThumbnailPrompt({ clip }: ThumbnailPromptProps) {
           <ImageIcon size={16} />
         </span>
         <span className="thumbSummaryCopy">
-          <strong>Thumbnail POV siap publikasi</strong>
+          <strong>{isShort ? "Cover Shorts sudah tertanam" : "Thumbnail siap publikasi"}</strong>
           <small>
-            {[thumbUrl ? "thumbnail" : "", prompt ? "prompt" : "", caption ? "caption" : ""]
+            {[
+              isShort ? "tanpa upload gambar" : "",
+              thumbUrl ? "preview" : "",
+              prompt ? "prompt" : "",
+              caption ? "caption" : "",
+            ]
               .filter(Boolean)
               .join(" · ")}
           </small>
@@ -39,12 +45,12 @@ export function ThumbnailPrompt({ clip }: ThumbnailPromptProps) {
           <div className="thumbPreview">
             <div className="thumbBlockHeader">
               <ImageIcon size={14} />
-              <span>Cover frame POV / FYP</span>
+              <span>{isShort ? "Preview frame cover di dalam video" : "Thumbnail upload"}</span>
             </div>
-            <img src={thumbUrl} alt="Cover frame POV siap dipakai sebagai thumbnail" />
+            <img src={thumbUrl} alt="Preview frame cover berkontras tinggi" />
             <button type="button" onClick={() => handleDownload(thumbUrl, thumbName)}>
               <Download size={15} />
-              <span>Unduh thumbnail</span>
+              <span>{isShort ? "Unduh preview (opsional)" : "Unduh thumbnail"}</span>
             </button>
           </div>
         ) : null}

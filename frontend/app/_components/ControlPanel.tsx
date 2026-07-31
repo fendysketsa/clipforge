@@ -302,7 +302,7 @@ export function ControlPanel({
         <p className="field-help">
           {clipMode === "highlight_5m"
             ? "Hanya kompilasi: AI memilih poin terpenting, menyusunnya kronologis, lalu menggabungkan menjadi satu video sekitar 5 menit."
-            : "Hanya membuat clip vertikal maksimal 60 detik. Hook, animasi, sound effect, payoff, dan penutup loop diterapkan dalam satu render."}
+            : "Clip vertikal maksimal 60 detik dengan cover CTR tertanam, hook, animasi, sound effect, payoff, dan penutup loop dalam satu render—tanpa perlu upload gambar thumbnail."}
         </p>
       </div>
 

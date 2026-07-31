@@ -372,19 +372,22 @@ def test_enhanced_edit_filter_adds_motion_hook_transition_and_progress():
     assert "#22D3EE@0.24" in value
 
 
-def test_shorts_cover_moment_uses_analyzed_pov_before_the_hook():
+def test_shorts_cover_moment_leads_with_hook_and_supporting_context():
     value = enhanced_edit_filter(
         60,
         "clip.hook.txt",
         pov_text_filename="clip.pov.txt",
         cover_text_filename="clip.cover.txt",
+        cover_support_text_filename="clip.cover-support.txt",
     )
 
     assert "textfile='clip.cover.txt'" in value
-    assert "text='POV'" in value
-    assert "between(t,0.08,0.950)" in value
+    assert "textfile='clip.cover-support.txt'" in value
+    assert "text='WAJIB TAHU'" in value
+    assert "text='LIHAT PENJELASANNYA'" in value
+    assert "between(t,0.08,1.350)" in value
     assert "textfile='clip.hook.txt'" in value
-    assert "between(t,1.02,3.80)" in value
+    assert "between(t,1.42,3.80)" in value
 
 
 def test_thumbnail_story_copy_is_compact_and_truthful():
@@ -403,10 +406,11 @@ def test_thumbnail_story_copy_is_compact_and_truthful():
 
     copy = thumbnail_story_copy(clip)
 
-    assert copy["eyebrow"] == "POV"
+    assert copy["eyebrow"] == "WAJIB TAHU"
     assert "POV:" not in copy["headline"]
     assert len(copy["headline"].splitlines()) <= 3
-    assert copy["support"] == "JANGAN PERNAH MEREMEHKAN\nORANG"
+    assert copy["headline"] == "JANGAN PERNAH\nMEREMEHKAN ORANG"
+    assert copy["support"] == "KAMU BARU SADAR UCAPAN\nKECIL BISA MELUKAI ORANG"
 
 
 def test_thumbnail_filter_uses_vertical_and_landscape_upload_shapes():
@@ -426,10 +430,11 @@ def test_thumbnail_filter_uses_vertical_and_landscape_upload_shapes():
     )
 
     assert "scale=1080:1920" in vertical
-    assert "text='POV'" in vertical
+    assert "text='WAJIB TAHU'" in vertical
+    assert "text='LIHAT PENJELASANNYA'" in vertical
     assert "scale=1280:720" in landscape
     assert "text='HIGHLIGHT'" in landscape
-    assert shorts_cover_frame_timestamp(60) == 0.62
+    assert shorts_cover_frame_timestamp(60) == 0.78
     assert shorts_cover_frame_timestamp(0.12) == 0.1
 
 
