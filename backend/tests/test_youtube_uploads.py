@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -473,6 +474,69 @@ def test_upload_watchdog_terminates_silent_process():
     assert stalled is True
     assert code != 0
     assert logs == ["started"]
+
+
+def test_upload_watchdog_treats_video_url_as_terminal_success():
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-u",
+            "-c",
+            (
+                "import time; "
+                "print('VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345'); "
+                "time.sleep(10)"
+            ),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    logs = []
+
+    code, stalled = monitor_youtube_upload_process(
+        process,
+        logs.append,
+        stall_timeout_seconds=5,
+        terminal_grace_seconds=0.05,
+    )
+
+    assert code == 0
+    assert stalled is False
+    assert logs == ["VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345"]
+    assert process.poll() is not None
+
+
+def test_running_upload_with_verified_url_recovers_as_completed(monkeypatch, tmp_path):
+    import api
+
+    upload = YouTubeUploadJob(
+        id="recover-upload",
+        source_job_id="job-1",
+        clip_url="/outputs/demo/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="running",
+        created_at="2026-07-31T09:00:00+00:00",
+        updated_at="2026-07-31T09:01:00+00:00",
+        started_at="2026-07-31T09:00:01+00:00",
+        title="Recovered",
+        video_url="https://www.youtube.com/watch?v=abcDEF12345",
+        logs=["VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345"],
+    )
+    uploads_path = tmp_path / "youtube_uploads.json"
+    uploads_path.write_text(
+        json.dumps([upload.model_dump()]),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", uploads_path)
+
+    recovered = api.load_youtube_uploads()[upload.id]
+
+    assert recovered.status == "completed"
+    assert recovered.video_url == upload.video_url
+    assert recovered.clip_delete_after is not None
+    assert recovered.error is None
+    assert "tanpa upload ulang" in recovered.logs[-1]
 
 
 def test_start_youtube_cdp_refresh_process_uses_configured_command(monkeypatch, tmp_path):

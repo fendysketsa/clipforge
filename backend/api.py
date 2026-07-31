@@ -920,15 +920,46 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
         upload = YouTubeUploadJob(**item)
         if upload.status == "running":
             finished_at = now_iso()
-            upload = upload.model_copy(
-                update={
-                    "status": "failed",
-                    "updated_at": finished_at,
-                    "finished_at": finished_at,
-                    "duration_seconds": duration_between_iso(upload.started_at, finished_at),
-                    "error": "Backend restarted before this YouTube upload finished",
-                }
-            )
+            if upload.video_url and not upload.dry_run:
+                delete_after = (
+                    datetime.fromisoformat(finished_at)
+                    + timedelta(
+                        seconds=max(
+                            1,
+                            env_int("YOUTUBE_DELETE_UPLOADED_CLIP_DELAY_SECONDS", 30),
+                        )
+                    )
+                ).isoformat()
+                upload = upload.model_copy(
+                    update={
+                        "status": "completed",
+                        "updated_at": finished_at,
+                        "finished_at": finished_at,
+                        "duration_seconds": duration_between_iso(upload.started_at, finished_at),
+                        "clip_delete_after": delete_after,
+                        "clip_deleted_at": None,
+                        "clip_delete_error": None,
+                        "clip_cleanup_started_at": None,
+                        "clip_cleanup_current_step": None,
+                        "clip_cleanup_completed_steps": [],
+                        "clip_cleanup_step_details": {},
+                        "logs": [
+                            *upload.logs,
+                            "Recovery restart: URL YouTube sudah terverifikasi; upload dipulihkan sebagai completed tanpa upload ulang.",
+                        ][-160:],
+                        "error": None,
+                    }
+                )
+            else:
+                upload = upload.model_copy(
+                    update={
+                        "status": "failed",
+                        "updated_at": finished_at,
+                        "finished_at": finished_at,
+                        "duration_seconds": duration_between_iso(upload.started_at, finished_at),
+                        "error": "Backend restarted before this YouTube upload finished",
+                    }
+                )
         loaded[upload.id] = upload
     return loaded
 
@@ -2456,6 +2487,8 @@ def monitor_youtube_upload_process(
     on_line,
     *,
     stall_timeout_seconds: float,
+    terminal_success_prefix: str = "VIDEO_URL:",
+    terminal_grace_seconds: float = 5.0,
 ) -> tuple[int, bool]:
     """Stream output without allowing a silent uploader subprocess to hang forever."""
     if process.stdout is None:
@@ -2473,22 +2506,34 @@ def monitor_youtube_upload_process(
     threading.Thread(target=read_output, daemon=True).start()
     last_progress = time.monotonic()
     timeout = max(0.1, float(stall_timeout_seconds))
+    terminal_success_at: float | None = None
 
     while True:
-        remaining = timeout - (time.monotonic() - last_progress)
+        now = time.monotonic()
+        if terminal_success_at is not None:
+            terminal_remaining = max(0.0, terminal_grace_seconds - (now - terminal_success_at))
+            if terminal_remaining <= 0:
+                terminate_youtube_upload_process(process)
+                return 0, False
+        else:
+            terminal_remaining = timeout
+        remaining = min(timeout - (now - last_progress), terminal_remaining)
         if remaining <= 0:
             terminate_youtube_upload_process(process)
-            return process.wait(), True
+            return (0, False) if terminal_success_at is not None else (process.wait(), True)
         try:
             line = output_queue.get(timeout=min(1.0, remaining))
         except queue.Empty:
             continue
         if line is None:
-            return process.wait(), False
+            code = process.wait()
+            return (0, False) if terminal_success_at is not None else (code, False)
         cleaned = line.rstrip()
         if cleaned:
             last_progress = time.monotonic()
             on_line(cleaned)
+            if terminal_success_prefix and cleaned.startswith(terminal_success_prefix):
+                terminal_success_at = time.monotonic()
 
 
 def auto_sync_youtube_upload_session(use_cdp: bool) -> tuple[bool, list[str], str | None]:
@@ -3466,6 +3511,12 @@ def run_youtube_upload(upload_id: str) -> None:
                 logs.append("File staging upload sementara dibersihkan.")
 
             video_url = youtube_video_url_from_logs(logs)
+            if video_url and not upload.dry_run and code != 0:
+                logs.append(
+                    "Uploader berhenti setelah URL final terverifikasi; status dipulihkan sebagai sukses tanpa retry upload."
+                )
+                code = 0
+                stalled = False
             error = (
                 f"Uploader tidak mengirim progres selama {stall_timeout_seconds} detik."
                 if stalled
