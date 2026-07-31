@@ -274,28 +274,69 @@ MYSTERY_WORDS = {
 
 ISLAMIC_WORDS = {
     "akhirat",
+    "akhlak",
+    "alhamdulillah",
     "allah",
     "alquran",
+    "bismillah",
     "dakwah",
     "doa",
+    "dosa",
+    "dzikir",
     "hadis",
     "hadits",
+    "haji",
+    "halal",
+    "haram",
     "hijrah",
     "hikmah",
     "ibadah",
     "iman",
+    "insyaallah",
     "islam",
+    "islami",
     "kajian",
+    "kiai",
+    "kyai",
     "masjid",
+    "muhammad",
     "muslim",
+    "muslimah",
     "nabi",
     "neraka",
+    "pahala",
+    "puasa",
     "quran",
+    "qur'an",
+    "ramadan",
+    "ramadhan",
+    "rasul",
+    "rasulullah",
+    "salat",
+    "salawat",
     "sedekah",
     "shalat",
+    "sholawat",
+    "sholat",
+    "subhanallah",
+    "sunnah",
     "surga",
+    "syariah",
+    "syariat",
+    "taubat",
+    "ulama",
+    "umrah",
+    "ustad",
+    "ustaz",
+    "ustazah",
     "ustadz",
+    "ustadzah",
+    "zakat",
+    "zikir",
 }
+
+ISLAMIC_BACKGROUND_MUSIC_TITLE = "Cahaya Hikmah (ClipForge Original)"
+ISLAMIC_BACKGROUND_MUSIC_LICENSE = "CC0-1.0"
 
 INSPIRING_WORDS = {
     "bangkit",
@@ -3481,11 +3522,15 @@ def detect_visual_theme(clip: ClipCandidate) -> VisualTheme:
     return "knowledge"
 
 
+def clip_has_islamic_context(clip: ClipCandidate) -> bool:
+    """Detect Islamic subject matter independently from the dominant visual theme."""
+    words = set(re.findall(r"[\w']+", f"{clip.title} {clip.text}".lower()))
+    return bool(words.intersection(ISLAMIC_WORDS))
+
+
 def visual_theme_profile(clip: ClipCandidate) -> dict[str, str]:
     theme = detect_visual_theme(clip)
-    has_islamic_context = bool(
-        set(re.findall(r"[\w']+", f"{clip.title} {clip.text}".lower())).intersection(ISLAMIC_WORDS)
-    )
+    has_islamic_context = clip_has_islamic_context(clip)
     profiles: dict[VisualTheme, dict[str, str]] = {
         "mystery": {
             "accent": "#A855F7",
@@ -3825,15 +3870,78 @@ def apply_codex_audio_cues(
     return sorted([*mandatory, *optional[: max_cues - len(mandatory)]], key=lambda item: item.start)
 
 
-def contextual_audio_mix_filter(base_filter: str, cues: list[SoundEffectCue]) -> str:
-    """Mix original synthetic micro-SFX under speech and cap peaks safely."""
-    if not cues:
+def contextual_audio_mix_filter(
+    base_filter: str,
+    cues: list[SoundEffectCue],
+    *,
+    background_music: bool = False,
+    duration: float = 60.0,
+    music_ducking: bool = True,
+) -> str:
+    """Mix speech, original micro-SFX, and an optional CC0 motivational music bed."""
+    if not cues and not background_music:
         return f"[0:a:0]{base_filter},aformat=sample_rates=48000:channel_layouts=stereo[audio_out]"
 
-    chains = [
-        f"[0:a:0]{base_filter},aformat=sample_rates=48000:channel_layouts=stereo[voice]"
-    ]
+    safe_duration = max(0.1, duration)
+    voice_filter = (
+        f"[0:a:0]{base_filter},"
+        "aformat=sample_rates=48000:channel_layouts=stereo"
+    )
+    if background_music and music_ducking:
+        voice_filter += ",asplit=2[voice][voice_sidechain]"
+    else:
+        voice_filter += "[voice]"
+    chains = [voice_filter]
     mix_inputs = ["[voice]"]
+
+    if background_music:
+        # A warm A-major pad and a sparse four-note motif. It is synthesized
+        # locally from simple oscillators, so exported videos never depend on a
+        # third-party recording or a remote music service.
+        pad_notes = ((220.00, 0.014), (277.18, 0.012), (329.63, 0.011))
+        music_labels: list[str] = []
+        for index, (frequency, volume) in enumerate(pad_notes, start=1):
+            label = f"music_pad_{index}"
+            chains.append(
+                f"sine=frequency={frequency:.2f}:sample_rate=48000:duration={safe_duration:.3f},"
+                f"volume='{volume:.3f}*(0.78+0.22*sin(2*PI*t/8))':eval=frame,"
+                f"aformat=sample_rates=48000:channel_layouts=stereo[{label}]"
+            )
+            music_labels.append(f"[{label}]")
+
+        motif_notes = (220.00, 277.18, 329.63, 246.94)
+        for index, frequency in enumerate(motif_notes):
+            label = f"music_motif_{index + 1}"
+            offset = index * 2
+            phase = f"mod(t,8)-{offset}"
+            chains.append(
+                f"sine=frequency={frequency:.2f}:sample_rate=48000:duration={safe_duration:.3f},"
+                f"volume='0.040*between(mod(t,8),{offset},{offset + 1.8})"
+                f"*pow(sin(PI*({phase})/1.8),2)':eval=frame,"
+                "aformat=sample_rates=48000:channel_layouts=stereo,"
+                f"aecho=0.8:0.35:95:0.16[{label}]"
+            )
+            music_labels.append(f"[{label}]")
+
+        fade_out_start = max(0.0, safe_duration - min(1.2, safe_duration * 0.2))
+        chains.append(
+            "".join(music_labels)
+            + f"amix=inputs={len(music_labels)}:duration=longest:dropout_transition=0:normalize=0,"
+            "lowpass=f=6500,highpass=f=110,volume=0.72,"
+            f"afade=t=in:st=0:d={min(0.8, safe_duration * 0.2):.3f},"
+            f"afade=t=out:st={fade_out_start:.3f}:d={safe_duration - fade_out_start:.3f}"
+            "[music_bed_raw]"
+        )
+        if music_ducking:
+            chains.append(
+                "[music_bed_raw][voice_sidechain]"
+                "sidechaincompress=threshold=0.025:ratio=10:attack=20:release=450"
+                "[music_bed]"
+            )
+        else:
+            chains.append("[music_bed_raw]anull[music_bed]")
+        mix_inputs.append("[music_bed]")
+
     chime_kinds = {"laugh", "think", "pray", "heart", "important", "emphasis", "loop"}
     for index, cue in enumerate(cues, start=1):
         label = f"sfx_{index}"
@@ -5035,6 +5143,10 @@ def export_clip(
     duration = clip.end - clip.start
     adaptive_plan = codex_edit_plan(clip)
     theme_profile = visual_theme_profile(clip)
+    islamic_background_music = clip_has_islamic_context(clip)
+    music_ducking_supported = islamic_background_music and ffmpeg_has_filter(
+        "sidechaincompress"
+    )
     emphasis_times = emphasis_timestamps(clip, clip_segments)
     pov_windows = (
         cinematic_pov_windows(clip, clip_segments)
@@ -5106,6 +5218,23 @@ def export_clip(
         ],
         "reaction_cues": [asdict(cue) for cue in reaction_cues],
         "sound_effect_cues": [asdict(cue) for cue in sound_effect_cues],
+        "background_music": (
+            {
+                "enabled": False,
+                "requested": True,
+                "title": ISLAMIC_BACKGROUND_MUSIC_TITLE,
+                "source": "locally_synthesized_clipforge_original",
+                "license": ISLAMIC_BACKGROUND_MUSIC_LICENSE,
+                "third_party_recording": False,
+                "ducking": music_ducking_supported,
+            }
+            if islamic_background_music
+            else {
+                "enabled": False,
+                "requested": False,
+                "reason": "non_islamic_clip",
+            }
+        ),
         "drawtext_supported": drawtext_supported,
         "subtitles_supported": subtitles_supported,
         "reaction_overlays_supported": reaction_overlays_supported,
@@ -5528,13 +5657,19 @@ def export_clip(
         "pcm_s16le",
         str(temp_audio_path.name),
     ]
-    if sound_effect_cues:
+    if sound_effect_cues or islamic_background_music:
         try:
             run(
                 [
                     *audio_input,
                     "-filter_complex",
-                    contextual_audio_mix_filter(audio_filter, sound_effect_cues),
+                    contextual_audio_mix_filter(
+                        audio_filter,
+                        sound_effect_cues,
+                        background_music=islamic_background_music,
+                        duration=duration,
+                        music_ducking=music_ducking_supported,
+                    ),
                     "-map",
                     "[audio_out]",
                     "-vn",
@@ -5548,11 +5683,19 @@ def export_clip(
                 ],
                 cwd=clips_dir,
             )
+            if islamic_background_music:
+                sidecar_payload["background_music"]["enabled"] = True
+                applied_edits.append(
+                    "Backsong motivasional Islami orisinal berlisensi CC0 ditambahkan pelan di bawah dialog."
+                )
         except RuntimeError as exc:
             temp_audio_path.unlink(missing_ok=True)
             console.print(
-                f"[yellow]Sound effect kontekstual dilewati; audio dialog tetap dipakai:[/yellow] {exc}"
+                f"[yellow]Audio pendukung dilewati; audio dialog tetap dipakai:[/yellow] {exc}"
             )
+            if islamic_background_music:
+                sidecar_payload["background_music"]["enabled"] = False
+                sidecar_payload["background_music"]["reason"] = "ffmpeg_mix_failed"
             run(plain_audio_command, cwd=clips_dir)
     else:
         run(plain_audio_command, cwd=clips_dir)

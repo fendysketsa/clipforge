@@ -19,6 +19,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - When a text-heavy backdrop is detected, transition vertical clips into a speaker-dominant layout with a shorter mosque-congregation panel below and a soft cinematic overlap instead of a hard 50/50 divide.
 - Add sparse conversation-aware reaction stickers for laughter, surprise, questions, prayer/gratitude, warnings, and emotional moments.
 - Mix restrained transcript-synced sound effects under normalized dialogue.
+- Automatically give Islamic clips a quiet, dialogue-ducked motivational music bed generated locally from the CC0 "Cahaya Hikmah" recipe, with no third-party recording or sample.
 - Apply loop treatment only when the payoff semantically reconnects to the opening hook.
 - Naturally blur the source footer/running-text strip in vertical exports by default before adding fresh captions and graphics.
 - Enhance voice clarity and generate safe, niche-aware social captions even when the AI service is unavailable.

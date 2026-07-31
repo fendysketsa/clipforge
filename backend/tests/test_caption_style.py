@@ -24,6 +24,7 @@ from clipper import (
     caption_gradient_blur_filter,
     channel_watermark_filter,
     cinematic_pov_windows,
+    clip_has_islamic_context,
     clip_topic_hashtags,
     codex_edit_plan,
     contextual_audio_mix_filter,
@@ -945,6 +946,40 @@ def test_mystery_islamic_theme_adds_context_badge_and_emphasis():
     assert "#A855F7" in value
 
 
+def test_islamic_context_is_detected_even_when_mystery_is_the_visual_theme():
+    clip = ClipCandidate(
+        index=1,
+        start=0,
+        end=30,
+        duration=30,
+        score=90,
+        title="Misteri Jin dalam Islam",
+        reason="test",
+        text="Kajian ini mengajak muslim mengambil hikmah.",
+    )
+
+    assert detect_visual_theme(clip) == "mystery"
+    assert clip_has_islamic_context(clip)
+
+
+def test_non_islamic_motivation_does_not_request_islamic_music():
+    clip = ClipCandidate(
+        index=1,
+        start=0,
+        end=30,
+        duration=30,
+        score=90,
+        title="Motivasi Bangkit Lagi",
+        reason="test",
+        text="Tetap semangat mengejar sukses.",
+    )
+
+    assert not clip_has_islamic_context(clip)
+
+    clip.title = "Motivasi Islami untuk Bangkit Lagi"
+    assert clip_has_islamic_context(clip)
+
+
 def test_seram_podcast_terms_use_mystery_theme_and_horror_hashtag():
     clip = ClipCandidate(
         index=1,
@@ -1050,6 +1085,24 @@ def test_contextual_audio_filter_mixes_sfx_under_voice_with_limiter():
     assert "adelay=delays=4500:all=1" in value
     assert "aecho=" in value
     assert "amix=inputs=3" in value
+    assert "alimiter=limit=0.95" in value
+    assert value.endswith("[audio_out]")
+
+
+def test_islamic_background_music_is_original_ducked_and_mixed_under_voice():
+    value = contextual_audio_mix_filter(
+        "highpass=f=70,aresample=48000",
+        [],
+        background_music=True,
+        duration=30,
+        music_ducking=True,
+    )
+
+    assert "asplit=2[voice][voice_sidechain]" in value
+    assert "sine=frequency=220.00" in value
+    assert "music_motif_4" in value
+    assert "sidechaincompress=threshold=0.025" in value
+    assert "[voice][music_bed]amix=inputs=2" in value
     assert "alimiter=limit=0.95" in value
     assert value.endswith("[audio_out]")
 

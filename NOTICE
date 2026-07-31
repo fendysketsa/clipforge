@@ -7,3 +7,8 @@ ClipForge includes or references third-party components:
 
 - Python and JavaScript dependencies are licensed by their respective authors.
   See `backend/requirements.txt` and `frontend/package.json` for dependency lists.
+
+- "Cahaya Hikmah (ClipForge Original)" background music recipe and its rendered
+  audio output are dedicated to the public domain under CC0-1.0. The track is
+  synthesized locally from simple oscillators by ClipForge and contains no
+  third-party recording or sample. Attribution is not required.
