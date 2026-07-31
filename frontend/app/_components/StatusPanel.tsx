@@ -62,6 +62,8 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
             <span>
               {job.request.visual_mode === "animated_3d"
                 ? "Visual 3D Animated"
+                : job.request.visual_mode === "retro_tv"
+                  ? "Efek TV jadul"
                 : job.request.visual_mode === "speaker_split"
                   ? "Visual split speaker"
                   : job.request.visual_mode === "cinematic"

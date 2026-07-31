@@ -170,6 +170,16 @@ def test_new_jobs_default_to_animated_3d_visuals():
     assert AutoViralRequest().visual_mode == "animated_3d"
 
 
+def test_jobs_accept_retro_tv_visuals():
+    request = ClipJobRequest(source_file="/tmp/source.mp4", visual_mode="retro_tv")
+    auto_request = AutoViralRequest(visual_mode="retro_tv")
+
+    assert request.visual_mode == "retro_tv"
+    assert auto_request.visual_mode == "retro_tv"
+    command = build_clipper_command(request)
+    assert command[command.index("--visual-mode") + 1] == "retro_tv"
+
+
 def test_configured_viral_queries_are_extended_not_replaced(monkeypatch):
     monkeypatch.setenv("VIRAL_CC_SEARCH_QUERIES", "topik khusus|podcast indonesia terbaru")
 

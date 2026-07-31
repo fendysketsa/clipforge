@@ -433,7 +433,7 @@ CropMode = Literal["center", "person", "streamer"]
 VideoQuality = Literal["standard", "high", "max"]
 ClipMode = Literal["short", "highlight_5m"]
 OutputFormat = Literal["vertical_short", "landscape_compilation"]
-VisualMode = Literal["auto_fyp", "cinematic", "speaker_split", "animated_3d"]
+VisualMode = Literal["auto_fyp", "cinematic", "speaker_split", "animated_3d", "retro_tv"]
 BackgroundMode = Literal["auto_clean", "keep", "mosque"]
 VisualTheme = Literal["mystery", "islamic", "warning", "inspiring", "knowledge"]
 DEFAULT_TRANSCRIPTION_MODEL = "Systran/faster-whisper-medium"
@@ -3853,6 +3853,27 @@ def animated_3d_fallback_filter(*, with_adaptive_sharpen: bool = False) -> str:
     )
 
 
+def retro_tv_look_filter(*, with_curves: bool = True) -> str:
+    """Give the complete edit a restrained monochrome CRT/aged-tape finish."""
+    faded_tones = (
+        ",curves=master='0/0.025 0.18/0.13 0.50/0.53 0.82/0.88 1/0.975'"
+        if with_curves
+        else ""
+    )
+    return (
+        "eq=contrast=1.12:brightness='-0.028+0.009*sin(2*PI*t*7)':"
+        "saturation=0.08:gamma=0.96:eval=frame"
+        f"{faded_tones},"
+        "noise=alls=8:allf=t+u,"
+        "drawgrid=x=0:y=0:w=iw:h=4:color=black@0.10:t=1,"
+        "drawbox=x='iw*0.69':y=0:w=3:h=ih:color=black@0.16:t=fill:"
+        "enable='lt(mod(t+0.35,5.10),1.05)',"
+        "drawbox=x='iw*0.22':y=0:w=1:h=ih:color=white@0.12:t=fill:"
+        "enable='lt(mod(t+2.10,7.30),0.72)',"
+        "vignette=PI/4.8"
+    )
+
+
 def landscape_compilation_frame_filter(
     accent: str,
     secondary: str,
@@ -4854,7 +4875,7 @@ def export_clip(
     applied_edits.extend(resolved_idea_edits)
     applied_edits = list(dict.fromkeys(applied_edits))
     subtitles_supported = ffmpeg_has_filter("subtitles")
-    reaction_overlays_supported = visual_mode not in {"cinematic", "animated_3d"} and output_format == "vertical_short" and (
+    reaction_overlays_supported = visual_mode not in {"cinematic", "animated_3d", "retro_tv"} and output_format == "vertical_short" and (
         ffmpeg_has_filter("movie")
         and ffmpeg_has_filter("overlay")
         and ffmpeg_has_filter("rotate")
@@ -5141,6 +5162,22 @@ def export_clip(
                 applied_edits.append(
                     f"Look 3D dipadukan dengan {len(pov_windows)} reframe sinematik pada momen POV terdeteksi."
                 )
+    if visual_mode == "retro_tv":
+        curves_supported = ffmpeg_has_filter("curves")
+        vf = f"{vf},{retro_tv_look_filter(with_curves=curves_supported)}"
+        sidecar_payload["retro_tv"] = {
+            "enabled": True,
+            "monochrome": True,
+            "animated_grain": True,
+            "scanlines": True,
+            "flicker": True,
+            "vertical_tape_scratches": True,
+            "vignette": True,
+            "curves": curves_supported,
+        }
+        applied_edits.append(
+            "Efek TV jadul diterapkan: hitam-putih pudar, grain bergerak, scanline, flicker halus, vignette, dan goresan pita vertikal."
+        )
     if drawtext_supported:
         vf = f"{vf},{channel_watermark_filter(output_format)}"
         sidecar_payload["channel_watermark"] = {
@@ -5498,6 +5535,10 @@ def export_compilation(
         combined_applied_edits.append(
             "Seluruh bagian memakai look 3D animated lokal yang lebih jernih dengan denoise ringan, detail adaptif, depth contrast, dan outline halus."
         )
+    elif visual_mode == "retro_tv":
+        combined_applied_edits.append(
+            "Seluruh bagian memakai efek TV jadul hitam-putih dengan grain, scanline, flicker, vignette, dan goresan pita vertikal."
+        )
     compilation = ClipCandidate(
         index=1,
         start=min(item.start for item in candidates),
@@ -5527,6 +5568,8 @@ def export_compilation(
                 if visual_mode in {"auto_fyp", "speaker_split"}
                 else "animated_3d_cinematic_frame"
                 if visual_mode == "animated_3d"
+                else "retro_tv_cinematic_frame"
+                if visual_mode == "retro_tv"
                 else "cinematic_blurred_frame_with_chapter_cards"
             ),
             "visual_mode": visual_mode,
@@ -5678,9 +5721,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--visual-mode",
-        choices=["auto_fyp", "cinematic", "speaker_split", "animated_3d"],
+        choices=["auto_fyp", "cinematic", "speaker_split", "animated_3d", "retro_tv"],
         default="animated_3d",
-        help="Adaptive FYP visuals, stable cinematic frame, speaker split-screen, or a local 3D animated look",
+        help="Adaptive FYP visuals, stable cinematic frame, speaker split-screen, a local 3D animated look, or an old-TV effect",
     )
     parser.add_argument(
         "--background-mode",

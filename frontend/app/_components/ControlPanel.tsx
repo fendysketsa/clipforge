@@ -404,6 +404,13 @@ export function ControlPanel({
           >
             3D Animated
           </button>
+          <button
+            className={visualMode === "retro_tv" ? "active" : ""}
+            type="button"
+            onClick={() => onVisualModeChange("retro_tv")}
+          >
+            TV Jadul
+          </button>
           {clipMode === "highlight_5m" ? (
             <button
               className={visualMode === "speaker_split" ? "active" : ""}
@@ -421,6 +428,8 @@ export function ControlPanel({
               }.`
             : visualMode === "animated_3d"
               ? "Look 3D sekaligus sinematik: depth, warna, dan outline tetap konsisten; kamera melakukan zoom/reframe halus ke posisi bervariasi hanya saat momen POV terdeteksi."
+            : visualMode === "retro_tv"
+              ? "Nuansa TV tabung hitam-putih: warna pudar, grain bergerak, scanline, flicker halus, vignette, dan goresan pita vertikal sesekali."
             : visualMode === "speaker_split"
               ? "Memprioritaskan dua panel pembicara; otomatis kembali ke frame sinematik bila wajah tidak cukup jelas."
               : "Frame premium tetap stabil dengan border di dalam area video."}

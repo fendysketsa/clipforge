@@ -47,6 +47,7 @@ from clipper import (
     payoff_banner_text,
     pov_banner_text,
     remove_running_text_filter,
+    retro_tv_look_filter,
     resolve_codex_ideas,
     score_window,
     segments_for_clip,
@@ -784,6 +785,26 @@ def test_animated_3d_basic_fallback_uses_widely_available_filters():
     assert "vignette=" in value
     assert "hqdn3d=" not in value
     assert "curves=" not in value
+
+
+def test_retro_tv_look_has_monochrome_grain_scanlines_flicker_and_scratches():
+    value = retro_tv_look_filter()
+
+    assert "saturation=0.08" in value
+    assert "sin(2*PI*t*7)" in value
+    assert "noise=alls=8:allf=t+u" in value
+    assert "drawgrid=" in value
+    assert value.count("drawbox=") == 2
+    assert "enable='lt(mod(t+" in value
+    assert "vignette=PI/4.8" in value
+    assert "curves=master=" in value
+
+
+def test_retro_tv_look_has_safe_fallback_without_curves():
+    value = retro_tv_look_filter(with_curves=False)
+
+    assert "curves=" not in value
+    assert "noise=alls=8:allf=t+u" in value
 
 
 def test_modern_gradient_border_uses_dual_tone_glow_layers():
