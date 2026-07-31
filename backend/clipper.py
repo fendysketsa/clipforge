@@ -3373,6 +3373,75 @@ def pov_banner_text(clip: ClipCandidate) -> str:
     return (chunks[0] if chunks else short_pov)[:110]
 
 
+def thumbnail_story_copy(
+    clip: ClipCandidate,
+    suggested_hook: str = "",
+    *,
+    long_form: bool = False,
+) -> dict[str, str]:
+    """Build compact, truthful cover copy from the analyzed story fields."""
+    raw_pov = re.sub(
+        r"^\s*pov\s*:\s*",
+        "",
+        clip.pov or fallback_pov_angle(clip.text),
+        flags=re.I,
+    )
+    if is_source_branding_segment(raw_pov):
+        raw_pov = fallback_pov_angle(clip.text)
+
+    raw_hook = suggested_hook or clip.hook or clip.title
+    if is_source_branding_segment(raw_hook):
+        raw_hook = clip.title if not is_source_branding_segment(clip.title) else raw_pov
+
+    if long_form:
+        headline_source = raw_hook
+        support_source = raw_pov
+        eyebrow = "HIGHLIGHT"
+        headline_words = 8
+        headline_chars = 18
+        headline_lines = 2
+        support_words = 10
+    else:
+        headline_source = raw_pov
+        support_source = raw_hook
+        eyebrow = "POV"
+        headline_words = 10
+        headline_chars = 22
+        headline_lines = 3
+        support_words = 6
+
+    headline = first_sentence(headline_source, max_words=headline_words).upper()
+    headline_chunks = split_subtitle_text(
+        headline,
+        max_chars=headline_chars,
+        max_lines=headline_lines,
+    )
+    headline = (headline_chunks[0] if headline_chunks else headline)[:120]
+
+    support = first_sentence(support_source, max_words=support_words).upper()
+    support_words_set = _content_words(support)
+    headline_words_set = _content_words(headline)
+    if support_words_set and support_words_set.issubset(headline_words_set):
+        support = ""
+    support_chunks = split_subtitle_text(
+        support,
+        max_chars=30 if long_form else 26,
+        max_lines=2,
+    )
+    support = (support_chunks[0] if support_chunks else support)[:80]
+
+    return {
+        "eyebrow": eyebrow,
+        "headline": headline,
+        "support": support,
+    }
+
+
+def shorts_cover_frame_timestamp(duration: float) -> float:
+    """Pick a stable frame inside the opening cover moment."""
+    return min(max(0.1, duration - 0.05), 0.62)
+
+
 def payoff_banner_text(clip: ClipCandidate, clip_segments: list[TranscriptSegment]) -> str:
     """Extract an explicit takeaway from the transcript without inventing copy."""
     key_markers = (
@@ -4113,6 +4182,7 @@ def enhanced_edit_filter(
     hook_text_filename: str,
     *,
     pov_text_filename: str = "",
+    cover_text_filename: str = "",
     show_progress: bool = True,
     theme_profile: dict[str, str] | None = None,
     emphasis_times: list[float] | None = None,
@@ -4173,8 +4243,8 @@ def enhanced_edit_filter(
         zoom_pixels = 24 + ((motion_variant + index) % 3) * 4
         active = f"between(t,{start:.3f},{end:.3f})"
         pov_zoom_terms.append(f"if({active},{zoom_pixels}*{phase},0)")
-        pov_x_terms.append(f"if({active},{x_offset}*{phase},0)")
-        pov_y_terms.append(f"if({active},{y_offset}*{phase},0)")
+        pov_x_terms.append(f"{x_offset}*{phase}*{active}")
+        pov_y_terms.append(f"{y_offset}*{phase}*{active}")
     scale_expression = (
         f"{scale_width}+{intro_zoom_pixels}*max(0,1-t/0.72)"
         + "".join(f"+{term}" for term in pov_zoom_terms)
@@ -4214,22 +4284,46 @@ def enhanced_edit_filter(
             ]
         )
     if show_text_overlays:
+        cover_end = min(safe_duration, 0.95)
+        hook_start = 1.02 if cover_text_filename and cover_end >= 0.4 else 0.10
+        if cover_text_filename and cover_end >= 0.4:
+            filters.extend(
+                [
+                    "drawbox=x=44:y=982:w=992:h=452:color=black@0.58:t=fill:"
+                    f"enable='between(t,0.08,{cover_end:.3f})'",
+                    f"drawbox=x=44:y=982:w=14:h=452:color={accent}@0.98:t=fill:"
+                    f"enable='between(t,0.08,{cover_end:.3f})'",
+                    f"drawbox=x=76:y=1010:w=166:h=58:color={accent}@0.96:t=fill:"
+                    f"enable='between(t,0.08,{cover_end:.3f})'",
+                    "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                    "text='POV':expansion=none:fontcolor=white:fontsize=29:x=124:y=1023:"
+                    f"enable='between(t,0.08,{cover_end:.3f})'",
+                    "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                    f"textfile='{cover_text_filename}':reload=0:expansion=none:"
+                    "fontcolor=white:fontsize=52:line_spacing=11:borderw=3:bordercolor=black@0.90:"
+                    "shadowcolor=black@0.85:shadowx=3:shadowy=3:x=78:y=1100:"
+                    f"enable='between(t,0.08,{cover_end:.3f})'",
+                    f"drawbox=x=76:y=1394:w=610:h=7:color={accent_secondary}@0.96:t=fill:"
+                    f"enable='between(t,0.08,{cover_end:.3f})'",
+                ]
+            )
         filters.extend(
             [
                 f"drawbox=x=48:y=1092:w={badge_width}:h=48:color={accent}@0.92:t=fill:"
-                "enable='between(t,0.06,3.80)'",
+                f"enable='between(t,{hook_start:.2f},3.80)'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                 f"text='{badge}':expansion=none:fontcolor=white:fontsize=23:"
-                "x=68:y=1103:enable='between(t,0.06,3.80)'",
+                f"x=68:y=1103:enable='between(t,{hook_start:.2f},3.80)'",
                 "drawbox=x=48:y=1150:w=984:h=220:color=black@0.46:t=fill:"
-                "enable='between(t,0.10,3.80)'",
+                f"enable='between(t,{hook_start:.2f},3.80)'",
                 f"drawbox=x=48:y=1150:w=14:h=220:color={accent}@0.98:t=fill:"
-                "enable='between(t,0.10,3.80)'",
+                f"enable='between(t,{hook_start:.2f},3.80)'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                 f"textfile='{hook_text_filename}':reload=0:expansion=none:"
                 "fontcolor=white:fontsize=48:line_spacing=10:borderw=2:bordercolor=black@0.85:"
-                "x='if(lt(t,0.48),-text_w+(t-0.10)*(76+text_w)/0.38,76)':y=1192:"
-                "enable='between(t,0.10,3.80)'",
+                f"x='if(lt(t,{hook_start + 0.38:.2f}),-text_w+(t-{hook_start:.2f})*"
+                "(76+text_w)/0.38,76)':y=1192:"
+                f"enable='between(t,{hook_start:.2f},3.80)'",
             ]
         )
         if pov_text_filename:
@@ -4554,6 +4648,121 @@ def grab_best_frame(video_path: Path, clip: ClipCandidate, thumb_path: Path) -> 
     return grab_frame_at(video_path, timestamp, thumb_path, label=f"clip {clip.index}")
 
 
+def designed_thumbnail_filter(
+    headline_filename: str,
+    support_filename: str,
+    *,
+    long_form: bool,
+    accent: str,
+    accent_secondary: str,
+) -> str:
+    """Create a deterministic high-contrast cover without redrawing the subject."""
+    font_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    font_regular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    if long_form:
+        return ",".join(
+            [
+                "scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos",
+                "crop=1280:720",
+                "eq=contrast=1.08:brightness=-0.015:saturation=1.10",
+                "drawbox=x=0:y=0:w=760:h=720:color=black@0.56:t=fill",
+                f"drawbox=x=0:y=0:w=18:h=720:color={accent}@0.98:t=fill",
+                f"drawbox=x=66:y=72:w=224:h=54:color={accent}@0.96:t=fill",
+                f"drawtext=fontfile={font_bold}:text='HIGHLIGHT':expansion=none:"
+                "fontcolor=white:fontsize=25:x=92:y=84",
+                f"drawtext=fontfile={font_bold}:textfile='{headline_filename}':reload=0:"
+                "expansion=none:fontcolor=white:fontsize=58:line_spacing=10:"
+                "borderw=3:bordercolor=black@0.90:shadowcolor=black@0.82:"
+                "shadowx=3:shadowy=3:x=68:y=170",
+                f"drawbox=x=68:y=492:w=570:h=6:color={accent_secondary}@0.96:t=fill",
+                f"drawtext=fontfile={font_regular}:textfile='{support_filename}':reload=0:"
+                "expansion=none:fontcolor=white@0.94:fontsize=27:line_spacing=6:"
+                "borderw=2:bordercolor=black@0.82:x=70:y=520",
+                f"drawbox=x=38:y=34:w=1204:h=652:color={accent_secondary}@0.38:t=5",
+            ]
+        )
+    return ",".join(
+        [
+            "scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos",
+            "crop=1080:1920",
+            "eq=contrast=1.07:brightness=-0.012:saturation=1.09",
+            "drawbox=x=36:y=960:w=1008:h=650:color=black@0.58:t=fill",
+            f"drawbox=x=36:y=960:w=15:h=650:color={accent}@0.98:t=fill",
+            f"drawbox=x=74:y=1000:w=174:h=60:color={accent}@0.96:t=fill",
+            f"drawtext=fontfile={font_bold}:text='POV':expansion=none:"
+            "fontcolor=white:fontsize=31:x=124:y=1014",
+            f"drawtext=fontfile={font_bold}:textfile='{headline_filename}':reload=0:"
+            "expansion=none:fontcolor=white:fontsize=58:line_spacing=12:"
+            "borderw=3:bordercolor=black@0.92:shadowcolor=black@0.86:"
+            "shadowx=3:shadowy=3:x=76:y=1105",
+            f"drawbox=x=76:y=1456:w=660:h=7:color={accent_secondary}@0.96:t=fill",
+            f"drawtext=fontfile={font_regular}:textfile='{support_filename}':reload=0:"
+            "expansion=none:fontcolor=white@0.94:fontsize=31:line_spacing=7:"
+            "borderw=2:bordercolor=black@0.84:x=78:y=1492",
+            f"drawbox=x=30:y=60:w=1020:h=1800:color={accent_secondary}@0.34:t=6",
+        ]
+    )
+
+
+def render_designed_thumbnail(
+    video_path: Path,
+    timestamp: float,
+    thumb_path: Path,
+    copy: dict[str, str],
+    *,
+    long_form: bool,
+    theme_profile: dict[str, str] | None = None,
+    label: str,
+) -> Path | None:
+    """Render the final upload-ready thumbnail from an actual video frame."""
+    profile = theme_profile or {
+        "accent": "#FACC15",
+        "accent_secondary": "#22D3EE",
+    }
+    headline_path = thumb_path.with_suffix(".headline.txt")
+    support_path = thumb_path.with_suffix(".support.txt")
+    thumb_path.parent.mkdir(parents=True, exist_ok=True)
+    thumb_path.unlink(missing_ok=True)
+    headline_path.write_text(copy.get("headline", "") + "\n", encoding="utf-8")
+    support_path.write_text(copy.get("support", "") + "\n", encoding="utf-8")
+    vf = designed_thumbnail_filter(
+        headline_path.name,
+        support_path.name,
+        long_form=long_form,
+        accent=profile.get("accent", "#FACC15"),
+        accent_secondary=profile.get("accent_secondary", "#22D3EE"),
+    )
+    try:
+        run(
+            [
+                ffmpeg_path(),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-ss",
+                f"{max(0.0, timestamp):.3f}",
+                "-i",
+                str(video_path.resolve()),
+                "-frames:v",
+                "1",
+                "-vf",
+                vf,
+                "-q:v",
+                "3",
+                str(thumb_path.name),
+            ],
+            cwd=thumb_path.parent,
+        )
+    except RuntimeError as exc:
+        console.print(f"[yellow]Thumbnail final gagal untuk {label}:[/yellow] {exc}")
+        return None
+    finally:
+        headline_path.unlink(missing_ok=True)
+        support_path.unlink(missing_ok=True)
+    return thumb_path if thumb_path.exists() else None
+
+
 def generate_thumbnail_prompt(
     clip: ClipCandidate,
     config: AIConfig,
@@ -4818,6 +5027,7 @@ def export_clip(
     temp_audio_path = clips_dir / f"{base_name}.audio_tmp.wav"
     hook_text_path = clips_dir / f"{base_name}.hook.txt"
     pov_text_path = clips_dir / f"{base_name}.pov.txt"
+    cover_text_path = clips_dir / f"{base_name}.cover.txt"
     payoff_text_path = clips_dir / f"{base_name}.payoff.txt"
     clean_background_path = clips_dir / f"{base_name}.background_tmp.mp4"
     json_path.unlink(missing_ok=True)
@@ -4832,6 +5042,7 @@ def export_clip(
         else None
     )
     core_message = payoff_banner_text(clip, clip_segments)
+    cover_copy = thumbnail_story_copy(clip)
     reaction_cues = detect_reaction_cues(clip, clip_segments)
     sound_effect_cues = (
         contextual_sound_effect_cues(
@@ -4909,6 +5120,14 @@ def export_clip(
         "aspect_ratio": "16:9" if output_format == "landscape_compilation" else "9:16",
         "source_metadata_embedded": False,
         "core_message": core_message.replace("\n", " ").strip(),
+        "thumbnail_strategy": (
+            "embedded_shorts_cover_frame"
+            if output_format == "vertical_short" and enhanced_edit and drawtext_supported
+            else "rendered_video_frame"
+        ),
+        "thumbnail_eyebrow": cover_copy["eyebrow"],
+        "thumbnail_headline": cover_copy["headline"].replace("\n", " "),
+        "thumbnail_support": cover_copy["support"].replace("\n", " "),
     }
 
     visual_source = video_path
@@ -5098,10 +5317,14 @@ def export_clip(
         if drawtext_supported:
             hook_text_path.write_text(hook_banner_text(clip) + "\n", encoding="utf-8")
             pov_text_path.write_text(pov_banner_text(clip) + "\n", encoding="utf-8")
+            cover_text_path.write_text(cover_copy["headline"] + "\n", encoding="utf-8")
             payoff_text_path.write_text(core_message + "\n", encoding="utf-8")
             if output_format == "vertical_short":
                 applied_edits.append(
                     "Intisari ucapan asli ditampilkan menjelang akhir agar makna klip langsung terbaca."
+                )
+                applied_edits.append(
+                    "Cover moment POV bergerak ditampilkan pada detik pertama dan dipakai sebagai thumbnail Shorts."
                 )
         else:
             console.print(
@@ -5137,6 +5360,11 @@ def export_clip(
                     duration,
                     hook_text_path.name,
                     pov_text_filename=pov_text_path.name if drawtext_supported else "",
+                    cover_text_filename=(
+                        cover_text_path.name
+                        if drawtext_supported and output_format == "vertical_short"
+                        else ""
+                    ),
                     show_progress=generate_assets,
                     theme_profile=theme_profile,
                     emphasis_times=emphasis_times,
@@ -5273,6 +5501,7 @@ def export_clip(
     finally:
         hook_text_path.unlink(missing_ok=True)
         pov_text_path.unlink(missing_ok=True)
+        cover_text_path.unlink(missing_ok=True)
         payoff_text_path.unlink(missing_ok=True)
         clean_background_path.unlink(missing_ok=True)
     audio_filter = (
@@ -5389,13 +5618,30 @@ def export_clip(
     if generate_assets:
         thumb_path = clips_dir / f"{base_name}_thumb.jpg"
         prompt_path = clips_dir / f"{base_name}_thumb.txt"
-        if grab_best_frame(video_path, clip, thumb_path) is not None:
-            thumb_prompt = generate_thumbnail_prompt(clip, ai_config or AIConfig())
-            if thumb_prompt:
-                prompt_path.write_text(
-                    f"HOOK: {thumb_prompt['hook_text']}\n\n{thumb_prompt['prompt']}\n",
-                    encoding="utf-8",
-                )
+        thumb_prompt = generate_thumbnail_prompt(clip, ai_config or AIConfig())
+        thumb_timestamp = (
+            shorts_cover_frame_timestamp(duration)
+            if output_format == "vertical_short"
+            else max(0.0, duration * 0.5)
+        )
+        rendered_thumb = grab_frame_at(
+            out_path,
+            thumb_timestamp,
+            thumb_path,
+            label=f"thumbnail final clip {clip.index}",
+        )
+        if rendered_thumb is not None:
+            sidecar_payload["thumbnail_frame_seconds"] = round(thumb_timestamp, 3)
+        if thumb_prompt:
+            prompt_path.write_text(
+                f"POV: {cover_copy['headline'].replace(chr(10), ' ')}\n"
+                f"HOOK: {thumb_prompt['hook_text']}\n"
+                f"STRATEGI: {sidecar_payload['thumbnail_strategy']}\n\n"
+                f"{thumb_prompt['prompt']}\n",
+                encoding="utf-8",
+            )
+
+        save_json(json_path, sidecar_payload)
 
         social_caption = generate_social_caption(clip, ai_config or AIConfig(), required_hashtags)
         if social_caption:
@@ -5556,52 +5802,65 @@ def export_compilation(
         improvement_ideas=combined_ideas,
         applied_edits=combined_applied_edits,
     )
-    save_json(
-        json_path,
-        {
-            **asdict(compilation),
-            "mode": "highlight_5m",
-            "output_format": "landscape_compilation",
-            "aspect_ratio": "16:9",
-            "layout": (
-                "adaptive_speaker_split_with_chapter_cards"
-                if visual_mode in {"auto_fyp", "speaker_split"}
-                else "animated_3d_cinematic_frame"
-                if visual_mode == "animated_3d"
-                else "retro_tv_cinematic_frame"
-                if visual_mode == "retro_tv"
-                else "cinematic_blurred_frame_with_chapter_cards"
-            ),
-            "visual_mode": visual_mode,
-            "background_mode": background_mode,
-            "enhanced_edit": enhanced_edit,
-            "remove_running_text": remove_running_text,
-            "source_metadata_embedded": False,
-            "parts": [asdict(item) for item in candidates],
-            "video_quality": video_quality,
-            "output_width": output_width,
-            "output_height": output_height,
-            "output_resolution": f"{output_width}x{output_height}",
-        },
-    )
+    compilation_sidecar = {
+        **asdict(compilation),
+        "mode": "highlight_5m",
+        "output_format": "landscape_compilation",
+        "aspect_ratio": "16:9",
+        "layout": (
+            "adaptive_speaker_split_with_chapter_cards"
+            if visual_mode in {"auto_fyp", "speaker_split"}
+            else "animated_3d_cinematic_frame"
+            if visual_mode == "animated_3d"
+            else "retro_tv_cinematic_frame"
+            if visual_mode == "retro_tv"
+            else "cinematic_blurred_frame_with_chapter_cards"
+        ),
+        "visual_mode": visual_mode,
+        "background_mode": background_mode,
+        "enhanced_edit": enhanced_edit,
+        "remove_running_text": remove_running_text,
+        "source_metadata_embedded": False,
+        "parts": [asdict(item) for item in candidates],
+        "video_quality": video_quality,
+        "output_width": output_width,
+        "output_height": output_height,
+        "output_resolution": f"{output_width}x{output_height}",
+        "thumbnail_strategy": "custom_long_form_upload",
+    }
 
     strongest_offset = sum(
         item.end - item.start
         for item in candidates[: candidates.index(strongest)]
     )
     strongest_timestamp = strongest_offset + (strongest.end - strongest.start) * 0.5
-    if grab_frame_at(
+    thumb_prompt = generate_thumbnail_prompt(compilation, ai_config, long_form=True)
+    thumbnail_copy = thumbnail_story_copy(
+        compilation,
+        thumb_prompt.get("hook_text", "") if thumb_prompt else "",
+        long_form=True,
+    )
+    if render_designed_thumbnail(
         out_path,
         strongest_timestamp,
         thumb_path,
+        thumbnail_copy,
+        long_form=True,
+        theme_profile=visual_theme_profile(strongest),
         label="kompilasi landscape",
     ) is not None:
-        thumb_prompt = generate_thumbnail_prompt(compilation, ai_config, long_form=True)
-        if thumb_prompt:
-            prompt_path.write_text(
-                f"HOOK: {thumb_prompt['hook_text']}\n\n{thumb_prompt['prompt']}\n",
-                encoding="utf-8",
-            )
+        compilation_sidecar["thumbnail_frame_seconds"] = round(strongest_timestamp, 3)
+        compilation_sidecar["thumbnail_eyebrow"] = thumbnail_copy["eyebrow"]
+        compilation_sidecar["thumbnail_headline"] = thumbnail_copy["headline"].replace("\n", " ")
+        compilation_sidecar["thumbnail_support"] = thumbnail_copy["support"].replace("\n", " ")
+    if thumb_prompt:
+        prompt_path.write_text(
+            f"HOOK: {thumb_prompt['hook_text']}\n"
+            "STRATEGI: custom_long_form_upload\n\n"
+            f"{thumb_prompt['prompt']}\n",
+            encoding="utf-8",
+        )
+    save_json(json_path, compilation_sidecar)
     social_caption = generate_social_caption(
         compilation,
         ai_config,

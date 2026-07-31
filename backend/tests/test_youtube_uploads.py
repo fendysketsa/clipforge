@@ -13,6 +13,7 @@ from api import (
     YouTubeUploadRequest,
     YouTubeUploadJob,
     best_youtube_clip_urls,
+    build_youtube_upload_command,
     default_youtube_description,
     default_youtube_tags,
     default_youtube_title,
@@ -83,6 +84,52 @@ def test_best_youtube_clip_urls_uses_candidate_scores():
         "/outputs/demo/clips/clip_04.mp4",
         "/outputs/demo/clips/clip_03.mp4",
     ]
+
+
+@pytest.mark.parametrize(
+    ("clip_name", "expected_type"),
+    [
+        ("clip_01.mp4", "shorts"),
+        ("highlight_5menit_hikmah.mp4", "long-form"),
+    ],
+)
+def test_upload_command_marks_thumbnail_content_type(
+    monkeypatch,
+    tmp_path,
+    clip_name,
+    expected_type,
+):
+    import api
+
+    video_path = tmp_path / clip_name
+    thumbnail_path = tmp_path / f"{video_path.stem}_thumb.jpg"
+    video_path.write_bytes(b"video")
+    thumbnail_path.write_bytes(b"thumbnail")
+
+    def fake_output_path(url):
+        return thumbnail_path if str(url).endswith("_thumb.jpg") else video_path
+
+    monkeypatch.setattr(api, "output_path_from_url", fake_output_path)
+    monkeypatch.setattr(api, "prepare_limited_upload_file", lambda path, _limit: path)
+    monkeypatch.setattr(api, "youtube_upload_prefers_cdp", lambda: False)
+    monkeypatch.setattr(api, "youtube_profile_upload_allowed", lambda: False)
+
+    upload = YouTubeUploadJob(
+        id="upload-thumb",
+        source_job_id="job-thumb",
+        clip_url=f"/outputs/demo/{clip_name}",
+        clip_name=clip_name,
+        status="queued",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        title="Judul",
+        thumbnail_url=f"/outputs/demo/{video_path.stem}_thumb.jpg",
+    )
+
+    command = build_youtube_upload_command(upload)
+    type_index = command.index("--thumbnail-content-type")
+
+    assert command[type_index + 1] == expected_type
 
 
 def test_best_youtube_clip_urls_falls_back_to_clip_order_without_scores():

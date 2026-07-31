@@ -1973,6 +1973,16 @@ def set_thumbnail(page, thumbnail_path: Path, timeout_ms: int = 45000) -> None:
     raise UploadError("Input thumbnail YouTube Studio tidak ditemukan; thumbnail belum terpasang.") from last_error
 
 
+def should_upload_custom_thumbnail(video_path: Path, content_type: str = "auto") -> bool:
+    """Only long-form uploads support a custom image in YouTube Studio."""
+    normalized = (content_type or "auto").strip().casefold()
+    if normalized == "long-form":
+        return True
+    if normalized == "shorts":
+        return False
+    return video_path.name.casefold().startswith("highlight_5menit_")
+
+
 def click_playlist_named(page, playlist_name: str, timeout_ms: int = 8000) -> bool:
     target = playlist_name.strip().lower()
     if not target:
@@ -4084,7 +4094,16 @@ def run_upload(args: argparse.Namespace) -> None:
             )
 
             if args.thumbnail:
-                log("Thumbnail dilewati sesuai konfigurasi; fokus ke judul, deskripsi, dan playlist.")
+                thumbnail_path = Path(args.thumbnail).expanduser().resolve()
+                if should_upload_custom_thumbnail(video_path, args.thumbnail_content_type):
+                    if not thumbnail_path.is_file():
+                        raise UploadError(f"File thumbnail tidak ditemukan: {thumbnail_path}")
+                    set_thumbnail(page, thumbnail_path)
+                else:
+                    log(
+                        "Thumbnail Shorts memakai cover moment POV di dalam video; "
+                        "YouTube Studio desktop tidak menerima gambar thumbnail custom untuk Shorts."
+                    )
 
             select_playlist(page, args.playlist)
             if args.made_for_kids:
@@ -4182,6 +4201,12 @@ def build_parser() -> argparse.ArgumentParser:
     upload.add_argument("--title", required=True)
     upload.add_argument("--description", default="")
     upload.add_argument("--thumbnail", default="")
+    upload.add_argument(
+        "--thumbnail-content-type",
+        choices=["auto", "shorts", "long-form"],
+        default="auto",
+        help="Pasang gambar custom untuk long-form; Shorts memakai cover frame di dalam video.",
+    )
     upload.add_argument("--visibility", choices=["private", "unlisted", "public"], default=os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "private"))
     upload.add_argument("--tags", default="")
     upload.add_argument("--playlist", default=os.environ.get("YOUTUBE_DEFAULT_PLAYLIST", "Islam"))

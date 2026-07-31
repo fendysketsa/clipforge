@@ -2614,7 +2614,19 @@ def build_youtube_upload_command(
     if upload.thumbnail_url:
         thumbnail_path = output_path_from_url(upload.thumbnail_url)
         if thumbnail_path is not None and thumbnail_path.is_file():
-            command.extend(["--thumbnail", str(thumbnail_path)])
+            thumbnail_content_type = (
+                "long-form"
+                if upload.clip_name.casefold().startswith("highlight_5menit_")
+                else "shorts"
+            )
+            command.extend(
+                [
+                    "--thumbnail",
+                    str(thumbnail_path),
+                    "--thumbnail-content-type",
+                    thumbnail_content_type,
+                ]
+            )
     if upload.tags:
         command.extend(["--tags", ",".join(upload.tags)])
     if upload.playlist:

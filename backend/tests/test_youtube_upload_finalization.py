@@ -13,6 +13,7 @@ from youtube_uploader import (
     next_upload_step_timeout_ms,
     reload_after_publish,
     safe_upload_visibility,
+    should_upload_custom_thumbnail,
     wait_for_copyright_checks,
     wait_for_final_upload_confirmation,
     wait_for_review_checks_safe_before_publish,
@@ -196,6 +197,16 @@ def test_uploader_forces_public_request_to_private_by_default(monkeypatch):
 
     monkeypatch.setenv("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", "true")
     assert safe_upload_visibility("public") == "public"
+
+
+def test_custom_thumbnail_is_only_uploaded_for_long_form(tmp_path):
+    short = tmp_path / "clip_01.mp4"
+    highlight = tmp_path / "highlight_5menit_hikmah.mp4"
+
+    assert not should_upload_custom_thumbnail(short, "shorts")
+    assert should_upload_custom_thumbnail(highlight, "long-form")
+    assert not should_upload_custom_thumbnail(short, "auto")
+    assert should_upload_custom_thumbnail(highlight, "auto")
 
 
 def test_review_safe_text_does_not_trigger_false_issue(monkeypatch):

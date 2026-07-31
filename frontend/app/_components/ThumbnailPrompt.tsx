@@ -24,7 +24,7 @@ export function ThumbnailPrompt({ clip }: ThumbnailPromptProps) {
           <ImageIcon size={16} />
         </span>
         <span className="thumbSummaryCopy">
-          <strong>Materi posting</strong>
+          <strong>Thumbnail POV siap publikasi</strong>
           <small>
             {[thumbUrl ? "thumbnail" : "", prompt ? "prompt" : "", caption ? "caption" : ""]
               .filter(Boolean)
@@ -39,9 +39,9 @@ export function ThumbnailPrompt({ clip }: ThumbnailPromptProps) {
           <div className="thumbPreview">
             <div className="thumbBlockHeader">
               <ImageIcon size={14} />
-              <span>Thumbnail</span>
+              <span>Cover frame POV / FYP</span>
             </div>
-            <img src={thumbUrl} alt="Screenshot momen terbaik untuk thumbnail" />
+            <img src={thumbUrl} alt="Cover frame POV siap dipakai sebagai thumbnail" />
             <button type="button" onClick={() => handleDownload(thumbUrl, thumbName)}>
               <Download size={15} />
               <span>Unduh thumbnail</span>

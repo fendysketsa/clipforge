@@ -29,6 +29,7 @@ from clipper import (
     contextual_audio_mix_filter,
     contextual_sound_effect_cues,
     detect_visual_theme,
+    designed_thumbnail_filter,
     detect_reaction_cues,
     embedded_split_subject_filter,
     emphasis_timestamps,
@@ -52,6 +53,8 @@ from clipper import (
     score_window,
     segments_for_clip,
     split_subtitle_text,
+    shorts_cover_frame_timestamp,
+    thumbnail_story_copy,
     transcription_decode_options,
     visual_theme_profile,
 )
@@ -366,6 +369,67 @@ def test_enhanced_edit_filter_adds_motion_hook_transition_and_progress():
     assert "gblur=sigma=18" in value
     assert "[modern_bg][modern_fg]overlay=40:71" in value
     assert "#22D3EE@0.24" in value
+
+
+def test_shorts_cover_moment_uses_analyzed_pov_before_the_hook():
+    value = enhanced_edit_filter(
+        60,
+        "clip.hook.txt",
+        pov_text_filename="clip.pov.txt",
+        cover_text_filename="clip.cover.txt",
+    )
+
+    assert "textfile='clip.cover.txt'" in value
+    assert "text='POV'" in value
+    assert "between(t,0.08,0.950)" in value
+    assert "textfile='clip.hook.txt'" in value
+    assert "between(t,1.02,3.80)" in value
+
+
+def test_thumbnail_story_copy_is_compact_and_truthful():
+    clip = ClipCandidate(
+        1,
+        0,
+        30,
+        30,
+        91,
+        "Ucapan yang Mengubah Cara Pandang",
+        "test",
+        "Nasihat ini menjelaskan dampak merendahkan orang lain.",
+        hook="Jangan Pernah Meremehkan Orang",
+        pov="POV: Kamu baru sadar ucapan kecil bisa melukai orang lain selamanya",
+    )
+
+    copy = thumbnail_story_copy(clip)
+
+    assert copy["eyebrow"] == "POV"
+    assert "POV:" not in copy["headline"]
+    assert len(copy["headline"].splitlines()) <= 3
+    assert copy["support"] == "JANGAN PERNAH MEREMEHKAN\nORANG"
+
+
+def test_thumbnail_filter_uses_vertical_and_landscape_upload_shapes():
+    vertical = designed_thumbnail_filter(
+        "headline.txt",
+        "support.txt",
+        long_form=False,
+        accent="#FACC15",
+        accent_secondary="#22D3EE",
+    )
+    landscape = designed_thumbnail_filter(
+        "headline.txt",
+        "support.txt",
+        long_form=True,
+        accent="#FACC15",
+        accent_secondary="#22D3EE",
+    )
+
+    assert "scale=1080:1920" in vertical
+    assert "text='POV'" in vertical
+    assert "scale=1280:720" in landscape
+    assert "text='HIGHLIGHT'" in landscape
+    assert shorts_cover_frame_timestamp(60) == 0.62
+    assert shorts_cover_frame_timestamp(0.12) == 0.1
 
 
 def test_fyp_analysis_explains_hook_first_30_seconds_and_codex_ideas():
