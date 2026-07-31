@@ -2846,11 +2846,15 @@ def select_candidates(candidates: list[ClipCandidate], limit: int) -> list[ClipC
 def select_compilation_candidates(
     candidates: list[ClipCandidate],
     target_duration: float = 300,
-    max_parts: int = 12,
+    max_parts: int | None = None,
 ) -> list[ClipCandidate]:
-    """Pick strong, non-overlapping moments until a highlight reel is ~target_duration."""
+    """Build a dense chronological story resume with coverage across the source."""
     if target_duration <= 0:
         return []
+
+    if max_parts is None:
+        # A ten-minute resume may need more than twelve short story beats.
+        max_parts = min(24, max(12, math.ceil(target_duration / 30)))
 
     remaining = candidates[:]
     remaining.sort(
@@ -2862,6 +2866,63 @@ def select_compilation_candidates(
     )
     picked: list[ClipCandidate] = []
     total = 0.0
+
+    def fit_to_remaining(candidate: ClipCandidate, seconds_left: float) -> ClipCandidate:
+        if candidate.end - candidate.start <= seconds_left:
+            return candidate
+        return ClipCandidate(
+            index=candidate.index,
+            start=candidate.start,
+            end=candidate.start + seconds_left,
+            duration=seconds_left,
+            score=candidate.score,
+            title=candidate.title,
+            reason=candidate.reason,
+            text=candidate.text,
+            hook=candidate.hook,
+            pov=candidate.pov,
+            fyp_label=candidate.fyp_label,
+            strengths=list(candidate.strengths),
+            weaknesses=list(candidate.weaknesses),
+            improvement_ideas=list(candidate.improvement_ideas),
+            applied_edits=list(candidate.applied_edits),
+            key_point_score=candidate.key_point_score,
+            loop_score=candidate.loop_score,
+            boundary_quality=candidate.boundary_quality,
+        )
+
+    # Seed the resume with a strong, non-overlapping beat from each source
+    # phase. This keeps a whole-video resume from clustering in one chapter.
+    if remaining:
+        source_start = min(item.start for item in remaining)
+        source_end = max(item.end for item in remaining)
+        source_span = max(1.0, source_end - source_start)
+        for phase_index in range(4):
+            phase_start = source_start + source_span * phase_index / 4
+            phase_end = source_start + source_span * (phase_index + 1) / 4
+            phase = [
+                item
+                for item in remaining
+                if phase_start <= (item.start + item.end) * 0.5 <= phase_end
+                and not any(
+                    not (item.end <= chosen.start or item.start >= chosen.end)
+                    for chosen in picked
+                )
+            ]
+            if not phase:
+                continue
+            best_phase = max(
+                phase,
+                key=lambda item: item.score - abs(item.duration - 60) * 0.05,
+            )
+            seconds_left = target_duration - total
+            if seconds_left < 8:
+                break
+            picked.append(fit_to_remaining(best_phase, seconds_left))
+            remaining.remove(best_phase)
+            total += picked[-1].end - picked[-1].start
+            if total >= target_duration or len(picked) >= max_parts:
+                break
 
     while remaining and len(picked) < max_parts and total < target_duration:
         best: ClipCandidate | None = None
@@ -2882,28 +2943,7 @@ def select_compilation_candidates(
         seconds_left = target_duration - total
         if seconds_left < 8:
             break
-        render_duration = best.end - best.start
-        if render_duration > seconds_left >= 8:
-            best = ClipCandidate(
-                index=best.index,
-                start=best.start,
-                end=best.start + seconds_left,
-                duration=seconds_left,
-                score=best.score,
-                title=best.title,
-                reason=best.reason,
-                text=best.text,
-                hook=best.hook,
-                pov=best.pov,
-                fyp_label=best.fyp_label,
-                strengths=list(best.strengths),
-                weaknesses=list(best.weaknesses),
-                improvement_ideas=list(best.improvement_ideas),
-                applied_edits=list(best.applied_edits),
-                key_point_score=best.key_point_score,
-                loop_score=best.loop_score,
-                boundary_quality=best.boundary_quality,
-            )
+        best = fit_to_remaining(best, seconds_left)
         picked.append(best)
         total += best.end - best.start
 
@@ -2980,9 +3020,10 @@ def ai_rescore_candidates(
         else "Pick and rank only the candidates that deserve to become clips."
     )
     format_instruction = (
-        "This is for one five-minute 16:9 landscape long-form highlight compilation. Choose complementary "
-        "key points that build a coherent narrative in chronological order; open with the strongest hook, "
-        "avoid repeated ideas and low-value filler, and favor sections that benefit from full context."
+        "This is for one 5-10 minute 16:9 landscape story resume of the entire source. Choose complementary "
+        "POV moments that form a coherent chronological arc: premise/context, conflict or development, core insight, "
+        "and payoff/conclusion. Cover the source broadly, avoid repeated ideas and low-value filler, and never invent "
+        "bridges that are not supported by the transcript."
         if compilation
         else "This is for Indonesian short-form FYP. Choose POV moments people would stop scrolling for, "
         "not merely complete transcript chunks."
@@ -3437,7 +3478,7 @@ def thumbnail_story_copy(
     if long_form:
         headline_source = raw_hook
         support_source = raw_pov
-        eyebrow = "HIGHLIGHT"
+        eyebrow = "RESUME CERITA"
         headline_words = 8
         headline_chars = 18
         headline_lines = 2
@@ -4804,8 +4845,8 @@ def designed_thumbnail_filter(
                 "eq=contrast=1.08:brightness=-0.015:saturation=1.10",
                 "drawbox=x=0:y=0:w=760:h=720:color=black@0.56:t=fill",
                 f"drawbox=x=0:y=0:w=18:h=720:color={accent}@0.98:t=fill",
-                f"drawbox=x=66:y=72:w=224:h=54:color={accent}@0.96:t=fill",
-                f"drawtext=fontfile={font_bold}:text='HIGHLIGHT':expansion=none:"
+                f"drawbox=x=66:y=72:w=282:h=54:color={accent}@0.96:t=fill",
+                f"drawtext=fontfile={font_bold}:text='RESUME CERITA':expansion=none:"
                 "fontcolor=white:fontsize=25:x=92:y=84",
                 f"drawtext=fontfile={font_bold}:textfile='{headline_filename}':reload=0:"
                 "expansion=none:fontcolor=white:fontsize=58:line_spacing=10:"
@@ -4917,20 +4958,20 @@ def generate_thumbnail_prompt(
         return {
             "hook_text": fallback_hook,
             "prompt": (
-                f'Add a bold {format_name} thumbnail text overlay reading "{fallback_hook}" '
+                f'Create an elegant cinematic, high-CTR {format_name} thumbnail text overlay reading "{fallback_hook}" '
                 "onto the provided screenshot. Keep the screenshot itself untouched as the background. "
-                "Place large high-contrast bold text (white fill, thick dark outline) with strong 16:9 composition, "
+                "Use a premium editorial hierarchy, restrained accent colors, large high-contrast bold text, and strong 16:9 composition; "
                 "do not cover faces, do not redraw or restyle the background image."
             ),
         }
 
     user_prompt = (
-        f"Create a compelling {format_name} thumbnail text overlay plan for this clip. The user already has a screenshot "
+        f"Create a truthful, viral-feeling, elegant cinematic {format_name} thumbnail text overlay plan for this clip. The user already has a screenshot "
         "(the best moment) and will feed it plus your prompt to an image generator that only writes text.\n"
         "Return JSON exactly like:\n"
         '{"hook_text": "<3-6 word punchy hook, ALL CAPS>", '
         '"prompt": "<instruction for the image generator: what text to write, where to place it, '
-        'style (bold, high contrast, outline), and an explicit rule to keep the screenshot background '
+        'style (premium editorial, bold, high contrast, restrained accent, outline), and an explicit rule to keep the screenshot background '
         'unchanged and not cover key subjects>"}\n\n'
         f"Clip title: {clip.title}\n"
         f"Clip transcript: {clip.text[:1000]}"
@@ -5895,7 +5936,8 @@ def export_compilation(
     parts_dir.mkdir(parents=True, exist_ok=True)
 
     strongest = max(candidates, key=lambda item: item.score)
-    base_name = f"highlight_5menit_{slugify(strongest.title)[:60] or 'pilihan-terbaik'}"
+    target_minutes = max(5, min(10, round(sum(item.duration for item in candidates) / 60)))
+    base_name = f"resume_cerita_{target_minutes}menit_{slugify(strongest.title)[:48] or 'inti-cerita'}"
     out_path = clips_dir / f"{base_name}.mp4"
     srt_path = clips_dir / f"{base_name}.srt"
     json_path = clips_dir / f"{base_name}.json"
@@ -5988,17 +6030,41 @@ def export_compilation(
         combined_applied_edits.append(
             "Seluruh bagian memakai efek TV jadul hitam-putih dengan grain, scanline, flicker, vignette, dan goresan pita vertikal."
         )
+    chronological_povs = list(
+        dict.fromkeys(
+            first_sentence(item.pov or fallback_pov_angle(item.text), max_words=14)
+            for item in candidates
+            if (item.pov or item.text).strip()
+        )
+    )
+    story_beats = [
+        first_sentence(item.title, max_words=8)
+        for item in candidates
+        if item.title.strip() and not is_source_branding_segment(item.title)
+    ]
+    representative_beats = (
+        [
+            story_beats[index]
+            for index in sorted(
+                {0, len(story_beats) // 3, (len(story_beats) * 2) // 3, len(story_beats) - 1}
+            )
+        ]
+        if story_beats
+        else [first_sentence(strongest.text, max_words=18)]
+    )
+    core_message = "Alur inti: " + " → ".join(representative_beats)
+    resume_pov = chronological_povs[0] if chronological_povs else fallback_pov_angle(strongest.text)
     compilation = ClipCandidate(
         index=1,
         start=min(item.start for item in candidates),
         end=max(item.end for item in candidates),
         duration=total_duration,
         score=compilation_score,
-        title=f"Highlight Terpenting: {strongest.title}"[:80],
-        reason=f"Kompilasi {len(candidates)} poin penting, dipilih untuk hook, value, dan payoff.",
+        title=f"Resume Cerita: {strongest.title}"[:80],
+        reason=f"Resume {len(candidates)} bagian inti yang merangkai konteks, POV, perkembangan, dan payoff secara kronologis.",
         text=" ".join(item.text for item in candidates),
         hook=strongest.hook or strongest.title,
-        pov=strongest.pov or fallback_pov_angle(strongest.text),
+        pov=resume_pov[:220],
         fyp_label=fyp_score_label(compilation_score),
         strengths=combined_strengths,
         weaknesses=combined_weaknesses,
@@ -6008,6 +6074,7 @@ def export_compilation(
     compilation_sidecar = {
         **asdict(compilation),
         "mode": "highlight_5m",
+        "resume_version": 1,
         "output_format": "landscape_compilation",
         "aspect_ratio": "16:9",
         "layout": (
@@ -6030,6 +6097,20 @@ def export_compilation(
         "output_height": output_height,
         "output_resolution": f"{output_width}x{output_height}",
         "thumbnail_strategy": "custom_long_form_upload",
+        "core_message": core_message[:600],
+        "story_arc": [
+            {
+                **asdict(item),
+                "narrative_role": (
+                    "hook_context"
+                    if index == 0
+                    else "payoff_conclusion"
+                    if index == len(candidates) - 1
+                    else "development"
+                ),
+            }
+            for index, item in enumerate(candidates)
+        ],
     }
 
     strongest_offset = sum(
@@ -6148,13 +6229,13 @@ def parse_args() -> argparse.Namespace:
         "--clip-mode",
         choices=["short", "highlight_5m"],
         default="short",
-        help="Export vertical shorts only, or one separate five-minute landscape compilation",
+        help="Export vertical shorts only, or one 5-10 minute landscape story resume",
     )
     parser.add_argument(
         "--compilation-target",
         type=float,
         default=300,
-        help="Target duration in seconds for highlight_5m mode",
+        help="Target duration (300-600 seconds) for story-resume mode",
     )
     parser.add_argument("--model", default=DEFAULT_TRANSCRIPTION_MODEL, help="faster-whisper model name")
     parser.add_argument("--language", default="id", help="Transcription language code")
@@ -6373,7 +6454,7 @@ def main() -> int:
     if not args.no_enhanced_edit:
         console.print("[bold]Applying enhanced motion graphics...[/bold]")
     if args.clip_mode == "highlight_5m":
-        console.print("[bold]Exporting 16:9 landscape cinematic highlight compilation...[/bold]")
+        console.print("[bold]Exporting 16:9 cinematic story resume with POV and core narrative...[/bold]")
         exported = [
             export_compilation(
                 final_video_path,

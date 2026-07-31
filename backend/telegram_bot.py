@@ -169,7 +169,7 @@ CLIPPING_STAGE_ALERTS: list[tuple[str, str, str, tuple[str, ...]]] = [
     (
         "compilation",
         "Mengekspor kompilasi 16:9",
-        "Momen terbaik sedang dirender menjadi video landscape sinematik maksimal lima menit.",
+        "Momen terbaik sedang dirangkai menjadi resume landscape sinematik sesuai target durasi.",
         ("exporting 16:9 landscape cinematic highlight compilation",),
     ),
     ("done", "Clipping selesai", "Render selesai. Bot akan menyiapkan pengiriman hasil.", ("done.", "exported:")),
@@ -647,7 +647,7 @@ def clip_title(clip: dict[str, Any], index: int) -> str:
 
 def is_compilation_result(clip: dict[str, Any]) -> bool:
     name = str(clip.get("name") or "").lower()
-    return name.startswith("highlight_5menit_")
+    return name.startswith(("highlight_5menit_", "resume_cerita_"))
 
 
 def telegram_fyp_label(score: int) -> str:
@@ -2546,7 +2546,7 @@ class ClipForgeTelegramBot:
                 + (f"Channel: {uploader}\n" if uploader else "")
                 + f"Clip pendek: {short_count}\n"
                 + (
-                    f"Kompilasi landscape 16:9 maksimal 5 menit: {compilation_count}\n"
+                    f"Resume cerita landscape 16:9 durasi 5–10 menit: {compilation_count}\n"
                     if compilation_count
                     else ""
                 )

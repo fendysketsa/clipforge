@@ -103,10 +103,10 @@ Default output video:
 - durasi clip pendek dinamis, maksimal 60 detik
 - mode `short` tidak merender kompilasi tambahan
 
-Untuk membuat satu kompilasi highlight sekitar lima menit (bukan Short):
+Untuk membuat satu clip resume sinematik 5–10 menit (bukan Short), pilih target 300–600 detik:
 
 ```powershell
-.\.venv\Scripts\python.exe clipper.py "URL" --clip-mode highlight_5m --compilation-target 300 --min 30 --max 75 --ai-enabled
+.\.venv\Scripts\python.exe clipper.py "URL" --clip-mode highlight_5m --compilation-target 600 --min 30 --max 90 --visual-mode cinematic --ai-enabled
 ```
 
 If CPU feels too slow, use a smaller model:

@@ -49,6 +49,8 @@ import {
   DEFAULT_MIN_DURATION,
   DEFAULT_MODEL,
   DEFAULT_VIDEO_QUALITY,
+  COMPILATION_MAX_SECONDS,
+  COMPILATION_MIN_SECONDS,
   COMPILATION_TARGET_SECONDS,
   JOB_POLL_INTERVAL_MS,
   MAX_REQUESTED_CLIPS,
@@ -99,6 +101,7 @@ export default function HomePage() {
   const [visualMode, setVisualMode] = useState<VisualMode>("animated_3d");
   const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>("auto_clean");
   const [clipMode, setClipMode] = useState<ClipMode>(DEFAULT_CLIP_MODE);
+  const [compilationTargetSeconds, setCompilationTargetSeconds] = useState(COMPILATION_TARGET_SECONDS);
   const [uploadPreviewUrl, setUploadPreviewUrl] = useState("");
   const [cropMode, setCropMode] = useState<CropMode>("person");
   const [camCorner, setCamCorner] = useState<CamCorner>("auto");
@@ -172,7 +175,10 @@ export default function HomePage() {
     setCaptionOutline(0.5);
     if (value === "highlight_5m") {
       setMinDuration(30);
-      setMaxDuration(75);
+      setMaxDuration(90);
+      setCompilationTargetSeconds(COMPILATION_TARGET_SECONDS);
+      setVisualMode("cinematic");
+      setBackgroundMode("keep");
     } else {
       setMinDuration(DEFAULT_MIN_DURATION);
       setMaxDuration(DEFAULT_MAX_DURATION);
@@ -563,7 +569,10 @@ export default function HomePage() {
           min_duration: minDuration,
           max_duration: effectiveMaxDuration,
           clip_mode: clipMode,
-          compilation_target_seconds: COMPILATION_TARGET_SECONDS,
+          compilation_target_seconds: Math.max(
+            COMPILATION_MIN_SECONDS,
+            Math.min(COMPILATION_MAX_SECONDS, compilationTargetSeconds),
+          ),
           model: DEFAULT_MODEL,
           language: DEFAULT_LANGUAGE,
           video_quality: videoQuality,
@@ -622,6 +631,7 @@ export default function HomePage() {
     captionOutlineColor,
     captionPosition,
     clipMode,
+    compilationTargetSeconds,
     cropMode,
     loadJobs,
     maxDuration,
@@ -886,13 +896,19 @@ export default function HomePage() {
   const handleUploadClipToYouTube = useCallback(
     async (clip: ClipFile) => {
       if (!job) return;
+      const includesAutomaticThumbnail = clip.name.toLowerCase().startsWith("highlight_5menit_")
+        || clip.name.toLowerCase().startsWith("resume_cerita_");
       try {
         const upload = await toast.promise(createYouTubeUpload(job.id, clip.url), {
-          loading: "Memasukkan upload YouTube ke antrean...",
+          loading: includesAutomaticThumbnail
+            ? "Memvalidasi video landscape dan thumbnail 16:9..."
+            : "Memasukkan upload YouTube ke antrean...",
           success: (upload) =>
             upload.status === "completed" && upload.video_url
               ? "Klip ini sudah terupload. Upload duplikat dilewati."
-              : "Upload masuk antrean. Session akan disinkronkan otomatis bila diperlukan.",
+              : includesAutomaticThumbnail
+                ? "Video dan thumbnail otomatis masuk antrean YouTube."
+                : "Upload masuk antrean. Session akan disinkronkan otomatis bila diperlukan.",
           error: (error) => error instanceof Error ? error.message : "Gagal membuat upload YouTube",
         });
         setYoutubeUploads((current) => [upload, ...current.filter((item) => item.id !== upload.id)]);
@@ -1142,6 +1158,8 @@ export default function HomePage() {
           onUploadFileChange={handleUploadFileChange}
           maxDuration={maxDuration}
           minDuration={minDuration}
+          compilationTargetSeconds={compilationTargetSeconds}
+          onCompilationTargetSecondsChange={setCompilationTargetSeconds}
           targetClips={targetClips}
           maxClips={maxClips}
           videoDuration={videoDuration}

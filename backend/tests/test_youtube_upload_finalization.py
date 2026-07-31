@@ -202,11 +202,13 @@ def test_uploader_forces_public_request_to_private_by_default(monkeypatch):
 def test_custom_thumbnail_is_only_uploaded_for_long_form(tmp_path):
     short = tmp_path / "clip_01.mp4"
     highlight = tmp_path / "highlight_5menit_hikmah.mp4"
+    resume = tmp_path / "resume_cerita_5menit_hikmah.mp4"
 
     assert not should_upload_custom_thumbnail(short, "shorts")
     assert should_upload_custom_thumbnail(highlight, "long-form")
     assert not should_upload_custom_thumbnail(short, "auto")
     assert should_upload_custom_thumbnail(highlight, "auto")
+    assert should_upload_custom_thumbnail(resume, "auto")
 
 
 def test_review_safe_text_does_not_trigger_false_issue(monkeypatch):

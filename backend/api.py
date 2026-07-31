@@ -207,7 +207,8 @@ class ClipJobRequest(BaseModel):
     min_duration: float = Field(default=15, ge=5, le=600)
     max_duration: float = Field(default=60, ge=10, le=600)
     clip_mode: Literal["short", "highlight_5m"] = "short"
-    compilation_target_seconds: float = Field(default=300, ge=240, le=360)
+    # Keep 240s readable for persisted legacy jobs; the current UI offers 300-600s.
+    compilation_target_seconds: float = Field(default=300, ge=240, le=600)
     model: str = "Systran/faster-whisper-medium"
     language: str = "id"
     analyze_seconds: float | None = Field(default=None, ge=10, le=7200)
@@ -430,6 +431,7 @@ class YouTubeUploadJob(BaseModel):
     title: str
     description: str = ""
     thumbnail_url: str | None = None
+    thumbnail_attached: bool = False
     visibility: Literal["private", "unlisted", "public"] = "private"
     made_for_kids: bool = False
     tags: list[str] = Field(default_factory=list)
@@ -1076,7 +1078,7 @@ def clip_index_from_name(name: str) -> int | None:
 def is_compilation_clip(job: "ClipJob", clip: ClipFile) -> bool:
     return (
         job.request.clip_mode == "highlight_5m"
-        or clip.name.lower().startswith("highlight_5menit_")
+        or clip.name.lower().startswith(("highlight_5menit_", "resume_cerita_"))
     )
 
 
@@ -1564,7 +1566,7 @@ def youtube_max_upload_bytes() -> int:
 
 def youtube_upload_staging_filter(source_path: Path) -> str:
     """Keep long-form compilations landscape when upload-size compression is needed."""
-    if source_path.name.lower().startswith("highlight_5menit_"):
+    if source_path.name.lower().startswith(("highlight_5menit_", "resume_cerita_")):
         return (
             "scale=1280:720:force_original_aspect_ratio=decrease,"
             "pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1"
@@ -2011,7 +2013,7 @@ def normalized_generated_metadata(payload: dict, *, is_compilation: bool) -> dic
     ai_hashtags = ai_hashtags[:6]
 
     # Keep the description readable: enough context to be useful, but still
-    # compact for Shorts and a five-minute highlight.
+    # compact for Shorts and a five-to-ten-minute story resume.
     if len(description) > 650:
         description = description[:650].rsplit(" ", 1)[0].rstrip(" ,;:-") + "…"
     text = f"{description}\n\n{' '.join(f'#{tag}' for tag in ai_hashtags)}"
@@ -2032,14 +2034,14 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
     transcript = clip_candidate_text(job, clip)
     clip_context = transcript or caption or title
     is_compilation = is_compilation_clip(job, clip)
-    format_name = "video kompilasi highlight sekitar lima menit" if is_compilation else "YouTube Shorts"
+    format_name = "video resume cerita landscape berdurasi lima sampai sepuluh menit" if is_compilation else "YouTube Shorts"
     system_prompt = (
         YOUTUBE_METADATA_SYSTEM_PROMPT.replace(
             "YouTube Shorts metadata writer",
             "YouTube long-form highlight metadata writer",
         ).replace(
             "short clips",
-            "five-minute highlight videos",
+            "five-to-ten-minute story-resume videos",
         )
         if is_compilation
         else YOUTUBE_METADATA_SYSTEM_PROMPT
@@ -2327,7 +2329,39 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
 
     thumbnail_url = request.thumbnail_url or clip.thumbnail_url
     thumbnail_path = output_path_from_url(thumbnail_url) if thumbnail_url else None
+    if (thumbnail_path is None or not thumbnail_path.is_file()) and is_compilation_clip(job, clip):
+        fallback_thumbnail = clip_path.with_name(f"{clip_path.stem}_thumb.jpg")
+        if fallback_thumbnail.is_file():
+            thumbnail_path = fallback_thumbnail
+            thumbnail_url = clip_url(fallback_thumbnail)
     safe_thumbnail_url = thumbnail_url if thumbnail_path is not None and thumbnail_path.is_file() else None
+    if is_compilation_clip(job, clip):
+        if thumbnail_path is None or not thumbnail_path.is_file():
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Thumbnail otomatis untuk Highlight/Resume landscape belum tersedia. "
+                    "Render ulang video agar thumbnail 16:9 dibuat sebelum upload YouTube."
+                ),
+            )
+        if thumbnail_path.suffix.casefold() not in {".jpg", ".jpeg", ".png"}:
+            raise HTTPException(status_code=409, detail="Thumbnail YouTube harus berupa JPG atau PNG.")
+        if thumbnail_path.stat().st_size > 2 * 1024 * 1024:
+            raise HTTPException(status_code=409, detail="Thumbnail YouTube melebihi batas aman 2 MB.")
+        try:
+            import cv2
+
+            image = cv2.imread(str(thumbnail_path.resolve()))
+        except Exception:
+            image = None
+        if image is None:
+            raise HTTPException(status_code=409, detail="Thumbnail otomatis tidak dapat dibaca sebagai gambar.")
+        height, width = image.shape[:2]
+        if width < 640 or height < 360 or abs((width / height) - (16 / 9)) > 0.03:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Thumbnail harus landscape 16:9; file saat ini {width}x{height}.",
+            )
     fallback_tags = request.tags or default_youtube_tags(job, clip)
     ai_metadata = generate_youtube_metadata(job, clip, fallback_tags)
     if env_bool("YOUTUBE_REQUIRE_AI_METADATA", True) and not isinstance(ai_metadata, dict):
@@ -2375,6 +2409,7 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         ),
         description=description,
         thumbnail_url=safe_thumbnail_url,
+        thumbnail_attached=False,
         visibility=safe_youtube_visibility(request.visibility),
         made_for_kids=request.made_for_kids,
         tags=tags,
@@ -2382,6 +2417,11 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         target_channel=request.target_channel,
         dry_run=request.dry_run,
         clip_sha256=clip_fingerprint,
+        logs=(
+            [f"Thumbnail otomatis 16:9 siap dipasang: {thumbnail_path.name}"]
+            if is_compilation_clip(job, clip) and thumbnail_path is not None
+            else []
+        ),
     )
 
 
@@ -2595,6 +2635,9 @@ def build_youtube_upload_command(
     use_cdp = youtube_upload_prefers_cdp() if use_cdp_override is None else use_cdp_override
     max_upload_bytes = youtube_max_upload_bytes()
     upload_path = prepare_limited_upload_file(clip_path, max_upload_bytes)
+    is_long_form = upload.clip_name.casefold().startswith(("highlight_5menit_", "resume_cerita_"))
+    if is_long_form and not upload.thumbnail_url:
+        raise RuntimeError("Upload Highlight/Resume dibatalkan karena thumbnail otomatis belum tersedia.")
     command = [
         sys.executable,
         "youtube_uploader.py",
@@ -2613,10 +2656,12 @@ def build_youtube_upload_command(
     ]
     if upload.thumbnail_url:
         thumbnail_path = output_path_from_url(upload.thumbnail_url)
+        if is_long_form and (thumbnail_path is None or not thumbnail_path.is_file()):
+            raise RuntimeError("File thumbnail otomatis tidak ditemukan sebelum upload YouTube dimulai.")
         if thumbnail_path is not None and thumbnail_path.is_file():
             thumbnail_content_type = (
                 "long-form"
-                if upload.clip_name.casefold().startswith("highlight_5menit_")
+                if is_long_form
                 else "shorts"
             )
             command.extend(
@@ -3355,6 +3400,7 @@ def complete_youtube_upload_as_duplicate(
         finished_at=completed_at,
         duration_seconds=0.0,
         video_url=duplicate.video_url,
+        thumbnail_attached=duplicate.thumbnail_attached,
         clip_delete_after=delete_after,
         clip_deleted_at=None if local_file_exists else completed_at,
         clip_delete_error=None,
@@ -3427,13 +3473,14 @@ def run_youtube_upload(upload_id: str) -> None:
     set_youtube_upload(
         upload_id,
         status="running",
+        thumbnail_attached=False,
         started_at=now_iso(),
         finished_at=None,
         duration_seconds=None,
         error=None,
     )
 
-    logs: list[str] = []
+    logs: list[str] = list(upload.logs[-20:])
     try:
         fallback_to_storage_state = False
         fallback_to_cdp = False
@@ -3477,6 +3524,8 @@ def run_youtube_upload(upload_id: str) -> None:
         default_max_attempts = 6 if (use_cdp_for_attempt or youtube_auth_state_exists() or youtube_chromium_profile_ready()) else 1
         max_attempts = max(1, env_int("YOUTUBE_CDP_UPLOAD_MAX_ATTEMPTS", default_max_attempts))
         for attempt in range(1, max_attempts + 1):
+            thumbnail_attached_for_attempt = False
+            set_youtube_upload(upload_id, thumbnail_attached=False)
             if attempt > 1:
                 if use_cdp_for_attempt:
                     mode = "Chrome CDP"
@@ -3505,11 +3554,15 @@ def run_youtube_upload(upload_id: str) -> None:
                 youtube_upload_processes[upload_id] = process
 
             def record_upload_log(cleaned: str) -> None:
+                nonlocal thumbnail_attached_for_attempt
+                if cleaned.startswith("THUMBNAIL_ATTACHED:"):
+                    thumbnail_attached_for_attempt = True
                 logs.append(cleaned)
                 set_youtube_upload(
                     upload_id,
                     logs=logs[-160:],
                     video_url=youtube_video_url_from_logs(logs),
+                    thumbnail_attached=thumbnail_attached_for_attempt,
                 )
 
             code, stalled = monitor_youtube_upload_process(
@@ -3523,7 +3576,23 @@ def run_youtube_upload(upload_id: str) -> None:
                 logs.append("File staging upload sementara dibersihkan.")
 
             video_url = youtube_video_url_from_logs(logs)
-            if video_url and not upload.dry_run and code != 0:
+            requires_thumbnail = bool(
+                upload.thumbnail_url
+                and upload.clip_name.casefold().startswith(("highlight_5menit_", "resume_cerita_"))
+            )
+            thumbnail_confirmation_error = ""
+            if code == 0 and requires_thumbnail and not thumbnail_attached_for_attempt:
+                code = 1
+                thumbnail_confirmation_error = (
+                    "Browser belum mengonfirmasi thumbnail otomatis terpasang; upload belum diselesaikan."
+                )
+                logs.append(thumbnail_confirmation_error)
+            if (
+                video_url
+                and not upload.dry_run
+                and code != 0
+                and (not requires_thumbnail or thumbnail_attached_for_attempt)
+            ):
                 logs.append(
                     "Uploader berhenti setelah URL final terverifikasi; status dipulihkan sebagai sukses tanpa retry upload."
                 )
@@ -3532,7 +3601,9 @@ def run_youtube_upload(upload_id: str) -> None:
             error = (
                 f"Uploader tidak mengirim progres selama {stall_timeout_seconds} detik."
                 if stalled
-                else youtube_upload_error_from_logs(logs) or f"youtube_uploader.py exited with code {code}"
+                else thumbnail_confirmation_error
+                or youtube_upload_error_from_logs(logs)
+                or f"youtube_uploader.py exited with code {code}"
             )
             if code == 0:
                 completed_at = now_iso()
@@ -3552,6 +3623,7 @@ def run_youtube_upload(upload_id: str) -> None:
                 set_youtube_upload(
                     upload_id,
                     status="completed",
+                    thumbnail_attached=thumbnail_attached_for_attempt,
                     logs=logs[-160:],
                     video_url=video_url,
                     finished_at=completed_at,

@@ -304,6 +304,8 @@ export function ResultsSection({
             const url = getOutputUrl(clip.url);
             const isSelected = selectedClipUrls.includes(clip.url);
             const latestUpload = youtubeUploads.find((upload) => upload.clip_url === clip.url);
+            const isLongForm = clip.name.toLowerCase().startsWith("highlight_5menit_")
+              || clip.name.toLowerCase().startsWith("resume_cerita_");
             const isUploadingToYouTube = latestUpload?.status === "queued" || latestUpload?.status === "running";
             const isAlreadyUploaded = latestUpload?.status === "completed" && Boolean(latestUpload.video_url);
             const hasRunningUpload = youtubeUploads.some((upload) => upload.status === "running");
@@ -357,7 +359,7 @@ export function ResultsSection({
 
             return (
               <article
-                className={`clipCard ${clip.is_correct ? "clipCardCorrect" : ""} ${isSelected ? "selected" : ""}`}
+                className={`clipCard ${isLongForm ? "clipCardLongForm" : ""} ${clip.is_correct ? "clipCardCorrect" : ""} ${isSelected ? "selected" : ""}`}
                 key={clip.url}
               >
                 <div className="clipMedia">
@@ -407,6 +409,7 @@ export function ResultsSection({
                         <span className="clipMetric">Loop {clip.loop_score}</span>
                       ) : null}
                       {clip.output_resolution ? <span className="clipMetric">{clip.output_resolution}</span> : null}
+                      {isLongForm && clip.thumbnail_url ? <span className="clipMetric">Thumbnail 16:9 siap</span> : null}
                     </div>
                     <details className="clipAnalysisDetails">
                       <summary>
@@ -505,7 +508,9 @@ export function ResultsSection({
                           ? "Mengupload..."
                           : latestUpload?.status === "failed"
                             ? "Ulangi YouTube"
-                            : "Kirim YouTube"}
+                            : isLongForm
+                              ? "Kirim + Thumbnail"
+                              : "Kirim YouTube"}
                       </span>
                     </button>
                     <button className="clipDeleteButton" type="button" onClick={() => onDeleteClip(clip)}>
@@ -529,6 +534,13 @@ export function ResultsSection({
                       <UploadCloud size={14} />
                       <span className="youtubeUploadStatusText">
                         YouTube: {latestUpload.status}
+                        {isLongForm && latestUpload.thumbnail_url
+                          ? latestUpload.thumbnail_attached
+                            ? " · thumbnail terpasang"
+                            : latestUpload.status === "running"
+                              ? " · memasang thumbnail"
+                              : " · thumbnail 16:9 siap"
+                          : null}
                         {latestUpload.status === "queued" && queuePosition !== null
                           ? ` · antrean ${queuePosition} dari ${queueTotal ?? queuePosition}`
                           : null}

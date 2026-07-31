@@ -178,3 +178,33 @@ def test_highlight_mode_builds_only_the_compilation_selection():
 
     assert selected is compilation
     assert sum(item.duration for item in compilation) == 300
+
+
+def test_compilation_selection_supports_ten_minute_story_resume():
+    candidates = [
+        make_candidate(0, start, 95 - (index % 8), f"Bab cerita {index}")
+        for index, start in enumerate(range(0, 1200, 70))
+    ]
+
+    selected = select_compilation_candidates(candidates, target_duration=600)
+
+    assert sum(item.duration for item in selected) == 600
+    assert len(selected) == 10
+    assert selected == sorted(selected, key=lambda item: item.start)
+
+
+def test_compilation_selection_covers_late_story_payoff():
+    candidates = [
+        make_candidate(0, start, 99 - index, f"Perkembangan awal {index}")
+        for index, start in enumerate(range(0, 700, 70))
+    ]
+    candidates.extend(
+        [
+            make_candidate(0, 1400, 74, "Konflik berkembang menuju jawaban."),
+            make_candidate(0, 1960, 72, "Kesimpulan dan payoff utama cerita."),
+        ]
+    )
+
+    selected = select_compilation_candidates(candidates, target_duration=600)
+
+    assert any(item.start >= 1900 for item in selected)

@@ -25,7 +25,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Enhance voice clarity and generate safe, niche-aware social captions even when the AI service is unavailable.
 - Keep captions compact with a face-safe gradient shade that never blurs source pixels.
 - Generate short clips up to 60 seconds without an extra compilation render.
-- Keep the chronological five-minute compilation available as a separate mode.
+- Keep the chronological 5–10 minute cinematic story resume available as a separate mode.
 - Telegram's primary CTA requests short clips only for a faster turnaround.
 - Search 70+ Creative Commons themes, including Islamic insight, mystery, myth/fact, history, and relevant horror; prioritize the last 30 days and expand to 180 days when needed.
 - Permanently skip YouTube source URLs that have already completed clipping.
@@ -285,10 +285,10 @@ Quick test on the first 180 seconds:
 .\.venv\Scripts\python.exe clipper.py "https://www.youtube.com/watch?v=..." --model Systran/faster-whisper-base --analyze-seconds 180 --top 1
 ```
 
-Create one non-Short highlight compilation targeting five minutes:
+Create one non-Short cinematic story resume targeting 5–10 minutes (300–600 seconds):
 
 ```powershell
-.\.venv\Scripts\python.exe clipper.py "URL" --clip-mode highlight_5m --compilation-target 300 --min 30 --max 75 --ai-enabled
+.\.venv\Scripts\python.exe clipper.py "URL" --clip-mode highlight_5m --compilation-target 600 --min 30 --max 90 --visual-mode cinematic --ai-enabled
 ```
 
 Outputs are written under `backend/outputs/`.

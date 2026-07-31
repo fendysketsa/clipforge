@@ -156,6 +156,7 @@ def test_telegram_cta_migrates_highlight_state_to_short_only_mode():
 
 def test_compilation_result_is_detected_from_export_name():
     assert is_compilation_result({"name": "highlight_5menit_poin-penting.mp4"})
+    assert is_compilation_result({"name": "resume_cerita_10menit_poin-penting.mp4"})
     assert not is_compilation_result({"name": "clip_01_poin-penting.mp4"})
 
 

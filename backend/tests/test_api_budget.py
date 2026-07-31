@@ -71,6 +71,13 @@ def test_upload_staging_keeps_compilation_landscape():
     assert "pad=1280:720" in value
 
 
+def test_upload_staging_keeps_story_resume_landscape():
+    value = youtube_upload_staging_filter(Path("resume_cerita_10menit_inti-cerita.mp4"))
+
+    assert "scale=1280:720" in value
+    assert "pad=1280:720" in value
+
+
 def test_upload_staging_keeps_short_vertical():
     value = youtube_upload_staging_filter(Path("clip_01_pilihan.mp4"))
 
@@ -100,6 +107,16 @@ def test_short_defaults_are_fast_fyp_length():
     assert request.model == "Systran/faster-whisper-medium"
     assert request.crop_mode == "person"
     assert request.caption_position == "bottom"
+
+
+def test_story_resume_accepts_ten_minute_target():
+    request = ClipJobRequest(
+        source_file="fake.mp4",
+        clip_mode="highlight_5m",
+        compilation_target_seconds=600,
+    )
+
+    assert request.compilation_target_seconds == 600
 
 
 def test_normalize_keeps_under_budget_target(monkeypatch):

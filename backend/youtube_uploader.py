@@ -131,7 +131,7 @@ def normalized_upload_metadata(video_path: Path, title: str, description: str) -
         clean_description = sidecar_caption(video_path)
     normalized_title = (
         youtube_long_form_title(clean_title)
-        if video_path.name.startswith("highlight_5menit_")
+        if video_path.name.startswith(("highlight_5menit_", "resume_cerita_"))
         else youtube_shorts_title(clean_title)
     )
     return normalized_title, clean_description[:5000]
@@ -1918,8 +1918,30 @@ def fill_tags(page, tags: str) -> None:
         log("Kolom Tags lanjutan dilewati; hashtag sudah dimasukkan ke deskripsi.")
 
 
+def validate_thumbnail_file(thumbnail_path: Path) -> tuple[int, int]:
+    if not thumbnail_path.is_file():
+        raise UploadError(f"File thumbnail tidak ditemukan: {thumbnail_path}")
+    if thumbnail_path.suffix.casefold() not in {".jpg", ".jpeg", ".png"}:
+        raise UploadError("Thumbnail YouTube harus berupa JPG atau PNG.")
+    if thumbnail_path.stat().st_size > 2 * 1024 * 1024:
+        raise UploadError("Thumbnail YouTube melebihi batas aman 2 MB.")
+    try:
+        import cv2
+
+        image = cv2.imread(str(thumbnail_path))
+    except Exception:
+        image = None
+    if image is None:
+        raise UploadError("Thumbnail YouTube tidak dapat dibaca sebagai gambar.")
+    height, width = image.shape[:2]
+    if width < 640 or height < 360 or abs((width / height) - (16 / 9)) > 0.03:
+        raise UploadError(f"Thumbnail long-form harus landscape 16:9; file saat ini {width}x{height}.")
+    return width, height
+
+
 def set_thumbnail(page, thumbnail_path: Path, timeout_ms: int = 45000) -> None:
-    log(f"Mengatur thumbnail: {thumbnail_path.name}.")
+    width, height = validate_thumbnail_file(thumbnail_path)
+    log(f"Mengatur thumbnail otomatis {width}x{height}: {thumbnail_path.name}.")
     deadline = time.monotonic() + timeout_ms / 1000
     selectors = (
         'ytcp-video-thumbnail-editor input[type="file"]',
@@ -1940,8 +1962,30 @@ def set_thumbnail(page, thumbnail_path: Path, timeout_ms: int = 45000) -> None:
                     locator = frame.locator(selector).first
                     if locator.count():
                         locator.set_input_files(str(thumbnail_path), timeout=30000)
-                        log(f"Thumbnail dipilih: {thumbnail_path.name}")
+                        try:
+                            has_file = bool(locator.evaluate("input => Boolean(input.files && input.files.length)"))
+                        except Exception:
+                            has_file = True
+                        if not has_file:
+                            continue
+                        time.sleep(1.5)
+                        page_text = normalized_page_text(page)
+                        rejection_terms = (
+                            "filetoobig",
+                            "filetoolarge",
+                            "filesterlalubesar",
+                            "invalidfile",
+                            "filetidakvalid",
+                            "cantuploadthumbnail",
+                            "tidakdapatmenguploadthumbnail",
+                        )
+                        if any(term in page_text for term in rejection_terms):
+                            save_debug_artifacts(page, "thumbnail-rejected")
+                            raise UploadError("YouTube menolak file thumbnail otomatis.")
+                        log(f"THUMBNAIL_ATTACHED: {thumbnail_path.name} ({width}x{height})")
                         return
+                except UploadError:
+                    raise
                 except Exception as exc:
                     last_error = exc
         if not clicked_upload:
@@ -1980,7 +2024,7 @@ def should_upload_custom_thumbnail(video_path: Path, content_type: str = "auto")
         return True
     if normalized == "shorts":
         return False
-    return video_path.name.casefold().startswith("highlight_5menit_")
+    return video_path.name.casefold().startswith(("highlight_5menit_", "resume_cerita_"))
 
 
 def click_playlist_named(page, playlist_name: str, timeout_ms: int = 8000) -> bool:

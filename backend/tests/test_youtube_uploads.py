@@ -4,6 +4,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from fastapi import HTTPException
 
 from api import (
     ClipCandidate,
@@ -91,6 +92,7 @@ def test_best_youtube_clip_urls_uses_candidate_scores():
     [
         ("clip_01.mp4", "shorts"),
         ("highlight_5menit_hikmah.mp4", "long-form"),
+        ("resume_cerita_10menit_hikmah.mp4", "long-form"),
     ],
 )
 def test_upload_command_marks_thumbnail_content_type(
@@ -130,6 +132,35 @@ def test_upload_command_marks_thumbnail_content_type(
     type_index = command.index("--thumbnail-content-type")
 
     assert command[type_index + 1] == expected_type
+
+
+def test_story_resume_upload_requires_automatic_thumbnail(monkeypatch, tmp_path):
+    import api
+
+    outputs = tmp_path / "outputs"
+    video_path = outputs / "job-resume" / "clips" / "resume_cerita_5menit_inti.mp4"
+    video_path.parent.mkdir(parents=True)
+    video_path.write_bytes(b"video")
+    clip = ClipFile(
+        name=video_path.name,
+        url="/outputs/job-resume/clips/resume_cerita_5menit_inti.mp4",
+        size_bytes=video_path.stat().st_size,
+    )
+    job = ClipJob(
+        id="job-resume",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/demo", clip_mode="highlight_5m"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "youtube_uploads", {})
+
+    with pytest.raises(HTTPException) as exc_info:
+        create_youtube_upload_record(job.id, YouTubeUploadRequest(clip_url=clip.url))
+    assert "Thumbnail otomatis" in str(exc_info.value.detail)
 
 
 def test_best_youtube_clip_urls_falls_back_to_clip_order_without_scores():

@@ -46,6 +46,8 @@ type ControlPanelProps = {
   onUploadFileChange: (file: File | null) => void;
   maxDuration: number;
   minDuration: number;
+  compilationTargetSeconds: number;
+  onCompilationTargetSecondsChange: (value: number) => void;
   targetClips: number;
   maxClips: number | null;
   videoDuration: number | null;
@@ -119,6 +121,8 @@ export function ControlPanel({
   onUploadFileChange,
   maxDuration,
   minDuration,
+  compilationTargetSeconds,
+  onCompilationTargetSecondsChange,
   targetClips,
   maxClips,
   videoDuration,
@@ -296,19 +300,19 @@ export function ControlPanel({
             type="button"
             onClick={() => onClipModeChange("highlight_5m")}
           >
-            Highlight 5 Menit
+            Clip Resume 5–10 Menit
           </button>
         </div>
         <p className="field-help">
           {clipMode === "highlight_5m"
-            ? "Hanya kompilasi: AI memilih poin terpenting, menyusunnya kronologis, lalu menggabungkan menjadi satu video sekitar 5 menit."
+            ? "AI mencari POV utama dan inti cerita dari seluruh video, membuang filler, lalu menyusunnya menjadi satu resume kronologis yang sinematik."
             : "Clip vertikal maksimal 60 detik dengan cover CTR tertanam, hook, animasi, sound effect, payoff, dan penutup loop dalam satu render—tanpa perlu upload gambar thumbnail."}
         </p>
       </div>
 
       <div className="gridFields">
         <label className="field">
-          <span>Durasi Minimum</span>
+          <span>{clipMode === "short" ? "Durasi Minimum" : "Durasi Minimum per Bagian"}</span>
           <input
             min={5}
             max={clipMode === "short" ? 59 : 600}
@@ -318,7 +322,7 @@ export function ControlPanel({
           />
         </label>
         <label className="field">
-          <span>Durasi Maksimum</span>
+          <span>{clipMode === "short" ? "Durasi Maksimum" : "Durasi Maksimum per Bagian"}</span>
           <input
             min={10}
             max={clipMode === "short" ? 60 : 600}
@@ -350,14 +354,28 @@ export function ControlPanel({
           </p>
         </label>
       ) : (
-        <div className="modeNotice">
-          <strong>Landscape otomatis · 16:9 · target ±5:00 menit</strong>
-          <span>
-            {videoDuration && videoDuration < 300
-              ? "Video sumber kurang dari 5 menit, sehingga hasil bisa lebih pendek."
-              : "Bagian filler, intro panjang, dan pengulangan dilewati; orientasi dikunci landscape."}
-          </span>
-        </div>
+        <>
+          <label className="field wide">
+            <span>Target Durasi Resume · {Math.round(compilationTargetSeconds / 60)} menit</span>
+            <input
+              min={300}
+              max={600}
+              step={60}
+              type="range"
+              value={compilationTargetSeconds}
+              onChange={(event) => onCompilationTargetSecondsChange(Number(event.target.value))}
+            />
+            <p className="field-help">Pilih 5–10 menit. AI tetap mengutamakan cerita yang utuh; hasil dapat lebih pendek bila materi inti sumber tidak mencukupi.</p>
+          </label>
+          <div className="modeNotice">
+            <strong>Landscape otomatis · 16:9 · target ±{Math.round(compilationTargetSeconds / 60)}:00</strong>
+            <span>
+              {videoDuration && videoDuration < compilationTargetSeconds
+                ? "Video sumber lebih pendek dari target, sehingga hasil mengikuti materi yang tersedia."
+                : "POV, konflik, konteks, dan payoff dirangkai kronologis; intro panjang, filler, dan pengulangan dilewati."}
+            </span>
+          </div>
+        </>
       )}
 
       <div className="segmentedField">
@@ -811,7 +829,9 @@ export function ControlPanel({
           />
         </label>
         <p className="field-help">
-          Selesai clipping langsung antrekan 3 klip terbaik sebagai Private. Publikasikan hanya setelah kolom Pembatasan bebas klaim.
+          {clipMode === "highlight_5m"
+            ? "Selesai render, video landscape dan thumbnail viral-elegan otomatis diupload sebagai Private. Publikasikan setelah kolom Pembatasan bebas klaim."
+            : "Selesai clipping langsung antrekan 3 klip terbaik sebagai Private. Publikasikan hanya setelah kolom Pembatasan bebas klaim."}
         </p>
         </div>
       </div>
