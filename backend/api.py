@@ -73,6 +73,13 @@ FULL_ANALYSIS_LIMIT_SECONDS = 30 * 60
 LONG_VIDEO_ANALYSIS_RATIO = 0.35
 MAX_AUTO_ANALYSIS_SECONDS = 20 * 60
 CLIP_BUDGET_RATIO = 0.8
+YOUTUBE_CLEANUP_STEPS = (
+    "video",
+    "thumbnail",
+    "metadata",
+    "workspace",
+    "job_sync",
+)
 FRESH_VIRAL_MAX_AGE_DAYS = 30
 MAX_VIRAL_FALLBACK_AGE_DAYS = 365
 CANCEL_GRACE_SECONDS = 8
@@ -416,9 +423,15 @@ class YouTubeUploadJob(BaseModel):
     target_channel: str = ""
     dry_run: bool = False
     video_url: str | None = None
+    clip_sha256: str | None = None
+    queue_position: int | None = None
+    queue_total: int | None = None
     clip_delete_after: str | None = None
     clip_deleted_at: str | None = None
     clip_delete_error: str | None = None
+    clip_cleanup_started_at: str | None = None
+    clip_cleanup_current_step: str | None = None
+    clip_cleanup_completed_steps: list[str] = Field(default_factory=list)
     logs: list[str] = []
     error: str | None = None
 
@@ -1207,6 +1220,7 @@ youtube_uploads: dict[str, YouTubeUploadJob] = load_youtube_uploads()
 jobs_lock = threading.Lock()
 processed_source_history_lock = threading.Lock()
 youtube_uploads_lock = threading.Lock()
+youtube_upload_creation_lock = threading.Lock()
 job_secrets: dict[str, str] = {}
 job_processes: dict[str, subprocess.Popen[str]] = {}
 youtube_upload_processes: dict[str, subprocess.Popen[str]] = {}
@@ -2103,15 +2117,69 @@ def best_youtube_clip_urls(job: ClipJob, count: int = DEFAULT_YOUTUBE_AUTO_UPLOA
     return [clip.url for _, _, _, clip in ranked[: max(1, count)]]
 
 
-def existing_active_youtube_upload(job_id: str, clip_url: str) -> YouTubeUploadJob | None:
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def reusable_youtube_upload(
+    job_id: str,
+    clip_url: str,
+    clip_sha256: str,
+) -> YouTubeUploadJob | None:
     with youtube_uploads_lock:
-        for upload in youtube_uploads.values():
+        uploads = sorted(youtube_uploads.values(), key=lambda item: item.created_at, reverse=True)
+        for upload in uploads:
+            exact_clip = upload.source_job_id == job_id and upload.clip_url == clip_url
+            same_fingerprint = bool(
+                clip_sha256
+                and upload.clip_sha256
+                and upload.clip_sha256 == clip_sha256
+            )
+            if exact_clip and upload.status in {"queued", "running"}:
+                return upload
             if (
-                upload.source_job_id == job_id
-                and upload.clip_url == clip_url
-                and upload.status in {"queued", "running"}
+                upload.status == "completed"
+                and upload.video_url
+                and not upload.dry_run
+                and (exact_clip or same_fingerprint)
             ):
                 return upload
+    return None
+
+
+def verified_duplicate_for_upload(
+    upload: YouTubeUploadJob,
+    clip_sha256: str,
+) -> YouTubeUploadJob | None:
+    with youtube_uploads_lock:
+        candidates = sorted(
+            youtube_uploads.values(),
+            key=lambda item: item.finished_at or item.updated_at,
+            reverse=True,
+        )
+        for candidate in candidates:
+            if candidate.id == upload.id:
+                continue
+            exact_clip = (
+                candidate.source_job_id == upload.source_job_id
+                and candidate.clip_url == upload.clip_url
+            )
+            same_fingerprint = bool(
+                clip_sha256
+                and candidate.clip_sha256
+                and candidate.clip_sha256 == clip_sha256
+            )
+            if (
+                candidate.status == "completed"
+                and candidate.video_url
+                and not candidate.dry_run
+                and (exact_clip or same_fingerprint)
+            ):
+                return candidate
     return None
 
 
@@ -2126,15 +2194,72 @@ def active_youtube_uploads_for_job(job_id: str, clip_urls: set[str] | None = Non
         ]
 
 
+def youtube_uploads_with_queue_positions(
+    uploads: list[YouTubeUploadJob],
+) -> list[YouTubeUploadJob]:
+    queued = sorted(
+        (upload for upload in uploads if upload.status == "queued"),
+        key=lambda item: item.created_at,
+    )
+    positions = {upload.id: index for index, upload in enumerate(queued, start=1)}
+    queue_total = len(queued)
+    return [
+        upload.model_copy(
+            update={
+                "queue_position": positions.get(upload.id),
+                "queue_total": queue_total if upload.status == "queued" else None,
+            }
+        )
+        for upload in uploads
+    ]
+
+
 def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> YouTubeUploadJob:
     job, clip, index = find_job_clip(job_id, request.clip_url)
-    existing = existing_active_youtube_upload(job_id, clip.url)
-    if existing is not None:
-        return existing
-
     clip_path = output_path_from_url(clip.url)
     if clip_path is None or not clip_path.is_file():
         raise HTTPException(status_code=404, detail="File clip tidak ditemukan di outputs")
+    try:
+        clip_fingerprint = file_sha256(clip_path)
+    except OSError as exc:
+        raise HTTPException(status_code=409, detail=f"File clip tidak dapat dibaca: {exc}") from exc
+    existing = reusable_youtube_upload(job_id, clip.url, clip_fingerprint)
+    if request.dry_run and existing is not None and existing.status == "completed":
+        existing = None
+    if existing is not None:
+        exact_clip = existing.source_job_id == job_id and existing.clip_url == clip.url
+        if exact_clip or existing.status in {"queued", "running"}:
+            return existing
+
+        completed_at = now_iso()
+        delete_after = completed_upload_cleanup_after(completed_at)
+        return existing.model_copy(
+            update={
+                "id": uuid.uuid4().hex,
+                "source_job_id": job_id,
+                "clip_url": clip.url,
+                "clip_name": clip.name,
+                "created_at": completed_at,
+                "updated_at": completed_at,
+                "started_at": completed_at,
+                "finished_at": completed_at,
+                "duration_seconds": 0.0,
+                "clip_sha256": clip_fingerprint,
+                "queue_position": None,
+                "queue_total": None,
+                "clip_delete_after": delete_after,
+                "clip_deleted_at": None,
+                "clip_delete_error": None,
+                "clip_cleanup_started_at": None,
+                "clip_cleanup_current_step": None,
+                "clip_cleanup_completed_steps": [],
+                "logs": [
+                    "Upload dilewati: fingerprint file identik sudah terupload dan URL YouTube terverifikasi.",
+                    f"File duplikat lokal akan dibersihkan otomatis setelah {max(1, env_int('YOUTUBE_DELETE_UPLOADED_CLIP_DELAY_SECONDS', 30))} detik.",
+                ],
+                "error": None,
+            }
+        )
 
     thumbnail_url = request.thumbnail_url or clip.thumbnail_url
     thumbnail_path = output_path_from_url(thumbnail_url) if thumbnail_url else None
@@ -2192,6 +2317,7 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         playlist=request.playlist,
         target_channel=request.target_channel,
         dry_run=request.dry_run,
+        clip_sha256=clip_fingerprint,
     )
 
 
@@ -2203,11 +2329,11 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
     if job.status != "completed":
         raise HTTPException(status_code=409, detail="Job belum selesai")
 
-    clip_urls = request.clip_urls or best_youtube_clip_urls(job, request.best_count)
+    clip_urls = list(dict.fromkeys(request.clip_urls or best_youtube_clip_urls(job, request.best_count)))
     if not clip_urls:
         raise HTTPException(status_code=400, detail="Tidak ada clip untuk diupload")
 
-    return [
+    uploads = [
         create_youtube_upload_record(
             job_id,
             YouTubeUploadRequest(
@@ -2222,23 +2348,46 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
         )
         for clip_url in clip_urls
     ]
+    return list({upload.id: upload for upload in uploads}.values())
 
 
 def queue_youtube_upload_jobs(uploads: list[YouTubeUploadJob]) -> None:
+    cleanup_ids: list[str] = []
+    has_queued = False
     with youtube_uploads_lock:
         for upload in uploads:
             if upload.id not in youtube_uploads:
                 youtube_uploads[upload.id] = upload
+            has_queued = has_queued or upload.status == "queued"
+            if (
+                upload.status == "completed"
+                and upload.video_url
+                and upload.clip_delete_after
+                and not upload.clip_deleted_at
+            ):
+                cleanup_ids.append(upload.id)
         save_youtube_uploads_unlocked()
-    start_youtube_worker_if_needed()
+    for upload_id in cleanup_ids:
+        schedule_completed_upload_cleanup(upload_id)
+    if has_queued:
+        start_youtube_worker_if_needed()
 
 
 def auto_queue_youtube_uploads_for_job(job_id: str, logs: list[str]) -> None:
     try:
         require_youtube_ready()
-        uploads = create_youtube_upload_batch_records(job_id, YouTubeBatchUploadRequest())
-        queue_youtube_upload_jobs(uploads)
-        logs.append(f"Auto upload YouTube: {len(uploads)} clip terbaik masuk antrean.")
+        with youtube_upload_creation_lock:
+            uploads = create_youtube_upload_batch_records(job_id, YouTubeBatchUploadRequest())
+            queue_youtube_upload_jobs(uploads)
+        queued_count = sum(upload.status == "queued" for upload in uploads)
+        skipped_count = sum(
+            upload.status == "completed" and bool(upload.video_url)
+            for upload in uploads
+        )
+        logs.append(
+            f"Auto upload YouTube: {queued_count} clip masuk antrean"
+            + (f", {skipped_count} duplikat terverifikasi dilewati." if skipped_count else ".")
+        )
     except HTTPException as exc:
         logs.append(f"Auto upload YouTube gagal: {exc.detail}")
     except Exception as exc:
@@ -2823,7 +2972,37 @@ def start_youtube_login_if_needed(*, reconnect_cdp: bool = False) -> YouTubeLogi
     return youtube_login_status
 
 
-def delete_completed_youtube_upload_clip(upload_id: str) -> tuple[int, bool]:
+def cleanup_step_delay_seconds() -> float:
+    try:
+        configured = float(os.environ.get("YOUTUBE_CLEANUP_STEP_DISPLAY_SECONDS", "0.7"))
+    except ValueError:
+        configured = 0.7
+    return max(0.0, min(configured, 2.0))
+
+
+def set_youtube_cleanup_step(
+    upload_id: str,
+    step: str | None,
+    completed_steps: list[str],
+) -> None:
+    with youtube_uploads_lock:
+        upload = youtube_uploads.get(upload_id)
+        started_at = upload.clip_cleanup_started_at if upload else None
+    set_youtube_upload(
+        upload_id,
+        clip_cleanup_started_at=started_at or now_iso(),
+        clip_cleanup_current_step=step,
+        clip_cleanup_completed_steps=[
+            item for item in YOUTUBE_CLEANUP_STEPS if item in completed_steps
+        ],
+    )
+
+
+def delete_completed_youtube_upload_clip(
+    upload_id: str,
+    *,
+    step_delay_seconds: float = 0.0,
+) -> tuple[int, bool]:
     """Delete one confirmed-uploaded clip and atomically remove it from its source job."""
     with youtube_uploads_lock:
         upload = youtube_uploads.get(upload_id)
@@ -2832,28 +3011,67 @@ def delete_completed_youtube_upload_clip(upload_id: str) -> tuple[int, bool]:
     if upload.status != "completed" or not upload.video_url or upload.dry_run:
         raise RuntimeError("Upload YouTube belum terkonfirmasi selesai; file tidak dihapus")
 
+    completed_steps = list(upload.clip_cleanup_completed_steps)
+
+    def complete_file_step(step: str, paths: set[Path]) -> int:
+        already_completed = step in completed_steps
+        set_youtube_cleanup_step(upload_id, step, completed_steps)
+        removed_count = remove_output_paths(paths)
+        remaining = sorted(str(path) for path in paths if path.exists())
+        if remaining:
+            raise RuntimeError(
+                f"Tahap cleanup {step} belum tuntas: " + ", ".join(remaining[:3])
+            )
+        if step not in completed_steps:
+            completed_steps.append(step)
+        set_youtube_cleanup_step(upload_id, None, completed_steps)
+        if not already_completed and step_delay_seconds > 0:
+            time.sleep(step_delay_seconds)
+        return removed_count
+
     with jobs_lock:
         job = jobs.get(upload.source_job_id)
         if job is None:
+            set_youtube_cleanup_step(upload_id, None, list(YOUTUBE_CLEANUP_STEPS))
             return 0, True
 
         target_clip = next((clip for clip in job.clips if clip.url == upload.clip_url), None)
         if target_clip is None:
+            set_youtube_cleanup_step(upload_id, None, list(YOUTUBE_CLEANUP_STEPS))
             return 0, not job.clips
 
         active_uploads = active_youtube_uploads_for_job(job.id, {target_clip.url})
         if active_uploads:
             raise RuntimeError("Masih ada upload aktif untuk file klip yang sama")
 
-        artifact_paths = clip_artifact_paths(target_clip)
-        removed = cleanup_clip_files(target_clip)
-        remaining_files = sorted(str(path) for path in artifact_paths if path.exists())
-        if remaining_files:
-            raise RuntimeError(
-                "File output belum seluruhnya terhapus: " + ", ".join(remaining_files[:3])
+        clip_path = output_path_from_url(target_clip.url)
+        video_paths = {clip_path} if clip_path is not None else set()
+        thumbnail_paths: set[Path] = set()
+        metadata_paths: set[Path] = set()
+        if clip_path is not None:
+            thumbnail_paths.update(
+                {
+                    clip_path.with_name(f"{clip_path.stem}_thumb.jpg"),
+                    clip_path.with_name(f"{clip_path.stem}_thumb.txt"),
+                }
             )
+            metadata_paths.update(
+                {
+                    clip_path.with_name(f"{clip_path.stem}_caption.txt"),
+                    clip_path.with_suffix(".json"),
+                }
+            )
+        if target_clip.thumbnail_url:
+            thumbnail_path = output_path_from_url(target_clip.thumbnail_url)
+            if thumbnail_path is not None:
+                thumbnail_paths.add(thumbnail_path)
+
+        removed = complete_file_step("video", video_paths)
+        removed += complete_file_step("thumbnail", thumbnail_paths)
+        removed += complete_file_step("metadata", metadata_paths)
 
         remaining_clips = [clip for clip in job.clips if clip.url != target_clip.url]
+        set_youtube_cleanup_step(upload_id, "workspace", completed_steps)
         if not remaining_clips:
             protected_dirs = {
                 work_dir
@@ -2863,10 +3081,21 @@ def delete_completed_youtube_upload_clip(upload_id: str) -> tuple[int, bool]:
                 if (work_dir := clip_output_work_dir(clip)) is not None
             }
             removed += cleanup_output_work_dirs(job.clips, protected_dirs)
+        if "workspace" not in completed_steps:
+            completed_steps.append("workspace")
+        set_youtube_cleanup_step(upload_id, None, completed_steps)
+        if step_delay_seconds > 0:
+            time.sleep(step_delay_seconds)
+
+        set_youtube_cleanup_step(upload_id, "job_sync", completed_steps)
+        if not remaining_clips:
             jobs.pop(job.id, None)
             job_secrets.pop(job.id, None)
             cancelled_job_ids.discard(job.id)
             save_jobs_unlocked()
+            if "job_sync" not in completed_steps:
+                completed_steps.append("job_sync")
+            set_youtube_cleanup_step(upload_id, None, completed_steps)
             return removed, True
 
         data = job.model_dump()
@@ -2874,6 +3103,9 @@ def delete_completed_youtube_upload_clip(upload_id: str) -> tuple[int, bool]:
         data["updated_at"] = now_iso()
         jobs[job.id] = ClipJob(**data)
         save_jobs_unlocked()
+        if "job_sync" not in completed_steps:
+            completed_steps.append("job_sync")
+        set_youtube_cleanup_step(upload_id, None, completed_steps)
         return removed, False
 
 
@@ -2911,7 +3143,10 @@ def schedule_completed_upload_cleanup(upload_id: str) -> None:
                     continue
 
                 try:
-                    removed, removed_job = delete_completed_youtube_upload_clip(upload_id)
+                    removed, removed_job = delete_completed_youtube_upload_clip(
+                        upload_id,
+                        step_delay_seconds=cleanup_step_delay_seconds(),
+                    )
                 except Exception as exc:
                     retry_count += 1
                     retry_delay = min(300, 30 * (2 ** min(retry_count - 1, 3)))
@@ -2923,6 +3158,7 @@ def schedule_completed_upload_cleanup(upload_id: str) -> None:
                         upload_id,
                         clip_delete_after=retry_at,
                         clip_delete_error=str(exc),
+                        clip_cleanup_current_step=None,
                         logs=[*upload.logs, message][-160:],
                     )
                     continue
@@ -2937,6 +3173,8 @@ def schedule_completed_upload_cleanup(upload_id: str) -> None:
                     clip_delete_after=None,
                     clip_deleted_at=deleted_at,
                     clip_delete_error=None,
+                    clip_cleanup_current_step=None,
+                    clip_cleanup_completed_steps=list(YOUTUBE_CLEANUP_STEPS),
                     logs=[*upload.logs, message][-160:],
                 )
                 return
@@ -2947,11 +3185,88 @@ def schedule_completed_upload_cleanup(upload_id: str) -> None:
     threading.Thread(target=cleanup_worker, daemon=True).start()
 
 
+def complete_youtube_upload_as_duplicate(
+    upload_id: str,
+    duplicate: YouTubeUploadJob,
+    *,
+    local_file_exists: bool,
+) -> None:
+    completed_at = now_iso()
+    delete_after = completed_upload_cleanup_after(completed_at) if local_file_exists else None
+    set_youtube_upload(
+        upload_id,
+        status="completed",
+        started_at=completed_at,
+        finished_at=completed_at,
+        duration_seconds=0.0,
+        video_url=duplicate.video_url,
+        clip_delete_after=delete_after,
+        clip_deleted_at=None if local_file_exists else completed_at,
+        clip_delete_error=None,
+        clip_cleanup_started_at=None if local_file_exists else completed_at,
+        clip_cleanup_current_step=None,
+        clip_cleanup_completed_steps=[] if local_file_exists else list(YOUTUBE_CLEANUP_STEPS),
+        logs=[
+            "Upload dilewati oleh worker: fingerprint/file sudah memiliki upload YouTube terverifikasi.",
+            f"Referensi upload: {duplicate.id[:10]} · {duplicate.video_url}",
+            (
+                "File lokal duplikat masuk jadwal auto-cleanup."
+                if local_file_exists
+                else "File lokal sudah tidak ada; tidak diperlukan cleanup tambahan."
+            ),
+        ],
+        error=None,
+    )
+    if delete_after:
+        schedule_completed_upload_cleanup(upload_id)
+
+
 def run_youtube_upload(upload_id: str) -> None:
     with youtube_uploads_lock:
         upload = youtube_uploads.get(upload_id)
     if upload is None:
         return
+
+    clip_path = output_path_from_url(upload.clip_url)
+    known_duplicate = verified_duplicate_for_upload(upload, upload.clip_sha256 or "")
+    if known_duplicate is not None:
+        complete_youtube_upload_as_duplicate(
+            upload_id,
+            known_duplicate,
+            local_file_exists=bool(clip_path and clip_path.is_file()),
+        )
+        return
+    if clip_path is None or not clip_path.is_file():
+        set_youtube_upload(
+            upload_id,
+            status="failed",
+            finished_at=now_iso(),
+            error="File clip tidak ditemukan sebelum upload dimulai.",
+        )
+        return
+    try:
+        clip_fingerprint = upload.clip_sha256 or file_sha256(clip_path)
+    except OSError as exc:
+        set_youtube_upload(
+            upload_id,
+            status="failed",
+            finished_at=now_iso(),
+            error=f"File clip tidak dapat dibaca sebelum upload: {exc}",
+        )
+        return
+    if upload.clip_sha256 != clip_fingerprint:
+        set_youtube_upload(upload_id, clip_sha256=clip_fingerprint)
+        upload = upload.model_copy(update={"clip_sha256": clip_fingerprint})
+
+    duplicate = verified_duplicate_for_upload(upload, clip_fingerprint)
+    if duplicate is not None:
+        complete_youtube_upload_as_duplicate(
+            upload_id,
+            duplicate,
+            local_file_exists=True,
+        )
+        return
+
     started_perf = time.perf_counter()
     set_youtube_upload(
         upload_id,
@@ -3082,6 +3397,9 @@ def run_youtube_upload(upload_id: str) -> None:
                     clip_delete_after=delete_after,
                     clip_deleted_at=None,
                     clip_delete_error=None,
+                    clip_cleanup_started_at=None,
+                    clip_cleanup_current_step=None,
+                    clip_cleanup_completed_steps=[],
                 )
                 if delete_after:
                     schedule_completed_upload_cleanup(upload_id)
@@ -4577,11 +4895,12 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 if finished_job.status != "completed" or not finished_job.clips:
                     raise RuntimeError(finished_job.error or f"Job selesai dengan status {finished_job.status}")
 
-                uploads = create_youtube_upload_batch_records(
-                    finished_job.id,
-                    YouTubeBatchUploadRequest(best_count=run.request.clips_per_video),
-                )
-                queue_youtube_upload_jobs(uploads)
+                with youtube_upload_creation_lock:
+                    uploads = create_youtube_upload_batch_records(
+                        finished_job.id,
+                        YouTubeBatchUploadRequest(best_count=run.request.clips_per_video),
+                    )
+                    queue_youtube_upload_jobs(uploads)
                 append_auto_viral_log(run_id, f"{len(uploads)} upload YouTube masuk antrean untuk job {finished_job.id[:10]}")
                 finished_uploads = wait_for_uploads([upload.id for upload in uploads])
                 item["uploads"] = [
@@ -4730,16 +5049,23 @@ def enable_youtube_storage_state_upload_mode() -> None:
 @app.get("/api/youtube/uploads", response_model=list[YouTubeUploadJob])
 def list_youtube_uploads() -> list[YouTubeUploadJob]:
     with youtube_uploads_lock:
-        return sorted(youtube_uploads.values(), key=lambda item: item.created_at, reverse=True)
+        uploads = list(youtube_uploads.values())
+    positioned = youtube_uploads_with_queue_positions(uploads)
+    return sorted(positioned, key=lambda item: item.created_at, reverse=True)
 
 
 @app.get("/api/youtube/uploads/{upload_id}", response_model=YouTubeUploadJob)
 def get_youtube_upload(upload_id: str) -> YouTubeUploadJob:
     with youtube_uploads_lock:
         upload = youtube_uploads.get(upload_id)
+        uploads = list(youtube_uploads.values())
     if not upload:
         raise HTTPException(status_code=404, detail="YouTube upload not found")
-    return upload
+    return next(
+        item
+        for item in youtube_uploads_with_queue_positions(uploads)
+        if item.id == upload_id
+    )
 
 
 @app.get("/api/youtube/login", response_model=YouTubeLoginStatus)
@@ -5285,20 +5611,20 @@ def stop_youtube_cdp() -> dict[str, bool | str]:
 @app.post("/api/jobs/{job_id}/youtube-uploads", response_model=YouTubeUploadJob)
 def create_youtube_upload(job_id: str, request: YouTubeUploadRequest) -> YouTubeUploadJob:
     require_youtube_ready()
-    upload = create_youtube_upload_record(job_id, request)
-    with youtube_uploads_lock:
-        youtube_uploads[upload.id] = upload
-        save_youtube_uploads_unlocked()
-    start_youtube_worker_if_needed()
-    return upload
+    with youtube_upload_creation_lock:
+        upload = create_youtube_upload_record(job_id, request)
+        queue_youtube_upload_jobs([upload])
+    return get_youtube_upload(upload.id)
 
 
 @app.post("/api/jobs/{job_id}/youtube-uploads/batch", response_model=list[YouTubeUploadJob])
 def create_youtube_upload_batch(job_id: str, request: YouTubeBatchUploadRequest) -> list[YouTubeUploadJob]:
     require_youtube_ready()
-    uploads = create_youtube_upload_batch_records(job_id, request)
-    queue_youtube_upload_jobs(uploads)
-    return uploads
+    with youtube_upload_creation_lock:
+        uploads = create_youtube_upload_batch_records(job_id, request)
+        queue_youtube_upload_jobs(uploads)
+    positioned = {upload.id: upload for upload in list_youtube_uploads()}
+    return [positioned[upload.id] for upload in uploads if upload.id in positioned]
 
 
 class ModelsQuery(BaseModel):

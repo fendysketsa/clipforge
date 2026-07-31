@@ -20,6 +20,7 @@ from telegram_bot import (
     save_state,
     split_text,
     unuploaded_clip_status,
+    youtube_upload_stage_label,
 )
 
 
@@ -51,6 +52,17 @@ def test_upload_preflight_queues_without_blocking_login_once():
 
     assert bot.prepare_youtube_upload_session(123, reason="retry upload") is True
     assert "Antrean dibuat sekarang" in messages[-1][1]
+
+
+def test_youtube_queue_stage_label_includes_position():
+    assert youtube_upload_stage_label(
+        {
+            "status": "queued",
+            "queue_position": 2,
+            "queue_total": 4,
+            "logs": [],
+        }
+    ) == "Masuk antrean (2/4)"
 
 
 def test_rejects_non_youtube_and_invalid_urls():

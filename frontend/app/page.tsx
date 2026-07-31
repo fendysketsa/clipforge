@@ -82,6 +82,8 @@ import { WorkflowBar } from "./_components/WorkflowBar";
 
 const isProcessJob = (item: ClipJob | null) =>
   item?.status === "queued" || item?.status === "running" || item?.status === "failed" || item?.status === "cancelled";
+const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
+const CLEANUP_PROGRESS_POLL_MS = 400;
 
 export default function HomePage() {
   const [url, setUrl] = useState("");
@@ -133,6 +135,7 @@ export default function HomePage() {
   const [error, setError] = useState("");
   const browserStartedJobId = useRef<string | null>(null);
   const notifiedAutoViralRunId = useRef<string | null>(null);
+  const cleanupConfirmationTimer = useRef<number | null>(null);
 
   const activeJobId = activeJob?.id;
   const isBusy = isActiveJob(activeJob);
@@ -144,6 +147,9 @@ export default function HomePage() {
       upload.status === "queued"
       || upload.status === "running"
       || Boolean(upload.clip_delete_after && !upload.clip_deleted_at),
+  );
+  const hasPendingYouTubeCleanup = youtubeUploads.some(
+    (upload) => Boolean(upload.clip_delete_after && !upload.clip_deleted_at),
   );
 
   // min_duration * target_clips must fit within 80% of the video length.
@@ -201,6 +207,7 @@ export default function HomePage() {
     const [config, uploads] = await Promise.all([getYouTubeConfig(), getYouTubeUploads()]);
     setYoutubeConfig(config);
     setYoutubeUploads(uploads);
+    return uploads;
   }, []);
 
   const handleSyncData = useCallback(async () => {
@@ -229,17 +236,72 @@ export default function HomePage() {
   }, [loadJobs, loadYouTubeUploads]);
 
   useEffect(() => {
+    if (!hasPendingYouTubeCleanup) return;
+    let cancelled = false;
+    const refreshCleanupProgress = async () => {
+      const uploads = await getYouTubeUploads().catch(() => null);
+      if (!cancelled && uploads) {
+        setYoutubeUploads(uploads);
+      }
+    };
+    refreshCleanupProgress();
+    const interval = window.setInterval(refreshCleanupProgress, CLEANUP_PROGRESS_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [hasPendingYouTubeCleanup]);
+
+  useEffect(() => {
     if (!hasActiveYouTubeUpload) return;
     const interval = window.setInterval(async () => {
       const result = await Promise.all([loadYouTubeUploads(), loadJobs()]).catch(() => null);
       if (!result) return;
+      const [nextUploads, nextJobs] = result;
       const selectedJobId = job?.id;
       if (!selectedJobId) return;
-      const nextJob = result[1].find((item) => item.id === selectedJobId) ?? null;
+      const nextJob = nextJobs.find((item) => item.id === selectedJobId) ?? null;
+      const now = Date.now();
+      const recentCleanup = nextUploads
+        .filter((upload) => upload.source_job_id === selectedJobId && upload.clip_deleted_at)
+        .map((upload) => ({
+          upload,
+          deletedAt: Date.parse(upload.clip_deleted_at || ""),
+        }))
+        .filter(({ deletedAt }) => !Number.isNaN(deletedAt) && now - deletedAt < CLEANUP_SUCCESS_DISPLAY_MS)
+        .sort((left, right) => right.deletedAt - left.deletedAt)[0];
+      const removedClipIsAwaitingConfirmation = Boolean(
+        recentCleanup
+        && job.clips.some((clip) => clip.url === recentCleanup.upload.clip_url)
+        && !nextJob?.clips.some((clip) => clip.url === recentCleanup.upload.clip_url),
+      );
+
+      if (removedClipIsAwaitingConfirmation && recentCleanup) {
+        if (cleanupConfirmationTimer.current !== null) {
+          window.clearTimeout(cleanupConfirmationTimer.current);
+        }
+        cleanupConfirmationTimer.current = window.setTimeout(async () => {
+          const refreshedJobs = await loadJobs().catch(() => null);
+          if (!refreshedJobs) return;
+          setJob((current) => (
+            current?.id === selectedJobId
+              ? refreshedJobs.find((item) => item.id === selectedJobId) ?? null
+              : current
+          ));
+          cleanupConfirmationTimer.current = null;
+        }, Math.max(250, recentCleanup.deletedAt + CLEANUP_SUCCESS_DISPLAY_MS - now));
+        return;
+      }
       setJob((current) => (current?.id === selectedJobId ? nextJob : current));
     }, JOB_POLL_INTERVAL_MS);
     return () => window.clearInterval(interval);
   }, [hasActiveYouTubeUpload, job?.id, loadJobs, loadYouTubeUploads]);
+
+  useEffect(() => () => {
+    if (cleanupConfirmationTimer.current !== null) {
+      window.clearTimeout(cleanupConfirmationTimer.current);
+    }
+  }, []);
 
   useEffect(() => {
     if (!autoViralRun || (autoViralRun.status !== "queued" && autoViralRun.status !== "running")) return;
@@ -827,7 +889,10 @@ export default function HomePage() {
       try {
         const upload = await toast.promise(createYouTubeUpload(job.id, clip.url), {
           loading: "Memasukkan upload YouTube ke antrean...",
-          success: "Upload masuk antrean. Session akan disinkronkan otomatis bila diperlukan.",
+          success: (upload) =>
+            upload.status === "completed" && upload.video_url
+              ? "Klip ini sudah terupload. Upload duplikat dilewati."
+              : "Upload masuk antrean. Session akan disinkronkan otomatis bila diperlukan.",
           error: (error) => error instanceof Error ? error.message : "Gagal membuat upload YouTube",
         });
         setYoutubeUploads((current) => [upload, ...current.filter((item) => item.id !== upload.id)]);
@@ -845,8 +910,18 @@ export default function HomePage() {
     try {
       const uploads = await toast.promise(createYouTubeUploadBatch(job.id, [], bestCount), {
         loading: `Memasukkan ${Math.min(bestCount, job.clips.length)} klip terbaik ke antrean YouTube...`,
-        success: (uploads) =>
-          `${uploads.length} klip masuk antrean. Session akan disinkronkan otomatis bila diperlukan.`,
+        success: (uploads) => {
+          const activeCount = uploads.filter(
+            (upload) => upload.status === "queued" || upload.status === "running",
+          ).length;
+          const skippedCount = uploads.filter(
+            (upload) => upload.status === "completed" && Boolean(upload.video_url),
+          ).length;
+          if (!activeCount) {
+            return `${skippedCount || uploads.length} klip sudah terupload; semua duplikat dilewati.`;
+          }
+          return `${activeCount} klip diproses/masuk antrean${skippedCount ? `, ${skippedCount} duplikat dilewati` : ""}.`;
+        },
         error: (error) => error instanceof Error ? error.message : "Gagal membuat batch upload YouTube",
       });
       setYoutubeUploads((current) => {

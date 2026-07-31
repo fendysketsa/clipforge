@@ -889,11 +889,35 @@ h2 {
   letter-spacing: 0.02em;
 }
 
+.queuePositionBadge {
+  display: inline-flex;
+  min-width: 48px;
+  height: 22px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border: 1px solid rgba(250, 204, 21, 0.3);
+  border-radius: 999px;
+  background: rgba(250, 204, 21, 0.09);
+  color: #fde047;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.025em;
+}
+
 .cleanupCountdownBadge.isDeleting {
   min-width: 70px;
   border-color: rgba(52, 211, 153, 0.36);
   background: rgba(52, 211, 153, 0.13);
   color: #6ee7b7;
+}
+
+.cleanupCountdownBadge.isComplete {
+  min-width: 74px;
+  border-color: rgba(52, 211, 153, 0.48);
+  background: rgba(52, 211, 153, 0.16);
+  color: #86efac;
 }
 
 .cleanupInfoIcon {
@@ -944,15 +968,30 @@ h2 {
 }
 
 .youtubeUploadStatus--cleanup:hover,
-.youtubeUploadStatus--cleanup:focus-within {
+.youtubeUploadStatus--cleanup:focus-within,
+.youtubeUploadStatus--cleanup.isAutoOpen {
   z-index: 10;
 }
 
 .youtubeUploadStatus--cleanup:hover .uploadCleanupTooltip,
-.youtubeUploadStatus--cleanup:focus-within .uploadCleanupTooltip {
+.youtubeUploadStatus--cleanup:focus-within .uploadCleanupTooltip,
+.youtubeUploadStatus--cleanup.isAutoOpen .uploadCleanupTooltip {
   opacity: 1;
   transform: translateY(0) scale(1);
   visibility: visible;
+}
+
+.youtubeUploadStatus.isCleanupComplete {
+  border-color: rgba(52, 211, 153, 0.4);
+  background: rgba(6, 78, 59, 0.16);
+}
+
+.uploadCleanupTooltip.isComplete {
+  border-color: rgba(52, 211, 153, 0.42);
+  box-shadow:
+    0 18px 45px rgba(0, 0, 0, 0.5),
+    0 0 24px rgba(52, 211, 153, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .uploadCleanupTooltipHeader {
@@ -1011,14 +1050,51 @@ h2 {
   display: grid;
   gap: 5px;
   margin: 0;
-  padding: 0 0 0 17px;
+  padding: 0;
   color: #b8d8d1;
   font-size: 10px;
   font-weight: 650;
+  list-style: none;
 }
 
-.uploadCleanupTooltip li::marker {
-  color: #34d399;
+.uploadCleanupSteps li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  transition:
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.uploadCleanupSteps li.isWaiting {
+  color: #8db3ab;
+}
+
+.uploadCleanupSteps li.isRunning {
+  color: #5eead4;
+  transform: translateX(1px);
+}
+
+.uploadCleanupSteps li.isComplete {
+  color: #bbf7d0;
+  transform: translateX(2px);
+}
+
+.uploadCleanupStepIcon {
+  display: inline-flex;
+  width: 15px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: #5eead4;
+}
+
+.uploadCleanupSteps li.isComplete .uploadCleanupStepIcon {
+  color: #4ade80;
+}
+
+.uploadCleanupSteps li.isRunning .uploadCleanupStepIcon {
+  color: #2dd4bf;
 }
 
 .uploadCleanupTooltip p {

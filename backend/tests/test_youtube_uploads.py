@@ -8,6 +8,7 @@ from api import (
     ClipFile,
     ClipJob,
     ClipJobRequest,
+    YouTubeUploadRequest,
     YouTubeUploadJob,
     best_youtube_clip_urls,
     default_youtube_description,
@@ -17,9 +18,12 @@ from api import (
     generate_youtube_description,
     generate_youtube_metadata,
     completed_upload_cleanup_after,
+    create_youtube_upload_record,
     monitor_youtube_upload_process,
     normalized_generated_metadata,
     youtube_metadata_provider_configs,
+    youtube_uploads_with_queue_positions,
+    verified_duplicate_for_upload,
     delete_all_job_clips,
     start_youtube_cdp_refresh_process,
     sync_youtube_cdp,
@@ -94,6 +98,142 @@ def test_best_youtube_clip_urls_falls_back_to_clip_order_without_scores():
         "/outputs/demo/clips/clip_02.mp4",
         "/outputs/demo/clips/clip_03.mp4",
     ]
+
+
+def test_queue_positions_follow_oldest_queued_first():
+    uploads = [
+        YouTubeUploadJob(
+            id="queued-2",
+            source_job_id="job-1",
+            clip_url="/outputs/demo/clips/clip_02.mp4",
+            clip_name="clip_02.mp4",
+            status="queued",
+            created_at="2026-01-01T00:00:02+00:00",
+            updated_at="2026-01-01T00:00:02+00:00",
+            title="Second",
+        ),
+        YouTubeUploadJob(
+            id="running",
+            source_job_id="job-1",
+            clip_url="/outputs/demo/clips/clip_00.mp4",
+            clip_name="clip_00.mp4",
+            status="running",
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+            title="Running",
+        ),
+        YouTubeUploadJob(
+            id="queued-1",
+            source_job_id="job-1",
+            clip_url="/outputs/demo/clips/clip_01.mp4",
+            clip_name="clip_01.mp4",
+            status="queued",
+            created_at="2026-01-01T00:00:01+00:00",
+            updated_at="2026-01-01T00:00:01+00:00",
+            title="First",
+        ),
+    ]
+
+    positioned = {upload.id: upload for upload in youtube_uploads_with_queue_positions(uploads)}
+
+    assert positioned["queued-1"].queue_position == 1
+    assert positioned["queued-1"].queue_total == 2
+    assert positioned["queued-2"].queue_position == 2
+    assert positioned["queued-2"].queue_total == 2
+    assert positioned["running"].queue_position is None
+
+
+def test_identical_completed_clip_is_not_uploaded_again(monkeypatch, tmp_path):
+    import api
+
+    outputs = tmp_path / "outputs"
+    clip_path = outputs / "new-job" / "clips" / "clip_01.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"same-video-content")
+    clip = ClipFile(
+        name=clip_path.name,
+        url="/outputs/new-job/clips/clip_01.mp4",
+        size_bytes=clip_path.stat().st_size,
+    )
+    job = ClipJob(
+        id="new-job",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/new"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    fingerprint = api.file_sha256(clip_path)
+    completed = YouTubeUploadJob(
+        id="already-uploaded",
+        source_job_id="old-job",
+        clip_url="/outputs/old-job/clips/clip_09.mp4",
+        clip_name="clip_09.mp4",
+        status="completed",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:01:00+00:00",
+        finished_at="2026-01-01T00:01:00+00:00",
+        title="Already uploaded",
+        video_url="https://www.youtube.com/watch?v=abcDEF12345",
+        clip_sha256=fingerprint,
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "youtube_uploads", {completed.id: completed})
+    monkeypatch.setattr(
+        api,
+        "generate_youtube_metadata",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("metadata generation must be skipped for a verified duplicate")
+        ),
+    )
+
+    reused = create_youtube_upload_record(
+        job.id,
+        YouTubeUploadRequest(clip_url=clip.url),
+    )
+
+    assert reused.status == "completed"
+    assert reused.video_url == completed.video_url
+    assert reused.source_job_id == job.id
+    assert reused.clip_url == clip.url
+    assert reused.clip_delete_after is not None
+    assert "Upload dilewati" in reused.logs[0]
+
+
+def test_worker_preflight_detects_duplicate_already_in_queue_history(monkeypatch):
+    import api
+
+    completed = YouTubeUploadJob(
+        id="completed",
+        source_job_id="job-old",
+        clip_url="/outputs/old/clip.mp4",
+        clip_name="clip.mp4",
+        status="completed",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:01:00+00:00",
+        title="Uploaded",
+        video_url="https://www.youtube.com/watch?v=abcDEF12345",
+        clip_sha256="abc123",
+    )
+    queued = YouTubeUploadJob(
+        id="queued",
+        source_job_id="job-new",
+        clip_url="/outputs/new/clip.mp4",
+        clip_name="clip.mp4",
+        status="queued",
+        created_at="2026-01-01T00:02:00+00:00",
+        updated_at="2026-01-01T00:02:00+00:00",
+        title="Duplicate",
+        clip_sha256="abc123",
+    )
+    monkeypatch.setattr(api, "youtube_uploads", {completed.id: completed, queued.id: queued})
+
+    duplicate = verified_duplicate_for_upload(queued, "abc123")
+
+    assert duplicate is not None
+    assert duplicate.id == completed.id
+    assert duplicate.video_url == completed.video_url
 
 
 def test_delete_all_job_clips_waits_for_active_youtube_upload(monkeypatch, tmp_path):
@@ -223,6 +363,14 @@ def test_completed_upload_cleanup_deletes_real_file_and_updates_job(monkeypatch,
     monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
     monkeypatch.setattr(api, "jobs", {job.id: job})
     monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+    cleanup_events = []
+    original_set_cleanup_step = api.set_youtube_cleanup_step
+
+    def record_cleanup_step(upload_id, step, completed_steps):
+        cleanup_events.append((step, tuple(completed_steps)))
+        original_set_cleanup_step(upload_id, step, completed_steps)
+
+    monkeypatch.setattr(api, "set_youtube_cleanup_step", record_cleanup_step)
 
     removed, removed_job = delete_completed_youtube_upload_clip(upload.id)
 
@@ -233,6 +381,16 @@ def test_completed_upload_cleanup_deletes_real_file_and_updates_job(monkeypatch,
     assert not clip_one_path.with_name("clip_01_caption.txt").exists()
     assert clip_two_path.exists()
     assert [clip.url for clip in api.jobs[job.id].clips] == [clip_two.url]
+    assert [event[0] for event in cleanup_events if event[0]] == [
+        "video",
+        "thumbnail",
+        "metadata",
+        "workspace",
+        "job_sync",
+    ]
+    assert api.youtube_uploads[upload.id].clip_cleanup_completed_steps == list(
+        api.YOUTUBE_CLEANUP_STEPS
+    )
 
 
 def test_completed_upload_cleanup_refuses_unverified_upload(monkeypatch):

@@ -184,9 +184,15 @@ export type YouTubeUploadJob = {
   target_channel: string;
   dry_run: boolean;
   video_url?: string | null;
+  clip_sha256?: string | null;
+  queue_position?: number | null;
+  queue_total?: number | null;
   clip_delete_after?: string | null;
   clip_deleted_at?: string | null;
   clip_delete_error?: string | null;
+  clip_cleanup_started_at?: string | null;
+  clip_cleanup_current_step?: string | null;
+  clip_cleanup_completed_steps?: string[];
   logs: string[];
   error?: string | null;
 };

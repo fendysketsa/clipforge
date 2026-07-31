@@ -627,6 +627,11 @@ def youtube_upload_stage_label(upload: dict[str, Any]) -> str:
             latest = label
         elif patterns and any(pattern in logs for pattern in patterns):
             latest = label
+    if status == "queued":
+        position = upload.get("queue_position")
+        total = upload.get("queue_total")
+        if isinstance(position, int) and position > 0:
+            latest += f" ({position}/{total if isinstance(total, int) and total > 0 else position})"
     return latest
 
 
@@ -1733,6 +1738,14 @@ class ClipForgeTelegramBot:
             f"Hashtag/Tags: {', '.join(upload.get('tags') or []) or '-'}",
             f"Visibilitas: {upload.get('visibility') or '-'}",
         ]
+        queue_position = upload.get("queue_position")
+        queue_total = upload.get("queue_total")
+        if status == "queued" and isinstance(queue_position, int) and queue_position > 0:
+            lines.insert(
+                1,
+                f"Nomor antrean: {queue_position} dari "
+                f"{queue_total if isinstance(queue_total, int) and queue_total > 0 else queue_position}",
+            )
         if upload.get("video_url"):
             lines.append(f"URL: {upload['video_url']}")
         if upload.get("error"):
@@ -1929,12 +1942,21 @@ class ClipForgeTelegramBot:
         if "queued" in sent:
             return
         clip_name = str(upload.get("clip_name") or upload.get("title") or "Clip")[:120]
+        queue_position = upload.get("queue_position")
+        queue_total = upload.get("queue_total")
+        queue_line = (
+            f"Antrean: {queue_position} dari "
+            f"{queue_total if isinstance(queue_total, int) and queue_total > 0 else queue_position}\n"
+            if isinstance(queue_position, int) and queue_position > 0
+            else ""
+        )
         self.send_message(
             chat_id,
             "Upload YouTube masuk antrean\n\n"
             f"Clip: {clip_name}\n"
             f"Judul: {str(upload.get('title') or '-')[:160]}\n"
             f"Playlist: {upload.get('playlist') or '-'}\n"
+            f"{queue_line}"
             f"Upload: {upload_id[:10]}",
         )
         sent.add("queued")
@@ -2308,9 +2330,23 @@ class ClipForgeTelegramBot:
                 return
             uploads = self.backend.create_youtube_upload_batch(job_id)
             self.remember_youtube_uploads(chat_id, uploads, announce_queued=True)
+            active_count = sum(
+                1 for upload in uploads if upload.get("status") in {"queued", "running"}
+            )
+            skipped_count = sum(
+                1
+                for upload in uploads
+                if upload.get("status") == "completed" and upload.get("video_url")
+            )
+            summary = (
+                f"{active_count} clip diproses/masuk antrean"
+                + (f"; {skipped_count} duplikat yang sudah terupload dilewati." if skipped_count else ".")
+                if active_count
+                else f"{skipped_count or len(uploads)} clip sudah terupload; tidak ada upload duplikat."
+            )
             self.send_message(
                 chat_id,
-                f"{len(uploads)} clip terbaik dimasukkan ke antrean upload YouTube.",
+                summary,
                 keyboard([[button("📊 Status Upload YouTube", "menu:youtube")], [button("🏠 Menu", "menu:home")]]),
             )
         except ServiceError as exc:
@@ -2684,6 +2720,14 @@ class ClipForgeTelegramBot:
         if isinstance(logs, list) and logs:
             last_log = str(logs[-1])[:500]
         for stage_id, label, detail in alerts:
+            if stage_id == "queued":
+                position = upload.get("queue_position")
+                total = upload.get("queue_total")
+                if isinstance(position, int) and position > 0:
+                    detail = (
+                        f"Clip menunggu giliran antrean {position} dari "
+                        f"{total if isinstance(total, int) and total > 0 else position}."
+                    )
             lines = [
                 f"Tahap upload YouTube: {label}",
                 "",
