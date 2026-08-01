@@ -2154,6 +2154,95 @@ def sanitize_metadata(info: dict) -> dict:
     return {key: info.get(key) for key in keys}
 
 
+def attach_monetization_provenance(
+    exported_paths: list[Path],
+    metadata: dict,
+    *,
+    uploaded_source: bool,
+) -> None:
+    """Persist rights and originality evidence next to every final render.
+
+    This is an audit aid, not a promise of YPP approval. YouTube evaluates the
+    final video and the channel as a whole, while commercial-use rights remain
+    the uploader's responsibility for locally supplied files.
+    """
+    rights_verified = bool(
+        not uploaded_source and is_creative_commons_metadata(metadata)
+    )
+    rights_basis = (
+        "user_supplied_file_requires_commercial_rights_confirmation"
+        if uploaded_source
+        else "creative_commons_attribution"
+        if rights_verified
+        else "unverified"
+    )
+    source = {
+        "title": str(metadata.get("title") or "").strip(),
+        "creator": str(metadata.get("uploader") or "").strip(),
+        "url": str(metadata.get("webpage_url") or "").strip(),
+        "license": str(metadata.get("license") or "").strip(),
+        "rights_basis": rights_basis,
+        "rights_verified": rights_verified,
+        "attribution_required": rights_verified,
+    }
+    for video_path in exported_paths:
+        sidecar_path = video_path.with_suffix(".json")
+        if not sidecar_path.is_file():
+            continue
+        try:
+            payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+
+        applied_edits = payload.get("applied_edits")
+        edit_count = len(applied_edits) if isinstance(applied_edits, list) else 0
+        output_format = str(payload.get("output_format") or "")
+        is_compilation = output_format == "landscape_compilation"
+        story_arc = payload.get("story_arc")
+        camera_angles = payload.get("virtual_camera_angles")
+        originality_signals = {
+            "editorial_hook_and_context": bool(payload.get("hook") and payload.get("pov")),
+            "original_core_message": bool(payload.get("core_message")),
+            "substantive_visual_edits": edit_count >= 3,
+            "transcript_timed_camera_direction": bool(camera_angles),
+            "structured_story_arc": bool(
+                is_compilation and isinstance(story_arc, list) and len(story_arc) >= 3
+            ),
+            "custom_thumbnail_strategy": bool(payload.get("thumbnail_strategy")),
+            "enhanced_edit": bool(payload.get("enhanced_edit")),
+        }
+        originality_score = sum(bool(value) for value in originality_signals.values())
+        minimum_score = 4 if is_compilation else 3
+        transformation_ready = (
+            originality_signals["enhanced_edit"]
+            and originality_signals["substantive_visual_edits"]
+            and originality_score >= minimum_score
+        )
+        commercial_rights_ready = rights_verified or uploaded_source
+        payload["source_provenance"] = source
+        payload["monetization_readiness"] = {
+            "status": (
+                "ready_for_private_upload_review"
+                if commercial_rights_ready and transformation_ready
+                else "needs_more_original_transformation"
+                if commercial_rights_ready
+                else "blocked_unverified_rights"
+            ),
+            "eligible_for_private_upload_review": bool(
+                commercial_rights_ready and transformation_ready
+            ),
+            "commercial_rights_confirmation_required": uploaded_source,
+            "originality_score": originality_score,
+            "minimum_originality_score": minimum_score,
+            "signals": originality_signals,
+            "channel_level_review_still_applies": True,
+            "guarantee": False,
+        }
+        save_json(sidecar_path, payload)
+
+
 def extract_audio(video_path: Path, audio_path: Path, force: bool = False, limit_seconds: float | None = None) -> Path:
     if audio_path.exists() and not force and "audio" in probe_media_stream_types(audio_path):
         return audio_path
@@ -4304,6 +4393,7 @@ def landscape_compilation_edit_filter(
     *,
     section_number: int,
     section_count: int,
+    editorial_text_filename: str = "",
     theme_profile: dict[str, str] | None = None,
     emphasis_times: list[float] | None = None,
     show_text_overlays: bool = True,
@@ -4348,6 +4438,29 @@ def landscape_compilation_edit_filter(
                 f"textfile='{hook_text_filename}':reload=0:expansion=none:"
                 "fontcolor=white:fontsize=38:line_spacing=8:borderw=2:bordercolor=black@0.82:"
                 f"x=108:y=145:enable='between(t,0.10,{intro_end:.3f})'",
+            ]
+        )
+
+    editorial_start = min(safe_duration, 5.20)
+    editorial_end = min(safe_duration, 9.40)
+    if (
+        show_text_overlays
+        and editorial_text_filename
+        and editorial_end - editorial_start >= 1.2
+    ):
+        filters.extend(
+            [
+                "drawbox=x=98:y=816:w=1030:h=170:color=black@0.68:t=fill:"
+                f"enable='between(t,{editorial_start:.3f},{editorial_end:.3f})'",
+                f"drawbox=x=98:y=816:w=10:h=170:color={secondary}@0.98:t=fill:"
+                f"enable='between(t,{editorial_start:.3f},{editorial_end:.3f})'",
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                f"text='CATATAN EDITOR':expansion=none:fontcolor={secondary}:fontsize=21:"
+                f"x=132:y=838:enable='between(t,{editorial_start:.3f},{editorial_end:.3f})'",
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+                f"textfile='{editorial_text_filename}':reload=0:expansion=none:"
+                "fontcolor=white:fontsize=29:line_spacing=6:borderw=1:bordercolor=black@0.78:"
+                f"x=132:y=878:enable='between(t,{editorial_start:.3f},{editorial_end:.3f})'",
             ]
         )
 
@@ -5714,10 +5827,14 @@ def export_clip(
                     hook_text_path.name,
                     section_number=compilation_part_number,
                     section_count=compilation_part_count,
+                    editorial_text_filename=pov_text_path.name if drawtext_supported else "",
                     theme_profile=theme_profile,
                     emphasis_times=emphasis_times,
                     show_text_overlays=drawtext_supported,
                 )}"
+            )
+            applied_edits.append(
+                "Setiap bab diberi catatan editor berbasis POV dan konteks klip agar resume memiliki framing editorial yang jelas."
             )
         else:
             vf = (
@@ -6100,32 +6217,52 @@ def export_compilation(
     thumb_path = clips_dir / f"{base_name}_thumb.jpg"
 
     part_paths: list[Path] = []
+    altered_content_disclosure_required = False
     try:
         for idx, candidate in enumerate(candidates, start=1):
-            part_paths.append(
-                export_clip(
-                    video_path,
-                    candidate,
-                    segments_for_clip(transcript, candidate),
-                    parts_dir,
-                    burn_subtitles,
-                    crop_mode,
-                    caption,
-                    ai_config,
-                    cam_corner,
-                    required_hashtags,
-                    video_quality,
-                    generate_assets=False,
-                    enforce_size=False,
-                    base_name_override=f"part_{idx:02}",
-                    enhanced_edit=enhanced_edit,
-                    remove_running_text=remove_running_text,
-                    output_format="landscape_compilation",
-                    visual_mode=visual_mode,
-                    background_mode=background_mode,
-                    compilation_part_number=idx,
-                    compilation_part_count=len(candidates),
+            part_path = export_clip(
+                video_path,
+                candidate,
+                segments_for_clip(transcript, candidate),
+                parts_dir,
+                burn_subtitles,
+                crop_mode,
+                caption,
+                ai_config,
+                cam_corner,
+                required_hashtags,
+                video_quality,
+                generate_assets=False,
+                enforce_size=False,
+                base_name_override=f"part_{idx:02}",
+                enhanced_edit=enhanced_edit,
+                remove_running_text=remove_running_text,
+                output_format="landscape_compilation",
+                visual_mode=visual_mode,
+                background_mode=background_mode,
+                compilation_part_number=idx,
+                compilation_part_count=len(candidates),
+            )
+            part_paths.append(part_path)
+            try:
+                part_payload = json.loads(
+                    part_path.with_suffix(".json").read_text(encoding="utf-8")
                 )
+            except (OSError, json.JSONDecodeError):
+                part_payload = {}
+            adaptive_split = (
+                part_payload.get("adaptive_text_split")
+                if isinstance(part_payload, dict)
+                else None
+            )
+            altered_content_disclosure_required = bool(
+                altered_content_disclosure_required
+                or (isinstance(part_payload, dict) and part_payload.get("background_replaced"))
+                or (
+                    isinstance(adaptive_split, dict)
+                    and adaptive_split.get("enabled")
+                )
+                or background_mode == "mosque"
             )
 
         concat_path = parts_dir / "concat.txt"
@@ -6243,6 +6380,7 @@ def export_compilation(
         ),
         "visual_mode": visual_mode,
         "background_mode": background_mode,
+        "altered_content_disclosure_required": altered_content_disclosure_required,
         "enhanced_edit": enhanced_edit,
         "remove_running_text": remove_running_text,
         "source_metadata_embedded": False,
@@ -6653,6 +6791,12 @@ def main() -> int:
                     background_mode=args.background_mode,
                 )
             )
+
+    attach_monetization_provenance(
+        exported,
+        metadata,
+        uploaded_source=bool(args.source_file),
+    )
 
     if not args.keep_intermediate:
         cleanup_intermediate(work_dir, final_video_path)

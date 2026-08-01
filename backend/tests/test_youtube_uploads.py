@@ -15,6 +15,7 @@ from api import (
     YouTubeUploadJob,
     best_youtube_clip_urls,
     build_youtube_upload_command,
+    clip_requires_altered_content_disclosure,
     default_youtube_description,
     default_youtube_tags,
     default_youtube_title,
@@ -25,6 +26,8 @@ from api import (
     create_youtube_upload_record,
     monitor_youtube_upload_process,
     normalized_generated_metadata,
+    youtube_monetization_preflight_issue,
+    youtube_source_attribution,
     youtube_metadata_provider_configs,
     youtube_uploads_with_queue_positions,
     verified_duplicate_for_upload,
@@ -132,6 +135,30 @@ def test_upload_command_marks_thumbnail_content_type(
     type_index = command.index("--thumbnail-content-type")
 
     assert command[type_index + 1] == expected_type
+
+
+def test_upload_command_discloses_realistic_background_replacement(monkeypatch, tmp_path):
+    import api
+
+    video_path = tmp_path / "clip_01.mp4"
+    video_path.write_bytes(b"video")
+    monkeypatch.setattr(api, "output_path_from_url", lambda _url: video_path)
+    monkeypatch.setattr(api, "prepare_limited_upload_file", lambda path, _limit: path)
+    monkeypatch.setattr(api, "youtube_upload_prefers_cdp", lambda: False)
+    monkeypatch.setattr(api, "youtube_profile_upload_allowed", lambda: False)
+    upload = YouTubeUploadJob(
+        id="upload-altered",
+        source_job_id="job-altered",
+        clip_url="/outputs/demo/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="queued",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        title="Judul",
+        altered_content=True,
+    )
+
+    assert "--altered-content" in build_youtube_upload_command(upload)
 
 
 def test_story_resume_upload_requires_automatic_thumbnail(monkeypatch, tmp_path):
@@ -794,6 +821,79 @@ def test_default_youtube_description_uses_ai_caption_and_hashtags_only():
     assert "#islam #shorts" in description
     assert "Sumber:" not in description
     assert "Channel sumber:" not in description
+
+
+def test_verified_cc_source_gets_required_attribution(monkeypatch):
+    import api
+
+    job = ClipJob(
+        id="job-cc",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {
+            "title": "Ceramah Sumber",
+            "uploader": "Kreator Asli",
+            "webpage_url": "https://youtu.be/source",
+            "license": "Creative Commons Attribution license",
+        },
+    )
+
+    value = youtube_source_attribution(job)
+
+    assert "Atribusi sumber (CC BY)" in value
+    assert "Kreator: Kreator Asli" in value
+    assert "Sumber: https://youtu.be/source" in value
+    assert "Diolah secara editorial oleh @ryuundyofficial" in value
+
+
+def test_monetization_preflight_requires_rights_and_substantive_edit(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-ready",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "monetization_readiness": {"eligible_for_private_upload_review": True}
+        },
+    )
+
+    assert youtube_monetization_preflight_issue(job, clip) is None
+
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: {})
+    assert "Render ulang" in (youtube_monetization_preflight_issue(job, clip) or "")
+
+
+def test_realistic_background_change_requires_disclosure(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {"adaptive_text_split": {"enabled": True}},
+    )
+
+    assert clip_requires_altered_content_disclosure(clip) is True
 
 
 def test_combined_job_highlight_metadata_is_not_marked_as_short():

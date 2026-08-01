@@ -16,6 +16,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Burn subtitles into clips by default.
 - Apply context-aware cinematic editing by default: theme color grading, animated hooks, varied camera motion, transcript-synced emphasis pulses, transitions, vignette, and progress bar.
 - Reframe a single speaker like a restrained virtual multi-camera edit, cutting between face-safe medium and close-up angles on meaningful speech beats.
+- Record a monetization-readiness audit beside each render, require substantive editorial signals before YouTube upload, preserve verified CC BY attribution, and disclose realistic backdrop replacement.
 - Offer a default **3D Animated** visual mode with light denoising, adaptive detail, warm animated-film color, depth contrast, and restrained outlines; no external video-generation service is required.
 - When a text-heavy backdrop is detected, transition vertical clips into a speaker-dominant layout with a shorter mosque-congregation panel below and a soft cinematic overlap instead of a hard 50/50 divide.
 - Add sparse conversation-aware reaction stickers for laughter, surprise, questions, prayer/gratitude, warnings, and emotional moments.
@@ -195,12 +196,18 @@ and persisted in `backend/data/youtube_uploads.json`.
 
 For safer reuse, URL jobs require explicit Creative Commons metadata by default
 before download. Viral search also rejects live/upcoming, age-restricted, and
-non-public sources. Verified rights data remains in local provenance records,
-while rendered MP4 files do not inherit source container metadata or chapters.
+non-public sources. Verified rights data remains in local provenance records and
+is appended as CC BY attribution in the YouTube description, while rendered MP4
+files do not inherit source container metadata or chapters. New renders also
+carry a monetization-readiness audit; upload is blocked when commercial-use
+rights or minimum substantive-edit evidence is absent. This is a preflight, not
+a promise of YPP approval, because YouTube also reviews the channel as a whole.
 During upload, Playwright waits for YouTube Studio Checks and cancels
 before save if copyright or restriction issues are detected. Auto uploads are
 kept Private by default, because Content ID can also apply a later claim after
-the initial Checks finish. Review the Restrictions column before publishing.
+the initial Checks finish. When ClipForge replaces a realistic backdrop, it also
+selects YouTube's altered-content disclosure before continuing. Review the
+Restrictions and monetization columns before publishing.
 This reduces risk but cannot guarantee a video will never receive a future claim.
 
 Optional YouTube upload configuration:

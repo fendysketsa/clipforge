@@ -12,6 +12,7 @@ from clipper import (
     TranscriptSegment,
     _hex_to_ass_color,
     adaptive_text_backdrop_split_filter,
+    attach_monetization_provenance,
     apply_codex_audio_cues,
     animated_3d_fallback_filter,
     animated_3d_look_filter,
@@ -336,6 +337,7 @@ def test_landscape_compilation_edit_uses_chapters_and_sparse_emphasis():
         section_number=2,
         section_count=5,
         emphasis_times=[12.0],
+        editorial_text_filename="part.editorial.txt",
     )
 
     assert "text='POIN 02'" in value
@@ -343,6 +345,40 @@ def test_landscape_compilation_edit_uses_chapters_and_sparse_emphasis():
     assert "textfile='part.hook.txt'" in value
     assert "between(t,12.000" in value
     assert "y=1072" in value
+    assert "text='CATATAN EDITOR'" in value
+    assert "textfile='part.editorial.txt'" in value
+
+
+def test_monetization_provenance_records_rights_and_originality(tmp_path):
+    video = tmp_path / "clip_01.mp4"
+    video.write_bytes(b"video")
+    video.with_suffix(".json").write_text(
+        '{"output_format":"vertical_short","enhanced_edit":true,'
+        '"hook":"Hook","pov":"Sudut pandang","core_message":"Inti",'
+        '"thumbnail_strategy":"embedded_shorts_cover_frame",'
+        '"virtual_camera_angles":[{"start":4,"end":6}],'
+        '"applied_edits":["a","b","c"]}',
+        encoding="utf-8",
+    )
+
+    attach_monetization_provenance(
+        [video],
+        {
+            "title": "Sumber",
+            "uploader": "Kreator",
+            "webpage_url": "https://youtu.be/source",
+            "license": "Creative Commons Attribution license",
+        },
+        uploaded_source=False,
+    )
+
+    import json
+
+    payload = json.loads(video.with_suffix(".json").read_text(encoding="utf-8"))
+    assert payload["source_provenance"]["rights_verified"] is True
+    assert payload["source_provenance"]["attribution_required"] is True
+    assert payload["monetization_readiness"]["eligible_for_private_upload_review"] is True
+    assert payload["monetization_readiness"]["guarantee"] is False
 
 
 def test_landscape_caption_backdrop_uses_16_by_9_canvas_without_face_blur():

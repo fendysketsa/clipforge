@@ -178,6 +178,7 @@ export type YouTubeUploadJob = {
   description: string;
   thumbnail_url?: string | null;
   thumbnail_attached?: boolean;
+  altered_content?: boolean;
   visibility: YouTubeVisibility;
   made_for_kids: boolean;
   tags: string[];

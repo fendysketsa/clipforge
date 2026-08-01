@@ -308,6 +308,60 @@ def click_text(page, patterns: Iterable[str], *, timeout_ms: int = 8000, optiona
     raise UploadError(f"Tombol/teks tidak ditemukan: {', '.join(patterns)}") from last_error
 
 
+def set_altered_content_disclosure(page, required: bool) -> None:
+    """Select YouTube's altered-content disclosure when realistic scenery changed."""
+    if not required:
+        return
+    click_role_button(
+        page,
+        [r"show more", r"tampilkan lebih banyak", r"selengkapnya"],
+        timeout_ms=5000,
+        optional=True,
+    )
+    time.sleep(0.6)
+    try:
+        selected = page.evaluate(
+            r"""
+            () => {
+              const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+              const anchors = [
+                'altered content', 'synthetic content', 'ai-generated content',
+                'konten yang diubah', 'konten sintetis', 'konten buatan ai'
+              ];
+              const nodes = [...document.querySelectorAll('body *')]
+                .filter((node) => {
+                  const text = normalize(node.innerText);
+                  return text.length > 20 && text.length < 2600 && anchors.some((item) => text.includes(item));
+                })
+                .sort((left, right) => normalize(left.innerText).length - normalize(right.innerText).length);
+              for (const container of nodes) {
+                const choices = [...container.querySelectorAll(
+                  'tp-yt-paper-radio-button, ytcp-radio-button, [role="radio"], label'
+                )];
+                const yes = choices.find((choice) => {
+                  const text = normalize(choice.innerText || choice.getAttribute('aria-label'));
+                  return /^(yes|ya)(\b|,)/.test(text) || text.includes('yes, it') || text.includes('ya, konten');
+                });
+                if (!yes) continue;
+                yes.click();
+                return true;
+              }
+              return false;
+            }
+            """
+        )
+    except Exception as exc:
+        save_debug_artifacts(page, "altered-content-disclosure-error")
+        raise UploadError(f"Disclosure altered content gagal dipilih: {exc}") from exc
+    if not selected:
+        save_debug_artifacts(page, "altered-content-disclosure-not-found")
+        raise UploadError(
+            "Upload dihentikan: backdrop realistis telah diubah, tetapi pilihan disclosure "
+            "Altered content/AI use tidak ditemukan di YouTube Studio."
+        )
+    log("Disclosure altered content dipilih karena backdrop realistis diganti.")
+
+
 def click_role_button(page, patterns: Iterable[str], *, timeout_ms: int = 8000, optional: bool = False) -> bool:
     deadline = time.monotonic() + timeout_ms / 1000
     last_error: Exception | None = None
@@ -4155,6 +4209,7 @@ def run_upload(args: argparse.Namespace) -> None:
             else:
                 click_text(page, [r"no,.*not made for kids", r"tidak,.*anak"], timeout_ms=8000)
             log("Setelan audiens dipilih.")
+            set_altered_content_disclosure(page, args.altered_content)
             if args.tags:
                 log("Kolom Tags lanjutan dilewati; hashtag sudah dimasukkan ke deskripsi.")
 
@@ -4268,6 +4323,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=env_bool("YOUTUBE_REQUIRE_COPYRIGHT_CHECKS", True),
     )
     upload.add_argument("--made-for-kids", action="store_true")
+    upload.add_argument("--altered-content", action="store_true")
     upload.add_argument("--dry-run", action="store_true")
     upload.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     upload.add_argument("--headless", action=argparse.BooleanOptionalAction, default=None)

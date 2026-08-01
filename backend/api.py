@@ -434,6 +434,7 @@ class YouTubeUploadJob(BaseModel):
     thumbnail_attached: bool = False
     visibility: Literal["private", "unlisted", "public"] = "private"
     made_for_kids: bool = False
+    altered_content: bool = False
     tags: list[str] = Field(default_factory=list)
     playlist: str = ""
     target_channel: str = ""
@@ -1809,7 +1810,86 @@ def default_youtube_description(job: ClipJob, clip: ClipFile) -> str:
     tags = default_youtube_tags(job, clip)
     if tags:
         parts.append(" ".join(f"#{tag.replace(' ', '')}" for tag in tags[:3]))
-    return "\n\n".join(parts)[:5000]
+    return append_youtube_source_attribution("\n\n".join(parts), job)
+
+
+def clip_sidecar_payload(clip: ClipFile) -> dict[str, Any]:
+    clip_path = output_path_from_url(clip.url)
+    json_path = clip_path.with_suffix(".json") if clip_path is not None else None
+    if json_path is None or not json_path.is_file():
+        return {}
+    try:
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def youtube_source_attribution(job: ClipJob) -> str:
+    """Return required CC attribution without asking the metadata LLM to invent it."""
+    if not job.request.url.strip():
+        return ""
+    metadata = metadata_for_job(job)
+    if not is_creative_commons_info(metadata):
+        return ""
+    title = str(metadata.get("title") or job.source_title or "Video sumber").strip()
+    creator = str(metadata.get("uploader") or job.source_uploader or "Kreator sumber").strip()
+    source_url = str(metadata.get("webpage_url") or job.source_url or job.request.url).strip()
+    license_name = str(metadata.get("license") or "Creative Commons Attribution").strip()
+    return (
+        "Atribusi sumber (CC BY):\n"
+        f"Judul: {title[:180]}\n"
+        f"Kreator: {creator[:120]}\n"
+        f"Sumber: {source_url[:500]}\n"
+        f"Lisensi: {license_name[:120]}\n"
+        "Diolah secara editorial oleh @ryuundyofficial."
+    )
+
+
+def append_youtube_source_attribution(description: str, job: ClipJob) -> str:
+    attribution = youtube_source_attribution(job)
+    clean = description.strip()
+    if not attribution or attribution in clean:
+        return clean[:5000]
+    available = max(0, 5000 - len(attribution) - 2)
+    return f"{clean[:available].rstrip()}\n\n{attribution}".strip()[:5000]
+
+
+def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | None:
+    """Block private upload when rights or substantive-edit evidence is missing."""
+    metadata = metadata_for_job(job)
+    if job.request.url.strip() and not is_creative_commons_info(metadata):
+        return (
+            "Upload diblokir: bukti lisensi Creative Commons sumber tidak ditemukan. "
+            "Render ulang dari sumber CC terverifikasi atau gunakan rekaman milik sendiri."
+        )
+    sidecar = clip_sidecar_payload(clip)
+    readiness = sidecar.get("monetization_readiness") if isinstance(sidecar, dict) else None
+    if not isinstance(readiness, dict):
+        return (
+            "Upload diblokir: output lama belum memiliki audit monetisasi. "
+            "Render ulang clip dengan ClipForge terbaru."
+        )
+    if not readiness.get("eligible_for_private_upload_review"):
+        return (
+            "Upload diblokir: transformasi editorial belum melewati preflight monetisasi. "
+            "Aktifkan Enhanced Edit dan render ulang sebelum review private di YouTube Studio."
+        )
+    return None
+
+
+def clip_requires_altered_content_disclosure(clip: ClipFile) -> bool:
+    sidecar = clip_sidecar_payload(clip)
+    replacement = sidecar.get("background_replacement")
+    adaptive_split = sidecar.get("adaptive_text_split")
+    background_mode = str(sidecar.get("background_mode") or "")
+    return bool(
+        sidecar.get("altered_content_disclosure_required")
+        or sidecar.get("background_replaced")
+        or isinstance(replacement, dict)
+        or (isinstance(adaptive_split, dict) and adaptive_split.get("enabled"))
+        or background_mode == "mosque"
+    )
 
 
 def default_youtube_tags(job: ClipJob, clip: ClipFile) -> list[str]:
@@ -1835,8 +1915,9 @@ YOUTUBE_METADATA_SYSTEM_PROMPT = (
     "from that clip's transcript and write fresh metadata—not a generic template and not copied old metadata. "
     "Make the title modern, emotionally engaging, natural, and honest. Write an informative description that "
     "is concise but substantial. Use Bahasa Indonesia and never state folklore, personal experiences, myths, "
-    "or supernatural claims as verified religious facts. Never mention source URLs, source channels, other "
-    "channels, uploaders, TV stations, sponsors, or credits. Return strict JSON only."
+    "or supernatural claims as verified religious facts. Do not invent source URLs, channels, uploaders, "
+    "sponsors, licenses, or credits; verified CC attribution is appended separately by the application. "
+    "Return strict JSON only."
 )
 
 
@@ -2362,6 +2443,9 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
                 status_code=409,
                 detail=f"Thumbnail harus landscape 16:9; file saat ini {width}x{height}.",
             )
+    monetization_issue = youtube_monetization_preflight_issue(job, clip)
+    if monetization_issue:
+        raise HTTPException(status_code=409, detail=monetization_issue)
     fallback_tags = request.tags or default_youtube_tags(job, clip)
     ai_metadata = generate_youtube_metadata(job, clip, fallback_tags)
     if env_bool("YOUTUBE_REQUIRE_AI_METADATA", True) and not isinstance(ai_metadata, dict):
@@ -2392,6 +2476,8 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         or request.description
         or default_youtube_description(job, clip)
     )
+    description = append_youtube_source_attribution(description, job)
+    altered_content = clip_requires_altered_content_disclosure(clip)
     upload_id = uuid.uuid4().hex
     now = now_iso()
     return YouTubeUploadJob(
@@ -2412,15 +2498,26 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         thumbnail_attached=False,
         visibility=safe_youtube_visibility(request.visibility),
         made_for_kids=request.made_for_kids,
+        altered_content=altered_content,
         tags=tags,
         playlist=request.playlist,
         target_channel=request.target_channel,
         dry_run=request.dry_run,
         clip_sha256=clip_fingerprint,
         logs=(
-            [f"Thumbnail otomatis 16:9 siap dipasang: {thumbnail_path.name}"]
-            if is_compilation_clip(job, clip) and thumbnail_path is not None
-            else []
+            (
+                [f"Thumbnail otomatis 16:9 siap dipasang: {thumbnail_path.name}"]
+                if is_compilation_clip(job, clip) and thumbnail_path is not None
+                else []
+            )
+            + [
+                "Preflight monetisasi lolos untuk upload Private; keputusan akhir tetap mengikuti review video dan channel oleh YouTube."
+            ]
+            + (
+                ["Penggantian backdrop terdeteksi; disclosure altered content akan dipilih saat upload."]
+                if altered_content
+                else []
+            )
         ),
     )
 
@@ -2701,6 +2798,8 @@ def build_youtube_upload_command(
             command.extend(["--chromium-profile-directory", YOUTUBE_CHROMIUM_PROFILE_DIRECTORY])
     if upload.made_for_kids:
         command.append("--made-for-kids")
+    if upload.altered_content:
+        command.append("--altered-content")
     if upload.dry_run:
         command.append("--dry-run")
     if not env_bool("YOUTUBE_HEADLESS", True):
