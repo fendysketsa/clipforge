@@ -2,6 +2,7 @@ from pathlib import Path
 
 from clipper import (
     AVAILABLE_FONTS,
+    CameraAngleCue,
     CaptionStyle,
     ClipCandidate,
     CodexEditPlan,
@@ -57,6 +58,7 @@ from clipper import (
     shorts_cover_frame_timestamp,
     thumbnail_story_copy,
     transcription_decode_options,
+    virtual_camera_angle_cues,
     visual_theme_profile,
 )
 
@@ -791,6 +793,51 @@ def test_animated_3d_cinematic_motion_reframes_only_inside_pov_windows():
     assert "if(between(t,5.000,6.400),28*sin(PI*(t-5.000)/1.400),0)" in value
     assert "if(between(t,14.000,15.200),32*sin(PI*(t-14.000)/1.200),0)" in value
     assert "x='(iw-ow)/2+-10*sin(PI*(t-5.000)/1.400)" in value
+    assert "sin(2*PI*t/6)" not in value
+
+
+def test_virtual_camera_angles_follow_spoken_beats_and_stay_sparse():
+    clip = ClipCandidate(2, 10, 42, 32, 88, "Judul", "test", "Isi")
+    segments = [
+        TranscriptSegment(10, 12, "Pembuka singkat untuk topik ini."),
+        TranscriptSegment(14, 16, "Ternyata keputusan pertama itu salah."),
+        TranscriptSegment(18, 20, "Konteks berikutnya dijelaskan dengan tenang."),
+        TranscriptSegment(23, 25, "Bayangkan kamu mengalami masalah yang sama."),
+        TranscriptSegment(29, 31, "Solusinya harus dimulai dari langkah sederhana."),
+        TranscriptSegment(36, 39, "Akhirnya hasilnya berubah dan jawabannya jelas."),
+    ]
+
+    cues = virtual_camera_angle_cues(clip, segments)
+
+    assert len(cues) == 4
+    assert [cue.start for cue in cues] == sorted(cue.start for cue in cues)
+    assert all(right.start - left.start >= 3.4 for left, right in zip(cues, cues[1:]))
+    assert len({cue.kind for cue in cues}) >= 3
+    assert all(cue.zoom_pixels >= 72 for cue in cues)
+    assert any("Ternyata" in cue.trigger for cue in cues)
+
+
+def test_virtual_camera_filter_uses_deliberate_cut_instead_of_random_drift():
+    cue = CameraAngleCue(
+        kind="close_left",
+        start=5.0,
+        end=7.2,
+        zoom_pixels=118,
+        x_offset=-28,
+        y_offset=-10,
+        trigger="Ternyata keputusan pertama itu salah.",
+    )
+
+    value = enhanced_edit_filter(
+        30,
+        "clip.hook.txt",
+        variation=1,
+        camera_angle_cues=[cue],
+    )
+
+    assert "if(between(t,5.000,7.200),118+6*sin(PI*(t-5.000)/2.200),0)" in value
+    assert "x='(iw-ow)/2+-28*between(t,5.000,7.200)'" in value
+    assert "y='(ih-oh)/2+-10*between(t,5.000,7.200)'" in value
     assert "sin(2*PI*t/6)" not in value
 
 

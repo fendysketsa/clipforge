@@ -106,6 +106,22 @@ class CodexEditPlan:
     loop_boost: bool = False
 
 
+CameraAngleKind = Literal["medium", "close_left", "close_center", "close_right"]
+
+
+@dataclass
+class CameraAngleCue:
+    """A transcript-timed virtual camera cut made from the same source shot."""
+
+    kind: CameraAngleKind
+    start: float
+    end: float
+    zoom_pixels: int
+    x_offset: int
+    y_offset: int
+    trigger: str
+
+
 ReactionKind = Literal["laugh", "shock", "think", "pray", "warning", "heart", "important"]
 
 
@@ -3273,7 +3289,7 @@ def resolve_codex_ideas(
             )
         elif area == "visual":
             applied.append(
-                "Arahan visual diterapkan: poin utama diberi emphasis pulse dan aksen frame."
+                "Arahan visual diterapkan: poin utama diberi emphasis pulse, aksen frame, dan variasi angle virtual medium/close-up."
             )
         elif area == "audio":
             applied.append(
@@ -3700,6 +3716,107 @@ def cinematic_pov_windows(
         if len(windows) >= limit:
             break
     return windows
+
+
+def virtual_camera_angle_cues(
+    clip: ClipCandidate,
+    clip_segments: list[TranscriptSegment],
+    *,
+    limit: int = 7,
+    min_gap: float = 3.4,
+) -> list[CameraAngleCue]:
+    """Plan sparse face-safe medium/close cuts on meaningful speech boundaries.
+
+    A single recording cannot provide a genuinely new physical viewpoint. These
+    cues recreate a multi-camera rhythm with deliberate crop, zoom, and eyeline
+    shifts instead of continuous random motion.
+    """
+    duration = max(0.1, clip.end - clip.start)
+    if duration < 7.0 or not clip_segments or limit <= 0:
+        return []
+
+    signal_words = (
+        (HOOK_WORDS - WEAK_STARTS)
+        | PAYOFF_WORDS
+        | TENSION_WORDS
+        | IMPORTANT_WORDS
+        | MYSTERY_WORDS
+    )
+    direct_words = {
+        "aku",
+        "anda",
+        "bayangkan",
+        "coba",
+        "kalian",
+        "kamu",
+        "saya",
+    }
+    candidates: list[tuple[int, float, float, str]] = []
+    for segment in clip_segments:
+        relative_start = max(0.0, segment.start - clip.start)
+        if relative_start < 1.65 or relative_start > duration - 1.15:
+            continue
+        words = set(re.findall(r"[\w']+", segment.text.casefold()))
+        score = len(words.intersection(signal_words)) * 4
+        score += len(words.intersection(direct_words)) * 2
+        score += int("?" in segment.text) * 3
+        score += int(segment.text.rstrip().endswith(("!", "?"))) * 2
+        score += min(2, len(words) // 8)
+        cue_duration = max(1.35, min(2.8, (segment.end - segment.start) + 0.45))
+        end = min(duration - 0.35, relative_start + cue_duration)
+        if end - relative_start < 1.0:
+            continue
+        trigger = " ".join(segment.text.split())[:96]
+        candidates.append((score, relative_start, end, trigger))
+
+    if not candidates:
+        return []
+
+    # Strong semantic beats get first refusal. Cadence candidates then fill
+    # longer stretches so a 30–60 second Short never feels like one static crop.
+    desired_count = min(limit, max(1, int(duration // 6.5)))
+    selected: list[tuple[int, float, float, str]] = []
+    for candidate in sorted(candidates, key=lambda item: (-item[0], item[1])):
+        if candidate[0] <= 1 and len(selected) >= max(1, desired_count // 2):
+            continue
+        if any(abs(candidate[1] - existing[1]) < min_gap for existing in selected):
+            continue
+        selected.append(candidate)
+        if len(selected) >= desired_count:
+            break
+
+    if len(selected) < desired_count:
+        for candidate in sorted(candidates, key=lambda item: item[1]):
+            if any(abs(candidate[1] - existing[1]) < min_gap for existing in selected):
+                continue
+            selected.append(candidate)
+            if len(selected) >= desired_count:
+                break
+
+    angle_cycle: tuple[tuple[CameraAngleKind, int, int, int], ...] = (
+        ("close_left", 118, -28, -10),
+        ("medium", 72, 20, -4),
+        ("close_center", 138, 0, -16),
+        ("close_right", 112, 28, -8),
+        ("medium", 78, -18, 4),
+    )
+    cues: list[CameraAngleCue] = []
+    for index, (_, start, end, trigger) in enumerate(sorted(selected, key=lambda item: item[1])):
+        kind, zoom_pixels, x_offset, y_offset = angle_cycle[
+            (max(0, clip.index - 1) + index) % len(angle_cycle)
+        ]
+        cues.append(
+            CameraAngleCue(
+                kind=kind,
+                start=round(start, 3),
+                end=round(end, 3),
+                zoom_pixels=zoom_pixels,
+                x_offset=x_offset,
+                y_offset=y_offset,
+                trigger=trigger,
+            )
+        )
+    return cues
 
 
 def detect_reaction_cues(
@@ -4346,6 +4463,7 @@ def enhanced_edit_filter(
     codex_plan: CodexEditPlan | None = None,
     payoff_text_filename: str = "",
     cinematic_pov_windows: list[tuple[float, float]] | None = None,
+    camera_angle_cues: list[CameraAngleCue] | None = None,
 ) -> str:
     """Add context-aware motion graphics while keeping faces and captions readable."""
     safe_duration = max(0.1, duration)
@@ -4398,11 +4516,37 @@ def enhanced_edit_filter(
         pov_zoom_terms.append(f"if({active},{zoom_pixels}*{phase},0)")
         pov_x_terms.append(f"{x_offset}*{phase}*{active}")
         pov_y_terms.append(f"{y_offset}*{phase}*{active}")
+    angle_zoom_terms: list[str] = []
+    angle_x_terms: list[str] = []
+    angle_y_terms: list[str] = []
+    for cue in camera_angle_cues or []:
+        if cue.end <= cue.start:
+            continue
+        active = f"between(t,{cue.start:.3f},{cue.end:.3f})"
+        cue_duration = cue.end - cue.start
+        settle = f"sin(PI*(t-{cue.start:.3f})/{cue_duration:.3f})"
+        angle_zoom_terms.append(
+            f"if({active},{cue.zoom_pixels}+6*{settle},0)"
+        )
+        angle_x_terms.append(f"{cue.x_offset}*{active}")
+        angle_y_terms.append(f"{cue.y_offset}*{active}")
     scale_expression = (
         f"{scale_width}+{intro_zoom_pixels}*max(0,1-t/0.72)"
-        + "".join(f"+{term}" for term in pov_zoom_terms)
+        + "".join(
+            f"+{term}"
+            for term in (
+                angle_zoom_terms
+                if camera_angle_cues is not None
+                else pov_zoom_terms
+            )
+        )
     )
-    if cinematic_pov_windows is None:
+    if camera_angle_cues is not None:
+        # Hard activation at a speech boundary reads like a second camera cut;
+        # the tiny settle motion keeps the digital crop from feeling frozen.
+        x_motion = "+".join(angle_x_terms) or "0"
+        y_motion = "+".join(angle_y_terms) or "0"
+    elif cinematic_pov_windows is None:
         x_motion = f"{amp_x:.1f}*sin(2*PI*t/{x_period})"
         y_motion = f"{amp_y:.1f}*sin(2*PI*t/{y_period})"
     else:
@@ -5229,6 +5373,11 @@ def export_clip(
         if visual_mode == "animated_3d" and output_format == "vertical_short"
         else None
     )
+    camera_angle_cues = (
+        virtual_camera_angle_cues(clip, clip_segments)
+        if enhanced_edit and output_format == "vertical_short"
+        else []
+    )
     core_message = payoff_banner_text(clip, clip_segments)
     cover_copy = thumbnail_story_copy(clip)
     reaction_cues = detect_reaction_cues(clip, clip_segments)
@@ -5292,6 +5441,7 @@ def export_clip(
             {"start": start, "end": end}
             for start, end in (pov_windows or [])
         ],
+        "virtual_camera_angles": [asdict(cue) for cue in camera_angle_cues],
         "reaction_cues": [asdict(cue) for cue in reaction_cues],
         "sound_effect_cues": [asdict(cue) for cue in sound_effect_cues],
         "background_music": (
@@ -5596,6 +5746,7 @@ def export_clip(
                     codex_plan=adaptive_plan,
                     payoff_text_filename=payoff_text_path.name if drawtext_supported else "",
                     cinematic_pov_windows=pov_windows,
+                    camera_angle_cues=camera_angle_cues or None,
                 )}"
             )
             sidecar_payload["motion_impact"] = {
@@ -5610,6 +5761,10 @@ def export_clip(
             if pov_windows:
                 applied_edits.append(
                     f"Look 3D dipadukan dengan {len(pov_windows)} reframe sinematik pada momen POV terdeteksi."
+                )
+            if camera_angle_cues:
+                applied_edits.append(
+                    f"Virtual multi-camera menerapkan {len(camera_angle_cues)} cut medium/close-up pada beat ucapan, dengan framing wajah tetap aman."
                 )
     if visual_mode == "retro_tv":
         curves_supported = ffmpeg_has_filter("curves")
