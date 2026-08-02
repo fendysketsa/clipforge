@@ -308,58 +308,228 @@ def click_text(page, patterns: Iterable[str], *, timeout_ms: int = 8000, optiona
     raise UploadError(f"Tombol/teks tidak ditemukan: {', '.join(patterns)}") from last_error
 
 
+def open_advanced_upload_settings(page, timeout_ms: int = 8000) -> bool:
+    """Open Studio's advanced metadata fields across its English/Indonesian labels."""
+    selectors = (
+        "ytcp-video-metadata-editor ytcp-button#toggle-button button",
+        "ytcp-video-metadata-editor ytcp-button#toggle-button",
+        'ytcp-video-metadata-editor button[aria-label*="advanced settings" i]',
+        'ytcp-video-metadata-editor button[aria-label*="setelan lanjutan" i]',
+    )
+    deadline = time.monotonic() + timeout_ms / 1000
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        for selector in selectors:
+            try:
+                locator = page.locator(selector).first
+                if locator.count() and locator.is_visible(timeout=250):
+                    try:
+                        toggle_copy = " ".join(
+                            filter(
+                                None,
+                                (
+                                    locator.inner_text(timeout=250),
+                                    locator.get_attribute("aria-label", timeout=250),
+                                ),
+                            )
+                        ).casefold()
+                    except Exception:
+                        toggle_copy = ""
+                    if any(
+                        marker in toggle_copy
+                        for marker in (
+                            "show less",
+                            "hide advanced",
+                            "tampilkan lebih sedikit",
+                            "sembunyikan setelan",
+                        )
+                    ):
+                        return True
+                    locator.click(timeout=1500)
+                    return True
+            except Exception as exc:
+                last_error = exc
+        time.sleep(0.1)
+
+    # The inner text is "Tampilkan lebih banyak", but Studio currently overrides
+    # its accessible name with "Tampilkan setelan lanjutan". Keep both variants.
+    if click_role_button(
+        page,
+        [
+            r"show more",
+            r"show advanced settings",
+            r"advanced settings",
+            r"tampilkan lebih banyak",
+            r"tampilkan setelan lanjutan",
+            r"setelan lanjutan",
+            r"selengkapnya",
+        ],
+        timeout_ms=1500,
+        optional=True,
+    ):
+        return True
+    if click_text(
+        page,
+        [r"^show more$", r"^tampilkan lebih banyak$", r"^selengkapnya$"],
+        timeout_ms=1500,
+        optional=True,
+    ):
+        return True
+    if last_error:
+        log(f"Setelan lanjutan belum dapat dibuka lewat selector utama: {last_error}")
+    return False
+
+
+def altered_content_disclosure_result(page) -> dict[str, bool]:
+    """Find, select, and report the verified state of Studio's disclosure field."""
+    result = page.evaluate(
+        r"""
+        () => {
+          const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+          const anchors = [
+            'altered content', 'altered or synthetic', 'synthetic content',
+            'ai-generated content', 'ai generated content', 'ai use', 'use of ai',
+            'konten yang diubah', 'konten diubah', 'konten sintetis',
+            'konten buatan ai', 'penggunaan ai', 'pemakaian ai'
+          ];
+          const choiceSelector = [
+            'tp-yt-paper-radio-button', 'ytcp-radio-button', '[role="radio"]',
+            'input[type="radio"]', 'label'
+          ].join(', ');
+          const visible = (node) => {
+            if (!(node instanceof Element)) return false;
+            const style = window.getComputedStyle(node);
+            const rect = node.getBoundingClientRect();
+            return style.display !== 'none' && style.visibility !== 'hidden'
+              && rect.width > 0 && rect.height > 0;
+          };
+          const choiceText = (choice) => normalize(
+            choice.innerText || choice.textContent || choice.getAttribute('aria-label')
+          );
+          const isYes = (choice) => {
+            const text = choiceText(choice);
+            return /^(yes|ya)(\b|[,.])/.test(text)
+              || text.includes('yes, it') || text.includes('ya, konten');
+          };
+          const isSelected = (choice) => {
+            const candidates = [
+              choice,
+              choice.closest('tp-yt-paper-radio-button, ytcp-radio-button, [role="radio"], label'),
+              choice.querySelector('input[type="radio"], [role="radio"]')
+            ].filter(Boolean);
+            return candidates.some((item) => item.checked === true
+              || item.getAttribute('aria-checked') === 'true'
+              || item.hasAttribute('checked'));
+          };
+          const domDistance = (left, right) => {
+            const leftAncestors = new Map();
+            let cursor = left;
+            let distance = 0;
+            while (cursor) {
+              leftAncestors.set(cursor, distance);
+              cursor = cursor.parentElement;
+              distance += 1;
+            }
+            cursor = right;
+            distance = 0;
+            while (cursor) {
+              if (leftAncestors.has(cursor)) return distance + leftAncestors.get(cursor);
+              cursor = cursor.parentElement;
+              distance += 1;
+            }
+            return Number.MAX_SAFE_INTEGER;
+          };
+          const nodes = [...document.querySelectorAll('body *')]
+            .filter((node) => {
+              const text = normalize(node.innerText || node.textContent);
+              return visible(node) && text.length > 2 && text.length < 2600
+                && anchors.some((item) => text.includes(item));
+            })
+            .sort((left, right) => normalize(left.innerText).length - normalize(right.innerText).length);
+
+          const visited = new Set();
+          for (const anchorNode of nodes) {
+            let container = anchorNode;
+            for (let depth = 0; container && container !== document.body && depth < 9; depth += 1) {
+              if (visited.has(container)) {
+                container = container.parentElement;
+                continue;
+              }
+              visited.add(container);
+              const sectionText = normalize(container.innerText || container.textContent);
+              if (!anchors.some((item) => sectionText.includes(item))) {
+                container = container.parentElement;
+                continue;
+              }
+              const choices = [
+                ...(container.matches(choiceSelector) ? [container] : []),
+                ...container.querySelectorAll(choiceSelector)
+              ].filter(visible);
+              // If a broad Studio wrapper contains several radio groups, prefer
+              // the Yes option nearest to this disclosure's own heading.
+              const yes = choices
+                .filter(isYes)
+                .sort((left, right) => domDistance(anchorNode, left) - domDistance(anchorNode, right))[0];
+              if (!yes) {
+                container = container.parentElement;
+                continue;
+              }
+              if (isSelected(yes)) return {found: true, clicked: false, selected: true};
+              yes.scrollIntoView({block: 'center', inline: 'nearest'});
+              yes.click();
+              return {found: true, clicked: true, selected: isSelected(yes)};
+            }
+          }
+          return {found: false, clicked: false, selected: false};
+        }
+        """
+    )
+    return {
+        "found": bool(isinstance(result, dict) and result.get("found")),
+        "clicked": bool(isinstance(result, dict) and result.get("clicked")),
+        "selected": bool(isinstance(result, dict) and result.get("selected")),
+    }
+
+
 def set_altered_content_disclosure(page, required: bool) -> None:
-    """Select YouTube's altered-content disclosure when realistic scenery changed."""
+    """Select and verify YouTube's disclosure when realistic scenery changed."""
     if not required:
         return
-    click_role_button(
-        page,
-        [r"show more", r"tampilkan lebih banyak", r"selengkapnya"],
-        timeout_ms=5000,
-        optional=True,
-    )
-    time.sleep(0.6)
+    advanced_opened = open_advanced_upload_settings(page)
+    if advanced_opened:
+        log("Setelan lanjutan YouTube Studio dibuka untuk disclosure AI/altered content.")
+
+    deadline = time.monotonic() + 8000 / 1000
+    found = False
+    clicked = False
     try:
-        selected = page.evaluate(
-            r"""
-            () => {
-              const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
-              const anchors = [
-                'altered content', 'synthetic content', 'ai-generated content',
-                'konten yang diubah', 'konten sintetis', 'konten buatan ai'
-              ];
-              const nodes = [...document.querySelectorAll('body *')]
-                .filter((node) => {
-                  const text = normalize(node.innerText);
-                  return text.length > 20 && text.length < 2600 && anchors.some((item) => text.includes(item));
-                })
-                .sort((left, right) => normalize(left.innerText).length - normalize(right.innerText).length);
-              for (const container of nodes) {
-                const choices = [...container.querySelectorAll(
-                  'tp-yt-paper-radio-button, ytcp-radio-button, [role="radio"], label'
-                )];
-                const yes = choices.find((choice) => {
-                  const text = normalize(choice.innerText || choice.getAttribute('aria-label'));
-                  return /^(yes|ya)(\b|,)/.test(text) || text.includes('yes, it') || text.includes('ya, konten');
-                });
-                if (!yes) continue;
-                yes.click();
-                return true;
-              }
-              return false;
-            }
-            """
-        )
+        while time.monotonic() < deadline:
+            result = altered_content_disclosure_result(page)
+            found = found or result["found"]
+            clicked = clicked or result["clicked"]
+            if result["selected"]:
+                log("Disclosure altered content/AI use dipilih dan terverifikasi.")
+                return
+            time.sleep(0.2)
     except Exception as exc:
         save_debug_artifacts(page, "altered-content-disclosure-error")
-        raise UploadError(f"Disclosure altered content gagal dipilih: {exc}") from exc
-    if not selected:
-        save_debug_artifacts(page, "altered-content-disclosure-not-found")
+        raise UploadError(f"Disclosure altered content/AI use gagal dipilih: {exc}") from exc
+
+    save_debug_artifacts(
+        page,
+        "altered-content-disclosure-not-selected"
+        if found or clicked
+        else "altered-content-disclosure-not-found",
+    )
+    if found or clicked:
         raise UploadError(
-            "Upload dihentikan: backdrop realistis telah diubah, tetapi pilihan disclosure "
-            "Altered content/AI use tidak ditemukan di YouTube Studio."
+            "Upload dihentikan: opsi Ya untuk disclosure Altered content/AI use ditemukan, "
+            "tetapi YouTube Studio belum mengonfirmasi bahwa opsi tersebut terpilih."
         )
-    log("Disclosure altered content dipilih karena backdrop realistis diganti.")
+    raise UploadError(
+        "Upload dihentikan: backdrop realistis telah diubah, tetapi pilihan disclosure "
+        "Altered content/AI use tidak ditemukan setelah setelan lanjutan YouTube Studio dibuka."
+    )
 
 
 def click_role_button(page, patterns: Iterable[str], *, timeout_ms: int = 8000, optional: bool = False) -> bool:
@@ -1993,6 +2163,52 @@ def validate_thumbnail_file(thumbnail_path: Path) -> tuple[int, int]:
     return width, height
 
 
+def thumbnail_upload_state(page) -> dict[str, object]:
+    """Read the custom-thumbnail transfer state without touching the file input."""
+    script = r"""
+    () => {
+      const uploaders = [...document.querySelectorAll(
+        'ytcp-video-thumbnail-editor ytcp-thumbnail-uploader, ytcp-thumbnail-uploader'
+      )];
+      const uploader = uploaders.find((candidate) => candidate.querySelector(
+        'input[type="file"][accept*="image"], input[type="file"][accept*=".jpg"], '
+        + 'input[type="file"][accept*=".jpeg"], input[type="file"][accept*=".png"]'
+      ));
+      if (!uploader) {
+        return {found: false, selected: false, uploading: false, error: ''};
+      }
+      const editor = uploader.closest('ytcp-video-custom-still-editor') || uploader;
+      const errorTip = editor.querySelector(
+        'ytcp-form-error-tip:not([hidden]), [role="alert"]:not([hidden])'
+      );
+      const error = errorTip
+        ? (errorTip.innerText || errorTip.textContent || '').replace(/\s+/g, ' ').trim()
+        : '';
+      return {
+        found: true,
+        selected: uploader.hasAttribute('selected'),
+        uploading: uploader.hasAttribute('is-ongoing-transfer'),
+        error,
+      };
+    }
+    """
+    fallback = {"found": False, "selected": False, "uploading": False, "error": ""}
+    for frame in page.frames:
+        try:
+            result = frame.evaluate(script)
+        except Exception:
+            continue
+        if not isinstance(result, dict) or not result.get("found"):
+            continue
+        return {
+            "found": True,
+            "selected": bool(result.get("selected")),
+            "uploading": bool(result.get("uploading")),
+            "error": str(result.get("error") or "").strip(),
+        }
+    return fallback
+
+
 def set_thumbnail(page, thumbnail_path: Path, timeout_ms: int = 45000) -> None:
     width, height = validate_thumbnail_file(thumbnail_path)
     log(f"Mengatur thumbnail otomatis {width}x{height}: {thumbnail_path.name}.")
@@ -2008,40 +2224,61 @@ def set_thumbnail(page, thumbnail_path: Path, timeout_ms: int = 45000) -> None:
         'input[type="file"][accept*=".png"]',
     )
     clicked_upload = False
+    upload_started = False
+    completed_state_polls = 0
     last_error: Exception | None = None
     while time.monotonic() < deadline:
+        if upload_started:
+            state = thumbnail_upload_state(page)
+            state_error = str(state["error"])
+            if state_error:
+                save_debug_artifacts(page, "thumbnail-rejected")
+                raise UploadError(f"YouTube menolak file thumbnail otomatis: {state_error}")
+            if state["selected"] and not state["uploading"]:
+                completed_state_polls += 1
+                if completed_state_polls >= 2:
+                    log(f"THUMBNAIL_ATTACHED: {thumbnail_path.name} ({width}x{height})")
+                    return
+            else:
+                completed_state_polls = 0
+
+            page_text = normalized_page_text(page)
+            rejection_terms = (
+                "filetoobig",
+                "filetoolarge",
+                "filesterlalubesar",
+                "invalidfile",
+                "filetidakvalid",
+                "cantuploadthumbnail",
+                "tidakdapatmenguploadthumbnail",
+            )
+            if any(term in page_text for term in rejection_terms):
+                save_debug_artifacts(page, "thumbnail-rejected")
+                raise UploadError("YouTube menolak file thumbnail otomatis.")
+            time.sleep(0.5)
+            continue
+
         for selector in selectors:
             for frame in page.frames:
                 try:
                     locator = frame.locator(selector).first
                     if locator.count():
                         locator.set_input_files(str(thumbnail_path), timeout=30000)
-                        try:
-                            has_file = bool(locator.evaluate("input => Boolean(input.files && input.files.length)"))
-                        except Exception:
-                            has_file = True
-                        if not has_file:
-                            continue
-                        time.sleep(1.5)
-                        page_text = normalized_page_text(page)
-                        rejection_terms = (
-                            "filetoobig",
-                            "filetoolarge",
-                            "filesterlalubesar",
-                            "invalidfile",
-                            "filetidakvalid",
-                            "cantuploadthumbnail",
-                            "tidakdapatmenguploadthumbnail",
+                        upload_started = True
+                        log(
+                            f"Transfer thumbnail dimulai satu kali; menunggu konfirmasi YouTube Studio: "
+                            f"{thumbnail_path.name}."
                         )
-                        if any(term in page_text for term in rejection_terms):
-                            save_debug_artifacts(page, "thumbnail-rejected")
-                            raise UploadError("YouTube menolak file thumbnail otomatis.")
-                        log(f"THUMBNAIL_ATTACHED: {thumbnail_path.name} ({width}x{height})")
-                        return
+                        break
                 except UploadError:
                     raise
                 except Exception as exc:
                     last_error = exc
+            if upload_started:
+                break
+        if upload_started:
+            time.sleep(0.5)
+            continue
         if not clicked_upload:
             clicked_upload = deep_click(
                 page,
@@ -2058,6 +2295,13 @@ def set_thumbnail(page, thumbnail_path: Path, timeout_ms: int = 45000) -> None:
         time.sleep(0.5)
 
     page_text = normalized_page_text(page)
+    if upload_started:
+        save_debug_artifacts(page, "thumbnail-upload-timeout")
+        raise UploadError(
+            "Transfer thumbnail sudah dimulai, tetapi YouTube Studio belum mengonfirmasi selesai; "
+            "file tidak dikirim ulang agar proses tidak berkedip atau terus mengulang."
+        ) from last_error
+
     save_debug_artifacts(page, "thumbnail-input-not-found")
     if (
         "ubahthumbnaildiaplikasiseluleryoutube" in page_text

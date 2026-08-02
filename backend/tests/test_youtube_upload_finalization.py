@@ -11,8 +11,11 @@ from youtube_uploader import (
     copyright_issue_detected,
     mark_clipforge_upload_tab,
     next_upload_step_timeout_ms,
+    open_advanced_upload_settings,
     reload_after_publish,
     safe_upload_visibility,
+    set_altered_content_disclosure,
+    set_thumbnail,
     should_upload_custom_thumbnail,
     wait_for_copyright_checks,
     wait_for_final_upload_confirmation,
@@ -84,6 +87,90 @@ class BrowserPage:
         self.closed = True
 
 
+class ClickableLocator:
+    def __init__(self, page, selector):
+        self.page = page
+        self.selector = selector
+
+    @property
+    def first(self):
+        return self
+
+    def count(self):
+        return int(self.selector == "ytcp-video-metadata-editor ytcp-button#toggle-button button")
+
+    def is_visible(self, **_kwargs):
+        return bool(self.count())
+
+    def click(self, **_kwargs):
+        self.page.clicked_selectors.append(self.selector)
+
+
+class AdvancedSettingsPage:
+    def __init__(self):
+        self.clicked_selectors = []
+
+    def locator(self, selector):
+        return ClickableLocator(self, selector)
+
+
+class DisclosurePage(AdvancedSettingsPage):
+    def __init__(self, results):
+        super().__init__()
+        self.results = list(results)
+        self.scripts = []
+
+    def evaluate(self, script):
+        self.scripts.append(script)
+        return self.results.pop(0) if len(self.results) > 1 else self.results[0]
+
+
+class ThumbnailInputLocator:
+    def __init__(self, page, selector):
+        self.page = page
+        self.selector = selector
+
+    @property
+    def first(self):
+        return self
+
+    def count(self):
+        return int(self.selector == 'input[type="file"][accept*="image"]')
+
+    def set_input_files(self, path, **_kwargs):
+        self.page.set_input_calls.append(path)
+        self.page.upload_started = True
+
+
+class ThumbnailFrame:
+    def __init__(self, page):
+        self.page = page
+
+    def locator(self, selector):
+        return ThumbnailInputLocator(self.page, selector)
+
+    def evaluate(self, _script):
+        if not self.page.upload_started:
+            return {"found": True, "selected": False, "uploading": False, "error": ""}
+        if self.page.state_reads == 0:
+            self.page.state_reads += 1
+            return {"found": True, "selected": True, "uploading": True, "error": ""}
+        return {"found": True, "selected": True, "uploading": False, "error": ""}
+
+
+class ThumbnailUploadPage:
+    def __init__(self):
+        self.upload_started = False
+        self.state_reads = 0
+        self.set_input_calls = []
+        self.frames = [ThumbnailFrame(self)]
+
+    def locator(self, selector):
+        if selector == "body":
+            return TextPage("")
+        return ThumbnailInputLocator(self, selector)
+
+
 def test_required_checks_do_not_continue_after_timeout_by_default(monkeypatch):
     monkeypatch.delenv("YOUTUBE_CONTINUE_WHEN_CHECKS_STUCK", raising=False)
     monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
@@ -102,6 +189,43 @@ def test_next_step_wait_never_exceeds_total_upload_timeout(monkeypatch):
     monkeypatch.setenv("YOUTUBE_NEXT_STEP_TIMEOUT_SECONDS", "1800")
 
     assert next_upload_step_timeout_ms(600_000) == 600_000
+
+
+def test_advanced_settings_uses_current_indonesian_studio_toggle():
+    page = AdvancedSettingsPage()
+
+    assert open_advanced_upload_settings(page)
+    assert page.clicked_selectors == [
+        "ytcp-video-metadata-editor ytcp-button#toggle-button button"
+    ]
+
+
+def test_altered_content_disclosure_is_verified_after_selection(monkeypatch):
+    page = DisclosurePage(
+        [
+            {"found": True, "clicked": True, "selected": False},
+            {"found": True, "clicked": False, "selected": True},
+        ]
+    )
+    logs = []
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(youtube_uploader, "log", logs.append)
+
+    set_altered_content_disclosure(page, required=True)
+
+    assert len(page.scripts) == 2
+    assert "'ai use'" in page.scripts[0]
+    assert "'penggunaan ai'" in page.scripts[0]
+    assert any("terverifikasi" in message for message in logs)
+
+
+def test_altered_content_disclosure_is_skipped_when_not_required():
+    page = DisclosurePage([{"found": False, "clicked": False, "selected": False}])
+
+    set_altered_content_disclosure(page, required=False)
+
+    assert page.clicked_selectors == []
+    assert page.scripts == []
 
 
 def test_checks_wait_when_one_item_is_safe_but_another_is_checking(monkeypatch):
@@ -209,6 +333,21 @@ def test_custom_thumbnail_is_only_uploaded_for_long_form(tmp_path):
     assert not should_upload_custom_thumbnail(short, "auto")
     assert should_upload_custom_thumbnail(highlight, "auto")
     assert should_upload_custom_thumbnail(resume, "auto")
+
+
+def test_thumbnail_file_is_submitted_once_while_studio_finishes_transfer(monkeypatch, tmp_path):
+    thumbnail = tmp_path / "resume_cerita_thumb.jpg"
+    thumbnail.write_bytes(b"thumbnail")
+    page = ThumbnailUploadPage()
+    logs = []
+    monkeypatch.setattr(youtube_uploader, "validate_thumbnail_file", lambda _path: (1280, 720))
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(youtube_uploader, "log", logs.append)
+
+    set_thumbnail(page, thumbnail, timeout_ms=5000)
+
+    assert page.set_input_calls == [str(thumbnail)]
+    assert any(message.startswith("THUMBNAIL_ATTACHED:") for message in logs)
 
 
 def test_review_safe_text_does_not_trigger_false_issue(monkeypatch):

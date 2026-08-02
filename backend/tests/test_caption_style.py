@@ -471,7 +471,7 @@ def test_thumbnail_filter_uses_vertical_and_landscape_upload_shapes():
     assert "text='WAJIB TAHU'" in vertical
     assert "text='LIHAT PENJELASANNYA'" in vertical
     assert "scale=1280:720" in landscape
-    assert "text='HIGHLIGHT'" in landscape
+    assert "text='RESUME CERITA'" in landscape
     assert shorts_cover_frame_timestamp(60) == 0.78
     assert shorts_cover_frame_timestamp(0.12) == 0.1
 

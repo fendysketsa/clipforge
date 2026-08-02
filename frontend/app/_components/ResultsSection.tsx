@@ -81,6 +81,19 @@ function friendlyYouTubeUploadError(message: string, usesChromeDebugging: boolea
   return clean;
 }
 
+function youtubeUploadErrorNeedsSessionRepair(message: string) {
+  const lowered = message.toLowerCase();
+  return [
+    "cdp",
+    "connect_over_cdp",
+    "econnrefused",
+    "login",
+    "session",
+    "sesi youtube",
+    "remote debugging",
+  ].some((marker) => lowered.includes(marker));
+}
+
 function fypScoreTone(score: number) {
   if (score >= 88) return "excellent";
   if (score >= 78) return "strong";
@@ -349,6 +362,7 @@ export function ResultsSection({
             const uploadError = latestUpload?.status === "failed"
               ? friendlyYouTubeUploadError(rawUploadError, usesChromeDebugging)
               : "";
+            const showSessionRecovery = youtubeUploadErrorNeedsSessionRepair(rawUploadError);
             const youtubeButtonTitle = youtubeEnabled
               ? isAlreadyUploaded
                 ? `Sudah terupload ke YouTube${latestUpload.video_url ? `: ${latestUpload.video_url}` : ""}`
@@ -680,24 +694,28 @@ export function ResultsSection({
                     <div className="youtubeUploadError" title={uploadError}>
                       <strong>Upload gagal</strong>
                       <span>{uploadError}</span>
-                      <button type="button" onClick={onSetupYouTubeOneTimeLogin} disabled={isYouTubeLoginActive}>
-                        <RefreshCw size={14} />
-                        <span>{isYouTubeLoginActive ? openStudioWaitingLabel : "Login Sekali"}</span>
-                      </button>
-                      <button type="button" onClick={onCaptureYouTubeSession}>
-                        <RefreshCw size={14} />
-                        <span>{usesChromeDebugging ? "CDP Opsional" : "Sync Session Browser"}</span>
-                      </button>
-                      {usesChromeDebugging ? (
+                      {showSessionRecovery ? (
                         <>
-                          <button type="button" onClick={onImportYouTubeCdpCookies}>
-                            <Download size={14} />
-                            <span>Ambil Cookies</span>
+                          <button type="button" onClick={onSetupYouTubeOneTimeLogin} disabled={isYouTubeLoginActive}>
+                            <RefreshCw size={14} />
+                            <span>{isYouTubeLoginActive ? openStudioWaitingLabel : "Login Sekali"}</span>
                           </button>
-                          <button type="button" onClick={onEnableNoCdpMode}>
-                            <Settings2 size={14} />
-                            <span>Tanpa CDP</span>
+                          <button type="button" onClick={onCaptureYouTubeSession}>
+                            <RefreshCw size={14} />
+                            <span>{usesChromeDebugging ? "CDP Opsional" : "Sync Session Browser"}</span>
                           </button>
+                          {usesChromeDebugging ? (
+                            <>
+                              <button type="button" onClick={onImportYouTubeCdpCookies}>
+                                <Download size={14} />
+                                <span>Ambil Cookies</span>
+                              </button>
+                              <button type="button" onClick={onEnableNoCdpMode}>
+                                <Settings2 size={14} />
+                                <span>Tanpa CDP</span>
+                              </button>
+                            </>
+                          ) : null}
                         </>
                       ) : null}
                     </div>
