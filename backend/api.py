@@ -17,7 +17,7 @@ from math import ceil, exp, log10
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import quote, urlencode, unquote, urlparse
+from urllib.parse import parse_qs, quote, urlencode, unquote, urlparse
 from urllib.error import HTTPError, URLError
 import urllib.request
 
@@ -46,6 +46,12 @@ PROCESSED_SOURCE_HISTORY_PATH = Path(
     os.environ.get(
         "PROCESSED_SOURCE_HISTORY_PATH",
         BASE_DIR / "data" / "processed_source_urls.json",
+    )
+)
+SOURCE_USAGE_HISTORY_PATH = Path(
+    os.environ.get(
+        "SOURCE_USAGE_HISTORY_PATH",
+        BASE_DIR / "data" / "source_usage_history.json",
     )
 )
 YOUTUBE_PLAYWRIGHT_STATE = Path(os.environ.get("YOUTUBE_PLAYWRIGHT_STATE", BASE_DIR / "data" / "youtube_storage_state.json"))
@@ -231,6 +237,7 @@ class ClipJobRequest(BaseModel):
     required_hashtags: list[str] = Field(default_factory=list)
     require_creative_commons: bool = True
     auto_upload_youtube: bool = False
+    allow_reprocess_source: bool = False
     ai_enabled: bool = True
     ai_base_url: str = DEFAULT_AI_BASE_URL
     ai_model: str = DEFAULT_AI_MODEL
@@ -307,6 +314,47 @@ class ClipJob(BaseModel):
     clips: list[ClipFile] = []
     candidates: list[ClipCandidate] = []
     error: str | None = None
+
+
+class SourceHistoryJob(BaseModel):
+    job_id: str
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
+    created_at: str
+    source_title: str | None = None
+    clip_mode: Literal["short", "highlight_5m"]
+    clip_count: int = 0
+
+
+class SourceHistoryCheck(BaseModel):
+    input_url: str
+    normalized_url: str | None = None
+    valid_youtube_url: bool = False
+    found: bool = False
+    archived: bool = False
+    has_short_clips: bool = False
+    has_highlight_5m: bool = False
+    attempted_modes: list[Literal["short", "highlight_5m"]] = Field(default_factory=list)
+    matches: list[SourceHistoryJob] = Field(default_factory=list)
+
+
+class SourceUsageLogEntry(BaseModel):
+    job_id: str
+    source_url: str
+    source_title: str | None = None
+    source_uploader: str | None = None
+    clip_mode: Literal["short", "highlight_5m"]
+    processed_at: str
+    clip_count: int = 0
+    output_names: list[str] = Field(default_factory=list)
+    processing_duration_seconds: float | None = None
+    compilation_target_seconds: float | None = None
+    auto_upload_youtube: bool = False
+
+
+class SourceUsageLogResponse(BaseModel):
+    items: list[SourceUsageLogEntry] = Field(default_factory=list)
+    total: int = 0
+    unique_sources: int = 0
 
 
 class ClipStatusUpdate(BaseModel):
@@ -779,6 +827,7 @@ UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 JOBS_PATH.parent.mkdir(parents=True, exist_ok=True)
 YOUTUBE_UPLOADS_PATH.parent.mkdir(parents=True, exist_ok=True)
 PROCESSED_SOURCE_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+SOURCE_USAGE_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
 YOUTUBE_PLAYWRIGHT_STATE.parent.mkdir(parents=True, exist_ok=True)
 app.mount("/outputs", StaticFiles(directory=OUTPUTS_DIR), name="outputs")
 
@@ -889,6 +938,20 @@ def load_processed_source_history() -> set[str]:
     if not isinstance(payload, list):
         return set()
     return {str(item).strip() for item in payload if isinstance(item, str) and item.strip()}
+
+
+def load_source_usage_history() -> dict[str, dict[str, Any]]:
+    try:
+        payload = json.loads(SOURCE_USAGE_HISTORY_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        str(url): record
+        for url, record in payload.items()
+        if isinstance(url, str) and isinstance(record, dict)
+    }
 
 
 def save_jobs_unlocked() -> None:
@@ -1260,6 +1323,7 @@ def cleanup_job_files(job: "ClipJob") -> int:
 
 jobs: dict[str, ClipJob] = load_jobs()
 processed_source_history: set[str] = load_processed_source_history()
+source_usage_history: dict[str, dict[str, Any]] = load_source_usage_history()
 processed_source_history.update(
     str(value)
     for job in jobs.values()
@@ -1270,6 +1334,7 @@ processed_source_history.update(
 youtube_uploads: dict[str, YouTubeUploadJob] = load_youtube_uploads()
 jobs_lock = threading.Lock()
 processed_source_history_lock = threading.Lock()
+source_usage_history_lock = threading.Lock()
 youtube_uploads_lock = threading.Lock()
 youtube_upload_creation_lock = threading.Lock()
 job_secrets: dict[str, str] = {}
@@ -1716,16 +1781,26 @@ def normalize_youtube_video_url(value: str) -> str | None:
     elif clean.startswith("youtu.be/"):
         clean = f"https://{clean}"
 
-    match = re.search(
-        r"(?:https?://)?(?:www\.)?youtube\.com/(?:watch\?v=|shorts/)([A-Za-z0-9_-]{6,})",
-        clean,
-        re.I,
-    )
-    if match:
-        return f"https://www.youtube.com/watch?v={match.group(1)}"
-    match = re.search(r"(?:https?://)?youtu\.be/([A-Za-z0-9_-]{6,})", clean, re.I)
-    if match:
-        return f"https://www.youtube.com/watch?v={match.group(1)}"
+    parsed = urlparse(clean)
+    host = parsed.netloc.casefold().split(":", 1)[0]
+    video_id = ""
+    if host in {"youtu.be", "www.youtu.be"}:
+        video_id = parsed.path.strip("/").split("/", 1)[0]
+    elif host in {
+        "youtube.com",
+        "www.youtube.com",
+        "m.youtube.com",
+        "music.youtube.com",
+        "youtube-nocookie.com",
+        "www.youtube-nocookie.com",
+    }:
+        path_parts = [part for part in parsed.path.split("/") if part]
+        if parsed.path.rstrip("/") == "/watch":
+            video_id = (parse_qs(parsed.query).get("v") or [""])[0]
+        elif len(path_parts) >= 2 and path_parts[0].casefold() in {"shorts", "live", "embed"}:
+            video_id = path_parts[1]
+    if re.fullmatch(r"[A-Za-z0-9_-]{6,}", video_id):
+        return f"https://www.youtube.com/watch?v={video_id}"
     return None
 
 
@@ -4430,7 +4505,23 @@ def run_job(job_id: str) -> None:
             if preview_job.source_uploader:
                 updates["source_uploader"] = preview_job.source_uploader
             set_job(job_id, **updates)
-            remember_processed_source(preview_job.source_url or request.url)
+            remember_processed_source(
+                preview_job.source_url or request.url,
+                clip_mode=request.clip_mode,
+                job_id=job_id,
+                source_title=preview_job.source_title,
+                source_uploader=preview_job.source_uploader,
+                clip_count=len(clips),
+                output_names=[clip.name for clip in clips],
+                processing_duration_seconds=elapsed_seconds(started_perf),
+                compilation_target_seconds=(
+                    request.compilation_target_seconds
+                    if request.clip_mode == "highlight_5m"
+                    else None
+                ),
+                auto_upload_youtube=request.auto_upload_youtube,
+                processed_at=str(updates["finished_at"]),
+            )
             if request.auto_upload_youtube:
                 auto_queue_youtube_uploads_for_job(job_id, logs)
         else:
@@ -4858,26 +4949,284 @@ def search_auto_viral_sources(
     return candidates
 
 
-def remember_processed_source(value: str) -> None:
+def remember_source_usage(
+    value: str,
+    *,
+    clip_mode: str,
+    job_id: str,
+    source_title: str | None = None,
+    source_uploader: str | None = None,
+    clip_count: int = 0,
+    output_names: list[str] | None = None,
+    processing_duration_seconds: float | None = None,
+    compilation_target_seconds: float | None = None,
+    auto_upload_youtube: bool = False,
+    processed_at: str | None = None,
+) -> None:
     normalized = normalize_youtube_video_url(value)
-    if not normalized:
+    if not normalized or clip_mode not in {"short", "highlight_5m"}:
         return
-    with processed_source_history_lock:
-        if normalized in processed_source_history:
-            return
-        processed_source_history.add(normalized)
-        payload = sorted(processed_source_history)[-5000:]
-        processed_source_history.clear()
-        processed_source_history.update(payload)
+    with source_usage_history_lock:
+        previous = source_usage_history.get(normalized, {})
+        modes = {
+            str(item)
+            for item in previous.get("modes", [])
+            if str(item) in {"short", "highlight_5m"}
+        }
+        modes.add(clip_mode)
+        job_ids = [
+            str(item)
+            for item in previous.get("job_ids", [])
+            if isinstance(item, str) and item and item != job_id
+        ][-19:]
+        job_ids.append(job_id)
+        event_processed_at = processed_at or now_iso()
+        events = [
+            item
+            for item in previous.get("events", [])
+            if isinstance(item, dict) and str(item.get("job_id") or "") != job_id
+        ][-49:]
+        events.append(
+            {
+                "job_id": job_id,
+                "source_url": normalized,
+                "source_title": source_title or previous.get("source_title"),
+                "source_uploader": source_uploader,
+                "clip_mode": clip_mode,
+                "processed_at": event_processed_at,
+                "clip_count": max(0, int(clip_count)),
+                "output_names": [str(name) for name in (output_names or []) if str(name).strip()][:30],
+                "processing_duration_seconds": processing_duration_seconds,
+                "compilation_target_seconds": compilation_target_seconds,
+                "auto_upload_youtube": bool(auto_upload_youtube),
+            }
+        )
+        source_usage_history[normalized] = {
+            "modes": sorted(modes),
+            "job_ids": job_ids,
+            "source_title": source_title or previous.get("source_title"),
+            "last_processed_at": event_processed_at,
+            "events": events,
+        }
+        payload = dict(sorted(source_usage_history.items())[-5000:])
+        source_usage_history.clear()
+        source_usage_history.update(payload)
         try:
-            temp_path = PROCESSED_SOURCE_HISTORY_PATH.with_suffix(".json.tmp")
+            temp_path = SOURCE_USAGE_HISTORY_PATH.with_suffix(".json.tmp")
             temp_path.write_text(
                 json.dumps(payload, indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
-            temp_path.replace(PROCESSED_SOURCE_HISTORY_PATH)
+            temp_path.replace(SOURCE_USAGE_HISTORY_PATH)
         except OSError as exc:
-            print(f"Gagal menyimpan riwayat sumber clipping: {exc}", flush=True)
+            print(f"Gagal menyimpan detail riwayat sumber clipping: {exc}", flush=True)
+
+
+def remember_processed_source(
+    value: str,
+    *,
+    clip_mode: str = "",
+    job_id: str = "",
+    source_title: str | None = None,
+    source_uploader: str | None = None,
+    clip_count: int = 0,
+    output_names: list[str] | None = None,
+    processing_duration_seconds: float | None = None,
+    compilation_target_seconds: float | None = None,
+    auto_upload_youtube: bool = False,
+    processed_at: str | None = None,
+) -> None:
+    normalized = normalize_youtube_video_url(value)
+    if not normalized:
+        return
+    with processed_source_history_lock:
+        if normalized not in processed_source_history:
+            processed_source_history.add(normalized)
+            payload = sorted(processed_source_history)[-5000:]
+            processed_source_history.clear()
+            processed_source_history.update(payload)
+            try:
+                temp_path = PROCESSED_SOURCE_HISTORY_PATH.with_suffix(".json.tmp")
+                temp_path.write_text(
+                    json.dumps(payload, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                temp_path.replace(PROCESSED_SOURCE_HISTORY_PATH)
+            except OSError as exc:
+                print(f"Gagal menyimpan riwayat sumber clipping: {exc}", flush=True)
+    if clip_mode and job_id:
+        remember_source_usage(
+            normalized,
+            clip_mode=clip_mode,
+            job_id=job_id,
+            source_title=source_title,
+            source_uploader=source_uploader,
+            clip_count=clip_count,
+            output_names=output_names,
+            processing_duration_seconds=processing_duration_seconds,
+            compilation_target_seconds=compilation_target_seconds,
+            auto_upload_youtube=auto_upload_youtube,
+            processed_at=processed_at,
+        )
+
+
+def backfill_source_usage_from_completed_jobs() -> None:
+    with source_usage_history_lock:
+        recorded_job_ids = {
+            str(event.get("job_id") or "")
+            for record in source_usage_history.values()
+            for event in record.get("events", [])
+            if isinstance(event, dict)
+        }
+    with jobs_lock:
+        completed_jobs = [job for job in jobs.values() if job.status == "completed"]
+
+    for raw_job in completed_jobs:
+        if raw_job.id in recorded_job_ids:
+            continue
+        job = enrich_job_for_display(raw_job)
+        source_url = job.source_url or job.request.url
+        if not normalize_youtube_video_url(source_url):
+            continue
+        remember_source_usage(
+            source_url,
+            clip_mode=job.request.clip_mode,
+            job_id=job.id,
+            source_title=job.source_title,
+            source_uploader=job.source_uploader,
+            clip_count=len(job.clips),
+            output_names=[clip.name for clip in job.clips],
+            processing_duration_seconds=job.duration_seconds,
+            compilation_target_seconds=(
+                job.request.compilation_target_seconds
+                if job.request.clip_mode == "highlight_5m"
+                else None
+            ),
+            auto_upload_youtube=job.request.auto_upload_youtube,
+            processed_at=job.finished_at or job.updated_at,
+        )
+
+
+def list_source_usage_log() -> SourceUsageLogResponse:
+    backfill_source_usage_from_completed_jobs()
+    with source_usage_history_lock:
+        snapshot = {
+            source_url: dict(record)
+            for source_url, record in source_usage_history.items()
+        }
+
+    entries: list[SourceUsageLogEntry] = []
+    for source_url, record in snapshot.items():
+        raw_events = record.get("events", [])
+        if isinstance(raw_events, list) and raw_events:
+            for event in raw_events:
+                if not isinstance(event, dict):
+                    continue
+                try:
+                    entries.append(SourceUsageLogEntry(**event))
+                except (TypeError, ValueError):
+                    continue
+            continue
+
+        # Backward-compatible entry for records written before per-run audit events existed.
+        modes = [
+            str(item)
+            for item in record.get("modes", [])
+            if str(item) in {"short", "highlight_5m"}
+        ]
+        processed_at = str(record.get("last_processed_at") or "")
+        job_ids = [str(item) for item in record.get("job_ids", []) if str(item)]
+        if not processed_at:
+            continue
+        for index, mode in enumerate(modes):
+            entries.append(
+                SourceUsageLogEntry(
+                    job_id=job_ids[-1] if job_ids else f"legacy-{index}-{source_url.rsplit('=', 1)[-1]}",
+                    source_url=source_url,
+                    source_title=str(record.get("source_title") or "").strip() or None,
+                    clip_mode=mode,
+                    processed_at=processed_at,
+                )
+            )
+
+    entries.sort(key=lambda item: item.processed_at, reverse=True)
+    return SourceUsageLogResponse(
+        items=entries,
+        total=len(entries),
+        unique_sources=len({item.source_url for item in entries}),
+    )
+
+
+def source_history_for_url(value: str) -> SourceHistoryCheck:
+    normalized = normalize_youtube_video_url(value)
+    if not normalized:
+        return SourceHistoryCheck(input_url=value)
+
+    with processed_source_history_lock:
+        archived_urls = {
+            candidate
+            for item in processed_source_history
+            if (candidate := normalize_youtube_video_url(item))
+        }
+    with source_usage_history_lock:
+        archived_record = dict(source_usage_history.get(normalized, {}))
+    with jobs_lock:
+        job_snapshot = list(jobs.values())
+
+    matching_jobs: list[ClipJob] = []
+    for job in job_snapshot:
+        source_urls = {
+            candidate
+            for item in (job.request.url, job.source_url)
+            if (candidate := normalize_youtube_video_url(str(item or "")))
+        }
+        if normalized in source_urls:
+            matching_jobs.append(enrich_job_for_display(job))
+
+    matching_jobs.sort(key=lambda item: item.created_at, reverse=True)
+    matches = [
+        SourceHistoryJob(
+            job_id=job.id,
+            status=job.status,
+            created_at=job.created_at,
+            source_title=job.source_title,
+            clip_mode=job.request.clip_mode,
+            clip_count=len(job.clips),
+        )
+        for job in matching_jobs[:12]
+    ]
+    archived_modes = {
+        str(item)
+        for item in archived_record.get("modes", [])
+        if str(item) in {"short", "highlight_5m"}
+    }
+    attempted_modes = archived_modes | {job.request.clip_mode for job in matching_jobs}
+
+    def job_has_mode(job: ClipJob, mode: str) -> bool:
+        long_form_outputs = any(
+            clip.name.casefold().startswith(("highlight_5menit_", "resume_cerita_"))
+            for clip in job.clips
+        )
+        if mode == "highlight_5m":
+            return long_form_outputs or (job.status == "completed" and job.request.clip_mode == mode)
+        return (bool(job.clips) and not long_form_outputs) or (
+            job.status == "completed" and job.request.clip_mode == mode
+        )
+
+    archived = normalized in archived_urls or bool(archived_record)
+    return SourceHistoryCheck(
+        input_url=value,
+        normalized_url=normalized,
+        valid_youtube_url=True,
+        found=archived or bool(matches),
+        archived=archived,
+        has_short_clips="short" in archived_modes
+        or any(job_has_mode(job, "short") for job in matching_jobs),
+        has_highlight_5m="highlight_5m" in archived_modes
+        or any(job_has_mode(job, "highlight_5m") for job in matching_jobs),
+        attempted_modes=sorted(attempted_modes),
+        matches=matches,
+    )
 
 
 def processed_job_source_urls() -> set[str]:
@@ -6149,6 +6498,16 @@ def probe_url(url: str) -> dict[str, float | None]:
     return {"duration": fetch_video_duration(url)}
 
 
+@app.get("/api/source-history", response_model=SourceHistoryCheck)
+def check_source_history(url: str) -> SourceHistoryCheck:
+    return source_history_for_url(url)
+
+
+@app.get("/api/source-usage-log", response_model=SourceUsageLogResponse)
+def get_source_usage_log() -> SourceUsageLogResponse:
+    return list_source_usage_log()
+
+
 @app.post("/api/jobs", response_model=ClipJob)
 def create_job(request: ClipJobRequest) -> ClipJob:
     if request.max_duration <= request.min_duration:
@@ -6175,6 +6534,21 @@ def create_job(request: ClipJobRequest) -> ClipJob:
             raise HTTPException(status_code=400, detail="Uploaded video not found; upload it again")
         request = request.model_copy(update={"source_file": str(upload_path)})
     elif request.url:
+        source_history = source_history_for_url(request.url)
+        if source_history.found and not request.allow_reprocess_source:
+            detected_formats: list[str] = []
+            if source_history.has_short_clips or "short" in source_history.attempted_modes:
+                detected_formats.append("clip pendek")
+            if source_history.has_highlight_5m or "highlight_5m" in source_history.attempted_modes:
+                detected_formats.append("Highlight/Resume 5–10 menit")
+            format_copy = ", ".join(detected_formats) or "arsip proses lama"
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Sumber YouTube ini sudah pernah diproses ({format_copy}). "
+                    "Periksa peringatan riwayat dan centang persetujuan jika memang ingin memproses ulang."
+                ),
+            )
         request = request.model_copy(update={"require_creative_commons": True})
 
     request = normalize_job_request(request)

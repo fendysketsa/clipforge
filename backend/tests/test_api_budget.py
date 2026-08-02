@@ -16,10 +16,13 @@ from api import (
     default_viral_video_search_queries,
     is_creative_commons_info,
     is_fresh_viral_upload,
+    list_source_usage_log,
     max_clips_for_duration,
     normalize_job_request,
+    normalize_youtube_video_url,
     processed_job_source_urls,
     safe_youtube_visibility,
+    source_history_for_url,
     unresolved_codex_ideas,
     youtube_cdp_start_needed,
     youtube_upload_staging_filter,
@@ -228,6 +231,169 @@ def test_processed_job_sources_are_always_excluded(monkeypatch):
         "https://www.youtube.com/watch?v=secondID6789",
         "https://www.youtube.com/watch?v=permanent77",
     }
+
+
+def test_youtube_source_normalizer_accepts_mobile_live_and_query_variants():
+    expected = "https://www.youtube.com/watch?v=abcDEF12345"
+
+    assert normalize_youtube_video_url(
+        "https://m.youtube.com/watch?si=share123&v=abcDEF12345&t=30"
+    ) == expected
+    assert normalize_youtube_video_url("https://www.youtube.com/live/abcDEF12345") == expected
+    assert normalize_youtube_video_url("https://youtu.be/abcDEF12345?si=share123") == expected
+
+
+def test_source_history_reports_short_and_highlight_usage(monkeypatch):
+    import api
+
+    source = "https://www.youtube.com/watch?v=abcDEF12345"
+    short_job = ClipJob(
+        id="short-job",
+        status="completed",
+        request=ClipJobRequest(url=source, clip_mode="short"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[ClipFile(name="clip_01.mp4", url="/outputs/demo/clip_01.mp4", size_bytes=10)],
+    )
+    highlight_job = ClipJob(
+        id="highlight-job",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/abcDEF12345", clip_mode="highlight_5m"),
+        created_at="2026-01-02T00:00:00+00:00",
+        updated_at="2026-01-02T00:00:00+00:00",
+        clips=[
+            ClipFile(
+                name="resume_cerita_5menit_inti.mp4",
+                url="/outputs/demo/resume_cerita_5menit_inti.mp4",
+                size_bytes=10,
+            )
+        ],
+    )
+    monkeypatch.setattr(api, "jobs", {short_job.id: short_job, highlight_job.id: highlight_job})
+    monkeypatch.setattr(api, "processed_source_history", {source})
+    monkeypatch.setattr(api, "source_usage_history", {})
+
+    result = source_history_for_url("https://m.youtube.com/watch?v=abcDEF12345&t=20")
+
+    assert result.found
+    assert result.archived
+    assert result.has_short_clips
+    assert result.has_highlight_5m
+    assert result.attempted_modes == ["highlight_5m", "short"]
+    assert [match.job_id for match in result.matches] == ["highlight-job", "short-job"]
+
+
+def test_create_job_requires_explicit_approval_for_processed_source(monkeypatch):
+    import api
+    import pytest
+    from fastapi import HTTPException
+
+    source = "https://www.youtube.com/watch?v=abcDEF12345"
+    completed = ClipJob(
+        id="completed-source",
+        status="completed",
+        request=ClipJobRequest(url=source),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    monkeypatch.setattr(api, "jobs", {completed.id: completed})
+    monkeypatch.setattr(api, "processed_source_history", {source})
+    monkeypatch.setattr(api, "source_usage_history", {})
+
+    with pytest.raises(HTTPException) as error:
+        api.create_job(ClipJobRequest(url="https://youtu.be/abcDEF12345"))
+
+    assert error.value.status_code == 409
+    assert "pernah diproses" in str(error.value.detail)
+
+
+def test_source_usage_log_only_lists_success_records(monkeypatch):
+    import api
+
+    source = "https://www.youtube.com/watch?v=abcDEF12345"
+    monkeypatch.setattr(api, "jobs", {})
+    monkeypatch.setattr(
+        api,
+        "source_usage_history",
+        {
+            source: {
+                "modes": ["short", "highlight_5m"],
+                "events": [
+                    {
+                        "job_id": "job-success-short",
+                        "source_url": source,
+                        "source_title": "Ceramah contoh",
+                        "source_uploader": "Channel Contoh",
+                        "clip_mode": "short",
+                        "processed_at": "2026-08-02T10:00:00+00:00",
+                        "clip_count": 3,
+                        "output_names": ["clip_01.mp4", "clip_02.mp4", "clip_03.mp4"],
+                        "processing_duration_seconds": 125.5,
+                        "compilation_target_seconds": None,
+                        "auto_upload_youtube": True,
+                    },
+                    {
+                        "job_id": "job-success-highlight",
+                        "source_url": source,
+                        "source_title": "Ceramah contoh",
+                        "source_uploader": "Channel Contoh",
+                        "clip_mode": "highlight_5m",
+                        "processed_at": "2026-08-03T10:00:00+00:00",
+                        "clip_count": 1,
+                        "output_names": ["resume_cerita_5menit_inti.mp4"],
+                        "processing_duration_seconds": 245.0,
+                        "compilation_target_seconds": 300,
+                        "auto_upload_youtube": False,
+                    },
+                ],
+            }
+        },
+    )
+
+    result = list_source_usage_log()
+
+    assert result.total == 2
+    assert result.unique_sources == 1
+    assert [item.job_id for item in result.items] == [
+        "job-success-highlight",
+        "job-success-short",
+    ]
+    assert result.items[0].output_names == ["resume_cerita_5menit_inti.mp4"]
+
+
+def test_source_usage_log_backfills_completed_jobs_but_not_failed_jobs(monkeypatch, tmp_path):
+    import api
+
+    completed = ClipJob(
+        id="completed-log-job",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/abcDEF12345", clip_mode="short"),
+        created_at="2026-08-01T10:00:00+00:00",
+        updated_at="2026-08-01T10:05:00+00:00",
+        finished_at="2026-08-01T10:05:00+00:00",
+        duration_seconds=300,
+        source_title="Sumber berhasil",
+        clips=[ClipFile(name="clip_01.mp4", url="/outputs/demo/clip_01.mp4", size_bytes=10)],
+    )
+    failed = ClipJob(
+        id="failed-log-job",
+        status="failed",
+        request=ClipJobRequest(url="https://youtu.be/failed12345", clip_mode="highlight_5m"),
+        created_at="2026-08-02T10:00:00+00:00",
+        updated_at="2026-08-02T10:01:00+00:00",
+        finished_at="2026-08-02T10:01:00+00:00",
+        error="render failed",
+    )
+    monkeypatch.setattr(api, "jobs", {completed.id: completed, failed.id: failed})
+    monkeypatch.setattr(api, "source_usage_history", {})
+    monkeypatch.setattr(api, "SOURCE_USAGE_HISTORY_PATH", tmp_path / "source_usage_history.json")
+
+    result = list_source_usage_log()
+
+    assert result.total == 1
+    assert result.items[0].job_id == completed.id
+    assert result.items[0].processed_at == completed.finished_at
+    assert all(item.job_id != failed.id for item in result.items)
 
 
 def test_viral_score_prefers_faster_recent_growth():

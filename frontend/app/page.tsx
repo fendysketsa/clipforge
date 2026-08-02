@@ -6,6 +6,7 @@ import {
   autoLoginYouTubeCdp,
   cancelJob,
   captureYouTubeBrowserSession,
+  checkSourceHistory,
   createJob,
   createYouTubeUpload,
   createYouTubeUploadBatch,
@@ -68,6 +69,7 @@ import type {
   ClipJob,
   CropMode,
   SourceMode,
+  SourceHistoryCheck,
   VideoQuality,
   VisualMode,
   YouTubeConfig,
@@ -97,6 +99,9 @@ export default function HomePage() {
   const [maxDuration, setMaxDuration] = useState(DEFAULT_MAX_DURATION);
   const [targetClips, setTargetClips] = useState(0);
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
+  const [sourceHistory, setSourceHistory] = useState<SourceHistoryCheck | null>(null);
+  const [isCheckingSourceHistory, setIsCheckingSourceHistory] = useState(false);
+  const [allowReprocessSource, setAllowReprocessSource] = useState(false);
   const [videoQuality, setVideoQuality] = useState<VideoQuality>(DEFAULT_VIDEO_QUALITY);
   const [visualMode, setVisualMode] = useState<VisualMode>("animated_3d");
   const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>("auto_clean");
@@ -186,16 +191,38 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (sourceMode !== "url") return;
+    if (sourceMode !== "url") {
+      setSourceHistory(null);
+      setIsCheckingSourceHistory(false);
+      setAllowReprocessSource(false);
+      return;
+    }
     const trimmed = url.trim();
     if (!trimmed) {
       setVideoDuration(null);
+      setSourceHistory(null);
+      setIsCheckingSourceHistory(false);
+      setAllowReprocessSource(false);
       return;
     }
     let cancelled = false;
-    const timer = window.setTimeout(async () => {
-      const duration = await probeUrlDuration(trimmed).catch(() => null);
-      if (!cancelled) setVideoDuration(duration);
+    setIsCheckingSourceHistory(true);
+    const timer = window.setTimeout(() => {
+      checkSourceHistory(trimmed)
+        .then((history) => {
+          if (!cancelled) setSourceHistory(history);
+        })
+        .catch(() => {
+          if (!cancelled) setSourceHistory(null);
+        })
+        .finally(() => {
+          if (!cancelled) setIsCheckingSourceHistory(false);
+        });
+      probeUrlDuration(trimmed).then((duration) => {
+        if (!cancelled) setVideoDuration(duration);
+      }).catch(() => {
+        if (!cancelled) setVideoDuration(null);
+      });
     }, 700);
     return () => {
       cancelled = true;
@@ -593,6 +620,7 @@ export default function HomePage() {
             .filter(Boolean),
           require_creative_commons: requireCreativeCommons,
           auto_upload_youtube: autoUploadYoutube,
+          allow_reprocess_source: sourceMode === "url" && allowReprocessSource,
           ai_enabled: aiEnabled,
           ai_base_url: aiBaseUrl.trim(),
           ai_model: aiModel.trim(),
@@ -620,6 +648,7 @@ export default function HomePage() {
     aiEnabled,
     aiModel,
     activeJob,
+    allowReprocessSource,
     autoUploadYoutube,
     burnSubtitles,
     backgroundMode,
@@ -1210,7 +1239,16 @@ export default function HomePage() {
           onAiApiKeyChange={setAiApiKey}
           onStartAutoViral={handleStartAutoViral}
           onStartJob={handleStartJob}
-          onUrlChange={setUrl}
+          onUrlChange={(value) => {
+            setUrl(value);
+            setSourceHistory(null);
+            setIsCheckingSourceHistory(Boolean(value.trim()));
+            setAllowReprocessSource(false);
+          }}
+          sourceHistory={sourceHistory}
+          isCheckingSourceHistory={isCheckingSourceHistory}
+          allowReprocessSource={allowReprocessSource}
+          onAllowReprocessSourceChange={setAllowReprocessSource}
           autoViralMessage={autoViralRun?.message ?? ""}
           url={url}
         />

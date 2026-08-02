@@ -3,6 +3,8 @@ import type {
   AutoViralRun,
   ClipJob,
   CreateClipJobInput,
+  SourceHistoryCheck,
+  SourceUsageLogResponse,
   YouTubeConfig,
   YouTubeCdpRepairStatus,
   YouTubeCdpRefreshStatus,
@@ -88,6 +90,25 @@ export const probeUrlDuration = async (url: string) => {
   }
   const data = (await response.json()) as { duration: number | null };
   return data.duration;
+};
+
+export const checkSourceHistory = async (url: string) => {
+  const response = await fetch(
+    `${CLIENT_API_BASE}/api/source-history?url=${encodeURIComponent(url)}`,
+    { cache: "no-store" },
+  );
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Gagal memeriksa riwayat sumber"));
+  }
+  return (await response.json()) as SourceHistoryCheck;
+};
+
+export const getSourceUsageLog = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/source-usage-log`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Gagal memuat log penggunaan sumber"));
+  }
+  return (await response.json()) as SourceUsageLogResponse;
 };
 
 export const getJobs = async () => {

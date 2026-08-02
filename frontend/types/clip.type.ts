@@ -103,6 +103,7 @@ export type ClipJob = {
     caption_outline_color: string;
     require_creative_commons: boolean;
     auto_upload_youtube: boolean;
+    allow_reprocess_source?: boolean;
     ai_enabled: boolean;
     ai_base_url: string;
     ai_model: string;
@@ -137,10 +138,52 @@ export type CreateClipJobInput = {
   required_hashtags?: string[];
   require_creative_commons?: boolean;
   auto_upload_youtube?: boolean;
+  allow_reprocess_source?: boolean;
   ai_enabled?: boolean;
   ai_base_url?: string;
   ai_model?: string;
   ai_api_key?: string;
+};
+
+export type SourceHistoryJob = {
+  job_id: string;
+  status: JobStatus;
+  created_at: string;
+  source_title?: string | null;
+  clip_mode: ClipMode;
+  clip_count: number;
+};
+
+export type SourceHistoryCheck = {
+  input_url: string;
+  normalized_url?: string | null;
+  valid_youtube_url: boolean;
+  found: boolean;
+  archived: boolean;
+  has_short_clips: boolean;
+  has_highlight_5m: boolean;
+  attempted_modes: ClipMode[];
+  matches: SourceHistoryJob[];
+};
+
+export type SourceUsageLogEntry = {
+  job_id: string;
+  source_url: string;
+  source_title?: string | null;
+  source_uploader?: string | null;
+  clip_mode: ClipMode;
+  processed_at: string;
+  clip_count: number;
+  output_names: string[];
+  processing_duration_seconds?: number | null;
+  compilation_target_seconds?: number | null;
+  auto_upload_youtube: boolean;
+};
+
+export type SourceUsageLogResponse = {
+  items: SourceUsageLogEntry[];
+  total: number;
+  unique_sources: number;
 };
 
 export type YouTubeConfig = {

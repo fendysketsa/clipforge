@@ -1,11 +1,13 @@
-import { Clock3, Film, RefreshCw, Scissors } from "lucide-react";
+import { Clock3, Film, ListChecks, RefreshCw, Scissors } from "lucide-react";
+import Link from "next/link";
 
 type TopbarProps = {
   isRefreshing?: boolean;
-  onRefresh: () => void;
+  onRefresh?: () => void;
+  activePage?: "workspace" | "source-log";
 };
 
-export function Topbar({ isRefreshing = false, onRefresh }: TopbarProps) {
+export function Topbar({ isRefreshing = false, onRefresh, activePage = "workspace" }: TopbarProps) {
   return (
     <header className="topbar">
       <div className="topbar-brand">
@@ -22,18 +24,22 @@ export function Topbar({ isRefreshing = false, onRefresh }: TopbarProps) {
       </div>
 
       <nav className="topbarNav" aria-label="Navigasi halaman">
-        <a href="#workspace">
+        <Link className={activePage === "workspace" ? "active" : ""} href="/#workspace">
           <Scissors size={15} />
           Buat klip
-        </a>
-        <a href="#results">
+        </Link>
+        <Link href="/#results">
           <Film size={15} />
           Hasil
-        </a>
-        <a href="#history">
+        </Link>
+        <Link href="/#history">
           <Clock3 size={15} />
           Riwayat
-        </a>
+        </Link>
+        <Link className={activePage === "source-log" ? "active" : ""} href="/source-history">
+          <ListChecks size={15} />
+          Log sumber
+        </Link>
       </nav>
 
       <div className="topbarActions">
@@ -41,16 +47,18 @@ export function Topbar({ isRefreshing = false, onRefresh }: TopbarProps) {
           <i aria-hidden="true" />
           Local workspace
         </span>
-        <button
-          className="syncDataButton"
-          type="button"
-          onClick={onRefresh}
-          disabled={isRefreshing}
-          title="Sinkronkan ulang status job, riwayat proses, dan daftar klip dari backend. Ini bukan refresh browser."
-        >
-          <RefreshCw className={isRefreshing ? "spin" : ""} size={16} />
-          <span>{isRefreshing ? "Sinkron..." : "Sinkronkan"}</span>
-        </button>
+        {onRefresh ? (
+          <button
+            className="syncDataButton"
+            type="button"
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            title="Sinkronkan ulang data terbaru dari backend. Ini bukan refresh browser."
+          >
+            <RefreshCw className={isRefreshing ? "spin" : ""} size={16} />
+            <span>{isRefreshing ? "Sinkron..." : "Sinkronkan"}</span>
+          </button>
+        ) : null}
       </div>
     </header>
   );

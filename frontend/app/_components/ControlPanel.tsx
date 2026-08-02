@@ -1,4 +1,4 @@
-import { Link2, Loader2, Play, RefreshCw, Scissors, ShieldCheck, Sparkles, Type, Upload, UploadCloud } from "lucide-react";
+import { AlertTriangle, CheckCircle2, History, Link2, Loader2, Play, RefreshCw, Scissors, ShieldCheck, Sparkles, Type, Upload, UploadCloud } from "lucide-react";
 import type { LocalLlmProvider } from "../../lib/apiClient";
 import {
   CAPTION_FONT_SIZE_MAX,
@@ -15,6 +15,7 @@ import type {
   ClipMode,
   CropMode,
   SourceMode,
+  SourceHistoryCheck,
   VideoQuality,
   VisualMode,
 } from "../../types/clip.type";
@@ -99,6 +100,10 @@ type ControlPanelProps = {
   onStartAutoViral: () => void;
   onStartJob: () => void;
   onUrlChange: (value: string) => void;
+  sourceHistory: SourceHistoryCheck | null;
+  isCheckingSourceHistory: boolean;
+  allowReprocessSource: boolean;
+  onAllowReprocessSourceChange: (value: boolean) => void;
   autoViralMessage: string;
   url: string;
 };
@@ -174,11 +179,27 @@ export function ControlPanel({
   onStartAutoViral,
   onStartJob,
   onUrlChange,
+  sourceHistory,
+  isCheckingSourceHistory,
+  allowReprocessSource,
+  onAllowReprocessSourceChange,
   autoViralMessage,
   url,
 }: ControlPanelProps) {
   const hasSource = sourceMode === "url" ? Boolean(url.trim()) : Boolean(uploadFileName);
-  const isStartDisabled = isSubmitting || isBusy || isUploading || !hasSource;
+  const duplicateApprovalRequired = sourceMode === "url" && Boolean(sourceHistory?.found) && !allowReprocessSource;
+  const sourceCheckPending = sourceMode === "url" && Boolean(url.trim()) && isCheckingSourceHistory;
+  const invalidCheckedSource = sourceMode === "url"
+    && Boolean(url.trim())
+    && Boolean(sourceHistory)
+    && !sourceHistory?.valid_youtube_url;
+  const isStartDisabled = isSubmitting
+    || isBusy
+    || isUploading
+    || !hasSource
+    || sourceCheckPending
+    || invalidCheckedSource
+    || duplicateApprovalRequired;
   const isProcessing = isSubmitting || isBusy;
   const localNoKeyBaseUrls = new Set<string>(
     LOCAL_LLM_PRESETS.filter((preset) => preset.label !== "Custom").map((preset) => preset.baseUrl),
@@ -227,15 +248,77 @@ export function ControlPanel({
         </div>
 
         {sourceMode === "url" ? (
-          <label className="field wide">
-            <span>Link Video YouTube</span>
-            <input
-              value={url}
-              onChange={(event) => onUrlChange(event.target.value)}
-              placeholder="https://www.youtube.com/watch?v=..."
-            />
-            <p className="field-help">Pastikan video memiliki percakapan yang jelas untuk hasil transkripsi terbaik.</p>
-          </label>
+          <>
+            <label className="field wide">
+              <span>Link Video YouTube</span>
+              <input
+                value={url}
+                onChange={(event) => onUrlChange(event.target.value)}
+                placeholder="https://www.youtube.com/watch?v=..."
+              />
+              <p className="field-help">Pastikan video memiliki percakapan yang jelas untuk hasil transkripsi terbaik.</p>
+            </label>
+            {url.trim() && isCheckingSourceHistory ? (
+              <div className="sourceHistoryNotice isChecking" role="status">
+                <Loader2 className="spin" size={18} />
+                <div>
+                  <strong>Memeriksa jejak sumber…</strong>
+                  <span>Mencocokkan ID video dengan seluruh job dan arsip ClipForge.</span>
+                </div>
+              </div>
+            ) : sourceHistory?.valid_youtube_url && sourceHistory.found ? (
+              <div className="sourceHistoryNotice isDuplicate" role="alert">
+                <AlertTriangle size={20} />
+                <div className="sourceHistoryCopy">
+                  <strong>Video ini sudah pernah masuk ClipForge</strong>
+                  <span>
+                    Sistem menemukan jejak pemrosesan sebelumnya. Periksa formatnya agar tidak membuat hasil ganda tanpa sengaja.
+                  </span>
+                  <div className="sourceHistoryBadges">
+                    {sourceHistory.has_short_clips || sourceHistory.attempted_modes.includes("short") ? (
+                      <span>Clip pendek</span>
+                    ) : null}
+                    {sourceHistory.has_highlight_5m || sourceHistory.attempted_modes.includes("highlight_5m") ? (
+                      <span>Highlight / Resume 5–10 menit</span>
+                    ) : null}
+                    {sourceHistory.archived && !sourceHistory.attempted_modes.length ? <span>Arsip lama</span> : null}
+                  </div>
+                  {sourceHistory.matches[0] ? (
+                    <small>
+                      <History size={13} />
+                      Terakhir: {sourceHistory.matches[0].source_title || `Job ${sourceHistory.matches[0].job_id.slice(0, 8)}`}
+                      {` · ${sourceHistory.matches[0].status}`}
+                      {` · ${new Date(sourceHistory.matches[0].created_at).toLocaleDateString("id-ID")}`}
+                    </small>
+                  ) : null}
+                  <label className="sourceHistoryApproval">
+                    <input
+                      type="checkbox"
+                      checked={allowReprocessSource}
+                      onChange={(event) => onAllowReprocessSourceChange(event.target.checked)}
+                    />
+                    <span>Saya sudah memeriksa riwayat dan memang ingin memproses ulang sumber ini.</span>
+                  </label>
+                </div>
+              </div>
+            ) : sourceHistory?.valid_youtube_url ? (
+              <div className="sourceHistoryNotice isClear" role="status">
+                <CheckCircle2 size={18} />
+                <div>
+                  <strong>Belum pernah diproses</strong>
+                  <span>ID video tidak ditemukan pada riwayat dan arsip ClipForge.</span>
+                </div>
+              </div>
+            ) : url.trim() && sourceHistory ? (
+              <div className="sourceHistoryNotice isInvalid" role="alert">
+                <AlertTriangle size={18} />
+                <div>
+                  <strong>Link YouTube belum dikenali</strong>
+                  <span>Gunakan link watch, youtu.be, Shorts, Live, atau Embed yang memuat ID video.</span>
+                </div>
+              </div>
+            ) : null}
+          </>
         ) : (
           <label className="field wide">
             <span>Upload File Video</span>
@@ -851,7 +934,13 @@ export function ControlPanel({
 
         <button className="primary" type="button" disabled={isStartDisabled} onClick={onStartJob}>
           {isProcessing ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
-          {isProcessing ? "Sedang Memproses..." : "Mulai Potong Video"}
+          {isProcessing
+            ? "Sedang Memproses..."
+            : sourceHistory?.found
+              ? allowReprocessSource
+                ? "Proses Ulang Sumber"
+                : "Konfirmasi Sebelum Proses Ulang"
+              : "Mulai Potong Video"}
         </button>
         {!hasSource ? <p className="startHint">Tambahkan sumber video untuk mulai memproses.</p> : null}
       </div>

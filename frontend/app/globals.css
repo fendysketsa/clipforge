@@ -2249,7 +2249,7 @@ body::before {
   background: rgba(94, 234, 212, 0.09);
 }
 
-.topbarNav a:first-child {
+.topbarNav a.active {
   color: var(--primary);
   background: rgba(94, 234, 212, 0.08);
 }
@@ -2527,6 +2527,553 @@ body::before {
   color: var(--text-secondary);
   font-size: 11px;
   line-height: 1.45;
+}
+
+.sourceHistoryNotice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 11px;
+  align-items: start;
+  padding: 13px 14px;
+  border: 1px solid rgba(148, 216, 204, 0.16);
+  border-radius: 13px;
+  background: rgba(5, 20, 17, 0.72);
+  color: var(--text-secondary);
+}
+
+.sourceHistoryNotice > svg {
+  margin-top: 1px;
+  flex: 0 0 auto;
+}
+
+.sourceHistoryNotice > div,
+.sourceHistoryCopy {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.sourceHistoryNotice strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.sourceHistoryNotice span {
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.sourceHistoryNotice.isChecking {
+  border-color: rgba(94, 234, 212, 0.2);
+  color: #5eead4;
+}
+
+.sourceHistoryNotice.isClear {
+  border-color: rgba(74, 222, 128, 0.26);
+  background: rgba(20, 83, 45, 0.13);
+  color: #4ade80;
+}
+
+.sourceHistoryNotice.isDuplicate,
+.sourceHistoryNotice.isInvalid {
+  border-color: rgba(251, 191, 36, 0.38);
+  background:
+    linear-gradient(135deg, rgba(120, 53, 15, 0.2), rgba(69, 26, 3, 0.12)),
+    rgba(19, 12, 5, 0.74);
+  color: #fbbf24;
+  box-shadow: inset 3px 0 0 rgba(251, 191, 36, 0.65);
+}
+
+.sourceHistoryBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.sourceHistoryBadges span {
+  padding: 4px 8px;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.09);
+  color: #fde68a;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.sourceHistoryNotice small {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  color: #c7a96b;
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+
+.sourceHistoryApproval {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 5px;
+  padding: 9px 10px;
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.16);
+  color: #fde7ad;
+  cursor: pointer;
+}
+
+.sourceHistoryApproval input {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+  accent-color: #f59e0b;
+}
+
+.sourceHistoryApproval span {
+  font-weight: 700;
+}
+
+.sourceLogPage {
+  min-height: 100vh;
+}
+
+.sourceLogHero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+  padding: 24px 26px;
+  border: 1px solid rgba(148, 216, 204, 0.13);
+  border-radius: 19px;
+  background:
+    radial-gradient(circle at 82% 20%, rgba(45, 212, 191, 0.13), transparent 28%),
+    linear-gradient(145deg, rgba(15, 42, 36, 0.94), rgba(5, 18, 16, 0.96));
+  box-shadow: 0 20px 55px rgba(0, 0, 0, 0.2);
+}
+
+.sourceLogHero > div:first-child {
+  display: grid;
+  gap: 8px;
+}
+
+.sourceLogEyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.sourceLogHero h2 {
+  font-size: clamp(22px, 3vw, 34px);
+  font-weight: 850;
+  letter-spacing: -0.04em;
+}
+
+.sourceLogHero p {
+  max-width: 720px;
+  color: #83a7a0;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.sourceLogIntegrity {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(74, 222, 128, 0.23);
+  border-radius: 12px;
+  background: rgba(22, 101, 52, 0.12);
+  color: #4ade80;
+}
+
+.sourceLogIntegrity span {
+  display: grid;
+  gap: 1px;
+  color: #789d94;
+  font-size: 9px;
+}
+
+.sourceLogIntegrity strong {
+  color: #86efac;
+  font-size: 11px;
+}
+
+.sourceLogStats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.sourceLogStats article {
+  display: grid;
+  gap: 10px;
+  padding: 16px 17px;
+  border: 1px solid rgba(148, 216, 204, 0.12);
+  border-radius: 14px;
+  background: rgba(7, 25, 21, 0.8);
+}
+
+.sourceLogStats span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #7b9f98;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.sourceLogStats span svg {
+  color: var(--primary);
+}
+
+.sourceLogStats strong {
+  color: var(--text-primary);
+  font-size: 25px;
+  line-height: 1;
+}
+
+.sourceLogPanel {
+  overflow: hidden;
+  border: 1px solid rgba(148, 216, 204, 0.13);
+  border-radius: 18px;
+  background: rgba(5, 18, 16, 0.78);
+  box-shadow: 0 20px 55px rgba(0, 0, 0, 0.18);
+}
+
+.sourceLogToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border-bottom: 1px solid rgba(148, 216, 204, 0.1);
+  background: rgba(11, 31, 27, 0.7);
+}
+
+.sourceLogSearch {
+  display: flex;
+  width: min(520px, 100%);
+  min-height: 40px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 216, 204, 0.15);
+  border-radius: 11px;
+  background: rgba(3, 13, 11, 0.68);
+  color: #71968e;
+}
+
+.sourceLogSearch:focus-within {
+  border-color: rgba(94, 234, 212, 0.4);
+  box-shadow: 0 0 0 3px rgba(94, 234, 212, 0.07);
+}
+
+.sourceLogSearch input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 11px;
+}
+
+.sourceLogFilters {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
+.sourceLogFilters button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #769b93;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.sourceLogFilters button span {
+  display: inline-grid;
+  min-width: 19px;
+  height: 19px;
+  place-items: center;
+  border-radius: 99px;
+  background: rgba(148, 216, 204, 0.09);
+  font-size: 8px;
+}
+
+.sourceLogFilters button:hover,
+.sourceLogFilters button.active {
+  border-color: rgba(94, 234, 212, 0.18);
+  background: rgba(94, 234, 212, 0.08);
+  color: var(--primary);
+}
+
+.sourceLogList {
+  display: grid;
+}
+
+.sourceLogCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px;
+  border-bottom: 1px solid rgba(148, 216, 204, 0.09);
+  transition: background 0.18s ease;
+}
+
+.sourceLogCard:last-child {
+  border-bottom: 0;
+}
+
+.sourceLogCard:hover {
+  background: rgba(94, 234, 212, 0.025);
+}
+
+.sourceLogModeIcon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(94, 234, 212, 0.18);
+  border-radius: 13px;
+  background: rgba(94, 234, 212, 0.08);
+  color: var(--primary);
+}
+
+.sourceLogModeIcon.isHighlight {
+  border-color: rgba(251, 191, 36, 0.23);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fbbf24;
+}
+
+.sourceLogCardMain {
+  display: grid;
+  min-width: 0;
+  gap: 11px;
+}
+
+.sourceLogCardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sourceLogCardHeader > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.sourceLogCardHeader h3 {
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.sourceLogCardHeader p,
+.sourceLogDate {
+  color: #759991;
+  font-size: 9px;
+}
+
+.sourceLogDate {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #8eb8af;
+}
+
+.sourceLogModeBadge {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border: 1px solid rgba(94, 234, 212, 0.2);
+  border-radius: 999px;
+  background: rgba(94, 234, 212, 0.07);
+  color: var(--primary);
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.sourceLogModeBadge.isHighlight {
+  border-color: rgba(251, 191, 36, 0.25);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fcd34d;
+}
+
+.sourceLogMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sourceLogMeta span {
+  padding: 5px 8px;
+  border: 1px solid rgba(148, 216, 204, 0.1);
+  border-radius: 8px;
+  background: rgba(2, 12, 10, 0.44);
+  color: #6f918a;
+  font-size: 8px;
+}
+
+.sourceLogMeta b {
+  color: #b8d4ce;
+}
+
+.sourceLogActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sourceLogActions a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #f87171;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.sourceLogActions code {
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: rgba(148, 216, 204, 0.07);
+  color: #85aaa2;
+  font-size: 8px;
+}
+
+.sourceLogOutputs {
+  border-top: 1px solid rgba(148, 216, 204, 0.08);
+  padding-top: 9px;
+}
+
+.sourceLogOutputs summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #7da39a;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.sourceLogOutputs summary svg:last-child {
+  transition: transform 0.18s ease;
+}
+
+.sourceLogOutputs[open] summary svg:last-child {
+  transform: rotate(180deg);
+}
+
+.sourceLogOutputs ul {
+  display: grid;
+  gap: 5px;
+  margin: 9px 0 0;
+  padding: 9px 9px 9px 27px;
+  border-radius: 9px;
+  background: rgba(2, 10, 9, 0.43);
+  color: #70938c;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8px;
+  overflow-wrap: anywhere;
+}
+
+.sourceLogEmpty {
+  display: grid;
+  min-height: 300px;
+  place-items: center;
+  align-content: center;
+  gap: 9px;
+  padding: 36px;
+  color: #63867f;
+  text-align: center;
+}
+
+.sourceLogEmpty strong {
+  color: #a8c8c1;
+  font-size: 12px;
+}
+
+.sourceLogEmpty span {
+  font-size: 10px;
+}
+
+.sourceLogError {
+  margin: 14px;
+  padding: 11px 12px;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: 10px;
+  background: rgba(127, 29, 29, 0.16);
+  color: #fca5a5;
+  font-size: 10px;
+}
+
+@media (max-width: 900px) {
+  .sourceLogHero,
+  .sourceLogToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sourceLogIntegrity {
+    align-self: flex-start;
+  }
+
+  .sourceLogStats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sourceLogSearch {
+    width: 100%;
+  }
+
+  .sourceLogFilters {
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .sourceLogStats {
+    grid-template-columns: 1fr;
+  }
+
+  .sourceLogCard {
+    grid-template-columns: 1fr;
+  }
+
+  .sourceLogModeIcon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .sourceLogCardHeader {
+    flex-direction: column;
+  }
+
+  .sourceLogModeBadge {
+    align-self: flex-start;
+  }
 }
 
 .field {
