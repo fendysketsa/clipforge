@@ -1930,6 +1930,76 @@ def append_youtube_source_attribution(description: str, job: ClipJob) -> str:
     return f"{clean[:available].rstrip()}\n\n{attribution}".strip()[:5000]
 
 
+def monetization_readiness_is_eligible(sidecar: dict[str, Any], readiness: dict[str, Any]) -> bool:
+    """Accept current audits and safely reinterpret older compilation audits."""
+    if readiness.get("eligible_for_private_upload_review"):
+        return True
+
+    signals = readiness.get("signals")
+    if not isinstance(signals, dict):
+        return False
+    output_format = str(sidecar.get("output_format") or "")
+    is_compilation = output_format == "landscape_compilation"
+    substantive_transformation = bool(signals.get("substantive_visual_edits")) or bool(
+        is_compilation
+        and signals.get("structured_story_arc")
+        and signals.get("editorial_hook_and_context")
+        and signals.get("original_core_message")
+    )
+    try:
+        originality_score = int(readiness.get("originality_score") or 0)
+        minimum_score = int(
+            readiness.get("minimum_originality_score") or (4 if is_compilation else 3)
+        )
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        signals.get("enhanced_edit")
+        and substantive_transformation
+        and originality_score >= minimum_score
+    )
+
+
+def monetization_preflight_transformation_message(
+    sidecar: dict[str, Any],
+    readiness: dict[str, Any],
+) -> str:
+    """Explain the actual failed audit signal instead of always blaming Enhanced Edit."""
+    signals = readiness.get("signals")
+    if not isinstance(signals, dict):
+        return (
+            "Upload diblokir: audit transformasi editorial belum lengkap. "
+            "Render ulang clip dengan ClipForge terbaru."
+        )
+    if not signals.get("enhanced_edit"):
+        return (
+            "Upload diblokir: Enhanced Edit tidak aktif pada hasil render ini. "
+            "Aktifkan Enhanced Edit lalu render ulang sebelum review private di YouTube Studio."
+        )
+    is_compilation = str(sidecar.get("output_format") or "") == "landscape_compilation"
+    if is_compilation and not signals.get("structured_story_arc"):
+        return (
+            "Upload diblokir: kompilasi belum memiliki structured story arc yang cukup. "
+            "Render ulang resume agar hook, perkembangan, dan payoff tersusun jelas."
+    )
+    try:
+        score = int(readiness.get("originality_score") or 0)
+        minimum = int(
+            readiness.get("minimum_originality_score") or (4 if is_compilation else 3)
+        )
+    except (TypeError, ValueError):
+        score, minimum = 0, 4 if is_compilation else 3
+    if score < minimum:
+        return (
+            f"Upload diblokir: skor transformasi editorial {score}/{minimum}. "
+            "Tambahkan konteks, pesan inti, dan penyuntingan substantif lalu render ulang."
+        )
+    return (
+        "Upload diblokir: hasil render belum mencatat transformasi visual atau editorial substantif. "
+        "Render ulang dengan perubahan yang membuat hasil jelas berbeda dari sumber."
+    )
+
+
 def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | None:
     """Block private upload when rights or substantive-edit evidence is missing."""
     metadata = metadata_for_job(job)
@@ -1945,11 +2015,8 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             "Upload diblokir: output lama belum memiliki audit monetisasi. "
             "Render ulang clip dengan ClipForge terbaru."
         )
-    if not readiness.get("eligible_for_private_upload_review"):
-        return (
-            "Upload diblokir: transformasi editorial belum melewati preflight monetisasi. "
-            "Aktifkan Enhanced Edit dan render ulang sebelum review private di YouTube Studio."
-        )
+    if not monetization_readiness_is_eligible(sidecar, readiness):
+        return monetization_preflight_transformation_message(sidecar, readiness)
     return None
 
 

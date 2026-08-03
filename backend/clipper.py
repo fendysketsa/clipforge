@@ -2215,9 +2215,15 @@ def attach_monetization_provenance(
         }
         originality_score = sum(bool(value) for value in originality_signals.values())
         minimum_score = 4 if is_compilation else 3
+        substantive_transformation = originality_signals["substantive_visual_edits"] or bool(
+            is_compilation
+            and originality_signals["structured_story_arc"]
+            and originality_signals["editorial_hook_and_context"]
+            and originality_signals["original_core_message"]
+        )
         transformation_ready = (
             originality_signals["enhanced_edit"]
-            and originality_signals["substantive_visual_edits"]
+            and substantive_transformation
             and originality_score >= minimum_score
         )
         commercial_rights_ready = rights_verified or uploaded_source
@@ -2237,6 +2243,7 @@ def attach_monetization_provenance(
             "originality_score": originality_score,
             "minimum_originality_score": minimum_score,
             "signals": originality_signals,
+            "substantive_transformation": substantive_transformation,
             "channel_level_review_still_applies": True,
             "guarantee": False,
         }

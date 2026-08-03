@@ -883,6 +883,85 @@ def test_monetization_preflight_requires_rights_and_substantive_edit(monkeypatch
     assert "Render ulang" in (youtube_monetization_preflight_issue(job, clip) or "")
 
 
+def test_monetization_preflight_accepts_legacy_compilation_story_arc(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-legacy-compilation",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "output_format": "landscape_compilation",
+            "monetization_readiness": {
+                "eligible_for_private_upload_review": False,
+                "originality_score": 5,
+                "minimum_originality_score": 4,
+                "signals": {
+                    "enhanced_edit": True,
+                    "substantive_visual_edits": False,
+                    "structured_story_arc": True,
+                    "editorial_hook_and_context": True,
+                    "original_core_message": True,
+                    "custom_thumbnail_strategy": True,
+                },
+            },
+        },
+    )
+
+    assert youtube_monetization_preflight_issue(job, clip) is None
+
+
+def test_monetization_preflight_explains_when_enhanced_edit_is_actually_missing(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-no-enhanced-edit",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "output_format": "vertical_short",
+            "monetization_readiness": {
+                "eligible_for_private_upload_review": False,
+                "originality_score": 4,
+                "minimum_originality_score": 3,
+                "signals": {
+                    "enhanced_edit": False,
+                    "substantive_visual_edits": True,
+                },
+            },
+        },
+    )
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+    assert "Enhanced Edit tidak aktif" in issue
+
+
 def test_realistic_background_change_requires_disclosure(monkeypatch):
     import api
 

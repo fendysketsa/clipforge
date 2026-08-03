@@ -382,6 +382,62 @@ def test_monetization_provenance_records_rights_and_originality(tmp_path):
     assert payload["monetization_readiness"]["guarantee"] is False
 
 
+def test_compilation_story_arc_counts_as_substantive_transformation(tmp_path):
+    video = tmp_path / "resume.mp4"
+    video.write_bytes(b"video")
+    video.with_suffix(".json").write_text(
+        '{"output_format":"landscape_compilation","enhanced_edit":true,'
+        '"hook":"Hook","pov":"Sudut pandang","core_message":"Alur inti",'
+        '"thumbnail_strategy":"custom_long_form_upload",'
+        '"story_arc":[{"index":1},{"index":2},{"index":3}],'
+        '"applied_edits":["pembuka dipangkas"]}',
+        encoding="utf-8",
+    )
+
+    attach_monetization_provenance(
+        [video],
+        {
+            "title": "Sumber",
+            "uploader": "Kreator",
+            "webpage_url": "https://youtu.be/source",
+            "license": "Creative Commons Attribution license",
+        },
+        uploaded_source=False,
+    )
+
+    import json
+
+    payload = json.loads(video.with_suffix(".json").read_text(encoding="utf-8"))
+    readiness = payload["monetization_readiness"]
+    assert readiness["signals"]["substantive_visual_edits"] is False
+    assert readiness["signals"]["structured_story_arc"] is True
+    assert readiness["substantive_transformation"] is True
+    assert readiness["eligible_for_private_upload_review"] is True
+
+
+def test_short_still_requires_substantive_visual_edits(tmp_path):
+    video = tmp_path / "short.mp4"
+    video.write_bytes(b"video")
+    video.with_suffix(".json").write_text(
+        '{"output_format":"vertical_short","enhanced_edit":true,'
+        '"hook":"Hook","pov":"Sudut pandang","core_message":"Inti",'
+        '"thumbnail_strategy":"embedded_shorts_cover_frame",'
+        '"applied_edits":["satu edit"]}',
+        encoding="utf-8",
+    )
+
+    attach_monetization_provenance(
+        [video],
+        {"license": "Creative Commons Attribution license"},
+        uploaded_source=False,
+    )
+
+    import json
+
+    payload = json.loads(video.with_suffix(".json").read_text(encoding="utf-8"))
+    assert payload["monetization_readiness"]["eligible_for_private_upload_review"] is False
+
+
 def test_landscape_caption_backdrop_uses_16_by_9_canvas_without_face_blur():
     value = landscape_caption_gradient_blur_filter("bottom")
 
