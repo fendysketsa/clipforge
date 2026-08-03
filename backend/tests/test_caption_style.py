@@ -59,6 +59,7 @@ from clipper import (
     shorts_cover_frame_timestamp,
     thumbnail_story_copy,
     transcription_decode_options,
+    viral_title_overlay_filter,
     virtual_camera_angle_cues,
     visual_theme_profile,
 )
@@ -410,22 +411,30 @@ def test_enhanced_edit_filter_adds_motion_hook_transition_and_progress():
     assert "#22D3EE@0.24" in value
 
 
-def test_shorts_cover_moment_leads_with_hook_and_supporting_context():
+def test_shorts_cover_moment_uses_bold_centered_viral_title():
     value = enhanced_edit_filter(
         60,
         "clip.hook.txt",
         pov_text_filename="clip.pov.txt",
         cover_text_filename="clip.cover.txt",
-        cover_support_text_filename="clip.cover-support.txt",
     )
 
     assert "textfile='clip.cover.txt'" in value
-    assert "textfile='clip.cover-support.txt'" in value
-    assert "text='WAJIB TAHU'" in value
-    assert "text='LIHAT PENJELASANNYA'" in value
-    assert "between(t,0.08,1.350)" in value
-    assert "textfile='clip.hook.txt'" in value
-    assert "between(t,1.42,3.80)" in value
+    assert "fontsize=72" in value
+    assert "borderw=8:bordercolor=black@1.0" in value
+    assert "x='(w-text_w)/2':y=286" in value
+    assert "between(t,0.08,3.200)" in value
+    assert "text='WAJIB TAHU'" not in value
+    assert "text='LIHAT PENJELASANNYA'" not in value
+    assert "textfile='clip.hook.txt'" not in value
+
+
+def test_viral_title_overlay_clamps_window_to_short_clip_duration():
+    value = viral_title_overlay_filter("clip.cover.txt", 1.4)
+
+    assert "textfile='clip.cover.txt'" in value
+    assert "between(t,0.08,1.400)" in value
+    assert "borderw=8" in value
 
 
 def test_thumbnail_story_copy_is_compact_and_truthful():
@@ -468,8 +477,11 @@ def test_thumbnail_filter_uses_vertical_and_landscape_upload_shapes():
     )
 
     assert "scale=1080:1920" in vertical
-    assert "text='WAJIB TAHU'" in vertical
-    assert "text='LIHAT PENJELASANNYA'" in vertical
+    assert "fontsize=72" in vertical
+    assert "borderw=8:bordercolor=black@1.0" in vertical
+    assert "x='(w-text_w)/2':y=286" in vertical
+    assert "text='WAJIB TAHU'" not in vertical
+    assert "text='LIHAT PENJELASANNYA'" not in vertical
     assert "scale=1280:720" in landscape
     assert "text='RESUME CERITA'" in landscape
     assert shorts_cover_frame_timestamp(60) == 0.78
