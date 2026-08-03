@@ -1000,17 +1000,12 @@ def adaptive_text_backdrop_split_filter(
     duration: float,
     asset_path: Path = MOSQUE_CONGREGATION_PATH,
 ) -> str:
-    """Blend a dominant speaker portrait over a restrained congregation panel."""
-    safe_duration = max(3.0, float(duration))
-    fade_duration = min(0.85, max(0.55, safe_duration * 0.018))
-    split_start = min(
-        safe_duration * 0.35,
-        min(6.0, max(2.0, safe_duration * 0.12)),
-    )
-    split_end = min(
-        safe_duration - 0.25,
-        max(split_start + (fade_duration * 2) + 0.8, safe_duration - 2.4),
-    )
+    """Blend a dominant speaker portrait over a restrained congregation panel.
+
+    The complete composition is present from the first frame. Delaying it with
+    an alpha fade made the opening frame look empty/black in video players and
+    caused the mosque panel to pop in only after the hook had already started.
+    """
     escaped_path = (
         str(asset_path.resolve())
         .replace("\\", "/")
@@ -1048,9 +1043,7 @@ def adaptive_text_backdrop_split_filter(
         "overlay=0:0:shortest=1:eof_action=repeat[adaptive_stage];"
         "[adaptive_stage][adaptive_subject]"
         "overlay=0:0:shortest=1:eof_action=repeat,"
-        "format=rgba,"
-        f"fade=t=in:st={split_start:.3f}:d={fade_duration:.3f}:alpha=1,"
-        f"fade=t=out:st={split_end:.3f}:d={fade_duration:.3f}:alpha=1"
+        "format=rgba"
         "[adaptive_split];"
         "[adaptive_original][adaptive_split]"
         "overlay=0:0:shortest=1:eof_action=repeat"
@@ -3652,7 +3645,7 @@ def viral_title_overlay_filter(headline_filename: str, duration: float) -> str:
         "borderw=8:bordercolor=black@1.0:"
         "shadowcolor=black@0.90:shadowx=4:shadowy=5:"
         "x='(w-text_w)/2':y=286:"
-        f"enable='between(t,0.08,{title_end:.3f})'"
+        f"enable='between(t,0,{title_end:.3f})'"
     )
 
 
@@ -4702,7 +4695,6 @@ def enhanced_edit_filter(
         f"y='(ih-oh)/2+{y_motion}'",
         "setsar=1",
         "vignette=PI/9",
-        "fade=t=in:st=0:d=0.18",
         modern_blurred_video_frame_filter(accent, accent_secondary),
     ]
     filters.extend(modern_gradient_border_filters(accent, accent_secondary))

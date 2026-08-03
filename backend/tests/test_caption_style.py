@@ -194,8 +194,8 @@ def test_text_backdrop_split_uses_a_speaker_dominant_congregation_panel():
     assert "pad=1080:1920:0:1160:color=black@0" in value
     assert "a='255*min(1,max(0,(H-Y)/180))'" in value
     assert "a='255*min(1,max(0,Y/160))'" in value
-    assert "fade=t=in:st=4.800:d=0.720:alpha=1" in value
-    assert "fade=t=out:st=37.600:d=0.720:alpha=1" in value
+    assert "fade=t=in" not in value
+    assert "fade=t=out" not in value
 
 
 def test_embedded_speaker_banner_frame_is_detected_for_mandatory_auto_split():
@@ -453,7 +453,7 @@ def test_enhanced_edit_filter_adds_motion_hook_transition_and_progress():
     assert "crop=1080:1920:x='(iw-ow)/2" in value
     assert "setsar=1" in value
     assert "vignette=PI/9" in value
-    assert "fade=t=in" in value
+    assert "fade=t=in" not in value
     assert "textfile='clip.hook.txt'" in value
     assert "textfile='clip.pov.txt'" in value
     assert "text='POV'" in value
@@ -479,7 +479,7 @@ def test_shorts_cover_moment_uses_bold_centered_viral_title():
     assert "fontsize=72" in value
     assert "borderw=8:bordercolor=black@1.0" in value
     assert "x='(w-text_w)/2':y=286" in value
-    assert "between(t,0.08,3.200)" in value
+    assert "between(t,0,3.200)" in value
     assert "text='WAJIB TAHU'" not in value
     assert "text='LIHAT PENJELASANNYA'" not in value
     assert "textfile='clip.hook.txt'" not in value
@@ -489,7 +489,7 @@ def test_viral_title_overlay_clamps_window_to_short_clip_duration():
     value = viral_title_overlay_filter("clip.cover.txt", 1.4)
 
     assert "textfile='clip.cover.txt'" in value
-    assert "between(t,0.08,1.400)" in value
+    assert "between(t,0,1.400)" in value
     assert "borderw=8" in value
 
 
