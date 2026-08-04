@@ -1106,6 +1106,8 @@ def clip_artifact_paths(clip: ClipFile) -> set[Path]:
     paths.add(clip_path.with_name(f"{clip_path.stem}_thumb.jpg"))
     paths.add(clip_path.with_name(f"{clip_path.stem}_thumb.txt"))
     paths.add(clip_path.with_name(f"{clip_path.stem}_caption.txt"))
+    paths.add(clip_path.with_suffix(".srt"))
+    paths.add(clip_path.with_name(f"{clip_path.stem}.dynamic.ass"))
     paths.add(clip_path.with_suffix(".json"))
     if clip.thumbnail_url:
         thumb_path = output_path_from_url(clip.thumbnail_url)
@@ -1934,6 +1936,14 @@ def monetization_readiness_is_eligible(sidecar: dict[str, Any], readiness: dict[
     """Accept current audits and safely reinterpret older compilation audits."""
     if readiness.get("eligible_for_private_upload_review"):
         return True
+    try:
+        audit_version = int(readiness.get("audit_version") or 1)
+    except (TypeError, ValueError):
+        audit_version = 1
+    if audit_version >= 2:
+        # Current audits are intentionally conservative; do not reinterpret a
+        # failed story/authenticity signal using the looser legacy rules.
+        return False
 
     signals = readiness.get("signals")
     if not isinstance(signals, dict):
@@ -1971,10 +1981,24 @@ def monetization_preflight_transformation_message(
             "Upload diblokir: audit transformasi editorial belum lengkap. "
             "Render ulang clip dengan ClipForge terbaru."
         )
+    try:
+        current_audit_version = int(readiness.get("audit_version") or 1)
+    except (TypeError, ValueError):
+        current_audit_version = 1
     if not signals.get("enhanced_edit"):
         return (
             "Upload diblokir: Enhanced Edit tidak aktif pada hasil render ini. "
             "Aktifkan Enhanced Edit lalu render ulang sebelum review private di YouTube Studio."
+        )
+    if current_audit_version >= 2 and not signals.get("cohesive_editorial_arc"):
+        return (
+            "Upload diblokir: clip belum membentuk alur editorial yang utuh dari hook ke pesan inti dan payoff. "
+            "Pilih kandidat dengan point utama serta ending tuntas, lalu render ulang."
+        )
+    if current_audit_version >= 2 and not signals.get("content_timed_editing"):
+        return (
+            "Upload diblokir: perubahan masih terlihat seperti template umum dan belum mengikuti isi ucapan. "
+            "Render ulang agar cut kamera, emphasis, atau audio cue mengikuti beat transcript."
         )
     is_compilation = str(sidecar.get("output_format") or "") == "landscape_compilation"
     if is_compilation and not signals.get("structured_story_arc"):
@@ -3437,6 +3461,8 @@ def delete_completed_youtube_upload_clip(
             metadata_paths.update(
                 {
                     clip_path.with_name(f"{clip_path.stem}_caption.txt"),
+                    clip_path.with_suffix(".srt"),
+                    clip_path.with_name(f"{clip_path.stem}.dynamic.ass"),
                     clip_path.with_suffix(".json"),
                 }
             )

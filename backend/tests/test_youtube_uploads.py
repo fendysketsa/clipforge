@@ -469,6 +469,8 @@ def test_completed_upload_cleanup_deletes_real_file_and_updates_job(monkeypatch,
     clip_one_path.with_name("clip_01_thumb.jpg").write_bytes(b"thumbnail")
     clip_one_path.with_suffix(".json").write_text('{"title": "Uploaded"}', encoding="utf-8")
     clip_one_path.with_name("clip_01_caption.txt").write_text("caption", encoding="utf-8")
+    clip_one_path.with_suffix(".srt").write_text("subtitle", encoding="utf-8")
+    clip_one_path.with_name("clip_01.dynamic.ass").write_text("dynamic", encoding="utf-8")
 
     job = ClipJob(
         id="job-1",
@@ -518,11 +520,13 @@ def test_completed_upload_cleanup_deletes_real_file_and_updates_job(monkeypatch,
         )
         removed += step_removed
 
-    assert removed >= 4
+    assert removed >= 6
     assert removed_job is False
     assert not clip_one_path.exists()
     assert not clip_one_path.with_suffix(".json").exists()
     assert not clip_one_path.with_name("clip_01_caption.txt").exists()
+    assert not clip_one_path.with_suffix(".srt").exists()
+    assert not clip_one_path.with_name("clip_01.dynamic.ass").exists()
     assert clip_two_path.exists()
     assert [clip.url for clip in api.jobs[job.id].clips] == [clip_two.url]
     assert [event[0] for event in cleanup_events if event[0]] == [

@@ -31,6 +31,7 @@ from clipper import (
     codex_edit_plan,
     contextual_audio_mix_filter,
     contextual_sound_effect_cues,
+    content_edit_variation,
     detect_visual_theme,
     designed_thumbnail_filter,
     detect_reaction_cues,
@@ -40,6 +41,7 @@ from clipper import (
     fallback_social_caption,
     ffmpeg_clean_metadata_args,
     hook_banner_text,
+    highlight_caption_keyword,
     intro_particle_burst_filters,
     is_source_branding_segment,
     landscape_caption_gradient_blur_filter,
@@ -56,12 +58,14 @@ from clipper import (
     score_window,
     segments_for_clip,
     split_subtitle_text,
+    subtitle_cues,
     shorts_cover_frame_timestamp,
     thumbnail_story_copy,
     transcription_decode_options,
     viral_title_overlay_filter,
     virtual_camera_angle_cues,
     visual_theme_profile,
+    write_dynamic_ass,
 )
 
 
@@ -107,14 +111,14 @@ def test_build_subtitle_style_center():
 def test_build_subtitle_style_bottom():
     style = build_subtitle_style(CaptionStyle(position="bottom"))
     assert "Alignment=2" in style
-    assert "MarginV=24" in style
+    assert "MarginV=50" in style
 
 
 def test_build_subtitle_style_defaults_to_face_safe_bottom():
     style = build_subtitle_style(CaptionStyle())
 
     assert "Alignment=2" in style
-    assert "MarginV=24" in style
+    assert "MarginV=50" in style
 
 
 def test_build_subtitle_style_font_whitelist():
@@ -137,13 +141,13 @@ def test_build_subtitle_style_font_size_clamped():
     assert "FontSize=120" in build_subtitle_style(CaptionStyle(font_size=500))
 
 
-def test_channel_watermark_is_small_visible_and_top_right():
+def test_channel_watermark_is_small_visible_and_shorts_ui_safe():
     vertical = channel_watermark_filter("vertical_short")
     landscape = channel_watermark_filter("landscape_compilation")
 
     assert "text='@ryuundyofficial'" in vertical
     assert "fontcolor=white@0.90:fontsize=24" in vertical
-    assert "x='w-text_w-62':y=98" in vertical
+    assert "x='62':y=98" in vertical
     assert "boxcolor=black@0.38" in vertical
     assert "fontcolor=white@0.90:fontsize=22" in landscape
     assert "x='w-text_w-42':y=38" in landscape
@@ -154,6 +158,61 @@ def test_split_subtitle_text_keeps_default_lines_compact():
     assert chunks
     assert all(len(line) <= 24 for chunk in chunks for line in chunk.splitlines())
     assert all(len(chunk.splitlines()) <= 2 for chunk in chunks)
+
+
+def test_subtitle_timing_follows_chunk_word_count():
+    segments = [
+        TranscriptSegment(
+            0,
+            8,
+            "Ternyata ini penting sekali dan jawabannya ada pada keputusan pertama",
+        )
+    ]
+
+    cues = subtitle_cues(segments, 0, 8)
+
+    assert len(cues) >= 2
+    durations = [end - start for start, end, _ in cues]
+    word_counts = [len(text.replace("\n", " ").split()) for _, _, text in cues]
+    assert durations.index(max(durations)) == word_counts.index(max(word_counts))
+
+
+def test_dynamic_ass_highlights_truthful_keyword_and_uses_safe_margins(tmp_path):
+    path = tmp_path / "clip.dynamic.ass"
+    segments = [TranscriptSegment(0, 3, "Ternyata jawaban ini sangat penting.")]
+
+    count = write_dynamic_ass(
+        path,
+        segments,
+        0,
+        3,
+        CaptionStyle(position="bottom"),
+        accent="#FACC15",
+    )
+    value = path.read_text(encoding="utf-8")
+
+    assert count == 1
+    assert "PlayResX: 1080" in value
+    assert "Style: Caption" in value
+    assert ",110,230,365,1" in value
+    assert r"\fscx108\fscy108" in value
+    assert "Ternyata" in value
+
+
+def test_caption_keyword_highlight_does_not_invent_copy():
+    source = "Solusinya tetap periksa 3 langkah penting"
+    rendered = highlight_caption_keyword(source)
+    plain = __import__("re").sub(r"\{[^}]+\}", "", rendered)
+
+    assert plain == source
+
+
+def test_content_edit_variation_is_stable_and_story_derived():
+    left = ClipCandidate(1, 0, 30, 30, 80, "Judul A", "test", "Isi A", hook="Hook A")
+    rerender = ClipCandidate(9, 0, 30, 30, 80, "Judul A", "test", "Isi A", hook="Hook A")
+
+    assert content_edit_variation(left) == content_edit_variation(rerender)
+    assert 0 <= content_edit_variation(left) < 6
 
 
 def test_available_fonts_has_defaults():
@@ -169,7 +228,7 @@ def test_caption_gradient_backdrop_tracks_position_without_blurring_faces():
     assert "geq=r='0':g='0':b='0'" in upper
     assert "geq=" in upper
     assert "overlay=0:280" in upper
-    assert "overlay=0:1450" in bottom
+    assert "overlay=0:1280" in bottom
 
 
 def test_running_text_cleanup_naturally_blurs_footer_without_changing_framing():
@@ -457,7 +516,7 @@ def test_enhanced_edit_filter_adds_motion_hook_transition_and_progress():
     assert "textfile='clip.hook.txt'" in value
     assert "textfile='clip.pov.txt'" in value
     assert "text='POV'" in value
-    assert "drawbox=x=48:y=1150" in value
+    assert "drawbox=x=56:y=1150:w=844" in value
     assert ":y=1192:" in value
     assert "between(t,12.000,12.320)" in value
     assert "between(t,24.000,24.320)" in value
@@ -478,7 +537,7 @@ def test_shorts_cover_moment_uses_bold_centered_viral_title():
     assert "textfile='clip.cover.txt'" in value
     assert "fontsize=72" in value
     assert "borderw=8:bordercolor=black@1.0" in value
-    assert "x='(w-text_w)/2':y=286" in value
+    assert "x='56+(844-text_w)/2':y=286" in value
     assert "between(t,0,3.200)" in value
     assert "text='WAJIB TAHU'" not in value
     assert "text='LIHAT PENJELASANNYA'" not in value
@@ -535,7 +594,7 @@ def test_thumbnail_filter_uses_vertical_and_landscape_upload_shapes():
     assert "scale=1080:1920" in vertical
     assert "fontsize=72" in vertical
     assert "borderw=8:bordercolor=black@1.0" in vertical
-    assert "x='(w-text_w)/2':y=286" in vertical
+    assert "x='56+(844-text_w)/2':y=286" in vertical
     assert "text='WAJIB TAHU'" not in vertical
     assert "text='LIHAT PENJELASANNYA'" not in vertical
     assert "scale=1280:720" in landscape

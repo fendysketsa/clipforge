@@ -108,7 +108,16 @@ def test_cleanup_clip_files_removes_output_artifacts(monkeypatch):
     thumb_path = clip_dir / "clip_01_thumb.jpg"
     prompt_path = clip_dir / "clip_01_thumb.txt"
     caption_path = clip_dir / "clip_01_caption.txt"
-    for path in (clip_path, thumb_path, prompt_path, caption_path):
+    subtitle_path = clip_dir / "clip_01.srt"
+    dynamic_caption_path = clip_dir / "clip_01.dynamic.ass"
+    for path in (
+        clip_path,
+        thumb_path,
+        prompt_path,
+        caption_path,
+        subtitle_path,
+        dynamic_caption_path,
+    ):
         path.write_bytes(b"x")
 
     monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
@@ -120,11 +129,13 @@ def test_cleanup_clip_files_removes_output_artifacts(monkeypatch):
         thumbnail_url="/outputs/work/clips/clip_01_thumb.jpg",
     )
 
-    assert cleanup_clip_files(clip) == 6
+    assert cleanup_clip_files(clip) == 8
     assert not clip_path.exists()
     assert not thumb_path.exists()
     assert not prompt_path.exists()
     assert not caption_path.exists()
+    assert not subtitle_path.exists()
+    assert not dynamic_caption_path.exists()
     assert not clip_dir.exists()
 
 

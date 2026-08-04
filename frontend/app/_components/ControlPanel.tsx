@@ -389,7 +389,7 @@ export function ControlPanel({
         <p className="field-help">
           {clipMode === "highlight_5m"
             ? "AI mencari POV utama dan inti cerita dari seluruh video, membuang filler, lalu menyusunnya menjadi satu resume kronologis yang sinematik."
-            : "Clip vertikal maksimal 60 detik dengan judul viral otomatis (ALL CAPS + outline), cover CTR tertanam, hook, animasi, sound effect, payoff, dan penutup loop—tanpa perlu upload thumbnail."}
+            : "Clip vertikal maksimal 60 detik dengan judul hook otomatis, caption kata-penting di safe area Shorts, variasi edit berbasis isi, sound effect selektif, payoff, dan loop alami—tanpa perlu upload thumbnail."}
         </p>
       </div>
 

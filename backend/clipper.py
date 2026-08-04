@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -2195,11 +2196,44 @@ def attach_monetization_provenance(
         is_compilation = output_format == "landscape_compilation"
         story_arc = payload.get("story_arc")
         camera_angles = payload.get("virtual_camera_angles")
+        emphasis_times = payload.get("emphasis_times")
+        reaction_cues = payload.get("reaction_cues")
+        sound_effect_cues = payload.get("sound_effect_cues")
+        dynamic_captions = payload.get("dynamic_captions")
+        edit_signature = payload.get("content_edit_signature")
+        boundary_quality = str(payload.get("boundary_quality") or "")
+        try:
+            key_point_score = int(payload.get("key_point_score") or 0)
+        except (TypeError, ValueError):
+            key_point_score = 0
+        content_timed_edits = bool(
+            camera_angles or emphasis_times or reaction_cues or sound_effect_cues
+        )
+        cohesive_editorial_arc = bool(
+            payload.get("hook")
+            and payload.get("core_message")
+            and (
+                (key_point_score >= 55 and boundary_quality != "menggantung")
+                # Backward-compatible evidence for renders made just before the
+                # story metrics were persisted into every sidecar.
+                or (not boundary_quality and bool(camera_angles))
+                or (is_compilation and isinstance(story_arc, list) and len(story_arc) >= 3)
+            )
+        )
         originality_signals = {
             "editorial_hook_and_context": bool(payload.get("hook") and payload.get("pov")),
             "original_core_message": bool(payload.get("core_message")),
-            "substantive_visual_edits": edit_count >= 3,
+            "cohesive_editorial_arc": cohesive_editorial_arc,
+            "substantive_visual_edits": edit_count >= 3 and content_timed_edits,
             "transcript_timed_camera_direction": bool(camera_angles),
+            "content_timed_editing": content_timed_edits,
+            "dynamic_keyword_captions": bool(
+                isinstance(dynamic_captions, dict) and dynamic_captions.get("enabled")
+            ),
+            "content_derived_visual_variation": bool(
+                isinstance(edit_signature, dict)
+                and edit_signature.get("derived_from_story")
+            ),
             "structured_story_arc": bool(
                 is_compilation and isinstance(story_arc, list) and len(story_arc) >= 3
             ),
@@ -2207,7 +2241,7 @@ def attach_monetization_provenance(
             "enhanced_edit": bool(payload.get("enhanced_edit")),
         }
         originality_score = sum(bool(value) for value in originality_signals.values())
-        minimum_score = 4 if is_compilation else 3
+        minimum_score = 5 if is_compilation else 6
         substantive_transformation = originality_signals["substantive_visual_edits"] or bool(
             is_compilation
             and originality_signals["structured_story_arc"]
@@ -2216,6 +2250,9 @@ def attach_monetization_provenance(
         )
         transformation_ready = (
             originality_signals["enhanced_edit"]
+            and originality_signals["editorial_hook_and_context"]
+            and originality_signals["original_core_message"]
+            and originality_signals["cohesive_editorial_arc"]
             and substantive_transformation
             and originality_score >= minimum_score
         )
@@ -2235,8 +2272,16 @@ def attach_monetization_provenance(
             "commercial_rights_confirmation_required": uploaded_source,
             "originality_score": originality_score,
             "minimum_originality_score": minimum_score,
+            "audit_version": 2,
             "signals": originality_signals,
             "substantive_transformation": substantive_transformation,
+            "original_creator_commentary_present": bool(
+                payload.get("original_creator_commentary")
+            ),
+            "note": (
+                "Lolos audit teknis untuk review Private, bukan jaminan YPP. "
+                "Komentar/kehadiran kreator asli tetap merupakan bukti transformasi terkuat."
+            ),
             "channel_level_review_still_applies": True,
             "guarantee": False,
         }
@@ -3516,6 +3561,13 @@ def apply_codex_edits_to_candidates(
 SUBTITLE_MAX_CHARS = 22
 SUBTITLE_MAX_LINES = 2
 
+# Important text stays clear of the Shorts action rail on the right and the
+# title/channel chrome near the bottom. Decorative pixels may extend beyond it.
+SHORTS_SAFE_LEFT = 56
+SHORTS_SAFE_RIGHT = 900
+SHORTS_SAFE_TOP = 220
+SHORTS_SAFE_BOTTOM = 1560
+
 
 def wrap_subtitle(text: str, max_chars: int = SUBTITLE_MAX_CHARS, max_lines: int = SUBTITLE_MAX_LINES) -> str:
     chunks = split_subtitle_text(text, max_chars=max_chars, max_lines=max_lines)
@@ -3545,6 +3597,25 @@ def split_subtitle_text(text: str, max_chars: int = SUBTITLE_MAX_CHARS, max_line
         chunks.append("\n".join(lines))
 
     return chunks
+
+
+def content_edit_variation(clip: ClipCandidate, variants: int = 6) -> int:
+    """Choose a stable look from story content, not export order.
+
+    Content-derived variation makes a channel less template-like while keeping
+    rerenders deterministic and easy to audit.
+    """
+    safe_variants = max(1, variants)
+    fingerprint = "|".join(
+        (
+            clip.title.strip().casefold(),
+            clip.hook.strip().casefold(),
+            clip.pov.strip().casefold(),
+            first_sentence(clip.text, max_words=18).casefold(),
+        )
+    )
+    digest = hashlib.sha256(fingerprint.encode("utf-8")).digest()
+    return int.from_bytes(digest[:2], "big") % safe_variants
 
 
 def hook_banner_text(clip: ClipCandidate) -> str:
@@ -3644,7 +3715,7 @@ def viral_title_overlay_filter(headline_filename: str, duration: float) -> str:
         "fontcolor=white:fontsize=72:line_spacing=3:"
         "borderw=8:bordercolor=black@1.0:"
         "shadowcolor=black@0.90:shadowx=4:shadowy=5:"
-        "x='(w-text_w)/2':y=286:"
+        f"x='{SHORTS_SAFE_LEFT}+({SHORTS_SAFE_RIGHT - SHORTS_SAFE_LEFT}-text_w)/2':y=286:"
         f"enable='between(t,0,{title_end:.3f})'"
     )
 
@@ -3999,7 +4070,7 @@ def reaction_overlay_filter(cue: ReactionCue, index: int) -> str:
     asset_path = (REACTION_ASSET_DIR / f"{cue.kind}.svg").resolve()
     escaped_path = str(asset_path).replace("\\", "/").replace(":", r"\:").replace("'", r"\'")
     size = 184 if cue.kind in {"laugh", "shock"} else 176 if cue.kind == "important" else 166
-    base_x = 828 if cue.side == "right" else 68
+    base_x = 704 if cue.side == "right" else 68
     direction = -1 if cue.side == "right" else 1
     base_label = f"reaction_base_{index}"
     sticker_label = f"reaction_sticker_{index}"
@@ -4609,8 +4680,8 @@ def enhanced_edit_filter(
     badge = profile["badge"]
     emphasis_label = profile["emphasis_label"]
     grade = profile["grade"]
-    motion_variant = max(0, variation) % 3
-    scale_width = 1120 + motion_variant * 20
+    motion_variant = max(0, variation) % 6
+    scale_width = (1120, 1140, 1160, 1130, 1150, 1170)[motion_variant]
     scale_height = int(round(scale_width * 16 / 9))
     if scale_height % 2:
         scale_height += 1
@@ -4618,9 +4689,15 @@ def enhanced_edit_filter(
     center_y = (scale_height - 1920) / 2
     amp_x = min(12.0, max(4.0, center_x - 2))
     amp_y = min(16.0, max(6.0, center_y - 2))
-    x_period = 7 - motion_variant
-    y_period = 5 + motion_variant
-    intro_zoom_pixels = 70 + motion_variant * 8
+    x_period, y_period = (
+        (7, 5),
+        (6, 6),
+        (5, 7),
+        (8, 5),
+        (7, 7),
+        (6, 8),
+    )[motion_variant]
+    intro_zoom_pixels = (70, 78, 86, 74, 82, 90)[motion_variant]
     pov_zoom_terms: list[str] = []
     pov_x_terms: list[str] = []
     pov_y_terms: list[str] = []
@@ -4719,20 +4796,20 @@ def enhanced_edit_filter(
             hook_start = 0.10
             filters.extend(
                 [
-                    f"drawbox=x=48:y=1092:w={badge_width}:h=48:color={accent}@0.92:t=fill:"
+                    f"drawbox=x=56:y=1092:w={badge_width}:h=48:color={accent}@0.92:t=fill:"
                     f"enable='between(t,{hook_start:.2f},3.80)'",
                     "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                     f"text='{badge}':expansion=none:fontcolor=white:fontsize=23:"
-                    f"x=68:y=1103:enable='between(t,{hook_start:.2f},3.80)'",
-                    "drawbox=x=48:y=1150:w=984:h=220:color=black@0.46:t=fill:"
+                    f"x=76:y=1103:enable='between(t,{hook_start:.2f},3.80)'",
+                    "drawbox=x=56:y=1150:w=844:h=220:color=black@0.46:t=fill:"
                     f"enable='between(t,{hook_start:.2f},3.80)'",
-                    f"drawbox=x=48:y=1150:w=14:h=220:color={accent}@0.98:t=fill:"
+                    f"drawbox=x=56:y=1150:w=14:h=220:color={accent}@0.98:t=fill:"
                     f"enable='between(t,{hook_start:.2f},3.80)'",
                     "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                     f"textfile='{hook_text_filename}':reload=0:expansion=none:"
                     "fontcolor=white:fontsize=48:line_spacing=10:borderw=2:bordercolor=black@0.85:"
                     f"x='if(lt(t,{hook_start + 0.38:.2f}),-text_w+(t-{hook_start:.2f})*"
-                    "(76+text_w)/0.38,76)':y=1192:"
+                    "(84+text_w)/0.38,84)':y=1192:"
                     f"enable='between(t,{hook_start:.2f},3.80)'",
                 ]
             )
@@ -4741,17 +4818,17 @@ def enhanced_edit_filter(
             if pov_end > 4.2:
                 filters.extend(
                     [
-                        "drawbox=x=78:y=1138:w=924:h=116:color=black@0.52:t=fill:"
+                        "drawbox=x=70:y=1138:w=830:h=116:color=black@0.52:t=fill:"
                         f"enable='between(t,4.20,{pov_end:.3f})'",
-                        f"drawbox=x=78:y=1138:w=9:h=116:color={accent_secondary}@0.96:t=fill:"
+                        f"drawbox=x=70:y=1138:w=9:h=116:color={accent_secondary}@0.96:t=fill:"
                         f"enable='between(t,4.20,{pov_end:.3f})'",
                         "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                         f"text='POV':expansion=none:fontcolor={accent_secondary}:fontsize=20:"
-                        f"x=108:y=1156:enable='between(t,4.20,{pov_end:.3f})'",
+                        f"x=100:y=1156:enable='between(t,4.20,{pov_end:.3f})'",
                         "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
                         f"textfile='{pov_text_filename}':reload=0:expansion=none:"
                         "fontcolor=white:fontsize=27:line_spacing=5:borderw=1:bordercolor=black@0.82:"
-                        f"x=108:y=1188:enable='between(t,4.20,{pov_end:.3f})'",
+                        f"x=100:y=1188:enable='between(t,4.20,{pov_end:.3f})'",
                     ]
                 )
         # Subtle pattern interrupts inside the first 30 seconds. These are
@@ -4792,22 +4869,22 @@ def enhanced_edit_filter(
         if show_text_overlays:
             filters.extend(
                 [
-                    "drawbox=x=594:y=382:w=438:h=108:color=black@0.74:t=fill:"
+                    "drawbox=x=500:y=382:w=400:h=108:color=black@0.74:t=fill:"
                     f"enable='between(t,{timestamp:.3f},{label_end:.3f})'",
-                    f"drawbox=x=594:y=382:w=438:h=7:color={accent}@0.98:t=fill:"
+                    f"drawbox=x=500:y=382:w=400:h=7:color={accent}@0.98:t=fill:"
                     f"enable='between(t,{timestamp:.3f},{label_end:.3f})'",
-                    f"drawbox=x=612:y=408:w=58:h=58:color={accent}@0.98:t=fill:"
+                    f"drawbox=x=518:y=408:w=58:h=58:color={accent}@0.98:t=fill:"
                     f"enable='between(t,{timestamp:.3f},{label_end:.3f})'",
                     "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                     "text='!':expansion=none:fontcolor=white:fontsize=38:"
-                    f"x=634:y=411:enable='between(t,{timestamp:.3f},{label_end:.3f})'",
+                    f"x=540:y=411:enable='between(t,{timestamp:.3f},{label_end:.3f})'",
                     "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                     f"text='NOTICE':expansion=none:fontcolor={accent_secondary}:fontsize=17:"
-                    f"x=690:y=400:enable='between(t,{timestamp:.3f},{label_end:.3f})'",
+                    f"x=596:y=400:enable='between(t,{timestamp:.3f},{label_end:.3f})'",
                     "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                     f"text='{emphasis_label}':expansion=none:fontcolor=white:fontsize=25:"
-                    f"x=690:y=426:enable='between(t,{timestamp:.3f},{label_end:.3f})'",
-                    f"drawbox=x=594:y=484:w=438:h=3:color={accent_secondary}@0.74:t=fill:"
+                    f"x=596:y=426:enable='between(t,{timestamp:.3f},{label_end:.3f})'",
+                    f"drawbox=x=500:y=484:w=400:h=3:color={accent_secondary}@0.74:t=fill:"
                     f"enable='between(t,{timestamp:.3f},{label_end:.3f})'",
                 ]
             )
@@ -4816,9 +4893,9 @@ def enhanced_edit_filter(
         card_end = max(card_start + 0.2, safe_duration - 1.28)
         filters.extend(
             [
-                "drawbox=x=48:y=1138:w=984:h=224:color=black@0.56:t=fill:"
+                "drawbox=x=56:y=1138:w=844:h=224:color=black@0.56:t=fill:"
                 f"enable='between(t,{card_start:.3f},{card_end:.3f})'",
-                f"drawbox=x=48:y=1138:w=14:h=224:color={accent_secondary}@0.98:t=fill:"
+                f"drawbox=x=56:y=1138:w=14:h=224:color={accent_secondary}@0.98:t=fill:"
                 f"enable='between(t,{card_start:.3f},{card_end:.3f})'",
                 f"drawbox=x=76:y=1156:w=244:h=42:color={accent}@0.94:t=fill:"
                 f"enable='between(t,{card_start:.3f},{card_end:.3f})'",
@@ -4858,9 +4935,13 @@ def enhanced_edit_filter(
     return ",".join(filters)
 
 
-def write_srt(path: Path, segments: list[TranscriptSegment], offset: float, clip_duration: float) -> None:
-    lines: list[str] = []
-    cue_index = 1
+def subtitle_cues(
+    segments: list[TranscriptSegment],
+    offset: float,
+    clip_duration: float,
+) -> list[tuple[float, float, str]]:
+    """Split speech into compact cues and distribute time by word count."""
+    cues: list[tuple[float, float, str]] = []
     for item in segments:
         start = max(0, item.start - offset)
         end = min(clip_duration, max(start + 0.2, item.end - offset))
@@ -4868,19 +4949,35 @@ def write_srt(path: Path, segments: list[TranscriptSegment], offset: float, clip
             continue
 
         chunks = split_subtitle_text(item.text)
-        chunk_duration = (end - start) / max(1, len(chunks))
+        weights = [max(1, len(re.findall(r"[\w']+", chunk))) for chunk in chunks]
+        total_weight = max(1, sum(weights))
+        elapsed_weight = 0
         for chunk_idx, chunk in enumerate(chunks):
-            chunk_start = start + chunk_duration * chunk_idx
-            chunk_end = end if chunk_idx == len(chunks) - 1 else start + chunk_duration * (chunk_idx + 1)
-            lines.extend(
-                [
-                    str(cue_index),
-                    f"{seconds_to_stamp(chunk_start, srt=True)} --> {seconds_to_stamp(chunk_end, srt=True)}",
-                    chunk,
-                    "",
-                ]
+            chunk_start = start + (end - start) * elapsed_weight / total_weight
+            elapsed_weight += weights[chunk_idx]
+            chunk_end = (
+                end
+                if chunk_idx == len(chunks) - 1
+                else start + (end - start) * elapsed_weight / total_weight
             )
-            cue_index += 1
+            cues.append((chunk_start, chunk_end, chunk))
+    return cues
+
+
+def write_srt(path: Path, segments: list[TranscriptSegment], offset: float, clip_duration: float) -> None:
+    lines: list[str] = []
+    for cue_index, (chunk_start, chunk_end, chunk) in enumerate(
+        subtitle_cues(segments, offset, clip_duration),
+        start=1,
+    ):
+        lines.extend(
+            [
+                str(cue_index),
+                f"{seconds_to_stamp(chunk_start, srt=True)} --> {seconds_to_stamp(chunk_end, srt=True)}",
+                chunk,
+                "",
+            ]
+        )
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -4935,7 +5032,7 @@ def build_subtitle_style(caption: CaptionStyle) -> str:
     # 2 = bottom-center, 6 = top-center, 10 = middle-center.
     if caption.position == "bottom":
         alignment = 2
-        margin_v = 24
+        margin_v = 50
     elif caption.position == "upper":
         alignment = 6
         margin_v = 70
@@ -4950,6 +5047,105 @@ def build_subtitle_style(caption: CaptionStyle) -> str:
     )
 
 
+def _ass_timestamp(seconds: float) -> str:
+    total_centiseconds = max(0, int(round(seconds * 100)))
+    hours, remainder = divmod(total_centiseconds, 360000)
+    minutes, remainder = divmod(remainder, 6000)
+    whole_seconds, centiseconds = divmod(remainder, 100)
+    return f"{hours}:{minutes:02}:{whole_seconds:02}.{centiseconds:02}"
+
+
+def _ass_escape(value: str) -> str:
+    return (
+        value.replace("\\", r"\\")
+        .replace("{", "(")
+        .replace("}", ")")
+        .replace("\n", r"\N")
+    )
+
+
+def highlight_caption_keyword(text: str, accent: str = "#FACC15") -> str:
+    """Highlight one transcript-grounded keyword without changing the quote."""
+    signal_words = (
+        (HOOK_WORDS - WEAK_STARTS)
+        | PAYOFF_WORDS
+        | TENSION_WORDS
+        | IMPORTANT_WORDS
+        | MYSTERY_WORDS
+    )
+    matches = list(re.finditer(r"[\w']+", text, flags=re.UNICODE))
+    candidates = [
+        match
+        for match in matches
+        if match.group(0).casefold() in signal_words
+        or re.fullmatch(r"\d+(?:[.,]\d+)?", match.group(0))
+    ]
+    if not candidates:
+        candidates = [match for match in matches if len(match.group(0)) >= 7]
+    if not candidates:
+        return _ass_escape(text)
+
+    chosen = max(candidates, key=lambda match: (len(match.group(0)), -match.start()))
+    primary = _hex_to_ass_color(accent)
+    before = _ass_escape(text[: chosen.start()])
+    keyword = _ass_escape(text[chosen.start() : chosen.end()])
+    after = _ass_escape(text[chosen.end() :])
+    return (
+        before
+        + "{" + rf"\c{primary}&\fscx108\fscy108" + "}"
+        + keyword
+        + r"{\rCaption}"
+        + after
+    )
+
+
+def write_dynamic_ass(
+    path: Path,
+    segments: list[TranscriptSegment],
+    offset: float,
+    clip_duration: float,
+    caption: CaptionStyle,
+    *,
+    accent: str = "#FACC15",
+) -> int:
+    """Write keyword-highlighted captions inside the Shorts UI-safe region."""
+    font_name = AVAILABLE_FONTS.get(caption.font_family, DEFAULT_FONT)
+    font_size = max(40, min(112, round(max(6, min(120, caption.font_size)) * 6.7)))
+    primary = _hex_to_ass_color(caption.color)
+    outline_color = _hex_to_ass_color(caption.outline_color)
+    outline = max(2.0, min(12.0, caption.outline_width * 6.0))
+    if caption.position == "upper":
+        alignment, margin_v = 8, SHORTS_SAFE_TOP + 130
+    elif caption.position == "center":
+        alignment, margin_v = 5, 0
+    else:
+        alignment, margin_v = 2, 1920 - SHORTS_SAFE_BOTTOM + 5
+
+    cues = subtitle_cues(segments, offset, clip_duration)
+    header = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Caption,{font_name},{font_size},{primary},&H0000D7FF,{outline_color},&H90000000,-1,0,0,0,100,100,0,0,1,{outline:.1f},1.2,{alignment},110,230,{margin_v},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    events = [
+        "Dialogue: 0,"
+        f"{_ass_timestamp(start)},{_ass_timestamp(end)},Caption,,0,0,0,,"
+        f"{highlight_caption_keyword(text, accent)}"
+        for start, end, text in cues
+    ]
+    path.write_text(header + "\n".join(events) + ("\n" if events else ""), encoding="utf-8")
+    return len(events)
+
+
 def channel_watermark_filter(output_format: str) -> str:
     """Render a small, readable channel signature away from captions and faces."""
     if output_format == "landscape_compilation":
@@ -4957,7 +5153,7 @@ def channel_watermark_filter(output_format: str) -> str:
         y_position = "38"
         font_size = 22
     else:
-        x_position = "w-text_w-62"
+        x_position = "62"
         y_position = "98"
         font_size = 24
     return (
@@ -4975,7 +5171,7 @@ def caption_gradient_blur_filter(position: CaptionPosition) -> str:
     """Add a face-safe gradient shade without blurring source pixels."""
     band_height = 380
     if position == "bottom":
-        band_y = 1450
+        band_y = 1280
     elif position == "center":
         band_y = 770
     else:
@@ -5099,7 +5295,8 @@ def designed_thumbnail_filter(
             f"drawtext=fontfile={font_bold}:textfile='{headline_filename}':reload=0:"
             "expansion=none:fontcolor=white:fontsize=72:line_spacing=3:"
             "borderw=8:bordercolor=black@1.0:shadowcolor=black@0.90:"
-            "shadowx=4:shadowy=5:x='(w-text_w)/2':y=286",
+            "shadowx=4:shadowy=5:"
+            f"x='{SHORTS_SAFE_LEFT}+({SHORTS_SAFE_RIGHT - SHORTS_SAFE_LEFT}-text_w)/2':y=286",
         ]
     )
 
@@ -5421,6 +5618,7 @@ def export_clip(
     clips_dir.mkdir(parents=True, exist_ok=True)
     base_name = base_name_override or f"clip_{clip.index:02}_{slugify(clip.title)[:72] or 'auto'}"
     srt_path = clips_dir / f"{base_name}.srt"
+    ass_path = clips_dir / f"{base_name}.dynamic.ass"
     json_path = clips_dir / f"{base_name}.json"
     out_path = clips_dir / f"{base_name}.mp4"
     temp_video_path = clips_dir / f"{base_name}.video_tmp.mp4"
@@ -5433,6 +5631,7 @@ def export_clip(
     json_path.unlink(missing_ok=True)
 
     duration = clip.end - clip.start
+    edit_variation = content_edit_variation(clip)
     adaptive_plan = codex_edit_plan(clip)
     theme_profile = visual_theme_profile(clip)
     islamic_background_music = clip_has_islamic_context(clip)
@@ -5508,6 +5707,22 @@ def export_clip(
         and all((REACTION_ASSET_DIR / f"{cue.kind}.svg").is_file() for cue in reaction_cues)
     )
     write_srt(srt_path, clip_segments, clip.start, duration)
+    dynamic_caption_cues = 0
+    if enhanced_edit and output_format == "vertical_short":
+        dynamic_caption_cues = write_dynamic_ass(
+            ass_path,
+            clip_segments,
+            clip.start,
+            duration,
+            caption or CaptionStyle(),
+            accent=theme_profile["accent"],
+        )
+        if dynamic_caption_cues:
+            applied_edits.append(
+                "Caption dinamis menyorot kata penting dan ditempatkan di safe area UI Shorts."
+            )
+    else:
+        ass_path.unlink(missing_ok=True)
     sidecar_payload = {
         **asdict(clip),
         "enhanced_edit": enhanced_edit,
@@ -5541,6 +5756,17 @@ def export_clip(
         "drawtext_supported": drawtext_supported,
         "subtitles_supported": subtitles_supported,
         "reaction_overlays_supported": reaction_overlays_supported,
+        "dynamic_captions": {
+            "enabled": bool(dynamic_caption_cues),
+            "cue_count": dynamic_caption_cues,
+            "keyword_highlight": bool(dynamic_caption_cues),
+            "shorts_ui_safe_area": bool(dynamic_caption_cues),
+        },
+        "content_edit_signature": {
+            "version": 1,
+            "variation": edit_variation,
+            "derived_from_story": True,
+        },
         "improvement_ideas": remaining_ideas,
         "applied_edits": applied_edits,
         "codex_ideas_resolved": len(clip.improvement_ideas) - len(remaining_ideas),
@@ -5815,7 +6041,7 @@ def export_clip(
                     show_progress=generate_assets,
                     theme_profile=theme_profile,
                     emphasis_times=emphasis_times,
-                    variation=max(0, clip.index - 1),
+                    variation=edit_variation,
                     show_text_overlays=drawtext_supported,
                     reaction_cues=reaction_cues,
                     show_reactions=reaction_overlays_supported,
@@ -5865,10 +6091,10 @@ def export_clip(
         sidecar_payload["channel_watermark"] = {
             "enabled": True,
             "text": CHANNEL_WATERMARK,
-            "position": "top_right",
+            "position": "top_left_safe",
         }
         applied_edits.append(
-            f"Watermark channel {CHANNEL_WATERMARK} ditambahkan di pojok kanan atas."
+            f"Watermark channel {CHANNEL_WATERMARK} ditambahkan di safe area kiri atas."
         )
     else:
         sidecar_payload["channel_watermark"] = {
@@ -5886,11 +6112,15 @@ def export_clip(
                 f":force_style='{style}'"
             )
         else:
+            subtitle_source = ass_path if dynamic_caption_cues else srt_path
+            subtitle_options = (
+                ""
+                if dynamic_caption_cues
+                else f":original_size=1080x1920:force_style='{style}'"
+            )
             vf = (
                 f"{vf},{caption_gradient_blur_filter((caption or CaptionStyle()).position)},"
-                f"subtitles='{srt_path.name}'"
-                ":original_size=1080x1920"
-                f":force_style='{style}'"
+                f"subtitles='{subtitle_source.name}'{subtitle_options}"
             )
     elif burn_subtitles and clip_segments:
         console.print(

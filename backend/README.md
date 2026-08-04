@@ -87,6 +87,7 @@ Default output video:
 - H.264 MP4, CRF 18
 - source download mencoba HD sampai 1080p (`bestvideo+bestaudio`)
 - subtitle burned-in
+- caption dinamis menyorot kata penting dari ucapan asli, dengan timing berbobot jumlah kata dan margin aman agar tidak tertutup action rail/judul UI Shorts; file SRT bersih tetap dibuat untuk accessibility
 - caption ringkas dengan gradient shade face-safe tanpa memburamkan piksel sumber
 - hook visual/audio, reaction kontekstual, dan pattern interrupt
 - klip berkonteks Islami otomatis mendapat backsong motivasional instrumental "Cahaya Hikmah" yang disintesis lokal, berlisensi CC0, dan di-duck agar dialog tetap jelas
@@ -95,6 +96,8 @@ Default output video:
 - intisari dari ucapan asli selalu ditampilkan menjelang akhir clip dan ikut disimpan di metadata hasil agar maknanya mudah dipahami
 - kandidat wajib punya point utama, batas kalimat tuntas, dan payoff dekat ending
 - treatment loop hanya aktif saat payoff benar-benar terhubung ke hook
+- variasi motion dipilih deterministik dari isi cerita (bukan nomor urut export) agar rangkaian upload tidak terlihat seperti template massal yang identik
+- audit monetisasi v2 hanya meloloskan upload Private bila alur hook–pesan inti–payoff utuh dan edit kamera/emphasis/audio benar-benar mengikuti transcript; hasil audit bukan jaminan diterima YPP
 - metadata/chapter container sumber tidak diwariskan ke MP4 hasil; bukti lisensi tetap disimpan lokal
 - transcript lokal accuracy-first via `Systran/faster-whisper-medium`, beam search,
   VAD, word timestamps, dan cache yang terikat model/bahasa
