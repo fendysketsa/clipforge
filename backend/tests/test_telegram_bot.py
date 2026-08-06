@@ -137,11 +137,11 @@ def test_build_job_payload_matches_backend_contract():
     assert payload["max_duration"] == 60
     assert payload["caption_font_size"] == 8
     assert payload["caption_outline"] == 0.5
-    assert payload["visual_mode"] == "animated_3d"
-    assert payload["background_mode"] == "auto_clean"
+    assert payload["visual_mode"] == "auto_fyp"
+    assert payload["background_mode"] == "keep"
     assert payload["clip_mode"] == "short"
     assert payload["compilation_target_seconds"] == TELEGRAM_COMPILATION_MAX_SECONDS == 300
-    assert payload["remove_running_text"] is True
+    assert payload["remove_running_text"] is False
 
 
 def test_telegram_cta_migrates_highlight_state_to_short_only_mode():

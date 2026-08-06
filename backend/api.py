@@ -219,11 +219,11 @@ class ClipJobRequest(BaseModel):
     language: str = "id"
     analyze_seconds: float | None = Field(default=None, ge=10, le=7200)
     video_quality: Literal["standard", "high", "max"] = "high"
-    visual_mode: Literal["auto_fyp", "cinematic", "speaker_split", "animated_3d", "retro_tv"] = "animated_3d"
-    background_mode: Literal["auto_clean", "keep", "mosque"] = "auto_clean"
+    visual_mode: Literal["auto_fyp", "cinematic", "speaker_split", "animated_3d", "retro_tv"] = "auto_fyp"
+    background_mode: Literal["auto_clean", "keep", "mosque"] = "keep"
     burn_subtitles: bool = True
     enhanced_edit: bool = True
-    remove_running_text: bool = True
+    remove_running_text: bool = False
     crop_mode: Literal["center", "person", "streamer"] = "person"
     cam_corner: Literal["auto", "br", "bl", "tr", "tl"] = "auto"
     caption_font_size: int = Field(default=8, ge=6, le=120)
@@ -749,8 +749,8 @@ class AutoViralRequest(BaseModel):
     min_duration: float = Field(default=15, ge=5, le=600)
     max_duration: float = Field(default=60, ge=10, le=600)
     video_quality: Literal["standard", "high", "max"] = "high"
-    visual_mode: Literal["auto_fyp", "cinematic", "speaker_split", "animated_3d", "retro_tv"] = "animated_3d"
-    background_mode: Literal["auto_clean", "keep", "mosque"] = "auto_clean"
+    visual_mode: Literal["auto_fyp", "cinematic", "speaker_split", "animated_3d", "retro_tv"] = "auto_fyp"
+    background_mode: Literal["auto_clean", "keep", "mosque"] = "keep"
     crop_mode: Literal["center", "person", "streamer"] = "person"
     burn_subtitles: bool = True
     ai_enabled: bool = True
@@ -4459,8 +4459,8 @@ def build_clipper_command(request: ClipJobRequest) -> list[str]:
         command.append("--no-burn-subtitles")
     if not request.enhanced_edit:
         command.append("--no-enhanced-edit")
-    if not request.remove_running_text:
-        command.append("--keep-running-text")
+    if request.remove_running_text:
+        command.append("--remove-running-text")
     command.extend(["--crop-mode", request.crop_mode])
     command.extend(["--cam-corner", request.cam_corner])
     command.extend(["--caption-font-size", str(request.caption_font_size)])

@@ -23,7 +23,7 @@ from clipper import (
     build_subtitle_style,
     candidate_fyp_analysis,
     candidate_story_metrics,
-    caption_gradient_blur_filter,
+    clean_detail_edit_filter,
     channel_watermark_filter,
     cinematic_pov_windows,
     clip_has_islamic_context,
@@ -44,7 +44,6 @@ from clipper import (
     highlight_caption_keyword,
     intro_particle_burst_filters,
     is_source_branding_segment,
-    landscape_caption_gradient_blur_filter,
     landscape_compilation_edit_filter,
     landscape_compilation_frame_filter,
     landscape_speaker_split_filter,
@@ -65,6 +64,7 @@ from clipper import (
     viral_title_overlay_filter,
     virtual_camera_angle_cues,
     visual_theme_profile,
+    vertical_clean_detail_crop_filter,
     write_dynamic_ass,
 )
 
@@ -220,17 +220,6 @@ def test_available_fonts_has_defaults():
     assert "Noto Sans" in AVAILABLE_FONTS
 
 
-def test_caption_gradient_backdrop_tracks_position_without_blurring_faces():
-    upper = caption_gradient_blur_filter("upper")
-    bottom = caption_gradient_blur_filter("bottom")
-
-    assert "gblur=" not in upper
-    assert "geq=r='0':g='0':b='0'" in upper
-    assert "geq=" in upper
-    assert "overlay=0:280" in upper
-    assert "overlay=0:1280" in bottom
-
-
 def test_running_text_cleanup_naturally_blurs_footer_without_changing_framing():
     value = remove_running_text_filter()
 
@@ -338,10 +327,20 @@ def test_embedded_split_subject_filter_removes_lower_panel_without_extreme_zoom(
 def test_landscape_compilation_frame_is_full_hd_and_preserves_source_aspect():
     value = landscape_compilation_frame_filter("#FACC15", "#22D3EE")
 
-    assert "crop=iw:trunc(ih*0.92/2)*2" in value
+    assert "crop=iw:trunc(ih*0.92/2)*2" not in value
     assert "scale=1920:1080:force_original_aspect_ratio=increase" in value
     assert "scale=1840:1000:force_original_aspect_ratio=decrease" in value
     assert "[wide_canvas][wide_fg]overlay=(W-w)/2:(H-h)/2" in value
+
+
+def test_landscape_compilation_footer_cleanup_remains_explicitly_available():
+    value = landscape_compilation_frame_filter(
+        "#FACC15",
+        "#22D3EE",
+        remove_running_text=True,
+    )
+
+    assert "crop=iw:trunc(ih*0.92/2)*2" in value
 
 
 def test_landscape_speaker_split_has_two_bordered_panels_and_active_pulses():
@@ -497,14 +496,6 @@ def test_short_still_requires_substantive_visual_edits(tmp_path):
     assert payload["monetization_readiness"]["eligible_for_private_upload_review"] is False
 
 
-def test_landscape_caption_backdrop_uses_16_by_9_canvas_without_face_blur():
-    value = landscape_caption_gradient_blur_filter("bottom")
-
-    assert "crop=1920:250" in value
-    assert "overlay=0:760" in value
-    assert "gblur=" not in value
-
-
 def test_enhanced_edit_filter_adds_motion_hook_transition_and_progress():
     value = enhanced_edit_filter(60, "clip.hook.txt", pov_text_filename="clip.pov.txt")
 
@@ -524,6 +515,58 @@ def test_enhanced_edit_filter_adds_motion_hook_transition_and_progress():
     assert "gblur=sigma=18" in value
     assert "[modern_bg][modern_fg]overlay=40:71" in value
     assert "#22D3EE@0.24" in value
+
+
+def test_clean_detail_edit_keeps_faces_clear_and_motion_sparse():
+    cue = CameraAngleCue(
+        kind="close_left",
+        start=5.0,
+        end=7.2,
+        zoom_pixels=42,
+        x_offset=-12,
+        y_offset=-6,
+        trigger="Ternyata keputusan pertama itu salah.",
+    )
+
+    value = clean_detail_edit_filter(
+        30,
+        "clip.hook.txt",
+        cover_text_filename="clip.cover.txt",
+        emphasis_times=[5.0, 12.0, 20.0],
+        camera_angle_cues=[cue],
+        detail_filter="cas=strength=0.18",
+    )
+
+    assert "1080+16*max(0,1-t/0.55)" in value
+    assert "if(between(t,5.000,7.200),42+3*sin" in value
+    assert "x='(iw-ow)/2+-12*between(t,5.000,7.200)'" in value
+    assert "cas=strength=0.18" in value
+    assert "textfile='clip.cover.txt'" in value
+    assert "h=4:color=" in value
+    assert "between(t,20.000" not in value
+    assert "gblur=" not in value
+    assert "vignette=" not in value
+    assert "gradient" not in value
+    assert "text='POV'" not in value
+    assert "text='INTISARI'" not in value
+
+
+def test_clean_detail_crop_avoids_extreme_landscape_upscale(monkeypatch, tmp_path):
+    monkeypatch.setattr("clipper.get_video_size", lambda _path: (1920, 1080))
+    clip = ClipCandidate(1, 0, 30, 30, 85, "Judul", "test", "Isi")
+
+    value, detail = vertical_clean_detail_crop_filter(
+        tmp_path / "source.mp4",
+        clip,
+        "center",
+    )
+
+    assert "crop=810:1080:554:0" in value
+    assert "scale=1080:1440:flags=lanczos" in value
+    assert "pad=1080:1920:0:240:color=#050B0A" in value
+    assert "gblur=" not in value
+    assert detail["layout"] == "clean_solid_canvas"
+    assert detail["extreme_upscale_avoided"] is True
 
 
 def test_shorts_cover_moment_uses_bold_centered_viral_title():
@@ -972,11 +1015,11 @@ def test_virtual_camera_angles_follow_spoken_beats_and_stay_sparse():
 
     cues = virtual_camera_angle_cues(clip, segments)
 
-    assert len(cues) == 4
+    assert len(cues) == 3
     assert [cue.start for cue in cues] == sorted(cue.start for cue in cues)
-    assert all(right.start - left.start >= 3.4 for left, right in zip(cues, cues[1:]))
+    assert all(right.start - left.start >= 5.2 for left, right in zip(cues, cues[1:]))
     assert len({cue.kind for cue in cues}) >= 3
-    assert all(cue.zoom_pixels >= 72 for cue in cues)
+    assert all(28 <= cue.zoom_pixels <= 48 for cue in cues)
     assert any("Ternyata" in cue.trigger for cue in cues)
 
 
@@ -1039,7 +1082,7 @@ def test_animated_3d_look_has_safe_color_grade_fallback():
 def test_animated_3d_look_can_add_adaptive_clarity():
     value = animated_3d_look_filter(with_adaptive_sharpen=True)
 
-    assert "hqdn3d=0.42:0.32:0.85:0.65" in value
+    assert "hqdn3d=0:0:0.45:0.35" in value
     assert "blend=all_mode=multiply:all_opacity=0.07" in value
     assert value.endswith("cas=strength=0.30")
 

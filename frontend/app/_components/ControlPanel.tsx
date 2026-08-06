@@ -524,7 +524,7 @@ export function ControlPanel({
         </div>
         <p className="field-help">
           {visualMode === "auto_fyp"
-            ? `Direkomendasikan: border adaptif dan motion seperlunya${
+            ? `Direkomendasikan: detail sumber dipertahankan tanpa blur/gradient, dengan reframe hanya pada beat penting${
                 clipMode === "highlight_5m" ? ", plus split kanan–kiri saat dua pembicara terdeteksi" : ""
               }.`
             : visualMode === "animated_3d"
@@ -564,7 +564,7 @@ export function ControlPanel({
         </div>
         <p className="field-help">
           {backgroundMode === "auto_clean"
-            ? "Backdrop penuh tulisan dibersihkan otomatis. Pada clip vertikal, pembicara tetap dominan dengan panel jamaah masjid di bawah dan transisi gradasi sinematik."
+            ? "Backdrop penuh tulisan dibersihkan otomatis. Mode Clean Detail tidak menambahkan panel bawah atau gradasi di atas pembicara."
             : backgroundMode === "mosque"
               ? "Selalu mencoba virtual background masjid; pembicara, meja, dan mikrofon tetap dipertahankan."
               : "Tidak mengubah background asli selain crop dan frame visual."}
@@ -651,7 +651,7 @@ export function ControlPanel({
           />
         </label>
         <p className="field-help">
-          Teks dibuat ringkas di safe-zone bawah dengan gradient gelap tanpa memburamkan wajah.
+          Teks dibuat ringkas dengan outline/shadow di safe-zone, tanpa gradient atau blur di atas wajah.
         </p>
 
         {burnSubtitles ? (

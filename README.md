@@ -14,18 +14,19 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - End candidates on complete key-point/payoff boundaries and suppress near-duplicate ideas.
 - Export vertical 9:16 MP4 clips with SRT files.
 - Burn subtitles into clips by default.
-- Apply context-aware cinematic editing by default: theme color grading, animated hooks, varied camera motion, transcript-synced emphasis pulses, transitions, vignette, and progress bar.
+- Apply clean context-aware editing by default: a truthful opening hook, sparse transcript-synced camera cuts, two brief edge cues, and a thin progress line.
 - Reframe a single speaker like a restrained virtual multi-camera edit, cutting between face-safe medium and close-up angles on meaningful speech beats.
 - Record a monetization-readiness audit beside each render, require substantive editorial signals before YouTube upload, preserve verified CC BY attribution, and disclose realistic backdrop replacement.
-- Offer a default **3D Animated** visual mode with light denoising, adaptive detail, warm animated-film color, depth contrast, and restrained outlines; no external video-generation service is required.
-- When a text-heavy backdrop is detected, transition vertical clips into a speaker-dominant layout with a shorter mosque-congregation panel below and a soft cinematic overlap instead of a hard 50/50 divide.
-- Add sparse conversation-aware reaction stickers for laughter, surprise, questions, prayer/gratitude, warnings, and emotional moments.
+- Use **Auto FYP Clean Detail** by default: restrained correction, final-pass adaptive clarity, sparse transcript-timed reframes, no continuous drift, and no blur/gradient over the source frame.
+- Keep the optional **3D Animated** mode for deliberately stylized renders with light temporal denoising, warm color, depth contrast, and restrained outlines.
+- Keep the original background by default; optional Auto Clean and Speaker Split modes remain available for text-heavy sources.
+- Add at most one strong conversation-aware reaction sticker in Clean Detail mode, only for laughter, surprise, prayer, or warnings.
 - Mix restrained transcript-synced sound effects under normalized dialogue.
 - Automatically give Islamic clips a quiet, dialogue-ducked motivational music bed generated locally from the CC0 "Cahaya Hikmah" recipe, with no third-party recording or sample.
 - Apply loop treatment only when the payoff semantically reconnects to the opening hook.
-- Naturally blur the source footer/running-text strip in vertical exports by default before adding fresh captions and graphics.
+- Preserve the source footer and face pixels by default; footer cleanup is opt-in for sources where modifying the lower frame is acceptable.
 - Enhance voice clarity and generate safe, niche-aware social captions even when the AI service is unavailable.
-- Keep captions compact with a face-safe gradient shade that never blurs source pixels.
+- Keep captions compact and readable with outline/shadow only, without a gradient band over the source image.
 - Generate short clips up to 60 seconds without an extra compilation render.
 - Keep the chronological 5–10 minute cinematic story resume available as a separate mode.
 - Telegram's primary CTA requests short clips only for a faster turnaround.

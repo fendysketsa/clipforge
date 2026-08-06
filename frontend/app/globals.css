@@ -3821,17 +3821,6 @@ details[open] > summary .detailsChevron {
   overflow: hidden;
 }
 
-.clipMedia::after {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 90px;
-  content: "";
-  pointer-events: none;
-  background: linear-gradient(to top, rgba(3, 10, 9, 0.68), transparent);
-}
-
 .clipMedia video,
 .clipCard .clipMedia video {
   display: block;

@@ -518,26 +518,29 @@ VIDEO_QUALITY_PRESETS = {
         "audio_bitrate": "160k",
         "max_download_height": 1080,
         "sharpen": "",
+        "cas_strength": "",
     },
     "high": {
         "label": "high quality",
-        "crf": "17",
+        "crf": "16",
         "preset": "medium",
         "profile": "high",
         "level": "4.2",
         "audio_bitrate": "192k",
         "max_download_height": 2160,
-        "sharpen": "unsharp=5:5:0.35:3:3:0.15",
+        "sharpen": "unsharp=5:5:0.22:3:3:0.08",
+        "cas_strength": "0.18",
     },
     "max": {
         "label": "maximum quality",
-        "crf": "15",
+        "crf": "14",
         "preset": "slow",
         "profile": "high",
         "level": "4.2",
         "audio_bitrate": "256k",
         "max_download_height": 2160,
-        "sharpen": "unsharp=5:5:0.45:3:3:0.20",
+        "sharpen": "unsharp=5:5:0.30:3:3:0.10",
+        "cas_strength": "0.24",
     },
 }
 SCALE_QUALITY_FLAGS = "flags=lanczos"
@@ -679,7 +682,11 @@ def enforce_clip_size_limit(path: Path, duration: float, max_bytes: int | None =
                 "-c:v",
                 "libx264",
                 "-preset",
-                "veryfast",
+                "slow",
+                "-tune",
+                "film",
+                "-x264-params",
+                "aq-mode=3:aq-strength=0.85:deblock=-1,-1",
                 "-b:v",
                 str(video_bps),
                 "-maxrate",
@@ -781,8 +788,17 @@ def scale_filter(width: int | str, height: int | str, *, force_increase: bool = 
 
 
 def add_quality_sharpen(vf: str, video_quality: VideoQuality) -> str:
-    sharpen = str(quality_preset(video_quality)["sharpen"])
+    sharpen = quality_detail_filter(video_quality)
     return f"{vf},{sharpen}" if sharpen else vf
+
+
+def quality_detail_filter(video_quality: VideoQuality) -> str:
+    """Choose restrained adaptive clarity, with a widely supported fallback."""
+    preset = quality_preset(video_quality)
+    cas_strength = str(preset.get("cas_strength") or "")
+    if cas_strength and ffmpeg_has_filter("cas"):
+        return f"cas=strength={cas_strength}"
+    return str(preset["sharpen"])
 
 
 def ffmpeg_clean_metadata_args() -> list[str]:
@@ -978,7 +994,12 @@ def ensure_minimum_hd_output(path: Path) -> tuple[int, int]:
 
 
 def remove_running_text_filter(crop_bottom: int = 280) -> str:
-    """Naturally obscure a source footer/ticker without zooming or changing framing."""
+    """Obscure a source footer/ticker when cleanup is explicitly requested.
+
+    This is intentionally opt-in. Any footer treatment necessarily modifies
+    source pixels and can overlap a close-up speaker, so the normal render path
+    keeps the original frame untouched.
+    """
     # Keep the legacy argument name for callers that passed crop_bottom by keyword;
     # it now controls the height of the feathered blur instead of a destructive crop.
     safe_height = max(160, min(420, int(crop_bottom)))
@@ -1822,6 +1843,67 @@ def vertical_crop_filter(video_path: Path, clip: ClipCandidate, crop_mode: CropM
     crop_y = clamp_even((scaled_height - 1920) / 2, 0, scaled_height - 1920)
     console.print(f"[green]Person crop[/green] clip {clip.index}: focus x={focus_x:.2f}, crop x={crop_x}")
     return f"{scale_filter(scaled_width, scaled_height)},crop=1080:1920:{crop_x}:{crop_y},setsar=1"
+
+
+def vertical_clean_detail_crop_filter(
+    video_path: Path,
+    clip: ClipCandidate,
+    crop_mode: CropMode,
+) -> tuple[str, dict[str, int | str | bool]]:
+    """Avoid extreme 9:16 upscaling for low-resolution landscape sources."""
+    source_size = get_video_size(video_path)
+    if source_size is None:
+        return vertical_crop_filter(video_path, clip, crop_mode), {
+            "source_resolution_known": False,
+            "layout": "full_height_fallback",
+        }
+    source_width, source_height = source_size
+    source_aspect = source_width / max(1, source_height)
+    if source_aspect <= 0.82 or source_height >= 1800:
+        return vertical_crop_filter(video_path, clip, crop_mode), {
+            "source_resolution_known": True,
+            "source_width": source_width,
+            "source_height": source_height,
+            "layout": "full_height_native_detail",
+        }
+
+    if source_height < 720:
+        panel_height = 1080
+    elif source_height < 1080:
+        panel_height = 1280
+    elif source_height < 1440:
+        panel_height = 1440
+    else:
+        panel_height = 1600
+    clean_source_height = source_height if source_height % 2 == 0 else source_height - 1
+    crop_width = clamp_even(
+        clean_source_height * 1080 / panel_height,
+        2,
+        source_width,
+    )
+    focus = detect_person_focus_x(video_path, clip) if crop_mode == "person" else None
+    focus_x = focus[0] if focus is not None else 0.5
+    crop_x = clamp_even(
+        focus_x * source_width - crop_width / 2,
+        0,
+        source_width - crop_width,
+    )
+    pad_y = (1920 - panel_height) // 2
+    vf = (
+        f"crop={crop_width}:{clean_source_height}:{crop_x}:0,"
+        f"scale=1080:{panel_height}:flags=lanczos,"
+        f"pad=1080:1920:0:{pad_y}:color=#050B0A,setsar=1"
+    )
+    return vf, {
+        "source_resolution_known": True,
+        "source_width": source_width,
+        "source_height": source_height,
+        "layout": "clean_solid_canvas",
+        "panel_height": panel_height,
+        "crop_width": crop_width,
+        "crop_x": crop_x,
+        "extreme_upscale_avoided": True,
+    }
 
 
 def embedded_split_subject_filter(
@@ -3899,8 +3981,8 @@ def virtual_camera_angle_cues(
     clip: ClipCandidate,
     clip_segments: list[TranscriptSegment],
     *,
-    limit: int = 7,
-    min_gap: float = 3.4,
+    limit: int = 5,
+    min_gap: float = 5.2,
 ) -> list[CameraAngleCue]:
     """Plan sparse face-safe medium/close cuts on meaningful speech boundaries.
 
@@ -3951,7 +4033,7 @@ def virtual_camera_angle_cues(
 
     # Strong semantic beats get first refusal. Cadence candidates then fill
     # longer stretches so a 30–60 second Short never feels like one static crop.
-    desired_count = min(limit, max(1, int(duration // 6.5)))
+    desired_count = min(limit, max(1, int(duration // 9.5)))
     selected: list[tuple[int, float, float, str]] = []
     for candidate in sorted(candidates, key=lambda item: (-item[0], item[1])):
         if candidate[0] <= 1 and len(selected) >= max(1, desired_count // 2):
@@ -3971,11 +4053,11 @@ def virtual_camera_angle_cues(
                 break
 
     angle_cycle: tuple[tuple[CameraAngleKind, int, int, int], ...] = (
-        ("close_left", 118, -28, -10),
-        ("medium", 72, 20, -4),
-        ("close_center", 138, 0, -16),
-        ("close_right", 112, 28, -8),
-        ("medium", 78, -18, 4),
+        ("close_left", 42, -12, -6),
+        ("medium", 28, 8, -2),
+        ("close_center", 48, 0, -8),
+        ("close_right", 40, 12, -5),
+        ("medium", 30, -8, 2),
     )
     cues: list[CameraAngleCue] = []
     for index, (_, start, end, trigger) in enumerate(sorted(selected, key=lambda item: item[1])):
@@ -4000,8 +4082,8 @@ def detect_reaction_cues(
     clip: ClipCandidate,
     clip_segments: list[TranscriptSegment],
     *,
-    limit: int = 4,
-    min_gap: float = 5.5,
+    limit: int = 2,
+    min_gap: float = 8.0,
 ) -> list[ReactionCue]:
     """Choose sparse, transcript-grounded reaction stickers instead of random emoji spam."""
     duration = max(0.1, clip.end - clip.start)
@@ -4342,12 +4424,12 @@ def animated_3d_look_filter(
     clarity = ",cas=strength=0.30" if with_adaptive_sharpen else ""
     if not with_outline:
         return (
-            "hqdn3d=0.42:0.32:0.85:0.65,"
+            "hqdn3d=0:0:0.45:0.35,"
             f"{color_grade},"
             f"vignette=PI/16{clarity}"
         )
     return (
-        "hqdn3d=0.42:0.32:0.85:0.65,"
+        "hqdn3d=0:0:0.45:0.35,"
         "split=2[animated_color_src][animated_edge_src];"
         f"[animated_color_src]{color_grade}[animated_color];"
         "[animated_edge_src]edgedetect=low=0.070:high=0.22,"
@@ -4393,7 +4475,7 @@ def landscape_compilation_frame_filter(
     accent: str,
     secondary: str,
     *,
-    remove_running_text: bool = True,
+    remove_running_text: bool = False,
 ) -> str:
     """Preserve the source framing inside a cinematic 1920x1080 long-form layout."""
     source_cleanup = "crop=iw:trunc(ih*0.92/2)*2:0:0," if remove_running_text else ""
@@ -4423,7 +4505,7 @@ def landscape_speaker_split_filter(
     secondary: str,
     *,
     emphasis_times: list[float] | None = None,
-    remove_running_text: bool = True,
+    remove_running_text: bool = False,
 ) -> str:
     """Build two bordered close-up panels and pulse the active side on key speech beats."""
     clean_height = make_even(source_height * (0.92 if remove_running_text else 1.0), 2)
@@ -4645,6 +4727,105 @@ def intro_particle_burst_filters(accent: str, secondary: str) -> list[str]:
             f"color={secondary}@0.88:t=fill:enable='between(t,0.14,0.70)'"
         ),
     ]
+
+
+def clean_detail_edit_filter(
+    duration: float,
+    hook_text_filename: str,
+    *,
+    cover_text_filename: str = "",
+    show_progress: bool = True,
+    theme_profile: dict[str, str] | None = None,
+    emphasis_times: list[float] | None = None,
+    show_text_overlays: bool = True,
+    reaction_cues: list[ReactionCue] | None = None,
+    show_reactions: bool = True,
+    camera_angle_cues: list[CameraAngleCue] | None = None,
+    detail_filter: str = "",
+) -> str:
+    """Keep source detail clean while adding sparse, story-timed visual rhythm."""
+    safe_duration = max(0.1, duration)
+    profile = theme_profile or {
+        "theme": "knowledge",
+        "accent": "#FACC15",
+        "accent_secondary": "#22D3EE",
+    }
+    theme = profile.get("theme", "knowledge")
+    accent = profile.get("accent", "#FACC15")
+    clean_grades = {
+        "mystery": "eq=contrast=1.025:brightness=-0.004:saturation=0.99:gamma=0.998",
+        "islamic": "eq=contrast=1.020:brightness=0.003:saturation=1.025:gamma=1.004",
+        "warning": "eq=contrast=1.025:brightness=0.001:saturation=1.02:gamma=1.0",
+        "inspiring": "eq=contrast=1.018:brightness=0.004:saturation=1.03:gamma=1.005",
+        "knowledge": "eq=contrast=1.020:brightness=0.002:saturation=1.02:gamma=1.002",
+    }
+
+    zoom_terms = ["16*max(0,1-t/0.55)"]
+    x_terms: list[str] = []
+    y_terms: list[str] = []
+    for cue in camera_angle_cues or []:
+        if cue.end <= cue.start:
+            continue
+        active = f"between(t,{cue.start:.3f},{cue.end:.3f})"
+        cue_duration = cue.end - cue.start
+        settle = f"sin(PI*(t-{cue.start:.3f})/{cue_duration:.3f})"
+        zoom_terms.append(f"if({active},{cue.zoom_pixels}+3*{settle},0)")
+        x_terms.append(f"{cue.x_offset}*{active}")
+        y_terms.append(f"{cue.y_offset}*{active}")
+
+    scale_expression = "1080+" + "+".join(zoom_terms)
+    x_motion = "+".join(x_terms) or "0"
+    y_motion = "+".join(y_terms) or "0"
+    filters = [
+        clean_grades.get(theme, clean_grades["knowledge"]),
+        (
+            "scale=w="
+            f"'trunc(({scale_expression})/2)*2':"
+            "h=-2:eval=frame:flags=lanczos"
+        ),
+        "crop=1080:1920:"
+        f"x='(iw-ow)/2+{x_motion}':"
+        f"y='(ih-oh)/2+{y_motion}'",
+        "setsar=1",
+    ]
+    if detail_filter:
+        filters.append(detail_filter)
+
+    if show_text_overlays:
+        title_filename = cover_text_filename or hook_text_filename
+        if title_filename:
+            filters.append(viral_title_overlay_filter(title_filename, safe_duration))
+
+    # A short edge cue marks only the strongest transcript beats. It adds
+    # rhythm without a card, vignette, gradient, or element over the face.
+    for timestamp in sorted(emphasis_times or [])[:2]:
+        pulse_end = min(safe_duration, timestamp + 0.24)
+        filters.extend(
+            [
+                f"drawbox=x=40:y=70:w=1000:h=3:color={accent}@0.82:t=fill:"
+                f"enable='between(t,{timestamp:.3f},{pulse_end:.3f})'",
+                f"drawbox=x=40:y=1847:w=1000:h=3:color={accent}@0.72:t=fill:"
+                f"enable='between(t,{timestamp:.3f},{pulse_end:.3f})'",
+            ]
+        )
+
+    if show_reactions:
+        strong_reactions = [
+            cue
+            for cue in (reaction_cues or [])
+            if cue.kind in {"laugh", "shock", "pray", "warning"}
+        ][:1]
+        filters.extend(
+            reaction_overlay_filter(cue, index)
+            for index, cue in enumerate(strong_reactions, start=1)
+        )
+
+    if show_progress:
+        filters.append(
+            f"drawbox=x=0:y=1916:w='max(2,iw*t/{safe_duration:.3f})':"
+            f"h=4:color={accent}@0.78:t=fill"
+        )
+    return ",".join(filters)
 
 
 def enhanced_edit_filter(
@@ -5167,42 +5348,6 @@ def channel_watermark_filter(output_format: str) -> str:
     )
 
 
-def caption_gradient_blur_filter(position: CaptionPosition) -> str:
-    """Add a face-safe gradient shade without blurring source pixels."""
-    band_height = 380
-    if position == "bottom":
-        band_y = 1280
-    elif position == "center":
-        band_y = 770
-    else:
-        band_y = 280
-    alpha = "255*0.88*(1-pow(abs(Y-H/2)/(H/2),2))"
-    return (
-        "split=2[caption_base][caption_shade_src];"
-        f"[caption_shade_src]crop=1080:{band_height}:0:{band_y},format=rgba,"
-        f"geq=r='0':g='0':b='0':a='{alpha}*0.28'[caption_band];"
-        f"[caption_base][caption_band]overlay=0:{band_y}"
-    )
-
-
-def landscape_caption_gradient_blur_filter(position: CaptionPosition) -> str:
-    """Add a face-safe caption shade sized for a 1920x1080 canvas."""
-    band_height = 250
-    if position == "bottom":
-        band_y = 760
-    elif position == "center":
-        band_y = 415
-    else:
-        band_y = 105
-    alpha = "255*0.82*(1-pow(abs(Y-H/2)/(H/2),2))"
-    return (
-        "split=2[wide_caption_base][wide_caption_shade_src];"
-        f"[wide_caption_shade_src]crop=1920:{band_height}:0:{band_y},format=rgba,"
-        f"geq=r='0':g='0':b='0':a='{alpha}*0.32'[wide_caption_band];"
-        f"[wide_caption_base][wide_caption_band]overlay=0:{band_y}"
-    )
-
-
 THUMBNAIL_SYSTEM_PROMPT = (
     "You write prompts for an AI image generator that will ONLY add a text overlay onto a "
     "provided screenshot. The screenshot is the thumbnail background and must NOT be redrawn, "
@@ -5608,10 +5753,10 @@ def export_clip(
     enforce_size: bool = True,
     base_name_override: str = "",
     enhanced_edit: bool = True,
-    remove_running_text: bool = True,
+    remove_running_text: bool = False,
     output_format: OutputFormat = "vertical_short",
-    visual_mode: VisualMode = "animated_3d",
-    background_mode: BackgroundMode = "auto_clean",
+    visual_mode: VisualMode = "auto_fyp",
+    background_mode: BackgroundMode = "keep",
     compilation_part_number: int = 1,
     compilation_part_count: int = 1,
 ) -> Path:
@@ -5631,6 +5776,7 @@ def export_clip(
     json_path.unlink(missing_ok=True)
 
     duration = clip.end - clip.start
+    clean_detail_pipeline = output_format == "vertical_short" and visual_mode == "auto_fyp"
     edit_variation = content_edit_variation(clip)
     adaptive_plan = codex_edit_plan(clip)
     theme_profile = visual_theme_profile(clip)
@@ -5657,14 +5803,16 @@ def export_clip(
             duration,
             reaction_cues,
             emphasis_times,
-            limit=3 if output_format == "landscape_compilation" else 5,
-            min_gap=7.0 if output_format == "landscape_compilation" else 3.0,
+            limit=3,
+            min_gap=7.0 if output_format == "landscape_compilation" else 5.5,
         )
         if enhanced_edit
         else []
     )
     if enhanced_edit:
         sound_effect_cues = apply_codex_audio_cues(sound_effect_cues, duration, adaptive_plan)
+        if clean_detail_pipeline:
+            sound_effect_cues = sound_effect_cues[:3]
     drawtext_supported = ffmpeg_has_filter("drawtext")
     automatic_short_title = output_format == "vertical_short" and drawtext_supported
     applied_edits = list(clip.applied_edits)
@@ -5775,6 +5923,14 @@ def export_clip(
         "output_format": output_format,
         "visual_mode": visual_mode,
         "background_mode": background_mode,
+        "clean_detail_pipeline": clean_detail_pipeline,
+        "detail_encoding": {
+            "crf": int(quality_preset(video_quality)["crf"]),
+            "preset": str(quality_preset(video_quality)["preset"]),
+            "clarity_filter": quality_detail_filter(video_quality) or "none",
+            "x264_tune": "film",
+            "adaptive_quantization": "aq-mode=3:aq-strength=0.85",
+        },
         "aspect_ratio": "16:9" if output_format == "landscape_compilation" else "9:16",
         "source_metadata_embedded": False,
         "core_message": core_message.replace("\n", " ").strip(),
@@ -5846,6 +6002,7 @@ def export_clip(
     adaptive_text_split_enabled = (
         output_format == "vertical_short"
         and background_mode == "auto_clean"
+        and visual_mode == "speaker_split"
         and (backdrop_profile is not None or embedded_split_profile is not None)
         and MOSQUE_CONGREGATION_PATH.is_file()
         and split_filters_supported
@@ -5901,6 +6058,18 @@ def export_clip(
         )
     elif crop_mode == "streamer":
         vf = streamer_crop_filter(video_path, clip, cam_corner)
+    elif clean_detail_pipeline:
+        vf, source_detail = vertical_clean_detail_crop_filter(
+            video_path,
+            clip,
+            crop_mode,
+        )
+        sidecar_payload["source_detail_strategy"] = source_detail
+        sidecar_payload["layout"] = str(source_detail["layout"])
+        if source_detail.get("extreme_upscale_avoided"):
+            applied_edits.append(
+                "Upscale ekstrem 9:16 dihindari; sumber landscape ditempatkan pada kanvas solid tajam agar detail wajah tetap natural."
+            )
     else:
         vf = vertical_crop_filter(video_path, clip, crop_mode)
     if (
@@ -5980,7 +6149,8 @@ def export_clip(
             if outline_supported
             else "Look 3D animated jernih diterapkan dengan denoise ringan, warna hangat, dan detail adaptif."
         )
-    vf = add_quality_sharpen(vf, video_quality)
+    if not clean_detail_pipeline:
+        vf = add_quality_sharpen(vf, video_quality)
     if automatic_short_title:
         cover_text_path.write_text(cover_copy["headline"] + "\n", encoding="utf-8")
     if enhanced_edit:
@@ -5989,9 +6159,10 @@ def export_clip(
             pov_text_path.write_text(pov_banner_text(clip) + "\n", encoding="utf-8")
             payoff_text_path.write_text(core_message + "\n", encoding="utf-8")
             if output_format == "vertical_short":
-                applied_edits.append(
-                    "Intisari ucapan asli ditampilkan menjelang akhir agar makna klip langsung terbaca."
-                )
+                if not clean_detail_pipeline:
+                    applied_edits.append(
+                        "Intisari ucapan asli ditampilkan menjelang akhir agar makna klip langsung terbaca."
+                    )
                 applied_edits.append(
                     "Judul hook bergaya Shorts ditampilkan otomatis pada 3,2 detik pertama dan ditandai keyframe untuk cover."
                 )
@@ -6027,39 +6198,70 @@ def export_clip(
                 "Setiap bab diberi catatan editor berbasis POV dan konteks klip agar resume memiliki framing editorial yang jelas."
             )
         else:
-            vf = (
-                f"{vf},"
-                f"{enhanced_edit_filter(
-                    duration,
-                    hook_text_path.name,
-                    pov_text_filename=pov_text_path.name if drawtext_supported else "",
-                    cover_text_filename=(
-                        cover_text_path.name
-                        if drawtext_supported and output_format == "vertical_short"
-                        else ""
-                    ),
-                    show_progress=generate_assets,
-                    theme_profile=theme_profile,
-                    emphasis_times=emphasis_times,
-                    variation=edit_variation,
-                    show_text_overlays=drawtext_supported,
-                    reaction_cues=reaction_cues,
-                    show_reactions=reaction_overlays_supported,
-                    codex_plan=adaptive_plan,
-                    payoff_text_filename=payoff_text_path.name if drawtext_supported else "",
-                    cinematic_pov_windows=pov_windows,
-                    camera_angle_cues=camera_angle_cues or None,
-                )}"
-            )
-            sidecar_payload["motion_impact"] = {
-                "animated_border": True,
-                "intro_zoom_out": True,
-                "intro_edge_particles": True,
-                "particle_duration_seconds": 0.84,
-            }
-            applied_edits.append(
-                "Border neon bergerak, zoom-out pembuka, dan bintik cahaya singkat ditambahkan untuk memperkuat hook."
-            )
+            if clean_detail_pipeline:
+                vf = (
+                    f"{vf},"
+                    f"{clean_detail_edit_filter(
+                        duration,
+                        hook_text_path.name,
+                        cover_text_filename=(
+                            cover_text_path.name if drawtext_supported else ""
+                        ),
+                        show_progress=generate_assets,
+                        theme_profile=theme_profile,
+                        emphasis_times=emphasis_times,
+                        show_text_overlays=drawtext_supported,
+                        reaction_cues=reaction_cues,
+                        show_reactions=reaction_overlays_supported,
+                        camera_angle_cues=camera_angle_cues,
+                        detail_filter=quality_detail_filter(video_quality),
+                    )}"
+                )
+                sidecar_payload["motion_impact"] = {
+                    "style": "clean_detail",
+                    "continuous_motion": False,
+                    "blurred_frame": False,
+                    "gradient_overlay": False,
+                    "large_editorial_cards": False,
+                    "story_timed_camera_cuts": len(camera_angle_cues),
+                }
+                applied_edits.append(
+                    "Pipeline clean-detail menjaga frame tanpa blur/gradient, lalu memberi reframe singkat hanya pada beat ucapan penting."
+                )
+            else:
+                vf = (
+                    f"{vf},"
+                    f"{enhanced_edit_filter(
+                        duration,
+                        hook_text_path.name,
+                        pov_text_filename=pov_text_path.name if drawtext_supported else "",
+                        cover_text_filename=(
+                            cover_text_path.name
+                            if drawtext_supported and output_format == "vertical_short"
+                            else ""
+                        ),
+                        show_progress=generate_assets,
+                        theme_profile=theme_profile,
+                        emphasis_times=emphasis_times,
+                        variation=edit_variation,
+                        show_text_overlays=drawtext_supported,
+                        reaction_cues=reaction_cues,
+                        show_reactions=reaction_overlays_supported,
+                        codex_plan=adaptive_plan,
+                        payoff_text_filename=payoff_text_path.name if drawtext_supported else "",
+                        cinematic_pov_windows=pov_windows,
+                        camera_angle_cues=camera_angle_cues or None,
+                    )}"
+                )
+                sidecar_payload["motion_impact"] = {
+                    "animated_border": True,
+                    "intro_zoom_out": True,
+                    "intro_edge_particles": True,
+                    "particle_duration_seconds": 0.84,
+                }
+                applied_edits.append(
+                    "Border neon bergerak, zoom-out pembuka, dan bintik cahaya singkat ditambahkan untuk memperkuat hook."
+                )
             if pov_windows:
                 applied_edits.append(
                     f"Look 3D dipadukan dengan {len(pov_windows)} reframe sinematik pada momen POV terdeteksi."
@@ -6070,6 +6272,8 @@ def export_clip(
                 )
     elif automatic_short_title:
         vf = f"{vf},{viral_title_overlay_filter(cover_text_path.name, duration)}"
+    if clean_detail_pipeline and not enhanced_edit:
+        vf = add_quality_sharpen(vf, video_quality)
     if visual_mode == "retro_tv":
         curves_supported = ffmpeg_has_filter("curves")
         vf = f"{vf},{retro_tv_look_filter(with_curves=curves_supported)}"
@@ -6106,8 +6310,7 @@ def export_clip(
         style = build_subtitle_style(caption or CaptionStyle())
         if output_format == "landscape_compilation":
             vf = (
-                f"{vf},{landscape_caption_gradient_blur_filter((caption or CaptionStyle()).position)},"
-                f"subtitles='{srt_path.name}'"
+                f"{vf},subtitles='{srt_path.name}'"
                 ":original_size=1920x1080"
                 f":force_style='{style}'"
             )
@@ -6119,9 +6322,12 @@ def export_clip(
                 else f":original_size=1080x1920:force_style='{style}'"
             )
             vf = (
-                f"{vf},{caption_gradient_blur_filter((caption or CaptionStyle()).position)},"
-                f"subtitles='{subtitle_source.name}'{subtitle_options}"
+                f"{vf},subtitles='{subtitle_source.name}'{subtitle_options}"
             )
+        sidecar_payload["caption_backdrop"] = {
+            "enabled": False,
+            "reason": "preserve_clear_source_pixels_and_faces",
+        }
     elif burn_subtitles and clip_segments:
         console.print(
             "[yellow]FFmpeg tidak memiliki filter subtitles; file SRT tetap dibuat "
@@ -6173,6 +6379,10 @@ def export_clip(
                 str(quality["level"]),
                 "-preset",
                 str(quality["preset"]),
+                "-tune",
+                "film",
+                "-x264-params",
+                "aq-mode=3:aq-strength=0.85:deblock=-1,-1",
                 "-crf",
                 str(quality["crf"]),
                 "-pix_fmt",
@@ -6389,10 +6599,10 @@ def export_compilation(
     cam_corner: str,
     required_hashtags: list[str],
     video_quality: VideoQuality,
-    visual_mode: VisualMode = "animated_3d",
-    background_mode: BackgroundMode = "auto_clean",
+    visual_mode: VisualMode = "auto_fyp",
+    background_mode: BackgroundMode = "keep",
     enhanced_edit: bool = True,
-    remove_running_text: bool = True,
+    remove_running_text: bool = False,
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     parts_dir = clips_dir / ".compilation_parts"
@@ -6750,13 +6960,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--visual-mode",
         choices=["auto_fyp", "cinematic", "speaker_split", "animated_3d", "retro_tv"],
-        default="animated_3d",
+        default="auto_fyp",
         help="Adaptive FYP visuals, stable cinematic frame, speaker split-screen, a local 3D animated look, or an old-TV effect",
     )
     parser.add_argument(
         "--background-mode",
         choices=["auto_clean", "keep", "mosque"],
-        default="auto_clean",
+        default="keep",
         help="Auto-clean text-heavy backdrops, keep the source, or force a neutral mosque background",
     )
     parser.add_argument("--force", action="store_true", help="Redo download, audio extraction, and transcription")
@@ -6783,7 +6993,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--keep-running-text",
         action="store_true",
-        help="Keep the source footer/running text instead of naturally blurring it in vertical exports",
+        help="Deprecated compatibility flag; source pixels are preserved by default",
+    )
+    parser.add_argument(
+        "--remove-running-text",
+        action="store_true",
+        help="Explicitly obscure the source footer/running text (may modify lower-frame pixels)",
     )
     parser.add_argument(
         "--keep-intermediate",
@@ -6956,7 +7171,7 @@ def main() -> int:
                 args.visual_mode,
                 args.background_mode,
                 not args.no_enhanced_edit,
-                not args.keep_running_text,
+                args.remove_running_text and not args.keep_running_text,
             )
         ]
     else:
@@ -6978,7 +7193,7 @@ def main() -> int:
                     required_hashtags,
                     args.video_quality,
                     enhanced_edit=not args.no_enhanced_edit,
-                    remove_running_text=not args.keep_running_text,
+                    remove_running_text=args.remove_running_text and not args.keep_running_text,
                     visual_mode=args.visual_mode,
                     background_mode=args.background_mode,
                 )

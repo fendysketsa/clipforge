@@ -84,16 +84,17 @@ outputs/
 Default output video:
 
 - vertical `1080x1920`
-- H.264 MP4, CRF 18
-- source download mencoba HD sampai 1080p (`bestvideo+bestaudio`)
+- H.264 MP4, CRF 16 untuk preset Jernih dan CRF 14 untuk Maksimal
+- source download mencoba sampai 2160p pada preset Jernih/Maksimal (`bestvideo+bestaudio`)
 - subtitle burned-in
 - caption dinamis menyorot kata penting dari ucapan asli, dengan timing berbobot jumlah kata dan margin aman agar tidak tertutup action rail/judul UI Shorts; file SRT bersih tetap dibuat untuk accessibility
-- caption ringkas dengan gradient shade face-safe tanpa memburamkan piksel sumber
+- caption ringkas dengan outline/shadow tanpa gradient band agar wajah dan piksel sumber tetap bersih
 - hook visual/audio, reaction kontekstual, dan pattern interrupt
 - klip berkonteks Islami otomatis mendapat backsong motivasional instrumental "Cahaya Hikmah" yang disintesis lokal, berlisensi CC0, dan di-duck agar dialog tetap jelas
-- mode visual `animated_3d` aktif secara default untuk look film animasi 3D lokal yang lebih jernih dengan denoise ringan, detail adaptif, dan outline halus sambil tetap mempertahankan wajah serta gerakan sumber
-- backdrop penuh tulisan atau video yang sudah memiliki panel judul/media di bawah memicu komposisi adaptif speaker-dominan: panel bawaan dibuang, pembicara dipusatkan di area utama, dan jamaah masjid ditampilkan pada panel bawah yang lebih pendek dengan overlap gradasi sinematik tanpa garis potong
-- intisari dari ucapan asli selalu ditampilkan menjelang akhir clip dan ikut disimpan di metadata hasil agar maknanya mudah dipahami
+- mode visual `auto_fyp` aktif secara default dengan pipeline clean-detail: koreksi warna ringan, adaptive clarity pada tahap akhir, reframe hanya di beat penting, tanpa blurred frame/gradient/kartu besar di atas wajah
+- mode `animated_3d` tetap tersedia bila memang menginginkan denoise temporal, warna film animasi, depth contrast, dan outline halus
+- background asli dipertahankan secara default; pembersihan backdrop dan panel speaker-split tetap tersedia sebagai pilihan khusus
+- intisari ucapan asli disimpan di metadata; mode clean-detail tidak menutup wajah dengan kartu intisari besar
 - kandidat wajib punya point utama, batas kalimat tuntas, dan payoff dekat ending
 - treatment loop hanya aktif saat payoff benar-benar terhubung ke hook
 - variasi motion dipilih deterministik dari isi cerita (bukan nomor urut export) agar rangkaian upload tidak terlihat seperti template massal yang identik

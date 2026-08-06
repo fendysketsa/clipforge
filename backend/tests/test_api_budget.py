@@ -185,9 +185,13 @@ def test_viral_search_is_broad_and_supports_staged_fallback():
         ViralVideoSearchRequest(max_age_days=366)
 
 
-def test_new_jobs_default_to_animated_3d_visuals():
-    assert ClipJobRequest(source_file="/tmp/source.mp4").visual_mode == "animated_3d"
-    assert AutoViralRequest().visual_mode == "animated_3d"
+def test_new_jobs_default_to_clean_detail_auto_fyp_visuals():
+    request = ClipJobRequest(source_file="/tmp/source.mp4")
+
+    assert request.visual_mode == "auto_fyp"
+    assert request.background_mode == "keep"
+    assert AutoViralRequest().visual_mode == "auto_fyp"
+    assert AutoViralRequest().background_mode == "keep"
 
 
 def test_jobs_accept_retro_tv_visuals():
@@ -570,8 +574,8 @@ def test_build_clipper_command_includes_five_minute_highlight_mode():
 
     assert command[command.index("--clip-mode") + 1] == "highlight_5m"
     assert command[command.index("--compilation-target") + 1] == "300.0"
-    assert command[command.index("--visual-mode") + 1] == "animated_3d"
-    assert command[command.index("--background-mode") + 1] == "auto_clean"
+    assert command[command.index("--visual-mode") + 1] == "auto_fyp"
+    assert command[command.index("--background-mode") + 1] == "keep"
 
 
 def test_build_clipper_command_enables_enhanced_edit_by_default():
@@ -581,6 +585,7 @@ def test_build_clipper_command_enables_enhanced_edit_by_default():
 
     assert "--no-enhanced-edit" not in command
     assert "--keep-running-text" not in command
+    assert "--remove-running-text" not in command
 
 
 def test_build_clipper_command_caps_short_render_at_one_minute():
@@ -607,7 +612,7 @@ def test_build_clipper_command_can_disable_enhanced_edit():
     assert "--no-enhanced-edit" in command
 
 
-def test_build_clipper_command_can_keep_source_running_text():
+def test_build_clipper_command_preserves_source_running_text_by_default():
     command = build_clipper_command(
         ClipJobRequest(
             source_file="/tmp/source.mp4",
@@ -616,7 +621,20 @@ def test_build_clipper_command_can_keep_source_running_text():
         )
     )
 
-    assert "--keep-running-text" in command
+    assert "--keep-running-text" not in command
+    assert "--remove-running-text" not in command
+
+
+def test_build_clipper_command_can_explicitly_remove_source_running_text():
+    command = build_clipper_command(
+        ClipJobRequest(
+            source_file="/tmp/source.mp4",
+            require_creative_commons=False,
+            remove_running_text=True,
+        )
+    )
+
+    assert "--remove-running-text" in command
 
 
 def test_delete_all_jobs_removes_only_process_jobs_and_preserves_clips(monkeypatch, tmp_path):

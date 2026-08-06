@@ -68,7 +68,7 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
                   ? "Visual split speaker"
                   : job.request.visual_mode === "cinematic"
                     ? "Frame sinematik"
-                    : "Visual Auto FYP"}
+                    : "Clean Detail Auto FYP"}
             </span>
             <span>
               {job.request.background_mode === "keep"
@@ -77,7 +77,7 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
                   ? "Virtual background masjid"
                   : "Auto clean + jamaah adaptif"}
             </span>
-            <span>{job.request.remove_running_text ? "Tulisan footer diblur natural" : "Footer sumber dipertahankan"}</span>
+            <span>{job.request.remove_running_text ? "Pembersihan footer aktif" : "Frame sumber dipertahankan jernih"}</span>
             <span>{job.request.analyze_seconds ? `Analisis: ${job.request.analyze_seconds}s` : "Full video"}</span>
             <span>{job.request.crop_mode === "person" ? "Follow person" : "Center crop"}</span>
             <span>

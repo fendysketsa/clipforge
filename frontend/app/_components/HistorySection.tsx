@@ -141,6 +141,8 @@ export function HistorySection({
                       ? "3D Animated"
                       : item.request.visual_mode === "retro_tv"
                         ? "TV Jadul"
+                      : item.request.visual_mode === "auto_fyp"
+                        ? "clean detail"
                         : item.request.visual_mode}
                   </span>
                   {item.request.ai_enabled ? <span>AI: {item.request.ai_model || "local"}</span> : <span>AI off</span>}

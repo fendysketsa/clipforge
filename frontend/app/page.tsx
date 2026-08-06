@@ -103,8 +103,8 @@ export default function HomePage() {
   const [isCheckingSourceHistory, setIsCheckingSourceHistory] = useState(false);
   const [allowReprocessSource, setAllowReprocessSource] = useState(false);
   const [videoQuality, setVideoQuality] = useState<VideoQuality>(DEFAULT_VIDEO_QUALITY);
-  const [visualMode, setVisualMode] = useState<VisualMode>("animated_3d");
-  const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>("auto_clean");
+  const [visualMode, setVisualMode] = useState<VisualMode>("auto_fyp");
+  const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>("keep");
   const [clipMode, setClipMode] = useState<ClipMode>(DEFAULT_CLIP_MODE);
   const [compilationTargetSeconds, setCompilationTargetSeconds] = useState(COMPILATION_TARGET_SECONDS);
   const [uploadPreviewUrl, setUploadPreviewUrl] = useState("");
@@ -175,7 +175,8 @@ export default function HomePage() {
   const handleClipModeChange = useCallback((value: ClipMode) => {
     setClipMode(value);
     setTargetClips(0);
-    setVisualMode("animated_3d");
+    setVisualMode("auto_fyp");
+    setBackgroundMode("keep");
     setCaptionFontSize(8);
     setCaptionOutline(0.5);
     if (value === "highlight_5m") {
@@ -606,6 +607,7 @@ export default function HomePage() {
           visual_mode: visualMode,
           background_mode: backgroundMode,
           burn_subtitles: burnSubtitles,
+          remove_running_text: false,
           crop_mode: cropMode,
           cam_corner: camCorner,
           caption_font_size: captionFontSize,
