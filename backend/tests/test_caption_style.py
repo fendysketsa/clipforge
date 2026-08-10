@@ -27,6 +27,7 @@ from clipper import (
     candidate_story_metrics,
     clean_detail_edit_filter,
     channel_watermark_filter,
+    cinematic_smoke_overlay_filter,
     cinematic_pov_windows,
     clip_has_islamic_context,
     clip_topic_hashtags,
@@ -38,6 +39,7 @@ from clipper import (
     detect_visual_theme,
     designed_thumbnail_filter,
     detect_reaction_cues,
+    detect_static_watermark_region,
     embedded_split_subject_filter,
     emphasis_timestamps,
     enhanced_edit_filter,
@@ -93,6 +95,23 @@ def test_hex_to_ass_color_shorthand():
 
 def test_hex_to_ass_color_invalid_falls_back():
     assert _hex_to_ass_color("nonsense") == "&H00FFFFFF"
+
+
+def test_cinematic_smoke_uses_low_resolution_procedural_layer_for_shorts():
+    value = cinematic_smoke_overlay_filter("vertical_short", variation=2)
+
+    assert "nullsrc=size=270x480:rate=15" in value
+    assert "geq=r='255':g='255':b='255':a='clip(" in value
+    assert "scale=1080:1920:flags=bilinear" in value
+    assert "[smoke_base][smoke_layer]overlay=0:0:shortest=1" in value
+
+
+def test_cinematic_smoke_supports_landscape_long_form():
+    value = cinematic_smoke_overlay_filter("landscape_compilation", variation=5)
+
+    assert "nullsrc=size=480x270:rate=15" in value
+    assert "gblur=sigma=4" in value
+    assert "scale=1920:1080:flags=bilinear" in value
 
 
 def test_huggingface_environment_supports_public_model_without_token(monkeypatch):
@@ -277,7 +296,10 @@ def test_detected_watermark_blur_is_local_and_preserves_the_canvas():
 
     assert value.startswith("split=2[wm_base][wm_blur_src]")
     assert "crop=286:74:402:1184" in value
-    assert "gblur=sigma=24:sigmaV=14:steps=3" in value
+    assert "gblur=sigma=17:sigmaV=13:steps=3" in value
+    assert "format=rgba,geq=" in value
+    assert "a='255*clip(min(min(X,W-1-X),min(Y,H-1-Y))/12,0,1)'" in value
+    assert "drawbox=color=black" not in value
     assert "overlay=402:1184" in value
     assert "scale=" not in value
 
@@ -298,6 +320,131 @@ def test_preview_watermark_region_scales_to_final_short_canvas():
 
     assert (result.x, result.y, result.width, result.height) == (402, 1184, 286, 74)
     assert result.confidence == 0.84
+
+
+def test_watermark_detector_hugs_persistent_logo_without_morphology_halo(tmp_path):
+    import cv2
+    import numpy as np
+
+    preview_path = tmp_path / "moving-scene-with-watermark.mp4"
+    width, height = 360, 640
+    writer = cv2.VideoWriter(
+        str(preview_path),
+        cv2.VideoWriter_fourcc(*"mp4v"),
+        5,
+        (width, height),
+    )
+    assert writer.isOpened()
+    yy, xx = np.mgrid[0:height, 0:width]
+    for frame_index in range(30):
+        frame = np.zeros((height, width, 3), dtype=np.uint8)
+        frame[..., 0] = ((xx + frame_index * 13) % 180 + 30).astype(np.uint8)
+        frame[..., 1] = ((yy // 3 + frame_index * 7) % 160 + 35).astype(np.uint8)
+        frame[..., 2] = ((xx // 2 + yy // 4 + frame_index * 11) % 150 + 45).astype(
+            np.uint8
+        )
+        cv2.circle(
+            frame,
+            (40 + (frame_index * 17) % 280, 250 + (frame_index % 5) * 12),
+            48,
+            (20, 220, 160),
+            -1,
+        )
+        cv2.putText(
+            frame,
+            "SOURCE",
+            (226, 72),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.58,
+            (0, 0, 0),
+            3,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            frame,
+            "SOURCE",
+            (226, 72),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.58,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
+        writer.write(frame)
+    writer.release()
+
+    region = detect_static_watermark_region(preview_path)
+
+    assert region is not None
+    assert 218 <= region.x <= 228
+    assert 48 <= region.y <= 56
+    assert 76 <= region.width <= 90
+    assert 27 <= region.height <= 35
+    assert region.persistence >= 0.90
+    assert type(region.x) is int
+    assert type(region.confidence) is float
+
+
+def test_watermark_detector_does_not_blur_changing_lower_center_subtitles(tmp_path):
+    import cv2
+    import numpy as np
+
+    preview_path = tmp_path / "moving-scene-with-changing-subtitles.mp4"
+    width, height = 360, 640
+    writer = cv2.VideoWriter(
+        str(preview_path),
+        cv2.VideoWriter_fourcc(*"mp4v"),
+        5,
+        (width, height),
+    )
+    assert writer.isOpened()
+    yy, xx = np.mgrid[0:height, 0:width]
+    captions = (
+        "PESAN PERTAMA",
+        "HIKMAH BERIKUTNYA",
+        "JANGAN MENYERAH",
+        "COBA RENUNGKAN",
+        "INI JAWABANNYA",
+    )
+    for frame_index in range(30):
+        frame = np.zeros((height, width, 3), dtype=np.uint8)
+        frame[..., 0] = ((xx + frame_index * 9) % 150 + 35).astype(np.uint8)
+        frame[..., 1] = ((yy // 4 + frame_index * 5) % 145 + 40).astype(np.uint8)
+        frame[..., 2] = ((xx // 3 + yy // 5 + frame_index * 7) % 135 + 50).astype(
+            np.uint8
+        )
+        caption = captions[(frame_index // 6) % len(captions)]
+        text_width = cv2.getTextSize(
+            caption,
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            2,
+        )[0][0]
+        origin = (max(8, (width - text_width) // 2), 540)
+        cv2.putText(
+            frame,
+            caption,
+            origin,
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (0, 0, 0),
+            4,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            frame,
+            caption,
+            origin,
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+        writer.write(frame)
+    writer.release()
+
+    assert detect_static_watermark_region(preview_path) is None
 
 
 def test_text_backdrop_split_uses_a_speaker_dominant_congregation_panel():

@@ -1033,16 +1033,26 @@ def remove_running_text_filter(crop_bottom: int = 280) -> str:
 
 
 def localized_watermark_blur_filter(region: WatermarkRegion) -> str:
-    """Blur one bounded source-watermark region without softening the full frame."""
+    """Blur one tightly bounded watermark with a feathered, seam-free edge."""
     x = max(0, int(region.x) // 2 * 2)
     y = max(0, int(region.y) // 2 * 2)
     width = max(16, int(region.width) // 2 * 2)
     height = max(12, int(region.height) // 2 * 2)
+    if region.source_width > 0:
+        width = min(width, max(16, (region.source_width - x) // 2 * 2))
+    if region.source_height > 0:
+        height = min(height, max(12, (region.source_height - y) // 2 * 2))
+    sigma = max(8, min(20, round(width * 0.06)))
+    sigma_vertical = max(6, min(14, round(height * 0.18)))
+    feather = max(4, min(12, min(width, height) // 6))
+    alpha = (
+        f"255*clip(min(min(X,W-1-X),min(Y,H-1-Y))/{feather},0,1)"
+    )
     return (
         "split=2[wm_base][wm_blur_src];"
         f"[wm_blur_src]crop={width}:{height}:{x}:{y},"
-        "gblur=sigma=24:sigmaV=14:steps=3,"
-        "drawbox=color=black@0.10:t=fill[wm_patch];"
+        f"gblur=sigma={sigma}:sigmaV={sigma_vertical}:steps=3,format=rgba,"
+        f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{alpha}'[wm_patch];"
         f"[wm_base][wm_patch]overlay={x}:{y}:shortest=1:eof_action=pass,setsar=1"
     )
 
@@ -1118,11 +1128,9 @@ def detect_static_watermark_region(
     component_count, _labels, stats, _centroids = cv2.connectedComponentsWithStats(
         joined, 8
     )
-    gray_variation = np.std(np.stack(gray_stack, axis=0).astype(np.float32), axis=0)
     candidates: list[tuple[float, WatermarkRegion]] = []
     frame_area = float(width * height)
-    padding_x = max(5, int(width * 0.012))
-    padding_y = max(4, int(height * 0.008))
+    edge_arrays = np.stack(edge_stack, axis=0)
 
     for index in range(1, component_count):
         x, y, component_width, component_height, _area = stats[index]
@@ -1133,12 +1141,28 @@ def detect_static_watermark_region(
             continue
         if not (0.008 <= height_ratio <= 0.13):
             continue
-        if aspect < 1.35 or component_width * component_height > frame_area * 0.065:
+        if aspect < 1.80 or component_width * component_height > frame_area * 0.065:
             continue
 
-        raw_patch = persistent[y : y + component_height, x : x + component_width]
-        if not raw_patch.size:
+        component_patch = persistent[y : y + component_height, x : x + component_width]
+        if not component_patch.size:
             continue
+        component_edge_y, component_edge_x = np.where(component_patch > 0)
+        if len(component_edge_x) < 8:
+            continue
+
+        # Closing/dilation is only for grouping glyphs. Derive the actual blur
+        # bounds from the raw persistent strokes and discard isolated outliers
+        # so the final patch hugs the logo instead of the morphology halo.
+        tight_left = x + int(np.floor(np.percentile(component_edge_x, 1.5)))
+        tight_right = x + int(np.ceil(np.percentile(component_edge_x, 98.5))) + 1
+        tight_top = y + int(np.floor(np.percentile(component_edge_y, 1.5)))
+        tight_bottom = y + int(np.ceil(np.percentile(component_edge_y, 98.5))) + 1
+        tight_width = tight_right - tight_left
+        tight_height = tight_bottom - tight_top
+        if tight_width < max(12, int(width * 0.04)) or tight_height < 4:
+            continue
+        raw_patch = persistent[tight_top:tight_bottom, tight_left:tight_right]
         edge_pixels = raw_patch > 0
         edge_density = float(np.count_nonzero(edge_pixels)) / float(raw_patch.size)
         if not (0.012 <= edge_density <= 0.42):
@@ -1154,36 +1178,81 @@ def detect_static_watermark_region(
         if meaningful_glyphs < 3:
             continue
         persistence = float(
-            np.mean(edge_frequency[y : y + component_height, x : x + component_width][edge_pixels])
+            np.mean(
+                edge_frequency[tight_top:tight_bottom, tight_left:tight_right][edge_pixels]
+            )
         )
-        motion = float(
-            np.mean(gray_variation[y : y + component_height, x : x + component_width])
+        # Changing subtitles often reuse the same lower-center baseline, but
+        # their exact strokes are less stable than an overlaid channel mark.
+        # Require a stronger per-pixel consensus before considering blur.
+        if persistence < 0.78:
+            continue
+        consensus = edge_pixels.astype(np.uint8) * 255
+        consensus = cv2.dilate(
+            consensus,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)),
+            iterations=1,
         )
-        text_score = min(1.0, meaningful_glyphs / 12.0)
-        aspect_score = min(1.0, aspect / 5.0)
-        motion_score = min(1.0, motion / 16.0)
-        confidence = (
-            persistence * 0.48
-            + text_score * 0.28
-            + aspect_score * 0.14
-            + motion_score * 0.10
-        )
-        if confidence < 0.60:
+        consensus_pixels = consensus > 0
+        frame_overlaps = []
+        for frame_edges in edge_arrays:
+            frame_patch = frame_edges[
+                tight_top:tight_bottom,
+                tight_left:tight_right,
+            ]
+            frame_overlaps.append(
+                float(np.count_nonzero(frame_patch & consensus_pixels))
+                / max(1.0, float(np.count_nonzero(edge_pixels)))
+            )
+        temporal_support = float(np.mean(np.asarray(frame_overlaps) >= 0.48))
+        if temporal_support < 0.68:
             continue
 
-        padded_x = max(0, x - padding_x)
-        padded_y = max(0, y - padding_y)
-        padded_right = min(width, x + component_width + padding_x)
-        padded_bottom = min(height, y + component_height + padding_y)
+        text_score = min(1.0, meaningful_glyphs / 12.0)
+        aspect_score = min(1.0, aspect / 5.0)
+        center_x = (tight_left + tight_right) / 2.0
+        center_y = (tight_top + tight_bottom) / 2.0
+        caption_band_like = bool(
+            center_y / height >= 0.70
+            and 0.14 <= center_x / width <= 0.86
+            and tight_width / width >= 0.16
+        )
+        if caption_band_like:
+            continue
+        nearest_edge = min(
+            center_x / width,
+            (width - center_x) / width,
+            center_y / height,
+            (height - center_y) / height,
+        )
+        edge_proximity = max(0.0, min(1.0, 1.0 - nearest_edge / 0.42))
+        confidence = (
+            persistence * 0.42
+            + temporal_support * 0.24
+            + text_score * 0.18
+            + edge_proximity * 0.10
+            + aspect_score * 0.06
+        )
+        if confidence < 0.66:
+            continue
+
+        # Padding follows glyph height rather than the whole canvas, keeping a
+        # small safety margin at any preview/output resolution.
+        padding_x = max(4, min(int(width * 0.012), round(tight_height * 0.26)))
+        padding_y = max(4, min(int(height * 0.009), round(tight_height * 0.22)))
+        padded_x = max(0, tight_left - padding_x)
+        padded_y = max(0, tight_top - padding_y)
+        padded_right = min(width, tight_right + padding_x)
+        padded_bottom = min(height, tight_bottom + padding_y)
         region = WatermarkRegion(
-            x=padded_x,
-            y=padded_y,
-            width=padded_right - padded_x,
-            height=padded_bottom - padded_y,
-            source_width=width,
-            source_height=height,
-            confidence=round(confidence, 3),
-            persistence=round(persistence, 3),
+            x=int(padded_x),
+            y=int(padded_y),
+            width=int(padded_right - padded_x),
+            height=int(padded_bottom - padded_y),
+            source_width=int(width),
+            source_height=int(height),
+            confidence=round(float(confidence), 3),
+            persistence=round(float(persistence), 3),
         )
         candidates.append((confidence, region))
 
@@ -4952,6 +5021,47 @@ def retro_tv_look_filter(*, with_curves: bool = True) -> str:
     )
 
 
+def cinematic_smoke_overlay_filter(
+    output_format: OutputFormat,
+    *,
+    variation: int = 0,
+) -> str:
+    """Add low-cost animated edge fog without covering the focal center.
+
+    The alpha field is generated at quarter resolution and then enlarged. This
+    keeps long-form exports practical while giving each story-derived variant
+    a slightly different drift phase.
+    """
+    if output_format == "landscape_compilation":
+        output_width, output_height = 1920, 1080
+        fog_width, fog_height = 480, 270
+        blur_sigma = 4
+    else:
+        output_width, output_height = 1080, 1920
+        fog_width, fog_height = 270, 480
+        blur_sigma = 5
+    phase = (variation % 6) * 0.73
+    alpha = (
+        "clip("
+        f"34*exp(-pow((Y-H*(0.88+0.025*sin(T*0.32+{phase:.2f})))/(H*0.12),2))"
+        f"*(0.72+0.28*sin(X/W*8+T*0.38+{phase:.2f}))"
+        f"+20*exp(-pow((X-W*(0.08+0.025*sin(T*0.19+{phase:.2f})))/(W*0.16),2)"
+        "-pow((Y-H*0.60)/(H*0.34),2))"
+        f"+22*exp(-pow((X-W*(0.92+0.02*sin(T*0.23+{phase:.2f})))/(W*0.17),2)"
+        "-pow((Y-H*0.50)/(H*0.38),2))"
+        f"+12*exp(-pow((Y-H*0.08)/(H*0.16),2))"
+        f"*(0.75+0.25*sin(X/W*10-T*0.25+{phase:.2f})),0,52)"
+    )
+    return (
+        "null[smoke_base];"
+        f"nullsrc=size={fog_width}x{fog_height}:rate=15,format=rgba,"
+        f"geq=r='255':g='255':b='255':a='{alpha}',"
+        f"gblur=sigma={blur_sigma},"
+        f"scale={output_width}:{output_height}:flags=bilinear,fps=30[smoke_layer];"
+        "[smoke_base][smoke_layer]overlay=0:0:shortest=1:eof_action=pass"
+    )
+
+
 def landscape_compilation_frame_filter(
     accent: str,
     secondary: str,
@@ -6846,11 +6956,40 @@ def export_clip(
     sidecar_payload["source_watermark_blur"] = {
         "enabled": auto_blur_watermarks,
         "detected": watermark_region is not None,
-        "method": "multi_frame_persistent_edge_local_blur",
+        "method": "multi_frame_persistent_edge_feathered_local_blur_v2",
+        "detector_version": 2,
         "region": asdict(watermark_region) if watermark_region is not None else None,
         "applied_before_clipforge_overlays": True,
+        "feathered_boundary": watermark_region is not None,
         "scope": "detected_region_only",
     }
+    smoke_filters_supported = all(
+        ffmpeg_has_filter(name)
+        for name in ("format", "fps", "geq", "gblur", "nullsrc", "overlay", "scale")
+    )
+    if smoke_filters_supported:
+        vf = (
+            f"{vf},"
+            f"{cinematic_smoke_overlay_filter(output_format, variation=edit_variation)}"
+        )
+        sidecar_payload["cinematic_smoke"] = {
+            "enabled": True,
+            "version": 1,
+            "style": "soft_white_edge_fog",
+            "placement": "lower_edge_and_corners",
+            "subject_safe_center": True,
+            "caption_rendered_above_effect": True,
+            "procedural": True,
+            "variation": edit_variation,
+        }
+        applied_edits.append(
+            "Kabut asap putih bergerak ditambahkan halus di tepi bawah dan sudut, sementara wajah serta subtitle tetap jelas."
+        )
+    else:
+        sidecar_payload["cinematic_smoke"] = {
+            "enabled": False,
+            "reason": "required_ffmpeg_filters_unavailable",
+        }
     if drawtext_supported:
         vf = f"{vf},{channel_watermark_filter(output_format)}"
         sidecar_payload["channel_watermark"] = {

@@ -91,6 +91,7 @@ Default output video:
 - caption ringkas dengan outline/shadow tanpa gradient band agar wajah dan piksel sumber tetap bersih
 - frame cover Shorts 9:16 ditanam pada opening sebagai kartu putih-kuning berbasis hook transcript; keyframe 0,78 detik dibuat agar frame mudah dipilih lewat aplikasi YouTube (Shorts tidak menerima upload thumbnail gambar kustom)
 - CTA `SUBSCRIBE + FOLLOW` muncul singkat di atas payoff yang masih bergerak, tanpa menambah outro kosong atau fade yang memutus loop
+- seluruh output short dan kompilasi long-form mendapat kabut asap putih bergerak yang halus di tepi bawah/sudut; overlay dibuat prosedural pada resolusi rendah, divariasikan dari isi cerita, dan dirender di bawah subtitle/watermark agar wajah serta teks tetap jelas
 - guardrail kebijakan Shorts dicatat di sidecar render: batas resmi 180 detik, batas internal konservatif 60 detik, strategi thumbnail frame-tertanam, dan kewajiban review hak/orisinalitas
 - Auto Search frontend memakai empat master niche evergreen Islami (mental health, halal wealth, fiqih harian, dan sejarah Islam), mengambil pool kandidat CC, lalu menampilkan Top 3 berdasarkan kecocokan niche + views/hari + engagement + freshness sebelum pengguna memasukkannya ke antrean clipping
 - hook visual/audio, reaction kontekstual, dan pattern interrupt
@@ -98,6 +99,7 @@ Default output video:
 - mode visual `auto_fyp` aktif secara default dengan pipeline clean-detail: koreksi warna ringan, adaptive clarity pada tahap akhir, reframe hanya di beat penting, tanpa blurred frame/gradient/kartu besar di atas wajah
 - mode `animated_3d` tetap tersedia bila memang menginginkan denoise temporal, warna film animasi, depth contrast, dan outline halus
 - background asli dipertahankan secara default; pembersihan backdrop dan panel speaker-split tetap tersedia sebagai pilihan khusus
+- blur watermark sumber memakai konsensus edge multi-frame konservatif (persistence minimal 0,78), menolak pola subtitle bawah dan detail non-text, memakai kotak persentil yang membuang outlier morfologi, padding mengikuti tinggi glyph, serta tepi feather transparan agar blur hanya mengenai logo tanpa kotak gelap atau seam keras
 - intisari ucapan asli disimpan di metadata; mode clean-detail tidak menutup wajah dengan kartu intisari besar
 - kandidat wajib punya point utama, batas kalimat tuntas, dan payoff dekat ending
 - treatment loop hanya aktif saat payoff benar-benar terhubung ke hook
