@@ -887,6 +887,40 @@ def test_monetization_preflight_requires_rights_and_substantive_edit(monkeypatch
     assert "Render ulang" in (youtube_monetization_preflight_issue(job, clip) or "")
 
 
+def test_monetization_preflight_blocks_short_outside_official_technical_limits(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-invalid-short",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "output_format": "vertical_short",
+            "aspect_ratio": "9:16",
+            "duration": 181,
+            "thumbnail_strategy": "embedded_shorts_cover_frame",
+            "monetization_readiness": {"eligible_for_private_upload_review": True},
+        },
+    )
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+    assert "181.0 detik" in issue
+    assert "180 detik" in issue
+
+
 def test_monetization_preflight_accepts_legacy_compilation_story_arc(monkeypatch):
     import api
 

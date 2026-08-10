@@ -1,6 +1,8 @@
 import type {
   AutoViralRequest,
   AutoViralRun,
+  ViralContentSearchRequest,
+  ViralContentSource,
   ClipJob,
   CreateClipJobInput,
   SourceHistoryCheck,
@@ -358,6 +360,18 @@ export const startAutoViralCampaign = async (input: AutoViralRequest = {}) => {
     throw new Error(await responseErrorMessage(response, "Failed to start auto viral campaign"));
   }
   return (await response.json()) as AutoViralRun;
+};
+
+export const searchViralContentSources = async (input: ViralContentSearchRequest) => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/automation/viral-cc/sources`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to search viral content sources"));
+  }
+  return (await response.json()) as ViralContentSource[];
 };
 
 export const getAutoViralCampaign = async (runId: string) => {

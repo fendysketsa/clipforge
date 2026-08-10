@@ -18,9 +18,11 @@ from api import (
     is_fresh_viral_upload,
     list_source_usage_log,
     max_clips_for_duration,
+    niche_relevance_score,
     normalize_job_request,
     normalize_youtube_video_url,
     processed_job_source_urls,
+    search_viral_video_sources,
     safe_youtube_visibility,
     source_history_for_url,
     unresolved_codex_ideas,
@@ -214,6 +216,74 @@ def test_configured_viral_queries_are_extended_not_replaced(monkeypatch):
     assert len(queries) >= 120
     assert queries.index("misteri dalam islam") < 10
     assert queries.index("podcast horor indonesia") < 12
+
+
+def test_selected_evergreen_niche_owns_the_first_search_positions():
+    mental = ViralVideoSearchRequest(niche="islamic_mental_health")
+    finance = ViralVideoSearchRequest(niche="halal_wealth")
+
+    assert mental.video_count == 3
+    assert mental.queries[0] == "kesehatan mental islam overthinking"
+    assert mental.queries.index("podcast horor indonesia") >= 12
+    assert finance.queries[0] == "cara mencari rezeki halal berkah"
+    assert finance.queries.index("podcast horor indonesia") >= 12
+
+
+def test_niche_relevance_rewards_master_context_terms_not_generic_islam_label():
+    aligned = {
+        "title": "Cara Mengatasi Overthinking dan Cemas dengan Tawakal",
+        "description": "Psikologi Islam untuk ketenangan hati dan emosi.",
+    }
+    generic = {
+        "title": "Kajian Islam Terbaru",
+        "description": "Ceramah umum untuk umat.",
+    }
+
+    assert niche_relevance_score(aligned, "islamic_mental_health") >= 50
+    assert niche_relevance_score(generic, "islamic_mental_health") == 0
+
+
+def test_selected_sources_limit_campaign_target_and_disable_auto_upload_when_requested():
+    request = AutoViralRequest(
+        niche="fiqih_harian",
+        video_count=5,
+        source_urls=[
+            "https://youtu.be/abcDEF12345",
+            "https://youtube.com/watch?v=xyzDEF12345",
+        ],
+        auto_upload_youtube=False,
+    )
+
+    assert request.video_count == 2
+    assert request.auto_upload_youtube is False
+    assert request.queries[0] == "kesalahan shalat yang sering tidak disadari"
+
+
+def test_search_returns_ranked_top_three_from_larger_candidate_pool(monkeypatch):
+    import api
+
+    candidates = [
+        {
+            "url": f"https://youtube.com/watch?v=demoRank{i:02}",
+            "title": f"Kandidat {i}",
+            "score": float(i),
+        }
+        for i in range(1, 10)
+    ]
+    monkeypatch.delenv("YOUTUBE_DATA_API_KEY", raising=False)
+    monkeypatch.setattr(api, "processed_job_source_urls", lambda: set())
+    monkeypatch.setattr(
+        api,
+        "search_auto_viral_sources",
+        lambda *_args, **_kwargs: list(candidates),
+    )
+
+    selected = search_viral_video_sources(
+        ViralVideoSearchRequest(niche="islamic_history", video_count=3)
+    )
+
+    assert [item["score"] for item in selected] == [9.0, 8.0, 7.0]
+    assert [item["rank"] for item in selected] == [1, 2, 3]
 
 
 def test_processed_job_sources_are_always_excluded(monkeypatch):
@@ -623,6 +693,26 @@ def test_build_clipper_command_preserves_source_running_text_by_default():
 
     assert "--keep-running-text" not in command
     assert "--remove-running-text" not in command
+
+
+def test_build_clipper_command_enables_local_watermark_detection_by_default():
+    command = build_clipper_command(
+        ClipJobRequest(source_file="/tmp/source.mp4", require_creative_commons=False)
+    )
+
+    assert "--auto-blur-watermarks" in command
+
+
+def test_build_clipper_command_can_disable_local_watermark_detection():
+    command = build_clipper_command(
+        ClipJobRequest(
+            source_file="/tmp/source.mp4",
+            require_creative_commons=False,
+            auto_blur_watermarks=False,
+        )
+    )
+
+    assert "--auto-blur-watermarks" not in command
 
 
 def test_build_clipper_command_can_explicitly_remove_source_running_text():

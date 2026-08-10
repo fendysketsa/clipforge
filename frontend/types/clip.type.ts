@@ -93,6 +93,7 @@ export type ClipJob = {
     burn_subtitles: boolean;
     enhanced_edit: boolean;
     remove_running_text: boolean;
+    auto_blur_watermarks: boolean;
     crop_mode: CropMode;
     cam_corner: CamCorner;
     caption_font_size: number;
@@ -127,6 +128,7 @@ export type CreateClipJobInput = {
   burn_subtitles: boolean;
   enhanced_edit?: boolean;
   remove_running_text?: boolean;
+  auto_blur_watermarks?: boolean;
   crop_mode: CropMode;
   cam_corner?: CamCorner;
   caption_font_size?: number;
@@ -288,7 +290,44 @@ export type YouTubeCdpRepairStatus = {
   logs: string[];
 };
 
+export type IslamicContentNiche =
+  | "auto"
+  | "islamic_mental_health"
+  | "halal_wealth"
+  | "fiqih_harian"
+  | "islamic_history";
+
+export type ViralContentSource = {
+  rank: number;
+  url: string;
+  title: string;
+  uploader: string;
+  duration?: number | null;
+  views: number;
+  views_per_day: number;
+  engagement_rate: number;
+  age_days?: number | null;
+  likes?: number | null;
+  license?: string | null;
+  rights_verified: boolean;
+  score: number;
+  viral_score: number;
+  niche: IslamicContentNiche;
+  niche_label: string;
+  niche_score: number;
+  ranking_reason: string;
+};
+
+export type ViralContentSearchRequest = {
+  niche: IslamicContentNiche;
+  video_count?: number;
+  max_age_days?: number;
+  min_views?: number;
+  exclude_urls?: string[];
+};
+
 export type AutoViralRequest = {
+  niche?: IslamicContentNiche;
   video_count?: number;
   clips_per_video?: number;
   search_limit_per_query?: number;
@@ -308,6 +347,8 @@ export type AutoViralRequest = {
   ai_base_url?: string;
   ai_model?: string;
   ai_api_key?: string;
+  source_urls?: string[];
+  auto_upload_youtube?: boolean;
 };
 
 export type AutoViralRun = {
@@ -318,7 +359,7 @@ export type AutoViralRun = {
   finished_at?: string | null;
   request: AutoViralRequest;
   message: string;
-  selected_sources: Record<string, unknown>[];
+  selected_sources: ViralContentSource[];
   processed: Record<string, unknown>[];
   errors: string[];
   logs: string[];

@@ -178,6 +178,20 @@ class EmbeddedSplitProfile:
     source_height: int
 
 
+@dataclass
+class WatermarkRegion:
+    """A persistent source overlay detected across several rendered frames."""
+
+    x: int
+    y: int
+    width: int
+    height: int
+    source_width: int
+    source_height: int
+    confidence: float
+    persistence: float
+
+
 HOOK_WORDS = {
     "intinya",
     "ternyata",
@@ -1015,6 +1029,188 @@ def remove_running_text_filter(crop_bottom: int = 280) -> str:
         f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{alpha}'[footer_blur];"
         f"[footer_base][footer_blur]overlay=0:{footer_y}:shortest=1:eof_action=pass,"
         "setsar=1"
+    )
+
+
+def localized_watermark_blur_filter(region: WatermarkRegion) -> str:
+    """Blur one bounded source-watermark region without softening the full frame."""
+    x = max(0, int(region.x) // 2 * 2)
+    y = max(0, int(region.y) // 2 * 2)
+    width = max(16, int(region.width) // 2 * 2)
+    height = max(12, int(region.height) // 2 * 2)
+    return (
+        "split=2[wm_base][wm_blur_src];"
+        f"[wm_blur_src]crop={width}:{height}:{x}:{y},"
+        "gblur=sigma=24:sigmaV=14:steps=3,"
+        "drawbox=color=black@0.10:t=fill[wm_patch];"
+        f"[wm_base][wm_patch]overlay={x}:{y}:shortest=1:eof_action=pass,setsar=1"
+    )
+
+
+def detect_static_watermark_region(
+    preview_path: Path,
+    *,
+    skip_edge_frames: int = 4,
+) -> WatermarkRegion | None:
+    """Find a compact text-like overlay that persists across a clip preview.
+
+    Detection runs on the already-cropped preview, before ClipForge captions,
+    channel branding, and CTA are drawn. Requiring repeated edge strokes across
+    many frames prevents ordinary speech captions from becoming blur targets.
+    """
+    try:
+        import cv2
+        import numpy as np
+    except Exception:
+        return None
+
+    capture = cv2.VideoCapture(str(preview_path.resolve()))
+    if not capture.isOpened():
+        return None
+    frames = []
+    try:
+        while len(frames) < 90:
+            ok, frame = capture.read()
+            if not ok:
+                break
+            frames.append(frame)
+    finally:
+        capture.release()
+    if len(frames) < 7:
+        return None
+
+    trim = min(max(1, skip_edge_frames), max(1, (len(frames) - 5) // 2))
+    analysis_frames = frames[trim : len(frames) - trim]
+    if len(analysis_frames) < 5:
+        return None
+    height, width = analysis_frames[0].shape[:2]
+    if width < 120 or height < 160:
+        return None
+
+    edge_stack = []
+    gray_stack = []
+    for frame in analysis_frames:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray_stack.append(gray)
+        edge_stack.append(cv2.Canny(gray, 42, 126) > 0)
+    edge_frequency = np.mean(np.stack(edge_stack, axis=0), axis=0)
+    persistent = (edge_frequency >= 0.58).astype(np.uint8) * 255
+
+    # Ignore frame boundaries, progress bars, and player-safe bottom UI. A
+    # watermark may still sit in any corner or in the centre-lower area.
+    mask = np.zeros_like(persistent)
+    mask[
+        int(height * 0.06) : int(height * 0.88),
+        int(width * 0.025) : int(width * 0.975),
+    ] = 255
+    persistent = cv2.bitwise_and(persistent, mask)
+    joined = cv2.morphologyEx(
+        persistent,
+        cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_RECT, (13, 3)),
+        iterations=1,
+    )
+    joined = cv2.dilate(
+        joined,
+        cv2.getStructuringElement(cv2.MORPH_RECT, (7, 3)),
+        iterations=1,
+    )
+    component_count, _labels, stats, _centroids = cv2.connectedComponentsWithStats(
+        joined, 8
+    )
+    gray_variation = np.std(np.stack(gray_stack, axis=0).astype(np.float32), axis=0)
+    candidates: list[tuple[float, WatermarkRegion]] = []
+    frame_area = float(width * height)
+    padding_x = max(5, int(width * 0.012))
+    padding_y = max(4, int(height * 0.008))
+
+    for index in range(1, component_count):
+        x, y, component_width, component_height, _area = stats[index]
+        width_ratio = component_width / width
+        height_ratio = component_height / height
+        aspect = component_width / max(1, component_height)
+        if not (0.055 <= width_ratio <= 0.52):
+            continue
+        if not (0.008 <= height_ratio <= 0.13):
+            continue
+        if aspect < 1.35 or component_width * component_height > frame_area * 0.065:
+            continue
+
+        raw_patch = persistent[y : y + component_height, x : x + component_width]
+        if not raw_patch.size:
+            continue
+        edge_pixels = raw_patch > 0
+        edge_density = float(np.count_nonzero(edge_pixels)) / float(raw_patch.size)
+        if not (0.012 <= edge_density <= 0.42):
+            continue
+        glyph_count, _glyph_labels, glyph_stats, _glyph_centroids = (
+            cv2.connectedComponentsWithStats(raw_patch, 8)
+        )
+        meaningful_glyphs = sum(
+            1
+            for glyph_index in range(1, glyph_count)
+            if 2 <= glyph_stats[glyph_index, cv2.CC_STAT_AREA] <= raw_patch.size * 0.22
+        )
+        if meaningful_glyphs < 3:
+            continue
+        persistence = float(
+            np.mean(edge_frequency[y : y + component_height, x : x + component_width][edge_pixels])
+        )
+        motion = float(
+            np.mean(gray_variation[y : y + component_height, x : x + component_width])
+        )
+        text_score = min(1.0, meaningful_glyphs / 12.0)
+        aspect_score = min(1.0, aspect / 5.0)
+        motion_score = min(1.0, motion / 16.0)
+        confidence = (
+            persistence * 0.48
+            + text_score * 0.28
+            + aspect_score * 0.14
+            + motion_score * 0.10
+        )
+        if confidence < 0.60:
+            continue
+
+        padded_x = max(0, x - padding_x)
+        padded_y = max(0, y - padding_y)
+        padded_right = min(width, x + component_width + padding_x)
+        padded_bottom = min(height, y + component_height + padding_y)
+        region = WatermarkRegion(
+            x=padded_x,
+            y=padded_y,
+            width=padded_right - padded_x,
+            height=padded_bottom - padded_y,
+            source_width=width,
+            source_height=height,
+            confidence=round(confidence, 3),
+            persistence=round(persistence, 3),
+        )
+        candidates.append((confidence, region))
+
+    return max(candidates, key=lambda item: item[0])[1] if candidates else None
+
+
+def scale_watermark_region(
+    region: WatermarkRegion,
+    output_width: int,
+    output_height: int,
+) -> WatermarkRegion:
+    """Map preview coordinates back to the final render canvas."""
+    scale_x = output_width / max(1, region.source_width)
+    scale_y = output_height / max(1, region.source_height)
+    x = max(0, min(output_width - 16, round(region.x * scale_x)))
+    y = max(0, min(output_height - 12, round(region.y * scale_y)))
+    width = min(output_width - x, max(16, round(region.width * scale_x)))
+    height = min(output_height - y, max(12, round(region.height * scale_y)))
+    return WatermarkRegion(
+        x=x,
+        y=y,
+        width=width,
+        height=height,
+        source_width=output_width,
+        source_height=output_height,
+        confidence=region.confidence,
+        persistence=region.persistence,
     )
 
 
@@ -2354,7 +2550,7 @@ def attach_monetization_provenance(
             "commercial_rights_confirmation_required": uploaded_source,
             "originality_score": originality_score,
             "minimum_originality_score": minimum_score,
-            "audit_version": 2,
+            "audit_version": 3,
             "signals": originality_signals,
             "substantive_transformation": substantive_transformation,
             "original_creator_commentary_present": bool(
@@ -2451,6 +2647,28 @@ def transcription_decode_options(language: str) -> dict:
     return options
 
 
+def configure_huggingface_environment() -> bool:
+    """Normalize optional Hub auth and keep public-model downloads quiet.
+
+    `huggingface_hub` reads authentication from the process environment. Older
+    deployments may still use HUGGING_FACE_HUB_TOKEN, so mirror either name to
+    both without ever printing the token. Public models remain usable when no
+    token is configured; persistent HF_HOME is supplied by Docker Compose.
+    """
+    token = (
+        os.environ.get("HF_TOKEN", "").strip()
+        or os.environ.get("HUGGING_FACE_HUB_TOKEN", "").strip()
+    )
+    if token:
+        os.environ["HF_TOKEN"] = token
+        os.environ["HUGGING_FACE_HUB_TOKEN"] = token
+    os.environ.setdefault("HF_HUB_VERBOSITY", "error")
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+    os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "300")
+    os.environ.setdefault("HF_HUB_ETAG_TIMEOUT", "30")
+    return bool(token)
+
+
 def transcript_cache_metadata_path(transcript_path: Path) -> Path:
     return transcript_path.with_name(f"{transcript_path.stem}.meta.json")
 
@@ -2481,9 +2699,15 @@ def transcribe(audio_path: Path, transcript_path: Path, model_name: str, languag
             for item in load_json(transcript_path)
         ]
 
+    hub_authenticated = configure_huggingface_environment()
     from faster_whisper import WhisperModel
 
     console.print(f"[bold]Loading model:[/bold] {model_name}")
+    console.print(
+        "[dim]Hugging Face: token aktif + cache persisten.[/dim]"
+        if hub_authenticated
+        else "[dim]Hugging Face: model publik + cache persisten (HF_TOKEN opsional).[/dim]"
+    )
     model = WhisperModel(model_name, device="cpu", compute_type="int8")
     segments, info = model.transcribe(str(audio_path), **transcription_decode_options(language))
 
@@ -3211,7 +3435,14 @@ AI_SYSTEM_PROMPT = (
     "filler, repeated ideas, generic motivation, and clips that need earlier context. Islamic insight, mystery, myth-versus-fact, "
     "history, supernatural stories, and relevant horror are valuable niches when genuinely present in the "
     "transcript. Authentic humor, witty answers, and naturally funny reactions are also high-value retention "
-    "moments. Reject source-channel intros, outros, credits, sponsor mentions, requests to subscribe/follow, "
+    "moments. For evergreen Islamic content, apply these editorial lenses when the transcript supports them: "
+    "mental-health clips must feel empathetic and calming, connect a relatable modern struggle to a practical "
+    "Islamic principle, and never shame the viewer; halal-wealth clips must explain riba, clean income, finance, "
+    "or career ethics in plain language with one usable takeaway; daily-fiqh clips must isolate one correctable "
+    "worship detail and preserve the speaker's evidence without inventing rulings; Islamic-history clips must "
+    "build an accurate premise-conflict-payoff arc with an explicit lesson for life today. Prefer a specific "
+    "problem, correction, contrast, or transformation over generic preaching. "
+    "Reject source-channel intros, outros, credits, sponsor mentions, requests to subscribe/follow, "
     "and thanks addressed to another channel or media brand. Never put a source channel or media brand in "
     "the clip title. Never turn myths, folklore, or supernatural claims into established Islamic facts; "
     "frame them accurately as stories, claims, questions, or lessons. "
@@ -3649,6 +3880,9 @@ SHORTS_SAFE_LEFT = 56
 SHORTS_SAFE_RIGHT = 900
 SHORTS_SAFE_TOP = 220
 SHORTS_SAFE_BOTTOM = 1560
+SHORTS_OFFICIAL_MAX_SECONDS = 180
+CLIPFORGE_SHORTS_MAX_SECONDS = 60
+SHORTS_POLICY_REVIEW_DATE = "2026-08-10"
 
 
 def wrap_subtitle(text: str, max_chars: int = SUBTITLE_MAX_CHARS, max_lines: int = SUBTITLE_MAX_LINES) -> str:
@@ -3786,20 +4020,241 @@ def shorts_cover_frame_timestamp(duration: float) -> float:
 
 
 SHORTS_TITLE_OVERLAY_SECONDS = 3.2
+SHORTS_CTA_OVERLAY_SECONDS = 2.35
+DEFAULT_SHORTS_CTA_VOICEOVER_TEXT = "Subscribe dan follow untuk video berikutnya!"
 
 
 def viral_title_overlay_filter(headline_filename: str, duration: float) -> str:
-    """Render a compact Shorts title like the bold hooks used in viral grids."""
+    """Render a transcript-grounded cover card like fast-scanning Shorts grids."""
     title_end = min(max(0.1, duration), SHORTS_TITLE_OVERLAY_SECONDS)
-    return (
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-        f"textfile='{headline_filename}':reload=0:expansion=none:"
-        "fontcolor=white:fontsize=72:line_spacing=3:"
-        "borderw=8:bordercolor=black@1.0:"
-        "shadowcolor=black@0.90:shadowx=4:shadowy=5:"
-        f"x='{SHORTS_SAFE_LEFT}+({SHORTS_SAFE_RIGHT - SHORTS_SAFE_LEFT}-text_w)/2':y=286:"
-        f"enable='between(t,0,{title_end:.3f})'"
+    active = f"enable='between(t,0,{title_end:.3f})'"
+    font_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    font_regular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    return ",".join(
+        [
+            # Two offset rectangles make a soft, rounded-looking card using
+            # only filters available in the standard backend FFmpeg build.
+            f"drawbox=x=70:y=1002:w=830:h=380:color=black@0.28:t=fill:{active}",
+            f"drawbox=x=58:y=982:w=842:h=356:color=white@0.97:t=fill:{active}",
+            f"drawbox=x=80:y=960:w=798:h=400:color=white@0.97:t=fill:{active}",
+            f"drawbox=x=96:y=1012:w=254:h=48:color=#FFF200@1.0:t=fill:{active}",
+            "drawtext="
+            f"fontfile={font_bold}:text='WAJIB TAHU':expansion=none:"
+            "fontcolor=black:fontsize=25:x=114:y=1021:"
+            f"{active}",
+            "drawtext="
+            f"fontfile={font_bold}:textfile='{headline_filename}':reload=0:expansion=none:"
+            "fontcolor=black:fontsize=49:line_spacing=4:"
+            "x=96:y=1086:"
+            f"{active}",
+            f"drawbox=x=96:y=1298:w=684:h=3:color=black@0.16:t=fill:{active}",
+            f"drawbox=x=96:y=1320:w=22:h=22:color=#FF1744@1.0:t=fill:{active}",
+            "drawtext="
+            f"fontfile={font_regular}:text='{CHANNEL_WATERMARK}':expansion=none:"
+            "fontcolor=black@0.82:fontsize=22:x=132:y=1318:"
+            f"{active}",
+        ]
     )
+
+
+def shorts_cta_overlay_filter(duration: float) -> str:
+    """Add a compact end CTA over the live payoff instead of a retention-killing outro."""
+    safe_duration = max(0.1, duration)
+    cta_start = max(0.0, safe_duration - SHORTS_CTA_OVERLAY_SECONDS)
+    cta_end = max(cta_start, safe_duration - 0.04)
+    active = f"enable='between(t,{cta_start:.3f},{cta_end:.3f})'"
+    font_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    font_regular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    return ",".join(
+        [
+            f"drawbox=x=88:y=1016:w=784:h=196:color=black@0.28:t=fill:{active}",
+            f"drawbox=x=74:y=1002:w=784:h=196:color=white@0.97:t=fill:{active}",
+            f"drawbox=x=96:y=1018:w=206:h=4:color=#FFF200@1.0:t=fill:{active}",
+            f"drawbox=x=96:y=1030:w=298:h=82:color=#FF1744@1.0:t=fill:{active}",
+            "drawtext="
+            f"fontfile={font_bold}:text='SUBSCRIBE':expansion=none:"
+            "fontcolor=white:fontsize=34:x=124:y=1053:"
+            f"{active}",
+            "drawtext="
+            f"fontfile={font_bold}:text='+ FOLLOW':expansion=none:"
+            "fontcolor=black:fontsize=34:x=426:y=1053:"
+            f"{active}",
+            "drawtext="
+            f"fontfile={font_regular}:text='JANGAN LEWATKAN VIDEO BERIKUTNYA':expansion=none:"
+            "fontcolor=black@0.72:fontsize=22:x=98:y=1142:"
+            f"{active}",
+            f"drawbox=x=742:y=1138:w=92:h=5:color=#FFF200@1.0:t=fill:{active}",
+        ]
+    )
+
+
+def env_enabled(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().casefold() in {"1", "true", "yes", "on"}
+
+
+def shorts_cta_voiceover_text() -> str:
+    """Return a short command-safe CTA copy; subprocess calls use argv, not a shell."""
+    configured = os.environ.get(
+        "CTA_VOICEOVER_TEXT", DEFAULT_SHORTS_CTA_VOICEOVER_TEXT
+    )
+    text = re.sub(r"\s+", " ", configured).strip()
+    return (text or DEFAULT_SHORTS_CTA_VOICEOVER_TEXT)[:120]
+
+
+def generate_shorts_cta_voiceover(
+    clips_dir: Path,
+    base_name: str,
+) -> tuple[Path, dict[str, object]] | None:
+    """Create an Indonesian CTA voice, preferring neural TTS with offline fallback."""
+    if not env_enabled("CTA_VOICEOVER_ENABLED", True):
+        return None
+
+    requested_provider = os.environ.get("CTA_VOICEOVER_PROVIDER", "auto").strip().lower()
+    if requested_provider not in {"auto", "edge", "espeak"}:
+        requested_provider = "auto"
+    text = shorts_cta_voiceover_text()
+    voice = os.environ.get("CTA_VOICEOVER_VOICE", "id-ID-ArdiNeural").strip()
+    if not re.fullmatch(r"[A-Za-z0-9-]{2,64}", voice):
+        voice = "id-ID-ArdiNeural"
+    rate = os.environ.get("CTA_VOICEOVER_RATE", "+12%").strip()
+    if not re.fullmatch(r"[+-]\d{1,2}%", rate):
+        rate = "+12%"
+    neural_path = clips_dir / f"{base_name}.cta_voice_tmp.mp3"
+    local_path = clips_dir / f"{base_name}.cta_voice_tmp.wav"
+
+    if requested_provider in {"auto", "edge"}:
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "edge_tts",
+                    "--voice",
+                    voice,
+                    "--rate",
+                    rate,
+                    "--text",
+                    text,
+                    "--write-media",
+                    str(neural_path.resolve()),
+                ],
+                cwd=clips_dir,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=35,
+            )
+            if (
+                result.returncode == 0
+                and neural_path.is_file()
+                and neural_path.stat().st_size > 512
+            ):
+                return neural_path, {
+                    "provider": "edge_neural",
+                    "voice": voice,
+                    "text": text,
+                    "rate": rate,
+                }
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        neural_path.unlink(missing_ok=True)
+        console.print(
+            "[yellow]Voice neural CTA tidak tersedia; mencoba voice lokal.[/yellow]"
+        )
+
+    espeak = shutil.which("espeak-ng") or shutil.which("espeak")
+    if requested_provider in {"auto", "edge", "espeak"} and espeak:
+        local_voice = os.environ.get("CTA_VOICEOVER_ESPEAK_VOICE", "id+m3").strip()
+        if not re.fullmatch(r"[A-Za-z0-9+_-]{1,32}", local_voice):
+            local_voice = "id+m3"
+        try:
+            result = subprocess.run(
+                [
+                    espeak,
+                    "-v",
+                    local_voice,
+                    "-s",
+                    "178",
+                    "-p",
+                    "48",
+                    "-a",
+                    "165",
+                    "-w",
+                    str(local_path.resolve()),
+                    text,
+                ],
+                cwd=clips_dir,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=20,
+            )
+            if result.returncode == 0 and local_path.is_file() and local_path.stat().st_size > 512:
+                return local_path, {
+                    "provider": "espeak_local",
+                    "voice": local_voice,
+                    "text": text,
+                    "rate": "178_wpm",
+                }
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        local_path.unlink(missing_ok=True)
+    return None
+
+
+def shorts_cta_voiceover_mix_filter(duration: float) -> str:
+    """Duck the final spoken beat and place the CTA voice inside its card window."""
+    safe_duration = max(0.1, duration)
+    cta_start = max(0.0, safe_duration - SHORTS_CTA_OVERLAY_SECONDS)
+    voice_start = min(safe_duration - 0.05, cta_start + 0.12)
+    voice_window = max(0.35, safe_duration - voice_start - 0.04)
+    delay_ms = max(0, int(round(voice_start * 1000)))
+    fade_out_start = max(0.1, voice_window - 0.18)
+    return (
+        "[0:a:0]aformat=sample_rates=48000:channel_layouts=stereo,"
+        f"volume='if(between(t,{cta_start:.3f},{safe_duration:.3f}),0.34,1)':eval=frame"
+        "[cta_dialog];"
+        f"[1:a:0]atrim=start=0:end={voice_window:.3f},asetpts=PTS-STARTPTS,"
+        "highpass=f=95,lowpass=f=12500,acompressor=threshold=0.10:ratio=3.2:"
+        "attack=8:release=100:makeup=1.45,loudnorm=I=-14:TP=-1.2:LRA=7,"
+        "aformat=sample_rates=48000:channel_layouts=stereo,"
+        "afade=t=in:st=0:d=0.055,"
+        f"afade=t=out:st={fade_out_start:.3f}:d=0.180,"
+        f"adelay=delays={delay_ms}:all=1[cta_voice];"
+        "[cta_dialog][cta_voice]amix=inputs=2:duration=first:"
+        "dropout_transition=0:normalize=0,alimiter=limit=0.95:attack=5:release=50"
+        "[cta_audio_out]"
+    )
+
+
+def shorts_policy_compliance(duration: float, *, embedded_cover: bool) -> dict[str, object]:
+    """Record the current technical Shorts guardrails beside each render.
+
+    Policy compliance still depends on the actual source rights, claims, and
+    channel-level review, so this deliberately records controls rather than a
+    promise that YouTube will recommend or monetize the upload.
+    """
+    safe_duration = max(0.0, duration)
+    return {
+        "reviewed_on": SHORTS_POLICY_REVIEW_DATE,
+        "official_max_seconds": SHORTS_OFFICIAL_MAX_SECONDS,
+        "clipforge_max_seconds": CLIPFORGE_SHORTS_MAX_SECONDS,
+        "duration_seconds": round(safe_duration, 3),
+        "duration_within_official_limit": safe_duration <= SHORTS_OFFICIAL_MAX_SECONDS,
+        "duration_within_clipforge_limit": safe_duration <= CLIPFORGE_SHORTS_MAX_SECONDS,
+        "vertical_aspect_ratio": "9:16",
+        "custom_thumbnail_upload_supported": False,
+        "thumbnail_strategy": (
+            "embedded_selectable_frame" if embedded_cover else "rendered_video_frame"
+        ),
+        "source_promos_removed_from_candidate_windows": True,
+        "rights_and_originality_review_required": True,
+        "channel_level_review_still_applies": True,
+        "recommendation_or_monetization_guarantee": False,
+    }
 
 
 def payoff_banner_text(clip: ClipCandidate, clip_segments: list[TranscriptSegment]) -> str:
@@ -5437,11 +5892,7 @@ def designed_thumbnail_filter(
             "scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos",
             "crop=1080:1920",
             "eq=contrast=1.09:brightness=-0.018:saturation=1.11",
-            f"drawtext=fontfile={font_bold}:textfile='{headline_filename}':reload=0:"
-            "expansion=none:fontcolor=white:fontsize=72:line_spacing=3:"
-            "borderw=8:bordercolor=black@1.0:shadowcolor=black@0.90:"
-            "shadowx=4:shadowy=5:"
-            f"x='{SHORTS_SAFE_LEFT}+({SHORTS_SAFE_RIGHT - SHORTS_SAFE_LEFT}-text_w)/2':y=286",
+            viral_title_overlay_filter(headline_filename, SHORTS_TITLE_OVERLAY_SECONDS),
         ]
     )
 
@@ -5754,6 +6205,7 @@ def export_clip(
     base_name_override: str = "",
     enhanced_edit: bool = True,
     remove_running_text: bool = False,
+    auto_blur_watermarks: bool = False,
     output_format: OutputFormat = "vertical_short",
     visual_mode: VisualMode = "auto_fyp",
     background_mode: BackgroundMode = "keep",
@@ -5768,11 +6220,13 @@ def export_clip(
     out_path = clips_dir / f"{base_name}.mp4"
     temp_video_path = clips_dir / f"{base_name}.video_tmp.mp4"
     temp_audio_path = clips_dir / f"{base_name}.audio_tmp.wav"
+    temp_cta_audio_path = clips_dir / f"{base_name}.audio_cta_tmp.wav"
     hook_text_path = clips_dir / f"{base_name}.hook.txt"
     pov_text_path = clips_dir / f"{base_name}.pov.txt"
     cover_text_path = clips_dir / f"{base_name}.cover.txt"
     payoff_text_path = clips_dir / f"{base_name}.payoff.txt"
     clean_background_path = clips_dir / f"{base_name}.background_tmp.mp4"
+    watermark_preview_path = clips_dir / f"{base_name}.watermark_preview_tmp.mp4"
     json_path.unlink(missing_ok=True)
 
     duration = clip.end - clip.start
@@ -5818,7 +6272,7 @@ def export_clip(
     applied_edits = list(clip.applied_edits)
     if automatic_short_title:
         applied_edits.append(
-            "Judul hook otomatis ALL CAPS dengan outline hitam tebal ditanam di awal video untuk cover Shorts."
+            "Kartu hook putih-kuning otomatis ditanam di awal video sebagai frame cover Shorts yang bisa dipilih."
         )
     if enhanced_edit and output_format == "vertical_short":
         if adaptive_plan.hook_boost:
@@ -5875,6 +6329,7 @@ def export_clip(
         **asdict(clip),
         "enhanced_edit": enhanced_edit,
         "remove_running_text": remove_running_text,
+        "auto_blur_watermarks": auto_blur_watermarks,
         "visual_theme": theme_profile["theme"],
         "emphasis_times": emphasis_times,
         "cinematic_pov_windows": [
@@ -5950,6 +6405,11 @@ def export_clip(
         "thumbnail_keyframe_seconds": (
             round(shorts_cover_frame_timestamp(duration), 3)
             if automatic_short_title
+            else None
+        ),
+        "shorts_policy_compliance": (
+            shorts_policy_compliance(duration, embedded_cover=automatic_short_title)
+            if output_format == "vertical_short"
             else None
         ),
     }
@@ -6290,6 +6750,81 @@ def export_clip(
         applied_edits.append(
             "Efek TV jadul diterapkan: hitam-putih pudar, grain bergerak, scanline, flicker halus, vignette, dan goresan pita vertikal."
         )
+    watermark_region: WatermarkRegion | None = None
+    watermark_filters_supported = all(
+        ffmpeg_has_filter(name) for name in ("crop", "gblur", "overlay", "split")
+    )
+    if auto_blur_watermarks and watermark_filters_supported:
+        preview_scale_width = 540 if output_format == "vertical_short" else 640
+        try:
+            run(
+                [
+                    ffmpeg_path(),
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-ss",
+                    f"{visual_start:.3f}",
+                    "-t",
+                    f"{duration:.3f}",
+                    "-i",
+                    str(visual_source.resolve()),
+                    "-map",
+                    "0:v:0",
+                    "-an",
+                    "-vf",
+                    f"{vf},fps=1,scale={preview_scale_width}:-2:flags=area",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "ultrafast",
+                    "-crf",
+                    "25",
+                    "-pix_fmt",
+                    "yuv420p",
+                    str(watermark_preview_path.name),
+                ],
+                cwd=clips_dir,
+            )
+            preview_region = detect_static_watermark_region(watermark_preview_path)
+            if preview_region is not None:
+                output_width, output_height = (
+                    (1080, 1920)
+                    if output_format == "vertical_short"
+                    else (1920, 1080)
+                )
+                watermark_region = scale_watermark_region(
+                    preview_region, output_width, output_height
+                )
+                vf = f"{vf},{localized_watermark_blur_filter(watermark_region)}"
+                applied_edits.append(
+                    "Watermark sumber statis terdeteksi lintas frame dan ditutup dengan blur lokal yang terbatas pada area logo."
+                )
+                console.print(
+                    "[green]Watermark sumber terdeteksi:[/green] blur lokal diterapkan "
+                    f"pada {watermark_region.x},{watermark_region.y} "
+                    f"{watermark_region.width}x{watermark_region.height}."
+                )
+            else:
+                console.print(
+                    "[dim]Tidak ada watermark statis yang cukup meyakinkan; frame sumber tidak diburamkan.[/dim]"
+                )
+        except RuntimeError as exc:
+            console.print(
+                "[yellow]Deteksi watermark dilewati agar export tetap berjalan:[/yellow] "
+                f"{exc}"
+            )
+        finally:
+            watermark_preview_path.unlink(missing_ok=True)
+    sidecar_payload["source_watermark_blur"] = {
+        "enabled": auto_blur_watermarks,
+        "detected": watermark_region is not None,
+        "method": "multi_frame_persistent_edge_local_blur",
+        "region": asdict(watermark_region) if watermark_region is not None else None,
+        "applied_before_clipforge_overlays": True,
+        "scope": "detected_region_only",
+    }
     if drawtext_supported:
         vf = f"{vf},{channel_watermark_filter(output_format)}"
         sidecar_payload["channel_watermark"] = {
@@ -6300,12 +6835,29 @@ def export_clip(
         applied_edits.append(
             f"Watermark channel {CHANNEL_WATERMARK} ditambahkan di safe area kiri atas."
         )
+        if output_format == "vertical_short":
+            vf = f"{vf},{shorts_cta_overlay_filter(duration)}"
+            sidecar_payload["end_cta"] = {
+                "enabled": True,
+                "copy": "SUBSCRIBE + FOLLOW",
+                "duration_seconds": SHORTS_CTA_OVERLAY_SECONDS,
+                "placement": "center_lower_caption_safe",
+                "extends_video_duration": False,
+            }
+            applied_edits.append(
+                "CTA Subscribe + Follow tampil singkat di atas payoff hidup tanpa menambah outro kosong."
+            )
     else:
         sidecar_payload["channel_watermark"] = {
             "enabled": False,
             "text": CHANNEL_WATERMARK,
             "reason": "ffmpeg_drawtext_unavailable",
         }
+        if output_format == "vertical_short":
+            sidecar_payload["end_cta"] = {
+                "enabled": False,
+                "reason": "ffmpeg_drawtext_unavailable",
+            }
     if burn_subtitles and clip_segments and subtitles_supported:
         style = build_subtitle_style(caption or CaptionStyle())
         if output_format == "landscape_compilation":
@@ -6408,6 +6960,7 @@ def export_clip(
         cover_text_path.unlink(missing_ok=True)
         payoff_text_path.unlink(missing_ok=True)
         clean_background_path.unlink(missing_ok=True)
+        watermark_preview_path.unlink(missing_ok=True)
     audio_filter = (
         "highpass=f=70,lowpass=f=15000,"
         "acompressor=threshold=0.125:ratio=2.5:attack=20:release=250:makeup=1.35,"
@@ -6474,6 +7027,90 @@ def export_clip(
             run(plain_audio_command, cwd=clips_dir)
     else:
         run(plain_audio_command, cwd=clips_dir)
+    mux_audio_path = temp_audio_path
+    cta_voice_path: Path | None = None
+    cta_voiceover_enabled = (
+        output_format == "vertical_short"
+        and drawtext_supported
+        and env_enabled("CTA_VOICEOVER_ENABLED", True)
+    )
+    if cta_voiceover_enabled:
+        generated_voice = generate_shorts_cta_voiceover(clips_dir, base_name)
+        if generated_voice is not None:
+            cta_voice_path, voice_details = generated_voice
+            try:
+                run(
+                    [
+                        ffmpeg_path(),
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        "-i",
+                        str(temp_audio_path.name),
+                        "-i",
+                        str(cta_voice_path.name),
+                        "-filter_complex",
+                        shorts_cta_voiceover_mix_filter(duration),
+                        "-map",
+                        "[cta_audio_out]",
+                        "-ac",
+                        "2",
+                        "-ar",
+                        "48000",
+                        "-c:a",
+                        "pcm_s16le",
+                        str(temp_cta_audio_path.name),
+                    ],
+                    cwd=clips_dir,
+                )
+                mux_audio_path = temp_cta_audio_path
+                sidecar_payload["end_cta"]["voiceover"] = {
+                    **voice_details,
+                    "enabled": True,
+                    "start_seconds": round(
+                        max(0.0, duration - SHORTS_CTA_OVERLAY_SECONDS) + 0.12,
+                        3,
+                    ),
+                    "dialog_ducking": True,
+                    "generated_for_this_export": True,
+                }
+                applied_edits.append(
+                    "Voice-over Indonesia mengucapkan CTA secara sinkron; dialog sumber diducking hanya selama kartu penutup."
+                )
+                console.print(
+                    "[green]Voice-over CTA aktif:[/green] "
+                    f"{voice_details['provider']} + dialog ducking."
+                )
+            except RuntimeError as exc:
+                temp_cta_audio_path.unlink(missing_ok=True)
+                sidecar_payload["end_cta"]["voiceover"] = {
+                    "enabled": False,
+                    "reason": "audio_mix_failed",
+                }
+                console.print(
+                    "[yellow]Voice-over CTA gagal dicampur; audio utama tetap digunakan:[/yellow] "
+                    f"{exc}"
+                )
+        else:
+            sidecar_payload["end_cta"]["voiceover"] = {
+                "enabled": False,
+                "reason": "neural_and_local_tts_unavailable",
+            }
+            console.print(
+                "[yellow]Voice-over CTA dilewati: provider neural dan lokal tidak tersedia.[/yellow]"
+            )
+    elif output_format == "vertical_short" and isinstance(
+        sidecar_payload.get("end_cta"), dict
+    ):
+        sidecar_payload["end_cta"]["voiceover"] = {
+            "enabled": False,
+            "reason": (
+                "disabled_by_environment"
+                if not env_enabled("CTA_VOICEOVER_ENABLED", True)
+                else "cta_card_unavailable"
+            ),
+        }
     run(
         [
             ffmpeg_path(),
@@ -6486,7 +7123,7 @@ def export_clip(
             "-i",
             str(temp_video_path.name),
             "-i",
-            str(temp_audio_path.name),
+            str(mux_audio_path.name),
             "-map",
             "0:v:0",
             "-map",
@@ -6521,6 +7158,9 @@ def export_clip(
     )
     temp_video_path.unlink(missing_ok=True)
     temp_audio_path.unlink(missing_ok=True)
+    temp_cta_audio_path.unlink(missing_ok=True)
+    if cta_voice_path is not None:
+        cta_voice_path.unlink(missing_ok=True)
     if enforce_size:
         enforce_clip_size_limit(out_path, duration)
     output_width, output_height = ensure_minimum_hd_output(out_path)
@@ -6603,6 +7243,7 @@ def export_compilation(
     background_mode: BackgroundMode = "keep",
     enhanced_edit: bool = True,
     remove_running_text: bool = False,
+    auto_blur_watermarks: bool = False,
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     parts_dir = clips_dir / ".compilation_parts"
@@ -6639,6 +7280,7 @@ def export_compilation(
                 base_name_override=f"part_{idx:02}",
                 enhanced_edit=enhanced_edit,
                 remove_running_text=remove_running_text,
+                auto_blur_watermarks=auto_blur_watermarks,
                 output_format="landscape_compilation",
                 visual_mode=visual_mode,
                 background_mode=background_mode,
@@ -7001,6 +7643,11 @@ def parse_args() -> argparse.Namespace:
         help="Explicitly obscure the source footer/running text (may modify lower-frame pixels)",
     )
     parser.add_argument(
+        "--auto-blur-watermarks",
+        action="store_true",
+        help="Detect persistent source watermarks across frames and blur only their local region",
+    )
+    parser.add_argument(
         "--keep-intermediate",
         action="store_true",
         help="Keep the downloaded source video and extracted audio after exporting clips",
@@ -7021,9 +7668,12 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
 
-    if args.clip_mode == "short" and args.max > 60:
-        console.print("[yellow]Short clip maximum capped at 60 seconds.[/yellow]")
-        args.max = 60.0
+    if args.clip_mode == "short" and args.max > CLIPFORGE_SHORTS_MAX_SECONDS:
+        console.print(
+            f"[yellow]Short clip maximum capped at {CLIPFORGE_SHORTS_MAX_SECONDS} seconds "
+            "to keep third-party claim risk below YouTube's stricter >1 minute Shorts rule.[/yellow]"
+        )
+        args.max = float(CLIPFORGE_SHORTS_MAX_SECONDS)
 
     if args.min <= 0 or args.max <= args.min:
         console.print("[red]Invalid duration range.[/red]")
@@ -7172,6 +7822,7 @@ def main() -> int:
                 args.background_mode,
                 not args.no_enhanced_edit,
                 args.remove_running_text and not args.keep_running_text,
+                args.auto_blur_watermarks,
             )
         ]
     else:
@@ -7194,6 +7845,7 @@ def main() -> int:
                     args.video_quality,
                     enhanced_edit=not args.no_enhanced_edit,
                     remove_running_text=args.remove_running_text and not args.keep_running_text,
+                    auto_blur_watermarks=args.auto_blur_watermarks,
                     visual_mode=args.visual_mode,
                     background_mode=args.background_mode,
                 )

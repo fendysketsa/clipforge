@@ -3185,8 +3185,9 @@ body::before {
 }
 
 .viralBlock {
-  grid-template-columns: minmax(150px, 0.4fr) minmax(0, 0.6fr);
-  align-items: center;
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  gap: 12px;
 }
 
 .autoViralButton {
@@ -3194,6 +3195,131 @@ body::before {
   align-items: center;
   justify-content: center;
   gap: 7px;
+}
+
+.autoContentHeading,
+.autoContentReason,
+.autoContentMeta,
+.autoContentSelect {
+  display: flex;
+  align-items: center;
+}
+
+.autoContentHeading {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.autoContentBadge {
+  padding: 4px 8px;
+  border: 1px solid rgba(250, 204, 21, 0.34);
+  border-radius: 999px;
+  color: #fde047;
+  background: rgba(250, 204, 21, 0.09);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.autoNicheField {
+  gap: 7px;
+}
+
+.autoNicheField small {
+  color: #789b95;
+  line-height: 1.5;
+}
+
+.autoContentResults {
+  display: grid;
+  gap: 9px;
+}
+
+.autoContentCard {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(148, 216, 204, 0.13);
+  border-radius: 12px;
+  background: rgba(3, 19, 17, 0.62);
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.autoContentCard.selected {
+  border-color: rgba(45, 212, 191, 0.48);
+  background: rgba(45, 212, 191, 0.07);
+}
+
+.autoContentSelect {
+  gap: 9px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.autoContentSelect input {
+  flex: 0 0 auto;
+  accent-color: var(--primary);
+}
+
+.autoContentRank {
+  flex: 0 0 auto;
+  color: #fde047;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.autoContentTitle {
+  min-width: 0;
+  overflow: hidden;
+  color: #e6fffa;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.autoContentMeta {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.autoContentMeta span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #9bc2ba;
+  background: rgba(148, 216, 204, 0.07);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.autoContentReason {
+  gap: 6px;
+  color: #78a69e;
+  font-size: 10px;
+}
+
+.autoContentReason span {
+  flex: 1;
+}
+
+.autoContentReason a {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 6px;
+  color: #5eead4;
+}
+
+.autoContentReason a:hover {
+  background: rgba(94, 234, 212, 0.1);
+}
+
+.autoQueueButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
 }
 
 .primary {

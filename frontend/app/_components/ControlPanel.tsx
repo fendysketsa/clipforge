@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, History, Link2, Loader2, Play, RefreshCw, Scissors, ShieldCheck, Sparkles, Type, Upload, UploadCloud } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, History, Link2, ListPlus, Loader2, Play, RefreshCw, Scissors, Search, ShieldCheck, Sparkles, Type, Upload, UploadCloud } from "lucide-react";
 import type { LocalLlmProvider } from "../../lib/apiClient";
 import {
   CAPTION_FONT_SIZE_MAX,
@@ -14,9 +14,11 @@ import type {
   CaptionPosition,
   ClipMode,
   CropMode,
+  IslamicContentNiche,
   SourceMode,
   SourceHistoryCheck,
   VideoQuality,
+  ViralContentSource,
   VisualMode,
 } from "../../types/clip.type";
 import { CaptionPreview } from "./CaptionPreview";
@@ -29,6 +31,40 @@ const CAM_CORNER_OPTIONS: { value: CamCorner; label: string }[] = [
   { value: "br", label: "Kanan Bawah" },
 ];
 
+const ISLAMIC_NICHE_OPTIONS: { value: IslamicContentNiche; label: string; description: string }[] = [
+  {
+    value: "islamic_mental_health",
+    label: "Mental Health & Spiritual Calm",
+    description: "Overthinking, ketenangan hati, tawakal, emosi, dan psikologi Islam.",
+  },
+  {
+    value: "halal_wealth",
+    label: "Halal Wealth, Career & Finance",
+    description: "Rezeki halal, riba, investasi syariah, bisnis, dan etika kerja.",
+  },
+  {
+    value: "fiqih_harian",
+    label: "Fiqih Harian & Fix Shalat",
+    description: "Kesalahan shalat, wudhu, doa, dan micro-learning ibadah praktis.",
+  },
+  {
+    value: "islamic_history",
+    label: "Islamic History & Epic Storytelling",
+    description: "Kisah Nabi, Sahabat, peradaban, ilmuwan, dan hikmah sejarah.",
+  },
+];
+
+function compactMetric(value: number) {
+  return new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
+function shortDuration(value?: number | null) {
+  if (!value) return "-";
+  const minutes = Math.floor(value / 60);
+  const seconds = Math.round(value % 60);
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 type ControlPanelProps = {
   clipMode: ClipMode;
   onClipModeChange: (value: ClipMode) => void;
@@ -37,6 +73,10 @@ type ControlPanelProps = {
   isBusy: boolean;
   isSubmitting: boolean;
   isAutoViralRunning: boolean;
+  isSearchingAutoContent: boolean;
+  autoContentNiche: IslamicContentNiche;
+  autoContentSources: ViralContentSource[];
+  selectedAutoContentUrls: string[];
   sourceMode: SourceMode;
   uploadFileName: string;
   uploadPreviewUrl: string;
@@ -98,6 +138,9 @@ type ControlPanelProps = {
   onAiModelChange: (value: string) => void;
   onAiApiKeyChange: (value: string) => void;
   onStartAutoViral: () => void;
+  onSearchAutoContent: () => void;
+  onAutoContentNicheChange: (value: IslamicContentNiche) => void;
+  onToggleAutoContentSource: (sourceUrl: string) => void;
   onStartJob: () => void;
   onUrlChange: (value: string) => void;
   sourceHistory: SourceHistoryCheck | null;
@@ -116,6 +159,10 @@ export function ControlPanel({
   isBusy,
   isSubmitting,
   isAutoViralRunning,
+  isSearchingAutoContent,
+  autoContentNiche,
+  autoContentSources,
+  selectedAutoContentUrls,
   sourceMode,
   uploadFileName,
   uploadPreviewUrl,
@@ -177,6 +224,9 @@ export function ControlPanel({
   onAiModelChange,
   onAiApiKeyChange,
   onStartAutoViral,
+  onSearchAutoContent,
+  onAutoContentNicheChange,
+  onToggleAutoContentSource,
   onStartJob,
   onUrlChange,
   sourceHistory,
@@ -389,7 +439,7 @@ export function ControlPanel({
         <p className="field-help">
           {clipMode === "highlight_5m"
             ? "AI mencari POV utama dan inti cerita dari seluruh video, membuang filler, lalu menyusunnya menjadi satu resume kronologis yang sinematik."
-            : "Clip vertikal maksimal 60 detik dengan judul hook otomatis, caption kata-penting di safe area Shorts, variasi edit berbasis isi, sound effect selektif, payoff, dan loop alami—tanpa perlu upload thumbnail."}
+            : "Clip vertikal maksimal 60 detik dengan cover putih-kuning pada frame 0,78 detik, caption kata-penting di safe area Shorts, edit berbasis isi, payoff, CTA Subscribe + Follow, dan loop alami."}
         </p>
       </div>
 
@@ -923,12 +973,86 @@ export function ControlPanel({
         {error ? <p className="error">{error}</p> : null}
 
         <div className="aiBlock viralBlock">
-          <button className="ghostButton autoViralButton" type="button" disabled={isAutoViralRunning || isProcessing} onClick={onStartAutoViral}>
-            {isAutoViralRunning ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
-            {isAutoViralRunning ? "Auto Viral Berjalan..." : "Auto Viral CC"}
+          <div className="autoContentHeading">
+            <span className="aiToggleLabel"><Sparkles size={16} /> Auto Search Konten Islami</span>
+            <span className="autoContentBadge">TOP 3</span>
+          </div>
+
+          <label className="field autoNicheField">
+            <span>Niche evergreen pilihan</span>
+            <select
+              value={autoContentNiche}
+              disabled={isSearchingAutoContent || isAutoViralRunning}
+              onChange={(event) => onAutoContentNicheChange(event.target.value as IslamicContentNiche)}
+            >
+              {ISLAMIC_NICHE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <small>{ISLAMIC_NICHE_OPTIONS.find((option) => option.value === autoContentNiche)?.description}</small>
+          </label>
+
+          <button
+            className="ghostButton autoViralButton"
+            type="button"
+            disabled={isSearchingAutoContent || isAutoViralRunning || isProcessing}
+            onClick={onSearchAutoContent}
+          >
+            {isSearchingAutoContent ? <Loader2 className="spin" size={16} /> : <Search size={16} />}
+            {isSearchingAutoContent ? "Meranking kandidat..." : "Cari Top 3 Konten"}
           </button>
+
+          {autoContentSources.length ? (
+            <div className="autoContentResults">
+              {autoContentSources.map((source) => {
+                const selected = selectedAutoContentUrls.includes(source.url);
+                return (
+                  <article className={`autoContentCard${selected ? " selected" : ""}`} key={source.url}>
+                    <label className="autoContentSelect">
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        disabled={isAutoViralRunning}
+                        onChange={() => onToggleAutoContentSource(source.url)}
+                      />
+                      <span className="autoContentRank">#{source.rank}</span>
+                      <span className="autoContentTitle">{source.title}</span>
+                    </label>
+                    <div className="autoContentMeta">
+                      <span>{compactMetric(source.views)} views</span>
+                      <span>{compactMetric(source.views_per_day)}/hari</span>
+                      <span>{shortDuration(source.duration)}</span>
+                      <span>niche {Math.round(source.niche_score)}/100</span>
+                    </div>
+                    <div className="autoContentReason">
+                      <ShieldCheck size={13} />
+                      <span>{source.ranking_reason}</span>
+                      <a href={source.url} target="_blank" rel="noreferrer" aria-label="Buka sumber YouTube">
+                        <ExternalLink size={14} />
+                      </a>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {autoContentSources.length ? (
+            <button
+              className="primary autoQueueButton"
+              type="button"
+              disabled={isAutoViralRunning || isProcessing || selectedAutoContentUrls.length === 0}
+              onClick={onStartAutoViral}
+            >
+              {isAutoViralRunning ? <Loader2 className="spin" size={16} /> : <ListPlus size={16} />}
+              {isAutoViralRunning
+                ? "Antrean clipping berjalan..."
+                : `Masukkan ${selectedAutoContentUrls.length} Pilihan ke Antrean`}
+            </button>
+          ) : null}
+
           <p className="field-help">
-            {autoViralMessage || "Atau biarkan sistem mencari konten Creative Commons yang relevan secara otomatis."}
+            {autoViralMessage || "Sistem mengambil pool kandidat CC, lalu meranking relevansi niche, momentum views, engagement, freshness, dan duplikasi sumber."}
           </p>
         </div>
 

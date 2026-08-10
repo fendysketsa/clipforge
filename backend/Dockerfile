@@ -20,6 +20,7 @@ RUN apt-get update \
       fonts-dejavu \
       fonts-liberation \
       fonts-noto-core \
+      espeak-ng \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

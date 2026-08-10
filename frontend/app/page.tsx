@@ -27,6 +27,7 @@ import {
   importYouTubeCdpCookies,
   probeUrlDuration,
   setupYouTubeOneTimeLogin,
+  searchViralContentSources,
   startYouTubeLogin,
   startAutoViralCampaign,
   updateJobClipStatus,
@@ -68,8 +69,10 @@ import type {
   ClipFile,
   ClipJob,
   CropMode,
+  IslamicContentNiche,
   SourceMode,
   SourceHistoryCheck,
+  ViralContentSource,
   VideoQuality,
   VisualMode,
   YouTubeConfig,
@@ -135,6 +138,10 @@ export default function HomePage() {
   const [youtubeConfig, setYoutubeConfig] = useState<YouTubeConfig | null>(null);
   const [youtubeUploads, setYoutubeUploads] = useState<YouTubeUploadJob[]>([]);
   const [autoViralRun, setAutoViralRun] = useState<AutoViralRun | null>(null);
+  const [autoContentNiche, setAutoContentNiche] = useState<IslamicContentNiche>("islamic_mental_health");
+  const [autoContentSources, setAutoContentSources] = useState<ViralContentSource[]>([]);
+  const [selectedAutoContentUrls, setSelectedAutoContentUrls] = useState<string[]>([]);
+  const [isSearchingAutoContent, setIsSearchingAutoContent] = useState(false);
   const [isYouTubeLoginActive, setIsYouTubeLoginActive] = useState(false);
   const [selectedHistoryJobIds, setSelectedHistoryJobIds] = useState<string[]>([]);
   const [selectedClipUrls, setSelectedClipUrls] = useState<string[]>([]);
@@ -346,11 +353,27 @@ export default function HomePage() {
       if ((nextRun.status === "completed" || nextRun.status === "failed") && notifiedAutoViralRunId.current !== nextRun.id) {
         notifiedAutoViralRunId.current = nextRun.id;
         if (nextRun.status === "completed") {
-          toast.success("Auto Viral CC selesai. Alert Telegram sudah dikirim bila token tersedia.");
+          toast.success(
+            nextRun.request.auto_upload_youtube === false
+              ? "Clipping kandidat niche selesai dan siap direview."
+              : "Auto Viral CC selesai. Alert Telegram sudah dikirim bila token tersedia.",
+          );
         } else {
           toast.error(nextRun.message || "Auto Viral CC gagal", { duration: 9000 });
         }
-        loadJobs().catch(() => undefined);
+        loadJobs().then((nextJobs) => {
+          const latestJobId = [...nextRun.processed]
+            .reverse()
+            .map((item) => typeof item.job_id === "string" ? item.job_id : "")
+            .find(Boolean);
+          const latestAutoJob = latestJobId
+            ? nextJobs.find((item) => item.id === latestJobId)
+            : undefined;
+          if (latestAutoJob) {
+            setActiveJob(latestAutoJob);
+            setJob(latestAutoJob);
+          }
+        }).catch(() => undefined);
         loadYouTubeUploads().catch(() => undefined);
       }
     }, JOB_POLL_INTERVAL_MS);
@@ -608,6 +631,7 @@ export default function HomePage() {
           background_mode: backgroundMode,
           burn_subtitles: burnSubtitles,
           remove_running_text: false,
+          auto_blur_watermarks: true,
           crop_mode: cropMode,
           cam_corner: camCorner,
           caption_font_size: captionFontSize,
@@ -1109,18 +1133,54 @@ export default function HomePage() {
     await loadJobs();
   }, [activeJobId, jobs, loadJobs]);
 
-  const handleStartAutoViral = useCallback(async () => {
-    if (isAutoViralRunning) return;
-    if (!youtubeConfig?.enabled) {
-      toast.error(youtubeConfig?.auth_status_message ?? "Uploader YouTube belum siap untuk auto viral.");
-      return;
+  const handleSearchAutoContent = useCallback(async () => {
+    if (isSearchingAutoContent || isAutoViralRunning) return;
+    setIsSearchingAutoContent(true);
+    try {
+      const sources = await toast.promise(
+        searchViralContentSources({
+          niche: autoContentNiche,
+          video_count: 3,
+          max_age_days: 30,
+          min_views: 1000,
+        }),
+        {
+          loading: "Mencari dan meranking kandidat niche...",
+          success: (items) => `Top ${items.length} kandidat niche siap dipilih.`,
+          error: (searchError) => searchError instanceof Error ? searchError.message : "Pencarian gagal",
+        },
+      );
+      setAutoContentSources(sources);
+      setSelectedAutoContentUrls(sources.map((source) => source.url));
+    } catch {
+      // toast.promise already presents the backend search error.
+    } finally {
+      setIsSearchingAutoContent(false);
     }
+  }, [autoContentNiche, isAutoViralRunning, isSearchingAutoContent]);
+
+  const handleToggleAutoContentSource = useCallback((sourceUrl: string) => {
+    setSelectedAutoContentUrls((current) => (
+      current.includes(sourceUrl)
+        ? current.filter((item) => item !== sourceUrl)
+        : [...current, sourceUrl]
+    ));
+  }, []);
+
+  const handleStartAutoViral = useCallback(async () => {
+    if (isAutoViralRunning || !selectedAutoContentUrls.length) return;
 
     try {
+      const selectedSources = autoContentSources.filter((source) => selectedAutoContentUrls.includes(source.url));
+      const selectedMaxAge = Math.max(30, ...selectedSources.map((source) => source.age_days ?? 0));
       const run = await toast.promise(
         startAutoViralCampaign({
-          clips_per_video: Math.min(5, youtubeConfig.auto_upload_count || 3),
-          max_age_days: 30,
+          niche: autoContentNiche,
+          source_urls: selectedAutoContentUrls,
+          video_count: selectedAutoContentUrls.length,
+          auto_upload_youtube: false,
+          clips_per_video: 3,
+          max_age_days: Math.min(365, selectedMaxAge),
           top: targetClips || null,
           min_duration: minDuration,
           max_duration: Math.min(60, maxDuration),
@@ -1135,29 +1195,33 @@ export default function HomePage() {
           ai_api_key: aiApiKey,
         }),
         {
-          loading: "Memulai Auto Viral CC...",
-          success: "Auto Viral CC berjalan di background.",
-          error: "Gagal memulai Auto Viral CC",
+          loading: "Memasukkan pilihan ke antrean clipping...",
+          success: `${selectedAutoContentUrls.length} sumber masuk antrean clipping.`,
+          error: "Gagal memasukkan sumber ke antrean clipping",
         },
       );
       notifiedAutoViralRunId.current = null;
       setAutoViralRun(run);
     } catch (autoError) {
-      toast.error(autoError instanceof Error ? autoError.message : "Gagal memulai Auto Viral CC", { duration: 9000 });
+      toast.error(autoError instanceof Error ? autoError.message : "Gagal memulai antrean clipping", { duration: 9000 });
     }
   }, [
     aiApiKey,
     aiBaseUrl,
     aiEnabled,
     aiModel,
+    autoContentNiche,
+    autoContentSources,
+    backgroundMode,
     burnSubtitles,
     cropMode,
     isAutoViralRunning,
     maxDuration,
     minDuration,
+    selectedAutoContentUrls,
     targetClips,
     videoQuality,
-    youtubeConfig,
+    visualMode,
   ]);
 
   return (
@@ -1179,6 +1243,10 @@ export default function HomePage() {
           isBusy={isBusy}
           isSubmitting={isSubmitting}
           isAutoViralRunning={isAutoViralRunning}
+          isSearchingAutoContent={isSearchingAutoContent}
+          autoContentNiche={autoContentNiche}
+          autoContentSources={autoContentSources}
+          selectedAutoContentUrls={selectedAutoContentUrls}
           sourceMode={sourceMode}
           uploadFileName={uploadFileName}
           uploadPreviewUrl={uploadPreviewUrl}
@@ -1240,6 +1308,13 @@ export default function HomePage() {
           onAiModelChange={setAiModel}
           onAiApiKeyChange={setAiApiKey}
           onStartAutoViral={handleStartAutoViral}
+          onSearchAutoContent={handleSearchAutoContent}
+          onAutoContentNicheChange={(value) => {
+            setAutoContentNiche(value);
+            setAutoContentSources([]);
+            setSelectedAutoContentUrls([]);
+          }}
+          onToggleAutoContentSource={handleToggleAutoContentSource}
           onStartJob={handleStartJob}
           onUrlChange={(value) => {
             setUrl(value);

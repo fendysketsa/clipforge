@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from clipper import (
@@ -10,6 +11,7 @@ from clipper import (
     ReactionCue,
     SoundEffectCue,
     TranscriptSegment,
+    WatermarkRegion,
     _hex_to_ass_color,
     adaptive_text_backdrop_split_filter,
     attach_monetization_provenance,
@@ -29,6 +31,7 @@ from clipper import (
     clip_has_islamic_context,
     clip_topic_hashtags,
     codex_edit_plan,
+    configure_huggingface_environment,
     contextual_audio_mix_filter,
     contextual_sound_effect_cues,
     content_edit_variation,
@@ -47,6 +50,7 @@ from clipper import (
     landscape_compilation_edit_filter,
     landscape_compilation_frame_filter,
     landscape_speaker_split_filter,
+    localized_watermark_blur_filter,
     modern_blurred_video_frame_filter,
     modern_gradient_border_filters,
     payoff_banner_text,
@@ -55,10 +59,15 @@ from clipper import (
     retro_tv_look_filter,
     resolve_codex_ideas,
     score_window,
+    scale_watermark_region,
     segments_for_clip,
     split_subtitle_text,
     subtitle_cues,
     shorts_cover_frame_timestamp,
+    shorts_cta_overlay_filter,
+    shorts_cta_voiceover_mix_filter,
+    shorts_cta_voiceover_text,
+    shorts_policy_compliance,
     thumbnail_story_copy,
     transcription_decode_options,
     viral_title_overlay_filter,
@@ -84,6 +93,26 @@ def test_hex_to_ass_color_shorthand():
 
 def test_hex_to_ass_color_invalid_falls_back():
     assert _hex_to_ass_color("nonsense") == "&H00FFFFFF"
+
+
+def test_huggingface_environment_supports_public_model_without_token(monkeypatch):
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)
+    monkeypatch.delenv("HF_HUB_VERBOSITY", raising=False)
+    monkeypatch.delenv("HF_HUB_DISABLE_PROGRESS_BARS", raising=False)
+
+    assert configure_huggingface_environment() is False
+    assert "HF_TOKEN" not in os.environ
+    assert os.environ["HF_HUB_VERBOSITY"] == "error"
+    assert os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] == "1"
+
+
+def test_huggingface_environment_accepts_legacy_token_without_logging_it(monkeypatch):
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.setenv("HUGGING_FACE_HUB_TOKEN", "hf_test_secret")
+
+    assert configure_huggingface_environment() is True
+    assert os.environ["HF_TOKEN"] == "hf_test_secret"
 
 
 def test_build_subtitle_style_upper():
@@ -230,6 +259,45 @@ def test_running_text_cleanup_naturally_blurs_footer_without_changing_framing():
     assert "overlay=0:1640" in value
     assert "scale=" not in value
     assert "setsar=1" in value
+
+
+def test_detected_watermark_blur_is_local_and_preserves_the_canvas():
+    region = WatermarkRegion(
+        x=402,
+        y=1184,
+        width=286,
+        height=74,
+        source_width=1080,
+        source_height=1920,
+        confidence=0.84,
+        persistence=0.78,
+    )
+
+    value = localized_watermark_blur_filter(region)
+
+    assert value.startswith("split=2[wm_base][wm_blur_src]")
+    assert "crop=286:74:402:1184" in value
+    assert "gblur=sigma=24:sigmaV=14:steps=3" in value
+    assert "overlay=402:1184" in value
+    assert "scale=" not in value
+
+
+def test_preview_watermark_region_scales_to_final_short_canvas():
+    preview = WatermarkRegion(
+        x=201,
+        y=592,
+        width=143,
+        height=37,
+        source_width=540,
+        source_height=960,
+        confidence=0.84,
+        persistence=0.78,
+    )
+
+    result = scale_watermark_region(preview, 1080, 1920)
+
+    assert (result.x, result.y, result.width, result.height) == (402, 1184, 286, 74)
+    assert result.confidence == 0.84
 
 
 def test_text_backdrop_split_uses_a_speaker_dominant_congregation_panel():
@@ -569,7 +637,7 @@ def test_clean_detail_crop_avoids_extreme_landscape_upscale(monkeypatch, tmp_pat
     assert detail["extreme_upscale_avoided"] is True
 
 
-def test_shorts_cover_moment_uses_bold_centered_viral_title():
+def test_shorts_cover_moment_uses_reference_style_white_yellow_card():
     value = enhanced_edit_filter(
         60,
         "clip.hook.txt",
@@ -578,11 +646,13 @@ def test_shorts_cover_moment_uses_bold_centered_viral_title():
     )
 
     assert "textfile='clip.cover.txt'" in value
-    assert "fontsize=72" in value
-    assert "borderw=8:bordercolor=black@1.0" in value
-    assert "x='56+(844-text_w)/2':y=286" in value
+    assert "color=white@0.97" in value
+    assert "color=#FFF200@1.0" in value
+    assert "fontcolor=black:fontsize=49" in value
+    assert "x=96:y=1086" in value
     assert "between(t,0,3.200)" in value
-    assert "text='WAJIB TAHU'" not in value
+    assert "text='WAJIB TAHU'" in value
+    assert "text='@ryuundyofficial'" in value
     assert "text='LIHAT PENJELASANNYA'" not in value
     assert "textfile='clip.hook.txt'" not in value
 
@@ -592,7 +662,47 @@ def test_viral_title_overlay_clamps_window_to_short_clip_duration():
 
     assert "textfile='clip.cover.txt'" in value
     assert "between(t,0,1.400)" in value
-    assert "borderw=8" in value
+    assert "color=white@0.97" in value
+
+
+def test_shorts_cta_is_brief_live_overlay_at_end():
+    value = shorts_cta_overlay_filter(30)
+
+    assert "text='SUBSCRIBE'" in value
+    assert "text='+ FOLLOW'" in value
+    assert "text='JANGAN LEWATKAN VIDEO BERIKUTNYA'" in value
+    assert "between(t,27.650,29.960)" in value
+    assert "fade=" not in value
+
+
+def test_shorts_cta_voiceover_ducks_dialog_and_stays_inside_card_window():
+    value = shorts_cta_voiceover_mix_filter(30)
+
+    assert "between(t,27.650,30.000),0.34,1" in value
+    assert "atrim=start=0:end=2.190" in value
+    assert "adelay=delays=27770:all=1" in value
+    assert "loudnorm=I=-14:TP=-1.2:LRA=7" in value
+    assert "[cta_audio_out]" in value
+
+
+def test_shorts_cta_voiceover_copy_is_configurable_and_bounded(monkeypatch):
+    monkeypatch.setenv("CTA_VOICEOVER_TEXT", "  Ikuti akun ini   untuk kajian berikutnya!  ")
+    assert shorts_cta_voiceover_text() == "Ikuti akun ini untuk kajian berikutnya!"
+
+    monkeypatch.setenv("CTA_VOICEOVER_TEXT", "x" * 160)
+    assert len(shorts_cta_voiceover_text()) == 120
+
+
+def test_shorts_policy_compliance_records_official_and_stricter_local_limits():
+    compliance = shorts_policy_compliance(59.8, embedded_cover=True)
+
+    assert compliance["official_max_seconds"] == 180
+    assert compliance["clipforge_max_seconds"] == 60
+    assert compliance["duration_within_official_limit"] is True
+    assert compliance["duration_within_clipforge_limit"] is True
+    assert compliance["custom_thumbnail_upload_supported"] is False
+    assert compliance["thumbnail_strategy"] == "embedded_selectable_frame"
+    assert compliance["recommendation_or_monetization_guarantee"] is False
 
 
 def test_thumbnail_story_copy_is_compact_and_truthful():
@@ -635,10 +745,10 @@ def test_thumbnail_filter_uses_vertical_and_landscape_upload_shapes():
     )
 
     assert "scale=1080:1920" in vertical
-    assert "fontsize=72" in vertical
-    assert "borderw=8:bordercolor=black@1.0" in vertical
-    assert "x='56+(844-text_w)/2':y=286" in vertical
-    assert "text='WAJIB TAHU'" not in vertical
+    assert "color=white@0.97" in vertical
+    assert "fontcolor=black:fontsize=49" in vertical
+    assert "x=96:y=1086" in vertical
+    assert "text='WAJIB TAHU'" in vertical
     assert "text='LIHAT PENJELASANNYA'" not in vertical
     assert "scale=1280:720" in landscape
     assert "text='RESUME CERITA'" in landscape

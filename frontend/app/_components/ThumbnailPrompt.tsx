@@ -29,7 +29,7 @@ export function ThumbnailPrompt({ clip }: ThumbnailPromptProps) {
           <strong>{isShort ? "Cover Shorts sudah tertanam" : "Thumbnail siap publikasi"}</strong>
           <small>
             {[
-              isShort ? "tanpa upload gambar" : "",
+              isShort ? "pilih frame 0,78 dtk di aplikasi YouTube" : "",
               thumbUrl ? "preview" : "",
               prompt ? "prompt" : "",
               caption ? "caption" : "",
@@ -46,7 +46,7 @@ export function ThumbnailPrompt({ clip }: ThumbnailPromptProps) {
           <div className="thumbPreview">
             <div className="thumbBlockHeader">
               <ImageIcon size={14} />
-              <span>{isShort ? "Preview frame cover di dalam video" : "Thumbnail upload"}</span>
+              <span>{isShort ? "Preview frame cover tertanam (0,78 detik)" : "Thumbnail upload"}</span>
             </div>
             <img src={thumbUrl} alt="Preview frame cover berkontras tinggi" />
             <button type="button" onClick={() => handleDownload(thumbUrl, thumbName)}>

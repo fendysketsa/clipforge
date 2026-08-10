@@ -25,7 +25,7 @@ import imageio_ffmpeg
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from yt_dlp import YoutubeDL
 
 from llm import AIConfig, chat_completion, extract_json
@@ -79,6 +79,7 @@ FULL_ANALYSIS_LIMIT_SECONDS = 30 * 60
 LONG_VIDEO_ANALYSIS_RATIO = 0.35
 MAX_AUTO_ANALYSIS_SECONDS = 20 * 60
 CLIP_BUDGET_RATIO = 0.8
+YOUTUBE_SHORTS_MAX_SECONDS = 180
 YOUTUBE_CLEANUP_STEPS = (
     "thumbnail",
     "metadata",
@@ -224,6 +225,7 @@ class ClipJobRequest(BaseModel):
     burn_subtitles: bool = True
     enhanced_edit: bool = True
     remove_running_text: bool = False
+    auto_blur_watermarks: bool = True
     crop_mode: Literal["center", "person", "streamer"] = "person"
     cam_corner: Literal["auto", "br", "bl", "tr", "tl"] = "auto"
     caption_font_size: int = Field(default=8, ge=6, le=120)
@@ -698,6 +700,109 @@ HORROR_PODCAST_SEARCH_QUERIES = [
     "kompilasi cerita seram indonesia",
 ]
 
+IslamicContentNiche = Literal[
+    "auto",
+    "islamic_mental_health",
+    "halal_wealth",
+    "fiqih_harian",
+    "islamic_history",
+]
+
+ISLAMIC_EVERGREEN_NICHES: dict[str, dict[str, Any]] = {
+    "islamic_mental_health": {
+        "label": "Mental Health & Spiritual Calm",
+        "queries": [
+            "kesehatan mental islam overthinking",
+            "cara menenangkan hati menurut islam",
+            "tawakal menghadapi kecemasan",
+            "stress emosi dan sabar dalam islam",
+            "tazkiyatun nafs ketenangan jiwa",
+            "psikologi islam rasa takut gagal",
+            "tadabbur quran untuk hati tenang",
+            "kelelahan mental dan spiritual islam",
+            "mengatasi insecure menurut islam",
+            "kajian ketenangan hati terbaru",
+            "podcast kesehatan mental islami",
+            "self healing dalam islam",
+        ],
+        "keywords": [
+            "overthinking", "cemas", "kecemasan", "tenang", "ketenangan", "tawakal",
+            "mental", "stres", "stress", "emosi", "sabar", "takut", "gagal", "insecure",
+            "tazkiyatun", "jiwa", "hati", "healing", "psikologi", "tadabbur",
+        ],
+        "hashtags": ["KesehatanMentalIslam", "KetenanganHati", "Tawakal"],
+    },
+    "halal_wealth": {
+        "label": "Halal Wealth, Career & Finance",
+        "queries": [
+            "cara mencari rezeki halal berkah",
+            "keuangan syariah untuk anak muda",
+            "bahaya riba dan solusi praktis",
+            "investasi halal pemula indonesia",
+            "etika kerja dan karier dalam islam",
+            "bisnis halal transparan",
+            "mengatur keuangan keluarga islami",
+            "rezeki bersih ketenangan keluarga",
+            "akad syariah dijelaskan sederhana",
+            "podcast pengusaha muslim indonesia",
+            "sedekah rezeki dan keberkahan",
+            "karier sukses sesuai syariah",
+        ],
+        "keywords": [
+            "rezeki", "halal", "berkah", "keberkahan", "riba", "syariah", "investasi",
+            "keuangan", "uang", "karier", "kerja", "bisnis", "usaha", "akad", "sedekah",
+            "pengusaha", "profesi", "gaji",
+        ],
+        "hashtags": ["RezekiHalal", "KeuanganSyariah", "KarierMuslim"],
+    },
+    "fiqih_harian": {
+        "label": "Fiqih Harian & Fix Shalat",
+        "queries": [
+            "kesalahan shalat yang sering tidak disadari",
+            "cara memperbaiki gerakan shalat",
+            "posisi sujud yang benar",
+            "kesalahan wudhu sehari hari",
+            "fiqih shalat praktis singkat",
+            "bacaan shalat yang benar",
+            "cara shalat lebih khusyuk",
+            "tata cara wudhu sesuai sunnah",
+            "tanya jawab fiqih ibadah harian",
+            "doa harian dan adab muslim",
+            "micro learning fiqih islam",
+            "kajian fiqih praktis terbaru",
+        ],
+        "keywords": [
+            "fiqih", "fikih", "shalat", "salat", "wudhu", "sujud", "ruku", "tumit",
+            "bacaan", "ibadah", "doa", "khusyuk", "sunnah", "makmum", "imam", "tayamum",
+            "najis", "gerakan", "adab",
+        ],
+        "hashtags": ["FiqihHarian", "PerbaikiShalat", "BelajarIbadah"],
+    },
+    "islamic_history": {
+        "label": "Islamic History & Epic Storytelling",
+        "queries": [
+            "kisah nabi penuh hikmah",
+            "kisah sahabat nabi inspiratif",
+            "sejarah peradaban islam dokumenter",
+            "strategi perang badar sejarah islam",
+            "kejayaan ilmuwan muslim",
+            "kisah kepemimpinan khalifah islam",
+            "sejarah islam yang jarang diketahui",
+            "tokoh muslim pengubah dunia",
+            "cerita epik peradaban muslim",
+            "hikmah sejarah islam untuk masa kini",
+            "dokumenter sejarah nabi indonesia",
+            "podcast sejarah islam indonesia",
+        ],
+        "keywords": [
+            "sejarah", "nabi", "rasul", "sahabat", "khalifah", "peradaban", "badar",
+            "uhud", "hijrah", "ilmuwan", "tokoh", "pasukan", "kerajaan", "dinasti", "ulama",
+            "kepemimpinan", "dokumenter", "kisah",
+        ],
+        "hashtags": ["SejarahIslam", "KisahSahabat", "HikmahSejarah"],
+    },
+}
+
 
 def merge_unique_queries(*groups: list[str]) -> list[str]:
     merged: list[str] = []
@@ -726,6 +831,20 @@ def prioritized_viral_queries(configured: list[str]) -> list[str]:
     )
 
 
+def prioritized_niche_queries(niche: IslamicContentNiche, configured: list[str]) -> list[str]:
+    """Put the selected evergreen niche ahead of every generic discovery query."""
+    if niche == "auto":
+        return prioritized_viral_queries(configured)
+    profile = ISLAMIC_EVERGREEN_NICHES[niche]
+    return merge_unique_queries(
+        list(profile["queries"]),
+        configured,
+        BROAD_VIRAL_SEARCH_QUERIES,
+        MYSTERY_ISLAMIC_SEARCH_QUERIES,
+        HORROR_PODCAST_SEARCH_QUERIES,
+    )
+
+
 def default_auto_viral_queries() -> list[str]:
     configured = env_search_queries("AUTO_VIRAL_SEARCH_QUERIES", "AUTOPILOT_KEYWORDS")
     return prioritized_viral_queries(configured)
@@ -737,6 +856,7 @@ def default_viral_video_search_queries() -> list[str]:
 
 
 class AutoViralRequest(BaseModel):
+    niche: IslamicContentNiche = "auto"
     queries: list[str] = Field(default_factory=default_auto_viral_queries)
     video_count: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_VIDEO_COUNT", 5), ge=1, le=7)
     clips_per_video: int = Field(default_factory=youtube_auto_upload_count, ge=1, le=5)
@@ -757,12 +877,33 @@ class AutoViralRequest(BaseModel):
     ai_base_url: str = DEFAULT_AI_BASE_URL
     ai_model: str = DEFAULT_AI_MODEL
     ai_api_key: str = ""
+    source_urls: list[str] = Field(default_factory=list)
+    auto_upload_youtube: bool = True
 
     @field_validator("queries")
     @classmethod
     def _clean_queries(cls, value: list[str]) -> list[str]:
         cleaned = [re.sub(r"\s+", " ", item).strip() for item in value if item.strip()]
         return prioritized_viral_queries(cleaned)[:80]
+
+    @field_validator("source_urls")
+    @classmethod
+    def _clean_source_urls(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            normalized = normalize_youtube_video_url(str(item))
+            if normalized and normalized not in seen:
+                cleaned.append(normalized)
+                seen.add(normalized)
+        return cleaned[:7]
+
+    @model_validator(mode="after")
+    def _apply_niche_priority(self) -> "AutoViralRequest":
+        self.queries = prioritized_niche_queries(self.niche, self.queries)[:80]
+        if self.source_urls:
+            self.video_count = min(self.video_count, len(self.source_urls))
+        return self
 
 
 class AutoViralRun(BaseModel):
@@ -780,8 +921,9 @@ class AutoViralRun(BaseModel):
 
 
 class ViralVideoSearchRequest(BaseModel):
+    niche: IslamicContentNiche = "auto"
     queries: list[str] = Field(default_factory=default_viral_video_search_queries)
-    video_count: int = Field(default_factory=lambda: env_int("VIRAL_CC_VIDEO_COUNT", 5), ge=1, le=7)
+    video_count: int = Field(default=3, ge=1, le=7)
     search_limit_per_query: int = Field(default_factory=lambda: env_int("VIRAL_CC_SEARCH_LIMIT", 25), ge=3, le=50)
     min_source_duration: int = Field(default=60, ge=30, le=7200)
     max_source_duration: int = Field(
@@ -811,6 +953,11 @@ class ViralVideoSearchRequest(BaseModel):
                 cleaned.append(normalized)
                 seen.add(normalized)
         return cleaned[:5000]
+
+    @model_validator(mode="after")
+    def _apply_niche_priority(self) -> "ViralVideoSearchRequest":
+        self.queries = prioritized_niche_queries(self.niche, self.queries)[:80]
+        return self
 
 
 app = FastAPI(title="Fendy Clipper API", version="0.1.0")
@@ -2033,6 +2180,36 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             "Render ulang dari sumber CC terverifikasi atau gunakan rekaman milik sendiri."
         )
     sidecar = clip_sidecar_payload(clip)
+    if str(sidecar.get("output_format") or "") == "vertical_short":
+        try:
+            duration = float(sidecar.get("duration") or 0)
+        except (TypeError, ValueError):
+            duration = 0.0
+        if duration > YOUTUBE_SHORTS_MAX_SECONDS:
+            return (
+                f"Upload diblokir: durasi {duration:.1f} detik melewati batas Shorts "
+                f"{YOUTUBE_SHORTS_MAX_SECONDS} detik. Render ulang dengan durasi yang sesuai."
+            )
+        aspect_ratio = str(sidecar.get("aspect_ratio") or "").strip()
+        if aspect_ratio and aspect_ratio not in {"9:16", "1:1"}:
+            return (
+                f"Upload diblokir: rasio {aspect_ratio} tidak memenuhi format vertikal/persegi Shorts. "
+                "Render ulang dalam 9:16."
+            )
+        thumbnail_strategy = str(sidecar.get("thumbnail_strategy") or "").strip()
+        if thumbnail_strategy and thumbnail_strategy != "embedded_shorts_cover_frame":
+            return (
+                "Upload diblokir: Short belum memiliki frame cover tertanam yang dapat dipilih. "
+                "Render ulang dengan ClipForge terbaru."
+            )
+        compliance = sidecar.get("shorts_policy_compliance")
+        if isinstance(compliance, dict) and not compliance.get(
+            "duration_within_official_limit", True
+        ):
+            return (
+                "Upload diblokir: audit teknis Shorts menandai durasi di luar batas resmi. "
+                "Render ulang clip."
+            )
     readiness = sidecar.get("monetization_readiness") if isinstance(sidecar, dict) else None
     if not isinstance(readiness, dict):
         return (
@@ -4461,6 +4638,8 @@ def build_clipper_command(request: ClipJobRequest) -> list[str]:
         command.append("--no-enhanced-edit")
     if request.remove_running_text:
         command.append("--remove-running-text")
+    if request.auto_blur_watermarks:
+        command.append("--auto-blur-watermarks")
     command.extend(["--crop-mode", request.crop_mode])
     command.extend(["--cam-corner", request.cam_corner])
     command.extend(["--caption-font-size", str(request.caption_font_size)])
@@ -4766,9 +4945,47 @@ def auto_viral_candidate_score(info: dict[str, Any]) -> float:
     )
 
 
-def compact_source_payload(info: dict[str, Any]) -> dict[str, Any]:
+def niche_relevance_score(info: dict[str, Any], niche: IslamicContentNiche) -> float:
+    """Score semantic fit using transparent niche terms from the evergreen brief."""
+    if niche == "auto":
+        return 0.0
+    profile = ISLAMIC_EVERGREEN_NICHES[niche]
+    title = re.sub(r"\s+", " ", str(info.get("title") or "")).casefold()
+    description = re.sub(r"\s+", " ", str(info.get("description") or "")).casefold()
+    tags = info.get("tags") if isinstance(info.get("tags"), list) else []
+    categories = info.get("categories") if isinstance(info.get("categories"), list) else []
+    supporting = " ".join([description, *map(str, tags), *map(str, categories)]).casefold()
+    matched: set[str] = set()
+    score = 0.0
+    for keyword in profile["keywords"]:
+        clean = str(keyword).casefold()
+        if clean in title:
+            matched.add(clean)
+            score += 9.0
+        elif clean in supporting:
+            matched.add(clean)
+            score += 3.5
+    # A result should contain at least two niche concepts to receive the full
+    # bonus; one generic Islamic word cannot displace a genuinely relevant item.
+    if len(matched) >= 4:
+        score += 18
+    elif len(matched) >= 2:
+        score += 9
+    elif len(matched) == 1:
+        score += 1
+    return round(min(100.0, score), 2)
+
+
+def compact_source_payload(
+    info: dict[str, Any],
+    niche: IslamicContentNiche = "auto",
+) -> dict[str, Any]:
     age_days = upload_age_days(info)
     views = int(info.get("view_count") or 0)
+    viral_score = auto_viral_candidate_score(info)
+    relevance_score = niche_relevance_score(info, niche)
+    ranking_score = viral_score + relevance_score * 1.65
+    profile = ISLAMIC_EVERGREEN_NICHES.get(niche, {})
     return {
         "url": normalize_youtube_video_url(youtube_watch_url(info)) or youtube_watch_url(info),
         "title": str(info.get("title") or "Video tanpa judul")[:180],
@@ -4782,7 +4999,16 @@ def compact_source_payload(info: dict[str, Any]) -> dict[str, Any]:
         "upload_date": info.get("upload_date"),
         "license": info.get("license"),
         "rights_verified": is_creative_commons_info(info),
-        "score": auto_viral_candidate_score(info),
+        "score": round(ranking_score, 2),
+        "viral_score": viral_score,
+        "niche": niche,
+        "niche_label": profile.get("label", "Auto Discovery"),
+        "niche_score": relevance_score,
+        "ranking_reason": (
+            f"Kecocokan niche {relevance_score:.0f}/100 + momentum {viral_score:.0f}"
+            if niche != "auto"
+            else f"Momentum viral {viral_score:.0f}"
+        ),
     }
 
 
@@ -4850,6 +5076,8 @@ def youtube_data_api_video_payload(item: dict[str, Any]) -> dict[str, Any]:
         "id": video_id,
         "webpage_url": f"https://www.youtube.com/watch?v={video_id}" if video_id else "",
         "title": snippet.get("title") or "Video tanpa judul",
+        "description": snippet.get("description") or "",
+        "tags": snippet.get("tags") if isinstance(snippet.get("tags"), list) else [],
         "uploader": snippet.get("channelTitle") or "",
         "duration": parse_youtube_iso_duration(str(content.get("duration") or "")),
         "view_count": int(stats.get("viewCount") or 0),
@@ -4950,7 +5178,7 @@ def search_youtube_data_api_viral_sources(
                     f"Skip sumber tidak aman ({rejection_reason}): {payload.get('title') or '-'}",
                 )
                 continue
-            candidates.append(compact_source_payload(payload))
+            candidates.append(compact_source_payload(payload, request.niche))
             if stop_after is not None and len(candidates) >= stop_after:
                 break
     if api_query_count == 0 and api_error_count > 0:
@@ -5034,7 +5262,7 @@ def search_auto_viral_sources(
                     f"Skip sumber tidak aman ({rejection_reason}): {metadata.get('title') or url}",
                 )
                 continue
-            candidates.append(compact_source_payload(metadata))
+            candidates.append(compact_source_payload(metadata, request.niche))
             if stop_after is not None and len(candidates) >= stop_after:
                 break
 
@@ -5358,6 +5586,7 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
         crop_mode="person",
         burn_subtitles=True,
         ai_enabled=True,
+        niche=request.niche,
     )
     run = AutoViralRun(
         id=run_id,
@@ -5376,6 +5605,7 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
             f"Mengecualikan {len(excluded_urls)} sumber yang pernah ditampilkan/diproses.",
         )
         sources: list[dict[str, Any]] = []
+        source_pool_target = max(request.video_count * 3, request.video_count)
         prefer_youtube_api = env_bool("VIRAL_CC_REQUIRE_YOUTUBE_DATA_API", True)
         if prefer_youtube_api and os.environ.get("YOUTUBE_DATA_API_KEY", "").strip():
             try:
@@ -5383,7 +5613,7 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
                     search_request,
                     run_id,
                     exclude_urls=excluded_urls,
-                    stop_after=request.video_count,
+                    stop_after=source_pool_target,
                 )
             except Exception as exc:
                 append_auto_viral_error(
@@ -5398,7 +5628,7 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
         else:
             append_auto_viral_log(run_id, "YouTube Data API dinonaktifkan; memakai pencarian yt-dlp terverifikasi.")
 
-        if len(sources) < request.video_count:
+        if len(sources) < source_pool_target:
             fallback_age_days = max(
                 request.max_age_days,
                 min(
@@ -5412,7 +5642,10 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
             )
             fallback_request = search_request.model_copy(
                 update={
-                    "queries": default_viral_video_search_queries(),
+                    "queries": prioritized_niche_queries(
+                        request.niche,
+                        default_viral_video_search_queries(),
+                    ),
                     "search_limit_per_query": max(
                         request.search_limit_per_query,
                         min(50, env_int("VIRAL_CC_SEARCH_LIMIT", 25)),
@@ -5436,17 +5669,22 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
                 fallback_request,
                 run_id,
                 exclude_urls={*excluded_urls, *found_urls},
-                stop_after=request.video_count - len(sources),
+                stop_after=source_pool_target - len(sources),
                 max_metadata_checks=request.max_metadata_checks,
             )
             sources = [*sources, *fallback_sources]
+        sources.sort(key=lambda item: float(item.get("score") or 0), reverse=True)
         selected = sources[: request.video_count]
+        for rank, source in enumerate(selected, start=1):
+            source["rank"] = rank
         update_auto_viral_run(
             run_id,
             status="completed",
             finished_at=now_iso(),
             selected_sources=selected,
-            message=f"Menemukan {len(selected)} kandidat video Creative Commons",
+            message=(
+                f"Top {len(selected)} kandidat {ISLAMIC_EVERGREEN_NICHES.get(request.niche, {}).get('label', 'Creative Commons')} siap dipilih"
+            ),
         )
         return selected
     except Exception as exc:
@@ -5464,6 +5702,34 @@ def wait_for_no_active_clipping_job(timeout_seconds: int = 3600) -> None:
             return
         time.sleep(3)
     raise RuntimeError("Masih ada job clipping aktif terlalu lama")
+
+
+def resolve_selected_auto_viral_sources(
+    request: AutoViralRequest,
+    run_id: str,
+) -> list[dict[str, Any]]:
+    """Revalidate user-selected Top 3 sources before they enter the clipping queue."""
+    sources: list[dict[str, Any]] = []
+    for rank, url in enumerate(request.source_urls, start=1):
+        append_auto_viral_log(run_id, f"Validasi pilihan #{rank}: {url}")
+        metadata = fetch_youtube_metadata(url)
+        rejection_reason = viral_source_rejection_reason(metadata)
+        if rejection_reason:
+            raise RuntimeError(f"Pilihan #{rank} tidak aman: {rejection_reason}")
+        duration = float(metadata.get("duration") or 0)
+        if duration < request.min_source_duration or duration > request.max_source_duration:
+            raise RuntimeError(
+                f"Pilihan #{rank} berdurasi {duration:.0f} detik, di luar batas sumber "
+                f"{request.min_source_duration}-{request.max_source_duration} detik"
+            )
+        if not is_fresh_viral_upload(metadata, request.max_age_days):
+            raise RuntimeError(
+                f"Pilihan #{rank} tidak lagi masuk jendela freshness {request.max_age_days} hari"
+            )
+        source = compact_source_payload(metadata, request.niche)
+        source["rank"] = rank
+        sources.append(source)
+    return sources
 
 
 def create_auto_viral_clip_job(source: dict[str, Any], request: AutoViralRequest) -> ClipJob:
@@ -5484,6 +5750,9 @@ def create_auto_viral_clip_job(source: dict[str, Any], request: AutoViralRequest
         ai_base_url=request.ai_base_url,
         ai_model=request.ai_model,
         ai_api_key=request.ai_api_key,
+        required_hashtags=list(
+            ISLAMIC_EVERGREEN_NICHES.get(request.niche, {}).get("hashtags", [])
+        ),
     )
     if job_request.max_duration <= job_request.min_duration:
         raise RuntimeError("max_duration must be greater than min_duration")
@@ -5575,28 +5844,43 @@ def run_auto_viral_campaign(run_id: str) -> None:
         update_auto_viral_run(
             run_id,
             status="running",
-            message="Mencari video Creative Commons viral; prioritas 30 hari, lalu perluas hingga 180 hari",
+            message=(
+                "Memvalidasi pilihan dan menyiapkan antrean clipping"
+                if run.request.source_urls
+                else "Mencari video Creative Commons viral; prioritas 30 hari, lalu perluas hingga 180 hari"
+            ),
         )
         append_auto_viral_log(run_id, "Automation dimulai")
-        try:
-            require_youtube_ready()
-        except HTTPException as exc:
-            raise RuntimeError(str(exc.detail)) from exc
+        if run.request.auto_upload_youtube:
+            try:
+                require_youtube_ready()
+            except HTTPException as exc:
+                raise RuntimeError(str(exc.detail)) from exc
 
         source_pool_target = max(run.request.video_count * 3, run.request.video_count)
         excluded_sources = processed_job_source_urls()
-        append_auto_viral_log(
-            run_id,
-            f"Mengecualikan {len(excluded_sources)} sumber yang sudah pernah masuk proses clipping",
-        )
-        sources = search_auto_viral_sources(
-            run.request,
-            run_id,
-            exclude_urls=excluded_sources,
-            stop_after=source_pool_target,
-            max_metadata_checks=env_int("VIRAL_CC_MAX_METADATA_CHECKS", 200),
-        )
-        if len(sources) < source_pool_target:
+        if run.request.source_urls:
+            selected_duplicates = excluded_sources.intersection(run.request.source_urls)
+            if selected_duplicates:
+                raise RuntimeError(
+                    "Pilihan sudah pernah diproses: " + ", ".join(sorted(selected_duplicates))
+                )
+            sources = resolve_selected_auto_viral_sources(run.request, run_id)
+            update_auto_viral_run(run_id, selected_sources=sources)
+            append_auto_viral_log(run_id, f"{len(sources)} pilihan lolos dan masuk antrean clipping")
+        else:
+            append_auto_viral_log(
+                run_id,
+                f"Mengecualikan {len(excluded_sources)} sumber yang sudah pernah masuk proses clipping",
+            )
+            sources = search_auto_viral_sources(
+                run.request,
+                run_id,
+                exclude_urls=excluded_sources,
+                stop_after=source_pool_target,
+                max_metadata_checks=env_int("VIRAL_CC_MAX_METADATA_CHECKS", 200),
+            )
+        if not run.request.source_urls and len(sources) < source_pool_target:
             fallback_age_days = max(
                 run.request.max_age_days,
                 min(
@@ -5610,7 +5894,10 @@ def run_auto_viral_campaign(run_id: str) -> None:
             )
             fallback_request = run.request.model_copy(
                 update={
-                    "queries": default_auto_viral_queries(),
+                    "queries": prioritized_niche_queries(
+                        run.request.niche,
+                        default_auto_viral_queries(),
+                    ),
                     "search_limit_per_query": max(run.request.search_limit_per_query, 25),
                     "min_views": fallback_min_views,
                     "max_age_days": fallback_age_days,
@@ -5644,7 +5931,8 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 "Tidak menemukan kandidat Creative Commons setelah pencarian diperluas; "
                 "semua sumber yang pernah diproses tetap dilewati"
             )
-        update_auto_viral_run(run_id, selected_sources=sources[: max(run.request.video_count, 1) * 3])
+        if not run.request.source_urls:
+            update_auto_viral_run(run_id, selected_sources=sources[: max(run.request.video_count, 1) * 3])
 
         completed_count = 0
         processed: list[dict[str, Any]] = []
@@ -5671,30 +5959,38 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 if finished_job.status != "completed" or not finished_job.clips:
                     raise RuntimeError(finished_job.error or f"Job selesai dengan status {finished_job.status}")
 
-                with youtube_upload_creation_lock:
-                    uploads = create_youtube_upload_batch_records(
-                        finished_job.id,
-                        YouTubeBatchUploadRequest(best_count=run.request.clips_per_video),
-                    )
-                    queue_youtube_upload_jobs(uploads)
-                append_auto_viral_log(run_id, f"{len(uploads)} upload YouTube masuk antrean untuk job {finished_job.id[:10]}")
-                finished_uploads = wait_for_uploads([upload.id for upload in uploads])
-                item["uploads"] = [
-                    {
-                        "id": upload.id,
-                        "status": upload.status,
-                        "title": upload.title,
-                        "video_url": upload.video_url,
-                        "error": upload.error,
-                    }
-                    for upload in finished_uploads
-                ]
-                if not finished_uploads or any(upload.status != "completed" for upload in finished_uploads):
-                    failed = [upload.error or upload.status for upload in finished_uploads if upload.status != "completed"]
-                    raise RuntimeError("Upload belum sukses semua: " + "; ".join(failed))
+                item["uploads"] = []
+                if run.request.auto_upload_youtube:
+                    with youtube_upload_creation_lock:
+                        uploads = create_youtube_upload_batch_records(
+                            finished_job.id,
+                            YouTubeBatchUploadRequest(best_count=run.request.clips_per_video),
+                        )
+                        queue_youtube_upload_jobs(uploads)
+                    append_auto_viral_log(run_id, f"{len(uploads)} upload YouTube masuk antrean untuk job {finished_job.id[:10]}")
+                    finished_uploads = wait_for_uploads([upload.id for upload in uploads])
+                    item["uploads"] = [
+                        {
+                            "id": upload.id,
+                            "status": upload.status,
+                            "title": upload.title,
+                            "video_url": upload.video_url,
+                            "error": upload.error,
+                        }
+                        for upload in finished_uploads
+                    ]
+                    if not finished_uploads or any(upload.status != "completed" for upload in finished_uploads):
+                        failed = [upload.error or upload.status for upload in finished_uploads if upload.status != "completed"]
+                        raise RuntimeError("Upload belum sukses semua: " + "; ".join(failed))
 
-                cleanup = delete_all_job_clips(finished_job.id)
-                item["cleanup"] = f"{cleanup.removed_clips} clip dihapus"
+                    cleanup = delete_all_job_clips(finished_job.id)
+                    item["cleanup"] = f"{cleanup.removed_clips} clip dihapus"
+                else:
+                    item["cleanup"] = "hasil clip disimpan untuk review"
+                    append_auto_viral_log(
+                        run_id,
+                        f"Job {finished_job.id[:10]} selesai; {len(finished_job.clips)} clip siap direview",
+                    )
                 item["status"] = "completed"
                 completed_count += 1
             except Exception as exc:
@@ -5705,11 +6001,21 @@ def run_auto_viral_campaign(run_id: str) -> None:
             update_auto_viral_run(run_id, processed=processed, message=f"{completed_count}/{run.request.video_count} video sukses")
 
         if completed_count < run.request.video_count:
-            raise RuntimeError(f"Hanya {completed_count}/{run.request.video_count} video yang berhasil clip dan upload")
+            suffix = "clip dan upload" if run.request.auto_upload_youtube else "masuk antrean clipping"
+            raise RuntimeError(f"Hanya {completed_count}/{run.request.video_count} video yang berhasil {suffix}")
 
         with auto_viral_lock:
             run = auto_viral_runs[run_id]
-        update_auto_viral_run(run_id, status="completed", finished_at=now_iso(), message="Automation selesai")
+        update_auto_viral_run(
+            run_id,
+            status="completed",
+            finished_at=now_iso(),
+            message=(
+                "Clipping Top 3 selesai dan siap direview"
+                if not run.request.auto_upload_youtube
+                else "Automation selesai"
+            ),
+        )
         with auto_viral_lock:
             final_run = auto_viral_runs[run_id]
         try:

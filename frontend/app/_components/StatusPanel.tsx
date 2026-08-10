@@ -78,6 +78,7 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
                   : "Auto clean + jamaah adaptif"}
             </span>
             <span>{job.request.remove_running_text ? "Pembersihan footer aktif" : "Frame sumber dipertahankan jernih"}</span>
+            <span>{job.request.auto_blur_watermarks ? "Blur watermark otomatis aktif" : "Blur watermark nonaktif"}</span>
             <span>{job.request.analyze_seconds ? `Analisis: ${job.request.analyze_seconds}s` : "Full video"}</span>
             <span>{job.request.crop_mode === "person" ? "Follow person" : "Center crop"}</span>
             <span>

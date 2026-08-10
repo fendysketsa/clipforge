@@ -51,6 +51,18 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 
 Docker users only need Docker and Docker Compose.
 
+The public Whisper model works without an account. ClipForge stores the model
+cache under `backend/data/huggingface`, so container rebuilds do not download it
+again. For higher Hugging Face download limits, create a read-only access token
+and set `HF_TOKEN=hf_...` in the untracked root `.env`; the backend forwards it
+automatically and never writes the value to job logs.
+
+Vertical Shorts also add a synchronized Indonesian voice-over to the final
+Subscribe + Follow card. Neural voice is attempted first and local `espeak-ng`
+is used automatically when it is unavailable. Configure it in `.env` with
+`CTA_VOICEOVER_ENABLED`, `CTA_VOICEOVER_TEXT`, `CTA_VOICEOVER_VOICE`, and
+`CTA_VOICEOVER_RATE`.
+
 ## Quick Start With Docker
 
 Copy the Docker env example:

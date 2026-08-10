@@ -89,6 +89,10 @@ Default output video:
 - subtitle burned-in
 - caption dinamis menyorot kata penting dari ucapan asli, dengan timing berbobot jumlah kata dan margin aman agar tidak tertutup action rail/judul UI Shorts; file SRT bersih tetap dibuat untuk accessibility
 - caption ringkas dengan outline/shadow tanpa gradient band agar wajah dan piksel sumber tetap bersih
+- frame cover Shorts 9:16 ditanam pada opening sebagai kartu putih-kuning berbasis hook transcript; keyframe 0,78 detik dibuat agar frame mudah dipilih lewat aplikasi YouTube (Shorts tidak menerima upload thumbnail gambar kustom)
+- CTA `SUBSCRIBE + FOLLOW` muncul singkat di atas payoff yang masih bergerak, tanpa menambah outro kosong atau fade yang memutus loop
+- guardrail kebijakan Shorts dicatat di sidecar render: batas resmi 180 detik, batas internal konservatif 60 detik, strategi thumbnail frame-tertanam, dan kewajiban review hak/orisinalitas
+- Auto Search frontend memakai empat master niche evergreen Islami (mental health, halal wealth, fiqih harian, dan sejarah Islam), mengambil pool kandidat CC, lalu menampilkan Top 3 berdasarkan kecocokan niche + views/hari + engagement + freshness sebelum pengguna memasukkannya ke antrean clipping
 - hook visual/audio, reaction kontekstual, dan pattern interrupt
 - klip berkonteks Islami otomatis mendapat backsong motivasional instrumental "Cahaya Hikmah" yang disintesis lokal, berlisensi CC0, dan di-duck agar dialog tetap jelas
 - mode visual `auto_fyp` aktif secara default dengan pipeline clean-detail: koreksi warna ringan, adaptive clarity pada tahap akhir, reframe hanya di beat penting, tanpa blurred frame/gradient/kartu besar di atas wajah
