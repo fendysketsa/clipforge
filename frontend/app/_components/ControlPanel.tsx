@@ -1083,6 +1083,10 @@ export function ControlPanel({
               </select>
             </label>
           </div>
+          <div className="viralFilterPolicy">
+            <ShieldCheck size={14} />
+            <span>Creative Commons dan Bahasa Indonesia selalu wajib. Filter lainnya diperluas otomatis bila hasil belum mencapai 3.</span>
+          </div>
 
           <button
             className="ghostButton autoViralButton"
@@ -1091,7 +1095,7 @@ export function ControlPanel({
             onClick={onSearchAutoContent}
           >
             {isSearchingAutoContent ? <Loader2 className="spin" size={16} /> : <Search size={16} />}
-            {isSearchingAutoContent ? "Menilai kandidat terbaru..." : "Cari 3 Konten Viral Terbaru"}
+            {isSearchingAutoContent ? "Mengambil dari Google YouTube API..." : "Cari 3 Konten Viral Terbaru"}
           </button>
 
           {autoContentSources.length ? (
@@ -1116,8 +1120,16 @@ export function ControlPanel({
                       <span>{freshnessLabel(source.age_days)}</span>
                       <span>{shortDuration(source.duration)}</span>
                       {source.definition === "hd" || (source.height ?? 0) >= 720 ? <span>HD</span> : null}
+                      {source.search_provider === "youtube_data_api" ? <span>Google API</span> : null}
+                      {source.search_provider === "yt_dlp_fallback" ? <span>Fallback CC</span> : null}
+                      {source.filter_match === "adaptive" ? <span>Filter diperluas</span> : null}
                       <span>kecocokan {Math.round(source.niche_score)}/100</span>
                     </div>
+                    {source.relaxed_filters?.length ? (
+                      <div className="autoFilterRelaxation">
+                        <span>Penyesuaian: {source.relaxed_filters.join(" • ")}</span>
+                      </div>
+                    ) : null}
                     <div className="autoContentReason">
                       <ShieldCheck size={13} />
                       <span>{source.ranking_reason}</span>
@@ -1146,7 +1158,7 @@ export function ControlPanel({
           ) : null}
 
           <p className="field-help">
-            {autoViralMessage || "Sistem mencari konten Creative Commons Indonesia, lalu menilai kecocokan tema, tayangan harian, interaksi, kebaruan, dan duplikasi sumber."}
+            {autoViralMessage || "Mode cepat tanpa AI: Google YouTube API memfilter Creative Commons, lalu skor lokal ringan mengurutkan hasil."}
           </p>
         </div>
 

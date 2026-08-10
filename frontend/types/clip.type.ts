@@ -319,6 +319,10 @@ export type ViralContentSource = {
   niche_label: string;
   niche_score: number;
   language_score: number;
+  search_provider?: "youtube_data_api" | "yt_dlp_fallback";
+  search_elapsed_ms?: number;
+  filter_match?: "exact" | "adaptive";
+  relaxed_filters?: string[];
   ranking_reason: string;
 };
 

@@ -980,7 +980,7 @@ class ViralVideoSearchRequest(BaseModel):
     upload_date_filter: ViralUploadDateFilter = "this_year"
     definition_filter: ViralDefinitionFilter = "hd"
     sort_order: ViralSortOrder = "popularity"
-    max_metadata_checks: int = Field(default_factory=lambda: env_int("VIRAL_CC_MAX_METADATA_CHECKS", 200), ge=3, le=500)
+    max_metadata_checks: int = Field(default_factory=lambda: env_int("VIRAL_CC_MAX_METADATA_CHECKS", 24), ge=3, le=500)
     exclude_urls: list[str] = Field(default_factory=list)
 
     @field_validator("queries")
@@ -1556,6 +1556,8 @@ youtube_cleanup_scheduled: set[str] = set()
 auto_viral_runs: dict[str, AutoViralRun] = {}
 auto_viral_lock = threading.Lock()
 auto_viral_active_run_id: str | None = None
+youtube_data_api_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+youtube_data_api_cache_lock = threading.Lock()
 
 
 def clip_url(path: Path) -> str:
@@ -4493,9 +4495,9 @@ def ytdlp_probe_options() -> dict:
         "no_warnings": True,
         "noplaylist": True,
         "skip_download": True,
-        "socket_timeout": 15,
-        "retries": 2,
-        "extractor_retries": 2,
+        "socket_timeout": max(5, min(30, env_int("VIRAL_CC_YTDLP_SOCKET_TIMEOUT", 8))),
+        "retries": 1,
+        "extractor_retries": 1,
         "http_headers": YTDLP_HTTP_HEADERS,
         "source_address": "0.0.0.0",
     }
@@ -4992,28 +4994,38 @@ def source_max_height(info: dict[str, Any]) -> int:
     return max(heights, default=0)
 
 
-def viral_search_filter_rejection_reason(
+def viral_search_filter_relaxation_reasons(
     info: dict[str, Any],
     request: AutoViralRequest | ViralVideoSearchRequest,
-) -> str:
-    """Revalidate UI search filters against full source metadata."""
+) -> list[str]:
+    """Return every soft-filter mismatch for transparent adaptive results."""
+    reasons: list[str] = []
     duration = float(info.get("duration") or 0)
     if request.duration_filter == "under_3" and not (0 < duration < 180):
-        return "durasi bukan kurang dari 3 menit"
+        reasons.append("durasi bukan kurang dari 3 menit")
     if request.duration_filter == "between_3_20" and not (180 <= duration <= 1200):
-        return "durasi bukan 3–20 menit"
+        reasons.append("durasi bukan 3–20 menit")
     if request.duration_filter == "over_20" and duration <= 1200:
-        return "durasi bukan lebih dari 20 menit"
+        reasons.append("durasi bukan lebih dari 20 menit")
 
     if not is_fresh_viral_upload(info, request.max_age_days):
-        return f"tanggal unggah di luar {request.max_age_days} hari terakhir"
+        reasons.append(f"tanggal unggah di luar {request.max_age_days} hari terakhir")
 
     if request.definition_filter == "hd":
         definition = str(info.get("definition") or "").strip().casefold()
         height = source_max_height(info)
         if definition == "sd" or (definition != "hd" and height < 720):
-            return "kualitas HD tidak terverifikasi"
-    return ""
+            reasons.append("kualitas HD tidak terverifikasi")
+    return reasons
+
+
+def viral_search_filter_rejection_reason(
+    info: dict[str, Any],
+    request: AutoViralRequest | ViralVideoSearchRequest,
+) -> str:
+    """Keep the legacy single-reason interface for strict validation callers."""
+    reasons = viral_search_filter_relaxation_reasons(info, request)
+    return reasons[0] if reasons else ""
 
 
 def auto_viral_candidate_score(info: dict[str, Any]) -> float:
@@ -5180,9 +5192,13 @@ def sort_viral_source_payloads(
     sources: list[dict[str, Any]],
     sort_order: ViralSortOrder,
 ) -> None:
+    def exact_filter_score(item: dict[str, Any]) -> int:
+        return 0 if item.get("filter_match") == "adaptive" else 1
+
     if sort_order == "newest":
         sources.sort(
             key=lambda item: (
+                exact_filter_score(item),
                 -(int(item.get("age_days")) if item.get("age_days") is not None else 999999),
                 float(item.get("score") or 0),
             ),
@@ -5191,6 +5207,7 @@ def sort_viral_source_payloads(
     elif sort_order == "relevance":
         sources.sort(
             key=lambda item: (
+                exact_filter_score(item),
                 float(item.get("niche_score") or 0),
                 float(item.get("language_score") or 0),
                 float(item.get("score") or 0),
@@ -5200,6 +5217,7 @@ def sort_viral_source_payloads(
     else:
         sources.sort(
             key=lambda item: (
+                exact_filter_score(item),
                 float(
                     item.get("viral_score")
                     if item.get("viral_score") is not None
@@ -5237,12 +5255,39 @@ def youtube_data_api_get(path: str, params: dict[str, Any]) -> dict[str, Any]:
     if not api_key:
         raise RuntimeError("YOUTUBE_DATA_API_KEY belum diset")
     clean_params = {key: value for key, value in params.items() if value not in {None, ""}}
+    key_fingerprint = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:10]
+    cache_key = hashlib.sha256(
+        json.dumps(
+            [key_fingerprint, path, sorted(clean_params.items())],
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    cache_ttl = max(0, min(3600, env_int("YOUTUBE_DATA_API_CACHE_TTL_SECONDS", 600)))
+    if cache_ttl:
+        with youtube_data_api_cache_lock:
+            cached = youtube_data_api_cache.get(cache_key)
+        if cached is not None and time.monotonic() - cached[0] <= cache_ttl:
+            return cached[1]
     clean_params["key"] = api_key
     url = f"https://www.googleapis.com/youtube/v3/{path}?{urlencode(clean_params)}"
     request = urllib.request.Request(url, headers={"Accept": "application/json"})
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            return json.loads(response.read().decode("utf-8"))
+        timeout_seconds = max(
+            3, min(30, env_int("YOUTUBE_DATA_API_TIMEOUT_SECONDS", 10))
+        )
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        if cache_ttl and isinstance(payload, dict):
+            with youtube_data_api_cache_lock:
+                youtube_data_api_cache[cache_key] = (time.monotonic(), payload)
+                if len(youtube_data_api_cache) > 160:
+                    oldest = min(
+                        youtube_data_api_cache,
+                        key=lambda item: youtube_data_api_cache[item][0],
+                    )
+                    youtube_data_api_cache.pop(oldest, None)
+        return payload
     except HTTPError as exc:
         detail = exc.reason
         try:
@@ -5257,9 +5302,13 @@ def youtube_data_api_get(path: str, params: dict[str, Any]) -> dict[str, Any]:
                 detail = f"{message or detail}" + (f" ({reason})" if reason else "")
         except Exception:
             pass
-        raise RuntimeError(f"YouTube Data API HTTP {exc.code}: {detail}") from exc
+        raise RuntimeError(
+            f"YouTube Data API HTTP {exc.code} [key-id {key_fingerprint}]: {detail}"
+        ) from exc
     except (URLError, TimeoutError, OSError) as exc:
-        raise RuntimeError(f"YouTube Data API request gagal: {exc}") from exc
+        raise RuntimeError(
+            f"YouTube Data API request gagal [key-id {key_fingerprint}]: {exc}"
+        ) from exc
 
 
 def youtube_data_api_video_payload(item: dict[str, Any]) -> dict[str, Any]:
@@ -5291,6 +5340,22 @@ def youtube_data_api_video_payload(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def youtube_data_api_search_queries(request: AutoViralRequest) -> list[str]:
+    """Use one broad OR query in fast mode to spend only one search.list call."""
+    max_api_queries = max(1, min(20, env_int("VIRAL_CC_MAX_API_QUERIES", 1)))
+    if env_bool("VIRAL_CC_FAST_API_ONLY", True):
+        terms: list[str] = []
+        for query in request.queries:
+            clean = re.sub(r"\s+", " ", query).strip()[:72]
+            if clean and clean.casefold() not in {item.casefold() for item in terms}:
+                terms.append(clean)
+            if len(terms) >= 6:
+                break
+        combined = "|".join(terms)
+        return [combined[:480]] if combined else []
+    return request.queries[:max_api_queries]
+
+
 def search_youtube_data_api_viral_sources(
     request: AutoViralRequest,
     run_id: str,
@@ -5302,15 +5367,25 @@ def search_youtube_data_api_viral_sources(
         return []
     seen: set[str] = set(exclude_urls or set())
     candidates: list[dict[str, Any]] = []
+    relaxed_candidates: list[dict[str, Any]] = []
+    adaptive_filters = env_bool("VIRAL_CC_ADAPTIVE_FILTERS", True)
     region_code = os.environ.get("VIRAL_CC_REGION_CODE", "ID").strip() or "ID"
     relevance_language = os.environ.get("VIRAL_CC_RELEVANCE_LANGUAGE", "id").strip() or "id"
     topic_id = os.environ.get("VIRAL_CC_TOPIC_ID", "").strip()
     api_error_count = 0
     api_query_count = 0
     last_api_error = ""
-    max_api_queries = max(1, min(20, env_int("VIRAL_CC_MAX_API_QUERIES", 12)))
-    for query in request.queries[:max_api_queries]:
+    search_deadline = time.monotonic() + max(
+        8, min(90, env_int("VIRAL_CC_FAST_SEARCH_BUDGET_SECONDS", 25))
+    )
+    for query in youtube_data_api_search_queries(request):
         if stop_after is not None and len(candidates) >= stop_after:
+            break
+        if time.monotonic() >= search_deadline:
+            append_auto_viral_log(
+                run_id,
+                "Batas waktu pencarian cepat tercapai; memakai kandidat API yang sudah lolos.",
+            )
             break
         append_auto_viral_log(run_id, f"YouTube Data API search: {query}")
         api_order = {
@@ -5324,19 +5399,23 @@ def search_youtube_data_api_viral_sources(
             "type": "video",
             "videoLicense": "creativeCommon",
             "order": api_order,
-            "maxResults": request.search_limit_per_query,
+            "maxResults": (
+                50
+                if env_bool("VIRAL_CC_FAST_API_ONLY", True)
+                else request.search_limit_per_query
+            ),
             "regionCode": region_code,
             "relevanceLanguage": relevance_language,
             "safeSearch": "strict",
             "publishedAfter": youtube_published_after(request.max_age_days),
         }
-        if request.duration_filter != "any":
+        if request.duration_filter != "any" and not adaptive_filters:
             search_params["videoDuration"] = {
                 "under_3": "short",
                 "between_3_20": "medium",
                 "over_20": "long",
             }[request.duration_filter]
-        if request.definition_filter == "hd":
+        if request.definition_filter == "hd" and not adaptive_filters:
             search_params["videoDefinition"] = "high"
         if topic_id and env_bool("VIRAL_CC_ENFORCE_TOPIC_ID", False):
             search_params["topicId"] = topic_id
@@ -5382,12 +5461,13 @@ def search_youtube_data_api_viral_sources(
             views = int(payload.get("view_count") or 0)
             if duration < request.min_source_duration or duration > request.max_source_duration:
                 continue
-            if views < request.min_views:
+            if views < request.min_views and not adaptive_filters:
                 continue
             if not is_fresh_viral_upload(payload, request.max_age_days):
                 continue
-            filter_rejection = viral_search_filter_rejection_reason(payload, request)
-            if filter_rejection:
+            filter_reasons = viral_search_filter_relaxation_reasons(payload, request)
+            filter_rejection = "; ".join(filter_reasons)
+            if filter_rejection and not adaptive_filters:
                 append_auto_viral_log(
                     run_id,
                     f"Skip karena filter ({filter_rejection}): {payload.get('title') or '-'}",
@@ -5408,11 +5488,33 @@ def search_youtube_data_api_viral_sources(
                     f"{payload.get('title') or '-'}",
                 )
                 continue
-            candidates.append(compact_source_payload(payload, request.niche))
+            source = compact_source_payload(payload, request.niche)
+            source["search_provider"] = "youtube_data_api"
+            relaxed_reasons: list[str] = []
+            relaxed_reasons.extend(filter_reasons)
+            if views < request.min_views:
+                relaxed_reasons.append(
+                    f"tayangan {views:,} di bawah preferensi {request.min_views:,}"
+                )
+            if relaxed_reasons:
+                source["filter_match"] = "adaptive"
+                source["relaxed_filters"] = relaxed_reasons
+                source["score"] = round(
+                    float(source.get("score") or 0) - 18 * len(relaxed_reasons), 2
+                )
+                relaxed_candidates.append(source)
+            else:
+                source["filter_match"] = "exact"
+                source["relaxed_filters"] = []
+                candidates.append(source)
             if stop_after is not None and len(candidates) >= stop_after:
                 break
     if api_query_count == 0 and api_error_count > 0:
         raise RuntimeError(last_api_error or "Semua request YouTube Data API gagal")
+    if stop_after is None or len(candidates) < stop_after:
+        sort_viral_source_payloads(relaxed_candidates, request.sort_order)
+        needed = len(relaxed_candidates) if stop_after is None else stop_after - len(candidates)
+        candidates.extend(relaxed_candidates[:needed])
     sort_viral_source_payloads(candidates, request.sort_order)
     return candidates
 
@@ -5427,6 +5529,8 @@ def search_auto_viral_sources(
 ) -> list[dict[str, Any]]:
     seen: set[str] = set(exclude_urls or set())
     candidates: list[dict[str, Any]] = []
+    relaxed_candidates: list[dict[str, Any]] = []
+    adaptive_filters = env_bool("VIRAL_CC_ADAPTIVE_FILTERS", True)
     metadata_checks = 0
     max_metadata_per_query = max(
         2,
@@ -5477,7 +5581,7 @@ def search_auto_viral_sources(
             views = int(metadata.get("view_count") or 0)
             if duration < request.min_source_duration or duration > request.max_source_duration:
                 continue
-            if views < request.min_views:
+            if views < request.min_views and not adaptive_filters:
                 continue
             if not is_fresh_viral_upload(metadata, request.max_age_days):
                 append_auto_viral_log(
@@ -5486,8 +5590,9 @@ def search_auto_viral_sources(
                     f"{metadata.get('title') or url}",
                 )
                 continue
-            filter_rejection = viral_search_filter_rejection_reason(metadata, request)
-            if filter_rejection:
+            filter_reasons = viral_search_filter_relaxation_reasons(metadata, request)
+            filter_rejection = "; ".join(filter_reasons)
+            if filter_rejection and not adaptive_filters:
                 append_auto_viral_log(
                     run_id,
                     f"Skip karena filter ({filter_rejection}): {metadata.get('title') or url}",
@@ -5508,10 +5613,32 @@ def search_auto_viral_sources(
                     f"{metadata.get('title') or url}",
                 )
                 continue
-            candidates.append(compact_source_payload(metadata, request.niche))
+            source = compact_source_payload(metadata, request.niche)
+            source["search_provider"] = "yt_dlp_fallback"
+            relaxed_reasons: list[str] = []
+            relaxed_reasons.extend(filter_reasons)
+            if views < request.min_views:
+                relaxed_reasons.append(
+                    f"tayangan {views:,} di bawah preferensi {request.min_views:,}"
+                )
+            if relaxed_reasons:
+                source["filter_match"] = "adaptive"
+                source["relaxed_filters"] = relaxed_reasons
+                source["score"] = round(
+                    float(source.get("score") or 0) - 18 * len(relaxed_reasons), 2
+                )
+                relaxed_candidates.append(source)
+            else:
+                source["filter_match"] = "exact"
+                source["relaxed_filters"] = []
+                candidates.append(source)
             if stop_after is not None and len(candidates) >= stop_after:
                 break
 
+    if stop_after is None or len(candidates) < stop_after:
+        sort_viral_source_payloads(relaxed_candidates, request.sort_order)
+        needed = len(relaxed_candidates) if stop_after is None else stop_after - len(candidates)
+        candidates.extend(relaxed_candidates[:needed])
     sort_viral_source_payloads(candidates, request.sort_order)
     return candidates
 
@@ -5815,6 +5942,7 @@ def processed_job_source_urls() -> set[str]:
 
 
 def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[str, Any]]:
+    search_started = time.perf_counter()
     run_id = f"search-{uuid.uuid4().hex}"
     search_request = AutoViralRequest(
         queries=request.queries,
@@ -5855,9 +5983,18 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
             f"Mengecualikan {len(excluded_urls)} sumber yang pernah ditampilkan/diproses.",
         )
         sources: list[dict[str, Any]] = []
-        source_pool_target = max(request.video_count * 3, request.video_count)
+        fast_api_only = env_bool("VIRAL_CC_FAST_API_ONLY", True)
+        source_pool_target = (
+            request.video_count
+            if fast_api_only
+            else max(request.video_count * 2, request.video_count)
+        )
         prefer_youtube_api = env_bool("VIRAL_CC_REQUIRE_YOUTUBE_DATA_API", True)
-        if prefer_youtube_api and os.environ.get("YOUTUBE_DATA_API_KEY", "").strip():
+        api_key_configured = bool(os.environ.get("YOUTUBE_DATA_API_KEY", "").strip())
+        api_attempted = False
+        quota_fallback = False
+        if prefer_youtube_api and api_key_configured:
+            api_attempted = True
             try:
                 sources = search_youtube_data_api_viral_sources(
                     search_request,
@@ -5868,28 +6005,51 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
             except Exception as exc:
                 append_auto_viral_error(
                     run_id,
-                    f"YouTube Data API belum memberi hasil; lanjut pencarian yt-dlp: {exc}",
+                    f"YouTube Data API gagal: {exc}",
                 )
+                quota_error = any(
+                    marker in str(exc).casefold()
+                    for marker in ("quotaexceeded", "dailylimitexceeded", "rate_limit")
+                )
+                quota_fallback = quota_error and env_bool(
+                    "VIRAL_CC_QUOTA_FALLBACK_ENABLED", True
+                )
+                if quota_fallback:
+                    append_auto_viral_log(
+                        run_id,
+                        "Quota Google habis; menjalankan fallback web terbatas dengan verifikasi CC tetap wajib.",
+                    )
+                elif fast_api_only:
+                    raise RuntimeError(
+                        "Google YouTube Data API tidak dapat dipakai. Periksa pembatasan key, "
+                        f"quota, dan aktivasi YouTube Data API v3: {exc}"
+                    ) from exc
         elif prefer_youtube_api:
-            append_auto_viral_log(
-                run_id,
-                "YouTube Data API key kosong; langsung memakai pencarian yt-dlp terverifikasi.",
-            )
+            if fast_api_only:
+                raise RuntimeError(
+                    "YOUTUBE_DATA_API_KEY belum terpasang; pencarian cepat tidak menjalankan fallback lambat."
+                )
+            append_auto_viral_log(run_id, "YouTube Data API key kosong; memakai fallback yt-dlp.")
         else:
             append_auto_viral_log(run_id, "YouTube Data API dinonaktifkan; memakai pencarian yt-dlp terverifikasi.")
 
-        if len(sources) < source_pool_target:
+        if len(sources) < source_pool_target and not (
+            fast_api_only and api_attempted and not quota_fallback
+        ):
             fallback_age_days = request.max_age_days
             fallback_min_views = min(
                 request.min_views,
                 max(0, env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", 100)),
             )
+            fallback_queries = prioritized_niche_queries(
+                request.niche,
+                default_viral_video_search_queries(),
+            )
+            if quota_fallback:
+                fallback_queries = fallback_queries[:2]
             fallback_request = search_request.model_copy(
                 update={
-                    "queries": prioritized_niche_queries(
-                        request.niche,
-                        default_viral_video_search_queries(),
-                    ),
+                    "queries": fallback_queries,
                     "search_limit_per_query": max(
                         request.search_limit_per_query,
                         min(50, env_int("VIRAL_CC_SEARCH_LIMIT", 25)),
@@ -5914,13 +6074,25 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
                 run_id,
                 exclude_urls={*excluded_urls, *found_urls},
                 stop_after=source_pool_target - len(sources),
-                max_metadata_checks=request.max_metadata_checks,
+                max_metadata_checks=(
+                    min(
+                        request.max_metadata_checks,
+                        max(3, env_int("VIRAL_CC_QUOTA_FALLBACK_METADATA_CHECKS", 8)),
+                    )
+                    if quota_fallback
+                    else min(
+                        request.max_metadata_checks,
+                        max(3, env_int("VIRAL_CC_FAST_MAX_METADATA_CHECKS", 24)),
+                    )
+                ),
             )
             sources = [*sources, *fallback_sources]
         sort_viral_source_payloads(sources, request.sort_order)
         selected = sources[: request.video_count]
+        elapsed_ms = max(0, round((time.perf_counter() - search_started) * 1000))
         for rank, source in enumerate(selected, start=1):
             source["rank"] = rank
+            source["search_elapsed_ms"] = elapsed_ms
         update_auto_viral_run(
             run_id,
             status="completed",
@@ -5975,8 +6147,13 @@ def resolve_selected_auto_viral_sources(
                 f"Pilihan #{rank} tidak lagi masuk jendela freshness {request.max_age_days} hari"
             )
         filter_rejection = viral_search_filter_rejection_reason(metadata, request)
-        if filter_rejection:
+        if filter_rejection and not env_bool("VIRAL_CC_ADAPTIVE_FILTERS", True):
             raise RuntimeError(f"Pilihan #{rank} tidak lolos filter: {filter_rejection}")
+        if filter_rejection:
+            append_auto_viral_log(
+                run_id,
+                f"Pilihan #{rank} memakai perluasan filter ({filter_rejection}); lisensi CC tetap terverifikasi.",
+            )
         niche_rejection = niche_candidate_rejection_reason(metadata, request.niche)
         if niche_rejection:
             raise RuntimeError(f"Pilihan #{rank} tidak lolos tema: {niche_rejection}")
@@ -6132,7 +6309,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 run_id,
                 exclude_urls=excluded_sources,
                 stop_after=source_pool_target,
-                max_metadata_checks=env_int("VIRAL_CC_MAX_METADATA_CHECKS", 200),
+                max_metadata_checks=env_int("VIRAL_CC_MAX_METADATA_CHECKS", 24),
             )
         if not run.request.source_urls and len(sources) < source_pool_target:
             fallback_age_days = run.request.max_age_days
@@ -6170,7 +6347,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
                         if (normalized := normalize_youtube_video_url(str(source.get("url") or "")))
                     },
                     stop_after=source_pool_target - len(sources),
-                    max_metadata_checks=env_int("VIRAL_CC_MAX_METADATA_CHECKS", 200),
+                    max_metadata_checks=env_int("VIRAL_CC_MAX_METADATA_CHECKS", 24),
                 )
             )
             sort_viral_source_payloads(sources, run.request.sort_order)

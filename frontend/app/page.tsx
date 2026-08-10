@@ -1153,18 +1153,21 @@ export default function HomePage() {
           ...viralSearchFilters,
         }),
         {
-          loading: "Mencari konten Indonesia yang sedang ramai...",
+          loading: "Memfilter konten lewat Google YouTube API...",
           success: (items) => items.length
-            ? `${items.length} kandidat terbaru berbahasa Indonesia siap dipilih.`
+            ? `${items.length} kandidat dari Google API siap dalam ${((items[0]?.search_elapsed_ms ?? 0) / 1000).toFixed(1)} detik.`
             : "Belum ada kandidat Indonesia yang memenuhi syarat.",
           error: (searchError) => searchError instanceof Error ? searchError.message : "Pencarian gagal",
         },
       );
       setAutoContentSources(sources);
       setSelectedAutoContentUrls(sources.map((source) => source.url));
+      const adaptiveCount = sources.filter((source) => source.filter_match === "adaptive").length;
       setAutoContentMessage(
         sources.length
-          ? "Hanya konten berbahasa Indonesia yang relevan dan terbaru yang ditampilkan."
+          ? adaptiveCount
+            ? `${adaptiveCount} kandidat memakai perluasan durasi/HD/tayangan; Creative Commons, Bahasa Indonesia, dan tema tetap wajib.`
+            : "Semua kandidat cocok dengan seluruh filter dan lisensi Creative Commons telah diverifikasi."
           : "Belum ditemukan konten Creative Commons Indonesia yang cukup relevan. Coba lagi nanti; video asing tidak akan dipaksakan masuk.",
       );
     } catch {

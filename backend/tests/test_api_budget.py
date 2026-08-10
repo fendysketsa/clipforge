@@ -25,10 +25,12 @@ from api import (
     normalize_youtube_video_url,
     processed_job_source_urls,
     search_viral_video_sources,
+    search_youtube_data_api_viral_sources,
     safe_youtube_visibility,
     source_history_for_url,
     unresolved_codex_ideas,
     youtube_cdp_start_needed,
+    youtube_data_api_search_queries,
     youtube_upload_staging_filter,
     user_error_from_logs,
     viral_source_rejection_reason,
@@ -184,7 +186,7 @@ def test_viral_search_is_broad_and_supports_staged_fallback():
     assert queries.index("podcast horor indonesia") < 12
     assert "mitos dan fakta menurut islam" in queries
     assert ViralVideoSearchRequest().search_limit_per_query == 25
-    assert ViralVideoSearchRequest().max_metadata_checks == 200
+    assert ViralVideoSearchRequest().max_metadata_checks == 24
     assert ViralVideoSearchRequest(max_age_days=180).max_age_days == 180
     with pytest.raises(ValidationError):
         ViralVideoSearchRequest(max_age_days=366)
@@ -333,6 +335,7 @@ def test_search_returns_ranked_top_three_from_larger_candidate_pool(monkeypatch)
         for i in range(1, 10)
     ]
     monkeypatch.delenv("YOUTUBE_DATA_API_KEY", raising=False)
+    monkeypatch.setenv("VIRAL_CC_FAST_API_ONLY", "false")
     monkeypatch.setattr(api, "processed_job_source_urls", lambda: set())
     monkeypatch.setattr(
         api,
@@ -346,6 +349,129 @@ def test_search_returns_ranked_top_three_from_larger_candidate_pool(monkeypatch)
 
     assert [item["score"] for item in selected] == [9.0, 8.0, 7.0]
     assert [item["rank"] for item in selected] == [1, 2, 3]
+
+
+def test_fast_google_api_search_does_not_enter_slow_ytdlp_fallback(monkeypatch):
+    import api
+
+    monkeypatch.setenv("YOUTUBE_DATA_API_KEY", "configured-test-key")
+    monkeypatch.setenv("VIRAL_CC_FAST_API_ONLY", "true")
+    monkeypatch.setattr(api, "processed_job_source_urls", lambda: set())
+    monkeypatch.setattr(
+        api,
+        "search_youtube_data_api_viral_sources",
+        lambda *_args, **_kwargs: [
+            {
+                "url": "https://youtube.com/watch?v=fastApi12345",
+                "title": "Kajian Indonesia Terbaru",
+                "score": 90.0,
+                "viral_score": 80.0,
+                "search_provider": "youtube_data_api",
+            }
+        ],
+    )
+
+    def fail_slow_fallback(*_args, **_kwargs):
+        raise AssertionError("yt-dlp fallback must not run in fast API mode")
+
+    monkeypatch.setattr(api, "search_auto_viral_sources", fail_slow_fallback)
+
+    selected = search_viral_video_sources(
+        ViralVideoSearchRequest(niche="islamic_current_viral", video_count=3)
+    )
+
+    assert len(selected) == 1
+    assert selected[0]["search_provider"] == "youtube_data_api"
+    assert selected[0]["search_elapsed_ms"] >= 0
+
+
+def test_fast_google_api_combines_niche_terms_into_one_quota_call(monkeypatch):
+    monkeypatch.setenv("VIRAL_CC_FAST_API_ONLY", "true")
+    monkeypatch.setenv("VIRAL_CC_MAX_API_QUERIES", "4")
+    request = AutoViralRequest(niche="islamic_current_viral")
+
+    queries = youtube_data_api_search_queries(request)
+
+    assert len(queries) == 1
+    assert "|" in queries[0]
+    assert "isu muslim indonesia viral hari ini" in queries[0]
+
+
+def test_quota_exceeded_uses_small_cc_verified_fallback(monkeypatch):
+    import api
+
+    monkeypatch.setenv("YOUTUBE_DATA_API_KEY", "configured-test-key")
+    monkeypatch.setenv("VIRAL_CC_FAST_API_ONLY", "true")
+    monkeypatch.setenv("VIRAL_CC_QUOTA_FALLBACK_ENABLED", "true")
+    monkeypatch.setenv("VIRAL_CC_QUOTA_FALLBACK_METADATA_CHECKS", "8")
+    monkeypatch.setattr(api, "processed_job_source_urls", lambda: set())
+    monkeypatch.setattr(
+        api,
+        "search_youtube_data_api_viral_sources",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("HTTP 429 quotaExceeded rate_limit")
+        ),
+    )
+    observed: dict[str, object] = {}
+
+    def fallback(request, *_args, **kwargs):
+        observed["query_count"] = len(request.queries)
+        observed["metadata_checks"] = kwargs["max_metadata_checks"]
+        return []
+
+    monkeypatch.setattr(api, "search_auto_viral_sources", fallback)
+
+    selected = search_viral_video_sources(
+        ViralVideoSearchRequest(niche="islamic_current_viral", video_count=3)
+    )
+
+    assert selected == []
+    assert observed == {"query_count": 2, "metadata_checks": 8}
+
+
+def test_api_search_adapts_soft_filters_but_keeps_cc_language_and_niche(monkeypatch):
+    import api
+
+    monkeypatch.setenv("YOUTUBE_DATA_API_KEY", "configured-test-key")
+    monkeypatch.setenv("VIRAL_CC_FAST_API_ONLY", "true")
+    monkeypatch.setenv("VIRAL_CC_ADAPTIVE_FILTERS", "true")
+
+    def fake_api(path, _params):
+        if path == "search":
+            return {"items": [{"id": {"videoId": "adaptive123"}}]}
+        return {
+            "items": [
+                {
+                    "id": "adaptive123",
+                    "snippet": {
+                        "title": "Kajian Islam Viral Indonesia Terbaru",
+                        "description": "Nasihat untuk umat Indonesia yang sedang ramai.",
+                        "publishedAt": datetime.now(timezone.utc).isoformat(),
+                        "defaultAudioLanguage": "id",
+                        "liveBroadcastContent": "none",
+                    },
+                    "statistics": {"viewCount": "500", "likeCount": "25"},
+                    "contentDetails": {"duration": "PT10M", "definition": "sd"},
+                    "status": {"license": "creativeCommon"},
+                }
+            ]
+        }
+
+    monkeypatch.setattr(api, "youtube_data_api_get", fake_api)
+    request = AutoViralRequest(
+        niche="islamic_current_viral",
+        video_count=3,
+        duration_filter="over_20",
+        definition_filter="hd",
+        min_views=1000,
+    )
+
+    selected = search_youtube_data_api_viral_sources(request, "missing-run", stop_after=3)
+
+    assert len(selected) == 1
+    assert selected[0]["rights_verified"] is True
+    assert selected[0]["filter_match"] == "adaptive"
+    assert len(selected[0]["relaxed_filters"]) == 3
 
 
 def test_processed_job_sources_are_always_excluded(monkeypatch):
