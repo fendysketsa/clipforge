@@ -3230,6 +3230,74 @@ body::before {
   line-height: 1.5;
 }
 
+.viralSearchFilterPanel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 11px;
+  border: 1px solid rgba(148, 216, 204, 0.13);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(94, 234, 212, 0.055), transparent 50%),
+    rgba(2, 14, 13, 0.58);
+}
+
+.viralFilterItem {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 216, 204, 0.09);
+  border-radius: 10px;
+  background: rgba(11, 29, 27, 0.62);
+}
+
+.viralFilterItem > span {
+  color: #6f9991;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.viralFilterItem select {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 27px 0 8px;
+  border-color: rgba(148, 216, 204, 0.14);
+  border-radius: 8px;
+  color: #dffcf6;
+  background-color: rgba(2, 12, 11, 0.68);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.viralFilterLocked strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  color: #baf9eb;
+  font-size: 11px;
+}
+
+.viralFilterLocked strong svg {
+  color: #5eead4;
+}
+
+.viralFilterLocked small {
+  color: #648a83;
+  font-size: 8px;
+  line-height: 1.35;
+}
+
+.viralFilterLicense {
+  border-color: rgba(45, 212, 191, 0.22);
+  background: rgba(45, 212, 191, 0.06);
+}
+
 .autoContentResults {
   display: grid;
   gap: 9px;
@@ -3626,6 +3694,10 @@ body::before {
   }
 
   .viralBlock {
+    grid-template-columns: 1fr;
+  }
+
+  .viralSearchFilterPanel {
     grid-template-columns: 1fr;
   }
 

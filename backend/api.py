@@ -702,15 +702,43 @@ HORROR_PODCAST_SEARCH_QUERIES = [
 
 IslamicContentNiche = Literal[
     "auto",
+    "islamic_current_viral",
     "islamic_mental_health",
     "halal_wealth",
     "fiqih_harian",
     "islamic_history",
 ]
+ViralDurationFilter = Literal["any", "under_3", "between_3_20", "over_20"]
+ViralUploadDateFilter = Literal["today", "this_week", "this_month", "this_year"]
+ViralDefinitionFilter = Literal["any", "hd"]
+ViralSortOrder = Literal["popularity", "relevance", "newest"]
 
 ISLAMIC_EVERGREEN_NICHES: dict[str, dict[str, Any]] = {
+    "islamic_current_viral": {
+        "label": "Isu Muslim & Kajian Viral Terkini",
+        "queries": [
+            "isu muslim indonesia viral hari ini",
+            "kajian islam viral terbaru indonesia",
+            "berita umat islam indonesia terbaru",
+            "podcast islam topik viral minggu ini",
+            "fenomena sosial menurut islam terbaru",
+            "ustaz indonesia bahas isu viral",
+            "nasihat islam untuk masalah masa kini",
+            "dakwah pendek viral indonesia terbaru",
+            "kisah muslim inspiratif terbaru indonesia",
+            "kajian anak muda islam yang sedang ramai",
+            "pertanyaan islam paling ramai minggu ini",
+            "ceramah islam trending indonesia",
+        ],
+        "keywords": [
+            "islam", "muslim", "kajian", "ustaz", "ustadz", "ulama", "dakwah",
+            "umat", "viral", "terbaru", "indonesia", "isu", "fenomena", "ramai",
+            "nasihat", "ceramah", "hijrah", "quran", "hadis", "hadits",
+        ],
+        "hashtags": ["IslamTerkini", "KajianViral", "MuslimIndonesia"],
+    },
     "islamic_mental_health": {
-        "label": "Mental Health & Spiritual Calm",
+        "label": "Kesehatan Mental & Ketenangan Jiwa",
         "queries": [
             "kesehatan mental islam overthinking",
             "cara menenangkan hati menurut islam",
@@ -733,7 +761,7 @@ ISLAMIC_EVERGREEN_NICHES: dict[str, dict[str, Any]] = {
         "hashtags": ["KesehatanMentalIslam", "KetenanganHati", "Tawakal"],
     },
     "halal_wealth": {
-        "label": "Halal Wealth, Career & Finance",
+        "label": "Rezeki Halal, Karier & Keuangan",
         "queries": [
             "cara mencari rezeki halal berkah",
             "keuangan syariah untuk anak muda",
@@ -756,7 +784,7 @@ ISLAMIC_EVERGREEN_NICHES: dict[str, dict[str, Any]] = {
         "hashtags": ["RezekiHalal", "KeuanganSyariah", "KarierMuslim"],
     },
     "fiqih_harian": {
-        "label": "Fiqih Harian & Fix Shalat",
+        "label": "Fikih Harian & Perbaikan Salat",
         "queries": [
             "kesalahan shalat yang sering tidak disadari",
             "cara memperbaiki gerakan shalat",
@@ -779,7 +807,7 @@ ISLAMIC_EVERGREEN_NICHES: dict[str, dict[str, Any]] = {
         "hashtags": ["FiqihHarian", "PerbaikiShalat", "BelajarIbadah"],
     },
     "islamic_history": {
-        "label": "Islamic History & Epic Storytelling",
+        "label": "Sejarah Islam & Kisah Penuh Hikmah",
         "queries": [
             "kisah nabi penuh hikmah",
             "kisah sahabat nabi inspiratif",
@@ -836,8 +864,12 @@ def prioritized_niche_queries(niche: IslamicContentNiche, configured: list[str])
     if niche == "auto":
         return prioritized_viral_queries(configured)
     profile = ISLAMIC_EVERGREEN_NICHES[niche]
+    current_year = datetime.now(timezone.utc).year
+    current_variants: list[str] = []
+    for query in list(profile["queries"]):
+        current_variants.extend([query, f"{query} terbaru {current_year}"])
     return merge_unique_queries(
-        list(profile["queries"]),
+        current_variants,
         configured,
         BROAD_VIRAL_SEARCH_QUERIES,
         MYSTERY_ISLAMIC_SEARCH_QUERIES,
@@ -865,6 +897,10 @@ class AutoViralRequest(BaseModel):
     max_source_duration: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MAX_SOURCE_SECONDS", 7200), ge=60, le=14400)
     min_views: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MIN_VIEWS", 1000), ge=0)
     max_age_days: int = Field(default=FRESH_VIRAL_MAX_AGE_DAYS, ge=1, le=MAX_VIRAL_FALLBACK_AGE_DAYS)
+    duration_filter: ViralDurationFilter = "over_20"
+    upload_date_filter: ViralUploadDateFilter = "this_year"
+    definition_filter: ViralDefinitionFilter = "hd"
+    sort_order: ViralSortOrder = "popularity"
     top: int | None = Field(default=None, ge=1, le=MAX_REQUESTED_CLIPS)
     min_duration: float = Field(default=15, ge=5, le=600)
     max_duration: float = Field(default=60, ge=10, le=600)
@@ -901,6 +937,13 @@ class AutoViralRequest(BaseModel):
     @model_validator(mode="after")
     def _apply_niche_priority(self) -> "AutoViralRequest":
         self.queries = prioritized_niche_queries(self.niche, self.queries)[:80]
+        if "max_age_days" not in self.model_fields_set:
+            self.max_age_days = {
+                "today": 1,
+                "this_week": 7,
+                "this_month": 31,
+                "this_year": 365,
+            }[self.upload_date_filter]
         if self.source_urls:
             self.video_count = min(self.video_count, len(self.source_urls))
         return self
@@ -925,7 +968,7 @@ class ViralVideoSearchRequest(BaseModel):
     queries: list[str] = Field(default_factory=default_viral_video_search_queries)
     video_count: int = Field(default=3, ge=1, le=7)
     search_limit_per_query: int = Field(default_factory=lambda: env_int("VIRAL_CC_SEARCH_LIMIT", 25), ge=3, le=50)
-    min_source_duration: int = Field(default=60, ge=30, le=7200)
+    min_source_duration: int = Field(default=30, ge=30, le=7200)
     max_source_duration: int = Field(
         default_factory=lambda: env_int("VIRAL_CC_MAX_SOURCE_SECONDS", 7200),
         ge=60,
@@ -933,6 +976,10 @@ class ViralVideoSearchRequest(BaseModel):
     )
     min_views: int = Field(default_factory=lambda: env_int("VIRAL_CC_MIN_VIEWS", 1000), ge=0)
     max_age_days: int = Field(default=FRESH_VIRAL_MAX_AGE_DAYS, ge=1, le=MAX_VIRAL_FALLBACK_AGE_DAYS)
+    duration_filter: ViralDurationFilter = "over_20"
+    upload_date_filter: ViralUploadDateFilter = "this_year"
+    definition_filter: ViralDefinitionFilter = "hd"
+    sort_order: ViralSortOrder = "popularity"
     max_metadata_checks: int = Field(default_factory=lambda: env_int("VIRAL_CC_MAX_METADATA_CHECKS", 200), ge=3, le=500)
     exclude_urls: list[str] = Field(default_factory=list)
 
@@ -957,6 +1004,13 @@ class ViralVideoSearchRequest(BaseModel):
     @model_validator(mode="after")
     def _apply_niche_priority(self) -> "ViralVideoSearchRequest":
         self.queries = prioritized_niche_queries(self.niche, self.queries)[:80]
+        if "max_age_days" not in self.model_fields_set:
+            self.max_age_days = {
+                "today": 1,
+                "this_week": 7,
+                "this_month": 31,
+                "this_year": 365,
+            }[self.upload_date_filter]
         return self
 
 
@@ -4920,6 +4974,48 @@ def youtube_published_after(max_age_days: int = FRESH_VIRAL_MAX_AGE_DAYS) -> str
     return threshold.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def source_max_height(info: dict[str, Any]) -> int:
+    heights: list[int] = []
+    for value in (info.get("height"), info.get("resolution_height")):
+        try:
+            heights.append(int(value or 0))
+        except (TypeError, ValueError):
+            pass
+    formats = info.get("formats") if isinstance(info.get("formats"), list) else []
+    for item in formats:
+        if not isinstance(item, dict):
+            continue
+        try:
+            heights.append(int(item.get("height") or 0))
+        except (TypeError, ValueError):
+            pass
+    return max(heights, default=0)
+
+
+def viral_search_filter_rejection_reason(
+    info: dict[str, Any],
+    request: AutoViralRequest | ViralVideoSearchRequest,
+) -> str:
+    """Revalidate UI search filters against full source metadata."""
+    duration = float(info.get("duration") or 0)
+    if request.duration_filter == "under_3" and not (0 < duration < 180):
+        return "durasi bukan kurang dari 3 menit"
+    if request.duration_filter == "between_3_20" and not (180 <= duration <= 1200):
+        return "durasi bukan 3–20 menit"
+    if request.duration_filter == "over_20" and duration <= 1200:
+        return "durasi bukan lebih dari 20 menit"
+
+    if not is_fresh_viral_upload(info, request.max_age_days):
+        return f"tanggal unggah di luar {request.max_age_days} hari terakhir"
+
+    if request.definition_filter == "hd":
+        definition = str(info.get("definition") or "").strip().casefold()
+        height = source_max_height(info)
+        if definition == "sd" or (definition != "hd" and height < 720):
+            return "kualitas HD tidak terverifikasi"
+    return ""
+
+
 def auto_viral_candidate_score(info: dict[str, Any]) -> float:
     views = max(0, int(info.get("view_count") or 0))
     likes = max(0, int(info.get("like_count") or 0))
@@ -4976,6 +5072,65 @@ def niche_relevance_score(info: dict[str, Any], niche: IslamicContentNiche) -> f
     return round(min(100.0, score), 2)
 
 
+INDONESIAN_CONTENT_MARKERS = {
+    "adalah", "agar", "atau", "bagaimana", "bahwa", "cara", "dalam", "dan",
+    "dengan", "hari", "indonesia", "ini", "kajian", "karena", "kisah", "kita",
+    "masalah", "menjadi", "menurut", "nasihat", "tidak", "untuk", "viral", "yang",
+}
+
+
+def indonesian_language_score(info: dict[str, Any]) -> float:
+    """Estimate whether the source is genuinely Indonesian, preferring metadata."""
+    declared_languages = {
+        str(info.get(key) or "").strip().casefold().replace("_", "-")
+        for key in ("language", "default_language", "default_audio_language")
+        if str(info.get(key) or "").strip()
+    }
+    if any(value == "id" or value.startswith("id-") for value in declared_languages):
+        return 100.0
+    if declared_languages and all(
+        not (value == "id" or value.startswith("id-"))
+        for value in declared_languages
+    ):
+        return 0.0
+
+    title = re.sub(r"[^a-z0-9]+", " ", str(info.get("title") or "").casefold())
+    description = re.sub(
+        r"[^a-z0-9]+", " ", str(info.get("description") or "").casefold()
+    )
+    title_tokens = set(title.split())
+    description_tokens = set(description.split())
+    title_hits = title_tokens & INDONESIAN_CONTENT_MARKERS
+    supporting_hits = description_tokens & INDONESIAN_CONTENT_MARKERS
+    score = min(75.0, len(title_hits) * 15.0)
+    score += min(25.0, len(supporting_hits - title_hits) * 4.0)
+    return round(min(100.0, score), 2)
+
+
+def niche_candidate_rejection_reason(
+    info: dict[str, Any],
+    niche: IslamicContentNiche,
+) -> str:
+    """Reject unrelated or non-Indonesian results before momentum can rank them."""
+    if niche == "auto":
+        return ""
+    relevance_score = niche_relevance_score(info, niche)
+    minimum_relevance = max(1, min(100, env_int("VIRAL_CC_MIN_NICHE_SCORE", 18)))
+    if relevance_score < minimum_relevance:
+        return (
+            f"kecocokan tema {relevance_score:.0f}/100 di bawah minimum "
+            f"{minimum_relevance}/100"
+        )
+    language_score = indonesian_language_score(info)
+    minimum_language = max(1, min(100, env_int("VIRAL_CC_MIN_INDONESIAN_SCORE", 15)))
+    if language_score < minimum_language:
+        return (
+            f"sinyal Bahasa Indonesia {language_score:.0f}/100 di bawah minimum "
+            f"{minimum_language}/100"
+        )
+    return ""
+
+
 def compact_source_payload(
     info: dict[str, Any],
     niche: IslamicContentNiche = "auto",
@@ -4984,13 +5139,20 @@ def compact_source_payload(
     views = int(info.get("view_count") or 0)
     viral_score = auto_viral_candidate_score(info)
     relevance_score = niche_relevance_score(info, niche)
-    ranking_score = viral_score + relevance_score * 1.65
+    language_score = indonesian_language_score(info)
+    ranking_score = viral_score + relevance_score * 1.85 + language_score * 0.25
     profile = ISLAMIC_EVERGREEN_NICHES.get(niche, {})
+    source_height = source_max_height(info)
+    definition = str(info.get("definition") or "").strip().casefold()
+    if not definition and source_height >= 720:
+        definition = "hd"
     return {
         "url": normalize_youtube_video_url(youtube_watch_url(info)) or youtube_watch_url(info),
         "title": str(info.get("title") or "Video tanpa judul")[:180],
         "uploader": str(info.get("uploader") or "")[:120],
         "duration": info.get("duration"),
+        "definition": definition,
+        "height": source_height or None,
         "views": views,
         "views_per_day": round(views / max(1, age_days or 1)),
         "engagement_rate": round(float(info.get("like_count") or 0) / max(views, 1), 5),
@@ -5002,14 +5164,51 @@ def compact_source_payload(
         "score": round(ranking_score, 2),
         "viral_score": viral_score,
         "niche": niche,
-        "niche_label": profile.get("label", "Auto Discovery"),
+        "niche_label": profile.get("label", "Penemuan Otomatis"),
         "niche_score": relevance_score,
+        "language_score": language_score,
         "ranking_reason": (
-            f"Kecocokan niche {relevance_score:.0f}/100 + momentum {viral_score:.0f}"
+            f"Kecocokan tema {relevance_score:.0f}/100 • Bahasa Indonesia "
+            f"{language_score:.0f}/100 • momentum {viral_score:.0f}"
             if niche != "auto"
             else f"Momentum viral {viral_score:.0f}"
         ),
     }
+
+
+def sort_viral_source_payloads(
+    sources: list[dict[str, Any]],
+    sort_order: ViralSortOrder,
+) -> None:
+    if sort_order == "newest":
+        sources.sort(
+            key=lambda item: (
+                -(int(item.get("age_days")) if item.get("age_days") is not None else 999999),
+                float(item.get("score") or 0),
+            ),
+            reverse=True,
+        )
+    elif sort_order == "relevance":
+        sources.sort(
+            key=lambda item: (
+                float(item.get("niche_score") or 0),
+                float(item.get("language_score") or 0),
+                float(item.get("score") or 0),
+            ),
+            reverse=True,
+        )
+    else:
+        sources.sort(
+            key=lambda item: (
+                float(
+                    item.get("viral_score")
+                    if item.get("viral_score") is not None
+                    else item.get("score") or 0
+                ),
+                float(item.get("score") or 0),
+            ),
+            reverse=True,
+        )
 
 
 def fetch_youtube_metadata(url: str) -> dict[str, Any]:
@@ -5078,8 +5277,11 @@ def youtube_data_api_video_payload(item: dict[str, Any]) -> dict[str, Any]:
         "title": snippet.get("title") or "Video tanpa judul",
         "description": snippet.get("description") or "",
         "tags": snippet.get("tags") if isinstance(snippet.get("tags"), list) else [],
+        "default_language": snippet.get("defaultLanguage") or "",
+        "default_audio_language": snippet.get("defaultAudioLanguage") or "",
         "uploader": snippet.get("channelTitle") or "",
         "duration": parse_youtube_iso_duration(str(content.get("duration") or "")),
+        "definition": str(content.get("definition") or ""),
         "view_count": int(stats.get("viewCount") or 0),
         "like_count": int(stats.get("likeCount") or 0),
         "upload_date": upload_date if len(upload_date) == 8 else "",
@@ -5111,18 +5313,31 @@ def search_youtube_data_api_viral_sources(
         if stop_after is not None and len(candidates) >= stop_after:
             break
         append_auto_viral_log(run_id, f"YouTube Data API search: {query}")
+        api_order = {
+            "popularity": "viewCount",
+            "relevance": "relevance",
+            "newest": "date",
+        }[request.sort_order]
         search_params: dict[str, Any] = {
             "part": "snippet",
             "q": query,
             "type": "video",
             "videoLicense": "creativeCommon",
-            "order": os.environ.get("VIRAL_CC_YOUTUBE_API_ORDER", "viewCount").strip() or "viewCount",
+            "order": api_order,
             "maxResults": request.search_limit_per_query,
             "regionCode": region_code,
             "relevanceLanguage": relevance_language,
             "safeSearch": "strict",
             "publishedAfter": youtube_published_after(request.max_age_days),
         }
+        if request.duration_filter != "any":
+            search_params["videoDuration"] = {
+                "under_3": "short",
+                "between_3_20": "medium",
+                "over_20": "long",
+            }[request.duration_filter]
+        if request.definition_filter == "hd":
+            search_params["videoDefinition"] = "high"
         if topic_id and env_bool("VIRAL_CC_ENFORCE_TOPIC_ID", False):
             search_params["topicId"] = topic_id
         try:
@@ -5171,6 +5386,13 @@ def search_youtube_data_api_viral_sources(
                 continue
             if not is_fresh_viral_upload(payload, request.max_age_days):
                 continue
+            filter_rejection = viral_search_filter_rejection_reason(payload, request)
+            if filter_rejection:
+                append_auto_viral_log(
+                    run_id,
+                    f"Skip karena filter ({filter_rejection}): {payload.get('title') or '-'}",
+                )
+                continue
             rejection_reason = viral_source_rejection_reason(payload)
             if rejection_reason:
                 append_auto_viral_log(
@@ -5178,12 +5400,20 @@ def search_youtube_data_api_viral_sources(
                     f"Skip sumber tidak aman ({rejection_reason}): {payload.get('title') or '-'}",
                 )
                 continue
+            niche_rejection = niche_candidate_rejection_reason(payload, request.niche)
+            if niche_rejection:
+                append_auto_viral_log(
+                    run_id,
+                    f"Skip kandidat tidak relevan ({niche_rejection}): "
+                    f"{payload.get('title') or '-'}",
+                )
+                continue
             candidates.append(compact_source_payload(payload, request.niche))
             if stop_after is not None and len(candidates) >= stop_after:
                 break
     if api_query_count == 0 and api_error_count > 0:
         raise RuntimeError(last_api_error or "Semua request YouTube Data API gagal")
-    candidates.sort(key=lambda item: float(item.get("score") or 0), reverse=True)
+    sort_viral_source_payloads(candidates, request.sort_order)
     return candidates
 
 
@@ -5202,7 +5432,8 @@ def search_auto_viral_sources(
         2,
         min(20, env_int("VIRAL_CC_METADATA_PER_QUERY", 6)),
     )
-    search_mode = os.environ.get("VIRAL_CC_YTDLP_SEARCH_MODE", "ytsearchdate").strip().lower()
+    default_search_mode = "ytsearchdate" if request.sort_order == "newest" else "ytsearch"
+    search_mode = default_search_mode
     if search_mode not in {"ytsearch", "ytsearchdate"}:
         search_mode = "ytsearchdate"
     for query in request.queries:
@@ -5255,6 +5486,13 @@ def search_auto_viral_sources(
                     f"{metadata.get('title') or url}",
                 )
                 continue
+            filter_rejection = viral_search_filter_rejection_reason(metadata, request)
+            if filter_rejection:
+                append_auto_viral_log(
+                    run_id,
+                    f"Skip karena filter ({filter_rejection}): {metadata.get('title') or url}",
+                )
+                continue
             rejection_reason = viral_source_rejection_reason(metadata)
             if rejection_reason:
                 append_auto_viral_log(
@@ -5262,11 +5500,19 @@ def search_auto_viral_sources(
                     f"Skip sumber tidak aman ({rejection_reason}): {metadata.get('title') or url}",
                 )
                 continue
+            niche_rejection = niche_candidate_rejection_reason(metadata, request.niche)
+            if niche_rejection:
+                append_auto_viral_log(
+                    run_id,
+                    f"Skip kandidat tidak relevan ({niche_rejection}): "
+                    f"{metadata.get('title') or url}",
+                )
+                continue
             candidates.append(compact_source_payload(metadata, request.niche))
             if stop_after is not None and len(candidates) >= stop_after:
                 break
 
-    candidates.sort(key=lambda item: float(item.get("score") or 0), reverse=True)
+    sort_viral_source_payloads(candidates, request.sort_order)
     return candidates
 
 
@@ -5587,6 +5833,10 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
         burn_subtitles=True,
         ai_enabled=True,
         niche=request.niche,
+        duration_filter=request.duration_filter,
+        upload_date_filter=request.upload_date_filter,
+        definition_filter=request.definition_filter,
+        sort_order=request.sort_order,
     )
     run = AutoViralRun(
         id=run_id,
@@ -5594,7 +5844,7 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
         created_at=now_iso(),
         updated_at=now_iso(),
         request=search_request,
-        message="Mencari kandidat CC baru; prioritas 30 hari lalu diperluas bila hasil kurang",
+        message="Mencari kandidat CC sesuai filter durasi, tanggal, kualitas, dan prioritas",
     )
     with auto_viral_lock:
         auto_viral_runs[run_id] = run
@@ -5629,13 +5879,7 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
             append_auto_viral_log(run_id, "YouTube Data API dinonaktifkan; memakai pencarian yt-dlp terverifikasi.")
 
         if len(sources) < source_pool_target:
-            fallback_age_days = max(
-                request.max_age_days,
-                min(
-                    MAX_VIRAL_FALLBACK_AGE_DAYS,
-                    env_int("VIRAL_CC_FALLBACK_MAX_AGE_DAYS", 180),
-                ),
-            )
+            fallback_age_days = request.max_age_days
             fallback_min_views = min(
                 request.min_views,
                 max(0, env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", 100)),
@@ -5656,8 +5900,8 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
             )
             append_auto_viral_log(
                 run_id,
-                f"Hasil terbaru baru {len(sources)}/{request.video_count}; memperluas pencarian "
-                f"hingga {fallback_age_days} hari, min. {fallback_min_views} views, "
+                f"Hasil sesuai filter baru {len(sources)}/{request.video_count}; memperluas kata kunci "
+                f"tanpa mengubah batas {fallback_age_days} hari, min. {fallback_min_views} views, "
                 f"{len(fallback_request.queries)} variasi keyword.",
             )
             found_urls = {
@@ -5673,7 +5917,7 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
                 max_metadata_checks=request.max_metadata_checks,
             )
             sources = [*sources, *fallback_sources]
-        sources.sort(key=lambda item: float(item.get("score") or 0), reverse=True)
+        sort_viral_source_payloads(sources, request.sort_order)
         selected = sources[: request.video_count]
         for rank, source in enumerate(selected, start=1):
             source["rank"] = rank
@@ -5683,7 +5927,11 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
             finished_at=now_iso(),
             selected_sources=selected,
             message=(
-                f"Top {len(selected)} kandidat {ISLAMIC_EVERGREEN_NICHES.get(request.niche, {}).get('label', 'Creative Commons')} siap dipilih"
+                f"Top {len(selected)} kandidat "
+                f"{ISLAMIC_EVERGREEN_NICHES.get(request.niche, {}).get('label', 'Creative Commons')} "
+                "siap dipilih"
+                if selected
+                else "Belum ditemukan konten CC terbaru yang relevan dan berbahasa Indonesia; tidak ada kandidat asing yang dipaksakan."
             ),
         )
         return selected
@@ -5726,6 +5974,12 @@ def resolve_selected_auto_viral_sources(
             raise RuntimeError(
                 f"Pilihan #{rank} tidak lagi masuk jendela freshness {request.max_age_days} hari"
             )
+        filter_rejection = viral_search_filter_rejection_reason(metadata, request)
+        if filter_rejection:
+            raise RuntimeError(f"Pilihan #{rank} tidak lolos filter: {filter_rejection}")
+        niche_rejection = niche_candidate_rejection_reason(metadata, request.niche)
+        if niche_rejection:
+            raise RuntimeError(f"Pilihan #{rank} tidak lolos tema: {niche_rejection}")
         source = compact_source_payload(metadata, request.niche)
         source["rank"] = rank
         sources.append(source)
@@ -5847,7 +6101,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
             message=(
                 "Memvalidasi pilihan dan menyiapkan antrean clipping"
                 if run.request.source_urls
-                else "Mencari video Creative Commons viral; prioritas 30 hari, lalu perluas hingga 180 hari"
+                else "Mencari video Creative Commons sesuai filter pencarian"
             ),
         )
         append_auto_viral_log(run_id, "Automation dimulai")
@@ -5881,13 +6135,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 max_metadata_checks=env_int("VIRAL_CC_MAX_METADATA_CHECKS", 200),
             )
         if not run.request.source_urls and len(sources) < source_pool_target:
-            fallback_age_days = max(
-                run.request.max_age_days,
-                min(
-                    MAX_VIRAL_FALLBACK_AGE_DAYS,
-                    env_int("VIRAL_CC_FALLBACK_MAX_AGE_DAYS", 180),
-                ),
-            )
+            fallback_age_days = run.request.max_age_days
             fallback_min_views = min(
                 run.request.min_views,
                 max(0, env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", 100)),
@@ -5905,12 +6153,12 @@ def run_auto_viral_campaign(run_id: str) -> None:
             )
             append_auto_viral_log(
                 run_id,
-                f"Kandidat baru belum cukup; memperluas pencarian hingga {fallback_age_days} hari "
-                f"dengan minimal {fallback_min_views} views",
+                f"Kandidat baru belum cukup; memperluas kata kunci tanpa mengubah filter "
+                f"{fallback_age_days} hari, minimal {fallback_min_views} views",
             )
             update_auto_viral_run(
                 run_id,
-                message=f"Memperluas pencarian Creative Commons hingga {fallback_age_days} hari",
+                message="Memperluas variasi kata kunci Creative Commons dengan filter tetap",
             )
             sources.extend(
                 search_auto_viral_sources(
@@ -5925,7 +6173,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
                     max_metadata_checks=env_int("VIRAL_CC_MAX_METADATA_CHECKS", 200),
                 )
             )
-            sources.sort(key=lambda item: float(item.get("score") or 0), reverse=True)
+            sort_viral_source_payloads(sources, run.request.sort_order)
         if not sources:
             raise RuntimeError(
                 "Tidak menemukan kandidat Creative Commons setelah pencarian diperluas; "

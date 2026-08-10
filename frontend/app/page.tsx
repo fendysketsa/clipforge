@@ -73,6 +73,7 @@ import type {
   SourceMode,
   SourceHistoryCheck,
   ViralContentSource,
+  ViralSearchFilters,
   VideoQuality,
   VisualMode,
   YouTubeConfig,
@@ -138,9 +139,16 @@ export default function HomePage() {
   const [youtubeConfig, setYoutubeConfig] = useState<YouTubeConfig | null>(null);
   const [youtubeUploads, setYoutubeUploads] = useState<YouTubeUploadJob[]>([]);
   const [autoViralRun, setAutoViralRun] = useState<AutoViralRun | null>(null);
-  const [autoContentNiche, setAutoContentNiche] = useState<IslamicContentNiche>("islamic_mental_health");
+  const [autoContentNiche, setAutoContentNiche] = useState<IslamicContentNiche>("islamic_current_viral");
   const [autoContentSources, setAutoContentSources] = useState<ViralContentSource[]>([]);
   const [selectedAutoContentUrls, setSelectedAutoContentUrls] = useState<string[]>([]);
+  const [autoContentMessage, setAutoContentMessage] = useState("");
+  const [viralSearchFilters, setViralSearchFilters] = useState<ViralSearchFilters>({
+    duration_filter: "over_20",
+    upload_date_filter: "this_year",
+    definition_filter: "hd",
+    sort_order: "popularity",
+  });
   const [isSearchingAutoContent, setIsSearchingAutoContent] = useState(false);
   const [isYouTubeLoginActive, setIsYouTubeLoginActive] = useState(false);
   const [selectedHistoryJobIds, setSelectedHistoryJobIds] = useState<string[]>([]);
@@ -355,7 +363,7 @@ export default function HomePage() {
         if (nextRun.status === "completed") {
           toast.success(
             nextRun.request.auto_upload_youtube === false
-              ? "Clipping kandidat niche selesai dan siap direview."
+              ? "Pemotongan kandidat tema selesai dan siap ditinjau."
               : "Auto Viral CC selesai. Alert Telegram sudah dikirim bila token tersedia.",
           );
         } else {
@@ -1141,23 +1149,30 @@ export default function HomePage() {
         searchViralContentSources({
           niche: autoContentNiche,
           video_count: 3,
-          max_age_days: 30,
           min_views: 1000,
+          ...viralSearchFilters,
         }),
         {
-          loading: "Mencari dan meranking kandidat niche...",
-          success: (items) => `Top ${items.length} kandidat niche siap dipilih.`,
+          loading: "Mencari konten Indonesia yang sedang ramai...",
+          success: (items) => items.length
+            ? `${items.length} kandidat terbaru berbahasa Indonesia siap dipilih.`
+            : "Belum ada kandidat Indonesia yang memenuhi syarat.",
           error: (searchError) => searchError instanceof Error ? searchError.message : "Pencarian gagal",
         },
       );
       setAutoContentSources(sources);
       setSelectedAutoContentUrls(sources.map((source) => source.url));
+      setAutoContentMessage(
+        sources.length
+          ? "Hanya konten berbahasa Indonesia yang relevan dan terbaru yang ditampilkan."
+          : "Belum ditemukan konten Creative Commons Indonesia yang cukup relevan. Coba lagi nanti; video asing tidak akan dipaksakan masuk.",
+      );
     } catch {
       // toast.promise already presents the backend search error.
     } finally {
       setIsSearchingAutoContent(false);
     }
-  }, [autoContentNiche, isAutoViralRunning, isSearchingAutoContent]);
+  }, [autoContentNiche, isAutoViralRunning, isSearchingAutoContent, viralSearchFilters]);
 
   const handleToggleAutoContentSource = useCallback((sourceUrl: string) => {
     setSelectedAutoContentUrls((current) => (
@@ -1171,8 +1186,6 @@ export default function HomePage() {
     if (isAutoViralRunning || !selectedAutoContentUrls.length) return;
 
     try {
-      const selectedSources = autoContentSources.filter((source) => selectedAutoContentUrls.includes(source.url));
-      const selectedMaxAge = Math.max(30, ...selectedSources.map((source) => source.age_days ?? 0));
       const run = await toast.promise(
         startAutoViralCampaign({
           niche: autoContentNiche,
@@ -1180,7 +1193,7 @@ export default function HomePage() {
           video_count: selectedAutoContentUrls.length,
           auto_upload_youtube: false,
           clips_per_video: 3,
-          max_age_days: Math.min(365, selectedMaxAge),
+          ...viralSearchFilters,
           top: targetClips || null,
           min_duration: minDuration,
           max_duration: Math.min(60, maxDuration),
@@ -1211,7 +1224,6 @@ export default function HomePage() {
     aiEnabled,
     aiModel,
     autoContentNiche,
-    autoContentSources,
     backgroundMode,
     burnSubtitles,
     cropMode,
@@ -1222,6 +1234,7 @@ export default function HomePage() {
     targetClips,
     videoQuality,
     visualMode,
+    viralSearchFilters,
   ]);
 
   return (
@@ -1246,6 +1259,7 @@ export default function HomePage() {
           isSearchingAutoContent={isSearchingAutoContent}
           autoContentNiche={autoContentNiche}
           autoContentSources={autoContentSources}
+          viralSearchFilters={viralSearchFilters}
           selectedAutoContentUrls={selectedAutoContentUrls}
           sourceMode={sourceMode}
           uploadFileName={uploadFileName}
@@ -1309,10 +1323,17 @@ export default function HomePage() {
           onAiApiKeyChange={setAiApiKey}
           onStartAutoViral={handleStartAutoViral}
           onSearchAutoContent={handleSearchAutoContent}
+          onViralSearchFiltersChange={(value) => {
+            setViralSearchFilters(value);
+            setAutoContentSources([]);
+            setSelectedAutoContentUrls([]);
+            setAutoContentMessage("");
+          }}
           onAutoContentNicheChange={(value) => {
             setAutoContentNiche(value);
             setAutoContentSources([]);
             setSelectedAutoContentUrls([]);
+            setAutoContentMessage("");
           }}
           onToggleAutoContentSource={handleToggleAutoContentSource}
           onStartJob={handleStartJob}
@@ -1326,7 +1347,7 @@ export default function HomePage() {
           isCheckingSourceHistory={isCheckingSourceHistory}
           allowReprocessSource={allowReprocessSource}
           onAllowReprocessSourceChange={setAllowReprocessSource}
-          autoViralMessage={autoViralRun?.message ?? ""}
+          autoViralMessage={autoViralRun?.message || autoContentMessage}
           url={url}
         />
         <StatusPanel job={activityJob} latestLogs={latestLogs} onCancelJob={handleCancelJob} />

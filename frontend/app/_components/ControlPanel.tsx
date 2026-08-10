@@ -19,6 +19,7 @@ import type {
   SourceHistoryCheck,
   VideoQuality,
   ViralContentSource,
+  ViralSearchFilters,
   VisualMode,
 } from "../../types/clip.type";
 import { CaptionPreview } from "./CaptionPreview";
@@ -33,23 +34,28 @@ const CAM_CORNER_OPTIONS: { value: CamCorner; label: string }[] = [
 
 const ISLAMIC_NICHE_OPTIONS: { value: IslamicContentNiche; label: string; description: string }[] = [
   {
+    value: "islamic_current_viral",
+    label: "Isu Muslim & Kajian Viral Terkini",
+    description: "Topik Muslim Indonesia yang ramai hari ini, minggu ini, dan paling baru.",
+  },
+  {
     value: "islamic_mental_health",
-    label: "Mental Health & Spiritual Calm",
+    label: "Kesehatan Mental & Ketenangan Jiwa",
     description: "Overthinking, ketenangan hati, tawakal, emosi, dan psikologi Islam.",
   },
   {
     value: "halal_wealth",
-    label: "Halal Wealth, Career & Finance",
+    label: "Rezeki Halal, Karier & Keuangan",
     description: "Rezeki halal, riba, investasi syariah, bisnis, dan etika kerja.",
   },
   {
     value: "fiqih_harian",
-    label: "Fiqih Harian & Fix Shalat",
-    description: "Kesalahan shalat, wudhu, doa, dan micro-learning ibadah praktis.",
+    label: "Fikih Harian & Perbaikan Salat",
+    description: "Kesalahan salat, wudu, doa, dan pembelajaran ibadah praktis.",
   },
   {
     value: "islamic_history",
-    label: "Islamic History & Epic Storytelling",
+    label: "Sejarah Islam & Kisah Penuh Hikmah",
     description: "Kisah Nabi, Sahabat, peradaban, ilmuwan, dan hikmah sejarah.",
   },
 ];
@@ -65,6 +71,15 @@ function shortDuration(value?: number | null) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+function freshnessLabel(ageDays?: number | null) {
+  if (ageDays === null || ageDays === undefined) return "Tanggal belum tersedia";
+  if (ageDays <= 0) return "Hari ini";
+  if (ageDays === 1) return "Kemarin";
+  if (ageDays <= 7) return `${ageDays} hari lalu`;
+  if (ageDays <= 30) return `${Math.ceil(ageDays / 7)} minggu lalu`;
+  return `${Math.ceil(ageDays / 30)} bulan lalu`;
+}
+
 type ControlPanelProps = {
   clipMode: ClipMode;
   onClipModeChange: (value: ClipMode) => void;
@@ -76,6 +91,7 @@ type ControlPanelProps = {
   isSearchingAutoContent: boolean;
   autoContentNiche: IslamicContentNiche;
   autoContentSources: ViralContentSource[];
+  viralSearchFilters: ViralSearchFilters;
   selectedAutoContentUrls: string[];
   sourceMode: SourceMode;
   uploadFileName: string;
@@ -139,6 +155,7 @@ type ControlPanelProps = {
   onAiApiKeyChange: (value: string) => void;
   onStartAutoViral: () => void;
   onSearchAutoContent: () => void;
+  onViralSearchFiltersChange: (value: ViralSearchFilters) => void;
   onAutoContentNicheChange: (value: IslamicContentNiche) => void;
   onToggleAutoContentSource: (sourceUrl: string) => void;
   onStartJob: () => void;
@@ -162,6 +179,7 @@ export function ControlPanel({
   isSearchingAutoContent,
   autoContentNiche,
   autoContentSources,
+  viralSearchFilters,
   selectedAutoContentUrls,
   sourceMode,
   uploadFileName,
@@ -225,6 +243,7 @@ export function ControlPanel({
   onAiApiKeyChange,
   onStartAutoViral,
   onSearchAutoContent,
+  onViralSearchFiltersChange,
   onAutoContentNicheChange,
   onToggleAutoContentSource,
   onStartJob,
@@ -974,12 +993,12 @@ export function ControlPanel({
 
         <div className="aiBlock viralBlock">
           <div className="autoContentHeading">
-            <span className="aiToggleLabel"><Sparkles size={16} /> Auto Search Konten Islami</span>
-            <span className="autoContentBadge">TOP 3</span>
+            <span className="aiToggleLabel"><Sparkles size={16} /> Pencarian Otomatis Konten Islami</span>
+            <span className="autoContentBadge">3 TERATAS</span>
           </div>
 
           <label className="field autoNicheField">
-            <span>Niche evergreen pilihan</span>
+            <span>Tema konten pilihan</span>
             <select
               value={autoContentNiche}
               disabled={isSearchingAutoContent || isAutoViralRunning}
@@ -992,6 +1011,79 @@ export function ControlPanel({
             <small>{ISLAMIC_NICHE_OPTIONS.find((option) => option.value === autoContentNiche)?.description}</small>
           </label>
 
+          <div className="viralSearchFilterPanel">
+            <div className="viralFilterItem viralFilterLocked">
+              <span>Jenis</span>
+              <strong><ShieldCheck size={13} /> Video</strong>
+            </div>
+            <label className="viralFilterItem">
+              <span>Durasi</span>
+              <select
+                value={viralSearchFilters.duration_filter}
+                disabled={isSearchingAutoContent || isAutoViralRunning}
+                onChange={(event) => onViralSearchFiltersChange({
+                  ...viralSearchFilters,
+                  duration_filter: event.target.value as ViralSearchFilters["duration_filter"],
+                })}
+              >
+                <option value="any">Semua durasi</option>
+                <option value="under_3">Kurang dari 3 menit</option>
+                <option value="between_3_20">3–20 menit</option>
+                <option value="over_20">Lebih dari 20 menit</option>
+              </select>
+            </label>
+            <label className="viralFilterItem">
+              <span>Tanggal unggah</span>
+              <select
+                value={viralSearchFilters.upload_date_filter}
+                disabled={isSearchingAutoContent || isAutoViralRunning}
+                onChange={(event) => onViralSearchFiltersChange({
+                  ...viralSearchFilters,
+                  upload_date_filter: event.target.value as ViralSearchFilters["upload_date_filter"],
+                })}
+              >
+                <option value="today">Hari ini</option>
+                <option value="this_week">Minggu ini</option>
+                <option value="this_month">Bulan ini</option>
+                <option value="this_year">Tahun ini</option>
+              </select>
+            </label>
+            <label className="viralFilterItem">
+              <span>Kualitas</span>
+              <select
+                value={viralSearchFilters.definition_filter}
+                disabled={isSearchingAutoContent || isAutoViralRunning}
+                onChange={(event) => onViralSearchFiltersChange({
+                  ...viralSearchFilters,
+                  definition_filter: event.target.value as ViralSearchFilters["definition_filter"],
+                })}
+              >
+                <option value="hd">HD saja</option>
+                <option value="any">Semua kualitas</option>
+              </select>
+            </label>
+            <div className="viralFilterItem viralFilterLocked viralFilterLicense">
+              <span>Lisensi</span>
+              <strong><ShieldCheck size={13} /> Creative Commons</strong>
+              <small>Wajib dan diverifikasi ulang</small>
+            </div>
+            <label className="viralFilterItem">
+              <span>Prioritaskan</span>
+              <select
+                value={viralSearchFilters.sort_order}
+                disabled={isSearchingAutoContent || isAutoViralRunning}
+                onChange={(event) => onViralSearchFiltersChange({
+                  ...viralSearchFilters,
+                  sort_order: event.target.value as ViralSearchFilters["sort_order"],
+                })}
+              >
+                <option value="popularity">Popularitas</option>
+                <option value="relevance">Relevansi</option>
+                <option value="newest">Paling baru</option>
+              </select>
+            </label>
+          </div>
+
           <button
             className="ghostButton autoViralButton"
             type="button"
@@ -999,7 +1091,7 @@ export function ControlPanel({
             onClick={onSearchAutoContent}
           >
             {isSearchingAutoContent ? <Loader2 className="spin" size={16} /> : <Search size={16} />}
-            {isSearchingAutoContent ? "Meranking kandidat..." : "Cari Top 3 Konten"}
+            {isSearchingAutoContent ? "Menilai kandidat terbaru..." : "Cari 3 Konten Viral Terbaru"}
           </button>
 
           {autoContentSources.length ? (
@@ -1019,10 +1111,12 @@ export function ControlPanel({
                       <span className="autoContentTitle">{source.title}</span>
                     </label>
                     <div className="autoContentMeta">
-                      <span>{compactMetric(source.views)} views</span>
-                      <span>{compactMetric(source.views_per_day)}/hari</span>
+                      <span>{compactMetric(source.views)} tayangan</span>
+                      <span>{compactMetric(source.views_per_day)} tayangan/hari</span>
+                      <span>{freshnessLabel(source.age_days)}</span>
                       <span>{shortDuration(source.duration)}</span>
-                      <span>niche {Math.round(source.niche_score)}/100</span>
+                      {source.definition === "hd" || (source.height ?? 0) >= 720 ? <span>HD</span> : null}
+                      <span>kecocokan {Math.round(source.niche_score)}/100</span>
                     </div>
                     <div className="autoContentReason">
                       <ShieldCheck size={13} />
@@ -1052,7 +1146,7 @@ export function ControlPanel({
           ) : null}
 
           <p className="field-help">
-            {autoViralMessage || "Sistem mengambil pool kandidat CC, lalu meranking relevansi niche, momentum views, engagement, freshness, dan duplikasi sumber."}
+            {autoViralMessage || "Sistem mencari konten Creative Commons Indonesia, lalu menilai kecocokan tema, tayangan harian, interaksi, kebaruan, dan duplikasi sumber."}
           </p>
         </div>
 

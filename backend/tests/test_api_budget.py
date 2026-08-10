@@ -14,11 +14,13 @@ from api import (
     build_clipper_command,
     choose_auto_analyze_seconds,
     default_viral_video_search_queries,
+    indonesian_language_score,
     is_creative_commons_info,
     is_fresh_viral_upload,
     list_source_usage_log,
     max_clips_for_duration,
     niche_relevance_score,
+    niche_candidate_rejection_reason,
     normalize_job_request,
     normalize_youtube_video_url,
     processed_job_source_urls,
@@ -30,6 +32,7 @@ from api import (
     youtube_upload_staging_filter,
     user_error_from_logs,
     viral_source_rejection_reason,
+    viral_search_filter_rejection_reason,
     youtube_upload_clean_metadata_args,
     youtube_published_after,
 )
@@ -229,6 +232,46 @@ def test_selected_evergreen_niche_owns_the_first_search_positions():
     assert finance.queries.index("podcast horor indonesia") >= 12
 
 
+def test_current_viral_niche_uses_indonesian_freshness_queries():
+    request = ViralVideoSearchRequest(niche="islamic_current_viral")
+
+    assert request.queries[0] == "isu muslim indonesia viral hari ini"
+    assert str(datetime.now(timezone.utc).year) in request.queries[1]
+    assert "terbaru" in request.queries[1]
+
+
+def test_search_filter_defaults_match_broad_cc_reference_layout():
+    request = ViralVideoSearchRequest(niche="islamic_current_viral")
+
+    assert request.duration_filter == "over_20"
+    assert request.upload_date_filter == "this_year"
+    assert request.definition_filter == "hd"
+    assert request.sort_order == "popularity"
+    assert request.max_age_days == 365
+
+
+def test_search_filter_revalidates_duration_date_and_hd_metadata():
+    request = ViralVideoSearchRequest(
+        niche="islamic_history",
+        duration_filter="over_20",
+        upload_date_filter="this_year",
+        definition_filter="hd",
+    )
+    valid = {
+        "duration": 1800,
+        "upload_date": datetime.now(timezone.utc).strftime("%Y%m%d"),
+        "definition": "hd",
+    }
+
+    assert viral_search_filter_rejection_reason(valid, request) == ""
+    assert "20 menit" in viral_search_filter_rejection_reason(
+        {**valid, "duration": 900}, request
+    )
+    assert "HD" in viral_search_filter_rejection_reason(
+        {**valid, "definition": "sd"}, request
+    )
+
+
 def test_niche_relevance_rewards_master_context_terms_not_generic_islam_label():
     aligned = {
         "title": "Cara Mengatasi Overthinking dan Cemas dengan Tawakal",
@@ -241,6 +284,25 @@ def test_niche_relevance_rewards_master_context_terms_not_generic_islam_label():
 
     assert niche_relevance_score(aligned, "islamic_mental_health") >= 50
     assert niche_relevance_score(generic, "islamic_mental_health") == 0
+
+
+def test_indonesian_niche_gate_rejects_english_zero_match_even_with_high_views():
+    english = {
+        "title": "Muslims Confront University Students You Need To See This",
+        "description": "A popular discussion with millions of views.",
+        "view_count": 10_000_000,
+    }
+    indonesian = {
+        "title": "Kisah Nabi yang Jarang Diketahui",
+        "description": "Kajian sejarah Islam untuk memahami hikmah para sahabat.",
+        "default_audio_language": "id",
+        "view_count": 5_000,
+    }
+
+    assert indonesian_language_score(english) == 0
+    assert niche_candidate_rejection_reason(english, "islamic_history")
+    assert indonesian_language_score(indonesian) == 100
+    assert niche_candidate_rejection_reason(indonesian, "islamic_history") == ""
 
 
 def test_selected_sources_limit_campaign_target_and_disable_auto_upload_when_requested():

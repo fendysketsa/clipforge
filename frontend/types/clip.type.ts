@@ -292,6 +292,7 @@ export type YouTubeCdpRepairStatus = {
 
 export type IslamicContentNiche =
   | "auto"
+  | "islamic_current_viral"
   | "islamic_mental_health"
   | "halal_wealth"
   | "fiqih_harian"
@@ -303,6 +304,8 @@ export type ViralContentSource = {
   title: string;
   uploader: string;
   duration?: number | null;
+  definition?: string;
+  height?: number | null;
   views: number;
   views_per_day: number;
   engagement_rate: number;
@@ -315,10 +318,18 @@ export type ViralContentSource = {
   niche: IslamicContentNiche;
   niche_label: string;
   niche_score: number;
+  language_score: number;
   ranking_reason: string;
 };
 
-export type ViralContentSearchRequest = {
+export type ViralSearchFilters = {
+  duration_filter: "any" | "under_3" | "between_3_20" | "over_20";
+  upload_date_filter: "today" | "this_week" | "this_month" | "this_year";
+  definition_filter: "any" | "hd";
+  sort_order: "popularity" | "relevance" | "newest";
+};
+
+export type ViralContentSearchRequest = ViralSearchFilters & {
   niche: IslamicContentNiche;
   video_count?: number;
   max_age_days?: number;
@@ -335,6 +346,10 @@ export type AutoViralRequest = {
   max_source_duration?: number;
   min_views?: number;
   max_age_days?: number;
+  duration_filter?: ViralSearchFilters["duration_filter"];
+  upload_date_filter?: ViralSearchFilters["upload_date_filter"];
+  definition_filter?: ViralSearchFilters["definition_filter"];
+  sort_order?: ViralSearchFilters["sort_order"];
   top?: number | null;
   min_duration?: number;
   max_duration?: number;
