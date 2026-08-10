@@ -21,6 +21,8 @@ def make_candidate(index: int, start: float, score: int, text: str) -> ClipCandi
         title=f"Candidate {index}",
         reason="heuristic",
         text=text,
+        key_point_score=score,
+        boundary_quality="kalimat_tuntas",
     )
 
 
@@ -102,6 +104,18 @@ def test_short_selection_deduplicates_the_same_main_point():
 
     assert different in selected
     assert sum(item is first or item is duplicate for item in selected) == 1
+
+
+def test_short_selection_excludes_candidates_that_upload_would_reject():
+    weak_point = make_candidate(0, 0, 99, "Hook kuat tetapi isi utamanya belum cukup jelas.")
+    weak_point.key_point_score = 54
+    hanging = make_candidate(0, 90, 98, "Poin kuat tetapi kalimatnya masih menggantung.")
+    hanging.boundary_quality = "menggantung"
+    ready = make_candidate(0, 180, 80, "Poin utama dan penutupnya sudah lengkap.")
+
+    selected = select_candidates([weak_point, hanging, ready], 3)
+
+    assert selected == [ready]
 
 
 def test_ai_rescore_disables_offline_provider_for_rest_of_job(monkeypatch, capsys):

@@ -2491,7 +2491,10 @@ def attach_monetization_provenance(
             payload.get("hook")
             and payload.get("core_message")
             and (
-                (key_point_score >= 55 and boundary_quality != "menggantung")
+                story_metrics_form_cohesive_editorial_arc(
+                    key_point_score,
+                    boundary_quality,
+                )
                 # Backward-compatible evidence for renders made just before the
                 # story metrics were persisted into every sidecar.
                 or (not boundary_quality and bool(camera_angles))
@@ -3245,8 +3248,31 @@ def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0
     )
 
 
+COHESIVE_EDITORIAL_MIN_KEY_POINT_SCORE = 55
+
+
+def story_metrics_form_cohesive_editorial_arc(
+    key_point_score: int,
+    boundary_quality: str,
+) -> bool:
+    """Keep render selection and upload-readiness story rules in sync."""
+    return bool(
+        key_point_score >= COHESIVE_EDITORIAL_MIN_KEY_POINT_SCORE
+        and boundary_quality != "menggantung"
+    )
+
+
+def candidate_has_cohesive_editorial_arc(candidate: ClipCandidate) -> bool:
+    return story_metrics_form_cohesive_editorial_arc(
+        candidate.key_point_score,
+        candidate.boundary_quality,
+    )
+
+
 def select_candidates(candidates: list[ClipCandidate], limit: int) -> list[ClipCandidate]:
-    candidates = candidates[:]
+    # A rendered short is advertised as ready to post, so do not select a
+    # candidate that the monetization preflight will inevitably reject later.
+    candidates = [item for item in candidates if candidate_has_cohesive_editorial_arc(item)]
     target_duration = 38
     candidates.sort(
         key=lambda item: candidate_rank_score(item, target_duration),
@@ -7770,6 +7796,18 @@ def main() -> int:
         )
         if args.clip_mode == "highlight_5m":
             compilation_candidates = candidates
+        else:
+            # Structural intro/ending edits recalculate story metrics. Guard
+            # against exporting a candidate that became incomplete afterward.
+            candidates = [
+                item for item in candidates if candidate_has_cohesive_editorial_arc(item)
+            ]
+            if not candidates:
+                console.print(
+                    "[red]No upload-ready clip candidates remained after structural edits. "
+                    "Try increasing --max or the analyzed duration.[/red]"
+                )
+                return 1
 
     save_json(work_dir / f"candidates{cache_suffix}.json", [asdict(item) for item in candidates])
     print_candidates(candidates)

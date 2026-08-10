@@ -24,6 +24,7 @@ from api import (
     generate_youtube_metadata,
     completed_upload_cleanup_after,
     create_youtube_upload_record,
+    create_youtube_upload_batch_records,
     monitor_youtube_upload_process,
     normalized_generated_metadata,
     youtube_monetization_preflight_issue,
@@ -86,6 +87,54 @@ def test_best_youtube_clip_urls_uses_candidate_scores():
     assert best_youtube_clip_urls(job, 3) == [
         "/outputs/demo/clips/clip_02.mp4",
         "/outputs/demo/clips/clip_04.mp4",
+        "/outputs/demo/clips/clip_03.mp4",
+    ]
+
+
+def test_automatic_upload_batch_skips_failed_preflight_instead_of_aborting(monkeypatch):
+    import api
+
+    job = ClipJob(
+        id="job-filtered-batch",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/demo"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[make_clip(1), make_clip(2), make_clip(3)],
+        candidates=[
+            make_candidate(1, 99),
+            make_candidate(2, 95),
+            make_candidate(3, 90),
+        ],
+    )
+    monkeypatch.setitem(api.jobs, job.id, job)
+    monkeypatch.setattr(
+        api,
+        "youtube_monetization_preflight_issue",
+        lambda _job, clip: "ending menggantung" if clip.name == "clip_01.mp4" else None,
+    )
+    monkeypatch.setattr(
+        api,
+        "create_youtube_upload_record",
+        lambda _job_id, request: YouTubeUploadJob(
+            id=request.clip_url,
+            source_job_id=job.id,
+            clip_url=request.clip_url,
+            clip_name=request.clip_url.rsplit("/", 1)[-1],
+            status="queued",
+            title="Test upload",
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+        ),
+    )
+
+    uploads = create_youtube_upload_batch_records(
+        job.id,
+        api.YouTubeBatchUploadRequest(best_count=2),
+    )
+
+    assert [upload.clip_url for upload in uploads] == [
+        "/outputs/demo/clips/clip_02.mp4",
         "/outputs/demo/clips/clip_03.mp4",
     ]
 

@@ -2929,9 +2929,30 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
     if job.status != "completed":
         raise HTTPException(status_code=409, detail="Job belum selesai")
 
-    clip_urls = list(dict.fromkeys(request.clip_urls or best_youtube_clip_urls(job, request.best_count)))
+    if request.clip_urls:
+        clip_urls = list(dict.fromkeys(request.clip_urls))
+    else:
+        # Rank the complete set first, then keep only clips that will pass the
+        # same preflight used by single uploads. One rejected top-ranked clip
+        # must not abort an otherwise valid automatic batch.
+        clips_by_url = {clip.url: clip for clip in job.clips}
+        ranked_urls = best_youtube_clip_urls(job, len(job.clips))
+        clip_urls = [
+            clip_url
+            for clip_url in ranked_urls
+            if (
+                (clip := clips_by_url.get(clip_url)) is not None
+                and youtube_monetization_preflight_issue(job, clip) is None
+            )
+        ][: request.best_count]
     if not clip_urls:
-        raise HTTPException(status_code=400, detail="Tidak ada clip untuk diupload")
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Tidak ada clip yang lolos audit upload. Render ulang agar kandidat "
+                "memiliki point utama dan ending tuntas."
+            ),
+        )
 
     uploads = [
         create_youtube_upload_record(
