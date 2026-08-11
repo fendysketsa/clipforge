@@ -158,6 +158,17 @@ Docker login:
 docker compose exec backend python youtube_uploader.py login
 ```
 
+On Linux, prepare the desktop bridge before starting/recreating Docker so the
+headed login window can use the active `DISPLAY` and Xauthority:
+
+```bash
+./scripts/prepare-youtube-gui-runtime.sh
+```
+
+`recreate-compose-up.sh` and `run-youtube-cdp-cli.sh` run this preparation
+automatically. Run it again after logging out of or restarting the desktop
+session, because the Xauthority cookie can change.
+
 Alternatively, reuse a Chromium/Chrome profile that is already logged in to the
 target YouTube channel by setting:
 

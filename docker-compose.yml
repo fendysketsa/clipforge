@@ -17,7 +17,9 @@ services:
       YOUTUBE_UPLOADS_PATH: /app/data/youtube_uploads.json
       YOUTUBE_PLAYWRIGHT_STATE: /app/data/youtube_storage_state.json
       DISPLAY: ${YOUTUBE_DISPLAY:-:1}
+      XAUTHORITY: /app/data/youtube-gui/Xauthority
       YOUTUBE_HOST_RUNTIME_DIR: /run/clipforge-host-user
+      YOUTUBE_GUI_BRIDGE_DIR: /app/data/youtube-gui
       YOUTUBE_LOGIN_HEADLESS: "false"
       YOUTUBE_CHROMIUM_USER_DATA_DIR: ${YOUTUBE_CHROMIUM_USER_DATA_DIR:-/app/data/youtube-playwright-profile}
       YOUTUBE_CHROMIUM_PROFILE_DIRECTORY: ${YOUTUBE_CHROMIUM_PROFILE_DIRECTORY:-}

@@ -1121,7 +1121,6 @@ def ensure_logged_in(page) -> None:
 
 
 def ensure_supported_studio_browser(page) -> None:
-    text = normalized_page_text(page)
     unsupported_patterns = (
         "sempurnakanpengalamananda",
         "browseryangtidakdidukung",
@@ -1129,11 +1128,41 @@ def ensure_supported_studio_browser(page) -> None:
         "unsupportedbrowser",
         "updateyourbrowser",
     )
-    if any(pattern in text for pattern in unsupported_patterns):
-        raise UploadError(
-            "YouTube Studio menolak browser otomatis backend sebagai browser lama/tidak didukung. "
-            "Update browser Playwright/backend, atau pakai Ambil Cookies CDP sebagai fallback session."
-        )
+    page_text = normalized_page_text(page)
+    if not any(pattern in page_text for pattern in unsupported_patterns):
+        return
+
+    current_url = str(getattr(page, "url", ""))
+    if "approve_browser_access=true" not in current_url.lower():
+        try:
+            approval_url = str(
+                page.evaluate(
+                    """
+                    () => document.querySelector('a[href*="approve_browser_access=true"]')?.href || ''
+                    """
+                )
+                or ""
+            ).strip()
+        except Exception:
+            approval_url = ""
+        if not approval_url.startswith("https://studio.youtube.com/"):
+            approval_url = "https://studio.youtube.com/upload?approve_browser_access=true"
+        try:
+            log("YouTube meminta konfirmasi kompatibilitas browser; melanjutkan lewat akses resmi Studio.")
+            page.goto(approval_url, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
+            page_text = normalized_page_text(page)
+            if not any(pattern in page_text for pattern in unsupported_patterns):
+                log("Konfirmasi akses browser YouTube Studio berhasil.")
+                return
+        except Exception as exc:
+            log(f"Konfirmasi akses browser YouTube Studio gagal: {exc}")
+
+    save_debug_artifacts(page, "youtube-browser-unsupported")
+    raise UploadError(
+        "YouTube Studio tetap menolak browser otomatis setelah konfirmasi akses resmi. "
+        "Update image Playwright/backend, lalu Login Sekali untuk menyegarkan session."
+    )
 
 
 def studio_channel_id_from_url(value: str) -> str:

@@ -1244,15 +1244,58 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
                     }
                 )
             else:
-                upload = upload.model_copy(
-                    update={
-                        "status": "failed",
-                        "updated_at": finished_at,
-                        "finished_at": finished_at,
-                        "duration_seconds": duration_between_iso(upload.started_at, finished_at),
-                        "error": "Backend restarted before this YouTube upload finished",
-                    }
+                file_selection_started = any(
+                    str(line).startswith("Video dipilih:")
+                    for line in upload.logs
                 )
+                if not file_selection_started:
+                    upload = upload.model_copy(
+                        update={
+                            "status": "queued",
+                            "updated_at": finished_at,
+                            "started_at": None,
+                            "finished_at": None,
+                            "duration_seconds": None,
+                            "logs": [
+                                *upload.logs,
+                                "Recovery restart: file belum dipilih di YouTube; upload dikembalikan ke antrean dengan aman.",
+                            ][-160:],
+                            "error": None,
+                        }
+                    )
+                else:
+                    upload = upload.model_copy(
+                        update={
+                            "status": "failed",
+                            "updated_at": finished_at,
+                            "finished_at": finished_at,
+                            "duration_seconds": duration_between_iso(upload.started_at, finished_at),
+                            "error": (
+                                "Backend restart setelah file dipilih; upload tidak diulang otomatis "
+                                "untuk mencegah video duplikat."
+                            ),
+                        }
+                    )
+        if (
+            upload.status == "failed"
+            and upload.error == "Backend restarted before this YouTube upload finished"
+            and not any(str(line).startswith("Video dipilih:") for line in upload.logs)
+        ):
+            recovered_at = now_iso()
+            upload = upload.model_copy(
+                update={
+                    "status": "queued",
+                    "updated_at": recovered_at,
+                    "started_at": None,
+                    "finished_at": None,
+                    "duration_seconds": None,
+                    "logs": [
+                        *upload.logs,
+                        "Recovery restart: upload lama belum memilih file dan dikembalikan ke antrean dengan aman.",
+                    ][-160:],
+                    "error": None,
+                }
+            )
         loaded[upload.id] = upload
     return loaded
 
@@ -3445,6 +3488,43 @@ def stop_youtube_cdp_processes() -> None:
         pass
 
 
+def youtube_graphical_process_env() -> dict[str, str]:
+    """Return an environment connected to the host desktop when available."""
+    process_env = os.environ.copy()
+    bridge_dir = Path(process_env.get("YOUTUBE_GUI_BRIDGE_DIR", "/app/data/youtube-gui"))
+    display_file = bridge_dir / "display"
+    try:
+        bridge_display = display_file.read_text(encoding="utf-8").strip().splitlines()[0]
+    except (OSError, IndexError):
+        bridge_display = ""
+    if bridge_display:
+        process_env["DISPLAY"] = bridge_display
+
+    configured_authority = process_env.get("XAUTHORITY", "")
+    authority_candidates = [Path(configured_authority)] if configured_authority else []
+    authority_candidates.append(bridge_dir / "Xauthority")
+    host_runtime_dir = Path(process_env.get("YOUTUBE_HOST_RUNTIME_DIR", "/run/clipforge-host-user"))
+    if host_runtime_dir.is_dir():
+        try:
+            authority_candidates.extend(
+                sorted(
+                    host_runtime_dir.glob(".mutter-Xwaylandauth.*"),
+                    key=lambda path: path.stat().st_mtime,
+                    reverse=True,
+                )
+            )
+        except OSError:
+            pass
+    for authority_path in authority_candidates:
+        if authority_path.is_file() and os.access(authority_path, os.R_OK):
+            process_env["XAUTHORITY"] = str(authority_path)
+            break
+
+    if (host_runtime_dir / "bus").exists():
+        process_env.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path={host_runtime_dir / 'bus'}")
+    return process_env
+
+
 def build_youtube_cdp_refresh_command() -> list[str]:
     configured = os.environ.get("YOUTUBE_CDP_REFRESH_COMMAND", "").strip()
     if configured:
@@ -3484,7 +3564,7 @@ def start_youtube_cdp_refresh_process(
     command = build_youtube_cdp_refresh_command()
     started_at = now_iso()
     YOUTUBE_CDP_REFRESH_LOG.parent.mkdir(parents=True, exist_ok=True)
-    process_env = os.environ.copy()
+    process_env = youtube_graphical_process_env()
     if force_profile_refresh:
         process_env["YOUTUBE_REFRESH_LOGIN_PROFILE"] = "true"
     if force_restart:
@@ -3579,19 +3659,8 @@ def run_youtube_login_process() -> None:
     global youtube_login_process, youtube_login_reconnect_cdp
     logs: list[str] = []
     try:
-        process_env = os.environ.copy()
+        process_env = youtube_graphical_process_env()
         process_env["YOUTUBE_LOGIN_HEADLESS"] = "false"
-        host_runtime_dir = Path(process_env.get("YOUTUBE_HOST_RUNTIME_DIR", "/run/clipforge-host-user"))
-        if host_runtime_dir.is_dir():
-            authority_files = sorted(
-                host_runtime_dir.glob(".mutter-Xwaylandauth.*"),
-                key=lambda path: path.stat().st_mtime,
-                reverse=True,
-            )
-            if authority_files:
-                process_env["XAUTHORITY"] = str(authority_files[0])
-            if (host_runtime_dir / "bus").exists():
-                process_env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={host_runtime_dir / 'bus'}"
         process = subprocess.Popen(
             build_youtube_login_command(),
             cwd=BASE_DIR,
@@ -4058,13 +4127,34 @@ def run_youtube_upload(upload_id: str) -> None:
             try:
                 refresh_status = start_youtube_cdp_refresh_process()
             except HTTPException as exc:
-                raise RuntimeError(str(exc.detail)) from exc
-            logs.append(refresh_status.message)
-            set_youtube_upload(upload_id, logs=logs[-160:])
-            if not refresh_status.cdp_ready and not youtube_cdp_ready():
-                raise RuntimeError(
-                    f"Chrome remote debugging belum aktif di {YOUTUBE_CDP_URL} setelah refresh command."
-                )
+                if youtube_upload_last_resort_fallback_allowed() and youtube_auth_state_exists():
+                    logs.append(f"Launcher Chrome CDP gagal: {exc.detail}")
+                    logs.append(
+                        f"Upload dialihkan otomatis ke Playwright storage-state: {YOUTUBE_PLAYWRIGHT_STATE}"
+                    )
+                    fallback_to_storage_state = True
+                    use_cdp_for_attempt = False
+                    set_youtube_upload(upload_id, logs=logs[-160:], error=None)
+                elif (
+                    youtube_upload_last_resort_fallback_allowed()
+                    and youtube_profile_upload_allowed()
+                    and youtube_chromium_profile_ready()
+                ):
+                    logs.append(f"Launcher Chrome CDP gagal: {exc.detail}")
+                    logs.append("Upload dialihkan otomatis ke profile Chromium backend langsung.")
+                    fallback_to_chromium_profile = True
+                    force_chromium_profile_for_attempt = True
+                    use_cdp_for_attempt = False
+                    set_youtube_upload(upload_id, logs=logs[-160:], error=None)
+                else:
+                    raise RuntimeError(str(exc.detail)) from exc
+            else:
+                logs.append(refresh_status.message)
+                set_youtube_upload(upload_id, logs=logs[-160:])
+                if not refresh_status.cdp_ready and not youtube_cdp_ready():
+                    raise RuntimeError(
+                        f"Chrome remote debugging belum aktif di {YOUTUBE_CDP_URL} setelah refresh command."
+                    )
         if not use_cdp_for_attempt and youtube_auth_state_exists():
             logs.append(f"Upload memakai Playwright storage state: {YOUTUBE_PLAYWRIGHT_STATE}")
             set_youtube_upload(upload_id, logs=logs[-160:])

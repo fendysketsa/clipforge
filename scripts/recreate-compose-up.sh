@@ -3,13 +3,16 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
-if [[ -f "$ROOT_DIR/.env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "$ROOT_DIR/.env"
-  set +a
-fi
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/load-dotenv.sh"
+load_dotenv "$ROOT_DIR/.env"
 
+"$ROOT_DIR/scripts/prepare-youtube-gui-runtime.sh"
+
+YOUTUBE_CDP_PORT="${YOUTUBE_CDP_PORT:-}"
+if [[ -z "$YOUTUBE_CDP_PORT" && "${YOUTUBE_CDP_URL:-}" =~ :([0-9]+)(/.*)?$ ]]; then
+  YOUTUBE_CDP_PORT="${BASH_REMATCH[1]}"
+fi
 YOUTUBE_CDP_PORT="${YOUTUBE_CDP_PORT:-9222}"
 CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME:-/tmp}/.config}"
 YOUTUBE_LOGIN_PROFILE_DIR="${YOUTUBE_LOGIN_PROFILE_DIR:-$CONFIG_HOME/clipforge/youtube-chrome-profile}"

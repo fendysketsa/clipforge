@@ -4,12 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-if [[ -f "$ROOT_DIR/.env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "$ROOT_DIR/.env"
-  set +a
-fi
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/load-dotenv.sh"
+load_dotenv "$ROOT_DIR/.env"
+
+"$ROOT_DIR/scripts/prepare-youtube-gui-runtime.sh"
 
 YOUTUBE_CDP_URL="${YOUTUBE_CDP_URL:-http://127.0.0.1:9222}"
 YOUTUBE_CHROME_LOG="${YOUTUBE_CHROME_LOG:-/tmp/clipforge-youtube-chrome.log}"

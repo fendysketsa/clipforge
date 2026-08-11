@@ -697,6 +697,146 @@ def test_running_upload_with_verified_url_recovers_as_completed(monkeypatch, tmp
     assert "tanpa upload ulang" in recovered.logs[-1]
 
 
+def test_running_upload_before_file_selection_returns_to_queue(monkeypatch, tmp_path):
+    import api
+
+    upload = YouTubeUploadJob(
+        id="recover-safe-upload",
+        source_job_id="job-1",
+        clip_url="/outputs/demo/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="running",
+        created_at="2026-08-11T01:00:00+00:00",
+        updated_at="2026-08-11T01:01:00+00:00",
+        started_at="2026-08-11T01:00:01+00:00",
+        title="Safe recovery",
+        logs=["Session YouTube belum login; menjalankan repair."],
+        error="temporary error",
+    )
+    uploads_path = tmp_path / "youtube_uploads.json"
+    uploads_path.write_text(json.dumps([upload.model_dump()]), encoding="utf-8")
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", uploads_path)
+
+    recovered = api.load_youtube_uploads()[upload.id]
+
+    assert recovered.status == "queued"
+    assert recovered.started_at is None
+    assert recovered.finished_at is None
+    assert recovered.error is None
+    assert "dikembalikan ke antrean" in recovered.logs[-1]
+
+
+def test_legacy_restart_failure_before_file_selection_returns_to_queue(monkeypatch, tmp_path):
+    import api
+
+    upload = YouTubeUploadJob(
+        id="recover-legacy-upload",
+        source_job_id="job-1",
+        clip_url="/outputs/demo/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="failed",
+        created_at="2026-08-11T01:00:00+00:00",
+        updated_at="2026-08-11T01:01:00+00:00",
+        started_at="2026-08-11T01:00:01+00:00",
+        finished_at="2026-08-11T01:01:00+00:00",
+        title="Legacy recovery",
+        logs=["Session YouTube belum login; menjalankan repair."],
+        error="Backend restarted before this YouTube upload finished",
+    )
+    uploads_path = tmp_path / "youtube_uploads.json"
+    uploads_path.write_text(json.dumps([upload.model_dump()]), encoding="utf-8")
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", uploads_path)
+
+    recovered = api.load_youtube_uploads()[upload.id]
+
+    assert recovered.status == "queued"
+    assert recovered.started_at is None
+    assert recovered.finished_at is None
+    assert recovered.error is None
+    assert "upload lama" in recovered.logs[-1]
+
+
+def test_running_upload_after_file_selection_is_not_retried(monkeypatch, tmp_path):
+    import api
+
+    upload = YouTubeUploadJob(
+        id="recover-unsafe-upload",
+        source_job_id="job-1",
+        clip_url="/outputs/demo/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="running",
+        created_at="2026-08-11T01:00:00+00:00",
+        updated_at="2026-08-11T01:01:00+00:00",
+        started_at="2026-08-11T01:00:01+00:00",
+        title="Unsafe recovery",
+        logs=["Dialog upload siap.", "Video dipilih: clip_01.mp4"],
+    )
+    uploads_path = tmp_path / "youtube_uploads.json"
+    uploads_path.write_text(json.dumps([upload.model_dump()]), encoding="utf-8")
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", uploads_path)
+
+    recovered = api.load_youtube_uploads()[upload.id]
+
+    assert recovered.status == "failed"
+    assert recovered.finished_at is not None
+    assert "mencegah video duplikat" in (recovered.error or "")
+
+
+def test_upload_falls_back_to_storage_state_when_cdp_launcher_fails(monkeypatch, tmp_path):
+    import api
+
+    outputs = tmp_path / "outputs"
+    clip_path = outputs / "demo" / "clips" / "clip_01.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"video")
+    upload = YouTubeUploadJob(
+        id="cdp-fallback-upload",
+        source_job_id="job-1",
+        clip_url="/outputs/demo/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="queued",
+        created_at="2026-08-11T01:00:00+00:00",
+        updated_at="2026-08-11T01:00:00+00:00",
+        title="CDP fallback",
+    )
+    command_modes = []
+
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", tmp_path / "youtube_uploads.json")
+    monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+    monkeypatch.setenv("YOUTUBE_UPLOAD_USE_CDP", "true")
+    monkeypatch.setenv("YOUTUBE_UPLOAD_FORCE_CDP", "true")
+    monkeypatch.setenv("YOUTUBE_UPLOAD_ALLOW_LAST_RESORT_FALLBACK", "true")
+    monkeypatch.setattr(api, "youtube_cdp_ready", lambda: False)
+    monkeypatch.setattr(api, "youtube_auth_state_exists", lambda: True)
+    monkeypatch.setattr(
+        api,
+        "start_youtube_cdp_refresh_process",
+        lambda: (_ for _ in ()).throw(HTTPException(status_code=409, detail="launcher failed")),
+    )
+
+    def fake_build_command(_upload, *, use_cdp_override=None, force_chromium_profile=False):
+        command_modes.append((use_cdp_override, force_chromium_profile))
+        return [sys.executable, "youtube_uploader.py", "upload", str(clip_path)]
+
+    def fake_monitor(_process, on_line, **_kwargs):
+        on_line("VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345")
+        return 0, False
+
+    monkeypatch.setattr(api, "build_youtube_upload_command", fake_build_command)
+    monkeypatch.setattr(api.subprocess, "Popen", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(api, "monitor_youtube_upload_process", fake_monitor)
+    monkeypatch.setattr(api, "cleanup_youtube_staging_file", lambda *_args: False)
+    monkeypatch.setattr(api, "schedule_completed_upload_cleanup", lambda _upload_id: None)
+
+    api.run_youtube_upload(upload.id)
+
+    completed = api.youtube_uploads[upload.id]
+    assert completed.status == "completed"
+    assert command_modes == [(False, False)]
+    assert any("dialihkan otomatis" in line for line in completed.logs)
+
+
 def test_start_youtube_cdp_refresh_process_uses_configured_command(monkeypatch, tmp_path):
     import api
 
@@ -723,6 +863,26 @@ def test_start_youtube_cdp_refresh_process_uses_configured_command(monkeypatch, 
     assert status.log_path == str(tmp_path / "chrome-refresh.log")
     assert calls[0][0] == ["/bin/echo", "refresh"]
     assert calls[0][1]["start_new_session"] is True
+
+
+def test_youtube_graphical_process_env_uses_readable_bridge(monkeypatch, tmp_path):
+    import api
+
+    bridge_dir = tmp_path / "youtube-gui"
+    bridge_dir.mkdir()
+    authority_path = bridge_dir / "Xauthority"
+    authority_path.write_bytes(b"desktop-cookie")
+    (bridge_dir / "display").write_text(":2\n", encoding="utf-8")
+
+    monkeypatch.setenv("YOUTUBE_GUI_BRIDGE_DIR", str(bridge_dir))
+    monkeypatch.setenv("YOUTUBE_HOST_RUNTIME_DIR", str(tmp_path / "missing-runtime"))
+    monkeypatch.setenv("DISPLAY", ":99")
+    monkeypatch.setenv("XAUTHORITY", str(tmp_path / "missing-Xauthority"))
+
+    process_env = api.youtube_graphical_process_env()
+
+    assert process_env["DISPLAY"] == ":2"
+    assert process_env["XAUTHORITY"] == str(authority_path)
 
 
 def test_sync_youtube_cdp_requires_existing_cdp(monkeypatch):

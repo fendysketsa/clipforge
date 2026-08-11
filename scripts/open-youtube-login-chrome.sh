@@ -60,12 +60,9 @@ EOF
   esac
   shift
 done
-if [[ -f "$ROOT_DIR/.env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "$ROOT_DIR/.env"
-  set +a
-fi
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/load-dotenv.sh"
+load_dotenv "$ROOT_DIR/.env"
 [[ -n "$ENV_YOUTUBE_CDP_PORT" ]] && YOUTUBE_CDP_PORT="$ENV_YOUTUBE_CDP_PORT"
 [[ -n "$ENV_YOUTUBE_CDP_URL" ]] && YOUTUBE_CDP_URL="$ENV_YOUTUBE_CDP_URL"
 [[ -n "$ENV_YOUTUBE_LOGIN_SOURCE_PROFILE_DIR" ]] && YOUTUBE_LOGIN_SOURCE_PROFILE_DIR="$ENV_YOUTUBE_LOGIN_SOURCE_PROFILE_DIR"
@@ -96,6 +93,7 @@ YOUTUBE_CHROME_START_MINIMIZED="${YOUTUBE_CHROME_START_MINIMIZED:-false}"
 YOUTUBE_CHROME_HEADLESS="${YOUTUBE_CHROME_HEADLESS:-false}"
 YOUTUBE_CHROME_BACKGROUND="${YOUTUBE_CHROME_BACKGROUND:-false}"
 YOUTUBE_HOST_RUNTIME_DIR="${YOUTUBE_HOST_RUNTIME_DIR:-/run/clipforge-host-user}"
+YOUTUBE_GUI_BRIDGE_DIR="${YOUTUBE_GUI_BRIDGE_DIR:-/app/data/youtube-gui}"
 
 if [[ "${IN_DOCKER:-}" != "1" ]]; then
   if [[ "$YOUTUBE_LOGIN_PROFILE_DIR" == /app/data/* ]]; then
@@ -260,11 +258,20 @@ if [[ "$CLI_YOUTUBE_USE_DESKTOP_PROFILE" != "true" ]]; then
   find "$YOUTUBE_LOGIN_PROFILE_DIR" -maxdepth 2 -name 'Singleton*' -delete 2>/dev/null || true
 fi
 
-# The backend container mounts the host desktop runtime read-only. Chrome needs
-# the same Xauthority/DBus values already used by the Playwright login flow;
-# without these it exits with code 1 before its CDP port becomes reachable.
-if [[ "$YOUTUBE_CHROME_HEADLESS" != "true" && -d "$YOUTUBE_HOST_RUNTIME_DIR" ]]; then
+# The bridge is a readable copy of the host Xauthority. It is needed on Docker
+# installations where user namespace mapping cannot traverse /run/user/<uid>.
+if [[ "$YOUTUBE_CHROME_HEADLESS" != "true" ]]; then
+  if [[ -r "$YOUTUBE_GUI_BRIDGE_DIR/display" ]]; then
+    bridge_display="$(head -n 1 "$YOUTUBE_GUI_BRIDGE_DIR/display" | tr -d '\r\n')"
+    [[ -n "$bridge_display" ]] && DISPLAY="$bridge_display" && export DISPLAY
+  fi
   if [[ -z "${XAUTHORITY:-}" || ! -r "${XAUTHORITY:-}" ]]; then
+    if [[ -r "$YOUTUBE_GUI_BRIDGE_DIR/Xauthority" ]]; then
+      XAUTHORITY="$YOUTUBE_GUI_BRIDGE_DIR/Xauthority"
+      export XAUTHORITY
+    fi
+  fi
+  if [[ ( -z "${XAUTHORITY:-}" || ! -r "${XAUTHORITY:-}" ) && -d "$YOUTUBE_HOST_RUNTIME_DIR" ]]; then
     shopt -s nullglob
     authority_files=("$YOUTUBE_HOST_RUNTIME_DIR"/.mutter-Xwaylandauth.*)
     shopt -u nullglob
