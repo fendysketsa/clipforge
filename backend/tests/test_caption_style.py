@@ -21,6 +21,7 @@ from clipper import (
     analyze_embedded_split_frame,
     analyze_text_heavy_backdrop,
     apply_codex_structural_edit,
+    auto_fyp_visual_plan,
     build_candidate_pool,
     build_subtitle_style,
     candidate_fyp_analysis,
@@ -630,6 +631,7 @@ def test_monetization_provenance_records_rights_and_originality(tmp_path):
         '{"output_format":"vertical_short","enhanced_edit":true,'
         '"hook":"Hook","pov":"Sudut pandang","core_message":"Inti",'
         '"thumbnail_strategy":"embedded_shorts_cover_frame",'
+        '"auto_fyp_visual_plan":{"content_derived":true},'
         '"virtual_camera_angles":[{"start":4,"end":6}],'
         '"applied_edits":["a","b","c"]}',
         encoding="utf-8",
@@ -662,6 +664,7 @@ def test_compilation_story_arc_counts_as_substantive_transformation(tmp_path):
         '{"output_format":"landscape_compilation","enhanced_edit":true,'
         '"hook":"Hook","pov":"Sudut pandang","core_message":"Alur inti",'
         '"thumbnail_strategy":"custom_long_form_upload",'
+        '"auto_fyp_visual_system":{"chapter_accents_are_content_derived":true},'
         '"story_arc":[{"index":1},{"index":2},{"index":3}],'
         '"applied_edits":["pembuka dipangkas"]}',
         encoding="utf-8",
@@ -849,7 +852,31 @@ def test_shorts_policy_compliance_records_official_and_stricter_local_limits():
     assert compliance["duration_within_clipforge_limit"] is True
     assert compliance["custom_thumbnail_upload_supported"] is False
     assert compliance["thumbnail_strategy"] == "embedded_selectable_frame"
+    assert compliance["inauthentic_content_policy_reviewed"] is True
+    assert compliance["claimed_content_over_one_minute_block_risk"] is False
     assert compliance["recommendation_or_monetization_guarantee"] is False
+
+
+def test_auto_fyp_visual_plan_uses_archival_accent_only_when_story_supports_it():
+    clip = ClipCandidate(
+        index=1,
+        start=0,
+        end=45,
+        duration=45,
+        score=90,
+        title="Sejarah Peradaban Islam",
+        reason="alur kuat",
+        text="Arsip dokumenter ini membahas khalifah dan pelajaran dari masa lalu.",
+        hook="Apa yang terlupakan dari sejarah ini?",
+        pov="Melihat hikmah sejarah untuk hari ini",
+    )
+
+    plan = auto_fyp_visual_plan(clip, "vertical_short")
+
+    assert plan["base"] == "cinematic_clean_detail"
+    assert plan["accent"] == "retro_archive"
+    assert plan["content_derived"] is True
+    assert plan["stack_all_effects"] is False
 
 
 def test_thumbnail_story_copy_is_compact_and_truthful():

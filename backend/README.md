@@ -92,12 +92,12 @@ Default output video:
 - frame cover Shorts 9:16 ditanam pada opening sebagai kartu putih-kuning berbasis hook transcript; keyframe 0,78 detik dibuat agar frame mudah dipilih lewat aplikasi YouTube (Shorts tidak menerima upload thumbnail gambar kustom)
 - CTA `SUBSCRIBE + FOLLOW` muncul singkat di atas payoff yang masih bergerak, tanpa menambah outro kosong atau fade yang memutus loop
 - seluruh output short dan kompilasi long-form mendapat kabut asap putih bergerak yang halus di tepi bawah/sudut; overlay dibuat prosedural pada resolusi rendah, divariasikan dari isi cerita, dan dirender di bawah subtitle/watermark agar wajah serta teks tetap jelas
-- guardrail kebijakan Shorts dicatat di sidecar render: batas resmi 180 detik, batas internal konservatif 60 detik, strategi thumbnail frame-tertanam, dan kewajiban review hak/orisinalitas
-- Auto Search frontend memakai empat master niche evergreen Islami (mental health, halal wealth, fiqih harian, dan sejarah Islam), mengambil pool kandidat CC, lalu menampilkan Top 3 berdasarkan kecocokan niche + views/hari + engagement + freshness sebelum pengguna memasukkannya ke antrean clipping
+- guardrail kebijakan Shorts dicatat di sidecar render: batas resmi 180 detik, batas internal konservatif 60 detik, risiko blokir Content ID di atas satu menit, strategi thumbnail frame-tertanam, serta kewajiban review hak/orisinalitas dan inauthentic-content
+- Auto Search frontend membandingkan isu Muslim terkini dan empat master niche evergreen Islami (mental health, halal wealth, fiqih harian, dan sejarah Islam), lalu menampilkan Top 3 CC Indonesia berdasarkan kecocokan niche + views/hari + engagement + freshness
 - hook visual/audio, reaction kontekstual, dan pattern interrupt
 - klip berkonteks Islami otomatis mendapat backsong motivasional instrumental "Cahaya Hikmah" yang disintesis lokal, berlisensi CC0, dan di-duck agar dialog tetap jelas
-- mode visual `auto_fyp` aktif secara default dengan pipeline clean-detail: koreksi warna ringan, adaptive clarity pada tahap akhir, reframe hanya di beat penting, tanpa blurred frame/gradient/kartu besar di atas wajah
-- mode `animated_3d` tetap tersedia bila memang menginginkan denoise temporal, warna film animasi, depth contrast, dan outline halus
+- mode visual tunggal `auto_fyp` dipakai untuk short dan long-form: basis clean-detail sinematik memilih aksen depth 3D, arsip TV, reframe, atau speaker split secara selektif dari isi cerita
+- nama mode visual lama tetap dapat dibaca untuk kompatibilitas, tetapi otomatis dimigrasikan ke `auto_fyp`
 - background asli dipertahankan secara default; pembersihan backdrop dan panel speaker-split tetap tersedia sebagai pilihan khusus
 - blur watermark sumber memakai konsensus edge multi-frame konservatif (persistence minimal 0,78), menolak pola subtitle bawah dan detail non-text, memakai kotak persentil yang membuang outlier morfologi, padding mengikuti tinggi glyph, serta tepi feather transparan agar blur hanya mengenai logo tanpa kotak gelap atau seam keras
 - intisari ucapan asli disimpan di metadata; mode clean-detail tidak menutup wajah dengan kartu intisari besar
@@ -116,7 +116,7 @@ Default output video:
 Untuk membuat satu clip resume sinematik 5–10 menit (bukan Short), pilih target 300–600 detik:
 
 ```powershell
-.\.venv\Scripts\python.exe clipper.py "URL" --clip-mode highlight_5m --compilation-target 600 --min 30 --max 90 --visual-mode cinematic --ai-enabled
+.\.venv\Scripts\python.exe clipper.py "URL" --clip-mode highlight_5m --compilation-target 600 --min 30 --max 90 --visual-mode auto_fyp --ai-enabled
 ```
 
 If CPU feels too slow, use a smaller model:

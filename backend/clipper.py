@@ -2548,6 +2548,8 @@ def attach_monetization_provenance(
         sound_effect_cues = payload.get("sound_effect_cues")
         dynamic_captions = payload.get("dynamic_captions")
         edit_signature = payload.get("content_edit_signature")
+        auto_visual_plan = payload.get("auto_fyp_visual_plan")
+        auto_visual_system = payload.get("auto_fyp_visual_system")
         boundary_quality = str(payload.get("boundary_quality") or "")
         try:
             key_point_score = int(payload.get("key_point_score") or 0)
@@ -2584,6 +2586,16 @@ def attach_monetization_provenance(
                 isinstance(edit_signature, dict)
                 and edit_signature.get("derived_from_story")
             ),
+            "content_adaptive_visual_direction": bool(
+                (
+                    isinstance(auto_visual_plan, dict)
+                    and auto_visual_plan.get("content_derived")
+                )
+                or (
+                    isinstance(auto_visual_system, dict)
+                    and auto_visual_system.get("chapter_accents_are_content_derived")
+                )
+            ),
             "structured_story_arc": bool(
                 is_compilation and isinstance(story_arc, list) and len(story_arc) >= 3
             ),
@@ -2603,6 +2615,7 @@ def attach_monetization_provenance(
             and originality_signals["editorial_hook_and_context"]
             and originality_signals["original_core_message"]
             and originality_signals["cohesive_editorial_arc"]
+            and originality_signals["content_adaptive_visual_direction"]
             and substantive_transformation
             and originality_score >= minimum_score
         )
@@ -2622,7 +2635,7 @@ def attach_monetization_provenance(
             "commercial_rights_confirmation_required": uploaded_source,
             "originality_score": originality_score,
             "minimum_originality_score": minimum_score,
-            "audit_version": 3,
+            "audit_version": 4,
             "signals": originality_signals,
             "substantive_transformation": substantive_transformation,
             "original_creator_commentary_present": bool(
@@ -2633,6 +2646,13 @@ def attach_monetization_provenance(
                 "Komentar/kehadiran kreator asli tetap merupakan bukti transformasi terkuat."
             ),
             "channel_level_review_still_applies": True,
+            "youtube_policy_reviewed_on": SHORTS_POLICY_REVIEW_DATE,
+            "inauthentic_content_policy": {
+                "mass_produced_or_repetitive_content_ineligible": True,
+                "content_specific_story_and_visual_direction_required": True,
+                "reused_content_policy_separately_applies": True,
+                "channel_wide_manual_review_still_applies": True,
+            },
             "guarantee": False,
         }
         save_json(sidecar_path, payload)
@@ -3532,8 +3552,10 @@ AI_SYSTEM_PROMPT = (
     "transcript. Authentic humor, witty answers, and naturally funny reactions are also high-value retention "
     "moments. For evergreen Islamic content, apply these editorial lenses when the transcript supports them: "
     "mental-health clips must feel empathetic and calming, connect a relatable modern struggle to a practical "
-    "Islamic principle, and never shame the viewer; halal-wealth clips must explain riba, clean income, finance, "
-    "or career ethics in plain language with one usable takeaway; daily-fiqh clips must isolate one correctable "
+    "Islamic principle, never diagnose the viewer, promise healing, or replace professional help; halal-wealth "
+    "clips must explain riba, clean income, finance, or career ethics in plain language with one usable takeaway, "
+    "without guaranteed returns or personalized financial claims; current-issue clips must distinguish verified "
+    "events, speaker opinion, and unresolved claims without inventing accusations; daily-fiqh clips must isolate one correctable "
     "worship detail and preserve the speaker's evidence without inventing rulings; Islamic-history clips must "
     "build an accurate premise-conflict-payoff arc with an explicit lesson for life today. Prefer a specific "
     "problem, correction, contrast, or transformation over generic preaching. "
@@ -3977,7 +3999,7 @@ SHORTS_SAFE_TOP = 220
 SHORTS_SAFE_BOTTOM = 1560
 SHORTS_OFFICIAL_MAX_SECONDS = 180
 CLIPFORGE_SHORTS_MAX_SECONDS = 60
-SHORTS_POLICY_REVIEW_DATE = "2026-08-10"
+SHORTS_POLICY_REVIEW_DATE = "2026-08-11"
 
 
 def wrap_subtitle(text: str, max_chars: int = SUBTITLE_MAX_CHARS, max_lines: int = SUBTITLE_MAX_LINES) -> str:
@@ -4027,6 +4049,78 @@ def content_edit_variation(clip: ClipCandidate, variants: int = 6) -> int:
     )
     digest = hashlib.sha256(fingerprint.encode("utf-8")).digest()
     return int.from_bytes(digest[:2], "big") % safe_variants
+
+
+ARCHIVAL_VISUAL_WORDS = {
+    "arsip",
+    "dahulu",
+    "dinasti",
+    "dokumenter",
+    "jadul",
+    "khalifah",
+    "kerajaan",
+    "masa lalu",
+    "peradaban",
+    "sejarah",
+    "tempo dulu",
+    "tokoh",
+}
+
+DEPTH_VISUAL_WORDS = {
+    "berubah",
+    "hikmah",
+    "inspirasi",
+    "kisah",
+    "pelajaran",
+    "perjalanan",
+    "rahasia",
+    "solusi",
+    "transformasi",
+}
+
+
+def auto_fyp_visual_plan(
+    clip: ClipCandidate,
+    output_format: OutputFormat,
+) -> dict[str, object]:
+    """Choose one restrained accent on top of a consistent cinematic base.
+
+    The decision is derived from the story rather than export order, providing
+    visible variation without stacking every effect or producing a batch of
+    near-identical templates.
+    """
+    searchable = re.sub(
+        r"\s+",
+        " ",
+        f"{clip.title} {clip.hook} {clip.pov} {clip.text}".casefold(),
+    )
+    words = set(re.findall(r"[\w']+", searchable))
+    variation = content_edit_variation(clip)
+    archival_match = any(term in searchable for term in ARCHIVAL_VISUAL_WORDS)
+    depth_match = bool(words.intersection(DEPTH_VISUAL_WORDS))
+
+    if archival_match:
+        accent = "retro_archive"
+        reason = "historical_or_archival_story_signal"
+    elif depth_match and variation in {1, 3, 5}:
+        accent = "animated_depth"
+        reason = "story_depth_signal"
+    else:
+        accent = "cinematic_clean"
+        reason = "clarity_and_authenticity_priority"
+
+    return {
+        "version": 1,
+        "base": "cinematic_clean_detail",
+        "accent": accent,
+        "reason": reason,
+        "content_derived": True,
+        "variation": variation,
+        "speaker_split": (
+            "detect_two_speakers" if output_format == "landscape_compilation" else "off"
+        ),
+        "stack_all_effects": False,
+    }
 
 
 def hook_banner_text(clip: ClipCandidate) -> str:
@@ -4346,6 +4440,11 @@ def shorts_policy_compliance(duration: float, *, embedded_cover: bool) -> dict[s
             "embedded_selectable_frame" if embedded_cover else "rendered_video_frame"
         ),
         "source_promos_removed_from_candidate_windows": True,
+        "inauthentic_content_policy_reviewed": True,
+        "mass_produced_or_repetitive_content_not_assumed_monetizable": True,
+        "non_original_shorts_views_may_be_ineligible": True,
+        "claimed_content_over_one_minute_block_risk": safe_duration > 60,
+        "content_id_claim_check_required_before_publication": True,
         "rights_and_originality_review_required": True,
         "channel_level_review_still_applies": True,
         "recommendation_or_monetization_guarantee": False,
@@ -6175,7 +6274,9 @@ SOCIAL_CAPTION_SYSTEM_PROMPT = (
     "Open with a strong hook, keep it punchy, add a soft call-to-action, a few relevant emojis, "
     "and 5-8 niche hashtags. For Islamic mystery, myth, supernatural, and horror content, keep the "
     "distinction between religious teaching, story, folklore, personal experience, and verified fact. "
-    "Do not invent certainty. Never mention, thank, promote, credit, or ask viewers to follow the source "
+    "Do not invent certainty, medical outcomes, guaranteed financial returns, or allegations about real people. "
+    "Phrase unverified current-event statements as the speaker's claim, not an established fact. "
+    "Never mention, thank, promote, credit, or ask viewers to follow the source "
     "channel, another channel, TV station, media brand, uploader, or sponsor. Reply ONLY with strict JSON, "
     "no markdown."
 )
@@ -6370,6 +6471,21 @@ def export_clip(
     edit_variation = content_edit_variation(clip)
     adaptive_plan = codex_edit_plan(clip)
     theme_profile = visual_theme_profile(clip)
+    auto_visual_plan = (
+        auto_fyp_visual_plan(clip, output_format)
+        if visual_mode == "auto_fyp"
+        else {
+            "version": 1,
+            "base": "legacy_manual_mode",
+            "accent": visual_mode,
+            "reason": "legacy_request",
+            "content_derived": False,
+            "variation": edit_variation,
+            "speaker_split": "manual" if visual_mode == "speaker_split" else "off",
+            "stack_all_effects": False,
+        }
+    )
+    auto_visual_accent = str(auto_visual_plan["accent"])
     islamic_background_music = clip_has_islamic_context(clip)
     music_ducking_supported = islamic_background_music and ffmpeg_has_filter(
         "sidechaincompress"
@@ -6377,7 +6493,11 @@ def export_clip(
     emphasis_times = emphasis_timestamps(clip, clip_segments)
     pov_windows = (
         cinematic_pov_windows(clip, clip_segments)
-        if visual_mode == "animated_3d" and output_format == "vertical_short"
+        if (
+            visual_mode == "animated_3d"
+            or auto_visual_accent == "animated_depth"
+        )
+        and output_format == "vertical_short"
         else None
     )
     camera_angle_cues = (
@@ -6437,12 +6557,17 @@ def export_clip(
     applied_edits.extend(resolved_idea_edits)
     applied_edits = list(dict.fromkeys(applied_edits))
     subtitles_supported = ffmpeg_has_filter("subtitles")
-    reaction_overlays_supported = visual_mode not in {"cinematic", "animated_3d", "retro_tv"} and output_format == "vertical_short" and (
+    reaction_overlays_supported = (
+        visual_mode not in {"cinematic", "animated_3d", "retro_tv"}
+        and auto_visual_accent != "retro_archive"
+        and output_format == "vertical_short"
+        and (
         ffmpeg_has_filter("movie")
         and ffmpeg_has_filter("overlay")
         and ffmpeg_has_filter("rotate")
         and ffmpeg_has_filter("colorchannelmixer")
         and all((REACTION_ASSET_DIR / f"{cue.kind}.svg").is_file() for cue in reaction_cues)
+        )
     )
     write_srt(srt_path, clip_segments, clip.start, duration)
     dynamic_caption_cues = 0
@@ -6513,6 +6638,7 @@ def export_clip(
         "video_quality": video_quality,
         "output_format": output_format,
         "visual_mode": visual_mode,
+        "auto_fyp_visual_plan": auto_visual_plan,
         "background_mode": background_mode,
         "clean_detail_pipeline": clean_detail_pipeline,
         "detail_encoding": {
@@ -6710,7 +6836,7 @@ def export_clip(
                 else "unsupported_output_or_filters"
             ),
         }
-    if visual_mode == "animated_3d":
+    if visual_mode == "animated_3d" or auto_visual_accent == "animated_depth":
         core_supported = all(
             ffmpeg_has_filter(name)
             for name in ("hqdn3d", "curves", "colorbalance")
@@ -6732,6 +6858,7 @@ def export_clip(
         vf = f"{vf},{animated_filter}"
         sidecar_payload["animated_3d"] = {
             "enabled": True,
+            "selected_by_auto_fyp": auto_visual_accent == "animated_depth",
             "outline": outline_supported,
             "adaptive_sharpen": adaptive_sharpen_supported,
             "method": (
@@ -6870,11 +6997,12 @@ def export_clip(
         vf = f"{vf},{viral_title_overlay_filter(cover_text_path.name, duration)}"
     if clean_detail_pipeline and not enhanced_edit:
         vf = add_quality_sharpen(vf, video_quality)
-    if visual_mode == "retro_tv":
+    if visual_mode == "retro_tv" or auto_visual_accent == "retro_archive":
         curves_supported = ffmpeg_has_filter("curves")
         vf = f"{vf},{retro_tv_look_filter(with_curves=curves_supported)}"
         sidecar_payload["retro_tv"] = {
             "enabled": True,
+            "selected_by_auto_fyp": auto_visual_accent == "retro_archive",
             "monochrome": True,
             "animated_grain": True,
             "scanlines": True,
@@ -7588,6 +7716,19 @@ def export_compilation(
             else "cinematic_blurred_frame_with_chapter_cards"
         ),
         "visual_mode": visual_mode,
+        "auto_fyp_visual_system": {
+            "version": 1,
+            "base": "cinematic_clean_detail",
+            "chapter_accents_are_content_derived": visual_mode == "auto_fyp",
+            "available_accents": [
+                "cinematic_clean",
+                "animated_depth",
+                "retro_archive",
+                "speaker_aware_split",
+            ],
+            "stack_all_effects": False,
+            "mass_template_repetition_risk_reduced": visual_mode == "auto_fyp",
+        },
         "background_mode": background_mode,
         "altered_content_disclosure_required": altered_content_disclosure_required,
         "enhanced_edit": enhanced_edit,
@@ -7768,7 +7909,7 @@ def parse_args() -> argparse.Namespace:
         "--visual-mode",
         choices=["auto_fyp", "cinematic", "speaker_split", "animated_3d", "retro_tv"],
         default="auto_fyp",
-        help="Adaptive FYP visuals, stable cinematic frame, speaker split-screen, a local 3D animated look, or an old-TV effect",
+        help="Auto FYP is the unified pipeline; legacy style names are accepted and migrated automatically",
     )
     parser.add_argument(
         "--background-mode",
@@ -7832,6 +7973,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+
+    if args.visual_mode != "auto_fyp":
+        console.print(
+            f"[yellow]Mode visual lama '{args.visual_mode}' dimigrasikan ke Auto FYP adaptif.[/yellow]"
+        )
+        args.visual_mode = "auto_fyp"
 
     if args.clip_mode == "short" and args.max > CLIPFORGE_SHORTS_MAX_SECONDS:
         console.print(

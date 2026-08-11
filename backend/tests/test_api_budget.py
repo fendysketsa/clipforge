@@ -11,6 +11,7 @@ from api import (
     ViralVideoSearchRequest,
     _models_from_payload,
     auto_viral_candidate_score,
+    best_matching_niche,
     build_clipper_command,
     choose_auto_analyze_seconds,
     default_viral_video_search_queries,
@@ -201,14 +202,14 @@ def test_new_jobs_default_to_clean_detail_auto_fyp_visuals():
     assert AutoViralRequest().background_mode == "keep"
 
 
-def test_jobs_accept_retro_tv_visuals():
+def test_legacy_visual_modes_are_migrated_to_auto_fyp():
     request = ClipJobRequest(source_file="/tmp/source.mp4", visual_mode="retro_tv")
     auto_request = AutoViralRequest(visual_mode="retro_tv")
 
-    assert request.visual_mode == "retro_tv"
-    assert auto_request.visual_mode == "retro_tv"
+    assert request.visual_mode == "auto_fyp"
+    assert auto_request.visual_mode == "auto_fyp"
     command = build_clipper_command(request)
-    assert command[command.index("--visual-mode") + 1] == "retro_tv"
+    assert command[command.index("--visual-mode") + 1] == "auto_fyp"
 
 
 def test_configured_viral_queries_are_extended_not_replaced(monkeypatch):
@@ -286,6 +287,19 @@ def test_niche_relevance_rewards_master_context_terms_not_generic_islam_label():
 
     assert niche_relevance_score(aligned, "islamic_mental_health") >= 50
     assert niche_relevance_score(generic, "islamic_mental_health") == 0
+
+
+def test_auto_niche_selects_the_strongest_supported_theme():
+    source = {
+        "title": "Cara Mengatasi Overthinking dan Cemas dengan Tawakal",
+        "description": "Psikologi Islam untuk ketenangan hati dan emosi.",
+    }
+
+    niche, score = best_matching_niche(source)
+
+    assert niche == "islamic_mental_health"
+    assert score >= 50
+    assert niche_relevance_score(source, "auto") == score
 
 
 def test_indonesian_niche_gate_rejects_english_zero_match_even_with_high_views():

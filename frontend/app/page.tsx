@@ -139,7 +139,7 @@ export default function HomePage() {
   const [youtubeConfig, setYoutubeConfig] = useState<YouTubeConfig | null>(null);
   const [youtubeUploads, setYoutubeUploads] = useState<YouTubeUploadJob[]>([]);
   const [autoViralRun, setAutoViralRun] = useState<AutoViralRun | null>(null);
-  const [autoContentNiche, setAutoContentNiche] = useState<IslamicContentNiche>("islamic_current_viral");
+  const [autoContentNiche, setAutoContentNiche] = useState<IslamicContentNiche>("auto");
   const [autoContentSources, setAutoContentSources] = useState<ViralContentSource[]>([]);
   const [selectedAutoContentUrls, setSelectedAutoContentUrls] = useState<string[]>([]);
   const [autoContentMessage, setAutoContentMessage] = useState("");
@@ -198,7 +198,6 @@ export default function HomePage() {
       setMinDuration(30);
       setMaxDuration(90);
       setCompilationTargetSeconds(COMPILATION_TARGET_SECONDS);
-      setVisualMode("cinematic");
       setBackgroundMode("keep");
     } else {
       setMinDuration(DEFAULT_MIN_DURATION);

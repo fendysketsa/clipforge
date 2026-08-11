@@ -59,17 +59,7 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
               {job.request.min_duration}s - {job.request.max_duration}s
             </span>
             <span>{job.request.enhanced_edit ? "Edit adaptif sinematik aktif" : "Edit standar"}</span>
-            <span>
-              {job.request.visual_mode === "animated_3d"
-                ? "Visual 3D Animated"
-                : job.request.visual_mode === "retro_tv"
-                  ? "Efek TV jadul"
-                : job.request.visual_mode === "speaker_split"
-                  ? "Visual split speaker"
-                  : job.request.visual_mode === "cinematic"
-                    ? "Frame sinematik"
-                    : "Clean Detail Auto FYP"}
-            </span>
+            <span>Auto FYP Viral adaptif</span>
             <span>
               {job.request.background_mode === "keep"
                 ? "Background asli"

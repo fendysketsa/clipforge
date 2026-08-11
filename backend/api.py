@@ -245,6 +245,13 @@ class ClipJobRequest(BaseModel):
     ai_model: str = DEFAULT_AI_MODEL
     ai_api_key: str = ""
 
+    @field_validator("visual_mode", mode="before")
+    @classmethod
+    def _unify_visual_mode(cls, value: Any) -> str:
+        # Legacy values remain readable in saved requests, but every new render
+        # now runs through the single content-adaptive Auto FYP pipeline.
+        return "auto_fyp"
+
     @field_validator("caption_color", "caption_outline_color")
     @classmethod
     def _validate_hex_color(cls, value: str) -> str:
@@ -862,7 +869,21 @@ def prioritized_viral_queries(configured: list[str]) -> list[str]:
 def prioritized_niche_queries(niche: IslamicContentNiche, configured: list[str]) -> list[str]:
     """Put the selected evergreen niche ahead of every generic discovery query."""
     if niche == "auto":
-        return prioritized_viral_queries(configured)
+        # Fast API mode combines the first six entries into one request. Give
+        # every supported niche a seat in that request instead of letting a
+        # single legacy theme dominate automatic discovery.
+        profiles = list(ISLAMIC_EVERGREEN_NICHES.values())
+        cross_niche_queries = [
+            str(profile["queries"][0])
+            for profile in profiles
+            if isinstance(profile.get("queries"), list) and profile["queries"]
+        ]
+        current_profile = ISLAMIC_EVERGREEN_NICHES["islamic_current_viral"]
+        cross_niche_queries.append(str(current_profile["queries"][1]))
+        return merge_unique(
+            cross_niche_queries,
+            prioritized_viral_queries(configured),
+        )
     profile = ISLAMIC_EVERGREEN_NICHES[niche]
     current_year = datetime.now(timezone.utc).year
     current_variants: list[str] = []
@@ -915,6 +936,11 @@ class AutoViralRequest(BaseModel):
     ai_api_key: str = ""
     source_urls: list[str] = Field(default_factory=list)
     auto_upload_youtube: bool = True
+
+    @field_validator("visual_mode", mode="before")
+    @classmethod
+    def _unify_visual_mode(cls, value: Any) -> str:
+        return "auto_fyp"
 
     @field_validator("queries")
     @classmethod
@@ -2202,6 +2228,11 @@ def monetization_preflight_transformation_message(
         return (
             "Upload diblokir: perubahan masih terlihat seperti template umum dan belum mengikuti isi ucapan. "
             "Render ulang agar cut kamera, emphasis, atau audio cue mengikuti beat transcript."
+        )
+    if current_audit_version >= 4 and not signals.get("content_adaptive_visual_direction"):
+        return (
+            "Upload diblokir: gaya visual belum tercatat mengikuti isi cerita dan berisiko terlihat "
+            "mass-produced. Render ulang dengan Auto FYP terbaru."
         )
     is_compilation = str(sidecar.get("output_format") or "") == "landscape_compilation"
     if is_compilation and not signals.get("structured_story_arc"):
@@ -5077,7 +5108,10 @@ def auto_viral_candidate_score(info: dict[str, Any]) -> float:
 def niche_relevance_score(info: dict[str, Any], niche: IslamicContentNiche) -> float:
     """Score semantic fit using transparent niche terms from the evergreen brief."""
     if niche == "auto":
-        return 0.0
+        return max(
+            niche_relevance_score(info, candidate_niche)
+            for candidate_niche in ISLAMIC_EVERGREEN_NICHES
+        )
     profile = ISLAMIC_EVERGREEN_NICHES[niche]
     title = re.sub(r"\s+", " ", str(info.get("title") or "")).casefold()
     description = re.sub(r"\s+", " ", str(info.get("description") or "")).casefold()
@@ -5103,6 +5137,15 @@ def niche_relevance_score(info: dict[str, Any], niche: IslamicContentNiche) -> f
     elif len(matched) == 1:
         score += 1
     return round(min(100.0, score), 2)
+
+
+def best_matching_niche(info: dict[str, Any]) -> tuple[str, float]:
+    """Return the strongest supported niche and its transparent relevance score."""
+    scored = [
+        (candidate_niche, niche_relevance_score(info, candidate_niche))
+        for candidate_niche in ISLAMIC_EVERGREEN_NICHES
+    ]
+    return max(scored, key=lambda item: item[1])
 
 
 INDONESIAN_CONTENT_MARKERS = {
@@ -5145,8 +5188,6 @@ def niche_candidate_rejection_reason(
     niche: IslamicContentNiche,
 ) -> str:
     """Reject unrelated or non-Indonesian results before momentum can rank them."""
-    if niche == "auto":
-        return ""
     relevance_score = niche_relevance_score(info, niche)
     minimum_relevance = max(1, min(100, env_int("VIRAL_CC_MIN_NICHE_SCORE", 18)))
     if relevance_score < minimum_relevance:
@@ -5171,10 +5212,14 @@ def compact_source_payload(
     age_days = upload_age_days(info)
     views = int(info.get("view_count") or 0)
     viral_score = auto_viral_candidate_score(info)
-    relevance_score = niche_relevance_score(info, niche)
+    resolved_niche, relevance_score = (
+        best_matching_niche(info)
+        if niche == "auto"
+        else (niche, niche_relevance_score(info, niche))
+    )
     language_score = indonesian_language_score(info)
     ranking_score = viral_score + relevance_score * 1.85 + language_score * 0.25
-    profile = ISLAMIC_EVERGREEN_NICHES.get(niche, {})
+    profile = ISLAMIC_EVERGREEN_NICHES.get(resolved_niche, {})
     source_height = source_max_height(info)
     definition = str(info.get("definition") or "").strip().casefold()
     if not definition and source_height >= 720:
@@ -5196,15 +5241,19 @@ def compact_source_payload(
         "rights_verified": is_creative_commons_info(info),
         "score": round(ranking_score, 2),
         "viral_score": viral_score,
-        "niche": niche,
-        "niche_label": profile.get("label", "Penemuan Otomatis"),
+        "niche": resolved_niche,
+        "niche_label": profile.get("label", "Auto Niche Terbaik"),
         "niche_score": relevance_score,
         "language_score": language_score,
         "ranking_reason": (
             f"Kecocokan tema {relevance_score:.0f}/100 • Bahasa Indonesia "
             f"{language_score:.0f}/100 • momentum {viral_score:.0f}"
             if niche != "auto"
-            else f"Momentum viral {viral_score:.0f}"
+            else (
+                f"Auto memilih {profile.get('label', resolved_niche)} • kecocokan "
+                f"{relevance_score:.0f}/100 • Bahasa Indonesia {language_score:.0f}/100 "
+                f"• momentum {viral_score:.0f}"
+            )
         ),
     }
 

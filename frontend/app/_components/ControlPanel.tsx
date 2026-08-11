@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ExternalLink, History, Link2, ListPlus, Loader2, Play, RefreshCw, Scissors, Search, ShieldCheck, Sparkles, Type, Upload, UploadCloud } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ExternalLink, History, Link2, ListPlus, Loader2, Play, RefreshCw, Scissors, Search, ShieldCheck, Sparkles, Type, Upload, UploadCloud } from "lucide-react";
 import type { LocalLlmProvider } from "../../lib/apiClient";
 import {
   CAPTION_FONT_SIZE_MAX,
@@ -33,6 +33,11 @@ const CAM_CORNER_OPTIONS: { value: CamCorner; label: string }[] = [
 ];
 
 const ISLAMIC_NICHE_OPTIONS: { value: IslamicContentNiche; label: string; description: string }[] = [
+  {
+    value: "auto",
+    label: "Auto Niche Terbaik",
+    description: "Membandingkan momentum, kecocokan tema, kebaruan, dan Bahasa Indonesia di semua niche lalu memilih yang terkuat.",
+  },
   {
     value: "islamic_current_viral",
     label: "Isu Muslim & Kajian Viral Terkini",
@@ -197,7 +202,6 @@ export function ControlPanel({
   maxClips,
   videoDuration,
   videoQuality,
-  visualMode,
   backgroundMode,
   onVideoQualityChange,
   onVisualModeChange,
@@ -530,6 +534,15 @@ export function ControlPanel({
         </>
       )}
 
+      <details className="compactDisclosure formatDisclosure">
+        <summary>
+          <span>
+            <strong>Visual & framing</strong>
+            <small>{VIDEO_QUALITY_OPTIONS.find((option) => option.value === videoQuality)?.label} · Auto FYP · {backgroundMode === "keep" ? "Background asli" : backgroundMode === "mosque" ? "Masjid" : "Auto bersih"}</small>
+          </span>
+          <ChevronDown size={17} />
+        </summary>
+        <div className="compactDisclosureBody">
       <div className="segmentedField">
         <span>Kualitas Output</span>
         <div className="segmentedControl" role="group" aria-label="Kualitas output video">
@@ -552,57 +565,17 @@ export function ControlPanel({
 
       <div className="segmentedField">
         <span>Gaya Visual</span>
-        <div className="segmentedControl" role="group" aria-label="Gaya visual video">
+        <div className="segmentedControl" role="group" aria-label="Gaya visual video otomatis">
           <button
-            className={visualMode === "auto_fyp" ? "active" : ""}
+            className="active"
             type="button"
             onClick={() => onVisualModeChange("auto_fyp")}
           >
-            Auto FYP
+            Auto FYP Viral
           </button>
-          <button
-            className={visualMode === "cinematic" ? "active" : ""}
-            type="button"
-            onClick={() => onVisualModeChange("cinematic")}
-          >
-            Frame Sinematik
-          </button>
-          <button
-            className={visualMode === "animated_3d" ? "active" : ""}
-            type="button"
-            onClick={() => onVisualModeChange("animated_3d")}
-          >
-            3D Animated
-          </button>
-          <button
-            className={visualMode === "retro_tv" ? "active" : ""}
-            type="button"
-            onClick={() => onVisualModeChange("retro_tv")}
-          >
-            TV Jadul
-          </button>
-          {clipMode === "highlight_5m" ? (
-            <button
-              className={visualMode === "speaker_split" ? "active" : ""}
-              type="button"
-              onClick={() => onVisualModeChange("speaker_split")}
-            >
-              Split Speaker
-            </button>
-          ) : null}
         </div>
         <p className="field-help">
-          {visualMode === "auto_fyp"
-            ? `Direkomendasikan: detail sumber dipertahankan tanpa blur/gradient, dengan reframe hanya pada beat penting${
-                clipMode === "highlight_5m" ? ", plus split kanan–kiri saat dua pembicara terdeteksi" : ""
-              }.`
-            : visualMode === "animated_3d"
-              ? "Look 3D sekaligus sinematik: depth, warna, dan outline tetap konsisten; kamera melakukan zoom/reframe halus ke posisi bervariasi hanya saat momen POV terdeteksi."
-            : visualMode === "retro_tv"
-              ? "Nuansa TV tabung hitam-putih: warna pudar, grain bergerak, scanline, flicker halus, vignette, dan goresan pita vertikal sesekali."
-            : visualMode === "speaker_split"
-              ? "Memprioritaskan dua panel pembicara; otomatis kembali ke frame sinematik bila wajah tidak cukup jelas."
-              : "Frame premium tetap stabil dengan border di dalam area video."}
+          Satu mode untuk clip pendek dan panjang: framing sinematik menjadi dasar, lalu depth 3D, nuansa arsip TV, reframe, atau split speaker dipilih selektif dari isi video. Variasi tetap konsisten dengan cerita agar tidak tampak seperti template massal.
         </p>
       </div>
 
@@ -696,16 +669,27 @@ export function ControlPanel({
           <span>Frame tetap 16:9; sistem mencari dua wajah dan memusatkan panel kiri–kanan tanpa crop manual.</span>
         </div>
       )}
+        </div>
+      </details>
       </div>
 
-      <div className="controlSection">
-        <div className="controlSectionHeading">
-          <span>03</span>
-          <div>
-            <h3>Poles secara otomatis</h3>
-            <p>Aktifkan hanya fitur tambahan yang Anda butuhkan.</p>
+      <details className="controlSection controlDisclosure">
+        <summary className="controlDisclosureSummary">
+          <div className="controlSectionHeading">
+            <span>03</span>
+            <div>
+              <h3>Poles secara otomatis</h3>
+              <p>Caption, AI agent, hashtag, dan upload YouTube.</p>
+            </div>
           </div>
-        </div>
+          <div className="controlDisclosureMeta">
+            <span>{burnSubtitles ? "Caption aktif" : "Caption nonaktif"}</span>
+            <span>{aiEnabled ? "AI aktif" : "AI nonaktif"}</span>
+            <ChevronDown size={17} />
+          </div>
+        </summary>
+
+        <div className="controlDisclosureBody">
 
         <div className="aiBlock">
         <label className="aiToggle">
@@ -986,12 +970,23 @@ export function ControlPanel({
             : "Selesai clipping langsung antrekan 3 klip terbaik sebagai Private. Publikasikan hanya setelah kolom Pembatasan bebas klaim."}
         </p>
         </div>
-      </div>
+        </div>
+      </details>
 
       <div className="controlActions">
         {error ? <p className="error">{error}</p> : null}
 
-        <div className="aiBlock viralBlock">
+        <details className="viralDiscoveryDisclosure">
+          <summary>
+            <span className="viralDiscoveryIcon"><Search size={17} /></span>
+            <span>
+              <strong>Belum punya sumber?</strong>
+              <small>Cari 3 konten Islami Creative Commons terbaik</small>
+            </span>
+            <span className="autoContentBadge">AUTO NICHE</span>
+            <ChevronDown size={17} />
+          </summary>
+          <div className="aiBlock viralBlock">
           <div className="autoContentHeading">
             <span className="aiToggleLabel"><Sparkles size={16} /> Pencarian Otomatis Konten Islami</span>
             <span className="autoContentBadge">3 TERATAS</span>
@@ -1160,7 +1155,8 @@ export function ControlPanel({
           <p className="field-help">
             {autoViralMessage || "Mode cepat tanpa AI: Google YouTube API memfilter Creative Commons, lalu skor lokal ringan mengurutkan hasil."}
           </p>
-        </div>
+          </div>
+        </details>
 
         <button className="primary" type="button" disabled={isStartDisabled} onClick={onStartJob}>
           {isProcessing ? <Loader2 className="spin" size={18} /> : <Play size={18} />}

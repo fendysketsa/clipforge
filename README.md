@@ -17,9 +17,9 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Apply clean context-aware editing by default: a truthful opening hook, sparse transcript-synced camera cuts, two brief edge cues, and a thin progress line.
 - Reframe a single speaker like a restrained virtual multi-camera edit, cutting between face-safe medium and close-up angles on meaningful speech beats.
 - Record a monetization-readiness audit beside each render, require substantive editorial signals before YouTube upload, preserve verified CC BY attribution, and disclose realistic backdrop replacement.
-- Use **Auto FYP Clean Detail** by default: restrained correction, final-pass adaptive clarity, sparse transcript-timed reframes, no continuous drift, and no blur/gradient over the source frame.
-- Keep the optional **3D Animated** mode for deliberately stylized renders with light temporal denoising, warm color, depth contrast, and restrained outlines.
-- Keep the original background by default; optional Auto Clean and Speaker Split modes remain available for text-heavy sources.
+- Use one **Auto FYP Viral** visual system for Shorts and long-form: cinematic clean detail is the base, while 3D depth, archival-TV treatment, reframe, and speaker split are selected from the story instead of exposed as separate presets.
+- Derive visual variation from the clip hook/POV/transcript so batches stay coherent without becoming near-identical mass-produced templates.
+- Keep the original background by default; optional background cleaning remains available for text-heavy sources.
 - Add at most one strong conversation-aware reaction sticker in Clean Detail mode, only for laughter, surprise, prayer, or warnings.
 - Mix restrained transcript-synced sound effects under normalized dialogue.
 - Automatically give Islamic clips a quiet, dialogue-ducked motivational music bed generated locally from the CC0 "Cahaya Hikmah" recipe, with no third-party recording or sample.
@@ -309,7 +309,7 @@ Quick test on the first 180 seconds:
 Create one non-Short cinematic story resume targeting 5–10 minutes (300–600 seconds):
 
 ```powershell
-.\.venv\Scripts\python.exe clipper.py "URL" --clip-mode highlight_5m --compilation-target 600 --min 30 --max 90 --visual-mode cinematic --ai-enabled
+.\.venv\Scripts\python.exe clipper.py "URL" --clip-mode highlight_5m --compilation-target 600 --min 30 --max 90 --visual-mode auto_fyp --ai-enabled
 ```
 
 Outputs are written under `backend/outputs/`.

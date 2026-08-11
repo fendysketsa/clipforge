@@ -4627,7 +4627,228 @@ a svg {
   background: rgba(167, 139, 250, 0.12);
 }
 
+/* Compact builder: keep the primary source → format → start flow above the fold. */
+.controlPanel {
+  overflow: hidden;
+  border-color: rgba(94, 234, 212, 0.18);
+  background:
+    radial-gradient(circle at 92% 2%, rgba(45, 212, 191, 0.11), transparent 24%),
+    linear-gradient(155deg, rgba(15, 38, 34, 0.97), rgba(5, 18, 16, 0.98));
+}
+
+.controlPanel .panelHeader {
+  margin-bottom: 12px;
+  padding-bottom: 14px;
+}
+
+.controlPanel .controlSection {
+  gap: 13px;
+  padding-block: 16px;
+}
+
+.compactDisclosure,
+.viralDiscoveryDisclosure {
+  overflow: hidden;
+  border: 1px solid rgba(148, 216, 204, 0.14);
+  border-radius: 14px;
+  background: rgba(3, 15, 13, 0.58);
+}
+
+.compactDisclosure > summary,
+.viralDiscoveryDisclosure > summary,
+.controlDisclosureSummary {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  list-style: none;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.compactDisclosure > summary::-webkit-details-marker,
+.viralDiscoveryDisclosure > summary::-webkit-details-marker,
+.controlDisclosureSummary::-webkit-details-marker {
+  display: none;
+}
+
+.compactDisclosure > summary:hover,
+.viralDiscoveryDisclosure > summary:hover,
+.controlDisclosureSummary:hover {
+  background: rgba(94, 234, 212, 0.055);
+}
+
+.compactDisclosure > summary > span,
+.viralDiscoveryDisclosure > summary > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.compactDisclosure > summary strong,
+.viralDiscoveryDisclosure > summary strong {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.compactDisclosure > summary small,
+.viralDiscoveryDisclosure > summary small {
+  color: #729990;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.compactDisclosure > summary > svg,
+.viralDiscoveryDisclosure > summary > svg,
+.controlDisclosureMeta > svg {
+  flex: 0 0 auto;
+  color: #75a69c;
+  transition: transform 0.2s ease;
+}
+
+.compactDisclosure[open] > summary > svg,
+.viralDiscoveryDisclosure[open] > summary > svg,
+.controlDisclosure[open] .controlDisclosureMeta > svg {
+  transform: rotate(180deg);
+}
+
+.compactDisclosure[open] > summary,
+.viralDiscoveryDisclosure[open] > summary {
+  border-bottom: 1px solid rgba(148, 216, 204, 0.1);
+  background: rgba(94, 234, 212, 0.045);
+}
+
+.compactDisclosureBody {
+  display: grid;
+  max-height: min(62vh, 650px);
+  gap: 15px;
+  padding: 15px;
+  overflow: auto;
+  scrollbar-color: rgba(94, 234, 212, 0.28) transparent;
+}
+
+.controlDisclosure {
+  border-bottom: 1px solid rgba(148, 216, 204, 0.1);
+}
+
+.controlDisclosureSummary {
+  justify-content: space-between;
+  padding-inline: 0;
+}
+
+.controlDisclosureSummary .controlSectionHeading {
+  min-width: 0;
+}
+
+.controlDisclosureMeta {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.controlDisclosureMeta > span {
+  padding: 5px 7px;
+  border: 1px solid rgba(94, 234, 212, 0.13);
+  border-radius: 999px;
+  background: rgba(94, 234, 212, 0.055);
+  color: #8ab2aa;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.controlDisclosureBody {
+  display: grid;
+  max-height: min(70vh, 760px);
+  gap: 10px;
+  padding: 5px 2px 16px;
+  overflow: auto;
+  scrollbar-color: rgba(94, 234, 212, 0.28) transparent;
+}
+
+.controlActions {
+  gap: 9px;
+  padding-top: 14px;
+}
+
+.controlActions > .error {
+  order: -4;
+}
+
+.controlActions > .primary:not(.autoQueueButton) {
+  order: -3;
+  min-height: 52px;
+  border: 1px solid rgba(153, 246, 228, 0.52);
+  border-radius: 13px;
+  background: linear-gradient(135deg, #99f6e4 0%, #2dd4bf 55%, #14b8a6 100%);
+  color: #031512;
+  box-shadow: 0 13px 30px rgba(20, 184, 166, 0.22);
+}
+
+.controlActions > .startHint {
+  order: -2;
+  margin-bottom: 2px;
+}
+
+.viralDiscoveryDisclosure {
+  order: 1;
+  border-color: rgba(167, 139, 250, 0.2);
+  background:
+    radial-gradient(circle at 92% 0%, rgba(167, 139, 250, 0.12), transparent 35%),
+    rgba(8, 15, 19, 0.66);
+}
+
+.viralDiscoveryIcon {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(167, 139, 250, 0.22);
+  border-radius: 10px;
+  background: rgba(167, 139, 250, 0.09);
+  color: #c4b5fd;
+}
+
+.viralDiscoveryDisclosure > summary .autoContentBadge {
+  flex: 0 0 auto;
+}
+
+.viralDiscoveryDisclosure .viralBlock {
+  max-height: min(72vh, 780px);
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+  background: rgba(3, 12, 14, 0.72);
+  scrollbar-color: rgba(167, 139, 250, 0.3) transparent;
+}
+
 @media (max-width: 640px) {
+  .controlDisclosureSummary {
+    align-items: flex-start;
+  }
+
+  .controlDisclosureMeta > span {
+    display: none;
+  }
+
+  .compactDisclosureBody,
+  .controlDisclosureBody,
+  .viralDiscoveryDisclosure .viralBlock {
+    max-height: none;
+  }
+
+  .viralDiscoveryDisclosure > summary .autoContentBadge {
+    display: none;
+  }
+
+  .controlPanel .controlSection {
+    padding-block: 13px;
+  }
+
   .historyActions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
