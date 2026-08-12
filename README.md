@@ -57,9 +57,9 @@ again. For higher Hugging Face download limits, create a read-only access token
 and set `HF_TOKEN=hf_...` in the untracked root `.env`; the backend forwards it
 automatically and never writes the value to job logs.
 
-Vertical Shorts also add a synchronized Indonesian voice-over to the final
-Subscribe + Follow card. Neural voice is attempted first and local `espeak-ng`
-is used automatically when it is unavailable. Configure it in `.env` with
+Vertical Shorts end with a content-theme-derived question over the live payoff,
+without a repeated Subscribe template. Optional Indonesian voice-over is disabled
+by default; when explicitly enabled it speaks that contextual question. Configure it in `.env` with
 `CTA_VOICEOVER_ENABLED`, `CTA_VOICEOVER_TEXT`, `CTA_VOICEOVER_VOICE`, and
 `CTA_VOICEOVER_RATE`.
 

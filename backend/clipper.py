@@ -2556,6 +2556,8 @@ def attach_monetization_provenance(
         reaction_cues = payload.get("reaction_cues")
         sound_effect_cues = payload.get("sound_effect_cues")
         dynamic_captions = payload.get("dynamic_captions")
+        end_cta = payload.get("end_cta")
+        chapter_edit_evidence = payload.get("chapter_edit_evidence")
         edit_signature = payload.get("content_edit_signature")
         auto_visual_plan = payload.get("auto_fyp_visual_plan")
         auto_visual_system = payload.get("auto_fyp_visual_system")
@@ -2564,8 +2566,20 @@ def attach_monetization_provenance(
             key_point_score = int(payload.get("key_point_score") or 0)
         except (TypeError, ValueError):
             key_point_score = 0
+        chapter_specific_edits = bool(
+            isinstance(chapter_edit_evidence, list)
+            and len(chapter_edit_evidence) >= 3
+            and all(
+                isinstance(item, dict)
+                and item.get("hook")
+                and item.get("pov")
+                and item.get("content_timed_editing")
+                for item in chapter_edit_evidence
+            )
+        )
         content_timed_edits = bool(
             camera_angles or emphasis_times or reaction_cues or sound_effect_cues
+            or chapter_specific_edits
         )
         cohesive_editorial_arc = bool(
             payload.get("hook")
@@ -2605,6 +2619,13 @@ def attach_monetization_provenance(
                     and auto_visual_system.get("chapter_accents_are_content_derived")
                 )
             ),
+            "content_specific_engagement_prompt": bool(
+                isinstance(end_cta, dict)
+                and end_cta.get("enabled")
+                and end_cta.get("strategy") == "content_theme_derived_question"
+                and end_cta.get("copy")
+            ),
+            "chapter_specific_editorial_framing": chapter_specific_edits,
             "structured_story_arc": bool(
                 is_compilation and isinstance(story_arc, list) and len(story_arc) >= 3
             ),
@@ -2618,6 +2639,8 @@ def attach_monetization_provenance(
             and originality_signals["structured_story_arc"]
             and originality_signals["editorial_hook_and_context"]
             and originality_signals["original_core_message"]
+            and originality_signals["chapter_specific_editorial_framing"]
+            and originality_signals["content_timed_editing"]
         )
         transformation_ready = (
             originality_signals["enhanced_edit"]
@@ -2644,7 +2667,7 @@ def attach_monetization_provenance(
             "commercial_rights_confirmation_required": uploaded_source,
             "originality_score": originality_score,
             "minimum_originality_score": minimum_score,
-            "audit_version": 4,
+            "audit_version": 5,
             "signals": originality_signals,
             "substantive_transformation": substantive_transformation,
             "original_creator_commentary_present": bool(
@@ -4030,7 +4053,7 @@ SHORTS_SAFE_TOP = 220
 SHORTS_SAFE_BOTTOM = 1560
 SHORTS_OFFICIAL_MAX_SECONDS = 180
 FENDY_CLIPPER_SHORTS_MAX_SECONDS = 60
-SHORTS_POLICY_REVIEW_DATE = "2026-08-11"
+SHORTS_POLICY_REVIEW_DATE = "2026-08-12"
 
 
 def wrap_subtitle(text: str, max_chars: int = SUBTITLE_MAX_CHARS, max_lines: int = SUBTITLE_MAX_LINES) -> str:
@@ -4241,7 +4264,7 @@ def shorts_cover_frame_timestamp(duration: float) -> float:
 
 SHORTS_TITLE_OVERLAY_SECONDS = 3.2
 SHORTS_CTA_OVERLAY_SECONDS = 2.35
-DEFAULT_SHORTS_CTA_VOICEOVER_TEXT = "Subscribe dan follow untuk video berikutnya!"
+DEFAULT_SHORTS_CTA_VOICEOVER_TEXT = "Tulis pendapatmu dan lanjutkan diskusinya!"
 
 
 def viral_title_overlay_filter(headline_filename: str, duration: float) -> str:
@@ -4257,10 +4280,18 @@ def viral_title_overlay_filter(headline_filename: str, duration: float) -> str:
             f"drawbox=x=70:y=1002:w=830:h=380:color=black@0.28:t=fill:{active}",
             f"drawbox=x=58:y=982:w=842:h=356:color=white@0.97:t=fill:{active}",
             f"drawbox=x=80:y=960:w=798:h=400:color=white@0.97:t=fill:{active}",
-            f"drawbox=x=96:y=1012:w=254:h=48:color=#FFF200@1.0:t=fill:{active}",
+            f"drawbox=x=96:y=1012:w=286:h=48:color=#FFF200@1.0:t=fill:{active}",
+            "drawtext="
+            f"fontfile={font_regular}:text='●':expansion=none:"
+            "fontcolor=#FF1744@0.22:fontsize=41:x=102:y=1005:"
+            f"enable='between(t,0,{title_end:.3f})*lt(mod(t,1.05),0.46)'",
+            "drawtext="
+            f"fontfile={font_regular}:text='●':expansion=none:"
+            "fontcolor=#FF1744:fontsize=24:x=111:y=1015:"
+            f"{active}",
             "drawtext="
             f"fontfile={font_bold}:text='WAJIB TAHU':expansion=none:"
-            "fontcolor=black:fontsize=25:x=114:y=1021:"
+            "fontcolor=black:fontsize=25:x=146:y=1021:"
             f"{active}",
             "drawtext="
             f"fontfile={font_bold}:textfile='{headline_filename}':reload=0:expansion=none:"
@@ -4268,42 +4299,68 @@ def viral_title_overlay_filter(headline_filename: str, duration: float) -> str:
             "x=96:y=1086:"
             f"{active}",
             f"drawbox=x=96:y=1298:w=684:h=3:color=black@0.16:t=fill:{active}",
-            f"drawbox=x=96:y=1320:w=22:h=22:color=#FF1744@1.0:t=fill:{active}",
             "drawtext="
             f"fontfile={font_regular}:text='{CHANNEL_WATERMARK}':expansion=none:"
-            "fontcolor=black@0.82:fontsize=22:x=132:y=1318:"
+            "fontcolor=black@0.82:fontsize=22:x=96:y=1318:"
             f"{active}",
         ]
     )
 
 
-def shorts_cta_overlay_filter(duration: float) -> str:
-    """Add a compact end CTA over the live payoff instead of a retention-killing outro."""
+def shorts_engagement_prompt(clip: ClipCandidate) -> str:
+    """Create a short, theme-derived question instead of a repeated subscribe template."""
+    theme = detect_visual_theme(clip)
+    searchable = f"{clip.title} {clip.hook} {clip.text}".casefold()
+    if "?" in (clip.hook or ""):
+        prompt = "JAWABANMU SAMA ATAU BEDA?"
+    elif theme == "mystery":
+        prompt = "MITOS ATAU FAKTA MENURUTMU?"
+    elif theme == "islamic":
+        prompt = "HIKMAH MANA YANG PALING NGENA?"
+    elif any(term in searchable for term in ARCHIVAL_VISUAL_WORDS):
+        prompt = "PELAJARAN APA YANG KAMU AMBIL?"
+    elif theme == "warning":
+        prompt = "PERNAH MENGALAMI HAL INI?"
+    elif theme == "inspiring":
+        prompt = "LANGKAH MANA YANG MAU DICOBA?"
+    else:
+        prompt = "POIN MANA YANG PALING NGENA?"
+    return prompt[:62]
+
+
+def shorts_cta_overlay_filter(duration: float, prompt_filename: str = "") -> str:
+    """Invite a content-relevant response over the live payoff without an empty outro."""
     safe_duration = max(0.1, duration)
     cta_start = max(0.0, safe_duration - SHORTS_CTA_OVERLAY_SECONDS)
     cta_end = max(cta_start, safe_duration - 0.04)
     active = f"enable='between(t,{cta_start:.3f},{cta_end:.3f})'"
     font_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     font_regular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    prompt_filter = (
+        "drawtext="
+        f"fontfile={font_bold}:textfile='{prompt_filename}':reload=0:expansion=none:"
+        "fontcolor=white:fontsize=31:borderw=2:bordercolor=black@0.86:"
+        "x=118:y=1065:"
+        f"{active}"
+        if prompt_filename
+        else "drawtext="
+        f"fontfile={font_bold}:text='TULIS PENDAPATMU':expansion=none:"
+        "fontcolor=white:fontsize=31:borderw=2:bordercolor=black@0.86:"
+        "x=118:y=1065:"
+        f"{active}"
+    )
     return ",".join(
         [
-            f"drawbox=x=88:y=1016:w=784:h=196:color=black@0.28:t=fill:{active}",
-            f"drawbox=x=74:y=1002:w=784:h=196:color=white@0.97:t=fill:{active}",
-            f"drawbox=x=96:y=1018:w=206:h=4:color=#FFF200@1.0:t=fill:{active}",
-            f"drawbox=x=96:y=1030:w=298:h=82:color=#FF1744@1.0:t=fill:{active}",
+            f"drawbox=x=98:y=1026:w=804:h=168:color=black@0.30:t=fill:{active}",
+            f"drawbox=x=82:y=1010:w=804:h=168:color=black@0.82:t=fill:{active}",
+            f"drawbox=x=82:y=1010:w=804:h=168:color=#FF3158@0.94:t=3:{active}",
+            f"drawbox=x=104:y=1034:w=10:h=112:color=#FF3158@1.0:t=fill:{active}",
+            prompt_filter,
             "drawtext="
-            f"fontfile={font_bold}:text='SUBSCRIBE':expansion=none:"
-            "fontcolor=white:fontsize=34:x=124:y=1053:"
+            f"fontfile={font_regular}:text='TULIS KOMENTAR · LANJUTKAN DISKUSI':expansion=none:"
+            "fontcolor=white@0.68:fontsize=19:x=120:y=1126:"
             f"{active}",
-            "drawtext="
-            f"fontfile={font_bold}:text='+ FOLLOW':expansion=none:"
-            "fontcolor=black:fontsize=34:x=426:y=1053:"
-            f"{active}",
-            "drawtext="
-            f"fontfile={font_regular}:text='JANGAN LEWATKAN VIDEO BERIKUTNYA':expansion=none:"
-            "fontcolor=black@0.72:fontsize=22:x=98:y=1142:"
-            f"{active}",
-            f"drawbox=x=742:y=1138:w=92:h=5:color=#FFF200@1.0:t=fill:{active}",
+            f"drawbox=x=120:y=1158:w=180:h=4:color=#FFF200@1.0:t=fill:{active}",
         ]
     )
 
@@ -4327,15 +4384,16 @@ def shorts_cta_voiceover_text() -> str:
 def generate_shorts_cta_voiceover(
     clips_dir: Path,
     base_name: str,
+    text: str = "",
 ) -> tuple[Path, dict[str, object]] | None:
     """Create an Indonesian CTA voice, preferring neural TTS with offline fallback."""
-    if not env_enabled("CTA_VOICEOVER_ENABLED", True):
+    if not env_enabled("CTA_VOICEOVER_ENABLED", False):
         return None
 
     requested_provider = os.environ.get("CTA_VOICEOVER_PROVIDER", "auto").strip().lower()
     if requested_provider not in {"auto", "edge", "espeak"}:
         requested_provider = "auto"
-    text = shorts_cta_voiceover_text()
+    text = re.sub(r"\s+", " ", text).strip()[:120] or shorts_cta_voiceover_text()
     voice = os.environ.get("CTA_VOICEOVER_VOICE", "id-ID-ArdiNeural").strip()
     if not re.fullmatch(r"[A-Za-z0-9-]{2,64}", voice):
         voice = "id-ID-ArdiNeural"
@@ -4474,6 +4532,10 @@ def shorts_policy_compliance(duration: float, *, embedded_cover: bool) -> dict[s
         "inauthentic_content_policy_reviewed": True,
         "mass_produced_or_repetitive_content_not_assumed_monetizable": True,
         "non_original_shorts_views_may_be_ineligible": True,
+        "contextual_engagement_prompt_preferred": True,
+        "repeated_subscribe_template_avoided": True,
+        "viewer_satisfaction_not_watch_time_alone": True,
+        "filler_avoidance_required": True,
         "claimed_content_over_one_minute_block_risk": safe_duration > 60,
         "content_id_claim_check_required_before_publication": True,
         "rights_and_originality_review_required": True,
@@ -6515,6 +6577,7 @@ def export_clip(
     pov_text_path = clips_dir / f"{base_name}.pov.txt"
     cover_text_path = clips_dir / f"{base_name}.cover.txt"
     payoff_text_path = clips_dir / f"{base_name}.payoff.txt"
+    engagement_text_path = clips_dir / f"{base_name}.engagement.txt"
     clean_background_path = clips_dir / f"{base_name}.background_tmp.mp4"
     watermark_preview_path = clips_dir / f"{base_name}.watermark_preview_tmp.mp4"
     json_path.unlink(missing_ok=True)
@@ -6560,6 +6623,7 @@ def export_clip(
     )
     core_message = payoff_banner_text(clip, clip_segments)
     cover_copy = thumbnail_story_copy(clip)
+    engagement_prompt = shorts_engagement_prompt(clip)
     reaction_cues = detect_reaction_cues(clip, clip_segments)
     sound_effect_cues = (
         contextual_sound_effect_cues(
@@ -7186,16 +7250,18 @@ def export_clip(
             f"Watermark channel {CHANNEL_WATERMARK} ditambahkan di safe area kiri atas."
         )
         if output_format == "vertical_short":
-            vf = f"{vf},{shorts_cta_overlay_filter(duration)}"
+            engagement_text_path.write_text(engagement_prompt + "\n", encoding="utf-8")
+            vf = f"{vf},{shorts_cta_overlay_filter(duration, engagement_text_path.name)}"
             sidecar_payload["end_cta"] = {
                 "enabled": True,
-                "copy": "SUBSCRIBE + FOLLOW",
+                "copy": engagement_prompt,
+                "strategy": "content_theme_derived_question",
                 "duration_seconds": SHORTS_CTA_OVERLAY_SECONDS,
                 "placement": "center_lower_caption_safe",
                 "extends_video_duration": False,
             }
             applied_edits.append(
-                "CTA Subscribe + Follow tampil singkat di atas payoff hidup tanpa menambah outro kosong."
+                "CTA akhir mengajak komentar dengan pertanyaan yang mengikuti tema klip, tanpa outro kosong atau template Subscribe berulang."
             )
     else:
         sidecar_payload["channel_watermark"] = {
@@ -7309,6 +7375,7 @@ def export_clip(
         pov_text_path.unlink(missing_ok=True)
         cover_text_path.unlink(missing_ok=True)
         payoff_text_path.unlink(missing_ok=True)
+        engagement_text_path.unlink(missing_ok=True)
         clean_background_path.unlink(missing_ok=True)
         watermark_preview_path.unlink(missing_ok=True)
     audio_filter = (
@@ -7382,10 +7449,14 @@ def export_clip(
     cta_voiceover_enabled = (
         output_format == "vertical_short"
         and drawtext_supported
-        and env_enabled("CTA_VOICEOVER_ENABLED", True)
+        and env_enabled("CTA_VOICEOVER_ENABLED", False)
     )
     if cta_voiceover_enabled:
-        generated_voice = generate_shorts_cta_voiceover(clips_dir, base_name)
+        generated_voice = generate_shorts_cta_voiceover(
+            clips_dir,
+            base_name,
+            engagement_prompt,
+        )
         if generated_voice is not None:
             cta_voice_path, voice_details = generated_voice
             try:
@@ -7457,7 +7528,7 @@ def export_clip(
             "enabled": False,
             "reason": (
                 "disabled_by_environment"
-                if not env_enabled("CTA_VOICEOVER_ENABLED", True)
+                if not env_enabled("CTA_VOICEOVER_ENABLED", False)
                 else "cta_card_unavailable"
             ),
         }
@@ -7611,6 +7682,7 @@ def export_compilation(
     thumb_path = clips_dir / f"{base_name}_thumb.jpg"
 
     part_paths: list[Path] = []
+    part_audits: list[dict[str, object]] = []
     altered_content_disclosure_required = False
     try:
         total_parts = len(candidates)
@@ -7658,6 +7730,22 @@ def export_compilation(
                 )
             except (OSError, json.JSONDecodeError):
                 part_payload = {}
+            if isinstance(part_payload, dict):
+                part_audits.append(
+                    {
+                        "part": idx,
+                        "hook": str(part_payload.get("hook") or "").strip()[:120],
+                        "pov": str(part_payload.get("pov") or "").strip()[:180],
+                        "core_message": str(part_payload.get("core_message") or "").strip()[:180],
+                        "visual_direction": part_payload.get("auto_fyp_visual_plan"),
+                        "content_timed_editing": bool(
+                            part_payload.get("emphasis_times")
+                            or part_payload.get("virtual_camera_angles")
+                            or part_payload.get("reaction_cues")
+                            or part_payload.get("sound_effect_cues")
+                        ),
+                    }
+                )
             adaptive_split = (
                 part_payload.get("adaptive_text_split")
                 if isinstance(part_payload, dict)
@@ -7827,6 +7915,7 @@ def export_compilation(
             }
             for index, item in enumerate(candidates)
         ],
+        "chapter_edit_evidence": part_audits,
         "retention_strategy": {
             "version": 2,
             "opening": "strongest_editorial_segment_first",

@@ -2348,6 +2348,17 @@ def monetization_preflight_transformation_message(
             "Upload diblokir: clip belum membentuk alur editorial yang utuh dari hook ke pesan inti dan payoff. "
             "Pilih kandidat dengan point utama serta ending tuntas, lalu render ulang."
         )
+    is_compilation = str(sidecar.get("output_format") or "") == "landscape_compilation"
+    if (
+        current_audit_version >= 5
+        and is_compilation
+        and not signals.get("chapter_specific_editorial_framing")
+    ):
+        return (
+            "Upload diblokir: long-form baru memiliki susunan bab, tetapi belum ada framing editorial "
+            "yang spesifik pada setiap bab. Render ulang agar hook, POV, dan beat edit tiap bagian "
+            "tercatat berbeda dari template umum."
+        )
     if current_audit_version >= 2 and not signals.get("content_timed_editing"):
         return (
             "Upload diblokir: perubahan masih terlihat seperti template umum dan belum mengikuti isi ucapan. "
@@ -2358,7 +2369,6 @@ def monetization_preflight_transformation_message(
             "Upload diblokir: gaya visual belum tercatat mengikuti isi cerita dan berisiko terlihat "
             "mass-produced. Render ulang dengan Auto FYP terbaru."
         )
-    is_compilation = str(sidecar.get("output_format") or "") == "landscape_compilation"
     if is_compilation and not signals.get("structured_story_arc"):
         return (
             "Upload diblokir: kompilasi belum memiliki structured story arc yang cukup. "

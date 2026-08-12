@@ -1245,6 +1245,48 @@ def test_monetization_preflight_accepts_legacy_compilation_story_arc(monkeypatch
     assert youtube_monetization_preflight_issue(job, clip) is None
 
 
+def test_monetization_preflight_v5_requires_chapter_specific_framing(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-template-compilation",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "output_format": "landscape_compilation",
+            "monetization_readiness": {
+                "eligible_for_private_upload_review": False,
+                "audit_version": 5,
+                "signals": {
+                    "enhanced_edit": True,
+                    "cohesive_editorial_arc": True,
+                    "content_timed_editing": True,
+                    "content_adaptive_visual_direction": True,
+                    "structured_story_arc": True,
+                    "chapter_specific_editorial_framing": False,
+                },
+            },
+        },
+    )
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+    assert "framing editorial" in issue
+    assert "setiap bab" in issue
+
+
 def test_monetization_preflight_explains_when_enhanced_edit_is_actually_missing(monkeypatch):
     import api
 

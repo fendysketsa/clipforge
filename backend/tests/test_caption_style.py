@@ -67,6 +67,7 @@ from clipper import (
     split_subtitle_text,
     subtitle_cues,
     shorts_cover_frame_timestamp,
+    shorts_engagement_prompt,
     shorts_cta_overlay_filter,
     shorts_cta_voiceover_mix_filter,
     shorts_cta_voiceover_text,
@@ -673,7 +674,7 @@ def test_monetization_provenance_records_rights_and_originality(tmp_path):
     assert payload["monetization_readiness"]["guarantee"] is False
 
 
-def test_compilation_story_arc_counts_as_substantive_transformation(tmp_path):
+def test_compilation_requires_chapter_specific_editorial_transformation(tmp_path):
     video = tmp_path / "resume.mp4"
     video.write_bytes(b"video")
     video.with_suffix(".json").write_text(
@@ -682,6 +683,10 @@ def test_compilation_story_arc_counts_as_substantive_transformation(tmp_path):
         '"thumbnail_strategy":"custom_long_form_upload",'
         '"auto_fyp_visual_system":{"chapter_accents_are_content_derived":true},'
         '"story_arc":[{"index":1},{"index":2},{"index":3}],'
+        '"chapter_edit_evidence":['
+        '{"hook":"Hook 1","pov":"POV 1","content_timed_editing":true},'
+        '{"hook":"Hook 2","pov":"POV 2","content_timed_editing":true},'
+        '{"hook":"Hook 3","pov":"POV 3","content_timed_editing":true}],'
         '"applied_edits":["pembuka dipangkas"]}',
         encoding="utf-8",
     )
@@ -703,8 +708,38 @@ def test_compilation_story_arc_counts_as_substantive_transformation(tmp_path):
     readiness = payload["monetization_readiness"]
     assert readiness["signals"]["substantive_visual_edits"] is False
     assert readiness["signals"]["structured_story_arc"] is True
+    assert readiness["signals"]["chapter_specific_editorial_framing"] is True
     assert readiness["substantive_transformation"] is True
     assert readiness["eligible_for_private_upload_review"] is True
+
+
+def test_compilation_story_arc_alone_is_not_enough_for_monetization_review(tmp_path):
+    video = tmp_path / "template-resume.mp4"
+    video.write_bytes(b"video")
+    video.with_suffix(".json").write_text(
+        '{"output_format":"landscape_compilation","enhanced_edit":true,'
+        '"hook":"Hook","pov":"Sudut pandang","core_message":"Alur inti",'
+        '"auto_fyp_visual_system":{"chapter_accents_are_content_derived":true},'
+        '"story_arc":[{"index":1},{"index":2},{"index":3}],'
+        '"applied_edits":["template umum"]}',
+        encoding="utf-8",
+    )
+
+    attach_monetization_provenance(
+        [video],
+        {"license": "Creative Commons Attribution license"},
+        uploaded_source=False,
+    )
+
+    import json
+
+    readiness = json.loads(video.with_suffix(".json").read_text(encoding="utf-8"))[
+        "monetization_readiness"
+    ]
+    assert readiness["signals"]["structured_story_arc"] is True
+    assert readiness["signals"]["chapter_specific_editorial_framing"] is False
+    assert readiness["substantive_transformation"] is False
+    assert readiness["eligible_for_private_upload_review"] is False
 
 
 def test_short_still_requires_substantive_visual_edits(tmp_path):
@@ -829,16 +864,30 @@ def test_viral_title_overlay_clamps_window_to_short_clip_duration():
     assert "textfile='clip.cover.txt'" in value
     assert "between(t,0,1.400)" in value
     assert "color=white@0.97" in value
+    assert "text='●'" in value
+    assert "lt(mod(t,1.05),0.46)" in value
 
 
-def test_shorts_cta_is_brief_live_overlay_at_end():
-    value = shorts_cta_overlay_filter(30)
+def test_shorts_cta_is_brief_contextual_overlay_at_end():
+    value = shorts_cta_overlay_filter(30, "clip.engagement.txt")
 
-    assert "text='SUBSCRIBE'" in value
-    assert "text='+ FOLLOW'" in value
-    assert "text='JANGAN LEWATKAN VIDEO BERIKUTNYA'" in value
+    assert "textfile='clip.engagement.txt'" in value
+    assert "text='TULIS KOMENTAR · LANJUTKAN DISKUSI'" in value
+    assert "text='SUBSCRIBE'" not in value
     assert "between(t,27.650,29.960)" in value
     assert "fade=" not in value
+
+
+def test_shorts_engagement_prompt_follows_content_theme():
+    islamic = ClipCandidate(
+        1, 0, 30, 30, 90, "Hikmah Salat", "test", "Allah mengajarkan hikmah salat."
+    )
+    mystery = ClipCandidate(
+        2, 0, 30, 30, 90, "Misteri Lama", "test", "Kisah mitos dan misteri ini belum terbukti."
+    )
+
+    assert shorts_engagement_prompt(islamic) == "HIKMAH MANA YANG PALING NGENA?"
+    assert shorts_engagement_prompt(mystery) == "MITOS ATAU FAKTA MENURUTMU?"
 
 
 def test_shorts_cta_voiceover_ducks_dialog_and_stays_inside_card_window():

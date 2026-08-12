@@ -90,7 +90,7 @@ Default output video:
 - caption dinamis menyorot kata penting dari ucapan asli, dengan timing berbobot jumlah kata dan margin aman agar tidak tertutup action rail/judul UI Shorts; file SRT bersih tetap dibuat untuk accessibility
 - caption ringkas dengan outline/shadow tanpa gradient band agar wajah dan piksel sumber tetap bersih
 - frame cover Shorts 9:16 ditanam pada opening sebagai kartu putih-kuning berbasis hook transcript; keyframe 0,78 detik dibuat agar frame mudah dipilih lewat aplikasi YouTube (Shorts tidak menerima upload thumbnail gambar kustom)
-- CTA `SUBSCRIBE + FOLLOW` muncul singkat di atas payoff yang masih bergerak, tanpa menambah outro kosong atau fade yang memutus loop
+- CTA kontekstual berbentuk pertanyaan mengikuti tema klip dan muncul singkat di atas payoff yang masih bergerak; voice-over template dinonaktifkan secara default agar dialog asli dan loop tetap utuh
 - seluruh output short dan kompilasi long-form mendapat kabut asap putih bergerak yang halus di tepi bawah/sudut; overlay dibuat prosedural pada resolusi rendah, divariasikan dari isi cerita, dan dirender di bawah subtitle/watermark agar wajah serta teks tetap jelas
 - guardrail kebijakan Shorts dicatat di sidecar render: batas resmi 180 detik, batas internal konservatif 60 detik, risiko blokir Content ID di atas satu menit, strategi thumbnail frame-tertanam, serta kewajiban review hak/orisinalitas dan inauthentic-content
 - Auto Search frontend membandingkan isu Muslim terkini dan empat master niche evergreen Islami (mental health, halal wealth, fiqih harian, dan sejarah Islam), lalu menampilkan Top 3 CC Indonesia berdasarkan kecocokan niche + views/hari + engagement + freshness
