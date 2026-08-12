@@ -84,7 +84,6 @@ import { DeleteAllToast } from "./_components/DeleteAllToast";
 import { HistorySection } from "./_components/HistorySection";
 import { ResultsSection } from "./_components/ResultsSection";
 import { StatusPanel } from "./_components/StatusPanel";
-import { SiteFooter } from "./_components/SiteFooter";
 import { Topbar } from "./_components/Topbar";
 import { WorkflowBar } from "./_components/WorkflowBar";
 
@@ -92,7 +91,7 @@ const isProcessJob = (item: ClipJob | null) =>
   item?.status === "queued" || item?.status === "running" || item?.status === "failed" || item?.status === "cancelled";
 const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
 const CLEANUP_PROGRESS_POLL_MS = 250;
-const TAB_JOB_STORAGE_KEY = "clipforge.activeJobId.v1";
+const TAB_JOB_STORAGE_KEY = "fendy-clipper.activeJobId.v1";
 
 export default function HomePage() {
   const [url, setUrl] = useState("");
@@ -1392,7 +1391,6 @@ export default function HomePage() {
         onStopJob={handleCancelJob}
         onToggleJobSelection={handleToggleHistoryJobSelection}
       />
-      <SiteFooter />
     </main>
   );
 }

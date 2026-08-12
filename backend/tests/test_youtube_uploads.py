@@ -13,6 +13,7 @@ from api import (
     ClipJobRequest,
     YouTubeUploadRequest,
     YouTubeUploadJob,
+    append_youtube_chapters,
     best_youtube_clip_urls,
     build_youtube_upload_command,
     clip_requires_altered_content_disclosure,
@@ -35,6 +36,8 @@ from api import (
     delete_all_job_clips,
     start_youtube_cdp_refresh_process,
     sync_youtube_cdp,
+    youtube_final_visibility_from_logs,
+    youtube_chapters_from_sidecar,
     youtube_video_url_from_logs,
 )
 from youtube_uploader import normalized_upload_metadata, studio_start_url
@@ -523,6 +526,47 @@ def test_youtube_video_url_from_logs_accepts_shorts_links():
     assert youtube_video_url_from_logs(["VIDEO_URL: https://youtube.com/shorts/abcDEF12345?feature=share"]) == (
         "https://www.youtube.com/watch?v=abcDEF12345"
     )
+
+
+def test_youtube_final_visibility_from_logs_prefers_latest_verified_value():
+    assert youtube_final_visibility_from_logs(
+        ["FINAL_VISIBILITY: public", "FINAL_VISIBILITY: private"]
+    ) == "private"
+
+
+def test_long_form_description_gets_valid_manual_chapters(monkeypatch):
+    import api
+
+    clip = ClipFile(
+        name="resume_cerita_5menit_inti.mp4",
+        url="/outputs/demo/resume_cerita_5menit_inti.mp4",
+        size_bytes=1,
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "output_format": "landscape_compilation",
+            "parts": [
+                {"duration": 42, "title": "Jawaban yang Paling Penting"},
+                {"duration": 58, "title": "Mengapa Masalah Ini Terjadi"},
+                {"duration": 55, "title": "Langkah Praktis Memperbaikinya"},
+                {"duration": 50, "title": "Kesimpulan dan Hikmah"},
+            ],
+        },
+    )
+
+    chapters = youtube_chapters_from_sidecar(clip)
+    description = append_youtube_chapters("Ringkasan video.", clip)
+
+    assert chapters == [
+        "00:00 Jawaban yang Paling Penting",
+        "00:42 Mengapa Masalah Ini Terjadi",
+        "01:40 Langkah Praktis Memperbaikinya",
+        "02:35 Kesimpulan dan Hikmah",
+    ]
+    assert "BAB VIDEO:\n" in description
+    assert description.endswith("02:35 Kesimpulan dan Hikmah")
 
 
 def test_completed_upload_cleanup_delay_defaults_to_thirty_seconds(monkeypatch):

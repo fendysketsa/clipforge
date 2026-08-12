@@ -1,6 +1,6 @@
-# ClipForge Frontend
+# Fendy Clipper Frontend
 
-Next.js UI for running the local ClipForge backend.
+Next.js UI for running the local Fendy Clipper backend.
 
 ## Setup
 

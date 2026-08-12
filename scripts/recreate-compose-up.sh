@@ -15,8 +15,8 @@ if [[ -z "$YOUTUBE_CDP_PORT" && "${YOUTUBE_CDP_URL:-}" =~ :([0-9]+)(/.*)?$ ]]; t
 fi
 YOUTUBE_CDP_PORT="${YOUTUBE_CDP_PORT:-9222}"
 CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME:-/tmp}/.config}"
-YOUTUBE_LOGIN_PROFILE_DIR="${YOUTUBE_LOGIN_PROFILE_DIR:-$CONFIG_HOME/clipforge/youtube-chrome-profile}"
-YOUTUBE_CHROME_LAUNCH_LOG="${YOUTUBE_CHROME_LAUNCH_LOG:-/tmp/clipforge-youtube-chrome-launcher.log}"
+YOUTUBE_LOGIN_PROFILE_DIR="${YOUTUBE_LOGIN_PROFILE_DIR:-$CONFIG_HOME/fendy-clipper/youtube-chrome-profile}"
+YOUTUBE_CHROME_LAUNCH_LOG="${YOUTUBE_CHROME_LAUNCH_LOG:-/tmp/fendy-clipper-youtube-chrome-launcher.log}"
 DOWN_FIRST=false
 WATCH_CHROME=false
 RESET_PROFILE=false

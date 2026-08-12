@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for improving ClipForge.
+Thanks for improving Fendy Clipper.
 
 ## Local setup
 

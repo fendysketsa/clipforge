@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from telegram_bot import (
-    ClipForgeTelegramBot,
+    FendyClipperTelegramBot,
     DEFAULT_SETTINGS,
     TELEGRAM_COMPILATION_MAX_SECONDS,
     battery_status_text,
@@ -45,7 +45,7 @@ def test_upload_preflight_queues_without_blocking_login_once():
         def setup_youtube_one_time_login(self):
             raise AssertionError("preflight must not run the long Login Sekali request")
 
-    bot = object.__new__(ClipForgeTelegramBot)
+    bot = object.__new__(FendyClipperTelegramBot)
     bot.backend = Backend()
     bot.send_message = lambda chat_id, text, markup=None: messages.append((chat_id, text, markup))
     bot.youtube_control_keyboard = lambda: {}
@@ -266,7 +266,7 @@ def test_unuploaded_clip_keyboard_uses_retry_status_and_upload_actions():
         },
     ]
 
-    markup = ClipForgeTelegramBot.unuploaded_clips_keyboard(object(), entries, 0)
+    markup = FendyClipperTelegramBot.unuploaded_clips_keyboard(object(), entries, 0)
     callbacks = [
         item["callback_data"]
         for row in markup["inline_keyboard"]
@@ -344,7 +344,7 @@ def test_battery_alert_levels_are_valid_unique_and_descending():
 
 
 def test_viral_exclusions_include_every_displayed_suggestion():
-    bot = object.__new__(ClipForgeTelegramBot)
+    bot = object.__new__(FendyClipperTelegramBot)
     bot.state = {
         "viral_video_seen_urls": ["https://youtu.be/alreadySeen1"],
         "viral_video_suggestions": {
@@ -355,7 +355,7 @@ def test_viral_exclusions_include_every_displayed_suggestion():
         "pending_url": "",
     }
 
-    assert ClipForgeTelegramBot.viral_exclude_urls(bot) == [
+    assert FendyClipperTelegramBot.viral_exclude_urls(bot) == [
         "https://www.youtube.com/watch?v=alreadySeen1",
         "https://www.youtube.com/watch?v=displayed01",
         "https://www.youtube.com/watch?v=displayed02",
@@ -363,10 +363,10 @@ def test_viral_exclusions_include_every_displayed_suggestion():
 
 
 def test_remember_viral_sources_marks_all_results_not_only_selected_one():
-    bot = object.__new__(ClipForgeTelegramBot)
+    bot = object.__new__(FendyClipperTelegramBot)
     bot.state = {"viral_video_seen_urls": ["https://youtu.be/alreadySeen1"]}
 
-    ClipForgeTelegramBot.remember_viral_sources(
+    FendyClipperTelegramBot.remember_viral_sources(
         bot,
         [
             {"url": "https://youtu.be/newVideo001"},
@@ -387,7 +387,7 @@ def test_youtube_control_keyboard_includes_merge_session():
         def latest_retryable_youtube_upload_id(self):
             return None
 
-    markup = ClipForgeTelegramBot.youtube_control_keyboard(DummyBot())
+    markup = FendyClipperTelegramBot.youtube_control_keyboard(DummyBot())
     callbacks = [
         button["callback_data"]
         for row in markup["inline_keyboard"]
@@ -403,7 +403,7 @@ def test_youtube_control_keyboard_includes_merge_session():
 
 
 def test_youtube_session_capture_lines_reports_success():
-    lines = ClipForgeTelegramBot.youtube_session_capture_lines(
+    lines = FendyClipperTelegramBot.youtube_session_capture_lines(
         object(),
         {"logs": ["Sesi YouTube dari browser tersimpan: /tmp/youtube_storage_state.json"]},
     )
@@ -413,7 +413,7 @@ def test_youtube_session_capture_lines_reports_success():
 
 
 def test_youtube_cdp_result_lines_reports_browser_login_fallback_as_in_progress():
-    lines = ClipForgeTelegramBot.youtube_cdp_result_lines(
+    lines = FendyClipperTelegramBot.youtube_cdp_result_lines(
         object(),
         {
             "ok": False,
@@ -433,11 +433,11 @@ def test_youtube_cdp_result_lines_reports_browser_login_fallback_as_in_progress(
 
 
 def test_job_keyboard_allows_delete_for_failed_and_queued_jobs():
-    failed_markup = ClipForgeTelegramBot.job_keyboard(
+    failed_markup = FendyClipperTelegramBot.job_keyboard(
         object(),
         {"id": "failed-job", "status": "failed", "clips": []},
     )
-    queued_markup = ClipForgeTelegramBot.job_keyboard(
+    queued_markup = FendyClipperTelegramBot.job_keyboard(
         object(),
         {"id": "queued-job", "status": "queued", "clips": []},
     )

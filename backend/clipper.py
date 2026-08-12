@@ -30,7 +30,7 @@ def emit_progress(percent: int, stage: str, detail: str) -> None:
     """Emit a machine-readable milestone consumed by the API progress tracker."""
     clean_detail = re.sub(r"[\r\n|]+", " ", detail).strip()
     console.print(
-        f"CLIPFORGE_PROGRESS:{max(0, min(100, int(percent)))}|{stage}|{clean_detail}",
+        f"FENDY_CLIPPER_PROGRESS:{max(0, min(100, int(percent)))}|{stage}|{clean_detail}",
         markup=False,
     )
 
@@ -375,7 +375,7 @@ ISLAMIC_WORDS = {
     "zikir",
 }
 
-ISLAMIC_BACKGROUND_MUSIC_TITLE = "Cahaya Hikmah (ClipForge Original)"
+ISLAMIC_BACKGROUND_MUSIC_TITLE = "Cahaya Hikmah (Fendy Clipper Original)"
 ISLAMIC_BACKGROUND_MUSIC_LICENSE = "CC0-1.0"
 
 INSPIRING_WORDS = {
@@ -1073,7 +1073,7 @@ def detect_static_watermark_region(
 ) -> WatermarkRegion | None:
     """Find a compact text-like overlay that persists across a clip preview.
 
-    Detection runs on the already-cropped preview, before ClipForge captions,
+    Detection runs on the already-cropped preview, before Fendy Clipper captions,
     channel branding, and CTA are drawn. Requiring repeated edge strokes across
     many frames prevents ordinary speech captions from becoming blur targets.
     """
@@ -2742,7 +2742,7 @@ def transcription_decode_options(language: str) -> dict:
             "jangan menambah kata yang tidak diucapkan."
         ),
     }
-    hotwords = os.environ.get("CLIPFORGE_TRANSCRIPTION_HOTWORDS", "").strip()
+    hotwords = os.environ.get("FENDY_CLIPPER_TRANSCRIPTION_HOTWORDS", "").strip()
     if hotwords:
         options["hotwords"] = hotwords
     return options
@@ -3533,6 +3533,28 @@ def select_compilation_candidates(
     return picked
 
 
+def order_compilation_for_retention(
+    candidates: list[ClipCandidate],
+) -> list[ClipCandidate]:
+    """Lead with the strongest promise, then restore the remaining source arc."""
+    if len(candidates) < 2:
+        return list(candidates)
+    strongest = max(
+        candidates,
+        key=lambda item: (
+            item.score,
+            item.key_point_score,
+            item.boundary_quality,
+            -item.start,
+        ),
+    )
+    remaining = sorted(
+        (item for item in candidates if item is not strongest),
+        key=lambda item: item.start,
+    )
+    return [strongest, *remaining]
+
+
 def select_output_candidates(
     candidates: list[ClipCandidate],
     *,
@@ -4007,7 +4029,7 @@ SHORTS_SAFE_RIGHT = 900
 SHORTS_SAFE_TOP = 220
 SHORTS_SAFE_BOTTOM = 1560
 SHORTS_OFFICIAL_MAX_SECONDS = 180
-CLIPFORGE_SHORTS_MAX_SECONDS = 60
+FENDY_CLIPPER_SHORTS_MAX_SECONDS = 60
 SHORTS_POLICY_REVIEW_DATE = "2026-08-11"
 
 
@@ -4439,10 +4461,10 @@ def shorts_policy_compliance(duration: float, *, embedded_cover: bool) -> dict[s
     return {
         "reviewed_on": SHORTS_POLICY_REVIEW_DATE,
         "official_max_seconds": SHORTS_OFFICIAL_MAX_SECONDS,
-        "clipforge_max_seconds": CLIPFORGE_SHORTS_MAX_SECONDS,
+        "fendy_clipper_max_seconds": FENDY_CLIPPER_SHORTS_MAX_SECONDS,
         "duration_seconds": round(safe_duration, 3),
         "duration_within_official_limit": safe_duration <= SHORTS_OFFICIAL_MAX_SECONDS,
-        "duration_within_clipforge_limit": safe_duration <= CLIPFORGE_SHORTS_MAX_SECONDS,
+        "duration_within_fendy_clipper_limit": safe_duration <= FENDY_CLIPPER_SHORTS_MAX_SECONDS,
         "vertical_aspect_ratio": "9:16",
         "custom_thumbnail_upload_supported": False,
         "thumbnail_strategy": (
@@ -6614,7 +6636,7 @@ def export_clip(
                 "enabled": False,
                 "requested": True,
                 "title": ISLAMIC_BACKGROUND_MUSIC_TITLE,
-                "source": "locally_synthesized_clipforge_original",
+                "source": "locally_synthesized_fendy_clipper_original",
                 "license": ISLAMIC_BACKGROUND_MUSIC_LICENSE,
                 "third_party_recording": False,
                 "ducking": music_ducking_supported,
@@ -7096,7 +7118,7 @@ def export_clip(
         "method": "multi_frame_persistent_edge_feathered_local_blur_v2",
         "detector_version": 2,
         "region": asdict(watermark_region) if watermark_region is not None else None,
-        "applied_before_clipforge_overlays": True,
+        "applied_before_fendy_clipper_overlays": True,
         "feathered_boundary": watermark_region is not None,
         "scope": "detected_region_only",
     }
@@ -7548,6 +7570,7 @@ def export_compilation(
     auto_blur_watermarks: bool = False,
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
+    candidates = order_compilation_for_retention(candidates)
     parts_dir = clips_dir / ".compilation_parts"
     shutil.rmtree(parts_dir, ignore_errors=True)
     parts_dir.mkdir(parents=True, exist_ok=True)
@@ -7778,6 +7801,13 @@ def export_compilation(
             }
             for index, item in enumerate(candidates)
         ],
+        "retention_strategy": {
+            "version": 1,
+            "opening": "strongest_editorial_segment_first",
+            "remaining_arc": "source_chronology_after_hook",
+            "first_30_seconds_match_title_thumbnail_promise": True,
+            "manual_youtube_chapters_ready": len(candidates) >= 3,
+        },
     }
 
     strongest_offset = sum(
@@ -7985,7 +8015,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--required-hashtags",
         default="",
-        help="Comma-separated hashtags always appended to generated captions, e.g. clipforge,viral",
+        help="Comma-separated hashtags always appended to generated captions, e.g. fendyclipper,viral",
     )
     parser.add_argument(
         "--require-creative-commons",
@@ -8004,12 +8034,12 @@ def main() -> int:
         )
         args.visual_mode = "auto_fyp"
 
-    if args.clip_mode == "short" and args.max > CLIPFORGE_SHORTS_MAX_SECONDS:
+    if args.clip_mode == "short" and args.max > FENDY_CLIPPER_SHORTS_MAX_SECONDS:
         console.print(
-            f"[yellow]Short clip maximum capped at {CLIPFORGE_SHORTS_MAX_SECONDS} seconds "
+            f"[yellow]Short clip maximum capped at {FENDY_CLIPPER_SHORTS_MAX_SECONDS} seconds "
             "to keep third-party claim risk below YouTube's stricter >1 minute Shorts rule.[/yellow]"
         )
-        args.max = float(CLIPFORGE_SHORTS_MAX_SECONDS)
+        args.max = float(FENDY_CLIPPER_SHORTS_MAX_SECONDS)
 
     if args.min <= 0 or args.max <= args.min:
         console.print("[red]Invalid duration range.[/red]")

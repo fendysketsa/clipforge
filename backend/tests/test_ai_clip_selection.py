@@ -5,6 +5,7 @@ from llm import AIConfig, LLMUnavailableError
 from clipper import (
     ClipCandidate,
     ai_rescore_candidates,
+    order_compilation_for_retention,
     select_candidates,
     select_compilation_candidates,
     select_output_candidates,
@@ -222,3 +223,17 @@ def test_compilation_selection_covers_late_story_payoff():
     selected = select_compilation_candidates(candidates, target_duration=600)
 
     assert any(item.start >= 1900 for item in selected)
+
+
+def test_compilation_export_order_moves_strongest_segment_to_opening():
+    candidates = [
+        make_candidate(1, 0, 72, "Konteks awal"),
+        make_candidate(2, 120, 96, "Jawaban yang paling kuat"),
+        make_candidate(3, 240, 80, "Kesimpulan"),
+    ]
+
+    ordered = order_compilation_for_retention(candidates)
+
+    assert ordered[0] is candidates[1]
+    assert [item.start for item in ordered[1:]] == [0, 240]
+    assert [item.start for item in candidates] == [0, 120, 240]

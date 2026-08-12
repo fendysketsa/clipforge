@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Fendy Clipper YouTube Chrome
+Comment=Start the persistent YouTube Studio browser used by Fendy Clipper uploads
+Exec=/bin/sh -lc 'for root in /www/wwwroot/clipper/*; do test -x "$root/scripts/open-youtube-login-chrome.sh" && exec "$root/scripts/open-youtube-login-chrome.sh" --headed --minimized --foreground; done; exit 1'
+Icon=google-chrome
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=8

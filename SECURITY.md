@@ -1,6 +1,6 @@
 # Security
 
-ClipForge is designed for local-first use.
+Fendy Clipper is designed for local-first use.
 
 ## Public deployments
 

@@ -2,20 +2,21 @@ import pytest
 
 import youtube_uploader
 from youtube_uploader import (
-    CLIPFORGE_UPLOAD_PAGE_NAME,
+    FENDY_CLIPPER_UPLOAD_PAGE_NAME,
     UploadError,
     click_final_upload_action,
     close_duplicate_target_studio_tabs,
-    close_idle_clipforge_upload_tabs,
+    close_idle_fendy_clipper_upload_tabs,
     close_upload_tab,
     copyright_claim_is_explicitly_non_blocking,
     copyright_issue_detected,
     copyright_issue_blocks_upload,
-    mark_clipforge_upload_tab,
+    mark_fendy_clipper_upload_tab,
     next_upload_step_timeout_ms,
     open_advanced_upload_settings,
     reload_after_publish,
     safe_upload_visibility,
+    save_claimed_upload_as_private,
     set_altered_content_disclosure,
     set_thumbnail,
     should_upload_custom_thumbnail,
@@ -78,7 +79,7 @@ class BrowserPage:
         if script == "window.name":
             return self.window_name
         if script.startswith("window.name = "):
-            self.window_name = CLIPFORGE_UPLOAD_PAGE_NAME
+            self.window_name = FENDY_CLIPPER_UPLOAD_PAGE_NAME
             return None
         raise AssertionError(f"Unexpected script: {script}")
 
@@ -469,18 +470,18 @@ def test_owned_upload_tab_is_marked_and_force_closed_even_when_setting_is_disabl
     page = BrowserPage("https://studio.youtube.com/channel/target")
     monkeypatch.setenv("YOUTUBE_CLOSE_UPLOAD_TAB", "false")
 
-    mark_clipforge_upload_tab(page)
+    mark_fendy_clipper_upload_tab(page)
     close_upload_tab(page, force=True)
 
-    assert page.window_name == CLIPFORGE_UPLOAD_PAGE_NAME
+    assert page.window_name == FENDY_CLIPPER_UPLOAD_PAGE_NAME
     assert page.closed is True
 
 
-def test_idle_cleanup_only_closes_marked_clipforge_tabs():
-    idle_upload = BrowserPage(window_name=CLIPFORGE_UPLOAD_PAGE_NAME)
+def test_idle_cleanup_only_closes_marked_fendy_clipper_tabs():
+    idle_upload = BrowserPage(window_name=FENDY_CLIPPER_UPLOAD_PAGE_NAME)
     user_tab = BrowserPage("https://studio.youtube.com/channel/target")
 
-    closed = close_idle_clipforge_upload_tabs([idle_upload, user_tab])
+    closed = close_idle_fendy_clipper_upload_tabs([idle_upload, user_tab])
 
     assert closed == 1
     assert idle_upload.closed is True
@@ -533,3 +534,47 @@ def test_final_action_rechecks_claim_notice_immediately_before_click(monkeypatch
             TextPage("Konten yang diklaim ditemukan di video ini"),
             "public",
         )
+
+
+def test_claimed_upload_is_finalized_as_private(monkeypatch):
+    page = object()
+    calls = []
+    logs = []
+    monkeypatch.setattr(youtube_uploader, "get_upload_workflow_step", lambda _page: "CHECKS")
+    monkeypatch.setattr(
+        youtube_uploader,
+        "click_next_upload_step",
+        lambda *_args, **kwargs: calls.append(("next", kwargs["expected_step"])),
+    )
+    monkeypatch.setattr(youtube_uploader, "wait_for_visibility_step", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        youtube_uploader,
+        "set_visibility",
+        lambda _page, visibility: calls.append(("visibility", visibility)),
+    )
+    monkeypatch.setattr(youtube_uploader, "visibility_is_selected", lambda *_args: True)
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        youtube_uploader,
+        "extract_video_url",
+        lambda _page: "https://www.youtube.com/watch?v=abcDEF12345",
+    )
+
+    def fake_final_action(_page, visibility, **kwargs):
+        calls.append(("final", visibility, kwargs["allow_claimed_private_save"]))
+
+    monkeypatch.setattr(youtube_uploader, "click_final_upload_action", fake_final_action)
+    monkeypatch.setattr(youtube_uploader, "reload_after_publish", lambda _page: calls.append(("reload",)))
+    monkeypatch.setattr(youtube_uploader, "log", logs.append)
+
+    result = save_claimed_upload_as_private(page, content_type="long-form", media_duration_seconds=300)
+
+    assert result == "https://www.youtube.com/watch?v=abcDEF12345"
+    assert calls == [
+        ("next", "REVIEW"),
+        ("visibility", "private"),
+        ("final", "private", True),
+        ("reload",),
+    ]
+    assert "FINAL_VISIBILITY: private" in logs
+    assert "PRIVATE_FALLBACK_SAVED: content_id_claim" in logs

@@ -336,14 +336,14 @@ export function ControlPanel({
                 <Loader2 className="spin" size={18} />
                 <div>
                   <strong>Memeriksa jejak sumber…</strong>
-                  <span>Mencocokkan ID video dengan seluruh job dan arsip ClipForge.</span>
+                  <span>Mencocokkan ID video dengan seluruh job dan arsip Fendy Clipper.</span>
                 </div>
               </div>
             ) : sourceHistory?.valid_youtube_url && sourceHistory.found ? (
               <div className="sourceHistoryNotice isDuplicate" role="alert">
                 <AlertTriangle size={20} />
                 <div className="sourceHistoryCopy">
-                  <strong>Video ini sudah pernah masuk ClipForge</strong>
+                  <strong>Video ini sudah pernah masuk Fendy Clipper</strong>
                   <span>
                     Sistem menemukan jejak pemrosesan sebelumnya. Periksa formatnya agar tidak membuat hasil ganda tanpa sengaja.
                   </span>
@@ -379,7 +379,7 @@ export function ControlPanel({
                 <CheckCircle2 size={18} />
                 <div>
                   <strong>Belum pernah diproses</strong>
-                  <span>ID video tidak ditemukan pada riwayat dan arsip ClipForge.</span>
+                  <span>ID video tidak ditemukan pada riwayat dan arsip Fendy Clipper.</span>
                 </div>
               </div>
             ) : url.trim() && sourceHistory ? (

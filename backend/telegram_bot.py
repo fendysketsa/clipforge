@@ -824,7 +824,7 @@ def _json_request(
 def _multipart_body(
     fields: dict[str, Any], file_field: str, file_path: Path
 ) -> tuple[bytes, str]:
-    boundary = f"----ClipForge{uuid.uuid4().hex}"
+    boundary = f"----FendyClipper{uuid.uuid4().hex}"
     chunks: list[bytes] = []
     for name, value in fields.items():
         if isinstance(value, (dict, list)):
@@ -1219,7 +1219,7 @@ def viral_sources_keyboard(sources: list[dict[str, Any]], suggestions: dict[str,
     return keyboard(rows)
 
 
-class ClipForgeTelegramBot:
+class FendyClipperTelegramBot:
     def __init__(self, token: str, owner_id: int):
         self.telegram = TelegramApi(token)
         self.backend = BackendClient()
@@ -2839,7 +2839,7 @@ class ClipForgeTelegramBot:
         elif command == "/settings":
             self.show_settings(chat_id)
         elif command == "/status":
-            self.send_message(chat_id, "Mengecek status ClipForge...")
+            self.send_message(chat_id, "Mengecek status Fendy Clipper...")
             self.show_status(chat_id)
         elif command in {"/battery", "/baterai"}:
             self.show_battery(chat_id)
@@ -3064,7 +3064,7 @@ class ClipForgeTelegramBot:
         elif data == "menu:settings":
             self.show_settings(chat_id, message_id if isinstance(message_id, int) else None)
         elif data == "menu:status":
-            self.send_message(chat_id, "Mengecek status ClipForge...")
+            self.send_message(chat_id, "Mengecek status Fendy Clipper...")
             self.show_status(chat_id)
         elif data == "menu:battery":
             self.show_battery(chat_id)
@@ -3337,7 +3337,7 @@ class ClipForgeTelegramBot:
                 self.backend.health()
                 return
             except ServiceError as exc:
-                print(f"Menunggu backend ClipForge: {exc}", flush=True)
+                print(f"Menunggu backend Fendy Clipper: {exc}", flush=True)
                 time.sleep(3)
 
     def monitor_battery(self, *, force: bool = False) -> None:
@@ -3430,7 +3430,7 @@ class ClipForgeTelegramBot:
         try:
             self.backend.health()
         except ServiceError as exc:
-            print(f"Backend ClipForge belum siap, bot tetap menerima command: {exc}", flush=True)
+            print(f"Backend Fendy Clipper belum siap, bot tetap menerima command: {exc}", flush=True)
         while self.running:
             try:
                 updates = self.telegram.call(
@@ -3474,7 +3474,7 @@ def main() -> None:
     except ValueError as exc:
         raise SystemExit("TELEGRAM_OWNER_ID harus berupa angka") from exc
 
-    bot = ClipForgeTelegramBot(token, owner_id)
+    bot = FendyClipperTelegramBot(token, owner_id)
 
     def stop(_signum: int, _frame: object) -> None:
         bot.running = False

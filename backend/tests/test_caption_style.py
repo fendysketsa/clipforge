@@ -847,9 +847,9 @@ def test_shorts_policy_compliance_records_official_and_stricter_local_limits():
     compliance = shorts_policy_compliance(59.8, embedded_cover=True)
 
     assert compliance["official_max_seconds"] == 180
-    assert compliance["clipforge_max_seconds"] == 60
+    assert compliance["fendy_clipper_max_seconds"] == 60
     assert compliance["duration_within_official_limit"] is True
-    assert compliance["duration_within_clipforge_limit"] is True
+    assert compliance["duration_within_fendy_clipper_limit"] is True
     assert compliance["custom_thumbnail_upload_supported"] is False
     assert compliance["thumbnail_strategy"] == "embedded_selectable_frame"
     assert compliance["inauthentic_content_policy_reviewed"] is True
@@ -1372,7 +1372,7 @@ def test_animated_3d_look_can_add_adaptive_clarity():
 
 
 def test_accuracy_first_transcription_decode_uses_beam_search_and_word_timestamps(monkeypatch):
-    monkeypatch.setenv("CLIPFORGE_TRANSCRIPTION_HOTWORDS", "Ustaz Abdul Somad, Al-Qur'an")
+    monkeypatch.setenv("FENDY_CLIPPER_TRANSCRIPTION_HOTWORDS", "Ustaz Abdul Somad, Al-Qur'an")
 
     options = transcription_decode_options("id")
 

@@ -27,11 +27,15 @@ DEFAULT_STUDIO_URL = os.environ.get(
 ).strip()
 DEFAULT_CDP_URL = os.environ.get("YOUTUBE_CDP_URL", "http://127.0.0.1:9222").strip()
 DEBUG_DIR = Path(os.environ.get("YOUTUBE_UPLOAD_DEBUG_DIR", BASE_DIR / "data" / "youtube_debug"))
-CLIPFORGE_UPLOAD_PAGE_NAME = "clipforge-youtube-upload"
+FENDY_CLIPPER_UPLOAD_PAGE_NAME = "fendy-clipper-youtube-upload"
 
 
 class UploadError(RuntimeError):
     pass
+
+
+class CopyrightClaimUploadError(UploadError):
+    """A claim blocked publication, but the uploaded file can still be saved Private."""
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -1546,24 +1550,24 @@ def close_upload_tab(page, *, force: bool = False) -> None:
         log("Tab upload YouTube tidak dapat ditutup otomatis.")
 
 
-def mark_clipforge_upload_tab(page) -> None:
+def mark_fendy_clipper_upload_tab(page) -> None:
     try:
-        page.evaluate(f"window.name = {json.dumps(CLIPFORGE_UPLOAD_PAGE_NAME)}")
+        page.evaluate(f"window.name = {json.dumps(FENDY_CLIPPER_UPLOAD_PAGE_NAME)}")
     except Exception:
         pass
 
 
-def is_clipforge_upload_tab(page) -> bool:
+def is_fendy_clipper_upload_tab(page) -> bool:
     try:
-        return page.evaluate("window.name") == CLIPFORGE_UPLOAD_PAGE_NAME
+        return page.evaluate("window.name") == FENDY_CLIPPER_UPLOAD_PAGE_NAME
     except Exception:
         return False
 
 
-def close_idle_clipforge_upload_tabs(pages: Iterable) -> int:
+def close_idle_fendy_clipper_upload_tabs(pages: Iterable) -> int:
     closed = 0
     for page in pages:
-        if not is_clipforge_upload_tab(page):
+        if not is_fendy_clipper_upload_tab(page):
             continue
         try:
             if not page.is_closed():
@@ -1572,7 +1576,7 @@ def close_idle_clipforge_upload_tabs(pages: Iterable) -> int:
         except Exception:
             continue
     if closed:
-        log(f"{closed} tab upload ClipForge yang idle ditutup.")
+        log(f"{closed} tab upload Fendy Clipper yang idle ditutup.")
     return closed
 
 
@@ -2037,7 +2041,7 @@ def wait_for_review_checks_safe_before_publish(
                 previously_verified_non_blocking_claim=previously_verified_non_blocking_claim,
             ):
                 save_debug_artifacts(page, "copyright-claim-before-publish")
-                raise UploadError(
+                raise CopyrightClaimUploadError(
                     "Klaim Content ID/copyright muncul pada review akhir. "
                     "Video tidak dipublikasikan agar channel tetap aman."
                 )
@@ -2071,6 +2075,7 @@ def click_final_upload_action(
     content_type: str = "auto",
     media_duration_seconds: float = 0.0,
     previously_verified_non_blocking_claim: bool = False,
+    allow_claimed_private_save: bool = False,
 ) -> None:
     active_step = get_upload_workflow_step(page)
     if active_step != "REVIEW":
@@ -2088,16 +2093,25 @@ def click_final_upload_action(
         body = page.locator("ytcp-uploads-dialog").inner_text(timeout=3000)
     except Exception:
         body = ""
-    if copyright_issue_blocks_upload(
+    claim_blocks_publication = copyright_issue_blocks_upload(
         body,
         content_type=content_type,
         media_duration_seconds=media_duration_seconds,
         previously_verified_non_blocking_claim=previously_verified_non_blocking_claim,
-    ):
+    )
+    saving_claimed_video_private = (
+        visibility == "private" and allow_claimed_private_save
+    )
+    if claim_blocks_publication and not saving_claimed_video_private:
         save_debug_artifacts(page, "copyright-claim-at-final-action")
-        raise UploadError(
+        raise CopyrightClaimUploadError(
             "Klaim Content ID/copyright terdeteksi tepat sebelum aksi final. "
             "Upload dibatalkan agar channel tetap aman."
+        )
+    if claim_blocks_publication and saving_claimed_video_private:
+        log(
+            "Klaim Content ID memblokir publikasi; aksi final dibatasi ke Simpan Private "
+            "agar video tetap tersedia untuk review manual."
         )
     if copyright_claim_is_explicitly_non_blocking(body):
         log(
@@ -2225,6 +2239,56 @@ def click_final_upload_action(
         time.sleep(0.4)
     save_debug_artifacts(page, "final-upload-button-not-found")
     raise UploadError(f"Tombol final '{label}' tidak ditemukan.")
+
+
+def save_claimed_upload_as_private(
+    page,
+    *,
+    timeout_ms: int = 30000,
+    content_type: str = "auto",
+    media_duration_seconds: float = 0.0,
+) -> str:
+    """Finish an already-transferred claimed upload without making it viewable."""
+    log(
+        "Fallback Content ID aktif: file sudah terkirim, jadi video akan disimpan Private "
+        "dan tidak akan dipublikasikan."
+    )
+    active_step = get_upload_workflow_step(page)
+    if active_step != "REVIEW":
+        if active_step != "CHECKS":
+            save_debug_artifacts(page, "private-fallback-invalid-step")
+            raise UploadError(
+                "Fallback Private tidak dapat dijalankan dari step upload "
+                f"{active_step or 'yang tidak terbaca'}."
+            )
+        click_next_upload_step(page, timeout_ms=timeout_ms, expected_step="REVIEW")
+
+    wait_for_visibility_step(page, timeout_ms=min(timeout_ms, 20000))
+    set_visibility(page, "private")
+    time.sleep(0.8)
+    if not visibility_is_selected(page, "private"):
+        save_debug_artifacts(page, "private-fallback-not-selected")
+        raise UploadError("Fallback gagal karena visibilitas Private belum tercentang.")
+
+    uploaded_video_url = extract_video_url(page)
+    click_final_upload_action(
+        page,
+        "private",
+        timeout_ms=timeout_ms,
+        content_type=content_type,
+        media_duration_seconds=media_duration_seconds,
+        allow_claimed_private_save=True,
+    )
+    final_url = uploaded_video_url or extract_video_url(page)
+    log("FINAL_VISIBILITY: private")
+    log("PRIVATE_FALLBACK_SAVED: content_id_claim")
+    if final_url:
+        log(f"VIDEO_URL: {final_url}")
+    try:
+        reload_after_publish(page)
+    except UploadError as exc:
+        log(f"Reload setelah Simpan Private dilewati: {exc}")
+    return final_url
 
 
 def fill_tags(page, tags: str) -> None:
@@ -4197,17 +4261,17 @@ def wait_for_copyright_checks(
                 except (TypeError, ValueError):
                     duration = 0.0
                 if duration <= 0:
-                    raise UploadError(
+                    raise CopyrightClaimUploadError(
                         "Klaim Content ID terdeteksi, tetapi durasi Short tidak dapat diverifikasi. "
                         "Upload dibatalkan karena aturan YouTube memblokir semua Short 1-3 menit "
                         "yang memiliki klaim aktif."
                     )
-                raise UploadError(
+                raise CopyrightClaimUploadError(
                     "Klaim Content ID terdeteksi pada Short berdurasi lebih dari 1 menit. "
                     "Sesuai kebijakan YouTube, Short 1-3 menit dengan klaim aktif diblokir "
                     "meskipun ringkasan klaim menyebut tidak ada dampak."
                 )
-            raise UploadError(
+            raise CopyrightClaimUploadError(
                 "YouTube Studio mendeteksi klaim Content ID/copyright pada clip ini. "
                 "Upload dibatalkan sebelum publish agar channel tetap aman."
             )
@@ -4597,7 +4661,7 @@ def run_upload(args: argparse.Namespace) -> None:
             for item in contexts:
                 install_context_dialog_guard(item)
             existing_pages = [item for ctx in contexts for item in ctx.pages]
-            close_idle_clipforge_upload_tabs(existing_pages)
+            close_idle_fendy_clipper_upload_tabs(existing_pages)
             existing_pages = [item for ctx in contexts for item in ctx.pages]
             studio_pages = [item for item in existing_pages if "studio.youtube.com" in item.url.lower()]
             target_pages = [item for item in studio_pages if page_url_matches_channel_id(item, args.target_channel_id)]
@@ -4616,7 +4680,7 @@ def run_upload(args: argparse.Namespace) -> None:
                 page = hydrated_page
             else:
                 page = context.new_page()
-            mark_clipforge_upload_tab(page)
+            mark_fendy_clipper_upload_tab(page)
         elif chromium_user_data_dir is not None:
             log(f"Menggunakan profile Chromium: {chromium_user_data_dir}")
             context = playwright.chromium.launch_persistent_context(
@@ -4744,10 +4808,20 @@ def run_upload(args: argparse.Namespace) -> None:
                 media_duration_seconds=args.media_duration_seconds,
                 previously_verified_non_blocking_claim=non_blocking_claim_approved,
             )
-            reload_after_publish(page)
             final_url = uploaded_video_url or extract_video_url(page)
+            log(f"FINAL_VISIBILITY: {args.visibility}")
             if final_url:
                 log(f"VIDEO_URL: {final_url}")
+            reload_after_publish(page)
+            context.storage_state(path=str(state_path))
+        except CopyrightClaimUploadError as exc:
+            log(f"Publikasi dihentikan: {exc}")
+            save_claimed_upload_as_private(
+                page,
+                timeout_ms=30000,
+                content_type=args.thumbnail_content_type,
+                media_duration_seconds=args.media_duration_seconds,
+            )
             context.storage_state(path=str(state_path))
         finally:
             close_upload_tab(page, force=using_cdp)
@@ -4758,7 +4832,7 @@ def run_upload(args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Upload ClipForge outputs to YouTube Studio with Playwright.")
+    parser = argparse.ArgumentParser(description="Upload Fendy Clipper outputs to YouTube Studio with Playwright.")
     parser.add_argument("--state", default=str(DEFAULT_STATE_PATH), help="Path storage_state Playwright untuk sesi YouTube.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 

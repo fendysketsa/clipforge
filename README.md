@@ -1,10 +1,10 @@
-# ClipForge
+# Fendy Clipper
 
 Local-first tool for turning long YouTube videos into ready-to-post vertical clips with transcription, burned-in subtitles, and smart crop options.
 
 ## Overview
 
-![ClipForge overview](image.png)
+![Fendy Clipper overview](image.png)
 
 ## Features
 
@@ -51,7 +51,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 
 Docker users only need Docker and Docker Compose.
 
-The public Whisper model works without an account. ClipForge stores the model
+The public Whisper model works without an account. Fendy Clipper stores the model
 cache under `backend/data/huggingface`, so container rebuilds do not download it
 again. For higher Hugging Face download limits, create a read-only access token
 and set `HF_TOKEN=hf_...` in the untracked root `.env`; the backend forwards it
@@ -148,7 +148,7 @@ dapat diubah melalui variabel di atas.
 
 ## YouTube Studio Upload
 
-ClipForge can upload completed clips to YouTube Studio with Playwright. The
+Fendy Clipper can upload completed clips to YouTube Studio with Playwright. The
 uploader uses a saved browser session, so you log in manually once and the
 dashboard or Telegram bot can queue uploads afterwards.
 
@@ -231,7 +231,7 @@ for blocks, strikes, unresolved copyright states, and every active claim on a
 Short over one minute. A claim is allowed to finish only when YouTube explicitly
 shows both that it has no impact on the video and no impact or strike on the
 channel. Auto uploads are kept Private by default, because Content ID can also
-apply a later claim after the initial Checks finish. When ClipForge replaces a realistic backdrop, it also
+apply a later claim after the initial Checks finish. When Fendy Clipper replaces a realistic backdrop, it also
 selects YouTube's altered-content disclosure before continuing. Review the
 Restrictions and monetization columns before publishing.
 This reduces risk but cannot guarantee a video will never receive a future claim.
@@ -251,7 +251,7 @@ YOUTUBE_CDP_MAX_UPLOAD_MB=45
 YOUTUBE_DEFAULT_VISIBILITY=private
 YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD=false
 YOUTUBE_MADE_FOR_KIDS=false
-YOUTUBE_DEFAULT_TAGS=shorts,clipforge
+YOUTUBE_DEFAULT_TAGS=shorts,fendyclipper
 YOUTUBE_DEFAULT_PLAYLIST=Islam
 YOUTUBE_TARGET_CHANNEL=ryuundyofficial
 YOUTUBE_TARGET_EMAIL=fendysketsa@gmail.com
@@ -358,7 +358,7 @@ BACKEND_API_BASE=http://backend:8010
 
 ## Safety And Legal Notes
 
-ClipForge is intended for local workflows and content you are allowed to process. Make sure you have rights or permission to download, transform, and republish source videos. Follow YouTube terms and applicable copyright law.
+Fendy Clipper is intended for local workflows and content you are allowed to process. Make sure you have rights or permission to download, transform, and republish source videos. Follow YouTube terms and applicable copyright law.
 
 Do not expose the backend publicly without authentication, rate limits, request validation, quotas, and cleanup. The backend accepts URLs and runs expensive jobs.
 

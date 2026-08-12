@@ -1,4 +1,4 @@
-# ClipForge Backend
+# Fendy Clipper Backend
 
 FastAPI service and CLI for generating vertical 9:16 clips from YouTube videos.
 
@@ -109,7 +109,7 @@ Default output video:
 - transcript lokal accuracy-first via `Systran/faster-whisper-medium`, beam search,
   VAD, word timestamps, dan cache yang terikat model/bahasa
 - nama orang/brand/istilah khusus dapat diprioritaskan melalui
-  `CLIPFORGE_TRANSCRIPTION_HOTWORDS` (pisahkan dengan koma)
+  `FENDY_CLIPPER_TRANSCRIPTION_HOTWORDS` (pisahkan dengan koma)
 - durasi clip pendek dinamis, maksimal 60 detik
 - mode `short` tidak merender kompilasi tambahan
 

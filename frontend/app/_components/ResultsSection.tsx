@@ -548,6 +548,9 @@ export function ResultsSection({
                       <UploadCloud size={14} />
                       <span className="youtubeUploadStatusText">
                         YouTube: {latestUpload.status}
+                        {latestUpload.status === "completed" && latestUpload.visibility === "private"
+                          ? " · tersimpan Private"
+                          : null}
                         {isLongForm && latestUpload.thumbnail_url
                           ? latestUpload.thumbnail_attached
                             ? " · thumbnail terpasang"

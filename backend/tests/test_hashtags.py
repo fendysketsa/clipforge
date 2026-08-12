@@ -2,7 +2,7 @@ from clipper import _normalize_hashtag
 
 
 def test_normalize_adds_hash():
-    assert _normalize_hashtag("clipforge") == "#clipforge"
+    assert _normalize_hashtag("fendyclipper") == "#fendyclipper"
 
 
 def test_normalize_keeps_existing_hash():

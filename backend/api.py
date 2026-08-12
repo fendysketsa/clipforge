@@ -129,6 +129,7 @@ YTDLP_HTTP_HEADERS = {
 CLI_USER_ERROR_PREFIX = "USER_ERROR:"
 YOUTUBE_UPLOAD_ERROR_PREFIX = "USER_ERROR:"
 YOUTUBE_VIDEO_URL_PREFIX = "VIDEO_URL:"
+YOUTUBE_FINAL_VISIBILITY_PREFIX = "FINAL_VISIBILITY:"
 DEFAULT_YOUTUBE_PLAYLIST = "Islam"
 DEFAULT_YOUTUBE_TARGET_CHANNEL = "ryuundyofficial"
 DEFAULT_YOUTUBE_TARGET_EMAIL = "fendysketsa@gmail.com"
@@ -137,7 +138,7 @@ DEFAULT_YOUTUBE_AUTO_UPLOAD_COUNT = 3
 DEFAULT_YOUTUBE_AI_FALLBACK_MODELS = ["llama3.2-id:latest", "llama3:latest"]
 ROOT_DIR = BASE_DIR.parent
 YOUTUBE_CDP_REFRESH_LOG = Path(
-    os.environ.get("YOUTUBE_CDP_REFRESH_LOG", "/tmp/clipforge-youtube-chrome-launcher.log")
+    os.environ.get("YOUTUBE_CDP_REFRESH_LOG", "/tmp/fendy-clipper-youtube-chrome-launcher.log")
 )
 
 
@@ -1623,7 +1624,7 @@ youtube_login_reconnect_cdp = False
 cancelled_job_ids: set[str] = set()
 preserve_job_files_on_cancel: set[str] = set()
 process_lock = threading.Lock()
-clip_job_slots = threading.BoundedSemaphore(max(1, env_int("CLIPFORGE_MAX_CONCURRENT_JOBS", 3)))
+clip_job_slots = threading.BoundedSemaphore(max(1, env_int("FENDY_CLIPPER_MAX_CONCURRENT_JOBS", 3)))
 youtube_worker_lock = threading.Lock()
 youtube_worker_running = False
 youtube_cleanup_lock = threading.Lock()
@@ -2094,6 +2095,16 @@ def youtube_video_url_from_logs(logs: list[str]) -> str | None:
     return None
 
 
+def youtube_final_visibility_from_logs(logs: list[str]) -> str | None:
+    for line in reversed(logs):
+        if YOUTUBE_FINAL_VISIBILITY_PREFIX not in line:
+            continue
+        value = line.split(YOUTUBE_FINAL_VISIBILITY_PREFIX, 1)[1].strip().casefold()
+        if value in {"private", "unlisted", "public"}:
+            return value
+    return None
+
+
 def sidecar_social_caption(clip: ClipFile) -> str:
     if clip.social_caption and clip.social_caption.strip():
         return clip.social_caption.strip()
@@ -2165,7 +2176,8 @@ def default_youtube_description(job: ClipJob, clip: ClipFile) -> str:
     tags = default_youtube_tags(job, clip)
     if tags:
         parts.append(" ".join(f"#{tag.replace(' ', '')}" for tag in tags[:3]))
-    return append_youtube_source_attribution("\n\n".join(parts), job)
+    description = append_youtube_chapters("\n\n".join(parts), clip)
+    return append_youtube_source_attribution(description, job)
 
 
 def clip_sidecar_payload(clip: ClipFile) -> dict[str, Any]:
@@ -2178,6 +2190,69 @@ def clip_sidecar_payload(clip: ClipFile) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def youtube_timestamp(seconds: float) -> str:
+    total = max(0, int(seconds))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours:02}:{minutes:02}:{secs:02}"
+    return f"{minutes:02}:{secs:02}"
+
+
+def youtube_chapters_from_sidecar(clip: ClipFile) -> list[str]:
+    """Build valid manual chapters from the rendered long-form editorial arc."""
+    payload = clip_sidecar_payload(clip)
+    if payload.get("output_format") != "landscape_compilation":
+        return []
+    raw_parts = payload.get("parts")
+    if not isinstance(raw_parts, list):
+        return []
+
+    prepared: list[tuple[float, str]] = []
+    cursor = 0.0
+    for index, raw in enumerate(raw_parts, start=1):
+        if not isinstance(raw, dict):
+            continue
+        try:
+            duration = float(raw.get("duration") or 0.0)
+            if duration <= 0:
+                duration = float(raw.get("end") or 0.0) - float(raw.get("start") or 0.0)
+        except (TypeError, ValueError):
+            duration = 0.0
+        if duration <= 0:
+            continue
+        raw_title = str(raw.get("title") or f"Bagian {index}")
+        title = re.sub(r"\s+", " ", raw_title).strip(" -|:.")[:70] or f"Bagian {index}"
+        prepared.append((cursor, title))
+        cursor += duration
+
+    # YouTube requires 00:00, at least three timestamps, and chapters of at
+    # least ten seconds. Skip any boundary that would create a short chapter.
+    chapters: list[tuple[float, str]] = []
+    for timestamp, title in prepared:
+        if chapters and timestamp - chapters[-1][0] < 10:
+            continue
+        if timestamp > 0 and cursor - timestamp < 10:
+            continue
+        chapters.append((timestamp, title))
+    if len(chapters) < 3 or chapters[0][0] != 0:
+        return []
+    return [f"{youtube_timestamp(timestamp)} {title}" for timestamp, title in chapters]
+
+
+def append_youtube_chapters(description: str, clip: ClipFile) -> str:
+    chapters = youtube_chapters_from_sidecar(clip)
+    clean = description.strip()
+    if not chapters or "BAB VIDEO:" in clean:
+        return clean[:5000]
+    block = "BAB VIDEO:\n" + "\n".join(chapters)
+    attribution_marker = "Atribusi sumber (CC BY):"
+    if attribution_marker in clean:
+        before, after = clean.split(attribution_marker, 1)
+        return f"{before.rstrip()}\n\n{block}\n\n{attribution_marker}{after}"[:5000]
+    return f"{clean}\n\n{block}".strip()[:5000]
 
 
 def youtube_source_attribution(job: ClipJob) -> str:
@@ -2257,7 +2332,7 @@ def monetization_preflight_transformation_message(
     if not isinstance(signals, dict):
         return (
             "Upload diblokir: audit transformasi editorial belum lengkap. "
-            "Render ulang clip dengan ClipForge terbaru."
+            "Render ulang clip dengan Fendy Clipper terbaru."
         )
     try:
         current_audit_version = int(readiness.get("audit_version") or 1)
@@ -2336,7 +2411,7 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
         if thumbnail_strategy and thumbnail_strategy != "embedded_shorts_cover_frame":
             return (
                 "Upload diblokir: Short belum memiliki frame cover tertanam yang dapat dipilih. "
-                "Render ulang dengan ClipForge terbaru."
+                "Render ulang dengan Fendy Clipper terbaru."
             )
         compliance = sidecar.get("shorts_policy_compliance")
         if isinstance(compliance, dict) and not compliance.get(
@@ -2350,7 +2425,7 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
     if not isinstance(readiness, dict):
         return (
             "Upload diblokir: output lama belum memiliki audit monetisasi. "
-            "Render ulang clip dengan ClipForge terbaru."
+            "Render ulang clip dengan Fendy Clipper terbaru."
         )
     if not monetization_readiness_is_eligible(sidecar, readiness):
         return monetization_preflight_transformation_message(sidecar, readiness)
@@ -2611,6 +2686,13 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
         if is_compilation
         else "- Sertakan #Shorts sebagai salah satu hashtag.\n"
     )
+    long_form_packaging_rule = (
+        "- Untuk long-form, bingkai judul sebagai satu masalah universal dan satu manfaat/jawaban "
+        "yang benar-benar dibahas; taruh kata terpenting di bagian awal, dan jangan memakai kata "
+        "'resume', 'rangkuman', 'highlight', atau durasi video.\n"
+        if is_compilation
+        else ""
+    )
     user_prompt = (
         f"Buat metadata {format_name} untuk video ini.\n"
         "Aturan:\n"
@@ -2618,6 +2700,7 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
         "- Title baru harus kuat, modern, natural, 35-75 karakter, maksimal 85 karakter, tanpa hashtag.\n"
         "- Perbaiki salah dengar transkrip yang jelas; jangan menyalin kata acak atau kalimat pembuka yang rusak.\n"
         "- Hindari ALL CAPS dan clickbait generik; tonjolkan manfaat, konflik, kejutan, atau hikmah yang benar-benar ada.\n"
+        f"{long_form_packaging_rule}"
         "- Description baru 2-3 kalimat informatif, sekitar 180-450 karakter; bangun rasa penasaran tanpa menyesatkan.\n"
         "- Description boleh memakai maksimal 2 emoji yang benar-benar relevan.\n"
         "- Bahasa Indonesia.\n"
@@ -2955,6 +3038,7 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         or request.description
         or default_youtube_description(job, clip)
     )
+    description = append_youtube_chapters(description, clip)
     description = append_youtube_source_attribution(description, job)
     altered_content = clip_requires_altered_content_disclosure(clip)
     upload_id = uuid.uuid4().hex
@@ -3507,7 +3591,7 @@ def youtube_graphical_process_env() -> dict[str, str]:
     configured_authority = process_env.get("XAUTHORITY", "")
     authority_candidates = [Path(configured_authority)] if configured_authority else []
     authority_candidates.append(bridge_dir / "Xauthority")
-    host_runtime_dir = Path(process_env.get("YOUTUBE_HOST_RUNTIME_DIR", "/run/clipforge-host-user"))
+    host_runtime_dir = Path(process_env.get("YOUTUBE_HOST_RUNTIME_DIR", "/run/fendy-clipper-host-user"))
     if host_runtime_dir.is_dir():
         try:
             authority_candidates.extend(
@@ -4208,6 +4292,7 @@ def run_youtube_upload(upload_id: str) -> None:
                     upload_id,
                     logs=logs[-160:],
                     video_url=youtube_video_url_from_logs(logs),
+                    visibility=youtube_final_visibility_from_logs(logs) or upload.visibility,
                     thumbnail_attached=thumbnail_attached_for_attempt,
                 )
 
@@ -4872,13 +4957,13 @@ def build_clipper_command(
     return command
 
 
-CLIPFORGE_PROGRESS_PATTERN = re.compile(
-    r"^CLIPFORGE_PROGRESS:(\d{1,3})\|([^|]+)\|(.*)$"
+FENDY_CLIPPER_PROGRESS_PATTERN = re.compile(
+    r"^FENDY_CLIPPER_PROGRESS:(\d{1,3})\|([^|]+)\|(.*)$"
 )
 
 
 def parse_clipper_progress(line: str) -> dict[str, int | str] | None:
-    match = CLIPFORGE_PROGRESS_PATTERN.match((line or "").strip())
+    match = FENDY_CLIPPER_PROGRESS_PATTERN.match((line or "").strip())
     if not match:
         return None
     raw_percent, stage, detail = match.groups()

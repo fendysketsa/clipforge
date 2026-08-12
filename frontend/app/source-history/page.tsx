@@ -18,7 +18,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { getSourceUsageLog } from "../../lib/apiClient";
 import type { ClipMode, SourceUsageLogEntry, SourceUsageLogResponse } from "../../types/clip.type";
-import { SiteFooter } from "../_components/SiteFooter";
 import { Topbar } from "../_components/Topbar";
 
 type ModeFilter = "all" | ClipMode;
@@ -177,7 +176,6 @@ export default function SourceHistoryPage() {
         )}
       </section>
 
-      <SiteFooter />
     </main>
   );
 }

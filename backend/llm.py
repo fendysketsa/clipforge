@@ -98,7 +98,7 @@ def chat_completion(config: AIConfig, messages: list[dict]) -> str:
         if "openrouter.ai" in base_url:
             request.add_header(
                 "X-OpenRouter-Title",
-                os.environ.get("OPENROUTER_APP_TITLE", "ClipForge").strip() or "ClipForge",
+                os.environ.get("OPENROUTER_APP_TITLE", "Fendy Clipper").strip() or "Fendy Clipper",
             )
             referer = os.environ.get("OPENROUTER_HTTP_REFERER", "").strip()
             if referer:

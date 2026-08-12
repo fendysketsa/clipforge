@@ -44,7 +44,7 @@ from api import (
 
 def test_parse_clipper_progress_maps_machine_milestone_to_job_state():
     assert parse_clipper_progress(
-        "CLIPFORGE_PROGRESS:73|render|Merender klip pendek 1 dari 3"
+        "FENDY_CLIPPER_PROGRESS:73|render|Merender klip pendek 1 dari 3"
     ) == {
         "progress_percent": 73,
         "progress_stage": "render",

@@ -11,8 +11,8 @@ load_dotenv "$ROOT_DIR/.env"
 "$ROOT_DIR/scripts/prepare-youtube-gui-runtime.sh"
 
 YOUTUBE_CDP_URL="${YOUTUBE_CDP_URL:-http://127.0.0.1:9222}"
-YOUTUBE_CHROME_LOG="${YOUTUBE_CHROME_LOG:-/tmp/clipforge-youtube-chrome.log}"
-YOUTUBE_CHROME_LAUNCH_LOG="${YOUTUBE_CHROME_LAUNCH_LOG:-/tmp/clipforge-youtube-chrome-cli-launcher.log}"
+YOUTUBE_CHROME_LOG="${YOUTUBE_CHROME_LOG:-/tmp/fendy-clipper-youtube-chrome.log}"
+YOUTUBE_CHROME_LAUNCH_LOG="${YOUTUBE_CHROME_LAUNCH_LOG:-/tmp/fendy-clipper-youtube-chrome-cli-launcher.log}"
 
 mkdir -p "$(dirname "$YOUTUBE_CHROME_LOG")" "$(dirname "$YOUTUBE_CHROME_LAUNCH_LOG")"
 touch "$YOUTUBE_CHROME_LOG" "$YOUTUBE_CHROME_LAUNCH_LOG"
@@ -31,7 +31,7 @@ if not payload.get("webSocketDebuggerUrl"):
 PY
 }
 
-echo "Starting ClipForge YouTube Chrome CDP..."
+echo "Starting Fendy Clipper YouTube Chrome CDP..."
 echo "CDP URL      : $YOUTUBE_CDP_URL"
 echo "Chrome log   : $YOUTUBE_CHROME_LOG"
 echo "Launcher log : $YOUTUBE_CHROME_LAUNCH_LOG"

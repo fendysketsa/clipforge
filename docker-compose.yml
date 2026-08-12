@@ -2,7 +2,7 @@ services:
   backend:
     build:
       context: ./backend
-    container_name: clipforge-backend
+    container_name: fendy-clipper-backend
     network_mode: host
     volumes:
       - ./backend/outputs:/app/outputs
@@ -10,7 +10,7 @@ services:
       - ./backend/data:/app/data
       - ./scripts:/app/scripts:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${YOUTUBE_HOST_RUNTIME_DIR:-/run/user/1000}:/run/clipforge-host-user:ro
+      - ${YOUTUBE_HOST_RUNTIME_DIR:-/run/user/1000}:/run/fendy-clipper-host-user:ro
     environment:
       IN_DOCKER: "1"
       JOBS_PATH: /app/data/jobs.json
@@ -18,7 +18,7 @@ services:
       YOUTUBE_PLAYWRIGHT_STATE: /app/data/youtube_storage_state.json
       DISPLAY: ${YOUTUBE_DISPLAY:-:1}
       XAUTHORITY: /app/data/youtube-gui/Xauthority
-      YOUTUBE_HOST_RUNTIME_DIR: /run/clipforge-host-user
+      YOUTUBE_HOST_RUNTIME_DIR: /run/fendy-clipper-host-user
       YOUTUBE_GUI_BRIDGE_DIR: /app/data/youtube-gui
       YOUTUBE_LOGIN_HEADLESS: "false"
       YOUTUBE_CHROMIUM_USER_DATA_DIR: ${YOUTUBE_CHROMIUM_USER_DATA_DIR:-/app/data/youtube-playwright-profile}
@@ -32,7 +32,7 @@ services:
       YOUTUBE_CDP_UPLOAD_REPAIR_ATTEMPTS: ${YOUTUBE_CDP_UPLOAD_REPAIR_ATTEMPTS:-3}
       YOUTUBE_CDP_UPLOAD_MAX_ATTEMPTS: ${YOUTUBE_CDP_UPLOAD_MAX_ATTEMPTS:-6}
       YOUTUBE_CDP_REFRESH_COMMAND: ${YOUTUBE_CDP_REFRESH_COMMAND:-/app/scripts/open-youtube-login-chrome.sh}
-      YOUTUBE_CDP_REFRESH_LOG: ${YOUTUBE_CDP_REFRESH_LOG:-/tmp/clipforge-youtube-chrome-launcher.log}
+      YOUTUBE_CDP_REFRESH_LOG: ${YOUTUBE_CDP_REFRESH_LOG:-/tmp/fendy-clipper-youtube-chrome-launcher.log}
       YOUTUBE_CDP_REFRESH_READY_TIMEOUT_SECONDS: ${YOUTUBE_CDP_REFRESH_READY_TIMEOUT_SECONDS:-30}
       TELEGRAM_YOUTUBE_ONE_TIME_LOGIN_TIMEOUT_SECONDS: ${TELEGRAM_YOUTUBE_ONE_TIME_LOGIN_TIMEOUT_SECONDS:-180}
       YOUTUBE_ONE_TIME_LOGIN_PROFILE_TIMEOUT_SECONDS: ${YOUTUBE_ONE_TIME_LOGIN_PROFILE_TIMEOUT_SECONDS:-90}
@@ -89,8 +89,8 @@ services:
       TELEGRAM_AI_BASE_URL: ${TELEGRAM_AI_BASE_URL:-http://127.0.0.1:11434/v1}
       TELEGRAM_AI_MODEL: ${TELEGRAM_AI_MODEL:-llama3.2-id:latest}
       TELEGRAM_AI_FALLBACK_MODELS: ${TELEGRAM_AI_FALLBACK_MODELS:-llama3.2-id:latest,llama3:latest}
-      CLIPFORGE_TRANSCRIPTION_HOTWORDS: ${CLIPFORGE_TRANSCRIPTION_HOTWORDS:-}
-      CLIPFORGE_MAX_CONCURRENT_JOBS: ${CLIPFORGE_MAX_CONCURRENT_JOBS:-3}
+      FENDY_CLIPPER_TRANSCRIPTION_HOTWORDS: ${FENDY_CLIPPER_TRANSCRIPTION_HOTWORDS:-}
+      FENDY_CLIPPER_MAX_CONCURRENT_JOBS: ${FENDY_CLIPPER_MAX_CONCURRENT_JOBS:-3}
       HF_TOKEN: ${HF_TOKEN:-}
       HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
       HF_HOME: ${HF_HOME:-/app/data/huggingface}
@@ -108,7 +108,7 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/free}
-      OPENROUTER_APP_TITLE: ${OPENROUTER_APP_TITLE:-ClipForge}
+      OPENROUTER_APP_TITLE: ${OPENROUTER_APP_TITLE:-Fendy Clipper}
       YOUTUBE_REQUIRE_AI_METADATA: ${YOUTUBE_REQUIRE_AI_METADATA:-true}
       YOUTUBE_DATA_API_KEY: ${YOUTUBE_DATA_API_KEY:-}
       VIRAL_CC_REQUIRE_YOUTUBE_DATA_API: ${VIRAL_CC_REQUIRE_YOUTUBE_DATA_API:-true}
@@ -151,7 +151,7 @@ services:
       context: ./frontend
       args:
         NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8010}
-    container_name: clipforge-frontend
+    container_name: fendy-clipper-frontend
     environment:
       BACKEND_API_BASE: http://172.18.0.1:8010
       BACKEND_API_BASES: http://172.18.0.1:8010,http://172.17.0.1:8010,http://host.docker.internal:8010,http://127.0.0.1:8010
@@ -167,7 +167,7 @@ services:
   telegram-bot:
     build:
       context: ./backend
-    container_name: clipforge-telegram-bot
+    container_name: fendy-clipper-telegram-bot
     command: ["python", "telegram_bot.py"]
     network_mode: host
     volumes:
