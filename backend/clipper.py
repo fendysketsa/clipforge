@@ -4190,7 +4190,7 @@ def thumbnail_story_copy(
     if long_form:
         headline_source = raw_hook
         support_source = raw_pov
-        eyebrow = "RESUME CERITA"
+        eyebrow = "WAJIB TAHU"
         headline_words = 8
         headline_chars = 18
         headline_lines = 2
@@ -5301,7 +5301,7 @@ def landscape_compilation_edit_filter(
     }
     accent = profile["accent"]
     secondary = profile.get("accent_secondary", "#22D3EE")
-    badge = "HOOK UTAMA" if section_number == 1 else f"POIN {section_number:02}"
+    badge = "WAJIB TAHU" if section_number == 1 else f"POIN {section_number:02}"
     section_text = f"BAGIAN {section_number:02} / {section_count:02}"
     filters = [
         profile["grade"],
@@ -5317,13 +5317,26 @@ def landscape_compilation_edit_filter(
                 f"enable='between(t,0.10,{intro_end:.3f})'",
                 f"drawbox=x=74:y=64:w=12:h=196:color={accent}@0.98:t=fill:"
                 f"enable='between(t,0.10,{intro_end:.3f})'",
-                f"drawbox=x=98:y=82:w=190:h=42:color={accent}@0.94:t=fill:"
+                "drawbox=x=98:y=82:w=234:h=44:color=black@0.86:t=fill:"
                 f"enable='between(t,0.10,{intro_end:.3f})'",
-                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-                f"text='{badge}':expansion=none:fontcolor=white:fontsize=22:x=116:y=91:"
+                "drawbox=x=98:y=82:w=234:h=44:color=#FF3158@0.92:t=2:"
+                f"enable='between(t,0.10,{intro_end:.3f})'",
+                # A restrained red attention pulse. It is intentionally not
+                # labelled LIVE/REC because the source is edited footage.
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+                "text='●':expansion=none:fontcolor=#FF3158@0.22:fontsize=43:x=104:y=78:"
+                f"enable='between(t,0.10,{intro_end:.3f})*lt(mod(t,1.10),0.48)'",
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+                "text='●':expansion=none:fontcolor=#FF3158:fontsize=25:x=113:y=87:"
                 f"enable='between(t,0.10,{intro_end:.3f})'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-                f"text='{section_text}':expansion=none:fontcolor={secondary}:fontsize=19:x=310:y=92:"
+                "text='●':expansion=none:fontcolor=white@0.92:fontsize=8:x=121:y=94:"
+                f"enable='between(t,0.10,{intro_end:.3f})*lt(mod(t,1.10),0.74)'",
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                f"text='{badge}':expansion=none:fontcolor=white:fontsize=21:x=151:y=92:"
+                f"enable='between(t,0.10,{intro_end:.3f})'",
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+                f"text='{section_text}':expansion=none:fontcolor={secondary}:fontsize=19:x=354:y=92:"
                 f"enable='between(t,0.10,{intro_end:.3f})'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                 f"textfile='{hook_text_filename}':reload=0:expansion=none:"
@@ -6074,6 +6087,9 @@ THUMBNAIL_SYSTEM_PROMPT = (
     "provided screenshot. The screenshot is the thumbnail background and must NOT be redrawn, "
     "restyled, or replaced. Make the hook intriguing but faithful to the transcript. For mystery, "
     "myth, supernatural, or horror topics, never present an unverified claim as religious fact. "
+    "Write the visible hook in natural Bahasa Indonesia even when the source title uses English. "
+    "Keep it to 3-6 concrete words and never use generic labels such as RESUME CERITA, HIGHLIGHT, "
+    "or RANGKUMAN as the main hook. "
     "Never mention, thank, credit, or promote the source channel, another channel, TV station, "
     "media brand, uploader, or sponsor in either the hook or prompt. "
     "Reply ONLY with strict JSON, no markdown."
@@ -6139,9 +6155,14 @@ def designed_thumbnail_filter(
                 "eq=contrast=1.08:brightness=-0.015:saturation=1.10",
                 "drawbox=x=0:y=0:w=760:h=720:color=black@0.56:t=fill",
                 f"drawbox=x=0:y=0:w=18:h=720:color={accent}@0.98:t=fill",
-                f"drawbox=x=66:y=72:w=282:h=54:color={accent}@0.96:t=fill",
-                f"drawtext=fontfile={font_bold}:text='RESUME CERITA':expansion=none:"
-                "fontcolor=white:fontsize=25:x=92:y=84",
+                "drawbox=x=66:y=72:w=260:h=54:color=black@0.88:t=fill",
+                "drawbox=x=66:y=72:w=260:h=54:color=#FF3158@0.96:t=3",
+                f"drawtext=fontfile={font_regular}:text='●':expansion=none:"
+                "fontcolor=#FF3158:fontsize=37:x=80:y=76",
+                f"drawtext=fontfile={font_regular}:text='●':expansion=none:"
+                "fontcolor=white@0.94:fontsize=10:x=91:y=89",
+                f"drawtext=fontfile={font_bold}:text='WAJIB TAHU':expansion=none:"
+                "fontcolor=white:fontsize=24:x=120:y=85",
                 f"drawtext=fontfile={font_bold}:textfile='{headline_filename}':reload=0:"
                 "expansion=none:fontcolor=white:fontsize=58:line_spacing=10:"
                 "borderw=3:bordercolor=black@0.90:shadowcolor=black@0.82:"
@@ -6244,6 +6265,7 @@ def generate_thumbnail_prompt(
     user_prompt = (
         f"Create a truthful, viral-feeling, elegant cinematic {format_name} thumbnail text overlay plan for this clip. The user already has a screenshot "
         "(the best moment) and will feed it plus your prompt to an image generator that only writes text.\n"
+        "The visible hook text must use natural Bahasa Indonesia, including when the source title is English.\n"
         "Return JSON exactly like:\n"
         '{"hook_text": "<3-6 word punchy hook, ALL CAPS>", '
         '"prompt": "<instruction for the image generator: what text to write, where to place it, '
@@ -6951,6 +6973,10 @@ def export_clip(
             applied_edits.append(
                 "Setiap bab diberi catatan editor berbasis POV dan konteks klip agar resume memiliki framing editorial yang jelas."
             )
+            if compilation_part_number == 1:
+                applied_edits.append(
+                    "Cold open memakai badge WAJIB TAHU dan indikator merah berdenyut untuk menarik fokus tanpa label LIVE/REC yang menyesatkan."
+                )
         else:
             if clean_detail_pipeline:
                 vf = (
@@ -7802,8 +7828,9 @@ def export_compilation(
             for index, item in enumerate(candidates)
         ],
         "retention_strategy": {
-            "version": 1,
+            "version": 2,
             "opening": "strongest_editorial_segment_first",
+            "opening_attention_signal": "truthful_red_pulse_with_wajib_tahu_badge",
             "remaining_arc": "source_chronology_after_hook",
             "first_30_seconds_match_title_thumbnail_promise": True,
             "manual_youtube_chapters_ready": len(candidates) >= 3,

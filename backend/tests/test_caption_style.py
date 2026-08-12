@@ -624,6 +624,22 @@ def test_landscape_compilation_edit_uses_chapters_and_sparse_emphasis():
     assert "textfile='part.editorial.txt'" in value
 
 
+def test_landscape_compilation_opening_uses_truthful_blinking_attention_dot():
+    value = landscape_compilation_edit_filter(
+        60,
+        "part.hook.txt",
+        section_number=1,
+        section_count=5,
+    )
+
+    assert "text='WAJIB TAHU'" in value
+    assert "text='●'" in value
+    assert "fontcolor=#FF3158" in value
+    assert "lt(mod(t,1.10),0.48)" in value
+    assert "text='LIVE'" not in value
+    assert "text='REC'" not in value
+
+
 def test_monetization_provenance_records_rights_and_originality(tmp_path):
     video = tmp_path / "clip_01.mp4"
     video.write_bytes(b"video")
@@ -925,7 +941,9 @@ def test_thumbnail_filter_uses_vertical_and_landscape_upload_shapes():
     assert "text='WAJIB TAHU'" in vertical
     assert "text='LIHAT PENJELASANNYA'" not in vertical
     assert "scale=1280:720" in landscape
-    assert "text='RESUME CERITA'" in landscape
+    assert "text='WAJIB TAHU'" in landscape
+    assert "text='●'" in landscape
+    assert "text='RESUME CERITA'" not in landscape
     assert shorts_cover_frame_timestamp(60) == 0.78
     assert shorts_cover_frame_timestamp(0.12) == 0.1
 
