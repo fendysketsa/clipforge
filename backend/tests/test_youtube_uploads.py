@@ -165,6 +165,7 @@ def test_upload_command_marks_thumbnail_content_type(
 
     monkeypatch.setattr(api, "output_path_from_url", fake_output_path)
     monkeypatch.setattr(api, "prepare_limited_upload_file", lambda path, _limit: path)
+    monkeypatch.setattr(api, "media_duration_seconds", lambda _path: 42.125)
     monkeypatch.setattr(api, "youtube_upload_prefers_cdp", lambda: False)
     monkeypatch.setattr(api, "youtube_profile_upload_allowed", lambda: False)
 
@@ -184,6 +185,35 @@ def test_upload_command_marks_thumbnail_content_type(
     type_index = command.index("--thumbnail-content-type")
 
     assert command[type_index + 1] == expected_type
+    duration_index = command.index("--media-duration-seconds")
+    assert command[duration_index + 1] == "42.125"
+
+
+def test_upload_command_marks_shorts_type_even_without_thumbnail(monkeypatch, tmp_path):
+    import api
+
+    video_path = tmp_path / "clip_01.mp4"
+    video_path.write_bytes(b"video")
+    monkeypatch.setattr(api, "output_path_from_url", lambda _url: video_path)
+    monkeypatch.setattr(api, "prepare_limited_upload_file", lambda path, _limit: path)
+    monkeypatch.setattr(api, "media_duration_seconds", lambda _path: 59.9)
+    monkeypatch.setattr(api, "youtube_upload_prefers_cdp", lambda: False)
+    monkeypatch.setattr(api, "youtube_profile_upload_allowed", lambda: False)
+    upload = YouTubeUploadJob(
+        id="upload-no-thumb",
+        source_job_id="job-no-thumb",
+        clip_url="/outputs/demo/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="queued",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        title="Judul",
+    )
+
+    command = build_youtube_upload_command(upload)
+
+    assert command[command.index("--thumbnail-content-type") + 1] == "shorts"
+    assert command[command.index("--media-duration-seconds") + 1] == "59.900"
 
 
 def test_upload_command_discloses_realistic_background_replacement(monkeypatch, tmp_path):

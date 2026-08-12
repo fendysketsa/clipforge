@@ -31,9 +31,9 @@ export function jobElapsedSeconds(job: ClipJob | null, now = Date.now()) {
   if (job.duration_seconds !== null && job.duration_seconds !== undefined) {
     return job.duration_seconds;
   }
-  if (!isActiveJob(job) || !job.started_at) return null;
+  if (!isActiveJob(job)) return null;
 
-  const startedAt = new Date(job.started_at).getTime();
+  const startedAt = new Date(job.started_at || job.created_at).getTime();
   if (!Number.isFinite(startedAt)) return null;
   return Math.max(0, (now - startedAt) / 1000);
 }

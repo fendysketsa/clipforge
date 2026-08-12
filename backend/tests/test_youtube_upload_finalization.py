@@ -8,7 +8,9 @@ from youtube_uploader import (
     close_duplicate_target_studio_tabs,
     close_idle_clipforge_upload_tabs,
     close_upload_tab,
+    copyright_claim_is_explicitly_non_blocking,
     copyright_issue_detected,
+    copyright_issue_blocks_upload,
     mark_clipforge_upload_tab,
     next_upload_step_timeout_ms,
     open_advanced_upload_settings,
@@ -280,6 +282,87 @@ def test_checks_block_exact_indonesian_claim_notice_from_studio(monkeypatch):
 
     with pytest.raises(UploadError, match="Content ID"):
         wait_for_copyright_checks(page, timeout_ms=100, require_checks=True)
+
+
+def test_checks_accept_exact_two_check_non_blocking_claim_from_studio(monkeypatch):
+    logs = []
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
+    monkeypatch.setattr(youtube_uploader, "log", logs.append)
+    page = TextPage(
+        "Konten yang dilindungi hak cipta ditemukan di video ini. "
+        "Tidak ada dampak pada jangkauan video. Video ini dapat dilihat sesuai dengan setelan Anda. "
+        "Tidak ada dampak pada channel. Hal ini bukan teguran hak cipta."
+    )
+
+    wait_for_copyright_checks(
+        page,
+        timeout_ms=100,
+        require_checks=True,
+        content_type="shorts",
+        media_duration_seconds=59.8,
+    )
+
+    assert copyright_claim_is_explicitly_non_blocking(page.body)
+    assert copyright_issue_blocks_upload(
+        page.body,
+        content_type="shorts",
+        media_duration_seconds=0,
+    )
+    assert any("aman untuk dilanjutkan" in message for message in logs)
+
+
+def test_checks_still_block_claimed_short_over_one_minute(monkeypatch):
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
+    page = TextPage(
+        "Konten yang dilindungi hak cipta ditemukan di video ini. "
+        "Tidak ada dampak pada jangkauan video. Video ini dapat dilihat sesuai dengan setelan Anda. "
+        "Tidak ada dampak pada channel. Hal ini bukan teguran hak cipta."
+    )
+
+    with pytest.raises(UploadError, match="Short berdurasi lebih dari 1 menit"):
+        wait_for_copyright_checks(
+            page,
+            timeout_ms=100,
+            require_checks=True,
+            content_type="shorts",
+            media_duration_seconds=61.0,
+        )
+
+
+def test_non_blocking_copy_never_overrides_explicit_video_block():
+    body = (
+        "This video has a Content ID claim. No impact on your video. "
+        "No impact on your channel. This is not a copyright strike. "
+        "The video is blocked globally."
+    )
+
+    assert not copyright_claim_is_explicitly_non_blocking(body)
+    assert copyright_issue_blocks_upload(body, content_type="long-form", media_duration_seconds=300)
+
+
+def test_verified_safe_claim_carries_to_compact_final_review_copy():
+    compact_body = "This video has a Content ID claim"
+
+    assert not copyright_issue_blocks_upload(
+        compact_body,
+        content_type="shorts",
+        media_duration_seconds=59.8,
+        previously_verified_non_blocking_claim=True,
+    )
+    assert copyright_issue_blocks_upload(
+        f"{compact_body}. Restrictions found",
+        content_type="shorts",
+        media_duration_seconds=59.8,
+        previously_verified_non_blocking_claim=True,
+    )
+    assert copyright_issue_blocks_upload(
+        compact_body,
+        content_type="shorts",
+        media_duration_seconds=61.0,
+        previously_verified_non_blocking_claim=True,
+    )
 
 
 def test_generic_checks_complete_is_not_treated_as_explicitly_safe(monkeypatch):

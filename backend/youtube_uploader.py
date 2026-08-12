@@ -5,10 +5,13 @@ import json
 import math
 import os
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Iterable
+
+import imageio_ffmpeg
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -135,6 +138,29 @@ def normalized_upload_metadata(video_path: Path, title: str, description: str) -
         else youtube_shorts_title(clean_title)
     )
     return normalized_title, clean_description[:5000]
+
+
+def probe_upload_media_duration_seconds(video_path: Path) -> float:
+    try:
+        result = subprocess.run(
+            [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-i", str(video_path)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            check=False,
+        )
+    except Exception:
+        return 0.0
+    match = re.search(
+        r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)",
+        f"{result.stderr}\n{result.stdout}",
+    )
+    if not match:
+        return 0.0
+    hours, minutes, seconds = match.groups()
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
 
 
 def youtube_long_form_title(value: str) -> str:
@@ -1988,8 +2014,15 @@ def final_action_button_is_ready(page, visibility: str) -> bool:
         return False
 
 
-def wait_for_review_checks_safe_before_publish(page, timeout_ms: int = 300000) -> None:
-    log("Memastikan tidak ada klaim dan tombol Publikasikan siap...")
+def wait_for_review_checks_safe_before_publish(
+    page,
+    timeout_ms: int = 300000,
+    *,
+    content_type: str = "auto",
+    media_duration_seconds: float = 0.0,
+    previously_verified_non_blocking_claim: bool = False,
+) -> None:
+    log("Memastikan status hak cipta tidak memblokir dan tombol Publikasikan siap...")
     deadline = time.monotonic() + timeout_ms / 1000
     last_body = ""
     while time.monotonic() < deadline:
@@ -1997,11 +2030,21 @@ def wait_for_review_checks_safe_before_publish(page, timeout_ms: int = 300000) -
         try:
             body = page.locator("ytcp-uploads-dialog").inner_text(timeout=3000)
             last_body = re.sub(r"\s+", " ", body).strip()[:700]
-            if copyright_issue_detected(body):
+            if copyright_issue_blocks_upload(
+                body,
+                content_type=content_type,
+                media_duration_seconds=media_duration_seconds,
+                previously_verified_non_blocking_claim=previously_verified_non_blocking_claim,
+            ):
                 save_debug_artifacts(page, "copyright-claim-before-publish")
                 raise UploadError(
                     "Klaim Content ID/copyright muncul pada review akhir. "
                     "Video tidak dipublikasikan agar channel tetap aman."
+                )
+            if copyright_claim_is_explicitly_non_blocking(body):
+                log(
+                    "Review akhir mengonfirmasi klaim Content ID tanpa dampak pada video "
+                    "dan tanpa dampak pada channel; aksi final boleh dilanjutkan."
                 )
         except UploadError:
             raise
@@ -2020,7 +2063,15 @@ def wait_for_review_checks_safe_before_publish(page, timeout_ms: int = 300000) -
     raise UploadError(f"Public atau tombol Publikasikan belum siap. Cuplikan modal: {last_body}")
 
 
-def click_final_upload_action(page, visibility: str, timeout_ms: int = 30000) -> None:
+def click_final_upload_action(
+    page,
+    visibility: str,
+    timeout_ms: int = 30000,
+    *,
+    content_type: str = "auto",
+    media_duration_seconds: float = 0.0,
+    previously_verified_non_blocking_claim: bool = False,
+) -> None:
     active_step = get_upload_workflow_step(page)
     if active_step != "REVIEW":
         save_debug_artifacts(page, "final-action-outside-visibility-step")
@@ -2037,11 +2088,21 @@ def click_final_upload_action(page, visibility: str, timeout_ms: int = 30000) ->
         body = page.locator("ytcp-uploads-dialog").inner_text(timeout=3000)
     except Exception:
         body = ""
-    if copyright_issue_detected(body):
+    if copyright_issue_blocks_upload(
+        body,
+        content_type=content_type,
+        media_duration_seconds=media_duration_seconds,
+        previously_verified_non_blocking_claim=previously_verified_non_blocking_claim,
+    ):
         save_debug_artifacts(page, "copyright-claim-at-final-action")
         raise UploadError(
             "Klaim Content ID/copyright terdeteksi tepat sebelum aksi final. "
             "Upload dibatalkan agar channel tetap aman."
+        )
+    if copyright_claim_is_explicitly_non_blocking(body):
+        log(
+            "Pemeriksaan terakhir: klaim Content ID berstatus tanpa dampak pada video/channel; "
+            "upload tetap diselesaikan."
         )
     if visibility == "public":
         patterns = [r"publish", r"publikasikan"]
@@ -3944,6 +4005,7 @@ COPYRIGHT_ISSUE_PATTERNS = (
     r"masalah hak cipta",
     r"konten yang diklaim",
     r"konten berhak cipta (?:telah )?ditemukan",
+    r"konten yang dilindungi hak cipta (?:telah )?ditemukan",
     r"klaim (?:telah )?ditemukan",
     r"pembatasan.*ditemukan",
     r"masalah ditemukan",
@@ -3954,10 +4016,97 @@ COPYRIGHT_ALL_CLEAR_PATTERNS = (
     (r"copyright\s+no issues found", r"community guidelines\s+no issues found"),
 )
 
+COPYRIGHT_NON_BLOCKING_VIDEO_PATTERNS = (
+    r"tidak ada dampak pada (?:jangkauan )?video",
+    r"video (?:ini )?dapat dilihat sesuai dengan setelan anda",
+    r"tidak memengaruhi (?:visibilitas|jangkauan)(?: atau fitur)? video anda",
+    r"no impact on (?:your )?video",
+    r"does not affect (?:your )?(?:video(?:'s)? )?(?:visibility|reach|features)",
+    r"your video (?:can|will) remain (?:viewable|visible|on youtube)",
+)
+
+COPYRIGHT_NON_BLOCKING_CHANNEL_PATTERNS = (
+    r"tidak ada dampak pada (?:channel|kanal)",
+    r"(?:hal ini )?bukan (?:sebuah )?teguran hak cipta",
+    r"no impact on (?:your )?channel",
+    r"does not affect (?:your )?(?:channel|account)",
+    r"(?:this is|it's|it is) not a copyright strike",
+)
+
+COPYRIGHT_BLOCKING_PATTERNS = (
+    r"blocked (?:globally|worldwide|in some|in all|from being viewed)",
+    r"(?:partially|fully) blocked",
+    r"video (?:is|will be|has been) blocked",
+    r"diblokir (?:secara global|di seluruh dunia|di beberapa|agar tidak dapat ditonton)",
+    r"video (?:ini )?(?:akan |telah )?diblokir",
+    r"(?:copyright )?removal request",
+    r"takedown (?:notice|request)",
+    r"permintaan penghapusan hak cipta",
+    r"video (?:is|was|has been) removed",
+    r"video (?:ini )?(?:telah |akan )?dihapus",
+    r"(?:visibility|jangkauan) (?:is |will be |akan )?(?:affected|limited|restricted|dibatasi|terpengaruh)",
+    r"(?:cannot|can't|tidak dapat|tidak bisa) (?:be )?(?:viewed|watched|ditonton|dilihat)",
+    r"(?:channel|account|kanal) (?:warning|penalty|strike|teguran|sanksi)",
+    r"restrictions? found",
+    r"pembatasan.*ditemukan",
+    r"masalah ditemukan",
+)
+
 
 def copyright_issue_detected(body: str) -> bool:
     normalized = re.sub(r"\s+", " ", body or "").casefold()
     return any(re.search(pattern, normalized, re.I) for pattern in COPYRIGHT_ISSUE_PATTERNS)
+
+
+def copyright_claim_is_explicitly_non_blocking(body: str) -> bool:
+    """Accept only YouTube's explicit two-part safe Content ID summary."""
+    normalized = re.sub(r"\s+", " ", body or "").casefold()
+    if not copyright_issue_detected(normalized):
+        return False
+    if any(re.search(pattern, normalized, re.I) for pattern in COPYRIGHT_BLOCKING_PATTERNS):
+        return False
+    video_is_safe = any(
+        re.search(pattern, normalized, re.I)
+        for pattern in COPYRIGHT_NON_BLOCKING_VIDEO_PATTERNS
+    )
+    channel_is_safe = any(
+        re.search(pattern, normalized, re.I)
+        for pattern in COPYRIGHT_NON_BLOCKING_CHANNEL_PATTERNS
+    )
+    return video_is_safe and channel_is_safe
+
+
+def content_id_claim_blocks_claimed_short(
+    content_type: str,
+    media_duration_seconds: float,
+) -> bool:
+    """YouTube blocks every claimed 1-3 minute Short, regardless of claim policy."""
+    normalized_type = (content_type or "auto").strip().casefold()
+    try:
+        duration = float(media_duration_seconds or 0)
+    except (TypeError, ValueError):
+        duration = 0.0
+    return normalized_type == "shorts" and (duration <= 0.0 or duration > 60.0)
+
+
+def copyright_issue_blocks_upload(
+    body: str,
+    *,
+    content_type: str = "auto",
+    media_duration_seconds: float = 0.0,
+    previously_verified_non_blocking_claim: bool = False,
+) -> bool:
+    if not copyright_issue_detected(body):
+        return False
+    normalized = re.sub(r"\s+", " ", body or "").casefold()
+    if any(re.search(pattern, normalized, re.I) for pattern in COPYRIGHT_BLOCKING_PATTERNS):
+        return True
+    if content_id_claim_blocks_claimed_short(content_type, media_duration_seconds):
+        return True
+    return not (
+        copyright_claim_is_explicitly_non_blocking(body)
+        or previously_verified_non_blocking_claim
+    )
 
 
 def copyright_checks_all_clear(body: str) -> bool:
@@ -3968,7 +4117,14 @@ def copyright_checks_all_clear(body: str) -> bool:
     )
 
 
-def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True) -> None:
+def wait_for_copyright_checks(
+    page,
+    timeout_ms: int,
+    require_checks: bool = True,
+    *,
+    content_type: str = "auto",
+    media_duration_seconds: float = 0.0,
+) -> bool:
     log("Menunggu YouTube Studio Checks sampai semua pemeriksaan aman...")
     deadline = time.monotonic() + timeout_ms / 1000
     long_running_extension_seconds = max(
@@ -4024,8 +4180,33 @@ def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True
         has_checking = any(re.search(pattern, lowered, re.I) for pattern in checking_patterns)
         has_long_running = any(re.search(pattern, lowered, re.I) for pattern in long_running_patterns)
         has_all_clear = copyright_checks_all_clear(body)
-        if copyright_issue_detected(body):
+        has_copyright_issue = copyright_issue_detected(body)
+        has_non_blocking_claim = copyright_claim_is_explicitly_non_blocking(body)
+        if copyright_issue_blocks_upload(
+            body,
+            content_type=content_type,
+            media_duration_seconds=media_duration_seconds,
+        ):
             save_debug_artifacts(page, "copyright-claim-detected")
+            if has_non_blocking_claim and content_id_claim_blocks_claimed_short(
+                content_type,
+                media_duration_seconds,
+            ):
+                try:
+                    duration = float(media_duration_seconds or 0)
+                except (TypeError, ValueError):
+                    duration = 0.0
+                if duration <= 0:
+                    raise UploadError(
+                        "Klaim Content ID terdeteksi, tetapi durasi Short tidak dapat diverifikasi. "
+                        "Upload dibatalkan karena aturan YouTube memblokir semua Short 1-3 menit "
+                        "yang memiliki klaim aktif."
+                    )
+                raise UploadError(
+                    "Klaim Content ID terdeteksi pada Short berdurasi lebih dari 1 menit. "
+                    "Sesuai kebijakan YouTube, Short 1-3 menit dengan klaim aktif diblokir "
+                    "meskipun ringkasan klaim menyebut tidak ada dampak."
+                )
             raise UploadError(
                 "YouTube Studio mendeteksi klaim Content ID/copyright pada clip ini. "
                 "Upload dibatalkan sebelum publish agar channel tetap aman."
@@ -4047,9 +4228,15 @@ def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True
                 next_progress_log_at = now + progress_log_interval_seconds
             time.sleep(5)
             continue
+        if has_copyright_issue and has_non_blocking_claim:
+            log(
+                "YouTube Studio mengonfirmasi klaim Content ID tanpa dampak pada video "
+                "dan tanpa dampak pada channel; upload dinilai aman untuk dilanjutkan."
+            )
+            return True
         if has_all_clear:
             log("YouTube Studio Checks aman: hak cipta dan pedoman komunitas sudah centang.")
-            return
+            return False
         time.sleep(2)
 
     if require_checks:
@@ -4058,7 +4245,7 @@ def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True
                 "Checks belum terkonfirmasi sampai timeout, tetapi tidak ada issue eksplisit; "
                 "lanjut ke Visibilitas sesuai konfigurasi."
             )
-            return
+            return False
         save_debug_artifacts(page, "checks-not-complete")
         raise UploadError(
             "Step 3 Checks belum selesai/tercentang setelah waktu tunggu panjang; "
@@ -4066,6 +4253,7 @@ def wait_for_copyright_checks(page, timeout_ms: int, require_checks: bool = True
             f"Upload dibatalkan demi keamanan. Cuplikan halaman: {last_body}"
         )
     log("Checks belum terkonfirmasi; melanjutkan karena require checks dinonaktifkan.")
+    return False
 
 
 def normalize_youtube_video_url(value: str) -> str:
@@ -4368,7 +4556,25 @@ def run_upload(args: argparse.Namespace) -> None:
     if requested_visibility != args.visibility:
         log(
             "Mode aman aktif: upload otomatis disimpan Private. "
-            "Publikasikan manual hanya setelah kolom Pembatasan bebas klaim."
+            "Publikasikan manual hanya jika kolom Pembatasan bebas blokir/strike "
+            "atau YouTube menyatakan klaim tidak berdampak."
+        )
+
+    if args.thumbnail_content_type == "auto":
+        args.thumbnail_content_type = (
+            "long-form" if should_upload_custom_thumbnail(video_path, "auto") else "shorts"
+        )
+    if args.media_duration_seconds <= 0:
+        args.media_duration_seconds = probe_upload_media_duration_seconds(video_path)
+    if args.media_duration_seconds > 0:
+        log(
+            f"Kebijakan upload memakai tipe {args.thumbnail_content_type} "
+            f"dan durasi {args.media_duration_seconds:.2f} detik."
+        )
+    else:
+        log(
+            f"Durasi media tidak terbaca; klaim Content ID pada tipe {args.thumbnail_content_type} "
+            "akan ditangani secara konservatif."
         )
 
     upload_title, upload_description = normalized_upload_metadata(video_path, args.title, args.description)
@@ -4494,10 +4700,12 @@ def run_upload(args: argparse.Namespace) -> None:
 
             click_next_upload_step(page, timeout_ms=next_step_timeout_ms, expected_step="CHECKS")
             log("Masuk ke tab Pemeriksaan awal.")
-            wait_for_copyright_checks(
+            non_blocking_claim_approved = wait_for_copyright_checks(
                 page,
                 min(timeout_ms, int(os.environ.get("YOUTUBE_CHECKS_TIMEOUT_SECONDS", "3600")) * 1000),
                 args.require_copyright_checks,
+                content_type=args.thumbnail_content_type,
+                media_duration_seconds=args.media_duration_seconds,
             )
             log("Step 3 Checks sudah selesai dan aman; lanjut ke Visibilitas.")
 
@@ -4515,14 +4723,27 @@ def run_upload(args: argparse.Namespace) -> None:
             log(f"Step 4 Visibilitas terverifikasi: {args.visibility}.")
             if args.visibility == "public":
                 review_timeout_ms = int(os.environ.get("YOUTUBE_PRE_PUBLISH_REVIEW_TIMEOUT_SECONDS", "900")) * 1000
-                wait_for_review_checks_safe_before_publish(page, timeout_ms=review_timeout_ms)
+                wait_for_review_checks_safe_before_publish(
+                    page,
+                    timeout_ms=review_timeout_ms,
+                    content_type=args.thumbnail_content_type,
+                    media_duration_seconds=args.media_duration_seconds,
+                    previously_verified_non_blocking_claim=non_blocking_claim_approved,
+                )
 
             if args.dry_run:
                 log("Dry-run aktif; proses berhenti sebelum publish/save final.")
                 return
 
             uploaded_video_url = extract_video_url(page)
-            click_final_upload_action(page, args.visibility, timeout_ms=30000)
+            click_final_upload_action(
+                page,
+                args.visibility,
+                timeout_ms=30000,
+                content_type=args.thumbnail_content_type,
+                media_duration_seconds=args.media_duration_seconds,
+                previously_verified_non_blocking_claim=non_blocking_claim_approved,
+            )
             reload_after_publish(page)
             final_url = uploaded_video_url or extract_video_url(page)
             if final_url:
@@ -4578,6 +4799,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["auto", "shorts", "long-form"],
         default="auto",
         help="Pasang gambar custom untuk long-form; Shorts memakai cover frame di dalam video.",
+    )
+    upload.add_argument(
+        "--media-duration-seconds",
+        type=float,
+        default=0.0,
+        help="Durasi media untuk menerapkan aturan Content ID Shorts 1-3 menit.",
     )
     upload.add_argument("--visibility", choices=["private", "unlisted", "public"], default=os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "private"))
     upload.add_argument("--tags", default="")

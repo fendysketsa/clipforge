@@ -2289,23 +2289,41 @@ body::before {
 
 .workflowBar {
   display: grid;
-  grid-template-columns: minmax(220px, 0.72fr) minmax(520px, 1.28fr);
+  grid-template-columns: minmax(270px, 0.62fr) minmax(600px, 1.38fr);
   align-items: center;
-  gap: 36px;
+  gap: 30px;
   margin-bottom: 28px;
-  padding: 18px 22px;
+  padding: 17px 20px;
   border: 1px solid rgba(148, 216, 204, 0.14);
   border-radius: 18px;
   background:
-    linear-gradient(110deg, rgba(94, 234, 212, 0.055), transparent 38%),
+    radial-gradient(circle at 12% 50%, rgba(94, 234, 212, 0.075), transparent 28%),
+    linear-gradient(110deg, rgba(94, 234, 212, 0.045), transparent 42%),
     rgba(9, 22, 20, 0.76);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
-.workflowHeading {
+.workflowBar--running {
+  border-color: rgba(94, 234, 212, 0.24);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(94, 234, 212, 0.05);
+}
+
+.workflowBar--stopped {
+  border-color: rgba(251, 113, 133, 0.28);
+}
+
+.workflowSummary {
   display: grid;
-  gap: 4px;
+  gap: 5px;
+  min-width: 0;
+}
+
+.workflowSummaryTopline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .workflowEyebrow,
@@ -2319,16 +2337,186 @@ body::before {
   text-transform: uppercase;
 }
 
-.workflowHeading p {
+.workflowLiveBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+  border: 1px solid rgba(148, 216, 204, 0.14);
+  border-radius: 999px;
+  color: #769990;
+  background: rgba(7, 19, 17, 0.62);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.workflowLiveBadge.is-live {
+  border-color: rgba(94, 234, 212, 0.24);
+  color: var(--primary);
+}
+
+.workflowLiveBadge.is-live svg {
+  animation: workflowPulse 1.8s ease-in-out infinite;
+}
+
+.workflowCurrentTask {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 850;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflowSummary p {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.45;
+}
+
+.workflowSource {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin-top: 2px;
+  padding: 7px 9px;
+  border: 1px solid rgba(94, 234, 212, 0.13);
+  border-radius: 9px;
+  color: var(--primary);
+  background: rgba(3, 15, 13, 0.52);
+}
+
+.workflowSource > span {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.workflowSource small {
+  color: #63877f;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workflowSource a,
+.workflowSource strong {
+  overflow: hidden;
+  color: #bcebe1;
+  font-size: 10px;
+  font-weight: 700;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflowSource a:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.workflowRuntime {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin-top: 2px;
+  padding: 5px 8px;
+  border: 1px solid rgba(148, 216, 204, 0.12);
+  border-radius: 8px;
+  color: #769990;
+  background: rgba(4, 15, 13, 0.45);
+  font-size: 10px;
+}
+
+.workflowRuntime svg {
+  color: var(--primary);
+}
+
+.workflowRuntime strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.workflowSummary .workflowPersistenceNote {
+  color: #6f928b;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.workflowProgressPanel {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.workflowProgressStats {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 18px;
+  color: #6f928b;
+  font-size: 10px;
+}
+
+.workflowProgressStats span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.workflowProgressStats i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #45635d;
+}
+
+.workflowProgressStats i.done {
+  background: var(--primary);
+  box-shadow: 0 0 8px rgba(94, 234, 212, 0.45);
+}
+
+.workflowProgressStats strong {
+  color: var(--text-primary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.workflowMeter {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 216, 204, 0.08);
+  border-radius: 999px;
+  background: rgba(148, 216, 204, 0.09);
+}
+
+.workflowMeter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2dd4bf, #5eead4 62%, #a7f3d0);
+  box-shadow: 0 0 14px rgba(94, 234, 212, 0.4);
+  transition: width 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.workflowBar--running .workflowMeter > span {
+  background-size: 200% 100%;
+  animation: workflowFlow 2.2s linear infinite;
 }
 
 .workflowSteps {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0;
   margin: 0;
   padding: 0;
@@ -2338,10 +2526,10 @@ body::before {
 .workflowSteps::before,
 .workflowSteps::after {
   position: absolute;
-  top: 18px;
-  right: 16.66%;
-  left: 16.66%;
-  height: 2px;
+  top: 16px;
+  right: 10%;
+  left: 10%;
+  height: 1px;
   content: "";
   border-radius: 999px;
 }
@@ -2351,19 +2539,7 @@ body::before {
 }
 
 .workflowSteps::after {
-  right: auto;
-  width: 0;
-  background: linear-gradient(90deg, var(--primary), #a7f3d0);
-  box-shadow: 0 0 12px rgba(94, 234, 212, 0.24);
-}
-
-.workflowSteps--2::after {
-  width: 33.33%;
-}
-
-.workflowSteps--3::after,
-.workflowSteps--complete::after {
-  width: 66.66%;
+  display: none;
 }
 
 .workflowSteps li {
@@ -2371,21 +2547,21 @@ body::before {
   z-index: 1;
   display: grid;
   justify-items: center;
-  gap: 7px;
+  gap: 6px;
   color: #63877f;
   text-align: center;
 }
 
 .workflowDot {
   display: inline-grid;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   place-items: center;
   border: 1px solid rgba(148, 216, 204, 0.18);
   border-radius: 50%;
   background: #0a1917;
   color: #6f928b;
-  box-shadow: 0 0 0 5px #0a1715;
+  box-shadow: 0 0 0 4px #0a1715;
 }
 
 .workflowSteps li.current .workflowDot,
@@ -2396,7 +2572,7 @@ body::before {
 }
 
 .workflowSteps li.current .workflowDot {
-  box-shadow: 0 0 0 5px #0a1715, 0 0 0 7px rgba(94, 234, 212, 0.12);
+  box-shadow: 0 0 0 4px #0a1715, 0 0 0 6px rgba(94, 234, 212, 0.12);
 }
 
 .workflowStepCopy {
@@ -2406,18 +2582,72 @@ body::before {
 
 .workflowStepCopy strong {
   color: inherit;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
 }
 
 .workflowStepCopy small {
   color: #63877f;
-  font-size: 10px;
+  font-size: 9px;
+  white-space: nowrap;
 }
 
 .workflowSteps li.current,
 .workflowSteps li.complete {
   color: var(--text-primary);
+}
+
+.workflowSteps li.current .workflowStepCopy small {
+  color: var(--primary);
+  font-weight: 750;
+}
+
+.workflowTaskDetails {
+  display: grid;
+  grid-template-columns: 0.62fr 1.45fr 1.2fr;
+  gap: 7px;
+  margin-top: 1px;
+}
+
+.workflowTaskDetails > span {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+  min-height: 47px;
+  padding: 7px 8px;
+  border: 1px solid rgba(148, 216, 204, 0.09);
+  border-radius: 8px;
+  background: rgba(3, 14, 12, 0.38);
+}
+
+.workflowTaskDetails small {
+  color: #63877f;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.workflowTaskDetails strong {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #a8d1c8;
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+@keyframes workflowFlow {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@keyframes workflowPulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.92); }
+  50% { opacity: 1; transform: scale(1.08); }
 }
 
 #workspace,
@@ -3655,8 +3885,13 @@ body::before {
     gap: 16px;
   }
 
-  .workflowHeading {
-    text-align: center;
+  .workflowSummary {
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(148, 216, 204, 0.1);
+  }
+
+  .workflowTaskDetails {
+    grid-template-columns: 0.7fr 1.3fr 1fr;
   }
 
   .workspace {
@@ -3705,12 +3940,35 @@ body::before {
     border-radius: 16px;
   }
 
-  .workflowStepCopy small {
+  .workflowProgressStats {
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .workflowSteps li:not(.current) .workflowStepCopy small {
     display: none;
   }
 
   .workflowStepCopy strong {
-    font-size: 10px;
+    font-size: 9px;
+  }
+
+  .workflowDot {
+    width: 30px;
+    height: 30px;
+  }
+
+  .workflowSteps::before,
+  .workflowSteps::after {
+    top: 15px;
+  }
+
+  .workflowTaskDetails {
+    grid-template-columns: 1fr;
+  }
+
+  .workflowTaskDetails > span {
+    min-height: 0;
   }
 
   .panel {

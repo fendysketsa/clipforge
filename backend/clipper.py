@@ -26,6 +26,15 @@ console = Console()
 _AI_UNAVAILABLE_NOTICE_PRINTED = False
 
 
+def emit_progress(percent: int, stage: str, detail: str) -> None:
+    """Emit a machine-readable milestone consumed by the API progress tracker."""
+    clean_detail = re.sub(r"[\r\n|]+", " ", detail).strip()
+    console.print(
+        f"CLIPFORGE_PROGRESS:{max(0, min(100, int(percent)))}|{stage}|{clean_detail}",
+        markup=False,
+    )
+
+
 def disable_unavailable_ai(config: AIConfig, exc: BaseException) -> bool:
     """Open the circuit once so one offline provider does not spam every generated asset."""
     global _AI_UNAVAILABLE_NOTICE_PRINTED
@@ -7555,7 +7564,14 @@ def export_compilation(
     part_paths: list[Path] = []
     altered_content_disclosure_required = False
     try:
+        total_parts = len(candidates)
         for idx, candidate in enumerate(candidates, start=1):
+            part_start = 70 + round(((idx - 1) / max(1, total_parts)) * 20)
+            emit_progress(
+                part_start,
+                "render",
+                f"Merender bagian cerita {idx} dari {total_parts}",
+            )
             part_path = export_clip(
                 video_path,
                 candidate,
@@ -7581,6 +7597,12 @@ def export_compilation(
                 compilation_part_count=len(candidates),
             )
             part_paths.append(part_path)
+            part_done = 70 + round((idx / max(1, total_parts)) * 20)
+            emit_progress(
+                part_done,
+                "render",
+                f"Bagian cerita {idx} dari {total_parts} selesai",
+            )
             try:
                 part_payload = json.loads(
                     part_path.with_suffix(".json").read_text(encoding="utf-8")
@@ -7603,6 +7625,7 @@ def export_compilation(
             )
 
         concat_path = parts_dir / "concat.txt"
+        emit_progress(91, "render", "Menyatukan seluruh bagian video panjang")
         concat_path.write_text(
             "\n".join(f"file '{path.name}'" for path in part_paths) + "\n",
             encoding="utf-8",
@@ -7629,6 +7652,7 @@ def export_compilation(
             ],
             cwd=parts_dir,
         )
+        emit_progress(92, "render", "Video panjang utuh selesai dirakit")
     finally:
         shutil.rmtree(parts_dir, ignore_errors=True)
 
@@ -7998,12 +8022,16 @@ def main() -> int:
     root = Path(args.output)
     root.mkdir(parents=True, exist_ok=True)
 
+    mode_label = "video panjang" if args.clip_mode == "highlight_5m" else "klip pendek"
+    emit_progress(3, "source", f"Menyiapkan sumber untuk {mode_label}")
+
     if args.source_file:
         source_file = Path(args.source_file)
         title = source_file.stem or "uploaded-video"
         work_dir = root / slugify(title)[:80]
         console.print("[bold]Using uploaded video...[/bold]")
         final_video_path, metadata = prepare_uploaded_source(source_file, work_dir)
+        emit_progress(16, "source", "Video upload lokal siap diproses")
     else:
         console.print("[bold]Fetching metadata...[/bold]")
         metadata = fetch_metadata(args.url)
@@ -8021,9 +8049,11 @@ def main() -> int:
             force=args.force,
             video_quality=args.video_quality,
         )
+        emit_progress(16, "source", "Video sumber berhasil disiapkan")
     save_json(work_dir / "metadata.json", metadata)
 
     cache_suffix = f"_{int(args.analyze_seconds)}s" if args.analyze_seconds else ""
+    emit_progress(20, "transcript", "Mengekstrak audio dari video")
     console.print("[bold]Extracting audio...[/bold]")
     audio_path = extract_audio(
         final_video_path,
@@ -8031,6 +8061,7 @@ def main() -> int:
         force=args.force,
         limit_seconds=args.analyze_seconds,
     )
+    emit_progress(28, "transcript", "Mentranskripsi ucapan dan menyusun timestamp")
     transcript = transcribe(
         audio_path,
         work_dir / f"transcript{cache_suffix}.json",
@@ -8039,6 +8070,7 @@ def main() -> int:
         force=args.force,
     )
 
+    emit_progress(46, "selection", "Menilai kandidat berdasarkan hook dan kelengkapan cerita")
     console.print("[bold]Scoring candidate clips...[/bold]")
     pool = build_candidate_pool(transcript, args.min, args.max)
     if not pool:
@@ -8068,11 +8100,17 @@ def main() -> int:
         short_limit=args.top,
         compilation_target=args.compilation_target,
     )
+    emit_progress(
+        59,
+        "selection",
+        f"{len(candidates)} kandidat terbaik terpilih untuk {mode_label}",
+    )
     if not candidates:
         console.print("[red]No clip candidates found. Try lowering --min or increasing --max.[/red]")
         return 1
 
     if not args.no_enhanced_edit:
+        emit_progress(63, "selection", "Merapikan hook, alur, dan ending kandidat")
         console.print("[bold]Applying Codex structural edits to hook and ending...[/bold]")
         candidates = apply_codex_edits_to_candidates(
             candidates,
@@ -8128,6 +8166,7 @@ def main() -> int:
     if not args.no_enhanced_edit:
         console.print("[bold]Applying enhanced motion graphics...[/bold]")
     if args.clip_mode == "highlight_5m":
+        emit_progress(70, "render", "Merakit resume cerita landscape 16:9")
         console.print("[bold]Exporting 16:9 cinematic story resume with POV and core narrative...[/bold]")
         exported = [
             export_compilation(
@@ -8149,10 +8188,18 @@ def main() -> int:
                 args.auto_blur_watermarks,
             )
         ]
+        emit_progress(93, "render", "Render video panjang selesai")
     else:
         console.print("[bold]Exporting vertical short clips...[/bold]")
         exported = []
-        for candidate in candidates:
+        total_candidates = len(candidates)
+        for export_index, candidate in enumerate(candidates, start=1):
+            render_start = 68 + round(((export_index - 1) / max(1, total_candidates)) * 25)
+            emit_progress(
+                render_start,
+                "render",
+                f"Merender klip pendek {export_index} dari {total_candidates}",
+            )
             clip_segments = segments_for_clip(transcript, candidate)
             exported.append(
                 export_clip(
@@ -8174,7 +8221,14 @@ def main() -> int:
                     background_mode=args.background_mode,
                 )
             )
+            render_done = 68 + round((export_index / max(1, total_candidates)) * 25)
+            emit_progress(
+                render_done,
+                "render",
+                f"Klip pendek {export_index} dari {total_candidates} selesai",
+            )
 
+    emit_progress(95, "finalize", "Menyimpan audit, metadata, dan kesiapan monetisasi")
     attach_monetization_provenance(
         exported,
         metadata,
@@ -8182,8 +8236,10 @@ def main() -> int:
     )
 
     if not args.keep_intermediate:
+        emit_progress(98, "finalize", "Membersihkan file sementara")
         cleanup_intermediate(work_dir, final_video_path)
 
+    emit_progress(100, "complete", "Semua hasil siap direview dan diunduh")
     console.print("[green]Done.[/green] Exported:")
     for path in exported:
         console.print(f"  {path}")

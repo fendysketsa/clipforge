@@ -226,10 +226,12 @@ files do not inherit source container metadata or chapters. New renders also
 carry a monetization-readiness audit; upload is blocked when commercial-use
 rights or minimum substantive-edit evidence is absent. This is a preflight, not
 a promise of YPP approval, because YouTube also reviews the channel as a whole.
-During upload, Playwright waits for YouTube Studio Checks and cancels
-before save if copyright or restriction issues are detected. Auto uploads are
-kept Private by default, because Content ID can also apply a later claim after
-the initial Checks finish. When ClipForge replaces a realistic backdrop, it also
+During upload, Playwright waits for YouTube Studio Checks and cancels before save
+for blocks, strikes, unresolved copyright states, and every active claim on a
+Short over one minute. A claim is allowed to finish only when YouTube explicitly
+shows both that it has no impact on the video and no impact or strike on the
+channel. Auto uploads are kept Private by default, because Content ID can also
+apply a later claim after the initial Checks finish. When ClipForge replaces a realistic backdrop, it also
 selects YouTube's altered-content disclosure before continuing. Review the
 Restrictions and monetization columns before publishing.
 This reduces risk but cannot guarantee a video will never receive a future claim.

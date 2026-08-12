@@ -69,6 +69,11 @@ export type ClipJob = {
   started_at?: string | null;
   finished_at?: string | null;
   duration_seconds?: number | null;
+  progress_percent?: number;
+  progress_stage?: string | null;
+  progress_detail?: string | null;
+  progress_step?: number;
+  progress_total_steps?: number;
   source_title?: string | null;
   source_url?: string | null;
   source_uploader?: string | null;

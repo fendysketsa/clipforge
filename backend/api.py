@@ -316,6 +316,11 @@ class ClipJob(BaseModel):
     started_at: str | None = None
     finished_at: str | None = None
     duration_seconds: float | None = None
+    progress_percent: int = 0
+    progress_stage: str | None = None
+    progress_detail: str | None = None
+    progress_step: int = 0
+    progress_total_steps: int = 5
     source_title: str | None = None
     source_url: str | None = None
     source_uploader: str | None = None
@@ -880,7 +885,7 @@ def prioritized_niche_queries(niche: IslamicContentNiche, configured: list[str])
         ]
         current_profile = ISLAMIC_EVERGREEN_NICHES["islamic_current_viral"]
         cross_niche_queries.append(str(current_profile["queries"][1]))
-        return merge_unique(
+        return merge_unique_queries(
             cross_niche_queries,
             prioritized_viral_queries(configured),
         )
@@ -1618,6 +1623,7 @@ youtube_login_reconnect_cdp = False
 cancelled_job_ids: set[str] = set()
 preserve_job_files_on_cancel: set[str] = set()
 process_lock = threading.Lock()
+clip_job_slots = threading.BoundedSemaphore(max(1, env_int("CLIPFORGE_MAX_CONCURRENT_JOBS", 3)))
 youtube_worker_lock = threading.Lock()
 youtube_worker_running = False
 youtube_cleanup_lock = threading.Lock()
@@ -3245,22 +3251,20 @@ def build_youtube_upload_command(
         "--timeout",
         os.environ.get("YOUTUBE_UPLOAD_TIMEOUT_SECONDS", "5400"),
     ]
+    thumbnail_content_type = "long-form" if is_long_form else "shorts"
+    command.extend(["--thumbnail-content-type", thumbnail_content_type])
+    media_duration = media_duration_seconds(clip_path)
+    if media_duration > 0:
+        command.extend(["--media-duration-seconds", f"{media_duration:.3f}"])
     if upload.thumbnail_url:
         thumbnail_path = output_path_from_url(upload.thumbnail_url)
         if is_long_form and (thumbnail_path is None or not thumbnail_path.is_file()):
             raise RuntimeError("File thumbnail otomatis tidak ditemukan sebelum upload YouTube dimulai.")
         if thumbnail_path is not None and thumbnail_path.is_file():
-            thumbnail_content_type = (
-                "long-form"
-                if is_long_form
-                else "shorts"
-            )
             command.extend(
                 [
                     "--thumbnail",
                     str(thumbnail_path),
-                    "--thumbnail-content-type",
-                    thumbnail_content_type,
                 ]
             )
     if upload.tags:
@@ -4500,9 +4504,10 @@ def resume_queued_youtube_uploads() -> None:
         schedule_completed_upload_cleanup(upload_id)
 
 
-def discover_clips(started_at: float) -> list[ClipFile]:
+def discover_clips(started_at: float, output_root: Path | None = None) -> list[ClipFile]:
     clips: list[ClipFile] = []
-    for path in OUTPUTS_DIR.rglob("clips/*.mp4"):
+    search_root = output_root or OUTPUTS_DIR
+    for path in search_root.rglob("clips/*.mp4"):
         if path.stat().st_mtime + 1 < started_at:
             continue
         thumb_path = path.with_name(f"{path.stem}_thumb.jpg")
@@ -4594,10 +4599,11 @@ def discover_clips(started_at: float) -> list[ClipFile]:
     return clips
 
 
-def discover_candidates(started_at: float) -> list[ClipCandidate]:
+def discover_candidates(started_at: float, output_root: Path | None = None) -> list[ClipCandidate]:
+    search_root = output_root or OUTPUTS_DIR
     candidate_files = [
         path
-        for path in OUTPUTS_DIR.rglob("candidates*.json")
+        for path in search_root.rglob("candidates*.json")
         if path.stat().st_mtime + 1 >= started_at
     ]
     if not candidate_files:
@@ -4730,21 +4736,18 @@ def choose_auto_analyze_seconds(duration: float | None) -> float | None:
     return min(MAX_AUTO_ANALYSIS_SECONDS, max(FULL_ANALYSIS_LIMIT_SECONDS, duration * LONG_VIDEO_ANALYSIS_RATIO))
 
 
-def cleanup_job_artifacts(started_at: float) -> int:
-    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-    removed = 0
-    for item in OUTPUTS_DIR.iterdir():
-        try:
-            if item.stat().st_mtime + 2 < started_at:
-                continue
-            if item.is_dir():
-                shutil.rmtree(item)
-            else:
-                item.unlink()
-            removed += 1
-        except OSError:
-            pass
-    return removed
+def cleanup_job_artifacts(output_root: Path) -> int:
+    root = OUTPUTS_DIR.resolve()
+    resolved = output_root.resolve()
+    if resolved == root or root not in resolved.parents:
+        raise RuntimeError(f"Refusing to clean unsafe job output path: {resolved}")
+    if not resolved.exists():
+        return 0
+    try:
+        shutil.rmtree(resolved)
+        return 1
+    except OSError:
+        return 0
 
 
 def cancel_process(job_id: str) -> bool:
@@ -4800,12 +4803,17 @@ def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
     return ClipJobRequest(**data)
 
 
-def build_clipper_command(request: ClipJobRequest) -> list[str]:
+def build_clipper_command(
+    request: ClipJobRequest,
+    output_root: Path | None = None,
+) -> list[str]:
     command = [sys.executable, "clipper.py"]
     if request.source_file:
         command.extend(["--source-file", request.source_file])
     else:
         command.append(request.url)
+    if output_root is not None:
+        command.extend(["--output", str(output_root)])
     command.extend(
         [
             "--top",
@@ -4864,6 +4872,35 @@ def build_clipper_command(request: ClipJobRequest) -> list[str]:
     return command
 
 
+CLIPFORGE_PROGRESS_PATTERN = re.compile(
+    r"^CLIPFORGE_PROGRESS:(\d{1,3})\|([^|]+)\|(.*)$"
+)
+
+
+def parse_clipper_progress(line: str) -> dict[str, int | str] | None:
+    match = CLIPFORGE_PROGRESS_PATTERN.match((line or "").strip())
+    if not match:
+        return None
+    raw_percent, stage, detail = match.groups()
+    percent = max(0, min(100, int(raw_percent)))
+    stage_steps = {
+        "source": 1,
+        "transcript": 2,
+        "selection": 3,
+        "render": 4,
+        "finalize": 5,
+        "complete": 5,
+    }
+    normalized_stage = stage.strip().casefold()
+    return {
+        "progress_percent": percent,
+        "progress_stage": normalized_stage,
+        "progress_detail": re.sub(r"\s+", " ", detail).strip()[:180],
+        "progress_step": stage_steps.get(normalized_stage, 0),
+        "progress_total_steps": 5,
+    }
+
+
 def run_job(job_id: str) -> None:
     with jobs_lock:
         job = jobs.get(job_id)
@@ -4878,15 +4915,15 @@ def run_job(job_id: str) -> None:
     if secret:
         request = request.model_copy(update={"ai_api_key": secret})
 
-    started_at = time.time()
-    started_perf = time.perf_counter()
-    started_at_iso = now_iso()
+    output_root = OUTPUTS_DIR / job_id
+    queued_started_perf = time.perf_counter()
+    queued_started_iso = now_iso()
     if job_id in cancelled_job_ids:
         set_job(
             job_id,
             status="cancelled",
-            started_at=started_at_iso,
-            **finish_job_updates(started_perf),
+            started_at=queued_started_iso,
+            **finish_job_updates(queued_started_perf),
             clips=[],
             candidates=[],
             error="Proses dibatalkan sebelum worker berjalan.",
@@ -4898,24 +4935,68 @@ def run_job(job_id: str) -> None:
 
     set_job(
         job_id,
+        progress_percent=0,
+        progress_stage="queued",
+        progress_detail="Menunggu slot worker paralel yang tersedia",
+        progress_step=0,
+        progress_total_steps=5,
+    )
+    clip_job_slots.acquire()
+    started_at = time.time()
+    started_perf = time.perf_counter()
+    started_at_iso = now_iso()
+    if job_id in cancelled_job_ids:
+        set_job(
+            job_id,
+            status="cancelled",
+            started_at=started_at_iso,
+            **finish_job_updates(started_perf),
+            clips=[],
+            candidates=[],
+            error="Proses dibatalkan sebelum slot worker berjalan.",
+        )
+        cancelled_job_ids.discard(job_id)
+        preserve_job_files_on_cancel.discard(job_id)
+        job_secrets.pop(job_id, None)
+        clip_job_slots.release()
+        return
+
+    set_job(
+        job_id,
         status="running",
         started_at=started_at_iso,
         finished_at=None,
         duration_seconds=None,
+        progress_percent=1,
+        progress_stage="source",
+        progress_detail="Menyiapkan worker pemrosesan",
+        progress_step=1,
+        progress_total_steps=5,
         error=None,
     )
-    command = build_clipper_command(request)
+    command = build_clipper_command(request, output_root)
 
-    process = subprocess.Popen(
-        command,
-        cwd=BASE_DIR,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        bufsize=1,
-    )
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=BASE_DIR,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+    except Exception as exc:
+        set_job(
+            job_id,
+            status="failed",
+            **finish_job_updates(started_perf),
+            error=f"Worker clipping gagal dimulai: {exc}",
+        )
+        job_secrets.pop(job_id, None)
+        clip_job_slots.release()
+        return
     with process_lock:
         job_processes[job_id] = process
 
@@ -4925,13 +5006,17 @@ def run_job(job_id: str) -> None:
         for line in process.stdout:
             cleaned = line.rstrip()
             if cleaned:
+                progress_update = parse_clipper_progress(cleaned)
+                if progress_update is not None:
+                    set_job(job_id, **progress_update)
+                    continue
                 logs.append(cleaned)
                 set_job(job_id, logs=logs[-120:])
 
         code = process.wait()
         if job_id in cancelled_job_ids:
             preserve_files = job_id in preserve_job_files_on_cancel
-            removed = 0 if preserve_files else cleanup_job_artifacts(started_at)
+            removed = 0 if preserve_files else cleanup_job_artifacts(output_root)
             error = (
                 "Proses dibatalkan dan catatan job dihapus. File output tidak dihapus."
                 if preserve_files
@@ -4948,12 +5033,21 @@ def run_job(job_id: str) -> None:
             )
             return
 
-        clips = discover_clips(started_at)
-        candidates = discover_candidates(started_at)
+        clips = discover_clips(started_at, output_root)
+        candidates = discover_candidates(started_at, output_root)
         if clips and candidates:
             clips = enrich_clips_with_candidate_titles(clips, candidates)
         if code == 0:
-            updates = {"status": "completed", "logs": logs[-120:], **finish_job_updates(started_perf)}
+            updates = {
+                "status": "completed",
+                "logs": logs[-120:],
+                "progress_percent": 100,
+                "progress_stage": "complete",
+                "progress_detail": "Semua hasil siap direview dan diunduh",
+                "progress_step": 5,
+                "progress_total_steps": 5,
+                **finish_job_updates(started_perf),
+            }
             if clips:
                 updates["clips"] = clips
             if candidates:
@@ -5011,6 +5105,7 @@ def run_job(job_id: str) -> None:
         job_secrets.pop(job_id, None)
         cancelled_job_ids.discard(job_id)
         preserve_job_files_on_cancel.discard(job_id)
+        clip_job_slots.release()
 
         # An uploaded source is only needed during processing; remove it afterwards
         # so large videos don't accumulate in uploads/.
@@ -7505,13 +7600,6 @@ def create_job(request: ClipJobRequest) -> ClipJob:
     if not request.url and not request.source_file:
         raise HTTPException(status_code=400, detail="Provide a YouTube URL or upload a video first")
 
-    with jobs_lock:
-        if any(job.status in {"queued", "running"} for job in jobs.values()):
-            raise HTTPException(
-                status_code=409,
-                detail="Masih ada proses clipping aktif. Tunggu selesai atau batalkan terlebih dahulu.",
-            )
-
     if request.source_file:
         upload_path = resolve_upload_path(request.source_file)
         if upload_path is None:
@@ -7552,12 +7640,6 @@ def create_job(request: ClipJobRequest) -> ClipJob:
         updated_at=now_iso(),
     )
     with jobs_lock:
-        if any(item.status in {"queued", "running"} for item in jobs.values()):
-            job_secrets.pop(job_id, None)
-            raise HTTPException(
-                status_code=409,
-                detail="Proses clipping lain baru saja dimulai. Coba lagi setelah proses tersebut selesai.",
-            )
         jobs[job_id] = job
         save_jobs_unlocked()
 

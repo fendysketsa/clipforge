@@ -966,8 +966,8 @@ export function ControlPanel({
         </label>
         <p className="field-help">
           {clipMode === "highlight_5m"
-            ? "Selesai render, video landscape dan thumbnail viral-elegan otomatis diupload sebagai Private. Publikasikan setelah kolom Pembatasan bebas klaim."
-            : "Selesai clipping langsung antrekan 3 klip terbaik sebagai Private. Publikasikan hanya setelah kolom Pembatasan bebas klaim."}
+            ? "Selesai render, video landscape dan thumbnail viral-elegan otomatis diupload sebagai Private. Publikasikan jika Pembatasan bebas blokir/strike atau klaim dinyatakan tidak berdampak oleh YouTube."
+            : "Selesai clipping langsung antrekan 3 klip terbaik sebagai Private. Publikasikan jika Pembatasan bebas blokir/strike atau klaim dinyatakan tidak berdampak oleh YouTube."}
         </p>
         </div>
         </div>

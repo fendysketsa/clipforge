@@ -92,6 +92,7 @@ const isProcessJob = (item: ClipJob | null) =>
   item?.status === "queued" || item?.status === "running" || item?.status === "failed" || item?.status === "cancelled";
 const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
 const CLEANUP_PROGRESS_POLL_MS = 250;
+const TAB_JOB_STORAGE_KEY = "clipforge.activeJobId.v1";
 
 export default function HomePage() {
   const [url, setUrl] = useState("");
@@ -156,7 +157,7 @@ export default function HomePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRefreshingData, setIsRefreshingData] = useState(false);
   const [error, setError] = useState("");
-  const browserStartedJobId = useRef<string | null>(null);
+  const restoredTabJob = useRef(false);
   const notifiedAutoViralRunId = useRef<string | null>(null);
   const cleanupConfirmationTimer = useRef<number | null>(null);
 
@@ -284,6 +285,32 @@ export default function HomePage() {
   }, [loadJobs, loadYouTubeUploads]);
 
   useEffect(() => {
+    if (restoredTabJob.current) return;
+    restoredTabJob.current = true;
+    const storedJobId = window.sessionStorage.getItem(TAB_JOB_STORAGE_KEY);
+    if (!storedJobId) return;
+
+    getJob(storedJobId)
+      .then((restoredJob) => {
+        setActiveJob(restoredJob);
+        setJob(restoredJob);
+        setClipMode(restoredJob.request.clip_mode);
+        if (restoredJob.request.url) {
+          setSourceMode("url");
+          setUrl(restoredJob.request.url);
+        }
+      })
+      .catch(() => {
+        window.sessionStorage.removeItem(TAB_JOB_STORAGE_KEY);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!activeJobId) return;
+    window.sessionStorage.setItem(TAB_JOB_STORAGE_KEY, activeJobId);
+  }, [activeJobId]);
+
+  useEffect(() => {
     if (!hasPendingYouTubeCleanup) return;
     let cancelled = false;
     const refreshCleanupProgress = async () => {
@@ -388,15 +415,6 @@ export default function HomePage() {
   }, [autoViralRun, loadJobs, loadYouTubeUploads]);
 
   useEffect(() => {
-    if (isActiveJob(activeJob)) return;
-
-    const runningJob = jobs.find(isActiveJob);
-    if (runningJob) {
-      setActiveJob(runningJob);
-    }
-  }, [activeJob, jobs]);
-
-  useEffect(() => {
     setSelectedHistoryJobIds((current) =>
       current.filter((id) =>
         jobs.some((item) => item.id === id && item.status !== "queued" && item.status !== "running"),
@@ -416,9 +434,6 @@ export default function HomePage() {
       setActiveJob(nextJob);
 
       if (nextJob.status === "completed" || nextJob.status === "failed" || nextJob.status === "cancelled") {
-        if (browserStartedJobId.current === nextJob.id) {
-          browserStartedJobId.current = null;
-        }
         setJob((current) => (current?.id === nextJob.id || current === null ? nextJob : current));
         loadJobs().catch(() => undefined);
       }
@@ -428,28 +443,18 @@ export default function HomePage() {
   }, [activeJobId, isBusy, loadJobs]);
 
   useEffect(() => {
-    if (!activeJobId || !isBusy || browserStartedJobId.current !== activeJobId) return;
+    if (!activeJobId || !isBusy) return;
 
-    const message = "Proses clip masih berjalan. Jika halaman ditutup atau direload, proses akan dibatalkan dan output sementara akan dihapus.";
+    const message = "Proses masih berjalan. Hindari refresh jika tidak perlu; jika dilanjutkan, backend tetap bekerja dan tab ini akan menyambung kembali ke task yang sama.";
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = message;
       return message;
     };
-    const cancelOnLeave = () => {
-      const endpoint = `/api/jobs/${activeJobId}/cancel`;
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(endpoint, new Blob([], { type: "text/plain" }));
-        return;
-      }
-      fetch(endpoint, { method: "POST", keepalive: true }).catch(() => undefined);
-    };
 
     window.addEventListener("beforeunload", warnBeforeUnload);
-    window.addEventListener("pagehide", cancelOnLeave);
     return () => {
       window.removeEventListener("beforeunload", warnBeforeUnload);
-      window.removeEventListener("pagehide", cancelOnLeave);
     };
   }, [activeJobId, isBusy]);
 
@@ -668,7 +673,7 @@ export default function HomePage() {
 
       setActiveJob(nextJob);
       setJob(nextJob);
-      browserStartedJobId.current = nextJob.id;
+      window.sessionStorage.setItem(TAB_JOB_STORAGE_KEY, nextJob.id);
       await loadJobs();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Gagal memulai proses.");
@@ -717,7 +722,7 @@ export default function HomePage() {
 
     setActiveJob(null);
     setJob((current) => (isProcessJob(current) ? null : current));
-    browserStartedJobId.current = null;
+    window.sessionStorage.removeItem(TAB_JOB_STORAGE_KEY);
     setSelectedHistoryJobIds([]);
     await loadJobs();
   }, [loadJobs]);
@@ -1134,9 +1139,6 @@ export default function HomePage() {
       setActiveJob(nextJob);
       setJob((current) => (current?.id === nextJob.id || current === null ? nextJob : current));
     }
-    if (activeJobId === jobId) {
-      browserStartedJobId.current = null;
-    }
     await loadJobs();
   }, [activeJobId, jobs, loadJobs]);
 
@@ -1247,6 +1249,9 @@ export default function HomePage() {
         hasSource={sourceMode === "url" ? Boolean(url.trim()) : Boolean(uploadFileName)}
         isProcessing={isBusy || isSubmitting}
         hasResults={Boolean(job?.clips.length)}
+        job={isSubmitting ? null : activityJob}
+        clipMode={clipMode}
+        sourceValue={sourceMode === "url" ? url.trim() : uploadFileName}
       />
 
       <section className="workspace" id="workspace">

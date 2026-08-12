@@ -24,6 +24,7 @@ from api import (
     niche_candidate_rejection_reason,
     normalize_job_request,
     normalize_youtube_video_url,
+    parse_clipper_progress,
     processed_job_source_urls,
     search_viral_video_sources,
     search_youtube_data_api_viral_sources,
@@ -39,6 +40,22 @@ from api import (
     youtube_upload_clean_metadata_args,
     youtube_published_after,
 )
+
+
+def test_parse_clipper_progress_maps_machine_milestone_to_job_state():
+    assert parse_clipper_progress(
+        "CLIPFORGE_PROGRESS:73|render|Merender klip pendek 1 dari 3"
+    ) == {
+        "progress_percent": 73,
+        "progress_stage": "render",
+        "progress_detail": "Merender klip pendek 1 dari 3",
+        "progress_step": 4,
+        "progress_total_steps": 5,
+    }
+
+
+def test_parse_clipper_progress_rejects_regular_human_log():
+    assert parse_clipper_progress("Exporting vertical short clips...") is None
 
 
 def test_max_clips_basic():
@@ -798,10 +815,8 @@ def test_user_error_from_logs_explains_incomplete_audio_download():
     assert "ulangi job" in message
 
 
-def test_create_job_rejects_when_another_job_is_active(monkeypatch):
+def test_create_job_accepts_another_job_while_one_is_active(monkeypatch):
     import api
-    import pytest
-    from fastapi import HTTPException
 
     active = ClipJob(
         id="active-job",
@@ -811,12 +826,36 @@ def test_create_job_rejects_when_another_job_is_active(monkeypatch):
         updated_at="2026-01-01T00:00:00+00:00",
     )
     monkeypatch.setattr(api, "jobs", {active.id: active})
+    monkeypatch.setattr(api, "processed_source_history", set())
+    monkeypatch.setattr(api, "source_usage_history", {})
 
-    with pytest.raises(HTTPException) as error:
-        api.create_job(ClipJobRequest(url="https://youtu.be/new"))
+    started_threads = []
 
-    assert error.value.status_code == 409
-    assert "aktif" in str(error.value.detail)
+    class FakeThread:
+        def __init__(self, *, target, args, daemon):
+            started_threads.append((target, args, daemon))
+
+        def start(self):
+            return None
+
+    monkeypatch.setattr(api.threading, "Thread", FakeThread)
+
+    created = api.create_job(ClipJobRequest(url="https://youtu.be/new"))
+
+    assert created.status == "queued"
+    assert created.id in api.jobs
+    assert active.id in api.jobs
+    assert started_threads == [(api.run_job, (created.id,), True)]
+
+
+def test_build_clipper_command_can_isolate_parallel_job_output(tmp_path):
+    request = ClipJobRequest(url="https://youtu.be/source")
+    output_root = tmp_path / "job-123"
+
+    command = build_clipper_command(request, output_root)
+
+    output_index = command.index("--output")
+    assert command[output_index + 1] == str(output_root)
 
 
 def test_build_clipper_command_forces_creative_commons_for_url_jobs():
