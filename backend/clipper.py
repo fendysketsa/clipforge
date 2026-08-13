@@ -2557,6 +2557,7 @@ def attach_monetization_provenance(
         sound_effect_cues = payload.get("sound_effect_cues")
         dynamic_captions = payload.get("dynamic_captions")
         end_cta = payload.get("end_cta")
+        subscriber_conversion = payload.get("subscriber_conversion")
         chapter_edit_evidence = payload.get("chapter_edit_evidence")
         edit_signature = payload.get("content_edit_signature")
         auto_visual_plan = payload.get("auto_fyp_visual_plan")
@@ -2622,8 +2623,23 @@ def attach_monetization_provenance(
             "content_specific_engagement_prompt": bool(
                 isinstance(end_cta, dict)
                 and end_cta.get("enabled")
-                and end_cta.get("strategy") == "content_theme_derived_question"
-                and end_cta.get("copy")
+                and end_cta.get("strategy") in {
+                    "content_theme_derived_question",
+                    "payoff_then_contextual_subscribe_value",
+                    "final_chapter_contextual_subscribe_value",
+                }
+                and (
+                    end_cta.get("copy")
+                    or end_cta.get("engagement_copy")
+                    or end_cta.get("subscribe_copy")
+                )
+            ),
+            "content_specific_subscribe_value": bool(
+                isinstance(subscriber_conversion, dict)
+                and subscriber_conversion.get("enabled")
+                and subscriber_conversion.get("content_theme_derived")
+                and subscriber_conversion.get("value_proposition")
+                and not subscriber_conversion.get("forced_or_incentivized_subscription")
             ),
             "chapter_specific_editorial_framing": chapter_specific_edits,
             "structured_story_arc": bool(
@@ -4298,6 +4314,7 @@ def shorts_cover_frame_timestamp(duration: float) -> float:
 
 SHORTS_TITLE_OVERLAY_SECONDS = 3.2
 SHORTS_CTA_OVERLAY_SECONDS = 2.35
+LONG_FORM_SUBSCRIBE_OVERLAY_SECONDS = 5.2
 DEFAULT_SHORTS_CTA_VOICEOVER_TEXT = "Tulis pendapatmu dan lanjutkan diskusinya!"
 
 
@@ -4383,14 +4400,36 @@ def shorts_engagement_prompt(clip: ClipCandidate) -> str:
     return prompt[:62]
 
 
-def shorts_cta_overlay_filter(duration: float, prompt_filename: str = "") -> str:
-    """Invite a content-relevant response over the live payoff without an empty outro."""
+def subscribe_value_prompt(clip: ClipCandidate) -> str:
+    """Give viewers a topic-specific reason to subscribe after receiving value."""
+    theme = detect_visual_theme(clip)
+    searchable = f"{clip.title} {clip.hook} {clip.pov} {clip.text}".casefold()
+    if any(term in searchable for term in ARCHIVAL_VISUAL_WORDS):
+        prompt = "SUBSCRIBE UNTUK KISAH & HIKMAH BERIKUTNYA"
+    elif theme == "islamic":
+        prompt = "SUBSCRIBE UNTUK HIKMAH BERIKUTNYA"
+    elif theme == "mystery":
+        prompt = "SUBSCRIBE UNTUK CERITA & CEK FAKTA BERIKUTNYA"
+    elif theme == "warning":
+        prompt = "SUBSCRIBE AGAR TAK LEWAT POIN PENTING"
+    elif theme == "inspiring":
+        prompt = "SUBSCRIBE UNTUK LANGKAH BAIK BERIKUTNYA"
+    else:
+        prompt = "SUBSCRIBE UNTUK PELAJARAN BERIKUTNYA"
+    return prompt[:64]
+
+
+def shorts_cta_overlay_filter(
+    duration: float,
+    prompt_filename: str = "",
+    subscribe_filename: str = "",
+) -> str:
+    """Invite a response and a value-led subscription over the live payoff."""
     safe_duration = max(0.1, duration)
     cta_start = max(0.0, safe_duration - SHORTS_CTA_OVERLAY_SECONDS)
     cta_end = max(cta_start, safe_duration - 0.04)
     active = f"enable='between(t,{cta_start:.3f},{cta_end:.3f})'"
     font_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-    font_regular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     prompt_filter = (
         "drawtext="
         f"fontfile={font_bold}:textfile='{prompt_filename}':reload=0:expansion=none:"
@@ -4404,6 +4443,19 @@ def shorts_cta_overlay_filter(duration: float, prompt_filename: str = "") -> str
         "x=118:y=1065:"
         f"{active}"
     )
+    subscribe_filter = (
+        "drawtext="
+        f"fontfile={font_bold}:textfile='{subscribe_filename}':reload=0:expansion=none:"
+        "fontcolor=white:fontsize=19:borderw=1:bordercolor=black@0.72:"
+        "x=142:y=1128:"
+        f"{active}"
+        if subscribe_filename
+        else "drawtext="
+        f"fontfile={font_bold}:text='SUBSCRIBE UNTUK VIDEO BERIKUTNYA':expansion=none:"
+        "fontcolor=white:fontsize=19:borderw=1:bordercolor=black@0.72:"
+        "x=142:y=1128:"
+        f"{active}"
+    )
     return ",".join(
         [
             f"drawbox=x=98:y=1026:w=804:h=168:color=black@0.30:t=fill:{active}",
@@ -4411,11 +4463,38 @@ def shorts_cta_overlay_filter(duration: float, prompt_filename: str = "") -> str
             f"drawbox=x=82:y=1010:w=804:h=168:color=#FF3158@0.94:t=3:{active}",
             f"drawbox=x=104:y=1034:w=10:h=112:color=#FF3158@1.0:t=fill:{active}",
             prompt_filter,
+            f"drawbox=x=120:y=1116:w=742:h=46:color=#FF1744@0.94:t=fill:{active}",
+            subscribe_filter,
+            f"drawbox=x=120:y=1168:w=180:h=4:color=#FFF200@1.0:t=fill:{active}",
+        ]
+    )
+
+
+def long_form_subscribe_overlay_filter(
+    duration: float,
+    subscribe_filename: str,
+) -> str:
+    """Add one compact subscription value proposition to the final story chapter."""
+    safe_duration = max(0.1, duration)
+    start = max(0.0, safe_duration - LONG_FORM_SUBSCRIBE_OVERLAY_SECONDS)
+    end = max(start, safe_duration - 0.12)
+    active = f"enable='between(t,{start:.3f},{end:.3f})'"
+    font_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    font_regular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    return ",".join(
+        [
+            f"drawbox=x=104:y=690:w=780:h=166:color=black@0.76:t=fill:{active}",
+            f"drawbox=x=104:y=690:w=12:h=166:color=#FF1744@1.0:t=fill:{active}",
+            f"drawbox=x=132:y=708:w=238:h=38:color=#FF1744@0.96:t=fill:{active}",
             "drawtext="
-            f"fontfile={font_regular}:text='TULIS KOMENTAR · LANJUTKAN DISKUSI':expansion=none:"
-            "fontcolor=white@0.68:fontsize=19:x=120:y=1126:"
+            f"fontfile={font_regular}:text='LANJUTKAN SERI INI':expansion=none:"
+            "fontcolor=white:fontsize=19:x=153:y=717:"
             f"{active}",
-            f"drawbox=x=120:y=1158:w=180:h=4:color=#FFF200@1.0:t=fill:{active}",
+            "drawtext="
+            f"fontfile={font_bold}:textfile='{subscribe_filename}':reload=0:expansion=none:"
+            "fontcolor=white:fontsize=27:line_spacing=5:borderw=2:bordercolor=black@0.82:"
+            "x=136:y=765:"
+            f"{active}",
         ]
     )
 
@@ -4589,6 +4668,8 @@ def shorts_policy_compliance(duration: float, *, embedded_cover: bool) -> dict[s
         "non_original_shorts_views_may_be_ineligible": True,
         "contextual_engagement_prompt_preferred": True,
         "repeated_subscribe_template_avoided": True,
+        "content_specific_subscribe_value_proposition": True,
+        "subscription_incentive_or_reward_offered": False,
         "viewer_satisfaction_not_watch_time_alone": True,
         "filler_avoidance_required": True,
         "claimed_content_over_one_minute_block_risk": safe_duration > 60,
@@ -6566,7 +6647,8 @@ def fallback_social_caption(
         if tag and tag.casefold() not in seen:
             ordered.append(tag)
             seen.add(tag.casefold())
-    return f"{emoji} {hook}\n\n{body}\n\n{' '.join(ordered[:8])}"[:2000]
+    subscribe_line = subscribe_value_prompt(clip).capitalize().rstrip(".!?") + "."
+    return f"{emoji} {hook}\n\n{body}\n{subscribe_line}\n\n{' '.join(ordered[:8])}"[:2000]
 
 
 def generate_social_caption(
@@ -6594,6 +6676,8 @@ def generate_social_caption(
     user_prompt = (
         f"Write a social media post caption (Bahasa Indonesia) for this {format_name}. "
         "Make the first line a hook that stops the scroll and makes people curious to read more.\n"
+        "End with one soft Subscribe invitation that gives a concrete reason tied to this video's topic; "
+        "do not use rewards, pressure, fake urgency, or a generic repeated slogan.\n"
         "Return JSON exactly like:\n"
         '{"caption": "<hook line\\n\\nbody 1-2 sentences with emojis\\n\\nsoft CTA>", '
         '"hashtags": ["#tag1", "#tag2", ...]}\n\n'
@@ -6628,6 +6712,9 @@ def generate_social_caption(
     text = "\n".join(clean_lines).strip()
     if not text:
         return fallback_social_caption(clip, required_hashtags, long_form=long_form)
+    if not re.search(r"\bsubscribe\b", text, flags=re.I):
+        subscribe_line = subscribe_value_prompt(clip).capitalize().rstrip(".!?") + "."
+        text = f"{text}\n{subscribe_line}"
 
     # Required hashtags always come first, then the AI-generated ones (deduped,
     # case-insensitive). Required tags are guaranteed to be present.
@@ -6685,6 +6772,7 @@ def export_clip(
     cover_text_path = clips_dir / f"{base_name}.cover.txt"
     payoff_text_path = clips_dir / f"{base_name}.payoff.txt"
     engagement_text_path = clips_dir / f"{base_name}.engagement.txt"
+    subscribe_text_path = clips_dir / f"{base_name}.subscribe.txt"
     clean_background_path = clips_dir / f"{base_name}.background_tmp.mp4"
     watermark_preview_path = clips_dir / f"{base_name}.watermark_preview_tmp.mp4"
     json_path.unlink(missing_ok=True)
@@ -6731,6 +6819,7 @@ def export_clip(
     core_message = payoff_banner_text(clip, clip_segments)
     cover_copy = thumbnail_story_copy(clip)
     engagement_prompt = shorts_engagement_prompt(clip)
+    subscribe_prompt = subscribe_value_prompt(clip)
     reaction_cues = detect_reaction_cues(clip, clip_segments)
     sound_effect_cues = (
         contextual_sound_effect_cues(
@@ -6749,6 +6838,10 @@ def export_clip(
             sound_effect_cues = sound_effect_cues[:3]
     drawtext_supported = ffmpeg_has_filter("drawtext")
     automatic_short_title = output_format == "vertical_short" and drawtext_supported
+    subscriber_cta_planned = (
+        output_format == "vertical_short"
+        or compilation_part_number == compilation_part_count
+    )
     applied_edits = list(clip.applied_edits)
     if automatic_short_title:
         applied_edits.append(
@@ -6913,6 +7006,14 @@ def export_clip(
             else None
         ),
         "one_k_experiment_readiness": one_k_experiment_readiness(clip, output_format),
+        "subscriber_conversion": {
+            "version": 1,
+            "enabled": bool(drawtext_supported and subscriber_cta_planned),
+            "value_proposition": subscribe_prompt,
+            "content_theme_derived": True,
+            "shown_after_payoff": bool(drawtext_supported and subscriber_cta_planned),
+            "forced_or_incentivized_subscription": False,
+        },
     }
 
     visual_source = video_path
@@ -7377,17 +7478,44 @@ def export_clip(
         )
         if output_format == "vertical_short":
             engagement_text_path.write_text(engagement_prompt + "\n", encoding="utf-8")
-            vf = f"{vf},{shorts_cta_overlay_filter(duration, engagement_text_path.name)}"
+            subscribe_text_path.write_text(subscribe_prompt + "\n", encoding="utf-8")
+            vf = (
+                f"{vf},"
+                f"{shorts_cta_overlay_filter(duration, engagement_text_path.name, subscribe_text_path.name)}"
+            )
             sidecar_payload["end_cta"] = {
                 "enabled": True,
-                "copy": engagement_prompt,
-                "strategy": "content_theme_derived_question",
+                "engagement_copy": engagement_prompt,
+                "subscribe_copy": subscribe_prompt,
+                "strategy": "payoff_then_contextual_subscribe_value",
                 "duration_seconds": SHORTS_CTA_OVERLAY_SECONDS,
                 "placement": "center_lower_caption_safe",
                 "extends_video_duration": False,
             }
             applied_edits.append(
-                "CTA akhir mengajak komentar dengan pertanyaan yang mengikuti tema klip, tanpa outro kosong atau template Subscribe berulang."
+                "CTA akhir mengajak komentar lalu memberi alasan Subscribe yang mengikuti tema klip, tanpa outro kosong atau janji palsu."
+            )
+        elif compilation_part_number == compilation_part_count:
+            wrapped_subscribe = split_subtitle_text(
+                subscribe_prompt,
+                max_chars=30,
+                max_lines=2,
+            )
+            subscribe_text_path.write_text(
+                (wrapped_subscribe[0] if wrapped_subscribe else subscribe_prompt) + "\n",
+                encoding="utf-8",
+            )
+            vf = f"{vf},{long_form_subscribe_overlay_filter(duration, subscribe_text_path.name)}"
+            sidecar_payload["end_cta"] = {
+                "enabled": True,
+                "subscribe_copy": subscribe_prompt,
+                "strategy": "final_chapter_contextual_subscribe_value",
+                "duration_seconds": LONG_FORM_SUBSCRIBE_OVERLAY_SECONDS,
+                "placement": "landscape_lower_third_above_subtitles",
+                "extends_video_duration": False,
+            }
+            applied_edits.append(
+                "Bab terakhir menampilkan alasan Subscribe yang sesuai tema setelah payoff, tanpa menambah outro kosong."
             )
     else:
         sidecar_payload["channel_watermark"] = {
@@ -7502,6 +7630,7 @@ def export_clip(
         cover_text_path.unlink(missing_ok=True)
         payoff_text_path.unlink(missing_ok=True)
         engagement_text_path.unlink(missing_ok=True)
+        subscribe_text_path.unlink(missing_ok=True)
         clean_background_path.unlink(missing_ok=True)
         watermark_preview_path.unlink(missing_ok=True)
     audio_filter = (
@@ -7581,7 +7710,7 @@ def export_clip(
         generated_voice = generate_shorts_cta_voiceover(
             clips_dir,
             base_name,
-            engagement_prompt,
+            subscribe_prompt.title(),
         )
         if generated_voice is not None:
             cta_voice_path, voice_details = generated_voice
@@ -7864,6 +7993,7 @@ def export_compilation(
                         "pov": str(part_payload.get("pov") or "").strip()[:180],
                         "core_message": str(part_payload.get("core_message") or "").strip()[:180],
                         "visual_direction": part_payload.get("auto_fyp_visual_plan"),
+                        "end_cta": part_payload.get("end_cta"),
                         "content_timed_editing": bool(
                             part_payload.get("emphasis_times")
                             or part_payload.get("virtual_camera_angles")
@@ -8054,6 +8184,21 @@ def export_compilation(
             compilation,
             "landscape_compilation",
         ),
+        "subscriber_conversion": {
+            "version": 1,
+            "enabled": True,
+            "strategy": "single_value_led_cta_after_final_payoff",
+            "value_proposition": subscribe_value_prompt(compilation),
+            "content_theme_derived": True,
+            "shown_once": True,
+            "forced_or_incentivized_subscription": False,
+            "analytics_to_review": [
+                "subscription_source",
+                "subscribers_gained_by_content",
+                "subscriber_vs_non_subscriber_watch_time",
+                "returning_viewers",
+            ],
+        },
     }
 
     strongest_offset = sum(

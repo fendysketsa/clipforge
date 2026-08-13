@@ -53,6 +53,7 @@ from clipper import (
     landscape_compilation_edit_filter,
     landscape_compilation_frame_filter,
     landscape_speaker_split_filter,
+    long_form_subscribe_overlay_filter,
     localized_watermark_blur_filter,
     modern_blurred_video_frame_filter,
     modern_gradient_border_filters,
@@ -73,6 +74,7 @@ from clipper import (
     shorts_cta_voiceover_mix_filter,
     shorts_cta_voiceover_text,
     shorts_policy_compliance,
+    subscribe_value_prompt,
     thumbnail_story_copy,
     transcription_decode_options,
     viral_title_overlay_filter,
@@ -870,11 +872,15 @@ def test_viral_title_overlay_clamps_window_to_short_clip_duration():
 
 
 def test_shorts_cta_is_brief_contextual_overlay_at_end():
-    value = shorts_cta_overlay_filter(30, "clip.engagement.txt")
+    value = shorts_cta_overlay_filter(
+        30,
+        "clip.engagement.txt",
+        "clip.subscribe.txt",
+    )
 
     assert "textfile='clip.engagement.txt'" in value
-    assert "text='TULIS KOMENTAR · LANJUTKAN DISKUSI'" in value
-    assert "text='SUBSCRIBE'" not in value
+    assert "textfile='clip.subscribe.txt'" in value
+    assert "color=#FF1744@0.94" in value
     assert "between(t,27.650,29.960)" in value
     assert "fade=" not in value
 
@@ -889,6 +895,17 @@ def test_shorts_engagement_prompt_follows_content_theme():
 
     assert shorts_engagement_prompt(islamic) == "HIKMAH MANA YANG PALING NGENA?"
     assert shorts_engagement_prompt(mystery) == "MITOS ATAU FAKTA MENURUTMU?"
+    assert subscribe_value_prompt(islamic) == "SUBSCRIBE UNTUK HIKMAH BERIKUTNYA"
+    assert subscribe_value_prompt(mystery) == "SUBSCRIBE UNTUK CERITA & CEK FAKTA BERIKUTNYA"
+
+
+def test_long_form_subscribe_cta_only_needs_a_compact_final_window():
+    value = long_form_subscribe_overlay_filter(60, "part.subscribe.txt")
+
+    assert "text='LANJUTKAN SERI INI'" in value
+    assert "textfile='part.subscribe.txt'" in value
+    assert "between(t,54.800,59.880)" in value
+    assert "fade=" not in value
 
 
 def test_shorts_cta_voiceover_ducks_dialog_and_stays_inside_card_window():
@@ -921,6 +938,8 @@ def test_shorts_policy_compliance_records_official_and_stricter_local_limits():
     assert compliance["inauthentic_content_policy_reviewed"] is True
     assert compliance["claimed_content_over_one_minute_block_risk"] is False
     assert compliance["recommendation_or_monetization_guarantee"] is False
+    assert compliance["content_specific_subscribe_value_proposition"] is True
+    assert compliance["subscription_incentive_or_reward_offered"] is False
 
 
 def test_one_k_readiness_is_an_experiment_signal_not_a_view_guarantee():

@@ -29,6 +29,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Keep captions compact and readable with outline/shadow only, without a gradient band over the source image.
 - Turn the fast-scanning reference-card pattern into a content-adaptive opening: the truthful hook stays prominent while the badge, accent color, and layout variation follow each story instead of repeating one fixed template.
 - Record a transparent 1K-view experiment-readiness signal for every Short and long-form render; it recommends whether to publish, A/B test the hook, or revise, but never claims to guarantee distribution.
+- Place one value-led Subscribe invitation after the payoff: Shorts pair it with the contextual discussion prompt, while long-form shows it once in the final chapter. The reason to subscribe follows the topic and never offers rewards or fake urgency.
 - Generate short clips up to 60 seconds without an extra compilation render.
 - Keep the chronological 5–10 minute cinematic story resume available as a separate mode.
 - Telegram's primary CTA requests short clips only for a faster turnaround.
