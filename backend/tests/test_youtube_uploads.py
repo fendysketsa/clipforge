@@ -911,6 +911,79 @@ def test_upload_falls_back_to_storage_state_when_cdp_launcher_fails(monkeypatch,
     assert any("dialihkan otomatis" in line for line in completed.logs)
 
 
+@pytest.mark.parametrize(
+    ("uploader_lines", "expected_status", "expected_confirmed"),
+    [
+        (
+            [
+                "PLAYLIST_CONFIRMED: Islam",
+                "VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345",
+            ],
+            "completed",
+            True,
+        ),
+        (
+            ["VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345"],
+            "failed",
+            False,
+        ),
+    ],
+)
+def test_upload_requires_playlist_confirmation_marker(
+    monkeypatch,
+    tmp_path,
+    uploader_lines,
+    expected_status,
+    expected_confirmed,
+):
+    import api
+
+    clip_path = tmp_path / "outputs" / "demo" / "clip_01.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"video")
+    upload = YouTubeUploadJob(
+        id="playlist-confirmation-upload",
+        source_job_id="job-playlist",
+        clip_url="/outputs/demo/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="queued",
+        created_at="2026-08-14T01:00:00+00:00",
+        updated_at="2026-08-14T01:00:00+00:00",
+        title="Playlist confirmation",
+        playlist="Islam",
+    )
+
+    monkeypatch.setattr(api, "OUTPUTS_DIR", tmp_path / "outputs")
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", tmp_path / "youtube_uploads.json")
+    monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+    monkeypatch.setattr(api, "youtube_upload_prefers_cdp", lambda: False)
+    monkeypatch.setattr(api, "youtube_auth_state_exists", lambda: False)
+    monkeypatch.setattr(api, "youtube_chromium_profile_ready", lambda: False)
+    monkeypatch.setattr(
+        api,
+        "build_youtube_upload_command",
+        lambda *_args, **_kwargs: [sys.executable, "youtube_uploader.py", "upload", str(clip_path)],
+    )
+    monkeypatch.setattr(api.subprocess, "Popen", lambda *_args, **_kwargs: object())
+
+    def fake_monitor(_process, on_line, **_kwargs):
+        for line in uploader_lines:
+            on_line(line)
+        return 0, False
+
+    monkeypatch.setattr(api, "monitor_youtube_upload_process", fake_monitor)
+    monkeypatch.setattr(api, "cleanup_youtube_staging_file", lambda *_args: False)
+    monkeypatch.setattr(api, "schedule_completed_upload_cleanup", lambda _upload_id: None)
+
+    api.run_youtube_upload(upload.id)
+
+    result = api.youtube_uploads[upload.id]
+    assert result.status == expected_status
+    assert result.playlist_confirmed is expected_confirmed
+    if expected_status == "failed":
+        assert "belum mengonfirmasi playlist" in (result.error or "")
+
+
 def test_start_youtube_cdp_refresh_process_uses_configured_command(monkeypatch, tmp_path):
     import api
 
@@ -1108,6 +1181,76 @@ def test_default_youtube_description_uses_ai_caption_and_hashtags_only():
     assert "#islam #shorts" in description
     assert "Sumber:" not in description
     assert "Channel sumber:" not in description
+
+
+def test_youtube_description_includes_fendy_audit_identity(monkeypatch):
+    import api
+
+    clip = ClipFile(
+        name="clip_01.mp4",
+        url="/outputs/demo/clips/clip_01.mp4",
+        size_bytes=1,
+        title="Hikmah Sabar",
+        social_caption="Satu pelajaran tentang sabar.\n\n#Islam #Shorts",
+    )
+    job = ClipJob(
+        id="job-audited",
+        status="completed",
+        request=ClipJobRequest(source_file="owned.mp4"),
+        created_at="2026-08-14T00:00:00+00:00",
+        updated_at="2026-08-14T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "auditor_identity": {"name": "Fendy", "audit_id": "FND-ABC123DEF456"}
+        },
+    )
+
+    description = default_youtube_description(job, clip)
+
+    assert description.endswith("Audit editorial otomatis: Fendy · ID FND-ABC123DEF456")
+
+
+def test_monetization_preflight_v6_requires_fendy_identity_and_growth_blueprint(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-audit-v6",
+        status="completed",
+        request=ClipJobRequest(source_file="owned.mp4"),
+        created_at="2026-08-14T00:00:00+00:00",
+        updated_at="2026-08-14T00:00:00+00:00",
+        clips=[clip],
+    )
+    base_sidecar = {
+        "monetization_readiness": {
+            "audit_version": 6,
+            "eligible_for_private_upload_review": True,
+        },
+    }
+
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: base_sidecar)
+    assert "auditor Fendy" in (youtube_monetization_preflight_issue(job, clip) or "")
+
+    with_auditor = {
+        **base_sidecar,
+        "auditor_identity": {
+            "name": "Fendy",
+            "display_signature": "FENDY AUDIT",
+            "audit_id": "FND-ABC123DEF456",
+            "visible_video_signature": True,
+        },
+    }
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: with_auditor)
+    assert "blueprint pertumbuhan Codex" in (youtube_monetization_preflight_issue(job, clip) or "")
+
+    complete = {**with_auditor, "codex_growth_blueprint": {"version": 1}}
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: complete)
+    assert youtube_monetization_preflight_issue(job, clip) is None
 
 
 def test_verified_cc_source_gets_required_attribution(monkeypatch):

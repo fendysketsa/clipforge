@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Iterable, Literal
 
@@ -2698,6 +2699,7 @@ def attach_monetization_provenance(
             and originality_score >= minimum_score
         )
         commercial_rights_ready = rights_verified or uploaded_source
+        policy_snapshot = youtube_policy_snapshot()
         payload["source_provenance"] = source
         payload["monetization_readiness"] = {
             "status": (
@@ -2713,7 +2715,7 @@ def attach_monetization_provenance(
             "commercial_rights_confirmation_required": uploaded_source,
             "originality_score": originality_score,
             "minimum_originality_score": minimum_score,
-            "audit_version": 5,
+            "audit_version": 6,
             "signals": originality_signals,
             "substantive_transformation": substantive_transformation,
             "original_creator_commentary_present": bool(
@@ -2724,7 +2726,10 @@ def attach_monetization_provenance(
                 "Komentar/kehadiran kreator asli tetap merupakan bukti transformasi terkuat."
             ),
             "channel_level_review_still_applies": True,
-            "youtube_policy_reviewed_on": SHORTS_POLICY_REVIEW_DATE,
+            "youtube_policy_reviewed_on": policy_snapshot["reviewed_on"],
+            "youtube_policy_snapshot": policy_snapshot,
+            "auditor_identity_required": True,
+            "codex_growth_blueprint_required": True,
             "inauthentic_content_policy": {
                 "mass_produced_or_repetitive_content_ineligible": True,
                 "content_specific_story_and_visual_direction_required": True,
@@ -4197,7 +4202,42 @@ SHORTS_SAFE_TOP = 220
 SHORTS_SAFE_BOTTOM = 1560
 SHORTS_OFFICIAL_MAX_SECONDS = 180
 FENDY_CLIPPER_SHORTS_MAX_SECONDS = 60
-SHORTS_POLICY_REVIEW_DATE = "2026-08-13"
+SHORTS_POLICY_REVIEW_DATE = os.environ.get("YOUTUBE_POLICY_REVIEW_DATE", "2026-08-14").strip()
+YOUTUBE_POLICY_REVIEW_INTERVAL_DAYS = 180
+
+
+def youtube_policy_snapshot(*, as_of: date | None = None) -> dict[str, object]:
+    """Expose policy freshness instead of pretending a dated audit lasts forever."""
+    fallback_reviewed = date(2026, 8, 14)
+    try:
+        reviewed = date.fromisoformat(SHORTS_POLICY_REVIEW_DATE)
+    except ValueError:
+        reviewed = fallback_reviewed
+    try:
+        review_interval_days = int(
+            os.environ.get(
+                "YOUTUBE_POLICY_REVIEW_INTERVAL_DAYS",
+                str(YOUTUBE_POLICY_REVIEW_INTERVAL_DAYS),
+            )
+        )
+    except ValueError:
+        review_interval_days = YOUTUBE_POLICY_REVIEW_INTERVAL_DAYS
+    review_interval_days = max(30, min(365, review_interval_days))
+    current_date = as_of or date.today()
+    review_due = reviewed + timedelta(days=review_interval_days)
+    return {
+        "snapshot_version": 1,
+        "reviewed_on": reviewed.isoformat(),
+        "review_due_on": review_due.isoformat(),
+        "review_required": current_date > review_due,
+        "rules_are_runtime_guarantee": False,
+        "future_year_assumed_unchanged": False,
+        "official_sources": [
+            "https://support.google.com/youtube/answer/15424877",
+            "https://support.google.com/youtube/answer/1311392",
+            "https://support.google.com/youtube/answer/12504220",
+        ],
+    }
 
 
 def wrap_subtitle(text: str, max_chars: int = SUBTITLE_MAX_CHARS, max_lines: int = SUBTITLE_MAX_LINES) -> str:
@@ -4743,8 +4783,10 @@ def shorts_policy_compliance(duration: float, *, embedded_cover: bool) -> dict[s
     promise that YouTube will recommend or monetize the upload.
     """
     safe_duration = max(0.0, duration)
+    policy_snapshot = youtube_policy_snapshot()
     return {
-        "reviewed_on": SHORTS_POLICY_REVIEW_DATE,
+        "reviewed_on": policy_snapshot["reviewed_on"],
+        "policy_snapshot": policy_snapshot,
         "official_max_seconds": SHORTS_OFFICIAL_MAX_SECONDS,
         "fendy_clipper_max_seconds": FENDY_CLIPPER_SHORTS_MAX_SECONDS,
         "duration_seconds": round(safe_duration, 3),
@@ -5073,7 +5115,7 @@ def detect_reaction_cues(
     clip: ClipCandidate,
     clip_segments: list[TranscriptSegment],
     *,
-    limit: int = 2,
+    limit: int = 4,
     min_gap: float = 8.0,
 ) -> list[ReactionCue]:
     """Choose sparse, transcript-grounded reaction stickers instead of random emoji spam."""
@@ -6244,8 +6286,129 @@ AVAILABLE_FONTS = {
 }
 DEFAULT_FONT = "DejaVu Sans"
 CHANNEL_WATERMARK = "@ryuundyofficial"
+FENDY_AUDITOR_NAME = "Fendy"
+FENDY_AUDIT_SIGNATURE = "FENDY AUDIT"
+CODEX_GROWTH_FRAMEWORK_VERSION = 1
 SOFT_CAPTION_BACK_COLOR = "&HC8000000"
 SOFT_CAPTION_SHADOW = 0.35
+
+
+def fendy_auditor_identity(
+    clip: ClipCandidate,
+    output_format: OutputFormat,
+) -> dict[str, object]:
+    """Create a stable per-video identity without claiming a manual human review."""
+    fingerprint = "|".join(
+        [
+            output_format,
+            re.sub(r"\s+", " ", clip.title).strip().casefold(),
+            f"{clip.start:.3f}",
+            f"{clip.end:.3f}",
+            re.sub(r"\s+", " ", clip.text).strip().casefold()[:1200],
+        ]
+    )
+    audit_id = "FND-" + hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:12].upper()
+    return {
+        "version": 1,
+        "name": FENDY_AUDITOR_NAME,
+        "display_signature": FENDY_AUDIT_SIGNATURE,
+        "audit_id": audit_id,
+        "role": "editorial_quality_auditor",
+        "audit_mode": "automated_preflight_with_owner_accountability",
+        "manual_human_review_claimed": False,
+        "output_format": output_format,
+        "visible_video_signature": True,
+        "codex_growth_framework_version": CODEX_GROWTH_FRAMEWORK_VERSION,
+    }
+
+
+def codex_growth_blueprint(
+    clip: ClipCandidate,
+    output_format: OutputFormat,
+) -> dict[str, object]:
+    """Turn the current edit into an honest, measurable channel-growth experiment."""
+    theme = detect_visual_theme(clip)
+    series_profiles = {
+        "islamic": ("Hikmah Praktis", "satu hikmah yang dapat dipahami dan dipraktikkan"),
+        "mystery": ("Cerita & Cek Fakta", "satu cerita, konteks, dan batas antara klaim dengan fakta"),
+        "warning": ("Jangan Abaikan", "satu risiko dan langkah yang bisa dilakukan"),
+        "inspiring": ("Langkah Baik", "satu perubahan kecil yang realistis"),
+        "knowledge": ("Poin yang Membuka Pikiran", "satu penjelasan spesifik tanpa filler"),
+    }
+    series_name, audience_promise = series_profiles[theme]
+    is_short = output_format == "vertical_short"
+    return {
+        "version": CODEX_GROWTH_FRAMEWORK_VERSION,
+        "owner": FENDY_AUDITOR_NAME,
+        "framework": "Codex compounding audience loop",
+        "series": {
+            "name": series_name,
+            "theme": theme,
+            "audience_promise": audience_promise,
+            "consistent_branding": True,
+            "episode_identity": hashlib.sha256(
+                f"{series_name}|{clip.title}|{clip.text[:500]}".encode("utf-8")
+            ).hexdigest()[:10],
+        },
+        "acquisition": {
+            "truthful_topic_specific_packaging": True,
+            "title_thumbnail_match_opening": True,
+            "long_form_ab_test_title_thumbnail": not is_short,
+            "shorts_embedded_cover_frame": is_short,
+            "avoid_generic_clickbait": True,
+        },
+        "retention": {
+            "hook_window_seconds": 3 if is_short else 30,
+            "strongest_relevant_moment_first": True,
+            "single_clear_promise": first_sentence(clip.hook or clip.title, max_words=10),
+            "payoff_required": True,
+            "semantic_loop_only_when_earned": True,
+            "chapters_recommended": not is_short,
+        },
+        "conversion": {
+            "engagement_prompt": shorts_engagement_prompt(clip) if is_short else "RESPONS SETELAH PAYOFF",
+            "subscribe_value": subscribe_value_prompt(clip),
+            "cta_after_value": True,
+            "short_to_related_long_form": is_short,
+            "incentive_or_fake_urgency": False,
+        },
+        "compounding_loop": {
+            "goal": "new_to_casual_to_regular_viewer",
+            "repeat_proven_topic_as_series": True,
+            "change_one_packaging_variable_per_test": True,
+            "never_copy_low_value_template_at_scale": True,
+            "review_window_days": [7, 28, 90],
+        },
+        "measure_after_publish": (
+            [
+                "engaged_views",
+                "viewed_vs_swiped",
+                "audience_retention",
+                "average_view_duration",
+                "rewatches",
+                "related_video_clicks",
+                "subscribers_gained",
+                "returning_viewers",
+            ]
+            if is_short
+            else [
+                "impressions_ctr",
+                "first_30_second_retention",
+                "average_view_duration",
+                "watch_time_share_ab_test",
+                "end_screen_click_rate",
+                "subscribers_gained",
+                "returning_viewers",
+            ]
+        ),
+        "official_guidance": [
+            "https://support.google.com/youtube/answer/12942217",
+            "https://support.google.com/youtube/answer/16391400",
+            "https://support.google.com/youtube/answer/14075157",
+            "https://support.google.com/youtube/answer/10246996",
+        ],
+        "view_or_subscriber_guarantee": False,
+    }
 
 
 @dataclass
@@ -6396,7 +6559,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 def channel_watermark_filter(output_format: str) -> str:
-    """Render a small, readable channel signature away from captions and faces."""
+    """Render Fendy's audit identity and channel signature in a safe area."""
     if output_format == "landscape_compilation":
         x_position = "w-text_w-42"
         y_position = "38"
@@ -6407,7 +6570,7 @@ def channel_watermark_filter(output_format: str) -> str:
         font_size = 24
     return (
         "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-        f"text='{CHANNEL_WATERMARK}':expansion=none:"
+        f"text='{FENDY_AUDIT_SIGNATURE} · {CHANNEL_WATERMARK}':expansion=none:"
         f"fontcolor=white@0.90:fontsize={font_size}:"
         "borderw=1:bordercolor=black@0.82:"
         "box=1:boxcolor=black@0.38:boxborderw=9:"
@@ -6916,6 +7079,8 @@ def export_clip(
     cover_copy = thumbnail_story_copy(clip)
     engagement_prompt = shorts_engagement_prompt(clip)
     subscribe_prompt = subscribe_value_prompt(clip)
+    auditor_identity = fendy_auditor_identity(clip, output_format)
+    growth_blueprint = codex_growth_blueprint(clip, output_format)
     reaction_cues = detect_reaction_cues(clip, clip_segments)
     sound_effect_cues = (
         contextual_sound_effect_cues(
@@ -6933,6 +7098,7 @@ def export_clip(
         if clean_detail_pipeline:
             sound_effect_cues = sound_effect_cues[:3]
     drawtext_supported = ffmpeg_has_filter("drawtext")
+    auditor_identity["visible_video_signature"] = drawtext_supported
     automatic_short_title = output_format == "vertical_short" and drawtext_supported
     subscriber_cta_planned = (
         output_format == "vertical_short"
@@ -7044,6 +7210,8 @@ def export_clip(
             "variation": edit_variation,
             "derived_from_story": True,
         },
+        "auditor_identity": auditor_identity,
+        "codex_growth_blueprint": growth_blueprint,
         "improvement_ideas": remaining_ideas,
         "applied_edits": applied_edits,
         "codex_ideas_resolved": len(clip.improvement_ideas) - len(remaining_ideas),
@@ -7588,11 +7756,13 @@ def export_clip(
         vf = f"{vf},{channel_watermark_filter(output_format)}"
         sidecar_payload["channel_watermark"] = {
             "enabled": True,
-            "text": CHANNEL_WATERMARK,
+            "text": f"{FENDY_AUDIT_SIGNATURE} · {CHANNEL_WATERMARK}",
+            "auditor": FENDY_AUDITOR_NAME,
+            "audit_id": auditor_identity["audit_id"],
             "position": "top_left_safe",
         }
         applied_edits.append(
-            f"Watermark channel {CHANNEL_WATERMARK} ditambahkan di safe area kiri atas."
+            f"Identitas {FENDY_AUDIT_SIGNATURE} dan channel {CHANNEL_WATERMARK} ditambahkan di safe area."
         )
         if output_format == "vertical_short":
             engagement_text_path.write_text(engagement_prompt + "\n", encoding="utf-8")
@@ -7638,7 +7808,9 @@ def export_clip(
     else:
         sidecar_payload["channel_watermark"] = {
             "enabled": False,
-            "text": CHANNEL_WATERMARK,
+            "text": f"{FENDY_AUDIT_SIGNATURE} · {CHANNEL_WATERMARK}",
+            "auditor": FENDY_AUDITOR_NAME,
+            "audit_id": auditor_identity["audit_id"],
             "reason": "ffmpeg_drawtext_unavailable",
         }
         if output_format == "vertical_short":
@@ -8235,6 +8407,9 @@ def export_compilation(
         improvement_ideas=combined_ideas,
         applied_edits=combined_applied_edits,
     )
+    compilation_auditor = fendy_auditor_identity(compilation, "landscape_compilation")
+    compilation_auditor["visible_video_signature"] = ffmpeg_has_filter("drawtext")
+    compilation_growth = codex_growth_blueprint(compilation, "landscape_compilation")
     compilation_sidecar = {
         **asdict(compilation),
         "mode": "highlight_5m",
@@ -8269,6 +8444,8 @@ def export_compilation(
         "enhanced_edit": enhanced_edit,
         "remove_running_text": remove_running_text,
         "source_metadata_embedded": False,
+        "auditor_identity": compilation_auditor,
+        "codex_growth_blueprint": compilation_growth,
         "parts": [asdict(item) for item in candidates],
         "video_quality": video_quality,
         "output_width": output_width,
@@ -8536,6 +8713,14 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+
+    policy_snapshot = youtube_policy_snapshot()
+    if policy_snapshot["review_required"]:
+        console.print(
+            "[yellow]Snapshot aturan YouTube sudah melewati jadwal review "
+            f"{policy_snapshot['review_due_on']}; render tetap berjalan, tetapi audit resmi "
+            "wajib diperbarui sebelum mengandalkan status monetisasi.[/yellow]"
+        )
 
     if args.visual_mode != "auto_fyp":
         console.print(

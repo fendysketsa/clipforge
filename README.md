@@ -257,6 +257,9 @@ YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD=false
 YOUTUBE_MADE_FOR_KIDS=false
 YOUTUBE_DEFAULT_TAGS=shorts,fendyclipper
 YOUTUBE_DEFAULT_PLAYLIST=Islam
+YOUTUBE_PLAYLIST_SELECT_ATTEMPTS=3
+YOUTUBE_POLICY_REVIEW_DATE=2026-08-14
+YOUTUBE_POLICY_REVIEW_INTERVAL_DAYS=180
 YOUTUBE_TARGET_CHANNEL=ryuundyofficial
 YOUTUBE_TARGET_EMAIL=fendysketsa@gmail.com
 YOUTUBE_TARGET_CHANNEL_ID=UCAOZF9Qzj6DYoXKtLnP4UUQ
@@ -283,6 +286,8 @@ YOUTUBE_DIRECT_UPLOAD_INPUT_TIMEOUT_MS=15000
 YOUTUBE_ALLOW_DIRECT_UPLOAD_PAGE_FALLBACK=true
 YOUTUBE_DRY_RUN=false
 ```
+
+Output baru membawa identitas `FENDY AUDIT` pada video, ID audit di sidecar/deskripsi upload, dan blueprint pertumbuhan Codex untuk acquisition, retention, conversion, serta returning viewers. Blueprint adalah rencana eksperimen terukur, bukan jaminan view atau subscriber.
 
 Use `YOUTUBE_DRY_RUN=true` to test the Playwright flow without pressing the
 final publish/save button.

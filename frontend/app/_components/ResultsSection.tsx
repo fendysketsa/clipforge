@@ -472,6 +472,12 @@ export function ResultsSection({
                         <span className="clipMetric">Loop {clip.loop_score}</span>
                       ) : null}
                       {clip.output_resolution ? <span className="clipMetric">{clip.output_resolution}</span> : null}
+                      {clip.auditor_name && clip.audit_id ? (
+                        <span className="clipMetric" title={`Audit editorial otomatis ${clip.audit_id}`}>
+                          FENDY AUDIT
+                        </span>
+                      ) : null}
+                      {clip.growth_series ? <span className="clipMetric">Seri: {clip.growth_series}</span> : null}
                       {isLongForm && clip.thumbnail_url ? <span className="clipMetric">Thumbnail 16:9 siap</span> : null}
                     </div>
                     <details className="clipAnalysisDetails">
@@ -607,6 +613,13 @@ export function ResultsSection({
                         YouTube: {latestUpload.status}
                         {latestUpload.status === "completed" && latestUpload.visibility === "private"
                           ? " · tersimpan Private"
+                          : null}
+                        {latestUpload.playlist
+                          ? latestUpload.playlist_confirmed
+                            ? ` · playlist ${latestUpload.playlist} terverifikasi`
+                            : latestUpload.status === "running"
+                              ? ` · mencari playlist ${latestUpload.playlist}`
+                              : null
                           : null}
                         {isLongForm && latestUpload.thumbnail_url
                           ? latestUpload.thumbnail_attached

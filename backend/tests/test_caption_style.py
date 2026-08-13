@@ -1,4 +1,5 @@
 import os
+from datetime import date
 from pathlib import Path
 
 from clipper import (
@@ -33,6 +34,7 @@ from clipper import (
     clip_has_islamic_context,
     clip_topic_hashtags,
     codex_edit_plan,
+    codex_growth_blueprint,
     configure_huggingface_environment,
     contextual_audio_mix_filter,
     contextual_sound_effect_cues,
@@ -45,6 +47,7 @@ from clipper import (
     emphasis_timestamps,
     enhanced_edit_filter,
     fallback_social_caption,
+    fendy_auditor_identity,
     ffmpeg_clean_metadata_args,
     hook_banner_text,
     highlight_caption_keyword,
@@ -83,6 +86,7 @@ from clipper import (
     visual_theme_profile,
     vertical_clean_detail_crop_filter,
     write_dynamic_ass,
+    youtube_policy_snapshot,
 )
 
 
@@ -199,12 +203,52 @@ def test_channel_watermark_is_small_visible_and_shorts_ui_safe():
     vertical = channel_watermark_filter("vertical_short")
     landscape = channel_watermark_filter("landscape_compilation")
 
-    assert "text='@ryuundyofficial'" in vertical
+    assert "text='FENDY AUDIT · @ryuundyofficial'" in vertical
     assert "fontcolor=white@0.90:fontsize=24" in vertical
     assert "x='62':y=98" in vertical
     assert "boxcolor=black@0.38" in vertical
     assert "fontcolor=white@0.90:fontsize=22" in landscape
     assert "x='w-text_w-42':y=38" in landscape
+
+
+def test_fendy_auditor_identity_is_stable_unique_and_transparent():
+    first = ClipCandidate(1, 0, 30, 30, 90, "Hikmah Sabar", "test", "Sabar itu perlu dilatih.")
+    second = ClipCandidate(2, 30, 60, 30, 90, "Hikmah Syukur", "test", "Syukur mengubah cara pandang.")
+
+    first_audit = fendy_auditor_identity(first, "vertical_short")
+    repeated_audit = fendy_auditor_identity(first, "vertical_short")
+    second_audit = fendy_auditor_identity(second, "vertical_short")
+
+    assert first_audit == repeated_audit
+    assert first_audit["name"] == "Fendy"
+    assert first_audit["display_signature"] == "FENDY AUDIT"
+    assert first_audit["manual_human_review_claimed"] is False
+    assert first_audit["audit_id"].startswith("FND-")
+    assert first_audit["audit_id"] != second_audit["audit_id"]
+
+
+def test_codex_growth_blueprint_links_short_and_long_form_into_a_series():
+    clip = ClipCandidate(
+        1,
+        0,
+        35,
+        35,
+        92,
+        "Hikmah Menjaga Salat",
+        "test",
+        "Allah mengajarkan pentingnya menjaga salat dan mengambil hikmah.",
+        hook="Kenapa salat harus dijaga?",
+    )
+
+    short = codex_growth_blueprint(clip, "vertical_short")
+    long_form = codex_growth_blueprint(clip, "landscape_compilation")
+
+    assert short["series"]["name"] == "Hikmah Praktis"
+    assert short["conversion"]["short_to_related_long_form"] is True
+    assert short["retention"]["hook_window_seconds"] == 3
+    assert long_form["acquisition"]["long_form_ab_test_title_thumbnail"] is True
+    assert long_form["retention"]["hook_window_seconds"] == 30
+    assert long_form["view_or_subscriber_guarantee"] is False
 
 
 def test_split_subtitle_text_keeps_default_lines_compact():
@@ -972,6 +1016,17 @@ def test_shorts_policy_compliance_records_official_and_stricter_local_limits():
     assert compliance["recommendation_or_monetization_guarantee"] is False
     assert compliance["content_specific_subscribe_value_proposition"] is True
     assert compliance["subscription_incentive_or_reward_offered"] is False
+
+
+def test_youtube_policy_snapshot_marks_future_rules_for_review_without_assuming_them():
+    current = youtube_policy_snapshot(as_of=date(2026, 8, 14))
+    future = youtube_policy_snapshot(as_of=date(2027, 8, 14))
+
+    assert current["review_required"] is False
+    assert future["review_required"] is True
+    assert future["future_year_assumed_unchanged"] is False
+    assert future["rules_are_runtime_guarantee"] is False
+    assert len(future["official_sources"]) == 3
 
 
 def test_two_k_readiness_is_an_experiment_signal_not_a_view_guarantee():

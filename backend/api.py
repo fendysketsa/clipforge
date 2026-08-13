@@ -306,6 +306,9 @@ class ClipFile(BaseModel):
     loop_score: int | None = None
     boundary_quality: str | None = None
     output_resolution: str | None = None
+    auditor_name: str | None = None
+    audit_id: str | None = None
+    growth_series: str | None = None
     is_correct: bool = False
 
 
@@ -501,6 +504,7 @@ class YouTubeUploadJob(BaseModel):
     altered_content: bool = False
     tags: list[str] = Field(default_factory=list)
     playlist: str = ""
+    playlist_confirmed: bool = False
     target_channel: str = ""
     dry_run: bool = False
     video_url: str | None = None
@@ -2178,7 +2182,8 @@ def default_youtube_description(job: ClipJob, clip: ClipFile) -> str:
     if tags:
         parts.append(" ".join(f"#{tag.replace(' ', '')}" for tag in tags[:3]))
     description = append_youtube_chapters("\n\n".join(parts), clip)
-    return append_youtube_source_attribution(description, job)
+    description = append_youtube_source_attribution(description, job)
+    return append_fendy_auditor_attribution(description, clip)
 
 
 def clip_sidecar_payload(clip: ClipFile) -> dict[str, Any]:
@@ -2281,6 +2286,24 @@ def append_youtube_source_attribution(description: str, job: ClipJob) -> str:
     attribution = youtube_source_attribution(job)
     clean = description.strip()
     if not attribution or attribution in clean:
+        return clean[:5000]
+    available = max(0, 5000 - len(attribution) - 2)
+    return f"{clean[:available].rstrip()}\n\n{attribution}".strip()[:5000]
+
+
+def append_fendy_auditor_attribution(description: str, clip: ClipFile) -> str:
+    """Keep the accountable Fendy audit identity on all newly rendered uploads."""
+    sidecar = clip_sidecar_payload(clip)
+    auditor = sidecar.get("auditor_identity") if isinstance(sidecar, dict) else None
+    if not isinstance(auditor, dict):
+        return description.strip()[:5000]
+    name = re.sub(r"\s+", " ", str(auditor.get("name") or "")).strip()
+    audit_id = re.sub(r"[^A-Za-z0-9-]", "", str(auditor.get("audit_id") or ""))[:24]
+    if name.casefold() != "fendy" or not audit_id:
+        return description.strip()[:5000]
+    attribution = f"Audit editorial otomatis: Fendy · ID {audit_id}"
+    clean = description.strip()
+    if attribution in clean:
         return clean[:5000]
     available = max(0, 5000 - len(attribution) - 2)
     return f"{clean[:available].rstrip()}\n\n{attribution}".strip()[:5000]
@@ -2449,6 +2472,33 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             "Upload diblokir: output lama belum memiliki audit monetisasi. "
             "Render ulang clip dengan Fendy Clipper terbaru."
         )
+    try:
+        audit_version = int(readiness.get("audit_version") or 1)
+    except (TypeError, ValueError):
+        audit_version = 1
+    if audit_version >= 6:
+        auditor = sidecar.get("auditor_identity")
+        if (
+            not isinstance(auditor, dict)
+            or str(auditor.get("name") or "").casefold() != "fendy"
+            or str(auditor.get("display_signature") or "").upper() != "FENDY AUDIT"
+            or not str(auditor.get("audit_id") or "").startswith("FND-")
+        ):
+            return (
+                "Upload diblokir: identitas auditor Fendy tidak ditemukan pada output. "
+                "Render ulang dengan Fendy Clipper terbaru."
+            )
+        if not auditor.get("visible_video_signature"):
+            return (
+                "Upload diblokir: signature visual FENDY AUDIT belum tertanam di video. "
+                "Pastikan FFmpeg drawtext tersedia lalu render ulang."
+            )
+        growth_blueprint = sidecar.get("codex_growth_blueprint")
+        if not isinstance(growth_blueprint, dict):
+            return (
+                "Upload diblokir: blueprint pertumbuhan Codex belum tercatat. "
+                "Render ulang agar audit retention dan subscriber lengkap."
+            )
     if not monetization_readiness_is_eligible(sidecar, readiness):
         return monetization_preflight_transformation_message(sidecar, readiness)
     return None
@@ -3062,6 +3112,7 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
     )
     description = append_youtube_chapters(description, clip)
     description = append_youtube_source_attribution(description, job)
+    description = append_fendy_auditor_attribution(description, clip)
     altered_content = clip_requires_altered_content_disclosure(clip)
     upload_id = uuid.uuid4().hex
     now = now_iso()
@@ -4132,6 +4183,7 @@ def complete_youtube_upload_as_duplicate(
         duration_seconds=0.0,
         video_url=duplicate.video_url,
         thumbnail_attached=duplicate.thumbnail_attached,
+        playlist_confirmed=duplicate.playlist_confirmed,
         clip_delete_after=delete_after,
         clip_deleted_at=None if local_file_exists else completed_at,
         clip_delete_error=None,
@@ -4205,6 +4257,7 @@ def run_youtube_upload(upload_id: str) -> None:
         upload_id,
         status="running",
         thumbnail_attached=False,
+        playlist_confirmed=False,
         started_at=now_iso(),
         finished_at=None,
         duration_seconds=None,
@@ -4277,7 +4330,8 @@ def run_youtube_upload(upload_id: str) -> None:
         max_attempts = max(1, env_int("YOUTUBE_CDP_UPLOAD_MAX_ATTEMPTS", default_max_attempts))
         for attempt in range(1, max_attempts + 1):
             thumbnail_attached_for_attempt = False
-            set_youtube_upload(upload_id, thumbnail_attached=False)
+            playlist_confirmed_for_attempt = False
+            set_youtube_upload(upload_id, thumbnail_attached=False, playlist_confirmed=False)
             if attempt > 1:
                 if use_cdp_for_attempt:
                     mode = "Chrome CDP"
@@ -4306,9 +4360,11 @@ def run_youtube_upload(upload_id: str) -> None:
                 youtube_upload_processes[upload_id] = process
 
             def record_upload_log(cleaned: str) -> None:
-                nonlocal thumbnail_attached_for_attempt
+                nonlocal playlist_confirmed_for_attempt, thumbnail_attached_for_attempt
                 if cleaned.startswith("THUMBNAIL_ATTACHED:"):
                     thumbnail_attached_for_attempt = True
+                if cleaned.startswith("PLAYLIST_CONFIRMED:"):
+                    playlist_confirmed_for_attempt = True
                 logs.append(cleaned)
                 set_youtube_upload(
                     upload_id,
@@ -4316,6 +4372,7 @@ def run_youtube_upload(upload_id: str) -> None:
                     video_url=youtube_video_url_from_logs(logs),
                     visibility=youtube_final_visibility_from_logs(logs) or upload.visibility,
                     thumbnail_attached=thumbnail_attached_for_attempt,
+                    playlist_confirmed=playlist_confirmed_for_attempt,
                 )
 
             code, stalled = monitor_youtube_upload_process(
@@ -4340,11 +4397,20 @@ def run_youtube_upload(upload_id: str) -> None:
                     "Browser belum mengonfirmasi thumbnail otomatis terpasang; upload belum diselesaikan."
                 )
                 logs.append(thumbnail_confirmation_error)
+            playlist_confirmation_error = ""
+            if code == 0 and upload.playlist and not playlist_confirmed_for_attempt:
+                code = 1
+                playlist_confirmation_error = (
+                    f"Browser belum mengonfirmasi playlist '{upload.playlist}' terpasang; "
+                    "upload belum diselesaikan."
+                )
+                logs.append(playlist_confirmation_error)
             if (
                 video_url
                 and not upload.dry_run
                 and code != 0
                 and (not requires_thumbnail or thumbnail_attached_for_attempt)
+                and (not upload.playlist or playlist_confirmed_for_attempt)
             ):
                 logs.append(
                     "Uploader berhenti setelah URL final terverifikasi; status dipulihkan sebagai sukses tanpa retry upload."
@@ -4355,6 +4421,7 @@ def run_youtube_upload(upload_id: str) -> None:
                 f"Uploader tidak mengirim progres selama {stall_timeout_seconds} detik."
                 if stalled
                 else thumbnail_confirmation_error
+                or playlist_confirmation_error
                 or youtube_upload_error_from_logs(logs)
                 or f"youtube_uploader.py exited with code {code}"
             )
@@ -4377,6 +4444,7 @@ def run_youtube_upload(upload_id: str) -> None:
                     upload_id,
                     status="completed",
                     thumbnail_attached=thumbnail_attached_for_attempt,
+                    playlist_confirmed=playlist_confirmed_for_attempt,
                     logs=logs[-160:],
                     video_url=video_url,
                     finished_at=completed_at,
@@ -4640,6 +4708,12 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
             return [str(item).strip() for item in value if isinstance(item, str) and item.strip()][:limit]
 
         improvement_ideas = unresolved_codex_ideas(sidecar, sidecar_list("improvement_ideas"))
+        auditor = sidecar.get("auditor_identity")
+        auditor = auditor if isinstance(auditor, dict) else {}
+        growth = sidecar.get("codex_growth_blueprint")
+        growth = growth if isinstance(growth, dict) else {}
+        series = growth.get("series")
+        series = series if isinstance(series, dict) else {}
 
         raw_score = sidecar.get("score")
         fyp_score = (
@@ -4699,6 +4773,15 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
                     str(sidecar.get("output_resolution")).strip()
                     if sidecar.get("output_resolution")
                     else None
+                ),
+                auditor_name=(
+                    str(auditor.get("name")).strip() if auditor.get("name") else None
+                ),
+                audit_id=(
+                    str(auditor.get("audit_id")).strip() if auditor.get("audit_id") else None
+                ),
+                growth_series=(
+                    str(series.get("name")).strip() if series.get("name") else None
                 ),
             )
         )

@@ -37,6 +37,9 @@ export type ClipFile = {
   loop_score?: number | null;
   boundary_quality?: string | null;
   output_resolution?: string | null;
+  auditor_name?: string | null;
+  audit_id?: string | null;
+  growth_series?: string | null;
   is_correct: boolean;
 };
 
@@ -233,6 +236,7 @@ export type YouTubeUploadJob = {
   made_for_kids: boolean;
   tags: string[];
   playlist: string;
+  playlist_confirmed?: boolean;
   target_channel: string;
   dry_run: boolean;
   video_url?: string | null;

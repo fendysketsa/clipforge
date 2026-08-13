@@ -2522,15 +2522,23 @@ def click_playlist_named(page, playlist_name: str, timeout_ms: int = 8000) -> bo
       ].filter(Boolean).join('\\n');
       const containsExactLine = (element) => normalizedLines(labelOf(element)).includes(target);
       const findClickable = (element) => {
+        const checkboxSelector =
+          'input[type="checkbox"], [role="checkbox"], ytcp-checkbox-lit, tp-yt-paper-checkbox, #checkbox';
+        const rowSelector =
+          'ytcp-playlist-dialog-row, tp-yt-paper-item, [role="listitem"], [role="option"]';
         let current = element;
         for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {
-          const checkbox = current.querySelector?.(
-            'input[type="checkbox"], [role="checkbox"], ytcp-checkbox-lit, tp-yt-paper-checkbox, #checkbox'
-          );
-          if (checkbox && isVisible(checkbox)) return checkbox;
-          if (current.getAttribute?.('role') === 'checkbox') return current;
+          if (current.matches?.(checkboxSelector) && isVisible(current)) return current;
+          const tag = String(current.tagName || '').toLowerCase();
+          if (tag === 'ytcp-playlist-dialog' || tag === 'tp-yt-paper-dialog') break;
+          const checkboxes = Array.from(current.querySelectorAll?.(checkboxSelector) || [])
+            .filter(isVisible);
+          if ((current.matches?.(rowSelector) || checkboxes.length === 1) && checkboxes.length) {
+            return checkboxes[0];
+          }
+          if (current.matches?.(rowSelector)) return current;
         }
-        return element.closest?.('[role="checkbox"], tp-yt-paper-item, ytcp-playlist-dialog-row, ytcp-checkbox-lit') || element;
+        return element;
       };
 
       for (const root of roots) {
@@ -2583,6 +2591,10 @@ def playlist_is_selected(page, playlist_name: str, timeout_ms: int = 3000) -> bo
         element.checked === true ||
         element.getAttribute?.('checked') !== null ||
         element.getAttribute?.('aria-checked') === 'true';
+      const checkboxSelector =
+        'input[type="checkbox"], [role="checkbox"], ytcp-checkbox-lit, tp-yt-paper-checkbox, #checkbox';
+      const rowSelector =
+        'ytcp-playlist-dialog-row, tp-yt-paper-item, [role="listitem"], [role="option"]';
       const labelOf = (element) => [
         element.innerText,
         element.textContent,
@@ -2593,17 +2605,17 @@ def playlist_is_selected(page, playlist_name: str, timeout_ms: int = 3000) -> bo
         const elements = root.querySelectorAll ? Array.from(root.querySelectorAll('*')) : [];
         for (const element of elements) {
           if (!labelOf(element).split(/\\n+/).map((line) => line.trim()).includes(target)) continue;
+          if (element.matches?.(checkboxSelector) && isChecked(element)) return true;
           let current = element;
           for (let depth = 0; current && depth < 10; depth += 1, current = current.parentElement) {
-            const checks = current.querySelectorAll?.(
-              'input[type="checkbox"], [role="checkbox"], ytcp-checkbox-lit, tp-yt-paper-checkbox, #checkbox'
-            );
-            if (checks) {
-              for (const check of checks) {
-                if (isChecked(check)) return true;
-              }
+            const tag = String(current.tagName || '').toLowerCase();
+            if (tag === 'ytcp-playlist-dialog' || tag === 'tp-yt-paper-dialog') break;
+            const checks = Array.from(current.querySelectorAll?.(checkboxSelector) || []);
+            // Do not inspect every checkbox in the entire dialog. Doing so can
+            // mistake another checked playlist for the requested playlist.
+            if ((current.matches?.(rowSelector) || checks.length === 1) && checks.some(isChecked)) {
+              return true;
             }
-            if (current.getAttribute?.('role') === 'checkbox' && isChecked(current)) return true;
           }
         }
       }
@@ -2723,6 +2735,7 @@ def click_playlist_checkbox(page, playlist_name: str, timeout_ms: int = 8000) ->
         return words.includes(target);
       };
       const checkboxSelectors = 'input[type="checkbox"], [role="checkbox"], ytcp-checkbox-lit, tp-yt-paper-checkbox, #checkbox';
+      const rowSelector = 'ytcp-playlist-dialog-row, tp-yt-paper-item, [role="listitem"], [role="option"]';
       const clickElement = (element) => {
         element.scrollIntoView?.({ block: 'center', inline: 'center' });
         element.click();
@@ -2744,29 +2757,23 @@ def click_playlist_checkbox(page, playlist_name: str, timeout_ms: int = 8000) ->
         const elements = root.querySelectorAll ? Array.from(root.querySelectorAll('*')) : [];
         for (const element of elements) {
           if (!isVisible(element) || (!exactLabel(element) && !containsTargetWord(element))) continue;
+          if (element.matches?.(checkboxSelectors)) {
+            if (isChecked(element)) return true;
+            return clickElement(element);
+          }
           let current = element;
           for (let depth = 0; current && depth < 10; depth += 1, current = current.parentElement) {
-            const checks = current.querySelectorAll?.(checkboxSelectors);
-            if (checks) {
-              for (const check of checks) {
-                if (!isVisible(check)) continue;
-                if (isChecked(check)) return true;
-                return clickElement(check);
-              }
-            }
-            if (current.getAttribute?.('role') === 'checkbox') {
-              if (isChecked(current)) return true;
-              return clickElement(current);
-            }
+            const checks = Array.from(current.querySelectorAll?.(checkboxSelectors) || [])
+              .filter(isVisible);
             const role = current.getAttribute?.('role') || '';
             const tag = String(current.tagName || '').toLowerCase();
-            if (
-              role === 'listitem' ||
-              role === 'option' ||
-              tag.includes('paper-item') ||
-              tag.includes('playlist') ||
-              current.className?.toString?.().toLowerCase?.().includes('row')
-            ) {
+            if (tag === 'ytcp-playlist-dialog' || tag === 'tp-yt-paper-dialog') break;
+            if ((current.matches?.(rowSelector) || checks.length === 1) && checks.length) {
+              const check = checks[0];
+              if (isChecked(check)) return true;
+              return clickElement(check);
+            }
+            if (role === 'listitem' || role === 'option' || current.matches?.(rowSelector)) {
               if (clickAtRowCheckboxSlot(current)) return true;
             }
           }
@@ -2806,7 +2813,6 @@ def search_playlist(page, playlist_name: str) -> bool:
                 page.keyboard.press("Control+A")
                 page.keyboard.press("Backspace")
                 page.keyboard.type(playlist_name, delay=max(0, int(os.environ.get("YOUTUBE_TYPE_DELAY_MS", "6"))))
-                page.keyboard.press("Enter")
                 log(f"Search playlist: {playlist_name}.")
                 time.sleep(1.2)
                 return True
@@ -2996,57 +3002,65 @@ def select_playlist(page, playlist: str) -> None:
     if not playlist_name:
         return
 
-    dismiss_reload_prompt(page)
-    log(f"Memilih playlist: {playlist_name}.")
-    if playlist_dropdown_value_matches(page, playlist_name, timeout_ms=1000):
-        log(f"Playlist sudah terpilih: {playlist_name}.")
-        return
-    opened = playlist_dialog_open(page, timeout_ms=800)
-    if not opened:
-        opened = open_playlist_dropdown(page, timeout_ms=8000)
-    if not opened:
-        save_debug_artifacts(page, "playlist-dropdown-not-open")
-        raise UploadError("Dropdown playlist tidak terbuka; upload tidak dilanjutkan.")
-
-    time.sleep(0.8)
-    search_playlist(page, playlist_name)
+    attempts = max(1, min(5, int(os.environ.get("YOUTUBE_PLAYLIST_SELECT_ATTEMPTS", "3"))))
     escaped = re.escape(playlist_name)
-    clicked_checkbox = click_playlist_checkbox(page, playlist_name, timeout_ms=3000)
-    try:
-        if not playlist_is_selected(page, playlist_name, timeout_ms=1000):
-            checkbox = page.get_by_role("checkbox", name=re.compile(escaped, re.I)).first
-        else:
-            checkbox = None
-        if checkbox is not None and checkbox.count():
+    last_error = ""
+    for attempt in range(1, attempts + 1):
+        dismiss_reload_prompt(page)
+        log(f"Memilih playlist: {playlist_name} (verifikasi {attempt}/{attempts}).")
+
+        # Always inspect the dialog. A collapsed summary can be stale when a
+        # Studio tab is reused by consecutive jobs, so it is not sufficient as
+        # proof that the requested checkbox is selected for this upload.
+        opened = playlist_dialog_open(page, timeout_ms=800)
+        if not opened:
+            opened = open_playlist_dropdown(page, timeout_ms=8000)
+        if not opened:
+            last_error = "Dropdown playlist tidak terbuka."
+            continue
+
+        time.sleep(0.8)
+        search_playlist(page, playlist_name)
+        selected = playlist_is_selected(page, playlist_name, timeout_ms=1800)
+        if not selected:
+            click_playlist_checkbox(page, playlist_name, timeout_ms=4000)
+            selected = playlist_is_selected(page, playlist_name, timeout_ms=2200)
+        if not selected:
             try:
-                should_click = not checkbox.is_checked(timeout=1000)
+                checkbox = page.get_by_role("checkbox", name=re.compile(escaped, re.I)).first
+                if checkbox.count():
+                    try:
+                        should_click = not checkbox.is_checked(timeout=1000)
+                    except Exception:
+                        should_click = True
+                    if should_click:
+                        checkbox.click(timeout=3000)
+                    selected = playlist_is_selected(page, playlist_name, timeout_ms=2200)
             except Exception:
-                should_click = True
-            if should_click:
-                checkbox.click(timeout=3000)
-                clicked_checkbox = True
-    except Exception:
-        pass
-
-    if not playlist_is_selected(page, playlist_name, timeout_ms=2500):
-        clicked_checkbox = click_playlist_checkbox(page, playlist_name, timeout_ms=5000)
-    if not playlist_is_selected(page, playlist_name, timeout_ms=2500):
-        if click_playlist_named(page, playlist_name, timeout_ms=3000):
+                pass
+        if not selected and click_playlist_named(page, playlist_name, timeout_ms=3000):
             time.sleep(0.5)
-    if not playlist_is_selected(page, playlist_name, timeout_ms=3000):
-        save_debug_artifacts(page, "playlist-not-checked")
-        raise UploadError(f"Playlist '{playlist_name}' belum berhasil dicentang; upload tidak dilanjutkan.")
+            selected = playlist_is_selected(page, playlist_name, timeout_ms=2200)
+        if not selected:
+            last_error = f"Playlist '{playlist_name}' belum berhasil dicentang."
+            continue
 
-    if clicked_checkbox or playlist_is_selected(page, playlist_name, timeout_ms=1200):
         if not click_playlist_done(page, timeout_ms=8000):
-            save_debug_artifacts(page, "playlist-done-not-found")
-            raise UploadError("Tombol Selesai playlist tidak ditemukan setelah playlist dicentang.")
+            last_error = "Tombol Selesai playlist tidak ditemukan setelah playlist dicentang."
+            continue
         time.sleep(0.5)
-        log(f"Playlist dipilih: {playlist_name}.")
-        return
+        dialog_closed = not playlist_dialog_open(page, timeout_ms=1000)
+        summary_confirmed = playlist_dropdown_value_matches(page, playlist_name, timeout_ms=3500)
+        if dialog_closed and summary_confirmed:
+            log(f"PLAYLIST_CONFIRMED: {playlist_name}")
+            return
+        last_error = (
+            f"Playlist '{playlist_name}' belum terkonfirmasi pada ringkasan detail video "
+            "setelah dialog ditutup."
+        )
 
-    save_debug_artifacts(page, "playlist-not-checked")
-    raise UploadError(f"Playlist '{playlist_name}' belum berhasil dicentang; upload tidak dilanjutkan.")
+    save_debug_artifacts(page, "playlist-verification-failed")
+    raise UploadError(f"{last_error} Upload tidak dilanjutkan agar playlist tidak terlewati.")
 
 
 def click_next_upload_step(page, timeout_ms: int = 20000, expected_step=None) -> None:
