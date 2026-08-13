@@ -106,7 +106,21 @@ LOCAL_LLM_PRESETS = [
     {"label": "OpenAI-compatible", "base_url": "http://localhost:20128/v1"},
 ]
 DEFAULT_AI_BASE_URL = os.environ.get("DEFAULT_AI_BASE_URL", "http://localhost:11434/v1")
-DEFAULT_AI_MODEL = os.environ.get("DEFAULT_AI_MODEL", "")
+DEFAULT_AI_MODEL = os.environ.get("DEFAULT_AI_MODEL", "llama3.2-id:latest")
+DEFAULT_REQUIRED_HASHTAGS = [
+    tag.strip().lstrip("#")
+    for tag in os.environ.get(
+        "DEFAULT_REQUIRED_HASHTAGS",
+        "viralindonesia,trendingindonesia,kontenpilihan",
+    ).split(",")
+    if tag.strip().lstrip("#")
+]
+
+
+def default_required_hashtags() -> list[str]:
+    return list(DEFAULT_REQUIRED_HASHTAGS)
+
+
 NETWORK_ERROR_PATTERNS = (
     "errno 101",
     "network is unreachable",
@@ -238,7 +252,7 @@ class ClipJobRequest(BaseModel):
     ] = "DejaVu Sans"
     caption_outline: float = Field(default=0.5, ge=0, le=8)
     caption_outline_color: str = "#000000"
-    required_hashtags: list[str] = Field(default_factory=list)
+    required_hashtags: list[str] = Field(default_factory=default_required_hashtags)
     require_creative_commons: bool = True
     auto_upload_youtube: bool = False
     allow_reprocess_source: bool = False
@@ -2301,7 +2315,10 @@ def append_fendy_auditor_attribution(description: str, clip: ClipFile) -> str:
     audit_id = re.sub(r"[^A-Za-z0-9-]", "", str(auditor.get("audit_id") or ""))[:24]
     if name.casefold() != "fendy" or not audit_id:
         return description.strip()[:5000]
-    attribution = f"Audit editorial otomatis: Fendy · ID {audit_id}"
+    attribution = (
+        f"Audit & edit editorial otomatis: Fendy Clipper · ID {audit_id}. "
+        "Hak materi sumber tetap pada pemegang hak masing-masing."
+    )
     clean = description.strip()
     if attribution in clean:
         return clean[:5000]
@@ -2490,7 +2507,7 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             )
         if not auditor.get("visible_video_signature"):
             return (
-                "Upload diblokir: signature visual FENDY AUDIT belum tertanam di video. "
+                "Upload diblokir: watermark visual ryuundyofficial belum tertanam di video. "
                 "Pastikan FFmpeg drawtext tersedia lalu render ulang."
             )
         growth_blueprint = sidecar.get("codex_growth_blueprint")
@@ -4988,7 +5005,11 @@ def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
                 timeout=4,
             )
             if models:
-                data["ai_model"] = models[0]
+                data["ai_model"] = (
+                    DEFAULT_AI_MODEL
+                    if DEFAULT_AI_MODEL and DEFAULT_AI_MODEL in models
+                    else models[0]
+                )
 
     return ClipJobRequest(**data)
 
@@ -6627,7 +6648,10 @@ def create_auto_viral_clip_job(source: dict[str, Any], request: AutoViralRequest
         ai_model=request.ai_model,
         ai_api_key=request.ai_api_key,
         required_hashtags=list(
-            ISLAMIC_EVERGREEN_NICHES.get(request.niche, {}).get("hashtags", [])
+            dict.fromkeys(
+                DEFAULT_REQUIRED_HASHTAGS
+                + list(ISLAMIC_EVERGREEN_NICHES.get(request.niche, {}).get("hashtags", []))
+            )
         ),
     )
     if job_request.max_duration <= job_request.min_duration:

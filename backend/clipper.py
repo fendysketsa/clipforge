@@ -6285,9 +6285,10 @@ AVAILABLE_FONTS = {
     "Noto Sans": "Noto Sans",
 }
 DEFAULT_FONT = "DejaVu Sans"
-CHANNEL_WATERMARK = "@ryuundyofficial"
+CHANNEL_WATERMARK = "ryuundyofficial"
 FENDY_AUDITOR_NAME = "Fendy"
 FENDY_AUDIT_SIGNATURE = "FENDY AUDIT"
+FENDY_PROVENANCE_BRAND = "Fendy Clipper"
 CODEX_GROWTH_FRAMEWORK_VERSION = 1
 SOFT_CAPTION_BACK_COLOR = "&HC8000000"
 SOFT_CAPTION_SHADOW = 0.35
@@ -6311,6 +6312,7 @@ def fendy_auditor_identity(
     return {
         "version": 1,
         "name": FENDY_AUDITOR_NAME,
+        "brand": FENDY_PROVENANCE_BRAND,
         "display_signature": FENDY_AUDIT_SIGNATURE,
         "audit_id": audit_id,
         "role": "editorial_quality_auditor",
@@ -6318,8 +6320,104 @@ def fendy_auditor_identity(
         "manual_human_review_claimed": False,
         "output_format": output_format,
         "visible_video_signature": True,
+        "embedded_mp4_provenance": False,
+        "claim_scope": "editorial_transformations_only",
+        "source_content_ownership_claimed": False,
+        "claimed_contributions": [
+            "editorial_selection",
+            "editing",
+            "subtitles",
+            "original_overlays",
+            "original_thumbnail_assets",
+        ],
         "codex_growth_framework_version": CODEX_GROWTH_FRAMEWORK_VERSION,
     }
+
+
+def ffmpeg_fendy_provenance_metadata_args(
+    title: str,
+    auditor_identity: dict[str, object],
+) -> list[str]:
+    """Describe Fendy's editorial contribution without claiming source ownership."""
+    audit_id = re.sub(
+        r"[^A-Za-z0-9-]",
+        "",
+        str(auditor_identity.get("audit_id") or ""),
+    )[:24]
+    if not audit_id.startswith("FND-"):
+        raise ValueError("ID audit Fendy tidak valid untuk metadata MP4")
+    clean_title = re.sub(r"[\r\n]+", " ", title).strip()[:180] or "Fendy Clipper Editorial"
+    year = date.today().year
+    notice = (
+        f"Audit dan edit editorial oleh {FENDY_PROVENANCE_BRAND}; Audit ID {audit_id}. "
+        "Hak materi sumber tetap pada pemegang hak masing-masing."
+    )
+    return [
+        "-metadata",
+        f"title={clean_title}",
+        "-metadata",
+        f"artist={FENDY_PROVENANCE_BRAND}",
+        "-metadata",
+        f"author={FENDY_PROVENANCE_BRAND}",
+        "-metadata",
+        f"encoded_by={FENDY_PROVENANCE_BRAND}",
+        "-metadata",
+        f"comment={notice}",
+        "-metadata",
+        f"description={notice}",
+        "-metadata",
+        f"copyright=Editorial edit and original assets © {year} {FENDY_PROVENANCE_BRAND}; source rights excluded",
+        "-metadata",
+        f"audit_id={audit_id}",
+        "-metadata",
+        "claim_scope=editorial_transformations_only",
+        "-metadata",
+        "source_content_ownership_claimed=false",
+    ]
+
+
+def embed_fendy_provenance_metadata(
+    path: Path,
+    title: str,
+    auditor_identity: dict[str, object],
+) -> Path:
+    """Remux the final MP4 so provenance follows direct downloads and copies."""
+    temp_path = path.with_suffix(".provenance_tmp.mp4")
+    temp_path.unlink(missing_ok=True)
+    try:
+        run(
+            [
+                ffmpeg_path(),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(path.resolve()),
+                "-map",
+                "0",
+                "-c",
+                "copy",
+                *ffmpeg_clean_metadata_args(),
+                *ffmpeg_fendy_provenance_metadata_args(title, auditor_identity),
+                "-movflags",
+                "+faststart+use_metadata_tags",
+                str(temp_path.resolve()),
+            ]
+        )
+        temp_path.replace(path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+    auditor_identity["embedded_mp4_provenance"] = True
+    return path
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def codex_growth_blueprint(
@@ -6559,22 +6657,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 def channel_watermark_filter(output_format: str) -> str:
-    """Render Fendy's audit identity and channel signature in a safe area."""
+    """Render one restrained channel signature; audit details stay in metadata."""
     if output_format == "landscape_compilation":
         x_position = "w-text_w-42"
         y_position = "38"
-        font_size = 22
+        font_size = 18
     else:
         x_position = "62"
         y_position = "98"
-        font_size = 24
+        font_size = 20
     return (
         "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-        f"text='{FENDY_AUDIT_SIGNATURE} · {CHANNEL_WATERMARK}':expansion=none:"
-        f"fontcolor=white@0.90:fontsize={font_size}:"
-        "borderw=1:bordercolor=black@0.82:"
-        "box=1:boxcolor=black@0.38:boxborderw=9:"
-        "shadowcolor=black@0.78:shadowx=2:shadowy=2:"
+        f"text='{CHANNEL_WATERMARK}':expansion=none:"
+        f"fontcolor=white@0.76:fontsize={font_size}:"
+        "borderw=1:bordercolor=black@0.62:"
+        "box=1:boxcolor=black@0.16:boxborderw=7:"
+        "shadowcolor=black@0.64:shadowx=1:shadowy=2:"
         f"x='{x_position}':y={y_position}"
     )
 
@@ -7756,13 +7854,14 @@ def export_clip(
         vf = f"{vf},{channel_watermark_filter(output_format)}"
         sidecar_payload["channel_watermark"] = {
             "enabled": True,
-            "text": f"{FENDY_AUDIT_SIGNATURE} · {CHANNEL_WATERMARK}",
+            "text": CHANNEL_WATERMARK,
             "auditor": FENDY_AUDITOR_NAME,
+            "brand": FENDY_PROVENANCE_BRAND,
             "audit_id": auditor_identity["audit_id"],
             "position": "top_left_safe",
         }
         applied_edits.append(
-            f"Identitas {FENDY_AUDIT_SIGNATURE} dan channel {CHANNEL_WATERMARK} ditambahkan di safe area."
+            f"Watermark channel {CHANNEL_WATERMARK} ditambahkan secara halus di safe area; detail audit disimpan di metadata."
         )
         if output_format == "vertical_short":
             engagement_text_path.write_text(engagement_prompt + "\n", encoding="utf-8")
@@ -7808,8 +7907,9 @@ def export_clip(
     else:
         sidecar_payload["channel_watermark"] = {
             "enabled": False,
-            "text": f"{FENDY_AUDIT_SIGNATURE} · {CHANNEL_WATERMARK}",
+            "text": CHANNEL_WATERMARK,
             "auditor": FENDY_AUDITOR_NAME,
+            "brand": FENDY_PROVENANCE_BRAND,
             "audit_id": auditor_identity["audit_id"],
             "reason": "ffmpeg_drawtext_unavailable",
         }
@@ -8129,12 +8229,28 @@ def export_clip(
         cta_voice_path.unlink(missing_ok=True)
     if enforce_size:
         enforce_clip_size_limit(out_path, duration)
+    if generate_assets:
+        embed_fendy_provenance_metadata(out_path, clip.title, auditor_identity)
     output_width, output_height = ensure_minimum_hd_output(out_path)
     sidecar_payload.update(
         {
             "output_width": output_width,
             "output_height": output_height,
             "output_resolution": f"{output_width}x{output_height}",
+            "provenance": {
+                "version": 1,
+                "brand": FENDY_PROVENANCE_BRAND,
+                "audit_id": auditor_identity["audit_id"],
+                "output_sha256": file_sha256(out_path),
+                "embedded_mp4_metadata": bool(
+                    auditor_identity.get("embedded_mp4_provenance")
+                ),
+                "visible_watermark": bool(
+                    auditor_identity.get("visible_video_signature")
+                ),
+                "claim_scope": "editorial_transformations_only",
+                "source_content_ownership_claimed": False,
+            },
         }
     )
     save_json(json_path, sidecar_payload)
@@ -8409,6 +8525,7 @@ def export_compilation(
     )
     compilation_auditor = fendy_auditor_identity(compilation, "landscape_compilation")
     compilation_auditor["visible_video_signature"] = ffmpeg_has_filter("drawtext")
+    embed_fendy_provenance_metadata(out_path, compilation.title, compilation_auditor)
     compilation_growth = codex_growth_blueprint(compilation, "landscape_compilation")
     compilation_sidecar = {
         **asdict(compilation),
@@ -8445,6 +8562,18 @@ def export_compilation(
         "remove_running_text": remove_running_text,
         "source_metadata_embedded": False,
         "auditor_identity": compilation_auditor,
+        "provenance": {
+            "version": 1,
+            "brand": FENDY_PROVENANCE_BRAND,
+            "audit_id": compilation_auditor["audit_id"],
+            "output_sha256": file_sha256(out_path),
+            "embedded_mp4_metadata": True,
+            "visible_watermark": bool(
+                compilation_auditor.get("visible_video_signature")
+            ),
+            "claim_scope": "editorial_transformations_only",
+            "source_content_ownership_claimed": False,
+        },
         "codex_growth_blueprint": compilation_growth,
         "parts": [asdict(item) for item in candidates],
         "video_quality": video_quality,
@@ -8701,7 +8830,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--required-hashtags",
         default="",
-        help="Comma-separated hashtags always appended to generated captions, e.g. fendyclipper,viral",
+        help=(
+            "Comma-separated hashtags always appended to generated captions, "
+            "e.g. viralindonesia,trendingindonesia,kontenpilihan"
+        ),
     )
     parser.add_argument(
         "--require-creative-commons",

@@ -135,6 +135,13 @@ def test_short_defaults_are_fast_fyp_length():
     assert request.model == "Systran/faster-whisper-medium"
     assert request.crop_mode == "person"
     assert request.caption_position == "bottom"
+    assert request.ai_base_url.endswith(":11434/v1")
+    assert request.ai_model == "llama3.2-id:latest"
+    assert request.required_hashtags == [
+        "viralindonesia",
+        "trendingindonesia",
+        "kontenpilihan",
+    ]
 
 
 def test_story_resume_accepts_ten_minute_target():

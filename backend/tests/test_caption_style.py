@@ -49,6 +49,7 @@ from clipper import (
     fallback_social_caption,
     fendy_auditor_identity,
     ffmpeg_clean_metadata_args,
+    ffmpeg_fendy_provenance_metadata_args,
     hook_banner_text,
     highlight_caption_keyword,
     intro_particle_burst_filters,
@@ -203,11 +204,13 @@ def test_channel_watermark_is_small_visible_and_shorts_ui_safe():
     vertical = channel_watermark_filter("vertical_short")
     landscape = channel_watermark_filter("landscape_compilation")
 
-    assert "text='FENDY AUDIT · @ryuundyofficial'" in vertical
-    assert "fontcolor=white@0.90:fontsize=24" in vertical
+    assert "text='ryuundyofficial'" in vertical
+    assert "FENDY" not in vertical
+    assert "FND-" not in vertical
+    assert "fontcolor=white@0.76:fontsize=20" in vertical
     assert "x='62':y=98" in vertical
-    assert "boxcolor=black@0.38" in vertical
-    assert "fontcolor=white@0.90:fontsize=22" in landscape
+    assert "boxcolor=black@0.16" in vertical
+    assert "fontcolor=white@0.76:fontsize=18" in landscape
     assert "x='w-text_w-42':y=38" in landscape
 
 
@@ -221,10 +224,27 @@ def test_fendy_auditor_identity_is_stable_unique_and_transparent():
 
     assert first_audit == repeated_audit
     assert first_audit["name"] == "Fendy"
+    assert first_audit["brand"] == "Fendy Clipper"
     assert first_audit["display_signature"] == "FENDY AUDIT"
     assert first_audit["manual_human_review_claimed"] is False
+    assert first_audit["source_content_ownership_claimed"] is False
+    assert first_audit["claim_scope"] == "editorial_transformations_only"
     assert first_audit["audit_id"].startswith("FND-")
     assert first_audit["audit_id"] != second_audit["audit_id"]
+
+
+def test_fendy_mp4_provenance_claims_only_editorial_contributions():
+    clip = ClipCandidate(1, 0, 30, 30, 90, "Hikmah Sabar", "test", "Sabar itu perlu dilatih.")
+    auditor = fendy_auditor_identity(clip, "vertical_short")
+
+    args = ffmpeg_fendy_provenance_metadata_args(clip.title, auditor)
+    metadata = "\n".join(args)
+
+    assert "artist=Fendy Clipper" in metadata
+    assert f"audit_id={auditor['audit_id']}" in metadata
+    assert "claim_scope=editorial_transformations_only" in metadata
+    assert "source_content_ownership_claimed=false" in metadata
+    assert "source rights excluded" in metadata
 
 
 def test_codex_growth_blueprint_links_short_and_long_form_into_a_series():
@@ -931,7 +951,7 @@ def test_shorts_cover_moment_uses_adaptive_reference_style_card():
     assert "x=96:y=1086" in value
     assert "between(t,0,3.200)" in value
     assert "text='FAKTA / PELAJARAN'" in value
-    assert "text='@ryuundyofficial'" in value
+    assert "text='ryuundyofficial'" in value
     assert "text='LIHAT PENJELASANNYA'" not in value
     assert "textfile='clip.hook.txt'" not in value
 

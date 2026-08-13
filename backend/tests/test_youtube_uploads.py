@@ -1211,7 +1211,10 @@ def test_youtube_description_includes_fendy_audit_identity(monkeypatch):
 
     description = default_youtube_description(job, clip)
 
-    assert description.endswith("Audit editorial otomatis: Fendy · ID FND-ABC123DEF456")
+    assert description.endswith(
+        "Audit & edit editorial otomatis: Fendy Clipper · ID FND-ABC123DEF456. "
+        "Hak materi sumber tetap pada pemegang hak masing-masing."
+    )
 
 
 def test_monetization_preflight_v6_requires_fendy_identity_and_growth_blueprint(monkeypatch):

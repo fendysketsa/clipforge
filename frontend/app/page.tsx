@@ -39,6 +39,7 @@ import {
   DEFAULT_AI_BASE_URL,
   DEFAULT_AI_ENABLED,
   DEFAULT_AI_MODEL,
+  DEFAULT_REQUIRED_HASHTAGS,
   DEFAULT_CAPTION_COLOR,
   DEFAULT_CAPTION_FONT,
   DEFAULT_CAPTION_FONT_SIZE,
@@ -125,7 +126,7 @@ export default function HomePage() {
   const [aiBaseUrl, setAiBaseUrl] = useState(DEFAULT_AI_BASE_URL);
   const [aiModel, setAiModel] = useState(DEFAULT_AI_MODEL);
   const [aiApiKey, setAiApiKey] = useState("");
-  const [requiredHashtags, setRequiredHashtags] = useState("");
+  const [requiredHashtags, setRequiredHashtags] = useState(DEFAULT_REQUIRED_HASHTAGS);
   const [requireCreativeCommons, setRequireCreativeCommons] = useState(true);
   const [autoUploadYoutube, setAutoUploadYoutube] = useState(false);
   const [aiModels, setAiModels] = useState<string[]>([]);
@@ -465,6 +466,11 @@ export default function HomePage() {
       const models = await fetchModels(base, aiApiKey.trim());
       setAiModels(models);
       if (models.length) {
+        setAiModel((current) => {
+          if (models.includes(DEFAULT_AI_MODEL)) return DEFAULT_AI_MODEL;
+          if (models.includes(current)) return current;
+          return models[0];
+        });
         toast.success(`${models.length} model dimuat`);
       } else {
         toast.error("Tidak ada model ditemukan");
@@ -488,11 +494,19 @@ export default function HomePage() {
         return;
       }
 
-      const first = providers[0];
-      setAiBaseUrl(first.base_url);
-      setAiModels(first.models);
-      if (first.models[0]) {
-        setAiModel(first.models[0]);
+      const selected =
+        providers.find(
+          (provider) =>
+            provider.base_url.includes(":11434") && provider.models.includes(DEFAULT_AI_MODEL),
+        ) ??
+        providers.find((provider) => provider.base_url.includes(":11434")) ??
+        providers[0];
+      setAiBaseUrl(selected.base_url);
+      setAiModels(selected.models);
+      if (selected.models.length) {
+        setAiModel(
+          selected.models.includes(DEFAULT_AI_MODEL) ? DEFAULT_AI_MODEL : selected.models[0],
+        );
       }
       if (!silent) {
         toast.success(`${providers.length} provider LLM lokal ditemukan`);
@@ -532,8 +546,10 @@ export default function HomePage() {
     setAiBaseUrl(provider.base_url);
     setAiApiKey("");
     setAiModels(provider.models);
-    if (provider.models[0]) {
-      setAiModel(provider.models[0]);
+    if (provider.models.length) {
+      setAiModel(
+        provider.models.includes(DEFAULT_AI_MODEL) ? DEFAULT_AI_MODEL : provider.models[0],
+      );
     }
   }, []);
 
