@@ -2509,46 +2509,34 @@ def click_playlist_named(page, playlist_name: str, timeout_ms: int = 8000) -> bo
         const style = window.getComputedStyle(element);
         return style && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
       };
-      const normalizedLines = (value) =>
-        String(value || '')
-          .split(/\\n+/)
-          .map((line) => line.trim().toLowerCase())
-          .filter(Boolean);
       const labelOf = (element) => [
         element.innerText,
         element.textContent,
         element.getAttribute?.('aria-label'),
         element.getAttribute?.('title'),
-      ].filter(Boolean).join('\\n');
-      const containsExactLine = (element) => normalizedLines(labelOf(element)).includes(target);
-      const findClickable = (element) => {
-        const checkboxSelector =
-          'input[type="checkbox"], [role="checkbox"], ytcp-checkbox-lit, tp-yt-paper-checkbox, #checkbox';
-        const rowSelector =
-          'ytcp-playlist-dialog-row, tp-yt-paper-item, [role="listitem"], [role="option"]';
-        let current = element;
-        for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {
-          if (current.matches?.(checkboxSelector) && isVisible(current)) return current;
-          const tag = String(current.tagName || '').toLowerCase();
-          if (tag === 'ytcp-playlist-dialog' || tag === 'tp-yt-paper-dialog') break;
-          const checkboxes = Array.from(current.querySelectorAll?.(checkboxSelector) || [])
-            .filter(isVisible);
-          if ((current.matches?.(rowSelector) || checkboxes.length === 1) && checkboxes.length) {
-            return checkboxes[0];
-          }
-          if (current.matches?.(rowSelector)) return current;
-        }
-        return element;
-      };
+      ].filter(Boolean).join('\\n').toLowerCase();
+      const rowSelector =
+        'li.row, label.ytcp-checkbox-label, ytcp-playlist-dialog-row, '
+        + 'tp-yt-paper-item, [role="listitem"], [role="option"]';
 
       for (const root of roots) {
-        const elements = root.querySelectorAll ? Array.from(root.querySelectorAll('*')) : [];
-        for (const element of elements) {
-          if (!isVisible(element) || !containsExactLine(element)) continue;
-          const clickable = findClickable(element);
-          clickable.scrollIntoView?.({ block: 'center', inline: 'center' });
-          clickable.click();
-          return true;
+        const dialogs = root.querySelectorAll
+          ? Array.from(root.querySelectorAll('ytcp-playlist-dialog'))
+          : [];
+        for (const dialog of dialogs) {
+          const surface = dialog.querySelector('tp-yt-paper-dialog[role="dialog"], #dialog') || dialog;
+          if (surface.getAttribute?.('aria-hidden') === 'true' || !isVisible(surface)) continue;
+          const rows = Array.from(surface.querySelectorAll?.(rowSelector) || []);
+          for (const row of rows) {
+            if (!isVisible(row)) continue;
+            const lines = labelOf(row).split(/\\n+/).map((line) => line.trim()).filter(Boolean);
+            if (!lines.includes(target)) continue;
+            const label = row.matches?.('label') ? row : row.querySelector?.('label');
+            const clickable = label && isVisible(label) ? label : row;
+            clickable.scrollIntoView?.({ block: 'center', inline: 'center' });
+            clickable.click();
+            return true;
+          }
         }
       }
       return false;
@@ -2594,7 +2582,8 @@ def playlist_is_selected(page, playlist_name: str, timeout_ms: int = 3000) -> bo
       const checkboxSelector =
         'input[type="checkbox"], [role="checkbox"], ytcp-checkbox-lit, tp-yt-paper-checkbox, #checkbox';
       const rowSelector =
-        'ytcp-playlist-dialog-row, tp-yt-paper-item, [role="listitem"], [role="option"]';
+        'li.row, label.ytcp-checkbox-label, ytcp-playlist-dialog-row, '
+        + 'tp-yt-paper-item, [role="listitem"], [role="option"]';
       const labelOf = (element) => [
         element.innerText,
         element.textContent,
@@ -2602,20 +2591,19 @@ def playlist_is_selected(page, playlist_name: str, timeout_ms: int = 3000) -> bo
         element.getAttribute?.('title'),
       ].filter(Boolean).join('\\n').toLowerCase();
       for (const root of roots) {
-        const elements = root.querySelectorAll ? Array.from(root.querySelectorAll('*')) : [];
-        for (const element of elements) {
-          if (!labelOf(element).split(/\\n+/).map((line) => line.trim()).includes(target)) continue;
-          if (element.matches?.(checkboxSelector) && isChecked(element)) return true;
-          let current = element;
-          for (let depth = 0; current && depth < 10; depth += 1, current = current.parentElement) {
-            const tag = String(current.tagName || '').toLowerCase();
-            if (tag === 'ytcp-playlist-dialog' || tag === 'tp-yt-paper-dialog') break;
-            const checks = Array.from(current.querySelectorAll?.(checkboxSelector) || []);
-            // Do not inspect every checkbox in the entire dialog. Doing so can
-            // mistake another checked playlist for the requested playlist.
-            if ((current.matches?.(rowSelector) || checks.length === 1) && checks.some(isChecked)) {
-              return true;
-            }
+        const dialogs = root.querySelectorAll
+          ? Array.from(root.querySelectorAll('ytcp-playlist-dialog'))
+          : [];
+        for (const dialog of dialogs) {
+          const surface = dialog.querySelector('tp-yt-paper-dialog[role="dialog"], #dialog') || dialog;
+          if (surface.getAttribute?.('aria-hidden') === 'true') continue;
+          const rows = Array.from(surface.querySelectorAll?.(rowSelector) || []);
+          for (const row of rows) {
+            const lines = labelOf(row).split(/\\n+/).map((line) => line.trim()).filter(Boolean);
+            if (!lines.includes(target)) continue;
+            const checks = Array.from(row.querySelectorAll?.(checkboxSelector) || []);
+            if (row.matches?.(checkboxSelector)) checks.unshift(row);
+            if (checks.some(isChecked)) return true;
           }
         }
       }
@@ -2718,66 +2706,55 @@ def click_playlist_checkbox(page, playlist_name: str, timeout_ms: int = 8000) ->
         element.checked === true ||
         element.getAttribute?.('checked') !== null ||
         element.getAttribute?.('aria-checked') === 'true';
-      const normalizedLines = (value) =>
-        String(value || '')
-          .split(/\\n+/)
-          .map((line) => line.trim().toLowerCase())
-          .filter(Boolean);
       const labelOf = (element) => [
         element.innerText,
         element.textContent,
         element.getAttribute?.('aria-label'),
         element.getAttribute?.('title'),
-      ].filter(Boolean).join('\\n');
-      const exactLabel = (element) => normalizedLines(labelOf(element)).includes(target);
-      const containsTargetWord = (element) => {
-        const words = labelOf(element).toLowerCase().split(/[^a-z0-9_]+/).filter(Boolean);
-        return words.includes(target);
-      };
+      ].filter(Boolean).join('\\n').toLowerCase();
       const checkboxSelectors = 'input[type="checkbox"], [role="checkbox"], ytcp-checkbox-lit, tp-yt-paper-checkbox, #checkbox';
-      const rowSelector = 'ytcp-playlist-dialog-row, tp-yt-paper-item, [role="listitem"], [role="option"]';
+      const rowSelector =
+        'li.row, label.ytcp-checkbox-label, ytcp-playlist-dialog-row, '
+        + 'tp-yt-paper-item, [role="listitem"], [role="option"]';
       const clickElement = (element) => {
         element.scrollIntoView?.({ block: 'center', inline: 'center' });
         element.click();
         return true;
       };
-      const clickAtRowCheckboxSlot = (row) => {
-        const rect = row.getBoundingClientRect?.();
-        if (!rect || rect.width <= 0 || rect.height <= 0) return false;
-        const x = Math.max(rect.left + 16, Math.min(rect.left + 34, rect.right - 8));
-        const y = rect.top + rect.height / 2;
-        const hit = document.elementFromPoint(x, y);
-        const checkbox = hit?.closest?.(checkboxSelectors);
-        if (checkbox && isVisible(checkbox)) return clickElement(checkbox);
-        hit?.click?.();
-        return true;
-      };
 
       for (const root of roots) {
-        const elements = root.querySelectorAll ? Array.from(root.querySelectorAll('*')) : [];
-        for (const element of elements) {
-          if (!isVisible(element) || (!exactLabel(element) && !containsTargetWord(element))) continue;
-          if (element.matches?.(checkboxSelectors)) {
-            if (isChecked(element)) return true;
-            return clickElement(element);
+        const dialogs = root.querySelectorAll
+          ? Array.from(root.querySelectorAll('ytcp-playlist-dialog'))
+          : [];
+        for (const dialog of dialogs) {
+          const surface = dialog.querySelector('tp-yt-paper-dialog[role="dialog"], #dialog') || dialog;
+          if (surface.getAttribute?.('aria-hidden') === 'true' || !isVisible(surface)) continue;
+          const rows = Array.from(surface.querySelectorAll?.(rowSelector) || []);
+          for (const row of rows) {
+            if (!isVisible(row)) continue;
+            const lines = labelOf(row).split(/\\n+/).map((line) => line.trim()).filter(Boolean);
+            if (!lines.includes(target)) continue;
+
+            const checks = Array.from(row.querySelectorAll?.(checkboxSelectors) || []);
+            if (row.matches?.(checkboxSelectors)) checks.unshift(row);
+            if (checks.some(isChecked)) return true;
+
+            // YouTube's current checkbox is a ytcp-checkbox-lit host containing
+            // an interactive div[role=checkbox] plus a hidden input. Clicking
+            // the host or text label no longer consistently changes its state.
+            const interactive = checks.find((check) =>
+              check.matches?.('[role="checkbox"]')
+              && check.getAttribute?.('aria-disabled') !== 'true'
+              && isVisible(check)
+            );
+            if (interactive) return clickElement(interactive);
+            const host = checks.find((check) =>
+              check.matches?.('ytcp-checkbox-lit, tp-yt-paper-checkbox') && isVisible(check)
+            );
+            if (host) return clickElement(host);
+            const label = row.matches?.('label') ? row : row.querySelector?.('label');
+            if (label && isVisible(label)) return clickElement(label);
           }
-          let current = element;
-          for (let depth = 0; current && depth < 10; depth += 1, current = current.parentElement) {
-            const checks = Array.from(current.querySelectorAll?.(checkboxSelectors) || [])
-              .filter(isVisible);
-            const role = current.getAttribute?.('role') || '';
-            const tag = String(current.tagName || '').toLowerCase();
-            if (tag === 'ytcp-playlist-dialog' || tag === 'tp-yt-paper-dialog') break;
-            if ((current.matches?.(rowSelector) || checks.length === 1) && checks.length) {
-              const check = checks[0];
-              if (isChecked(check)) return true;
-              return clickElement(check);
-            }
-            if (role === 'listitem' || role === 'option' || current.matches?.(rowSelector)) {
-              if (clickAtRowCheckboxSlot(current)) return true;
-            }
-          }
-          if (clickAtRowCheckboxSlot(element)) return true;
         }
       }
       return false;
@@ -2951,37 +2928,11 @@ def playlist_dialog_open(page, timeout_ms: int = 1500) -> bool:
         const style = window.getComputedStyle(element);
         return style && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
       };
-      const labelOf = (element) => [
-        element.innerText,
-        element.textContent,
-        element.getAttribute?.('aria-label'),
-        element.getAttribute?.('placeholder'),
-        element.getAttribute?.('title'),
-      ].filter(Boolean).join('\\n').toLowerCase();
       for (const root of roots) {
         const dialogs = root.querySelectorAll ? Array.from(root.querySelectorAll('ytcp-playlist-dialog')) : [];
-        if (dialogs.some((dialog) => isVisible(dialog))) return true;
-      }
-      for (const root of roots) {
-        const elements = root.querySelectorAll ? Array.from(root.querySelectorAll('*')) : [];
-        for (const element of elements) {
-          if (!isVisible(element)) continue;
-          const label = labelOf(element);
-          const tag = String(element.tagName || '').toLowerCase();
-          if (
-            tag === 'input' &&
-            label.includes('playlist') &&
-            (element.closest?.('ytcp-playlist-dialog,tp-yt-paper-dialog,tp-yt-iron-dropdown') || label.includes('telusuri'))
-          ) {
-            return true;
-          }
-          if (
-            label.includes('playlist baru') &&
-            label.includes('selesai') &&
-            (label.includes('telusuri') || label.includes('search') || label.includes('islam'))
-          ) {
-            return true;
-          }
+        for (const dialog of dialogs) {
+          const surface = dialog.querySelector('tp-yt-paper-dialog[role="dialog"], #dialog') || dialog;
+          if (surface.getAttribute?.('aria-hidden') !== 'true' && isVisible(surface)) return true;
         }
       }
       return false;
