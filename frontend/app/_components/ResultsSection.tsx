@@ -101,6 +101,37 @@ function fypScoreTone(score: number) {
   return "polish";
 }
 
+function oneKReadiness(score: number, isLongForm: boolean) {
+  if (score >= 88) {
+    return {
+      label: "Target 1K · siap uji",
+      tone: "excellent",
+      detail: isLongForm
+        ? "Hook, alur, dan packaging sudah kuat; publikasikan Private dulu lalu cek thumbnail, judul, dan retention 30 detik."
+        : "Hook dan payoff sudah kuat; publikasikan Private dulu lalu pilih frame cover 0,78 detik di aplikasi YouTube.",
+    };
+  }
+  if (score >= 78) {
+    return {
+      label: "Target 1K · layak uji",
+      tone: "strong",
+      detail: "Layak dipublikasikan sebagai eksperimen. Pantau viewed-vs-swiped, CTR, dan retention; angka view tetap ditentukan respons penonton.",
+    };
+  }
+  if (score >= 65) {
+    return {
+      label: "Target 1K · A/B hook",
+      tone: "test",
+      detail: "Uji judul atau pembuka lain sebelum upload utama; perbaiki temuan yang tercantum di bawah.",
+    };
+  }
+  return {
+    label: "Target 1K · poles dulu",
+    tone: "hold",
+    detail: "Belum disarankan untuk mengejar distribusi. Pilih kandidat lain atau perkuat hook, tempo, dan payoff.",
+  };
+}
+
 function completedUploadStatusIsVisible(upload: YouTubeUploadJob, now: number) {
   if (upload.status !== "completed") return true;
   if (!upload.video_url || upload.clip_delete_error) return true;
@@ -319,6 +350,9 @@ export function ResultsSection({
             const latestUpload = youtubeUploads.find((upload) => upload.clip_url === clip.url);
             const isLongForm = clip.name.toLowerCase().startsWith("highlight_5menit_")
               || clip.name.toLowerCase().startsWith("resume_cerita_");
+            const growthReadiness = clip.fyp_score !== null && clip.fyp_score !== undefined
+              ? oneKReadiness(clip.fyp_score, isLongForm)
+              : null;
             const isUploadingToYouTube = latestUpload?.status === "queued" || latestUpload?.status === "running";
             const isAlreadyUploaded = latestUpload?.status === "completed" && Boolean(latestUpload.video_url);
             const hasRunningUpload = youtubeUploads.some((upload) => upload.status === "running");
@@ -416,6 +450,15 @@ export function ResultsSection({
                         <Sparkles size={13} />
                         FYP {Math.round(clip.fyp_score)}
                       </span>
+                      {growthReadiness ? (
+                        <span
+                          className={`clipMetric clipMetric--growth clipMetric--growth-${growthReadiness.tone}`}
+                          title="Indikator kesiapan eksperimen, bukan jaminan jumlah view."
+                        >
+                          <Target size={13} />
+                          {growthReadiness.label}
+                        </span>
+                      ) : null}
                       {clip.key_point_score !== null && clip.key_point_score !== undefined ? (
                         <span className="clipMetric">Point {clip.key_point_score}</span>
                       ) : null}
@@ -453,6 +496,12 @@ export function ResultsSection({
                           <div className="analysisLine">
                             <Target size={15} />
                             <span><b>Intisari:</b> {clip.core_message}</span>
+                          </div>
+                        ) : null}
+                        {growthReadiness ? (
+                          <div className={`viewTargetReadiness viewTargetReadiness--${growthReadiness.tone}`}>
+                            <Target size={15} />
+                            <span><b>{growthReadiness.label}.</b> {growthReadiness.detail} Ini indikator kesiapan, bukan jaminan view.</span>
                           </div>
                         ) : null}
                         {clip.strengths?.length ? (

@@ -2873,6 +2873,41 @@ def fyp_score_label(score: int) -> str:
     return "Lemah"
 
 
+def one_k_experiment_readiness(
+    clip: ClipCandidate,
+    output_format: OutputFormat,
+) -> dict[str, object]:
+    """Describe publishing readiness without pretending to predict distribution."""
+    score = max(0, min(100, int(round(clip.score))))
+    if score >= 88:
+        status = "ready_to_test"
+    elif score >= 78:
+        status = "worth_testing"
+    elif score >= 65:
+        status = "test_hook_variant_first"
+    else:
+        status = "revise_before_publishing"
+    return {
+        "version": 1,
+        "target_views": 1000,
+        "readiness_score": score,
+        "status": status,
+        "guarantee": False,
+        "format": output_format,
+        "signals": {
+            "hook_present": bool((clip.hook or clip.title).strip()),
+            "single_key_point_score": clip.key_point_score,
+            "semantic_loop_score": clip.loop_score,
+            "complete_boundary": clip.boundary_quality in {"payoff_tuntas", "kalimat_tuntas"},
+        },
+        "measure_after_publish": (
+            ["viewed_vs_swiped", "audience_retention", "rewatches", "shares"]
+            if output_format == "vertical_short"
+            else ["impressions_ctr", "first_30_second_retention", "average_view_duration", "returning_viewers"]
+        ),
+    }
+
+
 def fallback_pov_angle(text: str) -> str:
     lowered = text.lower()
     if set(re.findall(r"[\w']+", lowered)).intersection(MYSTERY_WORDS):
@@ -4053,7 +4088,7 @@ SHORTS_SAFE_TOP = 220
 SHORTS_SAFE_BOTTOM = 1560
 SHORTS_OFFICIAL_MAX_SECONDS = 180
 FENDY_CLIPPER_SHORTS_MAX_SECONDS = 60
-SHORTS_POLICY_REVIEW_DATE = "2026-08-12"
+SHORTS_POLICY_REVIEW_DATE = "2026-08-13"
 
 
 def wrap_subtitle(text: str, max_chars: int = SUBTITLE_MAX_CHARS, max_lines: int = SUBTITLE_MAX_LINES) -> str:
@@ -4197,6 +4232,7 @@ def thumbnail_story_copy(
     long_form: bool = False,
 ) -> dict[str, str]:
     """Build compact, truthful cover copy from the analyzed story fields."""
+    eyebrow = visual_theme_profile(clip)["badge"]
     raw_pov = re.sub(
         r"^\s*pov\s*:\s*",
         "",
@@ -4213,7 +4249,6 @@ def thumbnail_story_copy(
     if long_form:
         headline_source = raw_hook
         support_source = raw_pov
-        eyebrow = "WAJIB TAHU"
         headline_words = 8
         headline_chars = 18
         headline_lines = 2
@@ -4224,7 +4259,6 @@ def thumbnail_story_copy(
         # truthful context underneath it.
         headline_source = raw_hook
         support_source = raw_pov
-        eyebrow = "WAJIB TAHU"
         headline_words = 8
         headline_chars = 22
         headline_lines = 3
@@ -4267,41 +4301,62 @@ SHORTS_CTA_OVERLAY_SECONDS = 2.35
 DEFAULT_SHORTS_CTA_VOICEOVER_TEXT = "Tulis pendapatmu dan lanjutkan diskusinya!"
 
 
-def viral_title_overlay_filter(headline_filename: str, duration: float) -> str:
-    """Render a transcript-grounded cover card like fast-scanning Shorts grids."""
+def viral_title_overlay_filter(
+    headline_filename: str,
+    duration: float,
+    *,
+    eyebrow: str = "WAJIB TAHU",
+    accent: str = "#FFF200",
+    variation: int = 0,
+) -> str:
+    """Render a transcript-grounded, content-adaptive Shorts context card."""
     title_end = min(max(0.1, duration), SHORTS_TITLE_OVERLAY_SECONDS)
     active = f"enable='between(t,0,{title_end:.3f})'"
     font_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     font_regular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    safe_eyebrow = re.sub(r"[^A-Z0-9 /&-]", "", eyebrow.upper()).strip()[:28] or "WAJIB TAHU"
+    card_variant = max(0, variation) % 3
+    card_x, card_width = ((58, 842), (66, 824), (50, 840))[card_variant]
+    inner_x = card_x + 22
+    content_x = card_x + 38
+    headline_y = (1086, 1080, 1092)[card_variant]
+    badge_width = min(390, max(244, len(safe_eyebrow) * 16 + 74))
+    accent_detail = (
+        f"drawbox=x={content_x}:y=1012:w={badge_width}:h=48:color={accent}@1.0:t=fill:{active}"
+        if card_variant == 0
+        else f"drawbox=x={card_x}:y=982:w=12:h=356:color={accent}@1.0:t=fill:{active}"
+        if card_variant == 1
+        else f"drawbox=x={inner_x}:y=982:w={card_width - 44}:h=9:color={accent}@1.0:t=fill:{active}"
+    )
     return ",".join(
         [
             # Two offset rectangles make a soft, rounded-looking card using
             # only filters available in the standard backend FFmpeg build.
-            f"drawbox=x=70:y=1002:w=830:h=380:color=black@0.28:t=fill:{active}",
-            f"drawbox=x=58:y=982:w=842:h=356:color=white@0.97:t=fill:{active}",
-            f"drawbox=x=80:y=960:w=798:h=400:color=white@0.97:t=fill:{active}",
-            f"drawbox=x=96:y=1012:w=286:h=48:color=#FFF200@1.0:t=fill:{active}",
+            f"drawbox=x={card_x + 12}:y=1002:w={card_width - 12}:h=380:color=black@0.28:t=fill:{active}",
+            f"drawbox=x={card_x}:y=982:w={card_width}:h=356:color=white@0.97:t=fill:{active}",
+            f"drawbox=x={inner_x}:y=960:w={card_width - 44}:h=400:color=white@0.97:t=fill:{active}",
+            accent_detail,
             "drawtext="
             f"fontfile={font_regular}:text='●':expansion=none:"
-            "fontcolor=#FF1744@0.22:fontsize=41:x=102:y=1005:"
+            f"fontcolor={accent}@0.20:fontsize=41:x={content_x + 6}:y=1005:"
             f"enable='between(t,0,{title_end:.3f})*lt(mod(t,1.05),0.46)'",
             "drawtext="
             f"fontfile={font_regular}:text='●':expansion=none:"
-            "fontcolor=#FF1744:fontsize=24:x=111:y=1015:"
+            f"fontcolor={accent}:fontsize=24:x={content_x + 15}:y=1015:"
             f"{active}",
             "drawtext="
-            f"fontfile={font_bold}:text='WAJIB TAHU':expansion=none:"
-            "fontcolor=black:fontsize=25:x=146:y=1021:"
+            f"fontfile={font_bold}:text='{safe_eyebrow}':expansion=none:"
+            f"fontcolor=black:fontsize=25:x={content_x + 50}:y=1021:"
             f"{active}",
             "drawtext="
             f"fontfile={font_bold}:textfile='{headline_filename}':reload=0:expansion=none:"
             "fontcolor=black:fontsize=49:line_spacing=4:"
-            "x=96:y=1086:"
+            f"x={content_x}:y={headline_y}:"
             f"{active}",
-            f"drawbox=x=96:y=1298:w=684:h=3:color=black@0.16:t=fill:{active}",
+            f"drawbox=x={content_x}:y=1298:w={card_width - 158}:h=3:color=black@0.16:t=fill:{active}",
             "drawtext="
             f"fontfile={font_regular}:text='{CHANNEL_WATERMARK}':expansion=none:"
-            "fontcolor=black@0.82:fontsize=22:x=96:y=1318:"
+            f"fontcolor=black@0.82:fontsize=22:x={content_x}:y=1318:"
             f"{active}",
         ]
     )
@@ -4571,7 +4626,12 @@ def payoff_banner_text(clip: ClipCandidate, clip_segments: list[TranscriptSegmen
 
 
 def detect_visual_theme(clip: ClipCandidate) -> VisualTheme:
-    words = set(re.findall(r"[\w']+", f"{clip.title} {clip.text}".lower()))
+    words = set(
+        re.findall(
+            r"[\w']+",
+            f"{clip.title} {clip.hook} {clip.pov} {clip.text}".lower(),
+        )
+    )
     if words.intersection(MYSTERY_WORDS):
         return "mystery"
     if words.intersection(ISLAMIC_WORDS):
@@ -4585,7 +4645,12 @@ def detect_visual_theme(clip: ClipCandidate) -> VisualTheme:
 
 def clip_has_islamic_context(clip: ClipCandidate) -> bool:
     """Detect Islamic subject matter independently from the dominant visual theme."""
-    words = set(re.findall(r"[\w']+", f"{clip.title} {clip.text}".lower()))
+    words = set(
+        re.findall(
+            r"[\w']+",
+            f"{clip.title} {clip.hook} {clip.pov} {clip.text}".lower(),
+        )
+    )
     return bool(words.intersection(ISLAMIC_WORDS))
 
 
@@ -4639,6 +4704,13 @@ def visual_theme_profile(clip: ClipCandidate) -> dict[str, str]:
         },
     }
     return {"theme": theme, **profiles[theme]}
+
+
+def cover_card_accent(profile: dict[str, str]) -> str:
+    """Keep familiar yellow for Islamic/reference cards; vary other niches."""
+    if profile.get("theme") == "islamic":
+        return profile.get("accent_secondary", "#FACC15")
+    return profile.get("accent", "#FACC15")
 
 
 def emphasis_timestamps(
@@ -5357,13 +5429,19 @@ def landscape_compilation_edit_filter(
     profile = theme_profile or {
         "accent": "#FACC15",
         "accent_secondary": "#22D3EE",
-        "badge": "RANGKUMAN UTAMA",
+        "badge": "WAJIB TAHU",
         "emphasis_label": "POIN PENTING",
         "grade": "eq=contrast=1.05:brightness=0.004:saturation=1.04:gamma=1.01",
     }
     accent = profile["accent"]
     secondary = profile.get("accent_secondary", "#22D3EE")
-    badge = "WAJIB TAHU" if section_number == 1 else f"POIN {section_number:02}"
+    badge = (
+        str(profile.get("badge") or "RANGKUMAN UTAMA")
+        if section_number == 1
+        else f"POIN {section_number:02}"
+    )
+    badge_width = min(360, max(234, len(badge) * 14 + 76))
+    section_text_x = 98 + badge_width + 22
     section_text = f"BAGIAN {section_number:02} / {section_count:02}"
     filters = [
         profile["grade"],
@@ -5379,9 +5457,9 @@ def landscape_compilation_edit_filter(
                 f"enable='between(t,0.10,{intro_end:.3f})'",
                 f"drawbox=x=74:y=64:w=12:h=196:color={accent}@0.98:t=fill:"
                 f"enable='between(t,0.10,{intro_end:.3f})'",
-                "drawbox=x=98:y=82:w=234:h=44:color=black@0.86:t=fill:"
+                f"drawbox=x=98:y=82:w={badge_width}:h=44:color=black@0.86:t=fill:"
                 f"enable='between(t,0.10,{intro_end:.3f})'",
-                "drawbox=x=98:y=82:w=234:h=44:color=#FF3158@0.92:t=2:"
+                f"drawbox=x=98:y=82:w={badge_width}:h=44:color=#FF3158@0.92:t=2:"
                 f"enable='between(t,0.10,{intro_end:.3f})'",
                 # A restrained red attention pulse. It is intentionally not
                 # labelled LIVE/REC because the source is edited footage.
@@ -5398,7 +5476,7 @@ def landscape_compilation_edit_filter(
                 f"text='{badge}':expansion=none:fontcolor=white:fontsize=21:x=151:y=92:"
                 f"enable='between(t,0.10,{intro_end:.3f})'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-                f"text='{section_text}':expansion=none:fontcolor={secondary}:fontsize=19:x=354:y=92:"
+                f"text='{section_text}':expansion=none:fontcolor={secondary}:fontsize=19:x={section_text_x}:y=92:"
                 f"enable='between(t,0.10,{intro_end:.3f})'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                 f"textfile='{hook_text_filename}':reload=0:expansion=none:"
@@ -5538,6 +5616,7 @@ def clean_detail_edit_filter(
     show_reactions: bool = True,
     camera_angle_cues: list[CameraAngleCue] | None = None,
     detail_filter: str = "",
+    variation: int = 0,
 ) -> str:
     """Keep source detail clean while adding sparse, story-timed visual rhythm."""
     safe_duration = max(0.1, duration)
@@ -5590,7 +5669,15 @@ def clean_detail_edit_filter(
     if show_text_overlays:
         title_filename = cover_text_filename or hook_text_filename
         if title_filename:
-            filters.append(viral_title_overlay_filter(title_filename, safe_duration))
+            filters.append(
+                viral_title_overlay_filter(
+                    title_filename,
+                    safe_duration,
+                    eyebrow=str(profile.get("badge") or "WAJIB TAHU"),
+                    accent=cover_card_accent(profile),
+                    variation=variation,
+                )
+            )
 
     # A short edge cue marks only the strongest transcript beats. It adds
     # rhythm without a card, vignette, gradient, or element over the face.
@@ -5768,7 +5855,15 @@ def enhanced_edit_filter(
         # fast-scanning title style commonly used in Shorts grids.
         cover_end = min(safe_duration, SHORTS_TITLE_OVERLAY_SECONDS)
         if cover_text_filename and cover_end >= 0.4:
-            filters.append(viral_title_overlay_filter(cover_text_filename, safe_duration))
+            filters.append(
+                viral_title_overlay_filter(
+                    cover_text_filename,
+                    safe_duration,
+                    eyebrow=str(profile.get("badge") or "WAJIB TAHU"),
+                    accent=cover_card_accent(profile),
+                    variation=motion_variant,
+                )
+            )
         else:
             hook_start = 0.10
             filters.extend(
@@ -6205,10 +6300,15 @@ def designed_thumbnail_filter(
     long_form: bool,
     accent: str,
     accent_secondary: str,
+    eyebrow: str = "WAJIB TAHU",
+    variation: int = 0,
 ) -> str:
     """Create a deterministic high-contrast cover without redrawing the subject."""
     font_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     font_regular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    safe_eyebrow = re.sub(r"[^A-Z0-9 /&-]", "", eyebrow.upper()).strip()[:28] or "WAJIB TAHU"
+    long_badge_width = min(390, max(260, len(safe_eyebrow) * 15 + 74))
+    card_accent = accent_secondary if "RENUNGAN" in safe_eyebrow else accent
     if long_form:
         return ",".join(
             [
@@ -6217,13 +6317,13 @@ def designed_thumbnail_filter(
                 "eq=contrast=1.08:brightness=-0.015:saturation=1.10",
                 "drawbox=x=0:y=0:w=760:h=720:color=black@0.56:t=fill",
                 f"drawbox=x=0:y=0:w=18:h=720:color={accent}@0.98:t=fill",
-                "drawbox=x=66:y=72:w=260:h=54:color=black@0.88:t=fill",
-                "drawbox=x=66:y=72:w=260:h=54:color=#FF3158@0.96:t=3",
+                f"drawbox=x=66:y=72:w={long_badge_width}:h=54:color=black@0.88:t=fill",
+                f"drawbox=x=66:y=72:w={long_badge_width}:h=54:color=#FF3158@0.96:t=3",
                 f"drawtext=fontfile={font_regular}:text='●':expansion=none:"
                 "fontcolor=#FF3158:fontsize=37:x=80:y=76",
                 f"drawtext=fontfile={font_regular}:text='●':expansion=none:"
                 "fontcolor=white@0.94:fontsize=10:x=91:y=89",
-                f"drawtext=fontfile={font_bold}:text='WAJIB TAHU':expansion=none:"
+                f"drawtext=fontfile={font_bold}:text='{safe_eyebrow}':expansion=none:"
                 "fontcolor=white:fontsize=24:x=120:y=85",
                 f"drawtext=fontfile={font_bold}:textfile='{headline_filename}':reload=0:"
                 "expansion=none:fontcolor=white:fontsize=58:line_spacing=10:"
@@ -6241,7 +6341,13 @@ def designed_thumbnail_filter(
             "scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos",
             "crop=1080:1920",
             "eq=contrast=1.09:brightness=-0.018:saturation=1.11",
-            viral_title_overlay_filter(headline_filename, SHORTS_TITLE_OVERLAY_SECONDS),
+            viral_title_overlay_filter(
+                headline_filename,
+                SHORTS_TITLE_OVERLAY_SECONDS,
+                eyebrow=safe_eyebrow,
+                accent=card_accent,
+                variation=variation,
+            ),
         ]
     )
 
@@ -6273,6 +6379,7 @@ def render_designed_thumbnail(
         long_form=long_form,
         accent=profile.get("accent", "#FACC15"),
         accent_secondary=profile.get("accent_secondary", "#22D3EE"),
+        eyebrow=copy.get("eyebrow", "WAJIB TAHU"),
     )
     try:
         run(
@@ -6645,7 +6752,7 @@ def export_clip(
     applied_edits = list(clip.applied_edits)
     if automatic_short_title:
         applied_edits.append(
-            "Kartu hook putih-kuning otomatis ditanam di awal video sebagai frame cover Shorts yang bisa dipilih."
+            "Kartu konteks adaptif otomatis ditanam di awal: headline berasal dari hook, sedangkan label dan warna mengikuti isi cerita."
         )
     if enhanced_edit and output_format == "vertical_short":
         if adaptive_plan.hook_boost:
@@ -6776,6 +6883,20 @@ def export_clip(
         "thumbnail_eyebrow": cover_copy["eyebrow"],
         "thumbnail_headline": cover_copy["headline"].replace("\n", " "),
         "thumbnail_support": cover_copy["support"].replace("\n", " "),
+        "context_card": (
+            {
+                "version": 2,
+                "reference_pattern": "fast_scan_context_headline",
+                "transcript_grounded": True,
+                "eyebrow": cover_copy["eyebrow"],
+                "theme_accent": cover_card_accent(theme_profile),
+                "layout_variation": edit_variation % 3,
+                "content_derived_variation": True,
+                "shorts_ui_safe": True,
+            }
+            if automatic_short_title
+            else None
+        ),
         "embedded_cover_window_seconds": (
             round(min(duration, SHORTS_TITLE_OVERLAY_SECONDS), 3)
             if automatic_short_title
@@ -6791,6 +6912,7 @@ def export_clip(
             if output_format == "vertical_short"
             else None
         ),
+        "one_k_experiment_readiness": one_k_experiment_readiness(clip, output_format),
     }
 
     visual_source = video_path
@@ -7039,7 +7161,7 @@ def export_clip(
             )
             if compilation_part_number == 1:
                 applied_edits.append(
-                    "Cold open memakai badge WAJIB TAHU dan indikator merah berdenyut untuk menarik fokus tanpa label LIVE/REC yang menyesatkan."
+                    f"Cold open memakai badge {theme_profile['badge']} dan indikator merah berdenyut untuk menarik fokus tanpa label LIVE/REC yang menyesatkan."
                 )
         else:
             if clean_detail_pipeline:
@@ -7059,6 +7181,7 @@ def export_clip(
                         show_reactions=reaction_overlays_supported,
                         camera_angle_cues=camera_angle_cues,
                         detail_filter=quality_detail_filter(video_quality),
+                        variation=edit_variation,
                     )}"
                 )
                 sidecar_payload["motion_impact"] = {
@@ -7115,7 +7238,10 @@ def export_clip(
                     f"Virtual multi-camera menerapkan {len(camera_angle_cues)} cut medium/close-up pada beat ucapan, dengan framing wajah tetap aman."
                 )
     elif automatic_short_title:
-        vf = f"{vf},{viral_title_overlay_filter(cover_text_path.name, duration)}"
+        vf = (
+            f"{vf},"
+            f"{viral_title_overlay_filter(cover_text_path.name, duration, eyebrow=cover_copy['eyebrow'], accent=cover_card_accent(theme_profile), variation=edit_variation)}"
+        )
     if clean_detail_pipeline and not enhanced_edit:
         vf = add_quality_sharpen(vf, video_quality)
     if visual_mode == "retro_tv" or auto_visual_accent == "retro_archive":
@@ -7919,11 +8045,15 @@ def export_compilation(
         "retention_strategy": {
             "version": 2,
             "opening": "strongest_editorial_segment_first",
-            "opening_attention_signal": "truthful_red_pulse_with_wajib_tahu_badge",
+            "opening_attention_signal": "truthful_red_pulse_with_content_theme_badge",
             "remaining_arc": "source_chronology_after_hook",
             "first_30_seconds_match_title_thumbnail_promise": True,
             "manual_youtube_chapters_ready": len(candidates) >= 3,
         },
+        "one_k_experiment_readiness": one_k_experiment_readiness(
+            compilation,
+            "landscape_compilation",
+        ),
     }
 
     strongest_offset = sum(

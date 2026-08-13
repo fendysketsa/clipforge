@@ -27,6 +27,8 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Preserve the source footer and face pixels by default; footer cleanup is opt-in for sources where modifying the lower frame is acceptable.
 - Enhance voice clarity and generate safe, niche-aware social captions even when the AI service is unavailable.
 - Keep captions compact and readable with outline/shadow only, without a gradient band over the source image.
+- Turn the fast-scanning reference-card pattern into a content-adaptive opening: the truthful hook stays prominent while the badge, accent color, and layout variation follow each story instead of repeating one fixed template.
+- Record a transparent 1K-view experiment-readiness signal for every Short and long-form render; it recommends whether to publish, A/B test the hook, or revise, but never claims to guarantee distribution.
 - Generate short clips up to 60 seconds without an extra compilation render.
 - Keep the chronological 5–10 minute cinematic story resume available as a separate mode.
 - Telegram's primary CTA requests short clips only for a faster turnaround.

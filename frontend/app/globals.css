@@ -4396,6 +4396,65 @@ details[open] > summary .detailsChevron {
   color: var(--primary);
 }
 
+.clipMetric--growth {
+  border-color: rgba(56, 189, 248, 0.22);
+  color: #bae6fd;
+}
+
+.clipMetric--growth-excellent,
+.clipMetric--growth-strong {
+  border-color: rgba(52, 211, 153, 0.24);
+  background: rgba(16, 185, 129, 0.08);
+  color: #86efac;
+}
+
+.clipMetric--growth-test {
+  border-color: rgba(250, 204, 21, 0.22);
+  background: rgba(250, 204, 21, 0.07);
+  color: #fde68a;
+}
+
+.clipMetric--growth-hold {
+  border-color: rgba(251, 146, 60, 0.24);
+  background: rgba(249, 115, 22, 0.08);
+  color: #fdba74;
+}
+
+.viewTargetReadiness {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 9px;
+  background: rgba(14, 165, 233, 0.055);
+  color: #bae6fd;
+}
+
+.viewTargetReadiness svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.viewTargetReadiness--excellent,
+.viewTargetReadiness--strong {
+  border-color: rgba(52, 211, 153, 0.22);
+  background: rgba(16, 185, 129, 0.06);
+  color: #a7f3d0;
+}
+
+.viewTargetReadiness--test {
+  border-color: rgba(250, 204, 21, 0.2);
+  background: rgba(250, 204, 21, 0.05);
+  color: #fde68a;
+}
+
+.viewTargetReadiness--hold {
+  border-color: rgba(251, 146, 60, 0.22);
+  background: rgba(249, 115, 22, 0.06);
+  color: #fed7aa;
+}
+
 .clipAnalysisDetails {
   margin: 0 17px 15px;
   border: 1px solid rgba(148, 216, 204, 0.12);

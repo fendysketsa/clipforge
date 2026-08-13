@@ -56,6 +56,7 @@ from clipper import (
     localized_watermark_blur_filter,
     modern_blurred_video_frame_filter,
     modern_gradient_border_filters,
+    one_k_experiment_readiness,
     payoff_banner_text,
     pov_banner_text,
     remove_running_text_filter,
@@ -838,7 +839,7 @@ def test_clean_detail_crop_avoids_extreme_landscape_upscale(monkeypatch, tmp_pat
     assert detail["extreme_upscale_avoided"] is True
 
 
-def test_shorts_cover_moment_uses_reference_style_white_yellow_card():
+def test_shorts_cover_moment_uses_adaptive_reference_style_card():
     value = enhanced_edit_filter(
         60,
         "clip.hook.txt",
@@ -848,11 +849,11 @@ def test_shorts_cover_moment_uses_reference_style_white_yellow_card():
 
     assert "textfile='clip.cover.txt'" in value
     assert "color=white@0.97" in value
-    assert "color=#FFF200@1.0" in value
+    assert "color=#FACC15@1.0" in value
     assert "fontcolor=black:fontsize=49" in value
     assert "x=96:y=1086" in value
     assert "between(t,0,3.200)" in value
-    assert "text='WAJIB TAHU'" in value
+    assert "text='FAKTA / PELAJARAN'" in value
     assert "text='@ryuundyofficial'" in value
     assert "text='LIHAT PENJELASANNYA'" not in value
     assert "textfile='clip.hook.txt'" not in value
@@ -922,6 +923,30 @@ def test_shorts_policy_compliance_records_official_and_stricter_local_limits():
     assert compliance["recommendation_or_monetization_guarantee"] is False
 
 
+def test_one_k_readiness_is_an_experiment_signal_not_a_view_guarantee():
+    clip = ClipCandidate(
+        1,
+        0,
+        35,
+        35,
+        89,
+        "Satu Pelajaran Penting",
+        "test",
+        "Masalah ini punya satu jawaban yang bisa diterapkan.",
+        hook="Kenapa hasilnya selalu berbeda?",
+        key_point_score=86,
+        loop_score=61,
+        boundary_quality="payoff_tuntas",
+    )
+
+    readiness = one_k_experiment_readiness(clip, "vertical_short")
+
+    assert readiness["target_views"] == 1000
+    assert readiness["status"] == "ready_to_test"
+    assert readiness["guarantee"] is False
+    assert "viewed_vs_swiped" in readiness["measure_after_publish"]
+
+
 def test_auto_fyp_visual_plan_uses_archival_accent_only_when_story_supports_it():
     clip = ClipCandidate(
         index=1,
@@ -960,7 +985,7 @@ def test_thumbnail_story_copy_is_compact_and_truthful():
 
     copy = thumbnail_story_copy(clip)
 
-    assert copy["eyebrow"] == "WAJIB TAHU"
+    assert copy["eyebrow"] == "JANGAN ABAIKAN"
     assert "POV:" not in copy["headline"]
     assert len(copy["headline"].splitlines()) <= 3
     assert copy["headline"] == "JANGAN PERNAH\nMEREMEHKAN ORANG"
@@ -995,6 +1020,40 @@ def test_thumbnail_filter_uses_vertical_and_landscape_upload_shapes():
     assert "text='RESUME CERITA'" not in landscape
     assert shorts_cover_frame_timestamp(60) == 0.78
     assert shorts_cover_frame_timestamp(0.12) == 0.1
+
+
+def test_shorts_context_card_varies_label_color_and_geometry_from_story():
+    value = viral_title_overlay_filter(
+        "headline.txt",
+        30,
+        eyebrow="RENUNGAN / HIKMAH",
+        accent="#22C55E",
+        variation=2,
+    )
+
+    assert "text='RENUNGAN / HIKMAH'" in value
+    assert "color=#22C55E@1.0" in value
+    assert "x=72:y=982:w=796:h=9" in value
+    assert "x=88:y=1092" in value
+
+
+def test_long_form_cold_open_uses_content_theme_badge():
+    value = landscape_compilation_edit_filter(
+        45,
+        "hook.txt",
+        section_number=1,
+        section_count=4,
+        theme_profile={
+            "accent": "#22C55E",
+            "accent_secondary": "#FACC15",
+            "badge": "RENUNGAN / HIKMAH",
+            "emphasis_label": "AMBIL HIKMAH",
+            "grade": "eq=contrast=1.0",
+        },
+    )
+
+    assert "text='RENUNGAN / HIKMAH'" in value
+    assert "text='WAJIB TAHU'" not in value
 
 
 def test_fyp_analysis_explains_hook_first_30_seconds_and_codex_ideas():
