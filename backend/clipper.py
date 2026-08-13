@@ -1041,26 +1041,56 @@ def remove_running_text_filter(crop_bottom: int = 280) -> str:
     )
 
 
-def localized_watermark_blur_filter(region: WatermarkRegion) -> str:
-    """Blur one tightly bounded watermark with a feathered, seam-free edge."""
-    x = max(0, int(region.x) // 2 * 2)
-    y = max(0, int(region.y) // 2 * 2)
+def localized_watermark_blur_filter(
+    region: WatermarkRegion,
+    *,
+    use_delogo: bool = False,
+) -> str:
+    """Restore one watermark region and feather it into the surrounding frame.
+
+    The filter is intentionally applied in source/crop coordinates before any
+    virtual-camera zoom. That makes the repaired pixels travel with the source
+    logo during wide/close/wide cuts instead of leaving a fixed blur rectangle
+    behind on the output canvas.
+    """
+    boundary_margin = 2 if use_delogo else 0
+    x = max(boundary_margin, int(region.x) // 2 * 2)
+    y = max(boundary_margin, int(region.y) // 2 * 2)
     width = max(16, int(region.width) // 2 * 2)
     height = max(12, int(region.height) // 2 * 2)
     if region.source_width > 0:
-        width = min(width, max(16, (region.source_width - x) // 2 * 2))
+        x = min(
+            x,
+            max(boundary_margin, region.source_width - boundary_margin - 16) // 2 * 2,
+        )
+        available_width = region.source_width - x - boundary_margin
+        width = min(width, max(16, available_width // 2 * 2))
     if region.source_height > 0:
-        height = min(height, max(12, (region.source_height - y) // 2 * 2))
+        y = min(
+            y,
+            max(boundary_margin, region.source_height - boundary_margin - 12) // 2 * 2,
+        )
+        available_height = region.source_height - y - boundary_margin
+        height = min(height, max(12, available_height // 2 * 2))
     sigma = max(8, min(20, round(width * 0.06)))
     sigma_vertical = max(6, min(14, round(height * 0.18)))
     feather = max(4, min(12, min(width, height) // 6))
     alpha = (
         f"255*clip(min(min(X,W-1-X),min(Y,H-1-Y))/{feather},0,1)"
     )
+    restoration = (
+        f"delogo=x={x}:y={y}:w={width}:h={height}:show=0,"
+        f"crop={width}:{height}:{x}:{y},"
+        "gblur=sigma=3:sigmaV=2:steps=2"
+        if use_delogo
+        else (
+            f"crop={width}:{height}:{x}:{y},"
+            f"gblur=sigma={sigma}:sigmaV={sigma_vertical}:steps=3"
+        )
+    )
     return (
         "split=2[wm_base][wm_blur_src];"
-        f"[wm_blur_src]crop={width}:{height}:{x}:{y},"
-        f"gblur=sigma={sigma}:sigmaV={sigma_vertical}:steps=3,format=rgba,"
+        f"[wm_blur_src]{restoration},format=rgba,"
         f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{alpha}'[wm_patch];"
         f"[wm_base][wm_patch]overlay={x}:{y}:shortest=1:eof_action=pass,setsar=1"
     )
@@ -2877,6 +2907,11 @@ def first_sentence(text: str, max_words: int = 8) -> str:
     return " ".join(words[:max_words]).capitalize() or "Auto clip"
 
 
+SHORT_EXPORT_MIN_FYP_SCORE = 78
+SHORT_REPAIR_POOL_MIN_SIZE = 12
+SHORT_REPAIR_POOL_MULTIPLIER = 4
+
+
 def fyp_score_label(score: int) -> str:
     if score >= 88:
         return "Sangat kuat"
@@ -2889,11 +2924,11 @@ def fyp_score_label(score: int) -> str:
     return "Lemah"
 
 
-def one_k_experiment_readiness(
+def two_k_experiment_readiness(
     clip: ClipCandidate,
     output_format: OutputFormat,
 ) -> dict[str, object]:
-    """Describe publishing readiness without pretending to predict distribution."""
+    """Describe a 2K-view publishing experiment without predicting distribution."""
     score = max(0, min(100, int(round(clip.score))))
     if score >= 88:
         status = "ready_to_test"
@@ -2904,8 +2939,15 @@ def one_k_experiment_readiness(
     else:
         status = "revise_before_publishing"
     return {
-        "version": 1,
-        "target_views": 1000,
+        "version": 2,
+        "target_views": 2000,
+        "target_metric": "shorts_views_starts_or_replays",
+        "quality_metric": "engaged_views",
+        "minimum_short_export_score": SHORT_EXPORT_MIN_FYP_SCORE,
+        "quality_gate_passed": (
+            output_format != "vertical_short"
+            or score >= SHORT_EXPORT_MIN_FYP_SCORE
+        ),
         "readiness_score": score,
         "status": status,
         "guarantee": False,
@@ -2915,13 +2957,54 @@ def one_k_experiment_readiness(
             "single_key_point_score": clip.key_point_score,
             "semantic_loop_score": clip.loop_score,
             "complete_boundary": clip.boundary_quality in {"payoff_tuntas", "kalimat_tuntas"},
+            "content_specific_subscribe_value": bool(clip.text.strip()),
         },
         "measure_after_publish": (
-            ["viewed_vs_swiped", "audience_retention", "rewatches", "shares"]
+            [
+                "shown_in_feed",
+                "engaged_views",
+                "how_many_chose_to_view",
+                "viewed_vs_swiped",
+                "audience_retention",
+                "average_view_duration",
+                "rewatches",
+                "shares",
+                "comments",
+                "subscribers_gained",
+            ]
             if output_format == "vertical_short"
-            else ["impressions_ctr", "first_30_second_retention", "average_view_duration", "returning_viewers"]
+            else [
+                "impressions_ctr",
+                "first_30_second_retention",
+                "average_view_duration",
+                "returning_viewers",
+                "subscribers_gained",
+            ]
+        ),
+        "iteration_order": (
+            [
+                "opening_hook_if_viewers_swipe",
+                "trim_drop_off_before_payoff",
+                "strengthen_topic_specific_subscribe_reason",
+                "repeat_winning_topic_not_identical_template",
+            ]
+            if output_format == "vertical_short"
+            else [
+                "thumbnail_and_title",
+                "first_30_seconds",
+                "chapter_pacing",
+                "subscriber_value_proposition",
+            ]
         ),
     }
+
+
+def one_k_experiment_readiness(
+    clip: ClipCandidate,
+    output_format: OutputFormat,
+) -> dict[str, object]:
+    """Backward-compatible alias for integrations using the former function name."""
+    return two_k_experiment_readiness(clip, output_format)
 
 
 def fallback_pov_angle(text: str) -> str:
@@ -3441,10 +3524,20 @@ def candidate_has_cohesive_editorial_arc(candidate: ClipCandidate) -> bool:
     )
 
 
-def select_candidates(candidates: list[ClipCandidate], limit: int) -> list[ClipCandidate]:
+def select_candidates(
+    candidates: list[ClipCandidate],
+    limit: int,
+    *,
+    minimum_score: int = SHORT_EXPORT_MIN_FYP_SCORE,
+) -> list[ClipCandidate]:
     # A rendered short is advertised as ready to post, so do not select a
-    # candidate that the monetization preflight will inevitably reject later.
-    candidates = [item for item in candidates if candidate_has_cohesive_editorial_arc(item)]
+    # candidate that the growth/monetization preflight will reject later.
+    candidates = [
+        item
+        for item in candidates
+        if candidate_has_cohesive_editorial_arc(item)
+        and item.score >= max(1, minimum_score)
+    ]
     target_duration = 38
     candidates.sort(
         key=lambda item: candidate_rank_score(item, target_duration),
@@ -4658,6 +4751,9 @@ def shorts_policy_compliance(duration: float, *, embedded_cover: bool) -> dict[s
         "duration_within_official_limit": safe_duration <= SHORTS_OFFICIAL_MAX_SECONDS,
         "duration_within_fendy_clipper_limit": safe_duration <= FENDY_CLIPPER_SHORTS_MAX_SECONDS,
         "vertical_aspect_ratio": "9:16",
+        "official_short_classification": "square_or_vertical_up_to_180_seconds",
+        "views_counting_since_2025_03_31": "starts_or_replays_without_minimum_watch_time",
+        "engaged_views_retained_as_quality_metric": True,
         "custom_thumbnail_upload_supported": False,
         "thumbnail_strategy": (
             "embedded_selectable_frame" if embedded_cover else "rendered_video_frame"
@@ -7005,7 +7101,7 @@ def export_clip(
             if output_format == "vertical_short"
             else None
         ),
-        "one_k_experiment_readiness": one_k_experiment_readiness(clip, output_format),
+        "two_k_experiment_readiness": two_k_experiment_readiness(clip, output_format),
         "subscriber_conversion": {
             "version": 1,
             "enabled": bool(drawtext_supported and subscriber_cta_planned),
@@ -7214,6 +7310,105 @@ def export_clip(
         )
     if not clean_detail_pipeline:
         vf = add_quality_sharpen(vf, video_quality)
+
+    # Detect and repair source branding before any virtual-camera scale/crop.
+    # A fixed output-space patch only covers the wide shot; applying it here
+    # keeps the repaired pixels locked to the logo through close-up cuts.
+    watermark_region: WatermarkRegion | None = None
+    watermark_filters_supported = all(
+        ffmpeg_has_filter(name) for name in ("crop", "gblur", "overlay", "split")
+    )
+    watermark_delogo_supported = ffmpeg_has_filter("delogo")
+    if auto_blur_watermarks and watermark_filters_supported:
+        preview_scale_width = 540 if output_format == "vertical_short" else 640
+        try:
+            run(
+                [
+                    ffmpeg_path(),
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-ss",
+                    f"{visual_start:.3f}",
+                    "-t",
+                    f"{duration:.3f}",
+                    "-i",
+                    str(visual_source.resolve()),
+                    "-map",
+                    "0:v:0",
+                    "-an",
+                    "-vf",
+                    f"{vf},fps=1,scale={preview_scale_width}:-2:flags=area",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "ultrafast",
+                    "-crf",
+                    "25",
+                    "-pix_fmt",
+                    "yuv420p",
+                    str(watermark_preview_path.name),
+                ],
+                cwd=clips_dir,
+            )
+            preview_region = detect_static_watermark_region(watermark_preview_path)
+            if preview_region is not None:
+                output_width, output_height = (
+                    (1080, 1920)
+                    if output_format == "vertical_short"
+                    else (1920, 1080)
+                )
+                watermark_region = scale_watermark_region(
+                    preview_region, output_width, output_height
+                )
+                cleanup_filter = localized_watermark_blur_filter(
+                    watermark_region,
+                    use_delogo=watermark_delogo_supported,
+                )
+                vf = f"{vf},{cleanup_filter}"
+                applied_edits.append(
+                    "Watermark sumber diperbaiki di koordinat sumber sebelum "
+                    "virtual-camera, sehingga tetap tertutup saat cut wide/close-up."
+                )
+                cleanup_name = (
+                    "delogo + feather"
+                    if watermark_delogo_supported
+                    else "blur feather"
+                )
+                console.print(
+                    "[green]Watermark sumber terdeteksi:[/green] "
+                    f"{cleanup_name} pra-camera diterapkan pada "
+                    f"{watermark_region.x},{watermark_region.y} "
+                    f"{watermark_region.width}x{watermark_region.height}."
+                )
+            else:
+                console.print(
+                    "[dim]Tidak ada watermark statis yang cukup meyakinkan; frame sumber tidak diburamkan.[/dim]"
+                )
+        except RuntimeError as exc:
+            console.print(
+                "[yellow]Deteksi watermark dilewati agar export tetap berjalan:[/yellow] "
+                f"{exc}"
+            )
+        finally:
+            watermark_preview_path.unlink(missing_ok=True)
+    sidecar_payload["source_watermark_blur"] = {
+        "enabled": auto_blur_watermarks,
+        "detected": watermark_region is not None,
+        "method": (
+            "pre_camera_multi_frame_delogo_feather_v3"
+            if watermark_delogo_supported
+            else "pre_camera_multi_frame_blur_feather_v3"
+        ),
+        "detector_version": 3,
+        "region": asdict(watermark_region) if watermark_region is not None else None,
+        "coordinate_space": "pre_virtual_camera_source_crop",
+        "survives_wide_close_wide_cuts": watermark_region is not None,
+        "applied_before_fendy_clipper_overlays": True,
+        "feathered_boundary": watermark_region is not None,
+        "scope": "detected_region_only",
+    }
     if automatic_short_title:
         cover_text_path.write_text(cover_copy["headline"] + "\n", encoding="utf-8")
     if enhanced_edit:
@@ -7362,83 +7557,6 @@ def export_clip(
         applied_edits.append(
             "Efek TV jadul diterapkan: hitam-putih pudar, grain bergerak, scanline, flicker halus, vignette, dan goresan pita vertikal."
         )
-    watermark_region: WatermarkRegion | None = None
-    watermark_filters_supported = all(
-        ffmpeg_has_filter(name) for name in ("crop", "gblur", "overlay", "split")
-    )
-    if auto_blur_watermarks and watermark_filters_supported:
-        preview_scale_width = 540 if output_format == "vertical_short" else 640
-        try:
-            run(
-                [
-                    ffmpeg_path(),
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-y",
-                    "-ss",
-                    f"{visual_start:.3f}",
-                    "-t",
-                    f"{duration:.3f}",
-                    "-i",
-                    str(visual_source.resolve()),
-                    "-map",
-                    "0:v:0",
-                    "-an",
-                    "-vf",
-                    f"{vf},fps=1,scale={preview_scale_width}:-2:flags=area",
-                    "-c:v",
-                    "libx264",
-                    "-preset",
-                    "ultrafast",
-                    "-crf",
-                    "25",
-                    "-pix_fmt",
-                    "yuv420p",
-                    str(watermark_preview_path.name),
-                ],
-                cwd=clips_dir,
-            )
-            preview_region = detect_static_watermark_region(watermark_preview_path)
-            if preview_region is not None:
-                output_width, output_height = (
-                    (1080, 1920)
-                    if output_format == "vertical_short"
-                    else (1920, 1080)
-                )
-                watermark_region = scale_watermark_region(
-                    preview_region, output_width, output_height
-                )
-                vf = f"{vf},{localized_watermark_blur_filter(watermark_region)}"
-                applied_edits.append(
-                    "Watermark sumber statis terdeteksi lintas frame dan ditutup dengan blur lokal yang terbatas pada area logo."
-                )
-                console.print(
-                    "[green]Watermark sumber terdeteksi:[/green] blur lokal diterapkan "
-                    f"pada {watermark_region.x},{watermark_region.y} "
-                    f"{watermark_region.width}x{watermark_region.height}."
-                )
-            else:
-                console.print(
-                    "[dim]Tidak ada watermark statis yang cukup meyakinkan; frame sumber tidak diburamkan.[/dim]"
-                )
-        except RuntimeError as exc:
-            console.print(
-                "[yellow]Deteksi watermark dilewati agar export tetap berjalan:[/yellow] "
-                f"{exc}"
-            )
-        finally:
-            watermark_preview_path.unlink(missing_ok=True)
-    sidecar_payload["source_watermark_blur"] = {
-        "enabled": auto_blur_watermarks,
-        "detected": watermark_region is not None,
-        "method": "multi_frame_persistent_edge_feathered_local_blur_v2",
-        "detector_version": 2,
-        "region": asdict(watermark_region) if watermark_region is not None else None,
-        "applied_before_fendy_clipper_overlays": True,
-        "feathered_boundary": watermark_region is not None,
-        "scope": "detected_region_only",
-    }
     smoke_filters_supported = all(
         ffmpeg_has_filter(name)
         for name in ("format", "fps", "geq", "gblur", "nullsrc", "overlay", "scale")
@@ -8180,7 +8298,7 @@ def export_compilation(
             "first_30_seconds_match_title_thumbnail_promise": True,
             "manual_youtube_chapters_ready": len(candidates) >= 3,
         },
-        "one_k_experiment_readiness": one_k_experiment_readiness(
+        "two_k_experiment_readiness": two_k_experiment_readiness(
             compilation,
             "landscape_compilation",
         ),
@@ -8515,42 +8633,83 @@ def main() -> int:
         target_count=ai_target_count,
         compilation=args.clip_mode == "highlight_5m",
     )
-    candidates, compilation_candidates = select_output_candidates(
-        pool,
-        clip_mode=args.clip_mode,
-        short_limit=args.top,
-        compilation_target=args.compilation_target,
-    )
+    structural_edits_applied = False
+    if args.clip_mode == "short" and not args.no_enhanced_edit:
+        # Repair a wider, diverse shortlist first. Only candidates that become
+        # genuinely upload-ready are allowed into the final requested batch.
+        emit_progress(
+            55,
+            "selection",
+            "Menerapkan auto-repair hook, alur, dan payoff sebelum quality gate",
+        )
+        console.print(
+            "[bold]Auto-repairing a broader shortlist before final FYP selection...[/bold]"
+        )
+        repair_limit = max(
+            SHORT_REPAIR_POOL_MIN_SIZE,
+            args.top * SHORT_REPAIR_POOL_MULTIPLIER,
+        )
+        repair_candidates = select_candidates(
+            pool,
+            repair_limit,
+            minimum_score=1,
+        )
+        repair_candidates = apply_codex_edits_to_candidates(
+            repair_candidates,
+            transcript,
+            min_duration=args.min,
+            max_duration=args.max,
+        )
+        candidates = select_candidates(repair_candidates, args.top)
+        compilation_candidates = []
+        structural_edits_applied = True
+    else:
+        candidates, compilation_candidates = select_output_candidates(
+            pool,
+            clip_mode=args.clip_mode,
+            short_limit=args.top,
+            compilation_target=args.compilation_target,
+        )
     emit_progress(
         59,
         "selection",
         f"{len(candidates)} kandidat terbaik terpilih untuk {mode_label}",
     )
     if not candidates:
-        console.print("[red]No clip candidates found. Try lowering --min or increasing --max.[/red]")
+        if args.clip_mode == "short":
+            console.print(
+                "[red]Tidak ada kandidat yang lolos quality gate Short "
+                f"FYP {SHORT_EXPORT_MIN_FYP_SCORE}. Sumber ini tidak diekspor agar "
+                "klip lemah tidak ikut diposting; analisis sumber lain atau perluas durasi analisis.[/red]"
+            )
+        else:
+            console.print(
+                "[red]No clip candidates found. Try lowering --min or increasing --max.[/red]"
+            )
         return 1
 
     if not args.no_enhanced_edit:
-        emit_progress(63, "selection", "Merapikan hook, alur, dan ending kandidat")
-        console.print("[bold]Applying Codex structural edits to hook and ending...[/bold]")
-        candidates = apply_codex_edits_to_candidates(
-            candidates,
-            transcript,
-            min_duration=args.min,
-            max_duration=args.max,
-        )
+        if not structural_edits_applied:
+            emit_progress(63, "selection", "Merapikan hook, alur, dan ending kandidat")
+            console.print("[bold]Applying Codex structural edits to hook and ending...[/bold]")
+            candidates = apply_codex_edits_to_candidates(
+                candidates,
+                transcript,
+                min_duration=args.min,
+                max_duration=args.max,
+            )
         if args.clip_mode == "highlight_5m":
             compilation_candidates = candidates
         else:
             # Structural intro/ending edits recalculate story metrics. Guard
-            # against exporting a candidate that became incomplete afterward.
-            candidates = [
-                item for item in candidates if candidate_has_cohesive_editorial_arc(item)
-            ]
+            # against exporting a candidate that became incomplete or remains
+            # below the enforced FYP threshold afterward.
+            candidates = select_candidates(candidates, args.top)
             if not candidates:
                 console.print(
-                    "[red]No upload-ready clip candidates remained after structural edits. "
-                    "Try increasing --max or the analyzed duration.[/red]"
+                    "[red]Tidak ada kandidat yang tetap lolos quality gate Short "
+                    f"FYP {SHORT_EXPORT_MIN_FYP_SCORE} setelah auto-repair. "
+                    "Klip tidak diekspor; coba sumber lain atau perluas durasi analisis.[/red]"
                 )
                 return 1
 

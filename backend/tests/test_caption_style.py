@@ -76,6 +76,7 @@ from clipper import (
     shorts_policy_compliance,
     subscribe_value_prompt,
     thumbnail_story_copy,
+    two_k_experiment_readiness,
     transcription_decode_options,
     viral_title_overlay_filter,
     virtual_camera_angle_cues,
@@ -307,6 +308,36 @@ def test_detected_watermark_blur_is_local_and_preserves_the_canvas():
     assert "drawbox=color=black" not in value
     assert "overlay=402:1184" in value
     assert "scale=" not in value
+
+
+def test_detected_watermark_delogo_restores_source_before_camera_zoom():
+    region = WatermarkRegion(
+        x=402,
+        y=1184,
+        width=286,
+        height=74,
+        source_width=1080,
+        source_height=1920,
+        confidence=0.84,
+        persistence=0.78,
+    )
+
+    cleanup = localized_watermark_blur_filter(region, use_delogo=True)
+    camera = clean_detail_edit_filter(
+        20,
+        "clip.hook.txt",
+        show_text_overlays=False,
+        show_progress=False,
+        camera_angle_cues=[
+            CameraAngleCue("close_center", 5, 7, 48, 0, -8, "beat"),
+        ],
+    )
+    value = f"scale=1080:1920,{cleanup},{camera}"
+
+    assert "delogo=x=402:y=1184:w=286:h=74:show=0" in cleanup
+    assert "gblur=sigma=3:sigmaV=2:steps=2" in cleanup
+    assert value.index("delogo=") < value.index("scale=w='trunc((1080+")
+    assert "if(between(t,5.000,7.000),48+3*" in camera
 
 
 def test_preview_watermark_region_scales_to_final_short_canvas():
@@ -933,6 +964,7 @@ def test_shorts_policy_compliance_records_official_and_stricter_local_limits():
     assert compliance["fendy_clipper_max_seconds"] == 60
     assert compliance["duration_within_official_limit"] is True
     assert compliance["duration_within_fendy_clipper_limit"] is True
+    assert compliance["engaged_views_retained_as_quality_metric"] is True
     assert compliance["custom_thumbnail_upload_supported"] is False
     assert compliance["thumbnail_strategy"] == "embedded_selectable_frame"
     assert compliance["inauthentic_content_policy_reviewed"] is True
@@ -942,7 +974,7 @@ def test_shorts_policy_compliance_records_official_and_stricter_local_limits():
     assert compliance["subscription_incentive_or_reward_offered"] is False
 
 
-def test_one_k_readiness_is_an_experiment_signal_not_a_view_guarantee():
+def test_two_k_readiness_is_an_experiment_signal_not_a_view_guarantee():
     clip = ClipCandidate(
         1,
         0,
@@ -958,12 +990,18 @@ def test_one_k_readiness_is_an_experiment_signal_not_a_view_guarantee():
         boundary_quality="payoff_tuntas",
     )
 
-    readiness = one_k_experiment_readiness(clip, "vertical_short")
+    readiness = two_k_experiment_readiness(clip, "vertical_short")
 
-    assert readiness["target_views"] == 1000
+    assert readiness["target_views"] == 2000
+    assert readiness["quality_metric"] == "engaged_views"
+    assert readiness["minimum_short_export_score"] == 78
+    assert readiness["quality_gate_passed"] is True
     assert readiness["status"] == "ready_to_test"
     assert readiness["guarantee"] is False
     assert "viewed_vs_swiped" in readiness["measure_after_publish"]
+    assert "engaged_views" in readiness["measure_after_publish"]
+    assert "subscribers_gained" in readiness["measure_after_publish"]
+    assert one_k_experiment_readiness(clip, "vertical_short") == readiness
 
 
 def test_auto_fyp_visual_plan_uses_archival_accent_only_when_story_supports_it():

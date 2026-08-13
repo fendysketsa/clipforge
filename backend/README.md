@@ -100,11 +100,12 @@ Default output video:
 - mode visual tunggal `auto_fyp` dipakai untuk short dan long-form: basis clean-detail sinematik memilih aksen depth 3D, arsip TV, reframe, atau speaker split secara selektif dari isi cerita
 - nama mode visual lama tetap dapat dibaca untuk kompatibilitas, tetapi otomatis dimigrasikan ke `auto_fyp`
 - background asli dipertahankan secara default; pembersihan backdrop dan panel speaker-split tetap tersedia sebagai pilihan khusus
-- blur watermark sumber memakai konsensus edge multi-frame konservatif (persistence minimal 0,78), menolak pola subtitle bawah dan detail non-text, memakai kotak persentil yang membuang outlier morfologi, padding mengikuti tinggi glyph, serta tepi feather transparan agar blur hanya mengenai logo tanpa kotak gelap atau seam keras
+- pembersihan watermark sumber memakai konsensus edge multi-frame konservatif (persistence minimal 0,78), menolak pola subtitle bawah dan detail non-text, lalu menjalankan delogo + feather di koordinat sumber sebelum virtual-camera agar logo tetap tertutup saat cut wide/close-up tanpa kotak gelap atau seam keras
 - intisari ucapan asli disimpan di metadata; mode clean-detail tidak menutup wajah dengan kartu intisari besar
 - kandidat wajib punya point utama, batas kalimat tuntas, dan payoff dekat ending
 - treatment loop hanya aktif saat payoff benar-benar terhubung ke hook
-- setiap sidecar mencatat kesiapan eksperimen target 1K berdasarkan skor editorial dan metrik yang perlu dipantau setelah publikasi; status ini bukan jaminan jumlah view
+- setiap sidecar mencatat kesiapan eksperimen target 2K, membedakan playback view dari engaged views, lalu memantau chose-to-view, retention, shares, serta subscriber yang dihasilkan; status ini bukan jaminan jumlah view
+- short menjalani auto-repair hook/ending pada shortlist yang lebih luas sebelum seleksi final; hanya kandidat FYP minimal 78 yang diekspor dan preflight YouTube menahan output lama di bawah ambang tersebut
 - variasi motion dipilih deterministik dari isi cerita (bukan nomor urut export) agar rangkaian upload tidak terlihat seperti template massal yang identik
 - audit monetisasi v2 hanya meloloskan upload Private bila alur hook–pesan inti–payoff utuh dan edit kamera/emphasis/audio benar-benar mengikuti transcript; hasil audit bukan jaminan diterima YPP
 - metadata/chapter container sumber tidak diwariskan ke MP4 hasil; bukti lisensi tetap disimpan lokal

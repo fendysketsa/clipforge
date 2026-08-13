@@ -80,6 +80,7 @@ LONG_VIDEO_ANALYSIS_RATIO = 0.35
 MAX_AUTO_ANALYSIS_SECONDS = 20 * 60
 CLIP_BUDGET_RATIO = 0.8
 YOUTUBE_SHORTS_MAX_SECONDS = 180
+SHORT_UPLOAD_MIN_FYP_SCORE = 78
 YOUTUBE_CLEANUP_STEPS = (
     "thumbnail",
     "metadata",
@@ -2402,6 +2403,17 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
         )
     sidecar = clip_sidecar_payload(clip)
     if str(sidecar.get("output_format") or "") == "vertical_short":
+        raw_fyp_score = sidecar.get("score")
+        try:
+            fyp_score = int(round(float(raw_fyp_score)))
+        except (TypeError, ValueError):
+            fyp_score = 0
+        if fyp_score < SHORT_UPLOAD_MIN_FYP_SCORE:
+            return (
+                "Upload diblokir: skor FYP klip "
+                f"{fyp_score}/{SHORT_UPLOAD_MIN_FYP_SCORE}. Render ulang dengan "
+                "auto-repair terbaru atau pilih kandidat yang lebih kuat."
+            )
         try:
             duration = float(sidecar.get("duration") or 0)
         except (TypeError, ValueError):

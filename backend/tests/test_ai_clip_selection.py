@@ -112,11 +112,19 @@ def test_short_selection_excludes_candidates_that_upload_would_reject():
     weak_point.key_point_score = 54
     hanging = make_candidate(0, 90, 98, "Poin kuat tetapi kalimatnya masih menggantung.")
     hanging.boundary_quality = "menggantung"
+    low_fyp = make_candidate(0, 150, 77, "Poin lengkap tetapi daya tariknya masih lemah.")
     ready = make_candidate(0, 180, 80, "Poin utama dan penutupnya sudah lengkap.")
 
-    selected = select_candidates([weak_point, hanging, ready], 3)
+    selected = select_candidates([weak_point, hanging, low_fyp, ready], 4)
 
     assert selected == [ready]
+
+
+def test_short_repair_pool_can_include_low_score_before_final_quality_gate():
+    candidate = make_candidate(0, 0, 58, "Poin lengkap yang masih perlu auto-repair.")
+
+    assert select_candidates([candidate], 1) == []
+    assert select_candidates([candidate], 1, minimum_score=1) == [candidate]
 
 
 def test_ai_rescore_disables_offline_provider_for_rest_of_job(monkeypatch, capsys):
