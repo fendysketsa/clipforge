@@ -6,6 +6,7 @@ project_dir="$(cd "$script_dir/.." && pwd)"
 install_dir="${LOCAL_IMAGE_INSTALL_DIR:-$project_dir/backend/data/local-image}"
 runtime_dir="$install_dir/runtime"
 model_dir="$install_dir/models"
+upscaler_dir="$install_dir/upscaler-ncnn"
 server_path="$(find "$runtime_dir" -type f -name sd-server -print -quit 2>/dev/null || true)"
 
 if [[ -z "$server_path" ]]; then
@@ -17,6 +18,9 @@ required_models=(
   "$model_dir/z_image_turbo-Q3_K.gguf"
   "$model_dir/Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
   "$model_dir/ae.safetensors"
+  "$upscaler_dir/realesrgan-ncnn-vulkan"
+  "$upscaler_dir/models/realesrgan-x4plus.bin"
+  "$upscaler_dir/models/realesrgan-x4plus.param"
 )
 for model_path in "${required_models[@]}"; do
   if [[ ! -s "$model_path" ]]; then
@@ -53,6 +57,18 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-python3 "$script_dir/local-image-gateway.py" \
-  --listen-port "$listen_port" \
+gateway_args=(
+  --listen-port "$listen_port"
   --upstream-port "$upstream_port"
+)
+if [[ "${LOCAL_IMAGE_UPSCALER_ENABLED:-true}" == "true" ]]; then
+  gateway_args+=(
+    --upscaler-binary "$upscaler_dir/realesrgan-ncnn-vulkan"
+    --upscaler-model-dir "$upscaler_dir/models"
+    --upscaler-scale "${LOCAL_IMAGE_UPSCALER_SCALE:-4}"
+    --upscaler-tile-size "${LOCAL_IMAGE_UPSCALER_TILE_SIZE:-128}"
+    --upscaler-gpu-id "${LOCAL_IMAGE_UPSCALER_GPU_ID:-0}"
+  )
+fi
+
+python3 "$script_dir/local-image-gateway.py" "${gateway_args[@]}"

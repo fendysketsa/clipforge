@@ -1,4 +1,5 @@
 import base64
+import io
 import json
 
 import long_animate
@@ -25,6 +26,8 @@ def test_fallback_storyboard_has_story_arc_without_duplicate_filler():
     assert all("plain and unmarked" in scene.visual_prompt for scene in storyboard.scenes)
     assert all("exactly five naturally separated fingers" in scene.visual_prompt for scene in storyboard.scenes)
     assert all("hijab as her sole head covering" in scene.visual_prompt for scene in storyboard.scenes)
+    assert all("no floating hands" in scene.visual_prompt for scene in storyboard.scenes)
+    assert all("never invent a crowd" in scene.visual_prompt for scene in storyboard.scenes)
     assert len({scene.narration for scene in storyboard.scenes}) == len(storyboard.scenes)
 
 
@@ -184,6 +187,73 @@ def test_explicit_silent_scene_has_no_automatic_voice_or_title_copy():
     assert storyboard.scenes[1].duration_hint == 4.5
 
 
+def test_islamic_indonesian_tts_profile_normalizes_pronunciation_only(monkeypatch):
+    original = (
+        "QS. Al-Qur'an mengajarkan seorang Ustadz memperbaiki makhraj setelah wudhu, "
+        "kemudian berdzikir kepada Allah SWT dan mengikuti Rasulullah SAW."
+    )
+    monkeypatch.setenv("LONG_ANIMATE_TTS_PROFILE", "islamic_indonesian")
+
+    spoken = long_animate._tts_pronunciation_text(original)
+
+    assert "Surah Al Quran" in spoken
+    assert "ustaz" in spoken
+    assert "makhroj" in spoken
+    assert "wudu" in spoken
+    assert "zikir" in spoken
+    assert "Alloh subhanahu wa taala" in spoken
+    assert "salallahu alaihi wasalam" in spoken
+    assert "Al-Qur'an" in original
+
+
+def test_islamic_indonesian_tts_profile_pronounces_allah_consistently(monkeypatch):
+    original = "Allah, allah, ALLAH, dan الله adalah tulisan yang tidak boleh dieja per huruf."
+    monkeypatch.setenv("LONG_ANIMATE_TTS_PROFILE", "islamic_indonesian")
+
+    spoken = long_animate._tts_pronunciation_text(original)
+
+    assert spoken == (
+        "Alloh, Alloh, Alloh, dan Alloh adalah tulisan yang tidak boleh dieja per huruf."
+    )
+    assert original.startswith("Allah, allah, ALLAH")
+
+
+def test_long_animate_tts_uses_calm_indonesian_islamic_prosody(monkeypatch, tmp_path):
+    scene = _fallback_storyboard(SCRIPT).scenes[0]
+    scene.narration = "Bacalah Al-Qur'an bersama ustadz dan perbaiki makhraj setelah wudhu."
+    captured = {}
+
+    class Result:
+        returncode = 0
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        output_path = command[command.index("--write-media") + 1]
+        long_animate.Path(output_path).write_bytes(b"audio" * 200)
+        return Result()
+
+    monkeypatch.setenv("LONG_ANIMATE_VOICE", "id-ID-ArdiNeural")
+    monkeypatch.setenv("LONG_ANIMATE_VOICE_RATE", "-6%")
+    monkeypatch.setenv("LONG_ANIMATE_VOICE_PITCH", "-2Hz")
+    monkeypatch.setenv("LONG_ANIMATE_VOICE_VOLUME", "+0%")
+    monkeypatch.setenv("LONG_ANIMATE_TTS_PROFILE", "islamic_indonesian")
+    monkeypatch.setattr(long_animate.subprocess, "run", fake_run)
+
+    output, provider = long_animate.synthesize_narration(scene, tmp_path)
+
+    assert provider == "edge_neural"
+    assert output.is_file()
+    assert "--rate=-6%" in captured["command"]
+    assert "--pitch=-2Hz" in captured["command"]
+    assert "--volume=+0%" in captured["command"]
+    spoken = captured["command"][captured["command"].index("--text") + 1]
+    assert "Al Quran" in spoken
+    assert "ustaz" in spoken
+    assert "makhroj" in spoken
+    assert "wudu" in spoken
+    assert "Al-Qur'an" in scene.narration
+
+
 def test_subtitles_are_short_and_end_when_voice_ends(tmp_path):
     scenes = _fallback_storyboard(SCRIPT).scenes[:2]
     scenes[0].narration = "Bacalah perlahan agar setiap huruf terdengar jelas dan mudah diperbaiki oleh guru."
@@ -331,6 +401,8 @@ def test_local_z_image_uses_sdcpp_openai_compatible_payload(monkeypatch, tmp_pat
     assert captured["payload"]["size"] == "1024x576"
     assert captured["payload"]["output_format"] == "png"
     assert "fused fingers" in captured["payload"]["negative_prompt"]
+    assert "disembodied hands" in captured["payload"]["negative_prompt"]
+    assert "unrequested crowd" in captured["payload"]["negative_prompt"]
     assert "woman wearing peci" in captured["payload"]["negative_prompt"]
     assert "verify natural hands and finger count" in captured["payload"]["prompt"]
     assert "model" not in captured["payload"]
@@ -340,3 +412,68 @@ def test_local_z_image_uses_sdcpp_openai_compatible_payload(monkeypatch, tmp_pat
     assert long_animate._remote_provider_label(
         "http://127.0.0.1:7860/v1", "z-image-turbo-q3"
     ) == "local_z_image_turbo"
+
+
+def test_local_z_image_retries_with_safer_resolutions(monkeypatch, tmp_path):
+    scene = _fallback_storyboard(SCRIPT).scenes[0]
+    attempted_sizes = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {"data": [{"b64_json": base64.b64encode(b"z" * 2048).decode()}]}
+            ).encode()
+
+    def fake_urlopen(request, timeout):
+        payload = json.loads(request.data.decode())
+        attempted_sizes.append(payload["size"])
+        if len(attempted_sizes) < 3:
+            body = io.BytesIO(
+                json.dumps({"error": {"message": "generate_image returned no results"}}).encode()
+            )
+            raise long_animate.urllib.error.HTTPError(
+                request.full_url, 500, "generation failed", {}, body
+            )
+        return Response()
+
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_PROVIDER", "stable-diffusion-cpp")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_BASE_URL", "http://127.0.0.1:7860/v1")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_MODEL", "z-image-turbo-q3")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_SIZE", "1536x864")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_RETRIES", "3")
+    monkeypatch.setattr(long_animate.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(long_animate.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(long_animate, "_normalize_scene_image", lambda path: True)
+
+    assert long_animate._remote_scene_image(scene, tmp_path / "scene.png") is True
+    assert attempted_sizes == ["1536x864", "1280x720", "1024x576"]
+
+
+def test_normalize_accepts_valid_soft_image_and_applies_extra_sharpen(monkeypatch, tmp_path):
+    path = tmp_path / "soft-scene.png"
+    path.write_bytes(b"valid encoded image placeholder")
+    image = long_animate.np.zeros((720, 1280, 3), dtype=long_animate.np.uint8)
+    gray = long_animate.np.zeros((1080, 1920), dtype=long_animate.np.uint8)
+    sharpen_passes = []
+
+    monkeypatch.setattr(long_animate.cv2, "imdecode", lambda encoded, mode: image)
+    monkeypatch.setattr(long_animate.cv2, "resize", lambda source, size, interpolation: image)
+    monkeypatch.setattr(long_animate.cv2, "GaussianBlur", lambda source, kernel, sigma: source)
+    monkeypatch.setattr(
+        long_animate.cv2,
+        "addWeighted",
+        lambda source, alpha, blurred, beta, gamma: sharpen_passes.append(alpha) or source,
+    )
+    monkeypatch.setattr(long_animate.cv2, "cvtColor", lambda source, conversion: gray)
+    monkeypatch.setattr(long_animate.cv2, "Laplacian", lambda source, depth: gray)
+    monkeypatch.setattr(long_animate.cv2, "imwrite", lambda target, source, options: True)
+    monkeypatch.setenv("LONG_ANIMATE_MIN_SHARPNESS", "30")
+
+    assert long_animate._normalize_scene_image(path) is True
+    assert sharpen_passes == [1.18, 1.32]

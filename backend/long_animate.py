@@ -70,7 +70,9 @@ STORYBOARD_SYSTEM_PROMPT = (
     "preparing, realizing, thinking, or feeling without stating exactly what the hands and body are doing. "
     "Apply culturally correct gendered clothing: a woman wearing a hijab never wears a peci, kopiah, songkok, "
     "or any second hat over it; those caps are reserved for male characters. "
-    "Whenever hands are visible, describe a relaxed natural pose with anatomically correct fingers. "
+    "Whenever hands are visible, describe a relaxed natural pose with anatomically correct fingers and make every "
+    "hand visibly connected through its wrist and forearm to its owner. Never introduce disembodied hands, floating "
+    "limbs, anonymous foreground body parts, or extra background people not requested by the script. "
     "Return art_bible, character_bible, and visual_prompt as short plain descriptive strings, never JSON objects. "
     "Copy explicit NARASI/Narator wording verbatim; visual directions and production instructions are never narration. "
     "Never copy narration labels, scene headings, timestamps, or on-screen text into visual_prompt. "
@@ -419,12 +421,15 @@ def _compose_visual_prompt(
     return _clean_text(
         "FULL-BLEED CINEMATIC 16:9 PHOTOGRAPH FROM ONE CAMERA. One continuous environment and one natural composition. "
         f"Visible moment: {visual}. "
-        "Use the exact subject count described; each person appears once. Use natural anatomy and relaxed believable poses. "
+        "STRICT SUBJECT INTEGRITY: use only the people explicitly described, each appearing exactly once; never invent a crowd, background extras, or partial people. "
+        "Frame every person with enough body context to identify who owns every limb. No hands or arms may enter from outside the frame, and never crop a person at the wrist or forearm. "
+        "Use natural anatomy and relaxed believable poses. "
         "Every clearly visible hand has exactly five naturally separated fingers with correct joints, proportions, and grip; no fused, missing, duplicated, or malformed fingers. "
+        "Every hand is visibly and anatomically attached through a wrist and forearm to a clearly visible person; no floating hands, disembodied limbs, or anonymous foreground hands. "
         "A woman wearing a hijab has the hijab as her sole head covering: never add a peci, kopiah, songkok, cap, or hat over or under her hijab. Male characters may wear a peci when described. "
         f"Continuity bible: {_clean_text(character_bible, 420)}. "
         f"Visual style: {_clean_text(art_bible, 320)}. "
-        "Use one clear focal action, a culturally accurate Indonesian setting, foreground and background depth, tack-sharp subject focus, fine facial and fabric detail, realistic skin texture, "
+        "Use one clear focal action, a culturally accurate Indonesian setting, clear subject-background separation, tack-sharp subject focus, fine facial and fabric detail, realistic skin texture, "
         "clean micro-contrast, realistic natural light, and professional composition. "
         "Keep every background surface plain and unmarked, and keep any book pages outside readable focus. "
         "Use original fictional everyday Indonesian people only. The photograph extends naturally to all four edges.",
@@ -865,7 +870,7 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
     final_prompt = (
         f"{scene.visual_prompt} Color direction: {scene.color_mood}. "
         "Depict only this visible action accurately. Edge-to-edge image, one normal camera frame, tack-sharp focal subject. "
-        "Before finalizing, verify natural hands and finger count, realistic faces, crisp eyes, clean fabric edges, and culturally correct headwear."
+        "Before finalizing, verify natural hands and finger count, that every limb is visibly attached to its owner, no body part enters from a frame edge, realistic faces, crisp eyes, clean fabric edges, and culturally correct headwear."
     )
     if is_gemini:
         image_size = os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "2K").strip().upper()
@@ -899,9 +904,11 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
                 "duplicate person, repeated subject, text, caption, subtitle, letters, numbers, Arabic writing, "
                 "watermark, logo, UI, blurry, soft focus, motion blur, low resolution, pixelated, compression artifacts, "
                 "deformed hands, fused fingers, missing fingers, extra fingers, duplicated fingers, broken joints, malformed grip, "
+                "disembodied hands, floating hands, detached hands, bodyless limbs, cropped arms, hands entering from frame edge, anonymous foreground hands, "
+                "unrequested crowd, extra background people, partial person, "
                 "woman wearing peci, woman wearing kopiah, woman wearing songkok, hijab with hat, double headwear"
             ),
-            "size": os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1920x1080"),
+            "size": os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1280x720"),
             "output_format": output_format,
             "output_compression": 100,
             "n": 1,
@@ -918,7 +925,6 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
             "moderation": "auto",
             "n": 1,
         }
-    payload = json.dumps(payload_object).encode("utf-8")
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
@@ -935,8 +941,22 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
         min(max_timeout, float(os.environ.get("LONG_ANIMATE_IMAGE_TIMEOUT_SECONDS", "180"))),
     )
     last_detail = "respons API gambar tidak valid"
+    sd_attempt_sizes: list[str] = []
+    if is_sd_cpp:
+        configured_size = str(payload_object["size"])
+        safe_sizes = ["1920x1080", "1536x864", "1280x720", "1024x576"]
+        if configured_size in safe_sizes:
+            sd_attempt_sizes = safe_sizes[safe_sizes.index(configured_size) :]
+        else:
+            sd_attempt_sizes = [configured_size, "1280x720", "1024x576"]
+        sd_attempt_sizes = list(dict.fromkeys(sd_attempt_sizes))
+    sd_size_index = 0
     for attempt in range(1, retries + 1):
         try:
+            attempt_payload = dict(payload_object)
+            if sd_attempt_sizes:
+                attempt_payload["size"] = sd_attempt_sizes[sd_size_index]
+            payload = json.dumps(attempt_payload).encode("utf-8")
             with urllib.request.urlopen(
                 urllib.request.Request(endpoint, data=payload, headers=headers, method="POST"),
                 timeout=timeout,
@@ -952,6 +972,15 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
         except Exception as exc:
             path.unlink(missing_ok=True)
             last_detail, status = _image_error_detail(exc)
+            if sd_attempt_sizes:
+                failed_size = sd_attempt_sizes[sd_size_index]
+                last_detail = f"{last_detail} (ukuran {failed_size})"
+                provider_failed = status in {500, 502, 503, 504} or any(
+                    token in last_detail.casefold()
+                    for token in ("no results", "outofdevicememory", "out of memory")
+                )
+                if provider_failed and sd_size_index < len(sd_attempt_sizes) - 1:
+                    sd_size_index += 1
             retryable = status in {408, 409, 429, 500, 502, 503, 504} or status is None
             if attempt < retries and retryable:
                 time.sleep(min(4.0, 1.25 * attempt))
@@ -965,7 +994,13 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
 
 
 def _normalize_scene_image(path: Path) -> bool:
-    image = cv2.imread(str(path.resolve()))
+    try:
+        encoded = np.frombuffer(path.read_bytes(), dtype=np.uint8)
+    except OSError:
+        return False
+    image = cv2.imdecode(encoded, cv2.IMREAD_COLOR) if encoded.size else None
+    if image is None:
+        image = cv2.imread(str(path.resolve()))
     if image is None or image.size == 0:
         return False
     height, width = image.shape[:2]
@@ -981,7 +1016,7 @@ def _normalize_scene_image(path: Path) -> bool:
         image = image[top : top + crop_height, :]
     interpolation = cv2.INTER_LANCZOS4 if image.shape[1] < 1920 else cv2.INTER_AREA
     canvas = cv2.resize(image, (1920, 1080), interpolation=interpolation)
-    # Restore a small amount of edge definition without creating bright halos.
+    # Restore edge definition without rejecting a valid, intentionally soft image.
     blurred = cv2.GaussianBlur(canvas, (0, 0), 0.85)
     canvas = cv2.addWeighted(canvas, 1.18, blurred, -0.18, 0)
     try:
@@ -991,7 +1026,10 @@ def _normalize_scene_image(path: Path) -> bool:
     gray = cv2.cvtColor(canvas, cv2.COLOR_BGR2GRAY)
     sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
     if sharpness < max(0.0, min(200.0, min_sharpness)):
-        return False
+        # A second restrained pass improves local edges. Low sharpness is not a
+        # decode failure and must never abort an otherwise valid Long Animate job.
+        soft = cv2.GaussianBlur(canvas, (0, 0), 1.15)
+        canvas = cv2.addWeighted(canvas, 1.32, soft, -0.32, 0)
     suffix = path.suffix.casefold()
     write_options = (
         [cv2.IMWRITE_PNG_COMPRESSION, 2]
@@ -1063,13 +1101,55 @@ def generate_scene_image(scene: AnimateScene, path: Path, art_bible: str) -> str
     return "fendy_local_story_art"
 
 
+def _tts_pronunciation_text(text: str) -> str:
+    """Prepare Indonesian Islamic narration for speech without changing subtitles."""
+    spoken = re.sub(r"\s+", " ", text).strip()
+    profile = os.environ.get(
+        "LONG_ANIMATE_TTS_PROFILE", "islamic_indonesian"
+    ).strip().casefold()
+    if profile not in {"islamic_indonesian", "islamic-id", "id-islamic"}:
+        return spoken
+
+    replacements = (
+        (r"(?i)\bQ\.?\s*S\.?\s*", "Surah "),
+        (r"(?i)\bS\.?\s*W\.?\s*T\.?\b", "subhanahu wa taala"),
+        (r"(?i)\bS\.?\s*A\.?\s*W\.?\b", "salallahu alaihi wasalam"),
+        (r"(?i)\bAllah\b", "Alloh"),
+        (r"الله", "Alloh"),
+        (r"(?i)\bAl[-\s]?Qur[’'`]an\b", "Al Quran"),
+        (r"(?i)\bQur[’'`]an\b", "Quran"),
+        (r"(?i)\bustadzah\b", "ustazah"),
+        (r"(?i)\bustadz\b", "ustaz"),
+        (r"(?i)\bmakhraj\b", "makhroj"),
+        (r"(?i)\bwudhu\b", "wudu"),
+        (r"(?i)\bberwudhu\b", "berwudu"),
+        (r"(?i)\bdzikir\b", "zikir"),
+        (r"(?i)\bberdzikir\b", "berzikir"),
+        (r"(?i)\bmuadzin\b", "muazin"),
+        (r"(?i)\bshalat\b", "salat"),
+        (r"(?i)\bsholat\b", "salat"),
+        (r"(?i)\binsya\s*allah\b", "insya Allah"),
+    )
+    for pattern, replacement in replacements:
+        spoken = re.sub(pattern, replacement, spoken)
+    spoken = re.sub(r"\s+([,.;:!?])", r"\1", spoken)
+    spoken = re.sub(r"([,.;:!?])(?!\s|$)", r"\1 ", spoken)
+    return re.sub(r"\s+", " ", spoken).strip()
+
+
 def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, str]:
     voice = os.environ.get("LONG_ANIMATE_VOICE", "id-ID-ArdiNeural").strip()
-    rate = os.environ.get("LONG_ANIMATE_VOICE_RATE", "+0%").strip()
+    rate = os.environ.get("LONG_ANIMATE_VOICE_RATE", "-6%").strip()
+    pitch = os.environ.get("LONG_ANIMATE_VOICE_PITCH", "-2Hz").strip()
+    volume = os.environ.get("LONG_ANIMATE_VOICE_VOLUME", "+0%").strip()
     if not re.fullmatch(r"[A-Za-z0-9-]{2,64}", voice):
         voice = "id-ID-ArdiNeural"
     if not re.fullmatch(r"[+-]\d{1,2}%", rate):
-        rate = "+0%"
+        rate = "-6%"
+    if not re.fullmatch(r"[+-]\d{1,3}Hz", pitch):
+        pitch = "-2Hz"
+    if not re.fullmatch(r"[+-]\d{1,2}%", volume):
+        volume = "+0%"
     if not scene.narration.strip():
         silent_path = scene_dir / f"scene_{scene.index:02}.voice.wav"
         _run(
@@ -1092,6 +1172,7 @@ def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, st
         )
         return silent_path, "intentional_silence"
     edge_path = scene_dir / f"scene_{scene.index:02}.voice.mp3"
+    spoken_narration = _tts_pronunciation_text(scene.narration)
     try:
         result = subprocess.run(
             [
@@ -1100,10 +1181,11 @@ def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, st
                 "edge_tts",
                 "--voice",
                 voice,
-                "--rate",
-                rate,
+                f"--rate={rate}",
+                f"--pitch={pitch}",
+                f"--volume={volume}",
                 "--text",
-                scene.narration,
+                spoken_narration,
                 "--write-media",
                 str(edge_path.resolve()),
             ],
@@ -1132,7 +1214,7 @@ def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, st
                 "170",
                 "-w",
                 str(local_path.resolve()),
-                scene.narration,
+                spoken_narration,
             ],
             text=True,
             capture_output=True,
