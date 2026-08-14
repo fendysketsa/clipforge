@@ -13,7 +13,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable
 from urllib.parse import urlparse
@@ -47,6 +47,11 @@ class AnimateScene:
     voice_duration: float = 0.0
     image_provider: str = ""
     voice_provider: str = ""
+    shot_prompts: list[str] = field(default_factory=list)
+    qa_attempts: int = 0
+    qa_score: float = 0.0
+    visuals_locked: bool = False
+    speech_tempo: float = 1.0
 
 
 @dataclass
@@ -57,6 +62,25 @@ class AnimateStoryboard:
     art_bible: str
     character_bible: str
     scenes: list[AnimateScene]
+    location_bible: str = ""
+
+
+@dataclass
+class AnimateShot:
+    index: int
+    scene_index: int
+    shot_index: int
+    shot_count: int
+    title: str
+    narration: str
+    visual_prompt: str
+    on_screen_text: str
+    camera_motion: str
+    color_mood: str
+    duration: float = 0.0
+    image_provider: str = ""
+    qa_attempts: int = 0
+    qa_score: float = 0.0
 
 
 STORYBOARD_SYSTEM_PROMPT = (
@@ -82,6 +106,8 @@ STORYBOARD_SYSTEM_PROMPT = (
     "hand visibly connected through its wrist and forearm to its owner. Never introduce disembodied hands, floating "
     "limbs, anonymous foreground body parts, or extra background people not requested by the script. "
     "Return art_bible, character_bible, and visual_prompt as short plain descriptive strings, never JSON objects. "
+    "Also define a location_bible for recurring places. Treat art_bible, character_bible, and location_bible as "
+    "immutable continuity contracts, not suggestions. "
     "Copy explicit NARASI/Narator wording verbatim; visual directions and production instructions are never narration. "
     "Never copy narration labels, scene headings, timestamps, or on-screen text into visual_prompt. "
     "Do not add claims that are absent from the script. "
@@ -90,7 +116,7 @@ STORYBOARD_SYSTEM_PROMPT = (
 
 
 _SCENE_HEADER_RE = re.compile(
-    r"(?im)^\s{0,3}#{1,6}\s*(?:scene|adegan)\s*(\d+)\s*(?:[—–:-]\s*)?([^\n]*)$"
+    r"(?im)^\s*#{1,6}\s*(?:scene|adegan)\s*(\d+)\s*(?:[—–:-]\s*)?([^\n]*)$"
 )
 
 
@@ -99,6 +125,13 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().casefold() in {"1", "true", "yes", "on"}
+
+
+def _output_geometry() -> tuple[str, int, int]:
+    aspect = os.environ.get("LONG_ANIMATE_OUTPUT_ASPECT_RATIO", "16:9").strip()
+    if aspect == "9:16":
+        return aspect, 1080, 1920
+    return "16:9", 1920, 1080
 
 
 def _plain_text_value(value: object) -> str:
@@ -239,6 +272,40 @@ def _single_visible_moment(value: str) -> str:
     return selected
 
 
+def _visible_shot_moments(value: str, max_shots: int = 3) -> list[str]:
+    """Split sequential physical actions into renderable still-image shots."""
+    clean = _visual_only(value)
+    if not clean:
+        return []
+    pieces = re.split(
+        r"(?<=[.!?])\s+|\s*[;]\s*|\s+(?:lalu|kemudian|setelah itu|sesudah itu)\s+",
+        clean,
+        flags=re.IGNORECASE,
+    )
+    action_prefix = (
+        r"(?:membuka|menutup|berjalan|berlari|duduk|berdiri|menoleh|mengangkat|meletakkan|"
+        r"menempelkan|memindai|memperbaiki|mengunci|menarik|mendorong|turun|naik|terbang|"
+        r"opens?|closes?|walks?|runs?|sits?|stands?|turns?|lifts?|places?|scans?|repairs?|locks?|flies?)"
+    )
+    subject = ""
+    first_piece = pieces[0].strip() if pieces else ""
+    subject_match = re.match(rf"(?i)^(.{{2,90}}?)\s+(?={action_prefix}\b)", first_piece)
+    if subject_match:
+        subject = subject_match.group(1).strip(" ,;:-")
+    shots: list[str] = []
+    for piece_index, piece in enumerate(pieces):
+        if piece_index > 0 and subject and re.match(rf"(?i)^\s*{action_prefix}\b", piece):
+            piece = f"{subject} {piece.strip()}"
+        moment = _single_visible_moment(piece)
+        if len(moment.split()) < 3:
+            continue
+        if moment.casefold() not in {item.casefold() for item in shots}:
+            shots.append(_clean_text(moment, 650))
+        if len(shots) >= max(1, max_shots):
+            break
+    return shots or [_single_visible_moment(clean)]
+
+
 def _short_on_screen_text(value: str, max_words: int = 6, max_chars: int = 48) -> str:
     clean = _strip_script_markup(value)
     words = clean.split()
@@ -263,10 +330,10 @@ def _extract_quoted_text(value: str, marker_pattern: str) -> str:
     return _strip_script_markup(match.group(1)) if match else ""
 
 
-def _directed_paragraph_sections(script: str) -> list[dict[str, str]]:
+def _directed_paragraph_sections(script: str) -> list[dict[str, object]]:
     """Parse prose prompts that explicitly separate narrator copy from visuals."""
     paragraphs = [item.strip() for item in re.split(r"\n\s*\n+", script) if item.strip()]
-    sections: list[dict[str, str]] = []
+    sections: list[dict[str, object]] = []
     narrator_marker = re.compile(
         r"(?is)\bnarator\s+(?:berkata|menjelaskan|menutup(?:\s+dengan\s+kalimat)?)\s*"
     )
@@ -293,7 +360,8 @@ def _directed_paragraph_sections(script: str) -> list[dict[str, str]]:
         ]
         if label_positions:
             visual_source = visual_source[: min(label_positions)]
-        visual = _single_visible_moment(visual_source)
+        visuals = _visible_shot_moments(visual_source)
+        visual = visuals[0] if visuals else ""
         on_screen_text = _short_on_screen_text(_extract_quoted_text(
             paragraph,
             r"(?:tampilkan|tambahkan)\s+(?:judul\s+di\s+layar|teks(?:\s+penutup)?(?:\s+secara\s+bergantian)?)\s*:?,?",
@@ -305,18 +373,19 @@ def _directed_paragraph_sections(script: str) -> list[dict[str, str]]:
                 "title": _clean_text(on_screen_text, 48) or _scene_title(narration, len(sections)),
                 "narration": _clean_text(narration, 900),
                 "visual": _clean_text(visual, 650),
+                "visuals": visuals,
                 "on_screen_text": _clean_text(on_screen_text, 48),
             }
         )
     return sections if len(sections) >= 3 else []
 
 
-def _scene_sections(script: str) -> list[dict[str, str]]:
+def _scene_sections(script: str) -> list[dict[str, object]]:
     """Parse explicit Markdown Scene/Adegan blocks without leaking production labels."""
     matches = list(_SCENE_HEADER_RE.finditer(script))
     if len(matches) < 3:
         return _directed_paragraph_sections(script)
-    sections: list[dict[str, str]] = []
+    sections: list[dict[str, object]] = []
     for index, match in enumerate(matches[:14]):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(script)
         body = script[match.end() : end].strip()
@@ -361,7 +430,8 @@ def _scene_sections(script: str) -> list[dict[str, str]]:
             if visual_match
             else (body[: min(label_positions)] if label_positions else body)
         )
-        visual_source = _single_visible_moment(visual_source)
+        visuals = _visible_shot_moments(visual_source)
+        visual_source = visuals[0] if visuals else ""
         if not narration and narration_match is None:
             narration = visual_source
         if not visual_source:
@@ -373,6 +443,7 @@ def _scene_sections(script: str) -> list[dict[str, str]]:
                 "title": _clean_text(title, 64),
                 "narration": _clean_text(narration, 900),
                 "visual": _clean_text(visual_source, 900),
+                "visuals": visuals,
                 "on_screen_text": on_screen_text,
             }
         )
@@ -454,6 +525,22 @@ def _requested_art_bible(script: str) -> str:
     return _clean_text(match.group(1), 600) if match else ""
 
 
+def _location_bible(script: str) -> str:
+    match = re.search(
+        r"(?im)^\s*(?:lokasi\s+konsisten|location\s+bible|lokasi)\s*:\s*(.+)$",
+        script,
+    )
+    if match:
+        return (
+            "Location continuity lock: preserve this architecture, geography, era, weather baseline, materials, "
+            f"and spatial layout whenever the location recurs. Script location facts: {_clean_text(match.group(1), 700)}"
+        )
+    return (
+        "Location continuity lock: preserve every recurring location exactly as established by the script; "
+        "do not substitute an unrelated familiar or stock setting."
+    )
+
+
 def _has_any(text: str, terms: tuple[str, ...]) -> bool:
     lowered = text.casefold()
     return any(
@@ -467,10 +554,10 @@ _PEOPLE_IDENTITY_TERMS = (
     "perempuan", "ibu", "ayah", "kakek", "nenek", "guru", "dokter", "petani", "nelayan",
     "astronaut", "ilmuwan", "ustaz", "ustadz", "karakter utama", "tokoh", "seorang", "warga",
     "kerumunan", "pejalan kaki", "pemuda", "gadis", "lelaki", "pekerja", "pelanggan", "perawat",
-    "polisi", "tentara", "pilot", "koki", "pedagang", "person", "people", "human", "boy", "girl",
+    "polisi", "tentara", "pilot", "koki", "pedagang", "teknisi", "mekanik", "person", "people", "human", "boy", "girl",
     "child", "baby", "teenager", "man", "woman",
     "mother", "father", "teacher", "doctor", "farmer", "fisherman", "scientist", "worker", "customer",
-    "nurse", "police officer", "soldier", "chef", "merchant",
+    "nurse", "police officer", "soldier", "chef", "merchant", "technician", "mechanic",
 )
 
 _PEOPLE_PRONOUN_TERMS = (
@@ -510,12 +597,33 @@ def _contains_unrequested_defaults(script: str, proposed: str) -> bool:
     )
 
 
+def _expected_people_limit(text: str) -> int:
+    if not _has_any(text, _PEOPLE_TERMS):
+        return 0
+    lowered = text.casefold()
+    if _has_any(lowered, ("crowd", "kerumunan", "jamaah", "audience", "penonton")):
+        return 8
+    human_noun = r"(?:orang|anak|pria|wanita|laki-laki|perempuan|person|people|boy|girl|men|women)"
+    word_values = {"satu": 1, "seorang": 1, "one": 1, "dua": 2, "two": 2, "tiga": 3, "three": 3, "empat": 4, "four": 4}
+    explicit: list[int] = []
+    for word, value in word_values.items():
+        if re.search(rf"(?<!\w){re.escape(word)}\s+{human_noun}(?!\w)", lowered):
+            explicit.append(value)
+    explicit.extend(
+        int(item)
+        for item in re.findall(rf"(?<!\d)([1-4])\s+{human_noun}(?!\w)", lowered)
+    )
+    return min(4, max([1, *explicit]))
+
+
 def _compose_visual_prompt(
     visual: str,
     narration: str,
     art_bible: str,
     character_bible: str,
+    location_bible: str = "",
 ) -> str:
+    aspect_ratio, _output_width, _output_height = _output_geometry()
     visual = _single_visible_moment(visual)
     grounding = _clean_text(narration, 700)
     scene_context = f"{visual} {grounding}"
@@ -529,6 +637,7 @@ def _compose_visual_prompt(
         complete_context,
         _ISLAMIC_VISUAL_TERMS,
     )
+    people_limit = _expected_people_limit(scene_context)
     continuity = (
         _clean_text(character_bible, 420)
         if has_people or has_nonhuman_character
@@ -554,7 +663,7 @@ def _compose_visual_prompt(
         else "Use only clothing explicitly supported by this scene; do not add unrequested religious or cultural attire. "
     )
     return _clean_text(
-        "FULL-BLEED CINEMATIC 16:9 SINGLE FRAME FROM ONE CAMERA. Render in the requested visual style, whether "
+        f"FULL-BLEED CINEMATIC {aspect_ratio} SINGLE FRAME FROM ONE CAMERA. Render in the requested visual style, whether "
         "animation, illustration, 3D, documentary, or photography. One continuous environment and one natural composition. "
         f"Visible moment: {visual}. "
         + (f"Narrative grounding: {grounding}. " if grounding else "")
@@ -562,9 +671,13 @@ def _compose_visual_prompt(
         "and time literally. Do not substitute a stock character or a familiar default setting. The visible moment "
         "takes priority; narrative grounding supplies meaning but must not introduce unrelated objects or people. "
         + subject_rule
+        + f"VISIBLE HUMAN LIMIT: {people_limit}; never exceed this count. "
         + clothing_rule
         + f"Continuity bible: {continuity}. "
-        + f"Visual style: {_clean_text(art_bible, 320)}. "
+        + (f"Location bible: {_clean_text(location_bible, 360)}. " if location_bible else "")
+        + f"IMMUTABLE GLOBAL VISUAL STYLE: {_clean_text(art_bible, 320)}. Keep the same medium, rendering technique, "
+        "lens language, texture treatment, detail level, and color-science across every shot; scene palette changes "
+        "must not change the global style. "
         "Use one clear focal action, the exact culture and location requested by the script, clear subject-background "
         "separation, crisp focal detail, believable materials and lighting appropriate to the requested style, and professional composition. "
         "Do not add unrequested writing, signage, logos, symbols, props, architecture, or decorations. "
@@ -605,6 +718,7 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
     else:
         art_bible = art_styles[int(seed[:2], 16) % len(art_styles)]
     character_bible = _character_bible(script)
+    location_bible = _location_bible(script)
     motions = ("push_in", "pan_right", "drift_up", "pan_left", "pull_out")
     roles = []
     for index in range(len(chunks)):
@@ -625,6 +739,12 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
         title = section["title"] if section and section["title"] else _scene_title(title_source, index)
         visual = section["visual"] if section else chunk
         on_screen_text = section["on_screen_text"] if section else ""
+        raw_shots = section.get("visuals") if section else _visible_shot_moments(str(visual))
+        shot_prompts = [
+            _clean_text(item, 650)
+            for item in (raw_shots if isinstance(raw_shots, list) else [visual])
+            if _clean_text(item, 650)
+        ][:3]
         scenes.append(
             AnimateScene(
                 index=index + 1,
@@ -635,6 +755,7 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
                     chunk,
                     art_bible,
                     character_bible,
+                    location_bible,
                 ),
                 on_screen_text=on_screen_text,
                 camera_motion=motions[(index + int(seed[2:4], 16)) % len(motions)],
@@ -645,6 +766,8 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
                     if chunk
                     else 4.5
                 ),
+                shot_prompts=shot_prompts,
+                visuals_locked=bool(section),
             )
         )
     first = scenes[0].title if scenes else "Cerita Animasi"
@@ -656,6 +779,7 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
         art_bible=art_bible,
         character_bible=character_bible,
         scenes=scenes,
+        location_bible=location_bible,
     )
 
 
@@ -703,7 +827,11 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
         "DILARANG memakai pola stok anak laki-laki/perempuan, keluarga, pakaian Islami, ustaz, masjid, sekolah, "
         "atau latar Indonesia bila unsur tersebut tidak diminta naskah. Jangan mengubah hewan, benda, robot, "
         "kendaraan, profesi, makhluk fantasi, atau lokasi menjadi manusia atau karakter generik. "
-        "Target 5-14 scene dan satu gagasan visual unik per scene. "
+        "Target durasi final 20 detik: buat 3-7 scene padat dan satu gagasan visual utama per scene. Jika satu "
+        "scene memuat beberapa aksi fisik berurutan, isi field shots dengan 2-3 momen tunggal; jangan gabungkan "
+        "beberapa aksi ke satu gambar. "
+        "Hook editor: shot pertama harus memperlihatkan konflik, risiko, pertanyaan visual, atau payoff yang dijanjikan "
+        "dalam dua detik pertama; jangan mulai dengan establishing shot generik. "
         "Cold-open harus langsung menjanjikan konflik/manfaat, lalu konteks, perkembangan, jawaban, payoff. "
         "Jangan menambah filler atau mengulang narasi. Buat art_bible dan character_bible yang konsisten. "
         "character_bible hanya boleh memuat identitas yang benar-benar ada dalam naskah; tulis 'No recurring "
@@ -711,8 +839,8 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
         "fisik yang konkret, bukan gambar generik yang hanya cocok dengan tema besar. visual_prompt hanya boleh "
         "berisi satu momen yang terlihat; jangan masukkan label Narasi, Teks layar, heading, atau timestamp.\n"
         "Return JSON exactly as: "
-        '{"title":"...","hook":"...","core_message":"...","art_bible":"...","character_bible":"...",'
-        '"scenes":[{"title":"...","narration":"...","visual_prompt":"...",'
+        '{"title":"...","hook":"...","core_message":"...","art_bible":"...","character_bible":"...","location_bible":"...",'
+        '"scenes":[{"title":"...","narration":"...","visual_prompt":"...","shots":["one visible moment", "optional next visible moment"],'
         '"on_screen_text":"maks 7 kata","camera_motion":"push_in|pull_out|pan_left|pan_right|drift_up",'
         '"color_mood":"...","narrative_role":"cold_open|context|development|evidence_and_answer|payoff_conclusion"}]}\n\n'
         f"{grounded_note}"
@@ -759,6 +887,12 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
         character_bible = fallback.character_bible
     else:
         character_bible = proposed_character_bible or fallback.character_bible
+    proposed_location_bible = _clean_text(parsed.get("location_bible"), 700)
+    location_bible = (
+        fallback.location_bible
+        if source_sections or _contains_unrequested_defaults(script, proposed_location_bible)
+        else proposed_location_bible or fallback.location_bible
+    )
     for index, raw in enumerate(raw_scenes):
         if not isinstance(raw, dict):
             return fallback
@@ -774,6 +908,15 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
             return fallback
         motion = _clean_text(raw.get("camera_motion"), 20)
         role = _clean_text(raw.get("narrative_role"), 30)
+        raw_shots = source.get("visuals") if source else raw.get("shots")
+        if not isinstance(raw_shots, list):
+            raw_shots = _visible_shot_moments(str(visual_prompt))
+        shot_prompts = [
+            _clean_text(item, 650)
+            for item in raw_shots
+            if _clean_text(item, 650)
+            and not _contains_unrequested_defaults(script, _clean_text(item, 650))
+        ][:3] or [_clean_text(visual_prompt, 650)]
         scenes.append(
             AnimateScene(
                 index=index + 1,
@@ -785,6 +928,7 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
                     narration,
                     art_bible,
                     character_bible,
+                    location_bible,
                 ),
                 on_screen_text=(source["on_screen_text"] if source else ""),
                 camera_motion=motion if motion in allowed_motions else "push_in",
@@ -796,6 +940,8 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
                     if narration
                     else 4.5
                 ),
+                shot_prompts=shot_prompts,
+                visuals_locked=bool(source),
             )
         )
     scenes[0].narrative_role = "cold_open"
@@ -807,7 +953,149 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
         art_bible=art_bible,
         character_bible=character_bible,
         scenes=scenes,
+        location_bible=location_bible,
     )
+
+
+def _target_duration_seconds() -> float:
+    try:
+        value = float(os.environ.get("LONG_ANIMATE_TARGET_DURATION_SECONDS", "20"))
+    except ValueError:
+        value = 20.0
+    return max(5.0, min(3600.0, value))
+
+
+def _transition_seconds() -> float:
+    try:
+        value = float(os.environ.get("LONG_ANIMATE_TRANSITION_SECONDS", "0.12"))
+    except ValueError:
+        value = 0.12
+    return max(0.0, min(0.2, value))
+
+
+def allocate_scene_durations(
+    scenes: list[AnimateScene],
+    voice_durations: list[float],
+    target_duration: float,
+) -> None:
+    """Allocate an exact millisecond timeline using measured TTS as the primary weight."""
+    if not scenes or len(scenes) != len(voice_durations):
+        raise ValueError("Scene dan durasi TTS harus memiliki jumlah yang sama")
+    target_ms = max(1000, round(target_duration * 1000))
+    minimum_ms = min(800, max(1, target_ms // max(1, len(scenes) * 3)))
+    remaining_ms = target_ms
+    unlocked = set(range(len(scenes)))
+    allocation = [0] * len(scenes)
+    weights = [
+        max(0.25, duration if scene.narration.strip() else min(1.0, scene.duration_hint or 0.8))
+        for scene, duration in zip(scenes, voice_durations)
+    ]
+    while unlocked:
+        total_weight = sum(weights[index] for index in unlocked) or float(len(unlocked))
+        too_small = [
+            index
+            for index in unlocked
+            if remaining_ms * weights[index] / total_weight < minimum_ms
+        ]
+        if not too_small:
+            break
+        for index in too_small:
+            allocation[index] = minimum_ms
+            remaining_ms -= minimum_ms
+            unlocked.remove(index)
+    total_weight = sum(weights[index] for index in unlocked) or 1.0
+    ordered = sorted(unlocked)
+    for position, index in enumerate(ordered):
+        if position == len(ordered) - 1:
+            value = remaining_ms
+        else:
+            value = round(remaining_ms * weights[index] / total_weight)
+            remaining_ms -= value
+            total_weight -= weights[index]
+        allocation[index] = max(1, value)
+    correction = target_ms - sum(allocation)
+    allocation[-1] += correction
+    for scene, original_voice, milliseconds in zip(scenes, voice_durations, allocation):
+        scene.duration = milliseconds / 1000.0
+        scene.voice_duration = max(0.0, original_voice if scene.narration.strip() else 0.0)
+
+
+_SEMANTIC_STOPWORDS = {
+    "yang", "dan", "atau", "dengan", "untuk", "dari", "pada", "dalam", "saat", "ketika", "sebelum",
+    "setelah", "sebuah", "seorang", "adalah", "akan", "telah", "agar", "karena", "scene", "shot", "visual",
+    "the", "and", "with", "from", "into", "that", "this", "when", "before", "after", "through", "visible",
+    "moment", "camera", "lighting", "cinematic",
+}
+
+
+def _semantic_tokens(text: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-zA-ZÀ-ÿ0-9'-]{4,}", text.casefold())
+        if token not in _SEMANTIC_STOPWORDS
+    }
+
+
+def scene_visual_semantic_score(narration: str, visual: str) -> float:
+    narrative_tokens = _semantic_tokens(narration)
+    visual_tokens = _semantic_tokens(visual)
+    if not narrative_tokens or not visual_tokens:
+        return 1.0
+    overlap = narrative_tokens & visual_tokens
+    return len(overlap) / max(1, min(len(narrative_tokens), 8))
+
+
+def plan_storyboard_shots(storyboard: AnimateStoryboard) -> list[AnimateShot]:
+    """Expand complex scenes into multiple visual shots without repeating narration."""
+    shots: list[AnimateShot] = []
+    motions = ("push_in", "pan_right", "pull_out", "pan_left", "drift_up")
+    reference_id = hashlib.sha256(storyboard.character_bible.encode("utf-8")).hexdigest()[:12]
+    for scene in storyboard.scenes:
+        raw_prompts = scene.shot_prompts or [_single_visible_moment(scene.narration)]
+        max_for_duration = max(1, min(3, int(scene.duration / 0.75)))
+        selected = raw_prompts[:max_for_duration] or [_single_visible_moment(scene.narration)]
+        shot_ms_total = round(scene.duration * 1000)
+        base_ms, remainder = divmod(shot_ms_total, len(selected))
+        for local_index, raw_visual in enumerate(selected, start=1):
+            if (
+                not scene.visuals_locked
+                and scene_visual_semantic_score(scene.narration, raw_visual) < 0.12
+            ):
+                raw_visual = _single_visible_moment(scene.narration)
+            shot_duration = (base_ms + (1 if local_index <= remainder else 0)) / 1000.0
+            prompt = _compose_visual_prompt(
+                raw_visual,
+                scene.narration,
+                storyboard.art_bible,
+                storyboard.character_bible,
+                storyboard.location_bible,
+            )
+            if "No recurring character is defined" not in storyboard.character_bible:
+                prompt = _clean_text(
+                    f"CHARACTER REFERENCE LOCK {reference_id}: every recurring identity must match the approved "
+                    f"reference design exactly. {prompt}",
+                    3200,
+                )
+            shots.append(
+                AnimateShot(
+                    index=len(shots) + 1,
+                    scene_index=scene.index,
+                    shot_index=local_index,
+                    shot_count=len(selected),
+                    title=scene.title,
+                    narration=scene.narration,
+                    visual_prompt=prompt,
+                    on_screen_text=scene.on_screen_text if local_index == 1 else "",
+                    camera_motion=motions[(scene.index + local_index - 2) % len(motions)],
+                    color_mood=scene.color_mood,
+                    duration=shot_duration,
+                )
+            )
+    transition = _transition_seconds()
+    if transition > 0:
+        for shot in shots[:-1]:
+            shot.duration += transition
+    return shots
 
 
 def _ffmpeg_path() -> str:
@@ -997,7 +1285,11 @@ def _image_error_detail(exc: BaseException) -> tuple[str, int | None]:
     return _clean_text(exc, 700) or exc.__class__.__name__, None
 
 
-def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
+def _remote_scene_image(
+    scene: AnimateScene | AnimateShot,
+    path: Path,
+    reference_image: Path | None = None,
+) -> bool:
     base, model, key = _image_endpoint()
     if not base:
         return False
@@ -1022,7 +1314,9 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
     quality = os.environ.get("LONG_ANIMATE_IMAGE_QUALITY", "high").strip().casefold()
     if quality not in {"low", "medium", "high", "auto"}:
         quality = "medium"
-    output_format = os.environ.get("LONG_ANIMATE_IMAGE_OUTPUT_FORMAT", "png").strip().casefold()
+    output_format = os.environ.get(
+        "LONG_ANIMATE_IMAGE_OUTPUT_FORMAT", "jpeg" if is_gemini else "png"
+    ).strip().casefold()
     if output_format not in {"png", "jpeg", "webp"}:
         output_format = "jpeg"
     final_prompt = (
@@ -1037,15 +1331,34 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
         image_size = os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "2K").strip().upper()
         if image_size not in {"512", "1K", "2K", "4K"}:
             image_size = "2K"
-        aspect_ratio = os.environ.get("LONG_ANIMATE_IMAGE_ASPECT_RATIO", "16:9").strip()
+        aspect_ratio = _output_geometry()[0]
         if aspect_ratio not in {"1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"}:
             aspect_ratio = "16:9"
         thinking_level = os.environ.get("LONG_ANIMATE_IMAGE_THINKING_LEVEL", "high").strip().casefold()
         if thinking_level not in {"minimal", "low", "medium", "high"}:
             thinking_level = "high"
+        gemini_input: object = final_prompt
+        if reference_image and reference_image.is_file():
+            reference_mime = "image/jpeg" if reference_image.suffix.casefold() in {".jpg", ".jpeg"} else "image/png"
+            gemini_input = [
+                {
+                    "type": "text",
+                    "text": (
+                        "Use the supplied image only as the immutable recurring-character and visual-style reference. "
+                        "Preserve the same identity, face or defining shape, proportions, clothing/equipment, materials, "
+                        "and rendering style, while creating the new action, pose, camera, and setting requested here. "
+                        + final_prompt
+                    ),
+                },
+                {
+                    "type": "image",
+                    "mime_type": reference_mime,
+                    "data": base64.b64encode(reference_image.read_bytes()).decode("ascii"),
+                },
+            ]
         payload_object = {
             "model": model,
-            "input": final_prompt,
+            "input": gemini_input,
             "response_format": {
                 "type": "image",
                 "mime_type": f"image/{output_format}",
@@ -1077,10 +1390,16 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
             negative_prompt += (
                 ", woman wearing peci, woman wearing kopiah, woman wearing songkok, hijab with hat, double headwear"
             )
+        configured_size = os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1280x720")
+        size_match = re.fullmatch(r"(\d{3,5})x(\d{3,5})", configured_size)
+        if size_match and _output_geometry()[0] == "9:16":
+            size_width, size_height = map(int, size_match.groups())
+            if size_width > size_height:
+                configured_size = f"{size_height}x{size_width}"
         payload_object = {
             "prompt": final_prompt,
             "negative_prompt": negative_prompt,
-            "size": os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1280x720"),
+            "size": configured_size,
             "output_format": output_format,
             "output_compression": 100,
             "n": 1,
@@ -1116,11 +1435,15 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
     sd_attempt_sizes: list[str] = []
     if is_sd_cpp:
         configured_size = str(payload_object["size"])
-        safe_sizes = ["1920x1080", "1536x864", "1280x720", "1024x576"]
+        safe_sizes = (
+            ["1080x1920", "864x1536", "720x1280", "576x1024"]
+            if _output_geometry()[0] == "9:16"
+            else ["1920x1080", "1536x864", "1280x720", "1024x576"]
+        )
         if configured_size in safe_sizes:
             sd_attempt_sizes = safe_sizes[safe_sizes.index(configured_size) :]
         else:
-            sd_attempt_sizes = [configured_size, "1280x720", "1024x576"]
+            sd_attempt_sizes = [configured_size, *safe_sizes[-2:]]
         sd_attempt_sizes = list(dict.fromkeys(sd_attempt_sizes))
     sd_size_index = 0
     for attempt in range(1, retries + 1):
@@ -1176,7 +1499,8 @@ def _normalize_scene_image(path: Path) -> bool:
     if image is None or image.size == 0:
         return False
     height, width = image.shape[:2]
-    target_ratio = 16 / 9
+    _aspect, target_width, target_height = _output_geometry()
+    target_ratio = target_width / target_height
     source_ratio = width / max(1, height)
     if source_ratio > target_ratio:
         crop_width = max(1, round(height * target_ratio))
@@ -1187,7 +1511,7 @@ def _normalize_scene_image(path: Path) -> bool:
         top = max(0, (height - crop_height) // 2)
         image = image[top : top + crop_height, :]
     interpolation = cv2.INTER_LANCZOS4 if image.shape[1] < 1920 else cv2.INTER_AREA
-    canvas = cv2.resize(image, (1920, 1080), interpolation=interpolation)
+    canvas = cv2.resize(image, (target_width, target_height), interpolation=interpolation)
     # Restore edge definition without rejecting a valid, intentionally soft image.
     blurred = cv2.GaussianBlur(canvas, (0, 0), 0.85)
     canvas = cv2.addWeighted(canvas, 1.18, blurred, -0.18, 0)
@@ -1216,7 +1540,7 @@ def _hex_bgr(seed: str, offset: int) -> tuple[int, int, int]:
     return tuple(int(40 + value * 0.72) for value in digest[:3])
 
 
-def _local_scene_image(scene: AnimateScene, path: Path, art_bible: str) -> None:
+def _local_scene_image(scene: AnimateScene | AnimateShot, path: Path, art_bible: str) -> None:
     seed = f"{art_bible}|{scene.visual_prompt}|{scene.color_mood}"
     top = np.array(_hex_bgr(seed, 1), dtype=np.float32)
     bottom = np.array(_hex_bgr(seed, 2), dtype=np.float32) * 0.42
@@ -1265,12 +1589,155 @@ def _local_scene_image(scene: AnimateScene, path: Path, art_bible: str) -> None:
         raise RuntimeError(f"Gagal membuat visual lokal scene {scene.index}")
 
 
-def generate_scene_image(scene: AnimateScene, path: Path, art_bible: str) -> str:
-    if _remote_scene_image(scene, path):
+def generate_scene_image(
+    scene: AnimateScene | AnimateShot,
+    path: Path,
+    art_bible: str,
+    reference_image: Path | None = None,
+) -> str:
+    if _remote_scene_image(scene, path, reference_image=reference_image):
         base, model, _key = _image_endpoint()
         return _remote_provider_label(base, model)
     _local_scene_image(scene, path, art_bible)
     return "fendy_local_story_art"
+
+
+_FACE_DETECTOR: object | None = None
+
+
+def _face_boxes(image: np.ndarray) -> list[tuple[int, int, int, int]]:
+    global _FACE_DETECTOR
+    model_path = Path(__file__).resolve().parent / "models" / "face_detection_yunet_2023mar.onnx"
+    if not model_path.is_file() or not hasattr(cv2, "FaceDetectorYN_create"):
+        return []
+    try:
+        height, width = image.shape[:2]
+        if _FACE_DETECTOR is None:
+            _FACE_DETECTOR = cv2.FaceDetectorYN_create(
+                str(model_path), "", (width, height), score_threshold=0.82, nms_threshold=0.3, top_k=20
+            )
+        else:
+            _FACE_DETECTOR.setInputSize((width, height))
+        _status, detections = _FACE_DETECTOR.detect(image)
+    except Exception:
+        return []
+    if detections is None:
+        return []
+    return [
+        (max(0, int(item[0])), max(0, int(item[1])), max(1, int(item[2])), max(1, int(item[3])))
+        for item in detections
+    ]
+
+
+def _visual_signature(image: np.ndarray) -> np.ndarray:
+    resized = cv2.resize(image, (256, 144), interpolation=cv2.INTER_AREA)
+    gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+    tone = cv2.calcHist([gray], [0], None, [32], [0, 256]).flatten()
+    grad_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+    grad_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+    magnitude = cv2.magnitude(grad_x, grad_y)
+    texture, _edges = np.histogram(np.clip(magnitude, 0, 255), bins=16, range=(0, 256))
+    signature = np.concatenate((tone.astype(np.float32), texture.astype(np.float32)))
+    norm = float(np.linalg.norm(signature)) or 1.0
+    return signature / norm
+
+
+def inspect_generated_image(
+    shot: AnimateShot,
+    path: Path,
+    style_reference: Path | None = None,
+    character_reference: Path | None = None,
+) -> tuple[float, list[str]]:
+    image = cv2.imread(str(path.resolve()))
+    if image is None or image.size == 0:
+        return 0.0, ["image_decode_failed"]
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    black_ratio = float(np.mean(gray < 8))
+    sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    faces = _face_boxes(image)
+    expected_people = _expected_people_limit(f"{shot.narration} {shot.visual_prompt.split('STRICT STORY GROUNDING:', 1)[0]}")
+    reasons: list[str] = []
+    score = 1.0
+    if black_ratio > 0.55:
+        reasons.append("black_or_empty_frame")
+        score -= 0.6
+    if sharpness < max(8.0, float(os.environ.get("LONG_ANIMATE_QA_MIN_SHARPNESS", "18"))):
+        reasons.append("soft_or_blurry_subject")
+        score -= 0.25
+    if faces and expected_people == 0:
+        reasons.append("unrequested_human_face")
+        score -= 0.45
+    elif expected_people and len(faces) > expected_people:
+        reasons.append("too_many_visible_faces")
+        score -= 0.35
+    if style_reference and style_reference.is_file():
+        reference = cv2.imread(str(style_reference.resolve()))
+        if reference is not None and reference.size:
+            similarity = float(
+                cv2.compareHist(
+                    _visual_signature(reference).astype(np.float32),
+                    _visual_signature(image).astype(np.float32),
+                    cv2.HISTCMP_CORREL,
+                )
+            )
+            if similarity < float(os.environ.get("LONG_ANIMATE_QA_STYLE_MIN", "0.05")):
+                reasons.append("global_style_drift")
+                score -= 0.25
+    if character_reference and character_reference.is_file() and faces:
+        reference = cv2.imread(str(character_reference.resolve()))
+        reference_faces = _face_boxes(reference) if reference is not None else []
+        if reference is not None and reference_faces:
+            rx, ry, rw, rh = max(reference_faces, key=lambda item: item[2] * item[3])
+            x, y, w, h = max(faces, key=lambda item: item[2] * item[3])
+            ref_crop = reference[ry : ry + rh, rx : rx + rw]
+            crop = image[y : y + h, x : x + w]
+            if ref_crop.size and crop.size:
+                similarity = float(
+                    cv2.compareHist(
+                        _visual_signature(ref_crop).astype(np.float32),
+                        _visual_signature(crop).astype(np.float32),
+                        cv2.HISTCMP_CORREL,
+                    )
+                )
+                if similarity < float(os.environ.get("LONG_ANIMATE_QA_CHARACTER_MIN", "-0.05")):
+                    reasons.append("character_reference_drift")
+                    score -= 0.3
+    return max(0.0, min(1.0, score)), reasons
+
+
+def generate_shot_image_with_qa(
+    shot: AnimateShot,
+    path: Path,
+    art_bible: str,
+    *,
+    style_reference: Path | None = None,
+    character_reference: Path | None = None,
+) -> str:
+    attempts = max(1, min(4, int(os.environ.get("LONG_ANIMATE_VISION_QA_ATTEMPTS", "2"))))
+    original_prompt = shot.visual_prompt
+    provider = "unknown"
+    last_reasons: list[str] = []
+    for attempt in range(1, attempts + 1):
+        shot.qa_attempts = attempt
+        if attempt > 1:
+            shot.visual_prompt = _clean_text(
+                f"QA REPAIR {attempt}: correct these failures: {', '.join(last_reasons)}. Strictly preserve the "
+                f"character reference lock, global style, requested subject count, action, and setting. {original_prompt}",
+                3500,
+            )
+        provider = generate_scene_image(shot, path, art_bible, reference_image=character_reference)
+        shot.qa_score, last_reasons = inspect_generated_image(
+            shot, path, style_reference=style_reference, character_reference=character_reference
+        )
+        if not last_reasons:
+            shot.visual_prompt = original_prompt
+            return provider
+    shot.visual_prompt = original_prompt
+    if _env_bool("LONG_ANIMATE_VISION_QA_STRICT", False):
+        raise LongAnimateImageError(
+            f"Vision QA shot {shot.index} gagal setelah {attempts} percobaan: {', '.join(last_reasons)}"
+        )
+    return provider
 
 
 def _tts_pronunciation_text(text: str) -> str:
@@ -1416,7 +1883,7 @@ def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, st
     return local_path, "silent_fallback_review_required"
 
 
-def _motion_expression(scene: AnimateScene, frames: int) -> tuple[str, str, str]:
+def _motion_expression(scene: AnimateScene | AnimateShot, frames: int) -> tuple[str, str, str]:
     progress = f"min(1,on/{max(1, frames)})"
     if scene.camera_motion == "pull_out":
         zoom = f"1.045-0.045*{progress}"
@@ -1431,41 +1898,106 @@ def _motion_expression(scene: AnimateScene, frames: int) -> tuple[str, str, str]
     return zoom, "(iw-iw/zoom)/2", "(ih-ih/zoom)/2"
 
 
-def render_scene(scene: AnimateScene, image_path: Path, voice_path: Path, scene_dir: Path) -> Path:
-    voice_duration = _media_duration(voice_path)
-    scene.voice_duration = voice_duration if scene.narration.strip() else 0.0
-    try:
-        minimum_scene_seconds = float(
-            os.environ.get("LONG_ANIMATE_MIN_SCENE_SECONDS", "6.0")
+def _atempo_chain(ratio: float) -> str:
+    values: list[float] = []
+    remaining = max(0.05, ratio)
+    while remaining > 2.0:
+        values.append(2.0)
+        remaining /= 2.0
+    while remaining < 0.5:
+        values.append(0.5)
+        remaining /= 0.5
+    values.append(max(0.5, min(2.0, remaining)))
+    return ",".join(f"atempo={value:.6f}" for value in values)
+
+
+def trim_voice_silence(scene: AnimateScene, voice_path: Path, scene_dir: Path) -> Path:
+    if not scene.narration.strip() or scene.voice_provider.startswith("intentional_silence"):
+        return voice_path
+    output = scene_dir / f"scene_{scene.index:02}.voice.trim.wav"
+    _run(
+        [
+            _ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y", "-i", str(voice_path.resolve()),
+            "-af",
+            "silenceremove=start_periods=1:start_duration=0.03:start_threshold=-48dB,"
+            "areverse,silenceremove=start_periods=1:start_duration=0.05:start_threshold=-48dB,areverse,"
+            "aresample=48000",
+            "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", str(output.resolve()),
+        ]
+    )
+    return output if _media_duration(output) > 0.1 else voice_path
+
+
+def fit_voice_to_scene(scene: AnimateScene, voice_path: Path, scene_dir: Path) -> Path:
+    output = scene_dir / f"scene_{scene.index:02}.voice.fit.wav"
+    target = max(0.05, scene.duration)
+    source_duration = _media_duration(voice_path)
+    if not scene.narration.strip() or source_duration <= 0.05:
+        _run(
+            [
+                _ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y",
+                "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", f"{target:.3f}",
+                "-c:a", "pcm_s16le", str(output.resolve()),
+            ]
         )
-    except ValueError:
-        minimum_scene_seconds = 6.0
-    minimum_scene_seconds = max(0.8, min(30.0, minimum_scene_seconds))
-    scene.duration = max(scene.duration_hint, voice_duration + 0.7, minimum_scene_seconds)
-    frames = max(1, round(scene.duration * 30))
-    zoom, x, y = _motion_expression(scene, frames)
-    title_path = scene_dir / f"scene_{scene.index:02}.title.txt"
-    if scene.on_screen_text:
-        title_path.write_text(scene.on_screen_text + "\n", encoding="utf-8")
-    output_path = scene_dir / f"scene_{scene.index:02}.mp4"
-    fade_out = max(0.0, scene.duration - 0.28)
+        scene.voice_duration = 0.0
+        return output
+    content_target = max(0.05, target - min(0.06, target * 0.03))
+    tempo = source_duration / content_target
+    scene.speech_tempo = tempo
+    _run(
+        [
+            _ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y", "-i", str(voice_path.resolve()),
+            "-af", f"{_atempo_chain(tempo)},aresample=48000,apad=whole_dur={target:.3f},atrim=0:{target:.3f}",
+            "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", str(output.resolve()),
+        ]
+    )
+    scene.voice_duration = min(target, _media_duration(output))
+    return output
+
+
+def concatenate_voice_track(paths: list[Path], scene_dir: Path, target_duration: float) -> Path:
+    concat_path = scene_dir / "voice_concat.txt"
+    concat_path.write_text("\n".join(f"file '{path.name}'" for path in paths) + "\n", encoding="utf-8")
+    output = scene_dir / "narration.wav"
+    _run(
+        [
+            _ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0",
+            "-i", concat_path.name, "-af", f"apad,atrim=0:{target_duration:.3f}",
+            "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", output.name,
+        ],
+        cwd=scene_dir,
+    )
+    return output
+
+
+def render_shot_video(shot: AnimateShot, image_path: Path, scene_dir: Path) -> Path:
+    _aspect, output_width, output_height = _output_geometry()
+    overscan_width = round(output_width * 1.05)
+    overscan_height = round(output_height * 1.05)
+    frames = max(1, round(shot.duration * 30))
+    zoom, x, y = _motion_expression(shot, frames)
+    title_path = scene_dir / f"shot_{shot.index:02}.title.txt"
+    if shot.on_screen_text:
+        title_path.write_text(shot.on_screen_text + "\n", encoding="utf-8")
+    output_path = scene_dir / f"shot_{shot.index:02}.mp4"
+    title_end = min(3.8, max(0.45, shot.duration - 0.08))
     vf_parts = [
-        "scale=2016:1134:force_original_aspect_ratio=increase,crop=2016:1134",
-        f"zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s=1920x1080:fps=30",
+        f"scale={overscan_width}:{overscan_height}:force_original_aspect_ratio=increase,crop={overscan_width}:{overscan_height}",
+        f"zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s={output_width}x{output_height}:fps=30",
         "eq=contrast=1.025:saturation=1.04:gamma=1.005",
         "unsharp=5:5:0.28:5:5:0.0",
     ]
-    if scene.on_screen_text:
+    if shot.on_screen_text:
         vf_parts.extend(
             [
-                "drawbox=x=86:y=76:w=720:h=142:color=black@0.58:t=fill:enable='between(t,0.15,3.80)'",
-                "drawbox=x=86:y=76:w=10:h=142:color=#34D399@0.95:t=fill:enable='between(t,0.15,3.80)'",
+                f"drawbox=x=86:y=76:w=720:h=142:color=black@0.58:t=fill:enable='between(t,0.08,{title_end:.3f})'",
+                f"drawbox=x=86:y=76:w=10:h=142:color=#34D399@0.95:t=fill:enable='between(t,0.08,{title_end:.3f})'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                 f"textfile='{title_path.name}':reload=0:expansion=none:fontcolor=white:fontsize=42:"
-                "line_spacing=8:borderw=2:bordercolor=black@0.75:x=120:y=112:enable='between(t,0.15,3.80)'",
+                f"line_spacing=8:borderw=2:bordercolor=black@0.75:x=120:y=112:enable='between(t,0.08,{title_end:.3f})'",
             ]
         )
-    vf_parts.extend(["fade=t=in:st=0:d=0.24", f"fade=t=out:st={fade_out:.3f}:d=0.28"])
     vf = ",".join(vf_parts)
     _run(
         [
@@ -1480,18 +2012,13 @@ def render_scene(scene: AnimateScene, image_path: Path, voice_path: Path, scene_
             "30",
             "-i",
             image_path.name,
-            "-i",
-            voice_path.name,
             "-t",
-            f"{scene.duration:.3f}",
+            f"{shot.duration:.3f}",
             "-vf",
             vf,
             "-map",
             "0:v:0",
-            "-map",
-            "1:a:0",
-            "-af",
-            "apad=pad_dur=2",
+            "-an",
             "-c:v",
             "libx264",
             "-preset",
@@ -1500,14 +2027,6 @@ def render_scene(scene: AnimateScene, image_path: Path, voice_path: Path, scene_
             "14",
             "-pix_fmt",
             "yuv420p",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "160k",
-            "-ar",
-            "48000",
-            "-ac",
-            "2",
             "-movflags",
             "+faststart",
             output_path.name,
@@ -1518,6 +2037,46 @@ def render_scene(scene: AnimateScene, image_path: Path, voice_path: Path, scene_
     return output_path
 
 
+def assemble_shot_videos(paths: list[Path], shots: list[AnimateShot], scene_dir: Path) -> Path:
+    if not paths or len(paths) != len(shots):
+        raise ValueError("Shot video tidak lengkap")
+    output = scene_dir / "assembled.mp4"
+    transition = _transition_seconds()
+    if len(paths) == 1 or transition <= 0:
+        concat_path = scene_dir / "concat.txt"
+        concat_path.write_text("\n".join(f"file '{path.name}'" for path in paths) + "\n", encoding="utf-8")
+        _run(
+            [
+                _ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0",
+                "-i", concat_path.name, "-c", "copy", output.name,
+            ],
+            cwd=scene_dir,
+        )
+        return output
+    command = [_ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y"]
+    for path in paths:
+        command.extend(["-i", path.name])
+    filters: list[str] = []
+    accumulated = shots[0].duration
+    previous = "[0:v]"
+    for index in range(1, len(paths)):
+        output_label = f"[xf{index}]"
+        offset = max(0.001, accumulated - transition)
+        filters.append(
+            f"{previous}[{index}:v]xfade=transition=fade:duration={transition:.3f}:offset={offset:.3f}{output_label}"
+        )
+        previous = output_label
+        accumulated += shots[index].duration - transition
+    command.extend(
+        [
+            "-filter_complex", ";".join(filters), "-map", previous, "-an", "-c:v", "libx264", "-preset", "slow",
+            "-crf", "14", "-pix_fmt", "yuv420p", "-movflags", "+faststart", output.name,
+        ]
+    )
+    _run(command, cwd=scene_dir)
+    return output
+
+
 def _srt_time(seconds: float) -> str:
     millis = max(0, round(seconds * 1000))
     hours, millis = divmod(millis, 3_600_000)
@@ -1526,7 +2085,7 @@ def _srt_time(seconds: float) -> str:
     return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
 
 
-def _subtitle_chunks(text: str, max_words: int = 7, max_chars: int = 46) -> list[str]:
+def _subtitle_chunks(text: str, max_words: int = 5, max_chars: int = 36) -> list[str]:
     chunks: list[str] = []
     current: list[str] = []
     for word in text.split():
@@ -1541,6 +2100,14 @@ def _subtitle_chunks(text: str, max_words: int = 7, max_chars: int = 46) -> list
             current = []
     if current:
         chunks.append(" ".join(current))
+    if len(chunks) >= 2 and len(chunks[-1].split()) == 1:
+        orphan = chunks.pop()
+        if len(f"{chunks[-1]} {orphan}") <= max_chars + 8:
+            chunks[-1] = f"{chunks[-1]} {orphan}"
+        else:
+            previous_words = chunks[-1].split()
+            chunks[-1] = " ".join(previous_words[:-1])
+            chunks.append(f"{previous_words[-1]} {orphan}")
     return chunks
 
 
@@ -1610,6 +2177,61 @@ def _thumbnail(image_path: Path, output_path: Path, title: str) -> None:
     cv2.imwrite(str(output_path.resolve()), image, [cv2.IMWRITE_JPEG_QUALITY, 88])
 
 
+def final_video_qc(
+    path: Path,
+    *,
+    target_duration: float,
+    width: int,
+    height: int,
+    cut_points: list[float],
+) -> dict[str, object]:
+    actual_duration = _media_duration(path)
+    failures: list[str] = []
+    if abs(actual_duration - target_duration) > 0.09:
+        failures.append(f"duration_mismatch:{actual_duration:.3f}")
+    probe = subprocess.run(
+        [_ffmpeg_path(), "-hide_banner", "-i", str(path.resolve())],
+        text=True,
+        capture_output=True,
+    )
+    detail = f"{probe.stdout}\n{probe.stderr}"
+    if f"{width}x{height}" not in detail:
+        failures.append("wrong_resolution")
+    if "48000 Hz" not in detail:
+        failures.append("audio_not_48khz")
+    black_samples: list[float] = []
+    blank_samples: list[bool] = []
+    capture = cv2.VideoCapture(str(path.resolve()))
+    if capture.isOpened():
+        sample_times = [0.0, max(0.0, target_duration - 0.05)]
+        for point in cut_points:
+            sample_times.extend((max(0.0, point - 0.04), point, min(target_duration - 0.01, point + 0.04)))
+        for timestamp in sample_times:
+            capture.set(cv2.CAP_PROP_POS_MSEC, timestamp * 1000)
+            ok, frame = capture.read()
+            if not ok or frame is None or not frame.size:
+                continue
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            black_ratio = float(np.mean(gray < 6))
+            black_samples.append(black_ratio)
+            blank_samples.append(float(np.mean(gray)) < 2.5 and float(np.std(gray)) < 2.5)
+        capture.release()
+    if any(blank_samples):
+        failures.append("black_frame_near_cut")
+    result = {
+        "passed": not failures,
+        "target_duration": round(target_duration, 3),
+        "actual_duration": round(actual_duration, 3),
+        "resolution": f"{width}x{height}",
+        "audio_sample_rate": 48000,
+        "max_black_pixel_ratio_near_cuts": round(max(black_samples, default=0.0), 4),
+        "failures": failures,
+    }
+    if failures:
+        raise RuntimeError(f"Final QC Long Animate gagal: {', '.join(failures)}")
+    return result
+
+
 def _slug(value: str) -> str:
     clean = re.sub(r"[^a-z0-9]+", "-", value.casefold()).strip("-")
     return clean[:52] or "cerita-animasi"
@@ -1635,10 +2257,37 @@ def render_long_animate(
     storyboard = build_storyboard(script, ai_config)
     if len(storyboard.scenes) < 3:
         raise RuntimeError("Long Animate membutuhkan minimal tiga scene bermakna.")
+    target_duration = _target_duration_seconds()
+    progress(24, "transcript", "Membuat seluruh TTS dan mengukur timing narasi asli")
+    trimmed_voice_paths: list[Path] = []
+    measured_voice_durations: list[float] = []
+    for scene in storyboard.scenes:
+        voice_path, scene.voice_provider = synthesize_narration(scene, scene_dir)
+        if (
+            scene.voice_provider == "silent_fallback_review_required"
+            and _env_bool("LONG_ANIMATE_TTS_STRICT", True)
+        ):
+            raise RuntimeError(
+                f"TTS scene {scene.index} gagal; render dihentikan agar video tidak berisi dead-air."
+            )
+        trimmed = trim_voice_silence(scene, voice_path, scene_dir)
+        trimmed_voice_paths.append(trimmed)
+        measured_voice_durations.append(
+            _media_duration(trimmed) if scene.narration.strip() else 0.0
+        )
+    allocate_scene_durations(storyboard.scenes, measured_voice_durations, target_duration)
+    fitted_voice_paths = [
+        fit_voice_to_scene(scene, voice_path, scene_dir)
+        for scene, voice_path in zip(storyboard.scenes, trimmed_voice_paths)
+    ]
+    narration_track = concatenate_voice_track(fitted_voice_paths, scene_dir, target_duration)
+    shots = plan_storyboard_shots(storyboard)
     (work_dir / "storyboard.json").write_text(
         json.dumps(
             {
                 **asdict(storyboard),
+                "target_duration": target_duration,
+                "shots": [asdict(shot) for shot in shots],
                 "source_script_sha256": hashlib.sha256(script.encode("utf-8")).hexdigest(),
             },
             indent=2,
@@ -1646,74 +2295,79 @@ def render_long_animate(
         ),
         encoding="utf-8",
     )
-    progress(32, "selection", f"Storyboard {len(storyboard.scenes)} scene siap; memulai produksi visual")
+    progress(
+        32,
+        "selection",
+        f"Timeline {target_duration:.3f} detik dan {len(shots)} shot siap; memulai produksi visual",
+    )
 
-    scene_paths: list[Path] = []
-    cursor = 0.0
+    shot_paths: list[Path] = []
+    shot_image_paths: list[Path] = []
+    style_reference: Path | None = None
+    character_reference: Path | None = None
     chapter_audits: list[dict[str, object]] = []
-    for scene_index, scene in enumerate(storyboard.scenes, start=1):
+    for shot_index, shot in enumerate(shots, start=1):
         progress(
-            32 + round(((scene_index - 1) / len(storyboard.scenes)) * 48),
+            32 + round(((shot_index - 1) / len(shots)) * 48),
             "render",
-            f"Membuat visual, suara, dan gerak scene {scene_index}/{len(storyboard.scenes)}",
+            f"Membuat dan memeriksa visual shot {shot_index}/{len(shots)}",
         )
-        image_path = scene_dir / f"scene_{scene.index:02}.png"
-        scene.image_provider = generate_scene_image(scene, image_path, storyboard.art_bible)
-        voice_path, voice_provider = synthesize_narration(scene, scene_dir)
-        scene.voice_provider = voice_provider
-        scene_path = render_scene(scene, image_path, voice_path, scene_dir)
-        scene_paths.append(scene_path)
+        image_path = scene_dir / f"shot_{shot.index:02}.png"
+        shot.image_provider = generate_shot_image_with_qa(
+            shot,
+            image_path,
+            storyboard.art_bible,
+            style_reference=style_reference,
+            character_reference=character_reference,
+        )
+        if style_reference is None:
+            style_reference = image_path
+        if character_reference is None and (
+            _expected_people_limit(shot.narration) > 0
+            or _has_any(shot.narration, _NONHUMAN_CHARACTER_TERMS)
+        ):
+            character_reference = image_path
+        shot_path = render_shot_video(shot, image_path, scene_dir)
+        shot_paths.append(shot_path)
+        shot_image_paths.append(image_path)
+        source_scene = storyboard.scenes[shot.scene_index - 1]
+        if not source_scene.image_provider:
+            source_scene.image_provider = shot.image_provider
+        source_scene.qa_attempts = max(source_scene.qa_attempts, shot.qa_attempts)
+        source_scene.qa_score = min(source_scene.qa_score or 1.0, shot.qa_score)
         chapter_audits.append(
             {
-                "part": scene.index,
-                "hook": scene.title,
-                "pov": scene.on_screen_text,
-                "core_message": scene.narration[:180],
+                "part": shot.index,
+                "scene": shot.scene_index,
+                "shot": shot.shot_index,
+                "hook": shot.title,
+                "pov": shot.on_screen_text,
+                "core_message": shot.narration[:180],
                 "content_timed_editing": True,
-                "camera_motion": scene.camera_motion,
-                "image_provider": scene.image_provider,
-                "voice_provider": scene.voice_provider,
+                "camera_motion": shot.camera_motion,
+                "image_provider": shot.image_provider,
+                "vision_qa_attempts": shot.qa_attempts,
+                "vision_qa_score": round(shot.qa_score, 3),
             }
         )
-        cursor += scene.duration
 
-    progress(82, "render", "Menggabungkan seluruh scene menjadi satu cerita utuh")
-    concat_path = scene_dir / "concat.txt"
-    concat_path.write_text(
-        "\n".join(f"file '{path.name}'" for path in scene_paths) + "\n",
-        encoding="utf-8",
-    )
-    assembled = scene_dir / "assembled.mp4"
-    _run(
-        [
-            _ffmpeg_path(),
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            concat_path.name,
-            "-c",
-            "copy",
-            assembled.name,
-        ],
-        cwd=scene_dir,
-    )
+    progress(82, "render", "Menggabungkan shot tanpa fade hitam atau padding audio antar-scene")
+    assembled = assemble_shot_videos(shot_paths, shots, scene_dir)
 
     base_name = f"long_animate_{_slug(storyboard.title)}"
     output_path = clips_dir / f"{base_name}.mp4"
     srt_path = clips_dir / f"{base_name}.srt"
     write_story_subtitles(srt_path, storyboard.scenes)
+    output_aspect, output_width, output_height = _output_geometry()
     subtitles = _supports_filter("subtitles")
     drawtext = _supports_filter("drawtext")
-    vf_parts = ["eq=contrast=1.02:saturation=1.04"]
+    vf_parts = [
+        "eq=contrast=1.02:saturation=1.04",
+        f"tpad=stop_mode=clone:stop_duration=2,trim=duration={target_duration:.3f},setpts=PTS-STARTPTS",
+    ]
     if subtitles and any(scene.narration.strip() for scene in storyboard.scenes):
         vf_parts.append(
-            f"subtitles='{srt_path.name}':original_size=1920x1080:"
+            f"subtitles='{srt_path.name}':original_size={output_width}x{output_height}:"
             "force_style='FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H00FFFFFF,"
             "OutlineColour=&H00101010,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=54'"
         )
@@ -1723,16 +2377,29 @@ def render_long_animate(
             "text='ryuundyofficial':fontcolor=white@0.72:fontsize=18:x=34:y=30:"
             "borderw=1:bordercolor=black@0.50"
         )
-    duration = max(cursor, _media_duration(assembled))
+    duration = target_duration
+    cut_points: list[float] = []
+    cut_cursor = 0.0
+    transition_seconds = _transition_seconds()
+    for shot in shots[:-1]:
+        cut_cursor += shot.duration - transition_seconds
+        cut_points.append(cut_cursor)
     story_seed = int(hashlib.sha256(script.encode()).hexdigest()[:8], 16)
     freq_a = 110 + story_seed % 55
     freq_b = 165 + (story_seed // 7) % 70
+    sfx_window = "+".join(
+        f"between(t\\,{max(0.0, point - 0.05):.3f}\\,{min(duration, point + 0.10):.3f})"
+        for point in cut_points
+    ) or "0"
     audio_filter = (
-        "[1:a]volume=0.030,lowpass=f=1250[m1];"
-        "[2:a]volume=0.018,lowpass=f=1850[m2];"
+        "[2:a]volume=0.032,lowpass=f=1250[m1];"
+        "[3:a]volume=0.020,lowpass=f=1850[m2];"
         "[m1][m2]amix=inputs=2:duration=longest:normalize=0[music];"
-        "[0:a]loudnorm=I=-16:TP=-1.5:LRA=11[voice];"
-        "[voice][music]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout]"
+        "[1:a]loudnorm=I=-16:TP=-1.5:LRA=9,asplit=2[voice][sidechain];"
+        "[music][sidechain]sidechaincompress=threshold=0.012:ratio=8:attack=18:release=260[ducked];"
+        f"[4:a]highpass=f=900,lowpass=f=4200,volume='0.18*({sfx_window})':eval=frame[sfx];"
+        "[voice][ducked][sfx]amix=inputs=3:duration=first:dropout_transition=0:normalize=0,"
+        f"loudnorm=I=-14:TP=-1.0:LRA=9,apad,atrim=0:{duration:.3f}[aout]"
     )
     quality_crf = {"standard": "19", "high": "16", "max": "14"}.get(video_quality, "16")
     _run(
@@ -1744,6 +2411,8 @@ def render_long_animate(
             "-y",
             "-i",
             str(assembled.resolve()),
+            "-i",
+            str(narration_track.resolve()),
             "-f",
             "lavfi",
             "-i",
@@ -1752,6 +2421,10 @@ def render_long_animate(
             "lavfi",
             "-i",
             f"sine=frequency={freq_b}:sample_rate=48000:duration={duration:.3f}",
+            "-f",
+            "lavfi",
+            "-i",
+            f"anoisesrc=color=pink:amplitude=0.08:sample_rate=48000:duration={duration:.3f}",
             "-filter_complex",
             audio_filter,
             "-vf",
@@ -1772,6 +2445,10 @@ def render_long_animate(
             "aac",
             "-b:a",
             "192k",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
             "-movflags",
             "+faststart",
             "-t",
@@ -1780,9 +2457,16 @@ def render_long_animate(
         ],
         cwd=clips_dir,
     )
+    final_qc = final_video_qc(
+        output_path,
+        target_duration=target_duration,
+        width=output_width,
+        height=output_height,
+        cut_points=cut_points,
+    )
     progress(92, "finalize", "Membuat thumbnail, chapter, dan audit YouTube Long Animate")
     thumb_path = clips_dir / f"{base_name}_thumb.jpg"
-    _thumbnail(scene_dir / "scene_01.png", thumb_path, storyboard.title)
+    _thumbnail(shot_image_paths[0], thumb_path, storyboard.title)
     prompt_path = clips_dir / f"{base_name}_thumb.txt"
     prompt_path.write_text(
         "STRATEGI: custom_long_form_upload\n"
@@ -1808,7 +2492,19 @@ def render_long_animate(
         }
         for scene in storyboard.scenes
     ]
-    score = min(94, 80 + len(storyboard.scenes) + (3 if all(scene.voice_provider != "silent_fallback_review_required" for scene in storyboard.scenes) else 0))
+    score = min(
+        96,
+        82
+        + min(6, len(shots))
+        + (3 if all(scene.voice_provider != "silent_fallback_review_required" for scene in storyboard.scenes) else 0)
+        + (3 if final_qc["passed"] else 0),
+    )
+    max_speech_tempo = max((scene.speech_tempo for scene in storyboard.scenes), default=1.0)
+    timing_weaknesses = (
+        [f"Narasi padat membutuhkan percepatan TTS hingga {max_speech_tempo:.2f}x; ringkas NARASI bila ingin tempo lebih santai."]
+        if max_speech_tempo > 1.35
+        else []
+    )
     sidecar: dict[str, object] = {
         "index": 1,
         "start": 0.0,
@@ -1816,7 +2512,7 @@ def render_long_animate(
         "duration": round(duration, 3),
         "score": score,
         "title": storyboard.title,
-        "reason": f"Long Animate utuh dengan {len(storyboard.scenes)} scene berbasis naskah asli.",
+        "reason": f"Long Animate {target_duration:g} detik dengan {len(storyboard.scenes)} scene dan {len(shots)} shot berbasis naskah asli.",
         "text": script,
         "hook": storyboard.hook,
         "pov": "Narasi orisinal pengguna divisualkan menjadi scene yang saling melanjutkan.",
@@ -1826,53 +2522,82 @@ def render_long_animate(
             "Naskah menjadi alur scene utuh, bukan slideshow acak.",
             "Art bible menjaga kesinambungan visual antar-scene.",
             "Narasi, motion, subtitle, dan musik tersinkron.",
+            "Vision QA memeriksa style, karakter, wajah tambahan, ketajaman, dan frame kosong.",
         ],
-        "weaknesses": [],
+        "weaknesses": timing_weaknesses,
         "improvement_ideas": [
             "Uji tiga variasi title-thumbnail melalui fitur A/B YouTube setelah upload Private.",
         ],
         "applied_edits": [
             "Naskah dipecah menjadi beat storyboard tanpa filler atau pengulangan.",
-            "Setiap scene mendapat visual prompt, palet, komposisi, dan motion tersendiri.",
-            "Voice-over Bahasa Indonesia disinkronkan dengan durasi scene.",
-            "Subtitle bertimestamp dan musik prosedural orisinal digabungkan ke master 16:9.",
+            "Scene kompleks dipecah menjadi beberapa shot tunggal tanpa mengulang voice-over.",
+            f"Voice-over dibuat lebih dulu; durasi hasil TTS menentukan timeline tepat {target_duration:g} detik.",
+            "Fade hitam dan padding audio antar-scene dihapus; musik memakai sidechain ducking.",
+            f"Subtitle bertimestamp dan audio AAC 48 kHz digabungkan ke master {output_aspect}.",
             "Thumbnail long-form dan chapter YouTube dibuat otomatis.",
         ],
         "key_point_score": 92,
         "loop_score": 70,
         "boundary_quality": "payoff_tuntas",
         "mode": "long_animate",
-        "production_model": "codex_scene_cinema_v1",
-        "output_format": "landscape_compilation",
-        "aspect_ratio": "16:9",
-        "output_resolution": "1920x1080",
+        "production_model": "codex_scene_cinema_v2",
+        "output_format": "portrait_short" if output_aspect == "9:16" else "landscape_compilation",
+        "aspect_ratio": output_aspect,
+        "output_resolution": f"{output_width}x{output_height}",
         "enhanced_edit": True,
         "thumbnail_strategy": "custom_long_form_upload",
         "storyboard_path": "storyboard.json",
         "scene_assets_directory": "animate_scenes",
         "art_bible": storyboard.art_bible,
         "character_bible": storyboard.character_bible,
+        "location_bible": storyboard.location_bible,
+        "character_reference": {
+            "reference_shot": character_reference.name if character_reference else None,
+            "method": "immutable_identity_lock_plus_face_similarity_qa",
+        },
         "image_generation": {
             "provider": storyboard.scenes[0].image_provider if storyboard.scenes else "unknown",
             "model": _image_endpoint()[1],
             "size": os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "2K"),
-            "aspect_ratio": os.environ.get("LONG_ANIMATE_IMAGE_ASPECT_RATIO", "16:9"),
+            "aspect_ratio": output_aspect,
             "thinking_level": os.environ.get("LONG_ANIMATE_IMAGE_THINKING_LEVEL", "high"),
             "strict_no_silent_fallback": _env_bool("LONG_ANIMATE_IMAGE_STRICT", False),
             "api_key_recorded": False,
         },
         "parts": parts,
+        "shots": [asdict(shot) for shot in shots],
         "story_arc": [asdict(scene) for scene in storyboard.scenes],
         "chapter_edit_evidence": chapter_audits,
         "virtual_camera_angles": [
-            {"scene": scene.index, "motion": scene.camera_motion}
-            for scene in storyboard.scenes
+            {"shot": shot.index, "scene": shot.scene_index, "motion": shot.camera_motion}
+            for shot in shots
         ],
         "dynamic_captions": {
             "enabled": subtitles,
             "transcript_grounded": True,
             "scene_timed": True,
         },
+        "timing_engine": {
+            "version": 2,
+            "target_duration": target_duration,
+            "tts_measured_before_allocation": True,
+            "dead_air_trimmed": True,
+            "gapless_hard_cuts": _transition_seconds() <= 0,
+            "transition_seconds": _transition_seconds(),
+            "maximum_speech_tempo": round(max_speech_tempo, 3),
+            "scene_duration_total": round(sum(scene.duration for scene in storyboard.scenes), 3),
+            "shot_render_duration_total": round(sum(shot.duration for shot in shots), 3),
+            "shot_effective_duration_total": round(
+                sum(shot.duration for shot in shots) - _transition_seconds() * max(0, len(shots) - 1), 3
+            ),
+        },
+        "vision_qa": {
+            "enabled": True,
+            "automatic_regeneration": True,
+            "attempts": max((shot.qa_attempts for shot in shots), default=0),
+            "minimum_score": round(min((shot.qa_score for shot in shots), default=0.0), 3),
+        },
+        "final_qc": final_qc,
         "content_edit_signature": {
             "version": 1,
             "derived_from_story": True,
@@ -1890,6 +2615,7 @@ def render_long_animate(
             "ai_or_procedural_images": True,
             "synthetic_or_neural_voice": True,
             "procedural_music": True,
+            "procedural_transition_sfx": True,
             "youtube_ai_use_disclosure": "required_conservative_default",
             "real_person_impersonation_allowed": False,
             "public_figure_likeness_allowed": False,
@@ -1988,9 +2714,10 @@ def render_long_animate(
         encoding="utf-8",
     )
     assembled.unlink(missing_ok=True)
-    concat_path.unlink(missing_ok=True)
-    for scene_path in scene_paths:
-        scene_path.unlink(missing_ok=True)
+    (scene_dir / "concat.txt").unlink(missing_ok=True)
+    narration_track.unlink(missing_ok=True)
+    for shot_path in shot_paths:
+        shot_path.unlink(missing_ok=True)
     for voice_path in scene_dir.glob("scene_*.voice.*"):
         voice_path.unlink(missing_ok=True)
     progress(95, "finalize", "Long Animate selesai dirakit; menjalankan audit akhir")

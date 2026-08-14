@@ -168,6 +168,69 @@ def test_motion_expression_varies_direction_without_static_slideshow():
     assert "ih-ih/zoom" in y
 
 
+def test_tts_duration_allocator_hits_exact_twenty_seconds():
+    scenes = _fallback_storyboard(SCRIPT).scenes[:3]
+
+    long_animate.allocate_scene_durations(scenes, [2.0, 3.0, 4.0], 20.0)
+
+    assert sum(scene.duration for scene in scenes) == 20.0
+    assert scenes[0].duration < scenes[1].duration < scenes[2].duration
+
+
+def test_complex_scene_expands_to_multiple_gapless_shots(monkeypatch):
+    script = """
+    ### ADEGAN 1 — Keluar Rumah
+    VISUAL: Seorang teknisi membuka pintu lalu berjalan menuju kendaraan di halaman.
+    NARASI: Teknisi bergegas memeriksa kendaraan sebelum badai datang.
+
+    ### ADEGAN 2 — Pemeriksaan
+    VISUAL: Teknisi menempelkan pemindai pada mesin kendaraan.
+    NARASI: Pemindai menemukan kabel utama yang hampir terputus.
+
+    ### ADEGAN 3 — Perbaikan
+    VISUAL: Teknisi mengunci kabel baru pada mesin yang kembali menyala.
+    NARASI: Kabel pengganti membuat kendaraan siap menghadapi badai.
+    """
+    storyboard = _fallback_storyboard(script)
+    long_animate.allocate_scene_durations(storyboard.scenes, [3.0, 3.0, 3.0], 20.0)
+    monkeypatch.setenv("LONG_ANIMATE_TRANSITION_SECONDS", "0.12")
+
+    shots = long_animate.plan_storyboard_shots(storyboard)
+    effective_duration = sum(shot.duration for shot in shots) - 0.12 * (len(shots) - 1)
+
+    assert len(shots) == 4
+    assert shots[0].scene_index == shots[1].scene_index == 1
+    assert "membuka pintu" in shots[0].visual_prompt
+    assert "berjalan menuju kendaraan" in shots[1].visual_prompt
+    assert round(effective_duration, 3) == 20.0
+
+
+def test_render_shot_has_no_black_fade_or_audio_padding(monkeypatch, tmp_path):
+    shot = long_animate.AnimateShot(
+        index=1,
+        scene_index=1,
+        shot_index=1,
+        shot_count=1,
+        title="Shot",
+        narration="Narasi",
+        visual_prompt="Visual",
+        on_screen_text="",
+        camera_motion="push_in",
+        color_mood="blue",
+        duration=2.0,
+    )
+    captured = {}
+    monkeypatch.setattr(long_animate, "_run", lambda command, cwd=None: captured.update(command=command, cwd=cwd))
+
+    long_animate.render_shot_video(shot, tmp_path / "shot.png", tmp_path)
+
+    command_text = " ".join(captured["command"])
+    assert "fade=t=in" not in command_text
+    assert "fade=t=out" not in command_text
+    assert "apad" not in command_text
+    assert "-an" in captured["command"]
+
+
 def test_markdown_scene_script_is_parsed_without_production_labels():
     script = """
     # Prompt Video
@@ -416,6 +479,59 @@ def test_gemini_image_payload_uses_native_interactions_api(monkeypatch, tmp_path
     assert "Visible moment:" in captured["payload"]["input"]
     assert captured["headers"]["X-goog-api-key"] == "test-gemini-key"
     assert "Authorization" not in captured["headers"]
+
+
+def test_gemini_receives_previous_character_reference(monkeypatch, tmp_path):
+    scene = _fallback_storyboard(SCRIPT).scenes[0]
+    reference = tmp_path / "reference.png"
+    reference.write_bytes(b"reference-image")
+    captured = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {
+                    "steps": [
+                        {
+                            "type": "model_output",
+                            "content": [
+                                {
+                                    "type": "image",
+                                    "mime_type": "image/png",
+                                    "data": base64.b64encode(b"x" * 2048).decode(),
+                                }
+                            ],
+                        }
+                    ]
+                }
+            ).encode()
+
+    def fake_urlopen(request, timeout):
+        captured["payload"] = json.loads(request.data.decode())
+        return Response()
+
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_MODEL", "gemini-3.1-flash-image")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_API_KEY", "test-key")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_RETRIES", "1")
+    monkeypatch.setattr(long_animate.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(long_animate, "_normalize_scene_image", lambda path: True)
+
+    assert long_animate._remote_scene_image(scene, tmp_path / "scene.png", reference) is True
+    blocks = captured["payload"]["input"]
+    assert blocks[0]["type"] == "text"
+    assert "immutable recurring-character" in blocks[0]["text"]
+    assert blocks[1] == {
+        "type": "image",
+        "mime_type": "image/png",
+        "data": base64.b64encode(b"reference-image").decode("ascii"),
+    }
 
 
 def test_gemini_strict_mode_rejects_missing_api_key(monkeypatch, tmp_path):

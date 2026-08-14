@@ -619,9 +619,9 @@ TEKS LAYAR: Data Terkirim`}</pre>
       ) : (
         <div className="modeNotice longAnimateEstimate">
           <strong>
-            Estimasi ±{Math.max(1, Math.round(scriptText.trim().split(/\s+/).filter(Boolean).length / 140))} menit · 16:9 Full HD
+            Target tepat 20 detik · 16:9 Full HD
           </strong>
-          <span>Estimasi mengikuti kecepatan narasi. Storyboard menggunakan 5–14 scene dan dapat lebih pendek atau panjang sesuai naskah.</span>
+          <span>TTS diukur lebih dulu, lalu 3–7 scene dapat dipecah menjadi beberapa shot. Narasi yang terlalu panjang akan dipercepat agar timeline tetap tepat 20 detik.</span>
         </div>
       )}
 

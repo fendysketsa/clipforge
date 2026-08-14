@@ -106,21 +106,32 @@ class GatewayHandler(BaseHTTPRequestHandler):
             if not isinstance(parsed, dict):
                 return body
             prompt = str(parsed.get("prompt") or "").strip()
-            prompt_guard = (
-                " STRICT SUBJECT INTEGRITY: show only explicitly requested people. Every visible hand must be "
-                "anatomically attached through a visible wrist and forearm to a clearly visible owner. Keep all "
-                "hands away from frame edges. Never add anonymous foreground hands, partial people, background "
-                "extras, floating limbs, or body parts entering from outside the frame."
-            )
-            negative_guard = (
-                "disembodied hands, floating hands, detached hands, bodyless limbs, cropped arms, cropped wrists, "
-                "hands entering from frame edge, anonymous foreground hands, partial person, unrequested crowd, "
-                "extra background people"
-            )
+            no_human_scene = "visible human limit: 0" in prompt.casefold()
+            if no_human_scene:
+                prompt_guard = (
+                    " STRICT SUBJECT INTEGRITY: preserve the requested non-human subject, action, count, props, "
+                    "location, and immutable global visual style. Keep the frame free of unrequested human figures "
+                    "and body parts."
+                )
+                negative_guard = (
+                    "unrequested human, human face, human silhouette, human body part, stock presenter, unrelated character"
+                )
+            else:
+                prompt_guard = (
+                    " STRICT SUBJECT INTEGRITY: show only explicitly requested people. Every visible hand must be "
+                    "anatomically attached through a visible wrist and forearm to a clearly visible owner. Keep all "
+                    "hands away from frame edges. Never add anonymous foreground hands, partial people, background "
+                    "extras, floating limbs, or body parts entering from outside the frame."
+                )
+                negative_guard = (
+                    "disembodied hands, floating hands, detached hands, bodyless limbs, cropped arms, cropped wrists, "
+                    "hands entering from frame edge, anonymous foreground hands, partial person, unrequested crowd, "
+                    "extra background people"
+                )
             if prompt_guard.strip() not in prompt:
                 parsed["prompt"] = f"{prompt}{prompt_guard}".strip()
             negative = str(parsed.get("negative_prompt") or "").strip(" ,")
-            if "disembodied hands" not in negative.casefold():
+            if negative_guard.split(",", 1)[0].casefold() not in negative.casefold():
                 parsed["negative_prompt"] = f"{negative}, {negative_guard}".strip(" ,")
             return json.dumps(parsed, separators=(",", ":")).encode("utf-8")
         except Exception as exc:

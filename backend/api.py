@@ -5055,7 +5055,11 @@ def cancel_process(job_id: str) -> bool:
 
 def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
     if request.clip_mode == "long_animate":
-        duration = max(15.0, len(request.script_text.split()) / 2.35)
+        try:
+            duration = float(os.environ.get("LONG_ANIMATE_TARGET_DURATION_SECONDS", "20"))
+        except ValueError:
+            duration = 20.0
+        duration = max(5.0, min(3600.0, duration))
     elif request.source_file:
         duration = probe_media_duration(Path(request.source_file))
     else:
