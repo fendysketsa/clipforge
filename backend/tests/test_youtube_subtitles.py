@@ -1,7 +1,48 @@
 import pytest
 
 import youtube_uploader
-from youtube_uploader import UploadError, add_manual_subtitle
+from youtube_uploader import UploadError, add_manual_subtitle, click_subtitle_done
+
+
+class FakeSubtitleButton:
+    def __init__(self, page):
+        self.page = page
+        self.clicks = 0
+
+    def count(self):
+        return 1
+
+    def is_visible(self, timeout=0):
+        return True
+
+    def get_attribute(self, name):
+        return "false" if name == "aria-disabled" else None
+
+    def scroll_into_view_if_needed(self, timeout=0):
+        return None
+
+    def click(self, timeout=0):
+        self.clicks += 1
+        self.page.editor_open = False
+
+
+class FakeSubtitleLocator:
+    def __init__(self, button):
+        self.first = button
+
+
+class FakeSubtitlePage:
+    def __init__(self):
+        self.editor_open = True
+        self.selectors = []
+        self.button = FakeSubtitleButton(self)
+
+    def locator(self, selector):
+        self.selectors.append(selector)
+        return FakeSubtitleLocator(self.button)
+
+    def evaluate(self, _script, *_args):
+        return self.editor_open
 
 
 def configure_required_subtitle(monkeypatch):
@@ -51,5 +92,16 @@ def test_required_manual_subtitle_rejects_missing_done_button(monkeypatch):
     monkeypatch.setattr(youtube_uploader, "type_subtitle_text", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(youtube_uploader, "click_subtitle_done", lambda *_args, **_kwargs: False)
 
-    with pytest.raises(UploadError, match="Tombol Selesai subtitle tidak ditemukan"):
+    with pytest.raises(UploadError, match="Tombol Selesai subtitle tidak berhasil menutup editor"):
         add_manual_subtitle(object())
+
+
+def test_subtitle_done_targets_header_publish_button_and_waits_until_closed(monkeypatch):
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+    page = FakeSubtitlePage()
+
+    assert click_subtitle_done(page, timeout_ms=500) is True
+
+    assert page.button.clicks == 1
+    assert page.editor_open is False
+    assert page.selectors[0] == "ytve-captions-editor-modal ytcp-button#publish-button button"

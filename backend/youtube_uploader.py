@@ -2765,9 +2765,20 @@ def click_playlist_checkbox(page, playlist_name: str, timeout_ms: int = 8000) ->
         return False
     deadline = time.monotonic() + timeout_ms / 1000
 
-    # Use Playwright's trusted pointer input first. Studio's current
-    # ytcp-checkbox-lit may ignore element.click() even though the event is
-    # delivered, which leaves aria-checked=false and creates a private draft.
+    def wait_until_selected(row, seconds: float = 1.25) -> bool:
+        state_deadline = min(deadline, time.monotonic() + seconds)
+        while time.monotonic() < state_deadline:
+            if playlist_row_is_selected(row):
+                log(f"Checkbox playlist tercentang dan terverifikasi: {playlist_name}.")
+                return True
+            time.sleep(0.12)
+        return False
+
+    # Studio currently renders a focusable div[role=checkbox] plus a hidden
+    # native input inside a label. Depending on the active Studio experiment,
+    # either the Lit host, keyboard handler, or native input owns the state.
+    # Try one interaction at a time and verify aria-checked/checked before the
+    # next method so a second event can never toggle a successful choice off.
     while time.monotonic() < deadline:
         row = playlist_row_locator(page, playlist_name)
         if row is None:
@@ -2775,26 +2786,59 @@ def click_playlist_checkbox(page, playlist_name: str, timeout_ms: int = 8000) ->
             continue
         if playlist_row_is_selected(row):
             return True
-        click_targets = (
+
+        # Keyboard activation avoids the label/default-action double-toggle
+        # seen in some ytcp-checkbox-lit revisions.
+        try:
+            role_checkbox = row.locator('div#checkbox[role="checkbox"], [role="checkbox"]').first
+            if role_checkbox.count() and role_checkbox.is_visible(timeout=300):
+                role_checkbox.scroll_into_view_if_needed(timeout=1000)
+                role_checkbox.focus(timeout=1000)
+                role_checkbox.press("Space", timeout=1500)
+                if wait_until_selected(row):
+                    return True
+        except Exception:
+            pass
+
+        # Clicking the label text lets the browser activate the associated
+        # hidden input once, without also targeting the Lit control itself.
+        try:
+            label_text = row.locator("span.checkbox-label, span.label-text").first
+            if label_text.count() and label_text.is_visible(timeout=300):
+                label_text.scroll_into_view_if_needed(timeout=1000)
+                label_text.click(timeout=2000)
+                if wait_until_selected(row):
+                    return True
+        except Exception:
+            pass
+
+        # Playwright's checked-state primitive is the most reliable fallback
+        # when Studio delegates state to the hidden native input.
+        try:
+            native_input = row.locator('input[type="checkbox"]').first
+            if native_input.count():
+                native_input.set_checked(True, force=True, timeout=2000)
+                if wait_until_selected(row):
+                    return True
+        except Exception:
+            pass
+
+        # Finish with trusted pointer input on each visible owner. This also
+        # covers older Studio layouts without the keyboard/native-input path.
+        for selector in (
             'div#checkbox[role="checkbox"]',
-            '[role="checkbox"]',
             "ytcp-checkbox-lit",
             "tp-yt-paper-checkbox",
             "label.ytcp-checkbox-label",
-        )
-        for selector in click_targets:
+        ):
             try:
                 control = row.locator(selector).first
                 if not control.count() or not control.is_visible(timeout=300):
                     continue
                 control.scroll_into_view_if_needed(timeout=1000)
                 control.click(timeout=min(2500, max(500, int((deadline - time.monotonic()) * 1000))))
-                state_deadline = min(deadline, time.monotonic() + 1.5)
-                while time.monotonic() < state_deadline:
-                    if playlist_row_is_selected(row):
-                        log(f"Checkbox playlist tercentang dan terverifikasi: {playlist_name}.")
-                        return True
-                    time.sleep(0.15)
+                if wait_until_selected(row):
+                    return True
             except Exception:
                 continue
         break
@@ -2864,12 +2908,27 @@ def click_playlist_checkbox(page, playlist_name: str, timeout_ms: int = 8000) ->
             // YouTube's current checkbox is a ytcp-checkbox-lit host containing
             // an interactive div[role=checkbox] plus a hidden input. Clicking
             // the host or text label no longer consistently changes its state.
+            // Prefer the native input. HTMLElement.click() performs its real
+            // checkbox default action and emits input/change exactly once.
+            const nativeInput = checks.find((check) =>
+              check.matches?.('input[type="checkbox"]') && !check.disabled
+            );
+            if (nativeInput) return clickElement(nativeInput);
             const interactive = checks.find((check) =>
               check.matches?.('[role="checkbox"]')
               && check.getAttribute?.('aria-disabled') !== 'true'
               && isVisible(check)
             );
-            if (interactive) return clickElement(interactive);
+            if (interactive) {
+              interactive.focus?.();
+              interactive.dispatchEvent(new KeyboardEvent('keydown', {
+                key: ' ', code: 'Space', bubbles: true, composed: true,
+              }));
+              interactive.dispatchEvent(new KeyboardEvent('keyup', {
+                key: ' ', code: 'Space', bubbles: true, composed: true,
+              }));
+              return true;
+            }
             const host = checks.find((check) =>
               check.matches?.('ytcp-checkbox-lit, tp-yt-paper-checkbox') && isVisible(check)
             );
@@ -2888,7 +2947,9 @@ def click_playlist_checkbox(page, playlist_name: str, timeout_ms: int = 8000) ->
     while time.monotonic() < deadline:
         try:
             if page.evaluate(script, {"target": target}):
-                return True
+                row = playlist_row_locator(page, playlist_name)
+                if row is not None and wait_until_selected(row, seconds=0.8):
+                    return True
         except Exception:
             pass
         time.sleep(0.25)
@@ -2924,20 +2985,57 @@ def search_playlist(page, playlist_name: str) -> bool:
 
 
 def click_playlist_done(page, timeout_ms: int = 8000) -> bool:
-    if click_role_button(page, [r"^done$|^selesai$|^simpan$|^ok$"], timeout_ms=2000, optional=True):
-        return True
-    return deep_click(
-        page,
-        selectors=(
-            'ytcp-button[dialog-confirm]',
-            'tp-yt-paper-button[dialog-confirm]',
-            'ytcp-playlist-dialog ytcp-button',
-            'tp-yt-paper-dialog ytcp-button',
-        ),
-        text_patterns=(r"^done$", r"^selesai$", r"^simpan$", r"^ok$"),
-        timeout_ms=timeout_ms,
-        optional=True,
-    )
+    deadline = time.monotonic() + timeout_ms / 1000
+    # Do not use a global role/text lookup here. The upload modal and thumbnail
+    # editor can expose other buttons named "Selesai" at the same time. Studio's
+    # playlist dialog has a stable, dedicated .done-button owner.
+    while time.monotonic() < deadline:
+        try:
+            buttons = page.locator(
+                "ytcp-playlist-dialog ytcp-button.done-button button, "
+                "ytcp-playlist-dialog .done-button button, "
+                "ytcp-playlist-dialog ytcp-button.done-button"
+            )
+            for index in range(buttons.count()):
+                button = buttons.nth(index)
+                if not button.is_visible(timeout=300):
+                    continue
+                if (button.get_attribute("aria-disabled") or "").lower() == "true":
+                    continue
+                button.scroll_into_view_if_needed(timeout=1000)
+                button.click(timeout=2000)
+                if not playlist_dialog_open(page, timeout_ms=1800):
+                    log("Tombol Selesai milik dialog playlist diklik.")
+                    return True
+        except Exception:
+            pass
+        try:
+            clicked = page.evaluate(
+                """
+                () => {
+                  const dialogs = Array.from(document.querySelectorAll('ytcp-playlist-dialog'));
+                  for (const dialog of dialogs) {
+                    const surface = dialog.querySelector('tp-yt-paper-dialog#dialog');
+                    if (!surface || surface.getAttribute('aria-hidden') === 'true') continue;
+                    const button = dialog.querySelector(
+                      'ytcp-button.done-button button, .done-button button, ytcp-button.done-button'
+                    );
+                    if (!button || button.getAttribute?.('aria-disabled') === 'true') continue;
+                    button.scrollIntoView?.({ block: 'center', inline: 'center' });
+                    button.click();
+                    return true;
+                  }
+                  return false;
+                }
+                """
+            )
+            if clicked and not playlist_dialog_open(page, timeout_ms=1800):
+                log("Tombol Selesai milik dialog playlist diklik.")
+                return True
+        except Exception:
+            pass
+        time.sleep(0.2)
+    return False
 
 
 def open_playlist_dropdown(page, timeout_ms: int = 8000) -> bool:
@@ -3120,6 +3218,14 @@ def select_playlist(page, playlist: str) -> None:
             last_error = f"Playlist '{playlist_name}' belum berhasil dicentang."
             continue
 
+        # Let the Lit checkbox propagate its selected-playlist model before
+        # confirming the dialog. A single immediate aria-checked read can race
+        # the model update even though the checkmark is already painted.
+        time.sleep(0.6)
+        if not playlist_is_selected(page, playlist_name, timeout_ms=1400):
+            last_error = f"Playlist '{playlist_name}' tidak stabil setelah dicentang."
+            continue
+
         if not click_playlist_done(page, timeout_ms=8000):
             last_error = "Tombol Selesai playlist tidak ditemukan setelah playlist dicentang."
             continue
@@ -3129,6 +3235,18 @@ def select_playlist(page, playlist: str) -> None:
         if dialog_closed and summary_confirmed:
             log(f"PLAYLIST_CONFIRMED: {playlist_name}")
             return
+        # Some Studio variants keep the collapsed trigger text as "Pilih".
+        # Reopen once and verify the actual checkbox persisted; this is stronger
+        # evidence than the trigger summary and leaves no silent false success.
+        if dialog_closed and open_playlist_dropdown(page, timeout_ms=5000):
+            time.sleep(0.5)
+            search_playlist(page, playlist_name)
+            persisted = playlist_is_selected(page, playlist_name, timeout_ms=2200)
+            if persisted and click_playlist_done(page, timeout_ms=5000):
+                log(f"PLAYLIST_CONFIRMED_BY_REOPEN: {playlist_name}")
+                return
+            if playlist_dialog_open(page, timeout_ms=500):
+                click_playlist_done(page, timeout_ms=1500)
         last_error = (
             f"Playlist '{playlist_name}' belum terkonfirmasi pada ringkasan detail video "
             "setelah dialog ditutup."
@@ -4043,15 +4161,92 @@ def type_subtitle_text(page, subtitle_text: str, timeout_ms: int = 15000) -> boo
     return False
 
 
+def subtitle_editor_open(page) -> bool:
+    script = """
+    () => {
+      const modal = document.querySelector('ytve-captions-editor-modal');
+      if (!modal) return false;
+      const dialog = modal.querySelector('tp-yt-paper-dialog[role="dialog"], ytcp-dialog');
+      if (!dialog || dialog.getAttribute?.('aria-hidden') === 'true') return false;
+      const rect = dialog.getBoundingClientRect?.();
+      if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+      const style = window.getComputedStyle(dialog);
+      return Boolean(style && style.display !== 'none' && style.visibility !== 'hidden');
+    }
+    """
+    try:
+        return bool(page.evaluate(script))
+    except Exception:
+        return False
+
+
+def wait_for_subtitle_editor_closed(page, timeout_ms: int = 8000) -> bool:
+    deadline = time.monotonic() + timeout_ms / 1000
+    while time.monotonic() < deadline:
+        if not subtitle_editor_open(page):
+            return True
+        time.sleep(0.2)
+    return not subtitle_editor_open(page)
+
+
 def click_subtitle_done(page, timeout_ms: int = 12000) -> bool:
-    patterns = [r"^selesai$|^done$"]
-    if click_role_button(page, patterns, timeout_ms=timeout_ms, optional=True):
-        log("Subtitle manual disimpan.")
-        return True
-    if deep_click(page, text_patterns=patterns, timeout_ms=timeout_ms, optional=True):
-        log("Subtitle manual disimpan.")
-        return True
-    return False
+    deadline = time.monotonic() + timeout_ms / 1000
+    clicked = False
+    # The captions editor has several header actions. Only #publish-button is
+    # the white "Selesai" button shown at the top-right; global text matching
+    # can hit the upload wizard or playlist dialog instead.
+    selectors = (
+        "ytve-captions-editor-modal ytcp-button#publish-button button",
+        "ytve-captions-editor-modal #publish-button button",
+        "ytve-captions-editor-modal ytcp-button#publish-button",
+    )
+    while time.monotonic() < deadline and not clicked:
+        for selector in selectors:
+            try:
+                button = page.locator(selector).first
+                if not button.count() or not button.is_visible(timeout=400):
+                    continue
+                if (button.get_attribute("aria-disabled") or "").lower() == "true":
+                    continue
+                button.scroll_into_view_if_needed(timeout=1000)
+                button.click(timeout=2500)
+                clicked = True
+                break
+            except Exception:
+                continue
+        if clicked:
+            break
+        try:
+            clicked = bool(
+                page.evaluate(
+                    """
+                    () => {
+                      const modal = document.querySelector('ytve-captions-editor-modal');
+                      if (!modal) return false;
+                      const button = modal.querySelector(
+                        'ytcp-button#publish-button button, #publish-button button, ytcp-button#publish-button'
+                      );
+                      if (!button || button.getAttribute?.('aria-disabled') === 'true') return false;
+                      button.scrollIntoView?.({ block: 'center', inline: 'center' });
+                      button.click();
+                      return true;
+                    }
+                    """
+                )
+            )
+        except Exception:
+            clicked = False
+        if not clicked:
+            time.sleep(0.25)
+
+    if not clicked:
+        return False
+    remaining_ms = max(500, int((deadline - time.monotonic()) * 1000))
+    if not wait_for_subtitle_editor_closed(page, timeout_ms=remaining_ms):
+        log("Tombol Selesai subtitle diklik, tetapi editor belum tertutup.")
+        return False
+    log("Subtitle manual disimpan dan editor subtitle sudah tertutup.")
+    return True
 
 
 def close_subtitle_editor(page, timeout_ms: int = 5000) -> bool:
@@ -4131,11 +4326,13 @@ def add_manual_subtitle(page, subtitle_text: str = "FCN") -> bool:
         log(f"Menunggu {after_type_delay_ms}ms setelah subtitle selesai diisi.")
         time.sleep(after_type_delay_ms / 1000)
     if click_subtitle_done(page, timeout_ms=done_timeout_ms):
-        time.sleep(0.5)
         return subtitle_filled
-    if subtitle_required:
+    if subtitle_filled or subtitle_required:
         save_debug_artifacts(page, "subtitle-done-not-found")
-        raise UploadError("Tombol Selesai subtitle tidak ditemukan; upload dihentikan agar subtitle tidak terlewati.")
+        raise UploadError(
+            "Tombol Selesai subtitle tidak berhasil menutup editor; "
+            "upload dihentikan agar subtitle dan urutan step tidak terlewati."
+        )
     if not close_subtitle_editor(page, timeout_ms=done_timeout_ms):
         save_debug_artifacts(page, "subtitle-done-not-found")
         message = "Tombol Selesai subtitle tidak ditemukan; subtitle dilewati agar upload tetap lanjut."
@@ -4849,10 +5046,16 @@ def run_upload(args: argparse.Namespace) -> None:
             click_next_upload_step(page, timeout_ms=next_step_timeout_ms, expected_step="VIDEO_ELEMENTS")
             log("Masuk ke tab Elemen video.")
             subtitle_text = os.environ.get("YOUTUBE_MANUAL_SUBTITLE_TEXT", "FCN").strip() or "FCN"
-            add_manual_subtitle(page, subtitle_text)
+            subtitle_added = add_manual_subtitle(page, subtitle_text)
+            if subtitle_added and subtitle_editor_open(page):
+                save_debug_artifacts(page, "subtitle-editor-still-open")
+                raise UploadError(
+                    "Editor subtitle masih terbuka setelah tombol Selesai; "
+                    "step berikutnya tidak dijalankan."
+                )
 
             click_next_upload_step(page, timeout_ms=next_step_timeout_ms, expected_step="CHECKS")
-            log("Masuk ke tab Pemeriksaan awal.")
+            log("Step Elemen video sudah tercentang; masuk ke tab Pemeriksaan awal.")
             non_blocking_claim_approved = wait_for_copyright_checks(
                 page,
                 min(timeout_ms, int(os.environ.get("YOUTUBE_CHECKS_TIMEOUT_SECONDS", "3600")) * 1000),

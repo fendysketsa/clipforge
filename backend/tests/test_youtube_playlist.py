@@ -4,6 +4,7 @@ import youtube_uploader
 from youtube_uploader import (
     UploadError,
     click_playlist_checkbox,
+    click_playlist_done,
     playlist_dialog_open,
     playlist_is_selected,
     playlist_row_is_selected,
@@ -26,6 +27,8 @@ class FakeControl:
         self.role = role
         self.checked = checked
         self.clicks = 0
+        self.focuses = 0
+        self.presses = []
 
     def get_attribute(self, name):
         if name == "aria-checked" and self.role:
@@ -47,6 +50,16 @@ class FakeControl:
     def click(self, timeout=0):
         self.clicks += 1
         self.checked = True
+
+    def focus(self, timeout=0):
+        self.focuses += 1
+
+    def press(self, key, timeout=0):
+        self.presses.append(key)
+        self.checked = True
+
+    def set_checked(self, checked, force=False, timeout=0):
+        self.checked = checked
 
 
 class FakeControls:
@@ -84,7 +97,11 @@ class FakeRow:
     def locator(self, selector):
         if selector.startswith('[role="checkbox"], input'):
             return FakeControls([self.checkbox])
-        if selector in {'div#checkbox[role="checkbox"]', '[role="checkbox"]'}:
+        if selector in {
+            'div#checkbox[role="checkbox"]',
+            '[role="checkbox"]',
+            'div#checkbox[role="checkbox"], [role="checkbox"]',
+        }:
             return FakeFirst(self.checkbox)
         return FakeFirst()
 
@@ -132,7 +149,7 @@ def test_playlist_summary_does_not_skip_explicit_search_and_checkbox_verificatio
     assert "PLAYLIST_CONFIRMED: Islam" in calls
 
 
-def test_playlist_selection_retries_when_collapsed_summary_is_not_confirmed(monkeypatch):
+def test_playlist_selection_confirms_by_reopening_when_summary_is_stale(monkeypatch):
     calls = configure_playlist_happy_path(monkeypatch, summaries=[False, True])
 
     select_playlist(object(), "Islam")
@@ -140,11 +157,35 @@ def test_playlist_selection_retries_when_collapsed_summary_is_not_confirmed(monk
     assert calls.count("open") == 2
     assert calls.count("search:Islam") == 2
     assert calls.count("done") == 2
+    assert "PLAYLIST_CONFIRMED_BY_REOPEN: Islam" in calls
+
+
+def test_playlist_selection_retries_when_reopened_checkbox_is_not_selected(monkeypatch):
+    calls = configure_playlist_happy_path(monkeypatch, summaries=[False, True])
+    states = iter([True, True, False, True, True])
+    monkeypatch.setattr(
+        youtube_uploader,
+        "playlist_is_selected",
+        lambda *_args, **_kwargs: next(states),
+    )
+
+    select_playlist(object(), "Islam")
+
+    assert calls.count("open") == 3
+    assert calls.count("search:Islam") == 3
+    assert calls.count("done") == 2
+    assert "PLAYLIST_CONFIRMED: Islam" in calls
 
 
 def test_playlist_selection_fails_closed_instead_of_silently_skipping(monkeypatch):
     monkeypatch.setenv("YOUTUBE_PLAYLIST_SELECT_ATTEMPTS", "2")
     calls = configure_playlist_happy_path(monkeypatch, summaries=[False, False])
+    states = iter([True, True, False, True, True, False])
+    monkeypatch.setattr(
+        youtube_uploader,
+        "playlist_is_selected",
+        lambda *_args, **_kwargs: next(states),
+    )
 
     with pytest.raises(UploadError, match="playlist tidak terlewati"):
         select_playlist(object(), "Islam")
@@ -189,7 +230,20 @@ def test_closed_playlist_dialog_requires_visible_non_hidden_surface(monkeypatch)
     assert "label.includes('playlist baru')" not in script
 
 
-def test_playlist_checkbox_uses_trusted_locator_click_and_verifies_state(monkeypatch):
+def test_playlist_done_is_scoped_to_playlist_dialog(monkeypatch):
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(youtube_uploader, "playlist_dialog_open", lambda *_args, **_kwargs: False)
+    page = CapturingPage()
+
+    assert click_playlist_done(page, timeout_ms=100)
+
+    script = page.scripts[0]
+    assert "ytcp-playlist-dialog" in script
+    assert "done-button" in script
+    assert "thumbnail" not in script
+
+
+def test_playlist_checkbox_uses_keyboard_activation_and_verifies_state(monkeypatch):
     checkbox = FakeControl(role=True, checked=False)
     row = FakeRow(checkbox)
     monkeypatch.setattr(youtube_uploader, "playlist_row_locator", lambda *_args: row)
@@ -197,7 +251,9 @@ def test_playlist_checkbox_uses_trusted_locator_click_and_verifies_state(monkeyp
     monkeypatch.setattr(youtube_uploader, "log", lambda _message: None)
 
     assert click_playlist_checkbox(object(), "Islam", timeout_ms=100)
-    assert checkbox.clicks == 1
+    assert checkbox.focuses == 1
+    assert checkbox.presses == ["Space"]
+    assert checkbox.clicks == 0
     assert playlist_row_is_selected(row) is True
 
 
