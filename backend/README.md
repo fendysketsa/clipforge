@@ -89,7 +89,7 @@ Default output video:
 - subtitle burned-in
 - caption dinamis menyorot kata penting dari ucapan asli, dengan timing berbobot jumlah kata dan margin aman agar tidak tertutup action rail/judul UI Shorts; file SRT bersih tetap dibuat untuk accessibility
 - caption ringkas dengan outline/shadow tanpa gradient band agar wajah dan piksel sumber tetap bersih
-- frame cover Shorts 9:16 ditanam pada opening sebagai kartu konteks berbasis hook transcript; badge, warna aksen, dan variasi layout mengikuti tema klip agar batch tidak tampak seperti template identik; keyframe 0,78 detik dibuat agar frame mudah dipilih lewat aplikasi YouTube (Shorts tidak menerima upload thumbnail gambar kustom)
+- frame cover Shorts 9:16 ditanam pada opening sebagai kartu konteks ringkas berbasis hook transcript; badge, warna aksen, dan variasi layout mengikuti tema klip agar batch tidak tampak seperti template identik; preview sekitar 0,78 detik menjadi panduan untuk menggeser timeline lewat aplikasi YouTube. Keyframe tidak dianggap dapat memaksa tiga saran otomatis YouTube, dan Shorts tidak menerima upload gambar thumbnail kustom seperti long-form
 - CTA kontekstual berbentuk pertanyaan mengikuti tema klip dan muncul singkat di atas payoff yang masih bergerak; voice-over template dinonaktifkan secara default agar dialog asli dan loop tetap utuh
 - CTA Subscribe memberi alasan yang mengikuti tema setelah payoff (misalnya hikmah, cek fakta, atau pelajaran berikutnya); Short menggabungkannya dengan pertanyaan komentar, sedangkan long-form hanya menampilkannya sekali pada bab terakhir tanpa reward atau urgensi palsu
 - seluruh output short dan kompilasi long-form mendapat kabut asap putih bergerak yang halus di tepi bawah/sudut; overlay dibuat prosedural pada resolusi rendah, divariasikan dari isi cerita, dan dirender di bawah subtitle/watermark agar wajah serta teks tetap jelas
@@ -107,7 +107,7 @@ Default output video:
 - intisari ucapan asli disimpan di metadata; mode clean-detail tidak menutup wajah dengan kartu intisari besar
 - kandidat wajib punya point utama, batas kalimat tuntas, dan payoff dekat ending
 - treatment loop hanya aktif saat payoff benar-benar terhubung ke hook
-- setiap sidecar mencatat kesiapan eksperimen target 2K, membedakan playback view dari engaged views, lalu memantau chose-to-view, retention, shares, serta subscriber yang dihasilkan; status ini bukan jaminan jumlah view
+- setiap sidecar mencatat kesiapan eksperimen target 5K dengan checkpoint 500/2K/5K, membedakan playback view dari engaged views, lalu memantau chose-to-view, retention, shares, serta subscriber yang dihasilkan; status ini bukan jaminan jumlah view
 - short menjalani auto-repair hook/ending pada shortlist yang lebih luas sebelum seleksi final; hanya kandidat FYP minimal 78 yang diekspor dan preflight YouTube menahan output lama di bawah ambang tersebut
 - variasi motion dipilih deterministik dari isi cerita (bukan nomor urut export) agar rangkaian upload tidak terlihat seperti template massal yang identik
 - audit monetisasi v2 hanya meloloskan upload Private bila alur hook–pesan inti–payoff utuh dan edit kamera/emphasis/audio benar-benar mengikuti transcript; hasil audit bukan jaminan diterima YPP

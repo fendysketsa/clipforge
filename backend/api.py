@@ -2758,6 +2758,8 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
     transcript = clip_candidate_text(job, clip)
     clip_context = transcript or caption or title
     is_compilation = is_compilation_clip(job, clip)
+    sidecar = clip_sidecar_payload(clip)
+    cover_headline = str(sidecar.get("thumbnail_headline") or "").strip() if not is_compilation else ""
     format_name = "video resume cerita landscape berdurasi lima sampai sepuluh menit" if is_compilation else "YouTube Shorts"
     system_prompt = (
         YOUTUBE_METADATA_SYSTEM_PROMPT.replace(
@@ -2782,6 +2784,17 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
         if is_compilation
         else ""
     )
+    shorts_cover_rule = (
+        "- Selaraskan title dengan headline frame cover yang sudah tertanam: pertahankan topik dan janji utamanya, "
+        "tetapi jangan menyalinnya secara kaku bila hasilnya tidak natural.\n"
+        if cover_headline
+        else ""
+    )
+    cover_context = (
+        f"Headline frame cover yang sudah tertanam: {cover_headline}\n"
+        if cover_headline
+        else ""
+    )
     user_prompt = (
         f"Buat metadata {format_name} untuk video ini.\n"
         "Aturan:\n"
@@ -2790,6 +2803,7 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
         "- Perbaiki salah dengar transkrip yang jelas; jangan menyalin kata acak atau kalimat pembuka yang rusak.\n"
         "- Hindari ALL CAPS dan clickbait generik; tonjolkan manfaat, konflik, kejutan, atau hikmah yang benar-benar ada.\n"
         f"{long_form_packaging_rule}"
+        f"{shorts_cover_rule}"
         "- Description baru 2-3 kalimat informatif, sekitar 180-450 karakter; bangun rasa penasaran tanpa menyesatkan.\n"
         "- Description boleh memakai maksimal 2 emoji yang benar-benar relevan.\n"
         "- Bahasa Indonesia.\n"
@@ -2799,6 +2813,7 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
         "- Wajib isi semua field JSON: title, description, hashtags.\n"
         'Return JSON exactly like {"title": "...", "description": "...", "hashtags": ["#tag1", "#tag2"]}.\n\n'
         f"Judul kerja klip (hanya petunjuk, wajib ditulis ulang): {title}\n"
+        f"{cover_context}"
         f"Konteks/transkrip klip:\n{clip_context[:2400]}"
     )
     last_error = ""

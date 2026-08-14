@@ -26,10 +26,10 @@ export function ThumbnailPrompt({ clip }: ThumbnailPromptProps) {
           <ImageIcon size={16} />
         </span>
         <span className="thumbSummaryCopy">
-          <strong>{isShort ? "Cover Shorts sudah tertanam" : "Thumbnail siap publikasi"}</strong>
+          <strong>{isShort ? "Frame cover Shorts siap dipilih" : "Thumbnail siap publikasi"}</strong>
           <small>
             {[
-              isShort ? "pilih frame 0,78 dtk di aplikasi YouTube" : "",
+              isShort ? "geser ke frame awal sekitar 0,78 dtk di aplikasi YouTube" : "",
               thumbUrl ? "preview" : "",
               prompt ? "prompt" : "",
               caption ? "caption" : "",
@@ -46,9 +46,15 @@ export function ThumbnailPrompt({ clip }: ThumbnailPromptProps) {
           <div className="thumbPreview">
             <div className="thumbBlockHeader">
               <ImageIcon size={14} />
-              <span>{isShort ? "Preview frame cover tertanam (0,78 detik)" : "Thumbnail upload"}</span>
+              <span>{isShort ? "Preview frame yang harus dipilih (sekitar 0,78 detik)" : "Thumbnail upload"}</span>
             </div>
             <img src={thumbUrl} alt="Preview frame cover berkontras tinggi" />
+            {isShort ? (
+              <p>
+                Di aplikasi YouTube, buka Edit thumbnail lalu geser timeline ke frame yang sama
+                dengan preview ini. Jangan mengandalkan pilihan otomatis tengah.
+              </p>
+            ) : null}
             <button type="button" onClick={() => handleDownload(thumbUrl, thumbName)}>
               <Download size={15} />
               <span>{isShort ? "Unduh preview (opsional)" : "Unduh thumbnail"}</span>

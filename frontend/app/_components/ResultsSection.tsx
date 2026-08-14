@@ -101,32 +101,34 @@ function fypScoreTone(score: number) {
   return "polish";
 }
 
-function twoKReadiness(score: number, isLongForm: boolean) {
+function fiveKReadiness(score: number, isLongForm: boolean) {
   if (score >= 88) {
     return {
-      label: "Target 2K · siap uji",
+      label: "Target 5K · siap uji",
       tone: "excellent",
       detail: isLongForm
         ? "Hook, alur, dan packaging sudah kuat; publikasikan Private dulu lalu cek thumbnail, judul, dan retention 30 detik."
-        : "Hook dan payoff sudah kuat; publikasikan Private dulu, pilih frame cover 0,78 detik, lalu ukur engaged views, chose-to-view, dan subscriber yang dihasilkan.",
+        : "Hook dan payoff sudah kuat; publikasikan Private dulu, buka Edit thumbnail di aplikasi YouTube dan geser ke frame cover awal sekitar 0,78 detik—jangan mengandalkan pilihan otomatis tengah—lalu ukur engaged views, chose-to-view, dan subscriber yang dihasilkan.",
     };
   }
   if (score >= 78) {
     return {
-      label: "Target 2K · layak uji",
+      label: "Target 5K · layak uji",
       tone: "strong",
       detail: "Layak dipublikasikan sebagai eksperimen. Pantau engaged views, chose-to-view, retention, shares, dan subscriber; angka view tetap ditentukan respons penonton.",
     };
   }
   if (score >= 65) {
     return {
-      label: "Target 2K · A/B hook",
+      label: isLongForm ? "Target 5K · A/B packaging" : "Target 5K · uji hook",
       tone: "test",
-      detail: "Uji judul atau pembuka lain sebelum upload utama; perbaiki temuan yang tercantum di bawah.",
+      detail: isLongForm
+        ? "Uji judul/thumbnail lewat fitur A/B YouTube setelah video siap; perbaiki juga temuan di bawah."
+        : "Coba satu varian hook secara berurutan—fitur A/B native YouTube tidak tersedia untuk Shorts—lalu bandingkan respons penonton.",
     };
   }
   return {
-    label: "Target 2K · poles dulu",
+    label: "Target 5K · poles dulu",
     tone: "hold",
     detail: "Belum disarankan untuk mengejar distribusi. Pilih kandidat lain atau perkuat hook, tempo, dan payoff.",
   };
@@ -351,7 +353,7 @@ export function ResultsSection({
             const isLongForm = clip.name.toLowerCase().startsWith("highlight_5menit_")
               || clip.name.toLowerCase().startsWith("resume_cerita_");
             const growthReadiness = clip.fyp_score !== null && clip.fyp_score !== undefined
-              ? twoKReadiness(clip.fyp_score, isLongForm)
+              ? fiveKReadiness(clip.fyp_score, isLongForm)
               : null;
             const isShortUploadReady = isLongForm
               || (typeof clip.fyp_score === "number" && clip.fyp_score >= 78);

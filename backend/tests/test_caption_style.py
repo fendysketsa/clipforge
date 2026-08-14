@@ -50,6 +50,7 @@ from clipper import (
     fendy_auditor_identity,
     ffmpeg_clean_metadata_args,
     ffmpeg_fendy_provenance_metadata_args,
+    five_k_experiment_readiness,
     hook_banner_text,
     highlight_caption_keyword,
     intro_particle_burst_filters,
@@ -947,11 +948,11 @@ def test_shorts_cover_moment_uses_adaptive_reference_style_card():
     assert "textfile='clip.cover.txt'" in value
     assert "color=white@0.97" in value
     assert "color=#FACC15@1.0" in value
-    assert "fontcolor=black:fontsize=49" in value
-    assert "x=96:y=1086" in value
+    assert "fontcolor=black:fontsize=58" in value
+    assert "x=96:y=1114" in value
     assert "between(t,0,3.200)" in value
     assert "text='FAKTA / PELAJARAN'" in value
-    assert "text='ryuundyofficial'" in value
+    assert "text='ryuundyofficial'" not in value
     assert "text='LIHAT PENJELASANNYA'" not in value
     assert "textfile='clip.hook.txt'" not in value
 
@@ -1049,7 +1050,7 @@ def test_youtube_policy_snapshot_marks_future_rules_for_review_without_assuming_
     assert len(future["official_sources"]) == 3
 
 
-def test_two_k_readiness_is_an_experiment_signal_not_a_view_guarantee():
+def test_five_k_readiness_is_an_experiment_signal_not_a_view_guarantee():
     clip = ClipCandidate(
         1,
         0,
@@ -1065,9 +1066,9 @@ def test_two_k_readiness_is_an_experiment_signal_not_a_view_guarantee():
         boundary_quality="payoff_tuntas",
     )
 
-    readiness = two_k_experiment_readiness(clip, "vertical_short")
+    readiness = five_k_experiment_readiness(clip, "vertical_short")
 
-    assert readiness["target_views"] == 2000
+    assert readiness["target_views"] == 5000
     assert readiness["quality_metric"] == "engaged_views"
     assert readiness["minimum_short_export_score"] == 78
     assert readiness["quality_gate_passed"] is True
@@ -1076,6 +1077,8 @@ def test_two_k_readiness_is_an_experiment_signal_not_a_view_guarantee():
     assert "viewed_vs_swiped" in readiness["measure_after_publish"]
     assert "engaged_views" in readiness["measure_after_publish"]
     assert "subscribers_gained" in readiness["measure_after_publish"]
+    assert readiness["review_checkpoints"] == [500, 2000, 5000]
+    assert two_k_experiment_readiness(clip, "vertical_short") == readiness
     assert one_k_experiment_readiness(clip, "vertical_short") == readiness
 
 
@@ -1119,9 +1122,30 @@ def test_thumbnail_story_copy_is_compact_and_truthful():
 
     assert copy["eyebrow"] == "JANGAN ABAIKAN"
     assert "POV:" not in copy["headline"]
-    assert len(copy["headline"].splitlines()) <= 3
+    assert len(copy["headline"].splitlines()) <= 2
     assert copy["headline"] == "JANGAN PERNAH\nMEREMEHKAN ORANG"
     assert copy["support"] == "KAMU BARU SADAR UCAPAN\nKECIL BISA MELUKAI ORANG"
+
+
+def test_shorts_thumbnail_copy_drops_dangling_punctuation_after_compaction():
+    clip = ClipCandidate(
+        1,
+        0,
+        46,
+        46,
+        91,
+        "Salah Langkah, Salah Pandang: Hati-hati Sebelum Kena Korban",
+        "test",
+        "Kesalahan kecil bisa berujung pada masalah.",
+        hook="Salah Langkah, Salah Pandang: Hati-hati Sebelum Kena Korban",
+        pov="Hati-hati sebelum mengambil keputusan",
+    )
+
+    copy = thumbnail_story_copy(clip)
+
+    assert copy["headline"] == "SALAH LANGKAH,\nSALAH PANDANG"
+    assert len(copy["headline"].splitlines()) == 2
+    assert len(copy["headline"].replace("\n", " ").split()) <= 6
 
 
 def test_thumbnail_filter_uses_vertical_and_landscape_upload_shapes():
@@ -1142,8 +1166,8 @@ def test_thumbnail_filter_uses_vertical_and_landscape_upload_shapes():
 
     assert "scale=1080:1920" in vertical
     assert "color=white@0.97" in vertical
-    assert "fontcolor=black:fontsize=49" in vertical
-    assert "x=96:y=1086" in vertical
+    assert "fontcolor=black:fontsize=58" in vertical
+    assert "x=96:y=1114" in vertical
     assert "text='WAJIB TAHU'" in vertical
     assert "text='LIHAT PENJELASANNYA'" not in vertical
     assert "scale=1280:720" in landscape
@@ -1165,8 +1189,8 @@ def test_shorts_context_card_varies_label_color_and_geometry_from_story():
 
     assert "text='RENUNGAN / HIKMAH'" in value
     assert "color=#22C55E@1.0" in value
-    assert "x=72:y=982:w=796:h=9" in value
-    assert "x=88:y=1092" in value
+    assert "x=72:y=1010:w=796:h=9" in value
+    assert "x=88:y=1120" in value
 
 
 def test_long_form_cold_open_uses_content_theme_badge():

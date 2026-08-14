@@ -1569,6 +1569,11 @@ def test_generate_youtube_description_uses_llm(monkeypatch):
     monkeypatch.setenv("TELEGRAM_AI_MODEL", "deepseek-v4-flash:cloud")
     monkeypatch.delenv("YOUTUBE_DESCRIPTION_AI_BASE_URL", raising=False)
     monkeypatch.delenv("YOUTUBE_DESCRIPTION_AI_MODEL", raising=False)
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {"thumbnail_headline": "Salah Langkah, Salah Pandang"},
+    )
 
     job = ClipJob(
         id="job-1",
@@ -1587,6 +1592,8 @@ def test_generate_youtube_description_uses_llm(monkeypatch):
         assert config.base_url == "http://127.0.0.1:11434/v1"
         assert config.model == "deepseek-v4-flash:cloud"
         assert "Judul kerja klip (hanya petunjuk, wajib ditulis ulang): Judul Clip" in messages[-1]["content"]
+        assert "Headline frame cover yang sudah tertanam: Salah Langkah, Salah Pandang" in messages[-1]["content"]
+        assert "Selaraskan title dengan headline frame cover" in messages[-1]["content"]
         return '{"title": "Nasihat Singkat Tentang Asef", "description": "Klip ini menjelaskan nasihat penting dengan konteks yang mudah dipahami. Simak poin utamanya agar pesan yang disampaikan dapat diterapkan dengan tepat.", "hashtags": ["#islam", "#nasihat", "#hikmah", "#shorts"]}'
 
     monkeypatch.setattr(api, "chat_completion", fake_chat_completion)

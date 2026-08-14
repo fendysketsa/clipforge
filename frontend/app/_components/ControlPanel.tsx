@@ -462,7 +462,7 @@ export function ControlPanel({
         <p className="field-help">
           {clipMode === "highlight_5m"
             ? "AI mencari POV utama dan inti cerita dari seluruh video, membuang filler, lalu menyusunnya menjadi satu resume kronologis 16:9 dengan cold-open dan thumbnail adaptif."
-            : "Clip vertikal maksimal 60 detik (di bawah batas resmi Shorts 3 menit, sekaligus menghindari risiko blok global konten ber-claim di atas 1 menit) dengan cover frame 0,78 detik, caption safe-area, payoff, CTA Subscribe kontekstual, dan loop alami."}
+            : "Clip vertikal maksimal 60 detik (di bawah batas resmi Shorts 3 menit, sekaligus menghindari risiko blok global konten ber-claim di atas 1 menit) dengan frame cover awal yang dapat dipilih lewat timeline aplikasi YouTube sekitar 0,78 detik, caption safe-area, payoff, CTA Subscribe kontekstual, dan loop alami."}
         </p>
       </div>
 

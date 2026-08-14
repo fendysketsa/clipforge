@@ -2553,6 +2553,89 @@ def click_playlist_named(page, playlist_name: str, timeout_ms: int = 8000) -> bo
     return False
 
 
+def playlist_row_locator(page, playlist_name: str):
+    """Return the visible Studio playlist row whose label exactly matches the name."""
+    target = playlist_name.strip().casefold()
+    if not target:
+        return None
+    try:
+        rows = page.locator(
+            "ytcp-playlist-dialog li.row, "
+            "ytcp-playlist-dialog ytcp-playlist-dialog-row, "
+            "ytcp-playlist-dialog tp-yt-paper-item, "
+            'ytcp-playlist-dialog [role="listitem"], '
+            'ytcp-playlist-dialog [role="option"]'
+        )
+        for index in range(rows.count()):
+            row = rows.nth(index)
+            try:
+                if not row.is_visible(timeout=300):
+                    continue
+                labels = row.locator("span.label-text, .checkbox-label, [aria-label], [title]")
+                values: list[str] = []
+                for label_index in range(labels.count()):
+                    label = labels.nth(label_index)
+                    label_values: list[str | None] = []
+                    try:
+                        label_values.append(label.inner_text(timeout=300))
+                    except Exception:
+                        pass
+                    for attribute in ("aria-label", "title"):
+                        try:
+                            label_values.append(label.get_attribute(attribute))
+                        except Exception:
+                            pass
+                    for value in label_values:
+                        if value:
+                            values.extend(
+                                line.strip().casefold()
+                                for line in value.splitlines()
+                                if line.strip()
+                            )
+                if not values:
+                    values = [
+                        line.strip().casefold()
+                        for line in row.inner_text(timeout=500).splitlines()
+                        if line.strip()
+                    ]
+                if target in values:
+                    return row
+            except Exception:
+                continue
+    except Exception:
+        return None
+    return None
+
+
+def playlist_row_is_selected(row) -> bool:
+    """Read both the Lit control and hidden native input used by Studio."""
+    try:
+        controls = row.locator(
+            '[role="checkbox"], input[type="checkbox"], ytcp-checkbox-lit, tp-yt-paper-checkbox'
+        )
+        for index in range(controls.count()):
+            control = controls.nth(index)
+            try:
+                aria_checked = (control.get_attribute("aria-checked") or "").strip().lower()
+                raw_checked_attribute = control.get_attribute("checked")
+                checked_attribute = (raw_checked_attribute or "").strip().lower()
+                if aria_checked == "true" or (
+                    raw_checked_attribute is not None
+                    and checked_attribute in {"", "true", "checked"}
+                ):
+                    return True
+                try:
+                    if control.is_checked(timeout=300):
+                        return True
+                except Exception:
+                    pass
+            except Exception:
+                continue
+    except Exception:
+        return False
+    return False
+
+
 def playlist_is_selected(page, playlist_name: str, timeout_ms: int = 3000) -> bool:
     target = playlist_name.strip().lower()
     if not target:
@@ -2612,6 +2695,9 @@ def playlist_is_selected(page, playlist_name: str, timeout_ms: int = 3000) -> bo
     """
     deadline = time.monotonic() + timeout_ms / 1000
     while time.monotonic() < deadline:
+        row = playlist_row_locator(page, playlist_name)
+        if row is not None and playlist_row_is_selected(row):
+            return True
         try:
             if page.evaluate(script, {"target": target}):
                 return True
@@ -2677,6 +2763,42 @@ def click_playlist_checkbox(page, playlist_name: str, timeout_ms: int = 8000) ->
     target = playlist_name.strip().lower()
     if not target:
         return False
+    deadline = time.monotonic() + timeout_ms / 1000
+
+    # Use Playwright's trusted pointer input first. Studio's current
+    # ytcp-checkbox-lit may ignore element.click() even though the event is
+    # delivered, which leaves aria-checked=false and creates a private draft.
+    while time.monotonic() < deadline:
+        row = playlist_row_locator(page, playlist_name)
+        if row is None:
+            time.sleep(0.2)
+            continue
+        if playlist_row_is_selected(row):
+            return True
+        click_targets = (
+            'div#checkbox[role="checkbox"]',
+            '[role="checkbox"]',
+            "ytcp-checkbox-lit",
+            "tp-yt-paper-checkbox",
+            "label.ytcp-checkbox-label",
+        )
+        for selector in click_targets:
+            try:
+                control = row.locator(selector).first
+                if not control.count() or not control.is_visible(timeout=300):
+                    continue
+                control.scroll_into_view_if_needed(timeout=1000)
+                control.click(timeout=min(2500, max(500, int((deadline - time.monotonic()) * 1000))))
+                state_deadline = min(deadline, time.monotonic() + 1.5)
+                while time.monotonic() < state_deadline:
+                    if playlist_row_is_selected(row):
+                        log(f"Checkbox playlist tercentang dan terverifikasi: {playlist_name}.")
+                        return True
+                    time.sleep(0.15)
+            except Exception:
+                continue
+        break
+
     script = """
     ({ target }) => {
       const roots = [];
@@ -2760,7 +2882,9 @@ def click_playlist_checkbox(page, playlist_name: str, timeout_ms: int = 8000) ->
       return false;
     }
     """
-    deadline = time.monotonic() + timeout_ms / 1000
+    # Compatibility fallback for older Studio variants where locator-based
+    # controls are not exposed in the light DOM.
+    deadline = max(deadline, time.monotonic() + min(2.0, timeout_ms / 1000))
     while time.monotonic() < deadline:
         try:
             if page.evaluate(script, {"target": target}):

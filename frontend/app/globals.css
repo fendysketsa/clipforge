@@ -4656,6 +4656,13 @@ details[open] > summary .detailsChevron {
   border-radius: 9px;
 }
 
+.thumbPreview p {
+  margin: 0;
+  color: #8eaaa4;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
 .thumbPreview button,
 .thumbPromptBox button {
   display: inline-flex;

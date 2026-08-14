@@ -2929,11 +2929,11 @@ def fyp_score_label(score: int) -> str:
     return "Lemah"
 
 
-def two_k_experiment_readiness(
+def five_k_experiment_readiness(
     clip: ClipCandidate,
     output_format: OutputFormat,
 ) -> dict[str, object]:
-    """Describe a 2K-view publishing experiment without predicting distribution."""
+    """Describe a 5K-view publishing experiment without predicting distribution."""
     score = max(0, min(100, int(round(clip.score))))
     if score >= 88:
         status = "ready_to_test"
@@ -2944,10 +2944,18 @@ def two_k_experiment_readiness(
     else:
         status = "revise_before_publishing"
     return {
-        "version": 2,
-        "target_views": 2000,
-        "target_metric": "shorts_views_starts_or_replays",
-        "quality_metric": "engaged_views",
+        "version": 3,
+        "target_views": 5000,
+        "target_metric": (
+            "shorts_views_starts_or_replays"
+            if output_format == "vertical_short"
+            else "youtube_views"
+        ),
+        "quality_metric": (
+            "engaged_views"
+            if output_format == "vertical_short"
+            else "watch_time"
+        ),
         "minimum_short_export_score": SHORT_EXPORT_MIN_FYP_SCORE,
         "quality_gate_passed": (
             output_format != "vertical_short"
@@ -3001,7 +3009,16 @@ def two_k_experiment_readiness(
                 "subscriber_value_proposition",
             ]
         ),
+        "review_checkpoints": [500, 2000, 5000],
     }
+
+
+def two_k_experiment_readiness(
+    clip: ClipCandidate,
+    output_format: OutputFormat,
+) -> dict[str, object]:
+    """Backward-compatible alias; the active publishing target is now 5K."""
+    return five_k_experiment_readiness(clip, output_format)
 
 
 def one_k_experiment_readiness(
@@ -3009,7 +3026,7 @@ def one_k_experiment_readiness(
     output_format: OutputFormat,
 ) -> dict[str, object]:
     """Backward-compatible alias for integrations using the former function name."""
-    return two_k_experiment_readiness(clip, output_format)
+    return five_k_experiment_readiness(clip, output_format)
 
 
 def fallback_pov_angle(text: str) -> str:
@@ -4404,22 +4421,23 @@ def thumbnail_story_copy(
         support_words = 10
     else:
         # Lead with the analyzed hook. A concrete promise/question is easier to
-        # scan in a Shorts grid than a longer POV sentence; the POV remains as
-        # truthful context underneath it.
+        # scan in a Shorts grid than a longer POV sentence. Keep this much
+        # tighter than an in-video caption: YouTube may display the selected
+        # frame as a small, center-cropped channel/search thumbnail.
         headline_source = raw_hook
         support_source = raw_pov
-        headline_words = 8
-        headline_chars = 22
-        headline_lines = 3
+        headline_words = 6
+        headline_chars = 18
+        headline_lines = 2
         support_words = 10
 
-    headline = first_sentence(headline_source, max_words=headline_words).upper()
+    headline = first_sentence(headline_source, max_words=headline_words).upper().rstrip(" ,;:-")
     headline_chunks = split_subtitle_text(
         headline,
         max_chars=headline_chars,
         max_lines=headline_lines,
     )
-    headline = (headline_chunks[0] if headline_chunks else headline)[:120]
+    headline = (headline_chunks[0] if headline_chunks else headline)[:120].rstrip(" ,;:-")
 
     support = first_sentence(support_source, max_words=support_words).upper()
     support_words_set = _content_words(support)
@@ -4441,11 +4459,12 @@ def thumbnail_story_copy(
 
 
 def shorts_cover_frame_timestamp(duration: float) -> float:
-    """Pick a stable, keyframe-friendly instant inside the opening cover moment."""
+    """Pick the preview instant users should scrub to in the YouTube app."""
     return min(max(0.1, duration - 0.05), 0.78)
 
 
 SHORTS_TITLE_OVERLAY_SECONDS = 3.2
+SHORTS_COVER_SELECTION_WINDOW = (0.55, 1.25)
 SHORTS_CTA_OVERLAY_SECONDS = 2.35
 LONG_FORM_SUBSCRIBE_OVERLAY_SECONDS = 5.2
 DEFAULT_SHORTS_CTA_VOICEOVER_TEXT = "Tulis pendapatmu dan lanjutkan diskusinya!"
@@ -4469,44 +4488,39 @@ def viral_title_overlay_filter(
     card_x, card_width = ((58, 842), (66, 824), (50, 840))[card_variant]
     inner_x = card_x + 22
     content_x = card_x + 38
-    headline_y = (1086, 1080, 1092)[card_variant]
+    headline_y = (1114, 1108, 1120)[card_variant]
     badge_width = min(390, max(244, len(safe_eyebrow) * 16 + 74))
     accent_detail = (
-        f"drawbox=x={content_x}:y=1012:w={badge_width}:h=48:color={accent}@1.0:t=fill:{active}"
+        f"drawbox=x={content_x}:y=1038:w={badge_width}:h=48:color={accent}@1.0:t=fill:{active}"
         if card_variant == 0
-        else f"drawbox=x={card_x}:y=982:w=12:h=356:color={accent}@1.0:t=fill:{active}"
+        else f"drawbox=x={card_x}:y=1010:w=12:h=310:color={accent}@1.0:t=fill:{active}"
         if card_variant == 1
-        else f"drawbox=x={inner_x}:y=982:w={card_width - 44}:h=9:color={accent}@1.0:t=fill:{active}"
+        else f"drawbox=x={inner_x}:y=1010:w={card_width - 44}:h=9:color={accent}@1.0:t=fill:{active}"
     )
     return ",".join(
         [
             # Two offset rectangles make a soft, rounded-looking card using
             # only filters available in the standard backend FFmpeg build.
-            f"drawbox=x={card_x + 12}:y=1002:w={card_width - 12}:h=380:color=black@0.28:t=fill:{active}",
-            f"drawbox=x={card_x}:y=982:w={card_width}:h=356:color=white@0.97:t=fill:{active}",
-            f"drawbox=x={inner_x}:y=960:w={card_width - 44}:h=400:color=white@0.97:t=fill:{active}",
+            f"drawbox=x={card_x + 12}:y=1024:w={card_width - 12}:h=322:color=black@0.28:t=fill:{active}",
+            f"drawbox=x={card_x}:y=1010:w={card_width}:h=310:color=white@0.97:t=fill:{active}",
+            f"drawbox=x={inner_x}:y=990:w={card_width - 44}:h=350:color=white@0.97:t=fill:{active}",
             accent_detail,
             "drawtext="
             f"fontfile={font_regular}:text='●':expansion=none:"
-            f"fontcolor={accent}@0.20:fontsize=41:x={content_x + 6}:y=1005:"
+            f"fontcolor={accent}@0.20:fontsize=41:x={content_x + 6}:y=1031:"
             f"enable='between(t,0,{title_end:.3f})*lt(mod(t,1.05),0.46)'",
             "drawtext="
             f"fontfile={font_regular}:text='●':expansion=none:"
-            f"fontcolor={accent}:fontsize=24:x={content_x + 15}:y=1015:"
+            f"fontcolor={accent}:fontsize=24:x={content_x + 15}:y=1041:"
             f"{active}",
             "drawtext="
             f"fontfile={font_bold}:text='{safe_eyebrow}':expansion=none:"
-            f"fontcolor=black:fontsize=25:x={content_x + 50}:y=1021:"
+            f"fontcolor=black:fontsize=25:x={content_x + 50}:y=1047:"
             f"{active}",
             "drawtext="
             f"fontfile={font_bold}:textfile='{headline_filename}':reload=0:expansion=none:"
-            "fontcolor=black:fontsize=49:line_spacing=4:"
+            "fontcolor=black:fontsize=58:line_spacing=7:"
             f"x={content_x}:y={headline_y}:"
-            f"{active}",
-            f"drawbox=x={content_x}:y=1298:w={card_width - 158}:h=3:color=black@0.16:t=fill:{active}",
-            "drawtext="
-            f"fontfile={font_regular}:text='{CHANNEL_WATERMARK}':expansion=none:"
-            f"fontcolor=black@0.82:fontsize=22:x={content_x}:y=1318:"
             f"{active}",
         ]
     )
@@ -6289,7 +6303,7 @@ CHANNEL_WATERMARK = "ryuundyofficial"
 FENDY_AUDITOR_NAME = "Fendy"
 FENDY_AUDIT_SIGNATURE = "FENDY AUDIT"
 FENDY_PROVENANCE_BRAND = "Fendy Clipper"
-CODEX_GROWTH_FRAMEWORK_VERSION = 1
+CODEX_GROWTH_FRAMEWORK_VERSION = 2
 SOFT_CAPTION_BACK_COLOR = "&HC8000000"
 SOFT_CAPTION_SHADOW = 0.35
 
@@ -6477,12 +6491,22 @@ def codex_growth_blueprint(
             "never_copy_low_value_template_at_scale": True,
             "review_window_days": [7, 28, 90],
         },
+        "youtube_recommendation_alignment": {
+            "audience_response_over_algorithm_guessing": True,
+            "choose_to_view": is_short,
+            "average_view_duration": True,
+            "average_percentage_viewed": is_short,
+            "viewer_satisfaction": True,
+            "compare_same_format": True,
+            "avoid_fixed_posting_frequency_claim": True,
+        },
         "measure_after_publish": (
             [
                 "engaged_views",
                 "viewed_vs_swiped",
                 "audience_retention",
                 "average_view_duration",
+                "average_percentage_viewed",
                 "rewatches",
                 "related_video_clicks",
                 "subscribers_gained",
@@ -6501,6 +6525,9 @@ def codex_growth_blueprint(
         ),
         "official_guidance": [
             "https://support.google.com/youtube/answer/12942217",
+            "https://support.google.com/youtube/answer/11914225",
+            "https://support.google.com/youtube/answer/16533387",
+            "https://support.google.com/youtube/answer/12220281",
             "https://support.google.com/youtube/answer/16391400",
             "https://support.google.com/youtube/answer/14075157",
             "https://support.google.com/youtube/answer/10246996",
@@ -7362,12 +7389,26 @@ def export_clip(
             if automatic_short_title
             else None
         ),
+        "thumbnail_selection": (
+            {
+                "method": "youtube_app_scrub_to_embedded_frame",
+                "recommended_seconds": round(shorts_cover_frame_timestamp(duration), 3),
+                "recommended_window_seconds": [
+                    round(min(duration, SHORTS_COVER_SELECTION_WINDOW[0]), 3),
+                    round(min(duration, SHORTS_COVER_SELECTION_WINDOW[1]), 3),
+                ],
+                "desktop_autogenerated_choice_guaranteed": False,
+                "manual_confirmation_required": True,
+            }
+            if automatic_short_title
+            else None
+        ),
         "shorts_policy_compliance": (
             shorts_policy_compliance(duration, embedded_cover=automatic_short_title)
             if output_format == "vertical_short"
             else None
         ),
-        "two_k_experiment_readiness": two_k_experiment_readiness(clip, output_format),
+        "five_k_experiment_readiness": five_k_experiment_readiness(clip, output_format),
         "subscriber_conversion": {
             "version": 1,
             "enabled": bool(drawtext_supported and subscriber_cta_planned),
@@ -8604,7 +8645,7 @@ def export_compilation(
             "first_30_seconds_match_title_thumbnail_promise": True,
             "manual_youtube_chapters_ready": len(candidates) >= 3,
         },
-        "two_k_experiment_readiness": two_k_experiment_readiness(
+        "five_k_experiment_readiness": five_k_experiment_readiness(
             compilation,
             "landscape_compilation",
         ),
