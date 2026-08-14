@@ -123,6 +123,12 @@ def test_markdown_scene_script_is_parsed_without_production_labels():
     assert all("Continuity bible:" in scene.visual_prompt for scene in storyboard.scenes)
 
 
+def test_structured_ai_art_direction_is_flattened_to_plain_prompt():
+    assert long_animate._clean_text(
+        {"pakaian_koko_putih": {}, "ruangan": {"cahaya_hangat": {}}}, 200
+    ) == "pakaian koko putih, ruangan: cahaya hangat"
+
+
 def test_gemini_image_payload_uses_native_interactions_api(monkeypatch, tmp_path):
     scene = _fallback_storyboard(SCRIPT).scenes[0]
     captured = {}

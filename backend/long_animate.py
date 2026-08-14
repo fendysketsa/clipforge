@@ -64,7 +64,10 @@ STORYBOARD_SYSTEM_PROMPT = (
     "Avoid public-figure likenesses, logos, copyrighted characters, embedded text, fake quotations, graphic harm, "
     "and depictions of prophets or sacred figures. Define a precise character_bible for recurring characters. "
     "Each visual_prompt must describe only one visible moment: subject, action, setting, composition, camera, "
-    "and lighting. Never copy narration labels, scene headings, timestamps, or on-screen text into visual_prompt. "
+    "and lighting. The action must be concrete and physically visible; never use abstract actions such as "
+    "preparing, realizing, thinking, or feeling without stating exactly what the hands and body are doing. "
+    "Return art_bible, character_bible, and visual_prompt as plain descriptive strings, never JSON objects. "
+    "Never copy narration labels, scene headings, timestamps, or on-screen text into visual_prompt. "
     "Do not add claims that are absent from the script. "
     "Return strict JSON only."
 )
@@ -82,8 +85,21 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return value.strip().casefold() in {"1", "true", "yes", "on"}
 
 
+def _plain_text_value(value: object) -> str:
+    if isinstance(value, dict):
+        parts: list[str] = []
+        for raw_key, raw_value in value.items():
+            key = str(raw_key).replace("_", " ").strip()
+            nested = _plain_text_value(raw_value)
+            parts.append(f"{key}: {nested}" if nested else key)
+        return ", ".join(part for part in parts if part)
+    if isinstance(value, (list, tuple, set)):
+        return ", ".join(part for item in value if (part := _plain_text_value(item)))
+    return str(value or "")
+
+
 def _clean_text(value: object, limit: int) -> str:
-    return re.sub(r"\s+", " ", str(value or "")).strip()[:limit]
+    return re.sub(r"\s+", " ", _plain_text_value(value)).strip()[:limit]
 
 
 def _sentence_chunks(script: str, target_words: int = 38) -> list[str]:
@@ -516,6 +532,47 @@ def _is_sd_cpp_endpoint(base: str, model: str = "") -> bool:
     )
 
 
+def _release_ollama_gpu_models() -> None:
+    """Free shared VRAM after storyboard generation before Z-Image starts."""
+    if not _env_bool("LONG_ANIMATE_RELEASE_OLLAMA_BEFORE_IMAGE", True):
+        return
+    root = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip().rstrip("/")
+    if root.endswith("/v1"):
+        root = root[:-3]
+    host = (urlparse(root).hostname or "").casefold()
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        return
+    try:
+        with urllib.request.urlopen(f"{root}/api/ps", timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        models = payload.get("models") if isinstance(payload, dict) else None
+        for item in models if isinstance(models, list) else []:
+            name = _clean_text(item.get("name") if isinstance(item, dict) else "", 160)
+            if not name:
+                continue
+            body = json.dumps({"model": name, "keep_alive": 0}).encode("utf-8")
+            request = urllib.request.Request(
+                f"{root}/api/generate",
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=15) as response:
+                response.read()
+        # Ollama acknowledges keep_alive=0 before CUDA/Vulkan memory has always
+        # disappeared. Do not race the image server: wait until /api/ps is empty.
+        deadline = time.monotonic() + 30.0
+        while models and time.monotonic() < deadline:
+            time.sleep(0.5)
+            with urllib.request.urlopen(f"{root}/api/ps", timeout=5) as response:
+                current = json.loads(response.read().decode("utf-8"))
+            models = current.get("models") if isinstance(current, dict) else None
+    except Exception:
+        # The image request still runs; strict mode will surface a real provider
+        # error if VRAM remains insufficient.
+        return
+
+
 def _gemini_interactions_endpoint(base: str) -> str:
     endpoint = base.rstrip("/")
     if endpoint.endswith("/openai"):
@@ -583,6 +640,8 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
     host = (urlparse(base).hostname or "").casefold()
     is_gemini = _is_gemini_image_endpoint(base)
     is_sd_cpp = _is_sd_cpp_endpoint(base, model)
+    if is_sd_cpp:
+        _release_ollama_gpu_models()
     if host in {"api.openai.com", "generativelanguage.googleapis.com"} and not key:
         provider_name = "Gemini" if is_gemini else "OpenAI"
         detail = (

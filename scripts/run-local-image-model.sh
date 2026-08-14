@@ -31,8 +31,11 @@ if [[ -f /usr/share/vulkan/icd.d/nvidia_icd.json ]]; then
   export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json
 fi
 
-exec "$server_path" \
-  --listen-port "${LOCAL_IMAGE_PORT:-7860}" \
+listen_port="${LOCAL_IMAGE_PORT:-7860}"
+upstream_port="${LOCAL_IMAGE_UPSTREAM_PORT:-7861}"
+
+"$server_path" \
+  --listen-port "$upstream_port" \
   --diffusion-model "$model_dir/z_image_turbo-Q3_K.gguf" \
   --llm "$model_dir/Qwen3-4B-Instruct-2507-Q4_K_M.gguf" \
   --vae "$model_dir/ae.safetensors" \
@@ -40,6 +43,16 @@ exec "$server_path" \
   --steps 8 \
   --diffusion-fa \
   --offload-to-cpu \
-  --clip-on-cpu \
   --vae-tiling \
-  --verbose
+  --verbose &
+server_pid=$!
+
+cleanup() {
+  kill "$server_pid" 2>/dev/null || true
+  wait "$server_pid" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+python3 "$script_dir/local-image-gateway.py" \
+  --listen-port "$listen_port" \
+  --upstream-port "$upstream_port"
