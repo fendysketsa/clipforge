@@ -68,6 +68,9 @@ STORYBOARD_SYSTEM_PROMPT = (
     "Each visual_prompt must describe exactly one uninterrupted camera shot and one visible moment: subject, action, setting, composition, camera, "
     "and lighting. The action must be concrete and physically visible; never use abstract actions such as "
     "preparing, realizing, thinking, or feeling without stating exactly what the hands and body are doing. "
+    "Apply culturally correct gendered clothing: a woman wearing a hijab never wears a peci, kopiah, songkok, "
+    "or any second hat over it; those caps are reserved for male characters. "
+    "Whenever hands are visible, describe a relaxed natural pose with anatomically correct fingers. "
     "Return art_bible, character_bible, and visual_prompt as short plain descriptive strings, never JSON objects. "
     "Copy explicit NARASI/Narator wording verbatim; visual directions and production instructions are never narration. "
     "Never copy narration labels, scene headings, timestamps, or on-screen text into visual_prompt. "
@@ -416,13 +419,16 @@ def _compose_visual_prompt(
     return _clean_text(
         "FULL-BLEED CINEMATIC 16:9 PHOTOGRAPH FROM ONE CAMERA. One continuous environment and one natural composition. "
         f"Visible moment: {visual}. "
+        "Use the exact subject count described; each person appears once. Use natural anatomy and relaxed believable poses. "
+        "Every clearly visible hand has exactly five naturally separated fingers with correct joints, proportions, and grip; no fused, missing, duplicated, or malformed fingers. "
+        "A woman wearing a hijab has the hijab as her sole head covering: never add a peci, kopiah, songkok, cap, or hat over or under her hijab. Male characters may wear a peci when described. "
         f"Continuity bible: {_clean_text(character_bible, 420)}. "
         f"Visual style: {_clean_text(art_bible, 320)}. "
-        "Use the exact subject count described; each person appears once. Use natural anatomy, correct hands and fingers, one clear focal action, culturally accurate Indonesian setting, "
-        "foreground and background depth, crisp subject focus, detailed textures, realistic natural light, and professional composition. "
+        "Use one clear focal action, a culturally accurate Indonesian setting, foreground and background depth, tack-sharp subject focus, fine facial and fabric detail, realistic skin texture, "
+        "clean micro-contrast, realistic natural light, and professional composition. "
         "Keep every background surface plain and unmarked, and keep any book pages outside readable focus. "
         "Use original fictional everyday Indonesian people only. The photograph extends naturally to all four edges.",
-        1500,
+        2200,
     )
 
 
@@ -850,15 +856,16 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
     endpoint = _gemini_interactions_endpoint(base) if is_gemini else base.rstrip("/")
     if not is_gemini and not endpoint.endswith("/images/generations"):
         endpoint += "/images/generations"
-    quality = os.environ.get("LONG_ANIMATE_IMAGE_QUALITY", "medium").strip().casefold()
+    quality = os.environ.get("LONG_ANIMATE_IMAGE_QUALITY", "high").strip().casefold()
     if quality not in {"low", "medium", "high", "auto"}:
         quality = "medium"
-    output_format = os.environ.get("LONG_ANIMATE_IMAGE_OUTPUT_FORMAT", "jpeg").strip().casefold()
+    output_format = os.environ.get("LONG_ANIMATE_IMAGE_OUTPUT_FORMAT", "png").strip().casefold()
     if output_format not in {"png", "jpeg", "webp"}:
         output_format = "jpeg"
     final_prompt = (
         f"{scene.visual_prompt} Color direction: {scene.color_mood}. "
-        "Depict only this visible action accurately. Edge-to-edge image, one normal camera frame, tack-sharp focal subject."
+        "Depict only this visible action accurately. Edge-to-edge image, one normal camera frame, tack-sharp focal subject. "
+        "Before finalizing, verify natural hands and finger count, realistic faces, crisp eyes, clean fabric edges, and culturally correct headwear."
     )
     if is_gemini:
         image_size = os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "2K").strip().upper()
@@ -890,11 +897,13 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
             "negative_prompt": (
                 "collage, montage, storyboard, contact sheet, comic panels, split screen, grid, border, "
                 "duplicate person, repeated subject, text, caption, subtitle, letters, numbers, Arabic writing, "
-                "watermark, logo, UI, blurry, soft focus, low resolution, pixelated, deformed hands, extra fingers"
+                "watermark, logo, UI, blurry, soft focus, motion blur, low resolution, pixelated, compression artifacts, "
+                "deformed hands, fused fingers, missing fingers, extra fingers, duplicated fingers, broken joints, malformed grip, "
+                "woman wearing peci, woman wearing kopiah, woman wearing songkok, hijab with hat, double headwear"
             ),
-            "size": os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1280x720"),
+            "size": os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1920x1080"),
             "output_format": output_format,
-            "output_compression": 97,
+            "output_compression": 100,
             "n": 1,
         }
     else:
@@ -904,7 +913,7 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
             "size": os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1536x1024"),
             "quality": quality,
             "output_format": output_format,
-            "output_compression": 92,
+            "output_compression": 100,
             "background": "opaque",
             "moderation": "auto",
             "n": 1,
@@ -972,18 +981,24 @@ def _normalize_scene_image(path: Path) -> bool:
         image = image[top : top + crop_height, :]
     interpolation = cv2.INTER_LANCZOS4 if image.shape[1] < 1920 else cv2.INTER_AREA
     canvas = cv2.resize(image, (1920, 1080), interpolation=interpolation)
-    # A restrained unsharp mask restores edge detail lost during local 720p upscaling.
-    blurred = cv2.GaussianBlur(canvas, (0, 0), 1.05)
-    canvas = cv2.addWeighted(canvas, 1.22, blurred, -0.22, 0)
+    # Restore a small amount of edge definition without creating bright halos.
+    blurred = cv2.GaussianBlur(canvas, (0, 0), 0.85)
+    canvas = cv2.addWeighted(canvas, 1.18, blurred, -0.18, 0)
     try:
-        min_sharpness = float(os.environ.get("LONG_ANIMATE_MIN_SHARPNESS", "18"))
+        min_sharpness = float(os.environ.get("LONG_ANIMATE_MIN_SHARPNESS", "30"))
     except ValueError:
-        min_sharpness = 18.0
+        min_sharpness = 30.0
     gray = cv2.cvtColor(canvas, cv2.COLOR_BGR2GRAY)
     sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
     if sharpness < max(0.0, min(200.0, min_sharpness)):
         return False
-    return bool(cv2.imwrite(str(path.resolve()), canvas, [cv2.IMWRITE_JPEG_QUALITY, 97]))
+    suffix = path.suffix.casefold()
+    write_options = (
+        [cv2.IMWRITE_PNG_COMPRESSION, 2]
+        if suffix == ".png"
+        else [cv2.IMWRITE_JPEG_QUALITY, 98]
+    )
+    return bool(cv2.imwrite(str(path.resolve()), canvas, write_options))
 
 
 def _hex_bgr(seed: str, offset: int) -> tuple[int, int, int]:
@@ -1226,9 +1241,9 @@ def render_scene(scene: AnimateScene, image_path: Path, voice_path: Path, scene_
             "-c:v",
             "libx264",
             "-preset",
-            "medium",
+            "slow",
             "-crf",
-            "17",
+            "14",
             "-pix_fmt",
             "yuv420p",
             "-c:a",
@@ -1388,7 +1403,7 @@ def render_long_animate(
             "render",
             f"Membuat visual, suara, dan gerak scene {scene_index}/{len(storyboard.scenes)}",
         )
-        image_path = scene_dir / f"scene_{scene.index:02}.jpg"
+        image_path = scene_dir / f"scene_{scene.index:02}.png"
         scene.image_provider = generate_scene_image(scene, image_path, storyboard.art_bible)
         voice_path, voice_provider = synthesize_narration(scene, scene_dir)
         scene.voice_provider = voice_provider
@@ -1465,7 +1480,7 @@ def render_long_animate(
         "[0:a]loudnorm=I=-16:TP=-1.5:LRA=11[voice];"
         "[voice][music]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout]"
     )
-    quality_crf = {"standard": "21", "high": "18", "max": "16"}.get(video_quality, "18")
+    quality_crf = {"standard": "19", "high": "16", "max": "14"}.get(video_quality, "16")
     _run(
         [
             _ffmpeg_path(),
@@ -1513,7 +1528,7 @@ def render_long_animate(
     )
     progress(92, "finalize", "Membuat thumbnail, chapter, dan audit YouTube Long Animate")
     thumb_path = clips_dir / f"{base_name}_thumb.jpg"
-    _thumbnail(scene_dir / "scene_01.jpg", thumb_path, storyboard.title)
+    _thumbnail(scene_dir / "scene_01.png", thumb_path, storyboard.title)
     prompt_path = clips_dir / f"{base_name}_thumb.txt"
     prompt_path.write_text(
         "STRATEGI: custom_long_form_upload\n"

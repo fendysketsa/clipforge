@@ -23,6 +23,8 @@ def test_fallback_storyboard_has_story_arc_without_duplicate_filler():
     assert storyboard.scenes[-1].narrative_role == "payoff_conclusion"
     assert all(scene.duration_hint >= 6 for scene in storyboard.scenes)
     assert all("plain and unmarked" in scene.visual_prompt for scene in storyboard.scenes)
+    assert all("exactly five naturally separated fingers" in scene.visual_prompt for scene in storyboard.scenes)
+    assert all("hijab as her sole head covering" in scene.visual_prompt for scene in storyboard.scenes)
     assert len({scene.narration for scene in storyboard.scenes}) == len(storyboard.scenes)
 
 
@@ -256,7 +258,7 @@ def test_gemini_image_payload_uses_native_interactions_api(monkeypatch, tmp_path
     monkeypatch.setattr(long_animate.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(long_animate, "_normalize_scene_image", lambda path: True)
 
-    assert long_animate._remote_scene_image(scene, tmp_path / "scene.jpg") is True
+    assert long_animate._remote_scene_image(scene, tmp_path / "scene.png") is True
     assert captured["url"] == "https://generativelanguage.googleapis.com/v1beta/interactions"
     assert captured["payload"]["model"] == "gemini-3.1-flash-image"
     assert captured["payload"]["response_format"] == {
@@ -324,10 +326,13 @@ def test_local_z_image_uses_sdcpp_openai_compatible_payload(monkeypatch, tmp_pat
     monkeypatch.setattr(long_animate.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(long_animate, "_normalize_scene_image", lambda path: True)
 
-    assert long_animate._remote_scene_image(scene, tmp_path / "scene.jpg") is True
+    assert long_animate._remote_scene_image(scene, tmp_path / "scene.png") is True
     assert captured["url"] == "http://127.0.0.1:7860/v1/images/generations"
     assert captured["payload"]["size"] == "1024x576"
-    assert captured["payload"]["output_format"] == "jpeg"
+    assert captured["payload"]["output_format"] == "png"
+    assert "fused fingers" in captured["payload"]["negative_prompt"]
+    assert "woman wearing peci" in captured["payload"]["negative_prompt"]
+    assert "verify natural hands and finger count" in captured["payload"]["prompt"]
     assert "model" not in captured["payload"]
     assert "quality" not in captured["payload"]
     assert "Authorization" not in captured["headers"]
