@@ -17,7 +17,8 @@ export function ThumbnailPrompt({ clip }: ThumbnailPromptProps) {
   const prompt = clip.thumbnail_prompt?.trim() ?? "";
   const caption = clip.social_caption?.trim() ?? "";
   const isShort = !clip.name.toLowerCase().startsWith("highlight_5menit_")
-    && !clip.name.toLowerCase().startsWith("resume_cerita_");
+    && !clip.name.toLowerCase().startsWith("resume_cerita_")
+    && !clip.name.toLowerCase().startsWith("long_animate_");
 
   return (
     <details className="thumbBlock">

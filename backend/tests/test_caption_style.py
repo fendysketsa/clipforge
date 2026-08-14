@@ -63,6 +63,7 @@ from clipper import (
     modern_blurred_video_frame_filter,
     modern_gradient_border_filters,
     one_k_experiment_readiness,
+    one_k_long_form_readiness,
     payoff_banner_text,
     pov_banner_text,
     remove_running_text_filter,
@@ -740,6 +741,26 @@ def test_landscape_compilation_opening_uses_truthful_blinking_attention_dot():
     assert "text='REC'" not in value
 
 
+def test_landscape_compilation_story_role_changes_chapter_badge():
+    cold_open = landscape_compilation_edit_filter(
+        20,
+        "part.hook.txt",
+        section_number=1,
+        section_count=5,
+        narrative_role="cold_open",
+    )
+    conclusion = landscape_compilation_edit_filter(
+        20,
+        "part.hook.txt",
+        section_number=5,
+        section_count=5,
+        narrative_role="payoff_conclusion",
+    )
+
+    assert "text='COLD OPEN'" in cold_open
+    assert "text='KESIMPULAN'" in conclusion
+
+
 def test_monetization_provenance_records_rights_and_originality(tmp_path):
     video = tmp_path / "clip_01.mp4"
     video.write_bytes(b"video")
@@ -1080,6 +1101,31 @@ def test_five_k_readiness_is_an_experiment_signal_not_a_view_guarantee():
     assert readiness["review_checkpoints"] == [500, 2000, 5000]
     assert two_k_experiment_readiness(clip, "vertical_short") == readiness
     assert one_k_experiment_readiness(clip, "vertical_short") == readiness
+
+
+def test_one_k_long_form_readiness_uses_story_gate_and_long_form_metrics():
+    clip = ClipCandidate(
+        1,
+        0,
+        540,
+        540,
+        89,
+        "Satu Masalah dan Jawabannya",
+        "alur utuh",
+        "Konteks, perkembangan, bukti, dan kesimpulan tersusun lengkap.",
+        hook="Mengapa masalah ini terus berulang?",
+        boundary_quality="payoff_tuntas",
+    )
+
+    readiness = one_k_long_form_readiness(clip, {"quality_gate_passed": True})
+
+    assert readiness["target_views"] == 1000
+    assert readiness["review_checkpoints"] == [100, 300, 1000]
+    assert readiness["quality_metric"] == "watch_time"
+    assert readiness["quality_gate_passed"] is True
+    assert readiness["guarantee"] is False
+    assert "home_and_suggested_ctr" in readiness["measure_after_publish"]
+    assert "audience_retention_dips_and_spikes" in readiness["measure_after_publish"]
 
 
 def test_auto_fyp_visual_plan_uses_archival_accent_only_when_story_supports_it():

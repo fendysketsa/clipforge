@@ -107,7 +107,10 @@ Default output video:
 - intisari ucapan asli disimpan di metadata; mode clean-detail tidak menutup wajah dengan kartu intisari besar
 - kandidat wajib punya point utama, batas kalimat tuntas, dan payoff dekat ending
 - treatment loop hanya aktif saat payoff benar-benar terhubung ke hook
-- setiap sidecar mencatat kesiapan eksperimen target 5K dengan checkpoint 500/2K/5K, membedakan playback view dari engaged views, lalu memantau chose-to-view, retention, shares, serta subscriber yang dihasilkan; status ini bukan jaminan jumlah view
+- sidecar Short mencatat eksperimen target 5K dengan checkpoint 500/2K/5K; sidecar Long Story mencatat target 1K dengan checkpoint 100/300/1K, lalu memantau impressions, CTR Beranda/Disarankan, retention 30 detik, average view duration, titik drop/spike, end-screen, serta subscriber; status ini bukan jaminan jumlah view
+- Long Story Director mengambil teaser tuntas 10–22 detik dari beat terkuat, menghapus bagian teaser dari posisi asal agar tidak duplikat, lalu menyusun konteks, perkembangan, penjelasan, dan kesimpulan mengikuti kronologi sumber tanpa filler durasi
+- mode `long_animate` menerima naskah orisinal, menyusunnya menjadi storyboard dan art bible, membuat visual berbeda untuk tiap scene, memberikan motion kamera, voice-over Indonesia, subtitle, musik prosedural, thumbnail, serta chapter, lalu menggabungkannya menjadi video 16:9 utuh
+- Long Animate memakai Ollama lokal untuk storyboard dan Z-Image-Turbo Q3 lokal melalui stable-diffusion.cpp untuk gambar scene; model/runtime berlisensi Apache-2.0 dan tidak memerlukan API key. Default `1024x576`, 8 step, Vulkan + CPU offload ditujukan untuk RTX 3050 4 GB, lalu gambar dinormalisasi ke 1920x1080. Parser `Scene`/`Adegan` membersihkan label narasi/teks layar, character bible dibawa ke semua prompt, dan `LONG_ANIMATE_IMAGE_STRICT=true` mencegah fallback geometri diam-diam. Provider `builtin://story-art` hanya tersedia sebagai placeholder eksplisit. Upload diwajibkan Private lebih dulu, disclosure AI diaktifkan secara konservatif, dan pengguna harus mengonfirmasi hak naskah serta izin komersial provider
 - short menjalani auto-repair hook/ending pada shortlist yang lebih luas sebelum seleksi final; hanya kandidat FYP minimal 78 yang diekspor dan preflight YouTube menahan output lama di bawah ambang tersebut
 - variasi motion dipilih deterministik dari isi cerita (bukan nomor urut export) agar rangkaian upload tidak terlihat seperti template massal yang identik
 - audit monetisasi v2 hanya meloloskan upload Private bila alur hook–pesan inti–payoff utuh dan edit kamera/emphasis/audio benar-benar mengikuti transcript; hasil audit bukan jaminan diterima YPP
@@ -119,10 +122,16 @@ Default output video:
 - durasi clip pendek dinamis, maksimal 60 detik
 - mode `short` tidak merender kompilasi tambahan
 
-Untuk membuat satu clip resume sinematik 5–10 menit (bukan Short), pilih target 300–600 detik:
+Untuk membuat satu Long Story sinematik 5–10 menit (bukan Short), pilih target 300–600 detik:
 
 ```powershell
 .\.venv\Scripts\python.exe clipper.py "URL" --clip-mode highlight_5m --compilation-target 600 --min 30 --max 90 --visual-mode auto_fyp --ai-enabled
+```
+
+Untuk membuat video Long Animate dari naskah:
+
+```powershell
+.\.venv\Scripts\python.exe clipper.py --clip-mode long_animate --script-file ".\naskah.txt" --output outputs --ai-enabled --ai-base-url http://localhost:11434/v1 --ai-model llama3.2-id:latest
 ```
 
 If CPU feels too slow, use a smaller model:

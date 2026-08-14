@@ -226,10 +226,11 @@ def youtube_auto_upload_count() -> int:
 class ClipJobRequest(BaseModel):
     url: str = ""
     source_file: str = ""
+    script_text: str = Field(default="", max_length=30000)
     top: int | None = Field(default=None, ge=1, le=50)
     min_duration: float = Field(default=15, ge=5, le=600)
     max_duration: float = Field(default=60, ge=10, le=600)
-    clip_mode: Literal["short", "highlight_5m"] = "short"
+    clip_mode: Literal["short", "highlight_5m", "long_animate"] = "short"
     # Keep 240s readable for persisted legacy jobs; the current UI offers 300-600s.
     compilation_target_seconds: float = Field(default=300, ge=240, le=600)
     model: str = "Systran/faster-whisper-medium"
@@ -254,6 +255,7 @@ class ClipJobRequest(BaseModel):
     caption_outline_color: str = "#000000"
     required_hashtags: list[str] = Field(default_factory=default_required_hashtags)
     require_creative_commons: bool = True
+    confirm_long_animate_rights: bool = False
     auto_upload_youtube: bool = False
     allow_reprocess_source: bool = False
     ai_enabled: bool = True
@@ -1438,8 +1440,10 @@ def clip_index_from_name(name: str) -> int | None:
 
 def is_compilation_clip(job: "ClipJob", clip: ClipFile) -> bool:
     return (
-        job.request.clip_mode == "highlight_5m"
-        or clip.name.lower().startswith(("highlight_5menit_", "resume_cerita_"))
+        job.request.clip_mode in {"highlight_5m", "long_animate"}
+        or clip.name.lower().startswith(
+            ("highlight_5menit_", "resume_cerita_", "long_animate_")
+        )
     )
 
 
@@ -1932,7 +1936,9 @@ def youtube_max_upload_bytes() -> int:
 
 def youtube_upload_staging_filter(source_path: Path) -> str:
     """Keep long-form compilations landscape when upload-size compression is needed."""
-    if source_path.name.lower().startswith(("highlight_5menit_", "resume_cerita_")):
+    if source_path.name.lower().startswith(
+        ("highlight_5menit_", "resume_cerita_", "long_animate_")
+    ):
         return (
             "scale=1280:720:force_original_aspect_ratio=decrease,"
             "pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1"
@@ -2442,6 +2448,33 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             "Render ulang dari sumber CC terverifikasi atau gunakan rekaman milik sendiri."
         )
     sidecar = clip_sidecar_payload(clip)
+    if str(sidecar.get("production_model") or "") == "codex_long_story_director":
+        story_director = sidecar.get("story_director")
+        if not isinstance(story_director, dict) or not story_director.get(
+            "quality_gate_passed"
+        ):
+            return (
+                "Upload diblokir: quality gate Long Story belum lolos. "
+                "Pilih materi dengan sedikitnya tiga beat unik dan render ulang tanpa filler."
+            )
+    if str(sidecar.get("production_model") or "") == "codex_scene_cinema_v1":
+        readiness = sidecar.get("one_k_long_form_readiness")
+        story_arc = sidecar.get("story_arc")
+        if (
+            not job.request.confirm_long_animate_rights
+            or not isinstance(readiness, dict)
+            or not readiness.get("quality_gate_passed")
+            or not isinstance(story_arc, list)
+            or any(
+                not isinstance(scene, dict)
+                or scene.get("voice_provider") == "silent_fallback_review_required"
+                for scene in story_arc
+            )
+        ):
+            return (
+                "Upload diblokir: Long Animate belum lolos pemeriksaan hak, narasi suara, "
+                "atau quality gate scene. Periksa naskah/provider lalu render ulang."
+            )
     if str(sidecar.get("output_format") or "") == "vertical_short":
         raw_fyp_score = sidecar.get("score")
         try:
@@ -2759,8 +2792,33 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
     clip_context = transcript or caption or title
     is_compilation = is_compilation_clip(job, clip)
     sidecar = clip_sidecar_payload(clip)
-    cover_headline = str(sidecar.get("thumbnail_headline") or "").strip() if not is_compilation else ""
-    format_name = "video resume cerita landscape berdurasi lima sampai sepuluh menit" if is_compilation else "YouTube Shorts"
+    cover_headline = (
+        str(sidecar.get("thumbnail_headline") or "").strip()
+        if not is_compilation
+        else ""
+    )
+    raw_story_arc = sidecar.get("story_arc") if is_compilation else None
+    story_outline = ""
+    if isinstance(raw_story_arc, list):
+        story_lines: list[str] = []
+        for raw_part in raw_story_arc[:8]:
+            if not isinstance(raw_part, dict):
+                continue
+            role = re.sub(
+                r"[^a-z_]",
+                "",
+                str(raw_part.get("narrative_role") or "development").lower(),
+            )
+            part_title = re.sub(r"\s+", " ", str(raw_part.get("title") or "")).strip()
+            if part_title:
+                story_lines.append(f"- {role}: {part_title[:100]}")
+        if story_lines:
+            story_outline = "Struktur cerita hasil render:\n" + "\n".join(story_lines) + "\n"
+    format_name = (
+        "video Long Story landscape berdurasi lima sampai sepuluh menit"
+        if is_compilation
+        else "YouTube Shorts"
+    )
     system_prompt = (
         YOUTUBE_METADATA_SYSTEM_PROMPT.replace(
             "YouTube Shorts metadata writer",
@@ -2780,7 +2838,8 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
     long_form_packaging_rule = (
         "- Untuk long-form, bingkai judul sebagai satu masalah universal dan satu manfaat/jawaban "
         "yang benar-benar dibahas; taruh kata terpenting di bagian awal, dan jangan memakai kata "
-        "'resume', 'rangkuman', 'highlight', atau durasi video.\n"
+        "'resume', 'rangkuman', 'highlight', atau durasi video. Janji judul harus terjawab oleh alur "
+        "dan harus cocok dengan cold-open, tanpa membocorkan payoff secara menyesatkan.\n"
         if is_compilation
         else ""
     )
@@ -2814,6 +2873,7 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
         'Return JSON exactly like {"title": "...", "description": "...", "hashtags": ["#tag1", "#tag2"]}.\n\n'
         f"Judul kerja klip (hanya petunjuk, wajib ditulis ulang): {title}\n"
         f"{cover_context}"
+        f"{story_outline}"
         f"Konteks/transkrip klip:\n{clip_context[:2400]}"
     )
     last_error = ""
@@ -3421,9 +3481,11 @@ def build_youtube_upload_command(
     use_cdp = youtube_upload_prefers_cdp() if use_cdp_override is None else use_cdp_override
     max_upload_bytes = youtube_max_upload_bytes()
     upload_path = prepare_limited_upload_file(clip_path, max_upload_bytes)
-    is_long_form = upload.clip_name.casefold().startswith(("highlight_5menit_", "resume_cerita_"))
+    is_long_form = upload.clip_name.casefold().startswith(
+        ("highlight_5menit_", "resume_cerita_", "long_animate_")
+    )
     if is_long_form and not upload.thumbnail_url:
-        raise RuntimeError("Upload Highlight/Resume dibatalkan karena thumbnail otomatis belum tersedia.")
+        raise RuntimeError("Upload long-form dibatalkan karena thumbnail otomatis belum tersedia.")
     command = [
         sys.executable,
         "youtube_uploader.py",
@@ -4420,7 +4482,9 @@ def run_youtube_upload(upload_id: str) -> None:
             video_url = youtube_video_url_from_logs(logs)
             requires_thumbnail = bool(
                 upload.thumbnail_url
-                and upload.clip_name.casefold().startswith(("highlight_5menit_", "resume_cerita_"))
+                and upload.clip_name.casefold().startswith(
+                    ("highlight_5menit_", "resume_cerita_", "long_animate_")
+                )
             )
             thumbnail_confirmation_error = ""
             if code == 0 and requires_thumbnail and not thumbnail_attached_for_attempt:
@@ -4990,13 +5054,22 @@ def cancel_process(job_id: str) -> bool:
 
 
 def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
-    if request.source_file:
+    if request.clip_mode == "long_animate":
+        duration = max(15.0, len(request.script_text.split()) / 2.35)
+    elif request.source_file:
         duration = probe_media_duration(Path(request.source_file))
     else:
         duration = fetch_video_duration(request.url)
     data = request.model_dump()
     if request.clip_mode == "short":
         data["max_duration"] = min(60.0, request.max_duration)
+    elif request.clip_mode == "long_animate":
+        data["top"] = 1
+        data["analyze_seconds"] = None
+        data["require_creative_commons"] = False
+        data["burn_subtitles"] = True
+        data["enhanced_edit"] = True
+        data["background_mode"] = "keep"
 
     if request.top is None:
         data["top"] = choose_auto_top(duration)
@@ -5008,7 +5081,7 @@ def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
     elif data["top"] is not None:
         data["top"] = max(1, min(int(data["top"]), MAX_REQUESTED_CLIPS))
 
-    if request.analyze_seconds is None:
+    if request.clip_mode != "long_animate" and request.analyze_seconds is None:
         data["analyze_seconds"] = choose_auto_analyze_seconds(duration)
 
     if request.ai_enabled:
@@ -5032,9 +5105,14 @@ def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
 def build_clipper_command(
     request: ClipJobRequest,
     output_root: Path | None = None,
+    script_path: Path | None = None,
 ) -> list[str]:
     command = [sys.executable, "clipper.py"]
-    if request.source_file:
+    if request.clip_mode == "long_animate":
+        if script_path is None:
+            raise ValueError("Long Animate command requires a script file")
+        command.extend(["--script-file", str(script_path)])
+    elif request.source_file:
         command.extend(["--source-file", request.source_file])
     else:
         command.append(request.url)
@@ -5200,7 +5278,12 @@ def run_job(job_id: str) -> None:
         progress_total_steps=5,
         error=None,
     )
-    command = build_clipper_command(request, output_root)
+    script_path: Path | None = None
+    if request.clip_mode == "long_animate":
+        output_root.mkdir(parents=True, exist_ok=True)
+        script_path = output_root / "input_script.txt"
+        script_path.write_text(request.script_text.strip() + "\n", encoding="utf-8")
+    command = build_clipper_command(request, output_root, script_path)
 
     try:
         process = subprocess.Popen(
@@ -5294,24 +5377,27 @@ def run_job(job_id: str) -> None:
                 updates["source_url"] = preview_job.source_url
             if preview_job.source_uploader:
                 updates["source_uploader"] = preview_job.source_uploader
+            if request.clip_mode == "long_animate" and clips:
+                updates["source_title"] = clips[0].title or "Long Animate"
             set_job(job_id, **updates)
-            remember_processed_source(
-                preview_job.source_url or request.url,
-                clip_mode=request.clip_mode,
-                job_id=job_id,
-                source_title=preview_job.source_title,
-                source_uploader=preview_job.source_uploader,
-                clip_count=len(clips),
-                output_names=[clip.name for clip in clips],
-                processing_duration_seconds=elapsed_seconds(started_perf),
-                compilation_target_seconds=(
-                    request.compilation_target_seconds
-                    if request.clip_mode == "highlight_5m"
-                    else None
-                ),
-                auto_upload_youtube=request.auto_upload_youtube,
-                processed_at=str(updates["finished_at"]),
-            )
+            if request.clip_mode != "long_animate":
+                remember_processed_source(
+                    preview_job.source_url or request.url,
+                    clip_mode=request.clip_mode,
+                    job_id=job_id,
+                    source_title=preview_job.source_title,
+                    source_uploader=preview_job.source_uploader,
+                    clip_count=len(clips),
+                    output_names=[clip.name for clip in clips],
+                    processing_duration_seconds=elapsed_seconds(started_perf),
+                    compilation_target_seconds=(
+                        request.compilation_target_seconds
+                        if request.clip_mode == "highlight_5m"
+                        else None
+                    ),
+                    auto_upload_youtube=request.auto_upload_youtube,
+                    processed_at=str(updates["finished_at"]),
+                )
             if request.auto_upload_youtube:
                 auto_queue_youtube_uploads_for_job(job_id, logs)
         else:
@@ -7818,7 +7904,7 @@ def get_source_usage_log() -> SourceUsageLogResponse:
 
 @app.post("/api/jobs", response_model=ClipJob)
 def create_job(request: ClipJobRequest) -> ClipJob:
-    if request.max_duration <= request.min_duration:
+    if request.clip_mode != "long_animate" and request.max_duration <= request.min_duration:
         raise HTTPException(status_code=400, detail="max_duration must be greater than min_duration")
     if request.clip_mode == "short" and request.min_duration >= 60:
         raise HTTPException(
@@ -7826,10 +7912,35 @@ def create_job(request: ClipJobRequest) -> ClipJob:
             detail="Durasi minimum clip pendek harus di bawah 60 detik",
         )
 
-    if not request.url and not request.source_file:
+    if request.clip_mode == "long_animate":
+        clean_script = request.script_text.strip()
+        if len(clean_script) < 120 or len(clean_script.split()) < 30:
+            raise HTTPException(
+                status_code=400,
+                detail="Naskah Long Animate minimal 120 karakter dan 30 kata.",
+            )
+        if not request.confirm_long_animate_rights:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Konfirmasi bahwa naskah milik Anda dan provider gambar/suara yang dikonfigurasi "
+                    "mengizinkan penggunaan komersial YouTube."
+                ),
+            )
+        request = request.model_copy(
+            update={
+                "url": "",
+                "source_file": "",
+                "script_text": clean_script,
+                "require_creative_commons": False,
+            }
+        )
+    elif not request.url and not request.source_file:
         raise HTTPException(status_code=400, detail="Provide a YouTube URL or upload a video first")
 
-    if request.source_file:
+    if request.clip_mode == "long_animate":
+        pass
+    elif request.source_file:
         upload_path = resolve_upload_path(request.source_file)
         if upload_path is None:
             raise HTTPException(status_code=400, detail="Uploaded video not found; upload it again")

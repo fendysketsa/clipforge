@@ -106,6 +106,13 @@ def test_upload_staging_keeps_story_resume_landscape():
     assert "pad=1280:720" in value
 
 
+def test_upload_staging_keeps_long_animate_landscape():
+    value = youtube_upload_staging_filter(Path("long_animate_langkah-kecil.mp4"))
+
+    assert "scale=1280:720" in value
+    assert "pad=1280:720" in value
+
+
 def test_upload_staging_keeps_short_vertical():
     value = youtube_upload_staging_filter(Path("clip_01_pilihan.mp4"))
 
@@ -152,6 +159,32 @@ def test_story_resume_accepts_ten_minute_target():
     )
 
     assert request.compilation_target_seconds == 600
+
+
+def test_long_animate_normalization_and_command_use_script_file(tmp_path):
+    script = (
+        "Perubahan yang bertahan lama dimulai dari kebiasaan kecil. "
+        "Kita menyusun satu tindakan sederhana, mengulanginya, lalu mengevaluasi hasilnya "
+        "agar kemajuan tetap terasa nyata setiap hari."
+    )
+    request = normalize_job_request(
+        ClipJobRequest(
+            clip_mode="long_animate",
+            script_text=script,
+            confirm_long_animate_rights=True,
+        )
+    )
+    script_path = tmp_path / "input_script.txt"
+    script_path.write_text(script, encoding="utf-8")
+
+    command = build_clipper_command(request, tmp_path, script_path)
+
+    assert request.top == 1
+    assert request.analyze_seconds is None
+    assert request.burn_subtitles is True
+    assert request.require_creative_commons is False
+    assert command[command.index("--clip-mode") + 1] == "long_animate"
+    assert command[command.index("--script-file") + 1] == str(script_path)
 
 
 def test_normalize_keeps_under_budget_target(monkeypatch):

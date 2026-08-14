@@ -101,10 +101,11 @@ function fypScoreTone(score: number) {
   return "polish";
 }
 
-function fiveKReadiness(score: number, isLongForm: boolean) {
+function growthTargetReadiness(score: number, isLongForm: boolean) {
+  const target = isLongForm ? "Target 1K" : "Target 5K";
   if (score >= 88) {
     return {
-      label: "Target 5K · siap uji",
+      label: `${target} · siap uji`,
       tone: "excellent",
       detail: isLongForm
         ? "Hook, alur, dan packaging sudah kuat; publikasikan Private dulu lalu cek thumbnail, judul, dan retention 30 detik."
@@ -113,14 +114,16 @@ function fiveKReadiness(score: number, isLongForm: boolean) {
   }
   if (score >= 78) {
     return {
-      label: "Target 5K · layak uji",
+      label: `${target} · layak uji`,
       tone: "strong",
-      detail: "Layak dipublikasikan sebagai eksperimen. Pantau engaged views, chose-to-view, retention, shares, dan subscriber; angka view tetap ditentukan respons penonton.",
+      detail: isLongForm
+        ? "Layak diuji sebagai long-form. Pantau impressions, CTR Beranda/Disarankan, retention 30 detik, average view duration, dan subscriber; 1K bukan jaminan."
+        : "Layak dipublikasikan sebagai eksperimen. Pantau engaged views, chose-to-view, retention, shares, dan subscriber; angka view tetap ditentukan respons penonton.",
     };
   }
   if (score >= 65) {
     return {
-      label: isLongForm ? "Target 5K · A/B packaging" : "Target 5K · uji hook",
+      label: isLongForm ? `${target} · A/B packaging` : `${target} · uji hook`,
       tone: "test",
       detail: isLongForm
         ? "Uji judul/thumbnail lewat fitur A/B YouTube setelah video siap; perbaiki juga temuan di bawah."
@@ -128,7 +131,7 @@ function fiveKReadiness(score: number, isLongForm: boolean) {
     };
   }
   return {
-    label: "Target 5K · poles dulu",
+    label: `${target} · poles dulu`,
     tone: "hold",
     detail: "Belum disarankan untuk mengejar distribusi. Pilih kandidat lain atau perkuat hook, tempo, dan payoff.",
   };
@@ -351,9 +354,10 @@ export function ResultsSection({
             const isSelected = selectedClipUrls.includes(clip.url);
             const latestUpload = youtubeUploads.find((upload) => upload.clip_url === clip.url);
             const isLongForm = clip.name.toLowerCase().startsWith("highlight_5menit_")
-              || clip.name.toLowerCase().startsWith("resume_cerita_");
+              || clip.name.toLowerCase().startsWith("resume_cerita_")
+              || clip.name.toLowerCase().startsWith("long_animate_");
             const growthReadiness = clip.fyp_score !== null && clip.fyp_score !== undefined
-              ? fiveKReadiness(clip.fyp_score, isLongForm)
+              ? growthTargetReadiness(clip.fyp_score, isLongForm)
               : null;
             const isShortUploadReady = isLongForm
               || (typeof clip.fyp_score === "number" && clip.fyp_score >= 78);

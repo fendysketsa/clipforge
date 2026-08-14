@@ -138,7 +138,7 @@ def normalized_upload_metadata(video_path: Path, title: str, description: str) -
         clean_description = sidecar_caption(video_path)
     normalized_title = (
         youtube_long_form_title(clean_title)
-        if video_path.name.startswith(("highlight_5menit_", "resume_cerita_"))
+        if video_path.name.startswith(("highlight_5menit_", "resume_cerita_", "long_animate_"))
         else youtube_shorts_title(clean_title)
     )
     return normalized_title, clean_description[:5000]
@@ -2476,7 +2476,9 @@ def should_upload_custom_thumbnail(video_path: Path, content_type: str = "auto")
         return True
     if normalized == "shorts":
         return False
-    return video_path.name.casefold().startswith(("highlight_5menit_", "resume_cerita_"))
+    return video_path.name.casefold().startswith(
+        ("highlight_5menit_", "resume_cerita_", "long_animate_")
+    )
 
 
 def click_playlist_named(page, playlist_name: str, timeout_ms: int = 8000) -> bool:

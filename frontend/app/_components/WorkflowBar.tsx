@@ -25,11 +25,11 @@ type WorkflowBarProps = {
 };
 
 const stageRanges = [
-  { key: "source", label: "Sumber", shortHint: "Ambil video", longHint: "Ambil video", start: 0, end: 18, icon: Film },
-  { key: "transcript", label: "Transkrip", shortHint: "Audio & ucapan", longHint: "Audio & alur", start: 18, end: 45, icon: AudioLines },
-  { key: "selection", label: "Seleksi", shortHint: "Pilih hook", longHint: "Susun cerita", start: 45, end: 67, icon: SearchCheck },
-  { key: "render", label: "Render", shortHint: "Klip per klip", longHint: "Resume 16:9", start: 67, end: 94, icon: Loader2 },
-  { key: "finalize", label: "Finalisasi", shortHint: "Audit & simpan", longHint: "Audit & thumbnail", start: 94, end: 100, icon: FileCheck2 },
+  { key: "source", label: "Sumber", shortHint: "Ambil video", longHint: "Ambil video", animateHint: "Baca naskah", start: 0, end: 18, icon: Film },
+  { key: "transcript", label: "Transkrip", shortHint: "Audio & ucapan", longHint: "Audio & alur", animateHint: "Petakan beat", start: 18, end: 45, icon: AudioLines },
+  { key: "selection", label: "Seleksi", shortHint: "Pilih hook", longHint: "Susun cerita", animateHint: "Storyboard", start: 45, end: 67, icon: SearchCheck },
+  { key: "render", label: "Render", shortHint: "Klip per klip", longHint: "Long Story 16:9", animateHint: "Scene Cinema", start: 67, end: 94, icon: Loader2 },
+  { key: "finalize", label: "Finalisasi", shortHint: "Audit & simpan", longHint: "Audit & thumbnail", animateHint: "AI disclosure", start: 94, end: 100, icon: FileCheck2 },
 ] as const;
 
 const fallbackProgressFromLogs = (job: ClipJob | null) => {
@@ -70,6 +70,29 @@ const stageDescriptions: Record<string, { doing: string; output: string }> = {
   },
 };
 
+const animateStageDescriptions: Record<string, { doing: string; output: string }> = {
+  source: {
+    doing: "Membaca naskah dan memvalidasi hak serta kelengkapan input.",
+    output: "Naskah siap diarahkan menjadi cerita visual.",
+  },
+  transcript: {
+    doing: "Memetakan narasi, hook, konflik, konteks, jawaban, dan payoff.",
+    output: "Beat cerita siap masuk ke storyboard.",
+  },
+  selection: {
+    doing: "Menyusun storyboard, art bible, prompt visual, palet, dan motion tiap scene.",
+    output: "Scene berbeda tetapi tetap berada dalam satu dunia visual.",
+  },
+  render: {
+    doing: "Membuat gambar, voice-over, gerak kamera, subtitle, dan musik setiap scene.",
+    output: "Seluruh scene siap digabungkan menjadi video 16:9.",
+  },
+  finalize: {
+    doing: "Membuat thumbnail, chapter, metadata, disclosure AI, dan audit hak.",
+    output: "Long Animate siap direview sebagai upload Private.",
+  },
+};
+
 export function WorkflowBar({
   hasSource,
   isProcessing,
@@ -80,7 +103,8 @@ export function WorkflowBar({
 }: WorkflowBarProps) {
   const [now, setNow] = useState(() => Date.now());
   const mode = job?.request.clip_mode ?? clipMode;
-  const isLongForm = mode === "highlight_5m";
+  const isLongAnimate = mode === "long_animate";
+  const isLongForm = mode === "highlight_5m" || isLongAnimate;
   const isStopped = job?.status === "failed" || job?.status === "cancelled";
   const isComplete = !isProcessing && (job ? job.status === "completed" : hasResults);
   const backendProgress = job?.progress_percent;
@@ -103,13 +127,17 @@ export function WorkflowBar({
     ? stageRanges.length - 1
     : Math.max(0, stageRanges.findIndex((stage) => progress < stage.end));
   const activeStage = stageRanges[activeStageIndex];
-  const stageDescription = stageDescriptions[activeStage.key];
+  const stageDescription = (isLongAnimate ? animateStageDescriptions : stageDescriptions)[activeStage.key];
   const nextStage = stageRanges[activeStageIndex + 1];
   const source = job?.request.url || job?.source_url || job?.request.source_file || sourceValue;
   const localSourceName = source && !source.startsWith("http")
     ? source.split(/[\\/]/).filter(Boolean).at(-1) || source
     : "";
-  const sourceLabel = job?.source_title || (localSourceName ? `Upload lokal · ${localSourceName}` : source || "Belum ada sumber");
+  const sourceLabel = job?.source_title || (isLongAnimate
+    ? "Naskah orisinal pengguna"
+    : localSourceName
+      ? `Upload lokal · ${localSourceName}`
+      : source || "Belum ada sumber");
   const stageProgress = progress >= 100
     ? 100
     : Math.max(0, Math.min(99, Math.round(((progress - activeStage.start) / (activeStage.end - activeStage.start)) * 100)));
@@ -118,10 +146,14 @@ export function WorkflowBar({
     if (isComplete) return isLongForm ? "Video panjang siap direview, diposting, atau diunduh." : "Semua klip pendek siap direview, diposting, atau diunduh.";
     if (isStopped) return job?.error || "Proses berhenti sebelum seluruh tahap selesai.";
     if (job?.progress_detail) return job.progress_detail;
-    if (isProcessing) return isLongForm ? "Menjalankan pipeline resume cerita video panjang." : "Menjalankan pipeline klip pendek satu per satu.";
+    if (isProcessing) return isLongAnimate
+      ? "Menjalankan Scene Cinema: storyboard, gambar, animasi, suara, subtitle, dan audit AI."
+      : isLongForm
+        ? "Menjalankan Long Story Director: teaser, alur, render, dan quality gate 1K."
+        : "Menjalankan pipeline klip pendek satu per satu.";
     if (hasSource) return "Sumber siap. Atur gaya lalu mulai proses.";
     return "Masukkan link atau upload video untuk memulai.";
-  }, [hasSource, isComplete, isLongForm, isProcessing, isStopped, job?.error, job?.progress_detail]);
+  }, [hasSource, isComplete, isLongAnimate, isLongForm, isProcessing, isStopped, job?.error, job?.progress_detail]);
 
   useEffect(() => {
     if (!isProcessing) return;
@@ -206,7 +238,7 @@ export function WorkflowBar({
                       ? "100% selesai"
                       : current
                         ? `${stageProgress}% tahap ini`
-                        : isLongForm ? stage.longHint : stage.shortHint}
+                        : isLongAnimate ? stage.animateHint : isLongForm ? stage.longHint : stage.shortHint}
                   </small>
                 </span>
               </li>

@@ -99,6 +99,8 @@ export default function HomePage() {
   const [sourceMode, setSourceMode] = useState<SourceMode>("url");
   const [uploadToken, setUploadToken] = useState("");
   const [uploadFileName, setUploadFileName] = useState("");
+  const [scriptText, setScriptText] = useState("");
+  const [confirmLongAnimateRights, setConfirmLongAnimateRights] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [minDuration, setMinDuration] = useState(DEFAULT_MIN_DURATION);
   const [maxDuration, setMaxDuration] = useState(DEFAULT_MAX_DURATION);
@@ -200,6 +202,12 @@ export default function HomePage() {
       setMaxDuration(90);
       setCompilationTargetSeconds(COMPILATION_TARGET_SECONDS);
       setBackgroundMode("keep");
+    } else if (value === "long_animate") {
+      setMinDuration(DEFAULT_MIN_DURATION);
+      setMaxDuration(DEFAULT_MAX_DURATION);
+      setCompilationTargetSeconds(COMPILATION_TARGET_SECONDS);
+      setSourceHistory(null);
+      setAllowReprocessSource(false);
     } else {
       setMinDuration(DEFAULT_MIN_DURATION);
       setMaxDuration(DEFAULT_MAX_DURATION);
@@ -295,7 +303,10 @@ export default function HomePage() {
         setActiveJob(restoredJob);
         setJob(restoredJob);
         setClipMode(restoredJob.request.clip_mode);
-        if (restoredJob.request.url) {
+        if (restoredJob.request.clip_mode === "long_animate") {
+          setScriptText(restoredJob.request.script_text || "");
+          setConfirmLongAnimateRights(Boolean(restoredJob.request.confirm_long_animate_rights));
+        } else if (restoredJob.request.url) {
           setSourceMode("url");
           setUrl(restoredJob.request.url);
         }
@@ -619,15 +630,23 @@ export default function HomePage() {
       setError("Proses clipping masih berjalan. Tunggu selesai atau batalkan sebelum memulai proses baru.");
       return;
     }
-    if (sourceMode === "url" && !trimmedUrl) {
+    if (clipMode === "long_animate" && (scriptText.trim().length < 120 || scriptText.trim().split(/\s+/).length < 30)) {
+      setError("Naskah Long Animate minimal 120 karakter dan 30 kata agar dapat dibuat menjadi tiga scene bermakna.");
+      return;
+    }
+    if (clipMode === "long_animate" && !confirmLongAnimateRights) {
+      setError("Konfirmasikan hak naskah dan izin komersial provider media sebelum memulai Long Animate.");
+      return;
+    }
+    if (clipMode !== "long_animate" && sourceMode === "url" && !trimmedUrl) {
       setError("Link YouTube tidak boleh kosong.");
       return;
     }
-    if (sourceMode === "upload" && !uploadToken) {
+    if (clipMode !== "long_animate" && sourceMode === "upload" && !uploadToken) {
       setError("Unggah file video terlebih dahulu.");
       return;
     }
-    if (effectiveMaxDuration <= minDuration) {
+    if (clipMode !== "long_animate" && effectiveMaxDuration <= minDuration) {
       setError(
         clipMode === "short"
           ? "Durasi minimum clip pendek harus di bawah 60 detik."
@@ -641,8 +660,9 @@ export default function HomePage() {
     try {
       const nextJob = await toast.promise(
         createJob({
-          url: sourceMode === "url" ? trimmedUrl : "",
-          source_file: sourceMode === "upload" ? uploadToken : "",
+          url: clipMode !== "long_animate" && sourceMode === "url" ? trimmedUrl : "",
+          source_file: clipMode !== "long_animate" && sourceMode === "upload" ? uploadToken : "",
+          script_text: clipMode === "long_animate" ? scriptText.trim() : "",
           top: clipMode === "short" && targetClips > 0 ? targetClips : undefined,
           min_duration: minDuration,
           max_duration: effectiveMaxDuration,
@@ -672,6 +692,7 @@ export default function HomePage() {
             .map((tag) => tag.trim())
             .filter(Boolean),
           require_creative_commons: requireCreativeCommons,
+          confirm_long_animate_rights: clipMode === "long_animate" && confirmLongAnimateRights,
           auto_upload_youtube: autoUploadYoutube,
           allow_reprocess_source: sourceMode === "url" && allowReprocessSource,
           ai_enabled: aiEnabled,
@@ -680,9 +701,9 @@ export default function HomePage() {
           ai_api_key: aiApiKey.trim(),
         }),
         {
-          loading: "Mempersiapkan proses pemotongan...",
-          success: "Proses pemotongan berhasil dimulai!",
-          error: "Gagal memulai proses pemotongan",
+          loading: clipMode === "long_animate" ? "Mempersiapkan produksi Long Animate..." : "Mempersiapkan proses pemotongan...",
+          success: clipMode === "long_animate" ? "Produksi Long Animate berhasil dimulai!" : "Proses pemotongan berhasil dimulai!",
+          error: clipMode === "long_animate" ? "Gagal memulai Long Animate" : "Gagal memulai proses pemotongan",
         },
       );
 
@@ -721,6 +742,8 @@ export default function HomePage() {
     requireCreativeCommons,
     requiredHashtags,
     sourceMode,
+    scriptText,
+    confirmLongAnimateRights,
     targetClips,
     uploadToken,
     url,
@@ -979,7 +1002,8 @@ export default function HomePage() {
     async (clip: ClipFile) => {
       if (!job) return;
       const includesAutomaticThumbnail = clip.name.toLowerCase().startsWith("highlight_5menit_")
-        || clip.name.toLowerCase().startsWith("resume_cerita_");
+        || clip.name.toLowerCase().startsWith("resume_cerita_")
+        || clip.name.toLowerCase().startsWith("long_animate_");
       try {
         const upload = await toast.promise(createYouTubeUpload(job.id, clip.url), {
           loading: includesAutomaticThumbnail
@@ -1261,12 +1285,12 @@ export default function HomePage() {
       <Topbar isRefreshing={isRefreshingData} onRefresh={handleSyncData} />
 
       <WorkflowBar
-        hasSource={sourceMode === "url" ? Boolean(url.trim()) : Boolean(uploadFileName)}
+        hasSource={clipMode === "long_animate" ? scriptText.trim().length >= 120 && scriptText.trim().split(/\s+/).length >= 30 : sourceMode === "url" ? Boolean(url.trim()) : Boolean(uploadFileName)}
         isProcessing={isBusy || isSubmitting}
         hasResults={Boolean(job?.clips.length)}
         job={isSubmitting ? null : activityJob}
         clipMode={clipMode}
-        sourceValue={sourceMode === "url" ? url.trim() : uploadFileName}
+        sourceValue={clipMode === "long_animate" ? "Naskah Long Animate" : sourceMode === "url" ? url.trim() : uploadFileName}
       />
 
       <section className="workspace" id="workspace">
@@ -1284,6 +1308,10 @@ export default function HomePage() {
           viralSearchFilters={viralSearchFilters}
           selectedAutoContentUrls={selectedAutoContentUrls}
           sourceMode={sourceMode}
+          scriptText={scriptText}
+          onScriptTextChange={setScriptText}
+          confirmLongAnimateRights={confirmLongAnimateRights}
+          onConfirmLongAnimateRightsChange={setConfirmLongAnimateRights}
           uploadFileName={uploadFileName}
           uploadPreviewUrl={uploadPreviewUrl}
           isUploading={isUploading}

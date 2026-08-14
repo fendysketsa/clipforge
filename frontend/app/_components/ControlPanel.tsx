@@ -99,6 +99,10 @@ type ControlPanelProps = {
   viralSearchFilters: ViralSearchFilters;
   selectedAutoContentUrls: string[];
   sourceMode: SourceMode;
+  scriptText: string;
+  onScriptTextChange: (value: string) => void;
+  confirmLongAnimateRights: boolean;
+  onConfirmLongAnimateRightsChange: (value: boolean) => void;
   uploadFileName: string;
   uploadPreviewUrl: string;
   isUploading: boolean;
@@ -187,6 +191,10 @@ export function ControlPanel({
   viralSearchFilters,
   selectedAutoContentUrls,
   sourceMode,
+  scriptText,
+  onScriptTextChange,
+  confirmLongAnimateRights,
+  onConfirmLongAnimateRightsChange,
   uploadFileName,
   uploadPreviewUrl,
   isUploading,
@@ -259,10 +267,15 @@ export function ControlPanel({
   autoViralMessage,
   url,
 }: ControlPanelProps) {
-  const hasSource = sourceMode === "url" ? Boolean(url.trim()) : Boolean(uploadFileName);
-  const duplicateApprovalRequired = sourceMode === "url" && Boolean(sourceHistory?.found) && !allowReprocessSource;
-  const sourceCheckPending = sourceMode === "url" && Boolean(url.trim()) && isCheckingSourceHistory;
-  const invalidCheckedSource = sourceMode === "url"
+  const isLongAnimate = clipMode === "long_animate";
+  const hasSource = isLongAnimate
+    ? scriptText.trim().length >= 120 && scriptText.trim().split(/\s+/).length >= 30
+    : sourceMode === "url"
+      ? Boolean(url.trim())
+      : Boolean(uploadFileName);
+  const duplicateApprovalRequired = !isLongAnimate && sourceMode === "url" && Boolean(sourceHistory?.found) && !allowReprocessSource;
+  const sourceCheckPending = !isLongAnimate && sourceMode === "url" && Boolean(url.trim()) && isCheckingSourceHistory;
+  const invalidCheckedSource = !isLongAnimate && sourceMode === "url"
     && Boolean(url.trim())
     && Boolean(sourceHistory)
     && !sourceHistory?.valid_youtube_url;
@@ -272,7 +285,8 @@ export function ControlPanel({
     || !hasSource
     || sourceCheckPending
     || invalidCheckedSource
-    || duplicateApprovalRequired;
+    || duplicateApprovalRequired
+    || (isLongAnimate && !confirmLongAnimateRights);
   const isProcessing = isSubmitting || isBusy;
   const localNoKeyBaseUrls = new Set<string>(
     LOCAL_LLM_PRESETS.filter((preset) => preset.label !== "Custom").map((preset) => preset.baseUrl),
@@ -286,8 +300,8 @@ export function ControlPanel({
           <Scissors size={18} />
         </span>
         <div className="panelTitleCopy">
-          <span className="panelEyebrow">Clip builder</span>
-          <h2>Buat Klip Baru</h2>
+          <span className="panelEyebrow">{isLongAnimate ? "Scene Cinema" : "Clip builder"}</span>
+          <h2>{isLongAnimate ? "Buat Long Animate" : "Buat Klip Baru"}</h2>
         </div>
       </div>
 
@@ -295,12 +309,12 @@ export function ControlPanel({
         <div className="controlSectionHeading">
           <span>01</span>
           <div>
-            <h3>Pilih sumber video</h3>
-            <p>Tempel link YouTube atau upload file dari perangkat.</p>
+            <h3>{isLongAnimate ? "Tulis naskah video" : "Pilih sumber video"}</h3>
+            <p>{isLongAnimate ? "Naskah menjadi storyboard, visual, animasi, narasi, dan video utuh." : "Tempel link YouTube atau upload file dari perangkat."}</p>
           </div>
         </div>
 
-        <div className="segmentedField">
+        {!isLongAnimate ? <div className="segmentedField">
           <span>Sumber Video</span>
           <div className="segmentedControl" role="group" aria-label="Sumber video">
             <button
@@ -318,9 +332,38 @@ export function ControlPanel({
               <Upload size={15} /> Upload Video
             </button>
           </div>
-        </div>
+        </div> : null}
 
-        {sourceMode === "url" ? (
+        {isLongAnimate ? (
+          <>
+            <label className="field wide longAnimateScriptField">
+              <span>Naskah Long Animate · {scriptText.trim().split(/\s+/).filter(Boolean).length} kata</span>
+              <textarea
+                value={scriptText}
+                onChange={(event) => onScriptTextChange(event.target.value.slice(0, 30000))}
+                placeholder="Tulis naskah lengkap. Gunakan paragraf untuk perubahan ide atau suasana. Sistem akan menyusun scene tanpa menambahkan fakta baru..."
+                rows={12}
+              />
+              <p className="field-help">
+                Minimal 120 karakter dan 30 kata. Durasi mengikuti isi naskah—tidak ditambah filler hanya untuk mengejar menit.
+              </p>
+            </label>
+            <label className="sourceHistoryApproval longAnimateRights">
+              <input
+                type="checkbox"
+                checked={confirmLongAnimateRights}
+                onChange={(event) => onConfirmLongAnimateRightsChange(event.target.checked)}
+              />
+              <span>
+                Saya memiliki hak atas naskah ini dan memastikan provider gambar/suara yang dikonfigurasi mengizinkan penggunaan komersial di YouTube.
+              </span>
+            </label>
+            <div className="modeNotice">
+              <strong>AI disclosure otomatis · upload awal Private</strong>
+              <span>Scene realistis, suara sintetis, dan musik prosedural ditandai untuk disclosure; figur publik, logo, karakter berhak cipta, dan klaim baru dilarang oleh prompt produksi.</span>
+            </div>
+          </>
+        ) : sourceMode === "url" ? (
           <>
             <label className="field wide">
               <span>Link Video YouTube</span>
@@ -352,7 +395,7 @@ export function ControlPanel({
                       <span>Clip pendek</span>
                     ) : null}
                     {sourceHistory.has_highlight_5m || sourceHistory.attempted_modes.includes("highlight_5m") ? (
-                      <span>Highlight / Resume 5–10 menit</span>
+                      <span>Long Story 5–10 menit</span>
                     ) : null}
                     {sourceHistory.archived && !sourceHistory.attempted_modes.length ? <span>Arsip lama</span> : null}
                   </div>
@@ -413,7 +456,7 @@ export function ControlPanel({
           </label>
         )}
 
-        {sourceMode === "url" ? (
+        {!isLongAnimate && sourceMode === "url" ? (
           <div className="aiBlock compactBlock">
             <label className="aiToggle">
               <span className="aiToggleLabel">
@@ -443,7 +486,7 @@ export function ControlPanel({
 
         <div className="segmentedField">
         <span>Model Clip</span>
-        <div className="segmentedControl" role="group" aria-label="Model clip">
+        <div className="segmentedControl segmentedControl--three" role="group" aria-label="Model produksi">
           <button
             className={clipMode === "short" ? "active" : ""}
             type="button"
@@ -456,17 +499,26 @@ export function ControlPanel({
             type="button"
             onClick={() => onClipModeChange("highlight_5m")}
           >
-            Clip Resume 5–10 Menit
+            Long Story 5–10 Menit
+          </button>
+          <button
+            className={clipMode === "long_animate" ? "active" : ""}
+            type="button"
+            onClick={() => onClipModeChange("long_animate")}
+          >
+            Long Animate
           </button>
         </div>
         <p className="field-help">
-          {clipMode === "highlight_5m"
-            ? "AI mencari POV utama dan inti cerita dari seluruh video, membuang filler, lalu menyusunnya menjadi satu resume kronologis 16:9 dengan cold-open dan thumbnail adaptif."
+          {clipMode === "long_animate"
+            ? "Scene Cinema mengubah naskah menjadi storyboard, art bible, visual per scene, gerak kamera, voice-over, subtitle, musik, thumbnail, dan satu video 16:9 utuh."
+            : clipMode === "highlight_5m"
+            ? "Codex Long Story Director membuat teaser singkat tanpa duplikasi, lalu merangkai konteks, perkembangan, penjelasan, dan kesimpulan secara kronologis dalam 16:9—tanpa memanjangkan video dengan filler."
             : "Clip vertikal maksimal 60 detik (di bawah batas resmi Shorts 3 menit, sekaligus menghindari risiko blok global konten ber-claim di atas 1 menit) dengan frame cover awal yang dapat dipilih lewat timeline aplikasi YouTube sekitar 0,78 detik, caption safe-area, payoff, CTA Subscribe kontekstual, dan loop alami."}
         </p>
       </div>
 
-      <div className="gridFields">
+      {clipMode !== "long_animate" ? <div className="gridFields">
         <label className="field">
           <span>{clipMode === "short" ? "Durasi Minimum" : "Durasi Minimum per Bagian"}</span>
           <input
@@ -487,7 +539,7 @@ export function ControlPanel({
             onChange={(event) => onMaxDurationChange(Number(event.target.value))}
           />
         </label>
-      </div>
+      </div> : null}
 
       {clipMode === "short" ? (
         <label className="field wide">
@@ -509,10 +561,10 @@ export function ControlPanel({
               : ""}
           </p>
         </label>
-      ) : (
+      ) : clipMode === "highlight_5m" ? (
         <>
           <label className="field wide">
-            <span>Target Durasi Resume · {Math.round(compilationTargetSeconds / 60)} menit</span>
+            <span>Target Durasi Long Story · {Math.round(compilationTargetSeconds / 60)} menit</span>
             <input
               min={300}
               max={600}
@@ -521,7 +573,7 @@ export function ControlPanel({
               value={compilationTargetSeconds}
               onChange={(event) => onCompilationTargetSecondsChange(Number(event.target.value))}
             />
-            <p className="field-help">Pilih 5–10 menit. AI tetap mengutamakan cerita yang utuh; hasil dapat lebih pendek bila materi inti sumber tidak mencukupi.</p>
+            <p className="field-help">Pilih 5–10 menit. Cerita boleh lebih pendek bila materi inti tidak cukup; durasi tidak akan dipenuhi dengan filler demi mengejar angka.</p>
           </label>
           <div className="modeNotice">
             <strong>Landscape otomatis · 16:9 · target ±{Math.round(compilationTargetSeconds / 60)}:00</strong>
@@ -532,6 +584,13 @@ export function ControlPanel({
             </span>
           </div>
         </>
+      ) : (
+        <div className="modeNotice longAnimateEstimate">
+          <strong>
+            Estimasi ±{Math.max(1, Math.round(scriptText.trim().split(/\s+/).filter(Boolean).length / 140))} menit · 16:9 Full HD
+          </strong>
+          <span>Estimasi mengikuti kecepatan narasi. Storyboard menggunakan 5–14 scene dan dapat lebih pendek atau panjang sesuai naskah.</span>
+        </div>
       )}
 
       <details className="compactDisclosure formatDisclosure">
@@ -965,8 +1024,8 @@ export function ControlPanel({
           />
         </label>
         <p className="field-help">
-          {clipMode === "highlight_5m"
-            ? "Selesai render, video landscape dan thumbnail viral-elegan otomatis diupload sebagai Private. Publikasikan jika Pembatasan bebas blokir/strike atau klaim dinyatakan tidak berdampak oleh YouTube."
+          {clipMode === "highlight_5m" || clipMode === "long_animate"
+            ? "Selesai render, video landscape dan thumbnail otomatis diupload sebagai Private. Untuk Long Animate, disclosure AI ikut diaktifkan; publikasikan hanya setelah hak, Checks, judul, thumbnail, dan isi scene direview."
             : "Selesai clipping langsung antrekan 3 klip terbaik sebagai Private. Publikasikan jika Pembatasan bebas blokir/strike atau klaim dinyatakan tidak berdampak oleh YouTube."}
         </p>
         </div>

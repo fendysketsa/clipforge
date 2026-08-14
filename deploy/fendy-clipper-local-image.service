@@ -1,0 +1,14 @@
+[Unit]
+Description=Fendy Clipper Local Z-Image Generator
+After=graphical-session.target network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/www/wwwroot/clipper/clipforge
+ExecStart=/www/wwwroot/clipper/clipforge/scripts/run-local-image-model.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target

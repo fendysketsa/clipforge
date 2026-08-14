@@ -28,11 +28,12 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Enhance voice clarity and generate safe, niche-aware social captions even when the AI service is unavailable.
 - Keep captions compact and readable with outline/shadow only, without a gradient band over the source image.
 - Turn the fast-scanning reference-card pattern into a content-adaptive opening: the truthful hook stays prominent while the badge, accent color, and layout variation follow each story instead of repeating one fixed template.
-- Record a transparent 5K-view experiment-readiness signal for every Short and long-form render, with review checkpoints at 500, 2K, and 5K; it recommends whether to publish, test a Shorts hook variant, use native A/B packaging for eligible long-form videos, or revise, while tracking chose-to-view, retention, shares, and subscriber conversion without claiming to guarantee distribution.
+- Record a transparent growth experiment signal: Shorts target 5K with checkpoints 500/2K/5K, while Long Story targets 1K with checkpoints 100/300/1K. Long-form tracks impressions, Home/Suggested CTR, first-30-second retention, average view duration, retention dips/spikes, end-screen clicks, and subscribers without claiming guaranteed distribution.
 - Auto-repair a broader shortlist before final selection, enforce a minimum FYP score of 78 for vertical exports, and block low-score legacy Shorts from YouTube upload instead of labeling them ready to post.
 - Place one value-led Subscribe invitation after the payoff: Shorts pair it with the contextual discussion prompt, while long-form shows it once in the final chapter. The reason to subscribe follows the topic and never offers rewards or fake urgency.
 - Generate short clips up to 60 seconds without an extra compilation render.
-- Keep the chronological 5–10 minute cinematic story resume available as a separate mode.
+- Build a separate 5–10 minute **Long Story** with a sentence-complete 10–22 second teaser, then restore source chronology across context, development, explanation, and payoff. The teaser is removed from its original position, and the renderer never adds filler merely to hit the selected duration.
+- Produce **Long Animate** directly from an original script: Scene Cinema uses local Ollama for the storyboard and a local Apache-2.0 Z-Image-Turbo Q3 service for prompt-faithful scene images, then adds content-derived camera motion, Indonesian narration, scene-timed subtitles, procedural original music, thumbnail, and YouTube chapters before joining everything into one 16:9 video.
 - Telegram's primary CTA requests short clips only for a faster turnaround.
 - Search 70+ Creative Commons themes, including Islamic insight, mystery, myth/fact, history, and relevant horror; prioritize the last 30 days and expand to 180 days when needed.
 - Permanently skip YouTube source URLs that have already completed clipping.
@@ -328,11 +329,38 @@ Quick test on the first 180 seconds:
 .\.venv\Scripts\python.exe clipper.py "https://www.youtube.com/watch?v=..." --model Systran/faster-whisper-base --analyze-seconds 180 --top 1
 ```
 
-Create one non-Short cinematic story resume targeting 5–10 minutes (300–600 seconds):
+Create one non-Short cinematic Long Story targeting 5–10 minutes (300–600 seconds):
 
 ```powershell
 .\.venv\Scripts\python.exe clipper.py "URL" --clip-mode highlight_5m --compilation-target 600 --min 30 --max 90 --visual-mode auto_fyp --ai-enabled
 ```
+
+Create a Long Animate video from a UTF-8 script:
+
+```powershell
+.\.venv\Scripts\python.exe clipper.py --clip-mode long_animate --script-file ".\naskah.txt" --output outputs --ai-enabled --ai-base-url http://localhost:11434/v1 --ai-model llama3.2-id:latest
+```
+
+For prompt-faithful visuals without a paid API, install and start the pinned local
+Z-Image-Turbo Q3 runtime (about 5.8 GB):
+
+```bash
+./scripts/install-local-image-model.sh
+./scripts/start-local-image-model.sh
+```
+
+It exposes `http://127.0.0.1:7860/v1/images/generations` through
+stable-diffusion.cpp. The default `1024x576`, 8-step render is designed for a
+4 GB RTX 3050 and is normalized to 1920x1080 by Long Animate. No Gemini/OpenAI
+key is required. `LONG_ANIMATE_IMAGE_STRICT=true` stops the job when the local
+service is unavailable instead of silently substituting procedural art. Use
+`builtin://story-art` only when a geometric placeholder is explicitly desired.
+The storyboard parser understands Markdown `Scene`/`Adegan` blocks, keeps a
+shared character bible, and removes narration/on-screen-text labels from image
+prompts. Long Animate conservatively
+enables YouTube's altered/synthetic disclosure, starts uploads as Private, and
+requires confirmation that the script and configured media providers permit
+commercial YouTube use.
 
 Outputs are written under `backend/outputs/`.
 

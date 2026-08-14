@@ -569,6 +569,77 @@ def test_long_form_description_gets_valid_manual_chapters(monkeypatch):
     assert description.endswith("02:35 Kesimpulan dan Hikmah")
 
 
+def test_long_story_quality_gate_blocks_automatic_upload(monkeypatch):
+    import api
+
+    clip = ClipFile(
+        name="resume_cerita_5menit_inti.mp4",
+        url="/outputs/demo/resume_cerita_5menit_inti.mp4",
+        size_bytes=1,
+    )
+    job = ClipJob(
+        id="job-long-story-gate",
+        status="completed",
+        request=ClipJobRequest(source_file="/tmp/source.mp4", clip_mode="highlight_5m"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "production_model": "codex_long_story_director",
+            "story_director": {"quality_gate_passed": False},
+        },
+    )
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+
+    assert "quality gate Long Story" in issue
+    assert "tiga beat unik" in issue
+
+
+def test_long_animate_preflight_requires_rights_and_working_voice(monkeypatch):
+    import api
+
+    clip = ClipFile(
+        name="long_animate_langkah-kecil.mp4",
+        url="/outputs/demo/long_animate_langkah-kecil.mp4",
+        size_bytes=1,
+    )
+    job = ClipJob(
+        id="job-long-animate-gate",
+        status="completed",
+        request=ClipJobRequest(
+            clip_mode="long_animate",
+            script_text="Naskah orisinal yang cukup panjang untuk menghasilkan beberapa scene bermakna dan alur cerita yang utuh.",
+            confirm_long_animate_rights=False,
+        ),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "production_model": "codex_scene_cinema_v1",
+            "one_k_long_form_readiness": {"quality_gate_passed": True},
+            "story_arc": [
+                {"voice_provider": "edge_neural"},
+                {"voice_provider": "edge_neural"},
+                {"voice_provider": "edge_neural"},
+            ],
+        },
+    )
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+
+    assert "pemeriksaan hak" in issue
+    assert "quality gate scene" in issue
+
+
 def test_completed_upload_cleanup_delay_defaults_to_thirty_seconds(monkeypatch):
     monkeypatch.delenv("YOUTUBE_DELETE_UPLOADED_CLIP_DELAY_SECONDS", raising=False)
 

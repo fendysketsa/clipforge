@@ -513,7 +513,7 @@ FILLER_PHRASES = (
 
 CropMode = Literal["center", "person", "streamer"]
 VideoQuality = Literal["standard", "high", "max"]
-ClipMode = Literal["short", "highlight_5m"]
+ClipMode = Literal["short", "highlight_5m", "long_animate"]
 OutputFormat = Literal["vertical_short", "landscape_compilation"]
 VisualMode = Literal["auto_fyp", "cinematic", "speaker_split", "animated_3d", "retro_tv"]
 BackgroundMode = Literal["auto_clean", "keep", "mosque"]
@@ -3013,6 +3013,51 @@ def five_k_experiment_readiness(
     }
 
 
+def one_k_long_form_readiness(
+    clip: ClipCandidate,
+    story_director: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Describe a 1K-view long-form experiment without promising distribution."""
+    base = five_k_experiment_readiness(clip, "landscape_compilation")
+    story = story_director or {}
+    story_gate = bool(story.get("quality_gate_passed"))
+    base.update(
+        {
+            "version": 1,
+            "target_views": 1000,
+            "target_metric": "youtube_views",
+            "quality_metric": "watch_time",
+            "quality_gate_passed": story_gate and bool((clip.hook or clip.title).strip()),
+            "status": (
+                base["status"]
+                if story_gate
+                else "revise_story_before_publishing"
+            ),
+            "review_checkpoints": [100, 300, 1000],
+            "measure_after_publish": [
+                "impressions",
+                "home_and_suggested_ctr",
+                "first_30_second_retention",
+                "average_view_duration",
+                "audience_retention_dips_and_spikes",
+                "end_screen_click_rate",
+                "returning_viewers",
+                "subscribers_gained",
+            ],
+            "iteration_order": [
+                "title_thumbnail_ab_test",
+                "first_30_seconds_promise_match",
+                "remove_retention_dips",
+                "move_top_moments_earlier",
+                "strengthen_end_screen_to_related_video",
+            ],
+            "story_director_quality_gate": story_gate,
+            "guarantee": False,
+        }
+    )
+    return base
+
+
 def two_k_experiment_readiness(
     clip: ClipCandidate,
     output_format: OutputFormat,
@@ -3744,10 +3789,164 @@ def order_compilation_for_retention(
     return [strongest, *remaining]
 
 
+def build_long_form_story_sequence(
+    candidates: list[ClipCandidate],
+    transcript: list[TranscriptSegment],
+    *,
+    teaser_target_seconds: float = 16.0,
+) -> tuple[list[ClipCandidate], list[str], dict[str, object]]:
+    """Turn selected source beats into a teaser plus a chronological story.
+
+    The former long-form order moved an entire high-scoring 30–90 second beat
+    to the front. That can reveal the answer too early and make the following
+    source chronology feel broken. Director v2 takes only a sentence-complete
+    teaser, then returns to the source arc. The teaser is removed from its
+    original position, so duration is not padded and content is not duplicated.
+    """
+    if not candidates:
+        return [], [], {
+            "version": 2,
+            "strategy": "no_story_material",
+            "quality_gate_passed": False,
+            "filler_padding_added": False,
+        }
+
+    chronological = sorted(
+        (ClipCandidate(**asdict(item)) for item in candidates),
+        key=lambda item: item.start,
+    )
+    strongest = max(
+        chronological,
+        key=lambda item: (
+            item.score,
+            item.key_point_score,
+            item.boundary_quality,
+            -item.start,
+        ),
+    )
+    strongest_duration = strongest.end - strongest.start
+    minimum_teaser = 10.0
+    maximum_teaser = min(22.0, max(minimum_teaser, strongest_duration - 10.0))
+    teaser_end = min(strongest.end, strongest.start + teaser_target_seconds)
+    if strongest_duration >= minimum_teaser + 10.0:
+        sentence_ends = [
+            segment.end
+            for segment in segments_for_clip(transcript, strongest)
+            if minimum_teaser
+            <= segment.end - strongest.start
+            <= maximum_teaser
+        ]
+        if sentence_ends:
+            teaser_end = min(
+                sentence_ends,
+                key=lambda value: abs((value - strongest.start) - teaser_target_seconds),
+            )
+    teaser_end = min(strongest.end, max(strongest.start + minimum_teaser, teaser_end))
+
+    def slice_candidate(
+        source: ClipCandidate,
+        start: float,
+        end: float,
+        index: int,
+    ) -> ClipCandidate:
+        payload = asdict(source)
+        slice_text = " ".join(
+            segment.text.strip()
+            for segment in transcript
+            if segment.end > start and segment.start < end and segment.text.strip()
+        ).strip()
+        payload.update(
+            {
+                "index": index,
+                "start": start,
+                "end": end,
+                "duration": max(0.0, end - start),
+                "text": slice_text or source.text,
+            }
+        )
+        return ClipCandidate(**payload)
+
+    # If the strongest beat is too short to split safely, retain the old
+    # no-duplication behavior rather than manufacturing extra runtime.
+    if strongest.end - teaser_end < 10.0:
+        sequence = order_compilation_for_retention(chronological)
+        roles = [
+            "cold_open"
+            if index == 0
+            else "payoff_conclusion"
+            if index == len(sequence) - 1
+            else "development"
+            for index in range(len(sequence))
+        ]
+        return sequence, roles, {
+            "version": 2,
+            "strategy": "strongest_complete_beat_then_chronology",
+            "quality_gate_passed": len(sequence) >= 3,
+            "cold_open_seconds": round(sequence[0].duration, 3),
+            "source_chronology_preserved_after_teaser": True,
+            "filler_padding_added": False,
+            "duplicated_teaser_content": False,
+        }
+
+    teaser = slice_candidate(strongest, strongest.start, teaser_end, 1)
+    sequence = [teaser]
+    for candidate in chronological:
+        if candidate is strongest:
+            continuation = slice_candidate(
+                candidate,
+                teaser_end,
+                candidate.end,
+                len(sequence) + 1,
+            )
+            continuation.title = f"Penjelasan: {candidate.title}"[:80]
+            sequence.append(continuation)
+        else:
+            candidate.index = len(sequence) + 1
+            sequence.append(candidate)
+    for index, candidate in enumerate(sequence, start=1):
+        candidate.index = index
+
+    roles: list[str] = []
+    for index in range(len(sequence)):
+        if index == 0:
+            role = "cold_open"
+        elif index == 1:
+            role = "context"
+        elif index == len(sequence) - 1:
+            role = "payoff_conclusion"
+        elif index / max(1, len(sequence) - 1) < 0.58:
+            role = "development"
+        else:
+            role = "evidence_and_answer"
+        roles.append(role)
+
+    total_duration = sum(item.end - item.start for item in sequence)
+    unique_story_beats = len(
+        {
+            first_sentence(item.title or item.text, max_words=8).casefold()
+            for item in sequence[1:]
+            if (item.title or item.text).strip()
+        }
+    )
+    return sequence, roles, {
+        "version": 2,
+        "strategy": "sentence_complete_teaser_then_source_chronology",
+        "quality_gate_passed": len(sequence) >= 4 and unique_story_beats >= 3,
+        "cold_open_seconds": round(teaser.end - teaser.start, 3),
+        "total_story_seconds": round(total_duration, 3),
+        "unique_story_beats": unique_story_beats,
+        "source_chronology_preserved_after_teaser": True,
+        "filler_padding_added": False,
+        "duplicated_teaser_content": False,
+        "original_commentary_or_editorial_bridges_required": True,
+        "youtube_view_guarantee": False,
+    }
+
+
 def select_output_candidates(
     candidates: list[ClipCandidate],
     *,
-    clip_mode: Literal["short", "highlight_5m"],
+    clip_mode: Literal["short", "highlight_5m", "long_animate"],
     short_limit: int,
     compilation_target: float = 300,
 ) -> tuple[list[ClipCandidate], list[ClipCandidate]]:
@@ -3756,6 +3955,8 @@ def select_output_candidates(
     if clip_mode == "highlight_5m":
         compilation = select_compilation_candidates(pool, compilation_target)
         return compilation, compilation
+    if clip_mode == "long_animate":
+        return [], []
     return select_candidates(pool, short_limit), []
 
 
@@ -5651,6 +5852,7 @@ def landscape_compilation_edit_filter(
     *,
     section_number: int,
     section_count: int,
+    narrative_role: str = "",
     editorial_text_filename: str = "",
     theme_profile: dict[str, str] | None = None,
     emphasis_times: list[float] | None = None,
@@ -5668,7 +5870,14 @@ def landscape_compilation_edit_filter(
     }
     accent = profile["accent"]
     secondary = profile.get("accent_secondary", "#22D3EE")
-    badge = (
+    role_badges = {
+        "cold_open": "COLD OPEN",
+        "context": "KONTEKS",
+        "development": "PERKEMBANGAN",
+        "evidence_and_answer": "PENJELASAN",
+        "payoff_conclusion": "KESIMPULAN",
+    }
+    badge = role_badges.get(narrative_role) or (
         str(profile.get("badge") or "RANGKUMAN UTAMA")
         if section_number == 1
         else f"POIN {section_number:02}"
@@ -7141,6 +7350,7 @@ def export_clip(
     background_mode: BackgroundMode = "keep",
     compilation_part_number: int = 1,
     compilation_part_count: int = 1,
+    compilation_narrative_role: str = "",
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     base_name = base_name_override or f"clip_{clip.index:02}_{slugify(clip.title)[:72] or 'auto'}"
@@ -7355,6 +7565,11 @@ def export_clip(
             "adaptive_quantization": "aq-mode=3:aq-strength=0.85",
         },
         "aspect_ratio": "16:9" if output_format == "landscape_compilation" else "9:16",
+        "narrative_role": (
+            compilation_narrative_role
+            if output_format == "landscape_compilation"
+            else None
+        ),
         "source_metadata_embedded": False,
         "core_message": core_message.replace("\n", " ").strip(),
         "thumbnail_strategy": (
@@ -7753,6 +7968,7 @@ def export_clip(
                     hook_text_path.name,
                     section_number=compilation_part_number,
                     section_count=compilation_part_count,
+                    narrative_role=compilation_narrative_role,
                     editorial_text_filename=pov_text_path.name if drawtext_supported else "",
                     theme_profile=theme_profile,
                     emphasis_times=emphasis_times,
@@ -8369,7 +8585,10 @@ def export_compilation(
     auto_blur_watermarks: bool = False,
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
-    candidates = order_compilation_for_retention(candidates)
+    candidates, narrative_roles, story_director = build_long_form_story_sequence(
+        candidates,
+        transcript,
+    )
     parts_dir = clips_dir / ".compilation_parts"
     shutil.rmtree(parts_dir, ignore_errors=True)
     parts_dir.mkdir(parents=True, exist_ok=True)
@@ -8388,7 +8607,10 @@ def export_compilation(
     altered_content_disclosure_required = False
     try:
         total_parts = len(candidates)
-        for idx, candidate in enumerate(candidates, start=1):
+        for idx, (candidate, narrative_role) in enumerate(
+            zip(candidates, narrative_roles),
+            start=1,
+        ):
             part_start = 70 + round(((idx - 1) / max(1, total_parts)) * 20)
             emit_progress(
                 part_start,
@@ -8418,6 +8640,7 @@ def export_compilation(
                 background_mode=background_mode,
                 compilation_part_number=idx,
                 compilation_part_count=len(candidates),
+                compilation_narrative_role=narrative_role,
             )
             part_paths.append(part_path)
             part_done = 70 + round((idx / max(1, total_parts)) * 20)
@@ -8436,6 +8659,7 @@ def export_compilation(
                 part_audits.append(
                     {
                         "part": idx,
+                        "narrative_role": narrative_role,
                         "hook": str(part_payload.get("hook") or "").strip()[:120],
                         "pov": str(part_payload.get("pov") or "").strip()[:180],
                         "core_message": str(part_payload.get("core_message") or "").strip()[:180],
@@ -8498,7 +8722,11 @@ def export_compilation(
 
     output_width, output_height = ensure_minimum_hd_output(out_path)
     total_duration = write_compilation_srt(srt_path, transcript, candidates)
-    compilation_score = round(sum(item.score for item in candidates) / len(candidates))
+    scored_seconds = sum(max(0.0, item.duration) for item in candidates)
+    compilation_score = round(
+        sum(item.score * max(0.0, item.duration) for item in candidates)
+        / max(0.001, scored_seconds)
+    )
     combined_strengths = list(
         dict.fromkeys(value for item in candidates for value in item.strengths)
     )[:4]
@@ -8530,11 +8758,13 @@ def export_compilation(
             if (item.pov or item.text).strip()
         )
     )
-    story_beats = [
-        first_sentence(item.title, max_words=8)
-        for item in candidates
-        if item.title.strip() and not is_source_branding_segment(item.title)
-    ]
+    story_beats = list(
+        dict.fromkeys(
+            first_sentence(item.title, max_words=8)
+            for item in candidates
+            if item.title.strip() and not is_source_branding_segment(item.title)
+        )
+    )
     representative_beats = (
         [
             story_beats[index]
@@ -8571,7 +8801,9 @@ def export_compilation(
     compilation_sidecar = {
         **asdict(compilation),
         "mode": "highlight_5m",
-        "resume_version": 1,
+        "resume_version": 2,
+        "production_model": "codex_long_story_director",
+        "story_director": story_director,
         "output_format": "landscape_compilation",
         "aspect_ratio": "16:9",
         "layout": (
@@ -8626,29 +8858,68 @@ def export_compilation(
         "story_arc": [
             {
                 **asdict(item),
-                "narrative_role": (
-                    "hook_context"
-                    if index == 0
-                    else "payoff_conclusion"
-                    if index == len(candidates) - 1
-                    else "development"
-                ),
+                "narrative_role": narrative_roles[index],
             }
             for index, item in enumerate(candidates)
         ],
         "chapter_edit_evidence": part_audits,
         "retention_strategy": {
-            "version": 2,
-            "opening": "strongest_editorial_segment_first",
+            "version": 3,
+            "opening": "sentence_complete_teaser_without_duplicate_runtime",
             "opening_attention_signal": "truthful_red_pulse_with_content_theme_badge",
-            "remaining_arc": "source_chronology_after_hook",
+            "remaining_arc": "source_chronology_after_teaser",
             "first_30_seconds_match_title_thumbnail_promise": True,
             "manual_youtube_chapters_ready": len(candidates) >= 3,
+            "filler_padding_added": False,
+            "story_quality_gate_passed": bool(story_director.get("quality_gate_passed")),
         },
-        "five_k_experiment_readiness": five_k_experiment_readiness(
+        "one_k_long_form_readiness": one_k_long_form_readiness(
             compilation,
-            "landscape_compilation",
+            story_director,
         ),
+        "packaging_experiment": {
+            "version": 1,
+            "platform": "youtube_native_title_thumbnail_ab_test",
+            "variants_to_prepare": 3,
+            "angles": [
+                {
+                    "name": "masalah_utama",
+                    "source_copy": first_sentence(
+                        compilation.hook or compilation.title,
+                        max_words=10,
+                    ),
+                },
+                {
+                    "name": "jawaban_atau_manfaat",
+                    "source_copy": first_sentence(core_message, max_words=12),
+                },
+                {
+                    "name": "payoff_kesimpulan",
+                    "source_copy": first_sentence(
+                        candidates[-1].title or candidates[-1].text,
+                        max_words=10,
+                    ),
+                },
+            ],
+            "title_thumbnail_promise_must_match_video": True,
+            "misleading_clickbait_allowed": False,
+            "primary_selection_signal": "watch_time_share",
+            "secondary_diagnostics": [
+                "home_and_suggested_ctr",
+                "first_30_second_retention",
+            ],
+            "guarantee": False,
+        },
+        "youtube_policy_guardrails": {
+            "source_rights_review_required": True,
+            "verified_cc_attribution_preserved_when_applicable": True,
+            "substantive_content_specific_edit_required": True,
+            "mass_produced_repetitive_template_allowed": False,
+            "filler_added_only_to_reach_duration": False,
+            "realistic_altered_content_disclosure_required_when_applicable": True,
+            "private_upload_review_before_publish": True,
+            "view_target_is_experiment_not_guarantee": True,
+        },
         "subscriber_conversion": {
             "version": 1,
             "enabled": True,
@@ -8775,14 +9046,19 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("url", nargs="?", default="", help="YouTube URL")
     parser.add_argument("--source-file", default="", help="Use a local video file instead of downloading from a URL")
+    parser.add_argument(
+        "--script-file",
+        default="",
+        help="User-authored UTF-8 script used by Long Animate mode",
+    )
     parser.add_argument("--top", type=int, default=5, help="Number of clips to export")
     parser.add_argument("--min", type=float, default=15, help="Minimum clip duration in seconds")
     parser.add_argument("--max", type=float, default=60, help="Maximum clip duration in seconds")
     parser.add_argument(
         "--clip-mode",
-        choices=["short", "highlight_5m"],
+        choices=["short", "highlight_5m", "long_animate"],
         default="short",
-        help="Export vertical shorts only, or one 5-10 minute landscape story resume",
+        help="Export Shorts, a source-video Long Story, or a script-to-video Long Animate",
     )
     parser.add_argument(
         "--compilation-target",
@@ -8908,16 +9184,104 @@ def main() -> int:
         )
         args.max = float(FENDY_CLIPPER_SHORTS_MAX_SECONDS)
 
-    if args.min <= 0 or args.max <= args.min:
+    if args.clip_mode != "long_animate" and (args.min <= 0 or args.max <= args.min):
         console.print("[red]Invalid duration range.[/red]")
         return 2
 
-    if not args.url and not args.source_file:
+    if args.clip_mode == "long_animate" and not args.script_file:
+        console.print("[red]Long Animate membutuhkan --script-file.[/red]")
+        return 2
+    if args.clip_mode != "long_animate" and not args.url and not args.source_file:
         console.print("[red]Provide a YouTube URL or --source-file.[/red]")
         return 2
 
     root = Path(args.output)
     root.mkdir(parents=True, exist_ok=True)
+
+    if args.clip_mode == "long_animate":
+        from long_animate import render_long_animate
+
+        script_path = Path(args.script_file)
+        if not script_path.is_file():
+            console.print("[red]File naskah Long Animate tidak ditemukan.[/red]")
+            return 2
+        script = script_path.read_text(encoding="utf-8").strip()
+        if len(script) < 120 or len(script.split()) < 30:
+            console.print(
+                "[red]Naskah Long Animate terlalu pendek. Gunakan minimal 120 karakter dan 30 kata.[/red]"
+            )
+            return 2
+        ai_config = AIConfig(
+            enabled=args.ai_enabled,
+            base_url=args.ai_base_url,
+            model=args.ai_model,
+            api_key=args.ai_api_key,
+        )
+        required_hashtags = [
+            tag.strip()
+            for tag in args.required_hashtags.split(",")
+            if tag.strip()
+        ]
+        emit_progress(3, "source", "Membaca naskah orisinal untuk Long Animate")
+        output_path, sidecar = render_long_animate(
+            script,
+            root,
+            ai_config,
+            video_quality=args.video_quality,
+            required_hashtags=required_hashtags,
+            progress=emit_progress,
+        )
+        candidate = ClipCandidate(
+            index=int(sidecar.get("index") or 1),
+            start=float(sidecar.get("start") or 0.0),
+            end=float(sidecar.get("end") or 0.0),
+            duration=float(sidecar.get("duration") or 0.0),
+            score=int(sidecar.get("score") or 1),
+            title=str(sidecar.get("title") or "Long Animate"),
+            reason=str(sidecar.get("reason") or "Long Animate dari naskah orisinal."),
+            text=str(sidecar.get("text") or script),
+            hook=str(sidecar.get("hook") or ""),
+            pov=str(sidecar.get("pov") or ""),
+            fyp_label=str(sidecar.get("fyp_label") or "Kuat"),
+            strengths=list(sidecar.get("strengths") or []),
+            weaknesses=list(sidecar.get("weaknesses") or []),
+            improvement_ideas=list(sidecar.get("improvement_ideas") or []),
+            applied_edits=list(sidecar.get("applied_edits") or []),
+            key_point_score=int(sidecar.get("key_point_score") or 0),
+            loop_score=int(sidecar.get("loop_score") or 0),
+            boundary_quality=str(sidecar.get("boundary_quality") or "payoff_tuntas"),
+        )
+        auditor = fendy_auditor_identity(candidate, "landscape_compilation")
+        auditor["visible_video_signature"] = ffmpeg_has_filter("drawtext")
+        sidecar["auditor_identity"] = auditor
+        sidecar["codex_growth_blueprint"] = codex_growth_blueprint(
+            candidate,
+            "landscape_compilation",
+        )
+        sidecar["subscriber_conversion"] = {
+            "version": 1,
+            "enabled": True,
+            "strategy": "description_and_end_screen_after_story_payoff",
+            "value_proposition": subscribe_value_prompt(candidate),
+            "content_theme_derived": True,
+            "shown_once": True,
+            "forced_or_incentivized_subscription": False,
+        }
+        save_json(output_path.with_suffix(".json"), sidecar)
+        embed_fendy_provenance_metadata(output_path, candidate.title, auditor)
+        attach_monetization_provenance(
+            [output_path],
+            {
+                "title": candidate.title,
+                "uploader": "user_script",
+                "webpage_url": "",
+                "license": "user_authored_rights_confirmation_required",
+            },
+            uploaded_source=True,
+        )
+        emit_progress(100, "complete", "Long Animate siap direview dan diupload sebagai Private")
+        console.print(f"[green]Done.[/green] Exported:\n  {output_path}")
+        return 0
 
     mode_label = "video panjang" if args.clip_mode == "highlight_5m" else "klip pendek"
     emit_progress(3, "source", f"Menyiapkan sumber untuk {mode_label}")

@@ -647,7 +647,7 @@ def clip_title(clip: dict[str, Any], index: int) -> str:
 
 def is_compilation_result(clip: dict[str, Any]) -> bool:
     name = str(clip.get("name") or "").lower()
-    return name.startswith(("highlight_5menit_", "resume_cerita_"))
+    return name.startswith(("highlight_5menit_", "resume_cerita_", "long_animate_"))
 
 
 def telegram_fyp_label(score: int) -> str:

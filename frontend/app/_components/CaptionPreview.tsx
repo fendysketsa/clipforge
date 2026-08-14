@@ -46,10 +46,10 @@ export function CaptionPreview({
     <div className="captionPreview">
       <span className="captionPreviewLabel">Preview</span>
       <div
-        className={`captionPreviewStage ${clipMode === "highlight_5m" ? "captionPreviewStage--landscape" : ""}`}
+        className={`captionPreviewStage ${clipMode !== "short" ? "captionPreviewStage--landscape" : ""}`}
         style={{
-          height: clipMode === "highlight_5m" ? 190 : PREVIEW_HEIGHT,
-          aspectRatio: clipMode === "highlight_5m" ? "16 / 9" : "9 / 16",
+          height: clipMode !== "short" ? 190 : PREVIEW_HEIGHT,
+          aspectRatio: clipMode !== "short" ? "16 / 9" : "9 / 16",
         }}
       >
         <div

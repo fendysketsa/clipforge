@@ -4,7 +4,9 @@ import clipper
 from llm import AIConfig, LLMUnavailableError
 from clipper import (
     ClipCandidate,
+    TranscriptSegment,
     ai_rescore_candidates,
+    build_long_form_story_sequence,
     order_compilation_for_retention,
     select_candidates,
     select_compilation_candidates,
@@ -245,3 +247,39 @@ def test_compilation_export_order_moves_strongest_segment_to_opening():
     assert ordered[0] is candidates[1]
     assert [item.start for item in ordered[1:]] == [0, 240]
     assert [item.start for item in candidates] == [0, 120, 240]
+
+
+def test_long_story_director_uses_short_teaser_then_restores_chronology():
+    candidates = [
+        make_candidate(1, 0, 78, "Konteks awal masalah"),
+        make_candidate(2, 120, 96, "Jawaban paling kuat"),
+        make_candidate(3, 240, 84, "Penjelasan dan contoh"),
+        make_candidate(4, 360, 88, "Kesimpulan dan payoff"),
+    ]
+    transcript = [
+        TranscriptSegment(start=start, end=start + 5, text=f"Kalimat {start}")
+        for start in range(0, 420, 5)
+    ]
+
+    sequence, roles, plan = build_long_form_story_sequence(candidates, transcript)
+
+    assert sequence[0].start == 120
+    assert [item.index for item in candidates] == [1, 2, 3, 4]
+    assert 10 <= sequence[0].duration <= 22
+    assert [item.start for item in sequence[1:]] == sorted(item.start for item in sequence[1:])
+    assert sum(item.duration for item in sequence) == sum(item.duration for item in candidates)
+    assert sequence[2].start == sequence[0].end
+    assert "Kalimat 120" in sequence[0].text
+    assert "Kalimat 135" not in sequence[0].text
+    assert "Kalimat 135" in sequence[2].text
+    assert "Kalimat 120" not in sequence[2].text
+    assert roles == [
+        "cold_open",
+        "context",
+        "development",
+        "evidence_and_answer",
+        "payoff_conclusion",
+    ]
+    assert plan["quality_gate_passed"] is True
+    assert plan["filler_padding_added"] is False
+    assert plan["duplicated_teaser_content"] is False
