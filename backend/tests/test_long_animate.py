@@ -23,12 +23,87 @@ def test_fallback_storyboard_has_story_arc_without_duplicate_filler():
     assert storyboard.scenes[0].narrative_role == "cold_open"
     assert storyboard.scenes[-1].narrative_role == "payoff_conclusion"
     assert all(scene.duration_hint >= 6 for scene in storyboard.scenes)
-    assert all("plain and unmarked" in scene.visual_prompt for scene in storyboard.scenes)
-    assert all("exactly five naturally separated fingers" in scene.visual_prompt for scene in storyboard.scenes)
-    assert all("hijab as her sole head covering" in scene.visual_prompt for scene in storyboard.scenes)
-    assert all("no floating hands" in scene.visual_prompt for scene in storyboard.scenes)
-    assert all("never invent a crowd" in scene.visual_prompt for scene in storyboard.scenes)
+    assert all("Do not add unrequested writing" in scene.visual_prompt for scene in storyboard.scenes)
+    assert "exactly five naturally separated fingers" in storyboard.scenes[0].visual_prompt
+    assert "hijab as her sole head covering" not in storyboard.scenes[0].visual_prompt
+    assert "Indonesian people only" not in storyboard.scenes[0].visual_prompt
     assert len({scene.narration for scene in storyboard.scenes}) == len(storyboard.scenes)
+
+
+def test_explicit_nonhuman_story_keeps_requested_subject_and_visual_style():
+    script = """
+    KARAKTER KONSISTEN: Robot penjelajah kecil berwarna jingga dengan satu antena biru.
+    GAYA VISUAL: Animasi 3D clay stop-motion, tekstur tanah liat, cahaya biru dingin.
+
+    ### ADEGAN 1 — Tiba di Europa
+    VISUAL: Robot jingga turun dari wahana di permukaan es Europa yang retak.
+    NARASI: Robot penjelajah tiba di Europa untuk mencari tanda samudra bawah tanah.
+
+    ### ADEGAN 2 — Memindai Es
+    VISUAL: Robot yang sama menempelkan pemindai biru pada retakan es bercahaya.
+    NARASI: Pemindainya menangkap getaran air jauh di bawah lapisan es.
+
+    ### ADEGAN 3 — Mengirim Temuan
+    VISUAL: Antena robot menyala saat sinyal biru melesat menuju wahana di orbit.
+    NARASI: Data penemuan dikirim ke wahana sebelum badai partikel tiba.
+    """
+
+    storyboard = _fallback_storyboard(script)
+
+    assert storyboard.art_bible.startswith("Animasi 3D clay stop-motion")
+    assert "Robot penjelajah kecil berwarna jingga" in storyboard.character_bible
+    assert "robot jingga turun" in storyboard.scenes[0].visual_prompt.casefold()
+    assert "permukaan es europa" in storyboard.scenes[0].visual_prompt.casefold()
+    assert all("hijab" not in scene.visual_prompt.casefold() for scene in storyboard.scenes)
+    assert all(not long_animate._has_any(scene.visual_prompt, ("peci",)) for scene in storyboard.scenes)
+    assert all("indonesian people only" not in scene.visual_prompt.casefold() for scene in storyboard.scenes)
+
+
+def test_ai_storyboard_removes_unrequested_stock_islamic_child(monkeypatch):
+    script = (
+        "Sebuah rover beroda enam mendarat di planet tandus saat matahari kembar terbit. "
+        "Rover memindai bebatuan hitam untuk menemukan mineral yang menyimpan air. "
+        "Badai debu mendekat dan menutup jalur kembali menuju kapsul. "
+        "Mesin bor rover membuka jalan melalui lapisan batu yang rapuh. "
+        "Sampel mineral akhirnya tersimpan aman sebelum badai mencapai lokasi."
+    )
+    payload = {
+        "title": "Misi Planet Tandus",
+        "hook": "Misi berpacu dengan badai.",
+        "core_message": "Rover menyelamatkan sampel.",
+        "art_bible": "cinematic 3D animation with ochre dust",
+        "character_bible": "A Muslim boy wearing a white peci accompanies the rover",
+        "scenes": [
+            {
+                "title": f"Misi {index}",
+                "narration": narration,
+                "visual_prompt": "A Muslim boy in a white peci stands beside the rover",
+                "on_screen_text": "",
+                "camera_motion": "push_in",
+                "color_mood": "ochre and cobalt",
+                "narrative_role": role,
+            }
+            for index, (narration, role) in enumerate(
+                [
+                    ("Rover beroda enam mendarat ketika dua matahari terbit di planet tandus.", "cold_open"),
+                    ("Pemindai rover menemukan mineral penyimpan air di antara bebatuan hitam.", "context"),
+                    ("Mesin bor rover menembus batu rapuh sebelum badai debu tiba.", "payoff_conclusion"),
+                ],
+                start=1,
+            )
+        ],
+    }
+    monkeypatch.setattr(long_animate, "chat_completion", lambda config, messages: json.dumps(payload))
+
+    storyboard = build_storyboard(
+        script,
+        AIConfig(enabled=True, base_url="http://localhost:11434/v1", model="local"),
+    )
+
+    assert "Muslim boy" not in storyboard.character_bible
+    assert all("muslim boy" not in scene.visual_prompt.casefold() for scene in storyboard.scenes)
+    assert all(not long_animate._has_any(scene.visual_prompt, ("peci",)) for scene in storyboard.scenes)
+    assert all("rover" in scene.visual_prompt.casefold() for scene in storyboard.scenes)
 
 
 def test_ai_storyboard_keeps_scene_specific_direction(monkeypatch):
@@ -403,7 +478,7 @@ def test_local_z_image_uses_sdcpp_openai_compatible_payload(monkeypatch, tmp_pat
     assert "fused fingers" in captured["payload"]["negative_prompt"]
     assert "disembodied hands" in captured["payload"]["negative_prompt"]
     assert "unrequested crowd" in captured["payload"]["negative_prompt"]
-    assert "woman wearing peci" in captured["payload"]["negative_prompt"]
+    assert "woman wearing peci" not in captured["payload"]["negative_prompt"]
     assert "verify natural hands and finger count" in captured["payload"]["prompt"]
     assert "model" not in captured["payload"]
     assert "quality" not in captured["payload"]

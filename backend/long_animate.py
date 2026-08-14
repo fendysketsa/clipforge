@@ -60,16 +60,24 @@ class AnimateStoryboard:
 
 
 STORYBOARD_SYSTEM_PROMPT = (
-    "You are an Indonesian animation director and storyboard editor. Turn a user-authored script "
+    "You are an animation director and storyboard editor fluent in Indonesian. Turn a user-authored script "
     "into a coherent, original 16:9 YouTube story. Every scene must materially advance the narrative. "
-    "Use a consistent visual world but vary composition, scale, palette, symbolic objects, and camera motion. "
+    "Treat the user's script as the only source of truth. Use a consistent visual world but vary composition, "
+    "scale, palette, symbolic objects, and camera motion. Never default to an Indonesian, Islamic, child, family, "
+    "school, mosque, or human scene unless that identity or setting is supported by the script. Never replace a "
+    "requested subject with a generic boy, girl, Muslim child, teacher, ustaz, or family. A requested animal, "
+    "object, vehicle, creature, profession, historical setting, fantasy world, or non-Indonesian location must remain "
+    "that exact subject and world. Preserve explicit subject count, age, gender, species, clothing, props, action, "
+    "location, time of day, weather, and visual style scene by scene. "
     "Avoid public-figure likenesses, logos, copyrighted characters, embedded text, fake quotations, graphic harm, "
-    "and depictions of prophets or sacred figures. Define a precise character_bible for recurring characters. "
+    "and depictions of prophets or sacred figures. Define a precise character_bible only for characters that actually "
+    "occur in the script; if there is no recurring character, say so and do not invent one. "
     "Each visual_prompt must describe exactly one uninterrupted camera shot and one visible moment: subject, action, setting, composition, camera, "
     "and lighting. The action must be concrete and physically visible; never use abstract actions such as "
     "preparing, realizing, thinking, or feeling without stating exactly what the hands and body are doing. "
-    "Apply culturally correct gendered clothing: a woman wearing a hijab never wears a peci, kopiah, songkok, "
-    "or any second hat over it; those caps are reserved for male characters. "
+    "Only include religious or cultural clothing when the script requests it or the stated setting unambiguously "
+    "requires it. When it is requested, apply culturally correct gendered clothing: a woman wearing a hijab never "
+    "wears a peci, kopiah, songkok, or any second hat over it; those caps are reserved for male characters. "
     "Whenever hands are visible, describe a relaxed natural pose with anatomically correct fingers and make every "
     "hand visibly connected through its wrist and forearm to its owner. Never introduce disembodied hands, floating "
     "limbs, anonymous foreground body parts, or extra background people not requested by the script. "
@@ -191,9 +199,23 @@ def _single_visible_moment(value: str) -> str:
     def visible_score(sentence: str) -> int:
         lowered = sentence.casefold()
         score = 0
-        if re.search(r"\b(?:anak|ustaz|ustadz|guru|ibu|ayah|pria|wanita|ia)\b", lowered):
+        if re.search(
+            r"\b(?:anak|bayi|remaja|pria|wanita|laki-laki|perempuan|ibu|ayah|guru|"
+            r"ustaz|ustadz|dokter|petani|nelayan|astronaut|ilmuwan|robot|hewan|kucing|"
+            r"anjing|burung|ikan|mobil|motor|kapal|pesawat|kereta|rumah|gedung|gunung|"
+            r"hutan|laut|planet|ia)\b",
+            lowered,
+        ):
             score += 4
-        if any(token in lowered for token in ("tangan", "duduk", "membaca", "membuka", "meletakkan", "membasuh", "menutup", "menyimpan", "menoleh")):
+        if any(
+            token in lowered
+            for token in (
+                "tangan", "berdiri", "duduk", "berjalan", "berlari", "terbang", "berenang",
+                "membaca", "menulis", "membuka", "meletakkan", "membasuh", "menutup",
+                "menyimpan", "menoleh", "mengangkat", "mendorong", "menarik", "memasak",
+                "menanam", "memperbaiki", "mendarat", "meledak", "runtuh", "menyala",
+            )
+        ):
             score += 2
         if any(token in lowered for token in ("suasana", "cahaya matahari", "burung terdengar")):
             score -= 2
@@ -358,6 +380,18 @@ def _scene_sections(script: str) -> list[dict[str, str]]:
 
 
 def _character_bible(script: str) -> str:
+    explicit = re.search(
+        r"(?im)^\s*(?:karakter\s+konsisten|character\s+bible|karakter)\s*:\s*(.+)$",
+        script,
+    )
+    if explicit:
+        details = _clean_text(explicit.group(1), 900)
+        if details and details.casefold() not in {"-", "tidak ada", "none", "no recurring character"}:
+            return (
+                "Recurring character continuity: preserve only these explicitly requested identities, including "
+                "their face or defining shape, age, species, body proportions, clothing, equipment, and colors in "
+                f"every applicable scene. Script character facts: {details}"
+            )
     cues = (
         "anak",
         "pria",
@@ -402,12 +436,77 @@ def _character_bible(script: str) -> str:
     details = "; ".join(dict.fromkeys(candidates))[:900]
     if details:
         return (
-            "Recurring character continuity: preserve the exact same face, age, skin tone, hairstyle, "
-            f"body proportions, and wardrobe colors in every scene. Script character facts: {details}"
+            "Recurring character continuity: preserve only the explicitly described recurring identities, including "
+            "their face or defining shape, age, species, body proportions, clothing, equipment, and colors in every "
+            f"applicable scene. Script character facts: {details}"
         )
     return (
-        "Recurring character continuity: preserve the exact same face, age, skin tone, hairstyle, "
-        "body proportions, and wardrobe colors for every recurring person across all scenes."
+        "No recurring character is defined. Do not invent any recurring identity or living subject; include one "
+        "only when the scene itself explicitly requires it."
+    )
+
+
+def _requested_art_bible(script: str) -> str:
+    match = re.search(
+        r"(?im)^\s*(?:gaya\s+visual|visual\s+style|art\s+bible|style)\s*:\s*(.+)$",
+        script,
+    )
+    return _clean_text(match.group(1), 600) if match else ""
+
+
+def _has_any(text: str, terms: tuple[str, ...]) -> bool:
+    lowered = text.casefold()
+    return any(
+        re.search(rf"(?<!\w){re.escape(term.casefold())}(?!\w)", lowered) is not None
+        for term in terms
+    )
+
+
+_PEOPLE_IDENTITY_TERMS = (
+    "orang", "manusia", "anak", "bayi", "remaja", "pria", "wanita", "laki-laki",
+    "perempuan", "ibu", "ayah", "kakek", "nenek", "guru", "dokter", "petani", "nelayan",
+    "astronaut", "ilmuwan", "ustaz", "ustadz", "karakter utama", "tokoh", "seorang", "warga",
+    "kerumunan", "pejalan kaki", "pemuda", "gadis", "lelaki", "pekerja", "pelanggan", "perawat",
+    "polisi", "tentara", "pilot", "koki", "pedagang", "person", "people", "human", "boy", "girl",
+    "child", "baby", "teenager", "man", "woman",
+    "mother", "father", "teacher", "doctor", "farmer", "fisherman", "scientist", "worker", "customer",
+    "nurse", "police officer", "soldier", "chef", "merchant",
+)
+
+_PEOPLE_PRONOUN_TERMS = (
+    "dia", "ia", "mereka", "aku", "saya", "kami", "kita", "he", "she", "they",
+)
+
+_PEOPLE_TERMS = _PEOPLE_IDENTITY_TERMS + _PEOPLE_PRONOUN_TERMS
+
+_NONHUMAN_CHARACTER_TERMS = (
+    "robot", "android", "cyborg", "hewan", "kucing", "anjing", "burung", "ikan", "paus", "lumba-lumba",
+    "kuda", "sapi", "kambing", "harimau", "singa", "gajah", "monyet", "rubah", "serigala", "beruang",
+    "monster", "makhluk", "alien", "naga", "dinosaurus", "animal", "cat", "dog", "bird", "fish", "whale",
+    "dolphin", "horse", "tiger", "lion", "elephant", "fox", "wolf", "bear", "creature", "dragon", "dinosaur",
+)
+
+_ISLAMIC_VISUAL_TERMS = (
+    "hijab", "jilbab", "peci", "kopiah", "songkok", "baju koko", "gamis", "muslimah",
+    "muslim clothing", "masjid", "mosque", "mukena", "sarung", "rehal",
+)
+
+_INDONESIAN_VISUAL_TERMS = (
+    "indonesia", "indonesian", "jakarta", "nusantara", "kampung indonesia", "desa indonesia",
+)
+
+
+def _contains_unrequested_defaults(script: str, proposed: str) -> bool:
+    """Reject familiar stock imagery that has no support in the user's source text."""
+    script_has_nonhuman = _has_any(script, _NONHUMAN_CHARACTER_TERMS)
+    script_allows_people = _has_any(script, _PEOPLE_IDENTITY_TERMS) or (
+        _has_any(script, _PEOPLE_PRONOUN_TERMS) and not script_has_nonhuman
+    )
+    if not script_allows_people and _has_any(proposed, _PEOPLE_TERMS):
+        return True
+    return any(
+        not _has_any(script, terms) and _has_any(proposed, terms)
+        for terms in (_ISLAMIC_VISUAL_TERMS, _INDONESIAN_VISUAL_TERMS)
     )
 
 
@@ -418,22 +517,60 @@ def _compose_visual_prompt(
     character_bible: str,
 ) -> str:
     visual = _single_visible_moment(visual)
+    grounding = _clean_text(narration, 700)
+    scene_context = f"{visual} {grounding}"
+    complete_context = f"{scene_context} {character_bible}"
+    has_people = _has_any(
+        scene_context,
+        _PEOPLE_TERMS,
+    )
+    has_nonhuman_character = _has_any(scene_context, _NONHUMAN_CHARACTER_TERMS)
+    has_islamic_clothing = has_people and _has_any(
+        complete_context,
+        _ISLAMIC_VISUAL_TERMS,
+    )
+    continuity = (
+        _clean_text(character_bible, 420)
+        if has_people or has_nonhuman_character
+        else "No recurring character appears in this frame; do not insert one"
+    )
+    subject_rule = (
+        "Use only the people explicitly described, each appearing exactly once; never invent a crowd, "
+        "background extras, or partial people. Frame every person with enough body context to identify who owns "
+        "every limb. No hands or arms may enter from outside the frame, and never crop a person at the wrist or "
+        "forearm. Use natural anatomy and relaxed believable poses. Every clearly visible hand has exactly five "
+        "naturally separated fingers with correct joints, proportions, and grip; no fused, missing, duplicated, or "
+        "malformed fingers. Every hand is visibly and anatomically attached through a wrist and forearm to a clearly "
+        "visible person; no floating hands, disembodied limbs, or anonymous foreground hands. "
+        if has_people
+        else "This scene does not request a human subject. Keep the frame free of human figures, faces, silhouettes, "
+        "crowds, and body parts. "
+    )
+    clothing_rule = (
+        "Apply only the religious clothing explicitly requested. A woman wearing a hijab has the hijab as her sole "
+        "head covering: never add a peci, kopiah, songkok, cap, or hat over or under her hijab. Male characters may "
+        "wear a peci only when described. "
+        if has_islamic_clothing
+        else "Use only clothing explicitly supported by this scene; do not add unrequested religious or cultural attire. "
+    )
     return _clean_text(
-        "FULL-BLEED CINEMATIC 16:9 PHOTOGRAPH FROM ONE CAMERA. One continuous environment and one natural composition. "
+        "FULL-BLEED CINEMATIC 16:9 SINGLE FRAME FROM ONE CAMERA. Render in the requested visual style, whether "
+        "animation, illustration, 3D, documentary, or photography. One continuous environment and one natural composition. "
         f"Visible moment: {visual}. "
-        "STRICT SUBJECT INTEGRITY: use only the people explicitly described, each appearing exactly once; never invent a crowd, background extras, or partial people. "
-        "Frame every person with enough body context to identify who owns every limb. No hands or arms may enter from outside the frame, and never crop a person at the wrist or forearm. "
-        "Use natural anatomy and relaxed believable poses. "
-        "Every clearly visible hand has exactly five naturally separated fingers with correct joints, proportions, and grip; no fused, missing, duplicated, or malformed fingers. "
-        "Every hand is visibly and anatomically attached through a wrist and forearm to a clearly visible person; no floating hands, disembodied limbs, or anonymous foreground hands. "
-        "A woman wearing a hijab has the hijab as her sole head covering: never add a peci, kopiah, songkok, cap, or hat over or under her hijab. Male characters may wear a peci when described. "
-        f"Continuity bible: {_clean_text(character_bible, 420)}. "
-        f"Visual style: {_clean_text(art_bible, 320)}. "
-        "Use one clear focal action, a culturally accurate Indonesian setting, clear subject-background separation, tack-sharp subject focus, fine facial and fabric detail, realistic skin texture, "
-        "clean micro-contrast, realistic natural light, and professional composition. "
-        "Keep every background surface plain and unmarked, and keep any book pages outside readable focus. "
-        "Use original fictional everyday Indonesian people only. The photograph extends naturally to all four edges.",
-        2200,
+        + (f"Narrative grounding: {grounding}. " if grounding else "")
+        + "STRICT STORY GROUNDING: depict the requested subject, event, action, object, location, era, weather, "
+        "and time literally. Do not substitute a stock character or a familiar default setting. The visible moment "
+        "takes priority; narrative grounding supplies meaning but must not introduce unrelated objects or people. "
+        + subject_rule
+        + clothing_rule
+        + f"Continuity bible: {continuity}. "
+        + f"Visual style: {_clean_text(art_bible, 320)}. "
+        "Use one clear focal action, the exact culture and location requested by the script, clear subject-background "
+        "separation, crisp focal detail, believable materials and lighting appropriate to the requested style, and professional composition. "
+        "Do not add unrequested writing, signage, logos, symbols, props, architecture, or decorations. "
+        "When people are explicitly requested, use original fictional people matching the script's stated identity; "
+        "never imitate a public figure. The image extends naturally to all four edges.",
+        3000,
     )
 
 
@@ -451,15 +588,18 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
     chunks = chunks[:14]
     seed = hashlib.sha256(script.encode("utf-8")).hexdigest()
     art_styles = (
-        "cinematic semi-realistic Indonesian storybook illustration, natural anatomy, subtle film grain",
-        "polished Indonesian animated-film still, believable materials, soft volumetric light",
-        "cinematic editorial illustration, natural human proportions, rich environmental detail",
-        "warm painterly animation still, realistic lighting, expressive restrained faces",
+        "cinematic semi-realistic storybook illustration, natural anatomy, subtle film grain",
+        "polished animated-film still, believable materials, soft volumetric light",
+        "cinematic editorial illustration, natural proportions, rich environmental detail",
+        "warm painterly animation still, realistic lighting, expressive restrained design",
     )
+    explicit_art_bible = _requested_art_bible(script)
     requested_style = script.casefold()
-    if any(token in requested_style for token in ("ultra-realistic", "ultra realistic", "fotoreal", "photoreal", "realistis")):
+    if explicit_art_bible:
+        art_bible = explicit_art_bible
+    elif any(token in requested_style for token in ("ultra-realistic", "ultra realistic", "fotoreal", "photoreal", "realistis")):
         art_bible = (
-            "ultra-realistic cinematic Indonesian photography, crisp subject detail, natural skin texture, "
+            "ultra-realistic cinematic photography, crisp subject detail, natural skin texture, "
             "believable materials, soft depth of field, warm natural window light, restrained film color grade"
         )
     else:
@@ -558,11 +698,18 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
             + "\n"
         )
     prompt = (
-        "Buat storyboard dari naskah berikut. Pertahankan seluruh fakta dan maksud naskah. "
+        "Buat storyboard dari naskah berikut. Naskah pengguna adalah satu-satunya sumber kebenaran. "
+        "Pertahankan seluruh fakta, subjek, kejadian, aksi, lokasi, zaman, pakaian, properti, dan maksud naskah. "
+        "DILARANG memakai pola stok anak laki-laki/perempuan, keluarga, pakaian Islami, ustaz, masjid, sekolah, "
+        "atau latar Indonesia bila unsur tersebut tidak diminta naskah. Jangan mengubah hewan, benda, robot, "
+        "kendaraan, profesi, makhluk fantasi, atau lokasi menjadi manusia atau karakter generik. "
         "Target 5-14 scene dan satu gagasan visual unik per scene. "
         "Cold-open harus langsung menjanjikan konflik/manfaat, lalu konteks, perkembangan, jawaban, payoff. "
         "Jangan menambah filler atau mengulang narasi. Buat art_bible dan character_bible yang konsisten. "
-        "visual_prompt hanya boleh berisi satu momen yang terlihat; jangan masukkan label Narasi, Teks layar, heading, atau timestamp.\n"
+        "character_bible hanya boleh memuat identitas yang benar-benar ada dalam naskah; tulis 'No recurring "
+        "character' bila tidak ada. Setiap visual_prompt harus menerjemahkan narasi scene yang sama menjadi aksi "
+        "fisik yang konkret, bukan gambar generik yang hanya cocok dengan tema besar. visual_prompt hanya boleh "
+        "berisi satu momen yang terlihat; jangan masukkan label Narasi, Teks layar, heading, atau timestamp.\n"
         "Return JSON exactly as: "
         '{"title":"...","hook":"...","core_message":"...","art_bible":"...","character_bible":"...",'
         '"scenes":[{"title":"...","narration":"...","visual_prompt":"...",'
@@ -601,17 +748,28 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
     art_tokens = ("cinematic", "realistic", "realistis", "illustration", "lighting", "photography", "film", "animation")
     art_bible = (
         proposed_art_bible
-        if any(token in proposed_art_bible.casefold() for token in art_tokens)
+        if (
+            any(token in proposed_art_bible.casefold() for token in art_tokens)
+            and not _contains_unrequested_defaults(script, proposed_art_bible)
+        )
         else fallback.art_bible
     )
     proposed_character_bible = _clean_text(parsed.get("character_bible"), 900)
-    character_bible = fallback.character_bible if source_sections else (proposed_character_bible or fallback.character_bible)
+    if source_sections or _contains_unrequested_defaults(script, proposed_character_bible):
+        character_bible = fallback.character_bible
+    else:
+        character_bible = proposed_character_bible or fallback.character_bible
     for index, raw in enumerate(raw_scenes):
         if not isinstance(raw, dict):
             return fallback
         source = source_sections[index] if source_sections else None
         narration = source["narration"] if source else _clean_text(raw.get("narration"), 900)
+        if not source and _contains_unrequested_defaults(script, narration):
+            return fallback
         visual_prompt = source["visual"] if source else _clean_text(raw.get("visual_prompt"), 900)
+        if not source and _contains_unrequested_defaults(script, visual_prompt):
+            # Prefer a literal source-grounded image over a polished but unrelated stock scene.
+            visual_prompt = narration
         if (not source and len(narration.split()) < 8) or not visual_prompt:
             return fallback
         motion = _clean_text(raw.get("camera_motion"), 20)
@@ -869,8 +1027,11 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
         output_format = "jpeg"
     final_prompt = (
         f"{scene.visual_prompt} Color direction: {scene.color_mood}. "
-        "Depict only this visible action accurately. Edge-to-edge image, one normal camera frame, tack-sharp focal subject. "
-        "Before finalizing, verify natural hands and finger count, that every limb is visibly attached to its owner, no body part enters from a frame edge, realistic faces, crisp eyes, clean fabric edges, and culturally correct headwear."
+        "Depict only this visible action accurately. Edge-to-edge image, one normal camera frame, with focal clarity "
+        "appropriate to the requested visual style. "
+        "Before finalizing, verify the requested subject identity and count, exact action, props, setting, era, weather, "
+        "time, and visual style. Add no unrequested person, clothing, architecture, or cultural/religious symbol. When "
+        "people are present, verify natural hands and finger count, attached limbs, believable faces, crisp eyes, and clean fabric edges."
     )
     if is_gemini:
         image_size = os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "2K").strip().upper()
@@ -897,17 +1058,28 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
         # stable-diffusion.cpp exposes an OpenAI-compatible image endpoint, but
         # intentionally supports a smaller field set. The actual Z-Image model
         # is loaded once by sd-server, so no remote model name or API key is sent.
+        negative_parts = [
+            "collage, montage, storyboard, contact sheet, comic panels, split screen, grid, border, "
+            "duplicate subject, repeated subject, text, caption, subtitle, letters, numbers, writing, "
+            "watermark, logo, UI, compression artifacts",
+            "deformed hands, fused fingers, missing fingers, extra fingers, duplicated fingers, broken joints, malformed grip, "
+            "disembodied hands, floating hands, detached hands, bodyless limbs, cropped arms, hands entering from frame edge, anonymous foreground hands",
+            "unrequested crowd, extra background people, partial person, unrelated stock character, unrequested cultural clothing",
+        ]
+        if not _has_any(scene.visual_prompt, ("soft focus", "dreamy", "dreamlike", "watercolor", "impressionist")):
+            negative_parts.append("blurry, soft focus")
+        if not _has_any(scene.visual_prompt, ("motion blur",)):
+            negative_parts.append("motion blur")
+        if not _has_any(scene.visual_prompt, ("pixel art", "8-bit", "16-bit")):
+            negative_parts.append("low resolution, pixelated")
+        negative_prompt = ", ".join(negative_parts)
+        if _has_any(scene.visual_prompt, _ISLAMIC_VISUAL_TERMS):
+            negative_prompt += (
+                ", woman wearing peci, woman wearing kopiah, woman wearing songkok, hijab with hat, double headwear"
+            )
         payload_object = {
             "prompt": final_prompt,
-            "negative_prompt": (
-                "collage, montage, storyboard, contact sheet, comic panels, split screen, grid, border, "
-                "duplicate person, repeated subject, text, caption, subtitle, letters, numbers, Arabic writing, "
-                "watermark, logo, UI, blurry, soft focus, motion blur, low resolution, pixelated, compression artifacts, "
-                "deformed hands, fused fingers, missing fingers, extra fingers, duplicated fingers, broken joints, malformed grip, "
-                "disembodied hands, floating hands, detached hands, bodyless limbs, cropped arms, hands entering from frame edge, anonymous foreground hands, "
-                "unrequested crowd, extra background people, partial person, "
-                "woman wearing peci, woman wearing kopiah, woman wearing songkok, hijab with hat, double headwear"
-            ),
+            "negative_prompt": negative_prompt,
             "size": os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1280x720"),
             "output_format": output_format,
             "output_compression": 100,

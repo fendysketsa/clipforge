@@ -358,26 +358,26 @@ export function ControlPanel({
               </summary>
               <div className="compactDisclosureBody">
                 <p>
-                  Buat minimal tiga blok ADEGAN. VISUAL berisi satu pose atau aksi yang bisa dibekukan dalam satu foto—hindari “lalu/kemudian”, montase, daftar angle, atau beberapa waktu sekaligus. NARASI boleh <code>-</code> bila adegan sengaja hening.
+                  Buat minimal tiga blok ADEGAN. VISUAL berisi satu momen yang bisa dibekukan menjadi satu frame—subjeknya bebas mengikuti cerita: manusia, hewan, robot, benda, kendaraan, alam, atau dunia fantasi. Detail yang tidak diminta tidak akan ditambahkan. NARASI boleh <code>-</code> bila adegan sengaja hening.
                 </p>
-                <pre>{`JUDUL: Cara Mengaji dengan Baik
-KARAKTER KONSISTEN: Anak 9 tahun, koko dan peci putih; ustaz berbaju krem.
-GAYA VISUAL: Sinematik realistis, cahaya pagi hangat, detail tajam.
+                <pre>{`JUDUL: Misi di Europa
+KARAKTER KONSISTEN: Robot penjelajah jingga dengan satu antena biru.
+GAYA VISUAL: Animasi 3D clay stop-motion, tekstur tanah liat, cahaya biru dingin.
 
-### ADEGAN 1 — Panggilan Belajar
-VISUAL: Anak menoleh ke arah ruang mengaji sambil memegang mainan di dekat jendela.
-NARASI: Al-Qur'an adalah petunjuk kehidupan bagi umat Islam.
-TEKS LAYAR: Saatnya Mengaji
+### ADEGAN 1 — Pendaratan
+VISUAL: Robot jingga turun dari wahana di permukaan es Europa yang retak.
+NARASI: Robot penjelajah tiba untuk mencari tanda samudra bawah tanah.
+TEKS LAYAR: Misi Dimulai
 
-### ADEGAN 2 — Bersuci
-VISUAL: Anak membasuh kedua tangan di tempat wudu yang bersih.
-NARASI: Sebelum mengaji, bersihkan diri dan berwudulah dengan tenang.
-TEKS LAYAR: Bersuci
+### ADEGAN 2 — Pemindaian
+VISUAL: Robot menempelkan pemindai biru pada retakan es bercahaya.
+NARASI: Sensor menangkap getaran air jauh di bawah lapisan es.
+TEKS LAYAR: Sinyal Air
 
-### ADEGAN 3 — Mulai Membaca
-VISUAL: Anak duduk di samping ustaz, menghadap Al-Qur'an tertutup di atas rehal.
-NARASI: Bacalah perlahan dan dengarkan koreksi guru dengan sabar.
-TEKS LAYAR: Baca Perlahan`}</pre>
+### ADEGAN 3 — Mengirim Data
+VISUAL: Antena robot menyala saat sinyal biru melesat menuju wahana di orbit.
+NARASI: Temuan dikirim sebelum badai partikel mencapai lokasi.
+TEKS LAYAR: Data Terkirim`}</pre>
               </div>
             </details>
             <label className="sourceHistoryApproval longAnimateRights">
@@ -392,7 +392,7 @@ TEKS LAYAR: Baca Perlahan`}</pre>
             </label>
             <div className="modeNotice">
               <strong>AI disclosure otomatis · upload awal Private</strong>
-              <span>Scene realistis, suara sintetis, dan musik prosedural ditandai untuk disclosure; figur publik, logo, karakter berhak cipta, dan klaim baru dilarang oleh prompt produksi.</span>
+              <span>Scene mengikuti gaya visual dan isi tiap adegan; suara sintetis serta musik prosedural ditandai untuk disclosure. Figur publik, logo, karakter berhak cipta, dan klaim baru dilarang oleh prompt produksi.</span>
             </div>
           </>
         ) : sourceMode === "url" ? (
