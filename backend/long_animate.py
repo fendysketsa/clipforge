@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import base64
 import hashlib
 import json
@@ -43,6 +44,7 @@ class AnimateScene:
     narrative_role: str
     duration_hint: float = 0.0
     duration: float = 0.0
+    voice_duration: float = 0.0
     image_provider: str = ""
     voice_provider: str = ""
 
@@ -63,10 +65,11 @@ STORYBOARD_SYSTEM_PROMPT = (
     "Use a consistent visual world but vary composition, scale, palette, symbolic objects, and camera motion. "
     "Avoid public-figure likenesses, logos, copyrighted characters, embedded text, fake quotations, graphic harm, "
     "and depictions of prophets or sacred figures. Define a precise character_bible for recurring characters. "
-    "Each visual_prompt must describe only one visible moment: subject, action, setting, composition, camera, "
+    "Each visual_prompt must describe exactly one uninterrupted camera shot and one visible moment: subject, action, setting, composition, camera, "
     "and lighting. The action must be concrete and physically visible; never use abstract actions such as "
     "preparing, realizing, thinking, or feeling without stating exactly what the hands and body are doing. "
-    "Return art_bible, character_bible, and visual_prompt as plain descriptive strings, never JSON objects. "
+    "Return art_bible, character_bible, and visual_prompt as short plain descriptive strings, never JSON objects. "
+    "Copy explicit NARASI/Narator wording verbatim; visual directions and production instructions are never narration. "
     "Never copy narration labels, scene headings, timestamps, or on-screen text into visual_prompt. "
     "Do not add claims that are absent from the script. "
     "Return strict JSON only."
@@ -86,6 +89,16 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def _plain_text_value(value: object) -> str:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith(("{", "[", "(")) and stripped.endswith(("}", "]", ")")):
+            try:
+                parsed = ast.literal_eval(stripped)
+            except (ValueError, SyntaxError):
+                parsed = None
+            if isinstance(parsed, (dict, list, tuple, set)):
+                return _plain_text_value(parsed)
+        return value
     if isinstance(value, dict):
         parts: list[str] = []
         for raw_key, raw_value in value.items():
@@ -144,11 +157,138 @@ def _visual_only(value: str) -> str:
     return _strip_script_markup(value)
 
 
+def _single_visible_moment(value: str) -> str:
+    """Keep an image prompt on one renderable shot instead of a contact sheet."""
+    clean = _visual_only(value)
+    sentences = [
+        item.strip()
+        for item in re.split(r"(?<=[.!?])\s+|\n+", clean)
+        if item.strip()
+    ]
+    rejected = (
+        "montase",
+        "kalender",
+        "variasi shot",
+        "variasi medium",
+        "transisi",
+        "tampilkan teks",
+        "tambahkan teks",
+        "subtitle",
+        "negative prompt",
+        "durasi akhir",
+    )
+    candidates = [
+        sentence
+        for sentence in sentences
+        if not any(token in sentence.casefold() for token in rejected)
+    ]
+
+    def visible_score(sentence: str) -> int:
+        lowered = sentence.casefold()
+        score = 0
+        if re.search(r"\b(?:anak|ustaz|ustadz|guru|ibu|ayah|pria|wanita|ia)\b", lowered):
+            score += 4
+        if any(token in lowered for token in ("tangan", "duduk", "membaca", "membuka", "meletakkan", "membasuh", "menutup", "menyimpan", "menoleh")):
+            score += 2
+        if any(token in lowered for token in ("suasana", "cahaya matahari", "burung terdengar")):
+            score -= 2
+        return score
+
+    selected = max(candidates, key=visible_score) if candidates else clean
+    selected = re.sub(
+        r"(?i)^(?:awali video dengan|lanjutkan dengan|selanjutnya,?|perlihatkan|tampilkan)\s+",
+        "",
+        selected,
+    )
+    selected = re.sub(r"(?i)^(?:pada\s+hari\s+berikutnya|setelah\s+selesai|pada\s+bagian\s+penutup),\s*", "", selected)
+    selected = re.split(
+        r"(?i),\s*(?=(?:lalu|kemudian|tersenyum|membaca|meletakkan|menutup|menyimpan)\b)|\s+(?:lalu|kemudian)\s+",
+        selected,
+        maxsplit=1,
+    )[0]
+    words = selected.split()
+    if len(words) > 58:
+        selected = " ".join(words[:58]).rstrip(" ,;:-") + "."
+    return selected
+
+
+def _short_on_screen_text(value: str, max_words: int = 6, max_chars: int = 48) -> str:
+    clean = _strip_script_markup(value)
+    words = clean.split()
+    selected = words[:max_words]
+    if (
+        len(words) > len(selected)
+        and selected
+        and selected[-1].casefold().strip(".,") in {"dan", "atau", "yang", "untuk", "dari"}
+    ):
+        selected.append(words[len(selected)])
+    shortened = " ".join(selected)
+    if len(shortened) > max_chars:
+        shortened = shortened[:max_chars].rsplit(" ", 1)[0]
+    return shortened.rstrip(" ,;:-")
+
+
+def _extract_quoted_text(value: str, marker_pattern: str) -> str:
+    match = re.search(
+        rf"(?is){marker_pattern}.{{0,90}}?[\"“]([^\"”]+)[\"”]",
+        value,
+    )
+    return _strip_script_markup(match.group(1)) if match else ""
+
+
+def _directed_paragraph_sections(script: str) -> list[dict[str, str]]:
+    """Parse prose prompts that explicitly separate narrator copy from visuals."""
+    paragraphs = [item.strip() for item in re.split(r"\n\s*\n+", script) if item.strip()]
+    sections: list[dict[str, str]] = []
+    narrator_marker = re.compile(
+        r"(?is)\bnarator\s+(?:berkata|menjelaskan|menutup(?:\s+dengan\s+kalimat)?)\s*"
+    )
+    for paragraph in paragraphs:
+        marker = narrator_marker.search(paragraph)
+        if marker is None:
+            continue
+        tail = paragraph[marker.end() :].lstrip(" :,.-")
+        quoted = re.match(r'^[\"“]([^\"”]+)[\"”]', tail, flags=re.DOTALL)
+        if quoted:
+            narration = _strip_script_markup(quoted.group(1))
+        else:
+            narration = re.sub(r"(?i)^bahwa\s+", "", tail).strip()
+            narration = _strip_script_markup(narration)
+
+        visual_source = paragraph[: marker.start()]
+        label_positions = [
+            match.start()
+            for pattern in (
+                r"(?is)\btampilkan\s+(?:judul|teks)",
+                r"(?is)\btambahkan\s+teks",
+            )
+            if (match := re.search(pattern, visual_source)) is not None
+        ]
+        if label_positions:
+            visual_source = visual_source[: min(label_positions)]
+        visual = _single_visible_moment(visual_source)
+        on_screen_text = _short_on_screen_text(_extract_quoted_text(
+            paragraph,
+            r"(?:tampilkan|tambahkan)\s+(?:judul\s+di\s+layar|teks(?:\s+penutup)?(?:\s+secara\s+bergantian)?)\s*:?,?",
+        ))
+        if len(narration.split()) < 3 or not visual:
+            continue
+        sections.append(
+            {
+                "title": _clean_text(on_screen_text, 48) or _scene_title(narration, len(sections)),
+                "narration": _clean_text(narration, 900),
+                "visual": _clean_text(visual, 650),
+                "on_screen_text": _clean_text(on_screen_text, 48),
+            }
+        )
+    return sections if len(sections) >= 3 else []
+
+
 def _scene_sections(script: str) -> list[dict[str, str]]:
     """Parse explicit Markdown Scene/Adegan blocks without leaking production labels."""
     matches = list(_SCENE_HEADER_RE.finditer(script))
     if len(matches) < 3:
-        return []
+        return _directed_paragraph_sections(script)
     sections: list[dict[str, str]] = []
     for index, match in enumerate(matches[:14]):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(script)
@@ -160,12 +300,24 @@ def _scene_sections(script: str) -> list[dict[str, str]]:
             r"(?:[\"“](.*?)[\"”]|([^\n]+))",
             body,
         )
-        on_screen_text = _strip_script_markup(
+        on_screen_text = _short_on_screen_text(
             (text_match.group(1) or text_match.group(2)) if text_match else ""
-        )[:70]
+        )
 
-        narration_match = re.search(r"(?is)(?:narasi|narration)\s*:\s*(.+)$", body)
+        narration_match = re.search(
+            r"(?is)(?:narasi|narration)\s*:\s*(.*?)"
+            r"(?=\n\s*(?:visual|gambar|teks\s*(?:layar|di\s+layar)|on[- ]screen\s+text)\s*:|\Z)",
+            body,
+        )
         narration = _strip_script_markup(narration_match.group(1)) if narration_match else ""
+        if narration.casefold() in {"-", "hening", "[hening]", "tanpa narasi", "no narration"}:
+            narration = ""
+
+        visual_match = re.search(
+            r"(?is)(?:visual|gambar)\s*:\s*(.*?)"
+            r"(?=\n\s*(?:narasi|narration|teks\s*(?:layar|di\s+layar)|on[- ]screen\s+text)\s*:|\Z)",
+            body,
+        )
 
         label_positions = [
             item.start()
@@ -173,16 +325,21 @@ def _scene_sections(script: str) -> list[dict[str, str]]:
                 re.search(r"(?is)teks\s*(?:layar|di\s+layar)\s*:", body),
                 re.search(r"(?is)on[- ]screen\s+text\s*:", body),
                 re.search(r"(?is)(?:narasi|narration)\s*:", body),
+                re.search(r"(?is)(?:visual|gambar)\s*:", body),
             )
             if item is not None
         ]
-        visual_source = body[: min(label_positions)] if label_positions else body
-        visual_source = _strip_script_markup(visual_source)
-        if not narration:
+        visual_source = (
+            visual_match.group(1)
+            if visual_match
+            else (body[: min(label_positions)] if label_positions else body)
+        )
+        visual_source = _single_visible_moment(visual_source)
+        if not narration and narration_match is None:
             narration = visual_source
         if not visual_source:
             visual_source = narration
-        if len(narration.split()) < 4 or not visual_source:
+        if not visual_source:
             continue
         sections.append(
             {
@@ -255,26 +412,27 @@ def _compose_visual_prompt(
     art_bible: str,
     character_bible: str,
 ) -> str:
-    visual = _visual_only(visual)
-    narration = _strip_script_markup(narration)
+    visual = _single_visible_moment(visual)
     return _clean_text(
-        "Create one cinematic 16:9 story frame, not a poster or collage. "
+        "FULL-BLEED CINEMATIC 16:9 PHOTOGRAPH FROM ONE CAMERA. One continuous environment and one natural composition. "
         f"Visible moment: {visual}. "
-        f"Narrative context (do not render as words): {narration[:420]}. "
-        f"Continuity bible: {character_bible}. "
-        f"Art direction: {art_bible}. "
-        "Use natural anatomy and hands, one clear focal action, culturally accurate Indonesian setting, "
-        "foreground/midground/background depth, intentional composition, realistic light, and clean negative space. "
-        "Use no text inside the image: do not place captions, letters, Arabic calligraphy, subtitles, watermarks, "
-        "logos, UI, or split screens. Use no public figure or public-figure likeness, copyrighted character, "
-        "prophet, or sacred figure inside the image.",
-        2400,
+        f"Continuity bible: {_clean_text(character_bible, 420)}. "
+        f"Visual style: {_clean_text(art_bible, 320)}. "
+        "Use the exact subject count described; each person appears once. Use natural anatomy, correct hands and fingers, one clear focal action, culturally accurate Indonesian setting, "
+        "foreground and background depth, crisp subject focus, detailed textures, realistic natural light, and professional composition. "
+        "Keep every background surface plain and unmarked, and keep any book pages outside readable focus. "
+        "Use original fictional everyday Indonesian people only. The photograph extends naturally to all four edges.",
+        1500,
     )
 
 
 def _fallback_storyboard(script: str) -> AnimateStoryboard:
     sections = _scene_sections(script)
-    chunks = [section["narration"] for section in sections] or _sentence_chunks(script)
+    chunks = (
+        [section["narration"] for section in sections]
+        if sections
+        else _sentence_chunks(script)
+    )
     if len(chunks) < 3:
         words = script.split()
         size = max(8, math.ceil(len(words) / 3))
@@ -287,7 +445,14 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
         "cinematic editorial illustration, natural human proportions, rich environmental detail",
         "warm painterly animation still, realistic lighting, expressive restrained faces",
     )
-    art_bible = art_styles[int(seed[:2], 16) % len(art_styles)]
+    requested_style = script.casefold()
+    if any(token in requested_style for token in ("ultra-realistic", "ultra realistic", "fotoreal", "photoreal", "realistis")):
+        art_bible = (
+            "ultra-realistic cinematic Indonesian photography, crisp subject detail, natural skin texture, "
+            "believable materials, soft depth of field, warm natural window light, restrained film color grade"
+        )
+    else:
+        art_bible = art_styles[int(seed[:2], 16) % len(art_styles)]
     character_bible = _character_bible(script)
     motions = ("push_in", "pan_right", "drift_up", "pan_left", "pull_out")
     roles = []
@@ -305,7 +470,8 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
     scenes: list[AnimateScene] = []
     for index, chunk in enumerate(chunks):
         section = sections[index] if sections else None
-        title = section["title"] if section and section["title"] else _scene_title(chunk, index)
+        title_source = chunk or (section["visual"] if section else "")
+        title = section["title"] if section and section["title"] else _scene_title(title_source, index)
         visual = section["visual"] if section else chunk
         on_screen_text = section["on_screen_text"] if section else ""
         scenes.append(
@@ -319,18 +485,22 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
                     art_bible,
                     character_bible,
                 ),
-                on_screen_text=on_screen_text or title,
+                on_screen_text=on_screen_text,
                 camera_motion=motions[(index + int(seed[2:4], 16)) % len(motions)],
-                color_mood=_color_mood(chunk, index),
+                color_mood=_color_mood(f"{chunk} {visual}", index),
                 narrative_role=roles[index],
-                duration_hint=max(6.0, min(22.0, len(chunk.split()) / 2.45 + 1.2)),
+                duration_hint=(
+                    max(6.0, min(22.0, len(chunk.split()) / 2.45 + 1.2))
+                    if chunk
+                    else 4.5
+                ),
             )
         )
     first = scenes[0].title if scenes else "Cerita Animasi"
     last = scenes[-1].title if scenes else first
     return AnimateStoryboard(
         title=first[:80],
-        hook=_clean_text(chunks[0] if chunks else script, 180),
+        hook=_clean_text(next((chunk for chunk in chunks if chunk), script), 180),
         core_message=f"{first} menuju {last}"[:300],
         art_bible=art_bible,
         character_bible=character_bible,
@@ -363,11 +533,22 @@ def _color_mood(text: str, index: int) -> str:
 
 def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
     fallback = _fallback_storyboard(script)
+    source_sections = _scene_sections(script)
     if not ai_config.enabled or not ai_config.base_url or not ai_config.model:
         return fallback
+    grounded_note = ""
+    if source_sections:
+        grounded_note = (
+            f"Naskah sudah memiliki {len(source_sections)} scene terarah. WAJIB kembalikan tepat "
+            f"{len(source_sections)} scene dalam urutan yang sama. Copy isi narration dari field NARASI "
+            "secara verbatim; jangan pernah menyuarakan isi VISUAL atau TEKS LAYAR.\n"
+            "SCENE TERKUNCI:\n"
+            + json.dumps(source_sections, ensure_ascii=False)
+            + "\n"
+        )
     prompt = (
         "Buat storyboard dari naskah berikut. Pertahankan seluruh fakta dan maksud naskah. "
-        "Target 5-14 scene, masing-masing 20-60 kata narasi dan satu gagasan visual unik. "
+        "Target 5-14 scene dan satu gagasan visual unik per scene. "
         "Cold-open harus langsung menjanjikan konflik/manfaat, lalu konteks, perkembangan, jawaban, payoff. "
         "Jangan menambah filler atau mengulang narasi. Buat art_bible dan character_bible yang konsisten. "
         "visual_prompt hanya boleh berisi satu momen yang terlihat; jangan masukkan label Narasi, Teks layar, heading, atau timestamp.\n"
@@ -376,6 +557,7 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
         '"scenes":[{"title":"...","narration":"...","visual_prompt":"...",'
         '"on_screen_text":"maks 7 kata","camera_motion":"push_in|pull_out|pan_left|pan_right|drift_up",'
         '"color_mood":"...","narrative_role":"cold_open|context|development|evidence_and_answer|payoff_conclusion"}]}\n\n'
+        f"{grounded_note}"
         f"NASKAH:\n{script[:30000]}"
     )
     try:
@@ -393,6 +575,8 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
     raw_scenes = parsed.get("scenes") if isinstance(parsed, dict) else None
     if not isinstance(raw_scenes, list) or not 3 <= len(raw_scenes) <= 14:
         return fallback
+    if source_sections and len(raw_scenes) != len(source_sections):
+        return fallback
     allowed_motions = {"push_in", "pull_out", "pan_left", "pan_right", "drift_up"}
     allowed_roles = {
         "cold_open",
@@ -402,21 +586,30 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
         "payoff_conclusion",
     }
     scenes: list[AnimateScene] = []
-    art_bible = _clean_text(parsed.get("art_bible"), 600) or fallback.art_bible
-    character_bible = _clean_text(parsed.get("character_bible"), 900) or fallback.character_bible
+    proposed_art_bible = _clean_text(parsed.get("art_bible"), 600)
+    art_tokens = ("cinematic", "realistic", "realistis", "illustration", "lighting", "photography", "film", "animation")
+    art_bible = (
+        proposed_art_bible
+        if any(token in proposed_art_bible.casefold() for token in art_tokens)
+        else fallback.art_bible
+    )
+    proposed_character_bible = _clean_text(parsed.get("character_bible"), 900)
+    character_bible = fallback.character_bible if source_sections else (proposed_character_bible or fallback.character_bible)
     for index, raw in enumerate(raw_scenes):
         if not isinstance(raw, dict):
             return fallback
-        narration = _clean_text(raw.get("narration"), 900)
-        visual_prompt = _clean_text(raw.get("visual_prompt"), 900)
-        if len(narration.split()) < 8 or not visual_prompt:
+        source = source_sections[index] if source_sections else None
+        narration = source["narration"] if source else _clean_text(raw.get("narration"), 900)
+        visual_prompt = source["visual"] if source else _clean_text(raw.get("visual_prompt"), 900)
+        if (not source and len(narration.split()) < 8) or not visual_prompt:
             return fallback
         motion = _clean_text(raw.get("camera_motion"), 20)
         role = _clean_text(raw.get("narrative_role"), 30)
         scenes.append(
             AnimateScene(
                 index=index + 1,
-                title=_clean_text(raw.get("title"), 64) or _scene_title(narration, index),
+                title=(source["title"] if source else _clean_text(raw.get("title"), 64))
+                or _scene_title(narration or visual_prompt, index),
                 narration=narration,
                 visual_prompt=_compose_visual_prompt(
                     visual_prompt,
@@ -424,13 +617,16 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
                     art_bible,
                     character_bible,
                 ),
-                on_screen_text=_clean_text(raw.get("on_screen_text"), 70)
-                or _scene_title(narration, index),
+                on_screen_text=(source["on_screen_text"] if source else ""),
                 camera_motion=motion if motion in allowed_motions else "push_in",
                 color_mood=_clean_text(raw.get("color_mood"), 120)
                 or _color_mood(narration, index),
                 narrative_role=role if role in allowed_roles else "development",
-                duration_hint=max(6.0, min(25.0, len(narration.split()) / 2.45 + 1.2)),
+                duration_hint=(
+                    max(6.0, min(25.0, len(narration.split()) / 2.45 + 1.2))
+                    if narration
+                    else 4.5
+                ),
             )
         )
     scenes[0].narrative_role = "cold_open"
@@ -662,7 +858,7 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
         output_format = "jpeg"
     final_prompt = (
         f"{scene.visual_prompt} Color direction: {scene.color_mood}. "
-        "The final image must depict the requested visible action accurately."
+        "Depict only this visible action accurately. Edge-to-edge image, one normal camera frame, tack-sharp focal subject."
     )
     if is_gemini:
         image_size = os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "2K").strip().upper()
@@ -691,9 +887,14 @@ def _remote_scene_image(scene: AnimateScene, path: Path) -> bool:
         # is loaded once by sd-server, so no remote model name or API key is sent.
         payload_object = {
             "prompt": final_prompt,
-            "size": os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1024x576"),
+            "negative_prompt": (
+                "collage, montage, storyboard, contact sheet, comic panels, split screen, grid, border, "
+                "duplicate person, repeated subject, text, caption, subtitle, letters, numbers, Arabic writing, "
+                "watermark, logo, UI, blurry, soft focus, low resolution, pixelated, deformed hands, extra fingers"
+            ),
+            "size": os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1280x720"),
             "output_format": output_format,
-            "output_compression": 92,
+            "output_compression": 97,
             "n": 1,
         }
     else:
@@ -759,16 +960,30 @@ def _normalize_scene_image(path: Path) -> bool:
     if image is None or image.size == 0:
         return False
     height, width = image.shape[:2]
-    scale = max(1920 / max(1, width), 1080 / max(1, height))
-    resized = cv2.resize(
-        image,
-        (max(1920, round(width * scale)), max(1080, round(height * scale))),
-        interpolation=cv2.INTER_LANCZOS4,
-    )
-    top = max(0, (resized.shape[0] - 1080) // 2)
-    left = max(0, (resized.shape[1] - 1920) // 2)
-    canvas = resized[top : top + 1080, left : left + 1920]
-    return bool(cv2.imwrite(str(path.resolve()), canvas, [cv2.IMWRITE_JPEG_QUALITY, 94]))
+    target_ratio = 16 / 9
+    source_ratio = width / max(1, height)
+    if source_ratio > target_ratio:
+        crop_width = max(1, round(height * target_ratio))
+        left = max(0, (width - crop_width) // 2)
+        image = image[:, left : left + crop_width]
+    elif source_ratio < target_ratio:
+        crop_height = max(1, round(width / target_ratio))
+        top = max(0, (height - crop_height) // 2)
+        image = image[top : top + crop_height, :]
+    interpolation = cv2.INTER_LANCZOS4 if image.shape[1] < 1920 else cv2.INTER_AREA
+    canvas = cv2.resize(image, (1920, 1080), interpolation=interpolation)
+    # A restrained unsharp mask restores edge detail lost during local 720p upscaling.
+    blurred = cv2.GaussianBlur(canvas, (0, 0), 1.05)
+    canvas = cv2.addWeighted(canvas, 1.22, blurred, -0.22, 0)
+    try:
+        min_sharpness = float(os.environ.get("LONG_ANIMATE_MIN_SHARPNESS", "18"))
+    except ValueError:
+        min_sharpness = 18.0
+    gray = cv2.cvtColor(canvas, cv2.COLOR_BGR2GRAY)
+    sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    if sharpness < max(0.0, min(200.0, min_sharpness)):
+        return False
+    return bool(cv2.imwrite(str(path.resolve()), canvas, [cv2.IMWRITE_JPEG_QUALITY, 97]))
 
 
 def _hex_bgr(seed: str, offset: int) -> tuple[int, int, int]:
@@ -840,6 +1055,27 @@ def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, st
         voice = "id-ID-ArdiNeural"
     if not re.fullmatch(r"[+-]\d{1,2}%", rate):
         rate = "+0%"
+    if not scene.narration.strip():
+        silent_path = scene_dir / f"scene_{scene.index:02}.voice.wav"
+        _run(
+            [
+                _ffmpeg_path(),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "anullsrc=r=48000:cl=stereo",
+                "-t",
+                f"{max(0.8, scene.duration_hint):.3f}",
+                "-c:a",
+                "pcm_s16le",
+                str(silent_path.resolve()),
+            ]
+        )
+        return silent_path, "intentional_silence"
     edge_path = scene_dir / f"scene_{scene.index:02}.voice.mp3"
     try:
         result = subprocess.run(
@@ -914,9 +1150,9 @@ def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, st
 def _motion_expression(scene: AnimateScene, frames: int) -> tuple[str, str, str]:
     progress = f"min(1,on/{max(1, frames)})"
     if scene.camera_motion == "pull_out":
-        zoom = f"1.09-0.09*{progress}"
+        zoom = f"1.045-0.045*{progress}"
         return zoom, "(iw-iw/zoom)/2", "(ih-ih/zoom)/2"
-    zoom = f"1.0+0.085*{progress}"
+    zoom = f"1.0+0.045*{progress}"
     if scene.camera_motion == "pan_left":
         return zoom, f"(iw-iw/zoom)*(1-{progress})", "(ih-ih/zoom)/2"
     if scene.camera_motion == "pan_right":
@@ -928,6 +1164,7 @@ def _motion_expression(scene: AnimateScene, frames: int) -> tuple[str, str, str]
 
 def render_scene(scene: AnimateScene, image_path: Path, voice_path: Path, scene_dir: Path) -> Path:
     voice_duration = _media_duration(voice_path)
+    scene.voice_duration = voice_duration if scene.narration.strip() else 0.0
     try:
         minimum_scene_seconds = float(
             os.environ.get("LONG_ANIMATE_MIN_SCENE_SECONDS", "6.0")
@@ -939,21 +1176,28 @@ def render_scene(scene: AnimateScene, image_path: Path, voice_path: Path, scene_
     frames = max(1, round(scene.duration * 30))
     zoom, x, y = _motion_expression(scene, frames)
     title_path = scene_dir / f"scene_{scene.index:02}.title.txt"
-    title_path.write_text(scene.on_screen_text + "\n", encoding="utf-8")
+    if scene.on_screen_text:
+        title_path.write_text(scene.on_screen_text + "\n", encoding="utf-8")
     output_path = scene_dir / f"scene_{scene.index:02}.mp4"
     fade_out = max(0.0, scene.duration - 0.28)
-    vf = (
-        "scale=2112:1188:force_original_aspect_ratio=increase,crop=2112:1188,"
-        f"zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s=1920x1080:fps=30,"
-        "eq=contrast=1.04:saturation=1.08:gamma=1.01,vignette=PI/11,"
-        "drawbox=x=86:y=76:w=720:h=142:color=black@0.58:t=fill:enable='between(t,0.15,4.20)',"
-        "drawbox=x=86:y=76:w=10:h=142:color=#34D399@0.95:t=fill:enable='between(t,0.15,4.20)',"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-        f"textfile='{title_path.name}':reload=0:expansion=none:fontcolor=white:fontsize=42:"
-        "line_spacing=8:borderw=2:bordercolor=black@0.75:x=120:y=112:enable='between(t,0.15,4.20)',"
-        "fade=t=in:st=0:d=0.24,"
-        f"fade=t=out:st={fade_out:.3f}:d=0.28"
-    )
+    vf_parts = [
+        "scale=2016:1134:force_original_aspect_ratio=increase,crop=2016:1134",
+        f"zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s=1920x1080:fps=30",
+        "eq=contrast=1.025:saturation=1.04:gamma=1.005",
+        "unsharp=5:5:0.28:5:5:0.0",
+    ]
+    if scene.on_screen_text:
+        vf_parts.extend(
+            [
+                "drawbox=x=86:y=76:w=720:h=142:color=black@0.58:t=fill:enable='between(t,0.15,3.80)'",
+                "drawbox=x=86:y=76:w=10:h=142:color=#34D399@0.95:t=fill:enable='between(t,0.15,3.80)'",
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                f"textfile='{title_path.name}':reload=0:expansion=none:fontcolor=white:fontsize=42:"
+                "line_spacing=8:borderw=2:bordercolor=black@0.75:x=120:y=112:enable='between(t,0.15,3.80)'",
+            ]
+        )
+    vf_parts.extend(["fade=t=in:st=0:d=0.24", f"fade=t=out:st={fade_out:.3f}:d=0.28"])
+    vf = ",".join(vf_parts)
     _run(
         [
             _ffmpeg_path(),
@@ -984,7 +1228,7 @@ def render_scene(scene: AnimateScene, image_path: Path, voice_path: Path, scene_
             "-preset",
             "medium",
             "-crf",
-            "19",
+            "17",
             "-pix_fmt",
             "yuv420p",
             "-c:a",
@@ -1013,22 +1257,48 @@ def _srt_time(seconds: float) -> str:
     return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
 
 
+def _subtitle_chunks(text: str, max_words: int = 7, max_chars: int = 46) -> list[str]:
+    chunks: list[str] = []
+    current: list[str] = []
+    for word in text.split():
+        proposal = " ".join([*current, word])
+        if current and (len(current) >= max_words or len(proposal) > max_chars):
+            chunks.append(" ".join(current))
+            current = [word]
+        else:
+            current.append(word)
+        if current and re.search(r"[.!?;:]$", current[-1]) and len(current) >= 3:
+            chunks.append(" ".join(current))
+            current = []
+    if current:
+        chunks.append(" ".join(current))
+    return chunks
+
+
 def write_story_subtitles(path: Path, scenes: list[AnimateScene]) -> None:
     cues: list[str] = []
     cursor = 0.0
     cue_index = 1
     for scene in scenes:
-        chunks = _sentence_chunks(scene.narration, target_words=11) or [scene.narration]
+        if not scene.narration.strip():
+            cursor += scene.duration
+            continue
+        chunks = _subtitle_chunks(scene.narration)
         total_words = max(1, sum(len(chunk.split()) for chunk in chunks))
-        local_cursor = cursor
+        voice_duration = scene.voice_duration or max(0.35, scene.duration - 0.7)
+        voice_duration = min(scene.duration, voice_duration)
+        local_cursor = cursor + min(0.08, voice_duration / 5)
+        narration_end = cursor + max(0.35, voice_duration)
+        usable_duration = max(0.35, narration_end - local_cursor)
         for chunk_index, chunk in enumerate(chunks):
             if chunk_index == len(chunks) - 1:
-                end = cursor + scene.duration
+                end = narration_end
             else:
                 share = len(chunk.split()) / total_words
-                end = min(cursor + scene.duration, local_cursor + scene.duration * share)
+                end = min(narration_end, local_cursor + usable_duration * share)
+            cue_end = min(narration_end, max(local_cursor + 0.25, end))
             cues.append(
-                f"{cue_index}\n{_srt_time(local_cursor)} --> {_srt_time(max(local_cursor + 0.35, end))}\n{chunk}\n"
+                f"{cue_index}\n{_srt_time(local_cursor)} --> {_srt_time(cue_end)}\n{chunk}\n"
             )
             local_cursor = end
             cue_index += 1
@@ -1172,11 +1442,11 @@ def render_long_animate(
     subtitles = _supports_filter("subtitles")
     drawtext = _supports_filter("drawtext")
     vf_parts = ["eq=contrast=1.02:saturation=1.04"]
-    if subtitles:
+    if subtitles and any(scene.narration.strip() for scene in storyboard.scenes):
         vf_parts.append(
             f"subtitles='{srt_path.name}':original_size=1920x1080:"
-            "force_style='FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H00FFFFFF,"
-            "OutlineColour=&H00101010,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=48'"
+            "force_style='FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H00FFFFFF,"
+            "OutlineColour=&H00101010,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=54'"
         )
     if drawtext:
         vf_parts.append(
@@ -1195,7 +1465,7 @@ def render_long_animate(
         "[0:a]loudnorm=I=-16:TP=-1.5:LRA=11[voice];"
         "[voice][music]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout]"
     )
-    quality_crf = {"standard": "22", "high": "19", "max": "17"}.get(video_quality, "19")
+    quality_crf = {"standard": "21", "high": "18", "max": "16"}.get(video_quality, "18")
     _run(
         [
             _ffmpeg_path(),

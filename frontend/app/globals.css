@@ -5015,6 +5015,28 @@ a svg {
   scrollbar-color: rgba(94, 234, 212, 0.28) transparent;
 }
 
+.longAnimateScriptGuide .compactDisclosureBody {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.longAnimateScriptGuide .compactDisclosureBody p {
+  margin: 0;
+}
+
+.longAnimateScriptGuide pre {
+  overflow-x: auto;
+  margin: 0;
+  padding: 13px;
+  border: 1px solid rgba(148, 216, 204, 0.14);
+  border-radius: 10px;
+  background: rgba(1, 10, 9, 0.72);
+  color: #c9f4e9;
+  font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: pre-wrap;
+}
+
 .controlDisclosure {
   border-bottom: 1px solid rgba(148, 216, 204, 0.1);
 }

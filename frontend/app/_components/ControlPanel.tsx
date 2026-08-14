@@ -341,13 +341,45 @@ export function ControlPanel({
               <textarea
                 value={scriptText}
                 onChange={(event) => onScriptTextChange(event.target.value.slice(0, 30000))}
-                placeholder="Tulis naskah lengkap. Gunakan paragraf untuk perubahan ide atau suasana. Sistem akan menyusun scene tanpa menambahkan fakta baru..."
+                placeholder={'JUDUL: ...\nKARAKTER KONSISTEN: ...\nGAYA VISUAL: ...\n\n### ADEGAN 1 — ...\nVISUAL: Satu momen yang terlihat kamera.\nNARASI: Kalimat yang benar-benar dibacakan.\nTEKS LAYAR: Opsional, maksimal 6 kata.'}
                 rows={12}
               />
               <p className="field-help">
-                Minimal 120 karakter dan 30 kata. Durasi mengikuti isi naskah—tidak ditambah filler hanya untuk mengejar menit.
+                Minimal 120 karakter dan 30 kata. Hanya isi NARASI yang dijadikan suara dan subtitle; VISUAL tidak dibacakan.
               </p>
             </label>
+            <details className="compactDisclosure longAnimateScriptGuide">
+              <summary>
+                <span>
+                  <strong>Format naskah agar hasil paling bersih</strong>
+                  <small>Pisahkan arahan gambar, voice-over, dan teks layar. Tidak perlu menulis resolusi, subtitle, transisi, atau negative prompt berulang kali.</small>
+                </span>
+                <ChevronDown size={17} />
+              </summary>
+              <div className="compactDisclosureBody">
+                <p>
+                  Buat minimal tiga blok ADEGAN. VISUAL berisi satu pose atau aksi yang bisa dibekukan dalam satu foto—hindari “lalu/kemudian”, montase, daftar angle, atau beberapa waktu sekaligus. NARASI boleh <code>-</code> bila adegan sengaja hening.
+                </p>
+                <pre>{`JUDUL: Cara Mengaji dengan Baik
+KARAKTER KONSISTEN: Anak 9 tahun, koko dan peci putih; ustaz berbaju krem.
+GAYA VISUAL: Sinematik realistis, cahaya pagi hangat, detail tajam.
+
+### ADEGAN 1 — Panggilan Belajar
+VISUAL: Anak menoleh ke arah ruang mengaji sambil memegang mainan di dekat jendela.
+NARASI: Al-Qur'an adalah petunjuk kehidupan bagi umat Islam.
+TEKS LAYAR: Saatnya Mengaji
+
+### ADEGAN 2 — Bersuci
+VISUAL: Anak membasuh kedua tangan di tempat wudu yang bersih.
+NARASI: Sebelum mengaji, bersihkan diri dan berwudulah dengan tenang.
+TEKS LAYAR: Bersuci
+
+### ADEGAN 3 — Mulai Membaca
+VISUAL: Anak duduk di samping ustaz, menghadap Al-Qur'an tertutup di atas rehal.
+NARASI: Bacalah perlahan dan dengarkan koreksi guru dengan sabar.
+TEKS LAYAR: Baca Perlahan`}</pre>
+              </div>
+            </details>
             <label className="sourceHistoryApproval longAnimateRights">
               <input
                 type="checkbox"

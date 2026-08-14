@@ -350,8 +350,8 @@ Z-Image-Turbo Q3 runtime (about 5.8 GB):
 ```
 
 It exposes `http://127.0.0.1:7860/v1/images/generations` through
-stable-diffusion.cpp. The default `1024x576`, 8-step render is designed for a
-4 GB RTX 3050 and is normalized to 1920x1080 by Long Animate. No Gemini/OpenAI
+stable-diffusion.cpp. The default `1280x720`, 8-step render is designed for a
+4 GB RTX 3050 and is normalized with a light detail pass to 1920x1080 by Long Animate. No Gemini/OpenAI
 key is required. `LONG_ANIMATE_IMAGE_STRICT=true` stops the job when the local
 service is unavailable instead of silently substituting procedural art. Use
 `builtin://story-art` only when a geometric placeholder is explicitly desired.

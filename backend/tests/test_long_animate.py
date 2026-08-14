@@ -22,7 +22,7 @@ def test_fallback_storyboard_has_story_arc_without_duplicate_filler():
     assert storyboard.scenes[0].narrative_role == "cold_open"
     assert storyboard.scenes[-1].narrative_role == "payoff_conclusion"
     assert all(scene.duration_hint >= 6 for scene in storyboard.scenes)
-    assert all("no text" in scene.visual_prompt for scene in storyboard.scenes)
+    assert all("plain and unmarked" in scene.visual_prompt for scene in storyboard.scenes)
     assert len({scene.narration for scene in storyboard.scenes}) == len(storyboard.scenes)
 
 
@@ -72,7 +72,7 @@ def test_ai_storyboard_keeps_scene_specific_direction(monkeypatch):
         "pull_out",
     ]
     assert storyboard.scenes[-1].narrative_role == "payoff_conclusion"
-    assert all("no public figure" in scene.visual_prompt for scene in storyboard.scenes)
+    assert all("original fictional" in scene.visual_prompt for scene in storyboard.scenes)
 
 
 def test_motion_expression_varies_direction_without_static_slideshow():
@@ -127,6 +127,83 @@ def test_structured_ai_art_direction_is_flattened_to_plain_prompt():
     assert long_animate._clean_text(
         {"pakaian_koko_putih": {}, "ruangan": {"cahaya_hangat": {}}}, 200
     ) == "pakaian koko putih, ruangan: cahaya hangat"
+
+    assert long_animate._clean_text(
+        "{'subject': 'anak', 'action': 'membaca', 'setting': 'ruang belajar'}", 200
+    ) == "subject: anak, action: membaca, setting: ruang belajar"
+
+
+def test_prose_director_prompt_voices_only_explicit_narrator_copy():
+    script = """
+    Karakter utama adalah seorang anak laki-laki berusia 9 tahun mengenakan koko putih.
+
+    Awali video dengan anak menghentikan mainannya di dekat jendela. Tampilkan teks: “Saatnya Mengaji”.
+    Narator berkata, “Al-Qur'an adalah petunjuk kehidupan bagi umat Islam.”
+
+    Anak membasuh kedua tangan di tempat wudu yang bersih. Tampilkan teks: “Bersuci”.
+    Narator menjelaskan bahwa sebelum mengaji, bersihkan diri dan berwudulah dengan tenang.
+
+    Anak duduk di samping ustaz dan membuka buku di atas rehal. Tampilkan teks: “Baca Perlahan”.
+    Narator menutup dengan kalimat, “Bacalah perlahan dan dengarkan koreksi guru dengan sabar.”
+    """
+
+    storyboard = _fallback_storyboard(script)
+
+    assert [scene.narration for scene in storyboard.scenes] == [
+        "Al-Qur'an adalah petunjuk kehidupan bagi umat Islam.",
+        "sebelum mengaji, bersihkan diri dan berwudulah dengan tenang.",
+        "Bacalah perlahan dan dengarkan koreksi guru dengan sabar.",
+    ]
+    assert "menghentikan mainannya" in storyboard.scenes[0].visual_prompt
+    assert "Narator" not in storyboard.scenes[0].visual_prompt
+    assert "Narrative context" not in storyboard.scenes[0].visual_prompt
+    assert storyboard.scenes[0].on_screen_text == "Saatnya Mengaji"
+
+
+def test_explicit_silent_scene_has_no_automatic_voice_or_title_copy():
+    script = """
+    ### ADEGAN 1 — Pagi
+    VISUAL: Anak berdiri di dekat jendela dan menatap halaman.
+    NARASI: Pagi yang tenang menjadi awal untuk belajar.
+
+    ### ADEGAN 2 — Jeda
+    VISUAL: Cahaya bergerak perlahan di atas rehal kayu.
+    NARASI: -
+
+    ### ADEGAN 3 — Belajar
+    VISUAL: Anak duduk di samping guru dengan sikap rapi.
+    NARASI: Ia mulai membaca perlahan bersama gurunya.
+    """
+
+    storyboard = _fallback_storyboard(script)
+
+    assert storyboard.scenes[1].narration == ""
+    assert storyboard.scenes[1].on_screen_text == ""
+    assert storyboard.scenes[1].duration_hint == 4.5
+
+
+def test_subtitles_are_short_and_end_when_voice_ends(tmp_path):
+    scenes = _fallback_storyboard(SCRIPT).scenes[:2]
+    scenes[0].narration = "Bacalah perlahan agar setiap huruf terdengar jelas dan mudah diperbaiki oleh guru."
+    scenes[0].duration = 8.0
+    scenes[0].voice_duration = 5.2
+    scenes[1].narration = ""
+    scenes[1].duration = 4.0
+    scenes[1].voice_duration = 0.0
+    output = tmp_path / "story.srt"
+
+    long_animate.write_story_subtitles(output, scenes)
+    subtitle = output.read_text(encoding="utf-8")
+    cue_text = [
+        line
+        for line in subtitle.splitlines()
+        if line and "-->" not in line and not line.isdigit()
+    ]
+
+    assert cue_text
+    assert all(len(line.split()) <= 7 for line in cue_text)
+    assert "00:00:05,200" in subtitle
+    assert "00:00:08" not in subtitle
 
 
 def test_gemini_image_payload_uses_native_interactions_api(monkeypatch, tmp_path):
