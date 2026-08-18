@@ -28,7 +28,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Enhance voice clarity and generate safe, niche-aware social captions even when the AI service is unavailable.
 - Keep captions compact and readable with outline/shadow only, without a gradient band over the source image.
 - Turn the fast-scanning reference-card pattern into a content-adaptive opening: the truthful hook stays prominent while the badge, accent color, and layout variation follow each story instead of repeating one fixed template.
-- Record a transparent growth experiment signal: Shorts target 5K with checkpoints 500/2K/5K, while Long Story targets 1K with checkpoints 100/300/1K. Long-form tracks impressions, Home/Suggested CTR, first-30-second retention, average view duration, retention dips/spikes, end-screen clicks, and subscribers without claiming guaranteed distribution.
+- Record a transparent growth experiment signal: Shorts target 10K with checkpoints 500/2K/5K/10K, while Long Story targets 1K with checkpoints 100/300/1K. Long-form tracks impressions, Home/Suggested CTR, first-30-second retention, average view duration, retention dips/spikes, end-screen clicks, and subscribers without claiming guaranteed distribution.
 - Auto-repair a broader shortlist before final selection, enforce a minimum FYP score of 78 for vertical exports, and block low-score legacy Shorts from YouTube upload instead of labeling them ready to post.
 - Place one value-led Subscribe invitation after the payoff: Shorts pair it with the contextual discussion prompt, while long-form shows it once in the final chapter. The reason to subscribe follows the topic and never offers rewards or fake urgency.
 - Generate short clips up to 60 seconds without an extra compilation render.

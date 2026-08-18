@@ -102,7 +102,7 @@ function fypScoreTone(score: number) {
 }
 
 function growthTargetReadiness(score: number, isLongForm: boolean) {
-  const target = isLongForm ? "Target 1K" : "Target 5K";
+  const target = isLongForm ? "Target 1K" : "Target 10K";
   if (score >= 88) {
     return {
       label: `${target} · siap uji`,

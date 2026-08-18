@@ -303,6 +303,7 @@ export default function HomePage() {
         setActiveJob(restoredJob);
         setJob(restoredJob);
         setClipMode(restoredJob.request.clip_mode);
+        setCropMode(restoredJob.request.crop_mode);
         if (restoredJob.request.clip_mode === "long_animate") {
           setScriptText(restoredJob.request.script_text || "");
           setConfirmLongAnimateRights(Boolean(restoredJob.request.confirm_long_animate_rights));
@@ -764,6 +765,11 @@ export default function HomePage() {
     setSelectedHistoryJobIds([]);
     await loadJobs();
   }, [loadJobs]);
+
+  const handleSelectHistoryJob = useCallback((selectedJob: ClipJob) => {
+    setJob(selectedJob);
+    setCropMode(selectedJob.request.crop_mode);
+  }, []);
 
   const handleDeleteAll = useCallback(() => {
     toast((item) => (
@@ -1431,7 +1437,7 @@ export default function HomePage() {
         onDeleteAll={handleDeleteAll}
         onDeleteFailed={handleDeleteFailed}
         onDeleteSelected={handleDeleteSelected}
-        onSelectJob={setJob}
+        onSelectJob={handleSelectHistoryJob}
         onStopJob={handleCancelJob}
         onToggleJobSelection={handleToggleHistoryJobSelection}
       />

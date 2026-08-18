@@ -72,7 +72,13 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
             <span>{job.request.remove_running_text ? "Pembersihan footer aktif" : "Frame sumber dipertahankan jernih"}</span>
             <span>{job.request.auto_blur_watermarks ? "Blur watermark otomatis aktif" : "Blur watermark nonaktif"}</span>
             <span>{job.request.analyze_seconds ? `Analisis: ${job.request.analyze_seconds}s` : "Full video"}</span>
-            <span>{job.request.crop_mode === "person" ? "Follow person" : "Center crop"}</span>
+            <span>
+              Job crop: {job.request.crop_mode === "person"
+                ? "Follow person"
+                : job.request.crop_mode === "streamer"
+                  ? "Streamer"
+                  : "Center"}
+            </span>
             <span>
               <Clock3 size={13} />
               Durasi: {formatDuration(elapsedSeconds)}

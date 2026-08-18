@@ -1110,7 +1110,7 @@ def test_youtube_policy_snapshot_marks_future_rules_for_review_without_assuming_
     assert len(future["official_sources"]) == 4
 
 
-def test_five_k_readiness_is_an_experiment_signal_not_a_view_guarantee():
+def test_ten_k_readiness_is_an_experiment_signal_not_a_view_guarantee():
     clip = ClipCandidate(
         1,
         0,
@@ -1128,7 +1128,8 @@ def test_five_k_readiness_is_an_experiment_signal_not_a_view_guarantee():
 
     readiness = five_k_experiment_readiness(clip, "vertical_short")
 
-    assert readiness["target_views"] == 5000
+    assert readiness["experiment_name"] == "10k_growth_ladder"
+    assert readiness["target_views"] == 10000
     assert readiness["quality_metric"] == "engaged_views"
     assert readiness["minimum_short_export_score"] == 78
     assert readiness["quality_gate_passed"] is True
@@ -1137,7 +1138,7 @@ def test_five_k_readiness_is_an_experiment_signal_not_a_view_guarantee():
     assert "viewed_vs_swiped" in readiness["measure_after_publish"]
     assert "engaged_views" in readiness["measure_after_publish"]
     assert "subscribers_gained" in readiness["measure_after_publish"]
-    assert readiness["review_checkpoints"] == [500, 2000, 5000]
+    assert readiness["review_checkpoints"] == [500, 2000, 5000, 10000]
     assert two_k_experiment_readiness(clip, "vertical_short") == readiness
     assert one_k_experiment_readiness(clip, "vertical_short") == readiness
 
@@ -1159,6 +1160,7 @@ def test_one_k_long_form_readiness_uses_story_gate_and_long_form_metrics():
     readiness = one_k_long_form_readiness(clip, {"quality_gate_passed": True})
 
     assert readiness["target_views"] == 1000
+    assert readiness["experiment_name"] == "1k_long_form_growth"
     assert readiness["review_checkpoints"] == [100, 300, 1000]
     assert readiness["quality_metric"] == "watch_time"
     assert readiness["quality_gate_passed"] is True
@@ -1523,9 +1525,9 @@ def test_codex_ideas_move_to_applied_feedback_after_render_treatments():
         drawtext_supported=True,
     )
 
-    assert remaining == []
-    assert len(applied) == 6
-    assert any("tidak dipaksakan" in item for item in applied)
+    assert remaining == ["Loop — kembalikan jawaban ke pertanyaan awal."]
+    assert len(applied) == 5
+    assert not any("loop diterapkan" in item.casefold() for item in applied)
 
 
 def test_codex_ideas_stay_manual_when_enhanced_edit_is_disabled():
@@ -1560,6 +1562,30 @@ def test_story_metrics_reward_a_key_point_with_question_to_payoff_loop():
     assert strong_metrics["key_point_score"] > filler_metrics["key_point_score"]
     assert strong_metrics["loop_score"] >= 45
     assert strong_metrics["boundary_quality"] == "payoff_tuntas"
+
+
+def test_story_metrics_do_not_claim_loop_for_unrelated_question_and_payoff():
+    unrelated = [
+        TranscriptSegment(0, 4, "Kenapa keputusan pertama ini penting?"),
+        TranscriptSegment(4, 16, "Pembahasan lalu berpindah ke tema lain."),
+        TranscriptSegment(16, 26, "Kesimpulannya, menjaga salat adalah solusi terbaik."),
+    ]
+
+    metrics = candidate_story_metrics(unrelated, 26)
+
+    assert metrics["loop_score"] < 45
+
+
+def test_story_metrics_ignore_generic_overlap_when_claiming_a_loop():
+    unrelated = [
+        TranscriptSegment(0, 4, "Kenapa keputusan ini penting?"),
+        TranscriptSegment(4, 16, "Pembahasan lalu berpindah ke tema lain."),
+        TranscriptSegment(16, 26, "Kesimpulannya, menjaga salat itu penting."),
+    ]
+
+    metrics = candidate_story_metrics(unrelated, 26)
+
+    assert metrics["loop_score"] < 45
 
 
 def test_candidate_pool_skips_arbitrary_mid_sentence_end():
@@ -1605,6 +1631,7 @@ def test_fyp_score_rewards_strong_opening_and_first_30_second_arc():
     weak_score, _ = score_window(weak, 55)
 
     assert strong_score >= weak_score + 20
+    assert strong_score < 100
 
 
 def test_pov_banner_is_compact_and_uses_candidate_angle():

@@ -3212,7 +3212,7 @@ def five_k_experiment_readiness(
     clip: ClipCandidate,
     output_format: OutputFormat,
 ) -> dict[str, object]:
-    """Describe a 5K-view publishing experiment without predicting distribution."""
+    """Describe a 10K-view growth experiment without predicting distribution."""
     score = max(0, min(100, int(round(clip.score))))
     if score >= 88:
         status = "ready_to_test"
@@ -3223,8 +3223,9 @@ def five_k_experiment_readiness(
     else:
         status = "revise_before_publishing"
     return {
-        "version": 3,
-        "target_views": 5000,
+        "version": 4,
+        "experiment_name": "10k_growth_ladder",
+        "target_views": 10000,
         "target_metric": (
             "shorts_views_starts_or_replays"
             if output_format == "vertical_short"
@@ -3288,7 +3289,7 @@ def five_k_experiment_readiness(
                 "subscriber_value_proposition",
             ]
         ),
-        "review_checkpoints": [500, 2000, 5000],
+        "review_checkpoints": [500, 2000, 5000, 10000],
     }
 
 
@@ -3303,6 +3304,7 @@ def one_k_long_form_readiness(
     base.update(
         {
             "version": 1,
+            "experiment_name": "1k_long_form_growth",
             "target_views": 1000,
             "target_metric": "youtube_views",
             "quality_metric": "watch_time",
@@ -3341,7 +3343,7 @@ def two_k_experiment_readiness(
     clip: ClipCandidate,
     output_format: OutputFormat,
 ) -> dict[str, object]:
-    """Backward-compatible alias; the active publishing target is now 5K."""
+    """Backward-compatible alias; the active Shorts target is now 10K."""
     return five_k_experiment_readiness(clip, output_format)
 
 
@@ -3433,8 +3435,9 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
     opening_concepts = _content_words(opening)
     closing_concepts = _content_words(closing)
     concept_overlap = opening_concepts.intersection(closing_concepts)
-    question_to_payoff = "?" in opening and payoff_near_end
-    hook_to_payoff = opening_hook and payoff_near_end
+    semantic_reconnection = bool(concept_overlap - IMPORTANT_WORDS - PAYOFF_WORDS)
+    question_to_payoff = "?" in opening and payoff_near_end and semantic_reconnection
+    hook_to_payoff = opening_hook and payoff_near_end and semantic_reconnection
     loop_score = min(45, len(concept_overlap) * 15)
     loop_score += 35 if question_to_payoff else 20 if hook_to_payoff else 0
     loop_score += 12 if complete_ending else -12
@@ -3739,26 +3742,33 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
     key_point_score = int(story_metrics["key_point_score"])
     loop_score = int(story_metrics["loop_score"])
     if key_point_score >= 75:
-        score += 8
         reasons.append("satu point penting terbentuk jelas")
     elif key_point_score < 40:
-        score -= 14
         reasons.append("point utama belum cukup jelas")
     if story_metrics["payoff_near_end"]:
-        score += 10
         reasons.append("payoff ditempatkan dekat ending")
     elif payoff_hits:
-        score -= 4
         reasons.append("payoff muncul terlalu awal lalu melebar")
     if loop_score >= 45:
-        score += 5
         reasons.append("hook dan payoff membentuk loop semantik")
 
     if word_count < 55:
         score -= 12
         reasons.append("terlalu sedikit konteks")
 
-    return max(1, min(100, score)), reasons
+    heuristic_score = max(1, min(100, score))
+    boundary_score = {
+        "payoff_tuntas": 100,
+        "kalimat_tuntas": 75,
+        "menggantung": 20,
+    }.get(str(story_metrics["boundary_quality"]), 20)
+    calibrated_score = round(
+        heuristic_score * 0.50
+        + key_point_score * 0.30
+        + loop_score * 0.05
+        + boundary_score * 0.15
+    )
+    return max(1, min(100, calibrated_score)), reasons
 
 
 def build_candidate_pool(
@@ -4280,7 +4290,32 @@ def ai_rescore_candidates(
         return candidates
 
     pool_limit = max(AI_RESCORE_POOL_LIMIT, min(len(candidates), (target_count or 0) * 12))
-    pool = sorted(candidates, key=lambda item: item.score, reverse=True)[:pool_limit]
+    ranked = sorted(candidates, key=candidate_rank_score, reverse=True)
+    if len(ranked) <= pool_limit:
+        pool = ranked
+    else:
+        # Reserve half of the pool for the strongest moment in evenly spaced
+        # timeline buckets, then fill the rest by quality. This prevents many
+        # overlapping windows near the start from hiding stronger later beats.
+        timeline_start = min(candidate.start for candidate in ranked)
+        timeline_end = max(candidate.start for candidate in ranked)
+        bucket_count = min(pool_limit, max(8, pool_limit // 2))
+        bucket_width = max(1.0, (timeline_end - timeline_start) / bucket_count)
+        bucket_winners: dict[int, ClipCandidate] = {}
+        for candidate in ranked:
+            bucket = min(
+                bucket_count - 1,
+                int((candidate.start - timeline_start) / bucket_width),
+            )
+            bucket_winners.setdefault(bucket, candidate)
+        pool = list(bucket_winners.values())
+        selected_ids = {id(candidate) for candidate in pool}
+        pool.extend(
+            candidate
+            for candidate in ranked
+            if id(candidate) not in selected_ids
+        )
+        pool = sorted(pool[:pool_limit], key=candidate_rank_score, reverse=True)
     items = [
         {
             "id": idx,
@@ -4288,6 +4323,10 @@ def ai_rescore_candidates(
             "end": round(candidate.end, 1),
             "duration": round(candidate.duration, 1),
             "heuristic_score": candidate.score,
+            "hook": candidate.hook,
+            "key_point_score": candidate.key_point_score,
+            "loop_score": candidate.loop_score,
+            "boundary_quality": candidate.boundary_quality,
             "heuristic_strengths": candidate.strengths,
             "heuristic_weaknesses": candidate.weaknesses,
             "text": candidate.text[:1200],
@@ -4545,11 +4584,9 @@ def resolve_codex_ideas(
                 "Arahan ending diterapkan: kalimat penutup sumber dijadikan payoff terakhir"
                 + (" dengan kartu teks dan accent audio." if drawtext_supported else " dengan accent audio.")
             )
-        elif area == "loop":
+        elif area == "loop" and plan.loop_boost:
             applied.append(
                 "Arahan loop diterapkan pada titik payoff yang kembali ke hook."
-                if plan.loop_boost
-                else "Arahan loop ditinjau: callback tidak dipaksakan karena hook dan payoff belum terhubung secara alami."
             )
         elif area == "visual":
             applied.append(
@@ -4588,6 +4625,7 @@ def apply_codex_structural_edit(
 ) -> ClipCandidate:
     """Trim a weak lead-in and extend an unfinished ending when the transcript allows it."""
     original_plan = codex_edit_plan(clip)
+    original_ideas = list(clip.improvement_ideas)
     original_start = clip.start
     original_end = clip.end
     min_safe_duration = max(5.0, min_duration)
@@ -4657,7 +4695,19 @@ def apply_codex_structural_edit(
         clip.fyp_label = fyp_score_label(clip.score)
         clip.strengths = list(refreshed["strengths"])
         clip.weaknesses = list(refreshed["weaknesses"])
-        clip.improvement_ideas = list(refreshed["improvement_ideas"])
+        resolved_areas: set[str] = set()
+        if clip.start != original_start:
+            resolved_areas.add("hook")
+        if clip.end != original_end:
+            resolved_areas.add("ending")
+        retained_ai_ideas = [
+            idea
+            for idea in original_ideas
+            if _codex_idea_area(idea) not in resolved_areas
+        ]
+        clip.improvement_ideas = list(
+            dict.fromkeys([*refreshed["improvement_ideas"], *retained_ai_ideas])
+        )[:3]
         clip.key_point_score = int(story_metrics["key_point_score"])
         clip.loop_score = int(story_metrics["loop_score"])
         clip.boundary_quality = str(story_metrics["boundary_quality"])

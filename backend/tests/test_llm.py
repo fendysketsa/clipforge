@@ -48,6 +48,20 @@ def test_extract_json_repairs_tab_and_cr():
     assert extract_json(raw) == {"v": "a\tb\rc"}
 
 
+def test_extract_json_replaces_unpaired_surrogates():
+    parsed = extract_json(r'{"caption": "aman\udaca", "tags": ["#baik\ud800"]}')
+
+    assert parsed == {"caption": "aman\ufffd", "tags": ["#baik\ufffd"]}
+    json.dumps(parsed, ensure_ascii=False).encode("utf-8")
+
+
+def test_extract_json_preserves_valid_surrogate_pair():
+    parsed = extract_json(r'{"caption": "halo \ud83d\ude00"}')
+
+    assert parsed == {"caption": "halo 😀"}
+    assert parsed["caption"].encode("utf-8") == b"halo \xf0\x9f\x98\x80"
+
+
 def test_content_from_response_plain_json():
     body = json.dumps({"choices": [{"message": {"content": "hello"}}]})
     assert _content_from_response(body) == "hello"

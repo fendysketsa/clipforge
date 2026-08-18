@@ -770,14 +770,37 @@ def page_url_matches_channel_id(page, target_channel_id: str) -> bool:
         return False
 
 
+def studio_active_channel_id(page) -> str:
+    try:
+        return str(
+            page.evaluate(
+                """
+                () => String(
+                  window.ytcfg?.get?.('CHANNEL_ID')
+                  || window.ytcfg?.data_?.CHANNEL_ID
+                  || window.ytcfg?.d?.CHANNEL_ID
+                  || window.yt?.config_?.CHANNEL_ID
+                  || ''
+                )
+                """
+            )
+            or ""
+        ).strip()
+    except Exception:
+        return ""
+
+
 def page_matches_allowed_identity(page, target_channel: str, target_email: str, target_channel_id: str = "") -> bool:
-    if page_url_matches_channel_id(page, target_channel_id):
-        return True
+    active_channel_id = studio_active_channel_id(page)
+    if active_channel_id and target_channel_id:
+        return active_channel_id == target_channel_id.strip()
     expected_channel = normalize_channel_text(target_channel)
     expected_email = normalize_channel_text(target_email)
     expected_channel_id = normalize_channel_text(target_channel_id)
     if not expected_channel and not expected_email and not expected_channel_id:
         return True
+    if expected_channel_id:
+        return False
     body = normalized_page_text(page)
     return bool(
         body
@@ -850,9 +873,15 @@ def ensure_target_identity(page, target_channel: str, target_email: str, target_
     if label == "tidak dikonfigurasi":
         return
 
-    if page_url_matches_channel_id(page, target_channel_id):
-        log(f"URL YouTube Studio channel target terdeteksi: {target_channel_id}.")
-        return
+    active_channel_id = studio_active_channel_id(page)
+    if active_channel_id and target_channel_id:
+        if active_channel_id == target_channel_id.strip():
+            log(f"Channel aktif YouTube Studio terverifikasi: {target_channel_id}.")
+            return
+        raise UploadError(
+            f"Sesi YouTube/Chromium aktif di channel '{active_channel_id}', bukan channel target "
+            f"'{target_channel_id}'. Upload dibatalkan agar tidak salah akun."
+        )
 
     if page_matches_allowed_identity(page, target_channel, target_email, target_channel_id):
         log(f"Identitas YouTube target terdeteksi: {label}.")
@@ -877,7 +906,7 @@ def ensure_target_identity(page, target_channel: str, target_email: str, target_
                     return
         except Exception:
             continue
-    if target_email and google_account_matches_target(page, target_email):
+    if target_email and not target_channel_id and google_account_matches_target(page, target_email):
         log(f"Email Google target terdeteksi: {target_email}.")
         if clicked_menu:
             try:
@@ -1126,6 +1155,7 @@ def upload_text_field_contains(
 
 def ensure_logged_in(page) -> None:
     ensure_supported_studio_browser(page)
+    ensure_studio_page_healthy(page)
     url = page.url.lower()
     if "accounts.google.com" in url or "signin" in url:
         save_debug_artifacts(page, "youtube-login-required")
@@ -1148,6 +1178,39 @@ def ensure_logged_in(page) -> None:
             "Session YouTube Studio belum login. Jalankan Login Sekali untuk menyimpan ulang cookies/storage-state "
             "atau pakai Ambil Cookies CDP jika memang ingin mengambil session dari Chrome CDP."
         )
+
+
+def studio_app_load_error(page, page_text: str | None = None) -> str:
+    if page_text is None:
+        try:
+            page_text = normalize_channel_text(page.locator("body").inner_text(timeout=3000))
+        except Exception:
+            page_text = ""
+    messages = (
+        ("maafadayangtidakberes", "Maaf, ada yang tidak beres"),
+        ("sorrysomethingwentwrong", "Sorry, something went wrong"),
+    )
+    for marker, message in messages:
+        if marker in page_text:
+            return message
+    try:
+        error_section = page.locator("ytcp-error-section").first
+        if error_section.count() and error_section.is_visible(timeout=500):
+            return "YouTube Studio app-load error"
+    except Exception:
+        pass
+    return ""
+
+
+def ensure_studio_page_healthy(page, page_text: str | None = None) -> None:
+    app_error = studio_app_load_error(page, page_text)
+    if not app_error:
+        return
+    save_debug_artifacts(page, "youtube-studio-app-load-error")
+    raise UploadError(
+        f"YouTube Studio gagal memuat aplikasi ({app_error}). "
+        "Session atau channel aktif perlu disegarkan lewat Login Sekali."
+    )
 
 
 def ensure_supported_studio_browser(page) -> None:
@@ -1177,16 +1240,39 @@ def ensure_supported_studio_browser(page) -> None:
             approval_url = ""
         if not approval_url.startswith("https://studio.youtube.com/"):
             approval_url = "https://studio.youtube.com/upload?approve_browser_access=true"
+        approval_completed = False
         try:
             log("YouTube meminta konfirmasi kompatibilitas browser; melanjutkan lewat akses resmi Studio.")
             page.goto(approval_url, wait_until="domcontentloaded", timeout=30000)
             page.wait_for_load_state("domcontentloaded", timeout=15000)
             page_text = normalized_page_text(page)
             if not any(pattern in page_text for pattern in unsupported_patterns):
+                ensure_studio_page_healthy(page)
+                approval_completed = True
+                if current_url and current_url != approval_url:
+                    page.goto(current_url, wait_until="domcontentloaded", timeout=30000)
+                    page.wait_for_load_state("domcontentloaded", timeout=15000)
+                    page_text = normalized_page_text(page)
+                    if any(pattern in page_text for pattern in unsupported_patterns):
+                        raise UploadError(
+                            "YouTube Studio kembali menolak browser setelah halaman channel dipulihkan."
+                        )
+                    ensure_studio_page_healthy(page)
                 log("Konfirmasi akses browser YouTube Studio berhasil.")
                 return
+        except UploadError:
+            raise
         except Exception as exc:
             log(f"Konfirmasi akses browser YouTube Studio gagal: {exc}")
+            detail = str(exc).strip() or "navigasi Studio berhenti tanpa detail"
+            raise UploadError(
+                (
+                    "YouTube Studio gagal memulihkan halaman channel setelah konfirmasi akses browser. "
+                    if approval_completed
+                    else "YouTube Studio gagal membuka halaman konfirmasi akses browser. "
+                )
+                + f"Detail: {detail}"
+            ) from exc
 
     save_debug_artifacts(page, "youtube-browser-unsupported")
     raise UploadError(
@@ -1253,6 +1339,7 @@ def goto_studio(page, timeout_ms: int = 30000, studio_url: str = "") -> None:
             page.goto(url, wait_until="domcontentloaded", timeout=nav_timeout)
             page.wait_for_load_state("domcontentloaded", timeout=min(nav_timeout, 15000))
             ensure_supported_studio_browser(page)
+            ensure_studio_page_healthy(page)
             return
         except Exception as exc:
             last_error = str(exc)
@@ -1422,6 +1509,7 @@ def goto_upload_page(page, channel_id: str = "", target_email: str = "", studio_
                 except Exception:
                     pass
                 ensure_supported_studio_browser(page)
+                ensure_studio_page_healthy(page)
                 if "accounts.google.com" in page.url.lower():
                     if resolve_google_account_chooser(page, target_email, studio_url=studio_url):
                         continue
@@ -1446,6 +1534,10 @@ def goto_upload_page(page, channel_id: str = "", target_email: str = "", studio_
                 ):
                     log("Dialog upload siap.")
                     return
+                last_error = (
+                    studio_app_load_error(page)
+                    or f"URL {page.url}: permukaan upload dan input file tidak muncul."
+                )
             except UploadError:
                 raise
             except Exception as exc:
@@ -1454,7 +1546,7 @@ def goto_upload_page(page, channel_id: str = "", target_email: str = "", studio_
     save_debug_artifacts(page, "upload-page-input-not-found")
     raise UploadError(
         "Halaman upload YouTube Studio tidak bisa dibuka atau input file tidak ditemukan. "
-        f"Detail: {last_error}"
+        f"Detail: {last_error or 'Studio tidak menampilkan permukaan upload.'}"
     )
 
 
@@ -1711,6 +1803,9 @@ def open_upload_dialog(
     if env_bool("YOUTUBE_ALLOW_DIRECT_UPLOAD_PAGE_FALLBACK", False):
         log("Tombol Create/Buat tidak tersedia; memakai halaman upload langsung.")
         goto_upload_page(page, target_channel_id, target_email, studio_url)
+        resolve_google_account_chooser(page, target_email, studio_url=studio_url)
+        ensure_logged_in(page)
+        ensure_target_identity(page, target_channel, target_email, target_channel_id)
         return
 
     save_debug_artifacts(page, "dashboard-upload-modal-not-open")

@@ -83,6 +83,34 @@ def test_ai_rescore_keeps_heuristics_when_endpoint_is_missing():
     assert candidate.score == 77
 
 
+def test_ai_rescore_pool_covers_timeline_and_sends_story_metrics(monkeypatch):
+    candidates = [
+        make_candidate(index, index * 60, 100 - index, f"Poin penting bagian {index}.")
+        for index in range(50)
+    ]
+    captured_items = []
+
+    def fake_chat_completion(config, messages):
+        nonlocal captured_items
+        captured_items = json.loads(messages[-1]["content"].split("Candidates:\n", 1)[1])
+        return '{"clips": []}'
+
+    monkeypatch.setattr(clipper, "chat_completion", fake_chat_completion)
+
+    ai_rescore_candidates(
+        candidates,
+        AIConfig(enabled=True, base_url="http://localhost:20128/v1", model="local-model"),
+        target_count=1,
+    )
+
+    assert len(captured_items) == 40
+    assert max(item["start"] for item in captured_items) >= 2700
+    assert all(
+        {"hook", "key_point_score", "loop_score", "boundary_quality"} <= item.keys()
+        for item in captured_items
+    )
+
+
 def test_short_selection_deduplicates_the_same_main_point():
     first = make_candidate(
         0,

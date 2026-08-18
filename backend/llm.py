@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import urllib.request
 from dataclasses import dataclass
+from typing import Any
 from urllib.error import HTTPError
 from urllib.parse import urlparse
 
@@ -192,9 +193,24 @@ def _content_from_response(raw: str) -> str:
     return payload["choices"][0]["message"]["content"]
 
 
+def _sanitize_json_unicode(value: Any) -> Any:
+    if isinstance(value, str):
+        # JSON accepts lone UTF-16 surrogates, but UTF-8 files do not. This also
+        # combines valid surrogate pairs without changing normal Unicode text.
+        return value.encode("utf-16", errors="surrogatepass").decode("utf-16", errors="replace")
+    if isinstance(value, list):
+        return [_sanitize_json_unicode(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            _sanitize_json_unicode(key): _sanitize_json_unicode(item)
+            for key, item in value.items()
+        }
+    return value
+
+
 def _loads_lenient(text: str) -> dict:
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
     except json.JSONDecodeError:
         # Models sometimes emit raw (unescaped) newlines/tabs inside string
         # values, which is invalid JSON. Escape control chars within strings.
@@ -229,7 +245,8 @@ def _loads_lenient(text: str) -> dict:
                 if char == '"':
                     in_string = True
                 repaired.append(char)
-        return json.loads("".join(repaired))
+        parsed = json.loads("".join(repaired))
+    return _sanitize_json_unicode(parsed)
 
 
 def extract_json(raw: str) -> dict:

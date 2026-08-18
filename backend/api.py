@@ -1852,9 +1852,18 @@ def youtube_login_refresh_needed(error: str) -> bool:
         or "sesi youtube belum login atau sudah kedaluwarsa" in lowered
         or "session youtube studio belum login" in lowered
         or "youtube studio meminta login" in lowered
+        or "youtube studio gagal memuat aplikasi" in lowered
         or "refresh ulang profil chrome cdp" in lowered
         or "signintoyoutube" in lowered
         or "accounts.google.com" in lowered
+    )
+
+
+def youtube_navigation_retry_needed(error: str) -> bool:
+    lowered = error.lower()
+    return (
+        "youtube studio gagal memulihkan halaman channel" in lowered
+        or "youtube studio gagal membuka halaman konfirmasi akses browser" in lowered
     )
 
 
@@ -4576,6 +4585,12 @@ def run_youtube_upload(upload_id: str) -> None:
                         force_chromium_profile_for_attempt = False
                         use_cdp_for_attempt = False
                     set_youtube_upload(upload_id, logs=logs[-160:], error=sync_error or error)
+                continue
+            if attempt < max_attempts and youtube_navigation_retry_needed(error):
+                logs.append(
+                    "Navigasi YouTube Studio terputus sebelum file dipilih; retry memakai session yang sama."
+                )
+                set_youtube_upload(upload_id, logs=logs[-160:], error=error)
                 continue
             if attempt < max_attempts and youtube_login_refresh_needed(error):
                 if not use_cdp_for_attempt and not one_time_login_refresh_attempted:
