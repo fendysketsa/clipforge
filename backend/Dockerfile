@@ -8,9 +8,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+ARG DENO_VERSION=2.5.5
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
       ca-certificates \
+      curl \
       ffmpeg \
       libglib2.0-0 \
       libgl1 \
@@ -21,6 +24,13 @@ RUN apt-get update \
       fonts-liberation \
       fonts-noto-core \
       espeak-ng \
+      unzip \
+    && curl -fsSLo /tmp/deno.zip \
+      "https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" \
+    && unzip -q /tmp/deno.zip -d /usr/local/bin \
+    && chmod 0755 /usr/local/bin/deno \
+    && deno --version \
+    && rm -f /tmp/deno.zip \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

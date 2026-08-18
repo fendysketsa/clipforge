@@ -189,6 +189,18 @@ class EmbeddedSplitProfile:
 
 
 @dataclass
+class MultiPersonProfile:
+    """Evidence that several people are visible together in the source frame."""
+
+    primary_focus_x: float
+    secondary_focus_x: float
+    simultaneous_frame_ratio: float
+    average_visible_faces: float
+    source_width: int
+    source_height: int
+
+
+@dataclass
 class WatermarkRegion:
     """A persistent source overlay detected across several rendered frames."""
 
@@ -757,12 +769,59 @@ def ytdlp_base_options(**overrides) -> dict:
         "file_access_retries": 3,
         "continuedl": True,
         "concurrent_fragment_downloads": 4,
+        # A small pause reduces guest-session throttling without making a
+        # single source download noticeably slow.
+        "sleep_interval_requests": 0.75,
         "http_headers": YTDLP_HTTP_HEADERS,
         # Prefer IPv4 on hosts where IPv6 routes exist but cannot reach YouTube.
         "source_address": "0.0.0.0",
     }
     options.update(overrides)
     return options
+
+
+def youtube_download_strategies(max_height: int, work_dir: Path) -> list[dict]:
+    """Return conservative YouTube media strategies, including an embedded-client retry.
+
+    YouTube can require a Proof-of-Origin token for some player clients.  The
+    normal yt-dlp client selection remains first.  The web embedded client is
+    then tried because it can supply signed media without a GVS PO token once
+    the EJS challenge is solved.  HLS Safari remains a last compatibility
+    fallback. Keeping output templates separate prevents incompatible partial
+    files from being resumed across strategies.
+    """
+    standard_format = (
+        f"bestvideo[height<={max_height}][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
+        f"bestvideo[height<={max_height}][vcodec^=avc1]+bestaudio/"
+        f"bestvideo[height<={max_height}][ext=mp4]+bestaudio[ext=m4a]/"
+        f"bestvideo[height<={max_height}]+bestaudio/"
+        f"best[height<={max_height}]/best"
+    )
+    hls_format = (
+        f"bestvideo[height<={max_height}][protocol^=m3u8]+bestaudio[protocol^=m3u8]/"
+        f"best[height<={max_height}][protocol^=m3u8]/"
+        "best[protocol^=m3u8]"
+    )
+    return [
+        {
+            "name": "default",
+            "format": standard_format,
+            "outtmpl": str(work_dir / "source.%(ext)s"),
+        },
+        {
+            "name": "web_embedded_ejs",
+            "format": standard_format,
+            "outtmpl": str(work_dir / "source_embedded.%(ext)s"),
+            "extractor_args": {"youtube": {"player_client": ["web_embedded"]}},
+        },
+        {
+            "name": "web_safari_hls",
+            "format": hls_format,
+            "outtmpl": str(work_dir / "source_hls.%(ext)s"),
+            "extractor_args": {"youtube": {"player_client": ["web_safari"]}},
+            "hls_prefer_native": True,
+        },
+    ]
 
 
 def is_network_error(message: str) -> bool:
@@ -787,6 +846,16 @@ def friendly_youtube_error(exc: Exception, stage: str) -> str:
         )
     if "unsupported url" in message.lower():
         return "Link video tidak dikenali. Gunakan URL YouTube penuh atau link youtu.be yang valid."
+    if "javascript runtime" in message.lower() or "challenge solving failed" in message.lower():
+        return (
+            "Runtime challenge YouTube belum siap. Build ulang backend agar Deno dan yt-dlp-ejs aktif, "
+            "lalu coba link yang sama lagi."
+        )
+    if "403" in message or "forbidden" in message.lower():
+        return (
+            "YouTube menolak seluruh jalur download otomatis (HTTP 403), termasuk retry embedded/EJS. "
+            "Coba lagi setelah beberapa menit; bila pembatasan sesi/IP tetap aktif, upload file MP4 langsung."
+        )
     return f"Gagal mengambil video dari YouTube saat {stage}: {message}"
 
 
@@ -1648,6 +1717,152 @@ def detect_speaker_focus_points(
     return (left_center, right_center), (width, height)
 
 
+def detect_multi_person_profile(
+    video_path: Path,
+    clip: ClipCandidate,
+) -> MultiPersonProfile | None:
+    """Require multiple faces in the same sampled frames, not merely speaker cuts."""
+    try:
+        import cv2
+        import numpy as np
+    except Exception:
+        return None
+
+    capture = cv2.VideoCapture(str(video_path.resolve()))
+    if not capture.isOpened():
+        return None
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    if width <= 0 or height <= 0:
+        capture.release()
+        return None
+
+    can_make_gray = hasattr(cv2, "cvtColor") and hasattr(cv2, "COLOR_BGR2GRAY")
+    face_cascade = make_cv2_cascade(cv2, "haarcascade_frontalface_default.xml") if can_make_gray else None
+    yunet = None
+    if YUNET_MODEL_PATH.exists() and hasattr(cv2, "FaceDetectorYN_create"):
+        yunet = cv2.FaceDetectorYN_create(
+            str(YUNET_MODEL_PATH),
+            "",
+            (320, 320),
+            0.42,
+            0.3,
+            5000,
+        )
+    if yunet is None and face_cascade is None:
+        capture.release()
+        return None
+
+    duration = max(0.1, clip.end - clip.start)
+    sample_count = min(12, max(7, int(duration // 5)))
+    step = duration / (sample_count + 1)
+    valid_frames = 0
+    simultaneous_frames = 0
+    visible_counts: list[int] = []
+    primary_observations: list[tuple[float, float]] = []
+    secondary_observations: list[float] = []
+
+    try:
+        for index in range(sample_count):
+            capture.set(cv2.CAP_PROP_POS_MSEC, (clip.start + step * (index + 1)) * 1000)
+            ok, frame = capture.read()
+            if not ok:
+                continue
+            valid_frames += 1
+            resize_scale = min(1.0, 720 / max(frame.shape[:2]))
+            resized = (
+                cv2.resize(frame, None, fx=resize_scale, fy=resize_scale, interpolation=cv2.INTER_AREA)
+                if resize_scale < 1
+                else frame
+            )
+            detected: list[tuple[float, float]] = []
+            resized_height, resized_width = resized.shape[:2]
+            if yunet is not None:
+                yunet.setInputSize((resized_width, resized_height))
+                _status, faces = yunet.detect(resized)
+                if faces is not None:
+                    for face in faces:
+                        x, _y, face_width, face_height = face[:4]
+                        confidence = float(face[-1])
+                        if confidence >= 0.42:
+                            detected.append(
+                                (
+                                    (x + face_width / 2) / max(1.0, resized_width),
+                                    float(face_width * face_height * confidence),
+                                )
+                            )
+            elif face_cascade is not None:
+                gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+                faces = face_cascade.detectMultiScale(
+                    gray,
+                    scaleFactor=1.08,
+                    minNeighbors=5,
+                    minSize=(30, 30),
+                )
+                for x, _y, face_width, face_height in faces:
+                    detected.append(
+                        (
+                            (x + face_width / 2) / max(1.0, resized_width),
+                            float(face_width * face_height),
+                        )
+                    )
+
+            strongest = sorted(detected, key=lambda item: item[1], reverse=True)[:4]
+            visible_counts.append(len(strongest))
+            if strongest:
+                primary_observations.append(strongest[0])
+            if len(strongest) >= 2:
+                centers = sorted(item[0] for item in strongest)
+                if centers[-1] - centers[0] >= 0.12:
+                    simultaneous_frames += 1
+                    primary_x = strongest[0][0]
+                    secondary_observations.append(
+                        max(
+                            (item[0] for item in strongest[1:]),
+                            key=lambda value: abs(value - primary_x),
+                        )
+                    )
+    finally:
+        capture.release()
+
+    if valid_frames < 4 or not primary_observations or not secondary_observations:
+        return None
+    simultaneous_ratio = simultaneous_frames / valid_frames
+    if simultaneous_frames < 2 or simultaneous_ratio < 0.28:
+        return None
+    primary_focus = sum(x * weight for x, weight in primary_observations) / max(
+        1.0,
+        sum(weight for _x, weight in primary_observations),
+    )
+    return MultiPersonProfile(
+        primary_focus_x=round(float(primary_focus), 4),
+        secondary_focus_x=round(float(np.median(secondary_observations)), 4),
+        simultaneous_frame_ratio=round(simultaneous_ratio, 3),
+        average_visible_faces=round(float(np.mean(visible_counts)), 2),
+        source_width=width,
+        source_height=height,
+    )
+
+
+def select_multi_person_profiles(
+    video_path: Path,
+    candidates: list[ClipCandidate],
+    *,
+    maximum: int | None = None,
+) -> dict[int, MultiPersonProfile]:
+    """Reserve the group layout for only one or two eligible Shorts in a batch."""
+    limit = maximum if maximum is not None else (2 if len(candidates) >= 6 else 1)
+    limit = max(0, min(2, limit))
+    selected: dict[int, MultiPersonProfile] = {}
+    for candidate in sorted(candidates, key=lambda item: item.score, reverse=True):
+        if len(selected) >= limit:
+            break
+        profile = detect_multi_person_profile(video_path, candidate)
+        if profile is not None:
+            selected[candidate.index] = profile
+    return selected
+
+
 def analyze_text_heavy_backdrop(frame, *, force: bool = False) -> BackdropProfile | None:
     """Detect a mostly uniform event banner with rows of contrasting text."""
     try:
@@ -2211,6 +2426,47 @@ def vertical_clean_detail_crop_filter(
     }
 
 
+def vertical_multi_person_context_filter(profile: MultiPersonProfile) -> str:
+    """Show a dominant speaker plus a wide group panel in one clean 9:16 frame."""
+    source_width = profile.source_width
+    source_height = profile.source_height
+    main_width = 1000
+    main_height = 1110
+    main_aspect = main_width / main_height
+    crop_height = source_height
+    crop_width = make_even(crop_height * main_aspect, 2)
+    if crop_width > source_width:
+        crop_width = make_even(source_width, 2)
+        crop_height = make_even(crop_width / main_aspect, 2)
+    crop_x = int(
+        clamp_even(
+            profile.primary_focus_x * source_width - crop_width / 2,
+            0,
+            source_width - crop_width,
+        )
+    )
+    crop_y = max(0, (source_height - crop_height) // 2)
+    return (
+        "split=3[group_bg_src][group_main_src][group_wide_src];"
+        "[group_bg_src]scale=1080:1920:force_original_aspect_ratio=increase:"
+        "force_divisible_by=2:flags=lanczos,crop=1080:1920,gblur=sigma=34,"
+        "eq=brightness=-0.20:saturation=0.78,"
+        "drawbox=x=0:y=0:w=iw:h=ih:color=#020908@0.42:t=fill[group_bg];"
+        f"[group_main_src]crop={crop_width}:{crop_height}:{crop_x}:{crop_y},"
+        f"scale={main_width}:{main_height}:flags=lanczos,setsar=1[group_main];"
+        "[group_wide_src]scale=1000:560:force_original_aspect_ratio=decrease:"
+        "force_divisible_by=2:flags=lanczos,"
+        "pad=1000:560:(ow-iw)/2:(oh-ih)/2:color=#020908,setsar=1[group_wide];"
+        "[group_bg]drawbox=x=32:y=62:w=1016:h=1126:color=black@0.72:t=fill,"
+        "drawbox=x=32:y=1208:w=1016:h=576:color=black@0.72:t=fill[group_stage];"
+        "[group_stage][group_main]overlay=40:70:shortest=1:eof_action=pass[group_stage_2];"
+        "[group_stage_2][group_wide]overlay=40:1216:shortest=1:eof_action=pass,"
+        "drawbox=x=36:y=66:w=1008:h=1118:color=#2DD4BF@0.86:t=4,"
+        "drawbox=x=36:y=1212:w=1008:h=568:color=#FACC15@0.82:t=4,"
+        "drawbox=x=48:y=1192:w=984:h=5:color=white@0.30:t=fill"
+    )
+
+
 def embedded_split_subject_filter(
     video_path: Path,
     clip: ClipCandidate,
@@ -2468,29 +2724,52 @@ def download_video(
         return existing, load_json(info_path)
 
     max_height = int(quality_preset(video_quality)["max_download_height"])
-    ydl_opts = ytdlp_base_options(
-        format=(
-            f"bestvideo[height<={max_height}][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
-            f"bestvideo[height<={max_height}][vcodec^=avc1]+bestaudio/"
-            f"bestvideo[height<={max_height}][ext=mp4]+bestaudio[ext=m4a]/"
-            f"bestvideo[height<={max_height}]+bestaudio/"
-            f"best[height<={max_height}]/best"
-        ),
-        outtmpl=str(work_dir / "source.%(ext)s"),
-        merge_output_format="mp4",
-        noprogress=True,
-        ffmpeg_location=ffmpeg_path(),
-    )
-
     work_dir.mkdir(parents=True, exist_ok=True)
-    info: dict
-    try:
-        with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-    except Exception as exc:
-        raise UserFacingError(friendly_youtube_error(exc, "mengunduh video")) from exc
+    info: dict = {}
+    file_path: Path | None = None
+    download_errors: list[Exception] = []
+    for attempt, strategy in enumerate(
+        youtube_download_strategies(max_height, work_dir),
+        start=1,
+    ):
+        strategy_name = str(strategy["name"])
+        options = {key: value for key, value in strategy.items() if key != "name"}
+        ydl_opts = ytdlp_base_options(
+            **options,
+            merge_output_format="mp4",
+            noprogress=True,
+            ffmpeg_location=ffmpeg_path(),
+        )
+        if attempt > 1:
+            console.print(
+                "[yellow]Retry download YouTube[/yellow] "
+                f"dengan jalur {strategy_name} ({attempt}/3)..."
+            )
+        try:
+            with YoutubeDL(ydl_opts) as ydl:
+                attempt_info = ydl.extract_info(url, download=True)
+                if isinstance(attempt_info, dict):
+                    info = attempt_info
+        except Exception as exc:
+            download_errors.append(exc)
+            continue
+        file_path = select_usable_source_media(work_dir)
+        if file_path is not None:
+            break
 
-    file_path = select_usable_source_media(work_dir)
+    if file_path is None and download_errors:
+        representative_error = next(
+            (
+                error
+                for error in download_errors
+                if "403" in str(error) or "forbidden" in str(error).casefold()
+            ),
+            download_errors[-1],
+        )
+        raise UserFacingError(
+            friendly_youtube_error(representative_error, "mengunduh video")
+        ) from representative_error
+
     if file_path is None:
         console.print(
             "[yellow]Hasil download utama belum memiliki audio lengkap; "
@@ -4420,13 +4699,13 @@ SHORTS_SAFE_TOP = 220
 SHORTS_SAFE_BOTTOM = 1560
 SHORTS_OFFICIAL_MAX_SECONDS = 180
 FENDY_CLIPPER_SHORTS_MAX_SECONDS = 60
-SHORTS_POLICY_REVIEW_DATE = os.environ.get("YOUTUBE_POLICY_REVIEW_DATE", "2026-08-14").strip()
+SHORTS_POLICY_REVIEW_DATE = os.environ.get("YOUTUBE_POLICY_REVIEW_DATE", "2026-08-18").strip()
 YOUTUBE_POLICY_REVIEW_INTERVAL_DAYS = 180
 
 
 def youtube_policy_snapshot(*, as_of: date | None = None) -> dict[str, object]:
     """Expose policy freshness instead of pretending a dated audit lasts forever."""
-    fallback_reviewed = date(2026, 8, 14)
+    fallback_reviewed = date(2026, 8, 18)
     try:
         reviewed = date.fromisoformat(SHORTS_POLICY_REVIEW_DATE)
     except ValueError:
@@ -4454,6 +4733,7 @@ def youtube_policy_snapshot(*, as_of: date | None = None) -> dict[str, object]:
             "https://support.google.com/youtube/answer/15424877",
             "https://support.google.com/youtube/answer/1311392",
             "https://support.google.com/youtube/answer/12504220",
+            "https://support.google.com/youtube/answer/16559650",
         ],
     }
 
@@ -7351,6 +7631,7 @@ def export_clip(
     compilation_part_number: int = 1,
     compilation_part_count: int = 1,
     compilation_narrative_role: str = "",
+    multi_person_profile: MultiPersonProfile | None = None,
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     base_name = base_name_override or f"clip_{clip.index:02}_{slugify(clip.title)[:72] or 'auto'}"
@@ -7638,12 +7919,16 @@ def export_clip(
     visual_start = clip.start
     embedded_split_profile = (
         detect_embedded_split_layout(video_path, clip)
-        if output_format == "vertical_short" and background_mode == "auto_clean"
+        if (
+            output_format == "vertical_short"
+            and background_mode == "auto_clean"
+            and multi_person_profile is None
+        )
         else None
     )
     clean_source: Path | None = None
     backdrop_profile: BackdropProfile | None = None
-    if embedded_split_profile is None:
+    if embedded_split_profile is None and multi_person_profile is None:
         clean_source, backdrop_profile = render_clean_background_segment(
             video_path,
             clip,
@@ -7719,6 +8004,21 @@ def export_clip(
             sidecar_payload["layout"] = "cinematic_bordered_frame"
             if should_try_split:
                 sidecar_payload["split_fallback_reason"] = "two_speakers_not_detected"
+    elif multi_person_profile is not None:
+        vf = vertical_multi_person_context_filter(multi_person_profile)
+        sidecar_payload["layout"] = "multi_person_context_stack"
+        sidecar_payload["multi_person_layout"] = {
+            "enabled": True,
+            "batch_limited_to": "one_or_two_clips",
+            "simultaneous_frame_ratio": multi_person_profile.simultaneous_frame_ratio,
+            "average_visible_faces": multi_person_profile.average_visible_faces,
+            "primary_focus_x": multi_person_profile.primary_focus_x,
+            "secondary_focus_x": multi_person_profile.secondary_focus_x,
+            "preserves_group_context": True,
+        }
+        applied_edits.append(
+            "Layout grup dipilih khusus untuk klip ini: pembicara utama tetap dominan dan panel lebar mempertahankan beberapa orang dalam satu frame."
+        )
     elif embedded_split_profile is not None:
         vf = embedded_split_subject_filter(
             video_path,
@@ -9495,6 +9795,16 @@ def main() -> int:
         console.print("[bold]Exporting vertical short clips...[/bold]")
         exported = []
         total_candidates = len(candidates)
+        multi_person_profiles = (
+            select_multi_person_profiles(final_video_path, candidates)
+            if args.visual_mode == "auto_fyp" and args.crop_mode != "streamer"
+            else {}
+        )
+        if multi_person_profiles:
+            console.print(
+                "[green]Layout grup adaptif:[/green] "
+                f"{len(multi_person_profiles)} dari {total_candidates} klip memakai frame beberapa orang."
+            )
         for export_index, candidate in enumerate(candidates, start=1):
             render_start = 68 + round(((export_index - 1) / max(1, total_candidates)) * 25)
             emit_progress(
@@ -9521,6 +9831,7 @@ def main() -> int:
                     auto_blur_watermarks=args.auto_blur_watermarks,
                     visual_mode=args.visual_mode,
                     background_mode=args.background_mode,
+                    multi_person_profile=multi_person_profiles.get(candidate.index),
                 )
             )
             render_done = 68 + round((export_index / max(1, total_candidates)) * 25)

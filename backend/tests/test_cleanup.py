@@ -10,6 +10,7 @@ from clipper import (
     prepare_uploaded_source,
     select_usable_source_media,
     source_media_candidates,
+    youtube_download_strategies,
 )
 
 
@@ -96,6 +97,31 @@ def test_friendly_youtube_error_explains_network_failure():
 
     assert "Upload Video" in message
     assert "membaca metadata" in message
+
+
+def test_friendly_youtube_error_explains_403_after_embedded_retry():
+    message = friendly_youtube_error(
+        RuntimeError("unable to download video data: HTTP Error 403: Forbidden"),
+        "mengunduh video",
+    )
+
+    assert "retry embedded/EJS" in message
+    assert "upload file MP4" in message
+    assert "ERROR:" not in message
+
+
+def test_youtube_download_strategies_isolate_partial_files_and_add_embedded_retry(tmp_path):
+    strategies = youtube_download_strategies(2160, tmp_path)
+
+    assert [item["name"] for item in strategies] == [
+        "default",
+        "web_embedded_ejs",
+        "web_safari_hls",
+    ]
+    assert len({item["outtmpl"] for item in strategies}) == 3
+    assert strategies[1]["extractor_args"]["youtube"]["player_client"] == ["web_embedded"]
+    assert "protocol^=m3u8" in strategies[2]["format"]
+    assert strategies[2]["extractor_args"]["youtube"]["player_client"] == ["web_safari"]
 
 
 def test_cleanup_clip_files_removes_output_artifacts(monkeypatch):

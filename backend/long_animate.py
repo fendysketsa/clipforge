@@ -4,6 +4,7 @@ import ast
 import base64
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -13,9 +14,11 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Generator
 from urllib.parse import urlparse
 
 import cv2
@@ -24,12 +27,44 @@ import numpy as np
 
 from llm import AIConfig, chat_completion, extract_json
 
+# Configure logging for Long Animate
+_logger = logging.getLogger("long_animate")
+if not _logger.handlers:
+    _handler = logging.StreamHandler(sys.stderr)
+    _handler.setFormatter(logging.Formatter('%(asctime)s [%(name)s] %(levelname)s: %(message)s'))
+    _logger.addHandler(_handler)
+    _logger.setLevel(logging.INFO)
+
 
 ProgressCallback = Callable[[int, str, str], None]
 
 
 class LongAnimateImageError(RuntimeError):
     """Remote image generation failed and local fallback is not acceptable."""
+
+
+@dataclass
+class RenderMetrics:
+    """Tracking metrics untuk Long Animate render."""
+    total_time_seconds: float = 0.0
+    storyboard_time: float = 0.0
+    tts_time: float = 0.0
+    tts_parallel_workers: int = 1
+    image_gen_time: float = 0.0
+    image_retry_count: int = 0
+    render_shots_time: float = 0.0
+    composite_time: float = 0.0
+    qc_time: float = 0.0
+    provider_used: str = "unknown"
+    error_count: int = 0
+    warning_count: int = 0
+    disk_space_mb: float = 0.0
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            k: v for k, v in self.__dict__.items()
+            if not k.startswith("_")
+        }
 
 
 @dataclass
@@ -1425,12 +1460,19 @@ def _remote_scene_image(
         headers["x-goog-api-key"] = key
     elif key:
         headers["Authorization"] = f"Bearer {key}"
+
     retries = max(1, min(4, int(os.environ.get("LONG_ANIMATE_IMAGE_RETRIES", "3"))))
+
+    # Local diffusion can legitimately need many minutes on a small GPU. Honor
+    # the configured timeout on every attempt instead of failing early while a
+    # valid render is still running.
     max_timeout = 1800.0 if is_sd_cpp else 300.0
-    timeout = max(
+    configured_timeout = max(
         30.0,
         min(max_timeout, float(os.environ.get("LONG_ANIMATE_IMAGE_TIMEOUT_SECONDS", "180"))),
     )
+    timeout_list = [configured_timeout] * retries
+
     last_detail = "respons API gambar tidak valid"
     sd_attempt_sizes: list[str] = []
     if is_sd_cpp:
@@ -1445,18 +1487,34 @@ def _remote_scene_image(
         else:
             sd_attempt_sizes = [configured_size, *safe_sizes[-2:]]
         sd_attempt_sizes = list(dict.fromkeys(sd_attempt_sizes))
+
+    # IMPROVEMENT: Universal size downgrade (not just SD-cpp)
+    provider_attempt_sizes = []
+    if not is_sd_cpp:
+        base_size = payload_object.get("size", "1024x768")
+        provider_attempt_sizes = [base_size, "1280x720", "1024x576", "768x432"]
+
     sd_size_index = 0
+    provider_size_index = 0
+
     for attempt in range(1, retries + 1):
         try:
+            timeout = timeout_list[attempt - 1]  # Progressive timeout
             attempt_payload = dict(payload_object)
-            if sd_attempt_sizes:
+
+            # Try downgrade size if provider fails
+            if sd_attempt_sizes and sd_size_index < len(sd_attempt_sizes):
                 attempt_payload["size"] = sd_attempt_sizes[sd_size_index]
+            elif provider_attempt_sizes and provider_size_index < len(provider_attempt_sizes):
+                attempt_payload["size"] = provider_attempt_sizes[provider_size_index]
+
             payload = json.dumps(attempt_payload).encode("utf-8")
             with urllib.request.urlopen(
                 urllib.request.Request(endpoint, data=payload, headers=headers, method="POST"),
-                timeout=timeout,
+                timeout=timeout,  # PROGRESSIVE TIMEOUT
             ) as response:
                 result = json.loads(response.read().decode("utf-8"))
+
             raw = _image_bytes_from_result(result, is_gemini)
             if len(raw) < 1024:
                 raise ValueError("data gambar dari API terlalu kecil")
@@ -1464,23 +1522,49 @@ def _remote_scene_image(
             if not _normalize_scene_image(path):
                 raise ValueError("gambar dari API tidak dapat dibaca atau dinormalisasi")
             return True
+
+        except urllib.error.HTTPError as e:
+            path.unlink(missing_ok=True)
+            status = e.code
+            last_detail = f"HTTP {status}: {e.reason}"
+
+            # IMPROVEMENT: Exponential backoff for rate limiting (429)
+            if status == 429:
+                backoff_seconds = min(60, 2 ** (attempt - 1))
+                _logger.warning(f"Rate limited (429), backoff {backoff_seconds}s before retry")
+                time.sleep(backoff_seconds)
+                continue
+
+            # Size downgrade untuk provider errors
+            if status in {500, 502, 503, 504}:
+                if sd_attempt_sizes and sd_size_index < len(sd_attempt_sizes) - 1:
+                    sd_size_index += 1
+                    retryable = True
+                elif provider_attempt_sizes and provider_size_index < len(provider_attempt_sizes) - 1:
+                    provider_size_index += 1
+                    retryable = True
+                else:
+                    retryable = False  # No more sizes to try
+            else:
+                retryable = status in {408, 409}
+
+            if attempt < retries and retryable:
+                continue
+            break
+
         except Exception as exc:
             path.unlink(missing_ok=True)
             last_detail, status = _image_error_detail(exc)
-            if sd_attempt_sizes:
-                failed_size = sd_attempt_sizes[sd_size_index]
-                last_detail = f"{last_detail} (ukuran {failed_size})"
-                provider_failed = status in {500, 502, 503, 504} or any(
-                    token in last_detail.casefold()
-                    for token in ("no results", "outofdevicememory", "out of memory")
-                )
-                if provider_failed and sd_size_index < len(sd_attempt_sizes) - 1:
-                    sd_size_index += 1
             retryable = status in {408, 409, 429, 500, 502, 503, 504} or status is None
             if attempt < retries and retryable:
                 time.sleep(min(4.0, 1.25 * attempt))
                 continue
             break
+
+    # IMPROVEMENT: Log timeout detail
+    if "timeout" in last_detail.lower():
+        _logger.warning(f"Image gen timeout for scene {scene.index} after max retries")
+
     if strict:
         raise LongAnimateImageError(
             f"Generate gambar AI scene {scene.index} gagal setelah {retries} percobaan: {last_detail}"
@@ -1778,17 +1862,17 @@ def _tts_pronunciation_text(text: str) -> str:
 
 def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, str]:
     voice = os.environ.get("LONG_ANIMATE_VOICE", "id-ID-ArdiNeural").strip()
-    rate = os.environ.get("LONG_ANIMATE_VOICE_RATE", "-6%").strip()
-    pitch = os.environ.get("LONG_ANIMATE_VOICE_PITCH", "-2Hz").strip()
-    volume = os.environ.get("LONG_ANIMATE_VOICE_VOLUME", "+0%").strip()
+    rate = os.environ.get("LONG_ANIMATE_VOICE_RATE", "-3%").strip()
+    pitch = os.environ.get("LONG_ANIMATE_VOICE_PITCH", "-1Hz").strip()
+    volume = os.environ.get("LONG_ANIMATE_VOICE_VOLUME", "+5%").strip()
     if not re.fullmatch(r"[A-Za-z0-9-]{2,64}", voice):
         voice = "id-ID-ArdiNeural"
     if not re.fullmatch(r"[+-]\d{1,2}%", rate):
-        rate = "-6%"
+        rate = "-3%"
     if not re.fullmatch(r"[+-]\d{1,3}Hz", pitch):
-        pitch = "-2Hz"
+        pitch = "-1Hz"
     if not re.fullmatch(r"[+-]\d{1,2}%", volume):
-        volume = "+0%"
+        volume = "+5%"
     if not scene.narration.strip():
         silent_path = scene_dir / f"scene_{scene.index:02}.voice.wav"
         _run(
@@ -2237,6 +2321,48 @@ def _slug(value: str) -> str:
     return clean[:52] or "cerita-animasi"
 
 
+@contextmanager
+def animate_work_directory(output_root: Path, script: str) -> Generator[tuple[Path, Path, Path], None, None]:
+    """Context manager untuk automatic cleanup on error."""
+    work_dir = output_root / _slug(script.splitlines()[0] if script.splitlines() else "long-animate")
+    clips_dir = work_dir / "clips"
+    scene_dir = work_dir / "animate_scenes"
+    clips_dir.mkdir(parents=True, exist_ok=True)
+    scene_dir.mkdir(parents=True, exist_ok=True)
+
+    cleanup_on_error = _env_bool("LONG_ANIMATE_CLEANUP_ON_ERROR", True)
+
+    try:
+        yield work_dir, clips_dir, scene_dir
+    except Exception:
+        if cleanup_on_error:
+            _logger.warning(f"Cleanup work directory on error: {work_dir}")
+            shutil.rmtree(work_dir, ignore_errors=True)
+            # Also cleanup face detector
+            global _FACE_DETECTOR
+            _FACE_DETECTOR = None
+        raise
+
+
+def _synthesize_and_trim_scene(
+    scene: AnimateScene,
+    scene_dir: Path,
+) -> tuple[AnimateScene, Path, float]:
+    """Worker function untuk parallel TTS synthesis dan trimming."""
+    voice_path, scene.voice_provider = synthesize_narration(scene, scene_dir)
+    if (
+        scene.voice_provider == "silent_fallback_review_required"
+        and _env_bool("LONG_ANIMATE_TTS_STRICT", True)
+    ):
+        raise RuntimeError(
+            f"TTS scene {scene.index} gagal; render dihentikan agar video tidak berisi dead-air."
+        )
+    trimmed = trim_voice_silence(scene, voice_path, scene_dir)
+    voice_duration = _media_duration(trimmed) if scene.narration.strip() else 0.0
+    _logger.debug(f"✓ TTS scene {scene.index}: {voice_duration:.2f}s")
+    return scene, trimmed, voice_duration
+
+
 def render_long_animate(
     script: str,
     output_root: Path,
@@ -2247,163 +2373,198 @@ def render_long_animate(
     progress: ProgressCallback | None = None,
 ) -> tuple[Path, dict[str, object]]:
     progress = progress or (lambda *_args: None)
-    work_dir = output_root / _slug(script.splitlines()[0] if script.splitlines() else "long-animate")
-    clips_dir = work_dir / "clips"
-    scene_dir = work_dir / "animate_scenes"
-    clips_dir.mkdir(parents=True, exist_ok=True)
-    scene_dir.mkdir(parents=True, exist_ok=True)
+    logger = _logger
+    metrics = RenderMetrics()
+    start_time = time.time()
 
-    progress(18, "selection", "Menyusun storyboard, art bible, dan alur setiap scene")
-    storyboard = build_storyboard(script, ai_config)
-    if len(storyboard.scenes) < 3:
-        raise RuntimeError("Long Animate membutuhkan minimal tiga scene bermakna.")
-    target_duration = _target_duration_seconds()
-    progress(24, "transcript", "Membuat seluruh TTS dan mengukur timing narasi asli")
-    trimmed_voice_paths: list[Path] = []
-    measured_voice_durations: list[float] = []
-    for scene in storyboard.scenes:
-        voice_path, scene.voice_provider = synthesize_narration(scene, scene_dir)
-        if (
-            scene.voice_provider == "silent_fallback_review_required"
-            and _env_bool("LONG_ANIMATE_TTS_STRICT", True)
-        ):
-            raise RuntimeError(
-                f"TTS scene {scene.index} gagal; render dihentikan agar video tidak berisi dead-air."
-            )
-        trimmed = trim_voice_silence(scene, voice_path, scene_dir)
-        trimmed_voice_paths.append(trimmed)
-        measured_voice_durations.append(
-            _media_duration(trimmed) if scene.narration.strip() else 0.0
-        )
-    allocate_scene_durations(storyboard.scenes, measured_voice_durations, target_duration)
-    fitted_voice_paths = [
-        fit_voice_to_scene(scene, voice_path, scene_dir)
-        for scene, voice_path in zip(storyboard.scenes, trimmed_voice_paths)
-    ]
-    narration_track = concatenate_voice_track(fitted_voice_paths, scene_dir, target_duration)
-    shots = plan_storyboard_shots(storyboard)
-    (work_dir / "storyboard.json").write_text(
-        json.dumps(
-            {
-                **asdict(storyboard),
-                "target_duration": target_duration,
-                "shots": [asdict(shot) for shot in shots],
-                "source_script_sha256": hashlib.sha256(script.encode("utf-8")).hexdigest(),
-            },
-            indent=2,
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-    progress(
-        32,
-        "selection",
-        f"Timeline {target_duration:.3f} detik dan {len(shots)} shot siap; memulai produksi visual",
-    )
+    logger.info(f"Starting Long Animate render for: {script[:100]}")
 
-    shot_paths: list[Path] = []
-    shot_image_paths: list[Path] = []
-    style_reference: Path | None = None
-    character_reference: Path | None = None
-    chapter_audits: list[dict[str, object]] = []
-    for shot_index, shot in enumerate(shots, start=1):
-        progress(
-            32 + round(((shot_index - 1) / len(shots)) * 48),
-            "render",
-            f"Membuat dan memeriksa visual shot {shot_index}/{len(shots)}",
-        )
-        image_path = scene_dir / f"shot_{shot.index:02}.png"
-        shot.image_provider = generate_shot_image_with_qa(
-            shot,
-            image_path,
-            storyboard.art_bible,
-            style_reference=style_reference,
-            character_reference=character_reference,
-        )
-        if style_reference is None:
-            style_reference = image_path
-        if character_reference is None and (
-            _expected_people_limit(shot.narration) > 0
-            or _has_any(shot.narration, _NONHUMAN_CHARACTER_TERMS)
-        ):
-            character_reference = image_path
-        shot_path = render_shot_video(shot, image_path, scene_dir)
-        shot_paths.append(shot_path)
-        shot_image_paths.append(image_path)
-        source_scene = storyboard.scenes[shot.scene_index - 1]
-        if not source_scene.image_provider:
-            source_scene.image_provider = shot.image_provider
-        source_scene.qa_attempts = max(source_scene.qa_attempts, shot.qa_attempts)
-        source_scene.qa_score = min(source_scene.qa_score or 1.0, shot.qa_score)
-        chapter_audits.append(
-            {
-                "part": shot.index,
-                "scene": shot.scene_index,
-                "shot": shot.shot_index,
-                "hook": shot.title,
-                "pov": shot.on_screen_text,
-                "core_message": shot.narration[:180],
-                "content_timed_editing": True,
-                "camera_motion": shot.camera_motion,
-                "image_provider": shot.image_provider,
-                "vision_qa_attempts": shot.qa_attempts,
-                "vision_qa_score": round(shot.qa_score, 3),
+    with animate_work_directory(output_root, script) as (work_dir, clips_dir, scene_dir):
+        # Storyboard
+        logger.info("Building storyboard and art bible")
+        progress(18, "selection", "Menyusun storyboard, art bible, dan alur setiap scene")
+        sb_start = time.time()
+        storyboard = build_storyboard(script, ai_config)
+        metrics.storyboard_time = time.time() - sb_start
+        logger.info(f"✓ Storyboard ready: {len(storyboard.scenes)} scenes in {metrics.storyboard_time:.1f}s")
+
+        if len(storyboard.scenes) < 3:
+            raise RuntimeError("Long Animate membutuhkan minimal tiga scene bermakna.")
+        target_duration = _target_duration_seconds()
+
+        # TTS Synthesis (PARALLEL)
+        logger.info("Synthesizing narration with parallel workers")
+        progress(24, "transcript", "Membuat seluruh TTS dan mengukur timing narasi asli")
+        tts_start = time.time()
+
+        trimmed_voice_paths: list[Path | None] = [None] * len(storyboard.scenes)
+        measured_voice_durations: list[float] = [0.0] * len(storyboard.scenes)
+        max_workers = min(4, max(1, os.cpu_count() or 1))
+        metrics.tts_parallel_workers = max_workers
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_synthesize_and_trim_scene, scene, scene_dir): idx
+                for idx, scene in enumerate(storyboard.scenes)
             }
+            for future in as_completed(futures):
+                result_index = futures[future]
+                _scene, trimmed_path, voice_duration = future.result()
+                trimmed_voice_paths[result_index] = trimmed_path
+                measured_voice_durations[result_index] = voice_duration
+
+        metrics.tts_time = time.time() - tts_start
+        logger.info(f"✓ TTS complete: {len(storyboard.scenes)} scenes in {metrics.tts_time:.1f}s ({max_workers} workers)")
+
+        allocate_scene_durations(storyboard.scenes, measured_voice_durations, target_duration)
+        fitted_voice_paths = [
+            fit_voice_to_scene(scene, voice_path, scene_dir)
+            for scene, voice_path in zip(storyboard.scenes, trimmed_voice_paths)
+            if voice_path is not None
+        ]
+        if len(fitted_voice_paths) != len(storyboard.scenes):
+            raise RuntimeError("Hasil TTS tidak lengkap; render dihentikan agar urutan narasi tidak rusak.")
+        narration_track = concatenate_voice_track(fitted_voice_paths, scene_dir, target_duration)
+        shots = plan_storyboard_shots(storyboard)
+        (work_dir / "storyboard.json").write_text(
+            json.dumps(
+                {
+                    **asdict(storyboard),
+                    "target_duration": target_duration,
+                    "shots": [asdict(shot) for shot in shots],
+                    "source_script_sha256": hashlib.sha256(script.encode("utf-8")).hexdigest(),
+                },
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        progress(
+            32,
+            "selection",
+            f"Timeline {target_duration:.3f} detik dan {len(shots)} shot siap; memulai produksi visual",
         )
 
-    progress(82, "render", "Menggabungkan shot tanpa fade hitam atau padding audio antar-scene")
-    assembled = assemble_shot_videos(shot_paths, shots, scene_dir)
+        # Image Generation (dengan timing tracking)
+        logger.info("Generating images and running vision QA")
+        img_start = time.time()
+        shot_paths: list[Path] = []
+        shot_image_paths: list[Path] = []
+        style_reference: Path | None = None
+        character_reference: Path | None = None
+        chapter_audits: list[dict[str, object]] = []
 
-    base_name = f"long_animate_{_slug(storyboard.title)}"
-    output_path = clips_dir / f"{base_name}.mp4"
-    srt_path = clips_dir / f"{base_name}.srt"
-    write_story_subtitles(srt_path, storyboard.scenes)
-    output_aspect, output_width, output_height = _output_geometry()
-    subtitles = _supports_filter("subtitles")
-    drawtext = _supports_filter("drawtext")
-    vf_parts = [
-        "eq=contrast=1.02:saturation=1.04",
-        f"tpad=stop_mode=clone:stop_duration=2,trim=duration={target_duration:.3f},setpts=PTS-STARTPTS",
-    ]
-    if subtitles and any(scene.narration.strip() for scene in storyboard.scenes):
-        vf_parts.append(
-            f"subtitles='{srt_path.name}':original_size={output_width}x{output_height}:"
-            "force_style='FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H00FFFFFF,"
-            "OutlineColour=&H00101010,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=54'"
+        for shot_index, shot in enumerate(shots, start=1):
+            progress(
+                32 + round(((shot_index - 1) / len(shots)) * 48),
+                "render",
+                f"Membuat dan memeriksa visual shot {shot_index}/{len(shots)}",
+            )
+            img_attempt_start = time.time()
+            image_path = scene_dir / f"shot_{shot.index:02}.png"
+            shot.image_provider = generate_shot_image_with_qa(
+                shot,
+                image_path,
+                storyboard.art_bible,
+                style_reference=style_reference,
+                character_reference=character_reference,
+            )
+            if style_reference is None:
+                style_reference = image_path
+            if character_reference is None and (
+                _expected_people_limit(shot.narration) > 0
+                or _has_any(shot.narration, _NONHUMAN_CHARACTER_TERMS)
+            ):
+                character_reference = image_path
+
+            elapsed = time.time() - img_attempt_start
+            retries_used = shot.qa_attempts - 1
+            metrics.image_retry_count += retries_used
+            logger.info(f"✓ Shot {shot_index}/{len(shots)}: {elapsed:.1f}s ({retries_used} retries, {shot.image_provider})")
+
+            shot_path = render_shot_video(shot, image_path, scene_dir)
+            shot_paths.append(shot_path)
+            shot_image_paths.append(image_path)
+            source_scene = storyboard.scenes[shot.scene_index - 1]
+            if not source_scene.image_provider:
+                source_scene.image_provider = shot.image_provider
+            source_scene.qa_attempts = max(source_scene.qa_attempts, shot.qa_attempts)
+            source_scene.qa_score = min(source_scene.qa_score or 1.0, shot.qa_score)
+            chapter_audits.append(
+                {
+                    "part": shot.index,
+                    "scene": shot.scene_index,
+                    "shot": shot.shot_index,
+                    "hook": shot.title,
+                    "pov": shot.on_screen_text,
+                    "core_message": shot.narration[:180],
+                    "content_timed_editing": True,
+                    "camera_motion": shot.camera_motion,
+                    "image_provider": shot.image_provider,
+                    "vision_qa_attempts": shot.qa_attempts,
+                    "vision_qa_score": round(shot.qa_score, 3),
+                }
+            )
+
+        metrics.image_gen_time = time.time() - img_start
+        logger.info(f"✓ Image generation complete: {metrics.image_gen_time:.1f}s total, {metrics.image_retry_count} retries across all shots")
+
+        progress(82, "render", "Menggabungkan shot tanpa fade hitam atau padding audio antar-scene")
+        assembled = assemble_shot_videos(shot_paths, shots, scene_dir)
+
+        base_name = f"long_animate_{_slug(storyboard.title)}"
+        output_path = clips_dir / f"{base_name}.mp4"
+        srt_path = clips_dir / f"{base_name}.srt"
+        write_story_subtitles(srt_path, storyboard.scenes)
+        output_aspect, output_width, output_height = _output_geometry()
+        subtitles = _supports_filter("subtitles")
+        drawtext = _supports_filter("drawtext")
+        vf_parts = [
+            "eq=contrast=1.02:saturation=1.04",
+            f"tpad=stop_mode=clone:stop_duration=2,trim=duration={target_duration:.3f},setpts=PTS-STARTPTS",
+        ]
+        if subtitles and any(scene.narration.strip() for scene in storyboard.scenes):
+            vf_parts.append(
+                f"subtitles='{srt_path.name}':original_size={output_width}x{output_height}:"
+                "force_style='FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H00FFFFFF,"
+                "OutlineColour=&H00101010,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=54'"
+            )
+        if drawtext:
+            vf_parts.append(
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+                "text='ryuundyofficial':fontcolor=white@0.72:fontsize=18:x=34:y=30:"
+                "borderw=1:bordercolor=black@0.50"
+            )
+        duration = target_duration
+        cut_points: list[float] = []
+        cut_cursor = 0.0
+        transition_seconds = _transition_seconds()
+        for shot in shots[:-1]:
+            cut_cursor += shot.duration - transition_seconds
+            cut_points.append(cut_cursor)
+        story_seed = int(hashlib.sha256(script.encode()).hexdigest()[:8], 16)
+        freq_a = 110 + story_seed % 55
+        freq_b = 165 + (story_seed // 7) % 70
+        sfx_window = "+".join(
+            f"between(t\\,{max(0.0, point - 0.05):.3f}\\,{min(duration, point + 0.10):.3f})"
+            for point in cut_points
+        ) or "0"
+        audio_filter = (
+            "[2:a]volume=0.032,lowpass=f=1250[m1];"
+            "[3:a]volume=0.020,lowpass=f=1850[m2];"
+            "[m1][m2]amix=inputs=2:duration=longest:normalize=0[music];"
+            "[1:a]loudnorm=I=-16:TP=-1.5:LRA=9,asplit=2[voice][sidechain];"
+            "[music][sidechain]sidechaincompress=threshold=0.012:ratio=8:attack=18:release=260[ducked];"
+            f"[4:a]highpass=f=900,lowpass=f=4200,volume='0.18*({sfx_window})':eval=frame[sfx];"
+            "[voice][ducked][sfx]amix=inputs=3:duration=first:dropout_transition=0:normalize=0,"
+            f"loudnorm=I=-14:TP=-1.0:LRA=9,apad,atrim=0:{duration:.3f}[aout]"
         )
-    if drawtext:
-        vf_parts.append(
-            "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-            "text='ryuundyofficial':fontcolor=white@0.72:fontsize=18:x=34:y=30:"
-            "borderw=1:bordercolor=black@0.50"
-        )
-    duration = target_duration
-    cut_points: list[float] = []
-    cut_cursor = 0.0
-    transition_seconds = _transition_seconds()
-    for shot in shots[:-1]:
-        cut_cursor += shot.duration - transition_seconds
-        cut_points.append(cut_cursor)
-    story_seed = int(hashlib.sha256(script.encode()).hexdigest()[:8], 16)
-    freq_a = 110 + story_seed % 55
-    freq_b = 165 + (story_seed // 7) % 70
-    sfx_window = "+".join(
-        f"between(t\\,{max(0.0, point - 0.05):.3f}\\,{min(duration, point + 0.10):.3f})"
-        for point in cut_points
-    ) or "0"
-    audio_filter = (
-        "[2:a]volume=0.032,lowpass=f=1250[m1];"
-        "[3:a]volume=0.020,lowpass=f=1850[m2];"
-        "[m1][m2]amix=inputs=2:duration=longest:normalize=0[music];"
-        "[1:a]loudnorm=I=-16:TP=-1.5:LRA=9,asplit=2[voice][sidechain];"
-        "[music][sidechain]sidechaincompress=threshold=0.012:ratio=8:attack=18:release=260[ducked];"
-        f"[4:a]highpass=f=900,lowpass=f=4200,volume='0.18*({sfx_window})':eval=frame[sfx];"
-        "[voice][ducked][sfx]amix=inputs=3:duration=first:dropout_transition=0:normalize=0,"
-        f"loudnorm=I=-14:TP=-1.0:LRA=9,apad,atrim=0:{duration:.3f}[aout]"
-    )
-    quality_crf = {"standard": "19", "high": "16", "max": "14"}.get(video_quality, "16")
-    _run(
-        [
+        quality_crf = {"standard": "19", "high": "16", "max": "14"}.get(video_quality, "16")
+
+        # Timing: Final composite
+        composite_start = time.time()
+        _run(
+            [
             _ffmpeg_path(),
             "-hide_banner",
             "-loglevel",
@@ -2454,58 +2615,66 @@ def render_long_animate(
             "-t",
             f"{duration:.3f}",
             str(output_path.resolve()),
-        ],
-        cwd=clips_dir,
-    )
-    final_qc = final_video_qc(
-        output_path,
-        target_duration=target_duration,
-        width=output_width,
-        height=output_height,
-        cut_points=cut_points,
-    )
-    progress(92, "finalize", "Membuat thumbnail, chapter, dan audit YouTube Long Animate")
-    thumb_path = clips_dir / f"{base_name}_thumb.jpg"
-    _thumbnail(shot_image_paths[0], thumb_path, storyboard.title)
-    prompt_path = clips_dir / f"{base_name}_thumb.txt"
-    prompt_path.write_text(
-        "STRATEGI: custom_long_form_upload\n"
-        f"HOOK: {storyboard.hook}\n"
-        f"ART BIBLE: {storyboard.art_bible}\n"
-        "Gunakan visual scene pertama; pertahankan janji cerita, kontras tinggi, maksimal 4 kata utama, tanpa clickbait menyesatkan.\n",
-        encoding="utf-8",
-    )
-    tags = [tag.strip().lstrip("#") for tag in (required_hashtags or []) if tag.strip()]
-    caption_path = clips_dir / f"{base_name}_caption.txt"
-    caption_path.write_text(
-        f"{storyboard.hook}\n\n{storyboard.core_message}\n\n"
-        + " ".join(f"#{tag}" for tag in tags[:6] if tag.casefold() != "shorts")
-        + "\n",
-        encoding="utf-8",
-    )
-    parts = [
-        {
-            "index": scene.index,
-            "title": scene.title,
-            "duration": round(scene.duration, 3),
-            "narrative_role": scene.narrative_role,
-        }
-        for scene in storyboard.scenes
-    ]
-    score = min(
-        96,
-        82
-        + min(6, len(shots))
-        + (3 if all(scene.voice_provider != "silent_fallback_review_required" for scene in storyboard.scenes) else 0)
-        + (3 if final_qc["passed"] else 0),
-    )
-    max_speech_tempo = max((scene.speech_tempo for scene in storyboard.scenes), default=1.0)
-    timing_weaknesses = (
-        [f"Narasi padat membutuhkan percepatan TTS hingga {max_speech_tempo:.2f}x; ringkas NARASI bila ingin tempo lebih santai."]
-        if max_speech_tempo > 1.35
-        else []
-    )
-    sidecar: dict[str, object] = {
+            ],
+            cwd=clips_dir,
+        )
+
+        metrics.composite_time = time.time() - composite_start
+        logger.info(f"✓ Composite complete: {metrics.composite_time:.1f}s")
+
+        # Timing: Final QC
+        qc_start = time.time()
+        final_qc = final_video_qc(
+            output_path,
+            target_duration=target_duration,
+            width=output_width,
+            height=output_height,
+            cut_points=cut_points,
+        )
+        metrics.qc_time = time.time() - qc_start
+        logger.info(f"✓ QC complete: {metrics.qc_time:.1f}s")
+        progress(92, "finalize", "Membuat thumbnail, chapter, dan audit YouTube Long Animate")
+        thumb_path = clips_dir / f"{base_name}_thumb.jpg"
+        _thumbnail(shot_image_paths[0], thumb_path, storyboard.title)
+        prompt_path = clips_dir / f"{base_name}_thumb.txt"
+        prompt_path.write_text(
+            "STRATEGI: custom_long_form_upload\n"
+            f"HOOK: {storyboard.hook}\n"
+            f"ART BIBLE: {storyboard.art_bible}\n"
+            "Gunakan visual scene pertama; pertahankan janji cerita, kontras tinggi, maksimal 4 kata utama, tanpa clickbait menyesatkan.\n",
+            encoding="utf-8",
+        )
+        tags = [tag.strip().lstrip("#") for tag in (required_hashtags or []) if tag.strip()]
+        caption_path = clips_dir / f"{base_name}_caption.txt"
+        caption_path.write_text(
+            f"{storyboard.hook}\n\n{storyboard.core_message}\n\n"
+            + " ".join(f"#{tag}" for tag in tags[:6] if tag.casefold() != "shorts")
+            + "\n",
+            encoding="utf-8",
+        )
+        parts = [
+            {
+                "index": scene.index,
+                "title": scene.title,
+                "duration": round(scene.duration, 3),
+                "narrative_role": scene.narrative_role,
+            }
+            for scene in storyboard.scenes
+        ]
+        score = min(
+            96,
+            82
+            + min(6, len(shots))
+            + (3 if all(scene.voice_provider != "silent_fallback_review_required" for scene in storyboard.scenes) else 0)
+            + (3 if final_qc["passed"] else 0),
+        )
+        max_speech_tempo = max((scene.speech_tempo for scene in storyboard.scenes), default=1.0)
+        timing_weaknesses = (
+            [f"Narasi padat membutuhkan percepatan TTS hingga {max_speech_tempo:.2f}x; ringkas NARASI bila ingin tempo lebih santai."]
+            if max_speech_tempo > 1.35
+            else []
+        )
+        sidecar: dict[str, object] = {
         "index": 1,
         "start": 0.0,
         "end": round(duration, 3),
@@ -2675,50 +2844,78 @@ def render_long_animate(
             "script_and_image_rights_confirmation_required": True,
             "view_target_is_experiment_not_guarantee": True,
         },
-    }
-    sidecar_path = output_path.with_suffix(".json")
-    sidecar_path.write_text(json.dumps(sidecar, indent=2, ensure_ascii=False), encoding="utf-8")
-    candidate_path = work_dir / "candidates.json"
-    candidate_path.write_text(
-        json.dumps(
-            [
-                {
-                    key: value
-                    for key, value in sidecar.items()
-                    if key
-                    in {
-                        "index",
-                        "start",
-                        "end",
-                        "duration",
-                        "score",
-                        "title",
-                        "reason",
-                        "text",
-                        "hook",
-                        "pov",
-                        "fyp_label",
-                        "strengths",
-                        "weaknesses",
-                        "improvement_ideas",
-                        "applied_edits",
-                        "key_point_score",
-                        "loop_score",
-                        "boundary_quality",
+        }
+        sidecar_path = output_path.with_suffix(".json")
+        sidecar_path.write_text(json.dumps(sidecar, indent=2, ensure_ascii=False), encoding="utf-8")
+        candidate_path = work_dir / "candidates.json"
+        candidate_path.write_text(
+            json.dumps(
+                [
+                    {
+                        key: value
+                        for key, value in sidecar.items()
+                        if key
+                        in {
+                            "index",
+                            "start",
+                            "end",
+                            "duration",
+                            "score",
+                            "title",
+                            "reason",
+                            "text",
+                            "hook",
+                            "pov",
+                            "fyp_label",
+                            "strengths",
+                            "weaknesses",
+                            "improvement_ideas",
+                            "applied_edits",
+                            "key_point_score",
+                            "loop_score",
+                            "boundary_quality",
+                        }
                     }
-                }
-            ],
-            indent=2,
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-    assembled.unlink(missing_ok=True)
-    (scene_dir / "concat.txt").unlink(missing_ok=True)
-    narration_track.unlink(missing_ok=True)
-    for shot_path in shot_paths:
-        shot_path.unlink(missing_ok=True)
-    for voice_path in scene_dir.glob("scene_*.voice.*"):
-        voice_path.unlink(missing_ok=True)
-    progress(95, "finalize", "Long Animate selesai dirakit; menjalankan audit akhir")
-    return output_path, sidecar
+                ],
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        assembled.unlink(missing_ok=True)
+        (scene_dir / "concat.txt").unlink(missing_ok=True)
+        narration_track.unlink(missing_ok=True)
+        for shot_path in shot_paths:
+            shot_path.unlink(missing_ok=True)
+        for voice_path in scene_dir.glob("scene_*.voice.*"):
+            voice_path.unlink(missing_ok=True)
+
+        # IMPROVEMENT: Metrics collection and reporting
+        metrics.total_time_seconds = time.time() - start_time
+
+        # Collect disk usage
+        try:
+            disk_usage_bytes = sum(
+                f.stat().st_size
+                for f in scene_dir.rglob("*")
+                if f.is_file()
+            )
+            metrics.disk_space_mb = disk_usage_bytes / (1024 * 1024)
+        except Exception as e:
+            _logger.warning(f"Could not measure disk usage: {e}")
+            metrics.disk_space_mb = 0.0
+
+        # Save metrics report
+        metrics_report_path = work_dir / "render_report.json"
+        metrics_report_path.write_text(
+            json.dumps(metrics.to_dict(), indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+        _logger.info(f"✅ Long Animate complete: {metrics.total_time_seconds:.1f}s total time")
+        _logger.info(f"  Breakdown: storyboard={metrics.storyboard_time:.1f}s, "
+                     f"tts={metrics.tts_time:.1f}s ({metrics.tts_parallel_workers} workers), "
+                     f"image={metrics.image_gen_time:.1f}s ({metrics.image_retry_count} retries), "
+                     f"composite={metrics.composite_time:.1f}s, qc={metrics.qc_time:.1f}s")
+
+        progress(95, "finalize", "Long Animate selesai dirakit; menjalankan audit akhir")
+        return output_path, sidecar

@@ -9,6 +9,7 @@ from clipper import (
     ClipCandidate,
     CodexEditPlan,
     EmbeddedSplitProfile,
+    MultiPersonProfile,
     ReactionCue,
     SoundEffectCue,
     TranscriptSegment,
@@ -71,6 +72,7 @@ from clipper import (
     resolve_codex_ideas,
     score_window,
     scale_watermark_region,
+    select_multi_person_profiles,
     segments_for_clip,
     split_subtitle_text,
     subtitle_cues,
@@ -88,6 +90,7 @@ from clipper import (
     virtual_camera_angle_cues,
     visual_theme_profile,
     vertical_clean_detail_crop_filter,
+    vertical_multi_person_context_filter,
     write_dynamic_ass,
     youtube_policy_snapshot,
 )
@@ -679,6 +682,42 @@ def test_landscape_speaker_split_has_two_bordered_panels_and_active_pulses():
     assert "between(t,24.000,24.720)" in value
 
 
+def test_vertical_multi_person_context_keeps_primary_and_wide_group_panels():
+    profile = MultiPersonProfile(
+        primary_focus_x=0.31,
+        secondary_focus_x=0.74,
+        simultaneous_frame_ratio=0.71,
+        average_visible_faces=2.6,
+        source_width=1920,
+        source_height=1080,
+    )
+
+    value = vertical_multi_person_context_filter(profile)
+
+    assert "split=3[group_bg_src][group_main_src][group_wide_src]" in value
+    assert "scale=1000:560:force_original_aspect_ratio=decrease" in value
+    assert "overlay=40:70" in value
+    assert "overlay=40:1216" in value
+    assert "crop=974:1080:" in value
+
+
+def test_multi_person_layout_is_limited_to_one_or_two_best_eligible_clips(monkeypatch):
+    candidates = [
+        ClipCandidate(index, 0, 30, 30, 95 - index, f"Clip {index}", "test", "isi")
+        for index in range(1, 8)
+    ]
+    profile = MultiPersonProfile(0.3, 0.7, 0.6, 2.3, 1920, 1080)
+    monkeypatch.setattr(
+        "clipper.detect_multi_person_profile",
+        lambda _path, clip: profile if clip.index in {1, 2, 3} else None,
+    )
+
+    selected = select_multi_person_profiles(Path("source.mp4"), candidates)
+
+    assert list(selected) == [1, 2]
+    assert all(item is profile for item in selected.values())
+
+
 def test_auto_background_detects_uniform_event_banner_with_text():
     import cv2
     import numpy as np
@@ -1061,14 +1100,14 @@ def test_shorts_policy_compliance_records_official_and_stricter_local_limits():
 
 
 def test_youtube_policy_snapshot_marks_future_rules_for_review_without_assuming_them():
-    current = youtube_policy_snapshot(as_of=date(2026, 8, 14))
-    future = youtube_policy_snapshot(as_of=date(2027, 8, 14))
+    current = youtube_policy_snapshot(as_of=date(2026, 8, 18))
+    future = youtube_policy_snapshot(as_of=date(2027, 8, 18))
 
     assert current["review_required"] is False
     assert future["review_required"] is True
     assert future["future_year_assumed_unchanged"] is False
     assert future["rules_are_runtime_guarantee"] is False
-    assert len(future["official_sources"]) == 3
+    assert len(future["official_sources"]) == 4
 
 
 def test_five_k_readiness_is_an_experiment_signal_not_a_view_guarantee():

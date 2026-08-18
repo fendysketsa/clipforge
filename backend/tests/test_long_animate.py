@@ -392,6 +392,36 @@ def test_long_animate_tts_uses_calm_indonesian_islamic_prosody(monkeypatch, tmp_
     assert "Al-Qur'an" in scene.narration
 
 
+def test_long_animate_tts_defaults_to_clear_natural_prosody(monkeypatch, tmp_path):
+    scene = _fallback_storyboard(SCRIPT).scenes[0]
+    captured = {}
+
+    class Result:
+        returncode = 0
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        output_path = command[command.index("--write-media") + 1]
+        long_animate.Path(output_path).write_bytes(b"audio" * 200)
+        return Result()
+
+    for name in (
+        "LONG_ANIMATE_VOICE_RATE",
+        "LONG_ANIMATE_VOICE_PITCH",
+        "LONG_ANIMATE_VOICE_VOLUME",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(long_animate.subprocess, "run", fake_run)
+
+    output, provider = long_animate.synthesize_narration(scene, tmp_path)
+
+    assert provider == "edge_neural"
+    assert output.is_file()
+    assert "--rate=-3%" in captured["command"]
+    assert "--pitch=-1Hz" in captured["command"]
+    assert "--volume=+5%" in captured["command"]
+
+
 def test_subtitles_are_short_and_end_when_voice_ends(tmp_path):
     scenes = _fallback_storyboard(SCRIPT).scenes[:2]
     scenes[0].narration = "Bacalah perlahan agar setiap huruf terdengar jelas dan mudah diperbaiki oleh guru."

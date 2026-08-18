@@ -38,6 +38,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Search 70+ Creative Commons themes, including Islamic insight, mystery, myth/fact, history, and relevant horror; prioritize the last 30 days and expand to 180 days when needed.
 - Permanently skip YouTube source URLs that have already completed clipping.
 - Crop center or shift crop toward detected faces/people.
+- When several faces are visible together, reserve a speaker-plus-group 9:16 layout for only one Short in a small batch or at most two in a larger batch, keeping the rest visually varied.
 - Use an accuracy-first Indonesian transcription preset (`faster-whisper-medium`,
   beam search, VAD, and word timestamps) and invalidate stale lower-quality transcript caches.
 - Manage jobs and generated clips from a Next.js UI.
@@ -51,6 +52,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Node.js 22+
 - npm
 - Network access for YouTube downloads and model downloads
+- Docker builds include Deno and `yt-dlp-ejs` so current YouTube JavaScript challenges can be solved before media download; the downloader retries with the web-embedded client when a default signed URL returns 403.
 - A full FFmpeg build with `drawtext`, `subtitles`/libass, and libx264 (included in the Docker image)
 - Enough CPU, disk, and time for transcription and video encoding
 

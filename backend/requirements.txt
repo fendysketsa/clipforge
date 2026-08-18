@@ -8,6 +8,8 @@ rich==15.0.0
 opencv-python-headless==4.10.0.84
 playwright>=1.56.0,<2.0.0
 uvicorn==0.38.0
-yt-dlp==2026.6.9
+# The default extra installs yt-dlp-ejs, required for YouTube's current JS
+# challenges. Keep this version aligned with the EJS package it resolves.
+yt-dlp[default]==2026.6.9
 edge-tts>=7.2.0,<8.0.0
 pytest==8.3.4
