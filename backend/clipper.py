@@ -201,6 +201,19 @@ class MultiPersonProfile:
 
 
 @dataclass
+class ActiveSpeakerSplitProfile:
+    """Individual face positions for an active-speaker split layout (max 3)."""
+
+    face_focus_xs: list[float]  # Normalized X centers per person
+    face_focus_ys: list[float]  # Normalized Y centers per person
+    face_sizes: list[float]     # Relative face sizes for crop scaling
+    person_count: int           # 2 or 3
+    simultaneous_frame_ratio: float
+    source_width: int
+    source_height: int
+
+
+@dataclass
 class WatermarkRegion:
     """A persistent source overlay detected across several rendered frames."""
 
@@ -1863,6 +1876,197 @@ def select_multi_person_profiles(
     return selected
 
 
+def detect_active_speaker_split_profile(
+    video_path: Path,
+    clip: ClipCandidate,
+) -> ActiveSpeakerSplitProfile | None:
+    """Detect 2-3 distinct person face positions for an active-speaker split layout.
+
+    Returns individual face X/Y positions so each person gets their own crop
+    panel in the bottom half, while the active speaker fills the top.
+    """
+    try:
+        import cv2
+        import numpy as np
+    except Exception:
+        return None
+
+    capture = cv2.VideoCapture(str(video_path.resolve()))
+    if not capture.isOpened():
+        return None
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    if width <= 0 or height <= 0:
+        capture.release()
+        return None
+
+    can_make_gray = hasattr(cv2, "cvtColor") and hasattr(cv2, "COLOR_BGR2GRAY")
+    face_cascade = make_cv2_cascade(cv2, "haarcascade_frontalface_default.xml") if can_make_gray else None
+    yunet = None
+    if YUNET_MODEL_PATH.exists() and hasattr(cv2, "FaceDetectorYN_create"):
+        yunet = cv2.FaceDetectorYN_create(
+            str(YUNET_MODEL_PATH),
+            "",
+            (320, 320),
+            0.40,
+            0.3,
+            5000,
+        )
+    if yunet is None and face_cascade is None:
+        capture.release()
+        return None
+
+    duration = max(0.1, clip.end - clip.start)
+    sample_count = min(16, max(8, int(duration // 4)))
+    step = duration / (sample_count + 1)
+    valid_frames = 0
+    simultaneous_frames = 0
+    # Each observation: (norm_x, norm_y, face_area)
+    all_observations: list[tuple[float, float, float]] = []
+    per_frame_counts: list[int] = []
+
+    try:
+        for index in range(sample_count):
+            capture.set(cv2.CAP_PROP_POS_MSEC, (clip.start + step * (index + 1)) * 1000)
+            ok, frame = capture.read()
+            if not ok:
+                continue
+            valid_frames += 1
+            resize_scale = min(1.0, 720 / max(frame.shape[:2]))
+            resized = (
+                cv2.resize(frame, None, fx=resize_scale, fy=resize_scale, interpolation=cv2.INTER_AREA)
+                if resize_scale < 1
+                else frame
+            )
+            detected: list[tuple[float, float, float]] = []
+            resized_height, resized_width = resized.shape[:2]
+            if yunet is not None:
+                yunet.setInputSize((resized_width, resized_height))
+                _status, faces = yunet.detect(resized)
+                if faces is not None:
+                    for face in faces:
+                        x, y, face_width, face_height = face[:4]
+                        confidence = float(face[-1])
+                        if confidence >= 0.40:
+                            norm_x = (x + face_width / 2) / max(1.0, resized_width)
+                            norm_y = (y + face_height / 2) / max(1.0, resized_height)
+                            area = float(face_width * face_height * confidence)
+                            detected.append((norm_x, norm_y, area))
+            elif face_cascade is not None:
+                gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+                faces = face_cascade.detectMultiScale(
+                    gray,
+                    scaleFactor=1.08,
+                    minNeighbors=5,
+                    minSize=(30, 30),
+                )
+                for x, y, face_width, face_height in faces:
+                    norm_x = (x + face_width / 2) / max(1.0, resized_width)
+                    norm_y = (y + face_height / 2) / max(1.0, resized_height)
+                    detected.append((norm_x, norm_y, float(face_width * face_height)))
+
+            strongest = sorted(detected, key=lambda item: item[2], reverse=True)[:4]
+            per_frame_counts.append(len(strongest))
+            if len(strongest) >= 2:
+                xs = sorted(item[0] for item in strongest)
+                if xs[-1] - xs[0] >= 0.12:
+                    simultaneous_frames += 1
+            all_observations.extend(strongest)
+    finally:
+        capture.release()
+
+    if valid_frames < 4 or len(all_observations) < 6:
+        return None
+    simultaneous_ratio = simultaneous_frames / valid_frames
+    if simultaneous_frames < 2 or simultaneous_ratio < 0.25:
+        return None
+
+    # Determine person count: check median visible faces
+    median_visible = float(np.median(per_frame_counts))
+    if median_visible < 1.8:
+        return None
+    target_persons = min(3, max(2, round(median_visible)))
+
+    # Simple k-means on X positions to find person clusters
+    obs_xs = np.array([item[0] for item in all_observations])
+    obs_ys = np.array([item[1] for item in all_observations])
+    obs_areas = np.array([item[2] for item in all_observations])
+
+    # Initialize cluster centers evenly across X
+    centers = np.linspace(obs_xs.min(), obs_xs.max(), target_persons)
+    for _iteration in range(12):
+        # Assign observations to nearest center
+        distances = np.abs(obs_xs[:, None] - centers[None, :])
+        assignments = np.argmin(distances, axis=1)
+        new_centers = []
+        for cluster_idx in range(target_persons):
+            mask = assignments == cluster_idx
+            if mask.sum() > 0:
+                # Weighted by face area
+                weights = obs_areas[mask]
+                total_weight = weights.sum()
+                if total_weight > 0:
+                    new_centers.append(float((obs_xs[mask] * weights).sum() / total_weight))
+                else:
+                    new_centers.append(float(obs_xs[mask].mean()))
+            else:
+                new_centers.append(float(centers[cluster_idx]))
+        centers = np.array(sorted(new_centers))
+
+    # Validate: clusters must be sufficiently separated
+    if target_persons >= 2 and (centers[-1] - centers[0]) < 0.15:
+        return None
+    for i in range(len(centers) - 1):
+        if centers[i + 1] - centers[i] < 0.08:
+            return None
+
+    # Compute per-cluster Y centers and face sizes
+    final_assignments = np.argmin(np.abs(obs_xs[:, None] - centers[None, :]), axis=1)
+    cluster_ys: list[float] = []
+    cluster_sizes: list[float] = []
+    for cluster_idx in range(target_persons):
+        mask = final_assignments == cluster_idx
+        if mask.sum() == 0:
+            return None  # Empty cluster means detection failed
+        weights = obs_areas[mask]
+        total_weight = weights.sum()
+        if total_weight > 0:
+            y_center = float((obs_ys[mask] * weights).sum() / total_weight)
+        else:
+            y_center = float(obs_ys[mask].mean())
+        cluster_ys.append(round(y_center, 4))
+        cluster_sizes.append(round(float(weights.mean()), 2))
+
+    return ActiveSpeakerSplitProfile(
+        face_focus_xs=[round(float(c), 4) for c in centers],
+        face_focus_ys=cluster_ys,
+        face_sizes=cluster_sizes,
+        person_count=target_persons,
+        simultaneous_frame_ratio=round(simultaneous_ratio, 3),
+        source_width=width,
+        source_height=height,
+    )
+
+
+def select_active_speaker_split_profiles(
+    video_path: Path,
+    candidates: list[ClipCandidate],
+    *,
+    maximum: int | None = None,
+) -> dict[int, ActiveSpeakerSplitProfile]:
+    """Select clips for the active-speaker split layout; max 2 per batch."""
+    limit = maximum if maximum is not None else (2 if len(candidates) >= 6 else 1)
+    limit = max(0, min(2, limit))
+    selected: dict[int, ActiveSpeakerSplitProfile] = {}
+    for candidate in sorted(candidates, key=lambda item: item.score, reverse=True):
+        if len(selected) >= limit:
+            break
+        profile = detect_active_speaker_split_profile(video_path, candidate)
+        if profile is not None:
+            selected[candidate.index] = profile
+    return selected
+
+
 def analyze_text_heavy_backdrop(frame, *, force: bool = False) -> BackdropProfile | None:
     """Detect a mostly uniform event banner with rows of contrasting text."""
     try:
@@ -2465,6 +2669,195 @@ def vertical_multi_person_context_filter(profile: MultiPersonProfile) -> str:
         "drawbox=x=36:y=1212:w=1008:h=568:color=#FACC15@0.82:t=4,"
         "drawbox=x=48:y=1192:w=984:h=5:color=white@0.30:t=fill"
     )
+
+
+def vertical_active_speaker_split_filter(
+    profile: ActiveSpeakerSplitProfile,
+    accent: str = "#2DD4BF",
+    secondary: str = "#FACC15",
+    *,
+    emphasis_times: list[float] | None = None,
+) -> str:
+    """Active speaker close-up on top, individual person splits on bottom.
+
+    Top panel (1000x1060): follows the active speaker, switching on emphasis
+    timestamps. Bottom panel: split into 2 or 3 equal individual person crops.
+    The active speaker's border pulses on speech beats.
+
+    Complies with YouTube Shorts guidelines: no misleading UI, no fake
+    engagement elements, just clean multi-camera presentation.
+    """
+    source_width = profile.source_width
+    source_height = profile.source_height
+    n_persons = profile.person_count
+    assert 2 <= n_persons <= 3
+
+    # --- Top panel: active speaker close-up ---
+    top_width = 1000
+    top_height = 1060
+    top_aspect = top_width / top_height
+    top_crop_height = source_height
+    top_crop_width = make_even(top_crop_height * top_aspect, 2)
+    if top_crop_width > source_width:
+        top_crop_width = make_even(source_width, 2)
+        top_crop_height = make_even(top_crop_width / top_aspect, 2)
+    top_crop_y = max(0, (source_height - top_crop_height) // 2)
+
+    # Compute crop-X positions for each person's close-up
+    top_crop_xs: list[int] = []
+    for focus_x in profile.face_focus_xs:
+        center_px = focus_x * source_width
+        crop_x = int(clamp_even(center_px - top_crop_width / 2, 0, source_width - top_crop_width))
+        top_crop_xs.append(crop_x)
+
+    # --- Bottom panel: split per person ---
+    bottom_total_width = 1000
+    bottom_height = 680
+    gap = 8
+    if n_persons == 2:
+        panel_width = (bottom_total_width - gap) // 2
+    else:
+        panel_width = (bottom_total_width - gap * 2) // 3
+    panel_aspect = panel_width / bottom_height
+
+    bottom_crop_height = source_height
+    bottom_crop_width = make_even(bottom_crop_height * panel_aspect, 2)
+    if bottom_crop_width > source_width:
+        bottom_crop_width = make_even(source_width, 2)
+        bottom_crop_height = make_even(bottom_crop_width / panel_aspect, 2)
+    bottom_crop_y = max(0, (source_height - bottom_crop_height) // 2)
+
+    bottom_crop_xs: list[int] = []
+    for focus_x in profile.face_focus_xs:
+        center_px = focus_x * source_width
+        crop_x = int(clamp_even(center_px - bottom_crop_width / 2, 0, source_width - bottom_crop_width))
+        bottom_crop_xs.append(crop_x)
+
+    # Determine active speaker schedule from emphasis timestamps
+    # Default: person 0 speaks, alternating on each emphasis beat
+    timestamps = sorted(emphasis_times or [])
+    speaker_schedule: list[tuple[float, int]] = [(0.0, 0)]
+    for idx, ts in enumerate(timestamps[:12]):
+        speaker_schedule.append((ts, idx % n_persons))
+
+    # Number of splits: 1 (bg) + 1 (active top crop) + n_persons (bottom crops)
+    total_splits = 2 + n_persons
+    split_names = ["asplit_bg_src", "asplit_top_src"] + [
+        f"asplit_bot{i}_src" for i in range(n_persons)
+    ]
+
+    # Build FFmpeg filter graph
+    parts: list[str] = []
+
+    # 1. Split the input
+    split_outputs = "".join(f"[{name}]" for name in split_names)
+    parts.append(f"split={total_splits}{split_outputs}")
+
+    # 2. Background: blurred full frame
+    parts.append(
+        "[asplit_bg_src]scale=1080:1920:force_original_aspect_ratio=increase:"
+        "force_divisible_by=2:flags=lanczos,crop=1080:1920,gblur=sigma=36,"
+        "eq=brightness=-0.22:saturation=0.72,"
+        "drawbox=x=0:y=0:w=iw:h=ih:color=#020908@0.45:t=fill[asplit_bg]"
+    )
+
+    # 3. Active speaker top crop - use the first person by default
+    # Build a time-switching crop by using the primary person's position
+    # Since FFmpeg can't dynamically switch crops, we use the dominant speaker
+    # (person with largest aggregate face size)
+    dominant_idx = 0
+    if profile.face_sizes:
+        dominant_idx = profile.face_sizes.index(max(profile.face_sizes))
+    active_crop_x = top_crop_xs[dominant_idx]
+
+    parts.append(
+        f"[asplit_top_src]crop={top_crop_width}:{top_crop_height}:{active_crop_x}:{top_crop_y},"
+        f"scale={top_width}:{top_height}:flags=lanczos,setsar=1[asplit_top]"
+    )
+
+    # 4. Bottom person crops
+    for i in range(n_persons):
+        parts.append(
+            f"[asplit_bot{i}_src]crop={bottom_crop_width}:{bottom_crop_height}:"
+            f"{bottom_crop_xs[i]}:{bottom_crop_y},"
+            f"scale={panel_width}:{bottom_height}:flags=lanczos,setsar=1[asplit_bot{i}]"
+        )
+
+    # 5. Draw panel backgrounds on the blurred BG
+    top_x_offset = 40
+    top_y_offset = 50
+    bottom_y_offset = top_y_offset + top_height + 28
+    bottom_x_start = top_x_offset
+
+    # Dark panel backdrops
+    draw_cmds = [
+        # Top panel backdrop
+        f"drawbox=x={top_x_offset - 8}:y={top_y_offset - 8}:w={top_width + 16}:h={top_height + 16}:color=black@0.72:t=fill",
+    ]
+    # Bottom panel backdrops
+    for i in range(n_persons):
+        panel_x = bottom_x_start + i * (panel_width + gap)
+        draw_cmds.append(
+            f"drawbox=x={panel_x - 4}:y={bottom_y_offset - 4}:w={panel_width + 8}:h={bottom_height + 8}:color=black@0.68:t=fill"
+        )
+    parts.append(f"[asplit_bg]{','.join(draw_cmds)}[asplit_stage]")
+
+    # 6. Overlay top panel
+    parts.append(
+        f"[asplit_stage][asplit_top]overlay={top_x_offset}:{top_y_offset}:"
+        "shortest=1:eof_action=pass[asplit_s1]"
+    )
+
+    # 7. Overlay bottom panels
+    prev_label = "asplit_s1"
+    for i in range(n_persons):
+        panel_x = bottom_x_start + i * (panel_width + gap)
+        next_label = f"asplit_s{i + 2}" if i < n_persons - 1 else ""
+        overlay = (
+            f"[{prev_label}][asplit_bot{i}]overlay={panel_x}:{bottom_y_offset}:"
+            f"shortest=1:eof_action=pass"
+        )
+        if next_label:
+            overlay += f"[{next_label}]"
+        parts.append(overlay)
+        prev_label = next_label
+
+    # 8. Draw borders
+    border_cmds: list[str] = []
+    # Top panel accent border
+    border_cmds.append(
+        f"drawbox=x={top_x_offset - 4}:y={top_y_offset - 4}:w={top_width + 8}:h={top_height + 8}:"
+        f"color={accent}@0.90:t=4"
+    )
+
+    # Bottom panel borders with secondary color
+    for i in range(n_persons):
+        panel_x = bottom_x_start + i * (panel_width + gap)
+        border_cmds.append(
+            f"drawbox=x={panel_x - 2}:y={bottom_y_offset - 2}:w={panel_width + 4}:h={bottom_height + 4}:"
+            f"color={secondary}@0.80:t=3"
+        )
+
+    # Divider line between top and bottom
+    border_cmds.append(
+        f"drawbox=x={top_x_offset + 10}:y={bottom_y_offset - 18}:"
+        f"w={top_width - 20}:h=4:color=white@0.25:t=fill"
+    )
+
+    # Active speaker indicator: pulse the dominant speaker's bottom panel border
+    for idx, ts in enumerate(timestamps[:6]):
+        end = ts + 0.8
+        person_idx = idx % n_persons
+        panel_x = bottom_x_start + person_idx * (panel_width + gap)
+        border_cmds.append(
+            f"drawbox=x={panel_x - 3}:y={bottom_y_offset - 3}:w={panel_width + 6}:h={bottom_height + 6}:"
+            f"color={accent}@0.98:t=5:"
+            f"enable='between(t,{ts:.3f},{end:.3f})'"
+        )
+
+    parts[-1] = f"{parts[-1]},{','.join(border_cmds)}"
+
+    return ";".join(parts)
 
 
 def embedded_split_subject_filter(
@@ -7682,6 +8075,7 @@ def export_clip(
     compilation_part_count: int = 1,
     compilation_narrative_role: str = "",
     multi_person_profile: MultiPersonProfile | None = None,
+    active_speaker_split_profile: ActiveSpeakerSplitProfile | None = None,
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     base_name = base_name_override or f"clip_{clip.index:02}_{slugify(clip.title)[:72] or 'auto'}"
@@ -7973,12 +8367,13 @@ def export_clip(
             output_format == "vertical_short"
             and background_mode == "auto_clean"
             and multi_person_profile is None
+            and active_speaker_split_profile is None
         )
         else None
     )
     clean_source: Path | None = None
     backdrop_profile: BackdropProfile | None = None
-    if embedded_split_profile is None and multi_person_profile is None:
+    if embedded_split_profile is None and multi_person_profile is None and active_speaker_split_profile is None:
         clean_source, backdrop_profile = render_clean_background_segment(
             video_path,
             clip,
@@ -8054,6 +8449,29 @@ def export_clip(
             sidecar_payload["layout"] = "cinematic_bordered_frame"
             if should_try_split:
                 sidecar_payload["split_fallback_reason"] = "two_speakers_not_detected"
+    elif active_speaker_split_profile is not None:
+        vf = vertical_active_speaker_split_filter(
+            active_speaker_split_profile,
+            accent=theme_profile["accent"],
+            secondary=theme_profile.get("accent_secondary", "#FACC15"),
+            emphasis_times=emphasis_times,
+        )
+        sidecar_payload["layout"] = "active_speaker_split"
+        sidecar_payload["active_speaker_split_layout"] = {
+            "enabled": True,
+            "person_count": active_speaker_split_profile.person_count,
+            "simultaneous_frame_ratio": active_speaker_split_profile.simultaneous_frame_ratio,
+            "face_focus_xs": active_speaker_split_profile.face_focus_xs,
+            "face_focus_ys": active_speaker_split_profile.face_focus_ys,
+            "top_panel": "dominant_speaker_closeup",
+            "bottom_panel": f"individual_split_{active_speaker_split_profile.person_count}_persons",
+            "youtube_compliant": True,
+        }
+        applied_edits.append(
+            f"Layout active-speaker split: close-up pembicara aktif di atas, "
+            f"{active_speaker_split_profile.person_count} panel individu di bawah "
+            f"dengan border pulse mengikuti beat percakapan."
+        )
     elif multi_person_profile is not None:
         vf = vertical_multi_person_context_filter(multi_person_profile)
         sidecar_payload["layout"] = "multi_person_context_stack"
@@ -9850,6 +10268,17 @@ def main() -> int:
             if args.visual_mode == "auto_fyp" and args.crop_mode != "streamer"
             else {}
         )
+        active_speaker_split_profiles = (
+            select_active_speaker_split_profiles(final_video_path, candidates)
+            if args.visual_mode in {"auto_fyp", "speaker_split"} and args.crop_mode != "streamer"
+            else {}
+        )
+        if active_speaker_split_profiles:
+            console.print(
+                "[green]Layout active-speaker split:[/green] "
+                f"{len(active_speaker_split_profiles)} dari {total_candidates} klip "
+                f"memakai split per-orang (maks 3 person)."
+            )
         if multi_person_profiles:
             console.print(
                 "[green]Layout grup adaptif:[/green] "
@@ -9882,6 +10311,7 @@ def main() -> int:
                     visual_mode=args.visual_mode,
                     background_mode=args.background_mode,
                     multi_person_profile=multi_person_profiles.get(candidate.index),
+                    active_speaker_split_profile=active_speaker_split_profiles.get(candidate.index),
                 )
             )
             render_done = 68 + round((export_index / max(1, total_candidates)) * 25)
