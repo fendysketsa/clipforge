@@ -1213,6 +1213,16 @@ def ensure_studio_page_healthy(page, page_text: str | None = None) -> None:
     )
 
 
+def _url_with_approve_param(url: str) -> str:
+    """Inject ``approve_browser_access=true`` into a Studio URL so that
+    YouTube does not re-show the unsupported-browser interstitial when
+    navigating back after initial approval."""
+    if not url or "approve_browser_access=true" in url.lower():
+        return url
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}approve_browser_access=true"
+
+
 def ensure_supported_studio_browser(page) -> None:
     unsupported_patterns = (
         "sempurnakanpengalamananda",
@@ -1250,14 +1260,33 @@ def ensure_supported_studio_browser(page) -> None:
                 ensure_studio_page_healthy(page)
                 approval_completed = True
                 if current_url and current_url != approval_url:
-                    page.goto(current_url, wait_until="domcontentloaded", timeout=30000)
+                    # Navigate back with approve_browser_access=true so
+                    # YouTube does not re-show the unsupported browser page.
+                    return_url = _url_with_approve_param(current_url)
+                    page.goto(return_url, wait_until="domcontentloaded", timeout=30000)
                     page.wait_for_load_state("domcontentloaded", timeout=15000)
                     page_text = normalized_page_text(page)
                     if any(pattern in page_text for pattern in unsupported_patterns):
-                        raise UploadError(
-                            "YouTube Studio kembali menolak browser setelah halaman channel dipulihkan."
+                        # Retry: navigate directly to approval_url one more
+                        # time, then skip returning to the original page — the
+                        # caller (goto_studio / goto_upload_page) will handle
+                        # the correct destination afterwards.
+                        log(
+                            "Halaman channel masih menolak browser; "
+                            "retry langsung ke halaman approval."
                         )
-                    ensure_studio_page_healthy(page)
+                        page.goto(approval_url, wait_until="domcontentloaded", timeout=30000)
+                        page.wait_for_load_state("domcontentloaded", timeout=15000)
+                        page_text = normalized_page_text(page)
+                        if any(pattern in page_text for pattern in unsupported_patterns):
+                            save_debug_artifacts(page, "youtube-browser-unsupported-retry")
+                            raise UploadError(
+                                "YouTube Studio kembali menolak browser setelah halaman channel dipulihkan. "
+                                "Coba update Playwright/backend atau Login Sekali ulang untuk menyegarkan session."
+                            )
+                        ensure_studio_page_healthy(page)
+                    else:
+                        ensure_studio_page_healthy(page)
                 log("Konfirmasi akses browser YouTube Studio berhasil.")
                 return
         except UploadError:

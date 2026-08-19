@@ -73,7 +73,7 @@ def test_unsupported_browser_page_uses_youtube_official_continue_link(monkeypatc
             {"wait_until": "domcontentloaded", "timeout": 30000},
         ),
         (
-            "https://studio.youtube.com/channel/demo",
+            "https://studio.youtube.com/channel/demo?approve_browser_access=true",
             {"wait_until": "domcontentloaded", "timeout": 30000},
         ),
     ]
@@ -106,7 +106,7 @@ def test_browser_approval_preserves_restore_navigation_error(monkeypatch):
     original_goto = page.goto
 
     def fail_restore(url, **kwargs):
-        if url == "https://studio.youtube.com/channel/demo":
+        if url == "https://studio.youtube.com/channel/demo?approve_browser_access=true":
             raise TimeoutError("restore timeout")
         original_goto(url, **kwargs)
 
@@ -123,7 +123,7 @@ def test_browser_approval_restore_error_never_has_blank_detail(monkeypatch):
     original_goto = page.goto
 
     def fail_restore(url, **kwargs):
-        if url == "https://studio.youtube.com/channel/demo":
+        if url == "https://studio.youtube.com/channel/demo?approve_browser_access=true":
             raise TimeoutError()
         original_goto(url, **kwargs)
 
