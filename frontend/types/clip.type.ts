@@ -40,6 +40,11 @@ export type ClipFile = {
   auditor_name?: string | null;
   audit_id?: string | null;
   growth_series?: string | null;
+  growth_target_views?: number | null;
+  growth_status?: string | null;
+  growth_quality_gate_passed?: boolean | null;
+  growth_next_action?: string | null;
+  growth_checkpoints?: number[];
   is_correct: boolean;
 };
 

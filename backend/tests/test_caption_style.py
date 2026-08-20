@@ -63,6 +63,7 @@ from clipper import (
     localized_watermark_blur_filter,
     modern_blurred_video_frame_filter,
     modern_gradient_border_filters,
+    micro_thesis_profile,
     one_k_experiment_readiness,
     one_k_long_form_readiness,
     payoff_banner_text,
@@ -82,6 +83,7 @@ from clipper import (
     shorts_cta_voiceover_mix_filter,
     shorts_cta_voiceover_text,
     shorts_policy_compliance,
+    social_anecdote_profile,
     subscribe_value_prompt,
     thumbnail_story_copy,
     two_k_experiment_readiness,
@@ -1110,7 +1112,7 @@ def test_youtube_policy_snapshot_marks_future_rules_for_review_without_assuming_
     assert len(future["official_sources"]) == 4
 
 
-def test_ten_k_readiness_is_an_experiment_signal_not_a_view_guarantee():
+def test_five_k_readiness_is_a_stability_experiment_not_a_view_guarantee():
     clip = ClipCandidate(
         1,
         0,
@@ -1128,8 +1130,9 @@ def test_ten_k_readiness_is_an_experiment_signal_not_a_view_guarantee():
 
     readiness = five_k_experiment_readiness(clip, "vertical_short")
 
-    assert readiness["experiment_name"] == "10k_growth_ladder"
-    assert readiness["target_views"] == 10000
+    assert readiness["experiment_name"] == "sustainable_5k_growth"
+    assert readiness["target_views"] == 5000
+    assert readiness["stretch_target_views"] == 10000
     assert readiness["quality_metric"] == "engaged_views"
     assert readiness["minimum_short_export_score"] == 78
     assert readiness["quality_gate_passed"] is True
@@ -1139,11 +1142,154 @@ def test_ten_k_readiness_is_an_experiment_signal_not_a_view_guarantee():
     assert "engaged_views" in readiness["measure_after_publish"]
     assert "subscribers_gained" in readiness["measure_after_publish"]
     assert readiness["review_checkpoints"] == [500, 2000, 5000, 10000]
+    assert readiness["stability_definition"]["success_rule"] == "at_least_3_reach_5000_views"
+    assert readiness["iteration_guardrails"]["delete_and_reupload_to_reset_distribution"] is False
     assert two_k_experiment_readiness(clip, "vertical_short") == readiness
     assert one_k_experiment_readiness(clip, "vertical_short") == readiness
 
 
-def test_one_k_long_form_readiness_uses_story_gate_and_long_form_metrics():
+def test_micro_thesis_rewards_dilemma_nuance_safety_and_nonjudgmental_payoff():
+    segments = [
+        TranscriptSegment(0, 5, "Marah memang manusiawi, tapi keputusan saat emosi perlu ditunda"),
+        TranscriptSegment(5, 11, "kalau ucapan kita mulai menyakiti atau membahayakan orang lain"),
+        TranscriptSegment(11, 18, "ambil jarak, tenangkan tubuh, lalu cari bantuan dan titik temu"),
+        TranscriptSegment(18, 25, "memilih jeda bukan berarti lemah, bisa jadi itu cara paling aman"),
+    ]
+    text = " ".join(item.text for item in segments)
+
+    profile = micro_thesis_profile(text, 25)
+    metrics = candidate_story_metrics(segments, 25)
+    score, reasons = score_window(segments, 25)
+
+    assert profile["qualified"] is True
+    assert profile["structure_score"] >= 90
+    assert profile["speech_density_fit"] is True
+    assert profile["copied_reference_assets"] is False
+    assert metrics["micro_thesis_qualified"] is True
+    assert metrics["boundary_quality"] == "payoff_tuntas"
+    assert score >= 78
+    assert "micro-thesis bernuansa tuntas dalam 20–32 detik" in reasons
+
+
+def test_micro_thesis_uses_restrained_authority_visuals_without_copying_reference():
+    clip = ClipCandidate(
+        index=1,
+        start=0,
+        end=25,
+        duration=25,
+        score=90,
+        title="Cara Aman Menghadapi Marah",
+        reason="alur bernuansa",
+        text=(
+            "Marah memang manusiawi, tapi keputusan saat emosi perlu ditunda kalau ucapan "
+            "mulai menyakiti orang lain. Ambil jarak dan cari titik temu. Memilih jeda bukan "
+            "berarti lemah, bisa jadi itu cara paling aman untuk semua sebelum menentukan "
+            "langkah berikutnya dengan kepala jernih."
+        ),
+        hook="Marah itu manusiawi, tapi kapan harus berhenti?",
+        boundary_quality="payoff_tuntas",
+    )
+
+    plan = auto_fyp_visual_plan(clip, "vertical_short")
+    readiness = five_k_experiment_readiness(clip, "vertical_short")
+
+    assert plan["accent"] == "restrained_authority"
+    assert plan["visual_restraint"]["maximum_virtual_camera_cuts"] == 2
+    assert plan["visual_restraint"]["reaction_stickers_allowed"] is False
+    assert plan["visual_restraint"]["cinematic_smoke_allowed"] is False
+    assert plan["micro_thesis"]["copied_reference_assets"] is False
+    assert readiness["signals"]["micro_thesis_20_32_seconds"] is True
+    assert readiness["iteration_guardrails"]["treat_single_viral_reference_as_outlier_not_baseline"] is True
+
+
+def test_social_anecdote_rewards_first_person_setup_comparison_and_safe_punchline():
+    segments = [
+        TranscriptSegment(0, 4, "Saya tadi baru turun dari mobil lalu ada orang bilang"),
+        TranscriptSegment(4, 9, "kok kamu kelihatan masih kecil, saya langsung kaget"),
+        TranscriptSegment(9, 15, "Memang orang yang belum pernah ketemu saya sering salah kira"),
+        TranscriptSegment(15, 20, "di HP badan saya terlihat tinggi besar"),
+        TranscriptSegment(20, 23, "ternyata pas dilihat aslinya kecil, saya cuma bisa tertawa"),
+    ]
+    text = " ".join(item.text for item in segments)
+
+    profile = social_anecdote_profile(text, 23)
+    metrics = candidate_story_metrics(segments, 23)
+    score, reasons = score_window(segments, 23)
+
+    assert profile["qualified"] is True
+    assert profile["structure_score"] >= 90
+    assert profile["self_directed_payoff"] is True
+    assert profile["synthetic_outrage_or_harassment_added"] is False
+    assert metrics["social_anecdote_qualified"] is True
+    assert metrics["boundary_quality"] == "payoff_tuntas"
+    assert metrics["loop_score"] >= 45
+    assert score >= 78
+    assert "anekdot sosial punya setup, pembanding, dan punchline aman" in reasons
+
+
+def test_social_anecdote_uses_brief_story_card_and_fast_face_safe_reframes():
+    segments = [
+        TranscriptSegment(0, 4, "Saya tadi baru turun dari mobil lalu ada orang bilang"),
+        TranscriptSegment(4, 9, "kok kamu kelihatan masih kecil, saya langsung kaget"),
+        TranscriptSegment(9, 15, "Memang orang yang belum pernah ketemu saya sering salah kira"),
+        TranscriptSegment(15, 20, "di HP badan saya terlihat tinggi besar"),
+        TranscriptSegment(20, 23, "ternyata pas dilihat aslinya kecil, saya cuma bisa tertawa"),
+    ]
+    text = " ".join(item.text for item in segments)
+    clip = ClipCandidate(
+        index=1,
+        start=0,
+        end=23,
+        duration=23,
+        score=92,
+        title="Salah Dikira Saat Baru Datang",
+        reason="anekdot lengkap",
+        text=text,
+        hook="Baru turun dari mobil langsung salah dikira",
+        boundary_quality="payoff_tuntas",
+    )
+
+    plan = auto_fyp_visual_plan(clip, "vertical_short")
+    cues = virtual_camera_angle_cues(
+        clip,
+        segments,
+        limit=7,
+        min_gap=2.2,
+        target_cadence=2.8,
+    )
+    title_filter = viral_title_overlay_filter(
+        "story.txt",
+        clip.duration,
+        overlay_seconds=float(plan["opening_context_seconds"]),
+    )
+    readiness = five_k_experiment_readiness(clip, "vertical_short")
+    growth = codex_growth_blueprint(clip, "vertical_short")
+
+    assert plan["accent"] == "story_punchline"
+    assert plan["opening_context_seconds"] == 1.9
+    assert plan["visual_restraint"]["maximum_virtual_camera_cuts"] == 7
+    assert plan["visual_restraint"]["reaction_stickers_allowed"] is False
+    assert plan["visual_restraint"]["authentic_source_reaction_priority"] is True
+    assert len(cues) >= 4
+    assert "between(t,0,1.900)" in title_filter
+    assert readiness["signals"]["social_anecdote_18_32_seconds"] is True
+    assert growth["conversion"]["visible_end_card"] is False
+    assert growth["conversion"]["protect_story_punchline_and_natural_loop"] is True
+
+
+def test_social_anecdote_does_not_reward_a_punchline_targeting_someone_else():
+    text = (
+        "Saya tadi datang lalu ada orang bilang sesuatu dan saya kaget. "
+        "Setelah dilihat di HP ternyata dia memang bodoh dan jelek sekali."
+    )
+
+    profile = social_anecdote_profile(text, 22)
+
+    assert profile["self_directed_payoff"] is False
+    assert profile["qualified"] is False
+
+
+def test_five_k_long_form_readiness_uses_story_gate_and_long_form_metrics():
     clip = ClipCandidate(
         1,
         0,
@@ -1159,9 +1305,9 @@ def test_one_k_long_form_readiness_uses_story_gate_and_long_form_metrics():
 
     readiness = one_k_long_form_readiness(clip, {"quality_gate_passed": True})
 
-    assert readiness["target_views"] == 1000
-    assert readiness["experiment_name"] == "1k_long_form_growth"
-    assert readiness["review_checkpoints"] == [100, 300, 1000]
+    assert readiness["target_views"] == 5000
+    assert readiness["experiment_name"] == "5k_long_form_growth"
+    assert readiness["review_checkpoints"] == [100, 500, 1000, 5000]
     assert readiness["quality_metric"] == "watch_time"
     assert readiness["quality_gate_passed"] is True
     assert readiness["guarantee"] is False

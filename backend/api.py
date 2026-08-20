@@ -325,6 +325,11 @@ class ClipFile(BaseModel):
     auditor_name: str | None = None
     audit_id: str | None = None
     growth_series: str | None = None
+    growth_target_views: int | None = None
+    growth_status: str | None = None
+    growth_quality_gate_passed: bool | None = None
+    growth_next_action: str | None = None
+    growth_checkpoints: list[int] = Field(default_factory=list)
     is_correct: bool = False
 
 
@@ -2466,9 +2471,15 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
                 "Upload diblokir: quality gate Long Story belum lolos. "
                 "Pilih materi dengan sedikitnya tiga beat unik dan render ulang tanpa filler."
             )
-    if str(sidecar.get("production_model") or "") == "codex_scene_cinema_v1":
-        readiness = sidecar.get("one_k_long_form_readiness")
+    production_model = str(sidecar.get("production_model") or "")
+    if production_model.startswith("codex_scene_cinema_v"):
+        readiness = sidecar.get("growth_readiness")
+        if not isinstance(readiness, dict):
+            readiness = sidecar.get("one_k_long_form_readiness")
         story_arc = sidecar.get("story_arc")
+        final_qc = sidecar.get("final_qc")
+        cold_open_contract = sidecar.get("cold_open_contract")
+        requires_v2_contract = production_model != "codex_scene_cinema_v1"
         if (
             not job.request.confirm_long_animate_rights
             or not isinstance(readiness, dict)
@@ -2478,6 +2489,17 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
                 not isinstance(scene, dict)
                 or scene.get("voice_provider") == "silent_fallback_review_required"
                 for scene in story_arc
+            )
+            or (
+                requires_v2_contract
+                and (not isinstance(final_qc, dict) or not final_qc.get("passed"))
+            )
+            or (
+                requires_v2_contract
+                and (
+                    not isinstance(cold_open_contract, dict)
+                    or not cold_open_contract.get("quality_gate_passed")
+                )
             )
         ):
             return (
@@ -4825,6 +4847,12 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
         growth = growth if isinstance(growth, dict) else {}
         series = growth.get("series")
         series = series if isinstance(series, dict) else {}
+        growth_readiness = sidecar.get("growth_readiness")
+        if not isinstance(growth_readiness, dict):
+            growth_readiness = sidecar.get("five_k_experiment_readiness")
+        if not isinstance(growth_readiness, dict):
+            growth_readiness = sidecar.get("one_k_long_form_readiness")
+        growth_readiness = growth_readiness if isinstance(growth_readiness, dict) else {}
 
         raw_score = sidecar.get("score")
         fyp_score = (
@@ -4894,6 +4922,32 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
                 growth_series=(
                     str(series.get("name")).strip() if series.get("name") else None
                 ),
+                growth_target_views=(
+                    int(growth_readiness["target_views"])
+                    if isinstance(growth_readiness.get("target_views"), (int, float))
+                    and not isinstance(growth_readiness.get("target_views"), bool)
+                    else None
+                ),
+                growth_status=(
+                    str(growth_readiness.get("status")).strip()
+                    if growth_readiness.get("status")
+                    else None
+                ),
+                growth_quality_gate_passed=(
+                    bool(growth_readiness.get("quality_gate_passed"))
+                    if "quality_gate_passed" in growth_readiness
+                    else None
+                ),
+                growth_next_action=(
+                    str(growth_readiness.get("next_action")).strip()
+                    if growth_readiness.get("next_action")
+                    else None
+                ),
+                growth_checkpoints=[
+                    int(item)
+                    for item in growth_readiness.get("review_checkpoints", [])
+                    if isinstance(item, (int, float)) and not isinstance(item, bool)
+                ][:6],
             )
         )
     clips.sort(key=lambda item: item.name)

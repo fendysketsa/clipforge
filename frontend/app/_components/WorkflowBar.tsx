@@ -149,7 +149,7 @@ export function WorkflowBar({
     if (isProcessing) return isLongAnimate
       ? "Menjalankan Scene Cinema: storyboard, gambar, animasi, suara, subtitle, dan audit AI."
       : isLongForm
-        ? "Menjalankan Long Story Director: teaser, alur, render, dan quality gate 1K."
+        ? "Menjalankan Long Story Director: teaser, alur, render, dan quality gate stabilitas 5K."
         : "Menjalankan pipeline klip pendek satu per satu.";
     if (hasSource) return "Sumber siap. Atur gaya lalu mulai proses.";
     return "Masukkan link atau upload video untuk memulai.";

@@ -624,7 +624,7 @@ def test_long_animate_preflight_requires_rights_and_working_voice(monkeypatch):
         api,
         "clip_sidecar_payload",
         lambda _clip: {
-            "production_model": "codex_scene_cinema_v1",
+            "production_model": "codex_scene_cinema_v2",
             "one_k_long_form_readiness": {"quality_gate_passed": True},
             "story_arc": [
                 {"voice_provider": "edge_neural"},
@@ -638,6 +638,53 @@ def test_long_animate_preflight_requires_rights_and_working_voice(monkeypatch):
 
     assert "pemeriksaan hak" in issue
     assert "quality gate scene" in issue
+
+
+def test_long_animate_v2_preflight_requires_final_qc_and_cold_open_contract(monkeypatch):
+    import api
+
+    clip = ClipFile(
+        name="long_animate_kontrak-hook.mp4",
+        url="/outputs/demo/long_animate_kontrak-hook.mp4",
+        size_bytes=1,
+    )
+    job = ClipJob(
+        id="job-long-animate-v2-contract",
+        status="completed",
+        request=ClipJobRequest(
+            clip_mode="long_animate",
+            script_text="Naskah orisinal dengan cold-open, perkembangan, dan payoff yang lengkap untuk pengujian quality gate.",
+            confirm_long_animate_rights=True,
+        ),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    base_sidecar = {
+        "production_model": "codex_scene_cinema_v2",
+        "growth_readiness": {"quality_gate_passed": True},
+        "story_arc": [
+            {"voice_provider": "edge_neural"},
+            {"voice_provider": "edge_neural"},
+            {"voice_provider": "edge_neural"},
+        ],
+    }
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: base_sidecar)
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+
+    assert "quality gate scene" in issue
+
+    complete_contract = {
+        **base_sidecar,
+        "final_qc": {"passed": True},
+        "cold_open_contract": {"quality_gate_passed": True},
+    }
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: complete_contract)
+
+    issue_after_contract = youtube_monetization_preflight_issue(job, clip) or ""
+
+    assert "quality gate scene" not in issue_after_contract
 
 
 def test_completed_upload_cleanup_delay_defaults_to_thirty_seconds(monkeypatch):

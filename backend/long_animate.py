@@ -121,6 +121,8 @@ class AnimateShot:
 STORYBOARD_SYSTEM_PROMPT = (
     "You are an animation director and storyboard editor fluent in Indonesian. Turn a user-authored script "
     "into a coherent, original 16:9 YouTube story. Every scene must materially advance the narrative. "
+    "The first scene is a cold-open contract: show the concrete conflict, risk, result, or visual question immediately; "
+    "never spend the opening on a logo, greeting, generic establishing shot, or context that does not prove the title promise. "
     "Treat the user's script as the only source of truth. Use a consistent visual world but vary composition, "
     "scale, palette, symbolic objects, and camera motion. Never default to an Indonesian, Islamic, child, family, "
     "school, mosque, or human scene unless that identity or setting is supported by the script. Never replace a "
@@ -2674,6 +2676,52 @@ def render_long_animate(
             if max_speech_tempo > 1.35
             else []
         )
+        narrative_roles = [scene.narrative_role for scene in storyboard.scenes]
+        animate_quality_gate_passed = bool(
+            len(storyboard.scenes) >= 3
+            and score >= 84
+            and final_qc.get("passed")
+            and narrative_roles
+            and narrative_roles[0] == "cold_open"
+            and narrative_roles[-1] == "payoff_conclusion"
+            and all(
+                scene.voice_provider != "silent_fallback_review_required"
+                for scene in storyboard.scenes
+            )
+        )
+        animate_growth_readiness = {
+            "version": 2,
+            "experiment_name": "5k_long_form_growth",
+            "target_views": 5000,
+            "stretch_target_views": 10000,
+            "review_checkpoints": [100, 500, 1000, 5000],
+            "quality_gate_passed": animate_quality_gate_passed,
+            "status": (
+                "ready_to_test"
+                if animate_quality_gate_passed
+                else "revise_story_before_publishing"
+            ),
+            "next_action": (
+                "Review Private, cocokkan promise judul-thumbnail dengan cold-open, lalu uji packaging native YouTube."
+                if animate_quality_gate_passed
+                else "Perbaiki cold-open, payoff, voice, atau final QC sebelum publikasi."
+            ),
+            "measure_after_publish": [
+                "home_and_suggested_ctr",
+                "first_30_second_retention",
+                "average_view_duration",
+                "audience_retention_dips_and_spikes",
+                "end_screen_click_rate",
+                "subscribers_gained",
+                "returning_viewers",
+            ],
+            "stability_definition": {
+                "window": "last_5_comparable_publications",
+                "success_rule": "at_least_3_reach_5000_views",
+                "comparison_baseline": "rolling_median_last_10_same_format_and_series",
+            },
+            "guarantee": False,
+        }
         sidecar: dict[str, object] = {
         "index": 1,
         "start": 0.0,
@@ -2767,6 +2815,13 @@ def render_long_animate(
             "minimum_score": round(min((shot.qa_score for shot in shots), default=0.0), 3),
         },
         "final_qc": final_qc,
+        "cold_open_contract": {
+            "first_scene_role": narrative_roles[0] if narrative_roles else None,
+            "last_scene_role": narrative_roles[-1] if narrative_roles else None,
+            "title_promise_must_be_visible_immediately": True,
+            "logo_or_greeting_before_value_allowed": False,
+            "quality_gate_passed": animate_quality_gate_passed,
+        },
         "content_edit_signature": {
             "version": 1,
             "derived_from_story": True,
@@ -2802,20 +2857,8 @@ def render_long_animate(
             "third_party_music_used": False,
             "third_party_video_used": False,
         },
-        "one_k_long_form_readiness": {
-            "target_views": 1000,
-            "review_checkpoints": [100, 300, 1000],
-            "quality_gate_passed": len(storyboard.scenes) >= 3 and score >= 84,
-            "measure_after_publish": [
-                "home_and_suggested_ctr",
-                "first_30_second_retention",
-                "average_view_duration",
-                "audience_retention_dips_and_spikes",
-                "end_screen_click_rate",
-                "subscribers_gained",
-            ],
-            "guarantee": False,
-        },
+        "one_k_long_form_readiness": animate_growth_readiness,
+        "growth_readiness": animate_growth_readiness,
         "packaging_experiment": {
             "version": 1,
             "platform": "youtube_native_title_thumbnail_ab_test",

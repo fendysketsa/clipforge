@@ -305,6 +305,291 @@ TENSION_WORDS = {
     "vs",
 }
 
+# A compact authority clip can outperform a busier edit when it resolves one
+# emotionally relevant dilemma with nuance. These signals are intentionally
+# topic-agnostic: they describe the editorial shape, not a creator or source to
+# imitate.
+MICRO_THESIS_DILEMMA_WORDS = {
+    "aman",
+    "bahaya",
+    "benar",
+    "boleh",
+    "buruk",
+    "cerai",
+    "haram",
+    "jahat",
+    "marah",
+    "menikah",
+    "pacaran",
+    "salah",
+    "wajib",
+}
+MICRO_THESIS_NUANCE_PHRASES = (
+    "akan tetapi",
+    "bisa jadi",
+    "kalau memang",
+    "meskipun",
+    "namun",
+    "sebaiknya",
+    "sementara itu",
+    "tapi",
+    "tergantung",
+    "walaupun",
+)
+MICRO_THESIS_SAFETY_WORDS = {
+    "bahaya",
+    "darurat",
+    "kekerasan",
+    "membahayakan",
+    "melindungi",
+    "merugikan",
+    "menyakiti",
+    "risiko",
+}
+MICRO_THESIS_NONJUDGMENT_PHRASES = (
+    "belum tentu",
+    "bisa jadi",
+    "bukan berarti",
+    "manusiawi",
+    "tidak otomatis",
+    "tidak selalu",
+)
+
+
+def micro_thesis_profile(
+    text: str,
+    duration: float,
+    *,
+    opening_text: str = "",
+    closing_text: str = "",
+) -> dict[str, object]:
+    """Detect a short dilemma→nuance→boundary→payoff editorial arc.
+
+    This is derived from the referenced video's general story mechanics, not
+    its wording, speaker, branding, or footage. The profile is suitable for
+    original and properly licensed material alike.
+    """
+    normalized = re.sub(r"\s+", " ", text).strip().casefold()
+    words = re.findall(r"[\w']+", normalized)
+    if not opening_text:
+        opening_text = " ".join(words[: min(18, max(8, len(words) // 3))])
+    if not closing_text:
+        closing_word_count = min(30, max(14, math.ceil(len(words) * 0.45)))
+        closing_text = " ".join(words[-closing_word_count:])
+    opening = re.sub(r"\s+", " ", opening_text).strip().casefold()
+    closing = re.sub(r"\s+", " ", closing_text).strip().casefold()
+    opening_words = set(re.findall(r"[\w']+", opening))
+    all_words = set(words)
+    closing_words = set(re.findall(r"[\w']+", closing))
+
+    dilemma_first = bool(opening_words.intersection(MICRO_THESIS_DILEMMA_WORDS))
+    nuance_present = any(phrase in normalized for phrase in MICRO_THESIS_NUANCE_PHRASES)
+    safety_boundary = bool(all_words.intersection(MICRO_THESIS_SAFETY_WORDS))
+    nonjudgmental_payoff = any(
+        phrase in closing for phrase in MICRO_THESIS_NONJUDGMENT_PHRASES
+    )
+    closing_safety_boundary = bool(
+        closing_words.intersection(MICRO_THESIS_SAFETY_WORDS)
+    )
+    closing_resolution = bool(
+        closing_words.intersection({"karena", "ketemu", "selesai", "solusi", "upaya"})
+        or closing_safety_boundary
+        or nonjudgmental_payoff
+    )
+    duration_fit = 20.0 <= duration <= 32.0
+    word_count_fit = 34 <= len(words) <= 82
+    speech_density = len(words) / max(1.0, duration)
+    speech_density_fit = 1.45 <= speech_density <= 2.60
+    structure_score = sum(
+        (
+            22 if dilemma_first else 0,
+            20 if nuance_present else 0,
+            18 if safety_boundary else 0,
+            18 if nonjudgmental_payoff else 0,
+            12 if closing_resolution else 0,
+            6 if duration_fit else 0,
+            4 if word_count_fit else 0,
+            6 if speech_density_fit else 0,
+        )
+    )
+    qualified = bool(
+        duration_fit
+        and word_count_fit
+        and speech_density_fit
+        and dilemma_first
+        and nuance_present
+        and closing_resolution
+        and (safety_boundary or nonjudgmental_payoff)
+    )
+    return {
+        "version": 1,
+        "qualified": qualified,
+        "structure_score": min(100, structure_score),
+        "duration_fit_20_32_seconds": duration_fit,
+        "word_count_fit": word_count_fit,
+        "speech_density_words_per_second": round(speech_density, 3),
+        "speech_density_fit": speech_density_fit,
+        "dilemma_in_opening": dilemma_first,
+        "nuance_present": nuance_present,
+        "safety_boundary": safety_boundary,
+        "closing_safety_boundary": closing_safety_boundary,
+        "nonjudgmental_payoff": nonjudgmental_payoff,
+        "closing_resolution": closing_resolution,
+        "copied_reference_assets": False,
+    }
+
+
+# Short first-person stories need a different editorial model than an
+# authority micro-thesis. The useful pattern is social friction, chronological
+# movement, a concrete comparison/turn, then a self-directed payoff. It is
+# intentionally language-aware for common Indonesian and Javanese transcript
+# forms without depending on a particular creator's wording.
+SOCIAL_ANECDOTE_FIRST_PERSON_WORDS = {
+    "aku",
+    "awake",
+    "badanku",
+    "diriku",
+    "gue",
+    "kami",
+    "kulo",
+    "saya",
+}
+SOCIAL_ANECDOTE_EVENT_WORDS = {
+    "bilang",
+    "diejek",
+    "dihina",
+    "dikira",
+    "dibilang",
+    "komentar",
+    "kaget",
+    "malu",
+    "menertawakan",
+    "ngomong",
+    "nyangka",
+    "teriak",
+}
+SOCIAL_ANECDOTE_SEQUENCE_WORDS = {
+    "baru",
+    "bareng",
+    "habis",
+    "kemarin",
+    "ketika",
+    "lalu",
+    "nembe",
+    "pas",
+    "setelah",
+    "tadi",
+    "waktu",
+    "wau",
+}
+SOCIAL_ANECDOTE_TURN_PHRASES = (
+    "akhirnya",
+    "asline",
+    "aslinya",
+    "begitu dilihat",
+    "di hp",
+    "ditingali",
+    "malah",
+    "padahal",
+    "pas dilihat",
+    "tenggane hp",
+    "ternyata",
+    "waktu dilihat",
+)
+SOCIAL_ANECDOTE_PAYOFF_WORDS = {
+    "aslinya",
+    "cuma",
+    "kecil",
+    "malah",
+    "memang",
+    "pancene",
+    "penghinaan",
+    "ternyata",
+}
+
+
+def social_anecdote_profile(
+    text: str,
+    duration: float,
+    *,
+    opening_text: str = "",
+    closing_text: str = "",
+) -> dict[str, object]:
+    """Detect social-friction anecdote → comparison → self-directed payoff."""
+    normalized = re.sub(r"\s+", " ", text).strip().casefold()
+    words = re.findall(r"[\w']+", normalized)
+    if not opening_text:
+        opening_text = " ".join(words[: min(20, max(9, len(words) // 3))])
+    if not closing_text:
+        closing_count = min(28, max(12, math.ceil(len(words) * 0.38)))
+        closing_text = " ".join(words[-closing_count:])
+    opening = re.sub(r"\s+", " ", opening_text).strip().casefold()
+    closing = re.sub(r"\s+", " ", closing_text).strip().casefold()
+    opening_words = set(re.findall(r"[\w']+", opening))
+    all_words = set(words)
+    closing_words = set(re.findall(r"[\w']+", closing))
+
+    first_person_opening = bool(
+        opening_words.intersection(SOCIAL_ANECDOTE_FIRST_PERSON_WORDS)
+    )
+    social_friction = bool(all_words.intersection(SOCIAL_ANECDOTE_EVENT_WORDS))
+    chronological_motion = bool(
+        all_words.intersection(SOCIAL_ANECDOTE_SEQUENCE_WORDS)
+    )
+    comparison_turn = any(phrase in normalized for phrase in SOCIAL_ANECDOTE_TURN_PHRASES)
+    closing_payoff = bool(
+        closing_words.intersection(SOCIAL_ANECDOTE_PAYOFF_WORDS | LAUGH_WORDS)
+    )
+    self_directed_payoff = bool(
+        closing_words.intersection(SOCIAL_ANECDOTE_FIRST_PERSON_WORDS)
+        and closing_payoff
+    )
+    duration_fit = 18.0 <= duration <= 32.0
+    word_count_fit = 30 <= len(words) <= 82
+    speech_density = len(words) / max(1.0, duration)
+    speech_density_fit = 1.30 <= speech_density <= 2.85
+    structure_score = sum(
+        (
+            18 if first_person_opening else 0,
+            20 if social_friction else 0,
+            14 if chronological_motion else 0,
+            18 if comparison_turn else 0,
+            14 if closing_payoff else 0,
+            8 if self_directed_payoff else 0,
+            4 if duration_fit else 0,
+            2 if word_count_fit else 0,
+            2 if speech_density_fit else 0,
+        )
+    )
+    qualified = bool(
+        duration_fit
+        and word_count_fit
+        and speech_density_fit
+        and first_person_opening
+        and social_friction
+        and chronological_motion
+        and comparison_turn
+        and closing_payoff
+        and self_directed_payoff
+    )
+    return {
+        "version": 1,
+        "qualified": qualified,
+        "structure_score": min(100, structure_score),
+        "duration_fit_18_32_seconds": duration_fit,
+        "word_count_fit": word_count_fit,
+        "speech_density_words_per_second": round(speech_density, 3),
+        "speech_density_fit": speech_density_fit,
+        "first_person_opening": first_person_opening,
+        "social_friction": social_friction,
+        "chronological_motion": chronological_motion,
+        "comparison_turn": comparison_turn,
+        "closing_payoff": closing_payoff,
+        "self_directed_payoff": self_directed_payoff,
+        "synthetic_outrage_or_harassment_added": False,
+        "copied_reference_assets": False,
+    }
+
 MYSTERY_WORDS = {
     "angker",
     "arwah",
@@ -3605,7 +3890,13 @@ def five_k_experiment_readiness(
     clip: ClipCandidate,
     output_format: OutputFormat,
 ) -> dict[str, object]:
-    """Describe a 10K-view growth experiment without predicting distribution."""
+    """Describe a repeatable 5K-view experiment without predicting distribution.
+
+    Five thousand views is treated as a portfolio outcome, not a property of one
+    render. The stability rule deliberately compares like-for-like uploads and
+    changes one variable at a time so a creator can learn from audience response
+    without delete/re-upload spam or misleading packaging.
+    """
     score = max(0, min(100, int(round(clip.score))))
     if score >= 88:
         status = "ready_to_test"
@@ -3615,10 +3906,13 @@ def five_k_experiment_readiness(
         status = "test_hook_variant_first"
     else:
         status = "revise_before_publishing"
+    micro_thesis = micro_thesis_profile(clip.text, clip.duration)
+    social_anecdote = social_anecdote_profile(clip.text, clip.duration)
     return {
-        "version": 4,
-        "experiment_name": "10k_growth_ladder",
-        "target_views": 10000,
+        "version": 5,
+        "experiment_name": "sustainable_5k_growth",
+        "target_views": 5000,
+        "stretch_target_views": 10000,
         "target_metric": (
             "shorts_views_starts_or_replays"
             if output_format == "vertical_short"
@@ -3636,14 +3930,33 @@ def five_k_experiment_readiness(
         ),
         "readiness_score": score,
         "status": status,
+        "next_action": (
+            "Publikasikan setelah review Private; ukur terhadap 10 upload terakhir dengan format dan seri yang sama."
+            if status == "ready_to_test"
+            else "Uji satu varian packaging atau hook, lalu bandingkan dengan baseline format dan seri yang sama."
+            if status == "worth_testing"
+            else "Perkuat hook dan promise-payoff sebelum publikasi."
+        ),
         "guarantee": False,
         "format": output_format,
+        "stability_definition": {
+            "window": "last_5_comparable_publications",
+            "success_rule": "at_least_3_reach_5000_views",
+            "comparison_baseline": "rolling_median_last_10_same_format_and_series",
+            "minimum_sample_warning": "do_not_call_stable_before_5_comparable_publications",
+        },
         "signals": {
             "hook_present": bool((clip.hook or clip.title).strip()),
             "single_key_point_score": clip.key_point_score,
             "semantic_loop_score": clip.loop_score,
             "complete_boundary": clip.boundary_quality in {"payoff_tuntas", "kalimat_tuntas"},
             "content_specific_subscribe_value": bool(clip.text.strip()),
+            "micro_thesis_20_32_seconds": bool(micro_thesis["qualified"]),
+            "micro_thesis_structure_score": int(micro_thesis["structure_score"]),
+            "social_anecdote_18_32_seconds": bool(social_anecdote["qualified"]),
+            "social_anecdote_structure_score": int(
+                social_anecdote["structure_score"]
+            ),
         },
         "measure_after_publish": (
             [
@@ -3683,6 +3996,18 @@ def five_k_experiment_readiness(
             ]
         ),
         "review_checkpoints": [500, 2000, 5000, 10000],
+        "review_windows_hours": [24, 72, 168, 672],
+        "iteration_guardrails": {
+            "change_one_variable_per_test": True,
+            "compare_same_format_and_series": True,
+            "delete_and_reupload_to_reset_distribution": False,
+            "publish_near_duplicate_variants": False,
+            "misleading_packaging": False,
+            "optimize_for_viewer_satisfaction_not_views_alone": True,
+            "treat_single_viral_reference_as_outlier_not_baseline": True,
+            "copy_reference_speaker_branding_wording_or_footage": False,
+            "manufacture_ridicule_conflict_or_harassment": False,
+        },
     }
 
 
@@ -3690,15 +4015,16 @@ def one_k_long_form_readiness(
     clip: ClipCandidate,
     story_director: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    """Describe a 1K-view long-form experiment without promising distribution."""
+    """Backward-compatible name for the active 5K long-form experiment."""
     base = five_k_experiment_readiness(clip, "landscape_compilation")
     story = story_director or {}
     story_gate = bool(story.get("quality_gate_passed"))
     base.update(
         {
-            "version": 1,
-            "experiment_name": "1k_long_form_growth",
-            "target_views": 1000,
+            "version": 2,
+            "experiment_name": "5k_long_form_growth",
+            "target_views": 5000,
+            "stretch_target_views": 10000,
             "target_metric": "youtube_views",
             "quality_metric": "watch_time",
             "quality_gate_passed": story_gate and bool((clip.hook or clip.title).strip()),
@@ -3707,7 +4033,7 @@ def one_k_long_form_readiness(
                 if story_gate
                 else "revise_story_before_publishing"
             ),
-            "review_checkpoints": [100, 300, 1000],
+            "review_checkpoints": [100, 500, 1000, 5000],
             "measure_after_publish": [
                 "impressions",
                 "home_and_suggested_ctr",
@@ -3726,6 +4052,11 @@ def one_k_long_form_readiness(
                 "strengthen_end_screen_to_related_video",
             ],
             "story_director_quality_gate": story_gate,
+            "next_action": (
+                "Review Private, cocokkan promise judul-thumbnail dengan 30 detik awal, lalu jalankan A/B packaging native YouTube."
+                if story_gate
+                else "Susun ulang minimal tiga beat unik dari cold-open sampai payoff sebelum publikasi."
+            ),
             "guarantee": False,
         }
     )
@@ -3736,7 +4067,7 @@ def two_k_experiment_readiness(
     clip: ClipCandidate,
     output_format: OutputFormat,
 ) -> dict[str, object]:
-    """Backward-compatible alias; the active Shorts target is now 10K."""
+    """Backward-compatible alias; the active stability target is now 5K."""
     return five_k_experiment_readiness(clip, output_format)
 
 
@@ -3802,10 +4133,37 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
     all_words = set(re.findall(r"[\w']+", text.casefold()))
     closing_words = set(re.findall(r"[\w']+", closing.casefold()))
     opening_words = set(re.findall(r"[\w']+", opening.casefold()))
+    micro_thesis = micro_thesis_profile(
+        text,
+        duration,
+        opening_text=opening,
+        closing_text=closing,
+    )
+    social_anecdote = social_anecdote_profile(
+        text,
+        duration,
+        opening_text=opening,
+        closing_text=closing,
+    )
     signal_words = HOOK_WORDS | TENSION_WORDS | PAYOFF_WORDS | IMPORTANT_WORDS
     signal_hits = all_words.intersection(signal_words)
-    payoff_near_end = bool(closing_words.intersection(PAYOFF_WORDS | IMPORTANT_WORDS))
-    complete_ending = text.rstrip().endswith((".", "!", "?"))
+    payoff_near_end = bool(
+        closing_words.intersection(PAYOFF_WORDS | IMPORTANT_WORDS)
+        or (
+            micro_thesis["qualified"]
+            and micro_thesis["closing_resolution"]
+        )
+        or (
+            social_anecdote["qualified"]
+            and social_anecdote["closing_payoff"]
+        )
+    )
+    punctuation_ending = text.rstrip().endswith((".", "!", "?"))
+    complete_ending = bool(
+        punctuation_ending
+        or micro_thesis["qualified"]
+        or social_anecdote["qualified"]
+    )
     opening_hook = bool(
         opening_words.intersection((HOOK_WORDS - WEAK_STARTS) | TENSION_WORDS)
         or "?" in opening
@@ -3821,6 +4179,8 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
     key_point_score += 8 if re.search(r"\b\d+(?:[.,]\d+)?\b", text) else 0
     key_point_score += 7 if "?" in text else 0
     key_point_score += 8 if density >= 1.25 else 3 if density >= 0.9 else -8
+    key_point_score += 14 if micro_thesis["qualified"] else 0
+    key_point_score += 14 if social_anecdote["qualified"] else 0
     key_point_score -= filler_hits * 12
     if not complete_ending:
         key_point_score -= 10
@@ -3828,11 +4188,15 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
     opening_concepts = _content_words(opening)
     closing_concepts = _content_words(closing)
     concept_overlap = opening_concepts.intersection(closing_concepts)
-    semantic_reconnection = bool(concept_overlap - IMPORTANT_WORDS - PAYOFF_WORDS)
+    semantic_reconnection = bool(
+        concept_overlap - IMPORTANT_WORDS - PAYOFF_WORDS
+        or social_anecdote["qualified"]
+    )
     question_to_payoff = "?" in opening and payoff_near_end and semantic_reconnection
     hook_to_payoff = opening_hook and payoff_near_end and semantic_reconnection
     loop_score = min(45, len(concept_overlap) * 15)
     loop_score += 35 if question_to_payoff else 20 if hook_to_payoff else 0
+    loop_score += 25 if social_anecdote["qualified"] else 0
     loop_score += 12 if complete_ending else -12
     if not opening_concepts:
         loop_score -= 10
@@ -3850,6 +4214,10 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
         "boundary_quality": boundary_quality,
         "payoff_near_end": payoff_near_end,
         "complete_ending": complete_ending,
+        "micro_thesis_qualified": bool(micro_thesis["qualified"]),
+        "micro_thesis_score": int(micro_thesis["structure_score"]),
+        "social_anecdote_qualified": bool(social_anecdote["qualified"]),
+        "social_anecdote_score": int(social_anecdote["structure_score"]),
     }
 
 
@@ -3863,6 +4231,23 @@ def is_meaningful_candidate_end(
 ) -> bool:
     """Avoid emitting arbitrary cuts in the middle of a thought."""
     last = window[-1]
+    window_duration = max(0.0, last.end - window[0].start)
+    micro_thesis_complete = bool(
+        micro_thesis_profile(
+            " ".join(item.text for item in window),
+            window_duration,
+            opening_text=" ".join(item.text for item in window[:2]),
+            closing_text=" ".join(item.text for item in window[-2:]),
+        )["qualified"]
+    )
+    social_anecdote_complete = bool(
+        social_anecdote_profile(
+            " ".join(item.text for item in window),
+            window_duration,
+            opening_text=" ".join(item.text for item in window[:2]),
+            closing_text=" ".join(item.text for item in window[-2:]),
+        )["qualified"]
+    )
     last_words = set(re.findall(r"[\w']+", last.text.casefold()))
     natural_sentence = last.text.rstrip().endswith((".", "!", "?"))
     explicit_resolution = bool(last_words.intersection(PAYOFF_WORDS | IMPORTANT_WORDS))
@@ -3872,7 +4257,15 @@ def is_meaningful_candidate_end(
         not is_last
         and segments[end_idx + 1].end - window[0].start > max_duration
     )
-    return natural_sentence or explicit_resolution or is_last or next_is_boundary or next_exceeds_limit
+    return (
+        natural_sentence
+        or explicit_resolution
+        or micro_thesis_complete
+        or social_anecdote_complete
+        or is_last
+        or next_is_boundary
+        or next_exceeds_limit
+    )
 
 
 def candidate_fyp_analysis(
@@ -3908,6 +4301,18 @@ def candidate_fyp_analysis(
     has_question = "?" in text
     complete_ending = text.rstrip().endswith((".", "!", "?"))
     story_metrics = candidate_story_metrics(items, duration)
+    micro_thesis = micro_thesis_profile(
+        text,
+        duration,
+        opening_text=opening_text,
+        closing_text=" ".join(item.text for item in items[-3:]),
+    )
+    social_anecdote = social_anecdote_profile(
+        text,
+        duration,
+        opening_text=opening_text,
+        closing_text=" ".join(item.text for item in items[-3:]),
+    )
     strongest_line = strongest_advice_line(items)
     hook_reference = first_sentence(opening_text or text, max_words=6)
     if not opening_has_hook and strongest_line:
@@ -3928,6 +4333,15 @@ def candidate_fyp_analysis(
             )
         else:
             ideas.append("Hook — buka langsung dengan konflik atau fakta utama sebelum konteks.")
+
+    if micro_thesis["qualified"]:
+        strengths.append(
+            "micro-thesis 20–32 detik merangkai dilema, nuansa, batas risiko, dan payoff tanpa menghakimi"
+        )
+    if social_anecdote["qualified"]:
+        strengths.append(
+            "anekdot sosial merangkai kejadian, perbandingan, dan punchline yang diarahkan ke diri sendiri"
+        )
 
     active_first_30_signals = sum(first_30_signals.values())
     if active_first_30_signals >= 3:
@@ -4029,6 +4443,18 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
         laugh_hits
         or re.search(r"(?:^|\W)(?:ha){2,}(?:\W|$)|w+k+w+k+|he(?:he)+", text.lower())
     )
+    micro_thesis = micro_thesis_profile(
+        text,
+        duration,
+        opening_text=opening_text,
+        closing_text=" ".join(item.text for item in items[-3:]),
+    )
+    social_anecdote = social_anecdote_profile(
+        text,
+        duration,
+        opening_text=opening_text,
+        closing_text=" ".join(item.text for item in items[-3:]),
+    )
 
     score = 24
     reasons: list[str] = []
@@ -4039,6 +4465,14 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
     elif 15 <= duration <= 75:
         score += 12
         reasons.append("durasi masih oke")
+
+    if micro_thesis["qualified"]:
+        score += 16
+        reasons.append("micro-thesis bernuansa tuntas dalam 20–32 detik")
+
+    if social_anecdote["qualified"]:
+        score += 16
+        reasons.append("anekdot sosial punya setup, pembanding, dan punchline aman")
 
     if hook_hits:
         bump = min(18, len(hook_hits) * 5)
@@ -4145,7 +4579,7 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
     if loop_score >= 45:
         reasons.append("hook dan payoff membentuk loop semantik")
 
-    if word_count < 55:
+    if word_count < 55 and not micro_thesis["qualified"]:
         score -= 12
         reasons.append("terlalu sedikit konteks")
 
@@ -4244,11 +4678,22 @@ def candidate_topic_similarity(left: ClipCandidate, right: ClipCandidate) -> flo
 
 
 def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0) -> float:
+    micro_thesis = micro_thesis_profile(candidate.text, candidate.duration)
+    social_anecdote = social_anecdote_profile(candidate.text, candidate.duration)
+    effective_target = (
+        23.0
+        if social_anecdote["qualified"]
+        else 26.0
+        if micro_thesis["qualified"]
+        else target_duration
+    )
     return (
         candidate.score
         + candidate.key_point_score * 0.10
         + candidate.loop_score * 0.05
-        - abs(candidate.duration - target_duration) * 0.05
+        + (4.0 if micro_thesis["qualified"] else 0.0)
+        + (4.0 if social_anecdote["qualified"] else 0.0)
+        - abs(candidate.duration - effective_target) * 0.05
     )
 
 
@@ -4662,6 +5107,12 @@ AI_SYSTEM_PROMPT = (
     "worship detail and preserve the speaker's evidence without inventing rulings; Islamic-history clips must "
     "build an accurate premise-conflict-payoff arc with an explicit lesson for life today. Prefer a specific "
     "problem, correction, contrast, or transformation over generic preaching. "
+    "For a focused 20–32 second authority clip, strongly prefer a truthful micro-thesis that opens on one "
+    "relatable dilemma, adds nuance, states a safety or ethical boundary, and lands on a nonjudgmental conclusion. "
+    "Do not force this structure when the transcript lacks those elements, and never imitate another speaker's wording or branding. "
+    "For an 18–32 second first-person anecdote, prefer a real social-friction event, chronological setup, "
+    "one concrete comparison or reveal, and a self-directed punchline. Do not manufacture ridicule, intensify "
+    "harassment, or turn an identifiable bystander into the target of the joke. "
     "Reject source-channel intros, outros, credits, sponsor mentions, requests to subscribe/follow, "
     "and thanks addressed to another channel or media brand. Never put a source channel or media brand in "
     "the clip title. Never turn myths, folklore, or supernatural claims into established Islamic facts; "
@@ -4722,6 +5173,11 @@ def ai_rescore_candidates(
             "boundary_quality": candidate.boundary_quality,
             "heuristic_strengths": candidate.strengths,
             "heuristic_weaknesses": candidate.weaknesses,
+            "micro_thesis": micro_thesis_profile(candidate.text, candidate.duration),
+            "social_anecdote": social_anecdote_profile(
+                candidate.text,
+                candidate.duration,
+            ),
             "text": candidate.text[:1200],
         }
         for idx, candidate in enumerate(pool)
@@ -5277,8 +5733,16 @@ def auto_fyp_visual_plan(
     variation = content_edit_variation(clip)
     archival_match = any(term in searchable for term in ARCHIVAL_VISUAL_WORDS)
     depth_match = bool(words.intersection(DEPTH_VISUAL_WORDS))
+    micro_thesis = micro_thesis_profile(clip.text, clip.duration)
+    social_anecdote = social_anecdote_profile(clip.text, clip.duration)
 
-    if archival_match:
+    if output_format == "vertical_short" and social_anecdote["qualified"]:
+        accent = "story_punchline"
+        reason = "social_friction_comparison_self_directed_payoff"
+    elif output_format == "vertical_short" and micro_thesis["qualified"]:
+        accent = "restrained_authority"
+        reason = "dilemma_nuance_safety_payoff_micro_thesis"
+    elif archival_match:
         accent = "retro_archive"
         reason = "historical_or_archival_story_signal"
     elif depth_match and variation in {1, 3, 5}:
@@ -5289,12 +5753,37 @@ def auto_fyp_visual_plan(
         reason = "clarity_and_authenticity_priority"
 
     return {
-        "version": 1,
+        "version": 3,
         "base": "cinematic_clean_detail",
         "accent": accent,
         "reason": reason,
         "content_derived": True,
         "variation": variation,
+        "micro_thesis": micro_thesis,
+        "social_anecdote": social_anecdote,
+        "opening_context_seconds": 1.9 if accent == "story_punchline" else 3.2,
+        "visual_restraint": {
+            "stable_speaker_priority": accent == "restrained_authority",
+            "face_and_gesture_priority": accent
+            in {"restrained_authority", "story_punchline"},
+            "maximum_virtual_camera_cuts": (
+                7
+                if accent == "story_punchline"
+                else 2
+                if accent == "restrained_authority"
+                else 5
+            ),
+            "reaction_stickers_allowed": accent
+            not in {"restrained_authority", "story_punchline"},
+            "authentic_source_reaction_priority": accent == "story_punchline",
+            "cinematic_smoke_allowed": accent
+            not in {"restrained_authority", "story_punchline"},
+            "dialogue_first_audio": accent
+            in {"restrained_authority", "story_punchline"},
+            "target_reframe_cadence_seconds": (
+                2.8 if accent == "story_punchline" else 9.5
+            ),
+        },
         "speaker_split": (
             "detect_two_speakers" if output_format == "landscape_compilation" else "off"
         ),
@@ -5401,9 +5890,10 @@ def viral_title_overlay_filter(
     eyebrow: str = "WAJIB TAHU",
     accent: str = "#FFF200",
     variation: int = 0,
+    overlay_seconds: float = SHORTS_TITLE_OVERLAY_SECONDS,
 ) -> str:
     """Render a transcript-grounded, content-adaptive Shorts context card."""
-    title_end = min(max(0.1, duration), SHORTS_TITLE_OVERLAY_SECONDS)
+    title_end = min(max(0.1, duration), max(0.4, overlay_seconds))
     active = f"enable='between(t,0,{title_end:.3f})'"
     font_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     font_regular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
@@ -5454,7 +5944,9 @@ def shorts_engagement_prompt(clip: ClipCandidate) -> str:
     """Create a short, theme-derived question instead of a repeated subscribe template."""
     theme = detect_visual_theme(clip)
     searchable = f"{clip.title} {clip.hook} {clip.text}".casefold()
-    if "?" in (clip.hook or ""):
+    if social_anecdote_profile(clip.text, clip.duration)["qualified"]:
+        prompt = "KAMU PERNAH SALAH DIKIRA?"
+    elif "?" in (clip.hook or ""):
         prompt = "JAWABANMU SAMA ATAU BEDA?"
     elif theme == "mystery":
         prompt = "MITOS ATAU FAKTA MENURUTMU?"
@@ -5475,7 +5967,9 @@ def subscribe_value_prompt(clip: ClipCandidate) -> str:
     """Give viewers a topic-specific reason to subscribe after receiving value."""
     theme = detect_visual_theme(clip)
     searchable = f"{clip.title} {clip.hook} {clip.pov} {clip.text}".casefold()
-    if any(term in searchable for term in ARCHIVAL_VISUAL_WORDS):
+    if social_anecdote_profile(clip.text, clip.duration)["qualified"]:
+        prompt = "SUBSCRIBE UNTUK CERITA & HIKMAH BERIKUTNYA"
+    elif any(term in searchable for term in ARCHIVAL_VISUAL_WORDS):
         prompt = "SUBSCRIBE UNTUK KISAH & HIKMAH BERIKUTNYA"
     elif theme == "islamic":
         prompt = "SUBSCRIBE UNTUK HIKMAH BERIKUTNYA"
@@ -5954,6 +6448,7 @@ def virtual_camera_angle_cues(
     *,
     limit: int = 5,
     min_gap: float = 5.2,
+    target_cadence: float = 9.5,
 ) -> list[CameraAngleCue]:
     """Plan sparse face-safe medium/close cuts on meaningful speech boundaries.
 
@@ -6004,7 +6499,10 @@ def virtual_camera_angle_cues(
 
     # Strong semantic beats get first refusal. Cadence candidates then fill
     # longer stretches so a 30–60 second Short never feels like one static crop.
-    desired_count = min(limit, max(1, int(duration // 9.5)))
+    desired_count = min(
+        limit,
+        max(1, int(duration // max(2.0, target_cadence))),
+    )
     selected: list[tuple[int, float, float, str]] = []
     for candidate in sorted(candidates, key=lambda item: (-item[0], item[1])):
         if candidate[0] <= 1 and len(selected) >= max(1, desired_count // 2):
@@ -6782,6 +7280,7 @@ def clean_detail_edit_filter(
     camera_angle_cues: list[CameraAngleCue] | None = None,
     detail_filter: str = "",
     variation: int = 0,
+    title_overlay_seconds: float = SHORTS_TITLE_OVERLAY_SECONDS,
 ) -> str:
     """Keep source detail clean while adding sparse, story-timed visual rhythm."""
     safe_duration = max(0.1, duration)
@@ -6841,6 +7340,7 @@ def clean_detail_edit_filter(
                     eyebrow=str(profile.get("badge") or "WAJIB TAHU"),
                     accent=cover_card_accent(profile),
                     variation=variation,
+                    overlay_seconds=title_overlay_seconds,
                 )
             )
 
@@ -6893,6 +7393,7 @@ def enhanced_edit_filter(
     payoff_text_filename: str = "",
     cinematic_pov_windows: list[tuple[float, float]] | None = None,
     camera_angle_cues: list[CameraAngleCue] | None = None,
+    title_overlay_seconds: float = SHORTS_TITLE_OVERLAY_SECONDS,
 ) -> str:
     """Add context-aware motion graphics while keeping faces and captions readable."""
     safe_duration = max(0.1, duration)
@@ -7018,7 +7519,7 @@ def enhanced_edit_filter(
         # Keep the source moving and put the truthful, transcript-derived title
         # in the face/UI-safe upper third. The strong black outline mirrors the
         # fast-scanning title style commonly used in Shorts grids.
-        cover_end = min(safe_duration, SHORTS_TITLE_OVERLAY_SECONDS)
+        cover_end = min(safe_duration, title_overlay_seconds)
         if cover_text_filename and cover_end >= 0.4:
             filters.append(
                 viral_title_overlay_filter(
@@ -7027,6 +7528,7 @@ def enhanced_edit_filter(
                     eyebrow=str(profile.get("badge") or "WAJIB TAHU"),
                     accent=cover_card_accent(profile),
                     variation=motion_variant,
+                    overlay_seconds=title_overlay_seconds,
                 )
             )
         else:
@@ -7381,6 +7883,8 @@ def codex_growth_blueprint(
     }
     series_name, audience_promise = series_profiles[theme]
     is_short = output_format == "vertical_short"
+    micro_thesis = micro_thesis_profile(clip.text, clip.duration)
+    social_anecdote = social_anecdote_profile(clip.text, clip.duration)
     return {
         "version": CODEX_GROWTH_FRAMEWORK_VERSION,
         "owner": FENDY_AUDITOR_NAME,
@@ -7408,11 +7912,33 @@ def codex_growth_blueprint(
             "payoff_required": True,
             "semantic_loop_only_when_earned": True,
             "chapters_recommended": not is_short,
+            "micro_thesis_strategy": micro_thesis if is_short else None,
+            "social_anecdote_strategy": social_anecdote if is_short else None,
+        },
+        "reference_learning": {
+            "adopted_patterns": [
+                "dilemma_nuance_safety_boundary_nonjudgmental_payoff",
+                "social_friction_chronology_comparison_self_directed_payoff",
+            ],
+            "applies_when_detected": bool(
+                is_short
+                and (micro_thesis["qualified"] or social_anecdote["qualified"])
+            ),
+            "single_reference_is_outlier_not_baseline": True,
+            "copy_speaker_branding_wording_or_footage": False,
+            "manufacture_ridicule_or_harassment": False,
+            "rights_and_originality_gate_unchanged": True,
         },
         "conversion": {
             "engagement_prompt": shorts_engagement_prompt(clip) if is_short else "RESPONS SETELAH PAYOFF",
             "subscribe_value": subscribe_value_prompt(clip),
             "cta_after_value": True,
+            "visible_end_card": not bool(
+                is_short and social_anecdote["qualified"]
+            ),
+            "protect_story_punchline_and_natural_loop": bool(
+                is_short and social_anecdote["qualified"]
+            ),
             "short_to_related_long_form": is_short,
             "incentive_or_fake_urgency": False,
         },
@@ -8116,7 +8642,17 @@ def export_clip(
         }
     )
     auto_visual_accent = str(auto_visual_plan["accent"])
-    islamic_background_music = clip_has_islamic_context(clip)
+    title_overlay_seconds = float(
+        auto_visual_plan.get("opening_context_seconds", SHORTS_TITLE_OVERLAY_SECONDS)
+    )
+    dialogue_first_accent = auto_visual_accent in {
+        "restrained_authority",
+        "story_punchline",
+    }
+    islamic_background_music = (
+        clip_has_islamic_context(clip)
+        and not dialogue_first_accent
+    )
     music_ducking_supported = islamic_background_music and ffmpeg_has_filter(
         "sidechaincompress"
     )
@@ -8131,7 +8667,27 @@ def export_clip(
         else None
     )
     camera_angle_cues = (
-        virtual_camera_angle_cues(clip, clip_segments)
+        virtual_camera_angle_cues(
+            clip,
+            clip_segments,
+            limit=(
+                7
+                if auto_visual_accent == "story_punchline"
+                else 2
+                if auto_visual_accent == "restrained_authority"
+                else 5
+            ),
+            min_gap=(
+                2.2
+                if auto_visual_accent == "story_punchline"
+                else 9.0
+                if auto_visual_accent == "restrained_authority"
+                else 5.2
+            ),
+            target_cadence=(
+                2.8 if auto_visual_accent == "story_punchline" else 9.5
+            ),
+        )
         if enhanced_edit and output_format == "vertical_short"
         else []
     )
@@ -8141,7 +8697,11 @@ def export_clip(
     subscribe_prompt = subscribe_value_prompt(clip)
     auditor_identity = fendy_auditor_identity(clip, output_format)
     growth_blueprint = codex_growth_blueprint(clip, output_format)
-    reaction_cues = detect_reaction_cues(clip, clip_segments)
+    reaction_cues = (
+        []
+        if dialogue_first_accent
+        else detect_reaction_cues(clip, clip_segments)
+    )
     sound_effect_cues = (
         contextual_sound_effect_cues(
             duration,
@@ -8155,6 +8715,10 @@ def export_clip(
     )
     if enhanced_edit:
         sound_effect_cues = apply_codex_audio_cues(sound_effect_cues, duration, adaptive_plan)
+        if auto_visual_accent == "restrained_authority":
+            sound_effect_cues = sound_effect_cues[:1]
+        elif auto_visual_accent == "story_punchline":
+            sound_effect_cues = []
         if clean_detail_pipeline:
             sound_effect_cues = sound_effect_cues[:3]
     drawtext_supported = ffmpeg_has_filter("drawtext")
@@ -8163,20 +8727,34 @@ def export_clip(
     subscriber_cta_planned = (
         output_format == "vertical_short"
         or compilation_part_number == compilation_part_count
-    )
+    ) and auto_visual_accent != "story_punchline"
     applied_edits = list(clip.applied_edits)
     if automatic_short_title:
         applied_edits.append(
             "Kartu konteks adaptif otomatis ditanam di awal: headline berasal dari hook, sedangkan label dan warna mengikuti isi cerita."
         )
     if enhanced_edit and output_format == "vertical_short":
+        if auto_visual_accent == "restrained_authority":
+            applied_edits.append(
+                "Mode restrained-authority menjaga pembicara stabil: maksimal dua reframe, tanpa reaction sticker/asap, dan audio dialog diprioritaskan."
+            )
+        elif auto_visual_accent == "story_punchline":
+            applied_edits.append(
+                "Mode story-punchline memakai kartu konteks 1,9 detik, reframe pada beat cerita, tanpa sticker/asap/SFX buatan, dan mempertahankan reaksi asli pembicara."
+            )
         if adaptive_plan.hook_boost:
-            applied_edits.append("Hook diberi impact pulse dan accent audio pada detik pertama.")
+            applied_edits.append(
+                "Hook diberi kartu kejadian singkat tanpa menutupi ekspresi pembicara."
+                if auto_visual_accent == "story_punchline"
+                else "Hook diberi impact pulse dan accent audio pada detik pertama."
+            )
         if adaptive_plan.tempo_boost:
             applied_edits.append("Pattern interrupt dipercepat pada detik 7, 14, dan 22.")
         if adaptive_plan.ending_boost:
             applied_edits.append(
-                "Penutup diberi kartu payoff dari kalimat asli dan accent audio."
+                "Punchline asli dipertahankan sebagai beat terakhir tanpa SFX yang memaksa emosi."
+                if auto_visual_accent == "story_punchline"
+                else "Penutup diberi kartu payoff dari kalimat asli dan accent audio."
                 if drawtext_supported
                 else "Penutup diberi accent audio untuk menegaskan payoff."
             )
@@ -8253,7 +8831,11 @@ def export_clip(
             else {
                 "enabled": False,
                 "requested": False,
-                "reason": "non_islamic_clip",
+                "reason": (
+                    f"{auto_visual_accent}_dialogue_first"
+                    if dialogue_first_accent
+                    else "non_islamic_clip"
+                ),
             }
         ),
         "drawtext_supported": drawtext_supported,
@@ -8280,6 +8862,24 @@ def export_clip(
         "output_format": output_format,
         "visual_mode": visual_mode,
         "auto_fyp_visual_plan": auto_visual_plan,
+        "micro_thesis_strategy": {
+            **micro_thesis_profile(clip.text, duration),
+            "generalized_from_public_performance_pattern": True,
+            "reference_wording_speaker_branding_or_footage_copied": False,
+            "outlier_performance_is_not_a_channel_baseline": True,
+            "original_or_properly_licensed_source_still_required": True,
+        },
+        "social_anecdote_strategy": {
+            **social_anecdote_profile(clip.text, duration),
+            "generalized_pattern": (
+                "social_friction_chronology_comparison_self_directed_payoff"
+            ),
+            "opening_context_seconds": title_overlay_seconds,
+            "preserve_authentic_source_reaction": True,
+            "synthetic_ridicule_or_harassment_added": False,
+            "reference_wording_speaker_branding_or_footage_copied": False,
+            "original_or_properly_licensed_source_still_required": True,
+        },
         "background_mode": background_mode,
         "clean_detail_pipeline": clean_detail_pipeline,
         "detail_encoding": {
@@ -8307,8 +8907,12 @@ def export_clip(
         "thumbnail_support": cover_copy["support"].replace("\n", " "),
         "context_card": (
             {
-                "version": 2,
-                "reference_pattern": "fast_scan_context_headline",
+                "version": 3,
+                "reference_pattern": (
+                    "brief_event_label_then_live_story"
+                    if auto_visual_accent == "story_punchline"
+                    else "fast_scan_context_headline"
+                ),
                 "transcript_grounded": True,
                 "eyebrow": cover_copy["eyebrow"],
                 "theme_accent": cover_card_accent(theme_profile),
@@ -8320,7 +8924,7 @@ def export_clip(
             else None
         ),
         "embedded_cover_window_seconds": (
-            round(min(duration, SHORTS_TITLE_OVERLAY_SECONDS), 3)
+            round(min(duration, title_overlay_seconds), 3)
             if automatic_short_title
             else None
         ),
@@ -8349,12 +8953,18 @@ def export_clip(
             else None
         ),
         "five_k_experiment_readiness": five_k_experiment_readiness(clip, output_format),
+        "growth_readiness": five_k_experiment_readiness(clip, output_format),
         "subscriber_conversion": {
             "version": 1,
             "enabled": bool(drawtext_supported and subscriber_cta_planned),
             "value_proposition": subscribe_prompt,
             "content_theme_derived": True,
             "shown_after_payoff": bool(drawtext_supported and subscriber_cta_planned),
+            "strategy": (
+                "protect_punchline_then_use_native_description_related_video_and_pinned_comment"
+                if auto_visual_accent == "story_punchline"
+                else "payoff_then_contextual_subscribe_value"
+            ),
             "forced_or_incentivized_subscription": False,
         },
     }
@@ -8712,7 +9322,7 @@ def export_clip(
                         "Intisari ucapan asli ditampilkan menjelang akhir agar makna klip langsung terbaca."
                     )
                 applied_edits.append(
-                    "Judul hook bergaya Shorts ditampilkan otomatis pada 3,2 detik pertama dan ditandai keyframe untuk cover."
+                    f"Judul hook bergaya Shorts ditampilkan otomatis pada {title_overlay_seconds:.1f} detik pertama dan ditandai keyframe untuk cover."
                 )
         else:
             console.print(
@@ -8769,6 +9379,7 @@ def export_clip(
                         camera_angle_cues=camera_angle_cues,
                         detail_filter=quality_detail_filter(video_quality),
                         variation=edit_variation,
+                        title_overlay_seconds=title_overlay_seconds,
                     )}"
                 )
                 sidecar_payload["motion_impact"] = {
@@ -8805,6 +9416,7 @@ def export_clip(
                         payoff_text_filename=payoff_text_path.name if drawtext_supported else "",
                         cinematic_pov_windows=pov_windows,
                         camera_angle_cues=camera_angle_cues or None,
+                        title_overlay_seconds=title_overlay_seconds,
                     )}"
                 )
                 sidecar_payload["motion_impact"] = {
@@ -8827,7 +9439,7 @@ def export_clip(
     elif automatic_short_title:
         vf = (
             f"{vf},"
-            f"{viral_title_overlay_filter(cover_text_path.name, duration, eyebrow=cover_copy['eyebrow'], accent=cover_card_accent(theme_profile), variation=edit_variation)}"
+            f"{viral_title_overlay_filter(cover_text_path.name, duration, eyebrow=cover_copy['eyebrow'], accent=cover_card_accent(theme_profile), variation=edit_variation, overlay_seconds=title_overlay_seconds)}"
         )
     if clean_detail_pipeline and not enhanced_edit:
         vf = add_quality_sharpen(vf, video_quality)
@@ -8848,7 +9460,7 @@ def export_clip(
         applied_edits.append(
             "Efek TV jadul diterapkan: hitam-putih pudar, grain bergerak, scanline, flicker halus, vignette, dan goresan pita vertikal."
         )
-    smoke_filters_supported = all(
+    smoke_filters_supported = not dialogue_first_accent and all(
         ffmpeg_has_filter(name)
         for name in ("format", "fps", "geq", "gblur", "nullsrc", "overlay", "scale")
     )
@@ -8873,7 +9485,11 @@ def export_clip(
     else:
         sidecar_payload["cinematic_smoke"] = {
             "enabled": False,
-            "reason": "required_ffmpeg_filters_unavailable",
+            "reason": (
+                f"{auto_visual_accent}_visual_restraint"
+                if dialogue_first_accent
+                else "required_ffmpeg_filters_unavailable"
+            ),
         }
     if drawtext_supported:
         vf = f"{vf},{channel_watermark_filter(output_format)}"
@@ -8888,7 +9504,7 @@ def export_clip(
         applied_edits.append(
             f"Watermark channel {CHANNEL_WATERMARK} ditambahkan secara halus di safe area; detail audit disimpan di metadata."
         )
-        if output_format == "vertical_short":
+        if output_format == "vertical_short" and subscriber_cta_planned:
             engagement_text_path.write_text(engagement_prompt + "\n", encoding="utf-8")
             subscribe_text_path.write_text(subscribe_prompt + "\n", encoding="utf-8")
             vf = (
@@ -8907,6 +9523,12 @@ def export_clip(
             applied_edits.append(
                 "CTA akhir mengajak komentar lalu memberi alasan Subscribe yang mengikuti tema klip, tanpa outro kosong atau janji palsu."
             )
+        elif output_format == "vertical_short":
+            sidecar_payload["end_cta"] = {
+                "enabled": False,
+                "reason": "protect_story_punchline_and_natural_loop",
+                "use_native_description_related_video_and_pinned_comment": True,
+            }
         elif compilation_part_number == compilation_part_count:
             wrapped_subscribe = split_subtitle_text(
                 subscribe_prompt,
@@ -9029,7 +9651,7 @@ def export_clip(
                         "-force_key_frames",
                         "0,"
                         f"{shorts_cover_frame_timestamp(duration):.3f},"
-                        f"{min(duration, SHORTS_TITLE_OVERLAY_SECONDS):.3f}",
+                        f"{min(duration, title_overlay_seconds):.3f}",
                     ]
                     if automatic_short_title
                     else []
@@ -9119,6 +9741,7 @@ def export_clip(
     cta_voiceover_enabled = (
         output_format == "vertical_short"
         and drawtext_supported
+        and subscriber_cta_planned
         and env_enabled("CTA_VOICEOVER_ENABLED", False)
     )
     if cta_voiceover_enabled:
@@ -9590,6 +10213,8 @@ def export_compilation(
             "chapter_accents_are_content_derived": visual_mode == "auto_fyp",
             "available_accents": [
                 "cinematic_clean",
+                "restrained_authority",
+                "story_punchline",
                 "animated_depth",
                 "retro_archive",
                 "speaker_aware_split",
@@ -9642,6 +10267,10 @@ def export_compilation(
             "story_quality_gate_passed": bool(story_director.get("quality_gate_passed")),
         },
         "one_k_long_form_readiness": one_k_long_form_readiness(
+            compilation,
+            story_director,
+        ),
+        "growth_readiness": one_k_long_form_readiness(
             compilation,
             story_director,
         ),
@@ -10026,6 +10655,19 @@ def main() -> int:
             candidate,
             "landscape_compilation",
         )
+        animate_gate = sidecar.get("one_k_long_form_readiness")
+        animate_gate_passed = bool(
+            isinstance(animate_gate, dict)
+            and animate_gate.get("quality_gate_passed")
+        )
+        animate_readiness = one_k_long_form_readiness(
+            candidate,
+            {"quality_gate_passed": animate_gate_passed},
+        )
+        # Keep the legacy sidecar key for older integrations while exposing one
+        # format-neutral readiness object to the dashboard and uploader.
+        sidecar["one_k_long_form_readiness"] = animate_readiness
+        sidecar["growth_readiness"] = animate_readiness
         sidecar["subscriber_conversion"] = {
             "version": 1,
             "enabled": True,

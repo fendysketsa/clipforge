@@ -52,10 +52,10 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
           <div className="jobMeta">
             <span>
               {job.request.clip_mode === "long_animate"
-                ? "Long Animate · storyboard ke video 16:9 · target uji 1K"
+                ? "Long Animate · storyboard ke video 16:9 · target stabilitas 5K"
                 : job.request.clip_mode === "highlight_5m"
-                ? `Long Story landscape ±${Math.round(job.request.compilation_target_seconds / 60)} menit · target uji 1K`
-                : `${job.request.top ?? "Auto"} clip pendek maks. 60 detik`}
+                ? `Long Story landscape ±${Math.round(job.request.compilation_target_seconds / 60)} menit · target stabilitas 5K`
+                : `${job.request.top ?? "Auto"} clip pendek maks. 60 detik · target stabilitas 5K`}
             </span>
             <span>
               {job.request.min_duration}s - {job.request.max_duration}s

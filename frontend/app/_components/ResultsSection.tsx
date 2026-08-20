@@ -101,39 +101,59 @@ function fypScoreTone(score: number) {
   return "polish";
 }
 
-function growthTargetReadiness(score: number, isLongForm: boolean) {
-  const target = isLongForm ? "Target 1K" : "Target 10K";
+function growthTargetReadiness(
+  score: number,
+  isLongForm: boolean,
+  targetViews = 5000,
+  nextAction?: string | null,
+  status?: string | null,
+) {
+  const target = `Target ${(targetViews / 1000).toLocaleString("id-ID", { maximumFractionDigits: 1 })}K`;
+  if (status?.startsWith("revise")) {
+    return {
+      label: `${target} · poles dulu`,
+      tone: "hold",
+      detail: nextAction || "Quality gate cerita belum lolos; perbaiki output sebelum publikasi.",
+    };
+  }
+  if (status === "test_hook_variant_first") {
+    return {
+      label: isLongForm ? `${target} · A/B packaging` : `${target} · uji hook`,
+      tone: "test",
+      detail: nextAction || "Ubah satu variabel, lalu bandingkan dengan upload seformat dan seseri.",
+    };
+  }
   if (score >= 88) {
     return {
       label: `${target} · siap uji`,
       tone: "excellent",
-      detail: isLongForm
+      detail: nextAction || (isLongForm
         ? "Hook, alur, dan packaging sudah kuat; publikasikan Private dulu lalu cek thumbnail, judul, dan retention 30 detik."
-        : "Hook dan payoff sudah kuat; publikasikan Private dulu, buka Edit thumbnail di aplikasi YouTube dan geser ke frame cover awal sekitar 0,78 detik—jangan mengandalkan pilihan otomatis tengah—lalu ukur engaged views, chose-to-view, dan subscriber yang dihasilkan.",
+        : "Hook dan payoff sudah kuat; publikasikan Private dulu, buka Edit thumbnail di aplikasi YouTube dan geser ke frame cover awal sekitar 0,78 detik—jangan mengandalkan pilihan otomatis tengah—lalu ukur engaged views, chose-to-view, dan subscriber yang dihasilkan."),
     };
   }
   if (score >= 78) {
     return {
       label: `${target} · layak uji`,
       tone: "strong",
-      detail: isLongForm
-        ? "Layak diuji sebagai long-form. Pantau impressions, CTR Beranda/Disarankan, retention 30 detik, average view duration, dan subscriber; 1K bukan jaminan."
-        : "Layak dipublikasikan sebagai eksperimen. Pantau engaged views, chose-to-view, retention, shares, dan subscriber; angka view tetap ditentukan respons penonton.",
+      detail: nextAction || (isLongForm
+        ? "Layak diuji sebagai long-form. Pantau impressions, CTR Beranda/Disarankan, retention 30 detik, average view duration, dan subscriber."
+        : "Layak dipublikasikan sebagai eksperimen. Pantau engaged views, chose-to-view, retention, shares, dan subscriber; angka view tetap ditentukan respons penonton."),
     };
   }
   if (score >= 65) {
     return {
       label: isLongForm ? `${target} · A/B packaging` : `${target} · uji hook`,
       tone: "test",
-      detail: isLongForm
+      detail: nextAction || (isLongForm
         ? "Uji judul/thumbnail lewat fitur A/B YouTube setelah video siap; perbaiki juga temuan di bawah."
-        : "Coba satu varian hook secara berurutan—fitur A/B native YouTube tidak tersedia untuk Shorts—lalu bandingkan respons penonton.",
+        : "Coba satu varian hook secara berurutan—fitur A/B native YouTube tidak tersedia untuk Shorts—lalu bandingkan respons penonton."),
     };
   }
   return {
     label: `${target} · poles dulu`,
     tone: "hold",
-    detail: "Belum disarankan untuk mengejar distribusi. Pilih kandidat lain atau perkuat hook, tempo, dan payoff.",
+    detail: nextAction || "Belum disarankan untuk mengejar distribusi. Pilih kandidat lain atau perkuat hook, tempo, dan payoff.",
   };
 }
 
@@ -357,10 +377,17 @@ export function ResultsSection({
               || clip.name.toLowerCase().startsWith("resume_cerita_")
               || clip.name.toLowerCase().startsWith("long_animate_");
             const growthReadiness = clip.fyp_score !== null && clip.fyp_score !== undefined
-              ? growthTargetReadiness(clip.fyp_score, isLongForm)
+              ? growthTargetReadiness(
+                  clip.fyp_score,
+                  isLongForm,
+                  clip.growth_target_views || 5000,
+                  clip.growth_next_action,
+                  clip.growth_status,
+                )
               : null;
-            const isShortUploadReady = isLongForm
-              || (typeof clip.fyp_score === "number" && clip.fyp_score >= 78);
+            const isUploadReady = typeof clip.growth_quality_gate_passed === "boolean"
+              ? clip.growth_quality_gate_passed
+              : isLongForm || (typeof clip.fyp_score === "number" && clip.fyp_score >= 78);
             const isUploadingToYouTube = latestUpload?.status === "queued" || latestUpload?.status === "running";
             const isAlreadyUploaded = latestUpload?.status === "completed" && Boolean(latestUpload.video_url);
             const hasRunningUpload = youtubeUploads.some((upload) => upload.status === "running");
@@ -406,8 +433,8 @@ export function ResultsSection({
               : "";
             const showSessionRecovery = youtubeUploadErrorNeedsSessionRepair(rawUploadError);
             const youtubeButtonTitle = youtubeEnabled
-              ? !isShortUploadReady
-                ? "Upload ditahan: Short harus lolos quality gate minimum FYP 78. Render ulang dengan auto-repair atau pilih kandidat lain."
+              ? !isUploadReady
+                ? "Upload ditahan: output belum lolos quality gate formatnya. Buka Analisis & perbaikan, lalu render ulang."
                 : isAlreadyUploaded
                 ? `Sudah terupload ke YouTube${latestUpload.video_url ? `: ${latestUpload.video_url}` : ""}`
                 : uploadError
@@ -441,7 +468,7 @@ export function ResultsSection({
                 <div className="clipInfo">
                   <div className="clipTitleBlock">
                     <span className="clipEyebrow">
-                      {isShortUploadReady ? "Klip siap posting" : "Ditahan quality gate"}
+                      {isUploadReady ? "Klip siap review Private" : "Ditahan quality gate"}
                     </span>
                     <h3>{title}</h3>
                   </div>
@@ -522,6 +549,12 @@ export function ResultsSection({
                             <span><b>{growthReadiness.label}.</b> {growthReadiness.detail} Ini indikator kesiapan, bukan jaminan view.</span>
                           </div>
                         ) : null}
+                        {clip.growth_checkpoints?.length ? (
+                          <div className="analysisLine">
+                            <BarChart3 size={15} />
+                            <span><b>Checkpoint review:</b> {clip.growth_checkpoints.map((item) => item.toLocaleString("id-ID")).join(" → ")} views</span>
+                          </div>
+                        ) : null}
                         {clip.strengths?.length ? (
                           <div className="analysisBlock analysisStrength">
                             <b>Kekuatan</b>
@@ -578,13 +611,13 @@ export function ResultsSection({
                       type="button"
                       className="youtubeUploadButton"
                       onClick={() => onUploadClipToYouTube(clip)}
-                      disabled={!youtubeEnabled || !isShortUploadReady || isUploadingToYouTube || isAlreadyUploaded}
+                      disabled={!youtubeEnabled || !isUploadReady || isUploadingToYouTube || isAlreadyUploaded}
                       title={youtubeButtonTitle}
                     >
                       <UploadCloud size={16} />
                       <span>
-                        {!isShortUploadReady
-                          ? "FYP <78 · Ditahan"
+                        {!isUploadReady
+                          ? "Quality gate · Ditahan"
                           : isAlreadyUploaded
                           ? "Sudah YouTube"
                           : isUploadingToYouTube
