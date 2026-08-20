@@ -504,6 +504,14 @@ export function ResultsSection({
                       {clip.loop_score !== null && clip.loop_score !== undefined ? (
                         <span className="clipMetric">Loop {clip.loop_score}</span>
                       ) : null}
+                      {clip.retention_score !== null && clip.retention_score !== undefined ? (
+                        <span
+                          className="clipMetric"
+                          title="Skor kesiapan editorial 30 detik pertama, bukan prediksi retention penonton."
+                        >
+                          Retention-ready {clip.retention_score}
+                        </span>
+                      ) : null}
                       {clip.output_resolution ? <span className="clipMetric">{clip.output_resolution}</span> : null}
                       {clip.auditor_name && clip.audit_id ? (
                         <span className="clipMetric" title={`Audit editorial otomatis ${clip.audit_id}`}>

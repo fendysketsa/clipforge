@@ -52,6 +52,7 @@ from clipper import (
     ffmpeg_clean_metadata_args,
     ffmpeg_fendy_provenance_metadata_args,
     five_k_experiment_readiness,
+    first_30_retention_profile,
     hook_banner_text,
     highlight_caption_keyword,
     intro_particle_burst_filters,
@@ -83,6 +84,7 @@ from clipper import (
     shorts_cta_voiceover_mix_filter,
     shorts_cta_voiceover_text,
     shorts_policy_compliance,
+    shorts_should_protect_payoff,
     social_anecdote_profile,
     subscribe_value_prompt,
     thumbnail_story_copy,
@@ -1084,6 +1086,14 @@ def test_shorts_cta_voiceover_copy_is_configurable_and_bounded(monkeypatch):
     assert len(shorts_cta_voiceover_text()) == 120
 
 
+def test_compact_short_protects_payoff_from_end_cta():
+    compact = ClipCandidate(1, 0, 30, 30, 88, "Jawaban", "test", "Jawabannya jelas.")
+    longer = ClipCandidate(1, 0, 48, 48, 88, "Jawaban", "test", "Jawabannya jelas.")
+
+    assert shorts_should_protect_payoff(compact) is True
+    assert shorts_should_protect_payoff(longer) is False
+
+
 def test_shorts_policy_compliance_records_official_and_stricter_local_limits():
     compliance = shorts_policy_compliance(59.8, embedded_cover=True)
 
@@ -1778,6 +1788,42 @@ def test_fyp_score_rewards_strong_opening_and_first_30_second_arc():
 
     assert strong_score >= weak_score + 20
     assert strong_score < 100
+
+
+def test_first_30_retention_profile_rewards_fresh_beats_without_dead_air():
+    strong = [
+        TranscriptSegment(0, 3, "Kenapa keputusan ini bisa berbahaya?"),
+        TranscriptSegment(3.2, 8, "Masalahnya ternyata ada pada langkah pertama."),
+        TranscriptSegment(8.2, 15, "Buktinya risiko naik ketika tanda ini diabaikan."),
+        TranscriptSegment(15.1, 22, "Karena itu periksa satu hal penting sebelum memilih."),
+        TranscriptSegment(22.2, 30, "Jawabannya, hentikan dulu lalu ambil keputusan yang aman."),
+    ]
+    weak = [
+        TranscriptSegment(0, 5, "Nah jadi sebelumnya kita akan membahas beberapa hal."),
+        TranscriptSegment(11, 15, "Kemudian penjelasannya masih berlanjut."),
+        TranscriptSegment(24, 29, "Lalu ada konteks umum yang lainnya."),
+    ]
+
+    strong_profile = first_30_retention_profile(strong, 30)
+    weak_profile = first_30_retention_profile(weak, 30)
+
+    assert strong_profile["retention_readiness_score"] >= 78
+    assert strong_profile["covered_beats"] == 5
+    assert strong_profile["actual_retention_prediction"] is False
+    assert weak_profile["longest_silence_seconds"] >= 9
+    assert strong_profile["retention_readiness_score"] >= weak_profile["retention_readiness_score"] + 25
+
+
+def test_retention_profile_marks_context_dependent_opening():
+    segments = [
+        TranscriptSegment(0, 3, "Dia kemudian melakukan hal tersebut."),
+        TranscriptSegment(3, 9, "Penjelasan baru muncul setelah pembuka."),
+    ]
+
+    profile = first_30_retention_profile(segments, 9)
+
+    assert profile["context_dependent_opening"] is True
+    assert profile["hook_score"] < 50
 
 
 def test_pov_banner_is_compact_and_uses_candidate_angle():

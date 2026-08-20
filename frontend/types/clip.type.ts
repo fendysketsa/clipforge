@@ -35,6 +35,7 @@ export type ClipFile = {
   applied_edits?: string[];
   key_point_score?: number | null;
   loop_score?: number | null;
+  retention_score?: number | null;
   boundary_quality?: string | null;
   output_resolution?: string | null;
   auditor_name?: string | null;
@@ -66,6 +67,7 @@ export type ClipCandidate = {
   applied_edits?: string[];
   key_point_score?: number;
   loop_score?: number;
+  retention_score?: number;
   boundary_quality?: string;
 };
 

@@ -1501,6 +1501,39 @@ def test_monetization_preflight_blocks_low_fyp_short(monkeypatch):
     assert "auto-repair" in issue
 
 
+def test_monetization_preflight_blocks_short_with_low_retention_readiness(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-low-retention-short",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "output_format": "vertical_short",
+            "score": 91,
+            "retention_score": 47,
+            "monetization_readiness": {"eligible_for_private_upload_review": True},
+        },
+    )
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+    assert "retention 30 detik 47/58" in issue
+    assert "perkembangan beat" in issue
+
+
 def test_monetization_preflight_accepts_legacy_compilation_story_arc(monkeypatch):
     import api
 

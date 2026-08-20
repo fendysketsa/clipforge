@@ -105,6 +105,7 @@ class ClipCandidate:
     key_point_score: int = 0
     loop_score: int = 0
     boundary_quality: str = ""
+    retention_score: int = 0
 
 
 @dataclass
@@ -820,6 +821,21 @@ FILLER_PHRASES = (
     "kurang lebih seperti itu",
     "dan lain sebagainya",
 )
+
+# Starts like these usually depend on a sentence the viewer has not heard. A
+# title card cannot repair that editorial problem, so they are treated as a
+# retention risk unless the same opening also contains a real hook signal.
+CONTEXT_DEPENDENT_STARTS = {
+    "begini",
+    "begitu",
+    "beliau",
+    "dia",
+    "kemudian",
+    "mereka",
+    "nah",
+    "sebelumnya",
+    "tersebut",
+}
 
 CropMode = Literal["center", "person", "streamer"]
 VideoQuality = Literal["standard", "high", "max"]
@@ -3906,6 +3922,8 @@ def five_k_experiment_readiness(
         status = "test_hook_variant_first"
     else:
         status = "revise_before_publishing"
+    if output_format == "vertical_short" and 0 < clip.retention_score < 58:
+        status = "revise_before_publishing"
     micro_thesis = micro_thesis_profile(clip.text, clip.duration)
     social_anecdote = social_anecdote_profile(clip.text, clip.duration)
     return {
@@ -3927,7 +3945,7 @@ def five_k_experiment_readiness(
         "quality_gate_passed": (
             output_format != "vertical_short"
             or score >= SHORT_EXPORT_MIN_FYP_SCORE
-        ),
+        ) and (clip.retention_score == 0 or clip.retention_score >= 58),
         "readiness_score": score,
         "status": status,
         "next_action": (
@@ -3949,6 +3967,8 @@ def five_k_experiment_readiness(
             "hook_present": bool((clip.hook or clip.title).strip()),
             "single_key_point_score": clip.key_point_score,
             "semantic_loop_score": clip.loop_score,
+            "first_30_retention_readiness_score": clip.retention_score,
+            "retention_score_is_editorial_diagnostic_not_prediction": True,
             "complete_boundary": clip.boundary_quality in {"payoff_tuntas", "kalimat_tuntas"},
             "content_specific_subscribe_value": bool(clip.text.strip()),
             "micro_thesis_20_32_seconds": bool(micro_thesis["qualified"]),
@@ -4113,6 +4133,149 @@ def _content_words(text: str) -> set[str]:
     }
 
 
+def first_30_retention_profile(
+    items: list[TranscriptSegment],
+    duration: float,
+) -> dict[str, object]:
+    """Estimate edit readiness across the first 30 seconds.
+
+    This is deliberately an editorial diagnostic, not a prediction of actual
+    audience retention. It rewards a self-contained opening, continuous useful
+    speech, and fresh story beats across the timeline while exposing dead-air
+    risk for the selector and sidecar audit.
+    """
+    if not items or duration <= 0:
+        return {
+            "version": 1,
+            "retention_readiness_score": 0,
+            "hook_score": 0,
+            "pacing_score": 0,
+            "progression_score": 0,
+            "opening_latency_seconds": 0.0,
+            "longest_silence_seconds": 0.0,
+            "speech_coverage_ratio": 0.0,
+            "beat_coverage_ratio": 0.0,
+            "covered_beats": 0,
+            "expected_beats": 0,
+            "actual_retention_prediction": False,
+        }
+
+    origin = items[0].start
+    horizon = max(0.1, min(30.0, duration))
+    timeline_end = origin + horizon
+    relevant = [
+        item
+        for item in sorted(items, key=lambda value: value.start)
+        if item.end > origin and item.start < timeline_end and item.text.strip()
+    ]
+    if not relevant:
+        return first_30_retention_profile([], duration)
+
+    opening = " ".join(
+        item.text for item in relevant if item.start < origin + min(3.0, horizon)
+    ).strip()
+    opening_words_list = re.findall(r"[\w']+", opening.casefold())
+    opening_words = set(opening_words_list)
+    first_word = opening_words_list[0] if opening_words_list else ""
+    hook_signals = (HOOK_WORDS - WEAK_STARTS) | TENSION_WORDS | MYSTERY_WORDS
+    opening_has_signal = bool(opening_words.intersection(hook_signals) or "?" in opening)
+    context_dependent = first_word in CONTEXT_DEPENDENT_STARTS and not opening_has_signal
+    opening_latency = max(0.0, relevant[0].start - origin)
+
+    hook_score = 12
+    hook_score += 32 if opening_has_signal else 0
+    hook_score += 18 if first_word and first_word not in WEAK_STARTS else 0
+    hook_score += 12 if 4 <= len(opening_words_list) <= 24 else 5 if opening_words_list else 0
+    hook_score += 14 if opening_latency <= 0.35 else 8 if opening_latency <= 0.8 else 0
+    hook_score += 12 if opening_words.intersection(TENSION_WORDS | IMPORTANT_WORDS) else 0
+    hook_score -= 24 if context_dependent else 0
+    hook_score -= 12 * sum(phrase in opening.casefold() for phrase in FILLER_PHRASES)
+    hook_score = max(0, min(100, hook_score))
+
+    # Merge ASR spans so overlapping segments do not inflate speech coverage.
+    spans: list[tuple[float, float]] = []
+    for item in relevant:
+        start = max(origin, item.start)
+        end = min(timeline_end, item.end)
+        if end <= start:
+            continue
+        if spans and start <= spans[-1][1]:
+            spans[-1] = (spans[-1][0], max(spans[-1][1], end))
+        else:
+            spans.append((start, end))
+    speech_seconds = sum(end - start for start, end in spans)
+    speech_coverage = min(1.0, speech_seconds / horizon)
+    gaps = [max(0.0, spans[0][0] - origin)] if spans else [horizon]
+    gaps.extend(
+        max(0.0, right[0] - left[1])
+        for left, right in zip(spans, spans[1:])
+    )
+    if spans:
+        gaps.append(max(0.0, timeline_end - spans[-1][1]))
+    longest_silence = max(gaps, default=0.0)
+    first_30_text = " ".join(item.text for item in relevant)
+    density = len(re.findall(r"[\w']+", first_30_text)) / horizon
+
+    pacing_score = round(speech_coverage * 55)
+    pacing_score += 25 if density >= 1.45 else 17 if density >= 1.05 else 7 if density >= 0.75 else 0
+    pacing_score += 20 if longest_silence <= 0.65 else 10 if longest_silence <= 1.2 else 0
+    if longest_silence > 2.0:
+        pacing_score -= min(24, round((longest_silence - 2.0) * 8))
+    pacing_score = max(0, min(100, pacing_score))
+
+    # Five editorial checkpoints make the desired 30-second arc explicit. For
+    # shorter clips only checkpoints that actually exist are evaluated.
+    beat_ranges = ((0.0, 3.0), (3.0, 8.0), (8.0, 15.0), (15.0, 22.0), (22.0, 30.0))
+    active_ranges = [beat for beat in beat_ranges if beat[0] < horizon]
+    seen_concepts: set[str] = set()
+    covered_beats = 0
+    signal_beats = 0
+    for beat_start, beat_end in active_ranges:
+        beat_text = " ".join(
+            item.text
+            for item in relevant
+            if item.end > origin + beat_start
+            and item.start < origin + min(beat_end, horizon)
+        ).strip()
+        beat_words = re.findall(r"[\w']+", beat_text.casefold())
+        concepts = _content_words(beat_text)
+        fresh_concepts = concepts - seen_concepts
+        beat_signal = bool(
+            set(beat_words).intersection(
+                (HOOK_WORDS - WEAK_STARTS) | TENSION_WORDS | PAYOFF_WORDS | IMPORTANT_WORDS
+            )
+            or "?" in beat_text
+        )
+        if len(beat_words) >= 3 and (len(fresh_concepts) >= 2 or beat_signal):
+            covered_beats += 1
+        if beat_signal:
+            signal_beats += 1
+        seen_concepts.update(concepts)
+
+    expected_beats = len(active_ranges)
+    beat_coverage = covered_beats / max(1, expected_beats)
+    signal_coverage = signal_beats / max(1, expected_beats)
+    progression_score = round(beat_coverage * 70 + signal_coverage * 30)
+    progression_score = max(0, min(100, progression_score))
+    readiness = round(hook_score * 0.40 + pacing_score * 0.32 + progression_score * 0.28)
+
+    return {
+        "version": 1,
+        "retention_readiness_score": max(0, min(100, readiness)),
+        "hook_score": hook_score,
+        "pacing_score": pacing_score,
+        "progression_score": progression_score,
+        "opening_latency_seconds": round(opening_latency, 3),
+        "longest_silence_seconds": round(longest_silence, 3),
+        "speech_coverage_ratio": round(speech_coverage, 3),
+        "beat_coverage_ratio": round(beat_coverage, 3),
+        "covered_beats": covered_beats,
+        "expected_beats": expected_beats,
+        "context_dependent_opening": context_dependent,
+        "actual_retention_prediction": False,
+    }
+
+
 def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> dict[str, int | bool | str]:
     """Measure whether a window contains one useful idea and a deliberate loop point."""
     if not items:
@@ -4122,6 +4285,7 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
             "boundary_quality": "lemah",
             "payoff_near_end": False,
             "complete_ending": False,
+            "retention_score": 0,
         }
 
     start = items[0].start
@@ -4171,6 +4335,7 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
     filler_hits = sum(phrase in text.casefold() for phrase in FILLER_PHRASES)
     word_count = len(re.findall(r"[\w']+", text))
     density = word_count / max(1.0, duration)
+    retention = first_30_retention_profile(items, duration)
 
     key_point_score = 18
     key_point_score += min(30, len(signal_hits) * 5)
@@ -4218,6 +4383,7 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
         "micro_thesis_score": int(micro_thesis["structure_score"]),
         "social_anecdote_qualified": bool(social_anecdote["qualified"]),
         "social_anecdote_score": int(social_anecdote["structure_score"]),
+        "retention_score": int(retention["retention_readiness_score"]),
     }
 
 
@@ -4301,6 +4467,7 @@ def candidate_fyp_analysis(
     has_question = "?" in text
     complete_ending = text.rstrip().endswith((".", "!", "?"))
     story_metrics = candidate_story_metrics(items, duration)
+    retention_score = int(story_metrics["retention_score"])
     micro_thesis = micro_thesis_profile(
         text,
         duration,
@@ -4371,6 +4538,12 @@ def candidate_fyp_analysis(
         ideas.append(
             "Tempo — buang jeda dan pengulangan agar setiap 5–8 detik membawa satu informasi baru."
         )
+    if retention_score < 58:
+        weaknesses.append("beat informasi 30 detik awal belum cukup konsisten")
+        if not any(_codex_idea_area(idea) == "tempo" for idea in ideas):
+            ideas.append(
+                "Ritme — pertahankan hanya beat yang menambah konflik, bukti, atau jawaban; buang jeda antarbeat."
+            )
 
     if has_payoff and complete_ending:
         strengths.append("memiliki payoff atau kesimpulan yang bisa ditunggu")
@@ -4568,6 +4741,7 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
     story_metrics = candidate_story_metrics(items, duration)
     key_point_score = int(story_metrics["key_point_score"])
     loop_score = int(story_metrics["loop_score"])
+    retention_score = int(story_metrics["retention_score"])
     if key_point_score >= 75:
         reasons.append("satu point penting terbentuk jelas")
     elif key_point_score < 40:
@@ -4578,6 +4752,10 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
         reasons.append("payoff muncul terlalu awal lalu melebar")
     if loop_score >= 45:
         reasons.append("hook dan payoff membentuk loop semantik")
+    if retention_score >= 78:
+        reasons.append("ritme 30 detik awal menjaga beat informasi tetap aktif")
+    elif retention_score < 58:
+        reasons.append("risiko drop-off tinggi pada ritme 30 detik awal")
 
     if word_count < 55 and not micro_thesis["qualified"]:
         score -= 12
@@ -4590,10 +4768,11 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
         "menggantung": 20,
     }.get(str(story_metrics["boundary_quality"]), 20)
     calibrated_score = round(
-        heuristic_score * 0.50
-        + key_point_score * 0.30
+        heuristic_score * 0.40
+        + key_point_score * 0.25
         + loop_score * 0.05
-        + boundary_score * 0.15
+        + boundary_score * 0.10
+        + retention_score * 0.20
     )
     return max(1, min(100, calibrated_score)), reasons
 
@@ -4664,6 +4843,7 @@ def build_candidate_pool(
                     key_point_score=int(story_metrics["key_point_score"]),
                     loop_score=int(story_metrics["loop_score"]),
                     boundary_quality=str(story_metrics["boundary_quality"]),
+                    retention_score=int(story_metrics["retention_score"]),
                 )
             )
     return candidates
@@ -4691,6 +4871,7 @@ def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0
         candidate.score
         + candidate.key_point_score * 0.10
         + candidate.loop_score * 0.05
+        + candidate.retention_score * 0.12
         + (4.0 if micro_thesis["qualified"] else 0.0)
         + (4.0 if social_anecdote["qualified"] else 0.0)
         - abs(candidate.duration - effective_target) * 0.05
@@ -4731,6 +4912,9 @@ def select_candidates(
         for item in candidates
         if candidate_has_cohesive_editorial_arc(item)
         and item.score >= max(1, minimum_score)
+        # A zero means legacy/manual candidate data with no timing audit. New
+        # transcript-derived candidates must clear the retention floor.
+        and (item.retention_score == 0 or item.retention_score >= 58)
     ]
     target_duration = 38
     candidates.sort(
@@ -4830,6 +5014,7 @@ def select_compilation_candidates(
             key_point_score=candidate.key_point_score,
             loop_score=candidate.loop_score,
             boundary_quality=candidate.boundary_quality,
+            retention_score=candidate.retention_score,
         )
 
     # Seed the resume with a strong, non-overlapping beat from each source
@@ -5170,6 +5355,7 @@ def ai_rescore_candidates(
             "hook": candidate.hook,
             "key_point_score": candidate.key_point_score,
             "loop_score": candidate.loop_score,
+            "retention_score": candidate.retention_score,
             "boundary_quality": candidate.boundary_quality,
             "heuristic_strengths": candidate.strengths,
             "heuristic_weaknesses": candidate.weaknesses,
@@ -5361,7 +5547,7 @@ def codex_edit_plan(clip: ClipCandidate) -> CodexEditPlan:
     )
     return CodexEditPlan(
         hook_boost=True,
-        tempo_boost=any(
+        tempo_boost=(0 < clip.retention_score < 78) or any(
             token in analysis
             for token in (
                 "tempo",
@@ -5560,6 +5746,7 @@ def apply_codex_structural_edit(
         clip.key_point_score = int(story_metrics["key_point_score"])
         clip.loop_score = int(story_metrics["loop_score"])
         clip.boundary_quality = str(story_metrics["boundary_quality"])
+        clip.retention_score = int(story_metrics["retention_score"])
     return clip
 
 
@@ -5735,6 +5922,13 @@ def auto_fyp_visual_plan(
     depth_match = bool(words.intersection(DEPTH_VISUAL_WORDS))
     micro_thesis = micro_thesis_profile(clip.text, clip.duration)
     social_anecdote = social_anecdote_profile(clip.text, clip.duration)
+    retention_cadence = (
+        5.5
+        if 0 < clip.retention_score < 68
+        else 7.0
+        if 0 < clip.retention_score < 78
+        else 9.5
+    )
 
     if output_format == "vertical_short" and social_anecdote["qualified"]:
         accent = "story_punchline"
@@ -5781,7 +5975,11 @@ def auto_fyp_visual_plan(
             "dialogue_first_audio": accent
             in {"restrained_authority", "story_punchline"},
             "target_reframe_cadence_seconds": (
-                2.8 if accent == "story_punchline" else 9.5
+                2.8
+                if accent == "story_punchline"
+                else 9.5
+                if accent == "restrained_authority"
+                else retention_cadence
             ),
         },
         "speaker_split": (
@@ -5982,6 +6180,15 @@ def subscribe_value_prompt(clip: ClipCandidate) -> str:
     else:
         prompt = "SUBSCRIBE UNTUK PELAJARAN BERIKUTNYA"
     return prompt[:64]
+
+
+def shorts_should_protect_payoff(clip: ClipCandidate) -> bool:
+    """Keep completion and earned loops free from an intrusive end card."""
+    return bool(
+        clip.duration <= 35.0
+        or clip.loop_score >= 45
+        or social_anecdote_profile(clip.text, clip.duration)["qualified"]
+    )
 
 
 def shorts_cta_overlay_filter(
@@ -7885,6 +8092,7 @@ def codex_growth_blueprint(
     is_short = output_format == "vertical_short"
     micro_thesis = micro_thesis_profile(clip.text, clip.duration)
     social_anecdote = social_anecdote_profile(clip.text, clip.duration)
+    protect_short_payoff = is_short and shorts_should_protect_payoff(clip)
     return {
         "version": CODEX_GROWTH_FRAMEWORK_VERSION,
         "owner": FENDY_AUDITOR_NAME,
@@ -7914,6 +8122,8 @@ def codex_growth_blueprint(
             "chapters_recommended": not is_short,
             "micro_thesis_strategy": micro_thesis if is_short else None,
             "social_anecdote_strategy": social_anecdote if is_short else None,
+            "first_30_editorial_readiness_score": clip.retention_score if is_short else None,
+            "actual_retention_prediction": False,
         },
         "reference_learning": {
             "adopted_patterns": [
@@ -7934,10 +8144,10 @@ def codex_growth_blueprint(
             "subscribe_value": subscribe_value_prompt(clip),
             "cta_after_value": True,
             "visible_end_card": not bool(
-                is_short and social_anecdote["qualified"]
+                protect_short_payoff
             ),
             "protect_story_punchline_and_natural_loop": bool(
-                is_short and social_anecdote["qualified"]
+                protect_short_payoff
             ),
             "short_to_related_long_form": is_short,
             "incentive_or_fake_urgency": False,
@@ -8670,22 +8880,33 @@ def export_clip(
         virtual_camera_angle_cues(
             clip,
             clip_segments,
-            limit=(
-                7
-                if auto_visual_accent == "story_punchline"
-                else 2
-                if auto_visual_accent == "restrained_authority"
-                else 5
+            limit=int(
+                dict(auto_visual_plan.get("visual_restraint") or {}).get(
+                    "maximum_virtual_camera_cuts",
+                    5,
+                )
             ),
             min_gap=(
                 2.2
                 if auto_visual_accent == "story_punchline"
                 else 9.0
                 if auto_visual_accent == "restrained_authority"
-                else 5.2
+                else max(
+                    3.2,
+                    float(
+                        dict(auto_visual_plan.get("visual_restraint") or {}).get(
+                            "target_reframe_cadence_seconds",
+                            9.5,
+                        )
+                    )
+                    * 0.72,
+                )
             ),
-            target_cadence=(
-                2.8 if auto_visual_accent == "story_punchline" else 9.5
+            target_cadence=float(
+                dict(auto_visual_plan.get("visual_restraint") or {}).get(
+                    "target_reframe_cadence_seconds",
+                    9.5,
+                )
             ),
         )
         if enhanced_edit and output_format == "vertical_short"
@@ -8727,7 +8948,9 @@ def export_clip(
     subscriber_cta_planned = (
         output_format == "vertical_short"
         or compilation_part_number == compilation_part_count
-    ) and auto_visual_accent != "story_punchline"
+    ) and not (
+        output_format == "vertical_short" and shorts_should_protect_payoff(clip)
+    )
     applied_edits = list(clip.applied_edits)
     if automatic_short_title:
         applied_edits.append(
@@ -8810,6 +9033,10 @@ def export_clip(
         "auto_blur_watermarks": auto_blur_watermarks,
         "visual_theme": theme_profile["theme"],
         "emphasis_times": emphasis_times,
+        "first_30_retention_profile": first_30_retention_profile(
+            clip_segments,
+            duration,
+        ),
         "cinematic_pov_windows": [
             {"start": start, "end": end}
             for start, end in (pov_windows or [])
@@ -8962,7 +9189,7 @@ def export_clip(
             "shown_after_payoff": bool(drawtext_supported and subscriber_cta_planned),
             "strategy": (
                 "protect_punchline_then_use_native_description_related_video_and_pinned_comment"
-                if auto_visual_accent == "story_punchline"
+                if not subscriber_cta_planned
                 else "payoff_then_contextual_subscribe_value"
             ),
             "forced_or_incentivized_subscription": False,
@@ -10647,6 +10874,7 @@ def main() -> int:
             key_point_score=int(sidecar.get("key_point_score") or 0),
             loop_score=int(sidecar.get("loop_score") or 0),
             boundary_quality=str(sidecar.get("boundary_quality") or "payoff_tuntas"),
+            retention_score=int(sidecar.get("retention_score") or 0),
         )
         auditor = fendy_auditor_identity(candidate, "landscape_compilation")
         auditor["visible_video_signature"] = ffmpeg_has_filter("drawtext")

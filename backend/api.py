@@ -298,6 +298,7 @@ class ClipCandidate(BaseModel):
     key_point_score: int = 0
     loop_score: int = 0
     boundary_quality: str = ""
+    retention_score: int = 0
 
 
 class ClipFile(BaseModel):
@@ -320,6 +321,7 @@ class ClipFile(BaseModel):
     applied_edits: list[str] = Field(default_factory=list)
     key_point_score: int | None = None
     loop_score: int | None = None
+    retention_score: int | None = None
     boundary_quality: str | None = None
     output_resolution: str | None = None
     auditor_name: str | None = None
@@ -2518,6 +2520,18 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
                 f"{fyp_score}/{SHORT_UPLOAD_MIN_FYP_SCORE}. Render ulang dengan "
                 "auto-repair terbaru atau pilih kandidat yang lebih kuat."
             )
+        raw_retention_score = sidecar.get("retention_score")
+        if isinstance(raw_retention_score, (int, float)) and not isinstance(
+            raw_retention_score,
+            bool,
+        ):
+            retention_score = max(0, min(100, int(round(raw_retention_score))))
+            if 0 < retention_score < 58:
+                return (
+                    "Upload diblokir: kesiapan retention 30 detik "
+                    f"{retention_score}/58. Pilih kandidat dengan hook, ritme, dan "
+                    "perkembangan beat yang lebih konsisten."
+                )
         try:
             duration = float(sidecar.get("duration") or 0)
         except (TypeError, ValueError):
@@ -2992,6 +3006,7 @@ def best_youtube_clip_urls(job: ClipJob, count: int = DEFAULT_YOUTUBE_AUTO_UPLOA
             candidate.score
             + candidate.key_point_score * 0.10
             + candidate.loop_score * 0.05
+            + candidate.retention_score * 0.12
         )
         for candidate in job.candidates
     }
@@ -4903,6 +4918,7 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
                 applied_edits=sidecar_list("applied_edits", limit=8),
                 key_point_score=sidecar_score("key_point_score"),
                 loop_score=sidecar_score("loop_score"),
+                retention_score=sidecar_score("retention_score"),
                 boundary_quality=(
                     str(sidecar.get("boundary_quality")).strip()
                     if sidecar.get("boundary_quality")

@@ -150,6 +150,27 @@ def test_short_selection_excludes_candidates_that_upload_would_reject():
     assert selected == [ready]
 
 
+def test_short_selection_rejects_timing_audited_candidate_with_drop_off_risk():
+    keyword_bait = make_candidate(
+        0,
+        0,
+        96,
+        "Ternyata rahasia penting ini punya jawaban yang mengejutkan.",
+    )
+    keyword_bait.retention_score = 57
+    paced_story = make_candidate(
+        0,
+        90,
+        82,
+        "Masalah, bukti, dan jawabannya tersusun tanpa jeda panjang.",
+    )
+    paced_story.retention_score = 74
+
+    selected = select_candidates([keyword_bait, paced_story], 2)
+
+    assert selected == [paced_story]
+
+
 def test_short_repair_pool_can_include_low_score_before_final_quality_gate():
     candidate = make_candidate(0, 0, 58, "Poin lengkap yang masih perlu auto-repair.")
 
