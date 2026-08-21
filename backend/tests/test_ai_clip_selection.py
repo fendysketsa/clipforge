@@ -137,6 +137,25 @@ def test_short_selection_deduplicates_the_same_main_point():
     assert sum(item is first or item is duplicate for item in selected) == 1
 
 
+def test_short_selection_returns_fewer_outputs_instead_of_repeating_one_point():
+    first = make_candidate(
+        0,
+        0,
+        95,
+        "Kesalahan pertama membuat biaya membesar karena risiko tidak diperiksa sejak awal.",
+    )
+    repeated = make_candidate(
+        0,
+        90,
+        94,
+        "Biaya membesar akibat kesalahan pertama saat risiko tidak diperiksa sejak awal.",
+    )
+
+    selected = select_candidates([first, repeated], 2)
+
+    assert selected == [first]
+
+
 def test_short_selection_excludes_candidates_that_upload_would_reject():
     weak_point = make_candidate(0, 0, 99, "Hook kuat tetapi isi utamanya belum cukup jelas.")
     weak_point.key_point_score = 54
@@ -306,7 +325,7 @@ def test_long_story_director_uses_short_teaser_then_restores_chronology():
         make_candidate(4, 360, 88, "Kesimpulan dan payoff"),
     ]
     transcript = [
-        TranscriptSegment(start=start, end=start + 5, text=f"Kalimat {start}")
+        TranscriptSegment(start=start, end=start + 5, text=f"Kalimat {start}.")
         for start in range(0, 420, 5)
     ]
 
@@ -332,3 +351,22 @@ def test_long_story_director_uses_short_teaser_then_restores_chronology():
     assert plan["quality_gate_passed"] is True
     assert plan["filler_padding_added"] is False
     assert plan["duplicated_teaser_content"] is False
+
+
+def test_long_story_director_never_makes_an_arbitrary_partial_teaser():
+    candidates = [
+        make_candidate(1, 0, 82, "Konteks lengkap"),
+        make_candidate(2, 120, 96, "Jawaban terkuat"),
+        make_candidate(3, 240, 88, "Kesimpulan lengkap"),
+    ]
+    transcript = [
+        TranscriptSegment(start=start, end=start + 5, text=f"fragmen {start}")
+        for start in range(0, 300, 5)
+    ]
+
+    sequence, _roles, plan = build_long_form_story_sequence(candidates, transcript)
+
+    assert sequence[0].start == 120
+    assert sequence[0].duration == candidates[1].duration
+    assert len(sequence) == len(candidates)
+    assert plan["cold_open_boundary"] == "complete_selected_beat"

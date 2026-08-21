@@ -1957,14 +1957,17 @@ def detect_speaker_focus_points(
     duration = max(0.1, clip.end - clip.start)
     sample_count = min(14, max(6, int(duration // 6)))
     step = duration / (sample_count + 1)
-    observations: list[tuple[float, float]] = []
-    frames_with_pair = 0
+    paired_observations: list[
+        tuple[tuple[float, float], tuple[float, float]]
+    ] = []
+    valid_frames = 0
 
     for index in range(sample_count):
         capture.set(cv2.CAP_PROP_POS_MSEC, (clip.start + step * (index + 1)) * 1000)
         ok, frame = capture.read()
         if not ok:
             continue
+        valid_frames += 1
         resize_scale = min(1.0, 720 / max(frame.shape[:2]))
         resized = (
             cv2.resize(frame, None, fx=resize_scale, fy=resize_scale, interpolation=cv2.INTER_AREA)
@@ -1999,34 +2002,34 @@ def detect_speaker_focus_points(
         strongest = sorted(detected, key=lambda item: item[1], reverse=True)[:3]
         if len(strongest) >= 2:
             ordered = sorted(strongest, key=lambda item: item[0])
-            if ordered[-1][0] - ordered[0][0] >= 0.18:
-                frames_with_pair += 1
-        observations.extend(strongest)
+            left_face, right_face = ordered[0], ordered[-1]
+            relative_prominence = min(left_face[1], right_face[1]) / max(
+                1.0, max(left_face[1], right_face[1])
+            )
+            if (
+                right_face[0] - left_face[0] >= 0.20
+                and relative_prominence >= 0.35
+            ):
+                # Only learn panel positions from faces visible in the same
+                # frame. Combining one face from shot A with another from shot
+                # B creates the empty/half-person split seen in long-form. A
+                # tiny audience face must not become a full speaker panel.
+                paired_observations.append((left_face, right_face))
 
     capture.release()
-    if len(observations) < 4:
+    minimum_pair_frames = max(2, math.ceil(valid_frames * 0.30))
+    if len(paired_observations) < minimum_pair_frames:
         return None
 
-    left_center = min(item[0] for item in observations)
-    right_center = max(item[0] for item in observations)
-    if right_center - left_center < 0.18:
-        return None
-    left_group: list[tuple[float, float]] = []
-    right_group: list[tuple[float, float]] = []
-    for _ in range(6):
-        left_group = []
-        right_group = []
-        for item in observations:
-            target = left_group if abs(item[0] - left_center) <= abs(item[0] - right_center) else right_group
-            target.append(item)
-        if not left_group or not right_group:
-            return None
-        left_center = sum(x * weight for x, weight in left_group) / sum(weight for _, weight in left_group)
-        right_center = sum(x * weight for x, weight in right_group) / sum(weight for _, weight in right_group)
-
-    if right_center - left_center < 0.20:
-        return None
-    if frames_with_pair == 0 and (len(left_group) < 2 or len(right_group) < 2):
+    left_faces = [pair[0] for pair in paired_observations]
+    right_faces = [pair[1] for pair in paired_observations]
+    left_center = sum(x * weight for x, weight in left_faces) / sum(
+        weight for _, weight in left_faces
+    )
+    right_center = sum(x * weight for x, weight in right_faces) / sum(
+        weight for _, weight in right_faces
+    )
+    if right_center - left_center < 0.22:
         return None
     return (left_center, right_center), (width, height)
 
@@ -2222,9 +2225,9 @@ def detect_active_speaker_split_profile(
     step = duration / (sample_count + 1)
     valid_frames = 0
     simultaneous_frames = 0
-    # Each observation: (norm_x, norm_y, face_area)
-    all_observations: list[tuple[float, float, float]] = []
-    per_frame_counts: list[int] = []
+    # Each observation: (norm_x, norm_y, face_area). Keep frame membership so
+    # a single person moving between shots cannot become two fake identities.
+    cooccurring_frames: list[list[tuple[float, float, float]]] = []
 
     try:
         for index in range(sample_count):
@@ -2267,23 +2270,23 @@ def detect_active_speaker_split_profile(
                     detected.append((norm_x, norm_y, float(face_width * face_height)))
 
             strongest = sorted(detected, key=lambda item: item[2], reverse=True)[:4]
-            per_frame_counts.append(len(strongest))
             if len(strongest) >= 2:
                 xs = sorted(item[0] for item in strongest)
-                if xs[-1] - xs[0] >= 0.12:
+                if xs[-1] - xs[0] >= 0.18:
                     simultaneous_frames += 1
-            all_observations.extend(strongest)
+                    cooccurring_frames.append(strongest)
     finally:
         capture.release()
 
+    all_observations = [item for frame in cooccurring_frames for item in frame]
     if valid_frames < 4 or len(all_observations) < 6:
         return None
     simultaneous_ratio = simultaneous_frames / valid_frames
-    if simultaneous_frames < 2 or simultaneous_ratio < 0.25:
+    if simultaneous_frames < max(2, math.ceil(valid_frames * 0.30)) or simultaneous_ratio < 0.30:
         return None
 
-    # Determine person count: check median visible faces
-    median_visible = float(np.median(per_frame_counts))
+    # Determine person count only from frames where people truly co-occur.
+    median_visible = float(np.median([len(frame) for frame in cooccurring_frames]))
     if median_visible < 1.8:
         return None
     target_persons = min(3, max(2, round(median_visible)))
@@ -2318,11 +2321,33 @@ def detect_active_speaker_split_profile(
     if target_persons >= 2 and (centers[-1] - centers[0]) < 0.15:
         return None
     for i in range(len(centers) - 1):
-        if centers[i + 1] - centers[i] < 0.08:
+        if centers[i + 1] - centers[i] < 0.16:
             return None
 
     # Compute per-cluster Y centers and face sizes
     final_assignments = np.argmin(np.abs(obs_xs[:, None] - centers[None, :]), axis=1)
+    cluster_frame_presence = [0 for _ in range(target_persons)]
+    full_cooccurrence_frames = 0
+    for frame in cooccurring_frames:
+        frame_xs = np.array([item[0] for item in frame])
+        frame_assignments = set(
+            int(value)
+            for value in np.argmin(
+                np.abs(frame_xs[:, None] - centers[None, :]),
+                axis=1,
+            )
+        )
+        for cluster_idx in frame_assignments:
+            cluster_frame_presence[cluster_idx] += 1
+        if len(frame_assignments) == target_persons:
+            full_cooccurrence_frames += 1
+    minimum_identity_frames = max(2, math.ceil(valid_frames * 0.25))
+    if (
+        min(cluster_frame_presence, default=0) < minimum_identity_frames
+        or full_cooccurrence_frames < minimum_identity_frames
+    ):
+        return None
+
     cluster_ys: list[float] = []
     cluster_sizes: list[float] = []
     for cluster_idx in range(target_persons):
@@ -2979,11 +3004,11 @@ def vertical_active_speaker_split_filter(
     *,
     emphasis_times: list[float] | None = None,
 ) -> str:
-    """Active speaker close-up on top, individual person splits on bottom.
+    """Dominant speaker on top, different supporting people on the bottom.
 
-    Top panel (1000x1060): follows the active speaker, switching on emphasis
-    timestamps. Bottom panel: split into 2 or 3 equal individual person crops.
-    The active speaker's border pulses on speech beats.
+    The dominant person is deliberately excluded from the lower row. Repeating
+    that crop made a three-panel layout look like duplicated content and left
+    narrow edge crops with no useful subject.
 
     Complies with YouTube Shorts guidelines: no misleading UI, no fake
     engagement elements, just clean multi-camera presentation.
@@ -3011,15 +3036,28 @@ def vertical_active_speaker_split_filter(
         crop_x = int(clamp_even(center_px - top_crop_width / 2, 0, source_width - top_crop_width))
         top_crop_xs.append(crop_x)
 
-    # --- Bottom panel: split per person ---
+    dominant_idx = 0
+    if profile.face_sizes:
+        dominant_idx = profile.face_sizes.index(max(profile.face_sizes))
+    companion_indices = [
+        index for index in range(n_persons) if index != dominant_idx
+    ]
+
+    # --- Bottom panel: supporting people only (never duplicate the top) ---
     bottom_total_width = 1000
     bottom_height = 680
     gap = 8
-    if n_persons == 2:
-        panel_width = (bottom_total_width - gap) // 2
-    else:
-        panel_width = (bottom_total_width - gap * 2) // 3
-    panel_aspect = panel_width / bottom_height
+    bottom_panel_count = len(companion_indices)
+    panel_width = (
+        bottom_total_width
+        if bottom_panel_count == 1
+        else (bottom_total_width - gap * (bottom_panel_count - 1)) // bottom_panel_count
+    )
+    # With one companion, a full-width 1000x680 crop is so wide that it can
+    # show the dominant speaker again. Keep a portrait-like subject crop and
+    # letterbox it inside the wide lower card instead.
+    bottom_subject_width = 520 if bottom_panel_count == 1 else panel_width
+    panel_aspect = bottom_subject_width / bottom_height
 
     bottom_crop_height = source_height
     bottom_crop_width = make_even(bottom_crop_height * panel_aspect, 2)
@@ -3029,22 +3067,18 @@ def vertical_active_speaker_split_filter(
     bottom_crop_y = max(0, (source_height - bottom_crop_height) // 2)
 
     bottom_crop_xs: list[int] = []
-    for focus_x in profile.face_focus_xs:
+    for person_index in companion_indices:
+        focus_x = profile.face_focus_xs[person_index]
         center_px = focus_x * source_width
         crop_x = int(clamp_even(center_px - bottom_crop_width / 2, 0, source_width - bottom_crop_width))
         bottom_crop_xs.append(crop_x)
 
-    # Determine active speaker schedule from emphasis timestamps
-    # Default: person 0 speaks, alternating on each emphasis beat
     timestamps = sorted(emphasis_times or [])
-    speaker_schedule: list[tuple[float, int]] = [(0.0, 0)]
-    for idx, ts in enumerate(timestamps[:12]):
-        speaker_schedule.append((ts, idx % n_persons))
 
-    # Number of splits: 1 (bg) + 1 (active top crop) + n_persons (bottom crops)
-    total_splits = 2 + n_persons
+    # Number of splits: background + dominant top + unique companions.
+    total_splits = 2 + bottom_panel_count
     split_names = ["asplit_bg_src", "asplit_top_src"] + [
-        f"asplit_bot{i}_src" for i in range(n_persons)
+        f"asplit_bot{i}_src" for i in range(bottom_panel_count)
     ]
 
     # Build FFmpeg filter graph
@@ -3062,13 +3096,7 @@ def vertical_active_speaker_split_filter(
         "drawbox=x=0:y=0:w=iw:h=ih:color=#020908@0.45:t=fill[asplit_bg]"
     )
 
-    # 3. Active speaker top crop - use the first person by default
-    # Build a time-switching crop by using the primary person's position
-    # Since FFmpeg can't dynamically switch crops, we use the dominant speaker
-    # (person with largest aggregate face size)
-    dominant_idx = 0
-    if profile.face_sizes:
-        dominant_idx = profile.face_sizes.index(max(profile.face_sizes))
+    # 3. Use the consistently largest face as the dominant top speaker.
     active_crop_x = top_crop_xs[dominant_idx]
 
     parts.append(
@@ -3077,11 +3105,14 @@ def vertical_active_speaker_split_filter(
     )
 
     # 4. Bottom person crops
-    for i in range(n_persons):
+    for i in range(bottom_panel_count):
         parts.append(
             f"[asplit_bot{i}_src]crop={bottom_crop_width}:{bottom_crop_height}:"
             f"{bottom_crop_xs[i]}:{bottom_crop_y},"
-            f"scale={panel_width}:{bottom_height}:flags=lanczos,setsar=1[asplit_bot{i}]"
+            f"scale={panel_width}:{bottom_height}:force_original_aspect_ratio=decrease:"
+            "force_divisible_by=2:flags=lanczos,"
+            f"pad={panel_width}:{bottom_height}:(ow-iw)/2:(oh-ih)/2:color=#020908,"
+            f"setsar=1[asplit_bot{i}]"
         )
 
     # 5. Draw panel backgrounds on the blurred BG
@@ -3096,7 +3127,7 @@ def vertical_active_speaker_split_filter(
         f"drawbox=x={top_x_offset - 8}:y={top_y_offset - 8}:w={top_width + 16}:h={top_height + 16}:color=black@0.72:t=fill",
     ]
     # Bottom panel backdrops
-    for i in range(n_persons):
+    for i in range(bottom_panel_count):
         panel_x = bottom_x_start + i * (panel_width + gap)
         draw_cmds.append(
             f"drawbox=x={panel_x - 4}:y={bottom_y_offset - 4}:w={panel_width + 8}:h={bottom_height + 8}:color=black@0.68:t=fill"
@@ -3111,9 +3142,9 @@ def vertical_active_speaker_split_filter(
 
     # 7. Overlay bottom panels
     prev_label = "asplit_s1"
-    for i in range(n_persons):
+    for i in range(bottom_panel_count):
         panel_x = bottom_x_start + i * (panel_width + gap)
-        next_label = f"asplit_s{i + 2}" if i < n_persons - 1 else ""
+        next_label = f"asplit_s{i + 2}" if i < bottom_panel_count - 1 else ""
         overlay = (
             f"[{prev_label}][asplit_bot{i}]overlay={panel_x}:{bottom_y_offset}:"
             f"shortest=1:eof_action=pass"
@@ -3132,7 +3163,7 @@ def vertical_active_speaker_split_filter(
     )
 
     # Bottom panel borders with secondary color
-    for i in range(n_persons):
+    for i in range(bottom_panel_count):
         panel_x = bottom_x_start + i * (panel_width + gap)
         border_cmds.append(
             f"drawbox=x={panel_x - 2}:y={bottom_y_offset - 2}:w={panel_width + 4}:h={bottom_height + 4}:"
@@ -3145,11 +3176,11 @@ def vertical_active_speaker_split_filter(
         f"w={top_width - 20}:h=4:color=white@0.25:t=fill"
     )
 
-    # Active speaker indicator: pulse the dominant speaker's bottom panel border
+    # Pulse only companion panels; the dominant person remains exclusive to top.
     for idx, ts in enumerate(timestamps[:6]):
         end = ts + 0.8
-        person_idx = idx % n_persons
-        panel_x = bottom_x_start + person_idx * (panel_width + gap)
+        panel_index = idx % bottom_panel_count
+        panel_x = bottom_x_start + panel_index * (panel_width + gap)
         border_cmds.append(
             f"drawbox=x={panel_x - 3}:y={bottom_y_offset - 3}:w={panel_width + 6}:h={bottom_height + 6}:"
             f"color={accent}@0.98:t=5:"
@@ -4854,7 +4885,16 @@ def candidate_topic_similarity(left: ClipCandidate, right: ClipCandidate) -> flo
     right_words = _content_words(right.text)
     if not left_words or not right_words:
         return 0.0
-    return len(left_words.intersection(right_words)) / len(left_words.union(right_words))
+    intersection = len(left_words.intersection(right_words))
+    jaccard = intersection / len(left_words.union(right_words))
+    if min(len(left_words), len(right_words)) < 5:
+        left_normalized = re.sub(r"\s+", " ", left.text.casefold()).strip()
+        right_normalized = re.sub(r"\s+", " ", right.text.casefold()).strip()
+        return 1.0 if left_normalized == right_normalized else 0.0
+    # Sliding candidate windows often make one repeated point a strict subset
+    # of a longer version. Jaccard alone understates that duplication.
+    containment = intersection / min(len(left_words), len(right_words))
+    return max(jaccard, containment)
 
 
 def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0) -> float:
@@ -4943,21 +4983,10 @@ def select_candidates(
                 best_adjusted = adjusted
 
         if best is None:
-            # Diversity is preferred, but it must not silently reduce an
-            # explicit clip target when enough non-overlapping moments exist.
-            best = next(
-                (
-                    candidate
-                    for candidate in remaining
-                    if not any(
-                        not (candidate.end <= item.start or candidate.start >= item.end)
-                        for item in picked
-                    )
-                ),
-                None,
-            )
-            if best is None:
-                break
+            # A smaller genuinely distinct batch is safer than filling an
+            # explicit target with the same point reworded. This also reduces
+            # repetitive/mass-produced channel risk.
+            break
         best.index = len(picked) + 1
         picked.append(best)
         remaining.remove(best)
@@ -4992,29 +5021,10 @@ def select_compilation_candidates(
     picked: list[ClipCandidate] = []
     total = 0.0
 
-    def fit_to_remaining(candidate: ClipCandidate, seconds_left: float) -> ClipCandidate:
-        if candidate.end - candidate.start <= seconds_left:
-            return candidate
-        return ClipCandidate(
-            index=candidate.index,
-            start=candidate.start,
-            end=candidate.start + seconds_left,
-            duration=seconds_left,
-            score=candidate.score,
-            title=candidate.title,
-            reason=candidate.reason,
-            text=candidate.text,
-            hook=candidate.hook,
-            pov=candidate.pov,
-            fyp_label=candidate.fyp_label,
-            strengths=list(candidate.strengths),
-            weaknesses=list(candidate.weaknesses),
-            improvement_ideas=list(candidate.improvement_ideas),
-            applied_edits=list(candidate.applied_edits),
-            key_point_score=candidate.key_point_score,
-            loop_score=candidate.loop_score,
-            boundary_quality=candidate.boundary_quality,
-            retention_score=candidate.retention_score,
+    def is_distinct(candidate: ClipCandidate) -> bool:
+        return all(
+            candidate_topic_similarity(candidate, chosen) < 0.72
+            for chosen in picked
         )
 
     # Seed the resume with a strong, non-overlapping beat from each source
@@ -5034,6 +5044,8 @@ def select_compilation_candidates(
                     not (item.end <= chosen.start or item.start >= chosen.end)
                     for chosen in picked
                 )
+                and is_distinct(item)
+                and item.duration <= target_duration - total + 0.05
             ]
             if not phase:
                 continue
@@ -5044,7 +5056,7 @@ def select_compilation_candidates(
             seconds_left = target_duration - total
             if seconds_left < 8:
                 break
-            picked.append(fit_to_remaining(best_phase, seconds_left))
+            picked.append(best_phase)
             remaining.remove(best_phase)
             total += picked[-1].end - picked[-1].start
             if total >= target_duration or len(picked) >= max_parts:
@@ -5055,6 +5067,10 @@ def select_compilation_candidates(
         best_adjusted = -1_000.0
         for candidate in remaining:
             if any(not (candidate.end <= item.start or candidate.start >= item.end) for item in picked):
+                continue
+            if not is_distinct(candidate):
+                continue
+            if candidate.duration > target_duration - total + 0.05:
                 continue
             # Favor concise, high-scoring sections so the final five minutes stay dense.
             adjusted = candidate.score - abs(candidate.duration - 60) * 0.05
@@ -5069,7 +5085,6 @@ def select_compilation_candidates(
         seconds_left = target_duration - total
         if seconds_left < 8:
             break
-        best = fit_to_remaining(best, seconds_left)
         picked.append(best)
         total += best.end - best.start
 
@@ -5140,6 +5155,7 @@ def build_long_form_story_sequence(
     minimum_teaser = 10.0
     maximum_teaser = min(22.0, max(minimum_teaser, strongest_duration - 10.0))
     teaser_end = min(strongest.end, strongest.start + teaser_target_seconds)
+    teaser_boundary_found = False
     if strongest_duration >= minimum_teaser + 10.0:
         sentence_ends = [
             segment.end
@@ -5147,12 +5163,21 @@ def build_long_form_story_sequence(
             if minimum_teaser
             <= segment.end - strongest.start
             <= maximum_teaser
+            and (
+                segment.text.rstrip().endswith((".", "!", "?"))
+                or bool(
+                    set(re.findall(r"[\w']+", segment.text.casefold())).intersection(
+                        PAYOFF_WORDS | IMPORTANT_WORDS
+                    )
+                )
+            )
         ]
         if sentence_ends:
             teaser_end = min(
                 sentence_ends,
                 key=lambda value: abs((value - strongest.start) - teaser_target_seconds),
             )
+            teaser_boundary_found = True
     teaser_end = min(strongest.end, max(strongest.start + minimum_teaser, teaser_end))
 
     def slice_candidate(
@@ -5180,7 +5205,7 @@ def build_long_form_story_sequence(
 
     # If the strongest beat is too short to split safely, retain the old
     # no-duplication behavior rather than manufacturing extra runtime.
-    if strongest.end - teaser_end < 10.0:
+    if not teaser_boundary_found or strongest.end - teaser_end < 10.0:
         sequence = order_compilation_for_retention(chronological)
         roles = [
             "cold_open"
@@ -5195,6 +5220,7 @@ def build_long_form_story_sequence(
             "strategy": "strongest_complete_beat_then_chronology",
             "quality_gate_passed": len(sequence) >= 3,
             "cold_open_seconds": round(sequence[0].duration, 3),
+            "cold_open_boundary": "complete_selected_beat",
             "source_chronology_preserved_after_teaser": True,
             "filler_padding_added": False,
             "duplicated_teaser_content": False,
@@ -5245,6 +5271,7 @@ def build_long_form_story_sequence(
         "strategy": "sentence_complete_teaser_then_source_chronology",
         "quality_gate_passed": len(sequence) >= 4 and unique_story_beats >= 3,
         "cold_open_seconds": round(teaser.end - teaser.start, 3),
+        "cold_open_boundary": "sentence_or_payoff_aligned",
         "total_story_seconds": round(total_duration, 3),
         "unique_story_beats": unique_story_beats,
         "source_chronology_preserved_after_teaser": True,
@@ -5785,13 +5812,13 @@ SHORTS_SAFE_TOP = 220
 SHORTS_SAFE_BOTTOM = 1560
 SHORTS_OFFICIAL_MAX_SECONDS = 180
 FENDY_CLIPPER_SHORTS_MAX_SECONDS = 60
-SHORTS_POLICY_REVIEW_DATE = os.environ.get("YOUTUBE_POLICY_REVIEW_DATE", "2026-08-18").strip()
+SHORTS_POLICY_REVIEW_DATE = os.environ.get("YOUTUBE_POLICY_REVIEW_DATE", "2026-08-21").strip()
 YOUTUBE_POLICY_REVIEW_INTERVAL_DAYS = 180
 
 
 def youtube_policy_snapshot(*, as_of: date | None = None) -> dict[str, object]:
     """Expose policy freshness instead of pretending a dated audit lasts forever."""
-    fallback_reviewed = date(2026, 8, 18)
+    fallback_reviewed = date(2026, 8, 21)
     try:
         reviewed = date.fromisoformat(SHORTS_POLICY_REVIEW_DATE)
     except ValueError:
@@ -5809,7 +5836,7 @@ def youtube_policy_snapshot(*, as_of: date | None = None) -> dict[str, object]:
     current_date = as_of or date.today()
     review_due = reviewed + timedelta(days=review_interval_days)
     return {
-        "snapshot_version": 1,
+        "snapshot_version": 2,
         "reviewed_on": reviewed.isoformat(),
         "review_due_on": review_due.isoformat(),
         "review_required": current_date > review_due,
@@ -5820,6 +5847,7 @@ def youtube_policy_snapshot(*, as_of: date | None = None) -> dict[str, object]:
             "https://support.google.com/youtube/answer/1311392",
             "https://support.google.com/youtube/answer/12504220",
             "https://support.google.com/youtube/answer/16559650",
+            "https://support.google.com/youtube/answer/2801973",
         ],
     }
 
@@ -6442,6 +6470,9 @@ def shorts_policy_compliance(duration: float, *, embedded_cover: bool) -> dict[s
         "source_promos_removed_from_candidate_windows": True,
         "inauthentic_content_policy_reviewed": True,
         "mass_produced_or_repetitive_content_not_assumed_monetizable": True,
+        "automated_or_synthetic_mass_production_allowed": False,
+        "duplicate_main_points_allowed_in_one_batch": False,
+        "split_layout_requires_unique_visible_subjects": True,
         "non_original_shorts_views_may_be_ineligible": True,
         "contextual_engagement_prompt_preferred": True,
         "repeated_subscribe_template_avoided": True,
@@ -9297,16 +9328,22 @@ def export_clip(
         sidecar_payload["active_speaker_split_layout"] = {
             "enabled": True,
             "person_count": active_speaker_split_profile.person_count,
+            "unique_companion_panel_count": active_speaker_split_profile.person_count - 1,
             "simultaneous_frame_ratio": active_speaker_split_profile.simultaneous_frame_ratio,
             "face_focus_xs": active_speaker_split_profile.face_focus_xs,
             "face_focus_ys": active_speaker_split_profile.face_focus_ys,
             "top_panel": "dominant_speaker_closeup",
-            "bottom_panel": f"individual_split_{active_speaker_split_profile.person_count}_persons",
-            "youtube_compliant": True,
+            "bottom_panel": (
+                f"unique_companions_{active_speaker_split_profile.person_count - 1}"
+            ),
+            "dominant_speaker_repeated_in_bottom": False,
+            "requires_same_frame_cooccurrence": True,
+            "youtube_guardrails_applied": True,
+            "compliance_guarantee": False,
         }
         applied_edits.append(
             f"Layout active-speaker split: close-up pembicara aktif di atas, "
-            f"{active_speaker_split_profile.person_count} panel individu di bawah "
+            f"{active_speaker_split_profile.person_count - 1} panel pendamping unik di bawah "
             f"dengan border pulse mengikuti beat percakapan."
         )
     elif multi_person_profile is not None:
@@ -10539,6 +10576,9 @@ def export_compilation(
             "verified_cc_attribution_preserved_when_applicable": True,
             "substantive_content_specific_edit_required": True,
             "mass_produced_repetitive_template_allowed": False,
+            "automated_or_synthetic_mass_production_allowed": False,
+            "duplicate_story_beats_allowed": False,
+            "speaker_split_requires_persistent_same_frame_cooccurrence": True,
             "filler_added_only_to_reach_duration": False,
             "realistic_altered_content_disclosure_required_when_applicable": True,
             "private_upload_review_before_publish": True,

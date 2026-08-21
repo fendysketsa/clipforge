@@ -4,6 +4,7 @@ from pathlib import Path
 
 from clipper import (
     AVAILABLE_FONTS,
+    ActiveSpeakerSplitProfile,
     CameraAngleCue,
     CaptionStyle,
     ClipCandidate,
@@ -94,6 +95,7 @@ from clipper import (
     virtual_camera_angle_cues,
     visual_theme_profile,
     vertical_clean_detail_crop_filter,
+    vertical_active_speaker_split_filter,
     vertical_multi_person_context_filter,
     write_dynamic_ass,
     youtube_policy_snapshot,
@@ -686,6 +688,44 @@ def test_landscape_speaker_split_has_two_bordered_panels_and_active_pulses():
     assert "between(t,24.000,24.720)" in value
 
 
+def test_vertical_active_split_never_repeats_dominant_speaker_in_bottom_row():
+    profile = ActiveSpeakerSplitProfile(
+        face_focus_xs=[0.15, 0.50, 0.85],
+        face_focus_ys=[0.44, 0.40, 0.46],
+        face_sizes=[8000, 18000, 9000],
+        person_count=3,
+        simultaneous_frame_ratio=0.72,
+        source_width=1920,
+        source_height=1080,
+    )
+
+    value = vertical_active_speaker_split_filter(profile, emphasis_times=[4.0])
+
+    assert "split=4[asplit_bg_src][asplit_top_src][asplit_bot0_src][asplit_bot1_src]" in value
+    assert "[asplit_top_src]crop=1020:1080:450:0" in value
+    assert "[asplit_bot0_src]crop=788:1080:0:0" in value
+    assert "[asplit_bot1_src]crop=788:1080:1132:0" in value
+    assert "asplit_bot2" not in value
+
+
+def test_vertical_two_person_split_uses_one_full_width_unique_companion():
+    profile = ActiveSpeakerSplitProfile(
+        face_focus_xs=[0.25, 0.75],
+        face_focus_ys=[0.42, 0.43],
+        face_sizes=[16000, 9000],
+        person_count=2,
+        simultaneous_frame_ratio=0.68,
+        source_width=1920,
+        source_height=1080,
+    )
+
+    value = vertical_active_speaker_split_filter(profile)
+
+    assert "split=3[asplit_bg_src][asplit_top_src][asplit_bot0_src]" in value
+    assert "scale=1000:680" in value
+    assert "asplit_bot1" not in value
+
+
 def test_vertical_multi_person_context_keeps_primary_and_wide_group_panels():
     profile = MultiPersonProfile(
         primary_focus_x=0.31,
@@ -1112,14 +1152,14 @@ def test_shorts_policy_compliance_records_official_and_stricter_local_limits():
 
 
 def test_youtube_policy_snapshot_marks_future_rules_for_review_without_assuming_them():
-    current = youtube_policy_snapshot(as_of=date(2026, 8, 18))
-    future = youtube_policy_snapshot(as_of=date(2027, 8, 18))
+    current = youtube_policy_snapshot(as_of=date(2026, 8, 21))
+    future = youtube_policy_snapshot(as_of=date(2027, 8, 21))
 
     assert current["review_required"] is False
     assert future["review_required"] is True
     assert future["future_year_assumed_unchanged"] is False
     assert future["rules_are_runtime_guarantee"] is False
-    assert len(future["official_sources"]) == 4
+    assert len(future["official_sources"]) == 5
 
 
 def test_five_k_readiness_is_a_stability_experiment_not_a_view_guarantee():
