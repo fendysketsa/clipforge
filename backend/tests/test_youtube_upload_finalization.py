@@ -55,6 +55,18 @@ class SequenceTextPage(TextPage):
         return self.bodies[0]
 
 
+class StaleUploadDialogsPage(TextPage):
+    """Studio page with a hidden stale dialog plus one visible active dialog."""
+
+    def evaluate(self, _script):
+        return self.body
+
+    def locator(self, selector):
+        if selector == "ytcp-uploads-dialog":
+            raise AssertionError("an unindexed multi-dialog locator must not be read")
+        return super().locator(selector)
+
+
 class PendingPublishPage:
     def locator(self, selector):
         if selector == "body":
@@ -361,6 +373,18 @@ def test_checks_block_exact_indonesian_claim_notice_from_studio(monkeypatch):
     monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
     page = TextPage(
         "Konten yang diklaim ditemukan di video ini. "
+        "Klaim ini tidak memengaruhi visibilitas atau fitur video Anda."
+    )
+
+    with pytest.raises(UploadError, match="Content ID"):
+        wait_for_copyright_checks(page, timeout_ms=100, require_checks=True)
+
+
+def test_checks_read_visible_dialog_when_studio_keeps_stale_dialog(monkeypatch):
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
+    page = StaleUploadDialogsPage(
+        "Pemeriksaan selesai. Konten yang diklaim ditemukan. "
         "Klaim ini tidak memengaruhi visibilitas atau fitur video Anda."
     )
 

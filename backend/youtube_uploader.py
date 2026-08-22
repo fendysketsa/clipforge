@@ -760,6 +760,81 @@ def normalized_page_text(page) -> str:
     return normalize_channel_text(page_identity_text(page))
 
 
+def active_upload_dialog_text(page, timeout_ms: int = 3000) -> str:
+    """Read the visible upload dialog, ignoring stale hidden Studio dialogs."""
+    script = r"""
+    () => {
+      const roots = [];
+      const seen = new Set();
+      const addRoot = (root) => {
+        if (root && !seen.has(root)) {
+          seen.add(root);
+          roots.push(root);
+        }
+      };
+      addRoot(document);
+      for (let index = 0; index < roots.length; index += 1) {
+        const root = roots[index];
+        const elements = root.querySelectorAll ? Array.from(root.querySelectorAll('*')) : [];
+        for (const element of elements) {
+          if (element.shadowRoot) addRoot(element.shadowRoot);
+        }
+      }
+      const isVisible = (element) => {
+        if (!element || !element.getBoundingClientRect) return false;
+        if (element.getAttribute?.('aria-hidden') === 'true') return false;
+        const rect = element.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        const style = window.getComputedStyle(element);
+        return Boolean(
+          style && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0'
+        );
+      };
+      const candidates = [];
+      for (const root of roots) {
+        const dialogs = root.querySelectorAll
+          ? Array.from(root.querySelectorAll('ytcp-uploads-dialog'))
+          : [];
+        for (const dialog of dialogs) {
+          const surface = dialog.querySelector?.('tp-yt-paper-dialog#dialog, [role="dialog"]') || dialog;
+          if (!isVisible(surface) && !isVisible(dialog)) continue;
+          const rect = surface.getBoundingClientRect?.() || dialog.getBoundingClientRect();
+          candidates.push({ dialog, score: (rect.width * rect.height) + rect.top + rect.left });
+        }
+      }
+      candidates.sort((left, right) => right.score - left.score);
+      const active = candidates[0]?.dialog;
+      return active ? String(active.innerText || active.textContent || '') : '';
+    }
+    """
+    try:
+        body = str(page.evaluate(script) or "")
+        if body.strip():
+            return body
+    except Exception:
+        pass
+
+    # Calling inner_text() on an unindexed collection throws in strict mode
+    # when Studio keeps an old hidden upload dialog in the DOM.
+    try:
+        dialogs = page.locator("ytcp-uploads-dialog")
+        for index in reversed(range(dialogs.count())):
+            dialog = dialogs.nth(index)
+            try:
+                if dialog.is_visible(timeout=min(timeout_ms, 500)):
+                    body = dialog.inner_text(timeout=timeout_ms)
+                    if body.strip():
+                        return body
+            except Exception:
+                continue
+    except Exception:
+        pass
+    try:
+        return page.locator("body").inner_text(timeout=timeout_ms)
+    except Exception:
+        return ""
+
+
 def page_url_matches_channel_id(page, target_channel_id: str) -> bool:
     expected_channel_id = target_channel_id.strip().lower()
     if not expected_channel_id:
@@ -2067,12 +2142,26 @@ def get_upload_workflow_step(page) -> str:
           if (element.shadowRoot) addRoot(element.shadowRoot);
         }
       }
+      const isVisible = (element) => {
+        if (!element || !element.getBoundingClientRect) return false;
+        if (element.getAttribute?.('aria-hidden') === 'true') return false;
+        const rect = element.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        const style = window.getComputedStyle(element);
+        return Boolean(style && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0');
+      };
+      let hiddenStep = '';
       for (const root of roots) {
-        const dialog = root.querySelector?.('ytcp-uploads-dialog');
-        const step = dialog?.getAttribute?.('workflow-step');
-        if (step) return String(step).toUpperCase();
+        const dialogs = root.querySelectorAll ? Array.from(root.querySelectorAll('ytcp-uploads-dialog')) : [];
+        for (const dialog of dialogs) {
+          const step = String(dialog.getAttribute?.('workflow-step') || '').toUpperCase();
+          if (!step) continue;
+          if (!hiddenStep) hiddenStep = step;
+          const surface = dialog.querySelector?.('tp-yt-paper-dialog#dialog, [role="dialog"]') || dialog;
+          if (isVisible(surface) || isVisible(dialog)) return step;
+        }
       }
-      return '';
+      return hiddenStep;
     }
     """
     try:
@@ -2115,14 +2204,11 @@ def wait_for_visibility_step(page, timeout_ms: int = 20000) -> None:
     last_body = ""
     while time.monotonic() < deadline:
         dismiss_reload_prompt(page, timeout_ms=300)
-        try:
-            body = page.locator("ytcp-uploads-dialog").inner_text(timeout=2000)
-            last_body = re.sub(r"\s+", " ", body).strip()[:500]
-            if any(re.search(pattern, body, re.I) for pattern in patterns):
-                log("Tab Visibilitas siap.")
-                return
-        except Exception:
-            pass
+        body = active_upload_dialog_text(page, timeout_ms=2000)
+        last_body = re.sub(r"\s+", " ", body).strip()[:500]
+        if any(re.search(pattern, body, re.I) for pattern in patterns):
+            log("Tab Visibilitas siap.")
+            return
         time.sleep(0.5)
     save_debug_artifacts(page, "visibility-step-not-ready")
     raise UploadError(f"Tab Visibilitas belum siap sebelum publish. Cuplikan modal: {last_body}")
@@ -2189,7 +2275,20 @@ def final_action_button_is_ready(page, visibility: str) -> bool:
     patterns = [r"publish", r"publikasikan"] if visibility == "public" else [r"save", r"done", r"simpan", r"selesai"]
     script = """
     ({ patterns }) => {
-      const dialog = document.querySelector('ytcp-uploads-dialog');
+      const isVisible = (element) => {
+        if (!element || !element.getBoundingClientRect) return false;
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return Boolean(
+          rect.width > 0 && rect.height > 0 && style &&
+          style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0'
+        );
+      };
+      const dialogs = Array.from(document.querySelectorAll('ytcp-uploads-dialog'));
+      const dialog = dialogs.find((candidate) => {
+        const surface = candidate.querySelector('tp-yt-paper-dialog#dialog, [role="dialog"]') || candidate;
+        return isVisible(surface) || isVisible(candidate);
+      });
       if (!dialog || String(dialog.getAttribute('workflow-step') || '').toUpperCase() !== 'REVIEW') return false;
       const host = dialog.querySelector('#done-button');
       const button = host?.querySelector?.('button') || host;
@@ -2232,29 +2331,24 @@ def wait_for_review_checks_safe_before_publish(
     last_body = ""
     while time.monotonic() < deadline:
         dismiss_reload_prompt(page, timeout_ms=300)
-        try:
-            body = page.locator("ytcp-uploads-dialog").inner_text(timeout=3000)
-            last_body = re.sub(r"\s+", " ", body).strip()[:700]
-            if copyright_issue_blocks_upload(
-                body,
-                content_type=content_type,
-                media_duration_seconds=media_duration_seconds,
-                previously_verified_non_blocking_claim=previously_verified_non_blocking_claim,
-            ):
-                save_debug_artifacts(page, "copyright-claim-before-publish")
-                raise CopyrightClaimUploadError(
-                    "Klaim Content ID/copyright muncul pada review akhir. "
-                    "Video tidak dipublikasikan agar channel tetap aman."
-                )
-            if copyright_claim_is_explicitly_non_blocking(body):
-                log(
-                    "Review akhir mengonfirmasi klaim Content ID tanpa dampak pada video "
-                    "dan tanpa dampak pada channel; aksi final boleh dilanjutkan."
-                )
-        except UploadError:
-            raise
-        except Exception:
-            pass
+        body = active_upload_dialog_text(page, timeout_ms=3000)
+        last_body = re.sub(r"\s+", " ", body).strip()[:700]
+        if copyright_issue_blocks_upload(
+            body,
+            content_type=content_type,
+            media_duration_seconds=media_duration_seconds,
+            previously_verified_non_blocking_claim=previously_verified_non_blocking_claim,
+        ):
+            save_debug_artifacts(page, "copyright-claim-before-publish")
+            raise CopyrightClaimUploadError(
+                "Klaim Content ID/copyright muncul pada review akhir. "
+                "Video tidak dipublikasikan agar channel tetap aman."
+            )
+        if copyright_claim_is_explicitly_non_blocking(body):
+            log(
+                "Review akhir mengonfirmasi klaim Content ID tanpa dampak pada video "
+                "dan tanpa dampak pada channel; aksi final boleh dilanjutkan."
+            )
         if (
             get_upload_workflow_step(page) == "REVIEW"
             and visibility_is_selected(page, "public")
@@ -2290,10 +2384,7 @@ def click_final_upload_action(
         raise UploadError(
             f"Visibilitas '{visibility}' belum benar-benar tercentang; upload tidak dipublikasikan."
         )
-    try:
-        body = page.locator("ytcp-uploads-dialog").inner_text(timeout=3000)
-    except Exception:
-        body = ""
+    body = active_upload_dialog_text(page, timeout_ms=3000)
     claim_blocks_publication = copyright_issue_blocks_upload(
         body,
         content_type=content_type,
@@ -3520,7 +3611,20 @@ def select_playlist(page, playlist: str) -> None:
 def click_next_upload_step(page, timeout_ms: int = 20000, expected_step=None) -> None:
     direct_script = """
     () => {
-      const dialog = document.querySelector('ytcp-uploads-dialog');
+      const isVisible = (element) => {
+        if (!element || !element.getBoundingClientRect) return false;
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return Boolean(
+          rect.width > 0 && rect.height > 0 && style &&
+          style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0'
+        );
+      };
+      const dialogs = Array.from(document.querySelectorAll('ytcp-uploads-dialog'));
+      const dialog = dialogs.find((candidate) => {
+        const surface = candidate.querySelector('tp-yt-paper-dialog#dialog, [role="dialog"]') || candidate;
+        return isVisible(surface) || isVisible(candidate);
+      });
       if (!dialog) return { clicked: false, reason: 'dialog-not-found' };
       const host = dialog.querySelector('#next-button');
       const button = host?.querySelector?.('button') || host;
@@ -4780,10 +4884,8 @@ def wait_for_copyright_checks(
         if now >= deadline:
             break
         dismiss_reload_prompt(page, timeout_ms=300)
-        try:
-            dialog = page.locator("ytcp-uploads-dialog")
-            body = dialog.inner_text(timeout=3000) if dialog.count() else page.locator("body").inner_text(timeout=3000)
-        except Exception:
+        body = active_upload_dialog_text(page, timeout_ms=3000)
+        if not body:
             time.sleep(1)
             continue
         lowered = body.lower()
@@ -4943,14 +5045,11 @@ def wait_for_final_upload_confirmation(page, timeout_ms: int, video_url: str = "
                 return video_url or extract_video_url(page)
         except Exception:
             pass
-        try:
-            body = page.locator("ytcp-uploads-dialog").inner_text(timeout=3000)
-            last_body = re.sub(r"\s+", " ", body).strip()[:500]
-            if any(re.search(pattern, body, re.I) for pattern in done_patterns):
-                log("Konfirmasi final upload terdeteksi.")
-                return video_url or extract_video_url(page)
-        except Exception:
-            pass
+        body = active_upload_dialog_text(page, timeout_ms=3000)
+        last_body = re.sub(r"\s+", " ", body).strip()[:500]
+        if any(re.search(pattern, body, re.I) for pattern in done_patterns):
+            log("Konfirmasi final upload terdeteksi.")
+            return video_url or extract_video_url(page)
         time.sleep(3)
     raise UploadError(
         "Upload YouTube belum terkonfirmasi selesai sampai timeout. "
