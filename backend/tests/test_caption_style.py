@@ -2,6 +2,8 @@ import os
 from datetime import date
 from pathlib import Path
 
+import clipper as clipper_module
+
 from clipper import (
     AVAILABLE_FONTS,
     ActiveSpeakerSplitProfile,
@@ -759,6 +761,19 @@ def test_vertical_active_split_rejects_same_input_crop_fallback():
         raise AssertionError("same-frame companion fallback must be rejected")
 
 
+def test_companion_focus_extractor_unpacks_detector_tuple(monkeypatch):
+    clip = ClipCandidate(2, 30, 50, 20, 82, "Other", "test", "other")
+    monkeypatch.setattr(
+        clipper_module,
+        "detect_person_focus_x",
+        lambda _path, _clip: (0.73, (1920, 1080)),
+    )
+
+    focus_x = clipper_module.detect_person_focus_x_value(Path("source.mp4"), clip)
+
+    assert focus_x == 0.73
+
+
 def test_split_companions_are_distinct_and_spread_across_timeline():
     candidates = [
         ClipCandidate(1, 0, 20, 20, 90, "Main", "test", "main"),
@@ -793,7 +808,55 @@ def test_split_companions_do_not_treat_duplicate_index_as_another_clip():
     assert select_split_companion_candidates(main, candidates) == []
 
 
-def test_vertical_multi_person_context_keeps_primary_and_wide_group_panels():
+def test_split_companions_reject_different_timestamps_with_the_same_visual_angle(monkeypatch):
+    candidates = [
+        ClipCandidate(1, 0, 20, 20, 90, "Main", "test", "main"),
+        ClipCandidate(2, 80, 100, 20, 88, "Same A", "test", "same-a"),
+        ClipCandidate(3, 180, 200, 20, 86, "Same B", "test", "same-b"),
+    ]
+    same_signature = ([0.25] * (32 * 18), [0.0] * 31 + [1.0])
+    monkeypatch.setattr(
+        clipper_module,
+        "sample_candidate_visual_signature",
+        lambda _path, _candidate: same_signature,
+    )
+
+    selected = select_split_companion_candidates(
+        candidates[0],
+        candidates,
+        video_path=Path("source.mp4"),
+    )
+
+    assert selected == []
+
+
+def test_split_companions_keep_only_genuinely_different_visuals(monkeypatch):
+    candidates = [
+        ClipCandidate(1, 0, 20, 20, 90, "Main", "test", "main"),
+        ClipCandidate(2, 80, 100, 20, 88, "Angle B", "test", "angle-b"),
+        ClipCandidate(3, 180, 200, 20, 86, "Angle C", "test", "angle-c"),
+    ]
+    signatures = {
+        1: ([0.05] * (32 * 18), [1.0] + [0.0] * 31),
+        2: ([0.45] * (32 * 18), [0.0, 1.0] + [0.0] * 30),
+        3: ([0.85] * (32 * 18), [0.0, 0.0, 1.0] + [0.0] * 29),
+    }
+    monkeypatch.setattr(
+        clipper_module,
+        "sample_candidate_visual_signature",
+        lambda _path, item: signatures[item.index],
+    )
+
+    selected = select_split_companion_candidates(
+        candidates[0],
+        candidates,
+        video_path=Path("source.mp4"),
+    )
+
+    assert [item.index for item in selected] == [3, 2]
+
+
+def test_vertical_multi_person_context_uses_an_independent_companion_input():
     profile = MultiPersonProfile(
         primary_focus_x=0.31,
         secondary_focus_x=0.74,
@@ -805,7 +868,8 @@ def test_vertical_multi_person_context_keeps_primary_and_wide_group_panels():
 
     value = vertical_multi_person_context_filter(profile)
 
-    assert "split=3[group_bg_src][group_main_src][group_wide_src]" in value
+    assert "[0:v]split=2[group_bg_src][group_main_src]" in value
+    assert "[1:v]setpts=PTS-STARTPTS" in value
     assert "scale=1000:560:force_original_aspect_ratio=decrease" in value
     assert "overlay=40:70" in value
     assert "overlay=40:1216" in value
@@ -2536,11 +2600,12 @@ def test_social_caption_has_safe_relevant_fallback_without_ai():
     caption = fallback_social_caption(clip, ["Dakwah"])
 
     assert "Bedakan kisah, mitos, pengalaman, dan fakta" in caption
-    assert "📌 TENTANG VIDEO INI" in caption
-    assert "✨ YANG AKAN KAMU DAPAT" in caption
-    assert "💬 IKUT BERDISKUSI" in caption
-    assert "🔥 DUKUNG @RYUUNDYOFFICIAL" in caption
-    assert "⚠️ CATATAN KONTEN" in caption
+    assert "📌 RINGKASAN" in caption
+    assert "🔎 POIN PENTING" in caption
+    assert "💬 MENURUT KAMU?" in caption
+    assert "🔥 DUKUNG CHANNEL INI" in caption
+    assert "📱 CHANNEL" not in caption
+    assert "⚠️ CATATAN KONTEN" not in caption
     assert "#Dakwah" in caption
     assert "#Misteri" in caption
     assert "#MitosAtauFakta" in caption

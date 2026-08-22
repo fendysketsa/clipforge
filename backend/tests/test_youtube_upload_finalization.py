@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 
 import youtube_uploader
@@ -18,8 +20,10 @@ from youtube_uploader import (
     safe_upload_visibility,
     save_claimed_upload_as_private,
     set_altered_content_disclosure,
+    set_upload_text_field,
     set_thumbnail,
     should_upload_custom_thumbnail,
+    validate_thumbnail_file,
     wait_for_copyright_checks,
     wait_for_final_upload_confirmation,
     wait_for_review_checks_safe_before_publish,
@@ -138,7 +142,10 @@ class ThumbnailInputLocator:
         return self
 
     def count(self):
-        return int(self.selector == 'input[type="file"][accept*="image"]')
+        return int(
+            self.selector
+            == 'ytcp-uploads-dialog input[type="file"][accept*="image"]'
+        )
 
     def set_input_files(self, path, **_kwargs):
         self.page.set_input_calls.append(path)
@@ -174,6 +181,38 @@ class ThumbnailUploadPage:
         return ThumbnailInputLocator(self, selector)
 
 
+class MetadataKeyboard:
+    def __init__(self, page):
+        self.page = page
+        self.presses = []
+        self.inserted = []
+
+    def press(self, key):
+        self.presses.append(key)
+
+    def insert_text(self, value):
+        self.inserted.append(value)
+        self.page.field_text = value
+
+    def type(self, *_args, **_kwargs):
+        raise AssertionError("metadata must not be typed character-by-character")
+
+
+class MetadataFieldPage:
+    def __init__(self):
+        self.keyboard = MetadataKeyboard(self)
+        self.field_text = ""
+        self.scripts = []
+
+    def evaluate(self, script, payload):
+        self.scripts.append(script)
+        if "target.scrollIntoView" in script:
+            return True
+        if "expectedText = normalizeText(expected)" in script:
+            return self.field_text == payload["expected"]
+        raise AssertionError("Unexpected metadata script")
+
+
 def test_required_checks_do_not_continue_after_timeout_by_default(monkeypatch):
     monkeypatch.delenv("YOUTUBE_CONTINUE_WHEN_CHECKS_STUCK", raising=False)
     monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
@@ -186,6 +225,50 @@ def test_next_step_wait_defaults_to_fifteen_minutes(monkeypatch):
     monkeypatch.delenv("YOUTUBE_NEXT_STEP_TIMEOUT_SECONDS", raising=False)
 
     assert next_upload_step_timeout_ms(5_400_000) == 900_000
+
+
+def test_metadata_description_uses_atomic_insert_and_normalized_verification(monkeypatch):
+    page = MetadataFieldPage()
+    description = "🔥 DUKUNG @RYUUNDYOFFICIAL\n👍 Like jika bermanfaat.\n\n⚠️ CATATAN KONTEN"
+    monkeypatch.setattr(youtube_uploader, "log", lambda _message: None)
+
+    set_upload_text_field(
+        page,
+        description,
+        "deskripsi",
+        (r"description|deskripsi", r"beri tahu penonton"),
+    )
+
+    assert page.keyboard.inserted == [description]
+    assert page.keyboard.presses == ["Control+A", "Backspace", "Tab"]
+    verification_script = page.scripts[-1]
+    assert "normalize('NFKC')" in verification_script
+    assert "\\u2066-\\u2069" in verification_script
+    assert "normalizeText(text) !== expectedText" in verification_script
+    assert "description-textarea" in verification_script
+    assert "ytcp-uploads-dialog" in verification_script
+    assert "isVisible(surface)" in verification_script
+
+
+def test_metadata_title_and_description_use_their_exact_active_dialog_ids(monkeypatch):
+    page = MetadataFieldPage()
+    monkeypatch.setattr(youtube_uploader, "log", lambda _message: None)
+
+    set_upload_text_field(
+        page,
+        "Judul yang benar #Shorts",
+        "judul",
+        (r"title|judul",),
+        reject_patterns=(r"description|deskripsi",),
+    )
+
+    focus_script = page.scripts[0]
+    verification_script = page.scripts[-1]
+    assert "title-textarea" in focus_script
+    assert "description-textarea" in focus_script
+    assert "activeDialogs.reverse()" in focus_script
+    assert "fieldKind === 'description'" in verification_script
+    assert "dialog.querySelector" in verification_script
 
 
 def test_next_step_wait_never_exceeds_total_upload_timeout(monkeypatch):
@@ -407,14 +490,14 @@ def test_uploader_forces_public_request_to_private_by_default(monkeypatch):
     assert safe_upload_visibility("public") == "public"
 
 
-def test_custom_thumbnail_is_only_uploaded_for_long_form(tmp_path):
+def test_custom_thumbnail_is_attempted_for_shorts_and_long_form(tmp_path):
     short = tmp_path / "clip_01.mp4"
     highlight = tmp_path / "highlight_5menit_hikmah.mp4"
     resume = tmp_path / "resume_cerita_5menit_hikmah.mp4"
 
-    assert not should_upload_custom_thumbnail(short, "shorts")
+    assert should_upload_custom_thumbnail(short, "shorts")
     assert should_upload_custom_thumbnail(highlight, "long-form")
-    assert not should_upload_custom_thumbnail(short, "auto")
+    assert should_upload_custom_thumbnail(short, "auto")
     assert should_upload_custom_thumbnail(highlight, "auto")
     assert should_upload_custom_thumbnail(resume, "auto")
 
@@ -424,7 +507,11 @@ def test_thumbnail_file_is_submitted_once_while_studio_finishes_transfer(monkeyp
     thumbnail.write_bytes(b"thumbnail")
     page = ThumbnailUploadPage()
     logs = []
-    monkeypatch.setattr(youtube_uploader, "validate_thumbnail_file", lambda _path: (1280, 720))
+    monkeypatch.setattr(
+        youtube_uploader,
+        "validate_thumbnail_file",
+        lambda _path, _content_type: (1280, 720),
+    )
     monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(youtube_uploader, "log", logs.append)
 
@@ -432,6 +519,44 @@ def test_thumbnail_file_is_submitted_once_while_studio_finishes_transfer(monkeyp
 
     assert page.set_input_calls == [str(thumbnail)]
     assert any(message.startswith("THUMBNAIL_ATTACHED:") for message in logs)
+
+
+def test_optional_shorts_thumbnail_skips_when_studio_has_no_upload_control(monkeypatch, tmp_path):
+    thumbnail = tmp_path / "clip_01_thumb.jpg"
+    thumbnail.write_bytes(b"thumbnail")
+    page = ThumbnailUploadPage()
+    page.frames = []
+    logs = []
+    monkeypatch.setattr(
+        youtube_uploader,
+        "validate_thumbnail_file",
+        lambda _path, _content_type: (1080, 1920),
+    )
+    monkeypatch.setattr(youtube_uploader, "log", logs.append)
+
+    attached = set_thumbnail(
+        page,
+        thumbnail,
+        timeout_ms=0,
+        content_type="shorts",
+        required=False,
+    )
+
+    assert attached is False
+    assert any(message.startswith("THUMBNAIL_SKIPPED:") for message in logs)
+
+
+def test_thumbnail_validation_accepts_portrait_shorts(monkeypatch, tmp_path):
+    thumbnail = tmp_path / "clip_01_thumb.jpg"
+    thumbnail.write_bytes(b"thumbnail")
+    fake_cv2 = type(
+        "FakeCv2",
+        (),
+        {"imread": staticmethod(lambda _path: type("Image", (), {"shape": (1920, 1080, 3)})())},
+    )()
+    monkeypatch.setitem(sys.modules, "cv2", fake_cv2)
+
+    assert validate_thumbnail_file(thumbnail, "shorts") == (1080, 1920)
 
 
 def test_review_safe_text_does_not_trigger_false_issue(monkeypatch):

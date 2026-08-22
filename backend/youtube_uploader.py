@@ -962,9 +962,11 @@ def set_upload_text_field(
 ) -> None:
     if not value:
         return
+    normalized_label = label.strip().casefold()
+    field_kind = "description" if normalized_label in {"description", "deskripsi"} else "title"
     pattern_list = list(patterns)
     script = """
-    ({ value, patterns, rejectPatterns }) => {
+    ({ value, patterns, rejectPatterns, fieldKind }) => {
       const roots = [];
       const seen = new Set();
       const addRoot = (root) => {
@@ -988,9 +990,33 @@ def set_upload_text_field(
         if (!element || !element.getBoundingClientRect) return false;
         const rect = element.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) return false;
-        const style = window.getComputedStyle(element);
-        return style && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+        for (let current = element; current; current = current.parentElement) {
+          const style = window.getComputedStyle(current);
+          if (!style || style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+            return false;
+          }
+        }
+        return true;
       };
+      const activeDialogs = [];
+      for (const root of roots) {
+        const dialogs = root.querySelectorAll ? Array.from(root.querySelectorAll('ytcp-uploads-dialog')) : [];
+        for (const dialog of dialogs) {
+          const surface = dialog.querySelector?.('tp-yt-paper-dialog#dialog') || dialog;
+          if (isVisible(surface)) activeDialogs.push(dialog);
+        }
+      }
+      const fieldId = fieldKind === 'description' ? 'description-textarea' : 'title-textarea';
+      for (const dialog of activeDialogs.reverse()) {
+        const exact = dialog.querySelector?.(
+          `ytcp-social-suggestions-textbox#${fieldId} #textbox[contenteditable="true"]`
+        );
+        if (!exact || !isVisible(exact)) continue;
+        exact.scrollIntoView?.({ block: 'center', inline: 'nearest' });
+        exact.click();
+        exact.focus();
+        return true;
+      }
       const labelsFor = (element) => {
         const chunks = [
           element.getAttribute?.('aria-label'),
@@ -1050,18 +1076,26 @@ def set_upload_text_field(
     }
     """
     expected = value.strip()
-    type_delay_ms = max(0, int(os.environ.get("YOUTUBE_TYPE_DELAY_MS", "6")))
     deadline = time.monotonic() + timeout_ms / 1000
     last_error: Exception | None = None
     while time.monotonic() < deadline:
         try:
             if page.evaluate(
                 script,
-                {"value": value, "patterns": pattern_list, "rejectPatterns": list(reject_patterns)},
+                {
+                    "value": value,
+                    "patterns": pattern_list,
+                    "rejectPatterns": list(reject_patterns),
+                    "fieldKind": field_kind,
+                },
             ):
                 page.keyboard.press("Control+A")
                 page.keyboard.press("Backspace")
-                page.keyboard.type(value, delay=type_delay_ms)
+                # Insert the whole payload as text. Typing description
+                # character-by-character lets Studio's @mention popup consume
+                # following Enter/newline keystrokes and replace unrelated
+                # lines with a mention chip.
+                page.keyboard.insert_text(value)
                 page.keyboard.press("Tab")
                 if upload_text_field_contains(
                     page,
@@ -1069,6 +1103,7 @@ def set_upload_text_field(
                     pattern_list,
                     reject_patterns=reject_patterns,
                     timeout_ms=3000,
+                    field_kind=field_kind,
                 ):
                     log(f"{label} diisi.")
                     return
@@ -1085,10 +1120,11 @@ def upload_text_field_contains(
     patterns: Iterable[str],
     reject_patterns: Iterable[str] = (),
     timeout_ms: int = 3000,
+    field_kind: str | None = None,
 ) -> bool:
     pattern_list = list(patterns)
     script = """
-    ({ expected, patterns, rejectPatterns }) => {
+    ({ expected, patterns, rejectPatterns, fieldKind }) => {
       const roots = [];
       const seen = new Set();
       const addRoot = (root) => {
@@ -1108,6 +1144,42 @@ def upload_text_field_contains(
       const regexes = patterns.map((pattern) => new RegExp(pattern, 'i'));
       const rejectRegexes = rejectPatterns.map((pattern) => new RegExp(pattern, 'i'));
       const textOf = (element) => String(element.value ?? element.textContent ?? '').trim();
+      const normalizeText = (value) => String(value ?? '')
+        .normalize('NFKC')
+        .replace(/[\\u200B-\\u200D\\u2066-\\u2069\\uFE00-\\uFE0F\\uFEFF]/g, '')
+        .replace(/\\u00A0/g, ' ')
+        .replace(/\\s+/g, ' ')
+        .trim()
+        .toLocaleLowerCase();
+      const expectedText = normalizeText(expected);
+      const isVisible = (element) => {
+        if (!element || !element.getBoundingClientRect) return false;
+        const rect = element.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        for (let current = element; current; current = current.parentElement) {
+          const style = window.getComputedStyle(current);
+          if (!style || style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+            return false;
+          }
+        }
+        return true;
+      };
+      if (fieldKind === 'title' || fieldKind === 'description') {
+        const fieldId = fieldKind === 'description' ? 'description-textarea' : 'title-textarea';
+        for (const root of roots) {
+          const dialogs = root.querySelectorAll ? Array.from(root.querySelectorAll('ytcp-uploads-dialog')) : [];
+          for (const dialog of dialogs.reverse()) {
+            const surface = dialog.querySelector?.('tp-yt-paper-dialog#dialog') || dialog;
+            if (!isVisible(surface)) continue;
+            const exact = dialog.querySelector?.(
+              `ytcp-social-suggestions-textbox#${fieldId} #textbox[contenteditable="true"]`
+            );
+            if (!exact || !isVisible(exact)) continue;
+            return normalizeText(textOf(exact)) === expectedText;
+          }
+        }
+        return false;
+      }
       const labelOf = (element) => {
         const chunks = [element.getAttribute?.('aria-label'), element.getAttribute?.('placeholder'), element.getAttribute?.('title')];
         let current = element;
@@ -1130,7 +1202,7 @@ def upload_text_field_contains(
           : [];
         for (const element of elements) {
           const text = textOf(element);
-          if (!text || !text.includes(expected)) continue;
+          if (!text || normalizeText(text) !== expectedText) continue;
           const label = labelOf(element);
           if (rejectRegexes.some((regex) => regex.test(label))) continue;
           if (regexes.some((regex) => regex.test(label))) return true;
@@ -1144,7 +1216,12 @@ def upload_text_field_contains(
         try:
             if page.evaluate(
                 script,
-                {"expected": expected, "patterns": pattern_list, "rejectPatterns": list(reject_patterns)},
+                {
+                    "expected": expected,
+                    "patterns": pattern_list,
+                    "rejectPatterns": list(reject_patterns),
+                    "fieldKind": field_kind,
+                },
             ):
                 return True
         except Exception:
@@ -2420,7 +2497,10 @@ def fill_tags(page, tags: str) -> None:
         log("Kolom Tags lanjutan dilewati; hashtag sudah dimasukkan ke deskripsi.")
 
 
-def validate_thumbnail_file(thumbnail_path: Path) -> tuple[int, int]:
+def validate_thumbnail_file(
+    thumbnail_path: Path,
+    content_type: str = "long-form",
+) -> tuple[int, int]:
     if not thumbnail_path.is_file():
         raise UploadError(f"File thumbnail tidak ditemukan: {thumbnail_path}")
     if thumbnail_path.suffix.casefold() not in {".jpg", ".jpeg", ".png"}:
@@ -2436,8 +2516,18 @@ def validate_thumbnail_file(thumbnail_path: Path) -> tuple[int, int]:
     if image is None:
         raise UploadError("Thumbnail YouTube tidak dapat dibaca sebagai gambar.")
     height, width = image.shape[:2]
-    if width < 640 or height < 360 or abs((width / height) - (16 / 9)) > 0.03:
-        raise UploadError(f"Thumbnail long-form harus landscape 16:9; file saat ini {width}x{height}.")
+    normalized_type = (content_type or "long-form").strip().casefold()
+    expected_ratio = 9 / 16 if normalized_type == "shorts" else 16 / 9
+    minimum_width, minimum_height = (360, 640) if normalized_type == "shorts" else (640, 360)
+    if (
+        width < minimum_width
+        or height < minimum_height
+        or abs((width / height) - expected_ratio) > 0.03
+    ):
+        expected_label = "portrait 9:16" if normalized_type == "shorts" else "landscape 16:9"
+        raise UploadError(
+            f"Thumbnail {normalized_type} harus {expected_label}; file saat ini {width}x{height}."
+        )
     return width, height
 
 
@@ -2445,7 +2535,25 @@ def thumbnail_upload_state(page) -> dict[str, object]:
     """Read the custom-thumbnail transfer state without touching the file input."""
     script = r"""
     () => {
-      const uploaders = [...document.querySelectorAll(
+      const isVisible = (element) => {
+        if (!element || !element.getBoundingClientRect) return false;
+        const rect = element.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        for (let current = element; current; current = current.parentElement) {
+          const style = window.getComputedStyle(current);
+          if (!style || style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+            return false;
+          }
+        }
+        return true;
+      };
+      const dialogs = [...document.querySelectorAll('ytcp-uploads-dialog')]
+        .filter((dialog) => isVisible(dialog.querySelector('tp-yt-paper-dialog#dialog') || dialog));
+      const activeDialog = dialogs[dialogs.length - 1];
+      if (!activeDialog) {
+        return {found: false, selected: false, uploading: false, error: ''};
+      }
+      const uploaders = [...activeDialog.querySelectorAll(
         'ytcp-video-thumbnail-editor ytcp-thumbnail-uploader, ytcp-thumbnail-uploader'
       )];
       const uploader = uploaders.find((candidate) => candidate.querySelector(
@@ -2462,9 +2570,10 @@ def thumbnail_upload_state(page) -> dict[str, object]:
       const error = errorTip
         ? (errorTip.innerText || errorTip.textContent || '').replace(/\s+/g, ' ').trim()
         : '';
+      const preview = uploader.querySelector('.preview, #preview-button');
       return {
         found: true,
-        selected: uploader.hasAttribute('selected'),
+        selected: uploader.hasAttribute('selected') && isVisible(preview),
         uploading: uploader.hasAttribute('is-ongoing-transfer'),
         error,
       };
@@ -2487,19 +2596,38 @@ def thumbnail_upload_state(page) -> dict[str, object]:
     return fallback
 
 
-def set_thumbnail(page, thumbnail_path: Path, timeout_ms: int = 45000) -> None:
-    width, height = validate_thumbnail_file(thumbnail_path)
+def set_thumbnail(
+    page,
+    thumbnail_path: Path,
+    timeout_ms: int = 45000,
+    *,
+    content_type: str = "long-form",
+    required: bool = True,
+) -> bool:
+    width, height = validate_thumbnail_file(thumbnail_path, content_type)
     log(f"Mengatur thumbnail otomatis {width}x{height}: {thumbnail_path.name}.")
-    deadline = time.monotonic() + timeout_ms / 1000
+    probe_timeout_ms = (
+        timeout_ms
+        if required
+        else min(
+            timeout_ms,
+            max(
+                1000,
+                int(os.environ.get("YOUTUBE_SHORTS_THUMBNAIL_PROBE_TIMEOUT_SECONDS", "6"))
+                * 1000,
+            ),
+        )
+    )
+    deadline = time.monotonic() + probe_timeout_ms / 1000
     selectors = (
-        'ytcp-video-thumbnail-editor input[type="file"]',
-        'ytcp-thumbnail-editor input[type="file"]',
-        'ytcp-video-custom-thumbnail-editor input[type="file"]',
-        'ytcp-video-metadata-editor input[type="file"][accept*="image"]',
-        'input[type="file"][accept*="image"]',
-        'input[type="file"][accept*=".jpg"]',
-        'input[type="file"][accept*=".jpeg"]',
-        'input[type="file"][accept*=".png"]',
+        'ytcp-uploads-dialog ytcp-video-thumbnail-editor input[type="file"]',
+        'ytcp-uploads-dialog ytcp-thumbnail-editor input[type="file"]',
+        'ytcp-uploads-dialog ytcp-video-custom-thumbnail-editor input[type="file"]',
+        'ytcp-uploads-dialog ytcp-video-metadata-editor input[type="file"][accept*="image"]',
+        'ytcp-uploads-dialog input[type="file"][accept*="image"]',
+        'ytcp-uploads-dialog input[type="file"][accept*=".jpg"]',
+        'ytcp-uploads-dialog input[type="file"][accept*=".jpeg"]',
+        'ytcp-uploads-dialog input[type="file"][accept*=".png"]',
     )
     clicked_upload = False
     upload_started = False
@@ -2516,7 +2644,7 @@ def set_thumbnail(page, thumbnail_path: Path, timeout_ms: int = 45000) -> None:
                 completed_state_polls += 1
                 if completed_state_polls >= 2:
                     log(f"THUMBNAIL_ATTACHED: {thumbnail_path.name} ({width}x{height})")
-                    return
+                    return True
             else:
                 completed_state_polls = 0
 
@@ -2543,6 +2671,10 @@ def set_thumbnail(page, thumbnail_path: Path, timeout_ms: int = 45000) -> None:
                     if locator.count():
                         locator.set_input_files(str(thumbnail_path), timeout=30000)
                         upload_started = True
+                        # The capability probe is short for optional Shorts,
+                        # but an upload that has started gets the full transfer
+                        # window before the workflow continues.
+                        deadline = time.monotonic() + timeout_ms / 1000
                         log(
                             f"Transfer thumbnail dimulai satu kali; menunggu konfirmasi YouTube Studio: "
                             f"{thumbnail_path.name}."
@@ -2557,7 +2689,7 @@ def set_thumbnail(page, thumbnail_path: Path, timeout_ms: int = 45000) -> None:
         if upload_started:
             time.sleep(0.5)
             continue
-        if not clicked_upload:
+        if required and not clicked_upload:
             clicked_upload = deep_click(
                 page,
                 selectors=(
@@ -2580,6 +2712,13 @@ def set_thumbnail(page, thumbnail_path: Path, timeout_ms: int = 45000) -> None:
             "file tidak dikirim ulang agar proses tidak berkedip atau terus mengulang."
         ) from last_error
 
+    if not required:
+        log(
+            "THUMBNAIL_SKIPPED: kontrol upload thumbnail tidak tersedia untuk Short ini; "
+            "upload video dilanjutkan tanpa mengubah alur lainnya."
+        )
+        return False
+
     save_debug_artifacts(page, "thumbnail-input-not-found")
     if (
         "ubahthumbnaildiaplikasiseluleryoutube" in page_text
@@ -2594,15 +2733,11 @@ def set_thumbnail(page, thumbnail_path: Path, timeout_ms: int = 45000) -> None:
 
 
 def should_upload_custom_thumbnail(video_path: Path, content_type: str = "auto") -> bool:
-    """Only long-form uploads support a custom image in YouTube Studio."""
+    """Attempt custom artwork; the live Studio UI decides capability."""
     normalized = (content_type or "auto").strip().casefold()
-    if normalized == "long-form":
+    if normalized in {"long-form", "shorts"}:
         return True
-    if normalized == "shorts":
-        return False
-    return video_path.name.casefold().startswith(
-        ("highlight_5menit_", "resume_cerita_", "long_animate_")
-    )
+    return video_path.suffix.casefold() in {".mp4", ".mov", ".mkv", ".webm", ".m4v"}
 
 
 def click_playlist_named(page, playlist_name: str, timeout_ms: int = 8000) -> bool:
@@ -5150,13 +5285,28 @@ def run_upload(args: argparse.Namespace) -> None:
                 thumbnail_path = Path(args.thumbnail).expanduser().resolve()
                 if should_upload_custom_thumbnail(video_path, args.thumbnail_content_type):
                     if not thumbnail_path.is_file():
-                        raise UploadError(f"File thumbnail tidak ditemukan: {thumbnail_path}")
-                    set_thumbnail(page, thumbnail_path)
-                else:
-                    log(
-                        "Thumbnail Shorts memakai cover CTR ber-keyframe di dalam video; "
-                        "YouTube Studio desktop tidak menerima gambar thumbnail custom untuk Shorts."
-                    )
+                        if args.thumbnail_content_type == "long-form":
+                            raise UploadError(f"File thumbnail tidak ditemukan: {thumbnail_path}")
+                        log(
+                            "THUMBNAIL_SKIPPED: aset thumbnail Short tidak ditemukan; "
+                            "upload video tetap dilanjutkan."
+                        )
+                    else:
+                        thumbnail_required = args.thumbnail_content_type == "long-form"
+                        try:
+                            set_thumbnail(
+                                page,
+                                thumbnail_path,
+                                content_type=args.thumbnail_content_type,
+                                required=thumbnail_required,
+                            )
+                        except UploadError as exc:
+                            if thumbnail_required:
+                                raise
+                            log(
+                                "THUMBNAIL_SKIPPED: thumbnail Short belum dapat dipasang "
+                                f"oleh Studio ({exc}); upload video tetap dilanjutkan."
+                            )
 
             select_playlist(page, args.playlist)
             if args.made_for_kids:
@@ -5167,6 +5317,79 @@ def run_upload(args: argparse.Namespace) -> None:
             set_altered_content_disclosure(page, args.altered_content)
             if args.tags:
                 log("Kolom Tags lanjutan dilewati; hashtag sudah dimasukkan ke deskripsi.")
+
+            # Studio can re-render the Details form after thumbnail/playlist
+            # changes. Verify the exact active fields immediately before we
+            # leave this step and repair them once if their values disappeared.
+            metadata_checks = (
+                (
+                    upload_title,
+                    "judul",
+                    "title",
+                    (r"(^|\n)(title|judul)(\n|$)", r"add a title", r"tambahkan judul"),
+                    (r"description", r"deskripsi"),
+                ),
+                (
+                    upload_description,
+                    "deskripsi",
+                    "description",
+                    (r"(^|\n)(description|deskripsi)(\n|$)", r"tell viewers", r"beri tahu penonton"),
+                    (r"(^|\n)(title|judul)(\n|$)",),
+                ),
+            )
+            for expected, metadata_label, field_kind, patterns, rejects in metadata_checks:
+                if upload_text_field_contains(
+                    page,
+                    expected,
+                    patterns,
+                    reject_patterns=rejects,
+                    timeout_ms=2500,
+                    field_kind=field_kind,
+                ):
+                    continue
+                log(f"{metadata_label.capitalize()} berubah/hilang setelah render ulang Studio; mengisi ulang.")
+                set_upload_text_field(page, expected, metadata_label, patterns, reject_patterns=rejects)
+
+            if args.thumbnail and thumbnail_path.is_file() and should_upload_custom_thumbnail(
+                video_path, args.thumbnail_content_type
+            ):
+                thumbnail_state = thumbnail_upload_state(page)
+                if not thumbnail_state["selected"]:
+                    log("Thumbnail belum melekat pada dialog aktif; mencoba pemasangan ulang satu kali.")
+                    thumbnail_required = args.thumbnail_content_type == "long-form"
+                    try:
+                        set_thumbnail(
+                            page,
+                            thumbnail_path,
+                            content_type=args.thumbnail_content_type,
+                            required=thumbnail_required,
+                        )
+                    except UploadError as exc:
+                        if thumbnail_required:
+                            raise
+                        log(
+                            "THUMBNAIL_SKIPPED: thumbnail Short belum dapat dipasang "
+                            f"setelah verifikasi akhir ({exc}); upload tetap dilanjutkan."
+                        )
+
+            # A thumbnail retry can also re-render metadata. This is the final
+            # hard gate: never continue with YouTube's filename title or an
+            # empty description when proper metadata was supplied.
+            for expected, metadata_label, field_kind, patterns, rejects in metadata_checks:
+                if not upload_text_field_contains(
+                    page,
+                    expected,
+                    patterns,
+                    reject_patterns=rejects,
+                    timeout_ms=5000,
+                    field_kind=field_kind,
+                ):
+                    save_debug_artifacts(page, f"{metadata_label}-missing-before-next")
+                    raise UploadError(
+                        f"{metadata_label.capitalize()} belum tersimpan pada dialog upload aktif; "
+                        "proses dihentikan sebelum tab Visibilitas agar metadata kosong tidak terunggah."
+                    )
+            log("Judul dan deskripsi dialog aktif terverifikasi sebelum lanjut.")
 
             next_step_timeout_ms = next_upload_step_timeout_ms(timeout_ms)
             click_next_upload_step(page, timeout_ms=next_step_timeout_ms, expected_step="VIDEO_ELEMENTS")

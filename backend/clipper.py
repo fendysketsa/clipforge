@@ -2706,18 +2706,93 @@ def select_active_speaker_split_profiles(
     return selected
 
 
+SPLIT_MIN_VISUAL_DISTANCE = 0.11
+
+
+def sample_candidate_visual_signature(
+    video_path: Path,
+    candidate: ClipCandidate,
+) -> tuple[list[float], list[float]] | None:
+    """Return a compact, subtitle-resistant signature for one candidate shot."""
+    try:
+        import cv2
+        import numpy as np
+    except Exception:
+        return None
+
+    capture = cv2.VideoCapture(str(video_path.resolve()))
+    if not capture.isOpened():
+        return None
+
+    duration = max(0.1, candidate.end - candidate.start)
+    gray_samples = []
+    histogram_samples = []
+    try:
+        for fraction in (0.25, 0.50, 0.75):
+            timestamp = candidate.start + duration * fraction
+            capture.set(cv2.CAP_PROP_POS_MSEC, timestamp * 1000)
+            ok, frame = capture.read()
+            if not ok or frame is None:
+                continue
+            # Crop a thin lower strip so changing source subtitles do not make
+            # one fixed camera look like a different angle.
+            height = frame.shape[0]
+            frame = frame[: max(1, int(height * 0.82)), :]
+            small = cv2.resize(frame, (32, 18), interpolation=cv2.INTER_AREA)
+            small = cv2.GaussianBlur(small, (5, 5), 0)
+            gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
+            hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+            histogram = cv2.calcHist([hsv], [0, 1], None, [8, 4], [0, 180, 0, 256])
+            histogram = histogram.astype(np.float32).reshape(-1)
+            histogram /= max(1.0, float(histogram.sum()))
+            gray_samples.append(gray.reshape(-1))
+            histogram_samples.append(histogram)
+    finally:
+        capture.release()
+
+    if len(gray_samples) < 2:
+        return None
+    gray_median = np.median(np.stack(gray_samples), axis=0)
+    histogram_median = np.median(np.stack(histogram_samples), axis=0)
+    histogram_median /= max(1e-6, float(histogram_median.sum()))
+    return gray_median.tolist(), histogram_median.tolist()
+
+
+def visual_signature_distance(
+    first: tuple[list[float], list[float]],
+    second: tuple[list[float], list[float]],
+) -> float:
+    """0 means the sampled shots match; larger values mean a new angle/scene."""
+    first_gray, first_histogram = first
+    second_gray, second_histogram = second
+    if not first_gray or len(first_gray) != len(second_gray):
+        return 0.0
+    pixel_distance = sum(
+        abs(left - right) for left, right in zip(first_gray, second_gray)
+    ) / len(first_gray)
+    histogram_distance = sum(
+        abs(left - right)
+        for left, right in zip(first_histogram, second_histogram)
+    ) / 2
+    return pixel_distance * 0.80 + histogram_distance * 0.20
+
+
 def select_split_companion_candidates(
     candidate: ClipCandidate,
     candidates: list[ClipCandidate],
     *,
     count: int = 2,
+    video_path: Path | None = None,
 ) -> list[ClipCandidate]:
     """Pick distinct timeline clips for the small panels in a split layout.
 
     A crop from the current frame is not a companion clip: it repeats the same
     picture even when it happens to be centered on another detected face. Use
     farthest-first timeline sampling so the main panel and every supporting
-    panel receive a different candidate segment, with good shot diversity.
+    panel receive a different candidate segment. When the source video is
+    available, reject segments whose sampled frames still look like the same
+    camera angle. A normal single-panel layout is better than a fake multi-cam
+    split made from three near-identical pictures.
     """
     requested = max(0, count)
     if requested == 0:
@@ -2727,15 +2802,53 @@ def select_split_companion_candidates(
     if len(eligible) < requested:
         return []
 
+    visual_signatures: dict[int, tuple[list[float], list[float]]] = {}
+    if video_path is not None:
+        for item in [candidate, *eligible]:
+            signature = sample_candidate_visual_signature(video_path, item)
+            if signature is not None:
+                visual_signatures[item.index] = signature
+        # Do not claim visual diversity when the main shot could not be read.
+        if candidate.index not in visual_signatures:
+            return []
+
     def midpoint(item: ClipCandidate) -> float:
         return (item.start + item.end) / 2
 
     selected: list[ClipCandidate] = []
     anchors = [candidate]
     while eligible and len(selected) < requested:
+        visually_distinct = eligible
+        if video_path is not None:
+            visually_distinct = [
+                item
+                for item in eligible
+                if item.index in visual_signatures
+                and all(
+                    visual_signature_distance(
+                        visual_signatures[item.index],
+                        visual_signatures[anchor.index],
+                    )
+                    >= SPLIT_MIN_VISUAL_DISTANCE
+                    for anchor in anchors
+                )
+            ]
+        if not visually_distinct:
+            return []
         chosen = max(
-            eligible,
+            visually_distinct,
             key=lambda item: (
+                (
+                    min(
+                        visual_signature_distance(
+                            visual_signatures[item.index],
+                            visual_signatures[anchor.index],
+                        )
+                        for anchor in anchors
+                    )
+                    if video_path is not None
+                    else 0.0
+                ),
                 min(abs(midpoint(item) - midpoint(anchor)) for anchor in anchors),
                 item.score,
                 -item.index,
@@ -3311,7 +3424,7 @@ def vertical_clean_detail_crop_filter(
 
 
 def vertical_multi_person_context_filter(profile: MultiPersonProfile) -> str:
-    """Show a dominant speaker plus a wide group panel in one clean 9:16 frame."""
+    """Show the main speaker plus a visually distinct companion clip below."""
     source_width = profile.source_width
     source_height = profile.source_height
     main_width = 1000
@@ -3331,14 +3444,15 @@ def vertical_multi_person_context_filter(profile: MultiPersonProfile) -> str:
     )
     crop_y = max(0, (source_height - crop_height) // 2)
     return (
-        "split=3[group_bg_src][group_main_src][group_wide_src];"
+        "[0:v]split=2[group_bg_src][group_main_src];"
         "[group_bg_src]scale=1080:1920:force_original_aspect_ratio=increase:"
         "force_divisible_by=2:flags=lanczos,crop=1080:1920,gblur=sigma=34,"
         "eq=brightness=-0.20:saturation=0.78,"
         "drawbox=x=0:y=0:w=iw:h=ih:color=#020908@0.42:t=fill[group_bg];"
         f"[group_main_src]crop={crop_width}:{crop_height}:{crop_x}:{crop_y},"
         f"scale={main_width}:{main_height}:flags=lanczos,setsar=1[group_main];"
-        "[group_wide_src]scale=1000:560:force_original_aspect_ratio=decrease:"
+        "[1:v]setpts=PTS-STARTPTS,"
+        "scale=1000:560:force_original_aspect_ratio=decrease:"
         "force_divisible_by=2:flags=lanczos,"
         "pad=1000:560:(ow-iw)/2:(oh-ih)/2:color=#020908,setsar=1[group_wide];"
         "[group_bg]drawbox=x=32:y=62:w=1016:h=1126:color=black@0.72:t=fill,"
@@ -3529,6 +3643,15 @@ def vertical_active_speaker_split_filter(
     parts[-1] = f"{parts[-1]},{','.join(border_cmds)}"
 
     return ";".join(parts)
+
+
+def detect_person_focus_x_value(
+    video_path: Path,
+    clip: ClipCandidate,
+) -> float:
+    """Extract only normalized X from the detector's ``(x, size)`` result."""
+    focus = detect_person_focus_x(video_path, clip)
+    return focus[0] if focus is not None else 0.5
 
 
 def embedded_split_subject_filter(
@@ -9328,8 +9451,15 @@ def clip_topic_hashtags(clip: ClipCandidate) -> list[str]:
 
 def social_description_highlights(clip: ClipCandidate, *, long_form: bool) -> list[str]:
     """Return concise, topic-aware viewer benefits for a complete description."""
+    words = set(re.findall(r"[\w']+", f"{clip.title} {clip.text}".casefold()))
     theme = detect_visual_theme(clip)
-    if theme == "mystery":
+    if words.intersection({"waris", "warisan", "pewaris", "ahliwaris", "takziah"}):
+        highlights = [
+            "Siapa yang berhak atas harta dan kapan harta boleh digunakan.",
+            "Batas tindakan sebelum pembagian atau penetapan hak selesai.",
+            "Cara menjaga hak keluarga agar tidak memicu sengketa di kemudian hari.",
+        ]
+    elif theme == "mystery":
         highlights = [
             "Konteks cerita tanpa langsung menganggap semua klaim sebagai fakta.",
             "Pemisahan antara pengalaman, mitos, penafsiran, dan hal yang terverifikasi.",
@@ -9381,12 +9511,21 @@ def format_social_description(
 
     highlights = social_description_highlights(clip, long_form=long_form)
     benefit_lines = "\n".join(f"✅ {item}" for item in highlights)
-    question = shorts_engagement_prompt(clip).capitalize().rstrip(" .!?") + "?"
-    subscribe_reason = subscribe_value_prompt(clip).capitalize().rstrip(" .!?") + "."
-    note = (
-        "Video ini dirangkum dan disusun ulang secara editorial. Simak konteksnya, "
-        "lalu cocokkan isu penting dengan rujukan tepercaya sebelum mengambil keputusan."
+    description_words = set(
+        re.findall(r"[\w']+", f"{clip.title} {clip.text}".casefold())
     )
+    question = (
+        "Bagian aturan warisan mana yang paling sering disalahpahami?"
+        if description_words.intersection(
+            {"waris", "warisan", "pewaris", "ahliwaris", "takziah"}
+        )
+        else re.sub(
+            r"(?i)^menurutmu[,:]?\s*",
+            "",
+            shorts_engagement_prompt(clip),
+        ).capitalize().rstrip(" .!?") + "?"
+    )
+    subscribe_reason = subscribe_value_prompt(clip).capitalize().rstrip(" .!?") + "."
     ordered_tags: list[str] = []
     seen: set[str] = set()
     for raw in hashtags:
@@ -9395,23 +9534,35 @@ def format_social_description(
             seen.add(tag.casefold())
             ordered_tags.append(tag)
 
-    channel_handle = os.environ.get("YOUTUBE_TARGET_CHANNEL", "ryuundyofficial").strip().lstrip("@")
-    channel_handle = re.sub(r"[^A-Za-z0-9_.-]", "", channel_handle) or "ryuundyofficial"
+    display_tags = ordered_tags
+    if long_form:
+        display_tags = display_tags[:8]
+    else:
+        generic_tags = {
+            "#dakwah",
+            "#faktamenarik",
+            "#hikmah",
+            "#islam",
+            "#pelajaranhidup",
+        }
+        display_tags = sorted(
+            (tag for tag in ordered_tags if tag.casefold() != "#shorts"),
+            key=lambda tag: tag.casefold() in generic_tags,
+        )[:4]
+        display_tags.append("#Shorts")
     sections = [
-        "📌 TENTANG VIDEO INI\n" + clean_summary,
-        "✨ YANG AKAN KAMU DAPAT\n" + benefit_lines,
-        "💬 IKUT BERDISKUSI\n" + question,
+        "📌 RINGKASAN\n" + clean_summary,
+        "🔎 POIN PENTING\n" + benefit_lines,
+        "💬 MENURUT KAMU?\n" + question,
         (
-            f"🔥 DUKUNG @{channel_handle.upper()}\n"
+            "🔥 DUKUNG CHANNEL INI\n"
             "👍 Like jika pembahasannya bermanfaat.\n"
-            "↗️ Bagikan kepada teman yang membutuhkan konteks ini.\n"
+            "↗️ Bagikan kepada keluarga atau teman yang membutuhkan.\n"
             f"🔔 {subscribe_reason}"
         ),
-        f"📱 CHANNEL\nYouTube · @{channel_handle}",
-        "⚠️ CATATAN KONTEN\n" + note,
     ]
-    if ordered_tags:
-        sections.append(" ".join(ordered_tags[:10 if long_form else 8]))
+    if display_tags:
+        sections.append(" ".join(display_tags))
     return "\n\n".join(sections)[:2000]
 
 
@@ -9571,6 +9722,7 @@ def export_clip(
     multi_person_profile: MultiPersonProfile | None = None,
     active_speaker_split_profile: ActiveSpeakerSplitProfile | None = None,
     split_companion_clips: list[ClipCandidate] | None = None,
+    multi_person_companion_clip: ClipCandidate | None = None,
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     base_name = base_name_override or f"clip_{clip.index:02}_{slugify(clip.title)[:72] or 'auto'}"
@@ -9592,14 +9744,22 @@ def export_clip(
     json_path.unlink(missing_ok=True)
 
     duration = clip.end - clip.start
-    split_companions = list(split_companion_clips or [])
-    multi_clip_split = (
-        active_speaker_split_profile is not None and len(split_companions) == 2
-    )
-    if active_speaker_split_profile is not None and not multi_clip_split:
+    active_split_companions = list(split_companion_clips or [])
+    split_companions: list[ClipCandidate] = []
+    if active_speaker_split_profile is not None and len(active_split_companions) == 2:
+        split_companions = active_split_companions
+        # Active-speaker is the more specific layout when both detectors match.
+        multi_person_profile = None
+    elif active_speaker_split_profile is not None:
         # Never regress to three crops from the same video frame.
         active_speaker_split_profile = None
-        split_companions = []
+    if active_speaker_split_profile is None and multi_person_profile is not None:
+        if multi_person_companion_clip is not None:
+            split_companions = [multi_person_companion_clip]
+        else:
+            # The former group layout duplicated input 0 at two crop sizes.
+            multi_person_profile = None
+    multi_clip_split = bool(split_companions)
     clean_detail_pipeline = output_format == "vertical_short" and visual_mode == "auto_fyp"
     edit_variation = content_edit_variation(clip)
     adaptive_plan = codex_edit_plan(clip)
@@ -10107,7 +10267,7 @@ def export_clip(
                 sidecar_payload["split_fallback_reason"] = "two_speakers_not_detected"
     elif active_speaker_split_profile is not None:
         companion_focus_xs = [
-            detect_person_focus_x(video_path, companion) or 0.5
+            detect_person_focus_x_value(video_path, companion)
             for companion in split_companions
         ]
         vf = vertical_active_speaker_split_filter(
@@ -10152,10 +10312,16 @@ def export_clip(
             "average_visible_faces": multi_person_profile.average_visible_faces,
             "primary_focus_x": multi_person_profile.primary_focus_x,
             "secondary_focus_x": multi_person_profile.secondary_focus_x,
-            "preserves_group_context": True,
+            "companion_clip_index": split_companions[0].index,
+            "companion_source_range": [
+                round(split_companions[0].start, 3),
+                round(split_companions[0].end, 3),
+            ],
+            "visually_distinct_companion_required": True,
+            "duplicate_main_frame": False,
         }
         applied_edits.append(
-            "Layout grup dipilih khusus untuk klip ini: pembicara utama tetap dominan dan panel lebar mempertahankan beberapa orang dalam satu frame."
+            "Layout grup dipilih khusus untuk klip ini: pembicara utama tetap dominan dan panel bawah memakai klip lain dengan angle yang berbeda."
         )
     elif embedded_split_profile is not None:
         vf = embedded_split_subject_filter(
@@ -12011,8 +12177,15 @@ def main() -> int:
             )
             else {}
         )
+        detected_split_indexes = set(multi_person_profiles) | set(
+            active_speaker_split_profiles
+        )
         split_companion_map = {
-            candidate.index: select_split_companion_candidates(candidate, candidates)
+            candidate.index: select_split_companion_candidates(
+                candidate,
+                candidates,
+                video_path=final_video_path,
+            )
             for candidate in candidates
             if candidate.index in active_speaker_split_profiles
         }
@@ -12021,6 +12194,40 @@ def main() -> int:
             for index, profile in active_speaker_split_profiles.items()
             if len(split_companion_map.get(index, [])) == 2
         }
+        # Do not render the older close-up + wide duplicate when the same clip
+        # also matched the group detector. Every secondary panel needs its own
+        # visually distinct timeline input.
+        multi_person_profiles = {
+            index: profile
+            for index, profile in multi_person_profiles.items()
+            if index not in active_speaker_split_profiles
+        }
+        multi_person_companion_map = {
+            candidate.index: select_split_companion_candidates(
+                candidate,
+                candidates,
+                count=1,
+                video_path=final_video_path,
+            )
+            for candidate in candidates
+            if candidate.index in multi_person_profiles
+        }
+        multi_person_profiles = {
+            index: profile
+            for index, profile in multi_person_profiles.items()
+            if len(multi_person_companion_map.get(index, [])) == 1
+        }
+        rejected_same_angle_count = len(
+            detected_split_indexes
+            - set(active_speaker_split_profiles)
+            - set(multi_person_profiles)
+        )
+        if rejected_same_angle_count:
+            console.print(
+                "[yellow]Split dibatalkan:[/yellow] "
+                f"{rejected_same_angle_count} klip tidak memiliki angle pendamping "
+                "yang cukup berbeda; layout satu frame dipakai agar gambar tidak kembar."
+            )
         if active_speaker_split_profiles:
             console.print(
                 "[green]Layout active-speaker split:[/green] "
@@ -12030,7 +12237,8 @@ def main() -> int:
         if multi_person_profiles:
             console.print(
                 "[green]Layout grup adaptif:[/green] "
-                f"{len(multi_person_profiles)} dari {total_candidates} klip memakai frame beberapa orang."
+                f"{len(multi_person_profiles)} dari {total_candidates} klip memakai "
+                "input pendamping dengan angle berbeda."
             )
         for export_index, candidate in enumerate(candidates, start=1):
             render_start = 68 + round(((export_index - 1) / max(1, total_candidates)) * 25)
@@ -12061,6 +12269,9 @@ def main() -> int:
                     multi_person_profile=multi_person_profiles.get(candidate.index),
                     active_speaker_split_profile=active_speaker_split_profiles.get(candidate.index),
                     split_companion_clips=split_companion_map.get(candidate.index),
+                    multi_person_companion_clip=(
+                        multi_person_companion_map.get(candidate.index) or [None]
+                    )[0],
                 )
             )
             render_done = 68 + round((export_index / max(1, total_candidates)) * 25)

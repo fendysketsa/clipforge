@@ -27,10 +27,10 @@ export function ThumbnailPrompt({ clip }: ThumbnailPromptProps) {
           <ImageIcon size={16} />
         </span>
         <span className="thumbSummaryCopy">
-          <strong>{isShort ? "Frame cover Shorts siap dipilih" : "Thumbnail siap publikasi"}</strong>
+          <strong>{isShort ? "Thumbnail Shorts siap upload otomatis" : "Thumbnail siap publikasi"}</strong>
           <small>
             {[
-              isShort ? "geser ke frame awal sekitar 0,78 dtk di aplikasi YouTube" : "",
+              isShort ? "fallback frame awal sekitar 0,78 dtk jika Upload file tidak tersedia" : "",
               thumbUrl ? "preview" : "",
               prompt ? "prompt" : "",
               caption ? "caption" : "",
@@ -47,18 +47,18 @@ export function ThumbnailPrompt({ clip }: ThumbnailPromptProps) {
           <div className="thumbPreview">
             <div className="thumbBlockHeader">
               <ImageIcon size={14} />
-              <span>{isShort ? "Preview frame yang harus dipilih (sekitar 0,78 detik)" : "Thumbnail upload"}</span>
+              <span>{isShort ? "Thumbnail portrait 9:16" : "Thumbnail upload"}</span>
             </div>
             <img src={thumbUrl} alt="Preview frame cover berkontras tinggi" />
             {isShort ? (
               <p>
-                Di aplikasi YouTube, buka Edit thumbnail lalu geser timeline ke frame yang sama
-                dengan preview ini. Jangan mengandalkan pilihan otomatis tengah.
+                ClipForge akan mencoba Upload file otomatis di Studio. Jika fasilitasnya tidak
+                tersedia, gunakan Edit thumbnail lalu pilih frame sekitar 0,78 detik sebagai fallback.
               </p>
             ) : null}
             <button type="button" onClick={() => handleDownload(thumbUrl, thumbName)}>
               <Download size={15} />
-              <span>{isShort ? "Unduh preview (opsional)" : "Unduh thumbnail"}</span>
+              <span>Unduh thumbnail</span>
             </button>
           </div>
         ) : null}

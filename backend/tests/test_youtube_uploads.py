@@ -191,6 +191,7 @@ def test_upload_command_marks_thumbnail_content_type(
     assert command[type_index + 1] == expected_type
     duration_index = command.index("--media-duration-seconds")
     assert command[duration_index + 1] == "42.125"
+    assert command[command.index("--thumbnail") + 1] == str(thumbnail_path)
 
 
 def test_upload_command_marks_shorts_type_even_without_thumbnail(monkeypatch, tmp_path):
@@ -1335,11 +1336,12 @@ def test_default_youtube_description_uses_ai_caption_and_hashtags_only():
     description = default_youtube_description(job, clip)
 
     assert "Ini caption AI yang siap diposting." in description
-    assert "#islam #shorts" in description
-    assert "📌 TENTANG VIDEO INI" in description
-    assert "✨ YANG AKAN KAMU DAPAT" in description
-    assert "🔥 DUKUNG @RYUUNDYOFFICIAL" in description
-    assert "⚠️ CATATAN KONTEN" in description
+    assert "#islam #Shorts" in description
+    assert "📌 RINGKASAN" in description
+    assert "🔎 POIN PENTING" in description
+    assert "🔥 DUKUNG CHANNEL INI" in description
+    assert "📱 CHANNEL" not in description
+    assert "⚠️ CATATAN KONTEN" not in description
     assert "Sumber:" not in description
     assert "Channel sumber:" not in description
 
@@ -1369,7 +1371,7 @@ def test_complete_short_description_has_full_sections_and_short_tag():
     )
 
     assert description.count("✅") == 2
-    assert "YouTube · @ryuundyofficial" in description
+    assert "YouTube · @ryuundyofficial" not in description
     assert "#Islam #Hikmah #Shorts" in description
 
 
@@ -1401,7 +1403,7 @@ def test_complete_long_description_is_more_detailed_and_removes_short_tag():
     assert "#Shorts" not in description
 
 
-def test_youtube_description_includes_fendy_audit_identity(monkeypatch):
+def test_youtube_description_keeps_fendy_audit_internal_not_public(monkeypatch):
     import api
 
     clip = ClipFile(
@@ -1429,10 +1431,41 @@ def test_youtube_description_includes_fendy_audit_identity(monkeypatch):
 
     description = default_youtube_description(job, clip)
 
-    assert description.endswith(
-        "Audit & edit editorial otomatis: Fendy Clipper · ID FND-ABC123DEF456. "
-        "Hak materi sumber tetap pada pemegang hak masing-masing."
+    assert "Audit & edit editorial otomatis" not in description
+    assert "FND-ABC123DEF456" not in description
+
+
+def test_legacy_crossed_sections_are_removed_when_description_is_rebuilt():
+    clip = ClipFile(
+        name="clip_01.mp4",
+        url="/outputs/demo/clips/clip_01.mp4",
+        size_bytes=1,
+        title="Aturan Harta Warisan",
+        core_message="Harta warisan dibagi setelah hak setiap ahli waris ditetapkan.",
     )
+    job = ClipJob(
+        id="job-clean-legacy-description",
+        status="completed",
+        request=ClipJobRequest(source_file="owned.mp4"),
+        created_at="2026-08-22T00:00:00+00:00",
+        updated_at="2026-08-22T00:00:00+00:00",
+        clips=[clip],
+    )
+    legacy = (
+        "📌 TENTANG VIDEO INI\nRingkasan aturan pembagian harta warisan.\n\n"
+        "✨ YANG AKAN KAMU DAPAT\n✅ Poin lama.\n\n"
+        "📱 CHANNEL\nYouTube · @ryuundyofficial\n\n"
+        "⚠️ CATATAN KONTEN\nCuplikan ini disusun ulang secara editorial.\n\n"
+        "Audit & edit editorial otomatis: Fendy Clipper · ID FND-OLD."
+    )
+
+    description = complete_youtube_description(job, clip, legacy, ["HartaWaris"])
+
+    assert "Ringkasan aturan pembagian harta warisan." in description
+    assert "📱 CHANNEL" not in description
+    assert "⚠️ CATATAN KONTEN" not in description
+    assert "Audit & edit editorial otomatis" not in description
+    assert "Bagian aturan warisan mana" in description
 
 
 def test_monetization_preflight_v6_requires_fendy_identity_and_growth_blueprint(monkeypatch):
@@ -1850,12 +1883,12 @@ def test_generate_youtube_description_uses_llm(monkeypatch):
     monkeypatch.setattr(api, "chat_completion", fake_chat_completion)
 
     assert generate_youtube_description(job, clip, ["islam", "shorts"]) == (
-        "Klip ini menjelaskan nasihat penting dengan konteks yang mudah dipahami. Simak poin utamanya agar pesan yang disampaikan dapat diterapkan dengan tepat.\n\n#islam #nasihat #hikmah #shorts"
+        "Nasihat penting dengan konteks yang mudah dipahami. Simak poin utamanya agar pesan yang disampaikan dapat diterapkan dengan tepat.\n\n#islam #nasihat #hikmah #shorts"
     )
 
     assert generate_youtube_metadata(job, clip, ["islam", "shorts"]) == {
         "title": "Nasihat Singkat Tentang Asef #Shorts",
-        "description": "Klip ini menjelaskan nasihat penting dengan konteks yang mudah dipahami. Simak poin utamanya agar pesan yang disampaikan dapat diterapkan dengan tepat.\n\n#islam #nasihat #hikmah #shorts",
+        "description": "Nasihat penting dengan konteks yang mudah dipahami. Simak poin utamanya agar pesan yang disampaikan dapat diterapkan dengan tepat.\n\n#islam #nasihat #hikmah #shorts",
         "hashtags": ["islam", "nasihat", "hikmah", "shorts"],
     }
 
@@ -2019,9 +2052,31 @@ def test_normalized_generated_metadata_accepts_nested_ollama_payload():
     assert normalized_generated_metadata(payload, is_compilation=False) == {
         "title": "Sabar Saat Ujian Mengubah Cara Kita Melihat Hidup #Shorts",
         "description": (
-            "Klip ini membahas bagaimana kesabaran menjaga hati ketika ujian datang. "
+            "Bagaimana kesabaran menjaga hati ketika ujian datang. "
             "Pesannya mengajak penonton memahami hikmah tanpa mengabaikan proses yang berat."
             "\n\n#Sabar #UjianHidup #HikmahIslam #Shorts"
         ),
         "hashtags": ["Sabar", "UjianHidup", "HikmahIslam", "Shorts"],
     }
+
+
+def test_normalized_metadata_removes_generic_title_tail_and_english_leak():
+    payload = {
+        "title": (
+            "Harta Waris Belum Dibagi, Bolehkah Disedekahkan? "
+            "Penjelasan Lengkap"
+        ),
+        "description": (
+            "Harta waris yang belum dibagi masih memuat hak para ahli waris. "
+            "Setelah menerima bagiannya, setiap ahli waris dapat bersedekah tanpa restriction."
+        ),
+        "hashtags": ["#HartaWaris", "#HakAhliWaris", "#Sedekah", "#Shorts"],
+    }
+
+    result = normalized_generated_metadata(payload, is_compilation=False)
+
+    assert result is not None
+    assert result["title"] == "Harta Waris Belum Dibagi, Bolehkah Disedekahkan? #Shorts"
+    assert len(str(result["title"])) <= 78
+    assert "restriction" not in str(result["description"])
+    assert "tanpa batasan" in str(result["description"])

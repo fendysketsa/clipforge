@@ -1010,17 +1010,22 @@ export default function HomePage() {
       const includesAutomaticThumbnail = clip.name.toLowerCase().startsWith("highlight_5menit_")
         || clip.name.toLowerCase().startsWith("resume_cerita_")
         || clip.name.toLowerCase().startsWith("long_animate_");
+      const includesOptionalShortThumbnail = !includesAutomaticThumbnail && Boolean(clip.thumbnail_url);
       try {
         const upload = await toast.promise(createYouTubeUpload(job.id, clip.url), {
           loading: includesAutomaticThumbnail
             ? "Memvalidasi video landscape dan thumbnail 16:9..."
-            : "Memasukkan upload YouTube ke antrean...",
+            : includesOptionalShortThumbnail
+              ? "Mengantrekan video dan thumbnail Shorts opsional..."
+              : "Memasukkan upload YouTube ke antrean...",
           success: (upload) =>
             upload.status === "completed" && upload.video_url
               ? "Klip ini sudah terupload. Upload duplikat dilewati."
               : includesAutomaticThumbnail
                 ? "Video dan thumbnail otomatis masuk antrean YouTube."
-                : "Upload masuk antrean. Session akan disinkronkan otomatis bila diperlukan.",
+                : includesOptionalShortThumbnail
+                  ? "Upload masuk antrean; thumbnail dipasang jika Studio menyediakan Upload file."
+                  : "Upload masuk antrean. Session akan disinkronkan otomatis bila diperlukan.",
           error: (error) => error instanceof Error ? error.message : "Gagal membuat upload YouTube",
         });
         setYoutubeUploads((current) => [upload, ...current.filter((item) => item.id !== upload.id)]);

@@ -2299,15 +2299,22 @@ def youtube_shorts_title(value: str) -> str:
     clean = re.sub(r"\s+", " ", value).strip()
     clean = re.sub(r"\s+#shorts\b", "", clean, flags=re.I).strip()
     suffix = " #Shorts"
-    if len(clean) + len(suffix) > 100:
-        clean = clean[: 100 - len(suffix)].rsplit(" ", 1)[0].rstrip() or clean[: 100 - len(suffix)].rstrip()
-    return f"{clean}{suffix}"[:100] if clean else "Clip #Shorts"
+    max_length = 78
+    if len(clean) + len(suffix) > max_length:
+        clean = clean[: max_length - len(suffix)].rsplit(" ", 1)[0].rstrip() or clean[: max_length - len(suffix)].rstrip()
+    return f"{clean}{suffix}"[:max_length] if clean else "Clip #Shorts"
 
 
 def youtube_description_highlights(context: str, *, is_compilation: bool) -> list[str]:
     """Build topic-aware benefit bullets without relying on metadata AI output."""
     words = set(re.findall(r"[\w']+", context.casefold(), flags=re.UNICODE))
-    if words.intersection({"jin", "misteri", "mistis", "mitos", "horor", "hantu", "gaib"}):
+    if words.intersection({"waris", "warisan", "pewaris", "ahliwaris", "takziah"}):
+        highlights = [
+            "Siapa yang berhak atas harta dan kapan harta boleh digunakan.",
+            "Batas tindakan sebelum pembagian atau penetapan hak selesai.",
+            "Cara menjaga hak keluarga agar tidak memicu sengketa di kemudian hari.",
+        ]
+    elif words.intersection({"jin", "misteri", "mistis", "mitos", "horor", "hantu", "gaib"}):
         highlights = [
             "Konteks cerita tanpa langsung menganggap setiap klaim sebagai fakta.",
             "Perbedaan antara pengalaman, mitos, penafsiran, dan hal yang terverifikasi.",
@@ -2340,6 +2347,25 @@ def youtube_description_highlights(context: str, *, is_compilation: bool) -> lis
     return highlights if is_compilation else highlights[:2]
 
 
+def youtube_description_summary(value: str) -> str:
+    """Extract the useful summary from current, legacy, or AI descriptions."""
+    clean = strip_hashtag_lines(value).strip()
+    for heading in ("📌 TENTANG VIDEO INI", "📌 RINGKASAN"):
+        if heading in clean:
+            clean = clean.split(heading, 1)[1].lstrip(" :\n")
+            break
+    clean = re.split(
+        r"\n\s*\n(?:✨ YANG AKAN KAMU DAPAT|🔎 POIN PENTING|💬 IKUT BERDISKUSI|"
+        r"💬 MENURUT KAMU\?|🔥 DUKUNG|📱 CHANNEL|⚠️ CATATAN KONTEN|"
+        r"Atribusi sumber \(CC BY\):|Audit & edit editorial otomatis:)",
+        clean,
+        maxsplit=1,
+    )[0]
+    return polish_youtube_metadata_description(
+        re.sub(r"\n{3,}", "\n\n", clean).strip()
+    )
+
+
 def complete_youtube_description(
     job: ClipJob,
     clip: ClipFile,
@@ -2347,10 +2373,7 @@ def complete_youtube_description(
     tags: list[str],
 ) -> str:
     """Format every Short and long-form upload as a complete readable description."""
-    clean_summary = strip_hashtag_lines(summary).strip()
-    if "📌 TENTANG VIDEO INI" in clean_summary:
-        return clean_summary[:5000]
-    clean_summary = re.sub(r"\n{3,}", "\n\n", clean_summary)
+    clean_summary = youtube_description_summary(summary)
     max_summary = 1500 if is_compilation_clip(job, clip) else 850
     if len(clean_summary) > max_summary:
         clean_summary = clean_summary[:max_summary].rsplit(" ", 1)[0].rstrip(" ,;:-") + "…"
@@ -2374,8 +2397,11 @@ def complete_youtube_description(
     highlights = youtube_description_highlights(context, is_compilation=is_compilation)
     benefit_lines = "\n".join(f"✅ {item}" for item in highlights)
     lowered = context.casefold()
-    if any(term in lowered for term in ("misteri", "mitos", "mistis", "horor", "gaib")):
-        question = "Menurutmu, bagian mana yang merupakan fakta, pengalaman, atau penafsiran?"
+    if any(term in lowered for term in ("waris", "warisan", "pewaris", "ahli waris", "takziah")):
+        question = "Bagian aturan warisan mana yang paling sering disalahpahami?"
+        subscribe_reason = "Subscribe untuk pembahasan hukum keluarga dan hikmah Islam berikutnya."
+    elif any(term in lowered for term in ("misteri", "mitos", "mistis", "horor", "gaib")):
+        question = "Bagian mana yang merupakan fakta, pengalaman, atau penafsiran?"
         subscribe_reason = "Subscribe untuk cerita kontekstual dan cek fakta berikutnya."
     elif any(term in lowered for term in ("islam", "allah", "nabi", "iman", "doa", "shalat", "salat")):
         question = "Hikmah mana yang paling relevan dengan kehidupanmu?"
@@ -2383,20 +2409,6 @@ def complete_youtube_description(
     else:
         question = "Poin mana yang paling membuka sudut pandangmu?"
         subscribe_reason = "Subscribe untuk pembahasan informatif berikutnya."
-
-    handle = os.environ.get("YOUTUBE_TARGET_CHANNEL", DEFAULT_YOUTUBE_TARGET_CHANNEL).strip().lstrip("@")
-    handle = re.sub(r"[^A-Za-z0-9_.-]", "", handle) or DEFAULT_YOUTUBE_TARGET_CHANNEL
-    if job.request.clip_mode == "long_animate":
-        note = (
-            "Video ini dibuat dan disusun secara editorial dari naskah terarah. "
-            "Cocokkan isu penting dengan rujukan tepercaya sebelum mengambil keputusan."
-        )
-    else:
-        note_subject = "Video" if is_compilation else "Cuplikan"
-        note = (
-            f"{note_subject} ini dipilih, dipotong, dan disusun ulang secara editorial. "
-            "Simak konteks utuh dan cocokkan isu penting dengan rujukan tepercaya sebelum mengambil keputusan."
-        )
 
     ordered_tags: list[str] = []
     seen: set[str] = set()
@@ -2410,22 +2422,36 @@ def complete_youtube_description(
         seen.add(tag.casefold())
         ordered_tags.append(tag)
 
+    display_tags = ordered_tags
+    if not is_compilation:
+        generic_tags = {
+            "dakwah",
+            "faktamenarik",
+            "hikmah",
+            "islam",
+            "pelajaranhidup",
+        }
+        display_tags = sorted(
+            (tag for tag in ordered_tags if tag.casefold() != "shorts"),
+            key=lambda tag: tag.casefold() in generic_tags,
+        )[:4]
+        display_tags.append("Shorts")
+    else:
+        display_tags = display_tags[:8]
+
     sections = [
-        "📌 TENTANG VIDEO INI\n" + clean_summary,
-        "✨ YANG AKAN KAMU DAPAT\n" + benefit_lines,
-        "💬 IKUT BERDISKUSI\n" + question,
+        "📌 RINGKASAN\n" + clean_summary,
+        "🔎 POIN PENTING\n" + benefit_lines,
+        "💬 MENURUT KAMU?\n" + question,
         (
-            f"🔥 DUKUNG @{handle.upper()}\n"
+            "🔥 DUKUNG CHANNEL INI\n"
             "👍 Like jika pembahasannya bermanfaat.\n"
-            "↗️ Bagikan kepada teman yang membutuhkan konteks ini.\n"
+            "↗️ Bagikan kepada keluarga atau teman yang membutuhkan.\n"
             f"🔔 {subscribe_reason}"
         ),
-        f"📱 CHANNEL\nYouTube · @{handle}",
-        "⚠️ CATATAN KONTEN\n" + note,
     ]
-    if ordered_tags:
-        limit = 12 if is_compilation else 8
-        sections.append(" ".join(f"#{tag}" for tag in ordered_tags[:limit]))
+    if display_tags:
+        sections.append(" ".join(f"#{tag}" for tag in display_tags))
     return "\n\n".join(sections)[:5000]
 
 
@@ -2434,8 +2460,7 @@ def default_youtube_description(job: ClipJob, clip: ClipFile) -> str:
     tags = default_youtube_tags(job, clip)
     description = complete_youtube_description(job, clip, caption, tags)
     description = append_youtube_chapters(description, clip)
-    description = append_youtube_source_attribution(description, job)
-    return append_fendy_auditor_attribution(description, clip)
+    return append_youtube_source_attribution(description, job)
 
 
 def clip_sidecar_payload(clip: ClipFile) -> dict[str, Any]:
@@ -2851,7 +2876,9 @@ YOUTUBE_METADATA_SYSTEM_PROMPT = (
     "You are a creative Indonesian YouTube metadata editor. For EACH clip, infer its specific central idea "
     "from that clip's transcript and write fresh metadata—not a generic template and not copied old metadata. "
     "Make the title modern, emotionally engaging, natural, and honest. Write an informative description that "
-    "is concise but substantial. Use Bahasa Indonesia and never state folklore, personal experiences, myths, "
+    "is concise but substantial. Use fully natural Bahasa Indonesia with no untranslated English fragments. "
+    "Preserve the exact subject and object of the transcript; do not merge related concepts into a broader claim. "
+    "Never state folklore, personal experiences, myths, "
     "or supernatural claims as verified religious facts. Do not invent source URLs, channels, uploaders, "
     "sponsors, licenses, or credits; verified CC attribution is appended separately by the application. "
     "Return strict JSON only."
@@ -3000,6 +3027,46 @@ def unwrap_metadata_payload(payload: dict) -> dict:
     return payload
 
 
+def polish_youtube_metadata_title(value: str) -> str:
+    """Remove generic tails that waste the most valuable mobile title space."""
+    clean = re.sub(r"\s+", " ", value).strip(" -|:–—")
+    generic_tail = (
+        r"(?:\s*[-–—:|]\s*|\s+)(?:penjelasan lengkap|begini aturannya|"
+        r"wajib tahu|simak sampai selesai|fakta mengejutkan|bikin kaget|ternyata)\s*[!?.]*$"
+    )
+    previous = ""
+    while clean != previous:
+        previous = clean
+        clean = re.sub(generic_tail, "", clean, flags=re.I).strip(" -|:–—")
+    return clean
+
+
+def polish_youtube_metadata_description(value: str) -> str:
+    """Repair small language leaks while preserving the model's factual wording."""
+    clean = re.sub(
+        r"^(?:video|klip|shorts?) ini\s+(?:menjelaskan|membahas|mengulas)\s+",
+        "",
+        value.strip(),
+        flags=re.I,
+    )
+    clean = re.sub(
+        r"^menurut ajaran\s*,\s*",
+        "Menurut penjelasan pembicara, ",
+        clean,
+        flags=re.I,
+    )
+    replacements = {
+        r"\bwithout restrictions?\b": "tanpa batasan",
+        r"\btanpa restrictions?\b": "tanpa batasan",
+        r"\bno restrictions?\b": "tanpa batasan",
+        r"\brestrictions?\b": "batasan",
+    }
+    for pattern, replacement in replacements.items():
+        clean = re.sub(pattern, replacement, clean, flags=re.I)
+    clean = re.sub(r"[ \t]{2,}", " ", clean).strip()
+    return clean[:1].upper() + clean[1:] if clean else ""
+
+
 def normalized_generated_metadata(payload: dict, *, is_compilation: bool) -> dict[str, str | list[str]] | None:
     payload = unwrap_metadata_payload(payload)
     clean_title = first_metadata_string(
@@ -3010,14 +3077,18 @@ def normalized_generated_metadata(payload: dict, *, is_compilation: bool) -> dic
         payload,
         ["description", "deskripsi", "caption", "keterangan", "deskripsi_video", "video_description"],
     )
-    clean_title = re.sub(r"https?://\S+", "", clean_title).strip(" -|")
+    clean_title = polish_youtube_metadata_title(
+        re.sub(r"https?://\S+", "", clean_title)
+    )
     description_lines = [
         line.strip()
         for line in description.splitlines()
         if line.strip()
         and not re.search(r"https?://|^\s*(?:sumber|source|channel\s+sumber)\s*:", line, flags=re.I)
     ]
-    description = strip_hashtag_lines("\n".join(description_lines))
+    description = polish_youtube_metadata_description(
+        strip_hashtag_lines("\n".join(description_lines))
+    )
     if not clean_title or len(description) < 70:
         return None
 
@@ -3119,18 +3190,28 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
         f"Buat metadata {format_name} untuk video ini.\n"
         "Aturan:\n"
         "- Pahami konteks transkrip klip ini saja; jangan memakai metadata video sumber.\n"
-        "- Title baru harus kuat, modern, natural, 35-75 karakter, maksimal 85 karakter, tanpa hashtag.\n"
+        "- Title baru harus kuat, natural, 35-68 karakter, maksimal 70 karakter, tanpa hashtag agar terbaca utuh di ponsel.\n"
+        "- Title harus menyebut objek/topik yang tepat dari transkrip. Jangan mencampur uang takziah, harta waris, "
+        "sedekah, atau objek terkait lain seolah semuanya sama.\n"
+        "- Jangan memakai ekor generik seperti 'Penjelasan Lengkap', 'Begini Aturannya', 'Wajib Tahu', "
+        "'Simak Sampai Selesai', atau 'Bikin Kaget'.\n"
         "- Perbaiki salah dengar transkrip yang jelas; jangan menyalin kata acak atau kalimat pembuka yang rusak.\n"
         "- Hindari ALL CAPS dan clickbait generik; tonjolkan manfaat, konflik, kejutan, atau hikmah yang benar-benar ada.\n"
         f"{long_form_packaging_rule}"
         f"{shorts_cover_rule}"
-        "- Description baru 2-3 kalimat informatif, sekitar 180-450 karakter; bangun rasa penasaran tanpa menyesatkan.\n"
+        "- Description baru 2-3 kalimat informatif, sekitar 180-450 karakter. Kalimat pertama harus langsung "
+        "menyebut topik/kata kunci utama secara natural; kalimat berikutnya menjelaskan konflik, aturan, atau manfaat "
+        "yang benar-benar dibahas tanpa menahan jawaban secara clickbait.\n"
+        "- Jangan membuka dengan frasa datar 'Video ini membahas' atau 'Video ini menjelaskan'; mulai dari pertanyaan, "
+        "masalah, atau jawaban inti yang konkret.\n"
+        "- Gunakan Bahasa Indonesia sepenuhnya tanpa kata Inggris yang belum diterjemahkan. Untuk isu hukum/agama, "
+        "atribusi jawaban sebagai isi penjelasan pembicara dan jangan memperluas klaim di luar transkrip.\n"
         "- Description hanya berisi ringkasan inti. Jangan tambahkan heading, CTA Like/Share/Subscribe, "
         "handle channel, catatan konten, chapter, atribusi, atau baris hashtag; aplikasi menatanya otomatis.\n"
         "- Description boleh memakai maksimal 2 emoji yang benar-benar relevan.\n"
         "- Bahasa Indonesia.\n"
         "- Jangan tulis URL, nama channel, uploader, TV, sponsor, kredit, atau label 'Sumber'.\n"
-        "- Buat 4-6 hashtag baru yang spesifik dan relevan dengan isi klip, bukan hashtag generik berulang.\n"
+        "- Buat 4-5 hashtag baru yang spesifik dan relevan dengan isi klip, bukan hashtag generik berulang.\n"
         f"{format_hashtag_rule}"
         "- Wajib isi semua field JSON: title, description, hashtags.\n"
         'Return JSON exactly like {"title": "...", "description": "...", "hashtags": ["#tag1", "#tag2"]}.\n\n'
@@ -3469,7 +3550,6 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
     description = complete_youtube_description(job, clip, description, tags)
     description = append_youtube_chapters(description, clip)
     description = append_youtube_source_attribution(description, job)
-    description = append_fendy_auditor_attribution(description, clip)
     altered_content = clip_requires_altered_content_disclosure(clip)
     upload_id = uuid.uuid4().hex
     now = now_iso()
@@ -4775,6 +4855,11 @@ def run_youtube_upload(upload_id: str) -> None:
                 nonlocal playlist_confirmed_for_attempt, thumbnail_attached_for_attempt
                 if cleaned.startswith("THUMBNAIL_ATTACHED:"):
                     thumbnail_attached_for_attempt = True
+                elif cleaned.startswith("THUMBNAIL_SKIPPED:"):
+                    # A final verification can discover that Studio discarded
+                    # an earlier thumbnail selection during a form re-render.
+                    # Do not leave a stale positive badge in the frontend.
+                    thumbnail_attached_for_attempt = False
                 if cleaned.startswith("PLAYLIST_CONFIRMED:"):
                     playlist_confirmed_for_attempt = True
                 logs.append(cleaned)

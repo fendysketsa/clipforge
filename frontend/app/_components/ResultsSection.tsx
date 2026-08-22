@@ -428,6 +428,9 @@ export function ResultsSection({
             const cleanupPanelVisible = cleanupPending || cleanupComplete;
             const cleanupTooltipId = latestUpload ? `cleanup-tooltip-${latestUpload.id}` : undefined;
             const rawUploadError = latestUpload?.error || latestUpload?.logs?.at(-1) || "";
+            const thumbnailWasSkipped = Boolean(
+              latestUpload?.logs?.some((line) => line.startsWith("THUMBNAIL_SKIPPED:")),
+            );
             const uploadError = latestUpload?.status === "failed"
               ? friendlyYouTubeUploadError(rawUploadError, usesChromeDebugging)
               : "";
@@ -668,12 +671,18 @@ export function ResultsSection({
                               ? ` · mencari playlist ${latestUpload.playlist}`
                               : null
                           : null}
-                        {isLongForm && latestUpload.thumbnail_url
+                        {latestUpload.thumbnail_url
                           ? latestUpload.thumbnail_attached
                             ? " · thumbnail terpasang"
                             : latestUpload.status === "running"
-                              ? " · memasang thumbnail"
-                              : " · thumbnail 16:9 siap"
+                              ? isLongForm
+                                ? " · memasang thumbnail"
+                                : " · mencoba thumbnail Shorts"
+                              : thumbnailWasSkipped
+                                ? " · thumbnail dilewati oleh Studio"
+                                : isLongForm
+                                  ? " · thumbnail 16:9 siap"
+                                  : null
                           : null}
                         {latestUpload.status === "queued" && queuePosition !== null
                           ? ` · antrean ${queuePosition} dari ${queueTotal ?? queuePosition}`
