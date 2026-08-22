@@ -42,10 +42,12 @@ from clipper import (
     contextual_sound_effect_cues,
     content_edit_variation,
     detect_visual_theme,
+    delayed_punchline_profile,
     designed_thumbnail_filter,
     detect_reaction_cues,
     detect_static_watermark_region,
     embedded_split_subject_filter,
+    evidence_stage_overlay_filter,
     emphasis_timestamps,
     enhanced_edit_filter,
     fallback_social_caption,
@@ -88,7 +90,9 @@ from clipper import (
     shorts_should_protect_payoff,
     social_anecdote_profile,
     subscribe_value_prompt,
+    structured_comparison_profile,
     thumbnail_story_copy,
+    truthful_payoff_teaser_filter,
     two_k_experiment_readiness,
     transcription_decode_options,
     viral_title_overlay_filter,
@@ -1336,6 +1340,185 @@ def test_social_anecdote_does_not_reward_a_punchline_targeting_someone_else():
     profile = social_anecdote_profile(text, 22)
 
     assert profile["self_directed_payoff"] is False
+    assert profile["qualified"] is False
+
+
+def test_delayed_punchline_rewards_truthful_question_answer_and_late_self_payoff():
+    segments = [
+        TranscriptSegment(0, 4, "Ketika ditanya kenapa pintu rumah perlu dikunci, semua penasaran"),
+        TranscriptSegment(4, 9, "Jadi sebenarnya tidak ada aturan yang memaksa jawaban tertentu"),
+        TranscriptSegment(9, 15, "Yang penting jawab sesuai keadaan dan jangan mengarang"),
+        TranscriptSegment(15, 20, "Ngapunten, saya cuma belum cukup umur untuk menjawabnya"),
+    ]
+    text = " ".join(item.text for item in segments)
+
+    profile = delayed_punchline_profile(text, 20)
+    metrics = candidate_story_metrics(segments, 20)
+    score, reasons = score_window(segments, 20)
+
+    assert profile["qualified"] is True
+    assert profile["truthful_teaser_eligible"] is True
+    assert profile["self_directed_payoff"] is True
+    assert profile["attacks_someone_else"] is False
+    assert metrics["delayed_punchline_qualified"] is True
+    assert metrics["boundary_quality"] == "payoff_tuntas"
+    assert metrics["loop_score"] >= 45
+    assert score >= 78
+    assert "tanya-jawab punya jawaban nyata dan punchline akhir yang aman" in reasons
+
+
+def test_delayed_punchline_uses_truthful_teaser_and_clears_before_spoken_payoff():
+    text = (
+        "Ketika ditanya kenapa pintu rumah perlu dikunci semua penasaran. "
+        "Jadi sebenarnya tidak ada aturan yang memaksa jawaban tertentu. "
+        "Yang penting jawab sesuai keadaan dan jangan mengarang. "
+        "Ngapunten, saya cuma belum cukup umur untuk menjawabnya."
+    )
+    clip = ClipCandidate(
+        index=1,
+        start=0,
+        end=20,
+        duration=20,
+        score=92,
+        title="Kenapa Pintu Rumah Dikunci",
+        reason="tanya-jawab dan punchline tuntas",
+        text=text,
+        hook="Kenapa pintu rumah perlu dikunci?",
+        loop_score=70,
+        boundary_quality="payoff_tuntas",
+    )
+
+    plan = auto_fyp_visual_plan(clip, "vertical_short")
+    teaser_filter = truthful_payoff_teaser_filter(
+        "payoff.txt",
+        clip.duration,
+        start_seconds=1.65,
+    )
+    clean_filter = clean_detail_edit_filter(
+        clip.duration,
+        "hook.txt",
+        payoff_teaser_text_filename="payoff.txt",
+        payoff_teaser_start_seconds=1.65,
+    )
+    readiness = five_k_experiment_readiness(clip, "vertical_short")
+    growth = codex_growth_blueprint(clip, "vertical_short")
+
+    assert plan["accent"] == "payoff_teaser"
+    assert plan["opening_context_seconds"] == 1.65
+    assert plan["persistent_truthful_payoff_teaser"] is True
+    assert plan["visual_restraint"]["reaction_stickers_allowed"] is False
+    assert plan["visual_restraint"]["authentic_source_reaction_priority"] is True
+    assert "between(t,1.650,17.650)" in teaser_filter
+    assert "textfile='payoff.txt'" in clean_filter
+    assert readiness["signals"]["delayed_punchline_16_26_seconds"] is True
+    assert readiness["iteration_guardrails"]["payoff_teaser_must_quote_late_transcript"] is True
+    assert growth["conversion"]["visible_end_card"] is False
+    assert growth["reference_learning"]["teaser_quotes_transcript_and_clears_before_payoff"] is True
+
+
+def test_delayed_punchline_rejects_attack_on_someone_else():
+    text = (
+        "Ketika ditanya kenapa dia datang semua penasaran. Jadi sebenarnya saya sudah tahu. "
+        "Ternyata saya cuma ingin bilang dia bodoh dan jelek."
+    )
+
+    profile = delayed_punchline_profile(text, 20)
+
+    assert profile["attacks_someone_else"] is True
+    assert profile["qualified"] is False
+
+
+def test_structured_comparison_rewards_question_evidence_and_fair_resolution():
+    segments = [
+        TranscriptSegment(0, 7, "Mengapa praktik agama di beberapa daerah bisa terlihat berbeda?"),
+        TranscriptSegment(7, 17, "Pertama, contohnya aturan setempat memengaruhi bentuk acara tetapi bukan tujuan ibadahnya"),
+        TranscriptSegment(17, 28, "Sedangkan di daerah lain bahasa dan kebiasaannya berbeda dengan contoh pertama"),
+        TranscriptSegment(28, 39, "Kedua, misalnya sumber sejarah juga perlu dibandingkan sebelum membuat klaim umum"),
+        TranscriptSegment(39, 47, "Namun perbedaan praktik tidak otomatis membuktikan kelompok lain lebih rendah"),
+        TranscriptSegment(47, 55, "Jadi yang penting kita memeriksa sumber, konteks, dan kesimpulannya dengan adil serta membedakan pendapat dari data yang terverifikasi"),
+    ]
+    text = " ".join(item.text for item in segments)
+
+    profile = structured_comparison_profile(text, 55)
+    metrics = candidate_story_metrics(segments, 55)
+    score, reasons = score_window(segments, 55)
+
+    assert profile["qualified"] is True
+    assert profile["comparison_beat_count"] >= 2
+    assert profile["evidence_beat_count"] >= 2
+    assert profile["qualified_resolution"] is True
+    assert profile["sensitive_religious_comparison"] is True
+    assert profile["manual_claim_and_context_review_required"] is True
+    assert profile["attacks_protected_group"] is False
+    assert metrics["structured_comparison_qualified"] is True
+    assert metrics["boundary_quality"] == "payoff_tuntas"
+    assert score >= 78
+    assert "perbandingan punya pertanyaan, bukti bertahap, dan kesimpulan adil" in reasons
+
+
+def test_structured_comparison_uses_fresh_evidence_stage_without_reference_branding():
+    text = (
+        "Mengapa praktik agama di beberapa daerah bisa terlihat berbeda? Pertama, "
+        "contohnya aturan setempat memengaruhi bentuk acara tetapi bukan tujuan ibadahnya. "
+        "Sedangkan di daerah lain bahasa dan kebiasaannya berbeda dengan contoh pertama. "
+        "Kedua, misalnya sumber sejarah perlu dibandingkan sebelum membuat klaim umum. "
+        "Namun perbedaan praktik tidak otomatis membuktikan kelompok lain lebih rendah. "
+        "Jadi yang penting kita memeriksa sumber, konteks, dan kesimpulannya dengan adil "
+        "serta membedakan pendapat dari data yang terverifikasi."
+    )
+    clip = ClipCandidate(
+        index=1,
+        start=0,
+        end=55,
+        duration=55,
+        score=93,
+        title="Mengapa Praktik Bisa Berbeda",
+        reason="bukti bertahap dan kesimpulan adil",
+        text=text,
+        hook="Mengapa praktik agama bisa berbeda?",
+        loop_score=58,
+        boundary_quality="payoff_tuntas",
+    )
+
+    plan = auto_fyp_visual_plan(clip, "vertical_short")
+    stage_filter = evidence_stage_overlay_filter("headline.txt", clip.duration)
+    clean_filter = clean_detail_edit_filter(
+        clip.duration,
+        "hook.txt",
+        cover_text_filename="headline.txt",
+        title_overlay_seconds=2.4,
+        evidence_stage_mode=True,
+    )
+    readiness = five_k_experiment_readiness(clip, "vertical_short")
+    growth = codex_growth_blueprint(clip, "vertical_short")
+
+    assert plan["accent"] == "evidence_stage"
+    assert plan["opening_context_seconds"] == 2.4
+    assert plan["three_beat_evidence_rail"] is True
+    assert plan["visual_restraint"]["reaction_stickers_allowed"] is False
+    assert "ARGUMEN / KONTEKS" in stage_filter
+    assert "BUKTI 1 / 3" in stage_filter
+    assert "BUKTI 2 / 3" in clean_filter
+    assert "textfile='headline.txt'" in clean_filter
+    assert readiness["signals"]["structured_comparison_38_60_seconds"] is True
+    assert readiness["signals"]["manual_claim_and_context_review_required"] is True
+    assert readiness["iteration_guardrails"]["duplicate_cold_open_excerpt"] is False
+    assert growth["conversion"]["visible_end_card"] is False
+    assert growth["reference_learning"][
+        "sensitive_religious_comparison_requires_manual_claim_review"
+    ] is True
+
+
+def test_structured_comparison_rejects_protected_group_attack():
+    text = (
+        "Mengapa agama ini berbeda? Pertama, contohnya ada dua aturan. Kedua, misalnya "
+        "ada tiga kebiasaan. Sedangkan kelompok lain berbeda dengan kami. Jadi mereka bodoh "
+        "dan agama palsu, sementara kita paling benar tanpa perlu memeriksa sumber lagi."
+    )
+
+    profile = structured_comparison_profile(text, 48)
+
+    assert profile["attacks_protected_group"] is True
     assert profile["qualified"] is False
 
 

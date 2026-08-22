@@ -92,3 +92,93 @@ Sampel 50 Shorts terbaru pada shelf channel memiliki median sekitar **213 ribu v
 - Jumlah subscriber yang diperoleh dari video tidak tersedia.
 - Status monetisasi channel/video tidak dapat dibuktikan dari halaman publik.
 - Pola editorial membantu membuat eksperimen lebih kuat, tetapi tidak menjamin 5K views.
+
+---
+
+# Referensi 3: `D9nY5QTzcH4`
+
+Audit dilakukan 22 Agustus 2026 dari metadata, transkrip otomatis, sampel video publik, dan shelf Shorts channel. Angka publik dapat berubah.
+
+## Fakta publik
+
+- Judul: **Masih di bawah umur : Ceramah Ning Umi Laila**
+- Channel: **Kolam Santri**
+- Durasi media: **19,71 detik**, format **9:16, 30 fps**
+- Dipublikasikan: **11 Januari 2025**
+- Saat diaudit: **2.131.852 views, 9.598 likes, 48 komentar**
+- Subscriber channel: **sekitar 342 ribu**
+- Lisensi tidak dilaporkan oleh metadata publik; hak pakai dan status monetisasi tidak dapat diasumsikan.
+
+Median views pada sampel 50 Shorts terbaru channel sekitar **40 ribu**. Video referensi berada sekitar **53 kali** di atas median tersebut, sehingga diperlakukan sebagai outlier, bukan baseline atau jaminan performa.
+
+## Pola baru yang dapat digeneralisasi
+
+1. Sekitar 3–4 detik awal memakai reaksi asli dan kartu konteks; audio pertanyaan sudah berjalan sehingga tidak menjadi intro kosong.
+2. Setelah konteks terbaca, potongan kalimat akhir muncul sebagai teaser ringkas di atas. Kalimat itu benar-benar berasal dari payoff, bukan janji yang tidak ada di video.
+3. Bagian tengah tetap berisi jawaban nyata; punchline tidak menggantikan substansi.
+4. Punchline akhir diarahkan kepada diri pembicara, bukan menjadikan orang lain sasaran hinaan.
+5. Caption bawah memakai frasa pendek dan satu keyword berwarna, sedangkan teaser atas tidak menabrak caption utama.
+6. Teaser dibersihkan sebelum kalimat itu diucapkan sehingga ekspresi dan punchline asli menjadi fokus.
+7. Reaksi/tawa asli menjadi pembuka dan penutup, membentuk visual loop tanpa menggandakan footage atau menambah reaction sticker palsu.
+8. Tidak ada CTA grafis yang menimpa punchline.
+
+## Yang diterapkan ke ClipForge
+
+- Detector `delayed_punchline_profile`: pertanyaan → jawaban nyata → punchline akhir yang diarahkan ke diri sendiri.
+- Rentang khusus 16–26 detik, 26–68 kata, dan 1,25–3,20 kata/detik.
+- Bonus scoring dan target ranking sekitar 20 detik hanya bila struktur lengkap serta ending aman.
+- Visual `payoff_teaser`: kartu konteks 1,65 detik, maksimal lima reframe face-safe, dialog-first, tanpa sticker/asap/SFX buatan.
+- Teaser mengambil kutipan transkrip akhir, baru tampil setelah kartu konteks, lalu hilang 2,35 detik sebelum payoff diucapkan.
+- CTA visual akhir disembunyikan agar punchline dan natural loop tetap utuh; konversi diarahkan melalui alasan subscribe yang spesifik, related video, deskripsi, dan pinned comment native YouTube.
+- Guardrail menolak punchline yang menyerang orang lain, hook yang menjanjikan konteks palsu, konflik buatan, serta penyalinan wajah, wording, branding, layout, atau footage referensi.
+
+## Yang tidak dapat disimpulkan
+
+- Views tidak dapat dipisahkan secara publik antara editing, popularitas tokoh, basis subscriber, rekomendasi, dan share eksternal.
+- Jumlah subscriber yang diperoleh dari video ini dan retention aktual tidak tersedia secara publik.
+- Pola ini layak diuji sebagai satu seri terukur, tetapi tidak menjamin views atau subscriber tertentu.
+
+---
+
+# Referensi 4: `h3NCixil9K4`
+
+Audit dilakukan 22 Agustus 2026 dari metadata, transkrip otomatis, sampel video publik, dan 50 Shorts terbaru channel. Angka publik dapat berubah.
+
+## Fakta publik
+
+- Judul: **KALAU AGAMA DARI TUHAN KENAPA BERBEDA**
+- Channel: **Islam Today**
+- Durasi media: **101,98 detik**, format **9:16, 60 fps**
+- Dipublikasikan: **14 Agustus 2026**
+- Saat diaudit: **1.301.347 views, 25.241 likes, 586 komentar**
+- Subscriber channel: **sekitar 153 ribu**
+- Lisensi tidak dilaporkan oleh metadata publik; hak pakai dan status monetisasi tidak dapat diasumsikan.
+
+Median sampel 50 Shorts terbaru channel sekitar **62 ribu views**. Video referensi berada sekitar **21 kali** di atas median. Channel memiliki beberapa video lain di atas satu juta views, tetapi hasil ini tetap outlier dan bukan jaminan template.
+
+## Pola yang terlihat
+
+1. Sekitar 14 detik akhir diduplikasi sebagai cold-open, kemudian video kembali ke bagian penjelasan sebelumnya dan berakhir pada pertanyaan yang sama.
+2. Pertanyaan besar menjadi promise utama, lalu argumen bergerak melalui beberapa contoh perbandingan.
+3. Layout sangat statis: pola dekoratif dan logo di atas, foto pendukung, video pembicara di tengah, serta subtitle pada band hitam bawah.
+4. Caption memakai frasa pendek dengan satu kata/frasa kuning untuk mempercepat scanning.
+5. Tidak ada virtual camera cut yang berarti; variasi terutama datang dari gestur pembicara, pergantian caption, dan musik.
+6. Topik membandingkan agama dan memuat klaim faktual yang perlu sumber, konteks, serta review agar tidak berubah menjadi serangan terhadap kelompok yang dilindungi.
+
+## Keputusan dan modifikasi ClipForge
+
+- Konsep **panggung argumen** dapat dipakai; frame, logo, pola, foto, wording, dan footage referensi tidak disalin.
+- Detector `structured_comparison_profile`: pertanyaan → minimal dua beat perbandingan/bukti → kesimpulan lengkap dan adil.
+- Rentang ClipForge tetap **38–60 detik**, 65–170 kata, dan 1,20–3,20 kata/detik. Walau YouTube mengizinkan Shorts vertikal lebih panjang, batas 60 detik dipertahankan untuk eksperimen channel ini.
+- Visual `evidence_stage`: kartu konteks 2,4 detik, indikator **BUKTI 1/3–3/3**, maksimal lima reframe, video sumber tetap dominan, tanpa logo/pola/foto sumber.
+- Duplikasi cold-open panjang dihapus. Hook cukup memakai pertanyaan asli satu kali; ending wajib memberi resolusi, tidak hanya mengulang pertanyaan.
+- Caption dinamis dan keyword highlight dipertahankan tanpa band hitam besar permanen.
+- Musik/SFX, reaction sticker, asap, dan CTA akhir dinonaktifkan agar argumen, atribusi, dan kesimpulan tetap jelas.
+- Perbandingan agama diberi flag `manual_claim_and_context_review_required`; publikasi memerlukan verifikasi klaim, konteks/atribusi, pemeriksaan serangan terhadap kelompok agama, dan konfirmasi hak sumber.
+
+## Guardrail kebijakan
+
+- Agama diperlakukan sebagai kelompok yang dilindungi; klaim inferioritas, penghinaan, atau dehumanisasi ditolak.
+- Template statis yang sama tidak diproduksi massal. Warna, headline, progress rail, crop, dan beat berasal dari isi setiap video.
+- Status lisensi video referensi tidak diketahui, sehingga video tersebut tidak digunakan sebagai aset produksi.
+- Template dan scoring adalah alat eksperimen editorial, bukan bukti kelayakan monetisasi atau jaminan distribusi.

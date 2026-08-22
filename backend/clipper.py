@@ -591,6 +591,319 @@ def social_anecdote_profile(
         "copied_reference_assets": False,
     }
 
+
+# A compact question-and-answer clip can earn a replay when the final line
+# changes the meaning of the setup. The useful mechanic is a truthful question,
+# a real answer, and a late self-directed punchline; reaction faces or copied
+# footage are never required for the profile to qualify.
+DELAYED_PUNCHLINE_SETUP_WORDS = {
+    "apa",
+    "bagaimana",
+    "boleh",
+    "ditanya",
+    "gimana",
+    "hukum",
+    "kenapa",
+    "kok",
+    "mengapa",
+    "pertanyaan",
+}
+DELAYED_PUNCHLINE_ANSWER_PHRASES = (
+    "artinya",
+    "jadi sebenarnya",
+    "jawabannya",
+    "karena",
+    "menurut saya",
+    "sebenarnya",
+)
+DELAYED_PUNCHLINE_MARKERS = {
+    "cuma",
+    "eh",
+    "maaf",
+    "malah",
+    "ngapunten",
+    "rupanya",
+    "ternyata",
+}
+DELAYED_PUNCHLINE_ATTACK_WORDS = {
+    "bodoh",
+    "dungu",
+    "goblok",
+    "jelek",
+    "tolol",
+}
+
+
+def delayed_punchline_profile(
+    text: str,
+    duration: float,
+    *,
+    opening_text: str = "",
+    closing_text: str = "",
+) -> dict[str, object]:
+    """Detect question -> real answer -> late self-directed punchline."""
+    normalized = re.sub(r"\s+", " ", text).strip().casefold()
+    words = re.findall(r"[\w']+", normalized)
+    if not opening_text:
+        opening_text = " ".join(words[: min(18, max(8, len(words) // 3))])
+    if not closing_text:
+        closing_count = min(22, max(9, math.ceil(len(words) * 0.32)))
+        closing_text = " ".join(words[-closing_count:])
+    opening = re.sub(r"\s+", " ", opening_text).strip().casefold()
+    closing = re.sub(r"\s+", " ", closing_text).strip().casefold()
+    opening_words = set(re.findall(r"[\w']+", opening))
+    closing_tokens = re.findall(r"[\w']+", closing)
+    payoff_tokens = closing_tokens[-18:]
+    closing_words = set(payoff_tokens)
+
+    question_setup = bool(
+        "?" in opening
+        or opening_words.intersection(DELAYED_PUNCHLINE_SETUP_WORDS)
+    )
+    answer_turn = any(
+        phrase in normalized for phrase in DELAYED_PUNCHLINE_ANSWER_PHRASES
+    )
+    late_punchline = bool(
+        closing_words.intersection(DELAYED_PUNCHLINE_MARKERS | LAUGH_WORDS)
+    )
+    self_directed_payoff = bool(
+        closing_words.intersection(SOCIAL_ANECDOTE_FIRST_PERSON_WORDS)
+        and late_punchline
+    )
+    attacks_someone_else = bool(
+        closing_words.intersection(DELAYED_PUNCHLINE_ATTACK_WORDS)
+    )
+    duration_fit = 16.0 <= duration <= 26.0
+    word_count_fit = 26 <= len(words) <= 68
+    speech_density = len(words) / max(1.0, duration)
+    speech_density_fit = 1.25 <= speech_density <= 3.20
+    teaser_word_count = len(payoff_tokens)
+    truthful_teaser_eligible = bool(
+        late_punchline and 2 <= teaser_word_count <= 18 and not attacks_someone_else
+    )
+    structure_score = sum(
+        (
+            22 if question_setup else 0,
+            22 if answer_turn else 0,
+            20 if late_punchline else 0,
+            14 if self_directed_payoff else 0,
+            8 if truthful_teaser_eligible else 0,
+            5 if duration_fit else 0,
+            4 if word_count_fit else 0,
+            5 if speech_density_fit else 0,
+        )
+    )
+    qualified = bool(
+        duration_fit
+        and word_count_fit
+        and speech_density_fit
+        and question_setup
+        and answer_turn
+        and late_punchline
+        and self_directed_payoff
+        and truthful_teaser_eligible
+        and not attacks_someone_else
+    )
+    return {
+        "version": 1,
+        "qualified": qualified,
+        "structure_score": min(100, structure_score),
+        "duration_fit_16_26_seconds": duration_fit,
+        "word_count_fit": word_count_fit,
+        "speech_density_words_per_second": round(speech_density, 3),
+        "speech_density_fit": speech_density_fit,
+        "question_setup": question_setup,
+        "answer_turn": answer_turn,
+        "late_punchline": late_punchline,
+        "self_directed_payoff": self_directed_payoff,
+        "truthful_teaser_eligible": truthful_teaser_eligible,
+        "attacks_someone_else": attacks_someone_else,
+        "authentic_source_reaction_only": True,
+        "synthetic_ridicule_or_harassment_added": False,
+        "copied_reference_assets": False,
+    }
+
+
+# Longer Shorts need visible progression rather than a static branded frame.
+# This profile rewards a question, multiple comparison/evidence beats, and a
+# qualified conclusion. It remains topic-agnostic, while sensitive religious
+# comparisons are explicitly held for human claim/context review.
+STRUCTURED_COMPARISON_QUESTION_WORDS = {
+    "apa",
+    "bagaimana",
+    "benarkah",
+    "kenapa",
+    "mana",
+    "mengapa",
+}
+STRUCTURED_COMPARISON_LINKS = (
+    "akan tetapi",
+    "berbeda dengan",
+    "dibanding",
+    "kalau",
+    "meskipun",
+    "namun",
+    "padahal",
+    "sedangkan",
+    "sementara",
+    "tetapi",
+    "tidak sama",
+)
+STRUCTURED_COMPARISON_EVIDENCE_MARKERS = (
+    "ada sekitar",
+    "buktinya",
+    "contohnya",
+    "faktanya",
+    "kedua",
+    "misalnya",
+    "pertama",
+    "salah satunya",
+)
+STRUCTURED_COMPARISON_RESOLUTION_PHRASES = (
+    "artinya",
+    "bukan berarti",
+    "jadi",
+    "karena itu",
+    "kesimpulannya",
+    "menurut saya",
+    "yang penting",
+)
+STRUCTURED_COMPARISON_SELF_REFLECTION = {
+    "kami",
+    "kita",
+    "saya",
+    "sendiri",
+}
+STRUCTURED_COMPARISON_RELIGION_WORDS = {
+    "agama",
+    "alkitab",
+    "buddha",
+    "gereja",
+    "hindu",
+    "islam",
+    "kristen",
+    "quran",
+    "tuhan",
+    "weda",
+}
+STRUCTURED_COMPARISON_ATTACK_PHRASES = (
+    "agama bodoh",
+    "agama palsu",
+    "lebih hina",
+    "lebih rendah",
+    "mereka bodoh",
+    "mereka tolol",
+)
+
+
+def structured_comparison_profile(
+    text: str,
+    duration: float,
+    *,
+    opening_text: str = "",
+    closing_text: str = "",
+) -> dict[str, object]:
+    """Detect question -> evidence ladder -> fair, complete conclusion."""
+    normalized = re.sub(r"\s+", " ", text).strip().casefold()
+    words = re.findall(r"[\w']+", normalized)
+    if not opening_text:
+        opening_text = " ".join(words[: min(24, max(12, len(words) // 4))])
+    if not closing_text:
+        closing_count = min(40, max(18, math.ceil(len(words) * 0.28)))
+        closing_text = " ".join(words[-closing_count:])
+    opening = re.sub(r"\s+", " ", opening_text).strip().casefold()
+    closing = re.sub(r"\s+", " ", closing_text).strip().casefold()
+    opening_words = set(re.findall(r"[\w']+", opening))
+    all_words = set(words)
+    closing_words = set(re.findall(r"[\w']+", closing))
+
+    question_setup = bool(
+        "?" in opening
+        or opening_words.intersection(STRUCTURED_COMPARISON_QUESTION_WORDS)
+    )
+    comparison_count = sum(
+        normalized.count(phrase) for phrase in STRUCTURED_COMPARISON_LINKS
+    )
+    explicit_evidence_count = sum(
+        normalized.count(marker)
+        for marker in STRUCTURED_COMPARISON_EVIDENCE_MARKERS
+    )
+    numeric_evidence_count = min(2, len(re.findall(r"\b\d+(?:[.,]\d+)?\b", normalized)))
+    comparison_evidence_count = min(2, comparison_count // 2)
+    evidence_beat_count = min(
+        6,
+        explicit_evidence_count + numeric_evidence_count + comparison_evidence_count,
+    )
+    self_reflective_closing = bool(
+        closing_words.intersection(STRUCTURED_COMPARISON_SELF_REFLECTION)
+    )
+    qualified_resolution = bool(
+        any(phrase in closing for phrase in STRUCTURED_COMPARISON_RESOLUTION_PHRASES)
+        or (self_reflective_closing and comparison_count >= 2)
+    )
+    sensitive_religious_comparison = bool(
+        all_words.intersection(STRUCTURED_COMPARISON_RELIGION_WORDS)
+        and comparison_count >= 1
+    )
+    attacks_protected_group = False
+    for phrase in STRUCTURED_COMPARISON_ATTACK_PHRASES:
+        cursor = 0
+        while (match_index := normalized.find(phrase, cursor)) >= 0:
+            prefix = normalized[max(0, match_index - 72) : match_index]
+            negated = bool(
+                re.search(r"\b(?:bukan|jangan|tidak)(?:\s+\w+){0,8}\s*$", prefix)
+            )
+            if not negated:
+                attacks_protected_group = True
+                break
+            cursor = match_index + len(phrase)
+        if attacks_protected_group:
+            break
+    duration_fit = 38.0 <= duration <= 60.0
+    word_count_fit = 65 <= len(words) <= 170
+    speech_density = len(words) / max(1.0, duration)
+    speech_density_fit = 1.20 <= speech_density <= 3.20
+    structure_score = sum(
+        (
+            18 if question_setup else 0,
+            min(24, comparison_count * 8),
+            min(24, evidence_beat_count * 8),
+            18 if qualified_resolution else 0,
+            5 if duration_fit else 0,
+            5 if word_count_fit else 0,
+            6 if speech_density_fit else 0,
+        )
+    )
+    qualified = bool(
+        duration_fit
+        and word_count_fit
+        and speech_density_fit
+        and question_setup
+        and comparison_count >= 2
+        and evidence_beat_count >= 2
+        and qualified_resolution
+        and not attacks_protected_group
+    )
+    return {
+        "version": 1,
+        "qualified": qualified,
+        "structure_score": min(100, structure_score),
+        "duration_fit_38_60_seconds": duration_fit,
+        "word_count_fit": word_count_fit,
+        "speech_density_words_per_second": round(speech_density, 3),
+        "speech_density_fit": speech_density_fit,
+        "question_setup": question_setup,
+        "comparison_beat_count": comparison_count,
+        "evidence_beat_count": evidence_beat_count,
+        "qualified_resolution": qualified_resolution,
+        "self_reflective_closing": self_reflective_closing,
+        "sensitive_religious_comparison": sensitive_religious_comparison,
+        "manual_claim_and_context_review_required": sensitive_religious_comparison,
+        "attacks_protected_group": attacks_protected_group,
+        "duplicated_cold_open_required": False,
+        "copied_reference_logo_pattern_photos_or_layout": False,
+    }
+
 MYSTERY_WORDS = {
     "angker",
     "arwah",
@@ -3957,8 +4270,10 @@ def five_k_experiment_readiness(
         status = "revise_before_publishing"
     micro_thesis = micro_thesis_profile(clip.text, clip.duration)
     social_anecdote = social_anecdote_profile(clip.text, clip.duration)
+    delayed_punchline = delayed_punchline_profile(clip.text, clip.duration)
+    structured_comparison = structured_comparison_profile(clip.text, clip.duration)
     return {
-        "version": 5,
+        "version": 7,
         "experiment_name": "sustainable_5k_growth",
         "target_views": 5000,
         "stretch_target_views": 10000,
@@ -4007,6 +4322,21 @@ def five_k_experiment_readiness(
             "social_anecdote_18_32_seconds": bool(social_anecdote["qualified"]),
             "social_anecdote_structure_score": int(
                 social_anecdote["structure_score"]
+            ),
+            "delayed_punchline_16_26_seconds": bool(
+                delayed_punchline["qualified"]
+            ),
+            "delayed_punchline_structure_score": int(
+                delayed_punchline["structure_score"]
+            ),
+            "structured_comparison_38_60_seconds": bool(
+                structured_comparison["qualified"]
+            ),
+            "structured_comparison_structure_score": int(
+                structured_comparison["structure_score"]
+            ),
+            "manual_claim_and_context_review_required": bool(
+                structured_comparison["manual_claim_and_context_review_required"]
             ),
         },
         "measure_after_publish": (
@@ -4058,6 +4388,12 @@ def five_k_experiment_readiness(
             "treat_single_viral_reference_as_outlier_not_baseline": True,
             "copy_reference_speaker_branding_wording_or_footage": False,
             "manufacture_ridicule_conflict_or_harassment": False,
+            "payoff_teaser_must_quote_late_transcript": True,
+            "payoff_teaser_promises_missing_context": False,
+            "copy_reference_logo_pattern_photos_or_layout": False,
+            "demean_or_attack_protected_religious_group": False,
+            "sensitive_comparison_requires_manual_claim_review": True,
+            "duplicate_cold_open_excerpt": False,
         },
     }
 
@@ -4340,6 +4676,18 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
         opening_text=opening,
         closing_text=closing,
     )
+    delayed_punchline = delayed_punchline_profile(
+        text,
+        duration,
+        opening_text=opening,
+        closing_text=closing,
+    )
+    structured_comparison = structured_comparison_profile(
+        text,
+        duration,
+        opening_text=opening,
+        closing_text=closing,
+    )
     signal_words = HOOK_WORDS | TENSION_WORDS | PAYOFF_WORDS | IMPORTANT_WORDS
     signal_hits = all_words.intersection(signal_words)
     payoff_near_end = bool(
@@ -4352,12 +4700,22 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
             social_anecdote["qualified"]
             and social_anecdote["closing_payoff"]
         )
+        or (
+            delayed_punchline["qualified"]
+            and delayed_punchline["late_punchline"]
+        )
+        or (
+            structured_comparison["qualified"]
+            and structured_comparison["qualified_resolution"]
+        )
     )
     punctuation_ending = text.rstrip().endswith((".", "!", "?"))
     complete_ending = bool(
         punctuation_ending
         or micro_thesis["qualified"]
         or social_anecdote["qualified"]
+        or delayed_punchline["qualified"]
+        or structured_comparison["qualified"]
     )
     opening_hook = bool(
         opening_words.intersection((HOOK_WORDS - WEAK_STARTS) | TENSION_WORDS)
@@ -4377,6 +4735,8 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
     key_point_score += 8 if density >= 1.25 else 3 if density >= 0.9 else -8
     key_point_score += 14 if micro_thesis["qualified"] else 0
     key_point_score += 14 if social_anecdote["qualified"] else 0
+    key_point_score += 14 if delayed_punchline["qualified"] else 0
+    key_point_score += 14 if structured_comparison["qualified"] else 0
     key_point_score -= filler_hits * 12
     if not complete_ending:
         key_point_score -= 10
@@ -4387,12 +4747,16 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
     semantic_reconnection = bool(
         concept_overlap - IMPORTANT_WORDS - PAYOFF_WORDS
         or social_anecdote["qualified"]
+        or delayed_punchline["qualified"]
+        or structured_comparison["qualified"]
     )
     question_to_payoff = "?" in opening and payoff_near_end and semantic_reconnection
     hook_to_payoff = opening_hook and payoff_near_end and semantic_reconnection
     loop_score = min(45, len(concept_overlap) * 15)
     loop_score += 35 if question_to_payoff else 20 if hook_to_payoff else 0
     loop_score += 25 if social_anecdote["qualified"] else 0
+    loop_score += 25 if delayed_punchline["qualified"] else 0
+    loop_score += 12 if structured_comparison["qualified"] else 0
     loop_score += 12 if complete_ending else -12
     if not opening_concepts:
         loop_score -= 10
@@ -4414,6 +4778,10 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
         "micro_thesis_score": int(micro_thesis["structure_score"]),
         "social_anecdote_qualified": bool(social_anecdote["qualified"]),
         "social_anecdote_score": int(social_anecdote["structure_score"]),
+        "delayed_punchline_qualified": bool(delayed_punchline["qualified"]),
+        "delayed_punchline_score": int(delayed_punchline["structure_score"]),
+        "structured_comparison_qualified": bool(structured_comparison["qualified"]),
+        "structured_comparison_score": int(structured_comparison["structure_score"]),
         "retention_score": int(retention["retention_readiness_score"]),
     }
 
@@ -4445,6 +4813,22 @@ def is_meaningful_candidate_end(
             closing_text=" ".join(item.text for item in window[-2:]),
         )["qualified"]
     )
+    delayed_punchline_complete = bool(
+        delayed_punchline_profile(
+            " ".join(item.text for item in window),
+            window_duration,
+            opening_text=" ".join(item.text for item in window[:2]),
+            closing_text=" ".join(item.text for item in window[-2:]),
+        )["qualified"]
+    )
+    structured_comparison_complete = bool(
+        structured_comparison_profile(
+            " ".join(item.text for item in window),
+            window_duration,
+            opening_text=" ".join(item.text for item in window[:2]),
+            closing_text=" ".join(item.text for item in window[-3:]),
+        )["qualified"]
+    )
     last_words = set(re.findall(r"[\w']+", last.text.casefold()))
     natural_sentence = last.text.rstrip().endswith((".", "!", "?"))
     explicit_resolution = bool(last_words.intersection(PAYOFF_WORDS | IMPORTANT_WORDS))
@@ -4459,6 +4843,8 @@ def is_meaningful_candidate_end(
         or explicit_resolution
         or micro_thesis_complete
         or social_anecdote_complete
+        or delayed_punchline_complete
+        or structured_comparison_complete
         or is_last
         or next_is_boundary
         or next_exceeds_limit
@@ -4511,6 +4897,18 @@ def candidate_fyp_analysis(
         opening_text=opening_text,
         closing_text=" ".join(item.text for item in items[-3:]),
     )
+    delayed_punchline = delayed_punchline_profile(
+        text,
+        duration,
+        opening_text=opening_text,
+        closing_text=" ".join(item.text for item in items[-3:]),
+    )
+    structured_comparison = structured_comparison_profile(
+        text,
+        duration,
+        opening_text=opening_text,
+        closing_text=" ".join(item.text for item in items[-3:]),
+    )
     strongest_line = strongest_advice_line(items)
     hook_reference = first_sentence(opening_text or text, max_words=6)
     if not opening_has_hook and strongest_line:
@@ -4539,6 +4937,14 @@ def candidate_fyp_analysis(
     if social_anecdote["qualified"]:
         strengths.append(
             "anekdot sosial merangkai kejadian, perbandingan, dan punchline yang diarahkan ke diri sendiri"
+        )
+    if delayed_punchline["qualified"]:
+        strengths.append(
+            "tanya-jawab singkat menahan punchline diri sendiri sampai beat terakhir"
+        )
+    if structured_comparison["qualified"]:
+        strengths.append(
+            "pertanyaan berkembang lewat beberapa bukti dan ditutup dengan kesimpulan yang lengkap"
         )
 
     active_first_30_signals = sum(first_30_signals.values())
@@ -4659,6 +5065,18 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
         opening_text=opening_text,
         closing_text=" ".join(item.text for item in items[-3:]),
     )
+    delayed_punchline = delayed_punchline_profile(
+        text,
+        duration,
+        opening_text=opening_text,
+        closing_text=" ".join(item.text for item in items[-3:]),
+    )
+    structured_comparison = structured_comparison_profile(
+        text,
+        duration,
+        opening_text=opening_text,
+        closing_text=" ".join(item.text for item in items[-3:]),
+    )
 
     score = 24
     reasons: list[str] = []
@@ -4677,6 +5095,14 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
     if social_anecdote["qualified"]:
         score += 16
         reasons.append("anekdot sosial punya setup, pembanding, dan punchline aman")
+
+    if delayed_punchline["qualified"]:
+        score += 16
+        reasons.append("tanya-jawab punya jawaban nyata dan punchline akhir yang aman")
+
+    if structured_comparison["qualified"]:
+        score += 16
+        reasons.append("perbandingan punya pertanyaan, bukti bertahap, dan kesimpulan adil")
 
     if hook_hits:
         bump = min(18, len(hook_hits) * 5)
@@ -4788,7 +5214,13 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
     elif retention_score < 58:
         reasons.append("risiko drop-off tinggi pada ritme 30 detik awal")
 
-    if word_count < 55 and not micro_thesis["qualified"]:
+    if (
+        word_count < 55
+        and not micro_thesis["qualified"]
+        and not social_anecdote["qualified"]
+        and not delayed_punchline["qualified"]
+        and not structured_comparison["qualified"]
+    ):
         score -= 12
         reasons.append("terlalu sedikit konteks")
 
@@ -4900,9 +5332,15 @@ def candidate_topic_similarity(left: ClipCandidate, right: ClipCandidate) -> flo
 def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0) -> float:
     micro_thesis = micro_thesis_profile(candidate.text, candidate.duration)
     social_anecdote = social_anecdote_profile(candidate.text, candidate.duration)
+    delayed_punchline = delayed_punchline_profile(candidate.text, candidate.duration)
+    structured_comparison = structured_comparison_profile(candidate.text, candidate.duration)
     effective_target = (
         23.0
         if social_anecdote["qualified"]
+        else 20.0
+        if delayed_punchline["qualified"]
+        else 52.0
+        if structured_comparison["qualified"]
         else 26.0
         if micro_thesis["qualified"]
         else target_duration
@@ -4914,6 +5352,8 @@ def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0
         + candidate.retention_score * 0.12
         + (4.0 if micro_thesis["qualified"] else 0.0)
         + (4.0 if social_anecdote["qualified"] else 0.0)
+        + (4.0 if delayed_punchline["qualified"] else 0.0)
+        + (4.0 if structured_comparison["qualified"] else 0.0)
         - abs(candidate.duration - effective_target) * 0.05
     )
 
@@ -5950,6 +6390,8 @@ def auto_fyp_visual_plan(
     depth_match = bool(words.intersection(DEPTH_VISUAL_WORDS))
     micro_thesis = micro_thesis_profile(clip.text, clip.duration)
     social_anecdote = social_anecdote_profile(clip.text, clip.duration)
+    delayed_punchline = delayed_punchline_profile(clip.text, clip.duration)
+    structured_comparison = structured_comparison_profile(clip.text, clip.duration)
     retention_cadence = (
         5.5
         if 0 < clip.retention_score < 68
@@ -5961,6 +6403,12 @@ def auto_fyp_visual_plan(
     if output_format == "vertical_short" and social_anecdote["qualified"]:
         accent = "story_punchline"
         reason = "social_friction_comparison_self_directed_payoff"
+    elif output_format == "vertical_short" and delayed_punchline["qualified"]:
+        accent = "payoff_teaser"
+        reason = "question_answer_late_self_directed_punchline"
+    elif output_format == "vertical_short" and structured_comparison["qualified"]:
+        accent = "evidence_stage"
+        reason = "question_multi_evidence_fair_resolution"
     elif output_format == "vertical_short" and micro_thesis["qualified"]:
         accent = "restrained_authority"
         reason = "dilemma_nuance_safety_payoff_micro_thesis"
@@ -5975,7 +6423,7 @@ def auto_fyp_visual_plan(
         reason = "clarity_and_authenticity_priority"
 
     return {
-        "version": 3,
+        "version": 5,
         "base": "cinematic_clean_detail",
         "accent": accent,
         "reason": reason,
@@ -5983,28 +6431,49 @@ def auto_fyp_visual_plan(
         "variation": variation,
         "micro_thesis": micro_thesis,
         "social_anecdote": social_anecdote,
-        "opening_context_seconds": 1.9 if accent == "story_punchline" else 3.2,
+        "delayed_punchline": delayed_punchline,
+        "structured_comparison": structured_comparison,
+        "opening_context_seconds": (
+            1.9
+            if accent == "story_punchline"
+            else 1.65
+            if accent == "payoff_teaser"
+            else 2.4
+            if accent == "evidence_stage"
+            else 3.2
+        ),
+        "persistent_truthful_payoff_teaser": accent == "payoff_teaser",
+        "three_beat_evidence_rail": accent == "evidence_stage",
         "visual_restraint": {
             "stable_speaker_priority": accent == "restrained_authority",
             "face_and_gesture_priority": accent
-            in {"restrained_authority", "story_punchline"},
+            in {"evidence_stage", "payoff_teaser", "restrained_authority", "story_punchline"},
             "maximum_virtual_camera_cuts": (
                 7
                 if accent == "story_punchline"
+                else 5
+                if accent == "payoff_teaser"
+                else 5
+                if accent == "evidence_stage"
                 else 2
                 if accent == "restrained_authority"
                 else 5
             ),
             "reaction_stickers_allowed": accent
-            not in {"restrained_authority", "story_punchline"},
-            "authentic_source_reaction_priority": accent == "story_punchline",
+            not in {"evidence_stage", "payoff_teaser", "restrained_authority", "story_punchline"},
+            "authentic_source_reaction_priority": accent
+            in {"payoff_teaser", "story_punchline"},
             "cinematic_smoke_allowed": accent
-            not in {"restrained_authority", "story_punchline"},
+            not in {"evidence_stage", "payoff_teaser", "restrained_authority", "story_punchline"},
             "dialogue_first_audio": accent
-            in {"restrained_authority", "story_punchline"},
+            in {"evidence_stage", "payoff_teaser", "restrained_authority", "story_punchline"},
             "target_reframe_cadence_seconds": (
                 2.8
                 if accent == "story_punchline"
+                else 3.1
+                if accent == "payoff_teaser"
+                else 7.2
+                if accent == "evidence_stage"
                 else 9.5
                 if accent == "restrained_authority"
                 else retention_cadence
@@ -6166,11 +6635,96 @@ def viral_title_overlay_filter(
     )
 
 
+def truthful_payoff_teaser_filter(
+    payoff_text_filename: str,
+    duration: float,
+    *,
+    accent: str = "#FFF200",
+    start_seconds: float = 0.32,
+) -> str:
+    """Hold a transcript-quoted late line above the story, then clear the payoff."""
+    safe_duration = max(0.1, duration)
+    teaser_start = min(
+        max(0.0, start_seconds),
+        max(0.0, safe_duration - 0.1),
+    )
+    teaser_end = max(teaser_start + 0.1, safe_duration - 2.35)
+    teaser_end = min(safe_duration - 0.04, teaser_end)
+    active = f"enable='between(t,{teaser_start:.3f},{teaser_end:.3f})'"
+    font_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    return ",".join(
+        [
+            "drawbox=x=160:y=228:w=760:h=118:color=black@0.22:t=fill:"
+            f"{active}",
+            f"drawbox=x=160:y=228:w=760:h=5:color={accent}@0.96:t=fill:"
+            f"{active}",
+            "drawtext="
+            f"fontfile={font_bold}:textfile='{payoff_text_filename}':reload=0:expansion=none:"
+            f"fontcolor={accent}:fontsize=34:line_spacing=5:borderw=3:bordercolor=black@0.92:"
+            "x=(w-text_w)/2:y=255:"
+            f"{active}",
+        ]
+    )
+
+
+def evidence_stage_overlay_filter(
+    headline_filename: str,
+    duration: float,
+    *,
+    accent: str = "#FACC15",
+    secondary: str = "#22D3EE",
+    intro_seconds: float = 2.4,
+) -> str:
+    """Add a fresh three-beat argument rail without copying a branded frame."""
+    safe_duration = max(0.1, duration)
+    intro_end = min(safe_duration, max(0.6, intro_seconds))
+    intro_active = f"enable='between(t,0,{intro_end:.3f})'"
+    font_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    filters = [
+        "drawbox=x=70:y=1030:w=860:h=252:color=black@0.68:t=fill:"
+        f"{intro_active}",
+        f"drawbox=x=70:y=1030:w=12:h=252:color={accent}@0.98:t=fill:"
+        f"{intro_active}",
+        f"drawbox=x=102:y=1054:w=310:h=42:color={secondary}@0.94:t=fill:"
+        f"{intro_active}",
+        "drawtext="
+        f"fontfile={font_bold}:text='ARGUMEN / KONTEKS':expansion=none:"
+        "fontcolor=black:fontsize=20:x=124:y=1063:"
+        f"{intro_active}",
+        "drawtext="
+        f"fontfile={font_bold}:textfile='{headline_filename}':reload=0:expansion=none:"
+        "fontcolor=white:fontsize=46:line_spacing=7:borderw=2:bordercolor=black@0.88:"
+        "x=108:y=1122:"
+        f"{intro_active}",
+    ]
+    section_duration = safe_duration / 3.0
+    for index in range(3):
+        start = index * section_duration
+        end = safe_duration if index == 2 else (index + 1) * section_duration
+        active = f"enable='between(t,{start:.3f},{end:.3f})'"
+        filters.extend(
+            [
+                "drawbox=x=724:y=228:w=286:h=54:color=black@0.48:t=fill:"
+                f"{active}",
+                f"drawbox=x=724:y=228:w={max(6, round(286 * (index + 1) / 3))}:h=5:"
+                f"color={accent}@0.98:t=fill:{active}",
+                "drawtext="
+                f"fontfile={font_bold}:text='BUKTI {index + 1} / 3':expansion=none:"
+                f"fontcolor={secondary}:fontsize=22:x=762:y=245:{active}",
+            ]
+        )
+    return ",".join(filters)
+
+
 def shorts_engagement_prompt(clip: ClipCandidate) -> str:
     """Create a short, theme-derived question instead of a repeated subscribe template."""
     theme = detect_visual_theme(clip)
     searchable = f"{clip.title} {clip.hook} {clip.text}".casefold()
-    if social_anecdote_profile(clip.text, clip.duration)["qualified"]:
+    if structured_comparison_profile(clip.text, clip.duration)["qualified"]:
+        prompt = "BAGIAN MANA PERLU DICEK LAGI?"
+    elif delayed_punchline_profile(clip.text, clip.duration)["qualified"]:
+        prompt = "JAWABAN AKHIRNYA KEPIKIRAN?"
+    elif social_anecdote_profile(clip.text, clip.duration)["qualified"]:
         prompt = "KAMU PERNAH SALAH DIKIRA?"
     elif "?" in (clip.hook or ""):
         prompt = "JAWABANMU SAMA ATAU BEDA?"
@@ -6193,7 +6747,11 @@ def subscribe_value_prompt(clip: ClipCandidate) -> str:
     """Give viewers a topic-specific reason to subscribe after receiving value."""
     theme = detect_visual_theme(clip)
     searchable = f"{clip.title} {clip.hook} {clip.pov} {clip.text}".casefold()
-    if social_anecdote_profile(clip.text, clip.duration)["qualified"]:
+    if structured_comparison_profile(clip.text, clip.duration)["qualified"]:
+        prompt = "SUBSCRIBE UNTUK ARGUMEN & CEK FAKTA"
+    elif delayed_punchline_profile(clip.text, clip.duration)["qualified"]:
+        prompt = "SUBSCRIBE UNTUK JAWABAN & HIKMAH SINGKAT"
+    elif social_anecdote_profile(clip.text, clip.duration)["qualified"]:
         prompt = "SUBSCRIBE UNTUK CERITA & HIKMAH BERIKUTNYA"
     elif any(term in searchable for term in ARCHIVAL_VISUAL_WORDS):
         prompt = "SUBSCRIBE UNTUK KISAH & HIKMAH BERIKUTNYA"
@@ -6216,6 +6774,8 @@ def shorts_should_protect_payoff(clip: ClipCandidate) -> bool:
         clip.duration <= 35.0
         or clip.loop_score >= 45
         or social_anecdote_profile(clip.text, clip.duration)["qualified"]
+        or delayed_punchline_profile(clip.text, clip.duration)["qualified"]
+        or structured_comparison_profile(clip.text, clip.duration)["qualified"]
     )
 
 
@@ -6484,6 +7044,9 @@ def shorts_policy_compliance(duration: float, *, embedded_cover: bool) -> dict[s
         "content_id_claim_check_required_before_publication": True,
         "rights_and_originality_review_required": True,
         "channel_level_review_still_applies": True,
+        "religion_treated_as_protected_group": True,
+        "comparative_religion_claims_require_context_and_fact_review": True,
+        "protected_group_inferiority_or_dehumanization_allowed": False,
         "recommendation_or_monetization_guarantee": False,
     }
 
@@ -7519,6 +8082,9 @@ def clean_detail_edit_filter(
     detail_filter: str = "",
     variation: int = 0,
     title_overlay_seconds: float = SHORTS_TITLE_OVERLAY_SECONDS,
+    payoff_teaser_text_filename: str = "",
+    payoff_teaser_start_seconds: float = 0.32,
+    evidence_stage_mode: bool = False,
 ) -> str:
     """Keep source detail clean while adding sparse, story-timed visual rhythm."""
     safe_duration = max(0.1, duration)
@@ -7571,14 +8137,34 @@ def clean_detail_edit_filter(
     if show_text_overlays:
         title_filename = cover_text_filename or hook_text_filename
         if title_filename:
+            if evidence_stage_mode:
+                filters.append(
+                    evidence_stage_overlay_filter(
+                        title_filename,
+                        safe_duration,
+                        accent=accent,
+                        secondary=str(profile.get("accent_secondary") or "#22D3EE"),
+                        intro_seconds=title_overlay_seconds,
+                    )
+                )
+            else:
+                filters.append(
+                    viral_title_overlay_filter(
+                        title_filename,
+                        safe_duration,
+                        eyebrow=str(profile.get("badge") or "WAJIB TAHU"),
+                        accent=cover_card_accent(profile),
+                        variation=variation,
+                        overlay_seconds=title_overlay_seconds,
+                    )
+                )
+        if payoff_teaser_text_filename:
             filters.append(
-                viral_title_overlay_filter(
-                    title_filename,
+                truthful_payoff_teaser_filter(
+                    payoff_teaser_text_filename,
                     safe_duration,
-                    eyebrow=str(profile.get("badge") or "WAJIB TAHU"),
-                    accent=cover_card_accent(profile),
-                    variation=variation,
-                    overlay_seconds=title_overlay_seconds,
+                    accent=accent,
+                    start_seconds=payoff_teaser_start_seconds,
                 )
             )
 
@@ -7975,7 +8561,7 @@ CHANNEL_WATERMARK = "ryuundyofficial"
 FENDY_AUDITOR_NAME = "Fendy"
 FENDY_AUDIT_SIGNATURE = "FENDY AUDIT"
 FENDY_PROVENANCE_BRAND = "Fendy Clipper"
-CODEX_GROWTH_FRAMEWORK_VERSION = 2
+CODEX_GROWTH_FRAMEWORK_VERSION = 4
 SOFT_CAPTION_BACK_COLOR = "&HC8000000"
 SOFT_CAPTION_SHADOW = 0.35
 
@@ -8123,6 +8709,8 @@ def codex_growth_blueprint(
     is_short = output_format == "vertical_short"
     micro_thesis = micro_thesis_profile(clip.text, clip.duration)
     social_anecdote = social_anecdote_profile(clip.text, clip.duration)
+    delayed_punchline = delayed_punchline_profile(clip.text, clip.duration)
+    structured_comparison = structured_comparison_profile(clip.text, clip.duration)
     protect_short_payoff = is_short and shorts_should_protect_payoff(clip)
     return {
         "version": CODEX_GROWTH_FRAMEWORK_VERSION,
@@ -8153,6 +8741,8 @@ def codex_growth_blueprint(
             "chapters_recommended": not is_short,
             "micro_thesis_strategy": micro_thesis if is_short else None,
             "social_anecdote_strategy": social_anecdote if is_short else None,
+            "delayed_punchline_strategy": delayed_punchline if is_short else None,
+            "structured_comparison_strategy": structured_comparison if is_short else None,
             "first_30_editorial_readiness_score": clip.retention_score if is_short else None,
             "actual_retention_prediction": False,
         },
@@ -8160,14 +8750,29 @@ def codex_growth_blueprint(
             "adopted_patterns": [
                 "dilemma_nuance_safety_boundary_nonjudgmental_payoff",
                 "social_friction_chronology_comparison_self_directed_payoff",
+                "question_answer_truthful_teaser_late_self_directed_punchline",
+                "question_three_evidence_beats_fair_resolution",
             ],
             "applies_when_detected": bool(
                 is_short
-                and (micro_thesis["qualified"] or social_anecdote["qualified"])
+                and (
+                    micro_thesis["qualified"]
+                    or social_anecdote["qualified"]
+                    or delayed_punchline["qualified"]
+                    or structured_comparison["qualified"]
+                )
             ),
             "single_reference_is_outlier_not_baseline": True,
             "copy_speaker_branding_wording_or_footage": False,
             "manufacture_ridicule_or_harassment": False,
+            "teaser_quotes_transcript_and_clears_before_payoff": bool(
+                delayed_punchline["qualified"]
+            ),
+            "static_reference_frame_logo_pattern_or_photos_copied": False,
+            "duplicated_cold_open_excerpt": False,
+            "sensitive_religious_comparison_requires_manual_claim_review": bool(
+                structured_comparison["manual_claim_and_context_review_required"]
+            ),
             "rights_and_originality_gate_unchanged": True,
         },
         "conversion": {
@@ -8887,6 +9492,8 @@ def export_clip(
         auto_visual_plan.get("opening_context_seconds", SHORTS_TITLE_OVERLAY_SECONDS)
     )
     dialogue_first_accent = auto_visual_accent in {
+        "evidence_stage",
+        "payoff_teaser",
         "restrained_authority",
         "story_punchline",
     }
@@ -8920,6 +9527,8 @@ def export_clip(
             min_gap=(
                 2.2
                 if auto_visual_accent == "story_punchline"
+                else 2.6
+                if auto_visual_accent == "payoff_teaser"
                 else 9.0
                 if auto_visual_accent == "restrained_authority"
                 else max(
@@ -8969,7 +9578,7 @@ def export_clip(
         sound_effect_cues = apply_codex_audio_cues(sound_effect_cues, duration, adaptive_plan)
         if auto_visual_accent == "restrained_authority":
             sound_effect_cues = sound_effect_cues[:1]
-        elif auto_visual_accent == "story_punchline":
+        elif auto_visual_accent in {"evidence_stage", "payoff_teaser", "story_punchline"}:
             sound_effect_cues = []
         if clean_detail_pipeline:
             sound_effect_cues = sound_effect_cues[:3]
@@ -8995,6 +9604,14 @@ def export_clip(
         elif auto_visual_accent == "story_punchline":
             applied_edits.append(
                 "Mode story-punchline memakai kartu konteks 1,9 detik, reframe pada beat cerita, tanpa sticker/asap/SFX buatan, dan mempertahankan reaksi asli pembicara."
+            )
+        elif auto_visual_accent == "payoff_teaser":
+            applied_edits.append(
+                "Mode payoff-teaser menampilkan kutipan punchline akhir secara ringkas di atas, lalu membersihkannya sebelum punchline diucapkan; tanpa sticker/asap/SFX buatan."
+            )
+        elif auto_visual_accent == "evidence_stage":
+            applied_edits.append(
+                "Mode evidence-stage mengganti frame/logo statis dengan kartu konteks adaptif dan indikator tiga beat bukti; video tetap dominan, tanpa musik/SFX atau duplikasi cold-open."
             )
         if adaptive_plan.hook_boost:
             applied_edits.append(
@@ -9138,6 +9755,42 @@ def export_clip(
             "reference_wording_speaker_branding_or_footage_copied": False,
             "original_or_properly_licensed_source_still_required": True,
         },
+        "delayed_punchline_strategy": {
+            **delayed_punchline_profile(clip.text, duration),
+            "generalized_pattern": (
+                "question_answer_truthful_teaser_late_self_directed_punchline"
+            ),
+            "opening_context_seconds": title_overlay_seconds,
+            "teaser_source": "late_transcript_quote",
+            "teaser_clears_before_spoken_payoff": True,
+            "preserve_authentic_source_reaction": True,
+            "synthetic_ridicule_or_harassment_added": False,
+            "reference_wording_speaker_branding_or_footage_copied": False,
+            "original_or_properly_licensed_source_still_required": True,
+        },
+        "structured_comparison_strategy": {
+            **structured_comparison_profile(clip.text, duration),
+            "generalized_pattern": "question_three_evidence_beats_fair_resolution",
+            "opening_context_seconds": title_overlay_seconds,
+            "three_beat_evidence_rail": auto_visual_accent == "evidence_stage",
+            "duplicate_cold_open_excerpt": False,
+            "reference_logo_pattern_photos_or_layout_copied": False,
+            "protected_group_attack_allowed": False,
+            "original_or_properly_licensed_source_still_required": True,
+        },
+        "manual_publication_review": {
+            "required": bool(
+                structured_comparison_profile(clip.text, duration)[
+                    "manual_claim_and_context_review_required"
+                ]
+            ),
+            "checks": [
+                "verify_comparative_factual_claims",
+                "preserve_context_and_attribution",
+                "remove_protected_group_attacks_or_inferiority_claims",
+                "confirm_source_rights_before_publication",
+            ],
+        },
         "background_mode": background_mode,
         "clean_detail_pipeline": clean_detail_pipeline,
         "detail_encoding": {
@@ -9165,10 +9818,14 @@ def export_clip(
         "thumbnail_support": cover_copy["support"].replace("\n", " "),
         "context_card": (
             {
-                "version": 3,
+                "version": 5,
                 "reference_pattern": (
                     "brief_event_label_then_live_story"
                     if auto_visual_accent == "story_punchline"
+                    else "truthful_late_quote_teaser_then_clean_payoff"
+                    if auto_visual_accent == "payoff_teaser"
+                    else "adaptive_three_beat_evidence_stage"
+                    if auto_visual_accent == "evidence_stage"
                     else "fast_scan_context_headline"
                 ),
                 "transcript_grounded": True,
@@ -9644,6 +10301,14 @@ def export_clip(
                         detail_filter=quality_detail_filter(video_quality),
                         variation=edit_variation,
                         title_overlay_seconds=title_overlay_seconds,
+                        payoff_teaser_text_filename=(
+                            payoff_text_path.name
+                            if auto_visual_accent == "payoff_teaser"
+                            and drawtext_supported
+                            else ""
+                        ),
+                        payoff_teaser_start_seconds=title_overlay_seconds,
+                        evidence_stage_mode=auto_visual_accent == "evidence_stage",
                     )}"
                 )
                 sidecar_payload["motion_impact"] = {
@@ -10479,6 +11144,8 @@ def export_compilation(
                 "cinematic_clean",
                 "restrained_authority",
                 "story_punchline",
+                "payoff_teaser",
+                "evidence_stage",
                 "animated_depth",
                 "retro_archive",
                 "speaker_aware_split",
