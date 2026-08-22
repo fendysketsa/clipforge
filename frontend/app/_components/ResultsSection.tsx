@@ -51,6 +51,7 @@ type ResultsSectionProps = {
   onStartYouTubeLogin: () => void;
   onUploadAllToYouTube: () => void;
   onUploadClipToYouTube: (clip: ClipFile) => void;
+  onRefreshYouTubePerformance: (uploadId: string) => void;
   onToggleAllClipSelection: () => void;
   onToggleClipSelection: (clipUrl: string) => void;
   onToggleClipCorrect: (clip: ClipFile, isCorrect: boolean) => void;
@@ -105,10 +106,11 @@ function growthTargetReadiness(
   score: number,
   isLongForm: boolean,
   targetViews = 5000,
+  targetSubscribers = 20,
   nextAction?: string | null,
   status?: string | null,
 ) {
-  const target = `Target ${(targetViews / 1000).toLocaleString("id-ID", { maximumFractionDigits: 1 })}K`;
+  const target = `Target ${(targetViews / 1000).toLocaleString("id-ID", { maximumFractionDigits: 1 })}K / ${targetSubscribers} sub`;
   if (status?.startsWith("revise")) {
     return {
       label: `${target} · poles dulu`,
@@ -209,6 +211,7 @@ export function ResultsSection({
   onStartYouTubeLogin,
   onUploadAllToYouTube,
   onUploadClipToYouTube,
+  onRefreshYouTubePerformance,
   onToggleAllClipSelection,
   onToggleClipSelection,
   onToggleClipCorrect,
@@ -373,6 +376,7 @@ export function ResultsSection({
             const url = getOutputUrl(clip.url);
             const isSelected = selectedClipUrls.includes(clip.url);
             const latestUpload = youtubeUploads.find((upload) => upload.clip_url === clip.url);
+            const latestPerformance = latestUpload?.performance_snapshots?.at(-1) ?? null;
             const isLongForm = clip.name.toLowerCase().startsWith("highlight_5menit_")
               || clip.name.toLowerCase().startsWith("resume_cerita_")
               || clip.name.toLowerCase().startsWith("long_animate_");
@@ -380,7 +384,8 @@ export function ResultsSection({
               ? growthTargetReadiness(
                   clip.fyp_score,
                   isLongForm,
-                  clip.growth_target_views || 5000,
+                  clip.growth_target_views || (isLongForm ? 5000 : 20000),
+                  clip.growth_target_subscribers || 20,
                   clip.growth_next_action,
                   clip.growth_status,
                 )
@@ -522,6 +527,10 @@ export function ResultsSection({
                         </span>
                       ) : null}
                       {clip.growth_series ? <span className="clipMetric">Seri: {clip.growth_series}</span> : null}
+                      {clip.subscriber_intent_score !== null
+                        && clip.subscriber_intent_score !== undefined ? (
+                        <span className="clipMetric">Potensi sub {clip.subscriber_intent_score}</span>
+                      ) : null}
                       {isLongForm && clip.thumbnail_url ? <span className="clipMetric">Thumbnail 16:9 siap</span> : null}
                     </div>
                     <details className="clipAnalysisDetails">
@@ -816,6 +825,60 @@ export function ResultsSection({
                             </p>
                           </div>
                         </>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {latestUpload?.status === "completed" && latestUpload.video_url ? (
+                    <div className={`youtubePerformance youtubePerformance--${latestUpload.performance_status}`}>
+                      <div className="youtubePerformanceHeader">
+                        <span>
+                          <BarChart3 size={15} />
+                          <strong>
+                            Target {(latestUpload.growth_target_views / 1000).toLocaleString("id-ID", { maximumFractionDigits: 1 })}K
+                            {" / "}{latestUpload.growth_target_subscribers} subscriber
+                          </strong>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onRefreshYouTubePerformance(latestUpload.id)}
+                          title="Ambil metrik terbaru dari YouTube"
+                        >
+                          <RefreshCw size={13} />
+                          Perbarui
+                        </button>
+                      </div>
+                      {latestPerformance ? (
+                        <div className="youtubePerformanceMetrics">
+                          <span>
+                            <b>{latestPerformance.views.toLocaleString("id-ID")}</b>
+                            views
+                          </span>
+                          {latestPerformance.engaged_views !== null
+                            && latestPerformance.engaged_views !== undefined ? (
+                            <span>
+                              <b>{latestPerformance.engaged_views.toLocaleString("id-ID")}</b>
+                              engaged
+                            </span>
+                          ) : null}
+                          <span>
+                            <b>{latestPerformance.subscribers_gained ?? "–"}</b>
+                            subscriber
+                          </span>
+                          {latestPerformance.average_view_percentage !== null
+                            && latestPerformance.average_view_percentage !== undefined ? (
+                            <span>
+                              <b>{latestPerformance.average_view_percentage.toFixed(1)}%</b>
+                              ditonton
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <p>Belum diukur. Perbarui setelah video dipublikasikan.</p>
+                      )}
+                      {latestUpload.performance_diagnosis?.length ? (
+                        <ul>
+                          {latestUpload.performance_diagnosis.map((item) => <li key={item}>{item}</li>)}
+                        </ul>
                       ) : null}
                     </div>
                   ) : null}

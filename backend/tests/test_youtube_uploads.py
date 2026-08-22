@@ -1337,9 +1337,14 @@ def test_default_youtube_description_uses_ai_caption_and_hashtags_only():
 
     assert "Ini caption AI yang siap diposting." in description
     assert "#islam #Shorts" in description
-    assert "📌 RINGKASAN" in description
-    assert "🔎 POIN PENTING" in description
-    assert "🔥 DUKUNG CHANNEL INI" in description
+    assert "RINGKASAN" in description
+    assert "POIN PENTING" in description
+    assert "UNTUK DIDISKUSIKAN" in description
+    assert "DUKUNG CHANNEL INI" in description
+    assert not any(
+        icon in description
+        for icon in ("📌", "🔎", "💬", "🔥", "✅", "👍", "↗️", "🔔")
+    )
     assert "📱 CHANNEL" not in description
     assert "⚠️ CATATAN KONTEN" not in description
     assert "Sumber:" not in description
@@ -1370,7 +1375,7 @@ def test_complete_short_description_has_full_sections_and_short_tag():
         ["Islam", "Hikmah"],
     )
 
-    assert description.count("✅") == 2
+    assert description.count("\n- ") == 5
     assert "YouTube · @ryuundyofficial" not in description
     assert "#Islam #Hikmah #Shorts" in description
 
@@ -1398,7 +1403,7 @@ def test_complete_long_description_is_more_detailed_and_removes_short_tag():
         ["Islam", "Cerita", "Shorts"],
     )
 
-    assert description.count("✅") == 3
+    assert description.count("\n- ") == 6
     assert "#Islam #Cerita" in description
     assert "#Shorts" not in description
 
@@ -1466,6 +1471,127 @@ def test_legacy_crossed_sections_are_removed_when_description_is_rebuilt():
     assert "⚠️ CATATAN KONTEN" not in description
     assert "Audit & edit editorial otomatis" not in description
     assert "Bagian aturan warisan mana" in description
+
+
+def test_current_plain_description_is_not_duplicated_when_rebuilt():
+    clip = ClipFile(
+        name="clip_01.mp4",
+        url="/outputs/demo/clips/clip_01.mp4",
+        size_bytes=1,
+        title="Hikmah Menjaga Hati",
+        core_message="Menjaga hati membutuhkan ilmu dan kebiasaan yang baik.",
+    )
+    job = ClipJob(
+        id="job-clean-current-description",
+        status="completed",
+        request=ClipJobRequest(source_file="owned.mp4"),
+        created_at="2026-08-22T00:00:00+00:00",
+        updated_at="2026-08-22T00:00:00+00:00",
+        clips=[clip],
+    )
+    current = complete_youtube_description(
+        job,
+        clip,
+        "Pelajaran tentang cara menjaga hati dalam kehidupan sehari-hari.",
+        ["Islam", "Hikmah"],
+    )
+
+    rebuilt = complete_youtube_description(job, clip, current, ["Islam", "Hikmah"])
+
+    assert rebuilt.count("RINGKASAN") == 1
+    assert rebuilt.count("POIN PENTING") == 1
+    assert "Pelajaran tentang cara menjaga hati" in rebuilt
+
+
+def test_complete_description_removes_icons_from_ai_summary():
+    clip = ClipFile(
+        name="clip_01.mp4",
+        url="/outputs/demo/clips/clip_01.mp4",
+        size_bytes=1,
+        title="Hikmah Menjaga Hati",
+    )
+    job = ClipJob(
+        id="job-icon-free-description",
+        status="completed",
+        request=ClipJobRequest(source_file="owned.mp4"),
+        created_at="2026-08-22T00:00:00+00:00",
+        updated_at="2026-08-22T00:00:00+00:00",
+        clips=[clip],
+    )
+
+    description = complete_youtube_description(
+        job,
+        clip,
+        "💡 Pelajaran penting → menjaga hati dengan baik. 🤲",
+        ["Islam", "Hikmah"],
+    )
+
+    assert "Pelajaran penting menjaga hati dengan baik." in description
+    assert not any(icon in description for icon in ("💡", "→", "🤲"))
+
+
+def test_performance_feedback_marks_20k_and_20_subscriber_target(monkeypatch, tmp_path):
+    import api
+
+    upload = YouTubeUploadJob(
+        id="upload-growth-target",
+        source_job_id="job-growth-target",
+        clip_url="/outputs/demo/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="completed",
+        created_at="2026-08-20T00:00:00+00:00",
+        updated_at="2026-08-20T00:00:00+00:00",
+        finished_at="2026-08-20T00:00:00+00:00",
+        title="Hikmah Menjaga Hati",
+        video_url="https://www.youtube.com/watch?v=demo12345",
+        growth_series="Hikmah Praktis",
+    )
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", tmp_path / "youtube_uploads.json")
+    monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+
+    updated = api.record_youtube_performance(
+        upload.id,
+        api.YouTubePerformanceSnapshot(
+            captured_at="2026-08-22T00:00:00+00:00",
+            source="youtube_analytics",
+            views=20000,
+            engaged_views=15000,
+            average_view_duration=28.4,
+            average_view_percentage=84.2,
+            subscribers_gained=20,
+        ),
+    )
+
+    assert updated.performance_status == "target_met"
+    assert updated.performance_snapshots[-1].engaged_views == 15000
+    assert "Target tercapai" in updated.performance_diagnosis[0]
+
+
+def test_performance_feedback_diagnoses_conversion_gap():
+    import api
+
+    upload = YouTubeUploadJob(
+        id="upload-growth-conversion",
+        source_job_id="job-growth-conversion",
+        clip_url="/outputs/demo/clips/clip_02.mp4",
+        clip_name="clip_02.mp4",
+        status="completed",
+        created_at="2026-08-20T00:00:00+00:00",
+        updated_at="2026-08-20T00:00:00+00:00",
+        title="Hikmah Sabar",
+        video_url="https://www.youtube.com/watch?v=demo67890",
+        growth_series="Hikmah Praktis",
+    )
+    snapshot = api.YouTubePerformanceSnapshot(
+        captured_at="2026-08-22T00:00:00+00:00",
+        source="manual",
+        views=24000,
+        subscribers_gained=7,
+    )
+
+    diagnosis = api.youtube_performance_diagnosis(upload, snapshot, [upload])
+
+    assert "konversi subscriber belum" in diagnosis[0]
 
 
 def test_monetization_preflight_v6_requires_fendy_identity_and_growth_blueprint(monkeypatch):

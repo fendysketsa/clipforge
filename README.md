@@ -32,10 +32,11 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Turn the fast-scanning reference-card pattern into a content-adaptive opening: the truthful hook stays prominent while the badge, accent color, and layout variation follow each story instead of repeating one fixed template.
 - Detect compact question–answer clips with a late self-directed punchline; show a short transcript-quoted payoff teaser only after the opening context card, clear it before the spoken payoff, preserve authentic reactions, and suppress synthetic stickers/SFX or an intrusive end CTA.
 - Turn long comparison/explainer Shorts into an adaptive three-beat evidence stage: keep the source video dominant, replace copied logos/patterns/photos with a content-derived context card and progress rail, remove duplicated cold-open excerpts, require a complete fair conclusion, and hold sensitive religious comparisons for manual claim/context review.
-- Record a transparent 5K stability experiment for Shorts, Long Story, and Long Animate. Stability means at least three of the latest five comparable uploads reach 5K, measured against the rolling median of the last ten uploads in the same format and series. Long-form tracks impressions, Home/Suggested CTR, first-30-second retention, average view duration, retention dips/spikes, end-screen clicks, and subscribers without claiming guaranteed distribution.
+- Record a transparent growth experiment: Shorts target 20K views and 20 subscribers per upload, while long-form keeps a 5K/20-subscriber baseline. Stability means at least three of the latest five comparable uploads reach both targets, measured against the rolling median of the last ten uploads in the same format and series. Targets are experiments, not guaranteed distribution.
+- Store post-publish performance snapshots on each YouTube upload and diagnose reach, retention, and subscriber conversion against comparable uploads in the same series. YouTube Analytics OAuth provides engaged views, watch metrics, shares, and subscribers; the YouTube Data API remains a public-statistics fallback.
 - Auto-repair a broader shortlist before final selection, enforce a minimum FYP score of 78 for vertical exports, and block low-score legacy Shorts from YouTube upload instead of labeling them ready to post.
 - Audit first-30-second editorial readiness across five beat windows (0–3, 3–8, 8–15, 15–22, and 22–30 seconds), including context-dependent openings, speech coverage, dead air, and fresh information. Timing-audited Shorts below 58 are held by the selection/upload gate; this score is a diagnostic, not a promise of actual audience retention.
-- Place one value-led Subscribe invitation after the payoff: Shorts pair it with the contextual discussion prompt, while long-form shows it once in the final chapter. The reason to subscribe follows the topic and never offers rewards or fake urgency.
+- Place one value-led Subscribe invitation after the payoff: Shorts pair it with the contextual discussion prompt in a shorter 1.85-second window, suppress it for clips up to 40 seconds or earned loops, and long-form shows it once in the final chapter. The reason to subscribe follows the topic and never offers rewards or fake urgency.
 - Generate short clips up to 60 seconds without an extra compilation render.
 - Build a separate 5–10 minute **Long Story** with a sentence-complete 10–22 second teaser, then restore source chronology across context, development, explanation, and payoff. The teaser is removed from its original position, and the renderer never adds filler merely to hit the selected duration.
 - Produce **Long Animate** directly from an original script: Scene Cinema uses local Ollama for the storyboard and a local Apache-2.0 Z-Image-Turbo Q3 service for prompt-faithful scene images, then adds content-derived camera motion, Indonesian narration, scene-timed subtitles, procedural original music, thumbnail, and YouTube chapters before joining everything into one 16:9 video.
@@ -230,6 +231,21 @@ Terbaik ke YouTube**. Batch uploads automatically pick the highest-scored clips,
 select the configured playlist, and verify the saved session appears to be the
 configured target channel before uploading. Uploads are processed one at a time
 and persisted in `backend/data/youtube_uploads.json`.
+
+The dashboard's **Perbarui** action records a post-publish performance snapshot.
+Set `YOUTUBE_DATA_API_KEY` for public views/likes/comments. For the complete
+20K/20 feedback loop, create an OAuth grant with the read-only YouTube Analytics
+scope and configure:
+
+```env
+YOUTUBE_ANALYTICS_CLIENT_ID=
+YOUTUBE_ANALYTICS_CLIENT_SECRET=
+YOUTUBE_ANALYTICS_REFRESH_TOKEN=
+```
+
+With OAuth configured, snapshots also include engaged views, average view
+duration/percentage, shares, and video-attributed subscriber gains. Secrets are
+read only by the backend and are never returned by the API.
 
 For safer reuse, URL jobs require explicit Creative Commons metadata by default
 before download. Viral search also rejects live/upcoming, age-restricted, and

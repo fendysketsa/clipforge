@@ -42,6 +42,8 @@ export type ClipFile = {
   audit_id?: string | null;
   growth_series?: string | null;
   growth_target_views?: number | null;
+  growth_target_subscribers?: number | null;
+  subscriber_intent_score?: number | null;
   growth_status?: string | null;
   growth_quality_gate_passed?: boolean | null;
   growth_next_action?: string | null;
@@ -265,6 +267,24 @@ export type YouTubeUploadJob = {
     completed_at?: string | null;
     duration_ms?: number | null;
     removed_items: number;
+  }>;
+  growth_series?: string;
+  growth_target_views: number;
+  growth_target_subscribers: number;
+  performance_status: "not_measured" | "learning" | "views_target_met" | "target_met";
+  performance_diagnosis: string[];
+  performance_snapshots: Array<{
+    captured_at: string;
+    source: "youtube_analytics" | "youtube_public" | "manual";
+    views: number;
+    engaged_views?: number | null;
+    average_view_duration?: number | null;
+    average_view_percentage?: number | null;
+    likes?: number | null;
+    comments?: number | null;
+    shares?: number | null;
+    subscribers_gained?: number | null;
+    subscribers_lost?: number | null;
   }>;
   backend_now?: string | null;
   clip_delete_remaining_seconds?: number | null;

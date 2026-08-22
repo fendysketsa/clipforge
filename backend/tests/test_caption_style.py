@@ -58,6 +58,7 @@ from clipper import (
     ffmpeg_fendy_provenance_metadata_args,
     five_k_experiment_readiness,
     first_30_retention_profile,
+    format_social_description,
     hook_banner_text,
     highlight_caption_keyword,
     intro_particle_burst_filters,
@@ -93,6 +94,7 @@ from clipper import (
     shorts_should_protect_payoff,
     social_anecdote_profile,
     subscribe_value_prompt,
+    subscriber_intent_profile,
     structured_comparison_profile,
     thumbnail_story_copy,
     truthful_payoff_teaser_filter,
@@ -1212,7 +1214,7 @@ def test_shorts_cta_is_brief_contextual_overlay_at_end():
     assert "textfile='clip.engagement.txt'" in value
     assert "textfile='clip.subscribe.txt'" in value
     assert "color=#FF1744@0.94" in value
-    assert "between(t,27.650,29.960)" in value
+    assert "between(t,28.150,29.960)" in value
     assert "fade=" not in value
 
 
@@ -1230,6 +1232,29 @@ def test_shorts_engagement_prompt_follows_content_theme():
     assert subscribe_value_prompt(mystery) == "SUBSCRIBE UNTUK CERITA & CEK FAKTA BERIKUTNYA"
 
 
+def test_subscriber_intent_rewards_complete_repeatable_clip():
+    clip = ClipCandidate(
+        1,
+        0,
+        30,
+        30,
+        90,
+        "Hikmah Menjaga Hati",
+        "test",
+        "Allah mengajarkan hikmah yang dapat diterapkan dalam kehidupan sehari-hari.",
+        hook="Kenapa hati mudah berubah?",
+        key_point_score=82,
+        loop_score=52,
+        boundary_quality="payoff_tuntas",
+    )
+
+    profile = subscriber_intent_profile(clip)
+
+    assert profile["score"] == 100
+    assert profile["label"] == "kuat"
+    assert profile["requires_post_publish_calibration"] is True
+
+
 def test_long_form_subscribe_cta_only_needs_a_compact_final_window():
     value = long_form_subscribe_overlay_filter(60, "part.subscribe.txt")
 
@@ -1242,9 +1267,9 @@ def test_long_form_subscribe_cta_only_needs_a_compact_final_window():
 def test_shorts_cta_voiceover_ducks_dialog_and_stays_inside_card_window():
     value = shorts_cta_voiceover_mix_filter(30)
 
-    assert "between(t,27.650,30.000),0.34,1" in value
-    assert "atrim=start=0:end=2.190" in value
-    assert "adelay=delays=27770:all=1" in value
+    assert "between(t,28.150,30.000),0.34,1" in value
+    assert "atrim=start=0:end=1.690" in value
+    assert "adelay=delays=28270:all=1" in value
     assert "loudnorm=I=-14:TP=-1.2:LRA=7" in value
     assert "[cta_audio_out]" in value
 
@@ -1311,9 +1336,11 @@ def test_five_k_readiness_is_a_stability_experiment_not_a_view_guarantee():
 
     readiness = five_k_experiment_readiness(clip, "vertical_short")
 
-    assert readiness["experiment_name"] == "sustainable_5k_growth"
-    assert readiness["target_views"] == 5000
-    assert readiness["stretch_target_views"] == 10000
+    assert readiness["experiment_name"] == "sustainable_20k_20_subscriber_growth"
+    assert readiness["target_views"] == 20000
+    assert readiness["target_subscribers"] == 20
+    assert readiness["target_subscribers_per_1000_views"] == 1.0
+    assert readiness["stretch_target_views"] == 50000
     assert readiness["quality_metric"] == "engaged_views"
     assert readiness["minimum_short_export_score"] == 78
     assert readiness["quality_gate_passed"] is True
@@ -1322,8 +1349,8 @@ def test_five_k_readiness_is_a_stability_experiment_not_a_view_guarantee():
     assert "viewed_vs_swiped" in readiness["measure_after_publish"]
     assert "engaged_views" in readiness["measure_after_publish"]
     assert "subscribers_gained" in readiness["measure_after_publish"]
-    assert readiness["review_checkpoints"] == [500, 2000, 5000, 10000]
-    assert readiness["stability_definition"]["success_rule"] == "at_least_3_reach_5000_views"
+    assert readiness["review_checkpoints"] == [1000, 5000, 10000, 20000]
+    assert readiness["stability_definition"]["success_rule"] == "at_least_3_reach_20000_views_and_20_subscribers"
     assert readiness["iteration_guardrails"]["delete_and_reupload_to_reset_distribution"] is False
     assert two_k_experiment_readiness(clip, "vertical_short") == readiness
     assert one_k_experiment_readiness(clip, "vertical_short") == readiness
@@ -1666,6 +1693,7 @@ def test_five_k_long_form_readiness_uses_story_gate_and_long_form_metrics():
     readiness = one_k_long_form_readiness(clip, {"quality_gate_passed": True})
 
     assert readiness["target_views"] == 5000
+    assert readiness["target_subscribers"] == 20
     assert readiness["experiment_name"] == "5k_long_form_growth"
     assert readiness["review_checkpoints"] == [100, 500, 1000, 5000]
     assert readiness["quality_metric"] == "watch_time"
@@ -2600,15 +2628,42 @@ def test_social_caption_has_safe_relevant_fallback_without_ai():
     caption = fallback_social_caption(clip, ["Dakwah"])
 
     assert "Bedakan kisah, mitos, pengalaman, dan fakta" in caption
-    assert "📌 RINGKASAN" in caption
-    assert "🔎 POIN PENTING" in caption
-    assert "💬 MENURUT KAMU?" in caption
-    assert "🔥 DUKUNG CHANNEL INI" in caption
+    assert "RINGKASAN" in caption
+    assert "POIN PENTING" in caption
+    assert "UNTUK DIDISKUSIKAN" in caption
+    assert "DUKUNG CHANNEL INI" in caption
+    assert not any(
+        icon in caption
+        for icon in ("📌", "🔎", "💬", "🔥", "✅", "👍", "↗️", "🔔")
+    )
     assert "📱 CHANNEL" not in caption
     assert "⚠️ CATATAN KONTEN" not in caption
     assert "#Dakwah" in caption
     assert "#Misteri" in caption
     assert "#MitosAtauFakta" in caption
+
+
+def test_social_description_removes_icons_from_ai_summary():
+    clip = ClipCandidate(
+        index=1,
+        start=0,
+        end=60,
+        duration=60,
+        score=90,
+        title="Hikmah Menjaga Hati",
+        reason="test",
+        text="Menjaga hati membutuhkan ilmu dan kebiasaan yang baik.",
+    )
+
+    caption = format_social_description(
+        clip,
+        "💡 Pelajaran penting → menjaga hati dengan baik. 🤲",
+        ["Hikmah"],
+        long_form=False,
+    )
+
+    assert "Pelajaran penting menjaga hati dengan baik." in caption
+    assert not any(icon in caption for icon in ("💡", "→", "🤲"))
 
 
 def test_landscape_compilation_caption_is_not_tagged_as_short():
@@ -2627,7 +2682,7 @@ def test_landscape_compilation_caption_is_not_tagged_as_short():
 
     assert "#Hikmah" in caption
     assert "#Shorts" not in caption
-    assert caption.count("✅") == 3
+    assert caption.count("\n- ") == 6
 
 
 def test_source_channel_promos_are_boundaries_not_clip_content():

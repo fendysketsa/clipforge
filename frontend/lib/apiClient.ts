@@ -230,6 +230,17 @@ export const getYouTubeUploads = async () => {
   return (await response.json()) as YouTubeUploadJob[];
 };
 
+export const refreshYouTubeUploadPerformance = async (uploadId: string) => {
+  const response = await fetch(
+    `${CLIENT_API_BASE}/api/youtube/uploads/${encodeURIComponent(uploadId)}/performance/refresh`,
+    { method: "POST", cache: "no-store" },
+  );
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Gagal memperbarui performa YouTube"));
+  }
+  return (await response.json()) as YouTubeUploadJob;
+};
+
 export const getYouTubeLoginStatus = async () => {
   const response = await fetch(`${CLIENT_API_BASE}/api/youtube/login`, { cache: "no-store" });
   if (!response.ok) {

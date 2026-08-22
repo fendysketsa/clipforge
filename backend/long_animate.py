@@ -2693,6 +2693,8 @@ def render_long_animate(
             "version": 2,
             "experiment_name": "5k_long_form_growth",
             "target_views": 5000,
+            "target_subscribers": 20,
+            "target_subscribers_per_1000_views": 4.0,
             "stretch_target_views": 10000,
             "review_checkpoints": [100, 500, 1000, 5000],
             "quality_gate_passed": animate_quality_gate_passed,
@@ -2717,7 +2719,7 @@ def render_long_animate(
             ],
             "stability_definition": {
                 "window": "last_5_comparable_publications",
-                "success_rule": "at_least_3_reach_5000_views",
+                "success_rule": "at_least_3_reach_5000_views_and_20_subscribers",
                 "comparison_baseline": "rolling_median_last_10_same_format_and_series",
             },
             "guarantee": False,

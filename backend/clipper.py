@@ -4399,12 +4399,12 @@ def five_k_experiment_readiness(
     clip: ClipCandidate,
     output_format: OutputFormat,
 ) -> dict[str, object]:
-    """Describe a repeatable 5K-view experiment without predicting distribution.
+    """Describe a repeatable format-specific experiment without predicting distribution.
 
-    Five thousand views is treated as a portfolio outcome, not a property of one
-    render. The stability rule deliberately compares like-for-like uploads and
-    changes one variable at a time so a creator can learn from audience response
-    without delete/re-upload spam or misleading packaging.
+    The legacy function name remains for saved sidecars and integrations. Shorts
+    target 20K views plus 20 subscribers; long-form keeps a 5K/20 baseline. The
+    stability rule compares like-for-like uploads and changes one variable at a
+    time without delete/re-upload spam or misleading packaging.
     """
     score = max(0, min(100, int(round(clip.score))))
     if score >= 88:
@@ -4421,11 +4421,20 @@ def five_k_experiment_readiness(
     social_anecdote = social_anecdote_profile(clip.text, clip.duration)
     delayed_punchline = delayed_punchline_profile(clip.text, clip.duration)
     structured_comparison = structured_comparison_profile(clip.text, clip.duration)
+    subscriber_intent = subscriber_intent_profile(clip)
+    is_short = output_format == "vertical_short"
+    target_views = 20000 if is_short else 5000
     return {
-        "version": 7,
-        "experiment_name": "sustainable_5k_growth",
-        "target_views": 5000,
-        "stretch_target_views": 10000,
+        "version": 8,
+        "experiment_name": (
+            "sustainable_20k_20_subscriber_growth"
+            if is_short
+            else "sustainable_5k_long_form_growth"
+        ),
+        "target_views": target_views,
+        "target_subscribers": 20,
+        "target_subscribers_per_1000_views": round(20 / target_views * 1000, 3),
+        "stretch_target_views": 50000 if is_short else 10000,
         "target_metric": (
             "shorts_views_starts_or_replays"
             if output_format == "vertical_short"
@@ -4454,7 +4463,11 @@ def five_k_experiment_readiness(
         "format": output_format,
         "stability_definition": {
             "window": "last_5_comparable_publications",
-            "success_rule": "at_least_3_reach_5000_views",
+            "success_rule": (
+                "at_least_3_reach_20000_views_and_20_subscribers"
+                if is_short
+                else "at_least_3_reach_5000_views_and_20_subscribers"
+            ),
             "comparison_baseline": "rolling_median_last_10_same_format_and_series",
             "minimum_sample_warning": "do_not_call_stable_before_5_comparable_publications",
         },
@@ -4466,6 +4479,7 @@ def five_k_experiment_readiness(
             "retention_score_is_editorial_diagnostic_not_prediction": True,
             "complete_boundary": clip.boundary_quality in {"payoff_tuntas", "kalimat_tuntas"},
             "content_specific_subscribe_value": bool(clip.text.strip()),
+            "subscriber_intent_score": subscriber_intent["score"],
             "micro_thesis_20_32_seconds": bool(micro_thesis["qualified"]),
             "micro_thesis_structure_score": int(micro_thesis["structure_score"]),
             "social_anecdote_18_32_seconds": bool(social_anecdote["qualified"]),
@@ -4525,8 +4539,12 @@ def five_k_experiment_readiness(
                 "subscriber_value_proposition",
             ]
         ),
-        "review_checkpoints": [500, 2000, 5000, 10000],
-        "review_windows_hours": [24, 72, 168, 672],
+        "review_checkpoints": (
+            [1000, 5000, 10000, 20000]
+            if is_short
+            else [100, 500, 1000, 5000]
+        ),
+        "review_windows_hours": [6, 48, 168, 672],
         "iteration_guardrails": {
             "change_one_variable_per_test": True,
             "compare_same_format_and_series": True,
@@ -6722,7 +6740,7 @@ def shorts_cover_frame_timestamp(duration: float) -> float:
 
 SHORTS_TITLE_OVERLAY_SECONDS = 3.2
 SHORTS_COVER_SELECTION_WINDOW = (0.55, 1.25)
-SHORTS_CTA_OVERLAY_SECONDS = 2.35
+SHORTS_CTA_OVERLAY_SECONDS = 1.85
 LONG_FORM_SUBSCRIBE_OVERLAY_SECONDS = 5.2
 DEFAULT_SHORTS_CTA_VOICEOVER_TEXT = "Tulis pendapatmu dan lanjutkan diskusinya!"
 
@@ -6917,10 +6935,45 @@ def subscribe_value_prompt(clip: ClipCandidate) -> str:
     return prompt[:64]
 
 
+def subscriber_intent_profile(clip: ClipCandidate) -> dict[str, object]:
+    """Score whether this clip gives viewers a credible reason to return."""
+    theme = detect_visual_theme(clip)
+    reasons: list[str] = []
+    score = 20
+    if (clip.hook or clip.title).strip():
+        score += 15
+        reasons.append("hook dan janji episode jelas")
+    if clip.boundary_quality in {"payoff_tuntas", "kalimat_tuntas"}:
+        score += 20
+        reasons.append("payoff tuntas membangun kepercayaan")
+    if clip.key_point_score >= 60:
+        score += 15
+        reasons.append("nilai utama cukup spesifik")
+    if 18 <= clip.duration <= 45:
+        score += 10
+        reasons.append("durasi mendukung konsumsi seri")
+    if theme in {"islamic", "mystery", "warning", "inspiring"}:
+        score += 15
+        reasons.append("tema mempunyai jalur episode lanjutan")
+    if clip.loop_score >= 45:
+        score += 5
+        reasons.append("ending mendorong tontonan ulang tanpa janji palsu")
+    safe_score = max(0, min(100, score))
+    return {
+        "score": safe_score,
+        "label": (
+            "kuat" if safe_score >= 80 else "layak" if safe_score >= 65 else "perlu_diperkuat"
+        ),
+        "reasons": reasons,
+        "value_proposition": subscribe_value_prompt(clip),
+        "requires_post_publish_calibration": True,
+    }
+
+
 def shorts_should_protect_payoff(clip: ClipCandidate) -> bool:
     """Keep completion and earned loops free from an intrusive end card."""
     return bool(
-        clip.duration <= 35.0
+        clip.duration <= 40.0
         or clip.loop_score >= 45
         or social_anecdote_profile(clip.text, clip.duration)["qualified"]
         or delayed_punchline_profile(clip.text, clip.duration)["qualified"]
@@ -8861,6 +8914,7 @@ def codex_growth_blueprint(
     delayed_punchline = delayed_punchline_profile(clip.text, clip.duration)
     structured_comparison = structured_comparison_profile(clip.text, clip.duration)
     protect_short_payoff = is_short and shorts_should_protect_payoff(clip)
+    subscriber_intent = subscriber_intent_profile(clip)
     return {
         "version": CODEX_GROWTH_FRAMEWORK_VERSION,
         "owner": FENDY_AUDITOR_NAME,
@@ -8937,6 +8991,7 @@ def codex_growth_blueprint(
             "short_to_related_long_form": is_short,
             "incentive_or_fake_urgency": False,
         },
+        "subscriber_intent": subscriber_intent,
         "compounding_loop": {
             "goal": "new_to_casual_to_regular_viewer",
             "repeat_proven_topic_as_series": True,
@@ -9411,7 +9466,7 @@ def generate_thumbnail_prompt(
 SOCIAL_CAPTION_SYSTEM_PROMPT = (
     "You are a viral social media copywriter for TikTok, Instagram Reels, and YouTube Shorts. "
     "You write short, scroll-stopping captions in Indonesian that make people want to watch and read. "
-    "Open with a strong hook, keep it punchy, and add at most two relevant emojis. "
+    "Open with a strong hook and keep it punchy. Do not use emojis or decorative symbols. "
     "Write only the topic summary; the application adds channel calls-to-action and hashtags in fixed sections. "
     "Also return 5-8 niche hashtags in the separate JSON array. For Islamic mystery, myth, supernatural, "
     "and horror content, keep the "
@@ -9427,6 +9482,24 @@ SOCIAL_CAPTION_SYSTEM_PROMPT = (
 def _normalize_hashtag(tag: str) -> str:
     cleaned = tag.strip().lstrip("#").strip()
     return f"#{cleaned}" if cleaned else ""
+
+
+_DESCRIPTION_ICON_RE = re.compile(
+    "["
+    "\U0001F1E6-\U0001F1FF"
+    "\U0001F300-\U0001FAFF"
+    "\u2190-\u21FF"
+    "\u2600-\u27BF"
+    "]"
+)
+
+
+def strip_description_icons(value: str) -> str:
+    """Remove decorative icons from public captions while preserving their wording."""
+    clean = _DESCRIPTION_ICON_RE.sub("", value)
+    clean = clean.replace("\ufe0f", "").replace("\u200d", "")
+    clean = re.sub(r"[ \t]{2,}", " ", clean)
+    return re.sub(r"(?m)^[ \t]+|[ \t]+$", "", clean).strip()
 
 
 def clip_topic_hashtags(clip: ClipCandidate) -> list[str]:
@@ -9502,7 +9575,7 @@ def format_social_description(
     """Build a tidy description shared by rendered Shorts and long-form assets."""
     clean_summary = "\n".join(
         line.strip()
-        for line in summary.splitlines()
+        for line in strip_description_icons(summary).splitlines()
         if line.strip() and not all(part.startswith("#") for part in line.split())
     ).strip()
     if not clean_summary:
@@ -9510,7 +9583,7 @@ def format_social_description(
     clean_summary = clean_summary[:900 if long_form else 600].rstrip()
 
     highlights = social_description_highlights(clip, long_form=long_form)
-    benefit_lines = "\n".join(f"✅ {item}" for item in highlights)
+    benefit_lines = "\n".join(f"- {item}" for item in highlights)
     description_words = set(
         re.findall(r"[\w']+", f"{clip.title} {clip.text}".casefold())
     )
@@ -9551,14 +9624,14 @@ def format_social_description(
         )[:4]
         display_tags.append("#Shorts")
     sections = [
-        "📌 RINGKASAN\n" + clean_summary,
-        "🔎 POIN PENTING\n" + benefit_lines,
-        "💬 MENURUT KAMU?\n" + question,
+        "RINGKASAN\n" + clean_summary,
+        "POIN PENTING\n" + benefit_lines,
+        "UNTUK DIDISKUSIKAN\n" + question,
         (
-            "🔥 DUKUNG CHANNEL INI\n"
-            "👍 Like jika pembahasannya bermanfaat.\n"
-            "↗️ Bagikan kepada keluarga atau teman yang membutuhkan.\n"
-            f"🔔 {subscribe_reason}"
+            "DUKUNG CHANNEL INI\n"
+            "- Sukai video ini jika pembahasannya bermanfaat.\n"
+            "- Bagikan kepada keluarga atau teman yang membutuhkan.\n"
+            f"- {subscribe_reason}"
         ),
     ]
     if display_tags:
@@ -9579,16 +9652,12 @@ def fallback_social_caption(
             "Simak konteksnya sampai selesai. Bedakan kisah, mitos, pengalaman, dan fakta—"
             "lalu ambil hikmah tanpa langsung mempercayai klaim yang belum jelas."
         )
-        emoji = "🌙"
     elif theme == "islamic":
         body = "Simak sampai selesai dan ambil hikmah yang paling relevan untuk kehidupan sehari-hari."
-        emoji = "🤲"
     elif theme == "warning":
         body = "Jangan berhenti di bagian awal—poin terpentingnya ada pada penjelasan lengkapnya."
-        emoji = "⚠️"
     else:
         body = "Tonton sampai selesai, lalu tulis bagian mana yang paling membuka sudut pandangmu."
-        emoji = "💡"
 
     ordered: list[str] = []
     seen: set[str] = set()
@@ -9603,7 +9672,7 @@ def fallback_social_caption(
         if tag and tag.casefold() not in seen:
             ordered.append(tag)
             seen.add(tag.casefold())
-    summary = f"{emoji} {hook}. {body}"
+    summary = f"{hook}. {body}"
     return format_social_description(
         clip,
         summary,
@@ -9640,7 +9709,7 @@ def generate_social_caption(
         "Write only a useful topic summary. Do not add Subscribe, Like, Share, Follow, channel handles, "
         "section headings, or hashtag lines because the application adds them consistently.\n"
         "Return JSON exactly like:\n"
-        '{"caption": "<hook line\\n\\nbody 1-3 informative sentences with emojis>", '
+        '{"caption": "<hook line\\n\\nbody 1-3 informative sentences without emojis>", '
         '"hashtags": ["#tag1", "#tag2", ...]}\n\n'
         f"Clip title: {clip.title}\n"
         f"Clip transcript: {clip.text[:1200]}"

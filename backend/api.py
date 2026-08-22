@@ -16,6 +16,7 @@ import uuid
 from math import ceil, exp, log10
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from statistics import median
 from typing import Any, Literal
 from urllib.parse import parse_qs, quote, urlencode, unquote, urlparse
 from urllib.error import HTTPError, URLError
@@ -328,6 +329,8 @@ class ClipFile(BaseModel):
     audit_id: str | None = None
     growth_series: str | None = None
     growth_target_views: int | None = None
+    growth_target_subscribers: int | None = None
+    subscriber_intent_score: int | None = None
     growth_status: str | None = None
     growth_quality_gate_passed: bool | None = None
     growth_next_action: str | None = None
@@ -507,6 +510,32 @@ class YouTubeCleanupStepProgress(BaseModel):
     removed_items: int = 0
 
 
+class YouTubePerformanceSnapshot(BaseModel):
+    captured_at: str
+    source: Literal["youtube_analytics", "youtube_public", "manual"]
+    views: int = Field(default=0, ge=0)
+    engaged_views: int | None = Field(default=None, ge=0)
+    average_view_duration: float | None = Field(default=None, ge=0)
+    average_view_percentage: float | None = Field(default=None, ge=0)
+    likes: int | None = Field(default=None, ge=0)
+    comments: int | None = Field(default=None, ge=0)
+    shares: int | None = Field(default=None, ge=0)
+    subscribers_gained: int | None = Field(default=None, ge=0)
+    subscribers_lost: int | None = Field(default=None, ge=0)
+
+
+class YouTubePerformanceUpdateRequest(BaseModel):
+    views: int = Field(default=0, ge=0)
+    engaged_views: int | None = Field(default=None, ge=0)
+    average_view_duration: float | None = Field(default=None, ge=0)
+    average_view_percentage: float | None = Field(default=None, ge=0, le=1000)
+    likes: int | None = Field(default=None, ge=0)
+    comments: int | None = Field(default=None, ge=0)
+    shares: int | None = Field(default=None, ge=0)
+    subscribers_gained: int | None = Field(default=None, ge=0)
+    subscribers_lost: int | None = Field(default=None, ge=0)
+
+
 class YouTubeUploadJob(BaseModel):
     id: str
     source_job_id: str
@@ -541,10 +570,29 @@ class YouTubeUploadJob(BaseModel):
     clip_cleanup_current_step: str | None = None
     clip_cleanup_completed_steps: list[str] = Field(default_factory=list)
     clip_cleanup_step_details: dict[str, YouTubeCleanupStepProgress] = Field(default_factory=dict)
+    growth_series: str = ""
+    growth_target_views: int = Field(default=20000, ge=1)
+    growth_target_subscribers: int = Field(default=20, ge=1)
+    performance_status: Literal[
+        "not_measured", "learning", "views_target_met", "target_met"
+    ] = "not_measured"
+    performance_diagnosis: list[str] = Field(default_factory=list)
+    performance_snapshots: list[YouTubePerformanceSnapshot] = Field(default_factory=list)
     backend_now: str | None = None
     clip_delete_remaining_seconds: float | None = None
     logs: list[str] = []
     error: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_growth_target(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "growth_target_views" in value:
+            return value
+        data = dict(value)
+        clip_name = str(data.get("clip_name") or "").casefold()
+        if clip_name.startswith(("highlight_5menit_", "resume_cerita_", "long_animate_")):
+            data["growth_target_views"] = 5000
+        return data
 
 
 class YouTubeLoginStatus(BaseModel):
@@ -2281,6 +2329,24 @@ def strip_hashtag_lines(value: str) -> str:
     return "\n".join(lines).strip()
 
 
+_DESCRIPTION_ICON_RE = re.compile(
+    "["
+    "\U0001F1E6-\U0001F1FF"
+    "\U0001F300-\U0001FAFF"
+    "\u2190-\u21FF"
+    "\u2600-\u27BF"
+    "]"
+)
+
+
+def strip_description_icons(value: str) -> str:
+    """Remove decorative icons from public descriptions without changing wording."""
+    clean = _DESCRIPTION_ICON_RE.sub("", value)
+    clean = clean.replace("\ufe0f", "").replace("\u200d", "")
+    clean = re.sub(r"[ \t]{2,}", " ", clean)
+    return re.sub(r"(?m)^[ \t]+|[ \t]+$", "", clean).strip()
+
+
 def default_youtube_title(job: ClipJob, clip: ClipFile, index: int) -> str:
     title = clip_sidecar_title(clip) or clip.title or job.source_title or f"Clip {index}"
     clean = re.sub(r"\s+", " ", title).strip()
@@ -2349,17 +2415,23 @@ def youtube_description_highlights(context: str, *, is_compilation: bool) -> lis
 
 def youtube_description_summary(value: str) -> str:
     """Extract the useful summary from current, legacy, or AI descriptions."""
-    clean = strip_hashtag_lines(value).strip()
-    for heading in ("📌 TENTANG VIDEO INI", "📌 RINGKASAN"):
-        if heading in clean:
-            clean = clean.split(heading, 1)[1].lstrip(" :\n")
-            break
+    clean = strip_hashtag_lines(strip_description_icons(value)).strip()
+    clean = re.sub(
+        r"^\s*(?:📌\s*)?(?:TENTANG VIDEO INI|RINGKASAN)\s*[:\n]+",
+        "",
+        clean,
+        count=1,
+        flags=re.IGNORECASE,
+    )
     clean = re.split(
-        r"\n\s*\n(?:✨ YANG AKAN KAMU DAPAT|🔎 POIN PENTING|💬 IKUT BERDISKUSI|"
-        r"💬 MENURUT KAMU\?|🔥 DUKUNG|📱 CHANNEL|⚠️ CATATAN KONTEN|"
+        r"\n\s*\n(?:(?:✨\s*)?YANG AKAN KAMU DAPAT|(?:🔎\s*)?POIN PENTING|"
+        r"(?:💬\s*)?(?:IKUT BERDISKUSI|MENURUT KAMU\?|UNTUK DIDISKUSIKAN)|"
+        r"(?:🔥\s*)?DUKUNG(?: CHANNEL INI)?|(?:📱\s*)?CHANNEL|"
+        r"(?:⚠️?\s*)?CATATAN KONTEN|"
         r"Atribusi sumber \(CC BY\):|Audit & edit editorial otomatis:)",
         clean,
         maxsplit=1,
+        flags=re.IGNORECASE,
     )[0]
     return polish_youtube_metadata_description(
         re.sub(r"\n{3,}", "\n\n", clean).strip()
@@ -2395,7 +2467,7 @@ def complete_youtube_description(
         if value
     )
     highlights = youtube_description_highlights(context, is_compilation=is_compilation)
-    benefit_lines = "\n".join(f"✅ {item}" for item in highlights)
+    benefit_lines = "\n".join(f"- {item}" for item in highlights)
     lowered = context.casefold()
     if any(term in lowered for term in ("waris", "warisan", "pewaris", "ahli waris", "takziah")):
         question = "Bagian aturan warisan mana yang paling sering disalahpahami?"
@@ -2440,14 +2512,14 @@ def complete_youtube_description(
         display_tags = display_tags[:8]
 
     sections = [
-        "📌 RINGKASAN\n" + clean_summary,
-        "🔎 POIN PENTING\n" + benefit_lines,
-        "💬 MENURUT KAMU?\n" + question,
+        "RINGKASAN\n" + clean_summary,
+        "POIN PENTING\n" + benefit_lines,
+        "UNTUK DIDISKUSIKAN\n" + question,
         (
-            "🔥 DUKUNG CHANNEL INI\n"
-            "👍 Like jika pembahasannya bermanfaat.\n"
-            "↗️ Bagikan kepada keluarga atau teman yang membutuhkan.\n"
-            f"🔔 {subscribe_reason}"
+            "DUKUNG CHANNEL INI\n"
+            "- Sukai video ini jika pembahasannya bermanfaat.\n"
+            "- Bagikan kepada keluarga atau teman yang membutuhkan.\n"
+            f"- {subscribe_reason}"
         ),
     ]
     if display_tags:
@@ -3208,7 +3280,7 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
         "atribusi jawaban sebagai isi penjelasan pembicara dan jangan memperluas klaim di luar transkrip.\n"
         "- Description hanya berisi ringkasan inti. Jangan tambahkan heading, CTA Like/Share/Subscribe, "
         "handle channel, catatan konten, chapter, atribusi, atau baris hashtag; aplikasi menatanya otomatis.\n"
-        "- Description boleh memakai maksimal 2 emoji yang benar-benar relevan.\n"
+        "- Jangan gunakan emoji, ikon, atau simbol dekoratif pada description.\n"
         "- Bahasa Indonesia.\n"
         "- Jangan tulis URL, nama channel, uploader, TV, sponsor, kredit, atau label 'Sumber'.\n"
         "- Buat 4-5 hashtag baru yang spesifik dan relevan dengan isi klip, bukan hashtag generik berulang.\n"
@@ -3313,6 +3385,8 @@ def best_youtube_clip_urls(job: ClipJob, count: int = DEFAULT_YOUTUBE_AUTO_UPLOA
     for position, clip in enumerate(job.clips):
         clip_index = clip_index_from_name(clip.name)
         score = scores_by_index.get(clip_index, -1) if clip_index is not None else -1
+        if clip.subscriber_intent_score is not None:
+            score += clip.subscriber_intent_score * 0.08
         ranked.append((score, -position, clip_index or position + 1, clip))
 
     ranked.sort(reverse=True)
@@ -3577,6 +3651,12 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         target_channel=request.target_channel,
         dry_run=request.dry_run,
         clip_sha256=clip_fingerprint,
+        growth_series=clip.growth_series or "",
+        growth_target_views=(
+            clip.growth_target_views
+            or (5000 if is_compilation_clip(job, clip) else 20000)
+        ),
+        growth_target_subscribers=clip.growth_target_subscribers or 20,
         logs=(
             (
                 [f"Thumbnail otomatis 16:9 siap dipasang: {thumbnail_path.name}"]
@@ -3700,6 +3780,305 @@ def set_youtube_upload(upload_id: str, **updates) -> None:
         data["updated_at"] = now_iso()
         youtube_uploads[upload_id] = YouTubeUploadJob(**data)
         save_youtube_uploads_unlocked()
+
+
+def youtube_video_id_from_url(value: str) -> str:
+    normalized = normalize_youtube_video_url(value) or ""
+    return (parse_qs(urlparse(normalized).query).get("v") or [""])[0]
+
+
+def youtube_performance_status(
+    snapshot: YouTubePerformanceSnapshot,
+    *,
+    target_views: int,
+    target_subscribers: int,
+) -> Literal["learning", "views_target_met", "target_met"]:
+    subscribers = snapshot.subscribers_gained or 0
+    if snapshot.views >= target_views and subscribers >= target_subscribers:
+        return "target_met"
+    if snapshot.views >= target_views:
+        return "views_target_met"
+    return "learning"
+
+
+def latest_performance_snapshot(upload: YouTubeUploadJob) -> YouTubePerformanceSnapshot | None:
+    return upload.performance_snapshots[-1] if upload.performance_snapshots else None
+
+
+def comparable_performance_medians(
+    upload: YouTubeUploadJob,
+    uploads: list[YouTubeUploadJob],
+) -> dict[str, float]:
+    if not upload.growth_series:
+        return {}
+    peers = [
+        latest
+        for item in uploads
+        if item.id != upload.id
+        and item.status == "completed"
+        and item.growth_series == upload.growth_series
+        and item.growth_target_views == upload.growth_target_views
+        and (latest := latest_performance_snapshot(item)) is not None
+    ]
+    if len(peers) < 3:
+        return {}
+
+    def values(name: str) -> list[float]:
+        return [
+            float(value)
+            for item in peers
+            if (value := getattr(item, name)) is not None
+        ]
+
+    medians: dict[str, float] = {}
+    for field in ("views", "average_view_percentage"):
+        field_values = values(field)
+        if field_values:
+            medians[field] = float(median(field_values))
+    conversion_values = [
+        (item.subscribers_gained or 0) * 1000 / item.views
+        for item in peers
+        if item.views > 0 and item.subscribers_gained is not None
+    ]
+    if conversion_values:
+        medians["subscribers_per_1000_views"] = float(median(conversion_values))
+    return medians
+
+
+def youtube_performance_diagnosis(
+    upload: YouTubeUploadJob,
+    snapshot: YouTubePerformanceSnapshot,
+    uploads: list[YouTubeUploadJob],
+) -> list[str]:
+    target_views = upload.growth_target_views
+    target_subscribers = upload.growth_target_subscribers
+    subscribers = snapshot.subscribers_gained
+    if snapshot.views >= target_views and (subscribers or 0) >= target_subscribers:
+        return [
+            f"Target tercapai: {snapshot.views:,} views dan {subscribers or 0} subscriber.",
+            "Pertahankan tema dan struktur; ubah hanya satu variabel packaging pada eksperimen berikutnya.",
+        ]
+
+    diagnosis: list[str] = []
+    if snapshot.views >= target_views and subscribers is not None and subscribers < target_subscribers:
+        diagnosis.append(
+            "Reach sudah mencapai target, tetapi konversi subscriber belum; perkuat janji seri dan related video."
+        )
+    elif subscribers is not None and subscribers >= target_subscribers:
+        diagnosis.append(
+            "Konversi subscriber sudah mencapai target; fokus berikutnya memperluas reach dari hook dan packaging."
+        )
+
+    baselines = comparable_performance_medians(upload, uploads)
+    if not baselines:
+        diagnosis.append(
+            "Baseline seri belum cukup; kumpulkan sedikitnya tiga upload sejenis sebelum mengubah bobot algoritma."
+        )
+    else:
+        baseline_views = baselines.get("views", 0)
+        if baseline_views and snapshot.views < baseline_views * 0.75:
+            diagnosis.append(
+                "Reach berada di bawah median seri; prioritaskan eksperimen first frame dan hook."
+            )
+        baseline_retention = baselines.get("average_view_percentage", 0)
+        if (
+            baseline_retention
+            and snapshot.average_view_percentage is not None
+            and snapshot.average_view_percentage < baseline_retention * 0.9
+        ):
+            diagnosis.append(
+                "Persentase tonton berada di bawah median seri; majukan payoff dan pangkas bagian yang tidak menambah informasi."
+            )
+        baseline_conversion = baselines.get("subscribers_per_1000_views", 0)
+        if snapshot.views and subscribers is not None and baseline_conversion:
+            conversion = subscribers * 1000 / snapshot.views
+            if conversion < baseline_conversion * 0.8:
+                diagnosis.append(
+                    "Konversi subscriber berada di bawah median seri; buat alasan mengikuti seri lebih spesifik."
+                )
+    if not diagnosis:
+        diagnosis.append(
+            "Performa masih dalam fase belajar dan tidak menunjukkan kelemahan relatif yang jelas."
+        )
+    return diagnosis[:4]
+
+
+def record_youtube_performance(
+    upload_id: str,
+    snapshot: YouTubePerformanceSnapshot,
+) -> YouTubeUploadJob:
+    with youtube_uploads_lock:
+        upload = youtube_uploads.get(upload_id)
+        if upload is None:
+            raise HTTPException(status_code=404, detail="YouTube upload not found")
+        if upload.status != "completed" or not upload.video_url:
+            raise HTTPException(status_code=409, detail="Upload belum memiliki URL YouTube final")
+        snapshots = [*upload.performance_snapshots, snapshot][-24:]
+        provisional = upload.model_copy(update={"performance_snapshots": snapshots})
+        status = youtube_performance_status(
+            snapshot,
+            target_views=upload.growth_target_views,
+            target_subscribers=upload.growth_target_subscribers,
+        )
+        diagnosis = youtube_performance_diagnosis(
+            provisional,
+            snapshot,
+            list(youtube_uploads.values()),
+        )
+        updated = provisional.model_copy(
+            update={
+                "updated_at": now_iso(),
+                "performance_status": status,
+                "performance_diagnosis": diagnosis,
+            }
+        )
+        youtube_uploads[upload_id] = updated
+        save_youtube_uploads_unlocked()
+        return updated
+
+
+def youtube_analytics_access_token() -> str:
+    client_id = os.environ.get("YOUTUBE_ANALYTICS_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("YOUTUBE_ANALYTICS_CLIENT_SECRET", "").strip()
+    refresh_token = os.environ.get("YOUTUBE_ANALYTICS_REFRESH_TOKEN", "").strip()
+    if not all((client_id, client_secret, refresh_token)):
+        return ""
+    body = urlencode(
+        {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        "https://oauth2.googleapis.com/token",
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"OAuth YouTube Analytics gagal: {exc}") from exc
+    token = str(payload.get("access_token") or "") if isinstance(payload, dict) else ""
+    if not token:
+        raise RuntimeError("OAuth YouTube Analytics tidak mengembalikan access token")
+    return token
+
+
+def youtube_analytics_snapshot(upload: YouTubeUploadJob) -> YouTubePerformanceSnapshot | None:
+    access_token = youtube_analytics_access_token()
+    if not access_token:
+        return None
+    video_id = youtube_video_id_from_url(upload.video_url or "")
+    if not video_id:
+        raise RuntimeError("URL YouTube tidak memiliki video ID yang valid")
+    start_value = upload.finished_at or upload.created_at
+    try:
+        start_date = datetime.fromisoformat(start_value).date().isoformat()
+    except ValueError:
+        start_date = datetime.now(timezone.utc).date().isoformat()
+    metrics = (
+        "views,engagedViews,estimatedMinutesWatched,averageViewDuration,"
+        "averageViewPercentage,likes,comments,shares,subscribersGained,subscribersLost"
+    )
+    url = "https://youtubeanalytics.googleapis.com/v2/reports?" + urlencode(
+        {
+            "ids": "channel==MINE",
+            "startDate": start_date,
+            "endDate": datetime.now(timezone.utc).date().isoformat(),
+            "metrics": metrics,
+            "filters": f"video=={video_id}",
+        }
+    )
+    request = urllib.request.Request(
+        url,
+        headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Query YouTube Analytics gagal: {exc}") from exc
+    headers = payload.get("columnHeaders") if isinstance(payload, dict) else []
+    rows = payload.get("rows") if isinstance(payload, dict) else []
+    if not isinstance(headers, list) or not isinstance(rows, list) or not rows:
+        values: dict[str, Any] = {}
+    else:
+        names = [str(item.get("name") or "") for item in headers if isinstance(item, dict)]
+        values = dict(zip(names, rows[0], strict=False)) if isinstance(rows[0], list) else {}
+    return YouTubePerformanceSnapshot(
+        captured_at=now_iso(),
+        source="youtube_analytics",
+        views=int(values.get("views") or 0),
+        engaged_views=int(values["engagedViews"]) if values.get("engagedViews") is not None else None,
+        average_view_duration=float(values["averageViewDuration"]) if values.get("averageViewDuration") is not None else None,
+        average_view_percentage=float(values["averageViewPercentage"]) if values.get("averageViewPercentage") is not None else None,
+        likes=int(values["likes"]) if values.get("likes") is not None else None,
+        comments=int(values["comments"]) if values.get("comments") is not None else None,
+        shares=int(values["shares"]) if values.get("shares") is not None else None,
+        subscribers_gained=int(values["subscribersGained"]) if values.get("subscribersGained") is not None else None,
+        subscribers_lost=int(values["subscribersLost"]) if values.get("subscribersLost") is not None else None,
+    )
+
+
+def youtube_public_snapshot(upload: YouTubeUploadJob) -> YouTubePerformanceSnapshot:
+    video_id = youtube_video_id_from_url(upload.video_url or "")
+    if not video_id:
+        raise RuntimeError("URL YouTube tidak memiliki video ID yang valid")
+    try:
+        payload = youtube_data_api_get("videos", {"part": "statistics", "id": video_id})
+        items = payload.get("items") if isinstance(payload, dict) else []
+        item = items[0] if isinstance(items, list) and items and isinstance(items[0], dict) else {}
+        statistics = item.get("statistics") if isinstance(item.get("statistics"), dict) else {}
+    except RuntimeError:
+        statistics = {}
+    if not statistics:
+        try:
+            with YoutubeDL(ytdlp_probe_options()) as ydl:
+                info = ydl.extract_info(upload.video_url or "", download=False)
+        except Exception as exc:
+            raise RuntimeError(f"Statistik publik video gagal diambil: {exc}") from exc
+        if isinstance(info, dict):
+            statistics = {
+                "viewCount": info.get("view_count"),
+                "likeCount": info.get("like_count"),
+                "commentCount": info.get("comment_count"),
+            }
+    if not statistics:
+        raise RuntimeError("Statistik publik video belum tersedia")
+    return YouTubePerformanceSnapshot(
+        captured_at=now_iso(),
+        source="youtube_public",
+        views=int(statistics.get("viewCount") or 0),
+        likes=int(statistics["likeCount"]) if statistics.get("likeCount") is not None else None,
+        comments=int(statistics["commentCount"]) if statistics.get("commentCount") is not None else None,
+    )
+
+
+def refresh_youtube_performance(upload_id: str) -> YouTubeUploadJob:
+    with youtube_uploads_lock:
+        upload = youtube_uploads.get(upload_id)
+    if upload is None:
+        raise HTTPException(status_code=404, detail="YouTube upload not found")
+    if upload.status != "completed" or not upload.video_url:
+        raise HTTPException(status_code=409, detail="Upload belum memiliki URL YouTube final")
+    analytics_error = ""
+    try:
+        snapshot = youtube_analytics_snapshot(upload)
+    except RuntimeError as exc:
+        analytics_error = str(exc)
+        snapshot = None
+    if snapshot is None:
+        try:
+            snapshot = youtube_public_snapshot(upload)
+        except RuntimeError as exc:
+            detail = str(exc)
+            if analytics_error:
+                detail = f"{analytics_error}; fallback statistik publik gagal: {detail}"
+            raise HTTPException(status_code=502, detail=detail) from exc
+    return record_youtube_performance(upload_id, snapshot)
 
 
 def terminate_youtube_upload_process(process: subprocess.Popen[str]) -> None:
@@ -5225,6 +5604,8 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
         growth = growth if isinstance(growth, dict) else {}
         series = growth.get("series")
         series = series if isinstance(series, dict) else {}
+        subscriber_intent = growth.get("subscriber_intent")
+        subscriber_intent = subscriber_intent if isinstance(subscriber_intent, dict) else {}
         growth_readiness = sidecar.get("growth_readiness")
         if not isinstance(growth_readiness, dict):
             growth_readiness = sidecar.get("five_k_experiment_readiness")
@@ -5305,6 +5686,18 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
                     int(growth_readiness["target_views"])
                     if isinstance(growth_readiness.get("target_views"), (int, float))
                     and not isinstance(growth_readiness.get("target_views"), bool)
+                    else None
+                ),
+                growth_target_subscribers=(
+                    int(growth_readiness["target_subscribers"])
+                    if isinstance(growth_readiness.get("target_subscribers"), (int, float))
+                    and not isinstance(growth_readiness.get("target_subscribers"), bool)
+                    else None
+                ),
+                subscriber_intent_score=(
+                    max(0, min(100, int(round(subscriber_intent["score"]))))
+                    if isinstance(subscriber_intent.get("score"), (int, float))
+                    and not isinstance(subscriber_intent.get("score"), bool)
                     else None
                 ),
                 growth_status=(
@@ -7594,6 +7987,32 @@ def get_youtube_upload(upload_id: str) -> YouTubeUploadJob:
         item
         for item in youtube_uploads_with_queue_positions(uploads)
         if item.id == upload_id
+    )
+
+
+@app.post(
+    "/api/youtube/uploads/{upload_id}/performance/refresh",
+    response_model=YouTubeUploadJob,
+)
+def refresh_youtube_upload_performance(upload_id: str) -> YouTubeUploadJob:
+    return refresh_youtube_performance(upload_id)
+
+
+@app.post(
+    "/api/youtube/uploads/{upload_id}/performance",
+    response_model=YouTubeUploadJob,
+)
+def update_youtube_upload_performance(
+    upload_id: str,
+    request: YouTubePerformanceUpdateRequest,
+) -> YouTubeUploadJob:
+    return record_youtube_performance(
+        upload_id,
+        YouTubePerformanceSnapshot(
+            captured_at=now_iso(),
+            source="manual",
+            **request.model_dump(),
+        ),
     )
 
 
