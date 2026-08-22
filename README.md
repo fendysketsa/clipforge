@@ -43,10 +43,11 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Search 70+ Creative Commons themes, including Islamic insight, mystery, myth/fact, history, and relevant horror; prioritize the last 30 days and expand to 180 days when needed.
 - Permanently skip YouTube source URLs that have already completed clipping.
 - Crop center or shift crop toward detected faces/people.
-- When several faces are visible together, reserve a speaker-plus-group 9:16 layout for only one Short in a small batch or at most two in a larger batch, keeping the rest visually varied.
+- When a three-panel 9:16 layout is selected, keep the current clip in the large panel and feed both smaller panels from two other, timeline-spread clip candidates. Never build the three panels by cropping the same simultaneous source frame; skip the layout when two distinct companion clips are unavailable.
 - Use an accuracy-first Indonesian transcription preset (`faster-whisper-medium`,
   beam search, VAD, and word timestamps) and invalidate stale lower-quality transcript caches.
 - Manage jobs and generated clips from a Next.js UI.
+- Generate a complete, readable description for every Short and long-form output: a content-specific summary, viewer benefits, discussion prompt, natural Like/Share/Subscribe support block, channel handle, editorial-context note, and deduplicated topical hashtags. Long-form keeps richer benefits and valid YouTube chapters while excluding `#Shorts`.
 - Start jobs and receive complete results from a private Telegram bot.
 - Queue completed clips for YouTube Studio upload through Playwright.
 - Run locally with Python/Node or with Docker Compose.

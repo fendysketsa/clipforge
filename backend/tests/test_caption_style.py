@@ -78,6 +78,7 @@ from clipper import (
     score_window,
     scale_watermark_region,
     select_multi_person_profiles,
+    select_split_companion_candidates,
     segments_for_clip,
     split_subtitle_text,
     subtitle_cues,
@@ -692,7 +693,7 @@ def test_landscape_speaker_split_has_two_bordered_panels_and_active_pulses():
     assert "between(t,24.000,24.720)" in value
 
 
-def test_vertical_active_split_never_repeats_dominant_speaker_in_bottom_row():
+def test_vertical_active_split_uses_two_independent_companion_inputs():
     profile = ActiveSpeakerSplitProfile(
         face_focus_xs=[0.15, 0.50, 0.85],
         face_focus_ys=[0.44, 0.40, 0.46],
@@ -703,16 +704,21 @@ def test_vertical_active_split_never_repeats_dominant_speaker_in_bottom_row():
         source_height=1080,
     )
 
-    value = vertical_active_speaker_split_filter(profile, emphasis_times=[4.0])
+    value = vertical_active_speaker_split_filter(
+        profile,
+        emphasis_times=[4.0],
+        companion_focus_xs=[0.15, 0.85],
+    )
 
-    assert "split=4[asplit_bg_src][asplit_top_src][asplit_bot0_src][asplit_bot1_src]" in value
+    assert "[0:v]split=2[asplit_bg_src][asplit_top_src]" in value
     assert "[asplit_top_src]crop=1020:1080:450:0" in value
-    assert "[asplit_bot0_src]crop=788:1080:0:0" in value
-    assert "[asplit_bot1_src]crop=788:1080:1132:0" in value
+    assert "[1:v]setpts=PTS-STARTPTS,crop=788:1080:0:0" in value
+    assert "[2:v]setpts=PTS-STARTPTS,crop=788:1080:1132:0" in value
+    assert "split=4" not in value
     assert "asplit_bot2" not in value
 
 
-def test_vertical_two_person_split_uses_one_full_width_unique_companion():
+def test_vertical_two_person_profile_still_renders_two_other_clips():
     profile = ActiveSpeakerSplitProfile(
         face_focus_xs=[0.25, 0.75],
         face_focus_ys=[0.42, 0.43],
@@ -723,11 +729,68 @@ def test_vertical_two_person_split_uses_one_full_width_unique_companion():
         source_height=1080,
     )
 
-    value = vertical_active_speaker_split_filter(profile)
+    value = vertical_active_speaker_split_filter(
+        profile,
+        companion_focus_xs=[0.25, 0.75],
+    )
 
-    assert "split=3[asplit_bg_src][asplit_top_src][asplit_bot0_src]" in value
-    assert "scale=1000:680" in value
-    assert "asplit_bot1" not in value
+    assert "[0:v]split=2[asplit_bg_src][asplit_top_src]" in value
+    assert "[1:v]setpts=PTS-STARTPTS" in value
+    assert "[2:v]setpts=PTS-STARTPTS" in value
+    assert "scale=496:680" in value
+
+
+def test_vertical_active_split_rejects_same_input_crop_fallback():
+    profile = ActiveSpeakerSplitProfile(
+        face_focus_xs=[0.25, 0.75],
+        face_focus_ys=[0.42, 0.43],
+        face_sizes=[16000, 9000],
+        person_count=2,
+        simultaneous_frame_ratio=0.68,
+        source_width=1920,
+        source_height=1080,
+    )
+
+    try:
+        vertical_active_speaker_split_filter(profile)
+    except ValueError as exc:
+        assert "exactly two companion clips" in str(exc)
+    else:
+        raise AssertionError("same-frame companion fallback must be rejected")
+
+
+def test_split_companions_are_distinct_and_spread_across_timeline():
+    candidates = [
+        ClipCandidate(1, 0, 20, 20, 90, "Main", "test", "main"),
+        ClipCandidate(2, 30, 50, 20, 82, "Near", "test", "near"),
+        ClipCandidate(3, 120, 140, 20, 88, "Middle", "test", "middle"),
+        ClipCandidate(4, 260, 280, 20, 86, "Far", "test", "far"),
+    ]
+
+    selected = select_split_companion_candidates(candidates[0], candidates)
+
+    assert [item.index for item in selected] == [4, 3]
+    assert len({candidates[0].index, *(item.index for item in selected)}) == 3
+
+
+def test_split_companions_require_two_other_candidates():
+    candidates = [
+        ClipCandidate(1, 0, 20, 20, 90, "Main", "test", "main"),
+        ClipCandidate(2, 30, 50, 20, 82, "Other", "test", "other"),
+    ]
+
+    assert select_split_companion_candidates(candidates[0], candidates) == []
+
+
+def test_split_companions_do_not_treat_duplicate_index_as_another_clip():
+    main = ClipCandidate(1, 0, 20, 20, 90, "Main", "test", "main")
+    candidates = [
+        main,
+        ClipCandidate(1, 100, 120, 20, 99, "Duplicate", "test", "duplicate"),
+        ClipCandidate(2, 200, 220, 20, 80, "Other", "test", "other"),
+    ]
+
+    assert select_split_companion_candidates(main, candidates) == []
 
 
 def test_vertical_multi_person_context_keeps_primary_and_wide_group_panels():
@@ -2473,6 +2536,11 @@ def test_social_caption_has_safe_relevant_fallback_without_ai():
     caption = fallback_social_caption(clip, ["Dakwah"])
 
     assert "Bedakan kisah, mitos, pengalaman, dan fakta" in caption
+    assert "📌 TENTANG VIDEO INI" in caption
+    assert "✨ YANG AKAN KAMU DAPAT" in caption
+    assert "💬 IKUT BERDISKUSI" in caption
+    assert "🔥 DUKUNG @RYUUNDYOFFICIAL" in caption
+    assert "⚠️ CATATAN KONTEN" in caption
     assert "#Dakwah" in caption
     assert "#Misteri" in caption
     assert "#MitosAtauFakta" in caption
@@ -2494,6 +2562,7 @@ def test_landscape_compilation_caption_is_not_tagged_as_short():
 
     assert "#Hikmah" in caption
     assert "#Shorts" not in caption
+    assert caption.count("✅") == 3
 
 
 def test_source_channel_promos_are_boundaries_not_clip_content():

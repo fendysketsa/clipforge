@@ -1,7 +1,16 @@
 import tempfile
+import time
 from pathlib import Path
 
-from api import ClipCandidate, ClipFile, ClipJob, ClipJobRequest, cleanup_clip_files, cleanup_job_files
+from api import (
+    ClipCandidate,
+    ClipFile,
+    ClipJob,
+    ClipJobRequest,
+    cleanup_clip_files,
+    cleanup_job_files,
+    cleanup_orphan_output_roots,
+)
 from clipper import (
     UserFacingError,
     cleanup_intermediate,
@@ -294,3 +303,80 @@ def test_cleanup_job_files_removes_related_output_folder(monkeypatch):
     cleanup_job_files(job)
 
     assert not (outputs / "video-title").exists()
+
+
+def test_cleanup_job_files_also_prunes_empty_job_id_parent(monkeypatch, tmp_path):
+    import api
+
+    outputs = tmp_path / "outputs"
+    clip_dir = outputs / "job-uuid" / "video-title" / "clips"
+    clip_dir.mkdir(parents=True)
+    clip_path = clip_dir / "clip_01.mp4"
+    clip_path.write_bytes(b"video")
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "jobs", {})
+    job = ClipJob(
+        id="job-uuid",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/x"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[
+            ClipFile(
+                name=clip_path.name,
+                url="/outputs/job-uuid/video-title/clips/clip_01.mp4",
+                size_bytes=1,
+            )
+        ],
+    )
+
+    cleanup_job_files(job)
+
+    assert not (outputs / "job-uuid").exists()
+
+
+def test_orphan_sweep_preserves_referenced_and_recent_nonempty_roots(monkeypatch, tmp_path):
+    import api
+    import os
+
+    outputs = tmp_path / "outputs"
+    protected_file = outputs / "job-live" / "video" / "clips" / "clip_01.mp4"
+    protected_file.parent.mkdir(parents=True)
+    protected_file.write_bytes(b"keep")
+    orphan_file = outputs / "job-orphan-old" / "video" / "source.mp4"
+    orphan_file.parent.mkdir(parents=True)
+    orphan_file.write_bytes(b"remove")
+    recent_file = outputs / "job-orphan-recent" / "video" / "source.mp4"
+    recent_file.parent.mkdir(parents=True)
+    recent_file.write_bytes(b"keep for grace")
+    empty_orphan = outputs / "job-orphan-empty"
+    empty_orphan.mkdir(parents=True)
+
+    old_timestamp = time.time() - 7200
+    for path in [orphan_file, orphan_file.parent, orphan_file.parent.parent]:
+        os.utime(path, (old_timestamp, old_timestamp))
+
+    live_clip = ClipFile(
+        name="clip_01.mp4",
+        url="/outputs/job-live/video/clips/clip_01.mp4",
+        size_bytes=1,
+    )
+    live_job = ClipJob(
+        id="job-live",
+        status="running",
+        request=ClipJobRequest(url="https://youtu.be/live"),
+        created_at="2026-08-22T00:00:00+00:00",
+        updated_at="2026-08-22T00:00:00+00:00",
+        clips=[live_clip],
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "jobs", {live_job.id: live_job})
+    monkeypatch.setattr(api, "youtube_uploads", {})
+
+    removed = cleanup_orphan_output_roots(min_age_seconds=3600)
+
+    assert removed == 2
+    assert protected_file.exists()
+    assert recent_file.exists()
+    assert not orphan_file.parent.parent.exists()
+    assert not empty_orphan.exists()

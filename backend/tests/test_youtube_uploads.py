@@ -17,6 +17,7 @@ from api import (
     best_youtube_clip_urls,
     build_youtube_upload_command,
     clip_requires_altered_content_disclosure,
+    complete_youtube_description,
     default_youtube_description,
     default_youtube_tags,
     default_youtube_title,
@@ -806,6 +807,44 @@ def test_completed_upload_cleanup_refuses_unverified_upload(monkeypatch):
         delete_completed_youtube_upload_clip(upload.id)
 
 
+def test_completed_upload_cleanup_removes_orphan_workspace_when_job_is_missing(
+    monkeypatch,
+    tmp_path,
+):
+    import api
+
+    outputs = tmp_path / "outputs"
+    work_dir = outputs / "orphan-job" / "video-title"
+    clip_dir = work_dir / "clips"
+    clip_dir.mkdir(parents=True)
+    clip_path = clip_dir / "clip_01.mp4"
+    clip_path.write_bytes(b"video")
+    clip_path.with_name("clip_01_caption.txt").write_text("caption", encoding="utf-8")
+    (work_dir / "source_embedded.mp4").write_bytes(b"source")
+    (work_dir / "audio_1200s.wav").write_bytes(b"audio")
+    upload = YouTubeUploadJob(
+        id="upload-orphan-workspace",
+        source_job_id="missing-job",
+        clip_url="/outputs/orphan-job/video-title/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="completed",
+        created_at="2026-08-22T00:00:00+00:00",
+        updated_at="2026-08-22T00:01:00+00:00",
+        finished_at="2026-08-22T00:01:00+00:00",
+        title="Uploaded",
+        video_url="https://www.youtube.com/watch?v=abcDEF12345",
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "jobs", {})
+    monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+
+    removed, removed_job = delete_completed_youtube_upload_clip(upload.id)
+
+    assert removed >= 3
+    assert removed_job is True
+    assert not (outputs / "orphan-job").exists()
+
+
 def test_upload_watchdog_terminates_silent_process():
     process = subprocess.Popen(
         [sys.executable, "-u", "-c", "import time; print('started'); time.sleep(10)"],
@@ -1297,8 +1336,69 @@ def test_default_youtube_description_uses_ai_caption_and_hashtags_only():
 
     assert "Ini caption AI yang siap diposting." in description
     assert "#islam #shorts" in description
+    assert "📌 TENTANG VIDEO INI" in description
+    assert "✨ YANG AKAN KAMU DAPAT" in description
+    assert "🔥 DUKUNG @RYUUNDYOFFICIAL" in description
+    assert "⚠️ CATATAN KONTEN" in description
     assert "Sumber:" not in description
     assert "Channel sumber:" not in description
+
+
+def test_complete_short_description_has_full_sections_and_short_tag():
+    clip = ClipFile(
+        name="clip_01.mp4",
+        url="/outputs/demo/clips/clip_01.mp4",
+        size_bytes=1,
+        title="Hikmah Menjaga Hati",
+        core_message="Menjaga hati membutuhkan ilmu dan kebiasaan yang baik.",
+    )
+    job = ClipJob(
+        id="job-short-description",
+        status="completed",
+        request=ClipJobRequest(source_file="owned.mp4"),
+        created_at="2026-08-22T00:00:00+00:00",
+        updated_at="2026-08-22T00:00:00+00:00",
+        clips=[clip],
+    )
+
+    description = complete_youtube_description(
+        job,
+        clip,
+        "Pembahasan tentang cara menjaga hati dalam kehidupan sehari-hari.",
+        ["Islam", "Hikmah"],
+    )
+
+    assert description.count("✅") == 2
+    assert "YouTube · @ryuundyofficial" in description
+    assert "#Islam #Hikmah #Shorts" in description
+
+
+def test_complete_long_description_is_more_detailed_and_removes_short_tag():
+    clip = ClipFile(
+        name="resume_cerita_hikmah.mp4",
+        url="/outputs/demo/clips/resume_cerita_hikmah.mp4",
+        size_bytes=1,
+        title="Perjalanan Memahami Hikmah",
+    )
+    job = ClipJob(
+        id="job-long-description",
+        status="completed",
+        request=ClipJobRequest(source_file="owned.mp4", clip_mode="highlight_5m"),
+        created_at="2026-08-22T00:00:00+00:00",
+        updated_at="2026-08-22T00:00:00+00:00",
+        clips=[clip],
+    )
+
+    description = complete_youtube_description(
+        job,
+        clip,
+        "Video panjang yang membahas konteks, proses, dan hikmah secara bertahap.",
+        ["Islam", "Cerita", "Shorts"],
+    )
+
+    assert description.count("✅") == 3
+    assert "#Islam #Cerita" in description
+    assert "#Shorts" not in description
 
 
 def test_youtube_description_includes_fendy_audit_identity(monkeypatch):

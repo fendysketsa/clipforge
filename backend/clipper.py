@@ -2706,6 +2706,47 @@ def select_active_speaker_split_profiles(
     return selected
 
 
+def select_split_companion_candidates(
+    candidate: ClipCandidate,
+    candidates: list[ClipCandidate],
+    *,
+    count: int = 2,
+) -> list[ClipCandidate]:
+    """Pick distinct timeline clips for the small panels in a split layout.
+
+    A crop from the current frame is not a companion clip: it repeats the same
+    picture even when it happens to be centered on another detected face. Use
+    farthest-first timeline sampling so the main panel and every supporting
+    panel receive a different candidate segment, with good shot diversity.
+    """
+    requested = max(0, count)
+    if requested == 0:
+        return []
+
+    eligible = [item for item in candidates if item.index != candidate.index]
+    if len(eligible) < requested:
+        return []
+
+    def midpoint(item: ClipCandidate) -> float:
+        return (item.start + item.end) / 2
+
+    selected: list[ClipCandidate] = []
+    anchors = [candidate]
+    while eligible and len(selected) < requested:
+        chosen = max(
+            eligible,
+            key=lambda item: (
+                min(abs(midpoint(item) - midpoint(anchor)) for anchor in anchors),
+                item.score,
+                -item.index,
+            ),
+        )
+        selected.append(chosen)
+        anchors.append(chosen)
+        eligible.remove(chosen)
+    return selected if len(selected) == requested else []
+
+
 def analyze_text_heavy_backdrop(frame, *, force: bool = False) -> BackdropProfile | None:
     """Detect a mostly uniform event banner with rows of contrasting text."""
     try:
@@ -3316,12 +3357,13 @@ def vertical_active_speaker_split_filter(
     secondary: str = "#FACC15",
     *,
     emphasis_times: list[float] | None = None,
+    companion_focus_xs: list[float] | None = None,
 ) -> str:
-    """Dominant speaker on top, different supporting people on the bottom.
+    """Dominant current clip on top, two different candidate clips below.
 
-    The dominant person is deliberately excluded from the lower row. Repeating
-    that crop made a three-panel layout look like duplicated content and left
-    narrow edge crops with no useful subject.
+    Inputs 1 and 2 must be separate timeline segments. The old implementation
+    split input 0 three ways and merely changed its crop, so all panels could
+    display the same source picture at once.
 
     Complies with YouTube Shorts guidelines: no misleading UI, no fake
     engagement elements, just clean multi-camera presentation.
@@ -3330,6 +3372,8 @@ def vertical_active_speaker_split_filter(
     source_height = profile.source_height
     n_persons = profile.person_count
     assert 2 <= n_persons <= 3
+    if companion_focus_xs is None or len(companion_focus_xs) != 2:
+        raise ValueError("active speaker split requires exactly two companion clips")
 
     # --- Top panel: active speaker close-up ---
     top_width = 1000
@@ -3352,25 +3396,13 @@ def vertical_active_speaker_split_filter(
     dominant_idx = 0
     if profile.face_sizes:
         dominant_idx = profile.face_sizes.index(max(profile.face_sizes))
-    companion_indices = [
-        index for index in range(n_persons) if index != dominant_idx
-    ]
-
-    # --- Bottom panel: supporting people only (never duplicate the top) ---
+    # --- Bottom panels: two different candidate clips (never input 0) ---
     bottom_total_width = 1000
     bottom_height = 680
     gap = 8
-    bottom_panel_count = len(companion_indices)
-    panel_width = (
-        bottom_total_width
-        if bottom_panel_count == 1
-        else (bottom_total_width - gap * (bottom_panel_count - 1)) // bottom_panel_count
-    )
-    # With one companion, a full-width 1000x680 crop is so wide that it can
-    # show the dominant speaker again. Keep a portrait-like subject crop and
-    # letterbox it inside the wide lower card instead.
-    bottom_subject_width = 520 if bottom_panel_count == 1 else panel_width
-    panel_aspect = bottom_subject_width / bottom_height
+    bottom_panel_count = 2
+    panel_width = (bottom_total_width - gap) // bottom_panel_count
+    panel_aspect = panel_width / bottom_height
 
     bottom_crop_height = source_height
     bottom_crop_width = make_even(bottom_crop_height * panel_aspect, 2)
@@ -3380,26 +3412,19 @@ def vertical_active_speaker_split_filter(
     bottom_crop_y = max(0, (source_height - bottom_crop_height) // 2)
 
     bottom_crop_xs: list[int] = []
-    for person_index in companion_indices:
-        focus_x = profile.face_focus_xs[person_index]
+    for focus_x in companion_focus_xs:
         center_px = focus_x * source_width
         crop_x = int(clamp_even(center_px - bottom_crop_width / 2, 0, source_width - bottom_crop_width))
         bottom_crop_xs.append(crop_x)
 
     timestamps = sorted(emphasis_times or [])
 
-    # Number of splits: background + dominant top + unique companions.
-    total_splits = 2 + bottom_panel_count
-    split_names = ["asplit_bg_src", "asplit_top_src"] + [
-        f"asplit_bot{i}_src" for i in range(bottom_panel_count)
-    ]
-
     # Build FFmpeg filter graph
     parts: list[str] = []
 
-    # 1. Split the input
-    split_outputs = "".join(f"[{name}]" for name in split_names)
-    parts.append(f"split={total_splits}{split_outputs}")
+    # 1. Only the main input is shared by its backdrop and large panel. Inputs
+    # 1 and 2 are independent companion clips supplied by the export command.
+    parts.append("[0:v]split=2[asplit_bg_src][asplit_top_src]")
 
     # 2. Background: blurred full frame
     parts.append(
@@ -3417,10 +3442,11 @@ def vertical_active_speaker_split_filter(
         f"scale={top_width}:{top_height}:flags=lanczos,setsar=1[asplit_top]"
     )
 
-    # 4. Bottom person crops
+    # 4. Bottom crops from two independent companion inputs
     for i in range(bottom_panel_count):
         parts.append(
-            f"[asplit_bot{i}_src]crop={bottom_crop_width}:{bottom_crop_height}:"
+            f"[{i + 1}:v]setpts=PTS-STARTPTS,"
+            f"crop={bottom_crop_width}:{bottom_crop_height}:"
             f"{bottom_crop_xs[i]}:{bottom_crop_y},"
             f"scale={panel_width}:{bottom_height}:force_original_aspect_ratio=decrease:"
             "force_divisible_by=2:flags=lanczos,"
@@ -3489,7 +3515,7 @@ def vertical_active_speaker_split_filter(
         f"w={top_width - 20}:h=4:color=white@0.25:t=fill"
     )
 
-    # Pulse only companion panels; the dominant person remains exclusive to top.
+    # Pulse only companion panels; the main clip remains exclusive to top.
     for idx, ts in enumerate(timestamps[:6]):
         end = ts + 0.8
         panel_index = idx % bottom_panel_count
@@ -9262,8 +9288,10 @@ def generate_thumbnail_prompt(
 SOCIAL_CAPTION_SYSTEM_PROMPT = (
     "You are a viral social media copywriter for TikTok, Instagram Reels, and YouTube Shorts. "
     "You write short, scroll-stopping captions in Indonesian that make people want to watch and read. "
-    "Open with a strong hook, keep it punchy, add a soft call-to-action, a few relevant emojis, "
-    "and 5-8 niche hashtags. For Islamic mystery, myth, supernatural, and horror content, keep the "
+    "Open with a strong hook, keep it punchy, and add at most two relevant emojis. "
+    "Write only the topic summary; the application adds channel calls-to-action and hashtags in fixed sections. "
+    "Also return 5-8 niche hashtags in the separate JSON array. For Islamic mystery, myth, supernatural, "
+    "and horror content, keep the "
     "distinction between religious teaching, story, folklore, personal experience, and verified fact. "
     "Do not invent certainty, medical outcomes, guaranteed financial returns, or allegations about real people. "
     "Phrase unverified current-event statements as the speaker's claim, not an established fact. "
@@ -9296,6 +9324,95 @@ def clip_topic_hashtags(clip: ClipCandidate) -> list[str]:
     if not tags:
         tags.extend(["#PelajaranHidup", "#FaktaMenarik"])
     return tags
+
+
+def social_description_highlights(clip: ClipCandidate, *, long_form: bool) -> list[str]:
+    """Return concise, topic-aware viewer benefits for a complete description."""
+    theme = detect_visual_theme(clip)
+    if theme == "mystery":
+        highlights = [
+            "Konteks cerita tanpa langsung menganggap semua klaim sebagai fakta.",
+            "Pemisahan antara pengalaman, mitos, penafsiran, dan hal yang terverifikasi.",
+            "Hikmah yang bisa dipikirkan kembali setelah menonton sampai selesai.",
+        ]
+    elif theme == "islamic":
+        highlights = [
+            "Konteks pembahasan agar pesan tidak berhenti pada satu potongan kalimat.",
+            "Hikmah utama yang relevan dengan kehidupan sehari-hari.",
+            "Sudut pandang yang bisa menjadi bahan belajar dan refleksi bersama.",
+        ]
+    elif theme == "warning":
+        highlights = [
+            "Masalah utama dan alasan mengapa poin ini perlu diperhatikan.",
+            "Konteks sebelum mengambil kesimpulan atau menerapkan sarannya.",
+            "Langkah penting yang dapat dipertimbangkan setelah memahami pembahasan.",
+        ]
+    elif theme == "inspiring":
+        highlights = [
+            "Gagasan utama yang dapat diterapkan secara realistis.",
+            "Pelajaran dari proses, bukan sekadar hasil akhirnya.",
+            "Satu langkah kecil yang bisa mulai dipikirkan setelah menonton.",
+        ]
+    else:
+        highlights = [
+            "Konteks lengkap di balik poin utama video.",
+            "Penjelasan inti tanpa berhenti pada hook pembuka.",
+            "Pelajaran yang bisa dinilai dan didiskusikan bersama.",
+        ]
+    return highlights if long_form else highlights[:2]
+
+
+def format_social_description(
+    clip: ClipCandidate,
+    summary: str,
+    hashtags: list[str],
+    *,
+    long_form: bool,
+) -> str:
+    """Build a tidy description shared by rendered Shorts and long-form assets."""
+    clean_summary = "\n".join(
+        line.strip()
+        for line in summary.splitlines()
+        if line.strip() and not all(part.startswith("#") for part in line.split())
+    ).strip()
+    if not clean_summary:
+        clean_summary = first_sentence(clip.text or clip.title, max_words=34).strip()
+    clean_summary = clean_summary[:900 if long_form else 600].rstrip()
+
+    highlights = social_description_highlights(clip, long_form=long_form)
+    benefit_lines = "\n".join(f"✅ {item}" for item in highlights)
+    question = shorts_engagement_prompt(clip).capitalize().rstrip(" .!?") + "?"
+    subscribe_reason = subscribe_value_prompt(clip).capitalize().rstrip(" .!?") + "."
+    note = (
+        "Video ini dirangkum dan disusun ulang secara editorial. Simak konteksnya, "
+        "lalu cocokkan isu penting dengan rujukan tepercaya sebelum mengambil keputusan."
+    )
+    ordered_tags: list[str] = []
+    seen: set[str] = set()
+    for raw in hashtags:
+        tag = _normalize_hashtag(str(raw))
+        if tag and tag.casefold() not in seen:
+            seen.add(tag.casefold())
+            ordered_tags.append(tag)
+
+    channel_handle = os.environ.get("YOUTUBE_TARGET_CHANNEL", "ryuundyofficial").strip().lstrip("@")
+    channel_handle = re.sub(r"[^A-Za-z0-9_.-]", "", channel_handle) or "ryuundyofficial"
+    sections = [
+        "📌 TENTANG VIDEO INI\n" + clean_summary,
+        "✨ YANG AKAN KAMU DAPAT\n" + benefit_lines,
+        "💬 IKUT BERDISKUSI\n" + question,
+        (
+            f"🔥 DUKUNG @{channel_handle.upper()}\n"
+            "👍 Like jika pembahasannya bermanfaat.\n"
+            "↗️ Bagikan kepada teman yang membutuhkan konteks ini.\n"
+            f"🔔 {subscribe_reason}"
+        ),
+        f"📱 CHANNEL\nYouTube · @{channel_handle}",
+        "⚠️ CATATAN KONTEN\n" + note,
+    ]
+    if ordered_tags:
+        sections.append(" ".join(ordered_tags[:10 if long_form else 8]))
+    return "\n\n".join(sections)[:2000]
 
 
 def fallback_social_caption(
@@ -9335,8 +9452,13 @@ def fallback_social_caption(
         if tag and tag.casefold() not in seen:
             ordered.append(tag)
             seen.add(tag.casefold())
-    subscribe_line = subscribe_value_prompt(clip).capitalize().rstrip(".!?") + "."
-    return f"{emoji} {hook}\n\n{body}\n{subscribe_line}\n\n{' '.join(ordered[:8])}"[:2000]
+    summary = f"{emoji} {hook}. {body}"
+    return format_social_description(
+        clip,
+        summary,
+        ordered,
+        long_form=long_form,
+    )
 
 
 def generate_social_caption(
@@ -9364,10 +9486,10 @@ def generate_social_caption(
     user_prompt = (
         f"Write a social media post caption (Bahasa Indonesia) for this {format_name}. "
         "Make the first line a hook that stops the scroll and makes people curious to read more.\n"
-        "End with one soft Subscribe invitation that gives a concrete reason tied to this video's topic; "
-        "do not use rewards, pressure, fake urgency, or a generic repeated slogan.\n"
+        "Write only a useful topic summary. Do not add Subscribe, Like, Share, Follow, channel handles, "
+        "section headings, or hashtag lines because the application adds them consistently.\n"
         "Return JSON exactly like:\n"
-        '{"caption": "<hook line\\n\\nbody 1-2 sentences with emojis\\n\\nsoft CTA>", '
+        '{"caption": "<hook line\\n\\nbody 1-3 informative sentences with emojis>", '
         '"hashtags": ["#tag1", "#tag2", ...]}\n\n'
         f"Clip title: {clip.title}\n"
         f"Clip transcript: {clip.text[:1200]}"
@@ -9400,26 +9522,26 @@ def generate_social_caption(
     text = "\n".join(clean_lines).strip()
     if not text:
         return fallback_social_caption(clip, required_hashtags, long_form=long_form)
-    if not re.search(r"\bsubscribe\b", text, flags=re.I):
-        subscribe_line = subscribe_value_prompt(clip).capitalize().rstrip(".!?") + "."
-        text = f"{text}\n{subscribe_line}"
-
     # Required hashtags always come first, then the AI-generated ones (deduped,
     # case-insensitive). Required tags are guaranteed to be present.
     ordered: list[str] = []
     seen: set[str] = set()
-    for raw in list(required_hashtags or []) + (
+    format_tags = [] if long_form else ["#Shorts"]
+    for raw in list(required_hashtags or []) + clip_topic_hashtags(clip) + format_tags + (
         parsed.get("hashtags") if isinstance(parsed.get("hashtags"), list) else []
     ):
         tag = _normalize_hashtag(str(raw))
         if tag and tag.lower() not in seen:
             seen.add(tag.lower())
             ordered.append(tag)
-    if ordered:
-        if long_form:
-            ordered = [tag for tag in ordered if tag.casefold() != "#shorts"]
-        text = f"{text}\n\n{' '.join(ordered)}"
-    return text[:2000]
+    if long_form:
+        ordered = [tag for tag in ordered if tag.casefold() != "#shorts"]
+    return format_social_description(
+        clip,
+        text,
+        ordered,
+        long_form=long_form,
+    )
 
 
 def export_clip(
@@ -9448,6 +9570,7 @@ def export_clip(
     compilation_narrative_role: str = "",
     multi_person_profile: MultiPersonProfile | None = None,
     active_speaker_split_profile: ActiveSpeakerSplitProfile | None = None,
+    split_companion_clips: list[ClipCandidate] | None = None,
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     base_name = base_name_override or f"clip_{clip.index:02}_{slugify(clip.title)[:72] or 'auto'}"
@@ -9469,6 +9592,14 @@ def export_clip(
     json_path.unlink(missing_ok=True)
 
     duration = clip.end - clip.start
+    split_companions = list(split_companion_clips or [])
+    multi_clip_split = (
+        active_speaker_split_profile is not None and len(split_companions) == 2
+    )
+    if active_speaker_split_profile is not None and not multi_clip_split:
+        # Never regress to three crops from the same video frame.
+        active_speaker_split_profile = None
+        split_companions = []
     clean_detail_pipeline = output_format == "vertical_short" and visual_mode == "auto_fyp"
     edit_variation = content_edit_variation(clip)
     adaptive_plan = codex_edit_plan(clip)
@@ -9975,32 +10106,40 @@ def export_clip(
             if should_try_split:
                 sidecar_payload["split_fallback_reason"] = "two_speakers_not_detected"
     elif active_speaker_split_profile is not None:
+        companion_focus_xs = [
+            detect_person_focus_x(video_path, companion) or 0.5
+            for companion in split_companions
+        ]
         vf = vertical_active_speaker_split_filter(
             active_speaker_split_profile,
             accent=theme_profile["accent"],
             secondary=theme_profile.get("accent_secondary", "#FACC15"),
             emphasis_times=emphasis_times,
+            companion_focus_xs=companion_focus_xs,
         )
         sidecar_payload["layout"] = "active_speaker_split"
         sidecar_payload["active_speaker_split_layout"] = {
             "enabled": True,
             "person_count": active_speaker_split_profile.person_count,
-            "unique_companion_panel_count": active_speaker_split_profile.person_count - 1,
+            "unique_companion_panel_count": 2,
             "simultaneous_frame_ratio": active_speaker_split_profile.simultaneous_frame_ratio,
             "face_focus_xs": active_speaker_split_profile.face_focus_xs,
             "face_focus_ys": active_speaker_split_profile.face_focus_ys,
             "top_panel": "dominant_speaker_closeup",
-            "bottom_panel": (
-                f"unique_companions_{active_speaker_split_profile.person_count - 1}"
-            ),
+            "bottom_panel": "two_distinct_timeline_clips",
+            "companion_clip_indexes": [item.index for item in split_companions],
+            "companion_source_ranges": [
+                [round(item.start, 3), round(item.end, 3)]
+                for item in split_companions
+            ],
             "dominant_speaker_repeated_in_bottom": False,
-            "requires_same_frame_cooccurrence": True,
+            "all_three_panels_use_distinct_inputs": True,
             "youtube_guardrails_applied": True,
             "compliance_guarantee": False,
         }
         applied_edits.append(
             f"Layout active-speaker split: close-up pembicara aktif di atas, "
-            f"{active_speaker_split_profile.person_count - 1} panel pendamping unik di bawah "
+            "dua klip timeline lain di panel bawah "
             f"dengan border pulse mengikuti beat percakapan."
         )
     elif multi_person_profile is not None:
@@ -10140,7 +10279,7 @@ def export_clip(
         ffmpeg_has_filter(name) for name in ("crop", "gblur", "overlay", "split")
     )
     watermark_delogo_supported = ffmpeg_has_filter("delogo")
-    if auto_blur_watermarks and watermark_filters_supported:
+    if auto_blur_watermarks and watermark_filters_supported and not multi_clip_split:
         preview_scale_width = 540 if output_format == "vertical_short" else 640
         try:
             run(
@@ -10229,6 +10368,11 @@ def export_clip(
         "applied_before_fendy_clipper_overlays": True,
         "feathered_boundary": watermark_region is not None,
         "scope": "detected_region_only",
+        "skip_reason": (
+            "multi_clip_split_uses_independent_visual_inputs"
+            if auto_blur_watermarks and multi_clip_split
+            else None
+        ),
     }
     if automatic_short_title:
         cover_text_path.write_text(cover_copy["headline"] + "\n", encoding="utf-8")
@@ -10535,6 +10679,17 @@ def export_clip(
         "-i",
         str(visual_source.resolve()),
     ]
+    for companion in split_companions:
+        video_input.extend(
+            [
+                "-ss",
+                f"{companion.start:.3f}",
+                "-t",
+                f"{duration:.3f}",
+                "-i",
+                str(video_path.resolve()),
+            ]
+        )
     audio_input = [
         ffmpeg_path(),
         "-hide_banner",
@@ -10551,14 +10706,16 @@ def export_clip(
     quality = quality_preset(video_quality)
 
     try:
+        video_filter_args = (
+            ["-filter_complex", f"{vf}[video_out]", "-map", "[video_out]"]
+            if multi_clip_split
+            else ["-map", "0:v:0", "-vf", vf]
+        )
         run(
             [
                 *video_input,
-                "-map",
-                "0:v:0",
+                *video_filter_args,
                 "-an",
-                "-vf",
-                vf,
                 "-c:v",
                 "libx264",
                 "-profile:v",
@@ -11847,14 +12004,28 @@ def main() -> int:
         )
         active_speaker_split_profiles = (
             select_active_speaker_split_profiles(final_video_path, candidates)
-            if args.visual_mode in {"auto_fyp", "speaker_split"} and args.crop_mode != "streamer"
+            if (
+                len(candidates) >= 3
+                and args.visual_mode in {"auto_fyp", "speaker_split"}
+                and args.crop_mode != "streamer"
+            )
             else {}
         )
+        split_companion_map = {
+            candidate.index: select_split_companion_candidates(candidate, candidates)
+            for candidate in candidates
+            if candidate.index in active_speaker_split_profiles
+        }
+        active_speaker_split_profiles = {
+            index: profile
+            for index, profile in active_speaker_split_profiles.items()
+            if len(split_companion_map.get(index, [])) == 2
+        }
         if active_speaker_split_profiles:
             console.print(
                 "[green]Layout active-speaker split:[/green] "
                 f"{len(active_speaker_split_profiles)} dari {total_candidates} klip "
-                f"memakai split per-orang (maks 3 person)."
+                "memakai 3 input berbeda (1 klip utama + 2 klip pendamping)."
             )
         if multi_person_profiles:
             console.print(
@@ -11889,6 +12060,7 @@ def main() -> int:
                     background_mode=args.background_mode,
                     multi_person_profile=multi_person_profiles.get(candidate.index),
                     active_speaker_split_profile=active_speaker_split_profiles.get(candidate.index),
+                    split_companion_clips=split_companion_map.get(candidate.index),
                 )
             )
             render_done = 68 + round((export_index / max(1, total_candidates)) * 25)

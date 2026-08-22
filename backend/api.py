@@ -1400,6 +1400,23 @@ def remove_empty_output_parents(path: Path) -> int:
     return removed
 
 
+def remove_empty_output_ancestors(directory: Path) -> int:
+    """Remove an empty directory and its empty parents, stopping at outputs."""
+    removed = 0
+    root = OUTPUTS_DIR.resolve()
+    current = directory.resolve()
+    while current != root and root in current.parents:
+        try:
+            current.rmdir()
+            removed += 1
+        except FileNotFoundError:
+            pass
+        except OSError:
+            break
+        current = current.parent
+    return removed
+
+
 def clip_artifact_paths(clip: ClipFile) -> set[Path]:
     paths: set[Path] = set()
     clip_path = output_path_from_url(clip.url)
@@ -1587,7 +1604,12 @@ def remove_output_paths(paths: set[Path]) -> int:
     return removed
 
 
-def cleanup_output_work_dirs(clips: list[ClipFile], protected_dirs: set[Path] | None = None) -> int:
+def cleanup_output_work_dirs(
+    clips: list[ClipFile],
+    protected_dirs: set[Path] | None = None,
+    *,
+    strict: bool = False,
+) -> int:
     root = OUTPUTS_DIR.resolve()
     protected = {path.resolve() for path in (protected_dirs or set())}
     removed = 0
@@ -1600,12 +1622,89 @@ def cleanup_output_work_dirs(clips: list[ClipFile], protected_dirs: set[Path] | 
     for work_dir in sorted(dirs, key=lambda item: len(item.parts), reverse=True):
         if work_dir in protected or work_dir == root or root not in work_dir.parents:
             continue
-        try:
-            if work_dir.is_dir():
+        if work_dir.is_dir():
+            try:
                 shutil.rmtree(work_dir)
+            except OSError as exc:
+                if strict:
+                    raise RuntimeError(
+                        f"Workspace output belum dapat dihapus: {work_dir}: {exc}"
+                    ) from exc
+                continue
+            removed += 1
+            removed += remove_empty_output_ancestors(work_dir.parent)
+    return removed
+
+
+def output_top_level_dir_from_url(url: str | None) -> Path | None:
+    path = output_path_from_url(url)
+    if path is None:
+        return None
+    root = OUTPUTS_DIR.resolve()
+    try:
+        first_part = path.resolve().relative_to(root).parts[0]
+    except (IndexError, ValueError):
+        return None
+    candidate = (root / first_part).resolve()
+    return candidate if candidate.parent == root else None
+
+
+def cleanup_orphan_output_roots(*, min_age_seconds: int | None = None) -> int:
+    """Remove unreferenced output roots while protecting every known job/upload.
+
+    Empty orphan directories are always safe to prune. Non-empty roots receive
+    an age grace period so a newly spawned process cannot be mistaken for stale
+    output before its job record becomes visible.
+    """
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+    root = OUTPUTS_DIR.resolve()
+    grace = max(
+        60,
+        min_age_seconds
+        if min_age_seconds is not None
+        else env_int("OUTPUT_ORPHAN_CLEANUP_MIN_AGE_SECONDS", 3600),
+    )
+    protected: set[Path] = set()
+    for job in jobs.values():
+        job_root = (root / job.id).resolve()
+        if job_root.parent == root:
+            protected.add(job_root)
+        for clip in job.clips:
+            if (clip_root := output_top_level_dir_from_url(clip.url)) is not None:
+                protected.add(clip_root)
+    for upload in youtube_uploads.values():
+        if upload.clip_deleted_at:
+            continue
+        if (upload_root := output_top_level_dir_from_url(upload.clip_url)) is not None:
+            protected.add(upload_root)
+
+    now = time.time()
+    removed = 0
+    for item in list(OUTPUTS_DIR.iterdir()):
+        try:
+            resolved = item.resolve()
+            if resolved.parent != root or resolved in protected or not item.is_dir():
+                continue
+            if not any(item.iterdir()):
+                item.rmdir()
                 removed += 1
-        except OSError:
-            pass
+                continue
+            latest_mtime = max(
+                [item.stat().st_mtime]
+                + [
+                    path.stat().st_mtime
+                    for path in item.rglob("*")
+                    if path.exists()
+                ]
+            )
+            if now - latest_mtime < grace:
+                continue
+            shutil.rmtree(item)
+            removed += 1
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            print(f"Cleanup orphan outputs dilewati untuk {item}: {exc}", flush=True)
     return removed
 
 
@@ -2205,19 +2304,136 @@ def youtube_shorts_title(value: str) -> str:
     return f"{clean}{suffix}"[:100] if clean else "Clip #Shorts"
 
 
+def youtube_description_highlights(context: str, *, is_compilation: bool) -> list[str]:
+    """Build topic-aware benefit bullets without relying on metadata AI output."""
+    words = set(re.findall(r"[\w']+", context.casefold(), flags=re.UNICODE))
+    if words.intersection({"jin", "misteri", "mistis", "mitos", "horor", "hantu", "gaib"}):
+        highlights = [
+            "Konteks cerita tanpa langsung menganggap setiap klaim sebagai fakta.",
+            "Perbedaan antara pengalaman, mitos, penafsiran, dan hal yang terverifikasi.",
+            "Hikmah yang bisa dinilai kembali setelah mengikuti pembahasan.",
+        ]
+    elif words.intersection({"islam", "allah", "nabi", "iman", "doa", "shalat", "salat", "muslim"}):
+        highlights = [
+            "Konteks pembahasan agar pesan tidak berhenti pada satu potongan kalimat.",
+            "Hikmah utama yang relevan dengan kehidupan sehari-hari.",
+            "Sudut pandang yang bisa menjadi bahan belajar dan refleksi bersama.",
+        ]
+    elif words.intersection({"uang", "rezeki", "riba", "investasi", "bisnis", "keuangan"}):
+        highlights = [
+            "Gagasan utama dan konteks di balik pembahasan keuangan.",
+            "Hal yang perlu diperiksa sebelum mengambil keputusan pribadi.",
+            "Pelajaran praktis yang bisa dipertimbangkan secara bertanggung jawab.",
+        ]
+    elif words.intersection({"sejarah", "sahabat", "kerajaan", "peradaban", "tokoh"}):
+        highlights = [
+            "Urutan konteks yang membantu memahami peristiwa dan tokohnya.",
+            "Poin penting di balik kejadian yang dibahas.",
+            "Hikmah sejarah yang masih relevan untuk dipikirkan hari ini.",
+        ]
+    else:
+        highlights = [
+            "Konteks lengkap di balik poin utama video.",
+            "Penjelasan inti tanpa berhenti pada hook pembuka.",
+            "Pelajaran yang bisa dinilai dan didiskusikan bersama.",
+        ]
+    return highlights if is_compilation else highlights[:2]
+
+
+def complete_youtube_description(
+    job: ClipJob,
+    clip: ClipFile,
+    summary: str,
+    tags: list[str],
+) -> str:
+    """Format every Short and long-form upload as a complete readable description."""
+    clean_summary = strip_hashtag_lines(summary).strip()
+    if "📌 TENTANG VIDEO INI" in clean_summary:
+        return clean_summary[:5000]
+    clean_summary = re.sub(r"\n{3,}", "\n\n", clean_summary)
+    max_summary = 1500 if is_compilation_clip(job, clip) else 850
+    if len(clean_summary) > max_summary:
+        clean_summary = clean_summary[:max_summary].rsplit(" ", 1)[0].rstrip(" ,;:-") + "…"
+    if not clean_summary:
+        title = clip_sidecar_title(clip) or clip.title or job.source_title or "Cuplikan pilihan"
+        clean_summary = f"{title.strip()}."
+
+    is_compilation = is_compilation_clip(job, clip)
+    context = " ".join(
+        value
+        for value in (
+            clip.title or "",
+            clip.hook or "",
+            clip.core_message or "",
+            clip_candidate_text(job, clip),
+            clean_summary,
+            " ".join(tags),
+        )
+        if value
+    )
+    highlights = youtube_description_highlights(context, is_compilation=is_compilation)
+    benefit_lines = "\n".join(f"✅ {item}" for item in highlights)
+    lowered = context.casefold()
+    if any(term in lowered for term in ("misteri", "mitos", "mistis", "horor", "gaib")):
+        question = "Menurutmu, bagian mana yang merupakan fakta, pengalaman, atau penafsiran?"
+        subscribe_reason = "Subscribe untuk cerita kontekstual dan cek fakta berikutnya."
+    elif any(term in lowered for term in ("islam", "allah", "nabi", "iman", "doa", "shalat", "salat")):
+        question = "Hikmah mana yang paling relevan dengan kehidupanmu?"
+        subscribe_reason = "Subscribe untuk hikmah dan pembahasan kontekstual berikutnya."
+    else:
+        question = "Poin mana yang paling membuka sudut pandangmu?"
+        subscribe_reason = "Subscribe untuk pembahasan informatif berikutnya."
+
+    handle = os.environ.get("YOUTUBE_TARGET_CHANNEL", DEFAULT_YOUTUBE_TARGET_CHANNEL).strip().lstrip("@")
+    handle = re.sub(r"[^A-Za-z0-9_.-]", "", handle) or DEFAULT_YOUTUBE_TARGET_CHANNEL
+    if job.request.clip_mode == "long_animate":
+        note = (
+            "Video ini dibuat dan disusun secara editorial dari naskah terarah. "
+            "Cocokkan isu penting dengan rujukan tepercaya sebelum mengambil keputusan."
+        )
+    else:
+        note_subject = "Video" if is_compilation else "Cuplikan"
+        note = (
+            f"{note_subject} ini dipilih, dipotong, dan disusun ulang secara editorial. "
+            "Simak konteks utuh dan cocokkan isu penting dengan rujukan tepercaya sebelum mengambil keputusan."
+        )
+
+    ordered_tags: list[str] = []
+    seen: set[str] = set()
+    candidates = [*tags]
+    if not is_compilation:
+        candidates.append("Shorts")
+    for raw in candidates:
+        tag = re.sub(r"[^\w\d_]", "", str(raw).strip().lstrip("#"), flags=re.UNICODE)[:30]
+        if not tag or (is_compilation and tag.casefold() == "shorts") or tag.casefold() in seen:
+            continue
+        seen.add(tag.casefold())
+        ordered_tags.append(tag)
+
+    sections = [
+        "📌 TENTANG VIDEO INI\n" + clean_summary,
+        "✨ YANG AKAN KAMU DAPAT\n" + benefit_lines,
+        "💬 IKUT BERDISKUSI\n" + question,
+        (
+            f"🔥 DUKUNG @{handle.upper()}\n"
+            "👍 Like jika pembahasannya bermanfaat.\n"
+            "↗️ Bagikan kepada teman yang membutuhkan konteks ini.\n"
+            f"🔔 {subscribe_reason}"
+        ),
+        f"📱 CHANNEL\nYouTube · @{handle}",
+        "⚠️ CATATAN KONTEN\n" + note,
+    ]
+    if ordered_tags:
+        limit = 12 if is_compilation else 8
+        sections.append(" ".join(f"#{tag}" for tag in ordered_tags[:limit]))
+    return "\n\n".join(sections)[:5000]
+
+
 def default_youtube_description(job: ClipJob, clip: ClipFile) -> str:
     caption = sidecar_social_caption(clip)
-    short_caption = strip_hashtag_lines(caption)
-    if len(short_caption) > 650:
-        short_caption = short_caption[:650].rsplit(" ", 1)[0].rstrip() + "..."
-    if not short_caption:
-        title = clip_sidecar_title(clip) or clip.title or job.source_title or "Cuplikan pilihan"
-        short_caption = f"{title.strip()}."
-    parts = [short_caption]
     tags = default_youtube_tags(job, clip)
-    if tags:
-        parts.append(" ".join(f"#{tag.replace(' ', '')}" for tag in tags[:3]))
-    description = append_youtube_chapters("\n\n".join(parts), clip)
+    description = complete_youtube_description(job, clip, caption, tags)
+    description = append_youtube_chapters(description, clip)
     description = append_youtube_source_attribution(description, job)
     return append_fendy_auditor_attribution(description, clip)
 
@@ -2909,6 +3125,8 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
         f"{long_form_packaging_rule}"
         f"{shorts_cover_rule}"
         "- Description baru 2-3 kalimat informatif, sekitar 180-450 karakter; bangun rasa penasaran tanpa menyesatkan.\n"
+        "- Description hanya berisi ringkasan inti. Jangan tambahkan heading, CTA Like/Share/Subscribe, "
+        "handle channel, catatan konten, chapter, atribusi, atau baris hashtag; aplikasi menatanya otomatis.\n"
         "- Description boleh memakai maksimal 2 emoji yang benar-benar relevan.\n"
         "- Bahasa Indonesia.\n"
         "- Jangan tulis URL, nama channel, uploader, TV, sponsor, kredit, atau label 'Sumber'.\n"
@@ -3248,6 +3466,7 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         or request.description
         or default_youtube_description(job, clip)
     )
+    description = complete_youtube_description(job, clip, description, tags)
     description = append_youtube_chapters(description, clip)
     description = append_youtube_source_attribution(description, job)
     description = append_fendy_auditor_attribution(description, clip)
@@ -4090,13 +4309,62 @@ def delete_completed_youtube_upload_clip(
     with jobs_lock:
         job = jobs.get(upload.source_job_id)
         if job is None:
+            if any(
+                clip.url == upload.clip_url
+                for known_job in jobs.values()
+                for clip in known_job.clips
+            ):
+                raise RuntimeError(
+                    "Workspace upload orphan masih direferensikan job lain; cleanup ditunda"
+                )
+            orphan_clip = ClipFile(
+                name=upload.clip_name,
+                url=upload.clip_url,
+                size_bytes=0,
+                thumbnail_url=upload.thumbnail_url,
+            )
+            protected_dirs = {
+                work_dir
+                for known_job in jobs.values()
+                for clip in known_job.clips
+                if (work_dir := clip_output_work_dir(clip)) is not None
+            }
+            removed = cleanup_clip_files(orphan_clip)
+            removed += cleanup_output_work_dirs(
+                [orphan_clip],
+                protected_dirs,
+                strict=True,
+            )
             set_youtube_cleanup_step(upload_id, None, list(YOUTUBE_CLEANUP_STEPS))
-            return 0, True
+            return removed, True
 
         target_clip = next((clip for clip in job.clips if clip.url == upload.clip_url), None)
         if target_clip is None:
+            orphan_clip = ClipFile(
+                name=upload.clip_name,
+                url=upload.clip_url,
+                size_bytes=0,
+                thumbnail_url=upload.thumbnail_url,
+            )
+            protected_dirs = {
+                work_dir
+                for clip in job.clips
+                if (work_dir := clip_output_work_dir(clip)) is not None
+            }
+            removed = cleanup_clip_files(orphan_clip)
+            removed += cleanup_output_work_dirs(
+                [orphan_clip],
+                protected_dirs,
+                strict=True,
+            )
+            removed_job = not job.clips
+            if removed_job:
+                jobs.pop(job.id, None)
+                job_secrets.pop(job.id, None)
+                cancelled_job_ids.discard(job.id)
+                save_jobs_unlocked()
             set_youtube_cleanup_step(upload_id, None, list(YOUTUBE_CLEANUP_STEPS))
-            return 0, not job.clips
+            return removed, removed_job
 
         active_uploads = active_youtube_uploads_for_job(job.id, {target_clip.url})
         if active_uploads:
@@ -4149,7 +4417,11 @@ def delete_completed_youtube_upload_clip(
                     for clip in other_job.clips
                     if (work_dir := clip_output_work_dir(clip)) is not None
                 }
-                workspace_removed = cleanup_output_work_dirs(job.clips, protected_dirs)
+                workspace_removed = cleanup_output_work_dirs(
+                    job.clips,
+                    protected_dirs,
+                    strict=True,
+                )
                 removed += workspace_removed
             if "workspace" not in completed_steps:
                 completed_steps.append("workspace")
@@ -4825,6 +5097,12 @@ def resume_queued_youtube_uploads() -> None:
         start_youtube_worker_if_needed()
     for upload_id in pending_cleanup_ids:
         schedule_completed_upload_cleanup(upload_id)
+    removed_orphans = cleanup_orphan_output_roots()
+    if removed_orphans:
+        print(
+            f"Startup cleanup outputs: {removed_orphans} folder orphan dihapus.",
+            flush=True,
+        )
 
 
 def discover_clips(started_at: float, output_root: Path | None = None) -> list[ClipFile]:
