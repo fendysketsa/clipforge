@@ -31,6 +31,7 @@ from api import (
     normalized_generated_metadata,
     youtube_monetization_preflight_issue,
     youtube_source_attribution,
+    youtube_growth_targets,
     youtube_metadata_provider_configs,
     youtube_uploads_with_queue_positions,
     verified_duplicate_for_upload,
@@ -289,6 +290,70 @@ def test_best_youtube_clip_urls_falls_back_to_clip_order_without_scores():
         "/outputs/demo/clips/clip_02.mp4",
         "/outputs/demo/clips/clip_03.mp4",
     ]
+
+
+def test_youtube_growth_targets_ignore_stale_short_sidecar_target():
+    clip = make_clip(1).model_copy(
+        update={"growth_target_views": 5000, "growth_target_subscribers": 5}
+    )
+    job = ClipJob(
+        id="job-short-target",
+        status="completed",
+        request=ClipJobRequest(source_file="owned.mp4", clip_mode="short"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+
+    assert youtube_growth_targets(job, clip) == (20000, 20)
+
+
+def test_youtube_growth_targets_keep_long_form_baseline_separate():
+    clip = ClipFile(
+        name="resume_cerita_5menit_inti.mp4",
+        url="/outputs/demo/clips/resume_cerita_5menit_inti.mp4",
+        size_bytes=1,
+        growth_target_views=20000,
+        growth_target_subscribers=99,
+    )
+    job = ClipJob(
+        id="job-long-target",
+        status="completed",
+        request=ClipJobRequest(source_file="owned.mp4", clip_mode="highlight_5m"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+
+    assert youtube_growth_targets(job, clip) == (5000, 20)
+
+
+def test_saved_upload_model_migrates_stale_targets_by_format():
+    short = YouTubeUploadJob(
+        id="saved-short",
+        source_job_id="job-short",
+        clip_url="/outputs/demo/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="completed",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        title="Short",
+        growth_target_views=5000,
+        growth_target_subscribers=5,
+    )
+    long_form = short.model_copy(
+        update={
+            "id": "saved-long",
+            "clip_name": "resume_cerita_5menit_inti.mp4",
+            "growth_target_views": 20000,
+            "growth_target_subscribers": 99,
+        }
+    )
+    # model_copy intentionally skips validation, mirroring a raw persisted payload below.
+    long_form = YouTubeUploadJob(**long_form.model_dump())
+
+    assert (short.growth_target_views, short.growth_target_subscribers) == (20000, 20)
+    assert (long_form.growth_target_views, long_form.growth_target_subscribers) == (5000, 20)
 
 
 def test_queue_positions_follow_oldest_queued_first():

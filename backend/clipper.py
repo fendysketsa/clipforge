@@ -4425,7 +4425,7 @@ def five_k_experiment_readiness(
     is_short = output_format == "vertical_short"
     target_views = 20000 if is_short else 5000
     return {
-        "version": 8,
+        "version": 9,
         "experiment_name": (
             "sustainable_20k_20_subscriber_growth"
             if is_short
@@ -4545,6 +4545,48 @@ def five_k_experiment_readiness(
             else [100, 500, 1000, 5000]
         ),
         "review_windows_hours": [6, 48, 168, 672],
+        "youtube_studio_review_flow": (
+            [
+                {
+                    "after_hours": 6,
+                    "focus": ["shown_in_feed", "views", "how_many_chose_to_view"],
+                    "decision": "diagnose_first_frame_or_hook_only_if_swipe_signal_is_weak",
+                },
+                {
+                    "after_hours": 48,
+                    "focus": [
+                        "engaged_views",
+                        "audience_retention",
+                        "average_view_duration",
+                        "average_percentage_viewed",
+                    ],
+                    "decision": "trim_drop_off_and_move_payoff_earlier_if_below_same_format_baseline",
+                },
+                {
+                    "after_hours": 168,
+                    "focus": ["shares", "comments", "subscribers_gained"],
+                    "decision": "repeat_the_topic_as_a_series_only_when_viewer_response_supports_it",
+                },
+                {
+                    "after_hours": 672,
+                    "focus": ["returning_viewers", "subscribers_gained"],
+                    "decision": "compare_with_last_10_same_format_and_series_before_changing_strategy",
+                },
+            ]
+            if is_short
+            else [
+                {
+                    "after_hours": 48,
+                    "focus": ["impressions_ctr", "first_30_second_retention"],
+                    "decision": "test_one_title_or_thumbnail_variable_when_packaging_is_weak",
+                },
+                {
+                    "after_hours": 168,
+                    "focus": ["average_view_duration", "subscribers_gained"],
+                    "decision": "compare_with_same_series_before_repeating_the_format",
+                },
+            ]
+        ),
         "iteration_guardrails": {
             "change_one_variable_per_test": True,
             "compare_same_format_and_series": True,

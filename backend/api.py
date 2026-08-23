@@ -585,13 +585,16 @@ class YouTubeUploadJob(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _legacy_growth_target(cls, value: Any) -> Any:
-        if not isinstance(value, dict) or "growth_target_views" in value:
+    def _canonical_growth_target(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
             return value
         data = dict(value)
         clip_name = str(data.get("clip_name") or "").casefold()
-        if clip_name.startswith(("highlight_5menit_", "resume_cerita_", "long_animate_")):
-            data["growth_target_views"] = 5000
+        is_long_form = clip_name.startswith(
+            ("highlight_5menit_", "resume_cerita_", "long_animate_")
+        )
+        data["growth_target_views"] = 5000 if is_long_form else 20000
+        data["growth_target_subscribers"] = 20
         return data
 
 
@@ -1517,6 +1520,11 @@ def is_compilation_clip(job: "ClipJob", clip: ClipFile) -> bool:
             ("highlight_5menit_", "resume_cerita_", "long_animate_")
         )
     )
+
+
+def youtube_growth_targets(job: "ClipJob", clip: ClipFile) -> tuple[int, int]:
+    """Return canonical per-upload targets without trusting stale sidecar values."""
+    return (5000 if is_compilation_clip(job, clip) else 20000, 20)
 
 
 def enrich_clips_with_candidate_titles(
@@ -3507,6 +3515,7 @@ def youtube_uploads_with_queue_positions(
 
 def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> YouTubeUploadJob:
     job, clip, index = find_job_clip(job_id, request.clip_url)
+    growth_target_views, growth_target_subscribers = youtube_growth_targets(job, clip)
     clip_path = output_path_from_url(clip.url)
     if clip_path is None or not clip_path.is_file():
         raise HTTPException(status_code=404, detail="File clip tidak ditemukan di outputs")
@@ -3520,6 +3529,17 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
     if existing is not None:
         exact_clip = existing.source_job_id == job_id and existing.clip_url == clip.url
         if exact_clip or existing.status in {"queued", "running"}:
+            if (
+                existing.growth_target_views != growth_target_views
+                or existing.growth_target_subscribers != growth_target_subscribers
+            ):
+                set_youtube_upload(
+                    existing.id,
+                    growth_target_views=growth_target_views,
+                    growth_target_subscribers=growth_target_subscribers,
+                )
+                with youtube_uploads_lock:
+                    return youtube_uploads.get(existing.id, existing)
             return existing
 
         completed_at = now_iso()
@@ -3545,6 +3565,8 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
                 "clip_cleanup_current_step": None,
                 "clip_cleanup_completed_steps": [],
                 "clip_cleanup_step_details": {},
+                "growth_target_views": growth_target_views,
+                "growth_target_subscribers": growth_target_subscribers,
                 "logs": [
                     "Upload dilewati: fingerprint file identik sudah terupload dan URL YouTube terverifikasi.",
                     f"File duplikat lokal akan dibersihkan otomatis setelah {max(1, env_int('YOUTUBE_DELETE_UPLOADED_CLIP_DELAY_SECONDS', 30))} detik.",
@@ -3652,11 +3674,8 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         dry_run=request.dry_run,
         clip_sha256=clip_fingerprint,
         growth_series=clip.growth_series or "",
-        growth_target_views=(
-            clip.growth_target_views
-            or (5000 if is_compilation_clip(job, clip) else 20000)
-        ),
-        growth_target_subscribers=clip.growth_target_subscribers or 20,
+        growth_target_views=growth_target_views,
+        growth_target_subscribers=growth_target_subscribers,
         logs=(
             (
                 [f"Thumbnail otomatis 16:9 siap dipasang: {thumbnail_path.name}"]

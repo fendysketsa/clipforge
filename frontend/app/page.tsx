@@ -26,7 +26,6 @@ import {
   getYouTubeUploads,
   importYouTubeCdpCookies,
   probeUrlDuration,
-  refreshYouTubeUploadPerformance,
   setupYouTubeOneTimeLogin,
   searchViralContentSources,
   startYouTubeLogin,
@@ -1068,23 +1067,6 @@ export default function HomePage() {
     }
   }, [job, loadYouTubeUploads, youtubeConfig?.auto_upload_count]);
 
-  const handleRefreshYouTubePerformance = useCallback(async (uploadId: string) => {
-    try {
-      const upload = await toast.promise(refreshYouTubeUploadPerformance(uploadId), {
-        loading: "Mengambil metrik performa YouTube...",
-        success: "Performa dan diagnosis diperbarui.",
-        error: (refreshError) => refreshError instanceof Error
-          ? refreshError.message
-          : "Gagal mengambil metrik YouTube",
-      });
-      setYoutubeUploads((current) => current.map((item) => (
-        item.id === upload.id ? upload : item
-      )));
-    } catch {
-      // toast.promise already displayed the actionable status.
-    }
-  }, []);
-
   const handleStartYouTubeLogin = useCallback(async () => {
     if (usesChromeDebugging()) {
       try {
@@ -1450,7 +1432,6 @@ export default function HomePage() {
         onStartYouTubeLogin={handleStartYouTubeLogin}
         onUploadAllToYouTube={handleUploadAllToYouTube}
         onUploadClipToYouTube={handleUploadClipToYouTube}
-        onRefreshYouTubePerformance={handleRefreshYouTubePerformance}
         onToggleAllClipSelection={handleToggleAllClipSelection}
         onToggleClipSelection={handleToggleClipSelection}
         onToggleClipCorrect={handleToggleClipCorrect}

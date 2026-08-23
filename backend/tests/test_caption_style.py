@@ -1350,6 +1350,15 @@ def test_five_k_readiness_is_a_stability_experiment_not_a_view_guarantee():
     assert "engaged_views" in readiness["measure_after_publish"]
     assert "subscribers_gained" in readiness["measure_after_publish"]
     assert readiness["review_checkpoints"] == [1000, 5000, 10000, 20000]
+    assert [step["after_hours"] for step in readiness["youtube_studio_review_flow"]] == [
+        6,
+        48,
+        168,
+        672,
+    ]
+    assert "how_many_chose_to_view" in readiness["youtube_studio_review_flow"][0]["focus"]
+    assert "engaged_views" in readiness["youtube_studio_review_flow"][1]["focus"]
+    assert "subscribers_gained" in readiness["youtube_studio_review_flow"][2]["focus"]
     assert readiness["stability_definition"]["success_rule"] == "at_least_3_reach_20000_views_and_20_subscribers"
     assert readiness["iteration_guardrails"]["delete_and_reupload_to_reset_distribution"] is False
     assert two_k_experiment_readiness(clip, "vertical_short") == readiness
