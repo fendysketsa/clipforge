@@ -431,7 +431,7 @@ export function ResultsSection({
             const cleanupTooltipId = latestUpload ? `cleanup-tooltip-${latestUpload.id}` : undefined;
             const rawUploadError = latestUpload?.error || latestUpload?.logs?.at(-1) || "";
             const thumbnailWasSkipped = Boolean(
-              latestUpload?.logs?.some((line) => line.startsWith("THUMBNAIL_SKIPPED:")),
+              latestUpload?.logs?.some((line) => line.startsWith("THUMBNAIL_SKIPPED")),
             );
             const uploadError = latestUpload?.status === "failed"
               ? friendlyYouTubeUploadError(rawUploadError, usesChromeDebugging)

@@ -5,6 +5,7 @@ import pytest
 import youtube_uploader
 from youtube_uploader import (
     FENDY_CLIPPER_UPLOAD_PAGE_NAME,
+    ThumbnailDailyLimitUploadError,
     UploadError,
     click_final_upload_action,
     close_duplicate_target_studio_tabs,
@@ -23,6 +24,7 @@ from youtube_uploader import (
     set_upload_text_field,
     set_thumbnail,
     should_upload_custom_thumbnail,
+    custom_thumbnail_daily_limit_detected,
     validate_thumbnail_file,
     wait_for_copyright_checks,
     wait_for_final_upload_confirmation,
@@ -237,6 +239,12 @@ def test_next_step_wait_defaults_to_fifteen_minutes(monkeypatch):
     monkeypatch.delenv("YOUTUBE_NEXT_STEP_TIMEOUT_SECONDS", raising=False)
 
     assert next_upload_step_timeout_ms(5_400_000) == 900_000
+
+
+def test_long_form_next_step_wait_allows_slow_processing(monkeypatch):
+    monkeypatch.delenv("YOUTUBE_LONG_FORM_NEXT_STEP_TIMEOUT_SECONDS", raising=False)
+
+    assert next_upload_step_timeout_ms(5_400_000, "long-form") == 3_600_000
 
 
 def test_metadata_description_uses_atomic_insert_and_normalized_verification(monkeypatch):
@@ -543,6 +551,37 @@ def test_thumbnail_file_is_submitted_once_while_studio_finishes_transfer(monkeyp
 
     assert page.set_input_calls == [str(thumbnail)]
     assert any(message.startswith("THUMBNAIL_ATTACHED:") for message in logs)
+
+
+def test_custom_thumbnail_daily_limit_is_detected_in_indonesian():
+    page = TextPage(
+        "Batas thumbnail kustom harian tercapai. "
+        "Diperlukan waktu hingga 24 jam untuk dapat membuat thumbnail kustom baru."
+    )
+
+    assert custom_thumbnail_daily_limit_detected(page) is True
+
+
+def test_thumbnail_daily_limit_stops_waiting_without_resubmitting(monkeypatch, tmp_path):
+    thumbnail = tmp_path / "resume_cerita_thumb.jpg"
+    thumbnail.write_bytes(b"thumbnail")
+    page = ThumbnailUploadPage()
+    monkeypatch.setattr(
+        youtube_uploader,
+        "validate_thumbnail_file",
+        lambda _path, _content_type: (1280, 720),
+    )
+    monkeypatch.setattr(
+        youtube_uploader,
+        "custom_thumbnail_daily_limit_detected",
+        lambda current_page: current_page.upload_started,
+    )
+    monkeypatch.setattr(youtube_uploader, "dismiss_custom_thumbnail_daily_limit", lambda _page: None)
+
+    with pytest.raises(ThumbnailDailyLimitUploadError, match="Batas harian thumbnail"):
+        set_thumbnail(page, thumbnail, timeout_ms=5000)
+
+    assert page.set_input_calls == [str(thumbnail)]
 
 
 def test_optional_shorts_thumbnail_skips_when_studio_has_no_upload_control(monkeypatch, tmp_path):

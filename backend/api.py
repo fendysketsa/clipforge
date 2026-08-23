@@ -1527,6 +1527,87 @@ def youtube_growth_targets(job: "ClipJob", clip: ClipFile) -> tuple[int, int]:
     return (5000 if is_compilation_clip(job, clip) else 20000, 20)
 
 
+def classify_long_form_playlist(*values: str) -> str:
+    """Map long-form story metadata to one existing Studio playlist."""
+    searchable = " ".join(value for value in values if isinstance(value, str)).casefold()
+    searchable = re.sub(r"[^a-z0-9\s-]", " ", searchable)
+    searchable = re.sub(r"\s+", " ", searchable).strip()
+
+    # Explicit genre declarations beat incidental words inside the story.
+    if any(marker in searchable for marker in ("cerita rakyat", "folklor", "folklore")):
+        return "Cerita Rakyat"
+    if any(marker in searchable for marker in ("legenda", "legend of", "asal usul")):
+        return "Legenda"
+
+    horror_markers = (
+        "horor",
+        "horror",
+        "hantu",
+        "gaib",
+        "mistis",
+        "angker",
+        "kuntilanak",
+        "pocong",
+        "genderuwo",
+        "setan",
+        "iblis",
+        "penampakan",
+        "kerasukan",
+        "bau anir",
+        "darah",
+        "misteri",
+        "malam mencekam",
+    )
+    if any(marker in searchable for marker in horror_markers):
+        return "Horor"
+
+    legend_markers = (
+        "kerajaan",
+        "raja",
+        "ratu",
+        "putri",
+        "pangeran",
+        "kesultanan",
+        "tokoh sakti",
+        "prasasti",
+    )
+    if any(marker in searchable for marker in legend_markers):
+        return "Legenda"
+
+    return "Cerita Rakyat"
+
+
+def automatic_long_form_playlist(
+    job: "ClipJob",
+    clip: ClipFile,
+    title: str,
+    description: str,
+) -> str:
+    sidecar = clip_sidecar_payload(clip)
+    sidecar_values = [
+        str(sidecar.get(key) or "")
+        for key in (
+            "title",
+            "text",
+            "hook",
+            "core_message",
+            "thumbnail_headline",
+            "thumbnail_support",
+        )
+    ]
+    return classify_long_form_playlist(
+        title,
+        description,
+        clip.title or "",
+        clip.social_caption or "",
+        clip.hook or "",
+        clip.core_message or "",
+        job.source_title or "",
+        job.request.script_text[:30000],
+        *sidecar_values,
+    )
+
+
 def enrich_clips_with_candidate_titles(
     clips: list[ClipFile],
     candidates: list[ClipCandidate],
@@ -3647,6 +3728,11 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
     description = append_youtube_chapters(description, clip)
     description = append_youtube_source_attribution(description, job)
     altered_content = clip_requires_altered_content_disclosure(clip)
+    playlist = (
+        automatic_long_form_playlist(job, clip, title, description)
+        if is_compilation_clip(job, clip)
+        else request.playlist
+    )
     upload_id = uuid.uuid4().hex
     now = now_iso()
     return YouTubeUploadJob(
@@ -3669,7 +3755,7 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         made_for_kids=request.made_for_kids,
         altered_content=altered_content,
         tags=tags,
-        playlist=request.playlist,
+        playlist=playlist,
         target_channel=request.target_channel,
         dry_run=request.dry_run,
         clip_sha256=clip_fingerprint,
@@ -3685,6 +3771,11 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
             + [
                 "Preflight monetisasi lolos untuk upload Private; keputusan akhir tetap mengikuti review video dan channel oleh YouTube."
             ]
+            + (
+                [f"Playlist long-form dipilih otomatis dari isi cerita: {playlist}."]
+                if is_compilation_clip(job, clip)
+                else []
+            )
             + (
                 ["Penggantian backdrop terdeteksi; disclosure altered content akan dipilih saat upload."]
                 if altered_content
@@ -5220,6 +5311,7 @@ def run_youtube_upload(upload_id: str) -> None:
         max_attempts = max(1, env_int("YOUTUBE_CDP_UPLOAD_MAX_ATTEMPTS", default_max_attempts))
         for attempt in range(1, max_attempts + 1):
             thumbnail_attached_for_attempt = False
+            thumbnail_requirement_waived_for_attempt = False
             playlist_confirmed_for_attempt = False
             set_youtube_upload(upload_id, thumbnail_attached=False, playlist_confirmed=False)
             if attempt > 1:
@@ -5250,9 +5342,15 @@ def run_youtube_upload(upload_id: str) -> None:
                 youtube_upload_processes[upload_id] = process
 
             def record_upload_log(cleaned: str) -> None:
-                nonlocal playlist_confirmed_for_attempt, thumbnail_attached_for_attempt
+                nonlocal playlist_confirmed_for_attempt
+                nonlocal thumbnail_attached_for_attempt
+                nonlocal thumbnail_requirement_waived_for_attempt
                 if cleaned.startswith("THUMBNAIL_ATTACHED:"):
                     thumbnail_attached_for_attempt = True
+                    thumbnail_requirement_waived_for_attempt = False
+                elif cleaned.startswith("THUMBNAIL_SKIPPED_DAILY_LIMIT:"):
+                    thumbnail_attached_for_attempt = False
+                    thumbnail_requirement_waived_for_attempt = True
                 elif cleaned.startswith("THUMBNAIL_SKIPPED:"):
                     # A final verification can discover that Studio discarded
                     # an earlier thumbnail selection during a form re-render.
@@ -5288,7 +5386,12 @@ def run_youtube_upload(upload_id: str) -> None:
                 )
             )
             thumbnail_confirmation_error = ""
-            if code == 0 and requires_thumbnail and not thumbnail_attached_for_attempt:
+            if (
+                code == 0
+                and requires_thumbnail
+                and not thumbnail_attached_for_attempt
+                and not thumbnail_requirement_waived_for_attempt
+            ):
                 code = 1
                 thumbnail_confirmation_error = (
                     "Browser belum mengonfirmasi thumbnail otomatis terpasang; upload belum diselesaikan."
@@ -5306,7 +5409,11 @@ def run_youtube_upload(upload_id: str) -> None:
                 video_url
                 and not upload.dry_run
                 and code != 0
-                and (not requires_thumbnail or thumbnail_attached_for_attempt)
+                and (
+                    not requires_thumbnail
+                    or thumbnail_attached_for_attempt
+                    or thumbnail_requirement_waived_for_attempt
+                )
                 and (not upload.playlist or playlist_confirmed_for_attempt)
             ):
                 logs.append(

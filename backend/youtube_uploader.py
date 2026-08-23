@@ -38,6 +38,10 @@ class CopyrightClaimUploadError(UploadError):
     """A claim blocked publication, but the uploaded file can still be saved Private."""
 
 
+class ThumbnailDailyLimitUploadError(UploadError):
+    """Studio rejected a custom thumbnail because the channel hit its daily limit."""
+
+
 def env_bool(name: str, default: bool = False) -> bool:
     value = os.environ.get(name)
     if value is None:
@@ -2177,7 +2181,10 @@ def wait_for_upload_workflow_step(page, expected_steps: Iterable[str], timeout_m
     while time.monotonic() < deadline:
         dismiss_reload_prompt(page, timeout_ms=300)
         last_step = get_upload_workflow_step(page)
-        if last_step in expected:
+        if last_step in expected or any(
+            upload_workflow_step_is_at_or_after(last_step, target)
+            for target in expected
+        ):
             log(f"Tab upload aktif: {last_step}.")
             return last_step
         time.sleep(0.4)
@@ -2186,6 +2193,20 @@ def wait_for_upload_workflow_step(page, expected_steps: Iterable[str], timeout_m
         "Tab upload belum berpindah sesuai alur. "
         f"Target: {', '.join(sorted(expected))}; terakhir: {last_step or 'tidak terbaca'}."
     )
+
+
+UPLOAD_WORKFLOW_STEP_ORDER = {
+    "DETAILS": 1,
+    "VIDEO_ELEMENTS": 2,
+    "CHECKS": 3,
+    "REVIEW": 4,
+}
+
+
+def upload_workflow_step_is_at_or_after(current: str, expected: str) -> bool:
+    current_order = UPLOAD_WORKFLOW_STEP_ORDER.get((current or "").upper(), 0)
+    expected_order = UPLOAD_WORKFLOW_STEP_ORDER.get((expected or "").upper(), 0)
+    return bool(current_order and expected_order and current_order >= expected_order)
 
 
 def wait_for_visibility_step(page, timeout_ms: int = 20000) -> None:
@@ -2622,6 +2643,90 @@ def validate_thumbnail_file(
     return width, height
 
 
+def custom_thumbnail_daily_limit_detected(page) -> bool:
+    markers = (
+        "batasthumbnailkustomhariantercapai",
+        "batasharianthumbnailkustomtercapai",
+        "dailycustomthumbnaillimitreached",
+        "customthumbnaillimitreached",
+        "waitupto24hourstocreatenewcustomthumbnails",
+        "diperlukanwaktuhingga24jamuntukdapatmembuatthumbnailkustombaru",
+    )
+    script = r"""
+    ({ markers }) => {
+      const roots = [];
+      const seen = new Set();
+      const addRoot = (root) => {
+        if (root && !seen.has(root)) {
+          seen.add(root);
+          roots.push(root);
+        }
+      };
+      addRoot(document);
+      for (let index = 0; index < roots.length; index += 1) {
+        const root = roots[index];
+        const elements = root.querySelectorAll ? Array.from(root.querySelectorAll('*')) : [];
+        for (const element of elements) {
+          if (element.shadowRoot) addRoot(element.shadowRoot);
+        }
+      }
+      const isVisible = (element) => {
+        if (!element || !element.getBoundingClientRect) return false;
+        const rect = element.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        const style = window.getComputedStyle(element);
+        return Boolean(
+          style && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0'
+        );
+      };
+      const normalize = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      for (const root of roots) {
+        const dialogs = root.querySelectorAll
+          ? Array.from(root.querySelectorAll('tp-yt-paper-dialog,[role="dialog"],ytcp-dialog'))
+          : [];
+        for (const dialog of dialogs) {
+          if (!isVisible(dialog)) continue;
+          const text = normalize(dialog.innerText || dialog.textContent || '');
+          if (markers.some((marker) => text.includes(marker))) return true;
+        }
+      }
+      return false;
+    }
+    """
+    try:
+        return bool(page.evaluate(script, {"markers": list(markers)}))
+    except Exception:
+        page_text = normalized_page_text(page)
+        return any(marker in page_text for marker in markers)
+
+
+def dismiss_custom_thumbnail_daily_limit(page) -> None:
+    clicked = click_text(
+        page,
+        (r"^tutup$", r"^close$", r"^oke$", r"^ok$"),
+        timeout_ms=2500,
+        optional=True,
+    )
+    if not clicked:
+        try:
+            page.keyboard.press("Escape")
+        except Exception:
+            pass
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        if not custom_thumbnail_daily_limit_detected(page):
+            log(
+                "Dialog batas harian thumbnail kustom ditutup; "
+                "upload dilanjutkan tanpa thumbnail kustom."
+            )
+            return
+        time.sleep(0.2)
+    save_debug_artifacts(page, "thumbnail-daily-limit-dialog-stuck")
+    raise UploadError(
+        "Dialog batas harian thumbnail kustom tidak berhasil ditutup; upload dihentikan agar alur tidak macet."
+    )
+
+
 def thumbnail_upload_state(page) -> dict[str, object]:
     """Read the custom-thumbnail transfer state without touching the file input."""
     script = r"""
@@ -2726,6 +2831,11 @@ def set_thumbnail(
     last_error: Exception | None = None
     while time.monotonic() < deadline:
         if upload_started:
+            if custom_thumbnail_daily_limit_detected(page):
+                dismiss_custom_thumbnail_daily_limit(page)
+                raise ThumbnailDailyLimitUploadError(
+                    "Batas harian thumbnail kustom YouTube tercapai; gunakan thumbnail otomatis Studio."
+                )
             state = thumbnail_upload_state(page)
             state_error = str(state["error"])
             if state_error:
@@ -2797,6 +2907,11 @@ def set_thumbnail(
 
     page_text = normalized_page_text(page)
     if upload_started:
+        if custom_thumbnail_daily_limit_detected(page):
+            dismiss_custom_thumbnail_daily_limit(page)
+            raise ThumbnailDailyLimitUploadError(
+                "Batas harian thumbnail kustom YouTube tercapai; gunakan thumbnail otomatis Studio."
+            )
         save_debug_artifacts(page, "thumbnail-upload-timeout")
         raise UploadError(
             "Transfer thumbnail sudah dimulai, tetapi YouTube Studio belum mengonfirmasi selesai; "
@@ -3302,6 +3417,13 @@ def click_playlist_checkbox(page, playlist_name: str, timeout_ms: int = 8000) ->
                 row = playlist_row_locator(page, playlist_name)
                 if row is not None and wait_until_selected(row, seconds=0.8):
                     return True
+                if playlist_is_selected(
+                    page,
+                    playlist_name,
+                    timeout_ms=min(800, max(100, timeout_ms)),
+                ):
+                    log(f"Checkbox playlist tercentang dan terverifikasi: {playlist_name}.")
+                    return True
         except Exception:
             pass
         time.sleep(0.25)
@@ -3711,10 +3833,45 @@ def click_next_upload_step(page, timeout_ms: int = 20000, expected_step=None) ->
     next_progress_log_at = time.monotonic() + 30
     while time.monotonic() < deadline:
         dismiss_reload_prompt(page, timeout_ms=300)
-        if expected_step and get_upload_workflow_step(page) == expected_step:
-            log(f"Tab upload sudah aktif: {expected_step}.")
+        current_step = get_upload_workflow_step(page)
+        if expected_step and upload_workflow_step_is_at_or_after(current_step, expected_step):
+            log(f"Tab upload sudah aktif: {current_step}.")
             return
         try:
+            # Playwright's locator click emits a trusted pointer action. This is
+            # more reliable than HTMLElement.click() on the long-form wizard,
+            # where Studio can ignore synthetic clicks while processing video.
+            for selector in (
+                "ytcp-uploads-dialog #next-button button",
+                "ytcp-uploads-dialog ytcp-button#next-button button",
+                "ytcp-uploads-dialog #next-button",
+            ):
+                try:
+                    locator = page.locator(selector).first
+                    if not locator.count() or not locator.is_visible(timeout=300):
+                        continue
+                    if locator.get_attribute("aria-disabled") == "true" or locator.is_disabled(timeout=300):
+                        last_reason = "next-disabled"
+                        continue
+                    locator.scroll_into_view_if_needed(timeout=1500)
+                    locator.click(timeout=3000)
+                    if expected_step:
+                        try:
+                            wait_for_upload_workflow_step(
+                                page,
+                                [expected_step],
+                                timeout_ms=min(timeout_ms, 15000),
+                            )
+                            return
+                        except UploadError as exc:
+                            last_reason = str(exc)
+                            time.sleep(0.8)
+                            break
+                    time.sleep(0.8)
+                    return
+                except Exception:
+                    continue
+
             direct = page.evaluate(direct_script)
             if isinstance(direct, dict) and direct.get("clicked"):
                 if expected_step:
@@ -3760,11 +3917,18 @@ def click_next_upload_step(page, timeout_ms: int = 20000, expected_step=None) ->
     raise UploadError(f"Tombol Berikutnya/Next modal upload tidak ditemukan atau masih disabled.{suffix}")
 
 
-def next_upload_step_timeout_ms(total_timeout_ms: int) -> int:
+def next_upload_step_timeout_ms(total_timeout_ms: int, content_type: str = "auto") -> int:
+    is_long_form = (content_type or "auto").strip().casefold() == "long-form"
+    setting_name = (
+        "YOUTUBE_LONG_FORM_NEXT_STEP_TIMEOUT_SECONDS"
+        if is_long_form
+        else "YOUTUBE_NEXT_STEP_TIMEOUT_SECONDS"
+    )
+    default_seconds = 3600 if is_long_form else 900
     try:
-        configured_seconds = int(os.environ.get("YOUTUBE_NEXT_STEP_TIMEOUT_SECONDS", "900"))
+        configured_seconds = int(os.environ.get(setting_name, str(default_seconds)))
     except ValueError:
-        configured_seconds = 900
+        configured_seconds = default_seconds
     return min(total_timeout_ms, max(60_000, configured_seconds * 1000))
 
 
@@ -5380,6 +5544,7 @@ def run_upload(args: argparse.Namespace) -> None:
                 reject_patterns=(r"(^|\n)(title|judul)(\n|$)",),
             )
 
+            thumbnail_daily_limit_waived = False
             if args.thumbnail:
                 thumbnail_path = Path(args.thumbnail).expanduser().resolve()
                 if should_upload_custom_thumbnail(video_path, args.thumbnail_content_type):
@@ -5398,6 +5563,12 @@ def run_upload(args: argparse.Namespace) -> None:
                                 thumbnail_path,
                                 content_type=args.thumbnail_content_type,
                                 required=thumbnail_required,
+                            )
+                        except ThumbnailDailyLimitUploadError as exc:
+                            thumbnail_daily_limit_waived = True
+                            log(
+                                "THUMBNAIL_SKIPPED_DAILY_LIMIT: "
+                                f"{exc} Video tetap dilanjutkan dengan thumbnail otomatis YouTube."
                             )
                         except UploadError as exc:
                             if thumbnail_required:
@@ -5451,7 +5622,7 @@ def run_upload(args: argparse.Namespace) -> None:
 
             if args.thumbnail and thumbnail_path.is_file() and should_upload_custom_thumbnail(
                 video_path, args.thumbnail_content_type
-            ):
+            ) and not thumbnail_daily_limit_waived:
                 thumbnail_state = thumbnail_upload_state(page)
                 if not thumbnail_state["selected"]:
                     log("Thumbnail belum melekat pada dialog aktif; mencoba pemasangan ulang satu kali.")
@@ -5462,6 +5633,12 @@ def run_upload(args: argparse.Namespace) -> None:
                             thumbnail_path,
                             content_type=args.thumbnail_content_type,
                             required=thumbnail_required,
+                        )
+                    except ThumbnailDailyLimitUploadError as exc:
+                        thumbnail_daily_limit_waived = True
+                        log(
+                            "THUMBNAIL_SKIPPED_DAILY_LIMIT: "
+                            f"{exc} Video tetap dilanjutkan dengan thumbnail otomatis YouTube."
                         )
                     except UploadError as exc:
                         if thumbnail_required:
@@ -5490,7 +5667,10 @@ def run_upload(args: argparse.Namespace) -> None:
                     )
             log("Judul dan deskripsi dialog aktif terverifikasi sebelum lanjut.")
 
-            next_step_timeout_ms = next_upload_step_timeout_ms(timeout_ms)
+            next_step_timeout_ms = next_upload_step_timeout_ms(
+                timeout_ms,
+                args.thumbnail_content_type,
+            )
             click_next_upload_step(page, timeout_ms=next_step_timeout_ms, expected_step="VIDEO_ELEMENTS")
             log("Masuk ke tab Elemen video.")
             subtitle_text = os.environ.get("YOUTUBE_MANUAL_SUBTITLE_TEXT", "FCN").strip() or "FCN"

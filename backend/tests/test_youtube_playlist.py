@@ -190,7 +190,9 @@ def test_playlist_selection_fails_closed_instead_of_silently_skipping(monkeypatc
     with pytest.raises(UploadError, match="playlist tidak terlewati"):
         select_playlist(object(), "Islam")
 
-    assert calls.count("open") == 2
+    # Each failed attempt opens once to select and once more to verify that
+    # Studio really persisted the checkbox before failing closed.
+    assert calls.count("open") == 4
     assert calls[-1] == "debug"
 
 

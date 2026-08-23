@@ -16,6 +16,7 @@ from api import (
     append_youtube_chapters,
     best_youtube_clip_urls,
     build_youtube_upload_command,
+    classify_long_form_playlist,
     clip_requires_altered_content_disclosure,
     complete_youtube_description,
     default_youtube_description,
@@ -290,6 +291,19 @@ def test_best_youtube_clip_urls_falls_back_to_clip_order_without_scores():
         "/outputs/demo/clips/clip_02.mp4",
         "/outputs/demo/clips/clip_03.mp4",
     ]
+
+
+@pytest.mark.parametrize(
+    ("story", "expected"),
+    [
+        ("Kisah horor sopir melihat penumpang gaib di Jalan Sumatera", "Horor"),
+        ("Legenda asal usul Putri dari kerajaan lama", "Legenda"),
+        ("Cerita rakyat tentang kancil yang diwariskan turun-temurun", "Cerita Rakyat"),
+        ("Perjalanan seorang anak menemukan kampung kelahirannya", "Cerita Rakyat"),
+    ],
+)
+def test_long_form_playlist_is_classified_without_user_ui(story, expected):
+    assert classify_long_form_playlist(story) == expected
 
 
 def test_youtube_growth_targets_ignore_stale_short_sidecar_target():
@@ -1205,6 +1219,65 @@ def test_upload_requires_playlist_confirmation_marker(
     assert result.playlist_confirmed is expected_confirmed
     if expected_status == "failed":
         assert "belum mengonfirmasi playlist" in (result.error or "")
+
+
+def test_long_upload_completes_when_youtube_daily_thumbnail_limit_is_reached(
+    monkeypatch,
+    tmp_path,
+):
+    import api
+
+    clip_path = tmp_path / "outputs" / "demo" / "resume_cerita_6menit_gaib.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"video")
+    upload = YouTubeUploadJob(
+        id="long-thumbnail-limit",
+        source_job_id="job-long-thumbnail-limit",
+        clip_url="/outputs/demo/resume_cerita_6menit_gaib.mp4",
+        clip_name=clip_path.name,
+        status="queued",
+        created_at="2026-08-23T00:00:00+00:00",
+        updated_at="2026-08-23T00:00:00+00:00",
+        title="Wanita Tidak Ada di Jalan Sumatera",
+        thumbnail_url="/outputs/demo/resume_cerita_6menit_gaib_thumb.jpg",
+        visibility="private",
+        playlist="Horor",
+    )
+
+    monkeypatch.setattr(api, "OUTPUTS_DIR", tmp_path / "outputs")
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", tmp_path / "youtube_uploads.json")
+    monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+    monkeypatch.setattr(api, "youtube_upload_prefers_cdp", lambda: False)
+    monkeypatch.setattr(api, "youtube_auth_state_exists", lambda: False)
+    monkeypatch.setattr(api, "youtube_chromium_profile_ready", lambda: False)
+    monkeypatch.setattr(
+        api,
+        "build_youtube_upload_command",
+        lambda *_args, **_kwargs: [sys.executable, "youtube_uploader.py", "upload", str(clip_path)],
+    )
+    monkeypatch.setattr(api.subprocess, "Popen", lambda *_args, **_kwargs: object())
+
+    def fake_monitor(_process, on_line, **_kwargs):
+        for line in (
+            "THUMBNAIL_SKIPPED_DAILY_LIMIT: batas harian tercapai",
+            "PLAYLIST_CONFIRMED: Horor",
+            "FINAL_VISIBILITY: private",
+            "VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345",
+        ):
+            on_line(line)
+        return 0, False
+
+    monkeypatch.setattr(api, "monitor_youtube_upload_process", fake_monitor)
+    monkeypatch.setattr(api, "cleanup_youtube_staging_file", lambda *_args: False)
+    monkeypatch.setattr(api, "schedule_completed_upload_cleanup", lambda _upload_id: None)
+
+    api.run_youtube_upload(upload.id)
+
+    result = api.youtube_uploads[upload.id]
+    assert result.status == "completed"
+    assert result.visibility == "private"
+    assert result.playlist_confirmed is True
+    assert result.thumbnail_attached is False
 
 
 def test_start_youtube_cdp_refresh_process_uses_configured_command(monkeypatch, tmp_path):
