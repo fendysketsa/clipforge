@@ -1221,7 +1221,7 @@ def test_upload_requires_playlist_confirmation_marker(
         assert "belum mengonfirmasi playlist" in (result.error or "")
 
 
-def test_long_upload_completes_when_youtube_daily_thumbnail_limit_is_reached(
+def test_long_upload_fails_when_youtube_daily_thumbnail_limit_is_reached(
     monkeypatch,
     tmp_path,
 ):
@@ -1274,10 +1274,10 @@ def test_long_upload_completes_when_youtube_daily_thumbnail_limit_is_reached(
     api.run_youtube_upload(upload.id)
 
     result = api.youtube_uploads[upload.id]
-    assert result.status == "completed"
-    assert result.visibility == "private"
+    assert result.status == "failed"
     assert result.playlist_confirmed is True
     assert result.thumbnail_attached is False
+    assert "thumbnail" in (result.error or "").casefold()
 
 
 def test_start_youtube_cdp_refresh_process_uses_configured_command(monkeypatch, tmp_path):
