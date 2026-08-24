@@ -2717,7 +2717,7 @@ def dismiss_custom_thumbnail_daily_limit(page) -> None:
         if not custom_thumbnail_daily_limit_detected(page):
             log(
                 "Dialog batas harian thumbnail kustom ditutup; "
-                "thumbnail tidak dilewati dan proses upload akan dihentikan."
+                "upload dapat dilanjutkan dengan thumbnail otomatis YouTube."
             )
             return
         time.sleep(0.2)
@@ -2835,7 +2835,7 @@ def set_thumbnail(
                 dismiss_custom_thumbnail_daily_limit(page)
                 raise ThumbnailDailyLimitUploadError(
                     "Batas harian thumbnail kustom YouTube tercapai; "
-                    "thumbnail wajib belum dapat dipasang."
+                    "YouTube meminta menunggu hingga 24 jam sebelum thumbnail kustom baru."
                 )
             state = thumbnail_upload_state(page)
             state_error = str(state["error"])
@@ -2912,7 +2912,7 @@ def set_thumbnail(
             dismiss_custom_thumbnail_daily_limit(page)
             raise ThumbnailDailyLimitUploadError(
                 "Batas harian thumbnail kustom YouTube tercapai; "
-                "thumbnail wajib belum dapat dipasang."
+                "YouTube meminta menunggu hingga 24 jam sebelum thumbnail kustom baru."
             )
         save_debug_artifacts(page, "thumbnail-upload-timeout")
         raise UploadError(
@@ -5546,6 +5546,7 @@ def run_upload(args: argparse.Namespace) -> None:
                 reject_patterns=(r"(^|\n)(title|judul)(\n|$)",),
             )
 
+            thumbnail_daily_limit_waived = False
             if args.thumbnail:
                 thumbnail_path = Path(args.thumbnail).expanduser().resolve()
                 if should_upload_custom_thumbnail(video_path, args.thumbnail_content_type):
@@ -5566,9 +5567,11 @@ def run_upload(args: argparse.Namespace) -> None:
                                 required=thumbnail_required,
                             )
                         except ThumbnailDailyLimitUploadError as exc:
-                            if thumbnail_required:
-                                raise
-                            log(f"THUMBNAIL_SKIPPED: thumbnail Short ditolak Studio ({exc}).")
+                            thumbnail_daily_limit_waived = True
+                            log(
+                                "THUMBNAIL_SKIPPED_DAILY_LIMIT: "
+                                f"{exc} Video tetap dilanjutkan dengan thumbnail otomatis YouTube."
+                            )
                         except UploadError as exc:
                             if thumbnail_required:
                                 raise
@@ -5621,7 +5624,7 @@ def run_upload(args: argparse.Namespace) -> None:
 
             if args.thumbnail and thumbnail_path.is_file() and should_upload_custom_thumbnail(
                 video_path, args.thumbnail_content_type
-            ):
+            ) and not thumbnail_daily_limit_waived:
                 thumbnail_state = thumbnail_upload_state(page)
                 if not thumbnail_state["selected"]:
                     log("Thumbnail belum melekat pada dialog aktif; mencoba pemasangan ulang satu kali.")
@@ -5634,9 +5637,11 @@ def run_upload(args: argparse.Namespace) -> None:
                             required=thumbnail_required,
                         )
                     except ThumbnailDailyLimitUploadError as exc:
-                        if thumbnail_required:
-                            raise
-                        log(f"THUMBNAIL_SKIPPED: thumbnail Short ditolak Studio ({exc}).")
+                        thumbnail_daily_limit_waived = True
+                        log(
+                            "THUMBNAIL_SKIPPED_DAILY_LIMIT: "
+                            f"{exc} Video tetap dilanjutkan dengan thumbnail otomatis YouTube."
+                        )
                     except UploadError as exc:
                         if thumbnail_required:
                             raise
@@ -5665,9 +5670,10 @@ def run_upload(args: argparse.Namespace) -> None:
             log("Judul dan deskripsi dialog aktif terverifikasi sebelum lanjut.")
 
             # Long-form must never leave Details until the custom thumbnail is
-            # visibly selected and its transfer has finished. This final gate
-            # runs after every metadata and playlist re-render in Studio.
-            if args.thumbnail_content_type == "long-form":
+            # visibly selected and its transfer has finished. The only safe
+            # exception is Studio's explicit daily-limit response: retrying the
+            # same file cannot succeed until YouTube restores the channel quota.
+            if args.thumbnail_content_type == "long-form" and not thumbnail_daily_limit_waived:
                 if not args.thumbnail:
                     raise UploadError(
                         "Upload long-form dihentikan karena file thumbnail wajib belum diberikan."
@@ -5689,6 +5695,11 @@ def run_upload(args: argparse.Namespace) -> None:
                         "proses dihentikan sebelum Elemen video."
                     )
                 log("THUMBNAIL_CONFIRMED_BEFORE_NEXT: thumbnail long-form terverifikasi di Detail.")
+            elif args.thumbnail_content_type == "long-form":
+                log(
+                    "THUMBNAIL_DAILY_LIMIT_FALLBACK_CONFIRMED: batas harian terverifikasi; "
+                    "lanjut tanpa mengulangi transfer thumbnail."
+                )
 
             next_step_timeout_ms = next_upload_step_timeout_ms(
                 timeout_ms,

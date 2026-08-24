@@ -5311,6 +5311,7 @@ def run_youtube_upload(upload_id: str) -> None:
         max_attempts = max(1, env_int("YOUTUBE_CDP_UPLOAD_MAX_ATTEMPTS", default_max_attempts))
         for attempt in range(1, max_attempts + 1):
             thumbnail_attached_for_attempt = False
+            thumbnail_requirement_waived_for_attempt = False
             playlist_confirmed_for_attempt = False
             set_youtube_upload(upload_id, thumbnail_attached=False, playlist_confirmed=False)
             if attempt > 1:
@@ -5343,8 +5344,13 @@ def run_youtube_upload(upload_id: str) -> None:
             def record_upload_log(cleaned: str) -> None:
                 nonlocal playlist_confirmed_for_attempt
                 nonlocal thumbnail_attached_for_attempt
+                nonlocal thumbnail_requirement_waived_for_attempt
                 if cleaned.startswith("THUMBNAIL_ATTACHED:"):
                     thumbnail_attached_for_attempt = True
+                    thumbnail_requirement_waived_for_attempt = False
+                elif cleaned.startswith("THUMBNAIL_SKIPPED_DAILY_LIMIT:"):
+                    thumbnail_attached_for_attempt = False
+                    thumbnail_requirement_waived_for_attempt = True
                 elif cleaned.startswith("THUMBNAIL_SKIPPED:"):
                     # A final verification can discover that Studio discarded
                     # an earlier thumbnail selection during a form re-render.
@@ -5384,6 +5390,7 @@ def run_youtube_upload(upload_id: str) -> None:
                 code == 0
                 and requires_thumbnail
                 and not thumbnail_attached_for_attempt
+                and not thumbnail_requirement_waived_for_attempt
             ):
                 code = 1
                 thumbnail_confirmation_error = (
@@ -5405,6 +5412,7 @@ def run_youtube_upload(upload_id: str) -> None:
                 and (
                     not requires_thumbnail
                     or thumbnail_attached_for_attempt
+                    or thumbnail_requirement_waived_for_attempt
                 )
                 and (not upload.playlist or playlist_confirmed_for_attempt)
             ):

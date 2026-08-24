@@ -1221,9 +1221,18 @@ def test_upload_requires_playlist_confirmation_marker(
         assert "belum mengonfirmasi playlist" in (result.error or "")
 
 
-def test_long_upload_fails_when_youtube_daily_thumbnail_limit_is_reached(
+@pytest.mark.parametrize(
+    ("thumbnail_line", "expected_status"),
+    [
+        ("THUMBNAIL_SKIPPED_DAILY_LIMIT: batas harian tercapai", "completed"),
+        ("THUMBNAIL_SKIPPED: Studio tidak mengonfirmasi thumbnail", "failed"),
+    ],
+)
+def test_long_upload_only_waives_thumbnail_requirement_for_verified_daily_limit(
     monkeypatch,
     tmp_path,
+    thumbnail_line,
+    expected_status,
 ):
     import api
 
@@ -1259,7 +1268,7 @@ def test_long_upload_fails_when_youtube_daily_thumbnail_limit_is_reached(
 
     def fake_monitor(_process, on_line, **_kwargs):
         for line in (
-            "THUMBNAIL_SKIPPED_DAILY_LIMIT: batas harian tercapai",
+            thumbnail_line,
             "PLAYLIST_CONFIRMED: Horor",
             "FINAL_VISIBILITY: private",
             "VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345",
@@ -1274,10 +1283,14 @@ def test_long_upload_fails_when_youtube_daily_thumbnail_limit_is_reached(
     api.run_youtube_upload(upload.id)
 
     result = api.youtube_uploads[upload.id]
-    assert result.status == "failed"
+    assert result.status == expected_status
     assert result.playlist_confirmed is True
     assert result.thumbnail_attached is False
-    assert "thumbnail" in (result.error or "").casefold()
+    if expected_status == "completed":
+        assert result.visibility == "private"
+        assert result.error is None
+    else:
+        assert "thumbnail" in (result.error or "").casefold()
 
 
 def test_start_youtube_cdp_refresh_process_uses_configured_command(monkeypatch, tmp_path):

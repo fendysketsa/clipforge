@@ -433,6 +433,9 @@ export function ResultsSection({
             const thumbnailWasSkipped = Boolean(
               latestUpload?.logs?.some((line) => line.startsWith("THUMBNAIL_SKIPPED")),
             );
+            const thumbnailDailyLimitWasReached = Boolean(
+              latestUpload?.logs?.some((line) => line.startsWith("THUMBNAIL_SKIPPED_DAILY_LIMIT:")),
+            );
             const uploadError = latestUpload?.status === "failed"
               ? friendlyYouTubeUploadError(rawUploadError, usesChromeDebugging)
               : "";
@@ -685,7 +688,9 @@ export function ResultsSection({
                                 ? " · memasang thumbnail"
                                 : " · mencoba thumbnail Shorts"
                               : thumbnailWasSkipped
-                                ? " · thumbnail dilewati oleh Studio"
+                                ? thumbnailDailyLimitWasReached
+                                  ? " · thumbnail otomatis YouTube (kuota kustom harian tercapai)"
+                                  : " · thumbnail dilewati oleh Studio"
                                 : isLongForm
                                   ? " · thumbnail 16:9 siap"
                                   : null
