@@ -999,12 +999,15 @@ def test_monetization_provenance_records_rights_and_originality(tmp_path):
             "license": "Creative Commons Attribution license",
         },
         uploaded_source=False,
+        source_rights_confirmed=True,
     )
 
     import json
 
     payload = json.loads(video.with_suffix(".json").read_text(encoding="utf-8"))
-    assert payload["source_provenance"]["rights_verified"] is True
+    assert payload["source_provenance"]["rights_verified"] is False
+    assert payload["source_provenance"]["rights_confirmed_by_user"] is True
+    assert payload["source_provenance"]["license_metadata_verified"] is True
     assert payload["source_provenance"]["attribution_required"] is True
     assert payload["monetization_readiness"]["eligible_for_private_upload_review"] is True
     assert payload["monetization_readiness"]["guarantee"] is False
@@ -1036,6 +1039,7 @@ def test_compilation_requires_chapter_specific_editorial_transformation(tmp_path
             "license": "Creative Commons Attribution license",
         },
         uploaded_source=False,
+        source_rights_confirmed=True,
     )
 
     import json
@@ -1315,7 +1319,7 @@ def test_youtube_policy_snapshot_marks_future_rules_for_review_without_assuming_
     assert future["review_required"] is True
     assert future["future_year_assumed_unchanged"] is False
     assert future["rules_are_runtime_guarantee"] is False
-    assert len(future["official_sources"]) == 5
+    assert len(future["official_sources"]) == 8
 
 
 def test_five_k_readiness_is_a_stability_experiment_not_a_view_guarantee():

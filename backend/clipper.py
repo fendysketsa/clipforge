@@ -21,6 +21,7 @@ from slugify import slugify
 from yt_dlp import YoutubeDL
 
 from llm import AIConfig, chat_completion, extract_json, is_llm_unavailable_error
+from source_rights import source_rights_risk_reasons
 
 
 console = Console()
@@ -3888,14 +3889,21 @@ def is_creative_commons_metadata(metadata: dict) -> bool:
 
 
 def require_creative_commons_metadata(metadata: dict) -> None:
-    if is_creative_commons_metadata(metadata):
-        return
-    license_text = metadata.get("license") or "tidak tersedia"
-    raise UserFacingError(
-        "Video sumber tidak terdeteksi sebagai Creative Commons. "
-        f"Lisensi terdeteksi: {license_text}. "
-        "Gunakan video dengan filter Creative Commons agar clipping lebih aman untuk dimodifikasi."
-    )
+    if not is_creative_commons_metadata(metadata):
+        license_text = metadata.get("license") or "tidak tersedia"
+        raise UserFacingError(
+            "Video sumber tidak terdeteksi sebagai Creative Commons. "
+            f"Lisensi terdeteksi: {license_text}. "
+            "Gunakan rekaman milik sendiri atau sumber dengan izin komersial yang dapat dibuktikan."
+        )
+    rights_risks = source_rights_risk_reasons(metadata)
+    if rights_risks:
+        raise UserFacingError(
+            "Sumber ditolak sebelum download karena berisiko tinggi terkena Content ID: "
+            + "; ".join(rights_risks[:2])
+            + ". Label Creative Commons pada YouTube tidak membuktikan uploader memiliki "
+            "seluruh hak audio/visual. Gunakan rekaman milik sendiri atau izin tertulis."
+        )
 
 
 def download_video(
@@ -3997,7 +4005,18 @@ def download_video(
 
 
 def sanitize_metadata(info: dict) -> dict:
-    keys = ["id", "title", "uploader", "duration", "webpage_url", "ext", "license"]
+    keys = [
+        "id",
+        "title",
+        "uploader",
+        "uploader_id",
+        "channel",
+        "channel_id",
+        "duration",
+        "webpage_url",
+        "ext",
+        "license",
+    ]
     return {key: info.get(key) for key in keys}
 
 
@@ -4006,6 +4025,7 @@ def attach_monetization_provenance(
     metadata: dict,
     *,
     uploaded_source: bool,
+    source_rights_confirmed: bool = False,
 ) -> None:
     """Persist rights and originality evidence next to every final render.
 
@@ -4013,14 +4033,14 @@ def attach_monetization_provenance(
     final video and the channel as a whole, while commercial-use rights remain
     the uploader's responsibility for locally supplied files.
     """
-    rights_verified = bool(
+    license_metadata_verified = bool(
         not uploaded_source and is_creative_commons_metadata(metadata)
     )
     rights_basis = (
         "user_supplied_file_requires_commercial_rights_confirmation"
         if uploaded_source
-        else "creative_commons_attribution"
-        if rights_verified
+        else "creative_commons_metadata_requires_chain_of_title_confirmation"
+        if license_metadata_verified
         else "unverified"
     )
     source = {
@@ -4029,8 +4049,13 @@ def attach_monetization_provenance(
         "url": str(metadata.get("webpage_url") or "").strip(),
         "license": str(metadata.get("license") or "").strip(),
         "rights_basis": rights_basis,
-        "rights_verified": rights_verified,
-        "attribution_required": rights_verified,
+        "rights_verified": False,
+        "rights_confirmed_by_user": bool(source_rights_confirmed or uploaded_source),
+        "license_metadata_verified": license_metadata_verified,
+        "chain_of_title_verified": False,
+        "commercial_rights_confirmation_required": True,
+        "creative_commons_label_alone_guarantees_no_content_id_claim": False,
+        "attribution_required": license_metadata_verified,
     }
     for video_path in exported_paths:
         sidecar_path = video_path.with_suffix(".json")
@@ -4164,7 +4189,9 @@ def attach_monetization_provenance(
             and substantive_transformation
             and originality_score >= minimum_score
         )
-        commercial_rights_ready = rights_verified or uploaded_source
+        commercial_rights_ready = bool(
+            uploaded_source or (license_metadata_verified and source_rights_confirmed)
+        )
         policy_snapshot = youtube_policy_snapshot()
         payload["source_provenance"] = source
         payload["monetization_readiness"] = {
@@ -4178,7 +4205,7 @@ def attach_monetization_provenance(
             "eligible_for_private_upload_review": bool(
                 commercial_rights_ready and transformation_ready
             ),
-            "commercial_rights_confirmation_required": uploaded_source,
+            "commercial_rights_confirmation_required": True,
             "originality_score": originality_score,
             "minimum_originality_score": minimum_score,
             "audit_version": 6,
@@ -4189,7 +4216,8 @@ def attach_monetization_provenance(
             ),
             "note": (
                 "Lolos audit teknis untuk review Private, bukan jaminan YPP. "
-                "Komentar/kehadiran kreator asli tetap merupakan bukti transformasi terkuat."
+                "Komentar/kehadiran kreator asli tetap merupakan bukti transformasi terkuat. "
+                "Metadata CC tidak membuktikan uploader menguasai seluruh hak audio/visual."
             ),
             "channel_level_review_still_applies": True,
             "youtube_policy_reviewed_on": policy_snapshot["reviewed_on"],
@@ -6485,7 +6513,7 @@ def youtube_policy_snapshot(*, as_of: date | None = None) -> dict[str, object]:
     current_date = as_of or date.today()
     review_due = reviewed + timedelta(days=review_interval_days)
     return {
-        "snapshot_version": 2,
+        "snapshot_version": 3,
         "reviewed_on": reviewed.isoformat(),
         "review_due_on": review_due.isoformat(),
         "review_required": current_date > review_due,
@@ -6497,6 +6525,9 @@ def youtube_policy_snapshot(*, as_of: date | None = None) -> dict[str, object]:
             "https://support.google.com/youtube/answer/12504220",
             "https://support.google.com/youtube/answer/16559650",
             "https://support.google.com/youtube/answer/2801973",
+            "https://support.google.com/youtube/answer/6013276",
+            "https://support.google.com/youtube/answer/9783148",
+            "https://support.google.com/youtube/answer/2797468",
         ],
     }
 
@@ -7285,6 +7316,10 @@ def shorts_policy_compliance(duration: float, *, embedded_cover: bool) -> dict[s
         "viewer_satisfaction_not_watch_time_alone": True,
         "filler_avoidance_required": True,
         "claimed_content_over_one_minute_block_risk": safe_duration > 60,
+        "fendy_zero_active_claim_upload_policy": True,
+        "non_blocking_claims_also_stop_fendy_upload": True,
+        "creative_commons_metadata_is_not_chain_of_title_proof": True,
+        "credit_crop_subtitles_or_short_duration_do_not_prevent_content_id": True,
         "content_id_claim_check_required_before_publication": True,
         "rights_and_originality_review_required": True,
         "channel_level_review_still_applies": True,
@@ -11920,7 +11955,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--require-creative-commons",
         action="store_true",
-        help="Reject YouTube URLs whose metadata is not Creative Commons/reuse allowed.",
+        help="Require CC metadata and reject source patterns with elevated Content ID risk.",
+    )
+    parser.add_argument(
+        "--confirm-source-rights",
+        action="store_true",
+        help="Record the user's confirmation of provable commercial audio/visual rights.",
     )
     return parser.parse_args()
 
@@ -12397,6 +12437,7 @@ def main() -> int:
         exported,
         metadata,
         uploaded_source=bool(args.source_file),
+        source_rights_confirmed=bool(args.confirm_source_rights),
     )
 
     if not args.keep_intermediate:

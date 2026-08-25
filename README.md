@@ -247,20 +247,26 @@ With OAuth configured, snapshots also include engaged views, average view
 duration/percentage, shares, and video-attributed subscriber gains. Secrets are
 read only by the backend and are never returned by the API.
 
-For safer reuse, URL jobs require explicit Creative Commons metadata by default
-before download. Viral search also rejects live/upcoming, age-restricted, and
-non-public sources. Verified rights data remains in local provenance records and
-is appended as CC BY attribution in the YouTube description, while rendered MP4
-files do not inherit source container metadata or chapters. New renders also
-carry a monetization-readiness audit; upload is blocked when commercial-use
-rights or minimum substantive-edit evidence is absent. This is a preflight, not
-a promise of YPP approval, because YouTube also reviews the channel as a whole.
-During upload, Playwright waits for YouTube Studio Checks and cancels before save
-for blocks, strikes, unresolved copyright states, and every active claim on a
-Short over one minute. A claim is allowed to finish only when YouTube explicitly
-shows both that it has no impact on the video and no impact or strike on the
-channel. Auto uploads are kept Private by default, because Content ID can also
-apply a later claim after the initial Checks finish. When Fendy Clipper replaces a realistic backdrop, it also
+For safer reuse, URL jobs require explicit Creative Commons metadata before
+download and an explicit confirmation that the user owns or has provable
+commercial permission for the complete audio and visual work. A CC label is
+license metadata, not proof that the uploader owns every element in a recording.
+Viral search also rejects live/upcoming, age-restricted, non-public, fan/support/
+reupload/archive accounts, and sources that look like TV, film, music, broadcaster,
+or known Content ID material. CC BY attribution is appended to the YouTube
+description, while rendered MP4 files do not inherit source container metadata or
+chapters. New renders also carry a monetization-readiness audit; upload is blocked
+when source-rights confirmation or minimum substantive-edit evidence is absent.
+This is a preflight, not a promise of YPP approval, because YouTube also reviews
+the channel as a whole.
+
+During upload, Playwright waits for YouTube Studio Checks and applies a zero-active-
+claim policy: every detected Content ID/copyright claim cancels the workflow before
+the final Save/Publish action, including claims currently described as having no
+impact and claims on Shorts under one minute. A claimed upload is no longer saved
+as a Private fallback. Auto uploads are kept Private by default when Checks are
+fully clear, because Content ID can also apply a later claim after initial Checks
+finish. When Fendy Clipper replaces a realistic backdrop, it also
 selects YouTube's altered-content disclosure before continuing. Review the
 Restrictions and monetization columns before publishing.
 This reduces risk but cannot guarantee a video will never receive a future claim.
@@ -291,6 +297,7 @@ YOUTUBE_TARGET_CHANNEL_ID=UCAOZF9Qzj6DYoXKtLnP4UUQ
 YOUTUBE_STUDIO_URL=https://studio.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ
 YOUTUBE_AUTO_UPLOAD_COUNT=3
 YOUTUBE_REQUIRE_COPYRIGHT_CHECKS=true
+YOUTUBE_COPYRIGHT_HIGH_RISK_TERMS=islam itu indah,transcorp,trans tv,trans7
 YOUTUBE_CONTINUE_WHEN_CHECKS_STUCK=false
 YOUTUBE_CHECKS_TIMEOUT_SECONDS=3600
 YOUTUBE_CHECKS_LONG_RUNNING_EXTENSION_SECONDS=1800

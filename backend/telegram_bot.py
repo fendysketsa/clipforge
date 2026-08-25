@@ -145,8 +145,8 @@ CLIPPING_STAGE_ALERTS: list[tuple[str, str, str, tuple[str, ...]]] = [
     ("metadata", "Membaca informasi video", "Backend sedang membaca metadata video sumber.", ("fetching metadata",)),
     (
         "creative_commons",
-        "Lisensi Creative Commons terverifikasi",
-        "Sumber terdeteksi Creative Commons/reuse allowed sebelum download dilanjutkan.",
+        "Metadata CC dan guard sumber lolos",
+        "Metadata Creative Commons terdeteksi dan sumber tidak cocok dengan pola risiko Content ID sebelum download.",
         ("creative commons license detected",),
     ),
     ("download", "Mengunduh video sumber", "Video sumber mulai diunduh untuk diproses.", ("fetching video",)),

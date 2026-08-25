@@ -147,9 +147,11 @@ type ControlPanelProps = {
   onSelectLocalProvider: (provider: LocalLlmProvider) => void;
   requiredHashtags: string;
   requireCreativeCommons: boolean;
+  confirmSourceRights: boolean;
   autoUploadYoutube: boolean;
   onRequiredHashtagsChange: (value: string) => void;
   onRequireCreativeCommonsChange: (value: boolean) => void;
+  onConfirmSourceRightsChange: (value: boolean) => void;
   onAutoUploadYoutubeChange: (value: boolean) => void;
   onCropModeChange: (mode: CropMode) => void;
   onMaxDurationChange: (value: number) => void;
@@ -232,9 +234,11 @@ export function ControlPanel({
   onSelectLocalProvider,
   requiredHashtags,
   requireCreativeCommons,
+  confirmSourceRights,
   autoUploadYoutube,
   onRequiredHashtagsChange,
   onRequireCreativeCommonsChange,
+  onConfirmSourceRightsChange,
   onAutoUploadYoutubeChange,
   onCropModeChange,
   onMaxDurationChange,
@@ -286,6 +290,7 @@ export function ControlPanel({
     || sourceCheckPending
     || invalidCheckedSource
     || duplicateApprovalRequired
+    || (!isLongAnimate && sourceMode === "url" && !confirmSourceRights)
     || (isLongAnimate && !confirmLongAnimateRights);
   const isProcessing = isSubmitting || isBusy;
   const localNoKeyBaseUrls = new Set<string>(
@@ -502,7 +507,17 @@ TEKS LAYAR: Data Terkirim`}</pre>
                 onChange={(event) => onRequireCreativeCommonsChange(event.target.checked)}
               />
             </label>
-            <p className="field-help">Dikunci aktif: video non-CC akan dibatalkan sebelum download agar sumber lebih aman untuk dimodifikasi.</p>
+            <p className="field-help">Dikunci aktif: video non-CC akan dibatalkan sebelum download. CC hanya metadata lisensi, bukan jaminan uploader memegang hak rekaman.</p>
+            <label className="sourceHistoryApproval">
+              <input
+                type="checkbox"
+                checked={confirmSourceRights}
+                onChange={(event) => onConfirmSourceRightsChange(event.target.checked)}
+              />
+              <span>
+                Saya memiliki rekaman ini atau izin komersial yang dapat dibuktikan untuk memakai ulang seluruh audio dan visualnya. Saya paham atribusi, crop, subtitle, dan durasi pendek tidak otomatis mencegah Content ID.
+              </span>
+            </label>
           </div>
         ) : null}
       </div>
@@ -546,7 +561,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
             ? "Scene Cinema mengubah naskah menjadi storyboard, art bible, visual per scene, gerak kamera, voice-over, subtitle, musik, thumbnail, dan satu video 16:9 utuh."
             : clipMode === "highlight_5m"
             ? "Codex Long Story Director membuat teaser singkat tanpa duplikasi, lalu merangkai konteks, perkembangan, penjelasan, dan kesimpulan secara kronologis dalam 16:9—tanpa memanjangkan video dengan filler."
-            : "Clip vertikal maksimal 60 detik (di bawah batas resmi Shorts 3 menit, sekaligus menghindari risiko blok global konten ber-claim di atas 1 menit) dengan frame cover awal yang dapat dipilih lewat timeline aplikasi YouTube sekitar 0,78 detik, caption safe-area, payoff, CTA Subscribe kontekstual, dan loop alami."}
+            : "Clip vertikal maksimal 60 detik (batas internal untuk fokus dan retention; Content ID apa pun tetap membatalkan upload) dengan frame cover awal yang dapat dipilih lewat timeline aplikasi YouTube sekitar 0,78 detik, caption safe-area, payoff, CTA Subscribe kontekstual, dan loop alami."}
         </p>
       </div>
 
@@ -1058,7 +1073,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
         <p className="field-help">
           {clipMode === "highlight_5m" || clipMode === "long_animate"
             ? "Selesai render, video landscape dan thumbnail otomatis diupload sebagai Private. Untuk Long Animate, disclosure AI ikut diaktifkan; publikasikan hanya setelah hak, Checks, judul, thumbnail, dan isi scene direview."
-            : "Selesai clipping langsung antrekan 3 klip terbaik sebagai Private. Publikasikan jika Pembatasan bebas blokir/strike atau klaim dinyatakan tidak berdampak oleh YouTube."}
+            : "Selesai clipping langsung antrekan 3 klip terbaik sebagai Private. Kebijakan nol-klaim aktif: Content ID apa pun membatalkan aksi Simpan/Publikasikan, termasuk klaim yang saat ini disebut tidak berdampak."}
         </p>
         </div>
         </div>
@@ -1072,7 +1087,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
             <span className="viralDiscoveryIcon"><Search size={17} /></span>
             <span>
               <strong>Belum punya sumber?</strong>
-              <small>Cari 3 konten Islami Creative Commons terbaik</small>
+              <small>Cari 3 referensi CC berisiko lebih rendah</small>
             </span>
             <span className="autoContentBadge">AUTO NICHE</span>
             <ChevronDown size={17} />
@@ -1150,8 +1165,8 @@ TEKS LAYAR: Data Terkirim`}</pre>
             </label>
             <div className="viralFilterItem viralFilterLocked viralFilterLicense">
               <span>Lisensi</span>
-              <strong><ShieldCheck size={13} /> Creative Commons</strong>
-              <small>Wajib dan diverifikasi ulang</small>
+              <strong><ShieldCheck size={13} /> Metadata CC</strong>
+              <small>Bukan bukti kepemilikan hak</small>
             </div>
             <label className="viralFilterItem">
               <span>Prioritaskan</span>
@@ -1171,7 +1186,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
           </div>
           <div className="viralFilterPolicy">
             <ShieldCheck size={14} />
-            <span>Creative Commons dan Bahasa Indonesia selalu wajib. Filter lainnya diperluas otomatis bila hasil belum mencapai 3.</span>
+            <span>Metadata Creative Commons dan Bahasa Indonesia wajib. Akun fan/reupload serta indikasi TV, film, musik, broadcaster, dan daftar risiko Content ID ditolak; hasil tetap hanya untuk review hak manual.</span>
           </div>
 
           <button
@@ -1244,7 +1259,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
           ) : null}
 
           <p className="field-help">
-            {autoViralMessage || "Mode cepat tanpa AI: Google YouTube API memfilter Creative Commons, lalu skor lokal ringan mengurutkan hasil."}
+            {autoViralMessage || "Google YouTube API memfilter metadata CC dan guard risiko sumber mengurutkan hasil. Upload tetap terkunci sampai hak audio/visual dapat dibuktikan."}
           </p>
           </div>
         </details>

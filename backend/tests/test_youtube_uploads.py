@@ -1790,7 +1790,7 @@ def test_verified_cc_source_gets_required_attribution(monkeypatch):
     job = ClipJob(
         id="job-cc",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source"),
+        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
     )
@@ -1820,7 +1820,7 @@ def test_monetization_preflight_requires_rights_and_substantive_edit(monkeypatch
     job = ClipJob(
         id="job-ready",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source"),
+        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -1844,6 +1844,61 @@ def test_monetization_preflight_requires_rights_and_substantive_edit(monkeypatch
     assert "Render ulang" in (youtube_monetization_preflight_issue(job, clip) or "")
 
 
+def test_monetization_preflight_requires_explicit_url_rights_confirmation(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-unconfirmed-url-rights",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+
+    assert "bukan bukti" in issue
+    assert "hak audio dan visual" in issue
+
+
+def test_monetization_preflight_blocks_high_risk_tv_reupload_even_when_confirmed(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-claimed-tv-source",
+        status="completed",
+        request=ClipJobRequest(
+            url="https://youtu.be/source",
+            confirm_source_rights=True,
+        ),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {
+            "license": "Creative Commons Attribution license",
+            "title": "Sintya Marisca - Islam Itu Indah 7 Feb 2k20",
+            "uploader": "Sintya Marisca Support",
+        },
+    )
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+
+    assert "berisiko tinggi terkena Content ID" in issue
+    assert "Label CC" in issue
+
+
 def test_monetization_preflight_blocks_short_outside_official_technical_limits(monkeypatch):
     import api
 
@@ -1851,7 +1906,7 @@ def test_monetization_preflight_blocks_short_outside_official_technical_limits(m
     job = ClipJob(
         id="job-invalid-short",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source"),
+        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -1886,7 +1941,7 @@ def test_monetization_preflight_blocks_low_fyp_short(monkeypatch):
     job = ClipJob(
         id="job-low-fyp-short",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source"),
+        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -1918,7 +1973,7 @@ def test_monetization_preflight_blocks_short_with_low_retention_readiness(monkey
     job = ClipJob(
         id="job-low-retention-short",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source"),
+        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -1951,7 +2006,7 @@ def test_monetization_preflight_accepts_legacy_compilation_story_arc(monkeypatch
     job = ClipJob(
         id="job-legacy-compilation",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source"),
+        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -1992,7 +2047,7 @@ def test_monetization_preflight_v5_requires_chapter_specific_framing(monkeypatch
     job = ClipJob(
         id="job-template-compilation",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source"),
+        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -2034,7 +2089,7 @@ def test_monetization_preflight_explains_when_enhanced_edit_is_actually_missing(
     job = ClipJob(
         id="job-no-enhanced-edit",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source"),
+        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],

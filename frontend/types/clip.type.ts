@@ -121,6 +121,7 @@ export type ClipJob = {
     caption_outline: number;
     caption_outline_color: string;
     require_creative_commons: boolean;
+    confirm_source_rights: boolean;
     confirm_long_animate_rights: boolean;
     auto_upload_youtube: boolean;
     allow_reprocess_source?: boolean;
@@ -159,6 +160,7 @@ export type CreateClipJobInput = {
   caption_outline_color?: string;
   required_hashtags?: string[];
   require_creative_commons?: boolean;
+  confirm_source_rights?: boolean;
   confirm_long_animate_rights?: boolean;
   auto_upload_youtube?: boolean;
   allow_reprocess_source?: boolean;
@@ -353,6 +355,7 @@ export type ViralContentSource = {
   likes?: number | null;
   license?: string | null;
   rights_verified: boolean;
+  license_metadata_verified?: boolean;
   score: number;
   viral_score: number;
   niche: IslamicContentNiche;

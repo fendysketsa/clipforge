@@ -2365,11 +2365,6 @@ def wait_for_review_checks_safe_before_publish(
                 "Klaim Content ID/copyright muncul pada review akhir. "
                 "Video tidak dipublikasikan agar channel tetap aman."
             )
-        if copyright_claim_is_explicitly_non_blocking(body):
-            log(
-                "Review akhir mengonfirmasi klaim Content ID tanpa dampak pada video "
-                "dan tanpa dampak pada channel; aksi final boleh dilanjutkan."
-            )
         if (
             get_upload_workflow_step(page) == "REVIEW"
             and visibility_is_selected(page, "public")
@@ -2391,7 +2386,6 @@ def click_final_upload_action(
     content_type: str = "auto",
     media_duration_seconds: float = 0.0,
     previously_verified_non_blocking_claim: bool = False,
-    allow_claimed_private_save: bool = False,
 ) -> None:
     active_step = get_upload_workflow_step(page)
     if active_step != "REVIEW":
@@ -2412,24 +2406,11 @@ def click_final_upload_action(
         media_duration_seconds=media_duration_seconds,
         previously_verified_non_blocking_claim=previously_verified_non_blocking_claim,
     )
-    saving_claimed_video_private = (
-        visibility == "private" and allow_claimed_private_save
-    )
-    if claim_blocks_publication and not saving_claimed_video_private:
+    if claim_blocks_publication:
         save_debug_artifacts(page, "copyright-claim-at-final-action")
         raise CopyrightClaimUploadError(
             "Klaim Content ID/copyright terdeteksi tepat sebelum aksi final. "
             "Upload dibatalkan agar channel tetap aman."
-        )
-    if claim_blocks_publication and saving_claimed_video_private:
-        log(
-            "Klaim Content ID memblokir publikasi; aksi final dibatasi ke Simpan Private "
-            "agar video tetap tersedia untuk review manual."
-        )
-    if copyright_claim_is_explicitly_non_blocking(body):
-        log(
-            "Pemeriksaan terakhir: klaim Content ID berstatus tanpa dampak pada video/channel; "
-            "upload tetap diselesaikan."
         )
     if visibility == "public":
         patterns = [r"publish", r"publikasikan"]
@@ -2552,56 +2533,6 @@ def click_final_upload_action(
         time.sleep(0.4)
     save_debug_artifacts(page, "final-upload-button-not-found")
     raise UploadError(f"Tombol final '{label}' tidak ditemukan.")
-
-
-def save_claimed_upload_as_private(
-    page,
-    *,
-    timeout_ms: int = 30000,
-    content_type: str = "auto",
-    media_duration_seconds: float = 0.0,
-) -> str:
-    """Finish an already-transferred claimed upload without making it viewable."""
-    log(
-        "Fallback Content ID aktif: file sudah terkirim, jadi video akan disimpan Private "
-        "dan tidak akan dipublikasikan."
-    )
-    active_step = get_upload_workflow_step(page)
-    if active_step != "REVIEW":
-        if active_step != "CHECKS":
-            save_debug_artifacts(page, "private-fallback-invalid-step")
-            raise UploadError(
-                "Fallback Private tidak dapat dijalankan dari step upload "
-                f"{active_step or 'yang tidak terbaca'}."
-            )
-        click_next_upload_step(page, timeout_ms=timeout_ms, expected_step="REVIEW")
-
-    wait_for_visibility_step(page, timeout_ms=min(timeout_ms, 20000))
-    set_visibility(page, "private")
-    time.sleep(0.8)
-    if not visibility_is_selected(page, "private"):
-        save_debug_artifacts(page, "private-fallback-not-selected")
-        raise UploadError("Fallback gagal karena visibilitas Private belum tercentang.")
-
-    uploaded_video_url = extract_video_url(page)
-    click_final_upload_action(
-        page,
-        "private",
-        timeout_ms=timeout_ms,
-        content_type=content_type,
-        media_duration_seconds=media_duration_seconds,
-        allow_claimed_private_save=True,
-    )
-    final_url = uploaded_video_url or extract_video_url(page)
-    log("FINAL_VISIBILITY: private")
-    log("PRIVATE_FALLBACK_SAVED: content_id_claim")
-    if final_url:
-        log(f"VIDEO_URL: {final_url}")
-    try:
-        reload_after_publish(page)
-    except UploadError as exc:
-        log(f"Reload setelah Simpan Private dilewati: {exc}")
-    return final_url
 
 
 def fill_tags(page, tags: str) -> None:
@@ -4957,19 +4888,6 @@ def copyright_claim_is_explicitly_non_blocking(body: str) -> bool:
     return video_is_safe and channel_is_safe
 
 
-def content_id_claim_blocks_claimed_short(
-    content_type: str,
-    media_duration_seconds: float,
-) -> bool:
-    """YouTube blocks every claimed 1-3 minute Short, regardless of claim policy."""
-    normalized_type = (content_type or "auto").strip().casefold()
-    try:
-        duration = float(media_duration_seconds or 0)
-    except (TypeError, ValueError):
-        duration = 0.0
-    return normalized_type == "shorts" and (duration <= 0.0 or duration > 60.0)
-
-
 def copyright_issue_blocks_upload(
     body: str,
     *,
@@ -4977,17 +4895,16 @@ def copyright_issue_blocks_upload(
     media_duration_seconds: float = 0.0,
     previously_verified_non_blocking_claim: bool = False,
 ) -> bool:
-    if not copyright_issue_detected(body):
-        return False
-    normalized = re.sub(r"\s+", " ", body or "").casefold()
-    if any(re.search(pattern, normalized, re.I) for pattern in COPYRIGHT_BLOCKING_PATTERNS):
-        return True
-    if content_id_claim_blocks_claimed_short(content_type, media_duration_seconds):
-        return True
-    return not (
-        copyright_claim_is_explicitly_non_blocking(body)
-        or previously_verified_non_blocking_claim
-    )
+    """Apply Fendy Clipper's stricter zero-active-claim upload policy.
+
+    YouTube may describe a claim as non-blocking for a particular territory or
+    at a particular moment. That status can differ by country and can change
+    later. For this channel, any active copyright/Content ID claim stops the
+    upload before the final action, regardless of duration or current impact.
+    The compatibility arguments remain so older callers can upgrade safely.
+    """
+    del content_type, media_duration_seconds, previously_verified_non_blocking_claim
+    return copyright_issue_detected(body)
 
 
 def copyright_checks_all_clear(body: str) -> bool:
@@ -5059,7 +4976,6 @@ def wait_for_copyright_checks(
         has_checking = any(re.search(pattern, lowered, re.I) for pattern in checking_patterns)
         has_long_running = any(re.search(pattern, lowered, re.I) for pattern in long_running_patterns)
         has_all_clear = copyright_checks_all_clear(body)
-        has_copyright_issue = copyright_issue_detected(body)
         has_non_blocking_claim = copyright_claim_is_explicitly_non_blocking(body)
         if copyright_issue_blocks_upload(
             body,
@@ -5067,28 +4983,16 @@ def wait_for_copyright_checks(
             media_duration_seconds=media_duration_seconds,
         ):
             save_debug_artifacts(page, "copyright-claim-detected")
-            if has_non_blocking_claim and content_id_claim_blocks_claimed_short(
-                content_type,
-                media_duration_seconds,
-            ):
-                try:
-                    duration = float(media_duration_seconds or 0)
-                except (TypeError, ValueError):
-                    duration = 0.0
-                if duration <= 0:
-                    raise CopyrightClaimUploadError(
-                        "Klaim Content ID terdeteksi, tetapi durasi Short tidak dapat diverifikasi. "
-                        "Upload dibatalkan karena aturan YouTube memblokir semua Short 1-3 menit "
-                        "yang memiliki klaim aktif."
-                    )
-                raise CopyrightClaimUploadError(
-                    "Klaim Content ID terdeteksi pada Short berdurasi lebih dari 1 menit. "
-                    "Sesuai kebijakan YouTube, Short 1-3 menit dengan klaim aktif diblokir "
-                    "meskipun ringkasan klaim menyebut tidak ada dampak."
-                )
+            impact_note = (
+                " Studio saat ini menyebut klaim tidak berdampak, tetapi Fendy Clipper "
+                "tetap menolaknya karena kebijakan klaim dapat berbeda per wilayah atau berubah kemudian."
+                if has_non_blocking_claim
+                else ""
+            )
             raise CopyrightClaimUploadError(
                 "YouTube Studio mendeteksi klaim Content ID/copyright pada clip ini. "
-                "Upload dibatalkan sebelum publish agar channel tetap aman."
+                "Upload dibatalkan sebelum aksi Simpan/Publikasikan agar channel tetap aman."
+                f"{impact_note}"
             )
         if has_long_running and not long_running_extended and long_running_extension_seconds:
             deadline += long_running_extension_seconds
@@ -5107,12 +5011,6 @@ def wait_for_copyright_checks(
                 next_progress_log_at = now + progress_log_interval_seconds
             time.sleep(5)
             continue
-        if has_copyright_issue and has_non_blocking_claim:
-            log(
-                "YouTube Studio mengonfirmasi klaim Content ID tanpa dampak pada video "
-                "dan tanpa dampak pada channel; upload dinilai aman untuk dilanjutkan."
-            )
-            return True
         if has_all_clear:
             log("YouTube Studio Checks aman: hak cipta dan pedoman komunitas sudah centang.")
             return False
@@ -5432,8 +5330,8 @@ def run_upload(args: argparse.Namespace) -> None:
     if requested_visibility != args.visibility:
         log(
             "Mode aman aktif: upload otomatis disimpan Private. "
-            "Publikasikan manual hanya jika kolom Pembatasan bebas blokir/strike "
-            "atau YouTube menyatakan klaim tidak berdampak."
+            "Publikasikan manual hanya jika kolom Pembatasan benar-benar bebas "
+            "klaim Content ID, blokir, dan strike."
         )
 
     if args.thumbnail_content_type == "auto":
@@ -5718,7 +5616,7 @@ def run_upload(args: argparse.Namespace) -> None:
 
             click_next_upload_step(page, timeout_ms=next_step_timeout_ms, expected_step="CHECKS")
             log("Step Elemen video sudah tercentang; masuk ke tab Pemeriksaan awal.")
-            non_blocking_claim_approved = wait_for_copyright_checks(
+            wait_for_copyright_checks(
                 page,
                 min(timeout_ms, int(os.environ.get("YOUTUBE_CHECKS_TIMEOUT_SECONDS", "3600")) * 1000),
                 args.require_copyright_checks,
@@ -5746,7 +5644,6 @@ def run_upload(args: argparse.Namespace) -> None:
                     timeout_ms=review_timeout_ms,
                     content_type=args.thumbnail_content_type,
                     media_duration_seconds=args.media_duration_seconds,
-                    previously_verified_non_blocking_claim=non_blocking_claim_approved,
                 )
 
             if args.dry_run:
@@ -5760,7 +5657,6 @@ def run_upload(args: argparse.Namespace) -> None:
                 timeout_ms=30000,
                 content_type=args.thumbnail_content_type,
                 media_duration_seconds=args.media_duration_seconds,
-                previously_verified_non_blocking_claim=non_blocking_claim_approved,
             )
             final_url = uploaded_video_url or extract_video_url(page)
             log(f"FINAL_VISIBILITY: {args.visibility}")
@@ -5770,13 +5666,15 @@ def run_upload(args: argparse.Namespace) -> None:
             context.storage_state(path=str(state_path))
         except CopyrightClaimUploadError as exc:
             log(f"Publikasi dihentikan: {exc}")
-            save_claimed_upload_as_private(
-                page,
-                timeout_ms=30000,
-                content_type=args.thumbnail_content_type,
-                media_duration_seconds=args.media_duration_seconds,
+            log(
+                "CLAIMED_UPLOAD_ABORTED: zero_active_claim_policy; "
+                "video tidak disimpan sebagai Private dan tidak dipublikasikan."
             )
             context.storage_state(path=str(state_path))
+            raise UploadError(
+                "Upload dihentikan oleh kebijakan nol-klaim. Pilih sumber yang hak audio dan "
+                "visualnya benar-benar Anda miliki/izinkan; klaim tidak disimpan sebagai Private."
+            ) from exc
         finally:
             close_upload_tab(page, force=using_cdp)
             if not using_cdp:

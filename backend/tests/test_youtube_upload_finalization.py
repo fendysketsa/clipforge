@@ -19,7 +19,6 @@ from youtube_uploader import (
     open_advanced_upload_settings,
     reload_after_publish,
     safe_upload_visibility,
-    save_claimed_upload_as_private,
     set_altered_content_disclosure,
     set_upload_text_field,
     set_thumbnail,
@@ -400,24 +399,23 @@ def test_checks_read_visible_dialog_when_studio_keeps_stale_dialog(monkeypatch):
         wait_for_copyright_checks(page, timeout_ms=100, require_checks=True)
 
 
-def test_checks_accept_exact_two_check_non_blocking_claim_from_studio(monkeypatch):
-    logs = []
+def test_checks_reject_exact_two_check_non_blocking_claim_from_studio(monkeypatch):
     monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
-    monkeypatch.setattr(youtube_uploader, "log", logs.append)
     page = TextPage(
         "Konten yang dilindungi hak cipta ditemukan di video ini. "
         "Tidak ada dampak pada jangkauan video. Video ini dapat dilihat sesuai dengan setelan Anda. "
         "Tidak ada dampak pada channel. Hal ini bukan teguran hak cipta."
     )
 
-    wait_for_copyright_checks(
-        page,
-        timeout_ms=100,
-        require_checks=True,
-        content_type="shorts",
-        media_duration_seconds=59.8,
-    )
+    with pytest.raises(UploadError, match="Content ID"):
+        wait_for_copyright_checks(
+            page,
+            timeout_ms=100,
+            require_checks=True,
+            content_type="shorts",
+            media_duration_seconds=59.8,
+        )
 
     assert copyright_claim_is_explicitly_non_blocking(page.body)
     assert copyright_issue_blocks_upload(
@@ -425,7 +423,6 @@ def test_checks_accept_exact_two_check_non_blocking_claim_from_studio(monkeypatc
         content_type="shorts",
         media_duration_seconds=0,
     )
-    assert any("aman untuk dilanjutkan" in message for message in logs)
 
 
 def test_checks_still_block_claimed_short_over_one_minute(monkeypatch):
@@ -437,7 +434,7 @@ def test_checks_still_block_claimed_short_over_one_minute(monkeypatch):
         "Tidak ada dampak pada channel. Hal ini bukan teguran hak cipta."
     )
 
-    with pytest.raises(UploadError, match="Short berdurasi lebih dari 1 menit"):
+    with pytest.raises(UploadError, match="Content ID"):
         wait_for_copyright_checks(
             page,
             timeout_ms=100,
@@ -458,10 +455,10 @@ def test_non_blocking_copy_never_overrides_explicit_video_block():
     assert copyright_issue_blocks_upload(body, content_type="long-form", media_duration_seconds=300)
 
 
-def test_verified_safe_claim_carries_to_compact_final_review_copy():
+def test_previously_non_blocking_claim_never_bypasses_zero_claim_policy():
     compact_body = "This video has a Content ID claim"
 
-    assert not copyright_issue_blocks_upload(
+    assert copyright_issue_blocks_upload(
         compact_body,
         content_type="shorts",
         media_duration_seconds=59.8,
@@ -722,47 +719,3 @@ def test_final_action_rechecks_claim_notice_immediately_before_click(monkeypatch
             TextPage("Konten yang diklaim ditemukan di video ini"),
             "public",
         )
-
-
-def test_claimed_upload_is_finalized_as_private(monkeypatch):
-    page = object()
-    calls = []
-    logs = []
-    monkeypatch.setattr(youtube_uploader, "get_upload_workflow_step", lambda _page: "CHECKS")
-    monkeypatch.setattr(
-        youtube_uploader,
-        "click_next_upload_step",
-        lambda *_args, **kwargs: calls.append(("next", kwargs["expected_step"])),
-    )
-    monkeypatch.setattr(youtube_uploader, "wait_for_visibility_step", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(
-        youtube_uploader,
-        "set_visibility",
-        lambda _page, visibility: calls.append(("visibility", visibility)),
-    )
-    monkeypatch.setattr(youtube_uploader, "visibility_is_selected", lambda *_args: True)
-    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(
-        youtube_uploader,
-        "extract_video_url",
-        lambda _page: "https://www.youtube.com/watch?v=abcDEF12345",
-    )
-
-    def fake_final_action(_page, visibility, **kwargs):
-        calls.append(("final", visibility, kwargs["allow_claimed_private_save"]))
-
-    monkeypatch.setattr(youtube_uploader, "click_final_upload_action", fake_final_action)
-    monkeypatch.setattr(youtube_uploader, "reload_after_publish", lambda _page: calls.append(("reload",)))
-    monkeypatch.setattr(youtube_uploader, "log", logs.append)
-
-    result = save_claimed_upload_as_private(page, content_type="long-form", media_duration_seconds=300)
-
-    assert result == "https://www.youtube.com/watch?v=abcDEF12345"
-    assert calls == [
-        ("next", "REVIEW"),
-        ("visibility", "private"),
-        ("final", "private", True),
-        ("reload",),
-    ]
-    assert "FINAL_VISIBILITY: private" in logs
-    assert "PRIVATE_FALLBACK_SAVED: content_id_claim" in logs

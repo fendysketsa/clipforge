@@ -130,6 +130,7 @@ export default function HomePage() {
   const [aiApiKey, setAiApiKey] = useState("");
   const [requiredHashtags, setRequiredHashtags] = useState(DEFAULT_REQUIRED_HASHTAGS);
   const [requireCreativeCommons, setRequireCreativeCommons] = useState(true);
+  const [confirmSourceRights, setConfirmSourceRights] = useState(false);
   const [autoUploadYoutube, setAutoUploadYoutube] = useState(false);
   const [aiModels, setAiModels] = useState<string[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
@@ -310,6 +311,7 @@ export default function HomePage() {
         } else if (restoredJob.request.url) {
           setSourceMode("url");
           setUrl(restoredJob.request.url);
+          setConfirmSourceRights(Boolean(restoredJob.request.confirm_source_rights));
         }
       })
       .catch(() => {
@@ -579,6 +581,7 @@ export default function HomePage() {
 
   const handleSourceModeChange = useCallback((mode: SourceMode) => {
     setSourceMode(mode);
+    setConfirmSourceRights(false);
     setError("");
   }, []);
 
@@ -643,6 +646,12 @@ export default function HomePage() {
       setError("Link YouTube tidak boleh kosong.");
       return;
     }
+    if (clipMode !== "long_animate" && sourceMode === "url" && !confirmSourceRights) {
+      setError(
+        "Konfirmasikan bahwa Anda memiliki hak/izin komersial atas audio dan visual sumber. Label Creative Commons saja tidak cukup.",
+      );
+      return;
+    }
     if (clipMode !== "long_animate" && sourceMode === "upload" && !uploadToken) {
       setError("Unggah file video terlebih dahulu.");
       return;
@@ -693,6 +702,7 @@ export default function HomePage() {
             .map((tag) => tag.trim())
             .filter(Boolean),
           require_creative_commons: requireCreativeCommons,
+          confirm_source_rights: sourceMode === "url" && confirmSourceRights,
           confirm_long_animate_rights: clipMode === "long_animate" && confirmLongAnimateRights,
           auto_upload_youtube: autoUploadYoutube,
           allow_reprocess_source: sourceMode === "url" && allowReprocessSource,
@@ -736,6 +746,7 @@ export default function HomePage() {
     captionPosition,
     clipMode,
     compilationTargetSeconds,
+    confirmSourceRights,
     cropMode,
     loadJobs,
     maxDuration,
@@ -1217,9 +1228,9 @@ export default function HomePage() {
       setAutoContentMessage(
         sources.length
           ? adaptiveCount
-            ? `${adaptiveCount} kandidat memakai perluasan durasi/HD/tayangan; Creative Commons, Bahasa Indonesia, dan tema tetap wajib.`
-            : "Semua kandidat cocok dengan seluruh filter dan lisensi Creative Commons telah diverifikasi."
-          : "Belum ditemukan konten Creative Commons Indonesia yang cukup relevan. Coba lagi nanti; video asing tidak akan dipaksakan masuk.",
+            ? `${adaptiveCount} kandidat memakai perluasan durasi/HD/tayangan; metadata CC, Bahasa Indonesia, tema, dan guard risiko hak tetap wajib.`
+            : "Semua kandidat cocok dengan filter dan metadata CC terdeteksi; kepemilikan hak audio/visual tetap harus direview manual."
+          : "Belum ditemukan referensi CC Indonesia berisiko rendah yang cukup relevan. Coba lagi nanti; sumber TV/reupload tidak akan dipaksakan masuk.",
       );
     } catch {
       // toast.promise already presents the backend search error.
@@ -1367,9 +1378,11 @@ export default function HomePage() {
           onSelectLocalProvider={handleSelectLocalProvider}
           requiredHashtags={requiredHashtags}
           requireCreativeCommons={requireCreativeCommons}
+          confirmSourceRights={confirmSourceRights}
           autoUploadYoutube={autoUploadYoutube}
           onRequiredHashtagsChange={setRequiredHashtags}
           onRequireCreativeCommonsChange={setRequireCreativeCommons}
+          onConfirmSourceRightsChange={setConfirmSourceRights}
           onAutoUploadYoutubeChange={setAutoUploadYoutube}
           onCropModeChange={setCropMode}
           onMaxDurationChange={setMaxDuration}
@@ -1403,6 +1416,7 @@ export default function HomePage() {
             setSourceHistory(null);
             setIsCheckingSourceHistory(Boolean(value.trim()));
             setAllowReprocessSource(false);
+            setConfirmSourceRights(false);
           }}
           sourceHistory={sourceHistory}
           isCheckingSourceHistory={isCheckingSourceHistory}

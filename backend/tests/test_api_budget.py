@@ -29,6 +29,7 @@ from api import (
     search_viral_video_sources,
     search_youtube_data_api_viral_sources,
     safe_youtube_visibility,
+    source_rights_risk_reasons,
     source_history_for_url,
     unresolved_codex_ideas,
     youtube_cdp_start_needed,
@@ -540,7 +541,8 @@ def test_api_search_adapts_soft_filters_but_keeps_cc_language_and_niche(monkeypa
     selected = search_youtube_data_api_viral_sources(request, "missing-run", stop_after=3)
 
     assert len(selected) == 1
-    assert selected[0]["rights_verified"] is True
+    assert selected[0]["rights_verified"] is False
+    assert selected[0]["license_metadata_verified"] is True
     assert selected[0]["filter_match"] == "adaptive"
     assert len(selected[0]["relaxed_filters"]) == 3
 
@@ -776,6 +778,21 @@ def test_viral_source_rejects_live_restricted_or_non_public_video():
     )
 
 
+def test_source_rights_guard_rejects_claimed_tv_show_reupload_even_when_cc():
+    source = {
+        "license": "Creative Commons Attribution license",
+        "availability": "public",
+        "title": "Sintya Marisca - Islam Itu Indah 7 Feb 2k20",
+        "uploader": "Sintya Marisca Support",
+    }
+
+    reasons = source_rights_risk_reasons(source)
+
+    assert any("fan/support/reupload" in reason for reason in reasons)
+    assert any("Content ID" in reason for reason in reasons)
+    assert "uploader" in (viral_source_rejection_reason(source) or "")
+
+
 def test_upload_staging_drops_source_metadata():
     args = youtube_upload_clean_metadata_args()
 
@@ -899,11 +916,16 @@ def test_build_clipper_command_can_isolate_parallel_job_output(tmp_path):
 
 
 def test_build_clipper_command_forces_creative_commons_for_url_jobs():
-    request = ClipJobRequest(url="https://youtu.be/source", require_creative_commons=False)
+    request = ClipJobRequest(
+        url="https://youtu.be/source",
+        require_creative_commons=False,
+        confirm_source_rights=True,
+    )
 
     command = build_clipper_command(request)
 
     assert "--require-creative-commons" in command
+    assert "--confirm-source-rights" in command
 
 
 def test_build_clipper_command_does_not_require_creative_commons_for_uploaded_files():

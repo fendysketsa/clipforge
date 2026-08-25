@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from yt_dlp import YoutubeDL
 
 from llm import AIConfig, chat_completion, extract_json
+from source_rights import source_rights_risk_reasons
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -256,6 +257,7 @@ class ClipJobRequest(BaseModel):
     caption_outline_color: str = "#000000"
     required_hashtags: list[str] = Field(default_factory=default_required_hashtags)
     require_creative_commons: bool = True
+    confirm_source_rights: bool = False
     confirm_long_animate_rights: bool = False
     auto_upload_youtube: bool = False
     allow_reprocess_source: bool = False
@@ -2863,8 +2865,23 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
     if job.request.url.strip() and not is_creative_commons_info(metadata):
         return (
             "Upload diblokir: bukti lisensi Creative Commons sumber tidak ditemukan. "
-            "Render ulang dari sumber CC terverifikasi atau gunakan rekaman milik sendiri."
+            "Gunakan rekaman milik sendiri atau sumber dengan metadata CC dan izin komersial yang dapat dibuktikan."
         )
+    if job.request.url.strip() and not job.request.confirm_source_rights:
+        return (
+            "Upload diblokir: lisensi Creative Commons pada metadata YouTube bukan bukti bahwa "
+            "uploader memiliki seluruh hak audio dan visual. Proses ulang sumber setelah Anda "
+            "mengonfirmasi kepemilikan atau izin komersial yang dapat dibuktikan."
+        )
+    if job.request.url.strip():
+        rights_risks = source_rights_risk_reasons(metadata)
+        if rights_risks:
+            return (
+                "Upload diblokir: sumber URL berisiko tinggi terkena Content ID ("
+                + "; ".join(rights_risks[:2])
+                + "). Label CC dan atribusi tidak menghapus hak broadcaster/pemilik rekaman. "
+                "Gunakan rekaman milik sendiri atau materi dengan izin tertulis yang mencakup audio dan visual."
+            )
     sidecar = clip_sidecar_payload(clip)
     if str(sidecar.get("production_model") or "") == "codex_long_story_director":
         story_director = sidecar.get("story_director")
@@ -6135,6 +6152,8 @@ def build_clipper_command(
             command.extend(["--required-hashtags", ",".join(cleaned)])
     if request.url:
         command.append("--require-creative-commons")
+        if request.confirm_source_rights:
+            command.append("--confirm-source-rights")
 
     if request.ai_enabled:
         command.append("--ai-enabled")
@@ -6454,7 +6473,7 @@ def is_creative_commons_info(info: dict[str, Any]) -> bool:
 def viral_source_rejection_reason(info: dict[str, Any]) -> str | None:
     """Reject risky/unavailable sources before they enter clipping automation."""
     if not is_creative_commons_info(info):
-        return "lisensi Creative Commons tidak terverifikasi"
+        return "metadata lisensi Creative Commons tidak terdeteksi"
     availability = str(info.get("availability") or "public").casefold()
     if availability not in {"", "public"}:
         return f"akses sumber bukan publik ({availability})"
@@ -6471,6 +6490,9 @@ def viral_source_rejection_reason(info: dict[str, Any]) -> str | None:
         age_limit = 0
     if age_limit >= 18:
         return "video berusia terbatas tidak dipakai"
+    rights_risks = source_rights_risk_reasons(info)
+    if rights_risks:
+        return rights_risks[0]
     return None
 
 
@@ -6706,7 +6728,8 @@ def compact_source_payload(
         "likes": info.get("like_count"),
         "upload_date": info.get("upload_date"),
         "license": info.get("license"),
-        "rights_verified": is_creative_commons_info(info),
+        "rights_verified": False,
+        "license_metadata_verified": is_creative_commons_info(info),
         "score": round(ranking_score, 2),
         "viral_score": viral_score,
         "niche": resolved_niche,
@@ -7690,7 +7713,7 @@ def resolve_selected_auto_viral_sources(
         if filter_rejection:
             append_auto_viral_log(
                 run_id,
-                f"Pilihan #{rank} memakai perluasan filter ({filter_rejection}); lisensi CC tetap terverifikasi.",
+                f"Pilihan #{rank} memakai perluasan filter ({filter_rejection}); metadata CC dan guard risiko hak tetap lolos.",
             )
         niche_rejection = niche_candidate_rejection_reason(metadata, request.niche)
         if niche_rejection:
@@ -8934,6 +8957,15 @@ def create_job(request: ClipJobRequest) -> ClipJob:
         )
     elif not request.url and not request.source_file:
         raise HTTPException(status_code=400, detail="Provide a YouTube URL or upload a video first")
+
+    if request.url.strip() and request.auto_upload_youtube and not request.confirm_source_rights:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Auto Upload diblokir: konfirmasikan kepemilikan atau izin komersial yang dapat "
+                "dibuktikan untuk seluruh audio dan visual sumber. Metadata CC saja tidak cukup."
+            ),
+        )
 
     if request.clip_mode == "long_animate":
         pass
