@@ -4915,6 +4915,29 @@ def copyright_checks_all_clear(body: str) -> bool:
     )
 
 
+def copyright_check_is_clear(body: str) -> bool:
+    """Return true once Studio explicitly clears the copyright check."""
+    normalized = re.sub(r"\s+", " ", body or "").casefold()
+    return any(
+        re.search(pattern, normalized, re.I)
+        for pattern in (
+            r"hak cipta\s+tidak ditemukan masalah",
+            r"copyright\s+no issues found",
+        )
+    )
+
+
+def community_check_is_pending(body: str) -> bool:
+    normalized = re.sub(r"\s+", " ", body or "").casefold()
+    return any(
+        re.search(pattern, normalized, re.I)
+        for pattern in (
+            r"pedoman komunitas.*(?:sedang memeriksa|masih memeriksa|memeriksa|perlu waktu lebih lama)",
+            r"community guidelines.*(?:checking|still checking|in progress|taking longer|takes longer)",
+        )
+    )
+
+
 def wait_for_copyright_checks(
     page,
     timeout_ms: int,
@@ -4922,6 +4945,8 @@ def wait_for_copyright_checks(
     *,
     content_type: str = "auto",
     media_duration_seconds: float = 0.0,
+    allow_private_review_while_community_pending: bool = False,
+    skip_pending_checks_for_private_review: bool = False,
 ) -> bool:
     log("Menunggu YouTube Studio Checks sampai semua pemeriksaan aman...")
     deadline = time.monotonic() + timeout_ms / 1000
@@ -4994,6 +5019,22 @@ def wait_for_copyright_checks(
                 "Upload dibatalkan sebelum aksi Simpan/Publikasikan agar channel tetap aman."
                 f"{impact_note}"
             )
+        if skip_pending_checks_for_private_review and has_checking:
+            log(
+                "Checks YouTube masih diproses tanpa klaim eksplisit. "
+                "Upload Private dilanjutkan sekarang; hasil pemeriksaan tetap berjalan di YouTube Studio."
+            )
+            return True
+        if (
+            allow_private_review_while_community_pending
+            and copyright_check_is_clear(body)
+            and community_check_is_pending(body)
+        ):
+            log(
+                "Copyright sudah aman; pemeriksaan Pedoman Komunitas masih berjalan. "
+                "Upload Private disimpan untuk review tanpa menahan antrean."
+            )
+            return True
         if has_long_running and not long_running_extended and long_running_extension_seconds:
             deadline += long_running_extension_seconds
             long_running_extended = True
@@ -5616,14 +5657,25 @@ def run_upload(args: argparse.Namespace) -> None:
 
             click_next_upload_step(page, timeout_ms=next_step_timeout_ms, expected_step="CHECKS")
             log("Step Elemen video sudah tercentang; masuk ke tab Pemeriksaan awal.")
-            wait_for_copyright_checks(
+            private_review_checks_pending = wait_for_copyright_checks(
                 page,
                 min(timeout_ms, int(os.environ.get("YOUTUBE_CHECKS_TIMEOUT_SECONDS", "3600")) * 1000),
                 args.require_copyright_checks,
                 content_type=args.thumbnail_content_type,
                 media_duration_seconds=args.media_duration_seconds,
+                allow_private_review_while_community_pending=(
+                    args.visibility == "private"
+                    and env_bool("YOUTUBE_PRIVATE_FAST_CHECKS", True)
+                ),
+                skip_pending_checks_for_private_review=(
+                    args.visibility == "private"
+                    and env_bool("YOUTUBE_PRIVATE_SKIP_PENDING_CHECKS", True)
+                ),
             )
-            log("Step 3 Checks sudah selesai dan aman; lanjut ke Visibilitas.")
+            if private_review_checks_pending:
+                log("Checks masih diproses YouTube; lanjut ke Visibilitas Private tanpa menahan antrean.")
+            else:
+                log("Step 3 Checks sudah selesai dan aman; lanjut ke Visibilitas.")
 
             click_next_upload_step(page, timeout_ms=next_step_timeout_ms, expected_step="REVIEW")
             log("Masuk ke tab Visibilitas.")

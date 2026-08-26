@@ -346,6 +346,62 @@ def test_checks_wait_when_one_item_is_safe_but_another_is_checking(monkeypatch):
         wait_for_copyright_checks(page, timeout_ms=100, require_checks=True)
 
 
+def test_private_review_does_not_wait_for_pending_community_check(monkeypatch):
+    logs = []
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "log", logs.append)
+    page = TextPage("Hak cipta Tidak ditemukan masalah\nPedoman Komunitas Masih memeriksa")
+
+    checks_pending = wait_for_copyright_checks(
+        page,
+        timeout_ms=100,
+        require_checks=True,
+        allow_private_review_while_community_pending=True,
+    )
+
+    assert checks_pending is True
+    assert any("tanpa menahan antrean" in message for message in logs)
+
+
+def test_private_review_skips_pending_copyright_check(monkeypatch):
+    logs = []
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "log", logs.append)
+    page = TextPage(
+        "Hak cipta Masih memeriksa\n"
+        "Pedoman Komunitas Tidak ditemukan masalah\n"
+        "Perlu waktu lebih lama untuk menyelesaikan pemeriksaan"
+    )
+
+    checks_pending = wait_for_copyright_checks(
+        page,
+        timeout_ms=100,
+        require_checks=True,
+        skip_pending_checks_for_private_review=True,
+    )
+
+    assert checks_pending is True
+    assert any("dilanjutkan sekarang" in message for message in logs)
+
+
+def test_private_review_fast_path_never_bypasses_a_copyright_claim(monkeypatch):
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
+    page = TextPage(
+        "Hak cipta Konten yang diklaim ditemukan di video ini\n"
+        "Pedoman Komunitas Masih memeriksa"
+    )
+
+    with pytest.raises(UploadError, match="Content ID"):
+        wait_for_copyright_checks(
+            page,
+            timeout_ms=100,
+            require_checks=True,
+            allow_private_review_while_community_pending=True,
+            skip_pending_checks_for_private_review=True,
+        )
+
+
 def test_checks_extend_wait_when_youtube_says_it_needs_longer(monkeypatch):
     clock = iter((0.0, 0.0, 1.0))
     logs = []

@@ -4430,7 +4430,7 @@ def five_k_experiment_readiness(
     """Describe a repeatable format-specific experiment without predicting distribution.
 
     The legacy function name remains for saved sidecars and integrations. Shorts
-    target 20K views plus 20 subscribers; long-form keeps a 5K/20 baseline. The
+    target 50K views plus 20 subscribers; long-form keeps a 5K/20 baseline. The
     stability rule compares like-for-like uploads and changes one variable at a
     time without delete/re-upload spam or misleading packaging.
     """
@@ -4451,18 +4451,18 @@ def five_k_experiment_readiness(
     structured_comparison = structured_comparison_profile(clip.text, clip.duration)
     subscriber_intent = subscriber_intent_profile(clip)
     is_short = output_format == "vertical_short"
-    target_views = 20000 if is_short else 5000
+    target_views = 50000 if is_short else 5000
     return {
-        "version": 9,
+        "version": 10,
         "experiment_name": (
-            "sustainable_20k_20_subscriber_growth"
+            "sustainable_50k_20_subscriber_growth"
             if is_short
             else "sustainable_5k_long_form_growth"
         ),
         "target_views": target_views,
         "target_subscribers": 20,
         "target_subscribers_per_1000_views": round(20 / target_views * 1000, 3),
-        "stretch_target_views": 50000 if is_short else 10000,
+        "stretch_target_views": 100000 if is_short else 10000,
         "target_metric": (
             "shorts_views_starts_or_replays"
             if output_format == "vertical_short"
@@ -4492,7 +4492,7 @@ def five_k_experiment_readiness(
         "stability_definition": {
             "window": "last_5_comparable_publications",
             "success_rule": (
-                "at_least_3_reach_20000_views_and_20_subscribers"
+                "at_least_3_reach_50000_views_and_20_subscribers"
                 if is_short
                 else "at_least_3_reach_5000_views_and_20_subscribers"
             ),
@@ -4568,7 +4568,7 @@ def five_k_experiment_readiness(
             ]
         ),
         "review_checkpoints": (
-            [1000, 5000, 10000, 20000]
+            [1000, 5000, 10000, 20000, 50000]
             if is_short
             else [100, 500, 1000, 5000]
         ),

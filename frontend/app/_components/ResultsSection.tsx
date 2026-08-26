@@ -94,6 +94,22 @@ function youtubeUploadErrorNeedsSessionRepair(message: string) {
   ].some((marker) => lowered.includes(marker));
 }
 
+function youtubeRunningStage(upload: YouTubeUploadJob) {
+  if (upload.status !== "running") return "";
+  const recent = [...(upload.logs ?? [])].reverse();
+  for (const line of recent) {
+    if (/masuk ke tab visibilitas|mengatur visibilitas|step 4 visibilitas/i.test(line)) return "finalisasi Private";
+    if (/copyright sudah aman|checks masih berjalan|menunggu youtube studio checks/i.test(line)) {
+      return "pemeriksaan copyright/komunitas";
+    }
+    if (/playlist/i.test(line)) return "verifikasi playlist";
+    if (/thumbnail/i.test(line)) return "verifikasi thumbnail";
+    if (/subtitle|elemen video/i.test(line)) return "subtitle & elemen video";
+    if (/file.*dipilih|mengunggah|upload.*dimulai/i.test(line)) return "transfer video";
+  }
+  return "menyiapkan YouTube Studio";
+}
+
 function fypScoreTone(score: number) {
   if (score >= 88) return "excellent";
   if (score >= 78) return "strong";
@@ -381,7 +397,7 @@ export function ResultsSection({
               ? growthTargetReadiness(
                   clip.fyp_score,
                   isLongForm,
-                  clip.growth_target_views || (isLongForm ? 5000 : 20000),
+                  clip.growth_target_views || (isLongForm ? 5000 : 50000),
                   clip.growth_target_subscribers || 20,
                   clip.growth_next_action,
                   clip.growth_status,
@@ -393,6 +409,7 @@ export function ResultsSection({
             const isUploadingToYouTube = latestUpload?.status === "queued" || latestUpload?.status === "running";
             const isAlreadyUploaded = latestUpload?.status === "completed" && Boolean(latestUpload.video_url);
             const hasRunningUpload = youtubeUploads.some((upload) => upload.status === "running");
+            const runningStage = latestUpload ? youtubeRunningStage(latestUpload) : "";
             const queuePosition = latestUpload?.status === "queued"
               ? latestUpload.queue_position ?? null
               : null;
@@ -670,6 +687,7 @@ export function ResultsSection({
                       <UploadCloud size={14} />
                       <span className="youtubeUploadStatusText">
                         YouTube: {latestUpload.status}
+                        {runningStage ? ` · ${runningStage}` : null}
                         {latestUpload.status === "completed" && latestUpload.visibility === "private"
                           ? " · tersimpan Private"
                           : null}

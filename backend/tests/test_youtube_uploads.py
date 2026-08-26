@@ -319,7 +319,7 @@ def test_youtube_growth_targets_ignore_stale_short_sidecar_target():
         clips=[clip],
     )
 
-    assert youtube_growth_targets(job, clip) == (20000, 20)
+    assert youtube_growth_targets(job, clip) == (50000, 20)
 
 
 def test_youtube_growth_targets_keep_long_form_baseline_separate():
@@ -366,7 +366,27 @@ def test_saved_upload_model_migrates_stale_targets_by_format():
     # model_copy intentionally skips validation, mirroring a raw persisted payload below.
     long_form = YouTubeUploadJob(**long_form.model_dump())
 
-    assert (short.growth_target_views, short.growth_target_subscribers) == (20000, 20)
+    assert (short.growth_target_views, short.growth_target_subscribers) == (50000, 20)
+    assert (long_form.growth_target_views, long_form.growth_target_subscribers) == (5000, 20)
+
+
+def test_saved_clip_model_migrates_stale_targets_by_format():
+    short = ClipFile(
+        name="clip_01.mp4",
+        url="/outputs/demo/clips/clip_01.mp4",
+        size_bytes=1,
+        growth_target_views=20000,
+        growth_target_subscribers=5,
+    )
+    long_form = ClipFile(
+        name="resume_cerita_5menit_inti.mp4",
+        url="/outputs/demo/clips/resume_cerita_5menit_inti.mp4",
+        size_bytes=1,
+        growth_target_views=50000,
+        growth_target_subscribers=99,
+    )
+
+    assert (short.growth_target_views, short.growth_target_subscribers) == (50000, 20)
     assert (long_form.growth_target_views, long_form.growth_target_subscribers) == (5000, 20)
 
 
@@ -1690,7 +1710,7 @@ def test_complete_description_removes_icons_from_ai_summary():
     assert not any(icon in description for icon in ("💡", "→", "🤲"))
 
 
-def test_performance_feedback_marks_20k_and_20_subscriber_target(monkeypatch, tmp_path):
+def test_performance_feedback_marks_50k_and_20_subscriber_target(monkeypatch, tmp_path):
     import api
 
     upload = YouTubeUploadJob(
@@ -1714,7 +1734,7 @@ def test_performance_feedback_marks_20k_and_20_subscriber_target(monkeypatch, tm
         api.YouTubePerformanceSnapshot(
             captured_at="2026-08-22T00:00:00+00:00",
             source="youtube_analytics",
-            views=20000,
+            views=50000,
             engaged_views=15000,
             average_view_duration=28.4,
             average_view_percentage=84.2,

@@ -339,6 +339,21 @@ class ClipFile(BaseModel):
     growth_checkpoints: list[int] = Field(default_factory=list)
     is_correct: bool = False
 
+    @model_validator(mode="before")
+    @classmethod
+    def _canonical_growth_target(cls, value: Any) -> Any:
+        """Migrate saved jobs/sidecars to the active per-format growth target."""
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        clip_name = str(data.get("name") or "").casefold()
+        is_long_form = clip_name.startswith(
+            ("highlight_5menit_", "resume_cerita_", "long_animate_")
+        )
+        data["growth_target_views"] = 5000 if is_long_form else 50000
+        data["growth_target_subscribers"] = 20
+        return data
+
 
 class ClipJob(BaseModel):
     id: str
@@ -573,7 +588,7 @@ class YouTubeUploadJob(BaseModel):
     clip_cleanup_completed_steps: list[str] = Field(default_factory=list)
     clip_cleanup_step_details: dict[str, YouTubeCleanupStepProgress] = Field(default_factory=dict)
     growth_series: str = ""
-    growth_target_views: int = Field(default=20000, ge=1)
+    growth_target_views: int = Field(default=50000, ge=1)
     growth_target_subscribers: int = Field(default=20, ge=1)
     performance_status: Literal[
         "not_measured", "learning", "views_target_met", "target_met"
@@ -595,7 +610,7 @@ class YouTubeUploadJob(BaseModel):
         is_long_form = clip_name.startswith(
             ("highlight_5menit_", "resume_cerita_", "long_animate_")
         )
-        data["growth_target_views"] = 5000 if is_long_form else 20000
+        data["growth_target_views"] = 5000 if is_long_form else 50000
         data["growth_target_subscribers"] = 20
         return data
 
@@ -1526,7 +1541,7 @@ def is_compilation_clip(job: "ClipJob", clip: ClipFile) -> bool:
 
 def youtube_growth_targets(job: "ClipJob", clip: ClipFile) -> tuple[int, int]:
     """Return canonical per-upload targets without trusting stale sidecar values."""
-    return (5000 if is_compilation_clip(job, clip) else 20000, 20)
+    return (5000 if is_compilation_clip(job, clip) else 50000, 20)
 
 
 def classify_long_form_playlist(*values: str) -> str:
