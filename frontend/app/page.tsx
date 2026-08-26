@@ -1225,12 +1225,15 @@ export default function HomePage() {
       setAutoContentSources(sources);
       setSelectedAutoContentUrls(sources.map((source) => source.url));
       const adaptiveCount = sources.filter((source) => source.filter_match === "adaptive").length;
+      const riskCount = sources.filter((source) => source.content_id_risk === "high").length;
       setAutoContentMessage(
         sources.length
-          ? adaptiveCount
+          ? riskCount
+            ? `${riskCount} kandidat punya sinyal risiko Content ID tetapi tetap ditampilkan. Gate ketat baru membatalkannya saat clipping dimulai, sebelum download.`
+            : adaptiveCount
             ? `${adaptiveCount} kandidat memakai perluasan durasi/HD/tayangan; metadata CC, Bahasa Indonesia, tema, dan guard risiko hak tetap wajib.`
             : "Semua kandidat cocok dengan filter dan metadata CC terdeteksi; kepemilikan hak audio/visual tetap harus direview manual."
-          : "Belum ditemukan referensi CC Indonesia berisiko rendah yang cukup relevan. Coba lagi nanti; sumber TV/reupload tidak akan dipaksakan masuk.",
+          : "Belum ditemukan referensi CC Indonesia yang cukup relevan. Coba perluas filter lalu cari lagi.",
       );
     } catch {
       // toast.promise already presents the backend search error.

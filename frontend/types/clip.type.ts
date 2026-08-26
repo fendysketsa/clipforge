@@ -356,6 +356,8 @@ export type ViralContentSource = {
   license?: string | null;
   rights_verified: boolean;
   license_metadata_verified?: boolean;
+  content_id_risk?: "review" | "high";
+  content_id_risk_reasons?: string[];
   score: number;
   viral_score: number;
   niche: IslamicContentNiche;

@@ -2534,6 +2534,7 @@ def youtube_description_summary(value: str) -> str:
         r"(?:💬\s*)?(?:IKUT BERDISKUSI|MENURUT KAMU\?|UNTUK DIDISKUSIKAN)|"
         r"YANG DIBAHAS DALAM VIDEO INI|MARI DISKUSIKAN|COBA TELAAH|COBA BEDAKAN|"
         r"UNTUK DIRENUNGKAN|MENURUTMU|"
+        r"JIKA TOMBOL VIRALKAN TERSEDIA|"
         r"(?:🔥\s*)?DUKUNG(?: CHANNEL INI)?|(?:📱\s*)?CHANNEL|"
         r"(?:⚠️?\s*)?CATATAN KONTEN|"
         r"Atribusi sumber \(CC BY\):|Audit & edit editorial otomatis:)",
@@ -2624,6 +2625,11 @@ def complete_youtube_description(
         ]
     cta_seed = f"{clip.title or ''}|{clean_summary}".encode("utf-8")
     contextual_cta = cta_options[hashlib.sha256(cta_seed).digest()[0] % len(cta_options)]
+    if is_compilation:
+        contextual_cta = (
+            "Jika tombol Viralkan tersedia pada 7 hari pertama, tekan bila video ini "
+            "memang layak agar lebih mudah ditemukan penonton baru."
+        )
 
     ordered_tags: list[str] = []
     seen: set[str] = set()
@@ -6527,8 +6533,13 @@ def is_creative_commons_info(info: dict[str, Any]) -> bool:
     )
 
 
-def viral_source_rejection_reason(info: dict[str, Any]) -> str | None:
-    """Reject risky/unavailable sources before they enter clipping automation."""
+def viral_source_discovery_rejection_reason(info: dict[str, Any]) -> str | None:
+    """Reject unusable sources during discovery without hiding rights-risk matches.
+
+    Content ID heuristics are intentionally not a discovery filter. They are
+    attached to each result for review and enforced when clipping starts, so a
+    useful search result is still findable without weakening the final gate.
+    """
     if not is_creative_commons_info(info):
         return "metadata lisensi Creative Commons tidak terdeteksi"
     availability = str(info.get("availability") or "public").casefold()
@@ -6547,6 +6558,14 @@ def viral_source_rejection_reason(info: dict[str, Any]) -> str | None:
         age_limit = 0
     if age_limit >= 18:
         return "video berusia terbatas tidak dipakai"
+    return None
+
+
+def viral_source_rejection_reason(info: dict[str, Any]) -> str | None:
+    """Apply the strict source gate immediately before clipping starts."""
+    discovery_rejection = viral_source_discovery_rejection_reason(info)
+    if discovery_rejection:
+        return discovery_rejection
     rights_risks = source_rights_risk_reasons(info)
     if rights_risks:
         return rights_risks[0]
@@ -6771,6 +6790,7 @@ def compact_source_payload(
     definition = str(info.get("definition") or "").strip().casefold()
     if not definition and source_height >= 720:
         definition = "hd"
+    content_id_risk_reasons = source_rights_risk_reasons(info)
     return {
         "url": normalize_youtube_video_url(youtube_watch_url(info)) or youtube_watch_url(info),
         "title": str(info.get("title") or "Video tanpa judul")[:180],
@@ -6787,6 +6807,8 @@ def compact_source_payload(
         "license": info.get("license"),
         "rights_verified": False,
         "license_metadata_verified": is_creative_commons_info(info),
+        "content_id_risk": "high" if content_id_risk_reasons else "review",
+        "content_id_risk_reasons": content_id_risk_reasons,
         "score": round(ranking_score, 2),
         "viral_score": viral_score,
         "niche": resolved_niche,
@@ -7091,7 +7113,7 @@ def search_youtube_data_api_viral_sources(
                     f"Skip karena filter ({filter_rejection}): {payload.get('title') or '-'}",
                 )
                 continue
-            rejection_reason = viral_source_rejection_reason(payload)
+            rejection_reason = viral_source_discovery_rejection_reason(payload)
             if rejection_reason:
                 append_auto_viral_log(
                     run_id,
@@ -7216,7 +7238,7 @@ def search_auto_viral_sources(
                     f"Skip karena filter ({filter_rejection}): {metadata.get('title') or url}",
                 )
                 continue
-            rejection_reason = viral_source_rejection_reason(metadata)
+            rejection_reason = viral_source_discovery_rejection_reason(metadata)
             if rejection_reason:
                 append_auto_viral_log(
                     run_id,
@@ -7751,7 +7773,7 @@ def resolve_selected_auto_viral_sources(
     for rank, url in enumerate(request.source_urls, start=1):
         append_auto_viral_log(run_id, f"Validasi pilihan #{rank}: {url}")
         metadata = fetch_youtube_metadata(url)
-        rejection_reason = viral_source_rejection_reason(metadata)
+        rejection_reason = viral_source_discovery_rejection_reason(metadata)
         if rejection_reason:
             raise RuntimeError(f"Pilihan #{rank} tidak aman: {rejection_reason}")
         duration = float(metadata.get("duration") or 0)
@@ -7782,6 +7804,12 @@ def resolve_selected_auto_viral_sources(
 
 
 def create_auto_viral_clip_job(source: dict[str, Any], request: AutoViralRequest) -> ClipJob:
+    strict_rejection = viral_source_rejection_reason(source)
+    if strict_rejection:
+        raise RuntimeError(
+            "Gate Content ID saat clipping membatalkan sumber sebelum download: "
+            f"{strict_rejection}"
+        )
     wait_for_no_active_clipping_job()
     job_request = ClipJobRequest(
         url=str(source["url"]),

@@ -560,7 +560,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
           {clipMode === "long_animate"
             ? "Scene Cinema mengubah naskah menjadi storyboard, art bible, visual per scene, gerak kamera, voice-over, subtitle, musik, thumbnail, dan satu video 16:9 utuh."
             : clipMode === "highlight_5m"
-            ? "Codex Long Story Director membuat teaser singkat tanpa duplikasi, lalu merangkai konteks, perkembangan, penjelasan, dan kesimpulan secara kronologis dalam 16:9—tanpa memanjangkan video dengan filler."
+            ? "Codex Long Story Director membuat teaser singkat tanpa duplikasi, lalu merangkai konteks, perkembangan, penjelasan, dan kesimpulan secara kronologis dalam 16:9—tanpa filler. Deskripsi menambahkan ajakan Viralkan yang wajar untuk 7 hari pertama; kelayakan tetap ditentukan YouTube."
             : "Clip vertikal maksimal 60 detik (batas internal untuk fokus dan retention; Content ID apa pun tetap membatalkan upload) dengan frame cover awal yang dapat dipilih lewat timeline aplikasi YouTube sekitar 0,78 detik, caption safe-area, payoff, CTA Subscribe kontekstual, dan loop alami."}
         </p>
       </div>
@@ -1186,7 +1186,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
           </div>
           <div className="viralFilterPolicy">
             <ShieldCheck size={14} />
-            <span>Metadata Creative Commons dan Bahasa Indonesia wajib. Akun fan/reupload serta indikasi TV, film, musik, broadcaster, dan daftar risiko Content ID ditolak; hasil tetap hanya untuk review hak manual.</span>
+            <span>Metadata Creative Commons dan Bahasa Indonesia wajib. Sinyal akun fan/reupload, TV, film, musik, broadcaster, dan risiko Content ID tetap ditampilkan sebagai peringatan; gate ketat baru membatalkan sumber saat clipping dimulai.</span>
           </div>
 
           <button
@@ -1231,6 +1231,14 @@ TEKS LAYAR: Data Terkirim`}</pre>
                         <span>Penyesuaian: {source.relaxed_filters.join(" • ")}</span>
                       </div>
                     ) : null}
+                    {source.content_id_risk === "high" ? (
+                      <div className="autoRightsWarning" role="alert">
+                        <ShieldCheck size={13} />
+                        <span>
+                          Risiko Content ID tinggi: {source.content_id_risk_reasons?.join(" • ") || "perlu review hak manual"}. Sumber akan dihentikan sebelum download saat proses clipping.
+                        </span>
+                      </div>
+                    ) : null}
                     <div className="autoContentReason">
                       <ShieldCheck size={13} />
                       <span>{source.ranking_reason}</span>
@@ -1259,7 +1267,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
           ) : null}
 
           <p className="field-help">
-            {autoViralMessage || "Google YouTube API memfilter metadata CC dan guard risiko sumber mengurutkan hasil. Upload tetap terkunci sampai hak audio/visual dapat dibuktikan."}
+            {autoViralMessage || "Google YouTube API mencari metadata CC secara luas. Peringatan risiko tidak menyembunyikan hasil; clipping dan upload tetap terkunci ketika hak audio/visual atau pemeriksaan Content ID tidak aman."}
           </p>
           </div>
         </details>

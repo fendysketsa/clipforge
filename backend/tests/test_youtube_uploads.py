@@ -1584,6 +1584,33 @@ def test_complete_long_description_is_more_detailed_and_removes_short_tag():
     assert "Yang dibahas dalam video ini:" in description
     assert "#Islam #Cerita" in description
     assert "#Shorts" not in description
+    assert "Jika tombol Viralkan tersedia pada 7 hari pertama" in description
+
+
+def test_short_description_does_not_claim_hype_eligibility():
+    clip = ClipFile(
+        name="clip_01.mp4",
+        url="/outputs/demo/clips/clip_01.mp4",
+        size_bytes=1,
+        title="Hikmah Menjaga Hati",
+    )
+    job = ClipJob(
+        id="job-short-no-hype",
+        status="completed",
+        request=ClipJobRequest(source_file="owned.mp4", clip_mode="short"),
+        created_at="2026-08-22T00:00:00+00:00",
+        updated_at="2026-08-22T00:00:00+00:00",
+        clips=[clip],
+    )
+
+    description = complete_youtube_description(
+        job,
+        clip,
+        "Hikmah untuk keseharian.",
+        ["Hikmah"],
+    )
+
+    assert "tombol Viralkan" not in description
 
 
 def test_youtube_description_keeps_fendy_audit_internal_not_public(monkeypatch):

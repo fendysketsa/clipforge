@@ -3495,7 +3495,8 @@ body::before {
 }
 
 .viralFilterPolicy,
-.autoFilterRelaxation {
+.autoFilterRelaxation,
+.autoRightsWarning {
   display: flex;
   align-items: flex-start;
   gap: 7px;
@@ -3521,6 +3522,24 @@ body::before {
   border-radius: 8px;
   color: #d2b96c;
   background: rgba(250, 204, 21, 0.055);
+}
+
+.autoRightsWarning {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 7px 8px;
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: 8px;
+  color: #fca5a5;
+  background: rgba(127, 29, 29, 0.14);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.autoRightsWarning svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
 }
 
 .autoContentResults {

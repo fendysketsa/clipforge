@@ -36,6 +36,7 @@ from api import (
     youtube_data_api_search_queries,
     youtube_upload_staging_filter,
     user_error_from_logs,
+    viral_source_discovery_rejection_reason,
     viral_source_rejection_reason,
     viral_search_filter_rejection_reason,
     youtube_upload_clean_metadata_args,
@@ -791,6 +792,18 @@ def test_source_rights_guard_rejects_claimed_tv_show_reupload_even_when_cc():
     assert any("fan/support/reupload" in reason for reason in reasons)
     assert any("Content ID" in reason for reason in reasons)
     assert "uploader" in (viral_source_rejection_reason(source) or "")
+
+
+def test_discovery_keeps_rights_risk_visible_but_clipping_gate_rejects_it():
+    source = {
+        "license": "Creative Commons Attribution license",
+        "availability": "public",
+        "title": "Full Episode Islam Itu Indah",
+        "uploader": "Contoh TV Reupload",
+    }
+
+    assert viral_source_discovery_rejection_reason(source) is None
+    assert viral_source_rejection_reason(source)
 
 
 def test_upload_staging_drops_source_metadata():

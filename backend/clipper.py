@@ -9714,6 +9714,11 @@ def format_social_description(
             ]
     cta_seed = f"{clip.title}|{clean_summary}".encode("utf-8")
     contextual_cta = cta_options[hashlib.sha256(cta_seed).digest()[0] % len(cta_options)]
+    if long_form:
+        contextual_cta = (
+            "Jika tombol Viralkan tersedia pada 7 hari pertama, tekan bila video ini "
+            "memang layak agar lebih mudah ditemukan penonton baru."
+        )
     ordered_tags: list[str] = []
     seen: set[str] = set()
     for raw in hashtags:
