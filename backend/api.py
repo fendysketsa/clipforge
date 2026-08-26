@@ -2517,6 +2517,8 @@ def youtube_description_summary(value: str) -> str:
     clean = re.split(
         r"\n\s*\n(?:(?:✨\s*)?YANG AKAN KAMU DAPAT|(?:🔎\s*)?POIN PENTING|"
         r"(?:💬\s*)?(?:IKUT BERDISKUSI|MENURUT KAMU\?|UNTUK DIDISKUSIKAN)|"
+        r"YANG DIBAHAS DALAM VIDEO INI|MARI DISKUSIKAN|COBA TELAAH|COBA BEDAKAN|"
+        r"UNTUK DIRENUNGKAN|MENURUTMU|"
         r"(?:🔥\s*)?DUKUNG(?: CHANNEL INI)?|(?:📱\s*)?CHANNEL|"
         r"(?:⚠️?\s*)?CATATAN KONTEN|"
         r"Atribusi sumber \(CC BY\):|Audit & edit editorial otomatis:)",
@@ -2557,21 +2559,56 @@ def complete_youtube_description(
         )
         if value
     )
-    highlights = youtube_description_highlights(context, is_compilation=is_compilation)
-    benefit_lines = "\n".join(f"- {item}" for item in highlights)
     lowered = context.casefold()
+    has_mystery_context = any(
+        term in lowered for term in ("misteri", "mitos", "mistis", "horor", "gaib", "setan", "jin")
+    )
+    has_islamic_context = any(
+        term in lowered
+        for term in ("islam", "allah", "al-quran", "alquran", "quran", "nabi", "iman", "doa", "shalat", "salat")
+    )
     if any(term in lowered for term in ("waris", "warisan", "pewaris", "ahli waris", "takziah")):
+        discussion_label = "Mari diskusikan:"
         question = "Bagian aturan warisan mana yang paling sering disalahpahami?"
-        subscribe_reason = "Subscribe untuk pembahasan hukum keluarga dan hikmah Islam berikutnya."
-    elif any(term in lowered for term in ("misteri", "mitos", "mistis", "horor", "gaib")):
+        cta_options = [
+            "Simpan video ini sebagai pengingat sebelum membahas hak keluarga.",
+            "Bagikan pembahasan ini kepada keluarga yang mungkin membutuhkannya.",
+            "Ikuti channel ini untuk pembahasan hukum keluarga dan hikmah Islam berikutnya.",
+        ]
+    elif has_mystery_context and has_islamic_context:
+        discussion_label = "Coba telaah:"
+        question = "Bagian mana yang bersumber dari dalil, penafsiran, atau cerita?"
+        cta_options = [
+            "Simpan video ini untuk menelaah kembali konteks pembahasannya.",
+            "Bagikan jika pembahasan ini membantu memisahkan dalil, penafsiran, dan cerita.",
+            "Ikuti channel ini untuk kajian kontekstual dan cek fakta berikutnya.",
+        ]
+    elif has_mystery_context:
+        discussion_label = "Coba bedakan:"
         question = "Bagian mana yang merupakan fakta, pengalaman, atau penafsiran?"
-        subscribe_reason = "Subscribe untuk cerita kontekstual dan cek fakta berikutnya."
+        cta_options = [
+            "Simpan video ini sebagai pengingat untuk memeriksa konteks sebelum percaya.",
+            "Bagikan jika pembahasan ini membantu membedakan cerita, penafsiran, dan fakta.",
+            "Ikuti channel ini untuk cerita kontekstual dan cek fakta berikutnya.",
+        ]
     elif any(term in lowered for term in ("islam", "allah", "nabi", "iman", "doa", "shalat", "salat")):
+        discussion_label = "Untuk direnungkan:"
         question = "Hikmah mana yang paling relevan dengan kehidupanmu?"
-        subscribe_reason = "Subscribe untuk hikmah dan pembahasan kontekstual berikutnya."
+        cta_options = [
+            "Simpan video ini jika ingin merenungkan kembali pesannya.",
+            "Bagikan pembahasan ini kepada orang yang mungkin membutuhkannya.",
+            "Ikuti channel ini untuk hikmah dan pembahasan kontekstual berikutnya.",
+        ]
     else:
+        discussion_label = "Menurutmu:"
         question = "Poin mana yang paling membuka sudut pandangmu?"
-        subscribe_reason = "Subscribe untuk pembahasan informatif berikutnya."
+        cta_options = [
+            "Simpan video ini jika ingin melihat kembali poin utamanya.",
+            "Bagikan kepada orang yang mungkin mendapat manfaat dari pembahasan ini.",
+            "Ikuti channel ini untuk pembahasan informatif berikutnya.",
+        ]
+    cta_seed = f"{clip.title or ''}|{clean_summary}".encode("utf-8")
+    contextual_cta = cta_options[hashlib.sha256(cta_seed).digest()[0] % len(cta_options)]
 
     ordered_tags: list[str] = []
     seen: set[str] = set()
@@ -2600,19 +2637,21 @@ def complete_youtube_description(
         )[:4]
         display_tags.append("Shorts")
     else:
-        display_tags = display_tags[:8]
+        display_tags = display_tags[:5]
 
-    sections = [
-        "RINGKASAN\n" + clean_summary,
-        "POIN PENTING\n" + benefit_lines,
-        "UNTUK DIDISKUSIKAN\n" + question,
-        (
-            "DUKUNG CHANNEL INI\n"
-            "- Sukai video ini jika pembahasannya bermanfaat.\n"
-            "- Bagikan kepada keluarga atau teman yang membutuhkan.\n"
-            f"- {subscribe_reason}"
-        ),
-    ]
+    sections = [clean_summary]
+    if is_compilation:
+        highlights = youtube_description_highlights(context, is_compilation=True)
+        sections.append(
+            "Yang dibahas dalam video ini:\n"
+            + "\n".join(f"- {item}" for item in highlights)
+        )
+    sections.extend(
+        [
+            f"{discussion_label}\n{question}",
+            contextual_cta,
+        ]
+    )
     if display_tags:
         sections.append(" ".join(f"#{tag}" for tag in display_tags))
     return "\n\n".join(sections)[:5000]
@@ -3056,6 +3095,9 @@ YOUTUBE_METADATA_SYSTEM_PROMPT = (
     "Make the title modern, emotionally engaging, natural, and honest. Write an informative description that "
     "is concise but substantial. Use fully natural Bahasa Indonesia with no untranslated English fragments. "
     "Preserve the exact subject and object of the transcript; do not merge related concepts into a broader claim. "
+    "Treat religious word counts, quotations, verse references, and similar numeric claims carefully: only state "
+    "them as facts when clearly supported by the supplied clip context; otherwise describe them as claims or as "
+    "topics discussed by the speaker. "
     "Never state folklore, personal experiences, myths, "
     "or supernatural claims as verified religious facts. Do not invent source URLs, channels, uploaders, "
     "sponsors, licenses, or credits; verified CC attribution is appended separately by the application. "

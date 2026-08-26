@@ -2640,11 +2640,13 @@ def test_social_caption_has_safe_relevant_fallback_without_ai():
 
     caption = fallback_social_caption(clip, ["Dakwah"])
 
-    assert "Bedakan kisah, mitos, pengalaman, dan fakta" in caption
-    assert "RINGKASAN" in caption
-    assert "POIN PENTING" in caption
-    assert "UNTUK DIDISKUSIKAN" in caption
-    assert "DUKUNG CHANNEL INI" in caption
+    assert "Bedakan dalil, penafsiran, dan cerita" in caption
+    assert "Coba telaah:" in caption
+    assert "dalil, penafsiran, dan cerita" in caption
+    assert "RINGKASAN" not in caption
+    assert "POIN PENTING" not in caption
+    assert "UNTUK DIDISKUSIKAN" not in caption
+    assert "DUKUNG CHANNEL INI" not in caption
     assert not any(
         icon in caption
         for icon in ("📌", "🔎", "💬", "🔥", "✅", "👍", "↗️", "🔔")
@@ -2695,7 +2697,8 @@ def test_landscape_compilation_caption_is_not_tagged_as_short():
 
     assert "#Hikmah" in caption
     assert "#Shorts" not in caption
-    assert caption.count("\n- ") == 6
+    assert caption.count("\n- ") == 3
+    assert "Yang dibahas dalam video ini:" in caption
 
 
 def test_source_channel_promos_are_boundaries_not_clip_content():

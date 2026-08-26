@@ -9544,11 +9544,14 @@ SOCIAL_CAPTION_SYSTEM_PROMPT = (
     "You are a viral social media copywriter for TikTok, Instagram Reels, and YouTube Shorts. "
     "You write short, scroll-stopping captions in Indonesian that make people want to watch and read. "
     "Open with a strong hook and keep it punchy. Do not use emojis or decorative symbols. "
-    "Write only the topic summary; the application adds channel calls-to-action and hashtags in fixed sections. "
+    "Write only the topic summary; the application adds one contextual call-to-action and relevant hashtags. "
     "Also return 5-8 niche hashtags in the separate JSON array. For Islamic mystery, myth, supernatural, "
     "and horror content, keep the "
     "distinction between religious teaching, story, folklore, personal experience, and verified fact. "
     "Do not invent certainty, medical outcomes, guaranteed financial returns, or allegations about real people. "
+    "Treat religious word counts, quotations, verse references, and similar numeric claims carefully: only state "
+    "them as facts when they are clearly supported by the supplied transcript; otherwise describe them as claims "
+    "or topics discussed in the video. "
     "Phrase unverified current-event statements as the speaker's claim, not an established fact. "
     "Never mention, thank, promote, credit, or ask viewers to follow the source "
     "channel, another channel, TV station, media brand, uploader, or sponsor. Reply ONLY with strict JSON, "
@@ -9659,23 +9662,58 @@ def format_social_description(
         clean_summary = first_sentence(clip.text or clip.title, max_words=34).strip()
     clean_summary = clean_summary[:900 if long_form else 600].rstrip()
 
-    highlights = social_description_highlights(clip, long_form=long_form)
-    benefit_lines = "\n".join(f"- {item}" for item in highlights)
     description_words = set(
         re.findall(r"[\w']+", f"{clip.title} {clip.text}".casefold())
     )
-    question = (
-        "Bagian aturan warisan mana yang paling sering disalahpahami?"
-        if description_words.intersection(
-            {"waris", "warisan", "pewaris", "ahliwaris", "takziah"}
-        )
-        else re.sub(
+    theme = detect_visual_theme(clip)
+    has_islamic_context = clip_has_islamic_context(clip)
+    if description_words.intersection(
+        {"waris", "warisan", "pewaris", "ahliwaris", "takziah"}
+    ):
+        discussion_label = "Mari diskusikan:"
+        question = "Bagian aturan warisan mana yang paling sering disalahpahami?"
+        cta_options = [
+            "Simpan video ini sebagai pengingat sebelum membahas hak keluarga.",
+            "Bagikan pembahasan ini kepada keluarga yang mungkin membutuhkannya.",
+            "Ikuti channel ini untuk pembahasan hukum keluarga dan hikmah Islam berikutnya.",
+        ]
+    else:
+        question = re.sub(
             r"(?i)^menurutmu[,:]?\s*",
             "",
             shorts_engagement_prompt(clip),
         ).capitalize().rstrip(" .!?") + "?"
-    )
-    subscribe_reason = subscribe_value_prompt(clip).capitalize().rstrip(" .!?") + "."
+        if theme == "mystery" and has_islamic_context:
+            discussion_label = "Coba telaah:"
+            question = "Bagian mana yang bersumber dari dalil, penafsiran, atau cerita?"
+            cta_options = [
+                "Simpan video ini untuk menelaah kembali konteks pembahasannya.",
+                "Bagikan jika pembahasan ini membantu memisahkan dalil, penafsiran, dan cerita.",
+                "Ikuti channel ini untuk kajian kontekstual dan cek fakta berikutnya.",
+            ]
+        elif theme == "mystery":
+            discussion_label = "Coba bedakan:"
+            cta_options = [
+                "Simpan video ini sebagai pengingat untuk memeriksa konteks sebelum percaya.",
+                "Bagikan jika pembahasan ini membantu membedakan cerita, penafsiran, dan fakta.",
+                "Ikuti channel ini untuk cerita kontekstual dan cek fakta berikutnya.",
+            ]
+        elif theme == "islamic":
+            discussion_label = "Untuk direnungkan:"
+            cta_options = [
+                "Simpan video ini jika ingin merenungkan kembali pesannya.",
+                "Bagikan pembahasan ini kepada orang yang mungkin membutuhkannya.",
+                "Ikuti channel ini untuk hikmah dan pembahasan kontekstual berikutnya.",
+            ]
+        else:
+            discussion_label = "Menurutmu:"
+            cta_options = [
+                "Simpan video ini jika ingin melihat kembali poin utamanya.",
+                "Bagikan kepada orang yang mungkin mendapat manfaat dari pembahasan ini.",
+                subscribe_value_prompt(clip).capitalize().rstrip(" .!?") + ".",
+            ]
+    cta_seed = f"{clip.title}|{clean_summary}".encode("utf-8")
+    contextual_cta = cta_options[hashlib.sha256(cta_seed).digest()[0] % len(cta_options)]
     ordered_tags: list[str] = []
     seen: set[str] = set()
     for raw in hashtags:
@@ -9686,7 +9724,7 @@ def format_social_description(
 
     display_tags = ordered_tags
     if long_form:
-        display_tags = display_tags[:8]
+        display_tags = display_tags[:5]
     else:
         generic_tags = {
             "#dakwah",
@@ -9700,17 +9738,19 @@ def format_social_description(
             key=lambda tag: tag.casefold() in generic_tags,
         )[:4]
         display_tags.append("#Shorts")
-    sections = [
-        "RINGKASAN\n" + clean_summary,
-        "POIN PENTING\n" + benefit_lines,
-        "UNTUK DIDISKUSIKAN\n" + question,
-        (
-            "DUKUNG CHANNEL INI\n"
-            "- Sukai video ini jika pembahasannya bermanfaat.\n"
-            "- Bagikan kepada keluarga atau teman yang membutuhkan.\n"
-            f"- {subscribe_reason}"
-        ),
-    ]
+    sections = [clean_summary]
+    if long_form:
+        highlights = social_description_highlights(clip, long_form=True)
+        sections.append(
+            "Yang dibahas dalam video ini:\n"
+            + "\n".join(f"- {item}" for item in highlights)
+        )
+    sections.extend(
+        [
+            f"{discussion_label}\n{question}",
+            contextual_cta,
+        ]
+    )
     if display_tags:
         sections.append(" ".join(display_tags))
     return "\n\n".join(sections)[:2000]
@@ -9723,8 +9763,13 @@ def fallback_social_caption(
     long_form: bool = False,
 ) -> str:
     theme = detect_visual_theme(clip)
-    hook = first_sentence(clip.title, max_words=8).rstrip(" .!?")
-    if theme == "mystery":
+    hook = first_sentence(clip.title, max_words=12).rstrip(" .!?")
+    if theme == "mystery" and clip_has_islamic_context(clip):
+        body = (
+            "Simak konteks pembahasannya sampai selesai. Bedakan dalil, penafsiran, dan cerita—"
+            "lalu ambil hikmah tanpa menguatkan klaim yang belum jelas sumbernya."
+        )
+    elif theme == "mystery":
         body = (
             "Simak konteksnya sampai selesai. Bedakan kisah, mitos, pengalaman, dan fakta—"
             "lalu ambil hikmah tanpa langsung mempercayai klaim yang belum jelas."
@@ -9784,7 +9829,8 @@ def generate_social_caption(
         f"Write a social media post caption (Bahasa Indonesia) for this {format_name}. "
         "Make the first line a hook that stops the scroll and makes people curious to read more.\n"
         "Write only a useful topic summary. Do not add Subscribe, Like, Share, Follow, channel handles, "
-        "section headings, or hashtag lines because the application adds them consistently.\n"
+        "section headings, or hashtag lines because the application adds one contextual viewer prompt "
+        "and the relevant hashtags.\n"
         "Return JSON exactly like:\n"
         '{"caption": "<hook line\\n\\nbody 1-3 informative sentences without emojis>", '
         '"hashtags": ["#tag1", "#tag2", ...]}\n\n'

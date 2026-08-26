@@ -1465,7 +1465,7 @@ def test_completed_fallback_login_restarts_cdp_and_validates_session(monkeypatch
     assert api.youtube_login_reconnect_cdp is False
 
 
-def test_default_youtube_description_uses_ai_caption_and_hashtags_only():
+def test_default_youtube_description_uses_natural_ai_caption_and_hashtags():
     clip = ClipFile(
         name="clip_01.mp4",
         url="/outputs/demo/clips/clip_01.mp4",
@@ -1488,10 +1488,11 @@ def test_default_youtube_description_uses_ai_caption_and_hashtags_only():
 
     assert "Ini caption AI yang siap diposting." in description
     assert "#islam #Shorts" in description
-    assert "RINGKASAN" in description
-    assert "POIN PENTING" in description
-    assert "UNTUK DIDISKUSIKAN" in description
-    assert "DUKUNG CHANNEL INI" in description
+    assert "Untuk direnungkan:" in description
+    assert "RINGKASAN" not in description
+    assert "POIN PENTING" not in description
+    assert "UNTUK DIDISKUSIKAN" not in description
+    assert "DUKUNG CHANNEL INI" not in description
     assert not any(
         icon in description
         for icon in ("📌", "🔎", "💬", "🔥", "✅", "👍", "↗️", "🔔")
@@ -1502,7 +1503,7 @@ def test_default_youtube_description_uses_ai_caption_and_hashtags_only():
     assert "Channel sumber:" not in description
 
 
-def test_complete_short_description_has_full_sections_and_short_tag():
+def test_complete_short_description_is_concise_contextual_and_has_short_tag():
     clip = ClipFile(
         name="clip_01.mp4",
         url="/outputs/demo/clips/clip_01.mp4",
@@ -1526,7 +1527,12 @@ def test_complete_short_description_has_full_sections_and_short_tag():
         ["Islam", "Hikmah"],
     )
 
-    assert description.count("\n- ") == 5
+    assert description.count("\n- ") == 0
+    assert "Untuk direnungkan:" in description
+    assert sum(
+        phrase in description
+        for phrase in ("Simpan video ini", "Bagikan pembahasan ini", "Ikuti channel ini")
+    ) == 1
     assert "YouTube · @ryuundyofficial" not in description
     assert "#Islam #Hikmah #Shorts" in description
 
@@ -1554,7 +1560,8 @@ def test_complete_long_description_is_more_detailed_and_removes_short_tag():
         ["Islam", "Cerita", "Shorts"],
     )
 
-    assert description.count("\n- ") == 6
+    assert description.count("\n- ") == 3
+    assert "Yang dibahas dalam video ini:" in description
     assert "#Islam #Cerita" in description
     assert "#Shorts" not in description
 
@@ -1649,8 +1656,10 @@ def test_current_plain_description_is_not_duplicated_when_rebuilt():
 
     rebuilt = complete_youtube_description(job, clip, current, ["Islam", "Hikmah"])
 
-    assert rebuilt.count("RINGKASAN") == 1
-    assert rebuilt.count("POIN PENTING") == 1
+    assert "RINGKASAN" not in rebuilt
+    assert "POIN PENTING" not in rebuilt
+    assert rebuilt.count("Untuk direnungkan:") == 1
+    assert rebuilt.count("Pelajaran tentang cara menjaga hati") == 1
     assert "Pelajaran tentang cara menjaga hati" in rebuilt
 
 
