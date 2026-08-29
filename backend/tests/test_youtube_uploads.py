@@ -30,12 +30,14 @@ from api import (
     create_youtube_upload_batch_records,
     monitor_youtube_upload_process,
     normalized_generated_metadata,
+    quarantine_queued_youtube_uploads_from_claimed_source,
     youtube_monetization_preflight_issue,
     youtube_source_attribution,
     youtube_growth_targets,
     youtube_metadata_provider_configs,
     youtube_public_cadence_issue,
     youtube_recent_publication_times,
+    youtube_source_claim_block,
     youtube_uploads_with_queue_positions,
     verified_duplicate_for_upload,
     delete_all_job_clips,
@@ -74,6 +76,57 @@ def make_candidate(index: int, score: int) -> ClipCandidate:
         reason="test",
         text="test",
     )
+
+
+def test_claim_quarantine_cancels_only_queued_uploads_from_same_source(monkeypatch, tmp_path):
+    import api
+
+    common = {
+        "clip_name": "clip.mp4",
+        "created_at": "2026-08-30T00:00:00+00:00",
+        "updated_at": "2026-08-30T00:00:00+00:00",
+        "title": "Test",
+    }
+    trigger = YouTubeUploadJob(
+        **common,
+        id="claim-trigger",
+        source_job_id="claimed-source",
+        clip_url="/outputs/claimed/clip_01.mp4",
+        status="failed",
+        logs=["CLAIMED_UPLOAD_ABORTED: zero_active_claim_policy"],
+    )
+    same_source = YouTubeUploadJob(
+        **common,
+        id="same-source-queued",
+        source_job_id="claimed-source",
+        clip_url="/outputs/claimed/clip_02.mp4",
+        status="queued",
+    )
+    other_source = YouTubeUploadJob(
+        **common,
+        id="other-source-queued",
+        source_job_id="safe-source",
+        clip_url="/outputs/safe/clip_01.mp4",
+        status="queued",
+    )
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", tmp_path / "youtube_uploads.json")
+    monkeypatch.setattr(
+        api,
+        "youtube_uploads",
+        {item.id: item for item in (trigger, same_source, other_source)},
+    )
+
+    quarantined = quarantine_queued_youtube_uploads_from_claimed_source(
+        "claimed-source",
+        trigger.id,
+    )
+
+    assert quarantined == 1
+    assert api.youtube_uploads[same_source.id].status == "cancelled"
+    assert "klaim Content ID" in (api.youtube_uploads[same_source.id].error or "")
+    assert api.youtube_uploads[other_source.id].status == "queued"
+    assert youtube_source_claim_block("claimed-source").id == trigger.id
+    assert youtube_source_claim_block("safe-source") is None
 
 
 def test_best_youtube_clip_urls_uses_candidate_scores():
@@ -1278,6 +1331,70 @@ def test_running_upload_after_file_selection_is_not_retried(monkeypatch, tmp_pat
     assert recovered.status == "failed"
     assert recovered.finished_at is not None
     assert "mencegah video duplikat" in (recovered.error or "")
+
+
+def test_running_upload_after_final_save_queues_content_verification(monkeypatch, tmp_path):
+    import api
+
+    upload = YouTubeUploadJob(
+        id="recover-post-save-upload",
+        source_job_id="job-1",
+        clip_url="/outputs/demo/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="running",
+        created_at="2026-08-11T01:00:00+00:00",
+        updated_at="2026-08-11T01:01:00+00:00",
+        started_at="2026-08-11T01:00:01+00:00",
+        title="Post-save recovery",
+        logs=[
+            "Video dipilih: clip_01.mp4",
+            "Tombol final diklik dan diterima: Simpan/Selesai.",
+            "FINAL_VISIBILITY: private",
+            "Modal upload sudah tertutup, tetapi konfirmasi transfer selesai belum terlihat; tetap menunggu.",
+        ],
+    )
+    uploads_path = tmp_path / "youtube_uploads.json"
+    uploads_path.write_text(json.dumps([upload.model_dump()]), encoding="utf-8")
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", uploads_path)
+
+    recovered = api.load_youtube_uploads()[upload.id]
+
+    assert recovered.status == "queued"
+    assert recovered.started_at is None
+    assert recovered.error is None
+    assert recovered.logs[-1] == api.YOUTUBE_RESTART_VERIFY_MARKER
+
+
+def test_legacy_post_save_restart_failure_queues_content_verification(monkeypatch, tmp_path):
+    import api
+
+    upload = YouTubeUploadJob(
+        id="recover-legacy-post-save",
+        source_job_id="job-1",
+        clip_url="/outputs/demo/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="failed",
+        created_at="2026-08-11T01:00:00+00:00",
+        updated_at="2026-08-11T01:01:00+00:00",
+        started_at="2026-08-11T01:00:01+00:00",
+        finished_at="2026-08-11T01:01:00+00:00",
+        title="Legacy post-save recovery",
+        logs=[
+            "Video dipilih: clip_01.mp4",
+            "Tombol final diklik dan diterima: Simpan/Selesai.",
+            "FINAL_VISIBILITY: private",
+        ],
+        error="Backend restart setelah file dipilih; upload tidak diulang otomatis untuk mencegah video duplikat.",
+    )
+    uploads_path = tmp_path / "youtube_uploads.json"
+    uploads_path.write_text(json.dumps([upload.model_dump()]), encoding="utf-8")
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", uploads_path)
+
+    recovered = api.load_youtube_uploads()[upload.id]
+
+    assert recovered.status == "queued"
+    assert recovered.error is None
+    assert recovered.logs[-1] == api.YOUTUBE_RESTART_VERIFY_MARKER
 
 
 def test_upload_falls_back_to_storage_state_when_cdp_launcher_fails(monkeypatch, tmp_path):

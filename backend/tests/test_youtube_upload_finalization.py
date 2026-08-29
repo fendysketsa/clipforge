@@ -16,6 +16,7 @@ from youtube_uploader import (
     copyright_issue_blocks_upload,
     mark_fendy_clipper_upload_tab,
     next_upload_step_timeout_ms,
+    normalize_youtube_video_url,
     open_advanced_upload_settings,
     reload_after_publish,
     safe_upload_visibility,
@@ -565,11 +566,54 @@ def test_review_blocks_claim_before_publication(monkeypatch):
     monkeypatch.setattr(youtube_uploader, "final_action_button_is_ready", lambda *_args: True)
     monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
 
-    with pytest.raises(UploadError, match="tidak dipublikasikan"):
+    with pytest.raises(UploadError, match="tidak masuk channel"):
         wait_for_review_checks_safe_before_publish(
             TextPage("Konten yang diklaim ditemukan di video ini"),
             100,
         )
+
+
+def test_private_review_rechecks_claim_before_save(monkeypatch):
+    selected_visibilities = []
+    ready_visibilities = []
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "get_upload_workflow_step", lambda _page: "REVIEW")
+    monkeypatch.setattr(
+        youtube_uploader,
+        "visibility_is_selected",
+        lambda _page, visibility: selected_visibilities.append(visibility) or True,
+    )
+    monkeypatch.setattr(
+        youtube_uploader,
+        "final_action_button_is_ready",
+        lambda _page, visibility: ready_visibilities.append(visibility) or True,
+    )
+    monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
+
+    with pytest.raises(UploadError, match="tidak masuk channel"):
+        wait_for_review_checks_safe_before_publish(
+            TextPage(
+                "Konten yang dilindungi hak cipta ditemukan di video ini. "
+                "Video diblokir secara global."
+            ),
+            100,
+            visibility="private",
+        )
+
+    assert selected_visibilities == []
+    assert ready_visibilities == []
+
+
+def test_exact_global_block_claim_copy_is_never_safe():
+    body = (
+        "Konten yang dilindungi hak cipta ditemukan di video ini. "
+        "Video diblokir secara global. Tidak ada dampak pada channel. "
+        "Hal ini bukan teguran hak cipta."
+    )
+
+    assert copyright_issue_detected(body)
+    assert copyright_issue_blocks_upload(body)
+    assert not copyright_claim_is_explicitly_non_blocking(body)
 
 
 def test_claim_detector_accepts_common_english_content_id_copy():
@@ -692,6 +736,7 @@ def test_review_safe_text_does_not_trigger_false_issue(monkeypatch):
     monkeypatch.setattr(youtube_uploader, "get_upload_workflow_step", lambda _page: "REVIEW")
     monkeypatch.setattr(youtube_uploader, "visibility_is_selected", lambda *_args: True)
     monkeypatch.setattr(youtube_uploader, "final_action_button_is_ready", lambda *_args: True)
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
 
     wait_for_review_checks_safe_before_publish(TextPage("Pemeriksaan selesai. Tidak ditemukan masalah."), 100)
 
@@ -750,6 +795,34 @@ def test_final_confirmation_extends_timeout_while_large_file_progress_moves(monk
         timeout_ms=100,
         video_url="https://www.youtube.com/watch?v=abcDEF12345",
     )
+
+
+def test_final_confirmation_recovers_from_exact_private_content_row(monkeypatch):
+    page = ClosedUploadStatusPage([""])
+    logs = []
+    monkeypatch.setattr(youtube_uploader.time, "monotonic", lambda: 0.0)
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "log", logs.append)
+    monkeypatch.setattr(
+        youtube_uploader,
+        "verify_saved_video_in_studio",
+        lambda *_args, **_kwargs: "https://www.youtube.com/watch?v=abcDEF12345",
+    )
+
+    assert wait_for_final_upload_confirmation(
+        page,
+        timeout_ms=1000,
+        expected_title="Video baru #Shorts",
+        visibility="private",
+    ) == "https://www.youtube.com/watch?v=abcDEF12345"
+    assert "halaman Content" in logs[-1]
+
+
+def test_normalize_youtube_video_url_accepts_studio_edit_link():
+    assert normalize_youtube_video_url(
+        "https://studio.youtube.com/video/abcDEF12345/edit"
+    ) == "https://www.youtube.com/watch?v=abcDEF12345"
 
 
 def test_reload_runs_once_after_ten_second_publish_delay(monkeypatch):

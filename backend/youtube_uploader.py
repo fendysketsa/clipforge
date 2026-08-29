@@ -2343,13 +2343,19 @@ def wait_for_review_checks_safe_before_publish(
     page,
     timeout_ms: int = 300000,
     *,
+    visibility: str = "public",
     content_type: str = "auto",
     media_duration_seconds: float = 0.0,
     previously_verified_non_blocking_claim: bool = False,
 ) -> None:
-    log("Memastikan status hak cipta tidak memblokir dan tombol Publikasikan siap...")
+    action_label = "Publikasikan" if visibility == "public" else "Simpan"
+    log(
+        "Memastikan ulang status hak cipta tetap aman dan tombol "
+        f"{action_label} siap..."
+    )
     deadline = time.monotonic() + timeout_ms / 1000
     last_body = ""
+    consecutive_safe_observations = 0
     while time.monotonic() < deadline:
         dismiss_reload_prompt(page, timeout_ms=300)
         body = active_upload_dialog_text(page, timeout_ms=3000)
@@ -2363,19 +2369,29 @@ def wait_for_review_checks_safe_before_publish(
             save_debug_artifacts(page, "copyright-claim-before-publish")
             raise CopyrightClaimUploadError(
                 "Klaim Content ID/copyright muncul pada review akhir. "
-                "Video tidak dipublikasikan agar channel tetap aman."
+                "Aksi Simpan/Publikasikan dibatalkan agar video berklaim tidak masuk channel."
             )
         if (
             get_upload_workflow_step(page) == "REVIEW"
-            and visibility_is_selected(page, "public")
-            and final_action_button_is_ready(page, "public")
+            and visibility_is_selected(page, visibility)
+            and final_action_button_is_ready(page, visibility)
         ):
-            log("Tidak ada klaim terdeteksi; Public tercentang dan tombol Publikasikan aktif.")
-            return
+            consecutive_safe_observations += 1
+            if consecutive_safe_observations >= 3:
+                log(
+                    "Tidak ada klaim pada verifikasi akhir; "
+                    f"{visibility.title()} tercentang dan tombol {action_label} aktif."
+                )
+                return
+        else:
+            consecutive_safe_observations = 0
         time.sleep(1)
 
     save_debug_artifacts(page, "publish-button-not-ready")
-    raise UploadError(f"Public atau tombol Publikasikan belum siap. Cuplikan modal: {last_body}")
+    raise UploadError(
+        f"{visibility.title()} atau tombol {action_label} belum siap. "
+        f"Cuplikan modal: {last_body}"
+    )
 
 
 def click_final_upload_action(
@@ -5099,24 +5115,46 @@ def normalize_youtube_video_url(value: str) -> str:
     match = re.search(r"(?:https?://)?youtu\.be/([A-Za-z0-9_-]{6,})", clean, re.I)
     if match:
         return f"https://www.youtube.com/watch?v={match.group(1)}"
+    match = re.search(
+        r"(?:https?://)?studio\.youtube\.com/(?:channel/[^/?#]+/)?video/([A-Za-z0-9_-]{6,})(?:/edit)?",
+        clean,
+        re.I,
+    )
+    if match:
+        return f"https://www.youtube.com/watch?v={match.group(1)}"
     return ""
 
 
-def extract_video_url(page) -> str:
+def extract_video_url(page, expected_title: str = "") -> str:
     try:
         video_id = page.locator("ytcp-uploads-dialog").first.get_attribute("video-id", timeout=1000) or ""
         if re.fullmatch(r"[A-Za-z0-9_-]{6,}", video_id.strip()):
             return f"https://www.youtube.com/watch?v={video_id.strip()}"
     except Exception:
         pass
-    candidates = [
-        'a[href*="youtu.be/"]',
-        'a[href*="youtube.com/watch"]',
-        'a[href*="youtube.com/shorts/"]',
-        'a[href*="/watch?v="]',
-        'a[href*="/shorts/"]',
-        'ytcp-video-info a',
-    ]
+    candidates = (
+        [
+            'ytcp-uploads-dialog a[href*="studio.youtube.com/video/"]',
+            'ytcp-uploads-dialog a[href*="/video/"][href*="/edit"]',
+            'ytcp-uploads-dialog a[href*="youtu.be/"]',
+            'ytcp-uploads-dialog a[href*="youtube.com/watch"]',
+            'ytcp-uploads-dialog a[href*="youtube.com/shorts/"]',
+            'ytcp-uploads-dialog a[href*="/watch?v="]',
+            'ytcp-uploads-dialog a[href*="/shorts/"]',
+            'ytcp-uploads-dialog ytcp-video-info a',
+        ]
+        if expected_title
+        else [
+            'a[href*="studio.youtube.com/video/"]',
+            'a[href*="/video/"][href*="/edit"]',
+            'a[href*="youtu.be/"]',
+            'a[href*="youtube.com/watch"]',
+            'a[href*="youtube.com/shorts/"]',
+            'a[href*="/watch?v="]',
+            'a[href*="/shorts/"]',
+            'ytcp-video-info a',
+        ]
+    )
     for selector in candidates:
         try:
             items = page.locator(selector)
@@ -5127,10 +5165,191 @@ def extract_video_url(page) -> str:
                     return video_url
         except Exception:
             continue
+    if expected_title:
+        try:
+            href = page.evaluate(
+                r"""
+                ({ expectedTitle }) => {
+                  const normalize = (value) => String(value || '')
+                    .replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+                  const wanted = normalize(expectedTitle);
+                  const roots = [];
+                  const seen = new Set();
+                  const addRoot = (root) => {
+                    if (root && !seen.has(root)) {
+                      seen.add(root);
+                      roots.push(root);
+                    }
+                  };
+                  addRoot(document);
+                  for (let index = 0; index < roots.length; index += 1) {
+                    const root = roots[index];
+                    const elements = root.querySelectorAll ? Array.from(root.querySelectorAll('*')) : [];
+                    for (const element of elements) {
+                      if (element.shadowRoot) addRoot(element.shadowRoot);
+                    }
+                  }
+                  const videoHref = (href) => /(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/|studio\.youtube\.com\/(?:channel\/[^/?#]+\/)?video\/|\/video\/[A-Za-z0-9_-]{6,}\/edit)/i.test(href || '');
+                  const matchesExpectedRow = (anchor) => {
+                    let node = anchor;
+                    for (let depth = 0; node && depth < 10; depth += 1) {
+                      const tag = String(node.tagName || '').toUpperCase();
+                      if (['BODY', 'HTML', 'YTCP-APP', 'YTCP-MAIN'].includes(tag)) break;
+                      const text = normalize(node.innerText || node.textContent || '');
+                      if (text.includes(wanted)) return true;
+                      const root = node.getRootNode?.();
+                      node = node.parentElement || (root && root.host) || null;
+                    }
+                    return false;
+                  };
+                  for (const root of roots) {
+                    const anchors = root.querySelectorAll ? Array.from(root.querySelectorAll('a[href]')) : [];
+                    for (const anchor of anchors) {
+                      const href = anchor.href || anchor.getAttribute('href') || '';
+                      if (videoHref(href) && matchesExpectedRow(anchor)) return href;
+                    }
+                  }
+                  return '';
+                }
+                """,
+                {"expectedTitle": expected_title},
+            )
+            video_url = normalize_youtube_video_url(str(href or ""))
+            if video_url:
+                return video_url
+        except Exception:
+            pass
     return ""
 
 
-def wait_for_final_upload_confirmation(page, timeout_ms: int, video_url: str = "") -> str:
+def saved_video_row_snapshot(page, expected_title: str, visibility: str) -> dict[str, str]:
+    """Find the exact saved upload row on Studio's Content page."""
+    try:
+        result = page.evaluate(
+            r"""
+            ({ expectedTitle, visibility }) => {
+              const normalize = (value) => String(value || '')
+                .replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+              const wanted = normalize(expectedTitle);
+              const visibilityWords = visibility === 'private'
+                ? ['private', 'pribadi']
+                : visibility === 'unlisted'
+                  ? ['unlisted', 'tidak publik']
+                  : ['public', 'publik'];
+              const roots = [];
+              const seen = new Set();
+              const addRoot = (root) => {
+                if (root && !seen.has(root)) {
+                  seen.add(root);
+                  roots.push(root);
+                }
+              };
+              addRoot(document);
+              for (let index = 0; index < roots.length; index += 1) {
+                const root = roots[index];
+                const elements = root.querySelectorAll ? Array.from(root.querySelectorAll('*')) : [];
+                for (const element of elements) {
+                  if (element.shadowRoot) addRoot(element.shadowRoot);
+                }
+              }
+              const videoHref = (href) => /(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/|studio\.youtube\.com\/(?:channel\/[^/?#]+\/)?video\/|\/video\/[A-Za-z0-9_-]{6,}\/edit)/i.test(href || '');
+              const ancestors = (anchor) => {
+                const values = [];
+                let node = anchor;
+                for (let depth = 0; node && depth < 12; depth += 1) {
+                  const tag = String(node.tagName || '').toUpperCase();
+                  if (['BODY', 'HTML', 'YTCP-APP', 'YTCP-MAIN'].includes(tag)) break;
+                  values.push(node);
+                  const root = node.getRootNode?.();
+                  node = node.parentElement || (root && root.host) || null;
+                }
+                return values;
+              };
+              for (const root of roots) {
+                const anchors = root.querySelectorAll ? Array.from(root.querySelectorAll('a[href]')) : [];
+                for (const anchor of anchors) {
+                  const href = anchor.href || anchor.getAttribute('href') || '';
+                  if (!videoHref(href)) continue;
+                  for (const container of ancestors(anchor)) {
+                    const text = normalize(container.innerText || container.textContent || '');
+                    if (!text.includes(wanted)) continue;
+                    const visibilityOk = visibilityWords.some((word) => text.includes(word));
+                    const uploadFailed = /(?:upload|mengupload|mengunggah).{0,30}(?:failed|gagal)|(?:failed|gagal).{0,30}(?:upload|mengupload|mengunggah)/i.test(text);
+                    const uploading = /(?:uploading|mengupload|mengunggah)\s*\d{1,3}\s*%/i.test(text);
+                    return { href, text, visibilityOk, uploadFailed, uploading };
+                  }
+                }
+              }
+              return { href: '', text: '', visibilityOk: false, uploadFailed: false, uploading: false };
+            }
+            """,
+            {"expectedTitle": expected_title, "visibility": visibility},
+        )
+    except Exception:
+        return {}
+    if not isinstance(result, dict):
+        return {}
+    return {str(key): str(value) for key, value in result.items()}
+
+
+def verify_saved_video_in_studio(
+    page,
+    expected_title: str,
+    visibility: str,
+    *,
+    timeout_ms: int = 30000,
+) -> str:
+    """Verify a just-saved video in a separate Studio Content tab."""
+    if not expected_title.strip():
+        return ""
+    context = getattr(page, "context", None)
+    if context is None:
+        return ""
+    verification_page = None
+    try:
+        verification_page = context.new_page()
+        install_browser_dialog_guard(verification_page)
+        channel_id = effective_channel_id(page)
+        target_url = (
+            f"https://studio.youtube.com/channel/{channel_id}/videos/upload"
+            if channel_id
+            else "https://studio.youtube.com/videos/upload"
+        )
+        verification_page.goto(target_url, wait_until="domcontentloaded", timeout=max(15000, timeout_ms))
+        deadline = time.monotonic() + timeout_ms / 1000
+        while time.monotonic() < deadline:
+            snapshot = saved_video_row_snapshot(verification_page, expected_title, visibility)
+            video_url = normalize_youtube_video_url(snapshot.get("href", ""))
+            if snapshot.get("uploadFailed") == "True":
+                raise UploadError("YouTube Studio menandai transfer video baru gagal.")
+            if (
+                video_url
+                and snapshot.get("visibilityOk") == "True"
+                and snapshot.get("uploading") != "True"
+            ):
+                return video_url
+            time.sleep(2)
+        return ""
+    except UploadError:
+        raise
+    except Exception:
+        return ""
+    finally:
+        if verification_page is not None:
+            try:
+                verification_page.close()
+            except Exception:
+                pass
+
+
+def wait_for_final_upload_confirmation(
+    page,
+    timeout_ms: int,
+    video_url: str = "",
+    *,
+    expected_title: str = "",
+    visibility: str = "private",
+) -> str:
     deadline = time.monotonic() + timeout_ms / 1000
     done_patterns = (
         r"video (published|uploaded)",
@@ -5161,6 +5380,7 @@ def wait_for_final_upload_confirmation(page, timeout_ms: int, video_url: str = "
     last_body = ""
     last_progress_percent = -1
     next_progress_log_at = 0.0
+    closed_idle_checks = 0
     while True:
         now = time.monotonic()
         if now >= deadline:
@@ -5208,7 +5428,25 @@ def wait_for_final_upload_confirmation(page, timeout_ms: int, video_url: str = "
         # menang agar upload saat ini tidak dianggap selesai terlalu dini.
         if not pending and any(re.search(pattern, body, re.I) for pattern in done_patterns):
             log("Konfirmasi final upload terdeteksi.")
-            return video_url or extract_video_url(page)
+            return video_url or extract_video_url(page, expected_title)
+        if dialog_count == 0 and not pending:
+            closed_idle_checks += 1
+            if closed_idle_checks >= 5 and expected_title:
+                verified_url = verify_saved_video_in_studio(
+                    page,
+                    expected_title,
+                    visibility,
+                    timeout_ms=min(30000, timeout_ms),
+                )
+                if verified_url:
+                    log(
+                        "Konfirmasi final dipulihkan dari halaman Content: "
+                        "video baru terdaftar dengan visibilitas yang benar."
+                    )
+                    return verified_url
+                closed_idle_checks = 0
+        else:
+            closed_idle_checks = 0
         if now >= next_progress_log_at:
             if progress:
                 log(
@@ -5420,6 +5658,55 @@ def run_check_login(args: argparse.Namespace) -> None:
         if browser is not None:
             browser.close()
     log(f"Session YouTube valid dan tersimpan: {state_path}")
+
+
+def run_verify_upload(args: argparse.Namespace) -> None:
+    """Recover a post-save upload without selecting the local file again."""
+    sync_playwright, _ = import_playwright()
+    state_path = Path(args.state).expanduser().resolve()
+    if not state_path.is_file():
+        raise UploadError(f"File sesi YouTube belum ada: {state_path}")
+
+    headless = args.headless if args.headless is not None else env_bool("YOUTUBE_HEADLESS", True)
+    slow_mo = int(os.environ.get("YOUTUBE_BROWSER_SLOW_MO_MS", "0"))
+    timeout_ms = max(30, int(args.timeout)) * 1000
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=headless, slow_mo=slow_mo)
+        context = browser.new_context(
+            locale=os.environ.get("YOUTUBE_BROWSER_LOCALE", "en-US"),
+            storage_state=str(state_path),
+            viewport={"width": 1440, "height": 1000},
+        )
+        install_context_dialog_guard(context)
+        page = context.new_page()
+        install_browser_dialog_guard(page)
+        try:
+            goto_studio(page, studio_url=args.studio_url)
+            ensure_logged_in(page)
+            ensure_target_identity(
+                page,
+                args.target_channel,
+                args.target_email,
+                args.target_channel_id,
+            )
+            video_url = verify_saved_video_in_studio(
+                page,
+                args.title,
+                args.visibility,
+                timeout_ms=timeout_ms,
+            )
+            if not video_url:
+                raise UploadError(
+                    "Video yang sudah difinalkan belum ditemukan sebagai baris tersimpan "
+                    "di halaman Content; file lokal dipertahankan."
+                )
+            log(f"FINAL_VISIBILITY: {args.visibility}")
+            log("UPLOAD_CONFIRMED: video pasca-restart terverifikasi di halaman Content.")
+            log(f"VIDEO_URL: {video_url}")
+            context.storage_state(path=str(state_path))
+        finally:
+            context.close()
+            browser.close()
 
 
 def run_upload(args: argparse.Namespace) -> None:
@@ -5729,19 +6016,25 @@ def run_upload(args: argparse.Namespace) -> None:
 
             click_next_upload_step(page, timeout_ms=next_step_timeout_ms, expected_step="CHECKS")
             log("Step Elemen video sudah tercentang; masuk ke tab Pemeriksaan awal.")
+            strict_zero_claim = env_bool("YOUTUBE_STRICT_ZERO_CLAIM", True)
+            effective_require_copyright_checks = bool(
+                args.require_copyright_checks or strict_zero_claim
+            )
             private_review_checks_pending = wait_for_copyright_checks(
                 page,
                 min(timeout_ms, int(os.environ.get("YOUTUBE_CHECKS_TIMEOUT_SECONDS", "3600")) * 1000),
-                args.require_copyright_checks,
+                effective_require_copyright_checks,
                 content_type=args.thumbnail_content_type,
                 media_duration_seconds=args.media_duration_seconds,
                 allow_private_review_while_community_pending=(
                     args.visibility == "private"
-                    and env_bool("YOUTUBE_PRIVATE_FAST_CHECKS", True)
+                    and not effective_require_copyright_checks
+                    and env_bool("YOUTUBE_PRIVATE_FAST_CHECKS", False)
                 ),
                 skip_pending_checks_for_private_review=(
                     args.visibility == "private"
-                    and env_bool("YOUTUBE_PRIVATE_SKIP_PENDING_CHECKS", True)
+                    and not effective_require_copyright_checks
+                    and env_bool("YOUTUBE_PRIVATE_SKIP_PENDING_CHECKS", False)
                 ),
             )
             if private_review_checks_pending:
@@ -5761,11 +6054,12 @@ def run_upload(args: argparse.Namespace) -> None:
                     f"Visibilitas '{args.visibility}' belum tercentang sebelum aksi final."
                 )
             log(f"Step 4 Visibilitas terverifikasi: {args.visibility}.")
-            if args.visibility == "public":
+            if effective_require_copyright_checks:
                 review_timeout_ms = int(os.environ.get("YOUTUBE_PRE_PUBLISH_REVIEW_TIMEOUT_SECONDS", "900")) * 1000
                 wait_for_review_checks_safe_before_publish(
                     page,
                     timeout_ms=review_timeout_ms,
+                    visibility=args.visibility,
                     content_type=args.thumbnail_content_type,
                     media_duration_seconds=args.media_duration_seconds,
                 )
@@ -5774,7 +6068,7 @@ def run_upload(args: argparse.Namespace) -> None:
                 log("Dry-run aktif; proses berhenti sebelum publish/save final.")
                 return
 
-            uploaded_video_url = extract_video_url(page)
+            uploaded_video_url = extract_video_url(page, upload_title)
             click_final_upload_action(
                 page,
                 args.visibility,
@@ -5782,15 +6076,22 @@ def run_upload(args: argparse.Namespace) -> None:
                 content_type=args.thumbnail_content_type,
                 media_duration_seconds=args.media_duration_seconds,
             )
-            final_url = uploaded_video_url or extract_video_url(page)
+            final_url = uploaded_video_url or extract_video_url(page, upload_title)
             log(f"FINAL_VISIBILITY: {args.visibility}")
+            if final_url:
+                # Persist the assigned video id before the potentially long
+                # transfer-confirmation wait. This is a recovery checkpoint,
+                # not a success marker; UPLOAD_CONFIRMED remains the hard gate.
+                log(f"VIDEO_URL: {final_url}")
             final_url = wait_for_final_upload_confirmation(
                 page,
                 timeout_ms=timeout_ms,
                 video_url=final_url,
+                expected_title=upload_title,
+                visibility=args.visibility,
             )
             log("UPLOAD_CONFIRMED: YouTube Studio mengonfirmasi transfer video selesai.")
-            if final_url:
+            if final_url and final_url != uploaded_video_url:
                 log(f"VIDEO_URL: {final_url}")
             reload_after_publish(page)
             context.storage_state(path=str(state_path))
@@ -5844,6 +6145,24 @@ def build_parser() -> argparse.ArgumentParser:
     check_login.add_argument("--target-channel-id", default=DEFAULT_TARGET_CHANNEL_ID)
     check_login.add_argument("--studio-url", default=DEFAULT_STUDIO_URL)
 
+    verify_upload = subparsers.add_parser(
+        "verify-upload",
+        help="Verifikasi upload yang finalisasinya terputus tanpa memilih file lagi.",
+    )
+    verify_upload.add_argument("--state", default=str(DEFAULT_STATE_PATH))
+    verify_upload.add_argument("--title", required=True)
+    verify_upload.add_argument(
+        "--visibility",
+        choices=["private", "unlisted", "public"],
+        default="private",
+    )
+    verify_upload.add_argument("--target-channel", default=os.environ.get("YOUTUBE_TARGET_CHANNEL", "ryuundyofficial"))
+    verify_upload.add_argument("--target-email", default=DEFAULT_TARGET_EMAIL)
+    verify_upload.add_argument("--target-channel-id", default=DEFAULT_TARGET_CHANNEL_ID)
+    verify_upload.add_argument("--studio-url", default=DEFAULT_STUDIO_URL)
+    verify_upload.add_argument("--timeout", type=int, default=120)
+    verify_upload.add_argument("--headless", action=argparse.BooleanOptionalAction, default=None)
+
     upload = subparsers.add_parser("upload", help="Upload satu file video ke YouTube Studio.")
     upload.add_argument("video")
     upload.add_argument("--state", default=str(DEFAULT_STATE_PATH))
@@ -5896,6 +6215,8 @@ def main() -> int:
             run_capture_session(args)
         elif args.command == "check-login":
             run_check_login(args)
+        elif args.command == "verify-upload":
+            run_verify_upload(args)
         elif args.command == "upload":
             run_upload(args)
         else:  # pragma: no cover

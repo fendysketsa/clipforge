@@ -154,6 +154,8 @@ YOUTUBE_UPLOAD_ERROR_PREFIX = "USER_ERROR:"
 YOUTUBE_VIDEO_URL_PREFIX = "VIDEO_URL:"
 YOUTUBE_UPLOAD_CONFIRMED_PREFIX = "UPLOAD_CONFIRMED:"
 YOUTUBE_FINAL_VISIBILITY_PREFIX = "FINAL_VISIBILITY:"
+YOUTUBE_CLAIM_ABORT_PREFIX = "CLAIMED_UPLOAD_ABORTED:"
+YOUTUBE_RESTART_VERIFY_MARKER = "Recovery restart: verifikasi final Content tanpa upload ulang."
 DEFAULT_YOUTUBE_PLAYLIST = "Islam"
 DEFAULT_YOUTUBE_TARGET_CHANNEL = "ryuundyofficial"
 DEFAULT_YOUTUBE_TARGET_EMAIL = "fendysketsa@gmail.com"
@@ -1363,6 +1365,37 @@ def save_jobs_unlocked() -> None:
         JOBS_PATH.write_text(data, encoding="utf-8")
 
 
+def youtube_upload_has_final_save_checkpoint(upload: YouTubeUploadJob) -> bool:
+    """Return true only after Studio accepted the final visibility action."""
+    logs = [str(line) for line in upload.logs]
+    has_final_visibility = any(
+        line.startswith(YOUTUBE_FINAL_VISIBILITY_PREFIX)
+        for line in logs
+    )
+    has_accepted_action = any(
+        line.startswith("Tombol final diklik dan diterima:")
+        for line in logs
+    )
+    has_blocking_abort = any(
+        marker in line
+        for line in logs
+        for marker in (
+            "CLAIMED_UPLOAD_ABORTED:",
+            "Publikasi dihentikan:",
+            "YouTube melaporkan transfer upload gagal",
+        )
+    )
+    return has_final_visibility and has_accepted_action and not has_blocking_abort
+
+
+def youtube_upload_needs_restart_verification(upload: YouTubeUploadJob) -> bool:
+    return (
+        upload.status == "queued"
+        and YOUTUBE_RESTART_VERIFY_MARKER in upload.logs
+        and youtube_upload_has_final_save_checkpoint(upload)
+    )
+
+
 def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
     if not YOUTUBE_UPLOADS_PATH.exists() or YOUTUBE_UPLOADS_PATH.is_dir():
         return {}
@@ -1407,6 +1440,18 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
                             *upload.logs,
                             "Recovery restart: konfirmasi final YouTube dan URL sudah tersimpan; upload dipulihkan sebagai completed tanpa upload ulang.",
                         ][-160:],
+                        "error": None,
+                    }
+                )
+            elif youtube_upload_has_final_save_checkpoint(upload):
+                upload = upload.model_copy(
+                    update={
+                        "status": "queued",
+                        "updated_at": finished_at,
+                        "started_at": None,
+                        "finished_at": None,
+                        "duration_seconds": None,
+                        "logs": [*upload.logs, YOUTUBE_RESTART_VERIFY_MARKER][-160:],
                         "error": None,
                     }
                 )
@@ -1460,6 +1505,24 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
                         *upload.logs,
                         "Recovery restart: upload lama belum memilih file dan dikembalikan ke antrean dengan aman.",
                     ][-160:],
+                    "error": None,
+                }
+            )
+        if (
+            upload.status == "failed"
+            and upload.error
+            == "Backend restart setelah file dipilih; upload tidak diulang otomatis untuk mencegah video duplikat."
+            and youtube_upload_has_final_save_checkpoint(upload)
+        ):
+            recovered_at = now_iso()
+            upload = upload.model_copy(
+                update={
+                    "status": "queued",
+                    "updated_at": recovered_at,
+                    "started_at": None,
+                    "finished_at": None,
+                    "duration_seconds": None,
+                    "logs": [*upload.logs, YOUTUBE_RESTART_VERIFY_MARKER][-160:],
                     "error": None,
                 }
             )
@@ -3843,6 +3906,90 @@ def reusable_youtube_upload(
     return None
 
 
+def recoverable_failed_youtube_upload(job_id: str, clip_url: str) -> YouTubeUploadJob | None:
+    with youtube_uploads_lock:
+        candidates = sorted(
+            youtube_uploads.values(),
+            key=lambda item: item.finished_at or item.updated_at,
+            reverse=True,
+        )
+    return next(
+        (
+            upload
+            for upload in candidates
+            if upload.source_job_id == job_id
+            and upload.clip_url == clip_url
+            and upload.status == "failed"
+            and youtube_upload_has_final_save_checkpoint(upload)
+            and not upload.upload_confirmed
+        ),
+        None,
+    )
+
+
+def youtube_source_claim_block(upload_or_job_id: YouTubeUploadJob | str) -> YouTubeUploadJob | None:
+    source_job_id = (
+        upload_or_job_id.source_job_id
+        if isinstance(upload_or_job_id, YouTubeUploadJob)
+        else upload_or_job_id
+    )
+    with youtube_uploads_lock:
+        candidates = sorted(
+            youtube_uploads.values(),
+            key=lambda item: item.finished_at or item.updated_at,
+            reverse=True,
+        )
+    return next(
+        (
+            upload
+            for upload in candidates
+            if upload.source_job_id == source_job_id
+            and any(
+                str(line).startswith(YOUTUBE_CLAIM_ABORT_PREFIX)
+                for line in upload.logs
+            )
+        ),
+        None,
+    )
+
+
+def quarantine_queued_youtube_uploads_from_claimed_source(
+    source_job_id: str,
+    triggering_upload_id: str,
+) -> int:
+    quarantined = 0
+    quarantined_at = now_iso()
+    with youtube_uploads_lock:
+        for upload_id, upload in list(youtube_uploads.items()):
+            if (
+                upload_id == triggering_upload_id
+                or upload.source_job_id != source_job_id
+                or upload.status != "queued"
+            ):
+                continue
+            data = upload.model_dump()
+            data.update(
+                {
+                    "status": "cancelled",
+                    "updated_at": quarantined_at,
+                    "finished_at": quarantined_at,
+                    "error": (
+                        "Upload dibatalkan otomatis: klip lain dari sumber yang sama "
+                        "sudah terdeteksi klaim Content ID/audio-visual."
+                    ),
+                    "logs": [
+                        *upload.logs,
+                        "SOURCE_CLAIM_QUARANTINE: sumber diblokir sebelum file dipilih; file lokal tetap aman.",
+                    ][-160:],
+                }
+            )
+            youtube_uploads[upload_id] = YouTubeUploadJob(**data)
+            quarantined += 1
+        if quarantined:
+            save_youtube_uploads_unlocked()
+    return quarantined
+
+
 def verified_duplicate_for_upload(
     upload: YouTubeUploadJob,
     clip_sha256: str,
@@ -3924,6 +4071,15 @@ def youtube_uploads_with_queue_positions(
 
 def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> YouTubeUploadJob:
     job, clip, index = find_job_clip(job_id, request.clip_url)
+    claimed_upload = youtube_source_claim_block(job_id)
+    if claimed_upload is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Sumber video ini sudah terdeteksi klaim Content ID/audio-visual pada klip "
+                f"'{claimed_upload.clip_name}'. Pilih sumber lain; upload ulang dari job yang sama diblokir."
+            ),
+        )
     upload_visibility = safe_youtube_visibility(request.visibility)
     if upload_visibility == "public":
         cadence_issue = youtube_public_cadence_issue()
@@ -3937,6 +4093,24 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         clip_fingerprint = file_sha256(clip_path)
     except OSError as exc:
         raise HTTPException(status_code=409, detail=f"File clip tidak dapat dibaca: {exc}") from exc
+    recovery = recoverable_failed_youtube_upload(job_id, clip.url)
+    if recovery is not None:
+        recovery_logs = [
+            *recovery.logs,
+            YOUTUBE_RESTART_VERIFY_MARKER,
+            "Retry aman: memeriksa video di halaman Content tanpa memilih file dan tanpa upload ulang.",
+        ][-160:]
+        set_youtube_upload(
+            recovery.id,
+            status="queued",
+            started_at=None,
+            finished_at=None,
+            duration_seconds=None,
+            logs=recovery_logs,
+            error=None,
+        )
+        with youtube_uploads_lock:
+            return youtube_uploads.get(recovery.id, recovery)
     existing = reusable_youtube_upload(job_id, clip.url, clip_fingerprint)
     if request.dry_run and existing is not None and existing.status == "completed":
         existing = None
@@ -4729,6 +4903,36 @@ def build_youtube_upload_command(
         command.append("--altered-content")
     if upload.dry_run:
         command.append("--dry-run")
+    if not env_bool("YOUTUBE_HEADLESS", True):
+        command.append("--no-headless")
+    return command
+
+
+def build_youtube_restart_verification_command(upload: YouTubeUploadJob) -> list[str]:
+    command = [
+        sys.executable,
+        "youtube_uploader.py",
+        "verify-upload",
+        "--state",
+        str(YOUTUBE_PLAYWRIGHT_STATE),
+        "--title",
+        upload.title,
+        "--visibility",
+        upload.visibility,
+        "--timeout",
+        os.environ.get("YOUTUBE_RESTART_VERIFY_TIMEOUT_SECONDS", "120"),
+    ]
+    if upload.target_channel:
+        command.extend(["--target-channel", upload.target_channel])
+    target_email = os.environ.get("YOUTUBE_TARGET_EMAIL", DEFAULT_YOUTUBE_TARGET_EMAIL).strip()
+    if target_email:
+        command.extend(["--target-email", target_email])
+    target_channel_id = os.environ.get("YOUTUBE_TARGET_CHANNEL_ID", DEFAULT_YOUTUBE_TARGET_CHANNEL_ID).strip()
+    if target_channel_id:
+        command.extend(["--target-channel-id", target_channel_id])
+    studio_url = os.environ.get("YOUTUBE_STUDIO_URL", "").strip()
+    if studio_url:
+        command.extend(["--studio-url", studio_url])
     if not env_bool("YOUTUBE_HEADLESS", True):
         command.append("--no-headless")
     return command
@@ -5538,10 +5742,147 @@ def complete_youtube_upload_as_duplicate(
         schedule_completed_upload_cleanup(upload_id)
 
 
+def run_youtube_restart_verification(upload_id: str) -> None:
+    """Verify a post-save upload after restart, never select the file again."""
+    with youtube_uploads_lock:
+        upload = youtube_uploads.get(upload_id)
+    if upload is None:
+        return
+
+    started_perf = time.perf_counter()
+    started_at = now_iso()
+    logs = [*upload.logs, "Memulihkan konfirmasi upload dari halaman Content YouTube Studio."][-160:]
+    set_youtube_upload(
+        upload_id,
+        status="running",
+        started_at=started_at,
+        finished_at=None,
+        duration_seconds=None,
+        logs=logs,
+        error=None,
+    )
+    command = build_youtube_restart_verification_command(upload)
+    process = subprocess.Popen(
+        command,
+        cwd=BASE_DIR,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+    )
+    with process_lock:
+        youtube_upload_processes[upload_id] = process
+
+    confirmed = False
+
+    def record_verification_log(cleaned: str) -> None:
+        nonlocal confirmed
+        if cleaned.startswith(YOUTUBE_UPLOAD_CONFIRMED_PREFIX):
+            confirmed = True
+        logs.append(cleaned)
+        set_youtube_upload(
+            upload_id,
+            logs=logs[-160:],
+            video_url=youtube_video_url_from_logs(logs),
+            visibility=youtube_final_visibility_from_logs(logs) or upload.visibility,
+            upload_confirmed=confirmed,
+        )
+
+    try:
+        code, stalled = monitor_youtube_upload_process(
+            process,
+            record_verification_log,
+            stall_timeout_seconds=max(
+                30,
+                env_int("YOUTUBE_RESTART_VERIFY_STALL_TIMEOUT_SECONDS", 180),
+            ),
+        )
+        video_url = youtube_video_url_from_logs(logs)
+        error = (
+            "Verifikasi Content YouTube tidak mengirim progres."
+            if stalled
+            else youtube_upload_error_from_logs(logs)
+            or f"youtube_uploader.py verify-upload exited with code {code}"
+        )
+        if code != 0 or not confirmed or not video_url:
+            set_youtube_upload(
+                upload_id,
+                status="failed",
+                logs=logs[-160:],
+                video_url=video_url,
+                upload_confirmed=False,
+                finished_at=now_iso(),
+                duration_seconds=elapsed_seconds(started_perf),
+                error=(
+                    "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. "
+                    + error
+                ),
+            )
+            return
+
+        completed_at = now_iso()
+        delete_after = completed_upload_cleanup_after(completed_at)
+        logs.append(
+            "Upload pasca-restart terverifikasi tanpa upload ulang; file lokal masuk auto-cleanup."
+        )
+        set_youtube_upload(
+            upload_id,
+            status="completed",
+            logs=logs[-160:],
+            video_url=video_url,
+            upload_confirmed=True,
+            finished_at=completed_at,
+            duration_seconds=elapsed_seconds(started_perf),
+            clip_delete_after=delete_after,
+            clip_deleted_at=None,
+            clip_delete_error=None,
+            clip_cleanup_started_at=None,
+            clip_cleanup_current_step=None,
+            clip_cleanup_completed_steps=[],
+            clip_cleanup_step_details={},
+            error=None,
+        )
+        schedule_completed_upload_cleanup(upload_id)
+    except Exception as exc:
+        set_youtube_upload(
+            upload_id,
+            status="failed",
+            logs=logs[-160:],
+            upload_confirmed=False,
+            finished_at=now_iso(),
+            duration_seconds=elapsed_seconds(started_perf),
+            error=(
+                "Verifikasi aman pasca-restart gagal; file lokal dipertahankan dan tidak diupload ulang: "
+                f"{exc}"
+            ),
+        )
+    finally:
+        with process_lock:
+            youtube_upload_processes.pop(upload_id, None)
+
+
 def run_youtube_upload(upload_id: str) -> None:
     with youtube_uploads_lock:
         upload = youtube_uploads.get(upload_id)
     if upload is None:
+        return
+
+    if youtube_upload_needs_restart_verification(upload):
+        try:
+            run_youtube_restart_verification(upload_id)
+        except Exception as exc:
+            set_youtube_upload(
+                upload_id,
+                status="failed",
+                finished_at=now_iso(),
+                upload_confirmed=False,
+                error=(
+                    "Verifikasi aman pasca-restart gagal dimulai; file lokal dipertahankan "
+                    f"dan antrean dilanjutkan: {exc}"
+                ),
+            )
         return
 
     clip_path = output_path_from_url(upload.clip_url)
@@ -5988,6 +6329,18 @@ def run_youtube_upload(upload_id: str) -> None:
                     f"Session YouTube masih belum login pada attempt {attempt}. Jalankan Login Sekali untuk menyegarkan storage-state/profile."
                 )
                 set_youtube_upload(upload_id, logs=logs[-160:], error=normalize_youtube_upload_error(error))
+            if any(
+                str(line).startswith(YOUTUBE_CLAIM_ABORT_PREFIX)
+                for line in logs
+            ):
+                quarantined = quarantine_queued_youtube_uploads_from_claimed_source(
+                    upload.source_job_id,
+                    upload_id,
+                )
+                logs.append(
+                    "Sumber dikarantina setelah klaim terdeteksi; "
+                    f"{quarantined} upload antrean dari sumber yang sama dibatalkan tanpa memilih file."
+                )
             set_youtube_upload(
                 upload_id,
                 status="failed",
