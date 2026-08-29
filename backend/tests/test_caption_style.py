@@ -1295,12 +1295,17 @@ def test_compact_short_protects_payoff_from_end_cta():
 
 
 def test_shorts_policy_compliance_records_official_and_stricter_local_limits():
-    compliance = shorts_policy_compliance(59.8, embedded_cover=True)
+    compliance = shorts_policy_compliance(44.8, embedded_cover=True)
+    outside_growth_window = shorts_policy_compliance(59.8, embedded_cover=True)
 
     assert compliance["official_max_seconds"] == 180
-    assert compliance["fendy_clipper_max_seconds"] == 60
+    assert compliance["fendy_clipper_min_seconds"] == 25
+    assert compliance["fendy_clipper_max_seconds"] == 45
     assert compliance["duration_within_official_limit"] is True
+    assert compliance["duration_within_growth_window"] is True
     assert compliance["duration_within_fendy_clipper_limit"] is True
+    assert outside_growth_window["duration_within_official_limit"] is True
+    assert outside_growth_window["duration_within_growth_window"] is False
     assert compliance["engaged_views_retained_as_quality_metric"] is True
     assert compliance["custom_thumbnail_upload_supported"] is False
     assert compliance["thumbnail_strategy"] == "embedded_selectable_frame"
@@ -1322,7 +1327,7 @@ def test_youtube_policy_snapshot_marks_future_rules_for_review_without_assuming_
     assert len(future["official_sources"]) == 8
 
 
-def test_five_k_readiness_is_a_stability_experiment_not_a_view_guarantee():
+def test_twenty_k_readiness_is_a_stability_experiment_not_a_view_guarantee():
     clip = ClipCandidate(
         1,
         0,
@@ -1340,11 +1345,11 @@ def test_five_k_readiness_is_a_stability_experiment_not_a_view_guarantee():
 
     readiness = five_k_experiment_readiness(clip, "vertical_short")
 
-    assert readiness["experiment_name"] == "sustainable_50k_20_subscriber_growth"
-    assert readiness["target_views"] == 50000
+    assert readiness["experiment_name"] == "sustainable_20k_20_subscriber_growth"
+    assert readiness["target_views"] == 20000
     assert readiness["target_subscribers"] == 20
-    assert readiness["target_subscribers_per_1000_views"] == 0.4
-    assert readiness["stretch_target_views"] == 100000
+    assert readiness["target_subscribers_per_1000_views"] == 1.0
+    assert readiness["stretch_target_views"] == 50000
     assert readiness["quality_metric"] == "engaged_views"
     assert readiness["minimum_short_export_score"] == 78
     assert readiness["quality_gate_passed"] is True
@@ -1353,7 +1358,7 @@ def test_five_k_readiness_is_a_stability_experiment_not_a_view_guarantee():
     assert "viewed_vs_swiped" in readiness["measure_after_publish"]
     assert "engaged_views" in readiness["measure_after_publish"]
     assert "subscribers_gained" in readiness["measure_after_publish"]
-    assert readiness["review_checkpoints"] == [1000, 5000, 10000, 20000, 50000]
+    assert readiness["review_checkpoints"] == [1000, 5000, 10000, 20000]
     assert [step["after_hours"] for step in readiness["youtube_studio_review_flow"]] == [
         6,
         48,
@@ -1363,7 +1368,7 @@ def test_five_k_readiness_is_a_stability_experiment_not_a_view_guarantee():
     assert "how_many_chose_to_view" in readiness["youtube_studio_review_flow"][0]["focus"]
     assert "engaged_views" in readiness["youtube_studio_review_flow"][1]["focus"]
     assert "subscribers_gained" in readiness["youtube_studio_review_flow"][2]["focus"]
-    assert readiness["stability_definition"]["success_rule"] == "at_least_3_reach_50000_views_and_20_subscribers"
+    assert readiness["stability_definition"]["success_rule"] == "at_least_3_reach_20000_views_and_20_subscribers"
     assert readiness["iteration_guardrails"]["delete_and_reupload_to_reset_distribution"] is False
     assert two_k_experiment_readiness(clip, "vertical_short") == readiness
     assert one_k_experiment_readiness(clip, "vertical_short") == readiness

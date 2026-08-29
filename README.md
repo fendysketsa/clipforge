@@ -37,7 +37,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Auto-repair a broader shortlist before final selection, enforce a minimum FYP score of 78 for vertical exports, and block low-score legacy Shorts from YouTube upload instead of labeling them ready to post.
 - Audit first-30-second editorial readiness across five beat windows (0–3, 3–8, 8–15, 15–22, and 22–30 seconds), including context-dependent openings, speech coverage, dead air, and fresh information. Timing-audited Shorts below 58 are held by the selection/upload gate; this score is a diagnostic, not a promise of actual audience retention.
 - Place one value-led Subscribe invitation after the payoff: Shorts pair it with the contextual discussion prompt in a shorter 1.85-second window, suppress it for clips up to 40 seconds or earned loops, and long-form shows it once in the final chapter. The reason to subscribe follows the topic and never offers rewards or fake urgency.
-- Generate short clips up to 60 seconds without an extra compilation render.
+- Target focused 25–45 second Shorts based on the channel retention profile, with a hard upload gate outside that window.
 - Build a separate 5–10 minute **Long Story** with a sentence-complete 10–22 second teaser, then restore source chronology across context, development, explanation, and payoff. The teaser is removed from its original position, and the renderer never adds filler merely to hit the selected duration.
 - Produce **Long Animate** directly from an original script: Scene Cinema uses local Ollama for the storyboard and a local Apache-2.0 Z-Image-Turbo Q3 service for prompt-faithful scene images, then adds content-derived camera motion, Indonesian narration, scene-timed subtitles, procedural original music, thumbnail, and YouTube chapters before joining everything into one 16:9 video.
 - Telegram's primary CTA requests short clips only for a faster turnaround.
@@ -225,8 +225,8 @@ cd backend
 
 Enable **Auto Upload YouTube** before starting a clipping job to automatically
 queue the highest-scored clips when processing finishes. After a job completes,
-you can also use **Upload 3 terbaik** or the per-clip YouTube button in the
-dashboard. In Telegram, use **Upload Clip Ini ke YouTube** or **Upload 3
+you can also use **Upload 2 terbaik** or the per-clip YouTube button in the
+dashboard. In Telegram, use **Upload Clip Ini ke YouTube** or **Upload 2
 Terbaik ke YouTube**. Batch uploads automatically pick the highest-scored clips,
 select the configured playlist, and verify the saved session appears to be the
 configured target channel before uploading. Uploads are processed one at a time
@@ -295,7 +295,10 @@ YOUTUBE_TARGET_CHANNEL=ryuundyofficial
 YOUTUBE_TARGET_EMAIL=fendysketsa@gmail.com
 YOUTUBE_TARGET_CHANNEL_ID=UCAOZF9Qzj6DYoXKtLnP4UUQ
 YOUTUBE_STUDIO_URL=https://studio.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ
-YOUTUBE_AUTO_UPLOAD_COUNT=3
+YOUTUBE_AUTO_UPLOAD_COUNT=2
+YOUTUBE_PUBLIC_DAILY_LIMIT=2
+YOUTUBE_PUBLIC_MIN_GAP_HOURS=6
+YOUTUBE_PUBLISH_TIMEZONE=Asia/Jakarta
 YOUTUBE_REQUIRE_COPYRIGHT_CHECKS=true
 YOUTUBE_COPYRIGHT_HIGH_RISK_TERMS=islam itu indah,transcorp,trans tv,trans7
 YOUTUBE_CONTINUE_WHEN_CHECKS_STUCK=false
@@ -351,7 +354,7 @@ The backend can also run without the UI:
 
 ```powershell
 cd backend
-.\.venv\Scripts\python.exe clipper.py "https://www.youtube.com/watch?v=..." --top 5 --min 15 --max 60
+.\.venv\Scripts\python.exe clipper.py "https://www.youtube.com/watch?v=..." --top 5 --min 25 --max 45
 ```
 
 Quick test on the first 180 seconds:

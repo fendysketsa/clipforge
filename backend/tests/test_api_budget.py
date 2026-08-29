@@ -133,14 +133,14 @@ def test_normalize_clamps_target_to_budget(monkeypatch):
     req = ClipJobRequest(source_file="fake.mp4", top=20, min_duration=35, max_duration=180)
     out = normalize_job_request(req)
     assert out.top == 2  # clamped from 20 to budget cap
-    assert out.max_duration == 60
+    assert out.max_duration == 45
 
 
 def test_short_defaults_are_fast_fyp_length():
     request = ClipJobRequest(source_file="fake.mp4")
 
-    assert request.min_duration == 15
-    assert request.max_duration == 60
+    assert request.min_duration == 25
+    assert request.max_duration == 45
     assert request.model == "Systran/faster-whisper-medium"
     assert request.crop_mode == "person"
     assert request.caption_position == "bottom"
@@ -259,6 +259,16 @@ def test_new_jobs_default_to_clean_detail_auto_fyp_visuals():
     assert request.background_mode == "keep"
     assert AutoViralRequest().visual_mode == "auto_fyp"
     assert AutoViralRequest().background_mode == "keep"
+    assert AutoViralRequest().niche == "islamic_practical_life"
+    assert ViralVideoSearchRequest().niche == "islamic_practical_life"
+
+
+def test_practical_life_niche_owns_default_search_positions():
+    request = ViralVideoSearchRequest()
+
+    assert request.queries[0] == "tanya jawab islam masalah orang tua"
+    assert request.queries[2].startswith("kajian rumah tangga islami")
+    assert request.queries.index("podcast horor indonesia") >= 12
 
 
 def test_legacy_visual_modes_are_migrated_to_auto_fyp():
@@ -974,7 +984,7 @@ def test_build_clipper_command_enables_enhanced_edit_by_default():
     assert "--remove-running-text" not in command
 
 
-def test_build_clipper_command_caps_short_render_at_one_minute():
+def test_build_clipper_command_caps_short_render_at_growth_window():
     command = build_clipper_command(
         ClipJobRequest(
             source_file="/tmp/source.mp4",
@@ -983,7 +993,7 @@ def test_build_clipper_command_caps_short_render_at_one_minute():
         )
     )
 
-    assert command[command.index("--max") + 1] == "60.0"
+    assert command[command.index("--max") + 1] == "45.0"
 
 
 def test_build_clipper_command_can_disable_enhanced_edit():

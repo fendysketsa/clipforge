@@ -143,7 +143,7 @@ export default function HomePage() {
   const [youtubeConfig, setYoutubeConfig] = useState<YouTubeConfig | null>(null);
   const [youtubeUploads, setYoutubeUploads] = useState<YouTubeUploadJob[]>([]);
   const [autoViralRun, setAutoViralRun] = useState<AutoViralRun | null>(null);
-  const [autoContentNiche, setAutoContentNiche] = useState<IslamicContentNiche>("auto");
+  const [autoContentNiche, setAutoContentNiche] = useState<IslamicContentNiche>("islamic_practical_life");
   const [autoContentSources, setAutoContentSources] = useState<ViralContentSource[]>([]);
   const [selectedAutoContentUrls, setSelectedAutoContentUrls] = useState<string[]>([]);
   const [autoContentMessage, setAutoContentMessage] = useState("");
@@ -627,7 +627,7 @@ export default function HomePage() {
 
   const handleStartJob = useCallback(async () => {
     const trimmedUrl = url.trim();
-    const effectiveMaxDuration = clipMode === "short" ? Math.min(60, maxDuration) : maxDuration;
+    const effectiveMaxDuration = clipMode === "short" ? Math.min(DEFAULT_MAX_DURATION, maxDuration) : maxDuration;
     setError("");
 
     if (isActiveJob(activeJob)) {
@@ -659,7 +659,7 @@ export default function HomePage() {
     if (clipMode !== "long_animate" && effectiveMaxDuration <= minDuration) {
       setError(
         clipMode === "short"
-          ? "Durasi minimum clip pendek harus di bawah 60 detik."
+          ? `Durasi minimum Short harus di bawah ${DEFAULT_MAX_DURATION} detik.`
           : "Durasi maksimum harus lebih besar dari durasi minimum.",
       );
       return;
@@ -1050,7 +1050,7 @@ export default function HomePage() {
 
   const handleUploadAllToYouTube = useCallback(async () => {
     if (!job || !job.clips.length) return;
-    const bestCount = youtubeConfig?.auto_upload_count ?? 3;
+    const bestCount = youtubeConfig?.auto_upload_count ?? 2;
     try {
       const uploads = await toast.promise(createYouTubeUploadBatch(job.id, [], bestCount), {
         loading: `Memasukkan ${Math.min(bestCount, job.clips.length)} klip terbaik ke antrean YouTube...`,
@@ -1260,11 +1260,11 @@ export default function HomePage() {
           source_urls: selectedAutoContentUrls,
           video_count: selectedAutoContentUrls.length,
           auto_upload_youtube: false,
-          clips_per_video: 3,
+          clips_per_video: 2,
           ...viralSearchFilters,
           top: targetClips || null,
           min_duration: minDuration,
-          max_duration: Math.min(60, maxDuration),
+          max_duration: Math.min(DEFAULT_MAX_DURATION, maxDuration),
           video_quality: videoQuality,
           visual_mode: visualMode,
           background_mode: backgroundMode,
@@ -1435,8 +1435,11 @@ export default function HomePage() {
         clips={job?.clips ?? []}
         selectedClipUrls={selectedClipUrls}
         youtubeEnabled={Boolean(youtubeConfig?.enabled)}
-        youtubeStatusMessage={youtubeConfig?.auth_status_message ?? "Login YouTube Playwright belum siap"}
-        youtubeAutoUploadCount={youtubeConfig?.auto_upload_count ?? 3}
+        youtubeStatusMessage={[
+          youtubeConfig?.auth_status_message ?? "Login YouTube Playwright belum siap",
+          youtubeConfig?.public_cadence_message,
+        ].filter(Boolean).join(" · ")}
+        youtubeAutoUploadCount={youtubeConfig?.auto_upload_count ?? 2}
         youtubeUploads={youtubeUploads}
         isYouTubeLoginActive={isYouTubeLoginActive}
         onDeleteAllClips={handleDeleteAllClips}

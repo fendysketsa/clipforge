@@ -55,7 +55,7 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
                 ? "Long Animate · storyboard ke video 16:9 · target stabilitas 5K"
                 : job.request.clip_mode === "highlight_5m"
                 ? `Long Story landscape ±${Math.round(job.request.compilation_target_seconds / 60)} menit · target stabilitas 5K`
-                : `${job.request.top ?? "Auto"} clip pendek maks. 60 detik · target stabilitas 5K`}
+                : `${job.request.top ?? "Auto"} clip pendek 25–45 detik · target stabilitas 20K`}
             </span>
             <span>
               {job.request.min_duration}s - {job.request.max_duration}s

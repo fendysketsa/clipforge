@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from statistics import median
 from typing import Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from urllib.parse import parse_qs, quote, urlencode, unquote, urlparse
 from urllib.error import HTTPError, URLError
 import urllib.request
@@ -82,7 +83,12 @@ LONG_VIDEO_ANALYSIS_RATIO = 0.35
 MAX_AUTO_ANALYSIS_SECONDS = 20 * 60
 CLIP_BUDGET_RATIO = 0.8
 YOUTUBE_SHORTS_MAX_SECONDS = 180
+SHORT_GROWTH_MIN_SECONDS = 25
+SHORT_GROWTH_MAX_SECONDS = 45
 SHORT_UPLOAD_MIN_FYP_SCORE = 78
+SHORT_GROWTH_TARGET_VIEWS = 20000
+LONG_FORM_GROWTH_TARGET_VIEWS = 5000
+GROWTH_TARGET_SUBSCRIBERS = 20
 YOUTUBE_CLEANUP_STEPS = (
     "thumbnail",
     "metadata",
@@ -151,7 +157,9 @@ DEFAULT_YOUTUBE_PLAYLIST = "Islam"
 DEFAULT_YOUTUBE_TARGET_CHANNEL = "ryuundyofficial"
 DEFAULT_YOUTUBE_TARGET_EMAIL = "fendysketsa@gmail.com"
 DEFAULT_YOUTUBE_TARGET_CHANNEL_ID = "UCAOZF9Qzj6DYoXKtLnP4UUQ"
-DEFAULT_YOUTUBE_AUTO_UPLOAD_COUNT = 3
+DEFAULT_YOUTUBE_AUTO_UPLOAD_COUNT = 2
+DEFAULT_YOUTUBE_PUBLIC_DAILY_LIMIT = 2
+DEFAULT_YOUTUBE_PUBLIC_MIN_GAP_HOURS = 6
 DEFAULT_YOUTUBE_AI_FALLBACK_MODELS = ["llama3.2-id:latest", "llama3:latest"]
 ROOT_DIR = BASE_DIR.parent
 YOUTUBE_CDP_REFRESH_LOG = Path(
@@ -225,13 +233,32 @@ def youtube_auto_upload_count() -> int:
     return max(1, min(MAX_REQUESTED_CLIPS, env_int("YOUTUBE_AUTO_UPLOAD_COUNT", DEFAULT_YOUTUBE_AUTO_UPLOAD_COUNT)))
 
 
+def youtube_public_daily_limit() -> int:
+    return max(
+        1,
+        min(
+            3,
+            env_int("YOUTUBE_PUBLIC_DAILY_LIMIT", DEFAULT_YOUTUBE_PUBLIC_DAILY_LIMIT),
+        ),
+    )
+
+
+def youtube_public_min_gap_hours() -> float:
+    return bounded_float_env(
+        "YOUTUBE_PUBLIC_MIN_GAP_HOURS",
+        DEFAULT_YOUTUBE_PUBLIC_MIN_GAP_HOURS,
+        1.0,
+        24.0,
+    )
+
+
 class ClipJobRequest(BaseModel):
     url: str = ""
     source_file: str = ""
     script_text: str = Field(default="", max_length=30000)
     top: int | None = Field(default=None, ge=1, le=50)
-    min_duration: float = Field(default=15, ge=5, le=600)
-    max_duration: float = Field(default=60, ge=10, le=600)
+    min_duration: float = Field(default=SHORT_GROWTH_MIN_SECONDS, ge=5, le=600)
+    max_duration: float = Field(default=SHORT_GROWTH_MAX_SECONDS, ge=10, le=600)
     clip_mode: Literal["short", "highlight_5m", "long_animate"] = "short"
     # Keep 240s readable for persisted legacy jobs; the current UI offers 300-600s.
     compilation_target_seconds: float = Field(default=300, ge=240, le=600)
@@ -350,8 +377,12 @@ class ClipFile(BaseModel):
         is_long_form = clip_name.startswith(
             ("highlight_5menit_", "resume_cerita_", "long_animate_")
         )
-        data["growth_target_views"] = 5000 if is_long_form else 50000
-        data["growth_target_subscribers"] = 20
+        data["growth_target_views"] = (
+            LONG_FORM_GROWTH_TARGET_VIEWS
+            if is_long_form
+            else SHORT_GROWTH_TARGET_VIEWS
+        )
+        data["growth_target_subscribers"] = GROWTH_TARGET_SUBSCRIBERS
         return data
 
 
@@ -451,6 +482,9 @@ class YouTubeConfig(BaseModel):
     target_channel: str
     target_email: str
     auto_upload_count: int
+    public_daily_limit: int
+    public_min_gap_hours: float
+    public_cadence_message: str
     active_upload_id: str | None = None
 
 
@@ -588,8 +622,8 @@ class YouTubeUploadJob(BaseModel):
     clip_cleanup_completed_steps: list[str] = Field(default_factory=list)
     clip_cleanup_step_details: dict[str, YouTubeCleanupStepProgress] = Field(default_factory=dict)
     growth_series: str = ""
-    growth_target_views: int = Field(default=50000, ge=1)
-    growth_target_subscribers: int = Field(default=20, ge=1)
+    growth_target_views: int = Field(default=SHORT_GROWTH_TARGET_VIEWS, ge=1)
+    growth_target_subscribers: int = Field(default=GROWTH_TARGET_SUBSCRIBERS, ge=1)
     performance_status: Literal[
         "not_measured", "learning", "views_target_met", "target_met"
     ] = "not_measured"
@@ -610,8 +644,12 @@ class YouTubeUploadJob(BaseModel):
         is_long_form = clip_name.startswith(
             ("highlight_5menit_", "resume_cerita_", "long_animate_")
         )
-        data["growth_target_views"] = 5000 if is_long_form else 50000
-        data["growth_target_subscribers"] = 20
+        data["growth_target_views"] = (
+            LONG_FORM_GROWTH_TARGET_VIEWS
+            if is_long_form
+            else SHORT_GROWTH_TARGET_VIEWS
+        )
+        data["growth_target_subscribers"] = GROWTH_TARGET_SUBSCRIBERS
         return data
 
 
@@ -811,6 +849,7 @@ HORROR_PODCAST_SEARCH_QUERIES = [
 
 IslamicContentNiche = Literal[
     "auto",
+    "islamic_practical_life",
     "islamic_current_viral",
     "islamic_mental_health",
     "halal_wealth",
@@ -823,6 +862,30 @@ ViralDefinitionFilter = Literal["any", "hd"]
 ViralSortOrder = Literal["popularity", "relevance", "newest"]
 
 ISLAMIC_EVERGREEN_NICHES: dict[str, dict[str, Any]] = {
+    "islamic_practical_life": {
+        "label": "Islam Praktis untuk Masalah Sehari-hari",
+        "queries": [
+            "tanya jawab islam masalah orang tua",
+            "kajian rumah tangga islami masalah sehari hari",
+            "ceramah kisah sedekah penuh hikmah",
+            "hutang riba dan rezeki halal keluarga",
+            "cara menghadapi marah dan cemas menurut islam",
+            "kesalahan ibadah sehari hari yang sering terjadi",
+            "kisah nabi dengan anak kecil penuh hikmah",
+            "doa dan shalat untuk masalah kehidupan",
+            "kajian islam overthinking dan ketenangan hati",
+            "adab kepada orang tua tanya jawab ustaz",
+            "kisah nyata hijrah dan perubahan hidup",
+            "jawaban ustaz singkat masalah keluarga",
+        ],
+        "keywords": [
+            "orang tua", "ayah", "ibu", "anak", "keluarga", "rumah tangga",
+            "suami", "istri", "hutang", "riba", "rezeki", "sedekah", "zakat",
+            "shalat", "salat", "doa", "ibadah", "marah", "cemas", "overthinking",
+            "hati", "adab", "hijrah", "masalah", "jawaban", "tanya jawab",
+        ],
+        "hashtags": ["IslamPraktis", "KajianHarian", "JawabanUstaz"],
+    },
     "islamic_current_viral": {
         "label": "Isu Muslim & Kajian Viral Terkini",
         "queries": [
@@ -1011,7 +1074,7 @@ def default_viral_video_search_queries() -> list[str]:
 
 
 class AutoViralRequest(BaseModel):
-    niche: IslamicContentNiche = "auto"
+    niche: IslamicContentNiche = "islamic_practical_life"
     queries: list[str] = Field(default_factory=default_auto_viral_queries)
     video_count: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_VIDEO_COUNT", 5), ge=1, le=7)
     clips_per_video: int = Field(default_factory=youtube_auto_upload_count, ge=1, le=5)
@@ -1025,8 +1088,8 @@ class AutoViralRequest(BaseModel):
     definition_filter: ViralDefinitionFilter = "hd"
     sort_order: ViralSortOrder = "popularity"
     top: int | None = Field(default=None, ge=1, le=MAX_REQUESTED_CLIPS)
-    min_duration: float = Field(default=15, ge=5, le=600)
-    max_duration: float = Field(default=60, ge=10, le=600)
+    min_duration: float = Field(default=SHORT_GROWTH_MIN_SECONDS, ge=5, le=600)
+    max_duration: float = Field(default=SHORT_GROWTH_MAX_SECONDS, ge=10, le=600)
     video_quality: Literal["standard", "high", "max"] = "high"
     visual_mode: Literal["auto_fyp", "cinematic", "speaker_split", "animated_3d", "retro_tv"] = "auto_fyp"
     background_mode: Literal["auto_clean", "keep", "mosque"] = "keep"
@@ -1092,7 +1155,7 @@ class AutoViralRun(BaseModel):
 
 
 class ViralVideoSearchRequest(BaseModel):
-    niche: IslamicContentNiche = "auto"
+    niche: IslamicContentNiche = "islamic_practical_life"
     queries: list[str] = Field(default_factory=default_viral_video_search_queries)
     video_count: int = Field(default=3, ge=1, le=7)
     search_limit_per_query: int = Field(default_factory=lambda: env_int("VIRAL_CC_SEARCH_LIMIT", 25), ge=3, le=50)
@@ -1541,7 +1604,12 @@ def is_compilation_clip(job: "ClipJob", clip: ClipFile) -> bool:
 
 def youtube_growth_targets(job: "ClipJob", clip: ClipFile) -> tuple[int, int]:
     """Return canonical per-upload targets without trusting stale sidecar values."""
-    return (5000 if is_compilation_clip(job, clip) else 50000, 20)
+    return (
+        LONG_FORM_GROWTH_TARGET_VIEWS
+        if is_compilation_clip(job, clip)
+        else SHORT_GROWTH_TARGET_VIEWS,
+        GROWTH_TARGET_SUBSCRIBERS,
+    )
 
 
 def classify_long_form_playlist(*values: str) -> str:
@@ -2008,6 +2076,132 @@ def youtube_default_visibility() -> Literal["private", "unlisted", "public"]:
     return safe_youtube_visibility()
 
 
+def youtube_publish_timezone() -> timezone | ZoneInfo:
+    name = os.environ.get("YOUTUBE_PUBLISH_TIMEZONE", "Asia/Jakarta").strip()
+    try:
+        return ZoneInfo(name or "Asia/Jakarta")
+    except ZoneInfoNotFoundError:
+        return timezone(timedelta(hours=7))
+
+
+def parsed_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def youtube_recent_publication_times(*, include_remote: bool = True) -> list[datetime]:
+    """Combine public channel activity with local reservations for cadence safety."""
+    published_by_video_id: dict[str, datetime] = {}
+    reservations_without_video_id: list[datetime] = []
+    with youtube_uploads_lock:
+        local_uploads = list(youtube_uploads.values())
+    for upload in local_uploads:
+        if upload.visibility != "public" or upload.dry_run:
+            continue
+        if upload.status not in {"queued", "running", "completed"}:
+            continue
+        value = upload.finished_at if upload.status == "completed" else upload.created_at
+        parsed = parsed_datetime(value)
+        if parsed is not None:
+            video_id = youtube_video_id_from_url(upload.video_url or "")
+            if video_id:
+                published_by_video_id[video_id] = parsed
+            else:
+                reservations_without_video_id.append(parsed)
+
+    channel_id = os.environ.get(
+        "YOUTUBE_TARGET_CHANNEL_ID",
+        DEFAULT_YOUTUBE_TARGET_CHANNEL_ID,
+    ).strip()
+    if include_remote and channel_id and os.environ.get("YOUTUBE_DATA_API_KEY", "").strip():
+        try:
+            payload = youtube_data_api_get(
+                "activities",
+                {
+                    "part": "snippet,contentDetails",
+                    "channelId": channel_id,
+                    "maxResults": 20,
+                },
+            )
+            items = payload.get("items") if isinstance(payload, dict) else []
+            if isinstance(items, list):
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    details = item.get("contentDetails")
+                    snippet = item.get("snippet")
+                    if not isinstance(details, dict) or not isinstance(details.get("upload"), dict):
+                        continue
+                    if not isinstance(snippet, dict):
+                        continue
+                    video_id = str(details["upload"].get("videoId") or "").strip()
+                    parsed = parsed_datetime(str(snippet.get("publishedAt") or ""))
+                    if parsed is not None:
+                        if video_id:
+                            # The remote publication timestamp is authoritative. Keying by
+                            # video ID prevents one completed local upload from being counted
+                            # again when it also appears in YouTube channel activities.
+                            published_by_video_id[video_id] = parsed
+                        else:
+                            reservations_without_video_id.append(parsed)
+        except RuntimeError:
+            # Public publishing remains guarded by local records when the API is unavailable.
+            pass
+
+    return sorted(
+        set(published_by_video_id.values()) | set(reservations_without_video_id)
+    )
+
+
+def youtube_public_cadence_issue(
+    now: datetime | None = None,
+    *,
+    include_remote: bool = True,
+) -> str | None:
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    current = current.astimezone(timezone.utc)
+    publish_tz = youtube_publish_timezone()
+    current_local = current.astimezone(publish_tz)
+    publications = [
+        item
+        for item in youtube_recent_publication_times(include_remote=include_remote)
+        if item <= current
+    ]
+    today = [
+        item
+        for item in publications
+        if item.astimezone(publish_tz).date() == current_local.date()
+    ]
+    daily_limit = youtube_public_daily_limit()
+    if len(today) >= daily_limit:
+        return (
+            f"Publikasi public hari ini sudah {len(today)}/{daily_limit}. "
+            "Upload sebagai Private dan jadwalkan hari berikutnya agar video tidak diterbitkan massal."
+        )
+
+    if publications:
+        latest = max(publications)
+        minimum_gap = timedelta(hours=youtube_public_min_gap_hours())
+        next_slot = latest + minimum_gap
+        if current < next_slot:
+            next_local = next_slot.astimezone(publish_tz)
+            return (
+                "Jarak publikasi belum aman. Slot public berikutnya "
+                f"{next_local.strftime('%d-%m-%Y %H:%M')} "
+                f"({getattr(publish_tz, 'key', 'WIB')}). Upload sebagai Private terlebih dahulu."
+            )
+    return None
+
+
 def active_youtube_upload_id() -> str | None:
     with youtube_uploads_lock:
         for upload in sorted(youtube_uploads.values(), key=lambda item: item.created_at):
@@ -2059,6 +2253,7 @@ def youtube_config_payload() -> YouTubeConfig:
         auth_status_message = f"Chromium profile belum ditemukan di container: {YOUTUBE_CHROMIUM_USER_DATA_DIR}"
     else:
         auth_status_message = f"Storage state belum ada: {YOUTUBE_PLAYWRIGHT_STATE}"
+    cadence_issue = youtube_public_cadence_issue(include_remote=False)
     return YouTubeConfig(
         enabled=playwright_installed() and youtube_upload_auth_ready(),
         playwright_installed=playwright_installed(),
@@ -2076,6 +2271,12 @@ def youtube_config_payload() -> YouTubeConfig:
         target_channel=os.environ.get("YOUTUBE_TARGET_CHANNEL", DEFAULT_YOUTUBE_TARGET_CHANNEL).strip(),
         target_email=os.environ.get("YOUTUBE_TARGET_EMAIL", DEFAULT_YOUTUBE_TARGET_EMAIL).strip(),
         auto_upload_count=youtube_auto_upload_count(),
+        public_daily_limit=youtube_public_daily_limit(),
+        public_min_gap_hours=youtube_public_min_gap_hours(),
+        public_cadence_message=(
+            cadence_issue
+            or "Slot public tersedia; tetap review Private sebelum menerbitkan."
+        ),
         active_upload_id=active_youtube_upload_id(),
     )
 
@@ -3020,6 +3221,18 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
                 f"Upload diblokir: durasi {duration:.1f} detik melewati batas Shorts "
                 f"{YOUTUBE_SHORTS_MAX_SECONDS} detik. Render ulang dengan durasi yang sesuai."
             )
+        if duration and duration < SHORT_GROWTH_MIN_SECONDS:
+            return (
+                f"Upload diblokir: durasi {duration:.1f} detik terlalu pendek untuk profil "
+                f"pertumbuhan {SHORT_GROWTH_MIN_SECONDS}–{SHORT_GROWTH_MAX_SECONDS} detik. "
+                "Render ulang dengan konteks, jawaban, dan payoff yang utuh."
+            )
+        if duration > SHORT_GROWTH_MAX_SECONDS:
+            return (
+                f"Upload diblokir: durasi {duration:.1f} detik melewati profil pertumbuhan "
+                f"{SHORT_GROWTH_MIN_SECONDS}–{SHORT_GROWTH_MAX_SECONDS} detik. "
+                "Majukan payoff dan pangkas bagian yang tidak menambah informasi."
+            )
         aspect_ratio = str(sidecar.get("aspect_ratio") or "").strip()
         if aspect_ratio and aspect_ratio not in {"9:16", "1:1"}:
             return (
@@ -3039,6 +3252,14 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             return (
                 "Upload diblokir: audit teknis Shorts menandai durasi di luar batas resmi. "
                 "Render ulang clip."
+            )
+        if isinstance(compliance, dict) and not compliance.get(
+            "duration_within_growth_window", True
+        ):
+            return (
+                "Upload diblokir: audit pertumbuhan menandai durasi di luar rentang "
+                f"{SHORT_GROWTH_MIN_SECONDS}–{SHORT_GROWTH_MAX_SECONDS} detik. "
+                "Render ulang clip dengan hook, jawaban, dan payoff yang lengkap."
             )
     readiness = sidecar.get("monetization_readiness") if isinstance(sidecar, dict) else None
     if not isinstance(readiness, dict):
@@ -3676,6 +3897,11 @@ def youtube_uploads_with_queue_positions(
 
 def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> YouTubeUploadJob:
     job, clip, index = find_job_clip(job_id, request.clip_url)
+    upload_visibility = safe_youtube_visibility(request.visibility)
+    if upload_visibility == "public":
+        cadence_issue = youtube_public_cadence_issue()
+        if cadence_issue:
+            raise HTTPException(status_code=409, detail=cadence_issue)
     growth_target_views, growth_target_subscribers = youtube_growth_targets(job, clip)
     clip_path = output_path_from_url(clip.url)
     if clip_path is None or not clip_path.is_file():
@@ -3831,7 +4057,7 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         description=description,
         thumbnail_url=safe_thumbnail_url,
         thumbnail_attached=False,
-        visibility=safe_youtube_visibility(request.visibility),
+        visibility=upload_visibility,
         made_for_kids=request.made_for_kids,
         altered_content=altered_content,
         tags=tags,
@@ -3895,6 +4121,16 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
             detail=(
                 "Tidak ada clip yang lolos audit upload. Render ulang agar kandidat "
                 "memiliki point utama dan ending tuntas."
+            ),
+        )
+
+    if safe_youtube_visibility(request.visibility) == "public" and len(clip_urls) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Batch public diblokir untuk mencegah publikasi massal. "
+                "Kirim batch sebagai Private, review, lalu terbitkan maksimal dua video per hari "
+                "dengan jarak sedikitnya enam jam."
             ),
         )
 
@@ -6113,7 +6349,17 @@ def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
         duration = fetch_video_duration(request.url)
     data = request.model_dump()
     if request.clip_mode == "short":
-        data["max_duration"] = min(60.0, request.max_duration)
+        data["min_duration"] = max(
+            float(SHORT_GROWTH_MIN_SECONDS),
+            min(float(SHORT_GROWTH_MAX_SECONDS - 1), request.min_duration),
+        )
+        data["max_duration"] = min(
+            float(SHORT_GROWTH_MAX_SECONDS),
+            max(float(SHORT_GROWTH_MIN_SECONDS + 1), request.max_duration),
+        )
+        if data["max_duration"] <= data["min_duration"]:
+            data["min_duration"] = float(SHORT_GROWTH_MIN_SECONDS)
+            data["max_duration"] = float(SHORT_GROWTH_MAX_SECONDS)
     elif request.clip_mode == "long_animate":
         data["top"] = 1
         data["analyze_seconds"] = None
@@ -6126,7 +6372,7 @@ def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
         data["top"] = choose_auto_top(duration)
 
     # Enforce: min_duration * target_clips <= 80% of the video length.
-    budget_cap = max_clips_for_duration(duration, request.min_duration)
+    budget_cap = max_clips_for_duration(duration, float(data["min_duration"]))
     if budget_cap is not None and data["top"] is not None:
         data["top"] = max(1, min(int(data["top"]), MAX_REQUESTED_CLIPS, budget_cap))
     elif data["top"] is not None:
@@ -6176,7 +6422,11 @@ def build_clipper_command(
             "--min",
             str(request.min_duration),
             "--max",
-            str(min(60.0, request.max_duration) if request.clip_mode == "short" else request.max_duration),
+            str(
+                min(float(SHORT_GROWTH_MAX_SECONDS), request.max_duration)
+                if request.clip_mode == "short"
+                else request.max_duration
+            ),
             "--clip-mode",
             request.clip_mode,
             "--compilation-target",
@@ -7594,8 +7844,8 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
         min_views=request.min_views,
         max_age_days=request.max_age_days,
         top=3,
-        min_duration=15,
-        max_duration=60,
+        min_duration=SHORT_GROWTH_MIN_SECONDS,
+        max_duration=SHORT_GROWTH_MAX_SECONDS,
         video_quality="high",
         crop_mode="person",
         burn_subtitles=True,
@@ -8116,10 +8366,10 @@ def start_auto_viral_campaign(request: AutoViralRequest) -> AutoViralRun:
     global auto_viral_active_run_id
     if request.max_duration <= request.min_duration:
         raise HTTPException(status_code=400, detail="max_duration must be greater than min_duration")
-    if request.min_duration >= 60:
+    if request.min_duration >= SHORT_GROWTH_MAX_SECONDS:
         raise HTTPException(
             status_code=400,
-            detail="Durasi minimum clip pendek harus di bawah 60 detik",
+            detail=f"Durasi minimum Short harus di bawah {SHORT_GROWTH_MAX_SECONDS} detik",
         )
     with auto_viral_lock:
         if auto_viral_active_run_id:
@@ -9011,10 +9261,10 @@ def get_source_usage_log() -> SourceUsageLogResponse:
 def create_job(request: ClipJobRequest) -> ClipJob:
     if request.clip_mode != "long_animate" and request.max_duration <= request.min_duration:
         raise HTTPException(status_code=400, detail="max_duration must be greater than min_duration")
-    if request.clip_mode == "short" and request.min_duration >= 60:
+    if request.clip_mode == "short" and request.min_duration >= SHORT_GROWTH_MAX_SECONDS:
         raise HTTPException(
             status_code=400,
-            detail="Durasi minimum clip pendek harus di bawah 60 detik",
+            detail=f"Durasi minimum Short harus di bawah {SHORT_GROWTH_MAX_SECONDS} detik",
         )
 
     if request.clip_mode == "long_animate":

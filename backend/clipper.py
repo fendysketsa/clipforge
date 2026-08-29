@@ -4430,7 +4430,7 @@ def five_k_experiment_readiness(
     """Describe a repeatable format-specific experiment without predicting distribution.
 
     The legacy function name remains for saved sidecars and integrations. Shorts
-    target 50K views plus 20 subscribers; long-form keeps a 5K/20 baseline. The
+    target 20K views plus 20 subscribers; long-form keeps a 5K/20 baseline. The
     stability rule compares like-for-like uploads and changes one variable at a
     time without delete/re-upload spam or misleading packaging.
     """
@@ -4451,18 +4451,18 @@ def five_k_experiment_readiness(
     structured_comparison = structured_comparison_profile(clip.text, clip.duration)
     subscriber_intent = subscriber_intent_profile(clip)
     is_short = output_format == "vertical_short"
-    target_views = 50000 if is_short else 5000
+    target_views = 20000 if is_short else 5000
     return {
-        "version": 10,
+        "version": 11,
         "experiment_name": (
-            "sustainable_50k_20_subscriber_growth"
+            "sustainable_20k_20_subscriber_growth"
             if is_short
             else "sustainable_5k_long_form_growth"
         ),
         "target_views": target_views,
         "target_subscribers": 20,
         "target_subscribers_per_1000_views": round(20 / target_views * 1000, 3),
-        "stretch_target_views": 100000 if is_short else 10000,
+        "stretch_target_views": 50000 if is_short else 10000,
         "target_metric": (
             "shorts_views_starts_or_replays"
             if output_format == "vertical_short"
@@ -4492,7 +4492,7 @@ def five_k_experiment_readiness(
         "stability_definition": {
             "window": "last_5_comparable_publications",
             "success_rule": (
-                "at_least_3_reach_50000_views_and_20_subscribers"
+                "at_least_3_reach_20000_views_and_20_subscribers"
                 if is_short
                 else "at_least_3_reach_5000_views_and_20_subscribers"
             ),
@@ -4568,7 +4568,7 @@ def five_k_experiment_readiness(
             ]
         ),
         "review_checkpoints": (
-            [1000, 5000, 10000, 20000, 50000]
+            [1000, 5000, 10000, 20000]
             if is_short
             else [100, 500, 1000, 5000]
         ),
@@ -6488,7 +6488,8 @@ SHORTS_SAFE_RIGHT = 900
 SHORTS_SAFE_TOP = 220
 SHORTS_SAFE_BOTTOM = 1560
 SHORTS_OFFICIAL_MAX_SECONDS = 180
-FENDY_CLIPPER_SHORTS_MAX_SECONDS = 60
+FENDY_CLIPPER_SHORTS_MIN_SECONDS = 25
+FENDY_CLIPPER_SHORTS_MAX_SECONDS = 45
 SHORTS_POLICY_REVIEW_DATE = os.environ.get("YOUTUBE_POLICY_REVIEW_DATE", "2026-08-21").strip()
 YOUTUBE_POLICY_REVIEW_INTERVAL_DAYS = 180
 
@@ -7290,9 +7291,15 @@ def shorts_policy_compliance(duration: float, *, embedded_cover: bool) -> dict[s
         "reviewed_on": policy_snapshot["reviewed_on"],
         "policy_snapshot": policy_snapshot,
         "official_max_seconds": SHORTS_OFFICIAL_MAX_SECONDS,
+        "fendy_clipper_min_seconds": FENDY_CLIPPER_SHORTS_MIN_SECONDS,
         "fendy_clipper_max_seconds": FENDY_CLIPPER_SHORTS_MAX_SECONDS,
         "duration_seconds": round(safe_duration, 3),
         "duration_within_official_limit": safe_duration <= SHORTS_OFFICIAL_MAX_SECONDS,
+        "duration_within_growth_window": (
+            FENDY_CLIPPER_SHORTS_MIN_SECONDS
+            <= safe_duration
+            <= FENDY_CLIPPER_SHORTS_MAX_SECONDS
+        ),
         "duration_within_fendy_clipper_limit": safe_duration <= FENDY_CLIPPER_SHORTS_MAX_SECONDS,
         "vertical_aspect_ratio": "9:16",
         "official_short_classification": "square_or_vertical_up_to_180_seconds",
@@ -7578,7 +7585,7 @@ def virtual_camera_angle_cues(
         return []
 
     # Strong semantic beats get first refusal. Cadence candidates then fill
-    # longer stretches so a 30–60 second Short never feels like one static crop.
+    # longer stretches so a 25–45 second Short never feels like one static crop.
     desired_count = min(
         limit,
         max(1, int(duration // max(2.0, target_cadence))),
@@ -11903,8 +11910,8 @@ def parse_args() -> argparse.Namespace:
         help="User-authored UTF-8 script used by Long Animate mode",
     )
     parser.add_argument("--top", type=int, default=5, help="Number of clips to export")
-    parser.add_argument("--min", type=float, default=15, help="Minimum clip duration in seconds")
-    parser.add_argument("--max", type=float, default=60, help="Maximum clip duration in seconds")
+    parser.add_argument("--min", type=float, default=25, help="Minimum clip duration in seconds")
+    parser.add_argument("--max", type=float, default=45, help="Maximum clip duration in seconds")
     parser.add_argument(
         "--clip-mode",
         choices=["short", "highlight_5m", "long_animate"],
@@ -12036,9 +12043,15 @@ def main() -> int:
     if args.clip_mode == "short" and args.max > FENDY_CLIPPER_SHORTS_MAX_SECONDS:
         console.print(
             f"[yellow]Short clip maximum capped at {FENDY_CLIPPER_SHORTS_MAX_SECONDS} seconds "
-            "to keep third-party claim risk below YouTube's stricter >1 minute Shorts rule.[/yellow]"
+            "for the channel's measured retention profile.[/yellow]"
         )
         args.max = float(FENDY_CLIPPER_SHORTS_MAX_SECONDS)
+    if args.clip_mode == "short" and args.min < FENDY_CLIPPER_SHORTS_MIN_SECONDS:
+        console.print(
+            f"[yellow]Short clip minimum raised to {FENDY_CLIPPER_SHORTS_MIN_SECONDS} seconds "
+            "so the answer and payoff remain complete.[/yellow]"
+        )
+        args.min = float(FENDY_CLIPPER_SHORTS_MIN_SECONDS)
 
     if args.clip_mode != "long_animate" and (args.min <= 0 or args.max <= args.min):
         console.print("[red]Invalid duration range.[/red]")

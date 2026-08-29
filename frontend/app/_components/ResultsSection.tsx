@@ -397,7 +397,7 @@ export function ResultsSection({
               ? growthTargetReadiness(
                   clip.fyp_score,
                   isLongForm,
-                  clip.growth_target_views || (isLongForm ? 5000 : 50000),
+                  clip.growth_target_views || (isLongForm ? 5000 : 20000),
                   clip.growth_target_subscribers || 20,
                   clip.growth_next_action,
                   clip.growth_status,

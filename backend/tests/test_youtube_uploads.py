@@ -34,6 +34,8 @@ from api import (
     youtube_source_attribution,
     youtube_growth_targets,
     youtube_metadata_provider_configs,
+    youtube_public_cadence_issue,
+    youtube_recent_publication_times,
     youtube_uploads_with_queue_positions,
     verified_duplicate_for_upload,
     delete_all_job_clips,
@@ -95,6 +97,96 @@ def test_best_youtube_clip_urls_uses_candidate_scores():
         "/outputs/demo/clips/clip_04.mp4",
         "/outputs/demo/clips/clip_03.mp4",
     ]
+
+
+def test_public_cadence_blocks_second_upload_inside_six_hour_gap(monkeypatch):
+    import api
+
+    now = datetime(2026, 8, 29, 12, 0, tzinfo=timezone.utc)
+    monkeypatch.setenv("YOUTUBE_PUBLISH_TIMEZONE", "Asia/Jakarta")
+    monkeypatch.setenv("YOUTUBE_PUBLIC_DAILY_LIMIT", "2")
+    monkeypatch.setenv("YOUTUBE_PUBLIC_MIN_GAP_HOURS", "6")
+    monkeypatch.setattr(
+        api,
+        "youtube_recent_publication_times",
+        lambda **_kwargs: [now - timedelta(hours=2)],
+    )
+
+    issue = youtube_public_cadence_issue(now)
+
+    assert issue is not None
+    assert "Slot public berikutnya" in issue
+
+
+def test_public_cadence_blocks_after_two_publications_today(monkeypatch):
+    import api
+
+    now = datetime(2026, 8, 29, 12, 0, tzinfo=timezone.utc)
+    monkeypatch.setenv("YOUTUBE_PUBLISH_TIMEZONE", "Asia/Jakarta")
+    monkeypatch.setenv("YOUTUBE_PUBLIC_DAILY_LIMIT", "2")
+    monkeypatch.setattr(
+        api,
+        "youtube_recent_publication_times",
+        lambda **_kwargs: [now - timedelta(hours=9), now - timedelta(hours=1)],
+    )
+
+    issue = youtube_public_cadence_issue(now)
+
+    assert issue is not None
+    assert "2/2" in issue
+
+
+def test_public_cadence_allows_slot_after_six_hours(monkeypatch):
+    import api
+
+    now = datetime(2026, 8, 29, 12, 0, tzinfo=timezone.utc)
+    monkeypatch.setenv("YOUTUBE_PUBLISH_TIMEZONE", "Asia/Jakarta")
+    monkeypatch.setenv("YOUTUBE_PUBLIC_DAILY_LIMIT", "2")
+    monkeypatch.setenv("YOUTUBE_PUBLIC_MIN_GAP_HOURS", "6")
+    monkeypatch.setattr(
+        api,
+        "youtube_recent_publication_times",
+        lambda **_kwargs: [now - timedelta(hours=7)],
+    )
+
+    assert youtube_public_cadence_issue(now) is None
+
+
+def test_recent_publications_deduplicates_local_upload_and_youtube_activity(monkeypatch):
+    import api
+
+    local = YouTubeUploadJob(
+        id="upload-1",
+        source_job_id="job-1",
+        clip_url="/outputs/job-1/clip.mp4",
+        clip_name="clip.mp4",
+        status="completed",
+        created_at="2026-08-29T01:00:00+00:00",
+        updated_at="2026-08-29T01:05:00+00:00",
+        finished_at="2026-08-29T01:05:00+00:00",
+        title="Test",
+        visibility="public",
+        video_url="https://www.youtube.com/watch?v=abc123",
+    )
+    monkeypatch.setattr(api, "youtube_uploads", {local.id: local})
+    monkeypatch.setenv("YOUTUBE_TARGET_CHANNEL_ID", "channel-1")
+    monkeypatch.setenv("YOUTUBE_DATA_API_KEY", "test-key")
+    monkeypatch.setattr(
+        api,
+        "youtube_data_api_get",
+        lambda *_args, **_kwargs: {
+            "items": [
+                {
+                    "contentDetails": {"upload": {"videoId": "abc123"}},
+                    "snippet": {"publishedAt": "2026-08-29T01:04:00Z"},
+                }
+            ]
+        },
+    )
+
+    publications = youtube_recent_publication_times()
+
+    assert publications == [datetime(2026, 8, 29, 1, 4, tzinfo=timezone.utc)]
 
 
 def test_automatic_upload_batch_skips_failed_preflight_instead_of_aborting(monkeypatch):
@@ -319,7 +411,7 @@ def test_youtube_growth_targets_ignore_stale_short_sidecar_target():
         clips=[clip],
     )
 
-    assert youtube_growth_targets(job, clip) == (50000, 20)
+    assert youtube_growth_targets(job, clip) == (20000, 20)
 
 
 def test_youtube_growth_targets_keep_long_form_baseline_separate():
@@ -366,7 +458,7 @@ def test_saved_upload_model_migrates_stale_targets_by_format():
     # model_copy intentionally skips validation, mirroring a raw persisted payload below.
     long_form = YouTubeUploadJob(**long_form.model_dump())
 
-    assert (short.growth_target_views, short.growth_target_subscribers) == (50000, 20)
+    assert (short.growth_target_views, short.growth_target_subscribers) == (20000, 20)
     assert (long_form.growth_target_views, long_form.growth_target_subscribers) == (5000, 20)
 
 
@@ -386,7 +478,7 @@ def test_saved_clip_model_migrates_stale_targets_by_format():
         growth_target_subscribers=99,
     )
 
-    assert (short.growth_target_views, short.growth_target_subscribers) == (50000, 20)
+    assert (short.growth_target_views, short.growth_target_subscribers) == (20000, 20)
     assert (long_form.growth_target_views, long_form.growth_target_subscribers) == (5000, 20)
 
 

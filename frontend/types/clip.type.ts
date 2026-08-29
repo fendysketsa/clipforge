@@ -228,6 +228,9 @@ export type YouTubeConfig = {
   target_channel: string;
   target_email: string;
   auto_upload_count: number;
+  public_daily_limit: number;
+  public_min_gap_hours: number;
+  public_cadence_message: string;
   active_upload_id?: string | null;
 };
 
@@ -334,6 +337,7 @@ export type YouTubeCdpRepairStatus = {
 
 export type IslamicContentNiche =
   | "auto"
+  | "islamic_practical_life"
   | "islamic_current_viral"
   | "islamic_mental_health"
   | "halal_wealth"

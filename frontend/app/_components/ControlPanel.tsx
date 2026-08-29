@@ -34,6 +34,11 @@ const CAM_CORNER_OPTIONS: { value: CamCorner; label: string }[] = [
 
 const ISLAMIC_NICHE_OPTIONS: { value: IslamicContentNiche; label: string; description: string }[] = [
   {
+    value: "islamic_practical_life",
+    label: "Islam Praktis Sehari-hari",
+    description: "Orang tua, keluarga, sedekah, rezeki, ibadah, emosi, dan masalah hidup dengan jawaban yang konkret.",
+  },
+  {
     value: "auto",
     label: "Auto Niche Terbaik",
     description: "Membandingkan momentum, kecocokan tema, kebaruan, dan Bahasa Indonesia di semua niche lalu memilih yang terkuat.",
@@ -561,7 +566,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
             ? "Scene Cinema mengubah naskah menjadi storyboard, art bible, visual per scene, gerak kamera, voice-over, subtitle, musik, thumbnail, dan satu video 16:9 utuh."
             : clipMode === "highlight_5m"
             ? "Codex Long Story Director membuat teaser singkat tanpa duplikasi, lalu merangkai konteks, perkembangan, penjelasan, dan kesimpulan secara kronologis dalam 16:9—tanpa filler. Deskripsi menambahkan ajakan Viralkan yang wajar untuk 7 hari pertama; kelayakan tetap ditentukan YouTube."
-            : "Clip vertikal maksimal 60 detik (batas internal untuk fokus dan retention; Content ID apa pun tetap membatalkan upload) dengan frame cover awal yang dapat dipilih lewat timeline aplikasi YouTube sekitar 0,78 detik, caption safe-area, payoff, CTA Subscribe kontekstual, dan loop alami."}
+            : "Clip vertikal 25–45 detik mengikuti profil retention channel, dengan frame cover awal yang dapat dipilih lewat timeline aplikasi YouTube sekitar 0,78 detik, caption safe-area, payoff, CTA Subscribe kontekstual, dan loop alami."}
         </p>
       </div>
 
