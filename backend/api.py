@@ -72,7 +72,7 @@ YOUTUBE_LOGIN_PROFILE_DIRECTORY = os.environ.get(
 ).strip()
 YOUTUBE_CDP_URL = os.environ.get("YOUTUBE_CDP_URL", "http://127.0.0.1:9222").strip()
 YOUTUBE_CDP_STAGING_DIR = Path(os.environ.get("YOUTUBE_CDP_STAGING_DIR", BASE_DIR / "data" / "youtube_cdp_uploads"))
-DEFAULT_YOUTUBE_MAX_UPLOAD_MB = 45
+DEFAULT_YOUTUBE_MAX_UPLOAD_MB = 256
 ALLOWED_UPLOAD_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"}
 SECONDS_PER_TARGET_CLIP = 360
 MIN_AUTO_CLIPS = 2
@@ -84,7 +84,7 @@ MAX_AUTO_ANALYSIS_SECONDS = 20 * 60
 CLIP_BUDGET_RATIO = 0.8
 YOUTUBE_SHORTS_MAX_SECONDS = 180
 SHORT_GROWTH_MIN_SECONDS = 25
-SHORT_GROWTH_MAX_SECONDS = 45
+SHORT_GROWTH_MAX_SECONDS = 180
 SHORT_UPLOAD_MIN_FYP_SCORE = 78
 SHORT_GROWTH_TARGET_VIEWS = 20000
 LONG_FORM_GROWTH_TARGET_VIEWS = 5000
@@ -3246,15 +3246,22 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
                 "Render ulang dengan Fendy Clipper terbaru."
             )
         compliance = sidecar.get("shorts_policy_compliance")
-        if isinstance(compliance, dict) and not compliance.get(
-            "duration_within_official_limit", True
+        # Re-evaluate persisted renders against the current limits. Older
+        # Sidecars can contain a false result from an older, shorter local
+        # growth window even though their actual duration is valid today.
+        if (
+            not duration
+            and isinstance(compliance, dict)
+            and not compliance.get("duration_within_official_limit", True)
         ):
             return (
                 "Upload diblokir: audit teknis Shorts menandai durasi di luar batas resmi. "
                 "Render ulang clip."
             )
-        if isinstance(compliance, dict) and not compliance.get(
-            "duration_within_growth_window", True
+        if (
+            not duration
+            and isinstance(compliance, dict)
+            and not compliance.get("duration_within_growth_window", True)
         ):
             return (
                 "Upload diblokir: audit pertumbuhan menandai durasi di luar rentang "

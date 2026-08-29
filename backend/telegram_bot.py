@@ -45,8 +45,21 @@ TELEGRAM_COMPILATION_MAX_SECONDS = 300
 ALLOWED_CAPTION_POSITIONS = {"upper", "center", "bottom"}
 ALLOWED_CAPTION_FONT_SIZES = {8, 9, 10, 12, 14, 18, 20, 24}
 ALLOWED_TOP = {None, 3, 5, 8, 10, 12}
-ALLOWED_DURATION_PRESETS = {(25, 35), (25, 45), (35, 45)}
-SETTINGS_SCHEMA_VERSION = 7
+ALLOWED_DURATION_PRESETS = {
+    (25, 35),
+    (25, 45),
+    (25, 60),
+    (25, 90),
+    (25, 180),
+    (45, 60),
+    (45, 90),
+    (45, 180),
+    (60, 90),
+    (60, 180),
+    (90, 180),
+    (120, 180),
+}
+SETTINGS_SCHEMA_VERSION = 9
 
 
 def env_float(name: str, default: float) -> float:
@@ -129,7 +142,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "clip_mode": "short",
     "top": None,
     "min_duration": 25,
-    "max_duration": 45,
+    "max_duration": 180,
     "video_quality": "high",
     "crop_mode": "person",
     "burn_subtitles": True,
@@ -426,7 +439,18 @@ def normalize_state(value: object) -> dict[str, Any]:
     state["settings"] = normalize_settings(value.get("settings"))
     if int(value.get("settings_schema_version") or 1) < SETTINGS_SCHEMA_VERSION:
         raw_settings = value.get("settings") if isinstance(value.get("settings"), dict) else {}
-        if (raw_settings.get("min_duration"), raw_settings.get("max_duration")) not in ALLOWED_DURATION_PRESETS:
+        previous_duration = (
+            raw_settings.get("min_duration"),
+            raw_settings.get("max_duration"),
+        )
+        schema_version = int(value.get("settings_schema_version") or 1)
+        if previous_duration == (25, 45) and schema_version < 8:
+            state["settings"]["min_duration"] = DEFAULT_SETTINGS["min_duration"]
+            state["settings"]["max_duration"] = DEFAULT_SETTINGS["max_duration"]
+        elif previous_duration == (25, 90) and schema_version < 9:
+            state["settings"]["min_duration"] = DEFAULT_SETTINGS["min_duration"]
+            state["settings"]["max_duration"] = DEFAULT_SETTINGS["max_duration"]
+        elif previous_duration not in ALLOWED_DURATION_PRESETS:
             state["settings"]["min_duration"] = DEFAULT_SETTINGS["min_duration"]
             state["settings"]["max_duration"] = DEFAULT_SETTINGS["max_duration"]
         if raw_settings.get("caption_font_size") in {7, 9, 10, 12, 14, 18}:
@@ -1148,7 +1172,7 @@ def settings_keyboard(settings: dict[str, Any], *, has_pending_url: bool = False
     clean = normalize_settings(settings)
     top = "auto" if clean["top"] is None else clean["top"]
     rows = [
-        [button("Output · Shorts 25–45 Detik", "settings:output")],
+        [button("Output · Shorts Adaptif 25–180 Detik", "settings:output")],
         [button(f"Jumlah Clip · {top}", "settings:top")],
         [button(f"Durasi · {clean['min_duration']}–{clean['max_duration']}d", "settings:duration")],
         [button(f"Kualitas · {clean['video_quality']}", "settings:quality")],
@@ -1370,7 +1394,7 @@ class FendyClipperTelegramBot:
             "Link siap diproses\n\n"
             f"{url}\n\n"
             + settings_summary(self.state["settings"])
-            + "\n\nSekali proses hanya menghasilkan clip vertikal 25–45 detik; kompilasi tidak ikut dirender.",
+            + "\n\nSekali proses menghasilkan clip vertikal adaptif 25–180 detik; Codex hanya memakai durasi panjang jika alur dan payoff-nya utuh.",
             confirmation_keyboard(),
         )
 
@@ -1381,7 +1405,7 @@ class FendyClipperTelegramBot:
             "1. Kirim link YouTube ke bot.\n"
             "2. Periksa pengaturan yang ditampilkan.\n"
             "3. Tekan Buat Clip Pendek.\n"
-            "4. Bot membuat clip 25–45 detik dengan hook, animasi/SFX, payoff, dan penutup loop.\n"
+            "4. Bot membuat clip adaptif 25–180 detik dengan hook, perkembangan isi, payoff, dan penutup loop.\n"
             "5. Bot akan mengirim seluruh hasil saat selesai.\n"
             "6. Tekan Upload ke YouTube pada video pilihan atau Upload 2 Terbaik.\n\n"
             "Hasil belum upload: /hasil menampilkan folder, file, skor FYP, dan hanya clip "
@@ -1500,7 +1524,7 @@ class FendyClipperTelegramBot:
             f"Status: {status_label}",
             f"Sumber: {title}",
             f"Job: {str(job.get('id', ''))[:10]}",
-            "Output: clip pendek 25–45 detik tanpa kompilasi tambahan",
+            "Output: clip pendek adaptif 25–180 detik tanpa kompilasi tambahan",
             f"Durasi proses: {format_duration(elapsed_for_job(job))}",
         ]
         if status in ACTIVE_STATUSES:
@@ -2398,8 +2422,8 @@ class FendyClipperTelegramBot:
         self.persist()
         status_message = self.send_message(
             chat_id,
-            "Proses dimulai: bot membuat clip vertikal 25–45 detik tanpa render kompilasi tambahan. "
-            "Hook, animasi/SFX, payoff, dan penutup loop aktif; semua hasil akan dikirim otomatis.",
+            "Proses dimulai: bot membuat clip vertikal adaptif 25–180 detik tanpa render kompilasi tambahan. "
+            "Codex mempertahankan beat yang menambah konteks, bukti, atau payoff dan membuang filler.",
             self.job_keyboard(job),
         )
         self.state["jobs"][job_id]["status_message_id"] = status_message.get("message_id")
@@ -3003,7 +3027,7 @@ class FendyClipperTelegramBot:
         elif name == "mode" and value in ALLOWED_CLIP_MODES:
             settings["clip_mode"] = "short"
             settings["top"] = None
-            settings["min_duration"], settings["max_duration"] = 25, 45
+            settings["min_duration"], settings["max_duration"] = 25, 180
         elif name == "duration" and len(parts) == 4:
             if not value.isdigit() or not parts[3].isdigit():
                 return False
@@ -3119,7 +3143,7 @@ class FendyClipperTelegramBot:
         elif data == "job:confirm":
             self.send_message(
                 chat_id,
-                "Perintah diterima. Backend menyiapkan clip pendek 25–45 detik...",
+                "Perintah diterima. Backend menyiapkan clip adaptif sampai 3 menit...",
             )
             self.start_job(chat_id)
         elif data == "settings:top":
@@ -3138,7 +3162,7 @@ class FendyClipperTelegramBot:
                 "Output Telegram dibuat otomatis tanpa kompilasi tambahan.",
                 keyboard(
                     [
-                        [button("✅ Shorts 25–45 Detik", "set:mode:short")],
+                        [button("✅ Shorts Adaptif s.d. 3 Menit", "set:mode:short")],
                         [button("⬅️ Kembali", "menu:settings")],
                     ]
                 ),
@@ -3146,7 +3170,8 @@ class FendyClipperTelegramBot:
         elif data == "settings:output":
             show_panel(
                 "Output otomatis\n\n"
-                "• Beberapa clip vertikal 25–45 detik\n"
+                "• Beberapa clip vertikal adaptif 25–180 detik\n"
+                "• Durasi panjang hanya dipilih jika tiap beat menambah informasi\n"
                 "• Hook kuat pada setiap clip\n"
                 "• Animasi, reaction, dan sound effect kontekstual\n"
                 "• Payoff lalu callback hook agar loop menyambung\n"
@@ -3160,7 +3185,12 @@ class FendyClipperTelegramBot:
                     [
                         [button("25–35 detik", "set:duration:25:35")],
                         [button("25–45 detik", "set:duration:25:45")],
-                        [button("35–45 detik", "set:duration:35:45")],
+                        [button("25–60 detik", "set:duration:25:60")],
+                        [button("25–90 detik", "set:duration:25:90")],
+                        [button("✅ Adaptif 25–180 detik", "set:duration:25:180")],
+                        [button("60–180 detik", "set:duration:60:180")],
+                        [button("90–180 detik", "set:duration:90:180")],
+                        [button("120–180 detik", "set:duration:120:180")],
                         [button("⬅️ Kembali", "menu:settings")],
                     ]
                 ),

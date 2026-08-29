@@ -57,7 +57,7 @@ against `TELEGRAM_OWNER_ID` for every message and button callback.
 Common CLI options:
 
 ```powershell
-.\.venv\Scripts\python.exe clipper.py "URL" --top 5 --min 25 --max 45
+.\.venv\Scripts\python.exe clipper.py "URL" --top 5 --min 25 --max 180
 ```
 
 Test cepat tanpa transcribe full video:
@@ -94,7 +94,7 @@ Default output video:
 - CTA kontekstual berbentuk pertanyaan mengikuti tema klip dan muncul singkat di atas payoff yang masih bergerak; voice-over template dinonaktifkan secara default agar dialog asli dan loop tetap utuh
 - CTA Subscribe memberi alasan yang mengikuti tema setelah payoff (misalnya hikmah, cek fakta, atau pelajaran berikutnya); Short menggabungkannya dengan pertanyaan komentar, sedangkan long-form hanya menampilkannya sekali pada bab terakhir tanpa reward atau urgensi palsu
 - seluruh output short dan kompilasi long-form mendapat kabut asap putih bergerak yang halus di tepi bawah/sudut; overlay dibuat prosedural pada resolusi rendah, divariasikan dari isi cerita, dan dirender di bawah subtitle/watermark agar wajah serta teks tetap jelas
-- guardrail kebijakan Shorts dicatat di sidecar render: batas resmi 180 detik, profil pertumbuhan internal 25–45 detik, kebijakan upload nol-klaim untuk setiap Content ID tanpa memandang durasi/dampak saat ini, strategi thumbnail frame-tertanam, metadata CC yang tidak dianggap sebagai bukti rantai hak, serta kewajiban review hak/orisinalitas dan inauthentic-content; snapshot aturan memiliki tanggal review dan otomatis ditandai kedaluwarsa agar proses 2027+ tidak menganggap aturan lama masih pasti berlaku
+- guardrail kebijakan Shorts dicatat di sidecar render: batas resmi dan rentang produksi maksimum 180 detik, pemilihan durasi adaptif tanpa filler, kebijakan upload nol-klaim untuk setiap Content ID tanpa memandang durasi/dampak saat ini, strategi thumbnail frame-tertanam, metadata CC yang tidak dianggap sebagai bukti rantai hak, serta kewajiban review hak/orisinalitas dan inauthentic-content; snapshot aturan memiliki tanggal review dan otomatis ditandai kedaluwarsa agar proses 2027+ tidak menganggap aturan lama masih pasti berlaku
 - setiap upload membuka, mencari, dan memverifikasi checkbox playlist secara eksplisit; antrean hanya menerima konfirmasi sukses setelah dialog tertutup dan ringkasan playlist cocok, dengan retry lokal tanpa melompati job berikutnya
 - setiap Short dan long-form hanya menampilkan watermark halus `ryuundyofficial`; ID audit deterministik, metadata provenance Fendy Clipper di MP4, dan hash SHA-256 tetap disimpan tanpa memenuhi layar video; klaim dibatasi pada kontribusi editorial, bukan kepemilikan materi sumber
 - setiap output menyimpan `codex_growth_blueprint`: identitas seri berdasarkan tema, promise–payoff retention, CTA setelah value, jalur Short menuju related long-form, rencana A/B title–thumbnail khusus long-form, serta metrik evaluasi 7/28/90 hari tanpa menjanjikan view atau subscriber
@@ -128,7 +128,7 @@ Default output video:
   VAD, word timestamps, dan cache yang terikat model/bahasa
 - nama orang/brand/istilah khusus dapat diprioritaskan melalui
   `FENDY_CLIPPER_TRANSCRIPTION_HOTWORDS` (pisahkan dengan koma)
-- durasi clip pendek fokus 25–45 detik
+- durasi clip pendek adaptif 25–180 detik; jendela di atas 60 detik harus memiliki perkembangan informasi dan payoff yang utuh
 - mode `short` tidak merender kompilasi tambahan
 
 Untuk membuat satu Long Story sinematik 5–10 menit (bukan Short), pilih target 300–600 detik:

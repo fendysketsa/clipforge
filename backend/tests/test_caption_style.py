@@ -52,6 +52,7 @@ from clipper import (
     evidence_stage_overlay_filter,
     emphasis_timestamps,
     enhanced_edit_filter,
+    extended_short_story_profile,
     fallback_social_caption,
     fendy_auditor_identity,
     ffmpeg_clean_metadata_args,
@@ -1294,17 +1295,19 @@ def test_compact_short_protects_payoff_from_end_cta():
     assert shorts_should_protect_payoff(longer) is False
 
 
-def test_shorts_policy_compliance_records_official_and_stricter_local_limits():
+def test_shorts_policy_compliance_records_three_minute_official_and_local_limits():
     compliance = shorts_policy_compliance(44.8, embedded_cover=True)
-    outside_growth_window = shorts_policy_compliance(59.8, embedded_cover=True)
+    longer_compliance = shorts_policy_compliance(120.0, embedded_cover=True)
+    outside_growth_window = shorts_policy_compliance(180.8, embedded_cover=True)
 
     assert compliance["official_max_seconds"] == 180
     assert compliance["fendy_clipper_min_seconds"] == 25
-    assert compliance["fendy_clipper_max_seconds"] == 45
+    assert compliance["fendy_clipper_max_seconds"] == 180
     assert compliance["duration_within_official_limit"] is True
     assert compliance["duration_within_growth_window"] is True
     assert compliance["duration_within_fendy_clipper_limit"] is True
-    assert outside_growth_window["duration_within_official_limit"] is True
+    assert longer_compliance["duration_within_growth_window"] is True
+    assert outside_growth_window["duration_within_official_limit"] is False
     assert outside_growth_window["duration_within_growth_window"] is False
     assert compliance["engaged_views_retained_as_quality_metric"] is True
     assert compliance["custom_thumbnail_upload_supported"] is False
@@ -1692,6 +1695,45 @@ def test_structured_comparison_rejects_protected_group_attack():
 
     assert profile["attacks_protected_group"] is True
     assert profile["qualified"] is False
+
+
+def test_extended_short_requires_sustained_progress_and_complete_payoff():
+    segments = [
+        TranscriptSegment(0, 20, "Mengapa masalah ini penting dan apa risiko yang sering tidak disadari oleh banyak orang sejak awal pembahasan?"),
+        TranscriptSegment(20, 40, "Pertama, kita perlu melihat konteks kejadian dan data utama supaya kesimpulan tidak dibuat terlalu cepat atau menyesatkan."),
+        TranscriptSegment(40, 60, "Kemudian contoh pertama menunjukkan sebab yang berbeda, sementara bukti berikutnya menjelaskan dampaknya bagi kehidupan sehari-hari."),
+        TranscriptSegment(60, 80, "Kedua, ada langkah yang bisa diperiksa sendiri agar informasi tersebut tidak hanya dipercaya tanpa sumber dan penjelasan."),
+        TranscriptSegment(80, 100, "Namun kita juga perlu membedakan pendapat pembicara, fakta yang terverifikasi, dan bagian yang masih membutuhkan pemeriksaan lanjutan."),
+        TranscriptSegment(100, 120, "Jadi intinya, langkah paling penting adalah memeriksa konteks dan bukti sebelum mengambil keputusan; itulah jawaban yang bermanfaat."),
+    ]
+
+    profile = extended_short_story_profile(segments, 120)
+    metrics = candidate_story_metrics(segments, 120)
+    score, reasons = score_window(segments, 120)
+
+    assert profile["qualified"] is True
+    assert profile["active_beat_coverage_ratio"] == 1.0
+    assert profile["forced_to_three_minutes"] is False
+    assert metrics["extended_short_qualified"] is True
+    assert metrics["boundary_quality"] == "payoff_tuntas"
+    assert score >= 78
+    assert "alur panjang layak sampai payoff" in reasons
+    assert "setiap blok 30 detik menambah informasi baru" in reasons
+
+
+def test_extended_short_rejects_stretched_sparse_content():
+    segments = [
+        TranscriptSegment(0, 8, "Baik kita mulai pembahasannya."),
+        TranscriptSegment(70, 78, "Ada hal lain yang ingin disampaikan."),
+        TranscriptSegment(150, 158, "Sampai di sini dahulu."),
+    ]
+
+    profile = extended_short_story_profile(segments, 158)
+    _score, reasons = score_window(segments, 158)
+
+    assert profile["qualified"] is False
+    assert profile["active_beat_coverage_ratio"] < 0.70
+    assert "durasi panjang perlu perkembangan kuat" in reasons
 
 
 def test_five_k_long_form_readiness_uses_story_gate_and_long_form_metrics():
@@ -2734,6 +2776,19 @@ def test_candidate_guard_frames_never_push_a_short_past_one_minute():
 
     assert candidates
     assert all(candidate.duration <= 60 for candidate in candidates)
+
+
+def test_candidate_guard_frames_never_push_an_extended_short_past_three_minutes():
+    segments = [
+        TranscriptSegment(0, 60, "Mengapa masalah ini penting? Pertama kita perlu melihat konteks dan bukti yang tersedia sebelum mengambil kesimpulan."),
+        TranscriptSegment(60, 120, "Kemudian fakta berikutnya menjelaskan akibat dan pilihan yang bisa diperiksa agar pembahasan terus berkembang."),
+        TranscriptSegment(120, 180, "Jadi intinya keputusan yang bermanfaat harus mengikuti sumber, konteks, dan jawaban yang sudah terverifikasi."),
+    ]
+
+    candidates = build_candidate_pool(segments, min_duration=60, max_duration=180)
+
+    assert candidates
+    assert all(candidate.duration <= 180 for candidate in candidates)
 
 
 def test_source_channel_promos_are_removed_from_export_subtitles():

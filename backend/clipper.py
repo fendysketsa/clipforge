@@ -905,6 +905,133 @@ def structured_comparison_profile(
         "copied_reference_logo_pattern_photos_or_layout": False,
     }
 
+
+EXTENDED_SHORT_PROGRESSION_MARKERS = (
+    "awalnya",
+    "pertama",
+    "kedua",
+    "ketiga",
+    "kemudian",
+    "selanjutnya",
+    "karena",
+    "tetapi",
+    "namun",
+    "ternyata",
+    "akibatnya",
+    "akhirnya",
+    "jadi",
+    "kesimpulannya",
+    "intinya",
+)
+
+
+def extended_short_story_profile(
+    items: list[TranscriptSegment],
+    duration: float,
+) -> dict[str, object]:
+    """Require sustained story progress before rewarding a 1-3 minute Short."""
+    if not items:
+        return {
+            "version": 1,
+            "qualified": False,
+            "structure_score": 0,
+            "duration_fit_60_180_seconds": False,
+            "opening_hook": False,
+            "closing_resolution": False,
+            "active_beat_coverage_ratio": 0.0,
+            "progression_marker_count": 0,
+            "speech_density_words_per_second": 0.0,
+        }
+
+    safe_duration = max(0.1, duration)
+    start = items[0].start
+    end = items[-1].end
+    text = " ".join(item.text for item in items).strip()
+    normalized = re.sub(r"\s+", " ", text).casefold()
+    words = re.findall(r"[\w']+", normalized)
+    opening = " ".join(item.text for item in items if item.start < start + 5.0)
+    closing = " ".join(item.text for item in items if item.end > end - 15.0)
+    opening_words = set(re.findall(r"[\w']+", opening.casefold()))
+    closing_words = set(re.findall(r"[\w']+", closing.casefold()))
+    opening_hook = bool(
+        opening_words.intersection(
+            (HOOK_WORDS - WEAK_STARTS) | TENSION_WORDS | MYSTERY_WORDS | IMPORTANT_WORDS
+        )
+        or "?" in opening
+    )
+    closing_resolution = bool(
+        closing.rstrip().endswith((".", "!", "?"))
+        and (
+            closing_words.intersection(PAYOFF_WORDS | IMPORTANT_WORDS)
+            or any(marker in closing.casefold() for marker in ("akhirnya", "jadi", "intinya", "kesimpulannya"))
+        )
+    )
+    progression_marker_count = sum(
+        min(2, normalized.count(marker)) for marker in EXTENDED_SHORT_PROGRESSION_MARKERS
+    )
+
+    beat_seconds = 30.0
+    expected_beats = max(2, math.ceil(safe_duration / beat_seconds))
+    active_beats = 0
+    for beat_index in range(expected_beats):
+        beat_start = start + beat_index * beat_seconds
+        beat_end = min(end, beat_start + beat_seconds)
+        beat_words = re.findall(
+            r"[\w']+",
+            " ".join(
+                item.text
+                for item in items
+                if item.end > beat_start and item.start < beat_end
+            ),
+        )
+        if len(beat_words) >= 14:
+            active_beats += 1
+    beat_coverage = active_beats / max(1, expected_beats)
+    speech_density = len(words) / safe_duration
+    duration_fit = 60.0 < safe_duration <= 180.0
+    word_count_fit = max(90, round(safe_duration * 0.80)) <= len(words) <= round(
+        safe_duration * 3.6
+    )
+    speech_density_fit = 0.80 <= speech_density <= 3.6
+    progression_fit = progression_marker_count >= 2
+    sustained_information = beat_coverage >= 0.70
+    structure_score = sum(
+        (
+            18 if opening_hook else 0,
+            18 if closing_resolution else 0,
+            18 if duration_fit else 0,
+            14 if word_count_fit else 0,
+            12 if speech_density_fit else 0,
+            10 if progression_fit else 0,
+            10 if sustained_information else 0,
+        )
+    )
+    qualified = bool(
+        duration_fit
+        and word_count_fit
+        and speech_density_fit
+        and opening_hook
+        and closing_resolution
+        and progression_fit
+        and sustained_information
+    )
+    return {
+        "version": 1,
+        "qualified": qualified,
+        "structure_score": min(100, structure_score),
+        "duration_fit_60_180_seconds": duration_fit,
+        "opening_hook": opening_hook,
+        "closing_resolution": closing_resolution,
+        "active_beat_coverage_ratio": round(beat_coverage, 3),
+        "active_beats": active_beats,
+        "expected_beats": expected_beats,
+        "progression_marker_count": progression_marker_count,
+        "speech_density_words_per_second": round(speech_density, 3),
+        "speech_density_fit": speech_density_fit,
+        "word_count_fit": word_count_fit,
+        "forced_to_three_minutes": False,
+    }
+
 MYSTERY_WORDS = {
     "angker",
     "arwah",
@@ -1309,11 +1436,11 @@ def ffmpeg_has_filter(name: str) -> bool:
 
 
 def configured_clip_max_bytes() -> int:
-    raw = os.environ.get("CLIP_MAX_MB") or os.environ.get("YOUTUBE_MAX_UPLOAD_MB") or os.environ.get("YOUTUBE_CDP_MAX_UPLOAD_MB") or "45"
+    raw = os.environ.get("CLIP_MAX_MB") or os.environ.get("YOUTUBE_MAX_UPLOAD_MB") or os.environ.get("YOUTUBE_CDP_MAX_UPLOAD_MB") or "256"
     try:
         mb = float(raw)
     except ValueError:
-        mb = 45
+        mb = 256
     return max(1, int(mb * 1024 * 1024))
 
 
@@ -4526,6 +4653,13 @@ def five_k_experiment_readiness(
             "structured_comparison_structure_score": int(
                 structured_comparison["structure_score"]
             ),
+            "extended_short_60_180_seconds": bool(
+                60 < clip.duration <= 180
+                and clip.key_point_score >= 75
+                and clip.retention_score >= 58
+                and clip.boundary_quality in {"payoff_tuntas", "kalimat_tuntas"}
+            ),
+            "three_minutes_is_ceiling_not_target": True,
             "manual_claim_and_context_review_required": bool(
                 structured_comparison["manual_claim_and_context_review_required"]
             ),
@@ -4925,6 +5059,7 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
         opening_text=opening,
         closing_text=closing,
     )
+    extended_short = extended_short_story_profile(items, duration)
     signal_words = HOOK_WORDS | TENSION_WORDS | PAYOFF_WORDS | IMPORTANT_WORDS
     signal_hits = all_words.intersection(signal_words)
     payoff_near_end = bool(
@@ -4945,6 +5080,10 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
             structured_comparison["qualified"]
             and structured_comparison["qualified_resolution"]
         )
+        or (
+            extended_short["qualified"]
+            and extended_short["closing_resolution"]
+        )
     )
     punctuation_ending = text.rstrip().endswith((".", "!", "?"))
     complete_ending = bool(
@@ -4953,6 +5092,7 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
         or social_anecdote["qualified"]
         or delayed_punchline["qualified"]
         or structured_comparison["qualified"]
+        or extended_short["qualified"]
     )
     opening_hook = bool(
         opening_words.intersection((HOOK_WORDS - WEAK_STARTS) | TENSION_WORDS)
@@ -4974,6 +5114,7 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
     key_point_score += 14 if social_anecdote["qualified"] else 0
     key_point_score += 14 if delayed_punchline["qualified"] else 0
     key_point_score += 14 if structured_comparison["qualified"] else 0
+    key_point_score += 16 if extended_short["qualified"] else 0
     key_point_score -= filler_hits * 12
     if not complete_ending:
         key_point_score -= 10
@@ -4986,6 +5127,7 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
         or social_anecdote["qualified"]
         or delayed_punchline["qualified"]
         or structured_comparison["qualified"]
+        or extended_short["qualified"]
     )
     question_to_payoff = "?" in opening and payoff_near_end and semantic_reconnection
     hook_to_payoff = opening_hook and payoff_near_end and semantic_reconnection
@@ -4994,6 +5136,7 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
     loop_score += 25 if social_anecdote["qualified"] else 0
     loop_score += 25 if delayed_punchline["qualified"] else 0
     loop_score += 12 if structured_comparison["qualified"] else 0
+    loop_score += 12 if extended_short["qualified"] else 0
     loop_score += 12 if complete_ending else -12
     if not opening_concepts:
         loop_score -= 10
@@ -5019,6 +5162,8 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
         "delayed_punchline_score": int(delayed_punchline["structure_score"]),
         "structured_comparison_qualified": bool(structured_comparison["qualified"]),
         "structured_comparison_score": int(structured_comparison["structure_score"]),
+        "extended_short_qualified": bool(extended_short["qualified"]),
+        "extended_short_score": int(extended_short["structure_score"]),
         "retention_score": int(retention["retention_readiness_score"]),
     }
 
@@ -5066,6 +5211,9 @@ def is_meaningful_candidate_end(
             closing_text=" ".join(item.text for item in window[-3:]),
         )["qualified"]
     )
+    extended_short_complete = bool(
+        extended_short_story_profile(window, window_duration)["qualified"]
+    )
     last_words = set(re.findall(r"[\w']+", last.text.casefold()))
     natural_sentence = last.text.rstrip().endswith((".", "!", "?"))
     explicit_resolution = bool(last_words.intersection(PAYOFF_WORDS | IMPORTANT_WORDS))
@@ -5082,6 +5230,7 @@ def is_meaningful_candidate_end(
         or social_anecdote_complete
         or delayed_punchline_complete
         or structured_comparison_complete
+        or extended_short_complete
         or is_last
         or next_is_boundary
         or next_exceeds_limit
@@ -5146,6 +5295,7 @@ def candidate_fyp_analysis(
         opening_text=opening_text,
         closing_text=" ".join(item.text for item in items[-3:]),
     )
+    extended_short = extended_short_story_profile(items, duration)
     strongest_line = strongest_advice_line(items)
     hook_reference = first_sentence(opening_text or text, max_words=6)
     if not opening_has_hook and strongest_line:
@@ -5182,6 +5332,18 @@ def candidate_fyp_analysis(
     if structured_comparison["qualified"]:
         strengths.append(
             "pertanyaan berkembang lewat beberapa bukti dan ditutup dengan kesimpulan yang lengkap"
+        )
+    if extended_short["qualified"]:
+        strengths.append(
+            "alur panjang menjaga informasi aktif di setiap beat sampai payoff akhir"
+        )
+    elif duration > 60:
+        weaknesses.append(
+            "durasi di atas satu menit belum membuktikan perkembangan informasi yang konsisten"
+        )
+        ideas.append(
+            "Struktur — pertahankan hanya beat yang memberi bukti atau perkembangan baru; "
+            "akhiri segera setelah payoff tanpa mengejar durasi tiga menit."
         )
 
     active_first_30_signals = sum(first_30_signals.values())
@@ -5315,15 +5477,22 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
         closing_text=" ".join(item.text for item in items[-3:]),
     )
 
+    extended_short = extended_short_story_profile(items, duration)
     score = 24
     reasons: list[str] = []
 
     if 28 <= duration <= 60:
         score += 18
         reasons.append("durasi pas")
+    elif 60 < duration <= 180 and extended_short["qualified"]:
+        score += 18
+        reasons.append("alur panjang layak sampai payoff")
     elif 15 <= duration <= 75:
         score += 12
         reasons.append("durasi masih oke")
+    elif duration <= 180:
+        score += 2
+        reasons.append("durasi panjang perlu perkembangan kuat")
 
     if micro_thesis["qualified"]:
         score += 16
@@ -5340,6 +5509,10 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
     if structured_comparison["qualified"]:
         score += 16
         reasons.append("perbandingan punya pertanyaan, bukti bertahap, dan kesimpulan adil")
+
+    if extended_short["qualified"]:
+        score += 16
+        reasons.append("setiap blok 30 detik menambah informasi baru")
 
     if hook_hits:
         bump = min(18, len(hook_hits) * 5)
@@ -6489,7 +6662,7 @@ SHORTS_SAFE_TOP = 220
 SHORTS_SAFE_BOTTOM = 1560
 SHORTS_OFFICIAL_MAX_SECONDS = 180
 FENDY_CLIPPER_SHORTS_MIN_SECONDS = 25
-FENDY_CLIPPER_SHORTS_MAX_SECONDS = 45
+FENDY_CLIPPER_SHORTS_MAX_SECONDS = 180
 SHORTS_POLICY_REVIEW_DATE = os.environ.get("YOUTUBE_POLICY_REVIEW_DATE", "2026-08-21").strip()
 YOUTUBE_POLICY_REVIEW_INTERVAL_DAYS = 180
 
@@ -7585,7 +7758,7 @@ def virtual_camera_angle_cues(
         return []
 
     # Strong semantic beats get first refusal. Cadence candidates then fill
-    # longer stretches so a 25–45 second Short never feels like one static crop.
+    # longer stretches so a 25–180 second Short never feels like one static crop.
     desired_count = min(
         limit,
         max(1, int(duration // max(2.0, target_cadence))),
@@ -8999,6 +9172,13 @@ def codex_growth_blueprint(
     structured_comparison = structured_comparison_profile(clip.text, clip.duration)
     protect_short_payoff = is_short and shorts_should_protect_payoff(clip)
     subscriber_intent = subscriber_intent_profile(clip)
+    extended_short_ready = bool(
+        is_short
+        and 60 < clip.duration <= 180
+        and clip.key_point_score >= 75
+        and clip.retention_score >= 58
+        and clip.boundary_quality in {"payoff_tuntas", "kalimat_tuntas"}
+    )
     return {
         "version": CODEX_GROWTH_FRAMEWORK_VERSION,
         "owner": FENDY_AUDITOR_NAME,
@@ -9021,6 +9201,10 @@ def codex_growth_blueprint(
         },
         "retention": {
             "hook_window_seconds": 3 if is_short else 30,
+            "duration_strategy": "shortest_complete_story_up_to_180_seconds" if is_short else "chapter_complete",
+            "maximum_short_seconds": 180 if is_short else None,
+            "force_three_minute_duration": False,
+            "extended_short_ready": extended_short_ready if is_short else None,
             "strongest_relevant_moment_first": True,
             "single_clear_promise": first_sentence(clip.hook or clip.title, max_words=10),
             "payoff_required": True,
@@ -9047,6 +9231,7 @@ def codex_growth_blueprint(
                     or social_anecdote["qualified"]
                     or delayed_punchline["qualified"]
                     or structured_comparison["qualified"]
+                    or extended_short_ready
                 )
             ),
             "single_reference_is_outlier_not_baseline": True,

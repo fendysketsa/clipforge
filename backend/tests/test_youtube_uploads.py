@@ -2082,6 +2082,47 @@ def test_monetization_preflight_blocks_short_outside_official_technical_limits(m
     assert "180 detik" in issue
 
 
+def test_monetization_preflight_rechecks_legacy_growth_audit_against_current_limit(
+    monkeypatch,
+):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-legacy-sixty-second-short",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+    sidecar = {
+        "output_format": "vertical_short",
+        "score": 90,
+        "aspect_ratio": "9:16",
+        "duration": 120,
+        "thumbnail_strategy": "embedded_shorts_cover_frame",
+        "shorts_policy_compliance": {
+            "duration_within_official_limit": True,
+            "duration_within_growth_window": False,
+            "fendy_clipper_max_seconds": 90,
+        },
+        "monetization_readiness": {"eligible_for_private_upload_review": True},
+    }
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: sidecar)
+
+    assert youtube_monetization_preflight_issue(job, clip) is None
+
+    sidecar["duration"] = 181
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+    assert "180 detik" in issue
+
+
 def test_monetization_preflight_blocks_low_fyp_short(monkeypatch):
     import api
 

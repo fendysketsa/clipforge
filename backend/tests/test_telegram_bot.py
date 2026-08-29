@@ -100,7 +100,7 @@ def test_normalize_settings_keeps_only_clickable_options():
         "clip_mode": "short",
         "top": 8,
         "min_duration": 25,
-        "max_duration": 45,
+        "max_duration": 180,
         "video_quality": "max",
         "crop_mode": "streamer",
         "burn_subtitles": False,
@@ -134,7 +134,7 @@ def test_build_job_payload_matches_backend_contract():
     assert payload["top"] == 5
     assert payload["crop_mode"] == "center"
     assert payload["min_duration"] == 25
-    assert payload["max_duration"] == 45
+    assert payload["max_duration"] == 180
     assert payload["caption_font_size"] == 8
     assert payload["caption_outline"] == 0.5
     assert payload["visual_mode"] == "auto_fyp"

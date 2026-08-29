@@ -40,6 +40,7 @@ from api import (
     viral_source_rejection_reason,
     viral_search_filter_rejection_reason,
     youtube_upload_clean_metadata_args,
+    youtube_max_upload_bytes,
     youtube_published_after,
 )
 
@@ -122,6 +123,13 @@ def test_upload_staging_keeps_short_vertical():
     assert "pad=720:1280" in value
 
 
+def test_youtube_upload_size_defaults_to_quality_safe_256_mb(monkeypatch):
+    monkeypatch.delenv("YOUTUBE_MAX_UPLOAD_MB", raising=False)
+    monkeypatch.delenv("YOUTUBE_CDP_MAX_UPLOAD_MB", raising=False)
+
+    assert youtube_max_upload_bytes() == 256 * 1024 * 1024
+
+
 def test_max_clips_at_least_one():
     assert max_clips_for_duration(40, 35) == 1
 
@@ -133,14 +141,14 @@ def test_normalize_clamps_target_to_budget(monkeypatch):
     req = ClipJobRequest(source_file="fake.mp4", top=20, min_duration=35, max_duration=180)
     out = normalize_job_request(req)
     assert out.top == 2  # clamped from 20 to budget cap
-    assert out.max_duration == 45
+    assert out.max_duration == 180
 
 
-def test_short_defaults_are_fast_fyp_length():
+def test_short_defaults_allow_up_to_three_minutes():
     request = ClipJobRequest(source_file="fake.mp4")
 
     assert request.min_duration == 25
-    assert request.max_duration == 45
+    assert request.max_duration == 180
     assert request.model == "Systran/faster-whisper-medium"
     assert request.crop_mode == "person"
     assert request.caption_position == "bottom"
@@ -993,7 +1001,7 @@ def test_build_clipper_command_caps_short_render_at_growth_window():
         )
     )
 
-    assert command[command.index("--max") + 1] == "45.0"
+    assert command[command.index("--max") + 1] == "180.0"
 
 
 def test_build_clipper_command_can_disable_enhanced_edit():

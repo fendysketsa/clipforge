@@ -566,7 +566,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
             ? "Scene Cinema mengubah naskah menjadi storyboard, art bible, visual per scene, gerak kamera, voice-over, subtitle, musik, thumbnail, dan satu video 16:9 utuh."
             : clipMode === "highlight_5m"
             ? "Codex Long Story Director membuat teaser singkat tanpa duplikasi, lalu merangkai konteks, perkembangan, penjelasan, dan kesimpulan secara kronologis dalam 16:9—tanpa filler. Deskripsi menambahkan ajakan Viralkan yang wajar untuk 7 hari pertama; kelayakan tetap ditentukan YouTube."
-            : "Clip vertikal 25–45 detik mengikuti profil retention channel, dengan frame cover awal yang dapat dipilih lewat timeline aplikasi YouTube sekitar 0,78 detik, caption safe-area, payoff, CTA Subscribe kontekstual, dan loop alami."}
+            : "Clip vertikal adaptif 25–180 detik: Codex memilih durasi terpendek yang cukup untuk hook, konteks, perkembangan, dan payoff—bukan memanjangkan isi dengan filler. Frame cover, caption safe-area, CTA Subscribe kontekstual, dan loop alami tetap aktif."}
         </p>
       </div>
 
@@ -575,7 +575,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
           <span>{clipMode === "short" ? "Durasi Minimum" : "Durasi Minimum per Bagian"}</span>
           <input
             min={5}
-            max={clipMode === "short" ? 59 : 600}
+            max={clipMode === "short" ? 179 : 600}
             type="number"
             value={minDuration}
             onChange={(event) => onMinDurationChange(Number(event.target.value))}
@@ -585,7 +585,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
           <span>{clipMode === "short" ? "Durasi Maksimum" : "Durasi Maksimum per Bagian"}</span>
           <input
             min={10}
-            max={clipMode === "short" ? 60 : 600}
+            max={clipMode === "short" ? 180 : 600}
             type="number"
             value={maxDuration}
             onChange={(event) => onMaxDurationChange(Number(event.target.value))}
