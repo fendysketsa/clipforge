@@ -75,6 +75,18 @@ class PendingPublishPage:
         return TextPage("Visibilitas Publik Publikasikan")
 
 
+class ClosedUploadStatusPage:
+    def __init__(self, bodies):
+        self.body = SequenceTextPage(bodies)
+
+    def locator(self, selector):
+        if selector == "ytcp-uploads-dialog":
+            return type("ClosedDialogLocator", (), {"count": lambda _self: 0})()
+        if selector == "body":
+            return self.body
+        return TextPage("")
+
+
 class ReloadPage:
     def __init__(self):
         self.reload_calls = []
@@ -692,6 +704,52 @@ def test_final_confirmation_ignores_published_text_behind_open_dialog(monkeypatc
 
     with pytest.raises(UploadError, match="belum terkonfirmasi selesai"):
         wait_for_final_upload_confirmation(PendingPublishPage(), timeout_ms=100)
+
+
+def test_final_confirmation_waits_after_modal_closes_while_transfer_is_still_running(monkeypatch):
+    clock = iter((0.0, 0.0, 0.1))
+    logs = []
+    page = ClosedUploadStatusPage(
+        [
+            "Video lama: Upload selesai. Video saat ini: Mengupload 16%",
+            "Upload selesai. Pemrosesan akan segera dimulai",
+        ]
+    )
+    monkeypatch.setattr(youtube_uploader.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "log", logs.append)
+
+    video_url = wait_for_final_upload_confirmation(
+        page,
+        timeout_ms=1000,
+        video_url="https://www.youtube.com/watch?v=abcDEF12345",
+    )
+
+    assert video_url == "https://www.youtube.com/watch?v=abcDEF12345"
+    assert any("16%" in message for message in logs)
+    assert logs[-1] == "Konfirmasi final upload terdeteksi."
+
+
+def test_final_confirmation_extends_timeout_while_large_file_progress_moves(monkeypatch):
+    clock = iter((0.0, 0.0, 0.09, 0.11))
+    page = ClosedUploadStatusPage(
+        [
+            "Mengupload 16%",
+            "Mengupload 17%",
+            "Upload selesai",
+        ]
+    )
+    monkeypatch.setattr(youtube_uploader.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "log", lambda _message: None)
+
+    assert wait_for_final_upload_confirmation(
+        page,
+        timeout_ms=100,
+        video_url="https://www.youtube.com/watch?v=abcDEF12345",
+    )
 
 
 def test_reload_runs_once_after_ten_second_publish_delay(monkeypatch):

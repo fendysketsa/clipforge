@@ -152,6 +152,7 @@ YTDLP_HTTP_HEADERS = {
 CLI_USER_ERROR_PREFIX = "USER_ERROR:"
 YOUTUBE_UPLOAD_ERROR_PREFIX = "USER_ERROR:"
 YOUTUBE_VIDEO_URL_PREFIX = "VIDEO_URL:"
+YOUTUBE_UPLOAD_CONFIRMED_PREFIX = "UPLOAD_CONFIRMED:"
 YOUTUBE_FINAL_VISIBILITY_PREFIX = "FINAL_VISIBILITY:"
 DEFAULT_YOUTUBE_PLAYLIST = "Islam"
 DEFAULT_YOUTUBE_TARGET_CHANNEL = "ryuundyofficial"
@@ -611,6 +612,7 @@ class YouTubeUploadJob(BaseModel):
     target_channel: str = ""
     dry_run: bool = False
     video_url: str | None = None
+    upload_confirmed: bool = False
     clip_sha256: str | None = None
     queue_position: int | None = None
     queue_total: int | None = None
@@ -1378,7 +1380,7 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
         upload = YouTubeUploadJob(**item)
         if upload.status == "running":
             finished_at = now_iso()
-            if upload.video_url and not upload.dry_run:
+            if upload.video_url and upload.upload_confirmed and not upload.dry_run:
                 delete_after = (
                     datetime.fromisoformat(finished_at)
                     + timedelta(
@@ -1403,7 +1405,7 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
                         "clip_cleanup_step_details": {},
                         "logs": [
                             *upload.logs,
-                            "Recovery restart: URL YouTube sudah terverifikasi; upload dipulihkan sebagai completed tanpa upload ulang.",
+                            "Recovery restart: konfirmasi final YouTube dan URL sudah tersimpan; upload dipulihkan sebagai completed tanpa upload ulang.",
                         ][-160:],
                         "error": None,
                     }
@@ -1459,6 +1461,22 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
                         "Recovery restart: upload lama belum memilih file dan dikembalikan ke antrean dengan aman.",
                     ][-160:],
                     "error": None,
+                }
+            )
+        if (
+            upload.status == "completed"
+            and not upload.upload_confirmed
+            and upload.clip_delete_after
+            and not upload.clip_deleted_at
+        ):
+            upload = upload.model_copy(
+                update={
+                    "clip_delete_after": None,
+                    "clip_delete_error": None,
+                    "logs": [
+                        *upload.logs,
+                        "Safety recovery: jadwal hapus dibatalkan karena catatan lama belum memiliki konfirmasi final transfer YouTube.",
+                    ][-160:],
                 }
             )
         loaded[upload.id] = upload
@@ -3817,6 +3835,7 @@ def reusable_youtube_upload(
             if (
                 upload.status == "completed"
                 and upload.video_url
+                and upload.upload_confirmed
                 and not upload.dry_run
                 and (exact_clip or same_fingerprint)
             ):
@@ -3849,6 +3868,7 @@ def verified_duplicate_for_upload(
             if (
                 candidate.status == "completed"
                 and candidate.video_url
+                and candidate.upload_confirmed
                 and not candidate.dry_run
                 and (exact_clip or same_fingerprint)
             ):
@@ -4170,6 +4190,7 @@ def queue_youtube_upload_jobs(uploads: list[YouTubeUploadJob]) -> None:
             if (
                 upload.status == "completed"
                 and upload.video_url
+                and upload.upload_confirmed
                 and upload.clip_delete_after
                 and not upload.clip_deleted_at
             ):
@@ -4530,8 +4551,8 @@ def monitor_youtube_upload_process(
     on_line,
     *,
     stall_timeout_seconds: float,
-    terminal_success_prefix: str = "VIDEO_URL:",
-    terminal_grace_seconds: float = 5.0,
+    terminal_success_prefix: str = YOUTUBE_UPLOAD_CONFIRMED_PREFIX,
+    terminal_grace_seconds: float = 60.0,
 ) -> tuple[int, bool]:
     """Stream output without allowing a silent uploader subprocess to hang forever."""
     if process.stdout is None:
@@ -5169,7 +5190,12 @@ def delete_completed_youtube_upload_clip(
         upload = youtube_uploads.get(upload_id)
     if upload is None:
         raise RuntimeError("Catatan upload YouTube tidak ditemukan")
-    if upload.status != "completed" or not upload.video_url or upload.dry_run:
+    if (
+        upload.status != "completed"
+        or not upload.video_url
+        or not upload.upload_confirmed
+        or upload.dry_run
+    ):
         raise RuntimeError("Upload YouTube belum terkonfirmasi selesai; file tidak dihapus")
 
     completed_steps = list(upload.clip_cleanup_completed_steps)
@@ -5380,6 +5406,7 @@ def schedule_completed_upload_cleanup(upload_id: str) -> None:
                     upload is None
                     or upload.status != "completed"
                     or not upload.video_url
+                    or not upload.upload_confirmed
                     or upload.dry_run
                     or upload.clip_deleted_at
                     or not upload.clip_delete_after
@@ -5486,6 +5513,7 @@ def complete_youtube_upload_as_duplicate(
         finished_at=completed_at,
         duration_seconds=0.0,
         video_url=duplicate.video_url,
+        upload_confirmed=duplicate.upload_confirmed,
         thumbnail_attached=duplicate.thumbnail_attached,
         playlist_confirmed=duplicate.playlist_confirmed,
         clip_delete_after=delete_after,
@@ -5636,7 +5664,13 @@ def run_youtube_upload(upload_id: str) -> None:
             thumbnail_attached_for_attempt = False
             thumbnail_requirement_waived_for_attempt = False
             playlist_confirmed_for_attempt = False
-            set_youtube_upload(upload_id, thumbnail_attached=False, playlist_confirmed=False)
+            upload_confirmed_for_attempt = False
+            set_youtube_upload(
+                upload_id,
+                thumbnail_attached=False,
+                playlist_confirmed=False,
+                upload_confirmed=False,
+            )
             if attempt > 1:
                 if use_cdp_for_attempt:
                     mode = "Chrome CDP"
@@ -5668,6 +5702,7 @@ def run_youtube_upload(upload_id: str) -> None:
                 nonlocal playlist_confirmed_for_attempt
                 nonlocal thumbnail_attached_for_attempt
                 nonlocal thumbnail_requirement_waived_for_attempt
+                nonlocal upload_confirmed_for_attempt
                 if cleaned.startswith("THUMBNAIL_ATTACHED:"):
                     thumbnail_attached_for_attempt = True
                     thumbnail_requirement_waived_for_attempt = False
@@ -5681,6 +5716,8 @@ def run_youtube_upload(upload_id: str) -> None:
                     thumbnail_attached_for_attempt = False
                 if cleaned.startswith("PLAYLIST_CONFIRMED:"):
                     playlist_confirmed_for_attempt = True
+                if cleaned.startswith(YOUTUBE_UPLOAD_CONFIRMED_PREFIX):
+                    upload_confirmed_for_attempt = True
                 logs.append(cleaned)
                 set_youtube_upload(
                     upload_id,
@@ -5689,6 +5726,7 @@ def run_youtube_upload(upload_id: str) -> None:
                     visibility=youtube_final_visibility_from_logs(logs) or upload.visibility,
                     thumbnail_attached=thumbnail_attached_for_attempt,
                     playlist_confirmed=playlist_confirmed_for_attempt,
+                    upload_confirmed=upload_confirmed_for_attempt,
                 )
 
             code, stalled = monitor_youtube_upload_process(
@@ -5728,8 +5766,17 @@ def run_youtube_upload(upload_id: str) -> None:
                     "upload belum diselesaikan."
                 )
                 logs.append(playlist_confirmation_error)
+            upload_confirmation_error = ""
+            if code == 0 and not upload.dry_run and not upload_confirmed_for_attempt:
+                code = 1
+                upload_confirmation_error = (
+                    "YouTube Studio belum mengonfirmasi transfer video selesai; "
+                    "upload belum diselesaikan dan file lokal dipertahankan."
+                )
+                logs.append(upload_confirmation_error)
             if (
                 video_url
+                and upload_confirmed_for_attempt
                 and not upload.dry_run
                 and code != 0
                 and (
@@ -5740,7 +5787,8 @@ def run_youtube_upload(upload_id: str) -> None:
                 and (not upload.playlist or playlist_confirmed_for_attempt)
             ):
                 logs.append(
-                    "Uploader berhenti setelah URL final terverifikasi; status dipulihkan sebagai sukses tanpa retry upload."
+                    "Uploader berhenti setelah konfirmasi final transfer dan URL terverifikasi; "
+                    "status dipulihkan sebagai sukses tanpa retry upload."
                 )
                 code = 0
                 stalled = False
@@ -5749,6 +5797,7 @@ def run_youtube_upload(upload_id: str) -> None:
                 if stalled
                 else thumbnail_confirmation_error
                 or playlist_confirmation_error
+                or upload_confirmation_error
                 or youtube_upload_error_from_logs(logs)
                 or f"youtube_uploader.py exited with code {code}"
             )
@@ -5774,6 +5823,7 @@ def run_youtube_upload(upload_id: str) -> None:
                     playlist_confirmed=playlist_confirmed_for_attempt,
                     logs=logs[-160:],
                     video_url=video_url,
+                    upload_confirmed=upload_confirmed_for_attempt,
                     finished_at=completed_at,
                     duration_seconds=elapsed_seconds(started_perf),
                     clip_delete_after=delete_after,
@@ -6002,6 +6052,7 @@ def resume_queued_youtube_uploads() -> None:
             for upload in youtube_uploads.values()
             if upload.status == "completed"
             and upload.video_url
+            and upload.upload_confirmed
             and upload.clip_delete_after
             and not upload.clip_deleted_at
             and not upload.dry_run
@@ -6326,6 +6377,16 @@ def cleanup_job_artifacts(output_root: Path) -> int:
         return 0
 
 
+def cleanup_failed_job_artifacts(output_root: Path) -> tuple[int, str]:
+    """Remove every partial artifact after a failed clip/render job."""
+    removed = cleanup_job_artifacts(output_root)
+    if output_root.exists():
+        return removed, "Cleanup output gagal; workspace sementara masih ada dan perlu dicek."
+    if removed:
+        return removed, "Workspace dan seluruh file sementara proses gagal telah dihapus."
+    return removed, "Tidak ada file sementara proses gagal yang tersisa."
+
+
 def cancel_process(job_id: str) -> bool:
     cancelled_job_ids.add(job_id)
     with process_lock:
@@ -6607,11 +6668,15 @@ def run_job(job_id: str) -> None:
             bufsize=1,
         )
     except Exception as exc:
+        _, cleanup_message = cleanup_failed_job_artifacts(output_root)
         set_job(
             job_id,
             status="failed",
             **finish_job_updates(started_perf),
-            error=f"Worker clipping gagal dimulai: {exc}",
+            clips=[],
+            candidates=[],
+            logs=[cleanup_message],
+            error=f"Worker clipping gagal dimulai: {exc}. {cleanup_message}",
         )
         job_secrets.pop(job_id, None)
         clip_job_slots.release()
@@ -6656,7 +6721,7 @@ def run_job(job_id: str) -> None:
         candidates = discover_candidates(started_at, output_root)
         if clips and candidates:
             clips = enrich_clips_with_candidate_titles(clips, candidates)
-        if code == 0:
+        if code == 0 and clips:
             updates = {
                 "status": "completed",
                 "logs": logs[-120:],
@@ -6712,15 +6777,42 @@ def run_job(job_id: str) -> None:
                 auto_queue_youtube_uploads_for_job(job_id, logs)
         else:
             friendly_error = user_error_from_logs(logs)
+            if code == 0:
+                failure_reason = friendly_error or (
+                    "Proses selesai tanpa menghasilkan clip yang dapat dipakai."
+                )
+            else:
+                failure_reason = friendly_error or f"clipper.py exited with code {code}"
+            _, cleanup_message = cleanup_failed_job_artifacts(output_root)
+            failure_logs = [*logs, cleanup_message][-120:]
             set_job(
                 job_id,
                 status="failed",
                 **finish_job_updates(started_perf),
-                clips=clips,
-                candidates=candidates,
-                logs=logs[-120:],
-                error=friendly_error or f"clipper.py exited with code {code}",
+                clips=[],
+                candidates=[],
+                logs=failure_logs,
+                error=f"{failure_reason} {cleanup_message}",
             )
+    except Exception as exc:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=CANCEL_GRACE_SECONDS)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=CANCEL_GRACE_SECONDS)
+        _, cleanup_message = cleanup_failed_job_artifacts(output_root)
+        failure_logs = [*logs, cleanup_message][-120:]
+        set_job(
+            job_id,
+            status="failed",
+            **finish_job_updates(started_perf),
+            clips=[],
+            candidates=[],
+            logs=failure_logs,
+            error=f"Worker clipping berhenti tidak normal: {exc}. {cleanup_message}",
+        )
     finally:
         with process_lock:
             job_processes.pop(job_id, None)

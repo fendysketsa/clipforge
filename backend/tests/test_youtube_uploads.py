@@ -580,6 +580,7 @@ def test_identical_completed_clip_is_not_uploaded_again(monkeypatch, tmp_path):
         finished_at="2026-01-01T00:01:00+00:00",
         title="Already uploaded",
         video_url="https://www.youtube.com/watch?v=abcDEF12345",
+        upload_confirmed=True,
         clip_sha256=fingerprint,
     )
     monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
@@ -619,6 +620,7 @@ def test_worker_preflight_detects_duplicate_already_in_queue_history(monkeypatch
         updated_at="2026-01-01T00:01:00+00:00",
         title="Uploaded",
         video_url="https://www.youtube.com/watch?v=abcDEF12345",
+        upload_confirmed=True,
         clip_sha256="abc123",
     )
     queued = YouTubeUploadJob(
@@ -925,6 +927,7 @@ def test_completed_upload_cleanup_deletes_real_file_and_updates_job(monkeypatch,
         finished_at="2026-01-01T00:01:00+00:00",
         title="Uploaded",
         video_url="https://www.youtube.com/watch?v=abcDEF12345",
+        upload_confirmed=True,
     )
 
     monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
@@ -990,8 +993,9 @@ def test_completed_upload_cleanup_refuses_unverified_upload(monkeypatch):
         status="completed",
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:01:00+00:00",
-        title="No URL",
-        video_url=None,
+        title="URL assigned before transfer finished",
+        video_url="https://www.youtube.com/watch?v=abcDEF12345",
+        upload_confirmed=False,
     )
     monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
 
@@ -1025,6 +1029,7 @@ def test_completed_upload_cleanup_removes_orphan_workspace_when_job_is_missing(
         finished_at="2026-08-22T00:01:00+00:00",
         title="Uploaded",
         video_url="https://www.youtube.com/watch?v=abcDEF12345",
+        upload_confirmed=True,
     )
     monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
     monkeypatch.setattr(api, "jobs", {})
@@ -1057,7 +1062,7 @@ def test_upload_watchdog_terminates_silent_process():
     assert logs == ["started"]
 
 
-def test_upload_watchdog_treats_video_url_as_terminal_success():
+def test_upload_watchdog_does_not_treat_early_video_url_as_success():
     process = subprocess.Popen(
         [
             sys.executable,
@@ -1078,13 +1083,48 @@ def test_upload_watchdog_treats_video_url_as_terminal_success():
     code, stalled = monitor_youtube_upload_process(
         process,
         logs.append,
+        stall_timeout_seconds=0.1,
+        terminal_grace_seconds=0.05,
+    )
+
+    assert code != 0
+    assert stalled is True
+    assert logs == ["VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345"]
+    assert process.poll() is not None
+
+
+def test_upload_watchdog_treats_explicit_upload_confirmation_as_terminal_success():
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-u",
+            "-c",
+            (
+                "import time; "
+                "print('UPLOAD_CONFIRMED: transfer selesai'); "
+                "print('VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345'); "
+                "time.sleep(10)"
+            ),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    logs = []
+
+    code, stalled = monitor_youtube_upload_process(
+        process,
+        logs.append,
         stall_timeout_seconds=5,
         terminal_grace_seconds=0.05,
     )
 
     assert code == 0
     assert stalled is False
-    assert logs == ["VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345"]
+    assert logs == [
+        "UPLOAD_CONFIRMED: transfer selesai",
+        "VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345",
+    ]
     assert process.poll() is not None
 
 
@@ -1102,7 +1142,11 @@ def test_running_upload_with_verified_url_recovers_as_completed(monkeypatch, tmp
         started_at="2026-07-31T09:00:01+00:00",
         title="Recovered",
         video_url="https://www.youtube.com/watch?v=abcDEF12345",
-        logs=["VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345"],
+        upload_confirmed=True,
+        logs=[
+            "UPLOAD_CONFIRMED: transfer selesai",
+            "VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345",
+        ],
     )
     uploads_path = tmp_path / "youtube_uploads.json"
     uploads_path.write_text(
@@ -1118,6 +1162,37 @@ def test_running_upload_with_verified_url_recovers_as_completed(monkeypatch, tmp
     assert recovered.clip_delete_after is not None
     assert recovered.error is None
     assert "tanpa upload ulang" in recovered.logs[-1]
+
+
+def test_running_upload_with_only_early_url_never_recovers_as_completed(monkeypatch, tmp_path):
+    import api
+
+    upload = YouTubeUploadJob(
+        id="recover-unconfirmed-upload",
+        source_job_id="job-1",
+        clip_url="/outputs/demo/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="running",
+        created_at="2026-07-31T09:00:00+00:00",
+        updated_at="2026-07-31T09:01:00+00:00",
+        started_at="2026-07-31T09:00:01+00:00",
+        title="Still transferring",
+        video_url="https://www.youtube.com/watch?v=abcDEF12345",
+        upload_confirmed=False,
+        logs=[
+            "Video dipilih: clip_01.mp4",
+            "VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345",
+        ],
+    )
+    uploads_path = tmp_path / "youtube_uploads.json"
+    uploads_path.write_text(json.dumps([upload.model_dump()]), encoding="utf-8")
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", uploads_path)
+
+    recovered = api.load_youtube_uploads()[upload.id]
+
+    assert recovered.status == "failed"
+    assert recovered.clip_delete_after is None
+    assert recovered.clip_deleted_at is None
 
 
 def test_running_upload_before_file_selection_returns_to_queue(monkeypatch, tmp_path):
@@ -1243,6 +1318,7 @@ def test_upload_falls_back_to_storage_state_when_cdp_launcher_fails(monkeypatch,
         return [sys.executable, "youtube_uploader.py", "upload", str(clip_path)]
 
     def fake_monitor(_process, on_line, **_kwargs):
+        on_line("UPLOAD_CONFIRMED: transfer selesai")
         on_line("VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345")
         return 0, False
 
@@ -1266,13 +1342,17 @@ def test_upload_falls_back_to_storage_state_when_cdp_launcher_fails(monkeypatch,
         (
             [
                 "PLAYLIST_CONFIRMED: Islam",
+                "UPLOAD_CONFIRMED: transfer selesai",
                 "VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345",
             ],
             "completed",
             True,
         ),
         (
-            ["VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345"],
+            [
+                "UPLOAD_CONFIRMED: transfer selesai",
+                "VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345",
+            ],
             "failed",
             False,
         ),
@@ -1383,6 +1463,7 @@ def test_long_upload_only_waives_thumbnail_requirement_for_verified_daily_limit(
             thumbnail_line,
             "PLAYLIST_CONFIRMED: Horor",
             "FINAL_VISIBILITY: private",
+            "UPLOAD_CONFIRMED: transfer selesai",
             "VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345",
         ):
             on_line(line)

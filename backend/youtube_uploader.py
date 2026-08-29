@@ -5136,29 +5136,101 @@ def wait_for_final_upload_confirmation(page, timeout_ms: int, video_url: str = "
         r"video (published|uploaded)",
         r"upload complete",
         r"processing will begin shortly",
+        r"checks? will begin shortly",
         r"video (berhasil )?(telah )?dipublikasikan",
         r"berhasil dipublikasikan",
         r"upload selesai",
+        r"upload telah selesai",
+        r"pemrosesan akan segera dimulai",
+        r"pemeriksaan akan segera dimulai",
+    )
+    pending_patterns = (
+        r"uploading\s*\d{1,3}\s*%",
+        r"mengupload\s*\d{1,3}\s*%",
+        r"mengunggah\s*\d{1,3}\s*%",
+        r"upload(?:ing)? (?:is )?(?:still )?in progress",
+        r"upload sedang berlangsung",
+    )
+    error_patterns = (
+        r"upload failed",
+        r"failed to upload",
+        r"upload gagal",
+        r"gagal mengupload",
+        r"gagal mengunggah",
     )
     last_body = ""
-    while time.monotonic() < deadline:
+    last_progress_percent = -1
+    next_progress_log_at = 0.0
+    while True:
+        now = time.monotonic()
+        if now >= deadline:
+            break
         dismiss_reload_prompt(page, timeout_ms=300)
+        dialog_count: int | None = None
         try:
             dialog_count = page.locator("ytcp-uploads-dialog").count()
-            if dialog_count == 0:
-                log("Modal upload sudah tertutup setelah publish.")
-                return video_url or extract_video_url(page)
         except Exception:
             pass
-        body = active_upload_dialog_text(page, timeout_ms=3000)
+
+        # Setelah tombol Simpan ditekan, Studio dapat menutup modal meskipun
+        # transfer file masih berjalan di background. Karena itu, modal yang
+        # hilang bukan lagi bukti sukses: baca juga status global Content page.
+        dialog_body = active_upload_dialog_text(page, timeout_ms=3000)
+        # Saat modal masih terbuka, jangan mencampur teks halaman di belakangnya:
+        # daftar Content dapat berisi video lama berstatus "published" dan
+        # menghasilkan sukses palsu. Status global hanya dipakai setelah modal
+        # upload aktif benar-benar hilang.
+        global_body = page_identity_text(page) if dialog_count == 0 else ""
+        body = "\n".join(part for part in (dialog_body, global_body) if part)
         last_body = re.sub(r"\s+", " ", body).strip()[:500]
-        if any(re.search(pattern, body, re.I) for pattern in done_patterns):
+        if any(re.search(pattern, body, re.I) for pattern in error_patterns):
+            save_debug_artifacts(page, "final-upload-failed")
+            raise UploadError(
+                "YouTube melaporkan transfer upload gagal. "
+                f"File lokal dipertahankan. Cuplikan halaman: {last_body}"
+            )
+        pending = any(re.search(pattern, body, re.I) for pattern in pending_patterns)
+        progress = re.search(
+            r"(?:uploading|mengupload|mengunggah)\s*(\d{1,3})\s*%",
+            body,
+            re.I,
+        )
+        if progress:
+            progress_percent = min(100, int(progress.group(1)))
+            if progress_percent > last_progress_percent:
+                last_progress_percent = progress_percent
+                # File besar boleh melewati estimasi awal selama transfernya
+                # nyata-nyata bergerak. Timeout menjadi batas tanpa progres,
+                # bukan batas total yang memutus upload aktif.
+                deadline = max(deadline, now + timeout_ms / 1000)
+        # Jika halaman memuat beberapa video, teks upload lama yang selesai
+        # dapat muncul bersamaan dengan upload aktif. Status pending selalu
+        # menang agar upload saat ini tidak dianggap selesai terlalu dini.
+        if not pending and any(re.search(pattern, body, re.I) for pattern in done_patterns):
             log("Konfirmasi final upload terdeteksi.")
             return video_url or extract_video_url(page)
+        if now >= next_progress_log_at:
+            if progress:
+                log(
+                    f"Transfer video masih berjalan ({progress.group(1)}%); "
+                    "uploader tetap menunggu dan file lokal tidak akan dihapus."
+                )
+            elif pending:
+                log("Transfer video masih berjalan; menunggu konfirmasi selesai dari YouTube.")
+            elif dialog_count == 0:
+                log(
+                    "Modal upload sudah tertutup, tetapi konfirmasi transfer selesai belum terlihat; "
+                    "tetap menunggu."
+                )
+            else:
+                log("Menunggu konfirmasi final transfer dari YouTube Studio.")
+            next_progress_log_at = now + 30
         time.sleep(3)
+    save_debug_artifacts(page, "final-upload-confirmation-timeout")
     raise UploadError(
         "Upload YouTube belum terkonfirmasi selesai sampai timeout. "
-        f"Tab Chrome dibiarkan terbuka untuk dicek manual. Cuplikan halaman: {last_body}"
+        "File lokal dipertahankan dan antrean tidak dilanjutkan sebagai sukses. "
+        f"Cuplikan halaman: {last_body}"
     )
 
 
@@ -5712,6 +5784,12 @@ def run_upload(args: argparse.Namespace) -> None:
             )
             final_url = uploaded_video_url or extract_video_url(page)
             log(f"FINAL_VISIBILITY: {args.visibility}")
+            final_url = wait_for_final_upload_confirmation(
+                page,
+                timeout_ms=timeout_ms,
+                video_url=final_url,
+            )
+            log("UPLOAD_CONFIRMED: YouTube Studio mengonfirmasi transfer video selesai.")
             if final_url:
                 log(f"VIDEO_URL: {final_url}")
             reload_after_publish(page)

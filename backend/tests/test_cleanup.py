@@ -2,6 +2,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import pytest
+
 from api import (
     ClipCandidate,
     ClipFile,
@@ -10,6 +12,7 @@ from api import (
     cleanup_clip_files,
     cleanup_job_files,
     cleanup_orphan_output_roots,
+    run_job,
 )
 from clipper import (
     UserFacingError,
@@ -63,6 +66,61 @@ def test_cleanup_does_not_delete_external_upload():
     cleanup_intermediate(work, upload)
 
     assert upload.exists()
+
+
+class FinishedClipperProcess:
+    def __init__(self, code: int, lines: list[str] | None = None):
+        self.code = code
+        self.stdout = iter(lines or [])
+
+    def wait(self, timeout=None):
+        return self.code
+
+    def poll(self):
+        return self.code
+
+
+@pytest.mark.parametrize("exit_code", [0, 7])
+def test_failed_or_empty_job_removes_entire_partial_workspace(monkeypatch, tmp_path, exit_code):
+    import api
+
+    outputs = tmp_path / "outputs"
+    job = ClipJob(
+        id=f"failed-{exit_code}",
+        status="queued",
+        request=ClipJobRequest(url="https://youtu.be/demo"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    workspace = outputs / job.id
+    workspace.mkdir(parents=True)
+    (workspace / "source.mp4.part").write_bytes(b"partial")
+    (workspace / "audio.wav").write_bytes(b"partial audio")
+
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "job_secrets", {})
+    monkeypatch.setattr(api, "job_processes", {})
+    monkeypatch.setattr(api, "cancelled_job_ids", set())
+    monkeypatch.setattr(api, "preserve_job_files_on_cancel", set())
+    monkeypatch.setattr(api, "build_clipper_command", lambda *_args, **_kwargs: ["clipper"])
+    monkeypatch.setattr(
+        api.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: FinishedClipperProcess(
+            exit_code,
+            ["USER_ERROR: rate/quality kandidat kurang tinggi"] if exit_code else [],
+        ),
+    )
+
+    run_job(job.id)
+
+    failed = api.jobs[job.id]
+    assert failed.status == "failed"
+    assert failed.clips == []
+    assert failed.candidates == []
+    assert not workspace.exists()
+    assert "telah dihapus" in failed.logs[-1]
 
 
 def test_source_media_candidates_never_reuses_ytdlp_partials(tmp_path):

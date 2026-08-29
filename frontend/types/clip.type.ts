@@ -258,6 +258,7 @@ export type YouTubeUploadJob = {
   target_channel: string;
   dry_run: boolean;
   video_url?: string | null;
+  upload_confirmed?: boolean;
   clip_sha256?: string | null;
   queue_position?: number | null;
   queue_total?: number | null;
