@@ -19,12 +19,14 @@ from api import (
     classify_long_form_playlist,
     clip_requires_altered_content_disclosure,
     complete_youtube_description,
+    content_shingle_similarity,
     default_youtube_description,
     default_youtube_tags,
     default_youtube_title,
     delete_completed_youtube_upload_clip,
     generate_youtube_description,
     generate_youtube_metadata,
+    generated_channel_authenticity_issue,
     completed_upload_cleanup_after,
     create_youtube_upload_record,
     create_youtube_upload_batch_records,
@@ -76,6 +78,77 @@ def make_candidate(index: int, score: int) -> ClipCandidate:
         reason="test",
         text="test",
     )
+
+
+def test_content_shingle_similarity_detects_template_copy_not_shared_topic_words():
+    template = "Keputusan kecil itu mengubah arah perjalanan dan memaksa tokoh menerima konsekuensinya."
+
+    assert content_shingle_similarity(template, template) == 1.0
+    assert content_shingle_similarity(template, "Perjalanan lain membahas sejarah kota dan perubahan ekonomi.") < 0.2
+
+
+def test_generated_channel_authenticity_rejects_near_duplicate_recent_upload(monkeypatch):
+    import api
+
+    clip = ClipFile(
+        name="long_animate_baru.mp4",
+        url="/outputs/new/long_animate_baru.mp4",
+        size_bytes=1,
+    )
+    job = ClipJob(
+        id="new-job",
+        status="completed",
+        request=ClipJobRequest(clip_mode="original_rebuild"),
+        created_at="2026-08-30T00:00:00+00:00",
+        updated_at="2026-08-30T00:00:00+00:00",
+        clips=[clip],
+    )
+    narrative = " ".join(
+        [
+            "Keputusan kecil mengubah arah perjalanan tokoh dan memaksanya menerima konsekuensi dengan jujur."
+        ]
+        * 8
+    )
+    current_text = (
+        "Keputusan kecil mengubah arah perjalanan. "
+        "Konsekuensi lebih penting daripada sensasi. "
+        "Pilihan perlu dipertanggungjawabkan. "
+        + narrative
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "production_model": "codex_original_rebuild_v1",
+            "channel_authenticity_contract": {
+                "human_creator_input_present": True,
+                "generic_or_mass_produced_template_allowed": False,
+                "editorial_angle": "Menilai konsekuensi keputusan kecil",
+            },
+            "hook": "Keputusan kecil mengubah arah perjalanan.",
+            "pov": "Konsekuensi lebih penting daripada sensasi.",
+            "core_message": "Pilihan perlu dipertanggungjawabkan.",
+            "text": narrative,
+        },
+    )
+    previous = YouTubeUploadJob(
+        id="previous-upload",
+        source_job_id="old-job",
+        clip_url="/outputs/deleted/old.mp4",
+        clip_name="old.mp4",
+        status="completed",
+        created_at="2026-08-29T00:00:00+00:00",
+        updated_at="2026-08-29T00:05:00+00:00",
+        title="Keputusan Kecil",
+        description=current_text,
+        video_url="https://www.youtube.com/watch?v=previous",
+    )
+    monkeypatch.setattr(api, "youtube_uploads", {previous.id: previous})
+
+    issue = generated_channel_authenticity_issue(job, clip) or ""
+
+    assert "terlalu mirip" in issue
+    assert "previous-u" in issue
 
 
 def test_claim_quarantine_cancels_only_queued_uploads_from_same_source(monkeypatch, tmp_path):
@@ -884,8 +957,66 @@ def test_long_animate_preflight_requires_rights_and_working_voice(monkeypatch):
 
     issue = youtube_monetization_preflight_issue(job, clip) or ""
 
-    assert "pemeriksaan hak" in issue
-    assert "quality gate scene" in issue
+    assert "izin komersial provider" in issue
+
+
+def test_original_rebuild_preflight_rejects_source_media_leak(monkeypatch):
+    import api
+
+    clip = ClipFile(
+        name="long_animate_bangun-ulang.mp4",
+        url="/outputs/demo/long_animate_bangun-ulang.mp4",
+        size_bytes=1,
+    )
+    job = ClipJob(
+        id="job-original-rebuild-gate",
+        status="completed",
+        request=ClipJobRequest(
+            source_file="/tmp/source.mp4",
+            clip_mode="original_rebuild",
+            confirm_source_rights=True,
+            confirm_long_animate_rights=True,
+        ),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "production_model": "codex_original_rebuild_v1",
+            "growth_readiness": {"quality_gate_passed": True},
+            "story_arc": [
+                {"voice_provider": "edge_neural"},
+                {"voice_provider": "edge_neural"},
+                {"voice_provider": "edge_neural"},
+            ],
+            "final_qc": {"passed": True},
+            "cold_open_contract": {"quality_gate_passed": True},
+            "altered_content_disclosure_required": True,
+            "synthetic_content": {"ai_or_procedural_images": True},
+            "asset_license_ledger": {
+                "complete": True,
+                "entries": [
+                    {"asset_class": name, "commercial_use_basis": "provider_terms", "proof_reference": "terms checked"}
+                    for name in ("source", "script", "visuals", "voice", "music")
+                ],
+            },
+            "original_rebuild": {
+                "source_audio_in_output": False,
+                "source_video_in_output": True,
+                "source_voice_cloned": False,
+                "human_factual_review_required": True,
+                "longest_verbatim_token_run": 3,
+                "maximum_verbatim_token_run": 10,
+            },
+        },
+    )
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+
+    assert "kontrak Original Rebuild" in issue
 
 
 def test_long_animate_v2_preflight_requires_final_qc_and_cold_open_contract(monkeypatch):
@@ -911,6 +1042,15 @@ def test_long_animate_v2_preflight_requires_final_qc_and_cold_open_contract(monk
     base_sidecar = {
         "production_model": "codex_scene_cinema_v2",
         "growth_readiness": {"quality_gate_passed": True},
+        "altered_content_disclosure_required": True,
+        "synthetic_content": {"ai_or_procedural_images": True},
+        "asset_license_ledger": {
+            "complete": True,
+            "entries": [
+                {"asset_class": name, "commercial_use_basis": "provider_terms", "proof_reference": "terms checked"}
+                for name in ("script", "visuals", "voice", "music")
+            ],
+        },
         "story_arc": [
             {"voice_provider": "edge_neural"},
             {"voice_provider": "edge_neural"},
@@ -927,7 +1067,26 @@ def test_long_animate_v2_preflight_requires_final_qc_and_cold_open_contract(monk
         **base_sidecar,
         "final_qc": {"passed": True},
         "cold_open_contract": {"quality_gate_passed": True},
+        "altered_content_disclosure_required": True,
+        "synthetic_content": {"ai_or_procedural_images": True},
+        "asset_license_ledger": {
+            "complete": True,
+            "entries": [
+                {"asset_class": name, "commercial_use_basis": "provider_terms", "proof_reference": "terms checked"}
+                for name in ("script", "visuals", "voice", "music")
+            ],
+        },
+        "channel_authenticity_contract": {
+            "human_creator_input_present": True,
+            "generic_or_mass_produced_template_allowed": False,
+            "editorial_angle": "Sudut cerita yang unik",
+        },
+        "hook": "Sebuah keputusan kecil mengubah arah perjalanan tokoh utama.",
+        "pov": "Kisah ini menilai keberanian melalui konsekuensi pilihan.",
+        "core_message": "Perubahan bermakna datang dari keputusan yang dipertanggungjawabkan.",
+        "text": " ".join(["Narasi orisinal berkembang melalui konflik pilihan dan konsekuensi yang berbeda."] * 8),
     }
+    monkeypatch.setattr(api, "youtube_uploads", {})
     monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: complete_contract)
 
     issue_after_contract = youtube_monetization_preflight_issue(job, clip) or ""

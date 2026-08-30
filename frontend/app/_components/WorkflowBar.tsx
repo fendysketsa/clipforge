@@ -93,6 +93,29 @@ const animateStageDescriptions: Record<string, { doing: string; output: string }
   },
 };
 
+const rebuildStageDescriptions: Record<string, { doing: string; output: string }> = {
+  source: {
+    doing: "Memvalidasi hak sumber, mengambil media kerja, dan menyiapkan ekstraksi ucapan.",
+    output: "Bahan riset lolos guard awal tanpa masuk ke hasil final.",
+  },
+  transcript: {
+    doing: "Mentranskripsi ucapan untuk riset dan menyusun konteks faktual sumber.",
+    output: "Bahan teks siap ditulis ulang; audio dan video sumber tidak diteruskan ke renderer.",
+  },
+  selection: {
+    doing: "Menulis sudut editorial baru dan memeriksa batas salinan verbatim.",
+    output: "Naskah baru lolos audit overlap dan siap menjadi storyboard.",
+  },
+  render: {
+    doing: "Membuat visual, voice-over, musik, subtitle, dan motion baru lewat Scene Cinema.",
+    output: "Video baru tersusun tanpa audio atau piksel sumber.",
+  },
+  finalize: {
+    doing: "Menyimpan hash, ledger lisensi, disclosure AI, lalu membandingkan narasi dengan output channel terbaru.",
+    output: "Original Rebuild siap untuk review fakta, variasi channel, dan YouTube Checks sebagai Private.",
+  },
+};
+
 export function WorkflowBar({
   hasSource,
   isProcessing,
@@ -104,7 +127,8 @@ export function WorkflowBar({
   const [now, setNow] = useState(() => Date.now());
   const mode = job?.request.clip_mode ?? clipMode;
   const isLongAnimate = mode === "long_animate";
-  const isLongForm = mode === "highlight_5m" || isLongAnimate;
+  const isOriginalRebuild = mode === "original_rebuild";
+  const isLongForm = mode === "highlight_5m" || isLongAnimate || isOriginalRebuild;
   const isStopped = job?.status === "failed" || job?.status === "cancelled";
   const isComplete = !isProcessing && (job ? job.status === "completed" : hasResults);
   const backendProgress = job?.progress_percent;
@@ -127,7 +151,13 @@ export function WorkflowBar({
     ? stageRanges.length - 1
     : Math.max(0, stageRanges.findIndex((stage) => progress < stage.end));
   const activeStage = stageRanges[activeStageIndex];
-  const stageDescription = (isLongAnimate ? animateStageDescriptions : stageDescriptions)[activeStage.key];
+  const stageDescription = (
+    isOriginalRebuild
+      ? rebuildStageDescriptions
+      : isLongAnimate
+        ? animateStageDescriptions
+        : stageDescriptions
+  )[activeStage.key];
   const nextStage = stageRanges[activeStageIndex + 1];
   const source = job?.request.url || job?.source_url || job?.request.source_file || sourceValue;
   const localSourceName = source && !source.startsWith("http")
@@ -146,14 +176,16 @@ export function WorkflowBar({
     if (isComplete) return isLongForm ? "Video panjang siap direview, diposting, atau diunduh." : "Semua klip pendek siap direview, diposting, atau diunduh.";
     if (isStopped) return job?.error || "Proses berhenti sebelum seluruh tahap selesai.";
     if (job?.progress_detail) return job.progress_detail;
-    if (isProcessing) return isLongAnimate
+    if (isProcessing) return isOriginalRebuild
+      ? "Menjalankan Original Rebuild: transkrip riset, rewrite anti-verbatim, media baru, dan audit hak."
+      : isLongAnimate
       ? "Menjalankan Scene Cinema: storyboard, gambar, animasi, suara, subtitle, dan audit AI."
       : isLongForm
         ? "Menjalankan Long Story Director: teaser, alur, render, dan quality gate stabilitas 5K."
         : "Menjalankan pipeline klip pendek satu per satu.";
     if (hasSource) return "Sumber siap. Atur gaya lalu mulai proses.";
     return "Masukkan link atau upload video untuk memulai.";
-  }, [hasSource, isComplete, isLongAnimate, isLongForm, isProcessing, isStopped, job?.error, job?.progress_detail]);
+  }, [hasSource, isComplete, isLongAnimate, isLongForm, isOriginalRebuild, isProcessing, isStopped, job?.error, job?.progress_detail]);
 
   useEffect(() => {
     if (!isProcessing) return;
@@ -238,7 +270,7 @@ export function WorkflowBar({
                       ? "100% selesai"
                       : current
                         ? `${stageProgress}% tahap ini`
-                        : isLongAnimate ? stage.animateHint : isLongForm ? stage.longHint : stage.shortHint}
+                        : isLongAnimate || isOriginalRebuild ? stage.animateHint : isLongForm ? stage.longHint : stage.shortHint}
                   </small>
                 </span>
               </li>

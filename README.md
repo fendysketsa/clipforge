@@ -19,6 +19,8 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Apply clean context-aware editing by default: a truthful opening hook, sparse transcript-synced camera cuts, two brief edge cues, and a thin progress line.
 - Reframe a single speaker like a restrained virtual multi-camera edit, cutting between face-safe medium and close-up angles on meaningful speech beats.
 - Record a monetization-readiness audit beside each render, require substantive editorial signals before YouTube upload, preserve verified CC BY attribution, and disclose realistic backdrop replacement.
+- Build an **Original Rebuild** from a rights-cleared source: transcribe it as untrusted research input, require an AI-authored Indonesian editorial angle, reject scripts that copy more than the configured contiguous-word limit, delete downloaded working media/audio/transcript artifacts before Scene Cinema rendering, never pass a caller-owned local source to the renderer, and record hashes plus a no-source-media audit. This is an originality and provenance guard—not a Content ID bypass or a guarantee of YPP approval.
+- Original Rebuild now requires a human-authored perspective plus source/provider license references. Every generated render records an asset-license ledger for research source, script, visuals, voice, and music. Before upload, a dynamic channel audit compares the narrative with up to 20 recent completed uploads and blocks near-duplicates at `YOUTUBE_GENERATED_CONTENT_MAX_SIMILARITY` (default `0.58`). Automated uploads are always forced Private-first; AI disclosure, Content ID Checks, factual review, attribution, and channel-wide YPP review still apply.
 - Use one **Auto FYP Viral** visual system for Shorts and long-form: cinematic clean detail is the base, while 3D depth, archival-TV treatment, reframe, and speaker split are selected from the story instead of exposed as separate presets.
 - Derive visual variation from the clip hook/POV/transcript so batches stay coherent without becoming near-identical mass-produced templates.
 - Keep the original background by default; optional background cleaning remains available for text-heavy sources.
@@ -289,7 +291,8 @@ YOUTUBE_MADE_FOR_KIDS=false
 YOUTUBE_DEFAULT_TAGS=viralindonesia,trendingindonesia,kontenpilihan
 YOUTUBE_DEFAULT_PLAYLIST=Islam
 YOUTUBE_PLAYLIST_SELECT_ATTEMPTS=3
-YOUTUBE_POLICY_REVIEW_DATE=2026-08-21
+YOUTUBE_POLICY_REVIEW_DATE=2026-08-30
+YOUTUBE_GENERATED_CONTENT_MAX_SIMILARITY=0.58
 YOUTUBE_POLICY_REVIEW_INTERVAL_DAYS=180
 YOUTUBE_TARGET_CHANNEL=ryuundyofficial
 YOUTUBE_TARGET_EMAIL=fendysketsa@gmail.com

@@ -2,7 +2,7 @@ export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancell
 export type YouTubeVisibility = "private" | "unlisted" | "public";
 export type CropMode = "center" | "person" | "streamer";
 export type VideoQuality = "standard" | "high" | "max";
-export type ClipMode = "short" | "highlight_5m" | "long_animate";
+export type ClipMode = "short" | "highlight_5m" | "long_animate" | "original_rebuild";
 export type VisualMode = "auto_fyp" | "cinematic" | "speaker_split" | "animated_3d" | "retro_tv";
 export type BackgroundMode = "auto_clean" | "keep" | "mosque";
 export type CamCorner = "auto" | "br" | "bl" | "tr" | "tl";
@@ -97,6 +97,9 @@ export type ClipJob = {
     url: string;
     source_file: string;
     script_text: string;
+    creator_perspective: string;
+    source_rights_evidence: string;
+    provider_rights_evidence: string;
     top: number | null;
     min_duration: number;
     max_duration: number;
@@ -135,6 +138,9 @@ export type CreateClipJobInput = {
   url?: string;
   source_file?: string;
   script_text?: string;
+  creator_perspective?: string;
+  source_rights_evidence?: string;
+  provider_rights_evidence?: string;
   top?: number;
   min_duration: number;
   max_duration: number;
@@ -361,6 +367,7 @@ export type ViralContentSource = {
   license?: string | null;
   rights_verified: boolean;
   license_metadata_verified?: boolean;
+  source_preflight?: "passed" | "blocked";
   content_id_risk?: "review" | "high";
   content_id_risk_reasons?: string[];
   score: number;

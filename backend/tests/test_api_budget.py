@@ -197,6 +197,60 @@ def test_long_animate_normalization_and_command_use_script_file(tmp_path):
     assert command[command.index("--script-file") + 1] == str(script_path)
 
 
+def test_original_rebuild_normalization_keeps_source_and_enforces_safe_flags(monkeypatch, tmp_path):
+    import api
+
+    monkeypatch.setattr(api, "fetch_video_duration", lambda _url: 600.0)
+    request = normalize_job_request(
+        ClipJobRequest(
+            url="https://www.youtube.com/watch?v=safe-source",
+            clip_mode="original_rebuild",
+            confirm_source_rights=True,
+            confirm_long_animate_rights=True,
+            creator_perspective="Saya menilai perubahan kecil harus dibuktikan dengan evaluasi yang konsisten setiap minggu.",
+            source_rights_evidence="CC source URL checked 2026-08-30",
+            provider_rights_evidence="Provider commercial terms checked 2026-08-30",
+            ai_enabled=True,
+            ai_base_url="http://localhost:11434/v1",
+            ai_model="test-model",
+        )
+    )
+
+    command = build_clipper_command(request, tmp_path)
+
+    assert request.top == 1
+    assert request.burn_subtitles is True
+    assert request.enhanced_edit is True
+    assert command[command.index("--clip-mode") + 1] == "original_rebuild"
+    assert command[1] == "clipper.py"
+    assert request.url in command
+    assert "--script-file" not in command
+    assert "--require-creative-commons" in command
+    assert "--confirm-source-rights" in command
+    assert "--confirm-provider-rights" in command
+    assert command[command.index("--creator-perspective") + 1] == request.creator_perspective
+    assert command[command.index("--source-rights-evidence") + 1] == request.source_rights_evidence
+    assert command[command.index("--provider-rights-evidence") + 1] == request.provider_rights_evidence
+
+
+def test_create_original_rebuild_requires_human_perspective_before_source_access():
+    import api
+    import pytest
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException, match="perspektif|sudut pandang"):
+        api.create_job(
+            ClipJobRequest(
+                source_file="not-opened.mp4",
+                clip_mode="original_rebuild",
+                confirm_source_rights=True,
+                confirm_long_animate_rights=True,
+                source_rights_evidence="Written permission checked today",
+                provider_rights_evidence="Commercial provider terms checked today",
+            )
+        )
+
+
 def test_normalize_keeps_under_budget_target(monkeypatch):
     import api
 
@@ -562,8 +616,71 @@ def test_api_search_adapts_soft_filters_but_keeps_cc_language_and_niche(monkeypa
     assert len(selected) == 1
     assert selected[0]["rights_verified"] is False
     assert selected[0]["license_metadata_verified"] is True
+    assert selected[0]["source_preflight"] == "passed"
     assert selected[0]["filter_match"] == "adaptive"
     assert len(selected[0]["relaxed_filters"]) == 3
+
+
+def test_api_search_skips_rights_risk_and_continues_to_safe_replacement(monkeypatch):
+    import api
+
+    monkeypatch.setenv("VIRAL_CC_ADAPTIVE_FILTERS", "true")
+    published_at = datetime.now(timezone.utc).isoformat()
+
+    def video_item(video_id, title, channel_title):
+        return {
+            "id": video_id,
+            "snippet": {
+                "title": title,
+                "channelTitle": channel_title,
+                "description": "Kajian Islam Indonesia viral terbaru untuk umat dan kehidupan.",
+                "publishedAt": published_at,
+                "defaultAudioLanguage": "id",
+                "liveBroadcastContent": "none",
+            },
+            "statistics": {"viewCount": "5000", "likeCount": "250"},
+            "contentDetails": {"duration": "PT10M", "definition": "hd"},
+            "status": {"license": "creativeCommon", "privacyStatus": "public"},
+        }
+
+    def fake_api(path, _params):
+        if path == "search":
+            return {
+                "items": [
+                    {"id": {"videoId": "risky-source"}},
+                    {"id": {"videoId": "safe-source"}},
+                ]
+            }
+        return {
+            "items": [
+                video_item(
+                    "risky-source",
+                    "Full Episode Kajian Islam Viral Indonesia",
+                    "Contoh TV Reupload",
+                ),
+                video_item(
+                    "safe-source",
+                    "Kajian Islam Viral Indonesia Terbaru",
+                    "Kajian Mandiri",
+                ),
+            ]
+        }
+
+    monkeypatch.setattr(api, "youtube_data_api_get", fake_api)
+    request = AutoViralRequest(
+        niche="islamic_current_viral",
+        video_count=1,
+        min_views=1000,
+    )
+
+    selected = search_youtube_data_api_viral_sources(request, "missing-run", stop_after=1)
+
+    assert [item["url"] for item in selected] == [
+        "https://www.youtube.com/watch?v=safe-source"
+    ]
+    assert selected[0]["source_preflight"] == "passed"
+    assert selected[0]["content_id_risk"] == "review"
+    assert selected[0]["content_id_risk_reasons"] == []
 
 
 def test_processed_job_sources_are_always_excluded(monkeypatch):
@@ -812,7 +929,7 @@ def test_source_rights_guard_rejects_claimed_tv_show_reupload_even_when_cc():
     assert "uploader" in (viral_source_rejection_reason(source) or "")
 
 
-def test_discovery_keeps_rights_risk_visible_but_clipping_gate_rejects_it():
+def test_discovery_rejects_rights_risk_before_source_can_be_selected():
     source = {
         "license": "Creative Commons Attribution license",
         "availability": "public",
@@ -820,8 +937,11 @@ def test_discovery_keeps_rights_risk_visible_but_clipping_gate_rejects_it():
         "uploader": "Contoh TV Reupload",
     }
 
-    assert viral_source_discovery_rejection_reason(source) is None
-    assert viral_source_rejection_reason(source)
+    discovery_reason = viral_source_discovery_rejection_reason(source)
+
+    assert discovery_reason
+    assert "uploader" in discovery_reason
+    assert viral_source_rejection_reason(source) == discovery_reason
 
 
 def test_upload_staging_drops_source_metadata():
@@ -875,6 +995,20 @@ def test_user_error_from_logs_prefers_cli_message():
     ]
 
     assert user_error_from_logs(logs) == "Koneksi server ke YouTube gagal saat membaca metadata."
+
+
+def test_user_error_from_logs_reassembles_rich_wrapped_actionable_message():
+    logs = [
+        "Fetching metadata...",
+        "USER_ERROR: Sumber ditolak sebelum download karena berisiko tinggi terkena",
+        "Content ID: sumber terindikasi milik broadcaster/media/studio.",
+        "Pilih Original Rebuild lalu isi perspektif dan referensi izin tertulis.",
+    ]
+
+    message = user_error_from_logs(logs) or ""
+
+    assert "Content ID" in message
+    assert "Original Rebuild" in message
 
 
 def test_user_error_from_logs_detects_network_error():

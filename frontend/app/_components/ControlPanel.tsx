@@ -106,6 +106,12 @@ type ControlPanelProps = {
   sourceMode: SourceMode;
   scriptText: string;
   onScriptTextChange: (value: string) => void;
+  creatorPerspective: string;
+  onCreatorPerspectiveChange: (value: string) => void;
+  sourceRightsEvidence: string;
+  onSourceRightsEvidenceChange: (value: string) => void;
+  providerRightsEvidence: string;
+  onProviderRightsEvidenceChange: (value: string) => void;
   confirmLongAnimateRights: boolean;
   onConfirmLongAnimateRightsChange: (value: boolean) => void;
   uploadFileName: string;
@@ -200,6 +206,12 @@ export function ControlPanel({
   sourceMode,
   scriptText,
   onScriptTextChange,
+  creatorPerspective,
+  onCreatorPerspectiveChange,
+  sourceRightsEvidence,
+  onSourceRightsEvidenceChange,
+  providerRightsEvidence,
+  onProviderRightsEvidenceChange,
   confirmLongAnimateRights,
   onConfirmLongAnimateRightsChange,
   uploadFileName,
@@ -277,6 +289,8 @@ export function ControlPanel({
   url,
 }: ControlPanelProps) {
   const isLongAnimate = clipMode === "long_animate";
+  const isOriginalRebuild = clipMode === "original_rebuild";
+  const isGeneratedVideo = isLongAnimate || isOriginalRebuild;
   const hasSource = isLongAnimate
     ? scriptText.trim().length >= 120 && scriptText.trim().split(/\s+/).length >= 30
     : sourceMode === "url"
@@ -296,7 +310,11 @@ export function ControlPanel({
     || invalidCheckedSource
     || duplicateApprovalRequired
     || (!isLongAnimate && sourceMode === "url" && !confirmSourceRights)
-    || (isLongAnimate && !confirmLongAnimateRights);
+    || (isOriginalRebuild && !confirmSourceRights)
+    || (isGeneratedVideo && !confirmLongAnimateRights)
+    || (isGeneratedVideo && providerRightsEvidence.trim().split(/\s+/).filter(Boolean).length < 3)
+    || (isOriginalRebuild && creatorPerspective.trim().split(/\s+/).filter(Boolean).length < 8)
+    || (isOriginalRebuild && sourceRightsEvidence.trim().split(/\s+/).filter(Boolean).length < 3);
   const isProcessing = isSubmitting || isBusy;
   const localNoKeyBaseUrls = new Set<string>(
     LOCAL_LLM_PRESETS.filter((preset) => preset.label !== "Custom").map((preset) => preset.baseUrl),
@@ -310,8 +328,8 @@ export function ControlPanel({
           <Scissors size={18} />
         </span>
         <div className="panelTitleCopy">
-          <span className="panelEyebrow">{isLongAnimate ? "Scene Cinema" : "Clip builder"}</span>
-          <h2>{isLongAnimate ? "Buat Long Animate" : "Buat Klip Baru"}</h2>
+          <span className="panelEyebrow">{isGeneratedVideo ? "Original Scene Cinema" : "Clip builder"}</span>
+          <h2>{isLongAnimate ? "Buat Long Animate" : isOriginalRebuild ? "Bangun Ulang Orisinal" : "Buat Klip Baru"}</h2>
         </div>
       </div>
 
@@ -319,8 +337,8 @@ export function ControlPanel({
         <div className="controlSectionHeading">
           <span>01</span>
           <div>
-            <h3>{isLongAnimate ? "Tulis naskah video" : "Pilih sumber video"}</h3>
-            <p>{isLongAnimate ? "Naskah menjadi storyboard, visual, animasi, narasi, dan video utuh." : "Tempel link YouTube atau upload file dari perangkat."}</p>
+            <h3>{isLongAnimate ? "Tulis naskah video" : isOriginalRebuild ? "Pilih bahan riset yang sah" : "Pilih sumber video"}</h3>
+            <p>{isLongAnimate ? "Naskah menjadi storyboard, visual, animasi, narasi, dan video utuh." : isOriginalRebuild ? "Ucapan ditranskripsi untuk riset, lalu media sumber dikeluarkan dari renderer sebelum video baru dibuat." : "Tempel link YouTube atau upload file dari perangkat."}</p>
           </div>
         </div>
 
@@ -400,6 +418,16 @@ TEKS LAYAR: Data Terkirim`}</pre>
                 Saya memiliki hak atas naskah ini dan memastikan provider gambar/suara yang dikonfigurasi mengizinkan penggunaan komersial di YouTube.
               </span>
             </label>
+            <label className="field wide">
+              <span>Referensi bukti izin provider</span>
+              <textarea
+                value={providerRightsEvidence}
+                onChange={(event) => onProviderRightsEvidenceChange(event.target.value.slice(0, 2000))}
+                placeholder="Contoh: Provider/model ..., Terms komersial https://..., diperiksa 30-08-2026. Musik dibuat prosedural tanpa rekaman pihak ketiga."
+                rows={3}
+              />
+              <p className="field-help">Disimpan dalam ledger lisensi output. Jangan masukkan API key atau data pembayaran.</p>
+            </label>
             <div className="modeNotice">
               <strong>AI disclosure otomatis · upload awal Private</strong>
               <span>Scene mengikuti gaya visual dan isi tiap adegan; suara sintetis serta musik prosedural ditandai untuk disclosure. Figur publik, logo, karakter berhak cipta, dan klaim baru dilarang oleh prompt produksi.</span>
@@ -438,6 +466,9 @@ TEKS LAYAR: Data Terkirim`}</pre>
                     ) : null}
                     {sourceHistory.has_highlight_5m || sourceHistory.attempted_modes.includes("highlight_5m") ? (
                       <span>Long Story 5–10 menit</span>
+                    ) : null}
+                    {sourceHistory.attempted_modes.includes("original_rebuild") ? (
+                      <span>Original Rebuild</span>
                     ) : null}
                     {sourceHistory.archived && !sourceHistory.attempted_modes.length ? <span>Arsip lama</span> : null}
                   </div>
@@ -498,21 +529,25 @@ TEKS LAYAR: Data Terkirim`}</pre>
           </label>
         )}
 
-        {!isLongAnimate && sourceMode === "url" ? (
+        {!isLongAnimate && (sourceMode === "url" || isOriginalRebuild) ? (
           <div className="aiBlock compactBlock">
-            <label className="aiToggle">
-              <span className="aiToggleLabel">
-                <ShieldCheck size={16} />
-                Wajib Creative Commons
-              </span>
-              <input
-                type="checkbox"
-                checked={requireCreativeCommons || sourceMode === "url"}
-                disabled
-                onChange={(event) => onRequireCreativeCommonsChange(event.target.checked)}
-              />
-            </label>
-            <p className="field-help">Dikunci aktif: video non-CC akan dibatalkan sebelum download. CC hanya metadata lisensi, bukan jaminan uploader memegang hak rekaman.</p>
+            {sourceMode === "url" ? (
+              <>
+                <label className="aiToggle">
+                  <span className="aiToggleLabel">
+                    <ShieldCheck size={16} />
+                    Wajib Creative Commons
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={requireCreativeCommons || sourceMode === "url"}
+                    disabled
+                    onChange={(event) => onRequireCreativeCommonsChange(event.target.checked)}
+                  />
+                </label>
+                <p className="field-help">Dikunci aktif: video non-CC akan dibatalkan sebelum download. CC hanya metadata lisensi, bukan jaminan uploader memegang hak rekaman.</p>
+              </>
+            ) : null}
             <label className="sourceHistoryApproval">
               <input
                 type="checkbox"
@@ -520,9 +555,53 @@ TEKS LAYAR: Data Terkirim`}</pre>
                 onChange={(event) => onConfirmSourceRightsChange(event.target.checked)}
               />
               <span>
-                Saya memiliki rekaman ini atau izin komersial yang dapat dibuktikan untuk memakai ulang seluruh audio dan visualnya. Saya paham atribusi, crop, subtitle, dan durasi pendek tidak otomatis mencegah Content ID.
+                {isOriginalRebuild
+                  ? "Saya memiliki hak atau izin untuk memproses bahan ini sebagai riset. Saya paham penulisan ulang tidak menghapus kewajiban izin atas sumber."
+                  : "Saya memiliki rekaman ini atau izin komersial yang dapat dibuktikan untuk memakai ulang seluruh audio dan visualnya. Saya paham atribusi, crop, subtitle, dan durasi pendek tidak otomatis mencegah Content ID."}
               </span>
             </label>
+            {isOriginalRebuild ? (
+              <>
+                <label className="field wide">
+                  <span>Perspektif atau analisis Anda · minimal 8 kata</span>
+                  <textarea
+                    value={creatorPerspective}
+                    onChange={(event) => onCreatorPerspectiveChange(event.target.value.slice(0, 4000))}
+                    placeholder="Tuliskan tesis, pengalaman, kritik, atau pelajaran Anda sendiri. Ini menjadi kontribusi manusia yang wajib, bukan sekadar prompt 'buat viral'."
+                    rows={4}
+                  />
+                </label>
+                <label className="field wide">
+                  <span>Referensi bukti hak sumber</span>
+                  <textarea
+                    value={sourceRightsEvidence}
+                    onChange={(event) => onSourceRightsEvidenceChange(event.target.value.slice(0, 2000))}
+                    placeholder="Contoh: URL lisensi/izin tertulis/nama file bukti kepemilikan dan tanggal verifikasi."
+                    rows={3}
+                  />
+                </label>
+                <label className="field wide">
+                  <span>Referensi bukti izin provider AI, gambar, suara, dan musik</span>
+                  <textarea
+                    value={providerRightsEvidence}
+                    onChange={(event) => onProviderRightsEvidenceChange(event.target.value.slice(0, 2000))}
+                    placeholder="Contoh: Provider/model ..., URL terms komersial ..., diperiksa tanggal .... Jangan masukkan API key."
+                    rows={3}
+                  />
+                </label>
+                <label className="sourceHistoryApproval longAnimateRights">
+                  <input
+                    type="checkbox"
+                    checked={confirmLongAnimateRights}
+                    onChange={(event) => onConfirmLongAnimateRightsChange(event.target.checked)}
+                  />
+                  <span>
+                    Saya memastikan provider AI, gambar, suara, dan musik mengizinkan penggunaan komersial serta akan mereview fakta dan setiap scene sebelum publikasi.
+                  </span>
+                </label>
+                <p className="field-help">Referensi tersebut disimpan di asset-license ledger output; Content ID dan review channel tetap wajib.</p>
+              </>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -538,7 +617,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
 
         <div className="segmentedField">
         <span>Model Clip</span>
-        <div className="segmentedControl segmentedControl--three" role="group" aria-label="Model produksi">
+        <div className="segmentedControl segmentedControl--four" role="group" aria-label="Model produksi">
           <button
             className={clipMode === "short" ? "active" : ""}
             type="button"
@@ -554,6 +633,13 @@ TEKS LAYAR: Data Terkirim`}</pre>
             Long Story 5–10 Menit
           </button>
           <button
+            className={clipMode === "original_rebuild" ? "active" : ""}
+            type="button"
+            onClick={() => onClipModeChange("original_rebuild")}
+          >
+            Original Rebuild
+          </button>
+          <button
             className={clipMode === "long_animate" ? "active" : ""}
             type="button"
             onClick={() => onClipModeChange("long_animate")}
@@ -564,13 +650,15 @@ TEKS LAYAR: Data Terkirim`}</pre>
         <p className="field-help">
           {clipMode === "long_animate"
             ? "Scene Cinema mengubah naskah menjadi storyboard, art bible, visual per scene, gerak kamera, voice-over, subtitle, musik, thumbnail, dan satu video 16:9 utuh."
+            : clipMode === "original_rebuild"
+            ? "JARVIS memakai sumber—termasuk broadcaster berisiko—hanya sebagai riset bila hak/izin terdokumentasi. Naskah ditulis dari perspektif Anda; audio dan piksel sumber dibuang sebelum visual, narasi, dan musik baru dibuat."
             : clipMode === "highlight_5m"
             ? "Codex Long Story Director membuat teaser singkat tanpa duplikasi, lalu merangkai konteks, perkembangan, penjelasan, dan kesimpulan secara kronologis dalam 16:9—tanpa filler. Deskripsi menambahkan ajakan Viralkan yang wajar untuk 7 hari pertama; kelayakan tetap ditentukan YouTube."
             : "Clip vertikal adaptif 25–180 detik: Codex memilih durasi terpendek yang cukup untuk hook, konteks, perkembangan, dan payoff—bukan memanjangkan isi dengan filler. Frame cover, caption safe-area, CTA Subscribe kontekstual, dan loop alami tetap aktif."}
         </p>
       </div>
 
-      {clipMode !== "long_animate" ? <div className="gridFields">
+      {!isGeneratedVideo ? <div className="gridFields">
         <label className="field">
           <span>{clipMode === "short" ? "Durasi Minimum" : "Durasi Minimum per Bagian"}</span>
           <input
@@ -639,9 +727,9 @@ TEKS LAYAR: Data Terkirim`}</pre>
       ) : (
         <div className="modeNotice longAnimateEstimate">
           <strong>
-            Target tepat 20 detik · 16:9 Full HD
+            {isOriginalRebuild ? "Riset → naskah baru → media baru · 16:9 Full HD" : "Target tepat 20 detik · 16:9 Full HD"}
           </strong>
-          <span>TTS diukur lebih dulu, lalu 3–7 scene dapat dipecah menjadi beberapa shot. Narasi yang terlalu panjang akan dipercepat agar timeline tetap tepat 20 detik.</span>
+          <span>{isOriginalRebuild ? "Tidak ada audio, suara, atau piksel sumber di output. Hash transkrip, batas anti-verbatim, dan kewajiban review fakta dicatat dalam audit." : "TTS diukur lebih dulu, lalu 3–7 scene dapat dipecah menjadi beberapa shot. Narasi yang terlalu panjang akan dipercepat agar timeline tetap tepat 20 detik."}</span>
         </div>
       )}
 
@@ -1076,8 +1164,8 @@ TEKS LAYAR: Data Terkirim`}</pre>
           />
         </label>
         <p className="field-help">
-          {clipMode === "highlight_5m" || clipMode === "long_animate"
-            ? "Selesai render, video landscape dan thumbnail otomatis diupload sebagai Private. Untuk Long Animate, disclosure AI ikut diaktifkan; publikasikan hanya setelah hak, Checks, judul, thumbnail, dan isi scene direview."
+          {clipMode === "highlight_5m" || clipMode === "long_animate" || clipMode === "original_rebuild"
+            ? "Selesai render, video landscape dan thumbnail otomatis diupload sebagai Private. Untuk produksi generatif, disclosure AI ikut diaktifkan; publikasikan hanya setelah hak, fakta, Checks, judul, thumbnail, dan isi scene direview."
             : "Selesai clipping langsung antrekan 3 klip terbaik sebagai Private. Kebijakan nol-klaim aktif: Content ID apa pun membatalkan aksi Simpan/Publikasikan, termasuk klaim yang saat ini disebut tidak berdampak."}
         </p>
         </div>
@@ -1191,7 +1279,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
           </div>
           <div className="viralFilterPolicy">
             <ShieldCheck size={14} />
-            <span>Metadata Creative Commons dan Bahasa Indonesia wajib. Sinyal akun fan/reupload, TV, film, musik, broadcaster, dan risiko Content ID tetap ditampilkan sebagai peringatan; gate ketat baru membatalkan sumber saat clipping dimulai.</span>
+            <span>Safe-first aktif: metadata Creative Commons dan Bahasa Indonesia wajib. Akun fan/reupload, TV, film, musik, broadcaster, serta sinyal risiko Content ID dilewati saat pencarian. Setiap pilihan divalidasi ulang sebelum download.</span>
           </div>
 
           <button
@@ -1229,6 +1317,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
                       {source.search_provider === "youtube_data_api" ? <span>Google API</span> : null}
                       {source.search_provider === "yt_dlp_fallback" ? <span>Fallback CC</span> : null}
                       {source.filter_match === "adaptive" ? <span>Filter diperluas</span> : null}
+                      {source.source_preflight === "passed" ? <span>Guard awal lolos</span> : null}
                       <span>kecocokan {Math.round(source.niche_score)}/100</span>
                     </div>
                     {source.relaxed_filters?.length ? (
@@ -1272,7 +1361,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
           ) : null}
 
           <p className="field-help">
-            {autoViralMessage || "Google YouTube API mencari metadata CC secara luas. Peringatan risiko tidak menyembunyikan hasil; clipping dan upload tetap terkunci ketika hak audio/visual atau pemeriksaan Content ID tidak aman."}
+            {autoViralMessage || "Google YouTube API mencari metadata CC secara luas dan otomatis mengganti kandidat yang terkena sinyal risiko. Guard awal mengurangi kegagalan sia-sia, tetapi bukan bukti kepemilikan atau jaminan bebas klaim di masa depan."}
           </p>
           </div>
         </details>

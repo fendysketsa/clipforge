@@ -78,6 +78,7 @@ export default function SourceHistoryPage() {
   const counts = useMemo(() => ({
     short: data.items.filter((item) => item.clip_mode === "short").length,
     highlight: data.items.filter((item) => item.clip_mode === "highlight_5m").length,
+    rebuild: data.items.filter((item) => item.clip_mode === "original_rebuild").length,
   }), [data.items]);
 
   const filteredItems = useMemo(() => {
@@ -135,6 +136,10 @@ export default function SourceHistoryPage() {
           <span><Film size={18} /> Highlight / Resume</span>
           <strong>{counts.highlight}</strong>
         </article>
+        <article>
+          <span><Sparkles size={18} /> Original Rebuild</span>
+          <strong>{counts.rebuild}</strong>
+        </article>
       </section>
 
       <section className="sourceLogPanel">
@@ -156,6 +161,9 @@ export default function SourceHistoryPage() {
             </button>
             <button className={mode === "highlight_5m" ? "active" : ""} type="button" onClick={() => setMode("highlight_5m")}>
               Highlight <span>{counts.highlight}</span>
+            </button>
+            <button className={mode === "original_rebuild" ? "active" : ""} type="button" onClick={() => setMode("original_rebuild")}>
+              Rebuild <span>{counts.rebuild}</span>
             </button>
           </div>
         </div>
@@ -182,9 +190,10 @@ export default function SourceHistoryPage() {
 
 function SourceLogCard({ item }: { item: SourceUsageLogEntry }) {
   const isHighlight = item.clip_mode === "highlight_5m";
+  const isRebuild = item.clip_mode === "original_rebuild";
   return (
     <article className="sourceLogCard">
-      <div className={`sourceLogModeIcon ${isHighlight ? "isHighlight" : "isShort"}`}>
+      <div className={`sourceLogModeIcon ${isHighlight || isRebuild ? "isHighlight" : "isShort"}`}>
         {isHighlight ? <Film size={20} /> : <Sparkles size={20} />}
       </div>
       <div className="sourceLogCardMain">
@@ -194,8 +203,8 @@ function SourceLogCard({ item }: { item: SourceUsageLogEntry }) {
             <h3>{item.source_title || `Video YouTube ${sourceVideoId(item.source_url)}`}</h3>
             <p>{item.source_uploader || "Channel tidak tercatat"}</p>
           </div>
-          <span className={`sourceLogModeBadge ${isHighlight ? "isHighlight" : "isShort"}`}>
-            {isHighlight ? "Highlight / Resume 5–10 menit" : "Clip pendek"}
+          <span className={`sourceLogModeBadge ${isHighlight || isRebuild ? "isHighlight" : "isShort"}`}>
+            {isHighlight ? "Highlight / Resume 5–10 menit" : isRebuild ? "Original Rebuild" : "Clip pendek"}
           </span>
         </div>
 

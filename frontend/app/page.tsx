@@ -100,6 +100,9 @@ export default function HomePage() {
   const [uploadToken, setUploadToken] = useState("");
   const [uploadFileName, setUploadFileName] = useState("");
   const [scriptText, setScriptText] = useState("");
+  const [creatorPerspective, setCreatorPerspective] = useState("");
+  const [sourceRightsEvidence, setSourceRightsEvidence] = useState("");
+  const [providerRightsEvidence, setProviderRightsEvidence] = useState("");
   const [confirmLongAnimateRights, setConfirmLongAnimateRights] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [minDuration, setMinDuration] = useState(DEFAULT_MIN_DURATION);
@@ -203,12 +206,14 @@ export default function HomePage() {
       setMaxDuration(90);
       setCompilationTargetSeconds(COMPILATION_TARGET_SECONDS);
       setBackgroundMode("keep");
-    } else if (value === "long_animate") {
+    } else if (value === "long_animate" || value === "original_rebuild") {
       setMinDuration(DEFAULT_MIN_DURATION);
       setMaxDuration(DEFAULT_MAX_DURATION);
       setCompilationTargetSeconds(COMPILATION_TARGET_SECONDS);
-      setSourceHistory(null);
-      setAllowReprocessSource(false);
+      if (value === "long_animate") {
+        setSourceHistory(null);
+        setAllowReprocessSource(false);
+      }
     } else {
       setMinDuration(DEFAULT_MIN_DURATION);
       setMaxDuration(DEFAULT_MAX_DURATION);
@@ -304,6 +309,9 @@ export default function HomePage() {
         setActiveJob(restoredJob);
         setJob(restoredJob);
         setClipMode(restoredJob.request.clip_mode);
+        setCreatorPerspective(restoredJob.request.creator_perspective || "");
+        setSourceRightsEvidence(restoredJob.request.source_rights_evidence || "");
+        setProviderRightsEvidence(restoredJob.request.provider_rights_evidence || "");
         setCropMode(restoredJob.request.crop_mode);
         if (restoredJob.request.clip_mode === "long_animate") {
           setScriptText(restoredJob.request.script_text || "");
@@ -312,6 +320,9 @@ export default function HomePage() {
           setSourceMode("url");
           setUrl(restoredJob.request.url);
           setConfirmSourceRights(Boolean(restoredJob.request.confirm_source_rights));
+          if (restoredJob.request.clip_mode === "original_rebuild") {
+            setConfirmLongAnimateRights(Boolean(restoredJob.request.confirm_long_animate_rights));
+          }
         }
       })
       .catch(() => {
@@ -627,6 +638,8 @@ export default function HomePage() {
 
   const handleStartJob = useCallback(async () => {
     const trimmedUrl = url.trim();
+    const isOriginalRebuild = clipMode === "original_rebuild";
+    const isGeneratedVideo = clipMode === "long_animate" || isOriginalRebuild;
     const effectiveMaxDuration = clipMode === "short" ? Math.min(DEFAULT_MAX_DURATION, maxDuration) : maxDuration;
     setError("");
 
@@ -638,8 +651,20 @@ export default function HomePage() {
       setError("Naskah Long Animate minimal 120 karakter dan 30 kata agar dapat dibuat menjadi tiga scene bermakna.");
       return;
     }
-    if (clipMode === "long_animate" && !confirmLongAnimateRights) {
-      setError("Konfirmasikan hak naskah dan izin komersial provider media sebelum memulai Long Animate.");
+    if (isGeneratedVideo && !confirmLongAnimateRights) {
+      setError("Konfirmasikan izin komersial provider AI, gambar, suara, dan musik sebelum memulai produksi.");
+      return;
+    }
+    if (isGeneratedVideo && providerRightsEvidence.trim().split(/\s+/).length < 3) {
+      setError("Isi referensi bukti izin komersial provider AI, gambar, suara, dan musik.");
+      return;
+    }
+    if (isOriginalRebuild && creatorPerspective.trim().split(/\s+/).length < 8) {
+      setError("Tulis minimal 8 kata sudut pandang atau analisis Anda sendiri untuk Original Rebuild.");
+      return;
+    }
+    if (isOriginalRebuild && sourceRightsEvidence.trim().split(/\s+/).length < 3) {
+      setError("Isi referensi bukti hak sumber, seperti URL lisensi, izin tertulis, atau catatan kepemilikan.");
       return;
     }
     if (clipMode !== "long_animate" && sourceMode === "url" && !trimmedUrl) {
@@ -648,7 +673,9 @@ export default function HomePage() {
     }
     if (clipMode !== "long_animate" && sourceMode === "url" && !confirmSourceRights) {
       setError(
-        "Konfirmasikan bahwa Anda memiliki hak/izin komersial atas audio dan visual sumber. Label Creative Commons saja tidak cukup.",
+        isOriginalRebuild
+          ? "Konfirmasikan bahwa Anda berhak memproses sumber sebagai bahan riset. Label Creative Commons saja tidak cukup."
+          : "Konfirmasikan bahwa Anda memiliki hak/izin komersial atas audio dan visual sumber. Label Creative Commons saja tidak cukup.",
       );
       return;
     }
@@ -656,7 +683,11 @@ export default function HomePage() {
       setError("Unggah file video terlebih dahulu.");
       return;
     }
-    if (clipMode !== "long_animate" && effectiveMaxDuration <= minDuration) {
+    if (isOriginalRebuild && !confirmSourceRights) {
+      setError("Konfirmasikan bahwa Anda berhak memproses sumber sebagai bahan riset Original Rebuild.");
+      return;
+    }
+    if (!isGeneratedVideo && effectiveMaxDuration <= minDuration) {
       setError(
         clipMode === "short"
           ? `Durasi minimum Short harus di bawah ${DEFAULT_MAX_DURATION} detik.`
@@ -673,6 +704,9 @@ export default function HomePage() {
           url: clipMode !== "long_animate" && sourceMode === "url" ? trimmedUrl : "",
           source_file: clipMode !== "long_animate" && sourceMode === "upload" ? uploadToken : "",
           script_text: clipMode === "long_animate" ? scriptText.trim() : "",
+          creator_perspective: isOriginalRebuild ? creatorPerspective.trim() : "",
+          source_rights_evidence: isOriginalRebuild ? sourceRightsEvidence.trim() : "",
+          provider_rights_evidence: isGeneratedVideo ? providerRightsEvidence.trim() : "",
           top: clipMode === "short" && targetClips > 0 ? targetClips : undefined,
           min_duration: minDuration,
           max_duration: effectiveMaxDuration,
@@ -702,8 +736,10 @@ export default function HomePage() {
             .map((tag) => tag.trim())
             .filter(Boolean),
           require_creative_commons: requireCreativeCommons,
-          confirm_source_rights: sourceMode === "url" && confirmSourceRights,
-          confirm_long_animate_rights: clipMode === "long_animate" && confirmLongAnimateRights,
+          confirm_source_rights: isOriginalRebuild
+            ? confirmSourceRights
+            : sourceMode === "url" && confirmSourceRights,
+          confirm_long_animate_rights: isGeneratedVideo && confirmLongAnimateRights,
           auto_upload_youtube: autoUploadYoutube,
           allow_reprocess_source: sourceMode === "url" && allowReprocessSource,
           ai_enabled: aiEnabled,
@@ -712,9 +748,21 @@ export default function HomePage() {
           ai_api_key: aiApiKey.trim(),
         }),
         {
-          loading: clipMode === "long_animate" ? "Mempersiapkan produksi Long Animate..." : "Mempersiapkan proses pemotongan...",
-          success: clipMode === "long_animate" ? "Produksi Long Animate berhasil dimulai!" : "Proses pemotongan berhasil dimulai!",
-          error: clipMode === "long_animate" ? "Gagal memulai Long Animate" : "Gagal memulai proses pemotongan",
+          loading: clipMode === "long_animate"
+            ? "Mempersiapkan produksi Long Animate..."
+            : isOriginalRebuild
+              ? "Mempersiapkan Original Rebuild safe-first..."
+              : "Mempersiapkan proses pemotongan...",
+          success: clipMode === "long_animate"
+            ? "Produksi Long Animate berhasil dimulai!"
+            : isOriginalRebuild
+              ? "Original Rebuild berhasil dimulai!"
+              : "Proses pemotongan berhasil dimulai!",
+          error: clipMode === "long_animate"
+            ? "Gagal memulai Long Animate"
+            : isOriginalRebuild
+              ? "Gagal memulai Original Rebuild"
+              : "Gagal memulai proses pemotongan",
         },
       );
 
@@ -746,6 +794,7 @@ export default function HomePage() {
     captionPosition,
     clipMode,
     compilationTargetSeconds,
+    creatorPerspective,
     confirmSourceRights,
     cropMode,
     loadJobs,
@@ -753,7 +802,9 @@ export default function HomePage() {
     minDuration,
     requireCreativeCommons,
     requiredHashtags,
+    providerRightsEvidence,
     sourceMode,
+    sourceRightsEvidence,
     scriptText,
     confirmLongAnimateRights,
     targetClips,
@@ -1216,24 +1267,28 @@ export default function HomePage() {
         }),
         {
           loading: "Memfilter konten lewat Google YouTube API...",
-          success: (items) => items.length
-            ? `${items.length} kandidat dari Google API siap dalam ${((items[0]?.search_elapsed_ms ?? 0) / 1000).toFixed(1)} detik.`
-            : "Belum ada kandidat Indonesia yang memenuhi syarat.",
+          success: (items) => {
+            const safeItems = items.filter((source) => source.content_id_risk !== "high");
+            return safeItems.length
+              ? `${safeItems.length} kandidat lolos guard awal dalam ${((safeItems[0]?.search_elapsed_ms ?? 0) / 1000).toFixed(1)} detik.`
+              : "Belum ada kandidat Indonesia yang lolos guard otomatis.";
+          },
           error: (searchError) => searchError instanceof Error ? searchError.message : "Pencarian gagal",
         },
       );
-      setAutoContentSources(sources);
-      setSelectedAutoContentUrls(sources.map((source) => source.url));
-      const adaptiveCount = sources.filter((source) => source.filter_match === "adaptive").length;
-      const riskCount = sources.filter((source) => source.content_id_risk === "high").length;
+      // Defense in depth for stale/cached responses from an older backend: a
+      // high-risk candidate is never selectable even though the current API
+      // already removes it during discovery.
+      const safeSources = sources.filter((source) => source.content_id_risk !== "high");
+      setAutoContentSources(safeSources);
+      setSelectedAutoContentUrls(safeSources.map((source) => source.url));
+      const adaptiveCount = safeSources.filter((source) => source.filter_match === "adaptive").length;
       setAutoContentMessage(
-        sources.length
-          ? riskCount
-            ? `${riskCount} kandidat punya sinyal risiko Content ID tetapi tetap ditampilkan. Gate ketat baru membatalkannya saat clipping dimulai, sebelum download.`
-            : adaptiveCount
+        safeSources.length
+          ? adaptiveCount
             ? `${adaptiveCount} kandidat memakai perluasan durasi/HD/tayangan; metadata CC, Bahasa Indonesia, tema, dan guard risiko hak tetap wajib.`
-            : "Semua kandidat cocok dengan filter dan metadata CC terdeteksi; kepemilikan hak audio/visual tetap harus direview manual."
-          : "Belum ditemukan referensi CC Indonesia yang cukup relevan. Coba perluas filter lalu cari lagi.",
+            : "Semua kandidat lolos guard otomatis awal dan metadata CC terdeteksi. Hak audio/visual tetap perlu direview sebelum publikasi."
+          : "Belum ditemukan kandidat yang lolos guard otomatis. Sistem tidak akan memaksakan sumber berisiko; coba perluas filter lalu cari lagi.",
       );
     } catch {
       // toast.promise already presents the backend search error.
@@ -1333,8 +1388,14 @@ export default function HomePage() {
           viralSearchFilters={viralSearchFilters}
           selectedAutoContentUrls={selectedAutoContentUrls}
           sourceMode={sourceMode}
-          scriptText={scriptText}
-          onScriptTextChange={setScriptText}
+        scriptText={scriptText}
+        onScriptTextChange={setScriptText}
+        creatorPerspective={creatorPerspective}
+        onCreatorPerspectiveChange={setCreatorPerspective}
+        sourceRightsEvidence={sourceRightsEvidence}
+        onSourceRightsEvidenceChange={setSourceRightsEvidence}
+        providerRightsEvidence={providerRightsEvidence}
+        onProviderRightsEvidenceChange={setProviderRightsEvidence}
           confirmLongAnimateRights={confirmLongAnimateRights}
           onConfirmLongAnimateRightsChange={setConfirmLongAnimateRights}
           uploadFileName={uploadFileName}
@@ -1428,7 +1489,12 @@ export default function HomePage() {
           autoViralMessage={autoViralRun?.message || autoContentMessage}
           url={url}
         />
-        <StatusPanel job={activityJob} latestLogs={latestLogs} onCancelJob={handleCancelJob} />
+        <StatusPanel
+          job={activityJob}
+          latestLogs={latestLogs}
+          onCancelJob={handleCancelJob}
+          onSwitchToOriginalRebuild={() => handleClipModeChange("original_rebuild")}
+        />
       </section>
 
       <ResultsSection
