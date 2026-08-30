@@ -15,6 +15,7 @@ from api import (
     YouTubeUploadJob,
     append_youtube_chapters,
     best_youtube_clip_urls,
+    build_youtube_restart_verification_command,
     build_youtube_upload_command,
     classify_long_form_playlist,
     clip_requires_altered_content_disclosure,
@@ -439,6 +440,26 @@ def test_upload_command_marks_shorts_type_even_without_thumbnail(monkeypatch, tm
 
     assert command[command.index("--thumbnail-content-type") + 1] == "shorts"
     assert command[command.index("--media-duration-seconds") + 1] == "59.900"
+
+
+def test_restart_verification_command_preserves_assigned_video_url(monkeypatch):
+    upload = YouTubeUploadJob(
+        id="verify-known-video",
+        source_job_id="job-1",
+        clip_url="/outputs/demo/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="queued",
+        created_at="2026-08-30T00:00:00+00:00",
+        updated_at="2026-08-30T00:01:00+00:00",
+        title="Video baru #Shorts",
+        video_url="https://www.youtube.com/watch?v=abcDEF12345",
+        logs=["FINAL_VISIBILITY: private"],
+    )
+    monkeypatch.setenv("YOUTUBE_HEADLESS", "true")
+
+    command = build_youtube_restart_verification_command(upload)
+
+    assert command[command.index("--video-url") + 1] == upload.video_url
 
 
 def test_upload_command_discloses_realistic_background_replacement(monkeypatch, tmp_path):

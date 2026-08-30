@@ -83,6 +83,12 @@ def test_ai_rescore_keeps_heuristics_when_endpoint_is_missing():
     assert candidate.score == 77
 
 
+def test_ai_brief_requires_distinct_angles_and_specific_titles():
+    assert "every clip must answer a different viewer question" in clipper.AI_SYSTEM_PROMPT
+    assert "concrete subject or object" in clipper.AI_SYSTEM_PROMPT
+    assert "uppercase emphasis phrase" in clipper.AI_SYSTEM_PROMPT
+
+
 def test_ai_rescore_pool_covers_timeline_and_sends_story_metrics(monkeypatch):
     candidates = [
         make_candidate(index, index * 60, 100 - index, f"Poin penting bagian {index}.")

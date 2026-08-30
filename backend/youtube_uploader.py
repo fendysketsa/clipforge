@@ -5292,11 +5292,73 @@ def saved_video_row_snapshot(page, expected_title: str, visibility: str) -> dict
     return {str(key): str(value) for key, value in result.items()}
 
 
+def saved_video_edit_snapshot(page, expected_title: str, visibility: str) -> dict[str, str]:
+    """Read the exact video's Studio edit page, including shadow-root fields."""
+    try:
+        result = page.evaluate(
+            r"""
+            ({ expectedTitle, visibility }) => {
+              const normalize = (value) => String(value || '')
+                .replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+              const wanted = normalize(expectedTitle);
+              const visibilityWords = visibility === 'private'
+                ? ['private', 'pribadi']
+                : visibility === 'unlisted'
+                  ? ['unlisted', 'tidak publik']
+                  : ['public', 'publik'];
+              const roots = [];
+              const seen = new Set();
+              const addRoot = (root) => {
+                if (root && !seen.has(root)) {
+                  seen.add(root);
+                  roots.push(root);
+                }
+              };
+              addRoot(document);
+              for (let index = 0; index < roots.length; index += 1) {
+                const root = roots[index];
+                const elements = root.querySelectorAll ? Array.from(root.querySelectorAll('*')) : [];
+                for (const element of elements) {
+                  if (element.shadowRoot) addRoot(element.shadowRoot);
+                }
+              }
+              const chunks = [document.title, document.body?.innerText];
+              for (const root of roots) {
+                const elements = root.querySelectorAll ? Array.from(root.querySelectorAll('*')) : [];
+                for (const element of elements) {
+                  chunks.push(
+                    element.getAttribute?.('aria-label'),
+                    element.getAttribute?.('title'),
+                    element.getAttribute?.('placeholder'),
+                    element.value,
+                    element.isContentEditable ? element.textContent : '',
+                  );
+                }
+              }
+              const text = normalize(chunks.filter(Boolean).join('\n'));
+              return {
+                titleOk: Boolean(wanted && text.includes(wanted)),
+                visibilityOk: visibilityWords.some((word) => text.includes(word)),
+                uploadFailed: /(?:upload|mengupload|mengunggah).{0,30}(?:failed|gagal)|(?:failed|gagal).{0,30}(?:upload|mengupload|mengunggah)/i.test(text),
+                uploading: /(?:uploading|mengupload|mengunggah)\s*\d{1,3}\s*%|upload(?:ing)? (?:is )?(?:still )?in progress|upload sedang berlangsung/i.test(text),
+              };
+            }
+            """,
+            {"expectedTitle": expected_title, "visibility": visibility},
+        )
+    except Exception:
+        return {}
+    if not isinstance(result, dict):
+        return {}
+    return {str(key): str(value) for key, value in result.items()}
+
+
 def verify_saved_video_in_studio(
     page,
     expected_title: str,
     visibility: str,
     *,
+    video_url: str = "",
     timeout_ms: int = 30000,
 ) -> str:
     """Verify a just-saved video in a separate Studio Content tab."""
@@ -5309,6 +5371,42 @@ def verify_saved_video_in_studio(
     try:
         verification_page = context.new_page()
         install_browser_dialog_guard(verification_page)
+        normalized_video_url = normalize_youtube_video_url(video_url)
+        video_id_match = re.search(r"[?&]v=([A-Za-z0-9_-]{6,})", normalized_video_url)
+        if video_id_match:
+            # The assigned video id is the strongest identity check and works
+            # for both Shorts and long-form. The Content list can place a new
+            # portrait upload on a different tab, so verify its edit page first.
+            video_id = video_id_match.group(1)
+            try:
+                verification_page.goto(
+                    f"https://studio.youtube.com/video/{video_id}/edit",
+                    wait_until="domcontentloaded",
+                    timeout=max(15000, timeout_ms),
+                )
+                deadline = time.monotonic() + timeout_ms / 1000
+                while time.monotonic() < deadline:
+                    snapshot = saved_video_edit_snapshot(
+                        verification_page,
+                        expected_title,
+                        visibility,
+                    )
+                    if snapshot.get("uploadFailed") == "True":
+                        raise UploadError("YouTube Studio menandai transfer video baru gagal.")
+                    if (
+                        snapshot.get("titleOk") == "True"
+                        and snapshot.get("visibilityOk") == "True"
+                        and snapshot.get("uploading") != "True"
+                    ):
+                        return normalized_video_url
+                    time.sleep(2)
+            except UploadError:
+                raise
+            except Exception:
+                # Keep the older Content-list verification as a safe fallback
+                # if Studio temporarily rejects the direct edit route.
+                pass
+
         channel_id = effective_channel_id(page)
         target_url = (
             f"https://studio.youtube.com/channel/{channel_id}/videos/upload"
@@ -5436,6 +5534,7 @@ def wait_for_final_upload_confirmation(
                     page,
                     expected_title,
                     visibility,
+                    video_url=video_url,
                     timeout_ms=min(30000, timeout_ms),
                 )
                 if verified_url:
@@ -5693,15 +5792,16 @@ def run_verify_upload(args: argparse.Namespace) -> None:
                 page,
                 args.title,
                 args.visibility,
+                video_url=args.video_url,
                 timeout_ms=timeout_ms,
             )
             if not video_url:
                 raise UploadError(
-                    "Video yang sudah difinalkan belum ditemukan sebagai baris tersimpan "
-                    "di halaman Content; file lokal dipertahankan."
+                    "Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; "
+                    "file lokal dipertahankan."
                 )
             log(f"FINAL_VISIBILITY: {args.visibility}")
-            log("UPLOAD_CONFIRMED: video pasca-restart terverifikasi di halaman Content.")
+            log("UPLOAD_CONFIRMED: video pasca-restart terverifikasi di YouTube Studio.")
             log(f"VIDEO_URL: {video_url}")
             context.storage_state(path=str(state_path))
         finally:
@@ -6151,6 +6251,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     verify_upload.add_argument("--state", default=str(DEFAULT_STATE_PATH))
     verify_upload.add_argument("--title", required=True)
+    verify_upload.add_argument("--video-url", default="")
     verify_upload.add_argument(
         "--visibility",
         choices=["private", "unlisted", "public"],

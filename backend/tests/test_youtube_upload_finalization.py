@@ -26,6 +26,7 @@ from youtube_uploader import (
     should_upload_custom_thumbnail,
     custom_thumbnail_daily_limit_detected,
     validate_thumbnail_file,
+    verify_saved_video_in_studio,
     wait_for_copyright_checks,
     wait_for_final_upload_confirmation,
     wait_for_review_checks_safe_before_publish,
@@ -86,6 +87,31 @@ class ClosedUploadStatusPage:
         if selector == "body":
             return self.body
         return TextPage("")
+
+
+class StudioVerificationPage:
+    def __init__(self):
+        self.goto_calls = []
+        self.closed = False
+
+    def goto(self, url, **kwargs):
+        self.goto_calls.append((url, kwargs))
+
+    def close(self):
+        self.closed = True
+
+
+class StudioVerificationContext:
+    def __init__(self):
+        self.page = StudioVerificationPage()
+
+    def new_page(self):
+        return self.page
+
+
+class StudioSourcePage:
+    def __init__(self):
+        self.context = StudioVerificationContext()
 
 
 class ReloadPage:
@@ -817,6 +843,59 @@ def test_final_confirmation_recovers_from_exact_private_content_row(monkeypatch)
         visibility="private",
     ) == "https://www.youtube.com/watch?v=abcDEF12345"
     assert "halaman Content" in logs[-1]
+
+
+def test_final_confirmation_passes_assigned_video_url_to_studio_verification(monkeypatch):
+    page = ClosedUploadStatusPage([""])
+    calls = []
+    monkeypatch.setattr(youtube_uploader.time, "monotonic", lambda: 0.0)
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "log", lambda _message: None)
+
+    def verify(*_args, **kwargs):
+        calls.append(kwargs)
+        return kwargs["video_url"]
+
+    monkeypatch.setattr(youtube_uploader, "verify_saved_video_in_studio", verify)
+
+    video_url = "https://www.youtube.com/watch?v=abcDEF12345"
+    assert wait_for_final_upload_confirmation(
+        page,
+        timeout_ms=1000,
+        video_url=video_url,
+        expected_title="Video baru #Shorts",
+        visibility="private",
+    ) == video_url
+    assert calls == [{"video_url": video_url, "timeout_ms": 1000}]
+
+
+def test_studio_verification_uses_exact_video_edit_page_before_content_list(monkeypatch):
+    source_page = StudioSourcePage()
+    video_url = "https://www.youtube.com/watch?v=abcDEF12345"
+    monkeypatch.setattr(youtube_uploader, "install_browser_dialog_guard", lambda _page: None)
+    monkeypatch.setattr(
+        youtube_uploader,
+        "saved_video_edit_snapshot",
+        lambda *_args, **_kwargs: {
+            "titleOk": "True",
+            "visibilityOk": "True",
+            "uploadFailed": "False",
+            "uploading": "False",
+        },
+    )
+
+    assert verify_saved_video_in_studio(
+        source_page,
+        "Video baru #Shorts",
+        "private",
+        video_url=video_url,
+        timeout_ms=1000,
+    ) == video_url
+    assert source_page.context.page.goto_calls[0][0] == (
+        "https://studio.youtube.com/video/abcDEF12345/edit"
+    )
+    assert source_page.context.page.closed is True
 
 
 def test_normalize_youtube_video_url_accepts_studio_edit_link():

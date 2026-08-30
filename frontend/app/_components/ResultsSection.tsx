@@ -98,6 +98,9 @@ function youtubeRunningStage(upload: YouTubeUploadJob) {
   if (upload.status !== "running") return "";
   const recent = [...(upload.logs ?? [])].reverse();
   for (const line of recent) {
+    if (/modal upload sudah tertutup|menunggu konfirmasi final transfer/i.test(line)) {
+      return "verifikasi hasil upload";
+    }
     if (/masuk ke tab visibilitas|mengatur visibilitas|step 4 visibilitas/i.test(line)) return "finalisasi Private";
     if (/copyright sudah aman|checks masih berjalan|menunggu youtube studio checks/i.test(line)) {
       return "pemeriksaan copyright/komunitas";
@@ -406,7 +409,9 @@ export function ResultsSection({
             const isUploadReady = typeof clip.growth_quality_gate_passed === "boolean"
               ? clip.growth_quality_gate_passed
               : isLongForm || (typeof clip.fyp_score === "number" && clip.fyp_score >= 78);
-            const isUploadingToYouTube = latestUpload?.status === "queued" || latestUpload?.status === "running";
+            const isQueuedForYouTube = latestUpload?.status === "queued";
+            const isRunningYouTubeUpload = latestUpload?.status === "running";
+            const isUploadingToYouTube = isQueuedForYouTube || isRunningYouTubeUpload;
             const isAlreadyUploaded = latestUpload?.status === "completed" && Boolean(latestUpload.video_url);
             const hasRunningUpload = youtubeUploads.some((upload) => upload.status === "running");
             const runningStage = latestUpload ? youtubeRunningStage(latestUpload) : "";
@@ -462,6 +467,10 @@ export function ResultsSection({
                 ? "Upload ditahan: output belum lolos quality gate formatnya. Buka Analisis & perbaikan, lalu render ulang."
                 : isAlreadyUploaded
                 ? `Sudah terupload ke YouTube${latestUpload.video_url ? `: ${latestUpload.video_url}` : ""}`
+                : isQueuedForYouTube
+                  ? "Klip sedang menunggu giliran upload YouTube."
+                  : isRunningYouTubeUpload
+                    ? "Upload sedang diproses dan diverifikasi oleh YouTube Studio."
                 : uploadError
                   ? `Upload ulang ke YouTube. Error terakhir: ${uploadError}`
                   : "Upload klip ini ke YouTube"
@@ -657,7 +666,9 @@ export function ResultsSection({
                           ? "Quality gate · Ditahan"
                           : isAlreadyUploaded
                           ? "Sudah YouTube"
-                          : isUploadingToYouTube
+                          : isQueuedForYouTube
+                          ? "Menunggu antrean"
+                          : isRunningYouTubeUpload
                           ? "Mengupload..."
                           : latestUpload?.status === "failed"
                             ? "Ulangi YouTube"

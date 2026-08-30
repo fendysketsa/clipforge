@@ -1317,6 +1317,9 @@ def test_shorts_policy_compliance_records_three_minute_official_and_local_limits
     assert compliance["recommendation_or_monetization_guarantee"] is False
     assert compliance["content_specific_subscribe_value_proposition"] is True
     assert compliance["subscription_incentive_or_reward_offered"] is False
+    assert compliance["same_source_series_requires_distinct_viewer_questions"] is True
+    assert compliance["fresh_conversation_pattern_is_editorial_signal_only"] is True
+    assert compliance["direct_reupload_pattern_treated_as_monetization_strategy"] is False
 
 
 def test_youtube_policy_snapshot_marks_future_rules_for_review_without_assuming_them():

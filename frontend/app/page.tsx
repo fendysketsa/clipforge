@@ -1469,6 +1469,12 @@ export default function HomePage() {
           }}
           onAutoContentNicheChange={(value) => {
             setAutoContentNiche(value);
+            if (value === "islamic_current_viral") {
+              setViralSearchFilters((current) => ({
+                ...current,
+                upload_date_filter: "this_week",
+              }));
+            }
             setAutoContentSources([]);
             setSelectedAutoContentUrls([]);
             setAutoContentMessage("");

@@ -4561,6 +4561,7 @@ def first_sentence(text: str, max_words: int = 8) -> str:
 SHORT_EXPORT_MIN_FYP_SCORE = 78
 SHORT_REPAIR_POOL_MIN_SIZE = 12
 SHORT_REPAIR_POOL_MULTIPLIER = 4
+SHORT_BATCH_MAX_TOPIC_SIMILARITY = 0.52
 
 
 def fyp_score_label(score: int) -> str:
@@ -5849,7 +5850,7 @@ def select_candidates(
                 (candidate_topic_similarity(candidate, item) for item in picked),
                 default=0.0,
             )
-            if max_topic_similarity >= 0.64:
+            if max_topic_similarity >= SHORT_BATCH_MAX_TOPIC_SIMILARITY:
                 continue
             diversity_bonus = 5.0 if picked and max_topic_similarity < 0.22 else 0.0
             adjusted = candidate_rank_score(candidate, target_duration) + diversity_bonus
@@ -6194,6 +6195,10 @@ AI_SYSTEM_PROMPT = (
     "worship detail and preserve the speaker's evidence without inventing rulings; Islamic-history clips must "
     "build an accurate premise-conflict-payoff arc with an explicit lesson for life today. Prefer a specific "
     "problem, correction, contrast, or transformation over generic preaching. "
+    "When selecting several clips from one conversation, every clip must answer a different viewer question "
+    "or deliver a genuinely different takeaway; never turn paraphrases of one point into a series. Package each "
+    "title around a concrete subject or object plus its tension, contrast, or outcome. Keep it truthful and "
+    "specific, avoid generic curiosity wording, and use at most one short uppercase emphasis phrase. "
     "For a focused 20–32 second authority clip, strongly prefer a truthful micro-thesis that opens on one "
     "relatable dilemma, adds nuance, states a safety or ethical boundary, and lands on a nonjudgmental conclusion. "
     "Do not force this structure when the transcript lacks those elements, and never imitate another speaker's wording or branding. "
@@ -7514,6 +7519,10 @@ def shorts_policy_compliance(duration: float, *, embedded_cover: bool) -> dict[s
         "mass_produced_or_repetitive_content_not_assumed_monetizable": True,
         "automated_or_synthetic_mass_production_allowed": False,
         "duplicate_main_points_allowed_in_one_batch": False,
+        "same_source_series_requires_distinct_viewer_questions": True,
+        "fresh_conversation_pattern_is_editorial_signal_only": True,
+        "freshness_crop_captions_or_titles_do_not_create_reuse_rights": True,
+        "direct_reupload_pattern_treated_as_monetization_strategy": False,
         "split_layout_requires_unique_visible_subjects": True,
         "non_original_shorts_views_may_be_ineligible": True,
         "contextual_engagement_prompt_preferred": True,

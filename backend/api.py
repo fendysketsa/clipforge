@@ -104,6 +104,7 @@ YOUTUBE_CLEANUP_STEP_RATIOS = {
     "job_sync": 1.0,
 }
 FRESH_VIRAL_MAX_AGE_DAYS = 30
+FRESH_CONVERSATION_MAX_AGE_DAYS = 7
 MAX_VIRAL_FALLBACK_AGE_DAYS = 365
 CANCEL_GRACE_SECONDS = 8
 LOCAL_LLM_PRESETS = [
@@ -165,6 +166,18 @@ DEFAULT_YOUTUBE_PUBLIC_DAILY_LIMIT = 2
 DEFAULT_YOUTUBE_PUBLIC_MIN_GAP_HOURS = 6
 DEFAULT_YOUTUBE_AI_FALLBACK_MODELS = ["llama3.2-id:latest", "llama3:latest"]
 ROOT_DIR = BASE_DIR.parent
+FRESH_CONVERSATION_MARKERS = (
+    "bahas",
+    "cerita",
+    "diskusi",
+    "interview",
+    "jawab",
+    "ngobrol",
+    "podcast",
+    "pengalaman",
+    "tanya jawab",
+    "wawancara",
+)
 YOUTUBE_CDP_REFRESH_LOG = Path(
     os.environ.get("YOUTUBE_CDP_REFRESH_LOG", "/tmp/fendy-clipper-youtube-chrome-launcher.log")
 )
@@ -1144,10 +1157,16 @@ class AutoViralRequest(BaseModel):
     @model_validator(mode="after")
     def _apply_niche_priority(self) -> "AutoViralRequest":
         self.queries = prioritized_niche_queries(self.niche, self.queries)[:80]
+        if (
+            self.niche == "islamic_current_viral"
+            and "upload_date_filter" not in self.model_fields_set
+            and "max_age_days" not in self.model_fields_set
+        ):
+            self.upload_date_filter = "this_week"
         if "max_age_days" not in self.model_fields_set:
             self.max_age_days = {
                 "today": 1,
-                "this_week": 7,
+                "this_week": FRESH_CONVERSATION_MAX_AGE_DAYS,
                 "this_month": 31,
                 "this_year": 365,
             }[self.upload_date_filter]
@@ -1211,10 +1230,16 @@ class ViralVideoSearchRequest(BaseModel):
     @model_validator(mode="after")
     def _apply_niche_priority(self) -> "ViralVideoSearchRequest":
         self.queries = prioritized_niche_queries(self.niche, self.queries)[:80]
+        if (
+            self.niche == "islamic_current_viral"
+            and "upload_date_filter" not in self.model_fields_set
+            and "max_age_days" not in self.model_fields_set
+        ):
+            self.upload_date_filter = "this_week"
         if "max_age_days" not in self.model_fields_set:
             self.max_age_days = {
                 "today": 1,
-                "this_week": 7,
+                "this_week": FRESH_CONVERSATION_MAX_AGE_DAYS,
                 "this_month": 31,
                 "this_year": 365,
             }[self.upload_date_filter]
@@ -5115,6 +5140,8 @@ def build_youtube_restart_verification_command(upload: YouTubeUploadJob) -> list
         "--timeout",
         os.environ.get("YOUTUBE_RESTART_VERIFY_TIMEOUT_SECONDS", "120"),
     ]
+    if upload.video_url:
+        command.extend(["--video-url", upload.video_url])
     if upload.target_channel:
         command.extend(["--target-channel", upload.target_channel])
     target_email = os.environ.get("YOUTUBE_TARGET_EMAIL", DEFAULT_YOUTUBE_TARGET_EMAIL).strip()
@@ -5944,7 +5971,7 @@ def run_youtube_restart_verification(upload_id: str) -> None:
 
     started_perf = time.perf_counter()
     started_at = now_iso()
-    logs = [*upload.logs, "Memulihkan konfirmasi upload dari halaman Content YouTube Studio."][-160:]
+    logs = [*upload.logs, "Memulihkan konfirmasi upload dari video tersimpan di YouTube Studio."][-160:]
     set_youtube_upload(
         upload_id,
         status="running",
@@ -7507,6 +7534,51 @@ def is_fresh_viral_upload(info: dict[str, Any], max_age_days: int = FRESH_VIRAL_
     return age_days is not None and age_days <= min(max_age_days, MAX_VIRAL_FALLBACK_AGE_DAYS)
 
 
+def fresh_conversation_source_profile(info: dict[str, Any]) -> dict[str, Any]:
+    """Score a recent creator conversation that may support distinct angles.
+
+    This measures editorial opportunity only. It does not weaken the separate
+    CC, chain-of-title, Content ID, or reused-content gates.
+    """
+    age_days = upload_age_days(info)
+    duration = max(0.0, float(info.get("duration") or 0))
+    title = re.sub(r"\s+", " ", str(info.get("title") or "")).casefold()
+    description = re.sub(r"\s+", " ", str(info.get("description") or "")).casefold()
+    searchable = f"{title} {description[:1200]}"
+    matched_markers = [marker for marker in FRESH_CONVERSATION_MARKERS if marker in searchable]
+    views = max(0, int(info.get("view_count") or 0))
+    effective_age = max(1, age_days if age_days is not None else FRESH_VIRAL_MAX_AGE_DAYS)
+    views_per_day = views / effective_age
+
+    freshness_score = (
+        18.0
+        if age_days is not None and age_days <= 3
+        else 10.0
+        if age_days is not None and age_days <= FRESH_CONVERSATION_MAX_AGE_DAYS
+        else 0.0
+    )
+    duration_score = 8.0 if 1200 <= duration <= 7200 else 3.0 if 600 <= duration <= 9000 else 0.0
+    conversation_score = min(10.0, len(matched_markers) * 4.0)
+    velocity_score = 8.0 if views_per_day >= 10_000 else 4.0 if views_per_day >= 1_000 else 0.0
+    qualified = bool(
+        age_days is not None
+        and age_days <= FRESH_CONVERSATION_MAX_AGE_DAYS
+        and 1200 <= duration <= 7200
+        and matched_markers
+    )
+    return {
+        "version": 1,
+        "qualified": qualified,
+        "score": round(freshness_score + duration_score + conversation_score + velocity_score, 2),
+        "age_days": age_days,
+        "duration_seconds": round(duration, 2),
+        "views_per_day": round(views_per_day),
+        "matched_markers": matched_markers[:5],
+        "requires_distinct_clip_angles": True,
+        "rights_or_monetization_guarantee": False,
+    }
+
+
 def youtube_published_after(max_age_days: int = FRESH_VIRAL_MAX_AGE_DAYS) -> str:
     safe_days = min(max(1, max_age_days), MAX_VIRAL_FALLBACK_AGE_DAYS)
     threshold = datetime.now(timezone.utc) - timedelta(days=safe_days)
@@ -7579,13 +7651,15 @@ def auto_viral_candidate_score(info: dict[str, Any]) -> float:
     engagement_score = min(24, engagement_rate * 420)
     recency_score = 36 * exp(-effective_age / 21)
     duration_score = 15 if 180 <= duration <= 1800 else 8 if 60 <= duration <= 3600 else 0
+    fresh_conversation_score = float(fresh_conversation_source_profile(info)["score"])
     return round(
         view_score
         + velocity_score
         + like_score
         + engagement_score
         + recency_score
-        + duration_score,
+        + duration_score
+        + fresh_conversation_score,
         2,
     )
 
@@ -7704,6 +7778,7 @@ def compact_source_payload(
     )
     language_score = indonesian_language_score(info)
     ranking_score = viral_score + relevance_score * 1.85 + language_score * 0.25
+    conversation_profile = fresh_conversation_source_profile(info)
     profile = ISLAMIC_EVERGREEN_NICHES.get(resolved_niche, {})
     source_height = source_max_height(info)
     definition = str(info.get("definition") or "").strip().casefold()
@@ -7731,6 +7806,8 @@ def compact_source_payload(
         "content_id_risk_reasons": content_id_risk_reasons,
         "score": round(ranking_score, 2),
         "viral_score": viral_score,
+        "fresh_conversation_profile": conversation_profile,
+        "fresh_conversation_score": conversation_profile["score"],
         "niche": resolved_niche,
         "niche_label": profile.get("label", "Auto Niche Terbaik"),
         "niche_score": relevance_score,
@@ -7738,11 +7815,21 @@ def compact_source_payload(
         "ranking_reason": (
             f"Kecocokan tema {relevance_score:.0f}/100 • Bahasa Indonesia "
             f"{language_score:.0f}/100 • momentum {viral_score:.0f}"
+            + (
+                " • percakapan baru kaya sudut"
+                if conversation_profile["qualified"]
+                else ""
+            )
             if niche != "auto"
             else (
                 f"Auto memilih {profile.get('label', resolved_niche)} • kecocokan "
                 f"{relevance_score:.0f}/100 • Bahasa Indonesia {language_score:.0f}/100 "
                 f"• momentum {viral_score:.0f}"
+                + (
+                    " • percakapan baru kaya sudut"
+                    if conversation_profile["qualified"]
+                    else ""
+                )
             )
         ),
     }

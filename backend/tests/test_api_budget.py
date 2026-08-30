@@ -15,6 +15,7 @@ from api import (
     build_clipper_command,
     choose_auto_analyze_seconds,
     default_viral_video_search_queries,
+    fresh_conversation_source_profile,
     indonesian_language_score,
     is_creative_commons_info,
     is_fresh_viral_upload,
@@ -378,10 +379,10 @@ def test_search_filter_defaults_match_broad_cc_reference_layout():
     request = ViralVideoSearchRequest(niche="islamic_current_viral")
 
     assert request.duration_filter == "over_20"
-    assert request.upload_date_filter == "this_year"
+    assert request.upload_date_filter == "this_week"
     assert request.definition_filter == "hd"
     assert request.sort_order == "popularity"
-    assert request.max_age_days == 365
+    assert request.max_age_days == 7
 
 
 def test_search_filter_revalidates_duration_date_and_hd_metadata():
@@ -894,6 +895,45 @@ def test_viral_score_rewards_real_engagement_not_views_alone():
     assert auto_viral_candidate_score({**base, "like_count": 8_000}) > auto_viral_candidate_score(
         {**base, "like_count": 100}
     )
+
+
+def test_fresh_conversation_profile_rewards_recent_multi_angle_source():
+    today = datetime.now(timezone.utc)
+    conversation = {
+        "upload_date": (today - timedelta(days=2)).strftime("%Y%m%d"),
+        "title": "Podcast: Pengalaman dan Jawaban untuk Masalah Keluarga",
+        "description": "Obrolan panjang membahas beberapa pengalaman nyata.",
+        "duration": 3200,
+        "view_count": 120_000,
+    }
+    generic = {
+        **conversation,
+        "title": "Renungan Harian",
+        "description": "Satu materi singkat.",
+    }
+
+    profile = fresh_conversation_source_profile(conversation)
+
+    assert profile["qualified"] is True
+    assert profile["requires_distinct_clip_angles"] is True
+    assert profile["rights_or_monetization_guarantee"] is False
+    assert "podcast" in profile["matched_markers"]
+    assert profile["score"] > fresh_conversation_source_profile(generic)["score"]
+
+
+def test_current_viral_defaults_to_seven_day_window_but_respects_explicit_filter():
+    automatic = AutoViralRequest(niche="islamic_current_viral")
+    explicit_year = AutoViralRequest(
+        niche="islamic_current_viral",
+        upload_date_filter="this_year",
+    )
+    evergreen = AutoViralRequest(niche="islamic_practical_life")
+
+    assert automatic.upload_date_filter == "this_week"
+    assert automatic.max_age_days == 7
+    assert explicit_year.upload_date_filter == "this_year"
+    assert explicit_year.max_age_days == 365
+    assert evergreen.max_age_days == 365
 
 
 def test_viral_license_must_be_explicit_creative_commons():
