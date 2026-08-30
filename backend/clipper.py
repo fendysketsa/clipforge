@@ -3983,6 +3983,22 @@ def clean_transcript_text(text: str) -> str:
     return cleaned.strip()
 
 
+_SUSPICIOUS_PUBLIC_WORD_RE = re.compile(
+    r"(?:[a-z]*hsp[a-z]*|[a-z]*q(?!u)[a-z]*|[a-z]*[bcdfghjklmnpqrstvwxyz]{5,}[a-z]*)",
+    flags=re.IGNORECASE,
+)
+
+
+def has_suspicious_public_copy(value: str) -> bool:
+    """Detect only high-confidence garbling before copy reaches a public asset."""
+    if "\ufffd" in value or re.search(r"(?i)\b\w*([a-z])\1\1\w*\b", value):
+        return True
+    return any(
+        _SUSPICIOUS_PUBLIC_WORD_RE.fullmatch(word)
+        for word in re.findall(r"[A-Za-z]+", value)
+    )
+
+
 def source_branding_reason(text: str) -> str | None:
     """Detect source-channel promos without treating ordinary proper names as branding."""
     normalized = re.sub(r"\s+", " ", text).strip().lower()
@@ -6298,7 +6314,8 @@ def ai_rescore_candidates(
         "and rewatch/share potential. Do not select two windows that communicate the same main idea.\n"
         "Every improvement idea must solve one stated weakness and be directly executable by an editor. "
         "Start each idea with exactly one supported area: Hook, Ritme, Ending, Loop, Visual, or Audio. "
-        "Write every viewer-facing field in clear, natural Indonesian. "
+        "Write every viewer-facing field in clear, natural Indonesian. Proofread the title and hook word by "
+        "word; never copy an obviously garbled ASR fragment, and omit it when the intended meaning is unclear. "
         "Write it as '<area> — <specific action>', for example "
         "'Hook — pindahkan klaim terkuat ke detik 0'. "
         "When useful, quote a short phrase from the transcript as the exact edit anchor. Do not give generic "
@@ -6307,7 +6324,7 @@ def ai_rescore_candidates(
         "Return clips sorted from strongest to weakest. Use fewer clips if the rest are weak.\n"
         "Respond with JSON shaped exactly like:\n"
         '{"clips": [{"id": <int>, "score": <int 0-100>, '
-        '"title": "<catchy hook title, max 8 words>", '
+        '"title": "<catchy, proofread hook title, 6-10 words>", '
         '"hook": "<scroll-stopping opening, max 8 words>", '
         '"reason": "<short why this has FYP potential>", '
         '"pov": "<short POV angle for viewers>", '
@@ -6380,6 +6397,7 @@ def ai_rescore_candidates(
             isinstance(title, str)
             and title.strip()
             and not is_source_branding_segment(title)
+            and not has_suspicious_public_copy(title)
         ):
             candidate.title = title.strip()[:80]
         hook = entry.get("hook")
@@ -6387,6 +6405,7 @@ def ai_rescore_candidates(
             isinstance(hook, str)
             and hook.strip()
             and not is_source_branding_segment(hook)
+            and not has_suspicious_public_copy(hook)
         ):
             candidate.hook = first_sentence(hook, max_words=8)[:80]
         reason = entry.get("reason")
@@ -9771,7 +9790,9 @@ def generate_thumbnail_prompt(
 SOCIAL_CAPTION_SYSTEM_PROMPT = (
     "You are a viral social media copywriter for TikTok, Instagram Reels, and YouTube Shorts. "
     "You write short, scroll-stopping captions in Indonesian that make people want to watch and read. "
-    "Open with a strong hook and keep it punchy. Do not use emojis or decorative symbols. "
+    "Open with a strong hook and keep it punchy. Proofread every word and never copy an obviously garbled or "
+    "misspelled transcript fragment; paraphrase it only when its intended meaning is clear. Do not use emojis "
+    "or decorative symbols. "
     "Write only the topic summary; the application adds one contextual call-to-action and relevant hashtags. "
     "Also return 5-8 niche hashtags in the separate JSON array. For Islamic mystery, myth, supernatural, "
     "and horror content, keep the "
@@ -9888,7 +9909,25 @@ def format_social_description(
     ).strip()
     if not clean_summary:
         clean_summary = first_sentence(clip.text or clip.title, max_words=34).strip()
-    clean_summary = clean_summary[:900 if long_form else 600].rstrip()
+    clean_summary = clean_summary[:900 if long_form else 700].rstrip()
+    summary_paragraphs = [
+        re.sub(r"\s+", " ", part).strip()
+        for part in re.split(r"\n\s*\n", clean_summary)
+        if part.strip()
+    ]
+    if len(summary_paragraphs) < 2 and summary_paragraphs:
+        sentences = [
+            part.strip()
+            for part in re.split(r"(?<=[.!?])\s+", summary_paragraphs[0])
+            if part.strip()
+        ]
+        if len(sentences) >= 2:
+            split_at = max(1, (len(sentences) + 1) // 2)
+            clean_summary = (
+                " ".join(sentences[:split_at])
+                + "\n\n"
+                + " ".join(sentences[split_at:])
+            )
 
     description_words = set(
         re.findall(r"[\w']+", f"{clip.title} {clip.text}".casefold())
@@ -10061,11 +10100,13 @@ def generate_social_caption(
     user_prompt = (
         f"Write a social media post caption (Bahasa Indonesia) for this {format_name}. "
         "Make the first line a hook that stops the scroll and makes people curious to read more.\n"
-        "Write only a useful topic summary. Do not add Subscribe, Like, Share, Follow, channel handles, "
+        "Write only a useful topic summary in exactly two short paragraphs separated by a blank line. Use 3-5 "
+        "informative sentences in total, proofread every word, and omit any garbled transcript fragment whose "
+        "meaning is unclear. Do not add Subscribe, Like, Share, Follow, channel handles, "
         "section headings, or hashtag lines because the application adds one contextual viewer prompt "
         "and the relevant hashtags.\n"
         "Return JSON exactly like:\n"
-        '{"caption": "<hook line\\n\\nbody 1-3 informative sentences without emojis>", '
+        '{"caption": "<paragraph 1 hook and context\\n\\nparagraph 2 explanation or benefit; 3-5 sentences total, without emojis>", '
         '"hashtags": ["#tag1", "#tag2", ...]}\n\n'
         f"Clip title: {clip.title}\n"
         f"Clip transcript: {clip.text[:1200]}"
@@ -10096,7 +10137,7 @@ def generate_social_caption(
         if not is_source_branding_segment(line)
     ]
     text = "\n".join(clean_lines).strip()
-    if not text:
+    if not text or has_suspicious_public_copy(text):
         return fallback_social_caption(clip, required_hashtags, long_form=long_form)
     # Required hashtags always come first, then the AI-generated ones (deduped,
     # case-insensitive). Required tags are guaranteed to be present.

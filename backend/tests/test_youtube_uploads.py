@@ -2782,12 +2782,18 @@ def test_generate_youtube_description_uses_llm(monkeypatch):
     monkeypatch.setattr(api, "chat_completion", fake_chat_completion)
 
     assert generate_youtube_description(job, clip, ["islam", "shorts"]) == (
-        "Nasihat penting dengan konteks yang mudah dipahami. Simak poin utamanya agar pesan yang disampaikan dapat diterapkan dengan tepat.\n\n#islam #nasihat #hikmah #shorts"
+        "Nasihat penting dengan konteks yang mudah dipahami.\n\n"
+        "Simak poin utamanya agar pesan yang disampaikan dapat diterapkan dengan tepat."
+        "\n\n#islam #nasihat #hikmah #shorts"
     )
 
     assert generate_youtube_metadata(job, clip, ["islam", "shorts"]) == {
         "title": "Nasihat Singkat Tentang Asef #Shorts",
-        "description": "Nasihat penting dengan konteks yang mudah dipahami. Simak poin utamanya agar pesan yang disampaikan dapat diterapkan dengan tepat.\n\n#islam #nasihat #hikmah #shorts",
+        "description": (
+            "Nasihat penting dengan konteks yang mudah dipahami.\n\n"
+            "Simak poin utamanya agar pesan yang disampaikan dapat diterapkan dengan tepat."
+            "\n\n#islam #nasihat #hikmah #shorts"
+        ),
         "hashtags": ["islam", "nasihat", "hikmah", "shorts"],
     }
 
@@ -2820,7 +2826,11 @@ def test_generate_youtube_metadata_accepts_indonesian_ollama_keys(monkeypatch):
 
     assert generate_youtube_metadata(job, clip, ["islam", "shorts"]) == {
         "title": "Pelajaran Rezeki Hari Ini #Shorts",
-        "description": "Renungan ini membahas makna rezeki dan pentingnya rasa syukur dalam kehidupan. Pesannya mengajak kita melihat nikmat dengan hati yang lebih jernih.\n\n#rezeki #syukur #islam #shorts",
+        "description": (
+            "Renungan ini membahas makna rezeki dan pentingnya rasa syukur dalam kehidupan.\n\n"
+            "Pesannya mengajak kita melihat nikmat dengan hati yang lebih jernih."
+            "\n\n#rezeki #syukur #islam #shorts"
+        ),
         "hashtags": ["rezeki", "syukur", "islam", "shorts"],
     }
 
@@ -2851,7 +2861,11 @@ def test_generate_youtube_metadata_falls_back_when_primary_model_fails(monkeypat
 
     assert generate_youtube_metadata(job, clip, ["islam"]) == {
         "title": "Nasihat Baru yang Layak Diperhatikan #Shorts",
-        "description": "Model fallback menjelaskan inti nasihat secara segar berdasarkan konteks klip. Deskripsi ini tetap ringkas, informatif, dan tidak mengambil metadata lama.\n\n#nasihat #islam #hikmah #shorts",
+        "description": (
+            "Model fallback menjelaskan inti nasihat secara segar berdasarkan konteks klip.\n\n"
+            "Deskripsi ini tetap ringkas, informatif, dan tidak mengambil metadata lama."
+            "\n\n#nasihat #islam #hikmah #shorts"
+        ),
         "hashtags": ["nasihat", "islam", "hikmah", "shorts"],
     }
 
@@ -2951,7 +2965,7 @@ def test_normalized_generated_metadata_accepts_nested_ollama_payload():
     assert normalized_generated_metadata(payload, is_compilation=False) == {
         "title": "Sabar Saat Ujian Mengubah Cara Kita Melihat Hidup #Shorts",
         "description": (
-            "Bagaimana kesabaran menjaga hati ketika ujian datang. "
+            "Bagaimana kesabaran menjaga hati ketika ujian datang.\n\n"
             "Pesannya mengajak penonton memahami hikmah tanpa mengabaikan proses yang berat."
             "\n\n#Sabar #UjianHidup #HikmahIslam #Shorts"
         ),
@@ -2979,3 +2993,35 @@ def test_normalized_metadata_removes_generic_title_tail_and_english_leak():
     assert len(str(result["title"])) <= 78
     assert "restriction" not in str(result["description"])
     assert "tanpa batasan" in str(result["description"])
+
+
+def test_normalized_metadata_rejects_obviously_garbled_public_copy():
+    payload = {
+        "title": "Peran Pemimpin Pesantren dalam Menjaga Amanah",
+        "description": (
+            "Pesantren tidak lakhsparan diri sendiri tanpa izin Allah. "
+            "Pembahasan ini menekankan pentingnya koordinasi keluarga dan komunitas."
+        ),
+        "hashtags": ["#Pesantren", "#Tarbiyah", "#PendidikanIslam", "#Shorts"],
+    }
+
+    assert normalized_generated_metadata(payload, is_compilation=False) is None
+
+
+def test_normalized_metadata_preserves_two_explicit_summary_paragraphs():
+    payload = {
+        "title": "Pemimpin Pesantren Menjaga Amanah Bersama",
+        "description": (
+            "Pesantren bertumbuh melalui amanah yang dijaga bersama keluarga dan komunitas. "
+            "Setiap keputusan perlu berangkat dari tujuan pendidikan yang jelas.\n\n"
+            "Koordinasi yang baik membantu pemimpin menyelaraskan kehendak, tindakan, dan makna. "
+            "Dari proses itulah terbentuk pribadi yang sabar dan bertanggung jawab."
+        ),
+        "hashtags": ["#Pesantren", "#Tarbiyah", "#PendidikanIslam", "#Shorts"],
+    }
+
+    result = normalized_generated_metadata(payload, is_compilation=False)
+
+    assert result is not None
+    summary = str(result["description"]).rsplit("\n\n#", 1)[0]
+    assert summary.count("\n\n") == 1

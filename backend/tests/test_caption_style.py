@@ -60,6 +60,7 @@ from clipper import (
     five_k_experiment_readiness,
     first_30_retention_profile,
     format_social_description,
+    has_suspicious_public_copy,
     hook_banner_text,
     highlight_caption_keyword,
     intro_particle_burst_filters,
@@ -2706,6 +2707,15 @@ def test_social_caption_has_safe_relevant_fallback_without_ai():
     assert "#Dakwah" in caption
     assert "#Misteri" in caption
     assert "#MitosAtauFakta" in caption
+    summary = caption.split("\n\nCoba telaah:", 1)[0]
+    assert summary.count("\n\n") == 1
+
+
+def test_public_copy_typo_gate_is_conservative():
+    assert has_suspicious_public_copy("Pesantren tidak lakhsparan diri sendiri.")
+    assert not has_suspicious_public_copy(
+        "Transkrip dan instruksi pesantren diperiksa dalam perspektif pendidikan."
+    )
 
 
 def test_social_description_removes_icons_from_ai_summary():

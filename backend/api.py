@@ -3636,7 +3636,10 @@ YOUTUBE_METADATA_SYSTEM_PROMPT = (
     "You are a creative Indonesian YouTube metadata editor. For EACH clip, infer its specific central idea "
     "from that clip's transcript and write fresh metadata—not a generic template and not copied old metadata. "
     "Make the title modern, emotionally engaging, natural, and honest. Write an informative description that "
-    "is concise but substantial. Use fully natural Bahasa Indonesia with no untranslated English fragments. "
+    "is concise but substantial. Proofread every public-facing word before replying: never copy a garbled, "
+    "uncertain, or obviously misspelled ASR fragment into the title or description. Paraphrase it only when the "
+    "intended meaning is clear; otherwise omit that fragment. Use fully natural Bahasa Indonesia with no "
+    "untranslated English fragments. "
     "Preserve the exact subject and object of the transcript; do not merge related concepts into a broader claim. "
     "Treat religious word counts, quotations, verse references, and similar numeric claims carefully: only state "
     "them as facts when clearly supported by the supplied clip context; otherwise describe them as claims or as "
@@ -3769,6 +3772,21 @@ def first_metadata_string(payload: dict, keys: list[str]) -> str:
     return ""
 
 
+def first_metadata_prose(payload: dict, keys: list[str]) -> str:
+    """Read AI prose without flattening intentional paragraph breaks."""
+    for key in keys:
+        value = payload.get(key)
+        if not isinstance(value, str) or not value.strip():
+            continue
+        paragraphs = [
+            re.sub(r"\s+", " ", part).strip()
+            for part in re.split(r"\n\s*\n", value.strip())
+            if part.strip()
+        ]
+        return "\n\n".join(paragraphs)
+    return ""
+
+
 def metadata_hashtag_values(payload: dict) -> list[str]:
     for key in ("hashtags", "hashtag", "tagar", "tags", "tag"):
         value = payload.get(key)
@@ -3830,29 +3848,86 @@ def polish_youtube_metadata_description(value: str) -> str:
     return clean[:1].upper() + clean[1:] if clean else ""
 
 
+_SUSPICIOUS_METADATA_WORD_RE = re.compile(
+    r"(?:[a-z]*hsp[a-z]*|[a-z]*q(?!u)[a-z]*|[a-z]*[bcdfghjklmnpqrstvwxyz]{5,}[a-z]*)",
+    flags=re.IGNORECASE,
+)
+
+
+def metadata_has_suspicious_typo(value: str) -> bool:
+    """Catch obvious garbled AI/ASR tokens before they become public copy.
+
+    This deliberately targets only high-confidence corruption patterns. Valid
+    uncommon names are safer to keep than to "correct" speculatively.
+    """
+    if "\ufffd" in value or re.search(r"(?i)\b\w*([a-z])\1\1\w*\b", value):
+        return True
+    return any(
+        _SUSPICIOUS_METADATA_WORD_RE.fullmatch(word)
+        for word in re.findall(r"[A-Za-z]+", value)
+    )
+
+
+def ensure_two_description_paragraphs(value: str) -> str:
+    """Keep metadata concise while guaranteeing two readable summary paragraphs."""
+    paragraphs = [
+        re.sub(r"\s+", " ", part).strip()
+        for part in re.split(r"\n\s*\n", value.strip())
+        if part.strip()
+    ]
+    if len(paragraphs) >= 2:
+        return "\n\n".join(paragraphs)
+    if not paragraphs:
+        return ""
+
+    sentences = [
+        part.strip()
+        for part in re.split(r"(?<=[.!?])\s+", paragraphs[0])
+        if part.strip()
+    ]
+    if len(sentences) < 2:
+        return paragraphs[0]
+    split_at = max(1, (len(sentences) + 1) // 2)
+    return " ".join(sentences[:split_at]) + "\n\n" + " ".join(sentences[split_at:])
+
+
 def normalized_generated_metadata(payload: dict, *, is_compilation: bool) -> dict[str, str | list[str]] | None:
     payload = unwrap_metadata_payload(payload)
     clean_title = first_metadata_string(
         payload,
         ["title", "judul", "headline", "judul_video", "video_title"],
     )
-    description = first_metadata_string(
+    description = first_metadata_prose(
         payload,
         ["description", "deskripsi", "caption", "keterangan", "deskripsi_video", "video_description"],
     )
     clean_title = polish_youtube_metadata_title(
         re.sub(r"https?://\S+", "", clean_title)
     )
-    description_lines = [
-        line.strip()
-        for line in description.splitlines()
-        if line.strip()
-        and not re.search(r"https?://|^\s*(?:sumber|source|channel\s+sumber)\s*:", line, flags=re.I)
-    ]
+    description_paragraphs: list[str] = []
+    for paragraph in re.split(r"\n\s*\n", description):
+        description_lines = [
+            line.strip()
+            for line in paragraph.splitlines()
+            if line.strip()
+            and not re.search(
+                r"https?://|^\s*(?:sumber|source|channel\s+sumber)\s*:",
+                line,
+                flags=re.I,
+            )
+        ]
+        if description_lines:
+            description_paragraphs.append(" ".join(description_lines))
     description = polish_youtube_metadata_description(
-        strip_hashtag_lines("\n".join(description_lines))
+        strip_hashtag_lines("\n\n".join(description_paragraphs))
     )
-    if not clean_title or len(description) < 70:
+    description = ensure_two_description_paragraphs(description)
+    if (
+        not clean_title
+        or len(description) < 110
+        or "\n\n" not in description
+        or metadata_has_suspicious_typo(f"{clean_title}\n{description}")
+    ):
         return None
 
     ai_hashtags = clean_ai_hashtags(metadata_hashtag_values(payload))
@@ -3958,12 +4033,14 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
         "sedekah, atau objek terkait lain seolah semuanya sama.\n"
         "- Jangan memakai ekor generik seperti 'Penjelasan Lengkap', 'Begini Aturannya', 'Wajib Tahu', "
         "'Simak Sampai Selesai', atau 'Bikin Kaget'.\n"
-        "- Perbaiki salah dengar transkrip yang jelas; jangan menyalin kata acak atau kalimat pembuka yang rusak.\n"
+        "- Perbaiki salah dengar transkrip yang jelas; jangan menyalin kata acak atau kalimat pembuka yang rusak. "
+        "Baca ulang title dan description kata demi kata dan pastikan tidak ada typo sebelum mengirim JSON.\n"
         "- Hindari ALL CAPS dan clickbait generik; tonjolkan manfaat, konflik, kejutan, atau hikmah yang benar-benar ada.\n"
         f"{long_form_packaging_rule}"
         f"{shorts_cover_rule}"
-        "- Description baru 2-3 kalimat informatif, sekitar 180-450 karakter. Kalimat pertama harus langsung "
-        "menyebut topik/kata kunci utama secara natural; kalimat berikutnya menjelaskan konflik, aturan, atau manfaat "
+        "- Description baru wajib terdiri dari tepat 2 paragraf ringkas, total 3-5 kalimat dan sekitar 240-520 "
+        "karakter. Pisahkan kedua paragraf dengan satu baris kosong. Paragraf pertama harus langsung menyebut "
+        "topik/kata kunci utama secara natural; paragraf kedua menjelaskan konflik, aturan, hikmah, atau manfaat "
         "yang benar-benar dibahas tanpa menahan jawaban secara clickbait.\n"
         "- Jangan membuka dengan frasa datar 'Video ini membahas' atau 'Video ini menjelaskan'; mulai dari pertanyaan, "
         "masalah, atau jawaban inti yang konkret.\n"
@@ -3996,8 +4073,9 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
             previous_content = ""
             for attempt in range(2):
                 repair_note = (
-                    "\n\nRespons sebelumnya belum memenuhi format/panjang/konteks. "
-                    "Perbaiki dan kembalikan satu objek JSON lengkap saja:\n"
+                    "\n\nRespons sebelumnya belum memenuhi format, dua paragraf, ejaan, panjang, atau konteks. "
+                    "Tulis ulang dengan Bahasa Indonesia baku, periksa semua typo, dan kembalikan satu objek "
+                    "JSON lengkap saja:\n"
                     + previous_content[:1200]
                     if attempt and previous_content
                     else ""
