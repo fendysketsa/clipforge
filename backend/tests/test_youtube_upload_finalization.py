@@ -889,6 +889,33 @@ def test_final_confirmation_passes_assigned_video_url_to_studio_verification(mon
     assert calls == [{"video_url": video_url, "timeout_ms": 1000}]
 
 
+def test_final_confirmation_verifies_assigned_url_even_when_studio_keeps_modal_open(monkeypatch):
+    page = TextPage("")
+    calls = []
+    monkeypatch.setenv("YOUTUBE_FINAL_VERIFY_IDLE_CHECKS", "2")
+    monkeypatch.setattr(youtube_uploader.time, "monotonic", lambda: 0.0)
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "active_upload_dialog_text", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(youtube_uploader, "log", lambda _message: None)
+
+    def verify(*_args, **kwargs):
+        calls.append(kwargs)
+        return kwargs["video_url"]
+
+    monkeypatch.setattr(youtube_uploader, "verify_saved_video_in_studio", verify)
+
+    video_url = "https://www.youtube.com/watch?v=abcDEF12345"
+    assert wait_for_final_upload_confirmation(
+        page,
+        timeout_ms=1000,
+        video_url=video_url,
+        expected_title="Video baru #Shorts",
+        visibility="private",
+    ) == video_url
+    assert calls == [{"video_url": video_url, "timeout_ms": 1000}]
+
+
 def test_studio_verification_uses_exact_video_edit_page_before_content_list(monkeypatch):
     source_page = StudioSourcePage()
     video_url = "https://www.youtube.com/watch?v=abcDEF12345"

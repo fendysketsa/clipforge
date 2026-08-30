@@ -3025,3 +3025,44 @@ def test_normalized_metadata_preserves_two_explicit_summary_paragraphs():
     assert result is not None
     summary = str(result["description"]).rsplit("\n\n#", 1)[0]
     assert summary.count("\n\n") == 1
+
+
+def test_normalized_metadata_repairs_confirmed_asr_word_in_title_and_description():
+    payload = {
+        "title": "Cara Mencerasikan Pendidikan Anak Bersama",
+        "description": (
+            "Pendidikan anak memerlukan kerja sama keluarga dan masyarakat. "
+            "Keduanya memiliki peran yang saling melengkapi.\n\n"
+            "Pembahasan ini menunjukkan cara mencerasikan tanggung jawab tanpa saling melepaskan amanah. "
+            "Tujuannya adalah membangun lingkungan pendidikan yang konsisten."
+        ),
+        "hashtags": ["#PendidikanAnak", "#Keluarga", "#Masyarakat", "#Shorts"],
+    }
+
+    result = normalized_generated_metadata(payload, is_compilation=False)
+
+    assert result is not None
+    assert "mencerasikan" not in str(result).casefold()
+    assert "Menyelaraskan" in str(result["title"])
+    assert "menyelaraskan" in str(result["description"])
+
+
+def test_public_metadata_repairs_compound_asr_phrases_from_existing_jobs():
+    payload = {
+        "title": "Jangan Kesanah Ke Mari: Pentingnya Dapat Di Mengertos Bahasa Sunda",
+        "description": (
+            "Bahasa Sunda membantu keluarga menyampaikan maksud secara lebih tepat. "
+            "Pilihan kata perlu disesuaikan dengan orang yang diajak berbicara.\n\n"
+            "Pembahasan ini mengingatkan agar pesan dapat di mengertos tanpa menimbulkan salah paham. "
+            "Konteks percakapan tetap perlu diperhatikan."
+        ),
+        "hashtags": ["#BahasaSunda", "#Komunikasi", "#Keluarga", "#Shorts"],
+    }
+
+    result = normalized_generated_metadata(payload, is_compilation=False)
+
+    assert result is not None
+    assert "kesanah" not in str(result).casefold()
+    assert "mengertos" not in str(result).casefold()
+    assert "ke sana" in str(result["title"]).casefold()
+    assert "dapat memahami" in str(result["description"]).casefold()

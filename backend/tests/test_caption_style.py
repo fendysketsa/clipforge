@@ -39,6 +39,7 @@ from clipper import (
     clip_topic_hashtags,
     codex_edit_plan,
     codex_growth_blueprint,
+    clean_transcript_text,
     configure_huggingface_environment,
     contextual_audio_mix_filter,
     contextual_sound_effect_cues,
@@ -2716,6 +2717,15 @@ def test_public_copy_typo_gate_is_conservative():
     assert not has_suspicious_public_copy(
         "Transkrip dan instruksi pesantren diperiksa dalam perspektif pendidikan."
     )
+
+
+def test_confirmed_asr_typo_is_repaired_before_public_copy():
+    assert clean_transcript_text(
+        "Bagaimana kita mencerasikan pendidikan keluarga dan masyarakat?"
+    ) == "Bagaimana kita menyelaraskan pendidikan keluarga dan masyarakat?"
+    assert clean_transcript_text(
+        "Jangan kesanah ke mari, pentingnya dapat di mengertos Bahasa Sunda."
+    ) == "Jangan ke sana ke mari, pentingnya dapat memahami Bahasa Sunda."
 
 
 def test_social_description_removes_icons_from_ai_summary():

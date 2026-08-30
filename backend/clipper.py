@@ -1355,6 +1355,10 @@ TRANSCRIPT_REPLACEMENTS = {
     r"\bseris\b": "series",
     r"\bmelawangkan\b": "meluangkan",
     r"\bmenyerahanakan\b": "menyederhanakan",
+    r"\bmencerasikan\b": "menyelaraskan",
+    r"\bkesanah\b": "ke sana",
+    r"\bdapat\s+di\s+mengertos\b": "dapat memahami",
+    r"\bmengertos\b": "memahami",
 }
 
 SOURCE_BRANDING_PATTERNS = (
@@ -3979,7 +3983,12 @@ def clean_transcript_text(text: str) -> str:
     cleaned = re.sub(r"\s+", " ", text).strip()
     cleaned = cleaned.replace(" ,", ",").replace(" .", ".").replace(" ?", "?").replace(" !", "!")
     for pattern, replacement in TRANSCRIPT_REPLACEMENTS.items():
-        cleaned = re.sub(pattern, replacement, cleaned, flags=re.IGNORECASE)
+        def case_aware_replacement(match: re.Match[str]) -> str:
+            if replacement[:1].islower() and match.group(0)[:1].isupper():
+                return replacement[:1].upper() + replacement[1:]
+            return replacement
+
+        cleaned = re.sub(pattern, case_aware_replacement, cleaned, flags=re.IGNORECASE)
     return cleaned.strip()
 
 
@@ -6399,7 +6408,7 @@ def ai_rescore_candidates(
             and not is_source_branding_segment(title)
             and not has_suspicious_public_copy(title)
         ):
-            candidate.title = title.strip()[:80]
+            candidate.title = clean_transcript_text(title)[:80]
         hook = entry.get("hook")
         if (
             isinstance(hook, str)
@@ -6407,7 +6416,7 @@ def ai_rescore_candidates(
             and not is_source_branding_segment(hook)
             and not has_suspicious_public_copy(hook)
         ):
-            candidate.hook = first_sentence(hook, max_words=8)[:80]
+            candidate.hook = first_sentence(clean_transcript_text(hook), max_words=8)[:80]
         reason = entry.get("reason")
         pov = entry.get("pov")
         reason_parts: list[str] = []
@@ -10132,7 +10141,7 @@ def generate_social_caption(
         return fallback_social_caption(clip, required_hashtags, long_form=long_form)
     text = caption.strip()
     clean_lines = [
-        line
+        clean_transcript_text(line)
         for line in text.splitlines()
         if not is_source_branding_segment(line)
     ]

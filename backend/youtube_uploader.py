@@ -53,6 +53,16 @@ def env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def env_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return int(value.strip())
+    except ValueError:
+        return default
+
+
 def safe_upload_visibility(requested: str) -> str:
     visibility = requested if requested in {"private", "unlisted", "public"} else "private"
     if visibility == "public" and not env_bool("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", False):
@@ -5616,7 +5626,11 @@ def wait_for_final_upload_confirmation(
     last_body = ""
     last_progress_percent = -1
     next_progress_log_at = 0.0
-    closed_idle_checks = 0
+    final_identity_idle_checks = 0
+    verification_idle_threshold = max(
+        2,
+        env_int("YOUTUBE_FINAL_VERIFY_IDLE_CHECKS", 5),
+    )
     while True:
         now = time.monotonic()
         if now >= deadline:
@@ -5665,9 +5679,20 @@ def wait_for_final_upload_confirmation(
         if not pending and any(re.search(pattern, body, re.I) for pattern in done_patterns):
             log("Konfirmasi final upload terdeteksi.")
             return video_url or extract_video_url(page, expected_title)
-        if dialog_count == 0 and not pending:
-            closed_idle_checks += 1
-            if closed_idle_checks >= 5 and expected_title:
+        # Studio kadang mempertahankan modal upload sesudah Simpan walaupun
+        # video sudah mendapat ID dan tersedia di halaman edit. Jangan menunggu
+        # modal itu selama satu jam: URL video + judul + visibilitas pada halaman
+        # edit merupakan verifikasi identitas yang lebih kuat daripada status
+        # modal. Pemeriksaan ini tetap tidak dijalankan selama progres transfer
+        # eksplisit masih terlihat.
+        can_verify_saved_video = bool(
+            expected_title
+            and not pending
+            and (dialog_count == 0 or normalize_youtube_video_url(video_url))
+        )
+        if can_verify_saved_video:
+            final_identity_idle_checks += 1
+            if final_identity_idle_checks >= verification_idle_threshold:
                 verified_url = verify_saved_video_in_studio(
                     page,
                     expected_title,
@@ -5677,13 +5702,13 @@ def wait_for_final_upload_confirmation(
                 )
                 if verified_url:
                     log(
-                        "Konfirmasi final dipulihkan dari halaman Content: "
-                        "video baru terdaftar dengan visibilitas yang benar."
+                        "Konfirmasi final dipulihkan dari halaman Content/edit: "
+                        "video baru terdaftar dengan judul dan visibilitas yang benar."
                     )
                     return verified_url
-                closed_idle_checks = 0
+                final_identity_idle_checks = 0
         else:
-            closed_idle_checks = 0
+            final_identity_idle_checks = 0
         if now >= next_progress_log_at:
             if progress:
                 log(

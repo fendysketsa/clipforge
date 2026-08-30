@@ -1448,6 +1448,15 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
     loaded: dict[str, YouTubeUploadJob] = {}
     for item in payload:
         upload = YouTubeUploadJob(**item)
+        repaired_title = repair_known_public_typos(upload.title)
+        repaired_description = repair_known_public_typos(upload.description)
+        if repaired_title != upload.title or repaired_description != upload.description:
+            upload = upload.model_copy(
+                update={
+                    "title": repaired_title,
+                    "description": repaired_description,
+                }
+            )
         if upload.status == "running":
             finished_at = now_iso()
             if upload.video_url and upload.upload_confirmed and not upload.dry_run:
@@ -1686,9 +1695,30 @@ def clip_artifact_paths(clip: ClipFile) -> set[Path]:
     return paths
 
 
+_KNOWN_PUBLIC_TYPO_REPLACEMENTS = {
+    r"\bmencerasikan\b": "menyelaraskan",
+    r"\bkesanah\b": "ke sana",
+    r"\bdapat\s+di\s+mengertos\b": "dapat memahami",
+    r"\bmengertos\b": "memahami",
+}
+
+
+def repair_known_public_typos(value: str) -> str:
+    """Repair confirmed ASR errors without guessing at unfamiliar proper names."""
+    clean = value
+    for pattern, replacement in _KNOWN_PUBLIC_TYPO_REPLACEMENTS.items():
+        def case_aware_replacement(match: re.Match[str]) -> str:
+            if match.group(0)[:1].isupper():
+                return replacement[:1].upper() + replacement[1:]
+            return replacement
+
+        clean = re.sub(pattern, case_aware_replacement, clean, flags=re.IGNORECASE)
+    return clean
+
+
 def clip_sidecar_title(clip: ClipFile) -> str | None:
     if clip.title and clip.title.strip():
-        return clip.title.strip()
+        return repair_known_public_typos(clip.title.strip())
 
     clip_path = output_path_from_url(clip.url)
     if clip_path is None:
@@ -1703,7 +1733,7 @@ def clip_sidecar_title(clip: ClipFile) -> str | None:
     except (OSError, json.JSONDecodeError):
         return None
     title = payload.get("title") if isinstance(payload, dict) else None
-    return title.strip() if isinstance(title, str) and title.strip() else None
+    return repair_known_public_typos(title.strip()) if isinstance(title, str) and title.strip() else None
 
 
 def clip_index_from_name(name: str) -> int | None:
@@ -1816,7 +1846,7 @@ def enrich_clips_with_candidate_titles(
     candidates: list[ClipCandidate],
 ) -> list[ClipFile]:
     titles_by_index = {
-        candidate.index: candidate.title.strip()
+        candidate.index: repair_known_public_typos(candidate.title.strip())
         for candidate in candidates
         if candidate.title.strip()
     }
@@ -3810,7 +3840,7 @@ def unwrap_metadata_payload(payload: dict) -> dict:
 
 def polish_youtube_metadata_title(value: str) -> str:
     """Remove generic tails that waste the most valuable mobile title space."""
-    clean = re.sub(r"\s+", " ", value).strip(" -|:–—")
+    clean = re.sub(r"\s+", " ", repair_known_public_typos(value)).strip(" -|:–—")
     generic_tail = (
         r"(?:\s*[-–—:|]\s*|\s+)(?:penjelasan lengkap|begini aturannya|"
         r"wajib tahu|simak sampai selesai|fakta mengejutkan|bikin kaget|ternyata)\s*[!?.]*$"
@@ -3844,6 +3874,7 @@ def polish_youtube_metadata_description(value: str) -> str:
     }
     for pattern, replacement in replacements.items():
         clean = re.sub(pattern, replacement, clean, flags=re.I)
+    clean = repair_known_public_typos(clean)
     clean = re.sub(r"[ \t]{2,}", " ", clean).strip()
     return clean[:1].upper() + clean[1:] if clean else ""
 
@@ -6738,7 +6769,7 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
                 sidecar = payload if isinstance(payload, dict) else {}
                 candidate_title = payload.get("title") if isinstance(payload, dict) else None
                 if isinstance(candidate_title, str) and candidate_title.strip():
-                    title = candidate_title.strip()
+                    title = repair_known_public_typos(candidate_title.strip())
             except (OSError, json.JSONDecodeError):
                 title = None
                 sidecar = {}
