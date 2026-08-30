@@ -42,6 +42,10 @@ class ThumbnailDailyLimitUploadError(UploadError):
     """Studio rejected a custom thumbnail because the channel hit its daily limit."""
 
 
+class FinalUploadTransferError(UploadError):
+    """Studio explicitly reported that the selected video's transfer failed."""
+
+
 def env_bool(name: str, default: bool = False) -> bool:
     value = os.environ.get(name)
     if value is None:
@@ -4954,6 +4958,16 @@ def community_check_is_pending(body: str) -> bool:
     )
 
 
+def private_review_check_options(visibility: str) -> tuple[bool, bool]:
+    """Return Private-only fast paths without weakening explicit-claim checks."""
+    if visibility != "private":
+        return False, False
+    return (
+        env_bool("YOUTUBE_PRIVATE_FAST_CHECKS", True),
+        env_bool("YOUTUBE_PRIVATE_SKIP_PENDING_CHECKS", True),
+    )
+
+
 def wait_for_copyright_checks(
     page,
     timeout_ms: int,
@@ -5265,14 +5279,37 @@ def saved_video_row_snapshot(page, expected_title: str, visibility: str) -> dict
                 }
                 return values;
               };
+              const containerText = (container) => {
+                const chunks = [
+                  container.innerText,
+                  container.textContent,
+                  container.getAttribute?.('aria-label'),
+                  container.getAttribute?.('title'),
+                ];
+                const descendants = container.querySelectorAll
+                  ? Array.from(container.querySelectorAll('[aria-label], [title], input, textarea')).slice(0, 300)
+                  : [];
+                for (const element of descendants) {
+                  chunks.push(
+                    element.getAttribute?.('aria-label'),
+                    element.getAttribute?.('title'),
+                    element.value,
+                  );
+                }
+                return normalize(chunks.filter(Boolean).join('\n'));
+              };
               for (const root of roots) {
                 const anchors = root.querySelectorAll ? Array.from(root.querySelectorAll('a[href]')) : [];
                 for (const anchor of anchors) {
                   const href = anchor.href || anchor.getAttribute('href') || '';
                   if (!videoHref(href)) continue;
                   for (const container of ancestors(anchor)) {
-                    const text = normalize(container.innerText || container.textContent || '');
-                    if (!text.includes(wanted)) continue;
+                    const text = containerText(container);
+                    const stableTitlePrefix = wanted.slice(0, Math.min(48, wanted.length));
+                    if (
+                      !text.includes(wanted) &&
+                      !(stableTitlePrefix.length >= 32 && text.includes(stableTitlePrefix))
+                    ) continue;
                     const visibilityOk = visibilityWords.some((word) => text.includes(word));
                     const uploadFailed = /(?:upload|mengupload|mengunggah).{0,30}(?:failed|gagal)|(?:failed|gagal).{0,30}(?:upload|mengupload|mengunggah)/i.test(text);
                     const uploading = /(?:uploading|mengupload|mengunggah)\s*\d{1,3}\s*%/i.test(text);
@@ -5336,9 +5373,51 @@ def saved_video_edit_snapshot(page, expected_title: str, visibility: str) -> dic
                 }
               }
               const text = normalize(chunks.filter(Boolean).join('\n'));
+              const selectedVisibility = (() => {
+                const selected = (element) => Boolean(element && (
+                  element.checked ||
+                  element.hasAttribute?.('checked') ||
+                  element.hasAttribute?.('active') ||
+                  element.classList?.contains('iron-selected') ||
+                  element.getAttribute?.('aria-checked') === 'true'
+                ));
+                for (const root of roots) {
+                  const elements = root.querySelectorAll
+                    ? Array.from(root.querySelectorAll(
+                        'tp-yt-paper-radio-button, ytcp-radio-button, [role="radio"], input[type="radio"]'
+                      ))
+                    : [];
+                  for (const element of elements) {
+                    if (!selected(element)) continue;
+                    const value = normalize([
+                      element.getAttribute?.('name'),
+                      element.getAttribute?.('value'),
+                      element.getAttribute?.('aria-label'),
+                      element.innerText,
+                      element.textContent,
+                    ].filter(Boolean).join(' '));
+                    if (value) return value;
+                  }
+                }
+                return '';
+              })();
+              const titleValues = [];
+              for (const root of roots) {
+                const fields = root.querySelectorAll
+                  ? Array.from(root.querySelectorAll(
+                      '#title-textarea #textbox, #title-textarea [contenteditable="true"], input[name="title"], textarea[name="title"]'
+                    ))
+                  : [];
+                for (const field of fields) {
+                  titleValues.push(field.value, field.innerText, field.textContent);
+                }
+              }
+              const exactTitleText = normalize(titleValues.filter(Boolean).join('\n'));
               return {
-                titleOk: Boolean(wanted && text.includes(wanted)),
-                visibilityOk: visibilityWords.some((word) => text.includes(word)),
+                titleOk: Boolean(wanted && (exactTitleText.includes(wanted) || text.includes(wanted))),
+                visibilityOk: visibilityWords.some(
+                  (word) => text.includes(word) || selectedVisibility.includes(word)
+                ),
                 uploadFailed: /(?:upload|mengupload|mengunggah).{0,30}(?:failed|gagal)|(?:failed|gagal).{0,30}(?:upload|mengupload|mengunggah)/i.test(text),
                 uploading: /(?:uploading|mengupload|mengunggah)\s*\d{1,3}\s*%|upload(?:ing)? (?:is )?(?:still )?in progress|upload sedang berlangsung/i.test(text),
               };
@@ -5371,6 +5450,23 @@ def verify_saved_video_in_studio(
     try:
         verification_page = context.new_page()
         install_browser_dialog_guard(verification_page)
+        last_progress_log_at = 0.0
+        overall_deadline = time.monotonic() + timeout_ms / 1000
+
+        def prepare_verification_page() -> None:
+            # A newly opened tab can receive Studio's unsupported-browser
+            # interstitial even when the source tab was already approved.
+            # Resolve it on every verification route before reading the DOM.
+            ensure_supported_studio_browser(verification_page)
+            ensure_studio_page_healthy(verification_page)
+
+        def log_verification_progress(message: str) -> None:
+            nonlocal last_progress_log_at
+            now = time.monotonic()
+            if now >= last_progress_log_at:
+                log(message)
+                last_progress_log_at = now + 15
+
         normalized_video_url = normalize_youtube_video_url(video_url)
         video_id_match = re.search(r"[?&]v=([A-Za-z0-9_-]{6,})", normalized_video_url)
         if video_id_match:
@@ -5378,21 +5474,31 @@ def verify_saved_video_in_studio(
             # for both Shorts and long-form. The Content list can place a new
             # portrait upload on a different tab, so verify its edit page first.
             video_id = video_id_match.group(1)
+            direct_timeout_ms = max(5000, (timeout_ms * 2) // 3)
             try:
                 verification_page.goto(
                     f"https://studio.youtube.com/video/{video_id}/edit",
                     wait_until="domcontentloaded",
-                    timeout=max(15000, timeout_ms),
+                    timeout=min(30000, max(15000, direct_timeout_ms)),
                 )
-                deadline = time.monotonic() + timeout_ms / 1000
+                prepare_verification_page()
+                deadline = min(
+                    overall_deadline,
+                    time.monotonic() + direct_timeout_ms / 1000,
+                )
                 while time.monotonic() < deadline:
+                    log_verification_progress(
+                        "Memverifikasi URL video langsung di halaman edit YouTube Studio."
+                    )
                     snapshot = saved_video_edit_snapshot(
                         verification_page,
                         expected_title,
                         visibility,
                     )
                     if snapshot.get("uploadFailed") == "True":
-                        raise UploadError("YouTube Studio menandai transfer video baru gagal.")
+                        raise FinalUploadTransferError(
+                            "YouTube Studio menandai transfer video baru gagal."
+                        )
                     if (
                         snapshot.get("titleOk") == "True"
                         and snapshot.get("visibilityOk") == "True"
@@ -5400,7 +5506,7 @@ def verify_saved_video_in_studio(
                     ):
                         return normalized_video_url
                     time.sleep(2)
-            except UploadError:
+            except FinalUploadTransferError:
                 raise
             except Exception:
                 # Keep the older Content-list verification as a safe fallback
@@ -5408,25 +5514,57 @@ def verify_saved_video_in_studio(
                 pass
 
         channel_id = effective_channel_id(page)
-        target_url = (
-            f"https://studio.youtube.com/channel/{channel_id}/videos/upload"
+        target_urls = (
+            (
+                f"https://studio.youtube.com/channel/{channel_id}/videos/short",
+                f"https://studio.youtube.com/channel/{channel_id}/videos/upload",
+                f"https://studio.youtube.com/channel/{channel_id}/videos",
+            )
             if channel_id
-            else "https://studio.youtube.com/videos/upload"
+            else (
+                "https://studio.youtube.com/videos/short",
+                "https://studio.youtube.com/videos/upload",
+                "https://studio.youtube.com/videos",
+            )
         )
-        verification_page.goto(target_url, wait_until="domcontentloaded", timeout=max(15000, timeout_ms))
-        deadline = time.monotonic() + timeout_ms / 1000
-        while time.monotonic() < deadline:
-            snapshot = saved_video_row_snapshot(verification_page, expected_title, visibility)
-            video_url = normalize_youtube_video_url(snapshot.get("href", ""))
-            if snapshot.get("uploadFailed") == "True":
-                raise UploadError("YouTube Studio menandai transfer video baru gagal.")
-            if (
-                video_url
-                and snapshot.get("visibilityOk") == "True"
-                and snapshot.get("uploading") != "True"
-            ):
-                return video_url
-            time.sleep(2)
+        for route_index, target_url in enumerate(target_urls):
+            remaining_ms = max(0, int((overall_deadline - time.monotonic()) * 1000))
+            if remaining_ms <= 0:
+                break
+            routes_left = len(target_urls) - route_index
+            per_route_timeout_ms = max(1000, remaining_ms // routes_left)
+            try:
+                verification_page.goto(
+                    target_url,
+                    wait_until="domcontentloaded",
+                    timeout=min(30000, max(10000, per_route_timeout_ms)),
+                )
+                prepare_verification_page()
+            except FinalUploadTransferError:
+                raise
+            except Exception:
+                continue
+            deadline = min(
+                overall_deadline,
+                time.monotonic() + per_route_timeout_ms / 1000,
+            )
+            while time.monotonic() < deadline:
+                log_verification_progress(
+                    "Mencari video tersimpan pada daftar Content YouTube Studio."
+                )
+                snapshot = saved_video_row_snapshot(verification_page, expected_title, visibility)
+                saved_url = normalize_youtube_video_url(snapshot.get("href", ""))
+                if snapshot.get("uploadFailed") == "True":
+                    raise FinalUploadTransferError(
+                        "YouTube Studio menandai transfer video baru gagal."
+                    )
+                if (
+                    saved_url
+                    and snapshot.get("visibilityOk") == "True"
+                    and snapshot.get("uploading") != "True"
+                ):
+                    return saved_url
+                time.sleep(2)
         return ""
     except UploadError:
         raise
@@ -6120,22 +6258,18 @@ def run_upload(args: argparse.Namespace) -> None:
             effective_require_copyright_checks = bool(
                 args.require_copyright_checks or strict_zero_claim
             )
+            (
+                allow_private_community_pending,
+                skip_private_pending_checks,
+            ) = private_review_check_options(args.visibility)
             private_review_checks_pending = wait_for_copyright_checks(
                 page,
                 min(timeout_ms, int(os.environ.get("YOUTUBE_CHECKS_TIMEOUT_SECONDS", "3600")) * 1000),
                 effective_require_copyright_checks,
                 content_type=args.thumbnail_content_type,
                 media_duration_seconds=args.media_duration_seconds,
-                allow_private_review_while_community_pending=(
-                    args.visibility == "private"
-                    and not effective_require_copyright_checks
-                    and env_bool("YOUTUBE_PRIVATE_FAST_CHECKS", False)
-                ),
-                skip_pending_checks_for_private_review=(
-                    args.visibility == "private"
-                    and not effective_require_copyright_checks
-                    and env_bool("YOUTUBE_PRIVATE_SKIP_PENDING_CHECKS", False)
-                ),
+                allow_private_review_while_community_pending=allow_private_community_pending,
+                skip_pending_checks_for_private_review=skip_private_pending_checks,
             )
             if private_review_checks_pending:
                 log("Checks masih diproses YouTube; lanjut ke Visibilitas Private tanpa menahan antrean.")

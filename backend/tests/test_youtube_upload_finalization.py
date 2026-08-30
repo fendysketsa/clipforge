@@ -18,6 +18,7 @@ from youtube_uploader import (
     next_upload_step_timeout_ms,
     normalize_youtube_video_url,
     open_advanced_upload_settings,
+    private_review_check_options,
     reload_after_publish,
     safe_upload_visibility,
     set_altered_content_disclosure,
@@ -93,8 +94,10 @@ class StudioVerificationPage:
     def __init__(self):
         self.goto_calls = []
         self.closed = False
+        self.url = ""
 
     def goto(self, url, **kwargs):
+        self.url = url
         self.goto_calls.append((url, kwargs))
 
     def close(self):
@@ -112,6 +115,7 @@ class StudioVerificationContext:
 class StudioSourcePage:
     def __init__(self):
         self.context = StudioVerificationContext()
+        self.url = "https://studio.youtube.com/channel/test-channel"
 
 
 class ReloadPage:
@@ -421,6 +425,21 @@ def test_private_review_skips_pending_copyright_check(monkeypatch):
 
     assert checks_pending is True
     assert any("dilanjutkan sekarang" in message for message in logs)
+
+
+def test_private_review_fast_paths_are_enabled_by_default(monkeypatch):
+    monkeypatch.delenv("YOUTUBE_PRIVATE_FAST_CHECKS", raising=False)
+    monkeypatch.delenv("YOUTUBE_PRIVATE_SKIP_PENDING_CHECKS", raising=False)
+
+    assert private_review_check_options("private") == (True, True)
+    assert private_review_check_options("public") == (False, False)
+
+
+def test_private_review_fast_paths_can_be_disabled_explicitly(monkeypatch):
+    monkeypatch.setenv("YOUTUBE_PRIVATE_FAST_CHECKS", "false")
+    monkeypatch.setenv("YOUTUBE_PRIVATE_SKIP_PENDING_CHECKS", "false")
+
+    assert private_review_check_options("private") == (False, False)
 
 
 def test_private_review_fast_path_never_bypasses_a_copyright_claim(monkeypatch):
@@ -896,6 +915,67 @@ def test_studio_verification_uses_exact_video_edit_page_before_content_list(monk
         "https://studio.youtube.com/video/abcDEF12345/edit"
     )
     assert source_page.context.page.closed is True
+
+
+def test_studio_verification_rechecks_browser_compatibility_on_new_tab(monkeypatch):
+    source_page = StudioSourcePage()
+    compatibility_pages = []
+    video_url = "https://www.youtube.com/watch?v=abcDEF12345"
+    monkeypatch.setattr(youtube_uploader, "install_browser_dialog_guard", lambda _page: None)
+    monkeypatch.setattr(
+        youtube_uploader,
+        "ensure_supported_studio_browser",
+        compatibility_pages.append,
+    )
+    monkeypatch.setattr(youtube_uploader, "ensure_studio_page_healthy", lambda _page: None)
+    monkeypatch.setattr(
+        youtube_uploader,
+        "saved_video_edit_snapshot",
+        lambda *_args, **_kwargs: {
+            "titleOk": "True",
+            "visibilityOk": "True",
+            "uploadFailed": "False",
+            "uploading": "False",
+        },
+    )
+
+    assert verify_saved_video_in_studio(
+        source_page,
+        "Video baru #Shorts",
+        "private",
+        video_url=video_url,
+        timeout_ms=1000,
+    ) == video_url
+    assert compatibility_pages == [source_page.context.page]
+
+
+def test_studio_verification_searches_shorts_content_tab_first(monkeypatch):
+    source_page = StudioSourcePage()
+    monkeypatch.setattr(youtube_uploader.time, "monotonic", lambda: 0.0)
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(youtube_uploader, "install_browser_dialog_guard", lambda _page: None)
+    monkeypatch.setattr(youtube_uploader, "ensure_supported_studio_browser", lambda _page: None)
+    monkeypatch.setattr(youtube_uploader, "ensure_studio_page_healthy", lambda _page: None)
+
+    def row_snapshot(page, *_args, **_kwargs):
+        if page.url.endswith("/videos/short"):
+            return {
+                "href": "https://studio.youtube.com/video/abcDEF12345/edit",
+                "visibilityOk": "True",
+                "uploadFailed": "False",
+                "uploading": "False",
+            }
+        return {}
+
+    monkeypatch.setattr(youtube_uploader, "saved_video_row_snapshot", row_snapshot)
+
+    assert verify_saved_video_in_studio(
+        source_page,
+        "Video baru #Shorts",
+        "private",
+        timeout_ms=3000,
+    ) == "https://www.youtube.com/watch?v=abcDEF12345"
+    assert source_page.context.page.goto_calls[0][0].endswith("/videos/short")
 
 
 def test_normalize_youtube_video_url_accepts_studio_edit_link():

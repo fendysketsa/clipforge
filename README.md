@@ -267,9 +267,11 @@ During upload, Playwright waits for YouTube Studio Checks and applies a zero-act
 claim policy: every detected Content ID/copyright claim cancels the workflow before
 the final Save/Publish action, including claims currently described as having no
 impact and claims on Shorts under one minute. A claimed upload is no longer saved
-as a Private fallback. Auto uploads are kept Private by default when Checks are
-fully clear, because Content ID can also apply a later claim after initial Checks
-finish. When Fendy Clipper replaces a realistic backdrop, it also
+as a Private fallback. Private auto uploads do not hold the whole queue while
+Studio still reports Checks as pending: the workflow checks for an explicit claim,
+continues as Private, then checks once more immediately before Save. Public and
+Unlisted uploads still require completed Checks. Because Content ID can apply a
+later claim, review Private uploads before publishing. When Fendy Clipper replaces a realistic backdrop, it also
 selects YouTube's altered-content disclosure before continuing. Review the
 Restrictions and monetization columns before publishing.
 This reduces risk but cannot guarantee a video will never receive a future claim.
@@ -304,6 +306,8 @@ YOUTUBE_PUBLIC_DAILY_LIMIT=2
 YOUTUBE_PUBLIC_MIN_GAP_HOURS=6
 YOUTUBE_PUBLISH_TIMEZONE=Asia/Jakarta
 YOUTUBE_REQUIRE_COPYRIGHT_CHECKS=true
+YOUTUBE_PRIVATE_FAST_CHECKS=true
+YOUTUBE_PRIVATE_SKIP_PENDING_CHECKS=true
 YOUTUBE_COPYRIGHT_HIGH_RISK_TERMS=islam itu indah,transcorp,trans tv,trans7
 YOUTUBE_CONTINUE_WHEN_CHECKS_STUCK=false
 YOUTUBE_CHECKS_TIMEOUT_SECONDS=3600
