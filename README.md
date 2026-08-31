@@ -26,7 +26,8 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Keep the original background by default; optional background cleaning remains available for text-heavy sources.
 - Add at most one strong conversation-aware reaction sticker in Clean Detail mode, only for laughter, surprise, prayer, or warnings.
 - Mix restrained transcript-synced sound effects under normalized dialogue.
-- Automatically give Islamic clips a quiet, dialogue-ducked motivational music bed generated locally from the CC0 "Cahaya Hikmah" recipe, with no third-party recording or sample.
+- For **Clip Pendek** only, select an instrumental downloaded from YouTube Studio Audio Library by the clip's detected theme and mood. Only manifest-verified `Attribution not required` tracks are eligible; dialogue uses an 80% gain, music is capped at 20%, and sidechain ducking lowers music further during speech. The renderer never scrapes Studio or relabels third-party downloads as Audio Library tracks.
+- If no eligible Audio Library track is installed, Islamic clips can still use the quiet, dialogue-ducked CC0 "Cahaya Hikmah" fallback generated locally without third-party recordings or samples.
 - Apply loop treatment only when the payoff semantically reconnects to the opening hook.
 - Preserve the source footer and face pixels by default; footer cleanup is opt-in for sources where modifying the lower frame is acceptable.
 - Enhance voice clarity and generate safe, niche-aware social captions even when the AI service is unavailable.

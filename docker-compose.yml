@@ -8,6 +8,7 @@ services:
       - ./backend/outputs:/app/outputs
       - ./backend/uploads:/app/uploads
       - ./backend/data:/app/data
+      - ./backend/assets/youtube_audio_library:/app/assets/youtube_audio_library:ro
       - ./scripts:/app/scripts:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${YOUTUBE_HOST_RUNTIME_DIR:-/run/user/1000}:/run/fendy-clipper-host-user:ro
@@ -113,6 +114,11 @@ services:
       CTA_VOICEOVER_VOICE: ${CTA_VOICEOVER_VOICE:-id-ID-ArdiNeural}
       CTA_VOICEOVER_RATE: ${CTA_VOICEOVER_RATE:-+12%}
       CTA_VOICEOVER_ESPEAK_VOICE: ${CTA_VOICEOVER_ESPEAK_VOICE:-id+m3}
+      SHORTS_YOUTUBE_AUDIO_LIBRARY_ENABLED: ${SHORTS_YOUTUBE_AUDIO_LIBRARY_ENABLED:-true}
+      YOUTUBE_AUDIO_LIBRARY_DIR: ${YOUTUBE_AUDIO_LIBRARY_DIR:-/app/assets/youtube_audio_library}
+      SHORTS_DIALOGUE_GAIN: ${SHORTS_DIALOGUE_GAIN:-0.80}
+      SHORTS_BACKGROUND_MUSIC_GAIN: ${SHORTS_BACKGROUND_MUSIC_GAIN:-0.20}
+      SHORTS_MUSIC_DUCKING: ${SHORTS_MUSIC_DUCKING:-true}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/free}

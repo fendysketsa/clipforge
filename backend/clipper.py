@@ -171,6 +171,22 @@ class SoundEffectCue:
     trigger: str
 
 
+@dataclass(frozen=True)
+class YouTubeAudioLibraryTrack:
+    """Locally downloaded, manifest-verified YouTube Audio Library music."""
+
+    path: Path
+    title: str
+    artist: str
+    moods: tuple[str, ...]
+    genres: tuple[str, ...]
+    themes: tuple[str, ...]
+    license: str
+    source_url: str
+    sha256: str
+    attribution_required: bool = False
+
+
 @dataclass
 class BackdropProfile:
     dominant_lab: tuple[float, float, float]
@@ -1131,6 +1147,14 @@ ISLAMIC_WORDS = {
 
 ISLAMIC_BACKGROUND_MUSIC_TITLE = "Cahaya Hikmah (Fendy Clipper Original)"
 ISLAMIC_BACKGROUND_MUSIC_LICENSE = "CC0-1.0"
+YOUTUBE_AUDIO_LIBRARY_DEFAULT_DIR = (
+    Path(__file__).resolve().parent / "assets" / "youtube_audio_library"
+)
+YOUTUBE_AUDIO_LIBRARY_LICENSES = {
+    "youtube audio library license",
+    "youtube_audio_library",
+    "youtube-audio-library",
+}
 
 INSPIRING_WORDS = {
     "bangkit",
@@ -7403,6 +7427,15 @@ def env_enabled(name: str, default: bool = False) -> bool:
     return value.strip().casefold() in {"1", "true", "yes", "on"}
 
 
+def env_audio_gain(name: str, default: float) -> float:
+    """Read a safe linear audio gain; invalid values keep the documented default."""
+    try:
+        value = float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(0.0, min(1.0, value))
+
+
 def shorts_cta_voiceover_text() -> str:
     """Return a short command-safe CTA copy; subprocess calls use argv, not a shell."""
     configured = os.environ.get(
@@ -7644,6 +7677,150 @@ def detect_visual_theme(clip: ClipCandidate) -> VisualTheme:
     if words.intersection(INSPIRING_WORDS):
         return "inspiring"
     return "knowledge"
+
+
+YOUTUBE_AUDIO_THEME_TAGS: dict[VisualTheme, set[str]] = {
+    "mystery": {"mystery", "dark", "dramatic", "suspense", "cinematic"},
+    "islamic": {"islamic", "reflective", "calm", "inspirational", "ambient"},
+    "warning": {"warning", "dramatic", "tense", "suspense", "cinematic"},
+    "inspiring": {"inspiring", "inspirational", "hopeful", "bright", "uplifting"},
+    "knowledge": {"knowledge", "educational", "calm", "ambient", "documentary"},
+}
+
+
+def _audio_catalog_tags(value: object) -> tuple[str, ...]:
+    raw = value if isinstance(value, list) else [value]
+    return tuple(
+        dict.fromkeys(
+            clean
+            for item in raw
+            if (clean := re.sub(r"\s+", " ", str(item or "")).strip().casefold())
+        )
+    )
+
+
+def load_youtube_audio_library_catalog(
+    library_dir: Path | None = None,
+) -> list[YouTubeAudioLibraryTrack]:
+    """Load only locally present, attribution-free Audio Library instrumentals."""
+    configured_dir = os.environ.get("YOUTUBE_AUDIO_LIBRARY_DIR", "").strip()
+    root = (
+        library_dir
+        if library_dir is not None
+        else Path(configured_dir)
+        if configured_dir
+        else YOUTUBE_AUDIO_LIBRARY_DEFAULT_DIR
+    ).expanduser().resolve()
+    catalog_path = root / "catalog.json"
+    if not catalog_path.is_file():
+        return []
+    try:
+        payload = json.loads(catalog_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return []
+    entries = payload.get("tracks") if isinstance(payload, dict) else payload
+    if not isinstance(entries, list):
+        return []
+    tracks: list[YouTubeAudioLibraryTrack] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        relative_file = str(entry.get("file") or "").strip()
+        path = (root / relative_file).resolve()
+        try:
+            path.relative_to(root)
+        except ValueError:
+            continue
+        license_name = re.sub(r"\s+", " ", str(entry.get("license") or "")).strip()
+        source_url = str(entry.get("source_url") or "").strip()
+        expected_sha256 = str(entry.get("sha256") or "").strip().casefold()
+        if (
+            not relative_file
+            or not path.is_file()
+            or path.suffix.casefold() not in {".mp3", ".wav", ".m4a", ".flac", ".ogg"}
+            or str(entry.get("kind") or "music").strip().casefold() != "music"
+            or entry.get("instrumental") is not True
+            or entry.get("attribution_required") is not False
+            or license_name.casefold() not in YOUTUBE_AUDIO_LIBRARY_LICENSES
+            or re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None
+            or file_sha256(path).casefold() != expected_sha256
+            or not (
+                "youtube.com/audiolibrary" in source_url.casefold()
+                or "studio.youtube.com" in source_url.casefold()
+            )
+        ):
+            continue
+        title = re.sub(r"\s+", " ", str(entry.get("title") or path.stem)).strip()
+        artist = re.sub(r"\s+", " ", str(entry.get("artist") or "YouTube Audio Library")).strip()
+        tracks.append(
+            YouTubeAudioLibraryTrack(
+                path=path,
+                title=title[:180],
+                artist=artist[:180],
+                moods=_audio_catalog_tags(entry.get("moods")),
+                genres=_audio_catalog_tags(entry.get("genres")),
+                themes=_audio_catalog_tags(entry.get("themes")),
+                license=license_name,
+                source_url=source_url,
+                sha256=expected_sha256,
+                attribution_required=False,
+            )
+        )
+    return tracks
+
+
+def select_youtube_audio_library_track(
+    clip: ClipCandidate,
+    library_dir: Path | None = None,
+) -> tuple[YouTubeAudioLibraryTrack | None, dict[str, object]]:
+    """Select a deterministic instrumental whose catalog mood matches the clip."""
+    theme = detect_visual_theme(clip)
+    desired = YOUTUBE_AUDIO_THEME_TAGS[theme]
+    clip_words = set(
+        re.findall(
+            r"[\w']+",
+            f"{clip.title} {clip.hook} {clip.pov} {clip.text}".casefold(),
+        )
+    )
+    ranked: list[tuple[int, str, YouTubeAudioLibraryTrack, list[str]]] = []
+    for track in load_youtube_audio_library_catalog(library_dir):
+        tags = set((*track.moods, *track.genres, *track.themes))
+        reasons: list[str] = []
+        score = 0
+        if theme in track.themes:
+            score += 12
+            reasons.append(f"theme:{theme}")
+        mood_overlap = sorted(desired.intersection(tags))
+        if mood_overlap:
+            score += 4 * len(mood_overlap)
+            reasons.extend(f"mood:{item}" for item in mood_overlap)
+        keyword_overlap = sorted(clip_words.intersection(tags))
+        if keyword_overlap:
+            score += 2 * len(keyword_overlap)
+            reasons.extend(f"keyword:{item}" for item in keyword_overlap)
+        if score < 4:
+            continue
+        stable_order = hashlib.sha256(
+            f"{clip.title}|{clip.text}|{track.title}|{track.artist}".encode("utf-8")
+        ).hexdigest()
+        ranked.append((score, stable_order, track, reasons))
+    if not ranked:
+        return None, {
+            "theme": theme,
+            "desired_tags": sorted(desired),
+            "reason": "no_eligible_theme_match",
+        }
+    score, _stable_order, track, reasons = sorted(
+        ranked,
+        key=lambda item: (-item[0], item[1]),
+    )[0]
+    return track, {
+        "theme": theme,
+        "desired_tags": sorted(desired),
+        "score": score,
+        "matched_by": reasons,
+        "reason": "theme_and_mood_match",
+    }
 
 
 def clip_has_islamic_context(clip: ClipCandidate) -> bool:
@@ -8116,26 +8293,45 @@ def contextual_audio_mix_filter(
     cues: list[SoundEffectCue],
     *,
     background_music: bool = False,
+    external_background_music: bool = False,
     duration: float = 60.0,
     music_ducking: bool = True,
+    dialogue_gain: float = 0.8,
+    music_gain: float = 0.2,
 ) -> str:
-    """Mix speech, original micro-SFX, and an optional CC0 motivational music bed."""
-    if not cues and not background_music:
+    """Mix dominant speech, sparse SFX, and one verified background music bed."""
+    has_music = background_music or external_background_music
+    if not cues and not has_music:
         return f"[0:a:0]{base_filter},aformat=sample_rates=48000:channel_layouts=stereo[audio_out]"
 
     safe_duration = max(0.1, duration)
+    dialogue_gain = max(0.0, min(1.0, dialogue_gain))
+    music_gain = max(0.0, min(1.0, music_gain))
     voice_filter = (
         f"[0:a:0]{base_filter},"
         "aformat=sample_rates=48000:channel_layouts=stereo"
     )
-    if background_music and music_ducking:
+    if has_music:
+        voice_filter += f",volume={dialogue_gain:.3f}"
+    if has_music and music_ducking:
         voice_filter += ",asplit=2[voice][voice_sidechain]"
     else:
         voice_filter += "[voice]"
     chains = [voice_filter]
     mix_inputs = ["[voice]"]
 
-    if background_music:
+    if external_background_music:
+        fade_out_start = max(0.0, safe_duration - min(1.0, safe_duration * 0.15))
+        chains.append(
+            "[1:a:0]aformat=sample_rates=48000:channel_layouts=stereo,"
+            f"atrim=start=0:end={safe_duration:.3f},asetpts=N/SR/TB,"
+            "highpass=f=90,lowpass=f=14000,loudnorm=I=-22:TP=-3:LRA=8,"
+            f"volume={music_gain:.3f},"
+            f"afade=t=in:st=0:d={min(0.45, safe_duration * 0.12):.3f},"
+            f"afade=t=out:st={fade_out_start:.3f}:d={safe_duration - fade_out_start:.3f}"
+            "[music_bed_raw]"
+        )
+    elif background_music:
         # A warm A-major pad and a sparse four-note motif. It is synthesized
         # locally from simple oscillators, so exported videos never depend on a
         # third-party recording or a remote music service.
@@ -8168,11 +8364,12 @@ def contextual_audio_mix_filter(
         chains.append(
             "".join(music_labels)
             + f"amix=inputs={len(music_labels)}:duration=longest:dropout_transition=0:normalize=0,"
-            "lowpass=f=6500,highpass=f=110,volume=0.72,"
+            f"lowpass=f=6500,highpass=f=110,volume={music_gain:.3f},"
             f"afade=t=in:st=0:d={min(0.8, safe_duration * 0.2):.3f},"
             f"afade=t=out:st={fade_out_start:.3f}:d={safe_duration - fade_out_start:.3f}"
             "[music_bed_raw]"
         )
+    if has_music:
         if music_ducking:
             chains.append(
                 "[music_bed_raw][voice_sidechain]"
@@ -10291,13 +10488,30 @@ def export_clip(
         "restrained_authority",
         "story_punchline",
     }
+    youtube_audio_library_requested = (
+        output_format == "vertical_short"
+        and env_enabled("SHORTS_YOUTUBE_AUDIO_LIBRARY_ENABLED", True)
+    )
+    youtube_audio_track: YouTubeAudioLibraryTrack | None = None
+    youtube_audio_selection: dict[str, object] = {
+        "theme": detect_visual_theme(clip),
+        "reason": "disabled_or_not_vertical_short",
+    }
+    if youtube_audio_library_requested:
+        youtube_audio_track, youtube_audio_selection = select_youtube_audio_library_track(clip)
     islamic_background_music = (
-        clip_has_islamic_context(clip)
+        youtube_audio_track is None
+        and clip_has_islamic_context(clip)
         and not dialogue_first_accent
     )
-    music_ducking_supported = islamic_background_music and ffmpeg_has_filter(
-        "sidechaincompress"
+    has_background_music = youtube_audio_track is not None or islamic_background_music
+    music_ducking_supported = (
+        has_background_music
+        and env_enabled("SHORTS_MUSIC_DUCKING", True)
+        and ffmpeg_has_filter("sidechaincompress")
     )
+    dialogue_gain = env_audio_gain("SHORTS_DIALOGUE_GAIN", 0.8)
+    music_gain = env_audio_gain("SHORTS_BACKGROUND_MUSIC_GAIN", 0.2)
     emphasis_times = emphasis_timestamps(clip, clip_segments)
     pov_windows = (
         cinematic_pov_windows(clip, clip_segments)
@@ -10490,20 +10704,47 @@ def export_clip(
             {
                 "enabled": False,
                 "requested": True,
+                "title": youtube_audio_track.title,
+                "artist": youtube_audio_track.artist,
+                "source": "youtube_audio_library",
+                "source_url": youtube_audio_track.source_url,
+                "asset_sha256": youtube_audio_track.sha256,
+                "license": youtube_audio_track.license,
+                "attribution_required": youtube_audio_track.attribution_required,
+                "third_party_recording": True,
+                "instrumental": True,
+                "moods": list(youtube_audio_track.moods),
+                "genres": list(youtube_audio_track.genres),
+                "themes": list(youtube_audio_track.themes),
+                "selection": youtube_audio_selection,
+                "dialogue_gain": dialogue_gain,
+                "music_gain_ceiling": music_gain,
+                "ducking": music_ducking_supported,
+            }
+            if youtube_audio_track is not None
+            else
+            {
+                "enabled": False,
+                "requested": True,
                 "title": ISLAMIC_BACKGROUND_MUSIC_TITLE,
                 "source": "locally_synthesized_fendy_clipper_original",
                 "license": ISLAMIC_BACKGROUND_MUSIC_LICENSE,
                 "third_party_recording": False,
+                "instrumental": True,
+                "dialogue_gain": dialogue_gain,
+                "music_gain_ceiling": music_gain,
                 "ducking": music_ducking_supported,
             }
             if islamic_background_music
             else {
                 "enabled": False,
-                "requested": False,
+                "requested": youtube_audio_library_requested,
+                "source": "youtube_audio_library",
+                "selection": youtube_audio_selection,
                 "reason": (
                     f"{auto_visual_accent}_dialogue_first"
-                    if dialogue_first_accent
-                    else "non_islamic_clip"
+                    if dialogue_first_accent and clip_has_islamic_context(clip)
+                    else str(youtube_audio_selection.get("reason") or "no_eligible_theme_match")
                 ),
             }
         ),
@@ -11449,18 +11690,27 @@ def export_clip(
         "pcm_s16le",
         str(temp_audio_path.name),
     ]
-    if sound_effect_cues or islamic_background_music:
+    if sound_effect_cues or has_background_music:
         try:
+            youtube_music_input = (
+                ["-stream_loop", "-1", "-i", str(youtube_audio_track.path.resolve())]
+                if youtube_audio_track is not None
+                else []
+            )
             run(
                 [
                     *audio_input,
+                    *youtube_music_input,
                     "-filter_complex",
                     contextual_audio_mix_filter(
                         audio_filter,
                         sound_effect_cues,
                         background_music=islamic_background_music,
+                        external_background_music=youtube_audio_track is not None,
                         duration=duration,
                         music_ducking=music_ducking_supported,
+                        dialogue_gain=dialogue_gain,
+                        music_gain=music_gain,
                     ),
                     "-map",
                     "[audio_out]",
@@ -11475,17 +11725,23 @@ def export_clip(
                 ],
                 cwd=clips_dir,
             )
-            if islamic_background_music:
+            if has_background_music:
                 sidecar_payload["background_music"]["enabled"] = True
-                applied_edits.append(
-                    "Backsong motivasional Islami orisinal berlisensi CC0 ditambahkan pelan di bawah dialog."
-                )
+                if youtube_audio_track is not None:
+                    applied_edits.append(
+                        f"Backsong YouTube Audio Library '{youtube_audio_track.title}' dipilih sesuai tema "
+                        f"dan dicampur maksimal {music_gain:.0%} di bawah dialog {dialogue_gain:.0%}."
+                    )
+                else:
+                    applied_edits.append(
+                        "Backsong motivasional Islami orisinal berlisensi CC0 ditambahkan pelan di bawah dialog."
+                    )
         except RuntimeError as exc:
             temp_audio_path.unlink(missing_ok=True)
             console.print(
                 f"[yellow]Audio pendukung dilewati; audio dialog tetap dipakai:[/yellow] {exc}"
             )
-            if islamic_background_music:
+            if has_background_music:
                 sidecar_payload["background_music"]["enabled"] = False
                 sidecar_payload["background_music"]["reason"] = "ffmpeg_mix_failed"
             run(plain_audio_command, cwd=clips_dir)

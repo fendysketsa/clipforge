@@ -10,6 +10,10 @@ backend/jobs.json
 backend/jobs.json.tmp
 backend/__pycache__/
 backend/**/*.py[cod]
+backend/assets/youtube_audio_library/*
+!backend/assets/youtube_audio_library/README.md
+!backend/assets/youtube_audio_library/catalog.json
+scripts/__pycache__/
 
 frontend/.next/
 frontend/node_modules/

@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import date
 from pathlib import Path
@@ -69,6 +70,7 @@ from clipper import (
     landscape_compilation_edit_filter,
     landscape_compilation_frame_filter,
     landscape_speaker_split_filter,
+    load_youtube_audio_library_catalog,
     long_form_subscribe_overlay_filter,
     localized_watermark_blur_filter,
     modern_blurred_video_frame_filter,
@@ -84,6 +86,7 @@ from clipper import (
     score_window,
     scale_watermark_region,
     select_multi_person_profiles,
+    select_youtube_audio_library_track,
     select_split_companion_candidates,
     segments_for_clip,
     split_subtitle_text,
@@ -2676,6 +2679,135 @@ def test_islamic_background_music_is_original_ducked_and_mixed_under_voice():
     assert "[voice][music_bed]amix=inputs=2" in value
     assert "alimiter=limit=0.95" in value
     assert value.endswith("[audio_out]")
+
+
+def test_external_youtube_audio_music_uses_80_20_gain_and_dialogue_ducking():
+    value = contextual_audio_mix_filter(
+        "highpass=f=70,aresample=48000",
+        [],
+        external_background_music=True,
+        duration=30,
+        music_ducking=True,
+        dialogue_gain=0.8,
+        music_gain=0.2,
+    )
+
+    assert "[0:a:0]highpass=f=70" in value
+    assert "volume=0.800,asplit=2[voice][voice_sidechain]" in value
+    assert "[1:a:0]aformat=" in value
+    assert "volume=0.200" in value
+    assert "atrim=start=0:end=30.000" in value
+    assert "sidechaincompress=threshold=0.025" in value
+    assert "[voice][music_bed]amix=inputs=2" in value
+    assert value.endswith("[audio_out]")
+
+
+def test_youtube_audio_catalog_selects_theme_and_rejects_unverified_tracks(tmp_path):
+    for name in (
+        "mystery.mp3",
+        "uplifting.mp3",
+        "credit-required.mp3",
+        "unknown.mp3",
+        "tampered.mp3",
+    ):
+        (tmp_path / name).write_bytes(b"audio")
+    asset_sha256 = clipper_module.file_sha256(tmp_path / "mystery.mp3")
+    (tmp_path / "catalog.json").write_text(
+        json.dumps(
+            {
+                "tracks": [
+                    {
+                        "file": "mystery.mp3",
+                        "title": "Dark Investigation",
+                        "artist": "Library Artist",
+                        "kind": "music",
+                        "instrumental": True,
+                        "themes": ["mystery"],
+                        "moods": ["dark", "suspense"],
+                        "genres": ["cinematic"],
+                        "license": "YouTube Audio Library License",
+                        "attribution_required": False,
+                        "source_url": "https://youtube.com/audiolibrary",
+                        "sha256": asset_sha256,
+                    },
+                    {
+                        "file": "uplifting.mp3",
+                        "title": "Bright Future",
+                        "artist": "Library Artist",
+                        "kind": "music",
+                        "instrumental": True,
+                        "themes": ["inspiring"],
+                        "moods": ["uplifting"],
+                        "genres": ["ambient"],
+                        "license": "YouTube Audio Library License",
+                        "attribution_required": False,
+                        "source_url": "https://studio.youtube.com/channel/demo/music",
+                        "sha256": asset_sha256,
+                    },
+                    {
+                        "file": "credit-required.mp3",
+                        "title": "Creative Commons Track",
+                        "artist": "CC Artist",
+                        "kind": "music",
+                        "instrumental": True,
+                        "themes": ["mystery"],
+                        "moods": ["dark"],
+                        "license": "YouTube Audio Library License",
+                        "attribution_required": True,
+                        "source_url": "https://youtube.com/audiolibrary",
+                        "sha256": asset_sha256,
+                    },
+                    {
+                        "file": "unknown.mp3",
+                        "title": "Unknown Download",
+                        "artist": "Unknown",
+                        "kind": "music",
+                        "instrumental": True,
+                        "themes": ["mystery"],
+                        "moods": ["dark"],
+                        "license": "royalty free",
+                        "attribution_required": False,
+                        "source_url": "https://example.com/music",
+                        "sha256": asset_sha256,
+                    },
+                    {
+                        "file": "tampered.mp3",
+                        "title": "Tampered Track",
+                        "artist": "Library Artist",
+                        "kind": "music",
+                        "instrumental": True,
+                        "themes": ["mystery"],
+                        "moods": ["dark"],
+                        "license": "YouTube Audio Library License",
+                        "attribution_required": False,
+                        "source_url": "https://youtube.com/audiolibrary",
+                        "sha256": "0" * 64,
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    clip = ClipCandidate(
+        index=1,
+        start=0,
+        end=45,
+        duration=45,
+        score=90,
+        title="Misteri Jejak Gelap",
+        reason="test",
+        text="Penyelidikan menemukan petunjuk misterius dalam suasana menegangkan.",
+    )
+
+    catalog = load_youtube_audio_library_catalog(tmp_path)
+    selected, evidence = select_youtube_audio_library_track(clip, tmp_path)
+
+    assert [track.title for track in catalog] == ["Dark Investigation", "Bright Future"]
+    assert selected is not None
+    assert selected.title == "Dark Investigation"
+    assert selected.attribution_required is False
+    assert evidence["theme"] == "mystery"
+    assert evidence["score"] >= 12
 
 
 def test_social_caption_has_safe_relevant_fallback_without_ai():
