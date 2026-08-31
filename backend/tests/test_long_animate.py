@@ -145,6 +145,7 @@ def test_ai_storyboard_keeps_scene_specific_direction(monkeypatch):
     )
 
     assert storyboard.title == "Langkah Kecil Mengubah Arah"
+    assert "3D" in storyboard.art_bible
     assert [scene.camera_motion for scene in storyboard.scenes] == [
         "push_in",
         "pan_right",
@@ -227,6 +228,116 @@ def test_people_prompt_uses_restrained_story_action_instead_of_stock_hands():
     assert "hands dominating the foreground" in prompt
 
 
+def test_ai_visual_cannot_authorize_raised_hands_or_a_crowd():
+    prompt = long_animate._compose_visual_prompt(
+        "A cheering worship crowd with raised hands and palms facing camera",
+        "Saya ingin mengajak kalian memahami makna amanah dalam kehidupan sehari-hari.",
+        "polished cinematic 3D animated-film still",
+        "One recurring adult narrator",
+    )
+
+    assert "Visible moment: Saya ingin mengajak kalian" in prompt
+    assert "VISIBLE HUMAN LIMIT: 1" in prompt
+    assert "ABSTRACT ADDRESS RULE" in prompt
+    assert "The requested hand action may appear once" not in prompt
+
+
+def test_user_locked_visual_can_explicitly_request_one_hand_action():
+    prompt = long_animate._compose_visual_prompt(
+        "Seorang guru mengangkat tangan untuk menunjukkan contoh gerakan",
+        "Guru memperagakan gerakan yang disebutkan dalam pelajaran.",
+        "polished cinematic 3D animated-film still",
+        "One recurring adult teacher",
+        visual_locked=True,
+    )
+
+    assert "Visible moment: Seorang guru mengangkat tangan" in prompt
+    assert "The requested hand action may appear once" in prompt
+
+
+def test_default_unrequested_visual_style_is_3d_animation(monkeypatch):
+    monkeypatch.delenv("LONG_ANIMATE_DEFAULT_VISUAL_STYLE", raising=False)
+
+    storyboard = _fallback_storyboard(SCRIPT)
+
+    assert "3D" in storyboard.art_bible
+
+
+def test_child_bathing_scene_gets_modest_3d_safety_and_water_camera_plan():
+    prompt = long_animate._compose_visual_prompt(
+        "Anak kecil mandi dan bermain air di kali dangkal",
+        "Anak kecil mandi di kali yang dangkal pada pagi hari.",
+        "polished cinematic 3D animated-film still",
+        "One recurring young child",
+        visual_locked=True,
+    )
+    motion, camera = long_animate._narrative_camera_plan(
+        "Anak kecil mandi di kali yang dangkal"
+    )
+
+    assert "CHILD-SAFE WATER SCENE" in prompt
+    assert "fully covered" in prompt
+    assert "no nudity" in prompt
+    assert "NARRATIVE ACTION CONTRACT" in prompt
+    assert "3D animated-film" in prompt
+    assert motion == "pan_right"
+    assert "water action" in camera
+
+
+def test_camera_motion_is_selected_from_each_scene_action():
+    assert long_animate._narrative_camera_plan("Anak berjalan menuju sekolah")[0] == "pan_right"
+    assert long_animate._narrative_camera_plan("Anak pergi ke sungai")[0] == "pan_right"
+    assert long_animate._narrative_camera_plan("Ia membaca buku di meja")[0] == "push_in"
+    assert long_animate._narrative_camera_plan("Ia melihat ikan dekat kakinya")[0] == "tilt_down"
+    assert long_animate._narrative_camera_plan("Pesawat terbang menuju langit")[0] == "drift_up"
+    assert long_animate._narrative_camera_plan("Akhirnya hasilnya terlihat jelas")[0] == "pull_out"
+
+
+def test_each_narration_sentence_gets_a_distinct_3d_scene_contract():
+    script = (
+        "Pagi itu, seorang anak kecil pergi ke sungai. "
+        "Ia mandi dan bermain air dengan gembira. "
+        "Tiba-tiba ia melihat seekor ikan kecil berenang di dekat kakinya."
+    )
+
+    storyboard = _fallback_storyboard(script)
+
+    assert [scene.narration for scene in storyboard.scenes] == [
+        "Pagi itu, seorang anak kecil pergi ke sungai.",
+        "Ia mandi dan bermain air dengan gembira.",
+        "Tiba-tiba ia melihat seekor ikan kecil berenang di dekat kakinya.",
+    ]
+    assert len({scene.visual_prompt for scene in storyboard.scenes}) == 3
+    assert [scene.transition for scene in storyboard.scenes] == [
+        "hard_cut",
+        "match_action",
+        "match_object",
+    ]
+    assert "natural gait cycle" in storyboard.scenes[0].animation_direction
+    assert "flowing water" in storyboard.scenes[1].animation_direction
+    assert [scene.camera_motion for scene in storyboard.scenes] == [
+        "pan_right",
+        "pan_right",
+        "tilt_down",
+    ]
+    assert "CHILD-SAFE WATER SCENE" in storyboard.scenes[1].visual_prompt
+    assert "CHILD-SAFE WATER SCENE" in storyboard.scenes[2].visual_prompt
+    assert "same recurring identity" in storyboard.scenes[2].continuity_anchor
+    assert "Never reset character design" in storyboard.scenes[2].continuity_anchor
+    assert all("SCENE ANIMATION DIRECTION" in scene.visual_prompt for scene in storyboard.scenes)
+    assert all("SCENE CONTINUITY ANCHOR" in scene.visual_prompt for scene in storyboard.scenes)
+
+
+def test_long_plain_script_keeps_the_last_sentence_when_scene_count_is_capped():
+    sentences = [f"Kalimat {index} menjelaskan peristiwa yang berbeda." for index in range(1, 19)]
+
+    chunks = long_animate._sentence_chunks(" ".join(sentences), max_chunks=14)
+
+    assert len(chunks) <= 14
+    assert "Kalimat 1" in chunks[0]
+    assert "Kalimat 18" in chunks[-1]
+
+
 def test_tts_duration_allocator_hits_exact_twenty_seconds():
     scenes = _fallback_storyboard(SCRIPT).scenes[:3]
 
@@ -277,6 +388,47 @@ def test_long_scene_gets_an_alternate_story_shot_without_repeating_voice(monkeyp
     assert sum(shot.duration for shot in shots) == 18.0
     assert shots[0].narration == shots[1].narration
     assert shots[0].visual_prompt != shots[1].visual_prompt
+
+
+def test_assemble_shots_uses_each_scene_transition(monkeypatch, tmp_path):
+    shots = [
+        long_animate.AnimateShot(
+            index=index,
+            scene_index=index,
+            shot_index=1,
+            shot_count=1,
+            title=f"Shot {index}",
+            narration=f"Narasi {index}",
+            visual_prompt=f"Visual {index}",
+            on_screen_text="",
+            camera_motion="push_in",
+            color_mood="blue",
+            transition=transition,
+            duration=3.0,
+        )
+        for index, transition in enumerate(
+            ("hard_cut", "match_action", "match_object"),
+            start=1,
+        )
+    ]
+    paths = []
+    for index in range(1, 4):
+        path = tmp_path / f"shot_{index}.mp4"
+        path.write_bytes(b"video")
+        paths.append(path)
+    captured = {}
+    monkeypatch.setenv("LONG_ANIMATE_TRANSITION_SECONDS", "0.2")
+    monkeypatch.setattr(
+        long_animate,
+        "_run",
+        lambda command, cwd=None: captured.update(command=command, cwd=cwd),
+    )
+
+    long_animate.assemble_shot_videos(paths, shots, tmp_path)
+
+    filters = captured["command"][captured["command"].index("-filter_complex") + 1]
+    assert "transition=smoothleft" in filters
+    assert "transition=dissolve" in filters
 
 
 def test_render_shot_has_no_black_fade_or_audio_padding(monkeypatch, tmp_path):
@@ -415,8 +567,8 @@ def test_islamic_indonesian_tts_profile_normalizes_pronunciation_only(monkeypatc
     assert "makhroj" in spoken
     assert "wudu" in spoken
     assert "zikir" in spoken
-    assert "Alloh subhanahu wa taala" in spoken
-    assert "salallahu alaihi wasalam" in spoken
+    assert "Alloh subhaanahu wa ta'aalaa" in spoken
+    assert "shallallaahu alaihi wasallam" in spoken
     assert "Al-Qur'an" in original
 
 
@@ -430,6 +582,19 @@ def test_islamic_indonesian_tts_profile_pronounces_allah_consistently(monkeypatc
         "Alloh, Alloh, Alloh, dan Alloh adalah tulisan yang tidak boleh dieja per huruf."
     )
     assert original.startswith("Allah, allah, ALLAH")
+
+
+def test_islamic_tts_expands_allah_and_muhamad_honorifics(monkeypatch):
+    original = "ALLAH SWT mengutus Muhamad SAW sebagai teladan. Allah ﷻ dan Muhammad ﷺ dimuliakan."
+    monkeypatch.setenv("LONG_ANIMATE_TTS_PROFILE", "islamic_indonesian")
+
+    spoken = long_animate._tts_pronunciation_text(original)
+
+    assert spoken.count("Alloh subhaanahu wa ta'aalaa") == 2
+    assert spoken.count("Muhammad shallallaahu alaihi wasallam") == 2
+    assert "SWT" not in spoken
+    assert "SAW" not in spoken
+    assert original.startswith("ALLAH SWT")
 
 
 def test_long_animate_tts_uses_calm_indonesian_islamic_prosody(monkeypatch, tmp_path):

@@ -41,7 +41,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Place one value-led Subscribe invitation after the payoff: Shorts pair it with the contextual discussion prompt in a shorter 1.85-second window, suppress it for clips up to 40 seconds or earned loops, and long-form shows it once in the final chapter. The reason to subscribe follows the topic and never offers rewards or fake urgency.
 - Produce adaptive 25–180 second Shorts: use the shortest complete promise–payoff cut, reserve longer windows for multi-beat stories with sustained information, and never add filler merely to reach three minutes.
 - Build a separate 5–10 minute **Long Story** with a sentence-complete 10–22 second teaser, then restore source chronology across context, development, explanation, and payoff. The teaser is removed from its original position, and the renderer never adds filler merely to hit the selected duration.
-- Produce **Long Animate** directly from an original script: Scene Cinema uses local Ollama for the storyboard and a local Apache-2.0 Z-Image-Turbo Q3 service for prompt-faithful scene images, then adds content-derived camera motion, Indonesian narration, scene-timed subtitles, procedural original music, thumbnail, and YouTube chapters before joining everything into one 16:9 video.
+- Produce **Long Animate** directly from an original script: Scene Cinema gives every complete narration sentence its own prompt-faithful 3D scene contract (visible action, animation direction, camera, duration, transition, and continuity lock), while retaining the same character, clothing, props, location, time, and art style across related scenes. Local Ollama builds the storyboard and a local Apache-2.0 Z-Image-Turbo Q3 service creates the scene keyframes; FFmpeg then adds scene-specific camera motion and transitions, Indonesian narration, scene-timed subtitles, procedural original music, thumbnail, and YouTube chapters before joining everything into one 16:9 video.
 - Telegram's primary CTA requests short clips only for a faster turnaround.
 - Search 70+ Creative Commons themes, including Islamic insight, mystery, myth/fact, history, and relevant horror. The current-viral niche defaults to the last seven days and rewards recent 20–120 minute conversations that can support genuinely different viewer questions; other themes keep their broader discovery windows.
 - Package same-source Shorts as distinct editorial angles with concrete, truthful tension/outcome titles, while rejecting near-duplicate talking points. Freshness, face crops, captions, and titles are editorial signals only—not proof of reuse rights or monetization eligibility.
@@ -254,9 +254,13 @@ For safer reuse, URL jobs require explicit Creative Commons metadata before
 download and an explicit confirmation that the user owns or has provable
 commercial permission for the complete audio and visual work. A CC label is
 license metadata, not proof that the uploader owns every element in a recording.
-Viral search also rejects live/upcoming, age-restricted, non-public, fan/support/
-reupload/archive accounts, and sources that look like TV, film, music, broadcaster,
-or known Content ID material. CC BY attribution is appended to the YouTube
+Viral search rejects live/upcoming, age-restricted, and non-public sources. A
+manually selected CC source that looks like a fan/support/reupload/archive account,
+TV, film, music, or broadcaster is treated as a risk signal rather than a Content ID
+result: with `AUTO_REBUILD_HIGH_RISK_CC_SOURCES=true`, Clip Pendek/Long Story retries
+as a source-free Original Rebuild instead of reusing its audio or pixels. This automatic replacement is rendered as a
+9:16 Short and keeps the original request's Short duration cap (25-180 seconds); a manually requested Original Rebuild
+still uses the configured Scene Cinema aspect and duration. CC BY attribution is appended to the YouTube
 description, while rendered MP4 files do not inherit source container metadata or
 chapters. New renders also carry a monetization-readiness audit; upload is blocked
 when source-rights confirmation or minimum substantive-edit evidence is absent.
@@ -264,9 +268,12 @@ This is a preflight, not a promise of YPP approval, because YouTube also reviews
 the channel as a whole.
 
 During upload, Playwright waits for YouTube Studio Checks and applies a zero-active-
-claim policy: every detected Content ID/copyright claim cancels the workflow before
+claim policy: every detected Content ID/copyright claim cancels that clip's workflow before
 the final Save/Publish action, including claims currently described as having no
-impact and claims on Shorts under one minute. A claimed upload is no longer saved
+impact and claims on Shorts under one minute. Sibling clips from the same source
+remain queued and receive their own Studio Checks. With `AUTO_REBUILD_CLAIMED_CLIPS=true`,
+the exact claimed clip also queues one source-free 9:16 Original Rebuild replacement;
+it is not auto-uploaded until human review. A claimed upload is no longer saved
 as a Private fallback. Private auto uploads do not hold the whole queue while
 Studio still reports Checks as pending: the workflow checks for an explicit claim,
 continues as Private, then checks once more immediately before Save. Public and
@@ -398,9 +405,14 @@ uses memory-mapped model weights and retries a restarted service at a lower reso
 key is required. `LONG_ANIMATE_IMAGE_STRICT=true` stops the job when the local
 service is unavailable instead of silently substituting procedural art. Use
 `builtin://story-art` only when a geometric placeholder is explicitly desired.
-The storyboard parser understands Markdown `Scene`/`Adegan` blocks, keeps a
-shared character bible, and removes narration/on-screen-text labels from image
-prompts. Long Animate conservatively
+The storyboard parser understands Markdown `Scene`/`Adegan` blocks, keeps shared
+character, location, and art bibles, and removes narration/on-screen-text labels
+from image prompts. Plain prose is split sentence-by-sentence whenever it fits the
+scene cap; long scripts are grouped without dropping the ending. Scene direction
+blocks repeated stock gestures and only permits a raised hand, crowd, prayer pose,
+or similar action when the narration or a user-authored `VISUAL` explicitly asks
+for it. Child water scenes enforce age-appropriate fully covering clothes and
+wholesome framing. Long Animate conservatively
 enables YouTube's altered/synthetic disclosure, starts uploads as Private, and
 requires confirmation that the script and configured media providers permit
 commercial YouTube use.

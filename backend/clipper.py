@@ -12325,6 +12325,18 @@ def parse_args() -> argparse.Namespace:
         help="Record the user's confirmation of provable commercial audio/visual rights.",
     )
     parser.add_argument(
+        "--rebuild-output-aspect",
+        choices=["16:9", "9:16"],
+        default="",
+        help="Internal output aspect override for an automatic Original Rebuild.",
+    )
+    parser.add_argument(
+        "--rebuild-target-duration",
+        type=float,
+        default=None,
+        help="Internal target duration override for an automatic Original Rebuild.",
+    )
+    parser.add_argument(
         "--confirm-provider-rights",
         action="store_true",
         help="Record confirmation that configured AI, image, voice, and music providers allow commercial use.",
@@ -12886,12 +12898,15 @@ def render_animated_script(
         boundary_quality=str(sidecar.get("boundary_quality") or "payoff_tuntas"),
         retention_score=int(sidecar.get("retention_score") or 0),
     )
-    auditor = fendy_auditor_identity(candidate, "landscape_compilation")
+    output_format = (
+        "portrait_short"
+        if str(sidecar.get("aspect_ratio") or "") == "9:16"
+        else "landscape_compilation"
+    )
+    auditor = fendy_auditor_identity(candidate, output_format)
     auditor["visible_video_signature"] = ffmpeg_has_filter("drawtext")
     sidecar["auditor_identity"] = auditor
-    sidecar["codex_growth_blueprint"] = codex_growth_blueprint(
-        candidate, "landscape_compilation"
-    )
+    sidecar["codex_growth_blueprint"] = codex_growth_blueprint(candidate, output_format)
     animate_gate = sidecar.get("one_k_long_form_readiness")
     animate_readiness = one_k_long_form_readiness(
         candidate,
@@ -13176,6 +13191,12 @@ def main() -> int:
                 "[red]Original Rebuild memerlukan referensi bukti hak sumber dan izin provider.[/red]"
             )
             return 2
+        if args.automatic_topic_rebuild:
+            if args.rebuild_output_aspect:
+                os.environ["LONG_ANIMATE_OUTPUT_ASPECT_RATIO"] = args.rebuild_output_aspect
+            if args.rebuild_target_duration is not None:
+                automatic_duration = max(25.0, min(180.0, args.rebuild_target_duration))
+                os.environ["LONG_ANIMATE_TARGET_DURATION_SECONDS"] = f"{automatic_duration:g}"
 
     root = Path(args.output)
     root.mkdir(parents=True, exist_ok=True)

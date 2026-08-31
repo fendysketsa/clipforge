@@ -78,6 +78,9 @@ class AnimateScene:
     camera_motion: str
     color_mood: str
     narrative_role: str
+    animation_direction: str = ""
+    transition: str = "cinematic_dissolve"
+    continuity_anchor: str = ""
     duration_hint: float = 0.0
     duration: float = 0.0
     voice_duration: float = 0.0
@@ -113,6 +116,9 @@ class AnimateShot:
     on_screen_text: str
     camera_motion: str
     color_mood: str
+    animation_direction: str = ""
+    transition: str = "cinematic_dissolve"
+    continuity_anchor: str = ""
     duration: float = 0.0
     image_provider: str = ""
     qa_attempts: int = 0
@@ -137,6 +143,13 @@ STORYBOARD_SYSTEM_PROMPT = (
     "Each visual_prompt must describe exactly one uninterrupted camera shot and one visible moment: subject, action, setting, composition, camera, "
     "and lighting. The action must be concrete and physically visible; never use abstract actions such as "
     "preparing, realizing, thinking, or feeling without stating exactly what the hands and body are doing. "
+    "Derive that physical action from the verbs and objects in the same narration, not merely from its broad theme. "
+    "Do not repeat one pose or symbolic gesture across scenes. An invitation to viewers, a statement of belief, or "
+    "an Islamic topic never implies a cheering crowd, raised palms, prayer pose, mosque, or hands toward camera. "
+    "Raised hands are allowed only when the user's narration or user-authored VISUAL direction explicitly requests them. "
+    "For any child bathing, swimming, wading, or playing in water, require fully covering age-appropriate modest "
+    "swimwear or play clothes and wholesome wide/medium framing; never show nudity, transparent wet clothing, "
+    "intimate washing, sensualization, voyeuristic angles, or body-part emphasis. "
     "Only include religious or cultural clothing when the script requests it or the stated setting unambiguously "
     "requires it. When it is requested, apply culturally correct gendered clothing: a woman wearing a hijab never "
     "wears a peci, kopiah, songkok, or any second hat over it; those caps are reserved for male characters. "
@@ -199,7 +212,8 @@ def _clean_text(value: object, limit: int) -> str:
     return re.sub(r"\s+", " ", _plain_text_value(value)).strip()[:limit]
 
 
-def _sentence_chunks(script: str, target_words: int = 38) -> list[str]:
+def _sentence_chunks(script: str, target_words: int = 38, max_chunks: int = 14) -> list[str]:
+    """Prefer one complete narration sentence per scene without dropping long scripts."""
     paragraphs = [item.strip() for item in re.split(r"\n\s*\n+", script) if item.strip()]
     sentences: list[str] = []
     for paragraph in paragraphs or [script]:
@@ -208,6 +222,10 @@ def _sentence_chunks(script: str, target_words: int = 38) -> list[str]:
             for item in re.split(r"(?<=[.!?])\s+", paragraph)
             if item.strip()
         )
+    if len(sentences) <= max_chunks:
+        return sentences
+    total_words = sum(len(sentence.split()) for sentence in sentences)
+    target_words = max(target_words, math.ceil(total_words / max_chunks))
     chunks: list[str] = []
     current: list[str] = []
     word_count = 0
@@ -221,6 +239,9 @@ def _sentence_chunks(script: str, target_words: int = 38) -> list[str]:
         word_count += len(words)
     if current:
         chunks.append(" ".join(current))
+    while len(chunks) > max_chunks:
+        tail = chunks.pop()
+        chunks[-1] = f"{chunks[-1]} {tail}"
     return chunks
 
 
@@ -620,6 +641,169 @@ _INDONESIAN_VISUAL_TERMS = (
     "indonesia", "indonesian", "jakarta", "nusantara", "kampung indonesia", "desa indonesia",
 )
 
+_STOCK_HAND_GESTURE_TERMS = (
+    "raise a hand", "raised hand", "raised hands", "hands raised", "raised palm", "raised palms",
+    "palms facing camera", "palms toward camera", "waving", "cheering hands", "hands in the air",
+    "prayer hands", "prayer-hand", "mengangkat tangan", "tangan terangkat", "angkat tangan",
+    "mengangkat kedua tangan", "telapak menghadap kamera", "telapak ke arah kamera", "melambai",
+    "tangan bersorak", "kerumunan mengacungkan tangan", "menengadahkan tangan",
+)
+
+_ABSTRACT_AUDIENCE_ADDRESS_TERMS = (
+    "mengajak kalian", "mengajak kita", "mari kita", "ayo kita", "saudara sekalian",
+    "teman-teman", "para penonton", "dear viewers", "let us", "join me", "i invite you",
+)
+
+_MINOR_VISUAL_TERMS = (
+    "anak", "anak kecil", "bocah", "balita", "bayi", "remaja", "child", "young child",
+    "kid", "toddler", "baby", "teenager",
+)
+
+_BATHING_OR_SWIMMING_TERMS = (
+    "mandi", "bermandi", "berenang", "berendam", "bermain air", "mencebur", "splashing",
+    "bathing", "bathes", "swimming", "swims", "wading", "plays in water", "river bath",
+)
+
+
+def _scene_safety_direction(text: str) -> str:
+    """Return concrete visual-safety direction without changing the narration."""
+    has_minor = _has_any(text, _MINOR_VISUAL_TERMS)
+    has_bathing = _has_any(text, _BATHING_OR_SWIMMING_TERMS)
+    if has_minor and has_bathing:
+        return (
+            "CHILD-SAFE WATER SCENE: the child remains fully covered in age-appropriate modest swimwear or play "
+            "clothes, with torso and hips covered at all times. Use a wholesome wide or medium environmental shot; "
+            "no nudity, transparent wet clothing, changing clothes, intimate washing, body-part emphasis, sensualized "
+            "pose, voyeuristic angle, or close framing of the torso, hips, or legs."
+        )
+    if has_minor:
+        return (
+            "CHILD-SAFE FRAMING: depict an age-appropriate everyday activity, expression, clothing, and setting. "
+            "Use wholesome eye-level framing with no nudity, sensualized pose, intimate body focus, or voyeuristic angle."
+        )
+    if has_bathing:
+        return (
+            "MODEST WATER-SCENE FRAMING: use appropriate swimwear or fully covering clothes and an environmental "
+            "wide/medium composition; no nudity, transparent clothing, intimate washing, or body-part emphasis."
+        )
+    return ""
+
+
+def _narrative_camera_plan(text: str, fallback: str = "push_in") -> tuple[str, str]:
+    """Choose camera motion/composition from visible action rather than scene order."""
+    if _has_any(text, ("ikan", "fish")):
+        return "tilt_down", "medium view that tilts from the observer's eye-line down to the clearly visible fish in the water"
+    if _has_any(text, _BATHING_OR_SWIMMING_TERMS):
+        return "pan_right", "wide environmental view with gentle lateral tracking that follows the water action"
+    if _has_any(text, ("terbang", "naik", "menjulang", "langit", "fly", "flying", "rises", "sky")):
+        return "drift_up", "low-to-medium angle with clear vertical space above the moving subject"
+    physical_traveler = _has_any(
+        text,
+        _PEOPLE_TERMS
+        + _NONHUMAN_CHARACTER_TERMS
+        + ("mobil", "motor", "kapal", "kereta", "kendaraan", "car", "motorcycle", "ship", "train", "vehicle"),
+    )
+    if physical_traveler and _has_any(
+        text,
+        ("berjalan", "berlari", "pergi", "perjalanan", "menuju", "walk", "run", "goes", "travel", "journey"),
+    ):
+        return "pan_right", "medium-wide side view with natural tracking space in the subject's direction of travel"
+    if _has_any(text, ("membaca", "menulis", "membuka buku", "mengaji", "read", "write", "opens the book")):
+        return "push_in", "medium three-quarter view that clearly shows the reader and the relevant book or object"
+    if _has_any(text, ("menemukan", "menyadari", "terungkap", "jawaban", "discover", "finds", "reveals", "answer")):
+        return "push_in", "layered medium shot with a clear focal reveal and unobstructed subject detail"
+    if _has_any(text, ("selesai", "akhirnya", "kesimpulan", "hasilnya", "finally", "conclusion", "result")):
+        return "pull_out", "balanced medium-wide consequence shot that reveals the completed result and environment"
+    allowed = {"push_in", "pull_out", "pan_left", "pan_right", "drift_up", "tilt_down"}
+    motion = fallback if fallback in allowed else "push_in"
+    return motion, "single cinematic medium or wide composition with clear depth and safe margins for subtle camera motion"
+
+
+def _alternate_camera_motion(primary: str, shot_index: int) -> str:
+    motions = ("push_in", "pan_right", "pull_out", "pan_left", "drift_up", "tilt_down")
+    if shot_index <= 1:
+        return primary
+    try:
+        start = motions.index(primary)
+    except ValueError:
+        start = 0
+    return motions[(start + shot_index - 1) % len(motions)]
+
+
+_ALLOWED_TRANSITIONS = {
+    "hard_cut",
+    "smooth_cut",
+    "match_action",
+    "match_object",
+    "cinematic_dissolve",
+}
+
+
+def _animation_direction(text: str) -> str:
+    """Describe motion that belongs to the scene instead of generic idle animation."""
+    if _has_any(text, ("ikan", "fish")):
+        return (
+            "the same clearly visible fish swims with natural fin and tail motion through the water current; the "
+            "observer responds only with a subtle eye-line and body turn, with no generic pointing or raised-hand pose"
+        )
+    if _has_any(text, _BATHING_OR_SWIMMING_TERMS):
+        return (
+            "gentle flowing water and small physically plausible splashes follow the visible action; natural balance, "
+            "subtle breathing, modest clothes staying opaque and properly fitted, leaves moving lightly in the breeze"
+        )
+    if _has_any(text, ("terbang", "fly", "flying", "burung", "pesawat")):
+        return "smooth directional flight, stable body or vehicle mechanics, subtle environmental parallax and moving clouds"
+    if _has_any(text, ("berjalan", "berlari", "pergi", "menuju", "walk", "run", "goes toward")):
+        return "natural gait cycle, believable weight transfer, restrained arm swing, cloth and nearby foliage reacting gently"
+    if _has_any(text, ("membaca", "menulis", "mengaji", "read", "write")):
+        return "subtle breathing and eye movement, small page motion, precise restrained hand movement around the relevant book"
+    if _has_any(text, ("membuka", "menutup", "mengambil", "meletakkan", "memperbaiki", "opens", "closes", "takes", "places", "repairs")):
+        return "one clear object interaction with believable hand contact, body weight, material response, and restrained follow-through"
+    return "subtle story-specific body or object motion, natural breathing or environmental movement, no repetitive waving or idle crowd loop"
+
+
+def _scene_transition(text: str, *, first_scene: bool = False) -> str:
+    if first_scene:
+        return "hard_cut"
+    if _has_any(text, ("membaca", "menulis", "buku", "ikan", "benda", "read", "write", "book", "fish", "object")):
+        return "match_object"
+    if _has_any(text, _BATHING_OR_SWIMMING_TERMS + ("berjalan", "berlari", "pergi", "menuju", "walk", "run")):
+        return "match_action"
+    if _has_any(text, ("tiba-tiba", "bahaya", "kejutan", "suddenly", "danger", "surprise")):
+        return "smooth_cut"
+    return "cinematic_dissolve"
+
+
+def _continuity_anchor(
+    scene_index: int,
+    character_bible: str,
+    location_bible: str,
+    scene_text: str,
+) -> str:
+    time_terms = [
+        term
+        for term in ("pagi", "siang", "sore", "malam", "dawn", "morning", "afternoon", "sunset", "night")
+        if _has_any(scene_text, (term,))
+    ]
+    return _clean_text(
+        f"Scene {scene_index} continuity: preserve the same recurring identity, face, age, body proportions, clothing, "
+        f"props, and color palette from the previous applicable scene. Character contract: {character_bible}. "
+        f"Location contract: {location_bible}. "
+        + (f"Explicit time continuity: {', '.join(time_terms)}. " if time_terms else "Continue time naturally unless narration changes it. ")
+        + "Never reset character design, outfit, weather, architecture, or time without explicit narration.",
+        1100,
+    )
+
+
+def _xfade_transition_name(transition: str) -> str:
+    return {
+        "match_action": "smoothleft",
+        "match_object": "dissolve",
+        "cinematic_dissolve": "dissolve",
+        "smooth_cut": "fadefast",
+        "hard_cut": "fade",
+    }.get(transition, "fade")
+
 
 def _contains_unrequested_defaults(script: str, proposed: str) -> bool:
     """Reject familiar stock imagery that has no support in the user's source text."""
@@ -660,29 +844,39 @@ def _compose_visual_prompt(
     art_bible: str,
     character_bible: str,
     location_bible: str = "",
+    *,
+    visual_locked: bool = False,
+    animation_direction: str = "",
+    continuity_anchor: str = "",
 ) -> str:
     aspect_ratio, _output_width, _output_height = _output_geometry()
     visual = _single_visible_moment(visual)
     grounding = _clean_text(narration, 700)
-    scene_context = f"{visual} {grounding}"
-    complete_context = f"{scene_context} {character_bible}"
+    # AI-authored visual copy is not permission to invent people, religious
+    # dress, or stock gestures. Only narration and a user-locked VISUAL field
+    # are authoritative for those choices.
+    trusted_action_context = f"{grounding} {visual if visual_locked else ''}"
+    if (
+        not _has_any(trusted_action_context, _STOCK_HAND_GESTURE_TERMS)
+        and _has_any(visual, _STOCK_HAND_GESTURE_TERMS)
+    ):
+        visual = grounding or "A story-specific object and environment from the narration"
+    trusted_scene_context = trusted_action_context or grounding
+    complete_context = f"{trusted_scene_context} {character_bible}"
     has_people = _has_any(
-        scene_context,
+        trusted_scene_context,
         _PEOPLE_TERMS,
     )
-    has_nonhuman_character = _has_any(scene_context, _NONHUMAN_CHARACTER_TERMS)
+    has_nonhuman_character = _has_any(trusted_scene_context, _NONHUMAN_CHARACTER_TERMS)
     hand_action_requested = _has_any(
-        scene_context,
-        (
-            "hand", "hands", "palm", "wave", "waving", "raise a hand", "raised hand",
-            "tangan", "telapak", "melambai", "mengangkat tangan", "jabat tangan",
-        ),
+        trusted_action_context,
+        _STOCK_HAND_GESTURE_TERMS,
     )
     has_islamic_clothing = has_people and _has_any(
         complete_context,
         _ISLAMIC_VISUAL_TERMS,
     )
-    people_limit = _expected_people_limit(scene_context)
+    people_limit = _expected_people_limit(trusted_scene_context)
     continuity = (
         _clean_text(character_bible, 420)
         if has_people or has_nonhuman_character
@@ -709,6 +903,24 @@ def _compose_visual_prompt(
         "working, or holding one story-relevant object. No waving, raised palms, cheering pose, reaching toward the "
         "camera, crowd of hands, prayer-hand close-up, or hands dominating the foreground. "
     )
+    audience_address_rule = (
+        "ABSTRACT ADDRESS RULE: this narration addresses or invites viewers. Never visualize that wording as an "
+        "audience reaction, rally, applause, worship crowd, raised hands, or people facing the lens. Show at most one "
+        "calm subject in three-quarter side view performing the most concrete topic action named in the narration. "
+        "If the narration contains no renderable physical action, use a close or medium shot of its most relevant "
+        "object and environment with no human hands visible. "
+        if _has_any(grounding, _ABSTRACT_AUDIENCE_ADDRESS_TERMS)
+        else ""
+    )
+    # Carry a recurring minor's age into pronoun-only follow-up scenes (for
+    # example, "Ia mandi...") so child-water safeguards cannot disappear just
+    # because the current sentence does not repeat the word "anak".
+    safety_direction = _scene_safety_direction(complete_context)
+    _camera_motion, camera_composition = _narrative_camera_plan(trusted_scene_context)
+    resolved_animation = _clean_text(
+        animation_direction or _animation_direction(trusted_scene_context),
+        650,
+    )
     clothing_rule = (
         "Apply only the religious clothing explicitly requested. A woman wearing a hijab has the hijab as her sole "
         "head covering: never add a peci, kopiah, songkok, cap, or hat over or under her hijab. Male characters may "
@@ -726,6 +938,8 @@ def _compose_visual_prompt(
         "takes priority; narrative grounding supplies meaning but must not introduce unrelated objects or people. "
         + subject_rule
         + gesture_rule
+        + audience_address_rule
+        + (f"{safety_direction} " if safety_direction else "")
         + f"VISIBLE HUMAN LIMIT: {people_limit}; never exceed this count. "
         + clothing_rule
         + f"Continuity bible: {continuity}. "
@@ -733,12 +947,20 @@ def _compose_visual_prompt(
         + f"IMMUTABLE GLOBAL VISUAL STYLE: {_clean_text(art_bible, 320)}. Keep the same medium, rendering technique, "
         "lens language, texture treatment, detail level, and color-science across every shot; scene palette changes "
         "must not change the global style. "
-        "Use one clear focal action, the exact culture and location requested by the script, clear subject-background "
+        f"NARRATIVE CAMERA PLAN: {camera_composition}. Compose one frozen instant that supports this motion; do not "
+        "describe multiple camera shots, a shot sequence, or a montage inside one image. "
+        "NARRATIVE ACTION CONTRACT: internally identify the narration's explicit subject, main visible verb, relevant "
+        "object, setting, time, and mood, then depict that exact combination. Do not import an action or location from "
+        "another scene, and do not replace missing details with a mosque, crowd, raised hands, or generic celebration. "
+        f"SCENE ANIMATION DIRECTION: {resolved_animation}. Animate only this visible action and its natural secondary "
+        "motion; do not add a generic idle loop, repeated waving, or unrelated crowd reaction. "
+        + (f"SCENE CONTINUITY ANCHOR: {_clean_text(continuity_anchor, 900)}. " if continuity_anchor else "")
+        + "Use one clear focal action, the exact culture and location requested by the script, clear subject-background "
         "separation, crisp focal detail, believable materials and lighting appropriate to the requested style, and professional composition. "
         "Do not add unrequested writing, signage, logos, symbols, props, architecture, or decorations. "
         "When people are explicitly requested, use original fictional people matching the script's stated identity; "
         "never imitate a public figure. The image extends naturally to all four edges.",
-        3000,
+        6000,
     )
 
 
@@ -755,11 +977,14 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
         chunks = [" ".join(words[index : index + size]) for index in range(0, len(words), size)]
     chunks = chunks[:14]
     seed = hashlib.sha256(script.encode("utf-8")).hexdigest()
+    default_visual_style = os.environ.get(
+        "LONG_ANIMATE_DEFAULT_VISUAL_STYLE", "3d_animated"
+    ).strip().casefold()
     art_styles = (
-        "cinematic semi-realistic storybook illustration, natural anatomy, subtle film grain",
-        "polished animated-film still, believable materials, soft volumetric light",
-        "cinematic editorial illustration, natural proportions, rich environmental detail",
-        "warm painterly animation still, realistic lighting, expressive restrained design",
+        "polished cinematic 3D animated-film still, expressive but restrained character acting, natural anatomy, believable materials, soft volumetric light",
+        "high-detail stylized 3D animation, story-specific props and environments, natural body mechanics, cinematic depth of field",
+        "warm premium 3D animated feature still, tactile materials, subtle facial acting, realistic lighting, clean composition",
+        "cinematic semi-realistic 3D story animation, grounded proportions, rich environmental detail, restrained film color grade",
     )
     explicit_art_bible = _requested_art_bible(script)
     requested_style = script.casefold()
@@ -770,8 +995,10 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
             "ultra-realistic cinematic photography, crisp subject detail, natural skin texture, "
             "believable materials, soft depth of field, warm natural window light, restrained film color grade"
         )
-    else:
+    elif default_visual_style in {"3d", "3d_animated", "animated_3d", "3d-animation"}:
         art_bible = art_styles[int(seed[:2], 16) % len(art_styles)]
+    else:
+        art_bible = "cinematic storybook illustration, natural anatomy, subtle film grain"
     character_bible = _character_bible(script)
     location_bible = _location_bible(script)
     motions = ("push_in", "pan_right", "drift_up", "pan_left", "pull_out")
@@ -800,6 +1027,19 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
             for item in (raw_shots if isinstance(raw_shots, list) else [visual])
             if _clean_text(item, 650)
         ][:3]
+        camera_motion, _camera_composition = _narrative_camera_plan(
+            f"{visual} {chunk}",
+            motions[(index + int(seed[2:4], 16)) % len(motions)],
+        )
+        scene_text = f"{visual} {chunk}"
+        animation_direction = _animation_direction(scene_text)
+        transition = _scene_transition(scene_text, first_scene=index == 0)
+        continuity_anchor = _continuity_anchor(
+            index + 1,
+            character_bible,
+            location_bible,
+            scene_text,
+        )
         scenes.append(
             AnimateScene(
                 index=index + 1,
@@ -811,11 +1051,17 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
                     art_bible,
                     character_bible,
                     location_bible,
+                    visual_locked=bool(section),
+                    animation_direction=animation_direction,
+                    continuity_anchor=continuity_anchor,
                 ),
                 on_screen_text=on_screen_text,
-                camera_motion=motions[(index + int(seed[2:4], 16)) % len(motions)],
+                camera_motion=camera_motion,
                 color_mood=_color_mood(f"{chunk} {visual}", index),
                 narrative_role=roles[index],
+                animation_direction=animation_direction,
+                transition=transition,
+                continuity_anchor=continuity_anchor,
                 duration_hint=(
                     max(6.0, min(22.0, len(chunk.split()) / 2.45 + 1.2))
                     if chunk
@@ -897,14 +1143,29 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
         "character' bila tidak ada. Setiap visual_prompt harus menerjemahkan narasi scene yang sama menjadi aksi "
         "fisik yang konkret, bukan gambar generik yang hanya cocok dengan tema besar. Variasikan wide establishing, "
         "medium action, detail benda yang relevan, perjalanan lokasi, perubahan waktu, dan consequence shot. "
+        "Untuk setiap scene, ambil subjek, kata kerja utama, objek, dan lokasi dari narasi scene tersebut; tuliskan "
+        "semuanya secara konkret di visual_prompt. Jangan mendaur ulang aksi, pose, atau komposisi scene sebelumnya. "
         "Jangan memakai pose stok berupa orang mengangkat tangan, telapak menghadap kamera, kerumunan bersorak, "
         "atau banyak tangan di foreground untuk melambangkan dukungan, iman, kebanggaan, atau kebersamaan. "
+        "Kalimat seperti 'saya mengajak kalian', 'mari kita', atau sapaan penonton bukan izin untuk membuat kerumunan. "
+        "Tampilkan maksimal satu subjek dalam sudut tiga-perempat yang melakukan aksi topik; bila tidak ada aksi fisik, "
+        "tampilkan benda atau lingkungan paling relevan tanpa tangan manusia. Gestur tangan terangkat hanya boleh "
+        "dipakai bila NARASI atau VISUAL buatan pengguna menyebutkannya secara eksplisit. "
+        "Jika narasi memuat anak mandi, berenang, berendam, atau bermain air, wajib beri pakaian renang/pakaian "
+        "bermain yang sopan dan menutup tubuh, gunakan wide/medium shot yang wajar, serta larang ketelanjangan, "
+        "pakaian basah transparan, aktivitas mencuci bagian intim, sensualisasi, dan close-up tubuh. "
         "Gunakan gestur harian yang tenang dan aksi yang benar-benar terjadi dalam alur. visual_prompt hanya boleh "
         "berisi satu momen yang terlihat; jangan masukkan label Narasi, Teks layar, heading, atau timestamp.\n"
+        "Isi animation_direction dengan gerak fisik subjek, benda, pakaian, air, atau lingkungan yang benar-benar "
+        "didukung narasi—bukan idle waving. Isi transition dengan salah satu hard_cut, smooth_cut, match_action, "
+        "match_object, atau cinematic_dissolve. Isi continuity_anchor dengan identitas, pakaian, properti, lokasi, "
+        "cuaca, dan waktu yang harus tetap sama dari scene sebelumnya; jangan mengarang detail baru.\n"
         "Return JSON exactly as: "
         '{"title":"...","hook":"...","core_message":"...","art_bible":"...","character_bible":"...","location_bible":"...",'
         '"scenes":[{"title":"...","narration":"...","visual_prompt":"...","shots":["one visible moment", "optional next visible moment"],'
-        '"on_screen_text":"maks 7 kata","camera_motion":"push_in|pull_out|pan_left|pan_right|drift_up",'
+        '"on_screen_text":"maks 7 kata","camera_motion":"push_in|pull_out|pan_left|pan_right|drift_up|tilt_down",'
+        '"animation_direction":"gerak yang tampak","transition":"hard_cut|smooth_cut|match_action|match_object|cinematic_dissolve",'
+        '"continuity_anchor":"detail yang diwariskan dari scene sebelumnya",'
         '"color_mood":"...","narrative_role":"cold_open|context|development|evidence_and_answer|payoff_conclusion"}]}\n\n'
         f"{grounded_note}"
         f"NASKAH:\n{script[:30000]}"
@@ -933,7 +1194,7 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
         return fallback
     if source_sections and len(raw_scenes) != len(source_sections):
         return fallback
-    allowed_motions = {"push_in", "pull_out", "pan_left", "pan_right", "drift_up"}
+    allowed_motions = {"push_in", "pull_out", "pan_left", "pan_right", "drift_up", "tilt_down"}
     allowed_roles = {
         "cold_open",
         "context",
@@ -944,10 +1205,15 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
     scenes: list[AnimateScene] = []
     proposed_art_bible = _clean_text(parsed.get("art_bible"), 600)
     art_tokens = ("cinematic", "realistic", "realistis", "illustration", "lighting", "photography", "film", "animation")
+    fallback_locks_default_3d = (
+        "3d" in fallback.art_bible.casefold()
+        and not _requested_art_bible(script)
+    )
     art_bible = (
         proposed_art_bible
         if (
-            any(token in proposed_art_bible.casefold() for token in art_tokens)
+            not fallback_locks_default_3d
+            and any(token in proposed_art_bible.casefold() for token in art_tokens)
             and not _contains_unrequested_defaults(script, proposed_art_bible)
         )
         else fallback.art_bible
@@ -987,6 +1253,42 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
             if _clean_text(item, 650)
             and not _contains_unrequested_defaults(script, _clean_text(item, 650))
         ][:3] or [_clean_text(visual_prompt, 650)]
+        camera_motion, _camera_composition = _narrative_camera_plan(
+            f"{visual_prompt} {narration}",
+            motion if motion in allowed_motions else "push_in",
+        )
+        scene_text = f"{visual_prompt} {narration}"
+        proposed_animation = _clean_text(raw.get("animation_direction"), 500)
+        if (
+            _contains_unrequested_defaults(script, proposed_animation)
+            or (
+                _has_any(proposed_animation, _STOCK_HAND_GESTURE_TERMS)
+                and not _has_any(narration, _STOCK_HAND_GESTURE_TERMS)
+            )
+        ):
+            proposed_animation = ""
+        animation_direction = proposed_animation or _animation_direction(scene_text)
+        proposed_transition = _clean_text(raw.get("transition"), 40).casefold().replace(" ", "_")
+        transition = (
+            proposed_transition
+            if proposed_transition in _ALLOWED_TRANSITIONS
+            else _scene_transition(scene_text, first_scene=index == 0)
+        )
+        proposed_continuity = _clean_text(raw.get("continuity_anchor"), 500)
+        continuity_anchor = _continuity_anchor(
+            index + 1,
+            character_bible,
+            location_bible,
+            scene_text,
+        )
+        if (
+            proposed_continuity
+            and not _contains_unrequested_defaults(script, proposed_continuity)
+        ):
+            continuity_anchor = _clean_text(
+                f"{continuity_anchor} Scene-specific continuity: {proposed_continuity}",
+                1300,
+            )
         scenes.append(
             AnimateScene(
                 index=index + 1,
@@ -999,12 +1301,18 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
                     art_bible,
                     character_bible,
                     location_bible,
+                    visual_locked=bool(source),
+                    animation_direction=animation_direction,
+                    continuity_anchor=continuity_anchor,
                 ),
                 on_screen_text=(source["on_screen_text"] if source else ""),
-                camera_motion=motion if motion in allowed_motions else "push_in",
+                camera_motion=camera_motion,
                 color_mood=_clean_text(raw.get("color_mood"), 120)
                 or _color_mood(narration, index),
                 narrative_role=role if role in allowed_roles else "development",
+                animation_direction=animation_direction,
+                transition=transition,
+                continuity_anchor=continuity_anchor,
                 duration_hint=(
                     max(6.0, min(25.0, len(narration.split()) / 2.45 + 1.2))
                     if narration
@@ -1015,6 +1323,7 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
             )
         )
     scenes[0].narrative_role = "cold_open"
+    scenes[0].transition = "hard_cut"
     scenes[-1].narrative_role = "payoff_conclusion"
     return AnimateStoryboard(
         title=_clean_text(parsed.get("title"), 80) or fallback.title,
@@ -1118,7 +1427,6 @@ def scene_visual_semantic_score(narration: str, visual: str) -> float:
 def plan_storyboard_shots(storyboard: AnimateStoryboard) -> list[AnimateShot]:
     """Expand complex scenes into multiple visual shots without repeating narration."""
     shots: list[AnimateShot] = []
-    motions = ("push_in", "pan_right", "pull_out", "pan_left", "drift_up")
     reference_id = hashlib.sha256(storyboard.character_bible.encode("utf-8")).hexdigest()[:12]
     for scene in storyboard.scenes:
         raw_prompts = scene.shot_prompts or _visible_shot_moments(scene.narration)
@@ -1148,12 +1456,15 @@ def plan_storyboard_shots(storyboard: AnimateStoryboard) -> list[AnimateShot]:
                 storyboard.art_bible,
                 storyboard.character_bible,
                 storyboard.location_bible,
+                visual_locked=scene.visuals_locked,
+                animation_direction=scene.animation_direction,
+                continuity_anchor=scene.continuity_anchor,
             )
             if "No recurring character is defined" not in storyboard.character_bible:
                 prompt = _clean_text(
                     f"CHARACTER REFERENCE LOCK {reference_id}: every recurring identity must match the approved "
                     f"reference design exactly. {prompt}",
-                    3200,
+                    6500,
                 )
             shots.append(
                 AnimateShot(
@@ -1165,8 +1476,17 @@ def plan_storyboard_shots(storyboard: AnimateStoryboard) -> list[AnimateShot]:
                     narration=scene.narration,
                     visual_prompt=prompt,
                     on_screen_text=scene.on_screen_text if local_index == 1 else "",
-                    camera_motion=motions[(scene.index + local_index - 2) % len(motions)],
+                    camera_motion=_alternate_camera_motion(
+                        _narrative_camera_plan(
+                            f"{raw_visual} {scene.narration}",
+                            scene.camera_motion,
+                        )[0],
+                        local_index,
+                    ),
                     color_mood=scene.color_mood,
+                    animation_direction=scene.animation_direction,
+                    transition=(scene.transition if local_index == 1 else "match_action"),
+                    continuity_anchor=scene.continuity_anchor,
                     duration=shot_duration,
                 )
             )
@@ -1476,6 +1796,8 @@ def _remote_scene_image(
             "disembodied hands, floating hands, detached hands, bodyless limbs, cropped arms, hands entering from frame edge, anonymous foreground hands",
             "unrequested crowd, extra background people, partial person, unrelated stock character, unrequested cultural clothing",
             "palms facing camera, wall of hands, raised-hand crowd, cheering hands, hands reaching toward lens, oversized foreground hands, hands dominating composition",
+            "nudity, naked person, nude child, exposed torso or hips, transparent wet clothing, underwear framing, "
+            "intimate washing, sensualized child, suggestive pose, voyeuristic angle, body-part close-up",
         ]
         if not _has_any(scene.visual_prompt, ("soft focus", "dreamy", "dreamlike", "watercolor", "impressionist")):
             negative_parts.append("blurry, soft focus")
@@ -1484,7 +1806,14 @@ def _remote_scene_image(
         if not _has_any(scene.visual_prompt, ("pixel art", "8-bit", "16-bit")):
             negative_parts.append("low resolution, pixelated")
         negative_prompt = ", ".join(negative_parts)
-        if _has_any(scene.visual_prompt, _ISLAMIC_VISUAL_TERMS):
+        # Inspect only user/story-grounded copy. The compiled prompt itself
+        # contains words such as "mosque" inside prohibition clauses, which
+        # must not be mistaken for a requested Islamic visual.
+        requested_visual_context = (
+            f"{scene.narration} "
+            f"{scene.visual_prompt.split('STRICT STORY GROUNDING:', 1)[0]}"
+        )
+        if _has_any(requested_visual_context, _ISLAMIC_VISUAL_TERMS):
             negative_prompt += (
                 ", woman wearing peci, woman wearing kopiah, woman wearing songkok, hijab with hat, double headwear"
             )
@@ -1881,7 +2210,7 @@ def generate_shot_image_with_qa(
             shot.visual_prompt = _clean_text(
                 f"QA REPAIR {attempt}: correct these failures: {', '.join(last_reasons)}. Strictly preserve the "
                 f"character reference lock, global style, requested subject count, action, and setting. {original_prompt}",
-                3500,
+                7000,
             )
         provider = generate_scene_image(shot, path, art_bible, reference_image=character_reference)
         shot.qa_score, last_reasons = inspect_generated_image(
@@ -1909,8 +2238,9 @@ def _tts_pronunciation_text(text: str) -> str:
 
     replacements = (
         (r"(?i)\bQ\.?\s*S\.?\s*", "Surah "),
-        (r"(?i)\bS\.?\s*W\.?\s*T\.?\b", "subhanahu wa taala"),
-        (r"(?i)\bS\.?\s*A\.?\s*W\.?\b", "salallahu alaihi wasalam"),
+        (r"(?i)(?<!\w)S\.?\s*W\.?\s*T\.?(?!\w)|ﷻ", "subhaanahu wa ta'aalaa"),
+        (r"(?i)(?<!\w)S\.?\s*A\.?\s*W\.?(?!\w)|ﷺ", "shallallaahu alaihi wasallam"),
+        (r"(?i)\b(?:muhamad|mohamad|mohammad|muhammad)\b", "Muhammad"),
         (r"(?i)\bAllah\b", "Alloh"),
         (r"الله", "Alloh"),
         (r"(?i)\bAl[-\s]?Qur[’'`]an\b", "Al Quran"),
@@ -2054,6 +2384,8 @@ def _motion_expression(scene: AnimateScene | AnimateShot, frames: int) -> tuple[
         return zoom, f"(iw-iw/zoom)*{progress}", "(ih-ih/zoom)/2"
     if scene.camera_motion == "drift_up":
         return zoom, "(iw-iw/zoom)/2", f"(ih-ih/zoom)*(1-{progress})"
+    if scene.camera_motion == "tilt_down":
+        return zoom, "(iw-iw/zoom)/2", f"(ih-ih/zoom)*{progress}"
     return zoom, "(iw-iw/zoom)/2", "(ih-ih/zoom)/2"
 
 
@@ -2221,8 +2553,9 @@ def assemble_shot_videos(paths: list[Path], shots: list[AnimateShot], scene_dir:
     for index in range(1, len(paths)):
         output_label = f"[xf{index}]"
         offset = max(0.001, accumulated - transition)
+        transition_name = _xfade_transition_name(shots[index].transition)
         filters.append(
-            f"{previous}[{index}:v]xfade=transition=fade:duration={transition:.3f}:offset={offset:.3f}{output_label}"
+            f"{previous}[{index}:v]xfade=transition={transition_name}:duration={transition:.3f}:offset={offset:.3f}{output_label}"
         )
         previous = output_label
         accumulated += shots[index].duration - transition
@@ -2822,7 +3155,8 @@ def render_long_animate(
         ],
         "applied_edits": [
             "Naskah dipecah menjadi beat storyboard tanpa filler atau pengulangan.",
-            "Scene kompleks dipecah menjadi beberapa shot tunggal tanpa mengulang voice-over.",
+            "Setiap unit narasi memiliki prompt 3D, animation direction, continuity anchor, kamera, dan transisi sendiri.",
+            "Scene kompleks dipecah menjadi beberapa shot tunggal yang tetap mewarisi karakter, pakaian, lokasi, dan waktu tanpa mengulang voice-over.",
             f"Voice-over dibuat lebih dulu; durasi hasil TTS menentukan timeline tepat {target_duration:g} detik.",
             "Fade hitam dan padding audio antar-scene dihapus; musik memakai sidechain ducking.",
             f"Subtitle bertimestamp dan audio AAC 48 kHz digabungkan ke master {output_aspect}.",
@@ -2832,7 +3166,7 @@ def render_long_animate(
         "loop_score": 70,
         "boundary_quality": "payoff_tuntas",
         "mode": "long_animate",
-        "production_model": "codex_scene_cinema_v2",
+        "production_model": "codex_scene_cinema_v3",
         "output_format": "portrait_short" if output_aspect == "9:16" else "landscape_compilation",
         "aspect_ratio": output_aspect,
         "output_resolution": f"{output_width}x{output_height}",
@@ -2859,6 +3193,20 @@ def render_long_animate(
         "parts": parts,
         "shots": [asdict(shot) for shot in shots],
         "story_arc": [asdict(scene) for scene in storyboard.scenes],
+        "scene_prompt_contract": {
+            "version": 3,
+            "one_visual_prompt_per_scene": True,
+            "one_animation_direction_per_scene": True,
+            "camera_and_transition_are_scene_specific": True,
+            "character_style_location_time_continuity_locked": True,
+            "render_execution_mode": "3d_keyframe_plus_scene_specific_camera_motion",
+            "subject_motion_video_model_claimed": False,
+            "scene_count": len(storyboard.scenes),
+            "unique_visual_prompt_count": len(
+                {hashlib.sha256(scene.visual_prompt.encode("utf-8")).hexdigest() for scene in storyboard.scenes}
+            ),
+            "generic_repeated_pose_allowed": False,
+        },
         "chapter_edit_evidence": chapter_audits,
         "virtual_camera_angles": [
             {"shot": shot.index, "scene": shot.scene_index, "motion": shot.camera_motion}
@@ -2960,6 +3308,11 @@ def render_long_animate(
             "generic_mass_produced_template_allowed": False,
             "misleading_title_thumbnail_allowed": False,
             "script_and_image_rights_confirmation_required": True,
+            "minor_sexualization_or_nudity_allowed": False,
+            "minor_dangerous_activity_allowed": False,
+            "child_scene_requires_age_appropriate_attire_and_framing": True,
+            "animation_is_not_automatically_marked_made_for_kids": True,
+            "audience_setting_requires_human_review": True,
             "view_target_is_experiment_not_guarantee": True,
         },
         }

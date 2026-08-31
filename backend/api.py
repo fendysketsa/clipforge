@@ -4509,41 +4509,45 @@ def youtube_source_claim_block(upload_or_job_id: YouTubeUploadJob | str) -> YouT
     )
 
 
+def youtube_clip_claim_block(source_job_id: str, clip_url: str) -> YouTubeUploadJob | None:
+    """Return a verified claim only for the exact rendered clip.
+
+    Content ID matches segments of an uploaded file. A claim on one candidate
+    is evidence about that file, not proof that every sibling clip from the
+    same long source will match, so siblings must keep their own Private check.
+    """
+    with youtube_uploads_lock:
+        candidates = sorted(
+            youtube_uploads.values(),
+            key=lambda item: item.finished_at or item.updated_at,
+            reverse=True,
+        )
+    return next(
+        (
+            upload
+            for upload in candidates
+            if upload.source_job_id == source_job_id
+            and upload.clip_url == clip_url
+            and any(
+                str(line).startswith(YOUTUBE_CLAIM_ABORT_PREFIX)
+                for line in upload.logs
+            )
+        ),
+        None,
+    )
+
+
 def quarantine_queued_youtube_uploads_from_claimed_source(
     source_job_id: str,
     triggering_upload_id: str,
 ) -> int:
-    quarantined = 0
-    quarantined_at = now_iso()
-    with youtube_uploads_lock:
-        for upload_id, upload in list(youtube_uploads.items()):
-            if (
-                upload_id == triggering_upload_id
-                or upload.source_job_id != source_job_id
-                or upload.status != "queued"
-            ):
-                continue
-            data = upload.model_dump()
-            data.update(
-                {
-                    "status": "cancelled",
-                    "updated_at": quarantined_at,
-                    "finished_at": quarantined_at,
-                    "error": (
-                        "Upload dibatalkan otomatis: klip lain dari sumber yang sama "
-                        "sudah terdeteksi klaim Content ID/audio-visual."
-                    ),
-                    "logs": [
-                        *upload.logs,
-                        "SOURCE_CLAIM_QUARANTINE: sumber diblokir sebelum file dipilih; file lokal tetap aman.",
-                    ][-160:],
-                }
-            )
-            youtube_uploads[upload_id] = YouTubeUploadJob(**data)
-            quarantined += 1
-        if quarantined:
-            save_youtube_uploads_unlocked()
-    return quarantined
+    """Legacy compatibility: claims are now isolated to the exact clip.
+
+    Keep the function callable for persisted workers/tests, but never cancel
+    sibling clips merely because they share a source job.
+    """
+    del source_job_id, triggering_upload_id
+    return 0
 
 
 def verified_duplicate_for_upload(
@@ -4627,13 +4631,13 @@ def youtube_uploads_with_queue_positions(
 
 def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> YouTubeUploadJob:
     job, clip, index = find_job_clip(job_id, request.clip_url)
-    claimed_upload = youtube_source_claim_block(job_id)
+    claimed_upload = youtube_clip_claim_block(job_id, clip.url)
     if claimed_upload is not None:
         raise HTTPException(
             status_code=409,
             detail=(
-                "Sumber video ini sudah terdeteksi klaim Content ID/audio-visual pada klip "
-                f"'{claimed_upload.clip_name}'. Pilih sumber lain; upload ulang dari job yang sama diblokir."
+                "Klip ini sudah terdeteksi klaim Content ID/audio-visual pada pemeriksaan sebelumnya "
+                f"('{claimed_upload.clip_name}'). Gunakan versi Original Rebuild tanpa audio/piksel sumber."
             ),
         )
     requested_visibility = safe_youtube_visibility(request.visibility)
@@ -6903,14 +6907,14 @@ def run_youtube_upload(upload_id: str) -> None:
                 str(line).startswith(YOUTUBE_CLAIM_ABORT_PREFIX)
                 for line in logs
             ):
-                quarantined = quarantine_queued_youtube_uploads_from_claimed_source(
-                    upload.source_job_id,
-                    upload_id,
-                )
                 logs.append(
-                    "Sumber dikarantina setelah klaim terdeteksi; "
-                    f"{quarantined} upload antrean dari sumber yang sama dibatalkan tanpa memilih file."
+                    "Klaim diisolasi ke klip ini. Klip lain dari sumber yang sama tetap antre "
+                    "dan wajib melewati pemeriksaan Content ID masing-masing."
                 )
+                replacement_id, replacement_message = queue_claimed_clip_rebuild(upload)
+                logs.append(replacement_message)
+                if replacement_id:
+                    logs.append(f"CLAIM_REBUILD_JOB:{replacement_id}")
             set_youtube_upload(
                 upload_id,
                 status="failed",
@@ -7498,6 +7502,21 @@ def build_clipper_command(
         command.append("--confirm-provider-rights")
     if request.automatic_topic_rebuild:
         command.append("--automatic-topic-rebuild")
+        # Automatic topic rebuild is the safe replacement for a rejected Short,
+        # so keep the replacement in the same portrait/duration product class.
+        # Manual Original Rebuild keeps the configured Scene Cinema defaults.
+        command.extend(["--rebuild-output-aspect", "9:16"])
+        command.extend(
+            [
+                "--rebuild-target-duration",
+                str(
+                    max(
+                        float(SHORT_GROWTH_MIN_SECONDS),
+                        min(float(SHORT_GROWTH_MAX_SECONDS), request.max_duration),
+                    )
+                ),
+            ]
+        )
     if request.creator_perspective:
         command.extend(["--creator-perspective", request.creator_perspective])
     if request.source_rights_evidence:
@@ -7543,6 +7562,117 @@ def parse_clipper_progress(line: str) -> dict[str, int | str] | None:
         "progress_step": stage_steps.get(normalized_stage, 0),
         "progress_total_steps": 5,
     }
+
+
+def source_risk_requires_automatic_rebuild(logs: list[str]) -> bool:
+    """Detect the explicit pre-download risk gate, not an actual Studio claim."""
+    combined = re.sub(r"\s+", " ", " ".join(logs[-120:])).casefold()
+    return bool(
+        "sumber ditolak sebelum download karena berisiko tinggi terkena content id" in combined
+        or (
+            "mode clip pendek dan long story tidak boleh memakai sumber ini" in combined
+            and "original rebuild" in combined
+        )
+    )
+
+
+def automatic_source_risk_rebuild_request(request: ClipJobRequest) -> ClipJobRequest | None:
+    """Convert a risky CC clip job into a source-free rebuild without auto-publish."""
+    if (
+        request.clip_mode not in {"short", "highlight_5m"}
+        or not request.url.strip()
+        or not request.ai_enabled
+        or not request.ai_base_url.strip()
+        or not request.ai_model.strip()
+        or not env_bool("AUTO_REBUILD_HIGH_RISK_CC_SOURCES", True)
+    ):
+        return None
+    return normalize_job_request(
+        request.model_copy(
+            update={
+                "clip_mode": "original_rebuild",
+                "automatic_topic_rebuild": True,
+                "top": 1,
+                "creator_perspective": "",
+                "source_rights_evidence": "",
+                "provider_rights_evidence": "",
+                "confirm_source_rights": False,
+                "confirm_long_animate_rights": False,
+                "auto_upload_youtube": False,
+                "allow_reprocess_source": True,
+            }
+        )
+    )
+
+
+def queue_claimed_clip_rebuild(upload: YouTubeUploadJob) -> tuple[str | None, str]:
+    """Queue one source-free portrait replacement for an actually claimed clip."""
+    if not env_bool("AUTO_REBUILD_CLAIMED_CLIPS", True):
+        return None, "Rebuild otomatis untuk klip terkena klaim dinonaktifkan."
+    marker = f"CLAIM_REBUILD_SOURCE_UPLOAD:{upload.id}"
+    with jobs_lock:
+        source_job = jobs.get(upload.source_job_id)
+        existing = next(
+            (
+                job
+                for job in jobs.values()
+                if any(str(line).strip() == marker for line in job.logs)
+            ),
+            None,
+        )
+    if existing is not None:
+        return existing.id, "Job Original Rebuild pengganti sudah tersedia."
+    if source_job is None:
+        return None, "Job sumber klip tidak ditemukan; rebuild otomatis tidak dibuat."
+    source_request = source_job.request
+    if source_request.clip_mode not in {"short", "highlight_5m"}:
+        return None, "Klip bukan hasil Clip Pendek/Long Story; rebuild otomatis tidak dibuat."
+    if not source_request.url.strip():
+        return None, "Sumber URL tidak tersedia; rebuild otomatis tidak dibuat."
+    if (
+        not source_request.ai_enabled
+        or not source_request.ai_base_url.strip()
+        or not source_request.ai_model.strip()
+    ):
+        return None, "AI Original Rebuild belum terkonfigurasi; rebuild otomatis tidak dibuat."
+
+    replacement_request = source_request.model_copy(
+        update={
+            "clip_mode": "original_rebuild",
+            "automatic_topic_rebuild": True,
+            "top": 1,
+            "creator_perspective": "",
+            "source_rights_evidence": "",
+            "provider_rights_evidence": "",
+            "confirm_source_rights": False,
+            "confirm_long_animate_rights": False,
+            "auto_upload_youtube": False,
+            "allow_reprocess_source": True,
+            "source_file": "",
+            "script_text": "",
+            "ai_api_key": "",
+        }
+    )
+    replacement_id = uuid.uuid4().hex
+    now = now_iso()
+    replacement = ClipJob(
+        id=replacement_id,
+        status="queued",
+        request=replacement_request,
+        created_at=now,
+        updated_at=now,
+        progress_detail="Klip terkena klaim dialihkan ke Original Rebuild 9:16",
+        logs=[
+            marker,
+            f"CLAIM_REBUILD_SOURCE_CLIP:{upload.clip_url}",
+            "Klaim nyata di YouTube Studio hanya mengganti klip ini; sibling tetap diproses biasa.",
+        ],
+    )
+    with jobs_lock:
+        jobs[replacement_id] = replacement
+        save_jobs_unlocked()
+    threading.Thread(target=run_job, args=(replacement_id,), daemon=True).start()
+    return replacement_id, "Original Rebuild 9:16 pengganti berhasil dimasukkan ke antrean."
 
 
 def run_job(job_id: str) -> None:
@@ -7654,6 +7784,7 @@ def run_job(job_id: str) -> None:
         job_processes[job_id] = process
 
     logs: list[str] = []
+    retry_as_rebuild: ClipJobRequest | None = None
     try:
         assert process.stdout is not None
         for line in process.stdout:
@@ -7745,6 +7876,33 @@ def run_job(job_id: str) -> None:
             if request.auto_upload_youtube:
                 auto_queue_youtube_uploads_for_job(job_id, logs)
         else:
+            if source_risk_requires_automatic_rebuild(logs):
+                retry_as_rebuild = automatic_source_risk_rebuild_request(request)
+            if retry_as_rebuild is not None:
+                _, cleanup_message = cleanup_failed_job_artifacts(output_root)
+                persisted_retry = retry_as_rebuild.model_copy(update={"ai_api_key": ""})
+                set_job(
+                    job_id,
+                    status="queued",
+                    request=persisted_retry,
+                    started_at=None,
+                    finished_at=None,
+                    duration_seconds=None,
+                    progress_percent=0,
+                    progress_stage="queued",
+                    progress_detail="Risiko hak sumber dialihkan otomatis ke Original Rebuild",
+                    progress_step=0,
+                    progress_total_steps=5,
+                    clips=[],
+                    candidates=[],
+                    logs=[
+                        *logs,
+                        "AUTO_SOURCE_RISK_REBUILD: sumber CC berisiko dialihkan ke media baru tanpa audio/piksel sumber.",
+                        cleanup_message,
+                    ][-120:],
+                    error=None,
+                )
+                return
             friendly_error = user_error_from_logs(logs)
             if code == 0:
                 failure_reason = friendly_error or (
@@ -7785,10 +7943,16 @@ def run_job(job_id: str) -> None:
     finally:
         with process_lock:
             job_processes.pop(job_id, None)
-        job_secrets.pop(job_id, None)
+        if retry_as_rebuild is None:
+            job_secrets.pop(job_id, None)
+        elif secret:
+            job_secrets[job_id] = secret
         cancelled_job_ids.discard(job_id)
         preserve_job_files_on_cancel.discard(job_id)
         clip_job_slots.release()
+
+        if retry_as_rebuild is not None:
+            threading.Thread(target=run_job, args=(job_id,), daemon=True).start()
 
         # An uploaded source is only needed during processing; remove it afterwards
         # so large videos don't accumulate in uploads/.

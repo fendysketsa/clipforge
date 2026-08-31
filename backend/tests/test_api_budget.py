@@ -257,6 +257,8 @@ def test_automatic_topic_rebuild_needs_no_manual_compliance_form(monkeypatch, tm
     assert request.confirm_long_animate_rights is False
     assert request.auto_upload_youtube is False
     assert "--automatic-topic-rebuild" in command
+    assert command[command.index("--rebuild-output-aspect") + 1] == "9:16"
+    assert float(command[command.index("--rebuild-target-duration") + 1]) == request.max_duration
     assert "--confirm-source-rights" not in command
     assert "--confirm-provider-rights" not in command
 

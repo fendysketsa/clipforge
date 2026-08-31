@@ -15,6 +15,7 @@ from api import (
     YouTubeUploadRequest,
     YouTubeUploadJob,
     append_youtube_chapters,
+    automatic_source_risk_rebuild_request,
     best_youtube_clip_urls,
     build_youtube_restart_verification_command,
     build_youtube_upload_command,
@@ -36,8 +37,11 @@ from api import (
     monitor_youtube_upload_process,
     normalized_generated_metadata,
     quarantine_queued_youtube_uploads_from_claimed_source,
+    queue_claimed_clip_rebuild,
     youtube_monetization_preflight_issue,
     reviewed_automatic_rebuild_for_private_upload,
+    source_risk_requires_automatic_rebuild,
+    youtube_clip_claim_block,
     youtube_upload_metadata,
     youtube_source_attribution,
     youtube_growth_targets,
@@ -156,7 +160,7 @@ def test_generated_channel_authenticity_rejects_near_duplicate_recent_upload(mon
     assert "previous-u" in issue
 
 
-def test_claim_quarantine_cancels_only_queued_uploads_from_same_source(monkeypatch, tmp_path):
+def test_claim_isolated_to_exact_clip_keeps_sibling_uploads_queued(monkeypatch, tmp_path):
     import api
 
     common = {
@@ -199,12 +203,120 @@ def test_claim_quarantine_cancels_only_queued_uploads_from_same_source(monkeypat
         trigger.id,
     )
 
-    assert quarantined == 1
-    assert api.youtube_uploads[same_source.id].status == "cancelled"
-    assert "klaim Content ID" in (api.youtube_uploads[same_source.id].error or "")
+    assert quarantined == 0
+    assert api.youtube_uploads[same_source.id].status == "queued"
+    assert api.youtube_uploads[same_source.id].error is None
     assert api.youtube_uploads[other_source.id].status == "queued"
     assert youtube_source_claim_block("claimed-source").id == trigger.id
+    assert youtube_clip_claim_block("claimed-source", trigger.clip_url).id == trigger.id
+    assert youtube_clip_claim_block("claimed-source", same_source.clip_url) is None
     assert youtube_source_claim_block("safe-source") is None
+
+
+def test_high_risk_cc_short_is_automatically_converted_to_source_free_rebuild(monkeypatch):
+    monkeypatch.setenv("AUTO_REBUILD_HIGH_RISK_CC_SOURCES", "true")
+    request = ClipJobRequest(
+        url="https://youtu.be/risky-source",
+        clip_mode="short",
+        top=4,
+        auto_upload_youtube=True,
+        ai_enabled=True,
+        ai_base_url="http://localhost:11434/v1",
+        ai_model="llama3.2-id:latest",
+    )
+    logs = [
+        "Sumber ditolak sebelum download karena berisiko tinggi terkena Content ID: "
+        "sumber terindikasi milik broadcaster/media/studio. Mode Clip Pendek dan Long Story "
+        "tidak boleh memakai sumber ini. Untuk mengambil topiknya tanpa memakai audio/piksel "
+        "sumber, pilih Original Rebuild."
+    ]
+
+    assert source_risk_requires_automatic_rebuild(logs)
+    rebuilt = automatic_source_risk_rebuild_request(request)
+
+    assert rebuilt is not None
+    assert rebuilt.clip_mode == "original_rebuild"
+    assert rebuilt.automatic_topic_rebuild is True
+    assert rebuilt.top == 1
+    assert rebuilt.auto_upload_youtube is False
+    assert rebuilt.allow_reprocess_source is True
+
+    command = api.build_clipper_command(rebuilt)
+    assert command[command.index("--rebuild-output-aspect") + 1] == "9:16"
+    assert float(command[command.index("--rebuild-target-duration") + 1]) == rebuilt.max_duration
+
+
+def test_unrelated_clip_failure_is_not_automatically_rebuilt():
+    request = ClipJobRequest(
+        url="https://youtu.be/source",
+        clip_mode="short",
+        ai_enabled=True,
+    )
+
+    assert not source_risk_requires_automatic_rebuild(
+        ["Tidak ada kandidat yang lolos quality gate Short FYP 78."]
+    )
+    assert automatic_source_risk_rebuild_request(
+        request.model_copy(update={"ai_enabled": False})
+    ) is None
+
+
+def test_actual_claim_queues_only_one_source_free_portrait_rebuild(monkeypatch, tmp_path):
+    import api
+
+    source = ClipJob(
+        id="source-job",
+        status="completed",
+        request=ClipJobRequest(
+            url="https://youtu.be/claimed-source",
+            clip_mode="short",
+            max_duration=45,
+            ai_enabled=True,
+            ai_base_url="http://localhost:11434/v1",
+            ai_model="test-model",
+        ),
+        created_at="2026-08-30T00:00:00+00:00",
+        updated_at="2026-08-30T00:05:00+00:00",
+    )
+    upload = YouTubeUploadJob(
+        id="claimed-upload",
+        source_job_id=source.id,
+        clip_url="/outputs/source-job/clips/clip_02.mp4",
+        clip_name="clip_02.mp4",
+        status="failed",
+        created_at="2026-08-30T00:06:00+00:00",
+        updated_at="2026-08-30T00:07:00+00:00",
+        title="Claimed",
+    )
+    started: list[str] = []
+
+    class FakeThread:
+        def __init__(self, *, target, args, daemon):
+            del target, daemon
+            self.args = args
+
+        def start(self):
+            started.append(self.args[0])
+
+    monkeypatch.setenv("AUTO_REBUILD_CLAIMED_CLIPS", "true")
+    monkeypatch.setattr(api, "JOBS_PATH", tmp_path / "jobs.json")
+    monkeypatch.setattr(api, "jobs", {source.id: source})
+    monkeypatch.setattr(api.threading, "Thread", FakeThread)
+
+    replacement_id, message = queue_claimed_clip_rebuild(upload)
+
+    assert replacement_id is not None
+    assert "berhasil" in message
+    replacement = api.jobs[replacement_id]
+    assert replacement.request.clip_mode == "original_rebuild"
+    assert replacement.request.automatic_topic_rebuild is True
+    assert replacement.request.max_duration == 45
+    assert replacement.request.auto_upload_youtube is False
+    assert started == [replacement_id]
+
+    duplicate_id, _ = queue_claimed_clip_rebuild(upload)
+    assert duplicate_id == replacement_id
+    assert started == [replacement_id]
 
 
 def test_best_youtube_clip_urls_uses_candidate_scores():
