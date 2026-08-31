@@ -8,7 +8,7 @@ services:
       - ./backend/outputs:/app/outputs
       - ./backend/uploads:/app/uploads
       - ./backend/data:/app/data
-      - ./backend/assets/youtube_audio_library:/app/assets/youtube_audio_library:ro
+      - ./backend/assets/youtube_audio_library:/app/assets/youtube_audio_library
       - ./scripts:/app/scripts:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${YOUTUBE_HOST_RUNTIME_DIR:-/run/user/1000}:/run/fendy-clipper-host-user:ro
@@ -115,6 +115,9 @@ services:
       CTA_VOICEOVER_RATE: ${CTA_VOICEOVER_RATE:-+12%}
       CTA_VOICEOVER_ESPEAK_VOICE: ${CTA_VOICEOVER_ESPEAK_VOICE:-id+m3}
       SHORTS_YOUTUBE_AUDIO_LIBRARY_ENABLED: ${SHORTS_YOUTUBE_AUDIO_LIBRARY_ENABLED:-true}
+      SHORTS_YOUTUBE_AUDIO_AUTO_SYNC: ${SHORTS_YOUTUBE_AUDIO_AUTO_SYNC:-true}
+      SHORTS_YOUTUBE_AUDIO_SYNC_TIMEOUT_SECONDS: ${SHORTS_YOUTUBE_AUDIO_SYNC_TIMEOUT_SECONDS:-75}
+      SHORTS_YOUTUBE_AUDIO_SYNC_COOLDOWN_SECONDS: ${SHORTS_YOUTUBE_AUDIO_SYNC_COOLDOWN_SECONDS:-900}
       YOUTUBE_AUDIO_LIBRARY_DIR: ${YOUTUBE_AUDIO_LIBRARY_DIR:-/app/assets/youtube_audio_library}
       SHORTS_DIALOGUE_GAIN: ${SHORTS_DIALOGUE_GAIN:-0.80}
       SHORTS_BACKGROUND_MUSIC_GAIN: ${SHORTS_BACKGROUND_MUSIC_GAIN:-0.20}

@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from collections import Counter
 from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
@@ -27,6 +28,7 @@ from source_rights import source_rights_risk_reasons
 
 console = Console()
 _AI_UNAVAILABLE_NOTICE_PRINTED = False
+_YOUTUBE_AUDIO_SYNC_LAST_ATTEMPT: dict[str, float] = {}
 
 
 def emit_progress(percent: int, stage: str, detail: str) -> None:
@@ -7823,6 +7825,106 @@ def select_youtube_audio_library_track(
     }
 
 
+def sync_youtube_audio_library_for_theme(
+    theme: VisualTheme,
+    library_dir: Path | None = None,
+) -> dict[str, object]:
+    """Best-effort Studio download; a failure must never abort clip rendering."""
+    if not env_enabled("SHORTS_YOUTUBE_AUDIO_AUTO_SYNC", True):
+        return {"ok": False, "reason": "auto_sync_disabled"}
+    try:
+        cooldown_value = float(
+            os.environ.get("SHORTS_YOUTUBE_AUDIO_SYNC_COOLDOWN_SECONDS", "900")
+        )
+    except ValueError:
+        cooldown_value = 900.0
+    cooldown = max(30.0, min(3600.0, cooldown_value))
+    now = time.monotonic()
+    previous = _YOUTUBE_AUDIO_SYNC_LAST_ATTEMPT.get(theme, 0.0)
+    if previous and now - previous < cooldown:
+        return {
+            "ok": False,
+            "reason": "auto_sync_cooldown",
+            "retry_after_seconds": round(cooldown - (now - previous), 1),
+        }
+    _YOUTUBE_AUDIO_SYNC_LAST_ATTEMPT[theme] = now
+
+    configured_dir = os.environ.get("YOUTUBE_AUDIO_LIBRARY_DIR", "").strip()
+    root = (
+        library_dir
+        if library_dir is not None
+        else Path(configured_dir)
+        if configured_dir
+        else YOUTUBE_AUDIO_LIBRARY_DEFAULT_DIR
+    ).expanduser().resolve()
+    module_dir = Path(__file__).resolve().parent
+    script_candidates = (
+        module_dir / "scripts" / "sync-youtube-audio-library.py",
+        module_dir.parent / "scripts" / "sync-youtube-audio-library.py",
+    )
+    script_path = next((path for path in script_candidates if path.is_file()), script_candidates[-1])
+    state_path = Path(
+        os.environ.get(
+            "YOUTUBE_PLAYWRIGHT_STATE",
+            str(Path(__file__).resolve().parent / "data" / "youtube_storage_state.json"),
+        )
+    ).expanduser().resolve()
+    studio_url = os.environ.get("YOUTUBE_STUDIO_URL", "https://studio.youtube.com").strip()
+    if not script_path.is_file():
+        return {"ok": False, "reason": "sync_script_missing", "path": str(script_path)}
+    try:
+        timeout_seconds = max(
+            30,
+            min(180, int(os.environ.get("SHORTS_YOUTUBE_AUDIO_SYNC_TIMEOUT_SECONDS", "75"))),
+        )
+    except ValueError:
+        timeout_seconds = 75
+    command = [
+        sys.executable,
+        str(script_path),
+        "--theme",
+        theme,
+        "--library-dir",
+        str(root),
+        "--state",
+        str(state_path),
+        "--studio-url",
+        studio_url,
+        "--timeout-seconds",
+        str(timeout_seconds),
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            text=True,
+            capture_output=True,
+            timeout=timeout_seconds + 20,
+        )
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "reason": "youtube_audio_sync_timeout"}
+    except OSError as exc:
+        return {"ok": False, "reason": "youtube_audio_sync_start_failed", "detail": str(exc)[:300]}
+    payload: dict[str, object] | None = None
+    for line in reversed(result.stdout.splitlines()):
+        if not line.startswith("YOUTUBE_AUDIO_SYNC:"):
+            continue
+        try:
+            parsed = json.loads(line.split(":", 1)[1])
+        except (ValueError, TypeError):
+            continue
+        if isinstance(parsed, dict):
+            payload = parsed
+            break
+    if payload is None:
+        payload = {
+            "ok": False,
+            "reason": "youtube_audio_sync_invalid_response",
+            "detail": (result.stderr or result.stdout).strip()[-500:],
+        }
+    payload["returncode"] = result.returncode
+    return payload
+
+
 def clip_has_islamic_context(clip: ClipCandidate) -> bool:
     """Detect Islamic subject matter independently from the dominant visual theme."""
     words = set(
@@ -10499,6 +10601,27 @@ def export_clip(
     }
     if youtube_audio_library_requested:
         youtube_audio_track, youtube_audio_selection = select_youtube_audio_library_track(clip)
+        if youtube_audio_track is None:
+            auto_sync = sync_youtube_audio_library_for_theme(
+                detect_visual_theme(clip),
+            )
+            if auto_sync.get("ok"):
+                youtube_audio_track, youtube_audio_selection = select_youtube_audio_library_track(clip)
+                youtube_audio_selection["auto_sync"] = auto_sync
+                if youtube_audio_track is not None:
+                    console.print(
+                        f"[green]Backsong Audio Library otomatis siap untuk tema "
+                        f"{youtube_audio_selection.get('theme')}.[/green]"
+                    )
+                else:
+                    youtube_audio_selection["reason"] = "downloaded_track_not_eligible"
+            else:
+                youtube_audio_selection["auto_sync"] = auto_sync
+                reason = str(auto_sync.get("reason") or "gagal")
+                console.print(
+                    f"[yellow]Audio Library otomatis belum tersedia ({reason}); "
+                    "render dilanjutkan tanpa memaksa backsong eksternal.[/yellow]"
+                )
     islamic_background_music = (
         youtube_audio_track is None
         and clip_has_islamic_context(clip)

@@ -3,9 +3,16 @@
 Folder ini hanya untuk musik instrumental yang diunduh langsung dari YouTube
 Studio > Koleksi audio > Musik dengan filter **Attribution not required**.
 
-YouTube tidak menyediakan API publik untuk katalog Audio Library. Karena itu,
-renderer tidak melakukan scraping halaman Studio atau mengunduh musik dari
-channel pihak ketiga. Unduh MP3 dari Studio sekali, lalu impor dengan:
+YouTube tidak menyediakan API publik untuk katalog Audio Library. Saat proses
+Clip Pendek, backend sekarang mencoba membuka halaman Studio memakai sesi dari
+fitur **Login Sekali**, memilih tab Musik, menerapkan filter
+**Attribution not required**, memilih mood sesuai tema, lalu mengunduh satu track
+ke katalog ini. Kegagalan login/UI tidak menggagalkan render: klip dilanjutkan
+dengan audio asli atau fallback lokal yang aman.
+
+Impor manual di bawah hanya jalur cadangan bila sinkronisasi otomatis tidak bisa
+digunakan. Nilai `/path/ke/track.mp3`, judul, dan artis wajib diganti dengan file
+serta metadata nyata:
 
 ```bash
 python scripts/import-youtube-audio-track.py \

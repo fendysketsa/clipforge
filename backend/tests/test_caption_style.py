@@ -1,4 +1,5 @@
 import json
+import importlib.util
 import os
 from datetime import date
 from pathlib import Path
@@ -2808,6 +2809,98 @@ def test_youtube_audio_catalog_selects_theme_and_rejects_unverified_tracks(tmp_p
     assert selected.attribution_required is False
     assert evidence["theme"] == "mystery"
     assert evidence["score"] >= 12
+
+
+def test_youtube_audio_auto_sync_uses_saved_studio_session_without_shell(monkeypatch, tmp_path):
+    script = tmp_path / "scripts" / "sync-youtube-audio-library.py"
+    script.parent.mkdir()
+    script.write_text("# test", encoding="utf-8")
+    state = tmp_path / "state.json"
+    state.write_text("{}", encoding="utf-8")
+    captured = {}
+
+    class Result:
+        returncode = 0
+        stderr = ""
+        stdout = 'YOUTUBE_AUDIO_SYNC:{"ok":true,"theme":"knowledge"}\n'
+
+    monkeypatch.setenv("SHORTS_YOUTUBE_AUDIO_AUTO_SYNC", "true")
+    monkeypatch.setenv("YOUTUBE_PLAYWRIGHT_STATE", str(state))
+    monkeypatch.setenv("YOUTUBE_STUDIO_URL", "https://studio.youtube.com/channel/demo")
+    monkeypatch.setattr(clipper_module, "__file__", str(tmp_path / "backend" / "clipper.py"))
+    monkeypatch.setattr(
+        clipper_module.subprocess,
+        "run",
+        lambda command, **kwargs: captured.update(command=command, kwargs=kwargs) or Result(),
+    )
+    clipper_module._YOUTUBE_AUDIO_SYNC_LAST_ATTEMPT.clear()
+
+    result = clipper_module.sync_youtube_audio_library_for_theme("knowledge", tmp_path / "library")
+
+    assert result["ok"] is True
+    assert result["returncode"] == 0
+    assert captured["command"][captured["command"].index("--theme") + 1] == "knowledge"
+    assert captured["command"][captured["command"].index("--state") + 1] == str(state)
+    assert captured["kwargs"]["capture_output"] is True
+    assert captured["kwargs"]["text"] is True
+
+
+def test_youtube_audio_auto_sync_failure_is_nonfatal_and_has_cooldown(monkeypatch, tmp_path):
+    script = tmp_path / "scripts" / "sync-youtube-audio-library.py"
+    script.parent.mkdir()
+    script.write_text("# test", encoding="utf-8")
+    calls = []
+
+    class Result:
+        returncode = 2
+        stderr = ""
+        stdout = 'YOUTUBE_AUDIO_SYNC:{"ok":false,"reason":"youtube_storage_state_missing"}\n'
+
+    monkeypatch.setenv("SHORTS_YOUTUBE_AUDIO_AUTO_SYNC", "true")
+    monkeypatch.setattr(clipper_module, "__file__", str(tmp_path / "backend" / "clipper.py"))
+    monkeypatch.setattr(
+        clipper_module.subprocess,
+        "run",
+        lambda command, **kwargs: calls.append(command) or Result(),
+    )
+    clipper_module._YOUTUBE_AUDIO_SYNC_LAST_ATTEMPT.clear()
+
+    first = clipper_module.sync_youtube_audio_library_for_theme("mystery", tmp_path / "library")
+    second = clipper_module.sync_youtube_audio_library_for_theme("mystery", tmp_path / "library")
+
+    assert first == {
+        "ok": False,
+        "reason": "youtube_storage_state_missing",
+        "returncode": 2,
+    }
+    assert second["reason"] == "auto_sync_cooldown"
+    assert len(calls) == 1
+
+
+def test_youtube_audio_sync_download_is_hashed_and_immediately_loadable(tmp_path):
+    script_path = Path(__file__).resolve().parents[2] / "scripts" / "sync-youtube-audio-library.py"
+    spec = importlib.util.spec_from_file_location("youtube_audio_sync_script", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    downloaded = tmp_path / "download.tmp"
+    downloaded.write_bytes(b"verified audio library bytes")
+
+    entry = module.import_download(
+        downloaded,
+        "Quiet Learning - Studio Artist.mp3",
+        tmp_path,
+        "knowledge",
+    )
+    catalog = load_youtube_audio_library_catalog(tmp_path)
+
+    assert entry["attribution_required"] is False
+    assert entry["downloaded_via"].endswith("attribution_not_required_filter")
+    assert len(entry["sha256"]) == 64
+    assert len(catalog) == 1
+    assert catalog[0].title == "Quiet Learning"
+    assert catalog[0].artist == "Studio Artist"
+    assert catalog[0].sha256 == entry["sha256"]
 
 
 def test_social_caption_has_safe_relevant_fallback_without_ai():
