@@ -409,6 +409,7 @@ export function ResultsSection({
             const isUploadReady = typeof clip.growth_quality_gate_passed === "boolean"
               ? clip.growth_quality_gate_passed
               : isLongForm || (typeof clip.fyp_score === "number" && clip.fyp_score >= 78);
+            const uploadReviewConfirmed = clip.is_correct;
             const isQueuedForYouTube = latestUpload?.status === "queued";
             const isRunningYouTubeUpload = latestUpload?.status === "running";
             const isUploadingToYouTube = isQueuedForYouTube || isRunningYouTubeUpload;
@@ -465,6 +466,8 @@ export function ResultsSection({
             const youtubeButtonTitle = youtubeEnabled
               ? !isUploadReady
                 ? "Upload ditahan: output belum lolos quality gate formatnya. Buka Analisis & perbaikan, lalu render ulang."
+                : !uploadReviewConfirmed
+                  ? "Centang review hasil, fakta, dan hak penggunaan sebelum upload Private."
                 : isAlreadyUploaded
                 ? `Sudah terupload ke YouTube${latestUpload.video_url ? `: ${latestUpload.video_url}` : ""}`
                 : isQueuedForYouTube
@@ -641,7 +644,7 @@ export function ResultsSection({
                     />
                     <span>
                       <CheckCircle2 size={16} />
-                      Hasil klip sudah benar
+                      Hasil, fakta, dan hak penggunaan sudah saya review
                     </span>
                   </label>
                   <div className="clipActions">
@@ -657,7 +660,7 @@ export function ResultsSection({
                       type="button"
                       className="youtubeUploadButton"
                       onClick={() => onUploadClipToYouTube(clip)}
-                      disabled={!youtubeEnabled || !isUploadReady || isUploadingToYouTube || isAlreadyUploaded}
+                      disabled={!youtubeEnabled || !isUploadReady || !uploadReviewConfirmed || isUploadingToYouTube || isAlreadyUploaded}
                       title={youtubeButtonTitle}
                     >
                       <UploadCloud size={16} />

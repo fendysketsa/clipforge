@@ -106,10 +106,6 @@ type ControlPanelProps = {
   sourceMode: SourceMode;
   scriptText: string;
   onScriptTextChange: (value: string) => void;
-  creatorPerspective: string;
-  onCreatorPerspectiveChange: (value: string) => void;
-  sourceRightsEvidence: string;
-  onSourceRightsEvidenceChange: (value: string) => void;
   providerRightsEvidence: string;
   onProviderRightsEvidenceChange: (value: string) => void;
   confirmLongAnimateRights: boolean;
@@ -206,10 +202,6 @@ export function ControlPanel({
   sourceMode,
   scriptText,
   onScriptTextChange,
-  creatorPerspective,
-  onCreatorPerspectiveChange,
-  sourceRightsEvidence,
-  onSourceRightsEvidenceChange,
   providerRightsEvidence,
   onProviderRightsEvidenceChange,
   confirmLongAnimateRights,
@@ -296,7 +288,7 @@ export function ControlPanel({
     : sourceMode === "url"
       ? Boolean(url.trim())
       : Boolean(uploadFileName);
-  const duplicateApprovalRequired = !isLongAnimate && sourceMode === "url" && Boolean(sourceHistory?.found) && !allowReprocessSource;
+  const duplicateApprovalRequired = !isLongAnimate && !isOriginalRebuild && sourceMode === "url" && Boolean(sourceHistory?.found) && !allowReprocessSource;
   const sourceCheckPending = !isLongAnimate && sourceMode === "url" && Boolean(url.trim()) && isCheckingSourceHistory;
   const invalidCheckedSource = !isLongAnimate && sourceMode === "url"
     && Boolean(url.trim())
@@ -309,12 +301,9 @@ export function ControlPanel({
     || sourceCheckPending
     || invalidCheckedSource
     || duplicateApprovalRequired
-    || (!isLongAnimate && sourceMode === "url" && !confirmSourceRights)
-    || (isOriginalRebuild && !confirmSourceRights)
-    || (isGeneratedVideo && !confirmLongAnimateRights)
-    || (isGeneratedVideo && providerRightsEvidence.trim().split(/\s+/).filter(Boolean).length < 3)
-    || (isOriginalRebuild && creatorPerspective.trim().split(/\s+/).filter(Boolean).length < 8)
-    || (isOriginalRebuild && sourceRightsEvidence.trim().split(/\s+/).filter(Boolean).length < 3);
+    || (!isLongAnimate && !isOriginalRebuild && sourceMode === "url" && !confirmSourceRights)
+    || (isLongAnimate && !confirmLongAnimateRights)
+    || (isLongAnimate && providerRightsEvidence.trim().split(/\s+/).filter(Boolean).length < 3);
   const isProcessing = isSubmitting || isBusy;
   const localNoKeyBaseUrls = new Set<string>(
     LOCAL_LLM_PRESETS.filter((preset) => preset.label !== "Custom").map((preset) => preset.baseUrl),
@@ -337,8 +326,8 @@ export function ControlPanel({
         <div className="controlSectionHeading">
           <span>01</span>
           <div>
-            <h3>{isLongAnimate ? "Tulis naskah video" : isOriginalRebuild ? "Pilih bahan riset yang sah" : "Pilih sumber video"}</h3>
-            <p>{isLongAnimate ? "Naskah menjadi storyboard, visual, animasi, narasi, dan video utuh." : isOriginalRebuild ? "Ucapan ditranskripsi untuk riset, lalu media sumber dikeluarkan dari renderer sebelum video baru dibuat." : "Tempel link YouTube atau upload file dari perangkat."}</p>
+            <h3>{isLongAnimate ? "Tulis naskah video" : isOriginalRebuild ? "Pilih sumber topik" : "Pilih sumber video"}</h3>
+            <p>{isLongAnimate ? "Naskah menjadi storyboard, visual, animasi, narasi, dan video utuh." : isOriginalRebuild ? "Codex menentukan ide dan sudut baru otomatis; audio serta gambar sumber tidak masuk ke hasil." : "Tempel link YouTube atau upload file dari perangkat."}</p>
           </div>
         </div>
 
@@ -480,14 +469,18 @@ TEKS LAYAR: Data Terkirim`}</pre>
                       {` · ${new Date(sourceHistory.matches[0].created_at).toLocaleDateString("id-ID")}`}
                     </small>
                   ) : null}
-                  <label className="sourceHistoryApproval">
-                    <input
-                      type="checkbox"
-                      checked={allowReprocessSource}
-                      onChange={(event) => onAllowReprocessSourceChange(event.target.checked)}
-                    />
-                    <span>Saya sudah memeriksa riwayat dan memang ingin memproses ulang sumber ini.</span>
-                  </label>
+                  {isOriginalRebuild ? (
+                    <small>Rebuild otomatis akan membuat draft baru tanpa memakai audio atau gambar dari hasil sebelumnya.</small>
+                  ) : (
+                    <label className="sourceHistoryApproval">
+                      <input
+                        type="checkbox"
+                        checked={allowReprocessSource}
+                        onChange={(event) => onAllowReprocessSourceChange(event.target.checked)}
+                      />
+                      <span>Saya sudah memeriksa riwayat dan memang ingin memproses ulang sumber ini.</span>
+                    </label>
+                  )}
                 </div>
               </div>
             ) : sourceHistory?.valid_youtube_url ? (
@@ -529,79 +522,34 @@ TEKS LAYAR: Data Terkirim`}</pre>
           </label>
         )}
 
-        {!isLongAnimate && (sourceMode === "url" || isOriginalRebuild) ? (
+        {isOriginalRebuild ? (
+          <div className="modeNotice">
+            <strong>Satu klik · ide dan naskah dibuat otomatis</strong>
+            <span>Codex mengambil topiknya sebagai bahan riset, membuat sudut editorial baru, mengecek kemiripan teks, lalu menghasilkan visual dan suara baru. Hasil tidak diunggah otomatis dan tetap perlu direview sebelum publikasi.</span>
+          </div>
+        ) : !isLongAnimate && sourceMode === "url" ? (
           <div className="aiBlock compactBlock">
-            {sourceMode === "url" ? (
-              <>
-                <label className="aiToggle">
-                  <span className="aiToggleLabel">
-                    <ShieldCheck size={16} />
-                    Wajib Creative Commons
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={requireCreativeCommons || sourceMode === "url"}
-                    disabled
-                    onChange={(event) => onRequireCreativeCommonsChange(event.target.checked)}
-                  />
-                </label>
-                <p className="field-help">Dikunci aktif: video non-CC akan dibatalkan sebelum download. CC hanya metadata lisensi, bukan jaminan uploader memegang hak rekaman.</p>
-              </>
-            ) : null}
+            <label className="aiToggle">
+              <span className="aiToggleLabel">
+                <ShieldCheck size={16} />
+                Wajib Creative Commons
+              </span>
+              <input
+                type="checkbox"
+                checked={requireCreativeCommons || sourceMode === "url"}
+                disabled
+                onChange={(event) => onRequireCreativeCommonsChange(event.target.checked)}
+              />
+            </label>
+            <p className="field-help">Dikunci aktif: video non-CC akan dibatalkan sebelum download. CC hanya metadata lisensi, bukan jaminan uploader memegang hak rekaman.</p>
             <label className="sourceHistoryApproval">
               <input
                 type="checkbox"
                 checked={confirmSourceRights}
                 onChange={(event) => onConfirmSourceRightsChange(event.target.checked)}
               />
-              <span>
-                {isOriginalRebuild
-                  ? "Saya memiliki hak atau izin untuk memproses bahan ini sebagai riset. Saya paham penulisan ulang tidak menghapus kewajiban izin atas sumber."
-                  : "Saya memiliki rekaman ini atau izin komersial yang dapat dibuktikan untuk memakai ulang seluruh audio dan visualnya. Saya paham atribusi, crop, subtitle, dan durasi pendek tidak otomatis mencegah Content ID."}
-              </span>
+              <span>Saya memiliki rekaman ini atau izin komersial yang dapat dibuktikan untuk memakai ulang seluruh audio dan visualnya. Saya paham atribusi, crop, subtitle, dan durasi pendek tidak otomatis mencegah Content ID.</span>
             </label>
-            {isOriginalRebuild ? (
-              <>
-                <label className="field wide">
-                  <span>Perspektif atau analisis Anda · minimal 8 kata</span>
-                  <textarea
-                    value={creatorPerspective}
-                    onChange={(event) => onCreatorPerspectiveChange(event.target.value.slice(0, 4000))}
-                    placeholder="Tuliskan tesis, pengalaman, kritik, atau pelajaran Anda sendiri. Ini menjadi kontribusi manusia yang wajib, bukan sekadar prompt 'buat viral'."
-                    rows={4}
-                  />
-                </label>
-                <label className="field wide">
-                  <span>Referensi bukti hak sumber</span>
-                  <textarea
-                    value={sourceRightsEvidence}
-                    onChange={(event) => onSourceRightsEvidenceChange(event.target.value.slice(0, 2000))}
-                    placeholder="Contoh: URL lisensi/izin tertulis/nama file bukti kepemilikan dan tanggal verifikasi."
-                    rows={3}
-                  />
-                </label>
-                <label className="field wide">
-                  <span>Referensi bukti izin provider AI, gambar, suara, dan musik</span>
-                  <textarea
-                    value={providerRightsEvidence}
-                    onChange={(event) => onProviderRightsEvidenceChange(event.target.value.slice(0, 2000))}
-                    placeholder="Contoh: Provider/model ..., URL terms komersial ..., diperiksa tanggal .... Jangan masukkan API key."
-                    rows={3}
-                  />
-                </label>
-                <label className="sourceHistoryApproval longAnimateRights">
-                  <input
-                    type="checkbox"
-                    checked={confirmLongAnimateRights}
-                    onChange={(event) => onConfirmLongAnimateRightsChange(event.target.checked)}
-                  />
-                  <span>
-                    Saya memastikan provider AI, gambar, suara, dan musik mengizinkan penggunaan komersial serta akan mereview fakta dan setiap scene sebelum publikasi.
-                  </span>
-                </label>
-                <p className="field-help">Referensi tersebut disimpan di asset-license ledger output; Content ID dan review channel tetap wajib.</p>
-              </>
-            ) : null}
           </div>
         ) : null}
       </div>
@@ -727,9 +675,9 @@ TEKS LAYAR: Data Terkirim`}</pre>
       ) : (
         <div className="modeNotice longAnimateEstimate">
           <strong>
-            {isOriginalRebuild ? "Riset → naskah baru → media baru · 16:9 Full HD" : "Target tepat 20 detik · 16:9 Full HD"}
+            {isOriginalRebuild ? "Riset → naskah baru → media baru · target ±3 menit" : "Target ±3 menit · 16:9 Full HD"}
           </strong>
-          <span>{isOriginalRebuild ? "Tidak ada audio, suara, atau piksel sumber di output. Hash transkrip, batas anti-verbatim, dan kewajiban review fakta dicatat dalam audit." : "TTS diukur lebih dulu, lalu 3–7 scene dapat dipecah menjadi beberapa shot. Narasi yang terlalu panjang akan dipercepat agar timeline tetap tepat 20 detik."}</span>
+          <span>{isOriginalRebuild ? "Alur riset disusun menjadi hook, konteks, perkembangan, bukti/contoh, hikmah, dan payoff. Tidak ada audio, suara, atau piksel sumber di output; hasil wajib direview sebelum publikasi." : "TTS diukur lebih dulu, lalu sekitar 10–14 scene dipecah menjadi shot yang mengikuti alur. Setiap gambar mendapat gerak kamera dan ambience halus agar tidak terasa seperti slideshow diam."}</span>
         </div>
       )}
 
@@ -1370,7 +1318,9 @@ TEKS LAYAR: Data Terkirim`}</pre>
           {isProcessing ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
           {isProcessing
             ? "Sedang Memproses..."
-            : sourceHistory?.found
+            : isOriginalRebuild
+              ? "Buat Ulang Otomatis"
+              : sourceHistory?.found
               ? allowReprocessSource
                 ? "Proses Ulang Sumber"
                 : "Konfirmasi Sebelum Proses Ulang"

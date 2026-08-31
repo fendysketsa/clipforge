@@ -7,6 +7,9 @@ cd "$ROOT_DIR"
 source "$ROOT_DIR/scripts/load-dotenv.sh"
 load_dotenv "$ROOT_DIR/.env"
 
+echo "Memastikan generator gambar lokal aktif..."
+"$ROOT_DIR/scripts/start-local-image-model.sh"
+
 "$ROOT_DIR/scripts/prepare-youtube-gui-runtime.sh"
 
 YOUTUBE_CDP_PORT="${YOUTUBE_CDP_PORT:-}"
@@ -62,9 +65,19 @@ PY
   return 1
 }
 
-compose_cmd=(docker compose)
+if docker compose version >/dev/null 2>&1; then
+  compose_cmd=(docker compose)
+elif command -v docker-compose >/dev/null 2>&1; then
+  # Some deployments still provide the standalone Compose binary. Selecting it
+  # explicitly avoids `docker: unknown command: docker compose` during rebuild.
+  compose_cmd=(docker-compose)
+else
+  echo "Docker Compose tidak ditemukan (plugin 'docker compose' atau binary 'docker-compose')." >&2
+  exit 1
+fi
+
 if ! docker info >/dev/null 2>&1; then
-  compose_cmd=(sudo docker compose)
+  compose_cmd=(sudo "${compose_cmd[@]}")
 fi
 
 if [[ "$DOWN_FIRST" == "true" ]]; then

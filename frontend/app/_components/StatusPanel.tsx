@@ -8,10 +8,11 @@ type StatusPanelProps = {
   job: ClipJob | null;
   latestLogs: string[];
   onCancelJob: () => void;
-  onSwitchToOriginalRebuild: () => void;
+  isStartingAutomaticRebuild: boolean;
+  onStartAutomaticRebuild: () => void;
 };
 
-export function StatusPanel({ job, latestLogs, onCancelJob, onSwitchToOriginalRebuild }: StatusPanelProps) {
+export function StatusPanel({ job, latestLogs, onCancelJob, isStartingAutomaticRebuild, onStartAutomaticRebuild }: StatusPanelProps) {
   const [now, setNow] = useState(() => Date.now());
   const StatusIcon = job ? statusIcon[job.status] : Activity;
   const canCancel = isActiveJob(job);
@@ -19,6 +20,7 @@ export function StatusPanel({ job, latestLogs, onCancelJob, onSwitchToOriginalRe
   const canSwitchToOriginalRebuild = Boolean(
     job?.status === "failed"
     && job.request.clip_mode !== "original_rebuild"
+    && Boolean(job.request.url)
     && /content id|broadcaster|original rebuild/i.test(`${job.error || ""} ${job.logs.join(" ")}`),
   );
 
@@ -85,8 +87,20 @@ export function StatusPanel({ job, latestLogs, onCancelJob, onSwitchToOriginalRe
             </span>
             <span>{job.request.clip_mode === "original_rebuild" ? "Rewrite anti-verbatim aktif" : job.request.clip_mode === "long_animate" ? "Naskah menjadi arah visual baru" : job.request.remove_running_text ? "Pembersihan footer aktif" : "Frame sumber dipertahankan jernih"}</span>
             <span>{job.request.clip_mode === "original_rebuild" ? "Suara sumber tidak dikloning" : job.request.clip_mode === "long_animate" ? "Voice-over generatif per scene" : job.request.auto_blur_watermarks ? "Blur watermark otomatis aktif" : "Blur watermark nonaktif"}</span>
-            {job.request.clip_mode === "original_rebuild" ? <span>Perspektif kreator: {job.request.creator_perspective.trim().split(/\s+/).filter(Boolean).length} kata</span> : null}
-            {job.request.clip_mode === "long_animate" || job.request.clip_mode === "original_rebuild" ? <span>Referensi lisensi tercatat; review dokumen + variasi channel wajib</span> : null}
+            {job.request.clip_mode === "original_rebuild" ? (
+              <span>
+                {job.request.automatic_topic_rebuild
+                  ? "Sudut editorial dipilih AI · persetujuan manusia wajib sebelum publikasi"
+                  : `Perspektif kreator: ${job.request.creator_perspective.trim().split(/\s+/).filter(Boolean).length} kata`}
+              </span>
+            ) : null}
+            {job.request.clip_mode === "long_animate" || job.request.clip_mode === "original_rebuild" ? (
+              <span>
+                {job.request.automatic_topic_rebuild
+                  ? "Draft otomatis · tidak diunggah otomatis"
+                  : "Referensi lisensi tercatat; review dokumen + variasi channel wajib"}
+              </span>
+            ) : null}
             <span>{job.request.clip_mode === "long_animate" ? "Tanpa analisis footage sumber" : job.request.analyze_seconds ? `Analisis: ${job.request.analyze_seconds}s` : "Full video"}</span>
             <span>
               {job.request.clip_mode === "long_animate" || job.request.clip_mode === "original_rebuild"
@@ -113,9 +127,9 @@ export function StatusPanel({ job, latestLogs, onCancelJob, onSwitchToOriginalRe
 
           {job.error ? <p className="error errorWithSpacing">{job.error}</p> : null}
           {canSwitchToOriginalRebuild ? (
-            <button className="uiButton" type="button" onClick={onSwitchToOriginalRebuild}>
+            <button className="uiButton" type="button" disabled={isStartingAutomaticRebuild} onClick={onStartAutomaticRebuild}>
               <Sparkles size={16} />
-              Gunakan topiknya lewat Original Rebuild
+              {isStartingAutomaticRebuild ? "Memulai rebuild otomatis..." : "Buat ulang otomatis dari topik ini"}
             </button>
           ) : null}
         </div>

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import subprocess
 import sys
@@ -28,6 +29,7 @@ from api import (
     generate_youtube_description,
     generate_youtube_metadata,
     generated_channel_authenticity_issue,
+    original_rebuild_upload_metadata_fallback,
     completed_upload_cleanup_after,
     create_youtube_upload_record,
     create_youtube_upload_batch_records,
@@ -35,6 +37,8 @@ from api import (
     normalized_generated_metadata,
     quarantine_queued_youtube_uploads_from_claimed_source,
     youtube_monetization_preflight_issue,
+    reviewed_automatic_rebuild_for_private_upload,
+    youtube_upload_metadata,
     youtube_source_attribution,
     youtube_growth_targets,
     youtube_metadata_provider_configs,
@@ -2370,6 +2374,162 @@ def test_monetization_preflight_requires_rights_and_substantive_edit(monkeypatch
     assert "Render ulang" in (youtube_monetization_preflight_issue(job, clip) or "")
 
 
+def test_automatic_rebuild_private_upload_requires_explicit_review(monkeypatch):
+    import api
+
+    clip = ClipFile(
+        name="long_animate_review.mp4",
+        url="/outputs/demo/long_animate_review.mp4",
+        size_bytes=1,
+        is_correct=False,
+    )
+    job = ClipJob(
+        id="job-automatic-review",
+        status="completed",
+        request=ClipJobRequest(
+            url="https://youtu.be/source",
+            clip_mode="original_rebuild",
+            automatic_topic_rebuild=True,
+        ),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: {})
+    monkeypatch.setattr(api, "metadata_for_job", lambda _job: {})
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+
+    assert "centang review hasil, fakta, dan hak penggunaan" in issue
+
+
+def test_metadata_for_rebuild_falls_back_to_render_sidecar(monkeypatch, tmp_path):
+    import api
+
+    monkeypatch.setattr(api, "OUTPUTS_DIR", tmp_path)
+    clip_dir = tmp_path / "demo"
+    clip_dir.mkdir()
+    clip = ClipFile(
+        name="long_animate_review.mp4",
+        url="/outputs/demo/long_animate_review.mp4",
+        size_bytes=1,
+    )
+    (clip_dir / "long_animate_review.json").write_text(
+        json.dumps(
+            {
+                "source_provenance": {
+                    "title": "Sumber riset",
+                    "creator": "Kreator",
+                    "url": "https://youtu.be/source",
+                    "license": "Creative Commons Attribution license (reuse allowed)",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    job = ClipJob(
+        id="job-sidecar-metadata",
+        status="completed",
+        request=ClipJobRequest(
+            url="https://youtu.be/source",
+            clip_mode="original_rebuild",
+            automatic_topic_rebuild=True,
+        ),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+
+    metadata = api.metadata_for_job(job)
+
+    assert metadata["license"] == "Creative Commons Attribution license (reuse allowed)"
+    assert metadata["uploader"] == "Kreator"
+
+
+def test_reviewed_source_free_automatic_rebuild_can_enter_private_review(monkeypatch):
+    import api
+
+    clip = ClipFile(
+        name="long_animate_review.mp4",
+        url="/outputs/demo/long_animate_review.mp4",
+        size_bytes=1,
+        is_correct=True,
+    )
+    job = ClipJob(
+        id="job-reviewed-automatic",
+        status="completed",
+        request=ClipJobRequest(
+            url="https://youtu.be/source",
+            clip_mode="original_rebuild",
+            automatic_topic_rebuild=True,
+        ),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    sidecar = {
+        "production_model": "codex_original_rebuild_v1",
+        "source_provenance": {
+            "license": "Creative Commons Attribution license (reuse allowed)",
+            "license_metadata_verified": True,
+            "research_only_source": True,
+            "source_audio_or_video_used_in_output": False,
+        },
+        "original_rebuild": {
+            "source_audio_in_output": False,
+            "source_video_in_output": False,
+            "source_voice_cloned": False,
+            "human_factual_review_required": True,
+            "longest_verbatim_token_run": 3,
+            "maximum_verbatim_token_run": 10,
+        },
+        "growth_readiness": {"quality_gate_passed": True},
+        "story_arc": [
+            {"voice_provider": "edge_neural"},
+            {"voice_provider": "edge_neural"},
+            {"voice_provider": "edge_neural"},
+        ],
+        "final_qc": {"passed": True},
+        "cold_open_contract": {"quality_gate_passed": True},
+        "altered_content_disclosure_required": True,
+        "synthetic_content": {"ai_or_procedural_images": True},
+        "asset_license_ledger": {
+            "complete": False,
+            "entries": [
+                {"asset_class": name, "commercial_use_basis": "reviewed before private upload", "proof_reference": ""}
+                for name in ("research_source", "script", "visuals", "voice", "music")
+            ],
+        },
+        "monetization_readiness": {
+            "status": "blocked_unverified_rights",
+            "eligible_for_private_upload_review": False,
+            "substantive_transformation": True,
+            "originality_score": 8,
+            "minimum_originality_score": 5,
+            "audit_version": 6,
+            "signals": {"enhanced_edit": True},
+        },
+        "auditor_identity": {
+            "name": "Fendy",
+            "display_signature": "FENDY AUDIT",
+            "audit_id": "FND-TEST-REVIEW",
+            "visible_video_signature": True,
+        },
+        "codex_growth_blueprint": {"version": 1},
+    }
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: sidecar)
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license (reuse allowed)"},
+    )
+
+    assert reviewed_automatic_rebuild_for_private_upload(
+        job, clip, sidecar, metadata={"license": sidecar["source_provenance"]["license"]}
+    )
+    assert youtube_monetization_preflight_issue(job, clip) is None
+
+
 def test_monetization_preflight_requires_explicit_url_rights_confirmation(monkeypatch):
     import api
 
@@ -2868,6 +3028,118 @@ def test_generate_youtube_metadata_falls_back_when_primary_model_fails(monkeypat
         ),
         "hashtags": ["nasihat", "islam", "hikmah", "shorts"],
     }
+
+
+def test_original_rebuild_upload_metadata_falls_back_to_hashed_render_script(monkeypatch):
+    import api
+
+    script = (
+        "Banyak orang mengira semua amal selesai setelah ibadah dilakukan. "
+        "Padahal, makna muqarrabin mengajak kita menilai kembali hubungan antara iman dan amal. "
+        "Perbedaan antara dakwah dan iman perlu dipahami melalui konteks yang utuh. "
+        "Dari sana, pelajaran hidup dapat diterapkan tanpa membuat kesimpulan yang tergesa-gesa."
+    )
+    clip = ClipFile(
+        name="long_animate_refleksi-iman.mp4",
+        url="/outputs/demo/long_animate_refleksi-iman.mp4",
+        size_bytes=1,
+        title="Memahami Hubungan Iman dan Amal",
+        is_correct=True,
+    )
+    job = ClipJob(
+        id="job-rebuild-metadata-fallback",
+        status="completed",
+        request=ClipJobRequest(
+            url="https://youtu.be/source",
+            clip_mode="original_rebuild",
+            automatic_topic_rebuild=True,
+        ),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    sidecar = {
+        "production_model": "codex_original_rebuild_v1",
+        "title": clip.title,
+        "hook": "Apa hubungan iman dan amal?",
+        "core_message": "Iman dan amal perlu dipahami dalam konteks yang utuh.",
+        "text": script,
+        "source_provenance": {
+            "research_only_source": True,
+            "source_audio_or_video_used_in_output": False,
+        },
+        "original_rebuild": {
+            "generated_script_sha256": hashlib.sha256(script.encode("utf-8")).hexdigest(),
+            "source_audio_in_output": False,
+            "source_video_in_output": False,
+            "source_voice_cloned": False,
+        },
+    }
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: sidecar)
+
+    metadata = original_rebuild_upload_metadata_fallback(
+        job,
+        clip,
+        ["viralindonesia", "trendingindonesia"],
+    )
+
+    assert metadata is not None
+    assert metadata["title"] == "Memahami Hubungan Iman dan Amal"
+    assert "\n\n" in str(metadata["description"])
+    assert len(metadata["hashtags"]) >= 3
+    assert "Iman" in metadata["hashtags"]
+
+
+def test_youtube_upload_metadata_uses_rebuild_fallback_when_ollama_is_unavailable(monkeypatch):
+    import api
+
+    script = " ".join(
+        [
+            "Naskah rebuild ini dibuat baru untuk mengulas makna iman dan amal secara kontekstual.",
+            "Setiap bagian menyusun pertanyaan, penjelasan, dan kesimpulan tanpa memakai media sumber.",
+            "Hasil akhirnya mengajak penonton memeriksa pesan secara utuh sebelum menarik kesimpulan.",
+        ]
+    )
+    clip = ClipFile(
+        name="long_animate_naskah-baru.mp4",
+        url="/outputs/demo/long_animate_naskah-baru.mp4",
+        size_bytes=1,
+        title="Menilai Iman dan Amal Secara Utuh",
+        is_correct=True,
+    )
+    job = ClipJob(
+        id="job-rebuild-provider-down",
+        status="completed",
+        request=ClipJobRequest(clip_mode="original_rebuild"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(api, "generate_youtube_metadata", lambda *_args: None)
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "production_model": "codex_original_rebuild_v1",
+            "title": clip.title,
+            "text": script,
+            "source_provenance": {
+                "research_only_source": True,
+                "source_audio_or_video_used_in_output": False,
+            },
+            "original_rebuild": {
+                "generated_script_sha256": hashlib.sha256(script.encode("utf-8")).hexdigest(),
+                "source_audio_in_output": False,
+                "source_video_in_output": False,
+                "source_voice_cloned": False,
+            },
+        },
+    )
+
+    metadata, source = youtube_upload_metadata(job, clip, ["islam", "highlight"])
+
+    assert metadata is not None
+    assert source == "original_rebuild_render"
 
 
 def test_generate_youtube_metadata_retries_incomplete_output_then_uses_fallback(monkeypatch):

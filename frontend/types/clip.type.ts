@@ -126,6 +126,7 @@ export type ClipJob = {
     require_creative_commons: boolean;
     confirm_source_rights: boolean;
     confirm_long_animate_rights: boolean;
+    automatic_topic_rebuild?: boolean;
     auto_upload_youtube: boolean;
     allow_reprocess_source?: boolean;
     ai_enabled: boolean;
@@ -168,6 +169,7 @@ export type CreateClipJobInput = {
   require_creative_commons?: boolean;
   confirm_source_rights?: boolean;
   confirm_long_animate_rights?: boolean;
+  automatic_topic_rebuild?: boolean;
   auto_upload_youtube?: boolean;
   allow_reprocess_source?: boolean;
   ai_enabled?: boolean;

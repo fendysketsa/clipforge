@@ -1,4 +1,5 @@
 import json
+import re
 
 import pytest
 
@@ -7,8 +8,11 @@ from clipper import (
     TranscriptSegment,
     UserFacingError,
     cleanup_intermediate,
+    deterministic_original_rebuild_script,
     longest_verbatim_token_run,
     original_rebuild_script,
+    original_rebuild_research_excerpt,
+    parse_original_rebuild_response,
     require_creative_commons_metadata,
 )
 from llm import AIConfig
@@ -81,6 +85,9 @@ def test_broadcaster_source_is_allowed_only_for_documented_research_rebuild():
 
 
 def test_original_rebuild_creates_audited_script_without_source_media(monkeypatch):
+    # Keep this fixture focused on audit semantics; duration targeting has a
+    # separate three-minute regression test in test_long_animate.py.
+    monkeypatch.setenv("LONG_ANIMATE_TARGET_DURATION_SECONDS", "20")
     payload = {
         "title": "Kemajuan yang Bisa Diukur",
         "editorial_angle": "Mengubah nasihat umum menjadi eksperimen evaluasi mingguan.",
@@ -143,4 +150,99 @@ def test_original_rebuild_never_falls_back_to_copied_transcript(monkeypatch):
             "Saya ingin membahas kebiasaan sebagai eksperimen yang dapat diuji dan diperbaiki setiap minggu.",
         )
 
-    assert calls == 2
+    assert calls == 4
+
+
+def test_automatic_topic_rebuild_derives_angle_without_manual_form(monkeypatch):
+    monkeypatch.setenv("LONG_ANIMATE_TARGET_DURATION_SECONDS", "20")
+    payload = {
+        "title": "Eksperimen Kecil",
+        "editorial_angle": "Mengubah nasihat umum menjadi langkah yang dapat diuji.",
+        "script": (
+            "Nasihat berguna ketika bisa diuji dalam kehidupan sehari-hari. Mulailah dari satu "
+            "tindakan kecil, catat kondisi awal, lalu tentukan waktu pemeriksaan. Catatan membantu "
+            "memisahkan kemajuan nyata dari kesan sesaat. Jika hasilnya belum membaik, ubah satu "
+            "bagian dan coba kembali. Perubahan akhirnya tumbuh dari bukti, bukan semangat sementara."
+        ),
+        "source_claims_used": ["Evaluasi rutin membantu melihat pola."],
+        "review_notes": ["Periksa konteks sebelum publikasi."],
+    }
+    monkeypatch.setattr(clipper, "chat_completion", lambda *_args, **_kwargs: json.dumps(payload))
+
+    script, audit = original_rebuild_script(
+        source_segments(),
+        {"title": "Kebiasaan Kecil", "uploader": "Sumber Riset"},
+        AIConfig(enabled=True, base_url="http://local/v1", model="test-model"),
+        "",
+        automatic_topic_rebuild=True,
+    )
+
+    assert script == payload["script"]
+    assert audit["human_creator_perspective_present"] is False
+    assert audit["editorial_angle_generated_automatically"] is True
+    assert audit["source_audio_in_output"] is False
+    assert audit["source_video_in_output"] is False
+
+
+def test_research_excerpt_samples_full_timeline_with_small_context():
+    transcript = [
+        TranscriptSegment(start=index, end=index + 1, text=f"Bagian unik nomor {index} membahas tema {index}.")
+        for index in range(120)
+    ]
+
+    excerpt = original_rebuild_research_excerpt(transcript, max_chars=1200)
+
+    assert len(excerpt) <= 1200
+    assert "nomor 0" in excerpt
+    assert "nomor 119" in excerpt
+    sampled_numbers = [int(value) for value in re.findall(r"nomor (\d+)", excerpt)]
+    assert any(45 <= value <= 75 for value in sampled_numbers)
+
+
+def test_rebuild_response_accepts_indonesian_nested_fields_and_plain_text():
+    nested = parse_original_rebuild_response(
+        json.dumps(
+            {
+                "hasil": {
+                    "naskah": "Ini naskah baru yang siap dibacakan.",
+                    "sudut_editorial": "Menguji dampak praktis topik.",
+                }
+            }
+        )
+    )
+    plain = parse_original_rebuild_response(
+        "SUDUT: Pelajaran praktis\nNASKAH: Ini adalah voice-over baru tanpa format JSON."
+    )
+
+    assert nested["script"] == "Ini naskah baru yang siap dibacakan."
+    assert nested["editorial_angle"] == "Menguji dampak praktis topik."
+    assert plain["script"] == "Ini adalah voice-over baru tanpa format JSON."
+    assert plain["editorial_angle"] == "Pelajaran praktis"
+
+
+def test_automatic_rebuild_uses_original_local_fallback_when_model_is_malformed(monkeypatch):
+    monkeypatch.setattr(clipper, "chat_completion", lambda *_args, **_kwargs: "{}")
+
+    script, audit = original_rebuild_script(
+        source_segments(),
+        {"title": "Kebiasaan Kecil", "uploader": "Sumber Riset"},
+        AIConfig(enabled=True, base_url="http://local/v1", model="test-model"),
+        "",
+        automatic_topic_rebuild=True,
+    )
+
+    assert len(script.split()) >= 30
+    assert audit["generation_strategy"] == "deterministic_original_fallback"
+    assert audit["longest_verbatim_token_run"] <= audit["maximum_verbatim_token_run"]
+    assert audit["source_audio_in_output"] is False
+
+
+def test_deterministic_fallback_stays_inside_word_cap():
+    script, angle = deterministic_original_rebuild_script(
+        "Kebiasaan Kecil untuk Hidup Lebih Terukur",
+        "evaluasi kebiasaan catatan perubahan konsisten keputusan",
+        maximum_words=51,
+    )
+
+    assert 30 <= len(script.split()) <= 51
+    assert angle

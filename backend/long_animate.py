@@ -14,6 +14,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from http.client import RemoteDisconnected
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
@@ -670,6 +671,13 @@ def _compose_visual_prompt(
         _PEOPLE_TERMS,
     )
     has_nonhuman_character = _has_any(scene_context, _NONHUMAN_CHARACTER_TERMS)
+    hand_action_requested = _has_any(
+        scene_context,
+        (
+            "hand", "hands", "palm", "wave", "waving", "raise a hand", "raised hand",
+            "tangan", "telapak", "melambai", "mengangkat tangan", "jabat tangan",
+        ),
+    )
     has_islamic_clothing = has_people and _has_any(
         complete_context,
         _ISLAMIC_VISUAL_TERMS,
@@ -692,6 +700,15 @@ def _compose_visual_prompt(
         else "This scene does not request a human subject. Keep the frame free of human figures, faces, silhouettes, "
         "crowds, and body parts. "
     )
+    gesture_rule = (
+        "The requested hand action may appear once as a secondary part of a medium or wide composition. Keep the "
+        "person's face, torso, and environment clearly visible; never place palms against the lens, never create a "
+        "wall of hands, and never let hands dominate the frame. "
+        if hand_action_requested
+        else "Use restrained everyday body language. Keep hands below shoulder level, naturally resting, walking, "
+        "working, or holding one story-relevant object. No waving, raised palms, cheering pose, reaching toward the "
+        "camera, crowd of hands, prayer-hand close-up, or hands dominating the foreground. "
+    )
     clothing_rule = (
         "Apply only the religious clothing explicitly requested. A woman wearing a hijab has the hijab as her sole "
         "head covering: never add a peci, kopiah, songkok, cap, or hat over or under her hijab. Male characters may "
@@ -708,6 +725,7 @@ def _compose_visual_prompt(
         "and time literally. Do not substitute a stock character or a familiar default setting. The visible moment "
         "takes priority; narrative grounding supplies meaning but must not introduce unrelated objects or people. "
         + subject_rule
+        + gesture_rule
         + f"VISIBLE HUMAN LIMIT: {people_limit}; never exceed this count. "
         + clothing_rule
         + f"Continuity bible: {continuity}. "
@@ -858,22 +876,30 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
             + json.dumps(source_sections, ensure_ascii=False)
             + "\n"
         )
+    target_duration = _target_duration_seconds()
+    desired_scenes = max(3, min(14, round(target_duration / 15)))
+    minimum_scenes = max(3, min(desired_scenes, round(desired_scenes * 0.8)))
     prompt = (
         "Buat storyboard dari naskah berikut. Naskah pengguna adalah satu-satunya sumber kebenaran. "
         "Pertahankan seluruh fakta, subjek, kejadian, aksi, lokasi, zaman, pakaian, properti, dan maksud naskah. "
         "DILARANG memakai pola stok anak laki-laki/perempuan, keluarga, pakaian Islami, ustaz, masjid, sekolah, "
         "atau latar Indonesia bila unsur tersebut tidak diminta naskah. Jangan mengubah hewan, benda, robot, "
         "kendaraan, profesi, makhluk fantasi, atau lokasi menjadi manusia atau karakter generik. "
-        "Target durasi final 20 detik: buat 3-7 scene padat dan satu gagasan visual utama per scene. Jika satu "
-        "scene memuat beberapa aksi fisik berurutan, isi field shots dengan 2-3 momen tunggal; jangan gabungkan "
-        "beberapa aksi ke satu gambar. "
+        f"Target durasi final sekitar {target_duration:g} detik: buat {minimum_scenes}-{desired_scenes} scene "
+        "berurutan yang mengikuti hook, konteks, perkembangan, bukti/contoh, hikmah, dan payoff dari naskah. "
+        "Untuk long-form, isi setiap field shots dengan 2-3 momen tunggal yang benar-benar berbeda agar visual "
+        "berganti alami setiap beberapa detik; jangan gabungkan beberapa aksi ke satu gambar. "
         "Hook editor: shot pertama harus memperlihatkan konflik, risiko, pertanyaan visual, atau payoff yang dijanjikan "
         "dalam dua detik pertama; jangan mulai dengan establishing shot generik. "
         "Cold-open harus langsung menjanjikan konflik/manfaat, lalu konteks, perkembangan, jawaban, payoff. "
         "Jangan menambah filler atau mengulang narasi. Buat art_bible dan character_bible yang konsisten. "
         "character_bible hanya boleh memuat identitas yang benar-benar ada dalam naskah; tulis 'No recurring "
         "character' bila tidak ada. Setiap visual_prompt harus menerjemahkan narasi scene yang sama menjadi aksi "
-        "fisik yang konkret, bukan gambar generik yang hanya cocok dengan tema besar. visual_prompt hanya boleh "
+        "fisik yang konkret, bukan gambar generik yang hanya cocok dengan tema besar. Variasikan wide establishing, "
+        "medium action, detail benda yang relevan, perjalanan lokasi, perubahan waktu, dan consequence shot. "
+        "Jangan memakai pose stok berupa orang mengangkat tangan, telapak menghadap kamera, kerumunan bersorak, "
+        "atau banyak tangan di foreground untuk melambangkan dukungan, iman, kebanggaan, atau kebersamaan. "
+        "Gunakan gestur harian yang tenang dan aksi yang benar-benar terjadi dalam alur. visual_prompt hanya boleh "
         "berisi satu momen yang terlihat; jangan masukkan label Narasi, Teks layar, heading, atau timestamp.\n"
         "Return JSON exactly as: "
         '{"title":"...","hook":"...","core_message":"...","art_bible":"...","character_bible":"...","location_bible":"...",'
@@ -896,7 +922,14 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
     except Exception:
         return fallback
     raw_scenes = parsed.get("scenes") if isinstance(parsed, dict) else None
-    if not isinstance(raw_scenes, list) or not 3 <= len(raw_scenes) <= 14:
+    required_scene_count = max(
+        3,
+        min(minimum_scenes, math.ceil(len(script.split()) / 32)),
+    )
+    if (
+        not isinstance(raw_scenes, list)
+        or not required_scene_count <= len(raw_scenes) <= 14
+    ):
         return fallback
     if source_sections and len(raw_scenes) != len(source_sections):
         return fallback
@@ -996,9 +1029,9 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
 
 def _target_duration_seconds() -> float:
     try:
-        value = float(os.environ.get("LONG_ANIMATE_TARGET_DURATION_SECONDS", "20"))
+        value = float(os.environ.get("LONG_ANIMATE_TARGET_DURATION_SECONDS", "180"))
     except ValueError:
-        value = 20.0
+        value = 180.0
     return max(5.0, min(3600.0, value))
 
 
@@ -1088,7 +1121,16 @@ def plan_storyboard_shots(storyboard: AnimateStoryboard) -> list[AnimateShot]:
     motions = ("push_in", "pan_right", "pull_out", "pan_left", "drift_up")
     reference_id = hashlib.sha256(storyboard.character_bible.encode("utf-8")).hexdigest()[:12]
     for scene in storyboard.scenes:
-        raw_prompts = scene.shot_prompts or [_single_visible_moment(scene.narration)]
+        raw_prompts = scene.shot_prompts or _visible_shot_moments(scene.narration)
+        if scene.duration >= 10 and len(raw_prompts) < 2:
+            raw_prompts = [
+                *raw_prompts,
+                _clean_text(
+                    "A different camera distance in the same story beat, showing the subject naturally "
+                    f"interacting with the relevant environment or object: {scene.narration}",
+                    650,
+                ),
+            ]
         max_for_duration = max(1, min(3, int(scene.duration / 0.75)))
         selected = raw_prompts[:max_for_duration] or [_single_visible_moment(scene.narration)]
         shot_ms_total = round(scene.duration * 1000)
@@ -1322,6 +1364,24 @@ def _image_error_detail(exc: BaseException) -> tuple[str, int | None]:
     return _clean_text(exc, 700) or exc.__class__.__name__, None
 
 
+def _image_connection_error(exc: BaseException) -> bool:
+    """Return True when a local/remote image service disappeared mid-request."""
+    if isinstance(exc, (ConnectionError, RemoteDisconnected, urllib.error.URLError)):
+        return True
+    detail = str(exc).casefold()
+    return any(
+        marker in detail
+        for marker in (
+            "connection refused",
+            "connection reset",
+            "remote end closed connection",
+            "remote disconnected",
+            "no route to host",
+            "network is unreachable",
+        )
+    )
+
+
 def _remote_scene_image(
     scene: AnimateScene | AnimateShot,
     path: Path,
@@ -1415,6 +1475,7 @@ def _remote_scene_image(
             "deformed hands, fused fingers, missing fingers, extra fingers, duplicated fingers, broken joints, malformed grip, "
             "disembodied hands, floating hands, detached hands, bodyless limbs, cropped arms, hands entering from frame edge, anonymous foreground hands",
             "unrequested crowd, extra background people, partial person, unrelated stock character, unrequested cultural clothing",
+            "palms facing camera, wall of hands, raised-hand crowd, cheering hands, hands reaching toward lens, oversized foreground hands, hands dominating composition",
         ]
         if not _has_any(scene.visual_prompt, ("soft focus", "dreamy", "dreamlike", "watercolor", "impressionist")):
             negative_parts.append("blurry, soft focus")
@@ -1427,7 +1488,7 @@ def _remote_scene_image(
             negative_prompt += (
                 ", woman wearing peci, woman wearing kopiah, woman wearing songkok, hijab with hat, double headwear"
             )
-        configured_size = os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1280x720")
+        configured_size = os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1024x576")
         size_match = re.fullmatch(r"(\d{3,5})x(\d{3,5})", configured_size)
         if size_match and _output_geometry()[0] == "9:16":
             size_width, size_height = map(int, size_match.groups())
@@ -1463,7 +1524,7 @@ def _remote_scene_image(
     elif key:
         headers["Authorization"] = f"Bearer {key}"
 
-    retries = max(1, min(4, int(os.environ.get("LONG_ANIMATE_IMAGE_RETRIES", "3"))))
+    retries = max(1, min(4, int(os.environ.get("LONG_ANIMATE_IMAGE_RETRIES", "4"))))
 
     # Local diffusion can legitimately need many minutes on a small GPU. Honor
     # the configured timeout on every attempt instead of failing early while a
@@ -1480,9 +1541,9 @@ def _remote_scene_image(
     if is_sd_cpp:
         configured_size = str(payload_object["size"])
         safe_sizes = (
-            ["1080x1920", "864x1536", "720x1280", "576x1024"]
+            ["1080x1920", "864x1536", "720x1280", "576x1024", "432x768"]
             if _output_geometry()[0] == "9:16"
-            else ["1920x1080", "1536x864", "1280x720", "1024x576"]
+            else ["1920x1080", "1536x864", "1280x720", "1024x576", "768x432"]
         )
         if configured_size in safe_sizes:
             sd_attempt_sizes = safe_sizes[safe_sizes.index(configured_size) :]
@@ -1558,8 +1619,19 @@ def _remote_scene_image(
             path.unlink(missing_ok=True)
             last_detail, status = _image_error_detail(exc)
             retryable = status in {408, 409, 429, 500, 502, 503, 504} or status is None
+            connection_error = _image_connection_error(exc)
+            # A local sd-server can be restarted by systemd after an OOM. Move
+            # to a safer resolution and give the service enough time to bind
+            # its port again instead of exhausting all retries immediately.
+            if is_sd_cpp and connection_error and sd_size_index < len(sd_attempt_sizes) - 1:
+                sd_size_index += 1
             if attempt < retries and retryable:
-                time.sleep(min(4.0, 1.25 * attempt))
+                retry_delay = (
+                    min(15.0, 6.0 * attempt)
+                    if connection_error
+                    else min(4.0, 1.25 * attempt)
+                )
+                time.sleep(retry_delay)
                 continue
             break
 
@@ -1971,10 +2043,11 @@ def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, st
 
 def _motion_expression(scene: AnimateScene | AnimateShot, frames: int) -> tuple[str, str, str]:
     progress = f"min(1,on/{max(1, frames)})"
+    micro_motion = f"0.006*sin(2*PI*on/{max(45, round(frames / 2))})"
     if scene.camera_motion == "pull_out":
-        zoom = f"1.045-0.045*{progress}"
+        zoom = f"1.075-0.065*{progress}+{micro_motion}"
         return zoom, "(iw-iw/zoom)/2", "(ih-ih/zoom)/2"
-    zoom = f"1.0+0.045*{progress}"
+    zoom = f"1.01+0.065*{progress}+{micro_motion}"
     if scene.camera_motion == "pan_left":
         return zoom, f"(iw-iw/zoom)*(1-{progress})", "(ih-ih/zoom)/2"
     if scene.camera_motion == "pan_right":
@@ -2071,7 +2144,7 @@ def render_shot_video(shot: AnimateShot, image_path: Path, scene_dir: Path) -> P
     vf_parts = [
         f"scale={overscan_width}:{overscan_height}:force_original_aspect_ratio=increase,crop={overscan_width}:{overscan_height}",
         f"zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s={output_width}x{output_height}:fps=30",
-        "eq=contrast=1.025:saturation=1.04:gamma=1.005",
+        "eq=brightness='0.004*sin(2*PI*t/7)':eval=frame:contrast=1.025:saturation=1.04:gamma=1.005",
         "unsharp=5:5:0.28:5:5:0.0",
     ]
     if shot.on_screen_text:

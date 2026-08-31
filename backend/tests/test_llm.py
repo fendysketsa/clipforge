@@ -73,8 +73,23 @@ def test_content_from_response_sse_stream():
     assert _content_from_response(body) == "streamed"
 
 
+def test_content_from_response_joins_multiple_sse_deltas():
+    first = json.dumps({"choices": [{"delta": {"content": "naskah "}}]})
+    second = json.dumps({"choices": [{"delta": {"content": "baru"}}]})
+
+    assert _content_from_response(f"data: {first}\ndata: {second}\ndata: [DONE]\n") == "naskah baru"
+
+
+def test_content_from_response_serializes_object_content():
+    body = json.dumps(
+        {"choices": [{"message": {"content": {"naskah": "isi", "sudut": "baru"}}}]}
+    )
+
+    assert json.loads(_content_from_response(body)) == {"naskah": "isi", "sudut": "baru"}
+
+
 def test_content_from_response_invalid_raises():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="usable content"):
         _content_from_response("not json at all")
 
 
@@ -148,3 +163,36 @@ def test_reachable_ollama_model_error_is_not_reported_as_offline(monkeypatch):
         )
 
     assert raised.value.code == 402
+
+
+def test_chat_completion_plain_mode_omits_json_response_format(monkeypatch):
+    captured = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {"choices": [{"message": {"content": "naskah biasa"}}]}
+            ).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        captured.update(json.loads(request.data.decode("utf-8")))
+        return Response()
+
+    monkeypatch.setattr(llm.urllib.request, "urlopen", fake_urlopen)
+
+    result = chat_completion(
+        AIConfig(base_url="http://local.test/v1", model="demo"),
+        [{"role": "user", "content": "Tulis naskah"}],
+        json_mode=False,
+        temperature=0.35,
+    )
+
+    assert result == "naskah biasa"
+    assert captured["temperature"] == 0.35
+    assert "response_format" not in captured

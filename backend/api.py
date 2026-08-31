@@ -142,6 +142,13 @@ NETWORK_ERROR_PATTERNS = (
     "connection refused",
     "cannot assign requested address",
 )
+IMAGE_GENERATION_ERROR_PATTERNS = (
+    "generate gambar ai",
+    "generator gambar lokal",
+    "images/generations",
+    "longanimateimageerror",
+    "image gen timeout",
+)
 YTDLP_HTTP_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -305,6 +312,7 @@ class ClipJobRequest(BaseModel):
     require_creative_commons: bool = True
     confirm_source_rights: bool = False
     confirm_long_animate_rights: bool = False
+    automatic_topic_rebuild: bool = False
     auto_upload_youtube: bool = False
     allow_reprocess_source: bool = False
     ai_enabled: bool = True
@@ -1914,6 +1922,32 @@ def metadata_for_job(job: "ClipJob") -> dict:
             continue
         if isinstance(payload, dict):
             return payload
+    # Original Rebuild deletes source media before rendering, so the resulting
+    # clip lives in a different work directory from metadata.json. Its sidecar
+    # retains the immutable source provenance needed by attribution/preflight.
+    for clip in job.clips:
+        clip_path = output_path_from_url(clip.url)
+        json_path = clip_path.with_suffix(".json") if clip_path is not None else None
+        try:
+            loaded = (
+                json.loads(json_path.read_text(encoding="utf-8"))
+                if json_path is not None and json_path.is_file()
+                else {}
+            )
+        except (OSError, json.JSONDecodeError):
+            loaded = {}
+        sidecar = loaded if isinstance(loaded, dict) else {}
+        provenance = sidecar.get("source_provenance")
+        if not isinstance(provenance, dict):
+            continue
+        payload = {
+            "title": provenance.get("title"),
+            "uploader": provenance.get("creator"),
+            "webpage_url": provenance.get("url"),
+            "license": provenance.get("license"),
+        }
+        if any(str(value or "").strip() for value in payload.values()):
+            return payload
     return {}
 
 
@@ -3362,13 +3396,72 @@ def generated_channel_authenticity_issue(job: ClipJob, clip: ClipFile) -> str | 
     return None
 
 
+def reviewed_automatic_rebuild_for_private_upload(
+    job: ClipJob,
+    clip: ClipFile,
+    sidecar: dict[str, Any],
+    metadata: dict[str, Any],
+) -> bool:
+    """Accept an explicit human review of a source-free automatic rebuild.
+
+    This only unlocks the application's Private-first upload workflow. It does
+    not assert copyright ownership, monetization eligibility, or permission to
+    publish; YouTube Checks and the later human publication decision remain.
+    """
+    if not (
+        job.request.clip_mode == "original_rebuild"
+        and job.request.automatic_topic_rebuild
+        and clip.is_correct
+        and str(sidecar.get("production_model") or "") == "codex_original_rebuild_v1"
+    ):
+        return False
+    provenance = sidecar.get("source_provenance")
+    rebuild = sidecar.get("original_rebuild")
+    if not isinstance(provenance, dict) or not isinstance(rebuild, dict):
+        return False
+    try:
+        overlap = int(rebuild.get("longest_verbatim_token_run") or 999)
+        overlap_limit = int(rebuild.get("maximum_verbatim_token_run") or 0)
+    except (TypeError, ValueError):
+        return False
+    cc_metadata_verified = bool(
+        is_creative_commons_info(metadata)
+        or (
+            provenance.get("license_metadata_verified") is True
+            and is_creative_commons_info({"license": provenance.get("license")})
+        )
+    )
+    return bool(
+        cc_metadata_verified
+        and provenance.get("research_only_source") is True
+        and provenance.get("source_audio_or_video_used_in_output") is False
+        and rebuild.get("source_audio_in_output") is False
+        and rebuild.get("source_video_in_output") is False
+        and rebuild.get("source_voice_cloned") is False
+        and rebuild.get("human_factual_review_required") is True
+        and overlap <= overlap_limit
+    )
+
+
 def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | None:
     """Block private upload when rights or substantive-edit evidence is missing."""
+    sidecar = clip_sidecar_payload(clip)
     metadata = metadata_for_job(job)
+    reviewed_automatic_rebuild = reviewed_automatic_rebuild_for_private_upload(
+        job, clip, sidecar, metadata
+    )
+    if job.request.automatic_topic_rebuild and not clip.is_correct:
+        return (
+            "Upload ditahan: centang review hasil, fakta, dan hak penggunaan terlebih dahulu. "
+            "Upload akan masuk sebagai Private agar YouTube Checks dapat diperiksa sebelum publikasi."
+        )
     research_only_rebuild = bool(
-        job.request.clip_mode == "original_rebuild"
-        and job.request.confirm_source_rights
-        and len(job.request.source_rights_evidence.split()) >= 3
+        reviewed_automatic_rebuild
+        or (
+            job.request.clip_mode == "original_rebuild"
+            and job.request.confirm_source_rights
+            and len(job.request.source_rights_evidence.split()) >= 3
+        )
     )
     if (
         job.request.url.strip()
@@ -3379,7 +3472,11 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             "Upload diblokir: bukti lisensi Creative Commons sumber tidak ditemukan. "
             "Gunakan rekaman milik sendiri atau sumber dengan metadata CC dan izin komersial yang dapat dibuktikan."
         )
-    if job.request.url.strip() and not job.request.confirm_source_rights:
+    if (
+        job.request.url.strip()
+        and not job.request.confirm_source_rights
+        and not reviewed_automatic_rebuild
+    ):
         return (
             "Upload diblokir: lisensi Creative Commons pada metadata YouTube bukan bukti bahwa "
             "uploader memiliki seluruh hak audio dan visual. Proses ulang sumber setelah Anda "
@@ -3398,7 +3495,6 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
                 + "). Label CC dan atribusi tidak menghapus hak broadcaster/pemilik rekaman. "
                 "Gunakan rekaman milik sendiri atau materi dengan izin tertulis yang mencakup audio dan visual."
             )
-    sidecar = clip_sidecar_payload(clip)
     if str(sidecar.get("production_model") or "") == "codex_long_story_director":
         story_director = sidecar.get("story_director")
         if not isinstance(story_director, dict) or not story_director.get(
@@ -3444,28 +3540,39 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             if isinstance(license_ledger, dict)
             else None
         )
-        license_ledger_failed = bool(
+        license_ledger_structure_failed = bool(
             not isinstance(license_ledger, dict)
-            or not license_ledger.get("complete")
             or not isinstance(license_entries, list)
             or len(license_entries) < 4
             or any(
                 not isinstance(entry, dict)
                 or not str(entry.get("asset_class") or "").strip()
                 or not str(entry.get("commercial_use_basis") or "").strip()
-                or not str(entry.get("proof_reference") or "").strip()
                 for entry in license_entries
+            )
+        )
+        license_ledger_evidence_failed = bool(
+            not reviewed_automatic_rebuild
+            and (
+                not isinstance(license_ledger, dict)
+                or not license_ledger.get("complete")
+                or not isinstance(license_entries, list)
+                or any(
+                    not isinstance(entry, dict)
+                    or not str(entry.get("proof_reference") or "").strip()
+                    for entry in license_entries
+                )
             )
         )
         disclosure_contract_failed = bool(
             sidecar.get("altered_content_disclosure_required") is not True
             or not isinstance(sidecar.get("synthetic_content"), dict)
         )
-        if not job.request.confirm_long_animate_rights:
+        if not job.request.confirm_long_animate_rights and not reviewed_automatic_rebuild:
             return (
                 "Upload diblokir: konfirmasi izin komersial provider AI, gambar, suara, dan musik belum tercatat."
             )
-        if license_ledger_failed:
+        if license_ledger_structure_failed or license_ledger_evidence_failed:
             return (
                 "Upload diblokir: asset-license ledger belum lengkap. Setiap kelas aset harus "
                 "memiliki basis penggunaan komersial dan referensi bukti untuk review manusia."
@@ -3509,9 +3616,13 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
                 "Upload diblokir: Long Animate belum lolos pemeriksaan hak, narasi suara, "
                 "atau quality gate scene. Periksa naskah/provider lalu render ulang."
             )
-        authenticity_issue = generated_channel_authenticity_issue(job, clip)
-        if authenticity_issue:
-            return authenticity_issue
+        # A reviewed automatic rebuild is only queued Private for Studio Checks.
+        # Its missing human-creator-input contract still prevents automatic
+        # publication, but should not make the review upload itself impossible.
+        if not reviewed_automatic_rebuild:
+            authenticity_issue = generated_channel_authenticity_issue(job, clip)
+            if authenticity_issue:
+                return authenticity_issue
     if str(sidecar.get("output_format") or "") == "vertical_short":
         raw_fyp_score = sidecar.get("score")
         try:
@@ -3625,7 +3736,20 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
                 "Upload diblokir: blueprint pertumbuhan Codex belum tercatat. "
                 "Render ulang agar audit retention dan subscriber lengkap."
             )
-    if not monetization_readiness_is_eligible(sidecar, readiness):
+    try:
+        reviewed_private_transformation_ready = bool(
+            reviewed_automatic_rebuild
+            and readiness.get("substantive_transformation") is True
+            and isinstance(readiness.get("signals"), dict)
+            and readiness["signals"].get("enhanced_edit") is True
+            and int(readiness.get("originality_score") or 0)
+            >= int(readiness.get("minimum_originality_score") or 1)
+        )
+    except (TypeError, ValueError):
+        reviewed_private_transformation_ready = False
+    if not monetization_readiness_is_eligible(
+        sidecar, readiness
+    ) and not reviewed_private_transformation_ready:
         return monetization_preflight_transformation_message(sidecar, readiness)
     return None
 
@@ -4152,6 +4276,116 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
     return None
 
 
+_REBUILD_METADATA_STOPWORDS = {
+    "adalah", "agar", "akan", "anda", "atau", "bahwa", "banyak", "bisa", "dalam",
+    "dengan", "dari", "dan", "dianggap", "ini", "jadi", "juga", "karena", "kembali",
+    "beres", "kita", "langsung", "maka", "masuk", "mungkin", "mereka", "menuju", "oleh",
+    "pada", "saja", "sangat", "sebagai", "selesai", "semua", "setelah", "sudah", "tapi",
+    "tentang", "tidak", "untuk", "yang",
+}
+
+
+def original_rebuild_upload_metadata_fallback(
+    job: ClipJob,
+    clip: ClipFile,
+    fallback_tags: list[str],
+) -> dict[str, str | list[str]] | None:
+    """Build fresh upload copy from the verified generated rebuild script.
+
+    This fallback is unavailable to ordinary source clips. It only reuses the
+    source-free script hashed during Original Rebuild, so an unavailable
+    metadata LLM cannot send source title/description copy to YouTube.
+    """
+    if job.request.clip_mode != "original_rebuild" or not clip.is_correct:
+        return None
+    sidecar = clip_sidecar_payload(clip)
+    rebuild = sidecar.get("original_rebuild")
+    provenance = sidecar.get("source_provenance")
+    if (
+        str(sidecar.get("production_model") or "") != "codex_original_rebuild_v1"
+        or not isinstance(rebuild, dict)
+        or not isinstance(provenance, dict)
+        or provenance.get("research_only_source") is not True
+        or provenance.get("source_audio_or_video_used_in_output") is not False
+        or rebuild.get("source_audio_in_output") is not False
+        or rebuild.get("source_video_in_output") is not False
+        or rebuild.get("source_voice_cloned") is not False
+    ):
+        return None
+
+    script = re.sub(r"\s+", " ", str(sidecar.get("text") or "")).strip()
+    expected_hash = str(rebuild.get("generated_script_sha256") or "").strip().casefold()
+    actual_hash = hashlib.sha256(script.encode("utf-8")).hexdigest()
+    if len(script.split()) < 20 or not expected_hash or actual_hash != expected_hash:
+        return None
+
+    render_title = re.sub(
+        r"\s+",
+        " ",
+        str(sidecar.get("title") or clip.title or ""),
+    ).strip()
+    if not render_title:
+        return None
+    title = youtube_long_form_title(repair_known_public_typos(render_title))
+    description = ensure_two_description_paragraphs(script)
+    if not description:
+        return None
+
+    context = " ".join(
+        str(sidecar.get(key) or "")
+        for key in ("title", "hook", "core_message", "text")
+    )
+    contextual_tags: list[str] = []
+    seen: set[str] = set()
+    for word in re.findall(r"[^\W_]+", context, flags=re.UNICODE):
+        normalized = word.casefold()
+        if (
+            len(normalized) < 4
+            or normalized in _REBUILD_METADATA_STOPWORDS
+            or normalized.isdigit()
+            or normalized in seen
+        ):
+            continue
+        seen.add(normalized)
+        contextual_tags.append(word[:1].upper() + word[1:30])
+        if len(contextual_tags) >= 5:
+            break
+    for tag in [*fallback_tags, "HikmahPraktis", "RefleksiHidup", "PembahasanKontekstual"]:
+        clean = re.sub(r"[^\w\d_]", "", str(tag).strip().lstrip("#"), flags=re.UNICODE)[:30]
+        if not clean or clean.casefold() in seen or clean.casefold() == "shorts":
+            continue
+        seen.add(clean.casefold())
+        contextual_tags.append(clean)
+        if len(contextual_tags) >= 5:
+            break
+    if len(contextual_tags) < 3:
+        return None
+    return {
+        "title": title,
+        "description": description[:650],
+        "hashtags": contextual_tags[:5],
+    }
+
+
+def youtube_upload_metadata(
+    job: ClipJob,
+    clip: ClipFile,
+    fallback_tags: list[str],
+) -> tuple[dict[str, str | list[str]] | None, str]:
+    metadata = generate_youtube_metadata(job, clip, fallback_tags)
+    if isinstance(metadata, dict):
+        return metadata, "ai"
+    metadata = original_rebuild_upload_metadata_fallback(job, clip, fallback_tags)
+    if isinstance(metadata, dict):
+        print(
+            "YouTube metadata memakai fallback naskah Original Rebuild terverifikasi; "
+            "provider AI metadata tidak tersedia.",
+            flush=True,
+        )
+        return metadata, "original_rebuild_render"
+    return None, "unavailable"
+
+
 def generate_youtube_description(job: ClipJob, clip: ClipFile, tags: list[str]) -> str | None:
     metadata = generate_youtube_metadata(job, clip, tags)
     description = metadata.get("description") if isinstance(metadata, dict) else None
@@ -4524,7 +4758,7 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
     if monetization_issue:
         raise HTTPException(status_code=409, detail=monetization_issue)
     fallback_tags = request.tags or default_youtube_tags(job, clip)
-    ai_metadata = generate_youtube_metadata(job, clip, fallback_tags)
+    ai_metadata, metadata_source = youtube_upload_metadata(job, clip, fallback_tags)
     if env_bool("YOUTUBE_REQUIRE_AI_METADATA", True) and not isinstance(ai_metadata, dict):
         raise HTTPException(
             status_code=409,
@@ -4600,6 +4834,13 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
             + [
                 "Preflight monetisasi lolos untuk upload Private; keputusan akhir tetap mengikuti review video dan channel oleh YouTube."
             ]
+            + (
+                [
+                    "Metadata upload dibuat dari naskah Original Rebuild terverifikasi karena provider AI metadata sedang tidak tersedia."
+                ]
+                if metadata_source == "original_rebuild_render"
+                else []
+            )
             + (
                 [f"Permintaan {requested_visibility} ditahan: upload otomatis dipaksa Private-first."]
                 if requested_visibility != "private"
@@ -6972,6 +7213,13 @@ def friendly_network_error() -> str:
     )
 
 
+def friendly_image_generation_error() -> str:
+    return (
+        "Generator gambar lokal sempat berhenti atau sedang memulihkan diri. "
+        "Sistem akan mencoba ulang dengan resolusi yang lebih aman; jika job ini sudah gagal, jalankan lagi."
+    )
+
+
 def user_error_from_logs(logs: list[str]) -> str | None:
     for index in range(len(logs) - 1, -1, -1):
         line = logs[index]
@@ -6988,10 +7236,13 @@ def user_error_from_logs(logs: list[str]) -> str | None:
                     break
                 parts.append(clean)
             return re.sub(r"\s+", " ", " ".join(parts)).strip()
+    combined_recent = "\n".join(logs[-120:]).lower()
+    if any(pattern in combined_recent for pattern in IMAGE_GENERATION_ERROR_PATTERNS):
+        return friendly_image_generation_error()
     for line in reversed(logs):
         if is_network_error(line):
             return friendly_network_error()
-    combined = "\n".join(logs[-120:]).lower()
+    combined = combined_recent
     if "no such filter: 'drawtext'" in combined or "no such filter: 'subtitles'" in combined:
         return (
             "FFmpeg backend belum memiliki filter teks/subtitle yang dibutuhkan. "
@@ -7101,9 +7352,9 @@ def cancel_process(job_id: str) -> bool:
 def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
     if request.clip_mode == "long_animate":
         try:
-            duration = float(os.environ.get("LONG_ANIMATE_TARGET_DURATION_SECONDS", "20"))
+            duration = float(os.environ.get("LONG_ANIMATE_TARGET_DURATION_SECONDS", "180"))
         except ValueError:
-            duration = 20.0
+            duration = 180.0
         duration = max(5.0, min(3600.0, duration))
     elif request.source_file:
         duration = probe_media_duration(Path(request.source_file))
@@ -7134,6 +7385,15 @@ def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
         data["burn_subtitles"] = True
         data["enhanced_edit"] = True
         data["background_mode"] = "keep"
+        if request.automatic_topic_rebuild:
+            # Automatic rebuild uses the source only as research input and does
+            # not pretend the user supplied rights evidence or editorial copy.
+            data["creator_perspective"] = ""
+            data["source_rights_evidence"] = ""
+            data["provider_rights_evidence"] = ""
+            data["confirm_source_rights"] = False
+            data["confirm_long_animate_rights"] = False
+            data["auto_upload_youtube"] = False
 
     if request.top is None and request.clip_mode not in {"long_animate", "original_rebuild"}:
         data["top"] = choose_auto_top(duration)
@@ -7236,6 +7496,8 @@ def build_clipper_command(
         command.append("--confirm-source-rights")
     if request.confirm_long_animate_rights:
         command.append("--confirm-provider-rights")
+    if request.automatic_topic_rebuild:
+        command.append("--automatic-topic-rebuild")
     if request.creator_perspective:
         command.extend(["--creator-perspective", request.creator_perspective])
     if request.source_rights_evidence:
@@ -10173,45 +10435,57 @@ def create_job(request: ClipJobRequest) -> ClipJob:
                     "Sistem tidak akan memakai transkrip mentah sebagai fallback."
                 ),
             )
-        if not request.confirm_long_animate_rights:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Konfirmasikan bahwa provider gambar, suara, dan AI yang dikonfigurasi "
-                    "mengizinkan penggunaan komersial YouTube."
-                ),
+        if request.automatic_topic_rebuild:
+            request = request.model_copy(
+                update={
+                    "creator_perspective": "",
+                    "source_rights_evidence": "",
+                    "provider_rights_evidence": "",
+                    "confirm_source_rights": False,
+                    "confirm_long_animate_rights": False,
+                    "auto_upload_youtube": False,
+                }
             )
-        if not request.confirm_source_rights:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Konfirmasikan bahwa Anda berhak memproses sumber sebagai bahan riset. "
-                    "Original Rebuild tidak menjadi jalan pintas untuk memakai sumber tanpa izin."
-                ),
-            )
-        if len(request.creator_perspective.split()) < 8:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Original Rebuild memerlukan minimal 8 kata sudut pandang, analisis, atau "
-                    "pengalaman Anda sendiri agar hasil tidak menjadi template AI generik."
-                ),
-            )
-        if len(request.source_rights_evidence.split()) < 3:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Tambahkan referensi bukti hak sumber—misalnya URL lisensi, izin tertulis, "
-                    "atau catatan kepemilikan rekaman."
-                ),
-            )
-        if len(request.provider_rights_evidence.split()) < 3:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Tambahkan referensi bukti izin komersial provider AI, gambar, suara, dan musik."
-                ),
-            )
+        else:
+            if not request.confirm_long_animate_rights:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Konfirmasikan bahwa provider gambar, suara, dan AI yang dikonfigurasi "
+                        "mengizinkan penggunaan komersial YouTube."
+                    ),
+                )
+            if not request.confirm_source_rights:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Konfirmasikan bahwa Anda berhak memproses sumber sebagai bahan riset. "
+                        "Original Rebuild tidak menjadi jalan pintas untuk memakai sumber tanpa izin."
+                    ),
+                )
+            if len(request.creator_perspective.split()) < 8:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Original Rebuild memerlukan minimal 8 kata sudut pandang, analisis, atau "
+                        "pengalaman Anda sendiri agar hasil tidak menjadi template AI generik."
+                    ),
+                )
+            if len(request.source_rights_evidence.split()) < 3:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Tambahkan referensi bukti hak sumber—misalnya URL lisensi, izin tertulis, "
+                        "atau catatan kepemilikan rekaman."
+                    ),
+                )
+            if len(request.provider_rights_evidence.split()) < 3:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Tambahkan referensi bukti izin komersial provider AI, gambar, suara, dan musik."
+                    ),
+                )
         if not request.url and not request.source_file:
             raise HTTPException(
                 status_code=400,

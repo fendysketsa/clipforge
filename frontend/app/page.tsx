@@ -93,6 +93,11 @@ const isProcessJob = (item: ClipJob | null) =>
 const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
 const CLEANUP_PROGRESS_POLL_MS = 250;
 const TAB_JOB_STORAGE_KEY = "fendy-clipper.activeJobId.v1";
+type StartJobOptions = {
+  mode?: ClipMode;
+  sourceUrl?: string;
+  allowReprocessSource?: boolean;
+};
 
 export default function HomePage() {
   const [url, setUrl] = useState("");
@@ -100,8 +105,6 @@ export default function HomePage() {
   const [uploadToken, setUploadToken] = useState("");
   const [uploadFileName, setUploadFileName] = useState("");
   const [scriptText, setScriptText] = useState("");
-  const [creatorPerspective, setCreatorPerspective] = useState("");
-  const [sourceRightsEvidence, setSourceRightsEvidence] = useState("");
   const [providerRightsEvidence, setProviderRightsEvidence] = useState("");
   const [confirmLongAnimateRights, setConfirmLongAnimateRights] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -309,8 +312,6 @@ export default function HomePage() {
         setActiveJob(restoredJob);
         setJob(restoredJob);
         setClipMode(restoredJob.request.clip_mode);
-        setCreatorPerspective(restoredJob.request.creator_perspective || "");
-        setSourceRightsEvidence(restoredJob.request.source_rights_evidence || "");
         setProviderRightsEvidence(restoredJob.request.provider_rights_evidence || "");
         setCropMode(restoredJob.request.crop_mode);
         if (restoredJob.request.clip_mode === "long_animate") {
@@ -636,60 +637,52 @@ export default function HomePage() {
     }
   }, []);
 
-  const handleStartJob = useCallback(async () => {
-    const trimmedUrl = url.trim();
-    const isOriginalRebuild = clipMode === "original_rebuild";
-    const isGeneratedVideo = clipMode === "long_animate" || isOriginalRebuild;
-    const effectiveMaxDuration = clipMode === "short" ? Math.min(DEFAULT_MAX_DURATION, maxDuration) : maxDuration;
+  const handleStartJob = useCallback(async (options: StartJobOptions = {}) => {
+    const requestedMode = options.mode ?? clipMode;
+    const requestedSourceMode: SourceMode = options.sourceUrl ? "url" : sourceMode;
+    const trimmedUrl = (options.sourceUrl ?? url).trim();
+    const isOriginalRebuild = requestedMode === "original_rebuild";
+    const isGeneratedVideo = requestedMode === "long_animate" || isOriginalRebuild;
+    const effectiveMaxDuration = requestedMode === "short" ? Math.min(DEFAULT_MAX_DURATION, maxDuration) : maxDuration;
     setError("");
+
+    if (options.mode) setClipMode(options.mode);
+    if (options.sourceUrl) {
+      setSourceMode("url");
+      setUrl(trimmedUrl);
+    }
 
     if (isActiveJob(activeJob)) {
       setError("Proses clipping masih berjalan. Tunggu selesai atau batalkan sebelum memulai proses baru.");
       return;
     }
-    if (clipMode === "long_animate" && (scriptText.trim().length < 120 || scriptText.trim().split(/\s+/).length < 30)) {
+    if (requestedMode === "long_animate" && (scriptText.trim().length < 120 || scriptText.trim().split(/\s+/).length < 30)) {
       setError("Naskah Long Animate minimal 120 karakter dan 30 kata agar dapat dibuat menjadi tiga scene bermakna.");
       return;
     }
-    if (isGeneratedVideo && !confirmLongAnimateRights) {
+    if (requestedMode === "long_animate" && !confirmLongAnimateRights) {
       setError("Konfirmasikan izin komersial provider AI, gambar, suara, dan musik sebelum memulai produksi.");
       return;
     }
-    if (isGeneratedVideo && providerRightsEvidence.trim().split(/\s+/).length < 3) {
+    if (requestedMode === "long_animate" && providerRightsEvidence.trim().split(/\s+/).length < 3) {
       setError("Isi referensi bukti izin komersial provider AI, gambar, suara, dan musik.");
       return;
     }
-    if (isOriginalRebuild && creatorPerspective.trim().split(/\s+/).length < 8) {
-      setError("Tulis minimal 8 kata sudut pandang atau analisis Anda sendiri untuk Original Rebuild.");
-      return;
-    }
-    if (isOriginalRebuild && sourceRightsEvidence.trim().split(/\s+/).length < 3) {
-      setError("Isi referensi bukti hak sumber, seperti URL lisensi, izin tertulis, atau catatan kepemilikan.");
-      return;
-    }
-    if (clipMode !== "long_animate" && sourceMode === "url" && !trimmedUrl) {
+    if (requestedMode !== "long_animate" && requestedSourceMode === "url" && !trimmedUrl) {
       setError("Link YouTube tidak boleh kosong.");
       return;
     }
-    if (clipMode !== "long_animate" && sourceMode === "url" && !confirmSourceRights) {
-      setError(
-        isOriginalRebuild
-          ? "Konfirmasikan bahwa Anda berhak memproses sumber sebagai bahan riset. Label Creative Commons saja tidak cukup."
-          : "Konfirmasikan bahwa Anda memiliki hak/izin komersial atas audio dan visual sumber. Label Creative Commons saja tidak cukup.",
-      );
+    if (requestedMode !== "long_animate" && !isOriginalRebuild && requestedSourceMode === "url" && !confirmSourceRights) {
+      setError("Konfirmasikan bahwa Anda memiliki hak/izin komersial atas audio dan visual sumber. Label Creative Commons saja tidak cukup.");
       return;
     }
-    if (clipMode !== "long_animate" && sourceMode === "upload" && !uploadToken) {
+    if (requestedMode !== "long_animate" && requestedSourceMode === "upload" && !uploadToken) {
       setError("Unggah file video terlebih dahulu.");
-      return;
-    }
-    if (isOriginalRebuild && !confirmSourceRights) {
-      setError("Konfirmasikan bahwa Anda berhak memproses sumber sebagai bahan riset Original Rebuild.");
       return;
     }
     if (!isGeneratedVideo && effectiveMaxDuration <= minDuration) {
       setError(
-        clipMode === "short"
+        requestedMode === "short"
           ? `Durasi minimum Short harus di bawah ${DEFAULT_MAX_DURATION} detik.`
           : "Durasi maksimum harus lebih besar dari durasi minimum.",
       );
@@ -701,16 +694,16 @@ export default function HomePage() {
     try {
       const nextJob = await toast.promise(
         createJob({
-          url: clipMode !== "long_animate" && sourceMode === "url" ? trimmedUrl : "",
-          source_file: clipMode !== "long_animate" && sourceMode === "upload" ? uploadToken : "",
-          script_text: clipMode === "long_animate" ? scriptText.trim() : "",
-          creator_perspective: isOriginalRebuild ? creatorPerspective.trim() : "",
-          source_rights_evidence: isOriginalRebuild ? sourceRightsEvidence.trim() : "",
-          provider_rights_evidence: isGeneratedVideo ? providerRightsEvidence.trim() : "",
-          top: clipMode === "short" && targetClips > 0 ? targetClips : undefined,
+          url: requestedMode !== "long_animate" && requestedSourceMode === "url" ? trimmedUrl : "",
+          source_file: requestedMode !== "long_animate" && requestedSourceMode === "upload" ? uploadToken : "",
+          script_text: requestedMode === "long_animate" ? scriptText.trim() : "",
+          creator_perspective: "",
+          source_rights_evidence: "",
+          provider_rights_evidence: requestedMode === "long_animate" ? providerRightsEvidence.trim() : "",
+          top: requestedMode === "short" && targetClips > 0 ? targetClips : undefined,
           min_duration: minDuration,
           max_duration: effectiveMaxDuration,
-          clip_mode: clipMode,
+          clip_mode: requestedMode,
           compilation_target_seconds: Math.max(
             COMPILATION_MIN_SECONDS,
             Math.min(COMPILATION_MAX_SECONDS, compilationTargetSeconds),
@@ -736,29 +729,30 @@ export default function HomePage() {
             .map((tag) => tag.trim())
             .filter(Boolean),
           require_creative_commons: requireCreativeCommons,
-          confirm_source_rights: isOriginalRebuild
-            ? confirmSourceRights
-            : sourceMode === "url" && confirmSourceRights,
-          confirm_long_animate_rights: isGeneratedVideo && confirmLongAnimateRights,
-          auto_upload_youtube: autoUploadYoutube,
-          allow_reprocess_source: sourceMode === "url" && allowReprocessSource,
+          confirm_source_rights: !isOriginalRebuild && requestedSourceMode === "url" && confirmSourceRights,
+          confirm_long_animate_rights: requestedMode === "long_animate" && confirmLongAnimateRights,
+          automatic_topic_rebuild: isOriginalRebuild,
+          auto_upload_youtube: isOriginalRebuild ? false : autoUploadYoutube,
+          allow_reprocess_source: requestedSourceMode === "url" && (
+            isOriginalRebuild || (options.allowReprocessSource ?? allowReprocessSource)
+          ),
           ai_enabled: aiEnabled,
           ai_base_url: aiBaseUrl.trim(),
           ai_model: aiModel.trim(),
           ai_api_key: aiApiKey.trim(),
         }),
         {
-          loading: clipMode === "long_animate"
+          loading: requestedMode === "long_animate"
             ? "Mempersiapkan produksi Long Animate..."
             : isOriginalRebuild
               ? "Mempersiapkan Original Rebuild safe-first..."
               : "Mempersiapkan proses pemotongan...",
-          success: clipMode === "long_animate"
+          success: requestedMode === "long_animate"
             ? "Produksi Long Animate berhasil dimulai!"
             : isOriginalRebuild
               ? "Original Rebuild berhasil dimulai!"
               : "Proses pemotongan berhasil dimulai!",
-          error: clipMode === "long_animate"
+          error: requestedMode === "long_animate"
             ? "Gagal memulai Long Animate"
             : isOriginalRebuild
               ? "Gagal memulai Original Rebuild"
@@ -794,7 +788,6 @@ export default function HomePage() {
     captionPosition,
     clipMode,
     compilationTargetSeconds,
-    creatorPerspective,
     confirmSourceRights,
     cropMode,
     loadJobs,
@@ -804,7 +797,6 @@ export default function HomePage() {
     requiredHashtags,
     providerRightsEvidence,
     sourceMode,
-    sourceRightsEvidence,
     scriptText,
     confirmLongAnimateRights,
     targetClips,
@@ -1390,10 +1382,6 @@ export default function HomePage() {
           sourceMode={sourceMode}
         scriptText={scriptText}
         onScriptTextChange={setScriptText}
-        creatorPerspective={creatorPerspective}
-        onCreatorPerspectiveChange={setCreatorPerspective}
-        sourceRightsEvidence={sourceRightsEvidence}
-        onSourceRightsEvidenceChange={setSourceRightsEvidence}
         providerRightsEvidence={providerRightsEvidence}
         onProviderRightsEvidenceChange={setProviderRightsEvidence}
           confirmLongAnimateRights={confirmLongAnimateRights}
@@ -1480,7 +1468,7 @@ export default function HomePage() {
             setAutoContentMessage("");
           }}
           onToggleAutoContentSource={handleToggleAutoContentSource}
-          onStartJob={handleStartJob}
+          onStartJob={() => { void handleStartJob(); }}
           onUrlChange={(value) => {
             setUrl(value);
             setSourceHistory(null);
@@ -1499,7 +1487,15 @@ export default function HomePage() {
           job={activityJob}
           latestLogs={latestLogs}
           onCancelJob={handleCancelJob}
-          onSwitchToOriginalRebuild={() => handleClipModeChange("original_rebuild")}
+          isStartingAutomaticRebuild={isSubmitting}
+          onStartAutomaticRebuild={() => {
+            const failedSourceUrl = activityJob?.request.url || url;
+            void handleStartJob({
+              mode: "original_rebuild",
+              sourceUrl: failedSourceUrl,
+              allowReprocessSource: true,
+            });
+          }}
         />
       </section>
 

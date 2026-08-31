@@ -77,15 +77,21 @@ def normalize_openai_base_url(base_url: str) -> str:
     return base
 
 
-def chat_completion(config: AIConfig, messages: list[dict]) -> str:
-    body = json.dumps(
-        {
-            "model": config.model,
-            "messages": messages,
-            "temperature": 0.2,
-            "response_format": {"type": "json_object"},
-        }
-    ).encode("utf-8")
+def chat_completion(
+    config: AIConfig,
+    messages: list[dict],
+    *,
+    json_mode: bool = True,
+    temperature: float = 0.2,
+) -> str:
+    payload: dict[str, Any] = {
+        "model": config.model,
+        "messages": messages,
+        "temperature": temperature,
+    }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+    body = json.dumps(payload).encode("utf-8")
 
     last_error: Exception | None = None
     last_response_error: HTTPError | None = None
@@ -121,7 +127,11 @@ def chat_completion(config: AIConfig, messages: list[dict]) -> str:
         if last_response_error is not None:
             raise last_response_error
         if shutil.which("ollama"):
-            return _ollama_cli_chat_completion(config, messages)
+            return _ollama_cli_chat_completion(
+                config,
+                messages,
+                json_mode=json_mode,
+            )
         detail = f" ({last_error})" if last_error is not None else ""
         raise LLMUnavailableError(
             "Ollama API tidak terjangkau dan Ollama CLI tidak terpasang; fallback lokal digunakan"
@@ -136,24 +146,33 @@ def _is_ollama_base_url(base_url: str) -> bool:
     return ":11434" in base_url
 
 
-def _messages_to_prompt(messages: list[dict]) -> str:
+def _messages_to_prompt(messages: list[dict], *, json_mode: bool = True) -> str:
     parts: list[str] = []
     for message in messages:
         role = str(message.get("role") or "user").upper()
         content = str(message.get("content") or "").strip()
         if content:
             parts.append(f"{role}:\n{content}")
-    parts.append("ASSISTANT:\nReturn only the requested strict JSON.")
+    parts.append(
+        "ASSISTANT:\nReturn only the requested strict JSON."
+        if json_mode
+        else "ASSISTANT:\nFollow the requested output format exactly."
+    )
     return "\n\n".join(parts)
 
 
-def _ollama_cli_chat_completion(config: AIConfig, messages: list[dict]) -> str:
+def _ollama_cli_chat_completion(
+    config: AIConfig,
+    messages: list[dict],
+    *,
+    json_mode: bool = True,
+) -> str:
     if not config.model:
         raise ValueError("Ollama model is not set")
     try:
         result = subprocess.run(
             ["ollama", "run", config.model],
-            input=_messages_to_prompt(messages),
+            input=_messages_to_prompt(messages, json_mode=json_mode),
             capture_output=True,
             text=True,
             timeout=config.timeout,
@@ -169,28 +188,78 @@ def _ollama_cli_chat_completion(config: AIConfig, messages: list[dict]) -> str:
     return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", result.stdout).strip()
 
 
+def _content_value(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list)):
+        if isinstance(value, list):
+            text_parts = [
+                str(item.get("text") or "")
+                for item in value
+                if isinstance(item, dict) and item.get("text")
+            ]
+            if text_parts:
+                return "".join(text_parts)
+        return json.dumps(value, ensure_ascii=False)
+    return ""
+
+
+def _payload_content(payload: dict) -> str:
+    choices = payload.get("choices")
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        choice = choices[0]
+        message = choice.get("message")
+        if isinstance(message, dict):
+            content = _content_value(message.get("content"))
+            if content:
+                return content
+        delta = choice.get("delta")
+        if isinstance(delta, dict):
+            content = _content_value(delta.get("content"))
+            if content:
+                return content
+        content = _content_value(choice.get("text"))
+        if content:
+            return content
+    for key in ("response", "content", "text"):
+        content = _content_value(payload.get(key))
+        if content:
+            return content
+    return ""
+
+
 def _content_from_response(raw: str) -> str:
     raw = raw.strip()
-    payload: dict | None = None
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError:
-        # Some OpenAI-compatible servers always reply as text/event-stream:
-        # one or more `data: {json}` lines terminated by `data: [DONE]`.
-        for line in raw.splitlines():
-            line = line.strip()
-            if not line.startswith("data:"):
-                continue
-            chunk = line[len("data:") :].strip()
-            if not chunk or chunk == "[DONE]":
-                continue
-            try:
-                payload = json.loads(chunk)
-            except json.JSONDecodeError:
-                continue
-    if not isinstance(payload, dict):
-        raise ValueError("LLM response was not valid JSON")
-    return payload["choices"][0]["message"]["content"]
+        payload = None
+    if isinstance(payload, dict):
+        content = _payload_content(payload)
+        if content:
+            return content
+
+    # Some OpenAI-compatible servers always reply as text/event-stream. Join
+    # every delta instead of keeping only the final (often empty) DONE chunk.
+    streamed: list[str] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+        chunk = line[len("data:") :].strip()
+        if not chunk or chunk == "[DONE]":
+            continue
+        try:
+            event = json.loads(chunk)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            content = _payload_content(event)
+            if content:
+                streamed.append(content)
+    if streamed:
+        return "".join(streamed)
+    raise ValueError("LLM response did not contain usable content")
 
 
 def _sanitize_json_unicode(value: Any) -> Any:

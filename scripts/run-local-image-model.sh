@@ -47,6 +47,7 @@ upstream_port="${LOCAL_IMAGE_UPSTREAM_PORT:-7861}"
   --steps 8 \
   --diffusion-fa \
   --offload-to-cpu \
+  --mmap \
   --vae-tiling \
   --verbose &
 server_pid=$!

@@ -234,6 +234,69 @@ def test_original_rebuild_normalization_keeps_source_and_enforces_safe_flags(mon
     assert command[command.index("--provider-rights-evidence") + 1] == request.provider_rights_evidence
 
 
+def test_automatic_topic_rebuild_needs_no_manual_compliance_form(monkeypatch, tmp_path):
+    import api
+
+    monkeypatch.setattr(api, "fetch_video_duration", lambda _url: 600.0)
+    request = normalize_job_request(
+        ClipJobRequest(
+            url="https://www.youtube.com/watch?v=research-source",
+            clip_mode="original_rebuild",
+            automatic_topic_rebuild=True,
+            auto_upload_youtube=True,
+            ai_enabled=True,
+            ai_base_url="http://localhost:11434/v1",
+            ai_model="test-model",
+        )
+    )
+
+    command = build_clipper_command(request, tmp_path)
+
+    assert request.creator_perspective == ""
+    assert request.confirm_source_rights is False
+    assert request.confirm_long_animate_rights is False
+    assert request.auto_upload_youtube is False
+    assert "--automatic-topic-rebuild" in command
+    assert "--confirm-source-rights" not in command
+    assert "--confirm-provider-rights" not in command
+
+
+def test_create_automatic_topic_rebuild_starts_without_manual_form(monkeypatch):
+    import api
+
+    class FakeThread:
+        def __init__(self, *args, **kwargs):
+            self.started = False
+
+        def start(self):
+            self.started = True
+
+    monkeypatch.setattr(api, "jobs", {})
+    monkeypatch.setattr(api, "processed_source_history", set())
+    monkeypatch.setattr(api, "source_usage_history", {})
+    monkeypatch.setattr(api, "fetch_video_duration", lambda _url: 600.0)
+    monkeypatch.setattr(api.threading, "Thread", FakeThread)
+
+    job = api.create_job(
+        ClipJobRequest(
+            url="https://www.youtube.com/watch?v=research-source",
+            clip_mode="original_rebuild",
+            automatic_topic_rebuild=True,
+            allow_reprocess_source=True,
+            auto_upload_youtube=True,
+            ai_enabled=True,
+            ai_base_url="http://localhost:11434/v1",
+            ai_model="test-model",
+        )
+    )
+
+    assert job.status == "queued"
+    assert job.request.automatic_topic_rebuild is True
+    assert job.request.confirm_source_rights is False
+    assert job.request.confirm_long_animate_rights is False
+    assert job.request.auto_upload_youtube is False
+
+
 def test_create_original_rebuild_requires_human_perspective_before_source_access():
     import api
     import pytest
@@ -625,6 +688,7 @@ def test_api_search_adapts_soft_filters_but_keeps_cc_language_and_niche(monkeypa
 def test_api_search_skips_rights_risk_and_continues_to_safe_replacement(monkeypatch):
     import api
 
+    monkeypatch.setenv("YOUTUBE_DATA_API_KEY", "configured-test-key")
     monkeypatch.setenv("VIRAL_CC_ADAPTIVE_FILTERS", "true")
     published_at = datetime.now(timezone.utc).isoformat()
 
@@ -1055,6 +1119,17 @@ def test_user_error_from_logs_detects_network_error():
     logs = ["ERROR: [download] Got error: [Errno 101] Network is unreachable"]
 
     assert "Upload Video" in (user_error_from_logs(logs) or "")
+
+
+def test_user_error_from_logs_does_not_mislabel_image_connection_as_youtube():
+    logs = [
+        "[long_animate] INFO: Generating images and running vision QA",
+        "Error: Generate gambar AI scene 1 gagal setelah 3 percobaan: <urlopen error [Errno 111] Connection refused>",
+    ]
+
+    message = user_error_from_logs(logs) or ""
+    assert "Generator gambar lokal" in message
+    assert "YouTube" not in message
 
 
 def test_user_error_from_logs_detects_missing_ffmpeg_text_filter():

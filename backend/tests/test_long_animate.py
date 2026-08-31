@@ -155,6 +155,45 @@ def test_ai_storyboard_keeps_scene_specific_direction(monkeypatch):
     assert all("original fictional" in scene.visual_prompt for scene in storyboard.scenes)
 
 
+def test_three_minute_script_rejects_an_undersegmented_ai_storyboard(monkeypatch):
+    long_script = " ".join(
+        f"Bagian {index} menjelaskan perubahan, sebab, contoh, dan akibat yang berbeda."
+        for index in range(1, 37)
+    )
+    payload = {
+        "title": "Terlalu Sedikit Scene",
+        "hook": "Hook",
+        "core_message": "Pesan",
+        "art_bible": "polished animated-film still",
+        "character_bible": "No recurring character",
+        "scenes": [
+            {
+                "title": f"Scene {index}",
+                "narration": "Narasi pendek.",
+                "visual_prompt": "Satu objek berubah di lingkungan yang relevan.",
+                "shots": ["Satu objek berubah di lingkungan yang relevan."],
+                "camera_motion": "push_in",
+                "narrative_role": "development",
+            }
+            for index in range(1, 4)
+        ],
+    }
+    monkeypatch.setenv("LONG_ANIMATE_TARGET_DURATION_SECONDS", "180")
+    monkeypatch.setattr(
+        long_animate,
+        "chat_completion",
+        lambda config, messages: json.dumps(payload),
+    )
+
+    storyboard = build_storyboard(
+        long_script,
+        AIConfig(enabled=True, base_url="http://localhost:11434/v1", model="local"),
+    )
+
+    assert storyboard.title != "Terlalu Sedikit Scene"
+    assert len(storyboard.scenes) >= 9
+
+
 def test_motion_expression_varies_direction_without_static_slideshow():
     storyboard = _fallback_storyboard(SCRIPT)
     scene = storyboard.scenes[0]
@@ -166,6 +205,26 @@ def test_motion_expression_varies_direction_without_static_slideshow():
     assert "on/300" in x
     assert "iw-iw/zoom" in x
     assert "ih-ih/zoom" in y
+    assert "sin(2*PI*on" in zoom
+
+
+def test_long_animate_default_target_is_three_minutes(monkeypatch):
+    monkeypatch.delenv("LONG_ANIMATE_TARGET_DURATION_SECONDS", raising=False)
+
+    assert long_animate._target_duration_seconds() == 180.0
+
+
+def test_people_prompt_uses_restrained_story_action_instead_of_stock_hands():
+    prompt = long_animate._compose_visual_prompt(
+        "Seorang guru berjalan perlahan melewati halaman sekolah",
+        "Ia mengamati perubahan suasana sebelum menjelaskan pelajarannya.",
+        "polished animated-film still",
+        "One recurring adult teacher",
+    )
+
+    assert "Keep hands below shoulder level" in prompt
+    assert "No waving, raised palms" in prompt
+    assert "hands dominating the foreground" in prompt
 
 
 def test_tts_duration_allocator_hits_exact_twenty_seconds():
@@ -205,6 +264,21 @@ def test_complex_scene_expands_to_multiple_gapless_shots(monkeypatch):
     assert round(effective_duration, 3) == 20.0
 
 
+def test_long_scene_gets_an_alternate_story_shot_without_repeating_voice(monkeypatch):
+    storyboard = _fallback_storyboard(SCRIPT)
+    storyboard.scenes = storyboard.scenes[:1]
+    storyboard.scenes[0].duration = 18.0
+    storyboard.scenes[0].shot_prompts = storyboard.scenes[0].shot_prompts[:1]
+    monkeypatch.setenv("LONG_ANIMATE_TRANSITION_SECONDS", "0")
+
+    shots = long_animate.plan_storyboard_shots(storyboard)
+
+    assert len(shots) == 2
+    assert sum(shot.duration for shot in shots) == 18.0
+    assert shots[0].narration == shots[1].narration
+    assert shots[0].visual_prompt != shots[1].visual_prompt
+
+
 def test_render_shot_has_no_black_fade_or_audio_padding(monkeypatch, tmp_path):
     shot = long_animate.AnimateShot(
         index=1,
@@ -229,6 +303,8 @@ def test_render_shot_has_no_black_fade_or_audio_padding(monkeypatch, tmp_path):
     assert "fade=t=out" not in command_text
     assert "apad" not in command_text
     assert "-an" in captured["command"]
+    assert "sin(2*PI*on" in command_text
+    assert "sin(2*PI*t/7)" in command_text
 
 
 def test_markdown_scene_script_is_parsed_without_production_labels():
@@ -674,6 +750,47 @@ def test_local_z_image_retries_with_safer_resolutions(monkeypatch, tmp_path):
 
     assert long_animate._remote_scene_image(scene, tmp_path / "scene.png") is True
     assert attempted_sizes == ["1536x864", "1280x720", "1024x576"]
+
+
+def test_local_z_image_waits_for_restart_and_downgrades_after_connection_refused(
+    monkeypatch, tmp_path
+):
+    scene = _fallback_storyboard(SCRIPT).scenes[0]
+    attempted_sizes = []
+    sleeps = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {"data": [{"b64_json": base64.b64encode(b"z" * 2048).decode()}]}
+            ).encode()
+
+    def fake_urlopen(request, timeout):
+        attempted_sizes.append(json.loads(request.data.decode())["size"])
+        if len(attempted_sizes) == 1:
+            raise long_animate.urllib.error.URLError(
+                ConnectionRefusedError(111, "Connection refused")
+            )
+        return Response()
+
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_PROVIDER", "stable-diffusion-cpp")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_BASE_URL", "http://127.0.0.1:7860/v1")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_MODEL", "z-image-turbo-q3")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_SIZE", "1280x720")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_RETRIES", "3")
+    monkeypatch.setattr(long_animate.time, "sleep", sleeps.append)
+    monkeypatch.setattr(long_animate.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(long_animate, "_normalize_scene_image", lambda path: True)
+
+    assert long_animate._remote_scene_image(scene, tmp_path / "scene.png") is True
+    assert attempted_sizes == ["1280x720", "1024x576"]
+    assert sleeps == [6.0]
 
 
 def test_normalize_accepts_valid_soft_image_and_applies_extra_sharpen(monkeypatch, tmp_path):
