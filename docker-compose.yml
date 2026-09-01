@@ -168,6 +168,12 @@ services:
       DEFAULT_AI_BASE_URL: ${DEFAULT_AI_BASE_URL:-http://127.0.0.1:11434/v1}
       DEFAULT_AI_MODEL: ${DEFAULT_AI_MODEL:-llama3.2-id:latest}
       DEFAULT_REQUIRED_HASHTAGS: ${DEFAULT_REQUIRED_HASHTAGS:-viralindonesia,trendingindonesia,kontenpilihan}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8010/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     restart: unless-stopped
 
   frontend:
@@ -183,7 +189,8 @@ services:
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

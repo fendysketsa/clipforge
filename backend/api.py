@@ -1461,11 +1461,12 @@ def write_source_usage_archive(events: list[dict[str, Any]]) -> None:
             for item in current_items
             if str(item.get("job_id") or "")
         }
-        before = json.dumps(events_by_key, sort_keys=True, ensure_ascii=False)
+        # Keep tuple keys for collision-free in-memory deduplication, but compare
+        # the mappings directly: JSON object keys cannot be tuples.
+        before = dict(events_by_key)
         for event in additions:
             events_by_key[(str(event.get("job_id") or ""), str(event.get("clip_mode") or ""))] = event
-        after = json.dumps(events_by_key, sort_keys=True, ensure_ascii=False)
-        if before == after and archive_path.exists():
+        if before == events_by_key and archive_path.exists():
             continue
 
         items = sorted(
