@@ -1352,6 +1352,40 @@ def _transition_seconds() -> float:
     return max(0.0, min(0.2, value))
 
 
+def _effective_timeline_duration(
+    scenes: list[AnimateScene],
+    voice_durations: list[float],
+    requested_duration: float,
+) -> float:
+    """Keep the timeline near the requested length without distorting speech."""
+    narrated = [
+        max(0.0, duration)
+        for scene, duration in zip(scenes, voice_durations)
+        if scene.narration.strip() and duration > 0
+    ]
+    if not narrated:
+        return requested_duration
+    try:
+        maximum_tempo = float(os.environ.get("LONG_ANIMATE_MAX_SPEECH_TEMPO", "1.18"))
+    except ValueError:
+        maximum_tempo = 1.18
+    maximum_tempo = max(1.0, min(1.35, maximum_tempo))
+    try:
+        breath_seconds = float(os.environ.get("LONG_ANIMATE_SCENE_BREATH_SECONDS", "0.35"))
+    except ValueError:
+        breath_seconds = 0.35
+    breath_seconds = max(0.08, min(1.0, breath_seconds))
+    intentional_silence = sum(
+        max(0.8, scene.duration_hint or 0.8)
+        for scene in scenes
+        if not scene.narration.strip()
+    )
+    speech_seconds = sum(narrated)
+    shortest_natural = speech_seconds / maximum_tempo + breath_seconds * len(narrated) + intentional_silence
+    longest_natural = speech_seconds + breath_seconds * len(narrated) + intentional_silence
+    return round(max(shortest_natural, min(requested_duration, longest_natural)), 3)
+
+
 def allocate_scene_durations(
     scenes: list[AnimateScene],
     voice_durations: list[float],
@@ -2266,17 +2300,17 @@ def _tts_pronunciation_text(text: str) -> str:
 
 def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, str]:
     voice = os.environ.get("LONG_ANIMATE_VOICE", "id-ID-ArdiNeural").strip()
-    rate = os.environ.get("LONG_ANIMATE_VOICE_RATE", "-3%").strip()
-    pitch = os.environ.get("LONG_ANIMATE_VOICE_PITCH", "-1Hz").strip()
-    volume = os.environ.get("LONG_ANIMATE_VOICE_VOLUME", "+5%").strip()
+    rate = os.environ.get("LONG_ANIMATE_VOICE_RATE", "+8%").strip()
+    pitch = os.environ.get("LONG_ANIMATE_VOICE_PITCH", "+2Hz").strip()
+    volume = os.environ.get("LONG_ANIMATE_VOICE_VOLUME", "+8%").strip()
     if not re.fullmatch(r"[A-Za-z0-9-]{2,64}", voice):
         voice = "id-ID-ArdiNeural"
     if not re.fullmatch(r"[+-]\d{1,2}%", rate):
-        rate = "-3%"
+        rate = "+8%"
     if not re.fullmatch(r"[+-]\d{1,3}Hz", pitch):
-        pitch = "-1Hz"
+        pitch = "+2Hz"
     if not re.fullmatch(r"[+-]\d{1,2}%", volume):
-        volume = "+5%"
+        volume = "+8%"
     if not scene.narration.strip():
         silent_path = scene_dir / f"scene_{scene.index:02}.voice.wav"
         _run(
@@ -2334,7 +2368,7 @@ def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, st
                 "-v",
                 os.environ.get("LONG_ANIMATE_ESPEAK_VOICE", "id+m3"),
                 "-s",
-                os.environ.get("LONG_ANIMATE_ESPEAK_SPEED", "155"),
+                os.environ.get("LONG_ANIMATE_ESPEAK_SPEED", "175"),
                 "-p",
                 "48",
                 "-a",
@@ -2434,7 +2468,9 @@ def fit_voice_to_scene(scene: AnimateScene, voice_path: Path, scene_dir: Path) -
         scene.voice_duration = 0.0
         return output
     content_target = max(0.05, target - min(0.06, target * 0.03))
-    tempo = source_duration / content_target
+    # Never stretch speech to fill spare visual time. A 27-second narration was
+    # previously rendered at 0.15x to fill three minutes, causing severe slurring.
+    tempo = max(1.0, source_duration / content_target)
     scene.speech_tempo = tempo
     _run(
         [
@@ -2443,7 +2479,7 @@ def fit_voice_to_scene(scene: AnimateScene, voice_path: Path, scene_dir: Path) -
             "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", str(output.resolve()),
         ]
     )
-    scene.voice_duration = min(target, _media_duration(output))
+    scene.voice_duration = min(target, source_duration / tempo)
     return output
 
 
@@ -2798,7 +2834,7 @@ def render_long_animate(
 
         if len(storyboard.scenes) < 3:
             raise RuntimeError("Long Animate membutuhkan minimal tiga scene bermakna.")
-        target_duration = _target_duration_seconds()
+        requested_target_duration = _target_duration_seconds()
 
         # TTS Synthesis (PARALLEL)
         logger.info("Synthesizing narration with parallel workers")
@@ -2824,6 +2860,17 @@ def render_long_animate(
         metrics.tts_time = time.time() - tts_start
         logger.info(f"✓ TTS complete: {len(storyboard.scenes)} scenes in {metrics.tts_time:.1f}s ({max_workers} workers)")
 
+        target_duration = _effective_timeline_duration(
+            storyboard.scenes,
+            measured_voice_durations,
+            requested_target_duration,
+        )
+        if target_duration != requested_target_duration:
+            logger.warning(
+                "Timeline disesuaikan dari %.3fs menjadi %.3fs agar tempo narasi tetap natural dan tegas",
+                requested_target_duration,
+                target_duration,
+            )
         allocate_scene_durations(storyboard.scenes, measured_voice_durations, target_duration)
         fitted_voice_paths = [
             fit_voice_to_scene(scene, voice_path, scene_dir)
@@ -3218,10 +3265,12 @@ def render_long_animate(
             "scene_timed": True,
         },
         "timing_engine": {
-            "version": 2,
+            "version": 3,
+            "requested_target_duration": requested_target_duration,
             "target_duration": target_duration,
             "tts_measured_before_allocation": True,
             "dead_air_trimmed": True,
+            "speech_slowdown_allowed": False,
             "gapless_hard_cuts": _transition_seconds() <= 0,
             "transition_seconds": _transition_seconds(),
             "maximum_speech_tempo": round(max_speech_tempo, 3),

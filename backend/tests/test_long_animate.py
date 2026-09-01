@@ -597,7 +597,7 @@ def test_islamic_tts_expands_allah_and_muhamad_honorifics(monkeypatch):
     assert original.startswith("ALLAH SWT")
 
 
-def test_long_animate_tts_uses_calm_indonesian_islamic_prosody(monkeypatch, tmp_path):
+def test_long_animate_tts_honors_explicit_indonesian_prosody(monkeypatch, tmp_path):
     scene = _fallback_storyboard(SCRIPT).scenes[0]
     scene.narration = "Bacalah Al-Qur'an bersama ustadz dan perbaiki makhraj setelah wudhu."
     captured = {}
@@ -658,9 +658,41 @@ def test_long_animate_tts_defaults_to_clear_natural_prosody(monkeypatch, tmp_pat
 
     assert provider == "edge_neural"
     assert output.is_file()
-    assert "--rate=-3%" in captured["command"]
-    assert "--pitch=-1Hz" in captured["command"]
-    assert "--volume=+5%" in captured["command"]
+    assert "--rate=+8%" in captured["command"]
+    assert "--pitch=+2Hz" in captured["command"]
+    assert "--volume=+8%" in captured["command"]
+
+
+def test_short_narration_shrinks_timeline_instead_of_slurring(monkeypatch):
+    scenes = _fallback_storyboard(SCRIPT).scenes[:3]
+    monkeypatch.delenv("LONG_ANIMATE_MAX_SPEECH_TEMPO", raising=False)
+    monkeypatch.delenv("LONG_ANIMATE_SCENE_BREATH_SECONDS", raising=False)
+
+    duration = long_animate._effective_timeline_duration(scenes, [4.0, 5.0, 6.0], 180.0)
+
+    assert duration == 16.05
+
+
+def test_fit_voice_never_slows_narration_to_fill_scene(monkeypatch, tmp_path):
+    scene = _fallback_storyboard(SCRIPT).scenes[0]
+    scene.duration = 30.0
+    source = tmp_path / "voice.wav"
+    source.write_bytes(b"voice")
+    captured = {}
+
+    monkeypatch.setattr(long_animate, "_media_duration", lambda path: 4.0)
+    monkeypatch.setattr(
+        long_animate,
+        "_run",
+        lambda command, **kwargs: captured.setdefault("command", command),
+    )
+
+    long_animate.fit_voice_to_scene(scene, source, tmp_path)
+
+    audio_filter = captured["command"][captured["command"].index("-af") + 1]
+    assert "atempo=1.000000" in audio_filter
+    assert scene.speech_tempo == 1.0
+    assert scene.voice_duration == 4.0
 
 
 def test_subtitles_are_short_and_end_when_voice_ends(tmp_path):
