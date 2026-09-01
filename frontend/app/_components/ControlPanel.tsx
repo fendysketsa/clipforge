@@ -327,7 +327,7 @@ export function ControlPanel({
           <span>01</span>
           <div>
             <h3>{isLongAnimate ? "Tulis naskah video" : isOriginalRebuild ? "Pilih sumber topik" : "Pilih sumber video"}</h3>
-            <p>{isLongAnimate ? "Naskah menjadi storyboard, visual, animasi, narasi, dan video utuh." : isOriginalRebuild ? "Codex menentukan ide dan sudut baru otomatis; audio serta gambar sumber tidak masuk ke hasil." : "Tempel link YouTube atau upload file dari perangkat."}</p>
+            <p>{isLongAnimate ? "Naskah menjadi storyboard, visual, animasi, narasi, dan video utuh." : isOriginalRebuild ? "Narasi link diriset menyeluruh, lalu ditulis menjadi cerita baru yang spesifik, bermanfaat, dan siap divisualkan." : "Tempel link YouTube atau upload file dari perangkat."}</p>
           </div>
         </div>
 
@@ -599,7 +599,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
           {clipMode === "long_animate"
             ? "Scene Cinema mengubah naskah menjadi storyboard, art bible, visual per scene, gerak kamera, voice-over, subtitle, musik, thumbnail, dan satu video 16:9 utuh."
             : clipMode === "original_rebuild"
-            ? "JARVIS memakai sumber—termasuk broadcaster berisiko—hanya sebagai riset bila hak/izin terdokumentasi. Naskah ditulis dari perspektif Anda; audio dan piksel sumber dibuang sebelum visual, narasi, dan musik baru dibuat."
+            ? "JARVIS memetakan isi narasi link menjadi hook, fakta/konteks, perkembangan, manfaat, dan payoff. Sistem membuat visual dokumenter sinematik, voice-over, musik, serta subtitle baru; audio dan piksel sumber tidak digunakan."
             : clipMode === "highlight_5m"
             ? "Codex Long Story Director membuat teaser singkat tanpa duplikasi, lalu merangkai konteks, perkembangan, penjelasan, dan kesimpulan secara kronologis dalam 16:9—tanpa filler. Deskripsi menambahkan ajakan Viralkan yang wajar untuk 7 hari pertama; kelayakan tetap ditentukan YouTube."
             : "Clip vertikal adaptif 25–180 detik: Codex memilih durasi terpendek yang cukup untuk hook, konteks, perkembangan, dan payoff—bukan memanjangkan isi dengan filler. Frame cover, caption safe-area, CTA Subscribe kontekstual, dan loop alami tetap aktif."}
@@ -677,7 +677,7 @@ TEKS LAYAR: Data Terkirim`}</pre>
           <strong>
             {isOriginalRebuild ? "Riset → naskah baru → media baru · target ±3 menit" : "Target ±3 menit · 16:9 Full HD"}
           </strong>
-          <span>{isOriginalRebuild ? "Alur riset disusun menjadi hook, konteks, perkembangan, bukti/contoh, hikmah, dan payoff. Tidak ada audio, suara, atau piksel sumber di output; hasil wajib direview sebelum publikasi." : "TTS diukur lebih dulu, lalu sekitar 10–14 scene dipecah menjadi shot yang mengikuti alur. Setiap gambar mendapat gerak kamera dan ambience halus agar tidak terasa seperti slideshow diam."}</span>
+          <span>{isOriginalRebuild ? "Setiap scene wajib membawa informasi baru dan visualnya mengikuti subjek, aksi, objek, serta lokasi dalam narasi. Naskah generik, berulang, atau terlalu tipis otomatis ditolak dan tidak diberi skor tinggi." : "TTS diukur lebih dulu, lalu sekitar 10–14 scene dipecah menjadi shot yang mengikuti alur. Setiap gambar mendapat gerak kamera dan ambience halus agar tidak terasa seperti slideshow diam."}</span>
         </div>
       )}
 

@@ -978,7 +978,7 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
     chunks = chunks[:14]
     seed = hashlib.sha256(script.encode("utf-8")).hexdigest()
     default_visual_style = os.environ.get(
-        "LONG_ANIMATE_DEFAULT_VISUAL_STYLE", "3d_animated"
+        "LONG_ANIMATE_DEFAULT_VISUAL_STYLE", "cinematic_realistic"
     ).strip().casefold()
     art_styles = (
         "polished cinematic 3D animated-film still, expressive but restrained character acting, natural anatomy, believable materials, soft volumetric light",
@@ -994,6 +994,17 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
         art_bible = (
             "ultra-realistic cinematic photography, crisp subject detail, natural skin texture, "
             "believable materials, soft depth of field, warm natural window light, restrained film color grade"
+        )
+    elif default_visual_style in {
+        "cinematic_realistic",
+        "realistic_cinematic",
+        "photorealistic",
+        "documentary_cinematic",
+    }:
+        art_bible = (
+            "cinematic realistic documentary-film still, photorealistic subjects and environments, natural anatomy, "
+            "authentic period and cultural details supported by the narration, dramatic motivated lighting, rich depth, "
+            "crisp focal detail, restrained premium color grade, no cartoon or toy-like proportions"
         )
     elif default_visual_style in {"3d", "3d_animated", "animated_3d", "3d-animation"}:
         art_bible = art_styles[int(seed[:2], 16) % len(art_styles)]
@@ -1322,6 +1333,13 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
                 visuals_locked=bool(source),
             )
         )
+    normalized_narrations = [
+        re.sub(r"[^\w]+", " ", scene.narration.casefold()).strip()
+        for scene in scenes
+        if scene.narration.strip()
+    ]
+    if normalized_narrations and len(set(normalized_narrations)) / len(normalized_narrations) < 0.9:
+        return fallback
     scenes[0].narrative_role = "cold_open"
     scenes[0].transition = "hard_cut"
     scenes[-1].narrative_role = "payoff_conclusion"
@@ -1446,6 +1464,72 @@ def _semantic_tokens(text: str) -> set[str]:
         token
         for token in re.findall(r"[a-zA-ZÀ-ÿ0-9'-]{4,}", text.casefold())
         if token not in _SEMANTIC_STOPWORDS
+    }
+
+
+def narration_quality_audit(
+    scenes: list[AnimateScene],
+    *,
+    requested_duration: float,
+    effective_duration: float,
+) -> dict[str, object]:
+    """Measure editorial substance instead of awarding quality for render success."""
+    narrations = [re.sub(r"\s+", " ", scene.narration).strip() for scene in scenes if scene.narration.strip()]
+    words = re.findall(r"[\w']+", " ".join(narrations), flags=re.UNICODE)
+    normalized = [
+        re.sub(r"[^\w]+", " ", narration.casefold()).strip()
+        for narration in narrations
+    ]
+    unique_ratio = len(set(normalized)) / max(1, len(normalized))
+    expected_words = max(30, round(requested_duration * 1.7))
+    word_coverage = min(1.0, len(words) / expected_words)
+    duration_coverage = min(1.0, effective_duration / max(1.0, requested_duration))
+    generic_markers = (
+        "bukan sekadar bahan untuk diterima begitu saja",
+        "ada tiga hal yang layak diperiksa",
+        "pisahkan informasi utama dari pendapat",
+        "lihat konteks yang membentuknya",
+        "timbang dampaknya",
+        "topik ini menjadi pelajaran",
+    )
+    joined = " ".join(narrations).casefold()
+    generic_hits = sum(marker in joined for marker in generic_markers)
+    issues: list[str] = []
+    if unique_ratio < 0.9:
+        issues.append(f"Narasi scene berulang; keunikan hanya {unique_ratio:.0%}.")
+    if word_coverage < 0.72:
+        issues.append(
+            f"Naskah hanya {len(words)} kata; belum cukup untuk target {requested_duration:g} detik yang bernilai."
+        )
+    if duration_coverage < 0.72:
+        issues.append(
+            f"Timeline alami hanya {effective_duration:g}/{requested_duration:g} detik karena naskah terlalu tipis."
+        )
+    if generic_hits >= 2:
+        issues.append("Naskah memakai terlalu banyak kalimat template generik.")
+    score = round(
+        max(
+            0.0,
+            min(
+                100.0,
+                100.0
+                - (1.0 - unique_ratio) * 55.0
+                - (1.0 - word_coverage) * 38.0
+                - (1.0 - duration_coverage) * 22.0
+                - generic_hits * 7.0,
+            ),
+        )
+    )
+    return {
+        "version": 1,
+        "score": score,
+        "passed": not issues and score >= 78,
+        "word_count": len(words),
+        "expected_words_for_requested_duration": expected_words,
+        "unique_scene_narration_ratio": round(unique_ratio, 3),
+        "requested_duration_coverage": round(duration_coverage, 3),
+        "generic_template_hits": generic_hits,
+        "issues": issues,
     }
 
 
@@ -2979,10 +3063,12 @@ def render_long_animate(
             f"tpad=stop_mode=clone:stop_duration=2,trim=duration={target_duration:.3f},setpts=PTS-STARTPTS",
         ]
         if subtitles and any(scene.narration.strip() for scene in storyboard.scenes):
+            subtitle_font_size = 50 if output_aspect == "9:16" else 38
             vf_parts.append(
                 f"subtitles='{srt_path.name}':original_size={output_width}x{output_height}:"
-                "force_style='FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H00FFFFFF,"
-                "OutlineColour=&H00101010,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=54'"
+                f"force_style='FontName=DejaVu Sans,FontSize={subtitle_font_size},Bold=-1,"
+                "PrimaryColour=&H0000E8FF,OutlineColour=&H00101010,BorderStyle=1,"
+                "Outline=3,Shadow=1,Alignment=2,MarginL=70,MarginR=70,MarginV=74'"
             )
         if drawtext:
             vf_parts.append(
@@ -3116,15 +3202,22 @@ def render_long_animate(
             }
             for scene in storyboard.scenes
         ]
-        score = min(
+        base_render_score = min(
             96,
             82
             + min(6, len(shots))
             + (3 if all(scene.voice_provider != "silent_fallback_review_required" for scene in storyboard.scenes) else 0)
             + (3 if final_qc["passed"] else 0),
         )
+        narration_audit = narration_quality_audit(
+            storyboard.scenes,
+            requested_duration=requested_target_duration,
+            effective_duration=target_duration,
+        )
+        score = min(base_render_score, int(narration_audit["score"]))
         max_speech_tempo = max((scene.speech_tempo for scene in storyboard.scenes), default=1.0)
-        timing_weaknesses = (
+        timing_weaknesses = list(narration_audit["issues"])
+        timing_weaknesses.extend(
             [f"Narasi padat membutuhkan percepatan TTS hingga {max_speech_tempo:.2f}x; ringkas NARASI bila ingin tempo lebih santai."]
             if max_speech_tempo > 1.35
             else []
@@ -3137,6 +3230,7 @@ def render_long_animate(
             and narrative_roles
             and narrative_roles[0] == "cold_open"
             and narrative_roles[-1] == "payoff_conclusion"
+            and bool(narration_audit["passed"])
             and all(
                 scene.voice_provider != "silent_fallback_review_required"
                 for scene in storyboard.scenes
@@ -3189,7 +3283,13 @@ def render_long_animate(
         "hook": storyboard.hook,
         "pov": "Narasi orisinal pengguna divisualkan menjadi scene yang saling melanjutkan.",
         "core_message": storyboard.core_message,
-        "fyp_label": "Sangat kuat" if score >= 88 else "Kuat",
+        "fyp_label": (
+            "Sangat kuat"
+            if score >= 88
+            else "Kuat"
+            if score >= 78
+            else "Perlu revisi"
+        ),
         "strengths": [
             "Naskah menjadi alur scene utuh, bukan slideshow acak.",
             "Art bible menjaga kesinambungan visual antar-scene.",
@@ -3209,9 +3309,13 @@ def render_long_animate(
             f"Subtitle bertimestamp dan audio AAC 48 kHz digabungkan ke master {output_aspect}.",
             "Thumbnail long-form dan chapter YouTube dibuat otomatis.",
         ],
-        "key_point_score": 92,
+        "key_point_score": int(narration_audit["score"]),
         "loop_score": 70,
-        "boundary_quality": "payoff_tuntas",
+        "boundary_quality": (
+            "payoff_tuntas"
+            if narration_audit["passed"]
+            else "isi_belum_layak"
+        ),
         "mode": "long_animate",
         "production_model": "codex_scene_cinema_v3",
         "output_format": "portrait_short" if output_aspect == "9:16" else "landscape_compilation",
@@ -3280,6 +3384,7 @@ def render_long_animate(
                 sum(shot.duration for shot in shots) - _transition_seconds() * max(0, len(shots) - 1), 3
             ),
         },
+        "narration_quality": narration_audit,
         "vision_qa": {
             "enabled": True,
             "automatic_regeneration": True,

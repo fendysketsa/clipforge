@@ -12937,6 +12937,69 @@ def deterministic_original_rebuild_script(
     return script, angle
 
 
+def original_rebuild_quality_issues(
+    script: str,
+    research_excerpt: str,
+    title: str,
+    *,
+    minimum_words: int,
+) -> list[str]:
+    """Reject generic, repetitive narration even when its word count is valid."""
+    clean = re.sub(r"\s+", " ", script).strip()
+    sentences = [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", clean)
+        if len(sentence.split()) >= 4
+    ]
+    normalized_sentences = [
+        re.sub(r"[^\w]+", " ", sentence.casefold()).strip()
+        for sentence in sentences
+    ]
+    issues: list[str] = []
+    expected_sentences = max(4, min(10, round(minimum_words / 38)))
+    if len(sentences) < expected_sentences:
+        issues.append(f"alur hanya memiliki {len(sentences)}/{expected_sentences} kalimat bermakna")
+    if normalized_sentences:
+        unique_ratio = len(set(normalized_sentences)) / len(normalized_sentences)
+        if unique_ratio < 0.88:
+            issues.append(f"narasi berulang (keunikan kalimat {unique_ratio:.0%})")
+
+    generic_markers = (
+        "bukan sekadar bahan untuk diterima begitu saja",
+        "ada tiga hal yang layak diperiksa",
+        "pisahkan informasi utama dari pendapat",
+        "lihat konteks yang membentuknya",
+        "timbang dampaknya",
+        "topik ini menjadi pelajaran",
+        "sebelum dipercaya atau diterapkan",
+    )
+    generic_hits = sum(marker in clean.casefold() for marker in generic_markers)
+    if generic_hits >= 2:
+        issues.append("terlalu banyak kalimat template generik")
+
+    grounding_counts = Counter(
+        word
+        for word in re.findall(
+            r"[\w']+",
+            f"{title} {research_excerpt}".casefold(),
+            flags=re.UNICODE,
+        )
+        if len(word) >= 5 and word not in ORIGINAL_REBUILD_STOP_WORDS
+    )
+    grounding_terms = sorted(
+        grounding_counts,
+        key=lambda word: (-grounding_counts[word], -len(word), word),
+    )[:16]
+    script_tokens = set(re.findall(r"[\w']+", clean.casefold(), flags=re.UNICODE))
+    required_grounding = min(3, max(1, len(grounding_terms)))
+    grounded = sum(term in script_tokens for term in grounding_terms)
+    if grounded < required_grounding:
+        issues.append(
+            f"isi kurang spesifik pada sumber ({grounded}/{required_grounding} kata kunci utama)"
+        )
+    return issues
+
+
 def _trim_original_rebuild_script(script: str, *, minimum_words: int, maximum_words: int) -> str:
     words = script.split()
     if len(words) <= maximum_words:
@@ -13000,6 +13063,44 @@ def original_rebuild_script(
     creator = str(metadata.get("uploader") or metadata.get("channel") or "").strip()[:120]
     failures: list[str] = []
     ai_reachable = ai_configured
+    acceptance_min_words = max(30, round(lower_words * 0.94))
+    repair_seed = ""
+    repair_seed_score = float("inf")
+
+    def assess_script(script: str) -> tuple[list[str], int, int]:
+        word_count = len(script.split())
+        overlap = longest_verbatim_token_run(source_text, script)
+        hard_max_words = max(upper_words + 20, round(upper_words * 1.35))
+        problems: list[str] = []
+        if word_count < acceptance_min_words:
+            problems.append(
+                f"naskah terlalu pendek ({word_count}/{acceptance_min_words} kata minimum aman)"
+            )
+        if word_count > hard_max_words:
+            problems.append(f"naskah terlalu panjang ({word_count}/{upper_words} kata)")
+        if overlap > overlap_limit:
+            problems.append(
+                f"masih menyalin {overlap} kata berurutan; maksimum {overlap_limit}"
+            )
+        problems.extend(
+            original_rebuild_quality_issues(
+                script,
+                research_excerpt,
+                title,
+                minimum_words=acceptance_min_words,
+            )
+        )
+        return problems, word_count, overlap
+
+    def remember_repair_seed(script: str, problems: list[str], word_count: int, overlap: int) -> None:
+        nonlocal repair_seed, repair_seed_score
+        if not script.strip():
+            return
+        length_gap = max(0, acceptance_min_words - word_count) + max(0, word_count - upper_words)
+        score = length_gap + max(0, overlap - overlap_limit) * 8 + len(problems) * 12
+        if score < repair_seed_score:
+            repair_seed = script.strip()
+            repair_seed_score = score
 
     def finish(
         script: str,
@@ -13078,7 +13179,10 @@ def original_rebuild_script(
             "pernyataan subjektif sebagai klaim bila sumber tidak membuktikannya. Jangan menambahkan angka, kutipan agama, "
             "diagnosis, janji hasil, atau fakta baru yang tidak tersedia. Susun alur long-form yang utuh: hook, konteks, "
             "perkembangan gagasan, contoh atau bukti yang tersedia, hikmah yang relevan, dan payoff. Jangan memanjangkan "
-            "durasi dengan filler, pengulangan, atau kalimat motivasi generik. Pertahankan hubungan sebab-akibat dan "
+            "durasi dengan filler, pengulangan, atau kalimat motivasi generik. Setiap paragraf harus memberi informasi "
+            "baru yang konkret: siapa/apa yang dibahas, apa yang terjadi atau dijelaskan, mengapa penting, dan apa "
+            "manfaat praktisnya bagi penonton. Gunakan 8-14 beat narasi yang berbeda; jangan mengulang satu tesis dengan "
+            "kata lain. Pertahankan hubungan sebab-akibat dan "
             "urutan kejadian penting yang didukung bahan riset agar cerita tetap masuk akal, tetapi jangan menyalin "
             "susunan kalimat atau gaya penyampaian video sumber. "
             f"Panjang naskah {lower_words}-{upper_words} kata agar sesuai target sekitar {target_seconds:g} detik. "
@@ -13131,19 +13235,10 @@ def original_rebuild_script(
                 minimum_words=lower_words,
                 maximum_words=upper_words,
             )
-        word_count = len(script.split())
-        overlap = longest_verbatim_token_run(source_text, script)
-        problems: list[str] = []
-        if word_count < lower_words:
-            problems.append(f"naskah terlalu pendek ({word_count}/{lower_words} kata)")
-        if word_count > hard_max_words:
-            problems.append(f"naskah terlalu panjang ({word_count}/{upper_words} kata)")
-        if overlap > overlap_limit:
-            problems.append(
-                f"masih menyalin {overlap} kata berurutan; maksimum {overlap_limit}"
-            )
+        problems, word_count, overlap = assess_script(script)
         if problems:
             failures.append(f"percobaan JSON {attempt}: " + "; ".join(problems))
+            remember_repair_seed(script, problems, word_count, overlap)
             continue
         return finish(
             script,
@@ -13184,47 +13279,67 @@ def original_rebuild_script(
                     minimum_words=lower_words,
                     maximum_words=upper_words,
                 )
-            word_count = len(script.split())
-            overlap = longest_verbatim_token_run(source_text, script)
-            if lower_words <= word_count <= hard_max_words and overlap <= overlap_limit:
+            problems, word_count, overlap = assess_script(script)
+            if not problems:
                 return finish(
                     script,
                     _derived_editorial_angle(title, research_excerpt),
                     attempt=4,
                     strategy="plain_text_recovery",
                 )
-            failures.append(
-                f"pemulihan plain-text: {word_count} kata; overlap {overlap}/{overlap_limit}"
-            )
+            failures.append("pemulihan plain-text: " + "; ".join(problems))
+            remember_repair_seed(script, problems, word_count, overlap)
         except Exception as exc:
             failures.append(f"pemulihan plain-text: {exc}")
 
-    if automatic_topic_rebuild:
-        script, editorial_angle = deterministic_original_rebuild_script(
-            title,
-            research_excerpt,
-            maximum_words=max(upper_words, lower_words),
-        )
-        overlap = longest_verbatim_token_run(source_text, script)
-        if overlap > overlap_limit:
-            script, editorial_angle = deterministic_original_rebuild_script(
-                "Topik utama",
-                "konteks dampak pelajaran informasi keputusan",
-                maximum_words=max(upper_words, lower_words),
+    if ai_reachable and repair_seed:
+        for repair_attempt in range(1, 3):
+            repair_prompt = (
+                "Perbaiki draft voice-over berikut, bukan menulis topik baru. Pertahankan semua fakta yang didukung "
+                "bahan riset, tetapi hilangkan kalimat berulang, template generik, dan frasa yang terlalu mirip sumber. "
+                f"Hasil harus {acceptance_min_words}-{upper_words} kata, memiliki hook konkret, alur sebab-akibat, "
+                "contoh atau penjelasan spesifik dari sumber, manfaat yang dapat dipahami penonton, dan payoff yang "
+                f"menjawab hook. Jangan menyalin lebih dari {overlap_limit} kata sumber secara berurutan. Jangan "
+                "menambah angka, dalil, nama, atau klaim yang tidak ada. Keluarkan HANYA naskah final tanpa label.\n\n"
+                f"MASALAH DRAFT: {failures[-1] if failures else '-'}\n\n"
+                f"DRAFT:\n{repair_seed}\n\n"
+                f"BAHAN RISET:\n{original_rebuild_research_excerpt(transcript, max_chars=4200)}"
             )
-            overlap = longest_verbatim_token_run(source_text, script)
-        if overlap <= overlap_limit and len(script.split()) >= 30:
-            return finish(
-                script,
-                editorial_angle,
-                attempt=5,
-                strategy="deterministic_original_fallback",
-                review_notes=["AI utama tidak menghasilkan naskah valid; review fakta dan kekhususan topik wajib."],
-            )
+            try:
+                response = chat_completion(
+                    config,
+                    [
+                        {
+                            "role": "system",
+                            "content": (
+                                "Anda editor senior naskah dokumenter Indonesia. Hasil harus spesifik, informatif, "
+                                "enak didengar, antiplagiarisme, dan langsung siap menjadi voice-over."
+                            ),
+                        },
+                        {"role": "user", "content": repair_prompt},
+                    ],
+                    json_mode=False,
+                    temperature=0.28,
+                )
+                repaired = str(parse_original_rebuild_response(response).get("script") or "").strip()
+                problems, word_count, overlap = assess_script(repaired)
+                if not problems:
+                    return finish(
+                        repaired,
+                        _derived_editorial_angle(title, research_excerpt),
+                        attempt=4 + repair_attempt,
+                        strategy="targeted_quality_repair",
+                        review_notes=["Verifikasi fakta dan konteks sumber sebelum publikasi."],
+                    )
+                failures.append(f"perbaikan terarah {repair_attempt}: " + "; ".join(problems))
+                remember_repair_seed(repaired, problems, word_count, overlap)
+            except Exception as exc:
+                failures.append(f"perbaikan terarah {repair_attempt}: {exc}")
 
     detail = failures[-1] if failures else "AI tidak menghasilkan respons yang dapat digunakan"
     raise UserFacingError(
-        "AI gagal membuat naskah Original Rebuild yang cukup orisinal: " + detail
+        "AI gagal membuat naskah Original Rebuild yang spesifik dan bermanfaat; output generik tidak dibuat: "
+        + detail
     )
 
 

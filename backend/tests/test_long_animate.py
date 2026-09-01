@@ -145,7 +145,7 @@ def test_ai_storyboard_keeps_scene_specific_direction(monkeypatch):
     )
 
     assert storyboard.title == "Langkah Kecil Mengubah Arah"
-    assert "3D" in storyboard.art_bible
+    assert "cinematic realistic" in storyboard.art_bible
     assert [scene.camera_motion for scene in storyboard.scenes] == [
         "push_in",
         "pan_right",
@@ -255,12 +255,13 @@ def test_user_locked_visual_can_explicitly_request_one_hand_action():
     assert "The requested hand action may appear once" in prompt
 
 
-def test_default_unrequested_visual_style_is_3d_animation(monkeypatch):
+def test_default_unrequested_visual_style_is_cinematic_realistic(monkeypatch):
     monkeypatch.delenv("LONG_ANIMATE_DEFAULT_VISUAL_STYLE", raising=False)
 
     storyboard = _fallback_storyboard(SCRIPT)
 
-    assert "3D" in storyboard.art_bible
+    assert "cinematic realistic" in storyboard.art_bible
+    assert "no cartoon" in storyboard.art_bible
 
 
 def test_child_bathing_scene_gets_modest_3d_safety_and_water_camera_plan():
@@ -671,6 +672,24 @@ def test_short_narration_shrinks_timeline_instead_of_slurring(monkeypatch):
     duration = long_animate._effective_timeline_duration(scenes, [4.0, 5.0, 6.0], 180.0)
 
     assert duration == 16.05
+
+
+def test_generic_repeated_narration_cannot_receive_high_quality_score():
+    storyboard = _fallback_storyboard(SCRIPT)
+    storyboard.scenes = storyboard.scenes[:5]
+    generic = "Pisahkan informasi utama dari pendapat, lihat konteksnya, lalu timbang dampaknya."
+    for scene in storyboard.scenes:
+        scene.narration = generic
+
+    audit = long_animate.narration_quality_audit(
+        storyboard.scenes,
+        requested_duration=180.0,
+        effective_duration=30.0,
+    )
+
+    assert audit["passed"] is False
+    assert audit["score"] < 50
+    assert audit["unique_scene_narration_ratio"] < 0.9
 
 
 def test_fit_voice_never_slows_narration_to_fill_scene(monkeypatch, tmp_path):
