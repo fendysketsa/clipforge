@@ -7,9 +7,6 @@ cd "$ROOT_DIR"
 source "$ROOT_DIR/scripts/load-dotenv.sh"
 load_dotenv "$ROOT_DIR/.env"
 
-echo "Memastikan generator gambar lokal aktif..."
-"$ROOT_DIR/scripts/start-local-image-model.sh"
-
 "$ROOT_DIR/scripts/prepare-youtube-gui-runtime.sh"
 
 YOUTUBE_CDP_PORT="${YOUTUBE_CDP_PORT:-}"

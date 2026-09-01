@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import json
 from pathlib import Path
 
 from api import (
@@ -263,8 +264,10 @@ def test_automatic_topic_rebuild_needs_no_manual_compliance_form(monkeypatch, tm
     assert "--confirm-provider-rights" not in command
 
 
-def test_create_automatic_topic_rebuild_starts_without_manual_form(monkeypatch):
+def test_create_automatic_topic_rebuild_is_retired(monkeypatch):
     import api
+    import pytest
+    from fastapi import HTTPException
 
     class FakeThread:
         def __init__(self, *args, **kwargs):
@@ -279,32 +282,28 @@ def test_create_automatic_topic_rebuild_starts_without_manual_form(monkeypatch):
     monkeypatch.setattr(api, "fetch_video_duration", lambda _url: 600.0)
     monkeypatch.setattr(api.threading, "Thread", FakeThread)
 
-    job = api.create_job(
-        ClipJobRequest(
-            url="https://www.youtube.com/watch?v=research-source",
-            clip_mode="original_rebuild",
-            automatic_topic_rebuild=True,
-            allow_reprocess_source=True,
-            auto_upload_youtube=True,
-            ai_enabled=True,
-            ai_base_url="http://localhost:11434/v1",
-            ai_model="test-model",
+    with pytest.raises(HTTPException) as error:
+        api.create_job(
+            ClipJobRequest(
+                url="https://www.youtube.com/watch?v=research-source",
+                clip_mode="original_rebuild",
+                automatic_topic_rebuild=True,
+                allow_reprocess_source=True,
+                auto_upload_youtube=True,
+                ai_enabled=True,
+                ai_base_url="http://localhost:11434/v1",
+                ai_model="test-model",
+            )
         )
-    )
-
-    assert job.status == "queued"
-    assert job.request.automatic_topic_rebuild is True
-    assert job.request.confirm_source_rights is False
-    assert job.request.confirm_long_animate_rights is False
-    assert job.request.auto_upload_youtube is False
+    assert error.value.status_code == 410
 
 
-def test_create_original_rebuild_requires_human_perspective_before_source_access():
+def test_create_original_rebuild_is_retired_before_source_access():
     import api
     import pytest
     from fastapi import HTTPException
 
-    with pytest.raises(HTTPException, match="perspektif|sudut pandang"):
+    with pytest.raises(HTTPException) as error:
         api.create_job(
             ClipJobRequest(
                 source_file="not-opened.mp4",
@@ -315,6 +314,7 @@ def test_create_original_rebuild_requires_human_perspective_before_source_access
                 provider_rights_evidence="Commercial provider terms checked today",
             )
         )
+    assert error.value.status_code == 410
 
 
 def test_normalize_keeps_under_budget_target(monkeypatch):
@@ -897,6 +897,10 @@ def test_source_usage_log_only_lists_success_records(monkeypatch):
         "job-success-short",
     ]
     assert result.items[0].output_names == ["resume_cerita_5menit_inti.mp4"]
+    assert result.folders[0].key == "2026-08"
+    assert result.folders[0].total == 2
+    assert result.folders[0].short_count == 1
+    assert result.folders[0].long_count == 1
 
 
 def test_source_usage_log_backfills_completed_jobs_but_not_failed_jobs(monkeypatch, tmp_path):
@@ -932,6 +936,11 @@ def test_source_usage_log_backfills_completed_jobs_but_not_failed_jobs(monkeypat
     assert result.items[0].job_id == completed.id
     assert result.items[0].processed_at == completed.finished_at
     assert all(item.job_id != failed.id for item in result.items)
+    archive_path = tmp_path / "source_usage" / "2026" / "08" / "source_usage.json"
+    assert archive_path.exists()
+    archive_payload = json.loads(archive_path.read_text(encoding="utf-8"))
+    assert archive_payload["total"] == 1
+    assert archive_payload["items"][0]["job_id"] == completed.id
 
 
 def test_viral_score_prefers_faster_recent_growth():

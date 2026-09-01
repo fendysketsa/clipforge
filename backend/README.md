@@ -52,7 +52,10 @@ $env:BACKEND_API_BASE="http://127.0.0.1:8010"
 ```
 
 The Docker Compose setup starts this process automatically. Access is checked
-against `TELEGRAM_OWNER_ID` for every message and button callback.
+against `TELEGRAM_OWNER_ID` for every message and button callback. The primary
+flow accepts a pasted YouTube link, checks whether it was processed before,
+offers **Clip Pendek 9:16** and **Long Story 16:9**, then records the explicit
+source-rights confirmation when the owner starts the job.
 
 Common CLI options:
 
@@ -84,8 +87,9 @@ outputs/
 Default output video:
 
 - vertical `1080x1920`
-- H.264 MP4, CRF 16 untuk preset Jernih dan CRF 14 untuk Maksimal
+- H.264 MP4; jalur default Standar memakai `veryfast`/CRF 20, preset Jernih memakai `fast`/CRF 18, dan Maksimal tetap `slow`/CRF 14
 - source download mencoba sampai 2160p pada preset Jernih/Maksimal (`bestvideo+bestaudio`)
+- hingga tiga job dapat berjalan dari tab berbeda; jatah CPU per job dibatasi lewat `FENDY_CLIPPER_CPU_THREADS_PER_JOB` agar Whisper dan FFmpeg tidak saling memenuhi seluruh core
 - source YouTube memakai Deno + `yt-dlp-ejs` untuk challenge JavaScript terbaru dan otomatis retry melalui `WEB_EMBEDDED_PLAYER` bila URL media default ditolak 403
 - subtitle burned-in
 - caption dinamis menyorot kata penting dari ucapan asli, dengan timing berbobot jumlah kata dan margin aman agar tidak tertutup action rail/judul UI Shorts; file SRT bersih tetap dibuat untuk accessibility
@@ -117,10 +121,8 @@ Default output video:
 - semua sidecar mencatat eksperimen pertumbuhan: Short menargetkan 20K views + 20 subscriber dengan checkpoint 1K/5K/10K/20K, sedangkan long-form mempertahankan baseline 5K + 20 subscriber; stabil berarti minimal tiga dari lima upload seformat dan seseri mencapai kedua target, dibandingkan rolling median 10 upload sebanding
 - record upload menyimpan maksimal 24 snapshot performa aktual dan diagnosis reach/retention/konversi relatif terhadap seri; endpoint refresh memakai YouTube Analytics OAuth bila tersedia, lalu fallback ke statistik publik YouTube Data API
 - Long Story Director mengambil teaser tuntas 10–22 detik dari beat terkuat, menghapus bagian teaser dari posisi asal agar tidak duplikat, lalu menyusun konteks, perkembangan, penjelasan, dan kesimpulan mengikuti kronologi sumber tanpa filler durasi
-- mode `long_animate` menerima naskah orisinal, menyusunnya menjadi storyboard dan art bible, membuat visual berbeda untuk tiap scene, memberikan motion kamera, voice-over Indonesia, subtitle, musik prosedural, thumbnail, serta chapter, lalu menggabungkannya menjadi video 16:9 utuh
-- Narasi Long Animate memakai `id-ID-ArdiNeural` dengan delivery tegas (`+8%`), pitch lebih terang (`+2Hz`), dan volume boost (`+8%`) agar artikulasi Indonesia terdengar sigap dan jelas. Profil `LONG_ANIMATE_TTS_PROFILE=islamic_indonesian` menormalkan pelafalan istilah seperti Allah/allah/ALLAH/الله, Al-Qur'an, ustadz, makhraj, wudhu, dzikir, SWT, dan SAW hanya pada input suara; naskah serta subtitle asli tidak diubah. Tempo, pitch, dan volume dapat disetel melalui `LONG_ANIMATE_VOICE_RATE`, `LONG_ANIMATE_VOICE_PITCH`, dan `LONG_ANIMATE_VOICE_VOLUME`.
-- Long Animate memakai Ollama lokal untuk storyboard dan Z-Image-Turbo Q3 berlisensi Apache 2.0 melalui stable-diffusion.cpp untuk gambar shot; tidak ada fallback OpenAI dan tidak ada biaya API gambar. Default aman untuk GPU 4 GB adalah `1024x576`, PNG, 8 step, Vulkan, flash attention, CPU offload, VRAM budgeting, layer streaming, dan bobot memory-mapped. Jika worker lokal sempat berhenti, renderer menunggu service pulih, mencoba sampai empat kali, serta menurunkan resolusi lalu menormalkan hasil ke Full HD. Real-ESRGAN `realesrgan-x4plus` berjalan pada skala native x4 dan diberi penajaman adaptif. Parser `Scene`/`Adegan` memisahkan `VISUAL`, `NARASI`, dan `TEKS LAYAR`; aksi berurutan dapat dipecah menjadi 1–3 shot tanpa mengulang narasi. Character, immutable style, dan location bible dibawa ke semua prompt. Vision QA memeriksa frame kosong, ketajaman, jumlah wajah, style drift, dan kemiripan referensi karakter lalu mencoba regenerate otomatis. `LONG_ANIMATE_IMAGE_STRICT=true` menghentikan render bila model lokal tetap gagal setelah seluruh pemulihan, sehingga placeholder tidak dianggap hasil berkualitas. Upload diwajibkan Private lebih dulu dan disclosure AI diaktifkan secara konservatif.
-- Timing Long Animate bersifat audio-first: seluruh TTS dibuat, silence tepi dipangkas, dan durasinya diukur. `LONG_ANIMATE_TARGET_DURATION_SECONDS=180` menjadi target maksimum alami; naskah pendek menghasilkan video lebih pendek dan suara tidak pernah diperlambat untuk mengisi tiga menit. Narasi padat dibatasi sekitar `LONG_ANIMATE_MAX_SPEECH_TEMPO=1.18`, dengan jeda scene `LONG_ANIMATE_SCENE_BREATH_SECONDS=0.35`. Storyboard mengikuti hook, konteks, perkembangan, bukti/contoh, hikmah, dan payoff; tiap scene memakai variasi shot serta gerak kamera/ambience halus dan menghindari pose tangan stok. Shot dirender tanpa audio/fade hitam, digabung dengan crossfade `LONG_ANIMATE_TRANSITION_SECONDS=0.12`, kemudian narasi, music ducking, SFX transisi, subtitle, AAC stereo 48 kHz, dan loudness normalization diproses pada master final. `LONG_ANIMATE_OUTPUT_ASPECT_RATIO` menerima `16:9` atau `9:16`; final QC memverifikasi durasi, resolusi, sample rate, dan frame hitam di sekitar cut.
+- mode produksi aktif hanya `short` dan `highlight_5m`; kegagalan atau klaim tidak pernah mengubah job menjadi mode generatif lain
+- log sumber sukses memakai indeks cepat untuk deteksi duplikat dan arsip audit fisik `data/source_usage/YYYY/MM/source_usage.json`; event lama dibackfill otomatis dan dideduplikasi berdasarkan job + format
 - short menjalani auto-repair hook/ending pada shortlist yang lebih luas sebelum seleksi final; hanya kandidat FYP minimal 78 yang diekspor dan preflight YouTube menahan output lama di bawah ambang tersebut
 - variasi motion dipilih deterministik dari isi cerita (bukan nomor urut export) agar rangkaian upload tidak terlihat seperti template massal yang identik
 - audit monetisasi v2 hanya meloloskan upload Private bila alur hook–pesan inti–payoff utuh dan edit kamera/emphasis/audio benar-benar mengikuti transcript; hasil audit bukan jaminan diterima YPP
@@ -138,12 +140,6 @@ Untuk membuat satu Long Story sinematik 5–10 menit (bukan Short), pilih target
 .\.venv\Scripts\python.exe clipper.py "URL" --clip-mode highlight_5m --compilation-target 600 --min 30 --max 90 --visual-mode auto_fyp --ai-enabled
 ```
 
-Untuk membuat video Long Animate dari naskah:
-
-```powershell
-.\.venv\Scripts\python.exe clipper.py --clip-mode long_animate --script-file ".\naskah.txt" --output outputs --ai-enabled --ai-base-url http://localhost:11434/v1 --ai-model llama3.2-id:latest
-```
-
 If CPU feels too slow, use a smaller model:
 
 ```powershell
@@ -155,8 +151,3 @@ If CPU feels too slow, use a smaller model:
 - This service is local-first. Add auth, rate limiting, and quotas before public deployment.
 - Do not commit `outputs/`, `.env`, or `jobs.json`.
 - Process only videos you have rights or permission to use.
-- Mode `original_rebuild` memakai sumber hanya sebagai bahan riset transkrip dan tidak pernah menjadikan transkrip mentah sebagai naskah output. Brief riset disampel merata sepanjang timeline serta dibatasi oleh `ORIGINAL_REBUILD_RESEARCH_MAX_CHARS=7000` agar instruksi tidak terpotong pada context window model lokal. Pipeline menerima JSON standar, alias field Indonesia/nested JSON, mencoba plain text, lalu memperbaiki draft hampir-valid secara terarah. Naskah diperiksa panjang, anti-verbatim, kekhususan topik, jumlah beat, dan pengulangan; bila AI tetap hanya menghasilkan tulisan generik, render dihentikan alih-alih menerbitkan fallback kosong. Semua jalur menolak rentetan lebih dari `ORIGINAL_REBUILD_MAX_VERBATIM_WORDS` kata sumber. Media download, audio ekstraksi, dan transkrip penuh dibersihkan sebelum `long_animate` membuat media baru; sidecar tetap mewajibkan review fakta, hak provider, disclosure AI, upload Private, dan YouTube Checks.
-- `AUTO_REBUILD_HIGH_RISK_CC_SOURCES=true` membedakan heuristik pra-download dari claim nyata: job Clip Pendek/Long Story dengan metadata CC tetapi sinyal broadcaster/reupload otomatis dicoba ulang sebagai Original Rebuild 9:16 tanpa audio atau piksel sumber. Durasi rebuild otomatis mengikuti batas Short dari request awal (25-180 detik); Original Rebuild manual tetap memakai aspect/durasi Scene Cinema yang dikonfigurasi. Filter HD dan durasi sumber tidak dianggap bukti hak atau hasil Content ID.
-- `AUTO_REBUILD_CLAIMED_CLIPS=true` membuat satu job Original Rebuild 9:16 pengganti hanya untuk klip yang benar-benar mendapat claim pada YouTube Studio Checks. Sibling dari source job yang sama tidak dibatalkan dan diperiksa sendiri-sendiri. Hasil rebuild tetap tidak auto-upload agar manusia dapat memeriksa fakta, aset provider, dan packaging terlebih dahulu.
-- Original Rebuild dari UI berjalan sebagai `automatic_topic_rebuild`: AI menentukan sudut editorial baru tanpa form tambahan, media sumber dibersihkan sebelum render, dan auto-upload dimatikan sampai review manusia. API/CLI manual lama tetap menerima perspektif manusia serta referensi bukti hak sumber/provider. Renderer menyimpan `asset_license_ledger` per kelas aset dan `channel_authenticity_contract`; preflight membandingkan shingle narasi dengan maksimal 20 upload terakhir dan menolak kemiripan di atas `YOUTUBE_GENERATED_CONTENT_MAX_SIMILARITY` (default 0,58). Musik dibuat prosedural tanpa rekaman pihak ketiga—bukan diklaim sebagai Audio Library—sehingga Checks tetap wajib. Semua upload otomatis dipaksa Private-first meskipun request meminta public.
-- Scene Cinema memakai `LONG_ANIMATE_DEFAULT_VISUAL_STYLE=cinematic_realistic` bila naskah tidak meminta gaya lain: tampilan dokumenter sinematik yang realistis, bukan karakter kartun generik. Prompt setiap shot mengunci subjek-aksi-objek-lokasi dari narasi, memilih komposisi/motion berdasarkan aksi (air, berjalan, membaca, terbang, reveal, atau payoff), menolak pose tangan/kerumunan buatan AI yang tidak diminta pengguna, dan memperlakukan sapaan seperti “saya mengajak kalian” sebagai narasi abstrak—bukan izin membuat orang mengangkat tangan. Adegan anak mandi/berenang selalu diberi pakaian sopan yang menutup tubuh dan framing wide/medium tanpa ketelanjangan, pakaian transparan, sensualisasi, voyeuristic angle, atau close-up tubuh. Profile `LONG_ANIMATE_TTS_PROFILE=islamic_indonesian` hanya mengubah teks khusus suara: `Allah SWT`, `Muhamad/Muhammad SAW`, serta simbol honorifik dibaca lengkap; subtitle dan naskah sumber tetap asli.

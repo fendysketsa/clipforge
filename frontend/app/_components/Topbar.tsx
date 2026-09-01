@@ -19,7 +19,7 @@ export function Topbar({ isRefreshing = false, onRefresh, activePage = "workspac
             <span>Fendy</span>
             <span>Clipper</span>
           </h1>
-          <p className="tagline">Video panjang, jadi konten singkat.</p>
+          <p className="tagline">Tempel link. Pilih format. Siap review.</p>
         </div>
       </div>
 

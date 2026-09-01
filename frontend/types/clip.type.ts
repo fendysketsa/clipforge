@@ -2,7 +2,7 @@ export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancell
 export type YouTubeVisibility = "private" | "unlisted" | "public";
 export type CropMode = "center" | "person" | "streamer";
 export type VideoQuality = "standard" | "high" | "max";
-export type ClipMode = "short" | "highlight_5m" | "long_animate" | "original_rebuild";
+export type ClipMode = "short" | "highlight_5m";
 export type VisualMode = "auto_fyp" | "cinematic" | "speaker_split" | "animated_3d" | "retro_tv";
 export type BackgroundMode = "auto_clean" | "keep" | "mosque";
 export type CamCorner = "auto" | "br" | "bl" | "tr" | "tl";
@@ -138,10 +138,6 @@ export type ClipJob = {
 export type CreateClipJobInput = {
   url?: string;
   source_file?: string;
-  script_text?: string;
-  creator_perspective?: string;
-  source_rights_evidence?: string;
-  provider_rights_evidence?: string;
   top?: number;
   min_duration: number;
   max_duration: number;
@@ -168,8 +164,6 @@ export type CreateClipJobInput = {
   required_hashtags?: string[];
   require_creative_commons?: boolean;
   confirm_source_rights?: boolean;
-  confirm_long_animate_rights?: boolean;
-  automatic_topic_rebuild?: boolean;
   auto_upload_youtube?: boolean;
   allow_reprocess_source?: boolean;
   ai_enabled?: boolean;
@@ -193,6 +187,8 @@ export type SourceHistoryCheck = {
   valid_youtube_url: boolean;
   found: boolean;
   archived: boolean;
+  last_processed_at?: string | null;
+  usage_count?: number;
   has_short_clips: boolean;
   has_highlight_5m: boolean;
   attempted_modes: ClipMode[];
@@ -215,8 +211,19 @@ export type SourceUsageLogEntry = {
 
 export type SourceUsageLogResponse = {
   items: SourceUsageLogEntry[];
+  folders: SourceUsageFolder[];
   total: number;
   unique_sources: number;
+};
+
+export type SourceUsageFolder = {
+  key: string;
+  year: number;
+  month: number;
+  total: number;
+  unique_sources: number;
+  short_count: number;
+  long_count: number;
 };
 
 export type YouTubeConfig = {

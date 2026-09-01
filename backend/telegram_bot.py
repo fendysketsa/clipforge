@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -46,6 +46,7 @@ ALLOWED_CAPTION_POSITIONS = {"upper", "center", "bottom"}
 ALLOWED_CAPTION_FONT_SIZES = {8, 9, 10, 12, 14, 18, 20, 24}
 ALLOWED_TOP = {None, 3, 5, 8, 10, 12}
 ALLOWED_DURATION_PRESETS = {
+    (30, 90),
     (25, 35),
     (25, 45),
     (25, 60),
@@ -59,7 +60,7 @@ ALLOWED_DURATION_PRESETS = {
     (90, 180),
     (120, 180),
 }
-SETTINGS_SCHEMA_VERSION = 9
+SETTINGS_SCHEMA_VERSION = 10
 
 
 def env_float(name: str, default: float) -> float:
@@ -143,7 +144,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "top": None,
     "min_duration": 25,
     "max_duration": 180,
-    "video_quality": "high",
+    "video_quality": "standard",
     "crop_mode": "person",
     "burn_subtitles": True,
     "ai_enabled": True,
@@ -375,8 +376,8 @@ def normalize_settings(value: object) -> dict[str, Any]:
     top = value.get("top")
     settings["top"] = top if top in ALLOWED_TOP else None
 
-    # Telegram CTA creates short clips only. Compilation stays a separate mode.
-    settings["clip_mode"] = "short"
+    clip_mode = value.get("clip_mode")
+    settings["clip_mode"] = clip_mode if clip_mode in ALLOWED_CLIP_MODES else "short"
 
     duration = (value.get("min_duration"), value.get("max_duration"))
     if duration in ALLOWED_DURATION_PRESETS:
@@ -414,6 +415,7 @@ def default_state() -> dict[str, Any]:
         "update_offset": 0,
         "waiting_for_url": False,
         "pending_url": "",
+        "pending_source_seen": None,
         "active_job_id": None,
         "settings_schema_version": SETTINGS_SCHEMA_VERSION,
         "settings": DEFAULT_SETTINGS.copy(),
@@ -434,6 +436,10 @@ def normalize_state(value: object) -> dict[str, Any]:
     state["waiting_for_url"] = bool(value.get("waiting_for_url", False))
     if isinstance(value.get("pending_url"), str):
         state["pending_url"] = value["pending_url"]
+    pending_source_seen = value.get("pending_source_seen")
+    state["pending_source_seen"] = (
+        pending_source_seen if isinstance(pending_source_seen, bool) else None
+    )
     if isinstance(value.get("active_job_id"), str):
         state["active_job_id"] = value["active_job_id"]
     state["settings"] = normalize_settings(value.get("settings"))
@@ -500,15 +506,22 @@ def save_state(state: dict[str, Any], path: Path = STATE_PATH) -> None:
     temp_path.replace(path)
 
 
-def build_job_payload(url: str, settings: dict[str, Any]) -> dict[str, Any]:
+def build_job_payload(
+    url: str,
+    settings: dict[str, Any],
+    *,
+    confirm_source_rights: bool = False,
+    allow_reprocess_source: bool = False,
+) -> dict[str, Any]:
     clean = normalize_settings(settings)
+    is_long_story = clean["clip_mode"] == "highlight_5m"
     return {
         "url": url.strip(),
         "top": clean["top"],
-        "clip_mode": "short",
+        "clip_mode": clean["clip_mode"],
         "compilation_target_seconds": TELEGRAM_COMPILATION_MAX_SECONDS,
-        "min_duration": clean["min_duration"],
-        "max_duration": clean["max_duration"],
+        "min_duration": 30 if is_long_story else clean["min_duration"],
+        "max_duration": 90 if is_long_story else clean["max_duration"],
         "video_quality": clean["video_quality"],
         "visual_mode": "auto_fyp",
         "background_mode": "keep",
@@ -516,6 +529,8 @@ def build_job_payload(url: str, settings: dict[str, Any]) -> dict[str, Any]:
         "remove_running_text": False,
         "crop_mode": clean["crop_mode"],
         "require_creative_commons": True,
+        "confirm_source_rights": confirm_source_rights,
+        "allow_reprocess_source": allow_reprocess_source,
         "ai_enabled": clean["ai_enabled"],
         "ai_base_url": clean["ai_base_url"],
         "ai_model": clean["ai_model"],
@@ -898,16 +913,35 @@ class BackendClient:
             raise ServiceError("Data job tidak valid")
         return result
 
-    def create_job(self, url: str, settings: dict[str, Any]) -> dict[str, Any]:
+    def create_job(
+        self,
+        url: str,
+        settings: dict[str, Any],
+        *,
+        confirm_source_rights: bool = False,
+        allow_reprocess_source: bool = False,
+    ) -> dict[str, Any]:
         result = _json_request(
             f"{self.base_url}/api/jobs",
             method="POST",
-            payload=build_job_payload(url, settings),
+            payload=build_job_payload(
+                url,
+                settings,
+                confirm_source_rights=confirm_source_rights,
+                allow_reprocess_source=allow_reprocess_source,
+            ),
             timeout=90,
         )
         if not isinstance(result, dict):
             raise ServiceError("Backend tidak mengembalikan job")
         return result
+
+    def source_history(self, url: str) -> dict[str, Any]:
+        result = _json_request(
+            f"{self.base_url}/api/source-history?url={quote(url.strip(), safe='')}",
+            timeout=20,
+        )
+        return result if isinstance(result, dict) else {}
 
     def search_viral_cc_sources(self, exclude_urls: list[str] | None = None) -> list[dict[str, Any]]:
         result = _json_request(
@@ -1134,16 +1168,25 @@ def keyboard(rows: list[list[dict[str, str]]]) -> dict[str, Any]:
     return {"inline_keyboard": rows}
 
 
+def clip_mode_label(value: object) -> str:
+    return "Long Story 5–10 menit" if value == "highlight_5m" else "Clip Pendek"
+
+
+def clip_mode_summary(value: object) -> str:
+    if value == "highlight_5m":
+        return "16:9 · satu cerita kronologis · target 5 menit tanpa filler"
+    return "9:16 · beberapa momen terbaik · durasi adaptif 25–180 detik"
+
+
 def main_menu_keyboard() -> dict[str, Any]:
     return keyboard(
         [
-            [button("🎬 Buat Clip Pendek", "menu:new")],
-            [button("🔥 Cari Viral CC", "viral:refresh")],
-            [button("📂 Clip Belum Upload YouTube", "menu:unuploaded")],
-            [button("📊 Status", "menu:status"), button("📚 Riwayat", "menu:history")],
-            [button("🔋 Baterai Device", "menu:battery")],
-            [button("⬆️ Status Upload YouTube", "menu:youtube"), button("🧪 Debug", "menu:debug")],
-            [button("⚙️ Pengaturan", "menu:settings"), button("❓ Bantuan", "menu:help")],
+            [button("➕ Tempel Link YouTube", "menu:new")],
+            [button("⚡ Buat Short", "menu:new:short"), button("🎬 Buat Long Story", "menu:new:highlight_5m")],
+            [button("📊 Proses Aktif", "menu:status"), button("🗂 Hasil & Riwayat", "menu:history")],
+            [button("📂 Belum Upload", "menu:unuploaded"), button("⬆️ YouTube", "menu:youtube")],
+            [button("🔥 Cari Viral CC", "viral:refresh"), button("⚙️ Pengaturan", "menu:settings")],
+            [button("❓ Panduan", "menu:help"), button("🧪 Diagnostik", "menu:debug")],
         ]
     )
 
@@ -1154,27 +1197,35 @@ def settings_summary(settings: dict[str, Any]) -> str:
     quality = {"standard": "Standar", "high": "Jernih", "max": "Maksimal"}[clean["video_quality"]]
     crop = {"center": "Center", "person": "Follow Person", "streamer": "Streamer"}[clean["crop_mode"]]
     position = {"upper": "Atas", "center": "Tengah", "bottom": "Bawah"}[clean["caption_position"]]
-    return (
-        "Output: Clip vertikal pendek tanpa kompilasi tambahan\n"
-        "Gaya: hook + animasi/SFX + payoff + penutup loop\n"
-        f"Target clip: {top}\n"
-        f"Durasi: {clean['min_duration']}–{clean['max_duration']} detik\n"
-        f"Kualitas: {quality}\n"
-        f"Mode crop: {crop}\n"
-        f"Subtitle: {'Aktif' if clean['burn_subtitles'] else 'Nonaktif'}\n"
-        f"AI: {'Aktif' if clean['ai_enabled'] else 'Nonaktif'}"
-        f" · {clean['ai_model']} @ {clean['ai_base_url']}\n"
-        f"Caption: {position}, {clean['caption_font_size']}px"
-    )
+    is_long_story = clean["clip_mode"] == "highlight_5m"
+    lines = [
+        f"Format: {clip_mode_label(clean['clip_mode'])}",
+        f"Output: {clip_mode_summary(clean['clip_mode'])}",
+        "Target video: 1 Long Story" if is_long_story else f"Target clip: {top}",
+        "Bagian cerita: 30–90 detik" if is_long_story else f"Durasi: {clean['min_duration']}–{clean['max_duration']} detik",
+        f"Kualitas: {quality}",
+        f"Mode crop: {crop}",
+        f"Subtitle: {'Aktif' if clean['burn_subtitles'] else 'Nonaktif'}",
+        f"AI: {'Aktif' if clean['ai_enabled'] else 'Nonaktif'} · {clean['ai_model']} @ {clean['ai_base_url']}",
+        f"Caption: {position}, {clean['caption_font_size']}px",
+    ]
+    return "\n".join(lines)
 
 
 def settings_keyboard(settings: dict[str, Any], *, has_pending_url: bool = False) -> dict[str, Any]:
     clean = normalize_settings(settings)
     top = "auto" if clean["top"] is None else clean["top"]
+    is_long_story = clean["clip_mode"] == "highlight_5m"
     rows = [
-        [button("Output · Shorts Adaptif 25–180 Detik", "settings:output")],
-        [button(f"Jumlah Clip · {top}", "settings:top")],
-        [button(f"Durasi · {clean['min_duration']}–{clean['max_duration']}d", "settings:duration")],
+        [button(f"Format · {clip_mode_label(clean['clip_mode'])}", "settings:mode")],
+        [button("💡 Cara kerja format ini", "settings:output")],
+    ]
+    if not is_long_story:
+        rows.extend([
+            [button(f"Jumlah Clip · {top}", "settings:top")],
+            [button(f"Durasi · {clean['min_duration']}–{clean['max_duration']}d", "settings:duration")],
+        ])
+    rows.extend([
         [button(f"Kualitas · {clean['video_quality']}", "settings:quality")],
         [button(f"Crop · {clean['crop_mode']}", "settings:crop")],
         [
@@ -1182,18 +1233,37 @@ def settings_keyboard(settings: dict[str, Any], *, has_pending_url: bool = False
             button(f"AI · {'ON' if clean['ai_enabled'] else 'OFF'}", "set:ai:toggle"),
         ],
         [button("Tampilan Caption", "settings:caption")],
-    ]
+    ])
     if has_pending_url:
         rows.append([button("✅ Kembali ke Konfirmasi", "pending:review")])
     rows.append([button("⬅️ Menu Utama", "menu:home")])
     return keyboard(rows)
 
 
-def confirmation_keyboard() -> dict[str, Any]:
+def confirmation_keyboard(
+    settings: dict[str, Any],
+    *,
+    source_previously_processed: bool = False,
+) -> dict[str, Any]:
+    clean = normalize_settings(settings)
+    is_long_story = clean["clip_mode"] == "highlight_5m"
     return keyboard(
         [
-            [button("🚀 Buat Clip Pendek", "job:confirm")],
-            [button("⚙️ Ubah Pengaturan", "menu:settings"), button("❌ Batal", "pending:cancel")],
+            [
+                button("✅ Short 9:16" if not is_long_story else "Short 9:16", "pending:mode:short"),
+                button("✅ Long Story 16:9" if is_long_story else "Long Story 16:9", "pending:mode:highlight_5m"),
+            ],
+            [
+                button(
+                    (
+                        f"♻️ Saya sudah cek · Proses Ulang {clip_mode_label(clean['clip_mode'])}"
+                        if source_previously_processed
+                        else f"🚀 Saya punya izin · Proses {clip_mode_label(clean['clip_mode'])}"
+                    ),
+                    "job:confirm",
+                )
+            ],
+            [button("⚙️ Detail", "menu:settings"), button("❌ Batal", "pending:cancel")],
         ]
     )
 
@@ -1367,17 +1437,37 @@ class FendyClipperTelegramBot:
         self.state["viral_video_seen_urls"] = normalized[-5000:]
 
     def show_home(self, chat_id: int, first_name: str = "") -> None:
-        greeting = f"Halo {first_name}, " if first_name else "Halo, "
+        greeting = f"Halo {first_name}!" if first_name else "Halo!"
         self.send_message(
             chat_id,
-            greeting
-            + "Fendy Clipper siap digunakan.\n\n"
-            "Kirim link YouTube langsung ke chat ini, atau gunakan tombol di bawah.",
+            f"{greeting} 👋\n\n"
+            "Fendy Clipper siap membuat dua jenis konten:\n"
+            "⚡ Clip Pendek · vertikal 9:16\n"
+            "🎬 Long Story · landscape 16:9\n\n"
+            "Cara tercepat: cukup copas link YouTube ke chat ini. Setelah link terbaca, "
+            "pilih format lalu tekan satu tombol proses.",
             main_menu_keyboard(),
         )
 
+    def prompt_for_url(self, chat_id: int, clip_mode: str | None = None) -> None:
+        if clip_mode in ALLOWED_CLIP_MODES:
+            self.state["settings"]["clip_mode"] = clip_mode
+            self.state["settings"] = normalize_settings(self.state["settings"])
+        selected_mode = self.state["settings"]["clip_mode"]
+        self.state["waiting_for_url"] = True
+        self.state["pending_url"] = ""
+        self.state["pending_source_seen"] = None
+        self.persist()
+        self.send_message(
+            chat_id,
+            f"🔗 Kirim atau copas link YouTube.\n\n"
+            f"Format awal: {clip_mode_label(selected_mode)}\n"
+            "Anda masih dapat mengganti format setelah link terbaca.",
+            keyboard([[button("❌ Batal", "pending:cancel")]]),
+        )
+
     def show_settings(self, chat_id: int, message_id: int | None = None) -> None:
-        text = "Pengaturan clipping saat ini\n\n" + settings_summary(self.state["settings"])
+        text = "⚙️ Pengaturan produksi\n\n" + settings_summary(self.state["settings"])
         markup = settings_keyboard(
             self.state["settings"],
             has_pending_url=is_supported_video_url(str(self.state.get("pending_url", ""))),
@@ -1387,34 +1477,49 @@ class FendyClipperTelegramBot:
         else:
             self.send_message(chat_id, text, markup)
 
-    def show_pending(self, chat_id: int) -> None:
+    def show_pending(self, chat_id: int, message_id: int | None = None) -> None:
         url = self.state.get("pending_url", "")
-        self.send_message(
-            chat_id,
-            "Link siap diproses\n\n"
-            f"{url}\n\n"
-            + settings_summary(self.state["settings"])
-            + "\n\nSekali proses menghasilkan clip vertikal adaptif 25–180 detik; Codex hanya memakai durasi panjang jika alur dan payoff-nya utuh.",
-            confirmation_keyboard(),
+        settings = normalize_settings(self.state["settings"])
+        source_seen = self.state.get("pending_source_seen") is True
+        history_checked = isinstance(self.state.get("pending_source_seen"), bool)
+        history_note = (
+            "⚠️ Sumber ini pernah diproses. Lanjutkan hanya jika Anda memang ingin membuat versi baru."
+            if source_seen
+            else "✅ Sumber belum ditemukan di riwayat proses bot."
+            if history_checked
+            else "ℹ️ Riwayat sumber belum dapat diperiksa; backend akan memvalidasi lagi saat proses dimulai."
         )
+        text = (
+            "✅ LINK SIAP DIPROSES\n\n"
+            f"🔗 {url}\n\n"
+            f"🎯 Format terpilih: {clip_mode_label(settings['clip_mode'])}\n"
+            f"📐 {clip_mode_summary(settings['clip_mode'])}\n"
+            f"✨ Kualitas: {settings['video_quality']} · Subtitle: {'aktif' if settings['burn_subtitles'] else 'nonaktif'}\n\n"
+            f"{history_note}\n\n"
+            "Tekan format lain jika ingin mengganti. Tombol proses sekaligus mengonfirmasi "
+            "bahwa Anda memiliki rekaman atau izin komersial yang dapat dibuktikan. "
+            "Hasil tetap harus direview sebelum dipublikasikan."
+        )
+        markup = confirmation_keyboard(settings, source_previously_processed=source_seen)
+        if message_id:
+            self.edit_message(chat_id, message_id, text, markup)
+        else:
+            self.send_message(chat_id, text, markup)
 
     def show_help(self, chat_id: int) -> None:
         self.send_message(
             chat_id,
-            "Cara menggunakan Fendy Clipper\n\n"
-            "1. Kirim link YouTube ke bot.\n"
-            "2. Periksa pengaturan yang ditampilkan.\n"
-            "3. Tekan Buat Clip Pendek.\n"
-            "4. Bot membuat clip adaptif 25–180 detik dengan hook, perkembangan isi, payoff, dan penutup loop.\n"
-            "5. Bot akan mengirim seluruh hasil saat selesai.\n"
-            "6. Tekan Upload ke YouTube pada video pilihan atau Upload 2 Terbaik.\n\n"
-            "Hasil belum upload: /hasil menampilkan folder, file, skor FYP, dan hanya clip "
-            "yang belum pernah mencapai status upload YouTube completed.\n\n"
-            "YouTube: /youtube untuk panel uploader, /loginsekali untuk simpan session Playwright sekali, "
-            "/nocdp untuk upload tanpa CDP, /cookies untuk ambil cookies CDP opsional, /cdp untuk recovery CDP.\n\n"
-            "Baterai: /battery untuk melihat sisa daya device. Alert otomatis dikirim saat baterai melewati ambang rendah.\n\n"
-            "Perintah: /clip, /getvideosviral, /status, /battery, /settings, /history, /hasil, /youtube, /cdp, "
-            "/loginsekali, /cookies, /nocdp, /profilelogin, /syncsession, /capturesession, /hapusgagal, /debug, /ping, /cancel, /menu",
+            "💡 CARA TERCEPAT\n\n"
+            "1. Copas link YouTube langsung ke chat.\n"
+            "2. Pilih ⚡ Short atau 🎬 Long Story.\n"
+            "3. Tekan ‘Saya punya izin · Proses’.\n"
+            "4. Pantau progres dari satu kartu status.\n"
+            "5. Review hasil, lalu pilih file yang akan diupload.\n\n"
+            "Short: 9:16, 25–180 detik, beberapa momen dengan hook dan payoff utuh.\n"
+            "Long Story: 16:9, target 5 menit, alur kronologis tanpa filler.\n\n"
+            "Catatan: metadata Creative Commons dan audit membantu mengurangi risiko, tetapi bukan "
+            "jaminan bebas Content ID atau diterima monetisasi YouTube/YPP.\n\n"
+            "Perintah utama: /clip, /status, /settings, /history, /hasil, /youtube, /cancel, /menu",
             main_menu_keyboard(),
         )
 
@@ -1519,23 +1624,31 @@ class FendyClipperTelegramBot:
             "failed": "Gagal",
             "cancelled": "Dibatalkan",
         }.get(status, status)
-        title = str(job.get("source_title") or job.get("request", {}).get("url") or "Video")[:500]
+        request = job.get("request") if isinstance(job.get("request"), dict) else {}
+        mode = request.get("clip_mode")
+        title = str(job.get("source_title") or request.get("url") or "Video")[:500]
+        progress = job.get("progress_percent")
+        progress_text = (
+            f"{max(0, min(100, int(progress)))}%"
+            if isinstance(progress, (int, float)) and not isinstance(progress, bool)
+            else "-"
+        )
         lines = [
-            f"Status: {status_label}",
+            f"🎬 {clip_mode_label(mode)}",
+            f"Status: {status_label} · {progress_text}",
+            f"Tahap: {progress_stage(job) if status in ACTIVE_STATUSES else str(job.get('progress_detail') or status_label)}",
             f"Sumber: {title}",
-            f"Job: {str(job.get('id', ''))[:10]}",
-            "Output: clip pendek adaptif 25–180 detik tanpa kompilasi tambahan",
-            f"Durasi proses: {format_duration(elapsed_for_job(job))}",
+            f"Waktu: {format_duration(elapsed_for_job(job))} · Job {str(job.get('id', ''))[:10]}",
+            f"Output: {clip_mode_summary(mode)}",
         ]
-        if status in ACTIVE_STATUSES:
-            lines.insert(2, f"Tahap: {progress_stage(job)}")
         if status == "completed":
             clips = job.get("clips", [])
             compilation_count = sum(1 for clip in clips if is_compilation_result(clip))
-            if compilation_count:
-                lines.append(f"Hasil: {len(clips) - compilation_count} clip pendek + {compilation_count} kompilasi")
-            else:
-                lines.append(f"Hasil: {len(clips)} clip pendek")
+            lines.append(
+                f"Hasil: {compilation_count} Long Story"
+                if mode == "highlight_5m"
+                else f"Hasil: {len(clips) - compilation_count} Clip Pendek"
+            )
         if status in {"failed", "cancelled"} and job.get("error"):
             lines.append(f"Keterangan: {str(job['error'])[:2000]}")
         return "\n".join(lines)
@@ -1547,8 +1660,14 @@ class FendyClipperTelegramBot:
         if status in ACTIVE_STATUSES:
             rows.append([button("🔄 Perbarui", f"refresh:{job_id}"), button("⏹ Batalkan", f"cancelask:{job_id}")])
         elif status == "completed" and job.get("clips"):
+            request = job.get("request") if isinstance(job.get("request"), dict) else {}
+            upload_label = (
+                "⬆️ Upload Long Story ke YouTube"
+                if request.get("clip_mode") == "highlight_5m"
+                else "⬆️ Upload 2 Short Terbaik"
+            )
             rows.append([button("📤 Kirim Semua Hasil", f"deliver:{job_id}")])
-            rows.append([button("⬆️ Upload 2 Terbaik ke YouTube", f"ytall:{job_id}")])
+            rows.append([button(upload_label, f"ytall:{job_id}")])
             rows.append([button("📂 Lihat Semua yang Belum Upload", "menu:unuploaded")])
         if status in {"queued", "failed", "cancelled"}:
             rows.append([button("🗑 Hapus Job", f"deleteask:{job_id}")])
@@ -1616,7 +1735,11 @@ class FendyClipperTelegramBot:
             title = str(title).replace("\n", " ")[:60]
             raw_status = str(job.get("status") or "")
             status = labels.get(raw_status, raw_status)
-            lines.append(f"\n{index}. {status} · {len(job.get('clips', []))} clip\n{title}")
+            request = job.get("request") if isinstance(job.get("request"), dict) else {}
+            lines.append(
+                f"\n{index}. {status} · {clip_mode_label(request.get('clip_mode'))} "
+                f"· {len(job.get('clips', []))} hasil\n{title}"
+            )
             job_id = str(job.get("id") or "")
             if raw_status in {"queued", "failed", "cancelled"}:
                 rows.append(
@@ -2385,8 +2508,14 @@ class FendyClipperTelegramBot:
                 main_menu_keyboard(),
             )
             return
-        self.state["pending_url"] = url
+        normalized_url = canonical_youtube_url(url) or url
+        self.state["pending_url"] = normalized_url
         self.state["waiting_for_url"] = False
+        try:
+            history = self.backend.source_history(normalized_url)
+            self.state["pending_source_seen"] = bool(history.get("found"))
+        except ServiceError:
+            self.state["pending_source_seen"] = None
         self.persist()
         self.show_pending(chat_id)
 
@@ -2404,7 +2533,12 @@ class FendyClipperTelegramBot:
                     self.job_keyboard(active),
                 )
                 return
-            job = self.backend.create_job(url, self.state["settings"])
+            job = self.backend.create_job(
+                url,
+                self.state["settings"],
+                confirm_source_rights=True,
+                allow_reprocess_source=bool(self.state.get("pending_source_seen")),
+            )
         except ServiceError as exc:
             self.send_message(chat_id, f"Gagal memulai clipping: {exc}", main_menu_keyboard())
             return
@@ -2412,6 +2546,7 @@ class FendyClipperTelegramBot:
         job_id = str(job["id"])
         self.state["active_job_id"] = job_id
         self.state["pending_url"] = ""
+        self.state["pending_source_seen"] = None
         self.state["waiting_for_url"] = False
         self.state["jobs"][job_id] = {
             "chat_id": chat_id,
@@ -2420,17 +2555,19 @@ class FendyClipperTelegramBot:
             "stage_alerts": ["queued"],
         }
         self.persist()
+        selected_mode = normalize_settings(self.state["settings"])["clip_mode"]
         status_message = self.send_message(
             chat_id,
-            "Proses dimulai: bot membuat clip vertikal adaptif 25–180 detik tanpa render kompilasi tambahan. "
-            "Codex mempertahankan beat yang menambah konteks, bukti, atau payoff dan membuang filler.",
+            f"🚀 Proses {clip_mode_label(selected_mode)} dimulai.\n\n"
+            f"{clip_mode_summary(selected_mode).capitalize()}. "
+            "Bot akan memperbarui kartu status ini dan mengirim hasil ketika seluruh audit selesai.",
             self.job_keyboard(job),
         )
         self.state["jobs"][job_id]["status_message_id"] = status_message.get("message_id")
         self.persist()
 
     def clip_metadata_text(self, clip: dict[str, Any], index: int, total: int) -> str:
-        result_label = "Kompilasi 16:9 Maks. 5 Menit" if is_compilation_result(clip) else "Clip Pendek"
+        result_label = "Long Story 16:9" if is_compilation_result(clip) else "Clip Pendek"
         parts = [f"Detail {result_label}", f"Judul:\n{clip_title(clip, index)}"]
         score = clip.get("fyp_score")
         label = str(clip.get("fyp_label") or "").strip()
@@ -2570,7 +2707,7 @@ class FendyClipperTelegramBot:
                 + (f"Channel: {uploader}\n" if uploader else "")
                 + f"Clip pendek: {short_count}\n"
                 + (
-                    f"Resume cerita landscape 16:9 durasi 5–10 menit: {compilation_count}\n"
+                    f"Long Story landscape 16:9: {compilation_count}\n"
                     if compilation_count
                     else ""
                 )
@@ -2591,7 +2728,7 @@ class FendyClipperTelegramBot:
             path = output_path_from_url(clip_url)
             title = clip_title(clip, index)
             if is_compilation_result(clip):
-                result_label = "Kompilasi 16:9 Maks. 5 Menit"
+                result_label = "Long Story 16:9"
             else:
                 short_position += 1
                 result_label = f"Clip Pendek {short_position}/{short_count}"
@@ -2640,7 +2777,14 @@ class FendyClipperTelegramBot:
             f"Semua hasil job {job_id[:10]} sudah dikirim.",
             keyboard(
                 [
-                    [button("⬆️ Upload 2 Terbaik ke YouTube", f"ytall:{job_id}")],
+                    [
+                        button(
+                            "⬆️ Upload Long Story ke YouTube"
+                            if compilation_count
+                            else "⬆️ Upload 2 Short Terbaik",
+                            f"ytall:{job_id}",
+                        )
+                    ],
                     [button("🎬 Clipping Baru", "menu:new")],
                     [button("📚 Riwayat", "menu:history"), button("🏠 Menu", "menu:home")],
                 ]
@@ -2857,9 +3001,7 @@ class FendyClipperTelegramBot:
         if command in {"/start", "/menu"}:
             self.show_home(chat_id, first_name)
         elif command == "/clip":
-            self.state["waiting_for_url"] = True
-            self.persist()
-            self.send_message(chat_id, "Kirim link YouTube yang ingin diproses.", keyboard([[button("❌ Batal", "pending:cancel")]]))
+            self.prompt_for_url(chat_id)
         elif command == "/settings":
             self.show_settings(chat_id)
         elif command == "/status":
@@ -3025,9 +3167,11 @@ class FendyClipperTelegramBot:
             else:
                 return False
         elif name == "mode" and value in ALLOWED_CLIP_MODES:
-            settings["clip_mode"] = "short"
+            settings["clip_mode"] = value
             settings["top"] = None
-            settings["min_duration"], settings["max_duration"] = 25, 180
+            settings["min_duration"], settings["max_duration"] = (
+                (30, 90) if value == "highlight_5m" else (25, 180)
+            )
         elif name == "duration" and len(parts) == 4:
             if not value.isdigit() or not parts[3].isdigit():
                 return False
@@ -3082,9 +3226,9 @@ class FendyClipperTelegramBot:
         if data == "menu:home":
             self.show_home(chat_id, str(callback.get("from", {}).get("first_name") or ""))
         elif data == "menu:new":
-            self.state["waiting_for_url"] = True
-            self.persist()
-            self.send_message(chat_id, "Kirim link YouTube yang ingin diproses.", keyboard([[button("❌ Batal", "pending:cancel")]]))
+            self.prompt_for_url(chat_id)
+        elif data.startswith("menu:new:"):
+            self.prompt_for_url(chat_id, data.rsplit(":", 1)[1])
         elif data == "menu:settings":
             self.show_settings(chat_id, message_id if isinstance(message_id, int) else None)
         elif data == "menu:status":
@@ -3116,10 +3260,7 @@ class FendyClipperTelegramBot:
                 if isinstance(seen_urls, list) and normalized_url not in seen_urls:
                     seen_urls.append(normalized_url)
                     self.state["viral_video_seen_urls"] = seen_urls[-500:]
-                self.state["pending_url"] = normalized_url
-                self.state["waiting_for_url"] = False
-                self.persist()
-                self.show_pending(chat_id)
+                self.receive_url(chat_id, normalized_url)
             else:
                 self.send_message(chat_id, "Pilihan video sudah tidak tersedia. Tekan Cari Lagi.", keyboard([[button("🔄 Cari Lagi", "viral:refresh")], [button("🏠 Menu", "menu:home")]]))
         elif data.startswith("unuploaded:"):
@@ -3133,17 +3274,26 @@ class FendyClipperTelegramBot:
         elif data == "pending:cancel":
             self.state["waiting_for_url"] = False
             self.state["pending_url"] = ""
+            self.state["pending_source_seen"] = None
             self.persist()
             self.send_message(chat_id, "Input link dibatalkan.", main_menu_keyboard())
         elif data == "pending:review":
             if is_supported_video_url(str(self.state.get("pending_url", ""))):
-                self.show_pending(chat_id)
+                self.show_pending(chat_id, message_id if isinstance(message_id, int) else None)
             else:
                 self.send_message(chat_id, "Link belum tersedia. Kirim link YouTube terlebih dahulu.", main_menu_keyboard())
+        elif data.startswith("pending:mode:"):
+            requested_mode = data.rsplit(":", 1)[1]
+            if requested_mode in ALLOWED_CLIP_MODES:
+                self.apply_setting_callback(f"set:mode:{requested_mode}")
+                self.show_pending(chat_id, message_id if isinstance(message_id, int) else None)
+            else:
+                self.send_message(chat_id, "Format video tidak dikenali.", main_menu_keyboard())
         elif data == "job:confirm":
+            selected_mode = self.state["settings"]["clip_mode"]
             self.send_message(
                 chat_id,
-                "Perintah diterima. Backend menyiapkan clip adaptif sampai 3 menit...",
+                f"✅ Izin sumber dikonfirmasi. Menyiapkan {clip_mode_label(selected_mode)}...",
             )
             self.start_job(chat_id)
         elif data == "settings:top":
@@ -3159,23 +3309,35 @@ class FendyClipperTelegramBot:
             )
         elif data == "settings:mode":
             show_panel(
-                "Output Telegram dibuat otomatis tanpa kompilasi tambahan.",
+                "Pilih format output\n\n"
+                "⚡ Short: vertikal 9:16, beberapa momen terbaik.\n"
+                "🎬 Long Story: landscape 16:9, satu alur 5–10 menit tanpa filler.",
                 keyboard(
                     [
-                        [button("✅ Shorts Adaptif s.d. 3 Menit", "set:mode:short")],
+                        [button("⚡ Clip Pendek 9:16", "set:mode:short")],
+                        [button("🎬 Long Story 16:9", "set:mode:highlight_5m")],
                         [button("⬅️ Kembali", "menu:settings")],
                     ]
                 ),
             )
         elif data == "settings:output":
+            selected_mode = self.state["settings"]["clip_mode"]
             show_panel(
-                "Output otomatis\n\n"
-                "• Beberapa clip vertikal adaptif 25–180 detik\n"
-                "• Durasi panjang hanya dipilih jika tiap beat menambah informasi\n"
-                "• Hook kuat pada setiap clip\n"
-                "• Animasi, reaction, dan sound effect kontekstual\n"
-                "• Payoff lalu callback hook agar loop menyambung\n"
-                "• Kompilasi dipisahkan supaya proses lebih cepat",
+                f"{clip_mode_label(selected_mode)}\n\n"
+                + (
+                    "• Landscape 16:9\n"
+                    "• Target 5 menit, maksimal 10 menit\n"
+                    "• Teaser singkat lalu cerita kronologis\n"
+                    "• Konteks, perkembangan, penjelasan, dan payoff\n"
+                    "• Tidak menambah filler untuk mengejar durasi"
+                    if selected_mode == "highlight_5m"
+                    else
+                    "• Vertikal 9:16\n"
+                    "• Beberapa clip adaptif 25–180 detik\n"
+                    "• Hook, konteks, perkembangan, dan payoff utuh\n"
+                    "• Caption dan edit mengikuti isi ucapan\n"
+                    "• Hanya kandidat yang lolos quality gate diekspor"
+                ),
                 keyboard([[button("⬅️ Kembali", "menu:settings")]]),
             )
         elif data == "settings:duration":
@@ -3417,14 +3579,14 @@ class FendyClipperTelegramBot:
                     "setMyCommands",
                     {
                         "commands": [
-                            {"command": "clip", "description": "Mulai clipping dari link YouTube"},
+                            {"command": "clip", "description": "Tempel link untuk Short atau Long Story"},
                             {
                                 "command": "getvideosviral",
                                 "description": f"Cari {VIRAL_CC_VIDEO_COUNT} video viral CC dakwah/podcast",
                             },
                             {"command": "status", "description": "Lihat proses yang sedang berjalan"},
                             {"command": "battery", "description": "Cek sisa baterai device"},
-                            {"command": "settings", "description": "Atur hasil clipping"},
+                            {"command": "settings", "description": "Pilih format dan kualitas output"},
                             {"command": "history", "description": "Lihat riwayat dan kirim ulang hasil"},
                             {
                                 "command": "hasil",
@@ -3442,7 +3604,7 @@ class FendyClipperTelegramBot:
                             {"command": "debug", "description": "Diagnosis koneksi bot dan backend"},
                             {"command": "ping", "description": "Cek bot aktif"},
                             {"command": "cancel", "description": "Batalkan proses aktif"},
-                            {"command": "menu", "description": "Buka menu utama"},
+                            {"command": "menu", "description": "Buka menu ringkas Fendy Clipper"},
                         ]
                     },
                     timeout=15,

@@ -5,7 +5,9 @@ export const DEFAULT_MIN_DURATION = 25;
 export const DEFAULT_MAX_DURATION = 180;
 export const DEFAULT_MODEL = "Systran/faster-whisper-medium";
 export const DEFAULT_LANGUAGE = "id";
-export const DEFAULT_VIDEO_QUALITY: VideoQuality = "high";
+// Standard keeps 1080x1920 output while using the faster CPU encode path.
+// Users can still opt into Jernih or Maksimal for difficult source footage.
+export const DEFAULT_VIDEO_QUALITY: VideoQuality = "standard";
 export const DEFAULT_CLIP_MODE: ClipMode = "short";
 export const COMPILATION_MIN_SECONDS = 300;
 export const COMPILATION_MAX_SECONDS = 600;

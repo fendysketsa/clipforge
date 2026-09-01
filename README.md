@@ -19,8 +19,6 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Apply clean context-aware editing by default: a truthful opening hook, sparse transcript-synced camera cuts, two brief edge cues, and a thin progress line.
 - Reframe a single speaker like a restrained virtual multi-camera edit, cutting between face-safe medium and close-up angles on meaningful speech beats.
 - Record a monetization-readiness audit beside each render, require substantive editorial signals before YouTube upload, preserve verified CC BY attribution, and disclose realistic backdrop replacement.
-- Build an **Original Rebuild** from a rights-cleared source: transcribe it as untrusted research input, require an AI-authored Indonesian editorial angle, reject scripts that copy more than the configured contiguous-word limit, delete downloaded working media/audio/transcript artifacts before Scene Cinema rendering, never pass a caller-owned local source to the renderer, and record hashes plus a no-source-media audit. This is an originality and provenance guard—not a Content ID bypass or a guarantee of YPP approval.
-- Original Rebuild now requires a human-authored perspective plus source/provider license references. Every generated render records an asset-license ledger for research source, script, visuals, voice, and music. Before upload, a dynamic channel audit compares the narrative with up to 20 recent completed uploads and blocks near-duplicates at `YOUTUBE_GENERATED_CONTENT_MAX_SIMILARITY` (default `0.58`). Automated uploads are always forced Private-first; AI disclosure, Content ID Checks, factual review, attribution, and channel-wide YPP review still apply.
 - Use one **Auto FYP Viral** visual system for Shorts and long-form: cinematic clean detail is the base, while 3D depth, archival-TV treatment, reframe, and speaker split are selected from the story instead of exposed as separate presets.
 - Derive visual variation from the clip hook/POV/transcript so batches stay coherent without becoming near-identical mass-produced templates.
 - Keep the original background by default; optional background cleaning remains available for text-heavy sources.
@@ -42,8 +40,8 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Place one value-led Subscribe invitation after the payoff: Shorts pair it with the contextual discussion prompt in a shorter 1.85-second window, suppress it for clips up to 40 seconds or earned loops, and long-form shows it once in the final chapter. The reason to subscribe follows the topic and never offers rewards or fake urgency.
 - Produce adaptive 25–180 second Shorts: use the shortest complete promise–payoff cut, reserve longer windows for multi-beat stories with sustained information, and never add filler merely to reach three minutes.
 - Build a separate 5–10 minute **Long Story** with a sentence-complete 10–22 second teaser, then restore source chronology across context, development, explanation, and payoff. The teaser is removed from its original position, and the renderer never adds filler merely to hit the selected duration.
-- Produce **Long Animate** directly from an original script: Scene Cinema gives every complete narration sentence its own prompt-faithful 3D scene contract (visible action, animation direction, camera, duration, transition, and continuity lock), while retaining the same character, clothing, props, location, time, and art style across related scenes. Local Ollama builds the storyboard and a local Apache-2.0 Z-Image-Turbo Q3 service creates the scene keyframes; FFmpeg then adds scene-specific camera motion and transitions, Indonesian narration, scene-timed subtitles, procedural original music, thumbnail, and YouTube chapters before joining everything into one 16:9 video.
-- Telegram's primary CTA requests short clips only for a faster turnaround.
+- Keep the production surface focused on two source-video formats only: **Clip Pendek** and **Long Story 5–10 Menit**. Failed or claimed clips never switch into a generative mode automatically.
+- Telegram mirrors the two-format web flow: paste one YouTube link, choose **Clip Pendek** or **Long Story**, confirm source rights, and start from one concise review card.
 - Search 70+ Creative Commons themes, including Islamic insight, mystery, myth/fact, history, and relevant horror. The current-viral niche defaults to the last seven days and rewards recent 20–120 minute conversations that can support genuinely different viewer questions; other themes keep their broader discovery windows.
 - Package same-source Shorts as distinct editorial angles with concrete, truthful tension/outcome titles, while rejecting near-duplicate talking points. Freshness, face crops, captions, and titles are editorial signals only—not proof of reuse rights or monetization eligibility.
 - Permanently skip YouTube source URLs that have already completed clipping.
@@ -124,12 +122,20 @@ backend/outputs -> /app/outputs
 backend/data -> /app/data
 ```
 
+Successful source audits keep a compact duplicate-detection index and are also
+mirrored into `backend/data/source_usage/YYYY/MM/source_usage.json`. Existing
+history is migrated with `scripts/migrate-source-usage-folders.py`; rerunning
+the migrator is safe because entries are deduplicated by job ID and clip mode.
+
 ## Telegram Bot
 
-The private bot provides clickable menus for clipping settings, live status,
-cancellation, history, and resending completed jobs. A YouTube link is confirmed
-before processing. When a job completes, the bot sends every clip followed by
-its thumbnail, full title, social caption, and thumbnail prompt.
+The private bot uses the same Quick Start concept as the web dashboard: paste a
+YouTube link directly into chat, choose **Clip Pendek 9:16** or **Long Story
+16:9**, confirm provable commercial source rights, and start from one concise
+review card. It checks source history before processing and clearly labels an
+intentional reprocess. Live status, cancellation, history, delivery, and YouTube
+upload actions remain available after the primary flow. When a job completes,
+the bot sends every result followed by its supporting metadata.
 
 Required configuration:
 
@@ -158,7 +164,7 @@ jobs can continue being monitored after a bot container restart. Telegram's
 hosted Bot API accepts uploads up to 50 MB; oversized clips remain available in
 the web dashboard or through `TELEGRAM_PUBLIC_BASE_URL` when configured.
 
-Gunakan `/battery` atau tombol **Baterai Device** untuk melihat sisa daya.
+Gunakan `/battery` untuk melihat sisa daya.
 Pada Linux, bot juga mengirim satu alert saat baterai yang tidak sedang diisi
 melewati ambang 20%, 10%, dan 5%. Docker Compose memasang `/sys` host secara
 read-only agar container dapat membaca status baterai; ambang dan interval cek
@@ -258,10 +264,8 @@ license metadata, not proof that the uploader owns every element in a recording.
 Viral search rejects live/upcoming, age-restricted, and non-public sources. A
 manually selected CC source that looks like a fan/support/reupload/archive account,
 TV, film, music, or broadcaster is treated as a risk signal rather than a Content ID
-result: with `AUTO_REBUILD_HIGH_RISK_CC_SOURCES=true`, Clip Pendek/Long Story retries
-as a source-free Original Rebuild instead of reusing its audio or pixels. This automatic replacement is rendered as a
-9:16 Short and keeps the original request's Short duration cap (25-180 seconds); a manually requested Original Rebuild
-still uses the configured Scene Cinema aspect and duration. CC BY attribution is appended to the YouTube
+result. A rejected Clip Pendek/Long Story remains rejected and must be replaced with a
+source whose commercial audio and visual rights can be demonstrated. CC BY attribution is appended to the YouTube
 description, while rendered MP4 files do not inherit source container metadata or
 chapters. New renders also carry a monetization-readiness audit; upload is blocked
 when source-rights confirmation or minimum substantive-edit evidence is absent.
@@ -272,9 +276,8 @@ During upload, Playwright waits for YouTube Studio Checks and applies a zero-act
 claim policy: every detected Content ID/copyright claim cancels that clip's workflow before
 the final Save/Publish action, including claims currently described as having no
 impact and claims on Shorts under one minute. Sibling clips from the same source
-remain queued and receive their own Studio Checks. With `AUTO_REBUILD_CLAIMED_CLIPS=true`,
-the exact claimed clip also queues one source-free 9:16 Original Rebuild replacement;
-it is not auto-uploaded until human review. A claimed upload is no longer saved
+remain queued and receive their own Studio Checks. No replacement or alternate
+production mode is queued automatically. A claimed upload is no longer saved
 as a Private fallback. Private auto uploads do not hold the whole queue while
 Studio still reports Checks as pending: the workflow checks for an explicit claim,
 continues as Private, then checks once more immediately before Save. Public and
@@ -384,40 +387,6 @@ Create one non-Short cinematic Long Story targeting 5–10 minutes (300–600 se
 ```powershell
 .\.venv\Scripts\python.exe clipper.py "URL" --clip-mode highlight_5m --compilation-target 600 --min 30 --max 90 --visual-mode auto_fyp --ai-enabled
 ```
-
-Create a Long Animate video from a UTF-8 script:
-
-```powershell
-.\.venv\Scripts\python.exe clipper.py --clip-mode long_animate --script-file ".\naskah.txt" --output outputs --ai-enabled --ai-base-url http://localhost:11434/v1 --ai-model llama3.2-id:latest
-```
-
-For prompt-faithful visuals without a paid API, install and start the pinned local
-Z-Image-Turbo Q3 runtime (about 5.8 GB):
-
-```bash
-./scripts/install-local-image-model.sh
-./scripts/start-local-image-model.sh
-```
-
-It exposes `http://127.0.0.1:7860/v1/images/generations` through
-stable-diffusion.cpp. Z-Image-Turbo uses the Apache 2.0 license and needs no paid image API. The
-memory-safe default `1024x576`, 8-step render is designed for a 4 GB RTX 3050 and is normalized with
-a light detail pass to 1920x1080 by Long Animate. The runtime combines flash attention, CPU offload,
-automatic VRAM budgeting, streamed layers, and memory-mapped weights. A transient 502 waits for the
-model supervisor, retries up to four times, and lowers resolution before failing. `LONG_ANIMATE_IMAGE_STRICT=true` stops the job when the local
-service is unavailable instead of silently substituting procedural art. Use
-`builtin://story-art` only when a geometric placeholder is explicitly desired.
-The storyboard parser understands Markdown `Scene`/`Adegan` blocks, keeps shared
-character, location, and art bibles, and removes narration/on-screen-text labels
-from image prompts. Plain prose is split sentence-by-sentence whenever it fits the
-scene cap; long scripts are grouped without dropping the ending. Scene direction
-blocks repeated stock gestures and only permits a raised hand, crowd, prayer pose,
-or similar action when the narration or a user-authored `VISUAL` explicitly asks
-for it. Child water scenes enforce age-appropriate fully covering clothes and
-wholesome framing. Long Animate conservatively
-enables YouTube's altered/synthetic disclosure, starts uploads as Private, and
-requires confirmation that the script and configured media providers permit
-commercial YouTube use.
 
 Outputs are written under `backend/outputs/`.
 

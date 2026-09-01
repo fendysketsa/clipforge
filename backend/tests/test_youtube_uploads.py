@@ -213,8 +213,7 @@ def test_claim_isolated_to_exact_clip_keeps_sibling_uploads_queued(monkeypatch, 
     assert youtube_source_claim_block("safe-source") is None
 
 
-def test_high_risk_cc_short_is_automatically_converted_to_source_free_rebuild(monkeypatch):
-    monkeypatch.setenv("AUTO_REBUILD_HIGH_RISK_CC_SOURCES", "true")
+def test_high_risk_cc_short_is_not_converted_to_another_mode():
     request = ClipJobRequest(
         url="https://youtu.be/risky-source",
         clip_mode="short",
@@ -231,19 +230,8 @@ def test_high_risk_cc_short_is_automatically_converted_to_source_free_rebuild(mo
         "sumber, pilih Original Rebuild."
     ]
 
-    assert source_risk_requires_automatic_rebuild(logs)
-    rebuilt = automatic_source_risk_rebuild_request(request)
-
-    assert rebuilt is not None
-    assert rebuilt.clip_mode == "original_rebuild"
-    assert rebuilt.automatic_topic_rebuild is True
-    assert rebuilt.top == 1
-    assert rebuilt.auto_upload_youtube is False
-    assert rebuilt.allow_reprocess_source is True
-
-    command = api.build_clipper_command(rebuilt)
-    assert command[command.index("--rebuild-output-aspect") + 1] == "9:16"
-    assert float(command[command.index("--rebuild-target-duration") + 1]) == rebuilt.max_duration
+    assert not source_risk_requires_automatic_rebuild(logs)
+    assert automatic_source_risk_rebuild_request(request) is None
 
 
 def test_unrelated_clip_failure_is_not_automatically_rebuilt():
@@ -261,26 +249,10 @@ def test_unrelated_clip_failure_is_not_automatically_rebuilt():
     ) is None
 
 
-def test_actual_claim_queues_only_one_source_free_portrait_rebuild(monkeypatch, tmp_path):
-    import api
-
-    source = ClipJob(
-        id="source-job",
-        status="completed",
-        request=ClipJobRequest(
-            url="https://youtu.be/claimed-source",
-            clip_mode="short",
-            max_duration=45,
-            ai_enabled=True,
-            ai_base_url="http://localhost:11434/v1",
-            ai_model="test-model",
-        ),
-        created_at="2026-08-30T00:00:00+00:00",
-        updated_at="2026-08-30T00:05:00+00:00",
-    )
+def test_actual_claim_does_not_queue_a_rebuild():
     upload = YouTubeUploadJob(
         id="claimed-upload",
-        source_job_id=source.id,
+        source_job_id="source-job",
         clip_url="/outputs/source-job/clips/clip_02.mp4",
         clip_name="clip_02.mp4",
         status="failed",
@@ -288,35 +260,10 @@ def test_actual_claim_queues_only_one_source_free_portrait_rebuild(monkeypatch, 
         updated_at="2026-08-30T00:07:00+00:00",
         title="Claimed",
     )
-    started: list[str] = []
-
-    class FakeThread:
-        def __init__(self, *, target, args, daemon):
-            del target, daemon
-            self.args = args
-
-        def start(self):
-            started.append(self.args[0])
-
-    monkeypatch.setenv("AUTO_REBUILD_CLAIMED_CLIPS", "true")
-    monkeypatch.setattr(api, "JOBS_PATH", tmp_path / "jobs.json")
-    monkeypatch.setattr(api, "jobs", {source.id: source})
-    monkeypatch.setattr(api.threading, "Thread", FakeThread)
-
     replacement_id, message = queue_claimed_clip_rebuild(upload)
 
-    assert replacement_id is not None
-    assert "berhasil" in message
-    replacement = api.jobs[replacement_id]
-    assert replacement.request.clip_mode == "original_rebuild"
-    assert replacement.request.automatic_topic_rebuild is True
-    assert replacement.request.max_duration == 45
-    assert replacement.request.auto_upload_youtube is False
-    assert started == [replacement_id]
-
-    duplicate_id, _ = queue_claimed_clip_rebuild(upload)
-    assert duplicate_id == replacement_id
-    assert started == [replacement_id]
+    assert replacement_id is None
+    assert "sudah dihapus" in message
 
 
 def test_best_youtube_clip_urls_uses_candidate_scores():

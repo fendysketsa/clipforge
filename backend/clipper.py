@@ -1367,8 +1367,11 @@ VIDEO_QUALITY_PRESETS = {
     },
     "high": {
         "label": "high quality",
-        "crf": "16",
-        "preset": "medium",
+        # 1080x1920 Shorts spend most of their wall time in x264. CRF 18 with
+        # the fast preset keeps social-delivery detail without medium's large
+        # CPU-time penalty.
+        "crf": "18",
+        "preset": "fast",
         "profile": "high",
         "level": "4.2",
         "audio_bitrate": "192k",
@@ -4125,8 +4128,8 @@ def require_creative_commons_metadata(
             + "; ".join(rights_risks[:2])
             + ". Label Creative Commons pada YouTube tidak membuktikan uploader memiliki "
             "seluruh hak audio/visual. Mode Clip Pendek dan Long Story tidak boleh memakai sumber ini. "
-            "Untuk mengambil topiknya tanpa memakai audio/piksel sumber, pilih Original Rebuild lalu "
-            "isi perspektif kreator serta referensi izin tertulis."
+            "Gunakan rekaman milik sendiri atau sumber lain dengan izin komersial audio dan visual "
+            "yang dapat dibuktikan. Job tidak akan dialihkan ke mode lain."
         )
 
 
@@ -4608,7 +4611,13 @@ def transcribe(audio_path: Path, transcript_path: Path, model_name: str, languag
         if hub_authenticated
         else "[dim]Hugging Face: model publik + cache persisten (HF_TOKEN opsional).[/dim]"
     )
-    model = WhisperModel(model_name, device="cpu", compute_type="int8")
+    model = WhisperModel(
+        model_name,
+        device="cpu",
+        compute_type="int8",
+        cpu_threads=cpu_threads_per_job(),
+        num_workers=1,
+    )
     segments, info = model.transcribe(str(audio_path), **transcription_decode_options(language))
 
     rows: list[TranscriptSegment] = []
@@ -7427,6 +7436,19 @@ def env_enabled(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().casefold() in {"1", "true", "yes", "on"}
+
+
+def cpu_threads_per_job() -> int:
+    """Bound CPU-heavy stages so parallel browser-tab jobs stay responsive."""
+    detected = max(1, os.cpu_count() or 1)
+    sensible_default = max(2, min(8, detected // 3 or 1))
+    try:
+        configured = int(
+            os.environ.get("FENDY_CLIPPER_CPU_THREADS_PER_JOB", str(sensible_default))
+        )
+    except (TypeError, ValueError):
+        configured = sensible_default
+    return max(1, min(detected, configured))
 
 
 def env_audio_gain(name: str, default: float) -> float:
@@ -11705,6 +11727,10 @@ def export_clip(
         "-loglevel",
         "error",
         "-y",
+        "-filter_threads",
+        str(cpu_threads_per_job()),
+        "-filter_complex_threads",
+        str(cpu_threads_per_job()),
         "-ss",
         f"{visual_start:.3f}",
         "-t",
@@ -11757,6 +11783,8 @@ def export_clip(
                 str(quality["level"]),
                 "-preset",
                 str(quality["preset"]),
+                "-threads",
+                str(cpu_threads_per_job()),
                 "-tune",
                 "film",
                 "-x264-params",
@@ -12587,19 +12615,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--script-file",
         default="",
-        help="User-authored UTF-8 script used by Long Animate mode",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument("--top", type=int, default=5, help="Number of clips to export")
     parser.add_argument("--min", type=float, default=25, help="Minimum clip duration in seconds")
     parser.add_argument("--max", type=float, default=45, help="Maximum clip duration in seconds")
     parser.add_argument(
         "--clip-mode",
-        choices=["short", "highlight_5m", "long_animate", "original_rebuild"],
+        choices=["short", "highlight_5m"],
         default="short",
-        help=(
-            "Export Shorts, a source-video Long Story, a script-to-video Long Animate, "
-            "or an Original Rebuild that uses a transcript only as research input"
-        ),
+        help="Export vertical Shorts or a source-video Long Story 5-10 minutes",
     )
     parser.add_argument(
         "--compilation-target",
@@ -12707,38 +12732,38 @@ def parse_args() -> argparse.Namespace:
         "--rebuild-output-aspect",
         choices=["16:9", "9:16"],
         default="",
-        help="Internal output aspect override for an automatic Original Rebuild.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--rebuild-target-duration",
         type=float,
         default=None,
-        help="Internal target duration override for an automatic Original Rebuild.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--confirm-provider-rights",
         action="store_true",
-        help="Record confirmation that configured AI, image, voice, and music providers allow commercial use.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--creator-perspective",
         default="",
-        help="Human-authored perspective or analysis required by Original Rebuild.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--automatic-topic-rebuild",
         action="store_true",
-        help="Let AI derive a fresh editorial angle while keeping source audio/video out of the output.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--source-rights-evidence",
         default="",
-        help="Reference to source ownership, written permission, or license evidence.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--provider-rights-evidence",
         default="",
-        help="Reference to commercial-use terms or license evidence for configured providers.",
+        help=argparse.SUPPRESS,
     )
     return parser.parse_args()
 

@@ -83,6 +83,7 @@ import type {
 import { ControlPanel } from "./_components/ControlPanel";
 import { DeleteAllToast } from "./_components/DeleteAllToast";
 import { HistorySection } from "./_components/HistorySection";
+import { QuickStartCard } from "./_components/QuickStartCard";
 import { ResultsSection } from "./_components/ResultsSection";
 import { StatusPanel } from "./_components/StatusPanel";
 import { Topbar } from "./_components/Topbar";
@@ -93,20 +94,11 @@ const isProcessJob = (item: ClipJob | null) =>
 const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
 const CLEANUP_PROGRESS_POLL_MS = 250;
 const TAB_JOB_STORAGE_KEY = "fendy-clipper.activeJobId.v1";
-type StartJobOptions = {
-  mode?: ClipMode;
-  sourceUrl?: string;
-  allowReprocessSource?: boolean;
-};
-
 export default function HomePage() {
   const [url, setUrl] = useState("");
   const [sourceMode, setSourceMode] = useState<SourceMode>("url");
   const [uploadToken, setUploadToken] = useState("");
   const [uploadFileName, setUploadFileName] = useState("");
-  const [scriptText, setScriptText] = useState("");
-  const [providerRightsEvidence, setProviderRightsEvidence] = useState("");
-  const [confirmLongAnimateRights, setConfirmLongAnimateRights] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [minDuration, setMinDuration] = useState(DEFAULT_MIN_DURATION);
   const [maxDuration, setMaxDuration] = useState(DEFAULT_MAX_DURATION);
@@ -198,29 +190,31 @@ export default function HomePage() {
   }, [maxClips, targetClips]);
 
   const handleClipModeChange = useCallback((value: ClipMode) => {
-    setClipMode(value);
+    const activeMode: ClipMode = value === "highlight_5m" ? "highlight_5m" : "short";
+    setClipMode(activeMode);
     setTargetClips(0);
     setVisualMode("auto_fyp");
     setBackgroundMode("keep");
     setCaptionFontSize(8);
     setCaptionOutline(0.5);
-    if (value === "highlight_5m") {
+    if (activeMode === "highlight_5m") {
       setMinDuration(30);
       setMaxDuration(90);
       setCompilationTargetSeconds(COMPILATION_TARGET_SECONDS);
       setBackgroundMode("keep");
-    } else if (value === "long_animate" || value === "original_rebuild") {
-      setMinDuration(DEFAULT_MIN_DURATION);
-      setMaxDuration(DEFAULT_MAX_DURATION);
-      setCompilationTargetSeconds(COMPILATION_TARGET_SECONDS);
-      if (value === "long_animate") {
-        setSourceHistory(null);
-        setAllowReprocessSource(false);
-      }
     } else {
       setMinDuration(DEFAULT_MIN_DURATION);
       setMaxDuration(DEFAULT_MAX_DURATION);
     }
+  }, []);
+
+  const handleUrlChange = useCallback((value: string) => {
+    setSourceMode("url");
+    setUrl(value);
+    setSourceHistory(null);
+    setIsCheckingSourceHistory(Boolean(value.trim()));
+    setAllowReprocessSource(false);
+    setConfirmSourceRights(false);
   }, []);
 
   useEffect(() => {
@@ -309,21 +303,18 @@ export default function HomePage() {
 
     getJob(storedJobId)
       .then((restoredJob) => {
+        if (!(["short", "highlight_5m"] as ClipMode[]).includes(restoredJob.request.clip_mode)) {
+          window.sessionStorage.removeItem(TAB_JOB_STORAGE_KEY);
+          return;
+        }
         setActiveJob(restoredJob);
         setJob(restoredJob);
         setClipMode(restoredJob.request.clip_mode);
-        setProviderRightsEvidence(restoredJob.request.provider_rights_evidence || "");
         setCropMode(restoredJob.request.crop_mode);
-        if (restoredJob.request.clip_mode === "long_animate") {
-          setScriptText(restoredJob.request.script_text || "");
-          setConfirmLongAnimateRights(Boolean(restoredJob.request.confirm_long_animate_rights));
-        } else if (restoredJob.request.url) {
+        if (restoredJob.request.url) {
           setSourceMode("url");
           setUrl(restoredJob.request.url);
           setConfirmSourceRights(Boolean(restoredJob.request.confirm_source_rights));
-          if (restoredJob.request.clip_mode === "original_rebuild") {
-            setConfirmLongAnimateRights(Boolean(restoredJob.request.confirm_long_animate_rights));
-          }
         }
       })
       .catch(() => {
@@ -637,50 +628,30 @@ export default function HomePage() {
     }
   }, []);
 
-  const handleStartJob = useCallback(async (options: StartJobOptions = {}) => {
-    const requestedMode = options.mode ?? clipMode;
-    const requestedSourceMode: SourceMode = options.sourceUrl ? "url" : sourceMode;
-    const trimmedUrl = (options.sourceUrl ?? url).trim();
-    const isOriginalRebuild = requestedMode === "original_rebuild";
-    const isGeneratedVideo = requestedMode === "long_animate" || isOriginalRebuild;
+  const handleStartJob = useCallback(async () => {
+    const requestedMode: ClipMode = clipMode === "highlight_5m" ? "highlight_5m" : "short";
+    const requestedSourceMode = sourceMode;
+    const trimmedUrl = url.trim();
     const effectiveMaxDuration = requestedMode === "short" ? Math.min(DEFAULT_MAX_DURATION, maxDuration) : maxDuration;
     setError("");
-
-    if (options.mode) setClipMode(options.mode);
-    if (options.sourceUrl) {
-      setSourceMode("url");
-      setUrl(trimmedUrl);
-    }
 
     if (isActiveJob(activeJob)) {
       setError("Proses clipping masih berjalan. Tunggu selesai atau batalkan sebelum memulai proses baru.");
       return;
     }
-    if (requestedMode === "long_animate" && (scriptText.trim().length < 120 || scriptText.trim().split(/\s+/).length < 30)) {
-      setError("Naskah Long Animate minimal 120 karakter dan 30 kata agar dapat dibuat menjadi tiga scene bermakna.");
-      return;
-    }
-    if (requestedMode === "long_animate" && !confirmLongAnimateRights) {
-      setError("Konfirmasikan izin komersial provider AI, gambar, suara, dan musik sebelum memulai produksi.");
-      return;
-    }
-    if (requestedMode === "long_animate" && providerRightsEvidence.trim().split(/\s+/).length < 3) {
-      setError("Isi referensi bukti izin komersial provider AI, gambar, suara, dan musik.");
-      return;
-    }
-    if (requestedMode !== "long_animate" && requestedSourceMode === "url" && !trimmedUrl) {
+    if (requestedSourceMode === "url" && !trimmedUrl) {
       setError("Link YouTube tidak boleh kosong.");
       return;
     }
-    if (requestedMode !== "long_animate" && !isOriginalRebuild && requestedSourceMode === "url" && !confirmSourceRights) {
+    if (requestedSourceMode === "url" && !confirmSourceRights) {
       setError("Konfirmasikan bahwa Anda memiliki hak/izin komersial atas audio dan visual sumber. Label Creative Commons saja tidak cukup.");
       return;
     }
-    if (requestedMode !== "long_animate" && requestedSourceMode === "upload" && !uploadToken) {
+    if (requestedSourceMode === "upload" && !uploadToken) {
       setError("Unggah file video terlebih dahulu.");
       return;
     }
-    if (!isGeneratedVideo && effectiveMaxDuration <= minDuration) {
+    if (effectiveMaxDuration <= minDuration) {
       setError(
         requestedMode === "short"
           ? `Durasi minimum Short harus di bawah ${DEFAULT_MAX_DURATION} detik.`
@@ -694,12 +665,8 @@ export default function HomePage() {
     try {
       const nextJob = await toast.promise(
         createJob({
-          url: requestedMode !== "long_animate" && requestedSourceMode === "url" ? trimmedUrl : "",
-          source_file: requestedMode !== "long_animate" && requestedSourceMode === "upload" ? uploadToken : "",
-          script_text: requestedMode === "long_animate" ? scriptText.trim() : "",
-          creator_perspective: "",
-          source_rights_evidence: "",
-          provider_rights_evidence: requestedMode === "long_animate" ? providerRightsEvidence.trim() : "",
+          url: requestedSourceMode === "url" ? trimmedUrl : "",
+          source_file: requestedSourceMode === "upload" ? uploadToken : "",
           top: requestedMode === "short" && targetClips > 0 ? targetClips : undefined,
           min_duration: minDuration,
           max_duration: effectiveMaxDuration,
@@ -729,34 +696,18 @@ export default function HomePage() {
             .map((tag) => tag.trim())
             .filter(Boolean),
           require_creative_commons: requireCreativeCommons,
-          confirm_source_rights: !isOriginalRebuild && requestedSourceMode === "url" && confirmSourceRights,
-          confirm_long_animate_rights: requestedMode === "long_animate" && confirmLongAnimateRights,
-          automatic_topic_rebuild: isOriginalRebuild,
-          auto_upload_youtube: isOriginalRebuild ? false : autoUploadYoutube,
-          allow_reprocess_source: requestedSourceMode === "url" && (
-            isOriginalRebuild || (options.allowReprocessSource ?? allowReprocessSource)
-          ),
+          confirm_source_rights: requestedSourceMode === "url" && confirmSourceRights,
+          auto_upload_youtube: autoUploadYoutube,
+          allow_reprocess_source: requestedSourceMode === "url" && allowReprocessSource,
           ai_enabled: aiEnabled,
           ai_base_url: aiBaseUrl.trim(),
           ai_model: aiModel.trim(),
           ai_api_key: aiApiKey.trim(),
         }),
         {
-          loading: requestedMode === "long_animate"
-            ? "Mempersiapkan produksi Long Animate..."
-            : isOriginalRebuild
-              ? "Mempersiapkan Original Rebuild safe-first..."
-              : "Mempersiapkan proses pemotongan...",
-          success: requestedMode === "long_animate"
-            ? "Produksi Long Animate berhasil dimulai!"
-            : isOriginalRebuild
-              ? "Original Rebuild berhasil dimulai!"
-              : "Proses pemotongan berhasil dimulai!",
-          error: requestedMode === "long_animate"
-            ? "Gagal memulai Long Animate"
-            : isOriginalRebuild
-              ? "Gagal memulai Original Rebuild"
-              : "Gagal memulai proses pemotongan",
+          loading: "Mempersiapkan proses pemotongan...",
+          success: "Proses pemotongan berhasil dimulai!",
+          error: "Gagal memulai proses pemotongan",
         },
       );
 
@@ -795,10 +746,7 @@ export default function HomePage() {
     minDuration,
     requireCreativeCommons,
     requiredHashtags,
-    providerRightsEvidence,
     sourceMode,
-    scriptText,
-    confirmLongAnimateRights,
     targetClips,
     uploadToken,
     url,
@@ -1356,43 +1304,41 @@ export default function HomePage() {
     <main className="shell">
       <Topbar isRefreshing={isRefreshingData} onRefresh={handleSyncData} />
 
-      <WorkflowBar
-        hasSource={clipMode === "long_animate" ? scriptText.trim().length >= 120 && scriptText.trim().split(/\s+/).length >= 30 : sourceMode === "url" ? Boolean(url.trim()) : Boolean(uploadFileName)}
-        isProcessing={isBusy || isSubmitting}
-        hasResults={Boolean(job?.clips.length)}
-        job={isSubmitting ? null : activityJob}
+      <QuickStartCard
+        url={url}
         clipMode={clipMode}
-        sourceValue={clipMode === "long_animate" ? "Naskah Long Animate" : sourceMode === "url" ? url.trim() : uploadFileName}
+        videoDuration={videoDuration}
+        sourceHistory={sourceHistory}
+        isCheckingSourceHistory={isCheckingSourceHistory}
+        allowReprocessSource={allowReprocessSource}
+        confirmSourceRights={confirmSourceRights}
+        isBusy={isBusy}
+        isSubmitting={isSubmitting}
+        error={error}
+        onUrlChange={handleUrlChange}
+        onClipModeChange={handleClipModeChange}
+        onAllowReprocessSourceChange={setAllowReprocessSource}
+        onConfirmSourceRightsChange={setConfirmSourceRights}
+        onStart={() => { void handleStartJob(); }}
       />
 
-      <section className="workspace" id="workspace">
+      {url.trim() || uploadFileName || activityJob ? (
+        <WorkflowBar
+          hasSource={sourceMode === "url" ? Boolean(url.trim()) : Boolean(uploadFileName)}
+          isProcessing={isBusy || isSubmitting}
+          hasResults={Boolean(job?.clips.length)}
+          job={isSubmitting ? null : activityJob}
+          clipMode={clipMode}
+          sourceValue={sourceMode === "url" ? url.trim() : uploadFileName}
+        />
+      ) : null}
+
+      <section className="workspace studioGrid" id="workspace">
         <ControlPanel
           clipMode={clipMode}
-          onClipModeChange={handleClipModeChange}
           cropMode={cropMode}
-          error={error}
           isBusy={isBusy}
           isSubmitting={isSubmitting}
-          isAutoViralRunning={isAutoViralRunning}
-          isSearchingAutoContent={isSearchingAutoContent}
-          autoContentNiche={autoContentNiche}
-          autoContentSources={autoContentSources}
-          viralSearchFilters={viralSearchFilters}
-          selectedAutoContentUrls={selectedAutoContentUrls}
-          sourceMode={sourceMode}
-        scriptText={scriptText}
-        onScriptTextChange={setScriptText}
-        providerRightsEvidence={providerRightsEvidence}
-        onProviderRightsEvidenceChange={setProviderRightsEvidence}
-          confirmLongAnimateRights={confirmLongAnimateRights}
-          onConfirmLongAnimateRightsChange={setConfirmLongAnimateRights}
-          uploadFileName={uploadFileName}
-          uploadPreviewUrl={uploadPreviewUrl}
-          isUploading={isUploading}
-          camCorner={camCorner}
-          onCamCornerChange={setCamCorner}
-          onSourceModeChange={handleSourceModeChange}
-          onUploadFileChange={handleUploadFileChange}
           maxDuration={maxDuration}
           minDuration={minDuration}
           compilationTargetSeconds={compilationTargetSeconds}
@@ -1401,11 +1347,7 @@ export default function HomePage() {
           maxClips={maxClips}
           videoDuration={videoDuration}
           videoQuality={videoQuality}
-          visualMode={visualMode}
-          backgroundMode={backgroundMode}
           onVideoQualityChange={setVideoQuality}
-          onVisualModeChange={setVisualMode}
-          onBackgroundModeChange={setBackgroundMode}
           onTargetClipsChange={handleTargetClipsChange}
           burnSubtitles={burnSubtitles}
           captionFontSize={captionFontSize}
@@ -1418,23 +1360,7 @@ export default function HomePage() {
           onCaptionOutlineChange={setCaptionOutline}
           onCaptionOutlineColorChange={setCaptionOutlineColor}
           aiEnabled={aiEnabled}
-          aiBaseUrl={aiBaseUrl}
-          aiModel={aiModel}
-          aiApiKey={aiApiKey}
-          aiModels={aiModels}
-          isLoadingModels={isLoadingModels}
-          isDiscoveringLlms={isDiscoveringLlms}
-          localLlmProviders={localLlmProviders}
-          onLoadModels={handleLoadModels}
-          onDiscoverLocalLlms={handleDiscoverLocalLlms}
-          onSelectLocalProvider={handleSelectLocalProvider}
-          requiredHashtags={requiredHashtags}
-          requireCreativeCommons={requireCreativeCommons}
-          confirmSourceRights={confirmSourceRights}
           autoUploadYoutube={autoUploadYoutube}
-          onRequiredHashtagsChange={setRequiredHashtags}
-          onRequireCreativeCommonsChange={setRequireCreativeCommons}
-          onConfirmSourceRightsChange={setConfirmSourceRights}
           onAutoUploadYoutubeChange={setAutoUploadYoutube}
           onCropModeChange={setCropMode}
           onMaxDurationChange={setMaxDuration}
@@ -1444,58 +1370,11 @@ export default function HomePage() {
           onCaptionPositionChange={setCaptionPosition}
           onCaptionColorChange={setCaptionColor}
           onAiEnabledChange={handleAiEnabledChange}
-          onAiBaseUrlChange={handleAiBaseUrlChange}
-          onAiModelChange={setAiModel}
-          onAiApiKeyChange={setAiApiKey}
-          onStartAutoViral={handleStartAutoViral}
-          onSearchAutoContent={handleSearchAutoContent}
-          onViralSearchFiltersChange={(value) => {
-            setViralSearchFilters(value);
-            setAutoContentSources([]);
-            setSelectedAutoContentUrls([]);
-            setAutoContentMessage("");
-          }}
-          onAutoContentNicheChange={(value) => {
-            setAutoContentNiche(value);
-            if (value === "islamic_current_viral") {
-              setViralSearchFilters((current) => ({
-                ...current,
-                upload_date_filter: "this_week",
-              }));
-            }
-            setAutoContentSources([]);
-            setSelectedAutoContentUrls([]);
-            setAutoContentMessage("");
-          }}
-          onToggleAutoContentSource={handleToggleAutoContentSource}
-          onStartJob={() => { void handleStartJob(); }}
-          onUrlChange={(value) => {
-            setUrl(value);
-            setSourceHistory(null);
-            setIsCheckingSourceHistory(Boolean(value.trim()));
-            setAllowReprocessSource(false);
-            setConfirmSourceRights(false);
-          }}
-          sourceHistory={sourceHistory}
-          isCheckingSourceHistory={isCheckingSourceHistory}
-          allowReprocessSource={allowReprocessSource}
-          onAllowReprocessSourceChange={setAllowReprocessSource}
-          autoViralMessage={autoViralRun?.message || autoContentMessage}
-          url={url}
         />
         <StatusPanel
           job={activityJob}
           latestLogs={latestLogs}
           onCancelJob={handleCancelJob}
-          isStartingAutomaticRebuild={isSubmitting}
-          onStartAutomaticRebuild={() => {
-            const failedSourceUrl = activityJob?.request.url || url;
-            void handleStartJob({
-              mode: "original_rebuild",
-              sourceUrl: failedSourceUrl,
-              allowReprocessSource: true,
-            });
-          }}
         />
       </section>
 
@@ -1525,7 +1404,7 @@ export default function HomePage() {
         onToggleClipCorrect={handleToggleClipCorrect}
       />
       <HistorySection
-        jobs={jobs}
+        jobs={jobs.filter((item) => item.request.clip_mode === "short" || item.request.clip_mode === "highlight_5m")}
         selectedJobIds={selectedHistoryJobIds}
         onDeleteAll={handleDeleteAll}
         onDeleteFailed={handleDeleteFailed}

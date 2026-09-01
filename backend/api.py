@@ -57,6 +57,7 @@ SOURCE_USAGE_HISTORY_PATH = Path(
         BASE_DIR / "data" / "source_usage_history.json",
     )
 )
+SOURCE_USAGE_ARCHIVE_DIR_OVERRIDE = os.environ.get("SOURCE_USAGE_ARCHIVE_DIR", "").strip()
 YOUTUBE_PLAYWRIGHT_STATE = Path(os.environ.get("YOUTUBE_PLAYWRIGHT_STATE", BASE_DIR / "data" / "youtube_storage_state.json"))
 YOUTUBE_CHROMIUM_USER_DATA_DIR = os.environ.get("YOUTUBE_CHROMIUM_USER_DATA_DIR", "").strip()
 if not YOUTUBE_CHROMIUM_USER_DATA_DIR and os.environ.get("IN_DOCKER", "").strip().lower() in {"1", "true", "yes", "on"}:
@@ -85,6 +86,8 @@ CLIP_BUDGET_RATIO = 0.8
 YOUTUBE_SHORTS_MAX_SECONDS = 180
 SHORT_GROWTH_MIN_SECONDS = 25
 SHORT_GROWTH_MAX_SECONDS = 180
+ACTIVE_CLIP_MODES = frozenset({"short", "highlight_5m"})
+RETIRED_CLIP_MODES = frozenset({"long_animate", "original_rebuild"})
 SHORT_UPLOAD_MIN_FYP_SCORE = 78
 SHORT_GROWTH_TARGET_VIEWS = 20000
 LONG_FORM_GROWTH_TARGET_VIEWS = 5000
@@ -460,6 +463,8 @@ class SourceHistoryCheck(BaseModel):
     valid_youtube_url: bool = False
     found: bool = False
     archived: bool = False
+    last_processed_at: str | None = None
+    usage_count: int = 0
     has_short_clips: bool = False
     has_highlight_5m: bool = False
     attempted_modes: list[Literal["short", "highlight_5m", "original_rebuild"]] = Field(default_factory=list)
@@ -480,8 +485,19 @@ class SourceUsageLogEntry(BaseModel):
     auto_upload_youtube: bool = False
 
 
+class SourceUsageFolder(BaseModel):
+    key: str
+    year: int
+    month: int
+    total: int = 0
+    unique_sources: int = 0
+    short_count: int = 0
+    long_count: int = 0
+
+
 class SourceUsageLogResponse(BaseModel):
     items: list[SourceUsageLogEntry] = Field(default_factory=list)
+    folders: list[SourceUsageFolder] = Field(default_factory=list)
     total: int = 0
     unique_sources: int = 0
 
@@ -1395,6 +1411,95 @@ def load_source_usage_history() -> dict[str, dict[str, Any]]:
     }
 
 
+def source_usage_archive_root() -> Path:
+    if SOURCE_USAGE_ARCHIVE_DIR_OVERRIDE:
+        return Path(SOURCE_USAGE_ARCHIVE_DIR_OVERRIDE)
+    return SOURCE_USAGE_HISTORY_PATH.parent / "source_usage"
+
+
+def source_usage_partition(value: str | None) -> tuple[int, int]:
+    try:
+        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    except ValueError:
+        parsed = datetime.now(timezone.utc)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    try:
+        local_time = parsed.astimezone(ZoneInfo("Asia/Jakarta"))
+    except ZoneInfoNotFoundError:
+        local_time = parsed.astimezone(timezone(timedelta(hours=7)))
+    return local_time.year, local_time.month
+
+
+def source_usage_archive_path(value: str | None) -> Path:
+    year, month = source_usage_partition(value)
+    return source_usage_archive_root() / f"{year:04d}" / f"{month:02d}" / "source_usage.json"
+
+
+def write_source_usage_archive(events: list[dict[str, Any]]) -> None:
+    """Mirror successful source events into audit folders without replacing the fast index."""
+    grouped: dict[Path, list[dict[str, Any]]] = {}
+    for event in events:
+        if not isinstance(event, dict) or not str(event.get("job_id") or "").strip():
+            continue
+        if str(event.get("clip_mode") or "") not in {"short", "highlight_5m"}:
+            continue
+        grouped.setdefault(source_usage_archive_path(str(event.get("processed_at") or "")), []).append(dict(event))
+
+    for archive_path, additions in grouped.items():
+        current_items: list[dict[str, Any]] = []
+        try:
+            existing = json.loads(archive_path.read_text(encoding="utf-8"))
+            raw_items = existing.get("items", []) if isinstance(existing, dict) else existing
+            if isinstance(raw_items, list):
+                current_items = [item for item in raw_items if isinstance(item, dict)]
+        except (OSError, json.JSONDecodeError):
+            pass
+
+        events_by_key = {
+            (str(item.get("job_id") or ""), str(item.get("clip_mode") or "")): item
+            for item in current_items
+            if str(item.get("job_id") or "")
+        }
+        before = json.dumps(events_by_key, sort_keys=True, ensure_ascii=False)
+        for event in additions:
+            events_by_key[(str(event.get("job_id") or ""), str(event.get("clip_mode") or ""))] = event
+        after = json.dumps(events_by_key, sort_keys=True, ensure_ascii=False)
+        if before == after and archive_path.exists():
+            continue
+
+        items = sorted(
+            events_by_key.values(),
+            key=lambda item: str(item.get("processed_at") or ""),
+            reverse=True,
+        )
+        year, month = source_usage_partition(str(items[0].get("processed_at") or "") if items else "")
+        payload = {
+            "schema_version": 1,
+            "year": year,
+            "month": month,
+            "total": len(items),
+            "items": items,
+        }
+        try:
+            archive_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = archive_path.with_suffix(".json.tmp")
+            temp_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+            temp_path.replace(archive_path)
+        except OSError as exc:
+            print(f"Gagal menyimpan folder audit sumber {archive_path}: {exc}", flush=True)
+
+
+def backfill_source_usage_archives(history: dict[str, dict[str, Any]]) -> None:
+    events = [
+        dict(event)
+        for record in history.values()
+        for event in record.get("events", [])
+        if isinstance(event, dict)
+    ]
+    write_source_usage_archive(events)
+
+
 def save_jobs_unlocked() -> None:
     jobs_list = sorted(jobs.values(), key=lambda job: job.created_at, reverse=True)
     payload = [job.model_dump() for job in jobs_list]
@@ -2135,6 +2240,7 @@ def cleanup_job_files(job: "ClipJob") -> int:
 jobs: dict[str, ClipJob] = load_jobs()
 processed_source_history: set[str] = load_processed_source_history()
 source_usage_history: dict[str, dict[str, Any]] = load_source_usage_history()
+backfill_source_usage_archives(source_usage_history)
 processed_source_history.update(
     str(value)
     for job in jobs.values()
@@ -2157,7 +2263,8 @@ youtube_login_reconnect_cdp = False
 cancelled_job_ids: set[str] = set()
 preserve_job_files_on_cancel: set[str] = set()
 process_lock = threading.Lock()
-clip_job_slots = threading.BoundedSemaphore(max(1, env_int("FENDY_CLIPPER_MAX_CONCURRENT_JOBS", 3)))
+MAX_CONCURRENT_CLIP_JOBS = max(1, env_int("FENDY_CLIPPER_MAX_CONCURRENT_JOBS", 3))
+clip_job_slots = threading.BoundedSemaphore(MAX_CONCURRENT_CLIP_JOBS)
 youtube_worker_lock = threading.Lock()
 youtube_worker_running = False
 youtube_cleanup_lock = threading.Lock()
@@ -4637,7 +4744,7 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
             status_code=409,
             detail=(
                 "Klip ini sudah terdeteksi klaim Content ID/audio-visual pada pemeriksaan sebelumnya "
-                f"('{claimed_upload.clip_name}'). Gunakan versi Original Rebuild tanpa audio/piksel sumber."
+                f"('{claimed_upload.clip_name}'). Gunakan sumber lain yang hak komersialnya jelas."
             ),
         )
     requested_visibility = safe_youtube_visibility(request.visibility)
@@ -6911,10 +7018,9 @@ def run_youtube_upload(upload_id: str) -> None:
                     "Klaim diisolasi ke klip ini. Klip lain dari sumber yang sama tetap antre "
                     "dan wajib melewati pemeriksaan Content ID masing-masing."
                 )
-                replacement_id, replacement_message = queue_claimed_clip_rebuild(upload)
-                logs.append(replacement_message)
-                if replacement_id:
-                    logs.append(f"CLAIM_REBUILD_JOB:{replacement_id}")
+                logs.append(
+                    "Rebuild otomatis dinonaktifkan; klip ini tidak diubah menjadi mode lain."
+                )
             set_youtube_upload(
                 upload_id,
                 status="failed",
@@ -6968,6 +7074,67 @@ def start_youtube_worker_if_needed() -> None:
             return
         youtube_worker_running = True
     threading.Thread(target=youtube_upload_worker_loop, daemon=True).start()
+
+
+@app.on_event("startup")
+def resume_interrupted_clipping_jobs() -> None:
+    """Resume active product modes and retire interrupted legacy generator jobs."""
+    resumable_ids: list[str] = []
+    changed = False
+    with jobs_lock:
+        for job_id, job in sorted(jobs.items(), key=lambda item: item[1].created_at):
+            if job.status not in {"queued", "running"}:
+                continue
+            if job.request.clip_mode in RETIRED_CLIP_MODES:
+                jobs[job_id] = job.model_copy(
+                    update={
+                        "status": "failed",
+                        "finished_at": now_iso(),
+                        "duration_seconds": job.duration_seconds,
+                        "progress_stage": "complete",
+                        "progress_detail": "Mode lama dihentikan; gunakan Clip Pendek atau Long Story",
+                        "progress_step": 5,
+                        "progress_total_steps": 5,
+                        "updated_at": now_iso(),
+                        "error": (
+                            "Original Rebuild dan Long Animate sudah dinonaktifkan. "
+                            "Buat job baru sebagai Clip Pendek atau Long Story 5–10 Menit."
+                        ),
+                        "logs": [
+                            *job.logs,
+                            "Mode generatif lama dihentikan saat penyederhanaan pipeline.",
+                        ][-120:],
+                    }
+                )
+                changed = True
+                continue
+            resumable_ids.append(job_id)
+            if job.status == "running":
+                jobs[job_id] = job.model_copy(
+                    update={
+                        "status": "queued",
+                        "started_at": None,
+                        "finished_at": None,
+                        "duration_seconds": None,
+                        "progress_percent": 0,
+                        "progress_stage": "queued",
+                        "progress_detail": "Melanjutkan antrean setelah backend restart",
+                        "progress_step": 0,
+                        "progress_total_steps": 5,
+                        "updated_at": now_iso(),
+                        "error": None,
+                        "logs": [
+                            *job.logs,
+                            "Backend restart terdeteksi; job dimasukkan kembali ke antrean.",
+                        ][-120:],
+                    }
+                )
+                changed = True
+        if changed:
+            save_jobs_unlocked()
+
+    for job_id in resumable_ids:
+        threading.Thread(target=run_job, args=(job_id,), daemon=True).start()
 
 
 @app.on_event("startup")
@@ -7565,114 +7732,21 @@ def parse_clipper_progress(line: str) -> dict[str, int | str] | None:
 
 
 def source_risk_requires_automatic_rebuild(logs: list[str]) -> bool:
-    """Detect the explicit pre-download risk gate, not an actual Studio claim."""
-    combined = re.sub(r"\s+", " ", " ".join(logs[-120:])).casefold()
-    return bool(
-        "sumber ditolak sebelum download karena berisiko tinggi terkena content id" in combined
-        or (
-            "mode clip pendek dan long story tidak boleh memakai sumber ini" in combined
-            and "original rebuild" in combined
-        )
-    )
+    """Compatibility hook: risky sources now fail instead of changing product mode."""
+    return False
 
 
 def automatic_source_risk_rebuild_request(request: ClipJobRequest) -> ClipJobRequest | None:
-    """Convert a risky CC clip job into a source-free rebuild without auto-publish."""
-    if (
-        request.clip_mode not in {"short", "highlight_5m"}
-        or not request.url.strip()
-        or not request.ai_enabled
-        or not request.ai_base_url.strip()
-        or not request.ai_model.strip()
-        or not env_bool("AUTO_REBUILD_HIGH_RISK_CC_SOURCES", True)
-    ):
-        return None
-    return normalize_job_request(
-        request.model_copy(
-            update={
-                "clip_mode": "original_rebuild",
-                "automatic_topic_rebuild": True,
-                "top": 1,
-                "creator_perspective": "",
-                "source_rights_evidence": "",
-                "provider_rights_evidence": "",
-                "confirm_source_rights": False,
-                "confirm_long_animate_rights": False,
-                "auto_upload_youtube": False,
-                "allow_reprocess_source": True,
-            }
-        )
-    )
+    """Compatibility hook retained for old callers; automatic rebuild is retired."""
+    return None
 
 
 def queue_claimed_clip_rebuild(upload: YouTubeUploadJob) -> tuple[str | None, str]:
-    """Queue one source-free portrait replacement for an actually claimed clip."""
-    if not env_bool("AUTO_REBUILD_CLAIMED_CLIPS", True):
-        return None, "Rebuild otomatis untuk klip terkena klaim dinonaktifkan."
-    marker = f"CLAIM_REBUILD_SOURCE_UPLOAD:{upload.id}"
-    with jobs_lock:
-        source_job = jobs.get(upload.source_job_id)
-        existing = next(
-            (
-                job
-                for job in jobs.values()
-                if any(str(line).strip() == marker for line in job.logs)
-            ),
-            None,
-        )
-    if existing is not None:
-        return existing.id, "Job Original Rebuild pengganti sudah tersedia."
-    if source_job is None:
-        return None, "Job sumber klip tidak ditemukan; rebuild otomatis tidak dibuat."
-    source_request = source_job.request
-    if source_request.clip_mode not in {"short", "highlight_5m"}:
-        return None, "Klip bukan hasil Clip Pendek/Long Story; rebuild otomatis tidak dibuat."
-    if not source_request.url.strip():
-        return None, "Sumber URL tidak tersedia; rebuild otomatis tidak dibuat."
-    if (
-        not source_request.ai_enabled
-        or not source_request.ai_base_url.strip()
-        or not source_request.ai_model.strip()
-    ):
-        return None, "AI Original Rebuild belum terkonfigurasi; rebuild otomatis tidak dibuat."
-
-    replacement_request = source_request.model_copy(
-        update={
-            "clip_mode": "original_rebuild",
-            "automatic_topic_rebuild": True,
-            "top": 1,
-            "creator_perspective": "",
-            "source_rights_evidence": "",
-            "provider_rights_evidence": "",
-            "confirm_source_rights": False,
-            "confirm_long_animate_rights": False,
-            "auto_upload_youtube": False,
-            "allow_reprocess_source": True,
-            "source_file": "",
-            "script_text": "",
-            "ai_api_key": "",
-        }
+    """Compatibility hook retained for old callers; claimed clips are not rebuilt."""
+    return None, (
+        "Rebuild otomatis sudah dihapus. Klip yang terkena klaim tetap gagal dan harus "
+        "diganti dengan sumber berizin yang aman."
     )
-    replacement_id = uuid.uuid4().hex
-    now = now_iso()
-    replacement = ClipJob(
-        id=replacement_id,
-        status="queued",
-        request=replacement_request,
-        created_at=now,
-        updated_at=now,
-        progress_detail="Klip terkena klaim dialihkan ke Original Rebuild 9:16",
-        logs=[
-            marker,
-            f"CLAIM_REBUILD_SOURCE_CLIP:{upload.clip_url}",
-            "Klaim nyata di YouTube Studio hanya mengganti klip ini; sibling tetap diproses biasa.",
-        ],
-    )
-    with jobs_lock:
-        jobs[replacement_id] = replacement
-        save_jobs_unlocked()
-    threading.Thread(target=run_job, args=(replacement_id,), daemon=True).start()
-    return replacement_id, "Original Rebuild 9:16 pengganti berhasil dimasukkan ke antrean."
 
 
 def run_job(job_id: str) -> None:
@@ -7684,6 +7758,26 @@ def run_job(job_id: str) -> None:
             job_secrets.pop(job_id, None)
             return
         request = job.request
+
+    if request.clip_mode not in ACTIVE_CLIP_MODES:
+        set_job(
+            job_id,
+            status="failed",
+            finished_at=now_iso(),
+            progress_percent=100,
+            progress_stage="complete",
+            progress_detail="Mode lama sudah dinonaktifkan",
+            progress_step=5,
+            progress_total_steps=5,
+            clips=[],
+            candidates=[],
+            error=(
+                "Original Rebuild dan Long Animate sudah dihapus. "
+                "Gunakan Clip Pendek atau Long Story 5–10 Menit."
+            ),
+        )
+        job_secrets.pop(job_id, None)
+        return
 
     secret = job_secrets.get(job_id)
     if secret:
@@ -7711,7 +7805,9 @@ def run_job(job_id: str) -> None:
         job_id,
         progress_percent=0,
         progress_stage="queued",
-        progress_detail="Menunggu slot worker paralel yang tersedia",
+        progress_detail=(
+            f"Menunggu slot worker paralel (maksimal {MAX_CONCURRENT_CLIP_JOBS} job aktif)"
+        ),
         progress_step=0,
         progress_total_steps=5,
     )
@@ -7748,12 +7844,7 @@ def run_job(job_id: str) -> None:
         progress_total_steps=5,
         error=None,
     )
-    script_path: Path | None = None
-    if request.clip_mode == "long_animate":
-        output_root.mkdir(parents=True, exist_ok=True)
-        script_path = output_root / "input_script.txt"
-        script_path.write_text(request.script_text.strip() + "\n", encoding="utf-8")
-    command = build_clipper_command(request, output_root, script_path)
+    command = build_clipper_command(request, output_root, None)
 
     try:
         process = subprocess.Popen(
@@ -7784,7 +7875,6 @@ def run_job(job_id: str) -> None:
         job_processes[job_id] = process
 
     logs: list[str] = []
-    retry_as_rebuild: ClipJobRequest | None = None
     try:
         assert process.stdout is not None
         for line in process.stdout:
@@ -7852,57 +7942,27 @@ def run_job(job_id: str) -> None:
                 updates["source_url"] = preview_job.source_url
             if preview_job.source_uploader:
                 updates["source_uploader"] = preview_job.source_uploader
-            if request.clip_mode == "long_animate" and clips:
-                updates["source_title"] = clips[0].title or "Long Animate"
             set_job(job_id, **updates)
-            if request.clip_mode != "long_animate":
-                remember_processed_source(
-                    preview_job.source_url or request.url,
-                    clip_mode=request.clip_mode,
-                    job_id=job_id,
-                    source_title=preview_job.source_title,
-                    source_uploader=preview_job.source_uploader,
-                    clip_count=len(clips),
-                    output_names=[clip.name for clip in clips],
-                    processing_duration_seconds=elapsed_seconds(started_perf),
-                    compilation_target_seconds=(
-                        request.compilation_target_seconds
-                        if request.clip_mode == "highlight_5m"
-                        else None
-                    ),
-                    auto_upload_youtube=request.auto_upload_youtube,
-                    processed_at=str(updates["finished_at"]),
-                )
+            remember_processed_source(
+                preview_job.source_url or request.url,
+                clip_mode=request.clip_mode,
+                job_id=job_id,
+                source_title=preview_job.source_title,
+                source_uploader=preview_job.source_uploader,
+                clip_count=len(clips),
+                output_names=[clip.name for clip in clips],
+                processing_duration_seconds=elapsed_seconds(started_perf),
+                compilation_target_seconds=(
+                    request.compilation_target_seconds
+                    if request.clip_mode == "highlight_5m"
+                    else None
+                ),
+                auto_upload_youtube=request.auto_upload_youtube,
+                processed_at=str(updates["finished_at"]),
+            )
             if request.auto_upload_youtube:
                 auto_queue_youtube_uploads_for_job(job_id, logs)
         else:
-            if source_risk_requires_automatic_rebuild(logs):
-                retry_as_rebuild = automatic_source_risk_rebuild_request(request)
-            if retry_as_rebuild is not None:
-                _, cleanup_message = cleanup_failed_job_artifacts(output_root)
-                persisted_retry = retry_as_rebuild.model_copy(update={"ai_api_key": ""})
-                set_job(
-                    job_id,
-                    status="queued",
-                    request=persisted_retry,
-                    started_at=None,
-                    finished_at=None,
-                    duration_seconds=None,
-                    progress_percent=0,
-                    progress_stage="queued",
-                    progress_detail="Risiko hak sumber dialihkan otomatis ke Original Rebuild",
-                    progress_step=0,
-                    progress_total_steps=5,
-                    clips=[],
-                    candidates=[],
-                    logs=[
-                        *logs,
-                        "AUTO_SOURCE_RISK_REBUILD: sumber CC berisiko dialihkan ke media baru tanpa audio/piksel sumber.",
-                        cleanup_message,
-                    ][-120:],
-                    error=None,
-                )
-                return
             friendly_error = user_error_from_logs(logs)
             if code == 0:
                 failure_reason = friendly_error or (
@@ -7943,16 +8003,10 @@ def run_job(job_id: str) -> None:
     finally:
         with process_lock:
             job_processes.pop(job_id, None)
-        if retry_as_rebuild is None:
-            job_secrets.pop(job_id, None)
-        elif secret:
-            job_secrets[job_id] = secret
+        job_secrets.pop(job_id, None)
         cancelled_job_ids.discard(job_id)
         preserve_job_files_on_cancel.discard(job_id)
         clip_job_slots.release()
-
-        if retry_as_rebuild is not None:
-            threading.Thread(target=run_job, args=(job_id,), daemon=True).start()
 
         # An uploaded source is only needed during processing; remove it afterwards
         # so large videos don't accumulate in uploads/.
@@ -8862,8 +8916,7 @@ def remember_source_usage(
             for item in previous.get("events", [])
             if isinstance(item, dict) and str(item.get("job_id") or "") != job_id
         ][-49:]
-        events.append(
-            {
+        new_event = {
                 "job_id": job_id,
                 "source_url": normalized,
                 "source_title": source_title or previous.get("source_title"),
@@ -8876,7 +8929,7 @@ def remember_source_usage(
                 "compilation_target_seconds": compilation_target_seconds,
                 "auto_upload_youtube": bool(auto_upload_youtube),
             }
-        )
+        events.append(new_event)
         source_usage_history[normalized] = {
             "modes": sorted(modes),
             "job_ids": job_ids,
@@ -8896,6 +8949,7 @@ def remember_source_usage(
             temp_path.replace(SOURCE_USAGE_HISTORY_PATH)
         except OSError as exc:
             print(f"Gagal menyimpan detail riwayat sumber clipping: {exc}", flush=True)
+        write_source_usage_archive([new_event])
 
 
 def remember_processed_source(
@@ -9025,9 +9079,26 @@ def list_source_usage_log() -> SourceUsageLogResponse:
                 )
             )
 
+    entries = [item for item in entries if item.clip_mode in {"short", "highlight_5m"}]
     entries.sort(key=lambda item: item.processed_at, reverse=True)
+    folder_entries: dict[tuple[int, int], list[SourceUsageLogEntry]] = {}
+    for item in entries:
+        folder_entries.setdefault(source_usage_partition(item.processed_at), []).append(item)
+    folders = [
+        SourceUsageFolder(
+            key=f"{year:04d}-{month:02d}",
+            year=year,
+            month=month,
+            total=len(items),
+            unique_sources=len({item.source_url for item in items}),
+            short_count=sum(item.clip_mode == "short" for item in items),
+            long_count=sum(item.clip_mode == "highlight_5m" for item in items),
+        )
+        for (year, month), items in sorted(folder_entries.items(), reverse=True)
+    ]
     return SourceUsageLogResponse(
         items=entries,
+        folders=folders,
         total=len(entries),
         unique_sources=len({item.source_url for item in entries}),
     )
@@ -9076,6 +9147,17 @@ def source_history_for_url(value: str) -> SourceHistoryCheck:
         for item in archived_record.get("modes", [])
         if str(item) in {"short", "highlight_5m", "original_rebuild"}
     }
+    archived_events = [
+        item
+        for item in archived_record.get("events", [])
+        if isinstance(item, dict)
+    ]
+    recorded_job_ids = {
+        str(item.get("job_id") or "")
+        for item in archived_events
+        if str(item.get("job_id") or "")
+    }
+    recorded_job_ids.update(job.id for job in matching_jobs)
     attempted_modes = archived_modes | {job.request.clip_mode for job in matching_jobs}
 
     def job_has_mode(job: ClipJob, mode: str) -> bool:
@@ -9096,6 +9178,11 @@ def source_history_for_url(value: str) -> SourceHistoryCheck:
         valid_youtube_url=True,
         found=archived or bool(matches),
         archived=archived,
+        last_processed_at=(
+            str(archived_record.get("last_processed_at") or "").strip()
+            or (matching_jobs[0].finished_at or matching_jobs[0].updated_at if matching_jobs else None)
+        ),
+        usage_count=len(recorded_job_ids),
         has_short_clips="short" in archived_modes
         or any(job_has_mode(job, "short") for job in matching_jobs),
         has_highlight_5m="highlight_5m" in archived_modes
@@ -10551,7 +10638,14 @@ def get_source_usage_log() -> SourceUsageLogResponse:
 
 @app.post("/api/jobs", response_model=ClipJob)
 def create_job(request: ClipJobRequest) -> ClipJob:
-    if request.clip_mode not in {"long_animate", "original_rebuild"} and request.max_duration <= request.min_duration:
+    if request.clip_mode not in ACTIVE_CLIP_MODES:
+        raise HTTPException(
+            status_code=410,
+            detail=(
+                "Mode ini sudah dihapus. Gunakan Clip Pendek atau Long Story 5–10 Menit."
+            ),
+        )
+    if request.max_duration <= request.min_duration:
         raise HTTPException(status_code=400, detail="max_duration must be greater than min_duration")
     if request.clip_mode == "short" and request.min_duration >= SHORT_GROWTH_MAX_SECONDS:
         raise HTTPException(
@@ -10559,103 +10653,7 @@ def create_job(request: ClipJobRequest) -> ClipJob:
             detail=f"Durasi minimum Short harus di bawah {SHORT_GROWTH_MAX_SECONDS} detik",
         )
 
-    if request.clip_mode == "long_animate":
-        clean_script = request.script_text.strip()
-        if len(clean_script) < 120 or len(clean_script.split()) < 30:
-            raise HTTPException(
-                status_code=400,
-                detail="Naskah Long Animate minimal 120 karakter dan 30 kata.",
-            )
-        if not request.confirm_long_animate_rights:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Konfirmasi bahwa naskah milik Anda dan provider gambar/suara yang dikonfigurasi "
-                    "mengizinkan penggunaan komersial YouTube."
-                ),
-            )
-        if len(request.provider_rights_evidence.split()) < 3:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Tambahkan referensi bukti izin komersial provider gambar, suara, AI, "
-                    "dan musik—misalnya nama provider, dokumen/URL terms, serta tanggal pengecekan."
-                ),
-            )
-        request = request.model_copy(
-            update={
-                "url": "",
-                "source_file": "",
-                "script_text": clean_script,
-                "require_creative_commons": False,
-            }
-        )
-    elif request.clip_mode == "original_rebuild":
-        if not request.ai_enabled or not request.ai_base_url.strip() or not request.ai_model.strip():
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Original Rebuild memerlukan AI aktif untuk menulis naskah editorial baru. "
-                    "Sistem tidak akan memakai transkrip mentah sebagai fallback."
-                ),
-            )
-        if request.automatic_topic_rebuild:
-            request = request.model_copy(
-                update={
-                    "creator_perspective": "",
-                    "source_rights_evidence": "",
-                    "provider_rights_evidence": "",
-                    "confirm_source_rights": False,
-                    "confirm_long_animate_rights": False,
-                    "auto_upload_youtube": False,
-                }
-            )
-        else:
-            if not request.confirm_long_animate_rights:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "Konfirmasikan bahwa provider gambar, suara, dan AI yang dikonfigurasi "
-                        "mengizinkan penggunaan komersial YouTube."
-                    ),
-                )
-            if not request.confirm_source_rights:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "Konfirmasikan bahwa Anda berhak memproses sumber sebagai bahan riset. "
-                        "Original Rebuild tidak menjadi jalan pintas untuk memakai sumber tanpa izin."
-                    ),
-                )
-            if len(request.creator_perspective.split()) < 8:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "Original Rebuild memerlukan minimal 8 kata sudut pandang, analisis, atau "
-                        "pengalaman Anda sendiri agar hasil tidak menjadi template AI generik."
-                    ),
-                )
-            if len(request.source_rights_evidence.split()) < 3:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "Tambahkan referensi bukti hak sumber—misalnya URL lisensi, izin tertulis, "
-                        "atau catatan kepemilikan rekaman."
-                    ),
-                )
-            if len(request.provider_rights_evidence.split()) < 3:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "Tambahkan referensi bukti izin komersial provider AI, gambar, suara, dan musik."
-                    ),
-                )
-        if not request.url and not request.source_file:
-            raise HTTPException(
-                status_code=400,
-                detail="Original Rebuild memerlukan link YouTube atau upload video sebagai bahan riset.",
-            )
-    elif not request.url and not request.source_file:
+    if not request.url and not request.source_file:
         raise HTTPException(status_code=400, detail="Provide a YouTube URL or upload a video first")
 
     if request.url.strip() and request.auto_upload_youtube and not request.confirm_source_rights:
@@ -10667,9 +10665,7 @@ def create_job(request: ClipJobRequest) -> ClipJob:
             ),
         )
 
-    if request.clip_mode == "long_animate":
-        pass
-    elif request.source_file:
+    if request.source_file:
         upload_path = resolve_upload_path(request.source_file)
         if upload_path is None:
             raise HTTPException(status_code=400, detail="Uploaded video not found; upload it again")
@@ -10682,8 +10678,6 @@ def create_job(request: ClipJobRequest) -> ClipJob:
                 detected_formats.append("clip pendek")
             if source_history.has_highlight_5m or "highlight_5m" in source_history.attempted_modes:
                 detected_formats.append("Highlight/Resume 5–10 menit")
-            if "original_rebuild" in source_history.attempted_modes:
-                detected_formats.append("Original Rebuild")
             format_copy = ", ".join(detected_formats) or "arsip proses lama"
             raise HTTPException(
                 status_code=409,

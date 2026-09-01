@@ -8,11 +8,13 @@ from telegram_bot import (
     battery_status_text,
     build_job_payload,
     canonical_youtube_url,
+    confirmation_keyboard,
     collect_unuploaded_clip_entries,
     format_duration,
     is_supported_video_url,
     is_compilation_result,
     load_state,
+    main_menu_keyboard,
     normalize_settings,
     output_path_from_url,
     parse_battery_alert_levels,
@@ -140,18 +142,47 @@ def test_build_job_payload_matches_backend_contract():
     assert payload["visual_mode"] == "auto_fyp"
     assert payload["background_mode"] == "keep"
     assert payload["clip_mode"] == "short"
+    assert payload["confirm_source_rights"] is False
+    assert payload["allow_reprocess_source"] is False
     assert payload["compilation_target_seconds"] == TELEGRAM_COMPILATION_MAX_SECONDS == 300
     assert payload["remove_running_text"] is False
 
 
-def test_telegram_cta_migrates_highlight_state_to_short_only_mode():
+def test_telegram_supports_long_story_as_second_active_mode():
     settings = normalize_settings({"clip_mode": "highlight_5m", "top": 5})
-    payload = build_job_payload("https://youtu.be/demo", settings)
+    payload = build_job_payload(
+        "https://youtu.be/demo",
+        settings,
+        confirm_source_rights=True,
+    )
 
-    assert settings["clip_mode"] == "short"
-    assert payload["clip_mode"] == "short"
+    assert settings["clip_mode"] == "highlight_5m"
+    assert payload["clip_mode"] == "highlight_5m"
     assert payload["top"] == 5
     assert payload["compilation_target_seconds"] == 300
+    assert payload["min_duration"] == 30
+    assert payload["max_duration"] == 90
+    assert payload["confirm_source_rights"] is True
+
+
+def test_fresh_menu_and_confirmation_offer_both_active_formats():
+    menu_callbacks = {
+        item["callback_data"]
+        for row in main_menu_keyboard()["inline_keyboard"]
+        for item in row
+        if "callback_data" in item
+    }
+    assert {"menu:new", "menu:new:short", "menu:new:highlight_5m"} <= menu_callbacks
+
+    confirmation = confirmation_keyboard(
+        {"clip_mode": "highlight_5m"},
+        source_previously_processed=True,
+    )
+    buttons = [item for row in confirmation["inline_keyboard"] for item in row]
+    callbacks = {item.get("callback_data") for item in buttons}
+    labels = " ".join(item["text"] for item in buttons)
+    assert {"pending:mode:short", "pending:mode:highlight_5m", "job:confirm"} <= callbacks
+    assert "Proses Ulang Long Story" in labels
 
 
 def test_compilation_result_is_detected_from_export_name():
