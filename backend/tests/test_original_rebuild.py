@@ -10,6 +10,7 @@ from clipper import (
     cleanup_intermediate,
     deterministic_original_rebuild_script,
     longest_verbatim_token_run,
+    original_rebuild_quality_issues,
     original_rebuild_script,
     original_rebuild_research_excerpt,
     parse_original_rebuild_response,
@@ -275,3 +276,39 @@ def test_deterministic_fallback_stays_inside_word_cap():
 
     assert 30 <= len(script.split()) <= 51
     assert angle
+
+
+def test_quality_gate_accepts_two_strong_source_terms_after_paraphrase():
+    script = (
+        "Kebiasaan kecil menjadi berguna ketika hasilnya bisa diamati setiap hari. "
+        "Evaluasi berkala menunjukkan bagian yang benar-benar memberi perubahan. "
+        "Catatan sederhana menjaga pengamatan tetap jernih dan tidak mengandalkan ingatan. "
+        "Dari bukti itu, langkah berikutnya dapat dipilih dengan lebih terukur."
+    )
+
+    issues = original_rebuild_quality_issues(
+        script,
+        "kebiasaan evaluasi pengeluaran",
+        "",
+        minimum_words=20,
+    )
+
+    assert not any("kurang spesifik pada sumber" in issue for issue in issues)
+
+
+def test_quality_gate_still_rejects_narration_with_only_one_source_term():
+    script = (
+        "Kebiasaan kecil menjadi berguna ketika hasilnya bisa diamati setiap hari. "
+        "Catatan berkala menunjukkan bagian yang benar-benar memberi perubahan. "
+        "Bukti sederhana menjaga pengamatan tetap jernih dan tidak mengandalkan ingatan. "
+        "Dari hasil itu, langkah berikutnya dapat dipilih dengan lebih terukur."
+    )
+
+    issues = original_rebuild_quality_issues(
+        script,
+        "kebiasaan evaluasi pengeluaran",
+        "",
+        minimum_words=20,
+    )
+
+    assert "isi kurang spesifik pada sumber (1/2 kata kunci utama)" in issues

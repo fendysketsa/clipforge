@@ -1652,10 +1652,7 @@ def _supports_filter(name: str) -> bool:
 
 
 def _image_endpoint() -> tuple[str, str, str]:
-    base = (
-        os.environ.get("LONG_ANIMATE_IMAGE_BASE_URL", "").strip()
-        or os.environ.get("OPENAI_IMAGE_BASE_URL", "").strip()
-    )
+    base = os.environ.get("LONG_ANIMATE_IMAGE_BASE_URL", "").strip()
     model = os.environ.get("LONG_ANIMATE_IMAGE_MODEL", "gemini-3.1-flash-image").strip()
     key = os.environ.get("LONG_ANIMATE_IMAGE_API_KEY", "").strip()
     host = (urlparse(base).hostname or "").casefold()
@@ -1663,7 +1660,7 @@ def _image_endpoint() -> tuple[str, str, str]:
         key = (
             os.environ.get("GEMINI_API_KEY", "").strip()
             if host == "generativelanguage.googleapis.com"
-            else os.environ.get("OPENAI_API_KEY", "").strip()
+            else ""
         )
     if base.casefold() in {
         "local",
@@ -1683,9 +1680,7 @@ def _remote_provider_label(base: str, model: str) -> str:
     host = (urlparse(base).hostname or "").casefold()
     if host == "generativelanguage.googleapis.com" and model.casefold().startswith("gemini-"):
         return "google_gemini_image_api"
-    if host == "api.openai.com" and model.casefold().startswith("gpt-image"):
-        return "openai_gpt_image_api"
-    return "openai_compatible_image_api"
+    return "remote_image_api"
 
 
 def _is_gemini_image_endpoint(base: str) -> bool:
@@ -1694,9 +1689,13 @@ def _is_gemini_image_endpoint(base: str) -> bool:
 
 def _is_sd_cpp_endpoint(base: str, model: str = "") -> bool:
     provider = os.environ.get("LONG_ANIMATE_IMAGE_PROVIDER", "").strip().casefold()
-    if provider in {"stable-diffusion-cpp", "stable_diffusion_cpp", "sdcpp"}:
-        return True
     host = (urlparse(base).hostname or "").casefold()
+    if provider in {"stable-diffusion-cpp", "stable_diffusion_cpp", "sdcpp"} and host in {
+        "127.0.0.1",
+        "localhost",
+        "::1",
+    }:
+        return True
     return host in {"127.0.0.1", "localhost", "::1"} and (
         "z-image" in model.casefold() or "sd-cpp" in model.casefold()
     )
@@ -1834,10 +1833,9 @@ def _remote_scene_image(
     is_sd_cpp = _is_sd_cpp_endpoint(base, model)
     if is_sd_cpp:
         _release_ollama_gpu_models()
-    if host in {"api.openai.com", "generativelanguage.googleapis.com"} and not key:
-        provider_name = "Gemini" if is_gemini else "OpenAI"
+    if is_gemini and not key:
         detail = (
-            f"LONG_ANIMATE_IMAGE_API_KEY belum diisi. Tempel API key {provider_name} di .env "
+            "LONG_ANIMATE_IMAGE_API_KEY belum diisi. Tempel API key Gemini di .env "
             "sebelum menjalankan Long Animate."
         )
         if strict:
@@ -1903,7 +1901,7 @@ def _remote_scene_image(
             "generation_config": {"thinking_level": thinking_level},
         }
     elif is_sd_cpp:
-        # stable-diffusion.cpp exposes an OpenAI-compatible image endpoint, but
+        # stable-diffusion.cpp exposes an images/generations endpoint, but
         # intentionally supports a smaller field set. The actual Z-Image model
         # is loaded once by sd-server, so no remote model name or API key is sent.
         negative_parts = [
@@ -1950,10 +1948,11 @@ def _remote_scene_image(
             "n": 1,
         }
     else:
+        default_api_size = "1024x1536" if _output_geometry()[0] == "9:16" else "1536x1024"
         payload_object = {
             "model": model,
             "prompt": final_prompt,
-            "size": os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1536x1024"),
+            "size": os.environ.get("LONG_ANIMATE_IMAGE_SIZE", default_api_size),
             "quality": quality,
             "output_format": output_format,
             "output_compression": 100,
@@ -2003,6 +2002,7 @@ def _remote_scene_image(
     if not is_sd_cpp:
         base_size = payload_object.get("size", "1024x768")
         provider_attempt_sizes = [base_size, "1280x720", "1024x576", "768x432"]
+        provider_attempt_sizes = list(dict.fromkeys(provider_attempt_sizes))
 
     sd_size_index = 0
     provider_size_index = 0
@@ -2047,8 +2047,12 @@ def _remote_scene_image(
 
             # Size downgrade untuk provider errors
             if status in {500, 502, 503, 504}:
-                if sd_attempt_sizes and sd_size_index < len(sd_attempt_sizes) - 1:
-                    sd_size_index += 1
+                if sd_attempt_sizes:
+                    if sd_size_index < len(sd_attempt_sizes) - 1:
+                        sd_size_index += 1
+                    # A 502 from the Python gateway usually means sd-server is
+                    # restarting. Keep retrying the safest size instead of
+                    # exhausting the resolution list and abandoning the job.
                     retryable = True
                 elif provider_attempt_sizes and provider_size_index < len(provider_attempt_sizes) - 1:
                     provider_size_index += 1
@@ -2059,6 +2063,8 @@ def _remote_scene_image(
                 retryable = status in {408, 409}
 
             if attempt < retries and retryable:
+                if is_sd_cpp and status in {502, 503, 504}:
+                    time.sleep(min(15.0, 6.0 * attempt))
                 continue
             break
 
@@ -2200,9 +2206,9 @@ def generate_scene_image(
     art_bible: str,
     reference_image: Path | None = None,
 ) -> str:
+    primary = _image_endpoint()
     if _remote_scene_image(scene, path, reference_image=reference_image):
-        base, model, _key = _image_endpoint()
-        return _remote_provider_label(base, model)
+        return _remote_provider_label(primary[0], primary[1])
     _local_scene_image(scene, path, art_bible)
     return "fendy_local_story_art"
 
@@ -3426,8 +3432,7 @@ def render_long_animate(
             "image_provider_commercial_terms_confirmation_required": any(
                 scene.image_provider in {
                     "google_gemini_image_api",
-                    "openai_gpt_image_api",
-                    "openai_compatible_image_api",
+                    "remote_image_api",
                 }
                 for scene in storyboard.scenes
             ),

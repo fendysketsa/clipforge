@@ -865,7 +865,6 @@ def test_gemini_strict_mode_rejects_missing_api_key(monkeypatch, tmp_path):
     monkeypatch.setenv("LONG_ANIMATE_IMAGE_MODEL", "gemini-3.1-flash-image")
     monkeypatch.setenv("LONG_ANIMATE_IMAGE_API_KEY", "")
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("LONG_ANIMATE_IMAGE_STRICT", "true")
 
     try:
@@ -876,7 +875,7 @@ def test_gemini_strict_mode_rejects_missing_api_key(monkeypatch, tmp_path):
         raise AssertionError("strict mode harus menghentikan render tanpa API key")
 
 
-def test_local_z_image_uses_sdcpp_openai_compatible_payload(monkeypatch, tmp_path):
+def test_local_z_image_uses_sdcpp_images_api_payload(monkeypatch, tmp_path):
     scene = _fallback_storyboard(SCRIPT).scenes[0]
     captured = {}
 
@@ -925,6 +924,74 @@ def test_local_z_image_uses_sdcpp_openai_compatible_payload(monkeypatch, tmp_pat
     assert long_animate._remote_provider_label(
         "http://127.0.0.1:7860/v1", "z-image-turbo-q3"
     ) == "local_z_image_turbo"
+
+
+def test_local_image_502_waits_for_recovery_without_online_fallback(monkeypatch, tmp_path):
+    scene = _fallback_storyboard(SCRIPT).scenes[0]
+    requests = []
+    sleeps = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {"data": [{"b64_json": base64.b64encode(b"z" * 2048).decode()}]}
+            ).encode()
+
+    def fake_urlopen(request, timeout):
+        payload = json.loads(request.data.decode())
+        requests.append(
+            {
+                "url": request.full_url,
+                "payload": payload,
+                "headers": dict(request.header_items()),
+                "timeout": timeout,
+            }
+        )
+        if len(requests) < 3:
+            raise long_animate.urllib.error.HTTPError(
+                request.full_url,
+                502,
+                "Bad Gateway",
+                {},
+                io.BytesIO(b'{"error":{"message":"local generator stopped"}}'),
+            )
+        return Response()
+
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_PROVIDER", "stable-diffusion-cpp")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_BASE_URL", "http://127.0.0.1:7860/v1")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_MODEL", "z-image-turbo-q3")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_SIZE", "1024x576")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_RETRIES", "3")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_STRICT", "true")
+    monkeypatch.setattr(long_animate, "_release_ollama_gpu_models", lambda: None)
+    monkeypatch.setattr(long_animate.time, "sleep", sleeps.append)
+    monkeypatch.setattr(long_animate.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(long_animate, "_normalize_scene_image", lambda path: True)
+
+    provider = long_animate.generate_scene_image(
+        scene,
+        tmp_path / "scene.png",
+        "cinematic realistic documentary-film still",
+    )
+
+    assert provider == "local_z_image_turbo"
+    assert len(requests) == 3
+    assert {request["url"] for request in requests} == {
+        "http://127.0.0.1:7860/v1/images/generations"
+    }
+    assert [request["payload"]["size"] for request in requests] == [
+        "1024x576",
+        "768x432",
+        "768x432",
+    ]
+    assert all("Authorization" not in request["headers"] for request in requests)
+    assert sleeps == [6.0, 12.0]
 
 
 def test_local_z_image_retries_with_safer_resolutions(monkeypatch, tmp_path):

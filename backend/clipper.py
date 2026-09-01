@@ -12991,8 +12991,23 @@ def original_rebuild_quality_issues(
         key=lambda word: (-grounding_counts[word], -len(word), word),
     )[:16]
     script_tokens = set(re.findall(r"[\w']+", clean.casefold(), flags=re.UNICODE))
-    required_grounding = min(3, max(1, len(grounding_terms)))
-    grounded = sum(term in script_tokens for term in grounding_terms)
+
+    def term_is_grounded(term: str) -> bool:
+        if term in script_tokens:
+            return True
+        # Indonesian narration commonly adds prefixes/suffixes while preserving
+        # the source concept (for example manfaat -> bermanfaat). Treat a long
+        # embedded root as grounded instead of demanding an exact token copy.
+        return any(
+            min(len(term), len(token)) >= 6 and (term in token or token in term)
+            for token in script_tokens
+        )
+
+    # Two strong topic terms are enough to prove source relevance. Requiring
+    # three exact words penalised legitimate paraphrases and caused an otherwise
+    # useful repaired draft to be discarded after transcription had completed.
+    required_grounding = min(2, max(1, len(grounding_terms)))
+    grounded = sum(term_is_grounded(term) for term in grounding_terms)
     if grounded < required_grounding:
         issues.append(
             f"isi kurang spesifik pada sumber ({grounded}/{required_grounding} kata kunci utama)"

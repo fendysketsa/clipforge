@@ -400,10 +400,11 @@ Z-Image-Turbo Q3 runtime (about 5.8 GB):
 ```
 
 It exposes `http://127.0.0.1:7860/v1/images/generations` through
-stable-diffusion.cpp. The memory-safe default `1024x576`, 8-step render is designed for a
-4 GB RTX 3050 and is normalized with a light detail pass to 1920x1080 by Long Animate. The runtime
-uses memory-mapped model weights and retries a restarted service at a lower resolution. No Gemini/OpenAI
-key is required. `LONG_ANIMATE_IMAGE_STRICT=true` stops the job when the local
+stable-diffusion.cpp. Z-Image-Turbo uses the Apache 2.0 license and needs no paid image API. The
+memory-safe default `1024x576`, 8-step render is designed for a 4 GB RTX 3050 and is normalized with
+a light detail pass to 1920x1080 by Long Animate. The runtime combines flash attention, CPU offload,
+automatic VRAM budgeting, streamed layers, and memory-mapped weights. A transient 502 waits for the
+model supervisor, retries up to four times, and lowers resolution before failing. `LONG_ANIMATE_IMAGE_STRICT=true` stops the job when the local
 service is unavailable instead of silently substituting procedural art. Use
 `builtin://story-art` only when a geometric placeholder is explicitly desired.
 The storyboard parser understands Markdown `Scene`/`Adegan` blocks, keeps shared

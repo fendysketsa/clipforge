@@ -47,12 +47,19 @@ upstream_port="${LOCAL_IMAGE_UPSTREAM_PORT:-7861}"
   --steps 8 \
   --diffusion-fa \
   --offload-to-cpu \
+  --max-vram "${LOCAL_IMAGE_MAX_VRAM_GIB:--1}" \
+  --stream-layers \
   --mmap \
   --vae-tiling \
   --verbose &
 server_pid=$!
+gateway_pid=""
 
 cleanup() {
+  if [[ -n "$gateway_pid" ]]; then
+    kill "$gateway_pid" 2>/dev/null || true
+    wait "$gateway_pid" 2>/dev/null || true
+  fi
   kill "$server_pid" 2>/dev/null || true
   wait "$server_pid" 2>/dev/null || true
 }
@@ -72,4 +79,22 @@ if [[ "${LOCAL_IMAGE_UPSCALER_ENABLED:-true}" == "true" ]]; then
   )
 fi
 
-python3 "$script_dir/local-image-gateway.py" "${gateway_args[@]}"
+python3 "$script_dir/local-image-gateway.py" "${gateway_args[@]}" &
+gateway_pid=$!
+
+# The gateway used to stay alive after sd-server crashed, returning HTTP 502
+# forever while systemd still considered the unit healthy. Exit as soon as
+# either child stops so Restart=on-failure can reload the model cleanly.
+set +e
+wait -n "$server_pid" "$gateway_pid"
+child_status=$?
+set -e
+if ! kill -0 "$server_pid" 2>/dev/null; then
+  echo "Model Z-Image lokal berhenti (status $child_status); meminta supervisor melakukan restart." >&2
+else
+  echo "Gateway gambar lokal berhenti (status $child_status); meminta supervisor melakukan restart." >&2
+fi
+if [[ "$child_status" -eq 0 ]]; then
+  child_status=1
+fi
+exit "$child_status"
