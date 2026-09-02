@@ -26,6 +26,7 @@ import {
   getYouTubeUploads,
   importYouTubeCdpCookies,
   probeUrlDuration,
+  repairJobClipContext,
   setupYouTubeOneTimeLogin,
   searchViralContentSources,
   startYouTubeLogin,
@@ -1039,6 +1040,26 @@ export default function HomePage() {
     [job, loadYouTubeUploads],
   );
 
+  const handleRepairClipContext = useCallback(
+    async (clip: ClipFile) => {
+      if (!job) return;
+      try {
+        const nextJob = await toast.promise(repairJobClipContext(job.id, clip.url), {
+          loading: "Mencari batas kalimat dan konteks yang aman...",
+          success: "Perbaikan otomatis dimulai. Hasil lama tetap disimpan untuk perbandingan.",
+          error: (error) => error instanceof Error ? error.message : "Gagal memulai perbaikan otomatis",
+        });
+        setActiveJob(nextJob);
+        setJob(nextJob);
+        window.sessionStorage.setItem(TAB_JOB_STORAGE_KEY, nextJob.id);
+        await loadJobs();
+      } catch {
+        // toast.promise already displayed the actionable status.
+      }
+    },
+    [job, loadJobs],
+  );
+
   const handleUploadAllToYouTube = useCallback(async () => {
     if (!job || !job.clips.length) return;
     const bestCount = youtubeConfig?.auto_upload_count ?? 2;
@@ -1399,6 +1420,7 @@ export default function HomePage() {
         onStartYouTubeLogin={handleStartYouTubeLogin}
         onUploadAllToYouTube={handleUploadAllToYouTube}
         onUploadClipToYouTube={handleUploadClipToYouTube}
+        onRepairClipContext={handleRepairClipContext}
         onToggleAllClipSelection={handleToggleAllClipSelection}
         onToggleClipSelection={handleToggleClipSelection}
         onToggleClipCorrect={handleToggleClipCorrect}

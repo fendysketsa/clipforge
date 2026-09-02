@@ -5786,6 +5786,34 @@ details[open] > summary .detailsChevron {
   color: #fda4af;
 }
 
+.clipActions .clipRepairButton {
+  border-color: rgba(94, 234, 212, 0.32);
+  background: linear-gradient(135deg, rgba(45, 212, 191, 0.18), rgba(59, 130, 246, 0.12));
+  color: #99f6e4;
+}
+
+.clipRepairNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 12px 17px;
+  border-bottom: 1px solid rgba(251, 191, 36, 0.16);
+  background: rgba(251, 191, 36, 0.055);
+  color: #fde68a;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.clipRepairNotice svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.clipMetric--blocked {
+  border-color: rgba(251, 191, 36, 0.24) !important;
+  color: #fde68a !important;
+}
+
 .clipActions .clipDeleteButton {
   border-color: rgba(251, 113, 133, 0.14);
   color: #fb7185;

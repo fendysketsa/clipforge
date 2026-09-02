@@ -397,6 +397,7 @@ class ClipFile(BaseModel):
     narrative_arc_score: int | None = None
     narrative_arc_complete: bool | None = None
     religious_context_safe: bool | None = None
+    context_recut_required: bool = False
     religious_review_required: bool | None = None
     religious_review_risk: str | None = None
     religious_claim_count: int | None = None
@@ -517,6 +518,10 @@ class SourceUsageLogResponse(BaseModel):
 class ClipStatusUpdate(BaseModel):
     url: str
     is_correct: bool
+
+
+class ClipRepairRequest(BaseModel):
+    url: str
 
 
 class ClipSelectionDeleteRequest(BaseModel):
@@ -2063,9 +2068,34 @@ def enrich_job_codex_feedback(job: "ClipJob") -> "ClipJob":
             if isinstance(raw_applied, list)
             else clip.applied_edits
         )
-        if remaining != clip.improvement_ideas or applied != clip.applied_edits:
+        religious_review = sidecar.get("religious_claim_review")
+        religious_integrity = sidecar.get("religious_context_integrity")
+        final_context_safe = (
+            bool(religious_integrity.get("safe_for_automatic_export"))
+            if isinstance(religious_integrity, dict)
+            and "safe_for_automatic_export" in religious_integrity
+            else clip.religious_context_safe
+        )
+        context_recut_required = bool(
+            isinstance(religious_review, dict)
+            and religious_review.get("recommended_decision") == "reject_and_recut"
+        ) or bool(
+            isinstance(religious_integrity, dict)
+            and religious_integrity.get("safe_for_automatic_export") is False
+        )
+        if (
+            remaining != clip.improvement_ideas
+            or applied != clip.applied_edits
+            or final_context_safe != clip.religious_context_safe
+            or context_recut_required != clip.context_recut_required
+        ):
             clip = clip.model_copy(
-                update={"improvement_ideas": remaining, "applied_edits": applied}
+                update={
+                    "improvement_ideas": remaining,
+                    "applied_edits": applied,
+                    "religious_context_safe": final_context_safe,
+                    "context_recut_required": context_recut_required,
+                }
             )
             changed = True
         clips.append(clip)
@@ -7323,6 +7353,19 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
         )
         religious_claims = religious_claim_review.get("claims")
         religious_claims = religious_claims if isinstance(religious_claims, list) else []
+        religious_context_integrity = sidecar.get("religious_context_integrity")
+        religious_context_integrity = (
+            religious_context_integrity
+            if isinstance(religious_context_integrity, dict)
+            else {}
+        )
+        review_decision = str(
+            religious_claim_review.get("recommended_decision") or ""
+        ).strip()
+        context_recut_required = bool(
+            review_decision == "reject_and_recut"
+            or religious_context_integrity.get("safe_for_automatic_export") is False
+        )
 
         def context_excerpt(key: str) -> str | None:
             rows = religious_claim_review.get(key)
@@ -7392,10 +7435,13 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
                     else None
                 ),
                 religious_context_safe=(
-                    bool(sidecar.get("religious_context_safe"))
+                    bool(religious_context_integrity.get("safe_for_automatic_export"))
+                    if "safe_for_automatic_export" in religious_context_integrity
+                    else bool(sidecar.get("religious_context_safe"))
                     if "religious_context_safe" in sidecar
                     else None
                 ),
+                context_recut_required=context_recut_required,
                 religious_review_required=(
                     bool(religious_claim_review.get("review_required"))
                     if religious_claim_review
@@ -11111,6 +11157,46 @@ def update_job_clip_status(job_id: str, update: ClipStatusUpdate) -> ClipJob:
         jobs[job_id] = next_job
         save_jobs_unlocked()
         return next_job
+
+
+@app.post("/api/jobs/{job_id}/clips/repair", response_model=ClipJob)
+def repair_job_clip_context(job_id: str, repair: ClipRepairRequest) -> ClipJob:
+    """Queue a fresh Short pass with the safest current boundary rules.
+
+    The original artifact remains available for comparison. Automatic upload is
+    deliberately disabled so the repaired result still receives human review.
+    """
+    job, clip, _ = find_job_clip(job_id, repair.url)
+    if job.request.clip_mode != "short":
+        raise HTTPException(
+            status_code=400,
+            detail="Perbaikan otomatis ini hanya untuk Clip Pendek",
+        )
+
+    sidecar = clip_sidecar_payload(clip)
+    review = sidecar.get("religious_claim_review")
+    integrity = sidecar.get("religious_context_integrity")
+    recut_required = bool(
+        isinstance(review, dict)
+        and review.get("recommended_decision") == "reject_and_recut"
+    ) or bool(
+        isinstance(integrity, dict)
+        and integrity.get("safe_for_automatic_export") is False
+    )
+    if not recut_required:
+        raise HTTPException(
+            status_code=409,
+            detail="Audit final tidak meminta potong ulang untuk klip ini",
+        )
+
+    next_request = job.request.model_copy(
+        update={
+            "allow_reprocess_source": True,
+            "auto_upload_youtube": False,
+            "enhanced_edit": True,
+        }
+    )
+    return create_job(next_request)
 
 
 def delete_job_clips_by_url(job_id: str, clip_urls: set[str]) -> ClipDeleteResponse:

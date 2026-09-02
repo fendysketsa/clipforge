@@ -59,6 +59,7 @@ type ResultsSectionProps = {
   onStartYouTubeLogin: () => void;
   onUploadAllToYouTube: () => void;
   onUploadClipToYouTube: (clip: ClipFile) => void;
+  onRepairClipContext: (clip: ClipFile) => Promise<void>;
   onToggleAllClipSelection: () => void;
   onToggleClipSelection: (clipUrl: string) => void;
   onToggleClipCorrect: (clip: ClipFile, isCorrect: boolean) => void;
@@ -237,11 +238,13 @@ export function ResultsSection({
   onStartYouTubeLogin,
   onUploadAllToYouTube,
   onUploadClipToYouTube,
+  onRepairClipContext,
   onToggleAllClipSelection,
   onToggleClipSelection,
   onToggleClipCorrect,
 }: ResultsSectionProps) {
   const [uploadStatusNow, setUploadStatusNow] = useState(() => Date.now());
+  const [repairingClipUrl, setRepairingClipUrl] = useState<string | null>(null);
   const selectedCount = selectedClipUrls.length;
   const allClipsSelected = clips.length > 0 && selectedCount === clips.length;
   const usesChromeDebugging = /remote debugging|cdp/i.test(youtubeStatusMessage);
@@ -414,9 +417,10 @@ export function ResultsSection({
                   clip.growth_status,
                 )
               : null;
-            const isUploadReady = typeof clip.growth_quality_gate_passed === "boolean"
+            const passesGrowthGate = typeof clip.growth_quality_gate_passed === "boolean"
               ? clip.growth_quality_gate_passed
               : isLongForm || (typeof clip.fyp_score === "number" && clip.fyp_score >= 78);
+            const isUploadReady = passesGrowthGate && !clip.context_recut_required;
             const uploadReviewConfirmed = clip.is_correct;
             const isQueuedForYouTube = latestUpload?.status === "queued";
             const isRunningYouTubeUpload = latestUpload?.status === "running";
@@ -513,7 +517,11 @@ export function ResultsSection({
                 <div className="clipInfo">
                   <div className="clipTitleBlock">
                     <span className="clipEyebrow">
-                      {isUploadReady ? "Klip siap review Private" : "Ditahan quality gate"}
+                      {clip.context_recut_required
+                        ? "Perlu perbaikan batas konteks"
+                        : isUploadReady
+                          ? "Klip siap review Private"
+                          : "Ditahan quality gate"}
                     </span>
                     <h3>{title}</h3>
                   </div>
@@ -565,7 +573,14 @@ export function ResultsSection({
                           Narasi {clip.narrative_arc_score}{clip.narrative_arc_complete ? " ✓" : ""}
                         </span>
                       ) : null}
-                      {clip.religious_context_safe === true ? (
+                      {clip.context_recut_required ? (
+                        <span
+                          className="clipMetric clipMetric--blocked"
+                          title="Audit final menemukan ucapan atau makna yang masih menggantung."
+                        >
+                          Potong ulang wajib
+                        </span>
+                      ) : clip.religious_context_safe === true ? (
                         <span
                           className="clipMetric"
                           title="Batas otomatis memastikan kalimat kajian tidak dimulai atau diakhiri menggantung; verifikasi sumber tetap diperlukan."
@@ -681,10 +696,17 @@ export function ResultsSection({
                   </>
                 ) : null}
                 <div className="clipCardFooter">
+                  {clip.context_recut_required ? (
+                    <div className="clipRepairNotice">
+                      <Info size={16} />
+                      <span>Audit final menemukan batas kalimat atau makna kajian belum utuh. Buat versi aman sebelum review dan upload.</span>
+                    </div>
+                  ) : null}
                   <label className="clipValidation">
                     <input
-                      checked={clip.is_correct}
+                      checked={clip.context_recut_required ? false : clip.is_correct}
                       type="checkbox"
+                      disabled={clip.context_recut_required}
                       onChange={(event) => onToggleClipCorrect(clip, event.target.checked)}
                     />
                     <span>
@@ -703,30 +725,52 @@ export function ResultsSection({
                       <Download size={16} />
                       <span>Unduh</span>
                     </button>
-                    <button
-                      type="button"
-                      className="youtubeUploadButton"
-                      onClick={() => onUploadClipToYouTube(clip)}
-                      disabled={!youtubeEnabled || !isUploadReady || !uploadReviewConfirmed || isUploadingToYouTube || isAlreadyUploaded}
-                      title={youtubeButtonTitle}
-                    >
-                      <UploadCloud size={16} />
-                      <span>
-                        {!isUploadReady
-                          ? "Quality gate · Ditahan"
-                          : isAlreadyUploaded
-                          ? "Sudah YouTube"
-                          : isQueuedForYouTube
-                          ? "Menunggu antrean"
-                          : isRunningYouTubeUpload
-                          ? "Mengupload..."
-                          : latestUpload?.status === "failed"
-                            ? "Ulangi YouTube"
-                            : isLongForm
-                              ? "Kirim + Thumbnail"
-                              : "Kirim YouTube"}
-                      </span>
-                    </button>
+                    {clip.context_recut_required ? (
+                      <button
+                        type="button"
+                        className="clipRepairButton"
+                        disabled={repairingClipUrl !== null}
+                        onClick={async () => {
+                          setRepairingClipUrl(clip.url);
+                          try {
+                            await onRepairClipContext(clip);
+                          } finally {
+                            setRepairingClipUrl(null);
+                          }
+                        }}
+                        title="Proses ulang otomatis dengan validasi batas ucapan final"
+                      >
+                        {repairingClipUrl === clip.url
+                          ? <LoaderCircle className="spin" size={16} />
+                          : <Sparkles size={16} />}
+                        <span>{repairingClipUrl === clip.url ? "Memperbaiki..." : "Perbaiki Otomatis"}</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="youtubeUploadButton"
+                        onClick={() => onUploadClipToYouTube(clip)}
+                        disabled={!youtubeEnabled || !isUploadReady || !uploadReviewConfirmed || isUploadingToYouTube || isAlreadyUploaded}
+                        title={youtubeButtonTitle}
+                      >
+                        <UploadCloud size={16} />
+                        <span>
+                          {!isUploadReady
+                            ? "Quality gate · Ditahan"
+                            : isAlreadyUploaded
+                              ? "Sudah YouTube"
+                              : isQueuedForYouTube
+                                ? "Menunggu antrean"
+                                : isRunningYouTubeUpload
+                                  ? "Mengupload..."
+                                  : latestUpload?.status === "failed"
+                                    ? "Ulangi YouTube"
+                                    : isLongForm
+                                      ? "Kirim + Thumbnail"
+                                      : "Kirim YouTube"}
+                        </span>
+                      </button>
+                    )}
                     <button className="clipDeleteButton" type="button" onClick={() => onDeleteClip(clip)}>
                       <Trash2 size={16} />
                       <span>Hapus</span>

@@ -7188,6 +7188,22 @@ def segments_for_clip(segments: Iterable[TranscriptSegment], clip: ClipCandidate
     return selected
 
 
+def refresh_candidate_export_context(
+    candidate: ClipCandidate,
+    transcript: list[TranscriptSegment],
+) -> bool:
+    """Synchronize context safety with the exact transcript rows being rendered."""
+    export_segments = segments_for_clip(transcript, candidate)
+    export_integrity = religious_context_integrity_profile(
+        export_segments,
+        max(0.1, candidate.end - candidate.start),
+    )
+    candidate.religious_context_safe = bool(
+        export_integrity["safe_for_automatic_export"]
+    )
+    return candidate.religious_context_safe
+
+
 def codex_edit_plan(clip: ClipCandidate) -> CodexEditPlan:
     """Translate analysis prose into deterministic editing behavior."""
     weaknesses = " ".join(clip.weaknesses).casefold()
@@ -11541,6 +11557,11 @@ def export_clip(
         "short_narrative_arc": narrative_arc_audit,
         "religious_context_integrity": religious_context_audit,
         "religious_claim_review": religious_claim_review,
+        # Always expose the render-time audit. Candidate metadata can predate a
+        # structural trim or include different transcript boundary padding.
+        "religious_context_safe": bool(
+            religious_context_audit["safe_for_automatic_export"]
+        ),
         "enhanced_edit": enhanced_edit,
         "remove_running_text": remove_running_text,
         "auto_blur_watermarks": auto_blur_watermarks,
@@ -14604,6 +14625,12 @@ def main() -> int:
     emit_progress(46, "selection", "Menilai kandidat berdasarkan hook dan kelengkapan cerita")
     console.print("[bold]Scoring candidate clips...[/bold]")
     pool = build_candidate_pool(transcript, args.min, args.max)
+    # Candidate windows are scored from their intended transcript rows, while
+    # the padded media interval can overlap a neighboring Whisper row. Audit
+    # the exact export selection before AI ranking so an unsafe top candidate
+    # is replaced by the next complete window instead of failing at upload.
+    for candidate in pool:
+        refresh_candidate_export_context(candidate, transcript)
     raw_candidate_count = len(pool)
     pool = [candidate for candidate in pool if candidate_is_editorially_safe(candidate)]
     rejected_editorial_count = raw_candidate_count - len(pool)
@@ -14716,6 +14743,29 @@ def main() -> int:
                     "Klip tidak diekspor; coba sumber lain atau perluas durasi analisis.[/red]"
                 )
                 return 1
+
+    if args.clip_mode == "short":
+        # The final FFmpeg interval can overlap a neighboring Whisper segment by
+        # a few frames. Re-audit exactly the segments that will be exported so a
+        # stale candidate-level "safe" flag can never reach the upload screen.
+        verified_candidates: list[ClipCandidate] = []
+        for candidate in candidates:
+            if refresh_candidate_export_context(candidate, transcript):
+                verified_candidates.append(candidate)
+        rejected_at_export = len(candidates) - len(verified_candidates)
+        if rejected_at_export:
+            console.print(
+                "[yellow]Final boundary gate:[/yellow] "
+                f"{rejected_at_export} kandidat dibatalkan sebelum render karena "
+                "batas ucapan final masih menggantung."
+            )
+        candidates = verified_candidates
+        if not candidates:
+            console.print(
+                "[red]Tidak ada kandidat dengan batas ucapan final yang aman. "
+                "Klip tidak dirender; proses ulang agar pemilih mencari window lain.[/red]"
+            )
+            return 1
 
     save_json(work_dir / f"candidates{cache_suffix}.json", [asdict(item) for item in candidates])
     print_candidates(candidates)

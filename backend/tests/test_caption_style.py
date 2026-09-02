@@ -85,6 +85,7 @@ from clipper import (
     retro_tv_look_filter,
     religious_context_integrity_profile,
     religious_claim_review_packet,
+    refresh_candidate_export_context,
     resolve_codex_ideas,
     score_window,
     scale_watermark_region,
@@ -3146,6 +3147,33 @@ def test_source_channel_promos_are_removed_from_export_subtitles():
         "Poin utama yang bermanfaat.",
         "Penjelasan dilanjutkan.",
     ]
+
+
+def test_final_export_context_catches_short_neighbor_bleed_after_safe_candidate():
+    transcript = [
+        TranscriptSegment(10, 20, "Menurut ulama, hukum ini perlu dijelaskan dengan syarat yang lengkap."),
+        TranscriptSegment(20, 20.5, "dan"),
+    ]
+    clip = ClipCandidate(
+        1,
+        9.7,
+        20.25,
+        10.55,
+        90,
+        "Hukum Dengan Syarat Lengkap",
+        "test",
+        transcript[0].text,
+        religious_context_safe=True,
+    )
+
+    safe = refresh_candidate_export_context(clip, transcript)
+
+    assert [item.text for item in segments_for_clip(transcript, clip)] == [
+        transcript[0].text,
+        transcript[1].text,
+    ]
+    assert safe is False
+    assert clip.religious_context_safe is False
 
 
 def test_hook_banner_text_is_short_uppercase_and_wrapped():

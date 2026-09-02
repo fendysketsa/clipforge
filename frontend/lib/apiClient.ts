@@ -185,6 +185,18 @@ export const updateJobClipStatus = async (jobId: string, clipUrl: string, isCorr
   return (await response.json()) as ClipJob;
 };
 
+export const repairJobClipContext = async (jobId: string, clipUrl: string) => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}/clips/repair`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: clipUrl }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Gagal membuat versi aman"));
+  }
+  return (await response.json()) as ClipJob;
+};
+
 export const cancelJob = async (jobId: string) => {
   const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}/cancel`, {
     method: "POST",

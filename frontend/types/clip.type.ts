@@ -39,6 +39,7 @@ export type ClipFile = {
   narrative_arc_score?: number | null;
   narrative_arc_complete?: boolean | null;
   religious_context_safe?: boolean | null;
+  context_recut_required?: boolean;
   religious_review_required?: boolean | null;
   religious_review_risk?: string | null;
   religious_claim_count?: number | null;

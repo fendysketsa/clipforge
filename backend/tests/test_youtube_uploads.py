@@ -12,6 +12,7 @@ from api import (
     ClipFile,
     ClipJob,
     ClipJobRequest,
+    ClipRepairRequest,
     YouTubeUploadRequest,
     YouTubeUploadJob,
     append_youtube_chapters,
@@ -26,6 +27,7 @@ from api import (
     default_youtube_description,
     default_youtube_tags,
     default_youtube_title,
+    discover_clips,
     delete_completed_youtube_upload_clip,
     generate_youtube_description,
     generate_youtube_metadata,
@@ -38,6 +40,7 @@ from api import (
     normalized_generated_metadata,
     quarantine_queued_youtube_uploads_from_claimed_source,
     queue_claimed_clip_rebuild,
+    repair_job_clip_context,
     youtube_monetization_preflight_issue,
     reviewed_automatic_rebuild_for_private_upload,
     source_risk_requires_automatic_rebuild,
@@ -87,6 +90,77 @@ def make_candidate(index: int, score: int) -> ClipCandidate:
         reason="test",
         text="test",
     )
+
+
+def test_discover_clips_prefers_final_context_audit_over_stale_candidate_flag(
+    tmp_path,
+    monkeypatch,
+):
+    import api
+
+    output_root = tmp_path / "outputs"
+    clips_dir = output_root / "job" / "clips"
+    clips_dir.mkdir(parents=True)
+    video = clips_dir / "clip_01.mp4"
+    video.write_bytes(b"video")
+    video.with_suffix(".json").write_text(
+        json.dumps(
+            {
+                "religious_context_safe": True,
+                "religious_context_integrity": {"safe_for_automatic_export": False},
+                "religious_claim_review": {"recommended_decision": "reject_and_recut"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
+
+    clips = discover_clips(0, output_root)
+
+    assert len(clips) == 1
+    assert clips[0].religious_context_safe is False
+    assert clips[0].context_recut_required is True
+
+
+def test_repair_job_clip_context_queues_safe_reprocess_without_auto_upload(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-needs-recut",
+        status="completed",
+        request=ClipJobRequest(
+            url="https://youtu.be/source",
+            clip_mode="short",
+            auto_upload_youtube=True,
+        ),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setitem(api.jobs, job.id, job)
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "religious_claim_review": {"recommended_decision": "reject_and_recut"},
+            "religious_context_integrity": {"safe_for_automatic_export": False},
+        },
+    )
+    captured = {}
+
+    def fake_create_job(request):
+        captured["request"] = request
+        return job.model_copy(update={"id": "repaired-job", "status": "queued"})
+
+    monkeypatch.setattr(api, "create_job", fake_create_job)
+
+    result = repair_job_clip_context(job.id, ClipRepairRequest(url=clip.url))
+
+    assert result.id == "repaired-job"
+    assert captured["request"].allow_reprocess_source is True
+    assert captured["request"].enhanced_edit is True
+    assert captured["request"].auto_upload_youtube is False
 
 
 def test_content_shingle_similarity_detects_template_copy_not_shared_topic_words():
