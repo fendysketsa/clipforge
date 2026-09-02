@@ -7,6 +7,7 @@ from clipper import (
     TranscriptSegment,
     ai_rescore_candidates,
     build_long_form_story_sequence,
+    editorial_safety_profile,
     order_compilation_for_retention,
     select_candidates,
     select_compilation_candidates,
@@ -87,6 +88,56 @@ def test_ai_brief_requires_distinct_angles_and_specific_titles():
     assert "every clip must answer a different viewer question" in clipper.AI_SYSTEM_PROMPT
     assert "concrete subject or object" in clipper.AI_SYSTEM_PROMPT
     assert "uppercase emphasis phrase" in clipper.AI_SYSTEM_PROMPT
+    assert "constructive lesson" in clipper.AI_SYSTEM_PROMPT
+
+
+def test_editorial_safety_rejects_mockery_and_keeps_constructive_victim_context():
+    mockery = editorial_safety_profile(
+        "Dia itu goblok dan pantas dipermalukan. Rasain, biar kapok."
+    )
+    constructive = editorial_safety_profile(
+        "Saya dihina waktu itu. Pelajarannya, kita jangan menghakimi dan harus saling menghormati."
+    )
+
+    assert mockery["safe_for_selection"] is False
+    assert mockery["direct_ridicule_or_insult"] is True
+    assert mockery["celebrates_harm"] is True
+    assert constructive["safe_for_selection"] is True
+    assert constructive["constructive_takeaway"] is True
+
+
+def test_short_selection_blocks_negative_story_without_constructive_takeaway():
+    unsafe = make_candidate(
+        0,
+        0,
+        95,
+        "Saya dihina dan diejek di depan orang banyak. Cerita selesai begitu saja.",
+    )
+    safe = make_candidate(
+        0,
+        90,
+        85,
+        "Saya dihina, tetapi pelajarannya kita jangan menghakimi dan saling menghormati.",
+    )
+
+    assert select_candidates([unsafe, safe], 2) == [safe]
+
+
+def test_compilation_selection_uses_the_same_editorial_safety_gate():
+    unsafe = make_candidate(
+        0,
+        0,
+        95,
+        "Mereka bodoh dan pantas dipermalukan supaya kapok.",
+    )
+    safe = make_candidate(
+        0,
+        90,
+        85,
+        "Pelajarannya, kita sebaiknya saling menghormati dan tidak menghakimi.",
+    )
+
+    assert select_compilation_candidates([unsafe, safe], target_duration=120) == [safe]
 
 
 def test_ai_rescore_pool_covers_timeline_and_sends_story_metrics(monkeypatch):

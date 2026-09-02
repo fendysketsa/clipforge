@@ -954,6 +954,8 @@ class BackendClient:
                 "max_source_duration": VIRAL_CC_MAX_SOURCE_SECONDS,
                 "min_views": int(env_float("VIRAL_CC_MIN_VIEWS", 1000)),
                 "max_age_days": 30,
+                "duration_filter": "any",
+                "definition_filter": "hd",
                 "max_metadata_checks": max(
                     200,
                     int(env_float("VIRAL_CC_MAX_METADATA_CHECKS", 200)),
@@ -1543,7 +1545,7 @@ class FendyClipperTelegramBot:
             f"Mencari {VIRAL_CC_VIDEO_COUNT} video viral Creative Commons dengan keyword "
             f"podcast, kajian, inspirasi, misteri Islam, mitos/fakta, podcast horor, cerita seram, "
             f"kisah nyata gaib, pendakian, kos/rumah sakit angker, urban legend, sejarah, dan 100+ variasi tema. "
-            f"Prioritas 30 hari terbaru; jika kurang, pencarian otomatis diperluas sampai 180 hari. "
+            f"Syarat wajib CC + HD; umur, durasi, views, dan tema dipakai untuk ranking adaptif. "
             f"Durasi maksimal {max_minutes} menit..."
             + (f"\nSkip permanen sumber yang pernah ditampilkan/diproses: {len(exclude_urls)}" if exclude_urls else ""),
         )
@@ -1556,7 +1558,7 @@ class FendyClipperTelegramBot:
             self.send_message(
                 chat_id,
                 f"Belum menemukan kandidat baru setelah pencarian diperluas dan seluruh video lama dilewati. "
-                f"Filter Creative Commons serta durasi maksimal {max_minutes} menit tetap dipertahankan.",
+                f"Filter wajib Creative Commons + HD serta durasi teknis maksimal {max_minutes} menit tetap dipertahankan.",
                 main_menu_keyboard(),
             )
             return
@@ -1566,7 +1568,7 @@ class FendyClipperTelegramBot:
         lines = [
             f"Top {len(selected_sources)} video viral Creative Commons",
             "Pencarian luas: 35+ variasi tema Indonesia",
-            f"Filter: Creative Commons, prioritas ≤30 hari/fallback ≤180 hari, durasi maksimal {max_minutes} menit",
+            f"Filter wajib: Creative Commons + HD; prioritas: terbaru, relevan, dan ramai; durasi maksimal {max_minutes} menit",
             "",
         ]
         for index, source in enumerate(selected_sources, start=1):

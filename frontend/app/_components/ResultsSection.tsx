@@ -32,6 +32,14 @@ const CLEANUP_ITEMS = [
   { id: "workspace", label: "File sementara dan folder kosong" },
   { id: "job_sync", label: "Card klip dan riwayat job disinkronkan" },
 ];
+const RELIGIOUS_REVIEW_LABELS: Record<string, string> = {
+  compare_clip_with_source_context: "Bandingkan clip dengan konteks sumber",
+  verify_quran_or_hadith_reference_and_wording: "Periksa rujukan dan redaksi ayat/hadis",
+  verify_ruling_scope_conditions_and_exceptions: "Periksa batas, syarat, dan pengecualian hukum",
+  confirm_clip_does_not_reverse_the_speaker_meaning: "Pastikan potongan tidak membalik maksud pembicara",
+  confirm_audio_visual_and_music_rights: "Pastikan hak audio, visual, dan musik",
+  review_private_upload_in_youtube_checks: "Periksa hasil Private melalui YouTube Checks",
+};
 
 type ResultsSectionProps = {
   clips: ClipFile[];
@@ -549,6 +557,22 @@ export function ResultsSection({
                           Retention-ready {clip.retention_score}
                         </span>
                       ) : null}
+                      {clip.narrative_arc_score !== null && clip.narrative_arc_score !== undefined ? (
+                        <span
+                          className="clipMetric"
+                          title="Audit urutan hook, konteks, konflik, jawaban, dan ending kuat."
+                        >
+                          Narasi {clip.narrative_arc_score}{clip.narrative_arc_complete ? " ✓" : ""}
+                        </span>
+                      ) : null}
+                      {clip.religious_context_safe === true ? (
+                        <span
+                          className="clipMetric"
+                          title="Batas otomatis memastikan kalimat kajian tidak dimulai atau diakhiri menggantung; verifikasi sumber tetap diperlukan."
+                        >
+                          Konteks kajian aman
+                        </span>
+                      ) : null}
                       {clip.output_resolution ? <span className="clipMetric">{clip.output_resolution}</span> : null}
                       {clip.auditor_name && clip.audit_id ? (
                         <span className="clipMetric" title={`Audit editorial otomatis ${clip.audit_id}`}>
@@ -598,6 +622,27 @@ export function ResultsSection({
                             <span><b>{growthReadiness.label}.</b> {growthReadiness.detail} Ini indikator kesiapan, bukan jaminan view.</span>
                           </div>
                         ) : null}
+                        {clip.religious_review_required ? (
+                          <div className="analysisBlock analysisIdea">
+                            <div className="analysisIdeaHeader">
+                              <b><Info size={14} /> Review konteks kajian wajib</b>
+                              <span>
+                                Risiko {clip.religious_review_risk || "medium"} · {clip.religious_claim_count || 0} klaim
+                              </span>
+                            </div>
+                            {clip.source_context_before ? (
+                              <p><b>Sebelum clip:</b> {clip.source_context_before}</p>
+                            ) : null}
+                            {clip.source_context_after ? (
+                              <p><b>Sesudah clip:</b> {clip.source_context_after}</p>
+                            ) : null}
+                            <ol>
+                              {(clip.religious_review_checks || []).map((item) => (
+                                <li key={item}>{RELIGIOUS_REVIEW_LABELS[item] || item.replaceAll("_", " ")}</li>
+                              ))}
+                            </ol>
+                          </div>
+                        ) : null}
                         {clip.growth_checkpoints?.length ? (
                           <div className="analysisLine">
                             <BarChart3 size={15} />
@@ -644,7 +689,9 @@ export function ResultsSection({
                     />
                     <span>
                       <CheckCircle2 size={16} />
-                      Hasil, fakta, dan hak penggunaan sudah saya review
+                      {clip.religious_review_required
+                        ? "Konteks, rujukan agama, fakta, dan hak penggunaan sudah saya review"
+                        : "Hasil, fakta, dan hak penggunaan sudah saya review"}
                     </span>
                   </label>
                   <div className="clipActions">

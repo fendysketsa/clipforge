@@ -2785,6 +2785,122 @@ def test_monetization_preflight_blocks_short_with_low_retention_readiness(monkey
     assert "perkembangan beat" in issue
 
 
+def test_monetization_preflight_blocks_short_with_incomplete_narrative_arc(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-incomplete-narrative-short",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "output_format": "vertical_short",
+            "score": 91,
+            "narrative_arc_score": 82,
+            "narrative_arc_complete": False,
+        },
+    )
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+    assert "hook, konteks, konflik, jawaban, dan ending kuat" in issue
+
+
+def test_monetization_preflight_blocks_short_with_dangling_religious_context(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-dangling-kajian-short",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "output_format": "vertical_short",
+            "score": 91,
+            "narrative_arc_score": 100,
+            "narrative_arc_complete": True,
+            "religious_context_safe": False,
+            "religious_context_integrity": {
+                "safe_for_automatic_export": False,
+                "quoted_claim_incomplete": True,
+            },
+        },
+    )
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+    assert "konteks kajian tidak utuh" in issue
+    assert "atribusi, syarat, dan penjelasannya lengkap" in issue
+
+
+def test_monetization_preflight_requires_explicit_review_for_religious_claim_packet(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-religious-claim-review",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+    sidecar = {
+        "output_format": "vertical_short",
+        "score": 91,
+        "duration": 38,
+        "aspect_ratio": "9:16",
+        "thumbnail_strategy": "embedded_shorts_cover_frame",
+        "narrative_arc_score": 100,
+        "narrative_arc_complete": True,
+        "religious_context_safe": True,
+        "religious_context_integrity": {"safe_for_automatic_export": True},
+        "religious_claim_review": {
+            "review_required": True,
+            "risk_level": "high",
+            "recommended_decision": "manual_review_before_private_upload",
+        },
+        "shorts_policy_compliance": {"duration_within_official_limit": True},
+        "monetization_readiness": {"eligible_for_private_upload_review": True},
+    }
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: sidecar)
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+    assert "selesaikan checklist review" in issue
+
+    reviewed_clip = clip.model_copy(update={"is_correct": True})
+    reviewed_job = job.model_copy(update={"clips": [reviewed_clip]})
+    reviewed_issue = youtube_monetization_preflight_issue(reviewed_job, reviewed_clip)
+    assert reviewed_issue is None
+
+
 def test_monetization_preflight_accepts_legacy_compilation_story_arc(monkeypatch):
     import api
 

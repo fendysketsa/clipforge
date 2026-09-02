@@ -368,6 +368,9 @@ class ClipCandidate(BaseModel):
     loop_score: int = 0
     boundary_quality: str = ""
     retention_score: int = 0
+    narrative_arc_score: int = 0
+    narrative_arc_complete: bool = False
+    religious_context_safe: bool = True
 
 
 class ClipFile(BaseModel):
@@ -391,6 +394,15 @@ class ClipFile(BaseModel):
     key_point_score: int | None = None
     loop_score: int | None = None
     retention_score: int | None = None
+    narrative_arc_score: int | None = None
+    narrative_arc_complete: bool | None = None
+    religious_context_safe: bool | None = None
+    religious_review_required: bool | None = None
+    religious_review_risk: str | None = None
+    religious_claim_count: int | None = None
+    religious_review_checks: list[str] = Field(default_factory=list)
+    source_context_before: str | None = None
+    source_context_after: str | None = None
     boundary_quality: str | None = None
     output_resolution: str | None = None
     auditor_name: str | None = None
@@ -1056,6 +1068,58 @@ ISLAMIC_EVERGREEN_NICHES: dict[str, dict[str, Any]] = {
     },
 }
 
+# YouTube search.list behaves far better with a few broad concepts than with
+# six long natural-language prompts joined into one q parameter. Detailed
+# niche phrases remain available to the bounded yt-dlp fallback and metadata
+# ranking; this compact query is only the fast API discovery seed.
+FAST_YOUTUBE_DATA_API_TERMS: dict[str, list[str]] = {
+    "auto": [
+        "kajian islam indonesia",
+        "ceramah islam indonesia",
+        "kisah inspiratif muslim",
+        "kesehatan mental islam",
+        "rezeki halal",
+        "sejarah islam",
+    ],
+    "islamic_practical_life": [
+        "kajian islam indonesia",
+        "ceramah islam indonesia",
+        "nasihat islam",
+        "tanya jawab islam",
+        "kisah inspiratif muslim",
+    ],
+    "islamic_current_viral": [
+        "kajian islam terbaru",
+        "ceramah islam terbaru",
+        "muslim indonesia",
+        "dakwah indonesia",
+    ],
+    "islamic_mental_health": [
+        "kesehatan mental islam",
+        "ketenangan hati islam",
+        "tawakal",
+        "psikologi islam",
+    ],
+    "halal_wealth": [
+        "rezeki halal",
+        "keuangan syariah",
+        "bisnis halal",
+        "riba islam",
+    ],
+    "fiqih_harian": [
+        "fiqih harian",
+        "shalat yang benar",
+        "wudhu yang benar",
+        "tanya jawab ibadah",
+    ],
+    "islamic_history": [
+        "sejarah islam",
+        "kisah nabi",
+        "kisah sahabat nabi",
+        "peradaban islam",
+    ],
+}
+
 
 def merge_unique_queries(*groups: list[str]) -> list[str]:
     merged: list[str] = []
@@ -1226,7 +1290,7 @@ class ViralVideoSearchRequest(BaseModel):
     )
     min_views: int = Field(default_factory=lambda: env_int("VIRAL_CC_MIN_VIEWS", 1000), ge=0)
     max_age_days: int = Field(default=FRESH_VIRAL_MAX_AGE_DAYS, ge=1, le=MAX_VIRAL_FALLBACK_AGE_DAYS)
-    duration_filter: ViralDurationFilter = "over_20"
+    duration_filter: ViralDurationFilter = "any"
     upload_date_filter: ViralUploadDateFilter = "this_year"
     definition_filter: ViralDefinitionFilter = "hd"
     sort_order: ViralSortOrder = "popularity"
@@ -3555,6 +3619,12 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
     """Block private upload when rights or substantive-edit evidence is missing."""
     sidecar = clip_sidecar_payload(clip)
     metadata = metadata_for_job(job)
+    editorial_safety = sidecar.get("editorial_safety")
+    if isinstance(editorial_safety, dict) and editorial_safety.get("safe_for_selection") is not True:
+        return (
+            "Upload diblokir: audit editorial mendeteksi ejekan/serangan, perayaan atas bahaya, "
+            "atau konteks negatif tanpa hikmah dan penutup konstruktif. Pilih kandidat lain."
+        )
     reviewed_automatic_rebuild = reviewed_automatic_rebuild_for_private_upload(
         job, clip, sidecar, metadata
     )
@@ -3732,6 +3802,44 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             if authenticity_issue:
                 return authenticity_issue
     if str(sidecar.get("output_format") or "") == "vertical_short":
+        religious_claim_review = sidecar.get("religious_claim_review")
+        if isinstance(religious_claim_review, dict):
+            if religious_claim_review.get("recommended_decision") == "reject_and_recut":
+                return (
+                    "Upload diblokir: paket review konteks meminta clip dipotong ulang karena "
+                    "batas kalimat atau makna kajian belum aman."
+                )
+            if religious_claim_review.get("review_required") is True and not clip.is_correct:
+                return (
+                    "Upload diblokir: clip memuat ayat, hadis, atau pernyataan hukum. "
+                    "Bandingkan dengan konteks sumber dan selesaikan checklist review sebelum upload Private."
+                )
+        raw_narrative_arc_score = sidecar.get("narrative_arc_score")
+        if isinstance(raw_narrative_arc_score, (int, float)) and not isinstance(
+            raw_narrative_arc_score,
+            bool,
+        ):
+            narrative_arc_score = max(
+                0,
+                min(100, int(round(raw_narrative_arc_score))),
+            )
+            if narrative_arc_score > 0 and sidecar.get("narrative_arc_complete") is not True:
+                return (
+                    "Upload diblokir: alur Short belum lengkap. Klip harus memiliki hook, "
+                    "konteks, konflik, jawaban, dan ending kuat dari ucapan sumber."
+                )
+        religious_context = sidecar.get("religious_context_integrity")
+        if (
+            sidecar.get("religious_context_safe") is False
+            or (
+                isinstance(religious_context, dict)
+                and religious_context.get("safe_for_automatic_export") is not True
+            )
+        ):
+            return (
+                "Upload diblokir: konteks kajian tidak utuh atau kutipan/pernyataan hukum "
+                "berakhir menggantung. Render ulang sampai atribusi, syarat, dan penjelasannya lengkap."
+            )
         raw_fyp_score = sidecar.get("score")
         try:
             fyp_score = int(round(float(raw_fyp_score)))
@@ -7207,6 +7315,25 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
         if not isinstance(growth_readiness, dict):
             growth_readiness = sidecar.get("one_k_long_form_readiness")
         growth_readiness = growth_readiness if isinstance(growth_readiness, dict) else {}
+        religious_claim_review = sidecar.get("religious_claim_review")
+        religious_claim_review = (
+            religious_claim_review
+            if isinstance(religious_claim_review, dict)
+            else {}
+        )
+        religious_claims = religious_claim_review.get("claims")
+        religious_claims = religious_claims if isinstance(religious_claims, list) else []
+
+        def context_excerpt(key: str) -> str | None:
+            rows = religious_claim_review.get(key)
+            if not isinstance(rows, list):
+                return None
+            text = " ".join(
+                str(row.get("text") or "").strip()
+                for row in rows
+                if isinstance(row, dict) and str(row.get("text") or "").strip()
+            )
+            return text[:700] or None
 
         raw_score = sidecar.get("score")
         fyp_score = (
@@ -7258,6 +7385,35 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
                 key_point_score=sidecar_score("key_point_score"),
                 loop_score=sidecar_score("loop_score"),
                 retention_score=sidecar_score("retention_score"),
+                narrative_arc_score=sidecar_score("narrative_arc_score"),
+                narrative_arc_complete=(
+                    bool(sidecar.get("narrative_arc_complete"))
+                    if "narrative_arc_complete" in sidecar
+                    else None
+                ),
+                religious_context_safe=(
+                    bool(sidecar.get("religious_context_safe"))
+                    if "religious_context_safe" in sidecar
+                    else None
+                ),
+                religious_review_required=(
+                    bool(religious_claim_review.get("review_required"))
+                    if religious_claim_review
+                    else None
+                ),
+                religious_review_risk=(
+                    str(religious_claim_review.get("risk_level") or "").strip() or None
+                ),
+                religious_claim_count=(
+                    len(religious_claims) if religious_claim_review else None
+                ),
+                religious_review_checks=[
+                    str(item).strip()
+                    for item in religious_claim_review.get("required_checks", [])
+                    if isinstance(item, str) and item.strip()
+                ][:8],
+                source_context_before=context_excerpt("before_context"),
+                source_context_after=context_excerpt("after_context"),
                 boundary_quality=(
                     str(sidecar.get("boundary_quality")).strip()
                     if sidecar.get("boundary_quality")
@@ -7912,7 +8068,10 @@ def run_job(job_id: str) -> None:
         candidates = discover_candidates(started_at, output_root)
         if clips and candidates:
             clips = enrich_clips_with_candidate_titles(clips, candidates)
-        if code == 0 and clips:
+        # Active clip modes always write candidates.json before rendering. A
+        # video file without any surviving candidate audit is not a valid
+        # result and its entire job workspace must be removed below.
+        if code == 0 and clips and candidates:
             updates = {
                 "status": "completed",
                 "logs": logs[-120:],
@@ -7961,6 +8120,17 @@ def run_job(job_id: str) -> None:
                 auto_upload_youtube=request.auto_upload_youtube,
                 processed_at=str(updates["finished_at"]),
             )
+            with jobs_lock:
+                completed_job = jobs.get(job_id)
+            if completed_job is not None:
+                try:
+                    send_clip_success_telegram_alert(completed_job)
+                except Exception as telegram_exc:
+                    success_logs = [
+                        *logs,
+                        f"Telegram alert clip berhasil gagal dikirim: {telegram_exc}",
+                    ][-120:]
+                    set_job(job_id, logs=success_logs)
             if request.auto_upload_youtube:
                 auto_queue_youtube_uploads_for_job(job_id, logs)
         else:
@@ -8227,6 +8397,20 @@ def viral_search_filter_rejection_reason(
     return reasons[0] if reasons else ""
 
 
+def viral_search_hard_filter_rejection_reason(
+    info: dict[str, Any],
+    request: AutoViralRequest | ViralVideoSearchRequest,
+) -> str:
+    """Keep the explicitly requested CC/HD constraints non-adaptive."""
+    if request.definition_filter != "hd":
+        return ""
+    definition = str(info.get("definition") or "").strip().casefold()
+    height = source_max_height(info)
+    if definition == "sd" or (definition != "hd" and height < 720):
+        return "kualitas HD tidak terverifikasi"
+    return ""
+
+
 def auto_viral_candidate_score(info: dict[str, Any]) -> float:
     views = max(0, int(info.get("view_count") or 0))
     likes = max(0, int(info.get("like_count") or 0))
@@ -8337,21 +8521,31 @@ def niche_candidate_rejection_reason(
     niche: IslamicContentNiche,
 ) -> str:
     """Reject unrelated or non-Indonesian results before momentum can rank them."""
+    reasons = niche_candidate_relaxation_reasons(info, niche)
+    return reasons[0] if reasons else ""
+
+
+def niche_candidate_relaxation_reasons(
+    info: dict[str, Any],
+    niche: IslamicContentNiche,
+) -> list[str]:
+    """Explain relevance/language mismatches so adaptive search can rank them."""
+    reasons: list[str] = []
     relevance_score = niche_relevance_score(info, niche)
     minimum_relevance = max(1, min(100, env_int("VIRAL_CC_MIN_NICHE_SCORE", 18)))
     if relevance_score < minimum_relevance:
-        return (
+        reasons.append(
             f"kecocokan tema {relevance_score:.0f}/100 di bawah minimum "
             f"{minimum_relevance}/100"
         )
     language_score = indonesian_language_score(info)
     minimum_language = max(1, min(100, env_int("VIRAL_CC_MIN_INDONESIAN_SCORE", 15)))
     if language_score < minimum_language:
-        return (
+        reasons.append(
             f"sinyal Bahasa Indonesia {language_score:.0f}/100 di bawah minimum "
             f"{minimum_language}/100"
         )
-    return ""
+    return reasons
 
 
 def compact_source_payload(
@@ -8581,13 +8775,17 @@ def youtube_data_api_search_queries(request: AutoViralRequest) -> list[str]:
     """Use one broad OR query in fast mode to spend only one search.list call."""
     max_api_queries = max(1, min(20, env_int("VIRAL_CC_MAX_API_QUERIES", 1)))
     if env_bool("VIRAL_CC_FAST_API_ONLY", True):
-        terms: list[str] = []
-        for query in request.queries:
-            clean = re.sub(r"\s+", " ", query).strip()[:72]
-            if clean and clean.casefold() not in {item.casefold() for item in terms}:
-                terms.append(clean)
-            if len(terms) >= 6:
-                break
+        configured_fast_query = re.sub(
+            r"\s+",
+            " ",
+            os.environ.get("VIRAL_CC_FAST_API_QUERY", ""),
+        ).strip()
+        if configured_fast_query:
+            return [configured_fast_query[:480]]
+        terms = FAST_YOUTUBE_DATA_API_TERMS.get(
+            request.niche,
+            FAST_YOUTUBE_DATA_API_TERMS["auto"],
+        )
         combined = "|".join(terms)
         return [combined[:480]] if combined else []
     return request.queries[:max_api_queries]
@@ -8644,15 +8842,20 @@ def search_youtube_data_api_viral_sources(
             "regionCode": region_code,
             "relevanceLanguage": relevance_language,
             "safeSearch": "strict",
-            "publishedAfter": youtube_published_after(request.max_age_days),
         }
+        # CC and an explicitly selected HD definition are hard requirements.
+        # Freshness, duration and minimum views are ranking preferences in
+        # adaptive mode; applying them in search.list used to empty the result
+        # set before metadata could be ranked.
+        if not adaptive_filters:
+            search_params["publishedAfter"] = youtube_published_after(request.max_age_days)
         if request.duration_filter != "any" and not adaptive_filters:
             search_params["videoDuration"] = {
                 "under_3": "short",
                 "between_3_20": "medium",
                 "over_20": "long",
             }[request.duration_filter]
-        if request.definition_filter == "hd" and not adaptive_filters:
+        if request.definition_filter == "hd":
             search_params["videoDefinition"] = "high"
         if topic_id and env_bool("VIRAL_CC_ENFORCE_TOPIC_ID", False):
             search_params["topicId"] = topic_id
@@ -8700,7 +8903,14 @@ def search_youtube_data_api_viral_sources(
                 continue
             if views < request.min_views and not adaptive_filters:
                 continue
-            if not is_fresh_viral_upload(payload, request.max_age_days):
+            if not is_fresh_viral_upload(payload, request.max_age_days) and not adaptive_filters:
+                continue
+            hard_filter_rejection = viral_search_hard_filter_rejection_reason(payload, request)
+            if hard_filter_rejection:
+                append_auto_viral_log(
+                    run_id,
+                    f"Skip karena filter wajib ({hard_filter_rejection}): {payload.get('title') or '-'}",
+                )
                 continue
             filter_reasons = viral_search_filter_relaxation_reasons(payload, request)
             filter_rejection = "; ".join(filter_reasons)
@@ -8717,11 +8927,24 @@ def search_youtube_data_api_viral_sources(
                     f"Skip sumber tidak aman ({rejection_reason}): {payload.get('title') or '-'}",
                 )
                 continue
-            niche_rejection = niche_candidate_rejection_reason(payload, request.niche)
-            if niche_rejection:
+            niche_reasons = niche_candidate_relaxation_reasons(payload, request.niche)
+            language_reasons = [
+                reason for reason in niche_reasons if reason.startswith("sinyal Bahasa Indonesia")
+            ]
+            if language_reasons:
                 append_auto_viral_log(
                     run_id,
-                    f"Skip kandidat tidak relevan ({niche_rejection}): "
+                    f"Skip kandidat bukan Bahasa Indonesia ({'; '.join(language_reasons)}): "
+                    f"{payload.get('title') or '-'}",
+                )
+                continue
+            relevance_reasons = [
+                reason for reason in niche_reasons if reason.startswith("kecocokan tema")
+            ]
+            if relevance_reasons and not adaptive_filters:
+                append_auto_viral_log(
+                    run_id,
+                    f"Skip kandidat tidak relevan ({'; '.join(relevance_reasons)}): "
                     f"{payload.get('title') or '-'}",
                 )
                 continue
@@ -8729,6 +8952,7 @@ def search_youtube_data_api_viral_sources(
             source["search_provider"] = "youtube_data_api"
             relaxed_reasons: list[str] = []
             relaxed_reasons.extend(filter_reasons)
+            relaxed_reasons.extend(relevance_reasons)
             if views < request.min_views:
                 relaxed_reasons.append(
                     f"tayangan {views:,} di bawah preferensi {request.min_views:,}"
@@ -8820,11 +9044,18 @@ def search_auto_viral_sources(
                 continue
             if views < request.min_views and not adaptive_filters:
                 continue
-            if not is_fresh_viral_upload(metadata, request.max_age_days):
+            if not is_fresh_viral_upload(metadata, request.max_age_days) and not adaptive_filters:
                 append_auto_viral_log(
                     run_id,
                     f"Skip tidak fresh (> {request.max_age_days} hari/tanggal tidak tersedia): "
                     f"{metadata.get('title') or url}",
+                )
+                continue
+            hard_filter_rejection = viral_search_hard_filter_rejection_reason(metadata, request)
+            if hard_filter_rejection:
+                append_auto_viral_log(
+                    run_id,
+                    f"Skip karena filter wajib ({hard_filter_rejection}): {metadata.get('title') or url}",
                 )
                 continue
             filter_reasons = viral_search_filter_relaxation_reasons(metadata, request)
@@ -8842,11 +9073,24 @@ def search_auto_viral_sources(
                     f"Skip sumber tidak aman ({rejection_reason}): {metadata.get('title') or url}",
                 )
                 continue
-            niche_rejection = niche_candidate_rejection_reason(metadata, request.niche)
-            if niche_rejection:
+            niche_reasons = niche_candidate_relaxation_reasons(metadata, request.niche)
+            language_reasons = [
+                reason for reason in niche_reasons if reason.startswith("sinyal Bahasa Indonesia")
+            ]
+            if language_reasons:
                 append_auto_viral_log(
                     run_id,
-                    f"Skip kandidat tidak relevan ({niche_rejection}): "
+                    f"Skip kandidat bukan Bahasa Indonesia ({'; '.join(language_reasons)}): "
+                    f"{metadata.get('title') or url}",
+                )
+                continue
+            relevance_reasons = [
+                reason for reason in niche_reasons if reason.startswith("kecocokan tema")
+            ]
+            if relevance_reasons and not adaptive_filters:
+                append_auto_viral_log(
+                    run_id,
+                    f"Skip kandidat tidak relevan ({'; '.join(relevance_reasons)}): "
                     f"{metadata.get('title') or url}",
                 )
                 continue
@@ -8854,6 +9098,7 @@ def search_auto_viral_sources(
             source["search_provider"] = "yt_dlp_fallback"
             relaxed_reasons: list[str] = []
             relaxed_reasons.extend(filter_reasons)
+            relaxed_reasons.extend(relevance_reasons)
             if views < request.min_views:
                 relaxed_reasons.append(
                     f"tayangan {views:,} di bawah preferensi {request.min_views:,}"
@@ -9303,8 +9548,11 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
         else:
             append_auto_viral_log(run_id, "YouTube Data API dinonaktifkan; memakai pencarian yt-dlp terverifikasi.")
 
+        # Fast mode may stop after one successful API request when it already
+        # found something. An empty API result, however, must not become an
+        # empty UI list: continue with the bounded yt-dlp metadata fallback.
         if len(sources) < source_pool_target and not (
-            fast_api_only and api_attempted and not quota_fallback
+            fast_api_only and api_attempted and not quota_fallback and bool(sources)
         ):
             fallback_age_days = request.max_age_days
             fallback_min_views = min(
@@ -9412,21 +9660,44 @@ def resolve_selected_auto_viral_sources(
                 f"Pilihan #{rank} berdurasi {duration:.0f} detik, di luar batas sumber "
                 f"{request.min_source_duration}-{request.max_source_duration} detik"
             )
-        if not is_fresh_viral_upload(metadata, request.max_age_days):
+        adaptive_filters = env_bool("VIRAL_CC_ADAPTIVE_FILTERS", True)
+        if not is_fresh_viral_upload(metadata, request.max_age_days) and not adaptive_filters:
             raise RuntimeError(
                 f"Pilihan #{rank} tidak lagi masuk jendela freshness {request.max_age_days} hari"
             )
+        hard_filter_rejection = viral_search_hard_filter_rejection_reason(metadata, request)
+        if hard_filter_rejection:
+            raise RuntimeError(
+                f"Pilihan #{rank} tidak lolos filter wajib: {hard_filter_rejection}"
+            )
         filter_rejection = viral_search_filter_rejection_reason(metadata, request)
-        if filter_rejection and not env_bool("VIRAL_CC_ADAPTIVE_FILTERS", True):
+        if filter_rejection and not adaptive_filters:
             raise RuntimeError(f"Pilihan #{rank} tidak lolos filter: {filter_rejection}")
         if filter_rejection:
             append_auto_viral_log(
                 run_id,
                 f"Pilihan #{rank} memakai perluasan filter ({filter_rejection}); metadata CC dan guard risiko hak tetap lolos.",
             )
-        niche_rejection = niche_candidate_rejection_reason(metadata, request.niche)
-        if niche_rejection:
-            raise RuntimeError(f"Pilihan #{rank} tidak lolos tema: {niche_rejection}")
+        niche_reasons = niche_candidate_relaxation_reasons(metadata, request.niche)
+        language_reasons = [
+            reason for reason in niche_reasons if reason.startswith("sinyal Bahasa Indonesia")
+        ]
+        if language_reasons:
+            raise RuntimeError(
+                f"Pilihan #{rank} bukan konten Bahasa Indonesia: {'; '.join(language_reasons)}"
+            )
+        relevance_reasons = [
+            reason for reason in niche_reasons if reason.startswith("kecocokan tema")
+        ]
+        if relevance_reasons and not adaptive_filters:
+            raise RuntimeError(
+                f"Pilihan #{rank} tidak lolos tema: {'; '.join(relevance_reasons)}"
+            )
+        if relevance_reasons:
+            append_auto_viral_log(
+                run_id,
+                f"Pilihan #{rank} memakai perluasan tema ({'; '.join(relevance_reasons)}).",
+            )
         source = compact_source_payload(metadata, request.niche)
         source["rank"] = rank
         sources.append(source)
@@ -9512,6 +9783,44 @@ def send_telegram_alert(text: str) -> None:
         request = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(request, timeout=15):
             pass
+
+
+def clip_success_telegram_text(job: ClipJob) -> str:
+    source = job.source_title or job.request.url or job.request.source_file or "Video"
+    format_label = (
+        "Long Story 5-10 menit"
+        if job.request.clip_mode == "highlight_5m"
+        else "Clip Pendek"
+    )
+    lines = [
+        "Clip berhasil dibuat",
+        "",
+        f"Job: {job.id}",
+        f"Format: {format_label}",
+        f"Sumber: {source}",
+        f"Jumlah hasil: {len(job.clips)}",
+        f"Durasi proses: {job.duration_seconds:.1f} detik" if job.duration_seconds is not None else "",
+        "",
+        "Hasil:",
+    ]
+    for index, clip in enumerate(job.clips[:12], start=1):
+        label = clip.title or clip.name
+        score = f" · FYP {clip.fyp_score}/100" if clip.fyp_score is not None else ""
+        lines.append(f"{index}. {label}{score}")
+    lines.extend(
+        [
+            "",
+            "Status: lolos quality gate kandidat dan audit editorial awal.",
+            "Tetap review hak audio/visual serta YouTube Checks sebelum dipublikasikan.",
+        ]
+    )
+    return "\n".join(line for line in lines if line is not None)[:12000]
+
+
+def send_clip_success_telegram_alert(job: ClipJob) -> None:
+    if not env_bool("TELEGRAM_CLIP_SUCCESS_ALERTS", True):
+        return
+    send_telegram_alert(clip_success_telegram_text(job))
 
 
 def auto_viral_summary(run: AutoViralRun) -> str:

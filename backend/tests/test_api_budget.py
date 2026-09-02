@@ -443,7 +443,7 @@ def test_current_viral_niche_uses_indonesian_freshness_queries():
 def test_search_filter_defaults_match_broad_cc_reference_layout():
     request = ViralVideoSearchRequest(niche="islamic_current_viral")
 
-    assert request.duration_filter == "over_20"
+    assert request.duration_filter == "any"
     assert request.upload_date_filter == "this_week"
     assert request.definition_filter == "hd"
     assert request.sort_order == "popularity"
@@ -605,7 +605,20 @@ def test_fast_google_api_combines_niche_terms_into_one_quota_call(monkeypatch):
 
     assert len(queries) == 1
     assert "|" in queries[0]
-    assert "isu muslim indonesia viral hari ini" in queries[0]
+    assert "kajian islam terbaru" in queries[0]
+    assert len(queries[0]) < 180
+
+
+def test_fast_google_api_query_can_be_overridden_without_exposing_key(monkeypatch):
+    monkeypatch.setenv("VIRAL_CC_FAST_API_ONLY", "true")
+    monkeypatch.setenv(
+        "VIRAL_CC_FAST_API_QUERY",
+        "kajian islam indonesia|nasihat penuh hikmah",
+    )
+
+    assert youtube_data_api_search_queries(AutoViralRequest()) == [
+        "kajian islam indonesia|nasihat penuh hikmah"
+    ]
 
 
 def test_quota_exceeded_uses_small_cc_verified_fallback(monkeypatch):
@@ -647,8 +660,11 @@ def test_api_search_adapts_soft_filters_but_keeps_cc_language_and_niche(monkeypa
     monkeypatch.setenv("VIRAL_CC_FAST_API_ONLY", "true")
     monkeypatch.setenv("VIRAL_CC_ADAPTIVE_FILTERS", "true")
 
-    def fake_api(path, _params):
+    search_params = {}
+
+    def fake_api(path, params):
         if path == "search":
+            search_params.update(params)
             return {"items": [{"id": {"videoId": "adaptive123"}}]}
         return {
             "items": [
@@ -662,7 +678,7 @@ def test_api_search_adapts_soft_filters_but_keeps_cc_language_and_niche(monkeypa
                         "liveBroadcastContent": "none",
                     },
                     "statistics": {"viewCount": "500", "likeCount": "25"},
-                    "contentDetails": {"duration": "PT10M", "definition": "sd"},
+                    "contentDetails": {"duration": "PT10M", "definition": "hd"},
                     "status": {"license": "creativeCommon"},
                 }
             ]
@@ -684,7 +700,66 @@ def test_api_search_adapts_soft_filters_but_keeps_cc_language_and_niche(monkeypa
     assert selected[0]["license_metadata_verified"] is True
     assert selected[0]["source_preflight"] == "passed"
     assert selected[0]["filter_match"] == "adaptive"
-    assert len(selected[0]["relaxed_filters"]) == 3
+    assert len(selected[0]["relaxed_filters"]) == 2
+    assert search_params["videoLicense"] == "creativeCommon"
+    assert search_params["videoDefinition"] == "high"
+    assert "publishedAfter" not in search_params
+
+
+def test_api_search_never_relaxes_explicit_hd_requirement(monkeypatch):
+    import api
+
+    monkeypatch.setenv("YOUTUBE_DATA_API_KEY", "configured-test-key")
+    monkeypatch.setenv("VIRAL_CC_ADAPTIVE_FILTERS", "true")
+
+    def fake_api(path, _params):
+        if path == "search":
+            return {"items": [{"id": {"videoId": "sd-only"}}]}
+        return {
+            "items": [
+                {
+                    "id": "sd-only",
+                    "snippet": {
+                        "title": "Kajian Islam Indonesia",
+                        "description": "Nasihat dan hikmah untuk umat Indonesia.",
+                        "publishedAt": datetime.now(timezone.utc).isoformat(),
+                        "defaultAudioLanguage": "id",
+                        "liveBroadcastContent": "none",
+                    },
+                    "statistics": {"viewCount": "5000", "likeCount": "100"},
+                    "contentDetails": {"duration": "PT10M", "definition": "sd"},
+                    "status": {"license": "creativeCommon"},
+                }
+            ]
+        }
+
+    monkeypatch.setattr(api, "youtube_data_api_get", fake_api)
+    request = AutoViralRequest(definition_filter="hd")
+
+    assert search_youtube_data_api_viral_sources(request, "missing-run", stop_after=3) == []
+
+
+def test_empty_fast_api_result_enters_bounded_metadata_fallback(monkeypatch):
+    import api
+
+    monkeypatch.setenv("YOUTUBE_DATA_API_KEY", "configured-test-key")
+    monkeypatch.setenv("VIRAL_CC_FAST_API_ONLY", "true")
+    monkeypatch.setattr(api, "processed_job_source_urls", lambda: set())
+    monkeypatch.setattr(api, "search_youtube_data_api_viral_sources", lambda *_args, **_kwargs: [])
+    observed = {}
+
+    def fallback(_request, *_args, **kwargs):
+        observed["max_metadata_checks"] = kwargs["max_metadata_checks"]
+        return [{"url": "https://youtube.com/watch?v=fallback123", "score": 81.0}]
+
+    monkeypatch.setattr(api, "search_auto_viral_sources", fallback)
+
+    selected = search_viral_video_sources(ViralVideoSearchRequest(video_count=3))
+
+    assert [item["url"] for item in selected] == [
+        "https://youtube.com/watch?v=fallback123"
+    ]
+    assert observed["max_metadata_checks"] <= 24
 
 
 def test_api_search_skips_rights_risk_and_continues_to_safe_replacement(monkeypatch):

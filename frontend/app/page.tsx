@@ -146,7 +146,7 @@ export default function HomePage() {
   const [selectedAutoContentUrls, setSelectedAutoContentUrls] = useState<string[]>([]);
   const [autoContentMessage, setAutoContentMessage] = useState("");
   const [viralSearchFilters, setViralSearchFilters] = useState<ViralSearchFilters>({
-    duration_filter: "over_20",
+    duration_filter: "any",
     upload_date_filter: "this_year",
     definition_filter: "hd",
     sort_order: "popularity",
@@ -1226,8 +1226,8 @@ export default function HomePage() {
       setAutoContentMessage(
         safeSources.length
           ? adaptiveCount
-            ? `${adaptiveCount} kandidat memakai perluasan durasi/HD/tayangan; metadata CC, Bahasa Indonesia, tema, dan guard risiko hak tetap wajib.`
-            : "Semua kandidat lolos guard otomatis awal dan metadata CC terdeteksi. Hak audio/visual tetap perlu direview sebelum publikasi."
+            ? `${adaptiveCount} kandidat memakai perluasan umur/durasi/tayangan/tema; lisensi CC, kualitas HD, Bahasa Indonesia, dan guard risiko hak tetap wajib.`
+            : "Semua kandidat lolos guard otomatis awal; metadata CC dan kualitas HD terdeteksi. Hak audio/visual tetap perlu direview sebelum publikasi."
           : "Belum ditemukan kandidat yang lolos guard otomatis. Sistem tidak akan memaksakan sumber berisiko; coba perluas filter lalu cari lagi.",
       );
     } catch {

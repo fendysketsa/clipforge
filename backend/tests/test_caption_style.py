@@ -83,6 +83,8 @@ from clipper import (
     pov_banner_text,
     remove_running_text_filter,
     retro_tv_look_filter,
+    religious_context_integrity_profile,
+    religious_claim_review_packet,
     resolve_codex_ideas,
     score_window,
     scale_watermark_region,
@@ -99,6 +101,7 @@ from clipper import (
     shorts_cta_voiceover_text,
     shorts_policy_compliance,
     shorts_should_protect_payoff,
+    short_narrative_arc_profile,
     social_anecdote_profile,
     subscribe_value_prompt,
     subscriber_intent_profile,
@@ -1336,7 +1339,7 @@ def test_youtube_policy_snapshot_marks_future_rules_for_review_without_assuming_
     assert future["review_required"] is True
     assert future["future_year_assumed_unchanged"] is False
     assert future["rules_are_runtime_guarantee"] is False
-    assert len(future["official_sources"]) == 8
+    assert len(future["official_sources"]) == 12
 
 
 def test_twenty_k_readiness_is_a_stability_experiment_not_a_view_guarantee():
@@ -1407,6 +1410,96 @@ def test_micro_thesis_rewards_dilemma_nuance_safety_and_nonjudgmental_payoff():
     assert metrics["boundary_quality"] == "payoff_tuntas"
     assert score >= 78
     assert "micro-thesis bernuansa tuntas dalam 20–32 detik" in reasons
+
+
+def test_kajian_short_requires_complete_five_beat_narrative_and_safe_context():
+    segments = [
+        TranscriptSegment(0, 2, "Tahukah kalian ada satu dosa yang menghabiskan pahala?"),
+        TranscriptSegment(2, 7, "Kita rajin sholat dan sedekah, tetapi lisan masih menyakiti orang lain."),
+        TranscriptSegment(7, 16, "Masalahnya, kezaliman kepada manusia tidak selesai dengan mengabaikan haknya."),
+        TranscriptSegment(16, 28, "Karena itu kita perlu mengakui kesalahan dan mengembalikan hak orang yang dizalimi."),
+        TranscriptSegment(28, 38, "Maka mintalah maaf sebelum terlambat. Jangan sampai pahala habis karena lisan kita."),
+    ]
+
+    arc = short_narrative_arc_profile(segments, 38)
+    religious = religious_context_integrity_profile(segments, 38)
+    metrics = candidate_story_metrics(segments, 38)
+    score, reasons = score_window(segments, 38)
+
+    assert arc["qualified"] is True
+    assert all(arc["beats"].values())
+    assert arc["duration_priority_25_45_seconds"] is True
+    assert religious["safe_for_automatic_export"] is True
+    assert religious["manual_source_and_claim_review_required"] is True
+    assert metrics["narrative_arc_complete"] is True
+    assert metrics["religious_context_safe"] is True
+    assert score >= 78
+    assert "hook, konteks, konflik, jawaban, dan ending terbentuk utuh" in reasons
+
+
+def test_candidate_pool_skips_kajian_greeting_and_starts_on_spoken_hook():
+    segments = [
+        TranscriptSegment(0, 3, "Assalamualaikum warahmatullahi wabarakatuh, pada kesempatan kali ini."),
+        TranscriptSegment(3, 5, "Tahukah kalian ada satu dosa yang menghabiskan pahala?"),
+        TranscriptSegment(5, 10, "Kita rajin sholat dan sedekah, tetapi lisan masih menyakiti orang lain."),
+        TranscriptSegment(10, 19, "Masalahnya, kezaliman kepada manusia tidak selesai dengan mengabaikan haknya."),
+        TranscriptSegment(19, 31, "Karena itu kita perlu mengakui kesalahan dan mengembalikan hak orang yang dizalimi."),
+        TranscriptSegment(31, 41, "Maka mintalah maaf sebelum terlambat. Jangan sampai pahala habis karena lisan kita."),
+    ]
+
+    pool = build_candidate_pool(segments, 25, 45)
+
+    assert pool
+    assert min(candidate.start for candidate in pool) >= 3.1
+    assert any(candidate.narrative_arc_complete for candidate in pool)
+    assert any(candidate.score >= 78 for candidate in pool)
+
+
+def test_kajian_short_rejects_dangling_hadith_quote_even_with_hook():
+    segments = [
+        TranscriptSegment(0, 3, "Tahukah kalian hadis yang sangat penting?"),
+        TranscriptSegment(3, 12, "Dalam hadits Rasulullah bersabda bahwa"),
+    ]
+
+    profile = religious_context_integrity_profile(segments, 12)
+
+    assert profile["is_religious_content"] is True
+    assert profile["quoted_claim_incomplete"] is True
+    assert profile["safe_for_automatic_export"] is False
+    assert profile["theological_accuracy_guaranteed"] is False
+
+
+def test_religious_claim_review_packet_preserves_timestamped_source_context():
+    transcript = [
+        TranscriptSegment(0, 4, "Sebelumnya ustaz menjelaskan bahwa pendapat harus dilihat bersama dalil dan keadaan."),
+        TranscriptSegment(4, 8, "Tahukah kalian mengapa perkara ini penting?"),
+        TranscriptSegment(8, 15, "Dalam hadits Rasulullah bersabda bahwa amal dinilai dari niatnya."),
+        TranscriptSegment(15, 23, "Karena itu hukum dan penerapannya perlu dijelaskan dengan syarat yang lengkap."),
+        TranscriptSegment(23, 31, "Maka jangan memotong ucapan sebelum penjelasan ulama selesai."),
+        TranscriptSegment(31, 36, "Sesudahnya beliau membahas perbedaan keadaan setiap orang."),
+    ]
+    clip = ClipCandidate(
+        1,
+        4,
+        31,
+        27,
+        90,
+        "Jangan Memotong Penjelasan",
+        "kajian lengkap",
+        " ".join(item.text for item in transcript[1:5]),
+    )
+
+    packet = religious_claim_review_packet(clip, transcript[1:5], transcript)
+
+    assert packet["review_required"] is True
+    assert packet["risk_level"] == "high"
+    assert packet["automatic_theological_approval"] is False
+    assert packet["before_context"][0]["start"] == 0
+    assert packet["after_context"][0]["start"] == 31
+    assert any("hadith_attribution" in claim["types"] for claim in packet["claims"])
+    assert "verify_quran_or_hadith_reference_and_wording" in packet["required_checks"]
+    assert len(packet["clip_transcript_sha256"]) == 64
+    assert packet["legacy_pipeline_changed"] is False
 
 
 def test_micro_thesis_uses_restrained_authority_visuals_without_copying_reference():

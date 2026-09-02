@@ -36,6 +36,15 @@ export type ClipFile = {
   key_point_score?: number | null;
   loop_score?: number | null;
   retention_score?: number | null;
+  narrative_arc_score?: number | null;
+  narrative_arc_complete?: boolean | null;
+  religious_context_safe?: boolean | null;
+  religious_review_required?: boolean | null;
+  religious_review_risk?: string | null;
+  religious_claim_count?: number | null;
+  religious_review_checks?: string[];
+  source_context_before?: string | null;
+  source_context_after?: string | null;
   boundary_quality?: string | null;
   output_resolution?: string | null;
   auditor_name?: string | null;
@@ -70,6 +79,9 @@ export type ClipCandidate = {
   key_point_score?: number;
   loop_score?: number;
   retention_score?: number;
+  narrative_arc_score?: number;
+  narrative_arc_complete?: boolean;
+  religious_context_safe?: boolean;
   boundary_quality?: string;
 };
 

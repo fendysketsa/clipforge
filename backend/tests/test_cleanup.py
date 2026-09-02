@@ -123,6 +123,101 @@ def test_failed_or_empty_job_removes_entire_partial_workspace(monkeypatch, tmp_p
     assert "telah dihapus" in failed.logs[-1]
 
 
+def test_rendered_file_without_surviving_candidate_audit_is_deleted(monkeypatch, tmp_path):
+    import api
+
+    outputs = tmp_path / "outputs"
+    job = ClipJob(
+        id="missing-candidate-audit",
+        status="queued",
+        request=ClipJobRequest(url="https://youtu.be/demo"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    workspace = outputs / job.id
+    clip_path = workspace / "clips" / "clip_01.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"rendered-but-unaudited")
+
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "JOBS_PATH", tmp_path / "jobs.json")
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "job_secrets", {})
+    monkeypatch.setattr(api, "job_processes", {})
+    monkeypatch.setattr(api, "cancelled_job_ids", set())
+    monkeypatch.setattr(api, "preserve_job_files_on_cancel", set())
+    monkeypatch.setattr(api, "build_clipper_command", lambda *_args, **_kwargs: ["clipper"])
+    monkeypatch.setattr(api.subprocess, "Popen", lambda *_args, **_kwargs: FinishedClipperProcess(0))
+    monkeypatch.setattr(
+        api,
+        "discover_clips",
+        lambda *_args, **_kwargs: [
+            ClipFile(name="clip_01.mp4", url="/outputs/demo/clips/clip_01.mp4", size_bytes=24)
+        ],
+    )
+    monkeypatch.setattr(api, "discover_candidates", lambda *_args, **_kwargs: [])
+    telegram_calls = []
+    monkeypatch.setattr(api, "send_clip_success_telegram_alert", telegram_calls.append)
+
+    run_job(job.id)
+
+    failed = api.jobs[job.id]
+    assert failed.status == "failed"
+    assert not workspace.exists()
+    assert telegram_calls == []
+
+
+def test_completed_clip_job_sends_telegram_success_alert(monkeypatch, tmp_path):
+    import api
+
+    outputs = tmp_path / "outputs"
+    job = ClipJob(
+        id="successful-alert",
+        status="queued",
+        request=ClipJobRequest(url="https://youtu.be/demo"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    candidate = ClipCandidate(
+        index=1,
+        start=0,
+        end=30,
+        duration=30,
+        score=88,
+        title="Hikmah yang Baik",
+        reason="pesan lengkap",
+        text="Pelajarannya, kita harus saling menghormati.",
+    )
+    clip = ClipFile(
+        name="clip_01.mp4",
+        url="/outputs/demo/clips/clip_01.mp4",
+        size_bytes=24,
+        title="Hikmah yang Baik",
+        fyp_score=88,
+    )
+
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "JOBS_PATH", tmp_path / "jobs.json")
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "job_secrets", {})
+    monkeypatch.setattr(api, "job_processes", {})
+    monkeypatch.setattr(api, "cancelled_job_ids", set())
+    monkeypatch.setattr(api, "preserve_job_files_on_cancel", set())
+    monkeypatch.setattr(api, "build_clipper_command", lambda *_args, **_kwargs: ["clipper"])
+    monkeypatch.setattr(api.subprocess, "Popen", lambda *_args, **_kwargs: FinishedClipperProcess(0))
+    monkeypatch.setattr(api, "discover_clips", lambda *_args, **_kwargs: [clip])
+    monkeypatch.setattr(api, "discover_candidates", lambda *_args, **_kwargs: [candidate])
+    monkeypatch.setattr(api, "remember_processed_source", lambda *_args, **_kwargs: None)
+    telegram_calls = []
+    monkeypatch.setattr(api, "send_clip_success_telegram_alert", telegram_calls.append)
+
+    run_job(job.id)
+
+    assert api.jobs[job.id].status == "completed"
+    assert len(telegram_calls) == 1
+    assert telegram_calls[0].id == job.id
+
+
 def test_source_media_candidates_never_reuses_ytdlp_partials(tmp_path):
     (tmp_path / "source.f137.mp4.part").write_bytes(b"incomplete")
     final = tmp_path / "source.mp4"

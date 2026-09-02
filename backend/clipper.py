@@ -110,6 +110,9 @@ class ClipCandidate:
     loop_score: int = 0
     boundary_quality: str = ""
     retention_score: int = 0
+    narrative_arc_score: int = 0
+    narrative_arc_complete: bool = False
+    religious_context_safe: bool = True
 
 
 @dataclass
@@ -312,6 +315,7 @@ PAYOFF_WORDS = {
 
 TENSION_WORDS = {
     "tapi",
+    "tetapi",
     "namun",
     "padahal",
     "ternyata",
@@ -815,6 +819,137 @@ STRUCTURED_COMPARISON_ATTACK_PHRASES = (
     "mereka tolol",
 )
 
+# Final clip selection must be stricter than a generic engagement scorer. The
+# words below are deliberately limited to unambiguous ridicule/abuse signals;
+# ordinary disagreement, a victim recounting that they were mocked, or an
+# educational warning about harassment should not be discarded automatically.
+EDITORIAL_INSULT_WORDS = {
+    "anjing",
+    "bangsat",
+    "bego",
+    "bodoh",
+    "dungu",
+    "goblok",
+    "idiot",
+    "jelek",
+    "kampungan",
+    "tolol",
+}
+EDITORIAL_TARGET_WORDS = {
+    "agama",
+    "dia",
+    "kalian",
+    "kaum",
+    "kelompok",
+    "kamu",
+    "lu",
+    "mereka",
+    "orang",
+    "umat",
+}
+EDITORIAL_CONSTRUCTIVE_MARKERS = (
+    "ambil hikmah",
+    "akhirnya",
+    "hikmahnya",
+    "intinya",
+    "jangan menghina",
+    "jangan menghakimi",
+    "kita belajar",
+    "pelajarannya",
+    "saya belajar",
+    "saling menghargai",
+    "saling menghormati",
+    "sebaiknya",
+    "solusinya",
+    "yang penting",
+)
+EDITORIAL_HARM_CELEBRATION_PHRASES = (
+    "bagus dia mati",
+    "biar kapok",
+    "mati aja",
+    "pantas celaka",
+    "pantas mati",
+    "rasain",
+    "sukurin",
+)
+EDITORIAL_NEGATION_PATTERN = re.compile(
+    r"\b(?:bukan|dilarang|jangan|tidak|tidak boleh)"
+    r"(?:\s+\w+){0,7}\s*$",
+    re.I,
+)
+
+
+def editorial_safety_profile(text: str) -> dict[str, object]:
+    """Audit a transcript window for ridicule and a constructive resolution.
+
+    This is a conservative local preflight, not a guarantee of YouTube policy
+    compliance. It blocks direct insults and celebration of harm, while
+    allowing educational or victim-context mentions that are explicitly
+    negated and resolved constructively.
+    """
+    normalized = re.sub(r"\s+", " ", text).strip().casefold()
+    tokens = re.findall(r"[\w']+", normalized)
+    harmful_matches: list[str] = []
+    protected_group_attack = False
+
+    for index, token in enumerate(tokens):
+        if token not in EDITORIAL_INSULT_WORDS:
+            continue
+        prefix = " ".join(tokens[max(0, index - 8):index])
+        neighborhood = set(tokens[max(0, index - 5):min(len(tokens), index + 6)])
+        if EDITORIAL_NEGATION_PATTERN.search(prefix):
+            continue
+        if neighborhood.intersection(EDITORIAL_TARGET_WORDS) or prefix.endswith("dasar"):
+            harmful_matches.append(token)
+            if neighborhood.intersection(STRUCTURED_COMPARISON_RELIGION_WORDS):
+                protected_group_attack = True
+
+    for phrase in STRUCTURED_COMPARISON_ATTACK_PHRASES:
+        cursor = 0
+        while (match_index := normalized.find(phrase, cursor)) >= 0:
+            prefix = normalized[max(0, match_index - 72):match_index]
+            if not EDITORIAL_NEGATION_PATTERN.search(prefix):
+                harmful_matches.append(phrase)
+                protected_group_attack = True
+                break
+            cursor = match_index + len(phrase)
+
+    celebrated_harm = [
+        phrase for phrase in EDITORIAL_HARM_CELEBRATION_PHRASES if phrase in normalized
+    ]
+    constructive_takeaway = bool(
+        any(marker in normalized for marker in EDITORIAL_CONSTRUCTIVE_MARKERS)
+        or any(marker in normalized for marker in MICRO_THESIS_NONJUDGMENT_PHRASES)
+    )
+    victim_context = bool(
+        re.search(r"\b(?:aku|dia|kami|kita|saya)\s+(?:diejek|dihina|direndahkan)\b", normalized)
+    )
+    sensitive_story = bool(
+        victim_context
+        or re.search(r"\b(?:ejek|hina|mencemooh|merendahkan|penghinaan|kekerasan)\b", normalized)
+    )
+    sensitive_without_takeaway = bool(
+        sensitive_story and not constructive_takeaway and not harmful_matches
+    )
+    safe_for_selection = not (
+        harmful_matches
+        or celebrated_harm
+        or protected_group_attack
+        or sensitive_without_takeaway
+    )
+    return {
+        "version": 1,
+        "safe_for_selection": safe_for_selection,
+        "direct_ridicule_or_insult": bool(harmful_matches),
+        "protected_group_attack": protected_group_attack,
+        "celebrates_harm": bool(celebrated_harm),
+        "sensitive_story": sensitive_story,
+        "constructive_takeaway": constructive_takeaway,
+        "sensitive_without_takeaway": sensitive_without_takeaway,
+        "matched_risk_terms": list(dict.fromkeys([*harmful_matches, *celebrated_harm]))[:8],
+        "automated_preflight_is_policy_guarantee": False,
+    }
+
 
 def structured_comparison_profile(
     text: str,
@@ -1309,6 +1444,9 @@ ORIGINAL_REBUILD_STOP_WORDS = LOOP_STOP_WORDS | {
 }
 
 FILLER_PHRASES = (
+    "assalamualaikum warahmatullahi wabarakatuh",
+    "assalamu'alaikum warahmatullahi wabarakatuh",
+    "saudara-saudaraku yang dirahmati allah",
     "seperti yang sudah dijelaskan",
     "kita akan membahas",
     "sebelum kita mulai",
@@ -1316,6 +1454,85 @@ FILLER_PHRASES = (
     "kurang lebih seperti itu",
     "dan lain sebagainya",
 )
+
+# The phrase list intentionally describes editorial shapes instead of promising
+# virality.  It is used only when the phrase is actually spoken in the source;
+# the system never fabricates a cold open that the speaker did not say.
+SHORT_NARRATIVE_HOOK_PHRASES = (
+    "ada satu",
+    "banyak orang tidak sadar",
+    "ini yang sering kita lakukan",
+    "jangan pernah",
+    "kenapa",
+    "rasulullah pernah",
+    "tahukah anda",
+    "tahukah kalian",
+    "ternyata",
+    "yang paling berbahaya",
+)
+SHORT_NARRATIVE_CONTEXT_MARKERS = (
+    "artinya",
+    "contohnya",
+    "dalam hal ini",
+    "ketika",
+    "misalnya",
+    "masalahnya",
+    "yang dimaksud",
+)
+SHORT_NARRATIVE_ANSWER_MARKERS = (
+    "caranya",
+    "jawabannya",
+    "karena itu",
+    "maka",
+    "makanya",
+    "pelajarannya",
+    "sebaiknya",
+    "solusinya",
+)
+SHORT_NARRATIVE_STRONG_END_MARKERS = (
+    "ambil hikmah",
+    "intinya",
+    "jangan sampai",
+    "kesimpulannya",
+    "kita belajar",
+    "pelajarannya",
+    "yang penting",
+)
+RELIGIOUS_ATTRIBUTION_MARKERS = (
+    "allah berfirman",
+    "dalam alquran",
+    "dalam al-quran",
+    "dalam hadis",
+    "dalam hadits",
+    "menurut ulama",
+    "nabi bersabda",
+    "rasulullah bersabda",
+    "surat ",
+)
+RELIGIOUS_RULING_WORDS = {
+    "dosa",
+    "halal",
+    "haram",
+    "hukum",
+    "makruh",
+    "pahala",
+    "sunnah",
+    "syariat",
+    "wajib",
+}
+
+
+def is_low_value_filler_segment(value: TranscriptSegment | str) -> bool:
+    """Recognize removable verbal padding without deleting meaningful speech."""
+    text = value.text if isinstance(value, TranscriptSegment) else value
+    normalized = re.sub(r"\s+", " ", text).strip().casefold()
+    if not normalized:
+        return True
+    if any(phrase in normalized for phrase in FILLER_PHRASES):
+        return True
+    tokens = re.findall(r"[\w']+", normalized)
+    hesitation_tokens = {"ah", "anu", "eee", "eh", "em", "hmm", "mmm", "uh"}
+    return bool(tokens and len(tokens) <= 4 and set(tokens).issubset(hesitation_tokens))
 
 # Starts like these usually depend on a sentence the viewer has not heard. A
 # title card cannot repair that editorial problem, so they are treated as a
@@ -4686,6 +4903,11 @@ def five_k_experiment_readiness(
         status = "revise_before_publishing"
     if output_format == "vertical_short" and 0 < clip.retention_score < 58:
         status = "revise_before_publishing"
+    if output_format == "vertical_short" and (
+        (clip.narrative_arc_score > 0 and not clip.narrative_arc_complete)
+        or not clip.religious_context_safe
+    ):
+        status = "revise_before_publishing"
     micro_thesis = micro_thesis_profile(clip.text, clip.duration)
     social_anecdote = social_anecdote_profile(clip.text, clip.duration)
     delayed_punchline = delayed_punchline_profile(clip.text, clip.duration)
@@ -4694,7 +4916,7 @@ def five_k_experiment_readiness(
     is_short = output_format == "vertical_short"
     target_views = 20000 if is_short else 5000
     return {
-        "version": 11,
+        "version": 12,
         "experiment_name": (
             "sustainable_20k_20_subscriber_growth"
             if is_short
@@ -4718,7 +4940,9 @@ def five_k_experiment_readiness(
         "quality_gate_passed": (
             output_format != "vertical_short"
             or score >= SHORT_EXPORT_MIN_FYP_SCORE
-        ) and (clip.retention_score == 0 or clip.retention_score >= 58),
+        ) and (clip.retention_score == 0 or clip.retention_score >= 58) and (
+            clip.narrative_arc_score == 0 or clip.narrative_arc_complete
+        ) and clip.religious_context_safe,
         "readiness_score": score,
         "status": status,
         "next_action": (
@@ -4745,6 +4969,9 @@ def five_k_experiment_readiness(
             "single_key_point_score": clip.key_point_score,
             "semantic_loop_score": clip.loop_score,
             "first_30_retention_readiness_score": clip.retention_score,
+            "narrative_arc_score": clip.narrative_arc_score,
+            "hook_context_tension_answer_strong_end_complete": clip.narrative_arc_complete,
+            "religious_context_safe_for_automatic_export": clip.religious_context_safe,
             "retention_score_is_editorial_diagnostic_not_prediction": True,
             "complete_boundary": clip.boundary_quality in {"payoff_tuntas", "kalimat_tuntas"},
             "content_specific_subscribe_value": bool(clip.text.strip()),
@@ -5128,6 +5355,339 @@ def first_30_retention_profile(
     }
 
 
+def short_narrative_arc_profile(
+    items: list[TranscriptSegment],
+    duration: float,
+) -> dict[str, object]:
+    """Audit HOOK -> CONTEXT -> TENSION -> ANSWER -> STRONG END on its timeline.
+
+    A bag of engaging keywords is not enough: every beat must appear in the
+    part of the clip where a viewer can understand it.  This keeps the selector
+    focused on one complete message rather than a merely quotable sentence.
+    """
+    if not items or duration <= 0:
+        return {
+            "version": 1,
+            "qualified": False,
+            "arc_score": 0,
+            "duration_priority_25_45_seconds": False,
+            "beats": {
+                "hook": False,
+                "context": False,
+                "tension": False,
+                "answer": False,
+                "strong_end": False,
+            },
+            "missing_beats": ["hook", "context", "tension", "answer", "strong_end"],
+            "single_message_coherence": False,
+        }
+
+    ordered = sorted(items, key=lambda item: item.start)
+    origin = ordered[0].start
+    safe_duration = max(0.1, duration)
+
+    def timeline_text(start_seconds: float, end_seconds: float) -> str:
+        return " ".join(
+            item.text
+            for item in ordered
+            if item.end > origin + start_seconds
+            and item.start < origin + min(safe_duration, end_seconds)
+        ).strip()
+
+    opening = timeline_text(0.0, min(3.0, safe_duration))
+    context_text = timeline_text(1.5, min(10.0, safe_duration * 0.32 + 2.0))
+    tension_text = timeline_text(min(4.5, safe_duration * 0.15), safe_duration * 0.72)
+    answer_text = timeline_text(safe_duration * 0.42, safe_duration)
+    closing_span = min(9.0, max(5.0, safe_duration * 0.24))
+    closing = timeline_text(max(0.0, safe_duration - closing_span), safe_duration)
+    full_text = " ".join(item.text for item in ordered).strip()
+
+    opening_normalized = re.sub(r"\s+", " ", opening).casefold()
+    context_normalized = re.sub(r"\s+", " ", context_text).casefold()
+    tension_normalized = re.sub(r"\s+", " ", tension_text).casefold()
+    answer_normalized = re.sub(r"\s+", " ", answer_text).casefold()
+    closing_normalized = re.sub(r"\s+", " ", closing).casefold()
+    opening_words = set(re.findall(r"[\w']+", opening_normalized))
+    context_words = re.findall(r"[\w']+", context_normalized)
+    tension_words = set(re.findall(r"[\w']+", tension_normalized))
+    answer_words = set(re.findall(r"[\w']+", answer_normalized))
+    closing_words = set(re.findall(r"[\w']+", closing_normalized))
+
+    hook = bool(
+        "?" in opening
+        or any(phrase in opening_normalized for phrase in SHORT_NARRATIVE_HOOK_PHRASES)
+        or opening_words.intersection(
+            (HOOK_WORDS - WEAK_STARTS) | TENSION_WORDS | MYSTERY_WORDS | IMPORTANT_WORDS
+        )
+    ) and not any(phrase in opening_normalized for phrase in FILLER_PHRASES)
+    context = bool(
+        len(context_words) >= 6
+        and (
+            any(marker in context_normalized for marker in SHORT_NARRATIVE_CONTEXT_MARKERS)
+            or len(_content_words(context_text)) >= 4
+        )
+    )
+    tension = bool(
+        tension_words.intersection(TENSION_WORDS)
+        or any(marker in tension_normalized for marker in ("akan tetapi", "meskipun", "tanpa disadari"))
+    )
+    answer = bool(
+        answer_words.intersection(PAYOFF_WORDS)
+        or any(marker in answer_normalized for marker in SHORT_NARRATIVE_ANSWER_MARKERS)
+        or re.search(r"\b(?:karena|sehingga)\b", answer_normalized)
+    )
+    closing_is_sentence = full_text.rstrip().endswith((".", "!", "?"))
+    strong_end = bool(
+        closing_is_sentence
+        and (
+            closing_words.intersection(PAYOFF_WORDS | IMPORTANT_WORDS)
+            or any(marker in closing_normalized for marker in SHORT_NARRATIVE_STRONG_END_MARKERS)
+            or re.search(r"\b(?:ingatlah|jangan|lakukan|mintalah|renungkan|sebaiknya|harus)\b", closing_normalized)
+        )
+    )
+
+    opening_concepts = _content_words(opening)
+    answer_concepts = _content_words(answer_text)
+    full_concepts = _content_words(full_text)
+    single_message_coherence = bool(
+        len(full_concepts) >= 5
+        and (
+            opening_concepts.intersection(answer_concepts)
+            or ("?" in opening and answer)
+            or (hook and answer and strong_end)
+        )
+    )
+    beats = {
+        "hook": hook,
+        "context": context,
+        "tension": tension,
+        "answer": answer,
+        "strong_end": strong_end,
+    }
+    missing_beats = [name for name, present in beats.items() if not present]
+    duration_priority = 25.0 <= safe_duration <= 45.0
+    arc_score = sum(
+        (
+            22 if hook else 0,
+            16 if context else 0,
+            18 if tension else 0,
+            22 if answer else 0,
+            17 if strong_end else 0,
+            5 if single_message_coherence else 0,
+        )
+    )
+    qualified = bool(not missing_beats and single_message_coherence)
+    return {
+        "version": 1,
+        "qualified": qualified,
+        "arc_score": min(100, arc_score),
+        "duration_priority_25_45_seconds": duration_priority,
+        "beats": beats,
+        "missing_beats": missing_beats,
+        "single_message_coherence": single_message_coherence,
+        "opening_seconds": 3.0,
+        "answer_search_starts_at_ratio": 0.42,
+        "strong_end_window_seconds": round(closing_span, 3),
+    }
+
+
+def religious_context_integrity_profile(
+    items: list[TranscriptSegment],
+    duration: float,
+) -> dict[str, object]:
+    """Flag obvious context damage around Islamic claims and quotations.
+
+    This cannot validate theology or authenticate a quotation.  It prevents the
+    automatic exporter from using visibly dangling/context-dependent boundaries
+    and leaves source/claim verification as an explicit human review item.
+    """
+    text = " ".join(item.text for item in items).strip()
+    normalized = re.sub(r"\s+", " ", text).casefold()
+    words = re.findall(r"[\w']+", normalized)
+    word_set = set(words)
+    religious = bool(word_set.intersection(ISLAMIC_WORDS))
+    attribution_present = any(marker in normalized for marker in RELIGIOUS_ATTRIBUTION_MARKERS)
+    ruling_present = bool(word_set.intersection(RELIGIOUS_RULING_WORDS))
+    first_word = words[0] if words else ""
+    context_dependent_opening = bool(
+        religious and first_word in CONTEXT_DEPENDENT_STARTS
+    )
+    dangling_connector = bool(
+        religious
+        and re.search(
+            r"\b(?:agar|bahwa|dan|karena|maka|namun|sehingga|tetapi|yaitu|yakni)\s*[,:;-]*$",
+            normalized,
+        )
+    )
+    complete_sentence = text.rstrip().endswith((".", "!", "?"))
+    quoted_claim_incomplete = bool(
+        attribution_present and (not complete_sentence or dangling_connector)
+    )
+    ruling_has_explanation = bool(
+        not ruling_present
+        or any(
+            marker in normalized
+            for marker in (
+                "artinya",
+                "karena",
+                "maka",
+                "menurut",
+                "sehingga",
+                "yang dimaksud",
+            )
+        )
+    )
+    safe_for_automatic_export = bool(
+        not religious
+        or (
+            complete_sentence
+            and not context_dependent_opening
+            and not dangling_connector
+            and not quoted_claim_incomplete
+            and ruling_has_explanation
+        )
+    )
+    return {
+        "version": 1,
+        "is_religious_content": religious,
+        "safe_for_automatic_export": safe_for_automatic_export,
+        "context_dependent_opening": context_dependent_opening,
+        "dangling_connector": dangling_connector,
+        "quoted_claim_incomplete": quoted_claim_incomplete,
+        "attribution_present": attribution_present,
+        "ruling_present": ruling_present,
+        "ruling_has_explanation": ruling_has_explanation,
+        "manual_source_and_claim_review_required": bool(attribution_present or ruling_present),
+        "theological_accuracy_guaranteed": False,
+    }
+
+
+def religious_claim_review_packet(
+    clip: ClipCandidate,
+    clip_segments: list[TranscriptSegment],
+    source_transcript: list[TranscriptSegment] | None = None,
+    *,
+    context_seconds: float = 20.0,
+) -> dict[str, object]:
+    """Build timestamped evidence for human review without changing the clip.
+
+    The packet is deliberately additive: it neither rewrites speech nor claims
+    to verify theology.  It lets a reviewer compare the exported sentence with
+    nearby source context and records exactly which checks must be completed.
+    """
+    transcript = sorted(source_transcript or clip_segments, key=lambda item: item.start)
+    integrity = religious_context_integrity_profile(clip_segments, clip.duration)
+    claims: list[dict[str, object]] = []
+    high_risk_rulings = {"halal", "haram", "hukum", "makruh", "syariat", "wajib"}
+
+    for segment in clip_segments:
+        normalized = re.sub(r"\s+", " ", segment.text).strip().casefold()
+        words = set(re.findall(r"[\w']+", normalized))
+        claim_types: list[str] = []
+        if any(marker in normalized for marker in RELIGIOUS_ATTRIBUTION_MARKERS):
+            if any(marker in normalized for marker in ("hadis", "hadits", "bersabda")):
+                claim_types.append("hadith_attribution")
+            if any(marker in normalized for marker in ("alquran", "al-quran", "allah berfirman", "surat ")):
+                claim_types.append("quran_attribution")
+        ruling_hits = sorted(words.intersection(RELIGIOUS_RULING_WORDS))
+        if ruling_hits:
+            claim_types.append("religious_ruling_or_consequence")
+        if not claim_types:
+            continue
+        claims.append(
+            {
+                "start": round(segment.start, 3),
+                "end": round(segment.end, 3),
+                "text": segment.text.strip(),
+                "types": list(dict.fromkeys(claim_types)),
+                "ruling_terms": ruling_hits,
+                "requires_source_verification": True,
+            }
+        )
+
+    before_segments = [
+        item
+        for item in transcript
+        if item.end <= clip.start + 0.05 and item.end >= clip.start - context_seconds
+    ]
+    after_segments = [
+        item
+        for item in transcript
+        if item.start >= clip.end - 0.05 and item.start <= clip.end + context_seconds
+    ]
+
+    def evidence_rows(items: list[TranscriptSegment], *, tail: bool) -> list[dict[str, object]]:
+        selected = items[-6:] if tail else items[:6]
+        return [
+            {
+                "start": round(item.start, 3),
+                "end": round(item.end, 3),
+                "text": item.text.strip(),
+            }
+            for item in selected
+            if item.text.strip()
+        ]
+
+    high_risk = bool(
+        any(
+            set(claim.get("ruling_terms") or []).intersection(high_risk_rulings)
+            or set(claim.get("types") or []).intersection(
+                {"hadith_attribution", "quran_attribution"}
+            )
+            for claim in claims
+        )
+    )
+    review_required = bool(claims)
+    risk_level = "high" if high_risk else "medium" if review_required else "low"
+    clip_text = " ".join(item.text.strip() for item in clip_segments if item.text.strip())
+    context_text = " ".join(
+        item.text.strip()
+        for item in [*before_segments, *clip_segments, *after_segments]
+        if item.text.strip()
+    )
+    required_checks = (
+        [
+            "compare_clip_with_source_context",
+            "verify_quran_or_hadith_reference_and_wording",
+            "verify_ruling_scope_conditions_and_exceptions",
+            "confirm_clip_does_not_reverse_the_speaker_meaning",
+            "confirm_audio_visual_and_music_rights",
+            "review_private_upload_in_youtube_checks",
+        ]
+        if review_required
+        else [
+            "confirm_clip_does_not_reverse_the_speaker_meaning",
+            "confirm_audio_visual_and_music_rights",
+            "review_private_upload_in_youtube_checks",
+        ]
+    )
+    return {
+        "version": 1,
+        "enabled": True,
+        "review_required": review_required,
+        "risk_level": risk_level,
+        "automatic_theological_approval": False,
+        "clip_start": round(clip.start, 3),
+        "clip_end": round(clip.end, 3),
+        "claims": claims,
+        "before_context": evidence_rows(before_segments, tail=True),
+        "after_context": evidence_rows(after_segments, tail=False),
+        "integrity": integrity,
+        "required_checks": required_checks,
+        "recommended_decision": (
+            "reject_and_recut"
+            if not integrity["safe_for_automatic_export"]
+            else "manual_review_before_private_upload"
+            if review_required
+            else "standard_editorial_review"
+        ),
+        "clip_transcript_sha256": hashlib.sha256(clip_text.encode("utf-8")).hexdigest(),
+        "context_transcript_sha256": hashlib.sha256(context_text.encode("utf-8")).hexdigest(),
+        "source_context_seconds_each_side": context_seconds,
+        "legacy_pipeline_changed": False,
+    }
+
+
 def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> dict[str, int | bool | str]:
     """Measure whether a window contains one useful idea and a deliberate loop point."""
     if not items:
@@ -5174,6 +5734,8 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
         closing_text=closing,
     )
     extended_short = extended_short_story_profile(items, duration)
+    narrative_arc = short_narrative_arc_profile(items, duration)
+    religious_context = religious_context_integrity_profile(items, duration)
     signal_words = HOOK_WORDS | TENSION_WORDS | PAYOFF_WORDS | IMPORTANT_WORDS
     signal_hits = all_words.intersection(signal_words)
     payoff_near_end = bool(
@@ -5213,6 +5775,16 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
         or "?" in opening
     )
     filler_hits = sum(phrase in text.casefold() for phrase in FILLER_PHRASES)
+    filler_hits += sum(is_low_value_filler_segment(item) for item in items)
+    normalized_segment_texts = [
+        re.sub(r"\W+", " ", item.text).strip().casefold()
+        for item in items
+        if item.text.strip()
+    ]
+    filler_hits += sum(
+        left == right and len(left.split()) >= 3
+        for left, right in zip(normalized_segment_texts, normalized_segment_texts[1:])
+    )
     word_count = len(re.findall(r"[\w']+", text))
     density = word_count / max(1.0, duration)
     retention = first_30_retention_profile(items, duration)
@@ -5229,6 +5801,10 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
     key_point_score += 14 if delayed_punchline["qualified"] else 0
     key_point_score += 14 if structured_comparison["qualified"] else 0
     key_point_score += 16 if extended_short["qualified"] else 0
+    key_point_score += 18 if narrative_arc["qualified"] else 0
+    key_point_score -= min(18, len(narrative_arc["missing_beats"]) * 4)
+    if not religious_context["safe_for_automatic_export"]:
+        key_point_score -= 24
     key_point_score -= filler_hits * 12
     if not complete_ending:
         key_point_score -= 10
@@ -5279,6 +5855,9 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
         "extended_short_qualified": bool(extended_short["qualified"]),
         "extended_short_score": int(extended_short["structure_score"]),
         "retention_score": int(retention["retention_readiness_score"]),
+        "narrative_arc_score": int(narrative_arc["arc_score"]),
+        "narrative_arc_complete": bool(narrative_arc["qualified"]),
+        "religious_context_safe": bool(religious_context["safe_for_automatic_export"]),
     }
 
 
@@ -5595,9 +6174,12 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
     score = 24
     reasons: list[str] = []
 
-    if 28 <= duration <= 60:
-        score += 18
-        reasons.append("durasi pas")
+    if 25 <= duration <= 45:
+        score += 20
+        reasons.append("durasi prioritas 25–45 detik")
+    elif 45 < duration <= 60:
+        score += 9
+        reasons.append("durasi masih ringkas tetapi di luar prioritas 25–45 detik")
     elif 60 < duration <= 180 and extended_short["qualified"]:
         score += 18
         reasons.append("alur panjang layak sampai payoff")
@@ -5723,6 +6305,21 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
     key_point_score = int(story_metrics["key_point_score"])
     loop_score = int(story_metrics["loop_score"])
     retention_score = int(story_metrics["retention_score"])
+    narrative_arc_score = int(story_metrics["narrative_arc_score"])
+    narrative_calibration_score = max(
+        narrative_arc_score,
+        88
+        if any(
+            (
+                micro_thesis["qualified"],
+                social_anecdote["qualified"],
+                delayed_punchline["qualified"],
+                structured_comparison["qualified"],
+                extended_short["qualified"],
+            )
+        )
+        else 0,
+    )
     if key_point_score >= 75:
         reasons.append("satu point penting terbentuk jelas")
     elif key_point_score < 40:
@@ -5737,6 +6334,12 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
         reasons.append("ritme 30 detik awal menjaga beat informasi tetap aktif")
     elif retention_score < 58:
         reasons.append("risiko drop-off tinggi pada ritme 30 detik awal")
+    if story_metrics["narrative_arc_complete"]:
+        reasons.append("hook, konteks, konflik, jawaban, dan ending terbentuk utuh")
+    elif narrative_arc_score < 70:
+        reasons.append("alur narasi lima beat belum lengkap")
+    if not story_metrics["religious_context_safe"]:
+        reasons.append("konteks kajian atau batas kutipan belum aman")
 
     if (
         word_count < 55
@@ -5755,11 +6358,12 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
         "menggantung": 20,
     }.get(str(story_metrics["boundary_quality"]), 20)
     calibrated_score = round(
-        heuristic_score * 0.40
-        + key_point_score * 0.25
+        heuristic_score * 0.32
+        + key_point_score * 0.23
         + loop_score * 0.05
         + boundary_score * 0.10
-        + retention_score * 0.20
+        + retention_score * 0.15
+        + narrative_calibration_score * 0.15
     )
     return max(1, min(100, calibrated_score)), reasons
 
@@ -5775,7 +6379,7 @@ def build_candidate_pool(
 
     branding_flags = [is_source_branding_segment(item) for item in segments]
     for start_idx, first in enumerate(segments):
-        if branding_flags[start_idx]:
+        if branding_flags[start_idx] or is_low_value_filler_segment(first):
             continue
         window: list[TranscriptSegment] = []
         for end_idx in range(start_idx, len(segments)):
@@ -5803,11 +6407,21 @@ def build_candidate_pool(
             fyp_analysis = candidate_fyp_analysis(window, duration, score)
             previous_is_branding = start_idx > 0 and branding_flags[start_idx - 1]
             next_is_branding = end_idx + 1 < len(segments) and branding_flags[end_idx + 1]
+            previous_is_filler = start_idx > 0 and is_low_value_filler_segment(
+                segments[start_idx - 1]
+            )
+            next_is_filler = end_idx + 1 < len(segments) and is_low_value_filler_segment(
+                segments[end_idx + 1]
+            )
             # Whisper timestamps can bleed a few frames across segment edges.
             # Keep a small inward guard around removed promos so their audio tail
             # cannot leak into an otherwise clean export.
-            safe_start = first.start + (0.45 if previous_is_branding else -0.35)
-            safe_end = window[-1].end - (0.35 if next_is_branding else -0.25)
+            safe_start = first.start + (
+                0.45 if previous_is_branding else 0.12 if previous_is_filler else -0.35
+            )
+            safe_end = window[-1].end - (
+                0.35 if next_is_branding else 0.12 if next_is_filler else -0.25
+            )
             safe_start = max(0, safe_start)
             safe_end = max(safe_start + 0.2, safe_end)
             safe_end = min(safe_end, safe_start + max_duration)
@@ -5831,6 +6445,9 @@ def build_candidate_pool(
                     loop_score=int(story_metrics["loop_score"]),
                     boundary_quality=str(story_metrics["boundary_quality"]),
                     retention_score=int(story_metrics["retention_score"]),
+                    narrative_arc_score=int(story_metrics["narrative_arc_score"]),
+                    narrative_arc_complete=bool(story_metrics["narrative_arc_complete"]),
+                    religious_context_safe=bool(story_metrics["religious_context_safe"]),
                 )
             )
     return candidates
@@ -5869,6 +6486,17 @@ def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0
         if micro_thesis["qualified"]
         else target_duration
     )
+    duration_priority = (
+        8.0
+        if 25.0 <= candidate.duration <= 45.0
+        else 2.0
+        if 20.0 <= candidate.duration <= 60.0
+        else -min(18.0, abs(candidate.duration - 45.0) * 0.14)
+    )
+    narrative_score = (
+        candidate.narrative_arc_score * 0.16
+        + (6.0 if candidate.narrative_arc_complete else 0.0)
+    )
     return (
         candidate.score
         + candidate.key_point_score * 0.10
@@ -5878,7 +6506,9 @@ def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0
         + (4.0 if social_anecdote["qualified"] else 0.0)
         + (4.0 if delayed_punchline["qualified"] else 0.0)
         + (4.0 if structured_comparison["qualified"] else 0.0)
-        - abs(candidate.duration - effective_target) * 0.05
+        + narrative_score
+        + duration_priority
+        - abs(candidate.duration - effective_target) * 0.08
     )
 
 
@@ -5903,6 +6533,10 @@ def candidate_has_cohesive_editorial_arc(candidate: ClipCandidate) -> bool:
     )
 
 
+def candidate_is_editorially_safe(candidate: ClipCandidate) -> bool:
+    return bool(editorial_safety_profile(candidate.text)["safe_for_selection"])
+
+
 def select_candidates(
     candidates: list[ClipCandidate],
     limit: int,
@@ -5915,10 +6549,15 @@ def select_candidates(
         item
         for item in candidates
         if candidate_has_cohesive_editorial_arc(item)
+        and candidate_is_editorially_safe(item)
         and item.score >= max(1, minimum_score)
         # A zero means legacy/manual candidate data with no timing audit. New
         # transcript-derived candidates must clear the retention floor.
         and (item.retention_score == 0 or item.retention_score >= 58)
+        # Zero keeps backward compatibility for manually-created candidates.
+        # Transcript-derived Shorts carry the audit and must satisfy all beats.
+        and (item.narrative_arc_score == 0 or item.narrative_arc_complete)
+        and item.religious_context_safe
     ]
     target_duration = 38
     candidates.sort(
@@ -5974,7 +6613,7 @@ def select_compilation_candidates(
         # A ten-minute resume may need more than twelve short story beats.
         max_parts = min(24, max(12, math.ceil(target_duration / 30)))
 
-    remaining = candidates[:]
+    remaining = [item for item in candidates if candidate_is_editorially_safe(item)]
     remaining.sort(
         key=lambda item: (
             item.score - abs(item.duration - 60) * 0.05,
@@ -6273,7 +6912,11 @@ AI_SYSTEM_PROMPT = (
     "something a loop when the ending semantically answers or reconnects to the opening. Penalize intros, outros, "
     "filler, repeated ideas, generic motivation, and clips that need earlier context. Islamic insight, mystery, myth-versus-fact, "
     "history, supernatural stories, and relevant horror are valuable niches when genuinely present in the "
-    "transcript. Authentic humor, witty answers, and naturally funny reactions are also high-value retention "
+    "transcript. For normal Shorts, prioritize 25–45 seconds and require a spoken, source-grounded HOOK -> "
+    "CONTEXT -> TENSION -> ANSWER -> STRONG END arc. The hook should land in 0–2 seconds, context by about "
+    "second 7, and the final line must deliver the promised answer or lesson. Do not invent, paraphrase, or "
+    "duplicate a cold open; move the boundary only to a stronger sentence that the speaker actually said. "
+    "Authentic humor, witty answers, and naturally funny reactions are also high-value retention "
     "moments. For evergreen Islamic content, apply these editorial lenses when the transcript supports them: "
     "mental-health clips must feel empathetic and calming, connect a relatable modern struggle to a practical "
     "Islamic principle, never diagnose the viewer, promise healing, or replace professional help; halal-wealth "
@@ -6293,10 +6936,16 @@ AI_SYSTEM_PROMPT = (
     "For an 18–32 second first-person anecdote, prefer a real social-friction event, chronological setup, "
     "one concrete comparison or reveal, and a self-directed punchline. Do not manufacture ridicule, intensify "
     "harassment, or turn an identifiable bystander into the target of the joke. "
+    "Reject clips that mock, demean, celebrate harm, or attack a person or protected group. If a transcript "
+    "mentions humiliation, conflict, fear, or another negative event, select it only when the clip preserves "
+    "enough context to end with a constructive lesson, ethical boundary, empathy, or respectful resolution. "
     "Reject source-channel intros, outros, credits, sponsor mentions, requests to subscribe/follow, "
     "and thanks addressed to another channel or media brand. Never put a source channel or media brand in "
     "the clip title. Never turn myths, folklore, or supernatural claims into established Islamic facts; "
     "frame them accurately as stories, claims, questions, or lessons. "
+    "For Islamic teaching, preserve the speaker's attribution, qualification, and explanation around Quran, hadith, "
+    "halal/haram, wajib, dosa, or pahala. Reject a window that starts mid-ruling, ends mid-quotation, or changes the "
+    "meaning by removing its exception or condition. A model score is not theological verification. "
     "Return ONLY strict JSON, no markdown, no prose."
 )
 
@@ -6352,6 +7001,9 @@ def ai_rescore_candidates(
             "loop_score": candidate.loop_score,
             "retention_score": candidate.retention_score,
             "boundary_quality": candidate.boundary_quality,
+            "narrative_arc_score": candidate.narrative_arc_score,
+            "narrative_arc_complete": candidate.narrative_arc_complete,
+            "religious_context_safe": candidate.religious_context_safe,
             "heuristic_strengths": candidate.strengths,
             "heuristic_weaknesses": candidate.weaknesses,
             "micro_thesis": micro_thesis_profile(candidate.text, candidate.duration),
@@ -6381,7 +7033,8 @@ def ai_rescore_candidates(
         f"{count_instruction}\n"
         f"{format_instruction}\n"
         "For each chosen candidate, score 0-100 honestly on viewer-retention and FYP potential. "
-        "Judge the first 3 seconds, the first 30-second hook arc, POV clarity, information density, "
+        "Judge the first 2 seconds, the complete HOOK -> CONTEXT -> TENSION -> ANSWER -> STRONG END arc, "
+        "the first 30-second hook arc, POV clarity, information density, "
         "pattern-interrupt opportunities, one clear key point, payoff placement, sentence-complete boundaries, "
         "and rewatch/share potential. Do not select two windows that communicate the same main idea.\n"
         "Every improvement idea must solve one stated weakness and be directly executable by an editor. "
@@ -6667,21 +7320,43 @@ def apply_codex_structural_edit(
         max_safe_end = min(max_safe_end, hard_end)
 
     current_segments = segments_for_clip(transcript, clip)
-    if original_plan.hook_boost and current_segments:
+    current_arc = short_narrative_arc_profile(current_segments, clip.duration)
+    if original_plan.hook_boost and current_segments and not current_arc["qualified"]:
         search_end = min(original_end, original_start + min(12.0, max(5.0, clip.duration * 0.25)))
         hook_options = [
             segment
             for segment in current_segments
             if segment.start < search_end and segment.start > original_start + 0.55
+            and not is_low_value_filler_segment(segment)
         ]
         if hook_options:
             strongest = max(hook_options, key=_segment_hook_score)
+            opening_options = [
+                segment
+                for segment in current_segments
+                if segment.start < original_start + min(3.0, clip.duration)
+            ]
+            opening_score = max(
+                (_segment_hook_score(segment)[0] for segment in opening_options),
+                default=-10,
+            )
             proposed_start = max(original_start, strongest.start - 0.12)
             trim_seconds = proposed_start - original_start
+            proposed_segments = [
+                segment
+                for segment in transcript
+                if segment.end > proposed_start and segment.start < original_end
+            ]
+            proposed_duration = original_end - proposed_start
+            proposed_religious_context = religious_context_integrity_profile(
+                proposed_segments,
+                proposed_duration,
+            )
             if (
-                _segment_hook_score(strongest)[0] > 0
+                _segment_hook_score(strongest)[0] >= opening_score + 3
                 and 0.65 <= trim_seconds <= 8.0
                 and original_end - proposed_start >= min_safe_duration
+                and proposed_religious_context["safe_for_automatic_export"]
             ):
                 clip.start = proposed_start
                 clip.applied_edits.append(
@@ -6745,6 +7420,9 @@ def apply_codex_structural_edit(
         clip.loop_score = int(story_metrics["loop_score"])
         clip.boundary_quality = str(story_metrics["boundary_quality"])
         clip.retention_score = int(story_metrics["retention_score"])
+        clip.narrative_arc_score = int(story_metrics["narrative_arc_score"])
+        clip.narrative_arc_complete = bool(story_metrics["narrative_arc_complete"])
+        clip.religious_context_safe = bool(story_metrics["religious_context_safe"])
     return clip
 
 
@@ -6784,13 +7462,13 @@ SHORTS_SAFE_BOTTOM = 1560
 SHORTS_OFFICIAL_MAX_SECONDS = 180
 FENDY_CLIPPER_SHORTS_MIN_SECONDS = 25
 FENDY_CLIPPER_SHORTS_MAX_SECONDS = 180
-SHORTS_POLICY_REVIEW_DATE = os.environ.get("YOUTUBE_POLICY_REVIEW_DATE", "2026-08-30").strip()
+SHORTS_POLICY_REVIEW_DATE = os.environ.get("YOUTUBE_POLICY_REVIEW_DATE", "2026-09-02").strip()
 YOUTUBE_POLICY_REVIEW_INTERVAL_DAYS = 180
 
 
 def youtube_policy_snapshot(*, as_of: date | None = None) -> dict[str, object]:
     """Expose policy freshness instead of pretending a dated audit lasts forever."""
-    fallback_reviewed = date(2026, 8, 30)
+    fallback_reviewed = date(2026, 9, 2)
     try:
         reviewed = date.fromisoformat(SHORTS_POLICY_REVIEW_DATE)
     except ValueError:
@@ -6808,7 +7486,7 @@ def youtube_policy_snapshot(*, as_of: date | None = None) -> dict[str, object]:
     current_date = as_of or date.today()
     review_due = reviewed + timedelta(days=review_interval_days)
     return {
-        "snapshot_version": 4,
+        "snapshot_version": 5,
         "reviewed_on": reviewed.isoformat(),
         "review_due_on": review_due.isoformat(),
         "review_required": current_date > review_due,
@@ -6825,6 +7503,8 @@ def youtube_policy_snapshot(*, as_of: date | None = None) -> dict[str, object]:
             "https://support.google.com/youtube/answer/6013276",
             "https://support.google.com/youtube/answer/9783148",
             "https://support.google.com/youtube/answer/2797468",
+            "https://support.google.com/youtube/answer/2802268",
+            "https://support.google.com/youtube/answer/2490020",
         ],
     }
 
@@ -6949,6 +7629,9 @@ def auto_fyp_visual_plan(
     elif output_format == "vertical_short" and micro_thesis["qualified"]:
         accent = "restrained_authority"
         reason = "dilemma_nuance_safety_payoff_micro_thesis"
+    elif output_format == "vertical_short" and clip.narrative_arc_complete:
+        accent = "narrative_message"
+        reason = "hook_context_tension_answer_strong_end"
     elif archival_match:
         accent = "retro_archive"
         reason = "historical_or_archival_story_signal"
@@ -6970,6 +7653,11 @@ def auto_fyp_visual_plan(
         "social_anecdote": social_anecdote,
         "delayed_punchline": delayed_punchline,
         "structured_comparison": structured_comparison,
+        "narrative_arc": {
+            "score": clip.narrative_arc_score,
+            "complete": clip.narrative_arc_complete,
+            "semantic_visual_change_cadence_seconds": 2.4,
+        },
         "opening_context_seconds": (
             1.9
             if accent == "story_punchline"
@@ -6977,6 +7665,8 @@ def auto_fyp_visual_plan(
             if accent == "payoff_teaser"
             else 2.4
             if accent == "evidence_stage"
+            else 2.0
+            if accent == "narrative_message"
             else 3.2
         ),
         "persistent_truthful_payoff_teaser": accent == "payoff_teaser",
@@ -6984,7 +7674,7 @@ def auto_fyp_visual_plan(
         "visual_restraint": {
             "stable_speaker_priority": accent == "restrained_authority",
             "face_and_gesture_priority": accent
-            in {"evidence_stage", "payoff_teaser", "restrained_authority", "story_punchline"},
+            in {"evidence_stage", "narrative_message", "payoff_teaser", "restrained_authority", "story_punchline"},
             "maximum_virtual_camera_cuts": (
                 7
                 if accent == "story_punchline"
@@ -6992,18 +7682,20 @@ def auto_fyp_visual_plan(
                 if accent == "payoff_teaser"
                 else 5
                 if accent == "evidence_stage"
+                else 6
+                if accent == "narrative_message"
                 else 2
                 if accent == "restrained_authority"
                 else 5
             ),
             "reaction_stickers_allowed": accent
-            not in {"evidence_stage", "payoff_teaser", "restrained_authority", "story_punchline"},
+            not in {"evidence_stage", "narrative_message", "payoff_teaser", "restrained_authority", "story_punchline"},
             "authentic_source_reaction_priority": accent
             in {"payoff_teaser", "story_punchline"},
             "cinematic_smoke_allowed": accent
-            not in {"evidence_stage", "payoff_teaser", "restrained_authority", "story_punchline"},
+            not in {"evidence_stage", "narrative_message", "payoff_teaser", "restrained_authority", "story_punchline"},
             "dialogue_first_audio": accent
-            in {"evidence_stage", "payoff_teaser", "restrained_authority", "story_punchline"},
+            in {"evidence_stage", "narrative_message", "payoff_teaser", "restrained_authority", "story_punchline"},
             "target_reframe_cadence_seconds": (
                 2.8
                 if accent == "story_punchline"
@@ -7011,6 +7703,8 @@ def auto_fyp_visual_plan(
                 if accent == "payoff_teaser"
                 else 7.2
                 if accent == "evidence_stage"
+                else 5.5
+                if accent == "narrative_message"
                 else 9.5
                 if accent == "restrained_authority"
                 else retention_cadence
@@ -7655,6 +8349,8 @@ def shorts_policy_compliance(duration: float, *, embedded_cover: bool) -> dict[s
         "religion_treated_as_protected_group": True,
         "comparative_religion_claims_require_context_and_fact_review": True,
         "protected_group_inferiority_or_dehumanization_allowed": False,
+        "direct_ridicule_or_harassment_allowed": False,
+        "negative_story_requires_constructive_context": True,
         "recommendation_or_monetization_guarantee": False,
     }
 
@@ -10547,6 +11243,7 @@ def export_clip(
     active_speaker_split_profile: ActiveSpeakerSplitProfile | None = None,
     split_companion_clips: list[ClipCandidate] | None = None,
     multi_person_companion_clip: ClipCandidate | None = None,
+    source_transcript: list[TranscriptSegment] | None = None,
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     base_name = base_name_override or f"clip_{clip.index:02}_{slugify(clip.title)[:72] or 'auto'}"
@@ -10608,6 +11305,7 @@ def export_clip(
     )
     dialogue_first_accent = auto_visual_accent in {
         "evidence_stage",
+        "narrative_message",
         "payoff_teaser",
         "restrained_authority",
         "story_punchline",
@@ -10827,8 +11525,22 @@ def export_clip(
             )
     else:
         ass_path.unlink(missing_ok=True)
+    narrative_arc_audit = short_narrative_arc_profile(clip_segments, duration)
+    religious_context_audit = religious_context_integrity_profile(
+        clip_segments,
+        duration,
+    )
+    religious_claim_review = religious_claim_review_packet(
+        clip,
+        clip_segments,
+        source_transcript,
+    )
     sidecar_payload = {
         **asdict(clip),
+        "editorial_safety": editorial_safety_profile(clip.text),
+        "short_narrative_arc": narrative_arc_audit,
+        "religious_context_integrity": religious_context_audit,
+        "religious_claim_review": religious_claim_review,
         "enhanced_edit": enhanced_edit,
         "remove_running_text": remove_running_text,
         "auto_blur_watermarks": auto_blur_watermarks,
@@ -10963,9 +11675,12 @@ def export_clip(
                 structured_comparison_profile(clip.text, duration)[
                     "manual_claim_and_context_review_required"
                 ]
+                or religious_context_audit["manual_source_and_claim_review_required"]
+                or religious_claim_review["review_required"]
             ),
             "checks": [
                 "verify_comparative_factual_claims",
+                "verify_quran_hadith_attribution_and_religious_rulings",
                 "preserve_context_and_attribution",
                 "remove_protected_group_attacks_or_inferiority_claims",
                 "confirm_source_rights_before_publication",
@@ -12406,6 +13121,15 @@ def export_compilation(
         },
         "codex_growth_blueprint": compilation_growth,
         "parts": [asdict(item) for item in candidates],
+        "editorial_safety": {
+            "version": 1,
+            "safe_for_selection": all(
+                editorial_safety_profile(item.text)["safe_for_selection"]
+                for item in candidates
+            ),
+            "part_audits": [editorial_safety_profile(item.text) for item in candidates],
+            "automated_preflight_is_policy_guarantee": False,
+        },
         "video_quality": video_quality,
         "output_width": output_width,
         "output_height": output_height,
@@ -13880,8 +14604,20 @@ def main() -> int:
     emit_progress(46, "selection", "Menilai kandidat berdasarkan hook dan kelengkapan cerita")
     console.print("[bold]Scoring candidate clips...[/bold]")
     pool = build_candidate_pool(transcript, args.min, args.max)
+    raw_candidate_count = len(pool)
+    pool = [candidate for candidate in pool if candidate_is_editorially_safe(candidate)]
+    rejected_editorial_count = raw_candidate_count - len(pool)
+    if rejected_editorial_count:
+        console.print(
+            "[yellow]Editorial safety gate:[/yellow] "
+            f"{rejected_editorial_count} kandidat berisi ejekan/serangan atau konteks negatif "
+            "tanpa pesan konstruktif dan tidak diteruskan ke AI/render."
+        )
     if not pool:
-        console.print("[red]No clip candidates found. Try lowering --min or increasing --max.[/red]")
+        console.print(
+            "[red]Tidak ada kandidat aman yang memiliki konteks dan pesan baik yang utuh. "
+            "Output tidak dibuat; gunakan sumber lain atau perluas rentang durasi.[/red]"
+        )
         return 1
 
     ai_config = AIConfig(
@@ -14150,6 +14886,7 @@ def main() -> int:
                     multi_person_companion_clip=(
                         multi_person_companion_map.get(candidate.index) or [None]
                     )[0],
+                    source_transcript=transcript,
                 )
             )
             render_done = 68 + round((export_index / max(1, total_candidates)) * 25)
