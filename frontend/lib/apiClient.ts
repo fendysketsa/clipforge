@@ -83,15 +83,25 @@ export const discoverLocalLlms = async () => {
   return (await response.json()) as LocalLlmProvider[];
 };
 
-export const probeUrlDuration = async (url: string) => {
+export type SourceProbe = {
+  duration: number | null;
+  title: string | null;
+  uploader: string | null;
+  channel_id: string | null;
+  license: string | null;
+  source_rights_trusted: boolean;
+  source_rights_risk: boolean;
+  source_rights_risk_reasons: string[];
+};
+
+export const probeUrlSource = async (url: string) => {
   const response = await fetch(`${API_BASE}/api/probe?url=${encodeURIComponent(url)}`, {
     cache: "no-store",
   });
   if (!response.ok) {
     return null;
   }
-  const data = (await response.json()) as { duration: number | null };
-  return data.duration;
+  return (await response.json()) as SourceProbe;
 };
 
 export const checkSourceHistory = async (url: string) => {

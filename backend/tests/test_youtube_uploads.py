@@ -122,10 +122,14 @@ def test_discover_clips_prefers_final_context_audit_over_stale_candidate_flag(
     assert clips[0].context_recut_required is True
 
 
-def test_repair_job_clip_context_queues_safe_reprocess_without_auto_upload(monkeypatch):
+def test_repair_job_clip_context_queues_only_selected_clip_without_auto_upload(monkeypatch, tmp_path):
     import api
 
-    clip = make_clip(1)
+    output_root = tmp_path / "outputs"
+    clip_path = output_root / "demo" / "clips" / "clip_01.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"rendered-clip")
+    clip = make_clip(1).model_copy(update={"url": "/outputs/demo/clips/clip_01.mp4"})
     job = ClipJob(
         id="job-needs-recut",
         status="completed",
@@ -138,29 +142,40 @@ def test_repair_job_clip_context_queues_safe_reprocess_without_auto_upload(monke
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
     )
-    monkeypatch.setitem(api.jobs, job.id, job)
+    monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "save_jobs_unlocked", lambda: None)
+    monkeypatch.setattr(api, "probe_media_duration", lambda _path: 35.0)
     monkeypatch.setattr(
         api,
         "clip_sidecar_payload",
         lambda _clip: {
-            "religious_claim_review": {"recommended_decision": "reject_and_recut"},
-            "religious_context_integrity": {"safe_for_automatic_export": False},
+            "score": 72,
+            "duration": 35,
         },
     )
-    captured = {}
+    started: list[str] = []
 
-    def fake_create_job(request):
-        captured["request"] = request
-        return job.model_copy(update={"id": "repaired-job", "status": "queued"})
+    class ImmediateThread:
+        def __init__(self, *, target, args, daemon):
+            self.args = args
 
-    monkeypatch.setattr(api, "create_job", fake_create_job)
+        def start(self):
+            started.append(self.args[0])
+
+    monkeypatch.setattr(api.threading, "Thread", ImmediateThread)
 
     result = repair_job_clip_context(job.id, ClipRepairRequest(url=clip.url))
 
-    assert result.id == "repaired-job"
-    assert captured["request"].allow_reprocess_source is True
-    assert captured["request"].enhanced_edit is True
-    assert captured["request"].auto_upload_youtube is False
+    assert result.id != job.id
+    assert result.request.source_file == str(clip_path)
+    assert result.request.url == job.request.url
+    assert result.request.top == 1
+    assert result.request.allow_reprocess_source is True
+    assert result.request.enhanced_edit is True
+    assert result.request.auto_upload_youtube is False
+    assert any("TARGETED_CLIP_REPAIR_SOURCE_CLIP" in line for line in result.logs)
+    assert started == [result.id]
 
 
 def test_content_shingle_similarity_detects_template_copy_not_shared_topic_words():
@@ -287,7 +302,7 @@ def test_claim_isolated_to_exact_clip_keeps_sibling_uploads_queued(monkeypatch, 
     assert youtube_source_claim_block("safe-source") is None
 
 
-def test_high_risk_cc_short_is_not_converted_to_another_mode():
+def test_high_risk_cc_short_is_not_converted_to_source_wide_rebuild():
     request = ClipJobRequest(
         url="https://youtu.be/risky-source",
         clip_mode="short",
@@ -300,8 +315,7 @@ def test_high_risk_cc_short_is_not_converted_to_another_mode():
     logs = [
         "Sumber ditolak sebelum download karena berisiko tinggi terkena Content ID: "
         "sumber terindikasi milik broadcaster/media/studio. Mode Clip Pendek dan Long Story "
-        "tidak boleh memakai sumber ini. Untuk mengambil topiknya tanpa memakai audio/piksel "
-        "sumber, pilih Original Rebuild."
+        "tidak boleh memakai sumber ini. Sumber tidak akan diproses ulang sebagai rebuild seluruh job."
     ]
 
     assert not source_risk_requires_automatic_rebuild(logs)
@@ -316,7 +330,7 @@ def test_unrelated_clip_failure_is_not_automatically_rebuilt():
     )
 
     assert not source_risk_requires_automatic_rebuild(
-        ["Tidak ada kandidat yang lolos quality gate Short FYP 78."]
+        ["Tidak ada kandidat yang lolos target Short FYP 80."]
     )
     assert automatic_source_risk_rebuild_request(
         request.model_copy(update={"ai_enabled": False})
@@ -324,6 +338,9 @@ def test_unrelated_clip_failure_is_not_automatically_rebuilt():
 
 
 def test_actual_claim_does_not_queue_a_rebuild():
+    assert not source_risk_requires_automatic_rebuild(
+        ["YouTube Studio mendeteksi klaim Content ID/copyright pada clip ini."]
+    )
     upload = YouTubeUploadJob(
         id="claimed-upload",
         source_job_id="source-job",
@@ -499,6 +516,45 @@ def test_automatic_upload_batch_skips_failed_preflight_instead_of_aborting(monke
         "/outputs/demo/clips/clip_02.mp4",
         "/outputs/demo/clips/clip_03.mp4",
     ]
+
+
+def test_automatic_batch_queues_only_shorts_reaching_fyp_80(monkeypatch):
+    import api
+
+    weak = make_clip(1).model_copy(update={"fyp_score": 79})
+    strong = make_clip(2).model_copy(update={"fyp_score": 86})
+    job = ClipJob(
+        id="job-fyp-80-batch",
+        status="completed",
+        request=ClipJobRequest(source_file="/tmp/owned.mp4"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[weak, strong],
+        candidates=[make_candidate(1, 95), make_candidate(2, 90)],
+    )
+    monkeypatch.setitem(api.jobs, job.id, job)
+    monkeypatch.setattr(api, "youtube_monetization_preflight_issue", lambda _job, _clip: None)
+    monkeypatch.setattr(
+        api,
+        "create_youtube_upload_record",
+        lambda _job_id, request: YouTubeUploadJob(
+            id=request.clip_url,
+            source_job_id=job.id,
+            clip_url=request.clip_url,
+            clip_name=request.clip_url.rsplit("/", 1)[-1],
+            status="queued",
+            title="Test upload",
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+        ),
+    )
+
+    uploads = create_youtube_upload_batch_records(
+        job.id,
+        api.YouTubeBatchUploadRequest(best_count=2),
+    )
+
+    assert [upload.clip_url for upload in uploads] == [strong.url]
 
 
 @pytest.mark.parametrize(
@@ -2507,6 +2563,71 @@ def test_monetization_preflight_requires_rights_and_substantive_edit(monkeypatch
     assert "Render ulang" in (youtube_monetization_preflight_issue(job, clip) or "")
 
 
+def test_monetization_preflight_accepts_confirmed_trusted_owned_channel(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-trusted-owned-channel",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setenv("YOUTUBE_TRUSTED_SOURCE_CHANNEL_IDS", "UC-owned-studio")
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {
+            "channel_id": "UC-owned-studio",
+            "uploader": "Studio Milik Fendy",
+            "license": "Standard YouTube License",
+        },
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "monetization_readiness": {"eligible_for_private_upload_review": True}
+        },
+    )
+
+    assert youtube_monetization_preflight_issue(job, clip) is None
+
+
+def test_internal_fyp_score_does_not_block_otherwise_eligible_private_upload(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-low-internal-score",
+        status="completed",
+        request=ClipJobRequest(source_file="/tmp/owned-source.mp4"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "output_format": "vertical_short",
+            "score": 42,
+            "duration": 35,
+            "aspect_ratio": "9:16",
+            "thumbnail_strategy": "embedded_shorts_cover_frame",
+            "religious_context_safe": True,
+            "monetization_readiness": {
+                "audit_version": 1,
+                "eligible_for_private_upload_review": True,
+            },
+        },
+    )
+
+    assert youtube_monetization_preflight_issue(job, clip) is None
+
+
 def test_automatic_rebuild_private_upload_requires_explicit_review(monkeypatch):
     import api
 
@@ -2794,7 +2915,7 @@ def test_monetization_preflight_rechecks_legacy_growth_audit_against_current_lim
     assert "180 detik" in issue
 
 
-def test_monetization_preflight_blocks_low_fyp_short(monkeypatch):
+def test_monetization_preflight_does_not_treat_low_fyp_score_as_platform_rule(monkeypatch):
     import api
 
     clip = make_clip(1)
@@ -2821,9 +2942,7 @@ def test_monetization_preflight_blocks_low_fyp_short(monkeypatch):
         },
     )
 
-    issue = youtube_monetization_preflight_issue(job, clip) or ""
-    assert "58/78" in issue
-    assert "auto-repair" in issue
+    assert youtube_monetization_preflight_issue(job, clip) is None
 
 
 def test_monetization_preflight_blocks_short_with_low_retention_readiness(monkeypatch):

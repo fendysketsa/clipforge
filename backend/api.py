@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from yt_dlp import YoutubeDL
 
 from llm import AIConfig, chat_completion, extract_json
-from source_rights import source_rights_risk_reasons
+from source_rights import is_trusted_source_channel, source_rights_risk_reasons
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -86,9 +86,9 @@ CLIP_BUDGET_RATIO = 0.8
 YOUTUBE_SHORTS_MAX_SECONDS = 180
 SHORT_GROWTH_MIN_SECONDS = 25
 SHORT_GROWTH_MAX_SECONDS = 180
+SHORT_FYP_TARGET_SCORE = 80
 ACTIVE_CLIP_MODES = frozenset({"short", "highlight_5m"})
 RETIRED_CLIP_MODES = frozenset({"long_animate", "original_rebuild"})
-SHORT_UPLOAD_MIN_FYP_SCORE = 78
 SHORT_GROWTH_TARGET_VIEWS = 20000
 LONG_FORM_GROWTH_TARGET_VIEWS = 5000
 GROWTH_TARGET_SUBSCRIBERS = 20
@@ -482,6 +482,17 @@ class SourceHistoryCheck(BaseModel):
     has_highlight_5m: bool = False
     attempted_modes: list[Literal["short", "highlight_5m", "original_rebuild"]] = Field(default_factory=list)
     matches: list[SourceHistoryJob] = Field(default_factory=list)
+
+
+class SourceProbe(BaseModel):
+    duration: float | None = None
+    title: str | None = None
+    uploader: str | None = None
+    channel_id: str | None = None
+    license: str | None = None
+    source_rights_trusted: bool = False
+    source_rights_risk: bool = False
+    source_rights_risk_reasons: list[str] = Field(default_factory=list)
 
 
 class SourceUsageLogEntry(BaseModel):
@@ -3671,10 +3682,14 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             and len(job.request.source_rights_evidence.split()) >= 3
         )
     )
+    trusted_owned_source = bool(
+        job.request.confirm_source_rights and is_trusted_source_channel(metadata)
+    )
     if (
         job.request.url.strip()
         and not is_creative_commons_info(metadata)
         and not research_only_rebuild
+        and not trusted_owned_source
     ):
         return (
             "Upload diblokir: bukti lisensi Creative Commons sumber tidak ditemukan. "
@@ -3870,17 +3885,9 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
                 "Upload diblokir: konteks kajian tidak utuh atau kutipan/pernyataan hukum "
                 "berakhir menggantung. Render ulang sampai atribusi, syarat, dan penjelasannya lengkap."
             )
-        raw_fyp_score = sidecar.get("score")
-        try:
-            fyp_score = int(round(float(raw_fyp_score)))
-        except (TypeError, ValueError):
-            fyp_score = 0
-        if fyp_score < SHORT_UPLOAD_MIN_FYP_SCORE:
-            return (
-                "Upload diblokir: skor FYP klip "
-                f"{fyp_score}/{SHORT_UPLOAD_MIN_FYP_SCORE}. Render ulang dengan "
-                "auto-repair terbaru atau pilih kandidat yang lebih kuat."
-            )
+        # FYP score is only an internal experiment/ranking signal. YouTube does
+        # not publish a numeric FYP threshold, so it must never be treated as a
+        # copyright, safety, or upload eligibility rule.
         raw_retention_score = sidecar.get("retention_score")
         if isinstance(raw_retention_score, (int, float)) and not isinstance(
             raw_retention_score,
@@ -5132,14 +5139,19 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
             if (
                 (clip := clips_by_url.get(clip_url)) is not None
                 and youtube_monetization_preflight_issue(job, clip) is None
+                and (
+                    job.request.clip_mode != "short"
+                    or clip.fyp_score is None
+                    or clip.fyp_score >= SHORT_FYP_TARGET_SCORE
+                )
             )
         ][: request.best_count]
     if not clip_urls:
         raise HTTPException(
             status_code=409,
             detail=(
-                "Tidak ada clip yang lolos audit upload. Render ulang agar kandidat "
-                "memiliki point utama dan ending tuntas."
+                "Tidak ada clip yang lolos audit upload dan target FYP 80. Gunakan "
+                "Perbaiki Otomatis pada clip terbaik; hanya clip itu yang diproses ulang."
             ),
         )
 
@@ -7236,7 +7248,7 @@ def resume_interrupted_clipping_jobs() -> None:
                         "progress_total_steps": 5,
                         "updated_at": now_iso(),
                         "error": (
-                            "Original Rebuild dan Long Animate sudah dinonaktifkan. "
+                            "Long Animate lama sudah dinonaktifkan. "
                             "Buat job baru sebagai Clip Pendek atau Long Story 5–10 Menit."
                         ),
                         "logs": [
@@ -7633,18 +7645,39 @@ def user_error_from_logs(logs: list[str]) -> str | None:
         )
     if "error initializing a simple filtergraph" in combined or "filter not found" in combined:
         return "Filter video FFmpeg tidak tersedia atau tidak kompatibel. Build ulang backend lalu coba lagi."
+    if "tidak ada kandidat" in combined:
+        return (
+            "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, "
+            "dan konteks aman. Perluas durasi analisis atau gunakan sumber lain."
+        )
     return None
 
 
-def fetch_video_duration(url: str) -> float | None:
+def fetch_video_probe(url: str) -> SourceProbe:
     try:
         with YoutubeDL(ytdlp_probe_options()) as ydl:
             info = ydl.extract_info(url, download=False)
     except Exception:
-        return None
+        return SourceProbe()
 
-    duration = info.get("duration") if isinstance(info, dict) else None
-    return float(duration) if duration else None
+    if not isinstance(info, dict):
+        return SourceProbe()
+    duration = info.get("duration")
+    risk_reasons = source_rights_risk_reasons(info)
+    return SourceProbe(
+        duration=float(duration) if duration else None,
+        title=str(info.get("title") or "").strip() or None,
+        uploader=str(info.get("uploader") or info.get("channel") or "").strip() or None,
+        channel_id=str(info.get("channel_id") or info.get("uploader_id") or "").strip() or None,
+        license=str(info.get("license") or "").strip() or None,
+        source_rights_trusted=is_trusted_source_channel(info),
+        source_rights_risk=bool(risk_reasons),
+        source_rights_risk_reasons=risk_reasons,
+    )
+
+
+def fetch_video_duration(url: str) -> float | None:
+    return fetch_video_probe(url).duration
 
 
 def probe_media_duration(path: Path) -> float | None:
@@ -7935,12 +7968,12 @@ def parse_clipper_progress(line: str) -> dict[str, int | str] | None:
 
 
 def source_risk_requires_automatic_rebuild(logs: list[str]) -> bool:
-    """Compatibility hook: risky sources now fail instead of changing product mode."""
+    """Compatibility hook: source-wide automatic rebuild is disabled."""
     return False
 
 
 def automatic_source_risk_rebuild_request(request: ClipJobRequest) -> ClipJobRequest | None:
-    """Compatibility hook retained for old callers; automatic rebuild is retired."""
+    """Compatibility hook: a rejected source cannot be rebuilt as a whole job."""
     return None
 
 
@@ -7975,7 +8008,7 @@ def run_job(job_id: str) -> None:
             clips=[],
             candidates=[],
             error=(
-                "Original Rebuild dan Long Animate sudah dihapus. "
+                "Mode ini tidak tersedia sebagai produk langsung. "
                 "Gunakan Clip Pendek atau Long Story 5–10 Menit."
             ),
         )
@@ -8229,7 +8262,11 @@ def run_job(job_id: str) -> None:
         # so large videos don't accumulate in uploads/.
         if request.source_file:
             upload_path = resolve_upload_path(request.source_file)
-            if upload_path is not None:
+            try:
+                request_source_path = Path(request.source_file).resolve()
+            except OSError:
+                request_source_path = None
+            if upload_path is not None and request_source_path == upload_path:
                 try:
                     upload_path.unlink()
                 except OSError:
@@ -10977,9 +11014,9 @@ def upload_video(file: UploadFile = File(...)) -> dict[str, str | float | None]:
     }
 
 
-@app.get("/api/probe")
-def probe_url(url: str) -> dict[str, float | None]:
-    return {"duration": fetch_video_duration(url)}
+@app.get("/api/probe", response_model=SourceProbe)
+def probe_url(url: str) -> SourceProbe:
+    return fetch_video_probe(url)
 
 
 @app.get("/api/source-history", response_model=SourceHistoryCheck)
@@ -11161,11 +11198,7 @@ def update_job_clip_status(job_id: str, update: ClipStatusUpdate) -> ClipJob:
 
 @app.post("/api/jobs/{job_id}/clips/repair", response_model=ClipJob)
 def repair_job_clip_context(job_id: str, repair: ClipRepairRequest) -> ClipJob:
-    """Queue a fresh Short pass with the safest current boundary rules.
-
-    The original artifact remains available for comparison. Automatic upload is
-    deliberately disabled so the repaired result still receives human review.
-    """
+    """Repair exactly one rendered Short without reopening the full source."""
     job, clip, _ = find_job_clip(job_id, repair.url)
     if job.request.clip_mode != "short":
         raise HTTPException(
@@ -11174,29 +11207,60 @@ def repair_job_clip_context(job_id: str, repair: ClipRepairRequest) -> ClipJob:
         )
 
     sidecar = clip_sidecar_payload(clip)
-    review = sidecar.get("religious_claim_review")
-    integrity = sidecar.get("religious_context_integrity")
-    recut_required = bool(
-        isinstance(review, dict)
-        and review.get("recommended_decision") == "reject_and_recut"
-    ) or bool(
-        isinstance(integrity, dict)
-        and integrity.get("safe_for_automatic_export") is False
-    )
-    if not recut_required:
+    clip_path = output_path_from_url(clip.url)
+    if clip_path is None or not clip_path.is_file():
+        raise HTTPException(status_code=404, detail="File clip yang akan diperbaiki tidak ditemukan")
+    if active_youtube_uploads_for_job(job_id, {clip.url}):
         raise HTTPException(
             status_code=409,
-            detail="Audit final tidak meminta potong ulang untuk klip ini",
+            detail="Tunggu upload clip ini selesai sebelum menjalankan perbaikan",
         )
+
+    try:
+        audited_duration = float(sidecar.get("duration") or 0)
+    except (TypeError, ValueError):
+        audited_duration = 0.0
+    clip_duration = probe_media_duration(clip_path) or audited_duration
+    target_max = min(
+        float(SHORT_GROWTH_MAX_SECONDS),
+        max(float(SHORT_GROWTH_MIN_SECONDS + 1), float(clip_duration or job.request.max_duration)),
+    )
 
     next_request = job.request.model_copy(
         update={
+            # Keep the original URL only as rights/attribution provenance. The
+            # worker input is this one rendered clip, never the full source.
+            "source_file": str(clip_path),
+            "top": 1,
+            "min_duration": float(SHORT_GROWTH_MIN_SECONDS),
+            "max_duration": target_max,
+            "analyze_seconds": None,
             "allow_reprocess_source": True,
             "auto_upload_youtube": False,
             "enhanced_edit": True,
         }
     )
-    return create_job(next_request)
+    next_request = normalize_job_request(next_request)
+    repair_job_id = uuid.uuid4().hex
+    now = now_iso()
+    next_job = ClipJob(
+        id=repair_job_id,
+        status="queued",
+        request=next_request,
+        created_at=now,
+        updated_at=now,
+        progress_detail="Memperbaiki satu clip terpilih tanpa memproses ulang sumber",
+        logs=[
+            f"TARGETED_CLIP_REPAIR_SOURCE_JOB:{job.id}",
+            f"TARGETED_CLIP_REPAIR_SOURCE_CLIP:{clip.url}",
+            "Input repair dibatasi ke satu MP4 hasil clip; video sumber penuh dan clip saudara tidak dibaca ulang.",
+        ],
+    )
+    with jobs_lock:
+        jobs[repair_job_id] = next_job
+        save_jobs_unlocked()
+    threading.Thread(target=run_job, args=(repair_job_id,), daemon=True).start()
+    return next_job
 
 
 def delete_job_clips_by_url(job_id: str, clip_urls: set[str]) -> ClipDeleteResponse:

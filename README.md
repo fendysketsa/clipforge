@@ -264,8 +264,17 @@ license metadata, not proof that the uploader owns every element in a recording.
 Viral search rejects live/upcoming, age-restricted, and non-public sources. A
 manually selected CC source that looks like a fan/support/reupload/archive account,
 TV, film, music, or broadcaster is treated as a risk signal rather than a Content ID
-result. A rejected Clip Pendek/Long Story remains rejected and must be replaced with a
-source whose commercial audio and visual rights can be demonstrated. CC BY attribution is appended to the YouTube
+result. The web interface now exposes that risk while the link is being checked and
+disables processing before download, so an obviously blocked source does not consume a
+render job. A rejected source is not rebuilt as a whole job: it must be replaced with a
+source whose commercial audio and visual rights can be demonstrated. Clip repair is
+strictly scoped to one already-rendered clip and never reprocesses the complete source.
+Owned broadcaster/media/studio channels can be configured in
+`YOUTUBE_TRUSTED_SOURCE_CHANNEL_IDS` as a comma-separated exact Channel ID allowlist.
+Use it only for channels you own or for which you hold documented commercial audio and
+visual reuse rights. It suppresses the name-based heuristic, not YouTube Studio Checks,
+and does not clear third-party material that may exist inside a video.
+CC BY attribution is appended to the YouTube
 description, while rendered MP4 files do not inherit source container metadata or
 chapters. New renders also carry a monetization-readiness audit; upload is blocked
 when source-rights confirmation or minimum substantive-edit evidence is absent.
@@ -277,7 +286,7 @@ claim policy: every detected Content ID/copyright claim cancels that clip's work
 the final Save/Publish action, including claims currently described as having no
 impact and claims on Shorts under one minute. Sibling clips from the same source
 remain queued and receive their own Studio Checks. No replacement or alternate
-production mode is queued automatically. A claimed upload is no longer saved
+production mode is queued automatically for a real Studio claim. A claimed upload is no longer saved
 as a Private fallback. Private auto uploads do not hold the whole queue while
 Studio still reports Checks as pending: the workflow checks for an explicit claim,
 continues as Private, then checks once more immediately before Save. Public and
@@ -320,6 +329,7 @@ YOUTUBE_REQUIRE_COPYRIGHT_CHECKS=true
 YOUTUBE_PRIVATE_FAST_CHECKS=true
 YOUTUBE_PRIVATE_SKIP_PENDING_CHECKS=true
 YOUTUBE_COPYRIGHT_HIGH_RISK_TERMS=islam itu indah,transcorp,trans tv,trans7
+YOUTUBE_TRUSTED_SOURCE_CHANNEL_IDS=
 YOUTUBE_CONTINUE_WHEN_CHECKS_STUCK=false
 YOUTUBE_CHECKS_TIMEOUT_SECONDS=3600
 YOUTUBE_CHECKS_LONG_RUNNING_EXTENSION_SECONDS=1800

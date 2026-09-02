@@ -213,17 +213,17 @@ def test_short_selection_returns_fewer_outputs_instead_of_repeating_one_point():
     assert selected == [first]
 
 
-def test_short_selection_excludes_candidates_that_upload_would_reject():
+def test_short_selection_treats_fyp_score_as_ranking_not_safety_gate():
     weak_point = make_candidate(0, 0, 99, "Hook kuat tetapi isi utamanya belum cukup jelas.")
     weak_point.key_point_score = 54
     hanging = make_candidate(0, 90, 98, "Poin kuat tetapi kalimatnya masih menggantung.")
     hanging.boundary_quality = "menggantung"
     low_fyp = make_candidate(0, 150, 77, "Poin lengkap tetapi daya tariknya masih lemah.")
-    ready = make_candidate(0, 180, 80, "Poin utama dan penutupnya sudah lengkap.")
+    ready = make_candidate(0, 240, 80, "Poin utama dan penutupnya sudah lengkap.")
 
     selected = select_candidates([weak_point, hanging, low_fyp, ready], 4)
 
-    assert selected == [ready]
+    assert selected == [low_fyp, ready]
 
 
 def test_short_selection_rejects_timing_audited_candidate_with_drop_off_risk():
@@ -247,11 +247,30 @@ def test_short_selection_rejects_timing_audited_candidate_with_drop_off_risk():
     assert selected == [paced_story]
 
 
-def test_short_repair_pool_can_include_low_score_before_final_quality_gate():
+def test_short_selection_can_include_low_score_when_structural_gates_pass():
     candidate = make_candidate(0, 0, 58, "Poin lengkap yang masih perlu auto-repair.")
 
-    assert select_candidates([candidate], 1) == []
+    assert select_candidates([candidate], 1) == [candidate]
     assert select_candidates([candidate], 1, minimum_score=1) == [candidate]
+
+
+def test_ai_rescore_accepts_common_alternate_candidate_key(monkeypatch):
+    candidate = make_candidate(0, 0, 70, "Masalah dan jawabannya dijelaskan sampai tuntas.")
+    config = AIConfig(
+        enabled=True,
+        base_url="http://127.0.0.1:11434/v1",
+        model="llama-local",
+    )
+    monkeypatch.setattr(
+        clipper,
+        "chat_completion",
+        lambda *args, **kwargs: '{"selected_clips":[{"id":0,"score":84,"title":"Jawaban yang Sering Terlewat"}]}',
+    )
+
+    rescored = ai_rescore_candidates([candidate], config, target_count=1)
+
+    assert rescored[0].score > 70
+    assert rescored[0].title == "Jawaban yang Sering Terlewat"
 
 
 def test_ai_rescore_disables_offline_provider_for_rest_of_job(monkeypatch, capsys):

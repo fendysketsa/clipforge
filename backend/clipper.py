@@ -23,7 +23,7 @@ from slugify import slugify
 from yt_dlp import YoutubeDL
 
 from llm import AIConfig, chat_completion, extract_json, is_llm_unavailable_error
-from source_rights import source_rights_risk_reasons
+from source_rights import is_trusted_source_channel, source_rights_risk_reasons
 
 
 console = Console()
@@ -4318,10 +4318,17 @@ def require_creative_commons_metadata(
     metadata: dict,
     *,
     research_only_original_rebuild: bool = False,
+    confirmed_source_rights: bool = False,
 ) -> None:
+    trusted_source = is_trusted_source_channel(metadata)
     if not is_creative_commons_metadata(metadata):
         license_text = metadata.get("license") or "tidak tersedia"
-        if research_only_original_rebuild:
+        if trusted_source and confirmed_source_rights:
+            console.print(
+                "[yellow]Channel ID sumber tercatat dalam allowlist hak milik/izin operator. "
+                "Lisensi YouTube standar diterima untuk proses, tetapi YouTube Checks tetap wajib.[/yellow]"
+            )
+        elif research_only_original_rebuild:
             console.print(
                 "[yellow]Metadata sumber bukan Creative Commons, tetapi diproses sebagai riset "
                 "Original Rebuild berdasarkan referensi izin pengguna; media sumber tidak masuk output.[/yellow]"
@@ -4345,8 +4352,10 @@ def require_creative_commons_metadata(
             + "; ".join(rights_risks[:2])
             + ". Label Creative Commons pada YouTube tidak membuktikan uploader memiliki "
             "seluruh hak audio/visual. Mode Clip Pendek dan Long Story tidak boleh memakai sumber ini. "
+            "Crop, subtitle, blur, perubahan kecepatan, atau potongan pendek tidak mengubah status hak "
+            "dan tidak menjamin hasil bebas Content ID. "
             "Gunakan rekaman milik sendiri atau sumber lain dengan izin komersial audio dan visual "
-            "yang dapat dibuktikan. Job tidak akan dialihkan ke mode lain."
+            "yang dapat dibuktikan. Sumber tidak akan diproses ulang sebagai rebuild seluruh job."
         )
 
 
@@ -4863,7 +4872,7 @@ def first_sentence(text: str, max_words: int = 8) -> str:
     return " ".join(words[:max_words]).capitalize() or "Auto clip"
 
 
-SHORT_EXPORT_MIN_FYP_SCORE = 78
+SHORT_EXPORT_MIN_FYP_SCORE = 80
 SHORT_REPAIR_POOL_MIN_SIZE = 12
 SHORT_REPAIR_POOL_MULTIPLIER = 4
 SHORT_BATCH_MAX_TOPIC_SIMILARITY = 0.52
@@ -4872,7 +4881,7 @@ SHORT_BATCH_MAX_TOPIC_SIMILARITY = 0.52
 def fyp_score_label(score: int) -> str:
     if score >= 88:
         return "Sangat kuat"
-    if score >= 78:
+    if score >= SHORT_EXPORT_MIN_FYP_SCORE:
         return "Kuat"
     if score >= 65:
         return "Menjanjikan"
@@ -4895,7 +4904,7 @@ def five_k_experiment_readiness(
     score = max(0, min(100, int(round(clip.score))))
     if score >= 88:
         status = "ready_to_test"
-    elif score >= 78:
+    elif score >= SHORT_EXPORT_MIN_FYP_SCORE:
         status = "worth_testing"
     elif score >= 65:
         status = "test_hook_variant_first"
@@ -4936,11 +4945,14 @@ def five_k_experiment_readiness(
             if output_format == "vertical_short"
             else "watch_time"
         ),
+        # This score is an editorial estimate, not a YouTube rule. Keep it as
+        # an experiment target without discarding an otherwise safe, coherent
+        # clip when a local model scores conservatively or returns no ranking.
         "minimum_short_export_score": SHORT_EXPORT_MIN_FYP_SCORE,
+        "fyp_target_reached": output_format != "vertical_short" or score >= SHORT_EXPORT_MIN_FYP_SCORE,
         "quality_gate_passed": (
-            output_format != "vertical_short"
-            or score >= SHORT_EXPORT_MIN_FYP_SCORE
-        ) and (clip.retention_score == 0 or clip.retention_score >= 58) and (
+            clip.retention_score == 0 or clip.retention_score >= 58
+        ) and (
             clip.narrative_arc_score == 0 or clip.narrative_arc_complete
         ) and clip.religious_context_safe,
         "readiness_score": score,
@@ -6541,10 +6553,10 @@ def select_candidates(
     candidates: list[ClipCandidate],
     limit: int,
     *,
-    minimum_score: int = SHORT_EXPORT_MIN_FYP_SCORE,
+    minimum_score: int = 1,
 ) -> list[ClipCandidate]:
-    # A rendered short is advertised as ready to post, so do not select a
-    # candidate that the growth/monetization preflight will reject later.
+    # FYP score is an internal ranking estimate, not a platform safety rule.
+    # Structural, retention, context, and editorial checks remain mandatory.
     candidates = [
         item
         for item in candidates
@@ -7074,7 +7086,15 @@ def ai_rescore_candidates(
             console.print(f"[yellow]AI agent failed, using heuristic scores:[/yellow] {exc}")
         return candidates
 
-    scored = parsed.get("clips") if isinstance(parsed, dict) else None
+    scored = None
+    if isinstance(parsed, list):
+        scored = parsed
+    elif isinstance(parsed, dict):
+        for key in ("clips", "candidates", "selected_clips", "results"):
+            value = parsed.get(key)
+            if isinstance(value, list):
+                scored = value
+                break
     if not isinstance(scored, list):
         console.print("[yellow]AI agent returned no usable clips; keeping heuristic scores.[/yellow]")
         return candidates
@@ -13328,6 +13348,27 @@ def prepare_uploaded_source(source_file: Path, work_dir: Path) -> tuple[Path, di
         "webpage_url": None,
         "ext": suffix.lstrip("."),
     }
+    # A targeted clip repair uses the already-rendered MP4 as its only media
+    # input. Preserve the original source attribution/rights audit from that
+    # clip's sidecar without reopening or reprocessing the complete source.
+    sidecar_path = source_file.with_suffix(".json")
+    if sidecar_path.is_file():
+        try:
+            sidecar = load_json(sidecar_path)
+        except (OSError, ValueError, TypeError):
+            sidecar = {}
+        provenance = sidecar.get("source_provenance") if isinstance(sidecar, dict) else None
+        if isinstance(provenance, dict):
+            metadata.update(
+                {
+                    "title": str(provenance.get("title") or metadata["title"]),
+                    "uploader": str(provenance.get("creator") or "") or None,
+                    "webpage_url": str(provenance.get("url") or "") or None,
+                    "license": str(provenance.get("license") or "") or None,
+                    "targeted_clip_repair": True,
+                    "repair_input_name": source_file.name,
+                }
+            )
     return source_file, metadata
 
 
@@ -14526,8 +14567,12 @@ def main() -> int:
                         )
                     )
                 ),
+                confirmed_source_rights=args.confirm_source_rights,
             )
-            console.print(f"[green]Creative Commons license detected:[/green] {metadata.get('license') or '-'}")
+            console.print(
+                f"[green]Pemeriksaan lisensi/hak sumber lolos:[/green] "
+                f"{metadata.get('license') or 'allowlist Channel ID'}"
+            )
         title = metadata.get("title") or metadata.get("id") or "youtube-video"
         work_dir = root / slugify(title)[:80]
         work_dir.mkdir(parents=True, exist_ok=True)
@@ -14709,15 +14754,21 @@ def main() -> int:
     if not candidates:
         if args.clip_mode == "short":
             console.print(
-                "[red]Tidak ada kandidat yang lolos quality gate Short "
-                f"FYP {SHORT_EXPORT_MIN_FYP_SCORE}. Sumber ini tidak diekspor agar "
-                "klip lemah tidak ikut diposting; analisis sumber lain atau perluas durasi analisis.[/red]"
+                "[red]Tidak ada kandidat yang lolos pemeriksaan alur, batas kalimat, "
+                "retensi, dan keamanan konteks. Coba perluas durasi analisis atau gunakan sumber lain.[/red]"
             )
         else:
             console.print(
                 "[red]No clip candidates found. Try lowering --min or increasing --max.[/red]"
             )
         return 1
+
+    if args.clip_mode == "short" and max(candidate.score for candidate in candidates) < SHORT_EXPORT_MIN_FYP_SCORE:
+        console.print(
+            "[yellow]Skor FYP terbaik masih di bawah target eksperimen "
+            f"{SHORT_EXPORT_MIN_FYP_SCORE}; kandidat aman terbaik tetap dirender. "
+            "Skor ini hanya sinyal ranking internal, bukan aturan upload YouTube.[/yellow]"
+        )
 
     if not args.no_enhanced_edit:
         if not structural_edits_applied:
@@ -14733,14 +14784,14 @@ def main() -> int:
             compilation_candidates = candidates
         else:
             # Structural intro/ending edits recalculate story metrics. Guard
-            # against exporting a candidate that became incomplete or remains
-            # below the enforced FYP threshold afterward.
+            # against exporting a candidate that became incomplete or unsafe
+            # after the edit; FYP score remains advisory.
             candidates = select_candidates(candidates, args.top)
             if not candidates:
                 console.print(
-                    "[red]Tidak ada kandidat yang tetap lolos quality gate Short "
-                    f"FYP {SHORT_EXPORT_MIN_FYP_SCORE} setelah auto-repair. "
-                    "Klip tidak diekspor; coba sumber lain atau perluas durasi analisis.[/red]"
+                    "[red]Tidak ada kandidat yang tetap lolos pemeriksaan alur, batas kalimat, "
+                    "retensi, dan keamanan konteks setelah auto-repair. "
+                    "Coba sumber lain atau perluas durasi analisis.[/red]"
                 )
                 return 1
 

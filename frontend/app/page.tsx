@@ -25,7 +25,7 @@ import {
   getYouTubeConfig,
   getYouTubeUploads,
   importYouTubeCdpCookies,
-  probeUrlDuration,
+  probeUrlSource,
   repairJobClipContext,
   setupYouTubeOneTimeLogin,
   searchViralContentSources,
@@ -35,6 +35,7 @@ import {
   uploadVideo,
   type ClipDeleteResult,
   type LocalLlmProvider,
+  type SourceProbe,
 } from "../lib/apiClient";
 import {
   DEFAULT_AI_BASE_URL,
@@ -105,6 +106,7 @@ export default function HomePage() {
   const [maxDuration, setMaxDuration] = useState(DEFAULT_MAX_DURATION);
   const [targetClips, setTargetClips] = useState(0);
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
+  const [sourceProbe, setSourceProbe] = useState<SourceProbe | null>(null);
   const [sourceHistory, setSourceHistory] = useState<SourceHistoryCheck | null>(null);
   const [isCheckingSourceHistory, setIsCheckingSourceHistory] = useState(false);
   const [allowReprocessSource, setAllowReprocessSource] = useState(false);
@@ -213,6 +215,7 @@ export default function HomePage() {
     setSourceMode("url");
     setUrl(value);
     setSourceHistory(null);
+    setSourceProbe(null);
     setIsCheckingSourceHistory(Boolean(value.trim()));
     setAllowReprocessSource(false);
     setConfirmSourceRights(false);
@@ -220,6 +223,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (sourceMode !== "url") {
+      setSourceProbe(null);
       setSourceHistory(null);
       setIsCheckingSourceHistory(false);
       setAllowReprocessSource(false);
@@ -228,6 +232,7 @@ export default function HomePage() {
     const trimmed = url.trim();
     if (!trimmed) {
       setVideoDuration(null);
+      setSourceProbe(null);
       setSourceHistory(null);
       setIsCheckingSourceHistory(false);
       setAllowReprocessSource(false);
@@ -236,20 +241,16 @@ export default function HomePage() {
     let cancelled = false;
     setIsCheckingSourceHistory(true);
     const timer = window.setTimeout(() => {
-      checkSourceHistory(trimmed)
-        .then((history) => {
-          if (!cancelled) setSourceHistory(history);
-        })
-        .catch(() => {
-          if (!cancelled) setSourceHistory(null);
-        })
-        .finally(() => {
-          if (!cancelled) setIsCheckingSourceHistory(false);
-        });
-      probeUrlDuration(trimmed).then((duration) => {
-        if (!cancelled) setVideoDuration(duration);
-      }).catch(() => {
-        if (!cancelled) setVideoDuration(null);
+      Promise.all([
+        checkSourceHistory(trimmed).catch(() => null),
+        probeUrlSource(trimmed).catch(() => null),
+      ]).then(([history, probe]) => {
+        if (cancelled) return;
+        setSourceHistory(history);
+        setSourceProbe(probe);
+        setVideoDuration(probe?.duration ?? null);
+      }).finally(() => {
+        if (!cancelled) setIsCheckingSourceHistory(false);
       });
     }, 700);
     return () => {
@@ -648,6 +649,12 @@ export default function HomePage() {
       setError("Konfirmasikan bahwa Anda memiliki hak/izin komersial atas audio dan visual sumber. Label Creative Commons saja tidak cukup.");
       return;
     }
+    if (requestedSourceMode === "url" && sourceProbe?.source_rights_risk) {
+      setError(
+        "Sumber ini terindikasi rekaman broadcaster/media/studio. Edit biasa tidak menghapus hak cipta atau Content ID. Gunakan rekaman milik sendiri atau sumber lain dengan izin komersial audio dan visual yang dapat dibuktikan.",
+      );
+      return;
+    }
     if (requestedSourceMode === "upload" && !uploadToken) {
       setError("Unggah file video terlebih dahulu.");
       return;
@@ -748,6 +755,7 @@ export default function HomePage() {
     requireCreativeCommons,
     requiredHashtags,
     sourceMode,
+    sourceProbe,
     targetClips,
     uploadToken,
     url,
@@ -1330,6 +1338,7 @@ export default function HomePage() {
         clipMode={clipMode}
         videoDuration={videoDuration}
         sourceHistory={sourceHistory}
+        sourceProbe={sourceProbe}
         isCheckingSourceHistory={isCheckingSourceHistory}
         allowReprocessSource={allowReprocessSource}
         confirmSourceRights={confirmSourceRights}

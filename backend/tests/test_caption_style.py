@@ -1367,7 +1367,7 @@ def test_twenty_k_readiness_is_a_stability_experiment_not_a_view_guarantee():
     assert readiness["target_subscribers_per_1000_views"] == 1.0
     assert readiness["stretch_target_views"] == 50000
     assert readiness["quality_metric"] == "engaged_views"
-    assert readiness["minimum_short_export_score"] == 78
+    assert readiness["minimum_short_export_score"] == 80
     assert readiness["quality_gate_passed"] is True
     assert readiness["status"] == "ready_to_test"
     assert readiness["guarantee"] is False

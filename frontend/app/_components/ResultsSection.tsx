@@ -124,7 +124,7 @@ function youtubeRunningStage(upload: YouTubeUploadJob) {
 
 function fypScoreTone(score: number) {
   if (score >= 88) return "excellent";
-  if (score >= 78) return "strong";
+  if (score >= 80) return "strong";
   if (score >= 65) return "promising";
   return "polish";
 }
@@ -161,7 +161,7 @@ function growthTargetReadiness(
         : "Hook dan payoff sudah kuat; publikasikan Private dulu, buka Edit thumbnail di aplikasi YouTube dan geser ke frame cover awal sekitar 0,78 detik—jangan mengandalkan pilihan otomatis tengah—lalu ukur engaged views, chose-to-view, dan subscriber yang dihasilkan."),
     };
   }
-  if (score >= 78) {
+  if (score >= 80) {
     return {
       label: `${target} · layak uji`,
       tone: "strong",
@@ -419,8 +419,12 @@ export function ResultsSection({
               : null;
             const passesGrowthGate = typeof clip.growth_quality_gate_passed === "boolean"
               ? clip.growth_quality_gate_passed
-              : isLongForm || (typeof clip.fyp_score === "number" && clip.fyp_score >= 78);
-            const isUploadReady = passesGrowthGate && !clip.context_recut_required;
+              : isLongForm || (typeof clip.fyp_score === "number" && clip.fyp_score >= 80);
+            const meetsFypTarget = isLongForm
+              || typeof clip.fyp_score !== "number"
+              || clip.fyp_score >= 80;
+            const needsTargetedRepair = clip.context_recut_required || !meetsFypTarget;
+            const isUploadReady = passesGrowthGate && meetsFypTarget && !clip.context_recut_required;
             const uploadReviewConfirmed = clip.is_correct;
             const isQueuedForYouTube = latestUpload?.status === "queued";
             const isRunningYouTubeUpload = latestUpload?.status === "running";
@@ -725,7 +729,7 @@ export function ResultsSection({
                       <Download size={16} />
                       <span>Unduh</span>
                     </button>
-                    {clip.context_recut_required ? (
+                    {needsTargetedRepair ? (
                       <button
                         type="button"
                         className="clipRepairButton"
@@ -738,7 +742,7 @@ export function ResultsSection({
                             setRepairingClipUrl(null);
                           }
                         }}
-                        title="Proses ulang otomatis dengan validasi batas ucapan final"
+                        title="Perbaiki hanya MP4 clip ini; video sumber dan clip lain tidak diproses ulang"
                       >
                         {repairingClipUrl === clip.url
                           ? <LoaderCircle className="spin" size={16} />

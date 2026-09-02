@@ -37,6 +37,29 @@ SOURCE_RIGHTS_BROADCASTER_PATTERNS = (
 )
 
 
+def trusted_source_channel_ids() -> set[str]:
+    """Return operator-approved channels with documented reuse rights."""
+    return {
+        value.strip()
+        for value in os.environ.get("YOUTUBE_TRUSTED_SOURCE_CHANNEL_IDS", "").split(",")
+        if value.strip()
+    }
+
+
+def source_channel_ids(info: dict[str, Any]) -> set[str]:
+    return {
+        str(info.get(key) or "").strip()
+        for key in ("channel_id", "uploader_id")
+        if str(info.get(key) or "").strip()
+    }
+
+
+def is_trusted_source_channel(info: dict[str, Any]) -> bool:
+    """Match immutable Channel IDs exactly; mutable display names are unsafe."""
+    configured = trusted_source_channel_ids()
+    return bool(configured and source_channel_ids(info) & configured)
+
+
 def source_rights_risk_reasons(info: dict[str, Any]) -> list[str]:
     """Flag URL sources whose CC label is not a reliable chain-of-title signal.
 
@@ -44,6 +67,9 @@ def source_rights_risk_reasons(info: dict[str, Any]) -> list[str]:
     contains a broadcaster, film, music, or another creator's recording. These
     signals are conservative workflow gates, not a legal determination.
     """
+    if is_trusted_source_channel(info):
+        return []
+
     title = re.sub(r"\s+", " ", str(info.get("title") or "")).strip().casefold()
     uploader = re.sub(
         r"\s+",

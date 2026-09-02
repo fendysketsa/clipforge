@@ -17,6 +17,7 @@ from api import (
     choose_auto_analyze_seconds,
     default_viral_video_search_queries,
     fresh_conversation_source_profile,
+    fetch_video_probe,
     indonesian_language_score,
     is_creative_commons_info,
     is_fresh_viral_upload,
@@ -45,6 +46,71 @@ from api import (
     youtube_max_upload_bytes,
     youtube_published_after,
 )
+
+
+def test_fetch_video_probe_reports_source_rights_risk_before_download(monkeypatch):
+    import api
+
+    class FakeYoutubeDL:
+        def __init__(self, _options):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, _url, download=False):
+            assert download is False
+            return {
+                "title": "Full Episode Program TV",
+                "uploader": "Contoh Media Studio",
+                "channel_id": "UC-risky-media",
+                "duration": 601,
+                "license": "Creative Commons Attribution license",
+            }
+
+    monkeypatch.setattr(api, "YoutubeDL", FakeYoutubeDL)
+
+    probe = fetch_video_probe("https://youtu.be/example")
+
+    assert probe.duration == 601
+    assert probe.source_rights_risk is True
+    assert probe.source_rights_risk_reasons
+    assert probe.channel_id == "UC-risky-media"
+    assert probe.license == "Creative Commons Attribution license"
+
+
+def test_fetch_video_probe_allows_low_risk_source_metadata(monkeypatch):
+    import api
+
+    class FakeYoutubeDL:
+        def __init__(self, _options):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, _url, download=False):
+            assert download is False
+            return {
+                "title": "Catatan kebun milik saya",
+                "uploader": "Kanal Pribadi Fendy",
+                "duration": 92,
+                "license": "Creative Commons Attribution license",
+            }
+
+    monkeypatch.setattr(api, "YoutubeDL", FakeYoutubeDL)
+
+    probe = fetch_video_probe("https://youtu.be/example")
+
+    assert probe.duration == 92
+    assert probe.source_rights_risk is False
+    assert probe.source_rights_risk_reasons == []
 
 
 def test_parse_clipper_progress_maps_machine_milestone_to_job_state():
@@ -1119,6 +1185,35 @@ def test_source_rights_guard_rejects_claimed_tv_show_reupload_even_when_cc():
     assert "uploader" in (viral_source_rejection_reason(source) or "")
 
 
+def test_source_rights_guard_allows_exact_operator_trusted_channel(monkeypatch):
+    source = {
+        "channel_id": "UC-owned-media-channel",
+        "license": "Creative Commons Attribution license",
+        "availability": "public",
+        "title": "Full Episode Program TV",
+        "uploader": "Contoh Media Studio",
+    }
+    monkeypatch.setenv(
+        "YOUTUBE_TRUSTED_SOURCE_CHANNEL_IDS",
+        "UC-another-channel,UC-owned-media-channel",
+    )
+
+    assert source_rights_risk_reasons(source) == []
+    assert viral_source_rejection_reason(source) is None
+
+
+def test_source_rights_allowlist_requires_exact_channel_id(monkeypatch):
+    source = {
+        "channel_id": "UC-owned-media-channel-copy",
+        "license": "Creative Commons Attribution license",
+        "title": "Full Episode Program TV",
+        "uploader": "Contoh Media Studio",
+    }
+    monkeypatch.setenv("YOUTUBE_TRUSTED_SOURCE_CHANNEL_IDS", "UC-owned-media-channel")
+
+    assert source_rights_risk_reasons(source)
+
+
 def test_discovery_rejects_rights_risk_before_source_can_be_selected():
     source = {
         "license": "Creative Commons Attribution license",
@@ -1192,13 +1287,13 @@ def test_user_error_from_logs_reassembles_rich_wrapped_actionable_message():
         "Fetching metadata...",
         "USER_ERROR: Sumber ditolak sebelum download karena berisiko tinggi terkena",
         "Content ID: sumber terindikasi milik broadcaster/media/studio.",
-        "Pilih Original Rebuild lalu isi perspektif dan referensi izin tertulis.",
+        "Sumber tidak akan diproses ulang sebagai rebuild seluruh job.",
     ]
 
     message = user_error_from_logs(logs) or ""
 
     assert "Content ID" in message
-    assert "Original Rebuild" in message
+    assert "tidak akan diproses ulang" in message
 
 
 def test_user_error_from_logs_detects_network_error():
@@ -1225,6 +1320,18 @@ def test_user_error_from_logs_detects_missing_ffmpeg_text_filter():
     ]
 
     assert "FFmpeg backend" in (user_error_from_logs(logs) or "")
+
+
+def test_user_error_from_logs_explains_structural_candidate_failure():
+    message = user_error_from_logs(
+        [
+            "Tidak ada kandidat yang lolos pemeriksaan alur, batas kalimat, retensi, dan keamanan konteks.",
+            "Workspace dan seluruh file sementara proses gagal telah dihapus.",
+        ]
+    ) or ""
+
+    assert "kalimat tuntas" in message
+    assert "clipper.py exited" not in message
 
 
 def test_user_error_from_logs_explains_incomplete_audio_download():

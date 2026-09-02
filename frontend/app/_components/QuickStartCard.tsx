@@ -16,6 +16,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { formatDuration } from "../../lib/utils";
+import type { SourceProbe } from "../../lib/apiClient";
 import type { ClipMode, SourceHistoryCheck } from "../../types/clip.type";
 
 type QuickStartCardProps = {
@@ -23,6 +24,7 @@ type QuickStartCardProps = {
   clipMode: ClipMode;
   videoDuration: number | null;
   sourceHistory: SourceHistoryCheck | null;
+  sourceProbe: SourceProbe | null;
   isCheckingSourceHistory: boolean;
   allowReprocessSource: boolean;
   confirmSourceRights: boolean;
@@ -41,6 +43,7 @@ export function QuickStartCard({
   clipMode,
   videoDuration,
   sourceHistory,
+  sourceProbe,
   isCheckingSourceHistory,
   allowReprocessSource,
   confirmSourceRights,
@@ -58,11 +61,13 @@ export function QuickStartCard({
   const hasUrl = Boolean(url.trim());
   const invalidUrl = Boolean(hasUrl && sourceHistory && !sourceHistory.valid_youtube_url);
   const duplicateBlocked = Boolean(sourceHistory?.found && !allowReprocessSource);
+  const sourceRightsBlocked = Boolean(sourceProbe?.source_rights_risk);
   const isWorking = isBusy || isSubmitting;
   const canStart = hasUrl
     && !invalidUrl
     && !isCheckingSourceHistory
     && !duplicateBlocked
+    && !sourceRightsBlocked
     && confirmSourceRights
     && !isWorking;
 
@@ -152,7 +157,20 @@ export function QuickStartCard({
           </small>
         </label>
 
-        {invalidUrl ? (
+        {sourceRightsBlocked ? (
+          <div className="quickNotice isDanger" role="alert">
+            <AlertTriangle size={17} />
+            <span className="quickNoticeCopy">
+              <strong>Sumber tidak aman untuk clipping ulang.</strong>
+              <small>
+                {sourceProbe?.source_rights_risk_reasons.slice(0, 2).join("; ")}. Crop, subtitle,
+                blur, perubahan kecepatan, dan potongan pendek tidak menghapus hak cipta atau Content ID.
+                Gunakan rekaman sendiri atau materi dengan izin komersial audio serta visual.
+                {sourceProbe?.channel_id ? ` Channel ID: ${sourceProbe.channel_id}.` : ""}
+              </small>
+            </span>
+          </div>
+        ) : invalidUrl ? (
           <div className="quickNotice isDanger" role="alert">
             <AlertTriangle size={17} />
             <span>Link belum dikenali sebagai video YouTube. Periksa lalu tempel ulang.</span>
@@ -183,6 +201,19 @@ export function QuickStartCard({
           </div>
         ) : null}
 
+        {sourceProbe?.source_rights_trusted && !sourceRightsBlocked ? (
+          <div className="quickNotice isSuccess" role="status">
+            <ShieldCheck size={17} />
+            <span className="quickNoticeCopy">
+              <strong>Kanal sumber ada dalam allowlist hak operator.</strong>
+              <small>
+                Nama broadcaster/media/studio tidak memblokir proses. Konfirmasi hak dan YouTube
+                Checks tetap wajib; allowlist bukan jaminan bebas klaim.
+              </small>
+            </span>
+          </div>
+        ) : null}
+
         <label className="quickRightsCheck">
           <input
             type="checkbox"
@@ -203,7 +234,9 @@ export function QuickStartCard({
             {isWorking ? "Sedang menyiapkan…" : `Proses ${modeLabel}`}
           </button>
         </div>
-        {!confirmSourceRights && hasUrl ? (
+        {sourceRightsBlocked ? (
+          <p className="quickStartHint">Proses dinonaktifkan sebelum download agar waktu dan kuota tidak terbuang.</p>
+        ) : !confirmSourceRights && hasUrl ? (
           <p className="quickStartHint">Centang konfirmasi izin sumber untuk mengaktifkan tombol proses.</p>
         ) : null}
       </div>

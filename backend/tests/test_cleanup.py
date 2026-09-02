@@ -1,3 +1,4 @@
+import json
 import tempfile
 import time
 from pathlib import Path
@@ -55,6 +56,33 @@ def test_prepare_uploaded_source_does_not_copy():
     assert returned == upload
     assert list(work.iterdir()) == []
     assert meta["ext"] == "mp4"
+
+
+def test_prepare_rendered_clip_preserves_original_source_provenance(tmp_path):
+    upload = tmp_path / "clip_01.mp4"
+    upload.write_bytes(b"u" * 100)
+    upload.with_suffix(".json").write_text(
+        json.dumps(
+            {
+                "source_provenance": {
+                    "title": "Sumber Asli",
+                    "creator": "Kreator Asli",
+                    "url": "https://youtu.be/source",
+                    "license": "Creative Commons Attribution license",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    work = tmp_path / "work"
+    work.mkdir()
+
+    returned, meta = prepare_uploaded_source(upload, work)
+
+    assert returned == upload
+    assert meta["webpage_url"] == "https://youtu.be/source"
+    assert meta["license"] == "Creative Commons Attribution license"
+    assert meta["targeted_clip_repair"] is True
 
 
 def test_cleanup_does_not_delete_external_upload():

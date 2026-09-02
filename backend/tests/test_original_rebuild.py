@@ -85,6 +85,21 @@ def test_broadcaster_source_is_allowed_only_for_documented_research_rebuild():
     )
 
 
+def test_trusted_owned_channel_accepts_standard_license_only_with_confirmation(monkeypatch):
+    metadata = {
+        "channel_id": "UC-owned-studio",
+        "title": "Program TV Produksi Sendiri",
+        "uploader": "Studio Milik Fendy",
+        "license": "Standard YouTube License",
+    }
+    monkeypatch.setenv("YOUTUBE_TRUSTED_SOURCE_CHANNEL_IDS", "UC-owned-studio")
+
+    with pytest.raises(UserFacingError, match="Creative Commons"):
+        require_creative_commons_metadata(metadata)
+
+    require_creative_commons_metadata(metadata, confirmed_source_rights=True)
+
+
 def test_original_rebuild_creates_audited_script_without_source_media(monkeypatch):
     # Keep this fixture focused on audit semantics; duration targeting has a
     # separate three-minute regression test in test_long_animate.py.
