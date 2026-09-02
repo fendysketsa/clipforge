@@ -1,5 +1,6 @@
 services:
   backend:
+    image: clipforge-backend:latest
     build:
       context: ./backend
     container_name: fendy-clipper-backend
@@ -201,8 +202,9 @@ services:
     restart: unless-stopped
 
   telegram-bot:
-    build:
-      context: ./backend
+    # Reuse the backend image. Building the same Dockerfile twice in parallel
+    # can collide in BuildKit/containerd while both services export one layer.
+    image: clipforge-backend:latest
     container_name: fendy-clipper-telegram-bot
     command: ["python", "telegram_bot.py"]
     network_mode: host

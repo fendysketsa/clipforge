@@ -1,4 +1,4 @@
-from source_rights import source_rights_risk_reasons
+from source_rights import source_rights_review_reasons, source_rights_risk_reasons
 
 
 def test_claimed_tv_show_reupload_is_high_risk_even_when_metadata_says_cc():
@@ -33,4 +33,15 @@ def test_broadcaster_and_protected_audiovisual_formats_are_high_risk():
     reasons = source_rights_risk_reasons(source)
 
     assert any("program TV/film/musik" in reason for reason in reasons)
-    assert any("broadcaster/media/studio" in reason for reason in reasons)
+    assert any("broadcaster/media/studio" in reason for reason in source_rights_review_reasons(source))
+
+
+def test_broadcaster_name_alone_is_review_not_automatic_block():
+    source = {
+        "license": "Creative Commons Attribution license",
+        "title": "Diskusi Ekonomi Kreatif",
+        "uploader": "Contoh Media Studio",
+    }
+
+    assert source_rights_risk_reasons(source) == []
+    assert source_rights_review_reasons(source)

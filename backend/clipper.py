@@ -23,7 +23,11 @@ from slugify import slugify
 from yt_dlp import YoutubeDL
 
 from llm import AIConfig, chat_completion, extract_json, is_llm_unavailable_error
-from source_rights import is_trusted_source_channel, source_rights_risk_reasons
+from source_rights import (
+    is_trusted_source_channel,
+    source_rights_review_reasons,
+    source_rights_risk_reasons,
+)
 
 
 console = Console()
@@ -73,11 +77,9 @@ NETWORK_ERROR_PATTERNS = (
 )
 
 YTDLP_HTTP_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/126.0.0.0 Safari/537.36"
-    ),
+    # Do not pin a browser User-Agent here. yt-dlp maintains a current UA and
+    # player-client pairing; an old, hand-written Chrome UA can make YouTube's
+    # media request disagree with the extracted player session and return 403.
     "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
@@ -1814,14 +1816,15 @@ def ytdlp_base_options(**overrides) -> dict:
 
 
 def youtube_download_strategies(max_height: int, work_dir: Path) -> list[dict]:
-    """Return conservative YouTube media strategies, including an embedded-client retry.
+    """Return bounded YouTube strategies with independent partial files.
 
     YouTube can require a Proof-of-Origin token for some player clients.  The
-    normal yt-dlp client selection remains first.  The web embedded client is
-    then tried because it can supply signed media without a GVS PO token once
-    the EJS challenge is solved.  HLS Safari remains a last compatibility
-    fallback. Keeping output templates separate prevents incompatible partial
-    files from being resumed across strategies.
+    current yt-dlp defaults remain first so its maintained client fallbacks can
+    work. A muxed audio-video choice then handles sources that expose no
+    separate adaptive pair. The web embedded client gets both adaptive and
+    muxed attempts after EJS challenge solving. HLS Safari is the final public
+    compatibility path. Keeping templates separate prevents incompatible
+    partial files from being resumed across strategies.
     """
     standard_format = (
         f"bestvideo[height<={max_height}][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
@@ -1835,6 +1838,10 @@ def youtube_download_strategies(max_height: int, work_dir: Path) -> list[dict]:
         f"best[height<={max_height}][protocol^=m3u8]/"
         "best[protocol^=m3u8]"
     )
+    muxed_format = (
+        f"best[height<={max_height}][vcodec!=none][acodec!=none]/"
+        "best[vcodec!=none][acodec!=none]"
+    )
     return [
         {
             "name": "default",
@@ -1842,9 +1849,20 @@ def youtube_download_strategies(max_height: int, work_dir: Path) -> list[dict]:
             "outtmpl": str(work_dir / "source.%(ext)s"),
         },
         {
+            "name": "compatible_muxed",
+            "format": muxed_format,
+            "outtmpl": str(work_dir / "source_muxed.%(ext)s"),
+        },
+        {
             "name": "web_embedded_ejs",
             "format": standard_format,
             "outtmpl": str(work_dir / "source_embedded.%(ext)s"),
+            "extractor_args": {"youtube": {"player_client": ["web_embedded"]}},
+        },
+        {
+            "name": "web_embedded_muxed",
+            "format": muxed_format,
+            "outtmpl": str(work_dir / "source_embedded_muxed.%(ext)s"),
             "extractor_args": {"youtube": {"player_client": ["web_embedded"]}},
         },
         {
@@ -1886,8 +1904,10 @@ def friendly_youtube_error(exc: Exception, stage: str) -> str:
         )
     if "403" in message or "forbidden" in message.lower():
         return (
-            "YouTube menolak seluruh jalur download otomatis (HTTP 403), termasuk retry embedded/EJS. "
-            "Coba lagi setelah beberapa menit; bila pembatasan sesi/IP tetap aktif, upload file MP4 langsung."
+            "YouTube menolak seluruh jalur download publik (HTTP 403) setelah format adaptif, "
+            "audio-video kompatibel, embedded/EJS, dan HLS dicoba. Ini pembatasan sesi/IP YouTube, "
+            "bukan penolakan hak cipta oleh aplikasi. Coba lagi setelah beberapa menit; bila tetap aktif, "
+            "gunakan file sumber yang Anda miliki/izinkan melalui tab Upload Video."
         )
     return f"Gagal mengambil video dari YouTube saat {stage}: {message}"
 
@@ -4357,6 +4377,13 @@ def require_creative_commons_metadata(
             "Gunakan rekaman milik sendiri atau sumber lain dengan izin komersial audio dan visual "
             "yang dapat dibuktikan. Sumber tidak akan diproses ulang sebagai rebuild seluruh job."
         )
+    review_reasons = source_rights_review_reasons(metadata)
+    if review_reasons:
+        console.print(
+            "[yellow]Review hak sumber: "
+            + "; ".join(review_reasons[:2])
+            + ". Proses boleh lanjut karena ini bukan bukti pelanggaran; YouTube Checks tetap wajib.[/yellow]"
+        )
 
 
 def download_video(
@@ -4376,10 +4403,9 @@ def download_video(
     info: dict = {}
     file_path: Path | None = None
     download_errors: list[Exception] = []
-    for attempt, strategy in enumerate(
-        youtube_download_strategies(max_height, work_dir),
-        start=1,
-    ):
+    strategies = youtube_download_strategies(max_height, work_dir)
+    total_attempts = len(strategies)
+    for attempt, strategy in enumerate(strategies, start=1):
         strategy_name = str(strategy["name"])
         options = {key: value for key, value in strategy.items() if key != "name"}
         ydl_opts = ytdlp_base_options(
@@ -4391,7 +4417,7 @@ def download_video(
         if attempt > 1:
             console.print(
                 "[yellow]Retry download YouTube[/yellow] "
-                f"dengan jalur {strategy_name} ({attempt}/3)..."
+                f"dengan jalur {strategy_name} ({attempt}/{total_attempts})..."
             )
         try:
             with YoutubeDL(ydl_opts) as ydl:
@@ -4405,6 +4431,9 @@ def download_video(
         if file_path is not None:
             break
 
+    # Every compatibility path is part of the loop above. In particular, do
+    # not raise immediately after adaptive/client errors: older code did that
+    # before its muxed source_fallback block could ever run.
     if file_path is None and download_errors:
         representative_error = next(
             (
@@ -4417,29 +4446,6 @@ def download_video(
         raise UserFacingError(
             friendly_youtube_error(representative_error, "mengunduh video")
         ) from representative_error
-
-    if file_path is None:
-        console.print(
-            "[yellow]Hasil download utama belum memiliki audio lengkap; "
-            "mencoba format audio-video kompatibel...[/yellow]"
-        )
-        fallback_opts = ytdlp_base_options(
-            format=(
-                f"best[height<={max_height}][vcodec!=none][acodec!=none]/"
-                "best[vcodec!=none][acodec!=none]"
-            ),
-            outtmpl=str(work_dir / "source_fallback.%(ext)s"),
-            noprogress=True,
-            ffmpeg_location=ffmpeg_path(),
-        )
-        try:
-            with YoutubeDL(fallback_opts) as ydl:
-                fallback_info = ydl.extract_info(url, download=True)
-                if isinstance(fallback_info, dict):
-                    info = fallback_info
-        except Exception as exc:
-            console.print(f"[yellow]Fallback audio-video gagal:[/yellow] {exc}")
-        file_path = select_usable_source_media(work_dir)
 
     if file_path is None:
         candidates = source_media_candidates(work_dir)
@@ -4490,11 +4496,18 @@ def attach_monetization_provenance(
     license_metadata_verified = bool(
         not uploaded_source and is_creative_commons_metadata(metadata)
     )
+    trusted_source_confirmed = bool(
+        not uploaded_source
+        and source_rights_confirmed
+        and is_trusted_source_channel(metadata)
+    )
     rights_basis = (
         "research_only_source_with_user_permission_evidence"
         if research_only_source
         else "user_supplied_file_requires_commercial_rights_confirmation"
         if uploaded_source
+        else "operator_trusted_channel_with_documented_commercial_permission"
+        if trusted_source_confirmed
         else "creative_commons_metadata_requires_chain_of_title_confirmation"
         if license_metadata_verified
         else "unverified"
@@ -4508,10 +4521,12 @@ def attach_monetization_provenance(
         "rights_verified": False,
         "rights_confirmed_by_user": bool(source_rights_confirmed or uploaded_source),
         "license_metadata_verified": license_metadata_verified,
+        "operator_trusted_channel": trusted_source_confirmed,
         "chain_of_title_verified": False,
         "commercial_rights_confirmation_required": True,
         "creative_commons_label_alone_guarantees_no_content_id_claim": False,
         "attribution_required": license_metadata_verified,
+        "uploaded_source": bool(uploaded_source),
         "research_only_source": bool(research_only_source),
         "source_audio_or_video_used_in_output": not bool(research_only_source),
     }
@@ -4538,6 +4553,12 @@ def attach_monetization_provenance(
         dynamic_captions = payload.get("dynamic_captions")
         end_cta = payload.get("end_cta")
         subscriber_conversion = payload.get("subscriber_conversion")
+        editorial_framing = payload.get("editorial_framing")
+        transformation_contract = (
+            editorial_framing.get("transformation_contract")
+            if isinstance(editorial_framing, dict)
+            else None
+        )
         chapter_edit_evidence = payload.get("chapter_edit_evidence")
         edit_signature = payload.get("content_edit_signature")
         auto_visual_plan = payload.get("auto_fyp_visual_plan")
@@ -4621,6 +4642,32 @@ def attach_monetization_provenance(
                 and subscriber_conversion.get("value_proposition")
                 and not subscriber_conversion.get("forced_or_incentivized_subscription")
             ),
+            "visible_editorial_interpretation": bool(
+                isinstance(editorial_framing, dict)
+                and editorial_framing.get("enabled")
+                and editorial_framing.get("content_derived")
+                and editorial_framing.get("editorial_angle")
+                and editorial_framing.get("takeaway")
+                and isinstance(
+                    editorial_framing.get("distinct_timed_windows"),
+                    (int, float),
+                )
+                and not isinstance(
+                    editorial_framing.get("distinct_timed_windows"),
+                    bool,
+                )
+                and editorial_framing.get("distinct_timed_windows", 0) >= 2
+                and isinstance(transformation_contract, dict)
+                and transformation_contract.get("passed") is True
+            ),
+            "substantive_editorial_contract": bool(
+                isinstance(transformation_contract, dict)
+                and transformation_contract.get("passed") is True
+                and transformation_contract.get("adds_interpretive_value") is True
+                and transformation_contract.get("takeaway_grounded_in_source") is True
+                and transformation_contract.get("distinct_timed_windows") == 2
+                and bool(transformation_contract.get("cosmetic_changes_not_counted"))
+            ),
             "chapter_specific_editorial_framing": chapter_specific_edits,
             "structured_story_arc": bool(
                 is_compilation and isinstance(story_arc, list) and len(story_arc) >= 3
@@ -4629,14 +4676,27 @@ def attach_monetization_provenance(
             "enhanced_edit": bool(payload.get("enhanced_edit")),
         }
         originality_score = sum(bool(value) for value in originality_signals.values())
-        minimum_score = 5 if is_compilation else 6
-        substantive_transformation = originality_signals["substantive_visual_edits"] or bool(
-            is_compilation
-            and originality_signals["structured_story_arc"]
-            and originality_signals["editorial_hook_and_context"]
-            and originality_signals["original_core_message"]
-            and originality_signals["chapter_specific_editorial_framing"]
-            and originality_signals["content_timed_editing"]
+        minimum_score = 5 if is_compilation else 7
+        substantive_transformation = bool(
+            (
+                originality_signals["substantive_visual_edits"]
+                or (
+                    is_compilation
+                    and originality_signals["structured_story_arc"]
+                    and originality_signals["editorial_hook_and_context"]
+                    and originality_signals["original_core_message"]
+                    and originality_signals["chapter_specific_editorial_framing"]
+                    and originality_signals["content_timed_editing"]
+                )
+            )
+            and (
+                is_compilation
+                or uploaded_source
+                or (
+                    originality_signals["visible_editorial_interpretation"]
+                    and originality_signals["substantive_editorial_contract"]
+                )
+            )
         )
         transformation_ready = (
             originality_signals["enhanced_edit"]
@@ -4649,6 +4709,7 @@ def attach_monetization_provenance(
         )
         commercial_rights_ready = bool(
             uploaded_source
+            or trusted_source_confirmed
             or (license_metadata_verified and source_rights_confirmed)
             or (research_only_source and source_rights_confirmed)
         )
@@ -4668,11 +4729,14 @@ def attach_monetization_provenance(
             "commercial_rights_confirmation_required": True,
             "originality_score": originality_score,
             "minimum_originality_score": minimum_score,
-            "audit_version": 6,
+            "audit_version": 8,
             "signals": originality_signals,
             "substantive_transformation": substantive_transformation,
             "original_creator_commentary_present": bool(
                 payload.get("original_creator_commentary")
+            ),
+            "automated_editorial_interpretation_present": bool(
+                originality_signals["visible_editorial_interpretation"]
             ),
             "note": (
                 "Lolos audit teknis untuk review Private, bukan jaminan YPP. "
@@ -5192,15 +5256,18 @@ def one_k_experiment_readiness(
 
 def fallback_pov_angle(text: str) -> str:
     lowered = text.lower()
+    # Lead with a short source concept so the visible analysis cannot become a
+    # generic card after the 12-word/two-line display limit is applied.
+    anchor = first_sentence(text, max_words=4).rstrip(" .,:;-")
     if set(re.findall(r"[\w']+", lowered)).intersection(MYSTERY_WORDS):
-        return "Kamu ikut membongkar cerita ini sampai fakta dan hikmahnya terlihat."
+        return f"{anchor}: uji klaim dan konteksnya."
     if set(re.findall(r"[\w']+", lowered)).intersection(ISLAMIC_WORDS):
-        return "Kamu sedang diajak melihat masalah ini dari sisi hikmah dan kehati-hatian."
+        return f"{anchor}: baca syarat dan konteksnya."
     if set(re.findall(r"[\w']+", lowered)).intersection(TENSION_WORDS):
-        return "Kamu baru sadar ada risiko yang selama ini sering dianggap sepele."
+        return f"{anchor}: nilai risiko dan dampaknya."
     if "?" in text:
-        return "Kamu punya pertanyaan yang sama dan ingin tahu jawaban akhirnya."
-    return "Kamu menemukan satu sudut pandang yang bisa langsung dipakai atau direnungkan."
+        return f"{anchor}: uji jawaban dengan konteks lengkap."
+    return f"{anchor}: nilai dampak praktisnya."
 
 
 def strongest_advice_line(items: list[TranscriptSegment]) -> str:
@@ -7064,7 +7131,7 @@ def ai_rescore_candidates(
         '"title": "<catchy, proofread hook title, 6-10 words>", '
         '"hook": "<scroll-stopping opening, max 8 words>", '
         '"reason": "<short why this has FYP potential>", '
-        '"pov": "<short POV angle for viewers>", '
+        '"pov": "<max 12 words of clip-specific critical, explanatory, or educational framing; add meaning rather than merely paraphrasing>", '
         '"strengths": ["<max 3 concrete strengths>"], '
         '"weaknesses": ["<max 3 concrete weaknesses>"], '
         '"improvement_ideas": ["<max 3 specific edit/content fixes>"]}]}\n\n'
@@ -7764,6 +7831,111 @@ def pov_banner_text(clip: ClipCandidate) -> str:
     short_pov = first_sentence(pov, max_words=12)
     chunks = split_subtitle_text(short_pov, max_chars=48, max_lines=2)
     return (chunks[0] if chunks else short_pov)[:110]
+
+
+EDITORIAL_INTERPRETIVE_MARKERS = {
+    "akibat",
+    "analisis",
+    "batas",
+    "bandingkan",
+    "dampak",
+    "konteks",
+    "mengapa",
+    "nilai",
+    "pelajaran",
+    "perhatikan",
+    "risiko",
+    "sebab",
+    "syarat",
+    "uji",
+}
+
+
+def editorial_card_windows(
+    duration: float,
+    title_overlay_seconds: float = 3.2,
+) -> list[tuple[float, float]]:
+    """Return the two non-overlapping windows used by the commentary cards."""
+    safe_duration = max(0.1, duration)
+    editorial_start = max(title_overlay_seconds + 0.65, safe_duration * 0.27)
+    editorial_end = min(safe_duration * 0.55, editorial_start + 3.6)
+    takeaway_start = max(safe_duration * 0.68, title_overlay_seconds + 5.0)
+    takeaway_end = min(safe_duration - 2.05, takeaway_start + 3.3)
+    return [
+        (start, end)
+        for start, end in (
+            (editorial_start, editorial_end),
+            (takeaway_start, takeaway_end),
+        )
+        if end - start >= 1.25
+    ]
+
+
+def editorial_transformation_profile(
+    clip: ClipCandidate,
+    editorial_angle: str,
+    takeaway: str,
+    duration: float,
+    *,
+    title_overlay_seconds: float = 3.2,
+) -> dict[str, object]:
+    """Prove that visible commentary adds meaning instead of cosmetic novelty."""
+    source_words = _content_words(clip.text)
+    angle_words = _content_words(editorial_angle)
+    takeaway_words = _content_words(takeaway)
+    shared_angle_words = source_words.intersection(angle_words)
+    new_angle_words = angle_words.difference(source_words)
+    normalized_angle = re.sub(r"\s+", " ", editorial_angle).strip().casefold()
+    normalized_source = re.sub(r"\s+", " ", clip.text).strip().casefold()
+    interpretive_marker_present = any(
+        marker in angle_words
+        or re.search(rf"\b{re.escape(marker)}\w*\b", normalized_angle)
+        for marker in EDITORIAL_INTERPRETIVE_MARKERS
+    )
+    content_specific = bool(source_words and shared_angle_words)
+    adds_interpretive_value = bool(
+        content_specific
+        and interpretive_marker_present
+        and len(new_angle_words) >= 2
+        and normalized_angle
+        and normalized_angle not in normalized_source
+    )
+    takeaway_grounded = bool(source_words.intersection(takeaway_words))
+    windows = editorial_card_windows(duration, title_overlay_seconds)
+    passed = bool(
+        adds_interpretive_value
+        and takeaway_grounded
+        and len(windows) == 2
+    )
+    return {
+        "version": 1,
+        "passed": passed,
+        "content_specific": content_specific,
+        "adds_interpretive_value": adds_interpretive_value,
+        "interpretive_marker_present": interpretive_marker_present,
+        "takeaway_grounded_in_source": takeaway_grounded,
+        "shared_source_concept_count": len(shared_angle_words),
+        "new_editorial_concept_count": len(new_angle_words),
+        "distinct_timed_windows": len(windows),
+        "visible_commentary_seconds": round(
+            sum(end - start for start, end in windows),
+            3,
+        ),
+        "meaningful_layers": [
+            "opening_context",
+            "mid_clip_analysis",
+            "source_grounded_takeaway",
+            "content_timed_visual_direction",
+        ],
+        "cosmetic_changes_not_counted": [
+            "crop",
+            "blur",
+            "speed_change",
+            "watermark",
+            "subtitle_only",
+        ],
+        "human_review_required": True,
+    }
 
 
 def thumbnail_story_copy(
@@ -9676,6 +9848,8 @@ def clean_detail_edit_filter(
     hook_text_filename: str,
     *,
     cover_text_filename: str = "",
+    editorial_text_filename: str = "",
+    takeaway_text_filename: str = "",
     show_progress: bool = True,
     theme_profile: dict[str, str] | None = None,
     emphasis_times: list[float] | None = None,
@@ -9771,6 +9945,46 @@ def clean_detail_edit_filter(
                     start_seconds=payoff_teaser_start_seconds,
                 )
             )
+        commentary_windows = editorial_card_windows(safe_duration, title_overlay_seconds)
+        if editorial_text_filename and commentary_windows:
+            editorial_start, editorial_end = commentary_windows[0]
+            if editorial_end - editorial_start >= 1.25:
+                editorial_active = (
+                    f"enable='between(t,{editorial_start:.3f},{editorial_end:.3f})'"
+                )
+                filters.extend(
+                    [
+                        f"drawbox=x=64:y=420:w=900:h=188:color=black@0.76:t=fill:{editorial_active}",
+                        f"drawbox=x=64:y=420:w=11:h=188:color={accent}@0.98:t=fill:{editorial_active}",
+                        f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                        f"text='SUDUT EDITORIAL':expansion=none:fontcolor={accent}:fontsize=21:"
+                        f"x=98:y=444:{editorial_active}",
+                        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+                        f"textfile='{editorial_text_filename}':reload=0:expansion=none:"
+                        "fontcolor=white:fontsize=29:line_spacing=7:borderw=1:bordercolor=black@0.78:"
+                        f"x=98:y=488:{editorial_active}",
+                    ]
+                )
+        if takeaway_text_filename and len(commentary_windows) >= 2:
+            takeaway_start, takeaway_end = commentary_windows[1]
+            if takeaway_end - takeaway_start >= 1.25:
+                takeaway_active = (
+                    f"enable='between(t,{takeaway_start:.3f},{takeaway_end:.3f})'"
+                )
+                secondary = str(profile.get("accent_secondary") or "#22D3EE")
+                filters.extend(
+                    [
+                        f"drawbox=x=64:y=420:w=900:h=188:color=black@0.78:t=fill:{takeaway_active}",
+                        f"drawbox=x=64:y=420:w=11:h=188:color={secondary}@0.98:t=fill:{takeaway_active}",
+                        f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                        f"text='MAKNA UTAMA':expansion=none:fontcolor={secondary}:fontsize=21:"
+                        f"x=98:y=444:{takeaway_active}",
+                        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                        f"textfile='{takeaway_text_filename}':reload=0:expansion=none:"
+                        "fontcolor=white:fontsize=29:line_spacing=7:borderw=1:bordercolor=black@0.82:"
+                        f"x=98:y=488:{takeaway_active}",
+                    ]
+                )
 
     # A short edge cue marks only the strongest transcript beats. It adds
     # rhythm without a card, vignette, gradient, or element over the face.
@@ -11440,6 +11654,28 @@ def export_clip(
         else []
     )
     core_message = payoff_banner_text(clip, clip_segments)
+    editorial_angle = pov_banner_text(clip)
+    editorial_contract = editorial_transformation_profile(
+        clip,
+        editorial_angle,
+        core_message,
+        duration,
+        title_overlay_seconds=title_overlay_seconds,
+    )
+    if output_format == "vertical_short" and not editorial_contract["adds_interpretive_value"]:
+        # AI can occasionally return a generic POV. Replace it with a bounded,
+        # source-anchored critical angle rather than rendering template filler.
+        fallback_clip = ClipCandidate(
+            **{**asdict(clip), "pov": fallback_pov_angle(clip.text)}
+        )
+        editorial_angle = pov_banner_text(fallback_clip)
+        editorial_contract = editorial_transformation_profile(
+            clip,
+            editorial_angle,
+            core_message,
+            duration,
+            title_overlay_seconds=title_overlay_seconds,
+        )
     cover_copy = thumbnail_story_copy(clip)
     engagement_prompt = shorts_engagement_prompt(clip)
     subscribe_prompt = subscribe_value_prompt(clip)
@@ -11470,6 +11706,12 @@ def export_clip(
         if clean_detail_pipeline:
             sound_effect_cues = sound_effect_cues[:3]
     drawtext_supported = ffmpeg_has_filter("drawtext")
+    visible_editorial_framing = bool(
+        enhanced_edit
+        and output_format == "vertical_short"
+        and drawtext_supported
+        and editorial_contract["passed"]
+    )
     auditor_identity["visible_video_signature"] = drawtext_supported
     automatic_short_title = output_format == "vertical_short" and drawtext_supported
     subscriber_cta_planned = (
@@ -11744,6 +11986,20 @@ def export_clip(
         ),
         "source_metadata_embedded": False,
         "core_message": core_message.replace("\n", " ").strip(),
+        "editorial_framing": {
+            "version": 2,
+            "enabled": visible_editorial_framing,
+            "content_derived": True,
+            "editorial_angle": editorial_angle.replace("\n", " ").strip(),
+            "takeaway": core_message.replace("\n", " ").strip(),
+            "distinct_timed_windows": 2 if visible_editorial_framing else 0,
+            "presentation": "sudut_editorial_then_makna_utama",
+            "generated_for_this_clip": True,
+            "source_dialogue_replaced": False,
+            "creator_voice_or_presence_claimed": False,
+            "human_review_required": True,
+            "transformation_contract": editorial_contract,
+        },
         "thumbnail_strategy": (
             "embedded_shorts_cover_frame"
             if automatic_short_title
@@ -12190,7 +12446,7 @@ def export_clip(
     if enhanced_edit:
         if drawtext_supported:
             hook_text_path.write_text(hook_banner_text(clip) + "\n", encoding="utf-8")
-            pov_text_path.write_text(pov_banner_text(clip) + "\n", encoding="utf-8")
+            pov_text_path.write_text(editorial_angle + "\n", encoding="utf-8")
             payoff_text_path.write_text(core_message + "\n", encoding="utf-8")
             if output_format == "vertical_short":
                 if not clean_detail_pipeline:
@@ -12246,6 +12502,12 @@ def export_clip(
                         cover_text_filename=(
                             cover_text_path.name if drawtext_supported else ""
                         ),
+                        editorial_text_filename=(
+                            pov_text_path.name if visible_editorial_framing else ""
+                        ),
+                        takeaway_text_filename=(
+                            payoff_text_path.name if visible_editorial_framing else ""
+                        ),
                         show_progress=generate_assets,
                         theme_profile=theme_profile,
                         emphasis_times=emphasis_times,
@@ -12277,6 +12539,10 @@ def export_clip(
                 applied_edits.append(
                     "Pipeline clean-detail menjaga frame tanpa blur/gradient, lalu memberi reframe singkat hanya pada beat ucapan penting."
                 )
+                if visible_editorial_framing:
+                    applied_edits.append(
+                        "Dua kartu spesifik clip menambahkan Sudut Editorial di tengah dan Makna Utama menjelang akhir; keduanya mengikuti POV serta payoff hasil analisis, bukan teks template umum."
+                    )
             else:
                 vf = (
                     f"{vf},"

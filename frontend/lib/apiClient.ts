@@ -92,6 +92,7 @@ export type SourceProbe = {
   source_rights_trusted: boolean;
   source_rights_risk: boolean;
   source_rights_risk_reasons: string[];
+  source_rights_review_reasons: string[];
 };
 
 export const probeUrlSource = async (url: string) => {

@@ -90,7 +90,7 @@ Default output video:
 - H.264 MP4; jalur default Standar memakai `veryfast`/CRF 20, preset Jernih memakai `fast`/CRF 18, dan Maksimal tetap `slow`/CRF 14
 - source download mencoba sampai 2160p pada preset Jernih/Maksimal (`bestvideo+bestaudio`)
 - hingga tiga job dapat berjalan dari tab berbeda; jatah CPU per job dibatasi lewat `FENDY_CLIPPER_CPU_THREADS_PER_JOB` agar Whisper dan FFmpeg tidak saling memenuhi seluruh core
-- source YouTube memakai Deno + `yt-dlp-ejs` untuk challenge JavaScript terbaru dan otomatis retry melalui `WEB_EMBEDDED_PLAYER` bila URL media default ditolak 403
+- source YouTube memakai Deno + `yt-dlp-ejs` untuk challenge JavaScript terbaru; downloader mencoba jalur default, audio-video muxed, web-embedded/EJS, lalu HLS dengan partial file terpisah bila URL media awal ditolak
 - subtitle burned-in
 - caption dinamis menyorot kata penting dari ucapan asli, dengan timing berbobot jumlah kata dan margin aman agar tidak tertutup action rail/judul UI Shorts; file SRT bersih tetap dibuat untuk accessibility
 - caption ringkas dengan outline/shadow tanpa gradient band agar wajah dan piksel sumber tetap bersih
@@ -114,7 +114,7 @@ Default output video:
 - nama mode visual lama tetap dapat dibaca untuk kompatibilitas, tetapi otomatis dimigrasikan ke `auto_fyp`
 - background asli dipertahankan secara default; pembersihan backdrop dan panel speaker-split tetap tersedia sebagai pilihan khusus
 - pembersihan watermark sumber memakai konsensus edge multi-frame konservatif (persistence minimal 0,78), menolak pola subtitle bawah dan detail non-text, lalu menjalankan delogo + feather di koordinat sumber sebelum virtual-camera agar logo tetap tertutup saat cut wide/close-up tanpa kotak gelap atau seam keras
-- intisari ucapan asli disimpan di metadata; mode clean-detail tidak menutup wajah dengan kartu intisari besar
+- mode clean-detail menanam dua kartu ringkas berbasis isi di upper safe area: `SUDUT EDITORIAL` pada pertengahan cerita dan `MAKNA UTAMA` menjelang akhir; audit v8 mensyaratkan analisis memakai konsep sumber sekaligus menambah bahasa interpretatif baru, takeaway tetap terbukti dari sumber, dan dua window benar-benar dirender. Crop/blur/speed/watermark/subtitle-only tidak dihitung
 - kandidat wajib punya point utama, batas kalimat tuntas, dan payoff dekat ending
 - micro-thesis 20–32 detik mendapat jalur khusus bila benar-benar memiliki dilema → nuansa → batas risiko/etika → kesimpulan tidak menghakimi; renderer memilih `restrained_authority` dengan maksimal dua reframe, tanpa reaction sticker/asap, dan tidak menyalin pembicara, branding, wording, atau footage referensi
 - anekdot sosial 18–32 detik mendapat jalur `story_punchline` bila memiliki konflik sosial nyata → urutan kejadian → pembanding/reveal → punchline kepada diri sendiri; renderer memakai kartu konteks 1,9 detik dan reframe face-safe bertempo, tanpa sticker, asap, SFX, backsound, atau hinaan buatan

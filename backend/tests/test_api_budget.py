@@ -113,6 +113,37 @@ def test_fetch_video_probe_allows_low_risk_source_metadata(monkeypatch):
     assert probe.source_rights_risk_reasons == []
 
 
+def test_fetch_video_probe_marks_broadcaster_name_for_review_not_block(monkeypatch):
+    import api
+
+    class FakeYoutubeDL:
+        def __init__(self, _options):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, _url, download=False):
+            assert download is False
+            return {
+                "title": "Diskusi Ekonomi Kreatif",
+                "uploader": "Contoh Media Studio",
+                "channel_id": "UC-media-example",
+                "duration": 900,
+                "license": "Creative Commons Attribution license",
+            }
+
+    monkeypatch.setattr(api, "YoutubeDL", FakeYoutubeDL)
+
+    probe = fetch_video_probe("https://youtu.be/example")
+
+    assert probe.source_rights_risk is False
+    assert probe.source_rights_review_reasons
+
+
 def test_parse_clipper_progress_maps_machine_milestone_to_job_state():
     assert parse_clipper_progress(
         "FENDY_CLIPPER_PROGRESS:73|render|Merender klip pendek 1 dari 3"

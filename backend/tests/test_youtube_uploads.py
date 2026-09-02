@@ -2503,6 +2503,63 @@ def test_monetization_preflight_v6_requires_fendy_identity_and_growth_blueprint(
     assert youtube_monetization_preflight_issue(job, clip) is None
 
 
+def test_monetization_preflight_v8_requires_substantive_editorial_contract_for_url_short(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-audit-v7-external-short",
+        status="completed",
+        request=ClipJobRequest(
+            url="https://youtu.be/source",
+            confirm_source_rights=True,
+        ),
+        created_at="2026-08-14T00:00:00+00:00",
+        updated_at="2026-08-14T00:00:00+00:00",
+        clips=[clip],
+    )
+    sidecar = {
+        "output_format": "vertical_short",
+        "source_provenance": {"uploaded_source": False},
+        "auditor_identity": {
+            "name": "Fendy",
+            "display_signature": "FENDY AUDIT",
+            "audit_id": "FND-ABC123DEF456",
+            "visible_video_signature": True,
+        },
+        "codex_growth_blueprint": {"version": 1},
+        "monetization_readiness": {
+            "audit_version": 8,
+            "eligible_for_private_upload_review": True,
+            "signals": {
+                "enhanced_edit": True,
+                "visible_editorial_interpretation": False,
+            },
+        },
+    }
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: sidecar)
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+    assert "Sudut Editorial" in issue
+    assert "hanya MP4 clip terpilih" in issue
+
+    sidecar["monetization_readiness"]["signals"][
+        "visible_editorial_interpretation"
+    ] = True
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+    assert "Crop, blur, subtitle, speed, dan watermark tidak dihitung" in issue
+
+    sidecar["monetization_readiness"]["signals"][
+        "substantive_editorial_contract"
+    ] = True
+    assert youtube_monetization_preflight_issue(job, clip) is None
+
+
 def test_verified_cc_source_gets_required_attribution(monkeypatch):
     import api
 

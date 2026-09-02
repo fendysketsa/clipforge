@@ -31,7 +31,11 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from yt_dlp import YoutubeDL
 
 from llm import AIConfig, chat_completion, extract_json
-from source_rights import is_trusted_source_channel, source_rights_risk_reasons
+from source_rights import (
+    is_trusted_source_channel,
+    source_rights_review_reasons,
+    source_rights_risk_reasons,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -493,6 +497,7 @@ class SourceProbe(BaseModel):
     source_rights_trusted: bool = False
     source_rights_risk: bool = False
     source_rights_risk_reasons: list[str] = Field(default_factory=list)
+    source_rights_review_reasons: list[str] = Field(default_factory=list)
 
 
 class SourceUsageLogEntry(BaseModel):
@@ -3988,6 +3993,37 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             return (
                 "Upload diblokir: blueprint pertumbuhan Codex belum tercatat. "
                 "Render ulang agar audit retention dan subscriber lengkap."
+            )
+    if audit_version >= 7 and str(sidecar.get("output_format") or "") == "vertical_short":
+        provenance = sidecar.get("source_provenance")
+        signals = readiness.get("signals")
+        uses_external_url_source = not (
+            isinstance(provenance, dict) and provenance.get("uploaded_source") is True
+        )
+        if (
+            uses_external_url_source
+            and (
+                not isinstance(signals, dict)
+                or signals.get("visible_editorial_interpretation") is not True
+            )
+        ):
+            return (
+                "Upload diblokir: Short dari sumber eksternal belum menampilkan Sudut Editorial "
+                "dan Makna Utama pada dua waktu berbeda. Jalankan Perbaiki Otomatis pada clip ini; "
+                "hanya MP4 clip terpilih yang dirender ulang."
+            )
+        if (
+            audit_version >= 8
+            and uses_external_url_source
+            and (
+                not isinstance(signals, dict)
+                or signals.get("substantive_editorial_contract") is not True
+            )
+        ):
+            return (
+                "Upload diblokir: kartu editorial belum membuktikan analisis baru yang terkait isi "
+                "dan takeaway yang bersumber dari clip. Crop, blur, subtitle, speed, dan watermark "
+                "tidak dihitung. Jalankan Perbaiki Otomatis; hanya MP4 clip terpilih yang dirender ulang."
             )
     try:
         reviewed_private_transformation_ready = bool(
@@ -7673,6 +7709,7 @@ def fetch_video_probe(url: str) -> SourceProbe:
         source_rights_trusted=is_trusted_source_channel(info),
         source_rights_risk=bool(risk_reasons),
         source_rights_risk_reasons=risk_reasons,
+        source_rights_review_reasons=source_rights_review_reasons(info),
     )
 
 
@@ -8652,6 +8689,7 @@ def compact_source_payload(
     if not definition and source_height >= 720:
         definition = "hd"
     content_id_risk_reasons = source_rights_risk_reasons(info)
+    rights_review_reasons = source_rights_review_reasons(info)
     return {
         "url": normalize_youtube_video_url(youtube_watch_url(info)) or youtube_watch_url(info),
         "title": str(info.get("title") or "Video tanpa judul")[:180],
@@ -8668,9 +8706,16 @@ def compact_source_payload(
         "license": info.get("license"),
         "rights_verified": False,
         "license_metadata_verified": is_creative_commons_info(info),
-        "source_preflight": "passed" if not content_id_risk_reasons else "blocked",
+        "source_preflight": (
+            "blocked"
+            if content_id_risk_reasons
+            else "review"
+            if rights_review_reasons
+            else "passed"
+        ),
         "content_id_risk": "high" if content_id_risk_reasons else "review",
         "content_id_risk_reasons": content_id_risk_reasons,
+        "source_rights_review_reasons": rights_review_reasons,
         "score": round(ranking_score, 2),
         "viral_score": viral_score,
         "fresh_conversation_profile": conversation_profile,

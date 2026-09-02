@@ -389,9 +389,10 @@ export type ViralContentSource = {
   license?: string | null;
   rights_verified: boolean;
   license_metadata_verified?: boolean;
-  source_preflight?: "passed" | "blocked";
+  source_preflight?: "passed" | "review" | "blocked";
   content_id_risk?: "review" | "high";
   content_id_risk_reasons?: string[];
+  source_rights_review_reasons?: string[];
   score: number;
   viral_score: number;
   niche: IslamicContentNiche;

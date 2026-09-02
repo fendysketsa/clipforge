@@ -18,11 +18,13 @@ from api import (
 from clipper import (
     UserFacingError,
     cleanup_intermediate,
+    download_video,
     extract_audio,
     friendly_youtube_error,
     prepare_uploaded_source,
     select_usable_source_media,
     source_media_candidates,
+    ytdlp_base_options,
     youtube_download_strategies,
 )
 
@@ -295,8 +297,9 @@ def test_friendly_youtube_error_explains_403_after_embedded_retry():
         "mengunduh video",
     )
 
-    assert "retry embedded/EJS" in message
-    assert "upload file MP4" in message
+    assert "embedded/EJS" in message
+    assert "Upload Video" in message
+    assert "bukan penolakan hak cipta" in message
     assert "ERROR:" not in message
 
 
@@ -305,13 +308,69 @@ def test_youtube_download_strategies_isolate_partial_files_and_add_embedded_retr
 
     assert [item["name"] for item in strategies] == [
         "default",
+        "compatible_muxed",
         "web_embedded_ejs",
+        "web_embedded_muxed",
         "web_safari_hls",
     ]
-    assert len({item["outtmpl"] for item in strategies}) == 3
-    assert strategies[1]["extractor_args"]["youtube"]["player_client"] == ["web_embedded"]
-    assert "protocol^=m3u8" in strategies[2]["format"]
-    assert strategies[2]["extractor_args"]["youtube"]["player_client"] == ["web_safari"]
+    assert len({item["outtmpl"] for item in strategies}) == 5
+    assert "acodec!=none" in strategies[1]["format"]
+    assert strategies[2]["extractor_args"]["youtube"]["player_client"] == ["web_embedded"]
+    assert "acodec!=none" in strategies[3]["format"]
+    assert "protocol^=m3u8" in strategies[4]["format"]
+    assert strategies[4]["extractor_args"]["youtube"]["player_client"] == ["web_safari"]
+
+
+def test_ytdlp_base_options_does_not_pin_a_stale_browser_user_agent():
+    options = ytdlp_base_options()
+
+    assert "User-Agent" not in options["http_headers"]
+    assert options["http_headers"]["Accept-Language"].startswith("id-ID")
+
+
+def test_download_video_reaches_muxed_fallback_after_default_403(monkeypatch, tmp_path):
+    import clipper
+
+    attempted_templates = []
+    downloaded = tmp_path / "source_muxed.mp4"
+
+    class FakeYoutubeDL:
+        def __init__(self, options):
+            self.options = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, _url, download):
+            assert download is True
+            attempted_templates.append(self.options["outtmpl"])
+            if "source_muxed" not in self.options["outtmpl"]:
+                raise RuntimeError("HTTP Error 403: Forbidden")
+            downloaded.write_bytes(b"audio-video")
+            return {"id": "demo", "title": "Demo", "ext": "mp4"}
+
+    select_calls = 0
+
+    def fake_select(_work_dir):
+        nonlocal select_calls
+        select_calls += 1
+        return downloaded if downloaded.exists() else None
+
+    monkeypatch.setattr(clipper, "YoutubeDL", FakeYoutubeDL)
+    monkeypatch.setattr(clipper, "select_usable_source_media", fake_select)
+    monkeypatch.setattr(clipper, "ffmpeg_path", lambda: "/usr/bin/ffmpeg")
+
+    path, metadata = download_video("https://youtu.be/demo", tmp_path)
+
+    assert path == downloaded
+    assert metadata["id"] == "demo"
+    assert len(attempted_templates) == 2
+    assert attempted_templates[0].endswith("source.%(ext)s")
+    assert attempted_templates[1].endswith("source_muxed.%(ext)s")
+    assert select_calls >= 2
 
 
 def test_cleanup_clip_files_removes_output_artifacts(monkeypatch):

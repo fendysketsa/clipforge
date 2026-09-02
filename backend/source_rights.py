@@ -60,6 +60,25 @@ def is_trusted_source_channel(info: dict[str, Any]) -> bool:
     return bool(configured and source_channel_ids(info) & configured)
 
 
+def source_rights_review_reasons(info: dict[str, Any]) -> list[str]:
+    """Return soft signals that need review but are not proof of infringement."""
+    if is_trusted_source_channel(info):
+        return []
+    uploader = re.sub(
+        r"\s+",
+        " ",
+        str(info.get("uploader") or info.get("channel") or ""),
+    ).strip().casefold()
+    if any(
+        re.search(pattern, uploader, re.I)
+        for pattern in SOURCE_RIGHTS_BROADCASTER_PATTERNS
+    ):
+        return [
+            "nama kanal terindikasi broadcaster/media/studio; lisensi dan kepemilikan seluruh elemen tetap perlu direview"
+        ]
+    return []
+
+
 def source_rights_risk_reasons(info: dict[str, Any]) -> list[str]:
     """Flag URL sources whose CC label is not a reliable chain-of-title signal.
 
@@ -84,12 +103,6 @@ def source_rights_risk_reasons(info: dict[str, Any]) -> list[str]:
         for pattern in SOURCE_RIGHTS_PROTECTED_FORMAT_PATTERNS
     ):
         reasons.append("judul terindikasi program TV/film/musik atau cuplikan karya audiovisual")
-    if any(
-        re.search(pattern, uploader, re.I)
-        for pattern in SOURCE_RIGHTS_BROADCASTER_PATTERNS
-    ):
-        reasons.append("sumber terindikasi milik broadcaster/media/studio")
-
     configured_terms = [
         value.strip().casefold()
         for value in os.environ.get(

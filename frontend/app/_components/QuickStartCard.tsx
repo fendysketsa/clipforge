@@ -214,6 +214,19 @@ export function QuickStartCard({
           </div>
         ) : null}
 
+        {!sourceRightsBlocked && !sourceProbe?.source_rights_trusted && sourceProbe?.source_rights_review_reasons.length ? (
+          <div className="quickNotice isWarning" role="status">
+            <AlertTriangle size={17} />
+            <span className="quickNoticeCopy">
+              <strong>Kanal media/studio: proses boleh dilanjutkan dengan review.</strong>
+              <small>
+                {sourceProbe.source_rights_review_reasons.slice(0, 2).join("; ")}.
+                Ini bukan blok otomatis dan bukan jaminan bebas Content ID.
+              </small>
+            </span>
+          </div>
+        ) : null}
+
         <label className="quickRightsCheck">
           <input
             type="checkbox"

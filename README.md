@@ -21,6 +21,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Record a monetization-readiness audit beside each render, require substantive editorial signals before YouTube upload, preserve verified CC BY attribution, and disclose realistic backdrop replacement.
 - Use one **Auto FYP Viral** visual system for Shorts and long-form: cinematic clean detail is the base, while 3D depth, archival-TV treatment, reframe, and speaker split are selected from the story instead of exposed as separate presets.
 - Derive visual variation from the clip hook/POV/transcript so batches stay coherent without becoming near-identical mass-produced templates.
+- Render two clip-specific editorial windows on Shorts: a mid-story interpretation and a late source-grounded takeaway. Audit v8 requires the interpretation to share a real source concept, add new analytical language, and occupy two rendered windows; crop, blur, speed, watermark, and subtitle-only changes never satisfy this contract.
 - Keep the original background by default; optional background cleaning remains available for text-heavy sources.
 - Add at most one strong conversation-aware reaction sticker in Clean Detail mode, only for laughter, surprise, prayer, or warnings.
 - Mix restrained transcript-synced sound effects under normalized dialogue.
@@ -61,7 +62,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Node.js 22+
 - npm
 - Network access for YouTube downloads and model downloads
-- Docker builds include Deno and `yt-dlp-ejs` so current YouTube JavaScript challenges can be solved before media download; the downloader retries with the web-embedded client when a default signed URL returns 403.
+- Docker builds include Deno and `yt-dlp-ejs` so current YouTube JavaScript challenges can be solved before media download. The downloader uses the maintained yt-dlp client defaults, then bounded muxed, web-embedded/EJS, and HLS compatibility paths; each path has an isolated partial file.
 - A full FFmpeg build with `drawtext`, `subtitles`/libass, and libx264 (included in the Docker image)
 - Enough CPU, disk, and time for transcription and video encoding
 
@@ -262,11 +263,13 @@ download and an explicit confirmation that the user owns or has provable
 commercial permission for the complete audio and visual work. A CC label is
 license metadata, not proof that the uploader owns every element in a recording.
 Viral search rejects live/upcoming, age-restricted, and non-public sources. A
-manually selected CC source that looks like a fan/support/reupload/archive account,
-TV, film, music, or broadcaster is treated as a risk signal rather than a Content ID
-result. The web interface now exposes that risk while the link is being checked and
-disables processing before download, so an obviously blocked source does not consume a
-render job. A rejected source is not rebuilt as a whole job: it must be replaced with a
+manually selected CC source that looks like a fan/support/reupload/archive account or
+TV/film/music recording is treated as a blocking risk signal rather than a Content ID
+result. A broadcaster/media/studio word in the channel name alone is only a review
+warning and does not block a valid CC source. The web interface exposes both decisions
+while the link is being checked and disables only blocked sources before download, so an
+obviously rejected source does not consume a render job. A rejected source is not rebuilt
+as a whole job: it must be replaced with a
 source whose commercial audio and visual rights can be demonstrated. Clip repair is
 strictly scoped to one already-rendered clip and never reprocesses the complete source.
 Owned broadcaster/media/studio channels can be configured in

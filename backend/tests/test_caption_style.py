@@ -54,6 +54,7 @@ from clipper import (
     embedded_split_subject_filter,
     evidence_stage_overlay_filter,
     emphasis_timestamps,
+    editorial_transformation_profile,
     enhanced_edit_filter,
     extended_short_story_profile,
     fallback_social_caption,
@@ -996,6 +997,12 @@ def test_monetization_provenance_records_rights_and_originality(tmp_path):
         '"hook":"Hook","pov":"Sudut pandang","core_message":"Inti",'
         '"thumbnail_strategy":"embedded_shorts_cover_frame",'
         '"auto_fyp_visual_plan":{"content_derived":true},'
+        '"editorial_framing":{"enabled":true,"content_derived":true,'
+        '"editorial_angle":"Mengapa konteksnya penting",'
+        '"takeaway":"Langkah yang dapat diuji","distinct_timed_windows":2,'
+        '"transformation_contract":{"passed":true,"adds_interpretive_value":true,'
+        '"takeaway_grounded_in_source":true,"distinct_timed_windows":2,'
+        '"cosmetic_changes_not_counted":["crop","blur"]}},'
         '"virtual_camera_angles":[{"start":4,"end":6}],'
         '"applied_edits":["a","b","c"]}',
         encoding="utf-8",
@@ -1021,7 +1028,44 @@ def test_monetization_provenance_records_rights_and_originality(tmp_path):
     assert payload["source_provenance"]["license_metadata_verified"] is True
     assert payload["source_provenance"]["attribution_required"] is True
     assert payload["monetization_readiness"]["eligible_for_private_upload_review"] is True
+    assert payload["monetization_readiness"]["signals"]["visible_editorial_interpretation"] is True
+    assert payload["monetization_readiness"]["automated_editorial_interpretation_present"] is True
     assert payload["monetization_readiness"]["guarantee"] is False
+
+
+def test_monetization_provenance_accepts_confirmed_operator_trusted_channel(monkeypatch, tmp_path):
+    video = tmp_path / "trusted-channel-short.mp4"
+    video.write_bytes(b"video")
+    video.with_suffix(".json").write_text(
+        '{"output_format":"vertical_short","enhanced_edit":true,'
+        '"hook":"Hook","pov":"Sudut pandang","core_message":"Inti",'
+        '"auto_fyp_visual_plan":{"content_derived":true},'
+        '"editorial_framing":{"enabled":true,"content_derived":true,'
+        '"editorial_angle":"Konteks spesifik","takeaway":"Makna spesifik",'
+        '"distinct_timed_windows":2,"transformation_contract":{"passed":true,'
+        '"adds_interpretive_value":true,"takeaway_grounded_in_source":true,'
+        '"distinct_timed_windows":2,"cosmetic_changes_not_counted":["crop"]}},'
+        '"virtual_camera_angles":[{"start":4,"end":6}],'
+        '"applied_edits":["a","b","c"]}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("YOUTUBE_TRUSTED_SOURCE_CHANNEL_IDS", "UC-owned-studio")
+
+    attach_monetization_provenance(
+        [video],
+        {
+            "channel_id": "UC-owned-studio",
+            "license": "Standard YouTube License",
+        },
+        uploaded_source=False,
+        source_rights_confirmed=True,
+    )
+
+    import json
+
+    payload = json.loads(video.with_suffix(".json").read_text(encoding="utf-8"))
+    assert payload["source_provenance"]["operator_trusted_channel"] is True
+    assert payload["monetization_readiness"]["eligible_for_private_upload_review"] is True
 
 
 def test_compilation_requires_chapter_specific_editorial_transformation(tmp_path):
@@ -1116,6 +1160,37 @@ def test_short_still_requires_substantive_visual_edits(tmp_path):
     assert payload["monetization_readiness"]["eligible_for_private_upload_review"] is False
 
 
+def test_short_with_visual_edits_still_requires_visible_editorial_interpretation(tmp_path):
+    video = tmp_path / "short-without-editorial-framing.mp4"
+    video.write_bytes(b"video")
+    video.with_suffix(".json").write_text(
+        '{"output_format":"vertical_short","enhanced_edit":true,'
+        '"hook":"Hook","pov":"Sudut pandang","core_message":"Inti",'
+        '"thumbnail_strategy":"embedded_shorts_cover_frame",'
+        '"auto_fyp_visual_plan":{"content_derived":true},'
+        '"virtual_camera_angles":[{"start":4,"end":6}],'
+        '"applied_edits":["a","b","c"]}',
+        encoding="utf-8",
+    )
+
+    attach_monetization_provenance(
+        [video],
+        {"license": "Creative Commons Attribution license"},
+        uploaded_source=False,
+        source_rights_confirmed=True,
+    )
+
+    import json
+
+    readiness = json.loads(video.with_suffix(".json").read_text(encoding="utf-8"))[
+        "monetization_readiness"
+    ]
+    assert readiness["signals"]["substantive_visual_edits"] is True
+    assert readiness["signals"]["visible_editorial_interpretation"] is False
+    assert readiness["substantive_transformation"] is False
+    assert readiness["eligible_for_private_upload_review"] is False
+
+
 def test_enhanced_edit_filter_adds_motion_hook_transition_and_progress():
     value = enhanced_edit_filter(60, "clip.hook.txt", pov_text_filename="clip.pov.txt")
 
@@ -1169,6 +1244,62 @@ def test_clean_detail_edit_keeps_faces_clear_and_motion_sparse():
     assert "gradient" not in value
     assert "text='POV'" not in value
     assert "text='INTISARI'" not in value
+
+
+def test_clean_detail_edit_adds_two_clip_specific_editorial_windows():
+    value = clean_detail_edit_filter(
+        30,
+        "clip.hook.txt",
+        editorial_text_filename="clip.editorial.txt",
+        takeaway_text_filename="clip.takeaway.txt",
+    )
+
+    assert "text='SUDUT EDITORIAL'" in value
+    assert "textfile='clip.editorial.txt'" in value
+    assert "text='MAKNA UTAMA'" in value
+    assert "textfile='clip.takeaway.txt'" in value
+    assert "between(t,8.100,11.700)" in value
+    assert "between(t,20.400,23.700)" in value
+
+
+def test_editorial_transformation_contract_requires_new_grounded_analysis():
+    clip = ClipCandidate(
+        1,
+        0,
+        30,
+        30,
+        88,
+        "Dampak menunda keputusan",
+        "alur lengkap",
+        "Keputusan menunda pembayaran membuat keluarga kehilangan kesempatan.",
+    )
+
+    generic = editorial_transformation_profile(
+        clip,
+        "POV viral yang wajib ditonton.",
+        "Konten menarik untuk semua orang.",
+        30,
+    )
+    grounded = editorial_transformation_profile(
+        clip,
+        "Nilai dampak keputusan ini terhadap keluarga.",
+        "Menunda pembayaran membuat keluarga kehilangan kesempatan.",
+        30,
+    )
+    fallback_grounded = editorial_transformation_profile(
+        clip,
+        pov_banner_text(clip),
+        "Menunda pembayaran membuat keluarga kehilangan kesempatan.",
+        30,
+    )
+
+    assert generic["passed"] is False
+    assert generic["adds_interpretive_value"] is False
+    assert grounded["passed"] is True
+    assert grounded["takeaway_grounded_in_source"] is True
+    assert grounded["distinct_timed_windows"] == 2
+    assert "crop" in grounded["cosmetic_changes_not_counted"]
+    assert fallback_grounded["passed"] is True
 
 
 def test_clean_detail_crop_avoids_extreme_landscape_upscale(monkeypatch, tmp_path):
