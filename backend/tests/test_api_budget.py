@@ -16,6 +16,7 @@ from api import (
     build_clipper_command,
     choose_auto_analyze_seconds,
     default_viral_video_search_queries,
+    ensure_python_subprocess_integrity,
     fresh_conversation_source_profile,
     fetch_video_probe,
     indonesian_language_score,
@@ -192,6 +193,26 @@ def test_legacy_codex_ideas_are_hidden_when_saved_plan_already_resolved_them():
     ]
 
     assert unresolved_codex_ideas(sidecar, ideas) == []
+
+
+def test_corrupted_subprocess_module_is_restored_from_valid_backup(tmp_path):
+    current = tmp_path / "subprocess.py"
+    backup = tmp_path / "subprocess.backup.py"
+    current.write_bytes(b"\xa0corrupt")
+    backup.write_text("BYTES_WARNING = 0\n", encoding="utf-8")
+
+    assert ensure_python_subprocess_integrity(current, backup) is True
+    assert current.read_bytes() == backup.read_bytes()
+    compile(current.read_text(encoding="utf-8"), str(current), "exec")
+
+
+def test_valid_subprocess_module_without_container_backup_is_accepted(tmp_path):
+    current = tmp_path / "subprocess.py"
+    current.write_text("BYTES_WARNING = 0\n", encoding="utf-8")
+
+    assert ensure_python_subprocess_integrity(
+        current, tmp_path / "missing-backup.py"
+    ) is False
 
 
 def test_upload_staging_keeps_compilation_landscape():

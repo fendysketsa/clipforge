@@ -423,6 +423,7 @@ class ClipFile(BaseModel):
     youtube_upload_ready: bool | None = None
     youtube_upload_issue: str | None = None
     automatic_repair_available: bool = False
+    monetization_strategy: list[str] = Field(default_factory=list)
     is_correct: bool = False
 
     @model_validator(mode="before")
@@ -462,6 +463,8 @@ class ClipJob(BaseModel):
     source_title: str | None = None
     source_url: str | None = None
     source_uploader: str | None = None
+    repair_source_job_id: str | None = None
+    repair_source_clip_url: str | None = None
     logs: list[str] = []
     clips: list[ClipFile] = []
     candidates: list[ClipCandidate] = []
@@ -1407,6 +1410,59 @@ def duration_between_iso(started_at: str | None, finished_at: str) -> float:
     return round(max(0.0, (finished - started).total_seconds()), 2)
 
 
+def ensure_python_subprocess_integrity(
+    current_path: Path | None = None,
+    backup_path: Path | None = None,
+) -> bool:
+    """Validate subprocess.py and restore it from the image copy when changed."""
+    current = current_path or Path(
+        os.environ.get("PYTHON_SUBPROCESS_FILE", subprocess.__file__)
+    )
+    configured_backup = os.environ.get(
+        "PYTHON_SUBPROCESS_BACKUP", "/opt/python-stdlib-backup/subprocess.py"
+    )
+    backup = backup_path or Path(configured_backup)
+
+    try:
+        current_bytes = current.read_bytes()
+        current_source = current_bytes.decode("utf-8")
+        compile(current_source, str(current), "exec")
+        current_valid = True
+    except (OSError, UnicodeDecodeError, SyntaxError):
+        current_bytes = b""
+        current_valid = False
+
+    if not backup.is_file():
+        if current_valid:
+            return False
+        raise RuntimeError(
+            f"stdlib Python rusak dan backup pemulihan tidak ditemukan: {backup}"
+        )
+
+    try:
+        backup_bytes = backup.read_bytes()
+        backup_source = backup_bytes.decode("utf-8")
+        compile(backup_source, str(backup), "exec")
+    except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+        raise RuntimeError(f"backup stdlib Python tidak valid: {backup}") from exc
+
+    if current_valid and current_bytes == backup_bytes:
+        return False
+
+    temporary = current.with_name(f".{current.name}.fendy-repair")
+    try:
+        temporary.write_bytes(backup_bytes)
+        temporary.chmod(0o644)
+        temporary.replace(current)
+    except OSError as exc:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise RuntimeError(f"gagal memulihkan stdlib Python: {current}") from exc
+    return True
+
+
 def codex_idea_area(value: str) -> str:
     prefix = re.split(r"\s*(?:—|–|:|\s-\s)\s*", value.casefold(), maxsplit=1)[0][:48]
     categories = (
@@ -2224,6 +2280,9 @@ def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
             "youtube_upload_ready": issue is None,
             "youtube_upload_issue": issue,
             "automatic_repair_available": automatic_repair_available,
+            "monetization_strategy": codex_monetization_strategy(
+                enriched, clip, issue
+            ),
         }
         if any(getattr(clip, key) != value for key, value in updates.items()):
             changed = True
@@ -4081,15 +4140,66 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
 def clip_requires_altered_content_disclosure(clip: ClipFile) -> bool:
     sidecar = clip_sidecar_payload(clip)
     replacement = sidecar.get("background_replacement")
-    adaptive_split = sidecar.get("adaptive_text_split")
     background_mode = str(sidecar.get("background_mode") or "")
     return bool(
         sidecar.get("altered_content_disclosure_required")
         or sidecar.get("background_replaced")
         or isinstance(replacement, dict)
-        or (isinstance(adaptive_split, dict) and adaptive_split.get("enabled"))
         or background_mode == "mosque"
     )
+
+
+def codex_monetization_strategy(
+    job: ClipJob,
+    clip: ClipFile,
+    upload_issue: str | None = None,
+) -> list[str]:
+    """Return per-clip actions; never present an internal score as YPP approval."""
+    sidecar = clip_sidecar_payload(clip)
+    readiness = sidecar.get("monetization_readiness")
+    signals = readiness.get("signals") if isinstance(readiness, dict) else None
+    actions: list[str] = []
+
+    if upload_issue:
+        gate = re.sub(r"^Upload (?:diblokir|ditahan):\s*", "", upload_issue).strip()
+        actions.append(f"Selesaikan gate upload: {gate}")
+    else:
+        actions.append(
+            "MP4 lolos gate lokal untuk masuk review Private; ini belum berarti channel diterima YPP."
+        )
+
+    if job.request.url.strip():
+        if job.request.confirm_source_rights:
+            actions.append(
+                "Simpan bukti izin komersial/chain of title audio dan visual; label CC saja bukan bukti seluruh hak."
+            )
+        else:
+            actions.append(
+                "Jangan publikasikan sebelum kepemilikan atau izin komersial sumber dapat dibuktikan."
+            )
+    else:
+        actions.append(
+            "Arsipkan bukti bahwa rekaman, suara, musik, dan visual unggahan memang milik sendiri atau berizin."
+        )
+
+    if isinstance(signals, dict) and signals.get("substantive_editorial_contract") is True:
+        actions.append(
+            "Pertahankan analisis yang spesifik pada isi—hook, sudut editorial, dan takeaway—serta variasikan tesis antarvideo agar kanal tidak terlihat mass-produced."
+        )
+    else:
+        actions.append(
+            "Tambahkan nilai orisinal yang nyata: komentar/analisis spesifik, alur utuh, dan takeaway; crop, subtitle, blur, speed, atau watermark saja tidak cukup."
+        )
+
+    if clip_requires_altered_content_disclosure(clip):
+        actions.append(
+            "Aktifkan disclosure altered/synthetic content saat upload karena edit visual AI terdeteksi."
+        )
+
+    actions.append(
+        "Unggah sebagai Private, tunggu pemeriksaan hak cipta dan kesesuaian iklan selesai, lalu lakukan review manusia sebelum Public."
+    )
+    return actions[:5]
 
 
 def default_youtube_tags(job: ClipJob, clip: ClipFile) -> list[str]:
@@ -7700,6 +7810,16 @@ def user_error_from_logs(logs: list[str]) -> str | None:
         if is_network_error(line):
             return friendly_network_error()
     combined = combined_recent
+    if (
+        "subprocess.py" in combined
+        and "unicode error" in combined
+        and "invalid start byte" in combined
+    ):
+        return (
+            "Runtime Python di dalam container rusak, bukan isi video. "
+            "Backend terbaru memulihkan subprocess.py otomatis dari salinan bersih; "
+            "build ulang container backend satu kali lalu ulangi job."
+        )
     if "no such filter: 'drawtext'" in combined or "no such filter: 'subtitles'" in combined:
         return (
             "FFmpeg backend belum memiliki filter teks/subtitle yang dibutuhkan. "
@@ -8039,6 +8159,74 @@ def parse_clipper_progress(line: str) -> dict[str, int | str] | None:
     }
 
 
+def retire_targeted_repair_source(repair_job: ClipJob) -> bool:
+    """Remove the obsolete source card after its repaired MP4 is verified.
+
+    The replacement remains in the repair job so the UI can review/upload it.
+    We only retire the old card after every replacement clip passes the same
+    YouTube preflight used by the upload endpoint.
+    """
+    source_job_id = str(repair_job.repair_source_job_id or "").strip()
+    source_clip_url = str(repair_job.repair_source_clip_url or "").strip()
+    if not source_job_id or not source_clip_url or not repair_job.clips:
+        return False
+    if any(
+        youtube_monetization_preflight_issue(repair_job, clip) is not None
+        or clip.context_recut_required
+        or (
+            clip.fyp_score is not None
+            and clip.fyp_score < SHORT_FYP_TARGET_SCORE
+        )
+        for clip in repair_job.clips
+    ):
+        return False
+    if active_youtube_uploads_for_job(source_job_id, {source_clip_url}):
+        return False
+
+    obsolete_clip: ClipFile | None = None
+    with jobs_lock:
+        source_job = jobs.get(source_job_id)
+        live_repair_job = jobs.get(repair_job.id)
+        if source_job is None or live_repair_job is None:
+            return False
+        obsolete_clip = next(
+            (clip for clip in source_job.clips if clip.url == source_clip_url),
+            None,
+        )
+        if obsolete_clip is None:
+            return False
+
+        remaining_clips = [
+            clip for clip in source_job.clips if clip.url != source_clip_url
+        ]
+        if remaining_clips:
+            source_data = source_job.model_dump()
+            source_data["clips"] = remaining_clips
+            source_data["updated_at"] = now_iso()
+            source_data["logs"] = [
+                *source_job.logs,
+                f"Klip lama {obsolete_clip.name} dipensiunkan setelah MP4 hasil Perbaiki Otomatis lolos audit.",
+            ][-120:]
+            jobs[source_job_id] = ClipJob(**source_data)
+        else:
+            jobs.pop(source_job_id, None)
+            job_secrets.pop(source_job_id, None)
+            cancelled_job_ids.discard(source_job_id)
+
+        repair_data = live_repair_job.model_dump()
+        repair_data["logs"] = [
+            *live_repair_job.logs,
+            f"TARGETED_CLIP_REPAIR_REPLACED_SOURCE:{source_job_id}:{source_clip_url}",
+            "MP4 pengganti lolos audit; kartu klip lama sudah dipensiunkan agar tidak diperbaiki berulang.",
+        ][-120:]
+        jobs[repair_job.id] = ClipJob(**repair_data)
+        save_jobs_unlocked()
+
+    if obsolete_clip is not None:
+        cleanup_clip_files(obsolete_clip)
+    return True
+
+
 def source_risk_requires_automatic_rebuild(logs: list[str]) -> bool:
     """Compatibility hook: source-wide automatic rebuild is disabled."""
     return False
@@ -8119,6 +8307,31 @@ def run_job(job_id: str) -> None:
         progress_step=0,
         progress_total_steps=5,
     )
+    try:
+        stdlib_repaired = ensure_python_subprocess_integrity()
+    except RuntimeError as exc:
+        _, cleanup_message = cleanup_failed_job_artifacts(output_root)
+        set_job(
+            job_id,
+            status="failed",
+            started_at=queued_started_iso,
+            **finish_job_updates(queued_started_perf),
+            clips=[],
+            candidates=[],
+            logs=[cleanup_message],
+            error=(
+                f"Worker dibatalkan karena runtime Python tidak sehat: {exc}. "
+                "Rebuild container backend diperlukan. "
+                f"{cleanup_message}"
+            ),
+        )
+        job_secrets.pop(job_id, None)
+        return
+    if stdlib_repaired:
+        set_job(
+            job_id,
+            logs=["Runtime Python dipulihkan otomatis sebelum worker dijalankan."],
+        )
     clip_job_slots.acquire()
     started_at = time.time()
     started_perf = time.perf_counter()
@@ -8273,6 +8486,10 @@ def run_job(job_id: str) -> None:
             )
             with jobs_lock:
                 completed_job = jobs.get(job_id)
+            if completed_job is not None:
+                retire_targeted_repair_source(completed_job)
+                with jobs_lock:
+                    completed_job = jobs.get(job_id)
             if completed_job is not None:
                 try:
                     send_clip_success_telegram_alert(completed_job)
@@ -11295,6 +11512,20 @@ def repair_job_clip_context(job_id: str, repair: ClipRepairRequest) -> ClipJob:
             status_code=409,
             detail="Tunggu upload clip ini selesai sebelum menjalankan perbaikan",
         )
+    with jobs_lock:
+        existing_repair = next(
+            (
+                item
+                for item in jobs.values()
+                if item.repair_source_job_id == job.id
+                and item.repair_source_clip_url == clip.url
+                and item.status in {"queued", "running", "completed"}
+                and (item.status != "completed" or bool(item.clips))
+            ),
+            None,
+        )
+    if existing_repair is not None:
+        return existing_repair
 
     try:
         audited_duration = float(sidecar.get("duration") or 0)
@@ -11329,6 +11560,8 @@ def repair_job_clip_context(job_id: str, repair: ClipRepairRequest) -> ClipJob:
         request=next_request,
         created_at=now,
         updated_at=now,
+        repair_source_job_id=job.id,
+        repair_source_clip_url=clip.url,
         progress_detail="Memperbaiki satu clip terpilih tanpa memproses ulang sumber",
         logs=[
             f"TARGETED_CLIP_REPAIR_SOURCE_JOB:{job.id}",

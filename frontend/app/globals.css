@@ -811,16 +811,27 @@ h2 {
   text-transform: uppercase;
 }
 
-.analysisIdea ol {
+.analysisApplied .analysisIdeaHeader > b {
+  color: #6ee7b7;
+}
+
+.analysisApplied .analysisIdeaHeader > span {
+  color: rgba(110, 231, 183, 0.78);
+}
+
+.analysisIdea ol,
+.analysisApplied ol {
   margin: 7px 0 0;
   padding-left: 20px;
 }
 
-.analysisIdea li {
+.analysisIdea li,
+.analysisApplied li {
   padding-left: 2px;
 }
 
-.analysisIdea li + li {
+.analysisIdea li + li,
+.analysisApplied li + li {
   margin-top: 5px;
 }
 

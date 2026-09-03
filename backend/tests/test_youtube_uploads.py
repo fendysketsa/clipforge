@@ -41,6 +41,7 @@ from api import (
     quarantine_queued_youtube_uploads_from_claimed_source,
     queue_claimed_clip_rebuild,
     repair_job_clip_context,
+    retire_targeted_repair_source,
     youtube_monetization_preflight_issue,
     reviewed_automatic_rebuild_for_private_upload,
     source_risk_requires_automatic_rebuild,
@@ -174,8 +175,84 @@ def test_repair_job_clip_context_queues_only_selected_clip_without_auto_upload(m
     assert result.request.allow_reprocess_source is True
     assert result.request.enhanced_edit is True
     assert result.request.auto_upload_youtube is False
+    assert result.repair_source_job_id == job.id
+    assert result.repair_source_clip_url == clip.url
     assert any("TARGETED_CLIP_REPAIR_SOURCE_CLIP" in line for line in result.logs)
     assert started == [result.id]
+
+
+def test_repair_job_clip_context_reuses_existing_repair(monkeypatch, tmp_path):
+    import api
+
+    output_root = tmp_path / "outputs"
+    clip_path = output_root / "demo" / "clips" / "clip_01.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"rendered-clip")
+    clip = make_clip(1).model_copy(update={"url": "/outputs/demo/clips/clip_01.mp4"})
+    source_job = ClipJob(
+        id="source-job",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source", clip_mode="short"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    existing = ClipJob(
+        id="existing-repair",
+        status="running",
+        request=source_job.request.model_copy(update={"source_file": str(clip_path)}),
+        created_at="2026-01-01T00:01:00+00:00",
+        updated_at="2026-01-01T00:01:00+00:00",
+        repair_source_job_id=source_job.id,
+        repair_source_clip_url=clip.url,
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
+    monkeypatch.setattr(api, "jobs", {source_job.id: source_job, existing.id: existing})
+    monkeypatch.setattr(api, "active_youtube_uploads_for_job", lambda *_args: [])
+
+    assert repair_job_clip_context(source_job.id, ClipRepairRequest(url=clip.url)).id == existing.id
+
+
+def test_retire_targeted_repair_source_removes_obsolete_card_after_verified_repair(
+    monkeypatch,
+    tmp_path,
+):
+    import api
+
+    output_root = tmp_path / "outputs"
+    old_path = output_root / "source" / "clips" / "old.mp4"
+    old_path.parent.mkdir(parents=True)
+    old_path.write_bytes(b"old")
+    old_clip = make_clip(1).model_copy(update={"url": "/outputs/source/clips/old.mp4"})
+    new_clip = make_clip(2).model_copy(update={"url": "/outputs/repair/clips/new.mp4"})
+    source_job = ClipJob(
+        id="source",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[old_clip, make_clip(3)],
+    )
+    repair_job = ClipJob(
+        id="repair",
+        status="completed",
+        request=source_job.request.model_copy(update={"source_file": str(old_path)}),
+        created_at="2026-01-01T00:01:00+00:00",
+        updated_at="2026-01-01T00:01:00+00:00",
+        clips=[new_clip],
+        repair_source_job_id=source_job.id,
+        repair_source_clip_url=old_clip.url,
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
+    monkeypatch.setattr(api, "jobs", {source_job.id: source_job, repair_job.id: repair_job})
+    monkeypatch.setattr(api, "save_jobs_unlocked", lambda: None)
+    monkeypatch.setattr(api, "youtube_monetization_preflight_issue", lambda *_args: None)
+    monkeypatch.setattr(api, "active_youtube_uploads_for_job", lambda *_args: [])
+
+    assert retire_targeted_repair_source(repair_job) is True
+    assert [clip.url for clip in api.jobs[source_job.id].clips] == [make_clip(3).url]
+    assert not old_path.exists()
+    assert "kartu klip lama sudah dipensiunkan" in api.jobs[repair_job.id].logs[-1]
 
 
 def test_content_shingle_similarity_detects_template_copy_not_shared_topic_words():
@@ -3280,10 +3357,23 @@ def test_realistic_background_change_requires_disclosure(monkeypatch):
     monkeypatch.setattr(
         api,
         "clip_sidecar_payload",
-        lambda _clip: {"adaptive_text_split": {"enabled": True}},
+        lambda _clip: {"background_replaced": True},
     )
 
     assert clip_requires_altered_content_disclosure(clip) is True
+
+
+def test_caption_layout_change_does_not_require_ai_disclosure(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {"adaptive_text_split": {"enabled": True}},
+    )
+
+    assert clip_requires_altered_content_disclosure(clip) is False
 
 
 def test_combined_job_highlight_metadata_is_not_marked_as_short():

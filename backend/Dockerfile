@@ -4,11 +4,26 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     IMAGEIO_FFMPEG_EXE=/usr/bin/ffmpeg \
-    FFMPEG_BINARY=/usr/bin/ffmpeg
+    FFMPEG_BINARY=/usr/bin/ffmpeg \
+    PYTHON_SUBPROCESS_FILE=/usr/local/lib/python3.12/subprocess.py \
+    PYTHON_SUBPROCESS_BACKUP=/opt/python-stdlib-backup/subprocess.py
 
 WORKDIR /app
 
 ARG DENO_VERSION=2.5.5
+
+# The local Docker/BuildKit snapshot has previously contained a raw 0xA0 byte
+# in subprocess.py. Repair that byte before pip (which imports subprocess), then
+# keep the verified file as the runtime recovery source.
+RUN stdlib_repaired="${PYTHON_SUBPROCESS_FILE}.repaired" \
+    && LC_ALL=C tr '\240' ' ' < "$PYTHON_SUBPROCESS_FILE" > "$stdlib_repaired" \
+    && mv "$stdlib_repaired" "$PYTHON_SUBPROCESS_FILE" \
+    && python -m py_compile "$PYTHON_SUBPROCESS_FILE" \
+    && python -c "import subprocess; print(f'Python subprocess runtime repaired: {subprocess.__file__}')" \
+    && mkdir -p /opt/python-stdlib-backup \
+    && cp "$PYTHON_SUBPROCESS_FILE" "$PYTHON_SUBPROCESS_BACKUP" \
+    && chmod 0444 "$PYTHON_SUBPROCESS_BACKUP" \
+    && python -m py_compile "$PYTHON_SUBPROCESS_BACKUP"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -43,8 +58,10 @@ RUN python -c "import cv2, sys; missing = [name for name in ('VideoCapture', 'Ca
 
 COPY . .
 
-RUN mkdir -p outputs uploads data
+RUN chmod 0755 /app/docker-entrypoint.sh \
+    && mkdir -p outputs uploads data
 
 EXPOSE 8010
 
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["python", "-m", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8010"]

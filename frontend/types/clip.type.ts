@@ -61,6 +61,7 @@ export type ClipFile = {
   youtube_upload_ready?: boolean | null;
   youtube_upload_issue?: string | null;
   automatic_repair_available?: boolean;
+  monetization_strategy?: string[];
   is_correct: boolean;
 };
 
@@ -105,6 +106,8 @@ export type ClipJob = {
   source_title?: string | null;
   source_url?: string | null;
   source_uploader?: string | null;
+  repair_source_job_id?: string | null;
+  repair_source_clip_url?: string | null;
   logs: string[];
   clips: ClipFile[];
   candidates: ClipCandidate[];

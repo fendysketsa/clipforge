@@ -598,11 +598,6 @@ export function ResultsSection({
                         </span>
                       ) : null}
                       {clip.output_resolution ? <span className="clipMetric">{clip.output_resolution}</span> : null}
-                      {clip.auditor_name && clip.audit_id ? (
-                        <span className="clipMetric" title={`Audit editorial otomatis ${clip.audit_id}`}>
-                          FENDY AUDIT
-                        </span>
-                      ) : null}
                       {clip.growth_series ? <span className="clipMetric">Seri: {clip.growth_series}</span> : null}
                       {clip.subscriber_intent_score !== null
                         && clip.subscriber_intent_score !== undefined ? (
@@ -691,11 +686,20 @@ export function ResultsSection({
                             <ul>{clip.applied_edits.map((item) => <li key={item}>{item}</li>)}</ul>
                           </div>
                         ) : null}
+                        {clip.monetization_strategy?.length ? (
+                          <div className={`analysisBlock ${clip.youtube_upload_ready ? "analysisApplied" : "analysisIdea"}`}>
+                            <div className="analysisIdeaHeader">
+                              <b><Target size={14} /> Strategi Codex menuju monetisasi</b>
+                              <span>{clip.youtube_upload_ready ? "Siap review Private" : "Gate belum lolos"}</span>
+                            </div>
+                            <ol>{clip.monetization_strategy.map((item) => <li key={item}>{item}</li>)}</ol>
+                          </div>
+                        ) : null}
                         {clip.improvement_ideas?.length ? (
                           <div className="analysisBlock analysisIdea">
                             <div className="analysisIdeaHeader">
-                              <b><Lightbulb size={14} /> Perlu tindakan manual</b>
-                              <span>Belum otomatis</span>
+                              <b><Lightbulb size={14} /> Ide Codex yang belum diterapkan</b>
+                              <span>Butuh edit manual</span>
                             </div>
                             <ol>{clip.improvement_ideas.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ol>
                           </div>
