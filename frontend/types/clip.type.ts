@@ -58,6 +58,9 @@ export type ClipFile = {
   growth_quality_gate_passed?: boolean | null;
   growth_next_action?: string | null;
   growth_checkpoints?: number[];
+  youtube_upload_ready?: boolean | null;
+  youtube_upload_issue?: string | null;
+  automatic_repair_available?: boolean;
   is_correct: boolean;
 };
 

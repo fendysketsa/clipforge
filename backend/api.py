@@ -420,6 +420,9 @@ class ClipFile(BaseModel):
     growth_quality_gate_passed: bool | None = None
     growth_next_action: str | None = None
     growth_checkpoints: list[int] = Field(default_factory=list)
+    youtube_upload_ready: bool | None = None
+    youtube_upload_issue: str | None = None
+    automatic_repair_available: bool = False
     is_correct: bool = False
 
     @model_validator(mode="before")
@@ -2193,9 +2196,41 @@ def enrich_job_source_metadata(job: "ClipJob") -> "ClipJob":
 
 
 def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
-    return enrich_job_source_metadata(
+    enriched = enrich_job_source_metadata(
         enrich_job_codex_feedback(enrich_job_clip_titles(job))
     )
+    if enriched.status != "completed" or not enriched.clips:
+        return enriched
+
+    # load_jobs() runs while this module is still being imported, before the
+    # preflight function below has been defined. API responses call this again
+    # after startup, when the live readiness fields can safely be populated.
+    preflight = globals().get("youtube_monetization_preflight_issue")
+    if not callable(preflight):
+        return enriched
+
+    clips: list[ClipFile] = []
+    changed = False
+    for clip in enriched.clips:
+        issue = preflight(enriched, clip)
+        automatic_repair_available = bool(
+            enriched.request.clip_mode == "short"
+            and (
+                clip.context_recut_required
+                or (issue and "Perbaiki Otomatis" in issue)
+            )
+        )
+        updates = {
+            "youtube_upload_ready": issue is None,
+            "youtube_upload_issue": issue,
+            "automatic_repair_available": automatic_repair_available,
+        }
+        if any(getattr(clip, key) != value for key, value in updates.items()):
+            changed = True
+            clips.append(clip.model_copy(update=updates))
+        else:
+            clips.append(clip)
+    return enriched.model_copy(update={"clips": clips}) if changed else enriched
 
 
 def clip_output_work_dir(clip: ClipFile) -> Path | None:

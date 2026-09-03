@@ -1302,6 +1302,35 @@ def test_editorial_transformation_contract_requires_new_grounded_analysis():
     assert fallback_grounded["passed"] is True
 
 
+def test_islamic_fallback_pov_adds_two_new_concepts_when_source_already_says_syarat():
+    text = (
+        "Kalau rukiah kita tahu, orang minta dirukiah dengan syarat harus bisa "
+        "membaca Al-Quran agar kemudian bisa rukiah sendiri."
+    )
+    clip = ClipCandidate(
+        1,
+        0,
+        35,
+        35,
+        91,
+        "Syarat rukiah mandiri",
+        "alur lengkap",
+        text,
+    )
+
+    angle = pov_banner_text(clip)
+    profile = editorial_transformation_profile(
+        clip,
+        angle,
+        "BISA RUKIAH SENDIRI",
+        35,
+    )
+
+    assert profile["new_editorial_concept_count"] >= 2
+    assert profile["adds_interpretive_value"] is True
+    assert profile["passed"] is True
+
+
 def test_clean_detail_crop_avoids_extreme_landscape_upscale(monkeypatch, tmp_path):
     monkeypatch.setattr("clipper.get_video_size", lambda _path: (1920, 1080))
     clip = ClipCandidate(1, 0, 30, 30, 85, "Judul", "test", "Isi")

@@ -57,6 +57,7 @@ type ResultsSectionProps = {
   onImportYouTubeCdpCookies: () => void;
   onSetupYouTubeOneTimeLogin: () => void;
   onStartYouTubeLogin: () => void;
+  onRepairClip: (clip: ClipFile) => void;
   onUploadAllToYouTube: () => void;
   onUploadClipToYouTube: (clip: ClipFile) => void;
   onToggleAllClipSelection: () => void;
@@ -235,6 +236,7 @@ export function ResultsSection({
   onImportYouTubeCdpCookies,
   onSetupYouTubeOneTimeLogin,
   onStartYouTubeLogin,
+  onRepairClip,
   onUploadAllToYouTube,
   onUploadClipToYouTube,
   onToggleAllClipSelection,
@@ -420,7 +422,11 @@ export function ResultsSection({
             const meetsFypTarget = isLongForm
               || typeof clip.fyp_score !== "number"
               || clip.fyp_score >= 80;
-            const isUploadReady = passesGrowthGate && meetsFypTarget && !clip.context_recut_required;
+            const isUploadReady = passesGrowthGate
+              && meetsFypTarget
+              && !clip.context_recut_required
+              && clip.youtube_upload_ready !== false;
+            const needsAutomaticRepair = Boolean(clip.automatic_repair_available);
             const uploadReviewConfirmed = clip.is_correct;
             const isQueuedForYouTube = latestUpload?.status === "queued";
             const isRunningYouTubeUpload = latestUpload?.status === "running";
@@ -477,7 +483,8 @@ export function ResultsSection({
             const showSessionRecovery = youtubeUploadErrorNeedsSessionRepair(rawUploadError);
             const youtubeButtonTitle = youtubeEnabled
               ? !isUploadReady
-                ? "Upload ditahan: output belum lolos quality gate formatnya. Buka Analisis & perbaikan, lalu render ulang."
+                ? clip.youtube_upload_issue
+                  || "Upload ditahan: output belum lolos quality gate formatnya. Buka Analisis & perbaikan, lalu render ulang."
                 : !uploadReviewConfirmed
                   ? "Centang review hasil, fakta, dan hak penggunaan sebelum upload Private."
                 : isAlreadyUploaded
@@ -519,6 +526,8 @@ export function ResultsSection({
                     <span className="clipEyebrow">
                       {clip.context_recut_required
                         ? "Perlu perbaikan batas konteks"
+                        : needsAutomaticRepair
+                          ? "Perlu perbaikan editorial"
                         : isUploadReady
                           ? "Klip siap review Private"
                           : "Ditahan quality gate"}
@@ -696,10 +705,15 @@ export function ResultsSection({
                   </>
                 ) : null}
                 <div className="clipCardFooter">
-                  {clip.context_recut_required ? (
+                  {clip.context_recut_required || needsAutomaticRepair ? (
                     <div className="clipRepairNotice">
                       <Info size={16} />
-                      <span>Audit final menemukan batas kalimat atau makna kajian belum utuh. Buat versi aman sebelum review dan upload.</span>
+                      <span>
+                        {clip.context_recut_required
+                          ? "Audit final menemukan batas kalimat atau makna kajian belum utuh. Buat versi aman sebelum review dan upload."
+                          : clip.youtube_upload_issue
+                            || "Audit transformasi editorial belum lolos. Render ulang klip ini sebelum upload."}
+                      </span>
                     </div>
                   ) : null}
                   <label className="clipValidation">
@@ -725,30 +739,43 @@ export function ResultsSection({
                       <Download size={16} />
                       <span>Unduh</span>
                     </button>
-                    <button
-                      type="button"
-                      className="youtubeUploadButton"
-                      onClick={() => onUploadClipToYouTube(clip)}
-                      disabled={!youtubeEnabled || !isUploadReady || !uploadReviewConfirmed || isUploadingToYouTube || isAlreadyUploaded}
-                      title={youtubeButtonTitle}
-                    >
-                      <UploadCloud size={16} />
-                      <span>
-                        {!isUploadReady
-                          ? "Quality gate · Ditahan"
-                          : isAlreadyUploaded
-                            ? "Sudah YouTube"
-                            : isQueuedForYouTube
-                              ? "Menunggu antrean"
-                              : isRunningYouTubeUpload
-                                ? "Mengupload..."
-                                : latestUpload?.status === "failed"
-                                  ? "Ulangi YouTube"
-                                  : isLongForm
-                                    ? "Kirim + Thumbnail"
-                                    : "Kirim YouTube"}
-                      </span>
-                    </button>
+                    {needsAutomaticRepair || clip.context_recut_required ? (
+                      <button
+                        type="button"
+                        className="clipRepairButton"
+                        onClick={() => onRepairClip(clip)}
+                        disabled={isUploadingToYouTube}
+                        title="Render ulang hanya MP4 klip ini dengan perbaikan editorial otomatis"
+                      >
+                        <Sparkles size={16} />
+                        <span>Perbaiki Otomatis</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="youtubeUploadButton"
+                        onClick={() => onUploadClipToYouTube(clip)}
+                        disabled={!youtubeEnabled || !isUploadReady || !uploadReviewConfirmed || isUploadingToYouTube || isAlreadyUploaded}
+                        title={youtubeButtonTitle}
+                      >
+                        <UploadCloud size={16} />
+                        <span>
+                          {!isUploadReady
+                            ? "Quality gate · Ditahan"
+                            : isAlreadyUploaded
+                              ? "Sudah YouTube"
+                              : isQueuedForYouTube
+                                ? "Menunggu antrean"
+                                : isRunningYouTubeUpload
+                                  ? "Mengupload..."
+                                  : latestUpload?.status === "failed"
+                                    ? "Ulangi YouTube"
+                                    : isLongForm
+                                      ? "Kirim + Thumbnail"
+                                      : "Kirim YouTube"}
+                        </span>
+                      </button>
+                    )}
                     <button className="clipDeleteButton" type="button" onClick={() => onDeleteClip(clip)}>
                       <Trash2 size={16} />
                       <span>Hapus</span>

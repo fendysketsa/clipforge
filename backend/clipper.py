@@ -5257,17 +5257,46 @@ def one_k_experiment_readiness(
 def fallback_pov_angle(text: str) -> str:
     lowered = text.lower()
     # Lead with a short source concept so the visible analysis cannot become a
-    # generic card after the 12-word/two-line display limit is applied.
+    # generic card after the 12-word/two-line display limit is applied. Keep at
+    # least two analytical concepts in every suffix: a source transcript may
+    # already contain one of them (for example "syarat"), and the substantive
+    # transformation audit only counts concepts that add meaning beyond the
+    # spoken source.
     anchor = first_sentence(text, max_words=4).rstrip(" .,:;-")
+    source_words = {
+        word
+        for word in re.findall(r"[\w']+", text.casefold())
+        if len(word) >= 4 and word not in LOOP_STOP_WORDS
+    }
     if set(re.findall(r"[\w']+", lowered)).intersection(MYSTERY_WORDS):
-        return f"{anchor}: uji klaim dan konteksnya."
-    if set(re.findall(r"[\w']+", lowered)).intersection(ISLAMIC_WORDS):
-        return f"{anchor}: baca syarat dan konteksnya."
-    if set(re.findall(r"[\w']+", lowered)).intersection(TENSION_WORDS):
-        return f"{anchor}: nilai risiko dan dampaknya."
-    if "?" in text:
-        return f"{anchor}: uji jawaban dengan konteks lengkap."
-    return f"{anchor}: nilai dampak praktisnya."
+        preferred = "verifikasi klaim, bukti, dan konteksnya"
+    elif set(re.findall(r"[\w']+", lowered)).intersection(ISLAMIC_WORDS):
+        preferred = "telaah batas, implikasi, dan konteksnya"
+    elif set(re.findall(r"[\w']+", lowered)).intersection(TENSION_WORDS):
+        preferred = "petakan risiko, konsekuensi, dan dampaknya"
+    elif "?" in text:
+        preferred = "uji jawaban, asumsi, dan konteks lengkap"
+    else:
+        preferred = "nilai dampak, konsekuensi, dan penerapan praktisnya"
+
+    # Prefer the topic-specific wording, then use another natural analytical
+    # frame if the source already happens to contain most of those words.
+    suffixes = [
+        preferred,
+        "analisis implikasi, batas, dan konteksnya",
+        "uji asumsi, konsekuensi, dan penerapannya",
+        "petakan sebab, dampak, dan pelajaran praktisnya",
+    ]
+    for suffix in dict.fromkeys(suffixes):
+        candidate = f"{anchor}: {suffix}."
+        candidate_words = {
+            word
+            for word in re.findall(r"[\w']+", candidate.casefold())
+            if len(word) >= 4 and word not in LOOP_STOP_WORDS
+        }
+        if len(candidate_words - source_words) >= 2:
+            return candidate
+    return f"{anchor}: analisis konsekuensi dan refleksi editorialnya."
 
 
 def strongest_advice_line(items: list[TranscriptSegment]) -> str:
