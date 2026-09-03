@@ -254,6 +254,17 @@ def test_short_selection_can_include_low_score_when_structural_gates_pass():
     assert select_candidates([candidate], 1, minimum_score=1) == [candidate]
 
 
+def test_final_short_quality_gate_discards_result_below_fyp_80():
+    below_target = make_candidate(0, 0, 77, "Poin lengkap tetapi belum cukup kuat.")
+    ready = make_candidate(1, 90, 80, "Hook, isi, dan payoff sudah kuat.")
+
+    assert select_candidates(
+        [below_target, ready],
+        2,
+        minimum_score=clipper.SHORT_EXPORT_MIN_FYP_SCORE,
+    ) == [ready]
+
+
 def test_ai_rescore_accepts_common_alternate_candidate_key(monkeypatch):
     candidate = make_candidate(0, 0, 70, "Masalah dan jawabannya dijelaskan sampai tuntas.")
     config = AIConfig(

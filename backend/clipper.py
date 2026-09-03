@@ -15002,7 +15002,11 @@ def main() -> int:
             min_duration=args.min,
             max_duration=args.max,
         )
-        candidates = select_candidates(repair_candidates, args.top)
+        candidates = select_candidates(
+            repair_candidates,
+            args.top,
+            minimum_score=SHORT_EXPORT_MIN_FYP_SCORE,
+        )
         compilation_candidates = []
         structural_edits_applied = True
     else:
@@ -15012,6 +15016,12 @@ def main() -> int:
             short_limit=args.top,
             compilation_target=args.compilation_target,
         )
+    if args.clip_mode == "short":
+        candidates = select_candidates(
+            candidates,
+            args.top,
+            minimum_score=SHORT_EXPORT_MIN_FYP_SCORE,
+        )
     emit_progress(
         59,
         "selection",
@@ -15020,21 +15030,15 @@ def main() -> int:
     if not candidates:
         if args.clip_mode == "short":
             console.print(
-                "[red]Tidak ada kandidat yang lolos pemeriksaan alur, batas kalimat, "
-                "retensi, dan keamanan konteks. Coba perluas durasi analisis atau gunakan sumber lain.[/red]"
+                "[red]Tidak ada kandidat yang mencapai target Short FYP "
+                f"{SHORT_EXPORT_MIN_FYP_SCORE} setelah optimasi otomatis. "
+                "Output berkualitas rendah tidak dibuat; gunakan sumber lain.[/red]"
             )
         else:
             console.print(
                 "[red]No clip candidates found. Try lowering --min or increasing --max.[/red]"
             )
         return 1
-
-    if args.clip_mode == "short" and max(candidate.score for candidate in candidates) < SHORT_EXPORT_MIN_FYP_SCORE:
-        console.print(
-            "[yellow]Skor FYP terbaik masih di bawah target eksperimen "
-            f"{SHORT_EXPORT_MIN_FYP_SCORE}; kandidat aman terbaik tetap dirender. "
-            "Skor ini hanya sinyal ranking internal, bukan aturan upload YouTube.[/yellow]"
-        )
 
     if not args.no_enhanced_edit:
         if not structural_edits_applied:
@@ -15049,15 +15053,19 @@ def main() -> int:
         if args.clip_mode == "highlight_5m":
             compilation_candidates = candidates
         else:
-            # Structural intro/ending edits recalculate story metrics. Guard
-            # against exporting a candidate that became incomplete or unsafe
-            # after the edit; FYP score remains advisory.
-            candidates = select_candidates(candidates, args.top)
+            # Structural intro/ending edits recalculate story metrics and the
+            # FYP estimate. Never render a Short that remains below the final
+            # quality target after all automatic repair passes.
+            candidates = select_candidates(
+                candidates,
+                args.top,
+                minimum_score=SHORT_EXPORT_MIN_FYP_SCORE,
+            )
             if not candidates:
                 console.print(
-                    "[red]Tidak ada kandidat yang tetap lolos pemeriksaan alur, batas kalimat, "
-                    "retensi, dan keamanan konteks setelah auto-repair. "
-                    "Coba sumber lain atau perluas durasi analisis.[/red]"
+                    "[red]Tidak ada kandidat yang tetap mencapai target Short FYP "
+                    f"{SHORT_EXPORT_MIN_FYP_SCORE} setelah auto-repair. "
+                    "Output berkualitas rendah dibuang; gunakan sumber lain.[/red]"
                 )
                 return 1
 

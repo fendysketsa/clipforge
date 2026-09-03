@@ -59,7 +59,6 @@ type ResultsSectionProps = {
   onStartYouTubeLogin: () => void;
   onUploadAllToYouTube: () => void;
   onUploadClipToYouTube: (clip: ClipFile) => void;
-  onRepairClipContext: (clip: ClipFile) => Promise<void>;
   onToggleAllClipSelection: () => void;
   onToggleClipSelection: (clipUrl: string) => void;
   onToggleClipCorrect: (clip: ClipFile, isCorrect: boolean) => void;
@@ -238,13 +237,11 @@ export function ResultsSection({
   onStartYouTubeLogin,
   onUploadAllToYouTube,
   onUploadClipToYouTube,
-  onRepairClipContext,
   onToggleAllClipSelection,
   onToggleClipSelection,
   onToggleClipCorrect,
 }: ResultsSectionProps) {
   const [uploadStatusNow, setUploadStatusNow] = useState(() => Date.now());
-  const [repairingClipUrl, setRepairingClipUrl] = useState<string | null>(null);
   const selectedCount = selectedClipUrls.length;
   const allClipsSelected = clips.length > 0 && selectedCount === clips.length;
   const usesChromeDebugging = /remote debugging|cdp/i.test(youtubeStatusMessage);
@@ -423,7 +420,6 @@ export function ResultsSection({
             const meetsFypTarget = isLongForm
               || typeof clip.fyp_score !== "number"
               || clip.fyp_score >= 80;
-            const needsTargetedRepair = clip.context_recut_required || !meetsFypTarget;
             const isUploadReady = passesGrowthGate && meetsFypTarget && !clip.context_recut_required;
             const uploadReviewConfirmed = clip.is_correct;
             const isQueuedForYouTube = latestUpload?.status === "queued";
@@ -729,52 +725,30 @@ export function ResultsSection({
                       <Download size={16} />
                       <span>Unduh</span>
                     </button>
-                    {needsTargetedRepair ? (
-                      <button
-                        type="button"
-                        className="clipRepairButton"
-                        disabled={repairingClipUrl !== null}
-                        onClick={async () => {
-                          setRepairingClipUrl(clip.url);
-                          try {
-                            await onRepairClipContext(clip);
-                          } finally {
-                            setRepairingClipUrl(null);
-                          }
-                        }}
-                        title="Perbaiki hanya MP4 clip ini; video sumber dan clip lain tidak diproses ulang"
-                      >
-                        {repairingClipUrl === clip.url
-                          ? <LoaderCircle className="spin" size={16} />
-                          : <Sparkles size={16} />}
-                        <span>{repairingClipUrl === clip.url ? "Memperbaiki..." : "Perbaiki Otomatis"}</span>
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="youtubeUploadButton"
-                        onClick={() => onUploadClipToYouTube(clip)}
-                        disabled={!youtubeEnabled || !isUploadReady || !uploadReviewConfirmed || isUploadingToYouTube || isAlreadyUploaded}
-                        title={youtubeButtonTitle}
-                      >
-                        <UploadCloud size={16} />
-                        <span>
-                          {!isUploadReady
-                            ? "Quality gate · Ditahan"
-                            : isAlreadyUploaded
-                              ? "Sudah YouTube"
-                              : isQueuedForYouTube
-                                ? "Menunggu antrean"
-                                : isRunningYouTubeUpload
-                                  ? "Mengupload..."
-                                  : latestUpload?.status === "failed"
-                                    ? "Ulangi YouTube"
-                                    : isLongForm
-                                      ? "Kirim + Thumbnail"
-                                      : "Kirim YouTube"}
-                        </span>
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className="youtubeUploadButton"
+                      onClick={() => onUploadClipToYouTube(clip)}
+                      disabled={!youtubeEnabled || !isUploadReady || !uploadReviewConfirmed || isUploadingToYouTube || isAlreadyUploaded}
+                      title={youtubeButtonTitle}
+                    >
+                      <UploadCloud size={16} />
+                      <span>
+                        {!isUploadReady
+                          ? "Quality gate · Ditahan"
+                          : isAlreadyUploaded
+                            ? "Sudah YouTube"
+                            : isQueuedForYouTube
+                              ? "Menunggu antrean"
+                              : isRunningYouTubeUpload
+                                ? "Mengupload..."
+                                : latestUpload?.status === "failed"
+                                  ? "Ulangi YouTube"
+                                  : isLongForm
+                                    ? "Kirim + Thumbnail"
+                                    : "Kirim YouTube"}
+                      </span>
+                    </button>
                     <button className="clipDeleteButton" type="button" onClick={() => onDeleteClip(clip)}>
                       <Trash2 size={16} />
                       <span>Hapus</span>
