@@ -36,6 +36,7 @@ from source_rights import (
     source_rights_review_reasons,
     source_rights_risk_reasons,
 )
+from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -48,6 +49,14 @@ YOUTUBE_UPLOADS_PATH = (
     _configured_youtube_uploads_path / "youtube_uploads.json"
     if _configured_youtube_uploads_path.is_dir()
     else _configured_youtube_uploads_path
+)
+_configured_tiktok_uploads_path = Path(
+    os.environ.get("TIKTOK_UPLOADS_PATH", BASE_DIR / "data" / "tiktok_uploads.json")
+)
+TIKTOK_UPLOADS_PATH = (
+    _configured_tiktok_uploads_path / "tiktok_uploads.json"
+    if _configured_tiktok_uploads_path.is_dir()
+    else _configured_tiktok_uploads_path
 )
 PROCESSED_SOURCE_HISTORY_PATH = Path(
     os.environ.get(
@@ -77,6 +86,17 @@ YOUTUBE_LOGIN_PROFILE_DIRECTORY = os.environ.get(
 ).strip()
 YOUTUBE_CDP_URL = os.environ.get("YOUTUBE_CDP_URL", "http://127.0.0.1:9222").strip()
 YOUTUBE_CDP_STAGING_DIR = Path(os.environ.get("YOUTUBE_CDP_STAGING_DIR", BASE_DIR / "data" / "youtube_cdp_uploads"))
+TIKTOK_PLAYWRIGHT_STATE = Path(
+    os.environ.get("TIKTOK_PLAYWRIGHT_STATE", BASE_DIR / "data" / "tiktok_storage_state.json")
+)
+TIKTOK_CHROMIUM_USER_DATA_DIR = os.environ.get(
+    "TIKTOK_CHROMIUM_USER_DATA_DIR", str(BASE_DIR / "data" / "tiktok-chrome-profile")
+).strip()
+if not TIKTOK_CHROMIUM_USER_DATA_DIR and os.environ.get("IN_DOCKER", "").strip().lower() in {"1", "true", "yes", "on"}:
+    TIKTOK_CHROMIUM_USER_DATA_DIR = "/app/data/tiktok-chrome-profile"
+TIKTOK_CHROMIUM_PROFILE_DIRECTORY = os.environ.get(
+    "TIKTOK_CHROMIUM_PROFILE_DIRECTORY", "Default"
+).strip()
 DEFAULT_YOUTUBE_MAX_UPLOAD_MB = 256
 ALLOWED_UPLOAD_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"}
 SECONDS_PER_TARGET_CLIP = 360
@@ -179,6 +199,9 @@ DEFAULT_YOUTUBE_AUTO_UPLOAD_COUNT = 2
 DEFAULT_YOUTUBE_PUBLIC_DAILY_LIMIT = 2
 DEFAULT_YOUTUBE_PUBLIC_MIN_GAP_HOURS = 6
 DEFAULT_YOUTUBE_AI_FALLBACK_MODELS = ["llama3.2-id:latest", "llama3:latest"]
+DEFAULT_TIKTOK_TARGET_HANDLE = "titikbalikislami"
+DEFAULT_TIKTOK_TARGET_EMAIL = "fendycn88@gmail.com"
+DEFAULT_TIKTOK_AUTO_UPLOAD_COUNT = 2
 ROOT_DIR = BASE_DIR.parent
 FRESH_CONVERSATION_MARKERS = (
     "bahas",
@@ -420,6 +443,14 @@ class ClipFile(BaseModel):
     growth_quality_gate_passed: bool | None = None
     growth_next_action: str | None = None
     growth_checkpoints: list[int] = Field(default_factory=list)
+    tiktok_series_id: str | None = None
+    tiktok_series_label: str | None = None
+    tiktok_opening_hook: str | None = None
+    tiktok_visual_recipe: str | None = None
+    tiktok_cta: str | None = None
+    tiktok_experiment_id: str | None = None
+    tiktok_caption: str | None = None
+    tiktok_series_identity_embedded: bool = False
     youtube_upload_ready: bool | None = None
     youtube_upload_issue: str | None = None
     automatic_repair_available: bool = False
@@ -657,6 +688,8 @@ class YouTubePerformanceSnapshot(BaseModel):
     source: Literal["youtube_analytics", "youtube_public", "manual"]
     views: int = Field(default=0, ge=0)
     engaged_views: int | None = Field(default=None, ge=0)
+    shown_in_feed: int | None = Field(default=None, ge=0)
+    stayed_to_watch_percentage: float | None = Field(default=None, ge=0, le=100)
     average_view_duration: float | None = Field(default=None, ge=0)
     average_view_percentage: float | None = Field(default=None, ge=0)
     likes: int | None = Field(default=None, ge=0)
@@ -669,6 +702,8 @@ class YouTubePerformanceSnapshot(BaseModel):
 class YouTubePerformanceUpdateRequest(BaseModel):
     views: int = Field(default=0, ge=0)
     engaged_views: int | None = Field(default=None, ge=0)
+    shown_in_feed: int | None = Field(default=None, ge=0)
+    stayed_to_watch_percentage: float | None = Field(default=None, ge=0, le=100)
     average_view_duration: float | None = Field(default=None, ge=0)
     average_view_percentage: float | None = Field(default=None, ge=0, le=1000)
     likes: int | None = Field(default=None, ge=0)
@@ -751,6 +786,107 @@ class YouTubeLoginStatus(BaseModel):
     finished_at: str | None = None
     error: str | None = None
     logs: list[str] = Field(default_factory=list)
+
+
+class TikTokConfig(BaseModel):
+    enabled: bool
+    playwright_installed: bool
+    auth_state_exists: bool
+    auth_state_path: str
+    auth_status_message: str
+    chromium_profile_ready: bool
+    chromium_profile_path: str = ""
+    chromium_profile_directory: str = ""
+    target_handle: str
+    target_email: str
+    default_visibility: Literal["only_you"] = "only_you"
+    auto_upload_count: int = DEFAULT_TIKTOK_AUTO_UPLOAD_COUNT
+    active_upload_id: str | None = None
+
+
+class TikTokUploadRequest(BaseModel):
+    clip_url: str
+    caption: str = ""
+    visibility: Literal["only_you"] = "only_you"
+    dry_run: bool = Field(default_factory=lambda: env_bool("TIKTOK_DRY_RUN", False))
+
+    @field_validator("caption")
+    @classmethod
+    def _clean_caption(cls, value: str) -> str:
+        return value.strip()[:2200]
+
+
+class TikTokBatchUploadRequest(BaseModel):
+    clip_urls: list[str] = Field(default_factory=list)
+    visibility: Literal["only_you"] = "only_you"
+    best_count: int = Field(default=DEFAULT_TIKTOK_AUTO_UPLOAD_COUNT, ge=1, le=MAX_REQUESTED_CLIPS)
+    dry_run: bool = Field(default_factory=lambda: env_bool("TIKTOK_DRY_RUN", False))
+
+
+class TikTokPerformanceSnapshot(BaseModel):
+    captured_at: str
+    source: Literal["manual"] = "manual"
+    views: int = Field(ge=0)
+    watched_full_percentage: float | None = Field(default=None, ge=0, le=100)
+    average_watch_time_seconds: float | None = Field(default=None, ge=0)
+    likes: int | None = Field(default=None, ge=0)
+    comments: int | None = Field(default=None, ge=0)
+    shares: int | None = Field(default=None, ge=0)
+    saves: int | None = Field(default=None, ge=0)
+    followers_gained: int | None = Field(default=None, ge=0)
+
+
+class TikTokPerformanceUpdateRequest(BaseModel):
+    views: int = Field(ge=0)
+    watched_full_percentage: float | None = Field(default=None, ge=0, le=100)
+    average_watch_time_seconds: float | None = Field(default=None, ge=0)
+    likes: int | None = Field(default=None, ge=0)
+    comments: int | None = Field(default=None, ge=0)
+    shares: int | None = Field(default=None, ge=0)
+    saves: int | None = Field(default=None, ge=0)
+    followers_gained: int | None = Field(default=None, ge=0)
+
+
+class TikTokUploadJob(BaseModel):
+    id: str
+    source_job_id: str
+    clip_url: str
+    clip_name: str
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
+    created_at: str
+    updated_at: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    duration_seconds: float | None = None
+    caption: str
+    visibility: Literal["only_you"] = "only_you"
+    target_handle: str
+    target_email: str = ""
+    dry_run: bool = False
+    profile_url: str | None = None
+    upload_confirmed: bool = False
+    clip_sha256: str | None = None
+    series_id: str = ""
+    series_label: str = ""
+    opening_hook: str = ""
+    visual_recipe: str = ""
+    cta: str = ""
+    experiment_id: str = ""
+    metrics_to_track: list[str] = Field(default_factory=list)
+    performance_snapshots: list[TikTokPerformanceSnapshot] = Field(default_factory=list)
+    queue_position: int | None = None
+    queue_total: int | None = None
+    logs: list[str] = Field(default_factory=list)
+    error: str | None = None
+
+
+class TikTokSessionStatus(BaseModel):
+    ok: bool
+    target_handle: str
+    state_path: str
+    message: str
+    logs: list[str] = Field(default_factory=list)
+    error: str | None = None
 
 
 class YouTubeCdpRefreshStatus(BaseModel):
@@ -1374,9 +1510,11 @@ OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 JOBS_PATH.parent.mkdir(parents=True, exist_ok=True)
 YOUTUBE_UPLOADS_PATH.parent.mkdir(parents=True, exist_ok=True)
+TIKTOK_UPLOADS_PATH.parent.mkdir(parents=True, exist_ok=True)
 PROCESSED_SOURCE_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
 SOURCE_USAGE_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
 YOUTUBE_PLAYWRIGHT_STATE.parent.mkdir(parents=True, exist_ok=True)
+TIKTOK_PLAYWRIGHT_STATE.parent.mkdir(parents=True, exist_ok=True)
 app.mount("/outputs", StaticFiles(directory=OUTPUTS_DIR), name="outputs")
 
 
@@ -1863,6 +2001,50 @@ def save_youtube_uploads_unlocked() -> None:
         YOUTUBE_UPLOADS_PATH.write_text(data, encoding="utf-8")
 
 
+def load_tiktok_uploads() -> dict[str, TikTokUploadJob]:
+    if not TIKTOK_UPLOADS_PATH.is_file():
+        return {}
+    try:
+        payload = json.loads(TIKTOK_UPLOADS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, list):
+        return {}
+    loaded: dict[str, TikTokUploadJob] = {}
+    for item in payload:
+        try:
+            upload = TikTokUploadJob(**item)
+        except Exception:
+            continue
+        if upload.status == "running":
+            finished_at = now_iso()
+            upload = upload.model_copy(
+                update={
+                    "status": "failed",
+                    "updated_at": finished_at,
+                    "finished_at": finished_at,
+                    "error": (
+                        "Backend restart saat upload TikTok berlangsung. Periksa TikTok Studio sebelum retry "
+                        "agar tidak membuat posting duplikat."
+                    ),
+                }
+            )
+        loaded[upload.id] = upload
+    return loaded
+
+
+def save_tiktok_uploads_unlocked() -> None:
+    items = sorted(tiktok_uploads.values(), key=lambda item: item.created_at, reverse=True)
+    data = json.dumps([item.model_dump() for item in items], indent=2, ensure_ascii=False)
+    TIKTOK_UPLOADS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        temp_path = TIKTOK_UPLOADS_PATH.with_suffix(".json.tmp")
+        temp_path.write_text(data, encoding="utf-8")
+        temp_path.replace(TIKTOK_UPLOADS_PATH)
+    except OSError:
+        TIKTOK_UPLOADS_PATH.write_text(data, encoding="utf-8")
+
+
 def clear_outputs_dir() -> int:
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     root = OUTPUTS_DIR.resolve()
@@ -1943,6 +2125,7 @@ def clip_artifact_paths(clip: ClipFile) -> set[Path]:
     paths.add(clip_path.with_name(f"{clip_path.stem}_thumb.jpg"))
     paths.add(clip_path.with_name(f"{clip_path.stem}_thumb.txt"))
     paths.add(clip_path.with_name(f"{clip_path.stem}_caption.txt"))
+    paths.add(clip_path.with_name(f"{clip_path.stem}_tiktok_caption.txt"))
     paths.add(clip_path.with_suffix(".srt"))
     paths.add(clip_path.with_name(f"{clip_path.stem}.dynamic.ass"))
     paths.add(clip_path.with_suffix(".json"))
@@ -2454,14 +2637,20 @@ processed_source_history.update(
     if value
 )
 youtube_uploads: dict[str, YouTubeUploadJob] = load_youtube_uploads()
+tiktok_uploads: dict[str, TikTokUploadJob] = load_tiktok_uploads()
 jobs_lock = threading.Lock()
 processed_source_history_lock = threading.Lock()
 source_usage_history_lock = threading.Lock()
 youtube_uploads_lock = threading.Lock()
 youtube_upload_creation_lock = threading.Lock()
+tiktok_uploads_lock = threading.Lock()
+tiktok_upload_creation_lock = threading.Lock()
 job_secrets: dict[str, str] = {}
 job_processes: dict[str, subprocess.Popen[str]] = {}
 youtube_upload_processes: dict[str, subprocess.Popen[str]] = {}
+tiktok_upload_processes: dict[str, subprocess.Popen[str]] = {}
+tiktok_login_process: subprocess.Popen[str] | None = None
+tiktok_login_status = YouTubeLoginStatus(active=False)
 youtube_login_process: subprocess.Popen[str] | None = None
 youtube_login_status = YouTubeLoginStatus(active=False)
 youtube_login_reconnect_cdp = False
@@ -2472,6 +2661,8 @@ MAX_CONCURRENT_CLIP_JOBS = max(1, env_int("FENDY_CLIPPER_MAX_CONCURRENT_JOBS", 3
 clip_job_slots = threading.BoundedSemaphore(MAX_CONCURRENT_CLIP_JOBS)
 youtube_worker_lock = threading.Lock()
 youtube_worker_running = False
+tiktok_worker_lock = threading.Lock()
+tiktok_worker_running = False
 youtube_cleanup_lock = threading.Lock()
 youtube_cleanup_scheduled: set[str] = set()
 auto_viral_runs: dict[str, AutoViralRun] = {}
@@ -4861,6 +5052,230 @@ def best_youtube_clip_urls(job: ClipJob, count: int = DEFAULT_YOUTUBE_AUTO_UPLOA
     return [clip.url for _, _, _, clip in ranked[: max(1, count)]]
 
 
+def tiktok_target_handle() -> str:
+    value = os.environ.get("TIKTOK_TARGET_HANDLE", DEFAULT_TIKTOK_TARGET_HANDLE)
+    return re.sub(r"[^a-zA-Z0-9._]", "", value.strip().lstrip("@")) or DEFAULT_TIKTOK_TARGET_HANDLE
+
+
+def tiktok_auth_state_exists() -> bool:
+    if not TIKTOK_PLAYWRIGHT_STATE.is_file():
+        return False
+    try:
+        payload = json.loads(TIKTOK_PLAYWRIGHT_STATE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    cookies = payload.get("cookies") if isinstance(payload, dict) else None
+    return bool(
+        isinstance(cookies, list)
+        and any("tiktok.com" in str(item.get("domain") or "").casefold() for item in cookies if isinstance(item, dict))
+    )
+
+
+def tiktok_chromium_profile_ready() -> bool:
+    root = Path(TIKTOK_CHROMIUM_USER_DATA_DIR).expanduser()
+    profile = root / TIKTOK_CHROMIUM_PROFILE_DIRECTORY if TIKTOK_CHROMIUM_PROFILE_DIRECTORY else root
+    return root.is_dir() and profile.is_dir()
+
+
+def active_tiktok_upload_id() -> str | None:
+    with tiktok_uploads_lock:
+        active = sorted(tiktok_uploads.values(), key=lambda item: item.created_at)
+    return next((item.id for item in active if item.status in {"queued", "running"}), None)
+
+
+def tiktok_config_payload() -> TikTokConfig:
+    state_ready = tiktok_auth_state_exists()
+    profile_ready = tiktok_chromium_profile_ready()
+    if state_ready:
+        auth_path = str(TIKTOK_PLAYWRIGHT_STATE)
+        message = (
+            f"Session TikTok siap. Upload dikunci ke @{tiktok_target_handle()} dan Only you."
+        )
+    elif profile_ready:
+        auth_path = str(Path(TIKTOK_CHROMIUM_USER_DATA_DIR) / TIKTOK_CHROMIUM_PROFILE_DIRECTORY)
+        message = (
+            f"Profile browser terdeteksi; klik Cek sesi TikTok untuk memvalidasi @{tiktok_target_handle()} "
+            "dan menyimpan session khusus TikTok."
+        )
+    else:
+        auth_path = str(TIKTOK_PLAYWRIGHT_STATE)
+        message = "Session TikTok belum tersedia. Login TikTok pada profile browser yang dikonfigurasi."
+    return TikTokConfig(
+        enabled=playwright_installed() and (state_ready or profile_ready),
+        playwright_installed=playwright_installed(),
+        auth_state_exists=state_ready,
+        auth_state_path=auth_path,
+        auth_status_message=message,
+        chromium_profile_ready=profile_ready,
+        chromium_profile_path=TIKTOK_CHROMIUM_USER_DATA_DIR,
+        chromium_profile_directory=TIKTOK_CHROMIUM_PROFILE_DIRECTORY,
+        target_handle=tiktok_target_handle(),
+        target_email=os.environ.get("TIKTOK_TARGET_EMAIL", DEFAULT_TIKTOK_TARGET_EMAIL).strip(),
+        auto_upload_count=max(1, min(MAX_REQUESTED_CLIPS, env_int("TIKTOK_AUTO_UPLOAD_COUNT", DEFAULT_TIKTOK_AUTO_UPLOAD_COUNT))),
+        active_upload_id=active_tiktok_upload_id(),
+    )
+
+
+def require_tiktok_ready() -> None:
+    config = tiktok_config_payload()
+    if not config.playwright_installed:
+        raise HTTPException(status_code=503, detail="Playwright belum terpasang di backend")
+    if not (config.auth_state_exists or config.chromium_profile_ready):
+        raise HTTPException(status_code=409, detail=config.auth_status_message)
+
+
+def tiktok_caption_for_clip(job: ClipJob, clip: ClipFile, index: int, requested: str = "") -> str:
+    if not requested.strip() and clip.tiktok_caption and clip.tiktok_caption.strip():
+        return clip.tiktok_caption.strip()[:2200].rstrip()
+    base = requested.strip() or (clip.social_caption or "").strip()
+    if not base:
+        base = clip.title or default_youtube_title(job, clip, index)
+    strategy = build_tiktok_strategy(
+        title=clip.title or "",
+        hook=clip.hook or "",
+        text=" ".join(value for value in (clip.core_message, clip.pov, base) if value),
+        stable_key=clip.url or f"{job.id}|{index}",
+    )
+    strategy.update(
+        {
+            key: value
+            for key, value in {
+                "series_id": clip.tiktok_series_id,
+                "series_label": clip.tiktok_series_label,
+                "opening_hook": clip.tiktok_opening_hook,
+                "visual_recipe": clip.tiktok_visual_recipe,
+                "cta": clip.tiktok_cta,
+                "experiment_id": clip.tiktok_experiment_id,
+            }.items()
+            if value
+        }
+    )
+    return tiktok_caption_from_strategy(base, strategy)
+
+
+def reusable_tiktok_upload(job_id: str, clip_url: str, fingerprint: str) -> TikTokUploadJob | None:
+    with tiktok_uploads_lock:
+        uploads = sorted(tiktok_uploads.values(), key=lambda item: item.created_at, reverse=True)
+    for upload in uploads:
+        exact = upload.source_job_id == job_id and upload.clip_url == clip_url
+        same_file = bool(fingerprint and upload.clip_sha256 == fingerprint)
+        if exact and upload.status in {"queued", "running"}:
+            return upload
+        if upload.status == "completed" and upload.upload_confirmed and not upload.dry_run and (exact or same_file):
+            return upload
+    return None
+
+
+def tiktok_upload_is_confirmed(job_id: str, clip_url: str) -> bool:
+    with tiktok_uploads_lock:
+        return any(
+            item.source_job_id == job_id
+            and item.clip_url == clip_url
+            and item.status == "completed"
+            and item.upload_confirmed
+            and not item.dry_run
+            for item in tiktok_uploads.values()
+        )
+
+
+def cross_platform_cleanup_after(job_id: str, clip_url: str, completed_at: str) -> str | None:
+    return completed_upload_cleanup_after(completed_at) if tiktok_upload_is_confirmed(job_id, clip_url) else None
+
+
+def create_tiktok_upload_record(job_id: str, request: TikTokUploadRequest) -> TikTokUploadJob:
+    job, clip, index = find_job_clip(job_id, request.clip_url)
+    if not clip.is_correct:
+        raise HTTPException(
+            status_code=409,
+            detail="Centang review konteks, fakta, dan hak penggunaan sebelum upload TikTok Only you.",
+        )
+    issue = youtube_monetization_preflight_issue(job, clip)
+    if issue:
+        raise HTTPException(status_code=409, detail=issue.replace("YouTube", "TikTok"))
+    clip_path = output_path_from_url(clip.url)
+    if clip_path is None or not clip_path.is_file():
+        raise HTTPException(status_code=404, detail="File clip tidak ditemukan di outputs")
+    fingerprint = file_sha256(clip_path)
+    existing = reusable_tiktok_upload(job_id, clip.url, fingerprint)
+    if existing is not None and not (request.dry_run and existing.status == "completed"):
+        return existing
+    now = now_iso()
+    strategy = build_tiktok_strategy(
+        title=clip.title or "",
+        hook=clip.hook or "",
+        text=" ".join(
+            value for value in (clip.core_message, clip.pov, clip.social_caption) if value
+        ),
+        stable_key=clip.url,
+    )
+    strategy.update(
+        {
+            key: value
+            for key, value in {
+                "series_id": clip.tiktok_series_id,
+                "series_label": clip.tiktok_series_label,
+                "opening_hook": clip.tiktok_opening_hook,
+                "visual_recipe": clip.tiktok_visual_recipe,
+                "cta": clip.tiktok_cta,
+                "experiment_id": clip.tiktok_experiment_id,
+            }.items()
+            if value
+        }
+    )
+    return TikTokUploadJob(
+        id=uuid.uuid4().hex,
+        source_job_id=job_id,
+        clip_url=clip.url,
+        clip_name=clip.name,
+        status="queued",
+        created_at=now,
+        updated_at=now,
+        caption=tiktok_caption_for_clip(job, clip, index, request.caption),
+        visibility="only_you",
+        target_handle=tiktok_target_handle(),
+        target_email=os.environ.get("TIKTOK_TARGET_EMAIL", DEFAULT_TIKTOK_TARGET_EMAIL).strip(),
+        dry_run=request.dry_run,
+        clip_sha256=fingerprint,
+        series_id=str(strategy["series_id"]),
+        series_label=str(strategy["series_label"]),
+        opening_hook=str(strategy["opening_hook"]),
+        visual_recipe=str(strategy["visual_recipe"]),
+        cta=str(strategy["cta"]),
+        experiment_id=str(strategy["experiment_id"]),
+        metrics_to_track=[str(item) for item in strategy["measure"]],
+        logs=[
+            "Preflight hak sumber dan transformasi editorial lolos.",
+            f"Paket TikTok diterapkan: {strategy['series_label']} · hook varian {strategy['hook_variant']}.",
+            "Upload TikTok dikunci Only you; publikasi umum tetap keputusan manual setelah review.",
+        ],
+    )
+
+
+def create_tiktok_upload_batch_records(job_id: str, request: TikTokBatchUploadRequest) -> list[TikTokUploadJob]:
+    with jobs_lock:
+        job = jobs.get(job_id)
+    if not job or job.status != "completed":
+        raise HTTPException(status_code=404 if not job else 409, detail="Job belum tersedia atau belum selesai")
+    if request.clip_urls:
+        clip_urls = list(dict.fromkeys(request.clip_urls))
+    else:
+        clips = {clip.url: clip for clip in job.clips}
+        clip_urls = [
+            url for url in best_youtube_clip_urls(job, len(job.clips))
+            if (clip := clips.get(url)) is not None
+            and clip.is_correct
+            and youtube_monetization_preflight_issue(job, clip) is None
+        ][:request.best_count]
+    if not clip_urls:
+        raise HTTPException(status_code=409, detail="Tidak ada clip yang sudah direview dan lolos quality gate TikTok.")
+    return list({item.id: item for item in (
+        create_tiktok_upload_record(
+            job_id,
+            TikTokUploadRequest(clip_url=url, visibility="only_you", dry_run=request.dry_run),
+        ) for url in clip_urls
+    )}.values())
+
+
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
@@ -5028,6 +5443,17 @@ def active_youtube_uploads_for_job(job_id: str, clip_urls: set[str] | None = Non
         ]
 
 
+def active_tiktok_uploads_for_job(job_id: str, clip_urls: set[str] | None = None) -> list[TikTokUploadJob]:
+    with tiktok_uploads_lock:
+        return [
+            upload
+            for upload in tiktok_uploads.values()
+            if upload.source_job_id == job_id
+            and upload.status in {"queued", "running"}
+            and (clip_urls is None or upload.clip_url in clip_urls)
+        ]
+
+
 def youtube_uploads_with_queue_positions(
     uploads: list[YouTubeUploadJob],
 ) -> list[YouTubeUploadJob]:
@@ -5125,7 +5551,7 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
             return existing
 
         completed_at = now_iso()
-        delete_after = completed_upload_cleanup_after(completed_at)
+        delete_after = cross_platform_cleanup_after(job_id, clip.url, completed_at)
         return existing.model_copy(
             update={
                 "id": uuid.uuid4().hex,
@@ -5151,7 +5577,11 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
                 "growth_target_subscribers": growth_target_subscribers,
                 "logs": [
                     "Upload dilewati: fingerprint file identik sudah terupload dan URL YouTube terverifikasi.",
-                    f"File duplikat lokal akan dibersihkan otomatis setelah {max(1, env_int('YOUTUBE_DELETE_UPLOADED_CLIP_DELAY_SECONDS', 30))} detik.",
+                    (
+                        f"Dua platform terverifikasi; file duplikat lokal dibersihkan setelah {max(1, env_int('YOUTUBE_DELETE_UPLOADED_CLIP_DELAY_SECONDS', 30))} detik."
+                        if delete_after
+                        else "File lokal dipertahankan sampai upload TikTok nyata untuk clip ini terverifikasi."
+                    ),
                 ],
                 "error": None,
             }
@@ -5470,7 +5900,12 @@ def comparable_performance_medians(
         ]
 
     medians: dict[str, float] = {}
-    for field in ("views", "average_view_percentage"):
+    for field in (
+        "views",
+        "shown_in_feed",
+        "stayed_to_watch_percentage",
+        "average_view_percentage",
+    ):
         field_values = values(field)
         if field_values:
             medians[field] = float(median(field_values))
@@ -5502,6 +5937,54 @@ def youtube_performance_diagnosis(
         ]
 
     diagnosis: list[str] = []
+    published_value = upload.finished_at or upload.created_at
+    try:
+        published_at = datetime.fromisoformat(published_value)
+        if published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=timezone.utc)
+        age_hours = max(
+            0.0,
+            (datetime.now(timezone.utc) - published_at.astimezone(timezone.utc)).total_seconds()
+            / 3600,
+        )
+    except ValueError:
+        age_hours = 0.0
+
+    if snapshot.shown_in_feed == 0:
+        if age_hours < 24:
+            diagnosis.append(
+                "Shown in feed masih 0 dalam 24 jam pertama; Short belum diuji di feed, jadi jangan menilai hook dari view dulu."
+            )
+        elif age_hours < 72:
+            diagnosis.append(
+                "Shown in feed masih 0; periksa Visibility Public dan Restrictions/Notices, lalu ukur lagi setelah 72 jam."
+            )
+        else:
+            diagnosis.append(
+                "Shown in feed tetap 0 setelah 72 jam; audit Public/Restrictions dan kirim feedback Studio bila semua status bersih."
+            )
+    elif snapshot.shown_in_feed is not None and snapshot.shown_in_feed > 0:
+        if snapshot.views == 0:
+            diagnosis.append(
+                "Short sudah tampil di feed tetapi view publik masih 0; bandingkan Realtime Studio dan halaman publik karena validasi metrik dapat tertunda."
+            )
+        elif snapshot.stayed_to_watch_percentage is None:
+            diagnosis.append(
+                "Short sudah masuk feed; isi Stayed to watch dari Studio agar kekuatan first frame dan hook dapat dibandingkan."
+            )
+    elif snapshot.views == 0:
+        if age_hours < 6:
+            diagnosis.append(
+                "View masih 0 pada jam-jam awal; masukkan Shown in feed dari Studio sebelum menyimpulkan ada masalah distribusi."
+            )
+        elif age_hours < 72:
+            diagnosis.append(
+                "View masih 0; cek Public, Restrictions/Notices, dan Shown in feed untuk memisahkan masalah distribusi dari masalah hook."
+            )
+        else:
+            diagnosis.append(
+                "View tetap 0 setelah 72 jam; jika Public dan Restrictions bersih, uji satu Short 100% orisinal dan kirim feedback Studio."
+            )
     if snapshot.views >= target_views and subscribers is not None and subscribers < target_subscribers:
         diagnosis.append(
             "Reach sudah mencapai target, tetapi konversi subscriber belum; perkuat janji seri dan related video."
@@ -5530,6 +6013,15 @@ def youtube_performance_diagnosis(
         ):
             diagnosis.append(
                 "Persentase tonton berada di bawah median seri; majukan payoff dan pangkas bagian yang tidak menambah informasi."
+            )
+        baseline_stayed = baselines.get("stayed_to_watch_percentage", 0)
+        if (
+            baseline_stayed
+            and snapshot.stayed_to_watch_percentage is not None
+            and snapshot.stayed_to_watch_percentage < baseline_stayed * 0.9
+        ):
+            diagnosis.append(
+                "Stayed to watch berada di bawah median seri; ubah first frame dan hook tanpa mengubah variabel lain."
             )
         baseline_conversion = baselines.get("subscribers_per_1000_views", 0)
         conversion_views = (
@@ -5725,6 +6217,22 @@ def refresh_youtube_performance(upload_id: str) -> YouTubeUploadJob:
             if analytics_error:
                 detail = f"{analytics_error}; fallback statistik publik gagal: {detail}"
             raise HTTPException(status_code=502, detail=detail) from exc
+    previous = latest_performance_snapshot(upload)
+    if previous is not None:
+        snapshot = snapshot.model_copy(
+            update={
+                "shown_in_feed": (
+                    snapshot.shown_in_feed
+                    if snapshot.shown_in_feed is not None
+                    else previous.shown_in_feed
+                ),
+                "stayed_to_watch_percentage": (
+                    snapshot.stayed_to_watch_percentage
+                    if snapshot.stayed_to_watch_percentage is not None
+                    else previous.stayed_to_watch_percentage
+                ),
+            }
+        )
     return record_youtube_performance(upload_id, snapshot)
 
 
@@ -6512,6 +7020,20 @@ def delete_completed_youtube_upload_clip(
         active_uploads = active_youtube_uploads_for_job(job.id, {target_clip.url})
         if active_uploads:
             raise RuntimeError("Masih ada upload aktif untuk file klip yang sama")
+        with tiktok_uploads_lock:
+            matching_tiktok = [
+                item
+                for item in tiktok_uploads.values()
+                if item.source_job_id == job.id and item.clip_url == target_clip.url
+            ]
+        tiktok_confirmed = any(
+            item.status == "completed" and item.upload_confirmed and not item.dry_run
+            for item in matching_tiktok
+        )
+        if not tiktok_confirmed:
+            raise RuntimeError(
+                "File dipertahankan sampai upload TikTok nyata untuk clip yang sama terkonfirmasi selesai"
+            )
 
         clip_path = output_path_from_url(target_clip.url)
         video_paths = {clip_path} if clip_path is not None else set()
@@ -6527,6 +7049,7 @@ def delete_completed_youtube_upload_clip(
             metadata_paths.update(
                 {
                     clip_path.with_name(f"{clip_path.stem}_caption.txt"),
+                    clip_path.with_name(f"{clip_path.stem}_tiktok_caption.txt"),
                     clip_path.with_suffix(".srt"),
                     clip_path.with_name(f"{clip_path.stem}.dynamic.ass"),
                     clip_path.with_suffix(".json"),
@@ -6730,7 +7253,17 @@ def complete_youtube_upload_as_duplicate(
     local_file_exists: bool,
 ) -> None:
     completed_at = now_iso()
-    delete_after = completed_upload_cleanup_after(completed_at) if local_file_exists else None
+    with youtube_uploads_lock:
+        current_upload = youtube_uploads.get(upload_id)
+    delete_after = (
+        cross_platform_cleanup_after(
+            current_upload.source_job_id,
+            current_upload.clip_url,
+            completed_at,
+        )
+        if local_file_exists and current_upload is not None
+        else None
+    )
     set_youtube_upload(
         upload_id,
         status="completed",
@@ -6752,7 +7285,9 @@ def complete_youtube_upload_as_duplicate(
             "Upload dilewati oleh worker: fingerprint/file sudah memiliki upload YouTube terverifikasi.",
             f"Referensi upload: {duplicate.id[:10]} · {duplicate.video_url}",
             (
-                "File lokal duplikat masuk jadwal auto-cleanup."
+                "Dua platform terverifikasi; file lokal duplikat masuk jadwal auto-cleanup."
+                if delete_after
+                else "File lokal dipertahankan sampai upload TikTok nyata untuk clip ini terverifikasi."
                 if local_file_exists
                 else "File lokal sudah tidak ada; tidak diperlukan cleanup tambahan."
             ),
@@ -6844,9 +7379,15 @@ def run_youtube_restart_verification(upload_id: str) -> None:
             return
 
         completed_at = now_iso()
-        delete_after = completed_upload_cleanup_after(completed_at)
+        delete_after = cross_platform_cleanup_after(
+            upload.source_job_id,
+            upload.clip_url,
+            completed_at,
+        )
         logs.append(
-            "Upload pasca-restart terverifikasi tanpa upload ulang; file lokal masuk auto-cleanup."
+            "Upload pasca-restart terverifikasi tanpa upload ulang; dua platform lengkap dan file masuk auto-cleanup."
+            if delete_after
+            else "Upload pasca-restart terverifikasi; file lokal dipertahankan sampai TikTok selesai."
         )
         set_youtube_upload(
             upload_id,
@@ -7167,10 +7708,18 @@ def run_youtube_upload(upload_id: str) -> None:
                 completed_at = now_iso()
                 delete_after = None
                 if video_url and not upload.dry_run:
-                    delete_after = completed_upload_cleanup_after(completed_at)
+                    delete_after = cross_platform_cleanup_after(
+                        upload.source_job_id,
+                        upload.clip_url,
+                        completed_at,
+                    )
                     logs.append(
-                        "Upload dan URL YouTube terverifikasi; file lokal akan dihapus otomatis "
-                        f"dalam {max(1, env_int('YOUTUBE_DELETE_UPLOADED_CLIP_DELAY_SECONDS', 30))} detik."
+                        (
+                            "Upload YouTube dan TikTok terverifikasi; file lokal akan dihapus otomatis "
+                            f"dalam {max(1, env_int('YOUTUBE_DELETE_UPLOADED_CLIP_DELAY_SECONDS', 30))} detik."
+                        )
+                        if delete_after
+                        else "Upload YouTube terverifikasi; file lokal dipertahankan sampai TikTok untuk clip yang sama selesai."
                     )
                 elif upload.dry_run:
                     logs.append("Dry-run selesai; file lokal tidak dijadwalkan untuk dihapus.")
@@ -7416,6 +7965,321 @@ def start_youtube_worker_if_needed() -> None:
     threading.Thread(target=youtube_upload_worker_loop, daemon=True).start()
 
 
+def set_tiktok_upload(upload_id: str, **updates: Any) -> None:
+    with tiktok_uploads_lock:
+        upload = tiktok_uploads.get(upload_id)
+        if upload is None:
+            return
+        data = upload.model_dump()
+        data.update(updates)
+        data["updated_at"] = now_iso()
+        tiktok_uploads[upload_id] = TikTokUploadJob(**data)
+        save_tiktok_uploads_unlocked()
+
+
+def record_tiktok_performance(
+    upload_id: str,
+    request: TikTokPerformanceUpdateRequest,
+) -> TikTokUploadJob:
+    with tiktok_uploads_lock:
+        upload = tiktok_uploads.get(upload_id)
+        if upload is None:
+            raise HTTPException(status_code=404, detail="Upload TikTok tidak ditemukan")
+        if upload.status != "completed" or not upload.upload_confirmed:
+            raise HTTPException(
+                status_code=409,
+                detail="Metrik baru dapat disimpan setelah upload TikTok terkonfirmasi selesai.",
+            )
+        snapshot = TikTokPerformanceSnapshot(
+            captured_at=now_iso(),
+            **request.model_dump(),
+        )
+        updated = upload.model_copy(
+            update={
+                "performance_snapshots": [*upload.performance_snapshots, snapshot][-30:],
+                "updated_at": now_iso(),
+            }
+        )
+        tiktok_uploads[upload_id] = updated
+        save_tiktok_uploads_unlocked()
+        return updated
+
+
+def tiktok_uploads_with_queue_positions(items: list[TikTokUploadJob]) -> list[TikTokUploadJob]:
+    queued = sorted((item for item in items if item.status == "queued"), key=lambda item: item.created_at)
+    positions = {item.id: index for index, item in enumerate(queued, start=1)}
+    return [
+        item.model_copy(update={
+            "queue_position": positions.get(item.id),
+            "queue_total": len(queued) if item.status == "queued" else None,
+        })
+        for item in items
+    ]
+
+
+def build_tiktok_base_command(*, force_profile: bool = False) -> list[str]:
+    command = [
+        sys.executable,
+        "tiktok_uploader.py",
+        "--state",
+        str(TIKTOK_PLAYWRIGHT_STATE),
+        "--target-handle",
+        tiktok_target_handle(),
+        "--target-email",
+        os.environ.get("TIKTOK_TARGET_EMAIL", DEFAULT_TIKTOK_TARGET_EMAIL).strip(),
+    ]
+    if (force_profile or not tiktok_auth_state_exists()) and tiktok_chromium_profile_ready():
+        command.extend(["--chromium-user-data-dir", TIKTOK_CHROMIUM_USER_DATA_DIR])
+        if TIKTOK_CHROMIUM_PROFILE_DIRECTORY:
+            command.extend(["--chromium-profile-directory", TIKTOK_CHROMIUM_PROFILE_DIRECTORY])
+    if not env_bool("TIKTOK_HEADLESS", True):
+        command.append("--no-headless")
+    return command
+
+
+def build_tiktok_upload_command(upload: TikTokUploadJob) -> list[str]:
+    clip_path = output_path_from_url(upload.clip_url)
+    if clip_path is None or not clip_path.is_file():
+        raise RuntimeError("File clip TikTok tidak ditemukan")
+    command = [*build_tiktok_base_command(), "upload", str(clip_path), "--caption", upload.caption]
+    if upload.dry_run:
+        command.append("--dry-run")
+    return command
+
+
+def tiktok_error_from_logs(logs: list[str]) -> str | None:
+    for line in reversed(logs):
+        if "USER_ERROR:" in line:
+            return line.split("USER_ERROR:", 1)[1].strip()
+    return None
+
+
+def schedule_cross_platform_cleanup_after_tiktok(upload: TikTokUploadJob) -> None:
+    if upload.dry_run or not upload.upload_confirmed:
+        return
+    with youtube_uploads_lock:
+        matching = [
+            item
+            for item in youtube_uploads.values()
+            if item.source_job_id == upload.source_job_id
+            and item.clip_url == upload.clip_url
+            and item.status == "completed"
+            and item.upload_confirmed
+            and item.video_url
+            and not item.dry_run
+            and not item.clip_deleted_at
+        ]
+    for youtube_upload in matching:
+        delete_after = completed_upload_cleanup_after(now_iso())
+        set_youtube_upload(
+            youtube_upload.id,
+            clip_delete_after=delete_after,
+            clip_delete_error=None,
+            logs=[
+                *youtube_upload.logs,
+                "Upload TikTok untuk clip yang sama sudah terverifikasi; syarat dua platform lengkap dan auto-cleanup dijadwalkan.",
+            ][-160:],
+        )
+        schedule_completed_upload_cleanup(youtube_upload.id)
+
+
+def run_tiktok_upload(upload_id: str) -> None:
+    with tiktok_uploads_lock:
+        upload = tiktok_uploads.get(upload_id)
+    if upload is None:
+        return
+    clip_path = output_path_from_url(upload.clip_url)
+    if clip_path is None or not clip_path.is_file():
+        set_tiktok_upload(upload_id, status="failed", finished_at=now_iso(), error="File clip tidak ditemukan.")
+        return
+    started = time.perf_counter()
+    logs = list(upload.logs[-20:])
+    set_tiktok_upload(
+        upload_id,
+        status="running",
+        started_at=now_iso(),
+        finished_at=None,
+        duration_seconds=None,
+        upload_confirmed=False,
+        error=None,
+    )
+    try:
+        process = subprocess.Popen(
+            build_tiktok_upload_command(upload),
+            cwd=BASE_DIR,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+        with process_lock:
+            tiktok_upload_processes[upload_id] = process
+        assert process.stdout is not None
+        confirmed = False
+        profile_url: str | None = None
+        for line in process.stdout:
+            cleaned = line.rstrip()
+            if not cleaned:
+                continue
+            logs.append(cleaned)
+            if cleaned.startswith("UPLOAD_CONFIRMED:"):
+                confirmed = True
+            if cleaned.startswith("VIDEO_URL:"):
+                profile_url = cleaned.split("VIDEO_URL:", 1)[1].strip()
+            set_tiktok_upload(
+                upload_id,
+                logs=logs[-120:],
+                upload_confirmed=confirmed,
+                profile_url=profile_url,
+            )
+        code = process.wait()
+        error = tiktok_error_from_logs(logs)
+        if code != 0 or (not upload.dry_run and not confirmed):
+            raise RuntimeError(error or f"tiktok_uploader.py exited with code {code}")
+        set_tiktok_upload(
+            upload_id,
+            status="completed",
+            logs=logs[-120:],
+            upload_confirmed=confirmed,
+            profile_url=profile_url,
+            finished_at=now_iso(),
+            duration_seconds=elapsed_seconds(started),
+            error=None,
+        )
+        with tiktok_uploads_lock:
+            completed_upload = tiktok_uploads.get(upload_id)
+        if completed_upload is not None:
+            schedule_cross_platform_cleanup_after_tiktok(completed_upload)
+    except Exception as exc:
+        set_tiktok_upload(
+            upload_id,
+            status="failed",
+            logs=logs[-120:],
+            finished_at=now_iso(),
+            duration_seconds=elapsed_seconds(started),
+            error=str(exc),
+        )
+    finally:
+        with process_lock:
+            tiktok_upload_processes.pop(upload_id, None)
+
+
+def tiktok_worker_loop() -> None:
+    global tiktok_worker_running
+    while True:
+        with tiktok_uploads_lock:
+            queued = sorted(
+                (item for item in tiktok_uploads.values() if item.status == "queued"),
+                key=lambda item: item.created_at,
+            )
+        if queued:
+            run_tiktok_upload(queued[0].id)
+            continue
+        with tiktok_worker_lock:
+            with tiktok_uploads_lock:
+                if any(item.status == "queued" for item in tiktok_uploads.values()):
+                    continue
+            tiktok_worker_running = False
+            return
+
+
+def start_tiktok_worker_if_needed() -> None:
+    global tiktok_worker_running
+    with tiktok_worker_lock:
+        if tiktok_worker_running:
+            return
+        tiktok_worker_running = True
+    threading.Thread(target=tiktok_worker_loop, daemon=True).start()
+
+
+def queue_tiktok_upload_jobs(items: list[TikTokUploadJob]) -> None:
+    has_queued = False
+    with tiktok_uploads_lock:
+        for item in items:
+            if item.id not in tiktok_uploads:
+                tiktok_uploads[item.id] = item
+            has_queued = has_queued or item.status == "queued"
+        save_tiktok_uploads_unlocked()
+    if has_queued:
+        start_tiktok_worker_if_needed()
+
+
+@app.on_event("startup")
+def resume_queued_tiktok_uploads() -> None:
+    with tiktok_uploads_lock:
+        has_queued = any(item.status == "queued" for item in tiktok_uploads.values())
+    if has_queued:
+        start_tiktok_worker_if_needed()
+
+
+def set_tiktok_login_status(**updates: Any) -> None:
+    global tiktok_login_status
+    data = tiktok_login_status.model_dump()
+    data.update(updates)
+    tiktok_login_status = YouTubeLoginStatus(**data)
+
+
+def run_tiktok_login_process() -> None:
+    global tiktok_login_process
+    logs: list[str] = []
+    command = build_tiktok_base_command(force_profile=True)
+    if "--no-headless" not in command:
+        command.append("--no-headless")
+    command.extend(["login", "--timeout", str(max(30, env_int("TIKTOK_LOGIN_TIMEOUT_SECONDS", 300)))])
+    try:
+        process_env = youtube_graphical_process_env()
+        process = subprocess.Popen(
+            command,
+            cwd=BASE_DIR,
+            env=process_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+        with process_lock:
+            tiktok_login_process = process
+        assert process.stdout is not None
+        for line in process.stdout:
+            cleaned = line.rstrip()
+            if cleaned:
+                logs.append(cleaned)
+                set_tiktok_login_status(logs=logs[-80:])
+        code = process.wait()
+        error = tiktok_error_from_logs(logs) if code else None
+        set_tiktok_login_status(
+            active=False,
+            finished_at=now_iso(),
+            logs=logs[-80:],
+            error=error or (f"tiktok_uploader.py login exited with code {code}" if code else None),
+        )
+    except Exception as exc:
+        set_tiktok_login_status(active=False, finished_at=now_iso(), logs=logs[-80:], error=str(exc))
+    finally:
+        with process_lock:
+            tiktok_login_process = None
+
+
+def start_tiktok_login_if_needed() -> YouTubeLoginStatus:
+    global tiktok_login_process
+    with process_lock:
+        if tiktok_login_process is not None and tiktok_login_process.poll() is None:
+            return tiktok_login_status
+        set_tiktok_login_status(
+            active=True,
+            started_at=now_iso(),
+            finished_at=None,
+            error=None,
+            logs=[f"Membuka TikTok untuk login akun @{tiktok_target_handle()}..."],
+        )
+    threading.Thread(target=run_tiktok_login_process, daemon=True).start()
+    return tiktok_login_status
+
+
 @app.on_event("startup")
 def resume_interrupted_clipping_jobs() -> None:
     """Resume active product modes and retire interrupted legacy generator jobs."""
@@ -7512,6 +8376,7 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
         thumb_path = path.with_name(f"{path.stem}_thumb.jpg")
         prompt_path = path.with_name(f"{path.stem}_thumb.txt")
         caption_path = path.with_name(f"{path.stem}_caption.txt")
+        tiktok_caption_path = path.with_name(f"{path.stem}_tiktok_caption.txt")
         json_path = path.with_suffix(".json")
         title: str | None = None
         sidecar: dict[str, Any] = {}
@@ -7538,6 +8403,19 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
         growth = growth if isinstance(growth, dict) else {}
         series = growth.get("series")
         series = series if isinstance(series, dict) else {}
+        tiktok_strategy = growth.get("tiktok")
+        if not isinstance(tiktok_strategy, dict):
+            tiktok_strategy = sidecar.get("tiktok_strategy")
+        if not isinstance(tiktok_strategy, dict):
+            tiktok_strategy = build_tiktok_strategy(
+                title=title or "",
+                hook=str(sidecar.get("hook") or ""),
+                text=" ".join(
+                    str(sidecar.get(key) or "")
+                    for key in ("text", "core_message", "pov")
+                ),
+                stable_key=clip_url(path),
+            )
         subscriber_intent = growth.get("subscriber_intent")
         subscriber_intent = subscriber_intent if isinstance(subscriber_intent, dict) else {}
         growth_readiness = sidecar.get("growth_readiness")
@@ -7679,6 +8557,30 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
                 ),
                 growth_series=(
                     str(series.get("name")).strip() if series.get("name") else None
+                ),
+                tiktok_series_id=(
+                    str(tiktok_strategy.get("series_id") or "").strip() or None
+                ),
+                tiktok_series_label=(
+                    str(tiktok_strategy.get("series_label") or "").strip() or None
+                ),
+                tiktok_opening_hook=(
+                    str(tiktok_strategy.get("opening_hook") or "").strip() or None
+                ),
+                tiktok_visual_recipe=(
+                    str(tiktok_strategy.get("visual_recipe") or "").strip() or None
+                ),
+                tiktok_cta=(str(tiktok_strategy.get("cta") or "").strip() or None),
+                tiktok_experiment_id=(
+                    str(tiktok_strategy.get("experiment_id") or "").strip() or None
+                ),
+                tiktok_caption=(
+                    tiktok_caption_path.read_text(encoding="utf-8").strip()
+                    if tiktok_caption_path.exists()
+                    else str(sidecar.get("tiktok_caption") or "").strip() or None
+                ),
+                tiktok_series_identity_embedded=bool(
+                    tiktok_strategy.get("series_identity_embedded")
                 ),
                 growth_target_views=(
                     int(growth_readiness["target_views"])
@@ -10496,6 +11398,106 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/tiktok/config", response_model=TikTokConfig)
+def get_tiktok_config() -> TikTokConfig:
+    return tiktok_config_payload()
+
+
+@app.get("/api/tiktok/uploads", response_model=list[TikTokUploadJob])
+def list_tiktok_uploads() -> list[TikTokUploadJob]:
+    with tiktok_uploads_lock:
+        items = list(tiktok_uploads.values())
+    return sorted(tiktok_uploads_with_queue_positions(items), key=lambda item: item.created_at, reverse=True)
+
+
+@app.post(
+    "/api/tiktok/uploads/{upload_id}/performance",
+    response_model=TikTokUploadJob,
+)
+def update_tiktok_upload_performance(
+    upload_id: str,
+    request: TikTokPerformanceUpdateRequest,
+) -> TikTokUploadJob:
+    return record_tiktok_performance(upload_id, request)
+
+
+@app.get("/api/tiktok/login", response_model=YouTubeLoginStatus)
+def get_tiktok_login() -> YouTubeLoginStatus:
+    return tiktok_login_status
+
+
+@app.post("/api/tiktok/login/start", response_model=YouTubeLoginStatus)
+def start_tiktok_login() -> YouTubeLoginStatus:
+    if not playwright_installed():
+        raise HTTPException(status_code=503, detail="Playwright belum terpasang di backend")
+    return start_tiktok_login_if_needed()
+
+
+@app.post("/api/tiktok/session/check", response_model=TikTokSessionStatus)
+def check_tiktok_session() -> TikTokSessionStatus:
+    require_tiktok_ready()
+    attempts = [build_tiktok_base_command() + ["check-login"]]
+    if tiktok_auth_state_exists() and tiktok_chromium_profile_ready():
+        attempts.append(build_tiktok_base_command(force_profile=True) + ["check-login"])
+    combined_logs: list[str] = []
+    error: str | None = None
+    for command in attempts:
+        try:
+            result = subprocess.run(
+                command,
+                cwd=BASE_DIR,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=max(30, env_int("TIKTOK_SESSION_CHECK_TIMEOUT_SECONDS", 90)),
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            error = "Pemeriksaan sesi TikTok melewati batas waktu. Tutup Chrome yang memakai profile tersebut lalu coba lagi."
+            combined_logs.append(error)
+            continue
+        logs = [line for line in f"{result.stdout}\n{result.stderr}".splitlines() if line.strip()]
+        combined_logs.extend(logs[-60:])
+        if result.returncode == 0 and any(line.startswith("TARGET_ACCOUNT_CONFIRMED:") for line in logs):
+            return TikTokSessionStatus(
+                ok=True,
+                target_handle=tiktok_target_handle(),
+                state_path=str(TIKTOK_PLAYWRIGHT_STATE),
+                message=f"Session @{tiktok_target_handle()} valid dan siap upload Only you.",
+                logs=combined_logs[-80:],
+            )
+        error = tiktok_error_from_logs(logs) or f"Validasi TikTok gagal (exit {result.returncode})."
+    return TikTokSessionStatus(
+        ok=False,
+        target_handle=tiktok_target_handle(),
+        state_path=str(TIKTOK_PLAYWRIGHT_STATE),
+        message="Session TikTok belum valid; tidak ada file yang dipilih atau diunggah.",
+        logs=combined_logs[-80:],
+        error=error,
+    )
+
+
+@app.post("/api/jobs/{job_id}/tiktok-uploads", response_model=TikTokUploadJob)
+def create_tiktok_upload(job_id: str, request: TikTokUploadRequest) -> TikTokUploadJob:
+    require_tiktok_ready()
+    with tiktok_upload_creation_lock:
+        upload = create_tiktok_upload_record(job_id, request)
+        queue_tiktok_upload_jobs([upload])
+    with tiktok_uploads_lock:
+        return tiktok_uploads.get(upload.id, upload)
+
+
+@app.post("/api/jobs/{job_id}/tiktok-uploads/batch", response_model=list[TikTokUploadJob])
+def create_tiktok_upload_batch(job_id: str, request: TikTokBatchUploadRequest) -> list[TikTokUploadJob]:
+    require_tiktok_ready()
+    with tiktok_upload_creation_lock:
+        uploads = create_tiktok_upload_batch_records(job_id, request)
+        queue_tiktok_upload_jobs(uploads)
+    current = {item.id: item for item in list_tiktok_uploads()}
+    return [current.get(item.id, item) for item in uploads]
+
+
 @app.get("/api/youtube/config", response_model=YouTubeConfig)
 def get_youtube_config() -> YouTubeConfig:
     return youtube_config_payload()
@@ -11515,7 +12517,7 @@ def repair_job_clip_context(job_id: str, repair: ClipRepairRequest) -> ClipJob:
     clip_path = output_path_from_url(clip.url)
     if clip_path is None or not clip_path.is_file():
         raise HTTPException(status_code=404, detail="File clip yang akan diperbaiki tidak ditemukan")
-    if active_youtube_uploads_for_job(job_id, {clip.url}):
+    if active_youtube_uploads_for_job(job_id, {clip.url}) or active_tiktok_uploads_for_job(job_id, {clip.url}):
         raise HTTPException(
             status_code=409,
             detail="Tunggu upload clip ini selesai sebelum menjalankan perbaikan",
@@ -11593,7 +12595,10 @@ def delete_job_clips_by_url(job_id: str, clip_urls: set[str]) -> ClipDeleteRespo
             raise HTTPException(status_code=404, detail="Job not found")
         if job.status in {"queued", "running"} or is_running:
             raise HTTPException(status_code=409, detail="Batalkan proses aktif sebelum menghapus output")
-        active_uploads = active_youtube_uploads_for_job(job_id, clip_urls)
+        active_uploads = [
+            *active_youtube_uploads_for_job(job_id, clip_urls),
+            *active_tiktok_uploads_for_job(job_id, clip_urls),
+        ]
         if active_uploads:
             raise HTTPException(
                 status_code=409,
@@ -11655,7 +12660,7 @@ def delete_all_job_clips(job_id: str) -> ClipDeleteResponse:
             raise HTTPException(status_code=404, detail="Job not found")
         if job.status in {"queued", "running"} or is_running:
             raise HTTPException(status_code=409, detail="Batalkan proses aktif sebelum menghapus output")
-        active_uploads = active_youtube_uploads_for_job(job_id)
+        active_uploads = [*active_youtube_uploads_for_job(job_id), *active_tiktok_uploads_for_job(job_id)]
         if active_uploads:
             raise HTTPException(
                 status_code=409,
@@ -11692,7 +12697,7 @@ def delete_job(job_id: str) -> dict[str, str | int]:
             raise HTTPException(status_code=409, detail="Batalkan proses aktif sebelum menghapus riwayatnya")
         if job.status == "queued":
             cancelled_job_ids.add(job_id)
-        active_uploads = active_youtube_uploads_for_job(job_id)
+        active_uploads = [*active_youtube_uploads_for_job(job_id), *active_tiktok_uploads_for_job(job_id)]
         if active_uploads:
             raise HTTPException(
                 status_code=409,

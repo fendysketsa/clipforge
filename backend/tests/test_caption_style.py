@@ -44,6 +44,7 @@ from clipper import (
     clean_transcript_text,
     configure_huggingface_environment,
     contextual_audio_mix_filter,
+    contextual_background_asset,
     contextual_sound_effect_cues,
     content_edit_variation,
     detect_visual_theme,
@@ -591,6 +592,21 @@ def test_text_backdrop_split_uses_a_speaker_dominant_congregation_panel():
     assert "a='255*min(1,max(0,Y/160))'" in value
     assert "fade=t=in" not in value
     assert "fade=t=out" not in value
+
+
+def test_auto_background_uses_mosque_only_for_islamic_context():
+    islamic = ClipCandidate(
+        1, 0, 30, 30, 85, "Menjaga Hati", "test",
+        "Shalat dan doa mengajarkan seorang muslim menjaga hati.",
+    )
+    general = ClipCandidate(
+        2, 0, 30, 30, 85, "Anggaran Proyek", "test",
+        "Cara menyusun anggaran proyek agar biaya tetap terkendali.",
+    )
+
+    assert contextual_background_asset(islamic, "auto_clean") == clipper_module.MOSQUE_BACKGROUND_PATH
+    assert contextual_background_asset(general, "auto_clean") is None
+    assert contextual_background_asset(general, "mosque") == clipper_module.MOSQUE_BACKGROUND_PATH
 
 
 def test_embedded_speaker_banner_frame_is_detected_for_mandatory_auto_split():

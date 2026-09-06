@@ -5277,6 +5277,18 @@ body::before {
   box-shadow: 0 10px 24px rgba(127, 29, 29, 0.13);
 }
 
+.uiButton--tiktok {
+  border-color: rgba(37, 244, 238, 0.28);
+  background: linear-gradient(135deg, rgba(37, 244, 238, 0.11), rgba(254, 44, 85, 0.1));
+  color: #a5f3fc;
+}
+
+.uiButton--tiktok:hover:not(:disabled) {
+  border-color: rgba(37, 244, 238, 0.48);
+  background: linear-gradient(135deg, rgba(37, 244, 238, 0.17), rgba(254, 44, 85, 0.15));
+  box-shadow: 0 10px 24px rgba(8, 145, 178, 0.12);
+}
+
 .uiButton--danger {
   border-color: rgba(251, 113, 133, 0.42);
   background: var(--danger);
@@ -5449,7 +5461,7 @@ details[open] > summary .detailsChevron {
 
 .youtubePerformanceItem {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(250px, 0.9fr) auto;
+  grid-template-columns: minmax(0, 1.5fr) minmax(330px, 1fr) minmax(300px, 0.9fr) auto;
   align-items: center;
   gap: 14px;
   padding: 13px 14px;
@@ -5491,6 +5503,42 @@ details[open] > summary .detailsChevron {
   display: flex;
   align-items: center;
   gap: 7px;
+}
+
+.youtubeFeedMetricEditor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(90px, 1fr));
+  align-items: end;
+  gap: 7px;
+}
+
+.youtubeFeedMetricEditor label {
+  display: grid;
+  gap: 4px;
+  color: #789c94;
+  font-size: 8px;
+}
+
+.youtubeFeedMetricEditor input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(148, 216, 204, 0.14);
+  border-radius: 9px;
+  outline: none;
+  background: rgba(4, 15, 13, 0.78);
+  color: #d7ebe7;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 10px;
+}
+
+.youtubeFeedMetricEditor input:focus {
+  border-color: rgba(94, 234, 212, 0.42);
+}
+
+.youtubeFeedMetricEditor .uiButton {
+  grid-column: 1 / -1;
+  min-height: 32px;
 }
 
 .youtubePerformanceMetrics span {
@@ -5893,6 +5941,25 @@ details[open] > summary .detailsChevron {
   color: #fda4af;
 }
 
+.clipActions .tiktokUploadButton {
+  border-color: rgba(37, 244, 238, 0.2);
+  background: linear-gradient(135deg, rgba(37, 244, 238, 0.08), rgba(254, 44, 85, 0.07));
+  color: #a5f3fc;
+}
+
+.tiktokSetupPanel {
+  border-color: rgba(37, 244, 238, 0.2);
+  background: linear-gradient(135deg, rgba(37, 244, 238, 0.045), rgba(254, 44, 85, 0.035));
+}
+
+.tiktokUploadStatus {
+  border-color: rgba(37, 244, 238, 0.2);
+}
+
+.tiktokUploadError {
+  border-color: rgba(254, 44, 85, 0.28);
+}
+
 .clipActions .clipRepairButton {
   border-color: rgba(94, 234, 212, 0.32);
   background: linear-gradient(135deg, rgba(45, 212, 191, 0.18), rgba(59, 130, 246, 0.12));
@@ -6088,6 +6155,10 @@ details[open] > summary .detailsChevron {
 
   .youtubePerformanceActions {
     justify-content: flex-start;
+  }
+
+  .youtubeFeedMetricEditor {
+    max-width: 360px;
   }
 }
 

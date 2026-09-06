@@ -35,6 +35,26 @@ SOURCE_RIGHTS_BROADCASTER_PATTERNS = (
     r"\bnetwork\b",
     r"\bstudios?\b",
 )
+SOURCE_RIGHTS_REPUBLISH_PATTERNS = (
+    r"\bre[ -]?post(?:ing|ed)?\b",
+    r"\bre[ -]?upload(?:ing|ed)?\b",
+    r"\bupload ulang\b",
+    r"\bunggah ulang\b",
+    r"\bmengunggah ulang\b",
+    r"\bmemublikasikan ulang\b",
+)
+SOURCE_RIGHTS_PROHIBITION_PATTERNS = (
+    r"\bnot (?:allowed|permitted|authorized)\b",
+    r"\bprohibited\b",
+    r"\bforbidden\b",
+    r"\bdilarang\b",
+    r"\btidak (?:diizinkan|diperbolehkan|diperkenankan)\b",
+)
+SOURCE_RIGHTS_COMMERCIAL_PATTERNS = (
+    r"\bcommercial(?:ly)?\b",
+    r"\bkomersial\b",
+    r"\bmoneti[sz](?:e|ed|ation|asi)\b",
+)
 
 
 def trusted_source_channel_ids() -> set[str]:
@@ -95,7 +115,22 @@ def source_rights_risk_reasons(info: dict[str, Any]) -> list[str]:
         " ",
         str(info.get("uploader") or info.get("channel") or ""),
     ).strip().casefold()
+    description = re.sub(
+        r"\s+",
+        " ",
+        str(info.get("description") or ""),
+    ).strip().casefold()
     reasons: list[str] = []
+    explicitly_blocks_commercial_republishing = bool(
+        description
+        and any(re.search(pattern, description, re.I) for pattern in SOURCE_RIGHTS_REPUBLISH_PATTERNS)
+        and any(re.search(pattern, description, re.I) for pattern in SOURCE_RIGHTS_PROHIBITION_PATTERNS)
+        and any(re.search(pattern, description, re.I) for pattern in SOURCE_RIGHTS_COMMERCIAL_PATTERNS)
+    )
+    if explicitly_blocks_commercial_republishing:
+        reasons.append(
+            "deskripsi sumber secara eksplisit melarang upload ulang untuk tujuan komersial/monetisasi"
+        )
     if any(re.search(pattern, uploader, re.I) for pattern in SOURCE_RIGHTS_REUPLOAD_PATTERNS):
         reasons.append("uploader terindikasi akun fan/support/reupload/arsip, bukan pemegang hak utama")
     if any(

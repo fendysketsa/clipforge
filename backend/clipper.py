@@ -28,6 +28,7 @@ from source_rights import (
     source_rights_review_reasons,
     source_rights_risk_reasons,
 )
+from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
 
 
 console = Console()
@@ -3649,9 +3650,12 @@ def render_clean_background_segment(
     clip: ClipCandidate,
     output_path: Path,
     mode: BackgroundMode,
+    *,
+    asset_path: Path | None = None,
 ) -> tuple[Path | None, BackdropProfile | None]:
     """Replace a text-heavy static backdrop while preserving the foreground subject."""
-    if mode == "keep" or not MOSQUE_BACKGROUND_PATH.is_file():
+    selected_asset = asset_path or contextual_background_asset(clip, mode)
+    if mode == "keep" or selected_asset is None or not selected_asset.is_file():
         return None, None
     try:
         import cv2
@@ -3675,7 +3679,7 @@ def render_clean_background_segment(
         console.print("[dim]Background bersih: backdrop tidak terdeteksi penuh tulisan; sumber dipertahankan.[/dim]")
         return None, None
 
-    background = cv2.imread(str(MOSQUE_BACKGROUND_PATH), cv2.IMREAD_COLOR)
+    background = cv2.imread(str(selected_asset), cv2.IMREAD_COLOR)
     if background is None:
         capture.release()
         return None, None
@@ -4475,8 +4479,15 @@ def sanitize_metadata(info: dict) -> dict:
         "webpage_url",
         "ext",
         "license",
+        "description",
     ]
-    return {key: info.get(key) for key in keys}
+    sanitized = {key: info.get(key) for key in keys}
+    # Deskripsi diperlukan untuk menangkap larangan penggunaan komersial yang
+    # dinyatakan pemilik sumber. Batasi ukurannya agar sidecar metadata tetap
+    # kecil dan tidak menyimpan deskripsi panjang tanpa kebutuhan audit.
+    description = str(sanitized.get("description") or "")
+    sanitized["description"] = description[:12000]
+    return sanitized
 
 
 def attach_monetization_provenance(
@@ -8914,6 +8925,23 @@ def clip_has_islamic_context(clip: ClipCandidate) -> bool:
     return bool(words.intersection(ISLAMIC_WORDS))
 
 
+def contextual_background_asset(
+    clip: ClipCandidate,
+    mode: BackgroundMode,
+) -> Path | None:
+    """Use a mosque asset only when the request or transcript supports it.
+
+    Aesthetic variation may be deterministic, but a representational backdrop
+    must never be selected merely to make the batch look different. In auto
+    mode an unmatched topic keeps its original frame.
+    """
+    if mode == "keep":
+        return None
+    if mode == "mosque" or clip_has_islamic_context(clip):
+        return MOSQUE_BACKGROUND_PATH
+    return None
+
+
 def visual_theme_profile(clip: ClipCandidate) -> dict[str, str]:
     theme = detect_visual_theme(clip)
     has_islamic_context = clip_has_islamic_context(clip)
@@ -10590,6 +10618,12 @@ def codex_growth_blueprint(
         and clip.retention_score >= 58
         and clip.boundary_quality in {"payoff_tuntas", "kalimat_tuntas"}
     )
+    tiktok_strategy = build_tiktok_strategy(
+        title=clip.title,
+        hook=clip.hook,
+        text=clip.text,
+        stable_key=f"{clip.index}|{clip.start:.3f}|{clip.end:.3f}",
+    )
     return {
         "version": CODEX_GROWTH_FRAMEWORK_VERSION,
         "owner": FENDY_AUDITOR_NAME,
@@ -10603,6 +10637,7 @@ def codex_growth_blueprint(
                 f"{series_name}|{clip.title}|{clip.text[:500]}".encode("utf-8")
             ).hexdigest()[:10],
         },
+        "tiktok": tiktok_strategy,
         "acquisition": {
             "truthful_topic_specific_packaging": True,
             "title_thumbnail_match_opening": True,
@@ -11733,6 +11768,12 @@ def export_clip(
     subscribe_prompt = subscribe_value_prompt(clip)
     auditor_identity = fendy_auditor_identity(clip, output_format)
     growth_blueprint = codex_growth_blueprint(clip, output_format)
+    tiktok_strategy = growth_blueprint.get("tiktok")
+    if output_format == "vertical_short" and isinstance(tiktok_strategy, dict):
+        series_eyebrow = str(tiktok_strategy.get("series_eyebrow") or "").strip()
+        if series_eyebrow:
+            cover_copy = {**cover_copy, "eyebrow": series_eyebrow}
+            theme_profile = {**theme_profile, "badge": series_eyebrow}
     reaction_cues = (
         []
         if dialogue_first_accent
@@ -11766,6 +11807,10 @@ def export_clip(
     )
     auditor_identity["visible_video_signature"] = drawtext_supported
     automatic_short_title = output_format == "vertical_short" and drawtext_supported
+    if isinstance(tiktok_strategy, dict):
+        tiktok_strategy["series_identity_embedded"] = bool(
+            automatic_short_title and auto_visual_accent != "evidence_stage"
+        )
     subscriber_cta_planned = (
         output_format == "vertical_short"
         or compilation_part_number == compilation_part_count
@@ -11777,6 +11822,10 @@ def export_clip(
         applied_edits.append(
             "Kartu konteks adaptif otomatis ditanam di awal: headline berasal dari hook, sedangkan label dan warna mengikuti isi cerita."
         )
+        if isinstance(tiktok_strategy, dict) and tiktok_strategy.get("series_identity_embedded"):
+            applied_edits.append(
+                f"Identitas seri TikTok '{tiktok_strategy.get('series_label')}' ditanam pada kartu pembuka; variasi visual dipilih stabil dari isi clip."
+            )
     if enhanced_edit and output_format == "vertical_short":
         if auto_visual_accent == "restrained_authority":
             applied_edits.append(
@@ -11956,6 +12005,7 @@ def export_clip(
         },
         "auditor_identity": auditor_identity,
         "codex_growth_blueprint": growth_blueprint,
+        "tiktok_strategy": tiktok_strategy,
         "improvement_ideas": remaining_ideas,
         "applied_edits": applied_edits,
         "codex_ideas_resolved": len(clip.improvement_ideas) - len(remaining_ideas),
@@ -12142,22 +12192,29 @@ def export_clip(
     )
     clean_source: Path | None = None
     backdrop_profile: BackdropProfile | None = None
+    contextual_background = contextual_background_asset(clip, background_mode)
     if embedded_split_profile is None and multi_person_profile is None and active_speaker_split_profile is None:
         clean_source, backdrop_profile = render_clean_background_segment(
             video_path,
             clip,
             clean_background_path,
             background_mode,
+            asset_path=contextual_background,
         )
     if clean_source is not None and backdrop_profile is not None:
         visual_source = clean_source
         visual_start = 0.0
         sidecar_payload["background_replaced"] = True
         sidecar_payload["background_replacement"] = {
-            "asset": MOSQUE_BACKGROUND_PATH.name,
+            "asset": contextual_background.name if contextual_background is not None else "",
             "confidence": backdrop_profile.confidence,
             "dominant_ratio": backdrop_profile.dominant_ratio,
             "aligned_component_count": backdrop_profile.aligned_component_count,
+            "content_relevance": (
+                "explicit_mosque_request"
+                if background_mode == "mosque"
+                else "islamic_transcript_match"
+            ),
         }
         applied_edits.append(
             "Backdrop bertulisan/tanggal diganti interior masjid netral tanpa logo agar fokus tetap pada pembicara."
@@ -12181,6 +12238,7 @@ def export_clip(
     adaptive_text_split_enabled = (
         output_format == "vertical_short"
         and background_mode == "auto_clean"
+        and clip_has_islamic_context(clip)
         and visual_mode == "speaker_split"
         and (backdrop_profile is not None or embedded_split_profile is not None)
         and MOSQUE_CONGREGATION_PATH.is_file()
@@ -12346,6 +12404,9 @@ def export_clip(
         sidecar_payload["adaptive_text_split"] = {
             "enabled": False,
             "reason": (
+                "topic_not_compatible_with_mosque_asset"
+                if background_mode == "auto_clean" and not clip_has_islamic_context(clip)
+                else
                 "not_text_heavy_or_embedded_split"
                 if backdrop_profile is None and embedded_split_profile is None
                 else "unsupported_output_or_filters"
@@ -13170,6 +13231,13 @@ def export_clip(
         social_caption = generate_social_caption(clip, ai_config or AIConfig(), required_hashtags)
         if social_caption:
             (clips_dir / f"{base_name}_caption.txt").write_text(social_caption + "\n", encoding="utf-8")
+            if output_format == "vertical_short" and isinstance(tiktok_strategy, dict):
+                tiktok_caption = tiktok_caption_from_strategy(social_caption, tiktok_strategy)
+                (clips_dir / f"{base_name}_tiktok_caption.txt").write_text(
+                    tiktok_caption + "\n", encoding="utf-8"
+                )
+                sidecar_payload["tiktok_caption"] = tiktok_caption
+                save_json(json_path, sidecar_payload)
 
     return out_path
 

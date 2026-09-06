@@ -13,6 +13,7 @@ from api import (
     ClipJob,
     ClipJobRequest,
     ClipRepairRequest,
+    TikTokUploadJob,
     YouTubeUploadRequest,
     YouTubeUploadJob,
     append_youtube_chapters,
@@ -1020,8 +1021,9 @@ def test_identical_completed_clip_is_not_uploaded_again(monkeypatch, tmp_path):
     assert reused.video_url == completed.video_url
     assert reused.source_job_id == job.id
     assert reused.clip_url == clip.url
-    assert reused.clip_delete_after is not None
+    assert reused.clip_delete_after is None
     assert "Upload dilewati" in reused.logs[0]
+    assert "TikTok" in reused.logs[-1]
 
 
 def test_worker_preflight_detects_duplicate_already_in_queue_history(monkeypatch):
@@ -1436,6 +1438,19 @@ def test_completed_upload_cleanup_deletes_real_file_and_updates_job(monkeypatch,
     monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
     monkeypatch.setattr(api, "jobs", {job.id: job})
     monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+    tiktok_upload = TikTokUploadJob(
+        id="tiktok-upload-1",
+        source_job_id=job.id,
+        clip_url=clip_one.url,
+        clip_name=clip_one.name,
+        status="completed",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:01:00+00:00",
+        caption="caption",
+        target_handle="titikbalikislami",
+        upload_confirmed=True,
+    )
+    monkeypatch.setattr(api, "tiktok_uploads", {tiktok_upload.id: tiktok_upload})
     cleanup_events = []
     original_set_cleanup_step = api.set_youtube_cleanup_step
 
@@ -2579,6 +2594,109 @@ def test_performance_baseline_uses_engaged_views_for_subscriber_conversion():
     medians = api.comparable_performance_medians(current, [current, *peers])
 
     assert medians["subscribers_per_1000_views"] == 10.0
+
+
+def test_performance_feedback_separates_zero_feed_distribution_from_hook():
+    import api
+
+    upload = YouTubeUploadJob(
+        id="upload-zero-feed",
+        source_job_id="job-zero-feed",
+        clip_url="/outputs/demo/clips/clip.mp4",
+        clip_name="clip.mp4",
+        status="completed",
+        created_at=datetime.now(timezone.utc).isoformat(),
+        updated_at=datetime.now(timezone.utc).isoformat(),
+        finished_at=datetime.now(timezone.utc).isoformat(),
+        title="Short Baru",
+        video_url="https://www.youtube.com/watch?v=zerofeed",
+    )
+    snapshot = api.YouTubePerformanceSnapshot(
+        captured_at=datetime.now(timezone.utc).isoformat(),
+        source="manual",
+        views=0,
+        shown_in_feed=0,
+    )
+
+    diagnosis = api.youtube_performance_diagnosis(upload, snapshot, [upload])
+
+    assert diagnosis[0].startswith("Shown in feed masih 0")
+    assert "jangan menilai hook" in diagnosis[0]
+
+
+def test_performance_feedback_flags_persistent_zero_feed_after_72_hours():
+    import api
+
+    old = (datetime.now(timezone.utc) - timedelta(hours=80)).isoformat()
+    upload = YouTubeUploadJob(
+        id="upload-persistent-zero-feed",
+        source_job_id="job-persistent-zero-feed",
+        clip_url="/outputs/demo/clips/clip.mp4",
+        clip_name="clip.mp4",
+        status="completed",
+        created_at=old,
+        updated_at=old,
+        finished_at=old,
+        title="Short Lama",
+        video_url="https://www.youtube.com/watch?v=oldzerofeed",
+    )
+    snapshot = api.YouTubePerformanceSnapshot(
+        captured_at=datetime.now(timezone.utc).isoformat(),
+        source="manual",
+        views=0,
+        shown_in_feed=0,
+    )
+
+    diagnosis = api.youtube_performance_diagnosis(upload, snapshot, [upload])
+
+    assert "setelah 72 jam" in diagnosis[0]
+    assert "feedback Studio" in diagnosis[0]
+
+
+def test_analytics_refresh_preserves_manually_entered_feed_metrics(monkeypatch, tmp_path):
+    import api
+
+    now = datetime.now(timezone.utc).isoformat()
+    upload = YouTubeUploadJob(
+        id="upload-preserve-feed",
+        source_job_id="job-preserve-feed",
+        clip_url="/outputs/demo/clips/clip.mp4",
+        clip_name="clip.mp4",
+        status="completed",
+        created_at=now,
+        updated_at=now,
+        finished_at=now,
+        title="Short dengan Data Studio",
+        video_url="https://www.youtube.com/watch?v=preservefeed",
+        performance_snapshots=[
+            api.YouTubePerformanceSnapshot(
+                captured_at=now,
+                source="manual",
+                views=0,
+                shown_in_feed=125,
+                stayed_to_watch_percentage=47.5,
+            )
+        ],
+    )
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", tmp_path / "youtube_uploads.json")
+    monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+    monkeypatch.setattr(
+        api,
+        "youtube_analytics_snapshot",
+        lambda _upload: api.YouTubePerformanceSnapshot(
+            captured_at=now,
+            source="youtube_analytics",
+            views=42,
+            engaged_views=30,
+        ),
+    )
+
+    updated = api.refresh_youtube_performance(upload.id)
+    latest = updated.performance_snapshots[-1]
+
+    assert latest.views == 42
+    assert latest.shown_in_feed == 125
+    assert latest.stayed_to_watch_percentage == 47.5
 
 
 def test_monetization_preflight_v6_requires_fendy_identity_and_growth_blueprint(monkeypatch):

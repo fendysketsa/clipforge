@@ -58,6 +58,14 @@ export type ClipFile = {
   growth_quality_gate_passed?: boolean | null;
   growth_next_action?: string | null;
   growth_checkpoints?: number[];
+  tiktok_series_id?: string | null;
+  tiktok_series_label?: string | null;
+  tiktok_opening_hook?: string | null;
+  tiktok_visual_recipe?: string | null;
+  tiktok_cta?: string | null;
+  tiktok_experiment_id?: string | null;
+  tiktok_caption?: string | null;
+  tiktok_series_identity_embedded?: boolean;
   youtube_upload_ready?: boolean | null;
   youtube_upload_issue?: string | null;
   automatic_repair_available?: boolean;
@@ -318,6 +326,8 @@ export type YouTubeUploadJob = {
     source: "youtube_analytics" | "youtube_public" | "manual";
     views: number;
     engaged_views?: number | null;
+    shown_in_feed?: number | null;
+    stayed_to_watch_percentage?: number | null;
     average_view_duration?: number | null;
     average_view_percentage?: number | null;
     likes?: number | null;
@@ -328,6 +338,75 @@ export type YouTubeUploadJob = {
   }>;
   backend_now?: string | null;
   clip_delete_remaining_seconds?: number | null;
+  logs: string[];
+  error?: string | null;
+};
+
+export type TikTokConfig = {
+  enabled: boolean;
+  playwright_installed: boolean;
+  auth_state_exists: boolean;
+  auth_state_path: string;
+  auth_status_message: string;
+  chromium_profile_ready: boolean;
+  chromium_profile_path: string;
+  chromium_profile_directory: string;
+  target_handle: string;
+  target_email: string;
+  default_visibility: "only_you";
+  auto_upload_count: number;
+  active_upload_id?: string | null;
+};
+
+export type TikTokUploadJob = {
+  id: string;
+  source_job_id: string;
+  clip_url: string;
+  clip_name: string;
+  status: JobStatus;
+  created_at: string;
+  updated_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  duration_seconds?: number | null;
+  caption: string;
+  visibility: "only_you";
+  target_handle: string;
+  target_email: string;
+  dry_run: boolean;
+  profile_url?: string | null;
+  upload_confirmed: boolean;
+  clip_sha256?: string | null;
+  series_id: string;
+  series_label: string;
+  opening_hook: string;
+  visual_recipe: string;
+  cta: string;
+  experiment_id: string;
+  metrics_to_track: string[];
+  performance_snapshots: Array<{
+    captured_at: string;
+    source: "manual";
+    views: number;
+    watched_full_percentage?: number | null;
+    average_watch_time_seconds?: number | null;
+    likes?: number | null;
+    comments?: number | null;
+    shares?: number | null;
+    saves?: number | null;
+    followers_gained?: number | null;
+  }>;
+  queue_position?: number | null;
+  queue_total?: number | null;
+  logs: string[];
+  error?: string | null;
+};
+
+export type TikTokSessionStatus = {
+  ok: boolean;
+  target_handle: string;
+  state_path: string;
+  message: string;
   logs: string[];
   error?: string | null;
 };

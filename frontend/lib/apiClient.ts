@@ -7,6 +7,9 @@ import type {
   CreateClipJobInput,
   SourceHistoryCheck,
   SourceUsageLogResponse,
+  TikTokConfig,
+  TikTokSessionStatus,
+  TikTokUploadJob,
   YouTubeConfig,
   YouTubeCdpRepairStatus,
   YouTubeCdpRefreshStatus,
@@ -234,6 +237,78 @@ export const getYouTubeConfig = async () => {
   return (await response.json()) as YouTubeConfig;
 };
 
+export const getTikTokConfig = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/tiktok/config`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Gagal memuat konfigurasi TikTok"));
+  }
+  return (await response.json()) as TikTokConfig;
+};
+
+export const getTikTokUploads = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/tiktok/uploads`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Gagal memuat upload TikTok"));
+  }
+  return (await response.json()) as TikTokUploadJob[];
+};
+
+export const updateTikTokUploadPerformance = async (
+  uploadId: string,
+  metrics: {
+    views: number;
+    watched_full_percentage?: number | null;
+    average_watch_time_seconds?: number | null;
+    likes?: number | null;
+    comments?: number | null;
+    shares?: number | null;
+    saves?: number | null;
+    followers_gained?: number | null;
+  },
+) => {
+  const response = await fetch(
+    `${CLIENT_API_BASE}/api/tiktok/uploads/${encodeURIComponent(uploadId)}/performance`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(metrics),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Gagal menyimpan metrik TikTok"));
+  }
+  return (await response.json()) as TikTokUploadJob;
+};
+
+export const checkTikTokSession = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/tiktok/session/check`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Gagal memeriksa session TikTok"));
+  }
+  return (await response.json()) as TikTokSessionStatus;
+};
+
+export const getTikTokLogin = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/tiktok/login`, { cache: "no-store" });
+  if (!response.ok) throw new Error("Gagal membaca status login TikTok");
+  return (await response.json()) as YouTubeLoginStatus;
+};
+
+export const startTikTokLogin = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/tiktok/login/start`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Gagal membuka login TikTok"));
+  }
+  return (await response.json()) as YouTubeLoginStatus;
+};
+
 export const enableYouTubeDirectProfileUpload = async () => {
   const response = await fetch(`${CLIENT_API_BASE}/api/youtube/upload-mode/direct-profile`, {
     method: "POST",
@@ -260,6 +335,37 @@ export const refreshYouTubeUploadPerformance = async (uploadId: string) => {
   );
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response, "Gagal memperbarui performa YouTube"));
+  }
+  return (await response.json()) as YouTubeUploadJob;
+};
+
+export const updateYouTubeUploadPerformance = async (
+  uploadId: string,
+  metrics: {
+    views: number;
+    engaged_views?: number | null;
+    shown_in_feed?: number | null;
+    stayed_to_watch_percentage?: number | null;
+    average_view_duration?: number | null;
+    average_view_percentage?: number | null;
+    likes?: number | null;
+    comments?: number | null;
+    shares?: number | null;
+    subscribers_gained?: number | null;
+    subscribers_lost?: number | null;
+  },
+) => {
+  const response = await fetch(
+    `${CLIENT_API_BASE}/api/youtube/uploads/${encodeURIComponent(uploadId)}/performance`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(metrics),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Gagal menyimpan metrik Studio"));
   }
   return (await response.json()) as YouTubeUploadJob;
 };
@@ -382,6 +488,30 @@ export const createYouTubeUploadBatch = async (jobId: string, clipUrls: string[]
     throw new Error(await responseErrorMessage(response, "Failed to queue YouTube uploads"));
   }
   return (await response.json()) as YouTubeUploadJob[];
+};
+
+export const createTikTokUpload = async (jobId: string, clipUrl: string) => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}/tiktok-uploads`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ clip_url: clipUrl, visibility: "only_you" }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Gagal memasukkan upload TikTok"));
+  }
+  return (await response.json()) as TikTokUploadJob;
+};
+
+export const createTikTokUploadBatch = async (jobId: string, clipUrls: string[] = [], bestCount = 2) => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}/tiktok-uploads/batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ clip_urls: clipUrls, best_count: bestCount, visibility: "only_you" }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Gagal memasukkan batch TikTok"));
+  }
+  return (await response.json()) as TikTokUploadJob[];
 };
 
 export const startAutoViralCampaign = async (input: AutoViralRequest = {}) => {

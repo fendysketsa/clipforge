@@ -20,7 +20,7 @@ import {
 import { useEffect, useState } from "react";
 import { getOutputUrl } from "../../lib/apiClient";
 import { clipDisplayTitle, handleCopyTitle, handleDownload } from "../../lib/utils";
-import type { ClipFile, YouTubeUploadJob } from "../../types/clip.type";
+import type { ClipFile, TikTokUploadJob, YouTubeUploadJob } from "../../types/clip.type";
 import { ThumbnailPrompt } from "./ThumbnailPrompt";
 
 const COMPLETED_UPLOAD_STATUS_TTL_MS = 30_000;
@@ -48,19 +48,45 @@ type ResultsSectionProps = {
   youtubeStatusMessage: string;
   youtubeAutoUploadCount: number;
   youtubeUploads: YouTubeUploadJob[];
+  tiktokEnabled: boolean;
+  tiktokStatusMessage: string;
+  tiktokTargetHandle: string;
+  tiktokAutoUploadCount: number;
+  tiktokUploads: TikTokUploadJob[];
+  isTikTokLoginActive: boolean;
   isYouTubeLoginActive: boolean;
   onDeleteAllClips: () => void;
   onDeleteClip: (clip: ClipFile) => void;
   onDeleteSelectedClips: () => void;
   onCaptureYouTubeSession: () => void;
+  onCheckTikTokSession: () => void;
   onEnableNoCdpMode: () => void;
   onImportYouTubeCdpCookies: () => void;
   onSetupYouTubeOneTimeLogin: () => void;
   onStartYouTubeLogin: () => void;
+  onStartTikTokLogin: () => void;
   onRepairClip: (clip: ClipFile) => void;
   onRefreshYouTubePerformance: (upload: YouTubeUploadJob) => Promise<void>;
+  onSaveYouTubeFeedMetrics: (
+    upload: YouTubeUploadJob,
+    metrics: { shown_in_feed?: number; stayed_to_watch_percentage?: number },
+  ) => Promise<void>;
+  onSaveTikTokPerformance: (
+    upload: TikTokUploadJob,
+    metrics: {
+      views: number;
+      watched_full_percentage?: number;
+      average_watch_time_seconds?: number;
+      comments?: number;
+      shares?: number;
+      saves?: number;
+      followers_gained?: number;
+    },
+  ) => Promise<void>;
   onUploadAllToYouTube: () => void;
+  onUploadAllToTikTok: () => void;
   onUploadClipToYouTube: (clip: ClipFile) => void;
+  onUploadClipToTikTok: (clip: ClipFile) => void;
   onToggleAllClipSelection: () => void;
   onToggleClipSelection: (clipUrl: string) => void;
   onToggleClipCorrect: (clip: ClipFile, isCorrect: boolean) => void;
@@ -228,25 +254,52 @@ export function ResultsSection({
   youtubeStatusMessage,
   youtubeAutoUploadCount,
   youtubeUploads,
+  tiktokEnabled,
+  tiktokStatusMessage,
+  tiktokTargetHandle,
+  tiktokAutoUploadCount,
+  tiktokUploads,
+  isTikTokLoginActive,
   isYouTubeLoginActive,
   onDeleteAllClips,
   onDeleteClip,
   onDeleteSelectedClips,
   onCaptureYouTubeSession,
+  onCheckTikTokSession,
   onEnableNoCdpMode,
   onImportYouTubeCdpCookies,
   onSetupYouTubeOneTimeLogin,
   onStartYouTubeLogin,
+  onStartTikTokLogin,
   onRepairClip,
   onRefreshYouTubePerformance,
+  onSaveYouTubeFeedMetrics,
+  onSaveTikTokPerformance,
   onUploadAllToYouTube,
+  onUploadAllToTikTok,
   onUploadClipToYouTube,
+  onUploadClipToTikTok,
   onToggleAllClipSelection,
   onToggleClipSelection,
   onToggleClipCorrect,
 }: ResultsSectionProps) {
   const [uploadStatusNow, setUploadStatusNow] = useState(() => Date.now());
   const [refreshingPerformanceId, setRefreshingPerformanceId] = useState<string | null>(null);
+  const [savingFeedMetricsId, setSavingFeedMetricsId] = useState<string | null>(null);
+  const [feedMetricDrafts, setFeedMetricDrafts] = useState<Record<string, {
+    shownInFeed: string;
+    stayedToWatch: string;
+  }>>({});
+  const [savingTikTokMetricsId, setSavingTikTokMetricsId] = useState<string | null>(null);
+  const [tiktokMetricDrafts, setTikTokMetricDrafts] = useState<Record<string, {
+    views: string;
+    completion: string;
+    watchTime: string;
+    comments: string;
+    shares: string;
+    saves: string;
+    followers: string;
+  }>>({});
   const selectedCount = selectedClipUrls.length;
   const allClipsSelected = clips.length > 0 && selectedCount === clips.length;
   const usesChromeDebugging = /remote debugging|cdp/i.test(youtubeStatusMessage);
@@ -264,6 +317,65 @@ export function ResultsSection({
       await onRefreshYouTubePerformance(upload);
     } finally {
       setRefreshingPerformanceId(null);
+    }
+  };
+
+  const saveFeedMetrics = async (upload: YouTubeUploadJob) => {
+    const latest = upload.performance_snapshots.at(-1);
+    const draft = feedMetricDrafts[upload.id];
+    const shownRaw = draft?.shownInFeed ?? latest?.shown_in_feed?.toString() ?? "";
+    const stayedRaw = draft?.stayedToWatch ?? latest?.stayed_to_watch_percentage?.toString() ?? "";
+    const shown = shownRaw.trim() === "" ? undefined : Math.max(0, Math.round(Number(shownRaw)));
+    const stayed = stayedRaw.trim() === ""
+      ? undefined
+      : Math.max(0, Math.min(100, Number(stayedRaw)));
+    if (
+      (shown === undefined || !Number.isFinite(shown))
+      && (stayed === undefined || !Number.isFinite(stayed))
+    ) return;
+    setSavingFeedMetricsId(upload.id);
+    try {
+      await onSaveYouTubeFeedMetrics(upload, {
+        shown_in_feed: shown !== undefined && Number.isFinite(shown) ? shown : undefined,
+        stayed_to_watch_percentage: stayed !== undefined && Number.isFinite(stayed) ? stayed : undefined,
+      });
+    } finally {
+      setSavingFeedMetricsId(null);
+    }
+  };
+
+  const saveTikTokMetrics = async (upload: TikTokUploadJob) => {
+    const latest = upload.performance_snapshots.at(-1);
+    const draft = tiktokMetricDrafts[upload.id] || {
+      views: latest?.views?.toString() ?? "0",
+      completion: latest?.watched_full_percentage?.toString() ?? "",
+      watchTime: latest?.average_watch_time_seconds?.toString() ?? "",
+      comments: latest?.comments?.toString() ?? "",
+      shares: latest?.shares?.toString() ?? "",
+      saves: latest?.saves?.toString() ?? "",
+      followers: latest?.followers_gained?.toString() ?? "",
+    };
+    const optionalNumber = (value: string, max?: number) => {
+      if (!value.trim()) return undefined;
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) return undefined;
+      return Math.max(0, max === undefined ? Math.round(parsed) : Math.min(max, parsed));
+    };
+    const views = optionalNumber(draft.views) ?? 0;
+    const watchTime = draft.watchTime.trim() === "" ? undefined : Math.max(0, Number(draft.watchTime));
+    setSavingTikTokMetricsId(upload.id);
+    try {
+      await onSaveTikTokPerformance(upload, {
+        views,
+        watched_full_percentage: optionalNumber(draft.completion, 100),
+        average_watch_time_seconds: watchTime !== undefined && Number.isFinite(watchTime) ? watchTime : undefined,
+        comments: optionalNumber(draft.comments),
+        shares: optionalNumber(draft.shares),
+        saves: optionalNumber(draft.saves),
+        followers_gained: optionalNumber(draft.followers),
+      });
+    } finally {
+      setSavingTikTokMetricsId(null);
     }
   };
 
@@ -301,7 +413,7 @@ export function ResultsSection({
         <div className="sectionTitle">
           <span className="sectionEyebrow">Output</span>
           <h2>Klip Siap Digunakan</h2>
-          <p>Review, unduh, atau kirim langsung ke YouTube.</p>
+          <p>Review, unduh, atau kirim Private ke YouTube dan Only you ke TikTok.</p>
         </div>
         <div className="resultsActions">
           <span className="sectionBadge">{clips.length} klip siap</span>
@@ -331,6 +443,18 @@ export function ResultsSection({
                 <UploadCloud size={16} />
                 <span>Upload {Math.min(youtubeAutoUploadCount, clips.length)} terbaik</span>
               </button>
+              <button
+                type="button"
+                onClick={onUploadAllToTikTok}
+                className="uiButton uiButton--tiktok"
+                disabled={!tiktokEnabled}
+                title={tiktokEnabled
+                  ? `Upload ${Math.min(tiktokAutoUploadCount, clips.length)} clip terbaik ke @${tiktokTargetHandle} sebagai Only you`
+                  : tiktokStatusMessage}
+              >
+                <UploadCloud size={16} />
+                <span>TikTok {Math.min(tiktokAutoUploadCount, clips.length)} terbaik</span>
+              </button>
               <button type="button" onClick={onDeleteAllClips} className="uiButton uiButton--ghostDanger">
                 <Trash2 size={16} />
                 <span>Hapus semua</span>
@@ -339,6 +463,33 @@ export function ResultsSection({
           ) : null}
         </div>
       </div>
+
+      {clips.length > 0 ? (
+        <details className="youtubeSetupPanel tiktokSetupPanel">
+          <summary>
+            <span className="youtubeSetupIcon"><Settings2 size={17} /></span>
+            <span className="youtubeSetupCopy">
+              <strong>TikTok @{tiktokTargetHandle} · Only you</strong>
+              <small>{tiktokStatusMessage}</small>
+            </span>
+            <ChevronDown className="detailsChevron" size={18} />
+          </summary>
+          <div className="youtubeSetupActions">
+            <button type="button" onClick={onStartTikTokLogin} className="uiButton uiButton--tiktok" disabled={isTikTokLoginActive}>
+              <ExternalLink size={16} />
+              <span>{isTikTokLoginActive ? "Menunggu login..." : "Login TikTok sekali"}</span>
+            </button>
+            <button type="button" onClick={onCheckTikTokSession} className="uiButton uiButton--tiktok" disabled={!tiktokEnabled}>
+              <RefreshCw size={16} />
+              <span>Cek sesi TikTok</span>
+            </button>
+            <a className="uiButton uiButton--secondary" href={`https://www.tiktok.com/@${tiktokTargetHandle}`} target="_blank" rel="noreferrer">
+              <ExternalLink size={16} />
+              <span>Buka profil</span>
+            </a>
+          </div>
+        </details>
+      ) : null}
 
       {clips.length > 0 && (usesChromeDebugging || !youtubeEnabled) ? (
         <details className="youtubeSetupPanel">
@@ -442,8 +593,56 @@ export function ResultsSection({
                   <div className="youtubePerformanceMetrics">
                     <span>View <b>{latest ? latest.views.toLocaleString("id-ID") : "—"}</b></span>
                     <span>Engaged <b>{latest?.engaged_views !== null && latest?.engaged_views !== undefined ? latest.engaged_views.toLocaleString("id-ID") : "—"}</b></span>
+                    <span>Feed <b>{latest?.shown_in_feed !== null && latest?.shown_in_feed !== undefined ? latest.shown_in_feed.toLocaleString("id-ID") : "—"}</b></span>
+                    <span>Stayed <b>{latest?.stayed_to_watch_percentage !== null && latest?.stayed_to_watch_percentage !== undefined ? `${latest.stayed_to_watch_percentage.toFixed(1)}%` : "—"}</b></span>
                     <span>Retention <b>{latest?.average_view_percentage !== null && latest?.average_view_percentage !== undefined ? `${latest.average_view_percentage.toFixed(1)}%` : "—"}</b></span>
                     <span title={latest?.engaged_views !== null && latest?.engaged_views !== undefined ? "Subscriber per 1.000 engaged views" : "Subscriber per 1.000 public views"}>Sub/1K <b>{conversion !== null ? conversion.toFixed(2) : "—"}</b></span>
+                  </div>
+                  <div className="youtubeFeedMetricEditor">
+                    <label>
+                      <span>Shown in feed</span>
+                      <input
+                        min="0"
+                        inputMode="numeric"
+                        type="number"
+                        placeholder="0"
+                        value={feedMetricDrafts[upload.id]?.shownInFeed ?? latest?.shown_in_feed?.toString() ?? ""}
+                        onChange={(event) => setFeedMetricDrafts((current) => ({
+                          ...current,
+                          [upload.id]: {
+                            shownInFeed: event.target.value,
+                            stayedToWatch: current[upload.id]?.stayedToWatch ?? latest?.stayed_to_watch_percentage?.toString() ?? "",
+                          },
+                        }))}
+                      />
+                    </label>
+                    <label>
+                      <span>Stayed to watch %</span>
+                      <input
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        inputMode="decimal"
+                        type="number"
+                        placeholder="0–100"
+                        value={feedMetricDrafts[upload.id]?.stayedToWatch ?? latest?.stayed_to_watch_percentage?.toString() ?? ""}
+                        onChange={(event) => setFeedMetricDrafts((current) => ({
+                          ...current,
+                          [upload.id]: {
+                            shownInFeed: current[upload.id]?.shownInFeed ?? latest?.shown_in_feed?.toString() ?? "",
+                            stayedToWatch: event.target.value,
+                          },
+                        }))}
+                      />
+                    </label>
+                    <button
+                      className="uiButton uiButton--secondary"
+                      disabled={savingFeedMetricsId !== null}
+                      onClick={() => { void saveFeedMetrics(upload); }}
+                      type="button"
+                    >
+                      <span>{savingFeedMetricsId === upload.id ? "Menyimpan..." : "Simpan metrik Studio"}</span>
+                    </button>
                   </div>
                   <div className="youtubePerformanceActions">
                     <button
@@ -474,6 +673,28 @@ export function ResultsSection({
             const url = getOutputUrl(clip.url);
             const isSelected = selectedClipUrls.includes(clip.url);
             const latestUpload = youtubeUploads.find((upload) => upload.clip_url === clip.url);
+            const latestTikTokUpload = tiktokUploads.find((upload) => upload.clip_url === clip.url);
+            const latestTikTokPerformance = latestTikTokUpload?.performance_snapshots.at(-1);
+            const tiktokDraft = latestTikTokUpload ? tiktokMetricDrafts[latestTikTokUpload.id] : undefined;
+            const updateTikTokMetricDraft = (
+              field: "views" | "completion" | "watchTime" | "comments" | "shares" | "saves" | "followers",
+              value: string,
+            ) => {
+              if (!latestTikTokUpload) return;
+              setTikTokMetricDrafts((current) => ({
+                ...current,
+                [latestTikTokUpload.id]: {
+                  views: current[latestTikTokUpload.id]?.views ?? latestTikTokPerformance?.views?.toString() ?? "0",
+                  completion: current[latestTikTokUpload.id]?.completion ?? latestTikTokPerformance?.watched_full_percentage?.toString() ?? "",
+                  watchTime: current[latestTikTokUpload.id]?.watchTime ?? latestTikTokPerformance?.average_watch_time_seconds?.toString() ?? "",
+                  comments: current[latestTikTokUpload.id]?.comments ?? latestTikTokPerformance?.comments?.toString() ?? "",
+                  shares: current[latestTikTokUpload.id]?.shares ?? latestTikTokPerformance?.shares?.toString() ?? "",
+                  saves: current[latestTikTokUpload.id]?.saves ?? latestTikTokPerformance?.saves?.toString() ?? "",
+                  followers: current[latestTikTokUpload.id]?.followers ?? latestTikTokPerformance?.followers_gained?.toString() ?? "",
+                  [field]: value,
+                },
+              }));
+            };
             const isLongForm = clip.name.toLowerCase().startsWith("highlight_5menit_")
               || clip.name.toLowerCase().startsWith("resume_cerita_")
               || clip.name.toLowerCase().startsWith("long_animate_");
@@ -503,6 +724,8 @@ export function ResultsSection({
             const isRunningYouTubeUpload = latestUpload?.status === "running";
             const isUploadingToYouTube = isQueuedForYouTube || isRunningYouTubeUpload;
             const isAlreadyUploaded = latestUpload?.status === "completed" && Boolean(latestUpload.video_url);
+            const isUploadingToTikTok = latestTikTokUpload?.status === "queued" || latestTikTokUpload?.status === "running";
+            const isAlreadyOnTikTok = latestTikTokUpload?.status === "completed" && latestTikTokUpload.upload_confirmed;
             const hasRunningUpload = youtubeUploads.some((upload) => upload.status === "running");
             const runningStage = latestUpload ? youtubeRunningStage(latestUpload) : "";
             const queuePosition = latestUpload?.status === "queued"
@@ -670,6 +893,11 @@ export function ResultsSection({
                       ) : null}
                       {clip.output_resolution ? <span className="clipMetric">{clip.output_resolution}</span> : null}
                       {clip.growth_series ? <span className="clipMetric">Seri: {clip.growth_series}</span> : null}
+                      {clip.tiktok_series_label ? (
+                        <span className="clipMetric" title="Identitas seri konsisten untuk TikTok">
+                          TikTok: {clip.tiktok_series_label}
+                        </span>
+                      ) : null}
                       {clip.subscriber_intent_score !== null
                         && clip.subscriber_intent_score !== undefined ? (
                         <span className="clipMetric">Potensi sub {clip.subscriber_intent_score}</span>
@@ -737,6 +965,21 @@ export function ResultsSection({
                           <div className="analysisLine">
                             <BarChart3 size={15} />
                             <span><b>Checkpoint review:</b> {clip.growth_checkpoints.map((item) => item.toLocaleString("id-ID")).join(" → ")} views</span>
+                          </div>
+                        ) : null}
+                        {clip.tiktok_series_label ? (
+                          <div className="analysisBlock analysisApplied">
+                            <div className="analysisIdeaHeader">
+                              <b><CheckCircle2 size={14} /> {clip.tiktok_series_identity_embedded ? "Paket TikTok diterapkan" : "Paket upload TikTok siap"}</b>
+                              <span>{clip.tiktok_series_label}</span>
+                            </div>
+                            <ol>
+                              {clip.tiktok_opening_hook ? <li><b>Hook 0–3 detik:</b> {clip.tiktok_opening_hook}</li> : null}
+                              {clip.tiktok_visual_recipe ? <li><b>{clip.tiktok_series_identity_embedded ? "Arah visual:" : "Arah visual render berikutnya:"}</b> {clip.tiktok_visual_recipe}</li> : null}
+                              {clip.tiktok_cta ? <li><b>CTA:</b> {clip.tiktok_cta}</li> : null}
+                              <li><b>Ukur per seri:</b> completion, watch time, share, save, komentar, dan follower.</li>
+                            </ol>
+                            {clip.tiktok_experiment_id ? <small>Eksperimen {clip.tiktok_experiment_id} · bukan jaminan FYP.</small> : null}
                           </div>
                         ) : null}
                         {clip.strengths?.length ? (
@@ -819,7 +1062,7 @@ export function ResultsSection({
                         type="button"
                         className="clipRepairButton"
                         onClick={() => onRepairClip(clip)}
-                        disabled={isUploadingToYouTube}
+                        disabled={isUploadingToYouTube || isUploadingToTikTok}
                         title="Render ulang hanya MP4 klip ini dengan perbaikan editorial otomatis"
                       >
                         <Sparkles size={16} />
@@ -851,6 +1094,34 @@ export function ResultsSection({
                         </span>
                       </button>
                     )}
+                    {!needsAutomaticRepair && !clip.context_recut_required ? (
+                      <button
+                        type="button"
+                        className="tiktokUploadButton"
+                        onClick={() => onUploadClipToTikTok(clip)}
+                        disabled={!tiktokEnabled || !isUploadReady || !uploadReviewConfirmed || isUploadingToTikTok || isAlreadyOnTikTok}
+                        title={!tiktokEnabled
+                          ? tiktokStatusMessage
+                          : !isUploadReady
+                            ? clip.youtube_upload_issue || "Clip belum lolos quality gate."
+                            : !uploadReviewConfirmed
+                              ? "Centang review konteks, fakta, dan hak penggunaan."
+                              : isAlreadyOnTikTok
+                                ? `Sudah dikirim ke @${tiktokTargetHandle} sebagai Only you.`
+                                : `Kirim ke @${tiktokTargetHandle} sebagai Only you.`}
+                      >
+                        <UploadCloud size={16} />
+                        <span>{isAlreadyOnTikTok
+                          ? "Sudah TikTok"
+                          : latestTikTokUpload?.status === "queued"
+                            ? "Antrean TikTok"
+                            : latestTikTokUpload?.status === "running"
+                              ? "Upload TikTok..."
+                              : latestTikTokUpload?.status === "failed"
+                                ? "Ulangi TikTok"
+                                : "Kirim TikTok"}</span>
+                      </button>
+                    ) : null}
                     <button className="clipDeleteButton" type="button" onClick={() => onDeleteClip(clip)}>
                       <Trash2 size={16} />
                       <span>Hapus</span>
@@ -1061,6 +1332,78 @@ export function ResultsSection({
                           ) : null}
                         </>
                       ) : null}
+                    </div>
+                  ) : null}
+                  {latestTikTokUpload ? (
+                    <div className={`youtubeUploadStatus tiktokUploadStatus status-${latestTikTokUpload.status}`}>
+                      <UploadCloud size={14} />
+                      <span className="youtubeUploadStatusText">
+                        TikTok: {latestTikTokUpload.status}
+                        {latestTikTokUpload.series_label ? ` · ${latestTikTokUpload.series_label}` : null}
+                        {latestTikTokUpload.status === "completed" && latestTikTokUpload.upload_confirmed
+                          ? " · tersimpan Only you"
+                          : null}
+                        {latestTikTokUpload.status === "queued" && latestTikTokUpload.queue_position
+                          ? ` · antrean ${latestTikTokUpload.queue_position}/${latestTikTokUpload.queue_total ?? latestTikTokUpload.queue_position}`
+                          : null}
+                        {latestTikTokUpload.profile_url ? (
+                          <> · <a href={latestTikTokUpload.profile_url} target="_blank" rel="noreferrer">profil</a></>
+                        ) : null}
+                      </span>
+                    </div>
+                  ) : null}
+                  {latestTikTokUpload?.status === "completed" && latestTikTokUpload.upload_confirmed ? (
+                    <details className="clipAnalysisDetails">
+                      <summary>
+                        <span className="detailsSummaryIcon"><BarChart3 size={15} /></span>
+                        <span>
+                          <strong>Catat performa TikTok</strong>
+                          <small>{latestTikTokUpload.series_label || "Seri TikTok"} · bandingkan per eksperimen</small>
+                        </span>
+                        <ChevronDown className="detailsChevron" size={17} />
+                      </summary>
+                      <div className="youtubeFeedMetricEditor">
+                        {([
+                          ["views", "Views", tiktokDraft?.views ?? latestTikTokPerformance?.views?.toString() ?? "0", undefined],
+                          ["completion", "Tonton penuh %", tiktokDraft?.completion ?? latestTikTokPerformance?.watched_full_percentage?.toString() ?? "", 100],
+                          ["watchTime", "Rata-rata detik", tiktokDraft?.watchTime ?? latestTikTokPerformance?.average_watch_time_seconds?.toString() ?? "", undefined],
+                          ["comments", "Komentar", tiktokDraft?.comments ?? latestTikTokPerformance?.comments?.toString() ?? "", undefined],
+                          ["shares", "Share", tiktokDraft?.shares ?? latestTikTokPerformance?.shares?.toString() ?? "", undefined],
+                          ["saves", "Save", tiktokDraft?.saves ?? latestTikTokPerformance?.saves?.toString() ?? "", undefined],
+                          ["followers", "Follower baru", tiktokDraft?.followers ?? latestTikTokPerformance?.followers_gained?.toString() ?? "", undefined],
+                        ] as const).map(([field, label, value, max]) => (
+                          <label key={field}>
+                            <span>{label}</span>
+                            <input
+                              min="0"
+                              max={max}
+                              step={field === "completion" || field === "watchTime" ? "0.1" : "1"}
+                              inputMode={field === "completion" || field === "watchTime" ? "decimal" : "numeric"}
+                              type="number"
+                              value={value}
+                              onChange={(event) => updateTikTokMetricDraft(field, event.target.value)}
+                            />
+                          </label>
+                        ))}
+                        <button
+                          className="uiButton uiButton--tiktok"
+                          disabled={savingTikTokMetricsId !== null}
+                          onClick={() => { void saveTikTokMetrics(latestTikTokUpload); }}
+                          type="button"
+                        >
+                          <span>{savingTikTokMetricsId === latestTikTokUpload.id ? "Menyimpan..." : "Simpan metrik TikTok"}</span>
+                        </button>
+                      </div>
+                    </details>
+                  ) : null}
+                  {latestTikTokUpload?.status === "failed" && latestTikTokUpload.error ? (
+                    <div className="youtubeUploadError tiktokUploadError" title={latestTikTokUpload.error}>
+                      <strong>Upload TikTok gagal</strong>
+                      <span>{latestTikTokUpload.error}</span>
+                      <button type="button" onClick={onCheckTikTokSession}>
+                        <RefreshCw size={14} />
+                        <span>Cek sesi TikTok</span>
+                      </button>
                     </div>
                   ) : null}
                 </div>

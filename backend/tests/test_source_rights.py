@@ -45,3 +45,40 @@ def test_broadcaster_name_alone_is_review_not_automatic_block():
 
     assert source_rights_risk_reasons(source) == []
     assert source_rights_review_reasons(source)
+
+
+def test_explicit_english_commercial_reposting_prohibition_is_high_risk():
+    source = {
+        "title": "Extraordinary Happiness",
+        "uploader": "Original Speaker Official",
+        "description": (
+            "Reposting our content or materials for commercial purposes or "
+            "monetization is not permitted."
+        ),
+    }
+
+    reasons = source_rights_risk_reasons(source)
+
+    assert any("secara eksplisit melarang" in reason for reason in reasons)
+
+
+def test_explicit_indonesian_monetized_reupload_prohibition_is_high_risk():
+    source = {
+        "title": "Kajian Harian",
+        "uploader": "Kanal Resmi",
+        "description": "Dilarang mengunggah ulang materi ini untuk tujuan monetisasi.",
+    }
+
+    reasons = source_rights_risk_reasons(source)
+
+    assert any("komersial/monetisasi" in reason for reason in reasons)
+
+
+def test_noncommercial_share_invitation_is_not_misread_as_a_prohibition():
+    source = {
+        "title": "Kajian Harian",
+        "uploader": "Kanal Resmi",
+        "description": "Silakan bagikan materi ini agar semakin bermanfaat.",
+    }
+
+    assert source_rights_risk_reasons(source) == []

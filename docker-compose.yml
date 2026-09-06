@@ -18,6 +18,18 @@ services:
       JOBS_PATH: /app/data/jobs.json
       YOUTUBE_UPLOADS_PATH: /app/data/youtube_uploads.json
       YOUTUBE_PLAYWRIGHT_STATE: /app/data/youtube_storage_state.json
+      TIKTOK_UPLOADS_PATH: /app/data/tiktok_uploads.json
+      TIKTOK_PLAYWRIGHT_STATE: /app/data/tiktok_storage_state.json
+      TIKTOK_CHROMIUM_USER_DATA_DIR: ${TIKTOK_CHROMIUM_USER_DATA_DIR:-/app/data/tiktok-chrome-profile}
+      TIKTOK_CHROMIUM_PROFILE_DIRECTORY: ${TIKTOK_CHROMIUM_PROFILE_DIRECTORY:-Default}
+      TIKTOK_TARGET_HANDLE: ${TIKTOK_TARGET_HANDLE:-titikbalikislami}
+      TIKTOK_TARGET_EMAIL: ${TIKTOK_TARGET_EMAIL:-fendycn88@gmail.com}
+      TIKTOK_HEADLESS: ${TIKTOK_HEADLESS:-true}
+      TIKTOK_LOGIN_HEADLESS: ${TIKTOK_LOGIN_HEADLESS:-false}
+      TIKTOK_LOGIN_TIMEOUT_SECONDS: ${TIKTOK_LOGIN_TIMEOUT_SECONDS:-300}
+      TIKTOK_AUTO_UPLOAD_COUNT: ${TIKTOK_AUTO_UPLOAD_COUNT:-2}
+      TIKTOK_SESSION_CHECK_TIMEOUT_SECONDS: ${TIKTOK_SESSION_CHECK_TIMEOUT_SECONDS:-90}
+      TIKTOK_DRY_RUN: ${TIKTOK_DRY_RUN:-false}
       DISPLAY: ${YOUTUBE_DISPLAY:-:1}
       XAUTHORITY: /app/data/youtube-gui/Xauthority
       YOUTUBE_HOST_RUNTIME_DIR: /run/fendy-clipper-host-user

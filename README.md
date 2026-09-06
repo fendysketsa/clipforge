@@ -19,8 +19,10 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Apply clean context-aware editing by default: a truthful opening hook, sparse transcript-synced camera cuts, two brief edge cues, and a thin progress line.
 - Reframe a single speaker like a restrained virtual multi-camera edit, cutting between face-safe medium and close-up angles on meaningful speech beats.
 - Record a monetization-readiness audit beside each render, require substantive editorial signals before YouTube upload, preserve verified CC BY attribution, and disclose realistic backdrop replacement.
+- Reject a source before download when its own description explicitly prohibits commercial reposting or monetization; a Creative Commons label, credit, crop, or subtitle cannot override that stated restriction.
 - Use one **Auto FYP Viral** visual system for Shorts and long-form: cinematic clean detail is the base, while 3D depth, archival-TV treatment, reframe, and speaker split are selected from the story instead of exposed as separate presets.
 - Derive visual variation from the clip hook/POV/transcript so batches stay coherent without becoming near-identical mass-produced templates.
+- Keep representational backdrops semantically grounded: automatic mosque replacement/split assets are limited to Islamic transcript matches, while unmatched topics retain their source frame instead of receiving an unrelated decorative image.
 - Render two clip-specific editorial windows on Shorts: a mid-story interpretation and a late source-grounded takeaway. Audit v8 requires the interpretation to share a real source concept, add new analytical language, and occupy two rendered windows; crop, blur, speed, watermark, and subtitle-only changes never satisfy this contract.
 - Keep the original background by default; optional background cleaning remains available for text-heavy sources.
 - Add at most one strong conversation-aware reaction sticker in Clean Detail mode, only for laughter, surprise, prayer, or warnings.
@@ -36,6 +38,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Turn long comparison/explainer Shorts into an adaptive three-beat evidence stage: keep the source video dominant, replace copied logos/patterns/photos with a content-derived context card and progress rail, remove duplicated cold-open excerpts, require a complete fair conclusion, and hold sensitive religious comparisons for manual claim/context review.
 - Record a transparent growth experiment: Shorts target 20K views and 20 subscribers per upload, while long-form keeps a 5K/20-subscriber baseline. Stability means at least three of the latest five comparable uploads reach both targets, measured against the rolling median of the last ten uploads in the same format and series. Targets are experiments, not guaranteed distribution.
 - Store post-publish performance snapshots on each YouTube upload and diagnose reach, retention, and subscriber conversion against comparable uploads in the same series. YouTube Analytics OAuth provides engaged views, watch metrics, shares, and subscribers; the YouTube Data API remains a public-statistics fallback.
+- Let operators enter Studio-only **Shown in feed** and **Stayed to watch** metrics, preserve them across API refreshes, and diagnose zero-view uploads differently when the Short has never entered the feed versus when viewers were actually offered it.
 - Auto-repair a broader shortlist before final selection, enforce a minimum FYP score of 80 for vertical exports, and discard low-score results instead of rendering confusing repair/upload choices.
 - Audit first-30-second editorial readiness across five beat windows (0–3, 3–8, 8–15, 15–22, and 22–30 seconds), including context-dependent openings, speech coverage, dead air, and fresh information. Timing-audited Shorts below 58 are held by the selection/upload gate; this score is a diagnostic, not a promise of actual audience retention.
 - Place one value-led Subscribe invitation after the payoff: Shorts pair it with the contextual discussion prompt in a shorter 1.85-second window, suppress it for clips up to 40 seconds or earned loops, and long-form shows it once in the final chapter. The reason to subscribe follows the topic and never offers rewards or fake urgency.
@@ -170,6 +173,31 @@ Pada Linux, bot juga mengirim satu alert saat baterai yang tidak sedang diisi
 melewati ambang 20%, 10%, dan 5%. Docker Compose memasang `/sys` host secara
 read-only agar container dapat membaca status baterai; ambang dan interval cek
 dapat diubah melalui variabel di atas.
+
+## TikTok Upload (Only you)
+
+Completed clips can be queued to `@titikbalikislami` from the dashboard. Open the
+TikTok connection panel and click **Login TikTok sekali**, finish login/CAPTCHA in
+the visible browser, and wait until ClipForge confirms the target profile. Then
+use **Kirim TikTok** on one reviewed clip or **TikTok 2 terbaik** for a sequential
+batch. Every automated upload is locked to **Only you**; make it public manually
+only after checking context, source rights, caption, sound, and TikTok's notices.
+The uploader aborts before selecting a file if it cannot prove that the browser
+owns `@titikbalikislami`, and stores its queue in
+`backend/data/tiktok_uploads.json`.
+
+For Islamic Shorts, the render and upload pipeline now assigns one stable,
+content-derived series: **Jawaban Ustadz 30 Detik**, **Kesalahan Ibadah
+Sehari-hari**, or **Nasihat yang Sering Disalahpahami**. The opening card carries
+the series identity, while the hook, restrained visual recipe, non-coercive CTA,
+TikTok caption, and experiment ID are saved with the clip. After a confirmed
+upload, use **Catat performa TikTok** on the clip card to record views, full-watch
+rate, shares, saves, and followers gained so results can be compared per series.
+These are measurement tools, not a promise of FYP, followers, or monetization.
+
+Clip cleanup is cross-platform safe: the local render is retained until both the
+matching YouTube and TikTok uploads are genuinely confirmed. A failed, queued,
+cancelled, or dry-run TikTok upload never authorizes automatic deletion.
 
 ## YouTube Studio Upload
 

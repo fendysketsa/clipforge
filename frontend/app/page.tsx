@@ -7,7 +7,10 @@ import {
   cancelJob,
   captureYouTubeBrowserSession,
   checkSourceHistory,
+  checkTikTokSession,
   createJob,
+  createTikTokUpload,
+  createTikTokUploadBatch,
   createYouTubeUpload,
   createYouTubeUploadBatch,
   deleteAllJobClips,
@@ -22,15 +25,21 @@ import {
   getAutoViralCampaign,
   getJob,
   getJobs,
+  getTikTokConfig,
+  getTikTokLogin,
+  getTikTokUploads,
   getYouTubeConfig,
   getYouTubeUploads,
   importYouTubeCdpCookies,
   probeUrlSource,
   refreshYouTubeUploadPerformance,
+  updateYouTubeUploadPerformance,
+  updateTikTokUploadPerformance,
   repairJobClip,
   setupYouTubeOneTimeLogin,
   searchViralContentSources,
   startYouTubeLogin,
+  startTikTokLogin,
   startAutoViralCampaign,
   updateJobClipStatus,
   uploadVideo,
@@ -76,6 +85,8 @@ import type {
   IslamicContentNiche,
   SourceMode,
   SourceHistoryCheck,
+  TikTokConfig,
+  TikTokUploadJob,
   ViralContentSource,
   ViralSearchFilters,
   VideoQuality,
@@ -144,6 +155,8 @@ export default function HomePage() {
   const [jobs, setJobs] = useState<ClipJob[]>([]);
   const [youtubeConfig, setYoutubeConfig] = useState<YouTubeConfig | null>(null);
   const [youtubeUploads, setYoutubeUploads] = useState<YouTubeUploadJob[]>([]);
+  const [tiktokConfig, setTiktokConfig] = useState<TikTokConfig | null>(null);
+  const [tiktokUploads, setTiktokUploads] = useState<TikTokUploadJob[]>([]);
   const [autoViralRun, setAutoViralRun] = useState<AutoViralRun | null>(null);
   const [autoContentNiche, setAutoContentNiche] = useState<IslamicContentNiche>("islamic_practical_life");
   const [autoContentSources, setAutoContentSources] = useState<ViralContentSource[]>([]);
@@ -157,6 +170,7 @@ export default function HomePage() {
   });
   const [isSearchingAutoContent, setIsSearchingAutoContent] = useState(false);
   const [isYouTubeLoginActive, setIsYouTubeLoginActive] = useState(false);
+  const [isTikTokLoginActive, setIsTikTokLoginActive] = useState(false);
   const [selectedHistoryJobIds, setSelectedHistoryJobIds] = useState<string[]>([]);
   const [selectedClipUrls, setSelectedClipUrls] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -179,6 +193,9 @@ export default function HomePage() {
   );
   const hasPendingYouTubeCleanup = youtubeUploads.some(
     (upload) => Boolean(upload.clip_delete_after && !upload.clip_deleted_at),
+  );
+  const hasActiveTikTokUpload = tiktokUploads.some(
+    (upload) => upload.status === "queued" || upload.status === "running",
   );
 
   // min_duration * target_clips must fit within 80% of the video length.
@@ -273,11 +290,18 @@ export default function HomePage() {
     return uploads;
   }, []);
 
+  const loadTikTokUploads = useCallback(async () => {
+    const [config, uploads] = await Promise.all([getTikTokConfig(), getTikTokUploads()]);
+    setTiktokConfig(config);
+    setTiktokUploads(uploads);
+    return uploads;
+  }, []);
+
   const handleSyncData = useCallback(async () => {
     if (isRefreshingData) return;
     setIsRefreshingData(true);
     try {
-      await Promise.all([loadJobs(), loadYouTubeUploads()]);
+      await Promise.all([loadJobs(), loadYouTubeUploads(), loadTikTokUploads()]);
       if (activeJobId) {
         const nextJob = await getJob(activeJobId).catch(() => null);
         if (nextJob) {
@@ -291,12 +315,36 @@ export default function HomePage() {
     } finally {
       setIsRefreshingData(false);
     }
-  }, [activeJobId, isRefreshingData, loadJobs, loadYouTubeUploads]);
+  }, [activeJobId, isRefreshingData, loadJobs, loadTikTokUploads, loadYouTubeUploads]);
 
   useEffect(() => {
     loadJobs().catch(() => undefined);
     loadYouTubeUploads().catch(() => undefined);
-  }, [loadJobs, loadYouTubeUploads]);
+    loadTikTokUploads().catch(() => undefined);
+  }, [loadJobs, loadTikTokUploads, loadYouTubeUploads]);
+
+  useEffect(() => {
+    if (!hasActiveTikTokUpload) return;
+    const interval = window.setInterval(() => {
+      loadTikTokUploads().catch(() => undefined);
+    }, 1500);
+    return () => window.clearInterval(interval);
+  }, [hasActiveTikTokUpload, loadTikTokUploads]);
+
+  useEffect(() => {
+    if (!isTikTokLoginActive) return;
+    const interval = window.setInterval(async () => {
+      const status = await getTikTokLogin().catch(() => null);
+      if (!status) return;
+      setIsTikTokLoginActive(status.active);
+      if (!status.active) {
+        loadTikTokUploads().catch(() => undefined);
+        if (status.error) toast.error(status.error);
+        else toast.success("Login TikTok tersimpan dan siap dipakai.");
+      }
+    }, 1500);
+    return () => window.clearInterval(interval);
+  }, [isTikTokLoginActive, loadTikTokUploads]);
 
   useEffect(() => {
     if (restoredTabJob.current) return;
@@ -1044,6 +1092,92 @@ export default function HomePage() {
     [youtubeConfig?.auth_status_message, youtubeConfig?.upload_uses_cdp],
   );
 
+  const handleCheckTikTokSession = useCallback(async () => {
+    try {
+      const result = await toast.promise(checkTikTokSession(), {
+        loading: "Memeriksa akun TikTok tanpa mengunggah file...",
+        success: (status) => status.ok
+          ? `Session @${status.target_handle} valid.`
+          : status.error || status.message,
+        error: (sessionError) => sessionError instanceof Error ? sessionError.message : "Gagal memeriksa TikTok",
+      });
+      if (!result.ok) throw new Error(result.error || result.message);
+      await loadTikTokUploads();
+    } catch (sessionError) {
+      if (sessionError instanceof Error) toast.error(sessionError.message);
+    }
+  }, [loadTikTokUploads]);
+
+  const handleStartTikTokLogin = useCallback(async () => {
+    try {
+      const status = await startTikTokLogin();
+      setIsTikTokLoginActive(status.active);
+      toast.success("Jendela TikTok dibuka. Login, selesaikan captcha, lalu buka profil @titikbalikislami.");
+    } catch (loginError) {
+      toast.error(loginError instanceof Error ? loginError.message : "Gagal membuka login TikTok");
+    }
+  }, []);
+
+  const handleUploadClipToTikTok = useCallback(async (clip: ClipFile) => {
+    if (!job) return;
+    try {
+      const upload = await toast.promise(createTikTokUpload(job.id, clip.url), {
+        loading: "Memasukkan clip ke antrean TikTok Only you...",
+        success: (item) => item.status === "completed"
+          ? "Clip identik sudah ada di TikTok; duplikat dilewati."
+          : `Upload TikTok @${item.target_handle} masuk antrean sebagai Only you.`,
+        error: (uploadError) => uploadError instanceof Error ? uploadError.message : "Gagal upload TikTok",
+      });
+      setTiktokUploads((current) => [upload, ...current.filter((item) => item.id !== upload.id)]);
+      loadTikTokUploads().catch(() => undefined);
+    } catch {
+      // Status sudah ditampilkan oleh toast.
+    }
+  }, [job, loadTikTokUploads]);
+
+  const handleUploadAllToTikTok = useCallback(async () => {
+    if (!job?.clips.length) return;
+    const bestCount = tiktokConfig?.auto_upload_count ?? 2;
+    try {
+      const uploads = await toast.promise(createTikTokUploadBatch(job.id, [], bestCount), {
+        loading: `Memilih ${Math.min(bestCount, job.clips.length)} clip terbaik untuk TikTok...`,
+        success: (items) => `${items.length} clip masuk antrean TikTok Only you.`,
+        error: (uploadError) => uploadError instanceof Error ? uploadError.message : "Gagal membuat batch TikTok",
+      });
+      setTiktokUploads((current) => {
+        const ids = new Set(uploads.map((item) => item.id));
+        return [...uploads, ...current.filter((item) => !ids.has(item.id))];
+      });
+      loadTikTokUploads().catch(() => undefined);
+    } catch {
+      // Status sudah ditampilkan oleh toast.
+    }
+  }, [job, loadTikTokUploads, tiktokConfig?.auto_upload_count]);
+
+  const handleSaveTikTokPerformance = useCallback(async (
+    upload: TikTokUploadJob,
+    metrics: {
+      views: number;
+      watched_full_percentage?: number;
+      average_watch_time_seconds?: number;
+      comments?: number;
+      shares?: number;
+      saves?: number;
+      followers_gained?: number;
+    },
+  ) => {
+    try {
+      const updated = await toast.promise(updateTikTokUploadPerformance(upload.id, metrics), {
+        loading: "Menyimpan performa TikTok per seri...",
+        success: "Metrik TikTok tersimpan untuk eksperimen seri ini.",
+        error: (metricError) => metricError instanceof Error ? metricError.message : "Gagal menyimpan metrik TikTok",
+      });
+      setTiktokUploads((current) => current.map((item) => item.id === updated.id ? updated : item));
+    } catch {
+      // toast.promise sudah menampilkan error.
+    }
+  }, []);
+
   const handleUploadClipToYouTube = useCallback(
     async (clip: ClipFile) => {
       if (!job) return;
@@ -1116,6 +1250,40 @@ export default function HomePage() {
           ? refreshError.message
           : "Gagal memperbarui performa YouTube",
       });
+      setYoutubeUploads((current) => current.map((item) => item.id === updated.id ? updated : item));
+    } catch {
+      // toast.promise already displayed the backend error.
+    }
+  }, []);
+
+  const handleSaveYouTubeFeedMetrics = useCallback(async (
+    upload: YouTubeUploadJob,
+    metrics: { shown_in_feed?: number; stayed_to_watch_percentage?: number },
+  ) => {
+    const latest = upload.performance_snapshots.at(-1);
+    try {
+      const updated = await toast.promise(
+        updateYouTubeUploadPerformance(upload.id, {
+          views: latest?.views ?? 0,
+          engaged_views: latest?.engaged_views,
+          average_view_duration: latest?.average_view_duration,
+          average_view_percentage: latest?.average_view_percentage,
+          likes: latest?.likes,
+          comments: latest?.comments,
+          shares: latest?.shares,
+          subscribers_gained: latest?.subscribers_gained,
+          subscribers_lost: latest?.subscribers_lost,
+          shown_in_feed: metrics.shown_in_feed,
+          stayed_to_watch_percentage: metrics.stayed_to_watch_percentage,
+        }),
+        {
+          loading: "Menyimpan Shown in feed dan Stayed to watch...",
+          success: "Metrik Shorts Studio tersimpan.",
+          error: (saveError) => saveError instanceof Error
+            ? saveError.message
+            : "Gagal menyimpan metrik Shorts Studio",
+        },
+      );
       setYoutubeUploads((current) => current.map((item) => item.id === updated.id ? updated : item));
     } catch {
       // toast.promise already displayed the backend error.
@@ -1442,6 +1610,12 @@ export default function HomePage() {
         ].filter(Boolean).join(" · ")}
         youtubeAutoUploadCount={youtubeConfig?.auto_upload_count ?? 2}
         youtubeUploads={youtubeUploads}
+        tiktokEnabled={Boolean(tiktokConfig?.enabled)}
+        tiktokStatusMessage={tiktokConfig?.auth_status_message ?? "Session TikTok belum siap"}
+        tiktokTargetHandle={tiktokConfig?.target_handle ?? "titikbalikislami"}
+        tiktokAutoUploadCount={tiktokConfig?.auto_upload_count ?? 2}
+        tiktokUploads={tiktokUploads}
+        isTikTokLoginActive={isTikTokLoginActive}
         isYouTubeLoginActive={isYouTubeLoginActive}
         onDeleteAllClips={handleDeleteAllClips}
         onDeleteClip={handleDeleteClip}
@@ -1452,9 +1626,15 @@ export default function HomePage() {
         onSetupYouTubeOneTimeLogin={handleSetupYouTubeOneTimeLogin}
         onStartYouTubeLogin={handleStartYouTubeLogin}
         onRepairClip={handleRepairClip}
+        onCheckTikTokSession={handleCheckTikTokSession}
+        onStartTikTokLogin={handleStartTikTokLogin}
         onRefreshYouTubePerformance={handleRefreshYouTubePerformance}
+        onSaveYouTubeFeedMetrics={handleSaveYouTubeFeedMetrics}
+        onSaveTikTokPerformance={handleSaveTikTokPerformance}
         onUploadAllToYouTube={handleUploadAllToYouTube}
+        onUploadAllToTikTok={handleUploadAllToTikTok}
         onUploadClipToYouTube={handleUploadClipToYouTube}
+        onUploadClipToTikTok={handleUploadClipToTikTok}
         onToggleAllClipSelection={handleToggleAllClipSelection}
         onToggleClipSelection={handleToggleClipSelection}
         onToggleClipCorrect={handleToggleClipCorrect}
