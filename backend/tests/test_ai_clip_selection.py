@@ -7,6 +7,8 @@ from clipper import (
     TranscriptSegment,
     ai_rescore_candidates,
     build_long_form_story_sequence,
+    candidate_is_high_information_extended_short,
+    candidate_rank_score,
     editorial_safety_profile,
     order_compilation_for_retention,
     select_candidates,
@@ -263,6 +265,54 @@ def test_final_short_quality_gate_discards_result_below_fyp_80():
         2,
         minimum_score=clipper.SHORT_EXPORT_MIN_FYP_SCORE,
     ) == [ready]
+
+
+def test_complete_high_information_84_second_short_is_not_penalized_for_length():
+    extended = make_candidate(
+        0,
+        0,
+        86,
+        "Kenapa biaya ini begitu besar? Pertama ada risiko, kemudian ada bukti, "
+        "tetapi masalahnya belum selesai. Karena itu jawabannya harus dilihat utuh. "
+        "Akhirnya, keputusan yang tepat adalah memeriksa dampaknya terlebih dahulu.",
+    )
+    extended.end = 84
+    extended.duration = 84
+    extended.key_point_score = 82
+    extended.retention_score = 78
+    extended.narrative_arc_score = 92
+    extended.narrative_arc_complete = True
+    extended.boundary_quality = "payoff_tuntas"
+
+    short = make_candidate(
+        1,
+        120,
+        86,
+        "Kenapa biaya ini besar? Karena ada risiko. Jadi periksa dampaknya.",
+    )
+    short.end = 158
+    short.duration = 38
+    short.key_point_score = 82
+    short.retention_score = 78
+    short.narrative_arc_score = 92
+    short.narrative_arc_complete = True
+    short.boundary_quality = "payoff_tuntas"
+
+    assert candidate_is_high_information_extended_short(extended) is True
+    assert candidate_rank_score(extended) > candidate_rank_score(short)
+
+
+def test_long_short_with_weak_progression_keeps_duration_penalty():
+    candidate = make_candidate(0, 0, 90, "Konteks umum yang terus diulang tanpa payoff.")
+    candidate.end = 84
+    candidate.duration = 84
+    candidate.key_point_score = 82
+    candidate.retention_score = 62
+    candidate.narrative_arc_score = 72
+    candidate.narrative_arc_complete = False
+    candidate.boundary_quality = "kalimat_tuntas"
+
+    assert candidate_is_high_information_extended_short(candidate) is False
 
 
 def test_ai_rescore_accepts_common_alternate_candidate_key(monkeypatch):

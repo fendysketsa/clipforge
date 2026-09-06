@@ -5475,9 +5475,12 @@ def comparable_performance_medians(
         if field_values:
             medians[field] = float(median(field_values))
     conversion_values = [
-        (item.subscribers_gained or 0) * 1000 / item.views
+        (item.subscribers_gained or 0)
+        * 1000
+        / (item.engaged_views if item.engaged_views is not None else item.views)
         for item in peers
-        if item.views > 0 and item.subscribers_gained is not None
+        if (item.engaged_views if item.engaged_views is not None else item.views) > 0
+        and item.subscribers_gained is not None
     ]
     if conversion_values:
         medians["subscribers_per_1000_views"] = float(median(conversion_values))
@@ -5529,11 +5532,16 @@ def youtube_performance_diagnosis(
                 "Persentase tonton berada di bawah median seri; majukan payoff dan pangkas bagian yang tidak menambah informasi."
             )
         baseline_conversion = baselines.get("subscribers_per_1000_views", 0)
-        if snapshot.views and subscribers is not None and baseline_conversion:
-            conversion = subscribers * 1000 / snapshot.views
+        conversion_views = (
+            snapshot.engaged_views
+            if snapshot.engaged_views is not None
+            else snapshot.views
+        )
+        if conversion_views and subscribers is not None and baseline_conversion:
+            conversion = subscribers * 1000 / conversion_views
             if conversion < baseline_conversion * 0.8:
                 diagnosis.append(
-                    "Konversi subscriber berada di bawah median seri; buat alasan mengikuti seri lebih spesifik."
+                    "Konversi subscriber per engaged view berada di bawah median seri; buat alasan mengikuti seri lebih spesifik."
                 )
     if not diagnosis:
         diagnosis.append(

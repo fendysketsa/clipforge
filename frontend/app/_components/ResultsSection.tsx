@@ -58,6 +58,7 @@ type ResultsSectionProps = {
   onSetupYouTubeOneTimeLogin: () => void;
   onStartYouTubeLogin: () => void;
   onRepairClip: (clip: ClipFile) => void;
+  onRefreshYouTubePerformance: (upload: YouTubeUploadJob) => Promise<void>;
   onUploadAllToYouTube: () => void;
   onUploadClipToYouTube: (clip: ClipFile) => void;
   onToggleAllClipSelection: () => void;
@@ -237,6 +238,7 @@ export function ResultsSection({
   onSetupYouTubeOneTimeLogin,
   onStartYouTubeLogin,
   onRepairClip,
+  onRefreshYouTubePerformance,
   onUploadAllToYouTube,
   onUploadClipToYouTube,
   onToggleAllClipSelection,
@@ -244,6 +246,7 @@ export function ResultsSection({
   onToggleClipCorrect,
 }: ResultsSectionProps) {
   const [uploadStatusNow, setUploadStatusNow] = useState(() => Date.now());
+  const [refreshingPerformanceId, setRefreshingPerformanceId] = useState<string | null>(null);
   const selectedCount = selectedClipUrls.length;
   const allClipsSelected = clips.length > 0 && selectedCount === clips.length;
   const usesChromeDebugging = /remote debugging|cdp/i.test(youtubeStatusMessage);
@@ -251,6 +254,18 @@ export function ResultsSection({
   const hasCleanupCountdown = youtubeUploads.some(
     (upload) => Boolean(upload.clip_delete_after && !upload.clip_deleted_at),
   );
+  const performanceUploads = youtubeUploads
+    .filter((upload) => upload.status === "completed" && Boolean(upload.video_url))
+    .slice(0, 8);
+
+  const refreshPerformance = async (upload: YouTubeUploadJob) => {
+    setRefreshingPerformanceId(upload.id);
+    try {
+      await onRefreshYouTubePerformance(upload);
+    } finally {
+      setRefreshingPerformanceId(null);
+    }
+  };
 
   useEffect(() => {
     if (!hasCleanupCountdown) return;
@@ -392,6 +407,62 @@ export function ResultsSection({
                 </button>
               </>
             )}
+          </div>
+        </details>
+      ) : null}
+
+      {performanceUploads.length > 0 ? (
+        <details className="youtubePerformancePanel">
+          <summary>
+            <span className="youtubeSetupIcon"><BarChart3 size={17} /></span>
+            <span className="youtubeSetupCopy">
+              <strong>Loop belajar YouTube</strong>
+              <small>Bandingkan view, retention, dan subscriber per seri—bukan tebakan skor FYP.</small>
+            </span>
+            <ChevronDown className="detailsChevron" size={18} />
+          </summary>
+          <div className="youtubePerformanceList">
+            {performanceUploads.map((upload) => {
+              const latest = upload.performance_snapshots.at(-1);
+              const conversionViews = latest?.engaged_views ?? latest?.views ?? 0;
+              const conversion = latest?.subscribers_gained !== null
+                && latest?.subscribers_gained !== undefined
+                && conversionViews > 0
+                ? (latest.subscribers_gained * 1000) / conversionViews
+                : null;
+              return (
+                <article className="youtubePerformanceItem" key={upload.id}>
+                  <div className="youtubePerformanceCopy">
+                    <strong>{upload.title}</strong>
+                    <small>
+                      {upload.growth_series || "Seri belum ditentukan"} · target {upload.growth_target_views.toLocaleString("id-ID")} view / {upload.growth_target_subscribers} sub
+                    </small>
+                    {upload.performance_diagnosis?.[0] ? <p>{upload.performance_diagnosis[0]}</p> : null}
+                  </div>
+                  <div className="youtubePerformanceMetrics">
+                    <span>View <b>{latest ? latest.views.toLocaleString("id-ID") : "—"}</b></span>
+                    <span>Engaged <b>{latest?.engaged_views !== null && latest?.engaged_views !== undefined ? latest.engaged_views.toLocaleString("id-ID") : "—"}</b></span>
+                    <span>Retention <b>{latest?.average_view_percentage !== null && latest?.average_view_percentage !== undefined ? `${latest.average_view_percentage.toFixed(1)}%` : "—"}</b></span>
+                    <span title={latest?.engaged_views !== null && latest?.engaged_views !== undefined ? "Subscriber per 1.000 engaged views" : "Subscriber per 1.000 public views"}>Sub/1K <b>{conversion !== null ? conversion.toFixed(2) : "—"}</b></span>
+                  </div>
+                  <div className="youtubePerformanceActions">
+                    <button
+                      className="uiButton uiButton--secondary"
+                      disabled={refreshingPerformanceId !== null}
+                      onClick={() => { void refreshPerformance(upload); }}
+                      type="button"
+                    >
+                      <RefreshCw className={refreshingPerformanceId === upload.id ? "spin" : ""} size={15} />
+                      <span>{refreshingPerformanceId === upload.id ? "Mengambil..." : "Perbarui"}</span>
+                    </button>
+                    <a href={upload.video_url || "#"} target="_blank" rel="noreferrer">
+                      <ExternalLink size={15} />
+                      <span>Studio/video</span>
+                    </a>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </details>
       ) : null}

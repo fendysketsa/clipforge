@@ -182,3 +182,42 @@ Median sampel 50 Shorts terbaru channel sekitar **62 ribu views**. Video referen
 - Template statis yang sama tidak diproduksi massal. Warna, headline, progress rail, crop, dan beat berasal dari isi setiap video.
 - Status lisensi video referensi tidak diketahui, sehingga video tersebut tidak digunakan sebagai aset produksi.
 - Template dan scoring adalah alat eksperimen editorial, bukan bukti kelayakan monetisasi atau jaminan distribusi.
+
+---
+
+# Referensi 5: `@CeritaLangitSenja`
+
+Audit dilakukan 5 September 2026 dari halaman publik channel, 48 Shorts terbaru, dan metadata tiga breakout terbaru. Angka dapat berubah.
+
+## Fakta publik
+
+- Channel dibuat **3 Januari 2023**, memiliki **676 video**, sekitar **692.011 total view**, dan sekitar **1,39 ribu subscriber** saat audit.
+- Pada 48 Shorts terbaru, median hanya sekitar **1.400 view**; 39 video berada di bawah 3.000 view dan hanya tiga mencapai 10.000 view.
+- Tiga breakout berjumlah sekitar **62 ribu, 30 ribu, dan 30 ribu view**. Ketiganya menyumbang sekitar **62,2%** dari seluruh view pada sampel 48 video, sehingga channel belum menunjukkan hasil tinggi yang stabil pada setiap upload.
+- Tiga breakout terbaru berdurasi **85, 89, dan 83 detik**. Temanya spesifik: politik NU, RUU Perampasan Aset/Megawati, dan biaya politik Rp100 miliar untuk masuk Senayan.
+- Ketiganya terbit setelah perubahan penghitungan 24 Agustus 2026: public view bertambah saat video mulai diputar, sedangkan YPP tetap memakai engaged views. Perbandingan dengan angka lama harus memakai metrik yang setara.
+- Subscriber yang berasal dari masing-masing video tidak tersedia secara publik. Rasio subscriber per video tidak boleh ditebak dari total subscriber channel.
+- Status lisensi, izin komersial, dan monetisasi tiap video tidak dapat dibuktikan dari shelf publik.
+
+## Pola yang dapat diuji tanpa menyalin
+
+1. Breakout memakai subjek atau institusi yang langsung dikenali, konflik yang konkret, dan konsekuensi publik; bukan motivasi generik.
+2. Angka atau objek spesifik memperjelas taruhan cerita, sementara judul tetap harus dijawab oleh isi video.
+3. Durasi 80–90 detik dapat bekerja ketika setiap bagian menambah sebab, bukti, atau akibat sampai payoff. Durasi panjang sendiri bukan sinyal viral.
+4. Wajah pembicara tetap dominan, caption kontras mudah dipindai, dan perubahan visual tidak mengambil alih argumen.
+5. Volume upload menciptakan lebih banyak eksperimen, tetapi distribusinya sangat timpang. Tiga pemenang tidak membuktikan bahwa semua template berhasil.
+6. Deskripsi channel bertema legenda Nusantara, sedangkan upload terbaru banyak bertema politik/agama. Pivot seperti ini perlu identitas seri yang jelas agar subscriber memahami alasan untuk kembali.
+
+## Yang diterapkan ke ClipForge
+
+- `candidate_is_high_information_extended_short` membuat kandidat 60–105 detik dapat bersaing dengan Short 25–45 detik hanya jika audit narasi lengkap, retention-ready minimal 70, point utama minimal 70, dan payoff tuntas.
+- Target ranking kandidat panjang yang lolos diarahkan ke sekitar 84 detik. Kandidat panjang yang datar tetap menerima penalti durasi.
+- AI rescoring menerima flag eksplisit bahwa kandidat panjang telah lolos quality gate, sehingga model tidak menganggap semua durasi di atas satu menit setara.
+- Dashboard sekarang mengekspos **Loop belajar YouTube** dan tombol **Perbarui** untuk public view, engaged view, average view percentage, serta subscriber per 1.000 engaged view. Feedback aktual menjadi dasar iterasi; skor FYP tetap hanya kesiapan editorial.
+
+## Guardrail
+
+- Nama tokoh, footage, wajah, caption, logo, dan branding referensi tidak disalin.
+- Konflik atau tuduhan politik tidak boleh diperkeras, dikeluarkan dari konteks, atau ditulis sebagai fakta bila sumber hanya menyampaikan opini/klaim.
+- Jangan memakai bot, sub4sub, pembelian traffic, atau ajakan yang menipu. Pertumbuhan harus berasal dari interaksi manusia yang autentik.
+- Reused content tetap memerlukan kontribusi editorial substantif dan hak komersial yang dapat dibuktikan; crop, subtitle, atau efek saja tidak cukup.

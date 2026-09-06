@@ -26,6 +26,7 @@ import {
   getYouTubeUploads,
   importYouTubeCdpCookies,
   probeUrlSource,
+  refreshYouTubeUploadPerformance,
   repairJobClip,
   setupYouTubeOneTimeLogin,
   searchViralContentSources,
@@ -1106,6 +1107,21 @@ export default function HomePage() {
     }
   }, [job, loadYouTubeUploads, youtubeConfig?.auto_upload_count]);
 
+  const handleRefreshYouTubePerformance = useCallback(async (upload: YouTubeUploadJob) => {
+    try {
+      const updated = await toast.promise(refreshYouTubeUploadPerformance(upload.id), {
+        loading: "Mengambil view, retention, dan subscriber dari YouTube...",
+        success: "Performa YouTube diperbarui.",
+        error: (refreshError) => refreshError instanceof Error
+          ? refreshError.message
+          : "Gagal memperbarui performa YouTube",
+      });
+      setYoutubeUploads((current) => current.map((item) => item.id === updated.id ? updated : item));
+    } catch {
+      // toast.promise already displayed the backend error.
+    }
+  }, []);
+
   const handleStartYouTubeLogin = useCallback(async () => {
     if (usesChromeDebugging()) {
       try {
@@ -1436,6 +1452,7 @@ export default function HomePage() {
         onSetupYouTubeOneTimeLogin={handleSetupYouTubeOneTimeLogin}
         onStartYouTubeLogin={handleStartYouTubeLogin}
         onRepairClip={handleRepairClip}
+        onRefreshYouTubePerformance={handleRefreshYouTubePerformance}
         onUploadAllToYouTube={handleUploadAllToYouTube}
         onUploadClipToYouTube={handleUploadClipToYouTube}
         onToggleAllClipSelection={handleToggleAllClipSelection}

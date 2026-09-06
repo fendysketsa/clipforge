@@ -2541,6 +2541,46 @@ def test_performance_feedback_diagnoses_conversion_gap():
     assert "konversi subscriber belum" in diagnosis[0]
 
 
+def test_performance_baseline_uses_engaged_views_for_subscriber_conversion():
+    import api
+
+    current = YouTubeUploadJob(
+        id="upload-current",
+        source_job_id="job-current",
+        clip_url="/outputs/demo/clips/current.mp4",
+        clip_name="current.mp4",
+        status="completed",
+        created_at="2026-09-01T00:00:00+00:00",
+        updated_at="2026-09-01T00:00:00+00:00",
+        title="Current",
+        video_url="https://www.youtube.com/watch?v=current123",
+        growth_series="Hikmah Praktis",
+    )
+    peers = []
+    for index in range(3):
+        peers.append(
+            current.model_copy(
+                update={
+                    "id": f"upload-peer-{index}",
+                    "video_url": f"https://www.youtube.com/watch?v=peer{index}",
+                    "performance_snapshots": [
+                        api.YouTubePerformanceSnapshot(
+                            captured_at="2026-09-03T00:00:00+00:00",
+                            source="youtube_analytics",
+                            views=10000,
+                            engaged_views=1000,
+                            subscribers_gained=10,
+                        )
+                    ],
+                }
+            )
+        )
+
+    medians = api.comparable_performance_medians(current, [current, *peers])
+
+    assert medians["subscribers_per_1000_views"] == 10.0
+
+
 def test_monetization_preflight_v6_requires_fendy_identity_and_growth_blueprint(monkeypatch):
     import api
 

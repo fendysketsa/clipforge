@@ -6578,11 +6578,28 @@ def candidate_topic_similarity(left: ClipCandidate, right: ClipCandidate) -> flo
     return max(jaccard, containment)
 
 
+def candidate_is_high_information_extended_short(candidate: ClipCandidate) -> bool:
+    """Recognize a complete 60-105 second Short without rewarding filler.
+
+    A longer Short should compete on information and story quality, not on
+    duration alone. This reuses the timing audits that gate transcript-derived
+    candidates, so a long window cannot win merely by containing more words.
+    """
+    return bool(
+        60.0 < candidate.duration <= 105.0
+        and candidate.narrative_arc_complete
+        and candidate.retention_score >= 70
+        and candidate.key_point_score >= 70
+        and candidate.boundary_quality == "payoff_tuntas"
+    )
+
+
 def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0) -> float:
     micro_thesis = micro_thesis_profile(candidate.text, candidate.duration)
     social_anecdote = social_anecdote_profile(candidate.text, candidate.duration)
     delayed_punchline = delayed_punchline_profile(candidate.text, candidate.duration)
     structured_comparison = structured_comparison_profile(candidate.text, candidate.duration)
+    high_information_extended = candidate_is_high_information_extended_short(candidate)
     effective_target = (
         23.0
         if social_anecdote["qualified"]
@@ -6592,11 +6609,13 @@ def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0
         if structured_comparison["qualified"]
         else 26.0
         if micro_thesis["qualified"]
+        else 84.0
+        if high_information_extended
         else target_duration
     )
     duration_priority = (
         8.0
-        if 25.0 <= candidate.duration <= 45.0
+        if 25.0 <= candidate.duration <= 45.0 or high_information_extended
         else 2.0
         if 20.0 <= candidate.duration <= 60.0
         else -min(18.0, abs(candidate.duration - 45.0) * 0.14)
@@ -6614,6 +6633,7 @@ def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0
         + (4.0 if social_anecdote["qualified"] else 0.0)
         + (4.0 if delayed_punchline["qualified"] else 0.0)
         + (4.0 if structured_comparison["qualified"] else 0.0)
+        + (5.0 if high_information_extended else 0.0)
         + narrative_score
         + duration_priority
         - abs(candidate.duration - effective_target) * 0.08
@@ -7118,6 +7138,9 @@ def ai_rescore_candidates(
             "social_anecdote": social_anecdote_profile(
                 candidate.text,
                 candidate.duration,
+            ),
+            "high_information_extended_short": candidate_is_high_information_extended_short(
+                candidate
             ),
             "text": candidate.text[:1200],
         }

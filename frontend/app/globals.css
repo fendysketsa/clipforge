@@ -5329,7 +5329,8 @@ body::before {
   flex: 0 0 auto;
 }
 
-.youtubeSetupPanel {
+.youtubeSetupPanel,
+.youtubePerformancePanel {
   margin: -4px 0 22px;
   border: 1px solid rgba(248, 113, 113, 0.16);
   border-radius: 15px;
@@ -5339,7 +5340,15 @@ body::before {
   overflow: hidden;
 }
 
+.youtubePerformancePanel {
+  border-color: rgba(94, 234, 212, 0.16);
+  background:
+    linear-gradient(100deg, rgba(94, 234, 212, 0.055), transparent 38%),
+    rgba(7, 20, 18, 0.72);
+}
+
 .youtubeSetupPanel > summary,
+.youtubePerformancePanel > summary,
 .clipAnalysisDetails > summary,
 .thumbBlock > summary {
   display: flex;
@@ -5351,14 +5360,22 @@ body::before {
 }
 
 .youtubeSetupPanel > summary::-webkit-details-marker,
+.youtubePerformancePanel > summary::-webkit-details-marker,
 .clipAnalysisDetails > summary::-webkit-details-marker,
 .thumbBlock > summary::-webkit-details-marker {
   display: none;
 }
 
-.youtubeSetupPanel > summary {
+.youtubeSetupPanel > summary,
+.youtubePerformancePanel > summary {
   min-height: 58px;
   padding: 10px 14px;
+}
+
+.youtubePerformancePanel .youtubeSetupIcon {
+  border-color: rgba(94, 234, 212, 0.2);
+  background: rgba(94, 234, 212, 0.08);
+  color: var(--primary);
 }
 
 .youtubeSetupIcon,
@@ -5423,6 +5440,85 @@ details[open] > summary .detailsChevron {
   flex-wrap: wrap;
   gap: 8px;
   padding: 0 14px 14px 59px;
+}
+
+.youtubePerformanceList {
+  display: grid;
+  border-top: 1px solid rgba(148, 216, 204, 0.1);
+}
+
+.youtubePerformanceItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(250px, 0.9fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 14px;
+  border-bottom: 1px solid rgba(148, 216, 204, 0.08);
+}
+
+.youtubePerformanceItem:last-child {
+  border-bottom: 0;
+}
+
+.youtubePerformanceCopy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.youtubePerformanceCopy strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.youtubePerformanceCopy small,
+.youtubePerformanceCopy p {
+  color: var(--text-secondary);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.youtubePerformanceCopy p {
+  margin: 2px 0 0;
+  color: #a9c9c2;
+}
+
+.youtubePerformanceMetrics,
+.youtubePerformanceActions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.youtubePerformanceMetrics span {
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid rgba(148, 216, 204, 0.11);
+  border-radius: 9px;
+  color: #789c94;
+  font-size: 8px;
+}
+
+.youtubePerformanceMetrics b {
+  color: #d7ebe7;
+  font-size: 10px;
+}
+
+.youtubePerformanceActions a {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid rgba(148, 216, 204, 0.13);
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: 9px;
+  font-weight: 800;
 }
 
 .clipGrid {
@@ -5984,6 +6080,14 @@ details[open] > summary .detailsChevron {
 
   .youtubeSetupActions .uiButton {
     width: 100%;
+  }
+
+  .youtubePerformanceItem {
+    grid-template-columns: 1fr;
+  }
+
+  .youtubePerformanceActions {
+    justify-content: flex-start;
   }
 }
 
