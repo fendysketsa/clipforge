@@ -5947,6 +5947,12 @@ details[open] > summary .detailsChevron {
   color: #a5f3fc;
 }
 
+.clipActions .tiktokUploadButton--login {
+  border-color: rgba(37, 244, 238, 0.32);
+  background: linear-gradient(135deg, rgba(37, 244, 238, 0.14), rgba(254, 44, 85, 0.1));
+  color: #ccfbf1;
+}
+
 .tiktokSetupPanel {
   border-color: rgba(37, 244, 238, 0.2);
   background: linear-gradient(135deg, rgba(37, 244, 238, 0.045), rgba(254, 44, 85, 0.035));

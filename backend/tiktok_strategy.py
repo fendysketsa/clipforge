@@ -12,8 +12,14 @@ _SERIES: dict[str, dict[str, Any]] = {
         "label": "Jawaban Ustadz 30 Detik",
         "eyebrow": "JAWABAN USTADZ",
         "pillar": "tanya_jawab_agama",
-        "cta": "Simpan untuk dipelajari lagi. Tulis pertanyaan lanjutan dengan santun.",
-        "hashtags": ["#JawabanUstadz", "#KajianIslam", "#BelajarIslam"],
+        "cta": "Simpan video ini sebagai bahan belajar.",
+        "hashtags": [
+            "#JawabanUstadz",
+            "#KajianIslam",
+            "#BelajarIslam",
+            "#Islam",
+            "#MuslimIndonesia",
+        ],
         "visuals": [
             "Buka dengan pertanyaan ringkas, lalu pertahankan close-up pembicara sampai inti jawaban.",
             "Gunakan kartu pertanyaan singkat dan reframe natural hanya pada kata kunci jawaban.",
@@ -24,8 +30,14 @@ _SERIES: dict[str, dict[str, Any]] = {
         "label": "Kesalahan Ibadah Sehari-hari",
         "eyebrow": "CEK IBADAH",
         "pillar": "koreksi_ibadah_berkonteks",
-        "cta": "Simpan sebagai pengingat dan periksa kembali rujukan lengkap sebelum mempraktikkannya.",
-        "hashtags": ["#CekIbadah", "#FiqihHarian", "#KajianIslam"],
+        "cta": "Simpan video ini sebagai pengingat untuk terus belajar.",
+        "hashtags": [
+            "#CekIbadah",
+            "#FiqihHarian",
+            "#KajianIslam",
+            "#Islam",
+            "#MuslimIndonesia",
+        ],
         "visuals": [
             "Tampilkan satu istilah ibadah penting di awal; hindari ilustrasi yang tidak sesuai konteks.",
             "Pakai aksen peringatan yang tenang dan fokuskan frame pada penjelasan, bukan efek dramatis.",
@@ -36,8 +48,14 @@ _SERIES: dict[str, dict[str, Any]] = {
         "label": "Nasihat yang Sering Disalahpahami",
         "eyebrow": "PAHAMI NASIHAT",
         "pillar": "nasihat_dan_hikmah",
-        "cta": "Apa pelajaran yang paling mengena? Tulis dengan santun dan simpan untuk direnungkan lagi.",
-        "hashtags": ["#NasihatIslam", "#Hikmah", "#Dakwah"],
+        "cta": "Pelajaran apa yang paling mengena bagi Anda?",
+        "hashtags": [
+            "#NasihatIslam",
+            "#HikmahIslam",
+            "#DakwahIslam",
+            "#Islam",
+            "#MuslimIndonesia",
+        ],
         "visuals": [
             "Gunakan close-up natural dan jeda visual tenang agar inti nasihat mudah dicerna.",
             "Tampilkan frasa kunci dari ucapan sumber; B-roll hanya muncul bila benar-benar memperjelas makna.",
@@ -145,21 +163,105 @@ def build_tiktok_strategy(
 
 
 def tiktok_caption_from_strategy(base_caption: str, strategy: dict[str, Any]) -> str:
-    base = re.sub(r"(?i)(?:^|\s)#shorts\b", " ", base_caption or "")
-    base = re.sub(r"[ \t]+", " ", base)
-    base = re.sub(r"\n{3,}", "\n\n", base).strip()
-    existing = {tag.casefold() for tag in re.findall(r"#[\w\d_]+", base, flags=re.UNICODE)}
+    generic_tags = {
+        "#shorts", "#fyp", "#fypシ", "#viral", "#trending", "#viralindonesia",
+        "#trendingindonesia", "#kontenpilihan",
+    }
+    engagement_prefixes = (
+        "untuk direnungkan", "hikmah mana", "bagikan", "share", "simpan", "save",
+        "tulis pertanyaan", "tulis di komentar", "komen", "komentar", "follow", "ikuti",
+        "seri:",
+    )
+
+    casual_fillers = re.compile(
+        r"(?i)(?:[.!?]\s+|^)(?:wah|eh|anu|nih|dong|wkwk|udah|gak|nggak)\b.*$"
+    )
+
+    def formalize(text: str) -> str:
+        text = re.sub(
+            r"(?i)^(?:poin penting dari penjelasan ini|jangan berhenti di potongan awal)\s*:\s*",
+            "",
+            text,
+        ).strip()
+        text = casual_fillers.sub(".", text).strip()
+        text = re.sub(r"(?i)\borang islam\b", "orang Islam", text)
+        text = re.sub(r"(?i)\bngena\b", "mengena", text)
+        if re.fullmatch(
+            r"kalau orang Islam seperti ini[,.]?\s*apa yang terjadi dengan mereka\?",
+            text,
+            flags=re.IGNORECASE,
+        ):
+            return "Apa yang terjadi ketika seorang Muslim berada dalam kondisi seperti ini?"
+        return text
+
+    def clean_public_copy(value: str) -> list[str]:
+        original = value or ""
+        without_tags = re.sub(r"#[\w\d_]+", " ", original, flags=re.UNICODE)
+        paragraphs = re.split(r"\n\s*\n", without_tags)
+        kept: list[str] = []
+        for paragraph in paragraphs:
+            text = formalize(
+                re.sub(r"\s+", " ", paragraph).strip().strip("-–—|").strip()
+            )
+            if not text or text.casefold().startswith(engagement_prefixes):
+                continue
+            fingerprint = re.sub(r"\W+", "", text, flags=re.UNICODE).casefold()
+            if fingerprint and fingerprint not in {
+                re.sub(r"\W+", "", item, flags=re.UNICODE).casefold() for item in kept
+            }:
+                kept.append(text)
+        return kept
+
+    base_candidates = clean_public_copy(base_caption)
+    opening_candidates = clean_public_copy(str(strategy.get("opening_hook") or ""))
+
+    def lead_score(text: str) -> tuple[int, int]:
+        score = 4 if text.endswith("?") else 0
+        if 6 <= len(text.split()) <= 24:
+            score += 2
+        if re.search(r"(?i)\b(?:seperti ini|hal ini)\.$", text):
+            score -= 3
+        return score, -len(text)
+
+    candidates = base_candidates or opening_candidates
+    lead = max(candidates, key=lead_score) if candidates else "Simak penjelasan lengkapnya."
+    lead = formalize(lead)
+
+    series_id = str(strategy.get("series_id") or "")
+    profile = _SERIES.get(series_id, {})
+    context_by_series = {
+        "jawaban_ustadz_30_detik": (
+            "Penjelasan lengkapnya penting agar pertanyaan dan jawaban tidak dipahami "
+            "di luar konteks."
+        ),
+        "kesalahan_ibadah_sehari_hari": (
+            "Pahami penjelasan lengkapnya agar praktik ibadah tidak dinilai hanya dari "
+            "potongan video."
+        ),
+        "nasihat_sering_disalahpahami": (
+            "Pahami penjelasan lengkapnya agar pesan yang disampaikan tidak terlepas dari konteks."
+        ),
+    }
+    context = context_by_series.get(
+        series_id,
+        "Pahami penjelasan lengkapnya agar pesan tidak terlepas dari konteks.",
+    )
+
     tags: list[str] = []
-    for raw in [*strategy.get("hashtags", []), "#Islam", "#Dakwah"]:
+    hashtag_source = profile.get("hashtags") or strategy.get("hashtags", [])
+    for raw in hashtag_source:
         tag = str(raw).strip()
-        if tag and tag.casefold() not in existing and tag.casefold() not in {item.casefold() for item in tags}:
-            tags.append(tag)
-    parts = [
-        f"Seri: {strategy.get('series_label', '')}",
-        str(strategy.get("opening_hook") or "").strip(),
-    ]
-    if base and base.casefold() not in {part.casefold() for part in parts}:
-        parts.append(base)
-    parts.append(str(strategy.get("cta") or "").strip())
-    parts.append(" ".join(tags[:5]))
-    return "\n\n".join(part for part in parts if part).strip()[:2200].rstrip()
+        normalized = tag.casefold()
+        if not tag or normalized in generic_tags or normalized in {item.casefold() for item in tags}:
+            continue
+        tags.append(tag)
+
+    # Prefer the canonical series CTA so stale clip metadata cannot restore an
+    # older multi-action CTA during a retry.
+    cta = re.sub(
+        r"\s+",
+        " ",
+        str(profile.get("cta") or strategy.get("cta") or ""),
+    ).strip()
+    parts = [lead, context, cta, " ".join(tags[:5])]
+    return "\n\n".join(part for part in parts if part).strip()[:600].rstrip()

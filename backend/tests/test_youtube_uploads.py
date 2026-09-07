@@ -2116,6 +2116,28 @@ def test_youtube_graphical_process_env_uses_readable_bridge(monkeypatch, tmp_pat
     assert process_env["XAUTHORITY"] == str(authority_path)
 
 
+def test_youtube_graphical_process_env_prefers_live_runtime_authority(monkeypatch, tmp_path):
+    import api
+
+    bridge_dir = tmp_path / "youtube-gui"
+    bridge_dir.mkdir()
+    bridge_authority = bridge_dir / "Xauthority"
+    bridge_authority.write_bytes(b"stale-desktop-cookie")
+    (bridge_dir / "display").write_text(":1\n", encoding="utf-8")
+    runtime_dir = tmp_path / "runtime"
+    runtime_dir.mkdir()
+    live_authority = runtime_dir / ".mutter-Xwaylandauth.current"
+    live_authority.write_bytes(b"current-desktop-cookie")
+
+    monkeypatch.setenv("YOUTUBE_GUI_BRIDGE_DIR", str(bridge_dir))
+    monkeypatch.setenv("YOUTUBE_HOST_RUNTIME_DIR", str(runtime_dir))
+    monkeypatch.setenv("XAUTHORITY", str(bridge_authority))
+
+    process_env = api.youtube_graphical_process_env()
+
+    assert process_env["XAUTHORITY"] == str(live_authority)
+
+
 def test_sync_youtube_cdp_requires_existing_cdp(monkeypatch):
     import api
 

@@ -1094,17 +1094,18 @@ export default function HomePage() {
 
   const handleCheckTikTokSession = useCallback(async () => {
     try {
-      const result = await toast.promise(checkTikTokSession(), {
+      await toast.promise(checkTikTokSession().then((status) => {
+        if (!status.ok) throw new Error(status.error || status.message);
+        return status;
+      }), {
         loading: "Memeriksa akun TikTok tanpa mengunggah file...",
-        success: (status) => status.ok
-          ? `Session @${status.target_handle} valid.`
-          : status.error || status.message,
+        success: (status) => `Session @${status.target_handle} valid.`,
         error: (sessionError) => sessionError instanceof Error ? sessionError.message : "Gagal memeriksa TikTok",
       });
-      if (!result.ok) throw new Error(result.error || result.message);
-      await loadTikTokUploads();
-    } catch (sessionError) {
-      if (sessionError instanceof Error) toast.error(sessionError.message);
+    } catch {
+      // toast.promise already renders the request or validation error once.
+    } finally {
+      await loadTikTokUploads().catch(() => undefined);
     }
   }, [loadTikTokUploads]);
 
@@ -1112,11 +1113,16 @@ export default function HomePage() {
     try {
       const status = await startTikTokLogin();
       setIsTikTokLoginActive(status.active);
-      toast.success("Jendela TikTok dibuka. Login, selesaikan captcha, lalu buka profil @titikbalikislami.");
+      toast.success(
+        status.active
+          ? `Jendela TikTok dibuka. Login, selesaikan captcha, lalu buka profil @${tiktokConfig?.target_handle ?? "titikbalikislami"}.`
+          : status.logs.at(-1) ?? "Session TikTok masih aktif; login tidak perlu diulang.",
+      );
+      if (!status.active) await loadTikTokUploads();
     } catch (loginError) {
       toast.error(loginError instanceof Error ? loginError.message : "Gagal membuka login TikTok");
     }
-  }, []);
+  }, [loadTikTokUploads, tiktokConfig?.target_handle]);
 
   const handleUploadClipToTikTok = useCallback(async (clip: ClipFile) => {
     if (!job) return;

@@ -445,15 +445,21 @@ export function ResultsSection({
               </button>
               <button
                 type="button"
-                onClick={onUploadAllToTikTok}
+                onClick={tiktokEnabled ? onUploadAllToTikTok : onStartTikTokLogin}
                 className="uiButton uiButton--tiktok"
-                disabled={!tiktokEnabled}
-                title={tiktokEnabled
+                disabled={isTikTokLoginActive}
+                aria-label={tiktokEnabled
                   ? `Upload ${Math.min(tiktokAutoUploadCount, clips.length)} clip terbaik ke @${tiktokTargetHandle} sebagai Only you`
                   : tiktokStatusMessage}
               >
-                <UploadCloud size={16} />
-                <span>TikTok {Math.min(tiktokAutoUploadCount, clips.length)} terbaik</span>
+                {tiktokEnabled ? <UploadCloud size={16} /> : <ExternalLink size={16} />}
+                <span>
+                  {tiktokEnabled
+                    ? `TikTok ${Math.min(tiktokAutoUploadCount, clips.length)} terbaik`
+                    : isTikTokLoginActive
+                      ? "Menunggu login TikTok..."
+                      : "Login TikTok"}
+                </span>
               </button>
               <button type="button" onClick={onDeleteAllClips} className="uiButton uiButton--ghostDanger">
                 <Trash2 size={16} />
@@ -479,9 +485,14 @@ export function ResultsSection({
               <ExternalLink size={16} />
               <span>{isTikTokLoginActive ? "Menunggu login..." : "Login TikTok sekali"}</span>
             </button>
-            <button type="button" onClick={onCheckTikTokSession} className="uiButton uiButton--tiktok" disabled={!tiktokEnabled}>
+            <button
+              type="button"
+              onClick={onCheckTikTokSession}
+              className="uiButton uiButton--tiktok"
+              disabled={isTikTokLoginActive}
+            >
               <RefreshCw size={16} />
-              <span>Cek sesi TikTok</span>
+              <span>{isTikTokLoginActive ? "Selesaikan login..." : "Cek sesi TikTok"}</span>
             </button>
             <a className="uiButton uiButton--secondary" href={`https://www.tiktok.com/@${tiktokTargetHandle}`} target="_blank" rel="noreferrer">
               <ExternalLink size={16} />
@@ -1097,10 +1108,12 @@ export function ResultsSection({
                     {!needsAutomaticRepair && !clip.context_recut_required ? (
                       <button
                         type="button"
-                        className="tiktokUploadButton"
-                        onClick={() => onUploadClipToTikTok(clip)}
-                        disabled={!tiktokEnabled || !isUploadReady || !uploadReviewConfirmed || isUploadingToTikTok || isAlreadyOnTikTok}
-                        title={!tiktokEnabled
+                        className={`tiktokUploadButton ${!tiktokEnabled ? "tiktokUploadButton--login" : ""}`}
+                        onClick={() => tiktokEnabled ? onUploadClipToTikTok(clip) : onStartTikTokLogin()}
+                        disabled={tiktokEnabled
+                          ? !isUploadReady || !uploadReviewConfirmed || isUploadingToTikTok || isAlreadyOnTikTok
+                          : isTikTokLoginActive}
+                        aria-label={!tiktokEnabled
                           ? tiktokStatusMessage
                           : !isUploadReady
                             ? clip.youtube_upload_issue || "Clip belum lolos quality gate."
@@ -1110,16 +1123,24 @@ export function ResultsSection({
                                 ? `Sudah dikirim ke @${tiktokTargetHandle} sebagai Only you.`
                                 : `Kirim ke @${tiktokTargetHandle} sebagai Only you.`}
                       >
-                        <UploadCloud size={16} />
-                        <span>{isAlreadyOnTikTok
-                          ? "Sudah TikTok"
-                          : latestTikTokUpload?.status === "queued"
-                            ? "Antrean TikTok"
-                            : latestTikTokUpload?.status === "running"
-                              ? "Upload TikTok..."
-                              : latestTikTokUpload?.status === "failed"
-                                ? "Ulangi TikTok"
-                                : "Kirim TikTok"}</span>
+                        {tiktokEnabled ? <UploadCloud size={16} /> : <ExternalLink size={16} />}
+                        <span>{!tiktokEnabled
+                          ? isTikTokLoginActive
+                            ? "Menunggu login..."
+                            : "Login TikTok"
+                          : !isUploadReady
+                            ? "Quality gate · Ditahan"
+                            : !uploadReviewConfirmed
+                              ? "Review dulu"
+                              : isAlreadyOnTikTok
+                                ? "Sudah TikTok"
+                                : latestTikTokUpload?.status === "queued"
+                                  ? "Antrean TikTok"
+                                  : latestTikTokUpload?.status === "running"
+                                    ? "Upload TikTok..."
+                                    : latestTikTokUpload?.status === "failed"
+                                      ? "Ulangi TikTok"
+                                      : "Kirim TikTok"}</span>
                       </button>
                     ) : null}
                     <button className="clipDeleteButton" type="button" onClick={() => onDeleteClip(clip)}>
@@ -1400,9 +1421,13 @@ export function ResultsSection({
                     <div className="youtubeUploadError tiktokUploadError" title={latestTikTokUpload.error}>
                       <strong>Upload TikTok gagal</strong>
                       <span>{latestTikTokUpload.error}</span>
-                      <button type="button" onClick={onCheckTikTokSession}>
+                      <button
+                        type="button"
+                        onClick={onCheckTikTokSession}
+                        disabled={isTikTokLoginActive}
+                      >
                         <RefreshCw size={14} />
-                        <span>Cek sesi TikTok</span>
+                        <span>{isTikTokLoginActive ? "Selesaikan login..." : "Cek sesi TikTok"}</span>
                       </button>
                     </div>
                   ) : null}

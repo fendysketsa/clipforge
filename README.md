@@ -178,7 +178,11 @@ dapat diubah melalui variabel di atas.
 
 Completed clips can be queued to `@titikbalikislami` from the dashboard. Open the
 TikTok connection panel and click **Login TikTok sekali**, finish login/CAPTCHA in
-the visible browser, and wait until ClipForge confirms the target profile. Then
+the visible browser, and wait until ClipForge confirms the target profile. TikTok
+uses its own Chrome CDP port (`9444` by default), separate from YouTube. A cookie
+is never treated as sufficient proof of login: ClipForge validates that the active
+browser account owns the configured handle, then atomically saves the complete
+Playwright storage-state. Then
 use **Kirim TikTok** on one reviewed clip or **TikTok 2 terbaik** for a sequential
 batch. Every automated upload is locked to **Only you**; make it public manually
 only after checking context, source rights, caption, sound, and TikTok's notices.
