@@ -168,14 +168,45 @@ def goto(page, url: str, timeout_ms: int = 45_000) -> None:
 
 
 def current_profile_handle(page) -> str:
+    selectors = (
+        '[data-e2e="nav-profile"]',
+        'a[aria-label="Profile"]',
+        'a[aria-label="Profil"]',
+        'a[href^="/@"]:has([aria-label="Profile"])',
+        'a[href^="/@"]:has([aria-label="Profil"])',
+    )
+    for selector in selectors:
+        try:
+            href = page.locator(selector).first.get_attribute("href", timeout=300) or ""
+        except Exception:
+            continue
+        match = re.search(r"/@([^/?#]+)", href)
+        if match:
+            return clean_handle(match.group(1))
+    return ""
+
+
+def profile_owner_controls_visible(page) -> bool:
+    """Detect controls that TikTok renders only on the signed-in user's profile."""
     try:
-        href = page.locator('[data-e2e="nav-profile"]').first.get_attribute(
-            "href", timeout=5_000
-        ) or ""
+        if page.locator('[data-e2e="edit-profile-entrance"]').first.is_visible(timeout=500):
+            return True
     except Exception:
-        href = ""
-    match = re.search(r"/@([^/?#]+)", href)
-    return clean_handle(match.group(1)) if match else ""
+        pass
+    # TikTok has changed the button wrapper/data attributes several times. The
+    # rendered body text is a safe fallback here: this check runs on the target
+    # profile URL, and public visitors do not get an Edit profile control.
+    try:
+        body_text = page.locator("body").inner_text(timeout=750)
+    except Exception:
+        return False
+    return bool(
+        re.search(
+            r"(?:^|\n)\s*(?:Edit profile|Edit profil|Sunting profil)\s*(?:\n|$)",
+            body_text,
+            re.I,
+        )
+    )
 
 
 def validate_target_account(page, target_handle: str, target_email: str = "") -> None:
@@ -183,7 +214,7 @@ def validate_target_account(page, target_handle: str, target_email: str = "") ->
     if not expected:
         raise UploadError("Target handle TikTok belum dikonfigurasi.")
     if not has_authenticated_tiktok_cookie(page.context):
-        raise UploadError("Sesi TikTok belum login. Klik Login TikTok lalu selesaikan CAPTCHA di Chrome.")
+        raise UploadError("Sesi TikTok belum login. Klik Login TikTok lalu lanjutkan dengan Google di Chrome.")
     goto(page, f"https://www.tiktok.com/@{expected}")
     page.wait_for_timeout(1800)
     login_button = first_visible(
@@ -192,34 +223,33 @@ def validate_target_account(page, target_handle: str, target_email: str = "") ->
         timeout_ms=1_000,
     )
     if "/login" in page.url.casefold() or login_button is not None:
-        raise UploadError("Sesi TikTok belum login. Klik Login TikTok lalu selesaikan CAPTCHA di Chrome.")
+        raise UploadError("Sesi TikTok belum login. Klik Login TikTok lalu lanjutkan dengan Google di Chrome.")
 
-    signed_in_handle = current_profile_handle(page)
-    if signed_in_handle == expected:
-        log(f"TARGET_ACCOUNT_CONFIRMED:@{expected}")
-        return
+    # Profile hydration is often slower than DOMContentLoaded. Previously this
+    # was checked only once; a valid @titikbalikislami page was consequently
+    # classified as an account mismatch and its reusable session quarantined.
+    signed_in_handle = ""
+    for _attempt in range(8):
+        observed_handle = current_profile_handle(page)
+        if observed_handle:
+            signed_in_handle = observed_handle
+        if observed_handle == expected or profile_owner_controls_visible(page):
+            log(f"TARGET_ACCOUNT_CONFIRMED:@{expected}")
+            return
+        page.wait_for_timeout(750)
 
-    own_profile = first_visible(
-        page,
-        [
-            '[data-e2e="edit-profile-entrance"]',
-            'button:has-text("Edit profile")',
-            'button:has-text("Edit profil")',
-            'button:has-text("Sunting profil")',
-            'a:has-text("Edit profile")',
-            'a:has-text("Edit profil")',
-        ],
-        timeout_ms=2200,
-    )
-    if own_profile is None:
-        save_debug(page, "account-mismatch")
-        account_hint = f" ({target_email})" if target_email else ""
-        signed_in_hint = f" Browser sedang login sebagai @{signed_in_handle}." if signed_in_handle else ""
+    save_debug(page, "account-mismatch")
+    account_hint = f" ({target_email})" if target_email else ""
+    if signed_in_handle and signed_in_handle != expected:
         raise UploadError(
-            f"Akun browser bukan pemilik @{expected}{account_hint}, atau sesi sudah habis. "
-            f"Upload dihentikan sebelum file dipilih.{signed_in_hint}"
+            f"Akun browser aktif @{signed_in_handle} bukan akun target @{expected}{account_hint}. "
+            "Upload dihentikan sebelum file dipilih."
         )
-    log(f"TARGET_ACCOUNT_CONFIRMED:@{expected}")
+    raise UploadError(
+        f"Sesi TikTok terdeteksi, tetapi identitas akun @{expected}{account_hint} belum dapat "
+        "diverifikasi karena halaman profil belum selesai dimuat. Session tetap disimpan; "
+        "klik Cek sesi TikTok lalu ulangi upload."
+    )
 
 
 def select_google_login(page, timeout_ms: int = 2_500) -> bool:
@@ -250,17 +280,70 @@ def select_google_login(page, timeout_ms: int = 2_500) -> bool:
     return True
 
 
+def select_qr_login(page, timeout_ms: int = 2_500) -> bool:
+    """Open TikTok's first-party QR login without spawning a Google OAuth popup."""
+    if "/login" not in str(getattr(page, "url", "")).casefold():
+        return False
+    qr_option = first_visible(
+        page,
+        (
+            '[data-e2e="channel-item"]:has-text("Use QR code")',
+            '[data-e2e="channel-item"]:has-text("Gunakan kode QR")',
+            '[role="link"]:has-text("Use QR code")',
+            '[role="link"]:has-text("Gunakan kode QR")',
+            'button:has-text("Use QR code")',
+            'button:has-text("Gunakan kode QR")',
+        ),
+        timeout_ms=timeout_ms,
+    )
+    if qr_option is None:
+        log("QR_LOGIN_OPTION_NOT_FOUND: Klik Use QR code secara manual pada jendela TikTok.")
+        return False
+    try:
+        qr_option.click(timeout=10_000)
+    except Exception as exc:
+        log(f"QR_LOGIN_CLICK_FAILED: Klik Use QR code secara manual ({exc}).")
+        return False
+    log("QR_LOGIN_SELECTED: Scan QR dengan aplikasi TikTok di HP lalu konfirmasi login.")
+    return True
+
+
 def login_and_capture(page, context, state_path: Path, target_handle: str, target_email: str, timeout: int) -> None:
     expected = clean_handle(target_handle)
     if not expected:
         raise UploadError("Target handle TikTok belum dikonfigurasi.")
-    if "tiktok.com" not in page.url.casefold():
+    if DEFAULT_LOGIN_METHOD == "qr":
+        # A previous Google attempt can leave an unusable black OAuth popup in
+        # Chrome for Testing. Remove only those external popup tabs, return to
+        # TikTok, and keep the persistent browser/profile itself alive.
+        for open_page in list(getattr(context, "pages", [])):
+            if open_page is page:
+                continue
+            if "accounts.google.com" in str(getattr(open_page, "url", "")).casefold():
+                try:
+                    open_page.close()
+                except Exception:
+                    pass
         goto(page, "https://www.tiktok.com/login")
-    if DEFAULT_LOGIN_METHOD == "google":
+        try:
+            page.bring_to_front()
+        except Exception:
+            pass
+    elif "tiktok.com" not in page.url.casefold():
+        goto(page, "https://www.tiktok.com/login")
+    if DEFAULT_LOGIN_METHOD == "qr":
+        select_qr_login(page)
+    elif DEFAULT_LOGIN_METHOD == "google":
         select_google_login(page)
+    if DEFAULT_LOGIN_METHOD == "qr":
+        instruction = "Scan QR dengan aplikasi TikTok di HP dan konfirmasi login"
+    elif DEFAULT_LOGIN_METHOD == "google":
+        instruction = f"Pilih akun Google {target_email or ''} dan selesaikan captcha bila muncul"
+    else:
+        instruction = "Selesaikan login secara manual"
     log(
-        f"LOGIN_REQUIRED: Pilih akun Google {target_email or ''}, selesaikan captcha bila muncul, "
-        f"lalu pastikan akun @{expected} yang aktif. Session baru disimpan setelah akun target terverifikasi."
+        f"LOGIN_REQUIRED: {instruction}, lalu pastikan akun @{expected} yang aktif. "
+        "Session baru disimpan setelah akun target terverifikasi."
     )
     deadline = time.monotonic() + max(30, timeout)
     last_check = 0.0
@@ -302,6 +385,15 @@ def login_and_capture(page, context, state_path: Path, target_handle: str, targe
             validate_target_account(candidate_page, expected, target_email)
             save_session_state(context, state_path)
             log(f"SESSION_SAVED:{state_path}")
+            # Leave the persistent browser on TikTok Studio, matching the
+            # YouTube deploy/login experience instead of ending on /login or a
+            # profile page after the session has been captured.
+            goto(page, UPLOAD_URL)
+            try:
+                page.bring_to_front()
+            except Exception:
+                pass
+            log("TIKTOK_STUDIO_READY")
             return
         except UploadError as exc:
             last_error = str(exc)

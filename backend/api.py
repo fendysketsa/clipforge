@@ -5155,8 +5155,8 @@ def tiktok_config_payload() -> TikTokConfig:
     elif profile_ready:
         auth_path = str(Path(TIKTOK_CHROMIUM_USER_DATA_DIR) / TIKTOK_CHROMIUM_PROFILE_DIRECTORY)
         message = (
-            "Profile browser tersedia tetapi belum login. Klik Login TikTok, pilih Continue with Google "
-            f"untuk {os.environ.get('TIKTOK_TARGET_EMAIL', DEFAULT_TIKTOK_TARGET_EMAIL).strip()}, selesaikan CAPTCHA, "
+            "Profile browser tersedia tetapi belum login. Klik Login TikTok, pilih Continue with Google, "
+            f"gunakan {os.environ.get('TIKTOK_TARGET_EMAIL', DEFAULT_TIKTOK_TARGET_EMAIL).strip()}, "
             f"dan masuk sebagai @{tiktok_target_handle()}."
         )
     else:
@@ -5185,7 +5185,7 @@ def require_tiktok_ready() -> None:
     if not config.auth_state_exists:
         raise HTTPException(
             status_code=409,
-            detail="Session TikTok belum login. Klik Login TikTok, lanjutkan dengan Google, lalu selesaikan CAPTCHA di Chrome.",
+            detail="Session TikTok belum login. Klik Login TikTok lalu lanjutkan dengan Google di Chrome.",
         )
 
 
@@ -8119,6 +8119,7 @@ def tiktok_error_requires_login(message: str) -> bool:
             "sesi tiktok belum login",
             "tiktok meminta login ulang",
             "akun browser bukan pemilik",
+            "akun browser aktif",
             "session tiktok sudah habis",
             "sesi sudah habis",
         )
@@ -8237,6 +8238,22 @@ def run_tiktok_upload(upload_id: str) -> None:
             used_cdp = "--cdp-url" in command
             if (
                 used_cdp
+                and not cdp_transport_failed
+                and error
+                and tiktok_error_requires_login(error)
+                and tiktok_auth_state_exists()
+            ):
+                # The visible Chrome profile and the portable Playwright state
+                # are independent copies of the same reusable login. A logout
+                # or stale tab in Chrome must not delete a still-valid saved
+                # state or force the user through OAuth on every upload.
+                cdp_transport_failed = True
+                logs.append(
+                    "Sesi Chrome TikTok ditolak; mencoba ulang dengan session tersimpan sebelum meminta login baru."
+                )
+                continue
+            if (
+                used_cdp
                 and error
                 and tiktok_error_is_cdp_transport_failure(error)
             ):
@@ -8259,7 +8276,7 @@ def run_tiktok_upload(upload_id: str) -> None:
                     continue
                 raise RuntimeError(
                     "Chrome TikTok macet dan session tersimpan tidak valid. "
-                    "Klik Login TikTok, selesaikan login/CAPTCHA, lalu ulangi upload."
+                    "Klik Login TikTok, lanjutkan dengan Google di Chrome, lalu ulangi upload."
                 )
             if (
                 not used_cdp
@@ -8385,6 +8402,25 @@ def tiktok_cdp_ready() -> bool:
     return bool(payload.get("webSocketDebuggerUrl"))
 
 
+def tiktok_chrome_rendering_broken() -> bool:
+    """Return true when the current Chrome instance cannot render on X11."""
+    lines = tail_text_file(TIKTOK_CHROME_LOG, 240)
+    last_start = -1
+    for index, line in enumerate(lines):
+        if "DevTools listening on" in line:
+            last_start = index
+    current_instance = lines[last_start + 1 :] if last_start >= 0 else lines[-80:]
+    normalized = "\n".join(current_instance).casefold()
+    return any(
+        marker in normalized
+        for marker in (
+            "authorization required, but no authorization protocol specified",
+            "could not open the default x display",
+            "invalid mit-magic-cookie-1",
+        )
+    )
+
+
 def tiktok_cdp_port() -> str:
     match = re.search(r":(\d+)(?:/|$)", TIKTOK_CDP_URL)
     return match.group(1) if match else "9444"
@@ -8500,6 +8536,11 @@ def open_tiktok_login_browser(logs: list[str]) -> None:
         if tiktok_cdp_ready():
             logs.append(f"Chrome GUI TikTok sudah siap di {TIKTOK_CDP_URL}.")
             return
+        if env_bool("TIKTOK_CDP_EXTERNAL_BROWSER", False):
+            raise RuntimeError(
+                "Chrome host TikTok tidak aktif. Jalankan scripts/recreate-compose-up.sh dari terminal desktop; "
+                "backend tidak akan membuka Chrome for Testing di dalam container."
+            )
         TIKTOK_CDP_REFRESH_LOG.parent.mkdir(parents=True, exist_ok=True)
         TIKTOK_CHROME_LOG.parent.mkdir(parents=True, exist_ok=True)
         launcher_log_offset = TIKTOK_CDP_REFRESH_LOG.stat().st_size if TIKTOK_CDP_REFRESH_LOG.is_file() else 0
@@ -8560,7 +8601,11 @@ def run_tiktok_login_process() -> None:
     global tiktok_login_process
     logs: list[str] = []
     try:
-        open_tiktok_login_browser(logs)
+        if tiktok_cdp_ready() and tiktok_chrome_rendering_broken():
+            logs.append("Chrome TikTok terdeteksi gagal merender X11; me-restart browser login otomatis.")
+            restart_tiktok_login_browser(logs)
+        else:
+            open_tiktok_login_browser(logs)
         set_tiktok_login_status(logs=logs[-80:])
         for attempt in range(2):
             command = build_tiktok_cdp_capture_command()
@@ -11807,7 +11852,7 @@ def check_tiktok_session() -> TikTokSessionStatus:
             target_handle=tiktok_target_handle(),
             state_path=str(TIKTOK_PLAYWRIGHT_STATE),
             message="Session TikTok belum tersedia. Klik Login TikTok terlebih dahulu.",
-            error="Session TikTok belum login. Klik Login TikTok dan selesaikan CAPTCHA di jendela Chrome.",
+            error="Session TikTok belum login. Klik Login TikTok lalu lanjutkan dengan Google di Chrome.",
         )
     combined_logs: list[str] = []
     error: str | None = None

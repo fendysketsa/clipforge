@@ -24,8 +24,10 @@ from tiktok_uploader import (
     login_and_capture,
     save_session_state,
     select_google_login,
+    select_qr_login,
     set_caption,
     upload_video,
+    validate_target_account,
     wait_for_post_button,
     wait_for_new_tiktok_post,
 )
@@ -247,6 +249,19 @@ def test_tiktok_gui_login_command_uses_cdp_without_locking_profile(monkeypatch):
     assert "--chromium-user-data-dir" not in command
 
 
+def test_tiktok_external_browser_mode_never_launches_chrome_inside_container(monkeypatch):
+    monkeypatch.setenv("TIKTOK_CDP_EXTERNAL_BROWSER", "true")
+    monkeypatch.setattr(api, "tiktok_cdp_ready", lambda: False)
+    monkeypatch.setattr(
+        api.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not launch")),
+    )
+
+    with pytest.raises(RuntimeError, match="Chrome host TikTok tidak aktif"):
+        api.open_tiktok_login_browser([])
+
+
 def test_tiktok_cdp_capture_uses_uploader_identity_validation(monkeypatch):
     monkeypatch.setattr(api, "TIKTOK_CDP_URL", "http://127.0.0.1:9444")
 
@@ -427,6 +442,56 @@ def test_tiktok_upload_falls_back_to_saved_session_after_cdp_timeout(monkeypatch
     assert any("session tersimpan" in line for line in completed.logs)
 
 
+def test_tiktok_upload_falls_back_to_saved_session_when_cdp_profile_is_logged_out(monkeypatch, tmp_path):
+    output_root = tmp_path / "outputs"
+    video = output_root / "demo" / "clip_01.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"video")
+    upload = api.TikTokUploadJob(
+        id="upload-cdp-logged-out",
+        source_job_id="job-tiktok",
+        clip_url="/outputs/demo/clip_01.mp4",
+        clip_name=video.name,
+        status="queued",
+        created_at="2026-09-06T00:00:00+00:00",
+        updated_at="2026-09-06T00:00:00+00:00",
+        caption="caption",
+        target_handle="titikbalikislami",
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
+    monkeypatch.setattr(api, "TIKTOK_CDP_URL", "http://127.0.0.1:9444")
+    monkeypatch.setattr(api, "tiktok_cdp_ready", lambda: True)
+    monkeypatch.setattr(api, "tiktok_auth_state_exists", lambda: True)
+    monkeypatch.setattr(api, "tiktok_uploads", {upload.id: upload})
+    monkeypatch.setattr(api, "save_tiktok_uploads_unlocked", lambda: None)
+    monkeypatch.setattr(api, "schedule_cross_platform_cleanup_after_tiktok", lambda _upload: None)
+    process_results = [
+        (["USER_ERROR:Sesi TikTok belum login. Klik Login TikTok lalu lanjutkan dengan Google di Chrome.\n"], 2),
+        (["UPLOAD_CONFIRMED:private\n", "VIDEO_URL:https://www.tiktok.com/@titikbalikislami\n"], 0),
+    ]
+    commands = []
+
+    class Process:
+        def __init__(self, command, **_kwargs):
+            commands.append(command)
+            lines, self.returncode = process_results[len(commands) - 1]
+            self.stdout = iter(lines)
+
+        def wait(self):
+            return self.returncode
+
+    monkeypatch.setattr(api.subprocess, "Popen", Process)
+
+    api.run_tiktok_upload(upload.id)
+
+    assert "--cdp-url" in commands[0]
+    assert "--cdp-url" not in commands[1]
+    completed = api.tiktok_uploads[upload.id]
+    assert completed.status == "completed"
+    assert completed.upload_confirmed is True
+    assert any("sebelum meminta login baru" in line for line in completed.logs)
+
+
 def test_tiktok_upload_restarts_stuck_cdp_before_falling_back(monkeypatch, tmp_path):
     output_root = tmp_path / "outputs"
     video = output_root / "demo" / "clip_01.mp4"
@@ -498,6 +563,21 @@ def test_tiktok_session_check_uses_live_cdp_without_saved_state(monkeypatch):
 
     assert status.ok is True
     assert commands[0][commands[0].index("--cdp-url") + 1] == "http://127.0.0.1:9444"
+
+
+def test_tiktok_detects_only_current_chrome_x11_render_failure(monkeypatch, tmp_path):
+    chrome_log = tmp_path / "tiktok-chrome.log"
+    monkeypatch.setattr(api, "TIKTOK_CHROME_LOG", chrome_log)
+    chrome_log.write_text(
+        "Authorization required, but no authorization protocol specified\n"
+        "DevTools listening on ws://127.0.0.1:9444/devtools/browser/new\n",
+        encoding="utf-8",
+    )
+    assert api.tiktok_chrome_rendering_broken() is False
+
+    with chrome_log.open("a", encoding="utf-8") as handle:
+        handle.write("ERR: Could not open the default X display.\n")
+    assert api.tiktok_chrome_rendering_broken() is True
 
 
 def test_tiktok_state_requires_a_tiktok_cookie(monkeypatch, tmp_path):
@@ -613,6 +693,33 @@ def test_tiktok_login_does_not_leave_login_page_for_stale_auth_cookie(monkeypatc
     assert not (tmp_path / "state.json").exists()
 
 
+def test_tiktok_account_validation_waits_for_slow_profile_hydration(monkeypatch):
+    class Page:
+        url = "https://www.tiktok.com/@titikbalikislami"
+
+        def __init__(self):
+            self.waits = []
+
+        def wait_for_timeout(self, milliseconds):
+            self.waits.append(milliseconds)
+
+    page = Page()
+    handles = iter(["", "", "titikbalikislami"])
+    monkeypatch.setattr("tiktok_uploader.has_authenticated_tiktok_cookie", lambda _context: True)
+    monkeypatch.setattr("tiktok_uploader.goto", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "tiktok_uploader.first_visible",
+        lambda _page, selectors, **_kwargs: None,
+    )
+    monkeypatch.setattr("tiktok_uploader.current_profile_handle", lambda _page: next(handles))
+    monkeypatch.setattr("tiktok_uploader.profile_owner_controls_visible", lambda _page: False)
+    page.context = object()
+
+    validate_target_account(page, "titikbalikislami", "owner@example.com")
+
+    assert page.waits == [1800, 750, 750]
+
+
 def test_tiktok_login_selects_google_oauth_without_entering_credentials():
     selected = []
 
@@ -638,6 +745,34 @@ def test_tiktok_login_selects_google_oauth_without_entering_credentials():
             return google_option
 
     assert select_google_login(Page()) is True
+    assert selected == [{"timeout": 10_000}]
+
+
+def test_tiktok_login_selects_first_party_qr_without_opening_oauth_popup():
+    selected = []
+
+    class QrOption:
+        first = None
+
+        def __init__(self):
+            self.first = self
+
+        def wait_for(self, **_kwargs):
+            pass
+
+        def click(self, **kwargs):
+            selected.append(kwargs)
+
+    qr_option = QrOption()
+
+    class Page:
+        url = "https://www.tiktok.com/login"
+
+        def locator(self, selector):
+            assert "QR" in selector
+            return qr_option
+
+    assert select_qr_login(Page()) is True
     assert selected == [{"timeout": 10_000}]
 
 

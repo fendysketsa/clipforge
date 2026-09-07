@@ -68,7 +68,16 @@ if [[ -r "$GUI_BRIDGE_DIR/display" ]]; then
   bridge_display="$(head -n 1 "$GUI_BRIDGE_DIR/display" | tr -d '\r\n')"
   [[ -z "$bridge_display" ]] || export DISPLAY="$bridge_display"
 fi
-if [[ -d "$HOST_RUNTIME_DIR" ]]; then
+# Prefer the readable bridge passed by Compose. A user-namespace container can
+# stat Mutter's host-runtime file yet still fail X11 authentication when Chrome
+# opens renderer/GPU child processes from it. This ordering matches the stable
+# YouTube launcher.
+if [[ -z "${XAUTHORITY:-}" || ! -r "${XAUTHORITY:-}" ]]; then
+  if [[ -r "$GUI_BRIDGE_DIR/Xauthority" ]]; then
+    export XAUTHORITY="$GUI_BRIDGE_DIR/Xauthority"
+  fi
+fi
+if [[ ( -z "${XAUTHORITY:-}" || ! -r "${XAUTHORITY:-}" ) && -d "$HOST_RUNTIME_DIR" ]]; then
   shopt -s nullglob
   authority_files=("$HOST_RUNTIME_DIR"/.mutter-Xwaylandauth.*)
   shopt -u nullglob
@@ -78,11 +87,6 @@ if [[ -d "$HOST_RUNTIME_DIR" ]]; then
       [[ "$authority_file" -nt "$newest_authority" ]] && newest_authority="$authority_file"
     done
     export XAUTHORITY="$newest_authority"
-  fi
-fi
-if [[ -z "${XAUTHORITY:-}" || ! -r "${XAUTHORITY:-}" ]]; then
-  if [[ -r "$GUI_BRIDGE_DIR/Xauthority" ]]; then
-    export XAUTHORITY="$GUI_BRIDGE_DIR/Xauthority"
   fi
 fi
 if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "$HOST_RUNTIME_DIR/bus" ]]; then
@@ -131,15 +135,20 @@ chrome_args=(
   --profile-directory="$TIKTOK_LOGIN_PROFILE_DIRECTORY"
   --no-first-run
   --no-default-browser-check
-  --start-maximized
+  --window-size=1100,850
   --disable-dev-shm-usage
   # This browser is displayed through the X11 socket mounted by Docker. Force
   # that backend so Chrome does not probe an unavailable Wayland socket.
   --ozone-platform=x11
-  # Do not disable GPU compositing, Skia, or rasterization here. Recent Chrome
-  # versions can fall back to software rendering on their own; disabling the
-  # whole rendering stack makes OAuth popup surfaces appear gray/blank under
-  # GNOME/Xwayland and also makes scrolling and animations needlessly slow.
+  # Use the same stable software-rendering path as the YouTube launcher. The
+  # deploy script runs this launcher in regular host Chrome, where Google OAuth
+  # renders normally without the container's X11/GPU bridge.
+  --disable-gpu
+  --disable-gpu-compositing
+  --disable-features=Vulkan,UseSkiaRenderer,CanvasOopRasterization
+  --disable-extensions
+  --disable-sync
+  --disable-default-apps
   --log-level=3
 )
 if [[ "${EUID:-$(id -u)}" == "0" ]]; then
