@@ -172,6 +172,7 @@ export function ControlPanel({
             : `${minDuration}–${maxDuration} detik per clip`}
         </span>
         <span>{burnSubtitles ? "Subtitle aktif" : "Tanpa subtitle"}</span>
+        {!isLongStory ? <span>Smart Split otomatis</span> : null}
       </div>
 
       <div className="productionGroup">

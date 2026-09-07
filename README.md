@@ -11,6 +11,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Download a single YouTube video with `yt-dlp`.
 - Transcribe locally with `faster-whisper`.
 - Score transcript windows for clip candidates.
+- Smart Split memakai timestamp per kata, akhir kalimat, jeda alami, dan perpindahan topik agar clip tidak dimulai di tengah ucapan atau berakhir sebelum payoff.
 - End candidates on complete key-point/payoff boundaries and suppress near-duplicate ideas.
 - Detect focused 20–32 second micro-theses that open on a relatable dilemma, add nuance, state a safety or ethical boundary, and close without stigmatizing the viewer. These use a restrained-authority edit with at most two meaningful reframes, no reaction stickers or cinematic smoke, and dialogue-first audio.
 - Detect 18–32 second social anecdotes with first-person friction, chronological movement, a concrete comparison, and a self-directed punchline. These use a 1.9-second event card, faster face-safe reframes, authentic source reactions, and no synthetic ridicule, stickers, smoke, SFX, or background music.

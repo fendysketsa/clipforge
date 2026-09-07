@@ -1560,7 +1560,7 @@ VisualMode = Literal["auto_fyp", "cinematic", "speaker_split", "animated_3d", "r
 BackgroundMode = Literal["auto_clean", "keep", "mosque"]
 VisualTheme = Literal["mystery", "islamic", "warning", "inspiring", "knowledge"]
 DEFAULT_TRANSCRIPTION_MODEL = "Systran/faster-whisper-medium"
-TRANSCRIPTION_CACHE_VERSION = 2
+TRANSCRIPTION_CACHE_VERSION = 3
 YUNET_MODEL_PATH = Path(__file__).resolve().parent / "models" / "face_detection_yunet_2023mar.onnx"
 MOSQUE_BACKGROUND_PATH = (
     Path(__file__).resolve().parent / "assets" / "backgrounds" / "grand_mosque_neutral.png"
@@ -4851,6 +4851,89 @@ def transcription_decode_options(language: str) -> dict:
     return options
 
 
+SMART_WORD_PAUSE_SECONDS = 0.72
+SMART_WORD_SOFT_LIMIT_SECONDS = 10.0
+SMART_WORD_HARD_LIMIT_SECONDS = 14.0
+
+
+def smart_transcript_segments(segment: object) -> list[TranscriptSegment]:
+    """Turn one coarse Whisper span into sentence-aligned timestamp rows.
+
+    Faster Whisper already returns word timestamps, but keeping only its
+    coarse (up to 30-second) spans makes candidate boundaries unnecessarily
+    blunt. These smaller rows let the selector start and stop on real spoken
+    sentences without inventing or rearranging any words.
+    """
+    fallback_text = clean_transcript_text(str(getattr(segment, "text", "") or ""))
+    fallback_start = float(getattr(segment, "start", 0.0) or 0.0)
+    fallback_end = float(getattr(segment, "end", fallback_start) or fallback_start)
+    raw_words = list(getattr(segment, "words", None) or [])
+    words: list[tuple[float, float, str]] = []
+    for word in raw_words:
+        start = getattr(word, "start", None)
+        end = getattr(word, "end", None)
+        value = str(getattr(word, "word", "") or "").strip()
+        if start is None or end is None or not value:
+            continue
+        start_value = float(start)
+        end_value = float(end)
+        if end_value > start_value:
+            words.append((start_value, end_value, value))
+    if not words:
+        return (
+            [TranscriptSegment(fallback_start, fallback_end, fallback_text)]
+            if fallback_text
+            else []
+        )
+
+    def join_words(items: list[tuple[float, float, str]]) -> str:
+        text = ""
+        for _, _, token in items:
+            if not text or re.match(r"^[,.;:!?%\)\]\}]", token):
+                text += token
+            elif text.endswith(("(", "[", "{")):
+                text += token
+            else:
+                text += " " + token
+        return clean_transcript_text(text)
+
+    rows: list[TranscriptSegment] = []
+    current: list[tuple[float, float, str]] = []
+
+    def flush() -> None:
+        if not current:
+            return
+        text = join_words(current)
+        if text:
+            rows.append(TranscriptSegment(current[0][0], current[-1][1], text))
+        current.clear()
+
+    for word in words:
+        if current:
+            pause = max(0.0, word[0] - current[-1][1])
+            current_duration = current[-1][1] - current[0][0]
+            if pause >= SMART_WORD_PAUSE_SECONDS and current_duration >= 1.0:
+                flush()
+        current.append(word)
+        duration = current[-1][1] - current[0][0]
+        closes_sentence = bool(re.search(r"[.!?][\"'”’)]?$", word[2]))
+        soft_boundary = duration >= SMART_WORD_SOFT_LIMIT_SECONDS and bool(
+            re.search(r"[,;:][\"'”’)]?$", word[2])
+        )
+        if (
+            (closes_sentence and duration >= 0.7)
+            or soft_boundary
+            or duration >= SMART_WORD_HARD_LIMIT_SECONDS
+        ):
+            flush()
+    flush()
+    return rows or (
+        [TranscriptSegment(fallback_start, fallback_end, fallback_text)]
+        if fallback_text
+        else []
+    )
+
+
 def configure_huggingface_environment() -> bool:
     """Normalize optional Hub auth and keep public-model downloads quiet.
 
@@ -4923,9 +5006,7 @@ def transcribe(audio_path: Path, transcript_path: Path, model_name: str, languag
 
     rows: list[TranscriptSegment] = []
     for segment in segments:
-        text = clean_transcript_text(segment.text)
-        if text:
-            rows.append(TranscriptSegment(float(segment.start), float(segment.end), text))
+        rows.extend(smart_transcript_segments(segment))
 
     save_json(transcript_path, [asdict(item) for item in rows])
     save_json(
@@ -4934,7 +5015,7 @@ def transcribe(audio_path: Path, transcript_path: Path, model_name: str, languag
             "version": TRANSCRIPTION_CACHE_VERSION,
             "model": model_name,
             "language": language,
-            "decode": "accuracy_first_beam_5",
+            "decode": "accuracy_first_beam_5_smart_word_boundaries",
         },
     )
     console.print(f"[green]Transcribed[/green] {len(rows)} segments. Detected language: {getattr(info, 'language', language)}")
@@ -6049,6 +6130,77 @@ def is_meaningful_candidate_end(
     )
 
 
+SMART_SPLIT_LONG_PAUSE_SECONDS = 1.8
+SMART_SPLIT_TOPIC_TRANSITIONS = (
+    "beralih ke",
+    "kita beralih",
+    "pertanyaan berikutnya",
+    "pembahasan berikutnya",
+    "sekarang kita bahas",
+    "selanjutnya kita bahas",
+    "topik berikutnya",
+)
+
+
+def is_smart_split_boundary(
+    previous: TranscriptSegment,
+    current: TranscriptSegment,
+) -> bool:
+    """Detect a natural chapter boundary that a Short must not cross."""
+    pause = max(0.0, current.start - previous.end)
+    normalized = re.sub(r"\s+", " ", current.text).strip().casefold()
+    return pause >= SMART_SPLIT_LONG_PAUSE_SECONDS or normalized.startswith(
+        SMART_SPLIT_TOPIC_TRANSITIONS
+    )
+
+
+def is_transition_only_segment(segment: TranscriptSegment) -> bool:
+    """Drop short moderator/chapter labels while preserving the real question after them."""
+    normalized = re.sub(r"\s+", " ", segment.text).strip().casefold()
+    return normalized.startswith(SMART_SPLIT_TOPIC_TRANSITIONS) and len(
+        re.findall(r"[\w']+", normalized)
+    ) <= 9
+
+
+def smart_candidate_media_bounds(
+    segments: list[TranscriptSegment],
+    *,
+    start_idx: int,
+    end_idx: int,
+    branding_flags: list[bool],
+    max_duration: float,
+) -> tuple[float, float]:
+    """Pad speech boundaries without leaking words from neighboring topics."""
+    first = segments[start_idx]
+    last = segments[end_idx]
+    previous = segments[start_idx - 1] if start_idx > 0 else None
+    following = segments[end_idx + 1] if end_idx + 1 < len(segments) else None
+    previous_is_branding = bool(previous and branding_flags[start_idx - 1])
+    next_is_branding = bool(following and branding_flags[end_idx + 1])
+    previous_is_filler = bool(previous and is_low_value_filler_segment(previous))
+    next_is_filler = bool(following and is_low_value_filler_segment(following))
+
+    if previous_is_branding:
+        safe_start = first.start + 0.45
+    elif previous_is_filler:
+        safe_start = first.start + 0.12
+    else:
+        available = max(0.0, first.start - previous.end) if previous else 0.35
+        safe_start = first.start - min(0.35, max(0.08, available * 0.45))
+
+    if next_is_branding:
+        safe_end = last.end - 0.35
+    elif next_is_filler:
+        safe_end = last.end - 0.12
+    else:
+        available = max(0.0, following.start - last.end) if following else 0.25
+        safe_end = last.end + min(0.25, max(0.08, available * 0.45))
+
+    safe_start = max(0.0, safe_start)
+    safe_end = max(safe_start + 0.2, safe_end)
+    return safe_start, min(safe_end, safe_start + max_duration)
+
+
 def candidate_fyp_analysis(
     items: list[TranscriptSegment],
     duration: float,
@@ -6498,13 +6650,19 @@ def build_candidate_pool(
 
     branding_flags = [is_source_branding_segment(item) for item in segments]
     for start_idx, first in enumerate(segments):
-        if branding_flags[start_idx] or is_low_value_filler_segment(first):
+        if (
+            branding_flags[start_idx]
+            or is_low_value_filler_segment(first)
+            or is_transition_only_segment(first)
+        ):
             continue
         window: list[TranscriptSegment] = []
         for end_idx in range(start_idx, len(segments)):
             if branding_flags[end_idx]:
                 break
             item = segments[end_idx]
+            if window and is_smart_split_boundary(window[-1], item):
+                break
             window.append(item)
             duration = window[-1].end - first.start
             if duration < min_duration:
@@ -6524,26 +6682,13 @@ def build_candidate_pool(
             score, reasons = score_window(window, duration)
             story_metrics = candidate_story_metrics(window, duration)
             fyp_analysis = candidate_fyp_analysis(window, duration, score)
-            previous_is_branding = start_idx > 0 and branding_flags[start_idx - 1]
-            next_is_branding = end_idx + 1 < len(segments) and branding_flags[end_idx + 1]
-            previous_is_filler = start_idx > 0 and is_low_value_filler_segment(
-                segments[start_idx - 1]
+            safe_start, safe_end = smart_candidate_media_bounds(
+                segments,
+                start_idx=start_idx,
+                end_idx=end_idx,
+                branding_flags=branding_flags,
+                max_duration=max_duration,
             )
-            next_is_filler = end_idx + 1 < len(segments) and is_low_value_filler_segment(
-                segments[end_idx + 1]
-            )
-            # Whisper timestamps can bleed a few frames across segment edges.
-            # Keep a small inward guard around removed promos so their audio tail
-            # cannot leak into an otherwise clean export.
-            safe_start = first.start + (
-                0.45 if previous_is_branding else 0.12 if previous_is_filler else -0.35
-            )
-            safe_end = window[-1].end - (
-                0.35 if next_is_branding else 0.12 if next_is_filler else -0.25
-            )
-            safe_start = max(0, safe_start)
-            safe_end = max(safe_start + 0.2, safe_end)
-            safe_end = min(safe_end, safe_start + max_duration)
             candidates.append(
                 ClipCandidate(
                     index=0,
@@ -15053,8 +15198,12 @@ def main() -> int:
             rebuild_audit=rebuild_audit,
         )
 
-    emit_progress(46, "selection", "Menilai kandidat berdasarkan hook dan kelengkapan cerita")
-    console.print("[bold]Scoring candidate clips...[/bold]")
+    emit_progress(
+        46,
+        "selection",
+        "Smart Split membaca batas kalimat, jeda, perpindahan topik, dan kelengkapan cerita",
+    )
+    console.print("[bold]Smart Split: scoring sentence-aligned candidate clips...[/bold]")
     pool = build_candidate_pool(transcript, args.min, args.max)
     # Candidate windows are scored from their intended transcript rows, while
     # the padded media interval can overlap a neighboring Whisper row. Audit

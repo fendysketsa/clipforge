@@ -56,7 +56,7 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
                 : `${job.request.top ?? "Auto"} clip pendek adaptif 25–180 detik · target eksperimen 20K`}
             </span>
             <span>{job.request.min_duration}s - {job.request.max_duration}s</span>
-            <span>{job.request.enhanced_edit ? "Edit adaptif sinematik aktif" : "Edit standar"}</span>
+            <span>{job.request.enhanced_edit ? "Smart Split + edit adaptif aktif" : "Smart Split aktif"}</span>
             <span>Auto FYP Viral adaptif</span>
             <span>
               {job.request.background_mode === "keep"

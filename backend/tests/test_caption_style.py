@@ -106,6 +106,7 @@ from clipper import (
     shorts_should_protect_payoff,
     short_narrative_arc_profile,
     social_anecdote_profile,
+    smart_transcript_segments,
     subscribe_value_prompt,
     subscriber_intent_profile,
     structured_comparison_profile,
@@ -2475,6 +2476,23 @@ def test_candidate_pool_skips_arbitrary_mid_sentence_end():
     assert any(candidate.boundary_quality == "payoff_tuntas" for candidate in candidates)
 
 
+def test_candidate_pool_does_not_cross_a_long_silence_or_topic_change():
+    segments = [
+        TranscriptSegment(0, 4, "Kenapa keputusan pertama ini penting?"),
+        TranscriptSegment(4, 12, "Masalahnya ada risiko yang sering tidak disadari."),
+        TranscriptSegment(12, 21, "Jawabannya adalah memeriksa bukti sampai kesimpulannya jelas."),
+        TranscriptSegment(24, 29, "Pertanyaan berikutnya membahas masalah yang berbeda."),
+        TranscriptSegment(29, 39, "Faktanya topik kedua memiliki konteks dan jawaban tersendiri."),
+        TranscriptSegment(39, 47, "Intinya kedua pembahasan tidak boleh dicampurkan."),
+    ]
+
+    candidates = build_candidate_pool(segments, min_duration=15, max_duration=50)
+
+    assert candidates
+    assert all(candidate.end <= 21.25 or candidate.start >= 23.65 for candidate in candidates)
+    assert all(not candidate.text.startswith("Pertanyaan berikutnya") for candidate in candidates)
+
+
 def test_ffmpeg_output_metadata_is_explicitly_sanitized():
     args = ffmpeg_clean_metadata_args()
 
@@ -2685,6 +2703,36 @@ def test_accuracy_first_transcription_decode_uses_beam_search_and_word_timestamp
     assert options["word_timestamps"] is True
     assert options["condition_on_previous_text"] is True
     assert options["hotwords"] == "Ustaz Abdul Somad, Al-Qur'an"
+
+
+def test_smart_transcript_segments_use_word_timestamps_and_sentence_boundaries():
+    class Word:
+        def __init__(self, start, end, word):
+            self.start = start
+            self.end = end
+            self.word = word
+
+    class Segment:
+        start = 0.0
+        end = 8.0
+        text = "Mengapa hal ini penting? Karena jawabannya mengubah keputusan."
+        words = [
+            Word(0.1, 0.8, "Mengapa"),
+            Word(0.8, 1.2, "hal"),
+            Word(1.2, 1.5, "ini"),
+            Word(1.5, 2.1, "penting?"),
+            Word(3.0, 3.5, "Karena"),
+            Word(3.5, 4.2, "jawabannya"),
+            Word(4.2, 4.8, "mengubah"),
+            Word(4.8, 5.5, "keputusan."),
+        ]
+
+    rows = smart_transcript_segments(Segment())
+
+    assert [(row.start, row.end, row.text) for row in rows] == [
+        (0.1, 2.1, "Mengapa hal ini penting?"),
+        (3.0, 5.5, "Karena jawabannya mengubah keputusan."),
+    ]
 
 
 def test_animated_3d_basic_fallback_uses_widely_available_filters():
