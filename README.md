@@ -191,14 +191,29 @@ The uploader aborts before selecting a file if it cannot prove that the browser
 owns `@titikbalikislami`, and stores its queue in
 `backend/data/tiktok_uploads.json`.
 
-For Islamic Shorts, the render and upload pipeline now assigns one stable,
-content-derived series: **Jawaban Ustadz 30 Detik**, **Kesalahan Ibadah
-Sehari-hari**, or **Nasihat yang Sering Disalahpahami**. The opening card carries
-the series identity, while the hook, restrained visual recipe, non-coercive CTA,
-TikTok caption, and experiment ID are saved with the clip. After a confirmed
-upload, use **Catat performa TikTok** on the clip card to record views, full-watch
-rate, shares, saves, and followers gained so results can be compared per series.
-These are measurement tools, not a promise of FYP, followers, or monetization.
+For Islamic Shorts, the render and upload pipeline assigns a stable series from
+the actual title, hook, and core message: **Tanya Jawab Islam** for explicit
+questions, **Panduan Ibadah** for contextual corrections, **Nasihat & Hikmah**
+for reflective advice, or **Kajian Islam Ringkas** as the neutral fallback. A
+speaker merely being called ustadz does not classify a clip as Q&A. The opening
+card carries the series identity, while the hook, restrained visual recipe,
+non-coercive CTA, TikTok caption, and experiment ID are saved with the clip.
+After a confirmed upload, use **Catat performa TikTok** on the clip card to
+record views, full-watch rate, shares, saves, and followers gained so results can
+be compared per series. These are measurement tools, not a promise of FYP,
+followers, or monetization.
+
+TikTok may keep the Post button disabled while the browser finishes processing
+the selected file. `TIKTOK_POST_READY_TIMEOUT_MS` controls how long ClipForge
+waits for that asynchronous step (default: `300000`, or five minutes). Progress
+changes are written to the upload job log; ClipForge clicks Post only after the
+button is visible and enabled.
+
+TikTok login defaults to `TIKTOK_LOGIN_METHOD=google`. ClipForge selects
+**Continue with Google** automatically, then waits for the user to choose
+`TIKTOK_TARGET_EMAIL` and complete any Google/TikTok CAPTCHA. ClipForge never
+types or stores the Google password, and it saves the browser session only after
+the active TikTok profile is verified against `TIKTOK_TARGET_HANDLE`.
 
 Clip cleanup is cross-platform safe: the local render is retained until both the
 matching YouTube and TikTok uploads are genuinely confirmed. A failed, queued,
@@ -223,9 +238,14 @@ headed login window can use the active `DISPLAY` and Xauthority:
 ./scripts/prepare-youtube-gui-runtime.sh
 ```
 
-`recreate-compose-up.sh` and `run-youtube-cdp-cli.sh` run this preparation
-automatically. Run it again after logging out of or restarting the desktop
-session, because the Xauthority cookie can change.
+`recreate-compose-up.sh` and `run-youtube-cdp-cli.sh` start a small host-side
+watcher automatically. It refreshes the bridge when Mutter rotates the
+Xauthority cookie (for example after locking, logging out, or restarting the
+desktop), so headed YouTube and TikTok login windows do not keep using a stale
+cookie. On systemd desktops the watcher runs as the transient user service
+`clipforge-gui-bridge.service`; other Linux hosts use a detached process. For a manually started stack, use
+`./scripts/prepare-youtube-gui-runtime.sh --start-watcher` once from the active
+desktop session.
 
 Alternatively, reuse a Chromium/Chrome profile that is already logged in to the
 target YouTube channel by setting:

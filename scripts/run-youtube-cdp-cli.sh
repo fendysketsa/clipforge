@@ -8,7 +8,7 @@ cd "$ROOT_DIR"
 source "$ROOT_DIR/scripts/load-dotenv.sh"
 load_dotenv "$ROOT_DIR/.env"
 
-"$ROOT_DIR/scripts/prepare-youtube-gui-runtime.sh"
+"$ROOT_DIR/scripts/prepare-youtube-gui-runtime.sh" --start-watcher
 
 YOUTUBE_CDP_URL="${YOUTUBE_CDP_URL:-http://127.0.0.1:9222}"
 YOUTUBE_CHROME_LOG="${YOUTUBE_CHROME_LOG:-/tmp/fendy-clipper-youtube-chrome.log}"

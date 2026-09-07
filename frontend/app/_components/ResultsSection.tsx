@@ -130,6 +130,29 @@ function youtubeUploadErrorNeedsSessionRepair(message: string) {
   ].some((marker) => lowered.includes(marker));
 }
 
+function friendlyTikTokUploadError(message: string) {
+  const clean = message.trim();
+  const lowered = clean.toLowerCase();
+  if (lowered.includes("tombol post tiktok belum siap")) {
+    return "Pemrosesan video TikTok belum selesai. Klik Ulangi TikTok; uploader akan menunggu sampai tombol Post aktif.";
+  }
+  if (lowered.includes("connect_over_cdp") && lowered.includes("timeout")) {
+    return "Koneksi ke Chrome TikTok macet. Coba ulang; uploader akan memakai session tersimpan sebagai cadangan.";
+  }
+  if (lowered.includes("connect_over_cdp") || lowered.includes("econnrefused")) {
+    return "Chrome TikTok tidak dapat dihubungi. Klik Cek sesi TikTok, lalu coba ulang.";
+  }
+  return clean;
+}
+
+function displayTikTokSeriesLabel(label?: string | null, fallback?: string | null) {
+  const clean = label?.trim() || "";
+  if (clean === "Jawaban Ustadz 30 Detik") return fallback?.trim() || "Kajian Islam Ringkas";
+  if (clean === "Kesalahan Ibadah Sehari-hari") return "Panduan Ibadah";
+  if (clean === "Nasihat yang Sering Disalahpahami") return "Nasihat & Hikmah";
+  return clean;
+}
+
 function youtubeRunningStage(upload: YouTubeUploadJob) {
   if (upload.status !== "running") return "";
   const recent = [...(upload.logs ?? [])].reverse();
@@ -685,6 +708,14 @@ export function ResultsSection({
             const isSelected = selectedClipUrls.includes(clip.url);
             const latestUpload = youtubeUploads.find((upload) => upload.clip_url === clip.url);
             const latestTikTokUpload = tiktokUploads.find((upload) => upload.clip_url === clip.url);
+            const tiktokSeriesLabel = displayTikTokSeriesLabel(
+              clip.tiktok_series_label,
+              clip.growth_series,
+            );
+            const uploadTikTokSeriesLabel = displayTikTokSeriesLabel(
+              latestTikTokUpload?.series_label,
+              tiktokSeriesLabel,
+            );
             const latestTikTokPerformance = latestTikTokUpload?.performance_snapshots.at(-1);
             const tiktokDraft = latestTikTokUpload ? tiktokMetricDrafts[latestTikTokUpload.id] : undefined;
             const updateTikTokMetricDraft = (
@@ -904,9 +935,9 @@ export function ResultsSection({
                       ) : null}
                       {clip.output_resolution ? <span className="clipMetric">{clip.output_resolution}</span> : null}
                       {clip.growth_series ? <span className="clipMetric">Seri: {clip.growth_series}</span> : null}
-                      {clip.tiktok_series_label ? (
+                      {tiktokSeriesLabel ? (
                         <span className="clipMetric" title="Identitas seri konsisten untuk TikTok">
-                          TikTok: {clip.tiktok_series_label}
+                          TikTok: {tiktokSeriesLabel}
                         </span>
                       ) : null}
                       {clip.subscriber_intent_score !== null
@@ -978,11 +1009,11 @@ export function ResultsSection({
                             <span><b>Checkpoint review:</b> {clip.growth_checkpoints.map((item) => item.toLocaleString("id-ID")).join(" → ")} views</span>
                           </div>
                         ) : null}
-                        {clip.tiktok_series_label ? (
+                        {tiktokSeriesLabel ? (
                           <div className="analysisBlock analysisApplied">
                             <div className="analysisIdeaHeader">
                               <b><CheckCircle2 size={14} /> {clip.tiktok_series_identity_embedded ? "Paket TikTok diterapkan" : "Paket upload TikTok siap"}</b>
-                              <span>{clip.tiktok_series_label}</span>
+                              <span>{tiktokSeriesLabel}</span>
                             </div>
                             <ol>
                               {clip.tiktok_opening_hook ? <li><b>Hook 0–3 detik:</b> {clip.tiktok_opening_hook}</li> : null}
@@ -1360,7 +1391,7 @@ export function ResultsSection({
                       <UploadCloud size={14} />
                       <span className="youtubeUploadStatusText">
                         TikTok: {latestTikTokUpload.status}
-                        {latestTikTokUpload.series_label ? ` · ${latestTikTokUpload.series_label}` : null}
+                        {uploadTikTokSeriesLabel ? ` · ${uploadTikTokSeriesLabel}` : null}
                         {latestTikTokUpload.status === "completed" && latestTikTokUpload.upload_confirmed
                           ? " · tersimpan Only you"
                           : null}
@@ -1379,7 +1410,7 @@ export function ResultsSection({
                         <span className="detailsSummaryIcon"><BarChart3 size={15} /></span>
                         <span>
                           <strong>Catat performa TikTok</strong>
-                          <small>{latestTikTokUpload.series_label || "Seri TikTok"} · bandingkan per eksperimen</small>
+                          <small>{uploadTikTokSeriesLabel || "Seri TikTok"} · bandingkan per eksperimen</small>
                         </span>
                         <ChevronDown className="detailsChevron" size={17} />
                       </summary>
@@ -1420,7 +1451,7 @@ export function ResultsSection({
                   {latestTikTokUpload?.status === "failed" && latestTikTokUpload.error ? (
                     <div className="youtubeUploadError tiktokUploadError" title={latestTikTokUpload.error}>
                       <strong>Upload TikTok gagal</strong>
-                      <span>{latestTikTokUpload.error}</span>
+                      <span>{friendlyTikTokUploadError(latestTikTokUpload.error)}</span>
                       <button
                         type="button"
                         onClick={onCheckTikTokSession}

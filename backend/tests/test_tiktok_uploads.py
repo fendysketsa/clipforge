@@ -19,9 +19,15 @@ from tiktok_uploader import (
     UploadError,
     _launch_with_retry,
     clean_handle,
+    content_caption_matches,
+    env_int,
     login_and_capture,
     save_session_state,
+    select_google_login,
+    set_caption,
     upload_video,
+    wait_for_post_button,
+    wait_for_new_tiktok_post,
 )
 from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
 
@@ -56,9 +62,11 @@ def test_tiktok_caption_removes_shorts_and_adds_relevant_islamic_tags():
 @pytest.mark.parametrize(
     ("title", "hook", "expected_series"),
     [
-        ("Bolehkah doa setelah shalat?", "Bagaimana hukumnya?", "jawaban_ustadz_30_detik"),
+        ("Bolehkah doa setelah shalat?", "Bagaimana hukumnya?", "tanya_jawab_islam"),
         ("Kesalahan wudhu yang sering terjadi", "Periksa bagian ini", "kesalahan_ibadah_sehari_hari"),
         ("Makna sabar saat diuji", "Sabar bukan berarti diam", "nasihat_sering_disalahpahami"),
+        ("Ini yang membuat hati terasa indah", "Simak penjelasan ustadz", "kajian_islam_ringkas"),
+        ("Pertama, masyarakat sudah siap", "Siapa pun dapat mengambil pelajaran", "kajian_islam_ringkas"),
     ],
 )
 def test_tiktok_strategy_selects_a_stable_content_series(title, hook, expected_series):
@@ -164,7 +172,7 @@ Penjelasan lengkapnya penting agar pertanyaan dan jawaban tidak dipahami di luar
 
 Simpan video ini sebagai bahan belajar.
 
-#JawabanUstadz #KajianIslam #BelajarIslam #Islam #MuslimIndonesia"""
+#TanyaJawabIslam #KajianIslam #BelajarIslam #Islam #MuslimIndonesia"""
 
 
 def test_tiktok_upload_record_is_always_only_you(monkeypatch, tmp_path):
@@ -190,7 +198,7 @@ def test_tiktok_upload_record_is_always_only_you(monkeypatch, tmp_path):
     assert upload.visibility == "only_you"
     assert upload.target_handle == "titikbalikislami"
     assert upload.upload_confirmed is False
-    assert upload.series_label == "Nasihat yang Sering Disalahpahami"
+    assert upload.series_label == "Nasihat & Hikmah"
     assert upload.opening_hook
     assert upload.visual_recipe
     assert upload.experiment_id
@@ -286,6 +294,31 @@ def test_tiktok_cdp_launcher_keeps_chrome_supervised(monkeypatch, tmp_path):
     assert any("Chrome GUI TikTok siap" in line for line in logs)
 
 
+def test_tiktok_chrome_startup_error_explains_stale_xauthority_without_noise():
+    message = api.tiktok_chrome_startup_error(
+        ["Xauthority bridge kedaluwarsa; cookie desktop aktif berubah."],
+        [
+            "[143:206:ERROR:third_party/webrtc/p2p/base/stun_port.cc:124] Binding request timed out",
+            "Invalid MIT-MAGIC-COOKIE-1 key",
+        ],
+        exit_code=1,
+    )
+
+    assert "cookie Xauthority berubah" in message
+    assert "tunggu beberapa detik" in message
+    assert "stun_port.cc" not in message
+
+
+def test_text_file_lines_since_excludes_previous_chrome_failures(tmp_path):
+    log_path = tmp_path / "chrome.log"
+    log_path.write_text("old Invalid MIT-MAGIC-COOKIE-1 key\n", encoding="utf-8")
+    offset = log_path.stat().st_size
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write("current startup failure\n")
+
+    assert api.text_file_lines_since(log_path, offset) == ["current startup failure"]
+
+
 def test_tiktok_upload_prefers_the_live_persistent_cdp_browser(monkeypatch, tmp_path):
     output_root = tmp_path / "outputs"
     video = output_root / "demo" / "clip_01.mp4"
@@ -310,6 +343,137 @@ def test_tiktok_upload_prefers_the_live_persistent_cdp_browser(monkeypatch, tmp_
 
     assert command[command.index("--cdp-url") + 1] == "http://127.0.0.1:9444"
     assert "--chromium-user-data-dir" not in command
+
+
+def test_tiktok_upload_command_can_bypass_unresponsive_cdp(monkeypatch, tmp_path):
+    output_root = tmp_path / "outputs"
+    video = output_root / "demo" / "clip_01.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"video")
+    monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
+    monkeypatch.setattr(api, "TIKTOK_CDP_URL", "http://127.0.0.1:9444")
+    monkeypatch.setattr(api, "tiktok_cdp_ready", lambda: True)
+    monkeypatch.setattr(api, "tiktok_auth_state_exists", lambda: True)
+    upload = api.TikTokUploadJob(
+        id="upload-storage-fallback",
+        source_job_id="job-tiktok",
+        clip_url="/outputs/demo/clip_01.mp4",
+        clip_name=video.name,
+        status="queued",
+        created_at="2026-09-06T00:00:00+00:00",
+        updated_at="2026-09-06T00:00:00+00:00",
+        caption="caption",
+        target_handle="titikbalikislami",
+    )
+
+    command = api.build_tiktok_upload_command(upload, allow_cdp=False)
+
+    assert "--cdp-url" not in command
+    assert "--chromium-user-data-dir" not in command
+
+
+def test_tiktok_upload_falls_back_to_saved_session_after_cdp_timeout(monkeypatch, tmp_path):
+    output_root = tmp_path / "outputs"
+    video = output_root / "demo" / "clip_01.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"video")
+    upload = api.TikTokUploadJob(
+        id="upload-cdp-timeout",
+        source_job_id="job-tiktok",
+        clip_url="/outputs/demo/clip_01.mp4",
+        clip_name=video.name,
+        status="queued",
+        created_at="2026-09-06T00:00:00+00:00",
+        updated_at="2026-09-06T00:00:00+00:00",
+        caption="caption",
+        target_handle="titikbalikislami",
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
+    monkeypatch.setattr(api, "TIKTOK_CDP_URL", "http://127.0.0.1:9444")
+    monkeypatch.setattr(api, "tiktok_cdp_ready", lambda: True)
+    monkeypatch.setattr(api, "tiktok_auth_state_exists", lambda: True)
+    monkeypatch.setattr(
+        api,
+        "restart_tiktok_login_browser",
+        lambda _logs: (_ for _ in ()).throw(RuntimeError("restart unavailable")),
+    )
+    monkeypatch.setattr(api, "tiktok_uploads", {upload.id: upload})
+    monkeypatch.setattr(api, "save_tiktok_uploads_unlocked", lambda: None)
+    monkeypatch.setattr(api, "schedule_cross_platform_cleanup_after_tiktok", lambda _upload: None)
+    process_results = [
+        (["USER_ERROR:Uploader TikTok gagal: BrowserType.connect_over_cdp: Timeout 15000ms exceeded.\n"], 1),
+        (["UPLOAD_CONFIRMED:private\n", "VIDEO_URL:https://www.tiktok.com/@titikbalikislami\n"], 0),
+    ]
+    commands = []
+
+    class Process:
+        def __init__(self, command, **_kwargs):
+            commands.append(command)
+            lines, self.returncode = process_results[len(commands) - 1]
+            self.stdout = iter(lines)
+
+        def wait(self):
+            return self.returncode
+
+    monkeypatch.setattr(api.subprocess, "Popen", Process)
+
+    api.run_tiktok_upload(upload.id)
+
+    assert "--cdp-url" in commands[0]
+    assert "--cdp-url" not in commands[1]
+    completed = api.tiktok_uploads[upload.id]
+    assert completed.status == "completed"
+    assert completed.upload_confirmed is True
+    assert any("session tersimpan" in line for line in completed.logs)
+
+
+def test_tiktok_upload_restarts_stuck_cdp_before_falling_back(monkeypatch, tmp_path):
+    output_root = tmp_path / "outputs"
+    video = output_root / "demo" / "clip_01.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"video")
+    upload = api.TikTokUploadJob(
+        id="upload-cdp-restart",
+        source_job_id="job-tiktok",
+        clip_url="/outputs/demo/clip_01.mp4",
+        clip_name=video.name,
+        status="queued",
+        created_at="2026-09-06T00:00:00+00:00",
+        updated_at="2026-09-06T00:00:00+00:00",
+        caption="caption",
+        target_handle="titikbalikislami",
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
+    monkeypatch.setattr(api, "TIKTOK_CDP_URL", "http://127.0.0.1:9444")
+    monkeypatch.setattr(api, "tiktok_cdp_ready", lambda: True)
+    monkeypatch.setattr(api, "tiktok_uploads", {upload.id: upload})
+    monkeypatch.setattr(api, "save_tiktok_uploads_unlocked", lambda: None)
+    monkeypatch.setattr(api, "schedule_cross_platform_cleanup_after_tiktok", lambda _upload: None)
+    restart_calls = []
+    monkeypatch.setattr(api, "restart_tiktok_login_browser", lambda _logs: restart_calls.append(True))
+    process_results = [
+        (["USER_ERROR:Uploader TikTok gagal: BrowserType.connect_over_cdp: Timeout 15000ms exceeded.\n"], 1),
+        (["UPLOAD_CONFIRMED:private\n", "VIDEO_URL:https://www.tiktok.com/@titikbalikislami\n"], 0),
+    ]
+    commands = []
+
+    class Process:
+        def __init__(self, command, **_kwargs):
+            commands.append(command)
+            lines, self.returncode = process_results[len(commands) - 1]
+            self.stdout = iter(lines)
+
+        def wait(self):
+            return self.returncode
+
+    monkeypatch.setattr(api.subprocess, "Popen", Process)
+
+    api.run_tiktok_upload(upload.id)
+
+    assert restart_calls == [True]
+    assert "--cdp-url" in commands[0]
+    assert "--cdp-url" in commands[1]
+    assert api.tiktok_uploads[upload.id].status == "completed"
 
 
 def test_tiktok_session_check_uses_live_cdp_without_saved_state(monkeypatch):
@@ -449,6 +613,34 @@ def test_tiktok_login_does_not_leave_login_page_for_stale_auth_cookie(monkeypatc
     assert not (tmp_path / "state.json").exists()
 
 
+def test_tiktok_login_selects_google_oauth_without_entering_credentials():
+    selected = []
+
+    class GoogleOption:
+        first = None
+
+        def __init__(self):
+            self.first = self
+
+        def wait_for(self, **_kwargs):
+            pass
+
+        def click(self, **kwargs):
+            selected.append(kwargs)
+
+    google_option = GoogleOption()
+
+    class Page:
+        url = "https://www.tiktok.com/login"
+
+        def locator(self, selector):
+            assert "Google" in selector
+            return google_option
+
+    assert select_google_login(Page()) is True
+    assert selected == [{"timeout": 10_000}]
+
+
 def test_tiktok_browser_launch_retries_closed_browser(monkeypatch):
     attempts = 0
     monkeypatch.setenv("TIKTOK_BROWSER_LAUNCH_ATTEMPTS", "3")
@@ -465,7 +657,7 @@ def test_tiktok_browser_launch_retries_closed_browser(monkeypatch):
     assert attempts == 3
 
 
-def test_tiktok_cdp_upload_sends_bytes_instead_of_container_path(monkeypatch, tmp_path):
+def test_tiktok_cdp_upload_uses_playwright_remote_file_transfer(monkeypatch, tmp_path):
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"video-payload")
     selected = []
@@ -505,10 +697,165 @@ def test_tiktok_cdp_upload_sends_bytes_instead_of_container_path(monkeypatch, tm
     )
 
     payload, kwargs = selected[0]
-    assert payload["name"] == "clip.mp4"
-    assert payload["mimeType"] == "video/mp4"
-    assert payload["buffer"] == b"video-payload"
+    assert payload == str(video.resolve())
     assert kwargs["timeout"] == 300_000
+
+
+def test_tiktok_transfer_status_is_not_post_confirmation():
+    caption = "Apa yang membuat kita merasa tidak ada di sini?\n\n#KajianIslam"
+
+    assert content_caption_matches("Uploaded (23.45MB)", caption) == 0
+    assert content_caption_matches(
+        "Posts (Created on)\nApa yang membuat kita merasa tidak ada di sini? #KajianIslam",
+        caption,
+    ) == 1
+
+
+def test_tiktok_post_confirmation_polls_settled_content_page_without_renavigating():
+    caption = "Apakah dia benar-benar seperti yang mereka bayangkan?\n\n#KajianIslam"
+    bodies = iter(
+        [
+            "Posts (Created on)",
+            "Posts (Created on)\nApakah dia benar-benar seperti yang mereka bayangkan? #KajianIslam",
+        ]
+    )
+
+    class Body:
+        def inner_text(self, **_kwargs):
+            return next(bodies)
+
+    class Page:
+        def __init__(self):
+            self.goto_calls = 0
+
+        def goto(self, *_args, **_kwargs):
+            self.goto_calls += 1
+
+        def locator(self, selector):
+            assert selector == "body"
+            return Body()
+
+        def wait_for_timeout(self, _milliseconds):
+            pass
+
+        def reload(self, **_kwargs):
+            raise AssertionError("the async table should settle before a reload")
+
+    page = Page()
+
+    assert wait_for_new_tiktok_post(page, caption, 0, timeout_ms=5_000) is True
+    assert page.goto_calls == 1
+
+
+def test_tiktok_caption_replaces_filename_instead_of_appending(monkeypatch):
+    expected = "Apa yang membuat kita merasa tidak ada di sini?\n\n#KajianIslam"
+
+    class Editor:
+        def __init__(self):
+            self.value = "clip_01_abiku-udah-lama-kita-nggak-syihab-sihab-ya"
+            self.selected = False
+
+        def click(self, **_kwargs):
+            pass
+
+        def press(self, key, **_kwargs):
+            if key == "Control+A":
+                self.selected = True
+            elif key == "Backspace" and self.selected:
+                self.value = ""
+                self.selected = False
+
+        def fill(self, value, **_kwargs):
+            # Model the rich editor behavior that exposed the regression: fill
+            # inserts at the caret unless the existing DraftJS value was first
+            # removed explicitly.
+            self.value += value
+
+        def input_value(self, **_kwargs):
+            raise RuntimeError("contenteditable is not an input")
+
+        def inner_text(self, **_kwargs):
+            return self.value
+
+    class Keyboard:
+        def press(self, _key):
+            pass
+
+        def type(self, _value, **_kwargs):
+            raise AssertionError("fill should work after the explicit clear")
+
+    class Page:
+        keyboard = Keyboard()
+
+        def wait_for_timeout(self, _milliseconds):
+            pass
+
+    editor = Editor()
+    monkeypatch.setattr("tiktok_uploader.first_visible", lambda *_args, **_kwargs: editor)
+
+    set_caption(Page(), expected)
+
+    assert editor.value == expected
+    assert "clip_01" not in editor.value
+
+
+def test_tiktok_post_button_waits_until_async_upload_enables_it():
+    states = iter([False, False, True])
+
+    class Button:
+        first = None
+
+        def __init__(self):
+            self.first = self
+            self.enabled = False
+
+        def wait_for(self, **_kwargs):
+            pass
+
+        def is_enabled(self, **_kwargs):
+            self.enabled = next(states)
+            return self.enabled
+
+        def get_attribute(self, name, **_kwargs):
+            if name == "disabled":
+                return None
+            return "false" if self.enabled else "true"
+
+    button = Button()
+
+    class Missing:
+        first = None
+
+        def __init__(self):
+            self.first = self
+
+        def wait_for(self, **_kwargs):
+            raise RuntimeError("missing")
+
+        def inner_text(self, **_kwargs):
+            raise RuntimeError("missing")
+
+    class Page:
+        def locator(self, selector):
+            if selector == '[data-e2e="post_video_button"]':
+                return button
+            return Missing()
+
+        def wait_for_timeout(self, _milliseconds):
+            pass
+
+    ready = wait_for_post_button(Page(), 5_000)
+
+    assert ready is button
+    assert button.enabled is True
+
+
+def test_tiktok_timeout_env_uses_safe_defaults_and_minimum(monkeypatch):
+    monkeypatch.setenv("TIKTOK_TEST_TIMEOUT_MS", "not-a-number")
+    assert env_int("TIKTOK_TEST_TIMEOUT_MS", 300_000, minimum=30_000) == 300_000
+
+    monkeypatch.setenv("TIKTOK_TEST_TIMEOUT_MS", "100")
+    assert env_int("TIKTOK_TEST_TIMEOUT_MS", 300_000, minimum=30_000) == 30_000
 
 
 def test_explicit_tiktok_login_refreshes_even_while_saved_session_exists(monkeypatch):
@@ -531,6 +878,42 @@ def test_explicit_tiktok_login_refreshes_even_while_saved_session_exists(monkeyp
     assert status.active is True
     assert status.error is None
     assert "Membuka TikTok" in status.logs[-1]
+
+
+def test_tiktok_login_restarts_stuck_cdp_and_retries(monkeypatch):
+    monkeypatch.setattr(api, "tiktok_login_process", None)
+    monkeypatch.setattr(api, "tiktok_login_status", api.YouTubeLoginStatus(active=True))
+    monkeypatch.setattr(api, "open_tiktok_login_browser", lambda _logs: None)
+    monkeypatch.setattr(api, "build_tiktok_cdp_capture_command", lambda: ["capture"])
+    monkeypatch.setattr(api, "youtube_graphical_process_env", lambda: {})
+    session_ready = iter([False, True])
+    monkeypatch.setattr(api, "tiktok_auth_state_exists", lambda: next(session_ready))
+    restart_calls = []
+    monkeypatch.setattr(api, "restart_tiktok_login_browser", lambda _logs: restart_calls.append(True))
+    process_results = [
+        (["USER_ERROR:Uploader TikTok gagal: BrowserType.connect_over_cdp: Timeout 15000ms exceeded.\n"], 1),
+        (["TARGET_ACCOUNT_CONFIRMED:@titikbalikislami\n", "SESSION_SAVED:/tmp/state.json\n"], 0),
+    ]
+    process_calls = []
+
+    class Process:
+        def __init__(self, command, **_kwargs):
+            process_calls.append(command)
+            lines, self.returncode = process_results[len(process_calls) - 1]
+            self.stdout = iter(lines)
+
+        def wait(self):
+            return self.returncode
+
+    monkeypatch.setattr(api.subprocess, "Popen", Process)
+
+    api.run_tiktok_login_process()
+
+    assert restart_calls == [True]
+    assert process_calls == [["capture"], ["capture"]]
+    assert api.tiktok_login_status.active is False
+    assert api.tiktok_login_status.error is None
+    assert any("me-restart Chrome" in line for line in api.tiktok_login_status.logs)
 
 
 def test_youtube_cleanup_is_blocked_until_same_clip_is_confirmed_on_tiktok(monkeypatch, tmp_path):

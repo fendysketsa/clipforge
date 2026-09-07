@@ -8,6 +8,7 @@ TIKTOK_CDP_PORT="${TIKTOK_CDP_PORT:-}"
 TIKTOK_LOGIN_PROFILE_DIR="${TIKTOK_CHROMIUM_USER_DATA_DIR:-/app/data/tiktok-chrome-profile}"
 TIKTOK_LOGIN_PROFILE_DIRECTORY="${TIKTOK_CHROMIUM_PROFILE_DIRECTORY:-Default}"
 TIKTOK_LOGIN_URL="${TIKTOK_LOGIN_URL:-https://www.tiktok.com/login}"
+TIKTOK_LOGIN_METHOD="${TIKTOK_LOGIN_METHOD:-google}"
 TIKTOK_CHROME_BACKGROUND="${TIKTOK_CHROME_BACKGROUND:-true}"
 if [[ "${IN_DOCKER:-}" == "1" ]]; then
   DEFAULT_TIKTOK_CHROME_LOG="/app/data/tiktok-chrome.log"
@@ -102,6 +103,23 @@ if [[ -z "${XAUTHORITY:-}" || ! -r "${XAUTHORITY:-}" ]]; then
   echo "Xauthority desktop aktif tidak dapat dibaca oleh Chrome TikTok." >&2
   exit 3
 fi
+# A Docker user-namespace may be able to stat Mutter's current authority file
+# but not read it. Do not launch Chrome with an older bridge cookie in that
+# state: X11 would reject it with the opaque "Invalid MIT-MAGIC-COOKIE-1".
+shopt -s nullglob
+live_authority_files=("$HOST_RUNTIME_DIR"/.mutter-Xwaylandauth.*)
+shopt -u nullglob
+if (( ${#live_authority_files[@]} > 0 )); then
+  newest_live_authority="${live_authority_files[0]}"
+  for authority_file in "${live_authority_files[@]:1}"; do
+    [[ "$authority_file" -nt "$newest_live_authority" ]] && newest_live_authority="$authority_file"
+  done
+  if [[ "$XAUTHORITY" == "$GUI_BRIDGE_DIR/Xauthority" && "$newest_live_authority" -nt "$XAUTHORITY" ]]; then
+    echo "Xauthority bridge kedaluwarsa; cookie desktop aktif berubah." >&2
+    echo "Watcher GUI belum memperbarui $XAUTHORITY. Jalankan scripts/prepare-youtube-gui-runtime.sh dari host." >&2
+    exit 3
+  fi
+fi
 
 mkdir -p "$TIKTOK_LOGIN_PROFILE_DIR" "$(dirname "$TIKTOK_CHROME_LOG")"
 find "$TIKTOK_LOGIN_PROFILE_DIR" -maxdepth 2 -name 'Singleton*' -delete 2>/dev/null || true
@@ -115,9 +133,13 @@ chrome_args=(
   --no-default-browser-check
   --start-maximized
   --disable-dev-shm-usage
-  --disable-gpu
-  --disable-gpu-compositing
-  --disable-features=Vulkan,UseSkiaRenderer,CanvasOopRasterization
+  # This browser is displayed through the X11 socket mounted by Docker. Force
+  # that backend so Chrome does not probe an unavailable Wayland socket.
+  --ozone-platform=x11
+  # Do not disable GPU compositing, Skia, or rasterization here. Recent Chrome
+  # versions can fall back to software rendering on their own; disabling the
+  # whole rendering stack makes OAuth popup surfaces appear gray/blank under
+  # GNOME/Xwayland and also makes scrolling and animations needlessly slow.
   --log-level=3
 )
 if [[ "${EUID:-$(id -u)}" == "0" ]]; then
@@ -129,6 +151,7 @@ echo "Display: ${DISPLAY:-tidak tersedia}"
 echo "Xauthority: $XAUTHORITY"
 echo "Profile: $TIKTOK_LOGIN_PROFILE_DIR"
 echo "CDP: $TIKTOK_CDP_URL"
+echo "Login method: $TIKTOK_LOGIN_METHOD (dipilih otomatis oleh uploader)"
 echo "Chrome log: $TIKTOK_CHROME_LOG"
 if [[ "$TIKTOK_CHROME_BACKGROUND" == "true" ]]; then
   "$CHROME_BIN" "${chrome_args[@]}" "$TIKTOK_LOGIN_URL" >>"$TIKTOK_CHROME_LOG" 2>&1 &

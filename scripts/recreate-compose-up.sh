@@ -7,7 +7,7 @@ cd "$ROOT_DIR"
 source "$ROOT_DIR/scripts/load-dotenv.sh"
 load_dotenv "$ROOT_DIR/.env"
 
-"$ROOT_DIR/scripts/prepare-youtube-gui-runtime.sh"
+"$ROOT_DIR/scripts/prepare-youtube-gui-runtime.sh" --start-watcher
 
 YOUTUBE_CDP_PORT="${YOUTUBE_CDP_PORT:-}"
 if [[ -z "$YOUTUBE_CDP_PORT" && "${YOUTUBE_CDP_URL:-}" =~ :([0-9]+)(/.*)?$ ]]; then

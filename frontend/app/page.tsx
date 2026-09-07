@@ -1115,7 +1115,7 @@ export default function HomePage() {
       setIsTikTokLoginActive(status.active);
       toast.success(
         status.active
-          ? `Jendela TikTok dibuka. Login, selesaikan captcha, lalu buka profil @${tiktokConfig?.target_handle ?? "titikbalikislami"}.`
+          ? `Chrome TikTok sedang dibuka. Pilih Continue with Google, gunakan ${tiktokConfig?.target_email ?? "akun Google target"}, lalu selesaikan captcha untuk @${tiktokConfig?.target_handle ?? "titikbalikislami"}.`
           : status.logs.at(-1) ?? "Session TikTok masih aktif; login tidak perlu diulang.",
       );
       if (!status.active) await loadTikTokUploads();

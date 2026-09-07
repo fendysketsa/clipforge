@@ -2442,6 +2442,19 @@ def enrich_job_source_metadata(job: "ClipJob") -> "ClipJob":
     return job.model_copy(update=updates)
 
 
+def current_tiktok_strategy_for_clip(clip: "ClipFile") -> dict[str, Any]:
+    return build_tiktok_strategy(
+        title=clip.title or "",
+        hook=clip.hook or "",
+        text=" ".join(
+            value
+            for value in (clip.core_message, clip.pov)
+            if value
+        ),
+        stable_key=clip.url or clip.name,
+    )
+
+
 def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
     enriched = enrich_job_source_metadata(
         enrich_job_codex_feedback(enrich_job_clip_titles(job))
@@ -2460,6 +2473,8 @@ def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
     changed = False
     for clip in enriched.clips:
         issue = preflight(enriched, clip)
+        tiktok_strategy = current_tiktok_strategy_for_clip(clip)
+        tiktok_strategy_changed = clip.tiktok_series_id != tiktok_strategy["series_id"]
         automatic_repair_available = bool(
             enriched.request.clip_mode == "short"
             and (
@@ -2473,6 +2488,17 @@ def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
             "automatic_repair_available": automatic_repair_available,
             "monetization_strategy": codex_monetization_strategy(
                 enriched, clip, issue
+            ),
+            "tiktok_series_id": str(tiktok_strategy["series_id"]),
+            "tiktok_series_label": str(tiktok_strategy["series_label"]),
+            "tiktok_opening_hook": str(tiktok_strategy["opening_hook"]),
+            "tiktok_visual_recipe": str(tiktok_strategy["visual_recipe"]),
+            "tiktok_cta": str(tiktok_strategy["cta"]),
+            "tiktok_experiment_id": str(tiktok_strategy["experiment_id"]),
+            # A corrected classification is an upload package for the existing
+            # render; do not claim that its former label was embedded on-video.
+            "tiktok_series_identity_embedded": bool(
+                clip.tiktok_series_identity_embedded and not tiktok_strategy_changed
             ),
         }
         if any(getattr(clip, key) != value for key, value in updates.items()):
@@ -5129,7 +5155,8 @@ def tiktok_config_payload() -> TikTokConfig:
     elif profile_ready:
         auth_path = str(Path(TIKTOK_CHROMIUM_USER_DATA_DIR) / TIKTOK_CHROMIUM_PROFILE_DIRECTORY)
         message = (
-            f"Profile browser tersedia tetapi belum login. Klik Login TikTok, selesaikan CAPTCHA, "
+            "Profile browser tersedia tetapi belum login. Klik Login TikTok, pilih Continue with Google "
+            f"untuk {os.environ.get('TIKTOK_TARGET_EMAIL', DEFAULT_TIKTOK_TARGET_EMAIL).strip()}, selesaikan CAPTCHA, "
             f"dan masuk sebagai @{tiktok_target_handle()}."
         )
     else:
@@ -5158,7 +5185,7 @@ def require_tiktok_ready() -> None:
     if not config.auth_state_exists:
         raise HTTPException(
             status_code=409,
-            detail="Session TikTok belum login. Klik Login TikTok dan selesaikan CAPTCHA di jendela Chrome.",
+            detail="Session TikTok belum login. Klik Login TikTok, lanjutkan dengan Google, lalu selesaikan CAPTCHA di Chrome.",
         )
 
 
@@ -5173,26 +5200,7 @@ def tiktok_caption_for_clip(job: ClipJob, clip: ClipFile, index: int, requested:
     base = requested.strip() or (clip.social_caption or "").strip() or (clip.tiktok_caption or "").strip()
     if not base:
         base = clip.title or default_youtube_title(job, clip, index)
-    strategy = build_tiktok_strategy(
-        title=clip.title or "",
-        hook=clip.hook or "",
-        text=" ".join(value for value in (clip.core_message, clip.pov, base) if value),
-        stable_key=clip.url or f"{job.id}|{index}",
-    )
-    strategy.update(
-        {
-            key: value
-            for key, value in {
-                "series_id": clip.tiktok_series_id,
-                "series_label": clip.tiktok_series_label,
-                "opening_hook": clip.tiktok_opening_hook,
-                "visual_recipe": clip.tiktok_visual_recipe,
-                "cta": clip.tiktok_cta,
-                "experiment_id": clip.tiktok_experiment_id,
-            }.items()
-            if value
-        }
-    )
+    strategy = current_tiktok_strategy_for_clip(clip)
     return tiktok_caption_from_strategy(base, strategy)
 
 
@@ -5243,28 +5251,7 @@ def create_tiktok_upload_record(job_id: str, request: TikTokUploadRequest) -> Ti
     if existing is not None and not (request.dry_run and existing.status == "completed"):
         return existing
     now = now_iso()
-    strategy = build_tiktok_strategy(
-        title=clip.title or "",
-        hook=clip.hook or "",
-        text=" ".join(
-            value for value in (clip.core_message, clip.pov, clip.social_caption) if value
-        ),
-        stable_key=clip.url,
-    )
-    strategy.update(
-        {
-            key: value
-            for key, value in {
-                "series_id": clip.tiktok_series_id,
-                "series_label": clip.tiktok_series_label,
-                "opening_hook": clip.tiktok_opening_hook,
-                "visual_recipe": clip.tiktok_visual_recipe,
-                "cta": clip.tiktok_cta,
-                "experiment_id": clip.tiktok_experiment_id,
-            }.items()
-            if value
-        }
-    )
+    strategy = current_tiktok_strategy_for_clip(clip)
     return TikTokUploadJob(
         id=uuid.uuid4().hex,
         source_job_id=job_id,
@@ -6663,6 +6650,16 @@ def run_youtube_profile_login_once(*, timeout_seconds: str | None = None) -> tup
 def tail_text_file(path: Path, limit: int = 80) -> list[str]:
     try:
         return path.read_text(encoding="utf-8", errors="replace").splitlines()[-limit:]
+    except OSError:
+        return []
+
+
+def text_file_lines_since(path: Path, offset: int, limit: int = 80) -> list[str]:
+    """Read only output appended by the current subprocess invocation."""
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            handle.seek(offset)
+            return handle.read().splitlines()[-limit:]
     except OSError:
         return []
 
@@ -8086,11 +8083,15 @@ def build_tiktok_base_command(*, force_profile: bool = False, cdp_url: str = "")
     return command
 
 
-def build_tiktok_upload_command(upload: TikTokUploadJob) -> list[str]:
+def build_tiktok_upload_command(
+    upload: TikTokUploadJob,
+    *,
+    allow_cdp: bool = True,
+) -> list[str]:
     clip_path = output_path_from_url(upload.clip_url)
     if clip_path is None or not clip_path.is_file():
         raise RuntimeError("File clip TikTok tidak ditemukan")
-    cdp_url = TIKTOK_CDP_URL if tiktok_cdp_ready() else ""
+    cdp_url = TIKTOK_CDP_URL if allow_cdp and tiktok_cdp_ready() else ""
     command = [
         *build_tiktok_base_command(cdp_url=cdp_url),
         "upload",
@@ -8120,6 +8121,24 @@ def tiktok_error_requires_login(message: str) -> bool:
             "akun browser bukan pemilik",
             "session tiktok sudah habis",
             "sesi sudah habis",
+        )
+    )
+
+
+def tiktok_error_is_cdp_transport_failure(message: str) -> bool:
+    """Identify failures that happen before TikTok upload automation starts."""
+    normalized = message.casefold()
+    if "connect_over_cdp" not in normalized:
+        return False
+    return any(
+        marker in normalized
+        for marker in (
+            "timeout",
+            "econnrefused",
+            "connection refused",
+            "websocket",
+            "socket hang up",
+            "browser has been closed",
         )
     )
 
@@ -8177,8 +8196,10 @@ def run_tiktok_upload(upload_id: str) -> None:
         confirmed = False
         profile_url: str | None = None
         used_cdp_recovery = False
+        cdp_restart_attempted = False
+        cdp_transport_failed = False
         while True:
-            command = build_tiktok_upload_command(upload)
+            command = build_tiktok_upload_command(upload, allow_cdp=not cdp_transport_failed)
             attempt_logs: list[str] = []
             process = subprocess.Popen(
                 command,
@@ -8215,7 +8236,34 @@ def run_tiktok_upload(upload_id: str) -> None:
                 break
             used_cdp = "--cdp-url" in command
             if (
+                used_cdp
+                and error
+                and tiktok_error_is_cdp_transport_failure(error)
+            ):
+                if not cdp_restart_attempted:
+                    cdp_restart_attempted = True
+                    logs.append("Koneksi Chrome CDP TikTok macet; me-restart Chrome khusus TikTok.")
+                    try:
+                        restart_tiktok_login_browser(logs)
+                    except Exception as recovery_exc:
+                        logs.append(f"Restart Chrome TikTok gagal: {recovery_exc}")
+                    else:
+                        if tiktok_cdp_ready():
+                            logs.append("Chrome TikTok pulih; mengulangi upload pada job yang sama.")
+                            continue
+                if not cdp_transport_failed and tiktok_auth_state_exists():
+                    cdp_transport_failed = True
+                    logs.append(
+                        "Koneksi Chrome CDP TikTok tetap macet; melanjutkan dengan session tersimpan."
+                    )
+                    continue
+                raise RuntimeError(
+                    "Chrome TikTok macet dan session tersimpan tidak valid. "
+                    "Klik Login TikTok, selesaikan login/CAPTCHA, lalu ulangi upload."
+                )
+            if (
                 not used_cdp
+                and not cdp_transport_failed
                 and not used_cdp_recovery
                 and error
                 and tiktok_error_requires_login(error)
@@ -8337,6 +8385,43 @@ def tiktok_cdp_ready() -> bool:
     return bool(payload.get("webSocketDebuggerUrl"))
 
 
+def tiktok_cdp_port() -> str:
+    match = re.search(r":(\d+)(?:/|$)", TIKTOK_CDP_URL)
+    return match.group(1) if match else "9444"
+
+
+def stop_tiktok_cdp_processes() -> None:
+    """Stop only Chrome instances using ClipForge's dedicated TikTok CDP port."""
+    global tiktok_cdp_process
+    process = tiktok_cdp_process
+    if process is not None and process.poll() is None:
+        try:
+            process.terminate()
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+        except Exception:
+            pass
+    try:
+        subprocess.run(
+            ["pkill", "-f", f"remote-debugging-port={tiktok_cdp_port()}"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=5,
+        )
+    except Exception:
+        pass
+    tiktok_cdp_process = None
+    time.sleep(1.5)
+
+
+def restart_tiktok_login_browser(logs: list[str]) -> None:
+    stop_tiktok_cdp_processes()
+    open_tiktok_login_browser(logs)
+
+
 def build_tiktok_cdp_launcher_command() -> list[str]:
     configured = os.environ.get("TIKTOK_CDP_REFRESH_COMMAND", "").strip()
     if configured:
@@ -8365,6 +8450,45 @@ def build_tiktok_cdp_capture_command() -> list[str]:
     ]
 
 
+def tiktok_chrome_startup_error(
+    launcher_logs: list[str],
+    chrome_logs: list[str],
+    *,
+    exit_code: int | None = None,
+) -> str:
+    """Turn noisy Chrome/X11 diagnostics into one actionable UI message."""
+    combined = "\n".join([*launcher_logs, *chrome_logs])
+    normalized = combined.casefold()
+    if "xauthority bridge kedaluwarsa" in normalized or "invalid mit-magic-cookie-1" in normalized:
+        return (
+            "Chrome TikTok tidak dapat mengakses desktop karena cookie Xauthority berubah. "
+            "Bridge GUI sedang diperbarui otomatis; tunggu beberapa detik lalu klik Login TikTok lagi."
+        )
+    if "authorization required" in normalized or "no authorization protocol" in normalized:
+        return (
+            "Chrome TikTok ditolak oleh sesi desktop aktif. "
+            "Pastikan GUI bridge watcher berjalan, lalu coba Login TikTok lagi."
+        )
+    if "display desktop tidak tersedia" in normalized or "socket x11" in normalized:
+        return "Desktop X11 aktif tidak tersedia untuk Chrome TikTok. Masuk ke sesi desktop lalu coba lagi."
+    if "xauthority desktop aktif tidak dapat dibaca" in normalized:
+        return (
+            "Kredensial desktop untuk Chrome TikTok tidak dapat dibaca. "
+            "Jalankan scripts/prepare-youtube-gui-runtime.sh --start-watcher dari terminal desktop."
+        )
+
+    useful = [
+        line.strip()
+        for line in [*launcher_logs, *chrome_logs]
+        if line.strip()
+        and "stun_port.cc" not in line
+        and "glib-gio-critical" not in line.casefold()
+    ]
+    detail = useful[-1] if useful else "Periksa DISPLAY, Xauthority, dan log launcher TikTok."
+    prefix = f"Chrome GUI TikTok berhenti saat startup (exit {exit_code}). " if exit_code is not None else ""
+    return prefix + detail
+
+
 def open_tiktok_login_browser(logs: list[str]) -> None:
     global tiktok_cdp_process
     if TIKTOK_CDP_URL.rstrip("/") == YOUTUBE_CDP_URL.rstrip("/"):
@@ -8378,6 +8502,8 @@ def open_tiktok_login_browser(logs: list[str]) -> None:
             return
         TIKTOK_CDP_REFRESH_LOG.parent.mkdir(parents=True, exist_ok=True)
         TIKTOK_CHROME_LOG.parent.mkdir(parents=True, exist_ok=True)
+        launcher_log_offset = TIKTOK_CDP_REFRESH_LOG.stat().st_size if TIKTOK_CDP_REFRESH_LOG.is_file() else 0
+        chrome_log_offset = TIKTOK_CHROME_LOG.stat().st_size if TIKTOK_CHROME_LOG.is_file() else 0
         command = build_tiktok_cdp_launcher_command()
         process_env = youtube_graphical_process_env()
         # Keep Chrome attached to a supervised Popen. A launcher shell that
@@ -8408,13 +8534,10 @@ def open_tiktok_login_browser(logs: list[str]) -> None:
             code = process.poll()
             if code is not None:
                 tiktok_cdp_process = None
-                launcher_logs = tail_text_file(TIKTOK_CDP_REFRESH_LOG, 20)
-                chrome_logs = tail_text_file(TIKTOK_CHROME_LOG, 12)
+                launcher_logs = text_file_lines_since(TIKTOK_CDP_REFRESH_LOG, launcher_log_offset, 20)
+                chrome_logs = text_file_lines_since(TIKTOK_CHROME_LOG, chrome_log_offset, 12)
                 logs.extend([*launcher_logs[-10:], *chrome_logs[-8:]])
-                raise RuntimeError(
-                    f"Chrome GUI TikTok berhenti saat startup (exit {code}): "
-                    + " | ".join([*launcher_logs[-3:], *chrome_logs[-5:]])
-                )
+                raise RuntimeError(tiktok_chrome_startup_error(launcher_logs, chrome_logs, exit_code=code))
             time.sleep(0.5)
         if process.poll() is None:
             process.terminate()
@@ -8424,16 +8547,12 @@ def open_tiktok_login_browser(logs: list[str]) -> None:
                 process.kill()
                 process.wait(timeout=5)
         tiktok_cdp_process = None
-        launcher_logs = tail_text_file(TIKTOK_CDP_REFRESH_LOG, 20)
-        chrome_logs = tail_text_file(TIKTOK_CHROME_LOG, 12)
+        launcher_logs = text_file_lines_since(TIKTOK_CDP_REFRESH_LOG, launcher_log_offset, 20)
+        chrome_logs = text_file_lines_since(TIKTOK_CHROME_LOG, chrome_log_offset, 12)
         logs.extend([*launcher_logs[-10:], *chrome_logs[-8:]])
         raise RuntimeError(
             "Chrome TikTok tidak membuka CDP dalam batas waktu. "
-            + (
-                "Detail Chrome: " + " | ".join(chrome_logs[-5:])
-                if chrome_logs
-                else f"Periksa DISPLAY/Xauthority dan log {TIKTOK_CDP_REFRESH_LOG}."
-            )
+            + tiktok_chrome_startup_error(launcher_logs, chrome_logs)
         )
 
 
@@ -8443,46 +8562,55 @@ def run_tiktok_login_process() -> None:
     try:
         open_tiktok_login_browser(logs)
         set_tiktok_login_status(logs=logs[-80:])
-        command = build_tiktok_cdp_capture_command()
-        process_env = youtube_graphical_process_env()
-        process = subprocess.Popen(
-            command,
-            cwd=BASE_DIR,
-            env=process_env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            bufsize=1,
-        )
-        with process_lock:
-            tiktok_login_process = process
-        assert process.stdout is not None
-        for line in process.stdout:
-            cleaned = line.rstrip()
-            if cleaned:
-                logs.append(cleaned)
-                set_tiktok_login_status(logs=logs[-80:])
-        code = process.wait()
-        session_saved = tiktok_auth_state_exists() and any(
-            line.startswith("SESSION_SAVED:") for line in logs
-        )
-        if code and session_saved:
-            logs.append(
-                "Session TikTok sudah tersimpan sebelum browser berhenti; session tetap dipakai ulang."
+        for attempt in range(2):
+            command = build_tiktok_cdp_capture_command()
+            process_env = youtube_graphical_process_env()
+            process = subprocess.Popen(
+                command,
+                cwd=BASE_DIR,
+                env=process_env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
             )
-        error = tiktok_error_from_logs(logs) if code and not session_saved else None
-        set_tiktok_login_status(
-            active=False,
-            finished_at=now_iso(),
-            logs=logs[-80:],
-            error=error or (
-                f"Proses browser TikTok berhenti tidak normal (code {code}) sebelum session tersimpan."
-                if code and not session_saved
-                else None
-            ),
-        )
+            with process_lock:
+                tiktok_login_process = process
+            attempt_logs: list[str] = []
+            assert process.stdout is not None
+            for line in process.stdout:
+                cleaned = line.rstrip()
+                if cleaned:
+                    attempt_logs.append(cleaned)
+                    logs.append(cleaned)
+                    set_tiktok_login_status(logs=logs[-80:])
+            code = process.wait()
+            session_saved = tiktok_auth_state_exists() and any(
+                line.startswith("SESSION_SAVED:") for line in attempt_logs
+            )
+            error = tiktok_error_from_logs(attempt_logs) if code and not session_saved else None
+            if attempt == 0 and error and tiktok_error_is_cdp_transport_failure(error):
+                logs.append("CDP TikTok macet saat login; me-restart Chrome TikTok otomatis.")
+                set_tiktok_login_status(logs=logs[-80:])
+                restart_tiktok_login_browser(logs)
+                continue
+            if code and session_saved:
+                logs.append(
+                    "Session TikTok sudah tersimpan sebelum browser berhenti; session tetap dipakai ulang."
+                )
+            set_tiktok_login_status(
+                active=False,
+                finished_at=now_iso(),
+                logs=logs[-80:],
+                error=error or (
+                    f"Proses browser TikTok berhenti tidak normal (code {code}) sebelum session tersimpan."
+                    if code and not session_saved
+                    else None
+                ),
+            )
+            break
     except Exception as exc:
         set_tiktok_login_status(active=False, finished_at=now_iso(), logs=logs[-80:], error=str(exc))
     finally:

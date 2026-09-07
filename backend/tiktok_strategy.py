@@ -5,16 +5,16 @@ import re
 from typing import Any
 
 
-TIKTOK_STRATEGY_VERSION = 1
+TIKTOK_STRATEGY_VERSION = 2
 
 _SERIES: dict[str, dict[str, Any]] = {
-    "jawaban_ustadz_30_detik": {
-        "label": "Jawaban Ustadz 30 Detik",
-        "eyebrow": "JAWABAN USTADZ",
+    "tanya_jawab_islam": {
+        "label": "Tanya Jawab Islam",
+        "eyebrow": "TANYA JAWAB",
         "pillar": "tanya_jawab_agama",
         "cta": "Simpan video ini sebagai bahan belajar.",
         "hashtags": [
-            "#JawabanUstadz",
+            "#TanyaJawabIslam",
             "#KajianIslam",
             "#BelajarIslam",
             "#Islam",
@@ -27,8 +27,8 @@ _SERIES: dict[str, dict[str, Any]] = {
         ],
     },
     "kesalahan_ibadah_sehari_hari": {
-        "label": "Kesalahan Ibadah Sehari-hari",
-        "eyebrow": "CEK IBADAH",
+        "label": "Panduan Ibadah",
+        "eyebrow": "PANDUAN IBADAH",
         "pillar": "koreksi_ibadah_berkonteks",
         "cta": "Simpan video ini sebagai pengingat untuk terus belajar.",
         "hashtags": [
@@ -45,8 +45,8 @@ _SERIES: dict[str, dict[str, Any]] = {
         ],
     },
     "nasihat_sering_disalahpahami": {
-        "label": "Nasihat yang Sering Disalahpahami",
-        "eyebrow": "PAHAMI NASIHAT",
+        "label": "Nasihat & Hikmah",
+        "eyebrow": "NASIHAT & HIKMAH",
         "pillar": "nasihat_dan_hikmah",
         "cta": "Pelajaran apa yang paling mengena bagi Anda?",
         "hashtags": [
@@ -62,6 +62,28 @@ _SERIES: dict[str, dict[str, Any]] = {
             "Awali dengan konflik pemahaman, lalu jaga visual sederhana sampai payoff nasihat selesai.",
         ],
     },
+    "kajian_islam_ringkas": {
+        "label": "Kajian Islam Ringkas",
+        "eyebrow": "INTI KAJIAN",
+        "pillar": "kajian_islam_umum",
+        "cta": "Simpan video ini sebagai bahan belajar.",
+        "hashtags": [
+            "#KajianIslam",
+            "#BelajarIslam",
+            "#DakwahIslam",
+            "#Islam",
+            "#MuslimIndonesia",
+        ],
+        "visuals": [
+            "Buka dengan inti pernyataan, lalu pertahankan fokus pada pembicara dan konteksnya.",
+            "Tampilkan frasa kunci yang benar-benar diucapkan sumber tanpa menambah klaim baru.",
+            "Gunakan visual sederhana yang mendukung inti kajian dan tidak mengalihkan perhatian.",
+        ],
+    },
+}
+
+_LEGACY_SERIES_IDS = {
+    "jawaban_ustadz_30_detik": "tanya_jawab_islam",
 }
 
 _ERROR_MARKERS = (
@@ -76,9 +98,15 @@ _MISUNDERSTANDING_MARKERS = (
 _STRONG_MISUNDERSTANDING_MARKERS = (
     "salah paham", "disalahpahami", "sering dianggap", "bukan berarti", "padahal",
 )
-_QUESTION_MARKERS = (
-    "apa ", "apakah", "bagaimana", "kenapa", "mengapa", "bolehkah", "benarkah",
-    "hukum", "ustadz", "ustad", "tanya",
+_STRONG_QUESTION_PATTERN = re.compile(
+    r"(?:^|[.!?]\s+)(?:apakah|bagaimana|kenapa|mengapa|bolehkah|benarkah|"
+    r"apa\s+hukumnya|bagaimana\s+hukumnya)\b",
+    flags=re.IGNORECASE,
+)
+_QUESTION_WITH_MARK_PATTERN = re.compile(
+    r"\b(?:apa|apakah|bagaimana|kenapa|mengapa|bolehkah|benarkah|siapa|kapan|"
+    r"di\s+mana|dimana)\b[^?]{0,180}\?",
+    flags=re.IGNORECASE,
 )
 
 
@@ -91,19 +119,19 @@ def _stable_variant(stable_key: str, series_id: str) -> int:
     return digest[0] % 3
 
 
-def _select_series(content: str) -> tuple[str, str]:
+def _select_series(content: str, headline: str) -> tuple[str, str]:
     lowered = f" {content.casefold()} "
     if any(marker in lowered for marker in _STRONG_MISUNDERSTANDING_MARKERS):
         return "nasihat_sering_disalahpahami", "Isi clip secara eksplisit meluruskan pemahaman nasihat."
     if any(marker in lowered for marker in _STRONG_ERROR_MARKERS):
         return "kesalahan_ibadah_sehari_hari", "Ada istilah koreksi atau praktik ibadah pada isi clip."
-    if "?" in content or any(marker in lowered for marker in _QUESTION_MARKERS):
-        return "jawaban_ustadz_30_detik", "Isi clip berbentuk pertanyaan atau jawaban agama."
+    if _STRONG_QUESTION_PATTERN.search(headline) or _QUESTION_WITH_MARK_PATTERN.search(headline):
+        return "tanya_jawab_islam", "Judul atau hook clip berbentuk pertanyaan agama."
     if any(marker in lowered for marker in _ERROR_MARKERS):
         return "kesalahan_ibadah_sehari_hari", "Ada istilah hukum atau peringatan pada isi clip."
     if any(marker in lowered for marker in _MISUNDERSTANDING_MARKERS):
         return "nasihat_sering_disalahpahami", "Isi clip berupa nasihat atau pelurusan pemahaman."
-    return "nasihat_sering_disalahpahami", "Seri nasihat dipakai sebagai identitas aman untuk isi reflektif."
+    return "kajian_islam_ringkas", "Isi tidak memaksakan format tanya-jawab, koreksi, atau nasihat tertentu."
 
 
 def build_tiktok_strategy(
@@ -116,8 +144,9 @@ def build_tiktok_strategy(
     """Create a stable, source-grounded TikTok package without inventing religious claims."""
     clean_title = _clean(title, 120)
     clean_hook = _clean(hook, 140)
+    headline = _clean(". ".join(part for part in (title, hook) if part), 320)
     content = _clean(" ".join(part for part in (title, hook, text) if part), 4000)
-    series_id, selection_reason = _select_series(content)
+    series_id, selection_reason = _select_series(content, headline)
     profile = _SERIES[series_id]
     variant = _stable_variant(stable_key or content, series_id)
     source_hook = clean_hook or clean_title or "Simak penjelasan lengkapnya"
@@ -228,9 +257,10 @@ def tiktok_caption_from_strategy(base_caption: str, strategy: dict[str, Any]) ->
     lead = formalize(lead)
 
     series_id = str(strategy.get("series_id") or "")
+    series_id = _LEGACY_SERIES_IDS.get(series_id, series_id)
     profile = _SERIES.get(series_id, {})
     context_by_series = {
-        "jawaban_ustadz_30_detik": (
+        "tanya_jawab_islam": (
             "Penjelasan lengkapnya penting agar pertanyaan dan jawaban tidak dipahami "
             "di luar konteks."
         ),
@@ -240,6 +270,9 @@ def tiktok_caption_from_strategy(base_caption: str, strategy: dict[str, Any]) ->
         ),
         "nasihat_sering_disalahpahami": (
             "Pahami penjelasan lengkapnya agar pesan yang disampaikan tidak terlepas dari konteks."
+        ),
+        "kajian_islam_ringkas": (
+            "Pahami penjelasan lengkapnya agar inti kajian tidak terlepas dari konteks."
         ),
     }
     context = context_by_series.get(

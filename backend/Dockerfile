@@ -39,6 +39,7 @@ RUN apt-get update \
       fonts-liberation \
       fonts-noto-core \
       espeak-ng \
+      procps \
       unzip \
     && curl -fsSLo /tmp/deno.zip \
       "https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" \
