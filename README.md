@@ -213,12 +213,13 @@ TikTok login defaults to `TIKTOK_LOGIN_METHOD=google`. ClipForge selects
 **Continue with Google** in the regular host Google Chrome, then waits for the
 user to choose `TIKTOK_TARGET_EMAIL` and finish login. ClipForge saves the
 browser session only after the active TikTok profile is verified against
-`TIKTOK_TARGET_HANDLE`. `scripts/recreate-compose-up.sh`
-starts both the YouTube Studio browser and the supervised TikTok login/Studio
-browser; after QR confirmation, the TikTok window is left on Studio Upload.
-TikTok runs in the regular host Google Chrome with a dedicated host-owned
-profile and CDP port 9444. The backend only connects to that browser and never
-falls back to Chrome for Testing inside Docker.
+`TIKTOK_TARGET_HANDLE`. `scripts/recreate-compose-up.sh` preserves and reuses
+that saved session. When a session is already present it does not start login
+again. Normal uploads reuse the dedicated host-owned Chrome profile over CDP
+port 9444, while its window stays minimized in the background. The window only
+needs user attention for the first login, CAPTCHA, or a genuinely expired
+session. Set `TIKTOK_UPLOAD_USE_CDP=false` only to troubleshoot with a copied
+headless storage-state; some TikTok sessions reject that separate context.
 
 Clip cleanup is cross-platform safe: the local render is retained until both the
 matching YouTube and TikTok uploads are genuinely confirmed. A failed, queued,

@@ -8091,7 +8091,17 @@ def build_tiktok_upload_command(
     clip_path = output_path_from_url(upload.clip_url)
     if clip_path is None or not clip_path.is_file():
         raise RuntimeError("File clip TikTok tidak ditemukan")
-    cdp_url = TIKTOK_CDP_URL if allow_cdp and tiktok_cdp_ready() else ""
+    # Prefer the dedicated persistent Chrome profile. TikTok can reject a fresh
+    # headless context even when its copied cookies are valid, while the browser
+    # that completed login remains accepted. The launcher keeps that dedicated
+    # window minimized so CDP uploads still run in the background.
+    cdp_url = (
+        TIKTOK_CDP_URL
+        if allow_cdp
+        and env_bool("TIKTOK_UPLOAD_USE_CDP", True)
+        and tiktok_cdp_ready()
+        else ""
+    )
     command = [
         *build_tiktok_base_command(cdp_url=cdp_url),
         "upload",
@@ -8120,6 +8130,20 @@ def tiktok_error_requires_login(message: str) -> bool:
             "tiktok meminta login ulang",
             "akun browser bukan pemilik",
             "akun browser aktif",
+            "session tiktok sudah habis",
+            "sesi sudah habis",
+        )
+    )
+
+
+def tiktok_error_invalidates_saved_session(message: str) -> bool:
+    """Quarantine only a definitively logged-out session, not identity UI misses."""
+    normalized = message.casefold()
+    return any(
+        marker in normalized
+        for marker in (
+            "sesi tiktok belum login",
+            "tiktok meminta login ulang",
             "session tiktok sudah habis",
             "sesi sudah habis",
         )
@@ -8314,7 +8338,9 @@ def run_tiktok_upload(upload_id: str) -> None:
     except Exception as exc:
         error_message = str(exc)
         if tiktok_error_requires_login(error_message):
-            rejected_state = quarantine_tiktok_auth_state()
+            rejected_state = None
+            if tiktok_error_invalidates_saved_session(error_message):
+                rejected_state = quarantine_tiktok_auth_state()
             if rejected_state is not None:
                 logs.append(
                     f"Session TikTok yang ditolak dipindahkan ke {rejected_state.name}; login baru diperlukan."
@@ -11840,11 +11866,15 @@ def check_tiktok_session() -> TikTokSessionStatus:
         raise HTTPException(status_code=503, detail="Playwright belum terpasang di backend")
     attempts: list[list[str]] = []
     cdp_ready = tiktok_cdp_ready()
+    state_ready = tiktok_auth_state_exists()
+    prefer_cdp = env_bool("TIKTOK_UPLOAD_USE_CDP", True)
+    if state_ready and not prefer_cdp:
+        attempts.append(build_tiktok_base_command() + ["check-login"])
     if cdp_ready:
         attempts.append(build_tiktok_base_command(cdp_url=TIKTOK_CDP_URL) + ["check-login"])
-    elif tiktok_auth_state_exists():
+    if state_ready and prefer_cdp:
         attempts.append(build_tiktok_base_command() + ["check-login"])
-    if not cdp_ready and tiktok_chromium_profile_ready():
+    if not cdp_ready and not state_ready and tiktok_chromium_profile_ready():
         attempts.append(build_tiktok_base_command(force_profile=True) + ["check-login"])
     if not attempts:
         return TikTokSessionStatus(
@@ -11889,7 +11919,7 @@ def check_tiktok_session() -> TikTokSessionStatus:
                 logs=combined_logs[-80:],
             )
         error = tiktok_error_from_logs(logs) or f"Validasi TikTok gagal (exit {result.returncode})."
-    if error and tiktok_error_requires_login(error):
+    if error and tiktok_error_invalidates_saved_session(error):
         rejected_state = quarantine_tiktok_auth_state()
         if rejected_state is not None:
             combined_logs.append(

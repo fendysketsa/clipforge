@@ -148,6 +148,32 @@ def save_debug(page, label: str) -> None:
         pass
 
 
+def minimize_cdp_browser(context, page) -> bool:
+    """Minimize the dedicated Chrome window without closing its login profile."""
+    session = None
+    try:
+        session = context.new_cdp_session(page)
+        window = session.send("Browser.getWindowForTarget")
+        window_id = window.get("windowId") if isinstance(window, dict) else None
+        if window_id is None:
+            return False
+        session.send(
+            "Browser.setWindowBounds",
+            {"windowId": window_id, "bounds": {"windowState": "minimized"}},
+        )
+        log("Chrome TikTok diminimalkan; automasi tetap berjalan di background.")
+        return True
+    except Exception as exc:
+        log(f"Chrome TikTok belum dapat diminimalkan otomatis: {exc}")
+        return False
+    finally:
+        if session is not None:
+            try:
+                session.detach()
+            except Exception:
+                pass
+
+
 def first_visible(page, selectors: Sequence[str], timeout_ms: int = 1500):
     for selector in selectors:
         try:
@@ -967,6 +993,12 @@ def run(args) -> int:
         try:
             page = context.pages[0] if context.pages else context.new_page()
             page.set_default_timeout(20_000)
+            if (
+                args.cdp_url
+                and args.command != "login"
+                and env_bool("TIKTOK_MINIMIZE_CDP_BROWSER", True)
+            ):
+                minimize_cdp_browser(context, page)
             if args.command == "login":
                 login_and_capture(
                     page,
@@ -976,6 +1008,14 @@ def run(args) -> int:
                     args.target_email,
                     args.timeout,
                 )
+                if args.cdp_url and env_bool("TIKTOK_CLOSE_CDP_AFTER_LOGIN", False):
+                    try:
+                        browser.close()
+                        log("Chrome login TikTok ditutup setelah session tersimpan.")
+                    except Exception as exc:
+                        log(f"Chrome login TikTok belum dapat ditutup otomatis: {exc}")
+                elif args.cdp_url and env_bool("TIKTOK_MINIMIZE_CDP_BROWSER", True):
+                    minimize_cdp_browser(context, page)
                 return 0
             validate_target_account(page, args.target_handle, args.target_email)
             save_session_state(context, Path(args.state))

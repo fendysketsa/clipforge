@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 import api
+import tiktok_uploader
 from api import (
     ClipFile,
     ClipJob,
@@ -334,7 +335,7 @@ def test_text_file_lines_since_excludes_previous_chrome_failures(tmp_path):
     assert api.text_file_lines_since(log_path, offset) == ["current startup failure"]
 
 
-def test_tiktok_upload_prefers_the_live_persistent_cdp_browser(monkeypatch, tmp_path):
+def test_tiktok_upload_prefers_live_persistent_cdp_by_default(monkeypatch, tmp_path):
     output_root = tmp_path / "outputs"
     video = output_root / "demo" / "clip_01.mp4"
     video.parent.mkdir(parents=True)
@@ -342,6 +343,8 @@ def test_tiktok_upload_prefers_the_live_persistent_cdp_browser(monkeypatch, tmp_
     monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
     monkeypatch.setattr(api, "TIKTOK_CDP_URL", "http://127.0.0.1:9444")
     monkeypatch.setattr(api, "tiktok_cdp_ready", lambda: True)
+    monkeypatch.setattr(api, "tiktok_auth_state_exists", lambda: True)
+    monkeypatch.delenv("TIKTOK_UPLOAD_USE_CDP", raising=False)
     upload = api.TikTokUploadJob(
         id="upload-cdp",
         source_job_id="job-tiktok",
@@ -357,6 +360,34 @@ def test_tiktok_upload_prefers_the_live_persistent_cdp_browser(monkeypatch, tmp_
     command = api.build_tiktok_upload_command(upload)
 
     assert command[command.index("--cdp-url") + 1] == "http://127.0.0.1:9444"
+    assert "--chromium-user-data-dir" not in command
+
+
+def test_tiktok_upload_can_explicitly_disable_live_cdp(monkeypatch, tmp_path):
+    output_root = tmp_path / "outputs"
+    video = output_root / "demo" / "clip_01.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"video")
+    monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
+    monkeypatch.setattr(api, "TIKTOK_CDP_URL", "http://127.0.0.1:9444")
+    monkeypatch.setattr(api, "tiktok_cdp_ready", lambda: True)
+    monkeypatch.setattr(api, "tiktok_auth_state_exists", lambda: True)
+    monkeypatch.setenv("TIKTOK_UPLOAD_USE_CDP", "false")
+    upload = api.TikTokUploadJob(
+        id="upload-cdp-explicit",
+        source_job_id="job-tiktok",
+        clip_url="/outputs/demo/clip_01.mp4",
+        clip_name=video.name,
+        status="queued",
+        created_at="2026-09-06T00:00:00+00:00",
+        updated_at="2026-09-06T00:00:00+00:00",
+        caption="caption",
+        target_handle="titikbalikislami",
+    )
+
+    command = api.build_tiktok_upload_command(upload)
+
+    assert "--cdp-url" not in command
     assert "--chromium-user-data-dir" not in command
 
 
@@ -388,6 +419,7 @@ def test_tiktok_upload_command_can_bypass_unresponsive_cdp(monkeypatch, tmp_path
 
 
 def test_tiktok_upload_falls_back_to_saved_session_after_cdp_timeout(monkeypatch, tmp_path):
+    monkeypatch.setenv("TIKTOK_UPLOAD_USE_CDP", "true")
     output_root = tmp_path / "outputs"
     video = output_root / "demo" / "clip_01.mp4"
     video.parent.mkdir(parents=True)
@@ -443,6 +475,7 @@ def test_tiktok_upload_falls_back_to_saved_session_after_cdp_timeout(monkeypatch
 
 
 def test_tiktok_upload_falls_back_to_saved_session_when_cdp_profile_is_logged_out(monkeypatch, tmp_path):
+    monkeypatch.setenv("TIKTOK_UPLOAD_USE_CDP", "true")
     output_root = tmp_path / "outputs"
     video = output_root / "demo" / "clip_01.mp4"
     video.parent.mkdir(parents=True)
@@ -493,6 +526,7 @@ def test_tiktok_upload_falls_back_to_saved_session_when_cdp_profile_is_logged_ou
 
 
 def test_tiktok_upload_restarts_stuck_cdp_before_falling_back(monkeypatch, tmp_path):
+    monkeypatch.setenv("TIKTOK_UPLOAD_USE_CDP", "true")
     output_root = tmp_path / "outputs"
     video = output_root / "demo" / "clip_01.mp4"
     video.parent.mkdir(parents=True)
@@ -565,6 +599,32 @@ def test_tiktok_session_check_uses_live_cdp_without_saved_state(monkeypatch):
     assert commands[0][commands[0].index("--cdp-url") + 1] == "http://127.0.0.1:9444"
 
 
+def test_tiktok_session_check_can_use_saved_state_without_touching_live_cdp(monkeypatch):
+    monkeypatch.setattr(api, "playwright_installed", lambda: True)
+    monkeypatch.setattr(api, "tiktok_cdp_ready", lambda: True)
+    monkeypatch.setattr(api, "tiktok_auth_state_exists", lambda: True)
+    monkeypatch.setattr(api, "TIKTOK_CDP_URL", "http://127.0.0.1:9444")
+    monkeypatch.setattr(api, "tiktok_login_status", api.YouTubeLoginStatus(active=False))
+    monkeypatch.setenv("TIKTOK_UPLOAD_USE_CDP", "false")
+    commands = []
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout="TARGET_ACCOUNT_CONFIRMED:@titikbalikislami\nSESSION_SAVED:/tmp/state.json\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(api.subprocess, "run", run)
+
+    status = api.check_tiktok_session()
+
+    assert status.ok is True
+    assert len(commands) == 1
+    assert "--cdp-url" not in commands[0]
+
+
 def test_tiktok_detects_only_current_chrome_x11_render_failure(monkeypatch, tmp_path):
     chrome_log = tmp_path / "tiktok-chrome.log"
     monkeypatch.setattr(api, "TIKTOK_CHROME_LOG", chrome_log)
@@ -629,6 +689,15 @@ def test_rejected_tiktok_state_is_quarantined_and_no_longer_ready(monkeypatch, t
     assert api.tiktok_auth_state_exists() is False
 
 
+def test_account_identity_miss_does_not_invalidate_saved_session():
+    mismatch = "Akun browser bukan pemilik @titikbalikislami."
+    logged_out = "Sesi TikTok belum login."
+
+    assert api.tiktok_error_requires_login(mismatch) is True
+    assert api.tiktok_error_invalidates_saved_session(mismatch) is False
+    assert api.tiktok_error_invalidates_saved_session(logged_out) is True
+
+
 def test_tiktok_profile_without_saved_auth_is_not_upload_ready(monkeypatch):
     monkeypatch.setattr(api, "playwright_installed", lambda: True)
     monkeypatch.setattr(api, "tiktok_auth_state_exists", lambda: False)
@@ -661,6 +730,79 @@ def test_tiktok_session_state_is_complete_and_atomically_replaced(tmp_path):
     payload = json.loads(state.read_text(encoding="utf-8"))
     assert payload["origins"][0]["localStorage"] == [{"name": "user", "value": "active"}]
     assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_successful_cdp_login_minimizes_dedicated_browser_by_default(monkeypatch, tmp_path):
+    class Page:
+        def set_default_timeout(self, _timeout):
+            pass
+
+    class Session:
+        def __init__(self):
+            self.calls = []
+
+        def send(self, method, params=None):
+            self.calls.append((method, params))
+            if method == "Browser.getWindowForTarget":
+                return {"windowId": 17}
+            return {}
+
+        def detach(self):
+            pass
+
+    session = Session()
+
+    class Context:
+        pages = [Page()]
+
+        def new_cdp_session(self, _page):
+            return session
+
+    class Browser:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class PlaywrightManager:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, *_args):
+            pass
+
+    browser = Browser()
+    context = Context()
+    monkeypatch.delenv("TIKTOK_CLOSE_CDP_AFTER_LOGIN", raising=False)
+    monkeypatch.delenv("TIKTOK_MINIMIZE_CDP_BROWSER", raising=False)
+    monkeypatch.setattr(
+        tiktok_uploader,
+        "import_playwright",
+        lambda: (lambda: PlaywrightManager(), RuntimeError),
+    )
+    monkeypatch.setattr(
+        tiktok_uploader,
+        "open_context",
+        lambda _playwright, _args: (context, browser),
+    )
+    monkeypatch.setattr(tiktok_uploader, "login_and_capture", lambda *_args: None)
+    args = SimpleNamespace(
+        command="login",
+        state=tmp_path / "state.json",
+        target_handle="titikbalikislami",
+        target_email="fendycn88@gmail.com",
+        timeout=30,
+        cdp_url="http://127.0.0.1:9444",
+    )
+
+    assert tiktok_uploader.run(args) == 0
+    assert browser.closed is False
+    assert ("Browser.getWindowForTarget", None) in session.calls
+    assert (
+        "Browser.setWindowBounds",
+        {"windowId": 17, "bounds": {"windowState": "minimized"}},
+    ) in session.calls
 
 
 def test_tiktok_login_does_not_leave_login_page_for_stale_auth_cookie(monkeypatch, tmp_path):

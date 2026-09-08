@@ -10,6 +10,7 @@ TIKTOK_LOGIN_PROFILE_DIRECTORY="${TIKTOK_CHROMIUM_PROFILE_DIRECTORY:-Default}"
 TIKTOK_LOGIN_URL="${TIKTOK_LOGIN_URL:-https://www.tiktok.com/login}"
 TIKTOK_LOGIN_METHOD="${TIKTOK_LOGIN_METHOD:-google}"
 TIKTOK_CHROME_BACKGROUND="${TIKTOK_CHROME_BACKGROUND:-true}"
+TIKTOK_CHROME_MINIMIZED="${TIKTOK_CHROME_MINIMIZED:-true}"
 if [[ "${IN_DOCKER:-}" == "1" ]]; then
   DEFAULT_TIKTOK_CHROME_LOG="/app/data/tiktok-chrome.log"
 else
@@ -149,8 +150,14 @@ chrome_args=(
   --disable-extensions
   --disable-sync
   --disable-default-apps
+  --disable-background-timer-throttling
+  --disable-backgrounding-occluded-windows
+  --disable-renderer-backgrounding
   --log-level=3
 )
+if [[ "$TIKTOK_CHROME_MINIMIZED" == "true" ]]; then
+  chrome_args+=(--start-minimized)
+fi
 if [[ "${EUID:-$(id -u)}" == "0" ]]; then
   chrome_args+=(--no-sandbox)
 fi
@@ -161,6 +168,7 @@ echo "Xauthority: $XAUTHORITY"
 echo "Profile: $TIKTOK_LOGIN_PROFILE_DIR"
 echo "CDP: $TIKTOK_CDP_URL"
 echo "Login method: $TIKTOK_LOGIN_METHOD (dipilih otomatis oleh uploader)"
+echo "Start minimized: $TIKTOK_CHROME_MINIMIZED"
 echo "Chrome log: $TIKTOK_CHROME_LOG"
 if [[ "$TIKTOK_CHROME_BACKGROUND" == "true" ]]; then
   "$CHROME_BIN" "${chrome_args[@]}" "$TIKTOK_LOGIN_URL" >>"$TIKTOK_CHROME_LOG" 2>&1 &

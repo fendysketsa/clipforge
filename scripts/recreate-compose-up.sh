@@ -24,6 +24,8 @@ YOUTUBE_LOGIN_PROFILE_DIR="${YOUTUBE_LOGIN_PROFILE_DIR:-$CONFIG_HOME/fendy-clipp
 YOUTUBE_CHROME_LAUNCH_LOG="${YOUTUBE_CHROME_LAUNCH_LOG:-/tmp/fendy-clipper-youtube-chrome-launcher.log}"
 TIKTOK_HOST_PROFILE_DIR="${TIKTOK_HOST_PROFILE_DIR:-$CONFIG_HOME/fendy-clipper/tiktok-chrome-profile}"
 TIKTOK_HOST_CHROME_LAUNCH_LOG="${TIKTOK_HOST_CHROME_LAUNCH_LOG:-/tmp/fendy-clipper-tiktok-chrome-launcher.log}"
+TIKTOK_UPLOAD_USE_CDP="${TIKTOK_UPLOAD_USE_CDP:-true}"
+TIKTOK_CLOSE_CDP_AFTER_LOGIN="${TIKTOK_CLOSE_CDP_AFTER_LOGIN:-false}"
 DOWN_FIRST=false
 WATCH_CHROME=false
 RESET_PROFILE=false
@@ -79,6 +81,18 @@ wait_for_backend() {
     sleep 1
   done
   return 1
+}
+
+tiktok_saved_session_ready() {
+  python - <<'PY' >/dev/null 2>&1
+import json
+import urllib.request
+
+with urllib.request.urlopen("http://127.0.0.1:8010/api/tiktok/config", timeout=5) as response:
+    payload = json.load(response)
+if not payload.get("auth_state_exists"):
+    raise SystemExit(1)
+PY
 }
 
 if docker compose version >/dev/null 2>&1; then
@@ -137,34 +151,6 @@ if ! wait_for_cdp "$YOUTUBE_CDP_PORT"; then
 fi
 echo "Chrome remote debugging ready on http://127.0.0.1:${YOUTUBE_CDP_PORT}."
 
-# TikTok must run in the user's regular host Chrome. Launching Chrome for
-# Testing inside Docker through X11 caused black windows, high CPU usage, and a
-# profile containing files owned by the remapped container user.
-tiktok_host_cdp="$(pgrep -af "remote-debugging-port=${TIKTOK_CDP_PORT}" || true)"
-if [[ -n "$tiktok_host_cdp" ]] && ! grep -F -- "$TIKTOK_HOST_PROFILE_DIR" <<<"$tiktok_host_cdp" >/dev/null; then
-  echo "Stopping old container/foreign TikTok Chrome on CDP port ${TIKTOK_CDP_PORT}..."
-  "${privilege_cmd[@]}" pkill -f "remote-debugging-port=${TIKTOK_CDP_PORT}" || true
-  sleep 2
-fi
-
-if pgrep -af "remote-debugging-port=${TIKTOK_CDP_PORT}.*${TIKTOK_HOST_PROFILE_DIR}" >/dev/null 2>&1; then
-  echo "TikTok host Chrome already running on CDP port ${TIKTOK_CDP_PORT}."
-else
-  echo "Starting TikTok in regular host Chrome..."
-  TIKTOK_CHROMIUM_USER_DATA_DIR="$TIKTOK_HOST_PROFILE_DIR" \
-    TIKTOK_CHROME_BACKGROUND=false \
-    nohup "$ROOT_DIR/scripts/open-tiktok-login-chrome.sh" \
-    >>"$TIKTOK_HOST_CHROME_LAUNCH_LOG" 2>&1 &
-  echo "TikTok host Chrome launcher log: ${TIKTOK_HOST_CHROME_LAUNCH_LOG}"
-fi
-
-if ! wait_for_cdp "$TIKTOK_CDP_PORT"; then
-  echo "Chrome host TikTok tidak merespons di http://127.0.0.1:${TIKTOK_CDP_PORT}." >&2
-  tail -40 "$TIKTOK_HOST_CHROME_LAUNCH_LOG" >&2 || true
-  exit 1
-fi
-echo "TikTok regular host Chrome ready on http://127.0.0.1:${TIKTOK_CDP_PORT}."
-
 "${compose_cmd[@]}" --env-file .env up -d --build --force-recreate backend telegram-bot frontend
 
 if ! wait_for_cdp "$YOUTUBE_CDP_PORT"; then
@@ -181,21 +167,64 @@ if ! wait_for_backend; then
 fi
 echo "Backend ClipForge ready on http://127.0.0.1:8010."
 
-# Start TikTok through the backend so the browser process is supervised, the QR
-# login is captured, and the saved session is available to subsequent uploads.
-if ! curl -fsS --max-time 10 -X POST http://127.0.0.1:8010/api/tiktok/login/start >/dev/null; then
-  echo "Backend gagal memulai browser TikTok login/Studio." >&2
-  exit 1
+# The saved storage-state lives in ./backend/data, so it survives a container
+# recreate. Keep the already-authenticated dedicated host Chrome minimized and
+# reuse it over CDP; never start the login flow again merely because containers
+# were recreated.
+if tiktok_saved_session_ready; then
+  if [[ "$TIKTOK_UPLOAD_USE_CDP" == "true" ]] \
+    && ! pgrep -af "remote-debugging-port=${TIKTOK_CDP_PORT}.*${TIKTOK_HOST_PROFILE_DIR}" >/dev/null 2>&1; then
+    echo "Menjalankan kembali profile TikTok yang sudah login dalam keadaan minimized..."
+    TIKTOK_CHROMIUM_USER_DATA_DIR="$TIKTOK_HOST_PROFILE_DIR" \
+      TIKTOK_LOGIN_URL=https://www.tiktok.com/tiktokstudio/upload \
+      TIKTOK_CHROME_BACKGROUND=false \
+      TIKTOK_CHROME_MINIMIZED=true \
+      nohup "$ROOT_DIR/scripts/open-tiktok-login-chrome.sh" \
+      >>"$TIKTOK_HOST_CHROME_LAUNCH_LOG" 2>&1 &
+    if ! wait_for_cdp "$TIKTOK_CDP_PORT"; then
+      echo "Profile TikTok tersimpan ada, tetapi Chrome background gagal dimulai." >&2
+      tail -40 "$TIKTOK_HOST_CHROME_LAUNCH_LOG" >&2 || true
+      exit 1
+    fi
+  elif [[ "$TIKTOK_UPLOAD_USE_CDP" != "true" && "$TIKTOK_CLOSE_CDP_AFTER_LOGIN" == "true" ]] \
+    && pgrep -af "remote-debugging-port=${TIKTOK_CDP_PORT}.*${TIKTOK_HOST_PROFILE_DIR}" >/dev/null 2>&1; then
+    echo "Menutup Chrome login TikTok lama; session sudah tersimpan."
+    pkill -f "remote-debugging-port=${TIKTOK_CDP_PORT}.*${TIKTOK_HOST_PROFILE_DIR}" || true
+  fi
+  echo "Session TikTok tersimpan ditemukan; tidak login ulang. Browser khusus tetap minimized di background."
+else
+  # TikTok login must use the user's regular host Chrome. Start it minimized so
+  # the user only restores it when manual login/CAPTCHA is required.
+  tiktok_host_cdp="$(pgrep -af "remote-debugging-port=${TIKTOK_CDP_PORT}" || true)"
+  if [[ -n "$tiktok_host_cdp" ]] && ! grep -F -- "$TIKTOK_HOST_PROFILE_DIR" <<<"$tiktok_host_cdp" >/dev/null; then
+    echo "Stopping old container/foreign TikTok Chrome on CDP port ${TIKTOK_CDP_PORT}..."
+    "${privilege_cmd[@]}" pkill -f "remote-debugging-port=${TIKTOK_CDP_PORT}" || true
+    sleep 2
+  fi
+
+  if pgrep -af "remote-debugging-port=${TIKTOK_CDP_PORT}.*${TIKTOK_HOST_PROFILE_DIR}" >/dev/null 2>&1; then
+    echo "TikTok host Chrome already running on CDP port ${TIKTOK_CDP_PORT}."
+  else
+    echo "Session TikTok belum tersedia; membuka Chrome login dalam keadaan minimized..."
+    TIKTOK_CHROMIUM_USER_DATA_DIR="$TIKTOK_HOST_PROFILE_DIR" \
+      TIKTOK_CHROME_BACKGROUND=false \
+      TIKTOK_CHROME_MINIMIZED=true \
+      nohup "$ROOT_DIR/scripts/open-tiktok-login-chrome.sh" \
+      >>"$TIKTOK_HOST_CHROME_LAUNCH_LOG" 2>&1 &
+    echo "TikTok host Chrome launcher log: ${TIKTOK_HOST_CHROME_LAUNCH_LOG}"
+  fi
+
+  if ! wait_for_cdp "$TIKTOK_CDP_PORT"; then
+    echo "Chrome host TikTok tidak merespons di http://127.0.0.1:${TIKTOK_CDP_PORT}." >&2
+    tail -40 "$TIKTOK_HOST_CHROME_LAUNCH_LOG" >&2 || true
+    exit 1
+  fi
+  if ! curl -fsS --max-time 10 -X POST http://127.0.0.1:8010/api/tiktok/login/start >/dev/null; then
+    echo "Backend gagal memulai browser TikTok login/Studio." >&2
+    exit 1
+  fi
+  echo "Chrome login TikTok siap dalam keadaan minimized. Buka hanya jika login/CAPTCHA diperlukan."
 fi
-# Give the supervisor time to terminate a previously black/stuck CDP instance
-# before checking the replacement port.
-sleep 2
-if ! wait_for_cdp "$TIKTOK_CDP_PORT"; then
-  echo "Chrome TikTok tidak merespons di http://127.0.0.1:${TIKTOK_CDP_PORT}." >&2
-  echo "Periksa backend/data/tiktok-chrome-launcher.log dan backend/data/tiktok-chrome.log." >&2
-  exit 1
-fi
-echo "TikTok login/Studio browser ready on http://127.0.0.1:${TIKTOK_CDP_PORT}."
 
 if [[ "$WATCH_CHROME" == "true" ]]; then
   echo "Watching Chrome remote debugging. Press Ctrl+C to stop watching; Chrome window stays open."
