@@ -253,6 +253,20 @@ cookie. On systemd desktops the watcher runs as the transient user service
 `./scripts/prepare-youtube-gui-runtime.sh --start-watcher` once from the active
 desktop session.
 
+To restore the Compose stack and the persistent YouTube/TikTok browser profiles
+automatically after the first desktop login following a reboot, install the
+user service once:
+
+```bash
+./scripts/install-autostart.sh
+```
+
+The service runs in the background as `clipforge-autostart.service`. Docker's
+`restart: unless-stopped` policy restores the containers; the user service runs
+`recreate-compose-up.sh --restore` to wait for that stack and restore the GUI
+bridge plus dedicated browser sessions without rebuilding images, requiring
+sudo, creating new profiles, or forcing a new login.
+
 Alternatively, reuse a Chromium/Chrome profile that is already logged in to the
 target YouTube channel by setting:
 
@@ -303,6 +317,24 @@ configured target channel before uploading. Uploads are processed one at a time
 and persisted in `backend/data/youtube_uploads.json`.
 
 The dashboard's **Perbarui** action records a post-publish performance snapshot.
+
+Viral CC discovery can enforce an honest momentum floor with
+`VIRAL_CC_REQUIRE_MOMENTUM=true`. `VIRAL_CC_MIN_VIEWS` controls total source
+views and `VIRAL_CC_MIN_VIEWS_PER_DAY` controls recent velocity. When no source
+meets both thresholds and the freshness window, ClipForge returns no candidate
+instead of presenting an old low-view source as viral. Source history stores
+the views, views/day, age, and editorial viral score captured at processing
+time so later audits compare real inputs rather than the label alone.
+
+When `YOUTUBE_DATA_API_KEY` is configured, the backend also starts a lightweight
+performance collector. Every six hours it batches up to 200 due uploads into
+groups of 50 video IDs, records public views/likes/comments, and updates the
+existing series diagnosis. Fields entered manually from Studio—such as shown in
+feed, stayed to watch, retention, shares, and subscribers gained—are carried
+forward instead of being erased by a public refresh. Configure this with
+`YOUTUBE_PERFORMANCE_AUTO_REFRESH`,
+`YOUTUBE_PERFORMANCE_AUTO_REFRESH_INTERVAL_SECONDS`, and
+`YOUTUBE_PERFORMANCE_AUTO_REFRESH_MAX_UPLOADS`.
 Set `YOUTUBE_DATA_API_KEY` for public views/likes/comments. For the complete
 20K/20 feedback loop, create an OAuth grant with the read-only YouTube Analytics
 scope and configure:

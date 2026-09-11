@@ -2721,6 +2721,70 @@ def test_analytics_refresh_preserves_manually_entered_feed_metrics(monkeypatch, 
     assert latest.stayed_to_watch_percentage == 47.5
 
 
+def test_public_performance_collector_batches_and_preserves_studio_fields(monkeypatch, tmp_path):
+    import api
+
+    old = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+    upload = YouTubeUploadJob(
+        id="upload-auto-feedback",
+        source_job_id="job-auto-feedback",
+        clip_url="/outputs/demo/clips/clip.mp4",
+        clip_name="clip.mp4",
+        status="completed",
+        created_at=old,
+        updated_at=old,
+        finished_at=old,
+        title="Short dengan feedback otomatis",
+        video_url="https://www.youtube.com/watch?v=autofeed123",
+        upload_confirmed=True,
+        performance_snapshots=[
+            api.YouTubePerformanceSnapshot(
+                captured_at=old,
+                source="manual",
+                views=10,
+                shown_in_feed=500,
+                stayed_to_watch_percentage=55.0,
+                average_view_percentage=82.0,
+                subscribers_gained=2,
+            )
+        ],
+    )
+    monkeypatch.setenv("YOUTUBE_DATA_API_KEY", "configured-test-key")
+    monkeypatch.setenv("YOUTUBE_PERFORMANCE_AUTO_REFRESH_INTERVAL_SECONDS", "900")
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", tmp_path / "youtube_uploads.json")
+    monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+    requests = []
+
+    def fake_api(path, params):
+        requests.append((path, params))
+        return {
+            "items": [
+                {
+                    "id": "autofeed123",
+                    "statistics": {
+                        "viewCount": "1250",
+                        "likeCount": "75",
+                        "commentCount": "12",
+                    },
+                }
+            ]
+        }
+
+    monkeypatch.setattr(api, "youtube_data_api_get", fake_api)
+
+    assert api.refresh_due_youtube_public_performance() == 1
+    assert len(requests) == 1
+    updated = api.youtube_uploads[upload.id]
+    latest = updated.performance_snapshots[-1]
+    assert latest.source == "youtube_public"
+    assert latest.views == 1250
+    assert latest.likes == 75
+    assert latest.shown_in_feed == 500
+    assert latest.stayed_to_watch_percentage == 55.0
+    assert latest.average_view_percentage == 82.0
+    assert latest.subscribers_gained == 2
+
+
 def test_monetization_preflight_v6_requires_fendy_identity_and_growth_blueprint(monkeypatch):
     import api
 

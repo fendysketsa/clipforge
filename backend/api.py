@@ -557,6 +557,10 @@ class SourceUsageLogEntry(BaseModel):
     processing_duration_seconds: float | None = None
     compilation_target_seconds: float | None = None
     auto_upload_youtube: bool = False
+    source_views: int | None = Field(default=None, ge=0)
+    source_views_per_day: int | None = Field(default=None, ge=0)
+    source_age_days: int | None = Field(default=None, ge=0)
+    source_viral_score: float | None = None
 
 
 class SourceUsageFolder(BaseModel):
@@ -2696,6 +2700,8 @@ MAX_CONCURRENT_CLIP_JOBS = max(1, env_int("FENDY_CLIPPER_MAX_CONCURRENT_JOBS", 3
 clip_job_slots = threading.BoundedSemaphore(MAX_CONCURRENT_CLIP_JOBS)
 youtube_worker_lock = threading.Lock()
 youtube_worker_running = False
+youtube_performance_collector_lock = threading.Lock()
+youtube_performance_collector_running = False
 tiktok_worker_lock = threading.Lock()
 tiktok_worker_running = False
 tiktok_cdp_lock = threading.Lock()
@@ -5904,6 +5910,32 @@ def latest_performance_snapshot(upload: YouTubeUploadJob) -> YouTubePerformanceS
     return upload.performance_snapshots[-1] if upload.performance_snapshots else None
 
 
+def carry_forward_youtube_performance_fields(
+    upload: YouTubeUploadJob,
+    snapshot: YouTubePerformanceSnapshot,
+) -> YouTubePerformanceSnapshot:
+    """Keep Studio-only/manual fields when a public refresh cannot supply them."""
+    previous = latest_performance_snapshot(upload)
+    if previous is None:
+        return snapshot
+    updates: dict[str, Any] = {}
+    for field in (
+        "engaged_views",
+        "shown_in_feed",
+        "stayed_to_watch_percentage",
+        "average_view_duration",
+        "average_view_percentage",
+        "likes",
+        "comments",
+        "shares",
+        "subscribers_gained",
+        "subscribers_lost",
+    ):
+        if getattr(snapshot, field) is None:
+            updates[field] = getattr(previous, field)
+    return snapshot.model_copy(update=updates) if updates else snapshot
+
+
 def comparable_performance_medians(
     upload: YouTubeUploadJob,
     uploads: list[YouTubeUploadJob],
@@ -6247,23 +6279,129 @@ def refresh_youtube_performance(upload_id: str) -> YouTubeUploadJob:
             if analytics_error:
                 detail = f"{analytics_error}; fallback statistik publik gagal: {detail}"
             raise HTTPException(status_code=502, detail=detail) from exc
-    previous = latest_performance_snapshot(upload)
-    if previous is not None:
-        snapshot = snapshot.model_copy(
-            update={
-                "shown_in_feed": (
-                    snapshot.shown_in_feed
-                    if snapshot.shown_in_feed is not None
-                    else previous.shown_in_feed
-                ),
-                "stayed_to_watch_percentage": (
-                    snapshot.stayed_to_watch_percentage
-                    if snapshot.stayed_to_watch_percentage is not None
-                    else previous.stayed_to_watch_percentage
-                ),
-            }
-        )
+    snapshot = carry_forward_youtube_performance_fields(upload, snapshot)
     return record_youtube_performance(upload_id, snapshot)
+
+
+def youtube_performance_refresh_timestamp(upload: YouTubeUploadJob) -> datetime:
+    value = (
+        upload.performance_snapshots[-1].captured_at
+        if upload.performance_snapshots
+        else upload.finished_at or upload.created_at
+    )
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def refresh_due_youtube_public_performance() -> int:
+    """Refresh many public uploads in four cheap Data API calls or fewer."""
+    if not os.environ.get("YOUTUBE_DATA_API_KEY", "").strip():
+        return 0
+    interval_seconds = max(
+        900,
+        env_int("YOUTUBE_PERFORMANCE_AUTO_REFRESH_INTERVAL_SECONDS", 21600),
+    )
+    maximum_uploads = max(
+        1,
+        min(500, env_int("YOUTUBE_PERFORMANCE_AUTO_REFRESH_MAX_UPLOADS", 200)),
+    )
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=interval_seconds)
+    with youtube_uploads_lock:
+        due = [
+            upload
+            for upload in youtube_uploads.values()
+            if upload.status == "completed"
+            and upload.upload_confirmed
+            and not upload.dry_run
+            and upload.video_url
+            and youtube_performance_refresh_timestamp(upload) <= cutoff
+        ]
+    due.sort(key=youtube_performance_refresh_timestamp)
+    due = due[:maximum_uploads]
+    uploads_by_video: dict[str, list[YouTubeUploadJob]] = {}
+    for upload in due:
+        video_id = youtube_video_id_from_url(upload.video_url or "")
+        if video_id:
+            uploads_by_video.setdefault(video_id, []).append(upload)
+
+    refreshed = 0
+    video_ids = list(uploads_by_video)
+    for offset in range(0, len(video_ids), 50):
+        batch_ids = video_ids[offset : offset + 50]
+        payload = youtube_data_api_get(
+            "videos",
+            {"part": "statistics", "id": ",".join(batch_ids)},
+        )
+        items = payload.get("items") if isinstance(payload, dict) else []
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict):
+                continue
+            video_id = str(item.get("id") or "")
+            statistics = item.get("statistics") if isinstance(item.get("statistics"), dict) else {}
+            if not video_id or not statistics:
+                continue
+            for upload in uploads_by_video.get(video_id, []):
+                snapshot = YouTubePerformanceSnapshot(
+                    captured_at=now_iso(),
+                    source="youtube_public",
+                    views=int(statistics.get("viewCount") or 0),
+                    likes=(
+                        int(statistics["likeCount"])
+                        if statistics.get("likeCount") is not None
+                        else None
+                    ),
+                    comments=(
+                        int(statistics["commentCount"])
+                        if statistics.get("commentCount") is not None
+                        else None
+                    ),
+                )
+                snapshot = carry_forward_youtube_performance_fields(upload, snapshot)
+                record_youtube_performance(upload.id, snapshot)
+                refreshed += 1
+    return refreshed
+
+
+def youtube_performance_collector_loop() -> None:
+    initial_delay = max(
+        10,
+        min(600, env_int("YOUTUBE_PERFORMANCE_AUTO_REFRESH_INITIAL_DELAY_SECONDS", 90)),
+    )
+    time.sleep(initial_delay)
+    while True:
+        try:
+            refreshed = refresh_due_youtube_public_performance()
+            if refreshed:
+                print(
+                    f"Auto refresh performa YouTube: {refreshed} upload diperbarui.",
+                    flush=True,
+                )
+        except Exception as exc:
+            print(f"Auto refresh performa YouTube dilewati: {exc}", flush=True)
+        time.sleep(
+            max(
+                900,
+                env_int("YOUTUBE_PERFORMANCE_AUTO_REFRESH_INTERVAL_SECONDS", 21600),
+            )
+        )
+
+
+def start_youtube_performance_collector_if_needed() -> None:
+    global youtube_performance_collector_running
+    if not env_bool("YOUTUBE_PERFORMANCE_AUTO_REFRESH", True):
+        return
+    if not os.environ.get("YOUTUBE_DATA_API_KEY", "").strip():
+        return
+    with youtube_performance_collector_lock:
+        if youtube_performance_collector_running:
+            return
+        youtube_performance_collector_running = True
+    threading.Thread(target=youtube_performance_collector_loop, daemon=True).start()
 
 
 def terminate_youtube_upload_process(process: subprocess.Popen[str]) -> None:
@@ -8792,6 +8930,7 @@ def resume_queued_youtube_uploads() -> None:
             f"Startup cleanup outputs: {removed_orphans} folder orphan dihapus.",
             flush=True,
         )
+    start_youtube_performance_collector_if_needed()
 
 
 def discover_clips(started_at: float, output_root: Path | None = None) -> list[ClipFile]:
@@ -9797,6 +9936,7 @@ def run_job(job_id: str) -> None:
                 candidates=candidates,
             )
             preview_job = enrich_job_source_metadata(preview_job)
+            source_metrics = source_growth_metrics(metadata_for_job(preview_job))
             if preview_job.source_title:
                 updates["source_title"] = preview_job.source_title
             if preview_job.source_url:
@@ -9819,6 +9959,7 @@ def run_job(job_id: str) -> None:
                     else None
                 ),
                 auto_upload_youtube=request.auto_upload_youtube,
+                **source_metrics,
                 processed_at=str(updates["finished_at"]),
             )
             with jobs_lock:
@@ -10106,6 +10247,31 @@ def viral_search_filter_rejection_reason(
     return reasons[0] if reasons else ""
 
 
+def viral_source_momentum_rejection_reason(
+    info: dict[str, Any],
+    request: AutoViralRequest | ViralVideoSearchRequest,
+) -> str:
+    """Reject sources that cannot honestly be described as having momentum."""
+    views = max(0, int(info.get("view_count") or 0))
+    if views < request.min_views:
+        return f"tayangan {views:,} di bawah minimum {request.min_views:,}"
+
+    age_days = upload_age_days(info)
+    if age_days is None:
+        return "tanggal unggah tidak tersedia"
+    if age_days > request.max_age_days:
+        return f"usia {age_days} hari melewati maksimum {request.max_age_days} hari"
+
+    minimum_velocity = max(0, env_int("VIRAL_CC_MIN_VIEWS_PER_DAY", 500))
+    views_per_day = round(views / max(1, age_days))
+    if views_per_day < minimum_velocity:
+        return (
+            f"momentum {views_per_day:,} views/hari di bawah minimum "
+            f"{minimum_velocity:,} views/hari"
+        )
+    return ""
+
+
 def viral_search_hard_filter_rejection_reason(
     info: dict[str, Any],
     request: AutoViralRequest | ViralVideoSearchRequest,
@@ -10145,6 +10311,26 @@ def auto_viral_candidate_score(info: dict[str, Any]) -> float:
         + fresh_conversation_score,
         2,
     )
+
+
+def source_growth_metrics(info: dict[str, Any]) -> dict[str, int | float | None]:
+    """Snapshot public source momentum when processing starts."""
+    raw_views = info.get("view_count")
+    if not isinstance(raw_views, (int, float)) or isinstance(raw_views, bool):
+        return {
+            "source_views": None,
+            "source_views_per_day": None,
+            "source_age_days": None,
+            "source_viral_score": None,
+        }
+    views = max(0, int(raw_views))
+    age_days = upload_age_days(info)
+    return {
+        "source_views": views,
+        "source_views_per_day": round(views / max(1, age_days or 1)),
+        "source_age_days": age_days,
+        "source_viral_score": auto_viral_candidate_score(info),
+    }
 
 
 def niche_relevance_score(info: dict[str, Any], niche: IslamicContentNiche) -> float:
@@ -10618,6 +10804,13 @@ def search_youtube_data_api_viral_sources(
             views = int(payload.get("view_count") or 0)
             if duration < request.min_source_duration or duration > request.max_source_duration:
                 continue
+            momentum_rejection = viral_source_momentum_rejection_reason(payload, request)
+            if momentum_rejection and env_bool("VIRAL_CC_REQUIRE_MOMENTUM", False):
+                append_auto_viral_log(
+                    run_id,
+                    f"Skip sumber tanpa momentum ({momentum_rejection}): {payload.get('title') or '-'}",
+                )
+                continue
             if views < request.min_views and not adaptive_filters:
                 continue
             if not is_fresh_viral_upload(payload, request.max_age_days) and not adaptive_filters:
@@ -10759,6 +10952,13 @@ def search_auto_viral_sources(
             views = int(metadata.get("view_count") or 0)
             if duration < request.min_source_duration or duration > request.max_source_duration:
                 continue
+            momentum_rejection = viral_source_momentum_rejection_reason(metadata, request)
+            if momentum_rejection and env_bool("VIRAL_CC_REQUIRE_MOMENTUM", False):
+                append_auto_viral_log(
+                    run_id,
+                    f"Skip sumber tanpa momentum ({momentum_rejection}): {metadata.get('title') or url}",
+                )
+                continue
             if views < request.min_views and not adaptive_filters:
                 continue
             if not is_fresh_viral_upload(metadata, request.max_age_days) and not adaptive_filters:
@@ -10854,6 +11054,10 @@ def remember_source_usage(
     processing_duration_seconds: float | None = None,
     compilation_target_seconds: float | None = None,
     auto_upload_youtube: bool = False,
+    source_views: int | None = None,
+    source_views_per_day: int | None = None,
+    source_age_days: int | None = None,
+    source_viral_score: float | None = None,
     processed_at: str | None = None,
 ) -> None:
     normalized = normalize_youtube_video_url(value)
@@ -10891,6 +11095,10 @@ def remember_source_usage(
                 "processing_duration_seconds": processing_duration_seconds,
                 "compilation_target_seconds": compilation_target_seconds,
                 "auto_upload_youtube": bool(auto_upload_youtube),
+                "source_views": source_views,
+                "source_views_per_day": source_views_per_day,
+                "source_age_days": source_age_days,
+                "source_viral_score": source_viral_score,
             }
         events.append(new_event)
         source_usage_history[normalized] = {
@@ -10927,6 +11135,10 @@ def remember_processed_source(
     processing_duration_seconds: float | None = None,
     compilation_target_seconds: float | None = None,
     auto_upload_youtube: bool = False,
+    source_views: int | None = None,
+    source_views_per_day: int | None = None,
+    source_age_days: int | None = None,
+    source_viral_score: float | None = None,
     processed_at: str | None = None,
 ) -> None:
     normalized = normalize_youtube_video_url(value)
@@ -10959,6 +11171,10 @@ def remember_processed_source(
             processing_duration_seconds=processing_duration_seconds,
             compilation_target_seconds=compilation_target_seconds,
             auto_upload_youtube=auto_upload_youtube,
+            source_views=source_views,
+            source_views_per_day=source_views_per_day,
+            source_age_days=source_age_days,
+            source_viral_score=source_viral_score,
             processed_at=processed_at,
         )
 
@@ -10996,6 +11212,7 @@ def backfill_source_usage_from_completed_jobs() -> None:
                 else None
             ),
             auto_upload_youtube=job.request.auto_upload_youtube,
+            **source_growth_metrics(metadata_for_job(job)),
             processed_at=job.finished_at or job.updated_at,
         )
 
@@ -11272,9 +11489,13 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
             fast_api_only and api_attempted and not quota_fallback and bool(sources)
         ):
             fallback_age_days = request.max_age_days
-            fallback_min_views = min(
-                request.min_views,
-                max(0, env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", 100)),
+            fallback_min_views = (
+                request.min_views
+                if env_bool("VIRAL_CC_REQUIRE_MOMENTUM", False)
+                else min(
+                    request.min_views,
+                    max(0, env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", 100)),
+                )
             )
             fallback_queries = prioritized_niche_queries(
                 request.niche,
@@ -11618,9 +11839,13 @@ def run_auto_viral_campaign(run_id: str) -> None:
             )
         if not run.request.source_urls and len(sources) < source_pool_target:
             fallback_age_days = run.request.max_age_days
-            fallback_min_views = min(
-                run.request.min_views,
-                max(0, env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", 100)),
+            fallback_min_views = (
+                run.request.min_views
+                if env_bool("VIRAL_CC_REQUIRE_MOMENTUM", False)
+                else min(
+                    run.request.min_views,
+                    max(0, env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", 100)),
+                )
             )
             fallback_request = run.request.model_copy(
                 update={

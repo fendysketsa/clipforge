@@ -234,6 +234,10 @@ export type SourceUsageLogEntry = {
   processing_duration_seconds?: number | null;
   compilation_target_seconds?: number | null;
   auto_upload_youtube: boolean;
+  source_views?: number | null;
+  source_views_per_day?: number | null;
+  source_age_days?: number | null;
+  source_viral_score?: number | null;
 };
 
 export type SourceUsageLogResponse = {

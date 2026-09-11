@@ -29,6 +29,7 @@ TIKTOK_CLOSE_CDP_AFTER_LOGIN="${TIKTOK_CLOSE_CDP_AFTER_LOGIN:-false}"
 DOWN_FIRST=false
 WATCH_CHROME=false
 RESET_PROFILE=false
+RESTORE_ONLY=false
 
 for arg in "$@"; do
   case "$arg" in
@@ -41,9 +42,12 @@ for arg in "$@"; do
     --reset-profile)
       RESET_PROFILE=true
       ;;
+    --restore)
+      RESTORE_ONLY=true
+      ;;
     *)
       echo "Unknown argument: $arg" >&2
-      echo "Usage: $0 [--down-first] [--watch-chrome] [--reset-profile]" >&2
+      echo "Usage: $0 [--down-first] [--watch-chrome] [--reset-profile] [--restore]" >&2
       exit 2
       ;;
   esac
@@ -107,9 +111,14 @@ else
 fi
 
 privilege_cmd=()
-if ! docker info >/dev/null 2>&1; then
+if [[ "$RESTORE_ONLY" != "true" ]] && ! docker info >/dev/null 2>&1; then
   privilege_cmd=(sudo)
   compose_cmd=(sudo "${compose_cmd[@]}")
+fi
+
+if [[ "$RESTORE_ONLY" == "true" && "$DOWN_FIRST" == "true" ]]; then
+  echo "--restore tidak dapat digabungkan dengan --down-first." >&2
+  exit 2
 fi
 
 if [[ "$DOWN_FIRST" == "true" ]]; then
@@ -151,7 +160,11 @@ if ! wait_for_cdp "$YOUTUBE_CDP_PORT"; then
 fi
 echo "Chrome remote debugging ready on http://127.0.0.1:${YOUTUBE_CDP_PORT}."
 
-"${compose_cmd[@]}" --env-file .env up -d --build --force-recreate backend telegram-bot frontend
+if [[ "$RESTORE_ONLY" == "true" ]]; then
+  echo "Mode restore: menunggu container yang dipulihkan Docker restart policy..."
+else
+  "${compose_cmd[@]}" --env-file .env up -d --build --force-recreate backend telegram-bot frontend
+fi
 
 if ! wait_for_cdp "$YOUTUBE_CDP_PORT"; then
   echo "Chrome remote debugging stopped after containers were recreated." >&2
@@ -159,7 +172,7 @@ if ! wait_for_cdp "$YOUTUBE_CDP_PORT"; then
   tail -40 "$YOUTUBE_CHROME_LAUNCH_LOG" >&2 || true
   exit 1
 fi
-echo "Chrome remote debugging still ready after container recreate."
+echo "Chrome remote debugging tetap siap setelah stack diperiksa."
 
 if ! wait_for_backend; then
   echo "Backend ClipForge tidak siap di http://127.0.0.1:8010 setelah container dibuat ulang." >&2

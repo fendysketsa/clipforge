@@ -1,0 +1,20 @@
+[Unit]
+Description=ClipForge stack and persistent browser sessions
+Wants=network-online.target graphical-session.target
+After=network-online.target graphical-session.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=oneshot
+WorkingDirectory=/www/wwwroot/clipper/clipforge
+Environment=DISPLAY=:1
+Environment=XDG_RUNTIME_DIR=%t
+ExecStart=/www/wwwroot/clipper/clipforge/scripts/recreate-compose-up.sh --restore
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=20
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=default.target

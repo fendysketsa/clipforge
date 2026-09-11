@@ -948,6 +948,7 @@ class BackendClient:
             f"{self.base_url}/api/automation/viral-cc/sources",
             method="POST",
             payload={
+                "niche": "auto",
                 "video_count": VIRAL_CC_VIDEO_COUNT,
                 "search_limit_per_query": max(25, int(env_float("VIRAL_CC_SEARCH_LIMIT", 25))),
                 "min_source_duration": 60,
@@ -1555,10 +1556,13 @@ class FendyClipperTelegramBot:
             self.send_message(chat_id, f"Gagal mencari video viral Creative Commons: {exc}", main_menu_keyboard())
             return
         if not sources:
+            self.state["viral_video_suggestions"] = {}
+            self.persist()
             self.send_message(
                 chat_id,
-                f"Belum menemukan kandidat baru setelah pencarian diperluas dan seluruh video lama dilewati. "
-                f"Filter wajib Creative Commons + HD serta durasi teknis maksimal {max_minutes} menit tetap dipertahankan.",
+                f"Belum menemukan kandidat baru dengan momentum nyata. Sumber lemah tidak dipaksakan. "
+                f"Filter wajib Creative Commons + HD, minimum views, views/hari, usia, dan durasi "
+                f"maksimal {max_minutes} menit tetap dipertahankan.",
                 main_menu_keyboard(),
             )
             return

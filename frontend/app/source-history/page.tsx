@@ -67,6 +67,8 @@ const formatDuration = (seconds?: number | null) => {
   return minutes ? `${minutes}m ${remainder}d` : `${remainder}d`;
 };
 
+const formatNumber = (value: number) => new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+
 const sourceVideoId = (url: string) => {
   try {
     const parsed = new URL(url);
@@ -315,6 +317,9 @@ function SourceLogCard({ item }: { item: SourceUsageLogEntry }) {
         </div>
         <div className="sourceArchiveCardMeta">
           <span><b>{item.clip_count}</b> output</span>
+          {item.source_views !== null && item.source_views !== undefined ? <span>Sumber <b>{formatNumber(item.source_views)} views</b></span> : null}
+          {item.source_views_per_day !== null && item.source_views_per_day !== undefined ? <span>Momentum <b>{formatNumber(item.source_views_per_day)}/hari</b></span> : null}
+          {item.source_age_days !== null && item.source_age_days !== undefined ? <span>Usia <b>{item.source_age_days} hari</b></span> : null}
           <span>Proses <b>{formatDuration(item.processing_duration_seconds)}</b></span>
           {item.compilation_target_seconds ? <span>Target <b>{Math.round(item.compilation_target_seconds / 60)} menit</b></span> : null}
           <span>Upload <b>{item.auto_upload_youtube ? "Aktif" : "Manual"}</b></span>

@@ -43,6 +43,7 @@ from api import (
     viral_source_discovery_rejection_reason,
     viral_source_rejection_reason,
     viral_search_filter_rejection_reason,
+    viral_source_momentum_rejection_reason,
     youtube_upload_clean_metadata_args,
     youtube_max_upload_bytes,
     youtube_published_after,
@@ -1150,6 +1151,29 @@ def test_viral_score_prefers_faster_recent_growth():
     }
 
     assert auto_viral_candidate_score(recent) > auto_viral_candidate_score(older)
+
+
+def test_viral_momentum_gate_rejects_old_or_slow_sources(monkeypatch):
+    today = datetime.now(timezone.utc)
+    request = ViralVideoSearchRequest(min_views=1_000, max_age_days=30)
+    monkeypatch.setenv("VIRAL_CC_MIN_VIEWS_PER_DAY", "500")
+
+    old = {
+        "upload_date": (today - timedelta(days=365)).strftime("%Y%m%d"),
+        "view_count": 500_000,
+    }
+    slow = {
+        "upload_date": (today - timedelta(days=20)).strftime("%Y%m%d"),
+        "view_count": 2_000,
+    }
+    moving = {
+        "upload_date": (today - timedelta(days=5)).strftime("%Y%m%d"),
+        "view_count": 10_000,
+    }
+
+    assert "melewati maksimum" in viral_source_momentum_rejection_reason(old, request)
+    assert "views/hari" in viral_source_momentum_rejection_reason(slow, request)
+    assert viral_source_momentum_rejection_reason(moving, request) == ""
 
 
 def test_viral_score_rewards_real_engagement_not_views_alone():
