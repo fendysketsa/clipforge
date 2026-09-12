@@ -133,6 +133,12 @@ function youtubeUploadErrorNeedsSessionRepair(message: string) {
 function friendlyTikTokUploadError(message: string) {
   const clean = message.trim();
   const lowered = clean.toLowerCase();
+  if (
+    lowered.includes("transfer file cdp tiktok gagal sebelum posting")
+    || (lowered.includes("set_input_files") && lowered.includes("tidak dapat menerima file video"))
+  ) {
+    return "Transfer video ke Chrome macet sebelum diposting. Klik Ulangi TikTok; uploader akan menyiapkan file yang lebih ringan dan beralih ke session tersimpan bila perlu.";
+  }
   if (lowered.includes("tombol post tiktok belum siap")) {
     return "Pemrosesan video TikTok belum selesai. Klik Ulangi TikTok; uploader akan menunggu sampai tombol Post aktif.";
   }
@@ -143,6 +149,12 @@ function friendlyTikTokUploadError(message: string) {
     return "Chrome TikTok tidak dapat dihubungi. Klik Cek sesi TikTok, lalu coba ulang.";
   }
   return clean;
+}
+
+function isTikTokFileTransferError(message?: string | null) {
+  const lowered = message?.toLowerCase() || "";
+  return lowered.includes("transfer file cdp tiktok gagal sebelum posting")
+    || (lowered.includes("set_input_files") && lowered.includes("tidak dapat menerima file video"));
 }
 
 function displayTikTokSeriesLabel(label?: string | null, fallback?: string | null) {
@@ -768,6 +780,7 @@ export function ResultsSection({
             const isAlreadyUploaded = latestUpload?.status === "completed" && Boolean(latestUpload.video_url);
             const isUploadingToTikTok = latestTikTokUpload?.status === "queued" || latestTikTokUpload?.status === "running";
             const isAlreadyOnTikTok = latestTikTokUpload?.status === "completed" && latestTikTokUpload.upload_confirmed;
+            const shouldRetryTikTokTransfer = isTikTokFileTransferError(latestTikTokUpload?.error);
             const hasRunningUpload = youtubeUploads.some((upload) => upload.status === "running");
             const runningStage = latestUpload ? youtubeRunningStage(latestUpload) : "";
             const queuePosition = latestUpload?.status === "queued"
@@ -1454,11 +1467,17 @@ export function ResultsSection({
                       <span>{friendlyTikTokUploadError(latestTikTokUpload.error)}</span>
                       <button
                         type="button"
-                        onClick={onCheckTikTokSession}
+                        onClick={shouldRetryTikTokTransfer
+                          ? () => onUploadClipToTikTok(clip)
+                          : onCheckTikTokSession}
                         disabled={isTikTokLoginActive}
                       >
                         <RefreshCw size={14} />
-                        <span>{isTikTokLoginActive ? "Selesaikan login..." : "Cek sesi TikTok"}</span>
+                        <span>{isTikTokLoginActive
+                          ? "Selesaikan login..."
+                          : shouldRetryTikTokTransfer
+                            ? "Ulangi TikTok"
+                            : "Cek sesi TikTok"}</span>
                       </button>
                     </div>
                   ) : null}

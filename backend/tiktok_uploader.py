@@ -31,7 +31,8 @@ TIKTOK_CONTENT_URL = "https://www.tiktok.com/tiktokstudio/content"
 # Playwright refuses remote-browser file transfers at 50 MiB. Leave enough
 # headroom for container/browser protocol overhead after making a staging copy.
 REMOTE_FILE_TRANSFER_LIMIT_BYTES = 50 * 1024 * 1024
-REMOTE_FILE_TARGET_BYTES = 44 * 1024 * 1024
+DEFAULT_REMOTE_FILE_DIRECT_MAX_MB = 20
+DEFAULT_REMOTE_FILE_TARGET_MB = 16
 
 
 class UploadError(RuntimeError):
@@ -51,6 +52,27 @@ def env_int(name: str, default: int, *, minimum: int = 1) -> int:
     except (TypeError, ValueError):
         value = default
     return max(minimum, value)
+
+
+def remote_file_staging_sizes() -> tuple[int, int]:
+    """Return safe source/target limits for Playwright's slow CDP transfer."""
+    direct_max_mb = min(
+        48,
+        env_int(
+            "TIKTOK_CDP_DIRECT_UPLOAD_MAX_MB",
+            DEFAULT_REMOTE_FILE_DIRECT_MAX_MB,
+            minimum=2,
+        ),
+    )
+    target_mb = min(
+        direct_max_mb - 1,
+        env_int(
+            "TIKTOK_CDP_STAGING_TARGET_MB",
+            DEFAULT_REMOTE_FILE_TARGET_MB,
+            minimum=1,
+        ),
+    )
+    return direct_max_mb * 1024 * 1024, target_mb * 1024 * 1024
 
 
 def log(message: str) -> None:
@@ -524,6 +546,26 @@ def set_caption(page, caption: str) -> None:
     )
 
 
+def discard_stale_upload_draft(page) -> None:
+    """Discard only the interrupted draft shown before a new file is selected."""
+    button = first_visible(
+        page,
+        [
+            'button:has-text("Discard")',
+            'button:has-text("Buang")',
+        ],
+        timeout_ms=1_200,
+    )
+    if button is None:
+        return
+    try:
+        button.click(timeout=5_000)
+        log("Draft upload TikTok lama dibuang sebelum memilih video baru.")
+        page.wait_for_timeout(700)
+    except Exception:
+        pass
+
+
 def dismiss_upload_overlays(page) -> None:
     """Dismiss TikTok Studio onboarding without accepting optional checks."""
     page.wait_for_timeout(700)
@@ -707,7 +749,11 @@ def wait_for_new_tiktok_post(
     return False
 
 
-def transcode_for_remote_upload(video_path: Path, destination: Path) -> Path:
+def transcode_for_remote_upload(
+    video_path: Path,
+    destination: Path,
+    target_bytes: int,
+) -> Path:
     """Create a sub-50 MiB H.264 copy for Playwright's remote CDP transport."""
     try:
         probe = subprocess.run(
@@ -733,7 +779,7 @@ def transcode_for_remote_upload(video_path: Path, destination: Path) -> Path:
         raise UploadError("Durasi video besar tidak valid untuk staging CDP.")
 
     audio_bitrate = 128_000
-    total_bitrate = int((REMOTE_FILE_TARGET_BYTES * 8 / duration) * 0.94)
+    total_bitrate = int((target_bytes * 8 / duration) * 0.94)
     video_bitrate = max(350_000, total_bitrate - audio_bitrate)
     passlog = destination.with_suffix("")
     common = [
@@ -791,7 +837,7 @@ def transcode_for_remote_upload(video_path: Path, destination: Path) -> Path:
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or str(exc)).strip().splitlines()[-1:]
         raise UploadError(
-            "Video melebihi batas CDP 50 MiB dan staging ulang gagal: "
+            "Video besar tidak dapat disiapkan untuk transfer CDP: "
             + (detail[0] if detail else str(exc))
         ) from exc
     if not destination.is_file() or destination.stat().st_size >= REMOTE_FILE_TRANSFER_LIMIT_BYTES:
@@ -821,6 +867,11 @@ def upload_video(
     page.wait_for_timeout(1500)
     if "/login" in page.url.casefold():
         raise UploadError("TikTok meminta login ulang; file belum dipilih.")
+    # TikTok keeps an interrupted upload as a draft in the persistent CDP
+    # profile. Clear that banner before resolving the file input; otherwise the
+    # old React tree can retain an attached but unusable input for five minutes.
+    discard_stale_upload_draft(page)
+    dismiss_upload_overlays(page)
     file_input = page.locator('input[type="file"]').first
     try:
         file_input.wait_for(state="attached", timeout=20_000)
@@ -833,11 +884,13 @@ def upload_video(
             # Let Playwright use its supported remote-file transfer. Payload
             # dictionaries bypass its 50 MiB guard and can freeze DraftJS/CDP.
             upload_path = video_path
-            if video_path.stat().st_size >= REMOTE_FILE_TRANSFER_LIMIT_BYTES:
+            direct_max_bytes, target_bytes = remote_file_staging_sizes()
+            if video_path.stat().st_size >= direct_max_bytes:
                 staging_directory = tempfile.TemporaryDirectory(prefix="clipforge-tiktok-cdp-")
                 upload_path = transcode_for_remote_upload(
                     video_path,
                     Path(staging_directory.name) / video_path.name,
+                    target_bytes,
                 )
                 log(
                     f"Video {video_path.stat().st_size / (1024 * 1024):.2f} MiB "
@@ -858,8 +911,13 @@ def upload_video(
     except Exception as exc:
         save_debug(page, "upload-file-select-failed")
         detail = str(exc).strip().splitlines()[0][:240] or type(exc).__name__
+        if remote_browser:
+            raise UploadError(
+                "Transfer file CDP TikTok gagal sebelum posting; "
+                f"tidak ada posting yang dibuat. Detail: {detail}"
+            ) from exc
         raise UploadError(
-            "Chrome TikTok tidak dapat menerima file video. Koneksi CDP tetap aman; "
+            "TikTok tidak dapat menerima file video; "
             f"tidak ada posting yang dibuat. Detail: {detail}"
         ) from exc
     finally:

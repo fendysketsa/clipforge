@@ -8398,6 +8398,18 @@ def tiktok_error_is_cdp_transport_failure(message: str) -> bool:
     )
 
 
+def tiktok_error_is_cdp_file_transfer_failure(message: str) -> bool:
+    """Identify a CDP file-selection failure that happened before Post."""
+    normalized = message.casefold()
+    return (
+        "transfer file cdp tiktok gagal sebelum posting" in normalized
+        or (
+            "chrome tiktok tidak dapat menerima file video" in normalized
+            and "set_input_files" in normalized
+        )
+    )
+
+
 def schedule_cross_platform_cleanup_after_tiktok(upload: TikTokUploadJob) -> None:
     if upload.dry_run or not upload.upload_confirmed:
         return
@@ -8490,6 +8502,20 @@ def run_tiktok_upload(upload_id: str) -> None:
             if code == 0 and (upload.dry_run or confirmed):
                 break
             used_cdp = "--cdp-url" in command
+            if (
+                used_cdp
+                and error
+                and tiktok_error_is_cdp_file_transfer_failure(error)
+                and tiktok_auth_state_exists()
+            ):
+                # set_input_files failed before caption/privacy/Post, so retrying
+                # in a fresh local context cannot duplicate a published video.
+                cdp_transport_failed = True
+                logs.append(
+                    "Transfer file CDP TikTok macet sebelum posting; "
+                    "melanjutkan otomatis dengan session tersimpan."
+                )
+                continue
             if (
                 used_cdp
                 and not cdp_transport_failed

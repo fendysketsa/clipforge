@@ -474,6 +474,60 @@ def test_tiktok_upload_falls_back_to_saved_session_after_cdp_timeout(monkeypatch
     assert any("session tersimpan" in line for line in completed.logs)
 
 
+def test_tiktok_upload_falls_back_after_cdp_file_transfer_timeout(monkeypatch, tmp_path):
+    monkeypatch.setenv("TIKTOK_UPLOAD_USE_CDP", "true")
+    output_root = tmp_path / "outputs"
+    video = output_root / "demo" / "clip_01.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"video")
+    upload = api.TikTokUploadJob(
+        id="upload-cdp-file-timeout",
+        source_job_id="job-tiktok",
+        clip_url="/outputs/demo/clip_01.mp4",
+        clip_name=video.name,
+        status="queued",
+        created_at="2026-09-06T00:00:00+00:00",
+        updated_at="2026-09-06T00:00:00+00:00",
+        caption="caption",
+        target_handle="titikbalikislami",
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
+    monkeypatch.setattr(api, "TIKTOK_CDP_URL", "http://127.0.0.1:9444")
+    monkeypatch.setattr(api, "tiktok_cdp_ready", lambda: True)
+    monkeypatch.setattr(api, "tiktok_auth_state_exists", lambda: True)
+    monkeypatch.setattr(api, "tiktok_uploads", {upload.id: upload})
+    monkeypatch.setattr(api, "save_tiktok_uploads_unlocked", lambda: None)
+    monkeypatch.setattr(api, "schedule_cross_platform_cleanup_after_tiktok", lambda _upload: None)
+    process_results = [
+        ([
+            "USER_ERROR:Transfer file CDP TikTok gagal sebelum posting; "
+            "tidak ada posting yang dibuat. Detail: Locator.set_input_files: Timeout 300000ms exceeded.\n"
+        ], 1),
+        (["UPLOAD_CONFIRMED:private\n", "VIDEO_URL:https://www.tiktok.com/@titikbalikislami\n"], 0),
+    ]
+    commands = []
+
+    class Process:
+        def __init__(self, command, **_kwargs):
+            commands.append(command)
+            lines, self.returncode = process_results[len(commands) - 1]
+            self.stdout = iter(lines)
+
+        def wait(self):
+            return self.returncode
+
+    monkeypatch.setattr(api.subprocess, "Popen", Process)
+
+    api.run_tiktok_upload(upload.id)
+
+    assert "--cdp-url" in commands[0]
+    assert "--cdp-url" not in commands[1]
+    completed = api.tiktok_uploads[upload.id]
+    assert completed.status == "completed"
+    assert completed.upload_confirmed is True
+    assert any("macet sebelum posting" in line for line in completed.logs)
+
+
 def test_tiktok_upload_falls_back_to_saved_session_when_cdp_profile_is_logged_out(monkeypatch, tmp_path):
     monkeypatch.setenv("TIKTOK_UPLOAD_USE_CDP", "true")
     output_root = tmp_path / "outputs"
@@ -978,6 +1032,27 @@ def test_tiktok_cdp_upload_uses_playwright_remote_file_transfer(monkeypatch, tmp
     assert kwargs["timeout"] == 300_000
 
 
+def test_tiktok_discards_interrupted_draft_before_new_file_selection(monkeypatch):
+    clicks = []
+
+    class Button:
+        def click(self, **kwargs):
+            clicks.append(kwargs)
+
+    class Page:
+        def wait_for_timeout(self, _milliseconds):
+            pass
+
+    monkeypatch.setattr(
+        "tiktok_uploader.first_visible",
+        lambda _page, selectors, **_kwargs: Button() if "Discard" in selectors[0] else None,
+    )
+
+    tiktok_uploader.discard_stale_upload_draft(Page())
+
+    assert clicks == [{"timeout": 5_000}]
+
+
 def test_tiktok_transfer_status_is_not_post_confirmation():
     caption = "Apa yang membuat kita merasa tidak ada di sini?\n\n#KajianIslam"
 
@@ -1133,6 +1208,27 @@ def test_tiktok_timeout_env_uses_safe_defaults_and_minimum(monkeypatch):
 
     monkeypatch.setenv("TIKTOK_TEST_TIMEOUT_MS", "100")
     assert env_int("TIKTOK_TEST_TIMEOUT_MS", 300_000, minimum=30_000) == 30_000
+
+
+def test_tiktok_large_cdp_files_use_a_smaller_staging_target(monkeypatch):
+    monkeypatch.delenv("TIKTOK_CDP_DIRECT_UPLOAD_MAX_MB", raising=False)
+    monkeypatch.delenv("TIKTOK_CDP_STAGING_TARGET_MB", raising=False)
+
+    direct_max, target = tiktok_uploader.remote_file_staging_sizes()
+
+    assert direct_max == 20 * 1024 * 1024
+    assert target == 16 * 1024 * 1024
+    assert target < direct_max < tiktok_uploader.REMOTE_FILE_TRANSFER_LIMIT_BYTES
+
+
+def test_tiktok_legacy_set_input_timeout_is_safe_to_retry_without_cdp():
+    message = (
+        "Chrome TikTok tidak dapat menerima file video. Koneksi CDP tetap aman; "
+        "tidak ada posting yang dibuat. Detail: Locator.set_input_files: "
+        "Timeout 300000ms exceeded."
+    )
+
+    assert api.tiktok_error_is_cdp_file_transfer_failure(message) is True
 
 
 def test_explicit_tiktok_login_refreshes_even_while_saved_session_exists(monkeypatch):
