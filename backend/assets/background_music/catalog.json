@@ -1,0 +1,88 @@
+{
+  "version": 2,
+  "runtime_downloads": false,
+  "tracks": [
+    {
+      "file": "calm-theme.ogg",
+      "title": "Calm Theme",
+      "artist": "pebonius",
+      "kind": "music",
+      "instrumental": true,
+      "themes": [
+        "knowledge",
+        "islamic"
+      ],
+      "moods": [
+        "calm",
+        "ambient",
+        "reflective",
+        "educational"
+      ],
+      "genres": [
+        "ambient"
+      ],
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution_required": false,
+      "source_url": "https://opengameart.org/content/calm-music-0",
+      "download_url": "https://opengameart.org/sites/default/files/calm_theme.ogg",
+      "source_checked_on": "2026-09-12",
+      "sha256": "8a701a803f365c8fe1257b2e18276a7fa8b0d62a9af601f973d43ccf4e354705"
+    },
+    {
+      "file": "happy-moments.ogg",
+      "title": "Happy Moments",
+      "artist": "Centurion_of_war",
+      "kind": "music",
+      "instrumental": true,
+      "themes": [
+        "inspiring"
+      ],
+      "moods": [
+        "happy",
+        "hopeful",
+        "bright",
+        "uplifting",
+        "inspirational"
+      ],
+      "genres": [
+        "piano",
+        "orchestral"
+      ],
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution_required": false,
+      "source_url": "https://opengameart.org/content/happy-moments",
+      "download_url": "https://opengameart.org/sites/default/files/piano1.3_0.ogg",
+      "source_checked_on": "2026-09-12",
+      "sha256": "427a4a557b29695263da90c42e6f41a43e9078b7eafa9926163f5e2515547fcf"
+    },
+    {
+      "file": "suspense.ogg",
+      "title": "Suspense",
+      "artist": "wipics",
+      "kind": "music",
+      "instrumental": true,
+      "themes": [
+        "mystery",
+        "warning"
+      ],
+      "moods": [
+        "dark",
+        "dramatic",
+        "suspense",
+        "tense"
+      ],
+      "genres": [
+        "cinematic"
+      ],
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution_required": false,
+      "source_url": "https://opengameart.org/content/suspense-0",
+      "download_url": "https://opengameart.org/sites/default/files/suspense_0.ogg",
+      "source_checked_on": "2026-09-12",
+      "sha256": "1b75b3eebb4a526cd7c337dc41aa5ca39d4dc0f44890a3a6c969e8edc205b8cf"
+    }
+  ]
+}

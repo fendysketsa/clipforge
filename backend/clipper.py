@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Iterable, Literal
+from urllib.parse import urlparse
 
 import imageio_ffmpeg
 from rich.console import Console
@@ -33,7 +34,6 @@ from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
 
 console = Console()
 _AI_UNAVAILABLE_NOTICE_PRINTED = False
-_YOUTUBE_AUDIO_SYNC_LAST_ATTEMPT: dict[str, float] = {}
 
 
 def emit_progress(percent: int, stage: str, detail: str) -> None:
@@ -180,8 +180,8 @@ class SoundEffectCue:
 
 
 @dataclass(frozen=True)
-class YouTubeAudioLibraryTrack:
-    """Locally downloaded, manifest-verified YouTube Audio Library music."""
+class BackgroundMusicTrack:
+    """Locally cached, license-manifested background music."""
 
     path: Path
     title: str
@@ -190,6 +190,7 @@ class YouTubeAudioLibraryTrack:
     genres: tuple[str, ...]
     themes: tuple[str, ...]
     license: str
+    license_url: str
     source_url: str
     sha256: str
     attribution_required: bool = False
@@ -1287,14 +1288,14 @@ ISLAMIC_WORDS = {
 
 ISLAMIC_BACKGROUND_MUSIC_TITLE = "Cahaya Hikmah (Fendy Clipper Original)"
 ISLAMIC_BACKGROUND_MUSIC_LICENSE = "CC0-1.0"
-YOUTUBE_AUDIO_LIBRARY_DEFAULT_DIR = (
-    Path(__file__).resolve().parent / "assets" / "youtube_audio_library"
+BACKGROUND_MUSIC_DEFAULT_DIR = (
+    Path(__file__).resolve().parent / "assets" / "background_music"
 )
-YOUTUBE_AUDIO_LIBRARY_LICENSES = {
-    "youtube audio library license",
-    "youtube_audio_library",
-    "youtube-audio-library",
+BACKGROUND_MUSIC_LICENSES = {"cc0-1.0"}
+BACKGROUND_MUSIC_LICENSE_URLS = {
+    "cc0-1.0": "https://creativecommons.org/publicdomain/zero/1.0/",
 }
+BACKGROUND_MUSIC_SOURCE_HOSTS = {"opengameart.org", "www.opengameart.org"}
 
 INSPIRING_WORDS = {
     "bangkit",
@@ -8815,7 +8816,7 @@ def detect_visual_theme(clip: ClipCandidate) -> VisualTheme:
     return "knowledge"
 
 
-YOUTUBE_AUDIO_THEME_TAGS: dict[VisualTheme, set[str]] = {
+BACKGROUND_MUSIC_THEME_TAGS: dict[VisualTheme, set[str]] = {
     "mystery": {"mystery", "dark", "dramatic", "suspense", "cinematic"},
     "islamic": {"islamic", "reflective", "calm", "inspirational", "ambient"},
     "warning": {"warning", "dramatic", "tense", "suspense", "cinematic"},
@@ -8835,17 +8836,17 @@ def _audio_catalog_tags(value: object) -> tuple[str, ...]:
     )
 
 
-def load_youtube_audio_library_catalog(
+def load_background_music_catalog(
     library_dir: Path | None = None,
-) -> list[YouTubeAudioLibraryTrack]:
-    """Load only locally present, attribution-free Audio Library instrumentals."""
-    configured_dir = os.environ.get("YOUTUBE_AUDIO_LIBRARY_DIR", "").strip()
+) -> list[BackgroundMusicTrack]:
+    """Load only local CC0 instrumentals whose manifest and hash are valid."""
+    configured_dir = os.environ.get("BACKGROUND_MUSIC_LIBRARY_DIR", "").strip()
     root = (
         library_dir
         if library_dir is not None
         else Path(configured_dir)
         if configured_dir
-        else YOUTUBE_AUDIO_LIBRARY_DEFAULT_DIR
+        else BACKGROUND_MUSIC_DEFAULT_DIR
     ).expanduser().resolve()
     catalog_path = root / "catalog.json"
     if not catalog_path.is_file():
@@ -8857,7 +8858,9 @@ def load_youtube_audio_library_catalog(
     entries = payload.get("tracks") if isinstance(payload, dict) else payload
     if not isinstance(entries, list):
         return []
-    tracks: list[YouTubeAudioLibraryTrack] = []
+    if not isinstance(payload, dict) or payload.get("runtime_downloads") is not False:
+        return []
+    tracks: list[BackgroundMusicTrack] = []
     for entry in entries:
         if not isinstance(entry, dict):
             continue
@@ -8868,7 +8871,9 @@ def load_youtube_audio_library_catalog(
         except ValueError:
             continue
         license_name = re.sub(r"\s+", " ", str(entry.get("license") or "")).strip()
+        license_url = str(entry.get("license_url") or "").strip()
         source_url = str(entry.get("source_url") or "").strip()
+        source_host = (urlparse(source_url).hostname or "").casefold()
         expected_sha256 = str(entry.get("sha256") or "").strip().casefold()
         if (
             not relative_file
@@ -8877,19 +8882,18 @@ def load_youtube_audio_library_catalog(
             or str(entry.get("kind") or "music").strip().casefold() != "music"
             or entry.get("instrumental") is not True
             or entry.get("attribution_required") is not False
-            or license_name.casefold() not in YOUTUBE_AUDIO_LIBRARY_LICENSES
+            or license_name.casefold() not in BACKGROUND_MUSIC_LICENSES
+            or license_url != BACKGROUND_MUSIC_LICENSE_URLS.get(license_name.casefold())
             or re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None
             or file_sha256(path).casefold() != expected_sha256
-            or not (
-                "youtube.com/audiolibrary" in source_url.casefold()
-                or "studio.youtube.com" in source_url.casefold()
-            )
+            or urlparse(source_url).scheme != "https"
+            or source_host not in BACKGROUND_MUSIC_SOURCE_HOSTS
         ):
             continue
         title = re.sub(r"\s+", " ", str(entry.get("title") or path.stem)).strip()
-        artist = re.sub(r"\s+", " ", str(entry.get("artist") or "YouTube Audio Library")).strip()
+        artist = re.sub(r"\s+", " ", str(entry.get("artist") or "Unknown artist")).strip()
         tracks.append(
-            YouTubeAudioLibraryTrack(
+            BackgroundMusicTrack(
                 path=path,
                 title=title[:180],
                 artist=artist[:180],
@@ -8897,6 +8901,7 @@ def load_youtube_audio_library_catalog(
                 genres=_audio_catalog_tags(entry.get("genres")),
                 themes=_audio_catalog_tags(entry.get("themes")),
                 license=license_name,
+                license_url=license_url,
                 source_url=source_url,
                 sha256=expected_sha256,
                 attribution_required=False,
@@ -8905,21 +8910,21 @@ def load_youtube_audio_library_catalog(
     return tracks
 
 
-def select_youtube_audio_library_track(
+def select_background_music_track(
     clip: ClipCandidate,
     library_dir: Path | None = None,
-) -> tuple[YouTubeAudioLibraryTrack | None, dict[str, object]]:
+) -> tuple[BackgroundMusicTrack | None, dict[str, object]]:
     """Select a deterministic instrumental whose catalog mood matches the clip."""
     theme = detect_visual_theme(clip)
-    desired = YOUTUBE_AUDIO_THEME_TAGS[theme]
+    desired = BACKGROUND_MUSIC_THEME_TAGS[theme]
     clip_words = set(
         re.findall(
             r"[\w']+",
             f"{clip.title} {clip.hook} {clip.pov} {clip.text}".casefold(),
         )
     )
-    ranked: list[tuple[int, str, YouTubeAudioLibraryTrack, list[str]]] = []
-    for track in load_youtube_audio_library_catalog(library_dir):
+    ranked: list[tuple[int, str, BackgroundMusicTrack, list[str]]] = []
+    for track in load_background_music_catalog(library_dir):
         tags = set((*track.moods, *track.genres, *track.themes))
         reasons: list[str] = []
         score = 0
@@ -8957,106 +8962,6 @@ def select_youtube_audio_library_track(
         "matched_by": reasons,
         "reason": "theme_and_mood_match",
     }
-
-
-def sync_youtube_audio_library_for_theme(
-    theme: VisualTheme,
-    library_dir: Path | None = None,
-) -> dict[str, object]:
-    """Best-effort Studio download; a failure must never abort clip rendering."""
-    if not env_enabled("SHORTS_YOUTUBE_AUDIO_AUTO_SYNC", True):
-        return {"ok": False, "reason": "auto_sync_disabled"}
-    try:
-        cooldown_value = float(
-            os.environ.get("SHORTS_YOUTUBE_AUDIO_SYNC_COOLDOWN_SECONDS", "900")
-        )
-    except ValueError:
-        cooldown_value = 900.0
-    cooldown = max(30.0, min(3600.0, cooldown_value))
-    now = time.monotonic()
-    previous = _YOUTUBE_AUDIO_SYNC_LAST_ATTEMPT.get(theme, 0.0)
-    if previous and now - previous < cooldown:
-        return {
-            "ok": False,
-            "reason": "auto_sync_cooldown",
-            "retry_after_seconds": round(cooldown - (now - previous), 1),
-        }
-    _YOUTUBE_AUDIO_SYNC_LAST_ATTEMPT[theme] = now
-
-    configured_dir = os.environ.get("YOUTUBE_AUDIO_LIBRARY_DIR", "").strip()
-    root = (
-        library_dir
-        if library_dir is not None
-        else Path(configured_dir)
-        if configured_dir
-        else YOUTUBE_AUDIO_LIBRARY_DEFAULT_DIR
-    ).expanduser().resolve()
-    module_dir = Path(__file__).resolve().parent
-    script_candidates = (
-        module_dir / "scripts" / "sync-youtube-audio-library.py",
-        module_dir.parent / "scripts" / "sync-youtube-audio-library.py",
-    )
-    script_path = next((path for path in script_candidates if path.is_file()), script_candidates[-1])
-    state_path = Path(
-        os.environ.get(
-            "YOUTUBE_PLAYWRIGHT_STATE",
-            str(Path(__file__).resolve().parent / "data" / "youtube_storage_state.json"),
-        )
-    ).expanduser().resolve()
-    studio_url = os.environ.get("YOUTUBE_STUDIO_URL", "https://studio.youtube.com").strip()
-    if not script_path.is_file():
-        return {"ok": False, "reason": "sync_script_missing", "path": str(script_path)}
-    try:
-        timeout_seconds = max(
-            30,
-            min(180, int(os.environ.get("SHORTS_YOUTUBE_AUDIO_SYNC_TIMEOUT_SECONDS", "75"))),
-        )
-    except ValueError:
-        timeout_seconds = 75
-    command = [
-        sys.executable,
-        str(script_path),
-        "--theme",
-        theme,
-        "--library-dir",
-        str(root),
-        "--state",
-        str(state_path),
-        "--studio-url",
-        studio_url,
-        "--timeout-seconds",
-        str(timeout_seconds),
-    ]
-    try:
-        result = subprocess.run(
-            command,
-            text=True,
-            capture_output=True,
-            timeout=timeout_seconds + 20,
-        )
-    except subprocess.TimeoutExpired:
-        return {"ok": False, "reason": "youtube_audio_sync_timeout"}
-    except OSError as exc:
-        return {"ok": False, "reason": "youtube_audio_sync_start_failed", "detail": str(exc)[:300]}
-    payload: dict[str, object] | None = None
-    for line in reversed(result.stdout.splitlines()):
-        if not line.startswith("YOUTUBE_AUDIO_SYNC:"):
-            continue
-        try:
-            parsed = json.loads(line.split(":", 1)[1])
-        except (ValueError, TypeError):
-            continue
-        if isinstance(parsed, dict):
-            payload = parsed
-            break
-    if payload is None:
-        payload = {
-            "ok": False,
-            "reason": "youtube_audio_sync_invalid_response",
-            "detail": (result.stderr or result.stdout).strip()[-500:],
-        }
-    payload["returncode"] = result.returncode
-    return payload
 
 
 def clip_has_islamic_context(clip: ClipCandidate) -> bool:
@@ -11792,44 +11697,28 @@ def export_clip(
         "restrained_authority",
         "story_punchline",
     }
-    youtube_audio_library_requested = (
+    background_music_requested = (
         output_format == "vertical_short"
-        and env_enabled("SHORTS_YOUTUBE_AUDIO_LIBRARY_ENABLED", True)
+        and env_enabled("SHORTS_BACKGROUND_MUSIC_ENABLED", True)
     )
-    youtube_audio_track: YouTubeAudioLibraryTrack | None = None
-    youtube_audio_selection: dict[str, object] = {
+    background_music_track: BackgroundMusicTrack | None = None
+    background_music_selection: dict[str, object] = {
         "theme": detect_visual_theme(clip),
         "reason": "disabled_or_not_vertical_short",
     }
-    if youtube_audio_library_requested:
-        youtube_audio_track, youtube_audio_selection = select_youtube_audio_library_track(clip)
-        if youtube_audio_track is None:
-            auto_sync = sync_youtube_audio_library_for_theme(
-                detect_visual_theme(clip),
+    if background_music_requested:
+        background_music_track, background_music_selection = select_background_music_track(clip)
+        if background_music_track is None:
+            console.print(
+                "[yellow]Backsong lokal terverifikasi tidak tersedia untuk tema ini; "
+                "render tidak akan mengunduh musik dan tetap dilanjutkan.[/yellow]"
             )
-            if auto_sync.get("ok"):
-                youtube_audio_track, youtube_audio_selection = select_youtube_audio_library_track(clip)
-                youtube_audio_selection["auto_sync"] = auto_sync
-                if youtube_audio_track is not None:
-                    console.print(
-                        f"[green]Backsong Audio Library otomatis siap untuk tema "
-                        f"{youtube_audio_selection.get('theme')}.[/green]"
-                    )
-                else:
-                    youtube_audio_selection["reason"] = "downloaded_track_not_eligible"
-            else:
-                youtube_audio_selection["auto_sync"] = auto_sync
-                reason = str(auto_sync.get("reason") or "gagal")
-                console.print(
-                    f"[yellow]Audio Library otomatis belum tersedia ({reason}); "
-                    "render dilanjutkan tanpa memaksa backsong eksternal.[/yellow]"
-                )
     islamic_background_music = (
-        youtube_audio_track is None
+        background_music_track is None
         and clip_has_islamic_context(clip)
         and not dialogue_first_accent
     )
-    has_background_music = youtube_audio_track is not None or islamic_background_music
+    has_background_music = background_music_track is not None or islamic_background_music
     music_ducking_supported = (
         has_background_music
         and env_enabled("SHORTS_MUSIC_DUCKING", True)
@@ -12090,24 +11979,26 @@ def export_clip(
             {
                 "enabled": False,
                 "requested": True,
-                "title": youtube_audio_track.title,
-                "artist": youtube_audio_track.artist,
-                "source": "youtube_audio_library",
-                "source_url": youtube_audio_track.source_url,
-                "asset_sha256": youtube_audio_track.sha256,
-                "license": youtube_audio_track.license,
-                "attribution_required": youtube_audio_track.attribution_required,
+                "title": background_music_track.title,
+                "artist": background_music_track.artist,
+                "source": "local_open_music_library",
+                "source_url": background_music_track.source_url,
+                "asset_sha256": background_music_track.sha256,
+                "license": background_music_track.license,
+                "license_url": background_music_track.license_url,
+                "attribution_required": background_music_track.attribution_required,
                 "third_party_recording": True,
                 "instrumental": True,
-                "moods": list(youtube_audio_track.moods),
-                "genres": list(youtube_audio_track.genres),
-                "themes": list(youtube_audio_track.themes),
-                "selection": youtube_audio_selection,
+                "runtime_downloaded": False,
+                "moods": list(background_music_track.moods),
+                "genres": list(background_music_track.genres),
+                "themes": list(background_music_track.themes),
+                "selection": background_music_selection,
                 "dialogue_gain": dialogue_gain,
                 "music_gain_ceiling": music_gain,
                 "ducking": music_ducking_supported,
             }
-            if youtube_audio_track is not None
+            if background_music_track is not None
             else
             {
                 "enabled": False,
@@ -12124,13 +12015,13 @@ def export_clip(
             if islamic_background_music
             else {
                 "enabled": False,
-                "requested": youtube_audio_library_requested,
-                "source": "youtube_audio_library",
-                "selection": youtube_audio_selection,
+                "requested": background_music_requested,
+                "source": "local_open_music_library",
+                "selection": background_music_selection,
                 "reason": (
                     f"{auto_visual_accent}_dialogue_first"
                     if dialogue_first_accent and clip_has_islamic_context(clip)
-                    else str(youtube_audio_selection.get("reason") or "no_eligible_theme_match")
+                    else str(background_music_selection.get("reason") or "no_eligible_theme_match")
                 ),
             }
         ),
@@ -13123,21 +13014,21 @@ def export_clip(
     ]
     if sound_effect_cues or has_background_music:
         try:
-            youtube_music_input = (
-                ["-stream_loop", "-1", "-i", str(youtube_audio_track.path.resolve())]
-                if youtube_audio_track is not None
+            local_music_input = (
+                ["-stream_loop", "-1", "-i", str(background_music_track.path.resolve())]
+                if background_music_track is not None
                 else []
             )
             run(
                 [
                     *audio_input,
-                    *youtube_music_input,
+                    *local_music_input,
                     "-filter_complex",
                     contextual_audio_mix_filter(
                         audio_filter,
                         sound_effect_cues,
                         background_music=islamic_background_music,
-                        external_background_music=youtube_audio_track is not None,
+                        external_background_music=background_music_track is not None,
                         duration=duration,
                         music_ducking=music_ducking_supported,
                         dialogue_gain=dialogue_gain,
@@ -13158,10 +13049,11 @@ def export_clip(
             )
             if has_background_music:
                 sidecar_payload["background_music"]["enabled"] = True
-                if youtube_audio_track is not None:
+                if background_music_track is not None:
                     applied_edits.append(
-                        f"Backsong YouTube Audio Library '{youtube_audio_track.title}' dipilih sesuai tema "
-                        f"dan dicampur maksimal {music_gain:.0%} di bawah dialog {dialogue_gain:.0%}."
+                        f"Backsong CC0 lokal '{background_music_track.title}' dipilih sesuai tema "
+                        f"dan dicampur maksimal {music_gain:.0%} di bawah dialog {dialogue_gain:.0%}; "
+                        "tidak ada unduhan saat render."
                     )
                 else:
                     applied_edits.append(
@@ -14870,8 +14762,7 @@ def render_animated_script(
             "asset_class": "music",
             "origin": "procedural_generated_in_application",
             "third_party_recording_used": False,
-            "youtube_audio_library_used": False,
-            "known_by_youtube_as_copyright_safe": False,
+            "local_open_music_library_used": False,
             "commercial_use_basis": "original_procedural_audio_plus_provider_confirmation",
             "proof_reference": provider_evidence,
             "content_id_checks_still_required": True,
@@ -14911,7 +14802,7 @@ def render_animated_script(
         "complete": ledger_complete,
         "evidence_verified": False,
         "manual_document_review_required_before_publication": True,
-        "youtube_audio_library_is_only_youtube_known_safe_library": True,
+        "third_party_music_requires_per_track_license_evidence": True,
         "content_id_and_channel_review_still_required": True,
         "guarantee": False,
     }

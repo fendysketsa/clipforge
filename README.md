@@ -28,8 +28,8 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Keep the original background by default; optional background cleaning remains available for text-heavy sources.
 - Add at most one strong conversation-aware reaction sticker in Clean Detail mode, only for laughter, surprise, prayer, or warnings.
 - Mix restrained transcript-synced sound effects under normalized dialogue.
-- For **Clip Pendek** only, select an instrumental from YouTube Studio Audio Library by the clip's detected theme and mood. When the local catalog has no match, a best-effort browser sync uses the saved **Login Sekali** Studio session, verifies the `Attribution not required` filter, downloads one matching track, hashes it, and caches it locally. Dialogue uses an 80% gain, music is capped at 20%, and sidechain ducking lowers music further during speech. Login/UI failures never abort the clip render.
-- If no eligible Audio Library track is installed, Islamic clips can still use the quiet, dialogue-ducked CC0 "Cahaya Hikmah" fallback generated locally without third-party recordings or samples.
+- For **Clip Pendek** only, select a theme-matched instrumental from a local, hash-verified CC0 library. Three bundled OpenGameArt tracks cover `mystery`, `islamic`, `warning`, `inspiring`, and `knowledge`; license/source evidence stays in `backend/assets/background_music/catalog.json`. Rebuild/setup may fetch a missing pinned asset, but clip rendering never downloads music. Dialogue uses an 80% gain, music is capped at 20%, and sidechain ducking lowers it further during speech.
+- If no eligible local track is installed, Islamic clips can still use the quiet, dialogue-ducked CC0 "Cahaya Hikmah" fallback generated locally without third-party recordings or samples.
 - Apply loop treatment only when the payoff semantically reconnects to the opening hook.
 - Preserve the source footer and face pixels by default; footer cleanup is opt-in for sources where modifying the lower frame is acceptable.
 - Enhance voice clarity and generate safe, niche-aware social captions even when the AI service is unavailable.

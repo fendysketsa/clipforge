@@ -12,3 +12,9 @@ Fendy Clipper includes or references third-party components:
   audio output are dedicated to the public domain under CC0-1.0. The track is
   synthesized locally from simple oscillators by Fendy Clipper and contains no
   third-party recording or sample. Attribution is not required.
+
+- The local background-music library includes "Calm Theme" by pebonius,
+  "Happy Moments" by Centurion_of_war, and "Suspense" by wipics. Each source
+  page marks the recording CC0; attribution is not required. Source pages,
+  license URL, retrieval audit date, and exact SHA-256 hashes are recorded in
+  `backend/assets/background_music/catalog.json`.

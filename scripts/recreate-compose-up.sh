@@ -121,6 +121,24 @@ if [[ "$RESTORE_ONLY" == "true" && "$DOWN_FIRST" == "true" ]]; then
   exit 2
 fi
 
+# Music is a build/setup asset, never a render-time dependency. The sync tool
+# is hash-pinned and only contacts allowlisted CC0 source hosts for a file that
+# is missing or invalid. A transient network failure must not break a rebuild;
+# the runtime loader will simply reject any incomplete asset.
+if [[ "$RESTORE_ONLY" != "true" && "${BACKGROUND_MUSIC_SYNC_ON_REBUILD:-true}" == "true" ]]; then
+  music_sync_python=""
+  if command -v python3 >/dev/null 2>&1; then
+    music_sync_python="$(command -v python3)"
+  elif command -v python >/dev/null 2>&1; then
+    music_sync_python="$(command -v python)"
+  fi
+  if [[ -z "$music_sync_python" ]]; then
+    echo "Peringatan: Python host tidak ada; verifikasi backsound lokal dilewati." >&2
+  elif ! "$music_sync_python" "$ROOT_DIR/scripts/sync-background-music-library.py"; then
+    echo "Peringatan: sinkronisasi backsound CC0 gagal; rebuild tetap jalan tanpa download saat render." >&2
+  fi
+fi
+
 if [[ "$DOWN_FIRST" == "true" ]]; then
   "${compose_cmd[@]}" --env-file .env down
 fi
