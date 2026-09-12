@@ -490,6 +490,8 @@ export type ViralContentSource = {
   language_score: number;
   search_provider?: "youtube_data_api" | "yt_dlp_fallback";
   search_elapsed_ms?: number;
+  trend_signal_score?: number;
+  trend_matches?: string[];
   filter_match?: "exact" | "adaptive";
   relaxed_filters?: string[];
   ranking_reason: string;
@@ -545,10 +547,29 @@ export type AutoViralRun = {
   created_at: string;
   updated_at: string;
   finished_at?: string | null;
+  trigger: "manual" | "schedule" | "search";
   request: AutoViralRequest;
   message: string;
+  progress_percent: number;
+  progress_stage: string;
+  progress_current: number;
+  progress_total: number;
+  search_provider?: string | null;
   selected_sources: ViralContentSource[];
   processed: Record<string, unknown>[];
   errors: string[];
   logs: string[];
+};
+
+export type AutoViralScheduleStatus = {
+  enabled: boolean;
+  interval_hours: number;
+  run_on_startup: boolean;
+  scheduler_running: boolean;
+  active_run_id?: string | null;
+  last_run_id?: string | null;
+  last_started_at?: string | null;
+  last_finished_at?: string | null;
+  next_run_at?: string | null;
+  message: string;
 };

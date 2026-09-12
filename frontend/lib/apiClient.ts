@@ -546,6 +546,22 @@ export const getAutoViralCampaign = async (runId: string) => {
   return (await response.json()) as AutoViralRun;
 };
 
+export const getAutoViralCampaigns = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/automation/viral-cc`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to load auto viral history"));
+  }
+  return (await response.json()) as AutoViralRun[];
+};
+
+export const getAutoViralSchedule = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/automation/viral-cc/schedule`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Failed to load auto viral schedule"));
+  }
+  return (await response.json()) as import("../types/clip.type").AutoViralScheduleStatus;
+};
+
 export const createJob = async (input: CreateClipJobInput) => {
   const response = await fetch(`${CLIENT_API_BASE}/api/jobs`, {
     method: "POST",

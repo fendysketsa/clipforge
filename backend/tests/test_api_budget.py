@@ -740,6 +740,125 @@ def test_fast_google_api_query_can_be_overridden_without_exposing_key(monkeypatc
     ]
 
 
+def test_youtube_trend_chart_seeds_cc_search_and_adds_ranking_signal(monkeypatch):
+    import api
+
+    monkeypatch.setenv("YOUTUBE_DATA_API_KEY", "configured-test-key")
+    monkeypatch.setenv("VIRAL_CC_USE_TREND_CHART", "true")
+    monkeypatch.setenv("VIRAL_CC_TREND_SEED_LIMIT", "2")
+    observed_search_query = ""
+    call_count = {"videos": 0}
+
+    def fake_api(path, params):
+        nonlocal observed_search_query
+        if path == "videos" and params.get("chart") == "mostPopular":
+            return {
+                "items": [{
+                    "id": "trend-1",
+                    "snippet": {
+                        "title": "Fenomena Sedekah Viral di Indonesia",
+                        "description": "Berita muslim Indonesia dan hikmah sedekah.",
+                        "defaultAudioLanguage": "id",
+                    },
+                }]
+            }
+        if path == "search":
+            observed_search_query = str(params["q"])
+            return {"items": [{"id": {"videoId": "cc-1"}}]}
+        call_count["videos"] += 1
+        return {
+            "items": [{
+                "id": "cc-1",
+                "snippet": {
+                    "title": "Hikmah di Balik Fenomena Sedekah",
+                    "description": "Kajian Islam Indonesia tentang sedekah.",
+                    "publishedAt": datetime.now(timezone.utc).isoformat(),
+                    "defaultAudioLanguage": "id",
+                    "liveBroadcastContent": "none",
+                },
+                "statistics": {"viewCount": "10000", "likeCount": "800"},
+                "contentDetails": {"duration": "PT30M", "definition": "hd"},
+                "status": {"license": "creativeCommon"},
+            }]
+        }
+
+    monkeypatch.setattr(api, "youtube_data_api_get", fake_api)
+    selected = search_youtube_data_api_viral_sources(
+        AutoViralRequest(niche="islamic_current_viral", video_count=1),
+        "missing-run",
+        stop_after=1,
+    )
+
+    assert "Fenomena Sedekah Viral" in observed_search_query
+    assert call_count["videos"] == 1
+    assert selected[0]["trend_signal_score"] > 0
+    assert "sedekah" in selected[0]["trend_matches"]
+
+
+def test_scheduled_discovery_prefers_youtube_api_over_ytdlp(monkeypatch):
+    import api
+
+    monkeypatch.setenv("YOUTUBE_DATA_API_KEY", "configured-test-key")
+    monkeypatch.setenv("VIRAL_CC_REQUIRE_YOUTUBE_DATA_API", "true")
+    monkeypatch.setenv("VIRAL_CC_FAST_API_ONLY", "true")
+    monkeypatch.setattr(
+        api,
+        "search_youtube_data_api_viral_sources",
+        lambda *_args, **_kwargs: [{"url": "https://youtube.com/watch?v=api-first", "score": 90}],
+    )
+    monkeypatch.setattr(
+        api,
+        "search_auto_viral_sources",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected yt-dlp fallback")),
+    )
+    run = api.AutoViralRun(
+        id="scheduled-test",
+        status="running",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=AutoViralRequest(video_count=1),
+    )
+    with api.auto_viral_lock:
+        api.auto_viral_runs[run.id] = run
+
+    selected = api.discover_auto_viral_campaign_sources(
+        run.request,
+        run.id,
+        set(),
+        3,
+    )
+
+    assert selected[0]["url"].endswith("api-first")
+    assert api.auto_viral_runs[run.id].search_provider == "youtube_data_api"
+
+
+def test_auto_viral_schedule_reads_interval_and_safe_review_defaults(monkeypatch):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_ENABLED", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_INTERVAL_HOURS", "4")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", "2")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "false")
+    monkeypatch.setattr(api, "auto_viral_scheduler_running", True)
+    monkeypatch.setattr(
+        api,
+        "auto_viral_scheduler_next_run_at",
+        datetime.now(timezone.utc) + timedelta(hours=4),
+    )
+
+    request = api.scheduled_auto_viral_request()
+    status = api.auto_viral_schedule_status()
+
+    assert request.niche == "islamic_current_viral"
+    assert request.video_count == 2
+    assert request.auto_upload_youtube is False
+    assert status.enabled is True
+    assert status.scheduler_running is True
+    assert status.interval_hours == 4
+    assert status.next_run_at
+
+
 def test_quota_exceeded_uses_small_cc_verified_fallback(monkeypatch):
     import api
 

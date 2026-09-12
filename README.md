@@ -326,6 +326,35 @@ instead of presenting an old low-view source as viral. Source history stores
 the views, views/day, age, and editorial viral score captured at processing
 time so later audits compare real inputs rather than the label alone.
 
+Auto Viral uses the YouTube Data API route for both dashboard searches and
+scheduled campaigns. It reads the regional `mostPopular` chart as a live topic
+signal, adds relevant Indonesian topics to the Creative Commons search, then
+ranks only sources that still pass freshness, momentum, language, HD, and rights
+preflight checks. The chart itself is not treated as permission to reuse a video.
+
+Enable the internal cron-style scheduler in `.env` (restart the backend after
+changing these values):
+
+```env
+YOUTUBE_DATA_API_KEY=your_google_api_key
+AUTO_VIRAL_SCHEDULE_ENABLED=true
+AUTO_VIRAL_SCHEDULE_INTERVAL_HOURS=6
+AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP=false
+AUTO_VIRAL_SCHEDULE_NICHE=islamic_current_viral
+AUTO_VIRAL_SCHEDULE_VIDEO_COUNT=3
+AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO=2
+AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE=false
+VIRAL_CC_TREND_VIDEO_CATEGORY_ID=25
+```
+
+The scheduler never overlaps active Auto Viral runs. Its next/last run, trigger,
+stage, overall percentage, successful source count, provider, and recent logs are
+visible in **Radar Viral Otomatis** on the dashboard. Run history survives backend
+restarts in `backend/data/auto_viral_runs.json`; an interrupted run is recorded as
+failed instead of disappearing. Automatic upload remains off by default so cron
+renders stay available for review. If enabled, YouTube visibility still follows
+the existing private-first upload safety rules.
+
 When `YOUTUBE_DATA_API_KEY` is configured, the backend also starts a lightweight
 performance collector. Every six hours it batches up to 200 due uploads into
 groups of 50 video IDs, records public views/likes/comments, and updates the

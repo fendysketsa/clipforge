@@ -70,6 +70,12 @@ SOURCE_USAGE_HISTORY_PATH = Path(
         BASE_DIR / "data" / "source_usage_history.json",
     )
 )
+AUTO_VIRAL_RUNS_PATH = Path(
+    os.environ.get(
+        "AUTO_VIRAL_RUNS_PATH",
+        BASE_DIR / "data" / "auto_viral_runs.json",
+    )
+)
 SOURCE_USAGE_ARCHIVE_DIR_OVERRIDE = os.environ.get("SOURCE_USAGE_ARCHIVE_DIR", "").strip()
 YOUTUBE_PLAYWRIGHT_STATE = Path(os.environ.get("YOUTUBE_PLAYWRIGHT_STATE", BASE_DIR / "data" / "youtube_storage_state.json"))
 YOUTUBE_CHROMIUM_USER_DATA_DIR = os.environ.get("YOUTUBE_CHROMIUM_USER_DATA_DIR", "").strip()
@@ -286,6 +292,13 @@ def env_search_queries(*names: str) -> list[str]:
 def env_int(name: str, default: int) -> int:
     try:
         return int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+
+
+def env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, str(default)))
     except ValueError:
         return default
 
@@ -1444,12 +1457,31 @@ class AutoViralRun(BaseModel):
     created_at: str
     updated_at: str
     finished_at: str | None = None
+    trigger: Literal["manual", "schedule", "search"] = "manual"
     request: AutoViralRequest
     message: str = ""
+    progress_percent: int = Field(default=0, ge=0, le=100)
+    progress_stage: str = "queued"
+    progress_current: int = Field(default=0, ge=0)
+    progress_total: int = Field(default=0, ge=0)
+    search_provider: str | None = None
     selected_sources: list[dict[str, Any]] = Field(default_factory=list)
     processed: list[dict[str, Any]] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     logs: list[str] = Field(default_factory=list)
+
+
+class AutoViralScheduleStatus(BaseModel):
+    enabled: bool
+    interval_hours: float
+    run_on_startup: bool
+    scheduler_running: bool
+    active_run_id: str | None = None
+    last_run_id: str | None = None
+    last_started_at: str | None = None
+    last_finished_at: str | None = None
+    next_run_at: str | None = None
+    message: str
 
 
 class ViralVideoSearchRequest(BaseModel):
@@ -1705,6 +1737,42 @@ def load_source_usage_history() -> dict[str, dict[str, Any]]:
     }
 
 
+def load_auto_viral_runs() -> dict[str, AutoViralRun]:
+    """Load durable automation history and retire work interrupted by a restart."""
+    try:
+        payload = json.loads(AUTO_VIRAL_RUNS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, list):
+        return {}
+
+    loaded: dict[str, AutoViralRun] = {}
+    for raw_item in payload:
+        if not isinstance(raw_item, dict):
+            continue
+        try:
+            run = AutoViralRun(**raw_item)
+        except (TypeError, ValueError):
+            continue
+        if run.status in {"queued", "running"}:
+            finished_at = now_iso()
+            run = run.model_copy(
+                update={
+                    "status": "failed",
+                    "updated_at": finished_at,
+                    "finished_at": finished_at,
+                    "message": "Automation terhenti karena backend restart; scheduler akan membuat run baru pada jadwal berikutnya.",
+                    "progress_stage": "interrupted",
+                    "logs": [
+                        *run.logs,
+                        f"{datetime.now().strftime('%H:%M:%S')} ERROR: Backend restart saat automation berjalan.",
+                    ][-160:],
+                }
+            )
+        loaded[run.id] = run
+    return loaded
+
+
 def source_usage_archive_root() -> Path:
     if SOURCE_USAGE_ARCHIVE_DIR_OVERRIDE:
         return Path(SOURCE_USAGE_ARCHIVE_DIR_OVERRIDE)
@@ -1808,6 +1876,25 @@ def save_jobs_unlocked() -> None:
         # JOBS_PATH may be a bind-mounted file; atomic rename over it fails
         # with Errno 16. Fall back to in-place write (single writer under lock).
         JOBS_PATH.write_text(data, encoding="utf-8")
+
+
+def save_auto_viral_runs_unlocked() -> None:
+    """Persist only real campaigns; interactive searches stay ephemeral."""
+    limit = max(10, min(500, env_int("AUTO_VIRAL_HISTORY_LIMIT", 100)))
+    runs_list = sorted(
+        (run for run in auto_viral_runs.values() if run.trigger != "search"),
+        key=lambda run: run.created_at,
+        reverse=True,
+    )[:limit]
+    payload = [run.model_dump() for run in runs_list]
+    AUTO_VIRAL_RUNS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    data = json.dumps(payload, indent=2, ensure_ascii=False)
+    try:
+        temp_path = AUTO_VIRAL_RUNS_PATH.with_suffix(".json.tmp")
+        temp_path.write_text(data, encoding="utf-8")
+        temp_path.replace(AUTO_VIRAL_RUNS_PATH)
+    except OSError:
+        AUTO_VIRAL_RUNS_PATH.write_text(data, encoding="utf-8")
 
 
 def youtube_upload_has_final_save_checkpoint(upload: YouTubeUploadJob) -> bool:
@@ -2707,9 +2794,14 @@ tiktok_worker_running = False
 tiktok_cdp_lock = threading.Lock()
 youtube_cleanup_lock = threading.Lock()
 youtube_cleanup_scheduled: set[str] = set()
-auto_viral_runs: dict[str, AutoViralRun] = {}
+auto_viral_runs: dict[str, AutoViralRun] = load_auto_viral_runs()
 auto_viral_lock = threading.Lock()
 auto_viral_active_run_id: str | None = None
+auto_viral_secrets: dict[str, str] = {}
+auto_viral_scheduler_lock = threading.Lock()
+auto_viral_scheduler_running = False
+auto_viral_scheduler_next_run_at: datetime | None = None
+auto_viral_scheduler_thread: threading.Thread | None = None
 youtube_data_api_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 youtube_data_api_cache_lock = threading.Lock()
 
@@ -10049,6 +10141,7 @@ def update_auto_viral_run(run_id: str, **updates) -> None:
         data.update(updates)
         data["updated_at"] = now_iso()
         auto_viral_runs[run_id] = AutoViralRun(**data)
+        save_auto_viral_runs_unlocked()
 
 
 def append_auto_viral_log(run_id: str, message: str) -> None:
@@ -10058,6 +10151,7 @@ def append_auto_viral_log(run_id: str, message: str) -> None:
             return
         logs = [*current.logs, f"{datetime.now().strftime('%H:%M:%S')} {message}"][-160:]
         auto_viral_runs[run_id] = current.model_copy(update={"logs": logs, "updated_at": now_iso()})
+        save_auto_viral_runs_unlocked()
 
 
 def append_auto_viral_error(run_id: str, message: str) -> None:
@@ -10068,6 +10162,7 @@ def append_auto_viral_error(run_id: str, message: str) -> None:
         errors = [*current.errors, message][-80:]
         logs = [*current.logs, f"{datetime.now().strftime('%H:%M:%S')} ERROR: {message}"][-160:]
         auto_viral_runs[run_id] = current.model_copy(update={"errors": errors, "logs": logs, "updated_at": now_iso()})
+        save_auto_viral_runs_unlocked()
 
 
 def youtube_watch_url(info: dict[str, Any]) -> str:
@@ -10694,6 +10789,86 @@ def youtube_data_api_search_queries(request: AutoViralRequest) -> list[str]:
     return request.queries[:max_api_queries]
 
 
+YOUTUBE_TREND_STOPWORDS = frozenset(
+    {
+        "yang", "dan", "di", "ke", "dari", "untuk", "dengan", "ini", "itu",
+        "the", "a", "an", "of", "to", "in", "on", "official", "video", "full",
+        "terbaru", "viral", "trending", "indonesia", "hari", "episode", "part",
+    }
+)
+
+
+def youtube_trend_signals(
+    request: AutoViralRequest,
+    run_id: str,
+) -> tuple[list[str], set[str]]:
+    """Read YouTube's regional most-popular chart and turn it into search/ranking signals.
+
+    Trending chart entries are inspiration signals only. The actual source still
+    has to pass Creative Commons, language, freshness, quality, and rights gates.
+    """
+    if not env_bool("VIRAL_CC_USE_TREND_CHART", True):
+        return [], set()
+    params: dict[str, Any] = {
+        "part": "snippet,statistics",
+        "chart": "mostPopular",
+        "regionCode": os.environ.get("VIRAL_CC_REGION_CODE", "ID").strip() or "ID",
+        "maxResults": max(5, min(50, env_int("VIRAL_CC_TREND_CHART_LIMIT", 25))),
+    }
+    category_id = os.environ.get("VIRAL_CC_TREND_VIDEO_CATEGORY_ID", "").strip()
+    if category_id:
+        params["videoCategoryId"] = category_id
+    append_auto_viral_log(
+        run_id,
+        "Membaca chart mostPopular YouTube regional sebagai sinyal tren saat ini.",
+    )
+    payload = youtube_data_api_get("videos", params)
+    eligible_titles: list[str] = []
+    trend_tokens: set[str] = set()
+    for item in payload.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        snippet = item.get("snippet") if isinstance(item.get("snippet"), dict) else {}
+        title = re.sub(r"\s+", " ", str(snippet.get("title") or "")).strip()
+        if not title:
+            continue
+        signal_payload = {
+            "title": title,
+            "description": snippet.get("description") or "",
+            "tags": snippet.get("tags") if isinstance(snippet.get("tags"), list) else [],
+            "default_language": snippet.get("defaultLanguage") or "",
+            "default_audio_language": snippet.get("defaultAudioLanguage") or "",
+        }
+        if indonesian_language_score(signal_payload) < max(
+            1, env_int("VIRAL_CC_MIN_INDONESIAN_SCORE", 15)
+        ):
+            continue
+        if request.niche != "auto" and niche_relevance_score(signal_payload, request.niche) <= 0:
+            continue
+        eligible_titles.append(title)
+        trend_tokens.update(
+            token
+            for token in re.findall(r"[a-z0-9]{3,}", title.casefold())
+            if token not in YOUTUBE_TREND_STOPWORDS
+        )
+
+    seed_limit = max(0, min(8, env_int("VIRAL_CC_TREND_SEED_LIMIT", 3)))
+    seeds = eligible_titles[:seed_limit]
+    append_auto_viral_log(
+        run_id,
+        f"Chart tren menghasilkan {len(eligible_titles)} topik relevan; {len(seeds)} dipakai sebagai seed pencarian CC.",
+    )
+    return seeds, trend_tokens
+
+
+def add_trend_seeds_to_queries(queries: list[str], seeds: list[str]) -> list[str]:
+    if not queries or not seeds:
+        return queries
+    seed_terms = [re.sub(r"[|]", " ", seed).strip()[:100] for seed in seeds if seed.strip()]
+    combined = "|".join([queries[0], *seed_terms])[:480]
+    return [combined, *queries[1:]]
+
+
 def search_youtube_data_api_viral_sources(
     request: AutoViralRequest,
     run_id: str,
@@ -10716,7 +10891,14 @@ def search_youtube_data_api_viral_sources(
     search_deadline = time.monotonic() + max(
         8, min(90, env_int("VIRAL_CC_FAST_SEARCH_BUDGET_SECONDS", 25))
     )
-    for query in youtube_data_api_search_queries(request):
+    trend_tokens: set[str] = set()
+    api_queries = youtube_data_api_search_queries(request)
+    try:
+        trend_seeds, trend_tokens = youtube_trend_signals(request, run_id)
+        api_queries = add_trend_seeds_to_queries(api_queries, trend_seeds)
+    except Exception as exc:
+        append_auto_viral_error(run_id, f"Chart tren YouTube gagal; lanjut dengan keyword utama: {exc}")
+    for query in api_queries:
         if stop_after is not None and len(candidates) >= stop_after:
             break
         if time.monotonic() >= search_deadline:
@@ -10860,6 +11042,14 @@ def search_youtube_data_api_viral_sources(
                 continue
             source = compact_source_payload(payload, request.niche)
             source["search_provider"] = "youtube_data_api"
+            source_tokens = set(re.findall(r"[a-z0-9]{3,}", (
+                f"{payload.get('title') or ''} {payload.get('description') or ''}"
+            ).casefold()))
+            matching_trend_tokens = sorted(source_tokens.intersection(trend_tokens))
+            trend_signal_score = min(20, len(matching_trend_tokens) * 4)
+            source["trend_signal_score"] = trend_signal_score
+            source["trend_matches"] = matching_trend_tokens[:8]
+            source["score"] = round(float(source.get("score") or 0) + trend_signal_score, 2)
             relaxed_reasons: list[str] = []
             relaxed_reasons.extend(filter_reasons)
             relaxed_reasons.extend(relevance_reasons)
@@ -11418,10 +11608,13 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
     run = AutoViralRun(
         id=run_id,
         status="running",
+        trigger="search",
         created_at=now_iso(),
         updated_at=now_iso(),
         request=search_request,
         message="Mencari kandidat CC sesuai filter durasi, tanggal, kualitas, dan prioritas",
+        progress_percent=5,
+        progress_stage="trend_discovery",
     )
     with auto_viral_lock:
         auto_viral_runs[run_id] = run
@@ -11553,6 +11746,10 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
             run_id,
             status="completed",
             finished_at=now_iso(),
+            progress_percent=100,
+            progress_stage="complete",
+            progress_current=len(selected),
+            progress_total=request.video_count,
             selected_sources=selected,
             message=(
                 f"Top {len(selected)} kandidat "
@@ -11567,6 +11764,9 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
         append_auto_viral_error(run_id, str(exc))
         update_auto_viral_run(run_id, status="failed", finished_at=now_iso(), message=str(exc))
         raise
+    finally:
+        with auto_viral_lock:
+            auto_viral_runs.pop(run_id, None)
 
 
 def wait_for_no_active_clipping_job(timeout_seconds: int = 3600) -> None:
@@ -11793,106 +11993,213 @@ def auto_viral_summary(run: AutoViralRun) -> str:
     return "\n".join(lines)[:12000]
 
 
+def discover_auto_viral_campaign_sources(
+    request: AutoViralRequest,
+    run_id: str,
+    excluded_sources: set[str],
+    source_pool_target: int,
+) -> list[dict[str, Any]]:
+    """Use the same YouTube Data API-first route for manual and scheduled runs."""
+    sources: list[dict[str, Any]] = []
+    prefer_youtube_api = env_bool("VIRAL_CC_REQUIRE_YOUTUBE_DATA_API", True)
+    api_key_configured = bool(os.environ.get("YOUTUBE_DATA_API_KEY", "").strip())
+    fast_api_only = env_bool("VIRAL_CC_FAST_API_ONLY", True)
+    quota_fallback = False
+    api_attempted = False
+
+    if prefer_youtube_api and api_key_configured:
+        api_attempted = True
+        update_auto_viral_run(
+            run_id,
+            progress_percent=6,
+            progress_stage="trend_discovery",
+            message="Membaca chart tren dan statistik YouTube regional",
+            search_provider="youtube_data_api",
+        )
+        try:
+            sources = search_youtube_data_api_viral_sources(
+                request,
+                run_id,
+                exclude_urls=excluded_sources,
+                stop_after=source_pool_target,
+            )
+        except Exception as exc:
+            append_auto_viral_error(run_id, f"YouTube Data API gagal: {exc}")
+            quota_fallback = any(
+                marker in str(exc).casefold()
+                for marker in ("quotaexceeded", "dailylimitexceeded", "rate_limit")
+            ) and env_bool("VIRAL_CC_QUOTA_FALLBACK_ENABLED", True)
+            if not quota_fallback and fast_api_only:
+                raise RuntimeError(
+                    "Google YouTube Data API tidak dapat dipakai. Periksa key, pembatasan, quota, "
+                    f"dan aktivasi YouTube Data API v3: {exc}"
+                ) from exc
+    elif prefer_youtube_api and fast_api_only:
+        raise RuntimeError(
+            "YOUTUBE_DATA_API_KEY belum terpasang; automation API-first tidak menjalankan fallback lambat."
+        )
+    else:
+        append_auto_viral_log(
+            run_id,
+            "YouTube Data API tidak diwajibkan/tersedia; memakai fallback yt-dlp terverifikasi.",
+        )
+
+    if len(sources) < source_pool_target and not (
+        fast_api_only and api_attempted and not quota_fallback and bool(sources)
+    ):
+        fallback_min_views = (
+            request.min_views
+            if env_bool("VIRAL_CC_REQUIRE_MOMENTUM", False)
+            else min(request.min_views, max(0, env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", 100)))
+        )
+        fallback_queries = prioritized_niche_queries(
+            request.niche,
+            default_auto_viral_queries(),
+        )
+        if quota_fallback:
+            fallback_queries = fallback_queries[:2]
+        fallback_request = request.model_copy(
+            update={
+                "queries": fallback_queries,
+                "search_limit_per_query": max(request.search_limit_per_query, 25),
+                "min_views": fallback_min_views,
+            }
+        )
+        update_auto_viral_run(
+            run_id,
+            progress_percent=10,
+            progress_stage="fallback_discovery",
+            message=f"Kandidat API {len(sources)}/{source_pool_target}; menjalankan fallback terbatas",
+            search_provider="hybrid" if sources else "yt_dlp_fallback",
+        )
+        found_urls = {
+            normalized
+            for source in sources
+            if (normalized := normalize_youtube_video_url(str(source.get("url") or "")))
+        }
+        sources.extend(
+            search_auto_viral_sources(
+                fallback_request,
+                run_id,
+                exclude_urls=excluded_sources | found_urls,
+                stop_after=source_pool_target - len(sources),
+                max_metadata_checks=(
+                    max(3, env_int("VIRAL_CC_QUOTA_FALLBACK_METADATA_CHECKS", 8))
+                    if quota_fallback
+                    else max(3, env_int("VIRAL_CC_FAST_MAX_METADATA_CHECKS", 24))
+                ),
+            )
+        )
+    sort_viral_source_payloads(sources, request.sort_order)
+    return sources
+
+
+def run_clip_job_with_campaign_progress(
+    job_id: str,
+    run_id: str,
+    source_index: int,
+    source_total: int,
+) -> None:
+    worker = threading.Thread(target=run_job, args=(job_id,), daemon=True)
+    worker.start()
+    last_signature: tuple[int, str, str] | None = None
+    segment_start = 18 + ((source_index - 1) * 72 / max(1, source_total))
+    segment_size = 72 / max(1, source_total)
+    while worker.is_alive():
+        with jobs_lock:
+            job = jobs.get(job_id)
+        if job is not None:
+            job_percent = max(0, min(100, int(job.progress_percent or 0)))
+            stage = str(job.progress_stage or "clipping")
+            detail = str(job.progress_detail or "Menjalankan pipeline clipping")
+            signature = (job_percent, stage, detail)
+            if signature != last_signature:
+                overall = min(90, round(segment_start + segment_size * job_percent / 100))
+                update_auto_viral_run(
+                    run_id,
+                    progress_percent=overall,
+                    progress_stage=f"clip_{stage}",
+                    progress_current=source_index - 1,
+                    progress_total=source_total,
+                    message=f"Sumber {source_index}/{source_total}: {detail}",
+                )
+                last_signature = signature
+        worker.join(timeout=2)
+    worker.join()
+
+
 def run_auto_viral_campaign(run_id: str) -> None:
     global auto_viral_active_run_id
     try:
         with auto_viral_lock:
             run = auto_viral_runs[run_id]
+            run_secret = auto_viral_secrets.get(run_id, "")
+        run_request = run.request.model_copy(update={"ai_api_key": run_secret})
         update_auto_viral_run(
             run_id,
             status="running",
+            progress_percent=2,
+            progress_stage="preflight",
             message=(
                 "Memvalidasi pilihan dan menyiapkan antrean clipping"
-                if run.request.source_urls
-                else "Mencari video Creative Commons sesuai filter pencarian"
+                if run_request.source_urls
+                else "Menyiapkan pencarian tren YouTube API"
             ),
         )
         append_auto_viral_log(run_id, "Automation dimulai")
-        if run.request.auto_upload_youtube:
+        if run_request.auto_upload_youtube:
             try:
                 require_youtube_ready()
             except HTTPException as exc:
                 raise RuntimeError(str(exc.detail)) from exc
 
-        source_pool_target = max(run.request.video_count * 3, run.request.video_count)
+        source_pool_target = max(run_request.video_count * 3, run_request.video_count)
         excluded_sources = processed_job_source_urls()
-        if run.request.source_urls:
-            selected_duplicates = excluded_sources.intersection(run.request.source_urls)
+        if run_request.source_urls:
+            selected_duplicates = excluded_sources.intersection(run_request.source_urls)
             if selected_duplicates:
                 raise RuntimeError(
                     "Pilihan sudah pernah diproses: " + ", ".join(sorted(selected_duplicates))
                 )
-            sources = resolve_selected_auto_viral_sources(run.request, run_id)
-            update_auto_viral_run(run_id, selected_sources=sources)
+            sources = resolve_selected_auto_viral_sources(run_request, run_id)
+            update_auto_viral_run(
+                run_id,
+                selected_sources=sources,
+                progress_percent=18,
+                progress_stage="selection",
+                progress_total=run_request.video_count,
+            )
             append_auto_viral_log(run_id, f"{len(sources)} pilihan lolos dan masuk antrean clipping")
         else:
             append_auto_viral_log(
                 run_id,
                 f"Mengecualikan {len(excluded_sources)} sumber yang sudah pernah masuk proses clipping",
             )
-            sources = search_auto_viral_sources(
-                run.request,
+            sources = discover_auto_viral_campaign_sources(
+                run_request,
                 run_id,
-                exclude_urls=excluded_sources,
-                stop_after=source_pool_target,
-                max_metadata_checks=env_int("VIRAL_CC_MAX_METADATA_CHECKS", 24),
+                excluded_sources,
+                source_pool_target,
             )
-        if not run.request.source_urls and len(sources) < source_pool_target:
-            fallback_age_days = run.request.max_age_days
-            fallback_min_views = (
-                run.request.min_views
-                if env_bool("VIRAL_CC_REQUIRE_MOMENTUM", False)
-                else min(
-                    run.request.min_views,
-                    max(0, env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", 100)),
-                )
-            )
-            fallback_request = run.request.model_copy(
-                update={
-                    "queries": prioritized_niche_queries(
-                        run.request.niche,
-                        default_auto_viral_queries(),
-                    ),
-                    "search_limit_per_query": max(run.request.search_limit_per_query, 25),
-                    "min_views": fallback_min_views,
-                    "max_age_days": fallback_age_days,
-                }
-            )
-            append_auto_viral_log(
-                run_id,
-                f"Kandidat baru belum cukup; memperluas kata kunci tanpa mengubah filter "
-                f"{fallback_age_days} hari, minimal {fallback_min_views} views",
-            )
-            update_auto_viral_run(
-                run_id,
-                message="Memperluas variasi kata kunci Creative Commons dengan filter tetap",
-            )
-            sources.extend(
-                search_auto_viral_sources(
-                    fallback_request,
-                    run_id,
-                    exclude_urls=excluded_sources | {
-                        normalized
-                        for source in sources
-                        if (normalized := normalize_youtube_video_url(str(source.get("url") or "")))
-                    },
-                    stop_after=source_pool_target - len(sources),
-                    max_metadata_checks=env_int("VIRAL_CC_MAX_METADATA_CHECKS", 24),
-                )
-            )
-            sort_viral_source_payloads(sources, run.request.sort_order)
         if not sources:
             raise RuntimeError(
                 "Tidak menemukan kandidat Creative Commons setelah pencarian diperluas; "
                 "semua sumber yang pernah diproses tetap dilewati"
             )
-        if not run.request.source_urls:
-            update_auto_viral_run(run_id, selected_sources=sources[: max(run.request.video_count, 1) * 3])
+        if not run_request.source_urls:
+            update_auto_viral_run(
+                run_id,
+                selected_sources=sources[: max(run_request.video_count, 1) * 3],
+                progress_percent=18,
+                progress_stage="selection",
+                progress_total=run_request.video_count,
+                message=f"{len(sources)} kandidat terurut; mulai mengolah sumber terbaik",
+            )
 
         completed_count = 0
         processed: list[dict[str, Any]] = []
-        for source in sources:
-            if completed_count >= run.request.video_count:
+        for source_index, source in enumerate(sources, start=1):
+            if completed_count >= run_request.video_count:
                 break
             append_auto_viral_log(run_id, f"Mulai clipping: {source.get('title')}")
             item: dict[str, Any] = {
@@ -11902,9 +12209,14 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 "status": "running",
             }
             try:
-                job = create_auto_viral_clip_job(source, run.request)
+                job = create_auto_viral_clip_job(source, run_request)
                 item["job_id"] = job.id
-                run_job(job.id)
+                run_clip_job_with_campaign_progress(
+                    job.id,
+                    run_id,
+                    min(source_index, run_request.video_count),
+                    run_request.video_count,
+                )
                 with jobs_lock:
                     finished_job = jobs.get(job.id)
                 if finished_job is None:
@@ -11915,11 +12227,26 @@ def run_auto_viral_campaign(run_id: str) -> None:
                     raise RuntimeError(finished_job.error or f"Job selesai dengan status {finished_job.status}")
 
                 item["uploads"] = []
-                if run.request.auto_upload_youtube:
+                if run_request.auto_upload_youtube:
+                    source_progress = min(
+                        90,
+                        round(
+                            18
+                            + min(source_index, run_request.video_count)
+                            * 72
+                            / max(1, run_request.video_count)
+                        ),
+                    )
+                    update_auto_viral_run(
+                        run_id,
+                        progress_percent=source_progress,
+                        progress_stage="youtube_upload",
+                        message=f"Mengunggah hasil sumber {min(source_index, run_request.video_count)}/{run_request.video_count} secara Private",
+                    )
                     with youtube_upload_creation_lock:
                         uploads = create_youtube_upload_batch_records(
                             finished_job.id,
-                            YouTubeBatchUploadRequest(best_count=run.request.clips_per_video),
+                            YouTubeBatchUploadRequest(best_count=run_request.clips_per_video),
                         )
                         queue_youtube_upload_jobs(uploads)
                     append_auto_viral_log(run_id, f"{len(uploads)} upload YouTube masuk antrean untuk job {finished_job.id[:10]}")
@@ -11953,11 +12280,17 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 item["error"] = str(exc)
                 append_auto_viral_error(run_id, f"{source.get('title')}: {exc}")
             processed.append(item)
-            update_auto_viral_run(run_id, processed=processed, message=f"{completed_count}/{run.request.video_count} video sukses")
+            update_auto_viral_run(
+                run_id,
+                processed=processed,
+                progress_current=completed_count,
+                progress_total=run_request.video_count,
+                message=f"{completed_count}/{run_request.video_count} video sukses",
+            )
 
-        if completed_count < run.request.video_count:
-            suffix = "clip dan upload" if run.request.auto_upload_youtube else "masuk antrean clipping"
-            raise RuntimeError(f"Hanya {completed_count}/{run.request.video_count} video yang berhasil {suffix}")
+        if completed_count < run_request.video_count:
+            suffix = "clip dan upload" if run_request.auto_upload_youtube else "masuk antrean clipping"
+            raise RuntimeError(f"Hanya {completed_count}/{run_request.video_count} video yang berhasil {suffix}")
 
         with auto_viral_lock:
             run = auto_viral_runs[run_id]
@@ -11965,6 +12298,10 @@ def run_auto_viral_campaign(run_id: str) -> None:
             run_id,
             status="completed",
             finished_at=now_iso(),
+            progress_percent=100,
+            progress_stage="complete",
+            progress_current=run_request.video_count,
+            progress_total=run_request.video_count,
             message=(
                 "Clipping Top 3 selesai dan siap direview"
                 if not run.request.auto_upload_youtube
@@ -11979,7 +12316,13 @@ def run_auto_viral_campaign(run_id: str) -> None:
             append_auto_viral_error(run_id, f"Telegram alert gagal: {telegram_exc}")
     except Exception as exc:
         append_auto_viral_error(run_id, str(exc))
-        update_auto_viral_run(run_id, status="failed", finished_at=now_iso(), message=str(exc))
+        update_auto_viral_run(
+            run_id,
+            status="failed",
+            finished_at=now_iso(),
+            progress_stage="failed",
+            message=str(exc),
+        )
         with auto_viral_lock:
             failed_run = auto_viral_runs[run_id]
         try:
@@ -11990,10 +12333,14 @@ def run_auto_viral_campaign(run_id: str) -> None:
         with auto_viral_lock:
             if auto_viral_active_run_id == run_id:
                 auto_viral_active_run_id = None
+            auto_viral_secrets.pop(run_id, None)
 
 
-@app.post("/api/automation/viral-cc", response_model=AutoViralRun)
-def start_auto_viral_campaign(request: AutoViralRequest) -> AutoViralRun:
+def create_and_start_auto_viral_campaign(
+    request: AutoViralRequest,
+    *,
+    trigger: Literal["manual", "schedule"] = "manual",
+) -> AutoViralRun:
     global auto_viral_active_run_id
     if request.max_duration <= request.min_duration:
         raise HTTPException(status_code=400, detail="max_duration must be greater than min_duration")
@@ -12008,24 +12355,170 @@ def start_auto_viral_campaign(request: AutoViralRequest) -> AutoViralRun:
             if active and active.status in {"queued", "running"}:
                 raise HTTPException(status_code=409, detail=f"Automation masih berjalan: {active.id}")
         run_id = uuid.uuid4().hex
+        secret = request.ai_api_key
+        safe_request = request.model_copy(update={"ai_api_key": ""})
         run = AutoViralRun(
             id=run_id,
             status="queued",
+            trigger=trigger,
             created_at=now_iso(),
             updated_at=now_iso(),
-            request=request,
-            message="Menunggu worker automation",
+            request=safe_request,
+            message=(
+                "Menunggu worker automation terjadwal"
+                if trigger == "schedule"
+                else "Menunggu worker automation"
+            ),
+            progress_percent=0,
+            progress_stage="queued",
+            progress_total=safe_request.video_count,
         )
         auto_viral_runs[run_id] = run
         auto_viral_active_run_id = run_id
+        if secret:
+            auto_viral_secrets[run_id] = secret
+        save_auto_viral_runs_unlocked()
     threading.Thread(target=run_auto_viral_campaign, args=(run_id,), daemon=True).start()
     return run
+
+
+def scheduled_auto_viral_request() -> AutoViralRequest:
+    return AutoViralRequest(
+        niche=os.environ.get("AUTO_VIRAL_SCHEDULE_NICHE", "islamic_current_viral"),  # type: ignore[arg-type]
+        video_count=max(1, min(7, env_int("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", 3))),
+        clips_per_video=max(1, min(5, env_int("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", 2))),
+        min_views=max(0, env_int("AUTO_VIRAL_SCHEDULE_MIN_VIEWS", 1000)),
+        upload_date_filter=os.environ.get("AUTO_VIRAL_SCHEDULE_UPLOAD_DATE_FILTER", "this_week"),  # type: ignore[arg-type]
+        duration_filter=os.environ.get("AUTO_VIRAL_SCHEDULE_DURATION_FILTER", "over_20"),  # type: ignore[arg-type]
+        definition_filter="hd",
+        sort_order="popularity",
+        auto_upload_youtube=env_bool("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False),
+    )
+
+
+def auto_viral_schedule_interval_hours() -> float:
+    return max(0.25, min(168.0, env_float("AUTO_VIRAL_SCHEDULE_INTERVAL_HOURS", 6.0)))
+
+
+def latest_scheduled_auto_viral_run() -> AutoViralRun | None:
+    with auto_viral_lock:
+        scheduled = [run for run in auto_viral_runs.values() if run.trigger == "schedule"]
+    return max(scheduled, key=lambda run: run.created_at) if scheduled else None
+
+
+def auto_viral_schedule_status() -> AutoViralScheduleStatus:
+    enabled = env_bool("AUTO_VIRAL_SCHEDULE_ENABLED", False)
+    latest = latest_scheduled_auto_viral_run()
+    with auto_viral_scheduler_lock:
+        scheduler_running = auto_viral_scheduler_running
+        next_run_at = auto_viral_scheduler_next_run_at
+    with auto_viral_lock:
+        active_id = auto_viral_active_run_id
+    if not enabled:
+        message = "Scheduler nonaktif; set AUTO_VIRAL_SCHEDULE_ENABLED=true lalu restart backend."
+    elif active_id:
+        message = "Automation sedang berjalan; jadwal berikutnya tidak akan membuat run tumpang tindih."
+    elif scheduler_running:
+        message = "Scheduler aktif dan menunggu waktu run berikutnya."
+    else:
+        message = "Scheduler diaktifkan tetapi worker belum berjalan."
+    return AutoViralScheduleStatus(
+        enabled=enabled,
+        interval_hours=auto_viral_schedule_interval_hours(),
+        run_on_startup=env_bool("AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP", False),
+        scheduler_running=scheduler_running,
+        active_run_id=active_id,
+        last_run_id=latest.id if latest else None,
+        last_started_at=latest.created_at if latest else None,
+        last_finished_at=latest.finished_at if latest else None,
+        next_run_at=next_run_at.isoformat() if next_run_at else None,
+        message=message,
+    )
+
+
+def auto_viral_scheduler_loop() -> None:
+    global auto_viral_scheduler_running, auto_viral_scheduler_next_run_at
+    interval = timedelta(hours=auto_viral_schedule_interval_hours())
+    latest = latest_scheduled_auto_viral_run()
+    if env_bool("AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP", False) and latest is None:
+        next_run = datetime.now(timezone.utc)
+    elif latest is not None:
+        try:
+            last_started = datetime.fromisoformat(latest.created_at.replace("Z", "+00:00"))
+        except ValueError:
+            last_started = datetime.now(timezone.utc)
+        next_run = max(datetime.now(timezone.utc), last_started + interval)
+    else:
+        next_run = datetime.now(timezone.utc) + interval
+    with auto_viral_scheduler_lock:
+        auto_viral_scheduler_next_run_at = next_run
+
+    try:
+        while env_bool("AUTO_VIRAL_SCHEDULE_ENABLED", False):
+            now = datetime.now(timezone.utc)
+            if now >= next_run:
+                try:
+                    create_and_start_auto_viral_campaign(
+                        scheduled_auto_viral_request(),
+                        trigger="schedule",
+                    )
+                    next_run = now + interval
+                except HTTPException as exc:
+                    if exc.status_code != 409:
+                        print(f"Auto Viral scheduler gagal membuat run: {exc.detail}", flush=True)
+                        next_run = now + interval
+                    else:
+                        next_run = now + timedelta(seconds=30)
+                except Exception as exc:
+                    print(f"Konfigurasi Auto Viral scheduler tidak valid: {exc}", flush=True)
+                    next_run = now + interval
+                with auto_viral_scheduler_lock:
+                    auto_viral_scheduler_next_run_at = next_run
+            wait_seconds = max(1.0, min(30.0, (next_run - datetime.now(timezone.utc)).total_seconds()))
+            time.sleep(wait_seconds)
+    finally:
+        with auto_viral_scheduler_lock:
+            auto_viral_scheduler_running = False
+            auto_viral_scheduler_next_run_at = None
+
+
+@app.on_event("startup")
+def start_auto_viral_scheduler_if_enabled() -> None:
+    global auto_viral_scheduler_running, auto_viral_scheduler_thread
+    with auto_viral_lock:
+        save_auto_viral_runs_unlocked()
+    if not env_bool("AUTO_VIRAL_SCHEDULE_ENABLED", False):
+        return
+    with auto_viral_scheduler_lock:
+        if auto_viral_scheduler_running:
+            return
+        auto_viral_scheduler_running = True
+        auto_viral_scheduler_thread = threading.Thread(
+            target=auto_viral_scheduler_loop,
+            name="auto-viral-scheduler",
+            daemon=True,
+        )
+        auto_viral_scheduler_thread.start()
+
+
+@app.post("/api/automation/viral-cc", response_model=AutoViralRun)
+def start_auto_viral_campaign(request: AutoViralRequest) -> AutoViralRun:
+    return create_and_start_auto_viral_campaign(request, trigger="manual")
 
 
 @app.get("/api/automation/viral-cc", response_model=list[AutoViralRun])
 def list_auto_viral_campaigns() -> list[AutoViralRun]:
     with auto_viral_lock:
-        return sorted(auto_viral_runs.values(), key=lambda item: item.created_at, reverse=True)
+        return sorted(
+            (run for run in auto_viral_runs.values() if run.trigger != "search"),
+            key=lambda item: item.created_at,
+            reverse=True,
+        )
+
+
+@app.get("/api/automation/viral-cc/schedule", response_model=AutoViralScheduleStatus)
+def get_auto_viral_schedule() -> AutoViralScheduleStatus:
+    return auto_viral_schedule_status()
 
 
 @app.post("/api/automation/viral-cc/sources")

@@ -23,6 +23,8 @@ import {
   enableYouTubeDirectProfileUpload,
   fetchModels,
   getAutoViralCampaign,
+  getAutoViralCampaigns,
+  getAutoViralSchedule,
   getJob,
   getJobs,
   getTikTokConfig,
@@ -74,6 +76,7 @@ import {
 import { isActiveJob } from "../lib/utils";
 import type {
   AutoViralRun,
+  AutoViralScheduleStatus,
   BackgroundMode,
   CamCorner,
   CaptionFont,
@@ -95,6 +98,7 @@ import type {
   YouTubeUploadJob,
 } from "../types/clip.type";
 import { ControlPanel } from "./_components/ControlPanel";
+import { AutoViralPanel } from "./_components/AutoViralPanel";
 import { DeleteAllToast } from "./_components/DeleteAllToast";
 import { HistorySection } from "./_components/HistorySection";
 import { QuickStartCard } from "./_components/QuickStartCard";
@@ -158,6 +162,7 @@ export default function HomePage() {
   const [tiktokConfig, setTiktokConfig] = useState<TikTokConfig | null>(null);
   const [tiktokUploads, setTiktokUploads] = useState<TikTokUploadJob[]>([]);
   const [autoViralRun, setAutoViralRun] = useState<AutoViralRun | null>(null);
+  const [autoViralSchedule, setAutoViralSchedule] = useState<AutoViralScheduleStatus | null>(null);
   const [autoContentNiche, setAutoContentNiche] = useState<IslamicContentNiche>("islamic_practical_life");
   const [autoContentSources, setAutoContentSources] = useState<ViralContentSource[]>([]);
   const [selectedAutoContentUrls, setSelectedAutoContentUrls] = useState<string[]>([]);
@@ -444,6 +449,35 @@ export default function HomePage() {
     if (cleanupConfirmationTimer.current !== null) {
       window.clearTimeout(cleanupConfirmationTimer.current);
     }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshOverview = async () => {
+      const [schedule, runs] = await Promise.all([
+        getAutoViralSchedule().catch(() => null),
+        getAutoViralCampaigns().catch(() => []),
+      ]);
+      if (cancelled) return;
+      if (schedule) setAutoViralSchedule(schedule);
+      setAutoViralRun((current) => {
+        const active = runs.find((item) => item.status === "queued" || item.status === "running");
+        if (active) return active;
+        const sameRun = current ? runs.find((item) => item.id === current.id) : null;
+        if (current && (current.status === "queued" || current.status === "running")) {
+          return sameRun ?? current;
+        }
+        const latest = runs[0];
+        if (latest && (!current || latest.created_at > current.created_at)) return latest;
+        return sameRun ?? current ?? latest ?? null;
+      });
+    };
+    void refreshOverview();
+    const interval = window.setInterval(refreshOverview, 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
@@ -1560,6 +1594,23 @@ export default function HomePage() {
           sourceValue={sourceMode === "url" ? url.trim() : uploadFileName}
         />
       ) : null}
+
+      <AutoViralPanel
+        niche={autoContentNiche}
+        filters={viralSearchFilters}
+        sources={autoContentSources}
+        selectedUrls={selectedAutoContentUrls}
+        message={autoContentMessage}
+        run={autoViralRun}
+        schedule={autoViralSchedule}
+        isSearching={isSearchingAutoContent}
+        isRunning={isAutoViralRunning}
+        onNicheChange={setAutoContentNiche}
+        onFiltersChange={setViralSearchFilters}
+        onSearch={() => { void handleSearchAutoContent(); }}
+        onToggleSource={handleToggleAutoContentSource}
+        onStart={() => { void handleStartAutoViral(); }}
+      />
 
       <section className="workspace studioGrid" id="workspace">
         <ControlPanel

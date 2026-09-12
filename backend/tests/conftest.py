@@ -20,4 +20,9 @@ def isolate_runtime_state_files(monkeypatch, tmp_path):
             "SOURCE_USAGE_HISTORY_PATH",
             tmp_path / "source_usage_history.json",
         )
+        monkeypatch.setattr(
+            api,
+            "AUTO_VIRAL_RUNS_PATH",
+            tmp_path / "auto_viral_runs.json",
+        )
     yield
