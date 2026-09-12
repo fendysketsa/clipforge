@@ -241,7 +241,15 @@ export function QuickStartCard({
         {error ? <div className="quickError" role="alert">{error}</div> : null}
 
         <div className="quickStartActions">
-          <a href="#workspace"><SlidersHorizontal size={15} /> Poles hasil</a>
+          <a
+            href="#production-settings"
+            onClick={() => {
+              const settings = document.getElementById("production-settings") as HTMLDetailsElement | null;
+              if (settings) settings.open = true;
+            }}
+          >
+            <SlidersHorizontal size={15} /> Pengaturan opsional
+          </a>
           <button className="quickStartButton" type="button" disabled={!canStart} onClick={onStart}>
             {isWorking ? <Loader2 className="spin" size={18} /> : <ArrowRight size={18} />}
             {isWorking ? "Sedang menyiapkan…" : `Proses ${modeLabel}`}

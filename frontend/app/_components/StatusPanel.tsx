@@ -25,7 +25,7 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
   }, [canCancel, job?.id]);
 
   return (
-    <section className="panel statusPanel">
+    <section className={`panel statusPanel${job ? "" : " statusPanel--empty"}`}>
       <div className="panelHeader">
         <div className="panelHeaderTitle">
           <span className="panelHeaderIcon">
@@ -41,7 +41,7 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
             <XCircle size={16} />
             <span>Batalkan</span>
           </button>
-        ) : null}
+        ) : !job ? <span className="statusIdleBadge">Siap memantau</span> : null}
       </div>
 
       {job ? (
@@ -92,12 +92,9 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
           {job.error ? <p className="error errorWithSpacing">{job.error}</p> : null}
         </div>
       ) : (
-        <div className="emptyState activityEmptyState">
-          <Activity className="emptyStateIcon" size={32} />
-          <p>Belum ada proses berjalan.</p>
-          <p className="emptyStateHint">
-            Masukkan link YouTube, lalu klik <strong>Mulai Potong Video</strong> untuk memulai.
-          </p>
+        <div className="statusIdleLine">
+          <Activity size={15} />
+          <span>Belum ada proses. Monitor akan aktif otomatis setelah Anda memulai.</span>
         </div>
       )}
     </section>
