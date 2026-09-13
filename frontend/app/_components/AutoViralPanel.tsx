@@ -70,7 +70,7 @@ export function AutoViralPanel({
       <summary className="optionalPanelSummary">
         <span className="optionalPanelIcon"><Radar size={18} /></span>
         <span className="optionalPanelTitle">
-          <span className="panelEyebrow">Fitur opsional</span>
+          <span className="panelEyebrow">Module 02 / opsional</span>
           <strong>Radar Viral Otomatis</strong>
           <small>Cari sumber tren untuk diproses secara otomatis.</small>
         </span>
@@ -82,7 +82,7 @@ export function AutoViralPanel({
           {schedule?.enabled ? `Tiap ${schedule.interval_hours} jam` : "Cron nonaktif"}
         </span>
         <span className="optionalPanelAction">
-          <span>Buka</span>
+          <span>Konfigurasi</span>
           <ChevronDown size={17} />
         </span>
       </summary>

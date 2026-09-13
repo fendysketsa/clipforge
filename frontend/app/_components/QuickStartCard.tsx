@@ -92,19 +92,20 @@ export function QuickStartCard({
   return (
     <section className="quickStart" aria-labelledby="quick-start-title">
       <div className="quickStartIntro">
-        <span className="quickStartEyebrow"><Scissors size={14} /> Quick Start</span>
-        <h2 id="quick-start-title">Satu link. Dua format. Siap review.</h2>
+        <span className="quickStartEyebrow"><Scissors size={14} /> Command deck / 01</span>
+        <h2 id="quick-start-title">Link masuk.<br />Klip siap.</h2>
         <p>
-          Pilih format, tempel link YouTube, lalu klik proses. Pengaturan aman sudah disiapkan.
+          Pilih format, tempel sumber, lalu jalankan pipeline. Default aman sudah aktif.
         </p>
         <div className="quickStartFacts" aria-label="Ringkasan kemampuan">
-          <span><ShieldCheck size={14} /> Lisensi & audit aktif</span>
-          <span><Clock3 size={14} /> Hingga 3 proses paralel</span>
-          <span><Film size={14} /> Output selalu direview dulu</span>
+          <span><ShieldCheck size={14} /> Audit aktif</span>
+          <span><Clock3 size={14} /> 3 worker</span>
+          <span><Film size={14} /> Review gate</span>
         </div>
       </div>
 
       <div className="quickStartComposer">
+        <span className="quickComposerLabel">// FORMAT_TARGET</span>
         <div className="quickModeGrid" role="group" aria-label="Pilih format video">
           <button
             className={clipMode === "short" ? "active" : ""}
@@ -133,7 +134,7 @@ export function QuickStartCard({
         </div>
 
         <label className="quickLinkField">
-          <span>Link video YouTube</span>
+          <span>// SOURCE_ENDPOINT <small>YOUTUBE</small></span>
           <div className="quickLinkInput">
             <Link2 size={19} />
             <input

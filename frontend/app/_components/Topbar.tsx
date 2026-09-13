@@ -19,7 +19,7 @@ export function Topbar({ isRefreshing = false, onRefresh, activePage = "workspac
             <span>Fendy</span>
             <span>Clipper</span>
           </h1>
-          <p className="tagline">Tempel link. Pilih format. Siap review.</p>
+          <p className="tagline">Video command center lokal</p>
         </div>
       </div>
 
@@ -45,7 +45,7 @@ export function Topbar({ isRefreshing = false, onRefresh, activePage = "workspac
       <div className="topbarActions">
         <span className="systemBadge">
           <i aria-hidden="true" />
-          Local workspace
+          System online
         </span>
         {onRefresh ? (
           <button

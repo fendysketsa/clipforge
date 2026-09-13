@@ -5,8 +5,13 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Clock3,
   Copy,
+  Database,
   ExternalLink,
   FileVideo2,
   Film,
@@ -18,6 +23,7 @@ import {
   Loader2,
   Search,
   Sparkles,
+  Terminal,
   Youtube,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -27,6 +33,16 @@ import type { SourceUsageFolder, SourceUsageLogEntry, SourceUsageLogResponse } f
 import { Topbar } from "../_components/Topbar";
 
 type ModeFilter = "all" | "short" | "highlight_5m";
+type PageSize = "5" | "10" | "20" | "50" | "100" | "all";
+
+const PAGE_SIZE_OPTIONS: { value: PageSize; label: string }[] = [
+  { value: "5", label: "5" },
+  { value: "10", label: "10" },
+  { value: "20", label: "20" },
+  { value: "50", label: "50" },
+  { value: "100", label: "100" },
+  { value: "all", label: "Semua" },
+];
 
 const MONTH_FORMATTER = new Intl.DateTimeFormat("id-ID", { month: "long" });
 
@@ -95,6 +111,8 @@ export default function SourceHistoryPage() {
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<ModeFilter>("all");
   const [archiveFilter, setArchiveFilter] = useState("all");
+  const [pageSize, setPageSize] = useState<PageSize>("5");
+  const [currentPage, setCurrentPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -179,9 +197,31 @@ export default function SourceHistoryPage() {
     });
   }, [activeItems, archiveFilter, mode, query]);
 
+  const numericPageSize = pageSize === "all" ? Math.max(filteredItems.length, 1) : Number(pageSize);
+  const totalPages = pageSize === "all" ? 1 : Math.max(1, Math.ceil(filteredItems.length / numericPageSize));
+  const pageStart = pageSize === "all" ? 0 : (currentPage - 1) * numericPageSize;
+  const paginatedItems = useMemo(
+    () => pageSize === "all" ? filteredItems : filteredItems.slice(pageStart, pageStart + numericPageSize),
+    [filteredItems, numericPageSize, pageSize, pageStart],
+  );
+
+  const visiblePages = useMemo(() => {
+    const visibleCount = Math.min(5, totalPages);
+    const firstVisible = Math.max(1, Math.min(currentPage - 2, totalPages - visibleCount + 1));
+    return Array.from({ length: visibleCount }, (_, index) => firstVisible + index);
+  }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [archiveFilter, mode, pageSize, query]);
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
+
   const groupedResults = useMemo(() => {
     const years = new Map<number, Map<number, SourceUsageLogEntry[]>>();
-    filteredItems.forEach((item) => {
+    paginatedItems.forEach((item) => {
       const { year, month } = archiveParts(item.processed_at);
       const months = years.get(year) ?? new Map<number, SourceUsageLogEntry[]>();
       months.set(month, [...(months.get(month) ?? []), item]);
@@ -193,7 +233,10 @@ export default function SourceHistoryPage() {
         year,
         months: [...months.entries()].sort(([a], [b]) => b - a),
       }));
-  }, [filteredItems]);
+  }, [paginatedItems]);
+
+  const rangeStart = filteredItems.length ? pageStart + 1 : 0;
+  const rangeEnd = pageStart + paginatedItems.length;
 
   const currentFolderLabel = archiveFilter === "all"
     ? "Semua arsip"
@@ -207,9 +250,9 @@ export default function SourceHistoryPage() {
 
       <section className="sourceArchiveHero">
         <div className="sourceArchiveHeroCopy">
-          <span className="sourceLogEyebrow"><Archive size={15} /> Arsip sumber</span>
-          <h2>Jejak sumber, tersusun rapi.</h2>
-          <p>Setiap proses sukses otomatis masuk folder tahun dan bulan. Temukan sumber lama tanpa menyisir seluruh riwayat.</p>
+          <span className="sourceLogEyebrow"><Terminal size={15} /> Data vault / source index</span>
+          <h2>Source Intelligence<br /><span>Archive.</span></h2>
+          <p>Jejak proses tersusun otomatis per tahun dan bulan. Telusuri sumber, output, dan task dari satu command explorer.</p>
         </div>
         <div className="archivePathPreview" aria-label="Lokasi folder penyimpanan">
           <HardDrive size={18} />
@@ -264,6 +307,22 @@ export default function SourceHistoryPage() {
             </div>
           </div>
 
+          <div className="archiveDataBar">
+            <span className="archiveQueryStatus">
+              <Database size={13} />
+              Query result <strong>{filteredItems.length}</strong>
+            </span>
+            <span className="archiveRangeStatus">
+              ROW {rangeStart}–{rangeEnd} / {filteredItems.length}
+            </span>
+            <label className="archivePageSize">
+              <span>Rows</span>
+              <select value={pageSize} onChange={(event) => setPageSize(event.target.value as PageSize)}>
+                {PAGE_SIZE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+          </div>
+
           {error ? <div className="sourceLogError">{error}</div> : null}
           {isLoading && !activeItems.length ? (
             <div className="sourceLogEmpty"><Loader2 className="spin" size={28} /><strong>Membuka arsip sumber…</strong></div>
@@ -294,6 +353,25 @@ export default function SourceHistoryPage() {
               <span>{activeItems.length ? "Ubah folder, pencarian, atau filter format." : "Folder pertama dibuat otomatis setelah proses berhasil."}</span>
             </div>
           )}
+
+          {filteredItems.length > 0 && pageSize !== "all" ? (
+            <nav className="archivePagination" aria-label="Navigasi halaman arsip">
+              <div>
+                <strong>{rangeStart}–{rangeEnd}</strong>
+                <span>dari {filteredItems.length} data</span>
+              </div>
+              <div className="archivePaginationButtons">
+                <button type="button" disabled={currentPage === 1} onClick={() => setCurrentPage(1)} aria-label="Halaman pertama"><ChevronsLeft size={14} /></button>
+                <button type="button" disabled={currentPage === 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} aria-label="Halaman sebelumnya"><ChevronLeft size={14} /></button>
+                {visiblePages.map((page) => (
+                  <button className={page === currentPage ? "active" : ""} type="button" key={page} onClick={() => setCurrentPage(page)} aria-label={`Halaman ${page}`} aria-current={page === currentPage ? "page" : undefined}>{page}</button>
+                ))}
+                <button type="button" disabled={currentPage === totalPages} onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} aria-label="Halaman berikutnya"><ChevronRight size={14} /></button>
+                <button type="button" disabled={currentPage === totalPages} onClick={() => setCurrentPage(totalPages)} aria-label="Halaman terakhir"><ChevronsRight size={14} /></button>
+              </div>
+              <span>PAGE {currentPage} / {totalPages}</span>
+            </nav>
+          ) : null}
         </div>
       </section>
     </main>

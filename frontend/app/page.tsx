@@ -101,6 +101,7 @@ import { ControlPanel } from "./_components/ControlPanel";
 import { AutoViralPanel } from "./_components/AutoViralPanel";
 import { DeleteAllToast } from "./_components/DeleteAllToast";
 import { HistorySection } from "./_components/HistorySection";
+import { OutputWorkspace } from "./_components/OutputWorkspace";
 import { QuickStartCard } from "./_components/QuickStartCard";
 import { ResultsSection } from "./_components/ResultsSection";
 import { StatusPanel } from "./_components/StatusPanel";
@@ -863,6 +864,7 @@ export default function HomePage() {
   const handleSelectHistoryJob = useCallback((selectedJob: ClipJob) => {
     setJob(selectedJob);
     setCropMode(selectedJob.request.crop_mode);
+    window.dispatchEvent(new Event("clipforge:open-results"));
   }, []);
 
   const handleDeleteAll = useCallback(() => {
@@ -1657,55 +1659,60 @@ export default function HomePage() {
         />
       </section>
 
-      <ResultsSection
-        clips={job?.clips ?? []}
-        selectedClipUrls={selectedClipUrls}
-        youtubeEnabled={Boolean(youtubeConfig?.enabled)}
-        youtubeStatusMessage={[
-          youtubeConfig?.auth_status_message ?? "Login YouTube Playwright belum siap",
-          youtubeConfig?.public_cadence_message,
-        ].filter(Boolean).join(" · ")}
-        youtubeAutoUploadCount={youtubeConfig?.auto_upload_count ?? 2}
-        youtubeUploads={youtubeUploads}
-        tiktokEnabled={Boolean(tiktokConfig?.enabled)}
-        tiktokStatusMessage={tiktokConfig?.auth_status_message ?? "Session TikTok belum siap"}
-        tiktokTargetHandle={tiktokConfig?.target_handle ?? "titikbalikislami"}
-        tiktokAutoUploadCount={tiktokConfig?.auto_upload_count ?? 2}
-        tiktokUploads={tiktokUploads}
-        isTikTokLoginActive={isTikTokLoginActive}
-        isYouTubeLoginActive={isYouTubeLoginActive}
-        onDeleteAllClips={handleDeleteAllClips}
-        onDeleteClip={handleDeleteClip}
-        onDeleteSelectedClips={handleDeleteSelectedClips}
-        onCaptureYouTubeSession={handleCaptureYouTubeSession}
-        onEnableNoCdpMode={handleEnableNoCdpMode}
-        onImportYouTubeCdpCookies={handleImportYouTubeCdpCookies}
-        onSetupYouTubeOneTimeLogin={handleSetupYouTubeOneTimeLogin}
-        onStartYouTubeLogin={handleStartYouTubeLogin}
-        onRepairClip={handleRepairClip}
-        onCheckTikTokSession={handleCheckTikTokSession}
-        onStartTikTokLogin={handleStartTikTokLogin}
-        onRefreshYouTubePerformance={handleRefreshYouTubePerformance}
-        onSaveYouTubeFeedMetrics={handleSaveYouTubeFeedMetrics}
-        onSaveTikTokPerformance={handleSaveTikTokPerformance}
-        onUploadAllToYouTube={handleUploadAllToYouTube}
-        onUploadAllToTikTok={handleUploadAllToTikTok}
-        onUploadClipToYouTube={handleUploadClipToYouTube}
-        onUploadClipToTikTok={handleUploadClipToTikTok}
-        onToggleAllClipSelection={handleToggleAllClipSelection}
-        onToggleClipSelection={handleToggleClipSelection}
-        onToggleClipCorrect={handleToggleClipCorrect}
-      />
-      <HistorySection
-        jobs={jobs.filter((item) => item.request.clip_mode === "short" || item.request.clip_mode === "highlight_5m")}
-        selectedJobIds={selectedHistoryJobIds}
-        onDeleteAll={handleDeleteAll}
-        onDeleteFailed={handleDeleteFailed}
-        onDeleteSelected={handleDeleteSelected}
-        onSelectJob={handleSelectHistoryJob}
-        onStopJob={handleCancelJob}
-        onToggleJobSelection={handleToggleHistoryJobSelection}
-      />
+      <OutputWorkspace
+        resultCount={job?.clips.length ?? 0}
+        historyCount={jobs.filter((item) => item.request.clip_mode === "short" || item.request.clip_mode === "highlight_5m").length}
+      >
+        <ResultsSection
+          clips={job?.clips ?? []}
+          selectedClipUrls={selectedClipUrls}
+          youtubeEnabled={Boolean(youtubeConfig?.enabled)}
+          youtubeStatusMessage={[
+            youtubeConfig?.auth_status_message ?? "Login YouTube Playwright belum siap",
+            youtubeConfig?.public_cadence_message,
+          ].filter(Boolean).join(" · ")}
+          youtubeAutoUploadCount={youtubeConfig?.auto_upload_count ?? 2}
+          youtubeUploads={youtubeUploads}
+          tiktokEnabled={Boolean(tiktokConfig?.enabled)}
+          tiktokStatusMessage={tiktokConfig?.auth_status_message ?? "Session TikTok belum siap"}
+          tiktokTargetHandle={tiktokConfig?.target_handle ?? "titikbalikislami"}
+          tiktokAutoUploadCount={tiktokConfig?.auto_upload_count ?? 2}
+          tiktokUploads={tiktokUploads}
+          isTikTokLoginActive={isTikTokLoginActive}
+          isYouTubeLoginActive={isYouTubeLoginActive}
+          onDeleteAllClips={handleDeleteAllClips}
+          onDeleteClip={handleDeleteClip}
+          onDeleteSelectedClips={handleDeleteSelectedClips}
+          onCaptureYouTubeSession={handleCaptureYouTubeSession}
+          onEnableNoCdpMode={handleEnableNoCdpMode}
+          onImportYouTubeCdpCookies={handleImportYouTubeCdpCookies}
+          onSetupYouTubeOneTimeLogin={handleSetupYouTubeOneTimeLogin}
+          onStartYouTubeLogin={handleStartYouTubeLogin}
+          onRepairClip={handleRepairClip}
+          onCheckTikTokSession={handleCheckTikTokSession}
+          onStartTikTokLogin={handleStartTikTokLogin}
+          onRefreshYouTubePerformance={handleRefreshYouTubePerformance}
+          onSaveYouTubeFeedMetrics={handleSaveYouTubeFeedMetrics}
+          onSaveTikTokPerformance={handleSaveTikTokPerformance}
+          onUploadAllToYouTube={handleUploadAllToYouTube}
+          onUploadAllToTikTok={handleUploadAllToTikTok}
+          onUploadClipToYouTube={handleUploadClipToYouTube}
+          onUploadClipToTikTok={handleUploadClipToTikTok}
+          onToggleAllClipSelection={handleToggleAllClipSelection}
+          onToggleClipSelection={handleToggleClipSelection}
+          onToggleClipCorrect={handleToggleClipCorrect}
+        />
+        <HistorySection
+          jobs={jobs.filter((item) => item.request.clip_mode === "short" || item.request.clip_mode === "highlight_5m")}
+          selectedJobIds={selectedHistoryJobIds}
+          onDeleteAll={handleDeleteAll}
+          onDeleteFailed={handleDeleteFailed}
+          onDeleteSelected={handleDeleteSelected}
+          onSelectJob={handleSelectHistoryJob}
+          onStopJob={handleCancelJob}
+          onToggleJobSelection={handleToggleHistoryJobSelection}
+        />
+      </OutputWorkspace>
     </main>
   );
 }

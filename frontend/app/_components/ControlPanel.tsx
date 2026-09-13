@@ -154,7 +154,7 @@ export function ControlPanel({
       <summary className="optionalPanelSummary">
         <span className="productionHeaderIcon"><SlidersHorizontal size={19} /></span>
         <span className="optionalPanelTitle">
-          <span className="panelEyebrow">Pengaturan opsional</span>
+          <span className="panelEyebrow">Module 03 / opsional</span>
           <strong id="production-settings-title">Poles Hasil</strong>
           <small>Default sudah siap — buka hanya jika ingin mengubah hasil.</small>
         </span>

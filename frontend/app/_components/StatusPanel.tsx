@@ -32,8 +32,8 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
             <StatusIcon className={job?.status === "running" ? "spin" : ""} size={18} />
           </span>
           <div className="panelTitleCopy">
-            <span className="panelEyebrow">Monitor proses</span>
-            <h2>Aktivitas</h2>
+            <span className="panelEyebrow">Live feed / proses</span>
+            <h2>Aktivitas Sistem</h2>
           </div>
         </div>
         {canCancel ? (
