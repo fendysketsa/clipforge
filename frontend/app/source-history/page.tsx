@@ -41,7 +41,7 @@ const PAGE_SIZE_OPTIONS: { value: PageSize; label: string }[] = [
   { value: "20", label: "20" },
   { value: "50", label: "50" },
   { value: "100", label: "100" },
-  { value: "all", label: "Semua" },
+  { value: "all", label: "All" },
 ];
 
 const MONTH_FORMATTER = new Intl.DateTimeFormat("id-ID", { month: "long" });
@@ -244,6 +244,13 @@ export default function SourceHistoryPage() {
       ? `${monthName(Number(archiveFilter.split("-")[1]))} ${archiveFilter.split("-")[0]}`
       : `Tahun ${archiveFilter}`;
 
+  const changePage = (page: number) => {
+    setCurrentPage(Math.max(1, Math.min(totalPages, page)));
+    window.requestAnimationFrame(() => {
+      document.getElementById("archive-list-start")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+
   return (
     <main className="shell sourceLogPage sourceArchivePage">
       <Topbar activePage="source-log" isRefreshing={isLoading} onRefresh={() => loadLog(true)} />
@@ -307,7 +314,7 @@ export default function SourceHistoryPage() {
             </div>
           </div>
 
-          <div className="archiveDataBar">
+          <div className="archiveDataBar" id="archive-list-start">
             <span className="archiveQueryStatus">
               <Database size={13} />
               Query result <strong>{filteredItems.length}</strong>
@@ -361,13 +368,13 @@ export default function SourceHistoryPage() {
                 <span>dari {filteredItems.length} data</span>
               </div>
               <div className="archivePaginationButtons">
-                <button type="button" disabled={currentPage === 1} onClick={() => setCurrentPage(1)} aria-label="Halaman pertama"><ChevronsLeft size={14} /></button>
-                <button type="button" disabled={currentPage === 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} aria-label="Halaman sebelumnya"><ChevronLeft size={14} /></button>
+                <button type="button" disabled={currentPage === 1} onClick={() => changePage(1)} aria-label="Halaman pertama"><ChevronsLeft size={14} /></button>
+                <button type="button" disabled={currentPage === 1} onClick={() => changePage(currentPage - 1)} aria-label="Halaman sebelumnya"><ChevronLeft size={14} /></button>
                 {visiblePages.map((page) => (
-                  <button className={page === currentPage ? "active" : ""} type="button" key={page} onClick={() => setCurrentPage(page)} aria-label={`Halaman ${page}`} aria-current={page === currentPage ? "page" : undefined}>{page}</button>
+                  <button className={page === currentPage ? "active" : ""} type="button" key={page} onClick={() => changePage(page)} aria-label={`Halaman ${page}`} aria-current={page === currentPage ? "page" : undefined}>{page}</button>
                 ))}
-                <button type="button" disabled={currentPage === totalPages} onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} aria-label="Halaman berikutnya"><ChevronRight size={14} /></button>
-                <button type="button" disabled={currentPage === totalPages} onClick={() => setCurrentPage(totalPages)} aria-label="Halaman terakhir"><ChevronsRight size={14} /></button>
+                <button type="button" disabled={currentPage === totalPages} onClick={() => changePage(currentPage + 1)} aria-label="Halaman berikutnya"><ChevronRight size={14} /></button>
+                <button type="button" disabled={currentPage === totalPages} onClick={() => changePage(totalPages)} aria-label="Halaman terakhir"><ChevronsRight size={14} /></button>
               </div>
               <span>PAGE {currentPage} / {totalPages}</span>
             </nav>
