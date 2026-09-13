@@ -98,6 +98,106 @@ export type ClipCandidate = {
   boundary_quality?: string;
 };
 
+export type JobTelemetryPoint = {
+  sequence: number;
+  sampled_at: string;
+  job_cpu_percent: number;
+  server_cpu_percent: number;
+  job_memory_mb: number;
+  gpu_utilization_percent: number | null;
+  gpu_job_memory_mb: number;
+  read_mb_s: number;
+  write_mb_s: number;
+  network_mb_s: number;
+};
+
+export type TelemetryAlert = {
+  sequence: number;
+  sampled_at: string;
+  code: string;
+  severity: "warning" | "critical";
+  message: string;
+  value: number;
+  unit: string;
+};
+
+export type GpuTelemetry = {
+  available: boolean;
+  provider: string | null;
+  reason: string | null;
+  device_count: number;
+  index: number | null;
+  name: string | null;
+  utilization_percent: number | null;
+  memory_utilization_percent: number | null;
+  memory_used_mb: number | null;
+  memory_total_mb: number | null;
+  memory_percent: number | null;
+  temperature_c: number | null;
+  power_w: number | null;
+  driver_version: string | null;
+  job_memory_mb: number;
+  job_process_count: number;
+  job_attributed: boolean;
+};
+
+export type JobTelemetry = {
+  available: boolean;
+  source: string;
+  sampled_at: string;
+  sequence: number;
+  interval_seconds: number;
+  active: boolean;
+  root_pid: number | null;
+  process_count: number;
+  thread_count: number;
+  cpu_capacity_cores: number;
+  job_cpu_percent: number;
+  job_cpu_core_percent: number;
+  server_cpu_percent: number;
+  load_1m: number;
+  load_5m: number;
+  load_15m: number;
+  job_memory_mb: number;
+  job_memory_percent: number;
+  server_memory_used_mb: number;
+  server_memory_total_mb: number;
+  server_memory_percent: number;
+  read_mb_s: number;
+  write_mb_s: number;
+  network_rx_mb_s: number;
+  network_tx_mb_s: number;
+  disk_free_gb: number;
+  disk_used_percent: number;
+  cpu_frequency_mhz: number | null;
+  cpu_temperature_c: number | null;
+  battery: {
+    available: boolean;
+    percent: number | null;
+    plugged: boolean | null;
+    seconds_left: number | null;
+    source: string | null;
+  };
+  gpu: GpuTelemetry;
+  peaks: {
+    job_cpu_percent: number;
+    server_cpu_percent: number;
+    job_memory_mb: number;
+    gpu_utilization_percent: number;
+    io_mb_s: number;
+    network_mb_s: number;
+  };
+  alerts: TelemetryAlert[];
+  history: JobTelemetryPoint[];
+};
+
+export type JobProgressEvent = {
+  stage: string;
+  detail: string;
+  percent: number;
+  at: string;
+};
+
 export type ClipJob = {
   id: string;
   status: JobStatus;
@@ -111,6 +211,7 @@ export type ClipJob = {
   progress_detail?: string | null;
   progress_step?: number;
   progress_total_steps?: number;
+  progress_history?: JobProgressEvent[];
   source_title?: string | null;
   source_url?: string | null;
   source_uploader?: string | null;
@@ -120,6 +221,7 @@ export type ClipJob = {
   clips: ClipFile[];
   candidates: ClipCandidate[];
   error: string | null;
+  telemetry?: JobTelemetry | null;
   request: {
     url: string;
     source_file: string;

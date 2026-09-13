@@ -33,6 +33,7 @@ export const CAPTION_FONTS = [
   { value: "Noto Sans", label: "Noto Sans", css: '"Noto Sans", system-ui, sans-serif' },
 ] as const;
 export const JOB_POLL_INTERVAL_MS = 2200;
+export const ACTIVE_JOB_POLL_INTERVAL_MS = 1000;
 export const RECENT_LOG_LIMIT = 10;
 export const MAX_REQUESTED_CLIPS = 12;
 export const VIDEO_QUALITY_OPTIONS: { value: VideoQuality; label: string; help: string }[] = [

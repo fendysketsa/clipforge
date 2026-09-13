@@ -66,6 +66,7 @@ import {
   DEFAULT_MIN_DURATION,
   DEFAULT_MODEL,
   DEFAULT_VIDEO_QUALITY,
+  ACTIVE_JOB_POLL_INTERVAL_MS,
   COMPILATION_MAX_SECONDS,
   COMPILATION_MIN_SECONDS,
   COMPILATION_TARGET_SECONDS,
@@ -540,7 +541,7 @@ export default function HomePage() {
         setJob((current) => (current?.id === nextJob.id || current === null ? nextJob : current));
         loadJobs().catch(() => undefined);
       }
-    }, JOB_POLL_INTERVAL_MS);
+    }, ACTIVE_JOB_POLL_INTERVAL_MS);
 
     return () => window.clearInterval(interval);
   }, [activeJobId, isBusy, loadJobs]);

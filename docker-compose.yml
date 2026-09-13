@@ -12,6 +12,8 @@ services:
       - ./backend/assets/background_music:/app/assets/background_music:ro
       - ./scripts:/app/scripts:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /sys/class/power_supply:/host/power_supply:ro
+      - /sys/class/drm:/host/drm:ro
       - ${YOUTUBE_HOST_RUNTIME_DIR:-/run/user/1000}:/run/fendy-clipper-host-user:ro
     environment:
       IN_DOCKER: "1"

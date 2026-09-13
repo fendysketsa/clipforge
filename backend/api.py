@@ -37,6 +37,7 @@ from source_rights import (
     source_rights_risk_reasons,
 )
 from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
+from telemetry import ProcessTelemetrySampler
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -498,6 +499,110 @@ class ClipFile(BaseModel):
         return data
 
 
+class JobTelemetryPoint(BaseModel):
+    sequence: int = 0
+    sampled_at: str
+    job_cpu_percent: float = 0
+    server_cpu_percent: float = 0
+    job_memory_mb: float = 0
+    gpu_utilization_percent: float | None = None
+    gpu_job_memory_mb: float = 0
+    read_mb_s: float = 0
+    write_mb_s: float = 0
+    network_mb_s: float = 0
+
+
+class TelemetryAlert(BaseModel):
+    sequence: int = 0
+    sampled_at: str
+    code: str
+    severity: Literal["warning", "critical"]
+    message: str
+    value: float
+    unit: str
+
+
+class TelemetryPeaks(BaseModel):
+    job_cpu_percent: float = 0
+    server_cpu_percent: float = 0
+    job_memory_mb: float = 0
+    gpu_utilization_percent: float = 0
+    io_mb_s: float = 0
+    network_mb_s: float = 0
+
+
+class BatteryTelemetry(BaseModel):
+    available: bool = False
+    percent: float | None = None
+    plugged: bool | None = None
+    seconds_left: int | None = None
+    source: str | None = None
+
+
+class GpuTelemetry(BaseModel):
+    available: bool = False
+    provider: str | None = None
+    reason: str | None = None
+    device_count: int = 0
+    index: int | None = None
+    name: str | None = None
+    utilization_percent: float | None = None
+    memory_utilization_percent: float | None = None
+    memory_used_mb: float | None = None
+    memory_total_mb: float | None = None
+    memory_percent: float | None = None
+    temperature_c: float | None = None
+    power_w: float | None = None
+    driver_version: str | None = None
+    job_memory_mb: float = 0
+    job_process_count: int = 0
+    job_attributed: bool = False
+
+
+class JobTelemetry(BaseModel):
+    available: bool = False
+    source: str = ""
+    sampled_at: str
+    sequence: int = 0
+    interval_seconds: float = 0
+    active: bool = False
+    root_pid: int | None = None
+    process_count: int = 0
+    thread_count: int = 0
+    cpu_capacity_cores: float = 0
+    job_cpu_percent: float = 0
+    job_cpu_core_percent: float = 0
+    server_cpu_percent: float = 0
+    load_1m: float = 0
+    load_5m: float = 0
+    load_15m: float = 0
+    job_memory_mb: float = 0
+    job_memory_percent: float = 0
+    server_memory_used_mb: float = 0
+    server_memory_total_mb: float = 0
+    server_memory_percent: float = 0
+    read_mb_s: float = 0
+    write_mb_s: float = 0
+    network_rx_mb_s: float = 0
+    network_tx_mb_s: float = 0
+    disk_free_gb: float = 0
+    disk_used_percent: float = 0
+    cpu_frequency_mhz: float | None = None
+    cpu_temperature_c: float | None = None
+    battery: BatteryTelemetry = Field(default_factory=BatteryTelemetry)
+    gpu: GpuTelemetry = Field(default_factory=GpuTelemetry)
+    peaks: TelemetryPeaks = Field(default_factory=TelemetryPeaks)
+    alerts: list[TelemetryAlert] = Field(default_factory=list)
+    history: list[JobTelemetryPoint] = Field(default_factory=list)
+
+
+class JobProgressEvent(BaseModel):
+    stage: str
+    detail: str = ""
+    percent: int = 0
+    at: str
+
+
 class ClipJob(BaseModel):
     id: str
     status: Literal["queued", "running", "completed", "failed", "cancelled"]
@@ -512,6 +617,7 @@ class ClipJob(BaseModel):
     progress_detail: str | None = None
     progress_step: int = 0
     progress_total_steps: int = 5
+    progress_history: list[JobProgressEvent] = Field(default_factory=list)
     source_title: str | None = None
     source_url: str | None = None
     source_uploader: str | None = None
@@ -521,6 +627,7 @@ class ClipJob(BaseModel):
     clips: list[ClipFile] = []
     candidates: list[ClipCandidate] = []
     error: str | None = None
+    telemetry: JobTelemetry | None = None
 
 
 class SourceHistoryJob(BaseModel):
@@ -1865,7 +1972,8 @@ def backfill_source_usage_archives(history: dict[str, dict[str, Any]]) -> None:
 
 def save_jobs_unlocked() -> None:
     jobs_list = sorted(jobs.values(), key=lambda job: job.created_at, reverse=True)
-    payload = [job.model_dump() for job in jobs_list]
+    # High-frequency runtime telemetry is ephemeral and must never churn jobs.json.
+    payload = [job.model_dump(exclude={"telemetry"}) for job in jobs_list]
     data = json.dumps(payload, indent=2, ensure_ascii=False)
     JOBS_PATH.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -2546,19 +2654,29 @@ def current_tiktok_strategy_for_clip(clip: "ClipFile") -> dict[str, Any]:
     )
 
 
+def attach_job_telemetry(job: "ClipJob") -> "ClipJob":
+    snapshots = globals().get("job_telemetry_snapshots")
+    telemetry_lock = globals().get("job_telemetry_lock")
+    if not isinstance(snapshots, dict) or telemetry_lock is None:
+        return job
+    with telemetry_lock:
+        telemetry = snapshots.get(job.id)
+    return job.model_copy(update={"telemetry": telemetry}) if telemetry is not None else job
+
+
 def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
     enriched = enrich_job_source_metadata(
         enrich_job_codex_feedback(enrich_job_clip_titles(job))
     )
     if enriched.status != "completed" or not enriched.clips:
-        return enriched
+        return attach_job_telemetry(enriched)
 
     # load_jobs() runs while this module is still being imported, before the
     # preflight function below has been defined. API responses call this again
     # after startup, when the live readiness fields can safely be populated.
     preflight = globals().get("youtube_monetization_preflight_issue")
     if not callable(preflight):
-        return enriched
+        return attach_job_telemetry(enriched)
 
     clips: list[ClipFile] = []
     changed = False
@@ -2597,7 +2715,8 @@ def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
             clips.append(clip.model_copy(update=updates))
         else:
             clips.append(clip)
-    return enriched.model_copy(update={"clips": clips}) if changed else enriched
+    result = enriched.model_copy(update={"clips": clips}) if changed else enriched
+    return attach_job_telemetry(result)
 
 
 def clip_output_work_dir(clip: ClipFile) -> Path | None:
@@ -2772,6 +2891,8 @@ tiktok_uploads_lock = threading.Lock()
 tiktok_upload_creation_lock = threading.Lock()
 job_secrets: dict[str, str] = {}
 job_processes: dict[str, subprocess.Popen[str]] = {}
+job_telemetry_snapshots: dict[str, JobTelemetry] = {}
+job_telemetry_lock = threading.Lock()
 youtube_upload_processes: dict[str, subprocess.Popen[str]] = {}
 tiktok_upload_processes: dict[str, subprocess.Popen[str]] = {}
 tiktok_login_process: subprocess.Popen[str] | None = None
@@ -9330,11 +9451,46 @@ def set_job(job_id: str, **updates) -> None:
         job = jobs.get(job_id)
         if job is None:
             return
-        data = job.model_dump()
+        updated_at = now_iso()
+        next_stage = updates.get("progress_stage")
+        if isinstance(next_stage, str) and next_stage and next_stage != job.progress_stage:
+            history = [*job.progress_history]
+            history.append(
+                JobProgressEvent(
+                    stage=next_stage,
+                    detail=str(updates.get("progress_detail") or job.progress_detail or "")[:180],
+                    percent=max(0, min(100, int(updates.get("progress_percent", job.progress_percent)))),
+                    at=updated_at,
+                )
+            )
+            updates["progress_history"] = history[-24:]
+        data = job.model_dump(exclude={"telemetry"})
         data.update(updates)
-        data["updated_at"] = now_iso()
+        data["updated_at"] = updated_at
         jobs[job_id] = ClipJob(**data)
         save_jobs_unlocked()
+
+
+def monitor_job_telemetry(
+    job_id: str,
+    process_pid: int,
+    stop_event: threading.Event,
+) -> None:
+    """Keep one real, non-persisted resource history for an active process tree."""
+    sampler = ProcessTelemetrySampler(process_pid)
+    while not stop_event.is_set():
+        try:
+            snapshot = JobTelemetry(**sampler.sample(active=True))
+            with job_telemetry_lock:
+                job_telemetry_snapshots[job_id] = snapshot
+        except Exception as exc:
+            print(f"Telemetry job {job_id[:8]} dilewati: {exc}", flush=True)
+        stop_event.wait(1.0)
+
+    with job_telemetry_lock:
+        current = job_telemetry_snapshots.get(job_id)
+        if current is not None:
+            job_telemetry_snapshots[job_id] = current.model_copy(update={"active": False})
 
 
 def finish_job_updates(started_perf: float) -> dict[str, str | float]:
@@ -9988,6 +10144,14 @@ def run_job(job_id: str) -> None:
         return
     with process_lock:
         job_processes[job_id] = process
+    telemetry_stop = threading.Event()
+    telemetry_thread = threading.Thread(
+        target=monitor_job_telemetry,
+        args=(job_id, process.pid, telemetry_stop),
+        daemon=True,
+        name=f"telemetry-{job_id[:8]}",
+    )
+    telemetry_thread.start()
 
     logs: list[str] = []
     try:
@@ -10136,6 +10300,8 @@ def run_job(job_id: str) -> None:
             error=f"Worker clipping berhenti tidak normal: {exc}. {cleanup_message}",
         )
     finally:
+        telemetry_stop.set()
+        telemetry_thread.join(timeout=2.0)
         with process_lock:
             job_processes.pop(job_id, None)
         job_secrets.pop(job_id, None)
@@ -13631,8 +13797,13 @@ def create_job(request: ClipJobRequest) -> ClipJob:
 def list_jobs() -> list[ClipJob]:
     with jobs_lock:
         snapshot = list(jobs.values())
+    # History cards do not need 48 telemetry points per job. Live detail polling
+    # uses GET /api/jobs/{id}, which includes the complete telemetry snapshot.
     return sorted(
-        (enrich_job_for_display(job) for job in snapshot),
+        (
+            enrich_job_for_display(job).model_copy(update={"telemetry": None})
+            for job in snapshot
+        ),
         key=lambda job: job.created_at,
         reverse=True,
     )

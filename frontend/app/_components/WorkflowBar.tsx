@@ -184,7 +184,16 @@ export function WorkflowBar({
           aria-valuenow={Math.round(progress)}
           aria-label={`Progres ${Math.round(progress)} persen`}
         >
-          <span style={{ width: `${progress}%` }} />
+          <span className="workflowMeterFill" style={{ width: `${progress}%` }} />
+          {isProcessing ? (
+            <i
+              className="workflowSparkEmitter"
+              style={{ left: `${Math.min(progress, 99.2)}%` }}
+              aria-hidden="true"
+            >
+              <b /><b /><b /><b /><b /><b /><b /><b />
+            </i>
+          ) : null}
         </div>
 
         <ol className="workflowSteps">

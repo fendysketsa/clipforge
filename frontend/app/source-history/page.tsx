@@ -258,8 +258,8 @@ export default function SourceHistoryPage() {
       <section className="sourceArchiveHero">
         <div className="sourceArchiveHeroCopy">
           <span className="sourceLogEyebrow"><Terminal size={15} /> Data vault / source index</span>
-          <h2>Source Intelligence<br /><span>Archive.</span></h2>
-          <p>Jejak proses tersusun otomatis per tahun dan bulan. Telusuri sumber, output, dan task dari satu command explorer.</p>
+          <h2>Source Intelligence <span>// Archive</span></h2>
+          <p>Telusuri sumber, output, dan task dari satu command explorer.</p>
         </div>
         <div className="archivePathPreview" aria-label="Lokasi folder penyimpanan">
           <HardDrive size={18} />

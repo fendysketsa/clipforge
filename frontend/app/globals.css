@@ -2477,7 +2477,7 @@ body::before {
   background: rgba(148, 216, 204, 0.09);
 }
 
-.workflowMeter > span {
+.workflowMeterFill {
   display: block;
   height: 100%;
   border-radius: inherit;
@@ -2486,7 +2486,7 @@ body::before {
   transition: width 600ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.workflowBar--running .workflowMeter > span {
+.workflowBar--running .workflowMeterFill {
   background-size: 200% 100%;
   animation: workflowFlow 2.2s linear infinite;
 }
@@ -8633,12 +8633,12 @@ body::after {
 .sourceArchivePage {
   --archive-surface: rgba(3, 15, 17, 0.94);
   --archive-line: rgba(83, 246, 220, 0.13);
-  gap: 14px;
+  gap: 10px;
 }
 
 .sourceArchiveHero {
-  min-height: 148px;
-  padding: 23px 27px;
+  min-height: 104px;
+  padding: 15px 20px;
   border-color: rgba(83, 246, 220, 0.24);
   border-radius: 16px;
   background:
@@ -8663,36 +8663,36 @@ body::after {
 
 .sourceArchiveHero::after {
   right: 16%;
-  bottom: -102px;
-  width: 225px;
-  height: 225px;
+  bottom: -88px;
+  width: 170px;
+  height: 170px;
   border-color: rgba(83, 246, 220, 0.09);
   border-radius: 50%;
   box-shadow: 0 0 0 34px rgba(83, 246, 220, 0.015), 0 0 0 68px rgba(83, 246, 220, 0.01);
 }
 
 .sourceArchiveHeroCopy {
-  gap: 7px;
+  gap: 5px;
 }
 
 .sourceArchiveHero h2 {
-  font-size: clamp(29px, 3.4vw, 42px);
-  letter-spacing: -0.05em;
-  line-height: 0.97;
+  font-size: clamp(23px, 2.35vw, 31px);
+  letter-spacing: -0.045em;
+  line-height: 1.05;
 }
 
 .sourceArchiveHero h2 span {
   color: #53f6dc;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-weight: 650;
-  letter-spacing: -0.06em;
+  font-weight: 700;
+  letter-spacing: -0.055em;
   text-shadow: 0 0 24px rgba(83, 246, 220, 0.22);
 }
 
 .sourceArchiveHero p {
   max-width: 700px;
   color: #7d9f9b;
-  font-size: 10.5px;
+  font-size: 9px;
 }
 
 .sourceLogEyebrow {
@@ -8702,7 +8702,8 @@ body::after {
 }
 
 .archivePathPreview {
-  min-width: 310px;
+  min-width: 280px;
+  padding: 9px 11px;
   border-radius: 9px;
   background:
     linear-gradient(90deg, rgba(83, 246, 220, 0.05), transparent),
@@ -8726,8 +8727,8 @@ body::after {
 
 .sourceArchiveStats article {
   position: relative;
-  min-height: 86px;
-  padding: 13px 16px;
+  min-height: 59px;
+  padding: 8px 13px;
   border: 0;
   border-right: 1px solid var(--archive-line);
   border-radius: 0;
@@ -8742,8 +8743,8 @@ body::after {
 
 .sourceArchiveStats article::after {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: 8px;
+  right: 9px;
   width: 4px;
   height: 4px;
   border-radius: 50%;
@@ -8760,23 +8761,24 @@ body::after {
 
 .sourceArchiveStats article > span {
   color: #709591;
-  font-size: 8.5px;
+  font-size: 7.5px;
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
 
 .sourceArchiveStats strong {
-  font-size: 26px;
+  font-size: 21px;
   font-variant-numeric: tabular-nums;
 }
 
 .sourceArchiveStats small {
-  font-size: 7.5px;
+  font-size: 6.8px;
 }
 
 .sourceArchiveShell {
-  min-height: 540px;
-  grid-template-columns: 210px minmax(0, 1fr);
+  display: flex;
+  min-height: 420px;
+  flex-direction: column;
   border-color: rgba(83, 246, 220, 0.17);
   border-radius: 15px;
   background: rgba(2, 12, 14, 0.9);
@@ -8784,8 +8786,14 @@ body::after {
 }
 
 .archiveSidebar {
-  gap: 4px;
-  padding: 13px 10px;
+  display: flex;
+  min-height: 48px;
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-right: 0;
+  border-bottom: 1px solid var(--archive-line);
   background:
     linear-gradient(rgba(83, 246, 220, 0.025) 1px, transparent 1px),
     linear-gradient(140deg, rgba(8, 40, 36, 0.94), rgba(3, 22, 22, 0.96));
@@ -8793,6 +8801,12 @@ body::after {
 }
 
 .archiveSidebarTitle {
+  flex: 0 0 auto;
+  min-width: 140px;
+  margin: 0;
+  padding: 0 11px 0 2px;
+  border-right: 1px solid var(--archive-line);
+  border-bottom: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   text-transform: uppercase;
 }
@@ -8809,6 +8823,12 @@ body::after {
   font-size: 8.5px;
 }
 
+.archiveSidebar > button {
+  width: auto;
+  min-width: 125px;
+  flex: 0 0 auto;
+}
+
 .archiveSidebar button.active {
   border-color: rgba(83, 246, 220, 0.25);
   background: linear-gradient(90deg, rgba(83, 246, 220, 0.12), rgba(83, 246, 220, 0.025));
@@ -8818,6 +8838,38 @@ body::after {
 .archiveSidebar button b {
   border-radius: 5px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.archiveTree {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.archiveYearNode {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.archiveYearNode > button {
+  width: auto;
+  min-width: 76px;
+}
+
+.archiveYearNode > div {
+  display: flex;
+  gap: 3px;
+  margin-left: 0;
+  padding-left: 5px;
+}
+
+.archiveYearNode > div button {
+  width: auto;
+  min-width: 86px;
 }
 
 .archiveContent {
@@ -8912,8 +8964,8 @@ body::after {
 }
 
 .archiveResults {
-  gap: 12px;
-  padding: 12px;
+  gap: 8px;
+  padding: 9px 11px;
 }
 
 .archiveYearGroup {
@@ -8978,7 +9030,7 @@ body::after {
 .sourceArchiveCard {
   position: relative;
   gap: 9px;
-  padding: 11px 12px;
+  padding: 8px 10px;
   border-bottom-color: rgba(83, 246, 220, 0.075);
 }
 
@@ -9014,7 +9066,25 @@ body::after {
 }
 
 .sourceArchiveCardBody {
-  gap: 7px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 12px;
+}
+
+.sourceArchiveCardTitle {
+  grid-column: 1 / -1;
+}
+
+.sourceArchiveCardMeta {
+  grid-column: 1;
+}
+
+.sourceArchiveCardActions {
+  grid-column: 2;
+  justify-content: flex-end;
+}
+
+.sourceArchiveCard .sourceLogOutputs {
+  grid-column: 1 / -1;
 }
 
 .sourceLogDate,
@@ -9051,13 +9121,14 @@ body::after {
 }
 
 .archivePagination {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) auto minmax(150px, 1fr);
+  grid-template-columns: 1fr;
   align-items: center;
   gap: 14px;
-  min-height: 56px;
-  margin-top: auto;
-  padding: 8px 13px;
+  min-height: 52px;
+  margin-top: 0;
+  padding: 7px 170px;
   border-top: 1px solid rgba(83, 246, 220, 0.1);
   background:
     linear-gradient(90deg, rgba(83, 246, 220, 0.035), transparent 30%),
@@ -9069,6 +9140,8 @@ body::after {
 }
 
 .archivePagination > div:first-child {
+  position: absolute;
+  left: 14px;
   display: grid;
   gap: 1px;
 }
@@ -9079,14 +9152,20 @@ body::after {
 }
 
 .archivePagination > span {
-  justify-self: end;
+  position: absolute;
+  right: 14px;
 }
 
 .archivePaginationButtons {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  justify-self: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid rgba(83, 246, 220, 0.13);
+  border-radius: 9px;
+  background: rgba(0, 8, 10, 0.72);
 }
 
 .archivePaginationButtons button {
@@ -9095,9 +9174,9 @@ body::after {
   height: 30px;
   place-items: center;
   padding: 0;
-  border: 1px solid rgba(83, 246, 220, 0.13);
-  border-radius: 6px;
-  background: rgba(4, 22, 22, 0.72);
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
   color: #769b96;
   cursor: pointer;
   font: 800 8px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -9160,18 +9239,14 @@ body::after {
   }
 
   .archivePagination {
-    grid-template-columns: 1fr auto;
-  }
-
-  .archivePaginationButtons {
-    grid-column: 1 / -1;
-    grid-row: 1;
+    grid-template-columns: 1fr;
+    padding-inline: 120px;
   }
 }
 
 @media (max-width: 600px) {
   .sourceArchiveHero {
-    padding: 18px;
+    padding: 14px;
   }
 
   .sourceArchiveHero h2 {
@@ -9183,7 +9258,7 @@ body::after {
   }
 
   .sourceArchiveStats article {
-    min-height: 72px;
+    min-height: 56px;
     border-bottom: 1px solid var(--archive-line);
   }
 
@@ -9203,6 +9278,34 @@ body::after {
     gap: 8px 12px;
   }
 
+  .archiveSidebarTitle {
+    min-width: 34px;
+    padding-right: 8px;
+  }
+
+  .archiveSidebarTitle > span {
+    display: none;
+  }
+
+  .archiveSidebar > button {
+    min-width: 112px;
+  }
+
+  .sourceArchiveCardBody {
+    grid-template-columns: 1fr;
+  }
+
+  .sourceArchiveCardTitle,
+  .sourceArchiveCardMeta,
+  .sourceArchiveCardActions,
+  .sourceArchiveCard .sourceLogOutputs {
+    grid-column: 1;
+  }
+
+  .sourceArchiveCardActions {
+    justify-content: flex-start;
+  }
+
   .archiveRangeStatus {
     order: 3;
     width: 100%;
@@ -9211,18 +9314,1450 @@ body::after {
   .archivePagination {
     grid-template-columns: 1fr;
     justify-items: center;
-    padding-block: 11px;
+    padding: 7px;
   }
 
   .archivePagination > div:first-child,
   .archivePagination > span {
-    justify-self: center;
-    text-align: center;
+    display: none;
   }
 
   .archivePaginationButtons {
-    grid-column: 1;
     max-width: 100%;
     overflow-x: auto;
+  }
+}
+
+/* Electric spark emitter: follows the live edge of the clip progress meter. */
+.workflowMeter {
+  overflow: visible;
+  isolation: isolate;
+}
+
+.workflowBar--running .workflowMeter {
+  box-shadow: 0 0 10px rgba(83, 246, 220, 0.15);
+}
+
+.workflowSparkEmitter {
+  position: absolute;
+  z-index: 5;
+  top: 50%;
+  display: block;
+  width: 7px;
+  height: 7px;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transition: left 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.workflowSparkEmitter::before {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  content: "";
+  background: #effffc;
+  box-shadow:
+    0 0 4px #fff,
+    0 0 9px #53f6dc,
+    0 0 17px rgba(83, 246, 220, 0.85),
+    0 0 28px rgba(45, 212, 191, 0.42);
+  animation: workflowSparkCore 520ms ease-in-out infinite alternate;
+}
+
+.workflowSparkEmitter::after {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 24px;
+  height: 3px;
+  border-radius: 999px;
+  content: "";
+  background: linear-gradient(90deg, transparent, rgba(83, 246, 220, 0.18), #dffff9);
+  filter: blur(0.35px);
+  transform-origin: right center;
+  animation: workflowSparkTrail 680ms ease-in-out infinite alternate;
+}
+
+.workflowSparkEmitter b {
+  --spark-x: -16px;
+  --spark-y: -12px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  width: 3px;
+  height: 1px;
+  border-radius: 999px;
+  background: #dffff9;
+  box-shadow: 0 0 5px #53f6dc, 0 0 9px rgba(83, 246, 220, 0.65);
+  opacity: 0;
+  transform-origin: center;
+  animation: workflowSparkFly 920ms cubic-bezier(0.2, 0.65, 0.35, 1) infinite;
+}
+
+.workflowSparkEmitter b:nth-child(1) { --spark-x: -17px; --spark-y: -13px; animation-delay: -80ms; }
+.workflowSparkEmitter b:nth-child(2) { --spark-x: -24px; --spark-y: -3px; animation-delay: -410ms; }
+.workflowSparkEmitter b:nth-child(3) { --spark-x: -18px; --spark-y: 12px; animation-delay: -690ms; background: #fbbf24; }
+.workflowSparkEmitter b:nth-child(4) { --spark-x: -7px; --spark-y: -18px; animation-delay: -260ms; }
+.workflowSparkEmitter b:nth-child(5) { --spark-x: 8px; --spark-y: -12px; animation-delay: -570ms; }
+.workflowSparkEmitter b:nth-child(6) { --spark-x: 6px; --spark-y: 11px; animation-delay: -760ms; background: #fef3c7; }
+.workflowSparkEmitter b:nth-child(7) { --spark-x: -29px; --spark-y: 6px; animation-delay: -330ms; }
+.workflowSparkEmitter b:nth-child(8) { --spark-x: -10px; --spark-y: 17px; animation-delay: -620ms; }
+
+@keyframes workflowSparkCore {
+  from { opacity: 0.72; transform: scale(0.72); }
+  to { opacity: 1; transform: scale(1.18); }
+}
+
+@keyframes workflowSparkTrail {
+  from { opacity: 0.28; transform: scaleX(0.55); }
+  to { opacity: 0.9; transform: scaleX(1); }
+}
+
+@keyframes workflowSparkFly {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate(0, 0) scaleX(0.45) rotate(0deg);
+  }
+  16% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate(var(--spark-x), var(--spark-y)) scaleX(1.6) rotate(-18deg);
+  }
+}
+
+/* Full-width process command deck and adaptive pipeline telemetry. */
+.studioGrid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.productionSettings,
+.statusPanel {
+  width: 100%;
+}
+
+.statusPanel {
+  --telemetry-accent: #53f6dc;
+  --telemetry-accent-rgb: 83, 246, 220;
+  position: relative;
+  top: auto;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border-color: rgba(var(--telemetry-accent-rgb), 0.27);
+  border-radius: 17px;
+  background:
+    linear-gradient(rgba(var(--telemetry-accent-rgb), 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--telemetry-accent-rgb), 0.022) 1px, transparent 1px),
+    radial-gradient(circle at 78% -20%, rgba(var(--telemetry-accent-rgb), 0.09), transparent 38%),
+    #020d0f;
+  background-size: 28px 28px, 28px 28px, auto, auto;
+  box-shadow:
+    0 22px 64px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(204, 251, 241, 0.035),
+    inset 0 0 90px rgba(var(--telemetry-accent-rgb), 0.018);
+}
+
+.statusPanel--high {
+  --telemetry-accent: #fbbf24;
+  --telemetry-accent-rgb: 251, 191, 36;
+}
+
+.statusPanel--critical {
+  --telemetry-accent: #fb7185;
+  --telemetry-accent-rgb: 251, 113, 133;
+}
+
+.statusPanel::before {
+  left: 18px;
+  width: 132px;
+  background: linear-gradient(90deg, transparent, var(--telemetry-accent) 24%, var(--telemetry-accent) 76%, transparent);
+  box-shadow: 0 0 15px rgba(var(--telemetry-accent-rgb), 0.76);
+}
+
+.statusPanel::after {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  right: 10%;
+  width: 30%;
+  height: 1px;
+  content: "";
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(var(--telemetry-accent-rgb), 0.34), transparent);
+}
+
+.statusPanelHeader {
+  position: relative;
+  z-index: 2;
+  min-height: 70px;
+  margin: 0;
+  padding: 12px 18px;
+  border-bottom: 1px solid rgba(var(--telemetry-accent-rgb), 0.14);
+  background: linear-gradient(90deg, rgba(var(--telemetry-accent-rgb), 0.065), transparent 42%);
+}
+
+.statusHeaderIcon {
+  position: relative;
+  color: var(--telemetry-accent);
+  background: rgba(var(--telemetry-accent-rgb), 0.11);
+  box-shadow: inset 0 0 0 1px rgba(var(--telemetry-accent-rgb), 0.22), 0 0 24px rgba(var(--telemetry-accent-rgb), 0.08);
+}
+
+.statusHeaderIcon::after {
+  position: absolute;
+  inset: -5px;
+  border: 1px solid rgba(var(--telemetry-accent-rgb), 0.14);
+  border-radius: 12px;
+  content: "";
+}
+
+.statusPanel .panelEyebrow {
+  color: var(--telemetry-accent);
+  font-size: 8px;
+  letter-spacing: 0.18em;
+}
+
+.statusPanel .panelTitleCopy h2 {
+  font-size: 16px;
+  letter-spacing: -0.025em;
+}
+
+.statusHeaderActions,
+.telemetryOnline {
+  display: flex;
+  align-items: center;
+}
+
+.statusHeaderActions {
+  gap: 10px;
+}
+
+.telemetryOnline {
+  gap: 7px;
+  padding: 6px 9px;
+  border: 1px solid rgba(var(--telemetry-accent-rgb), 0.16);
+  border-radius: 6px;
+  color: #71958f;
+  background: rgba(1, 10, 11, 0.58);
+  font: 750 8px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.1em;
+}
+
+.telemetryOnline i,
+.terminalRecording i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #58716e;
+}
+
+.telemetryOnline.is-live {
+  color: var(--telemetry-accent);
+}
+
+.telemetryOnline.is-live i,
+.terminalRecording i {
+  background: var(--telemetry-accent);
+  box-shadow: 0 0 0 4px rgba(var(--telemetry-accent-rgb), 0.08), 0 0 10px rgba(var(--telemetry-accent-rgb), 0.82);
+  animation: telemetryLed var(--telemetry-speed) ease-in-out infinite;
+}
+
+.telemetryContent {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 10px;
+  padding: 13px 18px 18px;
+}
+
+.telemetryDeck {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.32fr) minmax(0, 1.68fr);
+  min-height: 132px;
+  overflow: hidden;
+  border: 1px solid rgba(var(--telemetry-accent-rgb), 0.16);
+  border-radius: 11px;
+  background: rgba(0, 7, 9, 0.72);
+  box-shadow: inset 0 0 30px rgba(var(--telemetry-accent-rgb), 0.018);
+}
+
+.radarModule {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-right: 1px solid rgba(var(--telemetry-accent-rgb), 0.13);
+  background: linear-gradient(100deg, rgba(var(--telemetry-accent-rgb), 0.055), transparent);
+}
+
+.radarScope {
+  position: relative;
+  width: 96px;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid rgba(var(--telemetry-accent-rgb), 0.32);
+  border-radius: 50%;
+  background:
+    linear-gradient(90deg, transparent 49.4%, rgba(var(--telemetry-accent-rgb), 0.18) 50%, transparent 50.6%),
+    linear-gradient(transparent 49.4%, rgba(var(--telemetry-accent-rgb), 0.18) 50%, transparent 50.6%),
+    repeating-radial-gradient(circle, transparent 0 15px, rgba(var(--telemetry-accent-rgb), 0.13) 16px 17px),
+    rgba(var(--telemetry-accent-rgb), 0.025);
+  box-shadow: inset 0 0 25px rgba(var(--telemetry-accent-rgb), 0.07), 0 0 18px rgba(var(--telemetry-accent-rgb), 0.06);
+}
+
+.radarSweep {
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0deg 305deg, rgba(var(--telemetry-accent-rgb), 0.03) 322deg, rgba(var(--telemetry-accent-rgb), 0.55) 359deg, transparent 360deg);
+  animation: radarSweep var(--telemetry-speed) linear infinite;
+}
+
+.radarCore {
+  position: absolute;
+  z-index: 3;
+  inset: 50% auto auto 50%;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid rgba(var(--telemetry-accent-rgb), 0.36);
+  border-radius: 50%;
+  color: var(--telemetry-accent);
+  background: #031113;
+  box-shadow: 0 0 18px rgba(var(--telemetry-accent-rgb), 0.25);
+  transform: translate(-50%, -50%);
+}
+
+.radarCore::after {
+  position: absolute;
+  inset: -8px;
+  border: 1px solid rgba(var(--telemetry-accent-rgb), 0.2);
+  border-radius: inherit;
+  content: "";
+  animation: radarCorePulse var(--telemetry-speed) ease-out infinite;
+}
+
+.radarPing {
+  position: absolute;
+  z-index: 2;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--telemetry-accent);
+  box-shadow: 0 0 8px var(--telemetry-accent);
+  animation: radarTarget var(--telemetry-speed) ease-in-out infinite;
+}
+
+.radarPing--one { top: 20%; left: 64%; animation-delay: -0.3s; }
+.radarPing--two { top: 69%; left: 72%; animation-delay: -0.8s; }
+.radarPing--three { top: 61%; left: 24%; animation-delay: -1.35s; }
+
+.radarReadout {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.radarReadout > span,
+.signalHeader > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #668c87;
+  font: 750 7.5px/1.25 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.12em;
+}
+
+.radarReadout strong {
+  overflow: hidden;
+  color: var(--telemetry-accent);
+  font: 850 13px/1.2 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 0 14px rgba(var(--telemetry-accent-rgb), 0.34);
+}
+
+.radarReadout small {
+  overflow: hidden;
+  color: #8eb1ac;
+  font: 8.5px/1.3 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.signalModule {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-width: 0;
+  padding: 11px 14px 9px;
+}
+
+.signalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.signalMetrics {
+  display: flex;
+  gap: 5px;
+}
+
+.signalMetrics > span {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 72px;
+  justify-content: flex-end;
+  padding-left: 8px;
+  border-left: 1px solid rgba(var(--telemetry-accent-rgb), 0.12);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.signalMetrics small {
+  color: #496b67;
+  font-size: 6.5px;
+  letter-spacing: 0.1em;
+}
+
+.signalMetrics b {
+  color: #b7d7d1;
+  font-size: 9px;
+}
+
+.telemetryWave {
+  position: relative;
+  min-height: 76px;
+  overflow: hidden;
+  background:
+    linear-gradient(rgba(var(--telemetry-accent-rgb), 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--telemetry-accent-rgb), 0.055) 1px, transparent 1px);
+  background-size: 18px 18px;
+  mask-image: linear-gradient(90deg, transparent, #000 3%, #000 97%, transparent);
+}
+
+.telemetryWave svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transform: scaleY(var(--telemetry-wave-scale));
+  transform-origin: center;
+  transition: transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.telemetryWave path {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.telemetryWaveGhost {
+  stroke: rgba(var(--telemetry-accent-rgb), 0.13);
+  stroke-width: 1;
+}
+
+.telemetryWaveLive {
+  stroke: var(--telemetry-accent);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 92 808;
+  filter: drop-shadow(0 0 4px rgba(var(--telemetry-accent-rgb), 0.9));
+  animation: telemetryTrace var(--telemetry-speed) linear infinite;
+}
+
+.telemetryScanner {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 0;
+  width: 2px;
+  background: var(--telemetry-accent);
+  box-shadow: -12px 0 24px rgba(var(--telemetry-accent-rgb), 0.24), 0 0 10px rgba(var(--telemetry-accent-rgb), 0.82);
+  opacity: 0.7;
+  animation: telemetryScan var(--telemetry-speed) linear infinite;
+}
+
+.statusPanel .statusProgress {
+  position: relative;
+  height: 2px;
+  margin: 0;
+  overflow: visible;
+  background: rgba(var(--telemetry-accent-rgb), 0.09);
+}
+
+.statusPanel .statusProgress::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--telemetry-load);
+  content: "";
+  background: linear-gradient(90deg, rgba(var(--telemetry-accent-rgb), 0.15), var(--telemetry-accent));
+  box-shadow: 0 0 9px rgba(var(--telemetry-accent-rgb), 0.52);
+  transition: width 0.7s ease;
+}
+
+.telemetryMeta {
+  gap: 5px;
+  margin: 0;
+}
+
+.telemetryMeta span {
+  padding: 4px 7px;
+  border-color: rgba(var(--telemetry-accent-rgb), 0.12);
+  border-radius: 5px;
+  color: #70938e;
+  background: rgba(var(--telemetry-accent-rgb), 0.028);
+  font: 7.5px/1.2 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.telemetryMeta span:first-child,
+.telemetryMeta span:last-child {
+  color: #a2c7c0;
+}
+
+.terminalShell {
+  overflow: hidden;
+  border: 1px solid rgba(var(--telemetry-accent-rgb), 0.14);
+  border-radius: 10px;
+  background: rgba(0, 6, 8, 0.83);
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.28);
+}
+
+.terminalHeader {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  min-height: 31px;
+  padding: 0 11px;
+  border-bottom: 1px solid rgba(var(--telemetry-accent-rgb), 0.11);
+  color: #648a84;
+  background: linear-gradient(90deg, rgba(var(--telemetry-accent-rgb), 0.055), rgba(2, 14, 15, 0.9));
+  font: 750 7.5px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.1em;
+}
+
+.terminalHeader > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.terminalJobId {
+  color: #4e7771;
+}
+
+.terminalRecording {
+  justify-self: end;
+  color: var(--telemetry-accent);
+}
+
+.statusPanel .telemetryLogBox {
+  display: block;
+  min-height: 0;
+  max-height: 222px;
+  padding: 7px 0 8px;
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  scrollbar-color: rgba(var(--telemetry-accent-rgb), 0.28) transparent;
+  scrollbar-width: thin;
+}
+
+.terminalLine {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  min-height: 22px;
+  padding: 2px 12px 2px 0;
+  border-left: 2px solid transparent;
+}
+
+.terminalLine:hover {
+  border-left-color: rgba(var(--telemetry-accent-rgb), 0.42);
+  background: rgba(var(--telemetry-accent-rgb), 0.035);
+}
+
+.terminalLine > span {
+  padding-top: 1px;
+  color: #315b55;
+  font: 7.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-align: center;
+  user-select: none;
+}
+
+.statusPanel .terminalLine p {
+  margin: 0;
+  color: #91bbb4;
+  font: 9px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+.statusPanel .terminalLine:last-child p {
+  color: var(--telemetry-accent);
+  text-shadow: 0 0 11px rgba(var(--telemetry-accent-rgb), 0.18);
+}
+
+.terminalLine--pending p::after {
+  display: inline-block;
+  width: 6px;
+  height: 10px;
+  margin-left: 5px;
+  content: "";
+  vertical-align: -2px;
+  background: var(--telemetry-accent);
+  animation: terminalCaret 0.85s steps(1) infinite;
+}
+
+.statusPanel--empty {
+  min-height: 0;
+  padding: 0;
+}
+
+.statusPanel--empty .statusPanelHeader {
+  padding-bottom: 12px;
+}
+
+.statusIdleDeck {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  min-height: 74px;
+  padding: 11px 18px 14px;
+}
+
+.idleRadar {
+  position: relative;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(83, 246, 220, 0.19);
+  border-radius: 50%;
+  color: #53817a;
+  background: repeating-radial-gradient(circle, transparent 0 6px, rgba(83, 246, 220, 0.08) 7px 8px);
+}
+
+.idleRadar span {
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(transparent 0 320deg, rgba(83, 246, 220, 0.34) 360deg);
+  animation: radarSweep 4.8s linear infinite;
+}
+
+.idleRadar svg {
+  z-index: 1;
+}
+
+.statusIdleDeck > div:nth-child(2) {
+  display: grid;
+  gap: 3px;
+}
+
+.statusIdleDeck strong,
+.statusIdleDeck code {
+  color: #6ea39a;
+  font: 800 8.5px/1.2 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.08em;
+}
+
+.statusIdleDeck span {
+  color: #547a74;
+  font: 8.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.statusIdleDeck code {
+  color: #3e6c65;
+  font-size: 7.5px;
+}
+
+.statusPanel--state-completed .telemetryWaveLive,
+.statusPanel--state-failed .telemetryWaveLive,
+.statusPanel--state-cancelled .telemetryWaveLive,
+.statusPanel--state-completed .telemetryScanner,
+.statusPanel--state-failed .telemetryScanner,
+.statusPanel--state-cancelled .telemetryScanner {
+  animation-play-state: paused;
+}
+
+@keyframes radarSweep {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes radarCorePulse {
+  0% { opacity: 0.75; transform: scale(0.75); }
+  100% { opacity: 0; transform: scale(1.5); }
+}
+
+@keyframes radarTarget {
+  0%, 100% { opacity: 0.2; transform: scale(0.7); }
+  45% { opacity: 1; transform: scale(1.35); }
+}
+
+@keyframes telemetryTrace {
+  to { stroke-dashoffset: -900; }
+}
+
+@keyframes telemetryScan {
+  from { left: 0; }
+  to { left: 100%; }
+}
+
+@keyframes telemetryLed {
+  0%, 100% { opacity: 0.42; }
+  50% { opacity: 1; }
+}
+
+@keyframes terminalCaret {
+  50% { opacity: 0; }
+}
+
+@media (max-width: 820px) {
+  .telemetryDeck {
+    grid-template-columns: 1fr;
+  }
+
+  .radarModule {
+    grid-template-columns: 72px minmax(0, 1fr);
+    border-right: 0;
+    border-bottom: 1px solid rgba(var(--telemetry-accent-rgb), 0.13);
+  }
+
+  .radarScope {
+    width: 66px;
+  }
+
+  .signalMetrics > span {
+    min-width: auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .statusPanelHeader,
+  .statusIdleDeck {
+    padding-inline: 12px;
+  }
+
+  .telemetryContent {
+    padding: 10px 12px 13px;
+  }
+
+  .telemetryOnline,
+  .statusIdleDeck code,
+  .terminalJobId,
+  .signalMetrics small {
+    display: none;
+  }
+
+  .signalHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .signalMetrics {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .signalMetrics > span {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .terminalHeader {
+    grid-template-columns: 1fr auto;
+  }
+
+  .statusIdleDeck {
+    grid-template-columns: auto 1fr;
+  }
+}
+
+/* Real telemetry layer: every displayed value comes from the backend sampler. */
+.telemetryDataProof {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 6px;
+  color: #607873;
+  background: rgba(1, 9, 11, 0.72);
+  font: 800 7px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.11em;
+}
+
+.telemetryDataProof i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #64748b;
+}
+
+.telemetryDataProof.is-real {
+  border-color: rgba(34, 197, 94, 0.22);
+  color: #86efac;
+}
+
+.telemetryDataProof.is-real i {
+  background: #4ade80;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.82);
+}
+
+.radarReadout code {
+  overflow: hidden;
+  margin-top: 3px;
+  color: #3e6d66;
+  font: 650 6.5px/1.25 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signalHeader {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+}
+
+.signalLegend {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.signalLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #55736e;
+  font: 700 6px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.07em;
+}
+
+.signalLegend span::before {
+  width: 11px;
+  height: 1px;
+  content: "";
+  background: currentColor;
+  box-shadow: 0 0 5px currentColor;
+}
+
+.signalLegend .is-job { color: var(--telemetry-accent); }
+.signalLegend .is-server { color: #38bdf8; }
+.signalLegend .is-gpu { color: #c084fc; }
+
+.telemetryWaveServer,
+.telemetryWaveGpu {
+  stroke-width: 1.15;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.62;
+  transition: d 0.7s ease;
+}
+
+.telemetryWave svg {
+  transform: none;
+}
+
+.telemetryWaveServer {
+  stroke: #38bdf8;
+  filter: drop-shadow(0 0 3px rgba(56, 189, 248, 0.42));
+}
+
+.telemetryWaveGpu {
+  stroke: #c084fc;
+  filter: drop-shadow(0 0 3px rgba(192, 132, 252, 0.45));
+}
+
+.telemetryWaveLive {
+  stroke-dasharray: none;
+  animation: none;
+  transition: d 0.7s ease;
+}
+
+.telemetryAxis {
+  position: absolute;
+  left: 3px;
+  color: rgba(var(--telemetry-accent-rgb), 0.3);
+  font: 600 6px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.telemetryAxis--top { top: 5px; }
+.telemetryAxis--bottom { bottom: 5px; }
+
+.statusPanel .statusProgress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(var(--telemetry-accent-rgb), 0.35), var(--telemetry-accent));
+  box-shadow: 0 0 8px rgba(var(--telemetry-accent-rgb), 0.62);
+  animation: none;
+  transform: none;
+  transition: width 0.7s ease;
+}
+
+.realTelemetryGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.telemetryMetricCell {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 82px;
+  align-content: center;
+  gap: 3px;
+  padding: 9px 10px 10px;
+  overflow: hidden;
+  border: 1px solid rgba(var(--telemetry-accent-rgb), 0.12);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(var(--telemetry-accent-rgb), 0.045), transparent 55%),
+    rgba(0, 8, 10, 0.72);
+}
+
+.telemetryMetricCell::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 20px;
+  height: 20px;
+  border-top: 1px solid rgba(var(--telemetry-accent-rgb), 0.24);
+  border-right: 1px solid rgba(var(--telemetry-accent-rgb), 0.24);
+  content: "";
+}
+
+.telemetryMetricLabel {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #577d77;
+  font: 800 6.5px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.1em;
+}
+
+.telemetryMetricLabel > span {
+  display: inline-grid;
+  width: 19px;
+  height: 19px;
+  place-items: center;
+  border: 1px solid rgba(var(--telemetry-accent-rgb), 0.14);
+  border-radius: 5px;
+  color: var(--telemetry-accent);
+  background: rgba(var(--telemetry-accent-rgb), 0.05);
+}
+
+.telemetryMetricCell > strong {
+  overflow: hidden;
+  color: #c3e0da;
+  font: 850 13px/1.2 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: -0.035em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.telemetryMetricCell > small {
+  overflow: hidden;
+  color: #4e716c;
+  font: 6.5px/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.telemetryMetricCell > i {
+  position: relative;
+  display: block;
+  height: 2px;
+  margin-top: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(var(--telemetry-accent-rgb), 0.08);
+}
+
+.telemetryMetricCell > i > b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--telemetry-accent);
+  box-shadow: 0 0 6px rgba(var(--telemetry-accent-rgb), 0.74);
+  transition: width 0.7s ease;
+}
+
+.telemetryMetricCell.is-muted {
+  opacity: 0.62;
+}
+
+.telemetryMetricCell.is-muted > i > b {
+  background: #64748b;
+  box-shadow: none;
+}
+
+.telemetryFacts {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0;
+  overflow-x: auto;
+  border: 1px solid rgba(var(--telemetry-accent-rgb), 0.09);
+  border-radius: 6px;
+  background: rgba(0, 7, 9, 0.5);
+  scrollbar-width: none;
+}
+
+.telemetryFacts::-webkit-scrollbar {
+  display: none;
+}
+
+.telemetryFacts span {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-right: 1px solid rgba(var(--telemetry-accent-rgb), 0.08);
+  color: #456964;
+  font: 650 6.5px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-transform: uppercase;
+}
+
+.telemetryFacts span:last-child {
+  border-right: 0;
+}
+
+.telemetryFacts b {
+  color: #85aaa3;
+  font-weight: 800;
+}
+
+@media (max-width: 1100px) {
+  .realTelemetryGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .signalHeader {
+    grid-template-columns: 1fr auto;
+  }
+
+  .signalLegend {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    padding-top: 4px;
+  }
+}
+
+@media (max-width: 700px) {
+  .realTelemetryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .telemetryDataProof {
+    display: none;
+  }
+
+  .signalHeader {
+    grid-template-columns: 1fr;
+  }
+
+  .signalLegend,
+  .signalMetrics {
+    grid-column: 1;
+  }
+}
+
+@media (max-width: 420px) {
+  .realTelemetryGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Operations intelligence: real stage history, peak records, alerts and HUD controls. */
+.hudControlButton {
+  display: inline-flex;
+  min-height: 27px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 6px;
+  color: #59736f;
+  background: rgba(1, 9, 11, 0.72);
+  cursor: pointer;
+  font: 800 6.5px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.08em;
+}
+
+.hudControlButton:hover,
+.hudControlButton.is-active {
+  border-color: rgba(var(--telemetry-accent-rgb), 0.3);
+  color: var(--telemetry-accent);
+  background: rgba(var(--telemetry-accent-rgb), 0.065);
+  box-shadow: 0 0 14px rgba(var(--telemetry-accent-rgb), 0.05);
+}
+
+.telemetryFacts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.processIntelligenceGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(330px, 0.55fr);
+  gap: 7px;
+}
+
+.pipelineRoutePanel,
+.telemetryAlertPanel {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(var(--telemetry-accent-rgb), 0.12);
+  border-radius: 9px;
+  background:
+    linear-gradient(135deg, rgba(var(--telemetry-accent-rgb), 0.035), transparent 48%),
+    rgba(0, 7, 9, 0.7);
+}
+
+.intelPanelHeader {
+  display: flex;
+  min-height: 29px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 10px;
+  border-bottom: 1px solid rgba(var(--telemetry-accent-rgb), 0.09);
+  color: #547a74;
+  background: rgba(var(--telemetry-accent-rgb), 0.025);
+  font: 800 6.5px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.11em;
+}
+
+.intelPanelHeader > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.intelPanelHeader b {
+  color: #779e97;
+  font-size: 6px;
+}
+
+.currentOperation {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px 3px;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.currentOperation span {
+  flex: 0 0 auto;
+  color: #3c645e;
+  font-size: 6px;
+  letter-spacing: 0.09em;
+}
+
+.currentOperation strong {
+  overflow: hidden;
+  color: var(--telemetry-accent);
+  font-size: 7.5px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pipelineRoute {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  padding: 9px 9px 11px;
+  list-style: none;
+}
+
+.pipelineRoute::before {
+  position: absolute;
+  top: 24px;
+  right: 9%;
+  left: 9%;
+  height: 1px;
+  content: "";
+  background: linear-gradient(90deg, rgba(var(--telemetry-accent-rgb), 0.18), rgba(var(--telemetry-accent-rgb), 0.06));
+}
+
+.pipelineRoute li {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-width: 0;
+  justify-items: center;
+  gap: 4px;
+  color: #395b56;
+  text-align: center;
+}
+
+.routeNode {
+  display: grid;
+  width: 29px;
+  height: 29px;
+  place-items: center;
+  border: 1px solid rgba(148, 216, 204, 0.12);
+  border-radius: 50%;
+  color: #4c6e69;
+  background: #031012;
+  font: 750 6.5px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.pipelineRoute li.is-complete .routeNode,
+.pipelineRoute li.is-current .routeNode {
+  border-color: rgba(var(--telemetry-accent-rgb), 0.44);
+  color: var(--telemetry-accent);
+  box-shadow: 0 0 13px rgba(var(--telemetry-accent-rgb), 0.13), inset 0 0 9px rgba(var(--telemetry-accent-rgb), 0.08);
+}
+
+.pipelineRoute li.is-current .routeNode {
+  animation: routeNodePulse var(--telemetry-speed) ease-in-out infinite;
+}
+
+.pipelineRoute li > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.pipelineRoute strong,
+.pipelineRoute small,
+.pipelineRoute time {
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pipelineRoute strong {
+  color: #547a74;
+  font-size: 6.5px;
+  letter-spacing: 0.06em;
+}
+
+.pipelineRoute li.is-complete strong,
+.pipelineRoute li.is-current strong {
+  color: #a4c8c1;
+}
+
+.pipelineRoute small {
+  max-width: 100%;
+  color: #345651;
+  font-size: 5.8px;
+}
+
+.pipelineRoute li.is-current small {
+  color: var(--telemetry-accent);
+}
+
+.pipelineRoute time {
+  color: #31514d;
+  font-size: 5.5px;
+}
+
+.telemetryAlertPanel.has-alerts::after {
+  position: absolute;
+  top: 29px;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  content: "";
+  pointer-events: none;
+  background: rgba(251, 113, 133, 0.85);
+  box-shadow: 0 0 12px rgba(251, 113, 133, 0.82);
+  animation: alertScanner 2.8s linear infinite;
+}
+
+.telemetryPeaks {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  padding: 7px;
+}
+
+.telemetryPeaks span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid rgba(var(--telemetry-accent-rgb), 0.08);
+  background: rgba(var(--telemetry-accent-rgb), 0.018);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.telemetryPeaks small {
+  color: #3f625d;
+  font-size: 5.5px;
+}
+
+.telemetryPeaks b {
+  overflow: hidden;
+  color: #8fb6ae;
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alertHistoryList {
+  display: grid;
+  gap: 3px;
+  padding: 0 7px 7px;
+}
+
+.alertHistoryItem,
+.alertHistoryEmpty {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 29px;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 7px;
+  border: 1px solid rgba(148, 216, 204, 0.08);
+  border-radius: 5px;
+  background: rgba(2, 13, 14, 0.72);
+}
+
+.alertHistoryItem > i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fbbf24;
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.72);
+}
+
+.alertHistoryItem.is-critical {
+  border-color: rgba(251, 113, 133, 0.2);
+  animation: criticalAlertBlink 1.1s ease-in-out 3;
+}
+
+.alertHistoryItem.is-critical > i {
+  background: #fb7185;
+  box-shadow: 0 0 9px rgba(251, 113, 133, 0.88);
+}
+
+.alertHistoryItem > span,
+.alertHistoryEmpty > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.alertHistoryItem b,
+.alertHistoryItem small,
+.alertHistoryItem time,
+.alertHistoryEmpty b,
+.alertHistoryEmpty small {
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alertHistoryItem b {
+  color: #d4a84a;
+  font-size: 6.5px;
+  text-transform: uppercase;
+}
+
+.alertHistoryItem.is-critical b {
+  color: #fb8fa0;
+}
+
+.alertHistoryItem small,
+.alertHistoryEmpty small {
+  color: #58766f;
+  font-size: 5.8px;
+}
+
+.alertHistoryItem time {
+  color: #8ca9a3;
+  font-size: 6px;
+}
+
+.alertHistoryEmpty {
+  grid-template-columns: auto 1fr;
+  color: #4ade80;
+}
+
+.alertHistoryEmpty b {
+  color: #72a89d;
+  font-size: 6.5px;
+}
+
+.statusPanel--eco .radarSweep,
+.statusPanel--eco .radarPing,
+.statusPanel--eco .radarCore::after,
+.statusPanel--eco .telemetryScanner,
+.statusPanel--eco .telemetryOnline i,
+.statusPanel--eco .terminalRecording i,
+.statusPanel--eco .pipelineRoute li.is-current .routeNode,
+.statusPanel--eco .telemetryAlertPanel::after,
+.statusPanel--eco .terminalLine--pending p::after {
+  animation-play-state: paused;
+}
+
+@keyframes routeNodePulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(var(--telemetry-accent-rgb), 0.08), inset 0 0 7px rgba(var(--telemetry-accent-rgb), 0.06); }
+  50% { box-shadow: 0 0 18px rgba(var(--telemetry-accent-rgb), 0.28), inset 0 0 12px rgba(var(--telemetry-accent-rgb), 0.14); }
+}
+
+@keyframes alertScanner {
+  from { left: 0; opacity: 0; }
+  12%, 88% { opacity: 0.9; }
+  to { left: 100%; opacity: 0; }
+}
+
+@keyframes criticalAlertBlink {
+  0%, 100% { background: rgba(2, 13, 14, 0.72); }
+  50% { background: rgba(127, 29, 29, 0.17); }
+}
+
+@media (max-width: 920px) {
+  .processIntelligenceGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .hudControlButton span {
+    display: none;
+  }
+
+  .hudControlButton {
+    width: 27px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .pipelineRoute small,
+  .pipelineRoute time {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .processIntelligenceGrid {
+    display: none;
   }
 }
