@@ -8,7 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 
@@ -179,6 +179,13 @@ def minimize_cdp_browser(context, page) -> bool:
         window_id = window.get("windowId") if isinstance(window, dict) else None
         if window_id is None:
             return False
+        try:
+            current = session.send("Browser.getWindowBounds", {"windowId": window_id})
+        except Exception:
+            current = {}
+        bounds = current.get("bounds") if isinstance(current, dict) else None
+        if isinstance(bounds, dict) and bounds.get("windowState") == "minimized":
+            return True
         session.send(
             "Browser.setWindowBounds",
             {"windowId": window_id, "bounds": {"windowState": "minimized"}},
@@ -670,11 +677,19 @@ def post_button_is_enabled(button) -> bool:
     )
 
 
-def wait_for_post_button(page, timeout_ms: int):
+def wait_for_post_button(
+    page,
+    timeout_ms: int,
+    background_tick: Callable[[], bool] | None = None,
+):
     """Wait for TikTok's async file processing to enable the Post button."""
     deadline = time.monotonic() + max(1_000, timeout_ms) / 1000
     last_progress = ""
+    next_background_tick = 0.0
     while time.monotonic() < deadline:
+        if background_tick is not None and time.monotonic() >= next_background_tick:
+            background_tick()
+            next_background_tick = time.monotonic() + 5
         remaining_ms = max(250, int((deadline - time.monotonic()) * 1000))
         button = first_visible(
             page,
@@ -715,6 +730,7 @@ def wait_for_new_tiktok_post(
     caption: str,
     previous_matches: int | None,
     timeout_ms: int = 300_000,
+    background_tick: Callable[[], bool] | None = None,
 ) -> bool:
     """Confirm a new row in Studio Posts; transfer text is never proof of a post."""
     deadline = time.monotonic() + max(5_000, timeout_ms) / 1000
@@ -726,8 +742,14 @@ def wait_for_new_tiktok_post(
         page.goto(TIKTOK_CONTENT_URL, wait_until="domcontentloaded", timeout=45_000)
     except Exception:
         pass
+    if background_tick is not None:
+        background_tick()
     next_refresh = time.monotonic() + 60
+    next_background_tick = time.monotonic() + 5
     while time.monotonic() < deadline:
+        if background_tick is not None and time.monotonic() >= next_background_tick:
+            background_tick()
+            next_background_tick = time.monotonic() + 5
         try:
             # The Posts table is hydrated after DOMContentLoaded. Keep polling
             # the settled document; navigating on every pass resets TikTok's
@@ -744,6 +766,8 @@ def wait_for_new_tiktok_post(
                 page.reload(wait_until="domcontentloaded", timeout=45_000)
             except Exception:
                 pass
+            if background_tick is not None:
+                background_tick()
             next_refresh = time.monotonic() + 60
         page.wait_for_timeout(5_000)
     return False
@@ -856,6 +880,7 @@ def upload_video(
     target_handle: str,
     *,
     remote_browser: bool = False,
+    background_tick: Callable[[], bool] | None = None,
 ) -> None:
     previous_content_matches: int | None = None
     try:
@@ -865,6 +890,8 @@ def upload_video(
         log(f"POST_BASELINE_UNAVAILABLE:{str(exc).splitlines()[0][:180]}")
     goto(page, UPLOAD_URL)
     page.wait_for_timeout(1500)
+    if background_tick is not None:
+        background_tick()
     if "/login" in page.url.casefold():
         raise UploadError("TikTok meminta login ulang; file belum dipilih.")
     # TikTok keeps an interrupted upload as a draft in the persistent CDP
@@ -924,9 +951,13 @@ def upload_video(
         if staging_directory is not None:
             staging_directory.cleanup()
     log(f"Video dipilih: {video_path.name}")
+    if background_tick is not None:
+        background_tick()
     dismiss_upload_overlays(page)
     set_caption(page, caption)
     set_only_you(page)
+    if background_tick is not None:
+        background_tick()
 
     if dry_run:
         log("DRY_RUN: form siap dengan privasi Only you; tombol Post tidak diklik.")
@@ -938,7 +969,11 @@ def upload_video(
         DEFAULT_POST_READY_TIMEOUT_MS,
         minimum=MIN_POST_READY_TIMEOUT_MS,
     )
-    post_button = wait_for_post_button(page, post_ready_timeout_ms)
+    post_button = wait_for_post_button(
+        page,
+        post_ready_timeout_ms,
+        background_tick=background_tick,
+    )
     if post_button is None:
         progress = upload_progress_text(page)
         save_debug(page, "post-button-not-ready")
@@ -952,7 +987,11 @@ def upload_video(
     # after processing finishes but before Post is clicked.
     set_caption(page, caption)
     if not post_button_is_enabled(post_button):
-        post_button = wait_for_post_button(page, MIN_POST_READY_TIMEOUT_MS)
+        post_button = wait_for_post_button(
+            page,
+            MIN_POST_READY_TIMEOUT_MS,
+            background_tick=background_tick,
+        )
     if post_button is None:
         save_debug(page, "post-button-disabled-after-caption")
         raise UploadError(
@@ -961,6 +1000,8 @@ def upload_video(
         )
     post_button.click(timeout=10_000)
     log("Tombol Post diklik setelah privasi Only you terverifikasi.")
+    if background_tick is not None:
+        background_tick()
 
     confirmed = wait_for_new_tiktok_post(
         page,
@@ -971,6 +1012,7 @@ def upload_video(
             300_000,
             minimum=90_000,
         ),
+        background_tick=background_tick,
     )
     if not confirmed:
         save_debug(page, "confirmation-missing")
@@ -1083,6 +1125,9 @@ def run(args) -> int:
             video_path = Path(args.video).expanduser()
             if not video_path.is_file():
                 raise UploadError(f"File video tidak ditemukan: {video_path}")
+            background_tick = None
+            if args.cdp_url and env_bool("TIKTOK_MINIMIZE_CDP_BROWSER", True):
+                background_tick = lambda: minimize_cdp_browser(context, page)
             upload_video(
                 page,
                 video_path,
@@ -1090,6 +1135,7 @@ def run(args) -> int:
                 args.dry_run,
                 args.target_handle,
                 remote_browser=bool(args.cdp_url),
+                background_tick=background_tick,
             )
             save_session_state(context, Path(args.state))
             return 0

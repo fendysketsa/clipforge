@@ -27,6 +27,7 @@ import imageio_ffmpeg
 import numpy as np
 
 from llm import AIConfig, chat_completion, extract_json
+from islamic_text import islamic_indonesian_tts_text, repair_islamic_asr_text
 
 # Configure logging for Long Animate
 _logger = logging.getLogger("long_animate")
@@ -209,7 +210,8 @@ def _plain_text_value(value: object) -> str:
 
 
 def _clean_text(value: object, limit: int) -> str:
-    return re.sub(r"\s+", " ", _plain_text_value(value)).strip()[:limit]
+    clean = re.sub(r"\s+", " ", _plain_text_value(value)).strip()
+    return repair_islamic_asr_text(clean)[:limit]
 
 
 def _sentence_chunks(script: str, target_words: int = 38, max_chunks: int = 14) -> list[str]:
@@ -1027,6 +1029,7 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
             roles.append("evidence_and_answer")
     scenes: list[AnimateScene] = []
     for index, chunk in enumerate(chunks):
+        chunk = _clean_text(chunk, 900)
         section = sections[index] if sections else None
         title_source = chunk or (section["visual"] if section else "")
         title = section["title"] if section and section["title"] else _scene_title(title_source, index)
@@ -2360,32 +2363,7 @@ def _tts_pronunciation_text(text: str) -> str:
     if profile not in {"islamic_indonesian", "islamic-id", "id-islamic"}:
         return spoken
 
-    replacements = (
-        (r"(?i)\bQ\.?\s*S\.?\s*", "Surah "),
-        (r"(?i)(?<!\w)S\.?\s*W\.?\s*T\.?(?!\w)|ﷻ", "subhaanahu wa ta'aalaa"),
-        (r"(?i)(?<!\w)S\.?\s*A\.?\s*W\.?(?!\w)|ﷺ", "shallallaahu alaihi wasallam"),
-        (r"(?i)\b(?:muhamad|mohamad|mohammad|muhammad)\b", "Muhammad"),
-        (r"(?i)\bAllah\b", "Alloh"),
-        (r"الله", "Alloh"),
-        (r"(?i)\bAl[-\s]?Qur[’'`]an\b", "Al Quran"),
-        (r"(?i)\bQur[’'`]an\b", "Quran"),
-        (r"(?i)\bustadzah\b", "ustazah"),
-        (r"(?i)\bustadz\b", "ustaz"),
-        (r"(?i)\bmakhraj\b", "makhroj"),
-        (r"(?i)\bwudhu\b", "wudu"),
-        (r"(?i)\bberwudhu\b", "berwudu"),
-        (r"(?i)\bdzikir\b", "zikir"),
-        (r"(?i)\bberdzikir\b", "berzikir"),
-        (r"(?i)\bmuadzin\b", "muazin"),
-        (r"(?i)\bshalat\b", "salat"),
-        (r"(?i)\bsholat\b", "salat"),
-        (r"(?i)\binsya\s*allah\b", "insya Allah"),
-    )
-    for pattern, replacement in replacements:
-        spoken = re.sub(pattern, replacement, spoken)
-    spoken = re.sub(r"\s+([,.;:!?])", r"\1", spoken)
-    spoken = re.sub(r"([,.;:!?])(?!\s|$)", r"\1 ", spoken)
-    return re.sub(r"\s+", " ", spoken).strip()
+    return islamic_indonesian_tts_text(spoken)
 
 
 def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, str]:

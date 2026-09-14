@@ -107,6 +107,26 @@ def test_tiktok_strategy_caption_keeps_source_copy_and_adds_non_coercive_cta():
     assert len(caption) <= 600
 
 
+def test_tiktok_caption_uses_new_handle_and_platform_hashtags():
+    strategy = build_tiktok_strategy(
+        title="Makna ikhlas",
+        hook="Ikhlas tidak menghapus ikhtiar",
+        text="Nasihat tentang ikhlas dan ikhtiar.",
+        stable_key="clip-handle",
+    )
+
+    caption = tiktok_caption_from_strategy(
+        "Kajian Jamaat Tablek dari @ryuundyofficial. #Islam #Shorts",
+        strategy,
+    )
+
+    assert "Jamaah Tablig" in caption
+    assert "@ryuundys" in caption
+    assert "@ryuundyofficial" not in caption
+    assert "#Islam" in caption
+    assert "#Shorts" not in caption
+
+
 def test_tiktok_caption_removes_template_noise_and_duplicate_ctas():
     strategy = build_tiktok_strategy(
         title="Kalau orang Islam seperti ini",
@@ -992,6 +1012,7 @@ def test_tiktok_cdp_upload_uses_playwright_remote_file_transfer(monkeypatch, tmp
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"video-payload")
     selected = []
+    background_ticks = []
 
     class FileInput:
         def wait_for(self, **_kwargs):
@@ -1025,11 +1046,13 @@ def test_tiktok_cdp_upload_uses_playwright_remote_file_transfer(monkeypatch, tmp
         True,
         "titikbalikislami",
         remote_browser=True,
+        background_tick=lambda: background_ticks.append(True) or True,
     )
 
     payload, kwargs = selected[0]
     assert payload == str(video.resolve())
     assert kwargs["timeout"] == 300_000
+    assert len(background_ticks) >= 3
 
 
 def test_tiktok_discards_interrupted_draft_before_new_file_selection(monkeypatch):

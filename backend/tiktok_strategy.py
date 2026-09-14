@@ -4,6 +4,8 @@ import hashlib
 import re
 from typing import Any
 
+from islamic_text import repair_islamic_asr_text
+
 
 TIKTOK_STRATEGY_VERSION = 2
 
@@ -213,6 +215,8 @@ def tiktok_caption_from_strategy(base_caption: str, strategy: dict[str, Any]) ->
             text,
         ).strip()
         text = casual_fillers.sub(".", text).strip()
+        text = repair_islamic_asr_text(text)
+        text = re.sub(r"@ryuundyofficial\b", "@ryuundys", text, flags=re.IGNORECASE)
         text = re.sub(r"(?i)\borang islam\b", "orang Islam", text)
         text = re.sub(r"(?i)\bngena\b", "mengena", text)
         if re.fullmatch(

@@ -13,6 +13,8 @@ from typing import Iterable
 
 import imageio_ffmpeg
 
+from islamic_text import repair_islamic_asr_text
+
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_STATE_PATH = Path(os.environ.get("YOUTUBE_PLAYWRIGHT_STATE", BASE_DIR / "data" / "youtube_storage_state.json"))
@@ -143,8 +145,8 @@ def looks_like_description(value: str) -> bool:
 
 
 def normalized_upload_metadata(video_path: Path, title: str, description: str) -> tuple[str, str]:
-    clean_title = re.sub(r"\s+", " ", title).strip()[:100]
-    clean_description = description.strip()[:5000]
+    clean_title = repair_islamic_asr_text(re.sub(r"\s+", " ", title).strip())[:100]
+    clean_description = repair_islamic_asr_text(description.strip())[:5000]
     if looks_like_description(clean_title):
         if not clean_description:
             clean_description = title.strip()[:5000]
@@ -154,6 +156,13 @@ def normalized_upload_metadata(video_path: Path, title: str, description: str) -
         clean_title = sidecar_title(video_path) or filename_title(video_path)
     if not clean_description:
         clean_description = sidecar_caption(video_path)
+    clean_description = repair_islamic_asr_text(clean_description)
+    clean_description = re.sub(
+        r"@ryuundyofficial\b",
+        "@ryuundys",
+        clean_description,
+        flags=re.I,
+    )
     normalized_title = (
         youtube_long_form_title(clean_title)
         if video_path.name.startswith(("highlight_5menit_", "resume_cerita_", "long_animate_"))
@@ -193,11 +202,12 @@ def youtube_long_form_title(value: str) -> str:
 
 def youtube_shorts_title(value: str) -> str:
     clean = re.sub(r"\s+", " ", value).strip()
-    clean = re.sub(r"\s+#shorts\b", "", clean, flags=re.I).strip()
-    suffix = " #Shorts"
+    clean = re.sub(r"(?:\s*#(?:islam|shorts)\b)+", " ", clean, flags=re.I)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    suffix = " #Islam #Shorts"
     if len(clean) + len(suffix) > 100:
         clean = clean[: 100 - len(suffix)].rsplit(" ", 1)[0].rstrip() or clean[: 100 - len(suffix)].rstrip()
-    return f"{clean}{suffix}"[:100] if clean else "Clip #Shorts"
+    return f"{clean}{suffix}"[:100] if clean else "Clip #Islam #Shorts"
 
 
 def import_playwright():

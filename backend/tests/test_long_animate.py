@@ -598,6 +598,31 @@ def test_islamic_tts_expands_allah_and_muhamad_honorifics(monkeypatch):
     assert original.startswith("ALLAH SWT")
 
 
+def test_islamic_tts_repairs_tablig_and_common_pronunciations(monkeypatch):
+    original = (
+        "Jamaat Tablek belajar fiqih, aqidah, akhlaq, hadist, sholawat, "
+        "lalu shalat Ashar setelah adzan Dzuhur."
+    )
+    monkeypatch.setenv("LONG_ANIMATE_TTS_PROFILE", "islamic_indonesian")
+
+    spoken = long_animate._tts_pronunciation_text(original)
+
+    assert spoken == (
+        "Jamaah Tablig belajar fikih, akidah, akhlak, hadis, salawat, "
+        "lalu salat asar setelah azan zuhur."
+    )
+    assert "Tablek" in original
+
+
+def test_storyboard_repairs_islamic_asr_terms_in_subtitles():
+    storyboard = _fallback_storyboard(
+        "Narator menjelaskan bahwa Jamaat Tablek berdakwah dengan tertib."
+    )
+
+    assert "Jamaah Tablig" in storyboard.scenes[0].narration
+    assert "Tablek" not in storyboard.scenes[0].narration
+
+
 def test_long_animate_tts_honors_explicit_indonesian_prosody(monkeypatch, tmp_path):
     scene = _fallback_storyboard(SCRIPT).scenes[0]
     scene.narration = "Bacalah Al-Qur'an bersama ustadz dan perbaiki makhraj setelah wudhu."

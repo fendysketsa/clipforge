@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from yt_dlp import YoutubeDL
 
 from llm import AIConfig, chat_completion, extract_json
+from islamic_text import repair_islamic_asr_text
 from source_rights import (
     is_trusted_source_channel,
     source_rights_review_reasons,
@@ -2090,7 +2091,12 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
     for item in payload:
         upload = YouTubeUploadJob(**item)
         repaired_title = repair_known_public_typos(upload.title)
-        repaired_description = repair_known_public_typos(upload.description)
+        repaired_description = re.sub(
+            r"@ryuundyofficial\b",
+            "@ryuundys",
+            repair_known_public_typos(upload.description),
+            flags=re.IGNORECASE,
+        )
         if repaired_title != upload.title or repaired_description != upload.description:
             upload = upload.model_copy(
                 update={
@@ -2261,6 +2267,14 @@ def load_tiktok_uploads() -> dict[str, TikTokUploadJob]:
             upload = TikTokUploadJob(**item)
         except Exception:
             continue
+        repaired_caption = re.sub(
+            r"@ryuundyofficial\b",
+            "@ryuundys",
+            repair_islamic_asr_text(upload.caption),
+            flags=re.IGNORECASE,
+        )
+        if repaired_caption != upload.caption:
+            upload = upload.model_copy(update={"caption": repaired_caption})
         if upload.status == "running":
             finished_at = now_iso()
             upload = upload.model_copy(
@@ -2399,7 +2413,7 @@ def repair_known_public_typos(value: str) -> str:
             return replacement
 
         clean = re.sub(pattern, case_aware_replacement, clean, flags=re.IGNORECASE)
-    return clean
+    return repair_islamic_asr_text(clean)
 
 
 def clip_sidecar_title(clip: ClipFile) -> str | None:
@@ -3632,6 +3646,11 @@ def strip_description_icons(value: str) -> str:
     return re.sub(r"(?m)^[ \t]+|[ \t]+$", "", clean).strip()
 
 
+def normalize_public_channel_handle(value: str) -> str:
+    """Replace the retired public handle in generated or legacy upload copy."""
+    return re.sub(r"@ryuundyofficial\b", "@ryuundys", value, flags=re.I)
+
+
 def default_youtube_title(job: ClipJob, clip: ClipFile, index: int) -> str:
     title = clip_sidecar_title(clip) or clip.title or job.source_title or f"Clip {index}"
     clean = re.sub(r"\s+", " ", title).strip()
@@ -3648,12 +3667,13 @@ def youtube_long_form_title(value: str) -> str:
 
 def youtube_shorts_title(value: str) -> str:
     clean = re.sub(r"\s+", " ", value).strip()
-    clean = re.sub(r"\s+#shorts\b", "", clean, flags=re.I).strip()
-    suffix = " #Shorts"
+    clean = re.sub(r"(?:\s*#(?:islam|shorts)\b)+", " ", clean, flags=re.I)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    suffix = " #Islam #Shorts"
     max_length = 78
     if len(clean) + len(suffix) > max_length:
         clean = clean[: max_length - len(suffix)].rsplit(" ", 1)[0].rstrip() or clean[: max_length - len(suffix)].rstrip()
-    return f"{clean}{suffix}"[:max_length] if clean else "Clip #Shorts"
+    return f"{clean}{suffix}"[:max_length] if clean else "Clip #Islam #Shorts"
 
 
 def youtube_description_highlights(context: str, *, is_compilation: bool) -> list[str]:
@@ -3854,7 +3874,7 @@ def complete_youtube_description(
     )
     if display_tags:
         sections.append(" ".join(f"#{tag}" for tag in display_tags))
-    return "\n\n".join(sections)[:5000]
+    return normalize_public_channel_handle("\n\n".join(sections))[:5000]
 
 
 def default_youtube_description(job: ClipJob, clip: ClipFile) -> str:
@@ -3957,13 +3977,13 @@ def youtube_source_attribution(job: ClipJob) -> str:
         f"Kreator: {creator[:120]}\n"
         f"Sumber: {source_url[:500]}\n"
         f"Lisensi: {license_name[:120]}\n"
-        "Diolah secara editorial oleh @ryuundyofficial."
+        "Diolah secara editorial oleh @ryuundys."
     )
 
 
 def append_youtube_source_attribution(description: str, job: ClipJob) -> str:
     attribution = youtube_source_attribution(job)
-    clean = description.strip()
+    clean = normalize_public_channel_handle(description.strip())
     if not attribution or attribution in clean:
         return clean[:5000]
     available = max(0, 5000 - len(attribution) - 2)
@@ -5101,7 +5121,8 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
         f"Buat metadata {format_name} untuk video ini.\n"
         "Aturan:\n"
         "- Pahami konteks transkrip klip ini saja; jangan memakai metadata video sumber.\n"
-        "- Title baru harus kuat, natural, 35-68 karakter, maksimal 70 karakter, tanpa hashtag agar terbaca utuh di ponsel.\n"
+        "- Title baru harus kuat, natural, 35-68 karakter, maksimal 70 karakter, tanpa hashtag agar terbaca utuh di ponsel; "
+        "aplikasi akan menambahkan #Islam #Shorts secara otomatis untuk Shorts.\n"
         "- Title harus menyebut objek/topik yang tepat dari transkrip. Jangan mencampur uang takziah, harta waris, "
         "sedekah, atau objek terkait lain seolah semuanya sama.\n"
         "- Jangan memakai ekor generik seperti 'Penjelasan Lengkap', 'Begini Aturannya', 'Wajib Tahu', "

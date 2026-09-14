@@ -24,6 +24,7 @@ from slugify import slugify
 from yt_dlp import YoutubeDL
 
 from llm import AIConfig, chat_completion, extract_json, is_llm_unavailable_error
+from islamic_text import islamic_indonesian_tts_text, repair_islamic_asr_text
 from source_rights import (
     is_trusted_source_channel,
     source_rights_review_reasons,
@@ -4288,7 +4289,7 @@ def clean_transcript_text(text: str) -> str:
             return replacement
 
         cleaned = re.sub(pattern, case_aware_replacement, cleaned, flags=re.IGNORECASE)
-    return cleaned.strip()
+    return repair_islamic_asr_text(cleaned).strip()
 
 
 _SUSPICIOUS_PUBLIC_WORD_RE = re.compile(
@@ -4843,12 +4844,21 @@ def transcription_decode_options(language: str) -> dict:
         "initial_prompt": (
             "Transkripsi percakapan bahasa Indonesia. Pertahankan nama orang, istilah asing, "
             "angka, dan istilah agama sesuai ucapan. Gunakan ejaan serta tanda baca baku; "
-            "jangan menambah kata yang tidak diucapkan."
+            "jangan menambah kata yang tidak diucapkan. Istilah Islam yang mungkin muncul: "
+            "jamaah, tablig, dakwah, Al-Qur'an, hadis, fikih, akidah, akhlak, ustaz, salat, "
+            "wudu, zikir, syariah, Rasulullah, dan Muhammad."
         ),
     }
-    hotwords = os.environ.get("FENDY_CLIPPER_TRANSCRIPTION_HOTWORDS", "").strip()
-    if hotwords:
-        options["hotwords"] = hotwords
+    islamic_hotwords = (
+        "Jamaah Tablig, dakwah, Al-Qur'an, hadis, fikih, akidah, akhlak, ustaz, "
+        "salat, wudu, zikir, syariah, Rasulullah, Muhammad"
+    )
+    configured_hotwords = os.environ.get(
+        "FENDY_CLIPPER_TRANSCRIPTION_HOTWORDS", ""
+    ).strip()
+    options["hotwords"] = ", ".join(
+        item for item in (islamic_hotwords, configured_hotwords) if item
+    )
     return options
 
 
@@ -8593,6 +8603,7 @@ def generate_shorts_cta_voiceover(
     if requested_provider not in {"auto", "edge", "espeak"}:
         requested_provider = "auto"
     text = re.sub(r"\s+", " ", text).strip()[:120] or shorts_cta_voiceover_text()
+    spoken_text = islamic_indonesian_tts_text(text)
     voice = os.environ.get("CTA_VOICEOVER_VOICE", "id-ID-ArdiNeural").strip()
     if not re.fullmatch(r"[A-Za-z0-9-]{2,64}", voice):
         voice = "id-ID-ArdiNeural"
@@ -8614,7 +8625,7 @@ def generate_shorts_cta_voiceover(
                     "--rate",
                     rate,
                     "--text",
-                    text,
+                    spoken_text,
                     "--write-media",
                     str(neural_path.resolve()),
                 ],
@@ -8661,7 +8672,7 @@ def generate_shorts_cta_voiceover(
                     "165",
                     "-w",
                     str(local_path.resolve()),
-                    text,
+                    spoken_text,
                 ],
                 cwd=clips_dir,
                 stdout=subprocess.DEVNULL,

@@ -1112,7 +1112,7 @@ def test_normalized_upload_metadata_recovers_when_title_is_description(tmp_path)
         "",
     )
 
-    assert title == "Tuh Sekarang Kalau Bapak Ya #Shorts"
+    assert title == "Tuh Sekarang Kalau Bapak Ya #Islam #Shorts"
     assert description.startswith("Sumber: https://www.youtube.com/watch?v=demo")
 
 
@@ -1123,11 +1123,11 @@ def test_normalized_upload_metadata_uses_filename_when_sidecar_missing(tmp_path)
     title, description = normalized_upload_metadata(
         video,
         "Sumber: https://www.youtube.com/watch?v=demo #islam #shorts #ryuundy",
-        "Deskripsi benar",
+        "Deskripsi benar dari @ryuundyofficial",
     )
 
-    assert title == "Ini Judul Dari File #Shorts"
-    assert description == "Deskripsi benar"
+    assert title == "Ini Judul Dari File #Islam #Shorts"
+    assert description == "Deskripsi benar dari @ryuundys"
 
 
 def test_studio_start_url_uses_channel_dashboard():
@@ -2320,7 +2320,7 @@ def test_complete_short_description_is_concise_contextual_and_has_short_tag():
     description = complete_youtube_description(
         job,
         clip,
-        "Pembahasan tentang cara menjaga hati dalam kehidupan sehari-hari.",
+        "Pembahasan dari @ryuundyofficial tentang cara menjaga hati dalam kehidupan sehari-hari.",
         ["Islam", "Hikmah"],
     )
 
@@ -2331,6 +2331,8 @@ def test_complete_short_description_is_concise_contextual_and_has_short_tag():
         for phrase in ("Simpan video ini", "Bagikan pembahasan ini", "Ikuti channel ini")
     ) == 1
     assert "YouTube · @ryuundyofficial" not in description
+    assert "@ryuundys" in description
+    assert "@ryuundyofficial" not in description
     assert "#Islam #Hikmah #Shorts" in description
 
 
@@ -2907,7 +2909,7 @@ def test_verified_cc_source_gets_required_attribution(monkeypatch):
     assert "Atribusi sumber (CC BY)" in value
     assert "Kreator: Kreator Asli" in value
     assert "Sumber: https://youtu.be/source" in value
-    assert "Diolah secara editorial oleh @ryuundyofficial" in value
+    assert "Diolah secara editorial oleh @ryuundys" in value
 
 
 def test_monetization_preflight_requires_rights_and_substantive_edit(monkeypatch):
@@ -3707,7 +3709,7 @@ def test_generate_youtube_description_uses_llm(monkeypatch):
     )
 
     assert generate_youtube_metadata(job, clip, ["islam", "shorts"]) == {
-        "title": "Nasihat Singkat Tentang Asef #Shorts",
+        "title": "Nasihat Singkat Tentang Asef #Islam #Shorts",
         "description": (
             "Nasihat penting dengan konteks yang mudah dipahami.\n\n"
             "Simak poin utamanya agar pesan yang disampaikan dapat diterapkan dengan tepat."
@@ -3744,7 +3746,7 @@ def test_generate_youtube_metadata_accepts_indonesian_ollama_keys(monkeypatch):
     )
 
     assert generate_youtube_metadata(job, clip, ["islam", "shorts"]) == {
-        "title": "Pelajaran Rezeki Hari Ini #Shorts",
+        "title": "Pelajaran Rezeki Hari Ini #Islam #Shorts",
         "description": (
             "Renungan ini membahas makna rezeki dan pentingnya rasa syukur dalam kehidupan.\n\n"
             "Pesannya mengajak kita melihat nikmat dengan hati yang lebih jernih."
@@ -3779,7 +3781,7 @@ def test_generate_youtube_metadata_falls_back_when_primary_model_fails(monkeypat
     monkeypatch.setattr(api, "chat_completion", fake_chat_completion)
 
     assert generate_youtube_metadata(job, clip, ["islam"]) == {
-        "title": "Nasihat Baru yang Layak Diperhatikan #Shorts",
+        "title": "Nasihat Baru yang Layak Diperhatikan #Islam #Shorts",
         "description": (
             "Model fallback menjelaskan inti nasihat secara segar berdasarkan konteks klip.\n\n"
             "Deskripsi ini tetap ringkas, informatif, dan tidak mengambil metadata lama."
@@ -3994,7 +3996,7 @@ def test_normalized_generated_metadata_accepts_nested_ollama_payload():
     }
 
     assert normalized_generated_metadata(payload, is_compilation=False) == {
-        "title": "Sabar Saat Ujian Mengubah Cara Kita Melihat Hidup #Shorts",
+        "title": "Sabar Saat Ujian Mengubah Cara Kita Melihat Hidup #Islam #Shorts",
         "description": (
             "Bagaimana kesabaran menjaga hati ketika ujian datang.\n\n"
             "Pesannya mengajak penonton memahami hikmah tanpa mengabaikan proses yang berat."
@@ -4002,6 +4004,22 @@ def test_normalized_generated_metadata_accepts_nested_ollama_payload():
         ),
         "hashtags": ["Sabar", "UjianHidup", "HikmahIslam", "Shorts"],
     }
+
+
+def test_normalized_generated_metadata_deduplicates_required_title_hashtags():
+    payload = {
+        "title": "Jamaat Tablek dan Makna Sabar #shorts #ISLAM",
+        "description": (
+            "Kesabaran membantu menjaga hati ketika ujian datang dalam kehidupan. "
+            "Pesan ini mengajak kita memahami proses tanpa mengabaikan beratnya keadaan."
+        ),
+        "hashtags": ["#Sabar", "#UjianHidup", "#Islam", "#Shorts"],
+    }
+
+    result = normalized_generated_metadata(payload, is_compilation=False)
+
+    assert result is not None
+    assert result["title"] == "Jamaah Tablig dan Makna Sabar #Islam #Shorts"
 
 
 def test_normalized_metadata_removes_generic_title_tail_and_english_leak():
@@ -4020,7 +4038,7 @@ def test_normalized_metadata_removes_generic_title_tail_and_english_leak():
     result = normalized_generated_metadata(payload, is_compilation=False)
 
     assert result is not None
-    assert result["title"] == "Harta Waris Belum Dibagi, Bolehkah Disedekahkan? #Shorts"
+    assert result["title"] == "Harta Waris Belum Dibagi, Bolehkah Disedekahkan? #Islam #Shorts"
     assert len(str(result["title"])) <= 78
     assert "restriction" not in str(result["description"])
     assert "tanpa batasan" in str(result["description"])

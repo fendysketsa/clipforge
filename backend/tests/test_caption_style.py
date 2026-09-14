@@ -2703,7 +2703,8 @@ def test_accuracy_first_transcription_decode_uses_beam_search_and_word_timestamp
     assert options["best_of"] == 5
     assert options["word_timestamps"] is True
     assert options["condition_on_previous_text"] is True
-    assert options["hotwords"] == "Ustaz Abdul Somad, Al-Qur'an"
+    assert "Jamaah Tablig" in options["hotwords"]
+    assert "Ustaz Abdul Somad, Al-Qur'an" in options["hotwords"]
 
 
 def test_smart_transcript_segments_use_word_timestamps_and_sentence_boundaries():
@@ -3314,6 +3315,9 @@ def test_confirmed_asr_typo_is_repaired_before_public_copy():
     assert clean_transcript_text(
         "Jangan kesanah ke mari, pentingnya dapat di mengertos Bahasa Sunda."
     ) == "Jangan ke sana ke mari, pentingnya dapat memahami Bahasa Sunda."
+    assert clean_transcript_text(
+        "Jamaat Tablek menyampaikan dakwah."
+    ) == "Jamaah Tablig menyampaikan dakwah."
 
 
 def test_social_description_removes_icons_from_ai_summary():
