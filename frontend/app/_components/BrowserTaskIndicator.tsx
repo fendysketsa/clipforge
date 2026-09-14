@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { AutoViralRun, ClipJob } from "../../types/clip.type";
 
 type BrowserTaskIndicatorProps = {
@@ -11,6 +11,8 @@ type BrowserTaskIndicatorProps = {
 
 const DEFAULT_TITLE = "Fendy Clipper";
 const DEFAULT_ICON = "/favicon.svg";
+const FRAME_DURATION_MS = 240;
+const BACKGROUND_UPDATE_MS = 1_000;
 
 const stageLabels: Record<string, string> = {
   queued: "Menunggu antrean",
@@ -46,6 +48,8 @@ const spinnerIcon = (angle: number) => {
     </svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 };
+
+const spinnerFrames = Array.from({ length: 12 }, (_, frame) => spinnerIcon(frame * 30));
 
 export function BrowserTaskIndicator({
   job,
@@ -83,7 +87,24 @@ export function BrowserTaskIndicator({
     }
 
     return { active: false, percent: 0, stage: "", detail: "" };
-  }, [autoViralRun, isSearchingSources, job]);
+  }, [
+    autoViralRun?.id,
+    autoViralRun?.message,
+    autoViralRun?.progress_percent,
+    autoViralRun?.progress_stage,
+    autoViralRun?.status,
+    isSearchingSources,
+    job?.id,
+    job?.progress_detail,
+    job?.progress_percent,
+    job?.progress_stage,
+    job?.source_title,
+    job?.status,
+  ]);
+
+  const activityRef = useRef(activity);
+  const updateIndicatorRef = useRef<(() => void) | null>(null);
+  activityRef.current = activity;
 
   useEffect(() => {
     let icon = document.querySelector<HTMLLinkElement>('link[rel~="icon"]');
@@ -99,32 +120,59 @@ export function BrowserTaskIndicator({
       return;
     }
 
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const normalizedDetail = activity.detail.replace(/\s+/g, " ").trim().slice(0, 100);
-    const ticker = `${activity.stage}${normalizedDetail ? ` • ${normalizedDetail}` : ""} • Fendy Clipper • `;
-    let offset = 0;
-    let frame = 0;
+    const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const startedAt = Date.now();
+    let interval: number | undefined;
 
     const update = () => {
+      const current = activityRef.current;
+      if (!current.active) return;
+
+      const reducedMotion = motionPreference.matches;
+      const elapsedFrames = reducedMotion
+        ? 0
+        : Math.floor((Date.now() - startedAt) / FRAME_DURATION_MS);
+      const normalizedDetail = current.detail.replace(/\s+/g, " ").trim().slice(0, 100);
+      const ticker = `${current.stage}${normalizedDetail ? ` • ${normalizedDetail}` : ""} • Fendy Clipper • `;
+      const offset = ticker.length ? elapsedFrames % ticker.length : 0;
       const movingText = reducedMotion
         ? ticker
         : `${ticker.slice(offset)}${ticker.slice(0, offset)}`;
-      document.title = `[${activity.percent}%] ${movingText}`;
-      icon.href = spinnerIcon(reducedMotion ? 0 : frame * 30);
-      if (!reducedMotion) {
-        offset = (offset + 1) % ticker.length;
-        frame = (frame + 1) % 12;
-      }
+      document.title = `[${current.percent}%] ${movingText}`;
+      icon.href = spinnerFrames[elapsedFrames % spinnerFrames.length];
     };
 
-    update();
-    const interval = reducedMotion ? undefined : window.setInterval(update, 240);
+    const schedule = () => {
+      if (interval !== undefined) window.clearInterval(interval);
+      update();
+      interval = motionPreference.matches
+        ? undefined
+        : window.setInterval(
+          update,
+          document.hidden ? BACKGROUND_UPDATE_MS : FRAME_DURATION_MS,
+        );
+    };
+
+    updateIndicatorRef.current = update;
+    schedule();
+    document.addEventListener("visibilitychange", schedule);
+    window.addEventListener("pageshow", schedule);
+    motionPreference.addEventListener("change", schedule);
+
     return () => {
       if (interval !== undefined) window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", schedule);
+      window.removeEventListener("pageshow", schedule);
+      motionPreference.removeEventListener("change", schedule);
+      updateIndicatorRef.current = null;
       document.title = DEFAULT_TITLE;
       icon.href = DEFAULT_ICON;
     };
-  }, [activity]);
+  }, [activity.active]);
+
+  useEffect(() => {
+    updateIndicatorRef.current?.();
+  }, [activity.detail, activity.percent, activity.stage]);
 
   return null;
 }
