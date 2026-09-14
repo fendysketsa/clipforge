@@ -9737,6 +9737,7 @@ body::after {
 
 .telemetryWave {
   position: relative;
+  flex: 1 1 76px;
   min-height: 76px;
   overflow: hidden;
   background:
@@ -10032,6 +10033,17 @@ body::after {
   50% { opacity: 1; }
 }
 
+@keyframes telemetryBeatArrival {
+  0% { opacity: 0; transform: translateX(-8px) scaleY(0.45); }
+  35% { opacity: 1; transform: translateX(-1px) scaleY(1.12); }
+  100% { opacity: 0.72; transform: translateX(-1px) scaleY(1); }
+}
+
+@keyframes clipJourneyPulse {
+  0%, 100% { transform: scale(0.9); }
+  45% { transform: scale(1.08); }
+}
+
 @keyframes terminalCaret {
   50% { opacity: 0; }
 }
@@ -10168,6 +10180,7 @@ body::after {
 }
 
 .signalLegend .is-job { color: var(--telemetry-accent); }
+.signalLegend .is-pulse { color: #fbbf24; }
 .signalLegend .is-server { color: #38bdf8; }
 .signalLegend .is-gpu { color: #c084fc; }
 .signalLegend .is-gpu.is-unattributed {
@@ -10203,9 +10216,222 @@ body::after {
 }
 
 .telemetryWaveLive {
+  opacity: 0.48;
   stroke-dasharray: none;
   animation: none;
   transition: d 0.7s ease;
+}
+
+.telemetryWavePulse {
+  fill: none;
+  stroke: #fbbf24;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.82));
+  transition: d 0.35s linear;
+}
+
+.telemetryBeatCursor {
+  position: absolute;
+  top: 10px;
+  width: 2px;
+  height: 50px;
+  background: linear-gradient(transparent, #fbbf24 35%, #fff7c2 52%, #fbbf24 68%, transparent);
+  box-shadow: 0 0 11px rgba(251, 191, 36, 0.72);
+  transform: translateX(-1px);
+  animation: telemetryBeatArrival 520ms ease-out both;
+  pointer-events: none;
+}
+
+.telemetryBeatCursor::after {
+  position: absolute;
+  top: 48px;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  border: 1px solid #fef3c7;
+  border-radius: 50%;
+  content: "";
+  background: #fbbf24;
+  box-shadow: 0 0 9px #fbbf24;
+  transform: translate(-50%, -50%);
+}
+
+.signalModule {
+  display: flex;
+  flex-direction: column;
+}
+
+.clipJourney {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin: 7px 0 4px;
+  padding: 5px 7px;
+  border: 1px solid rgba(var(--telemetry-accent-rgb), 0.1);
+  border-radius: 6px;
+  background: rgba(0, 8, 10, 0.52);
+}
+
+.clipJourneyLabel {
+  display: grid;
+  gap: 2px;
+  min-width: 108px;
+}
+
+.clipJourneyLabel span {
+  color: #7fa69f;
+  font: 800 6.3px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.09em;
+}
+
+.clipJourneyLabel small {
+  color: #385f59;
+  font: 5.4px/1.2 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.clipJourneyTrack {
+  display: flex;
+  min-width: 0;
+  gap: 5px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--telemetry-accent-rgb), 0.22) transparent;
+}
+
+.clipJourneyNode {
+  position: relative;
+  display: grid;
+  flex: 1 0 82px;
+  min-width: 82px;
+  max-width: 150px;
+  grid-template-columns: 19px minmax(0, 1fr);
+  align-items: center;
+  gap: 0 5px;
+  padding: 4px 6px;
+  overflow: hidden;
+  border: 1px solid rgba(100, 132, 126, 0.1);
+  border-radius: 5px;
+  color: #456a64;
+  background: rgba(7, 20, 21, 0.68);
+}
+
+.clipJourneyNode::after {
+  position: absolute;
+  right: -8px;
+  bottom: -9px;
+  width: 27px;
+  height: 18px;
+  border-top: 1px solid rgba(100, 132, 126, 0.12);
+  content: "";
+  transform: rotate(-36deg);
+}
+
+.clipJourneyNode > i {
+  display: grid;
+  width: 19px;
+  height: 19px;
+  grid-row: 1 / 3;
+  place-items: center;
+  border: 1px solid rgba(100, 132, 126, 0.18);
+  border-radius: 50%;
+  font: normal 700 5.8px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.clipJourneyNode > span,
+.clipJourneyNode > b {
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clipJourneyNode > span {
+  color: #76958f;
+  font-size: 6px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+}
+
+.clipJourneyNode > b {
+  color: #3f625d;
+  font-size: 5.3px;
+  font-weight: 650;
+}
+
+.clipJourneyNode.is-complete {
+  border-color: rgba(74, 222, 128, 0.18);
+}
+
+.clipJourneyNode.is-complete > i,
+.clipJourneyNode.is-complete > b {
+  color: #4ade80;
+}
+
+.clipJourneyNode.is-active {
+  flex-basis: 170px;
+  max-width: 220px;
+  border-color: rgba(251, 191, 36, 0.42);
+  background: linear-gradient(90deg, rgba(251, 191, 36, 0.1), rgba(var(--telemetry-accent-rgb), 0.035));
+  box-shadow: inset 0 0 12px rgba(251, 191, 36, 0.04), 0 0 9px rgba(251, 191, 36, 0.05);
+}
+
+.clipJourneyNode.is-active > i {
+  border-color: rgba(251, 191, 36, 0.5);
+  color: #fbbf24;
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.18);
+  animation: clipJourneyPulse var(--telemetry-speed) ease-in-out infinite;
+}
+
+.clipJourneyNode.is-active > span { color: #fef3c7; }
+.clipJourneyNode.is-active > b { color: #d6aa43; }
+
+.clipTaskTrail {
+  display: flex;
+  min-width: 0;
+  min-height: 17px;
+  align-items: center;
+  gap: 4px;
+  padding-top: 3px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.clipTaskTrail span {
+  display: inline-flex;
+  flex: 0 0 auto;
+  max-width: 220px;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  color: #496c66;
+  font: 650 5.6px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clipTaskTrail span:not(:last-child)::after {
+  margin-left: 3px;
+  color: #31534e;
+  content: "›";
+}
+
+.clipTaskTrail i {
+  width: 4px;
+  height: 4px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #31534e;
+}
+
+.clipTaskTrail .is-done i { background: #4ade80; }
+.clipTaskTrail .is-current { color: #e4bd5c; }
+.clipTaskTrail .is-current i {
+  background: #fbbf24;
+  box-shadow: 0 0 7px #fbbf24;
 }
 
 .telemetryAxis {
@@ -10393,6 +10619,16 @@ body::after {
   .signalLegend,
   .signalMetrics {
     grid-column: 1;
+  }
+
+  .clipJourney {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .clipJourneyLabel {
+    grid-template-columns: auto 1fr;
+    align-items: baseline;
   }
 }
 
@@ -10761,9 +10997,11 @@ body::after {
 .statusPanel--eco .radarPing,
 .statusPanel--eco .radarCore::after,
 .statusPanel--eco .telemetryScanner,
+.statusPanel--eco .telemetryBeatCursor,
 .statusPanel--eco .telemetryOnline i,
 .statusPanel--eco .terminalRecording i,
 .statusPanel--eco .pipelineRoute li.is-current .routeNode,
+.statusPanel--eco .clipJourneyNode.is-active > i,
 .statusPanel--eco .pipelineRouteMeter > span,
 .statusPanel--eco .pipelineRouteMeter .workflowSparkEmitter::before,
 .statusPanel--eco .pipelineRouteMeter .workflowSparkEmitter::after,
@@ -10771,6 +11009,11 @@ body::after {
 .statusPanel--eco .telemetryAlertPanel::after,
 .statusPanel--eco .terminalLine--pending p::after {
   animation-play-state: paused;
+}
+
+.statusPanel--eco .telemetryBeatCursor {
+  opacity: 0.72;
+  animation: none;
 }
 
 @keyframes routeNodePulse {
@@ -10787,6 +11030,13 @@ body::after {
 @keyframes criticalAlertBlink {
   0%, 100% { background: rgba(2, 13, 14, 0.72); }
   50% { background: rgba(127, 29, 29, 0.17); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .telemetryBeatCursor,
+  .clipJourneyNode.is-active > i {
+    animation: none;
+  }
 }
 
 @media (max-width: 920px) {

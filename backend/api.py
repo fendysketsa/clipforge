@@ -503,6 +503,7 @@ class JobTelemetryPoint(BaseModel):
     sequence: int = 0
     sampled_at: str
     stage: str = "unknown"
+    operation: str = ""
     clip_index: int | None = None
     clip_total: int | None = None
     job_cpu_percent: float = 0
@@ -9488,6 +9489,9 @@ def monitor_job_telemetry(
             with jobs_lock:
                 current_job = jobs.get(job_id)
                 current_stage = current_job.progress_stage if current_job is not None else None
+                current_operation = (
+                    current_job.progress_detail if current_job is not None else None
+                )
                 current_clip_index = (
                     current_job.progress_clip_index if current_job is not None else None
                 )
@@ -9498,6 +9502,7 @@ def monitor_job_telemetry(
                 **sampler.sample(
                     active=True,
                     stage=current_stage,
+                    operation=current_operation,
                     clip_index=current_clip_index,
                     clip_total=current_clip_total,
                 )

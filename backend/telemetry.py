@@ -472,6 +472,7 @@ class ProcessTelemetrySampler:
         *,
         active: bool = True,
         stage: str | None = None,
+        operation: str | None = None,
         clip_index: int | None = None,
         clip_total: int | None = None,
     ) -> dict[str, Any]:
@@ -639,6 +640,7 @@ class ProcessTelemetrySampler:
             "sequence": self.sequence,
             "sampled_at": sampled_at,
             "stage": str(stage or "unknown").strip().casefold() or "unknown",
+            "operation": re.sub(r"\s+", " ", str(operation or "")).strip()[:180],
             "clip_index": clip_index,
             "clip_total": clip_total,
             "job_cpu_percent": round(normalized_cpu_percent, 1),

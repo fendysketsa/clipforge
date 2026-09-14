@@ -102,6 +102,7 @@ export type JobTelemetryPoint = {
   sequence: number;
   sampled_at: string;
   stage: string;
+  operation?: string;
   clip_index: number | null;
   clip_total: number | null;
   job_cpu_percent: number;

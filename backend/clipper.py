@@ -11631,6 +11631,8 @@ def export_clip(
     split_companion_clips: list[ClipCandidate] | None = None,
     multi_person_companion_clip: ClipCandidate | None = None,
     source_transcript: list[TranscriptSegment] | None = None,
+    progress_unit_number: int | None = None,
+    progress_unit_count: int | None = None,
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     base_name = base_name_override or f"clip_{clip.index:02}_{slugify(clip.title)[:72] or 'auto'}"
@@ -11650,6 +11652,25 @@ def export_clip(
     clean_background_path = clips_dir / f"{base_name}.background_tmp.mp4"
     watermark_preview_path = clips_dir / f"{base_name}.watermark_preview_tmp.mp4"
     json_path.unlink(missing_ok=True)
+
+    progress_number = max(1, int(progress_unit_number or compilation_part_number or 1))
+    progress_count = max(progress_number, int(progress_unit_count or compilation_part_count or 1))
+    progress_span_start = 68 if output_format == "vertical_short" else 70
+    progress_span_size = 25 if output_format == "vertical_short" else 20
+    progress_unit_label = "klip pendek" if output_format == "vertical_short" else "bagian cerita"
+
+    def emit_render_task(fraction: float, task: str) -> None:
+        """Expose real per-clip work so telemetry can segment resource samples."""
+        bounded_fraction = max(0.0, min(0.99, fraction))
+        overall_fraction = (progress_number - 1 + bounded_fraction) / progress_count
+        percent = progress_span_start + round(overall_fraction * progress_span_size)
+        emit_progress(
+            percent,
+            "render",
+            f"{task} · {progress_unit_label} {progress_number} dari {progress_count}",
+        )
+
+    emit_render_task(0.03, "Menyusun treatment edit dan aset kontekstual")
 
     duration = clip.end - clip.start
     active_split_companions = list(split_companion_clips or [])
@@ -12936,6 +12957,14 @@ def export_clip(
     quality = quality_preset(video_quality)
 
     try:
+        visual_task = (
+            "Encoding visual multi-angle, motion, dan subtitle"
+            if multi_clip_split
+            else "Encoding visual, motion, dan subtitle"
+            if burn_subtitles and clip_segments
+            else "Encoding visual dan motion"
+        )
+        emit_render_task(0.38, visual_task)
         video_filter_args = (
             ["-filter_complex", f"{vf}[video_out]", "-map", "[video_out]"]
             if multi_clip_split
@@ -13012,6 +13041,12 @@ def export_clip(
         "pcm_s16le",
         str(temp_audio_path.name),
     ]
+    emit_render_task(
+        0.69,
+        "Mix dialog, backsound, dan audio cue"
+        if sound_effect_cues or has_background_music
+        else "Normalisasi dan encoding audio dialog",
+    )
     if sound_effect_cues or has_background_music:
         try:
             local_music_input = (
@@ -13159,6 +13194,7 @@ def export_clip(
                 else "cta_card_unavailable"
             ),
         }
+    emit_render_task(0.84, "Mux audio-video dan optimasi fast-start")
     run(
         [
             ffmpeg_path(),
@@ -13211,6 +13247,7 @@ def export_clip(
         cta_voice_path.unlink(missing_ok=True)
     if enforce_size:
         enforce_clip_size_limit(out_path, duration)
+    emit_render_task(0.94, "Audit resolusi, provenance, dan integritas output")
     if generate_assets:
         embed_fendy_provenance_metadata(out_path, clip.title, auditor_identity)
     output_width, output_height = ensure_minimum_hd_output(out_path)
@@ -13373,6 +13410,8 @@ def export_compilation(
                 compilation_part_number=idx,
                 compilation_part_count=len(candidates),
                 compilation_narrative_role=narrative_role,
+                progress_unit_number=idx,
+                progress_unit_count=total_parts,
             )
             part_paths.append(part_path)
             part_done = 70 + round((idx / max(1, total_parts)) * 20)
@@ -15422,6 +15461,8 @@ def main() -> int:
                         multi_person_companion_map.get(candidate.index) or [None]
                     )[0],
                     source_transcript=transcript,
+                    progress_unit_number=export_index,
+                    progress_unit_count=total_candidates,
                 )
             )
             render_done = 68 + round((export_index / max(1, total_candidates)) * 25)

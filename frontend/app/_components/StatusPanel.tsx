@@ -131,14 +131,16 @@ function historyPath(
   const values = history.slice(-maxPoints).map(pick);
   if (!values.length) return "";
 
-  const xStep = values.length > 1 ? (width - plotInset * 2) / (values.length - 1) : 0;
+  // One horizontal cell is one real one-second sample. A fresh clip starts at
+  // the left instead of stretching two samples across the whole chart.
+  const xStep = (width - plotInset * 2) / (maxPoints - 1);
   let drawing = false;
   const commands = values.flatMap((value, index) => {
     if (value === null) {
       drawing = false;
       return [];
     }
-    const x = values.length > 1 ? plotInset + index * xStep : width / 2;
+    const x = plotInset + index * xStep;
     const y = height - 8 - clampPercent(value) * 0.7;
     const command = `${drawing ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
     drawing = true;
@@ -160,6 +162,48 @@ function historyPath(
     }
   }
   return commands.join(" ");
+}
+
+function pointWorkload(point: JobTelemetryPoint, gpuAttributed: boolean): number {
+  const ioLoad = Math.min(100, (point.read_mb_s + point.write_mb_s) * 2.5);
+  const gpuLoad = gpuAttributed ? point.gpu_utilization_percent ?? 0 : 0;
+  return clampPercent(Math.max(point.job_cpu_percent, gpuLoad, ioLoad));
+}
+
+function workPulsePath(history: JobTelemetryPoint[], gpuAttributed: boolean): string {
+  const width = 900;
+  const maxPoints = 48;
+  const inset = 24;
+  const baseline = 61;
+  const xStep = (width - inset * 2) / (maxPoints - 1);
+  const points = history.slice(-maxPoints);
+  if (!points.length) return "";
+
+  return points.flatMap((point, index) => {
+    const x = inset + index * xStep;
+    const workload = pointWorkload(point, gpuAttributed);
+    // Square-root scaling keeps light real work visible; peak height still
+    // increases monotonically with the measured task load.
+    const amplitude = workload <= 0 ? 2 : 6 + Math.sqrt(workload / 100) * 43;
+    const lead = Math.max(inset, x - 6);
+    return [
+      `${index ? "L" : "M"}${lead.toFixed(1)} ${baseline}`,
+      `L${Math.max(inset, x - 3).toFixed(1)} ${(baseline - amplitude * 0.14).toFixed(1)}`,
+      `L${x.toFixed(1)} ${(baseline - amplitude).toFixed(1)}`,
+      `L${Math.min(width - inset, x + 2.2).toFixed(1)} ${(baseline + amplitude * 0.24).toFixed(1)}`,
+      `L${Math.min(width - inset, x + 5.5).toFixed(1)} ${baseline}`,
+    ];
+  }).join(" ");
+}
+
+function traceXPercent(sampleCount: number): number {
+  if (!sampleCount) return 2.7;
+  const visibleIndex = Math.min(47, sampleCount - 1);
+  return ((24 + visibleIndex * ((900 - 48) / 47)) / 900) * 100;
+}
+
+function taskName(operation: string | undefined, fallback: string): string {
+  return (operation?.split(" · ")[0] || fallback).trim();
 }
 
 function MetricCell({
@@ -236,10 +280,52 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
   );
   const cpuPath = useMemo(() => historyPath(traceHistory, (point) => point.job_cpu_percent), [traceHistory]);
   const serverPath = useMemo(() => historyPath(traceHistory, (point) => point.server_cpu_percent), [traceHistory]);
-  const gpuPath = useMemo(
-    () => historyPath(traceHistory, (point) => point.gpu_utilization_percent),
-    [traceHistory],
+  const pulsePath = useMemo(
+    () => workPulsePath(traceHistory, Boolean(gpu?.job_attributed)),
+    [gpu?.job_attributed, traceHistory],
   );
+  const latestTracePoint = traceHistory.at(-1);
+  const currentWorkload = latestTracePoint
+    ? pointWorkload(latestTracePoint, Boolean(gpu?.job_attributed))
+    : 0;
+  const traceOperations = useMemo(() => {
+    const operations: string[] = [];
+    for (const point of traceHistory) {
+      const name = taskName(point.operation, traceStageLabel);
+      if (name && operations.at(-1) !== name) operations.push(name);
+    }
+    return operations.slice(-5);
+  }, [traceHistory, traceStageLabel]);
+  const renderHistory = useMemo(
+    () => (telemetry?.history ?? []).filter((point) => point.stage === "render" && point.clip_index !== null),
+    [telemetry?.history],
+  );
+  const knownClipTotal = traceClipTotal
+    ?? renderHistory.at(-1)?.clip_total
+    ?? null;
+  const knownActiveClip = traceClipIndex
+    ?? renderHistory.at(-1)?.clip_index
+    ?? null;
+  const renderIsFinished = ["finalize", "complete"].includes(stageKey) || job?.status === "completed";
+  const clipJourney = useMemo(() => {
+    if (!knownClipTotal || knownClipTotal < 1) return [];
+    return Array.from({ length: Math.min(knownClipTotal, 20) }, (_, offset) => {
+      const clipIndex = offset + 1;
+      const samples = renderHistory.filter((point) => point.clip_index === clipIndex);
+      const operations = samples.reduce<string[]>((result, point) => {
+        const name = taskName(point.operation, "Render");
+        if (name && result.at(-1) !== name) result.push(name);
+        return result;
+      }, []);
+      const peak = samples.reduce(
+        (highest, point) => Math.max(highest, pointWorkload(point, Boolean(gpu?.job_attributed))),
+        0,
+      );
+      const complete = renderIsFinished || (knownActiveClip !== null && clipIndex < knownActiveClip);
+      const active = !renderIsFinished && knownActiveClip === clipIndex;
+      return { clipIndex, samples: samples.length, operations, peak, complete, active };
+    });
+  }, [gpu?.job_attributed, knownActiveClip, knownClipTotal, renderHistory, renderIsFinished]);
   const telemetryStyle = {
     "--telemetry-speed": `${loadProfile.speed}s`,
     "--telemetry-wave-scale": loadProfile.waveScale,
@@ -341,32 +427,67 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
               <div className="signalHeader">
                 <span><Activity size={12} /> RESOURCE TRACE / {traceScopeLabel}</span>
                 <div className="signalLegend">
+                  <span className="is-pulse" title="Satu denyut per sampel nyata; tinggi denyut mengikuti beban terbesar CPU job, GPU job, atau process I/O">TASK PULSE</span>
                   <span className="is-job">JOB CPU</span>
                   <span className="is-server" title="Metrik seluruh host pada window clip aktif">HOST CPU</span>
-                  <span
-                    className={`is-gpu${gpu?.job_attributed ? "" : " is-unattributed"}`}
-                    title={gpu?.job_attributed ? "GPU teratribusi ke PID job" : "GPU tidak diplot karena belum dapat diatribusikan ke PID job"}
-                  >
-                    {gpu?.job_attributed ? "JOB GPU" : "GPU UNATTR."}
-                  </span>
                 </div>
                 <div className="signalMetrics">
-                  <span><small>SEQ</small><b>#{telemetry?.sequence ?? 0}</b></span>
+                  <span><small>LOAD</small><b>{fixed(currentWorkload, 0)}%</b></span>
                   <span><small>SAMPLES</small><b>{traceHistory.length}</b></span>
                   <span><small>PROGRESS</small><b>{Math.round(progress)}%</b></span>
                   <span><small>EVENTS</small><b>{job.logs.length}</b></span>
                 </div>
               </div>
+              {clipJourney.length ? (
+                <div className="clipJourney" aria-label={`Perjalanan proses ${knownClipTotal} ${traceUnitLabel.toLowerCase()}`}>
+                  <div className="clipJourneyLabel">
+                    <span>PER-{traceUnitLabel} EXECUTION</span>
+                    <small>1 denyut = 1 sampel nyata · tinggi = task load</small>
+                  </div>
+                  <div className="clipJourneyTrack">
+                    {clipJourney.map((item) => (
+                      <div
+                        className={`clipJourneyNode${item.complete ? " is-complete" : ""}${item.active ? " is-active" : ""}`}
+                        key={item.clipIndex}
+                        title={item.operations.length ? item.operations.join(" → ") : `${traceUnitLabel} belum diproses`}
+                      >
+                        <i>{item.complete ? <CheckCircle2 size={10} /> : String(item.clipIndex).padStart(2, "0")}</i>
+                        <span>{traceUnitLabel} {String(item.clipIndex).padStart(2, "0")}</span>
+                        <b>{item.active
+                          ? taskName(latestTracePoint?.operation, job.progress_detail || "Processing")
+                          : item.complete
+                            ? item.samples
+                              ? `${item.operations.length} TASK · PEAK ${fixed(item.peak, 0)}%`
+                              : "DONE"
+                            : "WAITING"}</b>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <div className="telemetryWave" aria-label={`Grafik telemetry ${traceStageLabel}, scope ${traceScopeLabel}`}>
                 <svg viewBox="0 0 900 86" preserveAspectRatio="none" role="img">
                   <path className="telemetryWaveServer" d={serverPath} />
-                  {gpu?.available && gpu.job_attributed && gpu.utilization_percent !== null ? <path className="telemetryWaveGpu" d={gpuPath} /> : null}
                   <path className="telemetryWaveLive" d={cpuPath} />
+                  <path className="telemetryWavePulse" d={pulsePath} />
                 </svg>
                 {!traceHistory.length ? <span className="telemetryWaveEmpty">ACQUIRING {traceScopeLabel} TRACE</span> : null}
-                <span className="telemetryScanner" />
-                <span className="telemetryAxis telemetryAxis--top">100</span>
-                <span className="telemetryAxis telemetryAxis--bottom">0</span>
+                {traceHistory.length ? (
+                  <span
+                    className="telemetryBeatCursor"
+                    key={`${traceScopeLabel}-${telemetry?.sequence ?? 0}`}
+                    style={{ left: `${traceXPercent(traceHistory.length)}%` }}
+                  />
+                ) : null}
+                <span className="telemetryAxis telemetryAxis--top">LOAD</span>
+                <span className="telemetryAxis telemetryAxis--bottom">TIME →</span>
+              </div>
+              <div className="clipTaskTrail" aria-label="Urutan task aktual">
+                {(traceOperations.length ? traceOperations : [job.progress_detail || traceStageLabel]).map((operation, index) => (
+                  <span className={index === (traceOperations.length || 1) - 1 ? "is-current" : "is-done"} key={`${operation}-${index}`}>
+                    <i />{operation}
+                  </span>
+                ))}
               </div>
             </div>
           </div>
