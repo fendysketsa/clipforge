@@ -100,6 +100,7 @@ import type {
 } from "../types/clip.type";
 import { ControlPanel } from "./_components/ControlPanel";
 import { AutoViralPanel } from "./_components/AutoViralPanel";
+import { BrowserTaskIndicator } from "./_components/BrowserTaskIndicator";
 import { DeleteAllToast } from "./_components/DeleteAllToast";
 import { HistorySection } from "./_components/HistorySection";
 import { OutputWorkspace } from "./_components/OutputWorkspace";
@@ -1577,6 +1578,11 @@ export default function HomePage() {
 
   return (
     <main className="shell">
+      <BrowserTaskIndicator
+        job={activityJob}
+        autoViralRun={autoViralRun}
+        isSearchingSources={isSearchingAutoContent}
+      />
       <Topbar isRefreshing={isRefreshingData} onRefresh={handleSyncData} />
 
       <QuickStartCard
