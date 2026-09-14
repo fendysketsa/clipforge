@@ -113,6 +113,18 @@ const isProcessJob = (item: ClipJob | null) =>
 const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
 const CLEANUP_PROGRESS_POLL_MS = 250;
 const TAB_JOB_STORAGE_KEY = "fendy-clipper.activeJobId.v1";
+
+const isVerifiedViralSource = (source: ViralContentSource, filters: ViralSearchFilters) => {
+  const duration = source.duration ?? 0;
+  const durationMatches = filters.duration_filter === "any"
+    || (filters.duration_filter === "under_3" && duration > 0 && duration < 180)
+    || (filters.duration_filter === "between_3_20" && duration >= 180 && duration <= 1200)
+    || (filters.duration_filter === "over_20" && duration > 1200);
+  return source.content_id_risk !== "high"
+    && source.license_metadata_verified === true
+    && durationMatches;
+};
+
 export default function HomePage() {
   const [url, setUrl] = useState("");
   const [sourceMode, setSourceMode] = useState<SourceMode>("url");
@@ -164,12 +176,12 @@ export default function HomePage() {
   const [tiktokUploads, setTiktokUploads] = useState<TikTokUploadJob[]>([]);
   const [autoViralRun, setAutoViralRun] = useState<AutoViralRun | null>(null);
   const [autoViralSchedule, setAutoViralSchedule] = useState<AutoViralScheduleStatus | null>(null);
-  const [autoContentNiche, setAutoContentNiche] = useState<IslamicContentNiche>("islamic_practical_life");
+  const [autoContentNiche, setAutoContentNiche] = useState<IslamicContentNiche>("faith_prophets_converts");
   const [autoContentSources, setAutoContentSources] = useState<ViralContentSource[]>([]);
   const [selectedAutoContentUrls, setSelectedAutoContentUrls] = useState<string[]>([]);
   const [autoContentMessage, setAutoContentMessage] = useState("");
   const [viralSearchFilters, setViralSearchFilters] = useState<ViralSearchFilters>({
-    duration_filter: "any",
+    duration_filter: "over_20",
     upload_date_filter: "this_year",
     definition_filter: "hd",
     sort_order: "popularity",
@@ -1471,7 +1483,7 @@ export default function HomePage() {
         {
           loading: "Memfilter konten lewat Google YouTube API...",
           success: (items) => {
-            const safeItems = items.filter((source) => source.content_id_risk !== "high");
+            const safeItems = items.filter((source) => isVerifiedViralSource(source, viralSearchFilters));
             return safeItems.length
               ? `${safeItems.length} kandidat lolos guard awal dalam ${((safeItems[0]?.search_elapsed_ms ?? 0) / 1000).toFixed(1)} detik.`
               : "Belum ada kandidat Indonesia yang lolos guard otomatis.";
@@ -1482,14 +1494,14 @@ export default function HomePage() {
       // Defense in depth for stale/cached responses from an older backend: a
       // high-risk candidate is never selectable even though the current API
       // already removes it during discovery.
-      const safeSources = sources.filter((source) => source.content_id_risk !== "high");
+      const safeSources = sources.filter((source) => isVerifiedViralSource(source, viralSearchFilters));
       setAutoContentSources(safeSources);
       setSelectedAutoContentUrls(safeSources.map((source) => source.url));
       const adaptiveCount = safeSources.filter((source) => source.filter_match === "adaptive").length;
       setAutoContentMessage(
         safeSources.length
           ? adaptiveCount
-            ? `${adaptiveCount} kandidat memakai perluasan umur/durasi/tayangan/tema; lisensi CC, kualitas HD, Bahasa Indonesia, dan guard risiko hak tetap wajib.`
+            ? `${adaptiveCount} kandidat memakai perluasan umur/tayangan/tema; durasi pilihan, lisensi CC, kualitas HD, Bahasa Indonesia, dan guard risiko hak tetap wajib.`
             : "Semua kandidat lolos guard otomatis awal; metadata CC dan kualitas HD terdeteksi. Hak audio/visual tetap perlu direview sebelum publikasi."
           : "Belum ditemukan kandidat yang lolos guard otomatis. Sistem tidak akan memaksakan sumber berisiko; coba perluas filter lalu cari lagi.",
       );

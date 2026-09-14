@@ -522,15 +522,15 @@ def test_new_jobs_default_to_clean_detail_auto_fyp_visuals():
     assert request.background_mode == "keep"
     assert AutoViralRequest().visual_mode == "auto_fyp"
     assert AutoViralRequest().background_mode == "keep"
-    assert AutoViralRequest().niche == "islamic_practical_life"
-    assert ViralVideoSearchRequest().niche == "islamic_practical_life"
+    assert AutoViralRequest().niche == "faith_prophets_converts"
+    assert ViralVideoSearchRequest().niche == "faith_prophets_converts"
 
 
 def test_practical_life_niche_owns_default_search_positions():
-    request = ViralVideoSearchRequest()
+    request = ViralVideoSearchRequest(niche="islamic_practical_life")
 
     assert request.queries[0] == "tanya jawab islam masalah orang tua"
-    assert request.queries[2].startswith("kajian rumah tangga islami")
+    assert request.queries[1].startswith("kajian rumah tangga islami")
     assert request.queries.index("podcast horor indonesia") >= 12
 
 
@@ -567,18 +567,38 @@ def test_selected_evergreen_niche_owns_the_first_search_positions():
     assert finance.queries.index("podcast horor indonesia") >= 12
 
 
+def test_faith_prophets_and_converts_niche_has_focused_google_api_terms():
+    request = ViralVideoSearchRequest(niche="faith_prophets_converts")
+
+    assert request.queries[0] == "kisah mualaf menemukan islam indonesia"
+    assert "kisah nabi lengkap penuh hikmah" in request.queries
+    assert youtube_data_api_search_queries(request) == [
+        "iman islam|cerita nabi|kisah nabi|kisah mualaf|perjalanan mualaf|kisah hidayah"
+    ]
+    assert niche_relevance_score(
+        {
+            "title": "Kisah Mualaf Menemukan Hidayah dan Mengucap Syahadat",
+            "description": "Perjalanan iman setelah membaca Al Quran.",
+        },
+        "faith_prophets_converts",
+    ) >= 50
+
+
 def test_current_viral_niche_uses_indonesian_freshness_queries():
     request = ViralVideoSearchRequest(niche="islamic_current_viral")
 
     assert request.queries[0] == "isu muslim indonesia viral hari ini"
-    assert str(datetime.now(timezone.utc).year) in request.queries[1]
-    assert "terbaru" in request.queries[1]
+    year_variant = next(
+        query for query in request.queries
+        if query.startswith("isu muslim indonesia viral hari ini terbaru")
+    )
+    assert str(datetime.now(timezone.utc).year) in year_variant
 
 
-def test_search_filter_defaults_match_broad_cc_reference_layout():
+def test_search_filter_defaults_match_long_form_cc_growth_layout():
     request = ViralVideoSearchRequest(niche="islamic_current_viral")
 
-    assert request.duration_filter == "any"
+    assert request.duration_filter == "over_20"
     assert request.upload_date_filter == "this_week"
     assert request.definition_filter == "hd"
     assert request.sort_order == "popularity"
@@ -866,7 +886,7 @@ def test_auto_viral_schedule_reads_interval_and_safe_review_defaults(monkeypatch
     request = api.scheduled_auto_viral_request()
     status = api.auto_viral_schedule_status()
 
-    assert request.niche == "islamic_current_viral"
+    assert request.niche == "faith_prophets_converts"
     assert request.video_count == 2
     assert request.auto_upload_youtube is False
     assert status.enabled is True
@@ -932,7 +952,7 @@ def test_api_search_adapts_soft_filters_but_keeps_cc_language_and_niche(monkeypa
                         "liveBroadcastContent": "none",
                     },
                     "statistics": {"viewCount": "500", "likeCount": "25"},
-                    "contentDetails": {"duration": "PT10M", "definition": "hd"},
+                    "contentDetails": {"duration": "PT30M", "definition": "hd"},
                     "status": {"license": "creativeCommon"},
                 }
             ]
@@ -954,8 +974,9 @@ def test_api_search_adapts_soft_filters_but_keeps_cc_language_and_niche(monkeypa
     assert selected[0]["license_metadata_verified"] is True
     assert selected[0]["source_preflight"] == "passed"
     assert selected[0]["filter_match"] == "adaptive"
-    assert len(selected[0]["relaxed_filters"]) == 2
+    assert len(selected[0]["relaxed_filters"]) == 1
     assert search_params["videoLicense"] == "creativeCommon"
+    assert search_params["videoDuration"] == "long"
     assert search_params["videoDefinition"] == "high"
     assert "publishedAfter" not in search_params
 
@@ -981,7 +1002,7 @@ def test_api_search_never_relaxes_explicit_hd_requirement(monkeypatch):
                         "liveBroadcastContent": "none",
                     },
                     "statistics": {"viewCount": "5000", "likeCount": "100"},
-                    "contentDetails": {"duration": "PT10M", "definition": "sd"},
+                    "contentDetails": {"duration": "PT30M", "definition": "sd"},
                     "status": {"license": "creativeCommon"},
                 }
             ]
@@ -1035,7 +1056,7 @@ def test_api_search_skips_rights_risk_and_continues_to_safe_replacement(monkeypa
                 "liveBroadcastContent": "none",
             },
             "statistics": {"viewCount": "5000", "likeCount": "250"},
-            "contentDetails": {"duration": "PT10M", "definition": "hd"},
+            "contentDetails": {"duration": "PT30M", "definition": "hd"},
             "status": {"license": "creativeCommon", "privacyStatus": "public"},
         }
 

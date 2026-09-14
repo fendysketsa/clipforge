@@ -331,6 +331,12 @@ scheduled campaigns. It reads the regional `mostPopular` chart as a live topic
 signal, adds relevant Indonesian topics to the Creative Commons search, then
 ranks only sources that still pass freshness, momentum, language, HD, and rights
 preflight checks. The chart itself is not treated as permission to reuse a video.
+The default dashboard preset focuses on iman, prophet stories, hidayah, and
+convert journeys. It sends a popularity-ordered Creative Commons query with the
+YouTube `long` duration filter, then revalidates that every result is over 20
+minutes using `videos.list` metadata. Within that popular pool, ClipForge ranks
+overall clipping opportunity so a smaller source with a stronger story can still
+beat a higher-view but weakly relevant source.
 
 Enable the internal cron-style scheduler in `.env` (restart the backend after
 changing these values):
@@ -340,7 +346,7 @@ YOUTUBE_DATA_API_KEY=your_google_api_key
 AUTO_VIRAL_SCHEDULE_ENABLED=true
 AUTO_VIRAL_SCHEDULE_INTERVAL_HOURS=6
 AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP=false
-AUTO_VIRAL_SCHEDULE_NICHE=islamic_current_viral
+AUTO_VIRAL_SCHEDULE_NICHE=faith_prophets_converts
 AUTO_VIRAL_SCHEDULE_VIDEO_COUNT=3
 AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO=2
 AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE=false

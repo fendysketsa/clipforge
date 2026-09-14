@@ -1215,6 +1215,7 @@ HORROR_PODCAST_SEARCH_QUERIES = [
 
 IslamicContentNiche = Literal[
     "auto",
+    "faith_prophets_converts",
     "islamic_practical_life",
     "islamic_current_viral",
     "islamic_mental_health",
@@ -1228,6 +1229,29 @@ ViralDefinitionFilter = Literal["any", "hd"]
 ViralSortOrder = Literal["popularity", "relevance", "newest"]
 
 ISLAMIC_EVERGREEN_NICHES: dict[str, dict[str, Any]] = {
+    "faith_prophets_converts": {
+        "label": "Iman, Kisah Nabi & Perjalanan Mualaf",
+        "queries": [
+            "kisah mualaf menemukan islam indonesia",
+            "iman naik turun dan cara menguatkannya",
+            "kisah nabi lengkap penuh hikmah",
+            "perjalanan mualaf menyentuh hati podcast indonesia",
+            "cerita nabi yang menguatkan iman",
+            "kisah hidayah masuk islam penuh haru",
+            "mualaf setelah membaca al quran kisah nyata",
+            "ujian iman yang mengubah hidup kajian",
+            "tanda kebesaran Allah kisah nyata",
+            "mukjizat nabi dan pelajaran kehidupan",
+            "kisah rasul dan sahabat yang jarang diketahui",
+            "podcast iman hidayah dan mualaf indonesia",
+        ],
+        "keywords": [
+            "iman", "tauhid", "akidah", "aqidah", "hidayah", "mualaf", "muallaf",
+            "masuk islam", "syahadat", "nabi", "rasul", "mukjizat", "quran", "al quran",
+            "kisah", "cerita", "hikmah", "ujian", "allah", "sahabat", "dakwah",
+        ],
+        "hashtags": ["KisahIman", "KisahNabi", "PerjalananMualaf"],
+    },
     "islamic_practical_life": {
         "label": "Islam Praktis untuk Masalah Sehari-hari",
         "queries": [
@@ -1375,12 +1399,20 @@ ISLAMIC_EVERGREEN_NICHES: dict[str, dict[str, Any]] = {
 # ranking; this compact query is only the fast API discovery seed.
 FAST_YOUTUBE_DATA_API_TERMS: dict[str, list[str]] = {
     "auto": [
+        "iman islam",
+        "kisah nabi",
+        "kisah mualaf",
         "kajian islam indonesia",
-        "ceramah islam indonesia",
-        "kisah inspiratif muslim",
         "kesehatan mental islam",
         "rezeki halal",
-        "sejarah islam",
+    ],
+    "faith_prophets_converts": [
+        "iman islam",
+        "cerita nabi",
+        "kisah nabi",
+        "kisah mualaf",
+        "perjalanan mualaf",
+        "kisah hidayah",
     ],
     "islamic_practical_life": [
         "kajian islam indonesia",
@@ -1469,10 +1501,10 @@ def prioritized_niche_queries(niche: IslamicContentNiche, configured: list[str])
         )
     profile = ISLAMIC_EVERGREEN_NICHES[niche]
     current_year = datetime.now(timezone.utc).year
-    current_variants: list[str] = []
-    for query in list(profile["queries"]):
-        current_variants.extend([query, f"{query} terbaru {current_year}"])
+    base_queries = list(profile["queries"])
+    current_variants = [f"{query} terbaru {current_year}" for query in base_queries]
     return merge_unique_queries(
+        base_queries,
         current_variants,
         configured,
         BROAD_VIRAL_SEARCH_QUERIES,
@@ -1492,7 +1524,7 @@ def default_viral_video_search_queries() -> list[str]:
 
 
 class AutoViralRequest(BaseModel):
-    niche: IslamicContentNiche = "islamic_practical_life"
+    niche: IslamicContentNiche = "faith_prophets_converts"
     queries: list[str] = Field(default_factory=default_auto_viral_queries)
     video_count: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_VIDEO_COUNT", 5), ge=1, le=7)
     clips_per_video: int = Field(default_factory=youtube_auto_upload_count, ge=1, le=5)
@@ -1598,7 +1630,7 @@ class AutoViralScheduleStatus(BaseModel):
 
 
 class ViralVideoSearchRequest(BaseModel):
-    niche: IslamicContentNiche = "islamic_practical_life"
+    niche: IslamicContentNiche = "faith_prophets_converts"
     queries: list[str] = Field(default_factory=default_viral_video_search_queries)
     video_count: int = Field(default=3, ge=1, le=7)
     search_limit_per_query: int = Field(default_factory=lambda: env_int("VIRAL_CC_SEARCH_LIMIT", 25), ge=3, le=50)
@@ -1610,7 +1642,7 @@ class ViralVideoSearchRequest(BaseModel):
     )
     min_views: int = Field(default_factory=lambda: env_int("VIRAL_CC_MIN_VIEWS", 1000), ge=0)
     max_age_days: int = Field(default=FRESH_VIRAL_MAX_AGE_DAYS, ge=1, le=MAX_VIRAL_FALLBACK_AGE_DAYS)
-    duration_filter: ViralDurationFilter = "any"
+    duration_filter: ViralDurationFilter = "over_20"
     upload_date_filter: ViralUploadDateFilter = "this_year"
     definition_filter: ViralDefinitionFilter = "hd"
     sort_order: ViralSortOrder = "popularity"
@@ -10543,14 +10575,6 @@ def viral_search_filter_relaxation_reasons(
 ) -> list[str]:
     """Return every soft-filter mismatch for transparent adaptive results."""
     reasons: list[str] = []
-    duration = float(info.get("duration") or 0)
-    if request.duration_filter == "under_3" and not (0 < duration < 180):
-        reasons.append("durasi bukan kurang dari 3 menit")
-    if request.duration_filter == "between_3_20" and not (180 <= duration <= 1200):
-        reasons.append("durasi bukan 3–20 menit")
-    if request.duration_filter == "over_20" and duration <= 1200:
-        reasons.append("durasi bukan lebih dari 20 menit")
-
     if not is_fresh_viral_upload(info, request.max_age_days):
         reasons.append(f"tanggal unggah di luar {request.max_age_days} hari terakhir")
 
@@ -10567,6 +10591,9 @@ def viral_search_filter_rejection_reason(
     request: AutoViralRequest | ViralVideoSearchRequest,
 ) -> str:
     """Keep the legacy single-reason interface for strict validation callers."""
+    hard_reason = viral_search_hard_filter_rejection_reason(info, request)
+    if hard_reason:
+        return hard_reason
     reasons = viral_search_filter_relaxation_reasons(info, request)
     return reasons[0] if reasons else ""
 
@@ -10600,7 +10627,14 @@ def viral_search_hard_filter_rejection_reason(
     info: dict[str, Any],
     request: AutoViralRequest | ViralVideoSearchRequest,
 ) -> str:
-    """Keep the explicitly requested CC/HD constraints non-adaptive."""
+    """Keep explicitly selected duration and HD constraints non-adaptive."""
+    duration = float(info.get("duration") or 0)
+    if request.duration_filter == "under_3" and not (0 < duration < 180):
+        return "durasi bukan kurang dari 3 menit"
+    if request.duration_filter == "between_3_20" and not (180 <= duration <= 1200):
+        return "durasi bukan 3–20 menit"
+    if request.duration_filter == "over_20" and duration <= 1200:
+        return "durasi bukan lebih dari 20 menit"
     if request.definition_filter != "hd":
         return ""
     definition = str(info.get("definition") or "").strip().casefold()
@@ -10873,15 +10907,18 @@ def sort_viral_source_payloads(
             reverse=True,
         )
     else:
+        # The API already returns a viewCount-ordered pool. Inside that pool,
+        # prefer total clip opportunity (theme, language and momentum) so a
+        # smaller source with a much stronger story can still win.
         sources.sort(
             key=lambda item: (
                 exact_filter_score(item),
+                float(item.get("score") or 0),
                 float(
                     item.get("viral_score")
                     if item.get("viral_score") is not None
                     else item.get("score") or 0
                 ),
-                float(item.get("score") or 0),
             ),
             reverse=True,
         )
@@ -11157,13 +11194,11 @@ def search_youtube_data_api_viral_sources(
             "relevanceLanguage": relevance_language,
             "safeSearch": "strict",
         }
-        # CC and an explicitly selected HD definition are hard requirements.
-        # Freshness, duration and minimum views are ranking preferences in
-        # adaptive mode; applying them in search.list used to empty the result
-        # set before metadata could be ranked.
+        # CC, selected duration and selected HD definition are hard requirements.
+        # Freshness and minimum views stay ranking preferences in adaptive mode.
         if not adaptive_filters:
             search_params["publishedAfter"] = youtube_published_after(request.max_age_days)
-        if request.duration_filter != "any" and not adaptive_filters:
+        if request.duration_filter != "any":
             search_params["videoDuration"] = {
                 "under_3": "short",
                 "between_3_20": "medium",
@@ -12613,7 +12648,7 @@ def create_and_start_auto_viral_campaign(
 
 def scheduled_auto_viral_request() -> AutoViralRequest:
     return AutoViralRequest(
-        niche=os.environ.get("AUTO_VIRAL_SCHEDULE_NICHE", "islamic_current_viral"),  # type: ignore[arg-type]
+        niche=os.environ.get("AUTO_VIRAL_SCHEDULE_NICHE", "faith_prophets_converts"),  # type: ignore[arg-type]
         video_count=max(1, min(7, env_int("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", 3))),
         clips_per_video=max(1, min(5, env_int("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", 2))),
         min_views=max(0, env_int("AUTO_VIRAL_SCHEDULE_MIN_VIEWS", 1000)),

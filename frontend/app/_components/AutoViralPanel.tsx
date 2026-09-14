@@ -25,6 +25,7 @@ type Props = {
 };
 
 const NICHES: { value: IslamicContentNiche; label: string }[] = [
+  { value: "faith_prophets_converts", label: "Iman, kisah nabi & mualaf" },
   { value: "islamic_current_viral", label: "Isu Muslim terkini" },
   { value: "islamic_practical_life", label: "Masalah hidup praktis" },
   { value: "islamic_mental_health", label: "Mental health Islami" },
@@ -35,6 +36,11 @@ const NICHES: { value: IslamicContentNiche; label: string }[] = [
 ];
 
 const formatNumber = (value: number) => new Intl.NumberFormat("id-ID", { notation: "compact" }).format(value);
+const formatSourceDuration = (seconds?: number | null) => {
+  if (!seconds) return "Durasi -";
+  const minutes = Math.floor(seconds / 60);
+  return `${Math.floor(minutes / 60) ? `${Math.floor(minutes / 60)}j ` : ""}${minutes % 60}m`;
+};
 const formatDate = (value?: string | null) => value
   ? new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" }).format(new Date(value))
   : "-";
@@ -131,7 +137,7 @@ export function AutoViralPanel({
           <div className="viralFilterItem viralFilterLocked">
             <span>Kualitas & lisensi</span>
             <strong><ShieldCheck size={14} /> HD + Creative Commons</strong>
-            <small>Tetap melewati guard hak audio/visual.</small>
+            <small>Lisensi diverifikasi ulang; hak audio/visual tetap direview.</small>
           </div>
         </div>
 
@@ -139,6 +145,10 @@ export function AutoViralPanel({
           {isSearching ? <Loader2 className="spin" size={16} /> : <Search size={16} />}
           {isSearching ? "Membaca chart & statistik..." : "Cari Kandidat dari Tren YouTube"}
         </button>
+
+        <p className="viralFilterPolicy">
+          Pool awal diurutkan berdasarkan views, lalu ClipForge memilih peluang cerita, hook, dan relevansi. Sumber kecil tetap bisa menang jika momennya kuat.
+        </p>
 
         {message ? <p className="viralFilterPolicy">{message}</p> : null}
 
@@ -156,6 +166,8 @@ export function AutoViralPanel({
                   <div className="autoContentMeta">
                     <span>{formatNumber(source.views)} views</span>
                     <span>{formatNumber(source.views_per_day)}/hari</span>
+                    <span>{formatSourceDuration(source.duration)}</span>
+                    <span>CC terverifikasi</span>
                     <span>Skor {Math.round(source.score)}</span>
                     <span>Trend +{source.trend_signal_score ?? 0}</span>
                     <span>{source.search_provider === "youtube_data_api" ? "YouTube API" : "Fallback"}</span>

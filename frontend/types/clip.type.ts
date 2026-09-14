@@ -563,6 +563,7 @@ export type YouTubeCdpRepairStatus = {
 
 export type IslamicContentNiche =
   | "auto"
+  | "faith_prophets_converts"
   | "islamic_practical_life"
   | "islamic_current_viral"
   | "islamic_mental_health"
