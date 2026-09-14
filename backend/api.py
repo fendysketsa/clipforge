@@ -502,6 +502,9 @@ class ClipFile(BaseModel):
 class JobTelemetryPoint(BaseModel):
     sequence: int = 0
     sampled_at: str
+    stage: str = "unknown"
+    clip_index: int | None = None
+    clip_total: int | None = None
     job_cpu_percent: float = 0
     server_cpu_percent: float = 0
     job_memory_mb: float = 0
@@ -617,6 +620,8 @@ class ClipJob(BaseModel):
     progress_detail: str | None = None
     progress_step: int = 0
     progress_total_steps: int = 5
+    progress_clip_index: int | None = None
+    progress_clip_total: int | None = None
     progress_history: list[JobProgressEvent] = Field(default_factory=list)
     source_title: str | None = None
     source_url: str | None = None
@@ -9480,7 +9485,23 @@ def monitor_job_telemetry(
     sampler = ProcessTelemetrySampler(process_pid)
     while not stop_event.is_set():
         try:
-            snapshot = JobTelemetry(**sampler.sample(active=True))
+            with jobs_lock:
+                current_job = jobs.get(job_id)
+                current_stage = current_job.progress_stage if current_job is not None else None
+                current_clip_index = (
+                    current_job.progress_clip_index if current_job is not None else None
+                )
+                current_clip_total = (
+                    current_job.progress_clip_total if current_job is not None else None
+                )
+            snapshot = JobTelemetry(
+                **sampler.sample(
+                    active=True,
+                    stage=current_stage,
+                    clip_index=current_clip_index,
+                    clip_total=current_clip_total,
+                )
+            )
             with job_telemetry_lock:
                 job_telemetry_snapshots[job_id] = snapshot
         except Exception as exc:
@@ -9883,9 +9904,13 @@ def build_clipper_command(
 FENDY_CLIPPER_PROGRESS_PATTERN = re.compile(
     r"^FENDY_CLIPPER_PROGRESS:(\d{1,3})\|([^|]+)\|(.*)$"
 )
+FENDY_CLIPPER_RENDER_UNIT_PATTERN = re.compile(
+    r"\b(?:klip pendek|bagian cerita)\s+(\d+)\s+dari\s+(\d+)\b",
+    re.IGNORECASE,
+)
 
 
-def parse_clipper_progress(line: str) -> dict[str, int | str] | None:
+def parse_clipper_progress(line: str) -> dict[str, int | str | None] | None:
     match = FENDY_CLIPPER_PROGRESS_PATTERN.match((line or "").strip())
     if not match:
         return None
@@ -9900,12 +9925,19 @@ def parse_clipper_progress(line: str) -> dict[str, int | str] | None:
         "complete": 5,
     }
     normalized_stage = stage.strip().casefold()
+    render_unit = (
+        FENDY_CLIPPER_RENDER_UNIT_PATTERN.search(detail)
+        if normalized_stage == "render"
+        else None
+    )
     return {
         "progress_percent": percent,
         "progress_stage": normalized_stage,
         "progress_detail": re.sub(r"\s+", " ", detail).strip()[:180],
         "progress_step": stage_steps.get(normalized_stage, 0),
         "progress_total_steps": 5,
+        "progress_clip_index": int(render_unit.group(1)) if render_unit else None,
+        "progress_clip_total": int(render_unit.group(2)) if render_unit else None,
     }
 
 

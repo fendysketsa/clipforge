@@ -71,10 +71,10 @@ def test_gpu_snapshot_attributes_vram_to_job_pid(monkeypatch):
 
 def test_process_sampler_emits_real_bounded_history():
     sampler = ProcessTelemetrySampler(os.getpid(), history_size=2)
-    sampler.sample()
+    sampler.sample(stage="source")
     time.sleep(0.02)
-    sampler.sample()
-    snapshot = sampler.sample()
+    sampler.sample(stage="render", clip_index=1, clip_total=2)
+    snapshot = sampler.sample(stage="render", clip_index=2, clip_total=2)
 
     assert snapshot["available"] is True
     assert snapshot["root_pid"] == os.getpid()
@@ -82,6 +82,9 @@ def test_process_sampler_emits_real_bounded_history():
     assert snapshot["cpu_capacity_cores"] > 0
     assert snapshot["job_memory_mb"] > 0
     assert len(snapshot["history"]) == 2
+    assert [point["stage"] for point in snapshot["history"]] == ["render", "render"]
+    assert [point["clip_index"] for point in snapshot["history"]] == [1, 2]
+    assert [point["clip_total"] for point in snapshot["history"]] == [2, 2]
     assert snapshot["source"] == "psutil+cgroup+nvidia-smi"
     assert set(snapshot["peaks"]) == {
         "job_cpu_percent",

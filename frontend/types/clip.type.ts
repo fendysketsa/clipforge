@@ -101,6 +101,9 @@ export type ClipCandidate = {
 export type JobTelemetryPoint = {
   sequence: number;
   sampled_at: string;
+  stage: string;
+  clip_index: number | null;
+  clip_total: number | null;
   job_cpu_percent: number;
   server_cpu_percent: number;
   job_memory_mb: number;
@@ -211,6 +214,8 @@ export type ClipJob = {
   progress_detail?: string | null;
   progress_step?: number;
   progress_total_steps?: number;
+  progress_clip_index?: number | null;
+  progress_clip_total?: number | null;
   progress_history?: JobProgressEvent[];
   source_title?: string | null;
   source_url?: string | null;

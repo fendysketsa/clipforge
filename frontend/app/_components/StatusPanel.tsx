@@ -127,16 +127,39 @@ function historyPath(
   const width = 900;
   const height = 86;
   const maxPoints = 48;
+  const plotInset = 24;
   const values = history.slice(-maxPoints).map(pick);
-  const padded: Array<number | null> = [
-    ...Array(Math.max(0, maxPoints - values.length)).fill(null),
-    ...values,
-  ];
-  return padded.map((value, index) => {
-    const x = index * (width / (maxPoints - 1));
-    const y = value === null ? height - 8 : height - 8 - clampPercent(value) * 0.7;
-    return `${index === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
-  }).join(" ");
+  if (!values.length) return "";
+
+  const xStep = values.length > 1 ? (width - plotInset * 2) / (values.length - 1) : 0;
+  let drawing = false;
+  const commands = values.flatMap((value, index) => {
+    if (value === null) {
+      drawing = false;
+      return [];
+    }
+    const x = values.length > 1 ? plotInset + index * xStep : width / 2;
+    const y = height - 8 - clampPercent(value) * 0.7;
+    const command = `${drawing ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
+    drawing = true;
+    return [command];
+  });
+
+  // Render one measurement as a short point-like stroke without inventing a trend.
+  if (commands.length === 1) {
+    const point = commands[0].match(/^M([\d.]+) ([\d.]+)$/);
+    if (point) {
+      const x = Number(point[1]);
+      const y = point[2];
+      commands.splice(
+        0,
+        1,
+        `M${Math.max(0, x - 1).toFixed(1)} ${y}`,
+        `L${Math.min(width, x + 1).toFixed(1)} ${y}`,
+      );
+    }
+  }
+  return commands.join(" ");
 }
 
 function MetricCell({
@@ -192,11 +215,30 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
     : newestAlert
       ? `${job?.id}:${newestAlert.sequence}:${newestAlert.code}`
       : "";
-  const cpuPath = useMemo(() => historyPath(telemetry?.history ?? [], (point) => point.job_cpu_percent), [telemetry?.history]);
-  const serverPath = useMemo(() => historyPath(telemetry?.history ?? [], (point) => point.server_cpu_percent), [telemetry?.history]);
+  const traceStageKey = useMemo(() => {
+    const history = telemetry?.history ?? [];
+    const hasCurrentStage = history.some((point) => point.stage === stageKey);
+    return !canCancel && !hasCurrentStage ? history.at(-1)?.stage ?? stageKey : stageKey;
+  }, [canCancel, stageKey, telemetry?.history]);
+  const traceStageLabel = STAGE_LABELS[traceStageKey] || traceStageKey.replaceAll("_", " ");
+  const traceClipIndex = traceStageKey === "render" ? job?.progress_clip_index ?? null : null;
+  const traceClipTotal = traceStageKey === "render" ? job?.progress_clip_total ?? null : null;
+  const traceUnitLabel = job?.request.clip_mode === "highlight_5m" ? "PART" : "CLIP";
+  const traceScopeLabel = traceClipIndex !== null
+    ? `${traceUnitLabel} ${traceClipIndex}/${traceClipTotal ?? "?"}`
+    : traceStageKey.toUpperCase();
+  const traceHistory = useMemo(
+    () => (telemetry?.history ?? []).filter((point) => (
+      point.stage === traceStageKey
+      && (traceClipIndex === null || point.clip_index === traceClipIndex)
+    )),
+    [telemetry?.history, traceClipIndex, traceStageKey],
+  );
+  const cpuPath = useMemo(() => historyPath(traceHistory, (point) => point.job_cpu_percent), [traceHistory]);
+  const serverPath = useMemo(() => historyPath(traceHistory, (point) => point.server_cpu_percent), [traceHistory]);
   const gpuPath = useMemo(
-    () => historyPath(telemetry?.history ?? [], (point) => point.gpu_utilization_percent),
-    [telemetry?.history],
+    () => historyPath(traceHistory, (point) => point.gpu_utilization_percent),
+    [traceHistory],
   );
   const telemetryStyle = {
     "--telemetry-speed": `${loadProfile.speed}s`,
@@ -290,37 +332,41 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
               <div className="radarReadout">
                 <span><Radio size={11} /> LIVE PROCESS LOAD</span>
                 <strong>{loadProfile.label} · {loadProfile.intensity}%</strong>
-                <small>{stageLabel}</small>
+                <small>{traceClipIndex !== null ? `${traceUnitLabel} ${traceClipIndex}/${traceClipTotal ?? "?"} · ${stageLabel}` : stageLabel}</small>
                 <code>{telemetry ? `PID ${telemetry.root_pid ?? "—"} / ${telemetry.process_count} PROC` : "WAITING FOR PID TREE"}</code>
               </div>
             </div>
 
             <div className="signalModule">
               <div className="signalHeader">
-                <span><Activity size={12} /> RESOURCE TRACE / {stageKey.toUpperCase()}</span>
+                <span><Activity size={12} /> RESOURCE TRACE / {traceScopeLabel}</span>
                 <div className="signalLegend">
                   <span className="is-job">JOB CPU</span>
-                  <span className="is-server">SERVER CPU</span>
-                  <span className="is-gpu">GPU</span>
+                  <span className="is-server" title="Metrik seluruh host pada window clip aktif">HOST CPU</span>
+                  <span
+                    className={`is-gpu${gpu?.job_attributed ? "" : " is-unattributed"}`}
+                    title={gpu?.job_attributed ? "GPU teratribusi ke PID job" : "GPU tidak diplot karena belum dapat diatribusikan ke PID job"}
+                  >
+                    {gpu?.job_attributed ? "JOB GPU" : "GPU UNATTR."}
+                  </span>
                 </div>
                 <div className="signalMetrics">
                   <span><small>SEQ</small><b>#{telemetry?.sequence ?? 0}</b></span>
+                  <span><small>SAMPLES</small><b>{traceHistory.length}</b></span>
                   <span><small>PROGRESS</small><b>{Math.round(progress)}%</b></span>
                   <span><small>EVENTS</small><b>{job.logs.length}</b></span>
                 </div>
               </div>
-              <div className="telemetryWave" aria-label="Grafik histori CPU job, CPU server, dan GPU">
+              <div className="telemetryWave" aria-label={`Grafik telemetry ${traceStageLabel}, scope ${traceScopeLabel}`}>
                 <svg viewBox="0 0 900 86" preserveAspectRatio="none" role="img">
                   <path className="telemetryWaveServer" d={serverPath} />
-                  {gpu?.available && gpu.utilization_percent !== null ? <path className="telemetryWaveGpu" d={gpuPath} /> : null}
+                  {gpu?.available && gpu.job_attributed && gpu.utilization_percent !== null ? <path className="telemetryWaveGpu" d={gpuPath} /> : null}
                   <path className="telemetryWaveLive" d={cpuPath} />
                 </svg>
+                {!traceHistory.length ? <span className="telemetryWaveEmpty">ACQUIRING {traceScopeLabel} TRACE</span> : null}
                 <span className="telemetryScanner" />
                 <span className="telemetryAxis telemetryAxis--top">100</span>
                 <span className="telemetryAxis telemetryAxis--bottom">0</span>
-              </div>
-              <div className={`statusProgress statusProgress--${job.status}`} aria-label={`Status job: ${job.status}`}>
-                <span style={{ width: `${progress}%` }} />
               </div>
             </div>
           </div>
@@ -394,11 +440,32 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
             <section className="pipelineRoutePanel">
               <div className="intelPanelHeader">
                 <span><Zap size={11} /> EXECUTION ROUTE</span>
-                <b>{Math.max(0, activeStageIndex)}/{PIPELINE_STAGES.length} PASSED</b>
+                <b>{Math.max(0, activeStageIndex)}/{PIPELINE_STAGES.length} PASSED · {Math.round(progress)}%</b>
               </div>
               <div className="currentOperation">
                 <span>CURRENT OPERATION</span>
-                <strong>{job.progress_detail || stageLabel}</strong>
+                <strong>{traceClipIndex !== null ? `${traceUnitLabel} ${traceClipIndex}/${traceClipTotal ?? "?"} · ` : ""}{job.progress_detail || stageLabel}</strong>
+              </div>
+              <div className="pipelineRouteMeterWrap">
+                <div
+                  className={`pipelineRouteMeter${canCancel ? " is-live" : ""}`}
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(progress)}
+                  aria-label={`Progres pipeline ${Math.round(progress)} persen`}
+                >
+                  <span style={{ width: `${progress}%` }} />
+                  {canCancel ? (
+                    <i
+                      className="workflowSparkEmitter"
+                      style={{ left: `${Math.min(progress, 99.2)}%` }}
+                      aria-hidden="true"
+                    >
+                      <b /><b /><b /><b /><b /><b /><b /><b />
+                    </i>
+                  ) : null}
+                </div>
               </div>
               <ol className="pipelineRoute">
                 {PIPELINE_STAGES.map((stage, index) => {
@@ -408,7 +475,7 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
                   return (
                     <li key={stage.key} className={`${isComplete ? "is-complete" : ""}${isCurrent ? " is-current" : ""}`}>
                       <span className="routeNode">{isComplete ? <CheckCircle2 size={11} /> : String(index + 1).padStart(2, "0")}</span>
-                      <div><strong>{stage.label}</strong><small>{isCurrent ? stageLabel : stage.help}</small></div>
+                      <div><strong>{stage.label}</strong><small>{isCurrent ? traceClipIndex !== null ? traceScopeLabel : stageLabel : stage.help}</small></div>
                       <time>{shortTime(event?.at)}</time>
                     </li>
                   );
@@ -422,9 +489,9 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
                 <b>{alerts.length + (job.error ? 1 : 0)} EVENTS</b>
               </div>
               <div className="telemetryPeaks">
-                <span><small>PEAK JOB</small><b>{fixed(telemetry?.peaks.job_cpu_percent, 0)}%</b></span>
-                <span><small>PEAK SERVER</small><b>{fixed(telemetry?.peaks.server_cpu_percent, 0)}%</b></span>
-                <span><small>PEAK GPU</small><b>{gpu?.available ? `${fixed(telemetry?.peaks.gpu_utilization_percent, 0)}%` : "N/A"}</b></span>
+                <span><small>JOB RUN PEAK</small><b>{fixed(telemetry?.peaks.job_cpu_percent, 0)}%</b></span>
+                <span><small>HOST PEAK</small><b>{fixed(telemetry?.peaks.server_cpu_percent, 0)}%</b></span>
+                <span><small>DEVICE GPU</small><b>{gpu?.available ? `${fixed(telemetry?.peaks.gpu_utilization_percent, 0)}%` : "N/A"}</b></span>
                 <span><small>PEAK I/O</small><b>{fixed(telemetry?.peaks.io_mb_s, 1)} MB/s</b></span>
               </div>
               <div className="alertHistoryList">

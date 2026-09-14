@@ -9696,7 +9696,7 @@ body::after {
 
 .signalModule {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr;
   min-width: 0;
   padding: 11px 14px 9px;
 }
@@ -9760,6 +9760,17 @@ body::after {
 .telemetryWave path {
   fill: none;
   vector-effect: non-scaling-stroke;
+}
+
+.telemetryWaveEmpty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(var(--telemetry-accent-rgb), 0.36);
+  font: 750 7px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.13em;
+  pointer-events: none;
 }
 
 .telemetryWaveGhost {
@@ -10159,6 +10170,14 @@ body::after {
 .signalLegend .is-job { color: var(--telemetry-accent); }
 .signalLegend .is-server { color: #38bdf8; }
 .signalLegend .is-gpu { color: #c084fc; }
+.signalLegend .is-gpu.is-unattributed {
+  color: #53645f;
+}
+
+.signalLegend .is-gpu.is-unattributed::before {
+  background: #53645f;
+  box-shadow: none;
+}
 
 .telemetryWaveServer,
 .telemetryWaveGpu {
@@ -10481,6 +10500,39 @@ body::after {
   white-space: nowrap;
 }
 
+.pipelineRouteMeterWrap {
+  padding: 7px 24px 1px;
+}
+
+.pipelineRouteMeter {
+  position: relative;
+  height: 4px;
+  overflow: visible;
+  border: 1px solid rgba(var(--telemetry-accent-rgb), 0.12);
+  border-radius: 999px;
+  background: rgba(var(--telemetry-accent-rgb), 0.07);
+  box-shadow: inset 0 0 7px rgba(0, 0, 0, 0.42);
+  isolation: isolate;
+}
+
+.pipelineRouteMeter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2dd4bf, var(--telemetry-accent) 62%, #d7fff8);
+  background-size: 180% 100%;
+  box-shadow: 0 0 9px rgba(var(--telemetry-accent-rgb), 0.48);
+  transition: width 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.pipelineRouteMeter.is-live > span {
+  animation: workflowFlow 2.2s linear infinite;
+}
+
+.pipelineRouteMeter .workflowSparkEmitter {
+  top: 50%;
+}
+
 .pipelineRoute {
   position: relative;
   display: grid;
@@ -10712,6 +10764,10 @@ body::after {
 .statusPanel--eco .telemetryOnline i,
 .statusPanel--eco .terminalRecording i,
 .statusPanel--eco .pipelineRoute li.is-current .routeNode,
+.statusPanel--eco .pipelineRouteMeter > span,
+.statusPanel--eco .pipelineRouteMeter .workflowSparkEmitter::before,
+.statusPanel--eco .pipelineRouteMeter .workflowSparkEmitter::after,
+.statusPanel--eco .pipelineRouteMeter .workflowSparkEmitter b,
 .statusPanel--eco .telemetryAlertPanel::after,
 .statusPanel--eco .terminalLine--pending p::after {
   animation-play-state: paused;

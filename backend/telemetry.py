@@ -467,7 +467,14 @@ class ProcessTelemetrySampler:
         idle = float(getattr(times, "idle", 0)) + float(getattr(times, "iowait", 0))
         return total, idle
 
-    def sample(self, *, active: bool = True) -> dict[str, Any]:
+    def sample(
+        self,
+        *,
+        active: bool = True,
+        stage: str | None = None,
+        clip_index: int | None = None,
+        clip_total: int | None = None,
+    ) -> dict[str, Any]:
         now = time.monotonic()
         interval = max(0.001, now - self.previous_at) if self.previous_at is not None else 0.0
         processes = self._processes()
@@ -631,6 +638,9 @@ class ProcessTelemetrySampler:
         point = {
             "sequence": self.sequence,
             "sampled_at": sampled_at,
+            "stage": str(stage or "unknown").strip().casefold() or "unknown",
+            "clip_index": clip_index,
+            "clip_total": clip_total,
             "job_cpu_percent": round(normalized_cpu_percent, 1),
             "server_cpu_percent": round(server_cpu_percent, 1),
             "job_memory_mb": round(rss_bytes / MIB, 1),

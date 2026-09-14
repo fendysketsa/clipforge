@@ -107,7 +107,6 @@ import { QuickStartCard } from "./_components/QuickStartCard";
 import { ResultsSection } from "./_components/ResultsSection";
 import { StatusPanel } from "./_components/StatusPanel";
 import { Topbar } from "./_components/Topbar";
-import { WorkflowBar } from "./_components/WorkflowBar";
 
 const isProcessJob = (item: ClipJob | null) =>
   item?.status === "queued" || item?.status === "running" || item?.status === "failed" || item?.status === "cancelled";
@@ -1586,17 +1585,6 @@ export default function HomePage() {
         onConfirmSourceRightsChange={setConfirmSourceRights}
         onStart={() => { void handleStartJob(); }}
       />
-
-      {url.trim() || uploadFileName || activityJob ? (
-        <WorkflowBar
-          hasSource={sourceMode === "url" ? Boolean(url.trim()) : Boolean(uploadFileName)}
-          isProcessing={isBusy || isSubmitting}
-          hasResults={Boolean(job?.clips.length)}
-          job={isSubmitting ? null : activityJob}
-          clipMode={clipMode}
-          sourceValue={sourceMode === "url" ? url.trim() : uploadFileName}
-        />
-      ) : null}
 
       <AutoViralPanel
         niche={autoContentNiche}

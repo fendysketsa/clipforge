@@ -155,6 +155,22 @@ def test_parse_clipper_progress_maps_machine_milestone_to_job_state():
         "progress_detail": "Merender klip pendek 1 dari 3",
         "progress_step": 4,
         "progress_total_steps": 5,
+        "progress_clip_index": 1,
+        "progress_clip_total": 3,
+    }
+
+
+def test_parse_clipper_progress_clears_clip_scope_outside_clip_render():
+    assert parse_clipper_progress(
+        "FENDY_CLIPPER_PROGRESS:95|finalize|Menyimpan audit dan metadata"
+    ) == {
+        "progress_percent": 95,
+        "progress_stage": "finalize",
+        "progress_detail": "Menyimpan audit dan metadata",
+        "progress_step": 5,
+        "progress_total_steps": 5,
+        "progress_clip_index": None,
+        "progress_clip_total": None,
     }
 
 
