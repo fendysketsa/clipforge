@@ -510,6 +510,8 @@ def test_viral_search_is_broad_and_supports_staged_fallback():
     assert "mitos dan fakta menurut islam" in queries
     assert ViralVideoSearchRequest().search_limit_per_query == 25
     assert ViralVideoSearchRequest().max_metadata_checks == 24
+    assert ViralVideoSearchRequest().min_views == 5_000
+    assert AutoViralRequest().min_views == 5_000
     assert ViralVideoSearchRequest(max_age_days=180).max_age_days == 180
     with pytest.raises(ValidationError):
         ViralVideoSearchRequest(max_age_days=366)
@@ -616,9 +618,14 @@ def test_search_filter_revalidates_duration_date_and_hd_metadata():
         "duration": 1800,
         "upload_date": datetime.now(timezone.utc).strftime("%Y%m%d"),
         "definition": "hd",
+        "view_count": 5_000,
     }
 
     assert viral_search_filter_rejection_reason(valid, request) == ""
+    assert "minimum wajib 5,000" in viral_search_filter_rejection_reason(
+        {**valid, "view_count": 4_999},
+        request,
+    )
     assert "20 menit" in viral_search_filter_rejection_reason(
         {**valid, "duration": 900}, request
     )
@@ -947,11 +954,11 @@ def test_api_search_adapts_soft_filters_but_keeps_cc_language_and_niche(monkeypa
                     "snippet": {
                         "title": "Kajian Islam Viral Indonesia Terbaru",
                         "description": "Nasihat untuk umat Indonesia yang sedang ramai.",
-                        "publishedAt": datetime.now(timezone.utc).isoformat(),
+                        "publishedAt": (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(),
                         "defaultAudioLanguage": "id",
                         "liveBroadcastContent": "none",
                     },
-                    "statistics": {"viewCount": "500", "likeCount": "25"},
+                    "statistics": {"viewCount": "5000", "likeCount": "250"},
                     "contentDetails": {"duration": "PT30M", "definition": "hd"},
                     "status": {"license": "creativeCommon"},
                 }

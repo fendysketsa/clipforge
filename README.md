@@ -318,13 +318,14 @@ and persisted in `backend/data/youtube_uploads.json`.
 
 The dashboard's **Perbarui** action records a post-publish performance snapshot.
 
-Viral CC discovery can enforce an honest momentum floor with
-`VIRAL_CC_REQUIRE_MOMENTUM=true`. `VIRAL_CC_MIN_VIEWS` controls total source
-views and `VIRAL_CC_MIN_VIEWS_PER_DAY` controls recent velocity. When no source
-meets both thresholds and the freshness window, ClipForge returns no candidate
-instead of presenting an old low-view source as viral. Source history stores
-the views, views/day, age, and editorial viral score captured at processing
-time so later audits compare real inputs rather than the label alone.
+Viral CC discovery always enforces a minimum of 5,000 total source views, including
+API fallbacks and revalidation before clipping. `VIRAL_CC_MIN_VIEWS` may raise that
+floor but cannot lower it. Enable `VIRAL_CC_REQUIRE_MOMENTUM=true` to additionally
+require the recent velocity set by `VIRAL_CC_MIN_VIEWS_PER_DAY`. When no source
+meets the hard reach and safety thresholds, ClipForge returns no candidate instead
+of presenting a low-view source as viral. Source history stores the views,
+views/day, age, and editorial viral score captured at processing time so later
+audits compare real inputs rather than the label alone.
 
 Auto Viral uses the YouTube Data API route for both dashboard searches and
 scheduled campaigns. It reads the regional `mostPopular` chart as a live topic

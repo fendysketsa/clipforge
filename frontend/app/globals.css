@@ -3478,18 +3478,66 @@ body::before {
 }
 
 .autoViralProgress {
+  position: relative;
+  isolation: isolate;
   height: 7px;
   border-radius: 999px;
   background: rgba(148, 216, 204, 0.11);
-  overflow: hidden;
+  overflow: visible;
 }
 
-.autoViralProgress span {
+.autoViralProgressFill {
+  position: relative;
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #14b8a6, #5eead4);
+  overflow: hidden;
+  background: linear-gradient(90deg, #0f9f91 0%, #2dd4bf 58%, #a7fff1 82%, #ffd166 100%);
+  background-size: 180% 100%;
+  box-shadow: 0 0 9px rgba(45, 212, 191, 0.42);
   transition: width 0.35s ease;
+}
+
+.autoViralProgressFill::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.5) 50%, transparent 70%);
+  transform: translateX(-100%);
+}
+
+.autoViralProgress--running {
+  box-shadow: 0 0 13px rgba(45, 212, 191, 0.2);
+}
+
+.autoViralProgress--running .autoViralProgressFill {
+  animation: autoViralEnergyFlow 1.8s linear infinite;
+}
+
+.autoViralProgress--running .autoViralProgressFill::after {
+  animation: autoViralEnergySweep 1.35s ease-in-out infinite;
+}
+
+.workflowSparkEmitter.autoViralSparkEmitter {
+  transform: translate(-50%, -50%) scale(0.9);
+}
+
+.workflowSparkEmitter.autoViralSparkEmitter b:nth-child(1),
+.workflowSparkEmitter.autoViralSparkEmitter b:nth-child(4),
+.workflowSparkEmitter.autoViralSparkEmitter b:nth-child(7) {
+  background: #ffd166;
+  box-shadow: 0 0 5px #ffb703, 0 0 10px rgba(251, 146, 60, 0.72);
+}
+
+@keyframes autoViralEnergyFlow {
+  from { background-position: 100% 0; }
+  to { background-position: -80% 0; }
+}
+
+@keyframes autoViralEnergySweep {
+  0%, 16% { opacity: 0; transform: translateX(-100%); }
+  42% { opacity: 0.9; }
+  72%, 100% { opacity: 0; transform: translateX(100%); }
 }
 
 .autoRunLogs {

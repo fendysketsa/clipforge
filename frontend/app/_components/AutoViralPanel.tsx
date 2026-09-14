@@ -136,8 +136,8 @@ export function AutoViralPanel({
           </label>
           <div className="viralFilterItem viralFilterLocked">
             <span>Kualitas & lisensi</span>
-            <strong><ShieldCheck size={14} /> HD + Creative Commons</strong>
-            <small>Lisensi diverifikasi ulang; hak audio/visual tetap direview.</small>
+            <strong><ShieldCheck size={14} /> HD + CC + minimal 5K views</strong>
+            <small>Ambang tayangan tidak dilonggarkan; hak audio/visual tetap direview.</small>
           </div>
         </div>
 
@@ -147,7 +147,7 @@ export function AutoViralPanel({
         </button>
 
         <p className="viralFilterPolicy">
-          Pool awal diurutkan berdasarkan views, lalu ClipForge memilih peluang cerita, hook, dan relevansi. Sumber kecil tetap bisa menang jika momennya kuat.
+          Hanya sumber dengan minimal 5.000 views yang dapat lolos. Setelah itu ClipForge mengurutkan momentum, kekuatan cerita, hook, dan relevansi.
         </p>
 
         {message ? <p className="viralFilterPolicy">{message}</p> : null}
@@ -194,7 +194,25 @@ export function AutoViralPanel({
               </div>
               <b>{progress}%</b>
             </div>
-            <div className="autoViralProgress" aria-label={`Progress automation ${progress}%`}><span style={{ width: `${progress}%` }} /></div>
+            <div
+              className={`autoViralProgress ${isRunning && progress < 100 ? "autoViralProgress--running" : ""}`}
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(progress)}
+              aria-label={`Progress automation ${progress}%`}
+            >
+              <span className="autoViralProgressFill" style={{ width: `${progress}%` }} />
+              {isRunning && progress < 100 ? (
+                <i
+                  className="workflowSparkEmitter autoViralSparkEmitter"
+                  style={{ left: `${Math.max(0.8, Math.min(progress, 99.2))}%` }}
+                  aria-hidden="true"
+                >
+                  <b /><b /><b /><b /><b /><b /><b /><b />
+                </i>
+              ) : null}
+            </div>
             <p>{run.message}</p>
             <div className="autoRunLogs">
               {run.logs.slice(-8).map((line, index) => <code key={`${line}-${index}`}>{line}</code>)}

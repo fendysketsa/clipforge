@@ -953,7 +953,7 @@ class BackendClient:
                 "search_limit_per_query": max(25, int(env_float("VIRAL_CC_SEARCH_LIMIT", 25))),
                 "min_source_duration": 60,
                 "max_source_duration": VIRAL_CC_MAX_SOURCE_SECONDS,
-                "min_views": int(env_float("VIRAL_CC_MIN_VIEWS", 1000)),
+                "min_views": max(5000, int(env_float("VIRAL_CC_MIN_VIEWS", 5000))),
                 "max_age_days": 30,
                 "duration_filter": "any",
                 "definition_filter": "hd",

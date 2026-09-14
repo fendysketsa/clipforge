@@ -148,6 +148,7 @@ YOUTUBE_CLEANUP_STEP_RATIOS = {
 FRESH_VIRAL_MAX_AGE_DAYS = 30
 FRESH_CONVERSATION_MAX_AGE_DAYS = 7
 MAX_VIRAL_FALLBACK_AGE_DAYS = 365
+MIN_VIRAL_SOURCE_VIEWS = 5_000
 CANCEL_GRACE_SECONDS = 8
 LOCAL_LLM_PRESETS = [
     {"label": "Ollama", "base_url": "http://localhost:11434/v1"},
@@ -1532,7 +1533,13 @@ class AutoViralRequest(BaseModel):
     search_limit_per_query: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_SEARCH_LIMIT", 25), ge=3, le=50)
     min_source_duration: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MIN_SOURCE_SECONDS", 60), ge=30, le=7200)
     max_source_duration: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MAX_SOURCE_SECONDS", 7200), ge=60, le=14400)
-    min_views: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MIN_VIEWS", 1000), ge=0)
+    min_views: int = Field(
+        default_factory=lambda: max(
+            MIN_VIRAL_SOURCE_VIEWS,
+            env_int("AUTO_VIRAL_MIN_VIEWS", MIN_VIRAL_SOURCE_VIEWS),
+        ),
+        ge=0,
+    )
     max_age_days: int = Field(default=FRESH_VIRAL_MAX_AGE_DAYS, ge=1, le=MAX_VIRAL_FALLBACK_AGE_DAYS)
     duration_filter: ViralDurationFilter = "over_20"
     upload_date_filter: ViralUploadDateFilter = "this_year"
@@ -1641,7 +1648,13 @@ class ViralVideoSearchRequest(BaseModel):
         ge=60,
         le=14400,
     )
-    min_views: int = Field(default_factory=lambda: env_int("VIRAL_CC_MIN_VIEWS", 1000), ge=0)
+    min_views: int = Field(
+        default_factory=lambda: max(
+            MIN_VIRAL_SOURCE_VIEWS,
+            env_int("VIRAL_CC_MIN_VIEWS", MIN_VIRAL_SOURCE_VIEWS),
+        ),
+        ge=0,
+    )
     max_age_days: int = Field(default=FRESH_VIRAL_MAX_AGE_DAYS, ge=1, le=MAX_VIRAL_FALLBACK_AGE_DAYS)
     duration_filter: ViralDurationFilter = "over_20"
     upload_date_filter: ViralUploadDateFilter = "this_year"
@@ -10648,7 +10661,11 @@ def viral_search_hard_filter_rejection_reason(
     info: dict[str, Any],
     request: AutoViralRequest | ViralVideoSearchRequest,
 ) -> str:
-    """Keep explicitly selected duration and HD constraints non-adaptive."""
+    """Keep source reach, selected duration, and HD constraints non-adaptive."""
+    views = max(0, int(info.get("view_count") or 0))
+    required_views = max(MIN_VIRAL_SOURCE_VIEWS, request.min_views)
+    if views < required_views:
+        return f"tayangan {views:,} di bawah minimum wajib {required_views:,}"
     duration = float(info.get("duration") or 0)
     if request.duration_filter == "under_3" and not (0 < duration < 180):
         return "durasi bukan kurang dari 3 menit"
@@ -11215,8 +11232,8 @@ def search_youtube_data_api_viral_sources(
             "relevanceLanguage": relevance_language,
             "safeSearch": "strict",
         }
-        # CC, selected duration and selected HD definition are hard requirements.
-        # Freshness and minimum views stay ranking preferences in adaptive mode.
+        # CC, minimum views, selected duration, and selected HD definition are hard requirements.
+        # Freshness and topical relevance may still adapt when configured.
         if not adaptive_filters:
             search_params["publishedAfter"] = youtube_published_after(request.max_age_days)
         if request.duration_filter != "any":
@@ -11268,7 +11285,6 @@ def search_youtube_data_api_viral_sources(
                 continue
             payload = youtube_data_api_video_payload(item)
             duration = float(payload.get("duration") or 0)
-            views = int(payload.get("view_count") or 0)
             if duration < request.min_source_duration or duration > request.max_source_duration:
                 continue
             momentum_rejection = viral_source_momentum_rejection_reason(payload, request)
@@ -11277,8 +11293,6 @@ def search_youtube_data_api_viral_sources(
                     run_id,
                     f"Skip sumber tanpa momentum ({momentum_rejection}): {payload.get('title') or '-'}",
                 )
-                continue
-            if views < request.min_views and not adaptive_filters:
                 continue
             if not is_fresh_viral_upload(payload, request.max_age_days) and not adaptive_filters:
                 continue
@@ -11338,10 +11352,6 @@ def search_youtube_data_api_viral_sources(
             relaxed_reasons: list[str] = []
             relaxed_reasons.extend(filter_reasons)
             relaxed_reasons.extend(relevance_reasons)
-            if views < request.min_views:
-                relaxed_reasons.append(
-                    f"tayangan {views:,} di bawah preferensi {request.min_views:,}"
-                )
             if relaxed_reasons:
                 source["filter_match"] = "adaptive"
                 source["relaxed_filters"] = relaxed_reasons
@@ -11424,7 +11434,6 @@ def search_auto_viral_sources(
                 continue
 
             duration = float(metadata.get("duration") or 0)
-            views = int(metadata.get("view_count") or 0)
             if duration < request.min_source_duration or duration > request.max_source_duration:
                 continue
             momentum_rejection = viral_source_momentum_rejection_reason(metadata, request)
@@ -11433,8 +11442,6 @@ def search_auto_viral_sources(
                     run_id,
                     f"Skip sumber tanpa momentum ({momentum_rejection}): {metadata.get('title') or url}",
                 )
-                continue
-            if views < request.min_views and not adaptive_filters:
                 continue
             if not is_fresh_viral_upload(metadata, request.max_age_days) and not adaptive_filters:
                 append_auto_viral_log(
@@ -11491,10 +11498,6 @@ def search_auto_viral_sources(
             relaxed_reasons: list[str] = []
             relaxed_reasons.extend(filter_reasons)
             relaxed_reasons.extend(relevance_reasons)
-            if views < request.min_views:
-                relaxed_reasons.append(
-                    f"tayangan {views:,} di bawah preferensi {request.min_views:,}"
-                )
             if relaxed_reasons:
                 source["filter_match"] = "adaptive"
                 source["relaxed_filters"] = relaxed_reasons
@@ -11967,13 +11970,10 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
             fast_api_only and api_attempted and not quota_fallback and bool(sources)
         ):
             fallback_age_days = request.max_age_days
-            fallback_min_views = (
-                request.min_views
-                if env_bool("VIRAL_CC_REQUIRE_MOMENTUM", False)
-                else min(
-                    request.min_views,
-                    max(0, env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", 100)),
-                )
+            fallback_min_views = max(
+                request.min_views,
+                MIN_VIRAL_SOURCE_VIEWS,
+                env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", MIN_VIRAL_SOURCE_VIEWS),
             )
             fallback_queries = prioritized_niche_queries(
                 request.niche,
@@ -12332,10 +12332,10 @@ def discover_auto_viral_campaign_sources(
     if len(sources) < source_pool_target and not (
         fast_api_only and api_attempted and not quota_fallback and bool(sources)
     ):
-        fallback_min_views = (
-            request.min_views
-            if env_bool("VIRAL_CC_REQUIRE_MOMENTUM", False)
-            else min(request.min_views, max(0, env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", 100)))
+        fallback_min_views = max(
+            request.min_views,
+            MIN_VIRAL_SOURCE_VIEWS,
+            env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", MIN_VIRAL_SOURCE_VIEWS),
         )
         fallback_queries = prioritized_niche_queries(
             request.niche,
@@ -12672,7 +12672,10 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         niche=os.environ.get("AUTO_VIRAL_SCHEDULE_NICHE", "faith_prophets_converts"),  # type: ignore[arg-type]
         video_count=max(1, min(7, env_int("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", 3))),
         clips_per_video=max(1, min(5, env_int("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", 2))),
-        min_views=max(0, env_int("AUTO_VIRAL_SCHEDULE_MIN_VIEWS", 1000)),
+        min_views=max(
+            MIN_VIRAL_SOURCE_VIEWS,
+            env_int("AUTO_VIRAL_SCHEDULE_MIN_VIEWS", MIN_VIRAL_SOURCE_VIEWS),
+        ),
         upload_date_filter=os.environ.get("AUTO_VIRAL_SCHEDULE_UPLOAD_DATE_FILTER", "this_week"),  # type: ignore[arg-type]
         duration_filter=os.environ.get("AUTO_VIRAL_SCHEDULE_DURATION_FILTER", "over_20"),  # type: ignore[arg-type]
         definition_filter="hd",

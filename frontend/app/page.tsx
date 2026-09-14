@@ -114,6 +114,7 @@ const isProcessJob = (item: ClipJob | null) =>
 const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
 const CLEANUP_PROGRESS_POLL_MS = 250;
 const TAB_JOB_STORAGE_KEY = "fendy-clipper.activeJobId.v1";
+const MIN_VIRAL_SOURCE_VIEWS = 5_000;
 
 const isVerifiedViralSource = (source: ViralContentSource, filters: ViralSearchFilters) => {
   const duration = source.duration ?? 0;
@@ -123,6 +124,7 @@ const isVerifiedViralSource = (source: ViralContentSource, filters: ViralSearchF
     || (filters.duration_filter === "over_20" && duration > 1200);
   return source.content_id_risk !== "high"
     && source.license_metadata_verified === true
+    && source.views >= MIN_VIRAL_SOURCE_VIEWS
     && durationMatches;
 };
 
@@ -1478,7 +1480,7 @@ export default function HomePage() {
         searchViralContentSources({
           niche: autoContentNiche,
           video_count: 3,
-          min_views: 1000,
+          min_views: MIN_VIRAL_SOURCE_VIEWS,
           ...viralSearchFilters,
         }),
         {
@@ -1502,8 +1504,8 @@ export default function HomePage() {
       setAutoContentMessage(
         safeSources.length
           ? adaptiveCount
-            ? `${adaptiveCount} kandidat memakai perluasan umur/tayangan/tema; durasi pilihan, lisensi CC, kualitas HD, Bahasa Indonesia, dan guard risiko hak tetap wajib.`
-            : "Semua kandidat lolos guard otomatis awal; metadata CC dan kualitas HD terdeteksi. Hak audio/visual tetap perlu direview sebelum publikasi."
+            ? `${adaptiveCount} kandidat memakai perluasan umur/tema; minimal 5K views, durasi pilihan, lisensi CC, kualitas HD, Bahasa Indonesia, dan guard risiko hak tetap wajib.`
+            : "Semua kandidat memiliki minimal 5K views dan lolos guard otomatis awal; metadata CC serta kualitas HD terdeteksi. Hak audio/visual tetap perlu direview sebelum publikasi."
           : "Belum ditemukan kandidat yang lolos guard otomatis. Sistem tidak akan memaksakan sumber berisiko; coba perluas filter lalu cari lagi.",
       );
     } catch {
@@ -1530,6 +1532,7 @@ export default function HomePage() {
           niche: autoContentNiche,
           source_urls: selectedAutoContentUrls,
           video_count: selectedAutoContentUrls.length,
+          min_views: MIN_VIRAL_SOURCE_VIEWS,
           auto_upload_youtube: false,
           clips_per_video: 2,
           ...viralSearchFilters,
