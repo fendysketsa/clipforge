@@ -559,6 +559,27 @@ The frontend also uses `BACKEND_API_BASE` internally for proxying API requests i
 BACKEND_API_BASE=http://backend:8010
 ```
 
+## NVIDIA GPU Deployment
+
+GPU access is enabled directly on the default `backend` service. After NVIDIA
+Container Toolkit has been configured once, normal rebuilds need no wrapper or
+additional Compose file:
+
+```bash
+sudo docker-compose --env-file .env up -d --build --force-recreate backend telegram-bot frontend
+```
+
+For the first-time host setup, full-stack rebuild, and GPU verification, run:
+
+```bash
+sudo bash /www/wwwroot/clipper/clipforge/scripts/gpu-compose-up.sh
+```
+
+The wrapper is idempotent: toolkit installation and the Docker daemon restart
+are skipped when the `nvidia` runtime is already registered.
+The existing `setup-nvidia-container-runtime.sh` command now forwards to this
+same full-stack GPU rebuild after configuration succeeds.
+
 ## Safety And Legal Notes
 
 Fendy Clipper is intended for local workflows and content you are allowed to process. Make sure you have rights or permission to download, transform, and republish source videos. Follow YouTube terms and applicable copyright law.

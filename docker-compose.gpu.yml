@@ -1,8 +1,4 @@
-# Optional NVIDIA runtime access for real GPU/VRAM telemetry.
-# Usage: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+# Backward-compatible no-op overlay for older deployment commands. GPU access
+# now exists in docker-compose.yml, so normal rebuilds do not need this file.
 services:
-  backend:
-    gpus: all
-    environment:
-      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
-      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+  backend: {}

@@ -37,11 +37,10 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   cd -- "${PROJECT_DIR}"
   if docker compose \
     -f docker-compose.yml \
-    -f docker-compose.gpu.yml \
     exec -T backend nvidia-smi >/dev/null 2>&1; then
     pass "nvidia-smi tersedia di backend ClipForge"
   else
-    fail "Backend belum berjalan dengan docker-compose.gpu.yml"
+    fail "Backend belum berjalan dengan akses NVIDIA GPU"
   fi
 else
   fail "Docker daemon tidak dapat diakses oleh user ini (coba jalankan dengan sudo)"

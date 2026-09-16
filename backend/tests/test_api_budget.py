@@ -1,6 +1,9 @@
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 
 from api import (
     AutoViralRequest,
@@ -1136,6 +1139,45 @@ def test_youtube_source_normalizer_accepts_mobile_live_and_query_variants():
     ) == expected
     assert normalize_youtube_video_url("https://www.youtube.com/live/abcDEF12345") == expected
     assert normalize_youtube_video_url("https://youtu.be/abcDEF12345?si=share123") == expected
+
+
+def test_api_import_loads_persisted_auto_viral_source_urls(tmp_path):
+    runs_path = tmp_path / "auto_viral_runs.json"
+    runs_path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "startup-regression",
+                    "status": "completed",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "updated_at": "2026-01-01T00:00:00+00:00",
+                    "request": {"source_urls": ["https://youtu.be/abcDEF12345"]},
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    env = {
+        **os.environ,
+        "AUTO_VIRAL_RUNS_PATH": str(runs_path),
+        "JOBS_PATH": str(tmp_path / "jobs.json"),
+        "YOUTUBE_UPLOADS_PATH": str(tmp_path / "youtube_uploads.json"),
+        "TIKTOK_UPLOADS_PATH": str(tmp_path / "tiktok_uploads.json"),
+        "PROCESSED_SOURCE_HISTORY_PATH": str(tmp_path / "processed_source_urls.json"),
+        "SOURCE_USAGE_HISTORY_PATH": str(tmp_path / "source_usage_history.json"),
+    }
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import api; assert len(api.auto_viral_runs) == 1"],
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_source_history_reports_short_and_highlight_usage(monkeypatch):

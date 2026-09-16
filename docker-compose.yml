@@ -5,6 +5,9 @@ services:
       context: ./backend
     container_name: fendy-clipper-backend
     network_mode: host
+    # GPU is part of the default deployment on this host. NVIDIA Container
+    # Toolkit still needs to be configured once before the first `up`.
+    gpus: all
     volumes:
       - ./backend/outputs:/app/outputs
       - ./backend/uploads:/app/uploads
@@ -17,6 +20,8 @@ services:
       - ${YOUTUBE_HOST_RUNTIME_DIR:-/run/user/1000}:/run/fendy-clipper-host-user:ro
     environment:
       IN_DOCKER: "1"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
       JOBS_PATH: /app/data/jobs.json
       YOUTUBE_UPLOADS_PATH: /app/data/youtube_uploads.json
       YOUTUBE_PLAYWRIGHT_STATE: /app/data/youtube_storage_state.json
@@ -125,6 +130,10 @@ services:
       YOUTUBE_SESSION_SYNC_STALL_TIMEOUT_SECONDS: ${YOUTUBE_SESSION_SYNC_STALL_TIMEOUT_SECONDS:-90}
       YOUTUBE_DELETE_UPLOADED_CLIP_DELAY_SECONDS: ${YOUTUBE_DELETE_UPLOADED_CLIP_DELAY_SECONDS:-30}
       OUTPUT_ORPHAN_CLEANUP_MIN_AGE_SECONDS: ${OUTPUT_ORPHAN_CLEANUP_MIN_AGE_SECONDS:-3600}
+      DATA_AUTOCLEAN_ENABLED: ${DATA_AUTOCLEAN_ENABLED:-true}
+      DATA_AUTOCLEAN_INTERVAL_SECONDS: ${DATA_AUTOCLEAN_INTERVAL_SECONDS:-21600}
+      DATA_DEBUG_RETENTION_DAYS: ${DATA_DEBUG_RETENTION_DAYS:-7}
+      DATA_STAGING_RETENTION_DAYS: ${DATA_STAGING_RETENTION_DAYS:-2}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_OWNER_ID: ${TELEGRAM_OWNER_ID:-}
       AUTO_VIRAL_TELEGRAM_CHAT_ID: ${AUTO_VIRAL_TELEGRAM_CHAT_ID:-}

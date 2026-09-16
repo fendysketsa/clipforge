@@ -94,6 +94,12 @@ YOUTUBE_LOGIN_PROFILE_DIRECTORY = os.environ.get(
 ).strip()
 YOUTUBE_CDP_URL = os.environ.get("YOUTUBE_CDP_URL", "http://127.0.0.1:9222").strip()
 YOUTUBE_CDP_STAGING_DIR = Path(os.environ.get("YOUTUBE_CDP_STAGING_DIR", BASE_DIR / "data" / "youtube_cdp_uploads"))
+YOUTUBE_UPLOAD_DEBUG_DIR = Path(
+    os.environ.get("YOUTUBE_UPLOAD_DEBUG_DIR", BASE_DIR / "data" / "youtube_debug")
+)
+TIKTOK_UPLOAD_DEBUG_DIR = Path(
+    os.environ.get("TIKTOK_UPLOAD_DEBUG_DIR", BASE_DIR / "data" / "tiktok_debug")
+)
 TIKTOK_PLAYWRIGHT_STATE = Path(
     os.environ.get("TIKTOK_PLAYWRIGHT_STATE", BASE_DIR / "data" / "tiktok_storage_state.json")
 )
@@ -1525,6 +1531,50 @@ def default_viral_video_search_queries() -> list[str]:
     return prioritized_viral_queries(configured)
 
 
+def normalize_youtube_video_url(value: str) -> str | None:
+    """Return one canonical watch URL for every supported YouTube URL shape.
+
+    This helper must remain above the Pydantic request models. Their field
+    validators also run while persisted automation records are loaded during
+    module import, before the rest of this file has finished defining itself.
+    """
+    clean = (value or "").strip().strip(".,;)'\"<>")
+    if not clean:
+        return None
+    if clean.startswith("//"):
+        clean = f"https:{clean}"
+    elif clean.startswith("/watch") or clean.startswith("/shorts/"):
+        clean = f"https://www.youtube.com{clean}"
+    elif clean.startswith("youtube.com/"):
+        clean = f"https://{clean}"
+    elif clean.startswith("www.youtube.com/"):
+        clean = f"https://{clean}"
+    elif clean.startswith("youtu.be/"):
+        clean = f"https://{clean}"
+
+    parsed = urlparse(clean)
+    host = parsed.netloc.casefold().split(":", 1)[0]
+    video_id = ""
+    if host in {"youtu.be", "www.youtu.be"}:
+        video_id = parsed.path.strip("/").split("/", 1)[0]
+    elif host in {
+        "youtube.com",
+        "www.youtube.com",
+        "m.youtube.com",
+        "music.youtube.com",
+        "youtube-nocookie.com",
+        "www.youtube-nocookie.com",
+    }:
+        path_parts = [part for part in parsed.path.split("/") if part]
+        if parsed.path.rstrip("/") == "/watch":
+            video_id = (parse_qs(parsed.query).get("v") or [""])[0]
+        elif len(path_parts) >= 2 and path_parts[0].casefold() in {"shorts", "live", "embed"}:
+            video_id = path_parts[1]
+    if re.fullmatch(r"[A-Za-z0-9_-]{6,}", video_id):
+        return f"https://www.youtube.com/watch?v={video_id}"
+    return None
+
+
 class AutoViralRequest(BaseModel):
     niche: IslamicContentNiche = "faith_prophets_converts"
     queries: list[str] = Field(default_factory=default_auto_viral_queries)
@@ -2914,6 +2964,105 @@ def cleanup_orphan_output_roots(*, min_age_seconds: int | None = None) -> int:
     return removed
 
 
+def cleanup_stale_runtime_artifacts(
+    *,
+    now: float | None = None,
+    debug_retention_seconds: int | None = None,
+    staging_retention_seconds: int | None = None,
+) -> dict[str, int]:
+    """Delete only expired debug captures and disposable upload staging files."""
+    current_time = time.time() if now is None else now
+    debug_retention = max(
+        86_400,
+        debug_retention_seconds
+        if debug_retention_seconds is not None
+        else env_int("DATA_DEBUG_RETENTION_DAYS", 7) * 86_400,
+    )
+    staging_retention = max(
+        86_400,
+        staging_retention_seconds
+        if staging_retention_seconds is not None
+        else env_int("DATA_STAGING_RETENTION_DAYS", 2) * 86_400,
+    )
+    targets = (
+        (YOUTUBE_UPLOAD_DEBUG_DIR, current_time - debug_retention),
+        (TIKTOK_UPLOAD_DEBUG_DIR, current_time - debug_retention),
+        (YOUTUBE_CDP_STAGING_DIR, current_time - staging_retention),
+    )
+    removed_files = 0
+    removed_bytes = 0
+    removed_dirs = 0
+
+    for root, cutoff in targets:
+        if not root.is_dir():
+            continue
+        for directory, child_dirs, filenames in os.walk(root, topdown=False, followlinks=False):
+            directory_path = Path(directory)
+            for filename in filenames:
+                path = directory_path / filename
+                try:
+                    if path.is_symlink():
+                        continue
+                    details = path.stat()
+                    if details.st_mtime >= cutoff:
+                        continue
+                    path.unlink()
+                    removed_files += 1
+                    removed_bytes += details.st_size
+                except (FileNotFoundError, OSError):
+                    continue
+            for child_dir in child_dirs:
+                path = directory_path / child_dir
+                try:
+                    if path.is_symlink():
+                        continue
+                    path.rmdir()
+                    removed_dirs += 1
+                except (FileNotFoundError, OSError):
+                    continue
+
+    return {
+        "files": removed_files,
+        "directories": removed_dirs,
+        "bytes": removed_bytes,
+    }
+
+
+def runtime_data_cleanup_loop() -> None:
+    global runtime_data_cleanup_running
+    try:
+        while env_bool("DATA_AUTOCLEAN_ENABLED", True):
+            result = cleanup_stale_runtime_artifacts()
+            if result["files"]:
+                freed_mb = result["bytes"] / 1024 / 1024
+                print(
+                    f"Auto-clean data: {result['files']} file lama dihapus ({freed_mb:.1f} MB).",
+                    flush=True,
+                )
+            interval = max(300, env_int("DATA_AUTOCLEAN_INTERVAL_SECONDS", 21_600))
+            time.sleep(interval)
+    except Exception as exc:
+        print(f"Auto-clean data berhenti karena error: {exc}", flush=True)
+    finally:
+        with runtime_data_cleanup_lock:
+            runtime_data_cleanup_running = False
+
+
+def start_runtime_data_cleanup_if_needed() -> None:
+    global runtime_data_cleanup_running
+    if not env_bool("DATA_AUTOCLEAN_ENABLED", True):
+        return
+    with runtime_data_cleanup_lock:
+        if runtime_data_cleanup_running:
+            return
+        runtime_data_cleanup_running = True
+    threading.Thread(
+        target=runtime_data_cleanup_loop,
+        name="runtime-data-autoclean",
+        daemon=True,
+    ).start()
+
+
 def cleanup_clip_files(clip: ClipFile) -> int:
     return remove_output_paths(clip_artifact_paths(clip))
 
@@ -2980,6 +3129,8 @@ tiktok_worker_running = False
 tiktok_cdp_lock = threading.Lock()
 youtube_cleanup_lock = threading.Lock()
 youtube_cleanup_scheduled: set[str] = set()
+runtime_data_cleanup_lock = threading.Lock()
+runtime_data_cleanup_running = False
 auto_viral_runs: dict[str, AutoViralRun] = load_auto_viral_runs()
 auto_viral_lock = threading.Lock()
 auto_viral_active_run_id: str | None = None
@@ -3545,44 +3696,6 @@ def prepare_limited_upload_file(source_path: Path, max_bytes: int) -> Path:
     raise RuntimeError(
         f"Gagal menyiapkan file upload di bawah {max_bytes // 1024 // 1024} MB: {last_error}"
     )
-
-
-def normalize_youtube_video_url(value: str) -> str | None:
-    clean = (value or "").strip().strip(".,;)'\"<>")
-    if not clean:
-        return None
-    if clean.startswith("//"):
-        clean = f"https:{clean}"
-    elif clean.startswith("/watch") or clean.startswith("/shorts/"):
-        clean = f"https://www.youtube.com{clean}"
-    elif clean.startswith("youtube.com/"):
-        clean = f"https://{clean}"
-    elif clean.startswith("www.youtube.com/"):
-        clean = f"https://{clean}"
-    elif clean.startswith("youtu.be/"):
-        clean = f"https://{clean}"
-
-    parsed = urlparse(clean)
-    host = parsed.netloc.casefold().split(":", 1)[0]
-    video_id = ""
-    if host in {"youtu.be", "www.youtu.be"}:
-        video_id = parsed.path.strip("/").split("/", 1)[0]
-    elif host in {
-        "youtube.com",
-        "www.youtube.com",
-        "m.youtube.com",
-        "music.youtube.com",
-        "youtube-nocookie.com",
-        "www.youtube-nocookie.com",
-    }:
-        path_parts = [part for part in parsed.path.split("/") if part]
-        if parsed.path.rstrip("/") == "/watch":
-            video_id = (parse_qs(parsed.query).get("v") or [""])[0]
-        elif len(path_parts) >= 2 and path_parts[0].casefold() in {"shorts", "live", "embed"}:
-            video_id = path_parts[1]
-    if re.fullmatch(r"[A-Za-z0-9_-]{6,}", video_id):
-        return f"https://www.youtube.com/watch?v={video_id}"
-    return None
 
 
 def youtube_video_url_from_logs(logs: list[str]) -> str | None:
@@ -9242,6 +9355,7 @@ def resume_queued_youtube_uploads() -> None:
             flush=True,
         )
     start_youtube_performance_collector_if_needed()
+    start_runtime_data_cleanup_if_needed()
 
 
 def discover_clips(started_at: float, output_root: Path | None = None) -> list[ClipFile]:

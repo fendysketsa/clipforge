@@ -13,6 +13,7 @@ from api import (
     cleanup_clip_files,
     cleanup_job_files,
     cleanup_orphan_output_roots,
+    cleanup_stale_runtime_artifacts,
     run_job,
 )
 from clipper import (
@@ -620,3 +621,43 @@ def test_orphan_sweep_preserves_referenced_and_recent_nonempty_roots(monkeypatch
     assert recent_file.exists()
     assert not orphan_file.parent.parent.exists()
     assert not empty_orphan.exists()
+
+
+def test_runtime_autoclean_removes_only_expired_disposable_files(monkeypatch, tmp_path):
+    import api
+    import os
+
+    youtube_debug = tmp_path / "youtube_debug"
+    tiktok_debug = tmp_path / "tiktok_debug"
+    staging = tmp_path / "youtube_cdp_uploads"
+    old_files = [
+        youtube_debug / "old.html",
+        tiktok_debug / "nested" / "old.png",
+        staging / "old.mp4",
+    ]
+    recent_files = [
+        youtube_debug / "recent.html",
+        staging / "recent.mp4",
+    ]
+    for path in [*old_files, *recent_files]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"data")
+
+    now = time.time()
+    old_timestamp = now - 172_800
+    for path in old_files:
+        os.utime(path, (old_timestamp, old_timestamp))
+
+    monkeypatch.setattr(api, "YOUTUBE_UPLOAD_DEBUG_DIR", youtube_debug)
+    monkeypatch.setattr(api, "TIKTOK_UPLOAD_DEBUG_DIR", tiktok_debug)
+    monkeypatch.setattr(api, "YOUTUBE_CDP_STAGING_DIR", staging)
+
+    result = cleanup_stale_runtime_artifacts(
+        now=now,
+        debug_retention_seconds=86_400,
+        staging_retention_seconds=86_400,
+    )
+
+    assert result == {"files": 3, "directories": 1, "bytes": 12}
+    assert all(not path.exists() for path in old_files)
+    assert all(path.exists() for path in recent_files)
