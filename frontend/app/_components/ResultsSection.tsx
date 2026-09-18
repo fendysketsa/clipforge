@@ -157,12 +157,42 @@ function isTikTokFileTransferError(message?: string | null) {
     || (lowered.includes("set_input_files") && lowered.includes("tidak dapat menerima file video"));
 }
 
+function tiktokUploadErrorNeedsSessionRepair(message?: string | null) {
+  const lowered = message?.toLowerCase() || "";
+  return [
+    "sesi tiktok belum login",
+    "tiktok meminta login ulang",
+    "session tiktok sudah habis",
+    "sesi sudah habis",
+    "akun browser aktif",
+    "akun browser bukan pemilik",
+    "connect_over_cdp",
+    "econnrefused",
+  ].some((marker) => lowered.includes(marker));
+}
+
 function displayTikTokSeriesLabel(label?: string | null, fallback?: string | null) {
   const clean = label?.trim() || "";
   if (clean === "Jawaban Ustadz 30 Detik") return fallback?.trim() || "Kajian Islam Ringkas";
   if (clean === "Kesalahan Ibadah Sehari-hari") return "Panduan Ibadah";
   if (clean === "Nasihat yang Sering Disalahpahami") return "Nasihat & Hikmah";
   return clean;
+}
+
+function tiktokRunningStage(upload: TikTokUploadJob) {
+  if (upload.status !== "running") return "";
+  const recent = [...(upload.logs ?? [])].reverse();
+  for (const line of recent) {
+    if (/memeriksa daftar posts|post_submission_ack/i.test(line)) return "memverifikasi daftar Posts";
+    if (/post_api_accepted|menerima proses posting/i.test(line)) return "TikTok menerima posting";
+    if (/tombol post diklik|post_confirmation_dialog/i.test(line)) return "mengirim permintaan Post";
+    if (/menunggu pemrosesan video|tombol post/i.test(line)) return "menunggu video siap diposting";
+    if (/caption/i.test(line)) return "mengisi caption";
+    if (/mengirim .* melalui transfer|video dipilih/i.test(line)) return "mentransfer video";
+    if (/disiapkan menjadi/i.test(line)) return "menyiapkan file ringan";
+    if (/target_account_confirmed|session_saved/i.test(line)) return "memeriksa akun TikTok";
+  }
+  return "menyiapkan TikTok Studio";
 }
 
 function youtubeRunningStage(upload: YouTubeUploadJob) {
@@ -780,7 +810,8 @@ export function ResultsSection({
             const isAlreadyUploaded = latestUpload?.status === "completed" && Boolean(latestUpload.video_url);
             const isUploadingToTikTok = latestTikTokUpload?.status === "queued" || latestTikTokUpload?.status === "running";
             const isAlreadyOnTikTok = latestTikTokUpload?.status === "completed" && latestTikTokUpload.upload_confirmed;
-            const shouldRetryTikTokTransfer = isTikTokFileTransferError(latestTikTokUpload?.error);
+            const shouldRetryTikTokUpload = isTikTokFileTransferError(latestTikTokUpload?.error)
+              || !tiktokUploadErrorNeedsSessionRepair(latestTikTokUpload?.error);
             const hasRunningUpload = youtubeUploads.some((upload) => upload.status === "running");
             const runningStage = latestUpload ? youtubeRunningStage(latestUpload) : "";
             const queuePosition = latestUpload?.status === "queued"
@@ -1405,6 +1436,9 @@ export function ResultsSection({
                       <span className="youtubeUploadStatusText">
                         TikTok: {latestTikTokUpload.status}
                         {uploadTikTokSeriesLabel ? ` · ${uploadTikTokSeriesLabel}` : null}
+                        {latestTikTokUpload.status === "running"
+                          ? ` · ${tiktokRunningStage(latestTikTokUpload)}`
+                          : null}
                         {latestTikTokUpload.status === "completed" && latestTikTokUpload.upload_confirmed
                           ? " · tersimpan Only you"
                           : null}
@@ -1467,7 +1501,7 @@ export function ResultsSection({
                       <span>{friendlyTikTokUploadError(latestTikTokUpload.error)}</span>
                       <button
                         type="button"
-                        onClick={shouldRetryTikTokTransfer
+                        onClick={shouldRetryTikTokUpload
                           ? () => onUploadClipToTikTok(clip)
                           : onCheckTikTokSession}
                         disabled={isTikTokLoginActive}
@@ -1475,7 +1509,7 @@ export function ResultsSection({
                         <RefreshCw size={14} />
                         <span>{isTikTokLoginActive
                           ? "Selesaikan login..."
-                          : shouldRetryTikTokTransfer
+                          : shouldRetryTikTokUpload
                             ? "Ulangi TikTok"
                             : "Cek sesi TikTok"}</span>
                       </button>

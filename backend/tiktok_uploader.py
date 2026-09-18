@@ -497,7 +497,25 @@ def caption_editor_text(editor) -> str:
 
 def clear_caption_editor(page, editor) -> None:
     """Remove TikTok's filename-derived caption from the actual text control."""
-    editor.click(timeout=5_000)
+    try:
+        editor.click(timeout=5_000)
+    except Exception as first_error:
+        dismissed, modal_text = dismiss_blocking_modal(page)
+        if not dismissed:
+            save_debug(page, "caption-blocked-by-modal")
+            detail = modal_text or "dialog tanpa keterangan"
+            raise UploadError(
+                f"Dialog TikTok menghalangi kolom caption: {detail}. "
+                "Video belum diposting."
+            ) from first_error
+        try:
+            editor.click(timeout=5_000)
+        except Exception as retry_error:
+            save_debug(page, "caption-click-failed")
+            raise UploadError(
+                "Kolom caption TikTok tetap tidak dapat diklik setelah dialog ditutup; "
+                "video belum diposting."
+            ) from retry_error
     try:
         editor.press("Control+A", timeout=2_000)
         editor.press("Backspace", timeout=2_000)
@@ -573,6 +591,80 @@ def discard_stale_upload_draft(page) -> None:
         pass
 
 
+BLOCKING_MODAL_SELECTORS = (
+    '[role="dialog"]:has-text("Continue to post?")',
+    '[role="dialog"]:has-text("Content may be restricted")',
+    '[data-floating-ui-portal]:has(.TUXModal-overlay[data-transition-status="open"])',
+    '[data-floating-ui-portal]:has(.TUXModal-overlay)',
+    '[role="dialog"]',
+)
+
+
+def visible_blocking_modal(page, timeout_ms: int = 500):
+    return first_visible(page, BLOCKING_MODAL_SELECTORS, timeout_ms=timeout_ms)
+
+
+def dismiss_blocking_modal(page) -> tuple[bool, str]:
+    """Dismiss a late TikTok Studio modal without enabling optional features."""
+    modal = visible_blocking_modal(page)
+    if modal is None:
+        return True, ""
+    try:
+        modal_text = " ".join(str(modal.inner_text(timeout=1_500) or "").split())[:300]
+    except Exception:
+        modal_text = ""
+    if modal_text:
+        log(f"Dialog TikTok terdeteksi: {modal_text}")
+
+    # Informational dialogs are commonly dismissible with Escape even when the
+    # close icon has no stable aria label across Studio releases.
+    try:
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(500)
+    except Exception:
+        pass
+    if visible_blocking_modal(page) is None:
+        log("Dialog TikTok ditutup sebelum pengisian caption.")
+        return True, modal_text
+
+    modal = visible_blocking_modal(page)
+    if modal is None:
+        return True, modal_text
+    button = first_visible(
+        modal,
+        (
+            'button[aria-label*="close" i]',
+            'button:has-text("Not now")',
+            'button:has-text("Nanti")',
+            'button:has-text("Skip")',
+            'button:has-text("Lewati")',
+            'button:has-text("Cancel")',
+            'button:has-text("Batal")',
+            'button:has-text("Got it")',
+            'button:has-text("Mengerti")',
+            'button:has-text("Paham")',
+            'button:has-text("OK")',
+            'button:has-text("Close")',
+            'button:has-text("Tutup")',
+            'button:has-text("Continue")',
+            'button:has-text("Lanjutkan")',
+        ),
+        timeout_ms=500,
+    )
+    if button is not None:
+        try:
+            button.click(timeout=5_000)
+            page.wait_for_timeout(700)
+        except Exception:
+            pass
+    dismissed = visible_blocking_modal(page) is None
+    if dismissed:
+        log("Dialog TikTok ditutup sebelum pengisian caption.")
+    else:
+        log(f"BLOCKING_TIKTOK_MODAL:{modal_text or 'isi dialog tidak terbaca'}")
+    return dismissed, modal_text
+
+
 def dismiss_upload_overlays(page) -> None:
     """Dismiss TikTok Studio onboarding without accepting optional checks."""
     page.wait_for_timeout(700)
@@ -597,6 +689,13 @@ def dismiss_upload_overlays(page) -> None:
             page.wait_for_timeout(400)
         except Exception:
             continue
+    dismissed, modal_text = dismiss_blocking_modal(page)
+    if not dismissed:
+        save_debug(page, "blocking-upload-modal")
+        detail = modal_text or "isi dialog tidak terbaca"
+        raise UploadError(
+            f"Dialog TikTok menghalangi form upload: {detail}. Video belum diposting."
+        )
 
 
 def set_only_you(page) -> None:
@@ -725,23 +824,308 @@ def tiktok_content_caption_count(page, caption: str) -> int:
     return content_caption_matches(body_text, caption)
 
 
+def visible_tiktok_post_ids(page) -> set[str]:
+    """Return the stable video IDs currently hydrated in Studio's Posts table."""
+    try:
+        links = page.locator('a[href*="/video/"]').all()
+    except Exception:
+        return set()
+    post_ids: set[str] = set()
+    for link in links:
+        try:
+            href = str(link.get_attribute("href", timeout=750) or "")
+        except Exception:
+            continue
+        match = re.search(r"/video/(\d+)", href)
+        if match:
+            post_ids.add(match.group(1))
+    return post_ids
+
+
+def tiktok_content_snapshot(page, caption: str) -> tuple[int, set[str] | None]:
+    """Capture both caption matches and post IDs before submitting a video."""
+    page.goto(TIKTOK_CONTENT_URL, wait_until="domcontentloaded", timeout=45_000)
+    body_text = page.locator("body").inner_text(timeout=20_000)
+    post_ids = visible_tiktok_post_ids(page)
+    # An empty baseline is only trustworthy for a genuinely empty account.
+    # If links have not hydrated yet, treating them as an empty set would make
+    # every old row look like a new post on the next page load.
+    ids_available = bool(post_ids) or bool(
+        re.search(r"\b(?:posts|postingan)\s*0\b", body_text, re.I)
+    )
+    return content_caption_matches(body_text, caption), post_ids if ids_available else None
+
+
+POST_SUBMISSION_SUCCESS_PATTERNS = (
+    r"your video has been uploaded",
+    r"your video is being processed",
+    r"your post is being processed",
+    r"video (?:kamu|anda) (?:telah |sudah )?diunggah",
+    r"berhasil (?:diunggah|diposting|dipublikasikan)",
+)
+
+POST_SUBMISSION_FAILURE_PATTERNS = (
+    r"couldn['\u2019]?t post",
+    r"could not post",
+    r"failed to post",
+    r"unable to post",
+    r"post failed",
+    r"couldn['\u2019]?t upload",
+    r"could not upload",
+    r"unable to upload",
+    r"video (?:couldn['\u2019]?t|could not) be uploaded",
+    r"upload failed",
+    r"something went wrong(?: while (?:posting|uploading))?",
+    r"gagal (?:memposting|mengunggah|diposting|diunggah)",
+    r"tidak dapat (?:memposting|mengunggah)",
+    r"terjadi kesalahan saat (?:memposting|mengunggah)",
+)
+
+
+def post_submission_failure(body_text: str) -> str | None:
+    """Extract TikTok's visible rejection instead of reporting a generic timeout."""
+    for line in normalized_caption_text(body_text).splitlines():
+        compact = " ".join(line.split()).strip()
+        if not compact:
+            continue
+        if any(re.search(pattern, compact, re.I) for pattern in POST_SUBMISSION_FAILURE_PATTERNS):
+            return compact[:300]
+    return None
+
+
+def monitor_post_submission_response(page) -> tuple[dict[str, object], object | None]:
+    """Observe TikTok's authoritative create-post response before clicking Post."""
+    state: dict[str, object] = {
+        "seen": False,
+        "accepted": False,
+        "error": "",
+        "url": "",
+    }
+
+    def handle_response(response) -> None:
+        try:
+            request = response.request
+            url = str(response.url or "")
+            normalized_url = url.casefold()
+            if str(request.method or "").upper() != "POST":
+                return
+            if "tiktok.com" not in normalized_url:
+                return
+            if not any(
+                marker in normalized_url
+                for marker in (
+                    "/api/v1/web/project/post",
+                    "/project/post",
+                    "/item/create",
+                    "/post/publish",
+                )
+            ):
+                return
+            state["seen"] = True
+            state["url"] = url.split("?", 1)[0]
+            http_status = int(response.status)
+            try:
+                payload = response.json()
+            except Exception:
+                payload = None
+            status_code = payload.get("status_code") if isinstance(payload, dict) else None
+            status_message = ""
+            if isinstance(payload, dict):
+                status_message = str(
+                    payload.get("status_msg")
+                    or payload.get("message")
+                    or payload.get("status_message")
+                    or ""
+                ).strip()
+            if 200 <= http_status < 300 and status_code in (0, "0"):
+                state["accepted"] = True
+                log(f"POST_API_ACCEPTED:{state['url']}")
+                return
+            if http_status >= 400 or status_code not in (None, 0, "0"):
+                detail = status_message or f"HTTP {http_status}, status_code={status_code}"
+                state["error"] = detail[:300]
+                log(f"POST_API_REJECTED:{state['url']}:{state['error']}")
+            else:
+                log(f"POST_API_RESPONSE_UNCLEAR:{state['url']}:HTTP {http_status}")
+        except Exception as exc:
+            log(f"POST_API_MONITOR_ERROR:{str(exc).splitlines()[0][:180]}")
+
+    try:
+        page.on("response", handle_response)
+    except Exception:
+        return state, None
+    return state, handle_response
+
+
+def stop_post_submission_monitor(page, handler: object | None) -> None:
+    if handler is None:
+        return
+    try:
+        page.remove_listener("response", handler)
+    except Exception:
+        try:
+            page.off("response", handler)
+        except Exception:
+            pass
+
+
+def confirm_post_submission_modal(page) -> tuple[str, str]:
+    """Handle a post-authorized TikTok dialog and describe the next action."""
+    modal = visible_blocking_modal(page, timeout_ms=250)
+    if modal is None:
+        return "none", ""
+    try:
+        modal_text = " ".join(str(modal.inner_text(timeout=1_000) or "").split())[:300]
+    except Exception:
+        modal_text = ""
+    normalized_text = modal_text.casefold()
+    if "content may be restricted" in normalized_text and "you can still post" in normalized_text:
+        close_control = first_visible(
+            modal,
+            (
+                ".common-modal-close",
+                ".common-modal-close-icon",
+            ),
+            timeout_ms=750,
+        )
+        if close_control is None:
+            return "blocked", modal_text
+        try:
+            close_control.click(timeout=5_000)
+            page.wait_for_timeout(700)
+        except Exception:
+            return "blocked", modal_text
+        if visible_blocking_modal(page) is not None:
+            return "blocked", modal_text
+        log(
+            "CONTENT_RESTRICTION_WARNING_ACKNOWLEDGED:"
+            "TikTok mengizinkan tetap post; tombol Post akan diklik ulang sekali."
+        )
+        return "retry_post", modal_text
+    button = first_visible(
+        modal,
+        (
+            'button:has-text("Post now")',
+            'button:has-text("Post anyway")',
+            'button:has-text("Continue posting")',
+            'button:has-text("Upload anyway")',
+            'button:has-text("Publish")',
+            'button:has-text("Publikasikan")',
+            'button:has-text("Posting sekarang")',
+            'button:has-text("Tetap posting")',
+            'button:has-text("Confirm")',
+            'button:has-text("Konfirmasi")',
+            'button:has-text("Continue")',
+            'button:has-text("Lanjutkan")',
+            'button:has-text("Post")',
+            'button:has-text("Posting")',
+        ),
+        timeout_ms=500,
+    )
+    if button is None:
+        return "blocked", modal_text
+    try:
+        button.click(timeout=5_000)
+        log(f"POST_CONFIRMATION_DIALOG_ACCEPTED:{modal_text or 'dialog konfirmasi'}")
+        page.wait_for_timeout(700)
+        return "confirmed", modal_text
+    except Exception:
+        return "blocked", modal_text
+
+
+def wait_for_post_submission(
+    page,
+    timeout_ms: int = 45_000,
+    background_tick: Callable[[], bool] | None = None,
+    submission_state: dict[str, object] | None = None,
+    post_button=None,
+) -> None:
+    """Let TikTok finish its submit request before leaving the upload page."""
+    deadline = time.monotonic() + max(15_000, timeout_ms) / 1000
+    next_background_tick = 0.0
+    post_retried = False
+    while time.monotonic() < deadline:
+        if background_tick is not None and time.monotonic() >= next_background_tick:
+            background_tick()
+            next_background_tick = time.monotonic() + 5
+        current_url = str(getattr(page, "url", ""))
+        if "/tiktokstudio/content" in current_url.casefold():
+            log("POST_SUBMISSION_SETTLED:TikTok membuka daftar Posts.")
+            return
+        try:
+            body_text = page.locator("body").inner_text(timeout=2_000)
+        except Exception:
+            body_text = ""
+        if submission_state is not None:
+            api_error = str(submission_state.get("error") or "").strip()
+            if api_error:
+                save_debug(page, "post-api-rejected")
+                raise UploadError(f"TikTok menolak permintaan posting: {api_error}")
+            if bool(submission_state.get("accepted")):
+                log("POST_SUBMISSION_SETTLED:API TikTok menerima posting.")
+                page.wait_for_timeout(3_000)
+                return
+        failure = post_submission_failure(body_text)
+        if failure:
+            save_debug(page, "post-rejected")
+            raise UploadError(f"TikTok menolak posting setelah tombol Post diklik: {failure}")
+        modal_action, modal_text = confirm_post_submission_modal(page)
+        if modal_action == "retry_post":
+            if post_button is None or post_retried:
+                save_debug(page, "content-restriction-warning-loop")
+                raise UploadError(
+                    "Peringatan pembatasan konten TikTok muncul berulang setelah dikonfirmasi; "
+                    "video belum diposting."
+                )
+            post_button.click(timeout=10_000)
+            post_retried = True
+            log("Tombol Post diklik ulang setelah peringatan pembatasan konten ditutup.")
+            page.wait_for_timeout(1_000)
+            continue
+        if modal_action == "confirmed":
+            continue
+        if modal_action == "blocked":
+            save_debug(page, "unknown-post-confirmation-modal")
+            raise UploadError(
+                "TikTok menampilkan dialog setelah tombol Post, tetapi kontrol konfirmasinya "
+                f"tidak dikenali: {modal_text or 'isi dialog tidak terbaca'}. Video belum diposting."
+            )
+        if any(re.search(pattern, body_text, re.I) for pattern in POST_SUBMISSION_SUCCESS_PATTERNS):
+            log("POST_SUBMISSION_SETTLED:TikTok menerima proses posting.")
+            # Keep the document alive briefly so a success toast cannot race a
+            # still-running create request on slower or larger uploads.
+            page.wait_for_timeout(3_000)
+            return
+        page.wait_for_timeout(1_000)
+    if submission_state is not None and not bool(submission_state.get("seen")):
+        save_debug(page, "post-request-missing")
+        raise UploadError(
+            "Tombol Post sudah diklik, tetapi TikTok tidak mengirim permintaan posting. "
+            "Kemungkinan ada dialog atau validasi TikTok yang masih menahan form; "
+            "video belum diposting."
+        )
+    # A response from a changed endpoint can be inconclusive. Continue with the
+    # authoritative Posts list only when a plausible post request was observed.
+    log("POST_SUBMISSION_ACK_UNAVAILABLE: memeriksa daftar Posts setelah masa tunggu aman.")
+
+
 def wait_for_new_tiktok_post(
     page,
     caption: str,
     previous_matches: int | None,
     timeout_ms: int = 300_000,
     background_tick: Callable[[], bool] | None = None,
+    previous_post_ids: set[str] | None = None,
 ) -> bool:
-    """Confirm a new row in Studio Posts; transfer text is never proof of a post."""
+    """Confirm a new Studio row by ID or caption; transfer text is never proof."""
     deadline = time.monotonic() + max(5_000, timeout_ms) / 1000
     required_matches = (previous_matches + 1) if previous_matches is not None else 1
-    # The video is already processed before Post is clicked. Give TikTok's
-    # submit request time to settle before navigating to the authoritative list.
-    page.wait_for_timeout(5_000)
-    try:
-        page.goto(TIKTOK_CONTENT_URL, wait_until="domcontentloaded", timeout=45_000)
-    except Exception:
-        pass
+    baseline_ids = previous_post_ids
+    if "/tiktokstudio/content" not in str(getattr(page, "url", "")).casefold():
+        try:
+            page.goto(TIKTOK_CONTENT_URL, wait_until="domcontentloaded", timeout=45_000)
+        except Exception:
+            pass
     if background_tick is not None:
         background_tick()
     next_refresh = time.monotonic() + 60
@@ -756,6 +1140,11 @@ def wait_for_new_tiktok_post(
             # async table and can hide a row that was already accepted.
             body_text = page.locator("body").inner_text(timeout=20_000)
             matches = content_caption_matches(body_text, caption)
+            current_ids = visible_tiktok_post_ids(page)
+            new_ids = current_ids - baseline_ids if baseline_ids is not None else set()
+            if new_ids:
+                log(f"POST_CONFIRMED_BY_NEW_ID:{sorted(new_ids)[0]}")
+                return True
             if matches >= required_matches:
                 log(f"POST_CONFIRMED_IN_CONTENT_LIST:{content_caption_key(caption)}")
                 return True
@@ -883,9 +1272,14 @@ def upload_video(
     background_tick: Callable[[], bool] | None = None,
 ) -> None:
     previous_content_matches: int | None = None
+    previous_post_ids: set[str] | None = None
     try:
-        previous_content_matches = tiktok_content_caption_count(page, caption)
+        previous_content_matches, previous_post_ids = tiktok_content_snapshot(page, caption)
         log(f"POST_BASELINE_MATCHES:{previous_content_matches}")
+        if previous_post_ids is None:
+            log("POST_BASELINE_VISIBLE_IDS:unavailable")
+        else:
+            log(f"POST_BASELINE_VISIBLE_IDS:{len(previous_post_ids)}")
     except Exception as exc:
         log(f"POST_BASELINE_UNAVAILABLE:{str(exc).splitlines()[0][:180]}")
     goto(page, UPLOAD_URL)
@@ -998,10 +1392,26 @@ def upload_video(
             "Tombol Post TikTok menjadi tidak aktif setelah caption diverifikasi; "
             "video tidak diterbitkan."
         )
-    post_button.click(timeout=10_000)
-    log("Tombol Post diklik setelah privasi Only you terverifikasi.")
-    if background_tick is not None:
-        background_tick()
+    submission_state, response_handler = monitor_post_submission_response(page)
+    try:
+        post_button.click(timeout=10_000)
+        log("Tombol Post diklik setelah privasi Only you terverifikasi.")
+        if background_tick is not None:
+            background_tick()
+
+        wait_for_post_submission(
+            page,
+            timeout_ms=env_int(
+                "TIKTOK_POST_SUBMIT_SETTLE_MS",
+                45_000,
+                minimum=15_000,
+            ),
+            background_tick=background_tick,
+            submission_state=submission_state,
+            post_button=post_button,
+        )
+    finally:
+        stop_post_submission_monitor(page, response_handler)
 
     confirmed = wait_for_new_tiktok_post(
         page,
@@ -1013,6 +1423,7 @@ def upload_video(
             minimum=90_000,
         ),
         background_tick=background_tick,
+        previous_post_ids=previous_post_ids,
     )
     if not confirmed:
         save_debug(page, "confirmation-missing")

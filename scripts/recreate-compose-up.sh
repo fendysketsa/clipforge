@@ -87,6 +87,54 @@ wait_for_backend() {
   return 1
 }
 
+refuse_restart_during_active_tiktok_upload() {
+  local python_cmd=""
+  if command -v python3 >/dev/null 2>&1; then
+    python_cmd="$(command -v python3)"
+  elif command -v python >/dev/null 2>&1; then
+    python_cmd="$(command -v python)"
+  else
+    return 0
+  fi
+  "$python_cmd" - <<'PY'
+import datetime
+import json
+import sys
+import urllib.request
+
+try:
+    with urllib.request.urlopen("http://127.0.0.1:8010/api/tiktok/uploads", timeout=3) as response:
+        uploads = json.load(response)
+except Exception:
+    raise SystemExit(0)
+
+now = datetime.datetime.now(datetime.timezone.utc)
+active = []
+for upload in uploads if isinstance(uploads, list) else []:
+    if upload.get("status") not in {"queued", "running"}:
+        continue
+    timestamp = upload.get("updated_at") or upload.get("started_at") or upload.get("created_at")
+    try:
+        updated = datetime.datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+        age_seconds = (now - updated.astimezone(datetime.timezone.utc)).total_seconds()
+    except Exception:
+        age_seconds = 0
+    # A fresh upload is genuinely active. A stale record must not permanently
+    # block the restart that lets backend startup recovery mark it failed.
+    if age_seconds <= 600:
+        active.append((str(upload.get("id") or "unknown"), upload.get("status"), int(age_seconds)))
+
+if active:
+    details = ", ".join(f"{upload_id} ({status}, {age}s)" for upload_id, status, age in active)
+    print(
+        "Rebuild dibatalkan: upload TikTok masih aktif: " + details + ".\n"
+        "Tunggu sampai selesai/failed, lalu jalankan rebuild lagi agar form TikTok tidak terputus.",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+PY
+}
+
 tiktok_saved_session_ready() {
   python - <<'PY' >/dev/null 2>&1
 import json
@@ -181,6 +229,7 @@ echo "Chrome remote debugging ready on http://127.0.0.1:${YOUTUBE_CDP_PORT}."
 if [[ "$RESTORE_ONLY" == "true" ]]; then
   echo "Mode restore: menunggu container yang dipulihkan Docker restart policy..."
 else
+  refuse_restart_during_active_tiktok_upload
   "${compose_cmd[@]}" --env-file .env up -d --build --force-recreate backend telegram-bot frontend
 fi
 

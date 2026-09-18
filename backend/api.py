@@ -8651,9 +8651,22 @@ def build_tiktok_upload_command(
 
 
 def tiktok_error_from_logs(logs: list[str]) -> str | None:
+    recent_detail = "\n".join(logs[-50:]).casefold()
     for line in reversed(logs):
         if "USER_ERROR:" in line:
-            return line.split("USER_ERROR:", 1)[1].strip()
+            message = line.split("USER_ERROR:", 1)[1].strip()
+            normalized = message.casefold()
+            if "locator.click" in normalized and "timeout" in normalized:
+                if "tuxmodal-overlay" in recent_detail or "intercepts pointer events" in recent_detail:
+                    return (
+                        "Dialog TikTok menutupi form upload sehingga kolom caption tidak dapat diklik. "
+                        "Video belum diposting; dialog akan ditutup otomatis pada percobaan berikutnya."
+                    )
+                return (
+                    "Kontrol TikTok tidak dapat diklik karena halaman belum siap. "
+                    "Video belum diposting; coba ulang setelah halaman Studio selesai dimuat."
+                )
+            return message
     return None
 
 

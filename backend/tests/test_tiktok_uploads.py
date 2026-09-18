@@ -27,9 +27,11 @@ from tiktok_uploader import (
     select_google_login,
     select_qr_login,
     set_caption,
+    tiktok_content_snapshot,
     upload_video,
     validate_target_account,
     wait_for_post_button,
+    wait_for_post_submission,
     wait_for_new_tiktok_post,
 )
 from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
@@ -1086,6 +1088,31 @@ def test_tiktok_transfer_status_is_not_post_confirmation():
     ) == 1
 
 
+def test_tiktok_post_id_baseline_is_unavailable_until_existing_rows_hydrate():
+    class EmptyLinks:
+        def all(self):
+            return []
+
+    class Body:
+        def inner_text(self, **_kwargs):
+            return "Posts 90\nPosts (Created on)"
+
+    class Page:
+        def goto(self, *_args, **_kwargs):
+            pass
+
+        def locator(self, selector):
+            if selector == "body":
+                return Body()
+            assert selector == 'a[href*="/video/"]'
+            return EmptyLinks()
+
+    matches, post_ids = tiktok_content_snapshot(Page(), "Caption baru")
+
+    assert matches == 0
+    assert post_ids is None
+
+
 def test_tiktok_post_confirmation_polls_settled_content_page_without_renavigating():
     caption = "Apakah dia benar-benar seperti yang mereka bayangkan?\n\n#KajianIslam"
     bodies = iter(
@@ -1120,6 +1147,162 @@ def test_tiktok_post_confirmation_polls_settled_content_page_without_renavigatin
 
     assert wait_for_new_tiktok_post(page, caption, 0, timeout_ms=5_000) is True
     assert page.goto_calls == 1
+
+
+def test_tiktok_post_confirmation_accepts_new_video_id_when_caption_is_changed():
+    class Link:
+        def __init__(self, href):
+            self.href = href
+
+        def get_attribute(self, _name, **_kwargs):
+            return self.href
+
+    class Locator:
+        def __init__(self, items):
+            self.items = items
+
+        def all(self):
+            return self.items
+
+    class Body:
+        def inner_text(self, **_kwargs):
+            return "Posts (Created on)\nCaption yang diubah TikTok"
+
+    class Page:
+        url = "https://www.tiktok.com/tiktokstudio/content"
+
+        def locator(self, selector):
+            if selector == "body":
+                return Body()
+            assert selector == 'a[href*="/video/"]'
+            return Locator([Link("/@target/video/222")])
+
+        def wait_for_timeout(self, _milliseconds):
+            pass
+
+        def reload(self, **_kwargs):
+            raise AssertionError("a newly hydrated ID should confirm immediately")
+
+    assert wait_for_new_tiktok_post(
+        Page(),
+        "Caption asli",
+        0,
+        timeout_ms=5_000,
+        previous_post_ids={"111"},
+    ) is True
+
+
+def test_tiktok_post_submission_reports_visible_rejection(monkeypatch):
+    class Body:
+        def inner_text(self, **_kwargs):
+            return "Couldn't post video. Please try again later."
+
+    class Page:
+        url = "https://www.tiktok.com/tiktokstudio/upload"
+
+        def locator(self, selector):
+            assert selector == "body"
+            return Body()
+
+    monkeypatch.setattr("tiktok_uploader.save_debug", lambda *_args: None)
+
+    with pytest.raises(UploadError, match="TikTok menolak posting"):
+        wait_for_post_submission(Page(), timeout_ms=15_000)
+
+
+def test_tiktok_post_submission_accepts_authoritative_api_response():
+    class Page:
+        url = "https://www.tiktok.com/tiktokstudio/upload"
+
+        def wait_for_timeout(self, _milliseconds):
+            pass
+
+    wait_for_post_submission(
+        Page(),
+        timeout_ms=15_000,
+        submission_state={"seen": True, "accepted": True, "error": ""},
+    )
+
+
+def test_tiktok_post_submission_fails_fast_when_no_request_was_sent(monkeypatch):
+    timeline = iter([0.0, 20.0])
+
+    class Body:
+        def inner_text(self, **_kwargs):
+            return "Upload video"
+
+    class Page:
+        url = "https://www.tiktok.com/tiktokstudio/upload"
+
+        def locator(self, selector):
+            assert selector == "body"
+            return Body()
+
+        def wait_for_timeout(self, _milliseconds):
+            pass
+
+    monkeypatch.setattr("tiktok_uploader.time.monotonic", lambda: next(timeline))
+    monkeypatch.setattr("tiktok_uploader.confirm_post_submission_modal", lambda _page: ("none", ""))
+    monkeypatch.setattr("tiktok_uploader.save_debug", lambda *_args: None)
+
+    with pytest.raises(UploadError, match="tidak mengirim permintaan posting"):
+        wait_for_post_submission(
+            Page(),
+            timeout_ms=15_000,
+            submission_state={"seen": False, "accepted": False, "error": ""},
+        )
+
+
+def test_tiktok_restricted_content_warning_closes_then_retries_post_once(monkeypatch):
+    timeline = iter([0.0, 1.0, 2.0])
+    state = {"seen": False, "accepted": False, "error": ""}
+
+    class Body:
+        def inner_text(self, **_kwargs):
+            return "Upload video"
+
+    class PostButton:
+        def __init__(self):
+            self.clicks = 0
+
+        def click(self, **_kwargs):
+            self.clicks += 1
+            state["seen"] = True
+            state["accepted"] = True
+
+    class Page:
+        url = "https://www.tiktok.com/tiktokstudio/upload"
+
+        def locator(self, selector):
+            assert selector == "body"
+            return Body()
+
+        def wait_for_timeout(self, _milliseconds):
+            pass
+
+    modal_actions = iter(
+        [
+            ("retry_post", "Content may be restricted. You can still post."),
+            ("none", ""),
+        ]
+    )
+    post_button = PostButton()
+    monkeypatch.setattr("tiktok_uploader.time.monotonic", lambda: next(timeline))
+    monkeypatch.setattr("tiktok_uploader.confirm_post_submission_modal", lambda _page: next(modal_actions))
+
+    wait_for_post_submission(
+        Page(),
+        timeout_ms=15_000,
+        submission_state=state,
+        post_button=post_button,
+    )
+
+    assert post_button.clicks == 1
+
+
+def test_tiktok_modal_selectors_cover_continue_to_post_dialog():
+    assert any("Continue to post?" in selector for selector in tiktok_uploader.BLOCKING_MODAL_SELECTORS)
+    assert any(selector == '[role="dialog"]' for selector in tiktok_uploader.BLOCKING_MODAL_SELECTORS)
 
 
 def test_tiktok_caption_replaces_filename_instead_of_appending(monkeypatch):
@@ -1172,6 +1355,52 @@ def test_tiktok_caption_replaces_filename_instead_of_appending(monkeypatch):
 
     assert editor.value == expected
     assert "clip_01" not in editor.value
+
+
+def test_tiktok_caption_recovers_when_a_late_modal_intercepts_the_first_click(monkeypatch):
+    expected = "Caption aman setelah dialog ditutup"
+    dismiss_calls = []
+
+    class Editor:
+        def __init__(self):
+            self.value = "filename.mp4"
+            self.clicks = 0
+            self.selected = False
+
+        def click(self, **_kwargs):
+            self.clicks += 1
+            if self.clicks == 1:
+                raise RuntimeError("TUXModal-overlay intercepts pointer events")
+
+        def press(self, key, **_kwargs):
+            if key == "Control+A":
+                self.selected = True
+            elif key == "Backspace" and self.selected:
+                self.value = ""
+
+        def fill(self, value, **_kwargs):
+            self.value = value
+
+        def input_value(self, **_kwargs):
+            return self.value
+
+    editor = Editor()
+
+    class Page:
+        def wait_for_timeout(self, _milliseconds):
+            pass
+
+    monkeypatch.setattr("tiktok_uploader.first_visible", lambda *_args, **_kwargs: editor)
+    monkeypatch.setattr(
+        "tiktok_uploader.dismiss_blocking_modal",
+        lambda _page: (dismiss_calls.append(True) or True, "Long-video information"),
+    )
+
+    set_caption(Page(), expected)
+
+    assert editor.value == expected
+    assert editor.clicks == 2
+    assert dismiss_calls == [True]
 
 
 def test_tiktok_post_button_waits_until_async_upload_enables_it():
@@ -1252,6 +1481,19 @@ def test_tiktok_legacy_set_input_timeout_is_safe_to_retry_without_cdp():
     )
 
     assert api.tiktok_error_is_cdp_file_transfer_failure(message) is True
+
+
+def test_tiktok_click_timeout_behind_modal_has_a_useful_error():
+    logs = [
+        "USER_ERROR:Uploader TikTok gagal: Locator.click: Timeout 5000ms exceeded.",
+        '<div class="TUXModal-overlay"> intercepts pointer events',
+    ]
+
+    message = api.tiktok_error_from_logs(logs)
+
+    assert message is not None
+    assert "Dialog TikTok menutupi form upload" in message
+    assert "Video belum diposting" in message
 
 
 def test_explicit_tiktok_login_refreshes_even_while_saved_session_exists(monkeypatch):
