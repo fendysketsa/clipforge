@@ -2160,11 +2160,17 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
             repair_known_public_typos(upload.description),
             flags=re.IGNORECASE,
         )
-        if repaired_title != upload.title or repaired_description != upload.description:
+        repaired_tags = [repair_public_hashtag_typos(tag) for tag in upload.tags]
+        if (
+            repaired_title != upload.title
+            or repaired_description != upload.description
+            or repaired_tags != upload.tags
+        ):
             upload = upload.model_copy(
                 update={
                     "title": repaired_title,
                     "description": repaired_description,
+                    "tags": repaired_tags,
                 }
             )
         if upload.status == "running":
@@ -2333,11 +2339,20 @@ def load_tiktok_uploads() -> dict[str, TikTokUploadJob]:
         repaired_caption = re.sub(
             r"@ryuundyofficial\b",
             "@ryuundys",
-            repair_islamic_asr_text(upload.caption),
+            repair_known_public_typos(upload.caption),
             flags=re.IGNORECASE,
         )
-        if repaired_caption != upload.caption:
-            upload = upload.model_copy(update={"caption": repaired_caption})
+        repaired_opening_hook = repair_known_public_typos(upload.opening_hook)
+        if (
+            repaired_caption != upload.caption
+            or repaired_opening_hook != upload.opening_hook
+        ):
+            upload = upload.model_copy(
+                update={
+                    "caption": repaired_caption,
+                    "opening_hook": repaired_opening_hook,
+                }
+            )
         if upload.status == "running":
             finished_at = now_iso()
             upload = upload.model_copy(
@@ -2463,6 +2478,9 @@ _KNOWN_PUBLIC_TYPO_REPLACEMENTS = {
     r"\bkesanah\b": "ke sana",
     r"\bdapat\s+di\s+mengertos\b": "dapat memahami",
     r"\bmengertos\b": "memahami",
+    r"\buntuk\s+tidak\s+sia(?:[\s-]+)?si(?:h)?akan\b": "untuk tidak menyia-nyiakan",
+    r"\btidak\s+sia(?:[\s-]+)?si(?:h)?akan\b": "tidak menyia-nyiakan",
+    r"\bsia(?:[\s-]+)?si(?:h)?akan\b": "sia-siakan",
 }
 
 
@@ -2476,7 +2494,22 @@ def repair_known_public_typos(value: str) -> str:
             return replacement
 
         clean = re.sub(pattern, case_aware_replacement, clean, flags=re.IGNORECASE)
+    clean = re.sub(
+        r"#[\w]+",
+        lambda match: repair_public_hashtag_typos(match.group(0)),
+        clean,
+    )
     return repair_islamic_asr_text(clean)
+
+
+def repair_public_hashtag_typos(value: str) -> str:
+    """Repair confirmed spelling errors while preserving hashtag separators."""
+    return re.sub(
+        r"siasihakan|siasiakan",
+        lambda match: "SiaSiakan" if match.group(0)[:1].isupper() else "siasiakan",
+        value,
+        flags=re.IGNORECASE,
+    )
 
 
 def clip_sidecar_title(clip: ClipFile) -> str | None:
@@ -4975,6 +5008,7 @@ def clean_ai_hashtags(values: list[str]) -> list[str]:
     seen: set[str] = set()
     for raw in values:
         tag = str(raw).strip().lstrip("#")
+        tag = repair_public_hashtag_typos(tag)
         tag = re.sub(r"\s+", "", tag)[:30]
         if tag and tag.lower() not in seen:
             seen.add(tag.lower())
@@ -5664,7 +5698,9 @@ def create_tiktok_upload_record(job_id: str, request: TikTokUploadRequest) -> Ti
         status="queued",
         created_at=now,
         updated_at=now,
-        caption=tiktok_caption_for_clip(job, clip, index, request.caption),
+        caption=repair_known_public_typos(
+            tiktok_caption_for_clip(job, clip, index, request.caption)
+        ),
         visibility="only_you",
         target_handle=tiktok_target_handle(),
         target_email=os.environ.get("TIKTOK_TARGET_EMAIL", DEFAULT_TIKTOK_TARGET_EMAIL).strip(),
@@ -5672,9 +5708,9 @@ def create_tiktok_upload_record(job_id: str, request: TikTokUploadRequest) -> Ti
         clip_sha256=fingerprint,
         series_id=str(strategy["series_id"]),
         series_label=str(strategy["series_label"]),
-        opening_hook=str(strategy["opening_hook"]),
-        visual_recipe=str(strategy["visual_recipe"]),
-        cta=str(strategy["cta"]),
+        opening_hook=repair_known_public_typos(str(strategy["opening_hook"])),
+        visual_recipe=repair_known_public_typos(str(strategy["visual_recipe"])),
+        cta=repair_known_public_typos(str(strategy["cta"])),
         experiment_id=str(strategy["experiment_id"]),
         metrics_to_track=[str(item) for item in strategy["measure"]],
         logs=[
@@ -6072,7 +6108,9 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
     ai_title = ai_metadata.get("title") if isinstance(ai_metadata, dict) else None
     ai_description = ai_metadata.get("description") if isinstance(ai_metadata, dict) else None
     ai_hashtags = ai_metadata.get("hashtags") if isinstance(ai_metadata, dict) else None
-    tags = clean_ai_hashtags(ai_hashtags if isinstance(ai_hashtags, list) else []) or fallback_tags
+    tags = clean_ai_hashtags(ai_hashtags if isinstance(ai_hashtags, list) else []) or [
+        repair_public_hashtag_typos(tag) for tag in fallback_tags
+    ]
     if env_bool("YOUTUBE_REQUIRE_AI_METADATA", True) and not clean_ai_hashtags(
         ai_hashtags if isinstance(ai_hashtags, list) else []
     ):
@@ -6089,6 +6127,8 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         or request.description
         or default_youtube_description(job, clip)
     )
+    title = repair_known_public_typos(title)
+    description = repair_known_public_typos(description)
     description = complete_youtube_description(job, clip, description, tags)
     description = append_youtube_chapters(description, clip)
     description = append_youtube_source_attribution(description, job)

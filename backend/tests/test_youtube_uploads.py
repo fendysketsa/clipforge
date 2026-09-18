@@ -4057,6 +4057,26 @@ def test_normalized_metadata_rejects_obviously_garbled_public_copy():
     assert normalized_generated_metadata(payload, is_compilation=False) is None
 
 
+def test_normalized_metadata_repairs_siasihakan_in_public_copy():
+    payload = {
+        "title": "Jangan Siasihakan Harta yang Dipercayakan",
+        "description": (
+            "Harta adalah amanah, sehingga kita diingatkan untuk tidak siasihakan harta "
+            "yang telah dipercayakan kepada kita. Penggunaannya juga dapat berdampak pada masyarakat.\n\n"
+            "Pembicara mengajak kita menggunakan harta dengan penuh tanggung jawab. "
+            "Pesan ini menempatkan kepedulian sosial sebagai bagian dari amanah tersebut."
+        ),
+        "hashtags": ["#JanganSiasihakanHarta", "#Amanah", "#TanggungJawab", "#Shorts"],
+    }
+
+    result = normalized_generated_metadata(payload, is_compilation=False)
+
+    assert result is not None
+    assert str(result["title"]).startswith("Jangan Sia-siakan Harta")
+    assert "tidak menyia-nyiakan harta" in str(result["description"])
+    assert "JanganSiaSiakanHarta" in result["hashtags"]
+
+
 def test_normalized_metadata_preserves_two_explicit_summary_paragraphs():
     payload = {
         "title": "Pemimpin Pesantren Menjaga Amanah Bersama",

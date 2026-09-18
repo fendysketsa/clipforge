@@ -2703,6 +2703,8 @@ def test_accuracy_first_transcription_decode_uses_beam_search_and_word_timestamp
     assert options["best_of"] == 5
     assert options["word_timestamps"] is True
     assert options["condition_on_previous_text"] is True
+    assert "beragam logat daerah" in options["initial_prompt"]
+    assert "sia-siakan" in options["hotwords"]
     assert "Jamaah Tablig" in options["hotwords"]
     assert "Ustaz Abdul Somad, Al-Qur'an" in options["hotwords"]
 
@@ -3318,6 +3320,12 @@ def test_confirmed_asr_typo_is_repaired_before_public_copy():
     assert clean_transcript_text(
         "Jamaat Tablek menyampaikan dakwah."
     ) == "Jamaah Tablig menyampaikan dakwah."
+    assert clean_transcript_text(
+        "Karena itu jangan siasihakan harta."
+    ) == "Karena itu jangan sia-siakan harta."
+    assert clean_transcript_text(
+        "Kita diajarkan untuk tidak siasiakan harta."
+    ) == "Kita diajarkan untuk tidak menyia-nyiakan harta."
 
 
 def test_social_description_removes_icons_from_ai_summary():

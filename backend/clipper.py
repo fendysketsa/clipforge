@@ -1638,6 +1638,9 @@ TRANSCRIPT_REPLACEMENTS = {
     r"\bkesanah\b": "ke sana",
     r"\bdapat\s+di\s+mengertos\b": "dapat memahami",
     r"\bmengertos\b": "memahami",
+    r"\buntuk\s+tidak\s+sia(?:[\s-]+)?si(?:h)?akan\b": "untuk tidak menyia-nyiakan",
+    r"\btidak\s+sia(?:[\s-]+)?si(?:h)?akan\b": "tidak menyia-nyiakan",
+    r"\bsia(?:[\s-]+)?si(?:h)?akan\b": "sia-siakan",
 }
 
 SOURCE_BRANDING_PATTERNS = (
@@ -4820,7 +4823,7 @@ def extract_audio(video_path: Path, audio_path: Path, force: bool = False, limit
 
 
 def transcription_decode_options(language: str) -> dict:
-    """Accuracy-first Whisper settings for clear Indonesian speech and names."""
+    """Accuracy-first Whisper settings for Indonesian speech and regional accents."""
     options: dict = {
         "language": language,
         "task": "transcribe",
@@ -4842,15 +4845,18 @@ def transcription_decode_options(language: str) -> dict:
         "no_speech_threshold": 0.55,
         "hallucination_silence_threshold": 1.5,
         "initial_prompt": (
-            "Transkripsi percakapan bahasa Indonesia. Pertahankan nama orang, istilah asing, "
-            "angka, dan istilah agama sesuai ucapan. Gunakan ejaan serta tanda baca baku; "
-            "jangan menambah kata yang tidak diucapkan. Istilah Islam yang mungkin muncul: "
+            "Transkripsi percakapan bahasa Indonesia dengan beragam logat daerah. Pertahankan "
+            "nama orang, istilah asing, kosakata daerah, angka, dan istilah agama sesuai ucapan. "
+            "Tuliskan kosakata bahasa Indonesia dengan ejaan serta tanda baca baku tanpa mengubah "
+            "makna atau menambah kata yang tidak diucapkan. Kosakata yang mungkin muncul: sia-sia, "
+            "sia-siakan, menyia-nyiakan, "
             "jamaah, tablig, dakwah, Al-Qur'an, hadis, fikih, akidah, akhlak, ustaz, salat, "
             "wudu, zikir, syariah, Rasulullah, dan Muhammad."
         ),
     }
     islamic_hotwords = (
-        "Jamaah Tablig, dakwah, Al-Qur'an, hadis, fikih, akidah, akhlak, ustaz, "
+        "sia-sia, sia-siakan, menyia-nyiakan, Jamaah Tablig, dakwah, Al-Qur'an, hadis, "
+        "fikih, akidah, akhlak, ustaz, "
         "salat, wudu, zikir, syariah, Rasulullah, Muhammad"
     )
     configured_hotwords = os.environ.get(
