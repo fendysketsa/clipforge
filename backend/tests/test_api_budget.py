@@ -8,6 +8,7 @@ import sys
 from api import (
     AutoViralRequest,
     ClipFile,
+    ClipCandidate,
     ClipJob,
     ClipJobRequest,
     MAX_AUTO_ANALYSIS_SECONDS,
@@ -37,6 +38,7 @@ from api import (
     search_viral_video_sources,
     search_youtube_data_api_viral_sources,
     safe_youtube_visibility,
+    salvageable_completed_clipper_result,
     source_rights_risk_reasons,
     source_history_for_url,
     unresolved_codex_ideas,
@@ -1681,6 +1683,77 @@ def test_user_error_from_logs_explains_incomplete_audio_download():
     message = user_error_from_logs(logs) or ""
     assert "Track audio sumber belum terunduh lengkap" in message
     assert "ulangi job" in message
+
+
+def test_signal_11_after_final_marker_preserves_verified_outputs(tmp_path):
+    clips_dir = tmp_path / "source" / "clips"
+    clips_dir.mkdir(parents=True)
+    clip_path = clips_dir / "clip_01.mp4"
+    clip_path.write_bytes(b"v" * 2048)
+    clip_path.with_suffix(".json").write_text(
+        json.dumps({"auditor_identity": {"audit_id": "FND-test"}}),
+        encoding="utf-8",
+    )
+    clip = ClipFile(
+        name=clip_path.name,
+        url="/outputs/job/source/clips/clip_01.mp4",
+        size_bytes=clip_path.stat().st_size,
+    )
+    candidate = ClipCandidate(
+        index=1,
+        start=0,
+        end=30,
+        duration=30,
+        score=88,
+        title="Kandidat",
+        reason="lengkap",
+        text="Kalimat lengkap dengan payoff.",
+    )
+
+    assert salvageable_completed_clipper_result(
+        -11,
+        ["Cleaned up 2 intermediate file(s).", "Done. Exported:"],
+        [clip],
+        [candidate],
+        tmp_path,
+    ) is True
+
+
+def test_failed_worker_is_not_salvaged_without_every_completion_proof(tmp_path):
+    clips_dir = tmp_path / "source" / "clips"
+    clips_dir.mkdir(parents=True)
+    clip_path = clips_dir / "clip_01.mp4"
+    clip_path.write_bytes(b"v" * 2048)
+    clip = ClipFile(
+        name=clip_path.name,
+        url="/outputs/job/source/clips/clip_01.mp4",
+        size_bytes=clip_path.stat().st_size,
+    )
+    candidate = ClipCandidate(
+        index=1,
+        start=0,
+        end=30,
+        duration=30,
+        score=88,
+        title="Kandidat",
+        reason="lengkap",
+        text="Kalimat lengkap dengan payoff.",
+    )
+
+    assert salvageable_completed_clipper_result(
+        -11,
+        ["Done. Exported:"],
+        [clip],
+        [candidate],
+        tmp_path,
+    ) is False
+    assert salvageable_completed_clipper_result(
+        1,
+        ["Done. Exported:"],
+        [clip],
+        [candidate],
+        tmp_path,
+    ) is False
 
 
 def test_create_job_accepts_another_job_while_one_is_active(monkeypatch):

@@ -221,3 +221,45 @@ Audit dilakukan 5 September 2026 dari halaman publik channel, 48 Shorts terbaru,
 - Konflik atau tuduhan politik tidak boleh diperkeras, dikeluarkan dari konteks, atau ditulis sebagai fakta bila sumber hanya menyampaikan opini/klaim.
 - Jangan memakai bot, sub4sub, pembelian traffic, atau ajakan yang menipu. Pertumbuhan harus berasal dari interaksi manusia yang autentik.
 - Reused content tetap memerlukan kontribusi editorial substantif dan hak komersial yang dapat dibuktikan; crop, subtitle, atau efek saja tidak cukup.
+
+---
+
+# Referensi 6: `ZNapEKkxUSI`
+
+Audit dilakukan 22 September 2026 dari metadata publik dan inspeksi frame video. Angka publik dapat berubah.
+
+## Fakta publik
+
+- Judul: **Chef Juna Akhirnya Klarifikasi Soal Isu Settingan MasterChef Indonesia Musim Ke-11**
+- Channel: **KapanLagiDotCom**
+- Durasi media: **50,86 detik**, format **9:16, 25 fps**
+- Dipublikasikan: **8 Desember 2023**
+- Saat diaudit: **1.155.359 views, 28.668 likes, 851 komentar**
+- Subscriber channel saat audit: **sekitar 2,43 juta**
+- Lisensi tidak dilaporkan oleh metadata publik; status monetisasi video dan hak pakai ulang cuplikan podcast tidak dapat diasumsikan.
+
+## Pola yang dapat digeneralisasi
+
+1. Kartu pertanyaan tampil sekitar satu detik, lalu dialog langsung mengambil alih; kartu bukan intro kosong.
+2. Alur bergerak dari tuduhan/pertanyaan, bantahan langsung, pertanyaan skeptis, bukti berupa angka dan rekam jejak, lalu prinsip penilaian yang adil.
+3. Satu pembicara dan gesturnya tetap menjadi visual utama. Perubahan crop hanya membantu beat argumen.
+4. Caption memakai frasa pendek, kontras tinggi, dan berada di area tengah-bawah yang mudah dipindai.
+5. Angka konkret dan risiko pribadi membuat bantahan lebih bernilai daripada penyangkalan kosong.
+6. Penutup kembali ke prinsip netral sehingga konflik tidak diarahkan menjadi serangan terhadap identitas kelompok.
+
+## Yang diterapkan ke ClipForge
+
+- Detector `claim_rebuttal_profile`: tuduhan/pertanyaan → jawaban langsung → bukti dan risiko pribadi → prinsip penutup yang adil.
+- Rentang khusus **36–58 detik**, **60–155 kata**, dan **1,20–3,20 kata/detik**; penyangkalan tanpa bukti atau tanpa prinsip penutup tidak memperoleh bonus.
+- Target ranking kandidat yang lolos diarahkan ke sekitar **48 detik**.
+- Visual `claim_rebuttal`: kartu pertanyaan orisinal 1,05 detik, pembicara dan gestur tetap dominan, maksimal empat reframe face-safe, caption dinamis, audio dialog sebagai prioritas, tanpa reaction sticker, asap, musik, SFX, atau overlay share.
+- CTA visual akhir disembunyikan agar prinsip penutup tidak tertimpa; pertanyaan komentar diarahkan ke kualitas bukti.
+- Semua kandidat klarifikasi memerlukan review klaim, konteks, atribusi, dan hak sumber sebelum publikasi. Penyebutan identitas yang dilindungi menambah flag review, bukan otomatis dianggap serangan.
+
+## Yang sengaja tidak ditiru
+
+- Kartu merah, palet kuning, logo, caption, wording, wajah, footage, dan identitas visual sumber.
+- Pergantian mendadak antara dua sistem branding di tengah video.
+- Overlay **share this video** yang menutupi wajah dan caption pada payoff.
+- Asumsi bahwa views tinggi membuktikan template, hak pakai, atau kelayakan monetisasi.
+- Crop dan subtitle sebagai satu-satunya kontribusi editorial; sumber pihak ketiga tetap membutuhkan hak komersial serta transformasi substantif yang terlihat.

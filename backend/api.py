@@ -9946,6 +9946,53 @@ def discover_candidates(started_at: float, output_root: Path | None = None) -> l
     return [ClipCandidate(**item) for item in payload]
 
 
+SALVAGEABLE_POST_COMPLETION_EXIT_CODES = {-11}
+
+
+def salvageable_completed_clipper_result(
+    exit_code: int,
+    logs: list[str],
+    clips: list[ClipFile],
+    candidates: list[ClipCandidate],
+    output_root: Path,
+) -> bool:
+    """Keep finalized output when a native module crashes during Python shutdown.
+
+    Signal 11 is only recoverable after ClipForge emitted its final completion
+    marker and every discovered MP4 still has a valid audit sidecar.
+    Other non-zero exits continue through the normal destructive failure cleanup.
+    """
+    if exit_code not in SALVAGEABLE_POST_COMPLETION_EXIT_CODES:
+        return False
+    if not clips or not candidates:
+        return False
+    if not any(re.search(r"\bDone\.\s+Exported:\s*$", line) for line in logs):
+        return False
+
+    clip_paths = {
+        path.name: path
+        for path in output_root.rglob("clips/*.mp4")
+        if path.is_file()
+    }
+    for clip in clips:
+        path = clip_paths.get(clip.name)
+        if path is None or path.stat().st_size < 1024:
+            return False
+        sidecar_path = path.with_suffix(".json")
+        if not sidecar_path.is_file() or sidecar_path.stat().st_size < 2:
+            return False
+        try:
+            sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        if not isinstance(sidecar, dict):
+            return False
+        auditor = sidecar.get("auditor_identity")
+        if not isinstance(auditor, dict) or not str(auditor.get("audit_id") or "").strip():
+            return False
+    return True
+
+
 def set_job(job_id: str, **updates) -> None:
     with jobs_lock:
         job = jobs.get(job_id)
@@ -10688,6 +10735,8 @@ def run_job(job_id: str) -> None:
             job_id,
             status="failed",
             **finish_job_updates(started_perf),
+            progress_stage="failed",
+            progress_detail="Worker gagal dimulai; tidak ada hasil final yang dibuat",
             clips=[],
             candidates=[],
             logs=[cleanup_message],
@@ -10744,18 +10793,40 @@ def run_job(job_id: str) -> None:
         candidates = discover_candidates(started_at, output_root)
         if clips and candidates:
             clips = enrich_clips_with_candidate_titles(clips, candidates)
+        salvaged_native_exit = salvageable_completed_clipper_result(
+            code,
+            logs,
+            clips,
+            candidates,
+            output_root,
+        )
+        completion_logs = logs
+        if salvaged_native_exit:
+            completion_logs = [
+                *logs,
+                (
+                    "RECOVERED_FINALIZED_OUTPUT: worker native berhenti dengan signal 11 "
+                    "setelah finalisasi; MP4, sidecar audit, dan kandidat sudah diverifikasi "
+                    "sehingga hasil dipertahankan."
+                ),
+            ][-120:]
         # Active clip modes always write candidates.json before rendering. A
         # video file without any surviving candidate audit is not a valid
         # result and its entire job workspace must be removed below.
-        if code == 0 and clips and candidates:
+        if (code == 0 or salvaged_native_exit) and clips and candidates:
             updates = {
                 "status": "completed",
-                "logs": logs[-120:],
+                "logs": completion_logs[-120:],
                 "progress_percent": 100,
                 "progress_stage": "complete",
-                "progress_detail": "Semua hasil siap direview dan diunduh",
+                "progress_detail": (
+                    "Hasil final terverifikasi dan siap direview serta diunduh"
+                    if salvaged_native_exit
+                    else "Semua hasil siap direview dan diunduh"
+                ),
                 "progress_step": 5,
                 "progress_total_steps": 5,
+                "error": None,
                 **finish_job_updates(started_perf),
             }
             if clips:
@@ -10809,12 +10880,12 @@ def run_job(job_id: str) -> None:
                     send_clip_success_telegram_alert(completed_job)
                 except Exception as telegram_exc:
                     success_logs = [
-                        *logs,
+                        *completion_logs,
                         f"Telegram alert clip berhasil gagal dikirim: {telegram_exc}",
                     ][-120:]
                     set_job(job_id, logs=success_logs)
             if request.auto_upload_youtube:
-                auto_queue_youtube_uploads_for_job(job_id, logs)
+                auto_queue_youtube_uploads_for_job(job_id, completion_logs)
         else:
             friendly_error = user_error_from_logs(logs)
             if code == 0:
@@ -10829,6 +10900,8 @@ def run_job(job_id: str) -> None:
                 job_id,
                 status="failed",
                 **finish_job_updates(started_perf),
+                progress_stage="failed",
+                progress_detail="Proses gagal; tidak ada hasil final yang dapat dipertahankan",
                 clips=[],
                 candidates=[],
                 logs=failure_logs,
@@ -10848,6 +10921,8 @@ def run_job(job_id: str) -> None:
             job_id,
             status="failed",
             **finish_job_updates(started_perf),
+            progress_stage="failed",
+            progress_detail="Worker berhenti tidak normal; hasil final tidak dapat diverifikasi",
             clips=[],
             candidates=[],
             logs=failure_logs,

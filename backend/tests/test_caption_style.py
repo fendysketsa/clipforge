@@ -38,6 +38,7 @@ from clipper import (
     candidate_story_metrics,
     clean_detail_edit_filter,
     channel_watermark_filter,
+    claim_rebuttal_profile,
     cinematic_smoke_overlay_filter,
     cinematic_pov_windows,
     clip_has_islamic_context,
@@ -2003,6 +2004,97 @@ def test_structured_comparison_rejects_protected_group_attack():
     profile = structured_comparison_profile(text, 48)
 
     assert profile["attacks_protected_group"] is True
+    assert profile["qualified"] is False
+
+
+def test_claim_rebuttal_rewards_direct_answer_evidence_stake_and_fair_principle():
+    segments = [
+        TranscriptSegment(0, 7, "Apakah proses ini settingan dan pemenangnya sudah ditentukan? Tidak, itu tidak benar."),
+        TranscriptSegment(7, 17, "Saya tidak pernah menerima arahan untuk memenangkan siapa pun dan keputusan harus bisa dijelaskan."),
+        TranscriptSegment(17, 29, "Kalau saya menerima sogokan 1 miliar atau 2 miliar, mengapa saya mempertaruhkan karier dan kepercayaan yang sudah dibangun?"),
+        TranscriptSegment(29, 40, "Saya bekerja sejak tahun 2001, jadi pengalaman dan rekam jejak itu menjadi bukti yang harus ikut diperiksa."),
+        TranscriptSegment(40, 50, "Di mata saya semua peserta dinilai dari hasil kerjanya, bukan asal suku atau etnisnya, supaya keputusan tetap adil."),
+    ]
+    text = " ".join(item.text for item in segments)
+
+    profile = claim_rebuttal_profile(text, 50)
+    metrics = candidate_story_metrics(segments, 50)
+    score, reasons = score_window(segments, 50)
+
+    assert profile["qualified"] is True
+    assert profile["structure_score"] >= 90
+    assert profile["allegation_or_challenge_in_opening"] is True
+    assert profile["direct_denial"] is True
+    assert profile["evidence_marker_count"] >= 2
+    assert profile["personal_stake"] is True
+    assert profile["impartial_closing"] is True
+    assert profile["sensitive_identity_claim"] is True
+    assert profile["manual_claim_and_context_review_required"] is True
+    assert profile["copied_reference_assets"] is False
+    assert metrics["claim_rebuttal_qualified"] is True
+    assert metrics["boundary_quality"] == "payoff_tuntas"
+    assert score >= 78
+    assert "tuduhan dijawab langsung dengan bukti, risiko pribadi, dan prinsip adil" in reasons
+
+
+def test_claim_rebuttal_uses_brief_original_card_and_speaker_led_visuals():
+    text = (
+        "Apakah proses ini settingan dan pemenangnya sudah ditentukan? Tidak, itu tidak benar. "
+        "Saya tidak pernah menerima arahan untuk memenangkan siapa pun dan keputusan harus bisa dijelaskan. "
+        "Kalau saya menerima sogokan 1 miliar atau 2 miliar, mengapa saya mempertaruhkan karier dan kepercayaan? "
+        "Saya bekerja sejak tahun 2001, jadi pengalaman dan rekam jejak menjadi bukti yang harus diperiksa. "
+        "Di mata saya semua peserta dinilai dari hasil kerjanya supaya keputusan tetap adil dan profesional."
+    )
+    clip = ClipCandidate(
+        index=1,
+        start=0,
+        end=50,
+        duration=50,
+        score=92,
+        title="Benarkah Prosesnya Sudah Diatur",
+        reason="klarifikasi lengkap",
+        text=text,
+        hook="Benarkah pemenangnya sudah ditentukan?",
+        loop_score=58,
+        boundary_quality="payoff_tuntas",
+    )
+
+    plan = auto_fyp_visual_plan(clip, "vertical_short")
+    title_filter = viral_title_overlay_filter(
+        "claim.txt",
+        clip.duration,
+        overlay_seconds=float(plan["opening_context_seconds"]),
+    )
+    readiness = five_k_experiment_readiness(clip, "vertical_short")
+    growth = codex_growth_blueprint(clip, "vertical_short")
+
+    assert plan["accent"] == "claim_rebuttal"
+    assert plan["opening_context_seconds"] == 1.05
+    assert plan["visual_restraint"]["stable_speaker_priority"] is True
+    assert plan["visual_restraint"]["maximum_virtual_camera_cuts"] == 4
+    assert plan["visual_restraint"]["reaction_stickers_allowed"] is False
+    assert plan["visual_restraint"]["cinematic_smoke_allowed"] is False
+    assert plan["visual_restraint"]["dialogue_first_audio"] is True
+    assert "between(t,0,1.050)" in title_filter
+    assert "SHARE" not in title_filter
+    assert readiness["signals"]["claim_rebuttal_36_58_seconds"] is True
+    assert readiness["signals"]["manual_claim_and_context_review_required"] is True
+    assert growth["conversion"]["visible_end_card"] is False
+    assert growth["reference_learning"]["claim_rebuttal_requires_manual_claim_review"] is True
+    assert growth["reference_learning"]["intrusive_share_overlay_or_mixed_source_branding_copied"] is False
+
+
+def test_claim_rebuttal_rejects_bare_denial_without_evidence_or_fair_resolution():
+    text = (
+        "Apakah ini settingan? Tidak, itu tidak benar. Saya tidak pernah melakukannya. "
+        "Pokoknya percaya saja karena saya sudah menjawab dan pembicaraan ini selesai sekarang."
+    )
+
+    profile = claim_rebuttal_profile(text, 45)
+
+    assert profile["evidence_marker_count"] == 0
+    assert profile["personal_stake"] is False
+    assert profile["impartial_closing"] is False
     assert profile["qualified"] is False
 
 

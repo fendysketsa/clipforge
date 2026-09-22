@@ -49,6 +49,15 @@ const statusLabel = (job: ClipJob | null) => {
   return "Proses perlu diperiksa";
 };
 
+const currentTaskLabel = (job: ClipJob | null) => {
+  if (!job) return "SIAP";
+  if (job.status === "queued") return "MENUNGGU GILIRAN";
+  if (job.status === "running") return "SEDANG DIKERJAKAN";
+  if (job.status === "completed") return "SELESAI";
+  if (job.status === "cancelled") return "DIBATALKAN";
+  return "PROSES GAGAL";
+};
+
 export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) {
   const StatusIcon = job ? statusIcon[job.status] : Circle;
   const currentStage = stageIndex(job);
@@ -97,7 +106,7 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
           <div className="clipCurrentTask">
             <span><Sparkles size={15} /></span>
             <div>
-              <small>SEDANG DIKERJAKAN</small>
+              <small>{currentTaskLabel(job)}</small>
               <strong>{job.progress_detail || job.source_title || "Menyiapkan pipeline…"}</strong>
             </div>
             <time><Clock3 size={13} /> {formatDuration(elapsed)}</time>
