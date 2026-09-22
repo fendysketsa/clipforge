@@ -18,6 +18,7 @@ from clipper import (
     MultiPersonProfile,
     ReactionCue,
     SoundEffectCue,
+    SoundEffectTrack,
     TranscriptSegment,
     WatermarkRegion,
     _hex_to_ass_color,
@@ -78,6 +79,7 @@ from clipper import (
     landscape_compilation_frame_filter,
     landscape_speaker_split_filter,
     load_background_music_catalog,
+    load_sound_effect_catalog,
     long_form_subscribe_overlay_filter,
     localized_watermark_blur_filter,
     modern_blurred_video_frame_filter,
@@ -97,6 +99,7 @@ from clipper import (
     scale_watermark_region,
     select_multi_person_profiles,
     select_background_music_track,
+    select_local_sound_effect_tracks,
     select_split_companion_candidates,
     segments_for_clip,
     split_subtitle_text,
@@ -1512,8 +1515,10 @@ def test_shorts_policy_compliance_records_three_minute_official_and_local_limits
     assert outside_growth_window["duration_within_official_limit"] is False
     assert outside_growth_window["duration_within_growth_window"] is False
     assert compliance["engaged_views_retained_as_quality_metric"] is True
-    assert compliance["custom_thumbnail_upload_supported"] is False
-    assert compliance["thumbnail_strategy"] == "embedded_selectable_frame"
+    assert compliance["custom_thumbnail_upload_supported"] is True
+    assert compliance["custom_thumbnail_requires_verified_account"] is True
+    assert compliance["thumbnail_strategy"] == "custom_upload_with_embedded_frame_fallback"
+    assert compliance["embedded_cover_frame_retained_as_fallback"] is True
     assert compliance["inauthentic_content_policy_reviewed"] is True
     assert compliance["claimed_content_over_one_minute_block_risk"] is False
     assert compliance["recommendation_or_monetization_guarantee"] is False
@@ -1532,7 +1537,16 @@ def test_youtube_policy_snapshot_marks_future_rules_for_review_without_assuming_
     assert future["review_required"] is True
     assert future["future_year_assumed_unchanged"] is False
     assert future["rules_are_runtime_guarantee"] is False
-    assert len(future["official_sources"]) == 12
+    assert len(future["official_sources"]) == 13
+
+
+def test_youtube_policy_snapshot_tracks_september_2026_claim_transition():
+    before = youtube_policy_snapshot(as_of=date(2026, 9, 23))
+    effective = youtube_policy_snapshot(as_of=date(2026, 9, 24))
+
+    assert before["claimed_short_over_one_minute_automatic_block_currently_applies"] is True
+    assert effective["claimed_short_over_one_minute_automatic_block_currently_applies"] is False
+    assert effective["zero_active_claim_workflow_is_stricter_than_youtube"] is True
 
 
 def test_twenty_k_readiness_is_a_stability_experiment_not_a_view_guarantee():
@@ -3039,6 +3053,75 @@ def test_contextual_audio_filter_mixes_sfx_under_voice_with_limiter():
     assert "amix=inputs=3" in value
     assert "alimiter=limit=0.95" in value
     assert value.endswith("[audio_out]")
+
+
+def test_local_cc0_sound_effect_catalog_is_hash_verified_and_kind_matched(tmp_path):
+    asset = tmp_path / "laugh.ogg"
+    asset.write_bytes(b"OggS-local-laugh")
+    digest = hashlib.sha256(asset.read_bytes()).hexdigest()
+    (tmp_path / "catalog.json").write_text(
+        json.dumps(
+            {
+                "runtime_downloads": False,
+                "effects": [
+                    {
+                        "file": "laugh.ogg",
+                        "title": "Local Laugh",
+                        "artist": "CC0 Artist",
+                        "kind": "sound_effect",
+                        "kinds": ["laugh"],
+                        "trim_start": 0.2,
+                        "max_duration": 0.8,
+                        "mix_gain": 0.1,
+                        "license": "CC0-1.0",
+                        "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+                        "attribution_required": False,
+                        "source_url": "https://opengameart.org/content/test-laugh",
+                        "sha256": digest,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    tracks = load_sound_effect_catalog(tmp_path)
+    cues = [SoundEffectCue("laugh", 5, 0.85, 920, 0.1, "hahaha")]
+
+    assert len(tracks) == 1
+    assert tracks[0].kinds == ("laugh",)
+    assert select_local_sound_effect_tracks(cues, tmp_path) == tracks
+
+    asset.write_bytes(b"tampered")
+    assert load_sound_effect_catalog(tmp_path) == []
+
+
+def test_contextual_audio_filter_prefers_local_effect_asset_over_sine(tmp_path):
+    track = SoundEffectTrack(
+        path=tmp_path / "laugh.ogg",
+        title="Local Laugh",
+        artist="CC0 Artist",
+        kinds=("laugh",),
+        license="CC0-1.0",
+        license_url="https://creativecommons.org/publicdomain/zero/1.0/",
+        source_url="https://opengameart.org/content/test-laugh",
+        sha256="a" * 64,
+        trim_start=0.693,
+        max_duration=0.85,
+        mix_gain=0.1,
+    )
+    cue = SoundEffectCue("laugh", 5, 0.85, 920, 0.1, "hahaha")
+
+    value = contextual_audio_mix_filter(
+        "highpass=f=70,aresample=48000",
+        [cue],
+        local_sound_effect_tracks=[track],
+        sound_effect_input_indices={0: 1},
+    )
+
+    assert "[1:a:0]atrim=start=0.693:end=1.543" in value
+    assert "adelay=delays=5000:all=1" in value
+    assert "sine=frequency=920" not in value
 
 
 def test_islamic_background_music_is_original_ducked_and_mixed_under_voice():

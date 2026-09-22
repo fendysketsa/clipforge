@@ -181,6 +181,24 @@ class SoundEffectCue:
 
 
 @dataclass(frozen=True)
+class SoundEffectTrack:
+    """A short, locally cached sound effect with verifiable license evidence."""
+
+    path: Path
+    title: str
+    artist: str
+    kinds: tuple[SoundEffectKind, ...]
+    license: str
+    license_url: str
+    source_url: str
+    sha256: str
+    trim_start: float = 0.0
+    max_duration: float = 1.0
+    mix_gain: float = 0.12
+    attribution_required: bool = False
+
+
+@dataclass(frozen=True)
 class BackgroundMusicTrack:
     """Locally cached, license-manifested background music."""
 
@@ -1297,6 +1315,10 @@ BACKGROUND_MUSIC_LICENSE_URLS = {
     "cc0-1.0": "https://creativecommons.org/publicdomain/zero/1.0/",
 }
 BACKGROUND_MUSIC_SOURCE_HOSTS = {"opengameart.org", "www.opengameart.org"}
+SOUND_EFFECT_DEFAULT_DIR = Path(__file__).resolve().parent / "assets" / "sound_effects"
+SOUND_EFFECT_LICENSES = BACKGROUND_MUSIC_LICENSES
+SOUND_EFFECT_LICENSE_URLS = BACKGROUND_MUSIC_LICENSE_URLS
+SOUND_EFFECT_SOURCE_HOSTS = BACKGROUND_MUSIC_SOURCE_HOSTS
 
 INSPIRING_WORDS = {
     "bangkit",
@@ -7827,13 +7849,13 @@ SHORTS_SAFE_BOTTOM = 1560
 SHORTS_OFFICIAL_MAX_SECONDS = 180
 FENDY_CLIPPER_SHORTS_MIN_SECONDS = 25
 FENDY_CLIPPER_SHORTS_MAX_SECONDS = 180
-SHORTS_POLICY_REVIEW_DATE = os.environ.get("YOUTUBE_POLICY_REVIEW_DATE", "2026-09-02").strip()
+SHORTS_POLICY_REVIEW_DATE = os.environ.get("YOUTUBE_POLICY_REVIEW_DATE", "2026-09-22").strip()
 YOUTUBE_POLICY_REVIEW_INTERVAL_DAYS = 180
 
 
 def youtube_policy_snapshot(*, as_of: date | None = None) -> dict[str, object]:
     """Expose policy freshness instead of pretending a dated audit lasts forever."""
-    fallback_reviewed = date(2026, 9, 2)
+    fallback_reviewed = date(2026, 9, 22)
     try:
         reviewed = date.fromisoformat(SHORTS_POLICY_REVIEW_DATE)
     except ValueError:
@@ -7851,12 +7873,17 @@ def youtube_policy_snapshot(*, as_of: date | None = None) -> dict[str, object]:
     current_date = as_of or date.today()
     review_due = reviewed + timedelta(days=review_interval_days)
     return {
-        "snapshot_version": 5,
+        "snapshot_version": 6,
         "reviewed_on": reviewed.isoformat(),
         "review_due_on": review_due.isoformat(),
         "review_required": current_date > review_due,
         "rules_are_runtime_guarantee": False,
         "future_year_assumed_unchanged": False,
+        "claimed_short_over_one_minute_change_effective_on": "2026-09-24",
+        "claimed_short_over_one_minute_automatic_block_currently_applies": (
+            current_date < date(2026, 9, 24)
+        ),
+        "zero_active_claim_workflow_is_stricter_than_youtube": True,
         "official_sources": [
             "https://support.google.com/youtube/answer/15424877",
             "https://support.google.com/youtube/answer/1311392",
@@ -7870,6 +7897,7 @@ def youtube_policy_snapshot(*, as_of: date | None = None) -> dict[str, object]:
             "https://support.google.com/youtube/answer/2797468",
             "https://support.google.com/youtube/answer/2802268",
             "https://support.google.com/youtube/answer/2490020",
+            "https://support.google.com/youtube/answer/72431",
         ],
     }
 
@@ -8927,9 +8955,15 @@ def shorts_policy_compliance(duration: float, *, embedded_cover: bool) -> dict[s
         "official_short_classification": "square_or_vertical_up_to_180_seconds",
         "views_counting_since_2025_03_31": "starts_or_replays_without_minimum_watch_time",
         "engaged_views_retained_as_quality_metric": True,
-        "custom_thumbnail_upload_supported": False,
+        "custom_thumbnail_upload_supported": True,
+        "custom_thumbnail_requires_verified_account": True,
+        "custom_thumbnail_studio_surface": "desktop_youtube_studio",
+        "custom_thumbnail_recommended_aspect_ratio": "9:16",
+        "embedded_cover_frame_retained_as_fallback": True,
         "thumbnail_strategy": (
-            "embedded_selectable_frame" if embedded_cover else "rendered_video_frame"
+            "custom_upload_with_embedded_frame_fallback"
+            if embedded_cover
+            else "custom_upload_with_rendered_frame_fallback"
         ),
         "source_promos_removed_from_candidate_windows": True,
         "inauthentic_content_policy_reviewed": True,
@@ -8948,7 +8982,19 @@ def shorts_policy_compliance(duration: float, *, embedded_cover: bool) -> dict[s
         "subscription_incentive_or_reward_offered": False,
         "viewer_satisfaction_not_watch_time_alone": True,
         "filler_avoidance_required": True,
-        "claimed_content_over_one_minute_block_risk": safe_duration > 60,
+        "claimed_content_over_one_minute_block_risk": bool(
+            safe_duration > 60
+            and policy_snapshot[
+                "claimed_short_over_one_minute_automatic_block_currently_applies"
+            ]
+        ),
+        "claimed_content_over_one_minute_platform_behavior": (
+            "automatic_block_before_2026_09_24"
+            if policy_snapshot[
+                "claimed_short_over_one_minute_automatic_block_currently_applies"
+            ]
+            else "may_remain_playable_but_claim_and_monetization_consequences_still_apply"
+        ),
         "fendy_zero_active_claim_upload_policy": True,
         "non_blocking_claims_also_stop_fendy_upload": True,
         "creative_commons_metadata_is_not_chain_of_title_proof": True,
@@ -9027,6 +9073,117 @@ def _audio_catalog_tags(value: object) -> tuple[str, ...]:
             if (clean := re.sub(r"\s+", " ", str(item or "")).strip().casefold())
         )
     )
+
+
+def load_sound_effect_catalog(
+    library_dir: Path | None = None,
+) -> list[SoundEffectTrack]:
+    """Load only local CC0 effects whose catalog metadata and hash are valid."""
+    configured_dir = os.environ.get("SOUND_EFFECT_LIBRARY_DIR", "").strip()
+    root = (
+        library_dir
+        if library_dir is not None
+        else Path(configured_dir)
+        if configured_dir
+        else SOUND_EFFECT_DEFAULT_DIR
+    ).expanduser().resolve()
+    catalog_path = root / "catalog.json"
+    if not catalog_path.is_file():
+        return []
+    try:
+        payload = json.loads(catalog_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return []
+    entries = payload.get("effects") if isinstance(payload, dict) else None
+    if (
+        not isinstance(entries, list)
+        or not isinstance(payload, dict)
+        or payload.get("runtime_downloads") is not False
+    ):
+        return []
+
+    valid_kinds = set(SoundEffectKind.__args__)
+    tracks: list[SoundEffectTrack] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        relative_file = str(entry.get("file") or "").strip()
+        path = (root / relative_file).resolve()
+        try:
+            path.relative_to(root)
+        except ValueError:
+            continue
+        kinds = tuple(
+            kind
+            for kind in _audio_catalog_tags(entry.get("kinds"))
+            if kind in valid_kinds
+        )
+        license_name = re.sub(r"\s+", " ", str(entry.get("license") or "")).strip()
+        license_url = str(entry.get("license_url") or "").strip()
+        source_url = str(entry.get("source_url") or "").strip()
+        source_host = (urlparse(source_url).hostname or "").casefold()
+        expected_sha256 = str(entry.get("sha256") or "").strip().casefold()
+        try:
+            trim_start = max(0.0, float(entry.get("trim_start") or 0.0))
+            max_duration = max(0.04, min(3.0, float(entry.get("max_duration") or 1.0)))
+            mix_gain = max(0.01, min(0.22, float(entry.get("mix_gain") or 0.12)))
+        except (TypeError, ValueError):
+            continue
+        if (
+            not relative_file
+            or not path.is_file()
+            or path.suffix.casefold() not in {".mp3", ".wav", ".m4a", ".flac", ".ogg"}
+            or str(entry.get("kind") or "").strip().casefold() != "sound_effect"
+            or not kinds
+            or entry.get("attribution_required") is not False
+            or license_name.casefold() not in SOUND_EFFECT_LICENSES
+            or license_url != SOUND_EFFECT_LICENSE_URLS.get(license_name.casefold())
+            or re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None
+            or file_sha256(path).casefold() != expected_sha256
+            or urlparse(source_url).scheme != "https"
+            or source_host not in SOUND_EFFECT_SOURCE_HOSTS
+        ):
+            continue
+        tracks.append(
+            SoundEffectTrack(
+                path=path,
+                title=re.sub(r"\s+", " ", str(entry.get("title") or path.stem)).strip()[:180],
+                artist=re.sub(r"\s+", " ", str(entry.get("artist") or "Unknown artist")).strip()[:180],
+                kinds=kinds,
+                license=license_name,
+                license_url=license_url,
+                source_url=source_url,
+                sha256=expected_sha256,
+                trim_start=trim_start,
+                max_duration=max_duration,
+                mix_gain=mix_gain,
+                attribution_required=False,
+            )
+        )
+    return tracks
+
+
+def select_local_sound_effect_tracks(
+    cues: list[SoundEffectCue],
+    library_dir: Path | None = None,
+) -> list[SoundEffectTrack | None]:
+    """Match each semantic cue to a verified local asset, retaining synth fallback."""
+    available = load_sound_effect_catalog(library_dir)
+    selected: list[SoundEffectTrack | None] = []
+    for cue in cues:
+        matches = [track for track in available if cue.kind in track.kinds]
+        if not matches:
+            selected.append(None)
+            continue
+        stable_key = hashlib.sha256(
+            f"{cue.kind}|{cue.trigger}|{cue.start:.3f}".encode("utf-8")
+        ).hexdigest()
+        ordered_matches = sorted(
+            matches,
+            key=lambda track: (track.title.casefold(), track.sha256),
+        )
+        selected.append(ordered_matches[int(stable_key[:8], 16) % len(ordered_matches)])
+    return selected
 
 
 def load_background_music_catalog(
@@ -9559,8 +9716,8 @@ def reaction_overlay_filter(cue: ReactionCue, index: int) -> str:
 
 SOUND_EFFECT_PROFILES: dict[SoundEffectKind, tuple[int, float, float]] = {
     # frequency (Hz), duration (seconds), mix volume
-    "laugh": (920, 0.20, 0.10),
-    "shock": (105, 0.34, 0.18),
+    "laugh": (920, 0.85, 0.10),
+    "shock": (105, 0.55, 0.18),
     "think": (620, 0.18, 0.07),
     "pray": (840, 0.38, 0.065),
     "warning": (155, 0.28, 0.15),
@@ -9682,6 +9839,8 @@ def contextual_audio_mix_filter(
     music_ducking: bool = True,
     dialogue_gain: float = 0.8,
     music_gain: float = 0.2,
+    local_sound_effect_tracks: list[SoundEffectTrack | None] | None = None,
+    sound_effect_input_indices: dict[int, int] | None = None,
 ) -> str:
     """Mix dominant speech, sparse SFX, and one verified background music bed."""
     has_music = background_music or external_background_music
@@ -9764,21 +9923,40 @@ def contextual_audio_mix_filter(
             chains.append("[music_bed_raw]anull[music_bed]")
         mix_inputs.append("[music_bed]")
 
+    local_tracks = local_sound_effect_tracks or []
+    local_input_indices = sound_effect_input_indices or {}
     chime_kinds = {"laugh", "think", "pray", "heart", "important", "emphasis", "loop"}
     for index, cue in enumerate(cues, start=1):
         label = f"sfx_{index}"
-        fade_in = min(0.018, cue.duration * 0.15)
-        fade_out_start = max(fade_in, cue.duration * 0.28)
-        fade_out_duration = max(0.04, cue.duration - fade_out_start)
         delay_ms = max(0, int(round(cue.start * 1000)))
-        filters = (
-            f"sine=frequency={cue.frequency}:sample_rate=48000:duration={cue.duration:.3f},"
-            f"volume={cue.volume:.3f},"
-            f"afade=t=in:st=0:d={fade_in:.3f},"
-            f"afade=t=out:st={fade_out_start:.3f}:d={fade_out_duration:.3f}"
+        track = local_tracks[index - 1] if index - 1 < len(local_tracks) else None
+        input_index = local_input_indices.get(index - 1)
+        effect_duration = (
+            max(0.04, min(cue.duration, track.max_duration))
+            if track is not None and input_index is not None
+            else cue.duration
         )
-        if cue.kind in chime_kinds:
-            filters += ",aecho=0.8:0.22:35:0.18"
+        fade_in = min(0.018, effect_duration * 0.15)
+        fade_out_start = max(fade_in, effect_duration * 0.58)
+        fade_out_duration = max(0.02, effect_duration - fade_out_start)
+        if track is not None and input_index is not None:
+            asset_end = track.trim_start + effect_duration
+            filters = (
+                f"[{input_index}:a:0]atrim=start={track.trim_start:.3f}:end={asset_end:.3f},"
+                "asetpts=PTS-STARTPTS,highpass=f=80,lowpass=f=14500,"
+                f"volume={min(cue.volume, track.mix_gain):.3f},"
+                f"afade=t=in:st=0:d={fade_in:.3f},"
+                f"afade=t=out:st={fade_out_start:.3f}:d={fade_out_duration:.3f}"
+            )
+        else:
+            filters = (
+                f"sine=frequency={cue.frequency}:sample_rate=48000:duration={cue.duration:.3f},"
+                f"volume={cue.volume:.3f},"
+                f"afade=t=in:st=0:d={fade_in:.3f},"
+                f"afade=t=out:st={fade_out_start:.3f}:d={fade_out_duration:.3f}"
+            )
+            if cue.kind in chime_kinds:
+                filters += ",aecho=0.8:0.22:35:0.18"
         filters += (
             ",aformat=sample_rates=48000:channel_layouts=stereo,"
             f"adelay=delays={delay_ms}:all=1[{label}]"
@@ -12165,10 +12343,24 @@ def export_clip(
         if dialogue_first_accent
         else detect_reaction_cues(clip, clip_segments)
     )
+    audio_reaction_cues = reaction_cues
+    if auto_visual_accent == "dialogue_focus":
+        # Podcasts remain visually clean, but one explicit laugh/surprise beat
+        # can receive a natural local accent when the transcript supports it.
+        audio_reaction_cues = [
+            cue
+            for cue in detect_reaction_cues(
+                clip,
+                clip_segments,
+                limit=2,
+                min_gap=8.0,
+            )
+            if cue.kind in {"laugh", "shock"}
+        ][:1]
     sound_effect_cues = (
         contextual_sound_effect_cues(
             duration,
-            reaction_cues,
+            audio_reaction_cues,
             emphasis_times,
             limit=3,
             min_gap=7.0 if output_format == "landscape_compilation" else 5.5,
@@ -12180,9 +12372,12 @@ def export_clip(
         sound_effect_cues = apply_codex_audio_cues(sound_effect_cues, duration, adaptive_plan)
         if auto_visual_accent in {"restrained_authority", "reverent_focus"}:
             sound_effect_cues = sound_effect_cues[:1]
+        elif auto_visual_accent == "dialogue_focus":
+            sound_effect_cues = [
+                cue for cue in sound_effect_cues if cue.kind in {"laugh", "shock"}
+            ][:1]
         elif auto_visual_accent in {
             "context_briefing",
-            "dialogue_focus",
             "evidence_stage",
             "payoff_teaser",
             "story_punchline",
@@ -12190,6 +12385,20 @@ def export_clip(
             sound_effect_cues = []
         if clean_detail_pipeline:
             sound_effect_cues = sound_effect_cues[:3]
+    sound_effect_tracks = select_local_sound_effect_tracks(sound_effect_cues)
+    local_sound_effect_count = sum(track is not None for track in sound_effect_tracks)
+    synthetic_sound_effect_count = len(sound_effect_cues) - local_sound_effect_count
+    if local_sound_effect_count:
+        console.print(
+            "[cyan]SFX_LOCAL_READY:[/cyan] "
+            f"{local_sound_effect_count}/{len(sound_effect_cues)} cue memakai aset CC0 lokal "
+            "terverifikasi; tidak ada unduhan saat render."
+        )
+    if synthetic_sound_effect_count:
+        console.print(
+            "[cyan]SFX_SYNTHETIC_FALLBACK:[/cyan] "
+            f"{synthetic_sound_effect_count} cue tanpa pasangan aset lokal memakai accent sintetis ringan."
+        )
     drawtext_supported = ffmpeg_has_filter("drawtext")
     visible_editorial_framing = bool(
         enhanced_edit
@@ -12229,7 +12438,8 @@ def export_clip(
             )
         elif auto_visual_accent == "dialogue_focus":
             applied_edits.append(
-                "Mode dialogue-focus memberi voice meter prosedural dan virtual multi-camera pada beat percakapan, tanpa stock B-roll atau backsound pihak ketiga."
+                "Mode dialogue-focus memberi voice meter prosedural dan virtual multi-camera; "
+                "maksimal satu SFX tawa/kaget yang benar-benar dipicu transkrip, tanpa stock B-roll atau backsound pihak ketiga."
             )
         elif auto_visual_accent == "restrained_authority":
             applied_edits.append(
@@ -12345,6 +12555,37 @@ def export_clip(
         "virtual_camera_angles": [asdict(cue) for cue in camera_angle_cues],
         "reaction_cues": [asdict(cue) for cue in reaction_cues],
         "sound_effect_cues": [asdict(cue) for cue in sound_effect_cues],
+        "sound_effects": {
+            "enabled": False,
+            "cue_count": len(sound_effect_cues),
+            "local_asset_count": local_sound_effect_count,
+            "synthetic_fallback_count": synthetic_sound_effect_count,
+            "runtime_downloaded": False,
+            "dialogue_priority": True,
+            "assets": [
+                {
+                    "cue_index": index,
+                    "cue_kind": cue.kind,
+                    "title": track.title,
+                    "artist": track.artist,
+                    "source": "local_cc0_sound_effect_library",
+                    "source_url": track.source_url,
+                    "asset_sha256": track.sha256,
+                    "license": track.license,
+                    "license_url": track.license_url,
+                    "attribution_required": track.attribution_required,
+                }
+                for index, (cue, track) in enumerate(
+                    zip(sound_effect_cues, sound_effect_tracks, strict=True)
+                )
+                if track is not None
+            ],
+            "reason": (
+                "contextual_transcript_cues"
+                if sound_effect_cues
+                else f"{auto_visual_accent}_dialogue_first_or_no_matching_cue"
+            ),
+        },
         "background_music": (
             {
                 "enabled": False,
@@ -12581,7 +12822,9 @@ def export_clip(
         ),
         "thumbnail_selection": (
             {
-                "method": "youtube_app_scrub_to_embedded_frame",
+                "method": "desktop_studio_custom_upload_then_mobile_frame_fallback",
+                "custom_upload_filename": f"{base_name}_thumb.jpg",
+                "custom_upload_requires_verified_account": True,
                 "recommended_seconds": round(shorts_cover_frame_timestamp(duration), 3),
                 "recommended_window_seconds": [
                     round(min(duration, SHORTS_COVER_SELECTION_WINDOW[0]), 3),
@@ -13437,10 +13680,20 @@ def export_clip(
                 if background_music_track is not None
                 else []
             )
+            sound_effect_inputs: list[str] = []
+            sound_effect_input_indices: dict[int, int] = {}
+            next_input_index = 1 + int(background_music_track is not None)
+            for cue_index, track in enumerate(sound_effect_tracks):
+                if track is None:
+                    continue
+                sound_effect_inputs.extend(["-i", str(track.path.resolve())])
+                sound_effect_input_indices[cue_index] = next_input_index
+                next_input_index += 1
             run(
                 [
                     *audio_input,
                     *local_music_input,
+                    *sound_effect_inputs,
                     "-filter_complex",
                     contextual_audio_mix_filter(
                         audio_filter,
@@ -13451,6 +13704,8 @@ def export_clip(
                         music_ducking=music_ducking_supported,
                         dialogue_gain=dialogue_gain,
                         music_gain=music_gain,
+                        local_sound_effect_tracks=sound_effect_tracks,
+                        sound_effect_input_indices=sound_effect_input_indices,
                     ),
                     "-map",
                     "[audio_out]",
@@ -13465,6 +13720,23 @@ def export_clip(
                 ],
                 cwd=clips_dir,
             )
+            sidecar_payload["sound_effects"]["enabled"] = bool(sound_effect_cues)
+            if local_sound_effect_count:
+                local_kinds = ", ".join(
+                    dict.fromkeys(
+                        cue.kind
+                        for cue, track in zip(
+                            sound_effect_cues,
+                            sound_effect_tracks,
+                            strict=True,
+                        )
+                        if track is not None
+                    )
+                )
+                applied_edits.append(
+                    f"SFX CC0 lokal ({local_kinds}) dipasang pada cue transkrip dengan volume rendah; "
+                    "dialog tetap dominan dan render tidak mengunduh aset."
+                )
             if has_background_music:
                 sidecar_payload["background_music"]["enabled"] = True
                 if background_music_track is not None:
@@ -13485,6 +13757,8 @@ def export_clip(
             if has_background_music:
                 sidecar_payload["background_music"]["enabled"] = False
                 sidecar_payload["background_music"]["reason"] = "ffmpeg_mix_failed"
+            sidecar_payload["sound_effects"]["enabled"] = False
+            sidecar_payload["sound_effects"]["reason"] = "ffmpeg_mix_failed"
             run(plain_audio_command, cwd=clips_dir)
     else:
         run(plain_audio_command, cwd=clips_dir)

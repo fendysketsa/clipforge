@@ -13,6 +13,7 @@ services:
       - ./backend/uploads:/app/uploads
       - ./backend/data:/app/data
       - ./backend/assets/background_music:/app/assets/background_music:ro
+      - ./backend/assets/sound_effects:/app/assets/sound_effects:ro
       - ./scripts:/app/scripts:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - /sys/class/power_supply:/host/power_supply:ro
@@ -162,6 +163,7 @@ services:
       SHORTS_ALLOW_THIRD_PARTY_MUSIC: ${SHORTS_ALLOW_THIRD_PARTY_MUSIC:-false}
       SHORTS_PROCEDURAL_MUSIC_ENABLED: ${SHORTS_PROCEDURAL_MUSIC_ENABLED:-false}
       BACKGROUND_MUSIC_LIBRARY_DIR: ${BACKGROUND_MUSIC_LIBRARY_DIR:-/app/assets/background_music}
+      SOUND_EFFECT_LIBRARY_DIR: ${SOUND_EFFECT_LIBRARY_DIR:-/app/assets/sound_effects}
       SHORTS_DIALOGUE_GAIN: ${SHORTS_DIALOGUE_GAIN:-0.80}
       SHORTS_BACKGROUND_MUSIC_GAIN: ${SHORTS_BACKGROUND_MUSIC_GAIN:-0.20}
       SHORTS_MUSIC_DUCKING: ${SHORTS_MUSIC_DUCKING:-true}

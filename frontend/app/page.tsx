@@ -33,7 +33,6 @@ import {
   probeUrlSource,
   refreshYouTubeUploadPerformance,
   updateYouTubeUploadPerformance,
-  updateTikTokUploadPerformance,
   repairJobClip,
   setupYouTubeOneTimeLogin,
   startYouTubeLogin,
@@ -1120,30 +1119,6 @@ export default function HomePage() {
     }
   }, [job, loadTikTokUploads, tiktokConfig?.auto_upload_count]);
 
-  const handleSaveTikTokPerformance = useCallback(async (
-    upload: TikTokUploadJob,
-    metrics: {
-      views: number;
-      watched_full_percentage?: number;
-      average_watch_time_seconds?: number;
-      comments?: number;
-      shares?: number;
-      saves?: number;
-      followers_gained?: number;
-    },
-  ) => {
-    try {
-      const updated = await toast.promise(updateTikTokUploadPerformance(upload.id, metrics), {
-        loading: "Menyimpan performa TikTok per seri...",
-        success: "Metrik TikTok tersimpan untuk eksperimen seri ini.",
-        error: (metricError) => metricError instanceof Error ? metricError.message : "Gagal menyimpan metrik TikTok",
-      });
-      setTiktokUploads((current) => current.map((item) => item.id === updated.id ? updated : item));
-    } catch {
-      // toast.promise sudah menampilkan error.
-    }
-  }, []);
-
   const handleUploadClipToYouTube = useCallback(
     async (clip: ClipFile) => {
       if (!job) return;
@@ -1486,7 +1461,6 @@ export default function HomePage() {
           onStartTikTokLogin={handleStartTikTokLogin}
           onRefreshYouTubePerformance={handleRefreshYouTubePerformance}
           onSaveYouTubeFeedMetrics={handleSaveYouTubeFeedMetrics}
-          onSaveTikTokPerformance={handleSaveTikTokPerformance}
           onUploadAllToYouTube={handleUploadAllToYouTube}
           onUploadAllToTikTok={handleUploadAllToTikTok}
           onUploadClipToYouTube={handleUploadClipToYouTube}

@@ -18,3 +18,9 @@ Fendy Clipper includes or references third-party components:
   page marks the recording CC0; attribution is not required. Source pages,
   license URL, retrieval audit date, and exact SHA-256 hashes are recorded in
   `backend/assets/background_music/catalog.json`.
+
+- The local sound-effect library includes "Do You Remember Laughter?" by
+  Supergeek, "Bong 1" by BMacZero, and "Pop 1" by EZduzziteh. Each source page
+  marks the recording CC0; attribution is not required. Source pages, license
+  URL, retrieval audit date, trim windows, and exact SHA-256 hashes are recorded
+  in `backend/assets/sound_effects/catalog.json`.

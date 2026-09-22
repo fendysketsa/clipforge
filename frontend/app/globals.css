@@ -655,18 +655,6 @@ h2 {
   border-color: rgba(110, 231, 183, 0.36);
 }
 
-.fypAnalysis {
-  display: grid;
-  gap: 10px;
-  margin: 0 16px 16px;
-  padding: 13px;
-  border: 1px solid rgba(110, 231, 183, 0.2);
-  border-radius: 12px;
-  background:
-    linear-gradient(145deg, rgba(16, 185, 129, 0.09), rgba(34, 211, 238, 0.035)),
-    rgba(3, 14, 11, 0.74);
-}
-
 .fypScoreRow {
   display: flex;
   align-items: center;
@@ -718,126 +706,6 @@ h2 {
   margin-left: auto;
   border-color: rgba(167, 243, 208, 0.28);
   background: rgba(16, 185, 129, 0.08);
-}
-
-.analysisLine {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.analysisLine svg {
-  flex: 0 0 auto;
-  margin-top: 2px;
-  color: var(--primary);
-}
-
-.analysisLine b,
-.analysisBlock b {
-  color: var(--text-primary);
-}
-
-.analysisBlock {
-  padding-top: 8px;
-  border-top: 1px solid rgba(167, 243, 208, 0.12);
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.analysisBlock > b {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.analysisBlock ul {
-  margin: 5px 0 0;
-  padding-left: 18px;
-}
-
-.analysisStrength li::marker {
-  color: #34d399;
-}
-
-.analysisWeakness li::marker {
-  color: #fb923c;
-}
-
-.analysisApplied {
-  padding: 9px 10px;
-  border: 1px solid rgba(52, 211, 153, 0.24);
-  border-radius: 9px;
-  background: rgba(16, 185, 129, 0.075);
-}
-
-.analysisApplied > b {
-  color: #6ee7b7;
-}
-
-.analysisApplied li::marker {
-  color: #34d399;
-}
-
-.analysisIdea {
-  padding: 9px 10px;
-  border: 1px solid rgba(250, 204, 21, 0.18);
-  border-radius: 9px;
-  background: rgba(250, 204, 21, 0.055);
-}
-
-.analysisIdeaHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.analysisIdeaHeader > b {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: #fde047;
-}
-
-.analysisIdeaHeader > span {
-  color: rgba(253, 224, 71, 0.72);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.analysisApplied .analysisIdeaHeader > b {
-  color: #6ee7b7;
-}
-
-.analysisApplied .analysisIdeaHeader > span {
-  color: rgba(110, 231, 183, 0.78);
-}
-
-.analysisIdea ol,
-.analysisApplied ol {
-  margin: 7px 0 0;
-  padding-left: 20px;
-}
-
-.analysisIdea li,
-.analysisApplied li {
-  padding-left: 2px;
-}
-
-.analysisIdea li + li,
-.analysisApplied li + li {
-  margin-top: 5px;
-}
-
-.analysisIdea li::marker {
-  color: #fde047;
-  font-weight: 800;
 }
 
 .clipValidation {
@@ -1950,73 +1818,6 @@ h2 {
   align-items: center;
   justify-content: center;
   gap: 6px;
-}
-
-.thumbBlock {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 12px;
-  padding: 12px;
-  border-top: 1px solid rgba(148, 163, 184, 0.18);
-}
-
-.thumbBlockHeader {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: rgba(148, 163, 184, 0.95);
-}
-
-.thumbPreview {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.thumbPreview img {
-  width: 100%;
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-}
-
-.thumbPreview button,
-.thumbPromptBox button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border: none;
-  border-radius: 8px;
-  background: rgba(16, 185, 129, 0.9);
-  color: #03130E;
-  font-weight: 600;
-  font-size: 0.82rem;
-  cursor: pointer;
-}
-
-.thumbPromptBox {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.thumbPromptBox pre {
-  margin: 0;
-  padding: 10px;
-  border-radius: 10px;
-  background: rgba(1, 10, 8, 0.72);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 0.82rem;
-  line-height: 1.45;
-  max-height: 220px;
-  overflow-y: auto;
 }
 
 .segmentedControl--grid {
@@ -5515,9 +5316,7 @@ body::before {
 }
 
 .youtubeSetupPanel > summary,
-.youtubePerformancePanel > summary,
-.clipAnalysisDetails > summary,
-.thumbBlock > summary {
+.youtubePerformancePanel > summary {
   display: flex;
   align-items: center;
   gap: 11px;
@@ -5527,9 +5326,7 @@ body::before {
 }
 
 .youtubeSetupPanel > summary::-webkit-details-marker,
-.youtubePerformancePanel > summary::-webkit-details-marker,
-.clipAnalysisDetails > summary::-webkit-details-marker,
-.thumbBlock > summary::-webkit-details-marker {
+.youtubePerformancePanel > summary::-webkit-details-marker {
   display: none;
 }
 
@@ -5545,8 +5342,7 @@ body::before {
   color: var(--primary);
 }
 
-.youtubeSetupIcon,
-.detailsSummaryIcon {
+.youtubeSetupIcon {
   display: inline-grid;
   flex: 0 0 auto;
   place-items: center;
@@ -5564,26 +5360,20 @@ body::before {
   color: #fda4af;
 }
 
-.youtubeSetupCopy,
-.thumbSummaryCopy,
-.clipAnalysisDetails > summary > span:nth-child(2) {
+.youtubeSetupCopy {
   display: grid;
   min-width: 0;
   flex: 1;
   gap: 3px;
 }
 
-.youtubeSetupCopy strong,
-.thumbSummaryCopy strong,
-.clipAnalysisDetails > summary strong {
+.youtubeSetupCopy strong {
   color: var(--text-primary);
   font-size: 12px;
   font-weight: 800;
 }
 
-.youtubeSetupCopy small,
-.thumbSummaryCopy small,
-.clipAnalysisDetails > summary small {
+.youtubeSetupCopy small {
   overflow: hidden;
   color: var(--text-secondary);
   font-size: 10px;
@@ -5940,83 +5730,6 @@ details[open] > summary .detailsChevron {
   color: #fdba74;
 }
 
-.viewTargetReadiness {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 9px 10px;
-  border: 1px solid rgba(56, 189, 248, 0.2);
-  border-radius: 9px;
-  background: rgba(14, 165, 233, 0.055);
-  color: #bae6fd;
-}
-
-.viewTargetReadiness svg {
-  flex: 0 0 auto;
-  margin-top: 2px;
-}
-
-.viewTargetReadiness--excellent,
-.viewTargetReadiness--strong {
-  border-color: rgba(52, 211, 153, 0.22);
-  background: rgba(16, 185, 129, 0.06);
-  color: #a7f3d0;
-}
-
-.viewTargetReadiness--test {
-  border-color: rgba(250, 204, 21, 0.2);
-  background: rgba(250, 204, 21, 0.05);
-  color: #fde68a;
-}
-
-.viewTargetReadiness--hold {
-  border-color: rgba(251, 146, 60, 0.22);
-  background: rgba(249, 115, 22, 0.06);
-  color: #fed7aa;
-}
-
-.clipAnalysisDetails {
-  margin: 0 17px 15px;
-  border: 1px solid rgba(148, 216, 204, 0.12);
-  border-radius: 13px;
-  background: rgba(4, 16, 14, 0.48);
-  overflow: hidden;
-}
-
-.clipAnalysisDetails > summary {
-  min-height: 54px;
-  padding: 9px 11px;
-}
-
-.detailsSummaryIcon {
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-}
-
-.clipAnalysisDetails[open] > summary {
-  border-bottom: 1px solid rgba(148, 216, 204, 0.1);
-  background: rgba(94, 234, 212, 0.035);
-}
-
-.clipAnalysisDetails .fypAnalysis {
-  gap: 11px;
-  margin: 0;
-  padding: 13px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.clipAnalysisDetails .analysisBlock {
-  font-size: 11px;
-}
-
-.clipAnalysisDetails .analysisApplied,
-.clipAnalysisDetails .analysisIdea {
-  border-radius: 10px;
-}
-
 .clipCardFooter {
   display: grid;
   margin-top: auto;
@@ -6168,105 +5881,6 @@ details[open] > summary .detailsChevron {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-}
-
-.thumbBlock {
-  display: block;
-  margin: 0;
-  padding: 0;
-  border-top: 1px solid rgba(148, 216, 204, 0.1);
-  background: rgba(3, 14, 12, 0.34);
-}
-
-.thumbBlock > summary {
-  min-height: 58px;
-  padding: 10px 17px;
-}
-
-.thumbBlock[open] > summary {
-  border-bottom: 1px solid rgba(148, 216, 204, 0.09);
-  background: rgba(94, 234, 212, 0.03);
-}
-
-.thumbSummaryCopy small {
-  color: #71958e;
-  text-transform: capitalize;
-}
-
-.thumbContent {
-  display: grid;
-  gap: 12px;
-  padding: 13px;
-}
-
-.thumbPreview,
-.thumbPromptBox {
-  display: grid;
-  gap: 9px;
-  padding: 11px;
-  border: 1px solid rgba(148, 216, 204, 0.1);
-  border-radius: 12px;
-  background: rgba(3, 13, 11, 0.52);
-}
-
-.thumbBlockHeader {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--text-secondary);
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.thumbBlockHeader svg {
-  color: var(--primary);
-}
-
-.thumbPreview img {
-  display: block;
-  width: 100%;
-  border-color: rgba(148, 216, 204, 0.12);
-  border-radius: 9px;
-}
-
-.thumbPreview p {
-  margin: 0;
-  color: #8eaaa4;
-  font-size: 10px;
-  line-height: 1.55;
-}
-
-.thumbPreview button,
-.thumbPromptBox button {
-  display: inline-flex;
-  min-height: 38px;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 12px;
-  border: 1px solid rgba(94, 234, 212, 0.2);
-  border-radius: 9px;
-  background: rgba(94, 234, 212, 0.09);
-  color: var(--primary);
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.thumbPreview button:hover,
-.thumbPromptBox button:hover {
-  border-color: rgba(94, 234, 212, 0.36);
-  background: rgba(94, 234, 212, 0.14);
-}
-
-.thumbPromptBox pre {
-  max-height: 160px;
-  padding: 11px;
-  border-color: rgba(148, 216, 204, 0.1);
-  border-radius: 9px;
-  background: rgba(1, 8, 7, 0.72);
-  color: #b8cec9;
-  font-size: 10px;
-  line-height: 1.6;
 }
 
 @media (max-width: 1180px) {

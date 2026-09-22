@@ -27,7 +27,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Render two clip-specific editorial windows on Shorts: a mid-story interpretation and a late source-grounded takeaway. Audit v8 requires the interpretation to share a real source concept, add new analytical language, and occupy two rendered windows; crop, blur, speed, watermark, and subtitle-only changes never satisfy this contract.
 - Keep the original background by default; optional background cleaning remains available for text-heavy sources.
 - Add at most one strong conversation-aware reaction sticker in Clean Detail mode, only for laughter, surprise, prayer, or warnings.
-- Mix restrained transcript-synced sound effects under normalized dialogue.
+- Mix restrained transcript-synced sound effects under normalized dialogue. Laugh, shock/warning, and light pop accents come from a local, hash-verified CC0 library; render never downloads SFX and falls back to a quiet synthesized accent when no matching local asset is valid.
 - For **Clip Pendek** only, select a theme-matched instrumental from a local, hash-verified CC0 library. Three bundled OpenGameArt tracks cover `mystery`, `islamic`, `warning`, `inspiring`, and `knowledge`; license/source evidence stays in `backend/assets/background_music/catalog.json`. Rebuild/setup may fetch a missing pinned asset, but clip rendering never downloads music. Dialogue uses an 80% gain, music is capped at 20%, and sidechain ducking lowers it further during speech.
 - If no eligible local track is installed, Islamic clips can still use the quiet, dialogue-ducked CC0 "Cahaya Hikmah" fallback generated locally without third-party recordings or samples.
 - Apply loop treatment only when the payoff semantically reconnects to the opening hook.
@@ -44,6 +44,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Audit first-30-second editorial readiness across five beat windows (0–3, 3–8, 8–15, 15–22, and 22–30 seconds), including context-dependent openings, speech coverage, dead air, and fresh information. Timing-audited Shorts below 58 are held by the selection/upload gate; this score is a diagnostic, not a promise of actual audience retention.
 - Place one value-led Subscribe invitation after the payoff: Shorts pair it with the contextual discussion prompt in a shorter 1.85-second window, suppress it for clips up to 40 seconds or earned loops, and long-form shows it once in the final chapter. The reason to subscribe follows the topic and never offers rewards or fake urgency.
 - Produce 25–45 second Shorts by default for denser retention; the manual range still supports up to 180 seconds for complete multi-beat stories with sustained information and no filler.
+- Generate a 9:16 custom Shorts thumbnail for verified accounts and attempt upload through desktop YouTube Studio; the embedded cover frame remains available as a fallback when the live Studio control or daily custom-thumbnail quota is unavailable.
 - Treat external-source monetization as a documented workflow: the dashboard requires a commercial-rights evidence reference (not sensitive document contents) plus at least eight words of human creator perspective. That perspective is rendered as a visible editorial card, while checkbox-only rights claims and AI-only packaging are blocked from YouTube upload.
 - Build a separate 5–10 minute **Long Story** with a sentence-complete 10–22 second teaser, then restore source chronology across context, development, explanation, and payoff. The teaser is removed from its original position, and the renderer never adds filler merely to hit the selected duration.
 - Keep the production surface focused on two source-video formats only: **Clip Pendek** and **Long Story 5–10 Menit**. Failed or claimed clips never switch into a generative mode automatically.
@@ -433,6 +434,11 @@ later claim, review Private uploads before publishing. When Fendy Clipper replac
 selects YouTube's altered-content disclosure before continuing. Review the
 Restrictions and monetization columns before publishing.
 This reduces risk but cannot guarantee a video will never receive a future claim.
+The policy snapshot was rechecked on 2026-09-22. YouTube says that starting
+2026-09-24 a new Short over one minute with an active Content ID claim will no
+longer be automatically blocked and may remain playable. ClipForge deliberately
+keeps its stricter zero-active-claim publication workflow because a playable
+claimed Short can still carry rights and monetization consequences.
 
 Optional YouTube upload configuration:
 
@@ -452,7 +458,7 @@ YOUTUBE_MADE_FOR_KIDS=false
 YOUTUBE_DEFAULT_TAGS=viralindonesia,trendingindonesia,kontenpilihan
 YOUTUBE_DEFAULT_PLAYLIST=Islam
 YOUTUBE_PLAYLIST_SELECT_ATTEMPTS=3
-YOUTUBE_POLICY_REVIEW_DATE=2026-08-30
+YOUTUBE_POLICY_REVIEW_DATE=2026-09-22
 YOUTUBE_GENERATED_CONTENT_MAX_SIMILARITY=0.58
 YOUTUBE_POLICY_REVIEW_INTERVAL_DAYS=180
 YOUTUBE_TARGET_CHANNEL=ryuundyofficial

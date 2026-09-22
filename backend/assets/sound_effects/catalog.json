@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "runtime_downloads": false,
+  "effects": [
+    {
+      "file": "laugh.ogg",
+      "title": "Do You Remember Laughter? (first laugh)",
+      "artist": "Supergeek",
+      "kind": "sound_effect",
+      "kinds": ["laugh"],
+      "trim_start": 0.693,
+      "max_duration": 0.85,
+      "mix_gain": 0.1,
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution_required": false,
+      "source_url": "https://opengameart.org/content/do-you-remember-laughter",
+      "download_url": "https://opengameart.org/sites/default/files/ogalaughter_2.ogg",
+      "source_checked_on": "2026-09-22",
+      "sha256": "64887c49e9e60a0caf993a97c12c82f367c6337f67a20a1fc60c30526bd7cff0"
+    },
+    {
+      "file": "shock-bong.wav",
+      "title": "Bong 1",
+      "artist": "BMacZero",
+      "kind": "sound_effect",
+      "kinds": ["shock", "warning"],
+      "trim_start": 0.0,
+      "max_duration": 0.55,
+      "mix_gain": 0.14,
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution_required": false,
+      "source_url": "https://opengameart.org/content/metal-impact-sounds",
+      "download_url": "https://opengameart.org/sites/default/files/bong1.wav",
+      "source_checked_on": "2026-09-22",
+      "sha256": "a6558d186f2843aefa212d567963b0ad79a6f78614bcf650f519620fc1549a6d"
+    },
+    {
+      "file": "pop.wav",
+      "title": "Pop 1",
+      "artist": "EZduzziteh",
+      "kind": "sound_effect",
+      "kinds": ["think", "important", "emphasis", "loop"],
+      "trim_start": 0.0,
+      "max_duration": 0.061,
+      "mix_gain": 0.085,
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution_required": false,
+      "source_url": "https://opengameart.org/content/pop-sounds-0",
+      "download_url": "https://opengameart.org/sites/default/files/pop1.wav",
+      "source_checked_on": "2026-09-22",
+      "sha256": "758416a61890a61f4e1f00a65531e75e7d867cad1e96392d829860b8aa3a66f6"
+    }
+  ]
+}

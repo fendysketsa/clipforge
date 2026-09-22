@@ -7,7 +7,6 @@ import {
   Download,
   ExternalLink,
   Info,
-  Lightbulb,
   LoaderCircle,
   RefreshCw,
   Settings2,
@@ -21,7 +20,6 @@ import { useEffect, useState } from "react";
 import { getOutputUrl } from "../../lib/apiClient";
 import { clipDisplayTitle, handleCopyTitle, handleDownload } from "../../lib/utils";
 import type { ClipFile, TikTokUploadJob, YouTubeUploadJob } from "../../types/clip.type";
-import { ThumbnailPrompt } from "./ThumbnailPrompt";
 
 const COMPLETED_UPLOAD_STATUS_TTL_MS = 30_000;
 const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
@@ -32,15 +30,6 @@ const CLEANUP_ITEMS = [
   { id: "workspace", label: "File sementara dan folder kosong" },
   { id: "job_sync", label: "Card klip dan riwayat job disinkronkan" },
 ];
-const RELIGIOUS_REVIEW_LABELS: Record<string, string> = {
-  compare_clip_with_source_context: "Bandingkan clip dengan konteks sumber",
-  verify_quran_or_hadith_reference_and_wording: "Periksa rujukan dan redaksi ayat/hadis",
-  verify_ruling_scope_conditions_and_exceptions: "Periksa batas, syarat, dan pengecualian hukum",
-  confirm_clip_does_not_reverse_the_speaker_meaning: "Pastikan potongan tidak membalik maksud pembicara",
-  confirm_audio_visual_and_music_rights: "Pastikan hak audio, visual, dan musik",
-  review_private_upload_in_youtube_checks: "Periksa hasil Private melalui YouTube Checks",
-};
-
 type ResultsSectionProps = {
   clips: ClipFile[];
   selectedClipUrls: string[];
@@ -70,18 +59,6 @@ type ResultsSectionProps = {
   onSaveYouTubeFeedMetrics: (
     upload: YouTubeUploadJob,
     metrics: { shown_in_feed?: number; stayed_to_watch_percentage?: number },
-  ) => Promise<void>;
-  onSaveTikTokPerformance: (
-    upload: TikTokUploadJob,
-    metrics: {
-      views: number;
-      watched_full_percentage?: number;
-      average_watch_time_seconds?: number;
-      comments?: number;
-      shares?: number;
-      saves?: number;
-      followers_gained?: number;
-    },
   ) => Promise<void>;
   onUploadAllToYouTube: () => void;
   onUploadAllToTikTok: () => void;
@@ -339,7 +316,6 @@ export function ResultsSection({
   onRepairClip,
   onRefreshYouTubePerformance,
   onSaveYouTubeFeedMetrics,
-  onSaveTikTokPerformance,
   onUploadAllToYouTube,
   onUploadAllToTikTok,
   onUploadClipToYouTube,
@@ -354,16 +330,6 @@ export function ResultsSection({
   const [feedMetricDrafts, setFeedMetricDrafts] = useState<Record<string, {
     shownInFeed: string;
     stayedToWatch: string;
-  }>>({});
-  const [savingTikTokMetricsId, setSavingTikTokMetricsId] = useState<string | null>(null);
-  const [tiktokMetricDrafts, setTikTokMetricDrafts] = useState<Record<string, {
-    views: string;
-    completion: string;
-    watchTime: string;
-    comments: string;
-    shares: string;
-    saves: string;
-    followers: string;
   }>>({});
   const selectedCount = selectedClipUrls.length;
   const allClipsSelected = clips.length > 0 && selectedCount === clips.length;
@@ -406,41 +372,6 @@ export function ResultsSection({
       });
     } finally {
       setSavingFeedMetricsId(null);
-    }
-  };
-
-  const saveTikTokMetrics = async (upload: TikTokUploadJob) => {
-    const latest = upload.performance_snapshots.at(-1);
-    const draft = tiktokMetricDrafts[upload.id] || {
-      views: latest?.views?.toString() ?? "0",
-      completion: latest?.watched_full_percentage?.toString() ?? "",
-      watchTime: latest?.average_watch_time_seconds?.toString() ?? "",
-      comments: latest?.comments?.toString() ?? "",
-      shares: latest?.shares?.toString() ?? "",
-      saves: latest?.saves?.toString() ?? "",
-      followers: latest?.followers_gained?.toString() ?? "",
-    };
-    const optionalNumber = (value: string, max?: number) => {
-      if (!value.trim()) return undefined;
-      const parsed = Number(value);
-      if (!Number.isFinite(parsed)) return undefined;
-      return Math.max(0, max === undefined ? Math.round(parsed) : Math.min(max, parsed));
-    };
-    const views = optionalNumber(draft.views) ?? 0;
-    const watchTime = draft.watchTime.trim() === "" ? undefined : Math.max(0, Number(draft.watchTime));
-    setSavingTikTokMetricsId(upload.id);
-    try {
-      await onSaveTikTokPerformance(upload, {
-        views,
-        watched_full_percentage: optionalNumber(draft.completion, 100),
-        average_watch_time_seconds: watchTime !== undefined && Number.isFinite(watchTime) ? watchTime : undefined,
-        comments: optionalNumber(draft.comments),
-        shares: optionalNumber(draft.shares),
-        saves: optionalNumber(draft.saves),
-        followers_gained: optionalNumber(draft.followers),
-      });
-    } finally {
-      setSavingTikTokMetricsId(null);
     }
   };
 
@@ -758,27 +689,6 @@ export function ResultsSection({
               latestTikTokUpload?.series_label,
               tiktokSeriesLabel,
             );
-            const latestTikTokPerformance = latestTikTokUpload?.performance_snapshots.at(-1);
-            const tiktokDraft = latestTikTokUpload ? tiktokMetricDrafts[latestTikTokUpload.id] : undefined;
-            const updateTikTokMetricDraft = (
-              field: "views" | "completion" | "watchTime" | "comments" | "shares" | "saves" | "followers",
-              value: string,
-            ) => {
-              if (!latestTikTokUpload) return;
-              setTikTokMetricDrafts((current) => ({
-                ...current,
-                [latestTikTokUpload.id]: {
-                  views: current[latestTikTokUpload.id]?.views ?? latestTikTokPerformance?.views?.toString() ?? "0",
-                  completion: current[latestTikTokUpload.id]?.completion ?? latestTikTokPerformance?.watched_full_percentage?.toString() ?? "",
-                  watchTime: current[latestTikTokUpload.id]?.watchTime ?? latestTikTokPerformance?.average_watch_time_seconds?.toString() ?? "",
-                  comments: current[latestTikTokUpload.id]?.comments ?? latestTikTokPerformance?.comments?.toString() ?? "",
-                  shares: current[latestTikTokUpload.id]?.shares ?? latestTikTokPerformance?.shares?.toString() ?? "",
-                  saves: current[latestTikTokUpload.id]?.saves ?? latestTikTokPerformance?.saves?.toString() ?? "",
-                  followers: current[latestTikTokUpload.id]?.followers ?? latestTikTokPerformance?.followers_gained?.toString() ?? "",
-                  [field]: value,
-                },
-              }));
-            };
             const isLongForm = clip.name.toLowerCase().startsWith("highlight_5menit_")
               || clip.name.toLowerCase().startsWith("resume_cerita_")
               || clip.name.toLowerCase().startsWith("long_animate_");
@@ -864,7 +774,7 @@ export function ResultsSection({
             const youtubeButtonTitle = youtubeEnabled
               ? !isUploadReady
                 ? clip.youtube_upload_issue
-                  || "Upload ditahan: output belum lolos quality gate formatnya. Buka Analisis & perbaikan, lalu render ulang."
+                  || "Upload ditahan: output belum lolos quality gate. Jalankan Perbaiki Otomatis."
                 : !uploadReviewConfirmed
                   ? "Centang review hasil, fakta, dan hak penggunaan sebelum upload Private."
                 : isAlreadyUploaded
@@ -925,8 +835,7 @@ export function ResultsSection({
                   </button>
                 </div>
                 {clip.fyp_score !== null && clip.fyp_score !== undefined ? (
-                  <>
-                    <div className="clipMetrics">
+                  <div className="clipMetrics">
                       <span className="clipMetric clipMetric--score">
                         <Sparkles size={13} />
                         FYP {Math.round(clip.fyp_score)}
@@ -989,124 +898,7 @@ export function ResultsSection({
                         <span className="clipMetric">Potensi sub {clip.subscriber_intent_score}</span>
                       ) : null}
                       {isLongForm && clip.thumbnail_url ? <span className="clipMetric">Thumbnail 16:9 siap</span> : null}
-                    </div>
-                    <details className="clipAnalysisDetails">
-                      <summary>
-                        <span className="detailsSummaryIcon">
-                          <BarChart3 size={16} />
-                        </span>
-                        <span>
-                          <strong>Analisis & perbaikan</strong>
-                          <small>{clip.fyp_label || "Sudah dinilai"} · lihat detail kualitas klip</small>
-                        </span>
-                        <ChevronDown className="detailsChevron" size={18} />
-                      </summary>
-                      <div className="fypAnalysis">
-                        {clip.hook ? (
-                          <div className="analysisLine">
-                            <Target size={15} />
-                            <span><b>Hook:</b> {clip.hook}</span>
-                          </div>
-                        ) : null}
-                        {clip.pov ? (
-                          <div className="analysisLine">
-                            <Video size={15} />
-                            <span><b>POV:</b> {clip.pov}</span>
-                          </div>
-                        ) : null}
-                        {clip.core_message ? (
-                          <div className="analysisLine">
-                            <Target size={15} />
-                            <span><b>Intisari:</b> {clip.core_message}</span>
-                          </div>
-                        ) : null}
-                        {growthReadiness ? (
-                          <div className={`viewTargetReadiness viewTargetReadiness--${growthReadiness.tone}`}>
-                            <Target size={15} />
-                            <span><b>{growthReadiness.label}.</b> {growthReadiness.detail} Ini indikator kesiapan, bukan jaminan view.</span>
-                          </div>
-                        ) : null}
-                        {clip.religious_review_required ? (
-                          <div className="analysisBlock analysisIdea">
-                            <div className="analysisIdeaHeader">
-                              <b><Info size={14} /> Review konteks kajian wajib</b>
-                              <span>
-                                Risiko {clip.religious_review_risk || "medium"} · {clip.religious_claim_count || 0} klaim
-                              </span>
-                            </div>
-                            {clip.source_context_before ? (
-                              <p><b>Sebelum clip:</b> {clip.source_context_before}</p>
-                            ) : null}
-                            {clip.source_context_after ? (
-                              <p><b>Sesudah clip:</b> {clip.source_context_after}</p>
-                            ) : null}
-                            <ol>
-                              {(clip.religious_review_checks || []).map((item) => (
-                                <li key={item}>{RELIGIOUS_REVIEW_LABELS[item] || item.replaceAll("_", " ")}</li>
-                              ))}
-                            </ol>
-                          </div>
-                        ) : null}
-                        {clip.growth_checkpoints?.length ? (
-                          <div className="analysisLine">
-                            <BarChart3 size={15} />
-                            <span><b>Checkpoint review:</b> {clip.growth_checkpoints.map((item) => item.toLocaleString("id-ID")).join(" → ")} views</span>
-                          </div>
-                        ) : null}
-                        {tiktokSeriesLabel ? (
-                          <div className="analysisBlock analysisApplied">
-                            <div className="analysisIdeaHeader">
-                              <b><CheckCircle2 size={14} /> {clip.tiktok_series_identity_embedded ? "Paket TikTok diterapkan" : "Paket upload TikTok siap"}</b>
-                              <span>{tiktokSeriesLabel}</span>
-                            </div>
-                            <ol>
-                              {clip.tiktok_opening_hook ? <li><b>Hook 0–3 detik:</b> {clip.tiktok_opening_hook}</li> : null}
-                              {clip.tiktok_visual_recipe ? <li><b>{clip.tiktok_series_identity_embedded ? "Arah visual:" : "Arah visual render berikutnya:"}</b> {clip.tiktok_visual_recipe}</li> : null}
-                              {clip.tiktok_cta ? <li><b>CTA:</b> {clip.tiktok_cta}</li> : null}
-                              <li><b>Ukur per seri:</b> completion, watch time, share, save, komentar, dan follower.</li>
-                            </ol>
-                            {clip.tiktok_experiment_id ? <small>Eksperimen {clip.tiktok_experiment_id} · bukan jaminan FYP.</small> : null}
-                          </div>
-                        ) : null}
-                        {clip.strengths?.length ? (
-                          <div className="analysisBlock analysisStrength">
-                            <b>Kekuatan</b>
-                            <ul>{clip.strengths.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul>
-                          </div>
-                        ) : null}
-                        {clip.weaknesses?.length ? (
-                          <div className="analysisBlock analysisWeakness">
-                            <b>Temuan awal</b>
-                            <ul>{clip.weaknesses.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul>
-                          </div>
-                        ) : null}
-                        {clip.applied_edits?.length ? (
-                          <div className="analysisBlock analysisApplied">
-                            <b><CheckCircle2 size={14} /> Perbaikan diterapkan</b>
-                            <ul>{clip.applied_edits.map((item) => <li key={item}>{item}</li>)}</ul>
-                          </div>
-                        ) : null}
-                        {clip.monetization_strategy?.length ? (
-                          <div className={`analysisBlock ${clip.youtube_upload_ready ? "analysisApplied" : "analysisIdea"}`}>
-                            <div className="analysisIdeaHeader">
-                              <b><Target size={14} /> Strategi Codex menuju monetisasi</b>
-                              <span>{clip.youtube_upload_ready ? "Siap review Private" : "Gate belum lolos"}</span>
-                            </div>
-                            <ol>{clip.monetization_strategy.map((item) => <li key={item}>{item}</li>)}</ol>
-                          </div>
-                        ) : null}
-                        {clip.improvement_ideas?.length ? (
-                          <div className="analysisBlock analysisIdea">
-                            <div className="analysisIdeaHeader">
-                              <b><Lightbulb size={14} /> Ide Codex yang belum diterapkan</b>
-                              <span>Butuh edit manual</span>
-                            </div>
-                            <ol>{clip.improvement_ideas.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ol>
-                          </div>
-                        ) : null}
-                      </div>
-                    </details>
-                  </>
+                  </div>
                 ) : null}
                 <div className="clipCardFooter">
                   {clip.context_recut_required || needsAutomaticRepair ? (
@@ -1451,50 +1243,6 @@ export function ResultsSection({
                       </span>
                     </div>
                   ) : null}
-                  {latestTikTokUpload?.status === "completed" && latestTikTokUpload.upload_confirmed ? (
-                    <details className="clipAnalysisDetails">
-                      <summary>
-                        <span className="detailsSummaryIcon"><BarChart3 size={15} /></span>
-                        <span>
-                          <strong>Catat performa TikTok</strong>
-                          <small>{uploadTikTokSeriesLabel || "Seri TikTok"} · bandingkan per eksperimen</small>
-                        </span>
-                        <ChevronDown className="detailsChevron" size={17} />
-                      </summary>
-                      <div className="youtubeFeedMetricEditor">
-                        {([
-                          ["views", "Views", tiktokDraft?.views ?? latestTikTokPerformance?.views?.toString() ?? "0", undefined],
-                          ["completion", "Tonton penuh %", tiktokDraft?.completion ?? latestTikTokPerformance?.watched_full_percentage?.toString() ?? "", 100],
-                          ["watchTime", "Rata-rata detik", tiktokDraft?.watchTime ?? latestTikTokPerformance?.average_watch_time_seconds?.toString() ?? "", undefined],
-                          ["comments", "Komentar", tiktokDraft?.comments ?? latestTikTokPerformance?.comments?.toString() ?? "", undefined],
-                          ["shares", "Share", tiktokDraft?.shares ?? latestTikTokPerformance?.shares?.toString() ?? "", undefined],
-                          ["saves", "Save", tiktokDraft?.saves ?? latestTikTokPerformance?.saves?.toString() ?? "", undefined],
-                          ["followers", "Follower baru", tiktokDraft?.followers ?? latestTikTokPerformance?.followers_gained?.toString() ?? "", undefined],
-                        ] as const).map(([field, label, value, max]) => (
-                          <label key={field}>
-                            <span>{label}</span>
-                            <input
-                              min="0"
-                              max={max}
-                              step={field === "completion" || field === "watchTime" ? "0.1" : "1"}
-                              inputMode={field === "completion" || field === "watchTime" ? "decimal" : "numeric"}
-                              type="number"
-                              value={value}
-                              onChange={(event) => updateTikTokMetricDraft(field, event.target.value)}
-                            />
-                          </label>
-                        ))}
-                        <button
-                          className="uiButton uiButton--tiktok"
-                          disabled={savingTikTokMetricsId !== null}
-                          onClick={() => { void saveTikTokMetrics(latestTikTokUpload); }}
-                          type="button"
-                        >
-                          <span>{savingTikTokMetricsId === latestTikTokUpload.id ? "Menyimpan..." : "Simpan metrik TikTok"}</span>
-                        </button>
-                      </div>
-                    </details>
-                  ) : null}
                   {latestTikTokUpload?.status === "failed" && latestTikTokUpload.error ? (
                     <div className="youtubeUploadError tiktokUploadError" title={latestTikTokUpload.error}>
                       <strong>Upload TikTok gagal</strong>
@@ -1516,7 +1264,6 @@ export function ResultsSection({
                     </div>
                   ) : null}
                 </div>
-                <ThumbnailPrompt clip={clip} />
               </article>
             );
           })}
