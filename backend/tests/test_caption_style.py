@@ -30,6 +30,7 @@ from clipper import (
     analyze_text_heavy_backdrop,
     apply_codex_structural_edit,
     auto_fyp_visual_plan,
+    background_music_render_policy,
     build_candidate_pool,
     build_subtitle_style,
     candidate_fyp_analysis,
@@ -48,7 +49,9 @@ from clipper import (
     contextual_background_asset,
     contextual_sound_effect_cues,
     content_edit_variation,
+    creator_commentary_mix_filter,
     detect_visual_theme,
+    editorial_motion_style,
     delayed_punchline_profile,
     designed_thumbnail_filter,
     detect_reaction_cues,
@@ -112,6 +115,7 @@ from clipper import (
     subscriber_intent_profile,
     structured_comparison_profile,
     thumbnail_story_copy,
+    topic_motion_overlay_filters,
     truthful_payoff_teaser_filter,
     two_k_experiment_readiness,
     transcription_decode_options,
@@ -1467,6 +1471,16 @@ def test_shorts_cta_voiceover_ducks_dialog_and_stays_inside_card_window():
     assert "[cta_audio_out]" in value
 
 
+def test_creator_commentary_uses_real_voice_window_and_ducks_only_that_window():
+    value = creator_commentary_mix_filter(35, 8, 9.5)
+
+    assert "between(t,9.500,17.500),0.20,1" in value
+    assert "atrim=start=0:end=8.000" in value
+    assert "adelay=delays=9500:all=1" in value
+    assert "loudnorm=I=-15:TP=-1.2:LRA=7" in value
+    assert value.endswith("[creator_audio_out]")
+
+
 def test_shorts_cta_voiceover_copy_is_configurable_and_bounded(monkeypatch):
     monkeypatch.setenv("CTA_VOICEOVER_TEXT", "  Ikuti akun ini   untuk kajian berikutnya!  ")
     assert shorts_cta_voiceover_text() == "Ikuti akun ini untuk kajian berikutnya!"
@@ -2064,6 +2078,47 @@ def test_auto_fyp_visual_plan_uses_archival_accent_only_when_story_supports_it()
     assert plan["accent"] == "retro_archive"
     assert plan["content_derived"] is True
     assert plan["stack_all_effects"] is False
+
+
+def test_auto_fyp_uses_topic_specific_motion_for_politics_podcast_and_quran():
+    politics = ClipCandidate(
+        1, 0, 36, 36, 88, "Politik Umat", "konteks", "Kebijakan pemerintah dan politik umat perlu dibahas dengan adil."
+    )
+    podcast = ClipCandidate(
+        2, 0, 36, 36, 88, "Podcast Islam", "dialog", "Host dan narasumber berdiskusi tentang kehidupan Muslim."
+    )
+    quran = ClipCandidate(
+        3, 0, 36, 36, 88, "Tadabbur Al-Qur'an", "renungan", "Ayat ini dijelaskan bersama tafsir dan konteks riwayatnya."
+    )
+
+    assert editorial_motion_style(politics) == "civic_context"
+    assert auto_fyp_visual_plan(politics, "vertical_short")["accent"] == "context_briefing"
+    assert visual_theme_profile(politics)["badge"] == "KONTEKS / UMAT"
+
+    assert editorial_motion_style(podcast) == "conversation_pulse"
+    assert auto_fyp_visual_plan(podcast, "vertical_short")["accent"] == "dialogue_focus"
+    podcast_filters = topic_motion_overlay_filters(36, visual_theme_profile(podcast), [8.0])
+    assert any("abs(sin" in item for item in podcast_filters)
+
+    assert editorial_motion_style(quran) == "reverent_reference"
+    assert auto_fyp_visual_plan(quran, "vertical_short")["accent"] == "reverent_focus"
+    assert visual_theme_profile(quran)["badge"] == "DALIL / RENUNGAN"
+
+
+def test_music_policy_requires_double_opt_in_for_third_party_recordings(monkeypatch):
+    monkeypatch.setenv("SHORTS_BACKGROUND_MUSIC_ENABLED", "true")
+    monkeypatch.delenv("SHORTS_ALLOW_THIRD_PARTY_MUSIC", raising=False)
+    monkeypatch.delenv("SHORTS_PROCEDURAL_MUSIC_ENABLED", raising=False)
+
+    safe_default = background_music_render_policy("vertical_short")
+
+    assert safe_default["library_music_enabled"] is True
+    assert safe_default["library_music_requested"] is False
+    assert safe_default["procedural_music_requested"] is False
+
+    monkeypatch.setenv("SHORTS_ALLOW_THIRD_PARTY_MUSIC", "true")
+    explicit_opt_in = background_music_render_policy("vertical_short")
+    assert explicit_opt_in["library_music_requested"] is True
 
 
 def test_thumbnail_story_copy_is_compact_and_truthful():

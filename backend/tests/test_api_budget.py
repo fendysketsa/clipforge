@@ -19,6 +19,7 @@ from api import (
     build_clipper_command,
     choose_auto_analyze_seconds,
     default_viral_video_search_queries,
+    ensure_source_rights_attestation,
     ensure_python_subprocess_integrity,
     fresh_conversation_source_profile,
     fetch_video_probe,
@@ -284,11 +285,12 @@ def test_normalize_clamps_target_to_budget(monkeypatch):
     assert out.max_duration == 180
 
 
-def test_short_defaults_allow_up_to_three_minutes():
+def test_short_defaults_are_retention_dense_but_manual_three_minutes_remains_valid():
     request = ClipJobRequest(source_file="fake.mp4")
 
     assert request.min_duration == 25
-    assert request.max_duration == 180
+    assert request.max_duration == 45
+    assert ClipJobRequest(source_file="fake.mp4", max_duration=180).max_duration == 180
     assert request.model == "Systran/faster-whisper-medium"
     assert request.crop_mode == "person"
     assert request.caption_position == "bottom"
@@ -373,6 +375,19 @@ def test_original_rebuild_normalization_keeps_source_and_enforces_safe_flags(mon
     assert command[command.index("--provider-rights-evidence") + 1] == request.provider_rights_evidence
 
 
+def test_clipper_command_passes_user_creator_recording_without_voice_clone(tmp_path):
+    voice_path = tmp_path / "my-voice.m4a"
+    request = ClipJobRequest(
+        source_file="owned.mp4",
+        creator_perspective="Menurut saya konteks utama ini perlu dijelaskan sebelum mengambil kesimpulan.",
+        creator_commentary_file=str(voice_path),
+    )
+
+    command = build_clipper_command(request, tmp_path)
+
+    assert command[command.index("--creator-commentary-file") + 1] == str(voice_path)
+
+
 def test_automatic_topic_rebuild_needs_no_manual_compliance_form(monkeypatch, tmp_path):
     import api
 
@@ -455,6 +470,19 @@ def test_create_original_rebuild_is_retired_before_source_access():
     assert error.value.status_code == 410
 
 
+def test_rights_checkbox_creates_automatic_audit_note():
+    request = ensure_source_rights_attestation(
+        ClipJobRequest(
+            url="https://youtu.be/rights-source",
+            confirm_source_rights=True,
+            auto_upload_youtube=True,
+        )
+    )
+
+    assert len(request.source_rights_evidence.split()) >= 6
+    assert "dicatat otomatis" in request.source_rights_evidence
+
+
 def test_normalize_keeps_under_budget_target(monkeypatch):
     import api
 
@@ -527,8 +555,9 @@ def test_new_jobs_default_to_clean_detail_auto_fyp_visuals():
     assert request.background_mode == "keep"
     assert AutoViralRequest().visual_mode == "auto_fyp"
     assert AutoViralRequest().background_mode == "keep"
-    assert AutoViralRequest().niche == "faith_prophets_converts"
-    assert ViralVideoSearchRequest().niche == "faith_prophets_converts"
+    assert AutoViralRequest().auto_upload_youtube is False
+    assert AutoViralRequest().niche == "auto"
+    assert ViralVideoSearchRequest().niche == "auto"
 
 
 def test_practical_life_niche_owns_default_search_positions():
@@ -570,6 +599,34 @@ def test_selected_evergreen_niche_owns_the_first_search_positions():
     assert mental.queries.index("podcast horor indonesia") >= 12
     assert finance.queries[0] == "cara mencari rezeki halal berkah"
     assert finance.queries.index("podcast horor indonesia") >= 12
+
+
+def test_broad_islamic_and_religious_niches_have_focused_search_profiles():
+    expected_first_queries = {
+        "islamic_politics_society": "politik islam indonesia podcast",
+        "islamic_podcast_dialogue": "podcast islam indonesia terbaru",
+        "quran_hadith_spirituality": "tadabbur al quran indonesia",
+        "muslim_family_lifestyle": "podcast keluarga muslim indonesia",
+        "religion_culture_interfaith": "podcast agama dan budaya indonesia",
+    }
+
+    for niche, first_query in expected_first_queries.items():
+        request = ViralVideoSearchRequest(niche=niche)
+        assert request.queries[0] == first_query
+        assert len(request.queries) >= 12
+
+    politics = {
+        "title": "Podcast Politik Islam dan Kebijakan Publik",
+        "description": "Dialog masyarakat Muslim tentang demokrasi dan keadilan.",
+    }
+    assert niche_relevance_score(politics, "islamic_politics_society") >= 50
+
+    automatic_query = youtube_data_api_search_queries(ViralVideoSearchRequest(niche="auto"))[0]
+    assert "politik islam indonesia" in automatic_query
+    assert "podcast islam indonesia" in automatic_query
+    assert "agama budaya indonesia" in automatic_query
+    assert "fiqih harian" in automatic_query
+    assert "sejarah islam" in automatic_query
 
 
 def test_faith_prophets_and_converts_niche_has_focused_google_api_terms():
@@ -896,7 +953,7 @@ def test_auto_viral_schedule_reads_interval_and_safe_review_defaults(monkeypatch
     request = api.scheduled_auto_viral_request()
     status = api.auto_viral_schedule_status()
 
-    assert request.niche == "faith_prophets_converts"
+    assert request.niche == "auto"
     assert request.video_count == 2
     assert request.auto_upload_youtube is False
     assert status.enabled is True

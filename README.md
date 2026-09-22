@@ -43,7 +43,8 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Auto-repair a broader shortlist before final selection, enforce a minimum FYP score of 80 for vertical exports, and discard low-score results instead of rendering confusing repair/upload choices.
 - Audit first-30-second editorial readiness across five beat windows (0–3, 3–8, 8–15, 15–22, and 22–30 seconds), including context-dependent openings, speech coverage, dead air, and fresh information. Timing-audited Shorts below 58 are held by the selection/upload gate; this score is a diagnostic, not a promise of actual audience retention.
 - Place one value-led Subscribe invitation after the payoff: Shorts pair it with the contextual discussion prompt in a shorter 1.85-second window, suppress it for clips up to 40 seconds or earned loops, and long-form shows it once in the final chapter. The reason to subscribe follows the topic and never offers rewards or fake urgency.
-- Produce adaptive 25–180 second Shorts: use the shortest complete promise–payoff cut, reserve longer windows for multi-beat stories with sustained information, and never add filler merely to reach three minutes.
+- Produce 25–45 second Shorts by default for denser retention; the manual range still supports up to 180 seconds for complete multi-beat stories with sustained information and no filler.
+- Treat external-source monetization as a documented workflow: the dashboard requires a commercial-rights evidence reference (not sensitive document contents) plus at least eight words of human creator perspective. That perspective is rendered as a visible editorial card, while checkbox-only rights claims and AI-only packaging are blocked from YouTube upload.
 - Build a separate 5–10 minute **Long Story** with a sentence-complete 10–22 second teaser, then restore source chronology across context, development, explanation, and payoff. The teaser is removed from its original position, and the renderer never adds filler merely to hit the selected duration.
 - Keep the production surface focused on two source-video formats only: **Clip Pendek** and **Long Story 5–10 Menit**. Failed or claimed clips never switch into a generative mode automatically.
 - Telegram mirrors the two-format web flow: paste one YouTube link, choose **Clip Pendek** or **Long Story**, confirm source rights, and start from one concise review card.
@@ -208,6 +209,10 @@ the selected file. `TIKTOK_POST_READY_TIMEOUT_MS` controls how long ClipForge
 waits for that asynchronous step (default: `300000`, or five minutes). Progress
 changes are written to the upload job log; ClipForge clicks Post only after the
 button is visible and enabled.
+If Chrome reports a transfer error after the file has already reached TikTok,
+ClipForge resumes **Continue editing** and verifies that draft instead of clicking
+**Discard** or sending the same file again. A matching post already found in
+Studio is treated as recovered confirmation, preventing duplicate retries.
 
 TikTok login defaults to `TIKTOK_LOGIN_METHOD=google`. ClipForge selects
 **Continue with Google** in the regular host Google Chrome, then waits for the
@@ -332,8 +337,11 @@ scheduled campaigns. It reads the regional `mostPopular` chart as a live topic
 signal, adds relevant Indonesian topics to the Creative Commons search, then
 ranks only sources that still pass freshness, momentum, language, HD, and rights
 preflight checks. The chart itself is not treated as permission to reuse a video.
-The default dashboard preset focuses on iman, prophet stories, hidayah, and
-convert journeys. It sends a popularity-ordered Creative Commons query with the
+The default dashboard preset mixes the full Islamic/religious catalog: politics
+and public affairs, podcasts and dialogue, Qur'an/hadith reflection, Muslim
+family/lifestyle, interfaith culture, faith stories, practical guidance, mental
+health, halal finance, fiqh, and history. A focused theme can still be selected.
+It sends a popularity-ordered Creative Commons query with the
 YouTube `long` duration filter, then revalidates that every result is over 20
 minutes using `videos.list` metadata. Within that popular pool, ClipForge ranks
 overall clipping opportunity so a smaller source with a stronger story can still
@@ -347,7 +355,7 @@ YOUTUBE_DATA_API_KEY=your_google_api_key
 AUTO_VIRAL_SCHEDULE_ENABLED=true
 AUTO_VIRAL_SCHEDULE_INTERVAL_HOURS=6
 AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP=false
-AUTO_VIRAL_SCHEDULE_NICHE=faith_prophets_converts
+AUTO_VIRAL_SCHEDULE_NICHE=auto
 AUTO_VIRAL_SCHEDULE_VIDEO_COUNT=3
 AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO=2
 AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE=false

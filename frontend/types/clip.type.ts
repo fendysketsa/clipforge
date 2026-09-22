@@ -233,6 +233,7 @@ export type ClipJob = {
     source_file: string;
     script_text: string;
     creator_perspective: string;
+    creator_commentary_file: string;
     source_rights_evidence: string;
     provider_rights_evidence: string;
     top: number | null;
@@ -273,6 +274,9 @@ export type ClipJob = {
 export type CreateClipJobInput = {
   url?: string;
   source_file?: string;
+  creator_perspective?: string;
+  creator_commentary_file?: string;
+  source_rights_evidence?: string;
   top?: number;
   min_duration: number;
   max_duration: number;
@@ -566,6 +570,11 @@ export type IslamicContentNiche =
   | "faith_prophets_converts"
   | "islamic_practical_life"
   | "islamic_current_viral"
+  | "islamic_politics_society"
+  | "islamic_podcast_dialogue"
+  | "quran_hadith_spirituality"
+  | "muslim_family_lifestyle"
+  | "religion_culture_interfaith"
   | "islamic_mental_health"
   | "halal_wealth"
   | "fiqih_harian"

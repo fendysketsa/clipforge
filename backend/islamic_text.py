@@ -12,6 +12,33 @@ _ISLAMIC_ASR_REPLACEMENTS = (
     (r"\bal[\s-]+qur[’'`]an\b", "Al-Qur'an"),
 )
 
+_INCOMPLETE_TITLE_ENDINGS = frozenset(
+    {
+        "adalah",
+        "agar",
+        "akan",
+        "atau",
+        "bahwa",
+        "bisa",
+        "dalam",
+        "dan",
+        "dari",
+        "dengan",
+        "karena",
+        "ketika",
+        "menjadi",
+        "oleh",
+        "pada",
+        "saat",
+        "sebagai",
+        "sehingga",
+        "tetapi",
+        "tidak",
+        "untuk",
+        "yang",
+    }
+)
+
 
 def _case_aware_replacement(match: re.Match[str], replacement: str) -> str:
     if match.group(0)[:1].isupper():
@@ -32,6 +59,28 @@ def repair_islamic_asr_text(value: str) -> str:
             flags=re.IGNORECASE,
         )
     return clean
+
+
+def public_title_has_complete_ending(value: str) -> bool:
+    """Reject metadata titles that visibly stop on an Indonesian connector."""
+    clean = re.sub(r"(?:\s*#[\w\d_]+)+\s*$", "", value).strip()
+    if not clean or clean.endswith((":", "-", "–", "—", ",", ";", "/")):
+        return False
+    words = re.findall(r"[\w']+", clean.casefold(), flags=re.UNICODE)
+    return bool(words and words[-1] not in _INCOMPLETE_TITLE_ENDINGS)
+
+
+def trim_public_title(value: str, max_chars: int) -> str:
+    """Fit a title without leaving a dangling connector after truncation."""
+    clean = re.sub(r"\s+", " ", value).strip()
+    if len(clean) > max_chars:
+        clean = clean[:max_chars].rsplit(" ", 1)[0].rstrip() or clean[:max_chars].rstrip()
+    while clean and not public_title_has_complete_ending(clean):
+        shorter = clean.rsplit(" ", 1)[0].rstrip(" -|:–—,;/")
+        if not shorter or shorter == clean:
+            break
+        clean = shorter
+    return clean.rstrip(" -|:–—,;/")
 
 
 def islamic_indonesian_tts_text(value: str) -> str:

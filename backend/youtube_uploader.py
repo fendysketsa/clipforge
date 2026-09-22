@@ -13,7 +13,7 @@ from typing import Iterable
 
 import imageio_ffmpeg
 
-from islamic_text import repair_islamic_asr_text
+from islamic_text import repair_islamic_asr_text, trim_public_title
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -205,8 +205,7 @@ def youtube_shorts_title(value: str) -> str:
     clean = re.sub(r"(?:\s*#(?:islam|shorts)\b)+", " ", clean, flags=re.I)
     clean = re.sub(r"\s+", " ", clean).strip()
     suffix = " #Islam #Shorts"
-    if len(clean) + len(suffix) > 100:
-        clean = clean[: 100 - len(suffix)].rsplit(" ", 1)[0].rstrip() or clean[: 100 - len(suffix)].rstrip()
+    clean = trim_public_title(clean, 100 - len(suffix))
     return f"{clean}{suffix}"[:100] if clean else "Clip #Islam #Shorts"
 
 

@@ -107,10 +107,10 @@ Default output video:
 - setiap Short dan long-form mendapat deskripsi siap-upload yang rapi dan informatif: ringkasan spesifik isi, manfaat menonton, pertanyaan diskusi, dukungan Like/Share/Subscribe yang natural, handle channel, catatan konteks editorial, serta hashtag topikal terdeduplikasi; long-form memakai tiga poin manfaat dan chapter valid tanpa `#Shorts`
 - cleanup upload terkonfirmasi menghapus video beserta thumbnail, caption, subtitle, sidecar, source/WAV sementara, workspace, dan folder UUID kosong; startup juga menyapu root output orphan berumur minimal satu jam sambil melindungi semua job serta upload yang masih tercatat
 - auto-clean data berjalan saat backend aktif dan berulang tiap 6 jam: debug upload YouTube/TikTok disimpan 7 hari dan staging CDP 2 hari; interval serta retensinya dapat diubah lewat `DATA_AUTOCLEAN_*`, `DATA_DEBUG_RETENTION_DAYS`, dan `DATA_STAGING_RETENTION_DAYS`
-- Auto Search frontend membandingkan isu Muslim terkini dan empat master niche evergreen Islami (mental health, halal wealth, fiqih harian, dan sejarah Islam), lalu menampilkan Top 3 CC Indonesia berdasarkan kecocokan niche + views/hari + engagement + freshness
+- Auto Search frontend mencakup politik umat, podcast/dialog Islam, Al-Qur'an dan hadis, keluarga/gaya hidup Muslim, agama/budaya lintas iman, serta niche evergreen Islami; Top 3 CC Indonesia tetap diurutkan dari kecocokan niche + views/hari + engagement + freshness
 - hook visual/audio, reaction kontekstual, dan pattern interrupt
-- Clip Pendek otomatis memilih backsong instrumental dari cache lokal CC0 berdasarkan tema/mood. Tiga track OpenGameArt terkurasi beserta bukti sumber, lisensi, dan SHA-256 ada di `assets/background_music/catalog.json`. `scripts/recreate-compose-up.sh` memverifikasi atau mengambil aset pinned yang hilang sebelum rebuild; proses render sama sekali tidak memakai jaringan untuk backsong. Dialog memakai gain 80%, musik maksimal 20%, dan sidechain ducking menurunkannya lagi ketika ada ucapan. Jika track lokal tidak lolos validasi, klip Islami masih dapat memakai fallback orisinal CC0 "Cahaya Hikmah".
-- mode visual tunggal `auto_fyp` dipakai untuk short dan long-form: basis clean-detail sinematik memilih aksen depth 3D, arsip TV, reframe, atau speaker split secara selektif dari isi cerita
+- Clip Pendek memakai kebijakan audio zero-claim secara default: dialog asli yang dinormalisasi dan SFX prosedural lokal, tanpa rekaman musik pihak ketiga. Cache CC0 lama tetap tersedia untuk operator yang sadar risiko, tetapi baru dipakai bila `SHORTS_BACKGROUND_MUSIC_ENABLED=true` dan `SHORTS_ALLOW_THIRD_PARTY_MUSIC=true` diaktifkan bersamaan. Musik sintesis lokal juga opt-in lewat `SHORTS_PROCEDURAL_MUSIC_ENABLED=true`.
+- mode visual tunggal `auto_fyp` dipakai untuk short dan long-form: basis clean-detail sinematik memilih motion khusus konteks politik, voice meter podcast, treatment khidmat ayat/hadis, timeline sejarah, depth 3D, arsip TV, reframe, atau speaker split dari isi cerita
 - batch Short mendeteksi beberapa wajah yang benar-benar muncul bersamaan; layout tiga panel hanya dialokasikan ke 1 klip pada batch kecil atau maksimal 2 pada batch besar, dengan frame besar memakai klip aktif dan dua panel kecil wajib memakai dua kandidat klip lain yang tersebar di timeline—bukan tiga crop dari frame sumber yang sama
 - nama mode visual lama tetap dapat dibaca untuk kompatibilitas, tetapi otomatis dimigrasikan ke `auto_fyp`
 - background asli dipertahankan secara default; pembersihan backdrop dan panel speaker-split tetap tersedia sebagai pilihan khusus
@@ -133,7 +133,8 @@ Default output video:
   VAD, word timestamps, dan cache yang terikat model/bahasa
 - nama orang/brand/istilah khusus dapat diprioritaskan melalui
   `FENDY_CLIPPER_TRANSCRIPTION_HOTWORDS` (pisahkan dengan koma)
-- durasi clip pendek adaptif 25–180 detik; jendela di atas 60 detik harus memiliki perkembangan informasi dan payoff yang utuh
+- durasi clip pendek default 25–45 detik untuk retention yang lebih padat; operator tetap dapat memilih sampai 180 detik ketika cerita multi-beat memang memerlukan perkembangan dan payoff yang utuh
+- sumber URL cukup memakai satu checkbox konfirmasi hak; sistem mencatat attestasi itu otomatis, sementara perspektif editorial dibuat dari analisis AI terhadap transkrip dan ditanam sebagai kartu tanpa meminta teks atau rekaman suara tambahan
 - mode `short` tidak merender kompilasi tambahan
 
 Untuk membuat satu Long Story sinematik 5–10 menit (bukan Short), pilih target 300–600 detik:

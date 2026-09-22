@@ -257,9 +257,9 @@ export default function SourceHistoryPage() {
 
       <section className="sourceArchiveHero">
         <div className="sourceArchiveHeroCopy">
-          <span className="sourceLogEyebrow"><Terminal size={15} /> Data vault / source index</span>
-          <h2>Source Intelligence <span>// Archive</span></h2>
-          <p>Telusuri sumber, output, dan task dari satu command explorer.</p>
+          <span className="sourceLogEyebrow"><Terminal size={15} /> SOURCE INDEX / ANTI DUPLIKAT</span>
+          <h2>Log Sumber <span>// Short & Long</span></h2>
+          <p>Cek video yang pernah dipakai, format hasilnya, dan lokasi file tanpa mengulang sumber secara tidak sengaja.</p>
         </div>
         <div className="archivePathPreview" aria-label="Lokasi folder penyimpanan">
           <HardDrive size={18} />
@@ -269,7 +269,7 @@ export default function SourceHistoryPage() {
       </section>
 
       <section className="sourceArchiveStats" aria-label="Ringkasan arsip sumber">
-        <article><span><Layers3 size={17} /> Proses sukses</span><strong>{activeItems.length}</strong><small>Short + Long Story</small></article>
+        <article><span><Layers3 size={17} /> Proses sukses</span><strong>{activeItems.length}</strong><small>Short + Long Highlight</small></article>
         <article><span><Youtube size={17} /> Sumber unik</span><strong>{data.unique_sources}</strong><small>Deteksi duplikat aktif</small></article>
         <article><span><FileVideo2 size={17} /> File dihasilkan</span><strong>{counts.outputs}</strong><small>Siap ditinjau</small></article>
         <article><span><CalendarDays size={17} /> Folder bulan</span><strong>{folders.length}</strong><small>{folderYears.length} tahun arsip</small></article>
@@ -398,7 +398,7 @@ function SourceLogCard({ item }: { item: SourceUsageLogEntry }) {
             <h3>{item.source_title || `Video YouTube ${videoId}`}</h3>
             <p>{item.source_uploader || "Channel tidak tercatat"}</p>
           </div>
-          <span className={`sourceLogModeBadge ${isLong ? "isHighlight" : "isShort"}`}>{isLong ? "Long Story" : "Clip Pendek"}</span>
+          <span className={`sourceLogModeBadge ${isLong ? "isHighlight" : "isShort"}`}>{isLong ? "Long Highlight" : "Viral Short"}</span>
         </div>
         <div className="sourceArchiveCardMeta">
           <span><b>{item.clip_count}</b> output</span>

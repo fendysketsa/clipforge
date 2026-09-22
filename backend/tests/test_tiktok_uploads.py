@@ -550,6 +550,51 @@ def test_tiktok_upload_falls_back_after_cdp_file_transfer_timeout(monkeypatch, t
     assert any("macet sebelum posting" in line for line in completed.logs)
 
 
+def test_tiktok_confirmation_wins_over_late_browser_error(monkeypatch, tmp_path):
+    output_root = tmp_path / "outputs"
+    video = output_root / "demo" / "clip_01.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"video")
+    upload = api.TikTokUploadJob(
+        id="upload-confirmed-then-browser-error",
+        source_job_id="job-tiktok",
+        clip_url="/outputs/demo/clip_01.mp4",
+        clip_name=video.name,
+        status="queued",
+        created_at="2026-09-06T00:00:00+00:00",
+        updated_at="2026-09-06T00:00:00+00:00",
+        caption="caption",
+        target_handle="titikbalikislami",
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
+    monkeypatch.setattr(api, "tiktok_cdp_ready", lambda: True)
+    monkeypatch.setattr(api, "tiktok_uploads", {upload.id: upload})
+    monkeypatch.setattr(api, "save_tiktok_uploads_unlocked", lambda: None)
+    monkeypatch.setattr(api, "schedule_cross_platform_cleanup_after_tiktok", lambda _upload: None)
+
+    class Process:
+        stdout = iter([
+            "UPLOAD_CONFIRMED:private\n",
+            "USER_ERROR:browser disconnected while saving session\n",
+        ])
+
+        def __init__(self, _command, **_kwargs):
+            pass
+
+        def wait(self):
+            return 1
+
+    monkeypatch.setattr(api.subprocess, "Popen", Process)
+
+    api.run_tiktok_upload(upload.id)
+
+    completed = api.tiktok_uploads[upload.id]
+    assert completed.status == "completed"
+    assert completed.upload_confirmed is True
+    assert completed.error is None
+    assert any("tidak upload ulang" in line for line in completed.logs)
+
+
 def test_tiktok_upload_falls_back_to_saved_session_when_cdp_profile_is_logged_out(monkeypatch, tmp_path):
     monkeypatch.setenv("TIKTOK_UPLOAD_USE_CDP", "true")
     output_root = tmp_path / "outputs"
@@ -777,6 +822,7 @@ def test_account_identity_miss_does_not_invalidate_saved_session():
 def test_tiktok_profile_without_saved_auth_is_not_upload_ready(monkeypatch):
     monkeypatch.setattr(api, "playwright_installed", lambda: True)
     monkeypatch.setattr(api, "tiktok_auth_state_exists", lambda: False)
+    monkeypatch.setattr(api, "tiktok_cdp_ready", lambda: False)
     monkeypatch.setattr(api, "tiktok_chromium_profile_ready", lambda: True)
 
     config = api.tiktok_config_payload()
@@ -784,6 +830,20 @@ def test_tiktok_profile_without_saved_auth_is_not_upload_ready(monkeypatch):
     assert config.enabled is False
     assert config.auth_state_exists is False
     assert "Login TikTok" in config.auth_status_message
+
+
+def test_live_tiktok_studio_browser_is_upload_ready_without_saved_state(monkeypatch):
+    monkeypatch.setattr(api, "playwright_installed", lambda: True)
+    monkeypatch.setattr(api, "tiktok_auth_state_exists", lambda: False)
+    monkeypatch.setattr(api, "tiktok_cdp_ready", lambda: True)
+    monkeypatch.setattr(api, "tiktok_chromium_profile_ready", lambda: True)
+    monkeypatch.setenv("TIKTOK_UPLOAD_USE_CDP", "true")
+
+    config = api.tiktok_config_payload()
+
+    assert config.enabled is True
+    assert config.auth_state_exists is False
+    assert "Chrome TikTok Studio aktif" in config.auth_status_message
 
 
 def test_tiktok_session_state_is_complete_and_atomically_replaced(tmp_path):
@@ -1057,7 +1117,7 @@ def test_tiktok_cdp_upload_uses_playwright_remote_file_transfer(monkeypatch, tmp
     assert len(background_ticks) >= 3
 
 
-def test_tiktok_discards_interrupted_draft_before_new_file_selection(monkeypatch):
+def test_tiktok_resumes_interrupted_draft_without_discarding_transferred_file(monkeypatch, tmp_path):
     clicks = []
 
     class Button:
@@ -1068,14 +1128,62 @@ def test_tiktok_discards_interrupted_draft_before_new_file_selection(monkeypatch
         def wait_for_timeout(self, _milliseconds):
             pass
 
+        def locator(self, selector):
+            assert selector == "body"
+            return type("Body", (), {"inner_text": lambda self, **_kwargs: "clip-viral.mp4\nCaption"})()
+
     monkeypatch.setattr(
         "tiktok_uploader.first_visible",
-        lambda _page, selectors, **_kwargs: Button() if "Discard" in selectors[0] else None,
+        lambda _page, selectors, **_kwargs: Button() if "Continue editing" in selectors[0] else None,
     )
 
-    tiktok_uploader.discard_stale_upload_draft(Page())
+    recovered = tiktok_uploader.recover_interrupted_upload_draft(
+        Page(), tmp_path / "clip-viral.mp4"
+    )
 
+    assert recovered is True
     assert clicks == [{"timeout": 5_000}]
+
+
+def test_tiktok_continues_when_cdp_errors_after_file_reaches_editor(monkeypatch, tmp_path):
+    video = tmp_path / "clip-ready.mp4"
+    video.write_bytes(b"video")
+
+    class FileInput:
+        def wait_for(self, **_kwargs):
+            pass
+
+        def set_input_files(self, *_args, **_kwargs):
+            raise RuntimeError("InvalidCharacterError from Playwright transfer")
+
+    class Locator:
+        first = FileInput()
+
+    class Page:
+        url = "https://www.tiktok.com/tiktokstudio/upload"
+
+        def wait_for_timeout(self, _milliseconds):
+            pass
+
+        def locator(self, selector):
+            assert selector == 'input[type="file"]'
+            return Locator()
+
+    monkeypatch.setattr("tiktok_uploader.goto", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("tiktok_uploader.recover_interrupted_upload_draft", lambda *_args: False)
+    monkeypatch.setattr("tiktok_uploader.upload_editor_has_requested_file", lambda *_args: True)
+    monkeypatch.setattr("tiktok_uploader.dismiss_upload_overlays", lambda *_args: None)
+    monkeypatch.setattr("tiktok_uploader.set_caption", lambda *_args: None)
+    monkeypatch.setattr("tiktok_uploader.set_only_you", lambda *_args: None)
+
+    upload_video(
+        Page(),
+        video,
+        "caption",
+        True,
+        "titikbalikislami",
+        remote_browser=True,
+    )
 
 
 def test_tiktok_transfer_status_is_not_post_confirmation():

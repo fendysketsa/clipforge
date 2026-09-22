@@ -2,18 +2,22 @@
 
 import { useRef, useState } from "react";
 import {
-  Archive,
   AlertTriangle,
+  Archive,
   ArrowRight,
+  Check,
   CheckCircle2,
   ClipboardPaste,
   Clock3,
+  Focus,
   Film,
   Link2,
   Loader2,
   Scissors,
   ShieldCheck,
-  SlidersHorizontal,
+  Sparkles,
+  Subtitles,
+  WandSparkles,
 } from "lucide-react";
 import { formatDuration } from "../../lib/utils";
 import type { SourceProbe } from "../../lib/apiClient";
@@ -37,6 +41,18 @@ type QuickStartCardProps = {
   onConfirmSourceRightsChange: (value: boolean) => void;
   onStart: () => void;
 };
+
+const SHORT_STEPS = [
+  { icon: Focus, label: "Auto reframe", detail: "Wajah tetap aman di 9:16" },
+  { icon: Subtitles, label: "Dynamic captions", detail: "Kata penting lebih terbaca" },
+  { icon: Sparkles, label: "Retention edit", detail: "Hook, zoom, beat, dan payoff" },
+];
+
+const LONG_STEPS = [
+  { icon: Sparkles, label: "Cold open", detail: "Momen terkuat masuk lebih awal" },
+  { icon: Film, label: "Story chapters", detail: "Alur rapi, tanpa filler" },
+  { icon: Focus, label: "YouTube packaging", detail: "Thumbnail dan judul selaras" },
+];
 
 export function QuickStartCard({
   url,
@@ -75,119 +91,120 @@ export function QuickStartCard({
     try {
       const value = (await navigator.clipboard.readText()).trim();
       if (!value) {
-        setPasteMessage("Clipboard kosong. Tekan Ctrl+V di kolom link.");
+        setPasteMessage("Clipboard kosong — tekan Ctrl+V di kolom link.");
         inputRef.current?.focus();
         return;
       }
       onUrlChange(value);
       setPasteMessage("Link berhasil ditempel.");
     } catch {
-      setPasteMessage("Browser memblokir clipboard. Tekan Ctrl+V di kolom link.");
+      setPasteMessage("Clipboard diblokir browser — tekan Ctrl+V.");
       inputRef.current?.focus();
     }
   };
 
-  const modeLabel = clipMode === "highlight_5m" ? "Long Story" : "Clip Pendek";
+  const sourceReady = Boolean(sourceProbe?.title || videoDuration);
+  const isLong = clipMode === "highlight_5m";
+  const polishSteps = isLong ? LONG_STEPS : SHORT_STEPS;
 
   return (
-    <section className="quickStart" aria-labelledby="quick-start-title">
-      <div className="quickStartIntro">
-        <span className="quickStartEyebrow"><Scissors size={14} /> Command deck / 01</span>
-        <h2 id="quick-start-title">Link masuk.<br />Klip siap.</h2>
+    <section className={`clipperHero${isLong ? " isLong" : ""}`} aria-labelledby="quick-start-title">
+      <div className="clipperHeroCopy">
+        <span className="clipperKicker">{isLong ? <Film size={14} /> : <Scissors size={14} />} AI VIDEO CLIPPER</span>
+        <h2 id="quick-start-title">
+          Satu sumber.<br />
+          <em>{isLong ? "Long video dengan alur yang bikin betah." : "Short yang nggak terasa dipotong asal."}</em>
+        </h2>
         <p>
-          Pilih format, tempel sumber, lalu jalankan pipeline. Default aman sudah aktif.
+          {isLong
+            ? "AI menyusun highlight 16:9 menjadi cerita 5–10 menit: cold open kuat, chapter yang runtut, payoff jelas, dan packaging siap YouTube."
+            : "AI mencari momen paling kuat, menjaga konteksnya, lalu memoles framing, subtitle, ritme, dan audio agar siap masuk feed vertikal."}
         </p>
-        <div className="quickStartFacts" aria-label="Ringkasan kemampuan">
-          <span><ShieldCheck size={14} /> Audit aktif</span>
-          <span><Clock3 size={14} /> 3 worker</span>
-          <span><Film size={14} /> Review gate</span>
+
+        <div className="clipperPromise">
+          {polishSteps.map(({ icon: Icon, label, detail }) => (
+            <span key={label}>
+              <i><Icon size={16} /></i>
+              <b>{label}<small>{detail}</small></b>
+            </span>
+          ))}
         </div>
       </div>
 
-      <div className="quickStartComposer">
-        <span className="quickComposerLabel">// FORMAT_TARGET</span>
-        <div className="quickModeGrid" role="group" aria-label="Pilih format video">
-          <button
-            className={clipMode === "short" ? "active" : ""}
-            type="button"
-            onClick={() => onClipModeChange("short")}
-          >
-            <span className="quickModeIcon"><Scissors size={19} /></span>
-            <span>
-              <strong>Clip Pendek</strong>
-              <small>9:16 · 25–180 detik · beberapa momen terbaik</small>
-            </span>
-            {clipMode === "short" ? <CheckCircle2 size={18} /> : null}
+      <div className="sourceComposer">
+        <div className="sourceComposerTop">
+          <span><WandSparkles size={16} /> Buat video baru</span>
+          <b>{isLong ? "16:9 · 5–10 menit" : "9:16 · 25–45 dtk"}</b>
+        </div>
+
+        <div className="formatChoice" role="group" aria-label="Pilih jenis hasil video">
+          <button className={!isLong ? "active" : ""} type="button" disabled={isWorking} onClick={() => onClipModeChange("short")}>
+            <span><Scissors size={17} /></span>
+            <b>Viral Short<small>Retention feed · 9:16</small></b>
+            {!isLong ? <CheckCircle2 size={16} /> : null}
           </button>
-          <button
-            className={clipMode === "highlight_5m" ? "active" : ""}
-            type="button"
-            onClick={() => onClipModeChange("highlight_5m")}
-          >
-            <span className="quickModeIcon"><Film size={19} /></span>
-            <span>
-              <strong>Long Story</strong>
-              <small>16:9 · 5–10 menit · alur kronologis tanpa filler</small>
-            </span>
-            {clipMode === "highlight_5m" ? <CheckCircle2 size={18} /> : null}
+          <button className={isLong ? "active" : ""} type="button" disabled={isWorking} onClick={() => onClipModeChange("highlight_5m")}>
+            <span><Film size={17} /></span>
+            <b>Long Highlight<small>Watch time · 16:9</small></b>
+            {isLong ? <CheckCircle2 size={16} /> : null}
           </button>
         </div>
 
-        <label className="quickLinkField">
-          <span>// SOURCE_ENDPOINT <small>YOUTUBE</small></span>
-          <div className="quickLinkInput">
-            <Link2 size={19} />
+        <label className="sourceUrlField">
+          <span>Link video sumber</span>
+          <div className="sourceUrlInput">
+            <Link2 size={20} />
             <input
               ref={inputRef}
               value={url}
               onChange={(event) => onUrlChange(event.target.value)}
-              placeholder="Tempel https://youtube.com/watch?v=..."
+              placeholder="Tempel link YouTube di sini…"
               inputMode="url"
               autoComplete="url"
             />
             <button type="button" onClick={() => { void pasteFromClipboard(); }}>
-              <ClipboardPaste size={16} /> Tempel
+              <ClipboardPaste size={16} /><span>Tempel</span>
             </button>
           </div>
           <small className={pasteMessage.includes("berhasil") ? "isSuccess" : ""}>
             {isCheckingSourceHistory
-              ? "Memeriksa link, durasi, dan riwayat sumber…"
+              ? "Sedang memeriksa sumber…"
               : videoDuration
-                ? `Video terdeteksi · durasi ${formatDuration(videoDuration)}`
-                : pasteMessage || "Mendukung link watch, youtu.be, Shorts, Live, dan Embed."}
+                ? `Terdeteksi · ${formatDuration(videoDuration)}`
+                : pasteMessage || "YouTube watch, Shorts, Live, dan youtu.be"}
           </small>
         </label>
 
+        {sourceReady && !sourceRightsBlocked ? (
+          <div className="sourceDetected" role="status">
+            <span className="sourceDetectedIcon"><Check size={18} /></span>
+            <span>
+              <small>Sumber siap dianalisis</small>
+              <strong>{sourceProbe?.title || "Video terdeteksi"}</strong>
+              {sourceProbe?.uploader ? <em>{sourceProbe.uploader}</em> : null}
+            </span>
+            {videoDuration ? <b><Clock3 size={13} /> {formatDuration(videoDuration)}</b> : null}
+          </div>
+        ) : null}
+
         {sourceRightsBlocked ? (
-          <div className="quickNotice isDanger" role="alert">
+          <div className="sourceNotice isDanger" role="alert">
             <AlertTriangle size={17} />
-            <span className="quickNoticeCopy">
-              <strong>Sumber tidak aman untuk clipping ulang.</strong>
-              <small>
-                {sourceProbe?.source_rights_risk_reasons.slice(0, 2).join("; ")}. Crop, subtitle,
-                blur, perubahan kecepatan, dan potongan pendek tidak menghapus hak cipta atau Content ID.
-                Gunakan rekaman sendiri atau materi dengan izin komersial audio serta visual.
-                {sourceProbe?.channel_id ? ` Channel ID: ${sourceProbe.channel_id}.` : ""}
-              </small>
+            <span>
+              <strong>Sumber tidak aman untuk diproses ulang.</strong>
+              <small>{sourceProbe?.source_rights_risk_reasons.slice(0, 2).join("; ")}. Gunakan rekaman sendiri atau materi berizin komersial.</small>
             </span>
           </div>
         ) : invalidUrl ? (
-          <div className="quickNotice isDanger" role="alert">
-            <AlertTriangle size={17} />
-            <span>Link belum dikenali sebagai video YouTube. Periksa lalu tempel ulang.</span>
+          <div className="sourceNotice isDanger" role="alert">
+            <AlertTriangle size={17} /><span><strong>Link belum dikenali.</strong><small>Periksa alamat video lalu coba lagi.</small></span>
           </div>
         ) : sourceHistory?.found ? (
-          <label className="quickNotice isWarning">
+          <label className="sourceNotice isWarning">
             <AlertTriangle size={17} />
-            <span className="quickNoticeCopy">
-              <strong>Sumber ini pernah diproses {sourceHistory.usage_count ? `${sourceHistory.usage_count} kali` : "sebelumnya"}.</strong>
-              <small>
-                {sourceHistory.last_processed_at
-                  ? `Terakhir ${new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeZone: "Asia/Jakarta" }).format(new Date(sourceHistory.last_processed_at))}. `
-                  : ""}
-                Centang bila memang ingin membuat versi baru.
-              </small>
-              <a href="/source-history"><Archive size={12} /> Buka arsip sumber</a>
+            <span>
+              <strong>Sumber ini pernah diproses {sourceHistory.usage_count ? `${sourceHistory.usage_count}×` : "sebelumnya"}.</strong>
+              <small>Aktifkan bila ingin membuat versi baru. <a href="/source-history"><Archive size={11} /> Buka Log Sumber</a></small>
             </span>
             <input
               type="checkbox"
@@ -196,71 +213,32 @@ export function QuickStartCard({
             />
           </label>
         ) : sourceHistory?.valid_youtube_url ? (
-          <div className="quickNotice isSuccess" role="status">
-            <CheckCircle2 size={17} />
-            <span>Link valid dan belum ditemukan dalam riwayat proses.</span>
+          <div className="sourceNotice isSuccess" role="status">
+            <CheckCircle2 size={17} /><span><strong>Link valid.</strong><small>Belum ada duplikat di riwayat.</small></span>
           </div>
         ) : null}
 
-        {sourceProbe?.source_rights_trusted && !sourceRightsBlocked ? (
-          <div className="quickNotice isSuccess" role="status">
-            <ShieldCheck size={17} />
-            <span className="quickNoticeCopy">
-              <strong>Kanal sumber ada dalam allowlist hak operator.</strong>
-              <small>
-                Nama broadcaster/media/studio tidak memblokir proses. Konfirmasi hak dan YouTube
-                Checks tetap wajib; allowlist bukan jaminan bebas klaim.
-              </small>
-            </span>
-          </div>
-        ) : null}
-
-        {!sourceRightsBlocked && !sourceProbe?.source_rights_trusted && sourceProbe?.source_rights_review_reasons.length ? (
-          <div className="quickNotice isWarning" role="status">
-            <AlertTriangle size={17} />
-            <span className="quickNoticeCopy">
-              <strong>Kanal media/studio: proses boleh dilanjutkan dengan review.</strong>
-              <small>
-                {sourceProbe.source_rights_review_reasons.slice(0, 2).join("; ")}.
-                Ini bukan blok otomatis dan bukan jaminan bebas Content ID.
-              </small>
-            </span>
-          </div>
-        ) : null}
-
-        <label className="quickRightsCheck">
+        <label className={`sourceRights${confirmSourceRights ? " checked" : ""}`}>
           <input
             type="checkbox"
             checked={confirmSourceRights}
             onChange={(event) => onConfirmSourceRightsChange(event.target.checked)}
           />
-          <span>
-            Saya memiliki rekaman ini atau izin komersial yang dapat dibuktikan untuk seluruh audio dan visual.
-          </span>
+          <span><ShieldCheck size={16} /><b>Saya punya hak/izin untuk audio dan visual sumber ini.</b></span>
         </label>
 
-        {error ? <div className="quickError" role="alert">{error}</div> : null}
+        {error ? <div className="sourceError" role="alert">{error}</div> : null}
 
-        <div className="quickStartActions">
-          <a
-            href="#production-settings"
-            onClick={() => {
-              const settings = document.getElementById("production-settings") as HTMLDetailsElement | null;
-              if (settings) settings.open = true;
-            }}
-          >
-            <SlidersHorizontal size={15} /> Pengaturan opsional
-          </a>
-          <button className="quickStartButton" type="button" disabled={!canStart} onClick={onStart}>
-            {isWorking ? <Loader2 className="spin" size={18} /> : <ArrowRight size={18} />}
-            {isWorking ? "Sedang menyiapkan…" : `Proses ${modeLabel}`}
-          </button>
-        </div>
-        {sourceRightsBlocked ? (
-          <p className="quickStartHint">Proses dinonaktifkan sebelum download agar waktu dan kuota tidak terbuang.</p>
-        ) : !confirmSourceRights && hasUrl ? (
-          <p className="quickStartHint">Centang konfirmasi izin sumber untuk mengaktifkan tombol proses.</p>
-        ) : null}
+        <button className="createShortButton" type="button" disabled={!canStart} onClick={onStart}>
+          {isWorking ? <Loader2 className="spin" size={19} /> : <WandSparkles size={19} />}
+          <span>
+            {isWorking ? "Menyiapkan pipeline…" : isLong ? "Susun Long Highlight" : "Temukan & poles Short"}
+            <small>{isWorking ? "Jangan tutup halaman ini" : isLong ? "AI menyusun alur dan chapter otomatis" : "AI memilih momen terbaik otomatis"}</small>
+          </span>
+          {!isWorking ? <ArrowRight size={19} /> : null}
+        </button>
+
+        {!confirmSourceRights && hasUrl ? <p className="sourceHint">Konfirmasi izin sumber untuk mulai.</p> : null}
       </div>
     </section>
   );

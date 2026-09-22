@@ -2103,6 +2103,43 @@ def probe_media_stream_types(path: Path) -> set[str]:
     return streams
 
 
+def probe_media_duration_seconds(path: Path) -> float | None:
+    """Read media duration through ffprobe/ffmpeg for video and audio-only files."""
+    ffmpeg_binary = Path(ffmpeg_path())
+    candidates = [
+        os.environ.get("FFPROBE_BINARY", "").strip(),
+        shutil.which("ffprobe") or "",
+        str(ffmpeg_binary.with_name("ffprobe")),
+    ]
+    for candidate in dict.fromkeys(value for value in candidates if value):
+        try:
+            process = subprocess.run(
+                [candidate, "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)],
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            payload = json.loads(process.stdout or "{}")
+            duration = float(dict(payload.get("format") or {}).get("duration") or 0)
+            if process.returncode == 0 and duration > 0:
+                return duration
+        except (OSError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired):
+            continue
+    try:
+        process = subprocess.run(
+            [ffmpeg_path(), "-hide_banner", "-i", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", process.stderr or "")
+    if not match:
+        return None
+    return int(match.group(1)) * 3600 + int(match.group(2)) * 60 + float(match.group(3))
+
+
 def source_media_candidates(work_dir: Path) -> list[Path]:
     """List only finalized source video files; yt-dlp partials must never be reused."""
     candidates: list[Path] = []
@@ -7913,6 +7950,67 @@ DEPTH_VISUAL_WORDS = {
     "transformasi",
 }
 
+PUBLIC_AFFAIRS_VISUAL_WORDS = {
+    "demokrasi",
+    "geopolitik",
+    "kebijakan",
+    "menteri",
+    "negara",
+    "parlemen",
+    "pemilu",
+    "pemerintah",
+    "politik",
+    "presiden",
+}
+
+PODCAST_VISUAL_WORDS = {
+    "dialog",
+    "diskusi",
+    "host",
+    "interview",
+    "narasumber",
+    "obrolan",
+    "podcast",
+    "talkshow",
+    "wawancara",
+}
+
+REVERENT_REFERENCE_VISUAL_WORDS = {
+    "alquran",
+    "ayat",
+    "doa",
+    "hadis",
+    "hadits",
+    "quran",
+    "qur'an",
+    "riwayat",
+    "surat",
+    "tadabbur",
+    "tafsir",
+    "tilawah",
+}
+
+
+def editorial_motion_style(clip: ClipCandidate) -> str:
+    """Choose a respectful motion language from the actual clip subject."""
+    searchable = re.sub(
+        r"\s+",
+        " ",
+        f"{clip.title} {clip.hook} {clip.pov} {clip.text}".casefold(),
+    )
+    words = set(re.findall(r"[\w']+", searchable))
+    if words.intersection(REVERENT_REFERENCE_VISUAL_WORDS):
+        return "reverent_reference"
+    if words.intersection(PUBLIC_AFFAIRS_VISUAL_WORDS):
+        return "civic_context"
+    if words.intersection(PODCAST_VISUAL_WORDS):
+        return "conversation_pulse"
+    if any(term in searchable for term in ARCHIVAL_VISUAL_WORDS):
+        return "historical_timeline"
+    if clip_has_islamic_context(clip):
+        return "contemplative_guidance"
+    return "editorial_clean"
+
 
 def auto_fyp_visual_plan(
     clip: ClipCandidate,
@@ -7931,6 +8029,7 @@ def auto_fyp_visual_plan(
     )
     words = set(re.findall(r"[\w']+", searchable))
     variation = content_edit_variation(clip)
+    motion_style = editorial_motion_style(clip)
     archival_match = any(term in searchable for term in ARCHIVAL_VISUAL_WORDS)
     depth_match = bool(words.intersection(DEPTH_VISUAL_WORDS))
     micro_thesis = micro_thesis_profile(clip.text, clip.duration)
@@ -7957,6 +8056,15 @@ def auto_fyp_visual_plan(
     elif output_format == "vertical_short" and micro_thesis["qualified"]:
         accent = "restrained_authority"
         reason = "dilemma_nuance_safety_payoff_micro_thesis"
+    elif output_format == "vertical_short" and motion_style == "reverent_reference":
+        accent = "reverent_focus"
+        reason = "quran_hadith_or_prayer_requires_respectful_motion"
+    elif output_format == "vertical_short" and motion_style == "civic_context":
+        accent = "context_briefing"
+        reason = "politics_policy_or_public_affairs_context"
+    elif output_format == "vertical_short" and motion_style == "conversation_pulse":
+        accent = "dialogue_focus"
+        reason = "podcast_interview_or_dialogue_format"
     elif output_format == "vertical_short" and clip.narrative_arc_complete:
         accent = "narrative_message"
         reason = "hook_context_tension_answer_strong_end"
@@ -7971,12 +8079,13 @@ def auto_fyp_visual_plan(
         reason = "clarity_and_authenticity_priority"
 
     return {
-        "version": 5,
+        "version": 6,
         "base": "cinematic_clean_detail",
         "accent": accent,
         "reason": reason,
         "content_derived": True,
         "variation": variation,
+        "editorial_motion_style": motion_style,
         "micro_thesis": micro_thesis,
         "social_anecdote": social_anecdote,
         "delayed_punchline": delayed_punchline,
@@ -8000,9 +8109,18 @@ def auto_fyp_visual_plan(
         "persistent_truthful_payoff_teaser": accent == "payoff_teaser",
         "three_beat_evidence_rail": accent == "evidence_stage",
         "visual_restraint": {
-            "stable_speaker_priority": accent == "restrained_authority",
+            "stable_speaker_priority": accent in {"restrained_authority", "reverent_focus"},
             "face_and_gesture_priority": accent
-            in {"evidence_stage", "narrative_message", "payoff_teaser", "restrained_authority", "story_punchline"},
+            in {
+                "context_briefing",
+                "dialogue_focus",
+                "evidence_stage",
+                "narrative_message",
+                "payoff_teaser",
+                "restrained_authority",
+                "reverent_focus",
+                "story_punchline",
+            },
             "maximum_virtual_camera_cuts": (
                 7
                 if accent == "story_punchline"
@@ -8013,17 +8131,46 @@ def auto_fyp_visual_plan(
                 else 6
                 if accent == "narrative_message"
                 else 2
-                if accent == "restrained_authority"
+                if accent in {"restrained_authority", "reverent_focus"}
+                else 4
+                if accent in {"context_briefing", "dialogue_focus"}
                 else 5
             ),
             "reaction_stickers_allowed": accent
-            not in {"evidence_stage", "narrative_message", "payoff_teaser", "restrained_authority", "story_punchline"},
+            not in {
+                "context_briefing",
+                "dialogue_focus",
+                "evidence_stage",
+                "narrative_message",
+                "payoff_teaser",
+                "restrained_authority",
+                "reverent_focus",
+                "story_punchline",
+            },
             "authentic_source_reaction_priority": accent
             in {"payoff_teaser", "story_punchline"},
             "cinematic_smoke_allowed": accent
-            not in {"evidence_stage", "narrative_message", "payoff_teaser", "restrained_authority", "story_punchline"},
+            not in {
+                "context_briefing",
+                "dialogue_focus",
+                "evidence_stage",
+                "narrative_message",
+                "payoff_teaser",
+                "restrained_authority",
+                "reverent_focus",
+                "story_punchline",
+            },
             "dialogue_first_audio": accent
-            in {"evidence_stage", "narrative_message", "payoff_teaser", "restrained_authority", "story_punchline"},
+            in {
+                "context_briefing",
+                "dialogue_focus",
+                "evidence_stage",
+                "narrative_message",
+                "payoff_teaser",
+                "restrained_authority",
+                "reverent_focus",
+                "story_punchline",
+            },
             "target_reframe_cadence_seconds": (
                 2.8
                 if accent == "story_punchline"
@@ -8034,7 +8181,11 @@ def auto_fyp_visual_plan(
                 else 5.5
                 if accent == "narrative_message"
                 else 9.5
-                if accent == "restrained_authority"
+                if accent in {"restrained_authority", "reverent_focus"}
+                else 6.8
+                if accent == "context_briefing"
+                else 4.8
+                if accent == "dialogue_focus"
                 else retention_cadence
             ),
         },
@@ -8724,6 +8875,31 @@ def shorts_cta_voiceover_mix_filter(duration: float) -> str:
     )
 
 
+def creator_commentary_mix_filter(
+    duration: float,
+    commentary_duration: float,
+    start_seconds: float,
+) -> str:
+    """Place the user's real voice over its editorial card and duck source speech."""
+    safe_duration = max(0.1, duration)
+    start = max(0.0, min(start_seconds, safe_duration - 0.2))
+    voice_window = max(0.2, min(commentary_duration, safe_duration - start - 0.05))
+    end = start + voice_window
+    delay_ms = int(round(start * 1000))
+    fade_out_start = max(0.08, voice_window - 0.16)
+    return (
+        "[0:a:0]aformat=sample_rates=48000:channel_layouts=stereo,"
+        f"volume='if(between(t,{start:.3f},{end:.3f}),0.20,1)':eval=frame[creator_dialog];"
+        f"[1:a:0]atrim=start=0:end={voice_window:.3f},asetpts=PTS-STARTPTS,"
+        "highpass=f=85,lowpass=f=14500,acompressor=threshold=0.10:ratio=3.0:"
+        "attack=8:release=110:makeup=1.4,loudnorm=I=-15:TP=-1.2:LRA=7,"
+        "aformat=sample_rates=48000:channel_layouts=stereo,afade=t=in:st=0:d=0.06,"
+        f"afade=t=out:st={fade_out_start:.3f}:d=0.16,adelay=delays={delay_ms}:all=1[creator_voice];"
+        "[creator_dialog][creator_voice]amix=inputs=2:duration=first:"
+        "dropout_transition=0:normalize=0,alimiter=limit=0.95:attack=5:release=50[creator_audio_out]"
+    )
+
+
 def shorts_policy_compliance(duration: float, *, embedded_cover: bool) -> dict[str, object]:
     """Record the current technical Shorts guardrails beside each render.
 
@@ -8992,6 +9168,24 @@ def clip_has_islamic_context(clip: ClipCandidate) -> bool:
     return bool(words.intersection(ISLAMIC_WORDS))
 
 
+def background_music_render_policy(output_format: OutputFormat) -> dict[str, bool]:
+    """Resolve the explicit opt-ins required before any music enters a render."""
+    vertical_short = output_format == "vertical_short"
+    third_party_allowed = env_enabled("SHORTS_ALLOW_THIRD_PARTY_MUSIC", False)
+    library_music_enabled = bool(
+        vertical_short and env_enabled("SHORTS_BACKGROUND_MUSIC_ENABLED", False)
+    )
+    return {
+        "third_party_music_allowed": third_party_allowed,
+        "library_music_enabled": library_music_enabled,
+        "library_music_requested": bool(library_music_enabled and third_party_allowed),
+        "procedural_music_requested": bool(
+            vertical_short
+            and env_enabled("SHORTS_PROCEDURAL_MUSIC_ENABLED", False)
+        ),
+    }
+
+
 def contextual_background_asset(
     clip: ClipCandidate,
     mode: BackgroundMode,
@@ -9012,6 +9206,7 @@ def contextual_background_asset(
 def visual_theme_profile(clip: ClipCandidate) -> dict[str, str]:
     theme = detect_visual_theme(clip)
     has_islamic_context = clip_has_islamic_context(clip)
+    motion_style = editorial_motion_style(clip)
     profiles: dict[VisualTheme, dict[str, str]] = {
         "mystery": {
             "accent": "#A855F7",
@@ -9058,7 +9253,21 @@ def visual_theme_profile(clip: ClipCandidate) -> dict[str, str]:
             "grade": "eq=contrast=1.05:brightness=0.004:saturation=1.04:gamma=1.01",
         },
     }
-    return {"theme": theme, **profiles[theme]}
+    profile = {"theme": theme, "motion_style": motion_style, **profiles[theme]}
+    motion_copy = {
+        "civic_context": ("KONTEKS / UMAT", "CEK KONTEKS"),
+        "conversation_pulse": ("PODCAST / GAGASAN", "POIN NARASUMBER"),
+        "reverent_reference": ("DALIL / RENUNGAN", "JAGA KONTEKS"),
+        "historical_timeline": ("SEJARAH / HIKMAH", "JEJAK PERISTIWA"),
+        "contemplative_guidance": ("RENUNGAN / HIKMAH", "AMBIL HIKMAH"),
+    }
+    if motion_style in motion_copy and not (
+        motion_style == "contemplative_guidance" and theme != "islamic"
+    ):
+        badge, emphasis_label = motion_copy[motion_style]
+        profile["badge"] = badge
+        profile["emphasis_label"] = emphasis_label
+    return profile
 
 
 def cover_card_accent(profile: dict[str, str]) -> str:
@@ -9990,6 +10199,76 @@ def intro_particle_burst_filters(accent: str, secondary: str) -> list[str]:
     ]
 
 
+def topic_motion_overlay_filters(
+    duration: float,
+    profile: dict[str, str],
+    emphasis_times: list[float] | None = None,
+) -> list[str]:
+    """Create lightweight, source-grounded motion without third-party assets."""
+    safe_duration = max(0.1, duration)
+    style = profile.get("motion_style", "editorial_clean")
+    accent = profile.get("accent", "#FACC15")
+    secondary = profile.get("accent_secondary", "#22D3EE")
+    filters: list[str] = []
+
+    if style == "conversation_pulse":
+        # A tiny procedural voice meter supports podcast footage without adding
+        # stock B-roll or music. Each bar moves at a different cadence.
+        for index, period in enumerate((0.72, 0.91, 1.13, 0.84)):
+            filters.append(
+                f"drawbox=x={858 + index * 34}:y={112 + index % 2 * 9}:"
+                f"w=15:h='16+28*abs(sin(2*PI*t/{period:.2f}))':"
+                f"color={secondary if index % 2 else accent}@0.78:t=fill:"
+                f"enable='between(t,0.20,{min(safe_duration, 3.20):.3f})'"
+            )
+    elif style == "civic_context":
+        # A restrained briefing rail signals context, never fake LIVE/REC UI.
+        intro_end = min(safe_duration, 3.0)
+        filters.extend(
+            [
+                f"drawbox=x=64:y=92:w='min(300,max(4,(t-0.08)*520))':h=5:"
+                f"color={accent}@0.90:t=fill:enable='between(t,0.08,{intro_end:.3f})'",
+                f"drawbox=x=64:y=103:w='min(190,max(4,(t-0.18)*360))':h=3:"
+                f"color={secondary}@0.76:t=fill:enable='between(t,0.18,{intro_end:.3f})'",
+            ]
+        )
+    elif style == "reverent_reference":
+        # Minimal corner strokes keep Qur'an, hadith, prayer, and rulings sober.
+        intro_end = min(safe_duration, 3.4)
+        filters.extend(
+            [
+                f"drawbox=x=58:y=90:w='min(180,max(3,t*105))':h=3:color={accent}@0.62:"
+                f"t=fill:enable='between(t,0,{intro_end:.3f})'",
+                f"drawbox=x=58:y=90:w=3:h='min(110,max(3,t*68))':color={accent}@0.62:"
+                f"t=fill:enable='between(t,0,{intro_end:.3f})'",
+                f"drawbox=x=842:y=1827:w='min(180,max(3,t*105))':h=3:color={secondary}@0.55:"
+                f"t=fill:enable='between(t,0,{intro_end:.3f})'",
+            ]
+        )
+    elif style == "historical_timeline":
+        filters.extend(
+            [
+                f"drawbox=x=52:y=360:w=4:h='min(620,max(4,t*82))':color={accent}@0.66:t=fill",
+                f"drawbox=x=42:y=520:w=24:h=24:color={secondary}@0.74:t=fill:"
+                "enable='between(t,1.4,1.72)'",
+                f"drawbox=x=42:y=755:w=24:h=24:color={accent}@0.74:t=fill:"
+                "enable='between(t,4.8,5.12)'",
+            ]
+        )
+
+    # Brief edge pulses follow strong transcript beats for every theme. They are
+    # procedural and do not imply facts that the speaker did not say.
+    if style in {"civic_context", "conversation_pulse", "historical_timeline"}:
+        for timestamp in sorted(emphasis_times or [])[:2]:
+            pulse_end = min(safe_duration, timestamp + 0.22)
+            filters.append(
+                f"drawbox=x=930:y=118:w='120*max(0,1-(t-{timestamp:.3f})/0.22)':"
+                f"h=4:color={secondary}@0.82:t=fill:"
+                f"enable='between(t,{timestamp:.3f},{pulse_end:.3f})'"
+            )
+    return filters
+
+
 def clean_detail_edit_filter(
     duration: float,
     hook_text_filename: str,
@@ -10058,6 +10337,7 @@ def clean_detail_edit_filter(
     ]
     if detail_filter:
         filters.append(detail_filter)
+    filters.extend(topic_motion_overlay_filters(safe_duration, profile, emphasis_times))
 
     if show_text_overlays:
         title_filename = cover_text_filename or hook_text_filename
@@ -11648,6 +11928,8 @@ def export_clip(
     split_companion_clips: list[ClipCandidate] | None = None,
     multi_person_companion_clip: ClipCandidate | None = None,
     source_transcript: list[TranscriptSegment] | None = None,
+    creator_perspective: str = "",
+    creator_commentary_file: Path | None = None,
     progress_unit_number: int | None = None,
     progress_unit_count: int | None = None,
 ) -> Path:
@@ -11660,6 +11942,7 @@ def export_clip(
     temp_video_path = clips_dir / f"{base_name}.video_tmp.mp4"
     temp_audio_path = clips_dir / f"{base_name}.audio_tmp.wav"
     temp_cta_audio_path = clips_dir / f"{base_name}.audio_cta_tmp.wav"
+    temp_creator_audio_path = clips_dir / f"{base_name}.audio_creator_tmp.wav"
     hook_text_path = clips_dir / f"{base_name}.hook.txt"
     pov_text_path = clips_dir / f"{base_name}.pov.txt"
     cover_text_path = clips_dir / f"{base_name}.cover.txt"
@@ -11729,16 +12012,21 @@ def export_clip(
         auto_visual_plan.get("opening_context_seconds", SHORTS_TITLE_OVERLAY_SECONDS)
     )
     dialogue_first_accent = auto_visual_accent in {
+        "context_briefing",
+        "dialogue_focus",
         "evidence_stage",
         "narrative_message",
         "payoff_teaser",
         "restrained_authority",
+        "reverent_focus",
         "story_punchline",
     }
-    background_music_requested = (
-        output_format == "vertical_short"
-        and env_enabled("SHORTS_BACKGROUND_MUSIC_ENABLED", True)
-    )
+    # A permissive CC0 license does not prevent a distributor from registering
+    # the same recording in Content ID later. Keep third-party recordings out of
+    # new renders unless the operator deliberately enables both switches.
+    audio_policy = background_music_render_policy(output_format)
+    third_party_music_allowed = audio_policy["third_party_music_allowed"]
+    background_music_requested = audio_policy["library_music_requested"]
     background_music_track: BackgroundMusicTrack | None = None
     background_music_selection: dict[str, object] = {
         "theme": detect_visual_theme(clip),
@@ -11751,8 +12039,10 @@ def export_clip(
                 "[yellow]Backsong lokal terverifikasi tidak tersedia untuk tema ini; "
                 "render tidak akan mengunduh musik dan tetap dilanjutkan.[/yellow]"
             )
+    procedural_music_requested = audio_policy["procedural_music_requested"]
     islamic_background_music = (
-        background_music_track is None
+        procedural_music_requested
+        and background_music_track is None
         and clip_has_islamic_context(clip)
         and not dialogue_first_accent
     )
@@ -11790,7 +12080,7 @@ def export_clip(
                 else 2.6
                 if auto_visual_accent == "payoff_teaser"
                 else 9.0
-                if auto_visual_accent == "restrained_authority"
+                if auto_visual_accent in {"restrained_authority", "reverent_focus"}
                 else max(
                     3.2,
                     float(
@@ -11813,7 +12103,12 @@ def export_clip(
         else []
     )
     core_message = payoff_banner_text(clip, clip_segments)
-    editorial_angle = pov_banner_text(clip)
+    human_creator_perspective = re.sub(r"\s+", " ", creator_perspective).strip()
+    editorial_angle = (
+        first_sentence(human_creator_perspective, max_words=18)
+        if human_creator_perspective
+        else pov_banner_text(clip)
+    )
     editorial_contract = editorial_transformation_profile(
         clip,
         editorial_angle,
@@ -11821,6 +12116,25 @@ def export_clip(
         duration,
         title_overlay_seconds=title_overlay_seconds,
     )
+    if (
+        output_format == "vertical_short"
+        and human_creator_perspective
+        and not editorial_contract["adds_interpretive_value"]
+    ):
+        # Keep the human contribution visible while grounding it with the
+        # source-specific analytical angle when the submitted copy is too broad.
+        grounded_angle = pov_banner_text(clip)
+        editorial_angle = first_sentence(
+            f"{human_creator_perspective.rstrip(' .!?')}. {grounded_angle}",
+            max_words=20,
+        )
+        editorial_contract = editorial_transformation_profile(
+            clip,
+            editorial_angle,
+            core_message,
+            duration,
+            title_overlay_seconds=title_overlay_seconds,
+        )
     if output_format == "vertical_short" and not editorial_contract["adds_interpretive_value"]:
         # AI can occasionally return a generic POV. Replace it with a bounded,
         # source-anchored critical angle rather than rendering template filler.
@@ -11864,9 +12178,15 @@ def export_clip(
     )
     if enhanced_edit:
         sound_effect_cues = apply_codex_audio_cues(sound_effect_cues, duration, adaptive_plan)
-        if auto_visual_accent == "restrained_authority":
+        if auto_visual_accent in {"restrained_authority", "reverent_focus"}:
             sound_effect_cues = sound_effect_cues[:1]
-        elif auto_visual_accent in {"evidence_stage", "payoff_teaser", "story_punchline"}:
+        elif auto_visual_accent in {
+            "context_briefing",
+            "dialogue_focus",
+            "evidence_stage",
+            "payoff_teaser",
+            "story_punchline",
+        }:
             sound_effect_cues = []
         if clean_detail_pipeline:
             sound_effect_cues = sound_effect_cues[:3]
@@ -11899,7 +12219,19 @@ def export_clip(
                 f"Identitas seri TikTok '{tiktok_strategy.get('series_label')}' ditanam pada kartu pembuka; variasi visual dipilih stabil dari isi clip."
             )
     if enhanced_edit and output_format == "vertical_short":
-        if auto_visual_accent == "restrained_authority":
+        if auto_visual_accent == "reverent_focus":
+            applied_edits.append(
+                "Mode reverent-focus memakai motion geometris minimal, tanpa reaction sticker/asap/backsound, agar ayat, hadis, doa, dan hukum agama tetap khidmat."
+            )
+        elif auto_visual_accent == "context_briefing":
+            applied_edits.append(
+                "Mode context-briefing memberi rail konteks dan reframe berbasis beat, tanpa elemen LIVE/REC palsu, reaction sticker, backsound, atau SFX dramatis."
+            )
+        elif auto_visual_accent == "dialogue_focus":
+            applied_edits.append(
+                "Mode dialogue-focus memberi voice meter prosedural dan virtual multi-camera pada beat percakapan, tanpa stock B-roll atau backsound pihak ketiga."
+            )
+        elif auto_visual_accent == "restrained_authority":
             applied_edits.append(
                 "Mode restrained-authority menjaga pembicara stabil: maksimal dua reframe, tanpa reaction sticker/asap, dan audio dialog diprioritaskan."
             )
@@ -12053,14 +12385,21 @@ def export_clip(
             if islamic_background_music
             else {
                 "enabled": False,
-                "requested": background_music_requested,
-                "source": "local_open_music_library",
+                "requested": bool(background_music_requested or procedural_music_requested),
+                "source": "none",
                 "selection": background_music_selection,
                 "reason": (
                     f"{auto_visual_accent}_dialogue_first"
                     if dialogue_first_accent and clip_has_islamic_context(clip)
+                    else "third_party_music_requires_double_opt_in"
+                    if audio_policy["library_music_enabled"] and not third_party_music_allowed
+                    else "zero_claim_dialogue_and_sfx_policy"
+                    if not background_music_requested and not procedural_music_requested
                     else str(background_music_selection.get("reason") or "no_eligible_theme_match")
                 ),
+                "third_party_music_allowed": third_party_music_allowed,
+                "procedural_music_requested": procedural_music_requested,
+                "content_id_risk_reduced": True,
             }
         ),
         "drawtext_supported": drawtext_supported,
@@ -12162,6 +12501,22 @@ def export_clip(
         ),
         "source_metadata_embedded": False,
         "core_message": core_message.replace("\n", " ").strip(),
+        "original_creator_commentary": bool(creator_commentary_file),
+        "original_creator_commentary_format": (
+            "creator_voice_and_ai_editorial_card"
+            if creator_commentary_file and not human_creator_perspective
+            else "creator_voice_and_visible_editorial_card"
+            if creator_commentary_file
+            else "visible_editorial_card"
+            if human_creator_perspective
+            else "ai_editorial_card"
+        ),
+        "creator_commentary": {
+            "enabled": False,
+            "verified_user_recording": False,
+            "voice_cloned": False,
+            "source": "none",
+        },
         "editorial_framing": {
             "version": 2,
             "enabled": visible_editorial_framing,
@@ -12170,9 +12525,17 @@ def export_clip(
             "takeaway": core_message.replace("\n", " ").strip(),
             "distinct_timed_windows": 2 if visible_editorial_framing else 0,
             "presentation": "sudut_editorial_then_makna_utama",
-            "generated_for_this_clip": True,
+            "generated_for_this_clip": not bool(human_creator_perspective),
+            "generation_source": (
+                "creator_input"
+                if human_creator_perspective
+                else "ai_candidate_analysis"
+                if ai_config is not None and ai_config.enabled
+                else "automatic_content_analysis"
+            ),
+            "human_creator_perspective_present": bool(human_creator_perspective),
             "source_dialogue_replaced": False,
-            "creator_voice_or_presence_claimed": False,
+            "creator_voice_or_presence_claimed": bool(creator_commentary_file),
             "human_review_required": True,
             "transformation_contract": editorial_contract,
         },
@@ -12717,6 +13080,9 @@ def export_clip(
                 )
                 sidecar_payload["motion_impact"] = {
                     "style": "clean_detail",
+                    "editorial_motion_style": theme_profile.get("motion_style", "editorial_clean"),
+                    "procedural_topic_animation": True,
+                    "third_party_visual_assets": False,
                     "continuous_motion": False,
                     "blurred_frame": False,
                     "gradient_overlay": False,
@@ -13123,6 +13489,56 @@ def export_clip(
     else:
         run(plain_audio_command, cwd=clips_dir)
     mux_audio_path = temp_audio_path
+    if creator_commentary_file is not None:
+        commentary_path = creator_commentary_file.resolve()
+        commentary_duration = probe_media_duration_seconds(commentary_path)
+        if (
+            not commentary_path.is_file()
+            or "audio" not in probe_media_stream_types(commentary_path)
+            or commentary_duration is None
+            or not 5 <= commentary_duration <= 15.25
+        ):
+            raise RuntimeError("Rekaman suara kreator harus berupa audio valid berdurasi 5–15 detik.")
+        commentary_windows = editorial_card_windows(duration, title_overlay_seconds)
+        commentary_start = commentary_windows[0][0] if commentary_windows else min(3.5, duration * 0.2)
+        run(
+            [
+                ffmpeg_path(),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(mux_audio_path.name),
+                "-i",
+                str(commentary_path),
+                "-filter_complex",
+                creator_commentary_mix_filter(duration, commentary_duration, commentary_start),
+                "-map",
+                "[creator_audio_out]",
+                "-ac",
+                "2",
+                "-ar",
+                "48000",
+                "-c:a",
+                "pcm_s16le",
+                str(temp_creator_audio_path.name),
+            ],
+            cwd=clips_dir,
+        )
+        mux_audio_path = temp_creator_audio_path
+        sidecar_payload["creator_commentary"] = {
+            "enabled": True,
+            "verified_user_recording": True,
+            "voice_cloned": False,
+            "source": "user_supplied_recording",
+            "duration_seconds": round(commentary_duration, 3),
+            "start_seconds": round(commentary_start, 3),
+            "source_dialogue_ducking": True,
+        }
+        applied_edits.append(
+            "Rekaman suara kreator asli ditempatkan pada kartu editorial; dialog sumber diturunkan hanya selama komentar."
+        )
     cta_voice_path: Path | None = None
     cta_voiceover_enabled = (
         output_format == "vertical_short"
@@ -13147,7 +13563,7 @@ def export_clip(
                         "error",
                         "-y",
                         "-i",
-                        str(temp_audio_path.name),
+                        str(mux_audio_path.name),
                         "-i",
                         str(cta_voice_path.name),
                         "-filter_complex",
@@ -13260,6 +13676,7 @@ def export_clip(
     temp_video_path.unlink(missing_ok=True)
     temp_audio_path.unlink(missing_ok=True)
     temp_cta_audio_path.unlink(missing_ok=True)
+    temp_creator_audio_path.unlink(missing_ok=True)
     if cta_voice_path is not None:
         cta_voice_path.unlink(missing_ok=True)
     if enforce_size:
@@ -13369,6 +13786,8 @@ def export_compilation(
     enhanced_edit: bool = True,
     remove_running_text: bool = False,
     auto_blur_watermarks: bool = False,
+    creator_perspective: str = "",
+    creator_commentary_file: Path | None = None,
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     candidates, narrative_roles, story_director = build_long_form_story_sequence(
@@ -13427,6 +13846,8 @@ def export_compilation(
                 compilation_part_number=idx,
                 compilation_part_count=len(candidates),
                 compilation_narrative_role=narrative_role,
+                creator_perspective=creator_perspective,
+                creator_commentary_file=(creator_commentary_file if idx == 1 else None),
                 progress_unit_number=idx,
                 progress_unit_count=total_parts,
             )
@@ -13453,6 +13874,7 @@ def export_compilation(
                         "core_message": str(part_payload.get("core_message") or "").strip()[:180],
                         "visual_direction": part_payload.get("auto_fyp_visual_plan"),
                         "end_cta": part_payload.get("end_cta"),
+                        "creator_commentary": part_payload.get("creator_commentary"),
                         "content_timed_editing": bool(
                             part_payload.get("emphasis_times")
                             or part_payload.get("virtual_camera_angles")
@@ -13626,6 +14048,26 @@ def export_compilation(
         "enhanced_edit": enhanced_edit,
         "remove_running_text": remove_running_text,
         "source_metadata_embedded": False,
+        "original_creator_commentary": bool(creator_commentary_file),
+        "original_creator_commentary_format": (
+            "creator_voice_and_ai_editorial_cards"
+            if creator_commentary_file and not creator_perspective.strip()
+            else "creator_voice_and_visible_editorial_cards"
+            if creator_commentary_file
+            else "visible_editorial_cards"
+            if creator_perspective.strip()
+            else "ai_editorial_cards"
+        ),
+        "creator_commentary": (
+            part_audits[0].get("creator_commentary")
+            if part_audits and isinstance(part_audits[0].get("creator_commentary"), dict)
+            else {
+                "enabled": False,
+                "verified_user_recording": False,
+                "voice_cloned": False,
+                "source": "none",
+            }
+        ),
         "auditor_identity": compilation_auditor,
         "provenance": {
             "version": 1,
@@ -14012,6 +14454,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--creator-perspective",
+        default="",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--creator-commentary-file",
         default="",
         help=argparse.SUPPRESS,
     )
@@ -15361,6 +15808,8 @@ def main() -> int:
                 not args.no_enhanced_edit,
                 args.remove_running_text and not args.keep_running_text,
                 args.auto_blur_watermarks,
+                args.creator_perspective,
+                Path(args.creator_commentary_file) if args.creator_commentary_file else None,
             )
         ]
         emit_progress(93, "render", "Render video panjang selesai")
@@ -15478,6 +15927,12 @@ def main() -> int:
                         multi_person_companion_map.get(candidate.index) or [None]
                     )[0],
                     source_transcript=transcript,
+                    creator_perspective=args.creator_perspective,
+                    creator_commentary_file=(
+                        Path(args.creator_commentary_file)
+                        if args.creator_commentary_file
+                        else None
+                    ),
                     progress_unit_number=export_index,
                     progress_unit_count=total_candidates,
                 )

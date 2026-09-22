@@ -25,6 +25,12 @@ type Props = {
 };
 
 const NICHES: { value: IslamicContentNiche; label: string }[] = [
+  { value: "auto", label: "Semua tema Islam & agama" },
+  { value: "islamic_politics_society", label: "Politik umat & masyarakat" },
+  { value: "islamic_podcast_dialogue", label: "Podcast & dialog Islam" },
+  { value: "quran_hadith_spirituality", label: "Al-Qur'an, hadis & tadabbur" },
+  { value: "muslim_family_lifestyle", label: "Keluarga & gaya hidup Muslim" },
+  { value: "religion_culture_interfaith", label: "Agama, budaya & lintas iman" },
   { value: "faith_prophets_converts", label: "Iman, kisah nabi & mualaf" },
   { value: "islamic_current_viral", label: "Isu Muslim terkini" },
   { value: "islamic_practical_life", label: "Masalah hidup praktis" },
@@ -32,7 +38,6 @@ const NICHES: { value: IslamicContentNiche; label: string }[] = [
   { value: "halal_wealth", label: "Rezeki & bisnis halal" },
   { value: "fiqih_harian", label: "Fiqih harian" },
   { value: "islamic_history", label: "Sejarah Islam" },
-  { value: "auto", label: "Campuran otomatis" },
 ];
 
 const formatNumber = (value: number) => new Intl.NumberFormat("id-ID", { notation: "compact" }).format(value);
@@ -78,7 +83,7 @@ export function AutoViralPanel({
         <span className="optionalPanelTitle">
           <span className="panelEyebrow">Module 02 / opsional</span>
           <strong>Radar Viral Otomatis</strong>
-          <small>Cari sumber tren untuk diproses secara otomatis.</small>
+          <small>Cari politik, podcast, kajian, dan tema agama untuk diolah otomatis.</small>
         </span>
         <span className={`optionalPanelState ${isSearching || isRunning ? "isActive" : ""}`}>
           {activityLabel}

@@ -31,7 +31,11 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from yt_dlp import YoutubeDL
 
 from llm import AIConfig, chat_completion, extract_json
-from islamic_text import repair_islamic_asr_text
+from islamic_text import (
+    public_title_has_complete_ending,
+    repair_islamic_asr_text,
+    trim_public_title,
+)
 from source_rights import (
     is_trusted_source_channel,
     source_rights_review_reasons,
@@ -120,6 +124,8 @@ TIKTOK_CHROME_LOG = Path(
 )
 DEFAULT_YOUTUBE_MAX_UPLOAD_MB = 256
 ALLOWED_UPLOAD_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"}
+ALLOWED_CREATOR_AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".webm"}
+MAX_CREATOR_AUDIO_BYTES = 20 * 1024 * 1024
 SECONDS_PER_TARGET_CLIP = 360
 MIN_AUTO_CLIPS = 2
 MAX_AUTO_CLIPS = 8
@@ -131,6 +137,7 @@ CLIP_BUDGET_RATIO = 0.8
 YOUTUBE_SHORTS_MAX_SECONDS = 180
 SHORT_GROWTH_MIN_SECONDS = 25
 SHORT_GROWTH_MAX_SECONDS = 180
+SHORT_DEFAULT_MAX_SECONDS = 45
 SHORT_FYP_TARGET_SCORE = 80
 ACTIVE_CLIP_MODES = frozenset({"short", "highlight_5m"})
 RETIRED_CLIP_MODES = frozenset({"long_animate", "original_rebuild"})
@@ -340,11 +347,12 @@ class ClipJobRequest(BaseModel):
     source_file: str = ""
     script_text: str = Field(default="", max_length=30000)
     creator_perspective: str = Field(default="", max_length=4000)
+    creator_commentary_file: str = Field(default="", max_length=255)
     source_rights_evidence: str = Field(default="", max_length=2000)
     provider_rights_evidence: str = Field(default="", max_length=2000)
     top: int | None = Field(default=None, ge=1, le=50)
     min_duration: float = Field(default=SHORT_GROWTH_MIN_SECONDS, ge=5, le=600)
-    max_duration: float = Field(default=SHORT_GROWTH_MAX_SECONDS, ge=10, le=600)
+    max_duration: float = Field(default=SHORT_DEFAULT_MAX_SECONDS, ge=10, le=600)
     clip_mode: Literal["short", "highlight_5m", "long_animate", "original_rebuild"] = "short"
     # Keep 240s readable for persisted legacy jobs; the current UI offers 300-600s.
     compilation_target_seconds: float = Field(default=300, ge=240, le=600)
@@ -403,6 +411,24 @@ class ClipJobRequest(BaseModel):
     @classmethod
     def _clean_compliance_text(cls, value: str) -> str:
         return re.sub(r"\s+", " ", value).strip()
+
+
+AUTOMATIC_SOURCE_RIGHTS_ATTESTATION = (
+    "Konfirmasi pengguna dicatat otomatis: izin komersial audio dan visual dinyatakan tersedia"
+)
+
+
+def ensure_source_rights_attestation(request: ClipJobRequest) -> ClipJobRequest:
+    """Turn the single rights checkbox into an explicit, auditable job note."""
+    if (
+        request.url.strip()
+        and request.confirm_source_rights
+        and len(request.source_rights_evidence.split()) < 6
+    ):
+        return request.model_copy(
+            update={"source_rights_evidence": AUTOMATIC_SOURCE_RIGHTS_ATTESTATION}
+        )
+    return request
 
 
 class ClipCandidate(BaseModel):
@@ -1226,6 +1252,11 @@ IslamicContentNiche = Literal[
     "faith_prophets_converts",
     "islamic_practical_life",
     "islamic_current_viral",
+    "islamic_politics_society",
+    "islamic_podcast_dialogue",
+    "quran_hadith_spirituality",
+    "muslim_family_lifestyle",
+    "religion_culture_interfaith",
     "islamic_mental_health",
     "halal_wealth",
     "fiqih_harian",
@@ -1306,6 +1337,121 @@ ISLAMIC_EVERGREEN_NICHES: dict[str, dict[str, Any]] = {
             "nasihat", "ceramah", "hijrah", "quran", "hadis", "hadits",
         ],
         "hashtags": ["IslamTerkini", "KajianViral", "MuslimIndonesia"],
+    },
+    "islamic_politics_society": {
+        "label": "Politik Umat, Kebijakan & Masyarakat Muslim",
+        "queries": [
+            "politik islam indonesia podcast",
+            "isu politik umat islam indonesia terbaru",
+            "ulama membahas kebijakan publik indonesia",
+            "demokrasi dan politik menurut islam kajian",
+            "geopolitik dunia islam podcast indonesia",
+            "kepemimpinan amanah dan keadilan dalam islam",
+            "hubungan agama negara diskusi indonesia",
+            "hak masyarakat muslim dan kebijakan publik",
+            "ekonomi politik umat islam indonesia",
+            "generasi muda muslim bicara politik",
+            "podcast tokoh muslim isu nasional",
+            "dialog kebangsaan dan umat islam",
+        ],
+        "keywords": [
+            "politik", "kebijakan", "pemerintah", "negara", "demokrasi", "pemilu",
+            "parlemen", "presiden", "menteri", "hukum", "keadilan", "kepemimpinan",
+            "geopolitik", "kebangsaan", "masyarakat", "umat", "muslim", "ulama",
+        ],
+        "hashtags": ["PolitikIslam", "IsuUmat", "MuslimIndonesia"],
+    },
+    "islamic_podcast_dialogue": {
+        "label": "Podcast, Wawancara & Dialog Islam",
+        "queries": [
+            "podcast islam indonesia terbaru",
+            "podcast ustaz obrolan anak muda",
+            "wawancara tokoh muslim indonesia",
+            "dialog islam kehidupan modern",
+            "podcast hijrah kisah nyata",
+            "podcast muslim keluarga dan karier",
+            "obrolan iman generasi muda",
+            "podcast ulama menjawab pertanyaan",
+            "diskusi islam santai indonesia",
+            "podcast perempuan muslim indonesia",
+            "talkshow agama islam indonesia",
+            "percakapan inspiratif muslim",
+        ],
+        "keywords": [
+            "podcast", "wawancara", "interview", "dialog", "diskusi", "obrolan",
+            "talkshow", "narasumber", "host", "tamu", "cerita", "pengalaman",
+            "islam", "muslim", "ustaz", "ustadz", "ulama", "kajian",
+        ],
+        "hashtags": ["PodcastIslam", "DialogMuslim", "ObrolanBermakna"],
+    },
+    "quran_hadith_spirituality": {
+        "label": "Al-Qur'an, Hadis, Doa & Spiritualitas",
+        "queries": [
+            "tadabbur al quran indonesia",
+            "kajian ayat al quran dan maknanya",
+            "hadis pilihan penjelasan ustaz",
+            "tafsir al quran singkat indonesia",
+            "doa dzikir dan ketenangan hati",
+            "makna surat al quran kajian",
+            "kajian hadis kehidupan sehari hari",
+            "quran dan sains kajian indonesia",
+            "tilawah dan tadabbur menyentuh hati",
+            "belajar memahami hadis dengan konteks",
+            "kajian akhlak dari al quran",
+            "spiritualitas islam podcast indonesia",
+        ],
+        "keywords": [
+            "quran", "alquran", "al quran", "ayat", "surat", "tafsir", "tadabbur",
+            "hadis", "hadits", "sunnah", "riwayat", "doa", "dzikir", "zikir",
+            "tilawah", "wahyu", "akhlak", "spiritual", "ruh", "hati",
+        ],
+        "hashtags": ["TadabburQuran", "BelajarHadis", "RenunganIslam"],
+    },
+    "muslim_family_lifestyle": {
+        "label": "Keluarga, Relasi & Gaya Hidup Muslim",
+        "queries": [
+            "podcast keluarga muslim indonesia",
+            "parenting islami anak remaja",
+            "pernikahan dan komunikasi dalam islam",
+            "gaya hidup muslim anak muda",
+            "muslimah karier dan keluarga podcast",
+            "adab pergaulan remaja muslim",
+            "rumah tangga islami tanya jawab",
+            "persiapan nikah menurut islam",
+            "ayah ibu dan pendidikan anak islam",
+            "kesehatan dan gaya hidup halal",
+            "komunitas muslim kreatif indonesia",
+            "relasi sehat menurut islam",
+        ],
+        "keywords": [
+            "keluarga", "parenting", "anak", "remaja", "nikah", "pernikahan", "suami",
+            "istri", "ayah", "ibu", "rumah tangga", "relasi", "komunikasi", "muslimah",
+            "pergaulan", "gaya hidup", "halal", "komunitas", "karier",
+        ],
+        "hashtags": ["KeluargaMuslim", "ParentingIslami", "GayaHidupMuslim"],
+    },
+    "religion_culture_interfaith": {
+        "label": "Agama, Budaya & Dialog Lintas Iman",
+        "queries": [
+            "podcast agama dan budaya indonesia",
+            "dialog lintas agama indonesia",
+            "toleransi antar umat beragama diskusi",
+            "sejarah agama di indonesia dokumenter",
+            "tradisi keagamaan nusantara podcast",
+            "hubungan islam dan budaya indonesia",
+            "tokoh agama dialog kebangsaan",
+            "agama dan kehidupan modern podcast",
+            "kerukunan umat beragama indonesia",
+            "perbandingan agama diskusi akademis indonesia",
+            "spiritualitas dan kemanusiaan dialog",
+            "budaya muslim nusantara dokumenter",
+        ],
+        "keywords": [
+            "agama", "budaya", "tradisi", "toleransi", "lintas iman", "antaragama",
+            "kerukunan", "kemanusiaan", "spiritualitas", "dialog", "sejarah", "nusantara",
+            "islam", "muslim", "kristen", "katolik", "hindu", "buddha", "konghucu",
+        ],
+        "hashtags": ["DialogAgama", "AgamaDanBudaya", "KerukunanIndonesia"],
     },
     "islamic_mental_health": {
         "label": "Kesehatan Mental & Ketenangan Jiwa",
@@ -1401,18 +1547,24 @@ ISLAMIC_EVERGREEN_NICHES: dict[str, dict[str, Any]] = {
     },
 }
 
-# YouTube search.list behaves far better with a few broad concepts than with
-# six long natural-language prompts joined into one q parameter. Detailed
+# YouTube search.list behaves far better with compact broad concepts than with
+# long natural-language prompts joined into one q parameter. Detailed
 # niche phrases remain available to the bounded yt-dlp fallback and metadata
 # ranking; this compact query is only the fast API discovery seed.
 FAST_YOUTUBE_DATA_API_TERMS: dict[str, list[str]] = {
     "auto": [
         "iman islam",
-        "kisah nabi",
-        "kisah mualaf",
-        "kajian islam indonesia",
+        "politik islam indonesia",
+        "podcast islam indonesia",
+        "tadabbur al quran",
+        "keluarga muslim",
+        "agama budaya indonesia",
+        "kajian islam terbaru",
         "kesehatan mental islam",
         "rezeki halal",
+        "fiqih harian",
+        "sejarah islam",
+        "nasihat islam",
     ],
     "faith_prophets_converts": [
         "iman islam",
@@ -1434,6 +1586,36 @@ FAST_YOUTUBE_DATA_API_TERMS: dict[str, list[str]] = {
         "ceramah islam terbaru",
         "muslim indonesia",
         "dakwah indonesia",
+    ],
+    "islamic_politics_society": [
+        "politik islam indonesia",
+        "isu umat islam",
+        "geopolitik dunia islam",
+        "dialog kebangsaan muslim",
+    ],
+    "islamic_podcast_dialogue": [
+        "podcast islam indonesia",
+        "podcast ustaz",
+        "wawancara tokoh muslim",
+        "dialog islam",
+    ],
+    "quran_hadith_spirituality": [
+        "tadabbur al quran",
+        "kajian hadis",
+        "tafsir quran indonesia",
+        "doa dzikir",
+    ],
+    "muslim_family_lifestyle": [
+        "keluarga muslim",
+        "parenting islami",
+        "pernikahan islam",
+        "gaya hidup muslim",
+    ],
+    "religion_culture_interfaith": [
+        "agama budaya indonesia",
+        "dialog lintas agama",
+        "kerukunan umat beragama",
+        "tradisi keagamaan nusantara",
     ],
     "islamic_mental_health": [
         "kesehatan mental islam",
@@ -1492,7 +1674,7 @@ def prioritized_viral_queries(configured: list[str]) -> list[str]:
 def prioritized_niche_queries(niche: IslamicContentNiche, configured: list[str]) -> list[str]:
     """Put the selected evergreen niche ahead of every generic discovery query."""
     if niche == "auto":
-        # Fast API mode combines the first six entries into one request. Give
+        # Fast API mode combines the compact entries into one request. Give
         # every supported niche a seat in that request instead of letting a
         # single legacy theme dominate automatic discovery.
         profiles = list(ISLAMIC_EVERGREEN_NICHES.values())
@@ -1576,7 +1758,7 @@ def normalize_youtube_video_url(value: str) -> str | None:
 
 
 class AutoViralRequest(BaseModel):
-    niche: IslamicContentNiche = "faith_prophets_converts"
+    niche: IslamicContentNiche = "auto"
     queries: list[str] = Field(default_factory=default_auto_viral_queries)
     video_count: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_VIDEO_COUNT", 5), ge=1, le=7)
     clips_per_video: int = Field(default_factory=youtube_auto_upload_count, ge=1, le=5)
@@ -1597,7 +1779,7 @@ class AutoViralRequest(BaseModel):
     sort_order: ViralSortOrder = "popularity"
     top: int | None = Field(default=None, ge=1, le=MAX_REQUESTED_CLIPS)
     min_duration: float = Field(default=SHORT_GROWTH_MIN_SECONDS, ge=5, le=600)
-    max_duration: float = Field(default=SHORT_GROWTH_MAX_SECONDS, ge=10, le=600)
+    max_duration: float = Field(default=SHORT_DEFAULT_MAX_SECONDS, ge=10, le=600)
     video_quality: Literal["standard", "high", "max"] = "high"
     visual_mode: Literal["auto_fyp", "cinematic", "speaker_split", "animated_3d", "retro_tv"] = "auto_fyp"
     background_mode: Literal["auto_clean", "keep", "mosque"] = "keep"
@@ -1608,7 +1790,9 @@ class AutoViralRequest(BaseModel):
     ai_model: str = DEFAULT_AI_MODEL
     ai_api_key: str = ""
     source_urls: list[str] = Field(default_factory=list)
-    auto_upload_youtube: bool = True
+    # Discovery can be automated, but publication must wait for human rights
+    # evidence, creator perspective, and YouTube's private copyright checks.
+    auto_upload_youtube: bool = False
 
     @field_validator("visual_mode", mode="before")
     @classmethod
@@ -1637,7 +1821,7 @@ class AutoViralRequest(BaseModel):
     def _apply_niche_priority(self) -> "AutoViralRequest":
         self.queries = prioritized_niche_queries(self.niche, self.queries)[:80]
         if (
-            self.niche == "islamic_current_viral"
+            self.niche in {"islamic_current_viral", "islamic_politics_society"}
             and "upload_date_filter" not in self.model_fields_set
             and "max_age_days" not in self.model_fields_set
         ):
@@ -1688,7 +1872,7 @@ class AutoViralScheduleStatus(BaseModel):
 
 
 class ViralVideoSearchRequest(BaseModel):
-    niche: IslamicContentNiche = "faith_prophets_converts"
+    niche: IslamicContentNiche = "auto"
     queries: list[str] = Field(default_factory=default_viral_video_search_queries)
     video_count: int = Field(default=3, ge=1, le=7)
     search_limit_per_query: int = Field(default_factory=lambda: env_int("VIRAL_CC_SEARCH_LIMIT", 25), ge=3, le=50)
@@ -1735,7 +1919,7 @@ class ViralVideoSearchRequest(BaseModel):
     def _apply_niche_priority(self) -> "ViralVideoSearchRequest":
         self.queries = prioritized_niche_queries(self.niche, self.queries)[:80]
         if (
-            self.niche == "islamic_current_viral"
+            self.niche in {"islamic_current_viral", "islamic_politics_society"}
             and "upload_date_filter" not in self.model_fields_set
             and "max_age_days" not in self.model_fields_set
         ):
@@ -3830,8 +4014,7 @@ def youtube_shorts_title(value: str) -> str:
     clean = re.sub(r"\s+", " ", clean).strip()
     suffix = " #Islam #Shorts"
     max_length = 78
-    if len(clean) + len(suffix) > max_length:
-        clean = clean[: max_length - len(suffix)].rsplit(" ", 1)[0].rstrip() or clean[: max_length - len(suffix)].rstrip()
+    clean = trim_public_title(clean, max_length - len(suffix))
     return f"{clean}{suffix}"[:max_length] if clean else "Clip #Islam #Shorts"
 
 
@@ -4418,6 +4601,37 @@ def reviewed_automatic_rebuild_for_private_upload(
     )
 
 
+def automatic_editorial_perspective_ready(sidecar: dict[str, Any]) -> bool:
+    """Accept a source-grounded perspective produced during clip analysis."""
+    editorial_framing = sidecar.get("editorial_framing")
+    if isinstance(editorial_framing, dict):
+        angle = str(editorial_framing.get("editorial_angle") or "").strip()
+        contract = editorial_framing.get("transformation_contract")
+        if (
+            editorial_framing.get("enabled") is True
+            and editorial_framing.get("content_derived") is True
+            and editorial_framing.get("generated_for_this_clip") is True
+            and len(angle.split()) >= 5
+            and isinstance(contract, dict)
+            and contract.get("passed") is True
+            and contract.get("adds_interpretive_value") is True
+        ):
+            return True
+
+    # Long Story keeps its per-chapter analysis in the compilation sidecar.
+    chapter_evidence = sidecar.get("chapter_edit_evidence")
+    return bool(
+        isinstance(chapter_evidence, list)
+        and len(chapter_evidence) >= 3
+        and all(
+            isinstance(chapter, dict)
+            and len(str(chapter.get("pov") or "").split()) >= 5
+            and str(chapter.get("core_message") or "").strip()
+            for chapter in chapter_evidence
+        )
+    )
+
+
 def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | None:
     """Block private upload when rights or substantive-edit evidence is missing."""
     sidecar = clip_sidecar_payload(clip)
@@ -4467,6 +4681,37 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             "uploader memiliki seluruh hak audio dan visual. Proses ulang sumber setelah Anda "
             "mengonfirmasi kepemilikan atau izin komersial yang dapat dibuktikan."
         )
+    if (
+        job.request.url.strip()
+        and not reviewed_automatic_rebuild
+        and len(job.request.source_rights_evidence.split()) < 6
+    ):
+        return (
+            "Upload diblokir: checkbox izin belum cukup. Catat minimal enam kata referensi bukti "
+            "hak komersial audio dan visual—misalnya kontrak, email izin, atau arsip kepemilikan. "
+            "Jangan masukkan data pribadi sensitif."
+        )
+    if (
+        job.request.url.strip()
+        and not reviewed_automatic_rebuild
+        and len(job.request.creator_perspective.split()) < 8
+        and not automatic_editorial_perspective_ready(sidecar)
+    ):
+        return (
+            "Upload diblokir: perspektif editorial otomatis belum ditemukan pada hasil render. "
+            "Render ulang dengan AI aktif agar analisis spesifik isi video tampil sebagai kartu editorial."
+        )
+    if job.request.creator_commentary_file and not reviewed_automatic_rebuild:
+        creator_commentary = sidecar.get("creator_commentary")
+        if not isinstance(creator_commentary, dict) or not (
+            creator_commentary.get("enabled") is True
+            and creator_commentary.get("verified_user_recording") is True
+            and creator_commentary.get("voice_cloned") is False
+        ):
+            return (
+                "Upload diblokir: rekaman suara kreator belum terbukti tercampur ke hasil. "
+                "Render ulang; sistem tidak akan menggantinya dengan voice clone."
+            )
     if job.request.url.strip():
         rights_risks = source_rights_risk_reasons(metadata)
         if job.request.clip_mode == "original_rebuild" and not research_only_rebuild:
@@ -5177,6 +5422,7 @@ def normalized_generated_metadata(payload: dict, *, is_compilation: bool) -> dic
     description = ensure_two_description_paragraphs(description)
     if (
         not clean_title
+        or not public_title_has_complete_ending(clean_title)
         or len(description) < 110
         or "\n\n" not in description
         or metadata_has_suspicious_typo(f"{clean_title}\n{description}")
@@ -5585,10 +5831,17 @@ def active_tiktok_upload_id() -> str | None:
 def tiktok_config_payload() -> TikTokConfig:
     state_ready = tiktok_auth_state_exists()
     profile_ready = tiktok_chromium_profile_ready()
+    live_browser_ready = env_bool("TIKTOK_UPLOAD_USE_CDP", True) and tiktok_cdp_ready()
     if state_ready:
         auth_path = str(TIKTOK_PLAYWRIGHT_STATE)
         message = (
             f"Session TikTok siap. Upload dikunci ke @{tiktok_target_handle()} dan Only you."
+        )
+    elif live_browser_ready:
+        auth_path = TIKTOK_CDP_URL
+        message = (
+            f"Chrome TikTok Studio aktif. Akun @{tiktok_target_handle()} akan diverifikasi "
+            "tepat sebelum upload Only you."
         )
     elif profile_ready:
         auth_path = str(Path(TIKTOK_CHROMIUM_USER_DATA_DIR) / TIKTOK_CHROMIUM_PROFILE_DIRECTORY)
@@ -5601,7 +5854,7 @@ def tiktok_config_payload() -> TikTokConfig:
         auth_path = str(TIKTOK_PLAYWRIGHT_STATE)
         message = "Session TikTok belum tersedia. Login TikTok pada profile browser yang dikonfigurasi."
     return TikTokConfig(
-        enabled=playwright_installed() and state_ready,
+        enabled=playwright_installed() and (state_ready or live_browser_ready),
         playwright_installed=playwright_installed(),
         auth_state_exists=state_ready,
         auth_state_path=auth_path,
@@ -5620,7 +5873,7 @@ def require_tiktok_ready() -> None:
     config = tiktok_config_payload()
     if not config.playwright_installed:
         raise HTTPException(status_code=503, detail="Playwright belum terpasang di backend")
-    if not config.auth_state_exists:
+    if not config.enabled:
         raise HTTPException(
             status_code=409,
             detail="Session TikTok belum login. Klik Login TikTok lalu lanjutkan dengan Google di Chrome.",
@@ -8858,6 +9111,14 @@ def run_tiktok_upload(upload_id: str) -> None:
                 )
             code = process.wait()
             error = tiktok_error_from_logs(attempt_logs)
+            # Confirmation is terminal. A late browser disconnect or state-save
+            # error must not turn a verified post into a failed duplicate retry.
+            if confirmed:
+                if code != 0:
+                    logs.append(
+                        "Posting sudah terverifikasi; error browser setelah konfirmasi diabaikan agar tidak upload ulang."
+                    )
+                break
             if code == 0 and (upload.dry_run or confirmed):
                 break
             used_cdp = "--cdp-url" in command
@@ -9897,6 +10158,27 @@ def probe_media_duration(path: Path) -> float | None:
     return None
 
 
+def probe_audio_upload(path: Path) -> tuple[bool, float | None]:
+    """Inspect a short user recording without decoding it into application memory."""
+    try:
+        result = subprocess.run(
+            [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-i", str(path.resolve())],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False, None
+    report = f"{result.stdout}\n{result.stderr}"
+    has_audio = bool(re.search(r"\bAudio:\s*", report, re.I))
+    match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", report, re.I)
+    if not match:
+        return has_audio, None
+    duration = int(match.group(1)) * 3600 + int(match.group(2)) * 60 + float(match.group(3))
+    return has_audio, duration
+
+
 def max_clips_for_duration(duration: float | None, min_duration: float) -> int | None:
     # Guarantee target clips can fit without overlap inside 80% of the video.
     if not duration or min_duration <= 0:
@@ -9980,7 +10262,7 @@ def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
         )
         if data["max_duration"] <= data["min_duration"]:
             data["min_duration"] = float(SHORT_GROWTH_MIN_SECONDS)
-            data["max_duration"] = float(SHORT_GROWTH_MAX_SECONDS)
+            data["max_duration"] = float(SHORT_DEFAULT_MAX_SECONDS)
     elif request.clip_mode == "long_animate":
         data["top"] = 1
         data["analyze_seconds"] = None
@@ -10123,6 +10405,8 @@ def build_clipper_command(
         )
     if request.creator_perspective:
         command.extend(["--creator-perspective", request.creator_perspective])
+    if request.creator_commentary_file:
+        command.extend(["--creator-commentary-file", request.creator_commentary_file])
     if request.source_rights_evidence:
         command.extend(["--source-rights-evidence", request.source_rights_evidence])
     if request.provider_rights_evidence:
@@ -10590,6 +10874,17 @@ def run_job(job_id: str) -> None:
             if upload_path is not None and request_source_path == upload_path:
                 try:
                     upload_path.unlink()
+                except OSError:
+                    pass
+        if request.creator_commentary_file:
+            commentary_path = resolve_upload_path(request.creator_commentary_file)
+            try:
+                requested_commentary_path = Path(request.creator_commentary_file).resolve()
+            except OSError:
+                requested_commentary_path = None
+            if commentary_path is not None and requested_commentary_path == commentary_path:
+                try:
+                    commentary_path.unlink()
                 except OSError:
                     pass
 
@@ -12049,7 +12344,7 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
         max_age_days=request.max_age_days,
         top=3,
         min_duration=SHORT_GROWTH_MIN_SECONDS,
-        max_duration=SHORT_GROWTH_MAX_SECONDS,
+        max_duration=SHORT_DEFAULT_MAX_SECONDS,
         video_quality="high",
         crop_mode="person",
         burn_subtitles=True,
@@ -12836,7 +13131,7 @@ def create_and_start_auto_viral_campaign(
 
 def scheduled_auto_viral_request() -> AutoViralRequest:
     return AutoViralRequest(
-        niche=os.environ.get("AUTO_VIRAL_SCHEDULE_NICHE", "faith_prophets_converts"),  # type: ignore[arg-type]
+        niche=os.environ.get("AUTO_VIRAL_SCHEDULE_NICHE", "auto"),  # type: ignore[arg-type]
         video_count=max(1, min(7, env_int("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", 3))),
         clips_per_video=max(1, min(5, env_int("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", 2))),
         min_views=max(
@@ -13961,6 +14256,40 @@ def upload_video(file: UploadFile = File(...)) -> dict[str, str | float | None]:
     }
 
 
+@app.post("/api/uploads/creator-commentary")
+def upload_creator_commentary(file: UploadFile = File(...)) -> dict[str, str | float]:
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in ALLOWED_CREATOR_AUDIO_EXTENSIONS:
+        allowed = ", ".join(sorted(ALLOWED_CREATOR_AUDIO_EXTENSIONS))
+        raise HTTPException(status_code=400, detail=f"Format rekaman tidak didukung. Gunakan: {allowed}")
+    stored_name = f"creator-{uuid.uuid4().hex}{suffix}"
+    target = UPLOADS_DIR / stored_name
+    try:
+        with target.open("wb") as out:
+            shutil.copyfileobj(file.file, out)
+    finally:
+        file.file.close()
+    try:
+        if target.stat().st_size > MAX_CREATOR_AUDIO_BYTES:
+            raise HTTPException(status_code=400, detail="Rekaman kreator maksimal 20 MB.")
+        has_audio, duration = probe_audio_upload(target)
+        if not has_audio or duration is None:
+            raise HTTPException(status_code=400, detail="File tidak memiliki track audio yang dapat dibaca.")
+        if duration < 5 or duration > 15.25:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Durasi rekaman harus 5–15 detik; file ini {duration:.1f} detik.",
+            )
+        return {
+            "creator_commentary_file": stored_name,
+            "original_name": file.filename or stored_name,
+            "duration": round(duration, 3),
+        }
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+
+
 @app.get("/api/probe", response_model=SourceProbe)
 def probe_url(url: str) -> SourceProbe:
     return fetch_video_probe(url)
@@ -13996,6 +14325,8 @@ def create_job(request: ClipJobRequest) -> ClipJob:
     if not request.url and not request.source_file:
         raise HTTPException(status_code=400, detail="Provide a YouTube URL or upload a video first")
 
+    request = ensure_source_rights_attestation(request)
+
     if request.url.strip() and request.auto_upload_youtube and not request.confirm_source_rights:
         raise HTTPException(
             status_code=400,
@@ -14004,13 +14335,32 @@ def create_job(request: ClipJobRequest) -> ClipJob:
                 "dibuktikan untuk seluruh audio dan visual sumber. Metadata CC saja tidak cukup."
             ),
         )
-
+    if (
+        request.url.strip()
+        and request.auto_upload_youtube
+        and len(request.source_rights_evidence.split()) < 6
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Auto Upload diblokir: catat referensi bukti izin komersial audio dan visual "
+                "minimal enam kata. Checkbox saja tidak cukup."
+            ),
+        )
     if request.source_file:
         upload_path = resolve_upload_path(request.source_file)
         if upload_path is None:
             raise HTTPException(status_code=400, detail="Uploaded video not found; upload it again")
         request = request.model_copy(update={"source_file": str(upload_path)})
     elif request.url:
+        if request.creator_commentary_file:
+            commentary_path = resolve_upload_path(request.creator_commentary_file)
+            if commentary_path is None:
+                raise HTTPException(status_code=400, detail="Rekaman suara kreator tidak ditemukan; unggah ulang.")
+            has_audio, commentary_duration = probe_audio_upload(commentary_path)
+            if not has_audio or commentary_duration is None or not 5 <= commentary_duration <= 15.25:
+                raise HTTPException(status_code=400, detail="Rekaman suara kreator harus berupa audio valid berdurasi 5–15 detik.")
+            request = request.model_copy(update={"creator_commentary_file": str(commentary_path)})
         source_history = source_history_for_url(request.url)
         if source_history.found and not request.allow_reprocess_source:
             detected_formats: list[str] = []

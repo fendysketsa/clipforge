@@ -1,4 +1,4 @@
-import { Clock3, Film, ListChecks, RefreshCw, Scissors } from "lucide-react";
+import { Clock3, Film, ListChecks, RefreshCw, Scissors, Sparkles } from "lucide-react";
 import Link from "next/link";
 
 type TopbarProps = {
@@ -19,14 +19,14 @@ export function Topbar({ isRefreshing = false, onRefresh, activePage = "workspac
             <span>Fendy</span>
             <span>Clipper</span>
           </h1>
-          <p className="tagline">Video command center lokal</p>
+          <p className="tagline">Source → better Short & Long</p>
         </div>
       </div>
 
       <nav className="topbarNav" aria-label="Navigasi halaman">
-        <Link className={activePage === "workspace" ? "active" : ""} href="/#workspace">
-          <Scissors size={15} />
-          Buat klip
+        <Link className={activePage === "workspace" ? "active" : ""} href="/#quick-start-title">
+          <Sparkles size={15} />
+          Buat video
         </Link>
         <Link href="/#results">
           <Film size={15} />
@@ -45,7 +45,7 @@ export function Topbar({ isRefreshing = false, onRefresh, activePage = "workspac
       <div className="topbarActions">
         <span className="systemBadge">
           <i aria-hidden="true" />
-          System online
+          Clipper siap
         </span>
         {onRefresh ? (
           <button

@@ -571,24 +571,64 @@ def set_caption(page, caption: str) -> None:
     )
 
 
-def discard_stale_upload_draft(page) -> None:
-    """Discard only the interrupted draft shown before a new file is selected."""
+def upload_editor_has_requested_file(page, video_path: Path) -> bool:
+    """Return true only when the visible editor plausibly owns this job's file."""
+    try:
+        body_text = normalized_caption_text(page.locator("body").inner_text(timeout=5_000))
+    except Exception:
+        body_text = ""
+    requested_names = {video_path.name.casefold(), video_path.stem.casefold()}
+    filename_matches = any(name and name in body_text.casefold() for name in requested_names)
+    editor_ready = first_visible(
+        page,
+        (
+            *POST_BUTTON_SELECTORS,
+            '[data-e2e="caption-editor"]',
+            '[class*="caption-editor"]',
+        ),
+        timeout_ms=1_500,
+    ) is not None
+    empty_picker = first_visible(
+        page,
+        ('text="Select video to upload"', 'text="Pilih video untuk diunggah"'),
+        timeout_ms=500,
+    ) is not None
+    return (filename_matches or editor_ready) and not empty_picker
+
+
+def recover_interrupted_upload_draft(page, video_path: Path) -> bool:
+    """Resume a browser draft when TikTok already received the requested file."""
     button = first_visible(
         page,
         [
-            'button:has-text("Discard")',
-            'button:has-text("Buang")',
+            'button:has-text("Continue editing")',
+            'button:has-text("Continue Editing")',
+            'button:has-text("Lanjutkan mengedit")',
+            'button:has-text("Lanjut mengedit")',
         ],
         timeout_ms=1_200,
     )
     if button is None:
-        return
+        return False
     try:
         button.click(timeout=5_000)
-        log("Draft upload TikTok lama dibuang sebelum memilih video baru.")
-        page.wait_for_timeout(700)
-    except Exception:
-        pass
+        log("Draft TikTok ditemukan; melanjutkan editor tanpa membuang file yang sudah ditransfer.")
+        page.wait_for_timeout(1_200)
+    except Exception as exc:
+        raise UploadError(
+            "Draft TikTok ditemukan tetapi tombol Continue editing tidak dapat dibuka. "
+            "File tidak dibuang dan upload baru tidak dimulai."
+        ) from exc
+
+    if upload_editor_has_requested_file(page, video_path):
+        log(f"DRAFT_FILE_RECOVERED:{video_path.name}")
+        return True
+
+    save_debug(page, "draft-recovered-unverified")
+    raise UploadError(
+        "TikTok memulihkan draft yang belum dapat dicocokkan dengan file job ini. "
+        "Draft tidak dibuang dan upload baru tidak dimulai; periksa editor TikTok agar tidak duplikat."
+    )
 
 
 BLOCKING_MODAL_SELECTORS = (
@@ -1282,23 +1322,36 @@ def upload_video(
             log(f"POST_BASELINE_VISIBLE_IDS:{len(previous_post_ids)}")
     except Exception as exc:
         log(f"POST_BASELINE_UNAVAILABLE:{str(exc).splitlines()[0][:180]}")
+    if (
+        not dry_run
+        and previous_content_matches
+        and previous_content_matches > 0
+        and previous_post_ids is not None
+    ):
+        # Recover after a worker/browser disconnect that happened after TikTok
+        # accepted the post. Selecting the same file again would duplicate it.
+        log(f"POST_ALREADY_PRESENT:{content_caption_key(caption)}")
+        log("UPLOAD_CONFIRMED:private")
+        log(f"VIDEO_URL:https://www.tiktok.com/@{clean_handle(target_handle)}")
+        return
     goto(page, UPLOAD_URL)
     page.wait_for_timeout(1500)
     if background_tick is not None:
         background_tick()
     if "/login" in page.url.casefold():
         raise UploadError("TikTok meminta login ulang; file belum dipilih.")
-    # TikTok keeps an interrupted upload as a draft in the persistent CDP
-    # profile. Clear that banner before resolving the file input; otherwise the
-    # old React tree can retain an attached but unusable input for five minutes.
-    discard_stale_upload_draft(page)
+    # Resume rather than discard: the browser may already hold the fully
+    # transferred file from an interrupted worker.
+    recovered_draft = recover_interrupted_upload_draft(page, video_path)
     dismiss_upload_overlays(page)
-    file_input = page.locator('input[type="file"]').first
-    try:
-        file_input.wait_for(state="attached", timeout=20_000)
-    except Exception as exc:
-        save_debug(page, "upload-input-missing")
-        raise UploadError("Input upload TikTok tidak ditemukan. Periksa sesi dan halaman TikTok Studio.") from exc
+    file_input = None
+    if not recovered_draft:
+        file_input = page.locator('input[type="file"]').first
+        try:
+            file_input.wait_for(state="attached", timeout=20_000)
+        except Exception as exc:
+            save_debug(page, "upload-input-missing")
+            raise UploadError("Input upload TikTok tidak ditemukan. Periksa sesi dan halaman TikTok Studio.") from exc
     staging_directory: tempfile.TemporaryDirectory[str] | None = None
     try:
         if remote_browser:
@@ -1321,30 +1374,50 @@ def upload_video(
             log(f"Mengirim {video_path.name} ke Chrome TikTok melalui transfer file CDP...")
         else:
             upload_file = str(video_path.resolve())
-        file_input.set_input_files(
-            upload_file,
-            timeout=env_int(
-                "TIKTOK_FILE_INPUT_TIMEOUT_MS",
-                DEFAULT_FILE_INPUT_TIMEOUT_MS,
-                minimum=60_000,
-            ),
-        )
+        if file_input is not None:
+            file_input.set_input_files(
+                upload_file,
+                timeout=env_int(
+                    "TIKTOK_FILE_INPUT_TIMEOUT_MS",
+                    DEFAULT_FILE_INPUT_TIMEOUT_MS,
+                    minimum=60_000,
+                ),
+            )
     except Exception as exc:
-        save_debug(page, "upload-file-select-failed")
-        detail = str(exc).strip().splitlines()[0][:240] or type(exc).__name__
+        transfer_recovered = False
         if remote_browser:
+            try:
+                transfer_recovered = upload_editor_has_requested_file(page, video_path)
+                if not transfer_recovered:
+                    transfer_recovered = recover_interrupted_upload_draft(page, video_path)
+            except UploadError:
+                raise
+        if transfer_recovered:
+            recovered_draft = True
+            log(
+                "CDP_FILE_TRANSFER_RECOVERED: Playwright melaporkan error, tetapi file yang sama "
+                "sudah siap di editor TikTok; proses dilanjutkan tanpa transfer ulang."
+            )
+        else:
+            save_debug(page, "upload-file-select-failed")
+            detail = str(exc).strip().splitlines()[0][:240] or type(exc).__name__
+            if remote_browser:
+                raise UploadError(
+                    "Transfer file CDP TikTok gagal sebelum posting; "
+                    f"tidak ada posting yang dibuat. Detail: {detail}"
+                ) from exc
             raise UploadError(
-                "Transfer file CDP TikTok gagal sebelum posting; "
+                "TikTok tidak dapat menerima file video; "
                 f"tidak ada posting yang dibuat. Detail: {detail}"
             ) from exc
-        raise UploadError(
-            "TikTok tidak dapat menerima file video; "
-            f"tidak ada posting yang dibuat. Detail: {detail}"
-        ) from exc
     finally:
         if staging_directory is not None:
             staging_directory.cleanup()
-    log(f"Video dipilih: {video_path.name}")
+    log(
+        f"Video draft dilanjutkan: {video_path.name}"
+        if recovered_draft
+        else f"Video dipilih: {video_path.name}"
+    )
     if background_tick is not None:
         background_tick()
     dismiss_upload_overlays(page)

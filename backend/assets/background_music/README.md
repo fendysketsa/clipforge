@@ -1,7 +1,9 @@
 # Pustaka backsound lokal
 
-Folder ini berisi musik instrumental terkurasi yang dipakai langsung dari disk.
-Proses render klip **tidak pernah mengunduh musik**. `catalog.json` menjadi
+Folder ini berisi musik instrumental terkurasi yang dapat dipakai langsung dari
+disk sebagai opsi kompatibilitas. Kebijakan default ClipForge tidak memasukkan
+rekaman musik pihak ketiga karena lisensi CC0 sekalipun tidak menjamin bebas dari
+klaim Content ID. Proses render klip **tidak pernah mengunduh musik**. `catalog.json` menjadi
 allowlist: loader hanya menerima file lokal dengan lisensi, URL sumber, dan
 SHA-256 yang cocok.
 
@@ -9,6 +11,14 @@ Koleksi awal memakai CC0 1.0 karena atribusi tidak diwajibkan dan karyanya boleh
 disalin, dimodifikasi, didistribusikan, serta digunakan secara komersial. Meski
 demikian, klaim Content ID yang keliru masih mungkin terjadi pada platform apa
 pun; pemeriksaan copyright platform tetap harus dijalankan sebelum publikasi.
+
+Untuk mengaktifkan pustaka ini, operator harus memilih risiko tersebut secara
+eksplisit dengan mengatur kedua variabel berikut:
+
+```env
+SHORTS_BACKGROUND_MUSIC_ENABLED=true
+SHORTS_ALLOW_THIRD_PARTY_MUSIC=true
+```
 
 | File | Judul — pembuat | Tema | Bukti lisensi |
 | --- | --- | --- | --- |

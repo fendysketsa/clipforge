@@ -17,6 +17,7 @@ from api import (
     YouTubeUploadRequest,
     YouTubeUploadJob,
     append_youtube_chapters,
+    automatic_editorial_perspective_ready,
     automatic_source_risk_rebuild_request,
     best_youtube_clip_urls,
     build_youtube_restart_verification_command,
@@ -53,6 +54,7 @@ from api import (
     youtube_metadata_provider_configs,
     youtube_public_cadence_issue,
     youtube_recent_publication_times,
+    youtube_shorts_title,
     youtube_source_claim_block,
     youtube_uploads_with_queue_positions,
     verified_duplicate_for_upload,
@@ -63,7 +65,11 @@ from api import (
     youtube_chapters_from_sidecar,
     youtube_video_url_from_logs,
 )
-from youtube_uploader import normalized_upload_metadata, studio_start_url
+from youtube_uploader import (
+    normalized_upload_metadata,
+    studio_start_url,
+    youtube_shorts_title as uploader_youtube_shorts_title,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -92,6 +98,19 @@ def make_candidate(index: int, score: int) -> ClipCandidate:
         reason="test",
         text="test",
     )
+
+
+def make_monetization_ready_url_request(**updates) -> ClipJobRequest:
+    values = {
+        "url": "https://youtu.be/source",
+        "confirm_source_rights": True,
+        "source_rights_evidence": "Izin tertulis audio visual diterima dari pemilik",
+        "creator_perspective": (
+            "Menurut saya konteks pembahasan ini penting agar penonton memahami dampaknya"
+        ),
+    }
+    values.update(updates)
+    return ClipJobRequest(**values)
 
 
 def test_discover_clips_prefers_final_context_audit_over_stale_candidate_flag(
@@ -2833,10 +2852,7 @@ def test_monetization_preflight_v8_requires_substantive_editorial_contract_for_u
     job = ClipJob(
         id="job-audit-v7-external-short",
         status="completed",
-        request=ClipJobRequest(
-            url="https://youtu.be/source",
-            confirm_source_rights=True,
-        ),
+        request=make_monetization_ready_url_request(),
         created_at="2026-08-14T00:00:00+00:00",
         updated_at="2026-08-14T00:00:00+00:00",
         clips=[clip],
@@ -2889,7 +2905,7 @@ def test_verified_cc_source_gets_required_attribution(monkeypatch):
     job = ClipJob(
         id="job-cc",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        request=make_monetization_ready_url_request(),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
     )
@@ -2919,7 +2935,7 @@ def test_monetization_preflight_requires_rights_and_substantive_edit(monkeypatch
     job = ClipJob(
         id="job-ready",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        request=make_monetization_ready_url_request(),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -2950,7 +2966,7 @@ def test_monetization_preflight_accepts_confirmed_trusted_owned_channel(monkeypa
     job = ClipJob(
         id="job-trusted-owned-channel",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        request=make_monetization_ready_url_request(),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -3188,6 +3204,80 @@ def test_monetization_preflight_requires_explicit_url_rights_confirmation(monkey
     assert "hak audio dan visual" in issue
 
 
+def test_monetization_preflight_requires_documented_rights_reference(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-rights-checkbox-only",
+        status="completed",
+        request=ClipJobRequest(
+            url="https://youtu.be/source",
+            confirm_source_rights=True,
+            creator_perspective=(
+                "Menurut saya konteks pembahasan ini penting agar maknanya tidak terpotong"
+            ),
+        ),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+
+    assert "checkbox izin belum cukup" in issue
+    assert "minimal enam kata" in issue
+
+
+def test_monetization_preflight_requires_automatic_editorial_perspective(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-no-human-perspective",
+        status="completed",
+        request=ClipJobRequest(
+            url="https://youtu.be/source",
+            confirm_source_rights=True,
+            source_rights_evidence="Izin tertulis audio visual diterima dari pemilik",
+        ),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+
+    assert "perspektif editorial otomatis belum ditemukan" in issue
+
+
+def test_automatic_editorial_perspective_accepts_grounded_ai_card():
+    assert automatic_editorial_perspective_ready(
+        {
+            "editorial_framing": {
+                "enabled": True,
+                "content_derived": True,
+                "generated_for_this_clip": True,
+                "editorial_angle": "Konteks ini menunjukkan dampak keputusan pada kehidupan keluarga sehari-hari",
+                "transformation_contract": {
+                    "passed": True,
+                    "adds_interpretive_value": True,
+                },
+            }
+        }
+    )
+
+
 def test_monetization_preflight_blocks_high_risk_tv_reupload_even_when_confirmed(monkeypatch):
     import api
 
@@ -3195,10 +3285,7 @@ def test_monetization_preflight_blocks_high_risk_tv_reupload_even_when_confirmed
     job = ClipJob(
         id="job-claimed-tv-source",
         status="completed",
-        request=ClipJobRequest(
-            url="https://youtu.be/source",
-            confirm_source_rights=True,
-        ),
+        request=make_monetization_ready_url_request(),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -3226,7 +3313,7 @@ def test_monetization_preflight_blocks_short_outside_official_technical_limits(m
     job = ClipJob(
         id="job-invalid-short",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        request=make_monetization_ready_url_request(),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -3263,7 +3350,7 @@ def test_monetization_preflight_rechecks_legacy_growth_audit_against_current_lim
     job = ClipJob(
         id="job-legacy-sixty-second-short",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        request=make_monetization_ready_url_request(),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -3302,7 +3389,7 @@ def test_monetization_preflight_does_not_treat_low_fyp_score_as_platform_rule(mo
     job = ClipJob(
         id="job-low-fyp-short",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        request=make_monetization_ready_url_request(),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -3332,7 +3419,7 @@ def test_monetization_preflight_blocks_short_with_low_retention_readiness(monkey
     job = ClipJob(
         id="job-low-retention-short",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        request=make_monetization_ready_url_request(),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -3365,7 +3452,7 @@ def test_monetization_preflight_blocks_short_with_incomplete_narrative_arc(monke
     job = ClipJob(
         id="job-incomplete-narrative-short",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        request=make_monetization_ready_url_request(),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -3397,7 +3484,7 @@ def test_monetization_preflight_blocks_short_with_dangling_religious_context(mon
     job = ClipJob(
         id="job-dangling-kajian-short",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        request=make_monetization_ready_url_request(),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -3435,7 +3522,7 @@ def test_monetization_preflight_requires_explicit_review_for_religious_claim_pac
     job = ClipJob(
         id="job-religious-claim-review",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        request=make_monetization_ready_url_request(),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -3481,7 +3568,7 @@ def test_monetization_preflight_accepts_legacy_compilation_story_arc(monkeypatch
     job = ClipJob(
         id="job-legacy-compilation",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        request=make_monetization_ready_url_request(),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -3522,7 +3609,7 @@ def test_monetization_preflight_v5_requires_chapter_specific_framing(monkeypatch
     job = ClipJob(
         id="job-template-compilation",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        request=make_monetization_ready_url_request(),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -3564,7 +3651,7 @@ def test_monetization_preflight_explains_when_enhanced_edit_is_actually_missing(
     job = ClipJob(
         id="job-no-enhanced-edit",
         status="completed",
-        request=ClipJobRequest(url="https://youtu.be/source", confirm_source_rights=True),
+        request=make_monetization_ready_url_request(),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
         clips=[clip],
@@ -4004,6 +4091,43 @@ def test_normalized_generated_metadata_accepts_nested_ollama_payload():
         ),
         "hashtags": ["Sabar", "UjianHidup", "HikmahIslam", "Shorts"],
     }
+
+
+def test_short_title_trim_does_not_leave_dangling_connector():
+    source = (
+        "Kenyataan Tidak Pernah Menyakiti, yang Terluka Adalah "
+        "Perasaan yang Kita Bangun Terlalu Tinggi"
+    )
+
+    for title_builder, max_length in (
+        (youtube_shorts_title, 78),
+        (uploader_youtube_shorts_title, 100),
+    ):
+        title = title_builder(source)
+        visible_title = title.removesuffix(" #Islam #Shorts")
+
+        assert len(title) <= max_length
+        assert visible_title.casefold().split()[-1] not in {
+            "adalah",
+            "dan",
+            "dengan",
+            "karena",
+            "tidak",
+            "yang",
+        }
+
+
+def test_normalized_generated_metadata_rejects_incomplete_title_ending():
+    payload = {
+        "title": "Mengapa Nasihat Baik Ini Justru Tidak",
+        "description": (
+            "Klip ini membahas alasan sebuah nasihat perlu dipahami dalam konteks yang utuh. "
+            "Penonton diajak melihat inti pesan sebelum menarik kesimpulan dari potongan video."
+        ),
+        "hashtags": ["#Nasihat", "#Konteks", "#HikmahIslam", "#Shorts"],
+    }
+
+    assert normalized_generated_metadata(payload, is_compilation=False) is None
 
 
 def test_normalized_generated_metadata_deduplicates_required_title_hashtags():

@@ -63,6 +63,23 @@ export const uploadVideo = async (file: File) => {
   };
 };
 
+export const uploadCreatorCommentary = async (file: File) => {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch(`${API_BASE}/api/uploads/creator-commentary`, {
+    method: "POST",
+    body: form,
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Gagal mengunggah rekaman kreator"));
+  }
+  return (await response.json()) as {
+    creator_commentary_file: string;
+    original_name: string;
+    duration: number;
+  };
+};
+
 export const fetchModels = async (baseUrl: string, apiKey: string) => {
   const response = await fetch(`${API_BASE}/api/models`, {
     method: "POST",

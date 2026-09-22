@@ -44,9 +44,9 @@ export function OutputWorkspace({ children, resultCount, historyCount }: OutputW
     <section className="outputWorkspace" id="output-workspace" aria-label="Workspace hasil dan riwayat">
       <header className="outputWorkspaceHeader">
         <div className="outputWorkspaceTitle">
-          <span>Library / workspace</span>
-          <h2>Konten & Proses</h2>
-          <p>Satu tempat untuk review output dan membuka pekerjaan sebelumnya.</p>
+          <span>VIDEO LIBRARY</span>
+          <h2>Hasil Short & Long</h2>
+          <p>Review output, cek quality gate, lalu unduh atau kirim ke channel.</p>
         </div>
 
         <div className="workspaceTabs" role="tablist" aria-label="Pilih tampilan workspace">
@@ -60,7 +60,7 @@ export function OutputWorkspace({ children, resultCount, historyCount }: OutputW
             onClick={() => activateTab("results")}
           >
             <Video size={16} />
-            <span><strong>Hasil Klip</strong><small>Output siap review</small></span>
+            <span><strong>Video siap review</strong><small>Short & Long terbaru</small></span>
             <b>{resultCount}</b>
           </button>
           <button

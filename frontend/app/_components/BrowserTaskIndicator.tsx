@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import type { AutoViralRun, ClipJob } from "../../types/clip.type";
+import type { ClipJob } from "../../types/clip.type";
 
 type BrowserTaskIndicatorProps = {
   job: ClipJob | null;
-  autoViralRun: AutoViralRun | null;
-  isSearchingSources: boolean;
 };
 
 const DEFAULT_TITLE = "Fendy Clipper";
@@ -51,22 +49,8 @@ const spinnerIcon = (angle: number) => {
 
 const spinnerFrames = Array.from({ length: 12 }, (_, frame) => spinnerIcon(frame * 30));
 
-export function BrowserTaskIndicator({
-  job,
-  autoViralRun,
-  isSearchingSources,
-}: BrowserTaskIndicatorProps) {
+export function BrowserTaskIndicator({ job }: BrowserTaskIndicatorProps) {
   const activity = useMemo(() => {
-    const autoViralActive = autoViralRun?.status === "queued" || autoViralRun?.status === "running";
-    if (autoViralActive && autoViralRun) {
-      return {
-        active: true,
-        percent: Math.max(0, Math.min(100, Math.round(autoViralRun.progress_percent || 0))),
-        stage: readableStage(autoViralRun.progress_stage),
-        detail: autoViralRun.message || "Menjalankan kampanye Auto Viral",
-      };
-    }
-
     const jobActive = job?.status === "queued" || job?.status === "running";
     if (jobActive && job) {
       return {
@@ -77,23 +61,8 @@ export function BrowserTaskIndicator({
       };
     }
 
-    if (isSearchingSources) {
-      return {
-        active: true,
-        percent: 0,
-        stage: "Mencari sumber",
-        detail: "Membaca tren dan kandidat Creative Commons",
-      };
-    }
-
     return { active: false, percent: 0, stage: "", detail: "" };
   }, [
-    autoViralRun?.id,
-    autoViralRun?.message,
-    autoViralRun?.progress_percent,
-    autoViralRun?.progress_stage,
-    autoViralRun?.status,
-    isSearchingSources,
     job?.id,
     job?.progress_detail,
     job?.progress_percent,

@@ -143,7 +143,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "clip_mode": "short",
     "top": None,
     "min_duration": 25,
-    "max_duration": 180,
+    "max_duration": 45,
     "video_quality": "standard",
     "crop_mode": "person",
     "burn_subtitles": True,
@@ -1178,7 +1178,7 @@ def clip_mode_label(value: object) -> str:
 def clip_mode_summary(value: object) -> str:
     if value == "highlight_5m":
         return "16:9 · satu cerita kronologis · target 5 menit tanpa filler"
-    return "9:16 · beberapa momen terbaik · durasi adaptif 25–180 detik"
+    return "9:16 · beberapa momen terbaik · default padat 25–45 detik"
 
 
 def main_menu_keyboard() -> dict[str, Any]:
@@ -1518,7 +1518,7 @@ class FendyClipperTelegramBot:
             "3. Tekan ‘Saya punya izin · Proses’.\n"
             "4. Pantau progres dari satu kartu status.\n"
             "5. Review hasil, lalu pilih file yang akan diupload.\n\n"
-            "Short: 9:16, 25–180 detik, beberapa momen dengan hook dan payoff utuh.\n"
+            "Short: 9:16, default 25–45 detik, beberapa momen dengan hook dan payoff utuh.\n"
             "Long Story: 16:9, target 5 menit, alur kronologis tanpa filler.\n\n"
             "Catatan: metadata Creative Commons dan audit membantu mengurangi risiko, tetapi bukan "
             "jaminan bebas Content ID atau diterima monetisasi YouTube/YPP.\n\n"
@@ -3339,7 +3339,7 @@ class FendyClipperTelegramBot:
                     if selected_mode == "highlight_5m"
                     else
                     "• Vertikal 9:16\n"
-                    "• Beberapa clip adaptif 25–180 detik\n"
+                    "• Default padat 25–45 detik; durasi panjang tetap opsional\n"
                     "• Hook, konteks, perkembangan, dan payoff utuh\n"
                     "• Caption dan edit mengikuti isi ucapan\n"
                     "• Hanya kandidat yang lolos quality gate diekspor"
@@ -3352,10 +3352,10 @@ class FendyClipperTelegramBot:
                 keyboard(
                     [
                         [button("25–35 detik", "set:duration:25:35")],
-                        [button("25–45 detik", "set:duration:25:45")],
+                        [button("✅ Padat 25–45 detik", "set:duration:25:45")],
                         [button("25–60 detik", "set:duration:25:60")],
                         [button("25–90 detik", "set:duration:25:90")],
-                        [button("✅ Adaptif 25–180 detik", "set:duration:25:180")],
+                        [button("Adaptif 25–180 detik", "set:duration:25:180")],
                         [button("60–180 detik", "set:duration:60:180")],
                         [button("90–180 detik", "set:duration:90:180")],
                         [button("120–180 detik", "set:duration:120:180")],

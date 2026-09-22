@@ -22,9 +22,6 @@ import {
   discoverLocalLlms,
   enableYouTubeDirectProfileUpload,
   fetchModels,
-  getAutoViralCampaign,
-  getAutoViralCampaigns,
-  getAutoViralSchedule,
   getJob,
   getJobs,
   getTikTokConfig,
@@ -39,10 +36,8 @@ import {
   updateTikTokUploadPerformance,
   repairJobClip,
   setupYouTubeOneTimeLogin,
-  searchViralContentSources,
   startYouTubeLogin,
   startTikTokLogin,
-  startAutoViralCampaign,
   updateJobClipStatus,
   uploadVideo,
   type ClipDeleteResult,
@@ -71,13 +66,12 @@ import {
   COMPILATION_MIN_SECONDS,
   COMPILATION_TARGET_SECONDS,
   JOB_POLL_INTERVAL_MS,
+  MAX_SHORT_DURATION,
   MAX_REQUESTED_CLIPS,
   RECENT_LOG_LIMIT,
 } from "../lib/constants";
 import { isActiveJob } from "../lib/utils";
 import type {
-  AutoViralRun,
-  AutoViralScheduleStatus,
   BackgroundMode,
   CamCorner,
   CaptionFont,
@@ -86,20 +80,16 @@ import type {
   ClipFile,
   ClipJob,
   CropMode,
-  IslamicContentNiche,
   SourceMode,
   SourceHistoryCheck,
   TikTokConfig,
   TikTokUploadJob,
-  ViralContentSource,
-  ViralSearchFilters,
   VideoQuality,
   VisualMode,
   YouTubeConfig,
   YouTubeUploadJob,
 } from "../types/clip.type";
 import { ControlPanel } from "./_components/ControlPanel";
-import { AutoViralPanel } from "./_components/AutoViralPanel";
 import { BrowserTaskIndicator } from "./_components/BrowserTaskIndicator";
 import { DeleteAllToast } from "./_components/DeleteAllToast";
 import { HistorySection } from "./_components/HistorySection";
@@ -114,20 +104,6 @@ const isProcessJob = (item: ClipJob | null) =>
 const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
 const CLEANUP_PROGRESS_POLL_MS = 250;
 const TAB_JOB_STORAGE_KEY = "fendy-clipper.activeJobId.v1";
-const MIN_VIRAL_SOURCE_VIEWS = 5_000;
-
-const isVerifiedViralSource = (source: ViralContentSource, filters: ViralSearchFilters) => {
-  const duration = source.duration ?? 0;
-  const durationMatches = filters.duration_filter === "any"
-    || (filters.duration_filter === "under_3" && duration > 0 && duration < 180)
-    || (filters.duration_filter === "between_3_20" && duration >= 180 && duration <= 1200)
-    || (filters.duration_filter === "over_20" && duration > 1200);
-  return source.content_id_risk !== "high"
-    && source.license_metadata_verified === true
-    && source.views >= MIN_VIRAL_SOURCE_VIEWS
-    && durationMatches;
-};
-
 export default function HomePage() {
   const [url, setUrl] = useState("");
   const [sourceMode, setSourceMode] = useState<SourceMode>("url");
@@ -177,19 +153,6 @@ export default function HomePage() {
   const [youtubeUploads, setYoutubeUploads] = useState<YouTubeUploadJob[]>([]);
   const [tiktokConfig, setTiktokConfig] = useState<TikTokConfig | null>(null);
   const [tiktokUploads, setTiktokUploads] = useState<TikTokUploadJob[]>([]);
-  const [autoViralRun, setAutoViralRun] = useState<AutoViralRun | null>(null);
-  const [autoViralSchedule, setAutoViralSchedule] = useState<AutoViralScheduleStatus | null>(null);
-  const [autoContentNiche, setAutoContentNiche] = useState<IslamicContentNiche>("faith_prophets_converts");
-  const [autoContentSources, setAutoContentSources] = useState<ViralContentSource[]>([]);
-  const [selectedAutoContentUrls, setSelectedAutoContentUrls] = useState<string[]>([]);
-  const [autoContentMessage, setAutoContentMessage] = useState("");
-  const [viralSearchFilters, setViralSearchFilters] = useState<ViralSearchFilters>({
-    duration_filter: "over_20",
-    upload_date_filter: "this_year",
-    definition_filter: "hd",
-    sort_order: "popularity",
-  });
-  const [isSearchingAutoContent, setIsSearchingAutoContent] = useState(false);
   const [isYouTubeLoginActive, setIsYouTubeLoginActive] = useState(false);
   const [isTikTokLoginActive, setIsTikTokLoginActive] = useState(false);
   const [selectedHistoryJobIds, setSelectedHistoryJobIds] = useState<string[]>([]);
@@ -198,13 +161,11 @@ export default function HomePage() {
   const [isRefreshingData, setIsRefreshingData] = useState(false);
   const [error, setError] = useState("");
   const restoredTabJob = useRef(false);
-  const notifiedAutoViralRunId = useRef<string | null>(null);
   const cleanupConfirmationTimer = useRef<number | null>(null);
 
   const activeJobId = activeJob?.id;
   const isBusy = isActiveJob(activeJob);
   const activityJob = isBusy ? activeJob : job;
-  const isAutoViralRunning = autoViralRun?.status === "queued" || autoViralRun?.status === "running";
   const latestLogs = useMemo(() => activityJob?.logs.slice(-RECENT_LOG_LIMIT) ?? [], [activityJob]);
   const hasActiveYouTubeUpload = youtubeUploads.some(
     (upload) =>
@@ -232,21 +193,22 @@ export default function HomePage() {
   }, [maxClips, targetClips]);
 
   const handleClipModeChange = useCallback((value: ClipMode) => {
-    const activeMode: ClipMode = value === "highlight_5m" ? "highlight_5m" : "short";
-    setClipMode(activeMode);
+    const nextMode: ClipMode = value === "highlight_5m" ? "highlight_5m" : "short";
+    setClipMode(nextMode);
     setTargetClips(0);
     setVisualMode("auto_fyp");
     setBackgroundMode("keep");
-    setCaptionFontSize(8);
-    setCaptionOutline(0.5);
-    if (activeMode === "highlight_5m") {
+    setBurnSubtitles(true);
+    setAiEnabled(true);
+    if (nextMode === "highlight_5m") {
       setMinDuration(30);
       setMaxDuration(90);
       setCompilationTargetSeconds(COMPILATION_TARGET_SECONDS);
-      setBackgroundMode("keep");
+      setVideoQuality("high");
     } else {
       setMinDuration(DEFAULT_MIN_DURATION);
       setMaxDuration(DEFAULT_MAX_DURATION);
+      setVideoQuality(DEFAULT_VIDEO_QUALITY);
     }
   }, []);
 
@@ -383,6 +345,10 @@ export default function HomePage() {
         setJob(restoredJob);
         setClipMode(restoredJob.request.clip_mode);
         setCropMode(restoredJob.request.crop_mode);
+        setMinDuration(restoredJob.request.min_duration);
+        setMaxDuration(restoredJob.request.max_duration);
+        setCompilationTargetSeconds(restoredJob.request.compilation_target_seconds);
+        setVideoQuality(restoredJob.request.video_quality);
         if (restoredJob.request.url) {
           setSourceMode("url");
           setUrl(restoredJob.request.url);
@@ -466,71 +432,6 @@ export default function HomePage() {
       window.clearTimeout(cleanupConfirmationTimer.current);
     }
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const refreshOverview = async () => {
-      const [schedule, runs] = await Promise.all([
-        getAutoViralSchedule().catch(() => null),
-        getAutoViralCampaigns().catch(() => []),
-      ]);
-      if (cancelled) return;
-      if (schedule) setAutoViralSchedule(schedule);
-      setAutoViralRun((current) => {
-        const active = runs.find((item) => item.status === "queued" || item.status === "running");
-        if (active) return active;
-        const sameRun = current ? runs.find((item) => item.id === current.id) : null;
-        if (current && (current.status === "queued" || current.status === "running")) {
-          return sameRun ?? current;
-        }
-        const latest = runs[0];
-        if (latest && (!current || latest.created_at > current.created_at)) return latest;
-        return sameRun ?? current ?? latest ?? null;
-      });
-    };
-    void refreshOverview();
-    const interval = window.setInterval(refreshOverview, 5_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!autoViralRun || (autoViralRun.status !== "queued" && autoViralRun.status !== "running")) return;
-    const interval = window.setInterval(async () => {
-      const nextRun = await getAutoViralCampaign(autoViralRun.id).catch(() => null);
-      if (!nextRun) return;
-      setAutoViralRun(nextRun);
-      if ((nextRun.status === "completed" || nextRun.status === "failed") && notifiedAutoViralRunId.current !== nextRun.id) {
-        notifiedAutoViralRunId.current = nextRun.id;
-        if (nextRun.status === "completed") {
-          toast.success(
-            nextRun.request.auto_upload_youtube === false
-              ? "Pemotongan kandidat tema selesai dan siap ditinjau."
-              : "Auto Viral CC selesai. Alert Telegram sudah dikirim bila token tersedia.",
-          );
-        } else {
-          toast.error(nextRun.message || "Auto Viral CC gagal", { duration: 9000 });
-        }
-        loadJobs().then((nextJobs) => {
-          const latestJobId = [...nextRun.processed]
-            .reverse()
-            .map((item) => typeof item.job_id === "string" ? item.job_id : "")
-            .find(Boolean);
-          const latestAutoJob = latestJobId
-            ? nextJobs.find((item) => item.id === latestJobId)
-            : undefined;
-          if (latestAutoJob) {
-            setActiveJob(latestAutoJob);
-            setJob(latestAutoJob);
-          }
-        }).catch(() => undefined);
-        loadYouTubeUploads().catch(() => undefined);
-      }
-    }, JOB_POLL_INTERVAL_MS);
-    return () => window.clearInterval(interval);
-  }, [autoViralRun, loadJobs, loadYouTubeUploads]);
 
   useEffect(() => {
     setSelectedHistoryJobIds((current) =>
@@ -733,7 +634,7 @@ export default function HomePage() {
     const requestedMode: ClipMode = clipMode === "highlight_5m" ? "highlight_5m" : "short";
     const requestedSourceMode = sourceMode;
     const trimmedUrl = url.trim();
-    const effectiveMaxDuration = requestedMode === "short" ? Math.min(DEFAULT_MAX_DURATION, maxDuration) : maxDuration;
+    const effectiveMaxDuration = requestedMode === "short" ? Math.min(MAX_SHORT_DURATION, maxDuration) : maxDuration;
     setError("");
 
     if (isActiveJob(activeJob)) {
@@ -761,8 +662,8 @@ export default function HomePage() {
     if (effectiveMaxDuration <= minDuration) {
       setError(
         requestedMode === "short"
-          ? `Durasi minimum Short harus di bawah ${DEFAULT_MAX_DURATION} detik.`
-          : "Durasi maksimum harus lebih besar dari durasi minimum.",
+          ? `Durasi minimum Short harus di bawah ${MAX_SHORT_DURATION} detik.`
+          : "Rentang segmen Long Highlight belum valid.",
       );
       return;
     }
@@ -804,6 +705,9 @@ export default function HomePage() {
             .filter(Boolean),
           require_creative_commons: requireCreativeCommons,
           confirm_source_rights: requestedSourceMode === "url" && confirmSourceRights,
+          source_rights_evidence: "",
+          creator_perspective: "",
+          creator_commentary_file: "",
           auto_upload_youtube: autoUploadYoutube,
           allow_reprocess_source: requestedSourceMode === "url" && allowReprocessSource,
           ai_enabled: aiEnabled,
@@ -812,8 +716,8 @@ export default function HomePage() {
           ai_api_key: aiApiKey.trim(),
         }),
         {
-          loading: "Mempersiapkan proses pemotongan...",
-          success: "Proses pemotongan berhasil dimulai!",
+          loading: requestedMode === "short" ? "Mempersiapkan Short..." : "Menyusun struktur Long Highlight...",
+          success: requestedMode === "short" ? "Proses Short dimulai!" : "Proses Long Highlight dimulai!",
           error: "Gagal memulai proses pemotongan",
         },
       );
@@ -878,7 +782,12 @@ export default function HomePage() {
 
   const handleSelectHistoryJob = useCallback((selectedJob: ClipJob) => {
     setJob(selectedJob);
+    setClipMode(selectedJob.request.clip_mode);
     setCropMode(selectedJob.request.crop_mode);
+    setMinDuration(selectedJob.request.min_duration);
+    setMaxDuration(selectedJob.request.max_duration);
+    setCompilationTargetSeconds(selectedJob.request.compilation_target_seconds);
+    setVideoQuality(selectedJob.request.video_quality);
     window.dispatchEvent(new Event("clipforge:open-results"));
   }, []);
 
@@ -1472,119 +1381,10 @@ export default function HomePage() {
     await loadJobs();
   }, [activeJobId, jobs, loadJobs]);
 
-  const handleSearchAutoContent = useCallback(async () => {
-    if (isSearchingAutoContent || isAutoViralRunning) return;
-    setIsSearchingAutoContent(true);
-    try {
-      const sources = await toast.promise(
-        searchViralContentSources({
-          niche: autoContentNiche,
-          video_count: 3,
-          min_views: MIN_VIRAL_SOURCE_VIEWS,
-          ...viralSearchFilters,
-        }),
-        {
-          loading: "Memfilter konten lewat Google YouTube API...",
-          success: (items) => {
-            const safeItems = items.filter((source) => isVerifiedViralSource(source, viralSearchFilters));
-            return safeItems.length
-              ? `${safeItems.length} kandidat lolos guard awal dalam ${((safeItems[0]?.search_elapsed_ms ?? 0) / 1000).toFixed(1)} detik.`
-              : "Belum ada kandidat Indonesia yang lolos guard otomatis.";
-          },
-          error: (searchError) => searchError instanceof Error ? searchError.message : "Pencarian gagal",
-        },
-      );
-      // Defense in depth for stale/cached responses from an older backend: a
-      // high-risk candidate is never selectable even though the current API
-      // already removes it during discovery.
-      const safeSources = sources.filter((source) => isVerifiedViralSource(source, viralSearchFilters));
-      setAutoContentSources(safeSources);
-      setSelectedAutoContentUrls(safeSources.map((source) => source.url));
-      const adaptiveCount = safeSources.filter((source) => source.filter_match === "adaptive").length;
-      setAutoContentMessage(
-        safeSources.length
-          ? adaptiveCount
-            ? `${adaptiveCount} kandidat memakai perluasan umur/tema; minimal 5K views, durasi pilihan, lisensi CC, kualitas HD, Bahasa Indonesia, dan guard risiko hak tetap wajib.`
-            : "Semua kandidat memiliki minimal 5K views dan lolos guard otomatis awal; metadata CC serta kualitas HD terdeteksi. Hak audio/visual tetap perlu direview sebelum publikasi."
-          : "Belum ditemukan kandidat yang lolos guard otomatis. Sistem tidak akan memaksakan sumber berisiko; coba perluas filter lalu cari lagi.",
-      );
-    } catch {
-      // toast.promise already presents the backend search error.
-    } finally {
-      setIsSearchingAutoContent(false);
-    }
-  }, [autoContentNiche, isAutoViralRunning, isSearchingAutoContent, viralSearchFilters]);
-
-  const handleToggleAutoContentSource = useCallback((sourceUrl: string) => {
-    setSelectedAutoContentUrls((current) => (
-      current.includes(sourceUrl)
-        ? current.filter((item) => item !== sourceUrl)
-        : [...current, sourceUrl]
-    ));
-  }, []);
-
-  const handleStartAutoViral = useCallback(async () => {
-    if (isAutoViralRunning || !selectedAutoContentUrls.length) return;
-
-    try {
-      const run = await toast.promise(
-        startAutoViralCampaign({
-          niche: autoContentNiche,
-          source_urls: selectedAutoContentUrls,
-          video_count: selectedAutoContentUrls.length,
-          min_views: MIN_VIRAL_SOURCE_VIEWS,
-          auto_upload_youtube: false,
-          clips_per_video: 2,
-          ...viralSearchFilters,
-          top: targetClips || null,
-          min_duration: minDuration,
-          max_duration: Math.min(DEFAULT_MAX_DURATION, maxDuration),
-          video_quality: videoQuality,
-          visual_mode: visualMode,
-          background_mode: backgroundMode,
-          crop_mode: cropMode,
-          burn_subtitles: burnSubtitles,
-          ai_enabled: aiEnabled,
-          ai_base_url: aiBaseUrl,
-          ai_model: aiModel,
-          ai_api_key: aiApiKey,
-        }),
-        {
-          loading: "Memasukkan pilihan ke antrean clipping...",
-          success: `${selectedAutoContentUrls.length} sumber masuk antrean clipping.`,
-          error: "Gagal memasukkan sumber ke antrean clipping",
-        },
-      );
-      notifiedAutoViralRunId.current = null;
-      setAutoViralRun(run);
-    } catch (autoError) {
-      toast.error(autoError instanceof Error ? autoError.message : "Gagal memulai antrean clipping", { duration: 9000 });
-    }
-  }, [
-    aiApiKey,
-    aiBaseUrl,
-    aiEnabled,
-    aiModel,
-    autoContentNiche,
-    backgroundMode,
-    burnSubtitles,
-    cropMode,
-    isAutoViralRunning,
-    maxDuration,
-    minDuration,
-    selectedAutoContentUrls,
-    targetClips,
-    videoQuality,
-    visualMode,
-    viralSearchFilters,
-  ]);
-
   return (
     <main className="shell">
       <BrowserTaskIndicator
         job={activityJob}
-        autoViralRun={autoViralRun}
-        isSearchingSources={isSearchingAutoContent}
       />
       <Topbar isRefreshing={isRefreshingData} onRefresh={handleSyncData} />
 
@@ -1605,23 +1405,6 @@ export default function HomePage() {
         onAllowReprocessSourceChange={setAllowReprocessSource}
         onConfirmSourceRightsChange={setConfirmSourceRights}
         onStart={() => { void handleStartJob(); }}
-      />
-
-      <AutoViralPanel
-        niche={autoContentNiche}
-        filters={viralSearchFilters}
-        sources={autoContentSources}
-        selectedUrls={selectedAutoContentUrls}
-        message={autoContentMessage}
-        run={autoViralRun}
-        schedule={autoViralSchedule}
-        isSearching={isSearchingAutoContent}
-        isRunning={isAutoViralRunning}
-        onNicheChange={setAutoContentNiche}
-        onFiltersChange={setViralSearchFilters}
-        onSearch={() => { void handleSearchAutoContent(); }}
-        onToggleSource={handleToggleAutoContentSource}
-        onStart={() => { void handleStartAutoViral(); }}
       />
 
       <section className="workspace studioGrid" id="workspace">
