@@ -860,14 +860,20 @@ EDITORIAL_INSULT_WORDS = {
 }
 EDITORIAL_TARGET_WORDS = {
     "agama",
+    "anggota dewan",
     "dia",
     "kalian",
     "kaum",
     "kelompok",
     "kamu",
     "lu",
+    "menteri",
     "mereka",
     "orang",
+    "pejabat",
+    "politisi",
+    "presiden",
+    "tokoh",
     "umat",
 }
 EDITORIAL_CONSTRUCTIVE_MARKERS = (
@@ -971,6 +977,135 @@ def editorial_safety_profile(text: str) -> dict[str, object]:
         "sensitive_without_takeaway": sensitive_without_takeaway,
         "matched_risk_terms": list(dict.fromkeys([*harmful_matches, *celebrated_harm]))[:8],
         "automated_preflight_is_policy_guarantee": False,
+    }
+
+
+AD_SUITABILITY_STRONG_PROFANITY = {
+    "bangsat",
+    "bajingan",
+    "kontol",
+    "memek",
+    "ngentot",
+}
+AD_SUITABILITY_POLITICAL_WORDS = {
+    "anggota dewan",
+    "dpr",
+    "kampanye",
+    "kandidat",
+    "menteri",
+    "partai",
+    "pejabat",
+    "pemilu",
+    "pilkada",
+    "politisi",
+    "presiden",
+    "senayan",
+}
+AD_SUITABILITY_ALLEGATION_WORDS = {
+    "bohong",
+    "curang",
+    "korupsi",
+    "koruptor",
+    "manipulasi",
+    "penipuan",
+    "settingan",
+    "suap",
+}
+AD_SUITABILITY_CONTROVERSIAL_ISSUE_WORDS = {
+    "aborsi",
+    "bunuh diri",
+    "kekerasan seksual",
+    "kekerasan rumah tangga",
+    "pelecehan seksual",
+    "self harm",
+}
+AD_SUITABILITY_GRAPHIC_HARM_WORDS = {
+    "berdarah-darah",
+    "dipenggal",
+    "dimutilasi",
+    "mayat hancur",
+}
+
+
+def advertiser_suitability_profile(text: str) -> dict[str, object]:
+    """Flag likely ad-suitability review areas without pretending to certify ads.
+
+    YouTube evaluates context, metadata, imagery, and the channel as a whole.
+    This local text pass therefore blocks only obvious high-risk packaging and
+    routes political allegations, sensitive issues, and religious comparisons
+    to a human self-certification review.
+    """
+    normalized = re.sub(r"\s+", " ", text).strip().casefold()
+    tokens = set(re.findall(r"[\w']+", normalized))
+    editorial = editorial_safety_profile(text)
+
+    def matching_phrases(values: set[str]) -> list[str]:
+        return sorted(
+            value
+            for value in values
+            if value in tokens or (" " in value and value in normalized)
+        )
+
+    profanity = matching_phrases(AD_SUITABILITY_STRONG_PROFANITY)
+    politics = matching_phrases(AD_SUITABILITY_POLITICAL_WORDS)
+    allegations = matching_phrases(AD_SUITABILITY_ALLEGATION_WORDS)
+    controversial = matching_phrases(AD_SUITABILITY_CONTROVERSIAL_ISSUE_WORDS)
+    graphic_harm = matching_phrases(AD_SUITABILITY_GRAPHIC_HARM_WORDS)
+    religious_comparison = bool(
+        len(tokens.intersection(STRUCTURED_COMPARISON_RELIGION_WORDS)) >= 2
+        or any(phrase in normalized for phrase in STRUCTURED_COMPARISON_ATTACK_PHRASES)
+    )
+    political_allegation = bool(politics and allegations)
+    high_risk = bool(
+        profanity
+        or graphic_harm
+        or editorial["direct_ridicule_or_insult"]
+        or editorial["protected_group_attack"]
+        or editorial["celebrates_harm"]
+    )
+    manual_review = bool(
+        high_risk
+        or political_allegation
+        or controversial
+        or religious_comparison
+    )
+    review_topics: list[str] = []
+    if profanity:
+        review_topics.append("strong_profanity")
+    if political_allegation:
+        review_topics.append("political_claim_or_allegation")
+    if controversial:
+        review_topics.append("controversial_issue")
+    if religious_comparison:
+        review_topics.append("religious_comparison_or_claim")
+    if graphic_harm:
+        review_topics.append("graphic_harm")
+    if editorial["direct_ridicule_or_insult"]:
+        review_topics.append("incendiary_or_demeaning")
+    if editorial["protected_group_attack"]:
+        review_topics.append("protected_group_attack")
+
+    return {
+        "version": 1,
+        "risk_tier": "high_risk" if high_risk else "manual_review" if manual_review else "low_risk",
+        "high_risk_for_full_ads": high_risk,
+        "manual_self_certification_review_required": manual_review,
+        "political_claim_or_allegation": political_allegation,
+        "religious_comparison_or_claim": religious_comparison,
+        "matched_topics": review_topics,
+        "matched_terms": list(
+            dict.fromkeys([*profanity, *politics, *allegations, *controversial, *graphic_harm])
+        )[:12],
+        "recommended_action": (
+            "reject_or_recut_high_risk_wording"
+            if high_risk
+            else "human_review_context_title_thumbnail_and_self_certification"
+            if manual_review
+            else "standard_human_review"
+        ),
+        "context_can_change_outcome": True,
+        "automatic_full_monetization_guarantee": False,
+        "official_guideline": "https://support.google.com/youtube/answer/6162278",
     }
 
 
@@ -7051,20 +7186,87 @@ def candidate_topic_similarity(left: ClipCandidate, right: ClipCandidate) -> flo
     return max(jaccard, containment)
 
 
-def candidate_is_high_information_extended_short(candidate: ClipCandidate) -> bool:
-    """Recognize a complete 60-105 second Short without rewarding filler.
+def high_information_extended_short_profile(
+    candidate: ClipCandidate,
+) -> dict[str, object]:
+    """Require observable information progress before rewarding 60-105s.
 
-    A longer Short should compete on information and story quality, not on
-    duration alone. This reuses the timing audits that gate transcript-derived
-    candidates, so a long window cannot win merely by containing more words.
+    The timing audit remains important, but a long candidate can otherwise pass
+    by repeating one claim with fluent speech. This second gate checks the
+    actual transcript for a hook, multiple semantic turns, sufficient speech
+    density, lexical variety, and a resolved ending.
     """
-    return bool(
-        60.0 < candidate.duration <= 105.0
-        and candidate.narrative_arc_complete
+    normalized = re.sub(r"\s+", " ", candidate.text).strip().casefold()
+    words = re.findall(r"[\w']+", normalized)
+    content_words = [word for word in words if word not in LOOP_STOP_WORDS]
+    distinct_content_ratio = (
+        len(set(content_words)) / len(content_words) if content_words else 0.0
+    )
+    speech_density = len(words) / max(1.0, candidate.duration)
+    progression_marker_count = sum(
+        min(2, normalized.count(marker))
+        for marker in EXTENDED_SHORT_PROGRESSION_MARKERS
+    )
+    semantic_units = [
+        unit.strip()
+        for unit in re.split(r"[.!?;]+", normalized)
+        if len(re.findall(r"[\w']+", unit)) >= 5
+    ]
+    opening = " ".join(words[: min(30, len(words))])
+    closing = " ".join(words[-min(38, len(words)):])
+    opening_words = set(re.findall(r"[\w']+", opening))
+    closing_words = set(re.findall(r"[\w']+", closing))
+    opening_hook = bool(
+        "?" in candidate.text[: max(80, len(candidate.text) // 4)]
+        or opening_words.intersection(
+            (HOOK_WORDS - WEAK_STARTS) | TENSION_WORDS | IMPORTANT_WORDS
+        )
+    )
+    closing_resolution = bool(
+        closing_words.intersection(PAYOFF_WORDS | IMPORTANT_WORDS)
+        or any(
+            marker in closing
+            for marker in ("akhirnya", "jadi", "intinya", "kesimpulannya")
+        )
+    )
+    transcript_progression_ready = bool(
+        0.85 <= speech_density <= 3.6
+        and progression_marker_count >= 2
+        and len(semantic_units) >= 4
+        and distinct_content_ratio >= 0.44
+        and opening_hook
+        and closing_resolution
+    )
+    timing_audit_ready = bool(
+        candidate.narrative_arc_complete
         and candidate.retention_score >= 70
         and candidate.key_point_score >= 70
         and candidate.boundary_quality == "payoff_tuntas"
     )
+    qualified = bool(
+        60.0 < candidate.duration <= 105.0
+        and timing_audit_ready
+        and transcript_progression_ready
+    )
+    return {
+        "version": 1,
+        "qualified": qualified,
+        "duration_fit_60_105_seconds": 60.0 < candidate.duration <= 105.0,
+        "timing_audit_ready": timing_audit_ready,
+        "transcript_progression_ready": transcript_progression_ready,
+        "speech_density_words_per_second": round(speech_density, 3),
+        "progression_marker_count": progression_marker_count,
+        "semantic_unit_count": len(semantic_units),
+        "distinct_content_word_ratio": round(distinct_content_ratio, 3),
+        "opening_hook": opening_hook,
+        "closing_resolution": closing_resolution,
+        "length_alone_is_quality_signal": False,
+    }
+
+
+def candidate_is_high_information_extended_short(candidate: ClipCandidate) -> bool:
+    """Recognize a complete 60-105 second Short without rewarding filler."""
+    return bool(high_information_extended_short_profile(candidate)["qualified"])
 
 
 def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0) -> float:
@@ -7139,7 +7341,15 @@ def candidate_has_cohesive_editorial_arc(candidate: ClipCandidate) -> bool:
 
 
 def candidate_is_editorially_safe(candidate: ClipCandidate) -> bool:
-    return bool(editorial_safety_profile(candidate.text)["safe_for_selection"])
+    packaging_text = " ".join(
+        value for value in (candidate.title, candidate.hook, candidate.text) if value
+    )
+    return bool(
+        editorial_safety_profile(packaging_text)["safe_for_selection"]
+        and not advertiser_suitability_profile(packaging_text)[
+            "high_risk_for_full_ads"
+        ]
+    )
 
 
 def select_candidates(
@@ -8098,13 +8308,13 @@ SHORTS_SAFE_BOTTOM = 1560
 SHORTS_OFFICIAL_MAX_SECONDS = 180
 FENDY_CLIPPER_SHORTS_MIN_SECONDS = 25
 FENDY_CLIPPER_SHORTS_MAX_SECONDS = 180
-SHORTS_POLICY_REVIEW_DATE = os.environ.get("YOUTUBE_POLICY_REVIEW_DATE", "2026-09-22").strip()
+SHORTS_POLICY_REVIEW_DATE = os.environ.get("YOUTUBE_POLICY_REVIEW_DATE", "2026-09-23").strip()
 YOUTUBE_POLICY_REVIEW_INTERVAL_DAYS = 180
 
 
 def youtube_policy_snapshot(*, as_of: date | None = None) -> dict[str, object]:
     """Expose policy freshness instead of pretending a dated audit lasts forever."""
-    fallback_reviewed = date(2026, 9, 22)
+    fallback_reviewed = date(2026, 9, 23)
     try:
         reviewed = date.fromisoformat(SHORTS_POLICY_REVIEW_DATE)
     except ValueError:
@@ -8122,7 +8332,7 @@ def youtube_policy_snapshot(*, as_of: date | None = None) -> dict[str, object]:
     current_date = as_of or date.today()
     review_due = reviewed + timedelta(days=review_interval_days)
     return {
-        "snapshot_version": 6,
+        "snapshot_version": 7,
         "reviewed_on": reviewed.isoformat(),
         "review_due_on": review_due.isoformat(),
         "review_required": current_date > review_due,
@@ -8136,6 +8346,7 @@ def youtube_policy_snapshot(*, as_of: date | None = None) -> dict[str, object]:
         "official_sources": [
             "https://support.google.com/youtube/answer/15424877",
             "https://support.google.com/youtube/answer/1311392",
+            "https://support.google.com/youtube/answer/6162278",
             "https://support.google.com/youtube/answer/3376882",
             "https://support.google.com/youtube/answer/14328491",
             "https://support.google.com/youtube/answer/12504220",
@@ -11250,7 +11461,7 @@ AVAILABLE_FONTS = {
     "Noto Sans": "Noto Sans",
 }
 DEFAULT_FONT = "DejaVu Sans"
-CHANNEL_WATERMARK = "ryuundyofficial"
+CHANNEL_WATERMARK = "@ryuundy"
 FENDY_AUDITOR_NAME = "Fendy"
 FENDY_AUDIT_SIGNATURE = "FENDY AUDIT"
 FENDY_PROVENANCE_BRAND = "Fendy Clipper"
@@ -11710,23 +11921,23 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 def channel_watermark_filter(output_format: str) -> str:
-    """Render one restrained channel signature; audit details stay in metadata."""
+    """Render a soft centered signature; audit details stay in metadata.
+
+    The italic face gives the requested slanted feel without rotating or
+    resampling the source frame. Low opacity keeps the mark readable while
+    avoiding a hard banner over the speaker or subtitles.
+    """
     if output_format == "landscape_compilation":
-        x_position = "w-text_w-42"
-        y_position = "38"
-        font_size = 18
+        font_size = 28
     else:
-        x_position = "62"
-        y_position = "98"
-        font_size = 20
+        font_size = 34
     return (
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf:"
         f"text='{CHANNEL_WATERMARK}':expansion=none:"
-        f"fontcolor=white@0.76:fontsize={font_size}:"
-        "borderw=1:bordercolor=black@0.62:"
-        "box=1:boxcolor=black@0.16:boxborderw=7:"
-        "shadowcolor=black@0.64:shadowx=1:shadowy=2:"
-        f"x='{x_position}':y={y_position}"
+        f"fontcolor=white@0.36:fontsize={font_size}:"
+        "borderw=1:bordercolor=black@0.24:"
+        "box=0:shadowcolor=black@0.28:shadowx=2:shadowy=2:"
+        "x='(w-text_w)/2':y='(h-text_h)*0.46'"
     )
 
 
@@ -12818,6 +13029,12 @@ def export_clip(
     sidecar_payload = {
         **asdict(clip),
         "editorial_safety": editorial_safety_profile(clip.text),
+        "advertiser_suitability": advertiser_suitability_profile(
+            " ".join(value for value in (clip.title, clip.hook, clip.text) if value)
+        ),
+        "high_information_extended_short": high_information_extended_short_profile(
+            clip
+        ),
         "short_narrative_arc": narrative_arc_audit,
         "religious_context_integrity": religious_context_audit,
         "religious_claim_review": religious_claim_review,
@@ -13751,10 +13968,12 @@ def export_clip(
             "auditor": FENDY_AUDITOR_NAME,
             "brand": FENDY_PROVENANCE_BRAND,
             "audit_id": auditor_identity["audit_id"],
-            "position": "top_left_safe",
+            "position": "center_soft_italic",
+            "opacity": 0.36,
+            "source_ownership_claimed": False,
         }
         applied_edits.append(
-            f"Watermark channel {CHANNEL_WATERMARK} ditambahkan secara halus di safe area; detail audit disimpan di metadata."
+            f"Watermark channel {CHANNEL_WATERMARK} ditambahkan secara halus, miring, dan transparan di tengah; detail audit disimpan di metadata."
         )
         if output_format == "vertical_short" and subscriber_cta_planned:
             engagement_text_path.write_text(engagement_prompt + "\n", encoding="utf-8")
@@ -14672,6 +14891,23 @@ def export_compilation(
             ),
             "part_audits": [editorial_safety_profile(item.text) for item in candidates],
             "automated_preflight_is_policy_guarantee": False,
+        },
+        "advertiser_suitability": {
+            "version": 1,
+            "manual_self_certification_review_required": any(
+                advertiser_suitability_profile(item.text)[
+                    "manual_self_certification_review_required"
+                ]
+                for item in candidates
+            ),
+            "high_risk_for_full_ads": any(
+                advertiser_suitability_profile(item.text)["high_risk_for_full_ads"]
+                for item in candidates
+            ),
+            "part_audits": [
+                advertiser_suitability_profile(item.text) for item in candidates
+            ],
+            "automatic_full_monetization_guarantee": False,
         },
         "video_quality": video_quality,
         "output_width": output_width,

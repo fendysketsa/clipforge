@@ -2637,6 +2637,93 @@ def test_performance_baseline_uses_engaged_views_for_subscriber_conversion():
     medians = api.comparable_performance_medians(current, [current, *peers])
 
     assert medians["subscribers_per_1000_views"] == 10.0
+    assert medians["subscribers_per_1000_engaged_views"] == 10.0
+    assert medians["engaged_view_rate"] == 10.0
+
+
+def test_performance_feedback_does_not_treat_one_k_public_views_as_quality():
+    import api
+
+    upload = YouTubeUploadJob(
+        id="upload-public-views-only",
+        source_job_id="job-public-views-only",
+        clip_url="/outputs/demo/clips/public.mp4",
+        clip_name="public.mp4",
+        status="completed",
+        created_at="2026-09-20T00:00:00+00:00",
+        updated_at="2026-09-20T00:00:00+00:00",
+        finished_at="2026-09-20T00:00:00+00:00",
+        title="Public views bukan retention",
+        video_url="https://www.youtube.com/watch?v=publicviews",
+        growth_series="Audit Shorts",
+    )
+    snapshot = api.YouTubePerformanceSnapshot(
+        captured_at="2026-09-23T00:00:00+00:00",
+        source="youtube_public",
+        views=1200,
+    )
+
+    diagnosis = api.youtube_performance_diagnosis(upload, snapshot, [upload])
+
+    assert any("engaged views belum tersedia" in item for item in diagnosis)
+    assert any("start/replay" in item for item in diagnosis)
+
+
+def test_monetization_preflight_blocks_high_ad_suitability_risk(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-high-ad-risk",
+        status="completed",
+        request=ClipJobRequest(),
+        created_at="2026-09-23T00:00:00+00:00",
+        updated_at="2026-09-23T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "editorial_safety": {"safe_for_selection": True},
+            "advertiser_suitability": {"high_risk_for_full_ads": True},
+        },
+    )
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+
+    assert "advertiser-suitability" in issue
+    assert "berisiko tinggi" in issue
+
+
+def test_monetization_preflight_requires_human_review_for_political_claim(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-political-review",
+        status="completed",
+        request=ClipJobRequest(),
+        created_at="2026-09-23T00:00:00+00:00",
+        updated_at="2026-09-23T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "editorial_safety": {"safe_for_selection": True},
+            "advertiser_suitability": {
+                "high_risk_for_full_ads": False,
+                "manual_self_certification_review_required": True,
+            },
+        },
+    )
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+
+    assert "Upload ditahan" in issue
+    assert "self-certification" in issue
 
 
 def test_performance_feedback_separates_zero_feed_distribution_from_hook():

@@ -189,6 +189,13 @@ Median sampel 50 Shorts terbaru channel sekitar **62 ribu views**. Video referen
 
 Audit dilakukan 5 September 2026 dari halaman publik channel, 48 Shorts terbaru, dan metadata tiga breakout terbaru. Angka dapat berubah.
 
+### Pembaruan screenshot 23 September 2026
+
+- Screenshot yang diberikan operator menampilkan sekitar **1,66 ribu subscriber**, **732 video**, dan enam Shorts teratas yang terlihat masing-masing sekitar **1,1–1,2 ribu public views**.
+- Umur setiap upload, engaged views, shown in feed, stayed to watch, retention, dan subscriber gained tidak terlihat. Karena itu deretan angka 1K tersebut belum membuktikan retention atau monetisasi yang stabil.
+- Sejak 31 Maret 2025 public Shorts views menghitung setiap start/replay tanpa minimum watch time. Eksperimen ClipForge harus membandingkan **engaged/public view ratio**, stayed to watch, average percentage viewed, dan subscriber per 1.000 engaged views pada upload yang umur serta serinya setara.
+- Packaging yang terlihat konsisten: wajah pembicara memenuhi frame, headline konflik sangat singkat di bagian atas/tengah, subtitle kuning per frasa, topik tokoh/politik/agama yang mudah dikenali, dan tidak ada intro visual panjang. Pola ini layak diuji, tetapi wording menghina atau tuduhan tanpa bukti tidak boleh ikut disalin karena berisiko pada advertiser suitability.
+
 ## Fakta publik
 
 - Channel dibuat **3 Januari 2023**, memiliki **676 video**, sekitar **692.011 total view**, dan sekitar **1,39 ribu subscriber** saat audit.

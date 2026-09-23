@@ -3056,9 +3056,10 @@ def render_long_animate(
             )
         if drawtext:
             vf_parts.append(
-                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-                "text='ryuundyofficial':fontcolor=white@0.72:fontsize=18:x=34:y=30:"
-                "borderw=1:bordercolor=black@0.50"
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf:"
+                "text='@ryuundy':expansion=none:fontcolor=white@0.36:fontsize=28:"
+                "x=(w-text_w)/2:y=(h-text_h)*0.46:borderw=1:bordercolor=black@0.24:"
+                "shadowcolor=black@0.28:shadowx=2:shadowy=2"
             )
         duration = target_duration
         cut_points: list[float] = []

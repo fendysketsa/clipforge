@@ -9,7 +9,9 @@ from clipper import (
     build_long_form_story_sequence,
     candidate_is_high_information_extended_short,
     candidate_rank_score,
+    advertiser_suitability_profile,
     editorial_safety_profile,
+    high_information_extended_short_profile,
     order_compilation_for_retention,
     select_candidates,
     select_compilation_candidates,
@@ -272,9 +274,13 @@ def test_complete_high_information_84_second_short_is_not_penalized_for_length()
         0,
         0,
         86,
-        "Kenapa biaya ini begitu besar? Pertama ada risiko, kemudian ada bukti, "
-        "tetapi masalahnya belum selesai. Karena itu jawabannya harus dilihat utuh. "
-        "Akhirnya, keputusan yang tepat adalah memeriksa dampaknya terlebih dahulu.",
+        "Kenapa biaya politik ini begitu besar dan siapa yang akhirnya menanggung risikonya? "
+        "Pertama, ongkos pencalonan membuat kandidat mencari dukungan modal sebelum program dibahas. "
+        "Kemudian, data pengeluaran dan sumber dana perlu diperiksa agar tuduhan tidak berdiri tanpa bukti. "
+        "Kedua, janji kampanye harus dibandingkan dengan keputusan anggaran setelah kandidat terpilih. "
+        "Namun hubungan itu belum otomatis membuktikan pelanggaran karena setiap klaim memerlukan dokumen, konteks, dan hak jawab. "
+        "Karena itu publik bisa memeriksa laporan dana, rekam keputusan, serta pihak yang menerima manfaat. "
+        "Akhirnya, keputusan yang adil adalah menilai bukti dan dampaknya, bukan hanya mengulang tuduhan yang paling keras.",
     )
     extended.end = 84
     extended.duration = 84
@@ -299,6 +305,9 @@ def test_complete_high_information_84_second_short_is_not_penalized_for_length()
     short.boundary_quality = "payoff_tuntas"
 
     assert candidate_is_high_information_extended_short(extended) is True
+    assert high_information_extended_short_profile(extended)[
+        "transcript_progression_ready"
+    ] is True
     assert candidate_rank_score(extended) > candidate_rank_score(short)
 
 
@@ -313,6 +322,47 @@ def test_long_short_with_weak_progression_keeps_duration_penalty():
     candidate.boundary_quality = "kalimat_tuntas"
 
     assert candidate_is_high_information_extended_short(candidate) is False
+
+
+def test_long_short_repetition_fails_even_when_timing_scores_are_high():
+    candidate = make_candidate(
+        0,
+        0,
+        90,
+        "Kenapa ini penting? Ini penting sekali. Karena ini penting, kita harus tahu ini penting. "
+        "Kemudian hal penting itu tetap penting. Jadi ini penting dan akhirnya tetap penting.",
+    )
+    candidate.end = 84
+    candidate.duration = 84
+    candidate.key_point_score = 90
+    candidate.retention_score = 90
+    candidate.narrative_arc_score = 90
+    candidate.narrative_arc_complete = True
+    candidate.boundary_quality = "payoff_tuntas"
+
+    profile = high_information_extended_short_profile(candidate)
+
+    assert profile["timing_audit_ready"] is True
+    assert profile["transcript_progression_ready"] is False
+    assert candidate_is_high_information_extended_short(candidate) is False
+
+
+def test_advertiser_suitability_routes_political_allegations_to_human_review():
+    profile = advertiser_suitability_profile(
+        "Presiden membantah tuduhan korupsi. Pertama kita periksa bukti dan hak jawabnya."
+    )
+
+    assert profile["risk_tier"] == "manual_review"
+    assert profile["political_claim_or_allegation"] is True
+    assert profile["high_risk_for_full_ads"] is False
+    assert profile["manual_self_certification_review_required"] is True
+
+
+def test_advertiser_suitability_rejects_direct_public_figure_insult():
+    profile = advertiser_suitability_profile("Presiden itu goblok dan pantas dihina.")
+
+    assert profile["risk_tier"] == "high_risk"
+    assert profile["high_risk_for_full_ads"] is True
 
 
 def test_ai_rescore_accepts_common_alternate_candidate_key(monkeypatch):

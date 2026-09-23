@@ -39,6 +39,8 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Turn long comparison/explainer Shorts into an adaptive three-beat evidence stage: keep the source video dominant, replace copied logos/patterns/photos with a content-derived context card and progress rail, remove duplicated cold-open excerpts, require a complete fair conclusion, and hold sensitive religious comparisons for manual claim/context review.
 - Record a transparent growth experiment: Shorts target 20K views and 20 subscribers per upload, while long-form keeps a 5K/20-subscriber baseline. Stability means at least three of the latest five comparable uploads reach both targets, measured against the rolling median of the last ten uploads in the same format and series. Targets are experiments, not guaranteed distribution.
 - Store post-publish performance snapshots on each YouTube upload and diagnose reach, retention, and subscriber conversion against comparable uploads in the same series. YouTube Analytics OAuth provides engaged views, watch metrics, shares, and subscribers; the YouTube Data API remains a public-statistics fallback.
+- Compare engaged/public view ratio against the same-series median so a 1K public-view floor is not mistaken for retention after Shorts starts/replays became public views.
+- Record an advertiser-suitability text audit beside every render: direct insults, strong profanity, protected-group attacks, and graphic-harm wording are held; political allegations, sensitive issues, and religious comparisons require human context/title/thumbnail and ad self-certification review.
 - Let operators enter Studio-only **Shown in feed** and **Stayed to watch** metrics, preserve them across API refreshes, and diagnose zero-view uploads differently when the Short has never entered the feed versus when viewers were actually offered it.
 - Auto-repair a broader shortlist before final selection, enforce a minimum FYP score of 80 for vertical exports, and discard low-score results instead of rendering confusing repair/upload choices.
 - Audit first-30-second editorial readiness across five beat windows (0–3, 3–8, 8–15, 15–22, and 22–30 seconds), including context-dependent openings, speech coverage, dead air, and fresh information. Timing-audited Shorts below 58 are held by the selection/upload gate; this score is a diagnostic, not a promise of actual audience retention.
@@ -434,7 +436,7 @@ later claim, review Private uploads before publishing. When Fendy Clipper replac
 selects YouTube's altered-content disclosure before continuing. Review the
 Restrictions and monetization columns before publishing.
 This reduces risk but cannot guarantee a video will never receive a future claim.
-The policy snapshot was rechecked on 2026-09-22. YouTube says that starting
+The policy snapshot was rechecked on 2026-09-23. YouTube says that starting
 2026-09-24 a new Short over one minute with an active Content ID claim will no
 longer be automatically blocked and may remain playable. ClipForge deliberately
 keeps its stricter zero-active-claim publication workflow because a playable
@@ -458,7 +460,7 @@ YOUTUBE_MADE_FOR_KIDS=false
 YOUTUBE_DEFAULT_TAGS=viralindonesia,trendingindonesia,kontenpilihan
 YOUTUBE_DEFAULT_PLAYLIST=Islam
 YOUTUBE_PLAYLIST_SELECT_ATTEMPTS=3
-YOUTUBE_POLICY_REVIEW_DATE=2026-09-22
+YOUTUBE_POLICY_REVIEW_DATE=2026-09-23
 YOUTUBE_GENERATED_CONTENT_MAX_SIMILARITY=0.58
 YOUTUBE_POLICY_REVIEW_INTERVAL_DAYS=180
 YOUTUBE_TARGET_CHANNEL=ryuundyofficial

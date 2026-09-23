@@ -588,6 +588,11 @@ export function ResultsSection({
                 && conversionViews > 0
                 ? (latest.subscribers_gained * 1000) / conversionViews
                 : null;
+              const engagedRate = latest?.engaged_views !== null
+                && latest?.engaged_views !== undefined
+                && (latest?.views ?? 0) > 0
+                ? (latest.engaged_views * 100) / latest.views
+                : null;
               return (
                 <article className="youtubePerformanceItem" key={upload.id}>
                   <div className="youtubePerformanceCopy">
@@ -600,6 +605,7 @@ export function ResultsSection({
                   <div className="youtubePerformanceMetrics">
                     <span>View <b>{latest ? latest.views.toLocaleString("id-ID") : "—"}</b></span>
                     <span>Engaged <b>{latest?.engaged_views !== null && latest?.engaged_views !== undefined ? latest.engaged_views.toLocaleString("id-ID") : "—"}</b></span>
+                    <span title="Engaged views dibagi public views; public views menghitung start/replay sejak 31 Maret 2025">Eng/View <b>{engagedRate !== null ? `${engagedRate.toFixed(1)}%` : "—"}</b></span>
                     <span>Feed <b>{latest?.shown_in_feed !== null && latest?.shown_in_feed !== undefined ? latest.shown_in_feed.toLocaleString("id-ID") : "—"}</b></span>
                     <span>Stayed <b>{latest?.stayed_to_watch_percentage !== null && latest?.stayed_to_watch_percentage !== undefined ? `${latest.stayed_to_watch_percentage.toFixed(1)}%` : "—"}</b></span>
                     <span>Retention <b>{latest?.average_view_percentage !== null && latest?.average_view_percentage !== undefined ? `${latest.average_view_percentage.toFixed(1)}%` : "—"}</b></span>

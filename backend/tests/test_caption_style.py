@@ -243,18 +243,19 @@ def test_build_subtitle_style_font_size_clamped():
     assert "FontSize=120" in build_subtitle_style(CaptionStyle(font_size=500))
 
 
-def test_channel_watermark_is_small_visible_and_shorts_ui_safe():
+def test_channel_watermark_is_soft_centered_italic_and_unobtrusive():
     vertical = channel_watermark_filter("vertical_short")
     landscape = channel_watermark_filter("landscape_compilation")
 
-    assert "text='ryuundyofficial'" in vertical
+    assert "text='@ryuundy'" in vertical
     assert "FENDY" not in vertical
     assert "FND-" not in vertical
-    assert "fontcolor=white@0.76:fontsize=20" in vertical
-    assert "x='62':y=98" in vertical
-    assert "boxcolor=black@0.16" in vertical
-    assert "fontcolor=white@0.76:fontsize=18" in landscape
-    assert "x='w-text_w-42':y=38" in landscape
+    assert "DejaVuSans-Oblique.ttf" in vertical
+    assert "fontcolor=white@0.36:fontsize=34" in vertical
+    assert "x='(w-text_w)/2':y='(h-text_h)*0.46'" in vertical
+    assert "box=0" in vertical
+    assert "fontcolor=white@0.36:fontsize=28" in landscape
+    assert "x='(w-text_w)/2':y='(h-text_h)*0.46'" in landscape
 
 
 def test_fendy_auditor_identity_is_stable_unique_and_transparent():
@@ -1390,7 +1391,7 @@ def test_shorts_cover_moment_uses_adaptive_reference_style_card():
     assert "x=96:y=1114" in value
     assert "between(t,0,3.200)" in value
     assert "text='FAKTA / PELAJARAN'" in value
-    assert "text='ryuundyofficial'" not in value
+    assert "text='@ryuundy'" not in value
     assert "text='LIHAT PENJELASANNYA'" not in value
     assert "textfile='clip.hook.txt'" not in value
 
@@ -1538,7 +1539,7 @@ def test_youtube_policy_snapshot_marks_future_rules_for_review_without_assuming_
     assert future["review_required"] is True
     assert future["future_year_assumed_unchanged"] is False
     assert future["rules_are_runtime_guarantee"] is False
-    assert len(future["official_sources"]) == 13
+    assert len(future["official_sources"]) == 14
 
 
 def test_youtube_policy_snapshot_tracks_september_2026_claim_transition():

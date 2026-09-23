@@ -4642,6 +4642,26 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             "Upload diblokir: audit editorial mendeteksi ejekan/serangan, perayaan atas bahaya, "
             "atau konteks negatif tanpa hikmah dan penutup konstruktif. Pilih kandidat lain."
         )
+    advertiser_suitability = sidecar.get("advertiser_suitability")
+    if isinstance(advertiser_suitability, dict):
+        if advertiser_suitability.get("high_risk_for_full_ads") is True:
+            return (
+                "Upload diblokir: audit advertiser-suitability menemukan wording berisiko tinggi "
+                "(misalnya hinaan langsung, profanity kuat, serangan kelompok, atau detail kekerasan grafis). "
+                "Pilih kandidat lain atau potong ulang tanpa mengubah makna sumber."
+            )
+        if (
+            advertiser_suitability.get(
+                "manual_self_certification_review_required"
+            )
+            is True
+            and not clip.is_correct
+        ):
+            return (
+                "Upload ditahan: topik politik/tuduhan, isu sensitif, atau perbandingan agama "
+                "memerlukan review konteks, judul, thumbnail, fakta/atribusi, dan self-certification "
+                "iklan. Tandai clip benar hanya setelah review manusia selesai."
+            )
     reviewed_automatic_rebuild = reviewed_automatic_rebuild_for_private_upload(
         job, clip, sidecar, metadata
     )
@@ -4987,7 +5007,7 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             )
         if not auditor.get("visible_video_signature"):
             return (
-                "Upload diblokir: watermark visual ryuundyofficial belum tertanam di video. "
+                "Upload diblokir: watermark visual @ryuundy belum tertanam di video. "
                 "Pastikan FFmpeg drawtext tersedia lalu render ulang."
             )
         growth_blueprint = sidecar.get("codex_growth_blueprint")
@@ -6662,6 +6682,13 @@ def comparable_performance_medians(
         field_values = values(field)
         if field_values:
             medians[field] = float(median(field_values))
+    engaged_view_rates = [
+        item.engaged_views * 100 / item.views
+        for item in peers
+        if item.engaged_views is not None and item.views > 0
+    ]
+    if engaged_view_rates:
+        medians["engaged_view_rate"] = float(median(engaged_view_rates))
     conversion_values = [
         (item.subscribers_gained or 0)
         * 1000
@@ -6671,7 +6698,11 @@ def comparable_performance_medians(
         and item.subscribers_gained is not None
     ]
     if conversion_values:
-        medians["subscribers_per_1000_views"] = float(median(conversion_values))
+        conversion_median = float(median(conversion_values))
+        medians["subscribers_per_1000_engaged_views"] = conversion_median
+        # Kept for compatibility with persisted dashboards made before public
+        # Shorts views and engaged views were separated explicitly.
+        medians["subscribers_per_1000_views"] = conversion_median
     return medians
 
 
@@ -6746,6 +6777,10 @@ def youtube_performance_diagnosis(
         diagnosis.append(
             "Konversi subscriber sudah mencapai target; fokus berikutnya memperluas reach dari hook dan packaging."
         )
+    if snapshot.views >= 1000 and snapshot.engaged_views is None:
+        diagnosis.append(
+            "Public views sudah melewati 1K, tetapi engaged views belum tersedia; sejak 31 Maret 2025 start/replay ikut dihitung, jadi jangan anggap angka ini sebagai retention yang stabil."
+        )
 
     baselines = comparable_performance_medians(upload, uploads)
     if not baselines:
@@ -6776,7 +6811,17 @@ def youtube_performance_diagnosis(
             diagnosis.append(
                 "Stayed to watch berada di bawah median seri; ubah first frame dan hook tanpa mengubah variabel lain."
             )
-        baseline_conversion = baselines.get("subscribers_per_1000_views", 0)
+        baseline_engaged_rate = baselines.get("engaged_view_rate", 0)
+        if snapshot.views > 0 and snapshot.engaged_views is not None:
+            engaged_rate = snapshot.engaged_views * 100 / snapshot.views
+            if baseline_engaged_rate and engaged_rate < baseline_engaged_rate * 0.9:
+                diagnosis.append(
+                    "Rasio engaged/public view berada di bawah median seri; angka public view kemungkinan besar tidak berubah menjadi tontonan yang memilih lanjut. Perbaiki frame pertama dan promise hook."
+                )
+        baseline_conversion = baselines.get(
+            "subscribers_per_1000_engaged_views",
+            baselines.get("subscribers_per_1000_views", 0),
+        )
         conversion_views = (
             snapshot.engaged_views
             if snapshot.engaged_views is not None
