@@ -243,7 +243,7 @@ def test_build_subtitle_style_font_size_clamped():
     assert "FontSize=120" in build_subtitle_style(CaptionStyle(font_size=500))
 
 
-def test_channel_watermark_is_soft_centered_italic_and_unobtrusive():
+def test_channel_watermark_is_centered_italic_signature_seal():
     vertical = channel_watermark_filter("vertical_short")
     landscape = channel_watermark_filter("landscape_compilation")
 
@@ -251,11 +251,16 @@ def test_channel_watermark_is_soft_centered_italic_and_unobtrusive():
     assert "FENDY" not in vertical
     assert "FND-" not in vertical
     assert "DejaVuSans-Oblique.ttf" in vertical
-    assert "fontcolor=white@0.36:fontsize=34" in vertical
-    assert "x='(w-text_w)/2':y='(h-text_h)*0.46'" in vertical
-    assert "box=0" in vertical
-    assert "fontcolor=white@0.36:fontsize=28" in landscape
-    assert "x='(w-text_w)/2':y='(h-text_h)*0.46'" in landscape
+    assert "color=black@0.28" in vertical
+    assert "color=#D4A017@0.34" in vertical
+    assert "color=#22C55E@0.72" in vertical
+    assert "text='◆'" in vertical
+    assert "fontcolor=white@0.72:fontsize=32" in vertical
+    assert "x='(iw-252)/2':y='(ih-58)*0.46'" in vertical
+    assert "x='((w-252)/2)+52'" in vertical
+    assert "fontcolor=white@0.72:fontsize=26" in landscape
+    assert "x='(iw-218)/2':y='(ih-48)*0.46'" in landscape
+    assert "x='((w-218)/2)+52'" in landscape
 
 
 def test_fendy_auditor_identity_is_stable_unique_and_transparent():
@@ -2315,6 +2320,21 @@ def test_shorts_context_card_varies_label_color_and_geometry_from_story():
     assert "color=#22C55E@1.0" in value
     assert "x=72:y=1010:w=796:h=9" in value
     assert "x=88:y=1120" in value
+    assert "color=#0B3D2E@0.72" in value
+    assert "color=#D4A017@0.48" in value
+    assert "text='◆'" in value
+
+
+def test_non_islamic_context_card_does_not_add_islamic_carving():
+    value = viral_title_overlay_filter(
+        "headline.txt",
+        30,
+        eyebrow="FAKTA / PELAJARAN",
+        accent="#FACC15",
+    )
+
+    assert "color=#0B3D2E@0.72" not in value
+    assert "color=#D4A017@0.48" not in value
 
 
 def test_long_form_cold_open_uses_content_theme_badge():

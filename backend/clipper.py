@@ -9056,6 +9056,29 @@ def viral_title_overlay_filter(
     content_x = card_x + 38
     headline_y = (1114, 1108, 1120)[card_variant]
     badge_width = min(390, max(244, len(safe_eyebrow) * 16 + 74))
+    islamic_card = any(
+        marker in safe_eyebrow
+        for marker in ("DALIL", "HIKMAH", "RENUNGAN", "UMAT")
+    )
+    ornament = (
+        [
+            f"drawbox=x={card_x + 6}:y=1004:w={card_width - 12}:h=322:color=#0B3D2E@0.72:t=4:{active}",
+            f"drawbox=x={card_x + 14}:y=1012:w={card_width - 28}:h=306:color=#D4A017@0.48:t=2:{active}",
+            f"drawbox=x={card_x + 58}:y=998:w={card_width - 116}:h=3:color=#D4A017@0.76:t=fill:{active}",
+            f"drawbox=x={card_x + card_width // 2 - 42}:y=994:w=84:h=7:color=#0B3D2E@0.82:t=fill:{active}",
+            f"drawtext=fontfile={font_regular}:text='◆':expansion=none:fontcolor=#D4A017@0.92:fontsize=28:x={card_x + card_width // 2 - 14}:y=977:{active}",
+            f"drawbox=x={card_x + 18}:y=1020:w=54:h=3:color=#D4A017@0.72:t=fill:{active}",
+            f"drawbox=x={card_x + 18}:y=1020:w=3:h=42:color=#D4A017@0.72:t=fill:{active}",
+            f"drawbox=x={card_x + card_width - 72}:y=1020:w=54:h=3:color=#D4A017@0.72:t=fill:{active}",
+            f"drawbox=x={card_x + card_width - 21}:y=1020:w=3:h=42:color=#D4A017@0.72:t=fill:{active}",
+            f"drawbox=x={card_x + 18}:y=1282:w=54:h=3:color=#D4A017@0.72:t=fill:{active}",
+            f"drawbox=x={card_x + 18}:y=1243:w=3:h=42:color=#D4A017@0.72:t=fill:{active}",
+            f"drawbox=x={card_x + card_width - 72}:y=1282:w=54:h=3:color=#D4A017@0.72:t=fill:{active}",
+            f"drawbox=x={card_x + card_width - 21}:y=1243:w=3:h=42:color=#D4A017@0.72:t=fill:{active}",
+        ]
+        if islamic_card
+        else []
+    )
     accent_detail = (
         f"drawbox=x={content_x}:y=1038:w={badge_width}:h=48:color={accent}@1.0:t=fill:{active}"
         if card_variant == 0
@@ -9070,6 +9093,7 @@ def viral_title_overlay_filter(
             f"drawbox=x={card_x + 12}:y=1024:w={card_width - 12}:h=322:color=black@0.28:t=fill:{active}",
             f"drawbox=x={card_x}:y=1010:w={card_width}:h=310:color=white@0.97:t=fill:{active}",
             f"drawbox=x={inner_x}:y=990:w={card_width - 44}:h=350:color=white@0.97:t=fill:{active}",
+            *ornament,
             accent_detail,
             "drawtext="
             f"fontfile={font_regular}:text='●':expansion=none:"
@@ -12063,23 +12087,32 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 def channel_watermark_filter(output_format: str) -> str:
-    """Render a soft centered signature; audit details stay in metadata.
-
-    The italic face gives the requested slanted feel without rotating or
-    resampling the source frame. Low opacity keeps the mark readable while
-    avoiding a hard banner over the speaker or subtitles.
-    """
+    """Render a compact signature seal; audit details stay in metadata."""
     if output_format == "landscape_compilation":
-        font_size = 28
+        font_size, seal_width, seal_height = 26, 218, 48
     else:
-        font_size = 34
-    return (
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf:"
-        f"text='{CHANNEL_WATERMARK}':expansion=none:"
-        f"fontcolor=white@0.36:fontsize={font_size}:"
-        "borderw=1:bordercolor=black@0.24:"
-        "box=0:shadowcolor=black@0.28:shadowx=2:shadowy=2:"
-        "x='(w-text_w)/2':y='(h-text_h)*0.46'"
+        font_size, seal_width, seal_height = 32, 252, 58
+    seal_box_x = f"(iw-{seal_width})/2"
+    seal_box_y = f"(ih-{seal_height})*0.46"
+    seal_text_x = f"(w-{seal_width})/2"
+    seal_text_y = f"(h-{seal_height})*0.46"
+    return ",".join(
+        [
+            f"drawbox=x='{seal_box_x}':y='{seal_box_y}':w={seal_width}:h={seal_height}:"
+            "color=black@0.28:t=fill",
+            f"drawbox=x='({seal_box_x})+5':y='({seal_box_y})+5':w={seal_width - 10}:h={seal_height - 10}:"
+            "color=#D4A017@0.34:t=1",
+            f"drawbox=x='({seal_box_x})+13':y='({seal_box_y})+13':w=3:h={seal_height - 26}:"
+            "color=#22C55E@0.72:t=fill",
+            "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
+            "text='◆':expansion=none:fontcolor=#FACC15@0.70:fontsize=16:"
+            f"x='({seal_text_x})+24':y='({seal_text_y})+({seal_height}-text_h)/2'",
+            "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf:"
+            f"text='{CHANNEL_WATERMARK}':expansion=none:"
+            f"fontcolor=white@0.72:fontsize={font_size}:"
+            "borderw=1:bordercolor=black@0.32:shadowcolor=black@0.34:shadowx=1:shadowy=2:"
+            f"x='({seal_text_x})+52':y='({seal_text_y})+({seal_height}-text_h)/2'",
+        ]
     )
 
 
@@ -14110,12 +14143,14 @@ def export_clip(
             "auditor": FENDY_AUDITOR_NAME,
             "brand": FENDY_PROVENANCE_BRAND,
             "audit_id": auditor_identity["audit_id"],
-            "position": "center_soft_italic",
-            "opacity": 0.36,
+            "position": "center_compact_signature_seal",
+            "opacity": 0.72,
+            "backplate_opacity": 0.28,
+            "ornament": "green_gold_geometric",
             "source_ownership_claimed": False,
         }
         applied_edits.append(
-            f"Watermark channel {CHANNEL_WATERMARK} ditambahkan secara halus, miring, dan transparan di tengah; detail audit disimpan di metadata."
+            f"Watermark channel {CHANNEL_WATERMARK} dipoles sebagai signature seal hijau-emas yang ringkas dan transparan di tengah; detail audit disimpan di metadata."
         )
         if output_format == "vertical_short" and subscriber_cta_planned:
             engagement_text_path.write_text(engagement_prompt + "\n", encoding="utf-8")
