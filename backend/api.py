@@ -138,7 +138,7 @@ YOUTUBE_SHORTS_MAX_SECONDS = 180
 SHORT_GROWTH_MIN_SECONDS = 25
 SHORT_GROWTH_MAX_SECONDS = 180
 SHORT_DEFAULT_MAX_SECONDS = 45
-SHORT_FYP_TARGET_SCORE = 80
+SHORT_FYP_TARGET_SCORE = 85
 ACTIVE_CLIP_MODES = frozenset({"short", "highlight_5m"})
 RETIRED_CLIP_MODES = frozenset({"long_animate", "original_rebuild"})
 SHORT_GROWTH_TARGET_VIEWS = 20000
@@ -383,6 +383,7 @@ class ClipJobRequest(BaseModel):
     automatic_topic_rebuild: bool = False
     auto_upload_youtube: bool = False
     allow_reprocess_source: bool = False
+    review_only: bool = False
     ai_enabled: bool = True
     ai_base_url: str = DEFAULT_AI_BASE_URL
     ai_model: str = DEFAULT_AI_MODEL
@@ -431,6 +432,17 @@ def ensure_source_rights_attestation(request: ClipJobRequest) -> ClipJobRequest:
     return request
 
 
+class ViralScoreBreakdown(BaseModel):
+    hook_immediacy: int = Field(default=0, ge=0, le=20)
+    standalone_clarity: int = Field(default=0, ge=0, le=20)
+    payoff_ending: int = Field(default=0, ge=0, le=15)
+    retention_density: int = Field(default=0, ge=0, le=15)
+    emotional_practical_value: int = Field(default=0, ge=0, le=10)
+    specificity_novelty: int = Field(default=0, ge=0, le=10)
+    editability: int = Field(default=0, ge=0, le=5)
+    metadata_fit: int = Field(default=0, ge=0, le=5)
+
+
 class ClipCandidate(BaseModel):
     index: int
     start: float
@@ -454,6 +466,10 @@ class ClipCandidate(BaseModel):
     narrative_arc_score: int = 0
     narrative_arc_complete: bool = False
     religious_context_safe: bool = True
+    viral_score: int = Field(default=0, ge=0, le=100)
+    viral_label: str = ""
+    viral_quality_gate_passed: bool = False
+    viral_score_breakdown: ViralScoreBreakdown = Field(default_factory=ViralScoreBreakdown)
 
 
 class ClipFile(BaseModel):
@@ -703,6 +719,15 @@ class SourceProbe(BaseModel):
     source_rights_risk: bool = False
     source_rights_risk_reasons: list[str] = Field(default_factory=list)
     source_rights_review_reasons: list[str] = Field(default_factory=list)
+    view_count: int | None = Field(default=None, ge=0)
+    like_count: int | None = Field(default=None, ge=0)
+    upload_date: str | None = None
+    source_age_days: int | None = Field(default=None, ge=0)
+    views_per_day: int | None = Field(default=None, ge=0)
+    momentum_score: float | None = Field(default=None, ge=0, le=100)
+    momentum_label: str | None = None
+    quick_check_recommendation: Literal["scan", "skip", "unknown"] = "unknown"
+    quick_check_reason: str | None = None
 
 
 class SourceUsageLogEntry(BaseModel):
@@ -2340,7 +2365,7 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
         repaired_title = repair_known_public_typos(upload.title)
         repaired_description = re.sub(
             r"@ryuundyofficial\b",
-            "@ryuundys",
+            "@ryuundy.studio",
             repair_known_public_typos(upload.description),
             flags=re.IGNORECASE,
         )
@@ -2522,7 +2547,7 @@ def load_tiktok_uploads() -> dict[str, TikTokUploadJob]:
             continue
         repaired_caption = re.sub(
             r"@ryuundyofficial\b",
-            "@ryuundys",
+            "@ryuundy.studio",
             repair_known_public_typos(upload.caption),
             flags=re.IGNORECASE,
         )
@@ -3335,7 +3360,7 @@ youtube_login_reconnect_cdp = False
 cancelled_job_ids: set[str] = set()
 preserve_job_files_on_cancel: set[str] = set()
 process_lock = threading.Lock()
-MAX_CONCURRENT_CLIP_JOBS = max(1, env_int("FENDY_CLIPPER_MAX_CONCURRENT_JOBS", 3))
+MAX_CONCURRENT_CLIP_JOBS = max(1, env_int("FENDY_CLIPPER_MAX_CONCURRENT_JOBS", 1))
 clip_job_slots = threading.BoundedSemaphore(MAX_CONCURRENT_CLIP_JOBS)
 youtube_worker_lock = threading.Lock()
 youtube_worker_running = False
@@ -3991,7 +4016,7 @@ def strip_description_icons(value: str) -> str:
 
 def normalize_public_channel_handle(value: str) -> str:
     """Replace the retired public handle in generated or legacy upload copy."""
-    return re.sub(r"@ryuundyofficial\b", "@ryuundys", value, flags=re.I)
+    return re.sub(r"@ryuundyofficial\b", "@ryuundy.studio", value, flags=re.I)
 
 
 def default_youtube_title(job: ClipJob, clip: ClipFile, index: int) -> str:
@@ -4319,7 +4344,7 @@ def youtube_source_attribution(job: ClipJob) -> str:
         f"Kreator: {creator[:120]}\n"
         f"Sumber: {source_url[:500]}\n"
         f"Lisensi: {license_name[:120]}\n"
-        "Diolah secara editorial oleh @ryuundys."
+        "Diolah secara editorial oleh @ryuundy.studio."
     )
 
 
@@ -6508,7 +6533,7 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
         raise HTTPException(
             status_code=409,
             detail=(
-                "Tidak ada clip yang lolos audit upload dan target FYP 80. Gunakan "
+                f"Tidak ada clip yang lolos audit upload dan target FYP {SHORT_FYP_TARGET_SCORE}. Gunakan "
                 "Perbaiki Otomatis pada clip terbaik; hanya clip itu yang diproses ulang."
             ),
         )
@@ -9976,6 +10001,90 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
     return clips
 
 
+VIRAL_SCORE_WEIGHTS = {
+    "hook_immediacy": 20,
+    "standalone_clarity": 20,
+    "payoff_ending": 15,
+    "retention_density": 15,
+    "emotional_practical_value": 10,
+    "specificity_novelty": 10,
+    "editability": 5,
+    "metadata_fit": 5,
+}
+
+
+def assess_viral_candidate(candidate: ClipCandidate) -> ClipCandidate:
+    """Expose an auditable 100-point estimate without inflating native scores."""
+    native_score = max(0, min(100, int(candidate.score)))
+
+    native_dimensions = (
+        candidate.key_point_score,
+        candidate.retention_score,
+        candidate.loop_score,
+        candidate.narrative_arc_score,
+    )
+    has_native_dimensions = any(value > 0 for value in native_dimensions)
+
+    def metric(value: int) -> int:
+        fallback = value if has_native_dimensions else native_score
+        return max(0, min(100, int(fallback)))
+
+    key_point = metric(candidate.key_point_score)
+    retention = metric(candidate.retention_score)
+    loop = metric(candidate.loop_score)
+    narrative = metric(candidate.narrative_arc_score)
+    boundary_safe = candidate.boundary_quality.strip().casefold() != "menggantung"
+    raw_quality = {
+        "hook_immediacy": round((retention + key_point) / 2),
+        "standalone_clarity": round((key_point + narrative) / 2),
+        "payoff_ending": round((loop + narrative) / 2),
+        "retention_density": retention,
+        "emotional_practical_value": key_point,
+        "specificity_novelty": round((key_point + narrative) / 2),
+        "editability": 100 if boundary_safe else 0,
+        "metadata_fit": 100 if candidate.title.strip() and candidate.reason.strip() else 60,
+    }
+    component_scores = {
+        name: round(weight * raw_quality[name] / 100)
+        for name, weight in VIRAL_SCORE_WEIGHTS.items()
+    }
+
+    # ClipForge's native candidate score remains the ceiling. When rounding or
+    # the rubric would exceed it, reduce the largest components first.
+    while sum(component_scores.values()) > native_score:
+        reducible = [name for name, value in component_scores.items() if value > 0]
+        if not reducible:
+            break
+        key = max(reducible, key=lambda name: component_scores[name])
+        component_scores[key] -= 1
+
+    viral_score = sum(component_scores.values())
+    hard_gate_passed = bool(
+        boundary_safe
+        and candidate.religious_context_safe
+        and candidate.duration > 0
+        and candidate.text.strip()
+        and (candidate.hook.strip() or candidate.text.strip())
+    )
+    if viral_score >= 90:
+        label = "Exceptional test candidate"
+    elif viral_score >= SHORT_FYP_TARGET_SCORE:
+        label = "Strong test candidate"
+    else:
+        label = f"Rejected — below {SHORT_FYP_TARGET_SCORE} quality floor"
+
+    return candidate.model_copy(
+        update={
+            "viral_score": viral_score,
+            "viral_label": label,
+            "viral_quality_gate_passed": (
+                hard_gate_passed and viral_score >= SHORT_FYP_TARGET_SCORE
+            ),
+            "viral_score_breakdown": ViralScoreBreakdown(**component_scores),
+        }
+    )
+
+
 def discover_candidates(started_at: float, output_root: Path | None = None) -> list[ClipCandidate]:
     search_root = output_root or OUTPUTS_DIR
     candidate_files = [
@@ -9988,7 +10097,10 @@ def discover_candidates(started_at: float, output_root: Path | None = None) -> l
 
     latest = max(candidate_files, key=lambda path: path.stat().st_mtime)
     payload = json.loads(latest.read_text(encoding="utf-8"))
-    return [ClipCandidate(**item) for item in payload]
+    return [
+        assess_viral_candidate(ClipCandidate(**item))
+        for item in payload
+    ]
 
 
 SALVAGEABLE_POST_COMPLETION_EXIT_CODES = {-11}
@@ -10217,6 +10329,7 @@ def fetch_video_probe(url: str) -> SourceProbe:
         return SourceProbe()
     duration = info.get("duration")
     risk_reasons = source_rights_risk_reasons(info)
+    quick_check = source_quick_check(info)
     return SourceProbe(
         duration=float(duration) if duration else None,
         title=str(info.get("title") or "").strip() or None,
@@ -10227,6 +10340,7 @@ def fetch_video_probe(url: str) -> SourceProbe:
         source_rights_risk=bool(risk_reasons),
         source_rights_risk_reasons=risk_reasons,
         source_rights_review_reasons=source_rights_review_reasons(info),
+        **quick_check,
     )
 
 
@@ -10377,6 +10491,10 @@ def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
             data["confirm_long_animate_rights"] = False
             data["auto_upload_youtube"] = False
 
+    if request.review_only:
+        data["auto_upload_youtube"] = False
+        data["clip_mode"] = "short"
+
     if request.top is None and request.clip_mode not in {"long_animate", "original_rebuild"}:
         data["top"] = choose_auto_top(duration)
 
@@ -10447,6 +10565,8 @@ def build_clipper_command(
         ]
     )
 
+    if request.review_only:
+        command.append("--review-only")
     if request.analyze_seconds:
         command.extend(["--analyze-seconds", str(request.analyze_seconds)])
     command.extend(["--video-quality", request.video_quality])
@@ -10472,7 +10592,7 @@ def build_clipper_command(
         cleaned = [tag.strip().lstrip("#") for tag in request.required_hashtags if tag.strip()]
         if cleaned:
             command.extend(["--required-hashtags", ",".join(cleaned)])
-    if request.url:
+    if request.url and (request.require_creative_commons or not request.review_only):
         command.append("--require-creative-commons")
     if request.confirm_source_rights:
         command.append("--confirm-source-rights")
@@ -10858,7 +10978,8 @@ def run_job(job_id: str) -> None:
         # Active clip modes always write candidates.json before rendering. A
         # video file without any surviving candidate audit is not a valid
         # result and its entire job workspace must be removed below.
-        if (code == 0 or salvaged_native_exit) and clips and candidates:
+        has_complete_result = bool(candidates and (clips or request.review_only))
+        if (code == 0 or salvaged_native_exit) and has_complete_result:
             updates = {
                 "status": "completed",
                 "logs": completion_logs[-120:],
@@ -10867,6 +10988,8 @@ def run_job(job_id: str) -> None:
                 "progress_detail": (
                     "Hasil final terverifikasi dan siap direview serta diunduh"
                     if salvaged_native_exit
+                    else "Ranking potensi viral siap direview"
+                    if request.review_only
                     else "Semua hasil siap direview dan diunduh"
                 ),
                 "progress_step": 5,
@@ -10896,6 +11019,8 @@ def run_job(job_id: str) -> None:
             if preview_job.source_uploader:
                 updates["source_uploader"] = preview_job.source_uploader
             set_job(job_id, **updates)
+            if request.review_only:
+                return
             remember_processed_source(
                 preview_job.source_url or request.url,
                 clip_mode=request.clip_mode,
@@ -11289,6 +11414,56 @@ def auto_viral_candidate_score(info: dict[str, Any]) -> float:
         + fresh_conversation_score,
         2,
     )
+
+
+def source_quick_check(info: dict[str, Any]) -> dict[str, Any]:
+    """Normalize public source momentum to a fast, explainable 0-100 preflight."""
+    raw_views = info.get("view_count")
+    if not isinstance(raw_views, (int, float)) or isinstance(raw_views, bool):
+        return {
+            "view_count": None,
+            "like_count": None,
+            "upload_date": str(info.get("upload_date") or "").strip() or None,
+            "source_age_days": None,
+            "views_per_day": None,
+            "momentum_score": None,
+            "momentum_label": "Data publik belum cukup",
+            "quick_check_recommendation": "unknown",
+            "quick_check_reason": "Lanjutkan Scan Potensi Viral untuk menilai isi dan hook dari transkrip.",
+        }
+
+    views = max(0, int(raw_views))
+    likes = max(0, int(info.get("like_count") or 0))
+    age_days = upload_age_days(info)
+    views_per_day = round(views / max(1, age_days or 1))
+    momentum_score = round(min(100.0, auto_viral_candidate_score(info) / 3.0), 1)
+
+    if momentum_score >= SHORT_FYP_TARGET_SCORE:
+        label = "Layak di-scan"
+        recommendation = "scan"
+        reason = (
+            f"Skor sumber lolos quality gate {SHORT_FYP_TARGET_SCORE}. "
+            "Scan transkrip untuk memastikan hook dan payoff juga layak dirender."
+        )
+    else:
+        label = "Tidak layak"
+        recommendation = "skip"
+        reason = (
+            f"Skor sumber belum mencapai quality gate {SHORT_FYP_TARGET_SCORE}. "
+            "Batalkan sekarang agar waktu render tidak terbuang."
+        )
+
+    return {
+        "view_count": views,
+        "like_count": likes,
+        "upload_date": str(info.get("upload_date") or "").strip() or None,
+        "source_age_days": age_days,
+        "views_per_day": views_per_day,
+        "momentum_score": momentum_score,
+        "momentum_label": label,
+        "quick_check_recommendation": recommendation,
+        "quick_check_reason": reason,
+    }
 
 
 def source_growth_metrics(info: dict[str, Any]) -> dict[str, int | float | None]:
@@ -12239,6 +12414,21 @@ def remember_processed_source(
         )
 
 
+def source_usage_event_has_rendered_output(event: dict[str, Any]) -> bool:
+    """Keep analysis-only events out of duplicate detection and usage reports."""
+    if "clip_count" not in event and "output_names" not in event:
+        return True
+    raw_clip_count = event.get("clip_count")
+    clip_count = (
+        int(raw_clip_count)
+        if isinstance(raw_clip_count, (int, float)) and not isinstance(raw_clip_count, bool)
+        else 0
+    )
+    raw_output_names = event.get("output_names")
+    output_names = raw_output_names if isinstance(raw_output_names, list) else []
+    return clip_count > 0 or any(str(name).strip() for name in output_names)
+
+
 def backfill_source_usage_from_completed_jobs() -> None:
     with source_usage_history_lock:
         recorded_job_ids = {
@@ -12248,7 +12438,13 @@ def backfill_source_usage_from_completed_jobs() -> None:
             if isinstance(event, dict)
         }
     with jobs_lock:
-        completed_jobs = [job for job in jobs.values() if job.status == "completed"]
+        completed_jobs = [
+            job
+            for job in jobs.values()
+            if job.status == "completed"
+            and not job.request.review_only
+            and bool(job.clips)
+        ]
 
     for raw_job in completed_jobs:
         if raw_job.id in recorded_job_ids:
@@ -12290,7 +12486,7 @@ def list_source_usage_log() -> SourceUsageLogResponse:
         raw_events = record.get("events", [])
         if isinstance(raw_events, list) and raw_events:
             for event in raw_events:
-                if not isinstance(event, dict):
+                if not isinstance(event, dict) or not source_usage_event_has_rendered_output(event):
                     continue
                 try:
                     entries.append(SourceUsageLogEntry(**event))
@@ -12362,6 +12558,8 @@ def source_history_for_url(value: str) -> SourceHistoryCheck:
 
     matching_jobs: list[ClipJob] = []
     for job in job_snapshot:
+        if job.request.review_only:
+            continue
         source_urls = {
             candidate
             for item in (job.request.url, job.source_url)
@@ -12382,16 +12580,29 @@ def source_history_for_url(value: str) -> SourceHistoryCheck:
         )
         for job in matching_jobs[:12]
     ]
-    archived_modes = {
-        str(item)
-        for item in archived_record.get("modes", [])
-        if str(item) in {"short", "highlight_5m", "original_rebuild"}
-    }
-    archived_events = [
+    raw_archived_events = [
         item
         for item in archived_record.get("events", [])
         if isinstance(item, dict)
     ]
+    archived_events = [
+        item
+        for item in raw_archived_events
+        if source_usage_event_has_rendered_output(item)
+    ]
+    if raw_archived_events:
+        archived_modes = {
+            str(item.get("clip_mode") or "")
+            for item in archived_events
+            if str(item.get("clip_mode") or "")
+            in {"short", "highlight_5m", "original_rebuild"}
+        }
+    else:
+        archived_modes = {
+            str(item)
+            for item in archived_record.get("modes", [])
+            if str(item) in {"short", "highlight_5m", "original_rebuild"}
+        }
     recorded_job_ids = {
         str(item.get("job_id") or "")
         for item in archived_events
@@ -12411,7 +12622,12 @@ def source_history_for_url(value: str) -> SourceHistoryCheck:
             job.status == "completed" and job.request.clip_mode == mode
         )
 
-    archived = normalized in archived_urls or bool(archived_record)
+    archived_record_has_render = bool(archived_events) if raw_archived_events else bool(archived_record)
+    archived = normalized in archived_urls or archived_record_has_render
+    archived_last_processed_at = max(
+        (str(item.get("processed_at") or "") for item in archived_events),
+        default="",
+    )
     return SourceHistoryCheck(
         input_url=value,
         normalized_url=normalized,
@@ -12419,7 +12635,7 @@ def source_history_for_url(value: str) -> SourceHistoryCheck:
         found=archived or bool(matches),
         archived=archived,
         last_processed_at=(
-            str(archived_record.get("last_processed_at") or "").strip()
+            archived_last_processed_at
             or (matching_jobs[0].finished_at or matching_jobs[0].updated_at if matching_jobs else None)
         ),
         usage_count=len(recorded_job_ids),
@@ -12443,6 +12659,8 @@ def processed_job_source_urls() -> set[str]:
     with jobs_lock:
         existing_jobs = list(jobs.values())
     for job in existing_jobs:
+        if job.request.review_only:
+            continue
         for value in (job.request.url, job.source_url):
             normalized = normalize_youtube_video_url(str(value or ""))
             if normalized:
@@ -14482,7 +14700,11 @@ def create_job(request: ClipJobRequest) -> ClipJob:
                 raise HTTPException(status_code=400, detail="Rekaman suara kreator harus berupa audio valid berdurasi 5–15 detik.")
             request = request.model_copy(update={"creator_commentary_file": str(commentary_path)})
         source_history = source_history_for_url(request.url)
-        if source_history.found and not request.allow_reprocess_source:
+        if (
+            source_history.found
+            and not request.allow_reprocess_source
+            and not request.review_only
+        ):
             detected_formats: list[str] = []
             if source_history.has_short_clips or "short" in source_history.attempted_modes:
                 detected_formats.append("clip pendek")
@@ -14496,7 +14718,10 @@ def create_job(request: ClipJobRequest) -> ClipJob:
                     "Periksa peringatan riwayat dan centang persetujuan jika memang ingin memproses ulang."
                 ),
             )
-        request = request.model_copy(update={"require_creative_commons": True})
+        if request.review_only:
+            request = request.model_copy(update={"auto_upload_youtube": False})
+        else:
+            request = request.model_copy(update={"require_creative_commons": True})
 
     request = normalize_job_request(request)
     job_id = uuid.uuid4().hex

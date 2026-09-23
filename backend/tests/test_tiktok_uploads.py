@@ -123,7 +123,7 @@ def test_tiktok_caption_uses_new_handle_and_platform_hashtags():
     )
 
     assert "Jamaah Tablig" in caption
-    assert "@ryuundys" in caption
+    assert "@ryuundy.studio" in caption
     assert "@ryuundyofficial" not in caption
     assert "#Islam" in caption
     assert "#Shorts" not in caption

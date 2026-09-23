@@ -1146,7 +1146,7 @@ def test_normalized_upload_metadata_uses_filename_when_sidecar_missing(tmp_path)
     )
 
     assert title == "Ini Judul Dari File #Islam #Shorts"
-    assert description == "Deskripsi benar dari @ryuundys"
+    assert description == "Deskripsi benar dari @ryuundy.studio"
 
 
 def test_studio_start_url_uses_channel_dashboard():
@@ -2350,7 +2350,7 @@ def test_complete_short_description_is_concise_contextual_and_has_short_tag():
         for phrase in ("Simpan video ini", "Bagikan pembahasan ini", "Ikuti channel ini")
     ) == 1
     assert "YouTube · @ryuundyofficial" not in description
-    assert "@ryuundys" in description
+    assert "@ryuundy.studio" in description
     assert "@ryuundyofficial" not in description
     assert "#Islam #Hikmah #Shorts" in description
 
@@ -3012,7 +3012,7 @@ def test_verified_cc_source_gets_required_attribution(monkeypatch):
     assert "Atribusi sumber (CC BY)" in value
     assert "Kreator: Kreator Asli" in value
     assert "Sumber: https://youtu.be/source" in value
-    assert "Diolah secara editorial oleh @ryuundys" in value
+    assert "Diolah secara editorial oleh @ryuundy.studio" in value
 
 
 def test_monetization_preflight_requires_rights_and_substantive_edit(monkeypatch):

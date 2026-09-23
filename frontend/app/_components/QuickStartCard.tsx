@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import {
   AlertTriangle,
+  BarChart3,
   Archive,
   ArrowRight,
   Check,
@@ -19,6 +20,7 @@ import {
   Subtitles,
   WandSparkles,
 } from "lucide-react";
+import { VIRAL_QUALITY_FLOOR } from "../../lib/constants";
 import { formatDuration } from "../../lib/utils";
 import type { SourceProbe } from "../../lib/apiClient";
 import type { ClipMode, SourceHistoryCheck } from "../../types/clip.type";
@@ -39,6 +41,7 @@ type QuickStartCardProps = {
   onClipModeChange: (value: ClipMode) => void;
   onAllowReprocessSourceChange: (value: boolean) => void;
   onConfirmSourceRightsChange: (value: boolean) => void;
+  onAnalyze: () => void;
   onStart: () => void;
 };
 
@@ -53,6 +56,10 @@ const LONG_STEPS = [
   { icon: Film, label: "Story chapters", detail: "Alur rapi, tanpa filler" },
   { icon: Focus, label: "YouTube packaging", detail: "Thumbnail dan judul selaras" },
 ];
+
+const formatCompactNumber = (value?: number | null) => value === null || value === undefined
+  ? "—"
+  : new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 
 export function QuickStartCard({
   url,
@@ -70,6 +77,7 @@ export function QuickStartCard({
   onClipModeChange,
   onAllowReprocessSourceChange,
   onConfirmSourceRightsChange,
+  onAnalyze,
   onStart,
 }: QuickStartCardProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -78,6 +86,18 @@ export function QuickStartCard({
   const invalidUrl = Boolean(hasUrl && sourceHistory && !sourceHistory.valid_youtube_url);
   const duplicateBlocked = Boolean(sourceHistory?.found && !allowReprocessSource);
   const sourceRightsBlocked = Boolean(sourceProbe?.source_rights_risk);
+  const quickScore = sourceProbe?.momentum_score ?? null;
+  const quickRecommendation = quickScore === null
+    ? sourceProbe?.quick_check_recommendation ?? "unknown"
+    : quickScore >= VIRAL_QUALITY_FLOOR ? "scan" : "skip";
+  const quickLabel = quickScore === null
+    ? sourceProbe?.momentum_label || "Data publik belum cukup"
+    : quickScore >= VIRAL_QUALITY_FLOOR ? "Layak di-scan" : "Tidak layak";
+  const quickReason = quickScore === null
+    ? sourceProbe?.quick_check_reason || "Gunakan Scan Potensi Viral untuk menilai isi video."
+    : quickScore >= VIRAL_QUALITY_FLOOR
+      ? `Skor sumber lolos quality gate . Scan transkrip untuk memastikan hook dan payoff juga layak dirender.`
+      : `Skor sumber belum mencapai quality gate . Batalkan sekarang agar waktu render tidak terbuang.`;
   const isWorking = isBusy || isSubmitting;
   const canStart = hasUrl
     && !invalidUrl
@@ -85,6 +105,10 @@ export function QuickStartCard({
     && !duplicateBlocked
     && !sourceRightsBlocked
     && confirmSourceRights
+    && !isWorking;
+  const canAnalyze = hasUrl
+    && !invalidUrl
+    && !isCheckingSourceHistory
     && !isWorking;
 
   const pasteFromClipboard = async () => {
@@ -133,7 +157,7 @@ export function QuickStartCard({
 
       <div className="sourceComposer">
         <div className="sourceComposerTop">
-          <span><WandSparkles size={16} /> Buat video baru</span>
+          <span><WandSparkles size={16} /> Scan lalu buat video</span>
           <b>{isLong ? "16:9 · 5–10 menit" : "9:16 · 25–45 dtk"}</b>
         </div>
 
@@ -187,6 +211,29 @@ export function QuickStartCard({
           </div>
         ) : null}
 
+        {sourceProbe ? (
+          <div className={`sourceQuickCheck is-${quickRecommendation}`} role="status">
+            <div className="sourceQuickScore">
+              <BarChart3 size={15} />
+              <b>{sourceProbe.momentum_score === null ? "—" : Math.round(sourceProbe.momentum_score)}</b>
+              <small>/100</small>
+            </div>
+            <div className="sourceQuickCopy">
+              <span>QUICK CHECK OTOMATIS · SINYAL SUMBER</span>
+              <strong>{quickLabel}</strong>
+              <small>{quickReason}</small>
+            </div>
+            <div className="sourceQuickMetrics">
+              <span><b>{formatCompactNumber(sourceProbe.view_count)}</b> views</span>
+              <span><b>{formatCompactNumber(sourceProbe.views_per_day)}</b> /hari</span>
+              <span><b>{sourceProbe.source_age_days ?? "—"}</b> hari</span>
+              {quickRecommendation === "skip" ? (
+                <button type="button" onClick={() => onUrlChange("")}>Lewati sumber</button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
         {sourceRightsBlocked ? (
           <div className="sourceNotice isDanger" role="alert">
             <AlertTriangle size={17} />
@@ -229,16 +276,28 @@ export function QuickStartCard({
 
         {error ? <div className="sourceError" role="alert">{error}</div> : null}
 
-        <button className="createShortButton" type="button" disabled={!canStart} onClick={onStart}>
-          {isWorking ? <Loader2 className="spin" size={19} /> : <WandSparkles size={19} />}
-          <span>
-            {isWorking ? "Menyiapkan pipeline…" : isLong ? "Susun Long Highlight" : "Temukan & poles Short"}
-            <small>{isWorking ? "Jangan tutup halaman ini" : isLong ? "AI menyusun alur dan chapter otomatis" : "AI memilih momen terbaik otomatis"}</small>
-          </span>
-          {!isWorking ? <ArrowRight size={19} /> : null}
-        </button>
+        <div className={`sourceActionGrid${isLong ? " isSingle" : ""}`}>
+          {!isLong ? (
+            <button className="analyzeViralButton" type="button" disabled={!canAnalyze} onClick={onAnalyze}>
+              {isWorking ? <Loader2 className="spin" size={19} /> : <Sparkles size={19} />}
+              <span>
+                {isWorking ? "Menganalisis video…" : "Scan Potensi Viral"}
+                <small>Tanpa render · ranking + skor 0–100</small>
+              </span>
+              {!isWorking ? <ArrowRight size={19} /> : null}
+            </button>
+          ) : null}
+          <button className="createShortButton" type="button" disabled={!canStart} onClick={onStart}>
+            {isWorking ? <Loader2 className="spin" size={19} /> : <WandSparkles size={19} />}
+            <span>
+              {isWorking ? "Menyiapkan pipeline…" : isLong ? "Susun Long Highlight" : "Buat Short Terbaik"}
+              <small>{isWorking ? "Jangan tutup halaman ini" : isLong ? "AI menyusun alur dan chapter otomatis" : "Render, subtitle, framing, dan polish"}</small>
+            </span>
+            {!isWorking ? <ArrowRight size={19} /> : null}
+          </button>
+        </div>
 
-        {!confirmSourceRights && hasUrl ? <p className="sourceHint">Konfirmasi izin sumber untuk mulai.</p> : null}
+        {!confirmSourceRights && hasUrl ? <p className="sourceHint">Scan bisa langsung. Konfirmasi izin hanya diperlukan untuk render atau upload.</p> : null}
       </div>
     </section>
   );

@@ -113,6 +113,15 @@ export type SourceProbe = {
   source_rights_risk: boolean;
   source_rights_risk_reasons: string[];
   source_rights_review_reasons: string[];
+  view_count: number | null;
+  like_count: number | null;
+  upload_date: string | null;
+  source_age_days: number | null;
+  views_per_day: number | null;
+  momentum_score: number | null;
+  momentum_label: string | null;
+  quick_check_recommendation: "scan" | "skip" | "unknown";
+  quick_check_reason: string | null;
 };
 
 export const probeUrlSource = async (url: string) => {

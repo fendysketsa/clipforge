@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getOutputUrl } from "../../lib/apiClient";
+import { VIRAL_QUALITY_FLOOR } from "../../lib/constants";
 import { clipDisplayTitle, handleCopyTitle, handleDownload } from "../../lib/utils";
 import type { ClipFile, TikTokUploadJob, YouTubeUploadJob } from "../../types/clip.type";
 
@@ -193,8 +194,7 @@ function youtubeRunningStage(upload: YouTubeUploadJob) {
 
 function fypScoreTone(score: number) {
   if (score >= 88) return "excellent";
-  if (score >= 80) return "strong";
-  if (score >= 65) return "promising";
+  if (score >= VIRAL_QUALITY_FLOOR) return "strong";
   return "polish";
 }
 
@@ -214,7 +214,7 @@ function growthTargetReadiness(
       detail: nextAction || "Quality gate cerita belum lolos; perbaiki output sebelum publikasi.",
     };
   }
-  if (status === "test_hook_variant_first") {
+  if (status === "test_hook_variant_first" && score >= VIRAL_QUALITY_FLOOR) {
     return {
       label: isLongForm ? `${target} · A/B packaging` : `${target} · uji hook`,
       tone: "test",
@@ -230,22 +230,13 @@ function growthTargetReadiness(
         : "Hook dan payoff sudah kuat; publikasikan Private dulu, buka Edit thumbnail di aplikasi YouTube dan geser ke frame cover awal sekitar 0,78 detik—jangan mengandalkan pilihan otomatis tengah—lalu ukur engaged views, chose-to-view, dan subscriber yang dihasilkan."),
     };
   }
-  if (score >= 80) {
+  if (score >= VIRAL_QUALITY_FLOOR) {
     return {
       label: `${target} · layak uji`,
       tone: "strong",
       detail: nextAction || (isLongForm
         ? "Layak diuji sebagai long-form. Pantau impressions, CTR Beranda/Disarankan, retention 30 detik, average view duration, dan subscriber."
         : "Layak dipublikasikan sebagai eksperimen. Pantau engaged views, chose-to-view, retention, shares, dan subscriber; angka view tetap ditentukan respons penonton."),
-    };
-  }
-  if (score >= 65) {
-    return {
-      label: isLongForm ? `${target} · A/B packaging` : `${target} · uji hook`,
-      tone: "test",
-      detail: nextAction || (isLongForm
-        ? "Uji judul/thumbnail lewat fitur A/B YouTube setelah video siap; perbaiki juga temuan di bawah."
-        : "Coba satu varian hook secara berurutan—fitur A/B native YouTube tidak tersedia untuk Shorts—lalu bandingkan respons penonton."),
     };
   }
   return {
@@ -710,10 +701,10 @@ export function ResultsSection({
               : null;
             const passesGrowthGate = typeof clip.growth_quality_gate_passed === "boolean"
               ? clip.growth_quality_gate_passed
-              : isLongForm || (typeof clip.fyp_score === "number" && clip.fyp_score >= 80);
+              : isLongForm || (typeof clip.fyp_score === "number" && clip.fyp_score >= VIRAL_QUALITY_FLOOR);
             const meetsFypTarget = isLongForm
               || typeof clip.fyp_score !== "number"
-              || clip.fyp_score >= 80;
+              || clip.fyp_score >= VIRAL_QUALITY_FLOOR;
             const isUploadReady = passesGrowthGate
               && meetsFypTarget
               && !clip.context_recut_required
@@ -840,70 +831,23 @@ export function ResultsSection({
                     <span>Salin judul</span>
                   </button>
                 </div>
-                {clip.fyp_score !== null && clip.fyp_score !== undefined ? (
+                {growthReadiness || clip.context_recut_required || (isLongForm && clip.thumbnail_url) ? (
                   <div className="clipMetrics">
-                      <span className="clipMetric clipMetric--score">
-                        <Sparkles size={13} />
-                        FYP {Math.round(clip.fyp_score)}
+                    {growthReadiness ? (
+                      <span
+                        className={`clipMetric clipMetric--growth clipMetric--growth-${growthReadiness.tone}`}
+                        title="Target eksperimen; hasil nyata dipantau setelah upload."
+                      >
+                        <Target size={13} />
+                        {growthReadiness.label}
                       </span>
-                      {growthReadiness ? (
-                        <span
-                          className={`clipMetric clipMetric--growth clipMetric--growth-${growthReadiness.tone}`}
-                          title="Indikator kesiapan eksperimen, bukan jaminan jumlah view."
-                        >
-                          <Target size={13} />
-                          {growthReadiness.label}
-                        </span>
-                      ) : null}
-                      {clip.key_point_score !== null && clip.key_point_score !== undefined ? (
-                        <span className="clipMetric">Point {clip.key_point_score}</span>
-                      ) : null}
-                      {clip.loop_score !== null && clip.loop_score !== undefined ? (
-                        <span className="clipMetric">Loop {clip.loop_score}</span>
-                      ) : null}
-                      {clip.retention_score !== null && clip.retention_score !== undefined ? (
-                        <span
-                          className="clipMetric"
-                          title="Skor kesiapan editorial 30 detik pertama, bukan prediksi retention penonton."
-                        >
-                          Retention-ready {clip.retention_score}
-                        </span>
-                      ) : null}
-                      {clip.narrative_arc_score !== null && clip.narrative_arc_score !== undefined ? (
-                        <span
-                          className="clipMetric"
-                          title="Audit urutan hook, konteks, konflik, jawaban, dan ending kuat."
-                        >
-                          Narasi {clip.narrative_arc_score}{clip.narrative_arc_complete ? " ✓" : ""}
-                        </span>
-                      ) : null}
-                      {clip.context_recut_required ? (
-                        <span
-                          className="clipMetric clipMetric--blocked"
-                          title="Audit final menemukan ucapan atau makna yang masih menggantung."
-                        >
-                          Potong ulang wajib
-                        </span>
-                      ) : clip.religious_context_safe === true ? (
-                        <span
-                          className="clipMetric"
-                          title="Batas otomatis memastikan kalimat kajian tidak dimulai atau diakhiri menggantung; verifikasi sumber tetap diperlukan."
-                        >
-                          Konteks kajian aman
-                        </span>
-                      ) : null}
-                      {clip.output_resolution ? <span className="clipMetric">{clip.output_resolution}</span> : null}
-                      {clip.growth_series ? <span className="clipMetric">Seri: {clip.growth_series}</span> : null}
-                      {tiktokSeriesLabel ? (
-                        <span className="clipMetric" title="Identitas seri konsisten untuk TikTok">
-                          TikTok: {tiktokSeriesLabel}
-                        </span>
-                      ) : null}
-                      {clip.subscriber_intent_score !== null
-                        && clip.subscriber_intent_score !== undefined ? (
-                        <span className="clipMetric">Potensi sub {clip.subscriber_intent_score}</span>
-                      ) : null}
-                      {isLongForm && clip.thumbnail_url ? <span className="clipMetric">Thumbnail 16:9 siap</span> : null}
+                    ) : null}
+                    {clip.context_recut_required ? (
+                      <span className="clipMetric clipMetric--blocked">Potong ulang wajib</span>
+                    ) : null}
+                    {isLongForm && clip.thumbnail_url ? (
+                      <span className="clipMetric">Thumbnail siap</span>
+                    ) : null}
                   </div>
                 ) : null}
                 <div className="clipCardFooter">

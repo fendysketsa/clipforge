@@ -96,6 +96,19 @@ export type ClipCandidate = {
   narrative_arc_complete?: boolean;
   religious_context_safe?: boolean;
   boundary_quality?: string;
+  viral_score?: number;
+  viral_label?: string;
+  viral_quality_gate_passed?: boolean;
+  viral_score_breakdown?: {
+    hook_immediacy: number;
+    standalone_clarity: number;
+    payoff_ending: number;
+    retention_density: number;
+    emotional_practical_value: number;
+    specificity_novelty: number;
+    editability: number;
+    metadata_fit: number;
+  };
 };
 
 export type JobTelemetryPoint = {
@@ -265,6 +278,7 @@ export type ClipJob = {
     automatic_topic_rebuild?: boolean;
     auto_upload_youtube: boolean;
     allow_reprocess_source?: boolean;
+    review_only?: boolean;
     ai_enabled: boolean;
     ai_base_url: string;
     ai_model: string;
@@ -305,6 +319,7 @@ export type CreateClipJobInput = {
   confirm_source_rights?: boolean;
   auto_upload_youtube?: boolean;
   allow_reprocess_source?: boolean;
+  review_only?: boolean;
   ai_enabled?: boolean;
   ai_base_url?: string;
   ai_model?: string;

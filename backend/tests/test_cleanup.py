@@ -20,6 +20,7 @@ from clipper import (
     UserFacingError,
     cleanup_intermediate,
     download_video,
+    download_review_audio,
     extract_audio,
     friendly_youtube_error,
     prepare_uploaded_source,
@@ -27,6 +28,7 @@ from clipper import (
     source_media_candidates,
     ytdlp_base_options,
     youtube_download_strategies,
+    youtube_review_audio_strategies,
 )
 
 
@@ -102,6 +104,7 @@ def test_cleanup_does_not_delete_external_upload():
 class FinishedClipperProcess:
     def __init__(self, code: int, lines: list[str] | None = None):
         self.code = code
+        self.pid = 999999
         self.stdout = iter(lines or [])
 
     def wait(self, timeout=None):
@@ -249,6 +252,63 @@ def test_completed_clip_job_sends_telegram_success_alert(monkeypatch, tmp_path):
     assert telegram_calls[0].id == job.id
 
 
+def test_review_only_job_completes_with_candidates_and_no_render(monkeypatch, tmp_path):
+    import api
+
+    outputs = tmp_path / "outputs"
+    job = ClipJob(
+        id="viral-scan",
+        status="queued",
+        request=ClipJobRequest(
+            url="https://youtu.be/demo",
+            review_only=True,
+            require_creative_commons=False,
+        ),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    candidate = ClipCandidate(
+        index=1,
+        start=5,
+        end=38,
+        duration=33,
+        score=86,
+        title="Hook kuat dengan jawaban utuh",
+        reason="Momen berdiri sendiri dan berakhir pada payoff.",
+        text="Pertanyaan dibuka cepat dan dijawab sampai tuntas.",
+        hook="Kenapa jawaban sederhana ini sering terlewat?",
+        key_point_score=88,
+        loop_score=84,
+        retention_score=90,
+        narrative_arc_score=87,
+        narrative_arc_complete=True,
+        boundary_quality="utuh",
+    )
+
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "JOBS_PATH", tmp_path / "jobs.json")
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "job_secrets", {})
+    monkeypatch.setattr(api, "job_processes", {})
+    monkeypatch.setattr(api, "cancelled_job_ids", set())
+    monkeypatch.setattr(api, "preserve_job_files_on_cancel", set())
+    monkeypatch.setattr(api, "build_clipper_command", lambda *_args, **_kwargs: ["clipper"])
+    monkeypatch.setattr(api.subprocess, "Popen", lambda *_args, **_kwargs: FinishedClipperProcess(0))
+    monkeypatch.setattr(api, "discover_clips", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(api, "discover_candidates", lambda *_args, **_kwargs: [candidate])
+    telegram_calls = []
+    monkeypatch.setattr(api, "send_clip_success_telegram_alert", telegram_calls.append)
+
+    run_job(job.id)
+
+    completed = api.jobs[job.id]
+    assert completed.status == "completed"
+    assert completed.clips == []
+    assert len(completed.candidates) == 1
+    assert completed.progress_detail == "Ranking potensi viral siap direview"
+    assert telegram_calls == []
+
+
 def test_source_media_candidates_never_reuses_ytdlp_partials(tmp_path):
     (tmp_path / "source.f137.mp4.part").write_bytes(b"incomplete")
     final = tmp_path / "source.mp4"
@@ -322,6 +382,67 @@ def test_youtube_download_strategies_isolate_partial_files_and_add_embedded_retr
     assert strategies[4]["extractor_args"]["youtube"]["player_client"] == ["web_safari"]
 
 
+
+def test_review_audio_strategies_are_audio_only_and_isolate_retries(tmp_path):
+    strategies = youtube_review_audio_strategies(tmp_path, "1200s")
+
+    assert [item["name"] for item in strategies] == [
+        "default",
+        "web_embedded_ejs",
+        "web_safari",
+    ]
+    assert len({item["outtmpl"] for item in strategies}) == 3
+    assert all("bestaudio" in item["format"] for item in strategies)
+    assert all("bestvideo" not in item["format"] for item in strategies)
+
+
+def test_download_review_audio_limits_range_and_uses_fallback(monkeypatch, tmp_path):
+    import clipper
+
+    attempted_options = []
+
+    class FakeYoutubeDL:
+        def __init__(self, options):
+            self.options = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, _url, download):
+            assert download is True
+            attempted_options.append(self.options)
+            if "embedded" not in self.options["outtmpl"]:
+                raise RuntimeError("HTTP Error 403: Forbidden")
+            target = Path(self.options["outtmpl"].replace("%(ext)s", "m4a"))
+            target.write_bytes(b"audio-only")
+            return {"id": "demo", "title": "Demo", "ext": "m4a"}
+
+    monkeypatch.setattr(clipper, "YoutubeDL", FakeYoutubeDL)
+    monkeypatch.setattr(
+        clipper,
+        "probe_media_stream_types",
+        lambda path: {"audio"} if path.exists() else set(),
+    )
+    monkeypatch.setattr(clipper, "ffmpeg_path", lambda: "/usr/bin/ffmpeg")
+
+    path, metadata = download_review_audio(
+        "https://youtu.be/demo",
+        tmp_path,
+        limit_seconds=1200,
+    )
+
+    assert path.name == "source_review_1200s_embedded.m4a"
+    assert metadata["id"] == "demo"
+    assert len(attempted_options) == 2
+    assert all("bestvideo" not in item["format"] for item in attempted_options)
+    assert attempted_options[1]["download_ranges"]({}, None) == [
+        {"start_time": 0.0, "end_time": 1200.0}
+    ]
+
+
 def test_ytdlp_base_options_does_not_pin_a_stale_browser_user_agent():
     options = ytdlp_base_options()
 
@@ -332,7 +453,7 @@ def test_ytdlp_base_options_does_not_pin_a_stale_browser_user_agent():
 def test_download_video_reaches_muxed_fallback_after_default_403(monkeypatch, tmp_path):
     import clipper
 
-    attempted_templates = []
+    attempted_options = []
     downloaded = tmp_path / "source_muxed.mp4"
 
     class FakeYoutubeDL:
@@ -347,7 +468,7 @@ def test_download_video_reaches_muxed_fallback_after_default_403(monkeypatch, tm
 
         def extract_info(self, _url, download):
             assert download is True
-            attempted_templates.append(self.options["outtmpl"])
+            attempted_options.append(self.options)
             if "source_muxed" not in self.options["outtmpl"]:
                 raise RuntimeError("HTTP Error 403: Forbidden")
             downloaded.write_bytes(b"audio-video")
@@ -364,13 +485,22 @@ def test_download_video_reaches_muxed_fallback_after_default_403(monkeypatch, tm
     monkeypatch.setattr(clipper, "select_usable_source_media", fake_select)
     monkeypatch.setattr(clipper, "ffmpeg_path", lambda: "/usr/bin/ffmpeg")
 
-    path, metadata = download_video("https://youtu.be/demo", tmp_path)
+    path, metadata = download_video(
+        "https://youtu.be/demo",
+        tmp_path,
+        limit_seconds=1200,
+    )
 
     assert path == downloaded
     assert metadata["id"] == "demo"
-    assert len(attempted_templates) == 2
-    assert attempted_templates[0].endswith("source.%(ext)s")
-    assert attempted_templates[1].endswith("source_muxed.%(ext)s")
+    assert len(attempted_options) == 2
+    assert attempted_options[0]["outtmpl"].endswith("source.%(ext)s")
+    assert attempted_options[1]["outtmpl"].endswith("source_muxed.%(ext)s")
+    assert all(
+        item["download_ranges"]({}, None)
+        == [{"start_time": 0.0, "end_time": 1200.0}]
+        for item in attempted_options
+    )
     assert select_calls >= 2
 
 

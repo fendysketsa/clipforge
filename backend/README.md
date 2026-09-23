@@ -89,7 +89,7 @@ Default output video:
 - vertical `1080x1920`
 - H.264 MP4; jalur default Standar memakai `veryfast`/CRF 20, preset Jernih memakai `fast`/CRF 18, dan Maksimal tetap `slow`/CRF 14
 - source download mencoba sampai 2160p pada preset Jernih/Maksimal (`bestvideo+bestaudio`)
-- hingga tiga job dapat berjalan dari tab berbeda; jatah CPU per job dibatasi lewat `FENDY_CLIPPER_CPU_THREADS_PER_JOB` agar Whisper dan FFmpeg tidak saling memenuhi seluruh core
+- default satu job berat diproses pada satu waktu dengan 10 thread agar Whisper, FFmpeg, dan AI tidak saling berebut RAM/CPU; konkurensi tetap dapat diatur lewat `FENDY_CLIPPER_MAX_CONCURRENT_JOBS` dan `FENDY_CLIPPER_CPU_THREADS_PER_JOB`
 - source YouTube memakai Deno + `yt-dlp-ejs` untuk challenge JavaScript terbaru; downloader mencoba jalur default, audio-video muxed, web-embedded/EJS, lalu HLS dengan partial file terpisah bila URL media awal ditolak
 - subtitle burned-in
 - caption dinamis menyorot kata penting dari ucapan asli, dengan timing berbobot jumlah kata dan margin aman agar tidak tertutup action rail/judul UI Shorts; file SRT bersih tetap dibuat untuk accessibility

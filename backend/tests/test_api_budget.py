@@ -11,6 +11,7 @@ from api import (
     ClipCandidate,
     ClipJob,
     ClipJobRequest,
+    assess_viral_candidate,
     MAX_AUTO_ANALYSIS_SECONDS,
     MAX_REQUESTED_CLIPS,
     ViralVideoSearchRequest,
@@ -39,6 +40,7 @@ from api import (
     search_youtube_data_api_viral_sources,
     safe_youtube_visibility,
     salvageable_completed_clipper_result,
+    source_quick_check,
     source_rights_risk_reasons,
     source_history_for_url,
     unresolved_codex_ideas,
@@ -1190,6 +1192,73 @@ def test_processed_job_sources_are_always_excluded(monkeypatch):
     }
 
 
+
+def test_review_only_scan_does_not_mark_source_processed_or_block_render(monkeypatch, tmp_path):
+    import api
+
+    source = "https://www.youtube.com/watch?v=abcDEF12345"
+    scan_job = ClipJob(
+        id="review-only-scan",
+        status="completed",
+        request=ClipJobRequest(url=source, clip_mode="short", review_only=True),
+        created_at="2026-09-23T10:00:00+00:00",
+        updated_at="2026-09-23T10:05:00+00:00",
+        finished_at="2026-09-23T10:05:00+00:00",
+        source_url=source,
+    )
+    polluted_review_event = {
+        "job_id": scan_job.id,
+        "source_url": source,
+        "clip_mode": "short",
+        "processed_at": scan_job.finished_at,
+        "clip_count": 0,
+        "output_names": [],
+    }
+    monkeypatch.setattr(api, "jobs", {scan_job.id: scan_job})
+    monkeypatch.setattr(api, "processed_source_history", set())
+    monkeypatch.setattr(
+        api,
+        "source_usage_history",
+        {
+            source: {
+                "modes": ["short"],
+                "job_ids": [scan_job.id],
+                "last_processed_at": scan_job.finished_at,
+                "events": [polluted_review_event],
+            }
+        },
+    )
+    monkeypatch.setattr(api, "SOURCE_USAGE_HISTORY_PATH", tmp_path / "source_usage_history.json")
+
+    history = source_history_for_url(source)
+    assert not history.found
+    assert not history.archived
+    assert history.usage_count == 0
+    assert history.attempted_modes == []
+    assert history.matches == []
+    assert processed_job_source_urls() == set()
+    assert list_source_usage_log().total == 0
+
+    started_threads = []
+
+    class FakeThread:
+        def __init__(self, *, target, args, daemon):
+            started_threads.append((target, args, daemon))
+
+        def start(self):
+            return None
+
+    monkeypatch.setattr(api.threading, "Thread", FakeThread)
+
+    render_job = api.create_job(
+        ClipJobRequest(url=source, clip_mode="short", confirm_source_rights=True)
+    )
+
+    assert render_job.status == "queued"
+    assert render_job.id in api.jobs
+    assert started_threads == [(api.run_job, (render_job.id,), True)]
+
+
 def test_youtube_source_normalizer_accepts_mobile_live_and_query_variants():
     expected = "https://www.youtube.com/watch?v=abcDEF12345"
 
@@ -1415,6 +1484,128 @@ def test_viral_score_prefers_faster_recent_growth():
     }
 
     assert auto_viral_candidate_score(recent) > auto_viral_candidate_score(older)
+
+
+
+def test_source_quick_check_can_recommend_scan_or_skip_before_render():
+    today = datetime.now(timezone.utc)
+    strong = source_quick_check(
+        {
+            "upload_date": (today - timedelta(days=2)).strftime("%Y%m%d"),
+            "view_count": 100_000,
+            "like_count": 6_000,
+            "duration": 900,
+        }
+    )
+    weak = source_quick_check(
+        {
+            "upload_date": (today - timedelta(days=120)).strftime("%Y%m%d"),
+            "view_count": 120,
+            "like_count": 2,
+            "duration": 90,
+        }
+    )
+
+    assert 0 <= strong["momentum_score"] <= 100
+    assert strong["quick_check_recommendation"] == "scan"
+    assert weak["quick_check_recommendation"] == "skip"
+
+
+
+def test_source_quick_check_enforces_exact_85_floor(monkeypatch):
+    today = datetime.now(timezone.utc)
+    info = {
+        "upload_date": (today - timedelta(days=2)).strftime("%Y%m%d"),
+        "view_count": 100_000,
+        "like_count": 6_000,
+        "duration": 900,
+    }
+
+    monkeypatch.setattr("api.auto_viral_candidate_score", lambda _info: 252)
+    below_floor = source_quick_check(info)
+    assert below_floor["momentum_score"] == 84
+    assert below_floor["momentum_label"] == "Tidak layak"
+    assert below_floor["quick_check_recommendation"] == "skip"
+
+    monkeypatch.setattr("api.auto_viral_candidate_score", lambda _info: 255)
+    at_floor = source_quick_check(info)
+    assert at_floor["momentum_score"] == 85
+    assert at_floor["momentum_label"] == "Layak di-scan"
+    assert at_floor["quick_check_recommendation"] == "scan"
+
+
+
+def test_source_quick_check_accepts_88_even_below_old_velocity_gate(monkeypatch):
+    today = datetime.now(timezone.utc)
+    monkeypatch.setattr("api.auto_viral_candidate_score", lambda _info: 264)
+
+    result = source_quick_check(
+        {
+            "upload_date": (today - timedelta(days=2_388)).strftime("%Y%m%d"),
+            "view_count": 1_800_000,
+            "like_count": 10_000,
+            "duration": 5_062,
+        }
+    )
+
+    assert result["momentum_score"] == 88
+    assert result["views_per_day"] < 1_000
+    assert result["momentum_label"] == "Layak di-scan"
+    assert result["quick_check_recommendation"] == "scan"
+
+
+def test_candidate_viral_rubric_never_inflates_native_score():
+    assessed = assess_viral_candidate(
+        ClipCandidate(
+            index=1,
+            start=12,
+            end=44,
+            duration=32,
+            score=88,
+            title="Jawaban yang mengubah cara pandang",
+            reason="Hook cepat dan payoff lengkap",
+            text="Masalahnya jelas, lalu pembicara memberi jawaban yang tuntas.",
+            hook="Ternyata masalah utamanya bukan itu.",
+            key_point_score=92,
+            loop_score=88,
+            retention_score=91,
+            narrative_arc_score=90,
+            narrative_arc_complete=True,
+            boundary_quality="utuh",
+        )
+    )
+
+    assert assessed.viral_score <= assessed.score
+    assert sum(assessed.viral_score_breakdown.model_dump().values()) == assessed.viral_score
+    assert assessed.viral_quality_gate_passed
+
+
+
+def test_candidate_viral_quality_gate_rejects_84_and_accepts_85():
+    base = {
+        "index": 1,
+        "start": 12,
+        "end": 44,
+        "duration": 32,
+        "title": "Jawaban utuh",
+        "reason": "Hook cepat dan payoff lengkap",
+        "text": "Masalah dijelaskan lalu dijawab tuntas.",
+        "hook": "Ternyata jawabannya bukan itu.",
+        "key_point_score": 100,
+        "loop_score": 100,
+        "retention_score": 100,
+        "narrative_arc_score": 100,
+        "narrative_arc_complete": True,
+        "boundary_quality": "utuh",
+    }
+
+    below_floor = assess_viral_candidate(ClipCandidate(score=84, **base))
+    at_floor = assess_viral_candidate(ClipCandidate(score=85, **base))
+
+    assert below_floor.viral_score == 84
+    assert not below_floor.viral_quality_gate_passed
+    assert at_floor.viral_score == 85
+    assert at_floor.viral_quality_gate_passed
 
 
 def test_viral_momentum_gate_rejects_old_or_slow_sources(monkeypatch):
@@ -1768,6 +1959,7 @@ def test_create_job_accepts_another_job_while_one_is_active(monkeypatch):
     )
     monkeypatch.setattr(api, "jobs", {active.id: active})
     monkeypatch.setattr(api, "processed_source_history", set())
+
     monkeypatch.setattr(api, "source_usage_history", {})
 
     started_threads = []
@@ -1787,6 +1979,21 @@ def test_create_job_accepts_another_job_while_one_is_active(monkeypatch):
     assert created.id in api.jobs
     assert active.id in api.jobs
     assert started_threads == [(api.run_job, (created.id,), True)]
+
+
+def test_build_clipper_command_supports_analysis_without_render_or_cc_gate():
+    request = ClipJobRequest(
+        url="https://youtu.be/source",
+        review_only=True,
+        require_creative_commons=False,
+        confirm_source_rights=False,
+    )
+
+    command = build_clipper_command(request)
+
+    assert "--review-only" in command
+    assert "--require-creative-commons" not in command
+    assert "--confirm-source-rights" not in command
 
 
 def test_build_clipper_command_can_isolate_parallel_job_output(tmp_path):

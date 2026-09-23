@@ -69,7 +69,7 @@ def test_ai_ranked_candidate_beats_higher_heuristic_score(monkeypatch):
 
     assert selected[0].title == "Kesalahan Pertama"
     assert selected[0].score == 84
-    assert selected[0].fyp_label == "Kuat"
+    assert selected[0].fyp_label == "Tidak layak"
     assert selected[0].pov == "Penonton merasa sedang diingatkan sebelum rugi."
     assert selected[0].reason.startswith("AI FYP:")
     assert generic.score < selected[0].score
@@ -161,7 +161,7 @@ def test_ai_rescore_pool_covers_timeline_and_sends_story_metrics(monkeypatch):
     ai_rescore_candidates(
         candidates,
         AIConfig(enabled=True, base_url="http://localhost:20128/v1", model="local-model"),
-        target_count=1,
+        target_count=10,
     )
 
     assert len(captured_items) == 40
@@ -258,9 +258,9 @@ def test_short_selection_can_include_low_score_when_structural_gates_pass():
     assert select_candidates([candidate], 1, minimum_score=1) == [candidate]
 
 
-def test_final_short_quality_gate_discards_result_below_fyp_80():
+def test_final_short_quality_gate_discards_result_below_fyp_85():
     below_target = make_candidate(0, 0, 77, "Poin lengkap tetapi belum cukup kuat.")
-    ready = make_candidate(1, 90, 80, "Hook, isi, dan payoff sudah kuat.")
+    ready = make_candidate(1, 90, 85, "Hook, isi, dan payoff sudah kuat.")
 
     assert select_candidates(
         [below_target, ready],

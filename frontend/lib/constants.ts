@@ -4,6 +4,7 @@ import type { ClipMode, JobStatus, VideoQuality } from "../types/clip.type";
 export const DEFAULT_MIN_DURATION = 25;
 export const DEFAULT_MAX_DURATION = 45;
 export const MAX_SHORT_DURATION = 180;
+export const VIRAL_QUALITY_FLOOR = 85;
 export const DEFAULT_MODEL = "Systran/faster-whisper-medium";
 export const DEFAULT_LANGUAGE = "id";
 // Standard keeps 1080x1920 output while using the faster CPU encode path.

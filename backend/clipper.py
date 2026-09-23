@@ -1921,6 +1921,7 @@ MOSQUE_CONGREGATION_PATH = (
     / "mosque-congregation-v1.png"
 )
 SOURCE_VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".webm"}
+SOURCE_AUDIO_EXTENSIONS = {".aac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".webm"}
 
 VIDEO_QUALITY_PRESETS = {
     "standard": {
@@ -2224,6 +2225,52 @@ def youtube_download_strategies(max_height: int, work_dir: Path) -> list[dict]:
             "outtmpl": str(work_dir / "source_hls.%(ext)s"),
             "extractor_args": {"youtube": {"player_client": ["web_safari"]}},
             "hls_prefer_native": True,
+        },
+    ]
+
+
+def review_audio_candidates(work_dir: Path, cache_key: str) -> list[Path]:
+    candidates: list[Path] = []
+    for path in work_dir.glob(f"source_review_{cache_key}_*"):
+        lowered = path.name.casefold()
+        if (
+            not path.is_file()
+            or path.suffix.casefold() not in SOURCE_AUDIO_EXTENSIONS
+            or ".part" in lowered
+            or lowered.endswith(".ytdl")
+            or lowered.endswith(".tmp")
+        ):
+            continue
+        candidates.append(path)
+    return sorted(candidates, key=lambda item: -item.stat().st_mtime)
+
+
+def select_usable_review_audio(work_dir: Path, cache_key: str) -> Path | None:
+    for path in review_audio_candidates(work_dir, cache_key):
+        if "audio" in probe_media_stream_types(path):
+            return path
+    return None
+
+
+def youtube_review_audio_strategies(work_dir: Path, cache_key: str) -> list[dict]:
+    audio_format = "bestaudio[ext=m4a]/bestaudio[acodec!=none][vcodec=none]/bestaudio"
+    return [
+        {
+            "name": "default",
+            "format": audio_format,
+            "outtmpl": str(work_dir / f"source_review_{cache_key}_default.%(ext)s"),
+        },
+        {
+            "name": "web_embedded_ejs",
+            "format": audio_format,
+            "outtmpl": str(work_dir / f"source_review_{cache_key}_embedded.%(ext)s"),
+            "extractor_args": {"youtube": {"player_client": ["web_embedded"]}},
+        },
+        {
+            "name": "web_safari",
+            "format": audio_format,
+            "outtmpl": str(work_dir / f"source_review_{cache_key}_safari.%(ext)s"),
+            "extractor_args": {"youtube": {"player_client": ["web_safari"]}},
         },
     ]
 
@@ -4784,7 +4831,14 @@ def download_video(
     work_dir: Path,
     force: bool = False,
     video_quality: VideoQuality = "high",
+    limit_seconds: float | None = None,
 ) -> tuple[Path, dict]:
+    """Download media render hanya sepanjang jendela yang dianalisis.
+
+    Video URL panjang tidak perlu diunduh sampai berjam-jam ketika transkrip dan
+    kandidat memang dibatasi ke ``limit_seconds``. Rentang unduhan yang sama
+    mengurangi kegagalan koneksi tanpa mengubah timestamp karena dimulai dari 0.
+    """
     info_path = work_dir / "metadata.json"
     existing = select_usable_source_media(work_dir)
     if existing is not None and info_path.exists() and not force:
@@ -4807,6 +4861,13 @@ def download_video(
             noprogress=True,
             ffmpeg_location=ffmpeg_path(),
         )
+        if limit_seconds:
+            analysis_end = float(limit_seconds)
+            ydl_opts["download_ranges"] = (
+                lambda _info, _ydl, end=analysis_end: [
+                    {"start_time": 0.0, "end_time": end}
+                ]
+            )
         if attempt > 1:
             console.print(
                 "[yellow]Retry download YouTube[/yellow] "
@@ -4854,6 +4915,85 @@ def download_video(
 
     save_json(info_path, sanitize_metadata(info))
     return file_path, sanitize_metadata(info)
+
+
+def download_review_audio(
+    url: str,
+    work_dir: Path,
+    *,
+    force: bool = False,
+    limit_seconds: float | None = None,
+) -> tuple[Path, dict]:
+    """Download only the audio range required by an analysis-only job."""
+    cache_key = f"{max(1, int(round(limit_seconds)))}s" if limit_seconds else "full"
+    existing = select_usable_review_audio(work_dir, cache_key)
+    if existing is not None and not force:
+        console.print(f"[green]Reusing review audio:[/green] {existing.name}")
+        metadata_path = work_dir / "metadata.json"
+        return existing, load_json(metadata_path) if metadata_path.exists() else {}
+
+    work_dir.mkdir(parents=True, exist_ok=True)
+    if force:
+        for path in work_dir.glob(f"source_review_{cache_key}_*"):
+            if path.is_file():
+                path.unlink(missing_ok=True)
+
+    info: dict = {}
+    file_path: Path | None = None
+    download_errors: list[Exception] = []
+    strategies = youtube_review_audio_strategies(work_dir, cache_key)
+    for attempt, strategy in enumerate(strategies, start=1):
+        strategy_name = str(strategy["name"])
+        options = {key: value for key, value in strategy.items() if key != "name"}
+        ydl_opts = ytdlp_base_options(
+            **options,
+            noprogress=True,
+            ffmpeg_location=ffmpeg_path(),
+        )
+        if limit_seconds:
+            analysis_end = float(limit_seconds)
+            ydl_opts["download_ranges"] = (
+                lambda _info, _ydl, end=analysis_end: [
+                    {"start_time": 0.0, "end_time": end}
+                ]
+            )
+        if attempt > 1:
+            console.print(
+                "[yellow]Retry audio review YouTube[/yellow] "
+                f"dengan jalur {strategy_name} ({attempt}/{len(strategies)})..."
+            )
+        try:
+            with YoutubeDL(ydl_opts) as ydl:
+                attempt_info = ydl.extract_info(url, download=True)
+                if isinstance(attempt_info, dict):
+                    info = attempt_info
+        except Exception as exc:
+            download_errors.append(exc)
+            continue
+        file_path = select_usable_review_audio(work_dir, cache_key)
+        if file_path is not None:
+            break
+
+    if file_path is None and download_errors:
+        representative_error = next(
+            (
+                error
+                for error in download_errors
+                if "403" in str(error) or "forbidden" in str(error).casefold()
+            ),
+            download_errors[-1],
+        )
+        raise UserFacingError(
+            friendly_youtube_error(representative_error, "mengunduh audio untuk scan")
+        ) from representative_error
+    if file_path is None:
+        raise UserFacingError(
+            "Audio untuk scan tidak tersedia. Coba lagi atau upload file sumber yang memiliki suara."
+        )
+
+    clean_info = sanitize_metadata(info)
+    save_json(work_dir / "metadata.json", clean_info)
+    return file_path, clean_info
 
 
 def sanitize_metadata(info: dict) -> dict:
@@ -5429,7 +5569,7 @@ def first_sentence(text: str, max_words: int = 8) -> str:
     return " ".join(words[:max_words]).capitalize() or "Auto clip"
 
 
-SHORT_EXPORT_MIN_FYP_SCORE = 80
+SHORT_EXPORT_MIN_FYP_SCORE = 85
 SHORT_REPAIR_POOL_MIN_SIZE = 12
 SHORT_REPAIR_POOL_MULTIPLIER = 4
 SHORT_BATCH_MAX_TOPIC_SIMILARITY = 0.52
@@ -5439,12 +5579,8 @@ def fyp_score_label(score: int) -> str:
     if score >= 88:
         return "Sangat kuat"
     if score >= SHORT_EXPORT_MIN_FYP_SCORE:
-        return "Kuat"
-    if score >= 65:
-        return "Menjanjikan"
-    if score >= 50:
-        return "Perlu dipoles"
-    return "Lemah"
+        return "Layak"
+    return "Tidak layak"
 
 
 def five_k_experiment_readiness(
@@ -5463,8 +5599,6 @@ def five_k_experiment_readiness(
         status = "ready_to_test"
     elif score >= SHORT_EXPORT_MIN_FYP_SCORE:
         status = "worth_testing"
-    elif score >= 65:
-        status = "test_hook_variant_first"
     else:
         status = "revise_before_publishing"
     if output_format == "vertical_short" and 0 < clip.retention_score < 58:
@@ -7718,6 +7852,7 @@ def select_output_candidates(
 
 
 AI_RESCORE_POOL_LIMIT = 40
+AI_RESCORE_TARGET_MULTIPLIER = 4
 AI_SYSTEM_PROMPT = (
     "You are an expert Indonesian short-form video editor for TikTok FYP, Reels, and YouTube Shorts. "
     "Your job is to choose the strongest POV moments from transcript windows, not to divide the video evenly. "
@@ -7777,7 +7912,10 @@ def ai_rescore_candidates(
         console.print("[yellow]AI agent skipped:[/yellow] base_url/model not set.")
         return candidates
 
-    pool_limit = max(AI_RESCORE_POOL_LIMIT, min(len(candidates), (target_count or 0) * 12))
+    pool_limit = min(
+        len(candidates),
+        max(AI_RESCORE_POOL_LIMIT, (target_count or 0) * AI_RESCORE_TARGET_MULTIPLIER),
+    )
     ranked = sorted(candidates, key=candidate_rank_score, reverse=True)
     if len(ranked) <= pool_limit:
         pool = ranked
@@ -7833,7 +7971,7 @@ def ai_rescore_candidates(
             "high_information_extended_short": candidate_is_high_information_extended_short(
                 candidate
             ),
-            "text": candidate.text[:1200],
+            "text": candidate.text[:800],
         }
         for idx, candidate in enumerate(pool)
     ]
@@ -9118,7 +9256,11 @@ def subscriber_intent_profile(clip: ClipCandidate) -> dict[str, object]:
     return {
         "score": safe_score,
         "label": (
-            "kuat" if safe_score >= 80 else "layak" if safe_score >= 65 else "perlu_diperkuat"
+            "kuat"
+            if safe_score >= 88
+            else "layak"
+            if safe_score >= SHORT_EXPORT_MIN_FYP_SCORE
+            else "tidak_layak"
         ),
         "reasons": reasons,
         "value_proposition": subscribe_value_prompt(clip),
@@ -16319,14 +16461,30 @@ def main() -> int:
         work_dir = root / slugify(title)[:80]
         work_dir.mkdir(parents=True, exist_ok=True)
 
-        console.print("[bold]Fetching video...[/bold]")
-        final_video_path, metadata = download_video(
-            args.url,
-            work_dir,
-            force=args.force,
-            video_quality=args.video_quality,
-        )
-        emit_progress(16, "source", "Video sumber berhasil disiapkan")
+        if args.review_only:
+            console.print("[bold]Fetching analysis audio only...[/bold]")
+            review_metadata = metadata
+            final_video_path, downloaded_metadata = download_review_audio(
+                args.url,
+                work_dir,
+                force=args.force,
+                limit_seconds=args.analyze_seconds,
+            )
+            metadata = {
+                **review_metadata,
+                **{key: value for key, value in downloaded_metadata.items() if value is not None},
+            }
+            emit_progress(16, "source", "Audio sumber untuk scan cepat berhasil disiapkan")
+        else:
+            console.print("[bold]Fetching video...[/bold]")
+            final_video_path, metadata = download_video(
+                args.url,
+                work_dir,
+                force=args.force,
+                video_quality=args.video_quality,
+                limit_seconds=args.analyze_seconds,
+            )
+            emit_progress(16, "source", "Video sumber berhasil disiapkan")
     save_json(work_dir / "metadata.json", metadata)
 
     cache_suffix = f"_{int(args.analyze_seconds)}s" if args.analyze_seconds else ""
@@ -16576,6 +16734,7 @@ def main() -> int:
     print_candidates(candidates)
 
     if args.review_only:
+        cleanup_intermediate(work_dir, final_video_path)
         console.print("[green]Review candidates ready.[/green]")
         return 0
 

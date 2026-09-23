@@ -159,7 +159,7 @@ def normalized_upload_metadata(video_path: Path, title: str, description: str) -
     clean_description = repair_islamic_asr_text(clean_description)
     clean_description = re.sub(
         r"@ryuundyofficial\b",
-        "@ryuundys",
+        "@ryuundy.studio",
         clean_description,
         flags=re.I,
     )

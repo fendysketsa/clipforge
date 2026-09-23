@@ -692,13 +692,9 @@ def is_compilation_result(clip: dict[str, Any]) -> bool:
 def telegram_fyp_label(score: int) -> str:
     if score >= 88:
         return "Sangat kuat"
-    if score >= 78:
-        return "Kuat"
-    if score >= 65:
-        return "Menjanjikan"
-    if score >= 50:
-        return "Perlu dipoles"
-    return "Lemah"
+    if score >= 85:
+        return "Layak"
+    return "Tidak layak"
 
 
 def clip_index_from_result(clip: dict[str, Any], fallback: int) -> int:
