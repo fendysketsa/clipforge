@@ -75,6 +75,7 @@ from clipper import (
     hook_banner_text,
     highlight_caption_keyword,
     intro_particle_burst_filters,
+    islamic_story_radar_profile,
     is_source_branding_segment,
     landscape_compilation_edit_filter,
     landscape_compilation_frame_filter,
@@ -3023,6 +3024,67 @@ def test_mystery_islamic_theme_adds_context_badge_and_emphasis():
     assert "CEK FAKTANYA" in value
     assert "between(t,5.000,5.420)" in value
     assert "#A855F7" in value
+
+
+def test_islamic_story_radar_rewards_complete_mentor_transformation():
+    text = (
+        "Ketika saya berada di titik terendah, saya takut dan hampir putus asa. "
+        "Guru saya memberi nasihat agar kembali berdoa kepada Allah. "
+        "Ternyata pesan guru itu membuat saya sadar. "
+        "Akhirnya saya mendapat hidayah dan hidup saya berubah."
+    )
+
+    profile = islamic_story_radar_profile(
+        text,
+        38,
+        opening_text="Ketika saya berada di titik terendah.",
+        closing_text="Akhirnya saya mendapat hidayah dan hidup saya berubah.",
+    )
+
+    assert profile["qualified"] is True
+    assert profile["archetype"] == "mentor_message"
+    assert profile["score_bonus"] == 10
+    assert profile["controversy_alone_is_quality_signal"] is False
+
+
+def test_islamic_story_radar_does_not_reward_generic_topic_or_controversy():
+    generic = islamic_story_radar_profile(
+        "Islam adalah topik penting untuk dibahas dalam kajian hari ini.",
+        32,
+    )
+    controversy = islamic_story_radar_profile(
+        "Perdebatan agama ini viral dan membuat banyak orang marah.",
+        32,
+    )
+
+    assert generic["qualified"] is False
+    assert generic["score_bonus"] == 0
+    assert controversy["qualified"] is False
+    assert controversy["score_bonus"] == 0
+
+
+def test_islamic_story_radar_surfaces_in_score_reason_and_visual_badge():
+    segments = [
+        TranscriptSegment(0, 8, "Ketika saya berada di titik terendah, saya takut dan putus asa."),
+        TranscriptSegment(8, 18, "Guru saya memberi nasihat agar kembali berdoa kepada Allah."),
+        TranscriptSegment(18, 28, "Ternyata pesan guru itu membuat saya sadar."),
+        TranscriptSegment(28, 38, "Akhirnya saya mendapat hidayah dan hidup saya berubah."),
+    ]
+    score, reasons = score_window(segments, 38)
+    clip = ClipCandidate(
+        index=1,
+        start=0,
+        end=38,
+        duration=38,
+        score=score,
+        title="Pesan Guru yang Mengubah Hidup",
+        reason="test",
+        text=" ".join(item.text for item in segments),
+    )
+
+    assert any("Islamic Story Radar: mentor message" in reason for reason in reasons)
+    assert visual_theme_profile(clip)["badge"] == "PESAN YANG MENGUBAH"
+    assert visual_theme_profile(clip)["emphasis_label"] == "INGAT PESANNYA"
 
 
 def test_islamic_context_is_detected_even_when_mystery_is_the_visual_theme():

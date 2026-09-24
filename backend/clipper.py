@@ -1579,6 +1579,7 @@ ISLAMIC_WORDS = {
     "dosa",
     "dzikir",
     "hadis",
+    "hidayah",
     "hadits",
     "haji",
     "halal",
@@ -1595,6 +1596,8 @@ ISLAMIC_WORDS = {
     "kyai",
     "masjid",
     "muhammad",
+    "mualaf",
+    "muallaf",
     "muslim",
     "muslimah",
     "nabi",
@@ -1616,8 +1619,10 @@ ISLAMIC_WORDS = {
     "subhanallah",
     "sunnah",
     "surga",
+    "syahadat",
     "syariah",
     "syariat",
+    "tauhid",
     "taubat",
     "ulama",
     "umrah",
@@ -1628,6 +1633,48 @@ ISLAMIC_WORDS = {
     "ustadzah",
     "zakat",
     "zikir",
+}
+
+# Story signals distilled from successful Indonesian Islamic short-form. They
+# describe reusable narrative structure, never a creator branding or wording.
+ISLAMIC_STORY_JOURNEY_MARKERS = (
+    "awalnya",
+    "dulu saya",
+    "ketika saya",
+    "perjalanan",
+    "sejak saat itu",
+    "sebelum akhirnya",
+    "setelah itu",
+    "titik terendah",
+)
+ISLAMIC_STORY_MENTOR_MARKERS = (
+    "guru berkata",
+    "guru saya",
+    "kata ustadz",
+    "pesan guru",
+    "pesan ustadz",
+    "menasihati",
+    "nasihat",
+)
+ISLAMIC_STORY_REVEAL_MARKERS = (
+    "akhirnya saya sadar",
+    "baru saya sadar",
+    "fakta yang",
+    "jawabannya",
+    "membuat saya sadar",
+    "ternyata",
+    "yang mengubah",
+)
+ISLAMIC_STORY_CHANGE_WORDS = {
+    "berubah", "hidayah", "hijrah", "ikhlas", "mualaf", "muallaf",
+    "sadar", "syahadat", "tenang", "taubat",
+}
+ISLAMIC_STORY_EVIDENCE_WORDS = {
+    "alasan", "bukti", "fakta", "logis", "menjawab", "sains",
+}
+ISLAMIC_STORY_EMOTION_WORDS = {
+    "cemas", "kehilangan", "menangis", "putus", "ragu", "takut",
+    "terendah", "ujian",
 }
 
 ISLAMIC_BACKGROUND_MUSIC_TITLE = "Cahaya Hikmah (Fendy Clipper Original)"
@@ -6429,6 +6476,109 @@ def religious_claim_review_packet(
     }
 
 
+def islamic_story_radar_profile(
+    text: str,
+    duration: float,
+    *,
+    opening_text: str = "",
+    closing_text: str = "",
+) -> dict[str, object]:
+    """Detect complete, high-value Islamic story shapes without rewarding outrage.
+
+    The radar looks for a lived journey, mentor message, question-to-answer
+    reveal, or evidence-backed insight. Religious topic words alone never earn
+    a bonus; a candidate also needs multiple story signals and a resolved end.
+    """
+    normalized = re.sub(r"\s+", " ", text).strip().casefold()
+    words = re.findall(r"[\w']+", normalized)
+    word_set = set(words)
+    opening = re.sub(r"\s+", " ", opening_text).strip().casefold()
+    if not opening:
+        opening = " ".join(words[:28])
+    closing = re.sub(r"\s+", " ", closing_text).strip().casefold()
+    if not closing:
+        closing = " ".join(words[-42:])
+    opening_words = set(re.findall(r"[\w']+", opening))
+    closing_words = set(re.findall(r"[\w']+", closing))
+
+    is_islamic = bool(word_set.intersection(ISLAMIC_WORDS))
+    first_person = bool(word_set.intersection({"aku", "kami", "saya"}))
+    journey = bool(
+        any(marker in normalized for marker in ISLAMIC_STORY_JOURNEY_MARKERS)
+        or (first_person and word_set.intersection(ISLAMIC_STORY_CHANGE_WORDS))
+    )
+    emotional_stakes = bool(
+        first_person and word_set.intersection(ISLAMIC_STORY_EMOTION_WORDS)
+    )
+    mentor_message = any(
+        marker in normalized for marker in ISLAMIC_STORY_MENTOR_MARKERS
+    )
+    reveal = bool(
+        any(marker in normalized for marker in ISLAMIC_STORY_REVEAL_MARKERS)
+        or word_set.intersection(PAYOFF_WORDS)
+    )
+    question_hook = bool(
+        "?" in opening
+        or opening_words.intersection({"apa", "apakah", "bagaimana", "kenapa", "mengapa"})
+    )
+    question_to_answer = bool(question_hook and reveal)
+    evidence_reveal = bool(
+        word_set.intersection(ISLAMIC_STORY_EVIDENCE_WORDS)
+        and (reveal or word_set.intersection(TENSION_WORDS))
+    )
+    transformation = bool(
+        word_set.intersection(ISLAMIC_STORY_CHANGE_WORDS)
+        and (journey or emotional_stakes or reveal)
+    )
+    resolved_ending = bool(
+        text.rstrip().endswith((".", "!", "?"))
+        and (
+            closing_words.intersection(
+                ISLAMIC_STORY_CHANGE_WORDS | PAYOFF_WORDS | IMPORTANT_WORDS
+            )
+            or any(marker in closing for marker in ISLAMIC_STORY_REVEAL_MARKERS)
+        )
+    )
+    signals = {
+        "journey": journey,
+        "emotional_stakes": emotional_stakes,
+        "mentor_message": mentor_message,
+        "question_to_answer": question_to_answer,
+        "evidence_reveal": evidence_reveal,
+        "transformation": transformation,
+    }
+    signal_count = sum(signals.values())
+    archetype = (
+        "mentor_message"
+        if mentor_message and transformation
+        else "transformation"
+        if transformation and (journey or emotional_stakes)
+        else "question_answer"
+        if question_to_answer
+        else "evidence_reveal"
+        if evidence_reveal
+        else "reflection"
+    )
+    qualified = bool(
+        is_islamic
+        and signal_count >= 2
+        and resolved_ending
+        and 20.0 <= duration <= 75.0
+    )
+    return {
+        "version": 1,
+        "qualified": qualified,
+        "archetype": archetype,
+        "signal_count": signal_count,
+        "signals": signals,
+        "resolved_ending": resolved_ending,
+        "duration_fit_20_75_seconds": 20.0 <= duration <= 75.0,
+        "score_bonus": min(10, 2 + signal_count * 2) if qualified else 0,
+        "controversy_alone_is_quality_signal": False,
+        "religious_accuracy_guaranteed": False,
+    }
+
+
 def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> dict[str, int | bool | str]:
     """Measure whether a window contains one useful idea and a deliberate loop point."""
     if not items:
@@ -6483,6 +6633,12 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
     extended_short = extended_short_story_profile(items, duration)
     narrative_arc = short_narrative_arc_profile(items, duration)
     religious_context = religious_context_integrity_profile(items, duration)
+    islamic_story = islamic_story_radar_profile(
+        text,
+        duration,
+        opening_text=opening,
+        closing_text=closing,
+    )
     signal_words = HOOK_WORDS | TENSION_WORDS | PAYOFF_WORDS | IMPORTANT_WORDS
     signal_hits = all_words.intersection(signal_words)
     payoff_near_end = bool(
@@ -6511,6 +6667,7 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
             extended_short["qualified"]
             and extended_short["closing_resolution"]
         )
+        or islamic_story["qualified"]
     )
     punctuation_ending = text.rstrip().endswith((".", "!", "?"))
     complete_ending = bool(
@@ -6521,6 +6678,7 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
         or structured_comparison["qualified"]
         or claim_rebuttal["qualified"]
         or extended_short["qualified"]
+        or islamic_story["qualified"]
     )
     opening_hook = bool(
         opening_words.intersection((HOOK_WORDS - WEAK_STARTS) | TENSION_WORDS)
@@ -6555,6 +6713,7 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
     key_point_score += 14 if claim_rebuttal["qualified"] else 0
     key_point_score += 16 if extended_short["qualified"] else 0
     key_point_score += 18 if narrative_arc["qualified"] else 0
+    key_point_score += int(islamic_story["score_bonus"])
     key_point_score -= min(18, len(narrative_arc["missing_beats"]) * 4)
     if not religious_context["safe_for_automatic_export"]:
         key_point_score -= 24
@@ -6615,6 +6774,9 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
         "narrative_arc_score": int(narrative_arc["arc_score"]),
         "narrative_arc_complete": bool(narrative_arc["qualified"]),
         "religious_context_safe": bool(religious_context["safe_for_automatic_export"]),
+        "islamic_story_qualified": bool(islamic_story["qualified"]),
+        "islamic_story_archetype": str(islamic_story["archetype"]),
+        "islamic_story_signal_count": int(islamic_story["signal_count"]),
     }
 
 
@@ -6832,6 +6994,12 @@ def candidate_fyp_analysis(
         closing_text=" ".join(item.text for item in items[-3:]),
     )
     extended_short = extended_short_story_profile(items, duration)
+    islamic_story = islamic_story_radar_profile(
+        text,
+        duration,
+        opening_text=opening_text,
+        closing_text=" ".join(item.text for item in items[-3:]),
+    )
     strongest_line = strongest_advice_line(items)
     hook_reference = first_sentence(opening_text or text, max_words=6)
     if not opening_has_hook and strongest_line:
@@ -6852,6 +7020,16 @@ def candidate_fyp_analysis(
             )
         else:
             ideas.append("Hook — buka langsung dengan konflik atau fakta utama sebelum konteks.")
+
+    if islamic_story["qualified"]:
+        story_labels = {
+            "mentor_message": "pesan guru terhubung jelas dengan perubahan hidup",
+            "transformation": "perjalanan batin berakhir pada perubahan yang nyata",
+            "question_answer": "pertanyaan awal dibayar dengan jawaban yang utuh",
+            "evidence_reveal": "fakta atau alasan berkembang menuju reveal yang jelas",
+            "reflection": "renungan Islami memiliki konteks dan payoff yang tuntas",
+        }
+        strengths.append(story_labels[str(islamic_story["archetype"])])
 
     if micro_thesis["qualified"]:
         strengths.append(
@@ -7022,6 +7200,12 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
         opening_text=opening_text,
         closing_text=" ".join(item.text for item in items[-3:]),
     )
+    islamic_story = islamic_story_radar_profile(
+        text,
+        duration,
+        opening_text=opening_text,
+        closing_text=" ".join(item.text for item in items[-3:]),
+    )
 
     extended_short = extended_short_story_profile(items, duration)
     score = 24
@@ -7066,6 +7250,12 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
     if extended_short["qualified"]:
         score += 16
         reasons.append("setiap blok 30 detik menambah informasi baru")
+
+    if islamic_story["qualified"]:
+        score += int(islamic_story["score_bonus"])
+        reasons.append(
+            "Islamic Story Radar: " + str(islamic_story["archetype"]).replace("_", " ")
+        )
 
     if hook_hits:
         bump = min(18, len(hook_hits) * 5)
@@ -7409,6 +7599,7 @@ def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0
     delayed_punchline = delayed_punchline_profile(candidate.text, candidate.duration)
     structured_comparison = structured_comparison_profile(candidate.text, candidate.duration)
     claim_rebuttal = claim_rebuttal_profile(candidate.text, candidate.duration)
+    islamic_story = islamic_story_radar_profile(candidate.text, candidate.duration)
     high_information_extended = candidate_is_high_information_extended_short(candidate)
     effective_target = (
         23.0
@@ -7447,6 +7638,7 @@ def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0
         + (4.0 if structured_comparison["qualified"] else 0.0)
         + (4.0 if claim_rebuttal["qualified"] else 0.0)
         + (5.0 if high_information_extended else 0.0)
+        + float(islamic_story["score_bonus"])
         + narrative_score
         + duration_priority
         - abs(candidate.duration - effective_target) * 0.08
@@ -7968,6 +8160,9 @@ def ai_rescore_candidates(
                 candidate.text,
                 candidate.duration,
             ),
+            "islamic_story_radar": islamic_story_radar_profile(
+                candidate.text, candidate.duration
+            ),
             "high_information_extended_short": candidate_is_high_information_extended_short(
                 candidate
             ),
@@ -7989,9 +8184,16 @@ def ai_rescore_candidates(
         else "This is for Indonesian short-form FYP. Choose POV moments people would stop scrolling for, "
         "not merely complete transcript chunks."
     )
+    islamic_story_instruction = (
+        "For Islamic content, prefer a truthful complete story: lived struggle or question, sufficient context, "
+        "a mentor message/evidence/reveal, and a resolved transformation or lesson. Package the title around the "
+        "specific human tension and outcome. Never reward interfaith outrage, attacks, celebrity names, uppercase, "
+        "or punctuation alone; controversy without context and constructive payoff is weak.\n"
+    )
     user_prompt = (
         f"{count_instruction}\n"
         f"{format_instruction}\n"
+        f"{islamic_story_instruction}"
         "For each chosen candidate, score 0-100 honestly on viewer-retention and FYP potential. "
         "Judge the first 2 seconds, the complete HOOK -> CONTEXT -> TENSION -> ANSWER -> STRONG END arc, "
         "the first 30-second hook arc, POV clarity, information density, "
@@ -10069,6 +10271,18 @@ def visual_theme_profile(clip: ClipCandidate) -> dict[str, str]:
         motion_style == "contemplative_guidance" and theme != "islamic"
     ):
         badge, emphasis_label = motion_copy[motion_style]
+        profile["badge"] = badge
+        profile["emphasis_label"] = emphasis_label
+    story_radar = islamic_story_radar_profile(clip.text, clip.duration)
+    if has_islamic_context and story_radar["qualified"]:
+        story_copy = {
+            "mentor_message": ("PESAN YANG MENGUBAH", "INGAT PESANNYA"),
+            "transformation": ("MOMEN HIDAYAH", "TITIK BALIK"),
+            "question_answer": ("TANYA / JAWAB", "TEMUKAN JAWABAN"),
+            "evidence_reveal": ("BUKTI / HIKMAH", "CEK ALASANNYA"),
+            "reflection": ("RENUNGAN / HIKMAH", "AMBIL HIKMAH"),
+        }
+        badge, emphasis_label = story_copy[str(story_radar["archetype"])]
         profile["badge"] = badge
         profile["emphasis_label"] = emphasis_label
     return profile

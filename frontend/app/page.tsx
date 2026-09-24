@@ -630,74 +630,6 @@ export default function HomePage() {
     }
   }, []);
 
-  const handleAnalyzeUrl = useCallback(async () => {
-    const trimmedUrl = url.trim();
-    setError("");
-
-    if (isActiveJob(activeJob)) {
-      setError("Masih ada proses aktif. Tunggu selesai atau batalkan sebelum memulai scan baru.");
-      return;
-    }
-    if (!trimmedUrl) {
-      setError("Tempel link YouTube terlebih dahulu.");
-      return;
-    }
-    if (sourceHistory && !sourceHistory.valid_youtube_url) {
-      setError("Link belum dikenali sebagai URL video YouTube.");
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const nextJob = await toast.promise(
-        createJob({
-          url: trimmedUrl,
-          top: 10,
-          min_duration: 25,
-          max_duration: 45,
-          clip_mode: "short",
-          model: DEFAULT_MODEL,
-          language: DEFAULT_LANGUAGE,
-          burn_subtitles: true,
-          crop_mode: cropMode,
-          require_creative_commons: false,
-          confirm_source_rights: false,
-          auto_upload_youtube: false,
-          allow_reprocess_source: true,
-          review_only: true,
-          ai_enabled: aiEnabled,
-          ai_base_url: aiBaseUrl.trim(),
-          ai_model: aiModel.trim(),
-          ai_api_key: aiApiKey.trim(),
-        }),
-        {
-          loading: "Memulai AI Viral Scan…",
-          success: "Scan dimulai — AI mencari momen terbaik.",
-          error: "Gagal memulai scan potensi viral",
-        },
-      );
-
-      setClipMode("short");
-      setActiveJob(nextJob);
-      setJob(nextJob);
-      window.sessionStorage.setItem(TAB_JOB_STORAGE_KEY, nextJob.id);
-      await loadJobs();
-    } catch (scanError) {
-      setError(scanError instanceof Error ? scanError.message : "Gagal memulai scan.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [
-    activeJob,
-    aiApiKey,
-    aiBaseUrl,
-    aiEnabled,
-    aiModel,
-    cropMode,
-    loadJobs,
-    sourceHistory,
-    url,
-  ]);
 
   const handleStartJob = useCallback(async () => {
     const requestedMode: ClipMode = clipMode === "highlight_5m" ? "highlight_5m" : "short";
@@ -785,8 +717,8 @@ export default function HomePage() {
           ai_api_key: aiApiKey.trim(),
         }),
         {
-          loading: requestedMode === "short" ? "Mempersiapkan Short..." : "Menyusun struktur Long Highlight...",
-          success: requestedMode === "short" ? "Proses Short dimulai!" : "Proses Long Highlight dimulai!",
+          loading: requestedMode === "short" ? "Memulai scan dan render Short..." : "Memulai scan dan susun Long Highlight...",
+          success: requestedMode === "short" ? "Scan dimulai — kandidat terbaik akan langsung dirender." : "Scan dimulai — chapter terbaik akan langsung disusun.",
           error: "Gagal memulai proses pemotongan",
         },
       );
@@ -1449,7 +1381,6 @@ export default function HomePage() {
         onClipModeChange={handleClipModeChange}
         onAllowReprocessSourceChange={setAllowReprocessSource}
         onConfirmSourceRightsChange={setConfirmSourceRights}
-        onAnalyze={() => { void handleAnalyzeUrl(); }}
         onStart={() => { void handleStartJob(); }}
       />
 

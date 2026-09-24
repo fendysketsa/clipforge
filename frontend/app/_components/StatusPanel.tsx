@@ -24,7 +24,7 @@ type StatusPanelProps = {
 const STAGES = [
   { key: "source", label: "Sumber", icon: Video },
   { key: "transcript", label: "Transkrip", icon: FileText },
-  { key: "selection", label: "Pilih hook", icon: Sparkles },
+  { key: "selection", label: "Scan & pilih clip", icon: Sparkles },
   { key: "render", label: "Render", icon: Scissors },
   { key: "finalize", label: "Selesai", icon: Check },
 ] as const;

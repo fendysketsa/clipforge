@@ -41,7 +41,6 @@ type QuickStartCardProps = {
   onClipModeChange: (value: ClipMode) => void;
   onAllowReprocessSourceChange: (value: boolean) => void;
   onConfirmSourceRightsChange: (value: boolean) => void;
-  onAnalyze: () => void;
   onStart: () => void;
 };
 
@@ -77,7 +76,6 @@ export function QuickStartCard({
   onClipModeChange,
   onAllowReprocessSourceChange,
   onConfirmSourceRightsChange,
-  onAnalyze,
   onStart,
 }: QuickStartCardProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -105,10 +103,6 @@ export function QuickStartCard({
     && !duplicateBlocked
     && !sourceRightsBlocked
     && confirmSourceRights
-    && !isWorking;
-  const canAnalyze = hasUrl
-    && !invalidUrl
-    && !isCheckingSourceHistory
     && !isWorking;
 
   const pasteFromClipboard = async () => {
@@ -276,28 +270,18 @@ export function QuickStartCard({
 
         {error ? <div className="sourceError" role="alert">{error}</div> : null}
 
-        <div className={`sourceActionGrid${isLong ? " isSingle" : ""}`}>
-          {!isLong ? (
-            <button className="analyzeViralButton" type="button" disabled={!canAnalyze} onClick={onAnalyze}>
-              {isWorking ? <Loader2 className="spin" size={19} /> : <Sparkles size={19} />}
-              <span>
-                {isWorking ? "Menganalisis video…" : "Scan Potensi Viral"}
-                <small>Tanpa render · ranking + skor 0–100</small>
-              </span>
-              {!isWorking ? <ArrowRight size={19} /> : null}
-            </button>
-          ) : null}
+        <div className="sourceActionGrid isSingle">
           <button className="createShortButton" type="button" disabled={!canStart} onClick={onStart}>
             {isWorking ? <Loader2 className="spin" size={19} /> : <WandSparkles size={19} />}
             <span>
-              {isWorking ? "Menyiapkan pipeline…" : isLong ? "Susun Long Highlight" : "Buat Short Terbaik"}
-              <small>{isWorking ? "Jangan tutup halaman ini" : isLong ? "AI menyusun alur dan chapter otomatis" : "Render, subtitle, framing, dan polish"}</small>
+              {isWorking ? "Scan dan render sedang berjalan…" : isLong ? "Scan & Susun Long Highlight" : "Scan & Buat Short Terbaik"}
+              <small>{isWorking ? "AI memilih kandidat lalu melanjutkan ke render" : isLong ? "Pilih chapter, susun alur, lalu render otomatis" : "Pilih momen terbaik, quality gate, lalu langsung render"}</small>
             </span>
             {!isWorking ? <ArrowRight size={19} /> : null}
           </button>
         </div>
 
-        {!confirmSourceRights && hasUrl ? <p className="sourceHint">Scan bisa langsung. Konfirmasi izin hanya diperlukan untuk render atau upload.</p> : null}
+        {!confirmSourceRights && hasUrl ? <p className="sourceHint">Konfirmasi izin untuk menjalankan scan dan render dalam satu proses.</p> : null}
       </div>
     </section>
   );
