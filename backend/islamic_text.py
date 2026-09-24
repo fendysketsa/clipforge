@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import re
+from dataclasses import dataclass
 
 
 # High-confidence ASR corrections only. These are safe for subtitles and public
@@ -38,6 +40,84 @@ _INCOMPLETE_TITLE_ENDINGS = frozenset(
         "yang",
     }
 )
+
+
+@dataclass(frozen=True)
+class QuranOutroQuote:
+    """A locked, human-reviewed Indonesian Qur'an excerpt for video outros."""
+
+    text: str
+    source: str
+    keywords: tuple[str, ...] = ()
+    source_url: str = ""
+
+
+# Do not populate this catalogue with model-generated wording. Every entry must
+# keep a concrete surah/ayah reference and be reviewed before release. Short
+# excerpts are used so the card remains readable and does not imitate tafsir.
+QURAN_OUTRO_QUOTES: tuple[QuranOutroQuote, ...] = (
+    QuranOutroQuote(
+        "Allah tidak membebani seseorang, kecuali menurut kesanggupannya.",
+        "QS. Al-Baqarah [2]: 286",
+        ("beban", "berat", "sanggup", "ujian", "masalah", "kesulitan"),
+        source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/2?from=286&to=286",
+    ),
+    QuranOutroQuote(
+        "Sesungguhnya beserta kesulitan ada kemudahan.",
+        "QS. Al-Insyirah [94]: 5",
+        ("sulit", "kesulitan", "mudah", "kemudahan", "ujian", "sabar"),
+        source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/94?from=5&to=5",
+    ),
+    QuranOutroQuote(
+        "Ingatlah, bahwa hanya dengan mengingat Allah hati akan selalu tenteram.",
+        "QS. Ar-Ra'd [13]: 28",
+        ("hati", "tenang", "tenteram", "zikir", "dzikir", "cemas", "gelisah"),
+        source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/13?from=28&to=28",
+    ),
+    QuranOutroQuote(
+        "Janganlah kamu berputus asa dari rahmat Allah.",
+        "QS. Yusuf [12]: 87",
+        ("putus asa", "rahmat", "ampun", "dosa", "taubat", "tobat", "harapan"),
+        source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/12?from=87&to=87",
+    ),
+    QuranOutroQuote(
+        "Siapa yang bertawakal kepada Allah, niscaya Allah akan mencukupkan (keperluan)-nya.",
+        "QS. At-Talaq [65]: 3",
+        ("tawakal", "rezeki", "cukup", "usaha", "ikhtiar", "percaya"),
+        source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/65?from=3&to=3",
+    ),
+    QuranOutroQuote(
+        "Janganlah kamu (merasa) lemah dan jangan (pula) bersedih hati.",
+        "QS. Ali 'Imran [3]: 139",
+        ("lemah", "sedih", "bangkit", "semangat", "gagal", "kecewa"),
+        source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/3?from=139&to=139",
+    ),
+    QuranOutroQuote(
+        "Sungguh, yang paling mulia di antara kamu di sisi Allah ialah orang yang paling bertakwa.",
+        "QS. Al-Hujurat [49]: 13",
+        ("mulia", "takwa", "suku", "bangsa", "manusia", "derajat"),
+        source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/49?from=13&to=13",
+    ),
+    QuranOutroQuote(
+        "Hendaklah berbuat baik kepada ibu bapak.",
+        "QS. Al-Isra' [17]: 23",
+        ("ibu", "bapak", "ayah", "orang tua", "berbakti", "keluarga"),
+        source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/17?from=23&to=23",
+    ),
+)
+
+
+def select_quran_outro_quote(value: str, seed: str = "") -> QuranOutroQuote:
+    """Select a relevant quote deterministically without asking AI to invent one."""
+    normalized = re.sub(r"\s+", " ", value).casefold().strip()
+    relevant = tuple(
+        quote
+        for quote in QURAN_OUTRO_QUOTES
+        if any(keyword in normalized for keyword in quote.keywords)
+    )
+    pool = relevant or QURAN_OUTRO_QUOTES
+    digest = hashlib.sha256(f"{seed}\n{normalized}".encode("utf-8")).digest()
+    return pool[int.from_bytes(digest[:8], "big") % len(pool)]
 
 
 def _case_aware_replacement(match: re.Match[str], replacement: str) -> str:

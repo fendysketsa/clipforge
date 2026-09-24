@@ -82,9 +82,12 @@ again. For higher Hugging Face download limits, create a read-only access token
 and set `HF_TOKEN=hf_...` in the untracked root `.env`; the backend forwards it
 automatically and never writes the value to job logs.
 
-Vertical Shorts end with a content-theme-derived question over the live payoff,
-without a repeated Subscribe template. Optional Indonesian voice-over is disabled
-by default; when explicitly enabled it speaks that contextual question. Configure it in `.env` with
+Vertical Shorts end with a 2.8-second Qur'an card selected from a locked,
+Kemenag-sourced catalogue; long-form uses the card once after its final chapter.
+Set `QURAN_OUTRO_ENABLED=false` to disable it. The preceding live payoff may include
+a content-theme-derived question without a repeated Subscribe template. Optional
+Indonesian voice-over is disabled by default; when explicitly enabled it speaks
+that contextual question. Configure it in `.env` with
 `CTA_VOICEOVER_ENABLED`, `CTA_VOICEOVER_TEXT`, `CTA_VOICEOVER_VOICE`, and
 `CTA_VOICEOVER_RATE`.
 

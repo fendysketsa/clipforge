@@ -91,6 +91,7 @@ from clipper import (
     one_k_long_form_readiness,
     payoff_banner_text,
     pov_banner_text,
+    quran_outro_overlay_filter,
     remove_running_text_filter,
     retro_tv_look_filter,
     religious_context_integrity_profile,
@@ -133,6 +134,7 @@ from clipper import (
     write_dynamic_ass,
     youtube_policy_snapshot,
 )
+from islamic_text import QURAN_OUTRO_QUOTES, select_quran_outro_quote
 
 
 def test_hex_to_ass_color_basic():
@@ -3813,3 +3815,44 @@ def test_intisari_card_is_rendered_even_without_an_ending_boost():
 
     assert "text='INTISARI'" in value
     assert "textfile='clip.payoff.txt'" in value
+
+
+def test_quran_outro_selects_parent_verse_for_mother_topic():
+    quote = select_quran_outro_quote(
+        "Berbakti kepada ibu dan ayah adalah tanggung jawab anak.",
+        seed="clip-ibu",
+    )
+
+    assert quote.source == "QS. Al-Isra' [17]: 23"
+    assert quote.source_url.startswith("https://quran.kemenag.go.id/")
+
+
+def test_quran_outro_selection_is_stable_and_always_has_reference():
+    first = select_quran_outro_quote("Nasihat umum untuk kehidupan", seed="clip-7")
+    second = select_quran_outro_quote("Nasihat umum untuk kehidupan", seed="clip-7")
+
+    assert first == second
+    assert all(quote.text and quote.source and quote.source_url for quote in QURAN_OUTRO_QUOTES)
+
+
+def test_quran_outro_filter_appends_after_source_and_supports_landscape():
+    vertical = quran_outro_overlay_filter(
+        30.0,
+        2.8,
+        "quote.txt",
+        "source.txt",
+    )
+    landscape = quran_outro_overlay_filter(
+        120.0,
+        2.8,
+        "quote.txt",
+        "source.txt",
+        "landscape_compilation",
+    )
+
+    assert "tpad=stop_mode=clone:stop_duration=2.800" in vertical
+    assert "between(t,30.000,32.800)" in vertical
+    assert "textfile='quote.txt'" in vertical
+    assert "textfile='source.txt'" in vertical
+    assert "between(t,120.000,122.800)" in landscape
+    assert "fontsize=54" in landscape

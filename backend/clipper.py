@@ -24,7 +24,11 @@ from slugify import slugify
 from yt_dlp import YoutubeDL
 
 from llm import AIConfig, chat_completion, extract_json, is_llm_unavailable_error
-from islamic_text import islamic_indonesian_tts_text, repair_islamic_asr_text
+from islamic_text import (
+    islamic_indonesian_tts_text,
+    repair_islamic_asr_text,
+    select_quran_outro_quote,
+)
 from source_rights import (
     is_trusted_source_channel,
     source_rights_review_reasons,
@@ -9234,6 +9238,7 @@ SHORTS_TITLE_OVERLAY_SECONDS = 3.2
 SHORTS_COVER_SELECTION_WINDOW = (0.55, 1.25)
 SHORTS_CTA_OVERLAY_SECONDS = 1.85
 LONG_FORM_SUBSCRIBE_OVERLAY_SECONDS = 5.2
+QURAN_OUTRO_SECONDS = 2.8
 DEFAULT_SHORTS_CTA_VOICEOVER_TEXT = "Tulis pendapatmu dan lanjutkan diskusinya!"
 
 
@@ -9582,6 +9587,46 @@ def long_form_subscribe_overlay_filter(
             "fontcolor=white:fontsize=27:line_spacing=5:borderw=2:bordercolor=black@0.82:"
             "x=136:y=765:"
             f"{active}",
+        ]
+    )
+
+
+def quran_outro_overlay_filter(
+    source_duration: float,
+    outro_duration: float,
+    quote_filename: str,
+    source_filename: str,
+    output_format: OutputFormat = "vertical_short",
+) -> str:
+    """Append a sober black Qur'an card after the source has fully finished."""
+    safe_source = max(0.1, source_duration)
+    safe_outro = max(1.8, min(4.0, outro_duration))
+    end = safe_source + safe_outro
+    active = f"enable='between(t,{safe_source:.3f},{end:.3f})'"
+    font_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    font_regular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    if output_format == "landscape_compilation":
+        quote_size, source_size, quote_y, source_y = 54, 31, "(h-text_h)/2-42", "h*0.68"
+        accent_x, accent_w, accent_y = "(w-760)/2", 760, "h*0.31"
+    else:
+        quote_size, source_size, quote_y, source_y = 52, 28, "(h-text_h)/2-54", "h*0.66"
+        accent_x, accent_w, accent_y = "(w-620)/2", 620, "h*0.31"
+    return ",".join(
+        [
+            f"fade=t=out:st={max(0.0, safe_source - 0.14):.3f}:d=0.14",
+            f"tpad=stop_mode=clone:stop_duration={safe_outro:.3f}",
+            f"drawbox=x=0:y=0:w=iw:h=ih:color=black@1.0:t=fill:{active}",
+            f"drawbox=x='{accent_x}':y='{accent_y}':w={accent_w}:h=3:"
+            f"color=#D4A017@0.86:t=fill:{active}",
+            "drawtext="
+            f"fontfile={font_bold}:textfile='{quote_filename}':reload=0:expansion=none:"
+            f"fontcolor=white:fontsize={quote_size}:line_spacing=13:"
+            "borderw=1:bordercolor=black@0.35:"
+            f"x=(w-text_w)/2:y='{quote_y}':{active}",
+            "drawtext="
+            f"fontfile={font_regular}:textfile='{source_filename}':reload=0:expansion=none:"
+            f"fontcolor=#D4A017:fontsize={source_size}:"
+            f"x=(w-text_w)/2:y='{source_y}':{active}",
         ]
     )
 
@@ -13005,6 +13050,8 @@ def export_clip(
     payoff_text_path = clips_dir / f"{base_name}.payoff.txt"
     engagement_text_path = clips_dir / f"{base_name}.engagement.txt"
     subscribe_text_path = clips_dir / f"{base_name}.subscribe.txt"
+    quran_quote_text_path = clips_dir / f"{base_name}.quran_quote.txt"
+    quran_quote_source_path = clips_dir / f"{base_name}.quran_source.txt"
     clean_background_path = clips_dir / f"{base_name}.background_tmp.mp4"
     watermark_preview_path = clips_dir / f"{base_name}.watermark_preview_tmp.mp4"
     json_path.unlink(missing_ok=True)
@@ -13282,6 +13329,49 @@ def export_clip(
             f"{synthetic_sound_effect_count} cue tanpa pasangan aset lokal memakai accent sintetis ringan."
         )
     drawtext_supported = ffmpeg_has_filter("drawtext")
+    quran_outro_configured = env_enabled("QURAN_OUTRO_ENABLED", True)
+    quran_outro_requested = quran_outro_configured and (
+        output_format == "vertical_short"
+        or compilation_part_number == compilation_part_count
+    )
+    quran_outro_duration = QURAN_OUTRO_SECONDS
+    quran_outro_enabled = bool(
+        quran_outro_requested
+        and drawtext_supported
+        and (
+            output_format != "vertical_short"
+            or duration + quran_outro_duration <= SHORTS_OFFICIAL_MAX_SECONDS
+        )
+    )
+    quran_outro_quote = (
+        select_quran_outro_quote(
+            " ".join(
+                value
+                for value in (clip.title, clip.hook, clip.pov, clip.text)
+                if value
+            ),
+            seed=f"{clip.index}|{clip.start:.3f}|{clip.end:.3f}",
+        )
+        if quran_outro_enabled
+        else None
+    )
+    output_duration = duration + (
+        quran_outro_duration if quran_outro_quote is not None else 0.0
+    )
+    if quran_outro_quote is not None:
+        wrapped_quote = split_subtitle_text(
+            f"“{quran_outro_quote.text}”",
+            max_chars=50 if output_format == "landscape_compilation" else 31,
+            max_lines=3 if output_format == "landscape_compilation" else 4,
+        )
+        quran_quote_text_path.write_text(
+            (wrapped_quote[0] if wrapped_quote else quran_outro_quote.text) + "\n",
+            encoding="utf-8",
+        )
+        quran_quote_source_path.write_text(
+            quran_outro_quote.source + "\n",
+            encoding="utf-8",
+        )
     visible_editorial_framing = bool(
         enhanced_edit
         and output_format == "vertical_short"
@@ -13427,6 +13517,39 @@ def export_clip(
         "short_narrative_arc": narrative_arc_audit,
         "religious_context_integrity": religious_context_audit,
         "religious_claim_review": religious_claim_review,
+        "quran_outro": {
+            "enabled": quran_outro_quote is not None,
+            "text": quran_outro_quote.text if quran_outro_quote is not None else None,
+            "source": quran_outro_quote.source if quran_outro_quote is not None else None,
+            "source_url": (
+                quran_outro_quote.source_url if quran_outro_quote is not None else None
+            ),
+            "translation_source": "Terjemahan Kemenag RI 2019",
+            "duration_seconds": (
+                quran_outro_duration if quran_outro_quote is not None else 0.0
+            ),
+            "selection": "topic_matched_deterministic_from_locked_catalog",
+            "ai_generated_wording": False,
+            "applied_once_at_end_of_long_video": (
+                output_format == "landscape_compilation"
+                and compilation_part_number == compilation_part_count
+            ),
+            "disabled_reason": (
+                None
+                if quran_outro_quote is not None
+                else "disabled_by_environment"
+                if not quran_outro_configured
+                else "ffmpeg_drawtext_unavailable"
+                if quran_outro_requested and not drawtext_supported
+                else "would_exceed_shorts_180_second_limit"
+                if quran_outro_requested and output_format == "vertical_short"
+                else "not_final_long_form_chapter"
+                if output_format == "landscape_compilation"
+                else "not_requested"
+            ),
+        },
+        "source_duration_seconds": round(duration, 3),
+        "output_duration_seconds": round(output_duration, 3),
         # Always expose the render-time audit. Candidate metadata can predate a
         # structural trim or include different transcript boundary padding.
         "religious_context_safe": bool(
@@ -14455,6 +14578,23 @@ def export_clip(
             "dan export video dilanjutkan tanpa burn subtitle.[/yellow]"
         )
 
+    if quran_outro_quote is not None:
+        vf = (
+            f"{vf},"
+            f"{quran_outro_overlay_filter(
+                duration,
+                quran_outro_duration,
+                quran_quote_text_path.name,
+                quran_quote_source_path.name,
+                output_format,
+            )}"
+        )
+        applied_edits.append(
+            f"Kartu penutup menampilkan kutipan Al-Qur'an terkurasi "
+            f"({quran_outro_quote.source}); teks ayat tidak dibuat oleh AI."
+        )
+        sidecar_payload["applied_edits"] = list(dict.fromkeys(applied_edits))
+
     video_input = [
         ffmpeg_path(),
         "-hide_banner",
@@ -14557,6 +14697,8 @@ def export_clip(
         payoff_text_path.unlink(missing_ok=True)
         engagement_text_path.unlink(missing_ok=True)
         subscribe_text_path.unlink(missing_ok=True)
+        quran_quote_text_path.unlink(missing_ok=True)
+        quran_quote_source_path.unlink(missing_ok=True)
         clean_background_path.unlink(missing_ok=True)
         watermark_preview_path.unlink(missing_ok=True)
     audio_filter = (
@@ -14837,6 +14979,15 @@ def export_clip(
             "1:a:0",
             "-c:v",
             "copy",
+            *(
+                [
+                    "-af",
+                    f"apad=pad_dur={quran_outro_duration:.3f},"
+                    f"atrim=0:{output_duration:.3f}",
+                ]
+                if quran_outro_quote is not None
+                else []
+            ),
             "-c:a",
             "aac",
             "-profile:a",
@@ -14870,7 +15021,7 @@ def export_clip(
     if cta_voice_path is not None:
         cta_voice_path.unlink(missing_ok=True)
     if enforce_size:
-        enforce_clip_size_limit(out_path, duration)
+        enforce_clip_size_limit(out_path, output_duration)
     emit_render_task(0.94, "Audit resolusi, provenance, dan integritas output")
     if generate_assets:
         embed_fendy_provenance_metadata(out_path, clip.title, auditor_identity)
@@ -15064,6 +15215,7 @@ def export_compilation(
                         "core_message": str(part_payload.get("core_message") or "").strip()[:180],
                         "visual_direction": part_payload.get("auto_fyp_visual_plan"),
                         "end_cta": part_payload.get("end_cta"),
+                        "quran_outro": part_payload.get("quran_outro"),
                         "creator_commentary": part_payload.get("creator_commentary"),
                         "content_timed_editing": bool(
                             part_payload.get("emphasis_times")
@@ -15121,7 +15273,11 @@ def export_compilation(
         shutil.rmtree(parts_dir, ignore_errors=True)
 
     output_width, output_height = ensure_minimum_hd_output(out_path)
-    total_duration = write_compilation_srt(srt_path, transcript, candidates)
+    source_duration = write_compilation_srt(srt_path, transcript, candidates)
+    total_duration = round(
+        probe_media_duration_seconds(out_path) or source_duration,
+        3,
+    )
     scored_seconds = sum(max(0.0, item.duration) for item in candidates)
     compilation_score = round(
         sum(item.score * max(0.0, item.duration) for item in candidates)
@@ -15235,6 +15391,16 @@ def export_compilation(
             "mass_template_repetition_risk_reduced": visual_mode == "auto_fyp",
         },
         "background_mode": background_mode,
+        "quran_outro": (
+            part_audits[-1].get("quran_outro")
+            if part_audits and isinstance(part_audits[-1].get("quran_outro"), dict)
+            else {
+                "enabled": False,
+                "disabled_reason": "final_chapter_metadata_unavailable",
+            }
+        ),
+        "source_duration_seconds": round(source_duration, 3),
+        "output_duration_seconds": total_duration,
         "altered_content_disclosure_required": altered_content_disclosure_required,
         "enhanced_edit": enhanced_edit,
         "remove_running_text": remove_running_text,
