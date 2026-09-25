@@ -15,6 +15,7 @@ from clipper import (
     order_compilation_for_retention,
     select_candidates,
     select_compilation_candidates,
+    select_short_export_candidates,
     select_output_candidates,
 )
 
@@ -69,7 +70,7 @@ def test_ai_ranked_candidate_beats_higher_heuristic_score(monkeypatch):
 
     assert selected[0].title == "Kesalahan Pertama"
     assert selected[0].score == 84
-    assert selected[0].fyp_label == "Tidak layak"
+    assert selected[0].fyp_label == "Perlu review"
     assert selected[0].pov == "Penonton merasa sedang diingatkan sebelum rugi."
     assert selected[0].reason.startswith("AI FYP:")
     assert generic.score < selected[0].score
@@ -267,6 +268,42 @@ def test_final_short_quality_gate_discards_result_below_fyp_85():
         2,
         minimum_score=clipper.SHORT_EXPORT_MIN_FYP_SCORE,
     ) == [ready]
+
+
+def test_short_export_prefers_candidates_at_quality_target():
+    review_only = make_candidate(
+        0,
+        0,
+        82,
+        "Poin aman dan lengkap tetapi prediksi FYP belum mencapai target.",
+    )
+    ready = make_candidate(
+        1,
+        90,
+        87,
+        "Hook kuat menjelaskan masalah berbeda lalu memberi jawaban tuntas.",
+    )
+
+    selected, review_fallback = select_short_export_candidates(
+        [review_only, ready],
+        2,
+    )
+
+    assert selected == [ready]
+    assert review_fallback is False
+
+
+def test_short_export_preserves_safe_below_target_candidates_for_review():
+    candidates = [
+        make_candidate(index, index * 90, 82 - index, f"Poin aman berbeda nomor {index} dengan jawaban tuntas.")
+        for index in range(5)
+    ]
+
+    selected, review_fallback = select_short_export_candidates(candidates, 8)
+
+    assert selected
+    assert len(selected) <= clipper.SHORT_REVIEW_FALLBACK_LIMIT
+    assert review_fallback is True
 
 
 def test_complete_high_information_84_second_short_is_not_penalized_for_length():

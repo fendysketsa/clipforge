@@ -29,6 +29,7 @@ from clipper import (
     ytdlp_base_options,
     youtube_download_strategies,
     youtube_review_audio_strategies,
+    youtube_retry_reason,
 )
 
 
@@ -364,6 +365,16 @@ def test_friendly_youtube_error_explains_403_after_embedded_retry():
     assert "ERROR:" not in message
 
 
+def test_youtube_retry_reason_distinguishes_recoverable_attempt_failures():
+    assert "format audio-video" in youtube_retry_reason(
+        RuntimeError("Requested format is not available")
+    )
+    assert "FFmpeg" in youtube_retry_reason(RuntimeError("ffmpeg exited with code 8"))
+    assert "ditolak sementara" in youtube_retry_reason(
+        RuntimeError("HTTP Error 403: Forbidden")
+    )
+
+
 def test_youtube_download_strategies_isolate_partial_files_and_add_embedded_retry(tmp_path):
     strategies = youtube_download_strategies(2160, tmp_path)
 
@@ -450,7 +461,7 @@ def test_ytdlp_base_options_does_not_pin_a_stale_browser_user_agent():
     assert options["http_headers"]["Accept-Language"].startswith("id-ID")
 
 
-def test_download_video_reaches_muxed_fallback_after_default_403(monkeypatch, tmp_path):
+def test_download_video_reaches_muxed_fallback_after_default_403(monkeypatch, tmp_path, capsys):
     import clipper
 
     attempted_options = []
@@ -470,6 +481,7 @@ def test_download_video_reaches_muxed_fallback_after_default_403(monkeypatch, tm
             assert download is True
             attempted_options.append(self.options)
             if "source_muxed" not in self.options["outtmpl"]:
+                self.options["logger"].error("ERROR: HTTP Error 403: Forbidden")
                 raise RuntimeError("HTTP Error 403: Forbidden")
             downloaded.write_bytes(b"audio-video")
             return {"id": "demo", "title": "Demo", "ext": "mp4"}
@@ -502,6 +514,11 @@ def test_download_video_reaches_muxed_fallback_after_default_403(monkeypatch, tm
         for item in attempted_options
     )
     assert select_calls >= 2
+    assert all("logger" in item for item in attempted_options)
+    output = capsys.readouterr().out
+    assert "ERROR:" not in output
+    assert "Mencoba alternatif berikutnya" in output
+    assert "Fallback download berhasil" in output
 
 
 def test_cleanup_clip_files_removes_output_artifacts(monkeypatch):

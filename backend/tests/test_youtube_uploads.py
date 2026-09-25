@@ -23,6 +23,7 @@ from api import (
     build_youtube_restart_verification_command,
     build_youtube_upload_command,
     classify_long_form_playlist,
+    clip_success_telegram_text,
     clip_requires_altered_content_disclosure,
     complete_youtube_description,
     content_shingle_similarity,
@@ -98,6 +99,54 @@ def make_candidate(index: int, score: int) -> ClipCandidate:
         reason="test",
         text="test",
     )
+
+
+def test_clip_success_message_marks_below_target_short_as_manual_review():
+    clip = make_clip(1).model_copy(update={"fyp_score": 82})
+    job = ClipJob(
+        id="job-review-fallback",
+        status="completed",
+        request=ClipJobRequest(source_file="/tmp/owned.mp4"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+
+    message = clip_success_telegram_text(job)
+
+    assert "review manual" in message
+    assert "auto-upload batch YouTube ditahan" in message
+
+
+def test_clip_success_message_marks_target_short_as_quality_ready():
+    clip = make_clip(1).model_copy(update={"fyp_score": 87})
+    job = ClipJob(
+        id="job-quality-ready",
+        status="completed",
+        request=ClipJobRequest(source_file="/tmp/owned.mp4"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+
+    assert "mencapai target skor prediksi" in clip_success_telegram_text(job)
+
+
+def test_clip_success_message_keeps_unknown_short_score_in_manual_review():
+    clip = make_clip(1).model_copy(update={"fyp_score": None})
+    job = ClipJob(
+        id="job-score-unknown",
+        status="completed",
+        request=ClipJobRequest(source_file="/tmp/owned.mp4"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+
+    message = clip_success_telegram_text(job)
+
+    assert "review manual" in message
+    assert "mencapai target skor prediksi" not in message
 
 
 def make_monetization_ready_url_request(**updates) -> ClipJobRequest:

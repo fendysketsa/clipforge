@@ -208,7 +208,7 @@ export function ControlPanel({
                   </button>
                 ))}
               </div>
-              {videoDuration ? <p className="targetSourceNote"><Clock3 size={13} /> Sumber {Math.round(videoDuration / 60)} menit · AI hanya mengambil chapter yang lolos quality gate</p> : null}
+              {videoDuration ? <p className="targetSourceNote"><Clock3 size={13} /> Sumber {Math.round(videoDuration / 60)} menit · AI hanya mengambil chapter dengan alur dan konteks yang utuh</p> : null}
             </section>
           </>
         ) : (

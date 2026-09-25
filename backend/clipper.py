@@ -90,6 +90,39 @@ YTDLP_HTTP_HEADERS = {
 }
 
 
+class RetryAwareYtdlpLogger:
+    """Keep recoverable yt-dlp attempt errors out of the user-facing log.
+
+    ``YoutubeDL`` logs an ``ERROR:`` line before raising. Downloading a
+    YouTube source intentionally tries several independent clients/formats, so
+    that line is often only an attempt failure rather than the job result. The
+    exception is still retained by the caller for the final diagnostic.
+    """
+
+    def debug(self, _message: str) -> None:
+        return
+
+    def warning(self, _message: str) -> None:
+        return
+
+    def error(self, _message: str) -> None:
+        return
+
+
+def youtube_retry_reason(exc: BaseException) -> str:
+    """Return a short, non-alarming explanation for one fallback attempt."""
+    message = str(exc).casefold()
+    if "requested format is not available" in message:
+        return "format audio-video tidak tersedia pada jalur ini"
+    if "ffmpeg exited with code" in message:
+        return "FFmpeg tidak dapat membaca stream/range dari jalur ini"
+    if "403" in message or "forbidden" in message:
+        return "akses stream ditolak sementara pada jalur ini"
+    if is_network_error(str(exc)):
+        return "koneksi jalur ini terputus"
+    return "media belum dapat diambil melalui jalur ini"
+
+
 @dataclass
 class TranscriptSegment:
     start: float
@@ -4909,6 +4942,7 @@ def download_video(
         ydl_opts = ytdlp_base_options(
             **options,
             merge_output_format="mp4",
+            logger=RetryAwareYtdlpLogger(),
             noprogress=True,
             ffmpeg_location=ffmpeg_path(),
         )
@@ -4931,9 +4965,19 @@ def download_video(
                     info = attempt_info
         except Exception as exc:
             download_errors.append(exc)
+            if attempt < total_attempts:
+                console.print(
+                    "[yellow]Jalur download "
+                    f"{strategy_name} belum cocok: {youtube_retry_reason(exc)}. "
+                    "Mencoba alternatif berikutnya...[/yellow]"
+                )
             continue
         file_path = select_usable_source_media(work_dir)
         if file_path is not None:
+            if attempt > 1:
+                console.print(
+                    f"[green]Fallback download berhasil melalui jalur {strategy_name}.[/green]"
+                )
             break
 
     # Every compatibility path is part of the loop above. In particular, do
@@ -5624,6 +5668,7 @@ SHORT_EXPORT_MIN_FYP_SCORE = 85
 SHORT_REPAIR_POOL_MIN_SIZE = 12
 SHORT_REPAIR_POOL_MULTIPLIER = 4
 SHORT_BATCH_MAX_TOPIC_SIMILARITY = 0.52
+SHORT_REVIEW_FALLBACK_LIMIT = 3
 
 
 def fyp_score_label(score: int) -> str:
@@ -5631,7 +5676,7 @@ def fyp_score_label(score: int) -> str:
         return "Sangat kuat"
     if score >= SHORT_EXPORT_MIN_FYP_SCORE:
         return "Layak"
-    return "Tidak layak"
+    return "Perlu review"
 
 
 def five_k_experiment_readiness(
@@ -7743,6 +7788,33 @@ def select_candidates(
     for idx, candidate in enumerate(picked, start=1):
         candidate.index = idx
     return picked
+
+
+def select_short_export_candidates(
+    candidates: list[ClipCandidate],
+    limit: int,
+) -> tuple[list[ClipCandidate], bool]:
+    """Prefer the FYP target, but preserve safe clips for manual review.
+
+    The internal FYP estimate is useful for ranking and automatic batch upload.
+    Safety remains enforced by ``select_candidates`` through narrative,
+    retention, boundary, religious-context, and editorial checks.
+    """
+    quality_candidates = select_candidates(
+        candidates,
+        limit,
+        minimum_score=SHORT_EXPORT_MIN_FYP_SCORE,
+    )
+    if quality_candidates:
+        return quality_candidates, False
+
+    fallback_limit = min(max(1, limit), SHORT_REVIEW_FALLBACK_LIMIT)
+    review_candidates = select_candidates(
+        candidates,
+        fallback_limit,
+        minimum_score=1,
+    )
+    return review_candidates, bool(review_candidates)
 
 
 def select_compilation_candidates(
@@ -17030,8 +17102,8 @@ def main() -> int:
     )
     structural_edits_applied = False
     if args.clip_mode == "short" and not args.no_enhanced_edit:
-        # Repair a wider, diverse shortlist first. Only candidates that become
-        # genuinely upload-ready are allowed into the final requested batch.
+        # Repair a wider, diverse shortlist before applying the final quality
+        # target. Structural and editorial safety gates remain mandatory.
         emit_progress(
             55,
             "selection",
@@ -17058,7 +17130,7 @@ def main() -> int:
         candidates = select_candidates(
             repair_candidates,
             args.top,
-            minimum_score=SHORT_EXPORT_MIN_FYP_SCORE,
+            minimum_score=1,
         )
         compilation_candidates = []
         structural_edits_applied = True
@@ -17069,12 +17141,6 @@ def main() -> int:
             short_limit=args.top,
             compilation_target=args.compilation_target,
         )
-    if args.clip_mode == "short":
-        candidates = select_candidates(
-            candidates,
-            args.top,
-            minimum_score=SHORT_EXPORT_MIN_FYP_SCORE,
-        )
     emit_progress(
         59,
         "selection",
@@ -17083,9 +17149,9 @@ def main() -> int:
     if not candidates:
         if args.clip_mode == "short":
             console.print(
-                "[red]Tidak ada kandidat yang mencapai target Short FYP "
-                f"{SHORT_EXPORT_MIN_FYP_SCORE} setelah optimasi otomatis. "
-                "Output berkualitas rendah tidak dibuat; gunakan sumber lain.[/red]"
+                "[red]Tidak ada kandidat dengan alur utuh, retensi memadai, "
+                "batas kalimat aman, dan konteks editorial yang layak. "
+                "Gunakan sumber lain atau perluas durasi analisis.[/red]"
             )
         else:
             console.print(
@@ -17105,22 +17171,6 @@ def main() -> int:
             )
         if args.clip_mode == "highlight_5m":
             compilation_candidates = candidates
-        else:
-            # Structural intro/ending edits recalculate story metrics and the
-            # FYP estimate. Never render a Short that remains below the final
-            # quality target after all automatic repair passes.
-            candidates = select_candidates(
-                candidates,
-                args.top,
-                minimum_score=SHORT_EXPORT_MIN_FYP_SCORE,
-            )
-            if not candidates:
-                console.print(
-                    "[red]Tidak ada kandidat yang tetap mencapai target Short FYP "
-                    f"{SHORT_EXPORT_MIN_FYP_SCORE} setelah auto-repair. "
-                    "Output berkualitas rendah dibuang; gunakan sumber lain.[/red]"
-                )
-                return 1
 
     if args.clip_mode == "short":
         # The final FFmpeg interval can overlap a neighboring Whisper segment by
@@ -17144,6 +17194,28 @@ def main() -> int:
                 "Klip tidak dirender; proses ulang agar pemilih mencari window lain.[/red]"
             )
             return 1
+
+        candidates, review_fallback = select_short_export_candidates(
+            candidates,
+            args.top,
+        )
+        if not candidates:
+            console.print(
+                "[red]Tidak ada kandidat yang tetap lolos gate struktur, retensi, "
+                "konteks, dan keamanan editorial setelah audit final.[/red]"
+            )
+            return 1
+        if review_fallback:
+            console.print(
+                "[yellow]Skor prediksi belum mencapai target Short FYP "
+                f"{SHORT_EXPORT_MIN_FYP_SCORE}. {len(candidates)} kandidat paling aman "
+                "tetap dirender untuk review manual; auto-upload batch YouTube tetap ditahan.[/yellow]"
+            )
+            emit_progress(
+                65,
+                "selection",
+                f"{len(candidates)} kandidat aman disiapkan untuk review manual",
+            )
 
     save_json(work_dir / f"candidates{cache_suffix}.json", [asdict(item) for item in candidates])
     print_candidates(candidates)

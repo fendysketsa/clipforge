@@ -44,7 +44,7 @@ function scoreTone(score: number) {
 function scoreLabel(score: number) {
   if (score >= 90) return "Exceptional";
   if (score >= VIRAL_QUALITY_FLOOR) return "Layak untuk diuji";
-  return "Tidak layak";
+  return "Perlu review";
 }
 
 function timestamp(seconds: number) {
@@ -108,7 +108,7 @@ export function ViralAnalysisResults({ candidates, sourceTitle }: Props) {
               <div className="viralCandidateTop">
                 <span className="viralRank">#{rank + 1}</span>
                 <div className="viralCandidateTitle">
-                  <span>{passes ? <CheckCircle2 size={14} /> : <XCircle size={14} />}{passes ? "LOLOS QUALITY GATE" : "BELUM LOLOS GATE"}</span>
+                  <span>{passes ? <CheckCircle2 size={14} /> : <XCircle size={14} />}{passes ? "MENCAPAI TARGET 85" : "DI BAWAH TARGET · REVIEW"}</span>
                   <h3>{candidate.title}</h3>
                 </div>
                 <div className="viralScoreDial">

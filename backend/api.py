@@ -2117,16 +2117,8 @@ def load_jobs() -> dict[str, ClipJob]:
     for item in payload:
         job = ClipJob(**item)
         job = enrich_job_for_display(job)
-        if job.status in {"queued", "running"}:
-            finished_at = now_iso()
-            data = job.model_dump()
-            data["status"] = "failed"
-            data["updated_at"] = finished_at
-            data["finished_at"] = finished_at
-            data["duration_seconds"] = duration_between_iso(job.started_at, finished_at)
-            data["error"] = "Backend restarted before this job finished"
-            job = ClipJob(**data)
-            job = enrich_job_for_display(job)
+        # Preserve active state so the startup recovery hook can requeue it.
+        # Marking it failed here makes resume_interrupted_clipping_jobs unreachable.
         loaded[job.id] = job
     return loaded
 
@@ -6035,7 +6027,10 @@ def create_tiktok_upload_batch_records(job_id: str, request: TikTokBatchUploadRe
             and youtube_monetization_preflight_issue(job, clip) is None
         ][:request.best_count]
     if not clip_urls:
-        raise HTTPException(status_code=409, detail="Tidak ada clip yang sudah direview dan lolos quality gate TikTok.")
+        raise HTTPException(
+            status_code=409,
+            detail="Tidak ada clip yang sudah direview dan lolos gate keamanan/editorial TikTok.",
+        )
     return list({item.id: item for item in (
         create_tiktok_upload_record(
             job_id,
@@ -10071,7 +10066,7 @@ def assess_viral_candidate(candidate: ClipCandidate) -> ClipCandidate:
     elif viral_score >= SHORT_FYP_TARGET_SCORE:
         label = "Strong test candidate"
     else:
-        label = f"Rejected — below {SHORT_FYP_TARGET_SCORE} quality floor"
+        label = f"Needs review — below target {SHORT_FYP_TARGET_SCORE}"
 
     return candidate.model_copy(
         update={
@@ -11442,15 +11437,15 @@ def source_quick_check(info: dict[str, Any]) -> dict[str, Any]:
         label = "Layak di-scan"
         recommendation = "scan"
         reason = (
-            f"Skor sumber lolos quality gate {SHORT_FYP_TARGET_SCORE}. "
+            f"Skor sinyal sumber mencapai target {SHORT_FYP_TARGET_SCORE}. "
             "Scan transkrip untuk memastikan hook dan payoff juga layak dirender."
         )
     else:
-        label = "Tidak layak"
+        label = "Prioritas rendah"
         recommendation = "skip"
         reason = (
-            f"Skor sumber belum mencapai quality gate {SHORT_FYP_TARGET_SCORE}. "
-            "Batalkan sekarang agar waktu render tidak terbuang."
+            f"Skor sinyal sumber belum mencapai target {SHORT_FYP_TARGET_SCORE}. "
+            "Sumber tetap boleh dipindai karena kualitas klip ditentukan dari transkrip."
         )
 
     return {
@@ -13015,6 +13010,18 @@ def clip_success_telegram_text(job: ClipJob) -> str:
         if job.request.clip_mode == "highlight_5m"
         else "Clip Pendek"
     )
+    quality_target_passed = bool(
+        job.request.clip_mode != "short"
+        or all(
+            clip.fyp_score is not None and clip.fyp_score >= SHORT_FYP_TARGET_SCORE
+            for clip in job.clips
+        )
+    )
+    quality_status = (
+        "Status: mencapai target skor prediksi dan lolos audit editorial awal."
+        if quality_target_passed
+        else "Status: lolos gate struktur/editorial untuk review manual; auto-upload batch YouTube ditahan karena skor prediksi belum mencapai target."
+    )
     lines = [
         "Clip berhasil dibuat",
         "",
@@ -13033,7 +13040,7 @@ def clip_success_telegram_text(job: ClipJob) -> str:
     lines.extend(
         [
             "",
-            "Status: lolos quality gate kandidat dan audit editorial awal.",
+            quality_status,
             "Tetap review hak audio/visual serta YouTube Checks sebelum dipublikasikan.",
         ]
     )

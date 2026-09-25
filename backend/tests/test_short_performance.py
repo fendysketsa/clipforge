@@ -1,3 +1,5 @@
+import json
+
 import clipper
 import api
 
@@ -31,6 +33,29 @@ def test_standard_remains_full_hd_fast_path():
 
     assert preset["preset"] == "veryfast"
     assert preset["max_download_height"] == 1080
+
+
+def test_load_jobs_preserves_active_status_for_startup_recovery(monkeypatch, tmp_path):
+    running = api.ClipJob(
+        id="running-job-on-disk",
+        status="running",
+        request=api.ClipJobRequest(source_file="running.mp4"),
+        created_at="2026-09-01T00:01:00+00:00",
+        updated_at="2026-09-01T00:01:00+00:00",
+        progress_percent=70,
+        progress_stage="render",
+    )
+    jobs_path = tmp_path / "jobs.json"
+    jobs_path.write_text(
+        json.dumps([running.model_dump(mode="json")]),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(api, "JOBS_PATH", jobs_path)
+
+    loaded = api.load_jobs()
+
+    assert loaded[running.id].status == "running"
+    assert loaded[running.id].error is None
 
 
 def test_startup_resumes_queued_and_interrupted_jobs(monkeypatch):

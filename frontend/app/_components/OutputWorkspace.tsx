@@ -46,7 +46,7 @@ export function OutputWorkspace({ children, resultCount, historyCount }: OutputW
         <div className="outputWorkspaceTitle">
           <span>VIDEO LIBRARY</span>
           <h2>Hasil Short & Long</h2>
-          <p>Review output, cek quality gate, lalu unduh atau kirim ke channel.</p>
+          <p>Review output dan audit kualitas, lalu unduh atau kirim ke channel.</p>
         </div>
 
         <div className="workspaceTabs" role="tablist" aria-label="Pilih tampilan workspace">

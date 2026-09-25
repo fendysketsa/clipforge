@@ -694,7 +694,7 @@ def telegram_fyp_label(score: int) -> str:
         return "Sangat kuat"
     if score >= 85:
         return "Layak"
-    return "Tidak layak"
+    return "Perlu review"
 
 
 def clip_index_from_result(clip: dict[str, Any], fallback: int) -> int:
@@ -3338,7 +3338,8 @@ class FendyClipperTelegramBot:
                     "• Default padat 25–45 detik; durasi panjang tetap opsional\n"
                     "• Hook, konteks, perkembangan, dan payoff utuh\n"
                     "• Caption dan edit mengikuti isi ucapan\n"
-                    "• Hanya kandidat yang lolos quality gate diekspor"
+                    "• Kandidat target FYP 85 diprioritaskan\n"
+                    "• Maksimal 3 kandidat aman di bawah target dapat diekspor untuk review manual"
                 ),
                 keyboard([[button("⬅️ Kembali", "menu:settings")]]),
             )

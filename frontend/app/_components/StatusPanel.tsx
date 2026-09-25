@@ -58,6 +58,17 @@ const currentTaskLabel = (job: ClipJob | null) => {
   return "PROSES GAGAL";
 };
 
+const friendlyProcessLog = (line: string) => {
+  const normalized = line.toLowerCase();
+  if (normalized.startsWith("error:") && normalized.includes("ffmpeg exited with code")) {
+    return "Jalur download utama belum cocok; fallback otomatis dilanjutkan.";
+  }
+  if (normalized.startsWith("error:") && normalized.includes("requested format is not available")) {
+    return "Format tidak tersedia pada jalur ini; fallback otomatis dilanjutkan.";
+  }
+  return line;
+};
+
 export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) {
   const StatusIcon = job ? statusIcon[job.status] : Circle;
   const currentStage = stageIndex(job);
@@ -117,7 +128,7 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
           <div className="clipStatusActions">
             <details className="compactLogs">
               <summary><span><Terminal size={14} /> Detail proses</span><ChevronDown size={14} /></summary>
-              <div>{latestLogs.length ? latestLogs.map((line, index) => <code key={`${line}-${index}`}>{line}</code>) : <code>Menunggu aktivitas…</code>}</div>
+              <div>{latestLogs.length ? latestLogs.map((line, index) => <code key={`${line}-${index}`}>{friendlyProcessLog(line)}</code>) : <code>Menunggu aktivitas…</code>}</div>
             </details>
             {canCancel ? <button type="button" onClick={onCancelJob}><XCircle size={15} /> Batalkan</button> : null}
           </div>

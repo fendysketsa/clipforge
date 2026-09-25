@@ -90,12 +90,12 @@ export function QuickStartCard({
     : quickScore >= VIRAL_QUALITY_FLOOR ? "scan" : "skip";
   const quickLabel = quickScore === null
     ? sourceProbe?.momentum_label || "Data publik belum cukup"
-    : quickScore >= VIRAL_QUALITY_FLOOR ? "Layak di-scan" : "Tidak layak";
+    : quickScore >= VIRAL_QUALITY_FLOOR ? "Layak di-scan" : "Prioritas rendah";
   const quickReason = quickScore === null
     ? sourceProbe?.quick_check_reason || "Gunakan Scan Potensi Viral untuk menilai isi video."
     : quickScore >= VIRAL_QUALITY_FLOOR
-      ? `Skor sumber lolos quality gate . Scan transkrip untuk memastikan hook dan payoff juga layak dirender.`
-      : `Skor sumber belum mencapai quality gate . Batalkan sekarang agar waktu render tidak terbuang.`;
+      ? `Skor sinyal sumber ${Math.round(quickScore)}/100 melewati target ${VIRAL_QUALITY_FLOOR}. Scan transkrip untuk memeriksa hook dan payoff.`
+      : `Skor sinyal sumber ${Math.round(quickScore)}/100 belum mencapai target ${VIRAL_QUALITY_FLOOR}. Sumber tetap boleh dipindai karena kualitas klip ditentukan dari transkrip.`;
   const isWorking = isBusy || isSubmitting;
   const canStart = hasUrl
     && !invalidUrl
@@ -275,7 +275,7 @@ export function QuickStartCard({
             {isWorking ? <Loader2 className="spin" size={19} /> : <WandSparkles size={19} />}
             <span>
               {isWorking ? "Scan dan render sedang berjalan…" : isLong ? "Scan & Susun Long Highlight" : "Scan & Buat Short Terbaik"}
-              <small>{isWorking ? "AI memilih kandidat lalu melanjutkan ke render" : isLong ? "Pilih chapter, susun alur, lalu render otomatis" : "Pilih momen terbaik, quality gate, lalu langsung render"}</small>
+              <small>{isWorking ? "AI memilih kandidat lalu melanjutkan ke render" : isLong ? "Pilih chapter, susun alur, lalu render otomatis" : "Pilih momen terbaik, audit struktur dan konteks, lalu render"}</small>
             </span>
             {!isWorking ? <ArrowRight size={19} /> : null}
           </button>

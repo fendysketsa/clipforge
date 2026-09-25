@@ -701,12 +701,11 @@ export function ResultsSection({
               : null;
             const passesGrowthGate = typeof clip.growth_quality_gate_passed === "boolean"
               ? clip.growth_quality_gate_passed
-              : isLongForm || (typeof clip.fyp_score === "number" && clip.fyp_score >= VIRAL_QUALITY_FLOOR);
+              : clip.youtube_upload_ready !== false;
             const meetsFypTarget = isLongForm
               || typeof clip.fyp_score !== "number"
               || clip.fyp_score >= VIRAL_QUALITY_FLOOR;
             const isUploadReady = passesGrowthGate
-              && meetsFypTarget
               && !clip.context_recut_required
               && clip.youtube_upload_ready !== false;
             const needsAutomaticRepair = Boolean(clip.automatic_repair_available);
@@ -771,7 +770,7 @@ export function ResultsSection({
             const youtubeButtonTitle = youtubeEnabled
               ? !isUploadReady
                 ? clip.youtube_upload_issue
-                  || "Upload ditahan: output belum lolos quality gate. Jalankan Perbaiki Otomatis."
+                  || "Upload ditahan: output belum lolos gate keamanan/editorial. Jalankan Perbaiki Otomatis."
                 : !uploadReviewConfirmed
                   ? "Centang review hasil, fakta, dan hak penggunaan sebelum upload Private."
                 : isAlreadyUploaded
@@ -815,9 +814,11 @@ export function ResultsSection({
                         ? "Perlu perbaikan batas konteks"
                         : needsAutomaticRepair
                           ? "Perlu perbaikan editorial"
+                        : isUploadReady && !meetsFypTarget
+                          ? "Siap review manual · skor di bawah target"
                         : isUploadReady
                           ? "Klip siap review Private"
-                          : "Ditahan quality gate"}
+                          : "Ditahan gate keamanan"}
                     </span>
                     <h3>{title}</h3>
                   </div>
@@ -933,7 +934,7 @@ export function ResultsSection({
                         aria-label={!tiktokEnabled
                           ? tiktokStatusMessage
                           : !isUploadReady
-                            ? clip.youtube_upload_issue || "Clip belum lolos quality gate."
+                            ? clip.youtube_upload_issue || "Clip belum lolos gate keamanan/editorial."
                             : !uploadReviewConfirmed
                               ? "Centang review konteks, fakta, dan hak penggunaan."
                               : isAlreadyOnTikTok

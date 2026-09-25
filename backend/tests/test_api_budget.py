@@ -1524,7 +1524,7 @@ def test_source_quick_check_enforces_exact_85_floor(monkeypatch):
     monkeypatch.setattr("api.auto_viral_candidate_score", lambda _info: 252)
     below_floor = source_quick_check(info)
     assert below_floor["momentum_score"] == 84
-    assert below_floor["momentum_label"] == "Tidak layak"
+    assert below_floor["momentum_label"] == "Prioritas rendah"
     assert below_floor["quick_check_recommendation"] == "skip"
 
     monkeypatch.setattr("api.auto_viral_candidate_score", lambda _info: 255)
