@@ -3805,6 +3805,33 @@ def test_intisari_prefers_explicit_key_message_from_spoken_transcript():
     assert "TERIMA KASIH" not in value
 
 
+def test_intisari_skips_trailing_acknowledgement_for_source_grounded_line():
+    clip = ClipCandidate(
+        1,
+        0,
+        35,
+        35,
+        90,
+        "Buah untuk lokasi syuting",
+        "test",
+        "Makanan yang tersedia dibahas sebelum memilih anggur untuk syuting.",
+    )
+    segments = [
+        TranscriptSegment(0, 8, "Makanan yang ada hari ini cuma yang tersedia."),
+        TranscriptSegment(8, 17, "Buahnya ada, tapi belum ada anggur."),
+        TranscriptSegment(17, 28, "Masa minta anggur di lokasi syuting tidak cocok, kan?"),
+        TranscriptSegment(28, 34, "Oke."),
+    ]
+
+    value = payoff_banner_text(clip, segments)
+
+    assert "MINTA ANGGUR" in value
+    assert value != "OKE"
+    assert clipper_module._content_words(value).intersection(
+        clipper_module._content_words(clip.text)
+    )
+
+
 def test_intisari_card_is_rendered_even_without_an_ending_boost():
     value = enhanced_edit_filter(
         30,

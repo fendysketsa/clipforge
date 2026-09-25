@@ -9996,8 +9996,33 @@ def payoff_banner_text(clip: ClipCandidate, clip_segments: list[TranscriptSegmen
         segment.text
         for segment in search_pool
         if any(marker in segment.text.casefold() for marker in key_markers)
+        and _content_words(segment.text)
     ]
-    takeaway = marked[-1] if marked else source_segments[-1].text
+    if marked:
+        takeaway = marked[-1]
+    else:
+        # The final ASR segment is often only an acknowledgement such as
+        # "oke", "iya", or "terima kasih". Using that verbatim makes the
+        # editorial contract fail even when the clip contains a usable,
+        # source-grounded takeaway. Prefer a substantive late line while
+        # keeping every displayed word traceable to the transcript.
+        def fallback_score(
+            indexed_segment: tuple[int, TranscriptSegment],
+        ) -> tuple[int, int, int]:
+            index, segment = indexed_segment
+            words = re.findall(r"[\w']+", segment.text.casefold())
+            content_word_count = len(_content_words(segment.text))
+            payoff_signal = int(
+                "?" in segment.text
+                or bool(set(words).intersection(PAYOFF_WORDS | IMPORTANT_WORDS))
+            )
+            return payoff_signal, min(content_word_count, 6), index
+
+        takeaway = max(
+            enumerate(search_pool),
+            key=fallback_score,
+            default=(0, source_segments[-1]),
+        )[1].text
     value = first_sentence(takeaway, max_words=10).upper()
     chunks = split_subtitle_text(value, max_chars=30, max_lines=2)
     return (chunks[0] if chunks else value)[:100]

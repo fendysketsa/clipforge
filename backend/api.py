@@ -3013,6 +3013,30 @@ def attach_job_telemetry(job: "ClipJob") -> "ClipJob":
     return job.model_copy(update={"telemetry": telemetry}) if telemetry is not None else job
 
 
+AUTOMATIC_CLIP_REPAIR_ISSUE_MARKERS = (
+    "Perbaiki Otomatis",
+    "perspektif editorial otomatis belum ditemukan",
+)
+
+
+def clip_automatic_repair_available(
+    job: "ClipJob",
+    clip: ClipFile,
+    issue: str | None,
+) -> bool:
+    """Expose targeted rerendering for failures that it can actually repair."""
+    return bool(
+        job.request.clip_mode == "short"
+        and (
+            clip.context_recut_required
+            or (
+                issue
+                and any(marker in issue for marker in AUTOMATIC_CLIP_REPAIR_ISSUE_MARKERS)
+            )
+        )
+    )
+
+
 def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
     enriched = enrich_job_source_metadata(
         enrich_job_codex_feedback(enrich_job_clip_titles(job))
@@ -3033,12 +3057,10 @@ def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
         issue = preflight(enriched, clip)
         tiktok_strategy = current_tiktok_strategy_for_clip(clip)
         tiktok_strategy_changed = clip.tiktok_series_id != tiktok_strategy["series_id"]
-        automatic_repair_available = bool(
-            enriched.request.clip_mode == "short"
-            and (
-                clip.context_recut_required
-                or (issue and "Perbaiki Otomatis" in issue)
-            )
+        automatic_repair_available = clip_automatic_repair_available(
+            enriched,
+            clip,
+            issue,
         )
         updates = {
             "youtube_upload_ready": issue is None,
@@ -4736,7 +4758,7 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
     ):
         return (
             "Upload diblokir: perspektif editorial otomatis belum ditemukan pada hasil render. "
-            "Render ulang dengan AI aktif agar analisis spesifik isi video tampil sebagai kartu editorial."
+            "Jalankan Perbaiki Otomatis agar analisis spesifik isi video tampil sebagai kartu editorial."
         )
     if job.request.creator_commentary_file and not reviewed_automatic_rebuild:
         creator_commentary = sidecar.get("creator_commentary")

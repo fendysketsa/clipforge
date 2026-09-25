@@ -25,6 +25,7 @@ from api import (
     classify_long_form_playlist,
     clip_success_telegram_text,
     clip_requires_altered_content_disclosure,
+    clip_automatic_repair_available,
     complete_youtube_description,
     content_shingle_similarity,
     default_youtube_description,
@@ -3395,6 +3396,25 @@ def test_monetization_preflight_requires_automatic_editorial_perspective(monkeyp
     issue = youtube_monetization_preflight_issue(job, clip) or ""
 
     assert "perspektif editorial otomatis belum ditemukan" in issue
+
+
+def test_missing_automatic_editorial_perspective_offers_targeted_repair():
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-editorial-repair",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source", clip_mode="short"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    issue = (
+        "Upload diblokir: perspektif editorial otomatis belum ditemukan pada hasil "
+        "render. Render ulang dengan AI aktif agar analisis spesifik isi video tampil "
+        "sebagai kartu editorial."
+    )
+
+    assert clip_automatic_repair_available(job, clip, issue) is True
 
 
 def test_automatic_editorial_perspective_accepts_grounded_ai_card():
