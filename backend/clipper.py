@@ -11450,6 +11450,437 @@ def topic_motion_overlay_filters(
     return filters
 
 
+def cinematic_clean_finish_filter(
+    theme: VisualTheme,
+    *,
+    with_curves: bool = True,
+    with_colorbalance: bool = True,
+    with_white_balance: bool = True,
+    with_deband: bool = True,
+    with_grain: bool = True,
+    grain_strength: float = 1.0,
+    exposure_brightness: float = 0.0,
+    gamma_multiplier: float = 1.0,
+    white_balance_gains: tuple[float, float, float] = (1.0, 1.0, 1.0),
+) -> str:
+    """Build a restrained film finish that preserves skin, text, and source detail.
+
+    The treatment deliberately avoids blur, bloom, black bars, and heavy LUTs.
+    It uses a small highlight roll-off, theme-aware split toning, debanding, and
+    optional fine temporal grain so social compression feels less brittle.
+    """
+    base_grades: dict[VisualTheme, tuple[float, float, float, float]] = {
+        "mystery": (1.055, -0.010, 0.940, 0.992),
+        "islamic": (1.038, 0.004, 1.045, 1.006),
+        "warning": (1.052, -0.004, 1.035, 0.997),
+        "inspiring": (1.035, 0.006, 1.055, 1.008),
+        "knowledge": (1.042, 0.002, 1.025, 1.002),
+    }
+    split_tones: dict[VisualTheme, str] = {
+        "mystery": "colorbalance=rs=-0.010:gs=-0.003:bs=0.018:rm=0.004:gm=0.002:bm=0.006:rh=0.008:gh=0.003:bh=-0.010",
+        "islamic": "colorbalance=rs=-0.004:gs=0.008:bs=0.010:rm=0.007:gm=0.006:bm=-0.004:rh=0.012:gh=0.006:bh=-0.010",
+        "warning": "colorbalance=rs=0.010:gs=-0.003:bs=-0.010:rm=0.008:gm=0.002:bm=-0.008:rh=0.015:gh=0.004:bh=-0.014",
+        "inspiring": "colorbalance=rs=-0.004:gs=0.003:bs=0.012:rm=0.006:gm=0.003:bm=0.002:rh=0.012:gh=0.006:bh=-0.008",
+        "knowledge": "colorbalance=rs=-0.005:gs=0.002:bs=0.009:rm=0.004:gm=0.003:bm=0.001:rh=0.009:gh=0.004:bh=-0.007",
+    }
+    contrast, brightness, saturation, gamma = base_grades.get(
+        theme, base_grades["knowledge"]
+    )
+    safe_brightness = max(-0.045, min(0.045, float(exposure_brightness)))
+    safe_gamma = max(0.94, min(1.07, float(gamma_multiplier)))
+    filters = [
+        "eq="
+        f"contrast={contrast:.3f}:"
+        f"brightness={brightness + safe_brightness:.3f}:"
+        f"saturation={saturation:.3f}:"
+        f"gamma={gamma * safe_gamma:.3f}"
+    ]
+    red_gain, green_gain, blue_gain = (
+        max(0.965, min(1.035, float(value))) for value in white_balance_gains
+    )
+    if with_white_balance and max(
+        abs(red_gain - 1.0),
+        abs(green_gain - 1.0),
+        abs(blue_gain - 1.0),
+    ) >= 0.003:
+        filters.append(
+            "colorchannelmixer="
+            f"rr={red_gain:.3f}:gg={green_gain:.3f}:bb={blue_gain:.3f}"
+        )
+    if with_curves:
+        filters.append(
+            "curves=master='0/0.006 0.16/0.135 0.50/0.515 0.84/0.875 1/0.992'"
+        )
+    if with_colorbalance:
+        filters.append(split_tones.get(theme, split_tones["knowledge"]))
+    if with_deband:
+        filters.append(
+            "deband=1thr=0.010:2thr=0.010:3thr=0.010:4thr=0.010:"
+            "range=12:direction=2*PI*random(1):blur=1:coupling=1"
+        )
+    if with_grain:
+        safe_grain = max(0.4, min(2.0, float(grain_strength)))
+        filters.append(f"noise=alls={safe_grain:.2f}:allf=t+u")
+    return ",".join(filters)
+
+
+def analyze_source_cinematic_profile(
+    video_path: Path,
+    clip: ClipCandidate,
+    *,
+    sample_count: int = 5,
+) -> dict:
+    """Estimate restrained exposure/WB corrections from representative source frames.
+
+    Face pixels are preferred when a face detector is available. Corrections are
+    deliberately capped so mixed lighting and skin tones are not neutralized into
+    an artificial grey-world look.
+    """
+    skipped = {
+        "version": 1,
+        "available": False,
+        "status": "skipped",
+        "sample_count": 0,
+        "face_sample_count": 0,
+        "exposure_brightness": 0.0,
+        "gamma_multiplier": 1.0,
+        "white_balance_gains": [1.0, 1.0, 1.0],
+        "color_cast": "unknown",
+        "skin_tone_protected": False,
+    }
+    try:
+        import cv2
+        import numpy as np
+    except Exception:
+        return {**skipped, "reason": "opencv_or_numpy_unavailable"}
+
+    capture = cv2.VideoCapture(str(video_path.resolve()))
+    if not capture.isOpened():
+        return {**skipped, "reason": "source_video_unreadable"}
+
+    safe_samples = max(3, min(9, int(sample_count)))
+    duration = max(0.1, clip.end - clip.start)
+    offsets = [duration * (index + 1) / (safe_samples + 1) for index in range(safe_samples)]
+    face_cascade = make_cv2_cascade(cv2, "haarcascade_frontalface_default.xml")
+    luminance_samples = []
+    center_color_means = []
+    face_color_means = []
+    face_luminance_medians: list[float] = []
+    valid_frames = 0
+    try:
+        for offset in offsets:
+            capture.set(cv2.CAP_PROP_POS_MSEC, (clip.start + offset) * 1000)
+            ok, frame = capture.read()
+            if not ok or frame is None:
+                continue
+            valid_frames += 1
+            resize_scale = min(1.0, 640 / max(frame.shape[:2]))
+            resized = (
+                cv2.resize(
+                    frame,
+                    None,
+                    fx=resize_scale,
+                    fy=resize_scale,
+                    interpolation=cv2.INTER_AREA,
+                )
+                if resize_scale < 1
+                else frame
+            )
+            height, width = resized.shape[:2]
+            analysis_frame = resized[: max(1, int(height * 0.90)), :]
+            gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
+            luminance_samples.append(gray.reshape(-1))
+
+            center = analysis_frame[
+                int(analysis_frame.shape[0] * 0.12) : int(analysis_frame.shape[0] * 0.82),
+                int(width * 0.15) : int(width * 0.85),
+            ]
+            if center.size:
+                center_gray = cv2.cvtColor(center, cv2.COLOR_BGR2GRAY)
+                neutral_mask = (center_gray >= 24) & (center_gray <= 235)
+                center_pixels = center[neutral_mask]
+                if center_pixels.size:
+                    center_color_means.append(center_pixels.mean(axis=0))
+
+            if face_cascade is None:
+                continue
+            faces = face_cascade.detectMultiScale(
+                gray,
+                scaleFactor=1.1,
+                minNeighbors=5,
+                minSize=(30, 30),
+            )
+            if len(faces) == 0:
+                continue
+            x, y, face_width, face_height = max(
+                faces, key=lambda item: int(item[2]) * int(item[3])
+            )
+            pad_x = int(face_width * 0.08)
+            pad_y = int(face_height * 0.08)
+            x0 = max(0, x + pad_x)
+            y0 = max(0, y + pad_y)
+            x1 = min(width, x + face_width - pad_x)
+            y1 = min(analysis_frame.shape[0], y + face_height - pad_y)
+            face = analysis_frame[y0:y1, x0:x1]
+            if not face.size:
+                continue
+            face_gray = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
+            face_luminance_medians.append(float(np.median(face_gray)))
+            neutral_mask = (face_gray >= 24) & (face_gray <= 235)
+            face_pixels = face[neutral_mask]
+            if face_pixels.size:
+                face_color_means.append(face_pixels.mean(axis=0))
+    finally:
+        capture.release()
+
+    if not luminance_samples:
+        return {**skipped, "reason": "source_frames_unreadable"}
+
+    luminance = np.concatenate(luminance_samples).astype(np.float32)
+    overall_median = float(np.median(luminance))
+    protected_median = (
+        float(np.median(face_luminance_medians))
+        if face_luminance_medians
+        else overall_median
+    )
+    exposure_median = (
+        protected_median * 0.68 + overall_median * 0.32
+        if face_luminance_medians
+        else overall_median
+    )
+    shadow_pct = float(np.mean(luminance <= 16) * 100)
+    highlight_pct = float(np.mean(luminance >= 245) * 100)
+    brightness = max(-0.030, min(0.040, (112.0 - exposure_median) / 255.0 * 0.15))
+    if highlight_pct > 3.0:
+        brightness -= min(0.012, (highlight_pct - 3.0) / 100.0 * 0.08)
+    if shadow_pct > 28.0 and exposure_median < 92.0:
+        brightness += min(0.010, (shadow_pct - 28.0) / 100.0 * 0.05)
+    brightness = max(-0.035, min(0.042, brightness))
+    gamma_multiplier = max(0.96, min(1.055, 1.0 + (104.0 - exposure_median) / 850.0))
+
+    color_samples = face_color_means or center_color_means
+    gains = [1.0, 1.0, 1.0]
+    color_cast = "neutral"
+    channel_means_rgb = [0.0, 0.0, 0.0]
+    if color_samples:
+        bgr = np.median(np.stack(color_samples), axis=0)
+        blue, green, red = (max(1.0, float(value)) for value in bgr)
+        neutral = (red + green + blue) / 3.0
+        gains = [
+            max(0.965, min(1.035, neutral / red)),
+            max(0.965, min(1.035, neutral / green)),
+            max(0.965, min(1.035, neutral / blue)),
+        ]
+        channel_means_rgb = [red, green, blue]
+        if red > blue * 1.09:
+            color_cast = "warm"
+        elif blue > red * 1.09:
+            color_cast = "cool"
+        elif green > ((red + blue) / 2) * 1.08:
+            color_cast = "green"
+
+    decisions = []
+    if abs(brightness) >= 0.006 or abs(gamma_multiplier - 1.0) >= 0.008:
+        decisions.append("adaptive_exposure")
+    if max(abs(value - 1.0) for value in gains) >= 0.003:
+        decisions.append("bounded_white_balance")
+    if not decisions:
+        decisions.append("source_already_balanced")
+    return {
+        "version": 1,
+        "available": True,
+        "status": "analyzed",
+        "sample_count": valid_frames,
+        "face_sample_count": len(face_luminance_medians),
+        "luminance_median": round(overall_median, 2),
+        "protected_luminance_median": round(exposure_median, 2),
+        "shadow_clip_percent": round(shadow_pct, 3),
+        "highlight_clip_percent": round(highlight_pct, 3),
+        "channel_means_rgb": [round(value, 2) for value in channel_means_rgb],
+        "exposure_brightness": round(brightness, 4),
+        "gamma_multiplier": round(gamma_multiplier, 4),
+        "white_balance_gains": [round(value, 4) for value in gains],
+        "color_cast": color_cast,
+        "skin_tone_protected": bool(face_luminance_medians),
+        "correction_limits": {
+            "brightness": [-0.035, 0.042],
+            "gamma": [0.96, 1.055],
+            "channel_gain": [0.965, 1.035],
+        },
+        "decisions": decisions,
+    }
+
+
+def analyze_render_quality(
+    video_path: Path,
+    *,
+    output_format: OutputFormat,
+    subtitles_rendered: bool,
+    caption_position: str,
+    sample_count: int = 7,
+) -> dict:
+    """Audit representative final frames without blocking a successful export."""
+    skipped = {
+        "version": 1,
+        "available": False,
+        "status": "skipped",
+        "quality_gate_passed": None,
+        "requires_manual_review": True,
+        "blocking": False,
+        "sample_count": 0,
+        "warnings": ["QC frame tidak tersedia; lakukan review visual manual."],
+    }
+    try:
+        import cv2
+        import numpy as np
+    except Exception:
+        return {**skipped, "reason": "opencv_or_numpy_unavailable"}
+
+    duration = probe_media_duration_seconds(video_path)
+    if duration is None or duration <= 0:
+        return {**skipped, "reason": "output_duration_unavailable"}
+    capture = cv2.VideoCapture(str(video_path.resolve()))
+    if not capture.isOpened():
+        return {**skipped, "reason": "output_video_unreadable"}
+
+    safe_samples = max(3, min(11, int(sample_count)))
+    timestamps = [duration * (index + 1) / (safe_samples + 1) for index in range(safe_samples)]
+    face_cascade = make_cv2_cascade(cv2, "haarcascade_frontalface_default.xml")
+    medians: list[float] = []
+    shadow_ratios: list[float] = []
+    highlight_ratios: list[float] = []
+    sharpness_values: list[float] = []
+    detected_faces = 0
+    safe_faces = 0
+    valid_frames = 0
+    try:
+        for timestamp in timestamps:
+            capture.set(cv2.CAP_PROP_POS_MSEC, timestamp * 1000)
+            ok, frame = capture.read()
+            if not ok or frame is None:
+                continue
+            valid_frames += 1
+            scale = min(1.0, 540 / max(1, frame.shape[1]))
+            small = (
+                cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+                if scale < 1
+                else frame
+            )
+            height, width = small.shape[:2]
+            roi = small[
+                int(height * 0.04) : max(1, int(height * 0.88)),
+                int(width * 0.06) : max(1, int(width * 0.94)),
+            ]
+            if not roi.size:
+                roi = small
+            gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+            medians.append(float(np.median(gray_roi)))
+            shadow_ratios.append(float(np.mean(gray_roi <= 16) * 100))
+            highlight_ratios.append(float(np.mean(gray_roi >= 245) * 100))
+            sharpness_values.append(float(cv2.Laplacian(gray_roi, cv2.CV_64F).var()))
+
+            if face_cascade is None:
+                continue
+            gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+            faces = face_cascade.detectMultiScale(
+                gray,
+                scaleFactor=1.1,
+                minNeighbors=5,
+                minSize=(28, 28),
+            )
+            for x, y, face_width, face_height in faces:
+                detected_faces += 1
+                margin_x = width * 0.018
+                margin_top = height * 0.012
+                margin_bottom = height * 0.045
+                if (
+                    x >= margin_x
+                    and y >= margin_top
+                    and x + face_width <= width - margin_x
+                    and y + face_height <= height - margin_bottom
+                ):
+                    safe_faces += 1
+    finally:
+        capture.release()
+
+    if not medians:
+        return {**skipped, "reason": "output_frames_unreadable"}
+
+    median_luminance = float(np.median(medians))
+    shadow_pct = float(np.mean(shadow_ratios))
+    highlight_pct = float(np.mean(highlight_ratios))
+    sharpness = float(np.median(sharpness_values))
+    dark_frame_ratio = float(np.mean(np.asarray(medians) < 34.0))
+    exposure_passed = bool(
+        34.0 <= median_luminance <= 222.0
+        and shadow_pct <= 34.0
+        and highlight_pct <= 10.0
+        and dark_frame_ratio <= 0.34
+    )
+    sharpness_passed = sharpness >= 18.0
+    face_assessed = detected_faces > 0
+    face_safe_ratio = safe_faces / detected_faces if detected_faces else None
+    face_passed = face_safe_ratio is None or face_safe_ratio >= 0.80
+    normalized_caption_position = str(caption_position or "bottom").strip().casefold()
+    subtitle_assessed = bool(subtitles_rendered)
+    subtitle_passed = bool(
+        not subtitles_rendered
+        or normalized_caption_position in {"upper", "center", "bottom"}
+    )
+    warnings: list[str] = []
+    if not exposure_passed:
+        warnings.append("Exposure output perlu review: shadow/highlight atau median luminans melewati batas aman.")
+    if not sharpness_passed:
+        warnings.append("Ketajaman median rendah; periksa fokus sumber atau upscale.")
+    if not face_passed:
+        warnings.append("Sebagian wajah terlalu dekat tepi frame; periksa crop kepala secara manual.")
+    if not subtitle_passed:
+        warnings.append("Posisi subtitle berada di luar preset safe-area yang dikenali.")
+    quality_gate_passed = bool(
+        exposure_passed and sharpness_passed and face_passed and subtitle_passed
+    )
+    return {
+        "version": 1,
+        "available": True,
+        "status": "passed" if quality_gate_passed else "review_required",
+        "quality_gate_passed": quality_gate_passed,
+        "requires_manual_review": not quality_gate_passed,
+        "blocking": False,
+        "sample_count": valid_frames,
+        "frame_timestamps_seconds": [round(value, 3) for value in timestamps],
+        "exposure": {
+            "passed": exposure_passed,
+            "median_luminance": round(median_luminance, 2),
+            "shadow_clip_percent": round(shadow_pct, 3),
+            "highlight_clip_percent": round(highlight_pct, 3),
+            "dark_frame_ratio": round(dark_frame_ratio, 3),
+        },
+        "sharpness": {
+            "passed": sharpness_passed,
+            "median_laplacian_variance": round(sharpness, 2),
+            "minimum": 18.0,
+        },
+        "head_crop": {
+            "assessed": face_assessed,
+            "passed": face_passed if face_assessed else None,
+            "detected_faces": detected_faces,
+            "safe_face_ratio": round(face_safe_ratio, 3) if face_safe_ratio is not None else None,
+        },
+        "subtitle_safe_area": {
+            "assessed": subtitle_assessed,
+            "passed": subtitle_passed if subtitle_assessed else None,
+            "position": normalized_caption_position,
+            "method": "renderer_geometry_contract",
+            "shorts_ui_safe": bool(
+                subtitle_assessed
+                and output_format == "vertical_short"
+                and subtitle_passed
+            ),
+        },
+        "warnings": warnings,
+    }
+
+
 def clean_detail_edit_filter(
     duration: float,
     hook_text_filename: str,
@@ -11470,6 +11901,9 @@ def clean_detail_edit_filter(
     payoff_teaser_text_filename: str = "",
     payoff_teaser_start_seconds: float = 0.32,
     evidence_stage_mode: bool = False,
+    cinematic_finish: str = "",
+    intro_push_in_pixels: int = 30,
+    intro_push_in_seconds: float = 0.78,
 ) -> str:
     """Keep source detail clean while adding sparse, story-timed visual rhythm."""
     safe_duration = max(0.1, duration)
@@ -11488,7 +11922,13 @@ def clean_detail_edit_filter(
         "knowledge": "eq=contrast=1.020:brightness=0.002:saturation=1.02:gamma=1.002",
     }
 
-    zoom_terms = ["16*max(0,1-t/0.55)"]
+    # A stronger but short quadratic push-in makes the first spoken beat feel
+    # intentional, then settles before the context card has finished.
+    safe_intro_pixels = max(0, min(60, int(intro_push_in_pixels)))
+    safe_intro_seconds = max(0.25, min(1.2, float(intro_push_in_seconds)))
+    zoom_terms = [
+        f"{safe_intro_pixels}*pow(max(0,1-t/{safe_intro_seconds:.2f}),2)"
+    ]
     x_terms: list[str] = []
     y_terms: list[str] = []
     for cue in camera_angle_cues or []:
@@ -11505,7 +11945,7 @@ def clean_detail_edit_filter(
     x_motion = "+".join(x_terms) or "0"
     y_motion = "+".join(y_terms) or "0"
     filters = [
-        clean_grades.get(theme, clean_grades["knowledge"]),
+        cinematic_finish or clean_grades.get(theme, clean_grades["knowledge"]),
         (
             "scale=w="
             f"'trunc(({scale_expression})/2)*2':"
@@ -13193,6 +13633,102 @@ def export_clip(
     edit_variation = content_edit_variation(clip)
     adaptive_plan = codex_edit_plan(clip)
     theme_profile = visual_theme_profile(clip)
+    cinematic_finish_enabled = bool(
+        clean_detail_pipeline
+        and env_enabled("SHORTS_CINEMATIC_FINISH_ENABLED", True)
+    )
+    adaptive_color_enabled = bool(
+        cinematic_finish_enabled
+        and env_enabled("SHORTS_ADAPTIVE_COLOR_ENABLED", True)
+    )
+    source_cinematic_profile = (
+        analyze_source_cinematic_profile(video_path, clip)
+        if adaptive_color_enabled
+        else {
+            "version": 1,
+            "available": False,
+            "status": "disabled",
+            "reason": "adaptive_color_disabled",
+            "sample_count": 0,
+            "face_sample_count": 0,
+            "exposure_brightness": 0.0,
+            "gamma_multiplier": 1.0,
+            "white_balance_gains": [1.0, 1.0, 1.0],
+            "color_cast": "unknown",
+            "skin_tone_protected": False,
+        }
+    )
+    cinematic_finish_capabilities = {
+        "curves": cinematic_finish_enabled and ffmpeg_has_filter("curves"),
+        "colorbalance": cinematic_finish_enabled and ffmpeg_has_filter("colorbalance"),
+        "white_balance": bool(
+            adaptive_color_enabled
+            and source_cinematic_profile.get("available")
+            and ffmpeg_has_filter("colorchannelmixer")
+        ),
+        "deband": cinematic_finish_enabled and ffmpeg_has_filter("deband"),
+        "grain": bool(
+            cinematic_finish_enabled
+            and video_quality in {"high", "max"}
+            and env_enabled("SHORTS_CINEMATIC_GRAIN_ENABLED", True)
+            and ffmpeg_has_filter("noise")
+        ),
+    }
+    cinematic_grain_strength = 1.20 if video_quality == "max" else 0.85
+    render_experiment_variant = (
+        "adaptive_a_restrained"
+        if cinematic_finish_enabled and edit_variation % 2 == 0
+        else "adaptive_b_balanced"
+        if cinematic_finish_enabled
+        else "control_no_cinematic_finish"
+    )
+    cinematic_intro_pixels = (
+        26 if render_experiment_variant == "adaptive_a_restrained" else 30
+    ) if cinematic_finish_enabled else 16
+    cinematic_intro_seconds = (
+        0.72 if render_experiment_variant == "adaptive_a_restrained" else 0.78
+    ) if cinematic_finish_enabled else 0.55
+    white_balance_values = source_cinematic_profile.get("white_balance_gains")
+    white_balance_gains = (
+        tuple(float(value) for value in white_balance_values[:3])
+        if isinstance(white_balance_values, list) and len(white_balance_values) >= 3
+        else (1.0, 1.0, 1.0)
+    )
+    cinematic_finish = (
+        cinematic_clean_finish_filter(
+            theme_profile["theme"],
+            with_curves=cinematic_finish_capabilities["curves"],
+            with_colorbalance=cinematic_finish_capabilities["colorbalance"],
+            with_white_balance=cinematic_finish_capabilities["white_balance"],
+            with_deband=cinematic_finish_capabilities["deband"],
+            with_grain=cinematic_finish_capabilities["grain"],
+            grain_strength=cinematic_grain_strength,
+            exposure_brightness=float(
+                source_cinematic_profile.get("exposure_brightness") or 0.0
+            ),
+            gamma_multiplier=float(
+                source_cinematic_profile.get("gamma_multiplier") or 1.0
+            ),
+            white_balance_gains=white_balance_gains,
+        )
+        if cinematic_finish_enabled
+        else ""
+    )
+    render_recipe = {
+        "family": "cinematic_adaptive_v2",
+        "variant": render_experiment_variant,
+        "theme": theme_profile["theme"],
+        "adaptive_color": adaptive_color_enabled,
+        "intro_push_in_pixels": cinematic_intro_pixels,
+        "intro_push_in_seconds": cinematic_intro_seconds,
+        "grain_strength": (
+            cinematic_grain_strength if cinematic_finish_capabilities["grain"] else 0.0
+        ),
+        "video_quality": video_quality,
+    }
+    render_recipe_hash = hashlib.sha256(
+        json.dumps(render_recipe, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()[:16]
     auto_visual_plan = (
         auto_fyp_visual_plan(clip, output_format)
         if visual_mode == "auto_fyp"
@@ -13488,6 +14024,10 @@ def export_clip(
         output_format == "vertical_short" and shorts_should_protect_payoff(clip)
     )
     applied_edits = list(clip.applied_edits)
+    if cinematic_finish_enabled:
+        applied_edits.append(
+            "Cinematic finish v2 diterapkan: exposure/white balance adaptif yang dibatasi, highlight roll-off lembut, split-tone sesuai tema, debanding, hook push-in, dan grain tipis hanya pada bitrate tinggi."
+        )
     if automatic_short_title:
         applied_edits.append(
             "Kartu konteks adaptif otomatis ditanam di awal: headline berasal dari hook, sedangkan label dan warna mengikuti isi cerita."
@@ -13863,6 +14403,48 @@ def export_clip(
             "clarity_filter": quality_detail_filter(video_quality) or "none",
             "x264_tune": "film",
             "adaptive_quantization": "aq-mode=3:aq-strength=0.85",
+        },
+        "cinematic_finish": {
+            "version": 2,
+            "enabled": cinematic_finish_enabled,
+            "style": "restrained_film_finish",
+            "theme": theme_profile["theme"],
+            "adaptive_color": adaptive_color_enabled,
+            "source_analysis": source_cinematic_profile,
+            "highlight_rolloff": bool(cinematic_finish_capabilities["curves"]),
+            "theme_split_tone": bool(cinematic_finish_capabilities["colorbalance"]),
+            "bounded_white_balance": bool(cinematic_finish_capabilities["white_balance"]),
+            "deband": bool(cinematic_finish_capabilities["deband"]),
+            "fine_grain": bool(cinematic_finish_capabilities["grain"]),
+            "grain_strength": (
+                cinematic_grain_strength
+                if cinematic_finish_capabilities["grain"]
+                else 0.0
+            ),
+            "opening_push_in_pixels": cinematic_intro_pixels,
+            "opening_push_in_seconds": cinematic_intro_seconds,
+            "heavy_blur": False,
+            "black_bars": False,
+            "face_and_caption_safe": True,
+            "view_guarantee": False,
+        },
+        "render_experiment": {
+            "version": 1,
+            "experiment_id": "cinematic_adaptive_v2",
+            "variant": render_experiment_variant,
+            "recipe_hash": render_recipe_hash,
+            "recipe": render_recipe,
+            "assignment": "stable_content_hash",
+            "controlled_variable": "opening_push_in_strength",
+            "performance_metrics": [
+                "shown_in_feed",
+                "stayed_to_watch_percentage",
+                "engaged_views",
+                "average_view_percentage",
+                "subscribers_gained",
+            ],
+            "causal_claim": False,
+            "view_guarantee": False,
         },
         "aspect_ratio": "16:9" if output_format == "landscape_compilation" else "9:16",
         "narrative_role": (
@@ -14451,10 +15033,14 @@ def export_clip(
                         ),
                         payoff_teaser_start_seconds=title_overlay_seconds,
                         evidence_stage_mode=auto_visual_accent == "evidence_stage",
+                        cinematic_finish=cinematic_finish,
+                        intro_push_in_pixels=cinematic_intro_pixels,
+                        intro_push_in_seconds=cinematic_intro_seconds,
                     )}"
                 )
                 sidecar_payload["motion_impact"] = {
                     "style": "clean_detail",
+                    "cinematic_finish_version": 2 if cinematic_finish_enabled else 0,
                     "editorial_motion_style": theme_profile.get("motion_style", "editorial_clean"),
                     "procedural_topic_animation": True,
                     "third_party_visual_assets": False,
@@ -15123,11 +15709,40 @@ def export_clip(
     if generate_assets:
         embed_fendy_provenance_metadata(out_path, clip.title, auditor_identity)
     output_width, output_height = ensure_minimum_hd_output(out_path)
+    render_qc_enabled = env_enabled("SHORTS_RENDER_QC_ENABLED", True)
+    if render_qc_enabled:
+        render_quality_qc = analyze_render_quality(
+            out_path,
+            output_format=output_format,
+            subtitles_rendered=bool(
+                burn_subtitles and clip_segments and subtitles_supported
+            ),
+            caption_position=(caption or CaptionStyle()).position,
+        )
+    else:
+        render_quality_qc = {
+            "version": 1,
+            "available": False,
+            "status": "disabled",
+            "reason": "render_qc_disabled",
+            "quality_gate_passed": None,
+            "requires_manual_review": True,
+            "blocking": False,
+            "sample_count": 0,
+            "warnings": ["QC frame dinonaktifkan; lakukan review visual manual."],
+        }
+    if render_quality_qc.get("quality_gate_passed") is False:
+        console.print(
+            "[yellow]QC frame meminta review manual:[/yellow] "
+            + " ".join(str(item) for item in render_quality_qc.get("warnings", []))
+        )
+    sidecar_payload["applied_edits"] = list(dict.fromkeys(applied_edits))
     sidecar_payload.update(
         {
             "output_width": output_width,
             "output_height": output_height,
             "output_resolution": f"{output_width}x{output_height}",
+            "render_quality_qc": render_quality_qc,
             "provenance": {
                 "version": 1,
                 "brand": FENDY_PROVENANCE_BRAND,

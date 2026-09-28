@@ -27,6 +27,8 @@ from clipper import (
     apply_codex_audio_cues,
     animated_3d_fallback_filter,
     animated_3d_look_filter,
+    analyze_render_quality,
+    analyze_source_cinematic_profile,
     analyze_embedded_split_frame,
     analyze_text_heavy_backdrop,
     apply_codex_structural_edit,
@@ -39,6 +41,7 @@ from clipper import (
     clean_detail_edit_filter,
     channel_watermark_filter,
     claim_rebuttal_profile,
+    cinematic_clean_finish_filter,
     cinematic_smoke_overlay_filter,
     cinematic_pov_windows,
     clip_has_islamic_context,
@@ -1267,7 +1270,7 @@ def test_clean_detail_edit_keeps_faces_clear_and_motion_sparse():
         detail_filter="cas=strength=0.18",
     )
 
-    assert "1080+16*max(0,1-t/0.55)" in value
+    assert "1080+30*pow(max(0,1-t/0.78),2)" in value
     assert "if(between(t,5.000,7.200),42+3*sin" in value
     assert "x='(iw-ow)/2+-12*between(t,5.000,7.200)'" in value
     assert "cas=strength=0.18" in value
@@ -1279,6 +1282,92 @@ def test_clean_detail_edit_keeps_faces_clear_and_motion_sparse():
     assert "gradient" not in value
     assert "text='POV'" not in value
     assert "text='INTISARI'" not in value
+
+
+def test_cinematic_clean_finish_adds_film_tone_without_heavy_blur():
+    value = cinematic_clean_finish_filter(
+        "islamic",
+        with_curves=True,
+        with_colorbalance=True,
+        with_deband=True,
+        with_grain=True,
+        grain_strength=0.85,
+    )
+
+    assert value.startswith("eq=contrast=1.038")
+    assert "curves=master=" in value
+    assert "colorbalance=" in value
+    assert "deband=1thr=0.010" in value
+    assert "noise=alls=0.85:allf=t+u" in value
+    assert "gblur=" not in value
+    assert "vignette=" not in value
+
+
+def test_cinematic_clean_finish_falls_back_to_portable_base_grade():
+    value = cinematic_clean_finish_filter(
+        "knowledge",
+        with_curves=False,
+        with_colorbalance=False,
+        with_deband=False,
+        with_grain=False,
+    )
+
+    assert value == "eq=contrast=1.042:brightness=0.002:saturation=1.025:gamma=1.002"
+
+
+def test_cinematic_clean_finish_applies_bounded_adaptive_exposure_and_white_balance():
+    value = cinematic_clean_finish_filter(
+        "islamic",
+        with_curves=False,
+        with_colorbalance=False,
+        with_deband=False,
+        with_grain=False,
+        exposure_brightness=0.02,
+        gamma_multiplier=1.03,
+        white_balance_gains=(0.98, 1.0, 1.02),
+    )
+
+    assert value.startswith(
+        "eq=contrast=1.038:brightness=0.024:saturation=1.045:gamma=1.036"
+    )
+    assert "colorchannelmixer=rr=0.980:gg=1.000:bb=1.020" in value
+
+
+def test_frame_analysis_falls_back_cleanly_for_missing_media(tmp_path):
+    clip = ClipCandidate(1, 0, 30, 30, 88, "Judul", "Alasan", "Isi")
+    missing = tmp_path / "missing.mp4"
+
+    source = analyze_source_cinematic_profile(missing, clip)
+    output = analyze_render_quality(
+        missing,
+        output_format="vertical_short",
+        subtitles_rendered=True,
+        caption_position="bottom",
+    )
+
+    assert source["available"] is False
+    assert source["exposure_brightness"] == 0.0
+    assert output["available"] is False
+    assert output["quality_gate_passed"] is None
+    assert output["blocking"] is False
+
+
+def test_clean_detail_uses_supplied_cinematic_finish_before_camera_motion():
+    finish = cinematic_clean_finish_filter(
+        "inspiring",
+        with_deband=False,
+        with_grain=False,
+    )
+    value = clean_detail_edit_filter(
+        30,
+        "clip.hook.txt",
+        cinematic_finish=finish,
+        intro_push_in_pixels=30,
+        intro_push_in_seconds=0.78,
+    )
+
+    assert value.startswith(finish + ",scale=")
+    assert "1080+30*pow(max(0,1-t/0.78),2)" in value
 
 
 def test_clean_detail_edit_adds_two_clip_specific_editorial_windows():

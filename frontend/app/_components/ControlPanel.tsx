@@ -182,7 +182,7 @@ export function ControlPanel({
           <span><Sparkles size={18} /></span>
           <div>
             <strong>{isLong ? "Long-form Director aktif" : "Auto Polish aktif"}</strong>
-            <small>{isLong ? "Cold open, story arc, chapter cards, cinematic grading, thumbnail, dan audit watch-time diterapkan otomatis." : "Hook-first cut, smart zoom, beat edit, audio leveling, dan audit retention diterapkan otomatis."}</small>
+            <small>{isLong ? "Cold open, story arc, chapter cards, cinematic grading, thumbnail, dan audit watch-time diterapkan otomatis." : "Hook-first cut, filmic color, smart zoom, beat edit, audio leveling, dan audit retention diterapkan otomatis."}</small>
           </div>
           <b><Check size={14} /> ON</b>
         </div>

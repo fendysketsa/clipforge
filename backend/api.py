@@ -515,6 +515,12 @@ class ClipFile(BaseModel):
     growth_quality_gate_passed: bool | None = None
     growth_next_action: str | None = None
     growth_checkpoints: list[int] = Field(default_factory=list)
+    render_experiment_id: str | None = None
+    render_experiment_variant: str | None = None
+    render_recipe_hash: str | None = None
+    render_qc_passed: bool | None = None
+    render_qc_status: str | None = None
+    render_qc_warnings: list[str] = Field(default_factory=list)
     tiktok_series_id: str | None = None
     tiktok_series_label: str | None = None
     tiktok_opening_hook: str | None = None
@@ -946,6 +952,12 @@ class YouTubeUploadJob(BaseModel):
     clip_cleanup_completed_steps: list[str] = Field(default_factory=list)
     clip_cleanup_step_details: dict[str, YouTubeCleanupStepProgress] = Field(default_factory=dict)
     growth_series: str = ""
+    render_experiment_id: str = ""
+    render_experiment_variant: str = ""
+    render_recipe_hash: str = ""
+    render_qc_passed: bool | None = None
+    render_qc_status: str = ""
+    render_qc_warnings: list[str] = Field(default_factory=list)
     growth_target_views: int = Field(default=SHORT_GROWTH_TARGET_VIEWS, ge=1)
     growth_target_subscribers: int = Field(default=GROWTH_TARGET_SUBSCRIBERS, ge=1)
     performance_status: Literal[
@@ -6480,6 +6492,12 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         dry_run=request.dry_run,
         clip_sha256=clip_fingerprint,
         growth_series=clip.growth_series or "",
+        render_experiment_id=clip.render_experiment_id or "",
+        render_experiment_variant=clip.render_experiment_variant or "",
+        render_recipe_hash=clip.render_recipe_hash or "",
+        render_qc_passed=clip.render_qc_passed,
+        render_qc_status=clip.render_qc_status or "",
+        render_qc_warnings=list(clip.render_qc_warnings),
         growth_target_views=growth_target_views,
         growth_target_subscribers=growth_target_subscribers,
         logs=(
@@ -6511,6 +6529,19 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
             + (
                 ["Penggantian backdrop terdeteksi; disclosure altered content akan dipilih saat upload."]
                 if altered_content
+                else []
+            )
+            + (
+                [
+                    f"Eksperimen render {clip.render_experiment_id} · {clip.render_experiment_variant} "
+                    "akan diukur bersama metrik performa YouTube."
+                ]
+                if clip.render_experiment_id and clip.render_experiment_variant
+                else []
+            )
+            + (
+                ["QC render meminta review manual sebelum publikasi."]
+                if clip.render_qc_passed is False
                 else []
             )
         ),
@@ -6702,6 +6733,14 @@ def comparable_performance_medians(
         and item.status == "completed"
         and item.growth_series == upload.growth_series
         and item.growth_target_views == upload.growth_target_views
+        and (
+            not upload.render_experiment_id
+            or item.render_experiment_id == upload.render_experiment_id
+        )
+        and (
+            not upload.render_experiment_variant
+            or item.render_experiment_variant == upload.render_experiment_variant
+        )
         and (latest := latest_performance_snapshot(item)) is not None
     ]
     if len(peers) < 3:
@@ -6763,6 +6802,11 @@ def youtube_performance_diagnosis(
         ]
 
     diagnosis: list[str] = []
+    if upload.render_qc_passed is False:
+        warning = upload.render_qc_warnings[0] if upload.render_qc_warnings else "hasil QC frame"
+        diagnosis.append(
+            f"QC render meminta review ({warning}); jangan menyimpulkan kelemahan hook sebelum masalah visual diperiksa."
+        )
     published_value = upload.finished_at or upload.created_at
     try:
         published_at = datetime.fromisoformat(published_value)
@@ -6826,8 +6870,13 @@ def youtube_performance_diagnosis(
 
     baselines = comparable_performance_medians(upload, uploads)
     if not baselines:
+        cohort = (
+            f" untuk cohort {upload.render_experiment_variant}"
+            if upload.render_experiment_variant
+            else ""
+        )
         diagnosis.append(
-            "Baseline seri belum cukup; kumpulkan sedikitnya tiga upload sejenis sebelum mengubah bobot algoritma."
+            f"Baseline seri{cohort} belum cukup; kumpulkan sedikitnya tiga upload sejenis sebelum mengubah bobot algoritma."
         )
     else:
         baseline_views = baselines.get("views", 0)
@@ -9816,6 +9865,24 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
         if not isinstance(growth_readiness, dict):
             growth_readiness = sidecar.get("one_k_long_form_readiness")
         growth_readiness = growth_readiness if isinstance(growth_readiness, dict) else {}
+        render_experiment = sidecar.get("render_experiment")
+        render_experiment = (
+            render_experiment if isinstance(render_experiment, dict) else {}
+        )
+        render_quality_qc = sidecar.get("render_quality_qc")
+        render_quality_qc = (
+            render_quality_qc if isinstance(render_quality_qc, dict) else {}
+        )
+        render_qc_warning_values = render_quality_qc.get("warnings")
+        render_qc_warnings = (
+            [
+                str(item).strip()
+                for item in render_qc_warning_values
+                if isinstance(item, str) and item.strip()
+            ][:6]
+            if isinstance(render_qc_warning_values, list)
+            else []
+        )
         religious_claim_review = sidecar.get("religious_claim_review")
         religious_claim_review = (
             religious_claim_review
@@ -10012,6 +10079,24 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
                     for item in growth_readiness.get("review_checkpoints", [])
                     if isinstance(item, (int, float)) and not isinstance(item, bool)
                 ][:6],
+                render_experiment_id=(
+                    str(render_experiment.get("experiment_id") or "").strip() or None
+                ),
+                render_experiment_variant=(
+                    str(render_experiment.get("variant") or "").strip() or None
+                ),
+                render_recipe_hash=(
+                    str(render_experiment.get("recipe_hash") or "").strip() or None
+                ),
+                render_qc_passed=(
+                    bool(render_quality_qc.get("quality_gate_passed"))
+                    if isinstance(render_quality_qc.get("quality_gate_passed"), bool)
+                    else None
+                ),
+                render_qc_status=(
+                    str(render_quality_qc.get("status") or "").strip() or None
+                ),
+                render_qc_warnings=render_qc_warnings,
             )
         )
     clips.sort(key=lambda item: item.name)

@@ -58,6 +58,12 @@ export type ClipFile = {
   growth_quality_gate_passed?: boolean | null;
   growth_next_action?: string | null;
   growth_checkpoints?: number[];
+  render_experiment_id?: string | null;
+  render_experiment_variant?: string | null;
+  render_recipe_hash?: string | null;
+  render_qc_passed?: boolean | null;
+  render_qc_status?: string | null;
+  render_qc_warnings?: string[];
   tiktok_series_id?: string | null;
   tiktok_series_label?: string | null;
   tiktok_opening_hook?: string | null;
@@ -448,6 +454,12 @@ export type YouTubeUploadJob = {
     removed_items: number;
   }>;
   growth_series?: string;
+  render_experiment_id?: string;
+  render_experiment_variant?: string;
+  render_recipe_hash?: string;
+  render_qc_passed?: boolean | null;
+  render_qc_status?: string;
+  render_qc_warnings?: string[];
   growth_target_views: number;
   growth_target_subscribers: number;
   performance_status: "not_measured" | "learning" | "views_target_met" | "target_met";

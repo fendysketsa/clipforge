@@ -591,6 +591,16 @@ export function ResultsSection({
                     <small>
                       {upload.growth_series || "Seri belum ditentukan"} · target {upload.growth_target_views.toLocaleString("id-ID")} view / {upload.growth_target_subscribers} sub
                     </small>
+                    {upload.render_experiment_variant ? (
+                      <small>
+                        Cohort {upload.render_experiment_variant.replaceAll("_", " ")}
+                        {upload.render_qc_passed === true
+                          ? " · QC lolos"
+                          : upload.render_qc_passed === false
+                            ? " · QC perlu review"
+                            : " · QC belum tersedia"}
+                      </small>
+                    ) : null}
                     {upload.performance_diagnosis?.[0] ? <p>{upload.performance_diagnosis[0]}</p> : null}
                   </div>
                   <div className="youtubePerformanceMetrics">

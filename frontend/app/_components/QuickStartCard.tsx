@@ -47,7 +47,7 @@ type QuickStartCardProps = {
 const SHORT_STEPS = [
   { icon: Focus, label: "Auto reframe", detail: "Wajah tetap aman di 9:16" },
   { icon: Subtitles, label: "Dynamic captions", detail: "Kata penting lebih terbaca" },
-  { icon: Sparkles, label: "Retention edit", detail: "Hook, zoom, beat, dan payoff" },
+  { icon: Sparkles, label: "Cinematic retention", detail: "Filmic color, hook, beat, payoff" },
 ];
 
 const LONG_STEPS = [

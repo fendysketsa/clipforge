@@ -2691,6 +2691,92 @@ def test_performance_baseline_uses_engaged_views_for_subscriber_conversion():
     assert medians["engaged_view_rate"] == 10.0
 
 
+def test_performance_baseline_keeps_cinematic_experiment_cohorts_separate():
+    import api
+
+    current = YouTubeUploadJob(
+        id="upload-cohort-current",
+        source_job_id="job-cohort",
+        clip_url="/outputs/demo/clips/current.mp4",
+        clip_name="current.mp4",
+        status="completed",
+        created_at="2026-09-01T00:00:00+00:00",
+        updated_at="2026-09-01T00:00:00+00:00",
+        title="Current",
+        video_url="https://www.youtube.com/watch?v=currentcohort",
+        growth_series="Hikmah Praktis",
+        render_experiment_id="cinematic_adaptive_v2",
+        render_experiment_variant="adaptive_a_restrained",
+    )
+    matching = [
+        current.model_copy(
+            update={
+                "id": f"matching-{index}",
+                "performance_snapshots": [
+                    api.YouTubePerformanceSnapshot(
+                        captured_at="2026-09-03T00:00:00+00:00",
+                        source="youtube_analytics",
+                        views=1000,
+                    )
+                ],
+            }
+        )
+        for index in range(3)
+    ]
+    other_variant = [
+        current.model_copy(
+            update={
+                "id": f"other-{index}",
+                "render_experiment_variant": "adaptive_b_balanced",
+                "performance_snapshots": [
+                    api.YouTubePerformanceSnapshot(
+                        captured_at="2026-09-03T00:00:00+00:00",
+                        source="youtube_analytics",
+                        views=9000,
+                    )
+                ],
+            }
+        )
+        for index in range(3)
+    ]
+
+    medians = api.comparable_performance_medians(
+        current,
+        [current, *matching, *other_variant],
+    )
+
+    assert medians["views"] == 1000.0
+
+
+def test_performance_diagnosis_flags_failed_render_qc_before_hook_changes():
+    import api
+
+    upload = YouTubeUploadJob(
+        id="upload-qc-review",
+        source_job_id="job-qc-review",
+        clip_url="/outputs/demo/clips/qc.mp4",
+        clip_name="qc.mp4",
+        status="completed",
+        created_at="2026-09-20T00:00:00+00:00",
+        updated_at="2026-09-20T00:00:00+00:00",
+        title="QC review",
+        video_url="https://www.youtube.com/watch?v=qcreview",
+        growth_series="Audit Shorts",
+        render_qc_passed=False,
+        render_qc_warnings=["Ketajaman median rendah."],
+    )
+    snapshot = api.YouTubePerformanceSnapshot(
+        captured_at="2026-09-23T00:00:00+00:00",
+        source="manual",
+        views=100,
+    )
+
+    diagnosis = api.youtube_performance_diagnosis(upload, snapshot, [upload])
+
+    assert "QC render meminta review" in diagnosis[0]
+    assert "Ketajaman median rendah" in diagnosis[0]
+
+
 def test_performance_feedback_does_not_treat_one_k_public_views_as_quality():
     import api
 
