@@ -20,12 +20,14 @@ from api import (
     best_matching_niche,
     build_clipper_command,
     choose_auto_analyze_seconds,
+    compact_source_payload,
     default_viral_video_search_queries,
     ensure_source_rights_attestation,
     ensure_python_subprocess_integrity,
     fresh_conversation_source_profile,
     fetch_video_probe,
     indonesian_language_score,
+    islamic_information_score,
     is_creative_commons_info,
     is_fresh_viral_upload,
     list_source_usage_log,
@@ -529,24 +531,21 @@ def test_youtube_published_after_uses_requested_search_window():
     assert timedelta(days=179, hours=23) < fallback_age < timedelta(days=180, minutes=1)
 
 
-def test_viral_search_is_broad_and_supports_staged_fallback():
+def test_viral_search_is_broad_but_keeps_an_islamic_information_lens():
     import pytest
     from pydantic import ValidationError
 
     queries = default_viral_video_search_queries()
-    assert len(queries) >= 120
+    assert len(queries) >= 50
     assert "misteri dalam islam" in queries
-    assert "podcast horor indonesia" in queries
-    assert "podcast cerita seram indonesia" in queries
-    assert "cerita horor pendakian gunung" in queries
-    assert "cerita horor kos angker" in queries
-    assert "urban legend kalimantan" in queries
-    assert queries.index("podcast horor indonesia") < 12
+    assert "podcast horor indonesia" not in queries
+    assert "podcast cerita seram indonesia" not in queries
+    assert "cerita horor pendakian gunung" not in queries
     assert "mitos dan fakta menurut islam" in queries
     assert ViralVideoSearchRequest().search_limit_per_query == 25
     assert ViralVideoSearchRequest().max_metadata_checks == 24
-    assert ViralVideoSearchRequest().min_views == 5_000
-    assert AutoViralRequest().min_views == 5_000
+    assert ViralVideoSearchRequest().min_views == 0
+    assert AutoViralRequest().min_views == 0
     assert ViralVideoSearchRequest(max_age_days=180).max_age_days == 180
     with pytest.raises(ValidationError):
         ViralVideoSearchRequest(max_age_days=366)
@@ -569,7 +568,7 @@ def test_practical_life_niche_owns_default_search_positions():
 
     assert request.queries[0] == "tanya jawab islam masalah orang tua"
     assert request.queries[1].startswith("kajian rumah tangga islami")
-    assert request.queries.index("podcast horor indonesia") >= 12
+    assert "podcast horor indonesia" not in request.queries
 
 
 def test_legacy_visual_modes_are_migrated_to_auto_fyp():
@@ -589,9 +588,9 @@ def test_configured_viral_queries_are_extended_not_replaced(monkeypatch):
 
     assert queries[0] == "topik khusus"
     assert queries.count("podcast indonesia terbaru") == 1
-    assert len(queries) >= 120
+    assert len(queries) >= 50
     assert queries.index("misteri dalam islam") < 10
-    assert queries.index("podcast horor indonesia") < 12
+    assert "podcast horor indonesia" not in queries
 
 
 def test_selected_evergreen_niche_owns_the_first_search_positions():
@@ -600,9 +599,9 @@ def test_selected_evergreen_niche_owns_the_first_search_positions():
 
     assert mental.video_count == 3
     assert mental.queries[0] == "kesehatan mental islam overthinking"
-    assert mental.queries.index("podcast horor indonesia") >= 12
+    assert "podcast horor indonesia" not in mental.queries
     assert finance.queries[0] == "cara mencari rezeki halal berkah"
-    assert finance.queries.index("podcast horor indonesia") >= 12
+    assert "podcast horor indonesia" not in finance.queries
 
 
 def test_broad_islamic_and_religious_niches_have_focused_search_profiles():
@@ -667,7 +666,7 @@ def test_search_filter_defaults_match_long_form_cc_growth_layout():
     assert request.duration_filter == "over_20"
     assert request.upload_date_filter == "this_week"
     assert request.definition_filter == "hd"
-    assert request.sort_order == "popularity"
+    assert request.sort_order == "relevance"
     assert request.max_age_days == 7
 
 
@@ -686,10 +685,9 @@ def test_search_filter_revalidates_duration_date_and_hd_metadata():
     }
 
     assert viral_search_filter_rejection_reason(valid, request) == ""
-    assert "minimum wajib 5,000" in viral_search_filter_rejection_reason(
-        {**valid, "view_count": 4_999},
-        request,
-    )
+    assert viral_search_filter_rejection_reason(
+        {**valid, "view_count": 1}, request
+    ) == ""
     assert "20 menit" in viral_search_filter_rejection_reason(
         {**valid, "duration": 900}, request
     )
@@ -710,6 +708,81 @@ def test_niche_relevance_rewards_master_context_terms_not_generic_islam_label():
 
     assert niche_relevance_score(aligned, "islamic_mental_health") >= 50
     assert niche_relevance_score(generic, "islamic_mental_health") == 0
+
+
+def test_islamic_information_gate_ignores_views_but_rejects_unrelated_entertainment():
+    informative = {
+        "title": "Podcast Politik Islam dan Keadilan Publik",
+        "description": "Dialog ulama membahas konteks kebijakan untuk umat Indonesia.",
+        "default_audio_language": "id",
+        "view_count": 37,
+    }
+    high_view_horror = {
+        "title": "Podcast Horor Rumah Angker Viral",
+        "description": "Cerita hantu dan penampakan paling menyeramkan.",
+        "default_audio_language": "id",
+        "view_count": 8_000_000,
+    }
+
+    assert islamic_information_score(informative) >= 24
+    assert islamic_information_score({**informative, "view_count": 8_000_000}) == (
+        islamic_information_score(informative)
+    )
+    assert niche_candidate_rejection_reason(
+        informative, "islamic_politics_society"
+    ) == ""
+    assert "nilai informasi Islam" in niche_candidate_rejection_reason(
+        high_view_horror, "auto"
+    )
+
+
+def test_view_count_never_blocks_an_otherwise_valid_source():
+    request = ViralVideoSearchRequest(
+        niche="islamic_politics_society",
+        min_views=5_000,
+        duration_filter="over_20",
+        definition_filter="hd",
+    )
+    low_view = {
+        "duration": 1800,
+        "definition": "hd",
+        "height": 1080,
+        "view_count": 3,
+        "upload_date": datetime.now(timezone.utc).strftime("%Y%m%d"),
+    }
+
+    assert viral_search_filter_rejection_reason(low_view, request) == ""
+
+
+def test_content_first_rank_can_put_a_small_informative_source_above_a_large_shallow_one():
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    low_view_informative = {
+        "id": "small-source",
+        "title": "Podcast Politik Islam: Amanah, Keadilan, dan Kebijakan Publik",
+        "description": "Dialog ulama menjelaskan demokrasi, kepemimpinan, hak umat Muslim, dan konteks hukum Indonesia.",
+        "default_audio_language": "id",
+        "view_count": 37,
+        "like_count": 2,
+        "duration": 1800,
+        "upload_date": today,
+    }
+    high_view_shallow = {
+        "id": "large-source",
+        "title": "Podcast Islam Indonesia",
+        "description": "Kajian Islam terbaru untuk umat.",
+        "default_audio_language": "id",
+        "view_count": 8_000_000,
+        "like_count": 300_000,
+        "duration": 1800,
+        "upload_date": today,
+    }
+
+    small = compact_source_payload(low_view_informative, "auto")
+    large = compact_source_payload(high_view_shallow, "auto")
+
+    assert small["information_score"] > large["information_score"]
+    assert small["score"] > large["score"]
+    assert small["views"] < large["views"]
 
 
 def test_auto_niche_selects_the_strongest_supported_theme():
@@ -1487,7 +1560,7 @@ def test_viral_score_prefers_faster_recent_growth():
 
 
 
-def test_source_quick_check_can_recommend_scan_or_skip_before_render():
+def test_source_quick_check_scans_sources_at_every_momentum_level():
     today = datetime.now(timezone.utc)
     strong = source_quick_check(
         {
@@ -1508,11 +1581,11 @@ def test_source_quick_check_can_recommend_scan_or_skip_before_render():
 
     assert 0 <= strong["momentum_score"] <= 100
     assert strong["quick_check_recommendation"] == "scan"
-    assert weak["quick_check_recommendation"] == "skip"
+    assert weak["quick_check_recommendation"] == "scan"
 
 
 
-def test_source_quick_check_enforces_exact_85_floor(monkeypatch):
+def test_source_quick_check_labels_momentum_without_blocking_scan(monkeypatch):
     today = datetime.now(timezone.utc)
     info = {
         "upload_date": (today - timedelta(days=2)).strftime("%Y%m%d"),
@@ -1524,8 +1597,8 @@ def test_source_quick_check_enforces_exact_85_floor(monkeypatch):
     monkeypatch.setattr("api.auto_viral_candidate_score", lambda _info: 252)
     below_floor = source_quick_check(info)
     assert below_floor["momentum_score"] == 84
-    assert below_floor["momentum_label"] == "Prioritas rendah"
-    assert below_floor["quick_check_recommendation"] == "skip"
+    assert below_floor["momentum_label"] == "Momentum rendah — tetap layak di-scan"
+    assert below_floor["quick_check_recommendation"] == "scan"
 
     monkeypatch.setattr("api.auto_viral_candidate_score", lambda _info: 255)
     at_floor = source_quick_check(info)

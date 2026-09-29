@@ -79,6 +79,7 @@ from clipper import (
     highlight_caption_keyword,
     intro_particle_burst_filters,
     islamic_story_radar_profile,
+    islamic_editorial_lane,
     is_source_branding_segment,
     landscape_compilation_edit_filter,
     landscape_compilation_frame_filter,
@@ -2307,6 +2308,41 @@ def test_auto_fyp_uses_topic_specific_motion_for_politics_podcast_and_quran():
     assert editorial_motion_style(quran) == "reverent_reference"
     assert auto_fyp_visual_plan(quran, "vertical_short")["accent"] == "reverent_focus"
     assert visual_theme_profile(quran)["badge"] == "DALIL / RENUNGAN"
+
+
+def test_auto_fyp_turns_practical_islam_into_guided_steps_with_adaptive_cards():
+    clip = ClipCandidate(
+        4,
+        0,
+        34,
+        34,
+        90,
+        "Cara Memperbaiki Shalat yang Terburu-buru",
+        "panduan utuh",
+        "Dalam Islam, perbaiki shalat dengan memahami prinsipnya lalu lakukan langkah yang benar.",
+        hook="Apa yang harus diperbaiki lebih dulu?",
+        pov="Perhatikan sebab langkah ini sering terlewat",
+        boundary_quality="payoff_tuntas",
+    )
+
+    plan = auto_fyp_visual_plan(clip, "vertical_short")
+    profile = visual_theme_profile(clip)
+    rendered_filter = clean_detail_edit_filter(
+        34,
+        "hook.txt",
+        editorial_text_filename="editorial.txt",
+        takeaway_text_filename="takeaway.txt",
+        theme_profile=profile,
+    )
+
+    assert islamic_editorial_lane(clip) == "practical_guidance"
+    assert editorial_motion_style(clip) == "practical_guidance"
+    assert plan["accent"] == "guided_steps"
+    assert plan["transformation_recipe"]["layers"] == ["problem", "principle", "next_step"]
+    assert plan["transformation_recipe"]["synthetic_claims_allowed"] is False
+    assert "PRINSIPNYA" in rendered_filter
+    assert "LANGKAH PRAKTIS" in rendered_filter
+    assert "x=986:y=590" in rendered_filter
 
 
 def test_music_policy_requires_double_opt_in_for_third_party_recordings(monkeypatch):

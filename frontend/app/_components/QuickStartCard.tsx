@@ -20,7 +20,6 @@ import {
   Subtitles,
   WandSparkles,
 } from "lucide-react";
-import { VIRAL_QUALITY_FLOOR } from "../../lib/constants";
 import { formatDuration } from "../../lib/utils";
 import type { SourceProbe } from "../../lib/apiClient";
 import type { ClipMode, SourceHistoryCheck } from "../../types/clip.type";
@@ -85,17 +84,12 @@ export function QuickStartCard({
   const duplicateBlocked = Boolean(sourceHistory?.found && !allowReprocessSource);
   const sourceRightsBlocked = Boolean(sourceProbe?.source_rights_risk);
   const quickScore = sourceProbe?.momentum_score ?? null;
-  const quickRecommendation = quickScore === null
-    ? sourceProbe?.quick_check_recommendation ?? "unknown"
-    : quickScore >= VIRAL_QUALITY_FLOOR ? "scan" : "skip";
-  const quickLabel = quickScore === null
-    ? sourceProbe?.momentum_label || "Data publik belum cukup"
-    : quickScore >= VIRAL_QUALITY_FLOOR ? "Layak di-scan" : "Prioritas rendah";
-  const quickReason = quickScore === null
-    ? sourceProbe?.quick_check_reason || "Gunakan Scan Potensi Viral untuk menilai isi video."
-    : quickScore >= VIRAL_QUALITY_FLOOR
-      ? `Skor sinyal sumber ${Math.round(quickScore)}/100 melewati target ${VIRAL_QUALITY_FLOOR}. Scan transkrip untuk memeriksa hook dan payoff.`
-      : `Skor sinyal sumber ${Math.round(quickScore)}/100 belum mencapai target ${VIRAL_QUALITY_FLOOR}. Sumber tetap boleh dipindai karena kualitas klip ditentukan dari transkrip.`;
+  const quickRecommendation = sourceProbe?.quick_check_recommendation ?? "unknown";
+  const quickLabel = sourceProbe?.momentum_label || "Data publik belum cukup";
+  const quickReason = sourceProbe?.quick_check_reason
+    || (quickScore === null
+      ? "Gunakan Scan Potensi Viral untuk menilai isi video."
+      : `Momentum sumber ${Math.round(quickScore)}/100 hanya sinyal distribusi. Scan transkrip tetap menentukan nilai informasi, hook, konteks, dan payoff.`);
   const isWorking = isBusy || isSubmitting;
   const canStart = hasUrl
     && !invalidUrl

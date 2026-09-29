@@ -82,8 +82,8 @@ export function AutoViralPanel({
         <span className="optionalPanelIcon"><Radar size={18} /></span>
         <span className="optionalPanelTitle">
           <span className="panelEyebrow">Module 02 / opsional</span>
-          <strong>Radar Viral Otomatis</strong>
-          <small>Cari politik, podcast, kajian, dan tema agama untuk diolah otomatis.</small>
+          <strong>Radar Sumber Islam</strong>
+          <small>Cari materi Islam informatif dari kanal kecil maupun besar untuk diolah otomatis.</small>
         </span>
         <span className={`optionalPanelState ${isSearching || isRunning ? "isActive" : ""}`}>
           {activityLabel}
@@ -134,15 +134,15 @@ export function AutoViralPanel({
           <label className="viralFilterItem">
             <span>Urutan</span>
             <select value={filters.sort_order} onChange={(event) => onFiltersChange({ ...filters, sort_order: event.target.value as ViralSearchFilters["sort_order"] })}>
-              <option value="popularity">Momentum & views</option>
               <option value="relevance">Relevansi</option>
+              <option value="popularity">Momentum & views</option>
               <option value="newest">Paling baru</option>
             </select>
           </label>
           <div className="viralFilterItem viralFilterLocked">
             <span>Kualitas & lisensi</span>
-            <strong><ShieldCheck size={14} /> HD + CC + minimal 5K views</strong>
-            <small>Ambang tayangan tidak dilonggarkan; hak audio/visual tetap direview.</small>
+            <strong><ShieldCheck size={14} /> HD + CC + semua skala view</strong>
+            <small>View hanya sinyal; relevansi Islam, isi informatif, dan hak sumber tetap wajib.</small>
           </div>
         </div>
 
@@ -152,7 +152,7 @@ export function AutoViralPanel({
         </button>
 
         <p className="viralFilterPolicy">
-          Hanya sumber dengan minimal 5.000 views yang dapat lolos. Setelah itu ClipForge mengurutkan momentum, kekuatan cerita, hook, dan relevansi.
+          Kanal kecil dan besar diperlakukan setara. Ranking mengutamakan isi Islam, kekuatan cerita, hook, konteks, dan potensi edit; momentum hanya pemecah skor yang berdekatan.
         </p>
 
         {message ? <p className="viralFilterPolicy">{message}</p> : null}
@@ -172,6 +172,7 @@ export function AutoViralPanel({
                     <span>{formatNumber(source.views)} views</span>
                     <span>{formatNumber(source.views_per_day)}/hari</span>
                     <span>{formatSourceDuration(source.duration)}</span>
+                    <span>Info Islam {Math.round(source.information_score ?? 0)}</span>
                     <span>CC terverifikasi</span>
                     <span>Skor {Math.round(source.score)}</span>
                     <span>Trend +{source.trend_signal_score ?? 0}</span>

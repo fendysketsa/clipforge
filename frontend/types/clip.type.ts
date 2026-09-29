@@ -629,6 +629,8 @@ export type ViralContentSource = {
   source_rights_review_reasons?: string[];
   score: number;
   viral_score: number;
+  momentum_score: number;
+  information_score: number;
   niche: IslamicContentNiche;
   niche_label: string;
   niche_score: number;

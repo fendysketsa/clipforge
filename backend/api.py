@@ -161,7 +161,6 @@ YOUTUBE_CLEANUP_STEP_RATIOS = {
 FRESH_VIRAL_MAX_AGE_DAYS = 30
 FRESH_CONVERSATION_MAX_AGE_DAYS = 7
 MAX_VIRAL_FALLBACK_AGE_DAYS = 365
-MIN_VIRAL_SOURCE_VIEWS = 5_000
 CANCEL_GRACE_SECONDS = 8
 LOCAL_LLM_PRESETS = [
     {"label": "Ollama", "base_url": "http://localhost:11434/v1"},
@@ -1143,14 +1142,14 @@ class YouTubeLiveChromeRequest(BaseModel):
 
 
 BROAD_VIRAL_SEARCH_QUERIES = [
-    "podcast indonesia terbaru",
+    "podcast islam indonesia terbaru",
     "podcast islam indonesia",
-    "podcast inspiratif indonesia",
-    "podcast kehidupan indonesia",
-    "obrolan tokoh indonesia",
-    "wawancara inspiratif indonesia",
+    "podcast inspiratif muslim indonesia",
+    "podcast kehidupan muslim indonesia",
+    "obrolan tokoh muslim indonesia",
+    "wawancara tokoh muslim indonesia",
     "kajian islam terbaru",
-    "ceramah terbaru indonesia",
+    "ceramah islam terbaru indonesia",
     "tausiyah singkat indonesia",
     "khutbah jumat indonesia",
     "nasihat kehidupan islam",
@@ -1178,9 +1177,9 @@ BROAD_VIRAL_SEARCH_QUERIES = [
     "ngaji indonesia terbaru",
     "tanya jawab islam",
     "kajian ustadz indonesia",
-    "inspirasi kehidupan indonesia",
-    "self improvement indonesia",
-    "pelajaran hidup podcast",
+    "inspirasi kehidupan islami indonesia",
+    "self improvement menurut islam",
+    "pelajaran hidup podcast islam",
 ]
 
 MYSTERY_ISLAMIC_SEARCH_QUERIES = [
@@ -1204,84 +1203,6 @@ MYSTERY_ISLAMIC_SEARCH_QUERIES = [
     "kisah ulama penuh hikmah",
     "legenda nusantara menurut islam",
     "mitos jawa menurut islam",
-    "cerita horor indonesia",
-    "podcast horor indonesia",
-    "kisah mistis indonesia",
-    "pengalaman gaib nyata",
-    "urban legend indonesia",
-    "misteri nusantara",
-    "fakta menyeramkan indonesia",
-    "misteri gunung indonesia",
-    "misteri laut indonesia",
-    "sejarah kelam indonesia",
-    "kisah nyata penuh misteri",
-    "cerita rakyat misteri indonesia",
-    "tempat angker dan sejarah indonesia",
-    "fenomena aneh indonesia",
-    "kisah survival menyeramkan",
-    "podcast kisah nyata indonesia",
-]
-
-HORROR_PODCAST_SEARCH_QUERIES = [
-    "podcast horor indonesia",
-    "podcast cerita seram indonesia",
-    "cerita seram podcast indonesia",
-    "podcast horor kisah nyata",
-    "podcast pengalaman mistis",
-    "podcast misteri nusantara",
-    "podcast urban legend indonesia",
-    "podcast paranormal indonesia",
-    "podcast investigasi tempat angker",
-    "podcast cerita hantu indonesia",
-    "cerita horor kisah nyata indonesia",
-    "kisah nyata pengalaman gaib",
-    "cerita seram narasi indonesia",
-    "cerita horor malam indonesia",
-    "cerita horor pendakian gunung",
-    "pengalaman mistis pendakian",
-    "cerita seram camping di hutan",
-    "kisah horor tersesat di hutan",
-    "misteri gunung dan jalur pendakian",
-    "cerita horor kos angker",
-    "cerita seram rumah kontrakan",
-    "kisah rumah kosong angker",
-    "cerita horor rumah sakit",
-    "cerita seram sekolah angker",
-    "cerita horor pabrik terbengkalai",
-    "cerita horor hotel angker",
-    "cerita seram kantor malam",
-    "cerita horor perjalanan malam",
-    "cerita mistis sopir malam",
-    "cerita horor ojek online",
-    "kisah seram penjaga malam",
-    "kisah horor desa terpencil",
-    "misteri kampung dan desa angker",
-    "cerita seram pesantren",
-    "kisah mistis makam dan kuburan",
-    "cerita horor laut dan nelayan",
-    "kisah misteri pantai selatan",
-    "cerita misteri danau indonesia",
-    "urban legend jawa",
-    "urban legend sumatera",
-    "urban legend kalimantan",
-    "urban legend sulawesi",
-    "urban legend bali",
-    "legenda hantu nusantara",
-    "kisah kuntilanak indonesia",
-    "kisah pocong nyata",
-    "misteri genderuwo jawa",
-    "kisah leak bali",
-    "cerita santet dan pesugihan",
-    "cerita tumbal dan ritual misteri",
-    "pengalaman kerasukan nyata",
-    "penampakan hantu kisah nyata",
-    "fenomena supranatural indonesia",
-    "mitos horor dan fakta",
-    "misteri sejarah tempat angker",
-    "cerita rakyat seram indonesia",
-    "audio drama horor indonesia",
-    "radio cerita horor indonesia",
-    "kompilasi cerita seram indonesia",
 ]
 
 IslamicContentNiche = Literal[
@@ -1695,15 +1616,15 @@ def merge_unique_queries(*groups: list[str]) -> list[str]:
 
 
 def prioritized_viral_queries(configured: list[str]) -> list[str]:
-    # Keep the user's strongest custom themes first, then deliberately diversify
-    # the first 12 API calls with Islamic mystery and horror-podcast formats.
+    # Put custom intent first, then cover broad Islamic formats. Generic horror
+    # queries are deliberately excluded: mystery is eligible only when its
+    # metadata explicitly frames the subject through Islam, faith, or ethics.
+    islamic_mystery = MYSTERY_ISLAMIC_SEARCH_QUERIES
     return merge_unique_queries(
         configured[:4],
-        MYSTERY_ISLAMIC_SEARCH_QUERIES[:4],
-        HORROR_PODCAST_SEARCH_QUERIES[:12],
+        islamic_mystery[:6],
         configured[4:],
-        MYSTERY_ISLAMIC_SEARCH_QUERIES[4:],
-        HORROR_PODCAST_SEARCH_QUERIES[12:],
+        islamic_mystery[6:],
         BROAD_VIRAL_SEARCH_QUERIES,
     )
 
@@ -1736,7 +1657,6 @@ def prioritized_niche_queries(niche: IslamicContentNiche, configured: list[str])
         configured,
         BROAD_VIRAL_SEARCH_QUERIES,
         MYSTERY_ISLAMIC_SEARCH_QUERIES,
-        HORROR_PODCAST_SEARCH_QUERIES,
     )
 
 
@@ -1803,17 +1723,14 @@ class AutoViralRequest(BaseModel):
     min_source_duration: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MIN_SOURCE_SECONDS", 60), ge=30, le=7200)
     max_source_duration: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MAX_SOURCE_SECONDS", 7200), ge=60, le=14400)
     min_views: int = Field(
-        default_factory=lambda: max(
-            MIN_VIRAL_SOURCE_VIEWS,
-            env_int("AUTO_VIRAL_MIN_VIEWS", MIN_VIRAL_SOURCE_VIEWS),
-        ),
+        default_factory=lambda: max(0, env_int("AUTO_VIRAL_MIN_VIEWS", 0)),
         ge=0,
     )
     max_age_days: int = Field(default=FRESH_VIRAL_MAX_AGE_DAYS, ge=1, le=MAX_VIRAL_FALLBACK_AGE_DAYS)
     duration_filter: ViralDurationFilter = "over_20"
     upload_date_filter: ViralUploadDateFilter = "this_year"
     definition_filter: ViralDefinitionFilter = "hd"
-    sort_order: ViralSortOrder = "popularity"
+    sort_order: ViralSortOrder = "relevance"
     top: int | None = Field(default=None, ge=1, le=MAX_REQUESTED_CLIPS)
     min_duration: float = Field(default=SHORT_GROWTH_MIN_SECONDS, ge=5, le=600)
     max_duration: float = Field(default=SHORT_DEFAULT_MAX_SECONDS, ge=10, le=600)
@@ -1920,17 +1837,14 @@ class ViralVideoSearchRequest(BaseModel):
         le=14400,
     )
     min_views: int = Field(
-        default_factory=lambda: max(
-            MIN_VIRAL_SOURCE_VIEWS,
-            env_int("VIRAL_CC_MIN_VIEWS", MIN_VIRAL_SOURCE_VIEWS),
-        ),
+        default_factory=lambda: max(0, env_int("VIRAL_CC_MIN_VIEWS", 0)),
         ge=0,
     )
     max_age_days: int = Field(default=FRESH_VIRAL_MAX_AGE_DAYS, ge=1, le=MAX_VIRAL_FALLBACK_AGE_DAYS)
     duration_filter: ViralDurationFilter = "over_20"
     upload_date_filter: ViralUploadDateFilter = "this_year"
     definition_filter: ViralDefinitionFilter = "hd"
-    sort_order: ViralSortOrder = "popularity"
+    sort_order: ViralSortOrder = "relevance"
     max_metadata_checks: int = Field(default_factory=lambda: env_int("VIRAL_CC_MAX_METADATA_CHECKS", 24), ge=3, le=500)
     exclude_urls: list[str] = Field(default_factory=list)
 
@@ -11470,11 +11384,11 @@ def viral_search_hard_filter_rejection_reason(
     info: dict[str, Any],
     request: AutoViralRequest | ViralVideoSearchRequest,
 ) -> str:
-    """Keep source reach, selected duration, and HD constraints non-adaptive."""
-    views = max(0, int(info.get("view_count") or 0))
-    required_views = max(MIN_VIRAL_SOURCE_VIEWS, request.min_views)
-    if views < required_views:
-        return f"tayangan {views:,} di bawah minimum wajib {required_views:,}"
+    """Keep selected duration and HD constraints non-adaptive.
+
+    View count is intentionally absent: reach is a ranking signal, never a
+    proxy for informational value or clip quality.
+    """
     duration = float(info.get("duration") or 0)
     if request.duration_filter == "under_3" and not (0 < duration < 180):
         return "durasi bukan kurang dari 3 menit"
@@ -11548,11 +11462,12 @@ def source_quick_check(info: dict[str, Any]) -> dict[str, Any]:
             "Scan transkrip untuk memastikan hook dan payoff juga layak dirender."
         )
     else:
-        label = "Prioritas rendah"
-        recommendation = "skip"
+        label = "Momentum rendah — tetap layak di-scan"
+        recommendation = "scan"
         reason = (
             f"Skor sinyal sumber belum mencapai target {SHORT_FYP_TARGET_SCORE}. "
-            "Sumber tetap boleh dipindai karena kualitas klip ditentukan dari transkrip."
+            "Lanjutkan scan: kualitas klip ditentukan dari nilai informasi, hook, konteks, "
+            "dan payoff transkrip, bukan dari views sumber."
         )
 
     return {
@@ -11666,6 +11581,55 @@ def indonesian_language_score(info: dict[str, Any]) -> float:
     return round(min(100.0, score), 2)
 
 
+ISLAMIC_INFORMATION_ANCHORS = {
+    "adab", "agama", "akhirat", "akhlak", "allah", "alquran", "dakwah", "doa",
+    "fikih", "fiqih", "hadis", "hadits", "halal", "haram", "hidayah",
+    "hijrah", "ibadah", "iman", "islam", "kajian", "muslim", "nabi",
+    "quran", "rasul", "spiritualitas", "riba", "sahabat", "salat", "shalat", "syariah",
+    "tafsir", "tauhid", "tawakal", "ulama", "ustad", "ustadz", "ustaz",
+    "zakat",
+}
+
+INFORMATION_FORMAT_MARKERS = {
+    "analisis", "bagaimana", "belajar", "ceramah", "dialog", "diskusi",
+    "fakta", "hukum", "jawaban", "kajian", "konteks", "mengapa",
+    "pelajaran", "penjelasan", "podcast", "sejarah", "tadabbur", "tafsir",
+    "tanya", "wawancara",
+}
+
+
+def islamic_information_score(info: dict[str, Any]) -> float:
+    """Estimate religious information value without using channel reach.
+
+    Metadata is only a discovery preflight; transcript analysis remains the
+    final authority. Requiring both Islamic anchors and an explanatory format
+    keeps generic entertainment or horror out while allowing politics,
+    podcasts, history, family, and other subjects through an Islamic lens.
+    """
+    title = re.sub(r"[^a-z0-9]+", " ", str(info.get("title") or "").casefold())
+    description = re.sub(
+        r"[^a-z0-9]+", " ", str(info.get("description") or "").casefold()
+    )
+    tags = info.get("tags") if isinstance(info.get("tags"), list) else []
+    supporting = f"{description} {' '.join(map(str, tags)).casefold()}"
+    title_words = set(title.split())
+    supporting_words = set(supporting.split())
+    religious_hits = title_words.intersection(ISLAMIC_INFORMATION_ANCHORS)
+    religious_support = supporting_words.intersection(ISLAMIC_INFORMATION_ANCHORS)
+    format_hits = title_words.intersection(INFORMATION_FORMAT_MARKERS)
+    format_support = supporting_words.intersection(INFORMATION_FORMAT_MARKERS)
+    _resolved_niche, relevance = best_matching_niche(info)
+
+    if not (religious_hits or religious_support):
+        return 0.0
+    score = relevance * 0.45
+    score += min(34.0, len(religious_hits) * 10.0 + len(religious_support) * 4.0)
+    score += min(22.0, len(format_hits) * 7.0 + len(format_support) * 3.0)
+    if (format_hits or format_support) and relevance >= 18:
+        score += 8.0
+    return round(min(100.0, score), 2)
+
+
 def niche_candidate_rejection_reason(
     info: dict[str, Any],
     niche: IslamicContentNiche,
@@ -11688,6 +11652,15 @@ def niche_candidate_relaxation_reasons(
             f"kecocokan tema {relevance_score:.0f}/100 di bawah minimum "
             f"{minimum_relevance}/100"
         )
+    information_score = islamic_information_score(info)
+    minimum_information = max(
+        1, min(100, env_int("VIRAL_CC_MIN_INFORMATION_SCORE", 24))
+    )
+    if information_score < minimum_information:
+        reasons.append(
+            f"nilai informasi Islam {information_score:.0f}/100 di bawah minimum "
+            f"{minimum_information}/100"
+        )
     language_score = indonesian_language_score(info)
     minimum_language = max(1, min(100, env_int("VIRAL_CC_MIN_INDONESIAN_SCORE", 15)))
     if language_score < minimum_language:
@@ -11705,14 +11678,28 @@ def compact_source_payload(
     age_days = upload_age_days(info)
     views = int(info.get("view_count") or 0)
     viral_score = auto_viral_candidate_score(info)
+    momentum_score = round(min(100.0, viral_score / 3.0), 2)
     resolved_niche, relevance_score = (
         best_matching_niche(info)
         if niche == "auto"
         else (niche, niche_relevance_score(info, niche))
     )
     language_score = indonesian_language_score(info)
-    ranking_score = viral_score + relevance_score * 1.85 + language_score * 0.25
+    information_score = islamic_information_score(info)
     conversation_profile = fresh_conversation_source_profile(info)
+    conversation_opportunity = min(
+        100.0, float(conversation_profile["score"]) * 2.25
+    )
+    # 85% of the rank is content/language/editorial opportunity. Public reach
+    # only breaks close calls, so a small channel with a stronger Islamic
+    # explanation can beat a large but shallow source.
+    ranking_score = (
+        relevance_score * 0.40
+        + information_score * 0.30
+        + language_score * 0.15
+        + conversation_opportunity * 0.10
+        + momentum_score * 0.05
+    )
     profile = ISLAMIC_EVERGREEN_NICHES.get(resolved_niche, {})
     source_height = source_max_height(info)
     definition = str(info.get("definition") or "").strip().casefold()
@@ -11748,6 +11735,8 @@ def compact_source_payload(
         "source_rights_review_reasons": rights_review_reasons,
         "score": round(ranking_score, 2),
         "viral_score": viral_score,
+        "momentum_score": momentum_score,
+        "information_score": information_score,
         "fresh_conversation_profile": conversation_profile,
         "fresh_conversation_score": conversation_profile["score"],
         "niche": resolved_niche,
@@ -11755,8 +11744,9 @@ def compact_source_payload(
         "niche_score": relevance_score,
         "language_score": language_score,
         "ranking_reason": (
-            f"Kecocokan tema {relevance_score:.0f}/100 • Bahasa Indonesia "
-            f"{language_score:.0f}/100 • momentum {viral_score:.0f}"
+            f"Kecocokan tema {relevance_score:.0f}/100 • nilai informasi Islam "
+            f"{information_score:.0f}/100 • Bahasa Indonesia {language_score:.0f}/100 "
+            f"• momentum hanya sinyal {momentum_score:.0f}/100"
             + (
                 " • percakapan baru kaya sudut"
                 if conversation_profile["qualified"]
@@ -11765,8 +11755,9 @@ def compact_source_payload(
             if niche != "auto"
             else (
                 f"Auto memilih {profile.get('label', resolved_niche)} • kecocokan "
-                f"{relevance_score:.0f}/100 • Bahasa Indonesia {language_score:.0f}/100 "
-                f"• momentum {viral_score:.0f}"
+                f"{relevance_score:.0f}/100 • nilai informasi Islam "
+                f"{information_score:.0f}/100 • Bahasa Indonesia {language_score:.0f}/100 "
+                f"• momentum hanya sinyal {momentum_score:.0f}/100"
                 + (
                     " • percakapan baru kaya sudut"
                     if conversation_profile["qualified"]
@@ -12091,8 +12082,8 @@ def search_youtube_data_api_viral_sources(
             "relevanceLanguage": relevance_language,
             "safeSearch": "strict",
         }
-        # CC, minimum views, selected duration, and selected HD definition are hard requirements.
-        # Freshness and topical relevance may still adapt when configured.
+        # CC, selected duration, and selected HD definition are hard requirements.
+        # Reach never is; Islamic relevance and information value are validated below.
         if not adaptive_filters:
             search_params["publishedAfter"] = youtube_published_after(request.max_age_days)
         if request.duration_filter != "any":
@@ -12188,13 +12179,14 @@ def search_youtube_data_api_viral_sources(
                     f"{payload.get('title') or '-'}",
                 )
                 continue
-            relevance_reasons = [
-                reason for reason in niche_reasons if reason.startswith("kecocokan tema")
+            content_reasons = [
+                reason for reason in niche_reasons
+                if reason.startswith(("kecocokan tema", "nilai informasi Islam"))
             ]
-            if relevance_reasons and not adaptive_filters:
+            if content_reasons:
                 append_auto_viral_log(
                     run_id,
-                    f"Skip kandidat tidak relevan ({'; '.join(relevance_reasons)}): "
+                    f"Skip kandidat tidak informatif/relevan ({'; '.join(content_reasons)}): "
                     f"{payload.get('title') or '-'}",
                 )
                 continue
@@ -12210,7 +12202,6 @@ def search_youtube_data_api_viral_sources(
             source["score"] = round(float(source.get("score") or 0) + trend_signal_score, 2)
             relaxed_reasons: list[str] = []
             relaxed_reasons.extend(filter_reasons)
-            relaxed_reasons.extend(relevance_reasons)
             if relaxed_reasons:
                 source["filter_match"] = "adaptive"
                 source["relaxed_filters"] = relaxed_reasons
@@ -12342,13 +12333,14 @@ def search_auto_viral_sources(
                     f"{metadata.get('title') or url}",
                 )
                 continue
-            relevance_reasons = [
-                reason for reason in niche_reasons if reason.startswith("kecocokan tema")
+            content_reasons = [
+                reason for reason in niche_reasons
+                if reason.startswith(("kecocokan tema", "nilai informasi Islam"))
             ]
-            if relevance_reasons and not adaptive_filters:
+            if content_reasons:
                 append_auto_viral_log(
                     run_id,
-                    f"Skip kandidat tidak relevan ({'; '.join(relevance_reasons)}): "
+                    f"Skip kandidat tidak informatif/relevan ({'; '.join(content_reasons)}): "
                     f"{metadata.get('title') or url}",
                 )
                 continue
@@ -12356,7 +12348,6 @@ def search_auto_viral_sources(
             source["search_provider"] = "yt_dlp_fallback"
             relaxed_reasons: list[str] = []
             relaxed_reasons.extend(filter_reasons)
-            relaxed_reasons.extend(relevance_reasons)
             if relaxed_reasons:
                 source["filter_match"] = "adaptive"
                 source["relaxed_filters"] = relaxed_reasons
@@ -12873,9 +12864,7 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
         ):
             fallback_age_days = request.max_age_days
             fallback_min_views = max(
-                request.min_views,
-                MIN_VIRAL_SOURCE_VIEWS,
-                env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", MIN_VIRAL_SOURCE_VIEWS),
+                0, env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", request.min_views)
             )
             fallback_queries = prioritized_niche_queries(
                 request.niche,
@@ -12897,8 +12886,8 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
             append_auto_viral_log(
                 run_id,
                 f"Hasil sesuai filter baru {len(sources)}/{request.video_count}; memperluas kata kunci "
-                f"tanpa mengubah batas {fallback_age_days} hari, min. {fallback_min_views} views, "
-                f"{len(fallback_request.queries)} variasi keyword.",
+                f"tanpa hard gate views, batas usia {fallback_age_days} hari, dan "
+                f"{len(fallback_request.queries)} variasi keyword Islam.",
             )
             found_urls = {
                 normalize_youtube_video_url(str(item.get("url") or ""))
@@ -13247,9 +13236,7 @@ def discover_auto_viral_campaign_sources(
         fast_api_only and api_attempted and not quota_fallback and bool(sources)
     ):
         fallback_min_views = max(
-            request.min_views,
-            MIN_VIRAL_SOURCE_VIEWS,
-            env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", MIN_VIRAL_SOURCE_VIEWS),
+            0, env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", request.min_views)
         )
         fallback_queries = prioritized_niche_queries(
             request.niche,
@@ -13586,14 +13573,11 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         niche=os.environ.get("AUTO_VIRAL_SCHEDULE_NICHE", "auto"),  # type: ignore[arg-type]
         video_count=max(1, min(7, env_int("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", 3))),
         clips_per_video=max(1, min(5, env_int("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", 2))),
-        min_views=max(
-            MIN_VIRAL_SOURCE_VIEWS,
-            env_int("AUTO_VIRAL_SCHEDULE_MIN_VIEWS", MIN_VIRAL_SOURCE_VIEWS),
-        ),
+        min_views=max(0, env_int("AUTO_VIRAL_SCHEDULE_MIN_VIEWS", 0)),
         upload_date_filter=os.environ.get("AUTO_VIRAL_SCHEDULE_UPLOAD_DATE_FILTER", "this_week"),  # type: ignore[arg-type]
         duration_filter=os.environ.get("AUTO_VIRAL_SCHEDULE_DURATION_FILTER", "over_20"),  # type: ignore[arg-type]
         definition_filter="hd",
-        sort_order="popularity",
+        sort_order="relevance",
         auto_upload_youtube=env_bool("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False),
     )
 

@@ -331,29 +331,33 @@ and persisted in `backend/data/youtube_uploads.json`.
 
 The dashboard's **Perbarui** action records a post-publish performance snapshot.
 
-Viral CC discovery always enforces a minimum of 5,000 total source views, including
-API fallbacks and revalidation before clipping. `VIRAL_CC_MIN_VIEWS` may raise that
-floor but cannot lower it. Enable `VIRAL_CC_REQUIRE_MOMENTUM=true` to additionally
-require the recent velocity set by `VIRAL_CC_MIN_VIEWS_PER_DAY`. When no source
-meets the hard reach and safety thresholds, ClipForge returns no candidate instead
-of presenting a low-view source as viral. Source history stores the views,
-views/day, age, and editorial viral score captured at processing time so later
-audits compare real inputs rather than the label alone.
+Viral CC discovery accepts sources from channels with any view count. Reach and
+views/day are recorded as distribution signals, but they do not gate discovery
+or stand in for content quality. Ranking is content-first: Islamic information
+value, niche relevance, Indonesian-language confidence, and editorial opportunity
+dominate; momentum only breaks close scores. Enable
+`VIRAL_CC_REQUIRE_MOMENTUM=true` only when an operator deliberately wants the
+optional `VIRAL_CC_MIN_VIEWS` and `VIRAL_CC_MIN_VIEWS_PER_DAY` campaign filter.
+Source history still stores views, views/day, age, and momentum for later audits.
 
 Auto Viral uses the YouTube Data API route for both dashboard searches and
 scheduled campaigns. It reads the regional `mostPopular` chart as a live topic
 signal, adds relevant Indonesian topics to the Creative Commons search, then
-ranks only sources that still pass freshness, momentum, language, HD, and rights
-preflight checks. The chart itself is not treated as permission to reuse a video.
+ranks only sources that still pass Islamic information, niche relevance, language,
+HD, and rights preflight checks. Generic horror or podcast entertainment is
+excluded unless metadata clearly frames it as Islamic explanation or ethical
+reflection. The chart itself is not treated as permission to reuse a video.
 The default dashboard preset mixes the full Islamic/religious catalog: politics
 and public affairs, podcasts and dialogue, Qur'an/hadith reflection, Muslim
 family/lifestyle, interfaith culture, faith stories, practical guidance, mental
 health, halal finance, fiqh, and history. A focused theme can still be selected.
-It sends a popularity-ordered Creative Commons query with the
+It sends a relevance-ordered Creative Commons query with the
 YouTube `long` duration filter, then revalidates that every result is over 20
-minutes using `videos.list` metadata. Within that popular pool, ClipForge ranks
-overall clipping opportunity so a smaller source with a stronger story can still
-beat a higher-view but weakly relevant source.
+minutes using `videos.list` metadata. Within that pool, ClipForge ranks overall clipping opportunity so a smaller
+source with a stronger informative story can beat a higher-view but shallow source.
+Rendered Shorts then use a content lane—Qur'an/hadith, politics, podcast, history,
+practical guidance, or faith reflection—to select motion, editorial-card labels,
+pacing, and restraint.
 
 Enable the internal cron-style scheduler in `.env` (restart the backend after
 changing these values):

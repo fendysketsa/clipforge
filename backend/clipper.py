@@ -8894,6 +8894,32 @@ REVERENT_REFERENCE_VISUAL_WORDS = {
     "tilawah",
 }
 
+PRACTICAL_GUIDANCE_VISUAL_WORDS = {
+    "adab", "cara", "hindari", "langkah", "lakukan", "panduan", "perbaiki",
+    "pertama", "kedua", "ketiga", "solusi", "tips",
+}
+
+
+def islamic_editorial_lane(clip: ClipCandidate) -> str:
+    """Classify the editorial job, independent from cosmetic color themes."""
+    searchable = re.sub(
+        r"\s+", " ", f"{clip.title} {clip.hook} {clip.pov} {clip.text}".casefold()
+    )
+    words = set(re.findall(r"[\w']+", searchable))
+    if words.intersection(REVERENT_REFERENCE_VISUAL_WORDS):
+        return "quran_hadith_reference"
+    if words.intersection(PUBLIC_AFFAIRS_VISUAL_WORDS):
+        return "islamic_public_affairs"
+    if words.intersection(PODCAST_VISUAL_WORDS):
+        return "islamic_dialogue"
+    if any(term in searchable for term in ARCHIVAL_VISUAL_WORDS):
+        return "islamic_history"
+    if clip_has_islamic_context(clip) and words.intersection(PRACTICAL_GUIDANCE_VISUAL_WORDS):
+        return "practical_guidance"
+    if clip_has_islamic_context(clip):
+        return "faith_reflection"
+    return "general_knowledge"
+
 
 def editorial_motion_style(clip: ClipCandidate) -> str:
     """Choose a respectful motion language from the actual clip subject."""
@@ -8911,6 +8937,8 @@ def editorial_motion_style(clip: ClipCandidate) -> str:
         return "conversation_pulse"
     if any(term in searchable for term in ARCHIVAL_VISUAL_WORDS):
         return "historical_timeline"
+    if clip_has_islamic_context(clip) and words.intersection(PRACTICAL_GUIDANCE_VISUAL_WORDS):
+        return "practical_guidance"
     if clip_has_islamic_context(clip):
         return "contemplative_guidance"
     return "editorial_clean"
@@ -8934,6 +8962,7 @@ def auto_fyp_visual_plan(
     words = set(re.findall(r"[\w']+", searchable))
     variation = content_edit_variation(clip)
     motion_style = editorial_motion_style(clip)
+    content_lane = islamic_editorial_lane(clip)
     archival_match = any(term in searchable for term in ARCHIVAL_VISUAL_WORDS)
     depth_match = bool(words.intersection(DEPTH_VISUAL_WORDS))
     micro_thesis = micro_thesis_profile(clip.text, clip.duration)
@@ -8973,6 +9002,9 @@ def auto_fyp_visual_plan(
     elif output_format == "vertical_short" and motion_style == "conversation_pulse":
         accent = "dialogue_focus"
         reason = "podcast_interview_or_dialogue_format"
+    elif output_format == "vertical_short" and motion_style == "practical_guidance":
+        accent = "guided_steps"
+        reason = "practical_islamic_takeaway_with_actionable_steps"
     elif output_format == "vertical_short" and clip.narrative_arc_complete:
         accent = "narrative_message"
         reason = "hook_context_tension_answer_strong_end"
@@ -8986,14 +9018,59 @@ def auto_fyp_visual_plan(
         accent = "cinematic_clean"
         reason = "clarity_and_authenticity_priority"
 
+    transformation_recipes = {
+        "quran_hadith_reference": {
+            "editorial_goal": "preserve_reference_context_and_extract_reflection",
+            "layers": ["grounded_hook", "source_attribution", "measured_takeaway"],
+            "card_labels": ["JAGA KONTEKS", "HIKMAH UTAMA"],
+        },
+        "islamic_public_affairs": {
+            "editorial_goal": "separate_claim_context_and_fair_conclusion",
+            "layers": ["issue_context", "speaker_position", "public_value"],
+            "card_labels": ["CEK KONTEKS", "INTI BAGI UMAT"],
+        },
+        "islamic_dialogue": {
+            "editorial_goal": "turn_conversation_into_one_complete_answer",
+            "layers": ["question", "key_exchange", "answer_payoff"],
+            "card_labels": ["POIN DIALOG", "INTI JAWABAN"],
+        },
+        "islamic_history": {
+            "editorial_goal": "connect_event_cause_and_present_day_lesson",
+            "layers": ["event", "cause_or_turn", "lesson_today"],
+            "card_labels": ["JEJAK PERISTIWA", "PELAJARAN HARI INI"],
+        },
+        "practical_guidance": {
+            "editorial_goal": "convert_explanation_into_safe_actionable_guidance",
+            "layers": ["problem", "principle", "next_step"],
+            "card_labels": ["PRINSIPNYA", "LANGKAH PRAKTIS"],
+        },
+        "faith_reflection": {
+            "editorial_goal": "connect_relatable_tension_to_grounded_reflection",
+            "layers": ["tension", "islamic_lens", "reflection"],
+            "card_labels": ["RENUNGKAN", "HIKMAH UTAMA"],
+        },
+        "general_knowledge": {
+            "editorial_goal": "add_context_and_a_clear_takeaway",
+            "layers": ["hook", "context", "takeaway"],
+            "card_labels": ["SUDUT EDITORIAL", "MAKNA UTAMA"],
+        },
+    }
+
     return {
-        "version": 7,
+        "version": 8,
         "base": "cinematic_clean_detail",
         "accent": accent,
         "reason": reason,
         "content_derived": True,
         "variation": variation,
         "editorial_motion_style": motion_style,
+        "content_lane": content_lane,
+        "transformation_recipe": {
+            **transformation_recipes[content_lane],
+            "source_dialogue_preserved": True,
+            "synthetic_claims_allowed": False,
+            "transcript_grounded": True,
+        },
         "micro_thesis": micro_thesis,
         "social_anecdote": social_anecdote,
         "delayed_punchline": delayed_punchline,
@@ -9026,6 +9103,7 @@ def auto_fyp_visual_plan(
             in {
                 "context_briefing",
                 "dialogue_focus",
+                "guided_steps",
                 "evidence_stage",
                 "claim_rebuttal",
                 "narrative_message",
@@ -9047,6 +9125,8 @@ def auto_fyp_visual_plan(
                 if accent == "narrative_message"
                 else 2
                 if accent in {"restrained_authority", "reverent_focus"}
+                else 3
+                if accent == "guided_steps"
                 else 4
                 if accent in {"context_briefing", "dialogue_focus"}
                 else 5
@@ -9055,6 +9135,7 @@ def auto_fyp_visual_plan(
             not in {
                 "context_briefing",
                 "dialogue_focus",
+                "guided_steps",
                 "evidence_stage",
                 "claim_rebuttal",
                 "narrative_message",
@@ -9069,6 +9150,7 @@ def auto_fyp_visual_plan(
             not in {
                 "context_briefing",
                 "dialogue_focus",
+                "guided_steps",
                 "evidence_stage",
                 "claim_rebuttal",
                 "narrative_message",
@@ -9081,6 +9163,7 @@ def auto_fyp_visual_plan(
             in {
                 "context_briefing",
                 "dialogue_focus",
+                "guided_steps",
                 "evidence_stage",
                 "claim_rebuttal",
                 "narrative_message",
@@ -9106,6 +9189,8 @@ def auto_fyp_visual_plan(
                 if accent == "context_briefing"
                 else 4.8
                 if accent == "dialogue_focus"
+                else 7.8
+                if accent == "guided_steps"
                 else retention_cadence
             ),
         },
@@ -10401,13 +10486,28 @@ def visual_theme_profile(clip: ClipCandidate) -> dict[str, str]:
             "grade": "eq=contrast=1.05:brightness=0.004:saturation=1.04:gamma=1.01",
         },
     }
-    profile = {"theme": theme, "motion_style": motion_style, **profiles[theme]}
+    profile = {
+        "theme": theme,
+        "motion_style": motion_style,
+        "editorial_label": "SUDUT EDITORIAL",
+        "takeaway_label": "MAKNA UTAMA",
+        **profiles[theme],
+    }
     motion_copy = {
         "civic_context": ("KONTEKS / UMAT", "CEK KONTEKS"),
         "conversation_pulse": ("PODCAST / GAGASAN", "POIN NARASUMBER"),
         "reverent_reference": ("DALIL / RENUNGAN", "JAGA KONTEKS"),
         "historical_timeline": ("SEJARAH / HIKMAH", "JEJAK PERISTIWA"),
+        "practical_guidance": ("PANDUAN / AMAL", "LANGKAH PRAKTIS"),
         "contemplative_guidance": ("RENUNGAN / HIKMAH", "AMBIL HIKMAH"),
+    }
+    editorial_copy = {
+        "civic_context": ("CEK KONTEKS", "INTI BAGI UMAT"),
+        "conversation_pulse": ("POIN DIALOG", "INTI JAWABAN"),
+        "reverent_reference": ("JAGA KONTEKS", "HIKMAH UTAMA"),
+        "historical_timeline": ("JEJAK PERISTIWA", "PELAJARAN HARI INI"),
+        "practical_guidance": ("PRINSIPNYA", "LANGKAH PRAKTIS"),
+        "contemplative_guidance": ("RENUNGKAN", "HIKMAH UTAMA"),
     }
     if motion_style in motion_copy and not (
         motion_style == "contemplative_guidance" and theme != "islamic"
@@ -10415,6 +10515,8 @@ def visual_theme_profile(clip: ClipCandidate) -> dict[str, str]:
         badge, emphasis_label = motion_copy[motion_style]
         profile["badge"] = badge
         profile["emphasis_label"] = emphasis_label
+    if motion_style in editorial_copy:
+        profile["editorial_label"], profile["takeaway_label"] = editorial_copy[motion_style]
     story_radar = islamic_story_radar_profile(clip.text, clip.duration)
     if has_islamic_context and story_radar["qualified"]:
         story_copy = {
@@ -11426,6 +11528,18 @@ def topic_motion_overlay_filters(
                 f"t=fill:enable='between(t,0,{intro_end:.3f})'",
             ]
         )
+    elif style == "practical_guidance":
+        # A quiet three-step rail makes actionable guidance scannable without
+        # inventing wording or covering the speaker/subtitles.
+        rail_end = min(safe_duration, 8.0)
+        filters.extend(
+            [
+                f"drawbox=x=986:y=590:w=3:h=360:color={accent}@0.42:t=fill:enable='between(t,0.4,{rail_end:.3f})'",
+                f"drawbox=x=976:y=610:w=23:h=23:color={secondary}@0.78:t=fill:enable='between(t,0.6,1.2)'",
+                f"drawbox=x=976:y=755:w=23:h=23:color={accent}@0.78:t=fill:enable='between(t,2.8,3.4)'",
+                f"drawbox=x=976:y=900:w=23:h=23:color={secondary}@0.78:t=fill:enable='between(t,5.0,5.6)'",
+            ]
+        )
     elif style == "historical_timeline":
         filters.extend(
             [
@@ -11439,7 +11553,7 @@ def topic_motion_overlay_filters(
 
     # Brief edge pulses follow strong transcript beats for every theme. They are
     # procedural and do not imply facts that the speaker did not say.
-    if style in {"civic_context", "conversation_pulse", "historical_timeline"}:
+    if style in {"civic_context", "conversation_pulse", "historical_timeline", "practical_guidance"}:
         for timestamp in sorted(emphasis_times or [])[:2]:
             pulse_end = min(safe_duration, timestamp + 0.22)
             filters.append(
@@ -12005,7 +12119,7 @@ def clean_detail_edit_filter(
                         f"drawbox=x=64:y=420:w=900:h=188:color=black@0.76:t=fill:{editorial_active}",
                         f"drawbox=x=64:y=420:w=11:h=188:color={accent}@0.98:t=fill:{editorial_active}",
                         f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-                        f"text='SUDUT EDITORIAL':expansion=none:fontcolor={accent}:fontsize=21:"
+                        f"text='{profile.get('editorial_label', 'SUDUT EDITORIAL')}':expansion=none:fontcolor={accent}:fontsize=21:"
                         f"x=98:y=444:{editorial_active}",
                         "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
                         f"textfile='{editorial_text_filename}':reload=0:expansion=none:"
@@ -12025,7 +12139,7 @@ def clean_detail_edit_filter(
                         f"drawbox=x=64:y=420:w=900:h=188:color=black@0.78:t=fill:{takeaway_active}",
                         f"drawbox=x=64:y=420:w=11:h=188:color={secondary}@0.98:t=fill:{takeaway_active}",
                         f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-                        f"text='MAKNA UTAMA':expansion=none:fontcolor={secondary}:fontsize=21:"
+                        f"text='{profile.get('takeaway_label', 'MAKNA UTAMA')}':expansion=none:fontcolor={secondary}:fontsize=21:"
                         f"x=98:y=444:{takeaway_active}",
                         "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                         f"textfile='{takeaway_text_filename}':reload=0:expansion=none:"
@@ -13751,6 +13865,7 @@ def export_clip(
         "claim_rebuttal",
         "context_briefing",
         "dialogue_focus",
+        "guided_steps",
         "evidence_stage",
         "narrative_message",
         "payoff_teaser",
@@ -13940,6 +14055,7 @@ def export_clip(
         elif auto_visual_accent in {
             "claim_rebuttal",
             "context_briefing",
+            "guided_steps",
             "evidence_stage",
             "payoff_teaser",
             "story_punchline",
@@ -14049,6 +14165,10 @@ def export_clip(
             applied_edits.append(
                 "Mode dialogue-focus memberi voice meter prosedural dan virtual multi-camera; "
                 "maksimal satu SFX tawa/kaget yang benar-benar dipicu transkrip, tanpa stock B-roll atau backsound pihak ketiga."
+            )
+        elif auto_visual_accent == "guided_steps":
+            applied_edits.append(
+                "Mode guided-steps menyusun masalah, prinsip Islam, dan langkah praktis melalui rail tiga beat, label kartu adaptif, maksimal tiga reframe, serta audio dialog tanpa SFX dramatis."
             )
         elif auto_visual_accent == "claim_rebuttal":
             applied_edits.append(
@@ -14477,7 +14597,12 @@ def export_clip(
             "editorial_angle": editorial_angle.replace("\n", " ").strip(),
             "takeaway": core_message.replace("\n", " ").strip(),
             "distinct_timed_windows": 2 if visible_editorial_framing else 0,
-            "presentation": "sudut_editorial_then_makna_utama",
+            "presentation": "content_lane_editorial_then_takeaway",
+            "content_lane": auto_visual_plan.get("content_lane"),
+            "card_labels": [
+                theme_profile.get("editorial_label", "SUDUT EDITORIAL"),
+                theme_profile.get("takeaway_label", "MAKNA UTAMA"),
+            ],
             "generated_for_this_clip": not bool(human_creator_perspective),
             "generation_source": (
                 "creator_input"
@@ -15055,7 +15180,7 @@ def export_clip(
                 )
                 if visible_editorial_framing:
                     applied_edits.append(
-                        "Dua kartu spesifik clip menambahkan Sudut Editorial di tengah dan Makna Utama menjelang akhir; keduanya mengikuti POV serta payoff hasil analisis, bukan teks template umum."
+                        f"Dua kartu spesifik clip memakai label '{theme_profile.get('editorial_label')}' dan '{theme_profile.get('takeaway_label')}'; isinya mengikuti POV serta payoff hasil analisis, bukan teks template umum."
                     )
             else:
                 vf = (
