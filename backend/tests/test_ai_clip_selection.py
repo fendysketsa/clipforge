@@ -254,6 +254,53 @@ def test_short_selection_rejects_timing_audited_candidate_with_drop_off_risk():
     assert selected == [paced_story]
 
 
+def test_manual_review_fallback_accepts_safe_quality_only_failure():
+    candidate = make_candidate(
+        0,
+        0,
+        90,
+        "Pertanyaan, konteks, jawaban, dan penutup sudah aman untuk direview.",
+    )
+    candidate.retention_score = 42
+    candidate.narrative_arc_score = 40
+    candidate.narrative_arc_complete = False
+
+    assert select_candidates([candidate], 1) == []
+    assert select_candidates(
+        [candidate],
+        1,
+        allow_manual_review_quality=True,
+    ) == [candidate]
+
+    selected, review_fallback = select_short_export_candidates(
+        [candidate],
+        1,
+        allow_manual_review_quality=True,
+    )
+
+    assert selected == [candidate]
+    assert review_fallback is True
+
+
+def test_manual_review_fallback_still_rejects_structurally_unsafe_candidate():
+    candidate = make_candidate(
+        0,
+        0,
+        92,
+        "Potongan ini belum memiliki cukup susunan cerita untuk direview.",
+    )
+    candidate.key_point_score = 54
+    candidate.retention_score = 74
+    candidate.narrative_arc_score = 100
+    candidate.narrative_arc_complete = False
+
+    assert select_candidates(
+        [candidate],
+        1,
+        allow_manual_review_quality=True,
+    ) == []
+
+
 def test_short_selection_can_include_low_score_when_structural_gates_pass():
     candidate = make_candidate(0, 0, 58, "Poin lengkap yang masih perlu auto-repair.")
 

@@ -7743,9 +7743,12 @@ def select_candidates(
     limit: int,
     *,
     minimum_score: int = 1,
+    allow_manual_review_quality: bool = False,
 ) -> list[ClipCandidate]:
-    # FYP score is an internal ranking estimate, not a platform safety rule.
-    # Structural, retention, context, and editorial checks remain mandatory.
+    # FYP, retention, and five-beat scores are quality predictions rather than
+    # platform-safety rules. The automatic path keeps them mandatory. A
+    # clearly-labelled manual-review fallback may relax those two predictions,
+    # but never the key-point, sentence-boundary, context, or editorial gates.
     candidates = [
         item
         for item in candidates
@@ -7754,10 +7757,18 @@ def select_candidates(
         and item.score >= max(1, minimum_score)
         # A zero means legacy/manual candidate data with no timing audit. New
         # transcript-derived candidates must clear the retention floor.
-        and (item.retention_score == 0 or item.retention_score >= 58)
+        and (
+            item.retention_score == 0
+            or item.retention_score >= 58
+            or allow_manual_review_quality
+        )
         # Zero keeps backward compatibility for manually-created candidates.
         # Transcript-derived Shorts carry the audit and must satisfy all beats.
-        and (item.narrative_arc_score == 0 or item.narrative_arc_complete)
+        and (
+            item.narrative_arc_score == 0
+            or item.narrative_arc_complete
+            or allow_manual_review_quality
+        )
         and item.religious_context_safe
     ]
     target_duration = 38
@@ -7808,6 +7819,7 @@ def select_and_repair_short_candidates(
     limit: int,
     min_duration: float,
     max_duration: float,
+    allow_manual_review_quality: bool = False,
 ) -> list[ClipCandidate]:
     """Repair a broad safe shortlist, then apply final diversity selection."""
     repair_limit = max(
@@ -7818,6 +7830,7 @@ def select_and_repair_short_candidates(
         candidates,
         repair_limit,
         minimum_score=1,
+        allow_manual_review_quality=allow_manual_review_quality,
     )
     repair_candidates = apply_codex_edits_to_candidates(
         repair_candidates,
@@ -7834,19 +7847,33 @@ def select_and_repair_short_candidates(
         repair_candidates,
         limit,
         minimum_score=1,
+        allow_manual_review_quality=allow_manual_review_quality,
     )
 
 
 def select_short_export_candidates(
     candidates: list[ClipCandidate],
     limit: int,
+    *,
+    allow_manual_review_quality: bool = False,
 ) -> tuple[list[ClipCandidate], bool]:
     """Prefer the FYP target, but preserve safe clips for manual review.
 
     The internal FYP estimate is useful for ranking and automatic batch upload.
-    Safety remains enforced by ``select_candidates`` through narrative,
-    retention, boundary, religious-context, and editorial checks.
+    The automatic path still requires retention and a complete five-beat arc.
+    The explicit review path may relax those quality predictions while keeping
+    the key-point, sentence-boundary, religious-context, and editorial checks.
     """
+    if allow_manual_review_quality:
+        fallback_limit = min(max(1, limit), SHORT_REVIEW_FALLBACK_LIMIT)
+        review_candidates = select_candidates(
+            candidates,
+            fallback_limit,
+            minimum_score=1,
+            allow_manual_review_quality=True,
+        )
+        return review_candidates, bool(review_candidates)
+
     quality_candidates = select_candidates(
         candidates,
         limit,
@@ -17938,6 +17965,7 @@ def main() -> int:
         compilation=args.clip_mode == "highlight_5m",
     )
     structural_edits_applied = False
+    manual_review_quality_fallback = False
     if args.clip_mode == "short" and not args.no_enhanced_edit:
         # Repair a wider, diverse shortlist before applying the final quality
         # target. Structural and editorial safety gates remain mandatory.
@@ -17994,10 +18022,25 @@ def main() -> int:
                     min_duration=args.min,
                     max_duration=expanded_max_duration,
                 )
+                if not candidates:
+                    candidates = select_and_repair_short_candidates(
+                        expanded_pool,
+                        transcript,
+                        limit=args.top,
+                        min_duration=args.min,
+                        max_duration=expanded_max_duration,
+                        allow_manual_review_quality=True,
+                    )
+                    manual_review_quality_fallback = bool(candidates)
                 if candidates:
                     console.print(
-                        "[green]Automatic duration expansion recovered "
-                        f"{len(candidates)} complete Short candidate(s).[/green]"
+                        "[green]Automatic recovery prepared "
+                        f"{len(candidates)} safe Short candidate(s)"
+                        + (
+                            " for manual story review.[/green]"
+                            if manual_review_quality_fallback
+                            else ".[/green]"
+                        )
                     )
         compilation_candidates = []
         structural_edits_applied = True
@@ -18044,10 +18087,23 @@ def main() -> int:
                     args.top,
                     minimum_score=1,
                 )
+                if not candidates:
+                    candidates = select_candidates(
+                        expanded_pool,
+                        min(args.top, SHORT_REVIEW_FALLBACK_LIMIT),
+                        minimum_score=1,
+                        allow_manual_review_quality=True,
+                    )
+                    manual_review_quality_fallback = bool(candidates)
                 if candidates:
                     console.print(
-                        "[green]Automatic duration expansion recovered "
-                        f"{len(candidates)} complete Short candidate(s).[/green]"
+                        "[green]Automatic recovery prepared "
+                        f"{len(candidates)} safe Short candidate(s)"
+                        + (
+                            " for manual story review.[/green]"
+                            if manual_review_quality_fallback
+                            else ".[/green]"
+                        )
                     )
     emit_progress(
         59,
@@ -18106,6 +18162,7 @@ def main() -> int:
         candidates, review_fallback = select_short_export_candidates(
             candidates,
             args.top,
+            allow_manual_review_quality=manual_review_quality_fallback,
         )
         if not candidates:
             console.print(
@@ -18114,9 +18171,19 @@ def main() -> int:
             )
             return 1
         if review_fallback:
+            for candidate in candidates:
+                candidate.applied_edits = list(
+                    dict.fromkeys(
+                        [
+                            *candidate.applied_edits,
+                            "Kandidat aman dipertahankan untuk review manual; "
+                            "prediksi retensi atau pola lima-beat masih di bawah target auto-upload.",
+                        ]
+                    )
+                )
             console.print(
-                "[yellow]Skor prediksi belum mencapai target Short FYP "
-                f"{SHORT_EXPORT_MIN_FYP_SCORE}. {len(candidates)} kandidat paling aman "
+                "[yellow]Quality gate otomatis (FYP, retensi, atau pola lima-beat) belum lengkap. "
+                f"{len(candidates)} kandidat paling aman "
                 "tetap dirender untuk review manual; auto-upload batch YouTube tetap ditahan.[/yellow]"
             )
             emit_progress(
