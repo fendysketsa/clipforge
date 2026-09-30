@@ -3108,7 +3108,8 @@ def test_monetization_preflight_v8_requires_substantive_editorial_contract_for_u
 
     issue = youtube_monetization_preflight_issue(job, clip) or ""
     assert "Sudut Editorial" in issue
-    assert "hanya MP4 clip terpilih" in issue
+    assert "setelah perbaikan otomatis" in issue
+    assert "Perbaiki Otomatis" not in issue
 
     sidecar["monetization_readiness"]["signals"][
         "visible_editorial_interpretation"

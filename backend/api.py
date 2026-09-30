@@ -2941,6 +2941,7 @@ def attach_job_telemetry(job: "ClipJob") -> "ClipJob":
 
 AUTOMATIC_CLIP_REPAIR_ISSUE_MARKERS = (
     "Perbaiki Otomatis",
+    "Perbaikan otomatis sudah dijalankan",
     "perspektif editorial otomatis belum ditemukan",
 )
 
@@ -2950,7 +2951,7 @@ def clip_automatic_repair_available(
     clip: ClipFile,
     issue: str | None,
 ) -> bool:
-    """Expose targeted rerendering for failures that it can actually repair."""
+    """Mark Short failures that remain blocked after the automatic repair pass."""
     return bool(
         job.request.clip_mode == "short"
         and (
@@ -4684,7 +4685,7 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
     ):
         return (
             "Upload diblokir: perspektif editorial otomatis belum ditemukan pada hasil render. "
-            "Jalankan Perbaiki Otomatis agar analisis spesifik isi video tampil sebagai kartu editorial."
+            "Perbaikan otomatis sudah dijalankan; proses ulang sumber atau pilih clip lain."
         )
     if job.request.creator_commentary_file and not reviewed_automatic_rebuild:
         creator_commentary = sidecar.get("creator_commentary")
@@ -4996,8 +4997,8 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
         ):
             return (
                 "Upload diblokir: Short dari sumber eksternal belum menampilkan Sudut Editorial "
-                "dan Makna Utama pada dua waktu berbeda. Jalankan Perbaiki Otomatis pada clip ini; "
-                "hanya MP4 clip terpilih yang dirender ulang."
+                "dan Makna Utama pada dua waktu berbeda setelah perbaikan otomatis. "
+                "Proses ulang sumber atau pilih clip lain."
             )
         if (
             audit_version >= 8
@@ -5010,7 +5011,7 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             return (
                 "Upload diblokir: kartu editorial belum membuktikan analisis baru yang terkait isi "
                 "dan takeaway yang bersumber dari clip. Crop, blur, subtitle, speed, dan watermark "
-                "tidak dihitung. Jalankan Perbaiki Otomatis; hanya MP4 clip terpilih yang dirender ulang."
+                "tidak dihitung. Perbaikan otomatis sudah dijalankan; proses ulang sumber atau pilih clip lain."
             )
     try:
         reviewed_private_transformation_ready = bool(
@@ -6496,7 +6497,7 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
             status_code=409,
             detail=(
                 f"Tidak ada clip yang lolos audit upload dan target FYP {SHORT_FYP_TARGET_SCORE}. Gunakan "
-                "Perbaiki Otomatis pada clip terbaik; hanya clip itu yang diproses ulang."
+                "sumber lain atau proses ulang sumber; hasil yang ditahan tidak dimasukkan ke antrean upload."
             ),
         )
 

@@ -33,7 +33,6 @@ import {
   probeUrlSource,
   refreshYouTubeUploadPerformance,
   updateYouTubeUploadPerformance,
-  repairJobClip,
   setupYouTubeOneTimeLogin,
   startYouTubeLogin,
   startTikTokLogin,
@@ -1013,34 +1012,6 @@ export default function HomePage() {
     [job, loadJobs],
   );
 
-  const handleRepairClip = useCallback(
-    async (clip: ClipFile) => {
-      if (!job) return;
-      if (isActiveJob(activeJob)) {
-        toast.error("Tunggu proses aktif selesai atau batalkan sebelum memperbaiki klip ini.");
-        return;
-      }
-
-      try {
-        const nextJob = await toast.promise(repairJobClip(job.id, clip.url), {
-          loading: "Menyiapkan perbaikan satu klip terpilih...",
-          success: "Perbaikan otomatis dimulai. Hanya MP4 klip ini yang dirender ulang.",
-          error: (repairError) => repairError instanceof Error
-            ? repairError.message
-            : "Gagal memulai perbaikan otomatis",
-        });
-        setActiveJob(nextJob);
-        setJob(nextJob);
-        setSelectedClipUrls([]);
-        window.sessionStorage.setItem(TAB_JOB_STORAGE_KEY, nextJob.id);
-        await loadJobs();
-      } catch {
-        // toast.promise already displayed the backend error.
-      }
-    },
-    [activeJob, job, loadJobs],
-  );
-
   const requireValidYouTubeSession = useCallback(<T extends { ok: boolean; error?: string | null; message?: string | null }>(result: T) => {
     if (!result.ok) {
       throw new Error(result.error || result.message || "Session YouTube belum valid");
@@ -1465,7 +1436,6 @@ export default function HomePage() {
           onImportYouTubeCdpCookies={handleImportYouTubeCdpCookies}
           onSetupYouTubeOneTimeLogin={handleSetupYouTubeOneTimeLogin}
           onStartYouTubeLogin={handleStartYouTubeLogin}
-          onRepairClip={handleRepairClip}
           onCheckTikTokSession={handleCheckTikTokSession}
           onStartTikTokLogin={handleStartTikTokLogin}
           onRefreshYouTubePerformance={handleRefreshYouTubePerformance}

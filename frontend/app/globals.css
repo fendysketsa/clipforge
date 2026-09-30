@@ -5828,12 +5828,6 @@ details[open] > summary .detailsChevron {
   border-color: rgba(254, 44, 85, 0.28);
 }
 
-.clipActions .clipRepairButton {
-  border-color: rgba(94, 234, 212, 0.32);
-  background: linear-gradient(135deg, rgba(45, 212, 191, 0.18), rgba(59, 130, 246, 0.12));
-  color: #99f6e4;
-}
-
 .clipRepairNotice {
   display: flex;
   align-items: flex-start;

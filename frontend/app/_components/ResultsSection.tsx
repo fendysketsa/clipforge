@@ -55,7 +55,6 @@ type ResultsSectionProps = {
   onSetupYouTubeOneTimeLogin: () => void;
   onStartYouTubeLogin: () => void;
   onStartTikTokLogin: () => void;
-  onRepairClip: (clip: ClipFile) => void;
   onRefreshYouTubePerformance: (upload: YouTubeUploadJob) => Promise<void>;
   onSaveYouTubeFeedMetrics: (
     upload: YouTubeUploadJob,
@@ -304,7 +303,6 @@ export function ResultsSection({
   onSetupYouTubeOneTimeLogin,
   onStartYouTubeLogin,
   onStartTikTokLogin,
-  onRepairClip,
   onRefreshYouTubePerformance,
   onSaveYouTubeFeedMetrics,
   onUploadAllToYouTube,
@@ -718,7 +716,7 @@ export function ResultsSection({
             const isUploadReady = passesGrowthGate
               && !clip.context_recut_required
               && clip.youtube_upload_ready !== false;
-            const needsAutomaticRepair = Boolean(clip.automatic_repair_available);
+            const automaticRepairDidNotPass = Boolean(clip.automatic_repair_available);
             const uploadReviewConfirmed = clip.is_correct;
             const isQueuedForYouTube = latestUpload?.status === "queued";
             const isRunningYouTubeUpload = latestUpload?.status === "running";
@@ -780,7 +778,7 @@ export function ResultsSection({
             const youtubeButtonTitle = youtubeEnabled
               ? !isUploadReady
                 ? clip.youtube_upload_issue
-                  || "Upload ditahan: output belum lolos gate keamanan/editorial. Jalankan Perbaiki Otomatis."
+                  || "Upload ditahan: output belum lolos gate keamanan/editorial setelah perbaikan otomatis. Proses ulang sumber atau pilih klip lain."
                 : !uploadReviewConfirmed
                   ? "Centang review hasil, fakta, dan hak penggunaan sebelum upload Private."
                 : isAlreadyUploaded
@@ -822,8 +820,8 @@ export function ResultsSection({
                     <span className="clipEyebrow">
                       {clip.context_recut_required
                         ? "Perlu perbaikan batas konteks"
-                        : needsAutomaticRepair
-                          ? "Perlu perbaikan editorial"
+                        : automaticRepairDidNotPass
+                          ? "Ditahan setelah perbaikan otomatis"
                         : isUploadReady && !meetsFypTarget
                           ? "Siap review manual · skor di bawah target"
                         : isUploadReady
@@ -862,14 +860,14 @@ export function ResultsSection({
                   </div>
                 ) : null}
                 <div className="clipCardFooter">
-                  {clip.context_recut_required || needsAutomaticRepair ? (
+                  {clip.context_recut_required || automaticRepairDidNotPass ? (
                     <div className="clipRepairNotice">
                       <Info size={16} />
                       <span>
                         {clip.context_recut_required
-                          ? "Audit final menemukan batas kalimat atau makna kajian belum utuh. Buat versi aman sebelum review dan upload."
+                          ? "Perbaikan otomatis sudah dijalankan, tetapi audit final masih menemukan batas kalimat atau makna yang belum utuh. Klip ini ditahan dari upload; proses ulang sumber atau pilih klip lain."
                           : clip.youtube_upload_issue
-                            || "Audit transformasi editorial belum lolos. Render ulang klip ini sebelum upload."}
+                            || "Perbaikan otomatis sudah dijalankan, tetapi audit transformasi editorial belum lolos. Klip ini tidak diteruskan ke upload."}
                       </span>
                     </div>
                   ) : null}
@@ -896,81 +894,66 @@ export function ResultsSection({
                       <Download size={16} />
                       <span>Unduh</span>
                     </button>
-                    {needsAutomaticRepair || clip.context_recut_required ? (
-                      <button
-                        type="button"
-                        className="clipRepairButton"
-                        onClick={() => onRepairClip(clip)}
-                        disabled={isUploadingToYouTube || isUploadingToTikTok}
-                        title="Render ulang hanya MP4 klip ini dengan perbaikan editorial otomatis"
-                      >
-                        <Sparkles size={16} />
-                        <span>Perbaiki Otomatis</span>
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="youtubeUploadButton"
-                        onClick={() => onUploadClipToYouTube(clip)}
-                        disabled={!youtubeEnabled || !isUploadReady || !uploadReviewConfirmed || isUploadingToYouTube || isAlreadyUploaded}
-                        title={youtubeButtonTitle}
-                      >
-                        <UploadCloud size={16} />
-                        <span>
-                          {!isUploadReady
-                            ? "Quality gate · Ditahan"
-                            : isAlreadyUploaded
-                              ? "Sudah YouTube"
-                              : isQueuedForYouTube
-                                ? "Menunggu antrean"
-                                : isRunningYouTubeUpload
-                                  ? "Mengupload..."
-                                  : latestUpload?.status === "failed"
-                                    ? "Ulangi YouTube"
-                                    : isLongForm
-                                      ? "Kirim + Thumbnail"
-                                      : "Kirim YouTube"}
-                        </span>
-                      </button>
-                    )}
-                    {!needsAutomaticRepair && !clip.context_recut_required ? (
-                      <button
-                        type="button"
-                        className={`tiktokUploadButton ${!tiktokEnabled ? "tiktokUploadButton--login" : ""}`}
-                        onClick={() => tiktokEnabled ? onUploadClipToTikTok(clip) : onStartTikTokLogin()}
-                        disabled={tiktokEnabled
-                          ? !isUploadReady || !uploadReviewConfirmed || isUploadingToTikTok || isAlreadyOnTikTok
-                          : isTikTokLoginActive}
-                        aria-label={!tiktokEnabled
-                          ? tiktokStatusMessage
-                          : !isUploadReady
-                            ? clip.youtube_upload_issue || "Clip belum lolos gate keamanan/editorial."
-                            : !uploadReviewConfirmed
-                              ? "Centang review konteks, fakta, dan hak penggunaan."
-                              : isAlreadyOnTikTok
-                                ? `Sudah dikirim ke @${tiktokTargetHandle} sebagai Only you.`
-                                : `Kirim ke @${tiktokTargetHandle} sebagai Only you.`}
-                      >
-                        {tiktokEnabled ? <UploadCloud size={16} /> : <ExternalLink size={16} />}
-                        <span>{!tiktokEnabled
-                          ? isTikTokLoginActive
-                            ? "Menunggu login..."
-                            : "Login TikTok"
-                          : !isUploadReady
-                            ? "Quality gate · Ditahan"
-                            : !uploadReviewConfirmed
-                              ? "Review dulu"
-                              : isAlreadyOnTikTok
-                                ? "Sudah TikTok"
-                                : latestTikTokUpload?.status === "queued"
-                                  ? "Antrean TikTok"
-                                  : latestTikTokUpload?.status === "running"
-                                    ? "Upload TikTok..."
-                                    : latestTikTokUpload?.status === "failed"
-                                      ? "Ulangi TikTok"
-                                      : "Kirim TikTok"}</span>
-                      </button>
-                    ) : null}
+                    <button
+                      type="button"
+                      className="youtubeUploadButton"
+                      onClick={() => onUploadClipToYouTube(clip)}
+                      disabled={!youtubeEnabled || !isUploadReady || !uploadReviewConfirmed || isUploadingToYouTube || isAlreadyUploaded}
+                      title={youtubeButtonTitle}
+                    >
+                      <UploadCloud size={16} />
+                      <span>
+                        {!isUploadReady
+                          ? "Quality gate · Ditahan"
+                          : isAlreadyUploaded
+                            ? "Sudah YouTube"
+                            : isQueuedForYouTube
+                              ? "Menunggu antrean"
+                              : isRunningYouTubeUpload
+                                ? "Mengupload..."
+                                : latestUpload?.status === "failed"
+                                  ? "Ulangi YouTube"
+                                  : isLongForm
+                                    ? "Kirim + Thumbnail"
+                                    : "Kirim YouTube"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`tiktokUploadButton ${!tiktokEnabled ? "tiktokUploadButton--login" : ""}`}
+                      onClick={() => tiktokEnabled ? onUploadClipToTikTok(clip) : onStartTikTokLogin()}
+                      disabled={tiktokEnabled
+                        ? !isUploadReady || !uploadReviewConfirmed || isUploadingToTikTok || isAlreadyOnTikTok
+                        : isTikTokLoginActive}
+                      aria-label={!tiktokEnabled
+                        ? tiktokStatusMessage
+                        : !isUploadReady
+                          ? clip.youtube_upload_issue || "Clip belum lolos gate keamanan/editorial."
+                          : !uploadReviewConfirmed
+                            ? "Centang review konteks, fakta, dan hak penggunaan."
+                            : isAlreadyOnTikTok
+                              ? `Sudah dikirim ke @${tiktokTargetHandle} sebagai Only you.`
+                              : `Kirim ke @${tiktokTargetHandle} sebagai Only you.`}
+                    >
+                      {tiktokEnabled ? <UploadCloud size={16} /> : <ExternalLink size={16} />}
+                      <span>{!tiktokEnabled
+                        ? isTikTokLoginActive
+                          ? "Menunggu login..."
+                          : "Login TikTok"
+                        : !isUploadReady
+                          ? "Quality gate · Ditahan"
+                          : !uploadReviewConfirmed
+                            ? "Review dulu"
+                            : isAlreadyOnTikTok
+                              ? "Sudah TikTok"
+                              : latestTikTokUpload?.status === "queued"
+                                ? "Antrean TikTok"
+                                : latestTikTokUpload?.status === "running"
+                                  ? "Upload TikTok..."
+                                  : latestTikTokUpload?.status === "failed"
+                                    ? "Ulangi TikTok"
+                                    : "Kirim TikTok"}</span>
+                    </button>
                     <button className="clipDeleteButton" type="button" onClick={() => onDeleteClip(clip)}>
                       <Trash2 size={16} />
                       <span>Hapus</span>
