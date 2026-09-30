@@ -14,9 +14,11 @@ from clipper import (
     high_information_extended_short_profile,
     order_compilation_for_retention,
     select_candidates,
+    select_and_repair_short_candidates,
     select_compilation_candidates,
     select_short_export_candidates,
     select_output_candidates,
+    short_auto_expand_max_duration,
 )
 
 
@@ -257,6 +259,88 @@ def test_short_selection_can_include_low_score_when_structural_gates_pass():
 
     assert select_candidates([candidate], 1) == [candidate]
     assert select_candidates([candidate], 1, minimum_score=1) == [candidate]
+
+
+def test_short_duration_fallback_recovers_complete_answer_beyond_normal_window():
+    transcript = [
+        TranscriptSegment(0, 3, "Tahukah kamu mengapa langkah awal ini keliru?"),
+        TranscriptSegment(
+            3,
+            15,
+            "Dalam pemeriksaan sehari-hari, orang biasanya mengikuti urutan yang sudah lama dipakai.",
+        ),
+        TranscriptSegment(
+            15,
+            34,
+            "Akan tetapi, urutan tersebut meninggalkan bagian yang belum dibaca dan penjelasan masih berlanjut",
+        ),
+        TranscriptSegment(
+            34,
+            50,
+            "Uraian berikut menghubungkan setiap bagian secara bertahap sambil menunggu penutup",
+        ),
+        TranscriptSegment(
+            50,
+            62,
+            "Jawabannya adalah memeriksa bukti satu per satu lalu membandingkan dampaknya sebelum memutuskan.",
+        ),
+        TranscriptSegment(
+            62,
+            72,
+            "Jadi ingatlah, keputusan harus mengikuti bukti agar kesimpulannya benar-benar jelas.",
+        ),
+    ]
+    normal_pool = clipper.build_candidate_pool(transcript, 25, 45)
+
+    assert select_and_repair_short_candidates(
+        normal_pool,
+        transcript,
+        limit=3,
+        min_duration=25,
+        max_duration=45,
+    ) == []
+
+    expanded_max = short_auto_expand_max_duration(45)
+    expanded_pool = clipper.build_candidate_pool(transcript, 25, expanded_max)
+    recovered = select_and_repair_short_candidates(
+        expanded_pool,
+        transcript,
+        limit=3,
+        min_duration=25,
+        max_duration=expanded_max,
+    )
+
+    assert expanded_max == 105
+    assert recovered
+    assert recovered[0].duration > 45
+    assert recovered[0].narrative_arc_complete is True
+    assert recovered[0].text.endswith("benar-benar jelas.")
+
+
+def test_short_repair_drops_candidate_that_cannot_reach_minimum_duration():
+    transcript = [
+        TranscriptSegment(
+            0,
+            24,
+            "Tahukah kamu jawabannya? Masalah ini selesai dengan bukti yang jelas.",
+        )
+    ]
+    candidate = make_candidate(
+        0,
+        0,
+        88,
+        transcript[0].text,
+    )
+    candidate.end = 24
+    candidate.duration = 24
+
+    assert select_and_repair_short_candidates(
+        [candidate],
+        transcript,
+        limit=1,
+        min_duration=25,
+        max_duration=45,
+    ) == []
 
 
 def test_final_short_quality_gate_discards_result_below_fyp_85():

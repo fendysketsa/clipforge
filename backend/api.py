@@ -6070,12 +6070,17 @@ def youtube_source_claim_block(upload_or_job_id: YouTubeUploadJob | str) -> YouT
     )
 
 
-def youtube_clip_claim_block(source_job_id: str, clip_url: str) -> YouTubeUploadJob | None:
+def youtube_clip_claim_block(
+    source_job_id: str,
+    clip_url: str,
+    clip_sha256: str | None = None,
+) -> YouTubeUploadJob | None:
     """Return a verified claim only for the exact rendered clip.
 
     Content ID matches segments of an uploaded file. A claim on one candidate
-    is evidence about that file, not proof that every sibling clip from the
-    same long source will match, so siblings must keep their own Private check.
+    is evidence about those exact bytes, not proof that every sibling clip or a
+    newly rendered replacement at the same URL will match. Persisted legacy
+    uploads without a fingerprint remain blocked conservatively.
     """
     with youtube_uploads_lock:
         candidates = sorted(
@@ -6089,6 +6094,11 @@ def youtube_clip_claim_block(source_job_id: str, clip_url: str) -> YouTubeUpload
             for upload in candidates
             if upload.source_job_id == source_job_id
             and upload.clip_url == clip_url
+            and (
+                not clip_sha256
+                or not upload.clip_sha256
+                or upload.clip_sha256 == clip_sha256
+            )
             and any(
                 str(line).startswith(YOUTUBE_CLAIM_ABORT_PREFIX)
                 for line in upload.logs
@@ -6203,15 +6213,6 @@ def youtube_uploads_with_queue_positions(
 
 def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> YouTubeUploadJob:
     job, clip, index = find_job_clip(job_id, request.clip_url)
-    claimed_upload = youtube_clip_claim_block(job_id, clip.url)
-    if claimed_upload is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Klip ini sudah terdeteksi klaim Content ID/audio-visual pada pemeriksaan sebelumnya "
-                f"('{claimed_upload.clip_name}'). Gunakan sumber lain yang hak komersialnya jelas."
-            ),
-        )
     requested_visibility = safe_youtube_visibility(request.visibility)
     # Automated publication always starts Private. Public release is a separate
     # human decision after Studio Checks, fact review, channel-variation review,
@@ -6225,6 +6226,16 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         clip_fingerprint = file_sha256(clip_path)
     except OSError as exc:
         raise HTTPException(status_code=409, detail=f"File clip tidak dapat dibaca: {exc}") from exc
+    claimed_upload = youtube_clip_claim_block(job_id, clip.url, clip_fingerprint)
+    if claimed_upload is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "File klip yang sama sudah terdeteksi klaim Content ID/audio-visual pada "
+                f"pemeriksaan sebelumnya ('{claimed_upload.clip_name}'). Ganti audio/visual dengan "
+                "materi yang hak komersialnya jelas, render ulang, lalu coba file hasil baru."
+            ),
+        )
     recovery = recoverable_failed_youtube_upload(job_id, clip.url)
     if recovery is not None:
         recovery_logs = [
@@ -10327,6 +10338,12 @@ def user_error_from_logs(logs: list[str]) -> str | None:
         )
     if "error initializing a simple filtergraph" in combined or "filter not found" in combined:
         return "Filter video FFmpeg tidak tersedia atau tidak kompatibel. Build ulang backend lalu coba lagi."
+    if "perluasan durasi otomatis sudah dicoba" in combined:
+        return (
+            "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, "
+            "dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; "
+            "gunakan sumber lain."
+        )
     if "tidak ada kandidat" in combined:
         return (
             "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, "

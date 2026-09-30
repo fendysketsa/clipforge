@@ -1938,6 +1938,18 @@ def test_user_error_from_logs_explains_structural_candidate_failure():
     assert "clipper.py exited" not in message
 
 
+def test_user_error_says_duration_was_already_expanded_automatically():
+    message = user_error_from_logs(
+        [
+            "Tidak ada kandidat dengan alur utuh dan konteks editorial yang layak.",
+            "Perluasan durasi otomatis sudah dicoba; gunakan sumber lain.",
+        ]
+    ) or ""
+
+    assert "otomatis mencoba window hingga 105 detik" in message
+    assert "Perluas durasi analisis" not in message
+
+
 def test_user_error_from_logs_explains_incomplete_audio_download():
     logs = [
         "[out#0/wav] Output file does not contain any stream",

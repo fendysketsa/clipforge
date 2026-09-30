@@ -72,6 +72,9 @@ type ResultsSectionProps = {
 function friendlyYouTubeUploadError(message: string, usesChromeDebugging: boolean) {
   const clean = message.trim();
   const lowered = clean.toLowerCase();
+  if (lowered.includes("kebijakan nol-klaim") || lowered.includes("klaim content id")) {
+    return "YouTube menemukan klaim Content ID pada file ini. Ganti bagian audio/visual yang diklaim dengan materi milik sendiri atau berizin, render ulang, lalu upload hasil barunya.";
+  }
   if (lowered.includes("connect_over_cdp") || lowered.includes("econnrefused")) {
     return "CDP belum aktif. Klik Login Sekali agar upload memakai Playwright storage-state tanpa CDP.";
   }
@@ -722,6 +725,9 @@ export function ResultsSection({
             const isRunningYouTubeUpload = latestUpload?.status === "running";
             const isUploadingToYouTube = isQueuedForYouTube || isRunningYouTubeUpload;
             const isAlreadyUploaded = latestUpload?.status === "completed" && Boolean(latestUpload.video_url);
+            const youtubeClaimWasDetected = Boolean(
+              latestUpload?.logs?.some((line) => line.startsWith("CLAIMED_UPLOAD_ABORTED:")),
+            );
             const isUploadingToTikTok = latestTikTokUpload?.status === "queued" || latestTikTokUpload?.status === "running";
             const isAlreadyOnTikTok = latestTikTokUpload?.status === "completed" && latestTikTokUpload.upload_confirmed;
             const shouldRetryTikTokUpload = isTikTokFileTransferError(latestTikTokUpload?.error)
@@ -783,6 +789,8 @@ export function ResultsSection({
                   ? "Centang review hasil, fakta, dan hak penggunaan sebelum upload Private."
                 : isAlreadyUploaded
                 ? `Sudah terupload ke YouTube${latestUpload.video_url ? `: ${latestUpload.video_url}` : ""}`
+                : youtubeClaimWasDetected
+                  ? "File ini ditahan karena klaim Content ID. Ganti audio/visual yang diklaim dan render ulang sebelum upload."
                 : isQueuedForYouTube
                   ? "Klip sedang menunggu giliran upload YouTube."
                   : isRunningYouTubeUpload
@@ -898,13 +906,15 @@ export function ResultsSection({
                       type="button"
                       className="youtubeUploadButton"
                       onClick={() => onUploadClipToYouTube(clip)}
-                      disabled={!youtubeEnabled || !isUploadReady || !uploadReviewConfirmed || isUploadingToYouTube || isAlreadyUploaded}
+                      disabled={!youtubeEnabled || !isUploadReady || !uploadReviewConfirmed || isUploadingToYouTube || isAlreadyUploaded || youtubeClaimWasDetected}
                       title={youtubeButtonTitle}
                     >
                       <UploadCloud size={16} />
                       <span>
                         {!isUploadReady
                           ? "Quality gate · Ditahan"
+                          : youtubeClaimWasDetected
+                            ? "Klaim terdeteksi"
                           : isAlreadyUploaded
                             ? "Sudah YouTube"
                             : isQueuedForYouTube
@@ -969,24 +979,24 @@ export function ResultsSection({
                           ? `Upload YouTube selesai. File lokal akan dihapus otomatis dalam ${cleanupCountdown} detik.`
                           : undefined
                       }
-                      className={`youtubeUploadStatus status-${latestUpload.status} ${cleanupPanelVisible ? "youtubeUploadStatus--cleanup isAutoOpen" : ""} ${cleanupComplete ? "isCleanupComplete" : ""}`}
+                      className={`youtubeUploadStatus status-${latestUpload.status} ${youtubeClaimWasDetected ? "youtubeUploadStatus--claim" : ""} ${cleanupPanelVisible ? "youtubeUploadStatus--cleanup isAutoOpen" : ""} ${cleanupComplete ? "isCleanupComplete" : ""}`}
                       tabIndex={cleanupPanelVisible ? 0 : undefined}
                     >
                       <UploadCloud size={14} />
                       <span className="youtubeUploadStatusText">
-                        YouTube: {latestUpload.status}
-                        {runningStage ? ` · ${runningStage}` : null}
+                        YouTube: {youtubeClaimWasDetected ? "ditahan · klaim Content ID" : latestUpload.status}
+                        {!youtubeClaimWasDetected && runningStage ? ` · ${runningStage}` : null}
                         {latestUpload.status === "completed" && latestUpload.visibility === "private"
                           ? " · tersimpan Private"
                           : null}
-                        {latestUpload.playlist
+                        {!youtubeClaimWasDetected && latestUpload.playlist
                           ? latestUpload.playlist_confirmed
                             ? ` · playlist ${latestUpload.playlist} terverifikasi`
                             : latestUpload.status === "running"
                               ? ` · mencari playlist ${latestUpload.playlist}`
                               : null
                           : null}
-                        {latestUpload.thumbnail_url
+                        {!youtubeClaimWasDetected && latestUpload.thumbnail_url
                           ? latestUpload.thumbnail_attached
                             ? " · thumbnail terpasang"
                             : latestUpload.status === "running"
@@ -1137,8 +1147,8 @@ export function ResultsSection({
                     </div>
                   ) : null}
                   {latestUpload?.status === "failed" && uploadError ? (
-                    <div className="youtubeUploadError" title={uploadError}>
-                      <strong>Upload gagal</strong>
+                    <div className={`youtubeUploadError ${youtubeClaimWasDetected ? "youtubeUploadError--claim" : ""}`} title={uploadError}>
+                      <strong>{youtubeClaimWasDetected ? "Klaim Content ID terdeteksi" : "Upload gagal"}</strong>
                       <span>{uploadError}</span>
                       {showSessionRecovery ? (
                         <>

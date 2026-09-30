@@ -5667,8 +5667,19 @@ def first_sentence(text: str, max_words: int = 8) -> str:
 SHORT_EXPORT_MIN_FYP_SCORE = 85
 SHORT_REPAIR_POOL_MIN_SIZE = 12
 SHORT_REPAIR_POOL_MULTIPLIER = 4
+SHORT_AUTO_EXPAND_MAX_SECONDS = 105.0
 SHORT_BATCH_MAX_TOPIC_SIMILARITY = 0.52
 SHORT_REVIEW_FALLBACK_LIMIT = 3
+
+
+def short_auto_expand_max_duration(configured_max_duration: float) -> float:
+    """Return the wider Short window used after the normal pass finds nothing.
+
+    The scoring model already has a stricter high-information gate for Shorts
+    up to 105 seconds. Use that existing safe range as an automatic fallback
+    instead of asking the user to rerun the same source with a larger value.
+    """
+    return max(float(configured_max_duration), SHORT_AUTO_EXPAND_MAX_SECONDS)
 
 
 def fyp_score_label(score: int) -> str:
@@ -7790,6 +7801,42 @@ def select_candidates(
     return picked
 
 
+def select_and_repair_short_candidates(
+    candidates: list[ClipCandidate],
+    transcript: list[TranscriptSegment],
+    *,
+    limit: int,
+    min_duration: float,
+    max_duration: float,
+) -> list[ClipCandidate]:
+    """Repair a broad safe shortlist, then apply final diversity selection."""
+    repair_limit = max(
+        SHORT_REPAIR_POOL_MIN_SIZE,
+        limit * SHORT_REPAIR_POOL_MULTIPLIER,
+    )
+    repair_candidates = select_candidates(
+        candidates,
+        repair_limit,
+        minimum_score=1,
+    )
+    repair_candidates = apply_codex_edits_to_candidates(
+        repair_candidates,
+        transcript,
+        min_duration=min_duration,
+        max_duration=max_duration,
+    )
+    repair_candidates = [
+        candidate
+        for candidate in repair_candidates
+        if candidate.duration >= min_duration
+    ]
+    return select_candidates(
+        repair_candidates,
+        limit,
+        minimum_score=1,
+    )
+
+
 def select_short_export_candidates(
     candidates: list[ClipCandidate],
     limit: int,
@@ -8631,27 +8678,52 @@ def apply_codex_structural_edit(
     if hard_end is not None:
         max_safe_end = min(max_safe_end, hard_end)
 
-    if original_plan.ending_boost and max_safe_end > original_end + 0.25:
+    needs_minimum_duration = clip.end - clip.start < min_safe_duration
+    if (
+        original_plan.ending_boost or needs_minimum_duration
+    ) and max_safe_end > original_end + 0.25:
         current_text = " ".join(segment.text for segment in current_segments).rstrip()
         needs_sentence_close = not current_text.endswith((".", "!", "?"))
+        previous_segment = current_segments[-1] if current_segments else None
         for segment in transcript:
             if segment.end <= original_end + 0.2:
                 continue
             if segment.start >= max_safe_end:
                 break
-            if is_source_branding_segment(segment):
+            if is_source_branding_segment(segment) or (
+                previous_segment is not None
+                and is_smart_split_boundary(previous_segment, segment)
+            ):
                 break
             words = set(re.findall(r"[\w']+", segment.text.lower()))
             has_resolution = bool(words.intersection(PAYOFF_WORDS | IMPORTANT_WORDS))
-            sentence_closed = segment.text.rstrip().endswith((".", "!", "?"))
-            if (has_resolution and sentence_closed) or (needs_sentence_close and sentence_closed):
-                proposed_end = min(max_safe_end, segment.end + 0.12)
+            sentence_closed = bool(
+                segment.end <= max_safe_end + 0.01
+                and segment.text.rstrip().endswith((".", "!", "?"))
+            )
+            proposed_end = min(max_safe_end, segment.end + 0.12)
+            reaches_minimum = proposed_end - clip.start >= min_safe_duration
+            if (
+                reaches_minimum
+                and (
+                    (has_resolution and sentence_closed)
+                    or (needs_sentence_close and sentence_closed)
+                    or (needs_minimum_duration and sentence_closed)
+                )
+            ):
                 if proposed_end > original_end + 0.25:
                     clip.end = proposed_end
-                    clip.applied_edits.append(
-                        f"Ending diperpanjang {proposed_end - original_end:.1f} detik sampai kalimat tuntas."
-                    )
+                    if needs_minimum_duration:
+                        clip.applied_edits.append(
+                            "Durasi kandidat diperpanjang otomatis "
+                            f"{proposed_end - original_end:.1f} detik sampai kalimat tuntas."
+                        )
+                    else:
+                        clip.applied_edits.append(
+                            f"Ending diperpanjang {proposed_end - original_end:.1f} detik sampai kalimat tuntas."
+                        )
                 break
+            previous_segment = segment
     if clip.start != original_start or clip.end != original_end:
         refreshed_segments = segments_for_clip(transcript, clip)
         clip.duration = clip.end - clip.start
@@ -17841,7 +17913,7 @@ def main() -> int:
             f"{rejected_editorial_count} kandidat berisi ejekan/serangan atau konteks negatif "
             "tanpa pesan konstruktif dan tidak diteruskan ke AI/render."
         )
-    if not pool:
+    if not pool and args.clip_mode != "short":
         console.print(
             "[red]Tidak ada kandidat aman yang memiliki konteks dan pesan baik yang utuh. "
             "Output tidak dibuat; gunakan sumber lain atau perluas rentang durasi.[/red]"
@@ -17877,26 +17949,56 @@ def main() -> int:
         console.print(
             "[bold]Auto-repairing a broader shortlist before final FYP selection...[/bold]"
         )
-        repair_limit = max(
-            SHORT_REPAIR_POOL_MIN_SIZE,
-            args.top * SHORT_REPAIR_POOL_MULTIPLIER,
-        )
-        repair_candidates = select_candidates(
+        candidates = select_and_repair_short_candidates(
             pool,
-            repair_limit,
-            minimum_score=1,
-        )
-        repair_candidates = apply_codex_edits_to_candidates(
-            repair_candidates,
             transcript,
+            limit=args.top,
             min_duration=args.min,
             max_duration=args.max,
         )
-        candidates = select_candidates(
-            repair_candidates,
-            args.top,
-            minimum_score=1,
-        )
+        if not candidates:
+            expanded_max_duration = short_auto_expand_max_duration(args.max)
+            if expanded_max_duration > args.max + 0.05:
+                emit_progress(
+                    57,
+                    "selection",
+                    "Kandidat layak belum cukup utuh; durasi diperluas otomatis",
+                )
+                console.print(
+                    "[bold yellow]No complete Short yet; automatically expanding "
+                    f"candidate windows from {args.max:g} to "
+                    f"{expanded_max_duration:g} seconds...[/bold yellow]"
+                )
+                expanded_pool = build_candidate_pool(
+                    transcript,
+                    args.min,
+                    expanded_max_duration,
+                )
+                for candidate in expanded_pool:
+                    refresh_candidate_export_context(candidate, transcript)
+                expanded_pool = [
+                    candidate
+                    for candidate in expanded_pool
+                    if candidate_is_editorially_safe(candidate)
+                ]
+                expanded_pool = ai_rescore_candidates(
+                    expanded_pool,
+                    ai_config,
+                    target_count=ai_target_count,
+                    compilation=False,
+                )
+                candidates = select_and_repair_short_candidates(
+                    expanded_pool,
+                    transcript,
+                    limit=args.top,
+                    min_duration=args.min,
+                    max_duration=expanded_max_duration,
+                )
+                if candidates:
+                    console.print(
+                        "[green]Automatic duration expansion recovered "
+                        f"{len(candidates)} complete Short candidate(s).[/green]"
+                    )
         compilation_candidates = []
         structural_edits_applied = True
     else:
@@ -17906,6 +18008,47 @@ def main() -> int:
             short_limit=args.top,
             compilation_target=args.compilation_target,
         )
+        if args.clip_mode == "short" and not candidates:
+            expanded_max_duration = short_auto_expand_max_duration(args.max)
+            if expanded_max_duration > args.max + 0.05:
+                emit_progress(
+                    57,
+                    "selection",
+                    "Kandidat layak belum cukup utuh; durasi diperluas otomatis",
+                )
+                console.print(
+                    "[bold yellow]No complete Short yet; automatically expanding "
+                    f"candidate windows from {args.max:g} to "
+                    f"{expanded_max_duration:g} seconds...[/bold yellow]"
+                )
+                expanded_pool = build_candidate_pool(
+                    transcript,
+                    args.min,
+                    expanded_max_duration,
+                )
+                for candidate in expanded_pool:
+                    refresh_candidate_export_context(candidate, transcript)
+                expanded_pool = [
+                    candidate
+                    for candidate in expanded_pool
+                    if candidate_is_editorially_safe(candidate)
+                ]
+                expanded_pool = ai_rescore_candidates(
+                    expanded_pool,
+                    ai_config,
+                    target_count=ai_target_count,
+                    compilation=False,
+                )
+                candidates = select_candidates(
+                    expanded_pool,
+                    args.top,
+                    minimum_score=1,
+                )
+                if candidates:
+                    console.print(
+                        "[green]Automatic duration expansion recovered "
+                        f"{len(candidates)} complete Short candidate(s).[/green]"
+                    )
     emit_progress(
         59,
         "selection",
@@ -17916,7 +18059,7 @@ def main() -> int:
             console.print(
                 "[red]Tidak ada kandidat dengan alur utuh, retensi memadai, "
                 "batas kalimat aman, dan konteks editorial yang layak. "
-                "Gunakan sumber lain atau perluas durasi analisis.[/red]"
+                "Perluasan durasi otomatis sudah dicoba; gunakan sumber lain.[/red]"
             )
         else:
             console.print(

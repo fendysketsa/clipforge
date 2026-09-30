@@ -411,6 +411,7 @@ def test_claim_isolated_to_exact_clip_keeps_sibling_uploads_queued(monkeypatch, 
         source_job_id="claimed-source",
         clip_url="/outputs/claimed/clip_01.mp4",
         status="failed",
+        clip_sha256="claimed-bytes",
         logs=["CLAIMED_UPLOAD_ABORTED: zero_active_claim_policy"],
     )
     same_source = YouTubeUploadJob(
@@ -445,6 +446,12 @@ def test_claim_isolated_to_exact_clip_keeps_sibling_uploads_queued(monkeypatch, 
     assert api.youtube_uploads[other_source.id].status == "queued"
     assert youtube_source_claim_block("claimed-source").id == trigger.id
     assert youtube_clip_claim_block("claimed-source", trigger.clip_url).id == trigger.id
+    assert youtube_clip_claim_block(
+        "claimed-source", trigger.clip_url, "claimed-bytes"
+    ).id == trigger.id
+    assert youtube_clip_claim_block(
+        "claimed-source", trigger.clip_url, "new-render-bytes"
+    ) is None
     assert youtube_clip_claim_block("claimed-source", same_source.clip_url) is None
     assert youtube_source_claim_block("safe-source") is None
 

@@ -2601,6 +2601,49 @@ def test_codex_intro_trim_creates_room_for_payoff_without_exceeding_max_duration
     assert clip.text.endswith("kesimpulannya.")
 
 
+def test_codex_structural_edit_automatically_extends_candidate_below_minimum_duration():
+    transcript = [
+        TranscriptSegment(
+            0,
+            12,
+            "Tahukah kamu mengapa keputusan ini penting? Konteksnya harus dibaca dengan utuh.",
+        ),
+        TranscriptSegment(
+            12,
+            24,
+            "Masalah dan jawabannya sudah jelas, tetapi interval media masih sedikit pendek.",
+        ),
+        TranscriptSegment(
+            24,
+            30,
+            "Jadi kesimpulannya, ikuti bukti agar keputusan tetap aman.",
+        ),
+    ]
+    clip = ClipCandidate(
+        1,
+        0,
+        24.2,
+        24.2,
+        86,
+        "Keputusan Aman",
+        "test",
+        " ".join(item.text for item in transcript[:2]),
+        boundary_quality="kalimat_tuntas",
+    )
+
+    apply_codex_structural_edit(
+        clip,
+        transcript,
+        min_duration=25,
+        max_duration=45,
+    )
+
+    assert clip.duration >= 25
+    assert clip.end >= 30
+    assert clip.text.endswith("tetap aman.")
+    assert any("Durasi kandidat diperpanjang otomatis" in item for item in clip.applied_edits)
+
+
 def test_codex_render_plan_drives_hook_tempo_payoff_and_audio():
     clip = ClipCandidate(
         1,

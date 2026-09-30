@@ -822,6 +822,12 @@ h2 {
   flex: 1;
 }
 
+.youtubeUploadStatus--claim {
+  border-color: rgba(251, 191, 36, 0.38);
+  background: rgba(120, 53, 15, 0.18);
+  color: #FDE68A;
+}
+
 .cleanupCountdownBadge {
   display: inline-flex;
   min-width: 45px;
@@ -1098,6 +1104,16 @@ h2 {
 
 .youtubeUploadError strong {
   color: #FECACA;
+}
+
+.youtubeUploadError--claim {
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(120, 53, 15, 0.22);
+  color: #FDE68A;
+}
+
+.youtubeUploadError--claim strong {
+  color: #FEF3C7;
 }
 
 .youtubeUploadError span {

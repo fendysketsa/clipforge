@@ -126,7 +126,7 @@ Default output video:
 - Long Story Director mengambil teaser tuntas 10–22 detik dari beat terkuat, menghapus bagian teaser dari posisi asal agar tidak duplikat, lalu menyusun konteks, perkembangan, penjelasan, dan kesimpulan mengikuti kronologi sumber tanpa filler durasi
 - mode produksi aktif hanya `short` dan `highlight_5m`; kegagalan atau klaim tidak pernah mengubah job menjadi mode generatif lain
 - log sumber sukses memakai indeks cepat untuk deteksi duplikat dan arsip audit fisik `data/source_usage/YYYY/MM/source_usage.json`; event lama dibackfill otomatis dan dideduplikasi berdasarkan job + format
-- short menjalani auto-repair hook/ending pada shortlist yang lebih luas sebelum seleksi final; hanya kandidat FYP minimal 80 yang diekspor dan hasil rendah dibuang sebelum render
+- short menjalani auto-repair hook/ending pada shortlist yang lebih luas sebelum seleksi final; bila window normal 25–45 detik belum menghasilkan kandidat utuh, analisis otomatis diperlebar sampai 105 detik sebelum proses dinyatakan gagal
 - variasi motion dipilih deterministik dari isi cerita (bukan nomor urut export) agar rangkaian upload tidak terlihat seperti template massal yang identik
 - audit monetisasi v2 hanya meloloskan upload Private bila alur hook–pesan inti–payoff utuh dan edit kamera/emphasis/audio benar-benar mengikuti transcript; hasil audit bukan jaminan diterima YPP
 - metadata/chapter container sumber tidak diwariskan ke MP4 hasil; bukti lisensi tetap disimpan lokal
