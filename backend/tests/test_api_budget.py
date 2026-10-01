@@ -1961,6 +1961,20 @@ def test_user_error_from_logs_explains_incomplete_audio_download():
     assert "ulangi job" in message
 
 
+def test_user_error_from_logs_identifies_corrupt_video_before_generic_stream_error():
+    message = user_error_from_logs(
+        [
+            "Invalid NAL unit size (16891 > 13321)",
+            "Error splitting the input into NAL units",
+            "Stream map '' matches no streams.",
+        ]
+    ) or ""
+
+    assert "video sumber rusak" in message
+    assert "otomatis mencoba jalur download lain" in message
+    assert "Track audio" not in message
+
+
 def test_signal_11_after_final_marker_preserves_verified_outputs(tmp_path):
     clips_dir = tmp_path / "source" / "clips"
     clips_dir.mkdir(parents=True)

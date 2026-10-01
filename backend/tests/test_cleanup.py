@@ -25,6 +25,7 @@ from clipper import (
     friendly_youtube_error,
     prepare_uploaded_source,
     select_usable_source_media,
+    source_media_integrity_error,
     source_media_candidates,
     ytdlp_base_options,
     youtube_download_strategies,
@@ -495,6 +496,7 @@ def test_download_video_reaches_muxed_fallback_after_default_403(monkeypatch, tm
 
     monkeypatch.setattr(clipper, "YoutubeDL", FakeYoutubeDL)
     monkeypatch.setattr(clipper, "select_usable_source_media", fake_select)
+    monkeypatch.setattr(clipper, "source_media_integrity_error", lambda _path: None)
     monkeypatch.setattr(clipper, "ffmpeg_path", lambda: "/usr/bin/ffmpeg")
 
     path, metadata = download_video(
@@ -519,6 +521,90 @@ def test_download_video_reaches_muxed_fallback_after_default_403(monkeypatch, tm
     assert "ERROR:" not in output
     assert "Mencoba alternatif berikutnya" in output
     assert "Fallback download berhasil" in output
+
+
+def test_download_video_discards_corrupt_final_file_and_uses_next_strategy(
+    monkeypatch, tmp_path, capsys
+):
+    import clipper
+
+    attempted_options = []
+
+    class FakeYoutubeDL:
+        def __init__(self, options):
+            self.options = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, _url, download):
+            assert download is True
+            attempted_options.append(self.options)
+            output_name = (
+                "source.mp4"
+                if len(attempted_options) == 1
+                else "source_muxed.mp4"
+            )
+            (tmp_path / output_name).write_bytes(b"downloaded-media")
+            return {"id": "demo", "title": "Demo", "ext": "mp4"}
+
+    monkeypatch.setattr(clipper, "YoutubeDL", FakeYoutubeDL)
+    monkeypatch.setattr(
+        clipper,
+        "probe_media_stream_types",
+        lambda _path: {"video", "audio"},
+    )
+    monkeypatch.setattr(
+        clipper,
+        "source_media_integrity_error",
+        lambda path: "Invalid NAL unit size" if path.name == "source.mp4" else None,
+    )
+    monkeypatch.setattr(clipper, "ffmpeg_path", lambda: "/usr/bin/ffmpeg")
+
+    path, metadata = download_video("https://youtu.be/demo", tmp_path, limit_seconds=1200)
+
+    assert path.name == "source_muxed.mp4"
+    assert metadata["id"] == "demo"
+    assert len(attempted_options) == 2
+    assert not (tmp_path / "source.mp4").exists()
+    output = capsys.readouterr().out
+    assert "file dibuang dan jalur lain dicoba" in output
+
+
+def test_source_media_integrity_error_decodes_video_and_audio(monkeypatch, tmp_path):
+    import clipper
+
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"media")
+    captured = {}
+
+    class Result:
+        returncode = 1
+        stdout = ""
+        stderr = "Invalid NAL unit size"
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return Result()
+
+    monkeypatch.setattr(
+        clipper,
+        "probe_media_stream_types",
+        lambda _path: {"video", "audio"},
+    )
+    monkeypatch.setattr(clipper.subprocess, "run", fake_run)
+    monkeypatch.setattr(clipper, "ffmpeg_path", lambda: "/usr/bin/ffmpeg")
+
+    error = source_media_integrity_error(source)
+
+    assert error == "Invalid NAL unit size"
+    assert "-xerror" in captured["command"]
+    assert captured["command"].count("-map") == 2
+    assert captured["command"][-2:] == ["null", "-"]
 
 
 def test_cleanup_clip_files_removes_output_artifacts(monkeypatch):

@@ -10322,6 +10322,16 @@ def user_error_from_logs(logs: list[str]) -> str | None:
             "Backend terbaru memulihkan subprocess.py otomatis dari salinan bersih; "
             "build ulang container backend satu kali lalu ulangi job."
         )
+    if (
+        "invalid nal unit size" in combined
+        or "error splitting the input into nal units" in combined
+        or "corrupt decoded frame" in combined
+    ):
+        return (
+            "File video sumber rusak atau terpotong saat diunduh. "
+            "Backend sekarang memvalidasi seluruh stream dan otomatis mencoba jalur download lain "
+            "sebelum render; jalankan ulang job ini."
+        )
     if "no such filter: 'drawtext'" in combined or "no such filter: 'subtitles'" in combined:
         return (
             "FFmpeg backend belum memiliki filter teks/subtitle yang dibutuhkan. "

@@ -2581,6 +2581,64 @@ def probe_media_stream_types(path: Path) -> set[str]:
     return streams
 
 
+def source_media_integrity_error(path: Path) -> str | None:
+    """Decode a downloaded source once so corrupt packets fail before rendering.
+
+    A container/stream probe is not enough for truncated adaptive downloads: the
+    MP4 can advertise both streams while containing malformed H.264 NAL units.
+    Rendering may then succeed for early clips and fail near the end, wasting the
+    whole job.  FFmpeg's null muxer verifies every decoded packet without writing
+    another large file.
+    """
+    streams = probe_media_stream_types(path)
+    missing = {"video", "audio"} - streams
+    if missing:
+        return "stream " + " dan ".join(sorted(missing)) + " tidak tersedia"
+
+    try:
+        verify_timeout = max(
+            120,
+            int(os.environ.get("SOURCE_MEDIA_VERIFY_TIMEOUT_SECONDS", "900")),
+        )
+    except ValueError:
+        verify_timeout = 900
+    try:
+        process = subprocess.run(
+            [
+                ffmpeg_path(),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-xerror",
+                "-err_detect",
+                "explode",
+                "-i",
+                str(path.resolve()),
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a:0",
+                "-f",
+                "null",
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=verify_timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return "validasi decode melewati batas waktu"
+    except OSError as exc:
+        return f"FFmpeg tidak dapat memvalidasi sumber: {exc}"
+
+    if process.returncode == 0:
+        return None
+    details = re.sub(r"\s+", " ", (process.stderr or process.stdout or "").strip())
+    if len(details) > 600:
+        details = details[-600:]
+    return details or f"FFmpeg validasi keluar dengan kode {process.returncode}"
+
+
 def probe_media_duration_seconds(path: Path) -> float | None:
     """Read media duration through ffprobe/ffmpeg for video and audio-only files."""
     ffmpeg_binary = Path(ffmpeg_path())
@@ -4926,14 +4984,25 @@ def download_video(
     info_path = work_dir / "metadata.json"
     existing = select_usable_source_media(work_dir)
     if existing is not None and info_path.exists() and not force:
-        console.print(f"[green]Reusing verified source:[/green] {existing.name}")
-        return existing, load_json(info_path)
+        console.print(
+            f"[dim]Memverifikasi integritas sumber tersimpan: {existing.name}...[/dim]"
+        )
+        integrity_error = source_media_integrity_error(existing)
+        if integrity_error is None:
+            console.print(f"[green]Reusing verified source:[/green] {existing.name}")
+            return existing, load_json(info_path)
+        console.print(
+            "[yellow]Sumber tersimpan rusak dan akan diunduh ulang:[/yellow] "
+            f"{integrity_error}"
+        )
+        existing.unlink(missing_ok=True)
 
     max_height = int(quality_preset(video_quality)["max_download_height"])
     work_dir.mkdir(parents=True, exist_ok=True)
     info: dict = {}
     file_path: Path | None = None
     download_errors: list[Exception] = []
+    integrity_errors: list[str] = []
     strategies = youtube_download_strategies(max_height, work_dir)
     total_attempts = len(strategies)
     for attempt, strategy in enumerate(strategies, start=1):
@@ -4972,7 +5041,23 @@ def download_video(
                     "Mencoba alternatif berikutnya...[/yellow]"
                 )
             continue
-        file_path = select_usable_source_media(work_dir)
+        candidate_path = select_usable_source_media(work_dir)
+        while candidate_path is not None:
+            console.print(
+                f"[dim]Memverifikasi decode sumber hasil jalur {strategy_name}: "
+                f"{candidate_path.name}...[/dim]"
+            )
+            integrity_error = source_media_integrity_error(candidate_path)
+            if integrity_error is None:
+                file_path = candidate_path
+                break
+            integrity_errors.append(f"{candidate_path.name}: {integrity_error}")
+            console.print(
+                "[yellow]Hasil download tidak utuh; file dibuang dan jalur lain dicoba:[/yellow] "
+                f"{integrity_error}"
+            )
+            candidate_path.unlink(missing_ok=True)
+            candidate_path = select_usable_source_media(work_dir)
         if file_path is not None:
             if attempt > 1:
                 console.print(
@@ -4983,6 +5068,14 @@ def download_video(
     # Every compatibility path is part of the loop above. In particular, do
     # not raise immediately after adaptive/client errors: older code did that
     # before its muxed source_fallback block could ever run.
+    if file_path is None and integrity_errors:
+        raise UserFacingError(
+            "Semua jalur download menghasilkan video yang rusak atau tidak lengkap. "
+            "Sistem sudah membuang file bermasalah dan mencoba fallback otomatis. "
+            "Coba ulang beberapa menit lagi atau upload file MP4 sumber. "
+            f"Detail terakhir: {integrity_errors[-1]}"
+        )
+
     if file_path is None and download_errors:
         representative_error = next(
             (
