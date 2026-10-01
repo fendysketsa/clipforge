@@ -1355,7 +1355,7 @@ export default function HomePage() {
         onStart={() => { void handleStartJob(); }}
       />
 
-      <section className="workspace studioGrid" id="workspace">
+      <section className={`workspace studioGrid${isBusy ? " isProcessing" : ""}`} id="workspace">
         <ControlPanel
           clipMode={clipMode}
           cropMode={cropMode}

@@ -44,9 +44,9 @@ type QuickStartCardProps = {
 };
 
 const SHORT_STEPS = [
-  { icon: Focus, label: "Auto reframe", detail: "Wajah tetap aman di 9:16" },
-  { icon: Subtitles, label: "Dynamic captions", detail: "Kata penting lebih terbaca" },
-  { icon: Sparkles, label: "Cinematic retention", detail: "Filmic color, hook, beat, payoff" },
+  { icon: Focus, label: "Framing otomatis", detail: "Wajah aman di 9:16" },
+  { icon: Subtitles, label: "Caption dinamis", detail: "Nyaman dibaca di feed" },
+  { icon: Sparkles, label: "Polish retention", detail: "Hook, ritme, dan payoff" },
 ];
 
 const LONG_STEPS = [
@@ -120,17 +120,17 @@ export function QuickStartCard({
   const polishSteps = isLong ? LONG_STEPS : SHORT_STEPS;
 
   return (
-    <section className={`clipperHero${isLong ? " isLong" : ""}`} aria-labelledby="quick-start-title">
+    <section className={`clipperHero${isLong ? " isLong" : ""}${isWorking ? " isWorking" : ""}`} aria-labelledby="quick-start-title">
       <div className="clipperHeroCopy">
         <span className="clipperKicker">{isLong ? <Film size={14} /> : <Scissors size={14} />} AI VIDEO CLIPPER</span>
         <h2 id="quick-start-title">
-          Satu sumber.<br />
-          <em>{isLong ? "Long video dengan alur yang bikin betah." : "Short yang nggak terasa dipotong asal."}</em>
+          Satu video masuk.<br />
+          <em>{isLong ? "Cerita utuh siap ditonton." : "Short terbaik siap tayang."}</em>
         </h2>
         <p>
           {isLong
-            ? "AI menyusun highlight 16:9 menjadi cerita 5–10 menit: cold open kuat, chapter yang runtut, payoff jelas, dan packaging siap YouTube."
-            : "AI mencari momen paling kuat, menjaga konteksnya, lalu memoles framing, subtitle, ritme, dan audio agar siap masuk feed vertikal."}
+            ? "AI memilih chapter terbaik, menyusun alur, lalu menyiapkan video panjang yang rapi dan siap direview."
+            : "AI menemukan momen terbaik lalu merapikan framing, caption, ritme, dan audio secara otomatis."}
         </p>
 
         <div className="clipperPromise">
@@ -145,7 +145,7 @@ export function QuickStartCard({
 
       <div className="sourceComposer">
         <div className="sourceComposerTop">
-          <span><WandSparkles size={16} /> Scan lalu buat video</span>
+          <span><WandSparkles size={16} /> {isWorking ? "Sedang meracik video" : "Mulai dari link video"}</span>
           <b>{isLong ? "16:9 · 5–10 menit" : "9:16 · 25–45 dtk"}</b>
         </div>
 

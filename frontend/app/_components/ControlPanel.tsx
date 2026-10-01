@@ -5,10 +5,8 @@ import {
   Check,
   ChevronDown,
   Clock3,
-  Focus,
   Film,
   Gauge,
-  Scissors,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -75,6 +73,15 @@ const CAPTION_POSITIONS: { value: CaptionPosition; label: string }[] = [
   { value: "bottom", label: "Bawah" },
 ];
 
+const CROP_MODES: { value: CropMode; label: string }[] = [
+  { value: "person", label: "Ikuti pembicara" },
+  { value: "center", label: "Crop tengah" },
+  { value: "streamer", label: "Split screen" },
+];
+
+type ShortEditProfile = "adaptive" | "punchy" | "split";
+type ShortDurationPreset = "quick" | "balanced" | "story" | "custom";
+
 function ToggleCard({ checked, description, disabled, icon, label, onChange }: {
   checked: boolean;
   description: string;
@@ -134,16 +141,38 @@ export function ControlPanel({
   const isLong = clipMode === "highlight_5m";
   const targetMinutes = Math.round(compilationTargetSeconds / 60);
   const selectedQuality = VIDEO_QUALITY_OPTIONS.find((option) => option.value === videoQuality);
-  const preset = cropMode === "streamer"
+  const editProfile: ShortEditProfile = cropMode === "streamer"
     ? "split"
     : captionPosition === "center" && captionFontSize >= 11
       ? "punchy"
-      : "clean";
+      : "adaptive";
+  const durationPreset: ShortDurationPreset = minDuration === 15 && maxDuration === 30
+    ? "quick"
+    : minDuration === 25 && maxDuration === 45
+      ? "balanced"
+      : minDuration === 35 && maxDuration === 60
+        ? "story"
+        : "custom";
 
-  const applyPreset = (next: "clean" | "punchy" | "split") => {
+  const editProfileCopy: Record<ShortEditProfile, { title: string; description: string }> = {
+    adaptive: {
+      title: "Auto Adaptif",
+      description: "AI memilih framing, zoom, ritme, dan aksen yang paling cocok untuk isi setiap clip.",
+    },
+    punchy: {
+      title: "Punchy",
+      description: "Caption lebih besar dan ritme visual lebih tegas untuk hook yang cepat.",
+    },
+    split: {
+      title: "Split Screen",
+      description: "Pembicara dan materi layar dipertahankan bersama dalam format vertikal.",
+    },
+  };
+
+  const applyEditProfile = (next: ShortEditProfile) => {
     onAiEnabledChange(true);
     onBurnSubtitlesChange(true);
-    if (next === "clean") {
+    if (next === "adaptive") {
       onCropModeChange("person");
       onCaptionPositionChange("bottom");
       onCaptionFontSizeChange(8);
@@ -161,6 +190,19 @@ export function ControlPanel({
     }
   };
 
+  const applyDurationPreset = (next: ShortDurationPreset) => {
+    if (next === "quick") {
+      onMinDurationChange(15);
+      onMaxDurationChange(30);
+    } else if (next === "balanced") {
+      onMinDurationChange(25);
+      onMaxDurationChange(45);
+    } else if (next === "story") {
+      onMinDurationChange(35);
+      onMaxDurationChange(60);
+    }
+  };
+
   return (
     <details className="panel shortPolish" id="production-settings">
       <summary className="shortPolishSummary">
@@ -171,21 +213,23 @@ export function ControlPanel({
           <em>{isLong ? "Susun cerita, chapter, dan packaging YouTube." : "Default sudah siap. Buka kalau ingin mengubah karakter hasil."}</em>
         </span>
         <span className="shortPolishSnapshot">
-          <b>{isLong ? `Story Arc · ${targetMinutes} menit` : preset === "clean" ? "Clean Focus" : preset === "punchy" ? "Punchy" : "Split Screen"}</b>
+          <b>{isLong ? `Story Arc · ${targetMinutes} menit` : editProfileCopy[editProfile].title}</b>
           <small>{isLong ? "16:9 · chapter lengkap" : `${minDuration}–${maxDuration} dtk`} · {selectedQuality?.label}</small>
         </span>
         <ChevronDown size={18} />
       </summary>
 
       <div className="shortPolishBody">
-        <div className="autoPolishBanner">
-          <span><Sparkles size={18} /></span>
-          <div>
-            <strong>{isLong ? "Long-form Director aktif" : "Auto Polish aktif"}</strong>
-            <small>{isLong ? "Cold open, story arc, chapter cards, cinematic grading, thumbnail, dan audit watch-time diterapkan otomatis." : "Hook-first cut, filmic color, smart zoom, beat edit, audio leveling, dan audit retention diterapkan otomatis."}</small>
+        {isLong ? (
+          <div className="autoPolishBanner">
+            <span><Sparkles size={18} /></span>
+            <div>
+              <strong>Long-form Director aktif</strong>
+              <small>Cold open, story arc, chapter cards, cinematic grading, thumbnail, dan audit watch-time diterapkan otomatis.</small>
+            </div>
+            <b><Check size={14} /> ON</b>
           </div>
-          <b><Check size={14} /> ON</b>
-        </div>
+        ) : null}
 
         {isLong ? (
           <>
@@ -213,35 +257,46 @@ export function ControlPanel({
           </>
         ) : (
           <>
-            <section className="polishSection">
-              <header><span>01</span><div><strong>Pilih rasa edit</strong><small>Satu klik mengatur framing, caption, dan kualitas.</small></div></header>
-              <div className="editPresetGrid">
-                <button className={preset === "clean" ? "active" : ""} type="button" disabled={disabled} onClick={() => applyPreset("clean")}>
-                  <Focus size={18} /><span><strong>Clean Focus</strong><small>Natural, fokus wajah</small></span>{preset === "clean" ? <Check size={16} /> : null}
-                </button>
-                <button className={preset === "punchy" ? "active" : ""} type="button" disabled={disabled} onClick={() => applyPreset("punchy")}>
-                  <Sparkles size={18} /><span><strong>Punchy</strong><small>Caption besar, ritme cepat</small></span>{preset === "punchy" ? <Check size={16} /> : null}
-                </button>
-                <button className={preset === "split" ? "active" : ""} type="button" disabled={disabled} onClick={() => applyPreset("split")}>
-                  <Scissors size={18} /><span><strong>Split Screen</strong><small>Pembicara + layar</small></span>{preset === "split" ? <Check size={16} /> : null}
-                </button>
+            <section className="adaptivePolishCard">
+              <span className="adaptivePolishIcon"><Sparkles size={20} /></span>
+              <div className="adaptivePolishCopy">
+                <span><strong>{editProfileCopy[editProfile].title}</strong>{editProfile === "adaptive" ? <b>REKOMENDASI</b> : null}</span>
+                <small>{editProfileCopy[editProfile].description}</small>
+                <em>Bukan acak buta — keputusan visual mengikuti wajah, ucapan, dan konteks clip.</em>
               </div>
+              <label className="adaptivePolishSelect">
+                <span>Variasi edit</span>
+                <select value={editProfile} disabled={disabled} onChange={(event) => applyEditProfile(event.target.value as ShortEditProfile)}>
+                  <option value="adaptive">Auto Adaptif</option>
+                  <option value="punchy">Punchy</option>
+                  <option value="split">Split Screen</option>
+                </select>
+              </label>
             </section>
 
             <section className="polishSection">
-              <header><span>02</span><div><strong>Target output</strong><small>Biarkan jumlah 0 agar AI menentukan otomatis.</small></div></header>
-              <div className="shortTargetGrid">
-                <label><span>Durasi minimum</span><div><input type="number" min={5} max={179} value={minDuration} disabled={disabled} onChange={(event) => onMinDurationChange(Number(event.target.value))} /><small>detik</small></div></label>
-                <label><span>Durasi maksimum</span><div><input type="number" min={10} max={180} value={maxDuration} disabled={disabled} onChange={(event) => onMaxDurationChange(Number(event.target.value))} /><small>detik</small></div></label>
-                <label><span>Jumlah Short</span><div><input type="number" min={0} max={maxClips ?? 12} value={targetClips} disabled={disabled} onChange={(event) => onTargetClipsChange(Number(event.target.value))} /><small>{targetClips === 0 ? "auto" : `maks. ${maxClips ?? 12}`}</small></div></label>
+              <header><span>01</span><div><strong>Target output</strong><small>Dua pilihan saja; sisanya ditentukan AI.</small></div></header>
+              <div className="shortTargetGrid shortTargetGrid--compact">
+                <label>
+                  <span>Durasi tiap Short</span>
+                  <div className="shortTargetSelect">
+                    <select value={durationPreset} disabled={disabled} onChange={(event) => applyDurationPreset(event.target.value as ShortDurationPreset)}>
+                      <option value="quick">Cepat · 15–30 detik</option>
+                      <option value="balanced">Seimbang · 25–45 detik</option>
+                      <option value="story">Bercerita · 35–60 detik</option>
+                      {durationPreset === "custom" ? <option value="custom">Custom · {minDuration}–{maxDuration} detik</option> : null}
+                    </select>
+                    <ChevronDown size={14} />
+                  </div>
+                </label>
+                <label><span>Jumlah Short</span><div><input type="number" min={0} max={maxClips ?? 12} value={targetClips} disabled={disabled} onChange={(event) => onTargetClipsChange(Number(event.target.value))} /><small>{targetClips === 0 ? "AI tentukan" : "maks. " + (maxClips ?? 12)}</small></div></label>
               </div>
               {videoDuration ? <p className="targetSourceNote"><Clock3 size={13} /> Sumber {Math.round(videoDuration / 60)} menit · batas jumlah disesuaikan otomatis</p> : null}
             </section>
           </>
         )}
-
         <details className="polishAdvanced">
-          <summary><span><SlidersHorizontal size={16} /> Detail lanjutan</span><small>Subtitle, kualitas, dan upload</small><ChevronDown size={16} /></summary>
+          <summary><span><SlidersHorizontal size={16} /> Detail lanjutan</span><small>Framing, subtitle, kualitas, dan upload</small><ChevronDown size={16} /></summary>
           <div className="polishAdvancedBody">
             <div className="shortToggleGrid">
               <ToggleCard checked={burnSubtitles} disabled={disabled} icon={<Captions size={17} />} label="Subtitle" description="Burn-in ke video" onChange={onBurnSubtitlesChange} />
@@ -251,6 +306,9 @@ export function ControlPanel({
 
             <div className="advancedFields">
               <label><span><Gauge size={14} /> Kualitas</span><select value={videoQuality} disabled={disabled} onChange={(event) => onVideoQualityChange(event.target.value as VideoQuality)}>{VIDEO_QUALITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label} — {option.help}</option>)}</select></label>
+              {!isLong ? <label><span>Framing video</span><select value={cropMode} disabled={disabled} onChange={(event) => onCropModeChange(event.target.value as CropMode)}>{CROP_MODES.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}</select></label> : null}
+              {!isLong ? <label><span>Durasi minimum</span><div className="advancedNumber"><input type="number" min={5} max={179} value={minDuration} disabled={disabled} onChange={(event) => onMinDurationChange(Number(event.target.value))} /><small>detik</small></div></label> : null}
+              {!isLong ? <label><span>Durasi maksimum</span><div className="advancedNumber"><input type="number" min={10} max={180} value={maxDuration} disabled={disabled} onChange={(event) => onMaxDurationChange(Number(event.target.value))} /><small>detik</small></div></label> : null}
               <label><span>Font caption</span><select value={captionFont} disabled={disabled} onChange={(event) => onCaptionFontChange(event.target.value as CaptionFont)}>{CAPTION_FONTS.map((font) => <option key={font.value} value={font.value}>{font.label}</option>)}</select></label>
               <label><span>Posisi caption</span><select value={captionPosition} disabled={disabled} onChange={(event) => onCaptionPositionChange(event.target.value as CaptionPosition)}>{CAPTION_POSITIONS.map((position) => <option key={position.value} value={position.value}>{position.label}</option>)}</select></label>
               <label><span>Ukuran caption</span><input type="number" min={CAPTION_FONT_SIZE_MIN} max={CAPTION_FONT_SIZE_MAX} value={captionFontSize} disabled={disabled} onChange={(event) => onCaptionFontSizeChange(Number(event.target.value))} /></label>
@@ -261,7 +319,7 @@ export function ControlPanel({
           </div>
         </details>
 
-        <footer className="shortPolishFooter"><ShieldCheck size={15} /><span>{isLong ? "Long Highlight menyertakan thumbnail 16:9 dan tetap masuk review sebelum publikasi." : "Hasil selalu masuk tahap review sebelum publikasi."}</span></footer>
+        <footer className="shortPolishFooter"><ShieldCheck size={15} /><span>{isLong ? "Long Highlight menyertakan thumbnail 16:9 dan tetap masuk review sebelum publikasi." : "Gaya boleh berbeda per clip, tetapi font, warna, dan identitas channel tetap konsisten. Semua hasil masuk review."}</span></footer>
       </div>
     </details>
   );

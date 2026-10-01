@@ -29,6 +29,14 @@ const STAGES = [
   { key: "finalize", label: "Selesai", icon: Check },
 ] as const;
 
+const STAGE_MESSAGES: Record<(typeof STAGES)[number]["key"], string> = {
+  source: "Menyiapkan video sumber agar tahap berikutnya berjalan stabil.",
+  transcript: "Mendengarkan ucapan dan menyusun timestamp agar konteks tidak terpotong.",
+  selection: "Membandingkan hook, pesan, konteks, dan payoff untuk menemukan bagian terkuat.",
+  render: "Meracik framing, caption, ritme, visual, dan audio pada hasil final.",
+  finalize: "Memeriksa kualitas akhir dan menyiapkan semua hasil untuk direview.",
+};
+
 const stageIndex = (job: ClipJob | null) => {
   if (!job) return -1;
   if (job.status === "completed") return STAGES.length;
@@ -76,6 +84,8 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
   const canCancel = isActiveJob(job);
   const elapsed = job ? jobElapsedSeconds(job) : 0;
   const isLong = job?.request.clip_mode === "highlight_5m";
+  const activeStage = STAGES[Math.max(0, Math.min(STAGES.length - 1, currentStage))];
+  const activeStageMessage = STAGE_MESSAGES[activeStage.key];
 
   return (
     <section className={`panel clipStatus clipStatus--${job?.status ?? "idle"}`} aria-live="polite">
@@ -114,13 +124,25 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
             })}
           </ol>
 
-          <div className="clipCurrentTask">
-            <span><Sparkles size={15} /></span>
-            <div>
-              <small>{currentTaskLabel(job)}</small>
-              <strong>{job.progress_detail || job.source_title || "Menyiapkan pipeline…"}</strong>
+          <div className="clipProcessSpotlight">
+            <div className="clipProcessVisual" aria-hidden="true">
+              <span className="clipProcessPhone">
+                <i />
+                <i />
+                <b><Sparkles size={17} /></b>
+              </span>
+              <i className="clipProcessOrbit orbitOne" />
+              <i className="clipProcessOrbit orbitTwo" />
             </div>
-            <time><Clock3 size={13} /> {formatDuration(elapsed)}</time>
+            <div className="clipProcessNarrative">
+              <span className="clipProcessLive"><i /> {currentTaskLabel(job)}</span>
+              <strong>{job.progress_detail || job.source_title || "Menyiapkan pipeline…"}</strong>
+              <p>{activeStageMessage}</p>
+              <div>
+                <time><Clock3 size={13} /> {formatDuration(elapsed)}</time>
+                <span>{progress}% selesai</span>
+              </div>
+            </div>
           </div>
 
           {job.error ? <div className="clipStatusError"><XCircle size={15} /> {job.error}</div> : null}
