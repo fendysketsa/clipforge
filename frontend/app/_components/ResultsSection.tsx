@@ -207,9 +207,17 @@ function growthTargetReadiness(
   targetSubscribers = 20,
   nextAction?: string | null,
   status?: string | null,
+  manualPrivateReviewReady = false,
 ) {
   const target = `Target ${(targetViews / 1000).toLocaleString("id-ID", { maximumFractionDigits: 1 })}K / ${targetSubscribers} sub`;
   if (status?.startsWith("revise")) {
+    if (manualPrivateReviewReady) {
+      return {
+        label: `${target} · review manual`,
+        tone: "test",
+        detail: "Aman masuk review Private setelah checklist manusia; target growth belum lolos untuk auto-upload batch.",
+      };
+    }
     return {
       label: `${target} · poles dulu`,
       tone: "hold",
@@ -700,6 +708,13 @@ export function ResultsSection({
             const isLongForm = clip.name.toLowerCase().startsWith("highlight_5menit_")
               || clip.name.toLowerCase().startsWith("resume_cerita_")
               || clip.name.toLowerCase().startsWith("long_animate_");
+            // Growth/FYP is an experiment-ranking signal, not a safety or
+            // rights rule. The backend preflight owns upload eligibility and
+            // may explicitly allow a reviewed quality-only fallback into the
+            // Private-first workflow while keeping automatic batch upload
+            // strict.
+            const isUploadReady = !clip.context_recut_required
+              && clip.youtube_upload_ready === true;
             const growthReadiness = clip.fyp_score !== null && clip.fyp_score !== undefined
               ? growthTargetReadiness(
                   clip.fyp_score,
@@ -708,17 +723,12 @@ export function ResultsSection({
                   clip.growth_target_subscribers || 20,
                   clip.growth_next_action,
                   clip.growth_status,
+                  isUploadReady,
                 )
               : null;
-            const passesGrowthGate = typeof clip.growth_quality_gate_passed === "boolean"
-              ? clip.growth_quality_gate_passed
-              : clip.youtube_upload_ready !== false;
             const meetsFypTarget = isLongForm
               || typeof clip.fyp_score !== "number"
               || clip.fyp_score >= VIRAL_QUALITY_FLOOR;
-            const isUploadReady = passesGrowthGate
-              && !clip.context_recut_required
-              && clip.youtube_upload_ready !== false;
             const automaticRepairDidNotPass = Boolean(clip.automatic_repair_available);
             const uploadReviewConfirmed = clip.is_correct;
             const isQueuedForYouTube = latestUpload?.status === "queued";

@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "source": "https://youtu.be/iaF7Tap9m5g?si=Tt-0TK2xC43yENcE",
+  "source_metadata_path": "../../../backend/outputs/fd582c94c1c64ff29b95f2cede68d8e2/apa-yang-terjadi-saat-masjid-kosong-ustadz-abdul-somad/metadata.json",
+  "native_candidates_path": "../../../backend/outputs/fd582c94c1c64ff29b95f2cede68d8e2/apa-yang-terjadi-saat-masjid-kosong-ustadz-abdul-somad/candidates.json",
+  "transcript_path": "../../../backend/outputs/fd582c94c1c64ff29b95f2cede68d8e2/apa-yang-terjadi-saat-masjid-kosong-ustadz-abdul-somad/transcript.json",
+  "analysis_parameters": {
+    "niche": "kajian Islam",
+    "candidate_limit": 10,
+    "min_duration": 25,
+    "max_duration": 45,
+    "language": "id",
+    "analysis_mode": "existing_timestamped_transcript_fallback"
+  },
+  "outcome": "REVIEW_REQUIRED",
+  "review_notes": [
+    "Kandidat pertama aman secara batas kalimat dan konteks kajian, tetapi klaim sejarah Andalusia tetap perlu verifikasi manusia sebelum publikasi.",
+    "Catatan job menyatakan pengguna telah mengonfirmasi izin komersial audio dan visual; metadata Creative Commons tetap bukan bukti tunggal rantai hak seluruh elemen rekaman.",
+    "Kandidat kedua dimulai dengan kata penghubung dan bergantung pada daftar tanggung jawab keluarga yang tidak terlihat."
+  ],
+  "candidates": [
+    {
+      "index": 1,
+      "start": 13.949,
+      "end": 58.75,
+      "duration": 44.801,
+      "start_timestamp": "00:00:13.949",
+      "end_timestamp": "00:00:58.750",
+      "transcript": "Enggak. Real Madrid Barcelona? Tahu. Real Madrid Barcelona itulah Andalusia mas, bro. Andalusia nama Islamnya. Ketika datang seorang perempuan bernama Ratu Isabela, habis umat Islam rata dengan tanah. Lari, pontang panting, sebagiannya lari ke Maroko, Mesir, Libya, Tunisia, Al-Jazair, Maroko, Samudera Atlantik, Real Madrid, Barcelona. Lari, mereka hanya menyebrang laut. Makanya sebagian orang Maroko yang di utara itu matanya biru, rambutnya pirang, kulitnya putih, hidungnya mancung. Kenapa? Menyebrang dari Eropa, rata dengan tanah. Begitulah, kalau kita lemah, makanya harus kita jaga masjid kita. Jangan sampai diambil apa pun.",
+      "hook": "Real Madrid dan Barcelona ternyata terhubung dengan kisah Andalusia.",
+      "reason": "Kontras nama klub dengan Andalusia langsung memicu rasa ingin tahu, lalu ditutup dengan pelajaran menjaga masjid.",
+      "standalone_score": 86,
+      "viral_score": 88,
+      "religious_context_safe": true,
+      "recommended_title": "Apa Hubungan Andalusia dengan Real Madrid?",
+      "risk_flags": [
+        "historical_claim_review_required",
+        "verify_queen_isabella_and_north_africa_claims",
+        "source_cc_metadata_does_not_prove_every_audio_visual_right"
+      ],
+      "retention_score": 86,
+      "key_point_score": 86,
+      "loop_score": 12,
+      "narrative_arc_score": 82,
+      "boundary_quality": "payoff_tuntas",
+      "strengths": [
+        "Hook kontras dan spesifik",
+        "Ucapan padat",
+        "Payoff berupa pelajaran praktis",
+        "Batas akhir tuntas"
+      ],
+      "weaknesses": [
+        "Opening berupa potongan dialog sehingga teks konteks harus tampil sejak frame pertama",
+        "Klaim sejarah terlalu padat untuk diterima tanpa review fakta"
+      ],
+      "improvement_ideas": [
+        "Gunakan overlay pembuka 'Apa hubungan Andalusia dengan Real Madrid?' tanpa mengubah ucapan sumber.",
+        "Tonjolkan kata ANDALUSIA, RATU ISABELLA, dan JAGA MASJID secara bertahap.",
+        "Gunakan deskripsi yang membedakan penjelasan penceramah dari verifikasi sejarah."
+      ]
+    },
+    {
+      "index": 2,
+      "start": 262.547,
+      "end": 289.14,
+      "duration": 26.593,
+      "start_timestamp": "00:04:22.547",
+      "end_timestamp": "00:04:49.140",
+      "transcript": "Tapi karena tidak sanggup mendidik mereka, bawa mereka ke masjid karena ada pengajian. Selawat, menyambung tali silaturahmi, dan memakmurkan masjid sudah selama Ramadan. Tapi coba perhatikan masjid-masjid yang lain. Masjid Al-Bakri, alhamdulillah. Masjid yang lain seperti ekor tikus, makin ke ujung makin kecil. Banyak masjid sekarang tinggal pemain inti saja lagi.",
+      "hook": "Tapi karena tidak sanggup mendidik mereka, bawa mereka ke masjid.",
+      "reason": "Analogi 'pemain inti' menarik, tetapi pembuka bergantung pada konteks tanggung jawab keluarga dari bagian sebelumnya.",
+      "standalone_score": 68,
+      "viral_score": 82,
+      "religious_context_safe": true,
+      "recommended_title": "Ketika Masjid Hanya Menyisakan Pemain Inti",
+      "risk_flags": [
+        "hidden_context_at_opening",
+        "starts_with_dangling_connector",
+        "payoff_needs_following_explanation"
+      ],
+      "retention_score": 95,
+      "key_point_score": 59,
+      "loop_score": 47,
+      "narrative_arc_score": 78,
+      "boundary_quality": "payoff_tuntas",
+      "strengths": [
+        "Analogi konkret dan mudah diingat",
+        "Tempo ucapan padat",
+        "Ending kalimat tuntas"
+      ],
+      "weaknesses": [
+        "Tidak sepenuhnya mandiri tanpa konteks sebelum timestamp 04:22",
+        "Akibat dari masjid kosong baru dijelaskan setelah cut berakhir"
+      ],
+      "improvement_ideas": [
+        "Potong ulang dari penjelasan tanggung jawab keluarga atau lanjutkan sampai solusi menjaga salat berjamaah.",
+        "Jangan memakai versi sekarang untuk auto-upload; gunakan hanya setelah review manual atau recut."
+      ]
+    }
+  ]
+}

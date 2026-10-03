@@ -4598,6 +4598,61 @@ def automatic_editorial_perspective_ready(sidecar: dict[str, Any]) -> bool:
     )
 
 
+def reviewed_quality_only_short_for_private_upload(
+    clip: ClipFile,
+    sidecar: dict[str, Any],
+) -> bool:
+    """Allow an explicitly reviewed, structurally safe fallback into Private.
+
+    The Short selector deliberately keeps a small manual-review fallback when
+    the only failed prediction is the strict five-beat narrative model.  The
+    upload preflight must use the same contract; otherwise the renderer tells
+    the operator a clip is safe to review while the dashboard can never send
+    it to that review.  This exception never relaxes context, sentence-boundary,
+    retention, rights, or editorial-safety checks, and it is not used by the
+    automatic batch uploader.
+    """
+    if not clip.is_correct or str(sidecar.get("output_format") or "") != "vertical_short":
+        return False
+
+    readiness = sidecar.get("monetization_readiness")
+    if not isinstance(readiness, dict) or readiness.get(
+        "eligible_for_private_upload_review"
+    ) is not True:
+        return False
+
+    boundary_quality = str(sidecar.get("boundary_quality") or "")
+    if boundary_quality not in {"payoff_tuntas", "kalimat_tuntas"}:
+        return False
+
+    religious_review = sidecar.get("religious_claim_review")
+    if (
+        isinstance(religious_review, dict)
+        and religious_review.get("recommended_decision") == "reject_and_recut"
+    ):
+        return False
+    religious_integrity = sidecar.get("religious_context_integrity")
+    if sidecar.get("religious_context_safe") is False or (
+        isinstance(religious_integrity, dict)
+        and religious_integrity.get("safe_for_automatic_export") is not True
+    ):
+        return False
+
+    try:
+        key_point_score = int(sidecar.get("key_point_score") or 0)
+        retention_score = int(sidecar.get("retention_score") or 0)
+        narrative_arc_score = int(sidecar.get("narrative_arc_score") or 0)
+    except (TypeError, ValueError):
+        return False
+
+    return bool(
+        key_point_score >= 55
+        and retention_score >= 58
+        and narrative_arc_score > 0
+        and sidecar.get("narrative_arc_complete") is not True
+    )
+
+
 def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | None:
     """Block private upload when rights or substantive-edit evidence is missing."""
     sidecar = clip_sidecar_payload(clip)
@@ -4840,6 +4895,10 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             if authenticity_issue:
                 return authenticity_issue
     if str(sidecar.get("output_format") or "") == "vertical_short":
+        reviewed_quality_fallback = reviewed_quality_only_short_for_private_upload(
+            clip,
+            sidecar,
+        )
         religious_claim_review = sidecar.get("religious_claim_review")
         if isinstance(religious_claim_review, dict):
             if religious_claim_review.get("recommended_decision") == "reject_and_recut":
@@ -4861,7 +4920,11 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
                 0,
                 min(100, int(round(raw_narrative_arc_score))),
             )
-            if narrative_arc_score > 0 and sidecar.get("narrative_arc_complete") is not True:
+            if (
+                narrative_arc_score > 0
+                and sidecar.get("narrative_arc_complete") is not True
+                and not reviewed_quality_fallback
+            ):
                 return (
                     "Upload diblokir: alur Short belum lengkap. Klip harus memiliki hook, "
                     "konteks, konflik, jawaban, dan ending kuat dari ucapan sumber."
@@ -5974,6 +6037,7 @@ def create_tiktok_upload_batch_records(job_id: str, request: TikTokBatchUploadRe
             if (clip := clips.get(url)) is not None
             and clip.is_correct
             and youtube_monetization_preflight_issue(job, clip) is None
+            and clip.growth_quality_gate_passed is not False
         ][:request.best_count]
     if not clip_urls:
         raise HTTPException(
@@ -6496,6 +6560,7 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
             if (
                 (clip := clips_by_url.get(clip_url)) is not None
                 and youtube_monetization_preflight_issue(job, clip) is None
+                and clip.growth_quality_gate_passed is not False
                 and (
                     job.request.clip_mode != "short"
                     or clip.fyp_score is None
@@ -6508,7 +6573,7 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
             status_code=409,
             detail=(
                 f"Tidak ada clip yang lolos audit upload dan target FYP {SHORT_FYP_TARGET_SCORE}. Gunakan "
-                "sumber lain atau proses ulang sumber; hasil yang ditahan tidak dimasukkan ke antrean upload."
+                "sumber lain atau proses ulang sumber; fallback review manual tidak dimasukkan ke auto-upload."
             ),
         )
 

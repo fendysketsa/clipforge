@@ -1925,6 +1925,16 @@ SHORT_NARRATIVE_ANSWER_MARKERS = (
     "sebaiknya",
     "solusinya",
 )
+SHORT_NARRATIVE_TENSION_MARKERS = (
+    "habis",
+    "hancur",
+    "kehilangan",
+    "makin kecil",
+    "pontang panting",
+    "rata dengan tanah",
+    "sampai kosong",
+    "tinggal pemain inti",
+)
 SHORT_NARRATIVE_STRONG_END_MARKERS = (
     "ambil hikmah",
     "intinya",
@@ -6370,7 +6380,15 @@ def short_narrative_arc_profile(
     )
     tension = bool(
         tension_words.intersection(TENSION_WORDS)
-        or any(marker in tension_normalized for marker in ("akan tetapi", "meskipun", "tanpa disadari"))
+        or any(
+            marker in tension_normalized
+            for marker in (
+                "akan tetapi",
+                "meskipun",
+                "tanpa disadari",
+                *SHORT_NARRATIVE_TENSION_MARKERS,
+            )
+        )
     )
     answer = bool(
         answer_words.intersection(PAYOFF_WORDS)

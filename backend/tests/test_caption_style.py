@@ -1744,6 +1744,21 @@ def test_kajian_short_requires_complete_five_beat_narrative_and_safe_context():
     assert "hook, konteks, konflik, jawaban, dan ending terbentuk utuh" in reasons
 
 
+def test_narrative_arc_recognizes_spoken_adversity_without_connector_word():
+    segments = [
+        TranscriptSegment(0, 3, "Real Madrid dan Barcelona? Itulah Andalusia."),
+        TranscriptSegment(3, 8, "Andalusia nama Islamnya ketika datang Ratu Isabela."),
+        TranscriptSegment(8, 17, "Habis umat Islam rata dengan tanah dan lari pontang panting."),
+        TranscriptSegment(17, 28, "Makanya kalau kita lemah kita harus menjaga masjid kita."),
+        TranscriptSegment(28, 35, "Jangan sampai diambil apa pun."),
+    ]
+
+    arc = short_narrative_arc_profile(segments, 35)
+
+    assert arc["beats"]["tension"] is True
+    assert arc["qualified"] is True
+
+
 def test_candidate_pool_skips_kajian_greeting_and_starts_on_spoken_hook():
     segments = [
         TranscriptSegment(0, 3, "Assalamualaikum warahmatullahi wabarakatuh, pada kesempatan kali ini."),

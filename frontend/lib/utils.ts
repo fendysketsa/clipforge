@@ -42,8 +42,31 @@ export function clipTitle(name: string) {
   return name.replace(/\.mp4$/i, "").replace(/^clip_\d+_/, "").replace(/-/g, " ");
 }
 
+function editorialSummaryTitle(value: string) {
+  const clean = value
+    .replace(/\s*-\s*/g, "-")
+    .replace(/^begitulah[,\s]*/i, "")
+    .replace(/^ini\s+/i, "")
+    .replace(/\bmakanya\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("id-ID");
+  return clean ? clean.charAt(0).toLocaleUpperCase("id-ID") + clean.slice(1) : "";
+}
+
+function transcriptTitleLooksContextDependent(value: string) {
+  const clean = value.trim().toLocaleLowerCase("id-ID");
+  if (/^(enggak|tapi karena|dan|lalu|terus)\b/.test(clean)) return true;
+  const words = clean.match(/[\p{L}\p{N}]+/gu) ?? [];
+  const trigrams = words.slice(0, -2).map((_, index) => words.slice(index, index + 3).join(" "));
+  return new Set(trigrams).size < trigrams.length;
+}
+
 export function clipDisplayTitle(clip: ClipFile) {
-  return clip.title?.trim() || clipTitle(clip.name);
+  const title = clip.title?.trim() || clipTitle(clip.name);
+  const editorialTitle = clip.core_message ? editorialSummaryTitle(clip.core_message) : "";
+  if (editorialTitle && transcriptTitleLooksContextDependent(title)) return editorialTitle;
+  return title;
 }
 
 async function downloadClip(url: string, filename: string) {

@@ -45,6 +45,7 @@ from api import (
     quarantine_queued_youtube_uploads_from_claimed_source,
     queue_claimed_clip_rebuild,
     repair_job_clip_context,
+    reviewed_quality_only_short_for_private_upload,
     retire_targeted_repair_source,
     youtube_monetization_preflight_issue,
     reviewed_automatic_rebuild_for_private_upload,
@@ -709,6 +710,49 @@ def test_automatic_batch_queues_only_shorts_reaching_fyp_80(monkeypatch):
     )
 
     assert [upload.clip_url for upload in uploads] == [strong.url]
+
+
+def test_automatic_batch_excludes_manual_review_quality_fallback(monkeypatch):
+    import api
+
+    manual_fallback = make_clip(1).model_copy(
+        update={"fyp_score": 91, "growth_quality_gate_passed": False}
+    )
+    automatic = make_clip(2).model_copy(
+        update={"fyp_score": 88, "growth_quality_gate_passed": True}
+    )
+    job = ClipJob(
+        id="job-manual-fallback-batch",
+        status="completed",
+        request=ClipJobRequest(source_file="/tmp/owned.mp4"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[manual_fallback, automatic],
+        candidates=[make_candidate(1, 99), make_candidate(2, 90)],
+    )
+    monkeypatch.setitem(api.jobs, job.id, job)
+    monkeypatch.setattr(api, "youtube_monetization_preflight_issue", lambda _job, _clip: None)
+    monkeypatch.setattr(
+        api,
+        "create_youtube_upload_record",
+        lambda _job_id, request: YouTubeUploadJob(
+            id=request.clip_url,
+            source_job_id=job.id,
+            clip_url=request.clip_url,
+            clip_name=request.clip_url.rsplit("/", 1)[-1],
+            status="queued",
+            title="Test upload",
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+        ),
+    )
+
+    uploads = create_youtube_upload_batch_records(
+        job.id,
+        api.YouTubeBatchUploadRequest(best_count=2),
+    )
+
+    assert [upload.clip_url for upload in uploads] == [automatic.url]
 
 
 @pytest.mark.parametrize(
@@ -3725,6 +3769,77 @@ def test_monetization_preflight_blocks_short_with_incomplete_narrative_arc(monke
 
     issue = youtube_monetization_preflight_issue(job, clip) or ""
     assert "hook, konteks, konflik, jawaban, dan ending kuat" in issue
+
+
+def test_reviewed_quality_only_short_can_enter_private_upload_review(monkeypatch):
+    import api
+
+    clip = make_clip(1).model_copy(update={"is_correct": True})
+    job = ClipJob(
+        id="job-reviewed-quality-fallback",
+        status="completed",
+        request=make_monetization_ready_url_request(),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    sidecar = {
+        "output_format": "vertical_short",
+        "score": 82,
+        "boundary_quality": "payoff_tuntas",
+        "key_point_score": 59,
+        "retention_score": 95,
+        "narrative_arc_score": 78,
+        "narrative_arc_complete": False,
+        "religious_context_safe": True,
+        "religious_context_integrity": {"safe_for_automatic_export": True},
+        "monetization_readiness": {"eligible_for_private_upload_review": True},
+    }
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: sidecar)
+
+    assert reviewed_quality_only_short_for_private_upload(clip, sidecar) is True
+    assert youtube_monetization_preflight_issue(job, clip) is None
+
+
+def test_quality_only_short_stays_blocked_without_human_review(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-unreviewed-quality-fallback",
+        status="completed",
+        request=make_monetization_ready_url_request(),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    sidecar = {
+        "output_format": "vertical_short",
+        "boundary_quality": "payoff_tuntas",
+        "key_point_score": 86,
+        "retention_score": 86,
+        "narrative_arc_score": 82,
+        "narrative_arc_complete": False,
+        "religious_context_safe": True,
+        "religious_context_integrity": {"safe_for_automatic_export": True},
+        "monetization_readiness": {"eligible_for_private_upload_review": True},
+    }
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: sidecar)
+
+    assert reviewed_quality_only_short_for_private_upload(clip, sidecar) is False
+    assert "alur Short belum lengkap" in (
+        youtube_monetization_preflight_issue(job, clip) or ""
+    )
 
 
 def test_monetization_preflight_blocks_short_with_dangling_religious_context(monkeypatch):

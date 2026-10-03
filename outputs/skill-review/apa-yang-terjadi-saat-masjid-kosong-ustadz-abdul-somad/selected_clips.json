@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "source": "https://youtu.be/iaF7Tap9m5g?si=Tt-0TK2xC43yENcE",
+  "quality_floor": 80,
+  "selected": [
+    {
+      "index": 1,
+      "start": 13.949,
+      "end": 58.75,
+      "duration": 44.801,
+      "transcript": "Enggak. Real Madrid Barcelona? Tahu. Real Madrid Barcelona itulah Andalusia mas, bro. Andalusia nama Islamnya. Ketika datang seorang perempuan bernama Ratu Isabela, habis umat Islam rata dengan tanah. Lari, pontang panting, sebagiannya lari ke Maroko, Mesir, Libya, Tunisia, Al-Jazair, Maroko, Samudera Atlantik, Real Madrid, Barcelona. Lari, mereka hanya menyebrang laut. Makanya sebagian orang Maroko yang di utara itu matanya biru, rambutnya pirang, kulitnya putih, hidungnya mancung. Kenapa? Menyebrang dari Eropa, rata dengan tanah. Begitulah, kalau kita lemah, makanya harus kita jaga masjid kita. Jangan sampai diambil apa pun.",
+      "score_breakdown": {
+        "hook_immediacy": 18,
+        "standalone_clarity": 17,
+        "payoff_and_ending": 15,
+        "retention_density": 13,
+        "emotional_or_practical_value": 8,
+        "specificity_and_novelty": 10,
+        "editability": 5,
+        "metadata_fit": 5
+      },
+      "viral_score": 91,
+      "label": "exceptional_test_candidate",
+      "title": "Apa Hubungan Andalusia dengan Real Madrid?",
+      "description": "Penceramah menghubungkan jejak Andalusia dengan nama yang sangat dikenal hari ini, lalu menutupnya dengan ajakan menjaga kemakmuran masjid. Klaim sejarah dalam cuplikan ini perlu dibandingkan dengan sumber sejarah tepercaya sebelum dipublikasikan sebagai fakta.",
+      "hashtags": ["Andalusia", "SejarahIslam", "KajianIslam", "Masjid", "Shorts"],
+      "cta": "Pelajaran apa yang paling kuat dari bagian ini?",
+      "hook_overlay": "APA HUBUNGAN ANDALUSIA DENGAN REAL MADRID?",
+      "edit_notes": [
+        "Pertahankan ucapan sumber dan tampilkan konteks overlay sejak frame pertama.",
+        "Tekankan ANDALUSIA saat nama itu pertama kali disebut.",
+        "Tampilkan payoff JAGA MASJID hanya pada kalimat penutup."
+      ],
+      "risk_flags": [
+        "historical_claim_review_required",
+        "source_rights_evidence_should_remain_attached_to_upload_record"
+      ],
+      "rights_review_required": false
+    }
+  ],
+  "rejected": [
+    {
+      "index": 2,
+      "start": 262.547,
+      "end": 289.14,
+      "duration": 26.593,
+      "viral_score": 76,
+      "reason": "Pembuka dimulai dengan kata 'tapi' dan objek 'mereka' yang membutuhkan konteks dari bagian sebelumnya; solusi penuh muncul setelah cut berakhir."
+    }
+  ],
+  "selection_summary": {
+    "requested": 2,
+    "selected": 1,
+    "outcome": "READY_FOR_RENDER",
+    "publication_review_required": true,
+    "note": "Skor adalah estimasi kualitas packaging/retention, bukan jaminan views. Upload tetap Private-first dan klaim sejarah harus direview."
+  }
+}
