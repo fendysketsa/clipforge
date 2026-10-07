@@ -26,6 +26,7 @@ TIKTOK_HOST_PROFILE_DIR="${TIKTOK_HOST_PROFILE_DIR:-$CONFIG_HOME/fendy-clipper/t
 TIKTOK_HOST_CHROME_LAUNCH_LOG="${TIKTOK_HOST_CHROME_LAUNCH_LOG:-/tmp/fendy-clipper-tiktok-chrome-launcher.log}"
 TIKTOK_UPLOAD_USE_CDP="${TIKTOK_UPLOAD_USE_CDP:-true}"
 TIKTOK_CLOSE_CDP_AFTER_LOGIN="${TIKTOK_CLOSE_CDP_AFTER_LOGIN:-false}"
+SOCIAL_BROWSER_SHARED="${SOCIAL_BROWSER_SHARED:-false}"
 DOWN_FIRST=false
 WATCH_CHROME=false
 RESET_PROFILE=false
@@ -74,6 +75,31 @@ PY
     sleep 1
   done
   return 1
+}
+
+start_legacy_tiktok_cdp_proxy() {
+  local legacy_port="${TIKTOK_LEGACY_CDP_PORT:-9444}"
+  local proxy_log="${TIKTOK_LEGACY_CDP_PROXY_LOG:-/tmp/fendy-clipper-tiktok-cdp-proxy.log}"
+  if [[ "$legacy_port" == "$YOUTUBE_CDP_PORT" ]]; then
+    return 0
+  fi
+  if curl -fsS --max-time 2 "http://127.0.0.1:${legacy_port}/json/version" >/dev/null 2>&1; then
+    echo "Endpoint kompatibilitas TikTok sudah siap di port ${legacy_port}."
+    return 0
+  fi
+  if ! command -v socat >/dev/null 2>&1; then
+    echo "Peringatan: socat tidak tersedia; backend lama perlu direcreate agar memakai browser bersama." >&2
+    return 0
+  fi
+  nohup socat \
+    "TCP-LISTEN:${legacy_port},bind=127.0.0.1,reuseaddr,fork" \
+    "TCP:127.0.0.1:${YOUTUBE_CDP_PORT}" \
+    >>"$proxy_log" 2>&1 &
+  if ! wait_for_cdp "$legacy_port"; then
+    echo "Peringatan: endpoint kompatibilitas TikTok gagal aktif; lihat ${proxy_log}." >&2
+    return 0
+  fi
+  echo "Backend lama diarahkan ke browser bersama melalui port ${legacy_port}; tidak ada Chrome kedua."
 }
 
 wait_for_backend() {
@@ -226,6 +252,10 @@ if ! wait_for_cdp "$YOUTUBE_CDP_PORT"; then
 fi
 echo "Chrome remote debugging ready on http://127.0.0.1:${YOUTUBE_CDP_PORT}."
 
+if [[ "$SOCIAL_BROWSER_SHARED" == "true" ]]; then
+  start_legacy_tiktok_cdp_proxy
+fi
+
 if [[ "$RESTORE_ONLY" == "true" ]]; then
   echo "Mode restore: menunggu container yang dipulihkan Docker restart policy..."
 else
@@ -248,10 +278,16 @@ fi
 echo "Backend ClipForge ready on http://127.0.0.1:8010."
 
 # The saved storage-state lives in ./backend/data, so it survives a container
-# recreate. Keep the already-authenticated dedicated host Chrome minimized and
-# reuse it over CDP; never start the login flow again merely because containers
-# were recreated.
-if tiktok_saved_session_ready; then
+# recreate. Reuse the already-authenticated host Chrome over CDP; never start
+# the login flow again merely because containers were recreated. Shared mode
+# keeps YouTube and TikTok in two tabs of that same browser.
+if [[ "$SOCIAL_BROWSER_SHARED" == "true" ]]; then
+  if [[ "$TIKTOK_CDP_PORT" != "$YOUTUBE_CDP_PORT" ]]; then
+    echo "SOCIAL_BROWSER_SHARED=true membutuhkan TIKTOK_CDP_URL dan YOUTUBE_CDP_URL pada port yang sama." >&2
+    exit 2
+  fi
+  echo "Browser bersama siap: tab YouTube Studio dan TikTok Studio memakai satu proses Chrome."
+elif tiktok_saved_session_ready; then
   if [[ "$TIKTOK_UPLOAD_USE_CDP" == "true" ]] \
     && ! pgrep -af "remote-debugging-port=${TIKTOK_CDP_PORT}.*${TIKTOK_HOST_PROFILE_DIR}" >/dev/null 2>&1; then
     echo "Menjalankan kembali profile TikTok yang sudah login dalam keadaan minimized..."

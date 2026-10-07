@@ -1,4 +1,8 @@
-from source_rights import source_rights_review_reasons, source_rights_risk_reasons
+from source_rights import (
+    is_reference_only_source_channel,
+    source_rights_review_reasons,
+    source_rights_risk_reasons,
+)
 
 
 def test_claimed_tv_show_reupload_is_high_risk_even_when_metadata_says_cc():
@@ -79,6 +83,45 @@ def test_noncommercial_share_invitation_is_not_misread_as_a_prohibition():
         "title": "Kajian Harian",
         "uploader": "Kanal Resmi",
         "description": "Silakan bagikan materi ini agar semakin bermanfaat.",
+    }
+
+    assert source_rights_risk_reasons(source) == []
+
+
+def test_podcast_ploudrest_is_reference_only_not_a_production_source():
+    source = {
+        "title": "Klip percakapan artis",
+        "uploader": "Podcast Ploudrest",
+        "uploader_id": "@PodcastPloudrest",
+    }
+
+    assert is_reference_only_source_channel(source) is True
+    assert any(
+        "referensi editorial" in reason
+        for reason in source_rights_risk_reasons(source)
+    )
+
+
+def test_operator_can_add_reference_only_channel_by_immutable_id(monkeypatch):
+    monkeypatch.setenv(
+        "YOUTUBE_REFERENCE_ONLY_SOURCE_CHANNEL_IDS",
+        "UC_REFERENCE_ONLY_EXAMPLE",
+    )
+    source = {
+        "channel_id": "UC_REFERENCE_ONLY_EXAMPLE",
+        "uploader": "Nama Kanal Bisa Berubah",
+    }
+
+    assert is_reference_only_source_channel(source) is True
+    assert source_rights_risk_reasons(source)
+
+
+def test_trusted_channel_override_requires_exact_channel_id(monkeypatch):
+    monkeypatch.setenv("YOUTUBE_TRUSTED_SOURCE_CHANNEL_IDS", "UC_LICENSED_OWNER")
+    source = {
+        "channel_id": "UC_LICENSED_OWNER",
+        "uploader": "Podcast Ploudrest",
+        "uploader_id": "@PodcastPloudrest",
     }
 
     assert source_rights_risk_reasons(source) == []

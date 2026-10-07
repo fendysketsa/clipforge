@@ -88,12 +88,66 @@ YOUTUBE_LOGIN_PROFILE_DIR="${YOUTUBE_LOGIN_PROFILE_DIR:-$DEFAULT_YOUTUBE_LOGIN_P
 YOUTUBE_LOGIN_PROFILE_DIRECTORY="${YOUTUBE_LOGIN_PROFILE_DIRECTORY:-${YOUTUBE_CHROMIUM_PROFILE_DIRECTORY:-Default}}"
 YOUTUBE_REFRESH_LOGIN_PROFILE="${YOUTUBE_REFRESH_LOGIN_PROFILE:-false}"
 YOUTUBE_STUDIO_URL="${YOUTUBE_STUDIO_URL:-https://studio.youtube.com}"
+SOCIAL_BROWSER_SHARED="${SOCIAL_BROWSER_SHARED:-false}"
+TIKTOK_STUDIO_URL="${TIKTOK_STUDIO_URL:-https://www.tiktok.com/tiktokstudio/upload}"
 YOUTUBE_CHROME_LOG="${YOUTUBE_CHROME_LOG:-/tmp/fendy-clipper-youtube-chrome.log}"
 YOUTUBE_CHROME_START_MINIMIZED="${YOUTUBE_CHROME_START_MINIMIZED:-false}"
 YOUTUBE_CHROME_HEADLESS="${YOUTUBE_CHROME_HEADLESS:-false}"
 YOUTUBE_CHROME_BACKGROUND="${YOUTUBE_CHROME_BACKGROUND:-false}"
 YOUTUBE_HOST_RUNTIME_DIR="${YOUTUBE_HOST_RUNTIME_DIR:-/run/fendy-clipper-host-user}"
 YOUTUBE_GUI_BRIDGE_DIR="${YOUTUBE_GUI_BRIDGE_DIR:-/app/data/youtube-gui}"
+
+ensure_browser_tabs() {
+  python - "$YOUTUBE_CDP_PORT" "$YOUTUBE_STUDIO_URL" "$SOCIAL_BROWSER_SHARED" "$TIKTOK_STUDIO_URL" <<'PY'
+import json
+import sys
+import urllib.parse
+import urllib.request
+
+port, youtube_url, shared, tiktok_url = sys.argv[1:]
+base = f"http://127.0.0.1:{port}"
+with urllib.request.urlopen(f"{base}/json/list", timeout=2) as response:
+    pages = json.load(response)
+open_urls = [str(page.get("url") or "").casefold() for page in pages]
+required = [("studio.youtube.com", youtube_url)]
+if shared == "true":
+    required.append(("tiktok.com", tiktok_url))
+for marker, target in required:
+    if any(marker in url for url in open_urls):
+        continue
+    request = urllib.request.Request(
+        f"{base}/json/new?{urllib.parse.quote(target, safe='')}",
+        method="PUT",
+    )
+    with urllib.request.urlopen(request, timeout=3):
+        pass
+PY
+}
+
+if curl -fsS --max-time 2 "http://127.0.0.1:${YOUTUBE_CDP_PORT}/json/version" >/dev/null 2>&1; then
+  ensure_browser_tabs
+  echo "Chrome bersama sudah berjalan; tab YouTube/TikTok dipastikan tersedia tanpa membuka proses baru."
+  exit 0
+fi
+
+# Both the systemd user service and a legacy desktop-autostart entry may call
+# this launcher during login. Hold one lock for the lifetime of Chrome so that
+# the startup race can never create a second browser instance.
+LAUNCH_LOCK="${YOUTUBE_CHROME_LAUNCH_LOCK:-/tmp/fendy-clipper-youtube-chrome-${YOUTUBE_CDP_PORT}.lock}"
+exec 9>"$LAUNCH_LOCK"
+if command -v flock >/dev/null 2>&1 && ! flock -n 9; then
+  deadline=$((SECONDS + 30))
+  while (( SECONDS < deadline )); do
+    if curl -fsS --max-time 2 "http://127.0.0.1:${YOUTUBE_CDP_PORT}/json/version" >/dev/null 2>&1; then
+      ensure_browser_tabs
+      echo "Launcher lain sudah membuka Chrome; tidak membuat proses kedua."
+      exit 0
+    fi
+    sleep 1
+  done
+  echo "Launcher Chrome lain masih memegang lock, tetapi CDP belum siap setelah 30 detik." >&2
+  exit 1
+fi
 
 if [[ "${IN_DOCKER:-}" != "1" ]]; then
   if [[ "$YOUTUBE_LOGIN_PROFILE_DIR" == /app/data/* ]]; then
@@ -330,12 +384,21 @@ echo "Background: ${YOUTUBE_CHROME_BACKGROUND}"
 if [[ "$YOUTUBE_CHROME_HEADLESS" == "true" ]]; then
   echo "Headless mode aktif: Chrome berjalan tanpa window. Untuk window login, jalankan: $0 --headed --background"
 fi
-echo "Command: ${CHROME_BIN} ${chrome_args[*]} ${YOUTUBE_STUDIO_URL}"
+startup_urls=()
+if [[ "$SOCIAL_BROWSER_SHARED" == "true" ]]; then
+  # Keep TikTok first for compatibility with an older running backend image,
+  # whose uploader used the first CDP page instead of selecting by hostname.
+  startup_urls+=("$TIKTOK_STUDIO_URL" "$YOUTUBE_STUDIO_URL")
+  echo "Shared social browser: YouTube Studio + TikTok Studio"
+else
+  startup_urls+=("$YOUTUBE_STUDIO_URL")
+fi
+echo "Command: ${CHROME_BIN} ${chrome_args[*]} ${startup_urls[*]}"
 
 if [[ "$YOUTUBE_CHROME_BACKGROUND" == "true" ]]; then
   "$CHROME_BIN" \
     "${chrome_args[@]}" \
-    "$YOUTUBE_STUDIO_URL" \
+    "${startup_urls[@]}" \
     >>"$YOUTUBE_CHROME_LOG" 2>&1 &
   echo "Chrome started in background. PID: $!"
   exit 0
@@ -343,5 +406,5 @@ fi
 
 exec "$CHROME_BIN" \
   "${chrome_args[@]}" \
-  "$YOUTUBE_STUDIO_URL" \
+  "${startup_urls[@]}" \
   2>>"$YOUTUBE_CHROME_LOG"

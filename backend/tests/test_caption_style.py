@@ -41,6 +41,7 @@ from clipper import (
     clean_detail_edit_filter,
     channel_watermark_filter,
     claim_rebuttal_profile,
+    contrast_banter_profile,
     cinematic_clean_finish_filter,
     cinematic_smoke_overlay_filter,
     cinematic_pov_windows,
@@ -2024,6 +2025,81 @@ def test_delayed_punchline_rejects_attack_on_someone_else():
     profile = delayed_punchline_profile(text, 20)
 
     assert profile["attacks_someone_else"] is True
+    assert profile["qualified"] is False
+
+
+def test_contrast_banter_rewards_setup_contrast_and_authentic_reaction():
+    segments = [
+        TranscriptSegment(0, 7, "Katanya ada beda gaya artis yang sudah sukses dan yang masih merintis, memang apa bedanya?"),
+        TranscriptSegment(7, 15, "Host lalu bertanya supaya contohnya jelas dan tidak cuma menjadi anggapan umum."),
+        TranscriptSegment(15, 24, "Kalau yang sudah sukses menaruh satu bungkus rokok di meja, sedangkan yang belum sukses masih minta satu batang."),
+        TranscriptSegment(24, 34, "Tapi itu cuma candaan dari obrolan mereka. Nah itu bedanya, semua langsung tertawa hahaha."),
+    ]
+    text = " ".join(item.text for item in segments)
+
+    profile = contrast_banter_profile(text, 34)
+    metrics = candidate_story_metrics(segments, 34)
+    score, reasons = score_window(segments, 34)
+
+    assert profile["qualified"] is True
+    assert profile["contrast_beat_count"] >= 2
+    assert profile["authentic_source_reaction"] is True
+    assert profile["health_sensitive_topic"] is True
+    assert profile["manual_health_context_review_required"] is True
+    assert profile["harmful_product_promotion"] is False
+    assert metrics["contrast_banter_qualified"] is True
+    assert metrics["boundary_quality"] == "payoff_tuntas"
+    assert score >= 78
+    assert "banter podcast punya setup, kontras, dan reaksi/payoff autentik" in reasons
+
+
+def test_contrast_banter_uses_original_restrained_visual_treatment():
+    text = (
+        "Katanya ada beda gaya artis yang sudah sukses dan yang masih merintis, memang apa bedanya? "
+        "Host lalu bertanya supaya contohnya jelas dan tidak cuma menjadi anggapan umum. "
+        "Kalau yang sudah sukses menaruh satu bungkus rokok di meja, sedangkan yang belum sukses masih minta satu batang. "
+        "Tapi itu cuma candaan dari obrolan mereka. Nah itu bedanya, semua langsung tertawa hahaha."
+    )
+    clip = ClipCandidate(
+        index=1,
+        start=0,
+        end=34,
+        duration=34,
+        score=92,
+        title="Apa Bedanya Gaya Mereka",
+        reason="setup, kontras, dan reaksi tuntas",
+        text=text,
+        hook="Memang apa bedanya?",
+        loop_score=64,
+        boundary_quality="payoff_tuntas",
+    )
+
+    plan = auto_fyp_visual_plan(clip, "vertical_short")
+    readiness = five_k_experiment_readiness(clip, "vertical_short")
+    growth = codex_growth_blueprint(clip, "vertical_short")
+
+    assert plan["accent"] == "banter_payoff"
+    assert plan["opening_context_seconds"] == 1.2
+    assert plan["visual_restraint"]["maximum_virtual_camera_cuts"] == 4
+    assert plan["visual_restraint"]["reaction_stickers_allowed"] is False
+    assert plan["visual_restraint"]["authentic_source_reaction_priority"] is True
+    assert plan["visual_restraint"]["dialogue_first_audio"] is True
+    assert readiness["signals"]["contrast_banter_22_50_seconds"] is True
+    assert readiness["signals"]["manual_claim_and_context_review_required"] is True
+    assert growth["conversion"]["visible_end_card"] is False
+    assert growth["reference_learning"]["reference_channel_used_for_ideas_not_source_media"] is True
+
+
+def test_contrast_banter_rejects_harmful_product_promotion():
+    text = (
+        "Katanya ada beda antara dua pembicara, memang apa bedanya? Host bertanya lalu mereka menjawab. "
+        "Kalau yang satu biasa saja, sedangkan yang lain bilang rokok bikin sukses dan semua orang harus merokok. "
+        "Tapi itulah bedanya, lalu semua tertawa hahaha setelah jawaban tersebut."
+    )
+
+    profile = contrast_banter_profile(text, 32)
+
+    assert profile["harmful_product_promotion"] is True
     assert profile["qualified"] is False
 
 

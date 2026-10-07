@@ -808,6 +808,157 @@ def delayed_punchline_profile(
     }
 
 
+# Fast podcast banter works when the clip contains a clear setup, a concrete
+# contrast, and an earned response/reaction at the end. This profile borrows
+# only that editorial grammar; it does not rely on an aggregator's headline,
+# crop, footage, logo, or caption layout.
+CONTRAST_BANTER_SETUP_WORDS = {
+    "apa",
+    "beda",
+    "bedanya",
+    "gimana",
+    "kenapa",
+    "kok",
+    "katanya",
+    "misalnya",
+}
+CONTRAST_BANTER_TURN_PHRASES = (
+    "beda dengan",
+    "dibanding",
+    "kalau yang",
+    "lain lagi",
+    "padahal",
+    "sedangkan",
+    "sementara",
+    "tapi",
+    "versus",
+)
+CONTRAST_BANTER_DIALOGUE_WORDS = {
+    "bilang",
+    "jawab",
+    "kata",
+    "ngomong",
+    "nanya",
+    "tanya",
+}
+CONTRAST_BANTER_PAYOFF_WORDS = {
+    "bedanya",
+    "intinya",
+    "jadinya",
+    "makanya",
+    "ternyata",
+}
+CONTRAST_BANTER_HEALTH_SENSITIVE_WORDS = {
+    "alkohol",
+    "miras",
+    "narkoba",
+    "rokok",
+    "vape",
+}
+CONTRAST_BANTER_HARMFUL_PROMOTION_PHRASES = (
+    "harus merokok",
+    "keren kalau merokok",
+    "merokok bikin sukses",
+    "rokok bikin sukses",
+    "wajib merokok",
+)
+
+
+def contrast_banter_profile(
+    text: str,
+    duration: float,
+    *,
+    opening_text: str = "",
+    closing_text: str = "",
+) -> dict[str, object]:
+    """Detect podcast setup -> contrast -> authentic reaction/payoff banter."""
+    normalized = re.sub(r"\s+", " ", text).strip().casefold()
+    words = re.findall(r"[\w']+", normalized)
+    if not opening_text:
+        opening_text = " ".join(words[: min(24, max(10, len(words) // 3))])
+    if not closing_text:
+        closing_count = min(30, max(12, math.ceil(len(words) * 0.34)))
+        closing_text = " ".join(words[-closing_count:])
+    opening = re.sub(r"\s+", " ", opening_text).strip().casefold()
+    closing = re.sub(r"\s+", " ", closing_text).strip().casefold()
+    opening_words = set(re.findall(r"[\w']+", opening))
+    all_words = set(words)
+    closing_words = set(re.findall(r"[\w']+", closing))
+
+    clear_setup = bool(
+        "?" in opening
+        or opening_words.intersection(CONTRAST_BANTER_SETUP_WORDS)
+    )
+    contrast_count = sum(
+        phrase in normalized for phrase in CONTRAST_BANTER_TURN_PHRASES
+    ) + min(2, words.count("beda") + words.count("bedanya"))
+    conversational_turn = bool(
+        normalized.count("?") >= 1
+        or all_words.intersection(CONTRAST_BANTER_DIALOGUE_WORDS)
+    )
+    authentic_reaction = bool(
+        closing_words.intersection(LAUGH_WORDS)
+        or re.search(r"(?:^|\W)(?:ha){2,}(?:\W|$)|w+k+w+k+|he(?:he)+", closing)
+    )
+    closing_payoff = bool(
+        closing_words.intersection(CONTRAST_BANTER_PAYOFF_WORDS)
+        or (authentic_reaction and contrast_count >= 1)
+    )
+    health_sensitive_topic = bool(
+        all_words.intersection(CONTRAST_BANTER_HEALTH_SENSITIVE_WORDS)
+    )
+    harmful_promotion = any(
+        phrase in normalized for phrase in CONTRAST_BANTER_HARMFUL_PROMOTION_PHRASES
+    )
+    safety = editorial_safety_profile(text)
+    duration_fit = 22.0 <= duration <= 50.0
+    word_count_fit = 30 <= len(words) <= 125
+    speech_density = len(words) / max(1.0, duration)
+    speech_density_fit = 1.10 <= speech_density <= 3.40
+    structure_score = sum(
+        (
+            20 if clear_setup else 0,
+            min(24, contrast_count * 12),
+            16 if conversational_turn else 0,
+            18 if closing_payoff else 0,
+            10 if authentic_reaction else 0,
+            4 if duration_fit else 0,
+            4 if word_count_fit else 0,
+            4 if speech_density_fit else 0,
+        )
+    )
+    qualified = bool(
+        duration_fit
+        and word_count_fit
+        and speech_density_fit
+        and clear_setup
+        and contrast_count >= 1
+        and conversational_turn
+        and closing_payoff
+        and safety["safe_for_selection"]
+        and not harmful_promotion
+    )
+    return {
+        "version": 1,
+        "qualified": qualified,
+        "structure_score": min(100, structure_score),
+        "duration_fit_22_50_seconds": duration_fit,
+        "word_count_fit": word_count_fit,
+        "speech_density_words_per_second": round(speech_density, 3),
+        "speech_density_fit": speech_density_fit,
+        "clear_setup": clear_setup,
+        "contrast_beat_count": contrast_count,
+        "conversational_turn": conversational_turn,
+        "closing_payoff": closing_payoff,
+        "authentic_source_reaction": authentic_reaction,
+        "health_sensitive_topic": health_sensitive_topic,
+        "harmful_product_promotion": harmful_promotion,
+        "manual_health_context_review_required": health_sensitive_topic,
+        "synthetic_laughter_or_ridicule_added": False,
+        "copied_reference_assets": False,
+    }
+
+
 # Longer Shorts need visible progression rather than a static branded frame.
 # This profile rewards a question, multiple comparison/evidence beats, and a
 # qualified conclusion. It remains topic-agnostic, while sensitive religious
@@ -5821,6 +5972,7 @@ def five_k_experiment_readiness(
     micro_thesis = micro_thesis_profile(clip.text, clip.duration)
     social_anecdote = social_anecdote_profile(clip.text, clip.duration)
     delayed_punchline = delayed_punchline_profile(clip.text, clip.duration)
+    contrast_banter = contrast_banter_profile(clip.text, clip.duration)
     structured_comparison = structured_comparison_profile(clip.text, clip.duration)
     claim_rebuttal = claim_rebuttal_profile(clip.text, clip.duration)
     subscriber_intent = subscriber_intent_profile(clip)
@@ -5902,6 +6054,10 @@ def five_k_experiment_readiness(
             "delayed_punchline_structure_score": int(
                 delayed_punchline["structure_score"]
             ),
+            "contrast_banter_22_50_seconds": bool(contrast_banter["qualified"]),
+            "contrast_banter_structure_score": int(
+                contrast_banter["structure_score"]
+            ),
             "structured_comparison_38_60_seconds": bool(
                 structured_comparison["qualified"]
             ),
@@ -5922,6 +6078,7 @@ def five_k_experiment_readiness(
             "manual_claim_and_context_review_required": bool(
                 structured_comparison["manual_claim_and_context_review_required"]
                 or claim_rebuttal["manual_claim_and_context_review_required"]
+                or contrast_banter["manual_health_context_review_required"]
             ),
         },
         "measure_after_publish": (
@@ -6025,6 +6182,8 @@ def five_k_experiment_readiness(
             "demean_or_attack_protected_religious_group": False,
             "sensitive_comparison_requires_manual_claim_review": True,
             "duplicate_cold_open_excerpt": False,
+            "reference_aggregator_used_as_production_source": False,
+            "health_sensitive_banter_requires_manual_context_review": True,
         },
     }
 
@@ -6789,6 +6948,12 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
         opening_text=opening,
         closing_text=closing,
     )
+    contrast_banter = contrast_banter_profile(
+        text,
+        duration,
+        opening_text=opening,
+        closing_text=closing,
+    )
     structured_comparison = structured_comparison_profile(
         text,
         duration,
@@ -6827,6 +6992,10 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
             and delayed_punchline["late_punchline"]
         )
         or (
+            contrast_banter["qualified"]
+            and contrast_banter["closing_payoff"]
+        )
+        or (
             structured_comparison["qualified"]
             and structured_comparison["qualified_resolution"]
         )
@@ -6846,6 +7015,7 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
         or micro_thesis["qualified"]
         or social_anecdote["qualified"]
         or delayed_punchline["qualified"]
+        or contrast_banter["qualified"]
         or structured_comparison["qualified"]
         or claim_rebuttal["qualified"]
         or extended_short["qualified"]
@@ -6880,6 +7050,7 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
     key_point_score += 14 if micro_thesis["qualified"] else 0
     key_point_score += 14 if social_anecdote["qualified"] else 0
     key_point_score += 14 if delayed_punchline["qualified"] else 0
+    key_point_score += 14 if contrast_banter["qualified"] else 0
     key_point_score += 14 if structured_comparison["qualified"] else 0
     key_point_score += 14 if claim_rebuttal["qualified"] else 0
     key_point_score += 16 if extended_short["qualified"] else 0
@@ -6899,6 +7070,7 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
         concept_overlap - IMPORTANT_WORDS - PAYOFF_WORDS
         or social_anecdote["qualified"]
         or delayed_punchline["qualified"]
+        or contrast_banter["qualified"]
         or structured_comparison["qualified"]
         or claim_rebuttal["qualified"]
         or extended_short["qualified"]
@@ -6909,6 +7081,7 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
     loop_score += 35 if question_to_payoff else 20 if hook_to_payoff else 0
     loop_score += 25 if social_anecdote["qualified"] else 0
     loop_score += 25 if delayed_punchline["qualified"] else 0
+    loop_score += 20 if contrast_banter["qualified"] else 0
     loop_score += 12 if structured_comparison["qualified"] else 0
     loop_score += 12 if claim_rebuttal["qualified"] else 0
     loop_score += 12 if extended_short["qualified"] else 0
@@ -6935,6 +7108,8 @@ def candidate_story_metrics(items: list[TranscriptSegment], duration: float) -> 
         "social_anecdote_score": int(social_anecdote["structure_score"]),
         "delayed_punchline_qualified": bool(delayed_punchline["qualified"]),
         "delayed_punchline_score": int(delayed_punchline["structure_score"]),
+        "contrast_banter_qualified": bool(contrast_banter["qualified"]),
+        "contrast_banter_score": int(contrast_banter["structure_score"]),
         "structured_comparison_qualified": bool(structured_comparison["qualified"]),
         "structured_comparison_score": int(structured_comparison["structure_score"]),
         "claim_rebuttal_qualified": bool(claim_rebuttal["qualified"]),
@@ -6986,6 +7161,14 @@ def is_meaningful_candidate_end(
             closing_text=" ".join(item.text for item in window[-2:]),
         )["qualified"]
     )
+    contrast_banter_complete = bool(
+        contrast_banter_profile(
+            " ".join(item.text for item in window),
+            window_duration,
+            opening_text=" ".join(item.text for item in window[:2]),
+            closing_text=" ".join(item.text for item in window[-3:]),
+        )["qualified"]
+    )
     structured_comparison_complete = bool(
         structured_comparison_profile(
             " ".join(item.text for item in window),
@@ -7020,6 +7203,7 @@ def is_meaningful_candidate_end(
         or micro_thesis_complete
         or social_anecdote_complete
         or delayed_punchline_complete
+        or contrast_banter_complete
         or structured_comparison_complete
         or claim_rebuttal_complete
         or extended_short_complete
@@ -7152,6 +7336,12 @@ def candidate_fyp_analysis(
         opening_text=opening_text,
         closing_text=" ".join(item.text for item in items[-3:]),
     )
+    contrast_banter = contrast_banter_profile(
+        text,
+        duration,
+        opening_text=opening_text,
+        closing_text=" ".join(item.text for item in items[-3:]),
+    )
     structured_comparison = structured_comparison_profile(
         text,
         duration,
@@ -7213,6 +7403,10 @@ def candidate_fyp_analysis(
     if delayed_punchline["qualified"]:
         strengths.append(
             "tanya-jawab singkat menahan punchline diri sendiri sampai beat terakhir"
+        )
+    if contrast_banter["qualified"]:
+        strengths.append(
+            "banter podcast bergerak dari setup ke kontras lalu reaksi/payoff autentik"
         )
     if structured_comparison["qualified"]:
         strengths.append(
@@ -7359,6 +7553,12 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
         opening_text=opening_text,
         closing_text=" ".join(item.text for item in items[-3:]),
     )
+    contrast_banter = contrast_banter_profile(
+        text,
+        duration,
+        opening_text=opening_text,
+        closing_text=" ".join(item.text for item in items[-3:]),
+    )
     structured_comparison = structured_comparison_profile(
         text,
         duration,
@@ -7409,6 +7609,10 @@ def score_window(items: list[TranscriptSegment], duration: float) -> tuple[int, 
     if delayed_punchline["qualified"]:
         score += 16
         reasons.append("tanya-jawab punya jawaban nyata dan punchline akhir yang aman")
+
+    if contrast_banter["qualified"]:
+        score += 16
+        reasons.append("banter podcast punya setup, kontras, dan reaksi/payoff autentik")
 
     if structured_comparison["qualified"]:
         score += 16
@@ -7768,6 +7972,7 @@ def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0
     micro_thesis = micro_thesis_profile(candidate.text, candidate.duration)
     social_anecdote = social_anecdote_profile(candidate.text, candidate.duration)
     delayed_punchline = delayed_punchline_profile(candidate.text, candidate.duration)
+    contrast_banter = contrast_banter_profile(candidate.text, candidate.duration)
     structured_comparison = structured_comparison_profile(candidate.text, candidate.duration)
     claim_rebuttal = claim_rebuttal_profile(candidate.text, candidate.duration)
     islamic_story = islamic_story_radar_profile(candidate.text, candidate.duration)
@@ -7777,6 +7982,8 @@ def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0
         if social_anecdote["qualified"]
         else 20.0
         if delayed_punchline["qualified"]
+        else 34.0
+        if contrast_banter["qualified"]
         else 52.0
         if structured_comparison["qualified"]
         else 48.0
@@ -7806,6 +8013,7 @@ def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0
         + (4.0 if micro_thesis["qualified"] else 0.0)
         + (4.0 if social_anecdote["qualified"] else 0.0)
         + (4.0 if delayed_punchline["qualified"] else 0.0)
+        + (4.0 if contrast_banter["qualified"] else 0.0)
         + (4.0 if structured_comparison["qualified"] else 0.0)
         + (4.0 if claim_rebuttal["qualified"] else 0.0)
         + (5.0 if high_information_extended else 0.0)
@@ -8414,6 +8622,10 @@ def ai_rescore_candidates(
             "heuristic_weaknesses": candidate.weaknesses,
             "micro_thesis": micro_thesis_profile(candidate.text, candidate.duration),
             "social_anecdote": social_anecdote_profile(
+                candidate.text,
+                candidate.duration,
+            ),
+            "contrast_banter": contrast_banter_profile(
                 candidate.text,
                 candidate.duration,
             ),
@@ -9178,6 +9390,7 @@ def auto_fyp_visual_plan(
     micro_thesis = micro_thesis_profile(clip.text, clip.duration)
     social_anecdote = social_anecdote_profile(clip.text, clip.duration)
     delayed_punchline = delayed_punchline_profile(clip.text, clip.duration)
+    contrast_banter = contrast_banter_profile(clip.text, clip.duration)
     structured_comparison = structured_comparison_profile(clip.text, clip.duration)
     claim_rebuttal = claim_rebuttal_profile(clip.text, clip.duration)
     retention_cadence = (
@@ -9194,6 +9407,9 @@ def auto_fyp_visual_plan(
     elif output_format == "vertical_short" and delayed_punchline["qualified"]:
         accent = "payoff_teaser"
         reason = "question_answer_late_self_directed_punchline"
+    elif output_format == "vertical_short" and contrast_banter["qualified"]:
+        accent = "banter_payoff"
+        reason = "podcast_setup_contrast_authentic_reaction_payoff"
     elif output_format == "vertical_short" and claim_rebuttal["qualified"]:
         accent = "claim_rebuttal"
         reason = "allegation_direct_answer_evidence_stake_fair_principle"
@@ -9267,7 +9483,7 @@ def auto_fyp_visual_plan(
     }
 
     return {
-        "version": 8,
+        "version": 9,
         "base": "cinematic_clean_detail",
         "accent": accent,
         "reason": reason,
@@ -9284,6 +9500,7 @@ def auto_fyp_visual_plan(
         "micro_thesis": micro_thesis,
         "social_anecdote": social_anecdote,
         "delayed_punchline": delayed_punchline,
+        "contrast_banter": contrast_banter,
         "structured_comparison": structured_comparison,
         "claim_rebuttal": claim_rebuttal,
         "narrative_arc": {
@@ -9296,6 +9513,8 @@ def auto_fyp_visual_plan(
             if accent == "story_punchline"
             else 1.65
             if accent == "payoff_teaser"
+            else 1.2
+            if accent == "banter_payoff"
             else 2.4
             if accent == "evidence_stage"
             else 1.05
@@ -9308,10 +9527,11 @@ def auto_fyp_visual_plan(
         "three_beat_evidence_rail": accent == "evidence_stage",
         "visual_restraint": {
             "stable_speaker_priority": accent
-            in {"claim_rebuttal", "restrained_authority", "reverent_focus"},
+            in {"banter_payoff", "claim_rebuttal", "restrained_authority", "reverent_focus"},
             "face_and_gesture_priority": accent
             in {
                 "context_briefing",
+                "banter_payoff",
                 "dialogue_focus",
                 "guided_steps",
                 "evidence_stage",
@@ -9327,6 +9547,8 @@ def auto_fyp_visual_plan(
                 if accent == "story_punchline"
                 else 5
                 if accent == "payoff_teaser"
+                else 4
+                if accent == "banter_payoff"
                 else 5
                 if accent == "evidence_stage"
                 else 4
@@ -9344,6 +9566,7 @@ def auto_fyp_visual_plan(
             "reaction_stickers_allowed": accent
             not in {
                 "context_briefing",
+                "banter_payoff",
                 "dialogue_focus",
                 "guided_steps",
                 "evidence_stage",
@@ -9355,10 +9578,11 @@ def auto_fyp_visual_plan(
                 "story_punchline",
             },
             "authentic_source_reaction_priority": accent
-            in {"payoff_teaser", "story_punchline"},
+            in {"banter_payoff", "payoff_teaser", "story_punchline"},
             "cinematic_smoke_allowed": accent
             not in {
                 "context_briefing",
+                "banter_payoff",
                 "dialogue_focus",
                 "guided_steps",
                 "evidence_stage",
@@ -9372,6 +9596,7 @@ def auto_fyp_visual_plan(
             "dialogue_first_audio": accent
             in {
                 "context_briefing",
+                "banter_payoff",
                 "dialogue_focus",
                 "guided_steps",
                 "evidence_stage",
@@ -9387,6 +9612,8 @@ def auto_fyp_visual_plan(
                 if accent == "story_punchline"
                 else 3.1
                 if accent == "payoff_teaser"
+                else 4.2
+                if accent == "banter_payoff"
                 else 7.2
                 if accent == "evidence_stage"
                 else 6.4
@@ -9777,6 +10004,8 @@ def shorts_engagement_prompt(clip: ClipCandidate) -> str:
     searchable = f"{clip.title} {clip.hook} {clip.text}".casefold()
     if claim_rebuttal_profile(clip.text, clip.duration)["qualified"]:
         prompt = "BUKTI MANA YANG PALING KUAT?"
+    elif contrast_banter_profile(clip.text, clip.duration)["qualified"]:
+        prompt = "BEDANYA MASUK AKAL MENURUTMU?"
     elif structured_comparison_profile(clip.text, clip.duration)["qualified"]:
         prompt = "BAGIAN MANA PERLU DICEK LAGI?"
     elif delayed_punchline_profile(clip.text, clip.duration)["qualified"]:
@@ -9806,6 +10035,8 @@ def subscribe_value_prompt(clip: ClipCandidate) -> str:
     searchable = f"{clip.title} {clip.hook} {clip.pov} {clip.text}".casefold()
     if claim_rebuttal_profile(clip.text, clip.duration)["qualified"]:
         prompt = "SUBSCRIBE UNTUK KLARIFIKASI & CEK BUKTI"
+    elif contrast_banter_profile(clip.text, clip.duration)["qualified"]:
+        prompt = "SUBSCRIBE UNTUK OBROLAN & SUDUT PANDANG BARU"
     elif structured_comparison_profile(clip.text, clip.duration)["qualified"]:
         prompt = "SUBSCRIBE UNTUK ARGUMEN & CEK FAKTA"
     elif delayed_punchline_profile(clip.text, clip.duration)["qualified"]:
@@ -9873,6 +10104,7 @@ def shorts_should_protect_payoff(clip: ClipCandidate) -> bool:
         or clip.loop_score >= 45
         or social_anecdote_profile(clip.text, clip.duration)["qualified"]
         or delayed_punchline_profile(clip.text, clip.duration)["qualified"]
+        or contrast_banter_profile(clip.text, clip.duration)["qualified"]
         or structured_comparison_profile(clip.text, clip.duration)["qualified"]
         or claim_rebuttal_profile(clip.text, clip.duration)["qualified"]
     )
@@ -12900,6 +13132,7 @@ def codex_growth_blueprint(
     micro_thesis = micro_thesis_profile(clip.text, clip.duration)
     social_anecdote = social_anecdote_profile(clip.text, clip.duration)
     delayed_punchline = delayed_punchline_profile(clip.text, clip.duration)
+    contrast_banter = contrast_banter_profile(clip.text, clip.duration)
     structured_comparison = structured_comparison_profile(clip.text, clip.duration)
     claim_rebuttal = claim_rebuttal_profile(clip.text, clip.duration)
     protect_short_payoff = is_short and shorts_should_protect_payoff(clip)
@@ -12952,6 +13185,7 @@ def codex_growth_blueprint(
             "micro_thesis_strategy": micro_thesis if is_short else None,
             "social_anecdote_strategy": social_anecdote if is_short else None,
             "delayed_punchline_strategy": delayed_punchline if is_short else None,
+            "contrast_banter_strategy": contrast_banter if is_short else None,
             "structured_comparison_strategy": structured_comparison if is_short else None,
             "claim_rebuttal_strategy": claim_rebuttal if is_short else None,
             "first_30_editorial_readiness_score": clip.retention_score if is_short else None,
@@ -12962,6 +13196,7 @@ def codex_growth_blueprint(
                 "dilemma_nuance_safety_boundary_nonjudgmental_payoff",
                 "social_friction_chronology_comparison_self_directed_payoff",
                 "question_answer_truthful_teaser_late_self_directed_punchline",
+                "podcast_setup_contrast_authentic_reaction_payoff",
                 "question_three_evidence_beats_fair_resolution",
                 "allegation_direct_answer_evidence_stake_fair_principle",
             ],
@@ -12971,6 +13206,7 @@ def codex_growth_blueprint(
                     micro_thesis["qualified"]
                     or social_anecdote["qualified"]
                     or delayed_punchline["qualified"]
+                    or contrast_banter["qualified"]
                     or structured_comparison["qualified"]
                     or claim_rebuttal["qualified"]
                     or extended_short_ready
@@ -12990,6 +13226,10 @@ def codex_growth_blueprint(
             "claim_rebuttal_requires_manual_claim_review": bool(
                 claim_rebuttal["manual_claim_and_context_review_required"]
             ),
+            "health_sensitive_banter_requires_manual_context_review": bool(
+                contrast_banter["manual_health_context_review_required"]
+            ),
+            "reference_channel_used_for_ideas_not_source_media": True,
             "intrusive_share_overlay_or_mixed_source_branding_copied": False,
             "rights_and_originality_gate_unchanged": True,
         },
@@ -14072,6 +14312,7 @@ def export_clip(
         auto_visual_plan.get("opening_context_seconds", SHORTS_TITLE_OVERLAY_SECONDS)
     )
     dialogue_first_accent = auto_visual_accent in {
+        "banter_payoff",
         "claim_rebuttal",
         "context_briefing",
         "dialogue_focus",
@@ -14141,6 +14382,8 @@ def export_clip(
                 if auto_visual_accent == "story_punchline"
                 else 2.6
                 if auto_visual_accent == "payoff_teaser"
+                else 3.4
+                if auto_visual_accent == "banter_payoff"
                 else 4.8
                 if auto_visual_accent == "claim_rebuttal"
                 else 9.0
@@ -14263,6 +14506,7 @@ def export_clip(
                 cue for cue in sound_effect_cues if cue.kind in {"laugh", "shock"}
             ][:1]
         elif auto_visual_accent in {
+            "banter_payoff",
             "claim_rebuttal",
             "context_briefing",
             "guided_steps",
@@ -14384,6 +14628,11 @@ def export_clip(
             applied_edits.append(
                 "Mode claim-rebuttal memakai kartu pertanyaan 1,05 detik, pembicara dan gestur sebagai visual utama, "
                 "maksimal empat reframe, caption dinamis, serta tanpa overlay share, musik, SFX, atau branding referensi."
+            )
+        elif auto_visual_accent == "banter_payoff":
+            applied_edits.append(
+                "Mode banter-payoff memakai kartu kontras singkat 1,2 detik, menjaga kedua pembicara dan reaksi asli sebagai fokus, "
+                "maksimal empat reframe, serta tanpa bar kuning, branding, musik, SFX, atau tawa sintetis dari kanal referensi."
             )
         elif auto_visual_accent == "restrained_authority":
             applied_edits.append(
@@ -14682,6 +14931,17 @@ def export_clip(
             "reference_wording_speaker_branding_or_footage_copied": False,
             "original_or_properly_licensed_source_still_required": True,
         },
+        "contrast_banter_strategy": {
+            **contrast_banter_profile(clip.text, duration),
+            "generalized_pattern": "podcast_setup_contrast_authentic_reaction_payoff",
+            "opening_context_seconds": title_overlay_seconds,
+            "preserve_detected_speaker_composition": True,
+            "preserve_authentic_source_reaction": True,
+            "synthetic_laughter_or_ridicule_added": False,
+            "reference_headline_bar_branding_layout_or_footage_copied": False,
+            "reference_channel_is_idea_source_only": True,
+            "original_episode_and_provable_rights_still_required": True,
+        },
         "structured_comparison_strategy": {
             **structured_comparison_profile(clip.text, duration),
             "generalized_pattern": "question_three_evidence_beats_fair_resolution",
@@ -14713,6 +14973,9 @@ def export_clip(
                 or claim_rebuttal_profile(clip.text, duration)[
                     "manual_claim_and_context_review_required"
                 ]
+                or contrast_banter_profile(clip.text, duration)[
+                    "manual_health_context_review_required"
+                ]
                 or religious_context_audit["manual_source_and_claim_review_required"]
                 or religious_claim_review["review_required"]
             ),
@@ -14723,6 +14986,7 @@ def export_clip(
                 "preserve_context_and_attribution",
                 "remove_protected_group_attacks_or_inferiority_claims",
                 "confirm_source_rights_before_publication",
+                "review_health_sensitive_products_without_glamorization",
             ],
         },
         "background_mode": background_mode,
@@ -14847,6 +15111,8 @@ def export_clip(
                     if auto_visual_accent == "evidence_stage"
                     else "brief_claim_card_then_speaker_led_rebuttal"
                     if auto_visual_accent == "claim_rebuttal"
+                    else "brief_contrast_card_then_authentic_conversation_payoff"
+                    if auto_visual_accent == "banter_payoff"
                     else "fast_scan_context_headline"
                 ),
                 "transcript_grounded": True,
@@ -16426,6 +16692,7 @@ def export_compilation(
             "available_accents": [
                 "cinematic_clean",
                 "restrained_authority",
+                "banter_payoff",
                 "claim_rebuttal",
                 "story_punchline",
                 "payoff_teaser",

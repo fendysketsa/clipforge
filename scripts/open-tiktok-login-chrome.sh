@@ -25,10 +25,19 @@ if [[ -z "$TIKTOK_CDP_PORT" && "$TIKTOK_CDP_URL" =~ :([0-9]+)(/.*)?$ ]]; then
 fi
 TIKTOK_CDP_PORT="${TIKTOK_CDP_PORT:-9444}"
 
-if [[ "${YOUTUBE_CDP_URL:-}" == "$TIKTOK_CDP_URL" ]]; then
+if [[ "${YOUTUBE_CDP_URL:-}" == "$TIKTOK_CDP_URL" && "${SOCIAL_BROWSER_SHARED:-false}" != "true" ]]; then
   echo "Port Chrome TikTok bertabrakan dengan YouTube: $TIKTOK_CDP_URL" >&2
   echo "Gunakan port khusus TikTok, misalnya TIKTOK_CDP_URL=http://127.0.0.1:9444" >&2
   exit 2
+fi
+
+if [[ "${SOCIAL_BROWSER_SHARED:-false}" == "true" ]]; then
+  if curl -fsS --max-time 2 "$TIKTOK_CDP_URL/json/version" >/dev/null 2>&1; then
+    echo "Browser bersama YouTube/TikTok sudah terbuka dan CDP siap: $TIKTOK_CDP_URL"
+    exit 0
+  fi
+  echo "Browser bersama belum aktif. Jalankan open-youtube-login-chrome.sh agar kedua tab dibuka dalam satu Chrome." >&2
+  exit 3
 fi
 
 if [[ "${IN_DOCKER:-}" != "1" && "$TIKTOK_LOGIN_PROFILE_DIR" == /app/data/* ]]; then

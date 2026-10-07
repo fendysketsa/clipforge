@@ -226,6 +226,9 @@ DEFAULT_YOUTUBE_TARGET_CHANNEL_ID = "UCAOZF9Qzj6DYoXKtLnP4UUQ"
 DEFAULT_YOUTUBE_AUTO_UPLOAD_COUNT = 2
 DEFAULT_YOUTUBE_PUBLIC_DAILY_LIMIT = 2
 DEFAULT_YOUTUBE_PUBLIC_MIN_GAP_HOURS = 6
+DEFAULT_YOUTUBE_RECOVERY_SHORT_MAX_SECONDS = 60
+DEFAULT_YOUTUBE_RECOVERY_PUBLIC_MIN_GAP_HOURS = 20
+DEFAULT_YOUTUBE_RECOVERY_NICHE = "islamic_practical_life"
 DEFAULT_YOUTUBE_AI_FALLBACK_MODELS = ["llama3.2-id:latest", "llama3:latest"]
 DEFAULT_TIKTOK_TARGET_HANDLE = "titikbalikislami"
 DEFAULT_TIKTOK_TARGET_EMAIL = "fendycn88@gmail.com"
@@ -287,7 +290,10 @@ def safe_youtube_visibility(
 ) -> Literal["private", "unlisted", "public"]:
     value = (requested or os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "private")).strip().lower()
     visibility = value if value in {"private", "unlisted", "public"} else "private"
-    if visibility == "public" and not env_bool("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", False):
+    if visibility == "public" and (
+        youtube_channel_recovery_mode()
+        or not env_bool("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", False)
+    ):
         return "private"
     return visibility  # type: ignore[return-value]
 
@@ -318,27 +324,68 @@ def env_float(name: str, default: float) -> float:
         return default
 
 
+def youtube_channel_recovery_mode() -> bool:
+    """Use a conservative publishing profile while channel reach is recovering."""
+    return env_bool("YOUTUBE_CHANNEL_RECOVERY_MODE", False)
+
+
+def youtube_recovery_short_max_seconds() -> float:
+    return bounded_float_env(
+        "YOUTUBE_RECOVERY_SHORT_MAX_SECONDS",
+        DEFAULT_YOUTUBE_RECOVERY_SHORT_MAX_SECONDS,
+        30.0,
+        90.0,
+    )
+
+
+def youtube_recovery_niche() -> "IslamicContentNiche":
+    configured = os.environ.get(
+        "YOUTUBE_RECOVERY_NICHE",
+        DEFAULT_YOUTUBE_RECOVERY_NICHE,
+    ).strip()
+    if configured in ISLAMIC_EVERGREEN_NICHES and configured != "auto":
+        return configured  # type: ignore[return-value]
+    return DEFAULT_YOUTUBE_RECOVERY_NICHE  # type: ignore[return-value]
+
+
 def youtube_auto_upload_count() -> int:
-    return max(1, min(MAX_REQUESTED_CLIPS, env_int("YOUTUBE_AUTO_UPLOAD_COUNT", DEFAULT_YOUTUBE_AUTO_UPLOAD_COUNT)))
+    configured = max(
+        1,
+        min(
+            MAX_REQUESTED_CLIPS,
+            env_int("YOUTUBE_AUTO_UPLOAD_COUNT", DEFAULT_YOUTUBE_AUTO_UPLOAD_COUNT),
+        ),
+    )
+    return 1 if youtube_channel_recovery_mode() else configured
 
 
 def youtube_public_daily_limit() -> int:
-    return max(
+    configured = max(
         1,
         min(
             3,
             env_int("YOUTUBE_PUBLIC_DAILY_LIMIT", DEFAULT_YOUTUBE_PUBLIC_DAILY_LIMIT),
         ),
     )
+    return 1 if youtube_channel_recovery_mode() else configured
 
 
 def youtube_public_min_gap_hours() -> float:
-    return bounded_float_env(
+    configured = bounded_float_env(
         "YOUTUBE_PUBLIC_MIN_GAP_HOURS",
         DEFAULT_YOUTUBE_PUBLIC_MIN_GAP_HOURS,
         1.0,
         24.0,
     )
+    if not youtube_channel_recovery_mode():
+        return configured
+    recovery_gap = bounded_float_env(
+        "YOUTUBE_RECOVERY_PUBLIC_MIN_GAP_HOURS",
+        DEFAULT_YOUTUBE_RECOVERY_PUBLIC_MIN_GAP_HOURS,
+        12.0,
+        24.0,
+    )
+    return max(configured, recovery_gap)
 
 
 class ClipJobRequest(BaseModel):
@@ -411,6 +458,15 @@ class ClipJobRequest(BaseModel):
     @classmethod
     def _clean_compliance_text(cls, value: str) -> str:
         return re.sub(r"\s+", " ", value).strip()
+
+    @model_validator(mode="after")
+    def _apply_channel_recovery_profile(self) -> "ClipJobRequest":
+        if youtube_channel_recovery_mode() and self.clip_mode == "short":
+            recovery_max = youtube_recovery_short_max_seconds()
+            self.max_duration = min(self.max_duration, recovery_max)
+            if self.min_duration >= self.max_duration:
+                self.min_duration = max(5.0, self.max_duration - 10.0)
+        return self
 
 
 AUTOMATIC_SOURCE_RIGHTS_ATTESTATION = (
@@ -1773,6 +1829,16 @@ class AutoViralRequest(BaseModel):
 
     @model_validator(mode="after")
     def _apply_niche_priority(self) -> "AutoViralRequest":
+        if youtube_channel_recovery_mode():
+            if self.niche == "auto":
+                self.niche = youtube_recovery_niche()
+            self.clips_per_video = 1
+            self.max_duration = min(
+                self.max_duration,
+                youtube_recovery_short_max_seconds(),
+            )
+            if self.min_duration >= self.max_duration:
+                self.min_duration = max(5.0, self.max_duration - 10.0)
         self.queries = prioritized_niche_queries(self.niche, self.queries)[:80]
         if (
             self.niche in {"islamic_current_viral", "islamic_politics_society"}
@@ -3510,6 +3576,14 @@ def youtube_public_cadence_issue(
     current = current.astimezone(timezone.utc)
     publish_tz = youtube_publish_timezone()
     current_local = current.astimezone(publish_tz)
+    pause_until = parsed_datetime(os.environ.get("YOUTUBE_PUBLIC_PAUSE_UNTIL", ""))
+    if pause_until is not None and current < pause_until:
+        pause_local = pause_until.astimezone(publish_tz)
+        return (
+            "Mode pemulihan menahan publikasi sampai "
+            f"{pause_local.strftime('%d-%m-%Y %H:%M')} "
+            f"({getattr(publish_tz, 'key', 'WIB')}). Upload dan review sebagai Private saja."
+        )
     publications = [
         item
         for item in youtube_recent_publication_times(include_remote=include_remote)
@@ -3592,7 +3666,10 @@ def youtube_config_payload() -> YouTubeConfig:
         auth_status_message = f"Chromium profile belum ditemukan di container: {YOUTUBE_CHROMIUM_USER_DATA_DIR}"
     else:
         auth_status_message = f"Storage state belum ada: {YOUTUBE_PLAYWRIGHT_STATE}"
-    cadence_issue = youtube_public_cadence_issue(include_remote=False)
+    # Manual publication in YouTube Studio is outside ClipForge's upload
+    # records. Include the public channel feed so the UI cannot incorrectly
+    # advertise an open slot after a Private video was made Public elsewhere.
+    cadence_issue = youtube_public_cadence_issue(include_remote=True)
     return YouTubeConfig(
         enabled=playwright_installed() and youtube_upload_auth_ready(),
         playwright_installed=playwright_installed(),
@@ -3614,7 +3691,13 @@ def youtube_config_payload() -> YouTubeConfig:
         public_min_gap_hours=youtube_public_min_gap_hours(),
         public_cadence_message=(
             cadence_issue
-            or "Slot public tersedia; tetap review Private sebelum menerbitkan."
+            or (
+                "Mode pemulihan aktif: pilih satu Short "
+                f"{SHORT_GROWTH_MIN_SECONDS}–{youtube_recovery_short_max_seconds():.0f} detik, "
+                "publikasikan maksimal satu per hari, dan pertahankan niche yang sama."
+                if youtube_channel_recovery_mode()
+                else "Slot public tersedia; tetap review Private sebelum menerbitkan."
+            )
         ),
         active_upload_id=active_youtube_upload_id(),
     )
@@ -4971,6 +5054,16 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
                 f"pertumbuhan {SHORT_GROWTH_MIN_SECONDS}–{SHORT_GROWTH_MAX_SECONDS} detik. "
                 "Render ulang dengan konteks, jawaban, dan payoff yang utuh."
             )
+        if (
+            youtube_channel_recovery_mode()
+            and duration > youtube_recovery_short_max_seconds()
+        ):
+            recovery_max = youtube_recovery_short_max_seconds()
+            return (
+                f"Upload ditahan oleh mode pemulihan channel: durasi {duration:.1f} detik "
+                f"melewati batas eksperimen {recovery_max:.0f} detik. Pangkas ke satu hook, "
+                "satu jawaban, dan satu payoff sebelum masuk antrean."
+            )
         if duration > SHORT_GROWTH_MAX_SECONDS:
             return (
                 f"Upload diblokir: durasi {duration:.1f} detik melewati profil pertumbuhan "
@@ -5400,6 +5493,14 @@ _SUSPICIOUS_METADATA_WORD_RE = re.compile(
     flags=re.IGNORECASE,
 )
 
+_DEFAULT_BLOCKED_PUBLIC_TITLE_TERMS = frozenset(
+    {
+        "bintah",
+        "ngeruti",
+        "turyanya",
+    }
+)
+
 
 def metadata_has_suspicious_typo(value: str) -> bool:
     """Catch obvious garbled AI/ASR tokens before they become public copy.
@@ -5413,6 +5514,38 @@ def metadata_has_suspicious_typo(value: str) -> bool:
         _SUSPICIOUS_METADATA_WORD_RE.fullmatch(word)
         for word in re.findall(r"[A-Za-z]+", value)
     )
+
+
+def public_title_quality_issue(value: str, *, is_compilation: bool = False) -> str | None:
+    """Reject obvious ASR debris before a title can enter the upload queue."""
+    clean = re.sub(r"(?:\s*#[\w\d_]+)+\s*$", "", value).strip()
+    words = re.findall(r"[^\W_]+", clean.casefold(), flags=re.UNICODE)
+    minimum_length = 24
+    maximum_length = 96 if is_compilation else 70
+    if len(clean) < minimum_length or len(words) < 4:
+        return "judul terlalu pendek untuk menjelaskan topik dan konflik secara jelas"
+    if len(clean) > maximum_length:
+        return f"judul melebihi {maximum_length} karakter sebelum hashtag"
+    if not public_title_has_complete_ending(clean):
+        return "judul terpotong atau berakhir pada kata penghubung"
+    if metadata_has_suspicious_typo(clean):
+        return "judul memuat token yang tampak rusak akibat ASR"
+
+    blocked_terms = {
+        *(_DEFAULT_BLOCKED_PUBLIC_TITLE_TERMS),
+        *(
+            item.casefold()
+            for item in env_csv("YOUTUBE_TITLE_BLOCKED_TERMS")
+        ),
+    }
+    bad_terms = sorted({word for word in words if word in blocked_terms})
+    if bad_terms:
+        return f"judul memuat kata ASR yang belum terverifikasi: {', '.join(bad_terms)}"
+    if re.search(r"(?i)^di\s+sejak\b|\bsoalnya\s+kini\s+ke\b", clean):
+        return "susunan judul tampak rusak dan wajib ditulis ulang"
+    if len(clean) >= 12 and clean.upper() == clean and re.search(r"[A-Z]", clean):
+        return "judul memakai huruf kapital seluruhnya"
+    return None
 
 
 def ensure_two_description_paragraphs(value: str) -> str:
@@ -5471,7 +5604,10 @@ def normalized_generated_metadata(payload: dict, *, is_compilation: bool) -> dic
     description = ensure_two_description_paragraphs(description)
     if (
         not clean_title
-        or not public_title_has_complete_ending(clean_title)
+        or public_title_quality_issue(
+            clean_title,
+            is_compilation=is_compilation,
+        )
         or len(description) < 110
         or "\n\n" not in description
         or metadata_has_suspicious_typo(f"{clean_title}\n{description}")
@@ -6446,6 +6582,23 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
     )
     title = repair_known_public_typos(title)
     description = repair_known_public_typos(description)
+    packaged_title = (
+        youtube_long_form_title(title)
+        if is_compilation_clip(job, clip)
+        else youtube_shorts_title(title)
+    )
+    title_issue = public_title_quality_issue(
+        packaged_title,
+        is_compilation=is_compilation_clip(job, clip),
+    )
+    if title_issue:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Upload diblokir: {title_issue}. Metadata wajib dibuat ulang dan "
+                "diperiksa sebelum masuk antrean Private."
+            ),
+        )
     description = complete_youtube_description(job, clip, description, tags)
     description = append_youtube_chapters(description, clip)
     description = append_youtube_source_attribution(description, job)
@@ -6465,11 +6618,7 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         status="queued",
         created_at=now,
         updated_at=now,
-        title=(
-            youtube_long_form_title(title)
-            if is_compilation_clip(job, clip)
-            else youtube_shorts_title(title)
-        ),
+        title=packaged_title,
         description=description,
         thumbnail_url=safe_thumbnail_url,
         thumbnail_attached=False,
@@ -6546,6 +6695,7 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
     if job.status != "completed":
         raise HTTPException(status_code=409, detail="Job belum selesai")
 
+    explicitly_selected = bool(request.clip_urls)
     if request.clip_urls:
         clip_urls = list(dict.fromkeys(request.clip_urls))
     else:
@@ -6576,6 +6726,17 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
                 "sumber lain atau proses ulang sumber; fallback review manual tidak dimasukkan ke auto-upload."
             ),
         )
+
+    if youtube_channel_recovery_mode() and len(clip_urls) > 1:
+        if explicitly_selected:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Mode pemulihan channel hanya mengizinkan satu kandidat terbaik per antrean. "
+                    "Pilih satu Short, review sebagai Private, lalu publikasikan sesuai slot harian."
+                ),
+            )
+        clip_urls = clip_urls[:1]
 
     if safe_youtube_visibility(request.visibility) == "public" and len(clip_urls) > 1:
         raise HTTPException(
@@ -9431,8 +9592,17 @@ def tiktok_cdp_ready() -> bool:
     return bool(payload.get("webSocketDebuggerUrl"))
 
 
+def social_browser_is_shared() -> bool:
+    return (
+        env_bool("SOCIAL_BROWSER_SHARED", False)
+        and TIKTOK_CDP_URL.rstrip("/") == YOUTUBE_CDP_URL.rstrip("/")
+    )
+
+
 def tiktok_chrome_rendering_broken() -> bool:
     """Return true when the current Chrome instance cannot render on X11."""
+    if social_browser_is_shared():
+        return False
     lines = tail_text_file(TIKTOK_CHROME_LOG, 240)
     last_start = -1
     for index, line in enumerate(lines):
@@ -9458,6 +9628,11 @@ def tiktok_cdp_port() -> str:
 def stop_tiktok_cdp_processes() -> None:
     """Stop only Chrome instances using ClipForge's dedicated TikTok CDP port."""
     global tiktok_cdp_process
+    if social_browser_is_shared():
+        # TikTok shares YouTube's persistent Chrome. A TikTok recovery must
+        # never terminate the YouTube tab or the common browser process.
+        tiktok_cdp_process = None
+        return
     process = tiktok_cdp_process
     if process is not None and process.poll() is None:
         try:
@@ -9556,7 +9731,10 @@ def tiktok_chrome_startup_error(
 
 def open_tiktok_login_browser(logs: list[str]) -> None:
     global tiktok_cdp_process
-    if TIKTOK_CDP_URL.rstrip("/") == YOUTUBE_CDP_URL.rstrip("/"):
+    if (
+        TIKTOK_CDP_URL.rstrip("/") == YOUTUBE_CDP_URL.rstrip("/")
+        and not social_browser_is_shared()
+    ):
         raise RuntimeError(
             "Port Chrome TikTok bertabrakan dengan YouTube. Set TIKTOK_CDP_URL ke port khusus "
             "(contoh http://127.0.0.1:9444), lalu restart backend."

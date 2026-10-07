@@ -675,6 +675,9 @@ def test_uploader_forces_public_request_to_private_by_default(monkeypatch):
     monkeypatch.setenv("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", "true")
     assert safe_upload_visibility("public") == "public"
 
+    monkeypatch.setenv("YOUTUBE_CHANNEL_RECOVERY_MODE", "true")
+    assert safe_upload_visibility("public") == "private"
+
 
 def test_custom_thumbnail_is_attempted_for_shorts_and_long_form(tmp_path):
     short = tmp_path / "clip_01.mp4"

@@ -42,6 +42,7 @@ from api import (
     create_youtube_upload_batch_records,
     monitor_youtube_upload_process,
     normalized_generated_metadata,
+    public_title_quality_issue,
     quarantine_queued_youtube_uploads_from_claimed_source,
     queue_claimed_clip_rebuild,
     repair_job_clip_context,
@@ -55,6 +56,10 @@ from api import (
     youtube_source_attribution,
     youtube_growth_targets,
     youtube_metadata_provider_configs,
+    youtube_auto_upload_count,
+    youtube_public_daily_limit,
+    youtube_public_min_gap_hours,
+    youtube_recovery_short_max_seconds,
     youtube_public_cadence_issue,
     youtube_recent_publication_times,
     youtube_shorts_title,
@@ -71,6 +76,7 @@ from api import (
 from youtube_uploader import (
     normalized_upload_metadata,
     studio_start_url,
+    upload_title_quality_issue,
     youtube_shorts_title as uploader_youtube_shorts_title,
 )
 
@@ -80,6 +86,7 @@ def isolate_openrouter_env(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_BASE_URL", raising=False)
     monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+    monkeypatch.delenv("YOUTUBE_CHANNEL_RECOVERY_MODE", raising=False)
 
 
 def make_clip(index: int) -> ClipFile:
@@ -586,6 +593,55 @@ def test_public_cadence_allows_slot_after_six_hours(monkeypatch):
     )
 
     assert youtube_public_cadence_issue(now) is None
+
+
+def test_channel_recovery_profile_clamps_upload_volume_and_cadence(monkeypatch):
+    monkeypatch.setenv("YOUTUBE_CHANNEL_RECOVERY_MODE", "true")
+    monkeypatch.setenv("YOUTUBE_AUTO_UPLOAD_COUNT", "5")
+    monkeypatch.setenv("YOUTUBE_PUBLIC_DAILY_LIMIT", "3")
+    monkeypatch.setenv("YOUTUBE_PUBLIC_MIN_GAP_HOURS", "6")
+    monkeypatch.setenv("YOUTUBE_RECOVERY_PUBLIC_MIN_GAP_HOURS", "20")
+    monkeypatch.setenv("YOUTUBE_RECOVERY_SHORT_MAX_SECONDS", "60")
+
+    assert youtube_auto_upload_count() == 1
+    assert youtube_public_daily_limit() == 1
+    assert youtube_public_min_gap_hours() == 20
+    assert youtube_recovery_short_max_seconds() == 60
+
+
+def test_public_cadence_honors_explicit_recovery_pause(monkeypatch):
+    now = datetime(2026, 10, 6, 8, 45, tzinfo=timezone.utc)
+    monkeypatch.setenv("YOUTUBE_PUBLISH_TIMEZONE", "Asia/Jakarta")
+    monkeypatch.setenv(
+        "YOUTUBE_PUBLIC_PAUSE_UNTIL",
+        "2026-10-08T15:45:00+07:00",
+    )
+    monkeypatch.setattr(
+        "api.youtube_recent_publication_times",
+        lambda **_kwargs: pytest.fail("remote activity should not be fetched during pause"),
+    )
+
+    issue = youtube_public_cadence_issue(now)
+
+    assert issue is not None
+    assert "08-10-2026 15:45" in issue
+
+
+def test_channel_recovery_profile_locks_auto_campaign_to_one_niche(monkeypatch):
+    import api
+
+    monkeypatch.setenv("YOUTUBE_CHANNEL_RECOVERY_MODE", "true")
+    monkeypatch.setenv("YOUTUBE_RECOVERY_NICHE", "islamic_practical_life")
+    request = api.AutoViralRequest(
+        niche="auto",
+        clips_per_video=4,
+        min_duration=25,
+        max_duration=180,
+    )
+
+    assert request.niche == "islamic_practical_life"
+    assert request.clips_per_video == 1
+    assert request.max_duration == 60
 
 
 def test_recent_publications_deduplicates_local_upload_and_youtube_activity(monkeypatch):
@@ -4493,6 +4549,36 @@ def test_normalized_generated_metadata_rejects_incomplete_title_ending():
     }
 
     assert normalized_generated_metadata(payload, is_compilation=False) is None
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Mengapa Saya Hidup Saya Nggak Ngeruti Hidup Anda",
+        "Mengaku Turyanya Rasul, Apa Itu Sebenarnya?",
+        "DI SEJAK BAIK DIRENCANAKAN MAU JADILAH JIHAD",
+    ],
+)
+def test_public_title_quality_rejects_observed_asr_debris(title):
+    assert public_title_quality_issue(title) is not None
+
+
+def test_public_title_quality_accepts_clear_specific_title():
+    assert (
+        public_title_quality_issue(
+            "Bicara Buruk Bisa Menghapus Nilai Amal Ibadah"
+        )
+        is None
+    )
+
+
+def test_direct_uploader_title_gate_matches_recovery_policy():
+    assert upload_title_quality_issue(
+        "Mengaku Turyanya Rasul, Apa Itu Sebenarnya?"
+    )
+    assert upload_title_quality_issue(
+        "Bicara Buruk Bisa Menghapus Nilai Amal Ibadah"
+    ) is None
 
 
 def test_normalized_generated_metadata_deduplicates_required_title_hashtags():

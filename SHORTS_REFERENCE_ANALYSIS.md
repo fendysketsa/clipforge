@@ -270,3 +270,42 @@ Audit dilakukan 22 September 2026 dari metadata publik dan inspeksi frame video.
 - Overlay **share this video** yang menutupi wajah dan caption pada payoff.
 - Asumsi bahwa views tinggi membuktikan template, hak pakai, atau kelayakan monetisasi.
 - Crop dan subtitle sebagai satu-satunya kontribusi editorial; sumber pihak ketiga tetap membutuhkan hak komersial serta transformasi substantif yang terlihat.
+
+---
+
+# Referensi 7: `@PodcastPloudrest`
+
+Audit terbatas dilakukan 6 Oktober 2026 dari screenshot yang diberikan operator. Halaman channel, status monetisasi, lisensi, izin, dan episode asli tidak berhasil diverifikasi; angka publik pada screenshot dapat berubah.
+
+## Fakta yang terlihat pada screenshot
+
+- Short menampilkan percakapan dua orang dalam komposisi vertikal bertumpuk.
+- Headline tengah berbunyi **“KEISHA ALVARO INI BEDANYA ROKOK ARTIS SUKSES DAN ENGGAK”**.
+- UI memperlihatkan sekitar **747 ribu suka** dan **2.314 komentar**.
+- Handle yang terlihat adalah **@PodcastPloudrest**.
+- Screenshot tidak membuktikan centang verifikasi, izin dari pemilik podcast, status YPP, pembagian pendapatan Content ID, atau hak komersial atas audio dan visual.
+
+## Pola yang dapat digeneralisasi
+
+1. Subjek dan kontras sudah terbaca dalam satu headline singkat sebelum payoff.
+2. Kedua pembicara dan reaksi autentiknya tetap terlihat; respons lawan bicara ikut menjadi bagian cerita.
+3. Alur yang berguna adalah setup → pembanding konkret → reaksi/payoff, bukan sekadar kutipan acak.
+4. Dialog mulai sejak frame awal sehingga kartu konteks tidak berubah menjadi intro kosong.
+5. Potensi replay berasal dari reaksi akhir yang terasa alami, bukan tawa atau stiker reaksi buatan.
+
+## Yang diterapkan ke ClipForge
+
+- Detector `contrast_banter_profile` untuk setup → kontras → giliran percakapan → reaksi/payoff autentik.
+- Rentang khusus **22–50 detik**, **30–125 kata**, dan **1,10–3,40 kata/detik**.
+- Kandidat yang lolos diarahkan ke target sekitar **34 detik** dan memperoleh bonus ranking hanya bila payoff tuntas.
+- Visual `banter_payoff`: kartu kontras adaptif sekitar 1,2 detik, maksimal empat reframe, kedua pembicara dan gestur asli diprioritaskan, tanpa bar headline kuning, musik, SFX, tawa sintetis, atau branding referensi.
+- Penyebutan rokok, vape, alkohol, miras, atau narkoba memicu review konteks manual. Promosi eksplisit seperti “merokok bikin sukses” tidak dapat meloloskan profil.
+- CTA visual akhir disembunyikan agar reaksi/payoff tetap utuh.
+- Channel ini dicatat sebagai **reference-only**: uploadnya ditolak sebagai media sumber produksi. Operator harus mencari episode asli dan membuktikan hak audio-visual sebelum pemrosesan.
+
+## Yang sengaja tidak ditiru
+
+- Footage hasil edit, crop, wajah, wording, headline, caption, logo, palet, dan layout identik milik channel referensi.
+- Asumsi bahwa angka suka besar atau tampilan profesional membuktikan monetisasi dan izin.
+- Penggunaan nama channel referensi sebagai sumber atribusi bila pemegang hak sebenarnya adalah podcast lain.
+- Glamorization produk berisiko kesehatan demi membuat hook lebih sensasional.

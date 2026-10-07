@@ -868,6 +868,83 @@ def test_tiktok_session_state_is_complete_and_atomically_replaced(tmp_path):
     assert list(tmp_path.glob("*.tmp")) == []
 
 
+def test_shared_browser_session_export_keeps_only_tiktok(monkeypatch, tmp_path):
+    monkeypatch.setenv("SOCIAL_BROWSER_SHARED", "true")
+
+    class Context:
+        def storage_state(self):
+            return {
+                "cookies": [
+                    {"name": "sessionid", "domain": ".tiktok.com"},
+                    {"name": "SID", "domain": ".google.com"},
+                    {"name": "LOGIN_INFO", "domain": ".youtube.com"},
+                ],
+                "origins": [
+                    {"origin": "https://www.tiktok.com", "localStorage": []},
+                    {"origin": "https://studio.youtube.com", "localStorage": []},
+                ],
+            }
+
+    state = tmp_path / "session.json"
+    save_session_state(Context(), state)
+
+    payload = json.loads(state.read_text(encoding="utf-8"))
+    assert [cookie["domain"] for cookie in payload["cookies"]] == [".tiktok.com"]
+    assert [origin["origin"] for origin in payload["origins"]] == ["https://www.tiktok.com"]
+
+
+def test_shared_browser_hydrates_tiktok_state_without_google_cookies(tmp_path):
+    state = tmp_path / "session.json"
+    state.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "sessionid", "domain": ".tiktok.com", "value": "tt"},
+                    {"name": "SID", "domain": ".google.com", "value": "google"},
+                ],
+                "origins": [
+                    {
+                        "origin": "https://www.tiktok.com",
+                        "localStorage": [{"name": "user", "value": "active"}],
+                    },
+                    {"origin": "https://studio.youtube.com", "localStorage": []},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class Context:
+        def __init__(self):
+            self.cookies = []
+            self.scripts = []
+
+        def add_cookies(self, cookies):
+            self.cookies.extend(cookies)
+
+        def add_init_script(self, *, script):
+            self.scripts.append(script)
+
+    context = Context()
+    assert tiktok_uploader.hydrate_cdp_context_from_state(context, state) is True
+    assert [cookie["domain"] for cookie in context.cookies] == [".tiktok.com"]
+    assert "www.tiktok.com" in context.scripts[0]
+    assert "studio.youtube.com" not in context.scripts[0]
+
+
+def test_shared_browser_selects_tiktok_tab_without_reusing_youtube():
+    youtube = SimpleNamespace(url="https://studio.youtube.com/channel/demo")
+    tiktok = SimpleNamespace(url="https://www.tiktok.com/tiktokstudio/upload")
+
+    class Context:
+        pages = [youtube, tiktok]
+
+        def new_page(self):
+            raise AssertionError("existing TikTok tab must be reused")
+
+    assert tiktok_uploader.select_tiktok_page(Context()) is tiktok
+
+
 def test_successful_cdp_login_minimizes_dedicated_browser_by_default(monkeypatch, tmp_path):
     class Page:
         def set_default_timeout(self, _timeout):

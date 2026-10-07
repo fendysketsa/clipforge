@@ -56,6 +56,13 @@ SOURCE_RIGHTS_COMMERCIAL_PATTERNS = (
     r"\bmoneti[sz](?:e|ed|ation|asi)\b",
 )
 
+# Channels in this registry are useful for editorial research, but are not
+# accepted as production sources. Keep the exact public handle/name narrowly
+# scoped; immutable Channel IDs supplied by the operator remain the preferred
+# identifier once they are known.
+BUILTIN_REFERENCE_ONLY_HANDLES = {"@podcastploudrest"}
+BUILTIN_REFERENCE_ONLY_NAMES = {"podcast ploudrest"}
+
 
 def trusted_source_channel_ids() -> set[str]:
     """Return operator-approved channels with documented reuse rights."""
@@ -64,6 +71,28 @@ def trusted_source_channel_ids() -> set[str]:
         for value in os.environ.get("YOUTUBE_TRUSTED_SOURCE_CHANNEL_IDS", "").split(",")
         if value.strip()
     }
+
+
+def reference_only_source_channel_ids() -> set[str]:
+    """Return channels explicitly approved for research, never media reuse."""
+    return {
+        value.strip()
+        for value in os.environ.get(
+            "YOUTUBE_REFERENCE_ONLY_SOURCE_CHANNEL_IDS", ""
+        ).split(",")
+        if value.strip()
+    }
+
+
+def reference_only_source_handles() -> set[str]:
+    configured = {
+        value.strip().casefold()
+        for value in os.environ.get(
+            "YOUTUBE_REFERENCE_ONLY_SOURCE_HANDLES", ""
+        ).split(",")
+        if value.strip()
+    }
+    return BUILTIN_REFERENCE_ONLY_HANDLES | configured
 
 
 def source_channel_ids(info: dict[str, Any]) -> set[str]:
@@ -78,6 +107,23 @@ def is_trusted_source_channel(info: dict[str, Any]) -> bool:
     """Match immutable Channel IDs exactly; mutable display names are unsafe."""
     configured = trusted_source_channel_ids()
     return bool(configured and source_channel_ids(info) & configured)
+
+
+def is_reference_only_source_channel(info: dict[str, Any]) -> bool:
+    """Identify editorial-reference channels without treating them as owners."""
+    configured_ids = reference_only_source_channel_ids()
+    if configured_ids and source_channel_ids(info) & configured_ids:
+        return True
+    uploader_id = str(info.get("uploader_id") or "").strip().casefold()
+    uploader_name = re.sub(
+        r"\s+",
+        " ",
+        str(info.get("uploader") or info.get("channel") or ""),
+    ).strip().casefold()
+    return bool(
+        uploader_id in reference_only_source_handles()
+        or uploader_name in BUILTIN_REFERENCE_ONLY_NAMES
+    )
 
 
 def source_rights_review_reasons(info: dict[str, Any]) -> list[str]:
@@ -121,6 +167,10 @@ def source_rights_risk_reasons(info: dict[str, Any]) -> list[str]:
         str(info.get("description") or ""),
     ).strip().casefold()
     reasons: list[str] = []
+    if is_reference_only_source_channel(info):
+        reasons.append(
+            "kanal ditetapkan hanya sebagai referensi editorial; cari episode dan pemegang hak asli sebelum produksi"
+        )
     explicitly_blocks_commercial_republishing = bool(
         description
         and any(re.search(pattern, description, re.I) for pattern in SOURCE_RIGHTS_REPUBLISH_PATTERNS)

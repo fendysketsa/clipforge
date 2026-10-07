@@ -13,7 +13,11 @@ from typing import Iterable
 
 import imageio_ffmpeg
 
-from islamic_text import repair_islamic_asr_text, trim_public_title
+from islamic_text import (
+    public_title_has_complete_ending,
+    repair_islamic_asr_text,
+    trim_public_title,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -65,9 +69,20 @@ def env_int(name: str, default: int) -> int:
         return default
 
 
+def recovery_short_max_seconds() -> float:
+    try:
+        configured = float(os.environ.get("YOUTUBE_RECOVERY_SHORT_MAX_SECONDS", "60"))
+    except ValueError:
+        configured = 60.0
+    return max(30.0, min(90.0, configured))
+
+
 def safe_upload_visibility(requested: str) -> str:
     visibility = requested if requested in {"private", "unlisted", "public"} else "private"
-    if visibility == "public" and not env_bool("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", False):
+    if visibility == "public" and (
+        env_bool("YOUTUBE_CHANNEL_RECOVERY_MODE", False)
+        or not env_bool("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", False)
+    ):
         return "private"
     return visibility
 
@@ -169,6 +184,36 @@ def normalized_upload_metadata(video_path: Path, title: str, description: str) -
         else youtube_shorts_title(clean_title)
     )
     return normalized_title, clean_description[:5000]
+
+
+def upload_title_quality_issue(value: str, *, is_long_form: bool = False) -> str | None:
+    clean = re.sub(r"(?:\s*#[\w\d_]+)+\s*$", "", value).strip()
+    words = re.findall(r"[^\W_]+", clean.casefold(), flags=re.UNICODE)
+    maximum_length = 96 if is_long_form else 70
+    if len(clean) < 24 or len(words) < 4:
+        return "judul terlalu pendek untuk menjelaskan topik dan konflik secara jelas"
+    if len(clean) > maximum_length:
+        return f"judul melebihi {maximum_length} karakter sebelum hashtag"
+    if not public_title_has_complete_ending(clean):
+        return "judul terpotong atau berakhir pada kata penghubung"
+    blocked_terms = {
+        "bintah",
+        "ngeruti",
+        "turyanya",
+        *(
+            item.strip().casefold()
+            for item in os.environ.get("YOUTUBE_TITLE_BLOCKED_TERMS", "").split(",")
+            if item.strip()
+        ),
+    }
+    bad_terms = sorted({word for word in words if word in blocked_terms})
+    if bad_terms:
+        return f"judul memuat kata ASR yang belum terverifikasi: {', '.join(bad_terms)}"
+    if re.search(r"(?i)^di\s+sejak\b|\bsoalnya\s+kini\s+ke\b", clean):
+        return "susunan judul tampak rusak dan wajib ditulis ulang"
+    if len(clean) >= 12 and clean.upper() == clean and re.search(r"[A-Z]", clean):
+        return "judul memakai huruf kapital seluruhnya"
+    return None
 
 
 def probe_upload_media_duration_seconds(video_path: Path) -> float:
@@ -6023,7 +6068,27 @@ def run_upload(args: argparse.Namespace) -> None:
             "akan ditangani secara konservatif."
         )
 
+    if (
+        env_bool("YOUTUBE_CHANNEL_RECOVERY_MODE", False)
+        and args.thumbnail_content_type == "shorts"
+        and args.media_duration_seconds > recovery_short_max_seconds()
+    ):
+        raise UploadError(
+            "Mode pemulihan channel menahan Short "
+            f"{args.media_duration_seconds:.1f} detik; batas saat ini "
+            f"{recovery_short_max_seconds():.0f} detik."
+        )
+
     upload_title, upload_description = normalized_upload_metadata(video_path, args.title, args.description)
+    if env_bool("YOUTUBE_CHANNEL_RECOVERY_MODE", False):
+        title_issue = upload_title_quality_issue(
+            upload_title,
+            is_long_form=args.thumbnail_content_type == "long-form",
+        )
+        if title_issue:
+            raise UploadError(
+                f"Mode pemulihan channel menahan upload: {title_issue}."
+            )
 
     headless = args.headless if args.headless is not None else env_bool("YOUTUBE_HEADLESS", True)
     slow_mo = int(os.environ.get("YOUTUBE_BROWSER_SLOW_MO_MS", "0"))

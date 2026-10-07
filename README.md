@@ -228,8 +228,11 @@ user to choose `TIKTOK_TARGET_EMAIL` and finish login. ClipForge saves the
 browser session only after the active TikTok profile is verified against
 `TIKTOK_TARGET_HANDLE`. `scripts/recreate-compose-up.sh` preserves and reuses
 that saved session. When a session is already present it does not start login
-again. Normal uploads reuse the dedicated host-owned Chrome profile over CDP
-port 9444, while its window stays minimized in the background. The window only
+again. Normal uploads can reuse a dedicated host-owned Chrome profile over CDP
+while its window stays minimized in the background. Set
+`SOCIAL_BROWSER_SHARED=true`, point `TIKTOK_CDP_URL` at `YOUTUBE_CDP_URL`, and
+enable `TIKTOK_CDP_HYDRATE_STORAGE_STATE=true` to use one Chrome window with a
+YouTube Studio tab and a TikTok Studio tab. The window only
 needs user attention for the first login, CAPTCHA, or a genuinely expired
 session. Set `TIKTOK_UPLOAD_USE_CDP=false` only to troubleshoot with a copied
 headless storage-state; some TikTok sessions reject that separate context.
@@ -277,7 +280,7 @@ user service once:
 The service runs in the background as `clipforge-autostart.service`. Docker's
 `restart: unless-stopped` policy restores the containers; the user service runs
 `recreate-compose-up.sh --restore` to wait for that stack and restore the GUI
-bridge plus dedicated browser sessions without rebuilding images, requiring
+bridge plus the configured browser session without rebuilding images, requiring
 sudo, creating new profiles, or forcing a new login.
 
 Alternatively, reuse a Chromium/Chrome profile that is already logged in to the
@@ -424,6 +427,14 @@ Owned broadcaster/media/studio channels can be configured in
 Use it only for channels you own or for which you hold documented commercial audio and
 visual reuse rights. It suppresses the name-based heuristic, not YouTube Studio Checks,
 and does not clear third-party material that may exist inside a video.
+Channels studied only for editorial patterns can be placed in
+`YOUTUBE_REFERENCE_ONLY_SOURCE_CHANNEL_IDS` (preferred) or
+`YOUTUBE_REFERENCE_ONLY_SOURCE_HANDLES`. ClipForge may learn general hook, pacing,
+conversation, and payoff structures from them, but rejects their uploads as production
+sources and asks for the original episode plus provable rights. Podcast Ploudrest is
+registered this way: its fast setup → contrast → authentic reaction pattern may activate
+the restrained `banter_payoff` edit, while its footage, headline bar, wording, branding,
+and caption layout are never copied.
 CC BY attribution is appended to the YouTube
 description, while rendered MP4 files do not inherit source container metadata or
 chapters. New renders also carry a monetization-readiness audit; upload is blocked
@@ -476,6 +487,12 @@ YOUTUBE_TARGET_CHANNEL=ryuundyofficial
 YOUTUBE_TARGET_EMAIL=fendysketsa@gmail.com
 YOUTUBE_TARGET_CHANNEL_ID=UCAOZF9Qzj6DYoXKtLnP4UUQ
 YOUTUBE_STUDIO_URL=https://studio.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ
+YOUTUBE_CHANNEL_RECOVERY_MODE=false
+YOUTUBE_RECOVERY_SHORT_MAX_SECONDS=60
+YOUTUBE_RECOVERY_PUBLIC_MIN_GAP_HOURS=20
+YOUTUBE_RECOVERY_NICHE=islamic_practical_life
+YOUTUBE_TITLE_BLOCKED_TERMS=ngeruti,turyanya,bintah
+YOUTUBE_PUBLIC_PAUSE_UNTIL=
 YOUTUBE_AUTO_UPLOAD_COUNT=2
 YOUTUBE_PUBLIC_DAILY_LIMIT=2
 YOUTUBE_PUBLIC_MIN_GAP_HOURS=6
@@ -505,6 +522,14 @@ YOUTUBE_DIRECT_UPLOAD_INPUT_TIMEOUT_MS=15000
 YOUTUBE_ALLOW_DIRECT_UPLOAD_PAGE_FALLBACK=true
 YOUTUBE_DRY_RUN=false
 ```
+
+Set `YOUTUBE_CHANNEL_RECOVERY_MODE=true` saat reach channel sedang turun. Mode
+ini mengunci auto-upload ke satu kandidat, satu niche, maksimal satu publikasi
+per hari, jeda sedikitnya `YOUTUBE_RECOVERY_PUBLIC_MIN_GAP_HOURS`, serta menahan
+Short yang melewati `YOUTUBE_RECOVERY_SHORT_MAX_SECONDS` atau memiliki judul
+rusak. `YOUTUBE_PUBLIC_PAUSE_UNTIL` dapat menahan slot sampai waktu ISO 8601
+tertentu. Semua upload tetap Private-first; tindakan Public di YouTube Studio
+harus tetap mengikuti pesan slot yang tampil di ClipForge.
 
 Output baru membawa identitas `FENDY AUDIT` pada video, ID audit di sidecar/deskripsi upload, dan blueprint pertumbuhan Codex untuk acquisition, retention, conversion, serta returning viewers. Blueprint adalah rencana eksperimen terukur, bukan jaminan view atau subscriber.
 

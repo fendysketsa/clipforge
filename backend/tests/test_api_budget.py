@@ -1853,6 +1853,9 @@ def test_youtube_auto_upload_is_private_unless_public_is_explicitly_allowed(monk
     monkeypatch.setenv("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", "true")
     assert safe_youtube_visibility("public") == "public"
 
+    monkeypatch.setenv("YOUTUBE_CHANNEL_RECOVERY_MODE", "true")
+    assert safe_youtube_visibility("public") == "private"
+
 
 def test_models_from_openai_compatible_payload():
     payload = {"data": [{"id": "qwen2.5"}, {"id": "llama3.1"}]}

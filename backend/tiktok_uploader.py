@@ -139,6 +139,19 @@ def save_session_state(context, state_path: Path) -> None:
     # IndexedDB has caused native Chromium/Playwright crashes on some Linux
     # builds, so keep the portable storage-state format here.
     state = context.storage_state()
+    if env_bool("SOCIAL_BROWSER_SHARED", False):
+        # The shared context also contains the YouTube/Google login. Never copy
+        # those credentials into TikTok's portable session file.
+        state["cookies"] = [
+            cookie
+            for cookie in state.get("cookies", [])
+            if "tiktok.com" in str(cookie.get("domain") or "").casefold()
+        ]
+        state["origins"] = [
+            origin
+            for origin in state.get("origins", [])
+            if "tiktok.com" in str(origin.get("origin") or "").casefold()
+        ]
     descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{state_path.name}.",
         dir=state_path.parent,
@@ -1548,6 +1561,8 @@ def open_context(playwright, args):
             "menghubungkan browser login GUI",
         )
         context = browser.contexts[0] if browser.contexts else browser.new_context(locale="id-ID")
+        if env_bool("TIKTOK_CDP_HYDRATE_STORAGE_STATE", False):
+            hydrate_cdp_context_from_state(context, Path(args.state))
         return context, browser
     profile_dir = Path(args.chromium_user_data_dir).expanduser() if args.chromium_user_data_dir else None
     if profile_dir and profile_dir.is_dir():
@@ -1570,17 +1585,66 @@ def open_context(playwright, args):
     return context, browser
 
 
+def hydrate_cdp_context_from_state(context, state_path: Path) -> bool:
+    """Import only TikTok state into a shared persistent CDP context."""
+    if not state_path.is_file():
+        return False
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    cookies = [
+        cookie
+        for cookie in payload.get("cookies", [])
+        if isinstance(cookie, dict)
+        and "tiktok.com" in str(cookie.get("domain") or "").casefold()
+    ]
+    if cookies:
+        context.add_cookies(cookies)
+    origins = {
+        str(item.get("origin")): item.get("localStorage", [])
+        for item in payload.get("origins", [])
+        if isinstance(item, dict)
+        and "tiktok.com" in str(item.get("origin") or "").casefold()
+    }
+    if origins:
+        serialized = json.dumps(origins, ensure_ascii=False).replace("</", "<\\/")
+        context.add_init_script(
+            script=(
+                "const states = " + serialized + ";"
+                "const entries = states[location.origin] || [];"
+                "for (const item of entries) localStorage.setItem(item.name, item.value);"
+            )
+        )
+    if cookies or origins:
+        log(f"SHARED_SESSION_HYDRATED:{len(cookies)} cookies TikTok")
+        return True
+    return False
+
+
+def select_tiktok_page(context):
+    """Keep YouTube intact by selecting the TikTok tab in a shared browser."""
+    pages = list(getattr(context, "pages", []))
+    for candidate in reversed(pages):
+        if "tiktok.com" in str(getattr(candidate, "url", "")).casefold():
+            return candidate
+    if pages and not env_bool("SOCIAL_BROWSER_SHARED", False):
+        return pages[0]
+    return context.new_page()
+
+
 def run(args) -> int:
     sync_playwright, _ = import_playwright()
     with sync_playwright() as playwright:
         context, browser = open_context(playwright, args)
         try:
-            page = context.pages[0] if context.pages else context.new_page()
+            page = select_tiktok_page(context)
             page.set_default_timeout(20_000)
             if (
                 args.cdp_url
                 and args.command != "login"
                 and env_bool("TIKTOK_MINIMIZE_CDP_BROWSER", True)
+                and not env_bool("SOCIAL_BROWSER_SHARED", False)
             ):
                 minimize_cdp_browser(context, page)
             if args.command == "login":
@@ -1598,7 +1662,11 @@ def run(args) -> int:
                         log("Chrome login TikTok ditutup setelah session tersimpan.")
                     except Exception as exc:
                         log(f"Chrome login TikTok belum dapat ditutup otomatis: {exc}")
-                elif args.cdp_url and env_bool("TIKTOK_MINIMIZE_CDP_BROWSER", True):
+                elif (
+                    args.cdp_url
+                    and env_bool("TIKTOK_MINIMIZE_CDP_BROWSER", True)
+                    and not env_bool("SOCIAL_BROWSER_SHARED", False)
+                ):
                     minimize_cdp_browser(context, page)
                 return 0
             validate_target_account(page, args.target_handle, args.target_email)
@@ -1610,7 +1678,11 @@ def run(args) -> int:
             if not video_path.is_file():
                 raise UploadError(f"File video tidak ditemukan: {video_path}")
             background_tick = None
-            if args.cdp_url and env_bool("TIKTOK_MINIMIZE_CDP_BROWSER", True):
+            if (
+                args.cdp_url
+                and env_bool("TIKTOK_MINIMIZE_CDP_BROWSER", True)
+                and not env_bool("SOCIAL_BROWSER_SHARED", False)
+            ):
                 background_tick = lambda: minimize_cdp_browser(context, page)
             upload_video(
                 page,
