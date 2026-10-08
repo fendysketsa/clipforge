@@ -35,6 +35,7 @@ const NICHES: { value: IslamicContentNiche; label: string }[] = [
   { value: "islamic_current_viral", label: "Isu Muslim terkini" },
   { value: "islamic_practical_life", label: "Masalah hidup praktis" },
   { value: "islamic_mental_health", label: "Mental health Islami" },
+  { value: "kindness_social_good", label: "Kebaikan & saling mengingatkan" },
   { value: "halal_wealth", label: "Rezeki & bisnis halal" },
   { value: "fiqih_harian", label: "Fiqih harian" },
   { value: "islamic_history", label: "Sejarah Islam" },
@@ -90,7 +91,7 @@ export function AutoViralPanel({
         </span>
         <span className={`autoScheduleBadge ${schedule?.enabled ? "enabled" : ""}`}>
           <Clock3 size={12} />
-          {schedule?.enabled ? `Tiap ${schedule.interval_hours} jam` : "Cron nonaktif"}
+          {schedule?.enabled ? `Siklus ${schedule.interval_hours} jam` : "Cron nonaktif"}
         </span>
         <span className="optionalPanelAction">
           <span>Konfigurasi</span>
@@ -104,6 +105,11 @@ export function AutoViralPanel({
           <small>
             Berikutnya: {formatDate(schedule?.next_run_at)} · Terakhir: {formatDate(schedule?.last_started_at)}
           </small>
+          {schedule?.enabled ? (
+            <small>
+              Mulai setelah laptop hidup {schedule.boot_delay_minutes} menit · upload headless setelah clip selesai {schedule.post_clip_upload_delay_minutes} menit · {schedule.background_upload_enabled ? "upload Private aktif" : "upload ditahan profil hak"}
+            </small>
+          ) : null}
         </div>
 
         <div className="viralSearchFilterPanel">

@@ -710,6 +710,23 @@ def test_niche_relevance_rewards_master_context_terms_not_generic_islam_label():
     assert niche_relevance_score(generic, "islamic_mental_health") == 0
 
 
+def test_kindness_niche_expands_channel_without_losing_islamic_identity():
+    request = ViralVideoSearchRequest(niche="kindness_social_good")
+    aligned = {
+        "title": "Menolong Tetangga dengan Empati dan Akhlak Mulia",
+        "description": (
+            "Nasihat Islam tentang sedekah, menjaga lisan, dan saling mengingatkan "
+            "dengan lembut dalam kehidupan sehari-hari."
+        ),
+        "default_audio_language": "id",
+    }
+
+    assert request.queries[0] == "kisah kebaikan sederhana menurut islam"
+    assert niche_relevance_score(aligned, "kindness_social_good") >= 50
+    assert islamic_information_score(aligned) >= 24
+    assert niche_candidate_rejection_reason(aligned, "kindness_social_good") == ""
+
+
 def test_islamic_information_gate_ignores_views_but_rejects_unrelated_entertainment():
     informative = {
         "title": "Podcast Politik Islam dan Keadilan Publik",
@@ -1018,6 +1035,7 @@ def test_auto_viral_schedule_reads_interval_and_safe_review_defaults(monkeypatch
 
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_ENABLED", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_INTERVAL_HOURS", "4")
+    monkeypatch.setenv("AUTO_VIRAL_CYCLE_DELAY_HOURS", "4")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", "2")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "false")
     monkeypatch.setattr(api, "auto_viral_scheduler_running", True)
@@ -1037,6 +1055,171 @@ def test_auto_viral_schedule_reads_interval_and_safe_review_defaults(monkeypatch
     assert status.scheduler_running is True
     assert status.interval_hours == 4
     assert status.next_run_at
+
+
+def test_auto_viral_schedule_waits_for_machine_uptime_and_previous_completion(monkeypatch):
+    import api
+
+    now = datetime(2026, 10, 8, 1, 0, tzinfo=timezone.utc)
+    monkeypatch.setenv("AUTO_VIRAL_BOOT_DELAY_MINUTES", "30")
+    monkeypatch.setenv("AUTO_VIRAL_CYCLE_DELAY_HOURS", "3")
+    monkeypatch.setattr(api, "system_uptime_seconds", lambda: 10 * 60)
+    latest = api.AutoViralRun(
+        id="finished-cycle",
+        status="completed",
+        trigger="schedule",
+        created_at=(now - timedelta(hours=4)).isoformat(),
+        updated_at=(now - timedelta(hours=1)).isoformat(),
+        finished_at=(now - timedelta(hours=1)).isoformat(),
+        request=AutoViralRequest(video_count=1),
+    )
+
+    next_run = api.auto_viral_next_run_at(now, latest, None)
+
+    assert next_run == now + timedelta(hours=2)
+    assert api.auto_viral_next_run_at(now, latest, "active-run") is None
+
+
+def test_auto_viral_first_cycle_obeys_remaining_boot_grace(monkeypatch):
+    import api
+
+    now = datetime(2026, 10, 8, 1, 0, tzinfo=timezone.utc)
+    monkeypatch.setenv("AUTO_VIRAL_BOOT_DELAY_MINUTES", "30")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP", "true")
+    monkeypatch.setattr(api, "system_uptime_seconds", lambda: 12 * 60)
+
+    assert api.auto_viral_next_run_at(now, None, None) == now + timedelta(minutes=18)
+
+
+def test_scheduled_upload_requires_complete_rights_profile(monkeypatch):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED", "false")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_EVIDENCE", "")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_CREATOR_PERSPECTIVE", "")
+
+    assert api.scheduled_auto_viral_request().auto_upload_youtube is False
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED", "true")
+    monkeypatch.setenv(
+        "AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_EVIDENCE",
+        "Izin komersial audio visual nomor kontrak dari pemilik sumber",
+    )
+    monkeypatch.setenv(
+        "AUTO_VIRAL_SCHEDULE_CREATOR_PERSPECTIVE",
+        "Menurut saya konteks ini membantu penonton memahami pesan secara utuh",
+    )
+
+    request = api.scheduled_auto_viral_request()
+    assert request.auto_upload_youtube is True
+    assert request.source_rights_confirmed is True
+
+
+def test_waiting_upload_run_is_resumable_after_backend_restart(tmp_path, monkeypatch):
+    import api
+
+    path = tmp_path / "auto-runs.json"
+    run = api.AutoViralRun(
+        id="resume-me",
+        status="running",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        clipping_finished_at=api.now_iso(),
+        upload_not_before=api.now_iso(),
+        progress_stage="waiting_upload",
+        request=AutoViralRequest(video_count=1, auto_upload_youtube=True),
+        processed=[
+            {
+                "job_id": "job-1",
+                "job_status": "completed",
+                "status": "awaiting_upload",
+            }
+        ],
+    )
+    path.write_text(json.dumps([run.model_dump()]), encoding="utf-8")
+    monkeypatch.setattr(api, "AUTO_VIRAL_RUNS_PATH", path)
+
+    loaded = api.load_auto_viral_runs()[run.id]
+
+    assert loaded.status == "queued"
+    assert loaded.progress_stage == "resume_pending_upload"
+    assert loaded.finished_at is None
+
+
+def test_deferred_upload_persists_queue_and_completion_checkpoints(monkeypatch):
+    import api
+    from types import SimpleNamespace
+
+    request = AutoViralRequest(video_count=1, clips_per_video=1, auto_upload_youtube=True)
+    run = api.AutoViralRun(
+        id="deferred-upload",
+        status="running",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=request,
+    )
+    fake_job = SimpleNamespace(status="completed")
+    fake_upload = SimpleNamespace(
+        id="upload-1",
+        status="queued",
+        title="Judul",
+        video_url=None,
+        error=None,
+    )
+    finished_upload = SimpleNamespace(
+        id="upload-1",
+        status="completed",
+        title="Judul",
+        video_url="https://youtu.be/result",
+        error=None,
+    )
+    with api.auto_viral_lock:
+        api.auto_viral_runs[run.id] = run
+    with api.jobs_lock:
+        api.jobs["job-1"] = fake_job
+    queued: list[str] = []
+    monkeypatch.setattr(api, "save_auto_viral_runs_unlocked", lambda: None)
+    monkeypatch.setattr(
+        api,
+        "create_youtube_upload_batch_records",
+        lambda *_args, **_kwargs: [fake_upload],
+    )
+    monkeypatch.setattr(
+        api,
+        "queue_youtube_upload_jobs",
+        lambda uploads: queued.extend(upload.id for upload in uploads),
+    )
+    monkeypatch.setattr(api, "wait_for_uploads", lambda _ids: [finished_upload])
+    monkeypatch.setattr(
+        api,
+        "delete_all_job_clips",
+        lambda _job_id: SimpleNamespace(removed_clips=1),
+    )
+
+    processed = api.upload_auto_viral_processed_jobs(
+        run.id,
+        request,
+        [
+            {
+                "job_id": "job-1",
+                "job_status": "completed",
+                "status": "awaiting_upload",
+                "uploads": [],
+            }
+        ],
+    )
+
+    assert queued == ["upload-1"]
+    assert processed[0]["status"] == "completed"
+    assert processed[0]["uploads"][0]["video_url"] == "https://youtu.be/result"
+    assert api.auto_viral_runs[run.id].progress_stage == "youtube_upload"
+    with api.auto_viral_lock:
+        api.auto_viral_runs.pop(run.id, None)
+    with api.jobs_lock:
+        api.jobs.pop("job-1", None)
 
 
 def test_quota_exceeded_uses_small_cc_verified_fallback(monkeypatch):

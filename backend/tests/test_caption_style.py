@@ -55,6 +55,7 @@ from clipper import (
     contextual_background_asset,
     contextual_sound_effect_cues,
     content_edit_variation,
+    creative_director_plan,
     creator_commentary_mix_filter,
     detect_visual_theme,
     editorial_motion_style,
@@ -174,6 +175,183 @@ def test_cinematic_smoke_supports_landscape_long_form():
     assert "nullsrc=size=480x270:rate=15" in value
     assert "gblur=sigma=4" in value
     assert "scale=1920:1080:flags=bilinear" in value
+
+
+def test_creative_director_ai_plan_changes_executable_edit_controls(monkeypatch):
+    clip = ClipCandidate(
+        1,
+        0,
+        32,
+        32,
+        88,
+        "Cerita dengan kejutan",
+        "test",
+        "Kenapa hasilnya berbeda? Awalnya biasa saja, tetapi ternyata jawabannya muncul di akhir.",
+        hook="Kenapa hasilnya berbeda?",
+        loop_score=60,
+    )
+    segments = [
+        TranscriptSegment(0, 3, "Kenapa hasilnya berbeda?"),
+        TranscriptSegment(12, 17, "Tetapi ternyata jawabannya muncul di akhir."),
+    ]
+    config = clipper_module.AIConfig(
+        enabled=True,
+        base_url="http://example.test/v1",
+        model="director-test",
+    )
+    monkeypatch.setattr(
+        clipper_module,
+        "chat_completion",
+        lambda *_args, **_kwargs: json.dumps(
+            {
+                "pacing": "dynamic",
+                "hook_treatment": "direct_speech",
+                "payoff_treatment": "semantic_loop",
+                "reaction_policy": "contextual",
+                "sound_style": "contextual",
+                "surprise_treatment": "reveal_punch_in",
+                "music_arc": "build_then_drop",
+                "editorial_intent": "Menjaga setup lalu mempercepat reveal",
+                "reason": "Pertanyaan membuka cerita dan jawaban baru muncul di akhir.",
+            }
+        ),
+    )
+
+    plan = creative_director_plan(clip, segments, "vertical_short", config)
+
+    assert plan["creative_director"]["source"] == "ai"
+    assert plan["creative_director"]["model"] == "director-test"
+    assert plan["opening_context_seconds"] <= 1.15
+    assert plan["visual_restraint"]["maximum_virtual_camera_cuts"] >= 5
+    assert plan["visual_restraint"]["maximum_sound_effects"] == 3
+    assert plan["creative_director"]["surprise_beat"]["source_grounded"] is True
+    assert plan["creative_director"]["surprise_beat"]["start"] > 12
+    assert plan["creative_director"]["music_arc"] == "build_then_drop"
+
+
+def test_creative_director_cannot_sensationalize_reverent_content(monkeypatch):
+    clip = ClipCandidate(
+        1,
+        0,
+        35,
+        35,
+        91,
+        "Makna ayat",
+        "test",
+        "Ayat Al-Qur'an ini mengajarkan doa dan kesabaran.",
+        hook="Apa makna ayat ini?",
+        loop_score=0,
+    )
+    config = clipper_module.AIConfig(True, "http://example.test/v1", "director-test")
+    monkeypatch.setattr(
+        clipper_module,
+        "chat_completion",
+        lambda *_args, **_kwargs: json.dumps(
+            {
+                "pacing": "dynamic",
+                "hook_treatment": "direct_speech",
+                "payoff_treatment": "semantic_loop",
+                "reaction_policy": "contextual",
+                "sound_style": "contextual",
+                "surprise_treatment": "reaction_snap",
+                "music_arc": "build_then_drop",
+                "editorial_intent": "Buat ayat terasa dramatis",
+                "reason": "Model meminta efek maksimal.",
+            }
+        ),
+    )
+
+    plan = creative_director_plan(
+        clip,
+        [TranscriptSegment(0, 8, clip.text)],
+        "vertical_short",
+        config,
+    )
+    direction = plan["creative_director"]
+
+    assert direction["pacing"] == "measured"
+    assert direction["reaction_policy"] == "none"
+    assert direction["sound_style"] == "dialogue_only"
+    assert direction["payoff_treatment"] == "natural_hold"
+    assert direction["surprise_treatment"] == "none"
+    assert direction["surprise_beat"] is None
+    assert direction["music_arc"] == "none"
+    assert direction["safety_override_applied"] is True
+    assert plan["visual_restraint"]["maximum_virtual_camera_cuts"] <= 2
+    assert plan["visual_restraint"]["maximum_sound_effects"] == 0
+    assert plan["visual_restraint"]["cinematic_smoke_allowed"] is False
+
+
+def test_creative_director_invalid_ai_response_uses_deterministic_fallback(monkeypatch):
+    clip = ClipCandidate(
+        1,
+        0,
+        30,
+        30,
+        80,
+        "Tips",
+        "test",
+        "Tiga langkah praktis yang bisa dilakukan hari ini.",
+    )
+    config = clipper_module.AIConfig(True, "http://example.test/v1", "director-test")
+    monkeypatch.setattr(
+        clipper_module,
+        "chat_completion",
+        lambda *_args, **_kwargs: '{"pacing":"chaos"}',
+    )
+
+    plan = creative_director_plan(
+        clip,
+        [TranscriptSegment(0, 5, clip.text)],
+        "vertical_short",
+        config,
+    )
+
+    assert plan["creative_director"]["source"] == "heuristic_fallback"
+    assert plan["creative_director"]["pacing"] in clipper_module.CREATIVE_DIRECTOR_PACING
+
+
+def test_creative_director_drops_unsubstantiated_surprise_and_music_drop(monkeypatch):
+    clip = ClipCandidate(
+        1,
+        0,
+        30,
+        30,
+        80,
+        "Penjelasan",
+        "test",
+        "Penjelasan berjalan tenang dari awal sampai akhir.",
+    )
+    config = clipper_module.AIConfig(True, "http://example.test/v1", "director-test")
+    monkeypatch.setattr(
+        clipper_module,
+        "chat_completion",
+        lambda *_args, **_kwargs: json.dumps(
+            {
+                "pacing": "balanced",
+                "hook_treatment": "context_card",
+                "payoff_treatment": "natural_hold",
+                "reaction_policy": "authentic_only",
+                "sound_style": "subtle_accents",
+                "surprise_treatment": "reaction_snap",
+                "music_arc": "build_then_drop",
+                "editorial_intent": "Menjelaskan isi sumber dengan tenang",
+                "reason": "Tidak ada pembalikan makna yang eksplisit.",
+            }
+        ),
+    )
+
+    plan = creative_director_plan(
+        clip,
+        [TranscriptSegment(8, 13, clip.text)],
+        "vertical_short",
+        config,
+    )
+
+    assert plan["creative_director"]["source"] == "ai"
+    assert plan["creative_director"]["surprise_treatment"] == "none"
+    assert plan["creative_director"]["surprise_beat"] is None
+    assert plan["creative_director"]["music_arc"] == "steady_ducked"
 
 
 def test_huggingface_environment_supports_public_model_without_token(monkeypatch):
@@ -1071,6 +1249,60 @@ def test_monetization_provenance_records_rights_and_originality(tmp_path):
     assert payload["monetization_readiness"]["signals"]["visible_editorial_interpretation"] is True
     assert payload["monetization_readiness"]["automated_editorial_interpretation_present"] is True
     assert payload["monetization_readiness"]["guarantee"] is False
+    team = payload["production_team_handoff"]
+    assert team["operating_model"] == "one_person_virtual_production_desk"
+    assert team["ready_for_private_human_review"] is True
+    assert team["controversial_hook_required"] is False
+    assert team["roles"]["distribution_specialist"]["platforms"] == [
+        "youtube_shorts",
+        "tiktok",
+        "instagram_reels",
+    ]
+    assert team["roles"]["quality_control_coordinator"]["publication_mode"] == "private_first"
+
+
+def test_production_team_handoff_maps_grounded_peak_and_keeps_human_boundary():
+    team = clipper_module.production_team_handoff(
+        {
+            "title": "Jawaban yang tidak diduga",
+            "hook": "Kenapa jawabannya berbeda?",
+            "text": "Awalnya biasa, tetapi ternyata ada alasan penting.",
+            "core_message": "Periksa alasan sebelum menyimpulkan.",
+            "enhanced_edit": True,
+            "output_format": "vertical_short",
+            "creative_director_plan": {
+                "pacing": "dynamic",
+                "surprise_treatment": "reveal_punch_in",
+                "surprise_beat": {
+                    "source_grounded": True,
+                    "treatment": "reveal_punch_in",
+                    "start": 12.4,
+                },
+            },
+            "auto_fyp_visual_plan": {"accent": "payoff_teaser"},
+            "dynamic_captions": {"enabled": True},
+            "render_quality_qc": {"quality_gate_passed": True},
+            "religious_context_integrity": {"safe_for_automatic_export": True},
+        },
+        {
+            "rights_basis": "operator_trusted_channel_with_documented_commercial_permission",
+            "rights_verified": False,
+            "rights_confirmed_by_user": True,
+        },
+        {
+            "eligible_for_private_upload_review": True,
+            "substantive_transformation": True,
+        },
+    )
+
+    researcher = team["roles"]["content_researcher_curator"]
+    editor = team["roles"]["clipper_video_editor"]
+    assert researcher["hook_type"] == "question"
+    assert researcher["peak_moment_seconds"] == 12.4
+    assert editor["surprise_treatment"] == "reveal_punch_in"
+    assert team["overall_status"] == "ready_for_private_human_review"
+    assert team["automation_boundary"]["human_must_approve_publication"] is True
+    assert team["automation_boundary"]["views_or_monetization_guaranteed"] is False
 
 
 def test_monetization_provenance_accepts_confirmed_operator_trusted_channel(monkeypatch, tmp_path):
@@ -3576,6 +3808,48 @@ def test_islamic_background_music_is_original_ducked_and_mixed_under_voice():
     assert "[voice][music_bed]amix=inputs=2" in value
     assert "alimiter=limit=0.95" in value
     assert value.endswith("[audio_out]")
+
+
+def test_music_arc_drops_bed_briefly_at_grounded_surprise():
+    value = contextual_audio_mix_filter(
+        "highpass=f=70,aresample=48000",
+        [],
+        background_music=True,
+        duration=30,
+        music_ducking=True,
+        music_drop_at=12.5,
+    )
+
+    assert (
+        "[music_bed_raw]volume='if(between(t,12.320,12.920),0.180,1)'"
+        ":eval=frame[music_bed_shaped]" in value
+    )
+    assert "[music_bed_shaped][voice_sidechain]sidechaincompress=" in value
+
+
+def test_creative_surprise_sound_cue_is_quiet_and_payoff_silence_stays_silent():
+    cue = clipper_module.creative_surprise_sound_cue(
+        {
+            "source_grounded": True,
+            "treatment": "reaction_snap",
+            "start": 8.25,
+        }
+    )
+
+    assert cue is not None
+    assert cue.kind == "shock"
+    assert cue.start == 8.25
+    assert cue.volume <= 0.13
+    assert (
+        clipper_module.creative_surprise_sound_cue(
+            {
+                "source_grounded": True,
+                "treatment": "payoff_silence",
+                "start": 18.0,
+            }
+        )
+        is None
+    )
 
 
 def test_external_local_music_uses_80_20_gain_and_dialogue_ducking():

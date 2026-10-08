@@ -5740,6 +5740,83 @@ details[open] > summary .detailsChevron {
   color: #fdba74;
 }
 
+.productionTeamDesk {
+  margin: 0 17px 14px;
+  overflow: hidden;
+  border: 1px solid rgba(94, 234, 212, 0.14);
+  border-radius: 12px;
+  background: rgba(4, 17, 15, 0.58);
+}
+
+.productionTeamDesk summary {
+  display: flex;
+  min-height: 42px;
+  cursor: pointer;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 850;
+  list-style: none;
+}
+
+.productionTeamDesk summary::-webkit-details-marker {
+  display: none;
+}
+
+.productionTeamDesk summary > span {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  gap: 7px;
+}
+
+.productionTeamDesk summary small {
+  color: var(--primary);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.productionTeamDesk[open] summary > svg {
+  transform: rotate(180deg);
+}
+
+.productionTeamGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding: 0 10px 10px;
+}
+
+.productionTeamGrid > div {
+  display: grid;
+  gap: 4px;
+  padding: 9px;
+  border: 1px solid rgba(148, 216, 204, 0.09);
+  border-radius: 9px;
+  background: rgba(6, 22, 19, 0.58);
+}
+
+.productionTeamGrid strong {
+  color: #a7f3d0;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.productionTeamGrid span,
+.productionTeamDesk > p {
+  color: var(--text-secondary);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.productionTeamDesk > p {
+  margin: 0;
+  padding: 0 11px 11px;
+}
+
 .clipCardFooter {
   display: grid;
   margin-top: auto;

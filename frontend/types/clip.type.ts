@@ -64,6 +64,12 @@ export type ClipFile = {
   render_qc_passed?: boolean | null;
   render_qc_status?: string | null;
   render_qc_warnings?: string[];
+  production_team_status?: string | null;
+  production_research_brief?: string | null;
+  production_editor_brief?: string | null;
+  production_distribution_brief?: string | null;
+  production_qc_brief?: string | null;
+  production_qc_checks?: string[];
   tiktok_series_id?: string | null;
   tiktok_series_label?: string | null;
   tiktok_opening_hook?: string | null;
@@ -603,6 +609,7 @@ export type IslamicContentNiche =
   | "muslim_family_lifestyle"
   | "religion_culture_interfaith"
   | "islamic_mental_health"
+  | "kindness_social_good"
   | "halal_wealth"
   | "fiqih_harian"
   | "islamic_history";
@@ -686,6 +693,9 @@ export type AutoViralRequest = {
   ai_api_key?: string;
   source_urls?: string[];
   auto_upload_youtube?: boolean;
+  source_rights_confirmed?: boolean;
+  source_rights_evidence?: string;
+  creator_perspective?: string;
 };
 
 export type AutoViralRun = {
@@ -713,6 +723,9 @@ export type AutoViralScheduleStatus = {
   interval_hours: number;
   run_on_startup: boolean;
   scheduler_running: boolean;
+  boot_delay_minutes: number;
+  post_clip_upload_delay_minutes: number;
+  background_upload_enabled: boolean;
   active_run_id?: string | null;
   last_run_id?: string | null;
   last_started_at?: string | null;

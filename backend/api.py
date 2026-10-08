@@ -576,6 +576,12 @@ class ClipFile(BaseModel):
     render_qc_passed: bool | None = None
     render_qc_status: str | None = None
     render_qc_warnings: list[str] = Field(default_factory=list)
+    production_team_status: str | None = None
+    production_research_brief: str | None = None
+    production_editor_brief: str | None = None
+    production_distribution_brief: str | None = None
+    production_qc_brief: str | None = None
+    production_qc_checks: list[str] = Field(default_factory=list)
     tiktok_series_id: str | None = None
     tiktok_series_label: str | None = None
     tiktok_opening_hook: str | None = None
@@ -1236,6 +1242,9 @@ BROAD_VIRAL_SEARCH_QUERIES = [
     "inspirasi kehidupan islami indonesia",
     "self improvement menurut islam",
     "pelajaran hidup podcast islam",
+    "kisah kebaikan sederhana menurut islam",
+    "menolong sesama dan kepedulian sosial islam",
+    "menjaga lisan dan tidak menghakimi orang",
 ]
 
 MYSTERY_ISLAMIC_SEARCH_QUERIES = [
@@ -1272,6 +1281,7 @@ IslamicContentNiche = Literal[
     "muslim_family_lifestyle",
     "religion_culture_interfaith",
     "islamic_mental_health",
+    "kindness_social_good",
     "halal_wealth",
     "fiqih_harian",
     "islamic_history",
@@ -1490,6 +1500,31 @@ ISLAMIC_EVERGREEN_NICHES: dict[str, dict[str, Any]] = {
         ],
         "hashtags": ["KesehatanMentalIslam", "KetenanganHati", "Tawakal"],
     },
+    "kindness_social_good": {
+        "label": "Kebaikan, Empati & Saling Mengingatkan",
+        "queries": [
+            "kisah kebaikan sederhana menurut islam",
+            "menolong sesama kisah inspiratif muslim",
+            "sedekah kecil yang mengubah hidup kisah nyata",
+            "menjaga lisan dan tidak menghakimi menurut islam",
+            "memaafkan dan meminta maaf dalam islam",
+            "adab bertetangga dan kepedulian sosial muslim",
+            "bakti kepada orang tua kisah penuh hikmah",
+            "amanah dan kejujuran dalam kehidupan sehari hari",
+            "empati kepada orang susah menurut islam",
+            "gotong royong dan kebaikan umat islam indonesia",
+            "adab digital muslim sebelum berkomentar",
+            "saling mengingatkan dalam kebaikan dengan lembut",
+        ],
+        "keywords": [
+            "kebaikan", "baik", "empati", "peduli", "kepedulian", "menolong",
+            "tolong", "sedekah", "berbagi", "memaafkan", "maaf", "amanah",
+            "jujur", "kejujuran", "lisan", "menghakimi", "tetangga", "bakti",
+            "orang tua", "gotong royong", "mengingatkan", "nasihat", "lembut",
+            "adab", "akhlak",
+        ],
+        "hashtags": ["KebaikanHarian", "SalingMengingatkan", "AkhlakMulia"],
+    },
     "halal_wealth": {
         "label": "Rezeki Halal, Karier & Keuangan",
         "queries": [
@@ -1575,6 +1610,7 @@ FAST_YOUTUBE_DATA_API_TERMS: dict[str, list[str]] = {
         "agama budaya indonesia",
         "kajian islam terbaru",
         "kesehatan mental islam",
+        "kebaikan dan empati islam",
         "rezeki halal",
         "fiqih harian",
         "sejarah islam",
@@ -1636,6 +1672,12 @@ FAST_YOUTUBE_DATA_API_TERMS: dict[str, list[str]] = {
         "ketenangan hati islam",
         "tawakal",
         "psikologi islam",
+    ],
+    "kindness_social_good": [
+        "kebaikan menurut islam",
+        "menolong sesama muslim",
+        "empati dan akhlak",
+        "saling mengingatkan",
     ],
     "halal_wealth": [
         "rezeki halal",
@@ -1803,6 +1845,9 @@ class AutoViralRequest(BaseModel):
     # Discovery can be automated, but publication must wait for human rights
     # evidence, creator perspective, and YouTube's private copyright checks.
     auto_upload_youtube: bool = False
+    source_rights_confirmed: bool = False
+    source_rights_evidence: str = Field(default="", max_length=2000)
+    creator_perspective: str = Field(default="", max_length=4000)
 
     @field_validator("visual_mode", mode="before")
     @classmethod
@@ -1864,6 +1909,8 @@ class AutoViralRun(BaseModel):
     created_at: str
     updated_at: str
     finished_at: str | None = None
+    clipping_finished_at: str | None = None
+    upload_not_before: str | None = None
     trigger: Literal["manual", "schedule", "search"] = "manual"
     request: AutoViralRequest
     message: str = ""
@@ -1883,6 +1930,9 @@ class AutoViralScheduleStatus(BaseModel):
     interval_hours: float
     run_on_startup: bool
     scheduler_running: bool
+    boot_delay_minutes: float = 30
+    post_clip_upload_delay_minutes: float = 30
+    background_upload_enabled: bool = False
     active_run_id: str | None = None
     last_run_id: str | None = None
     last_started_at: str | None = None
@@ -2156,7 +2206,28 @@ def load_auto_viral_runs() -> dict[str, AutoViralRun]:
             run = AutoViralRun(**raw_item)
         except (TypeError, ValueError):
             continue
-        if run.status in {"queued", "running"}:
+        resumable_upload_phase = bool(
+            run.trigger == "schedule"
+            and run.processed
+            and run.progress_stage
+            in {"waiting_upload", "youtube_upload", "resume_pending_upload"}
+        )
+        if run.status in {"queued", "running"} and resumable_upload_phase:
+            recovered_at = now_iso()
+            run = run.model_copy(
+                update={
+                    "status": "queued",
+                    "updated_at": recovered_at,
+                    "finished_at": None,
+                    "message": "Backend restart; fase upload terjadwal akan dilanjutkan tanpa membuat clip ulang.",
+                    "progress_stage": "resume_pending_upload",
+                    "logs": [
+                        *run.logs,
+                        f"{datetime.now().strftime('%H:%M:%S')} Upload terjadwal antre resume setelah restart.",
+                    ][-160:],
+                }
+            )
+        elif run.status in {"queued", "running"}:
             finished_at = now_iso()
             run = run.model_copy(
                 update={
@@ -4737,7 +4808,7 @@ def reviewed_quality_only_short_for_private_upload(
 
 
 def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | None:
-    """Block private upload when rights or substantive-edit evidence is missing."""
+    """Return a hard block or a review hold before the Private upload stage."""
     sidecar = clip_sidecar_payload(clip)
     metadata = metadata_for_job(job)
     editorial_safety = sidecar.get("editorial_safety")
@@ -4748,11 +4819,16 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
         )
     advertiser_suitability = sidecar.get("advertiser_suitability")
     if isinstance(advertiser_suitability, dict):
-        if advertiser_suitability.get("high_risk_for_full_ads") is True:
+        if (
+            advertiser_suitability.get("high_risk_for_full_ads") is True
+            and not clip.is_correct
+        ):
             return (
-                "Upload diblokir: audit advertiser-suitability menemukan wording berisiko tinggi "
-                "(misalnya hinaan langsung, profanity kuat, serangan kelompok, atau detail kekerasan grafis). "
-                "Pilih kandidat lain atau potong ulang tanpa mengubah makna sumber."
+                "Upload ditahan: audit advertiser-suitability menemukan wording yang mungkin "
+                "mendapat iklan terbatas atau tanpa iklan (misalnya profanity kuat atau detail "
+                "kekerasan grafis). Review konteks audio/visual, judul, thumbnail, dan "
+                "self-certification; tandai clip benar untuk mengirimnya ke review Private, "
+                "atau potong ulang tanpa mengubah makna sumber."
             )
         if (
             advertiser_suitability.get(
@@ -5541,7 +5617,13 @@ def public_title_quality_issue(value: str, *, is_compilation: bool = False) -> s
     bad_terms = sorted({word for word in words if word in blocked_terms})
     if bad_terms:
         return f"judul memuat kata ASR yang belum terverifikasi: {', '.join(bad_terms)}"
-    if re.search(r"(?i)^di\s+sejak\b|\bsoalnya\s+kini\s+ke\b", clean):
+    observed_asr_phrase = re.search(
+        r"(?i)^di\s+sejak\b|\bsoalnya\s+kini\s+ke\b|"
+        r"\borang\s+dabu\s+singkat\b|\bilmu\s+noko\b|"
+        r"\bsederah\s+yang\b|\bmasjid\s+cunyadin\b|\bcari\s+menantu\s+yang\s+takat\b",
+        clean,
+    )
+    if observed_asr_phrase:
         return "susunan judul tampak rusak dan wajib ditulis ulang"
     if len(clean) >= 12 and clean.upper() == clean and re.search(r"[A-Z]", clean):
         return "judul memakai huruf kapital seluruhnya"
@@ -10052,6 +10134,32 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
             if isinstance(render_qc_warning_values, list)
             else []
         )
+        production_team = sidecar.get("production_team_handoff")
+        production_team = production_team if isinstance(production_team, dict) else {}
+        production_roles = production_team.get("roles")
+        production_roles = production_roles if isinstance(production_roles, dict) else {}
+        production_research = production_roles.get("content_researcher_curator")
+        production_research = production_research if isinstance(production_research, dict) else {}
+        production_editor = production_roles.get("clipper_video_editor")
+        production_editor = production_editor if isinstance(production_editor, dict) else {}
+        production_distribution = production_roles.get("distribution_specialist")
+        production_distribution = (
+            production_distribution if isinstance(production_distribution, dict) else {}
+        )
+        production_qc = production_roles.get("quality_control_coordinator")
+        production_qc = production_qc if isinstance(production_qc, dict) else {}
+        production_platforms = production_distribution.get("platforms")
+        production_platforms = (
+            [str(item) for item in production_platforms if str(item).strip()]
+            if isinstance(production_platforms, list)
+            else []
+        )
+        production_checks = production_qc.get("required_human_checks")
+        production_checks = (
+            [str(item).strip() for item in production_checks if str(item).strip()][:8]
+            if isinstance(production_checks, list)
+            else []
+        )
         religious_claim_review = sidecar.get("religious_claim_review")
         religious_claim_review = (
             religious_claim_review
@@ -10266,6 +10374,54 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
                     str(render_quality_qc.get("status") or "").strip() or None
                 ),
                 render_qc_warnings=render_qc_warnings,
+                production_team_status=(
+                    str(production_team.get("overall_status") or "").strip() or None
+                ),
+                production_research_brief=(
+                    (
+                        f"Hook {production_research.get('hook_type') or 'source-grounded'}"
+                        + (
+                            f" · peak {float(production_research['peak_moment_seconds']):.1f}s"
+                            if isinstance(
+                                production_research.get("peak_moment_seconds"),
+                                (int, float),
+                            )
+                            and not isinstance(
+                                production_research.get("peak_moment_seconds"), bool
+                            )
+                            else ""
+                        )
+                    )
+                    if production_research
+                    else None
+                ),
+                production_editor_brief=(
+                    (
+                        f"{production_editor.get('pacing') or 'content-adaptive'} · "
+                        f"{production_editor.get('visual_accent') or 'auto_fyp'} · "
+                        f"surprise {production_editor.get('surprise_treatment') or 'none'}"
+                    )
+                    if production_editor
+                    else None
+                ),
+                production_distribution_brief=(
+                    (
+                        "Paket "
+                        + ", ".join(item.replace("_", " ") for item in production_platforms)
+                    )
+                    if production_platforms
+                    else None
+                ),
+                production_qc_brief=(
+                    (
+                        f"{production_qc.get('status') or 'hold'} · "
+                        f"rights {production_qc.get('rights_basis') or 'unverified'} · "
+                        "Private-first"
+                    )
+                    if production_qc
+                    else None
+                ),
+                production_qc_checks=production_checks,
             )
         )
     clips.sort(key=lambda item: item.name)
@@ -13309,6 +13465,9 @@ def create_auto_viral_clip_job(source: dict[str, Any], request: AutoViralRequest
         crop_mode=request.crop_mode,
         require_creative_commons=True,
         auto_upload_youtube=False,
+        confirm_source_rights=request.source_rights_confirmed,
+        source_rights_evidence=request.source_rights_evidence,
+        creator_perspective=request.creator_perspective,
         ai_enabled=request.ai_enabled,
         ai_base_url=request.ai_base_url,
         ai_model=request.ai_model,
@@ -13354,6 +13513,197 @@ def wait_for_uploads(upload_ids: list[str], timeout_seconds: int = 7200) -> list
             return uploads
         time.sleep(5)
     raise RuntimeError("Upload YouTube belum selesai sampai batas waktu")
+
+
+def auto_viral_boot_delay_minutes() -> float:
+    return max(0.0, min(1440.0, env_float("AUTO_VIRAL_BOOT_DELAY_MINUTES", 30.0)))
+
+
+def auto_viral_post_clip_upload_delay_minutes() -> float:
+    return max(
+        0.0,
+        min(1440.0, env_float("AUTO_VIRAL_POST_CLIP_UPLOAD_DELAY_MINUTES", 30.0)),
+    )
+
+
+def auto_viral_cycle_delay_hours() -> float:
+    return max(
+        0.25,
+        min(
+            168.0,
+            env_float(
+                "AUTO_VIRAL_CYCLE_DELAY_HOURS",
+                env_float("AUTO_VIRAL_SCHEDULE_INTERVAL_HOURS", 3.0),
+            ),
+        ),
+    )
+
+
+def system_uptime_seconds() -> float:
+    """Read machine uptime so backend restarts do not restart the boot grace."""
+    try:
+        value = Path("/proc/uptime").read_text(encoding="utf-8").split()[0]
+        return max(0.0, float(value))
+    except (OSError, ValueError, IndexError):
+        return max(0.0, time.monotonic())
+
+
+def auto_viral_boot_not_before(now: datetime | None = None) -> datetime:
+    current = now or datetime.now(timezone.utc)
+    remaining = max(
+        0.0,
+        auto_viral_boot_delay_minutes() * 60.0 - system_uptime_seconds(),
+    )
+    return current + timedelta(seconds=remaining)
+
+
+def parse_utc_datetime(value: str | None, fallback: datetime | None = None) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    except ValueError:
+        parsed = fallback or datetime.now(timezone.utc)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def wait_for_auto_viral_upload_window(run_id: str) -> None:
+    """Persist and wait for the post-render quiet period before hidden upload."""
+    with auto_viral_lock:
+        run = auto_viral_runs.get(run_id)
+    if run is None:
+        raise RuntimeError("Automation run hilang sebelum fase upload")
+    now = datetime.now(timezone.utc)
+    not_before = (
+        parse_utc_datetime(run.upload_not_before, now)
+        if run.upload_not_before
+        else now + timedelta(minutes=auto_viral_post_clip_upload_delay_minutes())
+    )
+    update_auto_viral_run(
+        run_id,
+        status="running",
+        clipping_finished_at=run.clipping_finished_at or now.isoformat(),
+        upload_not_before=not_before.isoformat(),
+        progress_percent=max(82, run.progress_percent),
+        progress_stage="waiting_upload",
+        message=(
+            "Semua clip selesai; upload headless Private dimulai setelah jeda "
+            f"hingga {not_before.astimezone(ZoneInfo('Asia/Jakarta')).strftime('%H:%M:%S')} WIB"
+        ),
+    )
+    while True:
+        remaining = (not_before - datetime.now(timezone.utc)).total_seconds()
+        if remaining <= 0:
+            return
+        time.sleep(min(15.0, max(0.1, remaining)))
+
+
+def upload_auto_viral_processed_jobs(
+    run_id: str,
+    request: AutoViralRequest,
+    processed: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Upload every rendered job Private, persisting checkpoints for restart safety."""
+    upload_items = [
+        item
+        for item in processed
+        if str(item.get("job_id") or "")
+        and item.get("job_status") == "completed"
+        and item.get("status") != "failed"
+    ]
+    if not upload_items:
+        raise RuntimeError("Tidak ada hasil clip yang dapat masuk fase upload")
+    total = len(upload_items)
+    for position, item in enumerate(upload_items, start=1):
+        job_id = str(item.get("job_id") or "")
+        if not job_id:
+            raise RuntimeError("Job ID clip hilang pada fase upload")
+        stored_uploads = item.get("uploads")
+        if (
+            item.get("status") == "completed"
+            and isinstance(stored_uploads, list)
+            and stored_uploads
+            and all(
+                isinstance(upload, dict) and upload.get("status") == "completed"
+                for upload in stored_uploads
+            )
+        ):
+            continue
+        with jobs_lock:
+            finished_job = jobs.get(job_id)
+        if finished_job is None or finished_job.status != "completed":
+            raise RuntimeError(f"Job {job_id[:10]} tidak siap untuk upload resume")
+
+        update_auto_viral_run(
+            run_id,
+            progress_percent=min(98, 84 + round(position * 14 / total)),
+            progress_stage="youtube_upload",
+            progress_current=position - 1,
+            progress_total=total,
+            processed=processed,
+            message=f"Upload headless Private {position}/{total}; tidak membuka jendela browser",
+        )
+        prior_ids = [
+            str(upload.get("id") or "")
+            for upload in stored_uploads
+            if isinstance(upload, dict) and str(upload.get("id") or "")
+        ] if isinstance(stored_uploads, list) else []
+        with youtube_uploads_lock:
+            prior = [youtube_uploads[upload_id] for upload_id in prior_ids if upload_id in youtube_uploads]
+        usable_prior = [upload for upload in prior if upload.status in {"queued", "running", "completed"}]
+        if usable_prior:
+            uploads = usable_prior
+        else:
+            with youtube_upload_creation_lock:
+                uploads = create_youtube_upload_batch_records(
+                    job_id,
+                    YouTubeBatchUploadRequest(best_count=request.clips_per_video),
+                )
+                queue_youtube_upload_jobs(uploads)
+        item["uploads"] = [
+            {
+                "id": upload.id,
+                "status": upload.status,
+                "title": upload.title,
+                "video_url": upload.video_url,
+                "error": upload.error,
+            }
+            for upload in uploads
+        ]
+        item["status"] = "uploading"
+        update_auto_viral_run(run_id, processed=processed)
+
+        finished_uploads = wait_for_uploads([upload.id for upload in uploads])
+        item["uploads"] = [
+            {
+                "id": upload.id,
+                "status": upload.status,
+                "title": upload.title,
+                "video_url": upload.video_url,
+                "error": upload.error,
+            }
+            for upload in finished_uploads
+        ]
+        if not finished_uploads or any(
+            upload.status != "completed" for upload in finished_uploads
+        ):
+            failed = [
+                upload.error or upload.status
+                for upload in finished_uploads
+                if upload.status != "completed"
+            ]
+            item["status"] = "failed"
+            update_auto_viral_run(run_id, processed=processed)
+            raise RuntimeError("Upload belum sukses semua: " + "; ".join(failed))
+        item["status"] = "completed"
+        cleanup = delete_all_job_clips(job_id)
+        item["cleanup"] = f"{cleanup.removed_clips} clip dihapus"
+        update_auto_viral_run(run_id, processed=processed, progress_current=position)
+        append_auto_viral_log(
+            run_id,
+            f"Semua upload job {job_id[:10]} selesai sebagai Private.",
+        )
+    return processed
 
 
 def send_telegram_alert(text: str) -> None:
@@ -13592,6 +13942,9 @@ def run_auto_viral_campaign(run_id: str) -> None:
             run = auto_viral_runs[run_id]
             run_secret = auto_viral_secrets.get(run_id, "")
         run_request = run.request.model_copy(update={"ai_api_key": run_secret})
+        deferred_background_upload = bool(
+            run.trigger == "schedule" and run_request.auto_upload_youtube
+        )
         update_auto_viral_run(
             run_id,
             status="running",
@@ -13684,7 +14037,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
                     raise RuntimeError(finished_job.error or f"Job selesai dengan status {finished_job.status}")
 
                 item["uploads"] = []
-                if run_request.auto_upload_youtube:
+                if run_request.auto_upload_youtube and not deferred_background_upload:
                     source_progress = min(
                         90,
                         round(
@@ -13724,13 +14077,21 @@ def run_auto_viral_campaign(run_id: str) -> None:
 
                     cleanup = delete_all_job_clips(finished_job.id)
                     item["cleanup"] = f"{cleanup.removed_clips} clip dihapus"
+                elif deferred_background_upload:
+                    item["status"] = "awaiting_upload"
+                    item["cleanup"] = "menunggu upload headless terjadwal"
+                    append_auto_viral_log(
+                        run_id,
+                        f"Job {finished_job.id[:10]} selesai render dan masuk batch upload tertunda.",
+                    )
                 else:
                     item["cleanup"] = "hasil clip disimpan untuk review"
                     append_auto_viral_log(
                         run_id,
                         f"Job {finished_job.id[:10]} selesai; {len(finished_job.clips)} clip siap direview",
                     )
-                item["status"] = "completed"
+                if item.get("status") != "awaiting_upload":
+                    item["status"] = "completed"
                 completed_count += 1
             except Exception as exc:
                 item["status"] = "failed"
@@ -13748,6 +14109,25 @@ def run_auto_viral_campaign(run_id: str) -> None:
         if completed_count < run_request.video_count:
             suffix = "clip dan upload" if run_request.auto_upload_youtube else "masuk antrean clipping"
             raise RuntimeError(f"Hanya {completed_count}/{run_request.video_count} video yang berhasil {suffix}")
+
+        if deferred_background_upload:
+            clipping_finished_at = now_iso()
+            upload_not_before = (
+                datetime.now(timezone.utc)
+                + timedelta(minutes=auto_viral_post_clip_upload_delay_minutes())
+            ).isoformat()
+            update_auto_viral_run(
+                run_id,
+                clipping_finished_at=clipping_finished_at,
+                upload_not_before=upload_not_before,
+                processed=processed,
+            )
+            wait_for_auto_viral_upload_window(run_id)
+            processed = upload_auto_viral_processed_jobs(
+                run_id,
+                run_request,
+                processed,
+            )
 
         with auto_viral_lock:
             run = auto_viral_runs[run_id]
@@ -13786,6 +14166,67 @@ def run_auto_viral_campaign(run_id: str) -> None:
             send_telegram_alert(auto_viral_summary(failed_run))
         except Exception as telegram_exc:
             append_auto_viral_error(run_id, f"Telegram alert gagal: {telegram_exc}")
+    finally:
+        with auto_viral_lock:
+            if auto_viral_active_run_id == run_id:
+                auto_viral_active_run_id = None
+            auto_viral_secrets.pop(run_id, None)
+
+
+def resume_scheduled_auto_viral_upload(run_id: str) -> None:
+    """Resume only the durable post-clip/upload phase after a backend restart."""
+    global auto_viral_active_run_id
+    try:
+        with auto_viral_lock:
+            run = auto_viral_runs.get(run_id)
+        if run is None or run.trigger != "schedule" or not run.processed:
+            raise RuntimeError("Run upload terjadwal tidak memiliki checkpoint yang dapat dilanjutkan")
+        if not run.request.auto_upload_youtube:
+            raise RuntimeError("Checkpoint tidak meminta upload YouTube")
+        try:
+            require_youtube_ready()
+        except HTTPException as exc:
+            raise RuntimeError(str(exc.detail)) from exc
+        update_auto_viral_run(
+            run_id,
+            status="running",
+            finished_at=None,
+            progress_stage="waiting_upload",
+            message="Melanjutkan fase upload headless setelah backend restart",
+        )
+        wait_for_auto_viral_upload_window(run_id)
+        processed = upload_auto_viral_processed_jobs(
+            run_id,
+            run.request,
+            [dict(item) for item in run.processed],
+        )
+        finished_at = now_iso()
+        update_auto_viral_run(
+            run_id,
+            status="completed",
+            finished_at=finished_at,
+            progress_percent=100,
+            progress_stage="complete",
+            progress_current=run.request.video_count,
+            progress_total=run.request.video_count,
+            processed=processed,
+            message="Automation selesai; siklus berikutnya dihitung tiga jam dari sekarang",
+        )
+        with auto_viral_lock:
+            final_run = auto_viral_runs[run_id]
+        try:
+            send_telegram_alert(auto_viral_summary(final_run))
+        except Exception as telegram_exc:
+            append_auto_viral_error(run_id, f"Telegram alert gagal: {telegram_exc}")
+    except Exception as exc:
+        append_auto_viral_error(run_id, str(exc))
+        update_auto_viral_run(
+            run_id,
+            status="failed",
+            finished_at=now_iso(),
+            progress_stage="failed",
+            message=str(exc),
+        )
     finally:
         with auto_viral_lock:
             if auto_viral_active_run_id == run_id:
@@ -13840,6 +14281,28 @@ def create_and_start_auto_viral_campaign(
 
 
 def scheduled_auto_viral_request() -> AutoViralRequest:
+    upload_requested = env_bool("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False)
+    rights_confirmed = env_bool(
+        "AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED", False
+    )
+    rights_evidence = os.environ.get(
+        "AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_EVIDENCE", ""
+    ).strip()
+    creator_perspective = os.environ.get(
+        "AUTO_VIRAL_SCHEDULE_CREATOR_PERSPECTIVE", ""
+    ).strip()
+    headless_private_ready = bool(
+        env_bool("YOUTUBE_HEADLESS", True)
+        and not env_bool("YOUTUBE_UPLOAD_USE_CDP", False)
+        and not env_bool("YOUTUBE_UPLOAD_FORCE_CDP", False)
+    )
+    upload_authorized = bool(
+        upload_requested
+        and headless_private_ready
+        and rights_confirmed
+        and len(rights_evidence.split()) >= 6
+        and len(creator_perspective.split()) >= 8
+    )
     return AutoViralRequest(
         niche=os.environ.get("AUTO_VIRAL_SCHEDULE_NICHE", "auto"),  # type: ignore[arg-type]
         video_count=max(1, min(7, env_int("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", 3))),
@@ -13849,12 +14312,16 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         duration_filter=os.environ.get("AUTO_VIRAL_SCHEDULE_DURATION_FILTER", "over_20"),  # type: ignore[arg-type]
         definition_filter="hd",
         sort_order="relevance",
-        auto_upload_youtube=env_bool("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False),
+        auto_upload_youtube=upload_authorized,
+        source_rights_confirmed=rights_confirmed,
+        source_rights_evidence=rights_evidence,
+        creator_perspective=creator_perspective,
     )
 
 
 def auto_viral_schedule_interval_hours() -> float:
-    return max(0.25, min(168.0, env_float("AUTO_VIRAL_SCHEDULE_INTERVAL_HOURS", 6.0)))
+    """Backward-compatible API field; the interval now starts after completion."""
+    return auto_viral_cycle_delay_hours()
 
 
 def latest_scheduled_auto_viral_run() -> AutoViralRun | None:
@@ -13865,6 +14332,8 @@ def latest_scheduled_auto_viral_run() -> AutoViralRun | None:
 
 def auto_viral_schedule_status() -> AutoViralScheduleStatus:
     enabled = env_bool("AUTO_VIRAL_SCHEDULE_ENABLED", False)
+    upload_requested = env_bool("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False)
+    scheduled_request = scheduled_auto_viral_request()
     latest = latest_scheduled_auto_viral_run()
     with auto_viral_scheduler_lock:
         scheduler_running = auto_viral_scheduler_running
@@ -13873,6 +14342,11 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
         active_id = auto_viral_active_run_id
     if not enabled:
         message = "Scheduler nonaktif; set AUTO_VIRAL_SCHEDULE_ENABLED=true lalu restart backend."
+    elif upload_requested and not scheduled_request.auto_upload_youtube:
+        message = (
+            "Siklus background aktif, tetapi upload otomatis ditahan sampai konfirmasi hak, "
+            "referensi bukti izin, dan perspektif kreator diisi."
+        )
     elif active_id:
         message = "Automation sedang berjalan; jadwal berikutnya tidak akan membuat run tumpang tindih."
     elif scheduler_running:
@@ -13884,6 +14358,9 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
         interval_hours=auto_viral_schedule_interval_hours(),
         run_on_startup=env_bool("AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP", False),
         scheduler_running=scheduler_running,
+        boot_delay_minutes=auto_viral_boot_delay_minutes(),
+        post_clip_upload_delay_minutes=auto_viral_post_clip_upload_delay_minutes(),
+        background_upload_enabled=scheduled_request.auto_upload_youtube,
         active_run_id=active_id,
         last_run_id=latest.id if latest else None,
         last_started_at=latest.created_at if latest else None,
@@ -13893,45 +14370,93 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
     )
 
 
-def auto_viral_scheduler_loop() -> None:
-    global auto_viral_scheduler_running, auto_viral_scheduler_next_run_at
-    interval = timedelta(hours=auto_viral_schedule_interval_hours())
-    latest = latest_scheduled_auto_viral_run()
-    if env_bool("AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP", False) and latest is None:
-        next_run = datetime.now(timezone.utc)
-    elif latest is not None:
-        try:
-            last_started = datetime.fromisoformat(latest.created_at.replace("Z", "+00:00"))
-        except ValueError:
-            last_started = datetime.now(timezone.utc)
-        next_run = max(datetime.now(timezone.utc), last_started + interval)
-    else:
-        next_run = datetime.now(timezone.utc) + interval
-    with auto_viral_scheduler_lock:
-        auto_viral_scheduler_next_run_at = next_run
+def auto_viral_next_run_at(
+    now: datetime,
+    latest: AutoViralRun | None,
+    active_run_id: str | None,
+) -> datetime | None:
+    """Calculate the next cycle from boot uptime and the prior completion."""
+    if active_run_id:
+        return None
+    if (
+        latest is not None
+        and latest.status == "queued"
+        and latest.progress_stage == "resume_pending_upload"
+    ):
+        return now
+    if latest is not None:
+        cycle_anchor = parse_utc_datetime(
+            latest.finished_at or latest.updated_at or latest.created_at,
+            now,
+        )
+        return max(
+            auto_viral_boot_not_before(now),
+            cycle_anchor + timedelta(hours=auto_viral_cycle_delay_hours()),
+        )
+    if env_bool("AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP", False):
+        return auto_viral_boot_not_before(now)
+    return max(
+        auto_viral_boot_not_before(now),
+        now + timedelta(hours=auto_viral_cycle_delay_hours()),
+    )
 
+
+def auto_viral_scheduler_loop() -> None:
+    global auto_viral_active_run_id, auto_viral_scheduler_running, auto_viral_scheduler_next_run_at
+    retry_not_before: datetime | None = None
     try:
         while env_bool("AUTO_VIRAL_SCHEDULE_ENABLED", False):
             now = datetime.now(timezone.utc)
-            if now >= next_run:
+            with auto_viral_lock:
+                active_id = auto_viral_active_run_id
+            latest = latest_scheduled_auto_viral_run()
+            next_run = auto_viral_next_run_at(now, latest, active_id)
+            if (
+                next_run is not None
+                and retry_not_before is not None
+                and retry_not_before > next_run
+            ):
+                next_run = retry_not_before
+            with auto_viral_scheduler_lock:
+                auto_viral_scheduler_next_run_at = next_run
+
+            if next_run is not None and now >= next_run:
                 try:
-                    create_and_start_auto_viral_campaign(
-                        scheduled_auto_viral_request(),
-                        trigger="schedule",
-                    )
-                    next_run = now + interval
+                    if (
+                        latest is not None
+                        and latest.status == "queued"
+                        and latest.progress_stage == "resume_pending_upload"
+                    ):
+                        with auto_viral_lock:
+                            if auto_viral_active_run_id is None:
+                                auto_viral_active_run_id = latest.id
+                        threading.Thread(
+                            target=resume_scheduled_auto_viral_upload,
+                            args=(latest.id,),
+                            name=f"auto-viral-upload-resume-{latest.id[:8]}",
+                            daemon=True,
+                        ).start()
+                    else:
+                        create_and_start_auto_viral_campaign(
+                            scheduled_auto_viral_request(),
+                            trigger="schedule",
+                        )
+                    retry_not_before = None
                 except HTTPException as exc:
                     if exc.status_code != 409:
                         print(f"Auto Viral scheduler gagal membuat run: {exc.detail}", flush=True)
-                        next_run = now + interval
-                    else:
-                        next_run = now + timedelta(seconds=30)
+                        retry_not_before = now + timedelta(minutes=5)
                 except Exception as exc:
                     print(f"Konfigurasi Auto Viral scheduler tidak valid: {exc}", flush=True)
-                    next_run = now + interval
-                with auto_viral_scheduler_lock:
-                    auto_viral_scheduler_next_run_at = next_run
-            wait_seconds = max(1.0, min(30.0, (next_run - datetime.now(timezone.utc)).total_seconds()))
+                    retry_not_before = now + timedelta(minutes=5)
+            wait_seconds = (
+                15.0
+                if next_run is None
+                else max(
+                    1.0,
+                    min(30.0, (next_run - datetime.now(timezone.utc)).total_seconds()),
+                )
+            )
             time.sleep(wait_seconds)
     finally:
         with auto_viral_scheduler_lock:

@@ -531,6 +531,27 @@ def test_advertiser_suitability_rejects_direct_public_figure_insult():
 
     assert profile["risk_tier"] == "high_risk"
     assert profile["high_risk_for_full_ads"] is True
+    assert profile["automatic_selection_allowed"] is False
+    assert profile["publication_disposition"] == "reject_or_recut"
+
+
+def test_ad_suitability_risk_is_kept_for_private_human_review():
+    candidate = make_candidate(
+        0,
+        0,
+        88,
+        (
+            "Istilah kontol disebut dalam pembahasan bahasa. Intinya, pahami konteks "
+            "sebelum mengutip kata kasar itu kembali."
+        ),
+    )
+
+    profile = advertiser_suitability_profile(candidate.text)
+
+    assert profile["high_risk_for_full_ads"] is True
+    assert profile["automatic_selection_allowed"] is True
+    assert profile["publication_disposition"] == "private_human_review"
+    assert select_candidates([candidate], 1) == [candidate]
 
 
 def test_ai_rescore_accepts_common_alternate_candidate_key(monkeypatch):

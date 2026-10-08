@@ -201,6 +201,54 @@ def test_discover_clips_prefers_final_context_audit_over_stale_candidate_flag(
     assert clips[0].context_recut_required is True
 
 
+def test_discover_clips_exposes_virtual_production_team_handoff(tmp_path, monkeypatch):
+    import api
+
+    output_root = tmp_path / "outputs"
+    clips_dir = output_root / "job" / "clips"
+    clips_dir.mkdir(parents=True)
+    video = clips_dir / "clip_01.mp4"
+    video.write_bytes(b"video")
+    video.with_suffix(".json").write_text(
+        json.dumps(
+            {
+                "production_team_handoff": {
+                    "overall_status": "ready_for_private_human_review",
+                    "roles": {
+                        "content_researcher_curator": {
+                            "hook_type": "contrast_or_reveal",
+                            "peak_moment_seconds": 8.5,
+                        },
+                        "clipper_video_editor": {
+                            "pacing": "dynamic",
+                            "visual_accent": "story_punchline",
+                            "surprise_treatment": "reaction_snap",
+                        },
+                        "distribution_specialist": {
+                            "platforms": ["youtube_shorts", "tiktok", "instagram_reels"],
+                        },
+                        "quality_control_coordinator": {
+                            "status": "ready_for_human_review",
+                            "rights_basis": "user_supplied_file_requires_commercial_rights_confirmation",
+                            "required_human_checks": ["verify_rights", "watch_final_render"],
+                        },
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
+
+    clip = discover_clips(0, output_root)[0]
+
+    assert clip.production_team_status == "ready_for_private_human_review"
+    assert clip.production_research_brief == "Hook contrast_or_reveal · peak 8.5s"
+    assert "reaction_snap" in (clip.production_editor_brief or "")
+    assert "youtube shorts" in (clip.production_distribution_brief or "")
+    assert clip.production_qc_checks == ["verify_rights", "watch_final_render"]
+
+
 def test_repair_job_clip_context_queues_only_selected_clip_without_auto_upload(monkeypatch, tmp_path):
     import api
 
@@ -2912,7 +2960,7 @@ def test_performance_feedback_does_not_treat_one_k_public_views_as_quality():
     assert any("start/replay" in item for item in diagnosis)
 
 
-def test_monetization_preflight_blocks_high_ad_suitability_risk(monkeypatch):
+def test_monetization_preflight_routes_high_ad_suitability_risk_to_review(monkeypatch):
     import api
 
     clip = make_clip(1)
@@ -2935,8 +2983,14 @@ def test_monetization_preflight_blocks_high_ad_suitability_risk(monkeypatch):
 
     issue = youtube_monetization_preflight_issue(job, clip) or ""
 
+    assert "Upload ditahan" in issue
     assert "advertiser-suitability" in issue
-    assert "berisiko tinggi" in issue
+    assert "iklan terbatas" in issue
+
+    reviewed_clip = clip.model_copy(update={"is_correct": True})
+    reviewed_issue = youtube_monetization_preflight_issue(job, reviewed_clip) or ""
+
+    assert "advertiser-suitability" not in reviewed_issue
 
 
 def test_monetization_preflight_requires_human_review_for_political_claim(monkeypatch):
@@ -4557,6 +4611,10 @@ def test_normalized_generated_metadata_rejects_incomplete_title_ending():
         "Mengapa Saya Hidup Saya Nggak Ngeruti Hidup Anda",
         "Mengaku Turyanya Rasul, Apa Itu Sebenarnya?",
         "DI SEJAK BAIK DIRENCANAKAN MAU JADILAH JIHAD",
+        "Orang Dabu Singkat Ini Dulu Tidak Menunggu Enam Bulan",
+        "Soalnya Kini Ke Ikam: Ilmu Noko dan Hikmah Roh Hidup",
+        "Sederah yang Dipilihkan Allah, Kenapa Masjid Cunyadin Dipilih?",
+        "Cari Menantu yang Takat kepada Allah",
     ],
 )
 def test_public_title_quality_rejects_observed_asr_debris(title):

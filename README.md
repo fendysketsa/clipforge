@@ -17,7 +17,8 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Detect 18–32 second social anecdotes with first-person friction, chronological movement, a concrete comparison, and a self-directed punchline. These use a 1.9-second event card, faster face-safe reframes, authentic source reactions, and no synthetic ridicule, stickers, smoke, SFX, or background music.
 - Export vertical 9:16 MP4 clips with SRT files.
 - Burn subtitles into clips by default.
-- Apply clean context-aware editing by default: a truthful opening hook, sparse transcript-synced camera cuts, two brief edge cues, and a thin progress line.
+- Apply clean context-aware editing by default: a truthful opening hook, sparse transcript-synced camera cuts, two brief edge cues, and a thin progress line. When AI is enabled, a bounded Creative Director reads each selected transcript and chooses its pacing, hook/payoff treatment, camera-cut density, reaction policy, and sound restraint; unsupported or unsafe plans fall back to the deterministic content-aware edit. It can also execute one transcript-grounded surprise beat with a face-safe punch-in, at most one quiet SFX accent, and a brief ducked-music drop—never a random timer, invented reaction, or pile of effects.
+- Run every completed clip through a visible four-role **Production Desk**: Researcher/Curator records the source-grounded hook and peak moment, Editor records the executed treatment, Distribution packages the vertical output for Shorts/TikTok/Reels, and QC records rights, context, render, title/thumbnail, and Private-first checks. The desk supports a one-person workflow but never self-approves rights, facts, final playback, or public release.
 - Finish Auto FYP Shorts with a restrained cinematic pass by default: frame-sampled exposure and bounded white balance that prefer detected face pixels, gentle highlight roll-off, theme-aware split toning, debanding, a controlled quadratic hook push-in, and fine grain only at high/max quality. The pass avoids heavy blur, black bars, and effects over faces or captions.
 - Audit representative final frames for shadow/highlight clipping, median sharpness, face-edge/head-crop risk, and subtitle renderer safe-area. Results and warnings are stored in the clip sidecar without silently discarding a completed export.
 - Reframe a single speaker like a restrained virtual multi-camera edit, cutting between face-safe medium and close-up angles on meaningful speech beats.
@@ -42,7 +43,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Record a transparent growth experiment: Shorts target 20K views and 20 subscribers per upload, while long-form keeps a 5K/20-subscriber baseline. Stability means at least three of the latest five comparable uploads reach both targets, measured against the rolling median of the last ten uploads in the same format and series. Targets are experiments, not guaranteed distribution.
 - Store post-publish performance snapshots on each YouTube upload and diagnose reach, retention, and subscriber conversion against comparable uploads in the same series and cinematic experiment cohort. Each upload keeps the stable render experiment ID, A/B opening-motion variant, exact recipe hash, and render-QC context. YouTube Analytics OAuth provides engaged views, watch metrics, shares, and subscribers; the YouTube Data API remains a public-statistics fallback.
 - Compare engaged/public view ratio against the same-series median so a 1K public-view floor is not mistaken for retention after Shorts starts/replays became public views.
-- Record an advertiser-suitability text audit beside every render: direct insults, strong profanity, protected-group attacks, and graphic-harm wording are held; political allegations, sensitive issues, and religious comparisons require human context/title/thumbnail and ad self-certification review.
+- Record an advertiser-suitability text audit beside every render without treating ad eligibility as a Community Guidelines verdict. Direct/protected-group attacks and glorified harm remain blocked; strong profanity or graphic wording stays available for Private human review and may receive limited/no ads, while political allegations, sensitive issues, and religious comparisons require context/title/thumbnail and ad self-certification review.
 - Let operators enter Studio-only **Shown in feed** and **Stayed to watch** metrics, preserve them across API refreshes, and diagnose zero-view uploads differently when the Short has never entered the feed versus when viewers were actually offered it.
 - Auto-repair a broader shortlist before final selection; when the normal 25–45 second pass finds no complete candidate, automatically retry sentence-aligned windows up to 105 seconds, then render up to three candidates with a clear point, complete sentence boundary, and safe editorial/religious context when only quality predictions such as retention or the five-beat pattern remain below target. These review fallbacks never enter automatic upload.
 - Audit first-30-second editorial readiness across five beat windows (0–3, 3–8, 8–15, 15–22, and 22–30 seconds), including context-dependent openings, speech coverage, dead air, and fresh information. Timing-audited Shorts below 58 are held by the selection/upload gate; this score is a diagnostic, not a promise of actual audience retention.
@@ -368,22 +369,35 @@ changing these values):
 ```env
 YOUTUBE_DATA_API_KEY=your_google_api_key
 AUTO_VIRAL_SCHEDULE_ENABLED=true
-AUTO_VIRAL_SCHEDULE_INTERVAL_HOURS=6
-AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP=false
+AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP=true
+AUTO_VIRAL_BOOT_DELAY_MINUTES=30
+AUTO_VIRAL_POST_CLIP_UPLOAD_DELAY_MINUTES=30
+AUTO_VIRAL_CYCLE_DELAY_HOURS=3
 AUTO_VIRAL_SCHEDULE_NICHE=auto
 AUTO_VIRAL_SCHEDULE_VIDEO_COUNT=3
 AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO=2
-AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE=false
+AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE=true
+AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED=true
+AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_EVIDENCE="Referensi izin komersial audio visual dari pemilik sumber"
+AUTO_VIRAL_SCHEDULE_CREATOR_PERSPECTIVE="Perspektif manusia yang akan ditanam sebagai kontribusi editorial pada setiap clip"
 VIRAL_CC_TREND_VIDEO_CATEGORY_ID=25
 ```
 
-The scheduler never overlaps active Auto Viral runs. Its next/last run, trigger,
-stage, overall percentage, successful source count, provider, and recent logs are
-visible in **Radar Viral Otomatis** on the dashboard. Run history survives backend
-restarts in `backend/data/auto_viral_runs.json`; an interrupted run is recorded as
-failed instead of disappearing. Automatic upload remains off by default so cron
-renders stay available for review. If enabled, YouTube visibility still follows
-the existing private-first upload safety rules.
+The background lifecycle waits until machine uptime reaches the boot delay, renders
+the complete clip batch, waits again for the configured post-clip delay, then queues
+every eligible upload as Private using the headless uploader. The next discovery
+cycle is calculated from the time the previous run actually finishes, not from when
+it started. Active runs never overlap. Upload checkpoints survive a backend restart,
+so a run interrupted during the waiting/upload phase resumes without clipping the
+same source again or duplicating a confirmed upload.
+
+The schedule status and recent logs remain visible in **Radar Viral Otomatis**, but
+no headed upload browser is opened when `YOUTUBE_HEADLESS=true` and CDP upload is
+disabled. Automatic upload is activated only when the operator explicitly records
+source-rights confirmation, a traceable evidence reference, and a human-authored
+creator perspective. Without all three, clipping can continue but the upload phase
+is held. Public publication is never automatic; the existing Private-first checks
+still apply.
 
 When `YOUTUBE_DATA_API_KEY` is configured, the backend also starts a lightweight
 performance collector. Every six hours it batches up to 200 due uploads into

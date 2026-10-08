@@ -309,3 +309,27 @@ Audit terbatas dilakukan 6 Oktober 2026 dari screenshot yang diberikan operator.
 - Asumsi bahwa angka suka besar atau tampilan profesional membuktikan monetisasi dan izin.
 - Penggunaan nama channel referensi sebagai sumber atribusi bila pemegang hak sebenarnya adalah podcast lain.
 - Glamorization produk berisiko kesehatan demi membuat hook lebih sensasional.
+
+---
+
+# Audit lintas referensi: ritme dan kejutan semantik
+
+Audit dilakukan 8 Oktober 2026 dari metadata publik YouTube dan contact sheet storyboard. Angka publik dapat berubah. Storyboard tidak cukup untuk menilai backsong atau kualitas mixing, sehingga temuan audio tidak diklaim berasal dari referensi ini.
+
+## Sampel publik
+
+- [`VDFTDm39fIM`](https://www.youtube.com/watch?v=VDFTDm39fIM) — sekitar 17,74 juta views, 137 detik: pembuka visual kuat, perpindahan subjek mengikuti giliran makna, caption pendek, dan akhir menggemakan gambaran pembuka.
+- [`I6ujLhjXilk`](https://www.youtube.com/watch?v=I6ujLhjXilk) — sekitar 6,71 juta views, 60 detik: pertanyaan langsung, pergantian pembicara pada beat jawaban, serta sistem caption yang dekoratif tetapi stabil.
+- [`J2qD1mV0UU8`](https://www.youtube.com/watch?v=J2qD1mV0UU8) — sekitar 6,41 juta views, 19 detik: kartu identitas singkat, setup cepat, satu kluster reaksi di payoff, lalu ekspresi akhir dibiarkan bernapas.
+- [`NIEfeIxxh_k`](https://www.youtube.com/watch?v=NIEfeIxxh_k) — sekitar 5,92 juta views, 50 detik: framing pembicara relatif stabil dan caption kontras; kekuatan utamanya berada pada cerita, bukan tumpukan efek.
+
+## Pola yang diterapkan ke ClipForge
+
+1. **Satu kejutan yang layak lebih kuat daripada banyak efek acak.** Mesin mencari reveal, kontras, reaksi, atau payoff pada segmen transkrip bertimestamp.
+2. Beat yang lolos dapat memperoleh close-up face-safe sekitar satu detik, satu aksen SFX pelan, serta penurunan backsong singkat agar kata utama terasa lebih jelas.
+3. Bila transkrip tidak mendukung kejutan, permintaan AI dibatalkan. Musik tetap steady atau tidak dipasang; tidak ada efek yang dijadwalkan secara acak.
+4. `payoff_silence` sengaja tidak diberi SFX. Keheningan dan penurunan musik menjadi treatment-nya.
+5. Ayat, hadis, doa, duka, hukum agama, politik sensitif, dan klaim serius tetap masuk jalur measured/dialogue-first tanpa dramatisasi kejutan.
+6. Backsong otomatis memakai instrumental yang dibuat lokal dan di-duck di bawah dialog. Rekaman pihak ketiga tetap memerlukan opt-in terpisah dan tidak diunduh saat render.
+
+Views tinggi pada sampel adalah bukti bahwa pola tersebut layak diuji, bukan bukti sebab-akibat atau jaminan view. ClipForge mengambil prinsip ritme dan struktur saja; footage, wajah, wording, caption, logo, palet, dan branding sumber tidak disalin.

@@ -877,6 +877,43 @@ export function ResultsSection({
                     ) : null}
                   </div>
                 ) : null}
+                {clip.production_team_status ? (
+                  <details className="productionTeamDesk">
+                    <summary>
+                      <span>
+                        <Video size={14} />
+                        Production Desk
+                      </span>
+                      <small>
+                        {clip.production_team_status === "ready_for_private_human_review"
+                          ? "Handoff siap"
+                          : "Perlu QC"}
+                      </small>
+                      <ChevronDown size={14} />
+                    </summary>
+                    <div className="productionTeamGrid">
+                      <div>
+                        <strong>Researcher</strong>
+                        <span>{clip.production_research_brief || "Hook dan peak moment perlu diperiksa."}</span>
+                      </div>
+                      <div>
+                        <strong>Editor</strong>
+                        <span>{clip.production_editor_brief || "Treatment edit adaptif."}</span>
+                      </div>
+                      <div>
+                        <strong>Distribution</strong>
+                        <span>{clip.production_distribution_brief || "Paket metadata perlu dilengkapi."}</span>
+                      </div>
+                      <div>
+                        <strong>Quality Control</strong>
+                        <span>{clip.production_qc_brief || "Hak, konteks, dan render perlu direview."}</span>
+                      </div>
+                    </div>
+                    <p>
+                      Otomatis membantu produksi; izin sumber, fakta, hasil final, dan publikasi tetap disetujui manusia.
+                    </p>
+                  </details>
+                ) : null}
                 <div className="clipCardFooter">
                   {clip.context_recut_required || automaticRepairDidNotPass ? (
                     <div className="clipRepairNotice">
