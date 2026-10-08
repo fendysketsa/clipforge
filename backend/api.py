@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 import hashlib
 import json
 import importlib.util
@@ -11811,11 +11812,24 @@ def viral_search_hard_filter_rejection_reason(
     info: dict[str, Any],
     request: AutoViralRequest | ViralVideoSearchRequest,
 ) -> str:
-    """Keep selected duration and HD constraints non-adaptive.
+    """Keep freshness ceiling, selected duration, and HD non-adaptive.
 
     View count is intentionally absent: reach is a ranking signal, never a
     proxy for informational value or clip quality.
     """
+    age_days = upload_age_days(info)
+    if age_days is None and env_bool("VIRAL_CC_REQUIRE_UPLOAD_DATE", True):
+        return "tanggal unggah tidak tersedia"
+    adaptive_max_age_days = max(
+        request.max_age_days,
+        env_int("VIRAL_CC_FALLBACK_MAX_AGE_DAYS", 90),
+    )
+    adaptive_max_age_days = min(MAX_VIRAL_FALLBACK_AGE_DAYS, adaptive_max_age_days)
+    if age_days is not None and age_days > adaptive_max_age_days:
+        return (
+            f"usia {age_days} hari melewati batas adaptif "
+            f"{adaptive_max_age_days} hari"
+        )
     duration = float(info.get("duration") or 0)
     if request.duration_filter == "under_3" and not (0 < duration < 180):
         return "durasi bukan kurang dari 3 menit"
@@ -12138,6 +12152,9 @@ def compact_source_payload(
         "url": normalize_youtube_video_url(youtube_watch_url(info)) or youtube_watch_url(info),
         "title": str(info.get("title") or "Video tanpa judul")[:180],
         "uploader": str(info.get("uploader") or "")[:120],
+        "channel_id": str(
+            info.get("channel_id") or info.get("uploader_id") or ""
+        )[:120],
         "duration": info.get("duration"),
         "definition": definition,
         "height": source_height or None,
@@ -12237,6 +12254,116 @@ def sort_viral_source_payloads(
             ),
             reverse=True,
         )
+
+
+VIRAL_DIVERSITY_TITLE_STOPWORDS = frozenset(
+    {
+        "yang", "dan", "dari", "untuk", "dengan", "atau", "ini", "itu",
+        "agar", "jadi", "dalam", "sebuah", "the", "of", "to", "video",
+        "full", "episode", "part", "ceramah", "kajian", "islam", "islami",
+        "indonesia", "terbaru", "viral",
+    }
+)
+
+
+def viral_source_title_tokens(source: dict[str, Any]) -> set[str]:
+    return {
+        token
+        for token in re.findall(
+            r"[a-z0-9]{3,}", str(source.get("title") or "").casefold()
+        )
+        if token not in VIRAL_DIVERSITY_TITLE_STOPWORDS
+    }
+
+
+def viral_source_titles_too_similar(
+    source: dict[str, Any],
+    selected: list[dict[str, Any]],
+    *,
+    threshold: float,
+) -> bool:
+    tokens = viral_source_title_tokens(source)
+    if not tokens:
+        return False
+    for existing in selected:
+        existing_tokens = viral_source_title_tokens(existing)
+        if not existing_tokens:
+            continue
+        union = tokens | existing_tokens
+        if union and len(tokens & existing_tokens) / len(union) >= threshold:
+            return True
+    return False
+
+
+def diverse_viral_source_payloads(
+    sources: list[dict[str, Any]],
+    limit: int,
+    *,
+    diversify_niches: bool,
+) -> list[dict[str, Any]]:
+    """Keep ranking quality while avoiding a batch dominated by one idea/channel.
+
+    The passes intentionally relax diversity when the licensed candidate pool is
+    small. Exact URL uniqueness is never relaxed.
+    """
+    if limit <= 0:
+        return []
+    unique_sources: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for source in sources:
+        normalized = normalize_youtube_video_url(str(source.get("url") or ""))
+        identity = normalized or str(source.get("url") or "").strip()
+        if not identity or identity in seen_urls:
+            continue
+        seen_urls.add(identity)
+        unique_sources.append(source)
+
+    selected: list[dict[str, Any]] = []
+    selected_urls: set[str] = set()
+    channel_counts: Counter[str] = Counter()
+    selected_niches: set[str] = set()
+
+    def channel_key(source: dict[str, Any]) -> str:
+        return str(
+            source.get("channel_id") or source.get("uploader") or "unknown-channel"
+        ).strip().casefold()
+
+    def add_pass(
+        *,
+        require_new_niche: bool,
+        max_per_channel: int | None,
+        title_threshold: float | None,
+    ) -> None:
+        for source in unique_sources:
+            if len(selected) >= limit:
+                return
+            url = normalize_youtube_video_url(str(source.get("url") or "")) or str(
+                source.get("url") or ""
+            )
+            if url in selected_urls:
+                continue
+            niche = str(source.get("niche") or "")
+            if require_new_niche and niche in selected_niches:
+                continue
+            channel = channel_key(source)
+            if max_per_channel is not None and channel_counts[channel] >= max_per_channel:
+                continue
+            if title_threshold is not None and viral_source_titles_too_similar(
+                source, selected, threshold=title_threshold
+            ):
+                continue
+            selected.append(source)
+            selected_urls.add(url)
+            channel_counts[channel] += 1
+            if niche:
+                selected_niches.add(niche)
+
+    if diversify_niches:
+        add_pass(require_new_niche=True, max_per_channel=1, title_threshold=0.64)
+    add_pass(require_new_niche=False, max_per_channel=1, title_threshold=0.64)
+    add_pass(require_new_niche=False, max_per_channel=2, title_threshold=0.82)
+    add_pass(require_new_niche=False, max_per_channel=None, title_threshold=None)
+    return selected
 
 
 def fetch_youtube_metadata(url: str) -> dict[str, Any]:
@@ -12339,6 +12466,7 @@ def youtube_data_api_video_payload(item: dict[str, Any]) -> dict[str, Any]:
         "default_language": snippet.get("defaultLanguage") or "",
         "default_audio_language": snippet.get("defaultAudioLanguage") or "",
         "uploader": snippet.get("channelTitle") or "",
+        "channel_id": snippet.get("channelId") or "",
         "duration": parse_youtube_iso_duration(str(content.get("duration") or "")),
         "definition": str(content.get("definition") or ""),
         "view_count": int(stats.get("viewCount") or 0),
@@ -13234,10 +13362,12 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
         )
         sources: list[dict[str, Any]] = []
         fast_api_only = env_bool("VIRAL_CC_FAST_API_ONLY", True)
-        source_pool_target = (
-            request.video_count
-            if fast_api_only
-            else max(request.video_count * 2, request.video_count)
+        diversity_pool_factor = max(
+            2, min(8, env_int("VIRAL_CC_DIVERSITY_POOL_FACTOR", 4))
+        )
+        source_pool_target = max(
+            request.video_count * diversity_pool_factor,
+            request.video_count,
         )
         prefer_youtube_api = env_bool("VIRAL_CC_REQUIRE_YOUTUBE_DATA_API", True)
         api_key_configured = bool(os.environ.get("YOUTUBE_DATA_API_KEY", "").strip())
@@ -13340,7 +13470,11 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
             )
             sources = [*sources, *fallback_sources]
         sort_viral_source_payloads(sources, request.sort_order)
-        selected = sources[: request.video_count]
+        selected = diverse_viral_source_payloads(
+            sources,
+            request.video_count,
+            diversify_niches=request.niche == "auto",
+        )
         elapsed_ms = max(0, round((time.perf_counter() - search_started) * 1000))
         for rank, source in enumerate(selected, start=1):
             source["rank"] = rank
@@ -13898,7 +14032,32 @@ def discover_auto_viral_campaign_sources(
             )
         )
     sort_viral_source_payloads(sources, request.sort_order)
-    return sources
+    diverse_prefix = diverse_viral_source_payloads(
+        sources,
+        request.video_count,
+        diversify_niches=request.niche == "auto",
+    )
+    selected_urls = {
+        normalize_youtube_video_url(str(source.get("url") or ""))
+        or str(source.get("url") or "")
+        for source in diverse_prefix
+    }
+    remaining = [
+        source
+        for source in sources
+        if (
+            normalize_youtube_video_url(str(source.get("url") or ""))
+            or str(source.get("url") or "")
+        )
+        not in selected_urls
+    ]
+    if diverse_prefix:
+        append_auto_viral_log(
+            run_id,
+            f"Diversity pass memilih {len(diverse_prefix)} kandidat utama dari "
+            f"{len(sources)} sumber: kanal dan tema dirotasi bila stok memungkinkan.",
+        )
+    return [*diverse_prefix, *remaining]
 
 
 def run_clip_job_with_campaign_progress(

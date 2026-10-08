@@ -1341,6 +1341,112 @@ def test_api_search_never_relaxes_explicit_hd_requirement(monkeypatch):
     assert search_youtube_data_api_viral_sources(request, "missing-run", stop_after=3) == []
 
 
+def test_adaptive_search_relaxes_week_filter_only_to_bounded_freshness(monkeypatch):
+    from api import viral_search_filter_relaxation_reasons, viral_search_hard_filter_rejection_reason
+
+    monkeypatch.setenv("VIRAL_CC_ADAPTIVE_FILTERS", "true")
+    monkeypatch.setenv("VIRAL_CC_FALLBACK_MAX_AGE_DAYS", "90")
+    request = AutoViralRequest(
+        upload_date_filter="this_week",
+        max_age_days=7,
+        duration_filter="over_20",
+        definition_filter="hd",
+    )
+    recent_enough = {
+        "upload_date": (datetime.now(timezone.utc) - timedelta(days=60)).strftime("%Y%m%d"),
+        "duration": 1800,
+        "definition": "hd",
+    }
+    far_too_old = {
+        "upload_date": (datetime.now(timezone.utc) - timedelta(days=500)).strftime("%Y%m%d"),
+        "duration": 1800,
+        "definition": "hd",
+    }
+
+    assert viral_search_hard_filter_rejection_reason(recent_enough, request) == ""
+    assert viral_search_filter_relaxation_reasons(recent_enough, request) == [
+        "tanggal unggah di luar 7 hari terakhir"
+    ]
+    assert "melewati batas adaptif 90 hari" in viral_search_hard_filter_rejection_reason(
+        far_too_old, request
+    )
+
+
+def test_diverse_source_selection_rotates_niche_and_channel_before_filling():
+    from api import diverse_viral_source_payloads
+
+    sources = [
+        {
+            "url": "https://www.youtube.com/watch?v=practical-one",
+            "title": "Cara Mengatasi Hutang Menurut Islam",
+            "channel_id": "channel-a",
+            "niche": "islamic_practical_life",
+            "score": 95,
+        },
+        {
+            "url": "https://www.youtube.com/watch?v=practical-two",
+            "title": "Solusi Hutang dan Rezeki Menurut Islam",
+            "channel_id": "channel-a",
+            "niche": "islamic_practical_life",
+            "score": 94,
+        },
+        {
+            "url": "https://www.youtube.com/watch?v=history-one",
+            "title": "Pelajaran dari Sejarah Andalusia",
+            "channel_id": "channel-b",
+            "niche": "islamic_history",
+            "score": 88,
+        },
+        {
+            "url": "https://www.youtube.com/watch?v=family-one",
+            "title": "Komunikasi Orang Tua dan Anak",
+            "channel_id": "channel-c",
+            "niche": "muslim_family_lifestyle",
+            "score": 84,
+        },
+    ]
+
+    selected = diverse_viral_source_payloads(sources, 3, diversify_niches=True)
+
+    assert [item["url"] for item in selected] == [
+        "https://www.youtube.com/watch?v=practical-one",
+        "https://www.youtube.com/watch?v=history-one",
+        "https://www.youtube.com/watch?v=family-one",
+    ]
+
+
+def test_diverse_source_selection_never_duplicates_url_and_relaxes_when_pool_is_small():
+    from api import diverse_viral_source_payloads
+
+    sources = [
+        {
+            "url": "https://youtu.be/abcDEF12345",
+            "title": "Nasihat Sabar Bagian Pertama",
+            "uploader": "Kanal Tunggal",
+            "niche": "islamic_practical_life",
+        },
+        {
+            "url": "https://www.youtube.com/watch?v=abcDEF12345",
+            "title": "Nasihat Sabar Duplikat",
+            "uploader": "Kanal Tunggal",
+            "niche": "islamic_practical_life",
+        },
+        {
+            "url": "https://www.youtube.com/watch?v=xyzUVW67890",
+            "title": "Nasihat Syukur Bagian Kedua",
+            "uploader": "Kanal Tunggal",
+            "niche": "islamic_practical_life",
+        },
+    ]
+
+    selected = diverse_viral_source_payloads(sources, 3, diversify_niches=True)
+
+    assert [item["url"] for item in selected] == [
+        "https://youtu.be/abcDEF12345",
+        "https://www.youtube.com/watch?v=xyzUVW67890",
+    ]
+
+
 def test_empty_fast_api_result_enters_bounded_metadata_fallback(monkeypatch):
     import api
 
