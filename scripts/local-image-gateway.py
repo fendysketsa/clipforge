@@ -106,27 +106,38 @@ class GatewayHandler(BaseHTTPRequestHandler):
             if not isinstance(parsed, dict):
                 return body
             prompt = str(parsed.get("prompt") or "").strip()
-            no_human_scene = "visible human limit: 0" in prompt.casefold()
-            if no_human_scene:
+            lowered_prompt = prompt.casefold()
+            object_only_scene = any(
+                marker in lowered_prompt
+                for marker in (
+                    "visible human limit: 0",
+                    "visible object scope:",
+                    "narrative object action contract:",
+                    "architecture or machinery geometry",
+                )
+            )
+            if object_only_scene:
                 prompt_guard = (
-                    " STRICT SUBJECT INTEGRITY: preserve the requested non-human subject, action, count, props, "
-                    "location, and immutable global visual style. Keep the frame free of unrequested human figures "
-                    "and body parts."
+                    " STRICT OBJECT COMPOSITION: preserve the requested structure or machine, exact mechanical action, "
+                    "materials, engineering geometry, scale, location, and visual style. Use crisp edges, fine surface "
+                    "detail, strong local contrast, natural light, and a clean unobstructed focal subject."
                 )
                 negative_guard = (
-                    "unrequested human, human face, human silhouette, human body part, stock presenter, unrelated character"
+                    "unrequested human, human face, human silhouette, human body part, hand, arm, stock presenter, "
+                    "unrelated character"
                 )
             else:
                 prompt_guard = (
-                    " STRICT SUBJECT INTEGRITY: show only explicitly requested people. Every visible hand must be "
-                    "anatomically attached through a visible wrist and forearm to a clearly visible owner. Keep all "
-                    "hands away from frame edges. Never add anonymous foreground hands, partial people, background "
-                    "extras, floating limbs, or body parts entering from outside the frame."
+                    " STRICT PORTRAIT QUALITY: show only explicitly requested people. Keep the principal person large, "
+                    "unobstructed, and sharply focused in a medium composition. Render a clean readable face with "
+                    "symmetrical eyes, defined nose and mouth, natural skin texture, individual hair strands, complete "
+                    "arms, natural hands, and coherent limb connections."
                 )
                 negative_guard = (
                     "disembodied hands, floating hands, detached hands, bodyless limbs, cropped arms, cropped wrists, "
                     "hands entering from frame edge, anonymous foreground hands, partial person, unrequested crowd, "
-                    "extra background people"
+                    "extra background people, melted face, smeared face, low-detail face, tiny face, distorted face, "
+                    "asymmetrical eyes, duplicated facial features, warped mouth, waxy skin"
                 )
             if prompt_guard.strip() not in prompt:
                 parsed["prompt"] = f"{prompt}{prompt_guard}".strip()
@@ -142,14 +153,18 @@ class GatewayHandler(BaseHTTPRequestHandler):
         self._forward()
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path.rstrip("/").endswith("/images/generations"):
+        request_path = self.path.rstrip("/")
+        if request_path.endswith(("/images/generations", "/images/edits")):
             with IMAGE_LOCK:
                 try:
                     release_ollama()
                 except Exception as exc:
                     self._json_error(503, f"Gagal menyiapkan VRAM GPU: {exc}")
                     return
-                self._forward(enhance_images=True)
+                self._forward(
+                    enhance_images=True,
+                    strengthen_request=request_path.endswith("/images/generations"),
+                )
             return
         self._forward()
 
@@ -222,10 +237,12 @@ class GatewayHandler(BaseHTTPRequestHandler):
             print(f"[local-image-gateway] Real-ESRGAN dilewati: {exc}", flush=True)
             return payload
 
-    def _forward(self, enhance_images: bool = False) -> None:
+    def _forward(
+        self, enhance_images: bool = False, strengthen_request: bool = False
+    ) -> None:
         length = int(self.headers.get("Content-Length", "0") or 0)
         body = self.rfile.read(length) if length else None
-        if enhance_images:
+        if strengthen_request:
             body = self._strengthen_generation_request(body)
         headers = {
             name: value

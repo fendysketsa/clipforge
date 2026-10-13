@@ -791,6 +791,8 @@ def _animation_direction(text: str) -> str:
         return "subtle breathing and eye movement, small page motion, precise restrained hand movement around the relevant book"
     if _has_any(text, ("membuka", "menutup", "mengambil", "meletakkan", "memperbaiki", "opens", "closes", "takes", "places", "repairs")):
         return "one clear object interaction with believable hand contact, body weight, material response, and restrained follow-through"
+    if not _has_any(text, _PEOPLE_TERMS + _NONHUMAN_CHARACTER_TERMS):
+        return "subtle story-specific object or environmental motion with believable mechanics, material response, and parallax"
     return "subtle story-specific body or object motion, natural breathing or environmental movement, no repetitive waving or idle crowd loop"
 
 
@@ -929,7 +931,7 @@ def _compose_visual_prompt(
     continuity = (
         _clean_text(character_bible, 420)
         if has_people or has_nonhuman_character
-        else "No recurring character appears in this frame; do not insert one"
+        else "Preserve the established architecture, machinery, materials, scale, weather, and spatial layout"
     )
     anatomy_rule = (
         "Frame visible people with enough body context to identify who owns every limb. No hands or arms may enter "
@@ -952,20 +954,32 @@ def _compose_visual_prompt(
             "extras, or partial people. "
             + anatomy_rule
         )
+    elif has_nonhuman_character:
+        subject_rule = (
+            "Depict only the explicitly described living subject with coherent species-specific anatomy, scale, and "
+            "placement in the requested environment. "
+        )
     else:
         subject_rule = (
-            "This scene does not request a human subject. Keep the frame free of human figures, faces, silhouettes, "
-            "crowds, and body parts. "
+            "Keep the composition exclusively centered on the requested architecture, machinery, landscape, materials, "
+            "and environmental details. Preserve physically credible scale, geometry, and engineering relationships. "
         )
-    gesture_rule = (
-        "The requested hand action may appear once as a secondary part of a medium or wide composition. Keep the "
-        "person's face, torso, and environment clearly visible; never place palms against the lens, never create a "
-        "wall of hands, and never let hands dominate the frame. "
-        if hand_action_requested
-        else "Use restrained everyday body language. Keep hands below shoulder level, naturally resting, walking, "
-        "working, or holding one story-relevant object. No waving, raised palms, cheering pose, reaching toward the "
-        "camera, crowd of hands, prayer-hand close-up, or hands dominating the foreground. "
-    )
+    # Never seed a people-free image with positive prompt tokens about hands or
+    # gestures. Local diffusion models often reproduce a forbidden noun even
+    # when it appears in a sentence beginning with "no". This used to turn
+    # architecture-only shots (for example, a tower crane) into a wall of
+    # anonymous foreground hands.
+    gesture_rule = ""
+    if has_people:
+        gesture_rule = (
+            "The requested hand action may appear once as a secondary part of a medium or wide composition. Keep the "
+            "person's face, torso, and environment clearly visible; never place palms against the lens, never create a "
+            "wall of hands, and never let hands dominate the frame. "
+            if hand_action_requested
+            else "Use restrained everyday body language. Keep hands below shoulder level, naturally resting, walking, "
+            "working, or holding one story-relevant object. No waving, raised palms, cheering pose, reaching toward the "
+            "camera, crowd of hands, prayer-hand close-up, or hands dominating the foreground. "
+        )
     audience_address_rule = (
         "ABSTRACT ADDRESS RULE: this narration addresses or invites viewers. Never visualize that wording as an "
         "audience reaction, rally, applause, worship crowd, raised hands, or people facing the lens. Show at most one "
@@ -990,25 +1004,60 @@ def _compose_visual_prompt(
         "wear a peci only when described. "
         if has_islamic_clothing
         else "Use only clothing explicitly supported by this scene; do not add unrequested religious or cultural attire. "
+        if has_people
+        else ""
+    )
+    if group_scene:
+        visible_subject_rule = (
+            "VISIBLE HUMAN COMPOSITION: this is a requested group scene; use only participants natural to the event "
+            "and keep the principal subject clearly readable. "
+        )
+    elif has_people:
+        visible_subject_rule = f"VISIBLE HUMAN LIMIT: {people_limit}; never exceed this count. "
+    elif has_nonhuman_character:
+        visible_subject_rule = "VISIBLE LIVING SUBJECT SCOPE: include only the explicitly requested species and count. "
+    else:
+        visible_subject_rule = (
+            "VISIBLE OBJECT SCOPE: show only the requested structures, machines, materials, landscape, and environment. "
+        )
+    narrative_action_rule = (
+        "NARRATIVE ACTION CONTRACT: internally identify the narration's explicit subject, main visible verb, relevant "
+        "object, setting, time, and mood, then depict that exact combination. Do not import an action or location from "
+        "another scene, and do not replace missing details with a mosque, crowd, raised hands, or generic celebration. "
+        if has_people
+        else "NARRATIVE OBJECT ACTION CONTRACT: identify the exact structure or machine, its visible mechanical action, "
+        "relevant material, setting, time, and mood, then depict that combination with physically credible geometry. "
+    )
+    scene_continuity_rule = (
+        f"SCENE CONTINUITY ANCHOR: {_clean_text(continuity_anchor, 900)}. "
+        if continuity_anchor and (has_people or has_nonhuman_character)
+        else "OBJECT CONTINUITY ANCHOR: preserve established architecture, machinery, materials, weather, and scale. "
+    )
+    grounding_rule = (
+        "STRICT STORY GROUNDING: depict the requested subject, event, action, object, location, era, weather, and time "
+        "literally. The visible moment takes priority; narrative grounding supplies meaning while keeping every "
+        "participant and object relevant to that moment. "
+        if has_people or has_nonhuman_character
+        else "STRICT OBJECT GROUNDING: depict the requested structure, machine, material, mechanical action, location, "
+        "era, weather, and time literally. The visible moment is the exclusive visual focus. "
+    )
+    animation_guard_rule = (
+        "Animate only this visible action and its natural secondary motion; keep gestures restrained and relevant to "
+        "the described activity. "
+        if has_people or has_nonhuman_character
+        else "Animate only the visible mechanical or environmental action with physically credible secondary motion. "
     )
     return _clean_text(
         f"FULL-BLEED CINEMATIC {aspect_ratio} SINGLE FRAME FROM ONE CAMERA. Render in the requested visual style, whether "
         "animation, illustration, 3D, documentary, or photography. One continuous environment and one natural composition. "
         f"Visible moment: {visual}. "
         + (f"Narrative grounding: {grounding}. " if grounding else "")
-        + "STRICT STORY GROUNDING: depict the requested subject, event, action, object, location, era, weather, "
-        "and time literally. Do not substitute a stock character or a familiar default setting. The visible moment "
-        "takes priority; narrative grounding supplies meaning but must not introduce unrelated objects or people. "
+        + grounding_rule
         + subject_rule
         + gesture_rule
         + audience_address_rule
         + (f"{safety_direction} " if safety_direction else "")
-        + (
-            "VISIBLE HUMAN COMPOSITION: this is a requested group scene; use only participants natural to the event "
-            "and keep the principal subject clearly readable. "
-            if group_scene
-            else f"VISIBLE HUMAN LIMIT: {people_limit}; never exceed this count. "
-        )
+        + visible_subject_rule
         + clothing_rule
         + f"Continuity bible: {continuity}. "
         + (f"Location bible: {_clean_text(location_bible, 360)}. " if location_bible else "")
@@ -1017,17 +1066,20 @@ def _compose_visual_prompt(
         "must not change the global style. "
         f"NARRATIVE CAMERA PLAN: {camera_composition}. Compose one frozen instant that supports this motion; do not "
         "describe multiple camera shots, a shot sequence, or a montage inside one image. "
-        "NARRATIVE ACTION CONTRACT: internally identify the narration's explicit subject, main visible verb, relevant "
-        "object, setting, time, and mood, then depict that exact combination. Do not import an action or location from "
-        "another scene, and do not replace missing details with a mosque, crowd, raised hands, or generic celebration. "
-        f"SCENE ANIMATION DIRECTION: {resolved_animation}. Animate only this visible action and its natural secondary "
-        "motion; do not add a generic idle loop, repeated waving, or unrelated crowd reaction. "
-        + (f"SCENE CONTINUITY ANCHOR: {_clean_text(continuity_anchor, 900)}. " if continuity_anchor else "")
+        + narrative_action_rule
+        + f"SCENE ANIMATION DIRECTION: {resolved_animation}. "
+        + animation_guard_rule
+        + scene_continuity_rule
         + "Use one clear focal action, the exact culture and location requested by the script, clear subject-background "
         "separation, crisp focal detail, believable materials and lighting appropriate to the requested style, and professional composition. "
         "Do not add unrequested writing, signage, logos, symbols, props, architecture, or decorations. "
-        "When people are explicitly requested, use original fictional people matching the script's stated identity; "
-        "never imitate a public figure. The image extends naturally to all four edges.",
+        + (
+            "When people are explicitly requested, use original fictional people matching the script's stated identity; "
+            "never imitate a public figure. "
+            if has_people
+            else ""
+        )
+        + "The image extends naturally to all four edges.",
         6000,
     )
 
@@ -2294,6 +2346,23 @@ def _physical_action_contract(visible: str, context: str = "") -> str:
     return ""
 
 
+def _visible_people_count(visible: str, context: str = "") -> int:
+    """Infer people from the exact shot, never from unrelated scene sentences."""
+    count = _expected_people_limit(visible)
+    if count or _requests_group_scene(visible):
+        return count
+    if _physical_action_contract(visible, context):
+        return 1
+    first_word = re.match(r"^([A-Z][a-zÀ-ÿ]{2,})\b", visible)
+    if (
+        first_word
+        and _has_any(context, _PEOPLE_IDENTITY_TERMS)
+        and re.search(rf"(?<!\w){re.escape(first_word.group(1))}(?!\w)", context, re.IGNORECASE)
+    ):
+        return 1
+    return 0
+
+
 def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
     """Build a short positive-only prompt for image models.
 
@@ -2319,15 +2388,25 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
         if style_match
         else "cinematic realistic"
     )
-    count = _expected_people_limit(f"{visible} {context}")
-    if re.match(r"^[A-Z][a-zÀ-ÿ]{2,}\b", visible) and not _requests_group_scene(visible):
-        count = 1
-    if count == 0 and _has_any(context, ("berusia", "siswa", "murid")):
-        count = 1
+    # The exact visible moment owns the subject count. A broad narration can
+    # mention workers or a later crowd without authorizing tiny background
+    # people in an architecture-only shot.
+    count = _visible_people_count(visible, context)
+    has_people = count > 0 or _requests_group_scene(visible)
     subject_count = (
         f"Visible subject count: exactly {count} person. "
         if 0 < count < 5 and not _requests_group_scene(visible)
         else ""
+    )
+    composition_rule = (
+        "Use a clean medium or medium-wide composition. Keep one principal person large and unobstructed enough for "
+        "a clearly readable face, eyes, nose, mouth, hair strands, clothing seams, and natural limb connections. "
+        "Use crisp edge definition, realistic skin texture, strong local contrast, controlled depth of field, natural "
+        "lighting, and only the people and objects required by this immediate moment."
+        if has_people
+        else "Use a clear wide or medium-wide composition with accurate architecture or machinery geometry, correct "
+        "scale, coherent materials, crisp edge definition, fine surface texture, strong local contrast, controlled "
+        "depth of field, natural lighting, and only the objects required by this immediate moment."
     )
     return _clean_text(
         "FULL-BLEED 16:9 SINGLE CAMERA FRAME. "
@@ -2336,11 +2415,46 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
         + (f"Immediate story context: {context}. " if context else "")
         + (f"{action_contract} " if action_contract else "")
         + f"Visual style: {style}. Color direction: {scene.color_mood}. "
-        "Use a clear medium or wide composition, believable anatomy, verify natural hands and finger count, "
-        "crisp focal detail, natural lighting, "
-        "and an environment limited to what this immediate moment requires.",
+        + composition_rule,
         1800,
     )
+
+
+def _multipart_image_edit_body(
+    fields: dict[str, object], reference_image: Path
+) -> tuple[bytes, str]:
+    """Encode a stable-diffusion.cpp OpenAI-compatible edit request."""
+    boundary = f"clipforge-{hashlib.sha256(os.urandom(24)).hexdigest()[:24]}"
+    chunks: list[bytes] = []
+    for name, value in fields.items():
+        chunks.extend(
+            (
+                f"--{boundary}\r\n".encode("ascii"),
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"),
+                str(value).encode("utf-8"),
+                b"\r\n",
+            )
+        )
+    suffix = reference_image.suffix.casefold()
+    mime = (
+        "image/jpeg"
+        if suffix in {".jpg", ".jpeg"}
+        else "image/webp"
+        if suffix == ".webp"
+        else "image/png"
+    )
+    filename = reference_image.name.replace('"', "") or "character-reference.png"
+    chunks.extend(
+        (
+            f"--{boundary}\r\n".encode("ascii"),
+            f'Content-Disposition: form-data; name="image[]"; filename="{filename}"\r\n'.encode("utf-8"),
+            f"Content-Type: {mime}\r\n\r\n".encode("ascii"),
+            reference_image.read_bytes(),
+            b"\r\n",
+            f"--{boundary}--\r\n".encode("ascii"),
+        )
+    )
+    return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
 
 
 def _remote_scene_image(
@@ -2355,6 +2469,12 @@ def _remote_scene_image(
     host = (urlparse(base).hostname or "").casefold()
     is_gemini = _is_gemini_image_endpoint(base)
     is_sd_cpp = _is_sd_cpp_endpoint(base, model)
+    sd_reference_edit = bool(
+        is_sd_cpp
+        and reference_image
+        and reference_image.is_file()
+        and _env_bool("LONG_ANIMATE_LOCAL_REFERENCE_IMAGES", False)
+    )
     if is_sd_cpp:
         _release_ollama_gpu_models()
     if is_gemini and not key:
@@ -2366,8 +2486,9 @@ def _remote_scene_image(
             raise LongAnimateImageError(detail)
         return False
     endpoint = _gemini_interactions_endpoint(base) if is_gemini else base.rstrip("/")
-    if not is_gemini and not endpoint.endswith("/images/generations"):
-        endpoint += "/images/generations"
+    if not is_gemini:
+        endpoint = re.sub(r"/images/(?:generations|edits)/?$", "", endpoint)
+        endpoint += "/images/edits" if sd_reference_edit else "/images/generations"
     quality = os.environ.get("LONG_ANIMATE_IMAGE_QUALITY", "high").strip().casefold()
     if quality not in {"low", "medium", "high", "auto"}:
         quality = "medium"
@@ -2431,6 +2552,18 @@ def _remote_scene_image(
             "intimate washing, sensualized child, suggestive pose, voyeuristic angle, body-part close-up",
         ]
         visible_for_negative = _compiled_visible_moment(scene.visual_prompt) or scene.visual_prompt
+        focused_context = _matching_narration_context(scene.narration, visible_for_negative)
+        scene_requests_people = _visible_people_count(visible_for_negative, focused_context) > 0
+        if not scene_requests_people:
+            negative_parts.append(
+                "person, people, human figure, face, portrait, worker, crowd, hand, hands, arm, arms, body part, "
+                "foreground limb, reaching limb"
+            )
+        else:
+            negative_parts.append(
+                "melted face, smeared face, low-detail face, tiny face, distorted face, asymmetrical eyes, crossed eyes, "
+                "duplicated facial features, warped mouth, waxy skin, plastic skin, muddy skin texture"
+            )
         if not _requests_group_scene(visible_for_negative):
             negative_parts.append(
                 "unrequested crowd, extra background people, partial person, unrelated stock character, unrequested cultural clothing"
@@ -2458,12 +2591,32 @@ def _remote_scene_image(
             negative_prompt += (
                 ", woman wearing peci, woman wearing kopiah, woman wearing songkok, hijab with hat, double headwear"
             )
-        configured_size = os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1024x576")
+        configured_size = os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1280x720")
         size_match = re.fullmatch(r"(\d{3,5})x(\d{3,5})", configured_size)
         if size_match and _output_geometry()[0] == "9:16":
             size_width, size_height = map(int, size_match.groups())
             if size_width > size_height:
                 configured_size = f"{size_height}x{size_width}"
+        sd_text_only_prompt = final_prompt
+        if sd_reference_edit:
+            # The upload supplies identity/style conditioning only. The prompt
+            # still owns the new action, pose, camera and setting.
+            final_prompt = (
+                "REFERENCE IDENTITY LOCK: use the uploaded image only for the recurring character's face, "
+                "body proportions, hair, clothing and defining visual traits. Create a new composition for the "
+                "requested action and setting; do not copy the reference pose or background. "
+                f"{final_prompt} "
+                "<sd_cpp_extra_args>"
+                + json.dumps(
+                    {
+                        "negative_prompt": negative_prompt,
+                        "image_preprocess": "target=ref,mode=none",
+                        "ref_image_args": "resize_before_vae=false",
+                    },
+                    separators=(",", ":"),
+                )
+                + "</sd_cpp_extra_args>"
+            )
         payload_object = {
             "prompt": final_prompt,
             "negative_prompt": negative_prompt,
@@ -2487,7 +2640,6 @@ def _remote_scene_image(
         }
     headers = {
         "Accept": "application/json",
-        "Content-Type": "application/json",
         "User-Agent": "FendyClip-LongAnimate/1.0",
     }
     if key and is_gemini:
@@ -2543,9 +2695,22 @@ def _remote_scene_image(
             elif provider_attempt_sizes and provider_size_index < len(provider_attempt_sizes):
                 attempt_payload["size"] = provider_attempt_sizes[provider_size_index]
 
-            payload = json.dumps(attempt_payload).encode("utf-8")
+            request_headers = dict(headers)
+            if sd_reference_edit and reference_image is not None:
+                edit_fields = {
+                    "prompt": attempt_payload["prompt"],
+                    "n": attempt_payload["n"],
+                    "size": attempt_payload["size"],
+                    "output_format": attempt_payload["output_format"],
+                    "output_compression": attempt_payload["output_compression"],
+                }
+                payload, content_type = _multipart_image_edit_body(edit_fields, reference_image)
+                request_headers["Content-Type"] = content_type
+            else:
+                payload = json.dumps(attempt_payload).encode("utf-8")
+                request_headers["Content-Type"] = "application/json"
             with urllib.request.urlopen(
-                urllib.request.Request(endpoint, data=payload, headers=headers, method="POST"),
+                urllib.request.Request(endpoint, data=payload, headers=request_headers, method="POST"),
                 timeout=timeout,  # PROGRESSIVE TIMEOUT
             ) as response:
                 result = json.loads(response.read().decode("utf-8"))
@@ -2562,6 +2727,20 @@ def _remote_scene_image(
             path.unlink(missing_ok=True)
             status = e.code
             last_detail = f"HTTP {status}: {e.reason}"
+
+            if sd_reference_edit and status in {500, 502, 503, 504}:
+                # Reference conditioning needs a vision-capable companion
+                # encoder and more memory than the common 4 GB local profile.
+                # Some sd.cpp builds terminate rather than returning a clean
+                # capability error. Retry as text-to-image so the entire story
+                # job survives; prompt/QA continuity remains active.
+                sd_reference_edit = False
+                endpoint = re.sub(r"/images/(?:generations|edits)/?$", "", endpoint)
+                endpoint += "/images/generations"
+                payload_object["prompt"] = sd_text_only_prompt
+                if attempt < retries:
+                    time.sleep(min(15.0, 6.0 * attempt))
+                    continue
 
             # IMPROVEMENT: Exponential backoff for rate limiting (429)
             if status == 429:
@@ -2598,6 +2777,11 @@ def _remote_scene_image(
             last_detail, status = _image_error_detail(exc)
             retryable = status in {408, 409, 429, 500, 502, 503, 504} or status is None
             connection_error = _image_connection_error(exc)
+            if sd_reference_edit and connection_error:
+                sd_reference_edit = False
+                endpoint = re.sub(r"/images/(?:generations|edits)/?$", "", endpoint)
+                endpoint += "/images/generations"
+                payload_object["prompt"] = sd_text_only_prompt
             # A local sd-server can be restarted by systemd after an OOM. Move
             # to a safer resolution and give the service enough time to bind
             # its port again instead of exhausting all retries immediately.
@@ -2807,16 +2991,9 @@ def inspect_generated_image(
     # one-child bedroom shot look like a valid crowd scene to QA.
     visible_moment = _compiled_visible_moment(shot.visual_prompt)
     story_people_context = visible_moment or shot.narration
-    expected_people = _expected_people_limit(story_people_context)
+    expected_people = _visible_people_count(story_people_context, shot.narration)
     explicit_people = _explicit_people_count(story_people_context)
     group_scene = _requests_group_scene(story_people_context)
-    if (
-        visible_moment
-        and re.match(r"^[A-Z][a-zÀ-ÿ]{2,}\b", visible_moment)
-        and not group_scene
-    ):
-        expected_people = max(1, expected_people)
-        explicit_people = explicit_people or 1
     reasons: list[str] = []
     score = 1.0
     if black_ratio > 0.55:
@@ -2831,6 +3008,31 @@ def inspect_generated_image(
     elif explicit_people and not group_scene and len(faces) > explicit_people:
         reasons.append("too_many_visible_faces")
         score -= 0.35
+    if expected_people > 0 and not group_scene:
+        if not faces:
+            reasons.append("missing_clear_face")
+            score -= 0.45
+        else:
+            x, y, w, h = max(faces, key=lambda item: item[2] * item[3])
+            face_area_ratio = (w * h) / max(1, image.shape[0] * image.shape[1])
+            min_face_area = max(
+                0.002,
+                min(0.08, float(os.environ.get("LONG_ANIMATE_QA_MIN_FACE_AREA", "0.008"))),
+            )
+            if face_area_ratio < min_face_area:
+                reasons.append("face_too_small")
+                score -= 0.35
+            face_gray = gray[y : y + h, x : x + w]
+            face_sharpness = (
+                float(cv2.Laplacian(face_gray, cv2.CV_64F).var()) if face_gray.size else 0.0
+            )
+            min_face_sharpness = max(
+                8.0,
+                min(250.0, float(os.environ.get("LONG_ANIMATE_QA_MIN_FACE_SHARPNESS", "32"))),
+            )
+            if face_sharpness < min_face_sharpness:
+                reasons.append("soft_face_detail")
+                score -= 0.35
     if style_reference and style_reference.is_file():
         reference = cv2.imread(str(style_reference.resolve()))
         if reference is not None and reference.size:
@@ -2876,6 +3078,16 @@ def generate_shot_image_with_qa(
 ) -> str:
     attempts = max(1, min(4, int(os.environ.get("LONG_ANIMATE_VISION_QA_ATTEMPTS", "2"))))
     original_prompt = shot.visual_prompt
+    visible_moment = _compiled_visible_moment(shot.visual_prompt) or _single_visible_moment(
+        shot.visual_prompt
+    )
+    visible_people = _visible_people_count(visible_moment, shot.narration)
+    uses_recurring_character = visible_people == 1 or _has_any(
+        visible_moment, _NONHUMAN_CHARACTER_TERMS
+    )
+    # Reference conditioning is strong enough to invent a person. Never feed a
+    # human reference into an object-only, architecture, machine or crowd shot.
+    active_character_reference = character_reference if uses_recurring_character else None
     provider = "unknown"
     last_reasons: list[str] = []
     for attempt in range(1, attempts + 1):
@@ -2886,9 +3098,14 @@ def generate_shot_image_with_qa(
                 f"character reference lock, global style, requested subject count, action, and setting. {original_prompt}",
                 7000,
             )
-        provider = generate_scene_image(shot, path, art_bible, reference_image=character_reference)
+        provider = generate_scene_image(
+            shot, path, art_bible, reference_image=active_character_reference
+        )
         shot.qa_score, last_reasons = inspect_generated_image(
-            shot, path, style_reference=style_reference, character_reference=character_reference
+            shot,
+            path,
+            style_reference=style_reference,
+            character_reference=active_character_reference,
         )
         if not last_reasons:
             shot.visual_prompt = original_prompt
@@ -2904,6 +3121,9 @@ def generate_shot_image_with_qa(
         "unrequested_human_face",
         "too_many_visible_faces",
         "character_reference_drift",
+        "missing_clear_face",
+        "face_too_small",
+        "soft_face_detail",
     }
     fatal_failures = [reason for reason in last_reasons if reason in fatal_reasons]
     if _env_bool("LONG_ANIMATE_VISION_QA_STRICT", False) and fatal_failures:
@@ -3583,7 +3803,7 @@ def _srt_time(seconds: float) -> str:
     return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
 
 
-def _subtitle_chunks(text: str, max_words: int = 5, max_chars: int = 36) -> list[str]:
+def _subtitle_chunks(text: str, max_words: int = 5, max_chars: int = 34) -> list[str]:
     chunks: list[str] = []
     current: list[str] = []
     for word in text.split():
@@ -3607,6 +3827,19 @@ def _subtitle_chunks(text: str, max_words: int = 5, max_chars: int = 36) -> list
             chunks[-1] = " ".join(previous_words[:-1])
             chunks.append(f"{previous_words[-1]} {orphan}")
     return chunks
+
+
+def _subtitle_force_style(output_aspect: str) -> str:
+    """Return a restrained, safe-area subtitle style for 1080p delivery."""
+    font_size = 36 if output_aspect == "9:16" else 26
+    horizontal_margin = 64 if output_aspect == "9:16" else 110
+    vertical_margin = 110 if output_aspect == "9:16" else 82
+    return (
+        f"FontName=DejaVu Sans,FontSize={font_size},Bold=-1,"
+        "PrimaryColour=&H0000E8FF,OutlineColour=&H00101010,BorderStyle=1,"
+        f"Outline=2,Shadow=0,Alignment=2,MarginL={horizontal_margin},"
+        f"MarginR={horizontal_margin},MarginV={vertical_margin}"
+    )
 
 
 def write_story_subtitles(path: Path, scenes: list[AnimateScene]) -> None:
@@ -3914,9 +4147,12 @@ def render_long_animate(
             )
             if style_reference is None:
                 style_reference = image_path
+            reference_moment = _compiled_visible_moment(shot.visual_prompt) or _single_visible_moment(
+                shot.visual_prompt
+            )
             if character_reference is None and (
-                _expected_people_limit(shot.narration) > 0
-                or _has_any(shot.narration, _NONHUMAN_CHARACTER_TERMS)
+                _visible_people_count(reference_moment, shot.narration) == 1
+                or _has_any(reference_moment, _NONHUMAN_CHARACTER_TERMS)
             ):
                 character_reference = image_path
 
@@ -3981,12 +4217,9 @@ def render_long_animate(
             f"tpad=stop_mode=clone:stop_duration=2,trim=duration={target_duration:.3f},setpts=PTS-STARTPTS",
         ]
         if subtitles and any(scene.narration.strip() for scene in storyboard.scenes):
-            subtitle_font_size = 50 if output_aspect == "9:16" else 38
             vf_parts.append(
                 f"subtitles='{srt_path.name}':original_size={output_width}x{output_height}:"
-                f"force_style='FontName=DejaVu Sans,FontSize={subtitle_font_size},Bold=-1,"
-                "PrimaryColour=&H0000E8FF,OutlineColour=&H00101010,BorderStyle=1,"
-                "Outline=3,Shadow=1,Alignment=2,MarginL=70,MarginR=70,MarginV=74'"
+                f"force_style='{_subtitle_force_style(output_aspect)}'"
             )
         if drawtext:
             vf_parts.append(

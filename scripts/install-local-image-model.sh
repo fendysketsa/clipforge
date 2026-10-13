@@ -13,9 +13,9 @@ runtime_name="sd-master-de298c2-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip"
 runtime_url="https://github.com/leejet/stable-diffusion.cpp/releases/download/master-820-de298c2/$runtime_name"
 runtime_sha="945b697995d8c7dbde6323d04177d7c12d29091ca84796b423f9ab6c660090ad"
 
-diffusion_name="z_image_turbo-Q3_K.gguf"
+diffusion_name="z_image_turbo-Q4_K.gguf"
 diffusion_url="https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/main/$diffusion_name"
-diffusion_sha="4b44bdaa7814f20d7cf144e3939bd93aa32f50660204dd0c2aea5c5376232980"
+diffusion_sha="14b375ab4f226bc5378f68f37e899ef3c2242b8541e61e2bc1aff40976086fbd"
 
 text_encoder_name="Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
 text_encoder_url="https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/$text_encoder_name"
@@ -49,6 +49,7 @@ verified_download() {
   local target="$2"
   local expected_sha="$3"
   local label="$4"
+  local partial="$target.part"
 
   if [[ -f "$target" ]] && printf '%s  %s\n' "$expected_sha" "$target" | sha256sum --check --status; then
     echo "$label sudah ada dan checksum valid."
@@ -58,13 +59,14 @@ verified_download() {
     mv "$target" "$target.invalid.$(date +%Y%m%d%H%M%S)"
   fi
   echo "Mengunduh $label ..."
-  curl --fail --location --retry 5 --retry-delay 3 --continue-at - --output "$target" "$url"
-  printf '%s  %s\n' "$expected_sha" "$target" | sha256sum --check
+  curl --fail --location --retry 5 --retry-delay 3 --continue-at - --output "$partial" "$url"
+  printf '%s  %s\n' "$expected_sha" "$partial" | sha256sum --check
+  mv "$partial" "$target"
 }
 
 runtime_archive="$download_dir/$runtime_name"
 verified_download "$runtime_url" "$runtime_archive" "$runtime_sha" "stable-diffusion.cpp Vulkan"
-verified_download "$diffusion_url" "$model_dir/$diffusion_name" "$diffusion_sha" "Z-Image-Turbo Q3"
+verified_download "$diffusion_url" "$model_dir/$diffusion_name" "$diffusion_sha" "Z-Image-Turbo Q4_K"
 verified_download "$text_encoder_url" "$model_dir/$text_encoder_name" "$text_encoder_sha" "Qwen3 text encoder Q4"
 verified_download "$vae_url" "$model_dir/$vae_name" "$vae_sha" "Z-Image VAE"
 upscaler_archive="$download_dir/$upscaler_archive_name"

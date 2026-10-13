@@ -14,8 +14,20 @@ if [[ -z "$server_path" ]]; then
   exit 1
 fi
 
+preferred_diffusion_model="$model_dir/z_image_turbo-Q4_K.gguf"
+fallback_diffusion_model="$model_dir/z_image_turbo-Q3_K.gguf"
+if [[ -s "$preferred_diffusion_model" ]]; then
+  diffusion_model="$preferred_diffusion_model"
+elif [[ -s "$fallback_diffusion_model" ]]; then
+  diffusion_model="$fallback_diffusion_model"
+  echo "Peringatan: memakai Z-Image Q3; instal ulang model lokal untuk kualitas Q4_K." >&2
+else
+  echo "Model Z-Image belum tersedia. Jalankan scripts/install-local-image-model.sh" >&2
+  exit 1
+fi
+
 required_models=(
-  "$model_dir/z_image_turbo-Q3_K.gguf"
+  "$diffusion_model"
   "$model_dir/Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
   "$model_dir/ae.safetensors"
   "$upscaler_dir/realesrgan-ncnn-vulkan"
@@ -40,7 +52,7 @@ upstream_port="${LOCAL_IMAGE_UPSTREAM_PORT:-7861}"
 
 "$server_path" \
   --listen-port "$upstream_port" \
-  --diffusion-model "$model_dir/z_image_turbo-Q3_K.gguf" \
+  --diffusion-model "$diffusion_model" \
   --llm "$model_dir/Qwen3-4B-Instruct-2507-Q4_K_M.gguf" \
   --vae "$model_dir/ae.safetensors" \
   --cfg-scale 1.0 \

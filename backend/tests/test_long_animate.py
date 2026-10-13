@@ -159,7 +159,8 @@ def test_ai_storyboard_keeps_scene_specific_direction(monkeypatch):
         "pull_out",
     ]
     assert storyboard.scenes[-1].narrative_role == "payoff_conclusion"
-    assert all("original fictional" in scene.visual_prompt for scene in storyboard.scenes)
+    assert "original fictional" not in storyboard.scenes[0].visual_prompt
+    assert "original fictional" in storyboard.scenes[1].visual_prompt
 
 
 def test_three_minute_script_rejects_an_undersegmented_ai_storyboard(monkeypatch):
@@ -249,6 +250,42 @@ def test_local_image_prompt_keeps_exact_action_and_drops_later_crowd_language():
     assert "mengangkat tangan" not in prompt
     assert "No waving" not in prompt
     assert len(prompt) < 1800
+
+
+def test_tower_crane_prompt_stays_machine_only_without_hand_tokens():
+    visual = "Tower crane bergerak mengangkat material konstruksi"
+    shot = long_animate.AnimateShot(
+        index=1,
+        scene_index=1,
+        shot_index=1,
+        shot_count=1,
+        title="Tower Crane",
+        narration=visual,
+        visual_prompt=long_animate._compose_visual_prompt(
+            visual,
+            visual,
+            "cinematic realistic architecture",
+            "No recurring character is defined",
+            visual_locked=True,
+        ),
+        on_screen_text="",
+        camera_motion="push_in",
+        color_mood="natural daylight",
+        duration=5.0,
+    )
+
+    compiled = shot.visual_prompt.casefold()
+    focused = long_animate._focused_image_generation_prompt(shot).casefold()
+
+    assert "hands below shoulder" not in compiled
+    assert "hand" not in compiled
+    assert "people" not in compiled
+    assert "person" not in compiled
+    assert "human" not in compiled
+    assert "visible subject count" not in focused
+    assert "hand" not in focused
+    assert "anatomy" not in focused
+    assert "architecture or machinery geometry" in focused
 
 
 def test_eating_bakso_prompt_requires_food_spoon_mouth_table_and_stall():
@@ -1027,6 +1064,19 @@ def test_subtitles_are_short_and_end_when_voice_ends(tmp_path):
     assert "00:00:08" not in subtitle
 
 
+def test_subtitle_style_is_proportional_and_inside_safe_area():
+    landscape = long_animate._subtitle_force_style("16:9")
+    portrait = long_animate._subtitle_force_style("9:16")
+
+    assert "FontSize=26" in landscape
+    assert "MarginL=110" in landscape
+    assert "MarginR=110" in landscape
+    assert "Outline=2" in landscape
+    assert "Shadow=0" in landscape
+    assert "FontSize=36" in portrait
+    assert "MarginV=110" in portrait
+
+
 def test_gemini_image_payload_uses_native_interactions_api(monkeypatch, tmp_path):
     scene = _fallback_storyboard(SCRIPT).scenes[0]
     captured = {}
@@ -1255,7 +1305,7 @@ def test_local_z_image_uses_sdcpp_images_api_payload(monkeypatch, tmp_path):
     assert "disembodied hands" in captured["payload"]["negative_prompt"]
     assert "unrequested crowd" in captured["payload"]["negative_prompt"]
     assert "woman wearing peci" not in captured["payload"]["negative_prompt"]
-    assert "verify natural hands and finger count" in captured["payload"]["prompt"]
+    assert "verify natural hands and finger count" not in captured["payload"]["prompt"]
     assert "model" not in captured["payload"]
     assert "quality" not in captured["payload"]
     assert "Authorization" not in captured["headers"]
@@ -1263,6 +1313,102 @@ def test_local_z_image_uses_sdcpp_images_api_payload(monkeypatch, tmp_path):
     assert long_animate._remote_provider_label(
         "http://127.0.0.1:7860/v1", "z-image-turbo-q3"
     ) == "local_z_image_turbo"
+
+
+def test_local_z_image_sends_character_reference_to_edits_endpoint(monkeypatch, tmp_path):
+    scene = _fallback_storyboard(SCRIPT).scenes[0]
+    reference = tmp_path / "character-reference.png"
+    reference.write_bytes(b"reference-character-pixels")
+    captured = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {"data": [{"b64_json": base64.b64encode(b"z" * 2048).decode()}]}
+            ).encode()
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["headers"] = dict(request.header_items())
+        captured["body"] = request.data
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_PROVIDER", "stable-diffusion-cpp")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_BASE_URL", "http://127.0.0.1:7860/v1")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_MODEL", "z-image-turbo-q3")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_SIZE", "1280x720")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_RETRIES", "1")
+    monkeypatch.setenv("LONG_ANIMATE_LOCAL_REFERENCE_IMAGES", "true")
+    monkeypatch.setattr(long_animate, "_release_ollama_gpu_models", lambda: None)
+    monkeypatch.setattr(long_animate.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(long_animate, "_normalize_scene_image", lambda path: True)
+
+    assert long_animate._remote_scene_image(
+        scene, tmp_path / "scene.png", reference
+    ) is True
+    body = captured["body"]
+    assert captured["url"] == "http://127.0.0.1:7860/v1/images/edits"
+    assert captured["headers"]["Content-type"].startswith("multipart/form-data; boundary=")
+    assert b'name="image[]"; filename="character-reference.png"' in body
+    assert b"reference-character-pixels" in body
+    assert b"REFERENCE IDENTITY LOCK" in body
+    assert b'"image_preprocess":"target=ref,mode=none"' in body
+    assert b'"ref_image_args":"resize_before_vae=false"' in body
+
+
+def test_local_reference_edit_falls_back_after_server_crash(monkeypatch, tmp_path):
+    scene = _fallback_storyboard(SCRIPT).scenes[0]
+    reference = tmp_path / "character-reference.png"
+    reference.write_bytes(b"reference-character-pixels")
+    requested_urls = []
+    sleeps = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {"data": [{"b64_json": base64.b64encode(b"z" * 2048).decode()}]}
+            ).encode()
+
+    def fake_urlopen(request, timeout):
+        requested_urls.append(request.full_url)
+        if len(requested_urls) == 1:
+            raise long_animate.urllib.error.HTTPError(
+                request.full_url, 502, "reference server stopped", {}, io.BytesIO(b"{}")
+            )
+        assert json.loads(request.data.decode())["prompt"].startswith("FULL-BLEED")
+        return Response()
+
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_PROVIDER", "stable-diffusion-cpp")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_BASE_URL", "http://127.0.0.1:7860/v1")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_MODEL", "z-image-turbo-q3")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_RETRIES", "2")
+    monkeypatch.setenv("LONG_ANIMATE_LOCAL_REFERENCE_IMAGES", "true")
+    monkeypatch.setattr(long_animate, "_release_ollama_gpu_models", lambda: None)
+    monkeypatch.setattr(long_animate.time, "sleep", sleeps.append)
+    monkeypatch.setattr(long_animate.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(long_animate, "_normalize_scene_image", lambda path: True)
+
+    assert long_animate._remote_scene_image(
+        scene, tmp_path / "scene.png", reference
+    ) is True
+    assert requested_urls == [
+        "http://127.0.0.1:7860/v1/images/edits",
+        "http://127.0.0.1:7860/v1/images/generations",
+    ]
+    assert sleeps == [6.0]
 
 
 def test_local_image_502_waits_for_recovery_without_online_fallback(monkeypatch, tmp_path):
@@ -1484,6 +1630,40 @@ def test_explicit_single_character_still_flags_unrequested_extra_faces(monkeypat
     assert "too_many_visible_faces" in reasons
 
 
+def test_single_character_requires_a_large_sharp_readable_face(monkeypatch):
+    shot = _motion_test_shot()
+    image = long_animate.np.random.default_rng(9).integers(
+        0, 256, size=(720, 1280, 3), dtype=long_animate.np.uint8
+    )
+    monkeypatch.setattr(long_animate.cv2, "imread", lambda _path: image)
+    monkeypatch.setattr(long_animate, "_face_boxes", lambda _image: [])
+
+    _score, reasons = long_animate.inspect_generated_image(shot, Path("missing-face.png"))
+
+    assert "missing_clear_face" in reasons
+
+
+def test_tower_crane_qa_does_not_expect_a_person_from_capitalization(monkeypatch):
+    shot = _motion_test_shot()
+    shot.narration = "Tower crane bergerak mengangkat material konstruksi."
+    shot.visual_prompt = long_animate._compose_visual_prompt(
+        shot.narration,
+        shot.narration,
+        "cinematic realistic architecture",
+        "No recurring character is defined",
+        visual_locked=True,
+    )
+    image = long_animate.np.random.default_rng(10).integers(
+        0, 256, size=(720, 1280, 3), dtype=long_animate.np.uint8
+    )
+    monkeypatch.setattr(long_animate.cv2, "imread", lambda _path: image)
+    monkeypatch.setattr(long_animate, "_face_boxes", lambda _image: [])
+
+    _score, reasons = long_animate.inspect_generated_image(shot, Path("tower.png"))
+
+    assert "missing_clear_face" not in reasons
+
+
 def test_strict_vision_qa_rejects_persistent_extra_people(monkeypatch, tmp_path):
     shot = _motion_test_shot()
     original_prompt = shot.visual_prompt
@@ -1527,6 +1707,68 @@ def test_strict_vision_qa_rejects_undecodable_image(monkeypatch, tmp_path):
         assert "image_decode_failed" in str(exc)
     else:
         raise AssertionError("strict QA must still reject an undecodable image")
+
+
+def test_object_only_shot_never_receives_human_character_reference(monkeypatch, tmp_path):
+    shot = _motion_test_shot()
+    shot.narration = "Tower crane bergerak mengangkat material konstruksi."
+    shot.visual_prompt = long_animate._compose_visual_prompt(
+        shot.narration,
+        shot.narration,
+        "cinematic realistic architecture",
+        "No recurring character is defined",
+        visual_locked=True,
+    )
+    reference = tmp_path / "human-reference.png"
+    reference.write_bytes(b"human")
+    received_references = []
+
+    def fake_generate(_shot, path, _art_bible, reference_image=None):
+        received_references.append(reference_image)
+        path.write_bytes(b"generated")
+        return "local-z-image"
+
+    monkeypatch.setenv("LONG_ANIMATE_VISION_QA_ATTEMPTS", "1")
+    monkeypatch.setattr(long_animate, "generate_scene_image", fake_generate)
+    monkeypatch.setattr(
+        long_animate, "inspect_generated_image", lambda *_args, **_kwargs: (1.0, [])
+    )
+
+    long_animate.generate_shot_image_with_qa(
+        shot,
+        tmp_path / "tower.png",
+        "cinematic realistic architecture",
+        character_reference=reference,
+    )
+
+    assert received_references == [None]
+
+
+def test_single_character_shot_receives_character_reference(monkeypatch, tmp_path):
+    shot = _motion_test_shot()
+    reference = tmp_path / "character-reference.png"
+    reference.write_bytes(b"character")
+    received_references = []
+
+    def fake_generate(_shot, path, _art_bible, reference_image=None):
+        received_references.append(reference_image)
+        path.write_bytes(b"generated")
+        return "local-z-image"
+
+    monkeypatch.setenv("LONG_ANIMATE_VISION_QA_ATTEMPTS", "1")
+    monkeypatch.setattr(long_animate, "generate_scene_image", fake_generate)
+    monkeypatch.setattr(
+        long_animate, "inspect_generated_image", lambda *_args, **_kwargs: (1.0, [])
+    )
+
+    long_animate.generate_shot_image_with_qa(
+        shot,
+        tmp_path / "child.png",
+        "cinematic realistic documentary",
+        character_reference=reference,
+    )
+
+    assert received_references == [reference]
 
 
 def test_motion_provider_preflight_rejects_paid_muapi(monkeypatch):
