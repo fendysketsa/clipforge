@@ -216,6 +216,16 @@ if [[ "$RESTORE_ONLY" != "true" && "${BACKGROUND_MUSIC_SYNC_ON_REBUILD:-true}" =
   fi
 fi
 
+# Generator Cerita depends on a real image provider. Start and health-check the
+# installed local Z-Image service before recreating the backend so a missing
+# provider can never degrade into procedural rectangle art.
+image_provider="${LONG_ANIMATE_IMAGE_PROVIDER:-}"
+image_base_url="${LONG_ANIMATE_IMAGE_BASE_URL:-}"
+if [[ "$image_provider" =~ ^(stable-diffusion-cpp|stable_diffusion_cpp|sdcpp)$ ]] \
+  || [[ "$image_base_url" =~ ^http://(127\.0\.0\.1|localhost|\[::1\]):7860(/|$) ]]; then
+  "$ROOT_DIR/scripts/start-local-image-model.sh"
+fi
+
 if [[ "$DOWN_FIRST" == "true" ]]; then
   "${compose_cmd[@]}" --env-file .env down
 fi

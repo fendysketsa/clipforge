@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+from pathlib import Path
 
 import long_animate
 from llm import AIConfig
@@ -262,6 +263,97 @@ def test_story_outline_expands_into_directed_drama_scenes(monkeypatch):
     assert "NARASI:" in script
     assert "VISUAL:" in script
     assert len(long_animate._scene_sections(script)) == 7
+
+
+def test_story_outline_accepts_safe_scene_count_instead_of_failing_exact_target(monkeypatch):
+    outline = (
+        "Raka dikenal sebagai anak paling nakal di desa, tetapi diam-diam ia membantu warga yang kesulitan. "
+        "Setelah menyelamatkan seorang anak dari sungai, warga akhirnya memahami luka dan kebaikan hatinya."
+    )
+    narration = " ".join(
+        "Raka menghadapi akibat dari pilihannya sambil berusaha melindungi orang lain dengan berani"
+        for _ in range(5)
+    )
+    payload = {
+        "title": "Anak Badung yang Membuat Desa Menangis",
+        "art_bible": "cinematic realistic original Indonesian village drama",
+        "character_bible": "Raka, anak laki-laki sebelas tahun dengan pakaian sederhana yang konsisten",
+        "location_bible": "Desa kecil dengan sekolah, sungai, dan perbukitan",
+        "scenes": [
+            {
+                "title": f"Bagian {index}",
+                "narration": narration,
+                "visual": (
+                    "Raka berlari melewati jalan desa; "
+                    "Raka berhenti untuk menolong seorang warga; "
+                    "Raka menatap sungai yang meluap"
+                ),
+                "on_screen_text": f"Pilihan {index}",
+            }
+            for index in range(1, 9)
+        ],
+    }
+    monkeypatch.setattr(long_animate, "chat_completion", lambda config, messages: json.dumps(payload))
+
+    script, audit = expand_story_outline(
+        outline,
+        AIConfig(enabled=True, base_url="http://localhost:11434/v1", model="local"),
+        target_duration=300,
+    )
+
+    assert audit["scene_count"] == 8
+    assert audit["preferred_scene_count"] == 7
+    assert len(long_animate._scene_sections(script)) == 8
+
+
+def test_story_outline_repairs_thin_scene_from_original_story(monkeypatch):
+    outline = " ".join(
+        f"Bagian cerita {index} menjelaskan pilihan Raka yang berani, akibatnya bagi warga desa, dan perubahan sikap keluarganya."
+        for index in range(1, 61)
+    )
+    full_narration = " ".join(
+        "Raka memahami akibat tindakannya dan berusaha memperbaiki keadaan bersama warga desa"
+        for _ in range(5)
+    )
+    payload = {
+        "title": "Perubahan Raka",
+        "art_bible": "cinematic realistic original Indonesian village drama",
+        "character_bible": "Raka, anak laki-laki sebelas tahun dengan pakaian sederhana yang konsisten",
+        "location_bible": "Desa kecil dengan sekolah, sungai, dan perbukitan",
+        "scenes": [
+            {
+                "title": f"Bagian {index}",
+                "narration": "Raka takut.",
+                "visual": "Raka diam.",
+                "on_screen_text": "Raka berubah",
+            }
+            if index == 2
+            else {
+                "title": f"Bagian {index}",
+                "narration": full_narration,
+                "visual": (
+                    "Raka berjalan melewati jalan desa; "
+                    "Raka membantu warga membawa barang; "
+                    "Raka berbicara dengan ibunya di rumah"
+                ),
+                "on_screen_text": "Raka berubah",
+            }
+            for index in range(1, 7)
+        ],
+    }
+    monkeypatch.setattr(long_animate, "chat_completion", lambda config, messages: json.dumps(payload))
+
+    script, audit = expand_story_outline(
+        outline,
+        AIConfig(enabled=True, base_url="http://localhost:11434/v1", model="local"),
+        target_duration=300,
+    )
+
+    sections = long_animate._scene_sections(script)
+    assert audit["scene_count"] == 6
+    assert len(sections) == 6
+    assert len(str(sections[1]["narration"]).split()) >= 18
+    assert len(str(sections[1]["visual"]).split()) >= 8
 
 
 def test_directed_story_script_is_not_rewritten(monkeypatch):
@@ -977,6 +1069,56 @@ def test_gemini_strict_mode_rejects_missing_api_key(monkeypatch, tmp_path):
         raise AssertionError("strict mode harus menghentikan render tanpa API key")
 
 
+def test_realistic_story_mode_rejects_procedural_rectangle_fallback(monkeypatch, tmp_path):
+    scene = _fallback_storyboard(SCRIPT).scenes[0]
+    monkeypatch.delenv("LONG_ANIMATE_IMAGE_BASE_URL", raising=False)
+    monkeypatch.delenv("LONG_ANIMATE_IMAGE_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("LONG_ANIMATE_ALLOW_PROCEDURAL_IMAGES", raising=False)
+
+    try:
+        long_animate.generate_scene_image(
+            scene,
+            tmp_path / "scene.png",
+            "cinematic realistic documentary-film still",
+        )
+    except long_animate.LongAnimateImageError as exc:
+        assert "fallback kotak dinonaktifkan" in str(exc)
+    else:
+        raise AssertionError("Generator Cerita tidak boleh memakai gambar kotak prosedural")
+
+
+def test_local_real_image_provider_preflight(monkeypatch):
+    captured = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"data":[{"id":"z-image-turbo-q3"}]}'
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request if isinstance(request, str) else request.full_url
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_PROVIDER", "stable-diffusion-cpp")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_BASE_URL", "http://127.0.0.1:7860/v1")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_MODEL", "z-image-turbo-q3")
+    monkeypatch.setattr(long_animate.urllib.request, "urlopen", fake_urlopen)
+
+    long_animate.require_real_image_provider()
+
+    assert captured == {
+        "url": "http://127.0.0.1:7860/v1/models",
+        "timeout": 8,
+    }
+
+
 def test_local_z_image_uses_sdcpp_images_api_payload(monkeypatch, tmp_path):
     scene = _fallback_storyboard(SCRIPT).scenes[0]
     captured = {}
@@ -1200,3 +1342,217 @@ def test_normalize_accepts_valid_soft_image_and_applies_extra_sharpen(monkeypatc
 
     assert long_animate._normalize_scene_image(path) is True
     assert sharpen_passes == [1.18, 1.32]
+
+
+def _motion_test_shot() -> long_animate.AnimateShot:
+    return long_animate.AnimateShot(
+        index=1,
+        scene_index=1,
+        shot_index=1,
+        shot_count=1,
+        title="Jalan desa",
+        narration="Seorang anak berlari di jalan desa.",
+        visual_prompt="A child runs on a rural village road at sunset",
+        on_screen_text="",
+        camera_motion="pan_right",
+        color_mood="warm",
+        animation_direction="The child runs forward while clothes move in the wind",
+        duration=7.2,
+    )
+
+
+def test_requested_school_assembly_allows_natural_background_faces(monkeypatch):
+    shot = _motion_test_shot()
+    shot.narration = "Saat upacara, seorang anak berdiri di barisan bersama murid-murid sekolah."
+    image = long_animate.np.random.default_rng(7).integers(
+        0, 256, size=(720, 1280, 3), dtype=long_animate.np.uint8
+    )
+    monkeypatch.setattr(long_animate.cv2, "imread", lambda _path: image)
+    monkeypatch.setattr(long_animate, "_face_boxes", lambda _image: [(0, 0, 30, 30)] * 12)
+
+    _score, reasons = long_animate.inspect_generated_image(shot, Path("assembly.png"))
+
+    assert "too_many_visible_faces" not in reasons
+    assert long_animate._requests_group_scene(shot.narration) is True
+
+
+def test_explicit_single_character_still_flags_unrequested_extra_faces(monkeypatch):
+    shot = _motion_test_shot()
+    image = long_animate.np.random.default_rng(8).integers(
+        0, 256, size=(720, 1280, 3), dtype=long_animate.np.uint8
+    )
+    monkeypatch.setattr(long_animate.cv2, "imread", lambda _path: image)
+    monkeypatch.setattr(long_animate, "_face_boxes", lambda _image: [(0, 0, 30, 30)] * 3)
+
+    _score, reasons = long_animate.inspect_generated_image(shot, Path("single-child.png"))
+
+    assert "too_many_visible_faces" in reasons
+
+
+def test_strict_vision_qa_keeps_valid_image_with_advisory_findings(monkeypatch, tmp_path):
+    shot = _motion_test_shot()
+    original_prompt = shot.visual_prompt
+    monkeypatch.setenv("LONG_ANIMATE_VISION_QA_ATTEMPTS", "2")
+    monkeypatch.setenv("LONG_ANIMATE_VISION_QA_STRICT", "true")
+    monkeypatch.setattr(long_animate, "generate_scene_image", lambda *_args, **_kwargs: "local-z-image")
+    monkeypatch.setattr(
+        long_animate,
+        "inspect_generated_image",
+        lambda *_args, **_kwargs: (0.65, ["too_many_visible_faces"]),
+    )
+
+    provider = long_animate.generate_shot_image_with_qa(
+        shot, tmp_path / "shot.png", "photorealistic documentary"
+    )
+
+    assert provider == "local-z-image"
+    assert shot.qa_attempts == 2
+    assert shot.visual_prompt == original_prompt
+
+
+def test_strict_vision_qa_rejects_undecodable_image(monkeypatch, tmp_path):
+    shot = _motion_test_shot()
+    monkeypatch.setenv("LONG_ANIMATE_VISION_QA_ATTEMPTS", "1")
+    monkeypatch.setenv("LONG_ANIMATE_VISION_QA_STRICT", "true")
+    monkeypatch.setattr(long_animate, "generate_scene_image", lambda *_args, **_kwargs: "local-z-image")
+    monkeypatch.setattr(
+        long_animate,
+        "inspect_generated_image",
+        lambda *_args, **_kwargs: (0.0, ["image_decode_failed"]),
+    )
+
+    try:
+        long_animate.generate_shot_image_with_qa(
+            shot, tmp_path / "broken.png", "photorealistic documentary"
+        )
+    except long_animate.LongAnimateImageError as exc:
+        assert "image_decode_failed" in str(exc)
+    else:
+        raise AssertionError("strict QA must still reject an undecodable image")
+
+
+def test_motion_provider_preflight_rejects_paid_muapi(monkeypatch):
+    monkeypatch.setenv("LONG_ANIMATE_VIDEO_PROVIDER", "muapi")
+
+    try:
+        long_animate.require_motion_video_provider()
+    except long_animate.LongAnimateVideoError as exc:
+        assert "tidak ada API berbayar" in str(exc)
+    else:
+        raise AssertionError("adapter video berbayar tidak boleh aktif")
+
+
+def test_wikimedia_free_video_search_preserves_license_metadata(monkeypatch):
+    captured = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, *_args):
+            return json.dumps(
+                {
+                    "query": {
+                        "pages": [
+                            {
+                                "pageid": 123,
+                                "title": "File:Village road.webm",
+                                "imageinfo": [
+                                    {
+                                        "url": "https://upload.wikimedia.org/free/village-road.webm",
+                                        "descriptionurl": "https://commons.wikimedia.org/wiki/File:Village_road.webm",
+                                        "size": 4_000_000,
+                                        "width": 1920,
+                                        "height": 1080,
+                                        "mime": "video/webm",
+                                        "extmetadata": {
+                                            "LicenseShortName": {"value": "CC BY-SA 4.0"},
+                                            "LicenseUrl": {
+                                                "value": "https://creativecommons.org/licenses/by-sa/4.0/"
+                                            },
+                                            "Artist": {"value": "<b>Example Creator</b>"},
+                                        },
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                }
+            ).encode()
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["headers"] = dict(request.header_items())
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setenv("LONG_ANIMATE_FREE_STOCK_LICENSES", "cc0,public domain,cc by-sa")
+    monkeypatch.setattr(long_animate.urllib.request, "urlopen", fake_urlopen)
+
+    results = long_animate._wikimedia_video_results(_motion_test_shot())
+
+    assert len(results) == 1
+    assert results[0]["license"] == "CC BY-SA 4.0"
+    assert results[0]["creator"] == "Example Creator"
+    assert results[0]["download_url"].startswith("https://upload.wikimedia.org/")
+    assert "filetype%3Avideo" in captured["url"]
+    assert "Authorization" not in captured["headers"]
+    assert captured["timeout"] == 30.0
+
+
+def test_local_free_motion_downloads_commons_and_records_credit(monkeypatch, tmp_path):
+    shot = _motion_test_shot()
+    source = {
+        "download_url": "https://upload.wikimedia.org/free/village.webm",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Village.webm",
+        "creator": "Free Creator",
+        "license": "CC BY 4.0",
+        "license_url": "https://creativecommons.org/licenses/by/4.0/",
+        "width": 1920,
+        "height": 1080,
+        "size": 4_000_000,
+    }
+
+    def fake_download(_url, output):
+        output.write_bytes(b"free-video" * 200)
+
+    monkeypatch.setenv("LONG_ANIMATE_VIDEO_PROVIDER", "local_free")
+    monkeypatch.setenv("LONG_ANIMATE_FREE_STOCK_ENABLED", "true")
+    monkeypatch.setenv("LONG_ANIMATE_FREE_STOCK_MAX_SHOTS", "4")
+    monkeypatch.setattr(long_animate, "_wikimedia_video_results", lambda _shot: [source])
+    monkeypatch.setattr(long_animate, "_download_free_stock_video", fake_download)
+    monkeypatch.setattr(long_animate, "_media_duration", lambda _path: 8.0)
+
+    output = long_animate.generate_motion_video(shot, tmp_path / "shot.png", tmp_path)
+
+    assert output == tmp_path / "shot_01.free-source-1.webm"
+    assert shot.motion_provider == "free_stock:wikimedia_commons"
+    assert shot.motion_creator == "Free Creator"
+    assert shot.motion_license == "CC BY 4.0"
+    assert shot.motion_source_page.endswith("File:Village.webm")
+
+
+def test_free_motion_falls_back_to_local_z_image_without_network_result(monkeypatch, tmp_path):
+    shot = _motion_test_shot()
+    monkeypatch.setenv("LONG_ANIMATE_VIDEO_PROVIDER", "local_free")
+    monkeypatch.setenv("LONG_ANIMATE_FREE_STOCK_ENABLED", "true")
+    monkeypatch.setattr(long_animate, "_wikimedia_video_results", lambda _shot: [])
+
+    assert long_animate.generate_motion_video(shot, tmp_path / "shot.png", tmp_path) is None
+    assert shot.motion_provider == "local_z_image_cinematic"
+
+
+def test_disabled_motion_provider_uses_local_frame_without_network(monkeypatch, tmp_path):
+    shot = _motion_test_shot()
+    monkeypatch.setenv("LONG_ANIMATE_VIDEO_PROVIDER", "off")
+    monkeypatch.setattr(
+        long_animate.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("network called")),
+    )
+
+    assert long_animate.generate_motion_video(shot, tmp_path / "shot.png", tmp_path) is None
+    assert shot.motion_provider == "local_z_image_cinematic"

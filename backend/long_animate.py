@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import base64
 import hashlib
+import html
 import json
 import logging
 import math
@@ -20,7 +21,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, Generator
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import cv2
 import imageio_ffmpeg
@@ -45,6 +46,10 @@ class LongAnimateImageError(RuntimeError):
     """Remote image generation failed and local fallback is not acceptable."""
 
 
+class LongAnimateVideoError(RuntimeError):
+    """Image-to-video generation failed and silent fallback is not acceptable."""
+
+
 class StoryOutlineExpansionError(RuntimeError):
     """A short story premise could not be expanded into a production-ready script."""
 
@@ -58,6 +63,7 @@ class RenderMetrics:
     tts_parallel_workers: int = 1
     image_gen_time: float = 0.0
     image_retry_count: int = 0
+    motion_gen_time: float = 0.0
     render_shots_time: float = 0.0
     composite_time: float = 0.0
     qc_time: float = 0.0
@@ -126,6 +132,12 @@ class AnimateShot:
     continuity_anchor: str = ""
     duration: float = 0.0
     image_provider: str = ""
+    motion_provider: str = ""
+    motion_source_url: str = ""
+    motion_source_page: str = ""
+    motion_creator: str = ""
+    motion_license: str = ""
+    motion_license_url: str = ""
     qa_attempts: int = 0
     qa_score: float = 0.0
 
@@ -825,12 +837,17 @@ def _contains_unrequested_defaults(script: str, proposed: str) -> bool:
     )
 
 
-def _expected_people_limit(text: str) -> int:
-    if not _has_any(text, _PEOPLE_TERMS):
-        return 0
+_GROUP_SCENE_TERMS = (
+    "crowd", "kerumunan", "jamaah", "audience", "penonton", "group", "gathering",
+    "upacara", "apel", "barisan", "murid-murid", "siswa-siswi", "para murid", "para siswa",
+    "sekelas", "kelas", "lapangan sekolah", "warga", "masyarakat", "penduduk",
+    "satu desa", "seluruh desa", "villagers", "classmates", "students", "ceremony", "assembly",
+)
+
+
+def _explicit_people_count(text: str) -> int | None:
+    """Return a small count only when the story states one explicitly."""
     lowered = text.casefold()
-    if _has_any(lowered, ("crowd", "kerumunan", "jamaah", "audience", "penonton")):
-        return 8
     human_noun = r"(?:orang|anak|pria|wanita|laki-laki|perempuan|person|people|boy|girl|men|women)"
     word_values = {"satu": 1, "seorang": 1, "one": 1, "dua": 2, "two": 2, "tiga": 3, "three": 3, "empat": 4, "four": 4}
     explicit: list[int] = []
@@ -841,7 +858,21 @@ def _expected_people_limit(text: str) -> int:
         int(item)
         for item in re.findall(rf"(?<!\d)([1-4])\s+{human_noun}(?!\w)", lowered)
     )
-    return min(4, max([1, *explicit]))
+    return min(4, max(explicit)) if explicit else None
+
+
+def _requests_group_scene(text: str) -> bool:
+    return _has_any(text, _GROUP_SCENE_TERMS)
+
+
+def _expected_people_limit(text: str) -> int:
+    if not _has_any(text, _PEOPLE_TERMS) and not _requests_group_scene(text):
+        return 0
+    if _requests_group_scene(text):
+        # Prompt guidance only. QA does not enforce an exact ceiling for a
+        # requested assembly or crowd because background attendance varies.
+        return 20
+    return _explicit_people_count(text) or 1
 
 
 def _compose_visual_prompt(
@@ -869,10 +900,8 @@ def _compose_visual_prompt(
         visual = grounding or "A story-specific object and environment from the narration"
     trusted_scene_context = trusted_action_context or grounding
     complete_context = f"{trusted_scene_context} {character_bible}"
-    has_people = _has_any(
-        trusted_scene_context,
-        _PEOPLE_TERMS,
-    )
+    group_scene = _requests_group_scene(trusted_scene_context)
+    has_people = _has_any(trusted_scene_context, _PEOPLE_TERMS) or group_scene
     has_nonhuman_character = _has_any(trusted_scene_context, _NONHUMAN_CHARACTER_TERMS)
     hand_action_requested = _has_any(
         trusted_action_context,
@@ -888,18 +917,32 @@ def _compose_visual_prompt(
         if has_people or has_nonhuman_character
         else "No recurring character appears in this frame; do not insert one"
     )
-    subject_rule = (
-        "Use only the people explicitly described, each appearing exactly once; never invent a crowd, "
-        "background extras, or partial people. Frame every person with enough body context to identify who owns "
-        "every limb. No hands or arms may enter from outside the frame, and never crop a person at the wrist or "
-        "forearm. Use natural anatomy and relaxed believable poses. Every clearly visible hand has exactly five "
-        "naturally separated fingers with correct joints, proportions, and grip; no fused, missing, duplicated, or "
-        "malformed fingers. Every hand is visibly and anatomically attached through a wrist and forearm to a clearly "
-        "visible person; no floating hands, disembodied limbs, or anonymous foreground hands. "
-        if has_people
-        else "This scene does not request a human subject. Keep the frame free of human figures, faces, silhouettes, "
-        "crowds, and body parts. "
+    anatomy_rule = (
+        "Frame visible people with enough body context to identify who owns every limb. No hands or arms may enter "
+        "from outside the frame, and never crop a person at the wrist or forearm. Use natural anatomy and relaxed "
+        "believable poses. Every clearly visible hand has exactly five naturally separated fingers with correct "
+        "joints, proportions, and grip; no fused, missing, duplicated, or malformed fingers. Every hand is visibly "
+        "and anatomically attached through a wrist and forearm to a clearly visible person; no floating hands, "
+        "disembodied limbs, or anonymous foreground hands. "
     )
+    if has_people and group_scene:
+        subject_rule = (
+            "Depict the requested group or event with a natural, believable number of background participants. Keep "
+            "the named or principal character visually dominant and do not clone faces, repeat one person, or fill "
+            "the frame with unrelated extras. "
+            + anatomy_rule
+        )
+    elif has_people:
+        subject_rule = (
+            "Use only the people explicitly described, each appearing exactly once; never invent a crowd, background "
+            "extras, or partial people. "
+            + anatomy_rule
+        )
+    else:
+        subject_rule = (
+            "This scene does not request a human subject. Keep the frame free of human figures, faces, silhouettes, "
+            "crowds, and body parts. "
+        )
     gesture_rule = (
         "The requested hand action may appear once as a secondary part of a medium or wide composition. Keep the "
         "person's face, torso, and environment clearly visible; never place palms against the lens, never create a "
@@ -946,7 +989,12 @@ def _compose_visual_prompt(
         + gesture_rule
         + audience_address_rule
         + (f"{safety_direction} " if safety_direction else "")
-        + f"VISIBLE HUMAN LIMIT: {people_limit}; never exceed this count. "
+        + (
+            "VISIBLE HUMAN COMPOSITION: this is a requested group scene; use only participants natural to the event "
+            "and keep the principal subject clearly readable. "
+            if group_scene
+            else f"VISIBLE HUMAN LIMIT: {people_limit}; never exceed this count. "
+        )
         + clothing_rule
         + f"Continuity bible: {continuity}. "
         + (f"Location bible: {_clean_text(location_bible, 360)}. " if location_bible else "")
@@ -1365,6 +1413,33 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
     )
 
 
+def _outline_narration_chunks(outline: str, scene_count: int) -> list[str]:
+    """Build contiguous narration fallbacks directly from the user's prose."""
+    narrative = re.sub(r"(?im)^\s*#{1,6}\s*[^\n]+\n?", "", outline, count=1)
+    narrative = re.sub(r"(?im)^\s*\*{0,2}genre\s*:\s*.*$", "", narrative)
+    narrative = re.sub(r"(?im)^\s*\*{0,2}pesan moral\*{0,2}\s*:\s*", "", narrative)
+    narrative = _strip_script_markup(narrative)
+    if not narrative:
+        return []
+
+    chunks = _sentence_chunks(
+        narrative,
+        target_words=max(24, math.ceil(len(narrative.split()) / max(1, scene_count))),
+        max_chunks=scene_count,
+    )
+    while len(chunks) < scene_count and chunks:
+        longest_index = max(range(len(chunks)), key=lambda item: len(chunks[item].split()))
+        words = chunks[longest_index].split()
+        if len(words) < 12:
+            break
+        midpoint = len(words) // 2
+        chunks[longest_index : longest_index + 1] = [
+            " ".join(words[:midpoint]),
+            " ".join(words[midpoint:]),
+        ]
+    return chunks[:scene_count]
+
+
 def expand_story_outline(
     outline: str,
     ai_config: AIConfig,
@@ -1404,7 +1479,8 @@ def expand_story_outline(
         "Tulis narasi/dubbing alami dalam Bahasa Indonesia; dialog singkat boleh berada di dalam narration dan harus "
         "jelas siapa yang berbicara. Setiap visual berisi 2-3 momen fisik berurutan yang dipisahkan titik koma, dengan "
         "karakter, pakaian, properti, lokasi, waktu, dan arah layar yang konsisten. Visual tidak boleh memuat tulisan. "
-        f"Target durasi sekitar {duration:g} detik, sekitar {target_words} kata, dan tepat {desired_scenes} adegan. "
+        f"Target durasi sekitar {duration:g} detik, sekitar {target_words} kata, dan sekitar {desired_scenes} adegan "
+        "(boleh menyesuaikan menjadi 3-14 adegan agar alur pengguna tidak terpotong). "
         "Adegan pertama harus cold open; adegan terakhir harus menyelesaikan janji utama. "
         "Return strict JSON only dengan bentuk: "
         '{"title":"...","art_bible":"cinematic realistic ...","character_bible":"...",'
@@ -1434,11 +1510,18 @@ def expand_story_outline(
         ) from exc
 
     raw_scenes = parsed.get("scenes") if isinstance(parsed, dict) else None
-    if not isinstance(raw_scenes, list) or len(raw_scenes) != desired_scenes:
+    if not isinstance(raw_scenes, list) or not 3 <= len(raw_scenes) <= 14:
         raise StoryOutlineExpansionError(
-            f"AI harus menghasilkan tepat {desired_scenes} adegan agar ritme video rapi."
+            "AI belum menghasilkan minimal 3 dan maksimal 14 adegan yang dapat dirender."
+        )
+    if len(raw_scenes) != desired_scenes:
+        _logger.warning(
+            "AI menghasilkan %d adegan dari target %d; hasil tetap dipakai karena masih dalam rentang render aman.",
+            len(raw_scenes),
+            desired_scenes,
         )
 
+    source_narrations = _outline_narration_chunks(outline, len(raw_scenes))
     scenes: list[dict[str, str]] = []
     total_words = 0
     for index, raw_scene in enumerate(raw_scenes, start=1):
@@ -1446,10 +1529,28 @@ def expand_story_outline(
             raise StoryOutlineExpansionError(f"Format adegan {index} dari AI tidak valid.")
         narration = _clean_text(raw_scene.get("narration"), 900)
         visual = _clean_text(raw_scene.get("visual"), 900)
-        if len(narration.split()) < 18 or len(visual.split()) < 8:
-            raise StoryOutlineExpansionError(
-                f"Adegan {index} terlalu tipis; narasi dan visual belum siap dirender."
+        source_narration = (
+            source_narrations[index - 1]
+            if index - 1 < len(source_narrations)
+            else ""
+        )
+        if len(narration.split()) < 18 and len(source_narration.split()) >= 18:
+            _logger.warning(
+                "Narasi adegan %d terlalu tipis; memakai bagian terkait dari cerita asli pengguna.",
+                index,
             )
+            narration = _clean_text(source_narration, 900)
+        if len(narration.split()) < 3:
+            narration = _clean_text(
+                source_narration or raw_scene.get("title") or clean_outline,
+                900,
+            )
+        if len(visual.split()) < 8:
+            _logger.warning(
+                "Visual adegan %d terlalu tipis; menurunkannya dari narasi adegan.",
+                index,
+            )
+            visual = _clean_text(narration, 900)
         total_words += len(narration.split())
         scenes.append(
             {
@@ -1462,9 +1563,24 @@ def expand_story_outline(
             }
         )
     if total_words < min_words:
-        raise StoryOutlineExpansionError(
-            f"Naskah hasil AI baru {total_words} kata; minimal {min_words} kata diperlukan untuk target durasi."
-        )
+        source_word_count = sum(len(item.split()) for item in source_narrations)
+        if source_word_count > total_words:
+            _logger.warning(
+                "Naskah AI hanya %d kata dari target minimal %d; memakai narasi cerita asli (%d kata).",
+                total_words,
+                min_words,
+                source_word_count,
+            )
+            for index, scene in enumerate(scenes):
+                if index < len(source_narrations):
+                    scene["narration"] = _clean_text(source_narrations[index], 900)
+            total_words = sum(len(scene["narration"].split()) for scene in scenes)
+        if total_words < min_words:
+            _logger.warning(
+                "Narasi produksi %d kata, di bawah target ideal %d; render tetap dilanjutkan dan timing akan disesuaikan.",
+                total_words,
+                min_words,
+            )
 
     title = _clean_text(parsed.get("title"), 100) or _scene_title(clean_outline, 0)
     art_bible = _clean_text(parsed.get("art_bible"), 600) or (
@@ -1500,6 +1616,7 @@ def expand_story_outline(
         "source": "user_story_outline",
         "profile": "original_serial_drama_v1",
         "scene_count": len(scenes),
+        "preferred_scene_count": desired_scenes,
         "target_words": target_words,
         "production_words": total_words,
         "outline_sha256": hashlib.sha256(outline.encode("utf-8")).hexdigest(),
@@ -1853,6 +1970,37 @@ def _is_sd_cpp_endpoint(base: str, model: str = "") -> bool:
     return host in {"127.0.0.1", "localhost", "::1"} and (
         "z-image" in model.casefold() or "sd-cpp" in model.casefold()
     )
+
+
+def require_real_image_provider() -> None:
+    """Fail before TTS/rendering when only procedural placeholder art is available."""
+    base, model, key = _image_endpoint()
+    if not base:
+        if _env_bool("LONG_ANIMATE_ALLOW_PROCEDURAL_IMAGES", False):
+            return
+        raise LongAnimateImageError(
+            "Provider gambar realistis belum masuk ke container. Periksa LONG_ANIMATE_IMAGE_BASE_URL; "
+            "fallback kotak dinonaktifkan."
+        )
+    if _is_gemini_image_endpoint(base) and not key:
+        raise LongAnimateImageError(
+            "GEMINI_API_KEY/LONG_ANIMATE_IMAGE_API_KEY belum diisi untuk generator gambar Gemini."
+        )
+    if not _is_sd_cpp_endpoint(base, model):
+        return
+
+    models_url = f"{base.rstrip('/')}/models"
+    try:
+        with urllib.request.urlopen(models_url, timeout=8) as response:
+            payload = response.read()
+        if not payload:
+            raise RuntimeError("respons /models kosong")
+    except Exception as exc:
+        detail, _status = _image_error_detail(exc)
+        raise LongAnimateImageError(
+            "Generator gambar realistis lokal belum siap di "
+            f"{models_url}. Jalankan scripts/start-local-image-model.sh. Detail: {detail}"
+        ) from exc
 
 
 def _release_ollama_gpu_models() -> None:
@@ -2361,8 +2509,19 @@ def generate_scene_image(
     reference_image: Path | None = None,
 ) -> str:
     primary = _image_endpoint()
+    allow_procedural = _env_bool("LONG_ANIMATE_ALLOW_PROCEDURAL_IMAGES", False)
+    if not primary[0] and not allow_procedural:
+        raise LongAnimateImageError(
+            "Provider gambar realistis belum dikonfigurasi. Isi LONG_ANIMATE_IMAGE_BASE_URL "
+            "dan jalankan scripts/start-local-image-model.sh; fallback kotak dinonaktifkan."
+        )
     if _remote_scene_image(scene, path, reference_image=reference_image):
         return _remote_provider_label(primary[0], primary[1])
+    if not allow_procedural:
+        raise LongAnimateImageError(
+            f"Provider gambar realistis tidak menghasilkan gambar untuk shot {scene.index}; "
+            "fallback kotak dinonaktifkan."
+        )
     _local_scene_image(scene, path, art_bible)
     return "fendy_local_story_art"
 
@@ -2420,7 +2579,10 @@ def inspect_generated_image(
     black_ratio = float(np.mean(gray < 8))
     sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
     faces = _face_boxes(image)
-    expected_people = _expected_people_limit(f"{shot.narration} {shot.visual_prompt.split('STRICT STORY GROUNDING:', 1)[0]}")
+    story_people_context = f"{shot.narration} {shot.visual_prompt.split('STRICT STORY GROUNDING:', 1)[0]}"
+    expected_people = _expected_people_limit(story_people_context)
+    explicit_people = _explicit_people_count(story_people_context)
+    group_scene = _requests_group_scene(story_people_context)
     reasons: list[str] = []
     score = 1.0
     if black_ratio > 0.55:
@@ -2432,7 +2594,7 @@ def inspect_generated_image(
     if faces and expected_people == 0:
         reasons.append("unrequested_human_face")
         score -= 0.45
-    elif expected_people and len(faces) > expected_people:
+    elif explicit_people and not group_scene and len(faces) > explicit_people:
         reasons.append("too_many_visible_faces")
         score -= 0.35
     if style_reference and style_reference.is_file():
@@ -2498,9 +2660,21 @@ def generate_shot_image_with_qa(
             shot.visual_prompt = original_prompt
             return provider
     shot.visual_prompt = original_prompt
-    if _env_bool("LONG_ANIMATE_VISION_QA_STRICT", False):
+    # Semantic detections are useful retry hints, but they are not reliable
+    # enough to delete a complete job. Strict mode only rejects image files
+    # that cannot safely continue into the FFmpeg render pipeline.
+    fatal_reasons = {"image_decode_failed", "black_or_empty_frame"}
+    fatal_failures = [reason for reason in last_reasons if reason in fatal_reasons]
+    if _env_bool("LONG_ANIMATE_VISION_QA_STRICT", False) and fatal_failures:
         raise LongAnimateImageError(
-            f"Vision QA shot {shot.index} gagal setelah {attempts} percobaan: {', '.join(last_reasons)}"
+            f"Vision QA shot {shot.index} gagal setelah {attempts} percobaan: {', '.join(fatal_failures)}"
+        )
+    if last_reasons:
+        _logger.warning(
+            "Vision QA shot %s menyisakan catatan nonfatal setelah %s percobaan (%s); gambar valid tetap dipakai.",
+            shot.index,
+            attempts,
+            ", ".join(last_reasons),
         )
     return provider
 
@@ -2715,6 +2889,339 @@ def concatenate_voice_track(paths: list[Path], scene_dir: Path, target_duration:
         cwd=scene_dir,
     )
     return output
+
+
+def _video_provider() -> str:
+    provider = os.environ.get("LONG_ANIMATE_VIDEO_PROVIDER", "local_free").strip().casefold()
+    aliases = {
+        "": "local_free",
+        "free": "local_free",
+        "local": "local_free",
+        "self_hosted": "local_free",
+        "wikimedia": "local_free",
+        "none": "off",
+        "disabled": "off",
+        "static": "off",
+        "ken_burns": "off",
+    }
+    return aliases.get(provider, provider)
+
+
+def require_motion_video_provider() -> None:
+    """Reject paid/cloud motion adapters; this deployment is intentionally free-only."""
+    provider = _video_provider()
+    if provider not in {"off", "local_free"}:
+        raise LongAnimateVideoError(
+            f"LONG_ANIMATE_VIDEO_PROVIDER={provider!r} tidak diizinkan. "
+            "Generator Cerita ini hanya menerima 'local_free' atau 'off'; tidak ada API berbayar."
+        )
+
+
+_FREE_STOCK_STOPWORDS = {
+    "adalah", "agar", "anak", "and", "atau", "camera", "cinematic", "close", "dalam",
+    "dengan", "dari", "dramatic", "frame", "high", "lighting", "medium", "natural",
+    "orang", "realistic", "scene", "sebuah", "shot", "slow", "style", "the", "untuk",
+    "yang", "wide", "without", "same", "exact", "film", "photo", "photorealistic",
+}
+
+
+def _free_stock_query(shot: AnimateShot) -> str:
+    """Extract a short concrete Commons query instead of sending a full AI prompt."""
+    source = f"{shot.title} {shot.visual_prompt} {shot.narration}"
+    words = re.findall(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'-]{2,}", source.casefold())
+    selected: list[str] = []
+    for word in words:
+        clean = word.strip("'-")
+        if clean in _FREE_STOCK_STOPWORDS or clean in selected or len(clean) < 4:
+            continue
+        selected.append(clean)
+        if len(selected) >= 6:
+            break
+    return " ".join(selected)
+
+
+def _clean_metadata_html(value: object, fallback: str = "") -> str:
+    clean = html.unescape(re.sub(r"<[^>]+>", " ", str(value or "")))
+    return re.sub(r"\s+", " ", clean).strip() or fallback
+
+
+def _free_stock_license_allowed(license_name: str) -> bool:
+    allowed = [
+        token.strip().casefold()
+        for token in os.environ.get(
+            "LONG_ANIMATE_FREE_STOCK_LICENSES",
+            "cc0,public domain,pdm,cc by,cc by-sa",
+        ).split(",")
+        if token.strip()
+    ]
+    normalized = license_name.casefold()
+    return bool(normalized and any(token in normalized for token in allowed))
+
+
+def _wikimedia_video_results(shot: AnimateShot) -> list[dict[str, object]]:
+    query = _free_stock_query(shot)
+    if not query:
+        return []
+    count = max(1, min(12, int(os.environ.get("LONG_ANIMATE_FREE_STOCK_SEARCH_COUNT", "8"))))
+    params = urlencode(
+        {
+            "action": "query",
+            "format": "json",
+            "generator": "search",
+            "gsrsearch": f"filetype:video {query}",
+            "gsrnamespace": 6,
+            "gsrlimit": count,
+            "prop": "imageinfo",
+            "iiprop": "url|size|mime|extmetadata|metadata",
+            "formatversion": 2,
+        }
+    )
+    url = f"https://commons.wikimedia.org/w/api.php?{params}"
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "ClipForge/1.0 (self-hosted free video editor)",
+        },
+    )
+    timeout = max(5.0, float(os.environ.get("LONG_ANIMATE_FREE_STOCK_TIMEOUT_SECONDS", "30")))
+    last_error: Exception | None = None
+    payload: dict[str, object] = {}
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                raw = response.read(4 * 1024 * 1024)
+            decoded = json.loads(raw.decode("utf-8"))
+            if isinstance(decoded, dict):
+                payload = decoded
+                break
+            raise LongAnimateVideoError("Wikimedia mengembalikan format JSON yang tidak dikenal.")
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+            last_error = exc
+            if isinstance(exc, urllib.error.HTTPError) and 400 <= exc.code < 500 and exc.code != 429:
+                break
+            if attempt < 2:
+                time.sleep(2.0 * (attempt + 1))
+    if not payload:
+        raise LongAnimateVideoError(f"Pencarian video gratis Wikimedia gagal: {last_error}")
+
+    query_data = payload.get("query")
+    pages_value = query_data.get("pages") if isinstance(query_data, dict) else []
+    pages = list(pages_value.values()) if isinstance(pages_value, dict) else pages_value
+    if not isinstance(pages, list):
+        return []
+
+    _aspect, output_width, output_height = _output_geometry()
+    target_landscape = output_width >= output_height
+    maximum_bytes = max(
+        1, int(os.environ.get("LONG_ANIMATE_FREE_STOCK_MAX_DOWNLOAD_MB", "250"))
+    ) * 1024 * 1024
+    results: list[dict[str, object]] = []
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        image_info = page.get("imageinfo")
+        info = image_info[0] if isinstance(image_info, list) and image_info else None
+        if not isinstance(info, dict):
+            continue
+        media_url = info.get("url")
+        mime = str(info.get("mime") or "")
+        parsed = urlparse(str(media_url or ""))
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or not parsed.hostname.casefold().endswith("wikimedia.org")
+            or not mime.startswith("video/")
+        ):
+            continue
+        file_size = int(info.get("size") or 0)
+        if not file_size or file_size > maximum_bytes:
+            continue
+        width = int(info.get("width") or 0)
+        height = int(info.get("height") or 0)
+        if width and height and (width >= height) != target_landscape:
+            continue
+        metadata = info.get("extmetadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+
+        def meta(name: str) -> object:
+            field = metadata.get(name)
+            return field.get("value") if isinstance(field, dict) else ""
+
+        license_name = _clean_metadata_html(meta("LicenseShortName"), "Unknown")
+        if not _free_stock_license_allowed(license_name):
+            continue
+        title = _clean_metadata_html(page.get("title"), "Wikimedia video")
+        results.append(
+            {
+                "download_url": str(media_url),
+                "source_page": str(
+                    info.get("descriptionurl")
+                    or f"https://commons.wikimedia.org/wiki/{title.replace(' ', '_')}"
+                ),
+                "creator": _clean_metadata_html(
+                    meta("Artist") or meta("Credit"), "Wikimedia contributor"
+                ),
+                "license": license_name,
+                "license_url": str(meta("LicenseUrl") or ""),
+                "width": width,
+                "height": height,
+                "size": file_size,
+            }
+        )
+    results.sort(
+        key=lambda item: (
+            int(item["height"]) < 720,
+            -int(item["width"]) * int(item["height"]),
+            int(item["size"]),
+        )
+    )
+    return results
+
+
+def _download_free_stock_video(url: str, output_path: Path) -> None:
+    parsed = urlparse(url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or not parsed.hostname.casefold().endswith("wikimedia.org")
+    ):
+        raise LongAnimateVideoError("URL unduhan stock video bukan host Wikimedia yang diizinkan.")
+    timeout = max(
+        10.0, float(os.environ.get("LONG_ANIMATE_FREE_STOCK_DOWNLOAD_TIMEOUT_SECONDS", "180"))
+    )
+    max_bytes = max(
+        1, int(os.environ.get("LONG_ANIMATE_FREE_STOCK_MAX_DOWNLOAD_MB", "250"))
+    ) * 1024 * 1024
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "video/*",
+            "User-Agent": "ClipForge/1.0 (self-hosted free video editor)",
+        },
+    )
+    temporary = output_path.with_suffix(output_path.suffix + ".part")
+    total = 0
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response, temporary.open("wb") as handle:
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_bytes:
+                    raise LongAnimateVideoError(
+                        f"Stock video melebihi batas {max_bytes // (1024 * 1024)} MB."
+                    )
+                handle.write(chunk)
+        if total < 1024:
+            raise LongAnimateVideoError("Stock video yang diunduh kosong atau terlalu kecil.")
+        temporary.replace(output_path)
+    except urllib.error.HTTPError as exc:
+        raise LongAnimateVideoError(f"Unduh stock video gagal (HTTP {exc.code}).") from exc
+    except (urllib.error.URLError, TimeoutError, RemoteDisconnected, OSError) as exc:
+        raise LongAnimateVideoError(f"Unduh stock video gagal: {exc}") from exc
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _wikimedia_motion_video(
+    shot: AnimateShot, scene_dir: Path
+) -> Path | None:
+    for index, asset in enumerate(_wikimedia_video_results(shot), start=1):
+        source_url = str(asset["download_url"])
+        suffix = Path(urlparse(source_url).path).suffix.casefold()
+        if suffix not in {".mp4", ".webm", ".ogv", ".ogg"}:
+            suffix = ".mp4"
+        output = scene_dir / f"shot_{shot.index:02}.free-source-{index}{suffix}"
+        try:
+            _download_free_stock_video(source_url, output)
+            if _media_duration(output) <= 0.4:
+                output.unlink(missing_ok=True)
+                continue
+        except LongAnimateVideoError:
+            output.unlink(missing_ok=True)
+            continue
+        shot.motion_provider = "free_stock:wikimedia_commons"
+        shot.motion_source_url = source_url
+        shot.motion_source_page = str(asset["source_page"])
+        shot.motion_creator = str(asset["creator"])
+        shot.motion_license = str(asset["license"])
+        shot.motion_license_url = str(asset["license_url"])
+        return output
+    return None
+
+
+def generate_motion_video(shot: AnimateShot, image_path: Path, scene_dir: Path) -> Path | None:
+    """Use keyless open footage when available, otherwise animate the local Z-Image frame."""
+    provider = _video_provider()
+    if provider == "off":
+        shot.motion_provider = "local_z_image_cinematic"
+        return None
+    if provider != "local_free":
+        raise LongAnimateVideoError(
+            f"Provider video {provider!r} tidak didukung dalam mode gratis."
+        )
+    if not _env_bool("LONG_ANIMATE_FREE_STOCK_ENABLED", True):
+        shot.motion_provider = "local_z_image_cinematic"
+        return None
+    maximum_shots = max(0, int(os.environ.get("LONG_ANIMATE_FREE_STOCK_MAX_SHOTS", "4")))
+    if maximum_shots and shot.index > maximum_shots:
+        shot.motion_provider = "local_z_image_cinematic"
+        return None
+    try:
+        source = _wikimedia_motion_video(shot, scene_dir)
+    except LongAnimateVideoError as exc:
+        _logger.warning(
+            "Stock gratis untuk shot %s tidak tersedia; memakai frame Z-Image lokal: %s",
+            shot.index,
+            exc,
+        )
+        source = None
+    if source is None:
+        shot.motion_provider = "local_z_image_cinematic"
+    return source
+
+
+def render_motion_shot_video(shot: AnimateShot, video_path: Path, scene_dir: Path) -> Path:
+    """Normalize provider video to the exact timeline while discarding paid native audio."""
+    _aspect, output_width, output_height = _output_geometry()
+    title_path = scene_dir / f"shot_{shot.index:02}.title.txt"
+    if shot.on_screen_text:
+        title_path.write_text(shot.on_screen_text + "\n", encoding="utf-8")
+    output_path = scene_dir / f"shot_{shot.index:02}.mp4"
+    title_end = min(3.8, max(0.45, shot.duration - 0.08))
+    vf_parts = [
+        f"scale={output_width}:{output_height}:force_original_aspect_ratio=increase",
+        f"crop={output_width}:{output_height}",
+        "fps=30",
+        f"tpad=stop_mode=clone:stop_duration={shot.duration:.3f}",
+        f"trim=duration={shot.duration:.3f}",
+        "setpts=PTS-STARTPTS",
+        "eq=contrast=1.02:saturation=1.035",
+        "unsharp=5:5:0.20:5:5:0.0",
+    ]
+    if shot.on_screen_text:
+        vf_parts.extend(
+            [
+                f"drawbox=x=86:y=76:w=720:h=142:color=black@0.58:t=fill:enable='between(t,0.08,{title_end:.3f})'",
+                f"drawbox=x=86:y=76:w=10:h=142:color=#34D399@0.95:t=fill:enable='between(t,0.08,{title_end:.3f})'",
+                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+                f"textfile='{title_path.name}':reload=0:expansion=none:fontcolor=white:fontsize=42:"
+                f"line_spacing=8:borderw=2:bordercolor=black@0.75:x=120:y=112:enable='between(t,0.08,{title_end:.3f})'",
+            ]
+        )
+    _run(
+        [
+            _ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y",
+            "-i", video_path.name, "-vf", ",".join(vf_parts), "-map", "0:v:0", "-an",
+            "-c:v", "libx264", "-preset", "slow", "-crf", "14", "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart", output_path.name,
+        ],
+        cwd=scene_dir,
+    )
+    title_path.unlink(missing_ok=True)
+    return output_path
 
 
 def render_shot_video(shot: AnimateShot, image_path: Path, scene_dir: Path) -> Path:
@@ -3042,6 +3549,8 @@ def render_long_animate(
     requested_target_duration = _target_duration_seconds()
 
     logger.info(f"Starting Long Animate render for: {script[:100]}")
+    require_real_image_provider()
+    require_motion_video_provider()
 
     with animate_work_directory(output_root, script) as (work_dir, clips_dir, scene_dir):
         progress(8, "selection", "Mengembangkan jalan cerita menjadi beat drama dan naskah dubbing")
@@ -3137,7 +3646,7 @@ def render_long_animate(
 
         # Image Generation (dengan timing tracking)
         logger.info("Generating images and running vision QA")
-        img_start = time.time()
+        visual_start = time.time()
         shot_paths: list[Path] = []
         shot_image_paths: list[Path] = []
         style_reference: Path | None = None
@@ -3168,11 +3677,19 @@ def render_long_animate(
                 character_reference = image_path
 
             elapsed = time.time() - img_attempt_start
+            metrics.image_gen_time += elapsed
             retries_used = shot.qa_attempts - 1
             metrics.image_retry_count += retries_used
             logger.info(f"✓ Shot {shot_index}/{len(shots)}: {elapsed:.1f}s ({retries_used} retries, {shot.image_provider})")
 
-            shot_path = render_shot_video(shot, image_path, scene_dir)
+            motion_start = time.time()
+            motion_source = generate_motion_video(shot, image_path, scene_dir)
+            metrics.motion_gen_time += time.time() - motion_start
+            shot_path = (
+                render_motion_shot_video(shot, motion_source, scene_dir)
+                if motion_source is not None
+                else render_shot_video(shot, image_path, scene_dir)
+            )
             shot_paths.append(shot_path)
             shot_image_paths.append(image_path)
             source_scene = storyboard.scenes[shot.scene_index - 1]
@@ -3191,13 +3708,19 @@ def render_long_animate(
                     "content_timed_editing": True,
                     "camera_motion": shot.camera_motion,
                     "image_provider": shot.image_provider,
+                    "motion_provider": shot.motion_provider,
                     "vision_qa_attempts": shot.qa_attempts,
                     "vision_qa_score": round(shot.qa_score, 3),
                 }
             )
 
-        metrics.image_gen_time = time.time() - img_start
-        logger.info(f"✓ Image generation complete: {metrics.image_gen_time:.1f}s total, {metrics.image_retry_count} retries across all shots")
+        logger.info(
+            "✓ Visual generation complete: %.1fs total (image %.1fs, motion %.1fs, %s retries)",
+            time.time() - visual_start,
+            metrics.image_gen_time,
+            metrics.motion_gen_time,
+            metrics.image_retry_count,
+        )
 
         progress(82, "render", "Menggabungkan shot tanpa fade hitam atau padding audio antar-scene")
         assembled = assemble_shot_videos(shot_paths, shots, scene_dir)
@@ -3338,11 +3861,33 @@ def render_long_animate(
             encoding="utf-8",
         )
         tags = [tag.strip().lstrip("#") for tag in (required_hashtags or []) if tag.strip()]
+        stock_attributions = [
+            {
+                "shot": shot.index,
+                "provider": "Wikimedia Commons",
+                "creator": shot.motion_creator,
+                "license": shot.motion_license,
+                "license_url": shot.motion_license_url,
+                "source_page": shot.motion_source_page,
+            }
+            for shot in shots
+            if shot.motion_provider == "free_stock:wikimedia_commons"
+        ]
+        credit_lines = [
+            f"Shot {item['shot']}: {item['creator']} — {item['license']} — {item['source_page']}"
+            for item in stock_attributions
+        ]
         caption_path = clips_dir / f"{base_name}_caption.txt"
         caption_path.write_text(
             f"{storyboard.hook}\n\n{storyboard.core_message}\n\n"
             + " ".join(f"#{tag}" for tag in tags[:6] if tag.casefold() != "shorts")
+            + ("\n\nKredit visual gratis:\n" + "\n".join(credit_lines) if credit_lines else "")
             + "\n",
+            encoding="utf-8",
+        )
+        credits_path = clips_dir / f"{base_name}_credits.txt"
+        credits_path.write_text(
+            ("\n".join(credit_lines) + "\n") if credit_lines else "Tidak ada stock pihak ketiga.\n",
             encoding="utf-8",
         )
         parts = [
@@ -3374,11 +3919,23 @@ def render_long_animate(
             if max_speech_tempo > 1.35
             else []
         )
+        real_image_provider_passed = bool(
+            shots
+            and all(
+                shot.image_provider not in {"", "unknown", "fendy_local_story_art"}
+                for shot in shots
+            )
+        )
+        if not real_image_provider_passed:
+            timing_weaknesses.append(
+                "Visual memakai placeholder prosedural; hasil wajib dirender ulang dengan provider gambar realistis."
+            )
         narrative_roles = [scene.narrative_role for scene in storyboard.scenes]
         animate_quality_gate_passed = bool(
             len(storyboard.scenes) >= 3
             and score >= 84
             and final_qc.get("passed")
+            and real_image_provider_passed
             and narrative_roles
             and narrative_roles[0] == "cold_open"
             and narrative_roles[-1] == "payoff_conclusion"
@@ -3456,7 +4013,7 @@ def render_long_animate(
         ],
         "applied_edits": [
             "Naskah dipecah menjadi beat storyboard tanpa filler atau pengulangan.",
-            "Setiap unit narasi memiliki prompt 3D, animation direction, continuity anchor, kamera, dan transisi sendiri.",
+            "Setiap unit narasi memiliki prompt sinematik, animation direction, continuity anchor, kamera, dan transisi sendiri.",
             "Scene kompleks dipecah menjadi beberapa shot tunggal yang tetap mewarisi karakter, pakaian, lokasi, dan waktu tanpa mengulang voice-over.",
             f"Voice-over dibuat lebih dulu; durasi hasil TTS menentukan timeline tepat {target_duration:g} detik.",
             "Fade hitam dan padding audio antar-scene dihapus; musik memakai sidechain ducking.",
@@ -3493,8 +4050,30 @@ def render_long_animate(
             "aspect_ratio": output_aspect,
             "thinking_level": os.environ.get("LONG_ANIMATE_IMAGE_THINKING_LEVEL", "high"),
             "strict_no_silent_fallback": _env_bool("LONG_ANIMATE_IMAGE_STRICT", False),
+            "procedural_fallback_allowed": _env_bool(
+                "LONG_ANIMATE_ALLOW_PROCEDURAL_IMAGES", False
+            ),
             "api_key_recorded": False,
         },
+        "video_generation": {
+            "provider": _video_provider(),
+            "engine": "wikimedia_commons_cc_footage_plus_local_z_image_cinematic",
+            "enabled": _video_provider() != "off",
+            "paid_api_used": False,
+            "api_key_required": False,
+            "maximum_free_stock_shots": max(
+                0, int(os.environ.get("LONG_ANIMATE_FREE_STOCK_MAX_SHOTS", "4"))
+            ),
+            "free_stock_shots": sum(
+                shot.motion_provider == "free_stock:wikimedia_commons" for shot in shots
+            ),
+            "local_cinematic_shots": sum(
+                shot.motion_provider == "local_z_image_cinematic" for shot in shots
+            ),
+            "native_audio_used": False,
+            "license_attribution_written": True,
+        },
+        "free_stock_attributions": stock_attributions,
         "parts": parts,
         "shots": [asdict(shot) for shot in shots],
         "story_arc": [asdict(scene) for scene in storyboard.scenes],
@@ -3504,7 +4083,11 @@ def render_long_animate(
             "one_animation_direction_per_scene": True,
             "camera_and_transition_are_scene_specific": True,
             "character_style_location_time_continuity_locked": True,
-            "render_execution_mode": "3d_keyframe_plus_scene_specific_camera_motion",
+            "render_execution_mode": (
+                "free_real_footage_plus_local_realistic_keyframes"
+                if stock_attributions
+                else "local_realistic_keyframe_plus_scene_specific_camera_motion"
+            ),
             "subject_motion_video_model_claimed": False,
             "scene_count": len(storyboard.scenes),
             "unique_visual_prompt_count": len(
@@ -3571,6 +4154,7 @@ def render_long_animate(
         "altered_content_disclosure_required": True,
         "synthetic_content": {
             "ai_or_procedural_images": True,
+            "ai_generated_video": False,
             "synthetic_or_neural_voice": True,
             "procedural_music": True,
             "procedural_transition_sfx": True,
@@ -3588,7 +4172,8 @@ def render_long_animate(
                 for scene in storyboard.scenes
             ),
             "third_party_music_used": False,
-            "third_party_video_used": False,
+            "third_party_video_used": bool(stock_attributions),
+            "third_party_video_attribution_recorded": bool(stock_attributions),
         },
         "one_k_long_form_readiness": animate_growth_readiness,
         "growth_readiness": animate_growth_readiness,
@@ -3696,6 +4281,7 @@ def render_long_animate(
         _logger.info(f"  Breakdown: storyboard={metrics.storyboard_time:.1f}s, "
                      f"tts={metrics.tts_time:.1f}s ({metrics.tts_parallel_workers} workers), "
                      f"image={metrics.image_gen_time:.1f}s ({metrics.image_retry_count} retries), "
+                     f"motion={metrics.motion_gen_time:.1f}s, "
                      f"composite={metrics.composite_time:.1f}s, qc={metrics.qc_time:.1f}s")
 
         progress(95, "finalize", "Long Animate selesai dirakit; menjalankan audit akhir")
