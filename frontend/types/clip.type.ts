@@ -2,7 +2,7 @@ export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancell
 export type YouTubeVisibility = "private" | "unlisted" | "public";
 export type CropMode = "center" | "person" | "streamer";
 export type VideoQuality = "standard" | "high" | "max";
-export type ClipMode = "short" | "highlight_5m";
+export type ClipMode = "short" | "highlight_5m" | "long_animate";
 export type VisualMode = "auto_fyp" | "cinematic" | "speaker_split" | "animated_3d" | "retro_tv";
 export type BackgroundMode = "auto_clean" | "keep" | "mosque";
 export type CamCorner = "auto" | "br" | "bl" | "tr" | "tl";
@@ -300,9 +300,11 @@ export type ClipJob = {
 export type CreateClipJobInput = {
   url?: string;
   source_file?: string;
+  script_text?: string;
   creator_perspective?: string;
   creator_commentary_file?: string;
   source_rights_evidence?: string;
+  provider_rights_evidence?: string;
   top?: number;
   min_duration: number;
   max_duration: number;
@@ -329,6 +331,7 @@ export type CreateClipJobInput = {
   required_hashtags?: string[];
   require_creative_commons?: boolean;
   confirm_source_rights?: boolean;
+  confirm_long_animate_rights?: boolean;
   auto_upload_youtube?: boolean;
   allow_reprocess_source?: boolean;
   review_only?: boolean;

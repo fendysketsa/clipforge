@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import math
 import os
@@ -39,6 +40,7 @@ from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
 
 console = Console()
 _AI_UNAVAILABLE_NOTICE_PRINTED = False
+_YOUTUBE_AUTH_REQUIRED = False
 
 
 def emit_progress(percent: int, stage: str, detail: str) -> None:
@@ -88,6 +90,27 @@ YTDLP_HTTP_HEADERS = {
     # media request disagree with the extracted player session and return 403.
     "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
 }
+
+YOUTUBE_AUTH_COOKIE_NAMES = frozenset(
+    {
+        "APISID",
+        "HSID",
+        "LOGIN_INFO",
+        "SAPISID",
+        "SID",
+        "SSID",
+        "__Secure-1PAPISID",
+        "__Secure-1PSID",
+        "__Secure-3PAPISID",
+        "__Secure-3PSID",
+    }
+)
+YOUTUBE_COOKIE_DOMAINS = (
+    "google.com",
+    "googlevideo.com",
+    "youtube.com",
+    "youtube-nocookie.com",
+)
 
 
 class RetryAwareYtdlpLogger:
@@ -2410,7 +2433,94 @@ def enforce_clip_size_limit(path: Path, duration: float, max_bytes: int | None =
     raise RuntimeError(f"Gagal membuat clip di bawah {limit // 1024 // 1024} MB: {last_error}")
 
 
-def ytdlp_base_options(**overrides) -> dict:
+def youtube_ytdlp_cookie_source() -> io.StringIO | str | None:
+    """Return yt-dlp cookies from the login session already saved by the app.
+
+    Playwright stores its reusable login as JSON, while yt-dlp expects a
+    Netscape cookie jar.  Converting it in memory avoids reading Chromium's
+    locked/encrypted Cookies database and avoids leaving another credential
+    file on disk. An explicit Netscape file remains available for operators.
+    """
+    enabled = os.environ.get("YOUTUBE_YTDLP_USE_AUTH", "true").strip().casefold()
+    if enabled in {"0", "false", "no", "off"}:
+        return None
+
+    explicit_cookie_file = os.environ.get("YOUTUBE_YTDLP_COOKIE_FILE", "").strip()
+    if explicit_cookie_file:
+        cookie_path = Path(explicit_cookie_file).expanduser()
+        return str(cookie_path) if cookie_path.is_file() else None
+
+    default_state = Path(__file__).resolve().parent / "data" / "youtube_storage_state.json"
+    state_path = Path(
+        os.environ.get("YOUTUBE_PLAYWRIGHT_STATE", str(default_state))
+    ).expanduser()
+    if not state_path.is_file():
+        return None
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    cookies = payload.get("cookies") if isinstance(payload, dict) else None
+    if not isinstance(cookies, list):
+        return None
+
+    now = time.time()
+    rows: list[str] = []
+    active_auth_cookie = False
+    for cookie in cookies:
+        if not isinstance(cookie, dict):
+            continue
+        domain = str(cookie.get("domain") or "").strip().casefold()
+        normalized_domain = domain.lstrip(".")
+        if not domain or not any(
+            normalized_domain == allowed or normalized_domain.endswith(f".{allowed}")
+            for allowed in YOUTUBE_COOKIE_DOMAINS
+        ):
+            continue
+        name = str(cookie.get("name") or "")
+        value = str(cookie.get("value") or "")
+        path = str(cookie.get("path") or "/")
+        if not name or any(
+            "\t" in field or "\n" in field or "\r" in field
+            for field in (domain, path, name, value)
+        ):
+            continue
+        try:
+            expires_value = float(cookie.get("expires") or 0)
+        except (TypeError, ValueError):
+            expires_value = 0
+        if expires_value > 0 and expires_value <= now:
+            continue
+        expires = str(max(0, int(expires_value)))
+        if name in YOUTUBE_AUTH_COOKIE_NAMES:
+            active_auth_cookie = True
+        rows.append(
+            "\t".join(
+                (
+                    domain,
+                    "TRUE" if domain.startswith(".") else "FALSE",
+                    path,
+                    "TRUE" if bool(cookie.get("secure")) else "FALSE",
+                    expires,
+                    name,
+                    value,
+                )
+            )
+        )
+
+    # Anonymous consent/preferences cookies do not solve a login challenge and
+    # should not silently turn public requests into cookie-authenticated ones.
+    if not rows or not active_auth_cookie:
+        return None
+    return io.StringIO(
+        "# Netscape HTTP Cookie File\n"
+        "# Generated in memory from ClipForge's YouTube login session.\n\n"
+        + "\n".join(rows)
+        + "\n"
+    )
+
+
+def ytdlp_base_options(*, use_youtube_auth: bool = False, **overrides) -> dict:
     options = {
         "noplaylist": True,
         "quiet": True,
@@ -2429,6 +2539,10 @@ def ytdlp_base_options(**overrides) -> dict:
         # Prefer IPv4 on hosts where IPv6 routes exist but cannot reach YouTube.
         "source_address": "0.0.0.0",
     }
+    if use_youtube_auth:
+        cookie_source = youtube_ytdlp_cookie_source()
+        if cookie_source is not None:
+            options["cookiefile"] = cookie_source
     options.update(overrides)
     return options
 
@@ -2554,10 +2668,15 @@ def friendly_youtube_error(exc: Exception, stage: str) -> str:
         )
     if "private video" in message.lower():
         return "Video YouTube bersifat privat, jadi tidak bisa diproses dari link publik."
-    if "sign in" in message.lower() or "login" in message.lower():
+    if (
+        "sign in" in message.lower()
+        or "login" in message.lower()
+        or "page needs to be reloaded" in message.lower()
+    ):
         return (
-            "YouTube meminta login atau verifikasi untuk video ini. "
-            "Gunakan video publik lain atau upload file videonya langsung."
+            "YouTube meminta login atau verifikasi dan sesi YouTube tersimpan belum diterima. "
+            "Jalankan Kontrol YouTube > Login Sekali untuk memperbarui sesi, lalu ulangi proses. "
+            "Jika video bukan milik/izin Anda, gunakan video publik lain atau upload file sumber yang sah."
         )
     if "unsupported url" in message.lower():
         return "Link video tidak dikenali. Gunakan URL YouTube penuh atau link youtu.be yang valid."
@@ -5079,12 +5198,37 @@ def is_source_branding_segment(segment: TranscriptSegment | str) -> bool:
 
 
 def fetch_metadata(url: str) -> dict:
+    global _YOUTUBE_AUTH_REQUIRED
     ydl_opts = ytdlp_base_options(skip_download=True)
     try:
         with YoutubeDL(ydl_opts) as ydl:
             return sanitize_metadata(ydl.extract_info(url, download=False))
     except Exception as exc:
-        raise UserFacingError(friendly_youtube_error(exc, "membaca metadata")) from exc
+        message = str(exc).casefold()
+        auth_challenge = (
+            "sign in" in message
+            or "login" in message
+            or "confirm you're not a bot" in message
+            or "confirm you’re not a bot" in message
+        )
+        if not auth_challenge or youtube_ytdlp_cookie_source() is None:
+            raise UserFacingError(friendly_youtube_error(exc, "membaca metadata")) from exc
+
+    console.print(
+        "[yellow]YouTube meminta verifikasi; mencoba ulang dengan sesi login tersimpan...[/yellow]"
+    )
+    try:
+        with YoutubeDL(
+            ytdlp_base_options(skip_download=True, use_youtube_auth=True)
+        ) as ydl:
+            metadata = sanitize_metadata(ydl.extract_info(url, download=False))
+    except Exception as auth_exc:
+        raise UserFacingError(
+            friendly_youtube_error(auth_exc, "membaca metadata dengan sesi tersimpan")
+        ) from auth_exc
+    _YOUTUBE_AUTH_REQUIRED = True
+    console.print("[green]Verifikasi YouTube berhasil memakai sesi login tersimpan.[/green]")
+    return metadata
 
 
 def is_creative_commons_metadata(metadata: dict) -> bool:
@@ -5190,6 +5334,7 @@ def download_video(
         options = {key: value for key, value in strategy.items() if key != "name"}
         ydl_opts = ytdlp_base_options(
             **options,
+            use_youtube_auth=_YOUTUBE_AUTH_REQUIRED,
             merge_output_format="mp4",
             logger=RetryAwareYtdlpLogger(),
             noprogress=True,
@@ -5315,6 +5460,7 @@ def download_review_audio(
         options = {key: value for key, value in strategy.items() if key != "name"}
         ydl_opts = ytdlp_base_options(
             **options,
+            use_youtube_auth=_YOUTUBE_AUTH_REQUIRED,
             noprogress=True,
             ffmpeg_location=ffmpeg_path(),
         )
@@ -17819,9 +17965,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max", type=float, default=45, help="Maximum clip duration in seconds")
     parser.add_argument(
         "--clip-mode",
-        choices=["short", "highlight_5m"],
+        choices=["short", "highlight_5m", "long_animate"],
         default="short",
-        help="Export vertical Shorts or a source-video Long Story 5-10 minutes",
+        help="Export Shorts, a source-video Long Story, or an original generated story",
     )
     parser.add_argument(
         "--compilation-target",
@@ -17933,6 +18079,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--rebuild-target-duration",
+        type=float,
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--long-animate-target-duration",
         type=float,
         default=None,
         help=argparse.SUPPRESS,
@@ -18891,6 +19043,18 @@ def main() -> int:
     if args.clip_mode == "long_animate" and not args.script_file:
         console.print("[red]Long Animate membutuhkan --script-file.[/red]")
         return 2
+    if args.clip_mode == "long_animate":
+        target_duration = max(
+            60.0,
+            min(600.0, float(args.long_animate_target_duration or 300.0)),
+        )
+        os.environ["LONG_ANIMATE_TARGET_DURATION_SECONDS"] = f"{target_duration:g}"
+        os.environ["LONG_ANIMATE_OUTPUT_ASPECT_RATIO"] = "16:9"
+        if not args.ai_enabled or not args.ai_base_url or not args.ai_model:
+            console.print(
+                "[red]Generator Cerita membutuhkan AI aktif, base URL, dan model.[/red]"
+            )
+            return 2
     if args.clip_mode == "long_animate" and (
         not args.confirm_provider_rights or len(args.provider_rights_evidence.split()) < 3
     ):
@@ -18942,12 +19106,12 @@ def main() -> int:
             console.print("[red]File naskah Long Animate tidak ditemukan.[/red]")
             return 2
         script = script_path.read_text(encoding="utf-8").strip()
-        if len(script) < 120 or len(script.split()) < 30:
+        if len(script) < 60 or len(script.split()) < 12:
             console.print(
-                "[red]Naskah Long Animate terlalu pendek. Gunakan minimal 120 karakter dan 30 kata.[/red]"
+                "[red]Jalan cerita terlalu pendek. Gunakan minimal 60 karakter dan 12 kata.[/red]"
             )
             return 2
-        emit_progress(3, "source", "Membaca naskah orisinal untuk Long Animate")
+        emit_progress(3, "source", "Membaca jalan cerita orisinal untuk Generator Cerita")
         return render_animated_script(args, root, script)
 
     mode_label = (

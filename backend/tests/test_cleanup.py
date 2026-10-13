@@ -1,3 +1,4 @@
+import io
 import json
 import tempfile
 import time
@@ -22,6 +23,7 @@ from clipper import (
     download_video,
     download_review_audio,
     extract_audio,
+    fetch_metadata,
     friendly_youtube_error,
     prepare_uploaded_source,
     select_usable_source_media,
@@ -29,6 +31,7 @@ from clipper import (
     source_media_candidates,
     ytdlp_base_options,
     youtube_download_strategies,
+    youtube_ytdlp_cookie_source,
     youtube_review_audio_strategies,
     youtube_retry_reason,
 )
@@ -460,6 +463,165 @@ def test_ytdlp_base_options_does_not_pin_a_stale_browser_user_agent():
 
     assert "User-Agent" not in options["http_headers"]
     assert options["http_headers"]["Accept-Language"].startswith("id-ID")
+    assert "cookiefile" not in options
+
+
+def test_ytdlp_base_options_uses_saved_youtube_login_without_disk_cookie_copy(
+    monkeypatch, tmp_path
+):
+    state_path = tmp_path / "youtube_storage_state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {
+                        "name": "SID",
+                        "value": "secret-auth-value",
+                        "domain": ".youtube.com",
+                        "path": "/",
+                        "expires": time.time() + 3600,
+                        "secure": True,
+                    },
+                    {
+                        "name": "PREF",
+                        "value": "hl=id",
+                        "domain": ".youtube.com",
+                        "path": "/",
+                        "expires": -1,
+                        "secure": True,
+                    },
+                    {
+                        "name": "unrelated",
+                        "value": "must-not-leak",
+                        "domain": ".example.com",
+                        "path": "/",
+                        "expires": -1,
+                        "secure": False,
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("YOUTUBE_PLAYWRIGHT_STATE", str(state_path))
+    monkeypatch.delenv("YOUTUBE_YTDLP_COOKIE_FILE", raising=False)
+    monkeypatch.delenv("YOUTUBE_YTDLP_USE_AUTH", raising=False)
+
+    options = ytdlp_base_options(use_youtube_auth=True)
+    cookie_source = options["cookiefile"]
+    cookie_text = cookie_source.getvalue()
+
+    assert isinstance(cookie_source, io.StringIO)
+    assert "\tSID\tsecret-auth-value" in cookie_text
+    assert "\tPREF\thl=id" in cookie_text
+    assert "must-not-leak" not in cookie_text
+
+
+def test_youtube_cookie_source_rejects_expired_or_anonymous_state(monkeypatch, tmp_path):
+    state_path = tmp_path / "youtube_storage_state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {
+                        "name": "SID",
+                        "value": "expired",
+                        "domain": ".youtube.com",
+                        "expires": time.time() - 60,
+                    },
+                    {
+                        "name": "PREF",
+                        "value": "hl=id",
+                        "domain": ".youtube.com",
+                        "expires": -1,
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("YOUTUBE_PLAYWRIGHT_STATE", str(state_path))
+    monkeypatch.delenv("YOUTUBE_YTDLP_COOKIE_FILE", raising=False)
+    monkeypatch.delenv("YOUTUBE_YTDLP_USE_AUTH", raising=False)
+
+    assert youtube_ytdlp_cookie_source() is None
+
+
+def test_youtube_cookie_source_can_be_disabled(monkeypatch, tmp_path):
+    state_path = tmp_path / "youtube_storage_state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {
+                        "name": "SID",
+                        "value": "secret-auth-value",
+                        "domain": ".youtube.com",
+                        "expires": -1,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("YOUTUBE_PLAYWRIGHT_STATE", str(state_path))
+    monkeypatch.setenv("YOUTUBE_YTDLP_USE_AUTH", "false")
+
+    assert youtube_ytdlp_cookie_source() is None
+
+
+def test_fetch_metadata_retries_bot_challenge_with_saved_session(monkeypatch, tmp_path):
+    import clipper
+
+    state_path = tmp_path / "youtube_storage_state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {
+                        "name": "SID",
+                        "value": "secret-auth-value",
+                        "domain": ".youtube.com",
+                        "path": "/",
+                        "expires": time.time() + 3600,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("YOUTUBE_PLAYWRIGHT_STATE", str(state_path))
+    monkeypatch.delenv("YOUTUBE_YTDLP_COOKIE_FILE", raising=False)
+    monkeypatch.delenv("YOUTUBE_YTDLP_USE_AUTH", raising=False)
+    monkeypatch.setattr(clipper, "_YOUTUBE_AUTH_REQUIRED", False)
+    attempted_options = []
+
+    class FakeYoutubeDL:
+        def __init__(self, options):
+            self.options = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, _url, download):
+            assert download is False
+            attempted_options.append(self.options)
+            if "cookiefile" not in self.options:
+                raise RuntimeError("Sign in to confirm you're not a bot")
+            return {"id": "demo", "title": "Demo"}
+
+    monkeypatch.setattr(clipper, "YoutubeDL", FakeYoutubeDL)
+
+    metadata = fetch_metadata("https://youtu.be/demo")
+
+    assert metadata["id"] == "demo"
+    assert len(attempted_options) == 2
+    assert "cookiefile" not in attempted_options[0]
+    assert isinstance(attempted_options[1]["cookiefile"], io.StringIO)
+    assert clipper._YOUTUBE_AUTH_REQUIRED is True
 
 
 def test_download_video_reaches_muxed_fallback_after_default_403(monkeypatch, tmp_path, capsys):

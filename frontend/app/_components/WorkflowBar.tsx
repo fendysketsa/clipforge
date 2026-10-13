@@ -79,8 +79,8 @@ export function WorkflowBar({
   sourceValue,
 }: WorkflowBarProps) {
   const [now, setNow] = useState(() => Date.now());
-  const mode = job?.request.clip_mode === "highlight_5m" ? "highlight_5m" : clipMode;
-  const isLongForm = mode === "highlight_5m";
+  const mode = job?.request.clip_mode ?? clipMode;
+  const isLongForm = mode === "highlight_5m" || mode === "long_animate";
   const isStopped = job?.status === "failed" || job?.status === "cancelled";
   const isComplete = !isProcessing && (job ? job.status === "completed" : hasResults);
   const backendProgress = job?.progress_percent;
@@ -105,7 +105,7 @@ export function WorkflowBar({
   const activeStage = stageRanges[activeStageIndex];
   const stageDescription = stageDescriptions[activeStage.key];
   const nextStage = stageRanges[activeStageIndex + 1];
-  const source = job?.request.url || job?.source_url || job?.request.source_file || sourceValue;
+  const source = job?.request.url || job?.source_url || job?.request.source_file || job?.request.script_text || sourceValue;
   const localSourceName = source && !source.startsWith("http")
     ? source.split(/[\\/]/).filter(Boolean).at(-1) || source
     : "";

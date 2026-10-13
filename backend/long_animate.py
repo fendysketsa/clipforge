@@ -45,6 +45,10 @@ class LongAnimateImageError(RuntimeError):
     """Remote image generation failed and local fallback is not acceptable."""
 
 
+class StoryOutlineExpansionError(RuntimeError):
+    """A short story premise could not be expanded into a production-ready script."""
+
+
 @dataclass
 class RenderMetrics:
     """Tracking metrics untuk Long Animate render."""
@@ -1197,9 +1201,13 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
     except Exception:
         return fallback
     raw_scenes = parsed.get("scenes") if isinstance(parsed, dict) else None
-    required_scene_count = max(
-        3,
-        min(minimum_scenes, math.ceil(len(script.split()) / 32)),
+    required_scene_count = (
+        len(source_sections)
+        if source_sections
+        else max(
+            3,
+            min(minimum_scenes, math.ceil(len(script.split()) / 32)),
+        )
     )
     if (
         not isinstance(raw_scenes, list)
@@ -1355,6 +1363,149 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
         scenes=scenes,
         location_bible=location_bible,
     )
+
+
+def expand_story_outline(
+    outline: str,
+    ai_config: AIConfig,
+    *,
+    target_duration: float | None = None,
+) -> tuple[str, dict[str, object]]:
+    """Expand one user-authored premise into a grounded Indonesian drama script.
+
+    Fully directed scene scripts remain untouched. Plain prose is treated as an
+    outline: the LLM may add connective fictional beats, but it must preserve the
+    supplied characters, setting, conflict, and ending constraints.
+    """
+    clean_outline = re.sub(r"\s+", " ", outline).strip()
+    if len(_scene_sections(outline)) >= 3:
+        return outline, {
+            "expanded": False,
+            "source": "user_directed_scenes",
+            "outline_sha256": hashlib.sha256(outline.encode("utf-8")).hexdigest(),
+        }
+    if not ai_config.enabled or not ai_config.base_url or not ai_config.model:
+        raise StoryOutlineExpansionError(
+            "Generator Cerita membutuhkan AI aktif untuk mengembangkan jalan cerita menjadi naskah produksi."
+        )
+
+    duration = target_duration or _target_duration_seconds()
+    desired_scenes = max(6, min(14, round(duration / 42)))
+    target_words = max(180, min(1500, round(duration * 2.05)))
+    min_words = max(150, round(target_words * 0.72))
+    prompt = (
+        "Kembangkan JALAN CERITA milik pengguna menjadi naskah drama Indonesia orisinal yang siap diproduksi. "
+        "Gunakan pola retensi drama serial: cold open langsung memperlihatkan risiko atau pembalikan, konteks status "
+        "tokoh, konflik yang meningkat, kegagalan sementara, reveal kemampuan/rahasia yang sudah ditanam sebelumnya, "
+        "pembalikan nasib, lalu payoff emosional yang tuntas. Jangan menyalin judul, karakter, dialog, adegan, visual, "
+        "atau identitas channel mana pun. Jangan mengubah fakta wajib, tokoh, latar, genre, atau akhir yang ditulis "
+        "pengguna. Tambahkan detail fiksi hanya untuk menyambungkan alur secara logis. Hindari filler, sapaan channel, "
+        "CTA, pengulangan ringkasan, klaim faktual baru, tokoh publik, merek, logo, dan karakter berhak cipta. "
+        "Tulis narasi/dubbing alami dalam Bahasa Indonesia; dialog singkat boleh berada di dalam narration dan harus "
+        "jelas siapa yang berbicara. Setiap visual berisi 2-3 momen fisik berurutan yang dipisahkan titik koma, dengan "
+        "karakter, pakaian, properti, lokasi, waktu, dan arah layar yang konsisten. Visual tidak boleh memuat tulisan. "
+        f"Target durasi sekitar {duration:g} detik, sekitar {target_words} kata, dan tepat {desired_scenes} adegan. "
+        "Adegan pertama harus cold open; adegan terakhir harus menyelesaikan janji utama. "
+        "Return strict JSON only dengan bentuk: "
+        '{"title":"...","art_bible":"cinematic realistic ...","character_bible":"...",'
+        '"location_bible":"...","scenes":[{"title":"...","narration":"...",'
+        '"visual":"momen 1; momen 2; momen 3","on_screen_text":"maks 6 kata"}]}.\n\n'
+        f"JALAN CERITA:\n{clean_outline[:12000]}"
+    )
+    try:
+        parsed = extract_json(
+            chat_completion(
+                ai_config,
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Anda showrunner dan editor drama Indonesia. Buat naskah orisinal, sinematik, "
+                            "konsisten, aman diproduksi, dan padat beat. Keluarkan JSON valid saja."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+            )
+        )
+    except Exception as exc:
+        raise StoryOutlineExpansionError(
+            f"AI gagal mengembangkan jalan cerita menjadi naskah produksi: {exc}"
+        ) from exc
+
+    raw_scenes = parsed.get("scenes") if isinstance(parsed, dict) else None
+    if not isinstance(raw_scenes, list) or len(raw_scenes) != desired_scenes:
+        raise StoryOutlineExpansionError(
+            f"AI harus menghasilkan tepat {desired_scenes} adegan agar ritme video rapi."
+        )
+
+    scenes: list[dict[str, str]] = []
+    total_words = 0
+    for index, raw_scene in enumerate(raw_scenes, start=1):
+        if not isinstance(raw_scene, dict):
+            raise StoryOutlineExpansionError(f"Format adegan {index} dari AI tidak valid.")
+        narration = _clean_text(raw_scene.get("narration"), 900)
+        visual = _clean_text(raw_scene.get("visual"), 900)
+        if len(narration.split()) < 18 or len(visual.split()) < 8:
+            raise StoryOutlineExpansionError(
+                f"Adegan {index} terlalu tipis; narasi dan visual belum siap dirender."
+            )
+        total_words += len(narration.split())
+        scenes.append(
+            {
+                "title": _clean_text(raw_scene.get("title"), 64) or f"Bagian {index}",
+                "narration": narration,
+                "visual": visual,
+                "on_screen_text": _short_on_screen_text(
+                    _clean_text(raw_scene.get("on_screen_text"), 64)
+                ),
+            }
+        )
+    if total_words < min_words:
+        raise StoryOutlineExpansionError(
+            f"Naskah hasil AI baru {total_words} kata; minimal {min_words} kata diperlukan untuk target durasi."
+        )
+
+    title = _clean_text(parsed.get("title"), 100) or _scene_title(clean_outline, 0)
+    art_bible = _clean_text(parsed.get("art_bible"), 600) or (
+        "cinematic realistic original drama, expressive natural acting, practical locations, "
+        "consistent film lighting, 16:9 composition"
+    )
+    character_bible = _clean_text(parsed.get("character_bible"), 900) or (
+        "Preserve every user-defined character identity, age, wardrobe, and relationship consistently."
+    )
+    location_bible = _clean_text(parsed.get("location_bible"), 700) or (
+        "Preserve every recurring location, era, weather, and spatial layout consistently."
+    )
+    blocks = [
+        f"JUDUL: {title}",
+        f"GAYA VISUAL: {art_bible}",
+        f"KARAKTER KONSISTEN: {character_bible}",
+        f"LOKASI KONSISTEN: {location_bible}",
+    ]
+    for index, scene in enumerate(scenes, start=1):
+        blocks.append(
+            "\n".join(
+                (
+                    f"### ADEGAN {index} — {scene['title']}",
+                    f"VISUAL: {scene['visual']}",
+                    f"NARASI: {scene['narration']}",
+                    f"TEKS LAYAR: {scene['on_screen_text']}",
+                )
+            )
+        )
+    production_script = "\n\n".join(blocks).strip()
+    return production_script, {
+        "expanded": True,
+        "source": "user_story_outline",
+        "profile": "original_serial_drama_v1",
+        "scene_count": len(scenes),
+        "target_words": target_words,
+        "production_words": total_words,
+        "outline_sha256": hashlib.sha256(outline.encode("utf-8")).hexdigest(),
+        "production_script_sha256": hashlib.sha256(production_script.encode("utf-8")).hexdigest(),
+        "copyrighted_reference_assets_used": False,
+    }
 
 
 def _target_duration_seconds() -> float:
@@ -2888,21 +3039,33 @@ def render_long_animate(
     logger = _logger
     metrics = RenderMetrics()
     start_time = time.time()
+    requested_target_duration = _target_duration_seconds()
 
     logger.info(f"Starting Long Animate render for: {script[:100]}")
 
     with animate_work_directory(output_root, script) as (work_dir, clips_dir, scene_dir):
+        progress(8, "selection", "Mengembangkan jalan cerita menjadi beat drama dan naskah dubbing")
+        production_script, outline_expansion = expand_story_outline(
+            script,
+            ai_config,
+            target_duration=requested_target_duration,
+        )
+        (work_dir / "story_outline.txt").write_text(script.strip() + "\n", encoding="utf-8")
+        (work_dir / "production_script.txt").write_text(
+            production_script.strip() + "\n",
+            encoding="utf-8",
+        )
+
         # Storyboard
         logger.info("Building storyboard and art bible")
         progress(18, "selection", "Menyusun storyboard, art bible, dan alur setiap scene")
         sb_start = time.time()
-        storyboard = build_storyboard(script, ai_config)
+        storyboard = build_storyboard(production_script, ai_config)
         metrics.storyboard_time = time.time() - sb_start
         logger.info(f"✓ Storyboard ready: {len(storyboard.scenes)} scenes in {metrics.storyboard_time:.1f}s")
 
         if len(storyboard.scenes) < 3:
             raise RuntimeError("Long Animate membutuhkan minimal tiga scene bermakna.")
-        requested_target_duration = _target_duration_seconds()
 
         # TTS Synthesis (PARALLEL)
         logger.info("Synthesizing narration with parallel workers")
@@ -2956,6 +3119,10 @@ def render_long_animate(
                     "target_duration": target_duration,
                     "shots": [asdict(shot) for shot in shots],
                     "source_script_sha256": hashlib.sha256(script.encode("utf-8")).hexdigest(),
+                    "production_script_sha256": hashlib.sha256(
+                        production_script.encode("utf-8")
+                    ).hexdigest(),
+                    "outline_expansion": outline_expansion,
                 },
                 indent=2,
                 ensure_ascii=False,
@@ -3068,7 +3235,7 @@ def render_long_animate(
         for shot in shots[:-1]:
             cut_cursor += shot.duration - transition_seconds
             cut_points.append(cut_cursor)
-        story_seed = int(hashlib.sha256(script.encode()).hexdigest()[:8], 16)
+        story_seed = int(hashlib.sha256(production_script.encode()).hexdigest()[:8], 16)
         freq_a = 110 + story_seed % 55
         freq_b = 165 + (story_seed // 7) % 70
         sfx_window = "+".join(
@@ -3263,8 +3430,10 @@ def render_long_animate(
         "duration": round(duration, 3),
         "score": score,
         "title": storyboard.title,
-        "reason": f"Long Animate {target_duration:g} detik dengan {len(storyboard.scenes)} scene dan {len(shots)} shot berbasis naskah asli.",
-        "text": script,
+        "reason": f"Generator Cerita {target_duration:g} detik dengan {len(storyboard.scenes)} scene dan {len(shots)} shot dari jalan cerita pengguna.",
+        "text": production_script,
+        "story_outline": script,
+        "outline_expansion": outline_expansion,
         "hook": storyboard.hook,
         "pov": "Narasi orisinal pengguna divisualkan menjadi scene yang saling melanjutkan.",
         "core_message": storyboard.core_message,
@@ -3302,7 +3471,7 @@ def render_long_animate(
             else "isi_belum_layak"
         ),
         "mode": "long_animate",
-        "production_model": "codex_scene_cinema_v3",
+        "production_model": "codex_story_drama_director_v1",
         "output_format": "portrait_short" if output_aspect == "9:16" else "landscape_compilation",
         "aspect_ratio": output_aspect,
         "output_resolution": f"{output_width}x{output_height}",
@@ -3388,6 +3557,9 @@ def render_long_animate(
             "version": 1,
             "derived_from_story": True,
             "source_script_sha256": hashlib.sha256(script.encode("utf-8")).hexdigest(),
+            "production_script_sha256": hashlib.sha256(
+                production_script.encode("utf-8")
+            ).hexdigest(),
         },
         "auto_fyp_visual_system": {
             "version": 2,

@@ -4,7 +4,12 @@ import json
 
 import long_animate
 from llm import AIConfig
-from long_animate import _fallback_storyboard, _motion_expression, build_storyboard
+from long_animate import (
+    _fallback_storyboard,
+    _motion_expression,
+    build_storyboard,
+    expand_story_outline,
+)
 
 
 SCRIPT = (
@@ -213,6 +218,78 @@ def test_long_animate_default_target_is_three_minutes(monkeypatch):
     monkeypatch.delenv("LONG_ANIMATE_TARGET_DURATION_SECONDS", raising=False)
 
     assert long_animate._target_duration_seconds() == 180.0
+
+
+def test_story_outline_expands_into_directed_drama_scenes(monkeypatch):
+    outline = (
+        "Seorang satpam miskin menggantikan temannya untuk kencan buta dan diremehkan keluarga kaya. "
+        "Ketika perusahaan disabotase, keahlian lamanya menyelamatkan semua orang dan mengubah penilaian mereka."
+    )
+    narration = " ".join(
+        "Raka menjaga sikap tenang ketika konflik baru memaksanya memilih tindakan yang berisiko namun benar"
+        for _ in range(5)
+    )
+    payload = {
+        "title": "Satpam yang Diremehkan",
+        "art_bible": "cinematic realistic original Indonesian drama",
+        "character_bible": "Raka, satpam dewasa dengan seragam biru tua yang konsisten",
+        "location_bible": "Gedung kantor modern pada malam hujan",
+        "scenes": [
+            {
+                "title": f"Beat {index}",
+                "narration": narration,
+                "visual": (
+                    "Raka berdiri di lobi saat alarm merah menyala; "
+                    "Raka membuka panel keamanan dengan alat kecil; "
+                    "Raka menuntun para pegawai menuju pintu aman"
+                ),
+                "on_screen_text": f"Pilihan {index}",
+            }
+            for index in range(1, 8)
+        ],
+    }
+    monkeypatch.setattr(long_animate, "chat_completion", lambda config, messages: json.dumps(payload))
+
+    script, audit = expand_story_outline(
+        outline,
+        AIConfig(enabled=True, base_url="http://localhost:11434/v1", model="local"),
+        target_duration=300,
+    )
+
+    assert audit["expanded"] is True
+    assert audit["scene_count"] == 7
+    assert "### ADEGAN 1 — Beat 1" in script
+    assert "NARASI:" in script
+    assert "VISUAL:" in script
+    assert len(long_animate._scene_sections(script)) == 7
+
+
+def test_directed_story_script_is_not_rewritten(monkeypatch):
+    directed = """
+    ### ADEGAN 1 — Hook
+    VISUAL: Raka berlari menuju alarm.
+    NARASI: Alarm berbunyi sebelum semua orang memahami bahayanya.
+    ### ADEGAN 2 — Konflik
+    VISUAL: Raka membuka panel keamanan.
+    NARASI: Ia menemukan kabel yang sengaja diputus oleh penyabot.
+    ### ADEGAN 3 — Payoff
+    VISUAL: Raka menyalakan kembali sistem gedung.
+    NARASI: Keahliannya menyelamatkan semua orang dan membuktikan siapa dirinya.
+    """
+    monkeypatch.setattr(
+        long_animate,
+        "chat_completion",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("AI must not be called")),
+    )
+
+    script, audit = expand_story_outline(
+        directed,
+        AIConfig(enabled=False, base_url="", model=""),
+        target_duration=300,
+    )
+
+    assert script == directed
+    assert audit["expanded"] is False
 
 
 def test_people_prompt_uses_restrained_story_action_instead_of_stock_hands():

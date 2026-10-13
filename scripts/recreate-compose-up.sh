@@ -21,6 +21,9 @@ fi
 TIKTOK_CDP_PORT="${TIKTOK_CDP_PORT:-9444}"
 CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME:-/tmp}/.config}"
 YOUTUBE_LOGIN_PROFILE_DIR="${YOUTUBE_LOGIN_PROFILE_DIR:-$CONFIG_HOME/fendy-clipper/youtube-chrome-profile}"
+if [[ "$YOUTUBE_LOGIN_PROFILE_DIR" == /app/data/* ]]; then
+  YOUTUBE_LOGIN_PROFILE_DIR="$ROOT_DIR/backend/data/${YOUTUBE_LOGIN_PROFILE_DIR#/app/data/}"
+fi
 YOUTUBE_CHROME_LAUNCH_LOG="${YOUTUBE_CHROME_LAUNCH_LOG:-/tmp/fendy-clipper-youtube-chrome-launcher.log}"
 TIKTOK_HOST_PROFILE_DIR="${TIKTOK_HOST_PROFILE_DIR:-$CONFIG_HOME/fendy-clipper/tiktok-chrome-profile}"
 TIKTOK_HOST_CHROME_LAUNCH_LOG="${TIKTOK_HOST_CHROME_LAUNCH_LOG:-/tmp/fendy-clipper-tiktok-chrome-launcher.log}"

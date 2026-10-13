@@ -1906,6 +1906,40 @@ def test_running_upload_with_verified_url_recovers_as_completed(monkeypatch, tmp
     assert "tanpa upload ulang" in recovered.logs[-1]
 
 
+def test_load_youtube_uploads_recovers_isolated_ascii_high_bit_flip(monkeypatch, tmp_path):
+    import api
+
+    upload = YouTubeUploadJob(
+        id="recover-corrupt-utf8",
+        source_job_id="job-1",
+        clip_url="/outputs/demo/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="completed",
+        created_at="2026-10-08T01:00:00+00:00",
+        updated_at="2026-10-08T01:01:00+00:00",
+        title="Recovered UTF-8 history",
+        performance_snapshots=[
+            {
+                "captured_at": "2026-10-08T01:01:00+00:00",
+                "source": "youtube_public",
+                "views": 253,
+            }
+        ],
+    )
+    uploads_path = tmp_path / "youtube_uploads.json"
+    damaged = json.dumps([upload.model_dump()]).encode("utf-8").replace(
+        b'youtube_public',
+        b'y\xefutube_public',
+    )
+    uploads_path.write_bytes(damaged)
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", uploads_path)
+
+    recovered = api.load_youtube_uploads()[upload.id]
+
+    assert recovered.performance_snapshots[0].source == "youtube_public"
+    assert recovered.performance_snapshots[0].views == 253
+
+
 def test_running_upload_with_only_early_url_never_recovers_as_completed(monkeypatch, tmp_path):
     import api
 

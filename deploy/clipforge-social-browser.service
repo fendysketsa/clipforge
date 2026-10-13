@@ -1,0 +1,19 @@
+[Unit]
+Description=ClipForge persistent YouTube and TikTok browser
+Wants=network-online.target graphical-session.target
+After=network-online.target graphical-session.target
+PartOf=graphical-session.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/www/wwwroot/clipper/clipforge
+Environment=DISPLAY=:1
+Environment=XDG_RUNTIME_DIR=%t
+ExecStart=/www/wwwroot/clipper/clipforge/scripts/open-youtube-login-chrome.sh --headed --minimized --foreground
+Restart=always
+RestartSec=10
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=default.target

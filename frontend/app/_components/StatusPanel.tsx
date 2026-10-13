@@ -49,7 +49,11 @@ const stageIndex = (job: ClipJob | null) => {
 
 const statusLabel = (job: ClipJob | null) => {
   if (!job) return "Siap menerima sumber";
-  const outputName = job.request.clip_mode === "highlight_5m" ? "Long Highlight" : "Short";
+  const outputName = job.request.clip_mode === "long_animate"
+    ? "Video Cerita"
+    : job.request.clip_mode === "highlight_5m"
+      ? "Long Highlight"
+      : "Short";
   if (job.status === "queued") return "Menunggu giliran";
   if (job.status === "running") return `Sedang membuat ${outputName}`;
   if (job.status === "completed") return `${outputName} selesai dibuat`;
@@ -83,7 +87,7 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
   const progress = job?.status === "completed" ? 100 : Math.max(0, Math.min(100, Math.round(job?.progress_percent ?? 0)));
   const canCancel = isActiveJob(job);
   const elapsed = job ? jobElapsedSeconds(job) : 0;
-  const isLong = job?.request.clip_mode === "highlight_5m";
+  const isLong = job?.request.clip_mode === "highlight_5m" || job?.request.clip_mode === "long_animate";
   const activeStage = STAGES[Math.max(0, Math.min(STAGES.length - 1, currentStage))];
   const activeStageMessage = STAGE_MESSAGES[activeStage.key];
 
@@ -103,7 +107,7 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
       {!job ? (
         <div className="clipStatusEmpty">
           <div className="emptyShortFrame"><Scissors size={24} /><i /></div>
-          <div><strong>Belum ada proses aktif</strong><p>Tempel sumber di atas. Progres Short atau Long Highlight akan tampil ringkas di sini.</p></div>
+          <div><strong>Belum ada proses aktif</strong><p>Tempel sumber atau jalan cerita di atas. Progres produksi akan tampil ringkas di sini.</p></div>
         </div>
       ) : (
         <div className="clipStatusBody">

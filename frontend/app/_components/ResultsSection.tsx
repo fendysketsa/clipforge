@@ -714,7 +714,7 @@ export function ResultsSection({
             // Private-first workflow while keeping automatic batch upload
             // strict.
             const isUploadReady = !clip.context_recut_required
-              && clip.youtube_upload_ready === true;
+              && clip.youtube_upload_ready !== false;
             const growthReadiness = clip.fyp_score !== null && clip.fyp_score !== undefined
               ? growthTargetReadiness(
                   clip.fyp_score,

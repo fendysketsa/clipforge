@@ -6,6 +6,7 @@ import {
   BarChart3,
   Archive,
   ArrowRight,
+  BookOpen,
   Check,
   CheckCircle2,
   ClipboardPaste,
@@ -26,6 +27,7 @@ import type { ClipMode, SourceHistoryCheck } from "../../types/clip.type";
 
 type QuickStartCardProps = {
   url: string;
+  storyText: string;
   clipMode: ClipMode;
   videoDuration: number | null;
   sourceHistory: SourceHistoryCheck | null;
@@ -37,6 +39,7 @@ type QuickStartCardProps = {
   isSubmitting: boolean;
   error: string;
   onUrlChange: (value: string) => void;
+  onStoryTextChange: (value: string) => void;
   onClipModeChange: (value: ClipMode) => void;
   onAllowReprocessSourceChange: (value: boolean) => void;
   onConfirmSourceRightsChange: (value: boolean) => void;
@@ -55,12 +58,19 @@ const LONG_STEPS = [
   { icon: Focus, label: "YouTube packaging", detail: "Thumbnail dan judul selaras" },
 ];
 
+const STORY_STEPS = [
+  { icon: BookOpen, label: "Naskah otomatis", detail: "Premis jadi beat drama" },
+  { icon: Film, label: "Scene sinematik", detail: "Tokoh dan lokasi konsisten" },
+  { icon: Subtitles, label: "Dubbing Indonesia", detail: "Subtitle dan audio sinkron" },
+];
+
 const formatCompactNumber = (value?: number | null) => value === null || value === undefined
   ? "—"
   : new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 
 export function QuickStartCard({
   url,
+  storyText,
   clipMode,
   videoDuration,
   sourceHistory,
@@ -72,6 +82,7 @@ export function QuickStartCard({
   isSubmitting,
   error,
   onUrlChange,
+  onStoryTextChange,
   onClipModeChange,
   onAllowReprocessSourceChange,
   onConfirmSourceRightsChange,
@@ -91,13 +102,17 @@ export function QuickStartCard({
       ? "Gunakan Scan Potensi Viral untuk menilai isi video."
       : `Momentum sumber ${Math.round(quickScore)}/100 hanya sinyal distribusi. Scan transkrip tetap menentukan nilai informasi, hook, konteks, dan payoff.`);
   const isWorking = isBusy || isSubmitting;
-  const canStart = hasUrl
-    && !invalidUrl
-    && !isCheckingSourceHistory
-    && !duplicateBlocked
-    && !sourceRightsBlocked
-    && confirmSourceRights
-    && !isWorking;
+  const isStory = clipMode === "long_animate";
+  const storyReady = storyText.trim().length >= 60 && storyText.trim().split(/\s+/).length >= 12;
+  const canStart = isStory
+    ? storyReady && confirmSourceRights && !isWorking
+    : hasUrl
+      && !invalidUrl
+      && !isCheckingSourceHistory
+      && !duplicateBlocked
+      && !sourceRightsBlocked
+      && confirmSourceRights
+      && !isWorking;
 
   const pasteFromClipboard = async () => {
     try {
@@ -116,19 +131,21 @@ export function QuickStartCard({
   };
 
   const sourceReady = Boolean(sourceProbe?.title || videoDuration);
-  const isLong = clipMode === "highlight_5m";
-  const polishSteps = isLong ? LONG_STEPS : SHORT_STEPS;
+  const isLong = clipMode !== "short";
+  const polishSteps = isStory ? STORY_STEPS : isLong ? LONG_STEPS : SHORT_STEPS;
 
   return (
     <section className={`clipperHero${isLong ? " isLong" : ""}${isWorking ? " isWorking" : ""}`} aria-labelledby="quick-start-title">
       <div className="clipperHeroCopy">
-        <span className="clipperKicker">{isLong ? <Film size={14} /> : <Scissors size={14} />} AI VIDEO CLIPPER</span>
+        <span className="clipperKicker">{isStory ? <BookOpen size={14} /> : isLong ? <Film size={14} /> : <Scissors size={14} />} AI VIDEO CLIPPER</span>
         <h2 id="quick-start-title">
-          Satu video masuk.<br />
-          <em>{isLong ? "Cerita utuh siap ditonton." : "Short terbaik siap tayang."}</em>
+          {isStory ? "Satu jalan cerita masuk." : "Satu video masuk."}<br />
+          <em>{isStory ? "Drama rapi siap direview." : isLong ? "Cerita utuh siap ditonton." : "Short terbaik siap tayang."}</em>
         </h2>
         <p>
-          {isLong
+          {isStory
+            ? "Tempel premis atau alur singkat. AI menyusun naskah, scene, visual, dubbing Indonesia, subtitle, musik, dan thumbnail dengan aset orisinal."
+            : isLong
             ? "AI memilih chapter terbaik, menyusun alur, lalu menyiapkan video panjang yang rapi dan siap direview."
             : "AI menemukan momen terbaik lalu merapikan framing, caption, ritme, dan audio secara otomatis."}
         </p>
@@ -145,8 +162,8 @@ export function QuickStartCard({
 
       <div className="sourceComposer">
         <div className="sourceComposerTop">
-          <span><WandSparkles size={16} /> {isWorking ? "Sedang meracik video" : "Mulai dari link video"}</span>
-          <b>{isLong ? "16:9 · 5–10 menit" : "9:16 · 25–45 dtk"}</b>
+          <span><WandSparkles size={16} /> {isWorking ? "Sedang meracik video" : isStory ? "Mulai dari jalan cerita" : "Mulai dari link video"}</span>
+          <b>{isStory ? "16:9 · AI ORIGINAL" : isLong ? "16:9 · 5–10 menit" : "9:16 · 25–45 dtk"}</b>
         </div>
 
         <div className="formatChoice" role="group" aria-label="Pilih jenis hasil video">
@@ -155,14 +172,31 @@ export function QuickStartCard({
             <b>Viral Short<small>Retention feed · 9:16</small></b>
             {!isLong ? <CheckCircle2 size={16} /> : null}
           </button>
-          <button className={isLong ? "active" : ""} type="button" disabled={isWorking} onClick={() => onClipModeChange("highlight_5m")}>
+          <button className={clipMode === "highlight_5m" ? "active" : ""} type="button" disabled={isWorking} onClick={() => onClipModeChange("highlight_5m")}>
             <span><Film size={17} /></span>
             <b>Long Highlight<small>Watch time · 16:9</small></b>
-            {isLong ? <CheckCircle2 size={16} /> : null}
+            {clipMode === "highlight_5m" ? <CheckCircle2 size={16} /> : null}
+          </button>
+          <button className={isStory ? "active" : ""} type="button" disabled={isWorking} onClick={() => onClipModeChange("long_animate")}>
+            <span><BookOpen size={17} /></span>
+            <b>Generator Cerita<small>Premis → video · 16:9</small></b>
+            {isStory ? <CheckCircle2 size={16} /> : null}
           </button>
         </div>
 
-        <label className="sourceUrlField">
+        {isStory ? (
+          <label className="storyInputField">
+            <span>Jalan cerita</span>
+            <textarea
+              value={storyText}
+              onChange={(event) => onStoryTextChange(event.target.value)}
+              placeholder="Contoh: Seorang satpam miskin menggantikan temannya untuk kencan buta. Ia diremehkan keluarga calon pasangan, tetapi ternyata menyimpan keahlian yang menyelamatkan perusahaan dari sabotase…"
+              rows={7}
+              maxLength={30000}
+            />
+            <small>{storyText.trim().length.toLocaleString("id-ID")} / 30.000 karakter · minimum 60 karakter dan 12 kata</small>
+          </label>
+        ) : <label className="sourceUrlField">
           <span>Link video sumber</span>
           <div className="sourceUrlInput">
             <Link2 size={20} />
@@ -185,9 +219,9 @@ export function QuickStartCard({
                 ? `Terdeteksi · ${formatDuration(videoDuration)}`
                 : pasteMessage || "YouTube watch, Shorts, Live, dan youtu.be"}
           </small>
-        </label>
+        </label>}
 
-        {sourceReady && !sourceRightsBlocked ? (
+        {!isStory && sourceReady && !sourceRightsBlocked ? (
           <div className="sourceDetected" role="status">
             <span className="sourceDetectedIcon"><Check size={18} /></span>
             <span>
@@ -199,7 +233,7 @@ export function QuickStartCard({
           </div>
         ) : null}
 
-        {sourceProbe ? (
+        {!isStory && sourceProbe ? (
           <div className={`sourceQuickCheck is-${quickRecommendation}`} role="status">
             <div className="sourceQuickScore">
               <BarChart3 size={15} />
@@ -222,7 +256,7 @@ export function QuickStartCard({
           </div>
         ) : null}
 
-        {sourceRightsBlocked ? (
+        {!isStory && sourceRightsBlocked ? (
           <div className="sourceNotice isDanger" role="alert">
             <AlertTriangle size={17} />
             <span>
@@ -230,11 +264,11 @@ export function QuickStartCard({
               <small>{sourceProbe?.source_rights_risk_reasons.slice(0, 2).join("; ")}. Gunakan rekaman sendiri atau materi berizin komersial.</small>
             </span>
           </div>
-        ) : invalidUrl ? (
+        ) : !isStory && invalidUrl ? (
           <div className="sourceNotice isDanger" role="alert">
             <AlertTriangle size={17} /><span><strong>Link belum dikenali.</strong><small>Periksa alamat video lalu coba lagi.</small></span>
           </div>
-        ) : sourceHistory?.found ? (
+        ) : !isStory && sourceHistory?.found ? (
           <label className="sourceNotice isWarning">
             <AlertTriangle size={17} />
             <span>
@@ -247,7 +281,7 @@ export function QuickStartCard({
               onChange={(event) => onAllowReprocessSourceChange(event.target.checked)}
             />
           </label>
-        ) : sourceHistory?.valid_youtube_url ? (
+        ) : !isStory && sourceHistory?.valid_youtube_url ? (
           <div className="sourceNotice isSuccess" role="status">
             <CheckCircle2 size={17} /><span><strong>Link valid.</strong><small>Belum ada duplikat di riwayat.</small></span>
           </div>
@@ -259,7 +293,7 @@ export function QuickStartCard({
             checked={confirmSourceRights}
             onChange={(event) => onConfirmSourceRightsChange(event.target.checked)}
           />
-          <span><ShieldCheck size={16} /><b>Saya punya hak/izin untuk audio dan visual sumber ini.</b></span>
+          <span><ShieldCheck size={16} /><b>{isStory ? "Saya punya hak atas cerita dan sudah meninjau izin komersial provider AI." : "Saya punya hak/izin untuk audio dan visual sumber ini."}</b></span>
         </label>
 
         {error ? <div className="sourceError" role="alert">{error}</div> : null}
@@ -268,14 +302,14 @@ export function QuickStartCard({
           <button className="createShortButton" type="button" disabled={!canStart} onClick={onStart}>
             {isWorking ? <Loader2 className="spin" size={19} /> : <WandSparkles size={19} />}
             <span>
-              {isWorking ? "Scan dan render sedang berjalan…" : isLong ? "Scan & Susun Long Highlight" : "Scan & Buat Short Terbaik"}
-              <small>{isWorking ? "AI memilih kandidat lalu melanjutkan ke render" : isLong ? "Pilih chapter, susun alur, lalu render otomatis" : "Pilih momen terbaik, audit struktur dan konteks, lalu render"}</small>
+              {isWorking ? "Produksi video sedang berjalan…" : isStory ? "Buat Video dari Cerita" : isLong ? "Scan & Susun Long Highlight" : "Scan & Buat Short Terbaik"}
+              <small>{isWorking ? "AI menyusun materi lalu melanjutkan ke render" : isStory ? "Naskah, scene, dubbing, subtitle, musik, QC, dan thumbnail otomatis" : isLong ? "Pilih chapter, susun alur, lalu render otomatis" : "Pilih momen terbaik, audit struktur dan konteks, lalu render"}</small>
             </span>
             {!isWorking ? <ArrowRight size={19} /> : null}
           </button>
         </div>
 
-        {!confirmSourceRights && hasUrl ? <p className="sourceHint">Konfirmasi izin untuk menjalankan scan dan render dalam satu proses.</p> : null}
+        {!confirmSourceRights && (isStory ? Boolean(storyText.trim()) : hasUrl) ? <p className="sourceHint">Konfirmasi hak dan izin untuk menjalankan produksi.</p> : null}
       </div>
     </section>
   );

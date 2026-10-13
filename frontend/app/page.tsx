@@ -105,6 +105,7 @@ const CLEANUP_PROGRESS_POLL_MS = 250;
 const TAB_JOB_STORAGE_KEY = "fendy-clipper.activeJobId.v1";
 export default function HomePage() {
   const [url, setUrl] = useState("");
+  const [storyText, setStoryText] = useState("");
   const [sourceMode, setSourceMode] = useState<SourceMode>("url");
   const [uploadToken, setUploadToken] = useState("");
   const [uploadFileName, setUploadFileName] = useState("");
@@ -192,14 +193,15 @@ export default function HomePage() {
   }, [maxClips, targetClips]);
 
   const handleClipModeChange = useCallback((value: ClipMode) => {
-    const nextMode: ClipMode = value === "highlight_5m" ? "highlight_5m" : "short";
+    const nextMode: ClipMode = value === "highlight_5m" || value === "long_animate" ? value : "short";
     setClipMode(nextMode);
     setTargetClips(0);
     setVisualMode("auto_fyp");
     setBackgroundMode("keep");
     setBurnSubtitles(true);
     setAiEnabled(true);
-    if (nextMode === "highlight_5m") {
+    setConfirmSourceRights(false);
+    if (nextMode === "highlight_5m" || nextMode === "long_animate") {
       setMinDuration(30);
       setMaxDuration(90);
       setCompilationTargetSeconds(COMPILATION_TARGET_SECONDS);
@@ -222,7 +224,7 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (sourceMode !== "url") {
+    if (sourceMode !== "url" || clipMode === "long_animate") {
       setSourceProbe(null);
       setSourceHistory(null);
       setIsCheckingSourceHistory(false);
@@ -257,7 +259,7 @@ export default function HomePage() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [url, sourceMode]);
+  }, [url, sourceMode, clipMode]);
 
   const loadJobs = useCallback(async () => {
     const nextJobs = await getJobs();
@@ -336,7 +338,7 @@ export default function HomePage() {
 
     getJob(storedJobId)
       .then((restoredJob) => {
-        if (!(["short", "highlight_5m"] as ClipMode[]).includes(restoredJob.request.clip_mode)) {
+        if (!(["short", "highlight_5m", "long_animate"] as ClipMode[]).includes(restoredJob.request.clip_mode)) {
           window.sessionStorage.removeItem(TAB_JOB_STORAGE_KEY);
           return;
         }
@@ -348,6 +350,10 @@ export default function HomePage() {
         setMaxDuration(restoredJob.request.max_duration);
         setCompilationTargetSeconds(restoredJob.request.compilation_target_seconds);
         setVideoQuality(restoredJob.request.video_quality);
+        setStoryText(restoredJob.request.script_text || "");
+        if (restoredJob.request.clip_mode === "long_animate") {
+          setConfirmSourceRights(Boolean(restoredJob.request.confirm_long_animate_rights));
+        }
         if (restoredJob.request.url) {
           setSourceMode("url");
           setUrl(restoredJob.request.url);
@@ -631,9 +637,11 @@ export default function HomePage() {
 
 
   const handleStartJob = useCallback(async () => {
-    const requestedMode: ClipMode = clipMode === "highlight_5m" ? "highlight_5m" : "short";
+    const requestedMode: ClipMode = clipMode;
+    const isStoryMode = requestedMode === "long_animate";
     const requestedSourceMode = sourceMode;
     const trimmedUrl = url.trim();
+    const trimmedStory = storyText.trim();
     const effectiveMaxDuration = requestedMode === "short" ? Math.min(MAX_SHORT_DURATION, maxDuration) : maxDuration;
     setError("");
 
@@ -641,25 +649,37 @@ export default function HomePage() {
       setError("Proses clipping masih berjalan. Tunggu selesai atau batalkan sebelum memulai proses baru.");
       return;
     }
-    if (requestedSourceMode === "url" && !trimmedUrl) {
+    if (isStoryMode && (trimmedStory.length < 60 || trimmedStory.split(/\s+/).length < 12)) {
+      setError("Jalan cerita minimal 60 karakter dan 12 kata agar konflik serta payoff dapat dikembangkan.");
+      return;
+    }
+    if (isStoryMode && !confirmSourceRights) {
+      setError("Konfirmasikan hak atas cerita dan izin komersial provider AI sebelum produksi.");
+      return;
+    }
+    if (isStoryMode && (!aiEnabled || !aiBaseUrl.trim() || !aiModel.trim())) {
+      setError("Generator Cerita membutuhkan AI aktif, base URL, dan model yang valid.");
+      return;
+    }
+    if (!isStoryMode && requestedSourceMode === "url" && !trimmedUrl) {
       setError("Link YouTube tidak boleh kosong.");
       return;
     }
-    if (requestedSourceMode === "url" && !confirmSourceRights) {
+    if (!isStoryMode && requestedSourceMode === "url" && !confirmSourceRights) {
       setError("Konfirmasikan bahwa Anda memiliki hak/izin komersial atas audio dan visual sumber. Label Creative Commons saja tidak cukup.");
       return;
     }
-    if (requestedSourceMode === "url" && sourceProbe?.source_rights_risk) {
+    if (!isStoryMode && requestedSourceMode === "url" && sourceProbe?.source_rights_risk) {
       setError(
         "Sumber ini terindikasi rekaman broadcaster/media/studio. Edit biasa tidak menghapus hak cipta atau Content ID. Gunakan rekaman milik sendiri atau sumber lain dengan izin komersial audio dan visual yang dapat dibuktikan.",
       );
       return;
     }
-    if (requestedSourceMode === "upload" && !uploadToken) {
+    if (!isStoryMode && requestedSourceMode === "upload" && !uploadToken) {
       setError("Unggah file video terlebih dahulu.");
       return;
     }
-    if (effectiveMaxDuration <= minDuration) {
+    if (!isStoryMode && effectiveMaxDuration <= minDuration) {
       setError(
         requestedMode === "short"
           ? `Durasi minimum Short harus di bawah ${MAX_SHORT_DURATION} detik.`
@@ -673,8 +693,9 @@ export default function HomePage() {
     try {
       const nextJob = await toast.promise(
         createJob({
-          url: requestedSourceMode === "url" ? trimmedUrl : "",
-          source_file: requestedSourceMode === "upload" ? uploadToken : "",
+          url: !isStoryMode && requestedSourceMode === "url" ? trimmedUrl : "",
+          source_file: !isStoryMode && requestedSourceMode === "upload" ? uploadToken : "",
+          script_text: isStoryMode ? trimmedStory : "",
           top: requestedMode === "short" && targetClips > 0 ? targetClips : undefined,
           min_duration: minDuration,
           max_duration: effectiveMaxDuration,
@@ -703,22 +724,26 @@ export default function HomePage() {
             .split(",")
             .map((tag) => tag.trim())
             .filter(Boolean),
-          require_creative_commons: requireCreativeCommons,
-          confirm_source_rights: requestedSourceMode === "url" && confirmSourceRights,
+          require_creative_commons: !isStoryMode && requireCreativeCommons,
+          confirm_source_rights: !isStoryMode && requestedSourceMode === "url" && confirmSourceRights,
+          confirm_long_animate_rights: isStoryMode && confirmSourceRights,
           source_rights_evidence: "",
+          provider_rights_evidence: isStoryMode
+            ? "Hak cerita dan ketentuan komersial provider AI telah ditinjau pengguna"
+            : "",
           creator_perspective: "",
           creator_commentary_file: "",
           auto_upload_youtube: autoUploadYoutube,
-          allow_reprocess_source: requestedSourceMode === "url" && allowReprocessSource,
+          allow_reprocess_source: !isStoryMode && requestedSourceMode === "url" && allowReprocessSource,
           ai_enabled: aiEnabled,
           ai_base_url: aiBaseUrl.trim(),
           ai_model: aiModel.trim(),
           ai_api_key: aiApiKey.trim(),
         }),
         {
-          loading: requestedMode === "short" ? "Memulai scan dan render Short..." : "Memulai scan dan susun Long Highlight...",
-          success: requestedMode === "short" ? "Scan dimulai — kandidat terbaik akan langsung dirender." : "Scan dimulai — chapter terbaik akan langsung disusun.",
-          error: "Gagal memulai proses pemotongan",
+          loading: isStoryMode ? "Mengembangkan cerita dan memulai produksi..." : requestedMode === "short" ? "Memulai scan dan render Short..." : "Memulai scan dan susun Long Highlight...",
+          success: isStoryMode ? "Produksi cerita dimulai — naskah, scene, dubbing, dan video dibuat otomatis." : requestedMode === "short" ? "Scan dimulai — kandidat terbaik akan langsung dirender." : "Scan dimulai — chapter terbaik akan langsung disusun.",
+          error: isStoryMode ? "Gagal memulai Generator Cerita" : "Gagal memulai proses pemotongan",
         },
       );
 
@@ -759,6 +784,7 @@ export default function HomePage() {
     requiredHashtags,
     sourceMode,
     sourceProbe,
+    storyText,
     targetClips,
     uploadToken,
     url,
@@ -783,6 +809,12 @@ export default function HomePage() {
   const handleSelectHistoryJob = useCallback((selectedJob: ClipJob) => {
     setJob(selectedJob);
     setClipMode(selectedJob.request.clip_mode);
+    setStoryText(selectedJob.request.script_text || "");
+    setConfirmSourceRights(
+      selectedJob.request.clip_mode === "long_animate"
+        ? Boolean(selectedJob.request.confirm_long_animate_rights)
+        : Boolean(selectedJob.request.confirm_source_rights),
+    );
     setCropMode(selectedJob.request.crop_mode);
     setMinDuration(selectedJob.request.min_duration);
     setMaxDuration(selectedJob.request.max_duration);
@@ -1338,6 +1370,7 @@ export default function HomePage() {
 
       <QuickStartCard
         url={url}
+        storyText={storyText}
         clipMode={clipMode}
         videoDuration={videoDuration}
         sourceHistory={sourceHistory}
@@ -1349,6 +1382,7 @@ export default function HomePage() {
         isSubmitting={isSubmitting}
         error={error}
         onUrlChange={handleUrlChange}
+        onStoryTextChange={setStoryText}
         onClipModeChange={handleClipModeChange}
         onAllowReprocessSourceChange={setAllowReprocessSource}
         onConfirmSourceRightsChange={setConfirmSourceRights}
@@ -1409,7 +1443,7 @@ export default function HomePage() {
 
       <OutputWorkspace
         resultCount={job?.clips.length ?? 0}
-        historyCount={jobs.filter((item) => item.request.clip_mode === "short" || item.request.clip_mode === "highlight_5m").length}
+        historyCount={jobs.filter((item) => ["short", "highlight_5m", "long_animate"].includes(item.request.clip_mode)).length}
       >
         <ResultsSection
           clips={job?.clips ?? []}
@@ -1449,7 +1483,7 @@ export default function HomePage() {
           onToggleClipCorrect={handleToggleClipCorrect}
         />
         <HistorySection
-          jobs={jobs.filter((item) => item.request.clip_mode === "short" || item.request.clip_mode === "highlight_5m")}
+          jobs={jobs.filter((item) => ["short", "highlight_5m", "long_animate"].includes(item.request.clip_mode))}
           selectedJobIds={selectedHistoryJobIds}
           onDeleteAll={handleDeleteAll}
           onDeleteFailed={handleDeleteFailed}

@@ -291,6 +291,51 @@ def test_normalize_clamps_target_to_budget(monkeypatch):
     assert out.max_duration == 180
 
 
+def test_story_generator_normalizes_without_source_probe(monkeypatch):
+    import api
+
+    monkeypatch.setattr(
+        api,
+        "fetch_video_duration",
+        lambda _url: (_ for _ in ()).throw(AssertionError("story mode has no source URL")),
+    )
+    request = ClipJobRequest(
+        clip_mode="long_animate",
+        script_text="Seorang satpam diremehkan, lalu memakai keahlian lamanya untuk menyelamatkan gedung dari sabotase dan membuktikan integritasnya.",
+        compilation_target_seconds=480,
+        ai_enabled=False,
+    )
+
+    normalized = normalize_job_request(request)
+
+    assert normalized.url == ""
+    assert normalized.source_file == ""
+    assert normalized.top == 1
+    assert normalized.burn_subtitles is True
+    assert normalized.require_creative_commons is False
+
+
+def test_story_generator_command_uses_script_and_requested_duration(tmp_path):
+    script_path = tmp_path / "story_input.txt"
+    script_path.write_text("jalan cerita orisinal", encoding="utf-8")
+    request = ClipJobRequest(
+        clip_mode="long_animate",
+        script_text="Seorang satpam diremehkan, lalu memakai keahlian lamanya untuk menyelamatkan gedung dari sabotase dan membuktikan integritasnya.",
+        compilation_target_seconds=480,
+        confirm_long_animate_rights=True,
+        provider_rights_evidence="ketentuan provider sudah ditinjau",
+        ai_enabled=True,
+        ai_base_url="http://localhost:11434/v1",
+        ai_model="local",
+    )
+
+    command = build_clipper_command(request, tmp_path / "output", script_path)
+
+    assert command[command.index("--script-file") + 1] == str(script_path)
+    assert command[command.index("--long-animate-target-duration") + 1] == "480.0"
+    assert "--confirm-provider-rights" in command
+
+
 def test_short_defaults_are_retention_dense_but_manual_three_minutes_remains_valid():
     request = ClipJobRequest(source_file="fake.mp4")
 

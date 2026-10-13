@@ -26,6 +26,7 @@ services:
       JOBS_PATH: /app/data/jobs.json
       YOUTUBE_UPLOADS_PATH: /app/data/youtube_uploads.json
       YOUTUBE_PLAYWRIGHT_STATE: /app/data/youtube_storage_state.json
+      YOUTUBE_YTDLP_USE_AUTH: ${YOUTUBE_YTDLP_USE_AUTH:-true}
       TIKTOK_UPLOADS_PATH: /app/data/tiktok_uploads.json
       TIKTOK_PLAYWRIGHT_STATE: /app/data/tiktok_storage_state.json
       TIKTOK_CHROMIUM_USER_DATA_DIR: ${TIKTOK_CHROMIUM_USER_DATA_DIR:-/app/data/tiktok-chrome-profile}

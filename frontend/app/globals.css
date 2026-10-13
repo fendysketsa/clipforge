@@ -11499,7 +11499,7 @@ body::after {
 
 .formatChoice {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -11532,6 +11532,39 @@ body::after {
 .formatChoice > button.active { border-color: rgba(94, 234, 212, 0.42); color: #5eead4; background: rgba(45, 212, 191, 0.08); box-shadow: inset 0 -1px 0 rgba(94, 234, 212, 0.24); }
 .clipperHero.isLong .formatChoice > button.active { border-color: rgba(167, 139, 250, 0.52); color: #c4b5fd; background: rgba(139, 92, 246, 0.1); box-shadow: inset 0 -1px 0 rgba(167, 139, 250, 0.3); }
 .formatChoice > button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+.storyInputField {
+  display: grid;
+  gap: 7px;
+}
+
+.storyInputField > span {
+  color: #ddd6fe;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.storyInputField textarea {
+  width: 100%;
+  min-height: 164px;
+  resize: vertical;
+  padding: 14px 15px;
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  border-radius: 13px;
+  outline: 0;
+  color: #f5f3ff;
+  background: #090716;
+  font: 500 12px/1.65 var(--font-sans);
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.storyInputField textarea:focus {
+  border-color: rgba(196, 181, 253, 0.72);
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.11), 0 0 28px rgba(139, 92, 246, 0.08);
+}
+
+.storyInputField textarea::placeholder { color: #615a78; }
+.storyInputField > small { color: #756d91; font: 8.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 
 .sourceNotice small a {
   display: inline-flex;

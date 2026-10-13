@@ -140,8 +140,8 @@ SHORT_GROWTH_MIN_SECONDS = 25
 SHORT_GROWTH_MAX_SECONDS = 180
 SHORT_DEFAULT_MAX_SECONDS = 45
 SHORT_FYP_TARGET_SCORE = 85
-ACTIVE_CLIP_MODES = frozenset({"short", "highlight_5m"})
-RETIRED_CLIP_MODES = frozenset({"long_animate", "original_rebuild"})
+ACTIVE_CLIP_MODES = frozenset({"short", "highlight_5m", "long_animate"})
+RETIRED_CLIP_MODES = frozenset({"original_rebuild"})
 SHORT_GROWTH_TARGET_VIEWS = 20000
 LONG_FORM_GROWTH_TARGET_VIEWS = 5000
 GROWTH_TARGET_SUBSCRIBERS = 20
@@ -473,6 +473,9 @@ class ClipJobRequest(BaseModel):
 AUTOMATIC_SOURCE_RIGHTS_ATTESTATION = (
     "Konfirmasi pengguna dicatat otomatis: izin komersial audio dan visual dinyatakan tersedia"
 )
+AUTOMATIC_STORY_PROVIDER_ATTESTATION = (
+    "Konfirmasi pengguna dicatat: hak jalan cerita dan ketentuan komersial provider AI telah ditinjau"
+)
 
 
 def ensure_source_rights_attestation(request: ClipJobRequest) -> ClipJobRequest:
@@ -484,6 +487,14 @@ def ensure_source_rights_attestation(request: ClipJobRequest) -> ClipJobRequest:
     ):
         return request.model_copy(
             update={"source_rights_evidence": AUTOMATIC_SOURCE_RIGHTS_ATTESTATION}
+        )
+    if (
+        request.clip_mode == "long_animate"
+        and request.confirm_long_animate_rights
+        and len(request.provider_rights_evidence.split()) < 3
+    ):
+        return request.model_copy(
+            update={"provider_rights_evidence": AUTOMATIC_STORY_PROVIDER_ATTESTATION}
         )
     return request
 
@@ -2403,12 +2414,37 @@ def youtube_upload_needs_restart_verification(upload: YouTubeUploadJob) -> bool:
     )
 
 
+def decode_persisted_utf8(payload: bytes) -> str:
+    """Recover isolated high-bit flips in otherwise ASCII JSON text.
+
+    A storage bit flip can turn an ASCII byte such as ``o`` (0x6f) into an
+    invalid standalone UTF-8 byte such as 0xef.  Persisted upload history must
+    not take down the whole API for that recoverable case.  Keep strict UTF-8
+    decoding for every other corruption shape so malformed data is never
+    silently discarded.
+    """
+    repaired = bytearray(payload)
+    repair_count = 0
+    while True:
+        try:
+            return repaired.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            if exc.end != exc.start + 1 or repair_count >= 8:
+                raise
+            damaged = repaired[exc.start]
+            recovered = damaged & 0x7F
+            if damaged < 0x80 or not 0x20 <= recovered <= 0x7E:
+                raise
+            repaired[exc.start] = recovered
+            repair_count += 1
+
+
 def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
     if not YOUTUBE_UPLOADS_PATH.exists() or YOUTUBE_UPLOADS_PATH.is_dir():
         return {}
 
     try:
-        raw_payload = YOUTUBE_UPLOADS_PATH.read_text(encoding="utf-8").strip()
+        raw_payload = decode_persisted_utf8(YOUTUBE_UPLOADS_PATH.read_bytes()).strip()
     except OSError:
         return {}
     if not raw_payload:
@@ -9828,8 +9864,9 @@ def open_tiktok_login_browser(logs: list[str]) -> None:
             return
         if env_bool("TIKTOK_CDP_EXTERNAL_BROWSER", False):
             raise RuntimeError(
-                "Chrome host TikTok tidak aktif. Jalankan scripts/recreate-compose-up.sh dari terminal desktop; "
-                "backend tidak akan membuka Chrome for Testing di dalam container."
+                "Chrome host TikTok tidak aktif. Layanan autostart akan memulihkannya; "
+                "tunggu 10 detik lalu klik Login TikTok lagi. Jika tetap gagal, jalankan "
+                "scripts/install-autostart.sh satu kali dari terminal desktop."
             )
         TIKTOK_CDP_REFRESH_LOG.parent.mkdir(parents=True, exist_ok=True)
         TIKTOK_CHROME_LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -9987,13 +10024,12 @@ def resume_interrupted_clipping_jobs() -> None:
                         "finished_at": now_iso(),
                         "duration_seconds": job.duration_seconds,
                         "progress_stage": "complete",
-                        "progress_detail": "Mode lama dihentikan; gunakan Clip Pendek atau Long Story",
+                        "progress_detail": "Mode lama dihentikan; buat job baru dengan mode yang tersedia",
                         "progress_step": 5,
                         "progress_total_steps": 5,
                         "updated_at": now_iso(),
                         "error": (
-                            "Long Animate lama sudah dinonaktifkan. "
-                            "Buat job baru sebagai Clip Pendek atau Long Story 5–10 Menit."
+                            "Mode generator lama ini sudah dinonaktifkan. Buat job baru dengan mode yang tersedia."
                         ),
                         "logs": [
                             *job.logs,
@@ -10920,6 +10956,8 @@ def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
         data["burn_subtitles"] = True
         data["enhanced_edit"] = True
         data["background_mode"] = "keep"
+        data["url"] = ""
+        data["source_file"] = ""
     elif request.clip_mode == "original_rebuild":
         data["top"] = 1
         data["burn_subtitles"] = True
@@ -11008,6 +11046,10 @@ def build_clipper_command(
             request.language,
         ]
     )
+    if request.clip_mode == "long_animate":
+        command.extend(
+            ["--long-animate-target-duration", str(request.compilation_target_seconds)]
+        )
 
     if request.review_only:
         command.append("--review-only")
@@ -11325,9 +11367,13 @@ def run_job(job_id: str) -> None:
         progress_total_steps=5,
         error=None,
     )
-    command = build_clipper_command(request, output_root, None)
-
     try:
+        script_path: Path | None = None
+        if request.clip_mode == "long_animate":
+            output_root.mkdir(parents=True, exist_ok=True)
+            script_path = output_root / "story_input.txt"
+            script_path.write_text(request.script_text.strip() + "\n", encoding="utf-8")
+        command = build_clipper_command(request, output_root, script_path)
         process = subprocess.Popen(
             command,
             cwd=BASE_DIR,
@@ -15702,7 +15748,7 @@ def create_job(request: ClipJobRequest) -> ClipJob:
         raise HTTPException(
             status_code=410,
             detail=(
-                "Mode ini sudah dihapus. Gunakan Clip Pendek atau Long Story 5–10 Menit."
+                "Mode ini sudah dihapus. Gunakan Clip Pendek, Long Highlight, atau Generator Cerita."
             ),
         )
     if request.max_duration <= request.min_duration:
@@ -15713,10 +15759,33 @@ def create_job(request: ClipJobRequest) -> ClipJob:
             detail=f"Durasi minimum Short harus di bawah {SHORT_GROWTH_MAX_SECONDS} detik",
         )
 
-    if not request.url and not request.source_file:
-        raise HTTPException(status_code=400, detail="Provide a YouTube URL or upload a video first")
-
     request = ensure_source_rights_attestation(request)
+
+    if request.clip_mode == "long_animate":
+        story = request.script_text.strip()
+        if len(story) < 60 or len(story.split()) < 12:
+            raise HTTPException(
+                status_code=400,
+                detail="Jalan cerita minimal 60 karakter dan 12 kata agar konflik serta payoff dapat dikembangkan.",
+            )
+        if not request.ai_enabled or not request.ai_base_url.strip() or not request.ai_model.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Generator Cerita membutuhkan AI aktif, base URL, dan model yang valid.",
+            )
+        if (
+            not request.confirm_long_animate_rights
+            or len(request.provider_rights_evidence.split()) < 3
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Konfirmasikan bahwa jalan cerita adalah milik/izin Anda dan ketentuan "
+                    "komersial provider AI telah ditinjau."
+                ),
+            )
+    elif not request.url and not request.source_file:
+        raise HTTPException(status_code=400, detail="Provide a YouTube URL or upload a video first")
 
     if request.url.strip() and request.auto_upload_youtube and not request.confirm_source_rights:
         raise HTTPException(

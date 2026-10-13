@@ -73,7 +73,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Node.js 22+
 - npm
 - Network access for YouTube downloads and model downloads
-- Docker builds include Deno and `yt-dlp-ejs` so current YouTube JavaScript challenges can be solved before media download. The downloader uses the maintained yt-dlp client defaults, then bounded muxed, web-embedded/EJS, and HLS compatibility paths; each path has an isolated partial file.
+- Docker builds include Deno and `yt-dlp-ejs` so current YouTube JavaScript challenges can be solved before media download. The downloader uses the maintained yt-dlp client defaults, then bounded muxed, web-embedded/EJS, and HLS compatibility paths; each path has an isolated partial file. Public extraction remains the default; if YouTube asks for login/bot verification, the downloader retries with the saved **Login Sekali** storage-state in memory without creating another cookie file.
 - A full FFmpeg build with `drawtext`, `subtitles`/libass, and libx264 (included in the Docker image)
 - Enough CPU, disk, and time for transcription and video encoding
 
@@ -278,11 +278,14 @@ user service once:
 ./scripts/install-autostart.sh
 ```
 
-The service runs in the background as `clipforge-autostart.service`. Docker's
-`restart: unless-stopped` policy restores the containers; the user service runs
-`recreate-compose-up.sh --restore` to wait for that stack and restore the GUI
-bridge plus the configured browser session without rebuilding images, requiring
-sudo, creating new profiles, or forcing a new login.
+The installer enables `clipforge-autostart.service` and
+`clipforge-social-browser.service`. Docker's restart policy restores the
+containers, while the browser service supervises one persistent, minimized
+Chrome profile containing both YouTube Studio and TikTok Studio. If Chrome is
+closed or the desktop starts again after a reboot, systemd opens the same
+profile automatically. The saved cookies and Playwright storage-state are
+reused; another manual login is only needed when Google/TikTok revokes the
+session or requires a new CAPTCHA.
 
 Alternatively, reuse a Chromium/Chrome profile that is already logged in to the
 target YouTube channel by setting:

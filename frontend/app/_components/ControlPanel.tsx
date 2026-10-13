@@ -138,7 +138,8 @@ export function ControlPanel({
   onAutoUploadYoutubeChange,
 }: ControlPanelProps) {
   const disabled = isBusy || isSubmitting;
-  const isLong = clipMode === "highlight_5m";
+  const isStory = clipMode === "long_animate";
+  const isLong = clipMode !== "short";
   const targetMinutes = Math.round(compilationTargetSeconds / 60);
   const selectedQuality = VIDEO_QUALITY_OPTIONS.find((option) => option.value === videoQuality);
   const editProfile: ShortEditProfile = cropMode === "streamer"
@@ -208,12 +209,12 @@ export function ControlPanel({
       <summary className="shortPolishSummary">
         <span className="shortPolishIcon"><WandSparkles size={19} /></span>
         <span>
-          <small>{isLong ? "POLISH LONG VIDEO" : "POLISH SHORT"}</small>
-          <strong>{isLong ? "Struktur & watch time" : "Gaya edit"}</strong>
-          <em>{isLong ? "Susun cerita, chapter, dan packaging YouTube." : "Default sudah siap. Buka kalau ingin mengubah karakter hasil."}</em>
+          <small>{isStory ? "STORY DRAMA DIRECTOR" : isLong ? "POLISH LONG VIDEO" : "POLISH SHORT"}</small>
+          <strong>{isStory ? "Cerita → produksi utuh" : isLong ? "Struktur & watch time" : "Gaya edit"}</strong>
+          <em>{isStory ? "Naskah, visual, dubbing, subtitle, musik, dan QC otomatis." : isLong ? "Susun cerita, chapter, dan packaging YouTube." : "Default sudah siap. Buka kalau ingin mengubah karakter hasil."}</em>
         </span>
         <span className="shortPolishSnapshot">
-          <b>{isLong ? `Story Arc · ${targetMinutes} menit` : editProfileCopy[editProfile].title}</b>
+          <b>{isStory ? `Drama AI · ${targetMinutes} menit` : isLong ? `Story Arc · ${targetMinutes} menit` : editProfileCopy[editProfile].title}</b>
           <small>{isLong ? "16:9 · chapter lengkap" : `${minDuration}–${maxDuration} dtk`} · {selectedQuality?.label}</small>
         </span>
         <ChevronDown size={18} />
@@ -224,8 +225,8 @@ export function ControlPanel({
           <div className="autoPolishBanner">
             <span><Sparkles size={18} /></span>
             <div>
-              <strong>Long-form Director aktif</strong>
-              <small>Cold open, story arc, chapter cards, cinematic grading, thumbnail, dan audit watch-time diterapkan otomatis.</small>
+              <strong>{isStory ? "Drama Director aktif" : "Long-form Director aktif"}</strong>
+              <small>{isStory ? "Premis dikembangkan menjadi beat drama, visual orisinal, dubbing Indonesia, subtitle, musik, thumbnail, dan QC." : "Cold open, story arc, chapter cards, cinematic grading, thumbnail, dan audit watch-time diterapkan otomatis."}</small>
             </div>
             <b><Check size={14} /> ON</b>
           </div>
@@ -234,16 +235,16 @@ export function ControlPanel({
         {isLong ? (
           <>
             <section className="polishSection">
-              <header><span>01</span><div><strong>Mesin retention long-form</strong><small>Setiap bagian punya fungsi dalam perjalanan penonton.</small></div></header>
+              <header><span>01</span><div><strong>{isStory ? "Mesin drama serial" : "Mesin retention long-form"}</strong><small>Setiap bagian punya fungsi dalam perjalanan penonton.</small></div></header>
               <div className="longFeatureGrid">
                 <span><Sparkles size={17} /><b>Cold open<small>Segmen terkuat membuka video</small></b></span>
-                <span><BookOpen size={17} /><b>Chapter story<small>Konteks → tensi → payoff</small></b></span>
-                <span><ImageIcon size={17} /><b>CTR package<small>Thumbnail dan judul satu janji</small></b></span>
+                <span><BookOpen size={17} /><b>{isStory ? "Drama beats" : "Chapter story"}<small>Konteks → tensi → reveal → payoff</small></b></span>
+                <span><ImageIcon size={17} /><b>{isStory ? "Visual konsisten" : "CTR package"}<small>{isStory ? "Tokoh, kostum, dan lokasi terkunci" : "Thumbnail dan judul satu janji"}</small></b></span>
               </div>
             </section>
 
             <section className="polishSection">
-              <header><span>02</span><div><strong>Target panjang cerita</strong><small>Lebih panjang hanya jika materi memang cukup kuat.</small></div></header>
+              <header><span>02</span><div><strong>Target panjang cerita</strong><small>{isStory ? "AI menyesuaikan jumlah adegan dan kepadatan dubbing." : "Lebih panjang hanya jika materi memang cukup kuat."}</small></div></header>
               <div className="longDurationGrid" role="group" aria-label="Pilih panjang Long Highlight">
                 {[300, 480, 600].map((seconds) => (
                   <button className={compilationTargetSeconds === seconds ? "active" : ""} type="button" key={seconds} disabled={disabled} onClick={() => onCompilationTargetSecondsChange(seconds)}>
@@ -252,7 +253,7 @@ export function ControlPanel({
                   </button>
                 ))}
               </div>
-              {videoDuration ? <p className="targetSourceNote"><Clock3 size={13} /> Sumber {Math.round(videoDuration / 60)} menit · AI hanya mengambil chapter dengan alur dan konteks yang utuh</p> : null}
+              {!isStory && videoDuration ? <p className="targetSourceNote"><Clock3 size={13} /> Sumber {Math.round(videoDuration / 60)} menit · AI hanya mengambil chapter dengan alur dan konteks yang utuh</p> : null}
             </section>
           </>
         ) : (
@@ -319,7 +320,7 @@ export function ControlPanel({
           </div>
         </details>
 
-        <footer className="shortPolishFooter"><ShieldCheck size={15} /><span>{isLong ? "Long Highlight menyertakan thumbnail 16:9 dan tetap masuk review sebelum publikasi." : "Gaya boleh berbeda per clip, tetapi font, warna, dan identitas channel tetap konsisten. Semua hasil masuk review."}</span></footer>
+        <footer className="shortPolishFooter"><ShieldCheck size={15} /><span>{isStory ? "Generator Cerita memakai aset orisinal, menandai konten sintetis, dan tetap mewajibkan review sebelum publikasi." : isLong ? "Long Highlight menyertakan thumbnail 16:9 dan tetap masuk review sebelum publikasi." : "Gaya boleh berbeda per clip, tetapi font, warna, dan identitas channel tetap konsisten. Semua hasil masuk review."}</span></footer>
       </div>
     </details>
   );
