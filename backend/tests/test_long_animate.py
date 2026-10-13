@@ -215,6 +215,101 @@ def test_motion_expression_varies_direction_without_static_slideshow():
     assert "sin(2*PI*on" in zoom
 
 
+def test_local_image_prompt_keeps_exact_action_and_drops_later_crowd_language():
+    shot = long_animate.AnimateShot(
+        index=3,
+        scene_index=1,
+        shot_index=3,
+        shot_count=3,
+        title="Upacara Bendera",
+        narration=(
+            "Bagas adalah anak laki-laki berusia sepuluh tahun. Ia bangun kesiangan di kamar. "
+            "Dengan terburu-buru, Bagas memasang dasi asal-asalan di depan cermin. "
+            "Setelah tiba di sekolah, seluruh siswa memenuhi lapangan upacara dan mengangkat tangan."
+        ),
+        visual_prompt=long_animate._compose_visual_prompt(
+            "Bagas memasang dasi asal-asalan di depan cermin kamar",
+            "Bagas adalah anak laki-laki berusia sepuluh tahun. Ia bangun kesiangan di kamar. "
+            "Dengan terburu-buru, Bagas memasang dasi asal-asalan di depan cermin. "
+            "Setelah tiba di sekolah, seluruh siswa memenuhi lapangan upacara dan mengangkat tangan.",
+            "cinematic realistic 3D animation",
+            "Bagas, anak laki-laki berusia sepuluh tahun",
+            visual_locked=True,
+        ),
+        on_screen_text="",
+        camera_motion="push_in",
+        color_mood="warm morning light",
+        duration=6.0,
+    )
+
+    prompt = long_animate._focused_image_generation_prompt(shot)
+
+    assert "Visible moment: Bagas memasang dasi asal-asalan" in prompt
+    assert "seluruh siswa" not in prompt
+    assert "mengangkat tangan" not in prompt
+    assert "No waving" not in prompt
+    assert len(prompt) < 1800
+
+
+def test_eating_bakso_prompt_requires_food_spoon_mouth_table_and_stall():
+    contract = long_animate._physical_action_contract(
+        "Raka sedang makan bakso di warung bakso",
+        "Raka duduk lapar setelah pulang sekolah.",
+    )
+
+    lowered = contract.casefold()
+    assert "bowl of bakso" in lowered
+    assert "spoon" in lowered
+    assert "open mouth" in lowered
+    assert "table" in lowered
+    assert "warung bakso" in lowered
+    assert "shoulders and elbows" in lowered
+
+
+def test_tying_necktie_prompt_keeps_both_hands_on_the_tie():
+    contract = long_animate._physical_action_contract(
+        "Bagas memasang dasi asal-asalan",
+        "Bagas berada di kamar tidur pada pagi hari.",
+    )
+
+    lowered = contract.casefold()
+    assert "both hands" in lowered
+    assert "shirt collar" in lowered
+    assert "necktie knot" in lowered
+    assert "elbows stay close to the torso" in lowered
+
+
+def test_genre_label_is_not_accepted_as_character_identity():
+    script = (
+        "KARAKTER KONSISTEN: komedi sekolah, drama anak-anak, persahabatan.\n"
+        "Bagas adalah seorang anak laki-laki berusia sepuluh tahun yang bertubuh pendek."
+    )
+
+    bible = long_animate._character_bible(script)
+
+    assert "Bagas adalah seorang anak laki-laki" in bible
+    assert "Script character facts: komedi sekolah" not in bible
+
+
+def test_outline_chunks_do_not_speak_duration_metadata():
+    outline = """
+    # Cerita Bagas
+    **Genre:** Komedi sekolah.
+    **Durasi cerita:** 10-12 menit.
+
+    Bagas bangun kesiangan lalu berlari ke sekolah. Ia mengikuti upacara bersama Dimas.
+    Akhirnya mereka belajar untuk saling membantu dan tidak menertawakan teman.
+    **TAMAT.**
+    """
+
+    chunks = long_animate._outline_narration_chunks(outline, 3)
+    joined = " ".join(chunks).casefold()
+
+    assert "durasi cerita" not in joined
+    assert "10-12 menit" not in joined
+    assert "tamat" not in joined
+
+
 def test_long_animate_default_target_is_three_minutes(monkeypatch):
     monkeypatch.delenv("LONG_ANIMATE_TARGET_DURATION_SECONDS", raising=False)
 
@@ -1389,7 +1484,7 @@ def test_explicit_single_character_still_flags_unrequested_extra_faces(monkeypat
     assert "too_many_visible_faces" in reasons
 
 
-def test_strict_vision_qa_keeps_valid_image_with_advisory_findings(monkeypatch, tmp_path):
+def test_strict_vision_qa_rejects_persistent_extra_people(monkeypatch, tmp_path):
     shot = _motion_test_shot()
     original_prompt = shot.visual_prompt
     monkeypatch.setenv("LONG_ANIMATE_VISION_QA_ATTEMPTS", "2")
@@ -1401,11 +1496,14 @@ def test_strict_vision_qa_keeps_valid_image_with_advisory_findings(monkeypatch, 
         lambda *_args, **_kwargs: (0.65, ["too_many_visible_faces"]),
     )
 
-    provider = long_animate.generate_shot_image_with_qa(
-        shot, tmp_path / "shot.png", "photorealistic documentary"
-    )
-
-    assert provider == "local-z-image"
+    try:
+        long_animate.generate_shot_image_with_qa(
+            shot, tmp_path / "shot.png", "photorealistic documentary"
+        )
+    except long_animate.LongAnimateImageError as exc:
+        assert "too_many_visible_faces" in str(exc)
+    else:
+        raise AssertionError("strict QA must reject a crowd in a one-person shot")
     assert shot.qa_attempts == 2
     assert shot.visual_prompt == original_prompt
 

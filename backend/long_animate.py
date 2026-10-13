@@ -518,7 +518,9 @@ def _scene_sections(script: str) -> list[dict[str, object]]:
         sections.append(
             {
                 "title": _clean_text(title, 64),
-                "narration": _clean_text(narration, 900),
+                # Narration is also the TTS source. A 900-character cap used
+                # to silently cut long outline-derived scenes mid-sentence.
+                "narration": _clean_text(narration, 5000),
                 "visual": _clean_text(visual_source, 900),
                 "visuals": visuals,
                 "on_screen_text": on_screen_text,
@@ -534,7 +536,19 @@ def _character_bible(script: str) -> str:
     )
     if explicit:
         details = _clean_text(explicit.group(1), 900)
-        if details and details.casefold() not in {"-", "tidak ada", "none", "no recurring character"}:
+        # Labels such as "komedi sekolah, drama, persahabatan" describe a
+        # genre, not a reusable character design. Treating them as identity
+        # facts makes the image model fill in arbitrary stock pupils instead
+        # of preserving the named subject from the narration.
+        identity_evidence = (
+            r"\b(?:bernama|berusia|seorang|mengenakan|memakai|berambut|berkulit|bertubuh|"
+            r"robot|android|cyborg|kucing|anjing|burung|ikan|naga|dinosaurus)\b"
+        )
+        if (
+            details
+            and details.casefold() not in {"-", "tidak ada", "none", "no recurring character"}
+            and re.search(identity_evidence, details, flags=re.IGNORECASE)
+        ):
             return (
                 "Recurring character continuity: preserve only these explicitly requested identities, including "
                 "their face or defining shape, age, species, body proportions, clothing, equipment, and colors in "
@@ -1417,6 +1431,9 @@ def _outline_narration_chunks(outline: str, scene_count: int) -> list[str]:
     """Build contiguous narration fallbacks directly from the user's prose."""
     narrative = re.sub(r"(?im)^\s*#{1,6}\s*[^\n]+\n?", "", outline, count=1)
     narrative = re.sub(r"(?im)^\s*\*{0,2}genre\s*:\s*.*$", "", narrative)
+    narrative = re.sub(r"(?im)^\s*\*{0,2}durasi(?:\s+cerita)?\s*:\s*.*$", "", narrative)
+    narrative = re.sub(r"(?im)^\s*\*{0,2}(?:judul|title)\s*:\s*.*$", "", narrative)
+    narrative = re.sub(r"(?im)^\s*\*{0,2}(?:tamat|selesai)\s*[.!]*\*{0,2}\s*$", "", narrative)
     narrative = re.sub(r"(?im)^\s*\*{0,2}pesan moral\*{0,2}\s*:\s*", "", narrative)
     narrative = _strip_script_markup(narrative)
     if not narrative:
@@ -1527,7 +1544,7 @@ def expand_story_outline(
     for index, raw_scene in enumerate(raw_scenes, start=1):
         if not isinstance(raw_scene, dict):
             raise StoryOutlineExpansionError(f"Format adegan {index} dari AI tidak valid.")
-        narration = _clean_text(raw_scene.get("narration"), 900)
+        narration = _clean_text(raw_scene.get("narration"), 5000)
         visual = _clean_text(raw_scene.get("visual"), 900)
         source_narration = (
             source_narrations[index - 1]
@@ -1539,11 +1556,11 @@ def expand_story_outline(
                 "Narasi adegan %d terlalu tipis; memakai bagian terkait dari cerita asli pengguna.",
                 index,
             )
-            narration = _clean_text(source_narration, 900)
+            narration = _clean_text(source_narration, 5000)
         if len(narration.split()) < 3:
             narration = _clean_text(
                 source_narration or raw_scene.get("title") or clean_outline,
-                900,
+                5000,
             )
         if len(visual.split()) < 8:
             _logger.warning(
@@ -1573,7 +1590,7 @@ def expand_story_outline(
             )
             for index, scene in enumerate(scenes):
                 if index < len(source_narrations):
-                    scene["narration"] = _clean_text(source_narrations[index], 900)
+                    scene["narration"] = _clean_text(source_narrations[index], 5000)
             total_words = sum(len(scene["narration"].split()) for scene in scenes)
         if total_words < min_words:
             _logger.warning(
@@ -2121,6 +2138,211 @@ def _image_connection_error(exc: BaseException) -> bool:
     )
 
 
+def _compiled_visible_moment(prompt: str) -> str:
+    """Return only the positive shot action from a compiled visual prompt."""
+    match = re.search(
+        r"(?is)\bVisible moment:\s*(.*?)\s*(?=Narrative grounding:|STRICT STORY GROUNDING:|$)",
+        prompt,
+    )
+    return _clean_text(match.group(1), 500) if match else ""
+
+
+def _matching_narration_context(narration: str, visible_moment: str) -> str:
+    """Pick nearby source sentences that establish the action without prompt pollution."""
+    sentences = [
+        re.sub(r"\s+", " ", item).strip()
+        for item in re.split(r"(?<=[.!?])\s+", narration)
+        if item.strip()
+    ]
+    if not sentences:
+        return ""
+    visible_tokens = _semantic_tokens(visible_moment)
+    scored: list[tuple[int, int]] = []
+    for index, sentence in enumerate(sentences):
+        overlap = len(visible_tokens & _semantic_tokens(sentence))
+        scored.append((overlap, index))
+    _overlap, best_index = max(scored, key=lambda item: (item[0], -item[1]))
+    best_sentence = sentences[best_index]
+    clauses = [
+        item.strip(" ,;:-")
+        for item in re.split(r"\s*[,;]\s*|\s+(?:lalu|kemudian|setelah itu)\s+", best_sentence, flags=re.I)
+        if item.strip(" ,;:-")
+    ]
+    best_clause = max(
+        clauses or [best_sentence],
+        key=lambda item: len(visible_tokens & _semantic_tokens(item)),
+    )
+    chosen: list[str] = []
+    # Identity facts help continuity without importing unrelated actions or a
+    # later crowd. Prefer a sentence naming the visible subject and age/type.
+    proper_names = {
+        token.casefold()
+        for token in re.findall(r"\b[A-Z][a-zÀ-ÿ]{2,}\b", visible_moment)
+    }
+    identity_candidates: list[tuple[int, str]] = []
+    for sentence in sentences:
+        lowered = sentence.casefold()
+        if re.search(r"\b(?:berusia|seorang anak|anak laki-laki|anak perempuan)\b", lowered) and (
+            not proper_names or any(name in lowered for name in proper_names)
+        ):
+            identity_score = 4 * int("berusia" in lowered)
+            identity_score += 2 * sum(name in lowered for name in proper_names)
+            identity_score += 3 * int(any(lowered.startswith(name) for name in proper_names))
+            identity_score -= 2 * int(_has_any(lowered, ("sekolah", "lapangan", "upacara")))
+            identity_candidates.append((identity_score, sentence))
+    if identity_candidates:
+        identity = max(identity_candidates, key=lambda item: item[0])[1]
+        age_fact = re.match(r"(?is)^(.*?\bberusia\s+[\w-]+\s+tahun)\b", identity)
+        chosen.append(age_fact.group(1) if age_fact else identity.split(",", 1)[0])
+    chosen.append(best_clause)
+    return _clean_text(". ".join(item.rstrip(" .;:") for item in chosen), 520)
+
+
+def _action_object_after(text: str, verbs: str) -> str:
+    match = re.search(
+        rf"(?is)\b(?:{verbs})\b\s+(?:semangkuk|seporsi|sebuah|sepotong|satu\s+porsi)?\s*"
+        r"([^,.;]{2,80})",
+        text,
+    )
+    if not match:
+        return ""
+    value = re.split(
+        r"(?i)\s+(?:di|ke|dari|sambil|ketika|dengan|yang|pada)\s+",
+        match.group(1),
+        maxsplit=1,
+    )[0]
+    return _clean_text(value, 80).strip(" ,;:-")
+
+
+def _physical_action_contract(visible: str, context: str = "") -> str:
+    """Translate common verbs into positive, physically renderable body geometry."""
+    text = f"{visible} {context}"
+    lowered = text.casefold()
+    setting_match = re.search(
+        r"\b(warung\s+bakso|warung\s+makan|restoran|kantin|dapur|ruang\s+makan|"
+        r"meja\s+makan|kamar\s+tidur|kamar|ruang\s+kelas|kelas|lapangan\s+sekolah)\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    setting = setting_match.group(1) if setting_match else "the named setting"
+
+    if re.search(r"\b(?:makan|memakan|menyantap|melahap|menyuap)\b", lowered):
+        food = _action_object_after(
+            visible,
+            r"makan|memakan|menyantap|melahap|menyuap",
+        ) or _action_object_after(
+            context,
+            r"makan|memakan|menyantap|melahap|menyuap",
+        ) or "the named food"
+        if _has_any(food, ("bakso", "soto", "sup", "bubur", "mi", "mie", "kuah")):
+            utensil = (
+                f"A bowl of {food} is fully visible on the table. One hand grips a spoon carrying {food} "
+                "just in front of a naturally open mouth"
+            )
+        else:
+            utensil = (
+                f"A serving of {food} is fully visible on the table. One hand brings a natural bite of {food} "
+                "just in front of a naturally open mouth"
+            )
+        return _clean_text(
+            f"PHYSICAL ACTION LAYOUT: the subject is seated at a table in {setting}. {utensil}; the other hand "
+            "rests beside the bowl or plate on the tabletop. Eyes and head face the food. Shoulders and elbows "
+            "stay relaxed close to the torso and table. The food, eating utensil, mouth, hands, and table are all "
+            "clearly readable in the same frame.",
+            700,
+        )
+    if re.search(r"\b(?:minum|meminum|menyeruput)\b", lowered):
+        drink = (
+            _action_object_after(visible, r"minum|meminum|menyeruput")
+            or _action_object_after(context, r"minum|meminum|menyeruput")
+            or "the named drink"
+        )
+        return _clean_text(
+            f"PHYSICAL ACTION LAYOUT: the subject is seated or standing naturally in {setting}. One hand holds "
+            f"a clearly visible glass or cup of {drink} at the lips; the other hand stays close to the table or torso. "
+            "The face turns toward the cup and the elbows remain low in a natural drinking posture.",
+            700,
+        )
+    if _has_any(lowered, ("memasang dasi", "mengikat dasi", "merapikan dasi")):
+        return _clean_text(
+            f"PHYSICAL ACTION LAYOUT: the subject stands in {setting} facing a mirror or dressing area. Both hands "
+            "are at the shirt collar, visibly gripping and adjusting the necktie knot. Elbows stay close to the torso; "
+            "the collar, tie, fingers, and unfinished knot are clearly visible in a medium shot.",
+            700,
+        )
+    if re.search(r"\b(?:membaca|membuka buku|mengaji)\b", lowered):
+        return _clean_text(
+            f"PHYSICAL ACTION LAYOUT: the subject sits naturally in {setting} with the named book open and fully "
+            "visible. Both hands touch the lower page edges and the eyes look down at the page; elbows remain close "
+            "to the body and supporting surface.",
+            700,
+        )
+    if re.search(r"\b(?:menulis|mencatat|menggambar)\b", lowered):
+        return _clean_text(
+            f"PHYSICAL ACTION LAYOUT: the subject sits at a work surface in {setting}. The writing hand holds a pen "
+            "or pencil against visible paper while the other hand steadies the page. Eyes follow the pen tip and both "
+            "forearms remain supported near the tabletop.",
+            700,
+        )
+    if re.search(r"\b(?:memasak|menggoreng|merebus|mengaduk)\b", lowered):
+        return _clean_text(
+            f"PHYSICAL ACTION LAYOUT: the subject works at the stove or counter in {setting}. One hand controls the "
+            "named cooking utensil at the food vessel while the other stabilizes the vessel or rests near the work "
+            "surface. The food, utensil, cookware, hands, and stove are all clearly visible.",
+            700,
+        )
+    return ""
+
+
+def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
+    """Build a short positive-only prompt for image models.
+
+    The full editorial contract contains many sentences such as "no raised
+    hands" and the entire scene narration. Local diffusion models can treat
+    those words as positive concepts or let a later school/crowd beat override
+    the first action. Generation therefore receives only the exact visible
+    moment plus its closest source context. Prohibitions stay in the provider's
+    negative prompt.
+    """
+    visible = _compiled_visible_moment(scene.visual_prompt) or _single_visible_moment(
+        scene.visual_prompt
+    )
+    visible = visible.rstrip(" .;:")
+    context = _matching_narration_context(scene.narration, visible)
+    action_contract = _physical_action_contract(visible, context)
+    style_match = re.search(
+        r"(?is)IMMUTABLE GLOBAL VISUAL STYLE:\s*(.*?)\s*(?=Keep the same medium|NARRATIVE CAMERA PLAN:)",
+        scene.visual_prompt,
+    )
+    style = (
+        _clean_text(style_match.group(1), 260).rstrip(" .;:")
+        if style_match
+        else "cinematic realistic"
+    )
+    count = _expected_people_limit(f"{visible} {context}")
+    if re.match(r"^[A-Z][a-zÀ-ÿ]{2,}\b", visible) and not _requests_group_scene(visible):
+        count = 1
+    if count == 0 and _has_any(context, ("berusia", "siswa", "murid")):
+        count = 1
+    subject_count = (
+        f"Visible subject count: exactly {count} person. "
+        if 0 < count < 5 and not _requests_group_scene(visible)
+        else ""
+    )
+    return _clean_text(
+        "FULL-BLEED 16:9 SINGLE CAMERA FRAME. "
+        f"Visible moment: {visible}. "
+        f"The visible moment is the primary focal action and must be unmistakable. {subject_count}"
+        + (f"Immediate story context: {context}. " if context else "")
+        + (f"{action_contract} " if action_contract else "")
+        + f"Visual style: {style}. Color direction: {scene.color_mood}. "
+        "Use a clear medium or wide composition, believable anatomy, verify natural hands and finger count, "
+        "crisp focal detail, natural lighting, "
+        "and an environment limited to what this immediate moment requires.",
+        1800,
+    )
+
+
 def _remote_scene_image(
     scene: AnimateScene | AnimateShot,
     path: Path,
@@ -2154,14 +2376,7 @@ def _remote_scene_image(
     ).strip().casefold()
     if output_format not in {"png", "jpeg", "webp"}:
         output_format = "jpeg"
-    final_prompt = (
-        f"{scene.visual_prompt} Color direction: {scene.color_mood}. "
-        "Depict only this visible action accurately. Edge-to-edge image, one normal camera frame, with focal clarity "
-        "appropriate to the requested visual style. "
-        "Before finalizing, verify the requested subject identity and count, exact action, props, setting, era, weather, "
-        "time, and visual style. Add no unrequested person, clothing, architecture, or cultural/religious symbol. When "
-        "people are present, verify natural hands and finger count, attached limbs, believable faces, crisp eyes, and clean fabric edges."
-    )
+    final_prompt = _focused_image_generation_prompt(scene)
     if is_gemini:
         image_size = os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "2K").strip().upper()
         if image_size not in {"512", "1K", "2K", "4K"}:
@@ -2212,11 +2427,19 @@ def _remote_scene_image(
             "watermark, logo, UI, compression artifacts",
             "deformed hands, fused fingers, missing fingers, extra fingers, duplicated fingers, broken joints, malformed grip, "
             "disembodied hands, floating hands, detached hands, bodyless limbs, cropped arms, hands entering from frame edge, anonymous foreground hands",
-            "unrequested crowd, extra background people, partial person, unrelated stock character, unrequested cultural clothing",
-            "palms facing camera, wall of hands, raised-hand crowd, cheering hands, hands reaching toward lens, oversized foreground hands, hands dominating composition",
             "nudity, naked person, nude child, exposed torso or hips, transparent wet clothing, underwear framing, "
             "intimate washing, sensualized child, suggestive pose, voyeuristic angle, body-part close-up",
         ]
+        visible_for_negative = _compiled_visible_moment(scene.visual_prompt) or scene.visual_prompt
+        if not _requests_group_scene(visible_for_negative):
+            negative_parts.append(
+                "unrequested crowd, extra background people, partial person, unrelated stock character, unrequested cultural clothing"
+            )
+        if not _has_any(visible_for_negative, _STOCK_HAND_GESTURE_TERMS):
+            negative_parts.append(
+                "palms facing camera, wall of hands, raised-hand crowd, cheering hands, hands reaching toward lens, "
+                "oversized foreground hands, hands dominating composition"
+            )
         if not _has_any(scene.visual_prompt, ("soft focus", "dreamy", "dreamlike", "watercolor", "impressionist")):
             negative_parts.append("blurry, soft focus")
         if not _has_any(scene.visual_prompt, ("motion blur",)):
@@ -2579,10 +2802,21 @@ def inspect_generated_image(
     black_ratio = float(np.mean(gray < 8))
     sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
     faces = _face_boxes(image)
-    story_people_context = f"{shot.narration} {shot.visual_prompt.split('STRICT STORY GROUNDING:', 1)[0]}"
+    # Judge subject count from this shot, not from the whole 30-60 second
+    # narration. A later mention of a school assembly previously made a
+    # one-child bedroom shot look like a valid crowd scene to QA.
+    visible_moment = _compiled_visible_moment(shot.visual_prompt)
+    story_people_context = visible_moment or shot.narration
     expected_people = _expected_people_limit(story_people_context)
     explicit_people = _explicit_people_count(story_people_context)
     group_scene = _requests_group_scene(story_people_context)
+    if (
+        visible_moment
+        and re.match(r"^[A-Z][a-zÀ-ÿ]{2,}\b", visible_moment)
+        and not group_scene
+    ):
+        expected_people = max(1, expected_people)
+        explicit_people = explicit_people or 1
     reasons: list[str] = []
     score = 1.0
     if black_ratio > 0.55:
@@ -2660,10 +2894,17 @@ def generate_shot_image_with_qa(
             shot.visual_prompt = original_prompt
             return provider
     shot.visual_prompt = original_prompt
-    # Semantic detections are useful retry hints, but they are not reliable
-    # enough to delete a complete job. Strict mode only rejects image files
-    # that cannot safely continue into the FFmpeg render pipeline.
-    fatal_reasons = {"image_decode_failed", "black_or_empty_frame"}
+    # In strict mode a technically valid but semantically impossible frame is
+    # still a failed frame. Previously a one-person action could keep a crowd
+    # after both retries and receive QA 1.0, which is worse than stopping the
+    # render and explaining what must be regenerated.
+    fatal_reasons = {
+        "image_decode_failed",
+        "black_or_empty_frame",
+        "unrequested_human_face",
+        "too_many_visible_faces",
+        "character_reference_drift",
+    }
     fatal_failures = [reason for reason in last_reasons if reason in fatal_reasons]
     if _env_bool("LONG_ANIMATE_VISION_QA_STRICT", False) and fatal_failures:
         raise LongAnimateImageError(
@@ -2800,11 +3041,14 @@ def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, st
 
 def _motion_expression(scene: AnimateScene | AnimateShot, frames: int) -> tuple[str, str, str]:
     progress = f"min(1,on/{max(1, frames)})"
-    micro_motion = f"0.006*sin(2*PI*on/{max(45, round(frames / 2))})"
+    # Keep the fallback visibly alive even on 15-25 second shots. This remains
+    # camera movement over a still keyframe (not subject animation), so the
+    # sidecar reports that limitation explicitly below.
+    micro_motion = f"0.009*sin(2*PI*on/{max(45, round(frames / 2))})"
     if scene.camera_motion == "pull_out":
-        zoom = f"1.075-0.065*{progress}+{micro_motion}"
+        zoom = f"1.14-0.11*{progress}+{micro_motion}"
         return zoom, "(iw-iw/zoom)/2", "(ih-ih/zoom)/2"
-    zoom = f"1.01+0.065*{progress}+{micro_motion}"
+    zoom = f"1.015+0.11*{progress}+{micro_motion}"
     if scene.camera_motion == "pan_left":
         return zoom, f"(iw-iw/zoom)*(1-{progress})", "(ih-ih/zoom)/2"
     if scene.camera_motion == "pan_right":
@@ -3226,8 +3470,8 @@ def render_motion_shot_video(shot: AnimateShot, video_path: Path, scene_dir: Pat
 
 def render_shot_video(shot: AnimateShot, image_path: Path, scene_dir: Path) -> Path:
     _aspect, output_width, output_height = _output_geometry()
-    overscan_width = round(output_width * 1.05)
-    overscan_height = round(output_height * 1.05)
+    overscan_width = round(output_width * 1.14)
+    overscan_height = round(output_height * 1.14)
     frames = max(1, round(shot.duration * 30))
     zoom, x, y = _motion_expression(shot, frames)
     title_path = scene_dir / f"shot_{shot.index:02}.title.txt"
@@ -3930,12 +4174,25 @@ def render_long_animate(
             timing_weaknesses.append(
                 "Visual memakai placeholder prosedural; hasil wajib dirender ulang dengan provider gambar realistis."
             )
+        free_stock_shot_count = sum(
+            shot.motion_provider == "free_stock:wikimedia_commons" for shot in shots
+        )
+        camera_only_shot_count = sum(
+            shot.motion_provider == "local_z_image_cinematic" for shot in shots
+        )
+        has_subject_motion = free_stock_shot_count > 0
+        if camera_only_shot_count:
+            timing_weaknesses.append(
+                f"{camera_only_shot_count}/{len(shots)} shot memakai gambar diam dengan gerak kamera pan/zoom; "
+                "orang dan objek di dalam gambar tidak dianimasikan."
+            )
         narrative_roles = [scene.narrative_role for scene in storyboard.scenes]
         animate_quality_gate_passed = bool(
             len(storyboard.scenes) >= 3
             and score >= 84
             and final_qc.get("passed")
             and real_image_provider_passed
+            and has_subject_motion
             and narrative_roles
             and narrative_roles[0] == "cold_open"
             and narrative_roles[-1] == "payoff_conclusion"
@@ -4004,7 +4261,11 @@ def render_long_animate(
         "strengths": [
             "Naskah menjadi alur scene utuh, bukan slideshow acak.",
             "Art bible menjaga kesinambungan visual antar-scene.",
-            "Narasi, motion, subtitle, dan musik tersinkron.",
+            (
+                "Narasi, footage bergerak, subtitle, dan musik tersinkron."
+                if has_subject_motion
+                else "Narasi, gerak kamera, subtitle, dan musik tersinkron."
+            ),
             "Vision QA memeriksa style, karakter, wajah tambahan, ketajaman, dan frame kosong.",
         ],
         "weaknesses": timing_weaknesses,
@@ -4059,17 +4320,16 @@ def render_long_animate(
             "provider": _video_provider(),
             "engine": "wikimedia_commons_cc_footage_plus_local_z_image_cinematic",
             "enabled": _video_provider() != "off",
+            "subject_motion_enabled": has_subject_motion,
+            "camera_motion_enabled": camera_only_shot_count > 0,
+            "fallback_motion_kind": "camera_pan_zoom_over_still_image",
             "paid_api_used": False,
             "api_key_required": False,
             "maximum_free_stock_shots": max(
                 0, int(os.environ.get("LONG_ANIMATE_FREE_STOCK_MAX_SHOTS", "4"))
             ),
-            "free_stock_shots": sum(
-                shot.motion_provider == "free_stock:wikimedia_commons" for shot in shots
-            ),
-            "local_cinematic_shots": sum(
-                shot.motion_provider == "local_z_image_cinematic" for shot in shots
-            ),
+            "free_stock_shots": free_stock_shot_count,
+            "local_cinematic_shots": camera_only_shot_count,
             "native_audio_used": False,
             "license_attribution_written": True,
         },
