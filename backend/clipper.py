@@ -19049,7 +19049,7 @@ def main() -> int:
             min(600.0, float(args.long_animate_target_duration or 300.0)),
         )
         os.environ["LONG_ANIMATE_TARGET_DURATION_SECONDS"] = f"{target_duration:g}"
-        os.environ["LONG_ANIMATE_OUTPUT_ASPECT_RATIO"] = "16:9"
+        os.environ["LONG_ANIMATE_OUTPUT_ASPECT_RATIO"] = "9:16"
         if not args.ai_enabled or not args.ai_base_url or not args.ai_model:
             console.print(
                 "[red]Generator Cerita membutuhkan AI aktif, base URL, dan model.[/red]"

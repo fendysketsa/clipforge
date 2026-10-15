@@ -59,9 +59,9 @@ const LONG_STEPS = [
 ];
 
 const STORY_STEPS = [
-  { icon: BookOpen, label: "Naskah otomatis", detail: "Premis jadi beat drama" },
-  { icon: Film, label: "Scene sinematik", detail: "Tokoh dan lokasi konsisten" },
-  { icon: Subtitles, label: "Dubbing Indonesia", detail: "Subtitle dan audio sinkron" },
+  { icon: BookOpen, label: "Naskah otomatis", detail: "Pembuka sampai klimaks" },
+  { icon: Film, label: "Scene sinematik", detail: "Tokoh, lokasi, dan gerak" },
+  { icon: Sparkles, label: "Video lengkap", detail: "Dubbing, subtitle, dan musik" },
 ];
 
 const formatCompactNumber = (value?: number | null) => value === null || value === undefined
@@ -139,12 +139,12 @@ export function QuickStartCard({
       <div className="clipperHeroCopy">
         <span className="clipperKicker">{isStory ? <BookOpen size={14} /> : isLong ? <Film size={14} /> : <Scissors size={14} />} AI VIDEO CLIPPER</span>
         <h2 id="quick-start-title">
-          {isStory ? "Satu jalan cerita masuk." : "Satu video masuk."}<br />
-          <em>{isStory ? "Drama rapi siap direview." : isLong ? "Cerita utuh siap ditonton." : "Short terbaik siap tayang."}</em>
+          {isStory ? "Satu ide cerita masuk." : "Satu video masuk."}<br />
+          <em>{isStory ? "Video lengkap siap direview." : isLong ? "Cerita utuh siap ditonton." : "Short terbaik siap tayang."}</em>
         </h2>
         <p>
           {isStory
-            ? "Tempel premis atau alur singkat. AI menyusun naskah, scene, visual, dubbing Indonesia, subtitle, musik, dan thumbnail dengan aset orisinal."
+            ? "Tempel premis atau alur cerita. ClipForge menyusun naskah, scene, visual, dubbing, subtitle, musik, lalu merender video secara otomatis."
             : isLong
             ? "AI memilih chapter terbaik, menyusun alur, lalu menyiapkan video panjang yang rapi dan siap direview."
             : "AI menemukan momen terbaik lalu merapikan framing, caption, ritme, dan audio secara otomatis."}
@@ -163,7 +163,7 @@ export function QuickStartCard({
       <div className="sourceComposer">
         <div className="sourceComposerTop">
           <span><WandSparkles size={16} /> {isWorking ? "Sedang meracik video" : isStory ? "Mulai dari jalan cerita" : "Mulai dari link video"}</span>
-          <b>{isStory ? "16:9 · AI ORIGINAL" : isLong ? "16:9 · 5–10 menit" : "9:16 · 25–45 dtk"}</b>
+          <b>{isStory ? "9:16 · AI VIDEO" : isLong ? "16:9 · 5–10 menit" : "9:16 · 25–45 dtk"}</b>
         </div>
 
         <div className="formatChoice" role="group" aria-label="Pilih jenis hasil video">
@@ -179,23 +179,51 @@ export function QuickStartCard({
           </button>
           <button className={isStory ? "active" : ""} type="button" disabled={isWorking} onClick={() => onClipModeChange("long_animate")}>
             <span><BookOpen size={17} /></span>
-            <b>Generator Cerita<small>Premis → video · 16:9</small></b>
+            <b>Generator Cerita<small>Premis → video jadi · 9:16</small></b>
             {isStory ? <CheckCircle2 size={16} /> : null}
           </button>
         </div>
 
         {isStory ? (
-          <label className="storyInputField">
-            <span>Jalan cerita</span>
-            <textarea
-              value={storyText}
-              onChange={(event) => onStoryTextChange(event.target.value)}
-              placeholder="Contoh: Seorang satpam miskin menggantikan temannya untuk kencan buta. Ia diremehkan keluarga calon pasangan, tetapi ternyata menyimpan keahlian yang menyelamatkan perusahaan dari sabotase…"
-              rows={7}
-              maxLength={30000}
-            />
-            <small>{storyText.trim().length.toLocaleString("id-ID")} / 30.000 karakter · minimum 60 karakter dan 12 kata</small>
-          </label>
+          <div className="storyStudioComposer">
+            <header>
+              <div className="storyStudioModeSwitch" aria-label="Mode pembuatan">
+                <span className="active"><Film size={14} /> Video</span>
+                <span><WandSparkles size={14} /> AI video</span>
+              </div>
+              <small>CLIPFORGE AI</small>
+            </header>
+            <label className="storyInputField">
+              <span>Sutradarai video Anda</span>
+              <textarea
+                value={storyText}
+                onChange={(event) => onStoryTextChange(event.target.value)}
+                placeholder="Ceritakan video yang ingin dibuat—tokoh, lokasi, kejadian, dialog, suasana, gaya visual, dan audio. ClipForge akan mengolahnya menjadi video sinematik lengkap…"
+                rows={8}
+                maxLength={30000}
+              />
+              <small>{storyText.trim().length.toLocaleString("id-ID")} / 30.000 karakter · minimum 60 karakter dan 12 kata</small>
+            </label>
+            <footer>
+              <div className="storyStudioTools">
+                <span title="AI memilih struktur cerita paling sesuai"><Focus size={15} /> Otomatis</span>
+                <span title="Naskah dan visual produksi ClipForge"><BookOpen size={15} /> Story skill</span>
+                <span title="Format video tujuan"><Film size={15} /> Vertikal 9:16</span>
+              </div>
+              <div className="storyStudioDirector">
+                <span><Sparkles size={14} /> Sutradara</span>
+                <button
+                  aria-label="Buat video dari cerita"
+                  className="storyStudioSubmit"
+                  disabled={!canStart}
+                  type="button"
+                  onClick={onStart}
+                >
+                  {isWorking ? <Loader2 className="spin" size={19} /> : <ArrowRight size={19} />}
+                </button>
+              </div>
+            </footer>
+          </div>
         ) : <label className="sourceUrlField">
           <span>Link video sumber</span>
           <div className="sourceUrlInput">
@@ -293,21 +321,21 @@ export function QuickStartCard({
             checked={confirmSourceRights}
             onChange={(event) => onConfirmSourceRightsChange(event.target.checked)}
           />
-          <span><ShieldCheck size={16} /><b>{isStory ? "Saya punya hak atas cerita dan sudah meninjau izin komersial provider AI." : "Saya punya hak/izin untuk audio dan visual sumber ini."}</b></span>
+          <span><ShieldCheck size={16} /><b>{isStory ? "Saya punya hak atas cerita ini dan telah meninjau izin komersial provider AI." : "Saya punya hak/izin untuk audio dan visual sumber ini."}</b></span>
         </label>
 
         {error ? <div className="sourceError" role="alert">{error}</div> : null}
 
-        <div className="sourceActionGrid isSingle">
+        {!isStory ? <div className="sourceActionGrid isSingle">
           <button className="createShortButton" type="button" disabled={!canStart} onClick={onStart}>
             {isWorking ? <Loader2 className="spin" size={19} /> : <WandSparkles size={19} />}
             <span>
-              {isWorking ? "Produksi video sedang berjalan…" : isStory ? "Buat Video dari Cerita" : isLong ? "Scan & Susun Long Highlight" : "Scan & Buat Short Terbaik"}
-              <small>{isWorking ? "AI menyusun materi lalu melanjutkan ke render" : isStory ? "Naskah, scene, dubbing, subtitle, musik, QC, dan thumbnail otomatis" : isLong ? "Pilih chapter, susun alur, lalu render otomatis" : "Pilih momen terbaik, audit struktur dan konteks, lalu render"}</small>
+              {isWorking ? "Produksi video sedang berjalan…" : isLong ? "Scan & Susun Long Highlight" : "Scan & Buat Short Terbaik"}
+              <small>{isWorking ? "AI menyusun materi lalu melanjutkan ke render" : isLong ? "Pilih chapter, susun alur, lalu render otomatis" : "Pilih momen terbaik, audit struktur dan konteks, lalu render"}</small>
             </span>
             {!isWorking ? <ArrowRight size={19} /> : null}
           </button>
-        </div>
+        </div> : null}
 
         {!confirmSourceRights && (isStory ? Boolean(storyText.trim()) : hasUrl) ? <p className="sourceHint">Konfirmasi hak dan izin untuk menjalankan produksi.</p> : null}
       </div>

@@ -209,13 +209,13 @@ export function ControlPanel({
       <summary className="shortPolishSummary">
         <span className="shortPolishIcon"><WandSparkles size={19} /></span>
         <span>
-          <small>{isStory ? "STORY DRAMA DIRECTOR" : isLong ? "POLISH LONG VIDEO" : "POLISH SHORT"}</small>
-          <strong>{isStory ? "Cerita → produksi utuh" : isLong ? "Struktur & watch time" : "Gaya edit"}</strong>
+          <small>{isStory ? "STORY VIDEO DIRECTOR" : isLong ? "POLISH LONG VIDEO" : "POLISH SHORT"}</small>
+          <strong>{isStory ? "Cerita → video lengkap" : isLong ? "Struktur & watch time" : "Gaya edit"}</strong>
           <em>{isStory ? "Naskah, visual, dubbing, subtitle, musik, dan QC otomatis." : isLong ? "Susun cerita, chapter, dan packaging YouTube." : "Default sudah siap. Buka kalau ingin mengubah karakter hasil."}</em>
         </span>
         <span className="shortPolishSnapshot">
           <b>{isStory ? `Drama AI · ${targetMinutes} menit` : isLong ? `Story Arc · ${targetMinutes} menit` : editProfileCopy[editProfile].title}</b>
-          <small>{isLong ? "16:9 · chapter lengkap" : `${minDuration}–${maxDuration} dtk`} · {selectedQuality?.label}</small>
+          <small>{isStory ? "9:16 · video lengkap" : isLong ? "16:9 · chapter lengkap" : `${minDuration}–${maxDuration} dtk · ${selectedQuality?.label}`}</small>
         </span>
         <ChevronDown size={18} />
       </summary>
@@ -225,8 +225,8 @@ export function ControlPanel({
           <div className="autoPolishBanner">
             <span><Sparkles size={18} /></span>
             <div>
-              <strong>{isStory ? "Drama Director aktif" : "Long-form Director aktif"}</strong>
-              <small>{isStory ? "Premis dikembangkan menjadi beat drama, visual orisinal, dubbing Indonesia, subtitle, musik, thumbnail, dan QC." : "Cold open, story arc, chapter cards, cinematic grading, thumbnail, dan audit watch-time diterapkan otomatis."}</small>
+              <strong>{isStory ? "Story Video Director aktif" : "Long-form Director aktif"}</strong>
+              <small>{isStory ? "Premis dikembangkan menjadi naskah, scene visual, dubbing, subtitle, musik, thumbnail, dan video final." : "Cold open, story arc, chapter cards, cinematic grading, thumbnail, dan audit watch-time diterapkan otomatis."}</small>
             </div>
             <b><Check size={14} /> ON</b>
           </div>
@@ -235,7 +235,7 @@ export function ControlPanel({
         {isLong ? (
           <>
             <section className="polishSection">
-              <header><span>01</span><div><strong>{isStory ? "Mesin drama serial" : "Mesin retention long-form"}</strong><small>Setiap bagian punya fungsi dalam perjalanan penonton.</small></div></header>
+              <header><span>01</span><div><strong>{isStory ? "Mesin drama sinematik" : "Mesin retention long-form"}</strong><small>Setiap bagian punya fungsi dalam perjalanan penonton.</small></div></header>
               <div className="longFeatureGrid">
                 <span><Sparkles size={17} /><b>Cold open<small>Segmen terkuat membuka video</small></b></span>
                 <span><BookOpen size={17} /><b>{isStory ? "Drama beats" : "Chapter story"}<small>Konteks → tensi → reveal → payoff</small></b></span>

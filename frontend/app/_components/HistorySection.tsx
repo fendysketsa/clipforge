@@ -37,6 +37,9 @@ export function HistorySection({
 
   const sourceLabel = (job: ClipJob) => {
     if (job.source_title?.trim()) return job.source_title.trim();
+    if (job.request.clip_mode === "long_animate" && job.request.script_text.trim()) {
+      return job.request.script_text.trim().replace(/\s+/g, " ").slice(0, 72);
+    }
     if (job.request.source_file) return job.request.source_file.split("/").pop() || "Upload video";
     if (!job.request.url) return "Video tanpa judul";
     try {

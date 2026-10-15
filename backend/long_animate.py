@@ -144,7 +144,8 @@ class AnimateShot:
 
 STORYBOARD_SYSTEM_PROMPT = (
     "You are an animation director and storyboard editor fluent in Indonesian. Turn a user-authored script "
-    "into a coherent, original 16:9 YouTube story. Every scene must materially advance the narrative. "
+    "into a coherent, original story composed for the requested output aspect ratio. "
+    "Every scene must materially advance the narrative. "
     "The first scene is a cold-open contract: show the concrete conflict, risk, result, or visual question immediately; "
     "never spend the opening on a logo, greeting, generic establishing shot, or context that does not prove the title promise. "
     "Treat the user's script as the only source of truth. Use a consistent visual world but vary composition, "
@@ -1257,8 +1258,12 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
     target_duration = _target_duration_seconds()
     desired_scenes = max(3, min(14, round(target_duration / 15)))
     minimum_scenes = max(3, min(desired_scenes, round(desired_scenes * 0.8)))
+    output_aspect = _output_geometry()[0]
+    output_orientation = "vertikal" if output_aspect == "9:16" else "horizontal"
     prompt = (
         "Buat storyboard dari naskah berikut. Naskah pengguna adalah satu-satunya sumber kebenaran. "
+        f"Komposisikan seluruh visual untuk frame {output_orientation} {output_aspect}; subjek utama, wajah, "
+        "aksi, dan properti penting harus aman di area tengah. "
         "Pertahankan seluruh fakta, subjek, kejadian, aksi, lokasi, zaman, pakaian, properti, dan maksud naskah. "
         "DILARANG memakai pola stok anak laki-laki/perempuan, keluarga, pakaian Islami, ustaz, masjid, sekolah, "
         "atau latar Indonesia bila unsur tersebut tidak diminta naskah. Jangan mengubah hewan, benda, robot, "
@@ -1654,7 +1659,7 @@ def expand_story_outline(
     title = _clean_text(parsed.get("title"), 100) or _scene_title(clean_outline, 0)
     art_bible = _clean_text(parsed.get("art_bible"), 600) or (
         "cinematic realistic original drama, expressive natural acting, practical locations, "
-        "consistent film lighting, 16:9 composition"
+        f"consistent film lighting, {_output_geometry()[0]} composition"
     )
     character_bible = _clean_text(parsed.get("character_bible"), 900) or (
         "Preserve every user-defined character identity, age, wardrobe, and relationship consistently."
@@ -2409,7 +2414,7 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
         "depth of field, natural lighting, and only the objects required by this immediate moment."
     )
     return _clean_text(
-        "FULL-BLEED 16:9 SINGLE CAMERA FRAME. "
+        f"FULL-BLEED {_output_geometry()[0]} SINGLE CAMERA FRAME. "
         f"Visible moment: {visible}. "
         f"The visible moment is the primary focal action and must be unmistakable. {subject_count}"
         + (f"Immediate story context: {context}. " if context else "")
