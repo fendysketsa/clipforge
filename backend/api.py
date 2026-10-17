@@ -2256,6 +2256,7 @@ def load_auto_viral_runs() -> dict[str, AutoViralRun]:
                 "youtube_upload",
                 "social_upload",
                 "retry_upload",
+                "daily_upload_limit",
                 "resume_pending_upload",
             }
         )
@@ -4546,23 +4547,56 @@ def append_fendy_auditor_attribution(description: str, clip: ClipFile) -> str:
 
 
 def monetization_readiness_is_eligible(sidecar: dict[str, Any], readiness: dict[str, Any]) -> bool:
-    """Accept current audits and safely reinterpret older compilation audits."""
+    """Accept a render whose editorial transformation audit has passed.
+
+    ``eligible_for_private_upload_review`` is persisted at render time as a
+    combined rights-and-transformation result.  Rights evidence can be added
+    to the job after that render (and is checked independently by the upload
+    preflight), so a false combined flag must not be reported as a failed
+    transformation when the current audit contains complete transformation
+    evidence.
+    """
     if readiness.get("eligible_for_private_upload_review"):
         return True
     try:
         audit_version = int(readiness.get("audit_version") or 1)
     except (TypeError, ValueError):
         audit_version = 1
-    if audit_version >= 2:
-        # Current audits are intentionally conservative; do not reinterpret a
-        # failed story/authenticity signal using the looser legacy rules.
-        return False
-
     signals = readiness.get("signals")
     if not isinstance(signals, dict):
         return False
     output_format = str(sidecar.get("output_format") or "")
     is_compilation = output_format == "landscape_compilation"
+
+    # Audit v8 stores the combined eligibility flag as false when commercial
+    # rights were not verified from source metadata, even if the editorial
+    # transformation itself passed. The upload preflight above validates the
+    # operator's current rights confirmation/evidence separately. Reconstruct
+    # only the strict v8 transformation result here so a rights-only render
+    # status cannot masquerade as a transformation failure.
+    if audit_version >= 8:
+        try:
+            originality_score = int(readiness.get("originality_score") or 0)
+            minimum_score = int(
+                readiness.get("minimum_originality_score") or (5 if is_compilation else 7)
+            )
+        except (TypeError, ValueError):
+            return False
+        return bool(
+            signals.get("enhanced_edit")
+            and signals.get("editorial_hook_and_context")
+            and signals.get("original_core_message")
+            and signals.get("cohesive_editorial_arc")
+            and signals.get("content_adaptive_visual_direction")
+            and readiness.get("substantive_transformation") is True
+            and originality_score >= minimum_score
+        )
+
+    if audit_version >= 2:
+        # Do not reinterpret older current-format audits using looser legacy
+        # rules because their exact transformation contracts differed.
+        return False
+
     substantive_transformation = bool(signals.get("substantive_visual_edits")) or bool(
         is_compilation
         and signals.get("structured_story_arc")
@@ -6338,14 +6372,12 @@ def create_tiktok_upload_batch_records(
     if request.clip_urls:
         clip_urls = list(dict.fromkeys(request.clip_urls))
     else:
-        clips = {clip.url: clip for clip in job.clips}
-        clip_urls = [
-            url for url in best_youtube_clip_urls(job, len(job.clips))
-            if (clip := clips.get(url)) is not None
-            and (clip.is_correct or allow_audited_automation)
-            and youtube_monetization_preflight_issue(job, clip) is None
-            and clip.growth_quality_gate_passed is not False
-        ][:request.best_count]
+        clip_urls = best_automatic_upload_clip_urls(
+            job,
+            request.best_count,
+            allow_audited_automation=allow_audited_automation,
+            require_youtube_fyp_target=False,
+        )
     if not clip_urls:
         raise HTTPException(
             status_code=409,
@@ -6370,6 +6402,33 @@ def file_sha256(path: Path) -> str:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def best_automatic_upload_clip_urls(
+    job: ClipJob,
+    best_count: int,
+    *,
+    allow_audited_automation: bool = True,
+    require_youtube_fyp_target: bool = True,
+) -> list[str]:
+    """Return every actually uploadable clip, including a single good result."""
+    clips_by_url = {clip.url: clip for clip in job.clips}
+    return [
+        clip_url
+        for clip_url in best_youtube_clip_urls(job, len(job.clips))
+        if (
+            (clip := clips_by_url.get(clip_url)) is not None
+            and (clip.is_correct or allow_audited_automation)
+            and youtube_monetization_preflight_issue(job, clip) is None
+            and clip.growth_quality_gate_passed is not False
+            and (
+                not require_youtube_fyp_target
+                or job.request.clip_mode != "short"
+                or clip.fyp_score is None
+                or clip.fyp_score >= SHORT_FYP_TARGET_SCORE
+            )
+        )
+    ][: max(1, best_count)]
 
 
 def reusable_youtube_upload(
@@ -6872,22 +6931,12 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
         # Rank the complete set first, then keep only clips that will pass the
         # same preflight used by single uploads. One rejected top-ranked clip
         # must not abort an otherwise valid automatic batch.
-        clips_by_url = {clip.url: clip for clip in job.clips}
-        ranked_urls = best_youtube_clip_urls(job, len(job.clips))
-        clip_urls = [
-            clip_url
-            for clip_url in ranked_urls
-            if (
-                (clip := clips_by_url.get(clip_url)) is not None
-                and youtube_monetization_preflight_issue(job, clip) is None
-                and clip.growth_quality_gate_passed is not False
-                and (
-                    job.request.clip_mode != "short"
-                    or clip.fyp_score is None
-                    or clip.fyp_score >= SHORT_FYP_TARGET_SCORE
-                )
-            )
-        ][: request.best_count]
+        clip_urls = best_automatic_upload_clip_urls(
+            job,
+            request.best_count,
+            allow_audited_automation=True,
+            require_youtube_fyp_target=True,
+        )
     if not clip_urls:
         raise HTTPException(
             status_code=409,
@@ -13798,6 +13847,54 @@ def wait_for_tiktok_uploads(
     raise RuntimeError("Upload TikTok belum selesai sampai batas waktu")
 
 
+def youtube_upload_is_verified(upload: Any) -> bool:
+    return bool(
+        getattr(upload, "status", "") == "completed"
+        and getattr(upload, "upload_confirmed", False)
+        and getattr(upload, "video_url", None)
+        and not getattr(upload, "dry_run", False)
+    )
+
+
+def tiktok_upload_is_verified(upload: Any) -> bool:
+    return bool(
+        getattr(upload, "status", "") == "completed"
+        and getattr(upload, "upload_confirmed", False)
+        and getattr(upload, "profile_url", None)
+        and not getattr(upload, "dry_run", False)
+    )
+
+
+def persisted_upload_group_is_verified(
+    uploads: Any,
+    *,
+    platform: Literal["youtube", "tiktok"],
+) -> bool:
+    """Re-check persisted checkpoints against authoritative upload records."""
+    if not isinstance(uploads, list) or not uploads:
+        return False
+    upload_ids = [
+        str(upload.get("id") or "")
+        for upload in uploads
+        if isinstance(upload, dict) and str(upload.get("id") or "")
+    ]
+    if len(upload_ids) != len(uploads):
+        return False
+    if platform == "youtube":
+        with youtube_uploads_lock:
+            records = [youtube_uploads.get(upload_id) for upload_id in upload_ids]
+        return all(
+            record is not None and youtube_upload_is_verified(record)
+            for record in records
+        )
+    with tiktok_uploads_lock:
+        records = [tiktok_uploads.get(upload_id) for upload_id in upload_ids]
+    return all(
+        record is not None and tiktok_upload_is_verified(record)
+        for record in records
+    )
+
+
 def auto_viral_boot_delay_minutes() -> float:
     return max(0.0, min(1440.0, env_float("AUTO_VIRAL_BOOT_DELAY_MINUTES", 30.0)))
 
@@ -13831,6 +13928,28 @@ def auto_viral_retry_delay_minutes() -> float:
 
 def auto_viral_retry_until_success() -> bool:
     return env_bool("AUTO_VIRAL_SCHEDULE_RETRY_UNTIL_SUCCESS", False)
+
+
+def auto_viral_daily_upload_limit() -> int:
+    """Hard per-platform cap for scheduled uploads on one Jakarta date."""
+    return max(
+        1,
+        min(7, env_int("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", 7)),
+    )
+
+
+def auto_viral_next_upload_date(now: datetime | None = None) -> datetime:
+    """Return the next Jakarta date in UTC, with a small boundary buffer."""
+    current = now or datetime.now(timezone.utc)
+    jakarta = ZoneInfo("Asia/Jakarta")
+    local = current.astimezone(jakarta)
+    next_local = (local + timedelta(days=1)).replace(
+        hour=0,
+        minute=1,
+        second=0,
+        microsecond=0,
+    )
+    return next_local.astimezone(timezone.utc)
 
 
 def system_uptime_seconds() -> float:
@@ -13880,7 +13999,10 @@ def auto_viral_run_can_resume_upload(run: AutoViralRun | None) -> bool:
         if str(item.get("job_id") or "")
         and item.get("job_status") == "completed"
     ]
-    return len(completed_jobs) >= run.request.video_count
+    # The configured source count is a target, not a minimum batch size. One
+    # completed quality-gated job is a durable upload checkpoint and must not
+    # be stranded because other sources produced no acceptable clip.
+    return bool(completed_jobs)
 
 
 def parse_utc_datetime(value: str | None, fallback: datetime | None = None) -> datetime:
@@ -13891,6 +14013,103 @@ def parse_utc_datetime(value: str | None, fallback: datetime | None = None) -> d
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+class AutoViralDailyUploadLimitReached(RuntimeError):
+    def __init__(self, platform: str, used: int, limit: int, retry_at: datetime):
+        self.platform = platform
+        self.used = used
+        self.limit = limit
+        self.retry_at = retry_at
+        super().__init__(
+            f"Kuota upload cron {platform} tanggal ini sudah {used}/{limit}; "
+            "sisa batch ditunda ke tanggal berikutnya."
+        )
+
+
+def scheduled_auto_viral_job_ids() -> set[str]:
+    """Identify clip jobs owned by the cron scheduler, including resumed runs."""
+    with auto_viral_lock:
+        runs = list(auto_viral_runs.values())
+    return {
+        str(item.get("job_id") or "").strip()
+        for run in runs
+        if run.trigger == "schedule"
+        for item in run.processed
+        if str(item.get("job_id") or "").strip()
+    }
+
+
+def auto_viral_daily_platform_upload_keys(
+    platform: Literal["youtube", "tiktok"],
+    now: datetime | None = None,
+) -> set[tuple[str, str]]:
+    """Count unique cron clips uploaded or currently reserved for one WIB date."""
+    current = now or datetime.now(timezone.utc)
+    local_date = current.astimezone(ZoneInfo("Asia/Jakarta")).date()
+    scheduled_job_ids = scheduled_auto_viral_job_ids()
+    if platform == "youtube":
+        with youtube_uploads_lock:
+            records: list[Any] = list(youtube_uploads.values())
+        verified = youtube_upload_is_verified
+    else:
+        with tiktok_uploads_lock:
+            records = list(tiktok_uploads.values())
+        verified = tiktok_upload_is_verified
+
+    keys: set[tuple[str, str]] = set()
+    for record in records:
+        job_id = str(getattr(record, "source_job_id", "") or "").strip()
+        clip_url = str(getattr(record, "clip_url", "") or "").strip()
+        if not job_id or not clip_url or job_id not in scheduled_job_ids:
+            continue
+        if getattr(record, "dry_run", False):
+            continue
+        # An in-flight upload reserves a slot even when it was queued shortly
+        # before midnight. This prevents completions crossing the date boundary
+        # from allowing more than seven real uploads on the new WIB date.
+        if getattr(record, "status", "") in {"queued", "running"}:
+            keys.add((job_id, clip_url))
+            continue
+        if not verified(record):
+            continue
+        completed_at = parse_utc_datetime(
+            getattr(record, "finished_at", None)
+            or getattr(record, "updated_at", None)
+            or getattr(record, "created_at", None),
+            current,
+        )
+        if completed_at.astimezone(ZoneInfo("Asia/Jakarta")).date() == local_date:
+            keys.add((job_id, clip_url))
+    return keys
+
+
+def auto_viral_daily_upload_slots(
+    platform: Literal["youtube", "tiktok"],
+    now: datetime | None = None,
+) -> int:
+    return max(
+        0,
+        auto_viral_daily_upload_limit()
+        - len(auto_viral_daily_platform_upload_keys(platform, now)),
+    )
+
+
+def require_auto_viral_daily_upload_slot(
+    platform: Literal["youtube", "tiktok"],
+    now: datetime | None = None,
+) -> int:
+    current = now or datetime.now(timezone.utc)
+    used = len(auto_viral_daily_platform_upload_keys(platform, current))
+    limit = auto_viral_daily_upload_limit()
+    if used >= limit:
+        raise AutoViralDailyUploadLimitReached(
+            platform,
+            used,
+            limit,
+            auto_viral_next_upload_date(current),
+        )
+    return limit - used
 
 
 def wait_for_auto_viral_upload_window(run_id: str) -> None:
@@ -13947,32 +14166,80 @@ def upload_auto_viral_processed_jobs(
             raise RuntimeError("Job ID clip hilang pada fase upload")
         stored_youtube = item.get("youtube_uploads", item.get("uploads", []))
         stored_tiktok = item.get("tiktok_uploads", [])
-        expected_groups = [
-            uploads
-            for enabled, uploads in (
-                (request.auto_upload_youtube, stored_youtube),
-                (request.auto_upload_tiktok, stored_tiktok),
+        expected_groups_verified: list[bool] = []
+        if request.auto_upload_youtube:
+            expected_groups_verified.append(
+                persisted_upload_group_is_verified(
+                    stored_youtube,
+                    platform="youtube",
+                )
             )
-            if enabled
-        ]
+        if request.auto_upload_tiktok:
+            expected_groups_verified.append(
+                persisted_upload_group_is_verified(
+                    stored_tiktok,
+                    platform="tiktok",
+                )
+            )
         if (
             item.get("status") == "completed"
-            and expected_groups
-            and all(
-                isinstance(uploads, list)
-                and bool(uploads)
-                and all(
-                    isinstance(upload, dict) and upload.get("status") == "completed"
-                    for upload in uploads
-                )
-                for uploads in expected_groups
-            )
+            and expected_groups_verified
+            and all(expected_groups_verified)
         ):
             continue
         with jobs_lock:
             finished_job = jobs.get(job_id)
         if finished_job is None or finished_job.status != "completed":
             raise RuntimeError(f"Job {job_id[:10]} tidak siap untuk upload resume")
+
+        # A durable backlog may have been rendered by an older policy version.
+        # Re-check every requested platform before creating any upload so a
+        # permanent review hold cannot retry forever or leave a half-uploaded
+        # cross-platform pair. Keep the local file for the operator instead.
+        if isinstance(finished_job, ClipJob):
+            review_holds: list[str] = []
+            platform_checks = [
+                ("YouTube", True, request.auto_upload_youtube),
+                ("TikTok", False, request.auto_upload_tiktok),
+            ]
+            for platform_label, require_fyp_target, enabled in platform_checks:
+                if not enabled:
+                    continue
+                eligible_urls = best_automatic_upload_clip_urls(
+                    finished_job,
+                    request.clips_per_video,
+                    allow_audited_automation=True,
+                    require_youtube_fyp_target=require_fyp_target,
+                )
+                if eligible_urls:
+                    continue
+                issues = [
+                    issue
+                    for clip in finished_job.clips
+                    if (issue := youtube_monetization_preflight_issue(finished_job, clip))
+                ]
+                review_holds.append(
+                    f"{platform_label}: "
+                    + (
+                        issues[0]
+                        if issues
+                        else "clip tidak lolos gate kualitas upload otomatis"
+                    )
+                )
+            if review_holds:
+                item["status"] = "manual_review_required"
+                item["error"] = "; ".join(review_holds)
+                item["cleanup"] = "ditahan untuk review manual; file dipertahankan"
+                update_auto_viral_run(
+                    run_id,
+                    processed=processed,
+                    progress_current=position,
+                )
+                append_auto_viral_log(
+                    run_id,
+                    f"Job {job_id[:10]} tidak diulang lagi: {item['error']}",
+                )
+                continue
 
         update_auto_viral_run(
             run_id,
@@ -14005,10 +14272,11 @@ def upload_auto_viral_processed_jobs(
             ]
             if not youtube_jobs:
                 with youtube_upload_creation_lock:
+                    available_slots = require_auto_viral_daily_upload_slot("youtube")
                     youtube_jobs = create_youtube_upload_batch_records(
                         job_id,
                         YouTubeBatchUploadRequest(
-                            best_count=request.clips_per_video,
+                            best_count=min(request.clips_per_video, available_slots),
                             visibility=youtube_default_visibility(),
                         ),
                     )
@@ -14021,6 +14289,8 @@ def upload_auto_viral_processed_jobs(
                     "status": upload.status,
                     "title": upload.title,
                     "video_url": upload.video_url,
+                    "upload_confirmed": upload.upload_confirmed,
+                    "dry_run": upload.dry_run,
                     "error": upload.error,
                 }
                 for upload in finished_youtube
@@ -14028,9 +14298,9 @@ def upload_auto_viral_processed_jobs(
             if not finished_youtube:
                 failures.append("YouTube: tidak ada job upload yang selesai")
             failures.extend(
-                f"YouTube: {upload.error or upload.status}"
+                f"YouTube: {upload.error or 'upload belum terverifikasi di Studio'}"
                 for upload in finished_youtube
-                if upload.status != "completed"
+                if not youtube_upload_is_verified(upload)
             )
 
         if request.auto_upload_tiktok:
@@ -14052,10 +14322,11 @@ def upload_auto_viral_processed_jobs(
             ]
             if not tiktok_jobs:
                 with tiktok_upload_creation_lock:
+                    available_slots = require_auto_viral_daily_upload_slot("tiktok")
                     tiktok_jobs = create_tiktok_upload_batch_records(
                         job_id,
                         TikTokBatchUploadRequest(
-                            best_count=request.clips_per_video,
+                            best_count=min(request.clips_per_video, available_slots),
                             visibility=safe_tiktok_visibility(),
                         ),
                         allow_audited_automation=True,
@@ -14069,6 +14340,8 @@ def upload_auto_viral_processed_jobs(
                     "status": upload.status,
                     "title": upload.clip_name,
                     "video_url": upload.profile_url,
+                    "upload_confirmed": upload.upload_confirmed,
+                    "dry_run": upload.dry_run,
                     "error": upload.error,
                 }
                 for upload in finished_tiktok
@@ -14076,9 +14349,9 @@ def upload_auto_viral_processed_jobs(
             if not finished_tiktok:
                 failures.append("TikTok: tidak ada job upload yang selesai")
             failures.extend(
-                f"TikTok: {upload.error or upload.status}"
+                f"TikTok: {upload.error or 'posting belum terverifikasi'}"
                 for upload in finished_tiktok
-                if upload.status != "completed"
+                if not tiktok_upload_is_verified(upload)
             )
 
         update_auto_viral_run(run_id, processed=processed)
@@ -14102,10 +14375,35 @@ def upload_auto_viral_until_success(
     request: AutoViralRequest,
     processed: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Retry the same durable three-clip batch until every platform confirms it."""
+    """Retry the same durable non-empty batch until every platform confirms it."""
     while True:
         try:
             return upload_auto_viral_processed_jobs(run_id, request, processed)
+        except AutoViralDailyUploadLimitReached as exc:
+            for item in processed:
+                if item.get("status") == "uploading":
+                    item["status"] = "awaiting_upload"
+            append_auto_viral_log(
+                run_id,
+                f"{exc} Dilanjutkan setelah {exc.retry_at.astimezone(ZoneInfo('Asia/Jakarta')).strftime('%d-%m-%Y %H:%M')} WIB.",
+            )
+            update_auto_viral_run(
+                run_id,
+                status="running",
+                finished_at=None,
+                upload_not_before=exc.retry_at.isoformat(),
+                progress_stage="daily_upload_limit",
+                processed=processed,
+                message=(
+                    f"Batas harian {exc.limit} upload {exc.platform} tercapai; "
+                    "sisa batch aman dan akan dilanjutkan tanggal berikutnya."
+                ),
+            )
+            while True:
+                remaining = (exc.retry_at - datetime.now(timezone.utc)).total_seconds()
+                if remaining <= 0:
+                    break
+                time.sleep(min(15.0, max(0.1, remaining)))
         except Exception as exc:
             if not auto_viral_retry_until_success():
                 raise
@@ -14506,6 +14804,26 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 if finished_job.status != "completed" or not finished_job.clips:
                     raise RuntimeError(finished_job.error or f"Job selesai dengan status {finished_job.status}")
 
+                if deferred_background_upload:
+                    if run_request.auto_upload_youtube and not best_automatic_upload_clip_urls(
+                        finished_job,
+                        run_request.clips_per_video,
+                        allow_audited_automation=True,
+                        require_youtube_fyp_target=True,
+                    ):
+                        raise RuntimeError(
+                            "Tidak ada clip yang lolos seluruh gate kualitas dan upload YouTube"
+                        )
+                    if run_request.auto_upload_tiktok and not best_automatic_upload_clip_urls(
+                        finished_job,
+                        run_request.clips_per_video,
+                        allow_audited_automation=True,
+                        require_youtube_fyp_target=False,
+                    ):
+                        raise RuntimeError(
+                            "Tidak ada clip yang lolos seluruh gate kualitas dan upload TikTok"
+                        )
+
                 item["uploads"] = []
                 if run_request.auto_upload_youtube and not deferred_background_upload:
                     source_progress = min(
@@ -14576,13 +14894,19 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 message=f"{completed_count}/{run_request.video_count} video sukses",
             )
 
-        if completed_count < run_request.video_count:
+        if completed_count == 0:
             suffix = (
                 "clip dan upload"
                 if run_request.auto_upload_youtube or run_request.auto_upload_tiktok
                 else "masuk antrean clipping"
             )
-            raise RuntimeError(f"Hanya {completed_count}/{run_request.video_count} video yang berhasil {suffix}")
+            raise RuntimeError(f"Tidak ada video yang berhasil {suffix}")
+        if completed_count < run_request.video_count:
+            append_auto_viral_log(
+                run_id,
+                f"Target {run_request.video_count} sumber menghasilkan {completed_count} batch berkualitas; "
+                "tetap melanjutkan upload semua hasil yang lolos.",
+            )
 
         if deferred_background_upload:
             clipping_finished_at = now_iso()
@@ -14611,15 +14935,15 @@ def run_auto_viral_campaign(run_id: str) -> None:
             finished_at=now_iso(),
             progress_percent=100,
             progress_stage="complete",
-            progress_current=run_request.video_count,
+            progress_current=completed_count,
             progress_total=run_request.video_count,
             message=(
-                "Clipping Top 3 selesai dan siap direview"
+                f"Clipping selesai; {completed_count} batch berkualitas siap direview"
                 if not (
                     run.request.auto_upload_youtube
                     or run.request.auto_upload_tiktok
                 )
-                else "Automation selesai"
+                else f"Automation selesai; {completed_count} batch terverifikasi terupload"
             ),
         )
         with auto_viral_lock:
@@ -14684,16 +15008,32 @@ def resume_scheduled_auto_viral_upload(run_id: str) -> None:
             [dict(item) for item in run.processed],
         )
         finished_at = now_iso()
+        verified_count = sum(
+            1 for item in processed if item.get("status") == "completed"
+        )
+        held_count = sum(
+            1
+            for item in processed
+            if item.get("status") == "manual_review_required"
+        )
         update_auto_viral_run(
             run_id,
             status="completed",
             finished_at=finished_at,
             progress_percent=100,
             progress_stage="complete",
-            progress_current=run.request.video_count,
+            progress_current=verified_count,
             progress_total=run.request.video_count,
             processed=processed,
-            message="Automation selesai; tiga clip terupload satu kali ke setiap platform.",
+            message=(
+                f"Automation backlog selesai; {verified_count} batch terverifikasi terupload, "
+                f"{held_count} batch ditahan untuk review manual dan file dipertahankan."
+                if held_count
+                else (
+                    "Automation selesai; semua hasil berkualitas yang tersedia "
+                    "terverifikasi terupload satu kali ke setiap platform."
+                )
+            ),
         )
         with auto_viral_lock:
             final_run = auto_viral_runs[run_id]
@@ -14852,6 +15192,25 @@ def latest_scheduled_auto_viral_run() -> AutoViralRun | None:
     return max(scheduled, key=lambda run: run.created_at) if scheduled else None
 
 
+def pending_scheduled_auto_viral_upload_run() -> AutoViralRun | None:
+    """Return the oldest durable upload backlog before starting new discovery.
+
+    A newer discovery attempt can fail before it produces a clip while older
+    scheduled runs still contain completed jobs waiting for upload. Looking
+    only at the newest run strands those clips forever, so drain resumable
+    checkpoints in FIFO order before scheduling another campaign.
+    """
+    with auto_viral_lock:
+        pending = [
+            run
+            for run in auto_viral_runs.values()
+            if run.trigger == "schedule"
+            and run.status in {"queued", "failed"}
+            and auto_viral_run_can_resume_upload(run)
+        ]
+    return min(pending, key=lambda run: run.created_at) if pending else None
+
+
 def auto_viral_schedule_status() -> AutoViralScheduleStatus:
     enabled = env_bool("AUTO_VIRAL_SCHEDULE_ENABLED", False)
     youtube_upload_requested = env_bool(
@@ -14891,7 +15250,7 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
         and latest is not None
         and latest.status == "completed"
     ):
-        message = "Tiga clip untuk boot ini sudah terupload satu kali; menunggu boot laptop berikutnya."
+        message = "Semua hasil berkualitas sudah terupload; menunggu jadwal berikutnya."
     elif (
         env_bool("AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT", False)
         and scheduled_run_started_in_current_boot(
@@ -14902,7 +15261,7 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
         and latest.status == "failed"
         and auto_viral_retry_until_success()
     ):
-        message = "Percobaan gagal; scheduler akan mengulang sampai tiga clip terupload lengkap."
+        message = "Percobaan gagal; scheduler akan mengulang batch yang sama sampai upload terverifikasi."
     elif scheduler_running:
         message = "Scheduler aktif dan menunggu waktu run berikutnya."
     else:
@@ -14942,6 +15301,19 @@ def auto_viral_next_run_at(
         and latest.progress_stage == "resume_pending_upload"
     ):
         return now
+    if (
+        latest is not None
+        and latest.status == "failed"
+        and auto_viral_retry_until_success()
+    ):
+        retry_anchor = parse_utc_datetime(
+            latest.finished_at or latest.updated_at or latest.created_at,
+            now,
+        )
+        return max(
+            auto_viral_boot_not_before(now),
+            retry_anchor + timedelta(minutes=auto_viral_retry_delay_minutes()),
+        )
     if env_bool("AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT", False):
         if scheduled_run_started_in_current_boot(latest, now):
             if latest is not None and latest.status == "completed":
@@ -14991,7 +15363,9 @@ def auto_viral_scheduler_loop() -> None:
             with auto_viral_lock:
                 active_id = auto_viral_active_run_id
             latest = latest_scheduled_auto_viral_run()
-            next_run = auto_viral_next_run_at(now, latest, active_id)
+            upload_backlog = pending_scheduled_auto_viral_upload_run()
+            schedule_candidate = upload_backlog or latest
+            next_run = auto_viral_next_run_at(now, schedule_candidate, active_id)
             if (
                 next_run is not None
                 and retry_not_before is not None
@@ -15004,28 +15378,27 @@ def auto_viral_scheduler_loop() -> None:
             if next_run is not None and now >= next_run:
                 try:
                     resume_upload = bool(
-                        latest is not None
+                        schedule_candidate is not None
                         and (
                             (
-                                latest.status == "queued"
-                                and latest.progress_stage == "resume_pending_upload"
+                                schedule_candidate.status == "queued"
+                                and schedule_candidate.progress_stage == "resume_pending_upload"
                             )
                             or (
-                                latest.status == "failed"
+                                schedule_candidate.status == "failed"
                                 and auto_viral_retry_until_success()
-                                and scheduled_run_started_in_current_boot(latest, now)
-                                and auto_viral_run_can_resume_upload(latest)
+                                and auto_viral_run_can_resume_upload(schedule_candidate)
                             )
                         )
                     )
-                    if resume_upload and latest is not None:
+                    if resume_upload and schedule_candidate is not None:
                         with auto_viral_lock:
                             if auto_viral_active_run_id is None:
-                                auto_viral_active_run_id = latest.id
+                                auto_viral_active_run_id = schedule_candidate.id
                         threading.Thread(
                             target=resume_scheduled_auto_viral_upload,
-                            args=(latest.id,),
-                            name=f"auto-viral-upload-resume-{latest.id[:8]}",
+                            args=(schedule_candidate.id,),
+                            name=f"auto-viral-upload-resume-{schedule_candidate.id[:8]}",
                             daemon=True,
                         ).start()
                     else:

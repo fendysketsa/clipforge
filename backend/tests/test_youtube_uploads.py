@@ -3378,6 +3378,141 @@ def test_monetization_preflight_requires_rights_and_substantive_edit(monkeypatch
     assert "Render ulang" in (youtube_monetization_preflight_issue(job, clip) or "")
 
 
+def test_monetization_preflight_accepts_v8_transformation_after_documented_rights(monkeypatch):
+    """A rights-only render status must not be mislabeled as failed editing."""
+    import api
+
+    clip = make_clip(1).model_copy(update={"is_correct": True})
+    job = ClipJob(
+        id="job-v8-documented-rights",
+        status="completed",
+        request=ClipJobRequest(
+            url="https://youtu.be/source",
+            clip_mode="short",
+            confirm_source_rights=True,
+            source_rights_evidence=(
+                "Izin komersial terdokumentasi mencakup seluruh audio dan visual sumber"
+            ),
+            creator_perspective=(
+                "Kebaikan disampaikan lembut agar kita saling mengingatkan tanpa menghakimi"
+            ),
+        ),
+        created_at="2026-10-17T00:00:00+00:00",
+        updated_at="2026-10-17T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(api, "metadata_for_job", lambda _job: {})
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "output_format": "vertical_short",
+            "duration": 35.25,
+            "aspect_ratio": "9:16",
+            "thumbnail_strategy": "embedded_shorts_cover_frame",
+            "narrative_arc_score": 100,
+            "narrative_arc_complete": True,
+            "religious_context_safe": True,
+            "religious_context_integrity": {"safe_for_automatic_export": True},
+            "source_provenance": {"uploaded_source": False},
+            "editorial_framing": {
+                "enabled": True,
+                "content_derived": True,
+                "generated_for_this_clip": False,
+                "human_creator_perspective_present": True,
+                "editorial_angle": "Sudut editorial spesifik yang berasal dari masukan kreator",
+                "transformation_contract": {
+                    "passed": True,
+                    "adds_interpretive_value": True,
+                },
+            },
+            "auditor_identity": {
+                "name": "Fendy",
+                "display_signature": "FENDY AUDIT",
+                "audit_id": "FND-V8-RIGHTS",
+                "visible_video_signature": True,
+            },
+            "codex_growth_blueprint": {"version": 4},
+            "monetization_readiness": {
+                "status": "blocked_unverified_rights",
+                "eligible_for_private_upload_review": False,
+                "audit_version": 8,
+                "originality_score": 13,
+                "minimum_originality_score": 7,
+                "substantive_transformation": True,
+                "signals": {
+                    "enhanced_edit": True,
+                    "editorial_hook_and_context": True,
+                    "original_core_message": True,
+                    "cohesive_editorial_arc": True,
+                    "content_timed_editing": True,
+                    "content_adaptive_visual_direction": True,
+                    "substantive_visual_edits": True,
+                    "visible_editorial_interpretation": True,
+                    "substantive_editorial_contract": True,
+                },
+            },
+        },
+    )
+
+    assert youtube_monetization_preflight_issue(job, clip) is None
+
+
+def test_monetization_preflight_keeps_v8_failed_transformation_blocked(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    job = ClipJob(
+        id="job-v8-failed-transformation",
+        status="completed",
+        request=make_monetization_ready_url_request(),
+        created_at="2026-10-17T00:00:00+00:00",
+        updated_at="2026-10-17T00:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "output_format": "vertical_short",
+            "source_provenance": {"uploaded_source": False},
+            "auditor_identity": {
+                "name": "Fendy",
+                "display_signature": "FENDY AUDIT",
+                "audit_id": "FND-V8-FAILED",
+                "visible_video_signature": True,
+            },
+            "codex_growth_blueprint": {"version": 4},
+            "monetization_readiness": {
+                "status": "blocked_unverified_rights",
+                "eligible_for_private_upload_review": False,
+                "audit_version": 8,
+                "originality_score": 12,
+                "minimum_originality_score": 7,
+                "substantive_transformation": True,
+                "signals": {
+                    "enhanced_edit": True,
+                    "editorial_hook_and_context": True,
+                    "original_core_message": True,
+                    "cohesive_editorial_arc": True,
+                    "content_timed_editing": True,
+                    "content_adaptive_visual_direction": False,
+                    "visible_editorial_interpretation": True,
+                    "substantive_editorial_contract": True,
+                },
+            },
+        },
+    )
+
+    issue = youtube_monetization_preflight_issue(job, clip) or ""
+    assert "gaya visual belum tercatat mengikuti isi cerita" in issue
+
+
 def test_monetization_preflight_accepts_confirmed_trusted_owned_channel(monkeypatch):
     import api
 

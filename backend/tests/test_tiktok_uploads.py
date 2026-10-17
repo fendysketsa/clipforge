@@ -27,6 +27,8 @@ from tiktok_uploader import (
     select_google_login,
     select_qr_login,
     set_caption,
+    set_only_you,
+    set_public,
     tiktok_content_snapshot,
     upload_video,
     validate_target_account,
@@ -46,6 +48,30 @@ def make_job(clip: ClipFile) -> ClipJob:
         updated_at="2026-09-06T00:00:00+00:00",
         clips=[clip],
     )
+
+
+@pytest.mark.parametrize(
+    ("setter", "current_label"),
+    [
+        (set_public, "Everyone"),
+        (set_only_you, "Only you"),
+    ],
+)
+def test_tiktok_visibility_accepts_already_selected_value(
+    monkeypatch,
+    setter,
+    current_label,
+):
+    clicked = []
+    trigger = SimpleNamespace(
+        inner_text=lambda **_kwargs: current_label,
+        click=lambda: clicked.append(True),
+    )
+    monkeypatch.setattr(tiktok_uploader, "first_visible", lambda *_args, **_kwargs: trigger)
+
+    setter(SimpleNamespace())
+
+    assert clicked == []
 
 
 def test_tiktok_caption_removes_shorts_and_adds_relevant_islamic_tags():
@@ -1624,6 +1650,42 @@ def test_tiktok_caption_recovers_when_a_late_modal_intercepts_the_first_click(mo
     assert editor.value == expected
     assert editor.clicks == 2
     assert dismiss_calls == [True]
+
+
+def test_tiktok_caption_prefers_current_draftjs_editor_without_legacy_waits(monkeypatch):
+    captured_selectors = []
+
+    class Editor:
+        value = ""
+
+        def click(self, **_kwargs):
+            pass
+
+        def press(self, _key, **_kwargs):
+            pass
+
+        def fill(self, value, **_kwargs):
+            self.value = value
+
+        def input_value(self, **_kwargs):
+            return self.value
+
+    class Page:
+        def wait_for_timeout(self, _milliseconds):
+            pass
+
+    editor = Editor()
+
+    def capture_first_visible(_page, selectors, **_kwargs):
+        captured_selectors.extend(selectors)
+        return editor
+
+    monkeypatch.setattr("tiktok_uploader.first_visible", capture_first_visible)
+
+    set_caption(Page(), "Caption cepat")
+
+    assert captured_selectors[0] == '.public-DraftEditor-content[contenteditable="true"]'
+    assert editor.value == "Caption cepat"
 
 
 def test_tiktok_post_button_waits_until_async_upload_enables_it():

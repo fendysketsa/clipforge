@@ -5969,6 +5969,10 @@ def attach_monetization_provenance(
             "eligible_for_private_upload_review": bool(
                 commercial_rights_ready and transformation_ready
             ),
+            # Keep the editorial result separate from the combined rights +
+            # transformation decision. Rights evidence may be confirmed or
+            # updated later in the upload workflow without re-rendering.
+            "transformation_ready_for_private_review": bool(transformation_ready),
             "commercial_rights_confirmation_required": True,
             "originality_score": originality_score,
             "minimum_originality_score": minimum_score,

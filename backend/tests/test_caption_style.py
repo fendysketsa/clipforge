@@ -1246,6 +1246,7 @@ def test_monetization_provenance_records_rights_and_originality(tmp_path):
     assert payload["source_provenance"]["license_metadata_verified"] is True
     assert payload["source_provenance"]["attribution_required"] is True
     assert payload["monetization_readiness"]["eligible_for_private_upload_review"] is True
+    assert payload["monetization_readiness"]["transformation_ready_for_private_review"] is True
     assert payload["monetization_readiness"]["signals"]["visible_editorial_interpretation"] is True
     assert payload["monetization_readiness"]["automated_editorial_interpretation_present"] is True
     assert payload["monetization_readiness"]["guarantee"] is False

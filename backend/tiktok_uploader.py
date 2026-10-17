@@ -541,10 +541,14 @@ def set_caption(page, caption: str) -> None:
     editor = first_visible(
         page,
         [
+            # TikTok Studio's current editor is DraftJS. Keep its concrete
+            # selector first: ``first_visible`` waits per fallback selector,
+            # so putting generic/legacy variants ahead of it adds roughly a
+            # minute to every upload even though the editor is already ready.
+            '.public-DraftEditor-content[contenteditable="true"]',
             '[data-e2e="caption-editor"] [contenteditable="true"]',
             '[data-e2e="caption-editor"][contenteditable="true"]',
             '[data-e2e="caption-editor"] textarea',
-            '.public-DraftEditor-content[contenteditable="true"]',
             '[class*="caption-editor"] [contenteditable="true"]',
             'div[contenteditable="true"][role="combobox"]',
             'div[contenteditable="true"][role="textbox"]',
@@ -756,17 +760,31 @@ def set_only_you(page) -> None:
         page,
         [
             '[data-e2e="privacy-level"]',
+            'button:has-text("Only you")',
+            'button:has-text("Hanya Anda")',
+            'button:has-text("Hanya kamu")',
             'button:has-text("Everyone")',
             'button:has-text("Semua orang")',
             'button:has-text("Friends")',
             'button:has-text("Pengikut")',
+            'div[role="combobox"]:has-text("Only you")',
+            'div[role="combobox"]:has-text("Hanya Anda")',
+            'div[role="combobox"]:has-text("Hanya kamu")',
             'div[role="combobox"]:has-text("Everyone")',
             'div[role="combobox"]:has-text("Semua orang")',
         ],
         timeout_ms=10_000,
     )
     if trigger is None:
+        save_debug(page, "privacy-control-missing")
         raise UploadError("Kontrol privasi TikTok tidak ditemukan; upload tidak diterbitkan.")
+    try:
+        current_visibility = trigger.inner_text(timeout=3_000).strip()
+    except Exception:
+        current_visibility = ""
+    if re.search(r"only you|hanya anda|hanya kamu", current_visibility, re.I):
+        log("FINAL_VISIBILITY:private")
+        return
     trigger.click()
     option = first_visible(
         page,
@@ -795,17 +813,29 @@ def set_public(page) -> None:
         page,
         [
             '[data-e2e="privacy-level"]',
+            'button:has-text("Everyone")',
+            'button:has-text("Semua orang")',
             'button:has-text("Only you")',
             'button:has-text("Hanya Anda")',
             'button:has-text("Friends")',
             'button:has-text("Pengikut")',
+            'div[role="combobox"]:has-text("Everyone")',
+            'div[role="combobox"]:has-text("Semua orang")',
             'div[role="combobox"]:has-text("Only you")',
             'div[role="combobox"]:has-text("Hanya Anda")',
         ],
         timeout_ms=10_000,
     )
     if trigger is None:
+        save_debug(page, "privacy-control-missing")
         raise UploadError("Kontrol privasi TikTok tidak ditemukan; upload tidak diterbitkan.")
+    try:
+        current_visibility = trigger.inner_text(timeout=3_000).strip()
+    except Exception:
+        current_visibility = ""
+    if re.search(r"everyone|semua orang", current_visibility, re.I):
+        log("FINAL_VISIBILITY:public")
+        return
     trigger.click()
     option = first_visible(
         page,
