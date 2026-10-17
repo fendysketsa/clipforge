@@ -6,6 +6,7 @@ import json
 import importlib.util
 import os
 import queue
+import random
 import re
 import shlex
 import shutil
@@ -296,6 +297,20 @@ def safe_youtube_visibility(
         or not env_bool("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", False)
     ):
         return "private"
+    return visibility  # type: ignore[return-value]
+
+
+def safe_tiktok_visibility(
+    requested: str | None = None,
+) -> Literal["only_you", "public"]:
+    value = (
+        requested or os.environ.get("TIKTOK_DEFAULT_VISIBILITY", "only_you")
+    ).strip().lower()
+    visibility = value if value in {"only_you", "public"} else "only_you"
+    if visibility == "public" and not env_bool(
+        "TIKTOK_ALLOW_PUBLIC_AUTO_UPLOAD", False
+    ):
+        return "only_you"
     return visibility  # type: ignore[return-value]
 
 
@@ -1081,7 +1096,7 @@ class TikTokConfig(BaseModel):
     chromium_profile_directory: str = ""
     target_handle: str
     target_email: str
-    default_visibility: Literal["only_you"] = "only_you"
+    default_visibility: Literal["only_you", "public"] = "only_you"
     auto_upload_count: int = DEFAULT_TIKTOK_AUTO_UPLOAD_COUNT
     active_upload_id: str | None = None
 
@@ -1089,7 +1104,9 @@ class TikTokConfig(BaseModel):
 class TikTokUploadRequest(BaseModel):
     clip_url: str
     caption: str = ""
-    visibility: Literal["only_you"] = "only_you"
+    visibility: Literal["only_you", "public"] = Field(
+        default_factory=safe_tiktok_visibility
+    )
     dry_run: bool = Field(default_factory=lambda: env_bool("TIKTOK_DRY_RUN", False))
 
     @field_validator("caption")
@@ -1100,7 +1117,9 @@ class TikTokUploadRequest(BaseModel):
 
 class TikTokBatchUploadRequest(BaseModel):
     clip_urls: list[str] = Field(default_factory=list)
-    visibility: Literal["only_you"] = "only_you"
+    visibility: Literal["only_you", "public"] = Field(
+        default_factory=safe_tiktok_visibility
+    )
     best_count: int = Field(default=DEFAULT_TIKTOK_AUTO_UPLOAD_COUNT, ge=1, le=MAX_REQUESTED_CLIPS)
     dry_run: bool = Field(default_factory=lambda: env_bool("TIKTOK_DRY_RUN", False))
 
@@ -1141,7 +1160,7 @@ class TikTokUploadJob(BaseModel):
     finished_at: str | None = None
     duration_seconds: float | None = None
     caption: str
-    visibility: Literal["only_you"] = "only_you"
+    visibility: Literal["only_you", "public"] = "only_you"
     target_handle: str
     target_email: str = ""
     dry_run: bool = False
@@ -1826,6 +1845,7 @@ def normalize_youtube_video_url(value: str) -> str | None:
 
 class AutoViralRequest(BaseModel):
     niche: IslamicContentNiche = "auto"
+    theme_focus: str = Field(default="", max_length=240)
     queries: list[str] = Field(default_factory=default_auto_viral_queries)
     video_count: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_VIDEO_COUNT", 5), ge=1, le=7)
     clips_per_video: int = Field(default_factory=youtube_auto_upload_count, ge=1, le=5)
@@ -1854,9 +1874,11 @@ class AutoViralRequest(BaseModel):
     ai_model: str = DEFAULT_AI_MODEL
     ai_api_key: str = ""
     source_urls: list[str] = Field(default_factory=list)
+    require_creative_commons: bool = True
     # Discovery can be automated, but publication must wait for human rights
     # evidence, creator perspective, and YouTube's private copyright checks.
     auto_upload_youtube: bool = False
+    auto_upload_tiktok: bool = False
     source_rights_confirmed: bool = False
     source_rights_evidence: str = Field(default="", max_length=2000)
     creator_perspective: str = Field(default="", max_length=4000)
@@ -1896,7 +1918,11 @@ class AutoViralRequest(BaseModel):
             )
             if self.min_duration >= self.max_duration:
                 self.min_duration = max(5.0, self.max_duration - 10.0)
-        self.queries = prioritized_niche_queries(self.niche, self.queries)[:80]
+        self.theme_focus = re.sub(r"\s+", " ", self.theme_focus).strip()
+        self.queries = merge_unique_queries(
+            [self.theme_focus] if self.theme_focus else [],
+            prioritized_niche_queries(self.niche, self.queries),
+        )[:80]
         if (
             self.niche in {"islamic_current_viral", "islamic_politics_society"}
             and "upload_date_filter" not in self.model_fields_set
@@ -1924,6 +1950,7 @@ class AutoViralRun(BaseModel):
     clipping_finished_at: str | None = None
     upload_not_before: str | None = None
     trigger: Literal["manual", "schedule", "search"] = "manual"
+    schedule_key: str = ""
     request: AutoViralRequest
     message: str = ""
     progress_percent: int = Field(default=0, ge=0, le=100)
@@ -1933,6 +1960,7 @@ class AutoViralRun(BaseModel):
     search_provider: str | None = None
     selected_sources: list[dict[str, Any]] = Field(default_factory=list)
     processed: list[dict[str, Any]] = Field(default_factory=list)
+    retry_count: int = Field(default=0, ge=0)
     errors: list[str] = Field(default_factory=list)
     logs: list[str] = Field(default_factory=list)
 
@@ -1941,6 +1969,7 @@ class AutoViralScheduleStatus(BaseModel):
     enabled: bool
     interval_hours: float
     run_on_startup: bool
+    once_per_boot: bool = False
     scheduler_running: bool
     boot_delay_minutes: float = 30
     post_clip_upload_delay_minutes: float = 30
@@ -2222,7 +2251,13 @@ def load_auto_viral_runs() -> dict[str, AutoViralRun]:
             run.trigger == "schedule"
             and run.processed
             and run.progress_stage
-            in {"waiting_upload", "youtube_upload", "resume_pending_upload"}
+            in {
+                "waiting_upload",
+                "youtube_upload",
+                "social_upload",
+                "retry_upload",
+                "resume_pending_upload",
+            }
         )
         if run.status in {"queued", "running"} and resumable_upload_phase:
             recovered_at = now_iso()
@@ -3788,7 +3823,7 @@ def youtube_config_payload() -> YouTubeConfig:
         direct_profile_upload=direct_profile_upload,
         chromium_profile_ready=has_chromium_profile,
         chromium_profile_path=YOUTUBE_CHROMIUM_USER_DATA_DIR,
-        default_visibility="private",
+        default_visibility=youtube_default_visibility(),
         default_made_for_kids=env_bool("YOUTUBE_MADE_FOR_KIDS", False),
         default_tags=env_csv("YOUTUBE_DEFAULT_TAGS"),
         default_playlist=os.environ.get("YOUTUBE_DEFAULT_PLAYLIST", DEFAULT_YOUTUBE_PLAYLIST).strip(),
@@ -4895,18 +4930,20 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             and len(job.request.source_rights_evidence.split()) >= 3
         )
     )
-    trusted_owned_source = bool(
-        job.request.confirm_source_rights and is_trusted_source_channel(metadata)
+    documented_source_permission = bool(
+        job.request.confirm_source_rights
+        and len(job.request.source_rights_evidence.split()) >= 6
     )
     if (
         job.request.url.strip()
         and not is_creative_commons_info(metadata)
         and not research_only_rebuild
-        and not trusted_owned_source
+        and not documented_source_permission
     ):
         return (
             "Upload diblokir: bukti lisensi Creative Commons sumber tidak ditemukan. "
-            "Gunakan rekaman milik sendiri atau sumber dengan metadata CC dan izin komersial yang dapat dibuktikan."
+            "Gunakan rekaman milik sendiri, sumber berlisensi CC, atau catat izin komersial "
+            "audio dan visual yang dapat dibuktikan."
         )
     if (
         job.request.url.strip()
@@ -6139,13 +6176,13 @@ def tiktok_config_payload() -> TikTokConfig:
     if state_ready:
         auth_path = str(TIKTOK_PLAYWRIGHT_STATE)
         message = (
-            f"Session TikTok siap. Upload dikunci ke @{tiktok_target_handle()} dan Only you."
+            f"Session TikTok siap. Upload dikunci ke @{tiktok_target_handle()} dengan visibility {safe_tiktok_visibility()}."
         )
     elif live_browser_ready:
         auth_path = TIKTOK_CDP_URL
         message = (
             f"Chrome TikTok Studio aktif. Akun @{tiktok_target_handle()} akan diverifikasi "
-            "tepat sebelum upload Only you."
+            f"tepat sebelum upload {safe_tiktok_visibility()}."
         )
     elif profile_ready:
         auth_path = str(Path(TIKTOK_CHROMIUM_USER_DATA_DIR) / TIKTOK_CHROMIUM_PROFILE_DIRECTORY)
@@ -6168,6 +6205,7 @@ def tiktok_config_payload() -> TikTokConfig:
         chromium_profile_directory=TIKTOK_CHROMIUM_PROFILE_DIRECTORY,
         target_handle=tiktok_target_handle(),
         target_email=os.environ.get("TIKTOK_TARGET_EMAIL", DEFAULT_TIKTOK_TARGET_EMAIL).strip(),
+        default_visibility=safe_tiktok_visibility(),
         auto_upload_count=max(1, min(MAX_REQUESTED_CLIPS, env_int("TIKTOK_AUTO_UPLOAD_COUNT", DEFAULT_TIKTOK_AUTO_UPLOAD_COUNT))),
         active_upload_id=active_tiktok_upload_id(),
     )
@@ -6228,9 +6266,14 @@ def cross_platform_cleanup_after(job_id: str, clip_url: str, completed_at: str) 
     return completed_upload_cleanup_after(completed_at) if tiktok_upload_is_confirmed(job_id, clip_url) else None
 
 
-def create_tiktok_upload_record(job_id: str, request: TikTokUploadRequest) -> TikTokUploadJob:
+def create_tiktok_upload_record(
+    job_id: str,
+    request: TikTokUploadRequest,
+    *,
+    allow_audited_automation: bool = False,
+) -> TikTokUploadJob:
     job, clip, index = find_job_clip(job_id, request.clip_url)
-    if not clip.is_correct:
+    if not clip.is_correct and not allow_audited_automation:
         raise HTTPException(
             status_code=409,
             detail="Centang review konteks, fakta, dan hak penggunaan sebelum upload TikTok Only you.",
@@ -6258,7 +6301,7 @@ def create_tiktok_upload_record(job_id: str, request: TikTokUploadRequest) -> Ti
         caption=repair_known_public_typos(
             tiktok_caption_for_clip(job, clip, index, request.caption)
         ),
-        visibility="only_you",
+        visibility=safe_tiktok_visibility(request.visibility),
         target_handle=tiktok_target_handle(),
         target_email=os.environ.get("TIKTOK_TARGET_EMAIL", DEFAULT_TIKTOK_TARGET_EMAIL).strip(),
         dry_run=request.dry_run,
@@ -6273,12 +6316,21 @@ def create_tiktok_upload_record(job_id: str, request: TikTokUploadRequest) -> Ti
         logs=[
             "Preflight hak sumber dan transformasi editorial lolos.",
             f"Paket TikTok diterapkan: {strategy['series_label']} · hook varian {strategy['hook_variant']}.",
-            "Upload TikTok dikunci Only you; publikasi umum tetap keputusan manual setelah review.",
+            (
+                "Upload TikTok akan dipublikasikan untuk semua orang setelah seluruh gate lolos."
+                if safe_tiktok_visibility(request.visibility) == "public"
+                else "Upload TikTok dikunci Only you; publikasi umum tetap keputusan manual setelah review."
+            ),
         ],
     )
 
 
-def create_tiktok_upload_batch_records(job_id: str, request: TikTokBatchUploadRequest) -> list[TikTokUploadJob]:
+def create_tiktok_upload_batch_records(
+    job_id: str,
+    request: TikTokBatchUploadRequest,
+    *,
+    allow_audited_automation: bool = False,
+) -> list[TikTokUploadJob]:
     with jobs_lock:
         job = jobs.get(job_id)
     if not job or job.status != "completed":
@@ -6290,7 +6342,7 @@ def create_tiktok_upload_batch_records(job_id: str, request: TikTokBatchUploadRe
         clip_urls = [
             url for url in best_youtube_clip_urls(job, len(job.clips))
             if (clip := clips.get(url)) is not None
-            and clip.is_correct
+            and (clip.is_correct or allow_audited_automation)
             and youtube_monetization_preflight_issue(job, clip) is None
             and clip.growth_quality_gate_passed is not False
         ][:request.best_count]
@@ -6302,7 +6354,12 @@ def create_tiktok_upload_batch_records(job_id: str, request: TikTokBatchUploadRe
     return list({item.id: item for item in (
         create_tiktok_upload_record(
             job_id,
-            TikTokUploadRequest(clip_url=url, visibility="only_you", dry_run=request.dry_run),
+            TikTokUploadRequest(
+                clip_url=url,
+                visibility=request.visibility,
+                dry_run=request.dry_run,
+            ),
+            allow_audited_automation=allow_audited_automation,
         ) for url in clip_urls
     )}.values())
 
@@ -6533,10 +6590,9 @@ def youtube_uploads_with_queue_positions(
 def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> YouTubeUploadJob:
     job, clip, index = find_job_clip(job_id, request.clip_url)
     requested_visibility = safe_youtube_visibility(request.visibility)
-    # Automated publication always starts Private. Public release is a separate
-    # human decision after Studio Checks, fact review, channel-variation review,
-    # and any required attribution have been inspected.
-    upload_visibility = "private"
+    # Public is honored only when the operator explicitly enables it; rights,
+    # quality, metadata, and Studio copyright checks remain mandatory.
+    upload_visibility = requested_visibility
     growth_target_views, growth_target_subscribers = youtube_growth_targets(job, clip)
     clip_path = output_path_from_url(clip.url)
     if clip_path is None or not clip_path.is_file():
@@ -6765,18 +6821,13 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
                 else []
             )
             + [
-                "Preflight monetisasi lolos untuk upload Private; keputusan akhir tetap mengikuti review video dan channel oleh YouTube."
+                f"Preflight monetisasi lolos untuk upload {upload_visibility}; keputusan akhir tetap mengikuti pemeriksaan YouTube."
             ]
             + (
                 [
                     "Metadata upload dibuat dari naskah Original Rebuild terverifikasi karena provider AI metadata sedang tidak tersedia."
                 ]
                 if metadata_source == "original_rebuild_render"
-                else []
-            )
-            + (
-                [f"Permintaan {requested_visibility} ditahan: upload otomatis dipaksa Private-first."]
-                if requested_visibility != "private"
                 else []
             )
             + (
@@ -9344,6 +9395,8 @@ def build_tiktok_upload_command(
         str(clip_path),
         "--caption",
         upload.caption,
+        "--visibility",
+        upload.visibility,
     ]
     if upload.dry_run:
         command.append("--dry-run")
@@ -11078,7 +11131,7 @@ def build_clipper_command(
         cleaned = [tag.strip().lstrip("#") for tag in request.required_hashtags if tag.strip()]
         if cleaned:
             command.extend(["--required-hashtags", ",".join(cleaned)])
-    if request.url and (request.require_creative_commons or not request.review_only):
+    if request.url and request.require_creative_commons:
         command.append("--require-creative-commons")
     if request.confirm_source_rights:
         command.append("--confirm-source-rights")
@@ -11677,7 +11730,11 @@ def is_creative_commons_info(info: dict[str, Any]) -> bool:
     )
 
 
-def viral_source_discovery_rejection_reason(info: dict[str, Any]) -> str | None:
+def viral_source_discovery_rejection_reason(
+    info: dict[str, Any],
+    *,
+    require_creative_commons: bool = True,
+) -> str | None:
     """Reject unusable or elevated-rights-risk sources during discovery.
 
     Discovery and clipping deliberately share the same conservative rights
@@ -11686,7 +11743,7 @@ def viral_source_discovery_rejection_reason(info: dict[str, Any]) -> str | None:
     These heuristics are a workflow preflight, not proof of ownership or a
     guarantee that YouTube will never apply a later claim.
     """
-    if not is_creative_commons_info(info):
+    if require_creative_commons and not is_creative_commons_info(info):
         return "metadata lisensi Creative Commons tidak terdeteksi"
     availability = str(info.get("availability") or "public").casefold()
     if availability not in {"", "public"}:
@@ -11710,9 +11767,16 @@ def viral_source_discovery_rejection_reason(info: dict[str, Any]) -> str | None:
     return None
 
 
-def viral_source_rejection_reason(info: dict[str, Any]) -> str | None:
+def viral_source_rejection_reason(
+    info: dict[str, Any],
+    *,
+    require_creative_commons: bool = True,
+) -> str | None:
     """Reapply the complete source gate immediately before clipping starts."""
-    return viral_source_discovery_rejection_reason(info)
+    return viral_source_discovery_rejection_reason(
+        info,
+        require_creative_commons=require_creative_commons,
+    )
 
 
 def upload_age_days(info: dict[str, Any]) -> int | None:
@@ -12528,6 +12592,9 @@ def youtube_data_api_search_queries(request: AutoViralRequest) -> list[str]:
     """Use one broad OR query in fast mode to spend only one search.list call."""
     max_api_queries = max(1, min(20, env_int("VIRAL_CC_MAX_API_QUERIES", 1)))
     if env_bool("VIRAL_CC_FAST_API_ONLY", True):
+        theme_focus = str(getattr(request, "theme_focus", "") or "").strip()
+        if theme_focus:
+            return [theme_focus[:480]]
         configured_fast_query = re.sub(
             r"\s+",
             " ",
@@ -12560,7 +12627,8 @@ def youtube_trend_signals(
     """Read YouTube's regional most-popular chart and turn it into search/ranking signals.
 
     Trending chart entries are inspiration signals only. The actual source still
-    has to pass Creative Commons, language, freshness, quality, and rights gates.
+    has to pass the configured license policy plus language, freshness, quality,
+    and rights-risk gates.
     """
     if not env_bool("VIRAL_CC_USE_TREND_CHART", True):
         return [], set()
@@ -12611,7 +12679,7 @@ def youtube_trend_signals(
     seeds = eligible_titles[:seed_limit]
     append_auto_viral_log(
         run_id,
-        f"Chart tren menghasilkan {len(eligible_titles)} topik relevan; {len(seeds)} dipakai sebagai seed pencarian CC.",
+        f"Chart tren menghasilkan {len(eligible_titles)} topik relevan; {len(seeds)} dipakai sebagai seed pencarian.",
     )
     return seeds, trend_tokens
 
@@ -12672,7 +12740,6 @@ def search_youtube_data_api_viral_sources(
             "part": "snippet",
             "q": query,
             "type": "video",
-            "videoLicense": "creativeCommon",
             "order": api_order,
             "maxResults": (
                 50
@@ -12683,6 +12750,8 @@ def search_youtube_data_api_viral_sources(
             "relevanceLanguage": relevance_language,
             "safeSearch": "strict",
         }
+        if request.require_creative_commons:
+            search_params["videoLicense"] = "creativeCommon"
         # CC, selected duration, and selected HD definition are hard requirements.
         # Reach never is; Islamic relevance and information value are validated below.
         if not adaptive_filters:
@@ -12762,7 +12831,10 @@ def search_youtube_data_api_viral_sources(
                     f"Skip karena filter ({filter_rejection}): {payload.get('title') or '-'}",
                 )
                 continue
-            rejection_reason = viral_source_discovery_rejection_reason(payload)
+            rejection_reason = viral_source_discovery_rejection_reason(
+                payload,
+                require_creative_commons=request.require_creative_commons,
+            )
             if rejection_reason:
                 append_auto_viral_log(
                     run_id,
@@ -12916,7 +12988,10 @@ def search_auto_viral_sources(
                     f"Skip karena filter ({filter_rejection}): {metadata.get('title') or url}",
                 )
                 continue
-            rejection_reason = viral_source_discovery_rejection_reason(metadata)
+            rejection_reason = viral_source_discovery_rejection_reason(
+                metadata,
+                require_creative_commons=request.require_creative_commons,
+            )
             if rejection_reason:
                 append_auto_viral_log(
                     run_id,
@@ -13572,7 +13647,10 @@ def resolve_selected_auto_viral_sources(
     for rank, url in enumerate(request.source_urls, start=1):
         append_auto_viral_log(run_id, f"Validasi pilihan #{rank}: {url}")
         metadata = fetch_youtube_metadata(url)
-        rejection_reason = viral_source_discovery_rejection_reason(metadata)
+        rejection_reason = viral_source_discovery_rejection_reason(
+            metadata,
+            require_creative_commons=request.require_creative_commons,
+        )
         if rejection_reason:
             raise RuntimeError(f"Pilihan #{rank} tidak aman: {rejection_reason}")
         duration = float(metadata.get("duration") or 0)
@@ -13597,7 +13675,8 @@ def resolve_selected_auto_viral_sources(
         if filter_rejection:
             append_auto_viral_log(
                 run_id,
-                f"Pilihan #{rank} memakai perluasan filter ({filter_rejection}); metadata CC dan guard risiko hak tetap lolos.",
+                f"Pilihan #{rank} memakai perluasan filter ({filter_rejection}); "
+                "kebijakan lisensi dan guard risiko hak tetap lolos.",
             )
         niche_reasons = niche_candidate_relaxation_reasons(metadata, request.niche)
         language_reasons = [
@@ -13626,7 +13705,10 @@ def resolve_selected_auto_viral_sources(
 
 
 def create_auto_viral_clip_job(source: dict[str, Any], request: AutoViralRequest) -> ClipJob:
-    strict_rejection = viral_source_rejection_reason(source)
+    strict_rejection = viral_source_rejection_reason(
+        source,
+        require_creative_commons=request.require_creative_commons,
+    )
     if strict_rejection:
         raise RuntimeError(
             "Gate Content ID saat clipping membatalkan sumber sebelum download: "
@@ -13643,7 +13725,7 @@ def create_auto_viral_clip_job(source: dict[str, Any], request: AutoViralRequest
         background_mode=request.background_mode,
         burn_subtitles=request.burn_subtitles,
         crop_mode=request.crop_mode,
-        require_creative_commons=True,
+        require_creative_commons=request.require_creative_commons,
         auto_upload_youtube=False,
         confirm_source_rights=request.source_rights_confirmed,
         source_rights_evidence=request.source_rights_evidence,
@@ -13695,6 +13777,27 @@ def wait_for_uploads(upload_ids: list[str], timeout_seconds: int = 7200) -> list
     raise RuntimeError("Upload YouTube belum selesai sampai batas waktu")
 
 
+def wait_for_tiktok_uploads(
+    upload_ids: list[str],
+    timeout_seconds: int = 7200,
+) -> list[TikTokUploadJob]:
+    terminal = {"completed", "failed", "cancelled"}
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        with tiktok_uploads_lock:
+            uploads = [
+                tiktok_uploads[upload_id]
+                for upload_id in upload_ids
+                if upload_id in tiktok_uploads
+            ]
+        if len(uploads) == len(upload_ids) and all(
+            upload.status in terminal for upload in uploads
+        ):
+            return uploads
+        time.sleep(5)
+    raise RuntimeError("Upload TikTok belum selesai sampai batas waktu")
+
+
 def auto_viral_boot_delay_minutes() -> float:
     return max(0.0, min(1440.0, env_float("AUTO_VIRAL_BOOT_DELAY_MINUTES", 30.0)))
 
@@ -13713,10 +13816,21 @@ def auto_viral_cycle_delay_hours() -> float:
             168.0,
             env_float(
                 "AUTO_VIRAL_CYCLE_DELAY_HOURS",
-                env_float("AUTO_VIRAL_SCHEDULE_INTERVAL_HOURS", 3.0),
+                env_float("AUTO_VIRAL_SCHEDULE_INTERVAL_HOURS", 0.5),
             ),
         ),
     )
+
+
+def auto_viral_retry_delay_minutes() -> float:
+    return max(
+        1.0,
+        min(1440.0, env_float("AUTO_VIRAL_SCHEDULE_RETRY_DELAY_MINUTES", 5.0)),
+    )
+
+
+def auto_viral_retry_until_success() -> bool:
+    return env_bool("AUTO_VIRAL_SCHEDULE_RETRY_UNTIL_SUCCESS", False)
 
 
 def system_uptime_seconds() -> float:
@@ -13735,6 +13849,38 @@ def auto_viral_boot_not_before(now: datetime | None = None) -> datetime:
         auto_viral_boot_delay_minutes() * 60.0 - system_uptime_seconds(),
     )
     return current + timedelta(seconds=remaining)
+
+
+def scheduled_run_started_in_current_boot(
+    run: AutoViralRun | None,
+    now: datetime,
+) -> bool:
+    """Treat one scheduled attempt as consumed until the machine boots again."""
+    if run is None:
+        return False
+    configured_key = os.environ.get("AUTO_VIRAL_SCHEDULE_RUN_KEY", "").strip()
+    if configured_key and run.schedule_key != configured_key:
+        return False
+    started_at = parse_utc_datetime(run.created_at, now)
+    boot_started_at = now - timedelta(seconds=system_uptime_seconds())
+    # Allow a small clock/uptime sampling skew around the actual boot boundary.
+    return started_at >= boot_started_at - timedelta(seconds=5)
+
+
+def auto_viral_run_can_resume_upload(run: AutoViralRun | None) -> bool:
+    if (
+        run is None
+        or run.trigger != "schedule"
+        or not (run.request.auto_upload_youtube or run.request.auto_upload_tiktok)
+    ):
+        return False
+    completed_jobs = [
+        item
+        for item in run.processed
+        if str(item.get("job_id") or "")
+        and item.get("job_status") == "completed"
+    ]
+    return len(completed_jobs) >= run.request.video_count
 
 
 def parse_utc_datetime(value: str | None, fallback: datetime | None = None) -> datetime:
@@ -13767,7 +13913,7 @@ def wait_for_auto_viral_upload_window(run_id: str) -> None:
         progress_percent=max(82, run.progress_percent),
         progress_stage="waiting_upload",
         message=(
-            "Semua clip selesai; upload headless Private dimulai setelah jeda "
+            "Semua clip selesai; upload headless dimulai setelah jeda "
             f"hingga {not_before.astimezone(ZoneInfo('Asia/Jakarta')).strftime('%H:%M:%S')} WIB"
         ),
     )
@@ -13783,13 +13929,14 @@ def upload_auto_viral_processed_jobs(
     request: AutoViralRequest,
     processed: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Upload every rendered job Private, persisting checkpoints for restart safety."""
+    """Upload audited clips to every requested platform with durable checkpoints."""
+    if not (request.auto_upload_youtube or request.auto_upload_tiktok):
+        raise RuntimeError("Tidak ada platform upload yang diaktifkan")
     upload_items = [
         item
         for item in processed
         if str(item.get("job_id") or "")
         and item.get("job_status") == "completed"
-        and item.get("status") != "failed"
     ]
     if not upload_items:
         raise RuntimeError("Tidak ada hasil clip yang dapat masuk fase upload")
@@ -13798,14 +13945,27 @@ def upload_auto_viral_processed_jobs(
         job_id = str(item.get("job_id") or "")
         if not job_id:
             raise RuntimeError("Job ID clip hilang pada fase upload")
-        stored_uploads = item.get("uploads")
+        stored_youtube = item.get("youtube_uploads", item.get("uploads", []))
+        stored_tiktok = item.get("tiktok_uploads", [])
+        expected_groups = [
+            uploads
+            for enabled, uploads in (
+                (request.auto_upload_youtube, stored_youtube),
+                (request.auto_upload_tiktok, stored_tiktok),
+            )
+            if enabled
+        ]
         if (
             item.get("status") == "completed"
-            and isinstance(stored_uploads, list)
-            and stored_uploads
+            and expected_groups
             and all(
-                isinstance(upload, dict) and upload.get("status") == "completed"
-                for upload in stored_uploads
+                isinstance(uploads, list)
+                and bool(uploads)
+                and all(
+                    isinstance(upload, dict) and upload.get("status") == "completed"
+                    for upload in uploads
+                )
+                for uploads in expected_groups
             )
         ):
             continue
@@ -13817,73 +13977,164 @@ def upload_auto_viral_processed_jobs(
         update_auto_viral_run(
             run_id,
             progress_percent=min(98, 84 + round(position * 14 / total)),
-            progress_stage="youtube_upload",
+            progress_stage="social_upload",
             progress_current=position - 1,
             progress_total=total,
             processed=processed,
-            message=f"Upload headless Private {position}/{total}; tidak membuka jendela browser",
+            message=f"Upload background {position}/{total} ke platform aktif",
         )
-        prior_ids = [
-            str(upload.get("id") or "")
-            for upload in stored_uploads
-            if isinstance(upload, dict) and str(upload.get("id") or "")
-        ] if isinstance(stored_uploads, list) else []
-        with youtube_uploads_lock:
-            prior = [youtube_uploads[upload_id] for upload_id in prior_ids if upload_id in youtube_uploads]
-        usable_prior = [upload for upload in prior if upload.status in {"queued", "running", "completed"}]
-        if usable_prior:
-            uploads = usable_prior
-        else:
-            with youtube_upload_creation_lock:
-                uploads = create_youtube_upload_batch_records(
-                    job_id,
-                    YouTubeBatchUploadRequest(best_count=request.clips_per_video),
-                )
-                queue_youtube_upload_jobs(uploads)
-        item["uploads"] = [
-            {
-                "id": upload.id,
-                "status": upload.status,
-                "title": upload.title,
-                "video_url": upload.video_url,
-                "error": upload.error,
-            }
-            for upload in uploads
-        ]
         item["status"] = "uploading"
-        update_auto_viral_run(run_id, processed=processed)
+        failures: list[str] = []
 
-        finished_uploads = wait_for_uploads([upload.id for upload in uploads])
-        item["uploads"] = [
-            {
-                "id": upload.id,
-                "status": upload.status,
-                "title": upload.title,
-                "video_url": upload.video_url,
-                "error": upload.error,
-            }
-            for upload in finished_uploads
-        ]
-        if not finished_uploads or any(
-            upload.status != "completed" for upload in finished_uploads
-        ):
-            failed = [
-                upload.error or upload.status
-                for upload in finished_uploads
-                if upload.status != "completed"
+        if request.auto_upload_youtube:
+            prior_ids = [
+                str(upload.get("id") or "")
+                for upload in stored_youtube
+                if isinstance(upload, dict) and str(upload.get("id") or "")
+            ] if isinstance(stored_youtube, list) else []
+            with youtube_uploads_lock:
+                prior_youtube = [
+                    youtube_uploads[upload_id]
+                    for upload_id in prior_ids
+                    if upload_id in youtube_uploads
+                ]
+            youtube_jobs = [
+                upload
+                for upload in prior_youtube
+                if upload.status in {"queued", "running", "completed"}
             ]
+            if not youtube_jobs:
+                with youtube_upload_creation_lock:
+                    youtube_jobs = create_youtube_upload_batch_records(
+                        job_id,
+                        YouTubeBatchUploadRequest(
+                            best_count=request.clips_per_video,
+                            visibility=youtube_default_visibility(),
+                        ),
+                    )
+                    queue_youtube_upload_jobs(youtube_jobs)
+            finished_youtube = wait_for_uploads([upload.id for upload in youtube_jobs])
+            item["youtube_uploads"] = item["uploads"] = [
+                {
+                    "platform": "youtube",
+                    "id": upload.id,
+                    "status": upload.status,
+                    "title": upload.title,
+                    "video_url": upload.video_url,
+                    "error": upload.error,
+                }
+                for upload in finished_youtube
+            ]
+            if not finished_youtube:
+                failures.append("YouTube: tidak ada job upload yang selesai")
+            failures.extend(
+                f"YouTube: {upload.error or upload.status}"
+                for upload in finished_youtube
+                if upload.status != "completed"
+            )
+
+        if request.auto_upload_tiktok:
+            prior_ids = [
+                str(upload.get("id") or "")
+                for upload in stored_tiktok
+                if isinstance(upload, dict) and str(upload.get("id") or "")
+            ] if isinstance(stored_tiktok, list) else []
+            with tiktok_uploads_lock:
+                prior_tiktok = [
+                    tiktok_uploads[upload_id]
+                    for upload_id in prior_ids
+                    if upload_id in tiktok_uploads
+                ]
+            tiktok_jobs = [
+                upload
+                for upload in prior_tiktok
+                if upload.status in {"queued", "running", "completed"}
+            ]
+            if not tiktok_jobs:
+                with tiktok_upload_creation_lock:
+                    tiktok_jobs = create_tiktok_upload_batch_records(
+                        job_id,
+                        TikTokBatchUploadRequest(
+                            best_count=request.clips_per_video,
+                            visibility=safe_tiktok_visibility(),
+                        ),
+                        allow_audited_automation=True,
+                    )
+                    queue_tiktok_upload_jobs(tiktok_jobs)
+            finished_tiktok = wait_for_tiktok_uploads([upload.id for upload in tiktok_jobs])
+            item["tiktok_uploads"] = [
+                {
+                    "platform": "tiktok",
+                    "id": upload.id,
+                    "status": upload.status,
+                    "title": upload.clip_name,
+                    "video_url": upload.profile_url,
+                    "error": upload.error,
+                }
+                for upload in finished_tiktok
+            ]
+            if not finished_tiktok:
+                failures.append("TikTok: tidak ada job upload yang selesai")
+            failures.extend(
+                f"TikTok: {upload.error or upload.status}"
+                for upload in finished_tiktok
+                if upload.status != "completed"
+            )
+
+        update_auto_viral_run(run_id, processed=processed)
+        if failures:
             item["status"] = "failed"
             update_auto_viral_run(run_id, processed=processed)
-            raise RuntimeError("Upload belum sukses semua: " + "; ".join(failed))
+            raise RuntimeError("Upload belum sukses semua: " + "; ".join(failures))
         item["status"] = "completed"
         cleanup = delete_all_job_clips(job_id)
         item["cleanup"] = f"{cleanup.removed_clips} clip dihapus"
         update_auto_viral_run(run_id, processed=processed, progress_current=position)
         append_auto_viral_log(
             run_id,
-            f"Semua upload job {job_id[:10]} selesai sebagai Private.",
+            f"Semua upload job {job_id[:10]} selesai di platform aktif.",
         )
     return processed
+
+
+def upload_auto_viral_until_success(
+    run_id: str,
+    request: AutoViralRequest,
+    processed: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Retry the same durable three-clip batch until every platform confirms it."""
+    while True:
+        try:
+            return upload_auto_viral_processed_jobs(run_id, request, processed)
+        except Exception as exc:
+            if not auto_viral_retry_until_success():
+                raise
+            with auto_viral_lock:
+                current = auto_viral_runs.get(run_id)
+                retry_count = (current.retry_count if current else 0) + 1
+            delay_minutes = auto_viral_retry_delay_minutes()
+            retry_at = datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)
+            append_auto_viral_error(
+                run_id,
+                f"Upload gagal; retry batch yang sama #{retry_count}: {exc}",
+            )
+            update_auto_viral_run(
+                run_id,
+                status="running",
+                finished_at=None,
+                progress_stage="retry_upload",
+                retry_count=retry_count,
+                processed=processed,
+                message=(
+                    "Upload belum lengkap; hanya clip/platform yang gagal akan dicoba lagi "
+                    f"pada {retry_at.astimezone(ZoneInfo('Asia/Jakarta')).strftime('%H:%M:%S')} WIB"
+                ),
+            )
+            while True:
+                remaining = (retry_at - datetime.now(timezone.utc)).total_seconds()
+                if remaining <= 0:
+                    break
+                time.sleep(min(15.0, max(0.1, remaining)))
 
 
 def send_telegram_alert(text: str) -> None:
@@ -13952,7 +14203,7 @@ def send_clip_success_telegram_alert(job: ClipJob) -> None:
 
 def auto_viral_summary(run: AutoViralRun) -> str:
     lines = [
-        "Auto Viral Creative Commons selesai",
+        "Auto Viral selesai",
         f"Run: {run.id}",
         f"Status: {run.status}",
         f"Target: {run.request.video_count} video, {run.request.clips_per_video} clip/video",
@@ -13967,12 +14218,20 @@ def auto_viral_summary(run: AutoViralRun) -> str:
     lines.append("")
     lines.append("Hasil proses:")
     for index, item in enumerate(run.processed, start=1):
-        uploads = item.get("uploads") if isinstance(item.get("uploads"), list) else []
+        legacy_or_youtube = item.get("youtube_uploads", item.get("uploads", []))
+        youtube_items = legacy_or_youtube if isinstance(legacy_or_youtube, list) else []
+        raw_tiktok = item.get("tiktok_uploads", [])
+        tiktok_items = raw_tiktok if isinstance(raw_tiktok, list) else []
+        uploads = [*youtube_items, *tiktok_items]
         lines.append(
             f"{index}. {item.get('title')} | {item.get('status')} | clips {item.get('clip_count')} | uploaded {len(uploads)} | cleanup {item.get('cleanup') or '-'}"
         )
         for upload in uploads[:5]:
-            lines.append(f"   - {upload.get('status')}: {upload.get('title')} {upload.get('video_url') or ''}")
+            platform = upload.get("platform") or "youtube"
+            lines.append(
+                f"   - {platform} {upload.get('status')}: "
+                f"{upload.get('title')} {upload.get('video_url') or ''}"
+            )
         if item.get("error"):
             lines.append(f"   Error: {item.get('error')}")
     if run.errors:
@@ -14148,7 +14407,8 @@ def run_auto_viral_campaign(run_id: str) -> None:
             run_secret = auto_viral_secrets.get(run_id, "")
         run_request = run.request.model_copy(update={"ai_api_key": run_secret})
         deferred_background_upload = bool(
-            run.trigger == "schedule" and run_request.auto_upload_youtube
+            run.trigger == "schedule"
+            and (run_request.auto_upload_youtube or run_request.auto_upload_tiktok)
         )
         update_auto_viral_run(
             run_id,
@@ -14165,6 +14425,11 @@ def run_auto_viral_campaign(run_id: str) -> None:
         if run_request.auto_upload_youtube:
             try:
                 require_youtube_ready()
+            except HTTPException as exc:
+                raise RuntimeError(str(exc.detail)) from exc
+        if run_request.auto_upload_tiktok:
+            try:
+                require_tiktok_ready()
             except HTTPException as exc:
                 raise RuntimeError(str(exc.detail)) from exc
 
@@ -14198,7 +14463,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
             )
         if not sources:
             raise RuntimeError(
-                "Tidak menemukan kandidat Creative Commons setelah pencarian diperluas; "
+                "Tidak menemukan kandidat aman setelah pencarian diperluas; "
                 "semua sumber yang pernah diproses tetap dilewati"
             )
         if not run_request.source_urls:
@@ -14312,7 +14577,11 @@ def run_auto_viral_campaign(run_id: str) -> None:
             )
 
         if completed_count < run_request.video_count:
-            suffix = "clip dan upload" if run_request.auto_upload_youtube else "masuk antrean clipping"
+            suffix = (
+                "clip dan upload"
+                if run_request.auto_upload_youtube or run_request.auto_upload_tiktok
+                else "masuk antrean clipping"
+            )
             raise RuntimeError(f"Hanya {completed_count}/{run_request.video_count} video yang berhasil {suffix}")
 
         if deferred_background_upload:
@@ -14328,7 +14597,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 processed=processed,
             )
             wait_for_auto_viral_upload_window(run_id)
-            processed = upload_auto_viral_processed_jobs(
+            processed = upload_auto_viral_until_success(
                 run_id,
                 run_request,
                 processed,
@@ -14346,7 +14615,10 @@ def run_auto_viral_campaign(run_id: str) -> None:
             progress_total=run_request.video_count,
             message=(
                 "Clipping Top 3 selesai dan siap direview"
-                if not run.request.auto_upload_youtube
+                if not (
+                    run.request.auto_upload_youtube
+                    or run.request.auto_upload_tiktok
+                )
                 else "Automation selesai"
             ),
         )
@@ -14386,12 +14658,18 @@ def resume_scheduled_auto_viral_upload(run_id: str) -> None:
             run = auto_viral_runs.get(run_id)
         if run is None or run.trigger != "schedule" or not run.processed:
             raise RuntimeError("Run upload terjadwal tidak memiliki checkpoint yang dapat dilanjutkan")
-        if not run.request.auto_upload_youtube:
-            raise RuntimeError("Checkpoint tidak meminta upload YouTube")
-        try:
-            require_youtube_ready()
-        except HTTPException as exc:
-            raise RuntimeError(str(exc.detail)) from exc
+        if not (run.request.auto_upload_youtube or run.request.auto_upload_tiktok):
+            raise RuntimeError("Checkpoint tidak meminta upload platform apa pun")
+        if run.request.auto_upload_youtube:
+            try:
+                require_youtube_ready()
+            except HTTPException as exc:
+                raise RuntimeError(str(exc.detail)) from exc
+        if run.request.auto_upload_tiktok:
+            try:
+                require_tiktok_ready()
+            except HTTPException as exc:
+                raise RuntimeError(str(exc.detail)) from exc
         update_auto_viral_run(
             run_id,
             status="running",
@@ -14400,7 +14678,7 @@ def resume_scheduled_auto_viral_upload(run_id: str) -> None:
             message="Melanjutkan fase upload headless setelah backend restart",
         )
         wait_for_auto_viral_upload_window(run_id)
-        processed = upload_auto_viral_processed_jobs(
+        processed = upload_auto_viral_until_success(
             run_id,
             run.request,
             [dict(item) for item in run.processed],
@@ -14415,7 +14693,7 @@ def resume_scheduled_auto_viral_upload(run_id: str) -> None:
             progress_current=run.request.video_count,
             progress_total=run.request.video_count,
             processed=processed,
-            message="Automation selesai; siklus berikutnya dihitung tiga jam dari sekarang",
+            message="Automation selesai; tiga clip terupload satu kali ke setiap platform.",
         )
         with auto_viral_lock:
             final_run = auto_viral_runs[run_id]
@@ -14464,6 +14742,11 @@ def create_and_start_auto_viral_campaign(
             id=run_id,
             status="queued",
             trigger=trigger,
+            schedule_key=(
+                os.environ.get("AUTO_VIRAL_SCHEDULE_RUN_KEY", "").strip()
+                if trigger == "schedule"
+                else ""
+            ),
             created_at=now_iso(),
             updated_at=now_iso(),
             request=safe_request,
@@ -14485,8 +14768,27 @@ def create_and_start_auto_viral_campaign(
     return run
 
 
+def scheduled_auto_viral_theme_focus(niche: IslamicContentNiche) -> str:
+    if not env_bool("AUTO_VIRAL_SCHEDULE_RANDOMIZE_THEMES", False):
+        return ""
+    configured = env_search_queries("AUTO_VIRAL_SCHEDULE_THEME_QUERIES")
+    profile = ISLAMIC_EVERGREEN_NICHES.get(niche, {})
+    profile_queries = profile.get("queries") if isinstance(profile, dict) else []
+    candidates = configured or (
+        [str(item) for item in profile_queries]
+        if isinstance(profile_queries, list)
+        else []
+    )
+    return random.SystemRandom().choice(candidates) if candidates else ""
+
+
 def scheduled_auto_viral_request() -> AutoViralRequest:
-    upload_requested = env_bool("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False)
+    youtube_upload_requested = env_bool(
+        "AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False
+    )
+    tiktok_upload_requested = env_bool(
+        "AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_TIKTOK", False
+    )
     rights_confirmed = env_bool(
         "AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED", False
     )
@@ -14501,23 +14803,38 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         and not env_bool("YOUTUBE_UPLOAD_USE_CDP", False)
         and not env_bool("YOUTUBE_UPLOAD_FORCE_CDP", False)
     )
-    upload_authorized = bool(
-        upload_requested
-        and headless_private_ready
-        and rights_confirmed
+    rights_profile_ready = bool(
+        rights_confirmed
         and len(rights_evidence.split()) >= 6
         and len(creator_perspective.split()) >= 8
     )
+    niche = os.environ.get("AUTO_VIRAL_SCHEDULE_NICHE", "auto")
+    if niche not in {"auto", *ISLAMIC_EVERGREEN_NICHES.keys()}:
+        niche = "auto"
+    clips_per_video = max(
+        1,
+        min(5, env_int("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", 2)),
+    )
     return AutoViralRequest(
-        niche=os.environ.get("AUTO_VIRAL_SCHEDULE_NICHE", "auto"),  # type: ignore[arg-type]
+        niche=niche,  # type: ignore[arg-type]
+        theme_focus=scheduled_auto_viral_theme_focus(niche),  # type: ignore[arg-type]
         video_count=max(1, min(7, env_int("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", 3))),
-        clips_per_video=max(1, min(5, env_int("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", 2))),
+        clips_per_video=clips_per_video,
         min_views=max(0, env_int("AUTO_VIRAL_SCHEDULE_MIN_VIEWS", 0)),
         upload_date_filter=os.environ.get("AUTO_VIRAL_SCHEDULE_UPLOAD_DATE_FILTER", "this_week"),  # type: ignore[arg-type]
         duration_filter=os.environ.get("AUTO_VIRAL_SCHEDULE_DURATION_FILTER", "over_20"),  # type: ignore[arg-type]
         definition_filter="hd",
         sort_order="relevance",
-        auto_upload_youtube=upload_authorized,
+        top=clips_per_video,
+        require_creative_commons=env_bool(
+            "AUTO_VIRAL_SCHEDULE_REQUIRE_CREATIVE_COMMONS", True
+        ),
+        auto_upload_youtube=bool(
+            youtube_upload_requested
+            and rights_profile_ready
+            and headless_private_ready
+        ),
+        auto_upload_tiktok=bool(tiktok_upload_requested and rights_profile_ready),
         source_rights_confirmed=rights_confirmed,
         source_rights_evidence=rights_evidence,
         creator_perspective=creator_perspective,
@@ -14537,7 +14854,12 @@ def latest_scheduled_auto_viral_run() -> AutoViralRun | None:
 
 def auto_viral_schedule_status() -> AutoViralScheduleStatus:
     enabled = env_bool("AUTO_VIRAL_SCHEDULE_ENABLED", False)
-    upload_requested = env_bool("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False)
+    youtube_upload_requested = env_bool(
+        "AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False
+    )
+    tiktok_upload_requested = env_bool(
+        "AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_TIKTOK", False
+    )
     scheduled_request = scheduled_auto_viral_request()
     latest = latest_scheduled_auto_viral_run()
     with auto_viral_scheduler_lock:
@@ -14547,13 +14869,40 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
         active_id = auto_viral_active_run_id
     if not enabled:
         message = "Scheduler nonaktif; set AUTO_VIRAL_SCHEDULE_ENABLED=true lalu restart backend."
-    elif upload_requested and not scheduled_request.auto_upload_youtube:
+    elif (
+        youtube_upload_requested
+        and not scheduled_request.auto_upload_youtube
+    ) or (
+        tiktok_upload_requested
+        and not scheduled_request.auto_upload_tiktok
+    ):
         message = (
             "Siklus background aktif, tetapi upload otomatis ditahan sampai konfirmasi hak, "
             "referensi bukti izin, dan perspektif kreator diisi."
         )
     elif active_id:
         message = "Automation sedang berjalan; jadwal berikutnya tidak akan membuat run tumpang tindih."
+    elif (
+        env_bool("AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT", False)
+        and scheduled_run_started_in_current_boot(
+            latest,
+            datetime.now(timezone.utc),
+        )
+        and latest is not None
+        and latest.status == "completed"
+    ):
+        message = "Tiga clip untuk boot ini sudah terupload satu kali; menunggu boot laptop berikutnya."
+    elif (
+        env_bool("AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT", False)
+        and scheduled_run_started_in_current_boot(
+            latest,
+            datetime.now(timezone.utc),
+        )
+        and latest is not None
+        and latest.status == "failed"
+        and auto_viral_retry_until_success()
+    ):
+        message = "Percobaan gagal; scheduler akan mengulang sampai tiga clip terupload lengkap."
     elif scheduler_running:
         message = "Scheduler aktif dan menunggu waktu run berikutnya."
     else:
@@ -14562,10 +14911,14 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
         enabled=enabled,
         interval_hours=auto_viral_schedule_interval_hours(),
         run_on_startup=env_bool("AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP", False),
+        once_per_boot=env_bool("AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT", False),
         scheduler_running=scheduler_running,
         boot_delay_minutes=auto_viral_boot_delay_minutes(),
         post_clip_upload_delay_minutes=auto_viral_post_clip_upload_delay_minutes(),
-        background_upload_enabled=scheduled_request.auto_upload_youtube,
+        background_upload_enabled=bool(
+            scheduled_request.auto_upload_youtube
+            or scheduled_request.auto_upload_tiktok
+        ),
         active_run_id=active_id,
         last_run_id=latest.id if latest else None,
         last_started_at=latest.created_at if latest else None,
@@ -14589,6 +14942,29 @@ def auto_viral_next_run_at(
         and latest.progress_stage == "resume_pending_upload"
     ):
         return now
+    if env_bool("AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT", False):
+        if scheduled_run_started_in_current_boot(latest, now):
+            if latest is not None and latest.status == "completed":
+                return None
+            if latest is not None and latest.status == "failed":
+                if not auto_viral_retry_until_success():
+                    return None
+                retry_anchor = parse_utc_datetime(
+                    latest.finished_at or latest.updated_at or latest.created_at,
+                    now,
+                )
+                return max(
+                    auto_viral_boot_not_before(now),
+                    retry_anchor
+                    + timedelta(minutes=auto_viral_retry_delay_minutes()),
+                )
+            return None
+        if env_bool("AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP", False):
+            return auto_viral_boot_not_before(now)
+        return max(
+            auto_viral_boot_not_before(now),
+            now + timedelta(hours=auto_viral_cycle_delay_hours()),
+        )
     if latest is not None:
         cycle_anchor = parse_utc_datetime(
             latest.finished_at or latest.updated_at or latest.created_at,
@@ -14627,11 +15003,22 @@ def auto_viral_scheduler_loop() -> None:
 
             if next_run is not None and now >= next_run:
                 try:
-                    if (
+                    resume_upload = bool(
                         latest is not None
-                        and latest.status == "queued"
-                        and latest.progress_stage == "resume_pending_upload"
-                    ):
+                        and (
+                            (
+                                latest.status == "queued"
+                                and latest.progress_stage == "resume_pending_upload"
+                            )
+                            or (
+                                latest.status == "failed"
+                                and auto_viral_retry_until_success()
+                                and scheduled_run_started_in_current_boot(latest, now)
+                                and auto_viral_run_can_resume_upload(latest)
+                            )
+                        )
+                    )
+                    if resume_upload and latest is not None:
                         with auto_viral_lock:
                             if auto_viral_active_run_id is None:
                                 auto_viral_active_run_id = latest.id

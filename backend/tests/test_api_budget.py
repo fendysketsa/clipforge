@@ -1136,10 +1136,144 @@ def test_auto_viral_first_cycle_obeys_remaining_boot_grace(monkeypatch):
     assert api.auto_viral_next_run_at(now, None, None) == now + timedelta(minutes=18)
 
 
+def test_auto_viral_once_per_boot_does_not_repeat_after_attempt(monkeypatch):
+    import api
+
+    now = datetime(2026, 10, 8, 1, 0, tzinfo=timezone.utc)
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RUN_KEY", "kindness-once-v1")
+    monkeypatch.setenv("AUTO_VIRAL_BOOT_DELAY_MINUTES", "30")
+    monkeypatch.setattr(api, "system_uptime_seconds", lambda: 45 * 60)
+    latest = api.AutoViralRun(
+        id="this-boot-attempt",
+        status="failed",
+        trigger="schedule",
+        schedule_key="kindness-once-v1",
+        created_at=(now - timedelta(minutes=10)).isoformat(),
+        updated_at=(now - timedelta(minutes=5)).isoformat(),
+        finished_at=(now - timedelta(minutes=5)).isoformat(),
+        request=AutoViralRequest(video_count=1),
+    )
+
+    assert api.auto_viral_next_run_at(now, latest, None) is None
+
+
+def test_auto_viral_once_per_boot_retries_failed_attempt(monkeypatch):
+    import api
+
+    now = datetime(2026, 10, 8, 1, 0, tzinfo=timezone.utc)
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RETRY_UNTIL_SUCCESS", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RETRY_DELAY_MINUTES", "5")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RUN_KEY", "kindness-once-v1")
+    monkeypatch.setattr(api, "system_uptime_seconds", lambda: 45 * 60)
+    latest = api.AutoViralRun(
+        id="failed-attempt",
+        status="failed",
+        trigger="schedule",
+        schedule_key="kindness-once-v1",
+        created_at=(now - timedelta(minutes=10)).isoformat(),
+        updated_at=(now - timedelta(minutes=2)).isoformat(),
+        finished_at=(now - timedelta(minutes=2)).isoformat(),
+        request=AutoViralRequest(video_count=3),
+    )
+
+    assert api.auto_viral_next_run_at(now, latest, None) == now + timedelta(minutes=3)
+
+
+def test_auto_viral_upload_retry_reuses_same_checkpoint(monkeypatch):
+    import api
+
+    run = api.AutoViralRun(
+        id="retry-same-batch",
+        status="running",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=AutoViralRequest(
+            video_count=3,
+            clips_per_video=1,
+            auto_upload_youtube=True,
+            auto_upload_tiktok=True,
+        ),
+    )
+    processed = [
+        {"job_id": f"job-{index}", "job_status": "completed", "status": "awaiting_upload"}
+        for index in range(3)
+    ]
+    calls: list[list[dict]] = []
+
+    def fake_upload(_run_id, _request, checkpoint):
+        calls.append(checkpoint)
+        if len(calls) == 1:
+            checkpoint[0]["youtube_uploads"] = [{"id": "yt-1", "status": "completed"}]
+            raise RuntimeError("TikTok sementara gagal")
+        return checkpoint
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RETRY_UNTIL_SUCCESS", "true")
+    monkeypatch.setattr(api, "auto_viral_retry_delay_minutes", lambda: 0)
+    monkeypatch.setattr(api, "upload_auto_viral_processed_jobs", fake_upload)
+    monkeypatch.setattr(api, "auto_viral_runs", {run.id: run})
+
+    result = api.upload_auto_viral_until_success(run.id, run.request, processed)
+
+    assert len(calls) == 2
+    assert calls[0] is calls[1] is processed
+    assert result[0]["youtube_uploads"][0]["id"] == "yt-1"
+    assert api.auto_viral_runs[run.id].retry_count == 1
+
+
+def test_auto_viral_once_per_boot_ignores_previous_boot_attempt(monkeypatch):
+    import api
+
+    now = datetime(2026, 10, 8, 1, 0, tzinfo=timezone.utc)
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RUN_KEY", "kindness-once-v1")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP", "true")
+    monkeypatch.setenv("AUTO_VIRAL_BOOT_DELAY_MINUTES", "30")
+    monkeypatch.setattr(api, "system_uptime_seconds", lambda: 10 * 60)
+    latest = api.AutoViralRun(
+        id="previous-boot-attempt",
+        status="completed",
+        trigger="schedule",
+        schedule_key="kindness-once-v1",
+        created_at=(now - timedelta(hours=3)).isoformat(),
+        updated_at=(now - timedelta(hours=2)).isoformat(),
+        finished_at=(now - timedelta(hours=2)).isoformat(),
+        request=AutoViralRequest(video_count=1),
+    )
+
+    assert api.auto_viral_next_run_at(now, latest, None) == now + timedelta(minutes=20)
+
+
+def test_auto_viral_once_per_boot_ignores_old_run_key(monkeypatch):
+    import api
+
+    now = datetime(2026, 10, 8, 1, 0, tzinfo=timezone.utc)
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RUN_KEY", "kindness-once-v2")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP", "true")
+    monkeypatch.setenv("AUTO_VIRAL_BOOT_DELAY_MINUTES", "30")
+    monkeypatch.setattr(api, "system_uptime_seconds", lambda: 45 * 60)
+    latest = api.AutoViralRun(
+        id="old-config-attempt",
+        status="failed",
+        trigger="schedule",
+        schedule_key="kindness-once-v1",
+        created_at=(now - timedelta(minutes=10)).isoformat(),
+        updated_at=(now - timedelta(minutes=5)).isoformat(),
+        finished_at=(now - timedelta(minutes=5)).isoformat(),
+        request=AutoViralRequest(video_count=1),
+    )
+
+    assert api.auto_viral_next_run_at(now, latest, None) == now
+
+
 def test_scheduled_upload_requires_complete_rights_profile(monkeypatch):
     import api
 
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_TIKTOK", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED", "false")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_EVIDENCE", "")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_CREATOR_PERSPECTIVE", "")
@@ -1158,7 +1292,63 @@ def test_scheduled_upload_requires_complete_rights_profile(monkeypatch):
 
     request = api.scheduled_auto_viral_request()
     assert request.auto_upload_youtube is True
+    assert request.auto_upload_tiktok is True
     assert request.source_rights_confirmed is True
+
+
+def test_scheduled_kindness_theme_is_randomized_and_cc_label_is_optional(monkeypatch):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_NICHE", "kindness_social_good")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RANDOMIZE_THEMES", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_REQUIRE_CREATIVE_COMMONS", "false")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", "1")
+
+    request = api.scheduled_auto_viral_request()
+
+    assert request.theme_focus in api.ISLAMIC_EVERGREEN_NICHES["kindness_social_good"]["queries"]
+    assert request.queries[0] == request.theme_focus
+    assert request.require_creative_commons is False
+    assert request.top == 1
+
+
+def test_non_cc_source_still_passes_only_when_cc_filter_is_disabled():
+    import api
+
+    source = {
+        "license": "YouTube Standard License",
+        "availability": "public",
+        "title": "Saling mengingatkan dalam kebaikan",
+        "uploader": "Pemilik Konten",
+    }
+
+    assert "Creative Commons" in str(api.viral_source_discovery_rejection_reason(source))
+    assert api.viral_source_discovery_rejection_reason(
+        source,
+        require_creative_commons=False,
+    ) is None
+
+
+def test_youtube_api_omits_license_filter_for_non_cc_schedule(monkeypatch):
+    import api
+
+    calls: list[tuple[str, dict]] = []
+    monkeypatch.setenv("YOUTUBE_DATA_API_KEY", "test-key")
+    monkeypatch.setattr(api, "youtube_trend_signals", lambda *_args: ([], set()))
+    monkeypatch.setattr(
+        api,
+        "youtube_data_api_get",
+        lambda resource, params: calls.append((resource, dict(params))) or {"items": []},
+    )
+    request = AutoViralRequest(
+        niche="kindness_social_good",
+        theme_focus="saling mengingatkan dalam kebaikan dengan lembut",
+        require_creative_commons=False,
+    )
+
+    assert api.search_youtube_data_api_viral_sources(request, "test-run") == []
+    assert calls[0][0] == "search"
+    assert "videoLicense" not in calls[0][1]
 
 
 def test_waiting_upload_run_is_resumable_after_backend_restart(tmp_path, monkeypatch):
@@ -1260,11 +1450,79 @@ def test_deferred_upload_persists_queue_and_completion_checkpoints(monkeypatch):
     assert queued == ["upload-1"]
     assert processed[0]["status"] == "completed"
     assert processed[0]["uploads"][0]["video_url"] == "https://youtu.be/result"
-    assert api.auto_viral_runs[run.id].progress_stage == "youtube_upload"
+    assert api.auto_viral_runs[run.id].progress_stage == "social_upload"
     with api.auto_viral_lock:
         api.auto_viral_runs.pop(run.id, None)
     with api.jobs_lock:
         api.jobs.pop("job-1", None)
+
+
+def test_deferred_upload_queues_youtube_and_tiktok_before_cleanup(monkeypatch):
+    import api
+    from types import SimpleNamespace
+
+    request = AutoViralRequest(
+        video_count=1,
+        clips_per_video=1,
+        auto_upload_youtube=True,
+        auto_upload_tiktok=True,
+    )
+    run = api.AutoViralRun(
+        id="deferred-cross-platform",
+        status="running",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=request,
+    )
+    youtube_queued = SimpleNamespace(
+        id="youtube-1", status="queued", title="YouTube", video_url=None, error=None
+    )
+    youtube_done = SimpleNamespace(
+        id="youtube-1",
+        status="completed",
+        title="YouTube",
+        video_url="https://youtu.be/result",
+        error=None,
+    )
+    tiktok_queued = SimpleNamespace(
+        id="tiktok-1", status="queued", clip_name="TikTok", profile_url=None, error=None
+    )
+    tiktok_done = SimpleNamespace(
+        id="tiktok-1",
+        status="completed",
+        clip_name="TikTok",
+        profile_url="https://tiktok.com/@target",
+        error=None,
+    )
+    with api.auto_viral_lock:
+        api.auto_viral_runs[run.id] = run
+    with api.jobs_lock:
+        api.jobs["job-cross"] = SimpleNamespace(status="completed")
+    queued: list[str] = []
+    monkeypatch.setattr(api, "save_auto_viral_runs_unlocked", lambda: None)
+    monkeypatch.setattr(api, "create_youtube_upload_batch_records", lambda *_args, **_kwargs: [youtube_queued])
+    monkeypatch.setattr(api, "create_tiktok_upload_batch_records", lambda *_args, **_kwargs: [tiktok_queued])
+    monkeypatch.setattr(api, "queue_youtube_upload_jobs", lambda jobs: queued.extend(job.id for job in jobs))
+    monkeypatch.setattr(api, "queue_tiktok_upload_jobs", lambda jobs: queued.extend(job.id for job in jobs))
+    monkeypatch.setattr(api, "wait_for_uploads", lambda _ids: [youtube_done])
+    monkeypatch.setattr(api, "wait_for_tiktok_uploads", lambda _ids: [tiktok_done])
+    monkeypatch.setattr(api, "delete_all_job_clips", lambda _job_id: SimpleNamespace(removed_clips=1))
+
+    processed = api.upload_auto_viral_processed_jobs(
+        run.id,
+        request,
+        [{"job_id": "job-cross", "job_status": "completed", "status": "awaiting_upload"}],
+    )
+
+    assert queued == ["youtube-1", "tiktok-1"]
+    assert processed[0]["youtube_uploads"][0]["status"] == "completed"
+    assert processed[0]["tiktok_uploads"][0]["status"] == "completed"
+    assert processed[0]["cleanup"] == "1 clip dihapus"
+    with api.auto_viral_lock:
+        api.auto_viral_runs.pop(run.id, None)
+    with api.jobs_lock:
+        api.jobs.pop("job-cross", None)
 
 
 def test_quota_exceeded_uses_small_cc_verified_fallback(monkeypatch):
@@ -2442,7 +2700,7 @@ def test_build_clipper_command_can_isolate_parallel_job_output(tmp_path):
     assert command[output_index + 1] == str(output_root)
 
 
-def test_build_clipper_command_forces_creative_commons_for_url_jobs():
+def test_build_clipper_command_respects_optional_creative_commons_for_url_jobs():
     request = ClipJobRequest(
         url="https://youtu.be/source",
         require_creative_commons=False,
@@ -2451,7 +2709,7 @@ def test_build_clipper_command_forces_creative_commons_for_url_jobs():
 
     command = build_clipper_command(request)
 
-    assert "--require-creative-commons" in command
+    assert "--require-creative-commons" not in command
     assert "--confirm-source-rights" in command
 
 

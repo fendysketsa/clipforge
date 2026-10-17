@@ -505,7 +505,7 @@ export type TikTokConfig = {
   chromium_profile_directory: string;
   target_handle: string;
   target_email: string;
-  default_visibility: "only_you";
+  default_visibility: "only_you" | "public";
   auto_upload_count: number;
   active_upload_id?: string | null;
 };
@@ -522,7 +522,7 @@ export type TikTokUploadJob = {
   finished_at?: string | null;
   duration_seconds?: number | null;
   caption: string;
-  visibility: "only_you";
+  visibility: "only_you" | "public";
   target_handle: string;
   target_email: string;
   dry_run: boolean;
@@ -717,6 +717,7 @@ export type AutoViralRun = {
   search_provider?: string | null;
   selected_sources: ViralContentSource[];
   processed: Record<string, unknown>[];
+  retry_count: number;
   errors: string[];
   logs: string[];
 };
@@ -725,6 +726,7 @@ export type AutoViralScheduleStatus = {
   enabled: boolean;
   interval_hours: number;
   run_on_startup: boolean;
+  once_per_boot: boolean;
   scheduler_running: boolean;
   boot_delay_minutes: number;
   post_clip_upload_delay_minutes: number;

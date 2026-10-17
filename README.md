@@ -185,7 +185,7 @@ melewati ambang 20%, 10%, dan 5%. Docker Compose memasang `/sys` host secara
 read-only agar container dapat membaca status baterai; ambang dan interval cek
 dapat diubah melalui variabel di atas.
 
-## TikTok Upload (Only you)
+## TikTok Upload
 
 Completed clips can be queued to `@titikbalikislami` from the dashboard. Open the
 TikTok connection panel and click **Login TikTok sekali**, finish login/CAPTCHA in
@@ -195,8 +195,9 @@ is never treated as sufficient proof of login: ClipForge validates that the acti
 browser account owns the configured handle, then atomically saves the complete
 Playwright storage-state. Then
 use **Kirim TikTok** on one reviewed clip or **TikTok 2 terbaik** for a sequential
-batch. Every automated upload is locked to **Only you**; make it public manually
-only after checking context, source rights, caption, sound, and TikTok's notices.
+batch. The safe default is **Only you**. Public automation requires both
+`TIKTOK_DEFAULT_VISIBILITY=public` and `TIKTOK_ALLOW_PUBLIC_AUTO_UPLOAD=true`;
+the rights, context, caption, sound, account, and submission checks still apply.
 The uploader aborts before selecting a file if it cannot prove that the browser
 owns `@titikbalikislami`, and stores its queue in
 `backend/data/tiktok_uploads.json`.
@@ -373,34 +374,58 @@ changing these values):
 YOUTUBE_DATA_API_KEY=your_google_api_key
 AUTO_VIRAL_SCHEDULE_ENABLED=true
 AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP=true
+AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT=true
+AUTO_VIRAL_SCHEDULE_RUN_KEY=kindness-once-v1
+AUTO_VIRAL_SCHEDULE_RETRY_UNTIL_SUCCESS=true
+AUTO_VIRAL_SCHEDULE_RETRY_DELAY_MINUTES=5
 AUTO_VIRAL_BOOT_DELAY_MINUTES=30
-AUTO_VIRAL_POST_CLIP_UPLOAD_DELAY_MINUTES=30
-AUTO_VIRAL_CYCLE_DELAY_HOURS=3
-AUTO_VIRAL_SCHEDULE_NICHE=auto
+AUTO_VIRAL_POST_CLIP_UPLOAD_DELAY_MINUTES=0
+AUTO_VIRAL_CYCLE_DELAY_HOURS=0.5
+AUTO_VIRAL_SCHEDULE_NICHE=kindness_social_good
+AUTO_VIRAL_SCHEDULE_RANDOMIZE_THEMES=true
+AUTO_VIRAL_SCHEDULE_REQUIRE_CREATIVE_COMMONS=false
 AUTO_VIRAL_SCHEDULE_VIDEO_COUNT=3
-AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO=2
+AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO=1
 AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE=true
+AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_TIKTOK=true
 AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED=true
 AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_EVIDENCE="Referensi izin komersial audio visual dari pemilik sumber"
 AUTO_VIRAL_SCHEDULE_CREATOR_PERSPECTIVE="Perspektif manusia yang akan ditanam sebagai kontribusi editorial pada setiap clip"
+YOUTUBE_DEFAULT_VISIBILITY=public
+YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD=true
+TIKTOK_DEFAULT_VISIBILITY=public
+TIKTOK_ALLOW_PUBLIC_AUTO_UPLOAD=true
 VIRAL_CC_TREND_VIDEO_CATEGORY_ID=25
 ```
 
 The background lifecycle waits until machine uptime reaches the boot delay, renders
-the complete clip batch, waits again for the configured post-clip delay, then queues
-every eligible upload as Private using the headless uploader. The next discovery
-cycle is calculated from the time the previous run actually finishes, not from when
-it started. Active runs never overlap. Upload checkpoints survive a backend restart,
+the complete clip batch, then queues every eligible upload with the configured
+YouTube and TikTok visibility. With `AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT=true`, one scheduled attempt
+is made per laptop boot and backend restarts do not create a duplicate attempt. When
+that option is disabled, the next discovery cycle is calculated from the time the
+previous run actually finishes. Active runs never overlap. Upload checkpoints survive a backend restart,
 so a run interrupted during the waiting/upload phase resumes without clipping the
 same source again or duplicating a confirmed upload.
+
+`AUTO_VIRAL_SCHEDULE_RUN_KEY` identifies the one-shot configuration. Change it only
+when an intentionally new one-shot campaign should be allowed on the current boot;
+old scheduler history with another key does not consume the new attempt.
+
+With `AUTO_VIRAL_SCHEDULE_RETRY_UNTIL_SUCCESS=true`, a temporary discovery,
+render, login, network, or platform failure is retried after the configured delay.
+Upload checkpoints are reused: a clip/platform pair already confirmed as uploaded
+is skipped, so the target remains exactly three clips rather than three new clips
+on every retry.
 
 The schedule status and recent logs remain visible in **Radar Viral Otomatis**, but
 no headed upload browser is opened when `YOUTUBE_HEADLESS=true` and CDP upload is
 disabled. Automatic upload is activated only when the operator explicitly records
 source-rights confirmation, a traceable evidence reference, and a human-authored
-creator perspective. Without all three, clipping can continue but the upload phase
-is held. Public publication is never automatic; the existing Private-first checks
-still apply.
+creator perspective. Disabling `AUTO_VIRAL_SCHEDULE_REQUIRE_CREATIVE_COMMONS`
+only removes the CC-label filter; explicit reupload prohibitions and elevated
+rights-risk sources remain blocked. Without a complete rights profile, clipping
+can continue but the upload phase is held. Public publication occurs only when its
+platform-specific visibility and explicit public-auto-upload switch are both enabled.
 
 When `YOUTUBE_DATA_API_KEY` is configured, the backend also starts a lightweight
 performance collector. Every six hours it batches up to 200 due uploads into

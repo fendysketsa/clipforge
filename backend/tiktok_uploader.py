@@ -790,6 +790,43 @@ def set_only_you(page) -> None:
     log("FINAL_VISIBILITY:private")
 
 
+def set_public(page) -> None:
+    trigger = first_visible(
+        page,
+        [
+            '[data-e2e="privacy-level"]',
+            'button:has-text("Only you")',
+            'button:has-text("Hanya Anda")',
+            'button:has-text("Friends")',
+            'button:has-text("Pengikut")',
+            'div[role="combobox"]:has-text("Only you")',
+            'div[role="combobox"]:has-text("Hanya Anda")',
+        ],
+        timeout_ms=10_000,
+    )
+    if trigger is None:
+        raise UploadError("Kontrol privasi TikTok tidak ditemukan; upload tidak diterbitkan.")
+    trigger.click()
+    option = first_visible(
+        page,
+        [
+            '[role="option"]:has-text("Everyone")',
+            '[role="option"]:has-text("Semua orang")',
+            'div:has-text("Everyone")',
+            'div:has-text("Semua orang")',
+        ],
+        timeout_ms=7000,
+    )
+    if option is None:
+        raise UploadError("Pilihan Everyone/Semua orang tidak ditemukan; upload tidak diterbitkan.")
+    option.click()
+    page.wait_for_timeout(500)
+    visible_text = page.locator("body").inner_text(timeout=5000)
+    if not re.search(r"everyone|semua orang", visible_text, re.I):
+        raise UploadError("Privasi publik TikTok tidak dapat diverifikasi; upload tidak diterbitkan.")
+    log("FINAL_VISIBILITY:public")
+
+
 POST_BUTTON_SELECTORS = (
     '[data-e2e="post_video_button"]',
     'button:has-text("Post")',
@@ -1321,6 +1358,7 @@ def upload_video(
     dry_run: bool,
     target_handle: str,
     *,
+    visibility: str = "only_you",
     remote_browser: bool = False,
     background_tick: Callable[[], bool] | None = None,
 ) -> None:
@@ -1344,7 +1382,7 @@ def upload_video(
         # Recover after a worker/browser disconnect that happened after TikTok
         # accepted the post. Selecting the same file again would duplicate it.
         log(f"POST_ALREADY_PRESENT:{content_caption_key(caption)}")
-        log("UPLOAD_CONFIRMED:private")
+        log(f"UPLOAD_CONFIRMED:{'public' if visibility == 'public' else 'private'}")
         log(f"VIDEO_URL:https://www.tiktok.com/@{clean_handle(target_handle)}")
         return
     goto(page, UPLOAD_URL)
@@ -1435,12 +1473,15 @@ def upload_video(
         background_tick()
     dismiss_upload_overlays(page)
     set_caption(page, caption)
-    set_only_you(page)
+    if visibility == "public":
+        set_public(page)
+    else:
+        set_only_you(page)
     if background_tick is not None:
         background_tick()
 
     if dry_run:
-        log("DRY_RUN: form siap dengan privasi Only you; tombol Post tidak diklik.")
+        log(f"DRY_RUN: form siap dengan privasi {visibility}; tombol Post tidak diklik.")
         return
 
     log("Menunggu pemrosesan video selesai dan tombol Post aktif...")
@@ -1481,7 +1522,7 @@ def upload_video(
     submission_state, response_handler = monitor_post_submission_response(page)
     try:
         post_button.click(timeout=10_000)
-        log("Tombol Post diklik setelah privasi Only you terverifikasi.")
+        log(f"Tombol Post diklik setelah privasi {visibility} terverifikasi.")
         if background_tick is not None:
             background_tick()
 
@@ -1517,7 +1558,7 @@ def upload_video(
             "TikTok tidak menampilkan video baru di Studio Posts setelah tombol Post diklik. "
             "Status tidak ditandai berhasil; periksa daftar Posts sebelum mencoba ulang."
         )
-    log("UPLOAD_CONFIRMED:private")
+    log(f"UPLOAD_CONFIRMED:{'public' if visibility == 'public' else 'private'}")
     log(f"VIDEO_URL:https://www.tiktok.com/@{clean_handle(target_handle)}")
 
 
@@ -1690,6 +1731,7 @@ def run(args) -> int:
                 args.caption,
                 args.dry_run,
                 args.target_handle,
+                visibility=args.visibility,
                 remote_browser=bool(args.cdp_url),
                 background_tick=background_tick,
             )
@@ -1709,7 +1751,7 @@ def run(args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Uploader TikTok private-first untuk ClipForge.")
+    parser = argparse.ArgumentParser(description="Uploader TikTok untuk ClipForge.")
     parser.add_argument("--state", default=str(DEFAULT_STATE_PATH))
     parser.add_argument("--chromium-user-data-dir", default=DEFAULT_PROFILE_DIR)
     parser.add_argument("--chromium-profile-directory", default=DEFAULT_PROFILE_NAME)
@@ -1724,6 +1766,7 @@ def build_parser() -> argparse.ArgumentParser:
     upload = subparsers.add_parser("upload")
     upload.add_argument("video")
     upload.add_argument("--caption", default="")
+    upload.add_argument("--visibility", choices=["only_you", "public"], default="only_you")
     upload.add_argument("--dry-run", action="store_true")
     return parser
 

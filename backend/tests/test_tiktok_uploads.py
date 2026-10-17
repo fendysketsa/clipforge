@@ -230,6 +230,44 @@ def test_tiktok_upload_record_is_always_only_you(monkeypatch, tmp_path):
     assert any("Only you" in line for line in upload.logs)
 
 
+def test_tiktok_public_upload_requires_explicit_switch(monkeypatch, tmp_path):
+    output_root = tmp_path / "outputs"
+    video = output_root / "demo" / "clip_01.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"owned-render")
+    clip = ClipFile(
+        name=video.name,
+        url="/outputs/demo/clip_01.mp4",
+        size_bytes=video.stat().st_size,
+        title="Hikmah sabar",
+        is_correct=True,
+    )
+    job = make_job(clip)
+    monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "tiktok_uploads", {})
+    monkeypatch.setattr(api, "youtube_monetization_preflight_issue", lambda *_args: None)
+
+    monkeypatch.delenv("TIKTOK_ALLOW_PUBLIC_AUTO_UPLOAD", raising=False)
+    held = create_tiktok_upload_record(
+        job.id,
+        TikTokUploadRequest(clip_url=clip.url, visibility="public"),
+    )
+    assert held.visibility == "only_you"
+
+    monkeypatch.setattr(api, "tiktok_uploads", {})
+    monkeypatch.setenv("TIKTOK_ALLOW_PUBLIC_AUTO_UPLOAD", "true")
+    public = create_tiktok_upload_record(
+        job.id,
+        TikTokUploadRequest(clip_url=clip.url, visibility="public"),
+    )
+    command = build_tiktok_upload_command(public)
+
+    assert public.visibility == "public"
+    assert command[command.index("--visibility") + 1] == "public"
+    assert any("semua orang" in line for line in public.logs)
+
+
 def test_tiktok_upload_command_keeps_account_guard_before_subcommand(monkeypatch, tmp_path):
     output_root = tmp_path / "outputs"
     video = output_root / "demo" / "clip_01.mp4"

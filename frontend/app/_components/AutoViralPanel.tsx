@@ -91,7 +91,11 @@ export function AutoViralPanel({
         </span>
         <span className={`autoScheduleBadge ${schedule?.enabled ? "enabled" : ""}`}>
           <Clock3 size={12} />
-          {schedule?.enabled ? `Siklus ${schedule.interval_hours} jam` : "Cron nonaktif"}
+          {schedule?.enabled
+            ? schedule.once_per_boot
+              ? "1x per boot"
+              : `Siklus ${schedule.interval_hours} jam`
+            : "Cron nonaktif"}
         </span>
         <span className="optionalPanelAction">
           <span>Konfigurasi</span>
@@ -107,7 +111,7 @@ export function AutoViralPanel({
           </small>
           {schedule?.enabled ? (
             <small>
-              Mulai setelah laptop hidup {schedule.boot_delay_minutes} menit · upload headless setelah clip selesai {schedule.post_clip_upload_delay_minutes} menit · {schedule.background_upload_enabled ? "upload Private aktif" : "upload ditahan profil hak"}
+              Mulai setelah laptop hidup {schedule.boot_delay_minutes} menit · {schedule.once_per_boot ? "sekali per boot" : `berulang tiap ${schedule.interval_hours} jam`} · upload headless setelah clip selesai {schedule.post_clip_upload_delay_minutes} menit · {schedule.background_upload_enabled ? "upload YouTube/TikTok aktif" : "upload ditahan profil hak"}
             </small>
           ) : null}
         </div>
