@@ -581,6 +581,7 @@ class ClipFile(BaseModel):
     size_bytes: int
     title: str | None = None
     thumbnail_url: str | None = None
+    thumbnail_variants: list[str] = Field(default_factory=list)
     thumbnail_prompt: str | None = None
     social_caption: str | None = None
     fyp_score: int | None = None
@@ -2830,6 +2831,8 @@ def clip_artifact_paths(clip: ClipFile) -> set[Path]:
 
     paths.add(clip_path)
     paths.add(clip_path.with_name(f"{clip_path.stem}_thumb.jpg"))
+    paths.add(clip_path.with_name(f"{clip_path.stem}_thumb_b.jpg"))
+    paths.add(clip_path.with_name(f"{clip_path.stem}_thumb_c.jpg"))
     paths.add(clip_path.with_name(f"{clip_path.stem}_thumb.txt"))
     paths.add(clip_path.with_name(f"{clip_path.stem}_caption.txt"))
     paths.add(clip_path.with_name(f"{clip_path.stem}_tiktok_caption.txt"))
@@ -2840,6 +2843,10 @@ def clip_artifact_paths(clip: ClipFile) -> set[Path]:
         thumb_path = output_path_from_url(clip.thumbnail_url)
         if thumb_path is not None:
             paths.add(thumb_path)
+    for thumbnail_url in clip.thumbnail_variants:
+        variant_path = output_path_from_url(thumbnail_url)
+        if variant_path is not None:
+            paths.add(variant_path)
     return paths
 
 
@@ -8458,9 +8465,15 @@ def delete_completed_youtube_upload_clip(
             thumbnail_paths.update(
                 {
                     clip_path.with_name(f"{clip_path.stem}_thumb.jpg"),
+                    clip_path.with_name(f"{clip_path.stem}_thumb_b.jpg"),
+                    clip_path.with_name(f"{clip_path.stem}_thumb_c.jpg"),
                     clip_path.with_name(f"{clip_path.stem}_thumb.txt"),
                 }
             )
+            for thumbnail_url in target_clip.thumbnail_variants:
+                variant_path = output_path_from_url(thumbnail_url)
+                if variant_path is not None:
+                    thumbnail_paths.add(variant_path)
             metadata_paths.update(
                 {
                     clip_path.with_name(f"{clip_path.stem}_caption.txt"),
@@ -10479,6 +10492,15 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
         if path.stat().st_mtime + 1 < started_at:
             continue
         thumb_path = path.with_name(f"{path.stem}_thumb.jpg")
+        thumb_variant_paths = [
+            candidate
+            for candidate in (
+                thumb_path,
+                path.with_name(f"{path.stem}_thumb_b.jpg"),
+                path.with_name(f"{path.stem}_thumb_c.jpg"),
+            )
+            if candidate.exists()
+        ]
         prompt_path = path.with_name(f"{path.stem}_thumb.txt")
         caption_path = path.with_name(f"{path.stem}_caption.txt")
         tiktok_caption_path = path.with_name(f"{path.stem}_tiktok_caption.txt")
@@ -10625,6 +10647,7 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
                 size_bytes=path.stat().st_size,
                 title=title,
                 thumbnail_url=clip_url(thumb_path) if thumb_path.exists() else None,
+                thumbnail_variants=[clip_url(item) for item in thumb_variant_paths],
                 thumbnail_prompt=(
                     prompt_path.read_text(encoding="utf-8") if prompt_path.exists() else None
                 ),

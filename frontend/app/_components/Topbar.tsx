@@ -1,4 +1,4 @@
-import { Clock3, Film, ListChecks, RefreshCw, Scissors, Sparkles } from "lucide-react";
+import { Clock3, Film, Lightbulb, ListChecks, RefreshCw, Sparkles } from "lucide-react";
 import Link from "next/link";
 
 type TopbarProps = {
@@ -12,14 +12,14 @@ export function Topbar({ isRefreshing = false, onRefresh, activePage = "workspac
     <header className="topbar">
       <div className="topbar-brand">
         <span className="brandMark" aria-hidden="true">
-          <Scissors size={20} />
+          <Sparkles size={20} />
         </span>
         <div className="brandCopy">
-          <h1 className="logo-text" aria-label="Fendy Clipper">
-            <span>Fendy</span>
-            <span>Clipper</span>
+          <h1 className="logo-text" aria-label="ClipForge Studio">
+            <span>ClipForge</span>
+            <span>Studio</span>
           </h1>
-          <p className="tagline">Source → better Short & Long</p>
+          <p className="tagline">Trend → original video → growth</p>
         </div>
       </div>
 
@@ -27,6 +27,10 @@ export function Topbar({ isRefreshing = false, onRefresh, activePage = "workspac
         <Link className={activePage === "workspace" ? "active" : ""} href="/#quick-start-title">
           <Sparkles size={15} />
           Buat video
+        </Link>
+        <Link href="/#content-studio">
+          <Lightbulb size={15} />
+          Ide tren
         </Link>
         <Link href="/#results">
           <Film size={15} />
@@ -45,7 +49,7 @@ export function Topbar({ isRefreshing = false, onRefresh, activePage = "workspac
       <div className="topbarActions">
         <span className="systemBadge">
           <i aria-hidden="true" />
-          Clipper siap
+          Studio siap
         </span>
         {onRefresh ? (
           <button

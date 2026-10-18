@@ -6,6 +6,7 @@ import {
   Clock3,
   Download,
   ExternalLink,
+  Image as ImageIcon,
   Info,
   LoaderCircle,
   RefreshCw,
@@ -708,6 +709,12 @@ export function ResultsSection({
             const isLongForm = clip.name.toLowerCase().startsWith("highlight_5menit_")
               || clip.name.toLowerCase().startsWith("resume_cerita_")
               || clip.name.toLowerCase().startsWith("long_animate_");
+            const thumbnailVariants = (clip.thumbnail_variants?.length
+              ? clip.thumbnail_variants
+              : clip.thumbnail_url
+                ? [clip.thumbnail_url]
+                : []
+            ).slice(0, 3);
             // Growth/FYP is an experiment-ranking signal, not a safety or
             // rights rule. The backend preflight owns upload eligibility and
             // may explicitly allow a reviewed quality-only fallback into the
@@ -876,6 +883,28 @@ export function ResultsSection({
                       <span className="clipMetric">Thumbnail siap</span>
                     ) : null}
                   </div>
+                ) : null}
+                {isLongForm && thumbnailVariants.length ? (
+                  <details className="thumbnailVariantDesk">
+                    <summary>
+                      <span><ImageIcon size={14} /> Paket thumbnail</span>
+                      <small>{thumbnailVariants.length} varian{thumbnailVariants.length === 3 ? " · siap A/B/C" : ""}</small>
+                      <ChevronDown size={14} />
+                    </summary>
+                    <div className="thumbnailVariantGrid">
+                      {thumbnailVariants.map((thumbnailUrl, index) => {
+                        const resolvedThumbnailUrl = getOutputUrl(thumbnailUrl);
+                        return (
+                          <a href={resolvedThumbnailUrl} target="_blank" rel="noreferrer" key={thumbnailUrl}>
+                            <span>Varian {String.fromCharCode(65 + index)}</span>
+                            <img src={resolvedThumbnailUrl} alt={`Thumbnail ${String.fromCharCode(65 + index)} untuk ${title}`} />
+                            <small><Download size={12} /> Buka resolusi penuh</small>
+                          </a>
+                        );
+                      })}
+                    </div>
+                    <p>Upload varian A terlebih dahulu. Untuk long-form publik, uji hingga tiga varian lewat Test &amp; Compare YouTube dan pilih berdasarkan watch-time share.</p>
+                  </details>
                 ) : null}
                 {clip.production_team_status ? (
                   <details className="productionTeamDesk">

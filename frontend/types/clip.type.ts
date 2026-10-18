@@ -21,6 +21,7 @@ export type ClipFile = {
   size_bytes: number;
   title?: string | null;
   thumbnail_url?: string | null;
+  thumbnail_variants?: string[];
   thumbnail_prompt?: string | null;
   social_caption?: string | null;
   fyp_score?: number | null;

@@ -3878,39 +3878,100 @@ def write_story_subtitles(path: Path, scenes: list[AnimateScene]) -> None:
     path.write_text("\n".join(cues), encoding="utf-8")
 
 
-def _thumbnail(image_path: Path, output_path: Path, title: str) -> None:
+def _thumbnail(
+    image_path: Path,
+    output_path: Path,
+    headline: str,
+    *,
+    eyebrow: str = "CERITA BARU",
+    variation: int = 0,
+) -> None:
+    """Render one of three materially different YouTube packaging variants."""
     image = cv2.imread(str(image_path.resolve()))
     if image is None:
         return
-    image = cv2.resize(image, (1280, 720), interpolation=cv2.INTER_AREA)
+    source_h, source_w = image.shape[:2]
+    scale = max(1280 / max(1, source_w), 720 / max(1, source_h))
+    resized = cv2.resize(
+        image,
+        (max(1280, round(source_w * scale)), max(720, round(source_h * scale))),
+        interpolation=cv2.INTER_AREA,
+    )
+    x0 = max(0, (resized.shape[1] - 1280) // 2)
+    y0 = max(0, (resized.shape[0] - 720) // 2)
+    image = resized[y0:y0 + 720, x0:x0 + 1280].copy()
+    image = cv2.convertScaleAbs(image, alpha=1.08, beta=-7)
+
+    variant = variation % 3
     overlay = image.copy()
-    cv2.rectangle(overlay, (46, 410), (940, 666), (4, 12, 12), -1)
-    image = cv2.addWeighted(overlay, 0.78, image, 0.22, 0)
-    cv2.rectangle(image, (46, 410), (60, 666), (62, 211, 153), -1)
-    words = title.upper().split()
+    if variant == 0:
+        cv2.rectangle(overlay, (0, 0), (770, 720), (3, 9, 10), -1)
+        image = cv2.addWeighted(overlay, 0.68, image, 0.32, 0)
+        panel = (54, 76, 742, 644)
+        accent = (24, 201, 238)
+        text_origin = (78, 244)
+        max_chars = 18
+    elif variant == 1:
+        cv2.rectangle(overlay, (0, 372), (1280, 720), (3, 9, 10), -1)
+        image = cv2.addWeighted(overlay, 0.73, image, 0.27, 0)
+        panel = (52, 402, 1228, 684)
+        accent = (82, 225, 126)
+        text_origin = (78, 510)
+        max_chars = 25
+    else:
+        cv2.rectangle(overlay, (354, 70), (926, 650), (3, 9, 10), -1)
+        image = cv2.addWeighted(overlay, 0.67, image, 0.33, 0)
+        panel = (354, 70, 926, 650)
+        accent = (238, 190, 37)
+        text_origin = (402, 248)
+        max_chars = 15
+
+    x1, y1, x2, y2 = panel
+    cv2.rectangle(image, (x1, y1), (x2, y2), (232, 245, 242), 3)
+    cv2.rectangle(image, (x1, y1), (x2, y1 + 10), accent, -1)
+    badge = re.sub(r"[^A-Z0-9 /&-]", "", eyebrow.upper()).strip()[:24] or "CERITA BARU"
+    badge_width = min(390, max(220, len(badge) * 15 + 54))
+    cv2.rectangle(image, (x1 + 24, y1 + 30), (x1 + 24 + badge_width, y1 + 78), (18, 25, 26), -1)
+    cv2.rectangle(image, (x1 + 24, y1 + 30), (x1 + 24 + badge_width, y1 + 78), accent, 2)
+    cv2.putText(image, badge, (x1 + 43, y1 + 63), cv2.FONT_HERSHEY_DUPLEX, 0.68, (250, 252, 251), 2, cv2.LINE_AA)
+
+    words = headline.upper().split()
     lines: list[str] = []
     current = ""
     for word in words:
         proposal = f"{current} {word}".strip()
-        if len(proposal) > 23 and current:
+        if len(proposal) > max_chars and current:
             lines.append(current)
             current = word
         else:
             current = proposal
     if current:
         lines.append(current)
+    font_scale = 1.38 if variant != 2 else 1.18
+    line_gap = 72 if variant != 2 else 66
     for index, line in enumerate(lines[:3]):
+        origin = (text_origin[0], text_origin[1] + index * line_gap)
         cv2.putText(
             image,
             line,
-            (92, 485 + index * 64),
+            (origin[0] + 4, origin[1] + 5),
             cv2.FONT_HERSHEY_DUPLEX,
-            1.32,
+            font_scale,
+            (0, 0, 0),
+            7,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            image,
+            line,
+            origin,
+            cv2.FONT_HERSHEY_DUPLEX,
+            font_scale,
             (247, 251, 249),
             3,
             cv2.LINE_AA,
         )
-    cv2.imwrite(str(output_path.resolve()), image, [cv2.IMWRITE_JPEG_QUALITY, 88])
+    cv2.imwrite(str(output_path.resolve()), image, [cv2.IMWRITE_JPEG_QUALITY, 92])
 
 
 def final_video_qc(
@@ -4333,7 +4394,11 @@ def render_long_animate(
         logger.info(f"✓ QC complete: {metrics.qc_time:.1f}s")
         progress(92, "finalize", "Membuat thumbnail, chapter, dan audit YouTube Long Animate")
         thumb_path = clips_dir / f"{base_name}_thumb.jpg"
-        _thumbnail(shot_image_paths[0], thumb_path, storyboard.title)
+        thumb_b_path = clips_dir / f"{base_name}_thumb_b.jpg"
+        thumb_c_path = clips_dir / f"{base_name}_thumb_c.jpg"
+        _thumbnail(shot_image_paths[0], thumb_path, storyboard.hook or storyboard.title, eyebrow="CERITA BARU", variation=0)
+        _thumbnail(shot_image_paths[0], thumb_b_path, storyboard.core_message or storyboard.title, eyebrow="INTI CERITA", variation=1)
+        _thumbnail(shot_image_paths[0], thumb_c_path, storyboard.title, eyebrow="WAJIB TAHU", variation=2)
         prompt_path = clips_dir / f"{base_name}_thumb.txt"
         prompt_path.write_text(
             "STRATEGI: custom_long_form_upload\n"
@@ -4533,6 +4598,26 @@ def render_long_animate(
         "output_resolution": f"{output_width}x{output_height}",
         "enhanced_edit": True,
         "thumbnail_strategy": "custom_long_form_upload",
+        "thumbnail_variants": [
+            {
+                "id": "A",
+                "angle": "cold_open_emotion",
+                "filename": thumb_path.name,
+                "headline": storyboard.hook or storyboard.title,
+            },
+            {
+                "id": "B",
+                "angle": "core_message_proof",
+                "filename": thumb_b_path.name,
+                "headline": storyboard.core_message or storyboard.title,
+            },
+            {
+                "id": "C",
+                "angle": "title_curiosity",
+                "filename": thumb_c_path.name,
+                "headline": storyboard.title,
+            },
+        ],
         "storyboard_path": "storyboard.json",
         "scene_assets_directory": "animate_scenes",
         "art_bible": storyboard.art_bible,

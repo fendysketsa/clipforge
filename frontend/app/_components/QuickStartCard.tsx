@@ -137,7 +137,7 @@ export function QuickStartCard({
   return (
     <section className={`clipperHero${isLong ? " isLong" : ""}${isWorking ? " isWorking" : ""}`} aria-labelledby="quick-start-title">
       <div className="clipperHeroCopy">
-        <span className="clipperKicker">{isStory ? <BookOpen size={14} /> : isLong ? <Film size={14} /> : <Scissors size={14} />} AI VIDEO CLIPPER</span>
+        <span className="clipperKicker">{isStory ? <BookOpen size={14} /> : isLong ? <Film size={14} /> : <Scissors size={14} />} AI PRODUCTION ENGINE</span>
         <h2 id="quick-start-title">
           {isStory ? "Satu ide cerita masuk." : "Satu video masuk."}<br />
           <em>{isStory ? "Video lengkap siap direview." : isLong ? "Cerita utuh siap ditonton." : "Short terbaik siap tayang."}</em>

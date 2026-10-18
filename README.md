@@ -8,6 +8,9 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 
 ## Features
 
+- Work as a broader **ClipForge Content Studio**, not only a clipper: a Trend → Original Content workspace maps Indonesian search signals into a channel-fit score, an Islamic/editorial angle, title, hook, thumbnail direction, rights/safety guardrail, and a production-ready premise that can be sent directly to the original Long Story generator.
+- Keep trend-jacking aligned with the channel: life stories and practical learning can enter directly; horror becomes evidence-led myth-vs-dalil storytelling; interfaith topics are held for stricter review; copyrighted drama/podcast trends contribute structure only, never copied footage or story material.
+- Prepare three materially different 16:9 thumbnail variants for newly rendered long-form videos—problem/emotion, answer/evidence, and payoff/curiosity—while keeping variant A as the upload default. All variants appear in the result card for YouTube's native Test & Compare workflow; the experiment optimizes for measured watch-time share, not promised virality.
 - Download a single YouTube video with `yt-dlp`.
 - Transcribe locally with `faster-whisper`.
 - Score transcript windows for clip candidates.

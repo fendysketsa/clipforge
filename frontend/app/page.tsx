@@ -89,6 +89,7 @@ import type {
 } from "../types/clip.type";
 import { ControlPanel } from "./_components/ControlPanel";
 import { BrowserTaskIndicator } from "./_components/BrowserTaskIndicator";
+import { ContentStudioPanel } from "./_components/ContentStudioPanel";
 import { DeleteAllToast } from "./_components/DeleteAllToast";
 import { HistorySection } from "./_components/HistorySection";
 import { OutputWorkspace } from "./_components/OutputWorkspace";
@@ -212,6 +213,16 @@ export default function HomePage() {
       setVideoQuality(DEFAULT_VIDEO_QUALITY);
     }
   }, []);
+
+  const handleUseTrendConcept = useCallback((premise: string) => {
+    handleClipModeChange("long_animate");
+    setStoryText(premise);
+    setConfirmSourceRights(false);
+    window.requestAnimationFrame(() => {
+      document.getElementById("quick-start-title")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    toast.success("Premis masuk ke Generator Cerita. Review, konfirmasi hak, lalu produksi.");
+  }, [handleClipModeChange]);
 
   const handleUrlChange = useCallback((value: string) => {
     setSourceMode("url");
@@ -1388,6 +1399,8 @@ export default function HomePage() {
         onConfirmSourceRightsChange={setConfirmSourceRights}
         onStart={() => { void handleStartJob(); }}
       />
+
+      <ContentStudioPanel onUseConcept={handleUseTrendConcept} />
 
       <section className={`workspace studioGrid${isBusy ? " isProcessing" : ""}`} id="workspace">
         <ControlPanel

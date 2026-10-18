@@ -12,6 +12,7 @@ from api import (
     ClipJob,
     ClipJobRequest,
     cleanup_clip_files,
+    clip_artifact_paths,
     cleanup_job_files,
     cleanup_orphan_output_roots,
     cleanup_stale_runtime_artifacts,
@@ -53,6 +54,33 @@ def test_cleanup_removes_source_and_audio_keeps_clips():
     assert "transcript.json" in names
     assert "clips" in names
     assert (work / "clips" / "clip_01.mp4").exists()
+
+
+def test_clip_artifact_paths_include_all_thumbnail_test_variants(monkeypatch, tmp_path):
+    import api
+
+    outputs = tmp_path / "outputs"
+    clip_dir = outputs / "demo" / "clips"
+    clip_dir.mkdir(parents=True)
+    video = clip_dir / "long_animate_demo.mp4"
+    video.write_bytes(b"video")
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    clip = ClipFile(
+        name=video.name,
+        url="/outputs/demo/clips/long_animate_demo.mp4",
+        size_bytes=video.stat().st_size,
+        thumbnail_variants=[
+            "/outputs/demo/clips/long_animate_demo_thumb.jpg",
+            "/outputs/demo/clips/long_animate_demo_thumb_b.jpg",
+            "/outputs/demo/clips/long_animate_demo_thumb_c.jpg",
+        ],
+    )
+
+    names = {path.name for path in clip_artifact_paths(clip)}
+
+    assert "long_animate_demo_thumb.jpg" in names
+    assert "long_animate_demo_thumb_b.jpg" in names
+    assert "long_animate_demo_thumb_c.jpg" in names
 
 
 def test_prepare_uploaded_source_does_not_copy():

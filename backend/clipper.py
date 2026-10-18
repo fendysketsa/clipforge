@@ -14404,6 +14404,49 @@ def designed_thumbnail_filter(
     long_badge_width = min(390, max(260, len(safe_eyebrow) * 15 + 74))
     card_accent = accent_secondary if "RENUNGAN" in safe_eyebrow else accent
     if long_form:
+        if variation % 3 == 1:
+            return ",".join(
+                [
+                    "scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos",
+                    "crop=1280:720",
+                    "eq=contrast=1.12:brightness=-0.025:saturation=1.08",
+                    "drawbox=x=0:y=382:w=1280:h=338:color=black@0.72:t=fill",
+                    f"drawbox=x=0:y=382:w=1280:h=10:color={accent}:t=fill",
+                    f"drawbox=x=62:y=410:w={long_badge_width}:h=48:color={accent_secondary}@0.96:t=fill",
+                    f"drawtext=fontfile={font_bold}:text='{safe_eyebrow}':expansion=none:"
+                    "fontcolor=black:fontsize=22:x=82:y=420",
+                    f"drawtext=fontfile={font_bold}:textfile='{headline_filename}':reload=0:"
+                    "expansion=none:fontcolor=white:fontsize=57:line_spacing=8:"
+                    "borderw=3:bordercolor=black@0.92:shadowcolor=black@0.8:"
+                    "shadowx=3:shadowy=3:x=62:y=472",
+                    f"drawbox=x=886:y=414:w=8:h=250:color={accent_secondary}@0.86:t=fill",
+                    f"drawtext=fontfile={font_regular}:textfile='{support_filename}':reload=0:"
+                    "expansion=none:fontcolor=white@0.9:fontsize=23:line_spacing=5:"
+                    "borderw=2:bordercolor=black@0.8:x=922:y=480",
+                ]
+            )
+        if variation % 3 == 2:
+            return ",".join(
+                [
+                    "scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos",
+                    "crop=1280:720",
+                    "eq=contrast=1.13:brightness=-0.02:saturation=1.14",
+                    "drawbox=x=34:y=34:w=1212:h=652:color=black@0.12:t=fill",
+                    f"drawbox=x=34:y=34:w=1212:h=652:color={accent_secondary}@0.66:t=5",
+                    "drawbox=x=362:y=82:w=556:h=556:color=black@0.70:t=fill",
+                    f"drawbox=x=362:y=82:w=556:h=12:color={accent}:t=fill",
+                    f"drawtext=fontfile={font_bold}:text='{safe_eyebrow}':expansion=none:"
+                    f"fontcolor={accent}:fontsize=24:x=(w-text_w)/2:y=130",
+                    f"drawtext=fontfile={font_bold}:textfile='{headline_filename}':reload=0:"
+                    "expansion=none:fontcolor=white:fontsize=55:line_spacing=10:"
+                    "borderw=3:bordercolor=black@0.92:shadowcolor=black@0.8:"
+                    "shadowx=3:shadowy=3:x=(w-text_w)/2:y=218",
+                    f"drawbox=x=470:y=474:w=340:h=5:color={accent_secondary}:t=fill",
+                    f"drawtext=fontfile={font_regular}:textfile='{support_filename}':reload=0:"
+                    "expansion=none:fontcolor=white@0.92:fontsize=24:line_spacing=5:"
+                    "borderw=2:bordercolor=black@0.82:x=(w-text_w)/2:y=505",
+                ]
+            )
         return ",".join(
             [
                 "scale=1280:720:force_original_aspect_ratio=increase:flags=lanczos",
@@ -14455,6 +14498,7 @@ def render_designed_thumbnail(
     long_form: bool,
     theme_profile: dict[str, str] | None = None,
     label: str,
+    variation: int = 0,
 ) -> Path | None:
     """Render the final upload-ready thumbnail from an actual video frame."""
     profile = theme_profile or {
@@ -14474,6 +14518,7 @@ def render_designed_thumbnail(
         accent=profile.get("accent", "#FACC15"),
         accent_secondary=profile.get("accent_secondary", "#22D3EE"),
         eyebrow=copy.get("eyebrow", "WAJIB TAHU"),
+        variation=variation,
     )
     try:
         run(
@@ -17891,6 +17936,43 @@ def export_compilation(
         compilation_sidecar["thumbnail_eyebrow"] = thumbnail_copy["eyebrow"]
         compilation_sidecar["thumbnail_headline"] = thumbnail_copy["headline"].replace("\n", " ")
         compilation_sidecar["thumbnail_support"] = thumbnail_copy["support"].replace("\n", " ")
+        thumbnail_variants: list[dict[str, str]] = [
+            {
+                "id": "A",
+                "angle": "masalah_utama",
+                "filename": thumb_path.name,
+                "headline": thumbnail_copy["headline"].replace("\n", " "),
+            }
+        ]
+        variant_sources = [
+            ("B", "jawaban_atau_manfaat", core_message, thumb_path.with_name(f"{base_name}_thumb_b.jpg"), 1),
+            ("C", "payoff_kesimpulan", candidates[-1].title or candidates[-1].text, thumb_path.with_name(f"{base_name}_thumb_c.jpg"), 2),
+        ]
+        for variant_id, angle, source_copy, variant_path, variation in variant_sources:
+            variant_copy = thumbnail_story_copy(
+                compilation,
+                first_sentence(source_copy, max_words=8),
+                long_form=True,
+            )
+            if render_designed_thumbnail(
+                out_path,
+                strongest_timestamp,
+                variant_path,
+                variant_copy,
+                long_form=True,
+                theme_profile=visual_theme_profile(strongest),
+                variation=variation,
+                label=f"kompilasi landscape varian {variant_id}",
+            ) is not None:
+                thumbnail_variants.append(
+                    {
+                        "id": variant_id,
+                        "angle": angle,
+                        "filename": variant_path.name,
+                        "headline": variant_copy["headline"].replace("\n", " "),
+                    }
+                )
+        compilation_sidecar["thumbnail_variants"] = thumbnail_variants
     if thumb_prompt:
         prompt_path.write_text(
             f"HOOK: {thumb_prompt['hook_text']}\n"

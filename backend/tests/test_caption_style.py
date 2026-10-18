@@ -2759,6 +2759,25 @@ def test_thumbnail_filter_uses_vertical_and_landscape_upload_shapes():
     assert shorts_cover_frame_timestamp(0.12) == 0.1
 
 
+def test_long_form_thumbnail_variants_change_layout_materially():
+    variants = [
+        designed_thumbnail_filter(
+            "headline.txt",
+            "support.txt",
+            long_form=True,
+            accent="#FACC15",
+            accent_secondary="#22D3EE",
+            variation=index,
+        )
+        for index in range(3)
+    ]
+
+    assert len(set(variants)) == 3
+    assert "drawbox=x=0:y=0:w=760:h=720" in variants[0]
+    assert "drawbox=x=0:y=382:w=1280:h=338" in variants[1]
+    assert "drawbox=x=362:y=82:w=556:h=556" in variants[2]
+
+
 def test_shorts_context_card_varies_label_color_and_geometry_from_story():
     value = viral_title_overlay_filter(
         "headline.txt",
