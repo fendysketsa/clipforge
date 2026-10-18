@@ -3532,6 +3532,8 @@ auto_viral_scheduler_lock = threading.Lock()
 auto_viral_scheduler_running = False
 auto_viral_scheduler_next_run_at: datetime | None = None
 auto_viral_scheduler_thread: threading.Thread | None = None
+completed_job_upload_sweeper_lock = threading.Lock()
+completed_job_upload_sweeper_running = False
 youtube_data_api_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 youtube_data_api_cache_lock = threading.Lock()
 
@@ -10198,6 +10200,245 @@ def resume_queued_youtube_uploads() -> None:
     start_runtime_data_cleanup_if_needed()
 
 
+AUTO_REPAIRABLE_UPLOAD_ISSUE_MARKERS = (
+    "alur Short belum lengkap",
+    "kesiapan retention",
+    "konteks kajian tidak utuh",
+    "dipotong ulang",
+    "Render ulang",
+    "Perbaiki Otomatis",
+    "perspektif editorial otomatis belum ditemukan",
+)
+
+
+def completed_job_upload_retry_ready(
+    records: list[Any],
+    job_id: str,
+    clip_url_value: str,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Return True only when no durable upload or fresh failure owns the clip."""
+    exact = [
+        item
+        for item in records
+        if str(getattr(item, "source_job_id", "") or "") == job_id
+        and str(getattr(item, "clip_url", "") or "") == clip_url_value
+        and not bool(getattr(item, "dry_run", False))
+    ]
+    if any(
+        getattr(item, "status", "") in {"queued", "running"}
+        or (
+            getattr(item, "status", "") == "completed"
+            and bool(getattr(item, "upload_confirmed", False))
+        )
+        for item in exact
+    ):
+        return False
+    failed_times = [
+        parsed
+        for item in exact
+        if getattr(item, "status", "") == "failed"
+        and (
+            parsed := parsed_datetime(
+                str(
+                    getattr(item, "updated_at", None)
+                    or getattr(item, "finished_at", None)
+                    or getattr(item, "created_at", None)
+                    or ""
+                )
+            )
+        )
+        is not None
+    ]
+    failed_at = max(failed_times, default=None)
+    if failed_at is None:
+        return True
+    current = now or datetime.now(timezone.utc)
+    cooldown = timedelta(
+        minutes=max(
+            1.0,
+            env_float("AUTO_UPLOAD_COMPLETED_JOBS_RETRY_MINUTES", 15.0),
+        )
+    )
+    return current.astimezone(timezone.utc) >= failed_at + cooldown
+
+
+def pending_completed_job_upload_urls(
+    job: ClipJob,
+    eligible_urls: list[str],
+    *,
+    platform: Literal["youtube", "tiktok"],
+) -> list[str]:
+    if platform == "youtube":
+        with youtube_uploads_lock:
+            records: list[Any] = list(youtube_uploads.values())
+    else:
+        with tiktok_uploads_lock:
+            records = list(tiktok_uploads.values())
+    return [
+        url
+        for url in eligible_urls
+        if completed_job_upload_retry_ready(records, job.id, url)
+    ]
+
+
+def queue_completed_job_repair_once(job: ClipJob) -> bool:
+    """Create one targeted repair for a quality/context failure, never a rights hold."""
+    if not env_bool("AUTO_REPAIR_COMPLETED_JOBS", True):
+        return False
+    for clip in job.clips:
+        issue = youtube_monetization_preflight_issue(job, clip)
+        if not issue or not any(
+            marker.casefold() in issue.casefold()
+            for marker in AUTO_REPAIRABLE_UPLOAD_ISSUE_MARKERS
+        ):
+            continue
+        if active_youtube_uploads_for_job(job.id, {clip.url}) or active_tiktok_uploads_for_job(
+            job.id, {clip.url}
+        ):
+            continue
+        try:
+            repair_job_clip_context(job.id, ClipRepairRequest(url=clip.url))
+            return True
+        except HTTPException as exc:
+            print(
+                f"Auto-repair backlog melewati job {job.id[:10]}: {exc.detail}",
+                flush=True,
+            )
+            return False
+        except Exception as exc:
+            print(
+                f"Auto-repair backlog gagal untuk job {job.id[:10]}: {exc}",
+                flush=True,
+            )
+            return False
+    return False
+
+
+def queue_completed_job_uploads_once() -> dict[str, int]:
+    """Act as the background operator for completed clips without requiring the UI."""
+    counts = {"youtube": 0, "tiktok": 0, "repair": 0}
+    if not env_bool("AUTO_UPLOAD_COMPLETED_JOBS", False):
+        return counts
+    with jobs_lock:
+        completed_jobs = sorted(
+            (
+                item
+                for item in jobs.values()
+                if item.status == "completed" and item.clips
+            ),
+            key=lambda item: item.created_at,
+        )
+
+    youtube_enabled = env_bool(
+        "AUTO_UPLOAD_COMPLETED_JOBS_YOUTUBE",
+        env_bool("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False),
+    )
+    tiktok_enabled = env_bool(
+        "AUTO_UPLOAD_COMPLETED_JOBS_TIKTOK",
+        env_bool("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_TIKTOK", False),
+    )
+    for job in completed_jobs:
+        # Use the stricter YouTube quality floor as the common selection gate so
+        # both platforms receive the same approved edit.
+        eligible_urls = best_automatic_upload_clip_urls(
+            job,
+            max(1, len(job.clips)),
+            allow_audited_automation=True,
+            require_youtube_fyp_target=True,
+        )
+        if not eligible_urls:
+            counts["repair"] += int(queue_completed_job_repair_once(job))
+            continue
+
+        if youtube_enabled:
+            urls = pending_completed_job_upload_urls(
+                job,
+                eligible_urls,
+                platform="youtube",
+            )
+            if youtube_default_visibility() == "public":
+                urls = urls[:1]
+            if urls:
+                try:
+                    require_youtube_ready()
+                    with youtube_upload_creation_lock:
+                        uploads = create_youtube_upload_batch_records(
+                            job.id,
+                            YouTubeBatchUploadRequest(
+                                clip_urls=urls,
+                                visibility=youtube_default_visibility(),
+                            ),
+                        )
+                        queue_youtube_upload_jobs(uploads)
+                    counts["youtube"] += sum(
+                        item.status == "queued" for item in uploads
+                    )
+                except Exception as exc:
+                    print(
+                        f"Auto-public YouTube melewati job {job.id[:10]}: {exc}",
+                        flush=True,
+                    )
+
+        if tiktok_enabled:
+            urls = pending_completed_job_upload_urls(
+                job,
+                eligible_urls,
+                platform="tiktok",
+            )
+            if urls:
+                try:
+                    require_tiktok_ready()
+                    with tiktok_upload_creation_lock:
+                        uploads = create_tiktok_upload_batch_records(
+                            job.id,
+                            TikTokBatchUploadRequest(
+                                clip_urls=urls,
+                                visibility=safe_tiktok_visibility(),
+                            ),
+                            allow_audited_automation=True,
+                        )
+                        queue_tiktok_upload_jobs(uploads)
+                    counts["tiktok"] += sum(
+                        item.status == "queued" for item in uploads
+                    )
+                except Exception as exc:
+                    print(
+                        f"Auto-public TikTok melewati job {job.id[:10]}: {exc}",
+                        flush=True,
+                    )
+    return counts
+
+
+def completed_job_upload_sweeper_loop() -> None:
+    global completed_job_upload_sweeper_running
+    try:
+        while env_bool("AUTO_UPLOAD_COMPLETED_JOBS", False):
+            queue_completed_job_uploads_once()
+            time.sleep(
+                max(
+                    15.0,
+                    env_float("AUTO_UPLOAD_COMPLETED_JOBS_SCAN_SECONDS", 60.0),
+                )
+            )
+    finally:
+        with completed_job_upload_sweeper_lock:
+            completed_job_upload_sweeper_running = False
+
+
+@app.on_event("startup")
+def start_completed_job_upload_sweeper_if_needed() -> None:
+    global completed_job_upload_sweeper_running
+    if not env_bool("AUTO_UPLOAD_COMPLETED_JOBS", False):
+        return
+    with completed_job_upload_sweeper_lock:
+        if completed_job_upload_sweeper_running:
+            return
+        completed_job_upload_sweeper_running = True
+    threading.Thread(target=completed_job_upload_sweeper_loop, daemon=True).start()
+
+
 def discover_clips(started_at: float, output_root: Path | None = None) -> list[ClipFile]:
     clips: list[ClipFile] = []
     search_root = output_root or OUTPUTS_DIR
@@ -14786,9 +15027,23 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 "url": source.get("url"),
                 "status": "running",
             }
+            item_checkpointed = False
             try:
                 job = create_auto_viral_clip_job(source, run_request)
                 item["job_id"] = job.id
+                item["job_status"] = job.status
+                processed.append(item)
+                item_checkpointed = True
+                # Persist ownership before the long-running worker starts.  If
+                # the backend stops during clipping, startup recovery can still
+                # reconnect this durable job to its scheduled upload phase.
+                update_auto_viral_run(
+                    run_id,
+                    processed=processed,
+                    progress_current=completed_count,
+                    progress_total=run_request.video_count,
+                    message=f"Sumber {source_index}/{run_request.video_count} masuk worker clipping",
+                )
                 run_clip_job_with_campaign_progress(
                     job.id,
                     run_id,
@@ -14885,7 +15140,8 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 item["status"] = "failed"
                 item["error"] = str(exc)
                 append_auto_viral_error(run_id, f"{source.get('title')}: {exc}")
-            processed.append(item)
+            if not item_checkpointed:
+                processed.append(item)
             update_auto_viral_run(
                 run_id,
                 processed=processed,
@@ -15211,6 +15467,127 @@ def pending_scheduled_auto_viral_upload_run() -> AutoViralRun | None:
     return min(pending, key=lambda run: run.created_at) if pending else None
 
 
+def reconcile_interrupted_scheduled_clip_runs() -> int:
+    """Reconnect clip jobs that survived a backend restart to their cron run.
+
+    Clip jobs are durable and are resumed independently at startup.  Previously,
+    the parent automation run was marked interrupted before the resumed worker
+    could write its job id into ``processed``.  The clip would finish normally,
+    but no scheduler run owned it anymore, so the upload phase could never see
+    it.  Match only jobs created during the interrupted run and only by the
+    exact selected source URL; this avoids adopting unrelated manual work.
+    """
+    with jobs_lock:
+        completed_jobs = [
+            job
+            for job in jobs.values()
+            if job.status == "completed" and bool(job.clips)
+        ]
+    with auto_viral_lock:
+        runs = list(auto_viral_runs.values())
+        claimed_job_ids = {
+            str(item.get("job_id") or "").strip()
+            for run in runs
+            for item in run.processed
+            if str(item.get("job_id") or "").strip()
+        }
+
+    recovered = 0
+    for run in sorted(runs, key=lambda item: item.created_at):
+        if (
+            run.trigger != "schedule"
+            or run.status != "failed"
+            or run.progress_stage != "interrupted"
+            or not (run.request.auto_upload_youtube or run.request.auto_upload_tiktok)
+            or not run.selected_sources
+        ):
+            continue
+        started_at = parse_utc_datetime(run.created_at)
+        interrupted_at = parse_utc_datetime(
+            run.finished_at or run.updated_at or run.created_at,
+            started_at,
+        )
+        selected_by_url = {
+            normalized: source
+            for source in run.selected_sources
+            if (
+                normalized := normalize_youtube_video_url(
+                    str(source.get("url") or "")
+                )
+            )
+        }
+        matches: list[tuple[ClipJob, dict[str, Any]]] = []
+        for job in completed_jobs:
+            if job.id in claimed_job_ids:
+                continue
+            job_url = normalize_youtube_video_url(
+                str(job.source_url or job.request.url or "")
+            )
+            source = selected_by_url.get(job_url)
+            if source is None:
+                continue
+            job_created_at = parse_utc_datetime(job.created_at, started_at)
+            # A job is created synchronously by the campaign before the run can
+            # be marked interrupted.  Keep a small skew allowance for writes
+            # landing around shutdown.
+            if not (
+                started_at - timedelta(seconds=5)
+                <= job_created_at
+                <= interrupted_at + timedelta(minutes=5)
+            ):
+                continue
+            matches.append((job, source))
+
+        if not matches:
+            continue
+        processed = [dict(item) for item in run.processed]
+        for job, source in sorted(matches, key=lambda item: item[0].created_at):
+            processed.append(
+                {
+                    "source": source,
+                    "title": source.get("title") or job.source_title,
+                    "url": source.get("url") or job.source_url or job.request.url,
+                    "status": "awaiting_upload",
+                    "job_id": job.id,
+                    "job_status": "completed",
+                    "clip_count": len(job.clips),
+                    "uploads": [],
+                    "cleanup": "dipulihkan setelah restart; menunggu upload headless terjadwal",
+                }
+            )
+            claimed_job_ids.add(job.id)
+            recovered += 1
+        recovered_at = now_iso()
+        latest_clip_finish = max(
+            (
+                parse_utc_datetime(job.finished_at or job.updated_at, interrupted_at)
+                for job, _source in matches
+            ),
+            default=interrupted_at,
+        )
+        update_auto_viral_run(
+            run.id,
+            status="queued",
+            updated_at=recovered_at,
+            finished_at=None,
+            clipping_finished_at=latest_clip_finish.isoformat(),
+            upload_not_before=recovered_at,
+            progress_percent=max(82, run.progress_percent),
+            progress_stage="resume_pending_upload",
+            progress_current=len(processed),
+            processed=processed,
+            message=(
+                f"{len(matches)} hasil clip yang selamat dari restart ditemukan; "
+                "fase upload terjadwal akan dilanjutkan."
+            ),
+            logs=[
+                *run.logs,
+                f"{datetime.now().strftime('%H:%M:%S')} Memulihkan {len(matches)} job clip ke antrean upload cron.",
+            ][-160:],
+        )
+    return recovered
+
+
 def auto_viral_schedule_status() -> AutoViralScheduleStatus:
     enabled = env_bool("AUTO_VIRAL_SCHEDULE_ENABLED", False)
     youtube_upload_requested = env_bool(
@@ -15337,6 +15714,15 @@ def auto_viral_next_run_at(
             auto_viral_boot_not_before(now),
             now + timedelta(hours=auto_viral_cycle_delay_hours()),
         )
+    # RUN_ON_STARTUP applies to recurring schedules too.  The old behavior
+    # honored it only when there was no history, so restarting the machine left
+    # the scheduler waiting for ``last completion + interval`` even after the
+    # configured boot grace had elapsed.
+    if (
+        env_bool("AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP", False)
+        and not scheduled_run_started_in_current_boot(latest, now)
+    ):
+        return auto_viral_boot_not_before(now)
     if latest is not None:
         cycle_anchor = parse_utc_datetime(
             latest.finished_at or latest.updated_at or latest.created_at,
@@ -15360,6 +15746,7 @@ def auto_viral_scheduler_loop() -> None:
     try:
         while env_bool("AUTO_VIRAL_SCHEDULE_ENABLED", False):
             now = datetime.now(timezone.utc)
+            reconcile_interrupted_scheduled_clip_runs()
             with auto_viral_lock:
                 active_id = auto_viral_active_run_id
             latest = latest_scheduled_auto_viral_run()

@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -1138,6 +1139,28 @@ def test_auto_viral_first_cycle_obeys_remaining_boot_grace(monkeypatch):
     assert api.auto_viral_next_run_at(now, None, None) == now + timedelta(minutes=18)
 
 
+def test_auto_viral_recurring_run_on_startup_does_not_wait_for_old_completion(monkeypatch):
+    import api
+
+    now = datetime(2026, 10, 18, 13, 30, tzinfo=timezone.utc)
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT", "false")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP", "true")
+    monkeypatch.setenv("AUTO_VIRAL_BOOT_DELAY_MINUTES", "30")
+    monkeypatch.setenv("AUTO_VIRAL_CYCLE_DELAY_HOURS", "24")
+    monkeypatch.setattr(api, "system_uptime_seconds", lambda: 45 * 60)
+    latest = api.AutoViralRun(
+        id="previous-boot-cycle",
+        status="completed",
+        trigger="schedule",
+        created_at=(now - timedelta(hours=6)).isoformat(),
+        updated_at=(now - timedelta(hours=5)).isoformat(),
+        finished_at=(now - timedelta(hours=5)).isoformat(),
+        request=AutoViralRequest(video_count=1),
+    )
+
+    assert api.auto_viral_next_run_at(now, latest, None) == now
+
+
 def test_auto_viral_once_per_boot_does_not_repeat_after_attempt(monkeypatch):
     import api
 
@@ -1255,6 +1278,53 @@ def test_auto_viral_upload_backlog_uses_oldest_resumable_run(monkeypatch):
 
     assert api.latest_scheduled_auto_viral_run().id == newest_without_clip.id
     assert api.pending_scheduled_auto_viral_upload_run().id == oldest.id
+
+
+def test_interrupted_schedule_reclaims_completed_clip_job_for_upload(monkeypatch):
+    import api
+
+    source_url = "https://www.youtube.com/watch?v=abcdefghijk"
+    started = datetime(2026, 10, 17, 11, 28, tzinfo=timezone.utc)
+    interrupted = started + timedelta(minutes=27)
+    run = api.AutoViralRun(
+        id="interrupted-parent",
+        status="failed",
+        trigger="schedule",
+        created_at=started.isoformat(),
+        updated_at=interrupted.isoformat(),
+        finished_at=interrupted.isoformat(),
+        progress_stage="interrupted",
+        progress_percent=19,
+        request=AutoViralRequest(
+            video_count=3,
+            clips_per_video=1,
+            auto_upload_youtube=True,
+            auto_upload_tiktok=True,
+        ),
+        selected_sources=[{"url": source_url, "title": "Sumber recovery"}],
+    )
+    job = ClipJob(
+        id="recovered-job",
+        status="completed",
+        request=ClipJobRequest(url=source_url),
+        created_at=(started + timedelta(minutes=11)).isoformat(),
+        updated_at=(interrupted + timedelta(hours=20)).isoformat(),
+        finished_at=(interrupted + timedelta(hours=20)).isoformat(),
+        source_url=source_url,
+        source_title="Sumber recovery",
+        clips=[ClipFile(name="clip.mp4", url="/outputs/clip.mp4", size_bytes=123)],
+    )
+    monkeypatch.setattr(api, "auto_viral_runs", {run.id: run})
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+
+    assert api.reconcile_interrupted_scheduled_clip_runs() == 1
+
+    recovered = api.auto_viral_runs[run.id]
+    assert recovered.status == "queued"
+    assert recovered.progress_stage == "resume_pending_upload"
+    assert recovered.finished_at is None
+    assert recovered.processed[0]["job_id"] == job.id
+    assert recovered.processed[0]["job_status"] == "completed"
 
 
 def test_auto_viral_upload_retry_reuses_same_checkpoint(monkeypatch):
@@ -1595,6 +1665,157 @@ def test_scheduled_upload_requires_complete_rights_profile(monkeypatch):
     assert request.auto_upload_youtube is True
     assert request.auto_upload_tiktok is True
     assert request.source_rights_confirmed is True
+
+
+def test_completed_job_upload_retry_respects_durable_records_and_cooldown(monkeypatch):
+    import api
+
+    now = datetime(2026, 10, 18, 14, 0, tzinfo=timezone.utc)
+    active = SimpleNamespace(
+        source_job_id="job-1",
+        clip_url="/outputs/clip.mp4",
+        status="queued",
+        upload_confirmed=False,
+        dry_run=False,
+        updated_at=now.isoformat(),
+    )
+    assert not api.completed_job_upload_retry_ready(
+        [active], "job-1", "/outputs/clip.mp4", now=now
+    )
+
+    failed = SimpleNamespace(
+        source_job_id="job-1",
+        clip_url="/outputs/clip.mp4",
+        status="failed",
+        upload_confirmed=False,
+        dry_run=False,
+        updated_at=(now - timedelta(minutes=5)).isoformat(),
+    )
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS_RETRY_MINUTES", "15")
+    assert not api.completed_job_upload_retry_ready(
+        [failed], "job-1", "/outputs/clip.mp4", now=now
+    )
+    assert api.completed_job_upload_retry_ready(
+        [failed],
+        "job-1",
+        "/outputs/clip.mp4",
+        now=now + timedelta(minutes=11),
+    )
+
+
+def test_completed_job_sweeper_queues_both_public_platforms_without_ui(monkeypatch):
+    import api
+
+    clip = ClipFile(
+        name="clip.mp4",
+        url="/outputs/clip.mp4",
+        size_bytes=1024,
+        fyp_score=95,
+        growth_quality_gate_passed=True,
+    )
+    job = ClipJob(
+        id="completed-job",
+        status="completed",
+        request=ClipJobRequest(),
+        created_at="2026-10-18T13:00:00+00:00",
+        updated_at="2026-10-18T13:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS", "true")
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS_YOUTUBE", "true")
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS_TIKTOK", "true")
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(
+        api,
+        "best_automatic_upload_clip_urls",
+        lambda *_args, **_kwargs: [clip.url],
+    )
+    monkeypatch.setattr(
+        api,
+        "pending_completed_job_upload_urls",
+        lambda _job, urls, *, platform: urls,
+    )
+    monkeypatch.setattr(api, "youtube_default_visibility", lambda: "public")
+    monkeypatch.setattr(api, "safe_tiktok_visibility", lambda *_args: "public")
+    monkeypatch.setattr(api, "require_youtube_ready", lambda: None)
+    monkeypatch.setattr(api, "require_tiktok_ready", lambda: None)
+
+    queued: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        api,
+        "create_youtube_upload_batch_records",
+        lambda _job_id, request: [
+            SimpleNamespace(status="queued", visibility=request.visibility)
+        ],
+    )
+    monkeypatch.setattr(
+        api,
+        "create_tiktok_upload_batch_records",
+        lambda _job_id, request, **_kwargs: [
+            SimpleNamespace(status="queued", visibility=request.visibility)
+        ],
+    )
+    monkeypatch.setattr(
+        api,
+        "queue_youtube_upload_jobs",
+        lambda items: queued.append(("youtube", items[0].visibility)),
+    )
+    monkeypatch.setattr(
+        api,
+        "queue_tiktok_upload_jobs",
+        lambda items: queued.append(("tiktok", items[0].visibility)),
+    )
+
+    assert api.queue_completed_job_uploads_once() == {
+        "youtube": 1,
+        "tiktok": 1,
+        "repair": 0,
+    }
+    assert queued == [("youtube", "public"), ("tiktok", "public")]
+
+
+def test_completed_job_sweeper_repairs_quality_failure_instead_of_publishing(monkeypatch):
+    import api
+
+    clip = ClipFile(
+        name="clip.mp4",
+        url="/outputs/clip.mp4",
+        size_bytes=1024,
+    )
+    job = ClipJob(
+        id="needs-repair",
+        status="completed",
+        request=ClipJobRequest(clip_mode="short"),
+        created_at="2026-10-18T13:00:00+00:00",
+        updated_at="2026-10-18T13:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS", "true")
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS_YOUTUBE", "true")
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS_TIKTOK", "true")
+    monkeypatch.setenv("AUTO_REPAIR_COMPLETED_JOBS", "true")
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "best_automatic_upload_clip_urls", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        api,
+        "youtube_monetization_preflight_issue",
+        lambda *_args: "Upload diblokir: alur Short belum lengkap.",
+    )
+    monkeypatch.setattr(api, "active_youtube_uploads_for_job", lambda *_args: [])
+    monkeypatch.setattr(api, "active_tiktok_uploads_for_job", lambda *_args: [])
+    repaired: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        api,
+        "repair_job_clip_context",
+        lambda job_id, request: repaired.append((job_id, request.url)),
+    )
+
+    assert api.queue_completed_job_uploads_once() == {
+        "youtube": 0,
+        "tiktok": 0,
+        "repair": 1,
+    }
+    assert repaired == [(job.id, clip.url)]
 
 
 def test_scheduled_kindness_theme_is_randomized_and_cc_label_is_optional(monkeypatch):
