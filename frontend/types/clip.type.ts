@@ -699,6 +699,9 @@ export type AutoViralRequest = {
   source_rights_confirmed?: boolean;
   source_rights_evidence?: string;
   creator_perspective?: string;
+  create_paired_long_video?: boolean;
+  paired_long_duration?: number;
+  auto_publish_paired_long_video?: boolean;
 };
 
 export type AutoViralRun = {
@@ -731,6 +734,9 @@ export type AutoViralScheduleStatus = {
   boot_delay_minutes: number;
   post_clip_upload_delay_minutes: number;
   background_upload_enabled: boolean;
+  paired_long_video_enabled: boolean;
+  paired_long_duration: number;
+  paired_long_auto_public_enabled: boolean;
   active_run_id?: string | null;
   last_run_id?: string | null;
   last_started_at?: string | null;

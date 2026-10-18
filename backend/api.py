@@ -4,6 +4,7 @@ from collections import Counter
 import hashlib
 import json
 import importlib.util
+import math
 import os
 import queue
 import random
@@ -418,6 +419,9 @@ class ClipJobRequest(BaseModel):
     clip_mode: Literal["short", "highlight_5m", "long_animate", "original_rebuild"] = "short"
     # Keep 240s readable for persisted legacy jobs; the current UI offers 300-600s.
     compilation_target_seconds: float = Field(default=300, ge=240, le=600)
+    # Internal long-form jobs may pin the exact source moments used by their
+    # companion Shorts. This keeps a paired Long Story grounded in its Short.
+    compilation_anchor_ranges: list[tuple[float, float]] = Field(default_factory=list)
     model: str = "Systran/faster-whisper-medium"
     language: str = "id"
     analyze_seconds: float | None = Field(default=None, ge=10, le=7200)
@@ -474,6 +478,23 @@ class ClipJobRequest(BaseModel):
     @classmethod
     def _clean_compliance_text(cls, value: str) -> str:
         return re.sub(r"\s+", " ", value).strip()
+
+    @field_validator("compilation_anchor_ranges")
+    @classmethod
+    def _validate_compilation_anchor_ranges(
+        cls,
+        value: list[tuple[float, float]],
+    ) -> list[tuple[float, float]]:
+        cleaned: list[tuple[float, float]] = []
+        for raw_start, raw_end in value[:5]:
+            start = float(raw_start)
+            end = float(raw_end)
+            if not math.isfinite(start) or not math.isfinite(end):
+                raise ValueError("compilation anchor ranges must be finite")
+            if start < 0 or end <= start:
+                raise ValueError("compilation anchor ranges must have 0 <= start < end")
+            cleaned.append((round(start, 3), round(end, 3)))
+        return cleaned
 
     @model_validator(mode="after")
     def _apply_channel_recovery_profile(self) -> "ClipJobRequest":
@@ -1532,19 +1553,21 @@ ISLAMIC_EVERGREEN_NICHES: dict[str, dict[str, Any]] = {
         "hashtags": ["KesehatanMentalIslam", "KetenanganHati", "Tawakal"],
     },
     "kindness_social_good": {
-        "label": "Kebaikan, Empati & Saling Mengingatkan",
+        "label": "Kebaikan, Pendidikan, Moral & Empati",
         "queries": [
             "kisah kebaikan sederhana menurut islam",
-            "menolong sesama kisah inspiratif muslim",
-            "sedekah kecil yang mengubah hidup kisah nyata",
-            "menjaga lisan dan tidak menghakimi menurut islam",
+            "guru yang mengubah hidup murid kisah inspiratif indonesia",
+            "pendidikan karakter anak dan remaja indonesia",
+            "pelajaran moral dari kisah nyata indonesia",
+            "menolong sesama kisah inspiratif indonesia",
+            "kebiasaan baik yang berdampak besar",
+            "etika digital sebelum berkomentar",
+            "menjaga lisan dan tidak menghakimi",
             "memaafkan dan meminta maaf dalam islam",
-            "adab bertetangga dan kepedulian sosial muslim",
             "bakti kepada orang tua kisah penuh hikmah",
             "amanah dan kejujuran dalam kehidupan sehari hari",
-            "empati kepada orang susah menurut islam",
-            "gotong royong dan kebaikan umat islam indonesia",
-            "adab digital muslim sebelum berkomentar",
+            "empati kepada orang yang sedang kesulitan",
+            "gotong royong dan kepedulian sosial indonesia",
             "saling mengingatkan dalam kebaikan dengan lembut",
         ],
         "keywords": [
@@ -1552,9 +1575,10 @@ ISLAMIC_EVERGREEN_NICHES: dict[str, dict[str, Any]] = {
             "tolong", "sedekah", "berbagi", "memaafkan", "maaf", "amanah",
             "jujur", "kejujuran", "lisan", "menghakimi", "tetangga", "bakti",
             "orang tua", "gotong royong", "mengingatkan", "nasihat", "lembut",
-            "adab", "akhlak",
+            "adab", "akhlak", "pendidikan", "belajar", "guru", "murid",
+            "karakter", "moral", "etika", "teladan", "tanggung jawab",
         ],
-        "hashtags": ["KebaikanHarian", "SalingMengingatkan", "AkhlakMulia"],
+        "hashtags": ["KebaikanHarian", "SalingMengingatkan", "PendidikanKarakter"],
     },
     "halal_wealth": {
         "label": "Rezeki Halal, Karier & Keuangan",
@@ -1705,10 +1729,11 @@ FAST_YOUTUBE_DATA_API_TERMS: dict[str, list[str]] = {
         "psikologi islam",
     ],
     "kindness_social_good": [
-        "kebaikan menurut islam",
-        "menolong sesama muslim",
-        "empati dan akhlak",
-        "saling mengingatkan",
+        "kisah kebaikan indonesia",
+        "pendidikan karakter",
+        "pelajaran moral kisah nyata",
+        "empati dan kepedulian sosial",
+        "saling mengingatkan kebaikan",
     ],
     "halal_wealth": [
         "rezeki halal",
@@ -1875,13 +1900,16 @@ class AutoViralRequest(BaseModel):
     ai_api_key: str = ""
     source_urls: list[str] = Field(default_factory=list)
     require_creative_commons: bool = True
-    # Discovery can be automated, but publication must wait for human rights
-    # evidence, creator perspective, and YouTube's private copyright checks.
+    # Discovery and publication may run unattended only after the configured
+    # rights attestation, creator perspective, AI/QC gates, and YouTube checks.
     auto_upload_youtube: bool = False
     auto_upload_tiktok: bool = False
     source_rights_confirmed: bool = False
     source_rights_evidence: str = Field(default="", max_length=2000)
     creator_perspective: str = Field(default="", max_length=4000)
+    create_paired_long_video: bool = False
+    paired_long_duration: float = Field(default=300, ge=240, le=600)
+    auto_publish_paired_long_video: bool = False
 
     @field_validator("visual_mode", mode="before")
     @classmethod
@@ -1908,6 +1936,8 @@ class AutoViralRequest(BaseModel):
 
     @model_validator(mode="after")
     def _apply_niche_priority(self) -> "AutoViralRequest":
+        if self.auto_publish_paired_long_video:
+            self.create_paired_long_video = True
         if youtube_channel_recovery_mode():
             if self.niche == "auto":
                 self.niche = youtube_recovery_niche()
@@ -1974,6 +2004,9 @@ class AutoViralScheduleStatus(BaseModel):
     boot_delay_minutes: float = 30
     post_clip_upload_delay_minutes: float = 30
     background_upload_enabled: bool = False
+    paired_long_video_enabled: bool = False
+    paired_long_duration: float = 300
+    paired_long_auto_public_enabled: bool = False
     active_run_id: str | None = None
     last_run_id: str | None = None
     last_started_at: str | None = None
@@ -11389,6 +11422,13 @@ def build_clipper_command(
             request.language,
         ]
     )
+    if request.clip_mode == "highlight_5m" and request.compilation_anchor_ranges:
+        command.extend(
+            [
+                "--compilation-anchor-ranges",
+                json.dumps(request.compilation_anchor_ranges, separators=(",", ":")),
+            ]
+        )
     if request.clip_mode == "long_animate":
         command.extend(
             ["--long-animate-target-duration", str(request.compilation_target_seconds)]
@@ -12438,6 +12478,14 @@ INFORMATION_FORMAT_MARKERS = {
     "tanya", "wawancara",
 }
 
+CONSTRUCTIVE_INFORMATION_ANCHORS = {
+    "amanah", "bakti", "belajar", "berbagi", "empati", "etika", "guru",
+    "jujur", "karakter", "kebaikan", "keluarga", "kepedulian", "kisah",
+    "memaafkan", "menolong", "moral", "murid", "nasihat", "orang", "peduli",
+    "pelajaran", "pendidikan", "refleksi", "sejarah", "sosial", "teladan",
+    "tanggung", "tolong",
+}
+
 
 def islamic_information_score(info: dict[str, Any]) -> float:
     """Estimate religious information value without using channel reach.
@@ -12471,6 +12519,41 @@ def islamic_information_score(info: dict[str, Any]) -> float:
     return round(min(100.0, score), 2)
 
 
+def constructive_information_score(info: dict[str, Any]) -> float:
+    """Score useful education, moral stories, and social-good explanations."""
+    title = re.sub(r"[^a-z0-9]+", " ", str(info.get("title") or "").casefold())
+    description = re.sub(
+        r"[^a-z0-9]+", " ", str(info.get("description") or "").casefold()
+    )
+    tags = info.get("tags") if isinstance(info.get("tags"), list) else []
+    supporting = f"{description} {' '.join(map(str, tags)).casefold()}"
+    title_words = set(title.split())
+    supporting_words = set(supporting.split())
+    value_hits = title_words.intersection(CONSTRUCTIVE_INFORMATION_ANCHORS)
+    value_support = supporting_words.intersection(CONSTRUCTIVE_INFORMATION_ANCHORS)
+    format_hits = title_words.intersection(INFORMATION_FORMAT_MARKERS)
+    format_support = supporting_words.intersection(INFORMATION_FORMAT_MARKERS)
+    relevance = niche_relevance_score(info, "kindness_social_good")
+    if not (value_hits or value_support):
+        return 0.0
+    score = relevance * 0.50
+    score += min(34.0, len(value_hits) * 9.0 + len(value_support) * 3.0)
+    score += min(20.0, len(format_hits) * 7.0 + len(format_support) * 3.0)
+    if (format_hits or format_support) and relevance >= 18:
+        score += 8.0
+    return round(min(100.0, score), 2)
+
+
+def source_information_score(info: dict[str, Any], niche: IslamicContentNiche) -> float:
+    """Use a broad constructive-value score only for the social-good profile."""
+    religious_score = islamic_information_score(info)
+    if niche == "kindness_social_good":
+        return max(religious_score, constructive_information_score(info))
+    if niche == "auto":
+        return max(religious_score, constructive_information_score(info))
+    return religious_score
+
+
 def niche_candidate_rejection_reason(
     info: dict[str, Any],
     niche: IslamicContentNiche,
@@ -12493,13 +12576,18 @@ def niche_candidate_relaxation_reasons(
             f"kecocokan tema {relevance_score:.0f}/100 di bawah minimum "
             f"{minimum_relevance}/100"
         )
-    information_score = islamic_information_score(info)
+    information_score = source_information_score(info, niche)
     minimum_information = max(
         1, min(100, env_int("VIRAL_CC_MIN_INFORMATION_SCORE", 24))
     )
     if information_score < minimum_information:
+        information_label = (
+            "nilai pendidikan/kebaikan"
+            if niche == "kindness_social_good"
+            else "nilai informasi Islam"
+        )
         reasons.append(
-            f"nilai informasi Islam {information_score:.0f}/100 di bawah minimum "
+            f"{information_label} {information_score:.0f}/100 di bawah minimum "
             f"{minimum_information}/100"
         )
     language_score = indonesian_language_score(info)
@@ -12510,6 +12598,21 @@ def niche_candidate_relaxation_reasons(
             f"{minimum_language}/100"
         )
     return reasons
+
+
+def niche_content_relaxation_reasons(reasons: list[str]) -> list[str]:
+    """Keep semantic-quality rejections shared by both search providers."""
+    return [
+        reason
+        for reason in reasons
+        if reason.startswith(
+            (
+                "kecocokan tema",
+                "nilai informasi Islam",
+                "nilai pendidikan/kebaikan",
+            )
+        )
+    ]
 
 
 def compact_source_payload(
@@ -12526,7 +12629,7 @@ def compact_source_payload(
         else (niche, niche_relevance_score(info, niche))
     )
     language_score = indonesian_language_score(info)
-    information_score = islamic_information_score(info)
+    information_score = source_information_score(info, niche)
     conversation_profile = fresh_conversation_source_profile(info)
     conversation_opportunity = min(
         100.0, float(conversation_profile["score"]) * 2.25
@@ -12542,6 +12645,11 @@ def compact_source_payload(
         + momentum_score * 0.05
     )
     profile = ISLAMIC_EVERGREEN_NICHES.get(resolved_niche, {})
+    information_label = (
+        "nilai pendidikan/kebaikan"
+        if resolved_niche == "kindness_social_good"
+        else "nilai informasi Islam"
+    )
     source_height = source_max_height(info)
     definition = str(info.get("definition") or "").strip().casefold()
     if not definition and source_height >= 720:
@@ -12588,7 +12696,7 @@ def compact_source_payload(
         "niche_score": relevance_score,
         "language_score": language_score,
         "ranking_reason": (
-            f"Kecocokan tema {relevance_score:.0f}/100 • nilai informasi Islam "
+            f"Kecocokan tema {relevance_score:.0f}/100 • {information_label} "
             f"{information_score:.0f}/100 • Bahasa Indonesia {language_score:.0f}/100 "
             f"• momentum hanya sinyal {momentum_score:.0f}/100"
             + (
@@ -12599,7 +12707,7 @@ def compact_source_payload(
             if niche != "auto"
             else (
                 f"Auto memilih {profile.get('label', resolved_niche)} • kecocokan "
-                f"{relevance_score:.0f}/100 • nilai informasi Islam "
+                f"{relevance_score:.0f}/100 • {information_label} "
                 f"{information_score:.0f}/100 • Bahasa Indonesia {language_score:.0f}/100 "
                 f"• momentum hanya sinyal {momentum_score:.0f}/100"
                 + (
@@ -13142,10 +13250,7 @@ def search_youtube_data_api_viral_sources(
                     f"{payload.get('title') or '-'}",
                 )
                 continue
-            content_reasons = [
-                reason for reason in niche_reasons
-                if reason.startswith(("kecocokan tema", "nilai informasi Islam"))
-            ]
+            content_reasons = niche_content_relaxation_reasons(niche_reasons)
             if content_reasons:
                 append_auto_viral_log(
                     run_id,
@@ -13299,10 +13404,7 @@ def search_auto_viral_sources(
                     f"{metadata.get('title') or url}",
                 )
                 continue
-            content_reasons = [
-                reason for reason in niche_reasons
-                if reason.startswith(("kecocokan tema", "nilai informasi Islam"))
-            ]
+            content_reasons = niche_content_relaxation_reasons(niche_reasons)
             if content_reasons:
                 append_auto_viral_log(
                     run_id,
@@ -14034,6 +14136,11 @@ def create_auto_viral_clip_job(source: dict[str, Any], request: AutoViralRequest
     if job_request.max_duration <= job_request.min_duration:
         raise RuntimeError("max_duration must be greater than min_duration")
     job_request = normalize_job_request(job_request)
+    return queue_auto_viral_clip_job(job_request)
+
+
+def queue_auto_viral_clip_job(job_request: ClipJobRequest) -> ClipJob:
+    """Persist one already-normalized automation job without starting it."""
     secret = job_request.ai_api_key
     job_id = uuid.uuid4().hex
     if secret:
@@ -14053,6 +14160,115 @@ def create_auto_viral_clip_job(source: dict[str, Any], request: AutoViralRequest
         jobs[job_id] = job
         save_jobs_unlocked()
     return job
+
+
+def create_auto_viral_paired_long_job(
+    source: dict[str, Any],
+    request: AutoViralRequest,
+    short_job: ClipJob,
+) -> ClipJob:
+    """Create a Long Story whose selected parts must include every Short beat."""
+    strict_rejection = viral_source_rejection_reason(
+        source,
+        require_creative_commons=request.require_creative_commons,
+    )
+    if strict_rejection:
+        raise RuntimeError(
+            "Gate Content ID membatalkan pasangan Long Story sebelum download: "
+            f"{strict_rejection}"
+        )
+    anchors = [
+        (candidate.start, candidate.end)
+        for candidate in short_job.candidates
+        if candidate.end > candidate.start
+    ][: max(1, request.clips_per_video)]
+    if not anchors:
+        raise RuntimeError("Short selesai tanpa timestamp kandidat untuk anchor Long Story")
+
+    wait_for_no_active_clipping_job()
+    job_request = ClipJobRequest(
+        url=str(source["url"]),
+        top=max(4, math.ceil(request.paired_long_duration / 60)),
+        min_duration=request.min_duration,
+        max_duration=request.max_duration,
+        clip_mode="highlight_5m",
+        compilation_target_seconds=request.paired_long_duration,
+        compilation_anchor_ranges=anchors,
+        video_quality=request.video_quality,
+        visual_mode=request.visual_mode,
+        background_mode=request.background_mode,
+        burn_subtitles=request.burn_subtitles,
+        crop_mode=request.crop_mode,
+        require_creative_commons=request.require_creative_commons,
+        auto_upload_youtube=False,
+        allow_reprocess_source=True,
+        confirm_source_rights=request.source_rights_confirmed,
+        source_rights_evidence=request.source_rights_evidence,
+        creator_perspective=request.creator_perspective,
+        ai_enabled=request.ai_enabled,
+        ai_base_url=request.ai_base_url,
+        ai_model=request.ai_model,
+        ai_api_key=request.ai_api_key,
+        required_hashtags=list(
+            dict.fromkeys(
+                DEFAULT_REQUIRED_HASHTAGS
+                + list(ISLAMIC_EVERGREEN_NICHES.get(request.niche, {}).get("hashtags", []))
+            )
+        ),
+    )
+    job_request = normalize_job_request(job_request)
+    return queue_auto_viral_clip_job(job_request)
+
+
+def auto_viral_short_long_relevance_audit(
+    short_job: ClipJob,
+    long_job: ClipJob,
+) -> dict[str, Any]:
+    """Prove that every Short moment is present in its paired Long Story."""
+    short_source = normalize_youtube_video_url(
+        short_job.source_url or short_job.request.url
+    )
+    long_source = normalize_youtube_video_url(
+        long_job.source_url or long_job.request.url
+    )
+    matches: list[dict[str, Any]] = []
+    for short_candidate in short_job.candidates:
+        short_duration = max(0.001, short_candidate.end - short_candidate.start)
+        best_overlap = 0.0
+        best_long_index: int | None = None
+        for long_candidate in long_job.candidates:
+            overlap = max(
+                0.0,
+                min(short_candidate.end, long_candidate.end)
+                - max(short_candidate.start, long_candidate.start),
+            )
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_long_index = long_candidate.index
+        coverage = best_overlap / short_duration
+        matches.append(
+            {
+                "short_index": short_candidate.index,
+                "long_part_index": best_long_index,
+                "source_overlap_seconds": round(best_overlap, 3),
+                "short_coverage": round(coverage, 4),
+                "passed": coverage >= 0.5,
+            }
+        )
+    passed = bool(
+        short_source
+        and short_source == long_source
+        and matches
+        and all(item["passed"] for item in matches)
+    )
+    return {
+        "passed": passed,
+        "same_source": bool(short_source and short_source == long_source),
+        "source_url": short_source or short_job.request.url,
+        "required_short_count": len(short_job.candidates),
+        "matched_short_count": sum(bool(item["passed"]) for item in matches),
+        "matches": matches,
+    }
 
 
 def wait_for_uploads(upload_ids: list[str], timeout_seconds: int = 7200) -> list[YouTubeUploadJob]:
@@ -14231,7 +14447,11 @@ def auto_viral_run_can_resume_upload(run: AutoViralRun | None) -> bool:
     if (
         run is None
         or run.trigger != "schedule"
-        or not (run.request.auto_upload_youtube or run.request.auto_upload_tiktok)
+        or not (
+            run.request.auto_upload_youtube
+            or run.request.auto_upload_tiktok
+            or run.request.auto_publish_paired_long_video
+        )
     ):
         return False
     completed_jobs = [
@@ -14273,11 +14493,12 @@ def scheduled_auto_viral_job_ids() -> set[str]:
     with auto_viral_lock:
         runs = list(auto_viral_runs.values())
     return {
-        str(item.get("job_id") or "").strip()
+        job_id
         for run in runs
         if run.trigger == "schedule"
         for item in run.processed
-        if str(item.get("job_id") or "").strip()
+        for key in ("job_id", "long_job_id")
+        if (job_id := str(item.get(key) or "").strip())
     }
 
 
@@ -14390,7 +14611,11 @@ def upload_auto_viral_processed_jobs(
     processed: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Upload audited clips to every requested platform with durable checkpoints."""
-    if not (request.auto_upload_youtube or request.auto_upload_tiktok):
+    if not (
+        request.auto_upload_youtube
+        or request.auto_upload_tiktok
+        or request.auto_publish_paired_long_video
+    ):
         raise RuntimeError("Tidak ada platform upload yang diaktifkan")
     upload_items = [
         item
@@ -14407,6 +14632,7 @@ def upload_auto_viral_processed_jobs(
             raise RuntimeError("Job ID clip hilang pada fase upload")
         stored_youtube = item.get("youtube_uploads", item.get("uploads", []))
         stored_tiktok = item.get("tiktok_uploads", [])
+        stored_paired_long = item.get("paired_long_youtube_uploads", [])
         expected_groups_verified: list[bool] = []
         if request.auto_upload_youtube:
             expected_groups_verified.append(
@@ -14422,6 +14648,13 @@ def upload_auto_viral_processed_jobs(
                     platform="tiktok",
                 )
             )
+        if request.auto_publish_paired_long_video:
+            expected_groups_verified.append(
+                persisted_upload_group_is_verified(
+                    stored_paired_long,
+                    platform="youtube",
+                )
+            )
         if (
             item.get("status") == "completed"
             and expected_groups_verified
@@ -14430,8 +14663,16 @@ def upload_auto_viral_processed_jobs(
             continue
         with jobs_lock:
             finished_job = jobs.get(job_id)
+            long_job_id = str(item.get("long_job_id") or "")
+            finished_long_job = jobs.get(long_job_id) if long_job_id else None
         if finished_job is None or finished_job.status != "completed":
             raise RuntimeError(f"Job {job_id[:10]} tidak siap untuk upload resume")
+        if request.auto_publish_paired_long_video and (
+            finished_long_job is None or finished_long_job.status != "completed"
+        ):
+            raise RuntimeError(
+                f"Long Story pasangan {long_job_id[:10] or '-'} tidak siap untuk auto-public"
+            )
 
         # A durable backlog may have been rendered by an older policy version.
         # Re-check every requested platform before creating any upload so a
@@ -14479,6 +14720,44 @@ def upload_auto_viral_processed_jobs(
                 append_auto_viral_log(
                     run_id,
                     f"Job {job_id[:10]} tidak diulang lagi: {item['error']}",
+                )
+                continue
+
+        if request.auto_publish_paired_long_video and isinstance(
+            finished_long_job, ClipJob
+        ):
+            eligible_long_urls = best_automatic_upload_clip_urls(
+                finished_long_job,
+                1,
+                allow_audited_automation=True,
+                require_youtube_fyp_target=False,
+            )
+            if not eligible_long_urls:
+                long_issues = [
+                    issue
+                    for clip in finished_long_job.clips
+                    if (
+                        issue := youtube_monetization_preflight_issue(
+                            finished_long_job,
+                            clip,
+                        )
+                    )
+                ]
+                item["status"] = "ai_review_failed"
+                item["error"] = (
+                    long_issues[0]
+                    if long_issues
+                    else "Long Story tidak lolos gate AI/QC untuk auto-public"
+                )
+                item["cleanup"] = "auto-public diblokir; file dipertahankan untuk perbaikan otomatis"
+                update_auto_viral_run(
+                    run_id,
+                    processed=processed,
+                    progress_current=position,
+                )
+                append_auto_viral_log(
+                    run_id,
+                    f"Long Story {long_job_id[:10]} gagal audit otomatis: {item['error']}",
                 )
                 continue
 
@@ -14595,6 +14874,75 @@ def upload_auto_viral_processed_jobs(
                 if not tiktok_upload_is_verified(upload)
             )
 
+        if request.auto_publish_paired_long_video:
+            assert isinstance(finished_long_job, ClipJob)
+            prior_ids = [
+                str(upload.get("id") or "")
+                for upload in stored_paired_long
+                if isinstance(upload, dict) and str(upload.get("id") or "")
+            ] if isinstance(stored_paired_long, list) else []
+            with youtube_uploads_lock:
+                prior_long_uploads = [
+                    youtube_uploads[upload_id]
+                    for upload_id in prior_ids
+                    if upload_id in youtube_uploads
+                ]
+            long_upload_jobs = [
+                upload
+                for upload in prior_long_uploads
+                if upload.status in {"queued", "running", "completed"}
+            ]
+            if not long_upload_jobs:
+                with youtube_upload_creation_lock:
+                    require_auto_viral_daily_upload_slot("youtube")
+                    long_upload_jobs = create_youtube_upload_batch_records(
+                        finished_long_job.id,
+                        YouTubeBatchUploadRequest(
+                            best_count=1,
+                            visibility="public",
+                        ),
+                    )
+                    queue_youtube_upload_jobs(long_upload_jobs)
+            finished_long_uploads = wait_for_uploads(
+                [upload.id for upload in long_upload_jobs]
+            )
+            item["paired_long_youtube_uploads"] = [
+                {
+                    "platform": "youtube_long",
+                    "id": upload.id,
+                    "status": upload.status,
+                    "title": upload.title,
+                    "video_url": upload.video_url,
+                    "visibility": upload.visibility,
+                    "upload_confirmed": upload.upload_confirmed,
+                    "dry_run": upload.dry_run,
+                    "error": upload.error,
+                }
+                for upload in finished_long_uploads
+            ]
+            if not finished_long_uploads:
+                failures.append("YouTube Long: tidak ada job upload yang selesai")
+            failures.extend(
+                f"YouTube Long: {upload.error or 'publikasi belum terverifikasi'}"
+                for upload in finished_long_uploads
+                if not youtube_upload_is_verified(upload)
+                or upload.visibility != "public"
+            )
+            public_long_url = next(
+                (
+                    upload.video_url
+                    for upload in finished_long_uploads
+                    if youtube_upload_is_verified(upload)
+                    and upload.visibility == "public"
+                ),
+                None,
+            )
+            if public_long_url:
+                item["published_long_url"] = public_long_url
+                for pair in item.get("short_long_pairs", []):
+                    if isinstance(pair, dict):
+                        pair["long_public_url"] = public_long_url
+
         update_auto_viral_run(run_id, processed=processed)
         if failures:
             item["status"] = "failed"
@@ -14602,7 +14950,16 @@ def upload_auto_viral_processed_jobs(
             raise RuntimeError("Upload belum sukses semua: " + "; ".join(failures))
         item["status"] = "completed"
         cleanup = delete_all_job_clips(job_id)
-        item["cleanup"] = f"{cleanup.removed_clips} clip dihapus"
+        removed_long_clips = 0
+        if request.auto_publish_paired_long_video and long_job_id:
+            long_cleanup = delete_all_job_clips(long_job_id)
+            removed_long_clips = long_cleanup.removed_clips
+        item["cleanup"] = (
+            f"{cleanup.removed_clips} short dan {removed_long_clips} long lokal dihapus "
+            "setelah upload terverifikasi"
+            if request.auto_publish_paired_long_video
+            else f"{cleanup.removed_clips} clip dihapus"
+        )
         update_auto_viral_run(run_id, processed=processed, progress_current=position)
         append_auto_viral_log(
             run_id,
@@ -14745,7 +15102,10 @@ def auto_viral_summary(run: AutoViralRun) -> str:
         "Auto Viral selesai",
         f"Run: {run.id}",
         f"Status: {run.status}",
-        f"Target: {run.request.video_count} video, {run.request.clips_per_video} clip/video",
+        (
+            f"Target: {run.request.video_count} sumber, {run.request.clips_per_video} short/sumber"
+            + (" + Long Story relevan" if run.request.create_paired_long_video else "")
+        ),
         f"Sukses: {sum(1 for item in run.processed if item.get('status') == 'completed')}",
         "",
         "Sumber dipilih:",
@@ -14761,9 +15121,13 @@ def auto_viral_summary(run: AutoViralRun) -> str:
         youtube_items = legacy_or_youtube if isinstance(legacy_or_youtube, list) else []
         raw_tiktok = item.get("tiktok_uploads", [])
         tiktok_items = raw_tiktok if isinstance(raw_tiktok, list) else []
-        uploads = [*youtube_items, *tiktok_items]
+        raw_long = item.get("paired_long_youtube_uploads", [])
+        long_items = raw_long if isinstance(raw_long, list) else []
+        uploads = [*youtube_items, *tiktok_items, *long_items]
         lines.append(
-            f"{index}. {item.get('title')} | {item.get('status')} | clips {item.get('clip_count')} | uploaded {len(uploads)} | cleanup {item.get('cleanup') or '-'}"
+            f"{index}. {item.get('title')} | {item.get('status')} | shorts {item.get('clip_count')}"
+            f" | long {item.get('long_clip_count') or 0} | uploaded {len(uploads)}"
+            f" | cleanup {item.get('cleanup') or '-'}"
         )
         for upload in uploads[:5]:
             platform = upload.get("platform") or "youtube"
@@ -14947,7 +15311,11 @@ def run_auto_viral_campaign(run_id: str) -> None:
         run_request = run.request.model_copy(update={"ai_api_key": run_secret})
         deferred_background_upload = bool(
             run.trigger == "schedule"
-            and (run_request.auto_upload_youtube or run_request.auto_upload_tiktok)
+            and (
+                run_request.auto_upload_youtube
+                or run_request.auto_upload_tiktok
+                or run_request.auto_publish_paired_long_video
+            )
         )
         update_auto_viral_run(
             run_id,
@@ -14961,7 +15329,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
             ),
         )
         append_auto_viral_log(run_id, "Automation dimulai")
-        if run_request.auto_upload_youtube:
+        if run_request.auto_upload_youtube or run_request.auto_publish_paired_long_video:
             try:
                 require_youtube_ready()
             except HTTPException as exc:
@@ -15059,6 +15427,71 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 if finished_job.status != "completed" or not finished_job.clips:
                     raise RuntimeError(finished_job.error or f"Job selesai dengan status {finished_job.status}")
 
+                if run_request.create_paired_long_video:
+                    append_auto_viral_log(
+                        run_id,
+                        f"Membuat Long Story relevan dari sumber yang sama untuk job {finished_job.id[:10]}",
+                    )
+                    long_job = create_auto_viral_paired_long_job(
+                        source,
+                        run_request,
+                        finished_job,
+                    )
+                    item["long_job_id"] = long_job.id
+                    item["long_job_status"] = long_job.status
+                    update_auto_viral_run(
+                        run_id,
+                        processed=processed,
+                        message=(
+                            f"Short sumber {source_index}/{run_request.video_count} selesai; "
+                            "merakit Long Story pasangannya"
+                        ),
+                    )
+                    run_clip_job_with_campaign_progress(
+                        long_job.id,
+                        run_id,
+                        min(source_index, run_request.video_count),
+                        run_request.video_count,
+                    )
+                    with jobs_lock:
+                        finished_long_job = jobs.get(long_job.id)
+                    if finished_long_job is None:
+                        raise RuntimeError("Job Long Story pasangan hilang setelah clipping")
+                    item["long_job_status"] = finished_long_job.status
+                    item["long_clip_count"] = len(finished_long_job.clips)
+                    if finished_long_job.status != "completed" or not finished_long_job.clips:
+                        raise RuntimeError(
+                            finished_long_job.error
+                            or f"Long Story selesai dengan status {finished_long_job.status}"
+                        )
+                    relevance_audit = auto_viral_short_long_relevance_audit(
+                        finished_job,
+                        finished_long_job,
+                    )
+                    item["short_long_relevance"] = relevance_audit
+                    if not relevance_audit["passed"]:
+                        raise RuntimeError(
+                            "Long Story pasangan gagal audit relevansi sumber/timestamp"
+                        )
+                    long_clip = finished_long_job.clips[0]
+                    item["long_clip_urls"] = [
+                        clip.url for clip in finished_long_job.clips
+                    ]
+                    item["short_long_pairs"] = [
+                        {
+                            "short_url": clip.url,
+                            "short_title": clip.title or clip.name,
+                            "long_url": long_clip.url,
+                            "long_title": long_clip.title or long_clip.name,
+                            "source_url": relevance_audit["source_url"],
+                        }
+                        for clip in finished_job.clips
+                    ]
+                    append_auto_viral_log(
+                        run_id,
+                        f"Pasangan Short + Long Story lolos audit relevansi untuk {source.get('title')}",
+                    )
+
                 if deferred_background_upload:
                     if run_request.auto_upload_youtube and not best_automatic_upload_clip_urls(
                         finished_job,
@@ -15078,6 +15511,20 @@ def run_auto_viral_campaign(run_id: str) -> None:
                         raise RuntimeError(
                             "Tidak ada clip yang lolos seluruh gate kualitas dan upload TikTok"
                         )
+                    if run_request.auto_publish_paired_long_video:
+                        if not run_request.create_paired_long_video:
+                            raise RuntimeError(
+                                "Auto-public Long Story aktif tetapi pembuatan pasangan long nonaktif"
+                            )
+                        if not best_automatic_upload_clip_urls(
+                            finished_long_job,
+                            1,
+                            allow_audited_automation=True,
+                            require_youtube_fyp_target=False,
+                        ):
+                            raise RuntimeError(
+                                "Long Story pasangan tidak lolos audit AI, hak, transformasi, atau QC untuk auto-public"
+                            )
 
                 item["uploads"] = []
                 if run_request.auto_upload_youtube and not deferred_background_upload:
@@ -15131,7 +15578,14 @@ def run_auto_viral_campaign(run_id: str) -> None:
                     item["cleanup"] = "hasil clip disimpan untuk review"
                     append_auto_viral_log(
                         run_id,
-                        f"Job {finished_job.id[:10]} selesai; {len(finished_job.clips)} clip siap direview",
+                        (
+                            f"Job {finished_job.id[:10]} selesai; {len(finished_job.clips)} short"
+                            + (
+                                " dan Long Story pasangannya siap direview"
+                                if run_request.create_paired_long_video
+                                else " siap direview"
+                            )
+                        ),
                     )
                 if item.get("status") != "awaiting_upload":
                     item["status"] = "completed"
@@ -15153,7 +15607,11 @@ def run_auto_viral_campaign(run_id: str) -> None:
         if completed_count == 0:
             suffix = (
                 "clip dan upload"
-                if run_request.auto_upload_youtube or run_request.auto_upload_tiktok
+                if (
+                    run_request.auto_upload_youtube
+                    or run_request.auto_upload_tiktok
+                    or run_request.auto_publish_paired_long_video
+                )
                 else "masuk antrean clipping"
             )
             raise RuntimeError(f"Tidak ada video yang berhasil {suffix}")
@@ -15198,6 +15656,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 if not (
                     run.request.auto_upload_youtube
                     or run.request.auto_upload_tiktok
+                    or run.request.auto_publish_paired_long_video
                 )
                 else f"Automation selesai; {completed_count} batch terverifikasi terupload"
             ),
@@ -15238,9 +15697,13 @@ def resume_scheduled_auto_viral_upload(run_id: str) -> None:
             run = auto_viral_runs.get(run_id)
         if run is None or run.trigger != "schedule" or not run.processed:
             raise RuntimeError("Run upload terjadwal tidak memiliki checkpoint yang dapat dilanjutkan")
-        if not (run.request.auto_upload_youtube or run.request.auto_upload_tiktok):
+        if not (
+            run.request.auto_upload_youtube
+            or run.request.auto_upload_tiktok
+            or run.request.auto_publish_paired_long_video
+        ):
             raise RuntimeError("Checkpoint tidak meminta upload platform apa pun")
-        if run.request.auto_upload_youtube:
+        if run.request.auto_upload_youtube or run.request.auto_publish_paired_long_video:
             try:
                 require_youtube_ready()
             except HTTPException as exc:
@@ -15270,7 +15733,7 @@ def resume_scheduled_auto_viral_upload(run_id: str) -> None:
         held_count = sum(
             1
             for item in processed
-            if item.get("status") == "manual_review_required"
+            if item.get("status") in {"manual_review_required", "ai_review_failed"}
         )
         update_auto_viral_run(
             run_id,
@@ -15283,7 +15746,7 @@ def resume_scheduled_auto_viral_upload(run_id: str) -> None:
             processed=processed,
             message=(
                 f"Automation backlog selesai; {verified_count} batch terverifikasi terupload, "
-                f"{held_count} batch ditahan untuk review manual dan file dipertahankan."
+                f"{held_count} batch ditolak audit otomatis dan file dipertahankan untuk perbaikan."
                 if held_count
                 else (
                     "Automation selesai; semua hasil berkualitas yang tersedia "
@@ -15385,6 +15848,12 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
     tiktok_upload_requested = env_bool(
         "AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_TIKTOK", False
     )
+    paired_long_public_requested = env_bool(
+        "AUTO_VIRAL_SCHEDULE_PAIRED_LONG_AUTO_PUBLIC", False
+    )
+    paired_long_enabled = env_bool(
+        "AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", True
+    )
     rights_confirmed = env_bool(
         "AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED", False
     )
@@ -15434,6 +15903,19 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         source_rights_confirmed=rights_confirmed,
         source_rights_evidence=rights_evidence,
         creator_perspective=creator_perspective,
+        create_paired_long_video=paired_long_enabled,
+        paired_long_duration=max(
+            240,
+            min(600, env_int("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_SECONDS", 300)),
+        ),
+        auto_publish_paired_long_video=bool(
+            paired_long_public_requested
+            and paired_long_enabled
+            and rights_profile_ready
+            and headless_private_ready
+            and env_bool("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", False)
+            and not youtube_channel_recovery_mode()
+        ),
     )
 
 
@@ -15486,10 +15968,11 @@ def reconcile_interrupted_scheduled_clip_runs() -> int:
     with auto_viral_lock:
         runs = list(auto_viral_runs.values())
         claimed_job_ids = {
-            str(item.get("job_id") or "").strip()
+            claimed_id
             for run in runs
             for item in run.processed
-            if str(item.get("job_id") or "").strip()
+            for key in ("job_id", "long_job_id")
+            if (claimed_id := str(item.get(key) or "").strip())
         }
 
     recovered = 0
@@ -15498,7 +15981,11 @@ def reconcile_interrupted_scheduled_clip_runs() -> int:
             run.trigger != "schedule"
             or run.status != "failed"
             or run.progress_stage != "interrupted"
-            or not (run.request.auto_upload_youtube or run.request.auto_upload_tiktok)
+            or not (
+                run.request.auto_upload_youtube
+                or run.request.auto_upload_tiktok
+                or run.request.auto_publish_paired_long_video
+            )
             or not run.selected_sources
         ):
             continue
@@ -15516,8 +16003,22 @@ def reconcile_interrupted_scheduled_clip_runs() -> int:
                 )
             )
         }
-        matches: list[tuple[ClipJob, dict[str, Any]]] = []
+        def belongs_to_interrupted_run(job: ClipJob) -> bool:
+            job_created_at = parse_utc_datetime(job.created_at, started_at)
+            return bool(
+                started_at - timedelta(seconds=5)
+                <= job_created_at
+                <= interrupted_at + timedelta(minutes=5)
+            )
+
+        matches: list[
+            tuple[ClipJob, dict[str, Any], ClipJob | None, dict[str, Any] | None]
+        ] = []
         for job in completed_jobs:
+            # A paired Long Story belongs to its Short checkpoint; never adopt
+            # it as a standalone short/upload item after a restart.
+            if job.request.clip_mode != "short":
+                continue
             if job.id in claimed_job_ids:
                 continue
             job_url = normalize_youtube_video_url(
@@ -15526,42 +16027,96 @@ def reconcile_interrupted_scheduled_clip_runs() -> int:
             source = selected_by_url.get(job_url)
             if source is None:
                 continue
-            job_created_at = parse_utc_datetime(job.created_at, started_at)
             # A job is created synchronously by the campaign before the run can
             # be marked interrupted.  Keep a small skew allowance for writes
             # landing around shutdown.
-            if not (
-                started_at - timedelta(seconds=5)
-                <= job_created_at
-                <= interrupted_at + timedelta(minutes=5)
-            ):
+            if not belongs_to_interrupted_run(job):
                 continue
-            matches.append((job, source))
+            paired_long_job: ClipJob | None = None
+            relevance_audit: dict[str, Any] | None = None
+            if run.request.create_paired_long_video:
+                long_candidates = [
+                    candidate
+                    for candidate in completed_jobs
+                    if candidate.request.clip_mode == "highlight_5m"
+                    and candidate.id not in claimed_job_ids
+                    and belongs_to_interrupted_run(candidate)
+                    and normalize_youtube_video_url(
+                        str(candidate.source_url or candidate.request.url or "")
+                    )
+                    == job_url
+                ]
+                for candidate in sorted(
+                    long_candidates,
+                    key=lambda item: item.created_at,
+                ):
+                    candidate_audit = auto_viral_short_long_relevance_audit(
+                        job,
+                        candidate,
+                    )
+                    if candidate_audit["passed"]:
+                        paired_long_job = candidate
+                        relevance_audit = candidate_audit
+                        break
+                # Never recover a Short-only checkpoint for a campaign that
+                # promises a paired Long Story. The scheduler will check again
+                # after the durable long-form worker finishes.
+                if paired_long_job is None:
+                    continue
+            matches.append((job, source, paired_long_job, relevance_audit))
 
         if not matches:
             continue
         processed = [dict(item) for item in run.processed]
-        for job, source in sorted(matches, key=lambda item: item[0].created_at):
-            processed.append(
-                {
-                    "source": source,
-                    "title": source.get("title") or job.source_title,
-                    "url": source.get("url") or job.source_url or job.request.url,
-                    "status": "awaiting_upload",
-                    "job_id": job.id,
-                    "job_status": "completed",
-                    "clip_count": len(job.clips),
-                    "uploads": [],
-                    "cleanup": "dipulihkan setelah restart; menunggu upload headless terjadwal",
-                }
-            )
+        for job, source, paired_long_job, relevance_audit in sorted(
+            matches,
+            key=lambda item: item[0].created_at,
+        ):
+            recovered_item: dict[str, Any] = {
+                "source": source,
+                "title": source.get("title") or job.source_title,
+                "url": source.get("url") or job.source_url or job.request.url,
+                "status": "awaiting_upload",
+                "job_id": job.id,
+                "job_status": "completed",
+                "clip_count": len(job.clips),
+                "uploads": [],
+                "cleanup": "dipulihkan setelah restart; menunggu upload headless terjadwal",
+            }
+            if paired_long_job is not None and relevance_audit is not None:
+                long_clip = paired_long_job.clips[0]
+                recovered_item.update(
+                    {
+                        "long_job_id": paired_long_job.id,
+                        "long_job_status": "completed",
+                        "long_clip_count": len(paired_long_job.clips),
+                        "long_clip_urls": [
+                            clip.url for clip in paired_long_job.clips
+                        ],
+                        "short_long_relevance": relevance_audit,
+                        "short_long_pairs": [
+                            {
+                                "short_url": clip.url,
+                                "short_title": clip.title or clip.name,
+                                "long_url": long_clip.url,
+                                "long_title": long_clip.title or long_clip.name,
+                                "source_url": relevance_audit["source_url"],
+                            }
+                            for clip in job.clips
+                        ],
+                    }
+                )
+                claimed_job_ids.add(paired_long_job.id)
+            processed.append(recovered_item)
             claimed_job_ids.add(job.id)
             recovered += 1
         recovered_at = now_iso()
         latest_clip_finish = max(
             (
                 parse_utc_datetime(job.finished_at or job.updated_at, interrupted_at)
-                for job, _source in matches
+                for matched_job in matches
+                for job in (matched_job[0], matched_job[2])
+                if job is not None
             ),
             default=interrupted_at,
         )
@@ -15596,6 +16151,9 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
     tiktok_upload_requested = env_bool(
         "AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_TIKTOK", False
     )
+    paired_long_public_requested = env_bool(
+        "AUTO_VIRAL_SCHEDULE_PAIRED_LONG_AUTO_PUBLIC", False
+    )
     scheduled_request = scheduled_auto_viral_request()
     latest = latest_scheduled_auto_viral_run()
     with auto_viral_scheduler_lock:
@@ -15611,6 +16169,9 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
     ) or (
         tiktok_upload_requested
         and not scheduled_request.auto_upload_tiktok
+    ) or (
+        paired_long_public_requested
+        and not scheduled_request.auto_publish_paired_long_video
     ):
         message = (
             "Siklus background aktif, tetapi upload otomatis ditahan sampai konfirmasi hak, "
@@ -15654,6 +16215,12 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
         background_upload_enabled=bool(
             scheduled_request.auto_upload_youtube
             or scheduled_request.auto_upload_tiktok
+            or scheduled_request.auto_publish_paired_long_video
+        ),
+        paired_long_video_enabled=scheduled_request.create_paired_long_video,
+        paired_long_duration=scheduled_request.paired_long_duration,
+        paired_long_auto_public_enabled=(
+            scheduled_request.auto_publish_paired_long_video
         ),
         active_run_id=active_id,
         last_run_id=latest.id if latest else None,

@@ -8578,6 +8578,7 @@ def select_compilation_candidates(
     candidates: list[ClipCandidate],
     target_duration: float = 300,
     max_parts: int | None = None,
+    anchor_ranges: list[tuple[float, float]] | None = None,
 ) -> list[ClipCandidate]:
     """Build a dense chronological story resume with coverage across the source."""
     if target_duration <= 0:
@@ -8598,11 +8599,45 @@ def select_compilation_candidates(
     picked: list[ClipCandidate] = []
     total = 0.0
 
+    def anchor_coverage(candidate: ClipCandidate, anchor: tuple[float, float]) -> float:
+        start, end = anchor
+        overlap = max(0.0, min(candidate.end, end) - max(candidate.start, start))
+        return overlap / max(0.001, end - start)
+
     def is_distinct(candidate: ClipCandidate) -> bool:
         return all(
             candidate_topic_similarity(candidate, chosen) < 0.72
             for chosen in picked
         )
+
+    # Companion Long Stories must visibly contain every source moment used by
+    # their Shorts. Pin those beats before adding timeline-wide diversity.
+    for anchor in anchor_ranges or []:
+        if any(anchor_coverage(candidate, anchor) >= 0.5 for candidate in picked):
+            continue
+        compatible = [
+            candidate
+            for candidate in remaining
+            if candidate.duration <= target_duration - total + 0.05
+            and not any(
+                not (candidate.end <= chosen.start or candidate.start >= chosen.end)
+                for chosen in picked
+            )
+        ]
+        if not compatible:
+            continue
+        anchored = max(
+            compatible,
+            key=lambda candidate: (
+                anchor_coverage(candidate, anchor),
+                candidate.score,
+            ),
+        )
+        if anchor_coverage(anchored, anchor) < 0.5:
+            continue
+        picked.append(anchored)
+        remaining.remove(anchored)
+        total += anchored.end - anchored.start
 
     # Seed the resume with a strong, non-overlapping beat from each source
     # phase. This keeps a whole-video resume from clustering in one chapter.
@@ -8865,11 +8900,16 @@ def select_output_candidates(
     clip_mode: Literal["short", "highlight_5m", "long_animate", "original_rebuild"],
     short_limit: int,
     compilation_target: float = 300,
+    compilation_anchor_ranges: list[tuple[float, float]] | None = None,
 ) -> tuple[list[ClipCandidate], list[ClipCandidate]]:
     """Keep short and compilation renders mutually exclusive."""
     pool = [ClipCandidate(**asdict(item)) for item in candidates]
     if clip_mode == "highlight_5m":
-        compilation = select_compilation_candidates(pool, compilation_target)
+        compilation = select_compilation_candidates(
+            pool,
+            compilation_target,
+            anchor_ranges=compilation_anchor_ranges,
+        )
         return compilation, compilation
     if clip_mode in {"long_animate", "original_rebuild"}:
         return [], []
@@ -17979,6 +18019,11 @@ def parse_args() -> argparse.Namespace:
         default=300,
         help="Target duration (300-600 seconds) for story-resume mode",
     )
+    parser.add_argument(
+        "--compilation-anchor-ranges",
+        default="",
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--model", default=DEFAULT_TRANSCRIPTION_MODEL, help="faster-whisper model name")
     parser.add_argument("--language", default="id", help="Transcription language code")
     parser.add_argument("--output", default="outputs", help="Output directory")
@@ -19011,6 +19056,28 @@ def render_animated_script(
 def main() -> int:
     args = parse_args()
 
+    compilation_anchor_ranges: list[tuple[float, float]] = []
+    if args.compilation_anchor_ranges:
+        try:
+            raw_anchor_ranges = json.loads(args.compilation_anchor_ranges)
+            if not isinstance(raw_anchor_ranges, list):
+                raise ValueError("anchor payload must be a list")
+            for item in raw_anchor_ranges[:5]:
+                if not isinstance(item, list) or len(item) != 2:
+                    raise ValueError("each anchor must contain start and end")
+                start, end = float(item[0]), float(item[1])
+                if (
+                    not math.isfinite(start)
+                    or not math.isfinite(end)
+                    or start < 0
+                    or end <= start
+                ):
+                    raise ValueError("anchor must have finite 0 <= start < end")
+                compilation_anchor_ranges.append((start, end))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            console.print(f"[red]Invalid compilation anchor ranges: {exc}[/red]")
+            return 2
+
     policy_snapshot = youtube_policy_snapshot()
     if policy_snapshot["review_required"]:
         console.print(
@@ -19398,6 +19465,7 @@ def main() -> int:
             clip_mode=args.clip_mode,
             short_limit=args.top,
             compilation_target=args.compilation_target,
+            compilation_anchor_ranges=compilation_anchor_ranges,
         )
         if args.clip_mode == "short" and not candidates:
             expanded_max_duration = short_auto_expand_max_duration(args.max)
@@ -19539,6 +19607,28 @@ def main() -> int:
                 "selection",
                 f"{len(candidates)} kandidat aman disiapkan untuk review manual",
             )
+
+    if args.clip_mode == "highlight_5m" and compilation_anchor_ranges:
+        missing_anchors = [
+            anchor
+            for anchor in compilation_anchor_ranges
+            if not any(
+                max(
+                    0.0,
+                    min(candidate.end, anchor[1])
+                    - max(candidate.start, anchor[0]),
+                )
+                / max(0.001, anchor[1] - anchor[0])
+                >= 0.5
+                for candidate in compilation_candidates
+            )
+        ]
+        if missing_anchors:
+            console.print(
+                "[red]Long Story dibatalkan karena momen Short wajib tidak dapat "
+                "dipertahankan dengan batas kalimat yang aman.[/red]"
+            )
+            return 1
 
     save_json(work_dir / f"candidates{cache_suffix}.json", [asdict(item) for item in candidates])
     print_candidates(candidates)

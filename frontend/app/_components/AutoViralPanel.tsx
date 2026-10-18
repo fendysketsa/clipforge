@@ -111,7 +111,7 @@ export function AutoViralPanel({
           </small>
           {schedule?.enabled ? (
             <small>
-              Mulai setelah laptop hidup {schedule.boot_delay_minutes} menit · {schedule.once_per_boot ? "sekali per boot" : `berulang tiap ${schedule.interval_hours} jam`} · upload headless setelah clip selesai {schedule.post_clip_upload_delay_minutes} menit · {schedule.background_upload_enabled ? "upload YouTube/TikTok aktif" : "upload ditahan profil hak"}
+              Mulai setelah laptop hidup {schedule.boot_delay_minutes} menit · {schedule.once_per_boot ? "sekali per boot" : `berulang tiap ${schedule.interval_hours} jam`} · {schedule.paired_long_video_enabled ? `setiap short dipasangkan Long Story ${Math.round(schedule.paired_long_duration / 60)} menit` : "tanpa pasangan Long Story"} · {schedule.paired_long_auto_public_enabled ? "Long Story auto-public setelah audit AI/QC" : "Long Story disimpan tanpa auto-public"} · upload headless setelah clip selesai {schedule.post_clip_upload_delay_minutes} menit · {schedule.background_upload_enabled ? "upload YouTube/TikTok aktif" : "upload ditahan profil hak"}
             </small>
           ) : null}
         </div>
@@ -182,7 +182,7 @@ export function AutoViralPanel({
                     <span>{formatNumber(source.views)} views</span>
                     <span>{formatNumber(source.views_per_day)}/hari</span>
                     <span>{formatSourceDuration(source.duration)}</span>
-                    <span>Info Islam {Math.round(source.information_score ?? 0)}</span>
+                    <span>Nilai isi {Math.round(source.information_score ?? 0)}</span>
                     <span>CC terverifikasi</span>
                     <span>Skor {Math.round(source.score)}</span>
                     <span>Trend +{source.trend_signal_score ?? 0}</span>

@@ -1085,6 +1085,8 @@ def test_auto_viral_schedule_reads_interval_and_safe_review_defaults(monkeypatch
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_INTERVAL_HOURS", "4")
     monkeypatch.setenv("AUTO_VIRAL_CYCLE_DELAY_HOURS", "4")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", "2")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_SECONDS", "360")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "false")
     monkeypatch.setattr(api, "auto_viral_scheduler_running", True)
     monkeypatch.setattr(
@@ -1099,9 +1101,13 @@ def test_auto_viral_schedule_reads_interval_and_safe_review_defaults(monkeypatch
     assert request.niche == "auto"
     assert request.video_count == 2
     assert request.auto_upload_youtube is False
+    assert request.create_paired_long_video is True
+    assert request.paired_long_duration == 360
     assert status.enabled is True
     assert status.scheduler_running is True
     assert status.interval_hours == 4
+    assert status.paired_long_video_enabled is True
+    assert status.paired_long_duration == 360
     assert status.next_run_at
 
 
@@ -1325,6 +1331,75 @@ def test_interrupted_schedule_reclaims_completed_clip_job_for_upload(monkeypatch
     assert recovered.finished_at is None
     assert recovered.processed[0]["job_id"] == job.id
     assert recovered.processed[0]["job_status"] == "completed"
+
+
+def test_interrupted_paired_campaign_recovers_only_with_relevant_long(monkeypatch):
+    import api
+
+    source_url = "https://www.youtube.com/watch?v=abcdefghijk"
+    started = datetime(2026, 10, 17, 11, 28, tzinfo=timezone.utc)
+    interrupted = started + timedelta(minutes=27)
+    run = api.AutoViralRun(
+        id="interrupted-paired-parent",
+        status="failed",
+        trigger="schedule",
+        created_at=started.isoformat(),
+        updated_at=interrupted.isoformat(),
+        finished_at=interrupted.isoformat(),
+        progress_stage="interrupted",
+        request=AutoViralRequest(
+            video_count=1,
+            clips_per_video=1,
+            auto_upload_youtube=True,
+            create_paired_long_video=True,
+            auto_publish_paired_long_video=True,
+        ),
+        selected_sources=[{"url": source_url, "title": "Sumber recovery pair"}],
+    )
+    candidate_fields = {
+        "index": 1,
+        "start": 100.0,
+        "end": 135.0,
+        "duration": 35.0,
+        "score": 90,
+        "title": "Pesan utama",
+        "reason": "relevan",
+        "text": "pesan kebaikan yang utuh",
+    }
+    short_job = ClipJob(
+        id="recovered-short",
+        status="completed",
+        request=ClipJobRequest(url=source_url),
+        created_at=(started + timedelta(minutes=8)).isoformat(),
+        updated_at=interrupted.isoformat(),
+        source_url=source_url,
+        candidates=[ClipCandidate(**candidate_fields)],
+        clips=[ClipFile(name="short.mp4", url="/outputs/short.mp4", size_bytes=123)],
+    )
+    long_job = ClipJob(
+        id="recovered-long",
+        status="completed",
+        request=ClipJobRequest(url=source_url, clip_mode="highlight_5m"),
+        created_at=(started + timedelta(minutes=20)).isoformat(),
+        updated_at=(interrupted + timedelta(minutes=1)).isoformat(),
+        source_url=source_url,
+        candidates=[ClipCandidate(**candidate_fields)],
+        clips=[ClipFile(name="long.mp4", url="/outputs/long.mp4", size_bytes=456)],
+    )
+    monkeypatch.setattr(api, "auto_viral_runs", {run.id: run})
+    monkeypatch.setattr(api, "jobs", {short_job.id: short_job})
+
+    assert api.reconcile_interrupted_scheduled_clip_runs() == 0
+    assert api.auto_viral_runs[run.id].status == "failed"
+
+    monkeypatch.setattr(api, "jobs", {short_job.id: short_job, long_job.id: long_job})
+
+    assert api.reconcile_interrupted_scheduled_clip_runs() == 1
+    recovered = api.auto_viral_runs[run.id].processed[0]
+    assert recovered["job_id"] == short_job.id
+    assert recovered["long_job_id"] == long_job.id
+    assert recovered["short_long_relevance"]["passed"] is True
+    assert recovered["short_long_pairs"][0]["long_url"] == "/outputs/long.mp4"
 
 
 def test_auto_viral_upload_retry_reuses_same_checkpoint(monkeypatch):
@@ -1645,11 +1720,16 @@ def test_scheduled_upload_requires_complete_rights_profile(monkeypatch):
 
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_TIKTOK", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_AUTO_PUBLIC", "true")
+    monkeypatch.setenv("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", "true")
+    monkeypatch.setenv("YOUTUBE_CHANNEL_RECOVERY_MODE", "false")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED", "false")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_EVIDENCE", "")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_CREATOR_PERSPECTIVE", "")
 
-    assert api.scheduled_auto_viral_request().auto_upload_youtube is False
+    blocked = api.scheduled_auto_viral_request()
+    assert blocked.auto_upload_youtube is False
+    assert blocked.auto_publish_paired_long_video is False
 
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED", "true")
     monkeypatch.setenv(
@@ -1664,7 +1744,50 @@ def test_scheduled_upload_requires_complete_rights_profile(monkeypatch):
     request = api.scheduled_auto_viral_request()
     assert request.auto_upload_youtube is True
     assert request.auto_upload_tiktok is True
+    assert request.auto_publish_paired_long_video is True
     assert request.source_rights_confirmed is True
+
+
+def test_kindness_profile_accepts_nonreligious_educational_story():
+    import api
+
+    source = {
+        "title": "Guru yang Mengubah Hidup Murid: Pelajaran Moral dan Empati",
+        "description": (
+            "Kisah nyata pendidikan karakter, tanggung jawab, dan kepedulian "
+            "yang dijelaskan melalui wawancara guru dan murid."
+        ),
+        "tags": ["pendidikan", "karakter", "kebaikan", "kisah inspiratif"],
+        "language": "id",
+    }
+
+    assert api.constructive_information_score(source) >= 24
+    assert api.source_information_score(source, "kindness_social_good") >= 24
+    assert api.niche_candidate_rejection_reason(source, "kindness_social_good") == ""
+
+
+def test_kindness_low_value_reason_is_a_hard_content_search_rejection(monkeypatch):
+    import api
+
+    monkeypatch.setenv("VIRAL_CC_MIN_NICHE_SCORE", "1")
+    monkeypatch.setenv("VIRAL_CC_MIN_INFORMATION_SCORE", "24")
+    source = {
+        "title": "Orang Berjalan di Kota",
+        "description": "rekaman suasana biasa tanpa penjelasan atau pelajaran",
+        "language": "id",
+    }
+
+    reasons = api.niche_candidate_relaxation_reasons(
+        source,
+        "kindness_social_good",
+    )
+
+    assert any(reason.startswith("nilai pendidikan/kebaikan") for reason in reasons)
+    assert api.niche_content_relaxation_reasons(reasons) == [
+        reason
+        for reason in reasons
+        if reason.startswith(("kecocokan tema", "nilai pendidikan/kebaikan"))
+    ]
 
 
 def test_completed_job_upload_retry_respects_durable_records_and_cooldown(monkeypatch):
@@ -2044,6 +2167,132 @@ def test_deferred_upload_rejects_completed_status_without_platform_confirmation(
         api.auto_viral_runs.pop(run.id, None)
     with api.jobs_lock:
         api.jobs.pop("job-unverified", None)
+
+
+def test_deferred_upload_auto_publishes_verified_paired_long(monkeypatch):
+    import api
+
+    source_url = "https://www.youtube.com/watch?v=abcDEF12345"
+    short_clip = ClipFile(
+        name="clip_01.mp4",
+        url="/outputs/short.mp4",
+        size_bytes=123,
+    )
+    long_clip = ClipFile(
+        name="resume_cerita_5menit.mp4",
+        url="/outputs/long.mp4",
+        size_bytes=456,
+    )
+    short_job = ClipJob(
+        id="paired-short-job",
+        status="completed",
+        request=ClipJobRequest(url=source_url),
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        clips=[short_clip],
+    )
+    long_job = ClipJob(
+        id="paired-long-job",
+        status="completed",
+        request=ClipJobRequest(url=source_url, clip_mode="highlight_5m"),
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        clips=[long_clip],
+    )
+    request = AutoViralRequest(
+        video_count=1,
+        create_paired_long_video=True,
+        auto_publish_paired_long_video=True,
+    )
+    run = api.AutoViralRun(
+        id="paired-long-public-run",
+        status="running",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=request,
+    )
+    queued_upload = SimpleNamespace(
+        id="long-upload",
+        status="queued",
+        title="Kisah Bermakna",
+        video_url=None,
+        visibility="public",
+        upload_confirmed=False,
+        dry_run=False,
+        error=None,
+    )
+    finished_upload = SimpleNamespace(
+        id="long-upload",
+        status="completed",
+        title="Kisah Bermakna",
+        video_url="https://youtu.be/published-long",
+        visibility="public",
+        upload_confirmed=True,
+        dry_run=False,
+        error=None,
+    )
+    with api.auto_viral_lock:
+        api.auto_viral_runs[run.id] = run
+    with api.jobs_lock:
+        api.jobs[short_job.id] = short_job
+        api.jobs[long_job.id] = long_job
+    created: list[tuple[str, str]] = []
+    deleted: list[str] = []
+    monkeypatch.setattr(api, "save_auto_viral_runs_unlocked", lambda: None)
+    monkeypatch.setattr(
+        api,
+        "best_automatic_upload_clip_urls",
+        lambda job, *_args, **_kwargs: [job.clips[0].url],
+    )
+    monkeypatch.setattr(api, "require_auto_viral_daily_upload_slot", lambda *_args: 1)
+
+    def create_upload(job_id, upload_request):
+        created.append((job_id, upload_request.visibility))
+        return [queued_upload]
+
+    monkeypatch.setattr(api, "create_youtube_upload_batch_records", create_upload)
+    monkeypatch.setattr(api, "queue_youtube_upload_jobs", lambda _uploads: None)
+    monkeypatch.setattr(api, "wait_for_uploads", lambda _ids: [finished_upload])
+    monkeypatch.setattr(
+        api,
+        "delete_all_job_clips",
+        lambda job_id: deleted.append(job_id) or SimpleNamespace(removed_clips=1),
+    )
+
+    processed = api.upload_auto_viral_processed_jobs(
+        run.id,
+        request,
+        [
+            {
+                "job_id": short_job.id,
+                "job_status": "completed",
+                "long_job_id": long_job.id,
+                "long_job_status": "completed",
+                "status": "awaiting_upload",
+                "short_long_pairs": [
+                    {
+                        "short_url": short_clip.url,
+                        "long_url": long_clip.url,
+                    }
+                ],
+            }
+        ],
+    )
+
+    assert created == [(long_job.id, "public")]
+    assert processed[0]["published_long_url"] == "https://youtu.be/published-long"
+    assert processed[0]["short_long_pairs"][0]["long_public_url"] == (
+        "https://youtu.be/published-long"
+    )
+    assert processed[0]["paired_long_youtube_uploads"][0]["visibility"] == "public"
+    assert deleted == [short_job.id, long_job.id]
+
+    with api.auto_viral_lock:
+        api.auto_viral_runs.pop(run.id, None)
+    with api.jobs_lock:
+        api.jobs.pop(short_job.id, None)
+        api.jobs.pop(long_job.id, None)
 
 
 def test_deferred_upload_holds_legacy_clip_that_now_requires_manual_review(monkeypatch):
@@ -3538,6 +3787,62 @@ def test_build_clipper_command_includes_five_minute_highlight_mode():
     assert command[command.index("--compilation-target") + 1] == "300.0"
     assert command[command.index("--visual-mode") + 1] == "auto_fyp"
     assert command[command.index("--background-mode") + 1] == "keep"
+
+
+def test_build_clipper_command_passes_companion_short_anchor_ranges():
+    request = ClipJobRequest(
+        source_file="/tmp/source.mp4",
+        clip_mode="highlight_5m",
+        compilation_anchor_ranges=[(12.25, 48.75)],
+    )
+
+    command = build_clipper_command(request)
+
+    payload = command[command.index("--compilation-anchor-ranges") + 1]
+    assert json.loads(payload) == [[12.25, 48.75]]
+
+
+def test_short_long_relevance_audit_requires_same_source_and_timestamp_overlap():
+    import api
+
+    source_url = "https://www.youtube.com/watch?v=abcDEF12345"
+    short_candidate = ClipCandidate(
+        index=1,
+        start=120,
+        end=160,
+        duration=40,
+        score=90,
+        title="Pesan baik",
+        reason="Utuh",
+        text="Saling mengingatkan dengan lembut.",
+    )
+    long_candidate = short_candidate.model_copy(
+        update={"index": 3, "start": 110, "end": 170, "duration": 60}
+    )
+    short_job = ClipJob(
+        id="short-job",
+        status="completed",
+        request=ClipJobRequest(url=source_url),
+        source_url=source_url,
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        candidates=[short_candidate],
+    )
+    long_job = ClipJob(
+        id="long-job",
+        status="completed",
+        request=ClipJobRequest(url=source_url, clip_mode="highlight_5m"),
+        source_url=source_url,
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        candidates=[long_candidate],
+    )
+
+    audit = api.auto_viral_short_long_relevance_audit(short_job, long_job)
+
+    assert audit["passed"] is True
+    assert audit["same_source"] is True
+    assert audit["matched_short_count"] == 1
 
 
 def test_build_clipper_command_enables_enhanced_edit_by_default():

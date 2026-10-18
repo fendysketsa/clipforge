@@ -615,6 +615,29 @@ def test_compilation_selection_reaches_five_minutes_without_overlap():
     )
 
 
+def test_compilation_selection_pins_the_companion_short_range():
+    candidates = [
+        make_candidate(1, 0, 99, "Pembuka kuat"),
+        make_candidate(2, 90, 15, "Nasihat utama yang dipakai Short"),
+        make_candidate(3, 200, 98, "Konteks lanjutan"),
+        make_candidate(4, 310, 97, "Payoff cerita"),
+    ]
+
+    selected = select_compilation_candidates(
+        candidates,
+        target_duration=120,
+        max_parts=2,
+        anchor_ranges=[(100, 140)],
+    )
+
+    assert len(selected) == 2
+    assert any(item.start == 90 for item in selected)
+    assert any(
+        max(0, min(item.end, 140) - max(item.start, 100)) / 40 >= 0.5
+        for item in selected
+    )
+
+
 def test_short_mode_does_not_build_a_compilation_selection():
     candidates = [
         make_candidate(0, start, 95 - index, f"Poin penting {index}")
