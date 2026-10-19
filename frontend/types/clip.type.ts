@@ -274,6 +274,7 @@ export type ClipJob = {
     visual_mode: VisualMode;
     background_mode: BackgroundMode;
     burn_subtitles: boolean;
+    slow_motion_no_voice: boolean;
     enhanced_edit: boolean;
     remove_running_text: boolean;
     auto_blur_watermarks: boolean;
@@ -318,6 +319,7 @@ export type CreateClipJobInput = {
   visual_mode?: VisualMode;
   background_mode?: BackgroundMode;
   burn_subtitles: boolean;
+  slow_motion_no_voice?: boolean;
   enhanced_edit?: boolean;
   remove_running_text?: boolean;
   auto_blur_watermarks?: boolean;
@@ -730,6 +732,7 @@ export type AutoViralRequest = {
   background_mode?: BackgroundMode;
   crop_mode?: CropMode;
   burn_subtitles?: boolean;
+  slow_motion_no_voice?: boolean;
   ai_enabled?: boolean;
   ai_base_url?: string;
   ai_model?: string;

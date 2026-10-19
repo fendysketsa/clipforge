@@ -106,6 +106,7 @@ def test_normalize_settings_keeps_only_clickable_options():
         "video_quality": "max",
         "crop_mode": "streamer",
         "burn_subtitles": False,
+        "slow_motion_no_voice": False,
         "ai_enabled": False,
         "ai_base_url": DEFAULT_SETTINGS["ai_base_url"],
         "ai_model": DEFAULT_SETTINGS["ai_model"],
@@ -146,6 +147,16 @@ def test_build_job_payload_matches_backend_contract():
     assert payload["allow_reprocess_source"] is False
     assert payload["compilation_target_seconds"] == TELEGRAM_COMPILATION_MAX_SECONDS == 300
     assert payload["remove_running_text"] is False
+    assert payload["slow_motion_no_voice"] is False
+
+
+def test_telegram_job_payload_can_enable_slow_motion_without_voice():
+    payload = build_job_payload(
+        "https://youtu.be/demo",
+        {"slow_motion_no_voice": True},
+    )
+
+    assert payload["slow_motion_no_voice"] is True
 
 
 def test_telegram_supports_long_story_as_second_active_mode():

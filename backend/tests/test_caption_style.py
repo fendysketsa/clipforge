@@ -102,6 +102,7 @@ from clipper import (
     retro_tv_look_filter,
     religious_context_integrity_profile,
     religious_claim_review_packet,
+    retime_srt_for_playback_rate,
     refresh_candidate_export_context,
     resolve_codex_ideas,
     score_window,
@@ -547,9 +548,36 @@ def test_dynamic_ass_highlights_truthful_keyword_and_uses_safe_margins(tmp_path)
     assert count == 1
     assert "PlayResX: 1080" in value
     assert "Style: Caption" in value
+    assert "Style: Caption,DejaVu Sans,53," in value
     assert ",110,230,365,1" in value
     assert r"\fscx108\fscy108" in value
     assert "Ternyata" in value
+
+
+def test_dynamic_ass_caps_large_user_font_at_proportional_size(tmp_path):
+    path = tmp_path / "large.dynamic.ass"
+
+    write_dynamic_ass(
+        path,
+        [TranscriptSegment(0, 3, "Pelajaran matematika tetap mudah dibaca.")],
+        0,
+        3,
+        CaptionStyle(font_size=36),
+    )
+
+    assert "Style: Caption,DejaVu Sans,72," in path.read_text(encoding="utf-8")
+
+
+def test_retime_srt_for_slow_motion_stretches_caption_timestamps(tmp_path):
+    path = tmp_path / "clip.srt"
+    path.write_text(
+        "1\n00:00:01,300 --> 00:00:02,600\nContoh\n",
+        encoding="utf-8",
+    )
+
+    retime_srt_for_playback_rate(path, 0.65)
+
+    assert "00:00:02,000 --> 00:00:04,000" in path.read_text(encoding="utf-8")
 
 
 def test_caption_keyword_highlight_does_not_invent_copy():

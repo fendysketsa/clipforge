@@ -144,9 +144,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "top": None,
     "min_duration": 25,
     "max_duration": 45,
-    "video_quality": "standard",
+    "video_quality": "high",
     "crop_mode": "person",
     "burn_subtitles": True,
+    "slow_motion_no_voice": False,
     "ai_enabled": True,
     "ai_base_url": DEFAULT_TELEGRAM_AI_BASE_URL,
     "ai_model": DEFAULT_TELEGRAM_AI_MODEL,
@@ -393,6 +394,8 @@ def normalize_settings(value: object) -> dict[str, Any]:
 
     if isinstance(value.get("burn_subtitles"), bool):
         settings["burn_subtitles"] = value["burn_subtitles"]
+    if isinstance(value.get("slow_motion_no_voice"), bool):
+        settings["slow_motion_no_voice"] = value["slow_motion_no_voice"]
     if isinstance(value.get("ai_enabled"), bool):
         settings["ai_enabled"] = value["ai_enabled"]
     if isinstance(value.get("ai_base_url"), str) and value["ai_base_url"].strip():
@@ -526,6 +529,7 @@ def build_job_payload(
         "visual_mode": "auto_fyp",
         "background_mode": "keep",
         "burn_subtitles": clean["burn_subtitles"],
+        "slow_motion_no_voice": clean["slow_motion_no_voice"],
         "remove_running_text": False,
         "crop_mode": clean["crop_mode"],
         "require_creative_commons": True,
@@ -1205,6 +1209,7 @@ def settings_summary(settings: dict[str, Any]) -> str:
         f"Kualitas: {quality}",
         f"Mode crop: {crop}",
         f"Subtitle: {'Aktif' if clean['burn_subtitles'] else 'Nonaktif'}",
+        f"Slow motion tanpa suara: {'Aktif (0,65×)' if clean['slow_motion_no_voice'] else 'Nonaktif'}",
         f"AI: {'Aktif' if clean['ai_enabled'] else 'Nonaktif'} · {clean['ai_model']} @ {clean['ai_base_url']}",
         f"Caption: {position}, {clean['caption_font_size']}px",
     ]
@@ -1227,6 +1232,7 @@ def settings_keyboard(settings: dict[str, Any], *, has_pending_url: bool = False
     rows.extend([
         [button(f"Kualitas · {clean['video_quality']}", "settings:quality")],
         [button(f"Crop · {clean['crop_mode']}", "settings:crop")],
+        [button(f"Slow motion tanpa suara · {'ON' if clean['slow_motion_no_voice'] else 'OFF'}", "set:slowmotion:toggle")],
         [
             button(f"Subtitle · {'ON' if clean['burn_subtitles'] else 'OFF'}", "set:subtitles:toggle"),
             button(f"AI · {'ON' if clean['ai_enabled'] else 'OFF'}", "set:ai:toggle"),
@@ -3187,6 +3193,8 @@ class FendyClipperTelegramBot:
             settings["crop_mode"] = value
         elif name == "subtitles" and value == "toggle":
             settings["burn_subtitles"] = not settings["burn_subtitles"]
+        elif name == "slowmotion" and value == "toggle":
+            settings["slow_motion_no_voice"] = not settings["slow_motion_no_voice"]
         elif name == "ai" and value == "toggle":
             settings["ai_enabled"] = not settings["ai_enabled"]
         elif name == "position" and value in ALLOWED_CAPTION_POSITIONS:

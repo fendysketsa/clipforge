@@ -98,6 +98,8 @@ class AnimateScene:
     voice_duration: float = 0.0
     image_provider: str = ""
     voice_provider: str = ""
+    voice_gender: str = "neutral"
+    voice_name: str = ""
     shot_prompts: list[str] = field(default_factory=list)
     qa_attempts: int = 0
     qa_score: float = 0.0
@@ -199,6 +201,15 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().casefold() in {"1", "true", "yes", "on"}
+
+
+def _image_motion_strength() -> float:
+    """Return a safe, bounded motion multiplier even with a malformed env value."""
+    try:
+        value = float(os.environ.get("LONG_ANIMATE_IMAGE_MOTION_STRENGTH", "1.35"))
+    except (TypeError, ValueError):
+        value = 1.35
+    return max(0.70, min(1.80, value))
 
 
 _OUTPUT_ASPECT_OVERRIDE: ContextVar[str | None] = ContextVar(
@@ -2630,16 +2641,23 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
     )
     output_aspect = _output_geometry()[0]
     output_type = "vertical short video" if output_aspect == "9:16" else "landscape video"
+    animation_direction = _clean_text(
+        getattr(scene, "animation_direction", "") or "natural motion implied by the visible action",
+        260,
+    ).rstrip(" .;:")
     return _clean_text(
-        f"FULL-BLEED {output_aspect} SINGLE CAMERA FRAME. Use case: {use_case}. "
-        f"Asset type: cinematic storyboard keyframe for a {output_type}. "
-        f"Visible moment: {visible}. "
-        f"The visible moment is the primary focal action and must be unmistakable. {subject_count}{qa_repair_direction}"
-        + (f"Scene/backdrop and immediate story context: {context}. " if context else "")
+        f"FULL-BLEED {output_aspect} SINGLE CAMERA FRAME for a {output_type}; use case: {use_case}. "
+        f"SHOT-SPECIFIC CONTRACT — Visible moment: {visible}. "
+        + (f"Setting, condition, and immediate context: {context}. " if context else "")
+        + f"Atmosphere, lighting, weather, time, and color mood: {scene.color_mood}. "
+        + f"Motion-ready pose/environment direction: {animation_direction}. "
+        + "The exact action, setting, conditions, and atmosphere above must be unmistakable. "
+        + "Do not import an action, location, weather, time, character, prop, or mood from another shot. "
+        + f"{subject_count}{qa_repair_direction}"
         + (f"{action_contract} " if action_contract else "")
-        + f"Style/medium: {style}. Lighting/mood and color direction: {scene.color_mood}. "
+        + f"Immutable style/medium: {style}. "
         + f"Composition/framing: {composition_rule}",
-        1800,
+        2400,
     )
 
 
@@ -2821,7 +2839,9 @@ def _remote_scene_image(
             negative_prompt += (
                 ", woman wearing peci, woman wearing kopiah, woman wearing songkok, hijab with hat, double headwear"
             )
-        configured_size = os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1280x720")
+        # Generate one step above 720p so the final 1080p canvas needs only a
+        # mild upscale. Providers can still fall back to smaller safe sizes.
+        configured_size = os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1536x864")
         size_match = re.fullmatch(r"(\d{3,5})x(\d{3,5})", configured_size)
         if size_match and _output_geometry()[0] == "9:16":
             size_width, size_height = map(int, size_match.groups())
@@ -3306,7 +3326,7 @@ def generate_shot_image_with_qa(
     style_reference: Path | None = None,
     character_reference: Path | None = None,
 ) -> str:
-    attempts = max(1, min(4, int(os.environ.get("LONG_ANIMATE_VISION_QA_ATTEMPTS", "2"))))
+    attempts = max(1, min(4, int(os.environ.get("LONG_ANIMATE_VISION_QA_ATTEMPTS", "3"))))
     original_prompt = shot.visual_prompt
     visible_moment = _compiled_visible_moment(shot.visual_prompt) or _single_visible_moment(
         shot.visual_prompt
@@ -3410,19 +3430,97 @@ def _tts_pronunciation_text(text: str) -> str:
     return islamic_indonesian_tts_text(spoken)
 
 
+_FEMALE_VOICE_TERMS = (
+    "wanita", "perempuan", "gadis", "siswi", "ibu", "bunda", "nenek",
+    "istri", "putri", "muslimah", "ustazah", "ratu", "female", "woman",
+    "girl", "mother", "wife", "daughter", "queen",
+)
+_MALE_VOICE_TERMS = (
+    "pria", "laki-laki", "lelaki", "pemuda", "siswa", "ayah", "bapak",
+    "kakek", "suami", "putra", "ustaz", "ustadz", "raja", "male", "man",
+    "boy", "father", "husband", "son", "king",
+)
+
+
+def infer_scene_voice_gender(scene: AnimateScene) -> str:
+    """Infer a narrator voice from explicit scene/character facts only."""
+    visible = _compiled_visible_moment(scene.visual_prompt) or _single_visible_moment(
+        scene.visual_prompt
+    )
+    immediate_context = _matching_narration_context(scene.narration, visible)
+    weighted_contexts = (
+        (visible.casefold(), 4),
+        (immediate_context.casefold(), 3),
+        (scene.title.casefold(), 2),
+        (scene.continuity_anchor.casefold(), 2),
+        (scene.narration.casefold(), 1),
+    )
+    context = " ".join(value for value, _weight in weighted_contexts if value)
+    explicit_female = re.search(
+        r"\b(?:narator|narrator|suara|voice)\s+(?:seorang\s+)?(?:wanita|perempuan|female|woman)\b",
+        context,
+    )
+    explicit_male = re.search(
+        r"\b(?:narator|narrator|suara|voice)\s+(?:seorang\s+)?(?:pria|laki-laki|lelaki|male|man)\b",
+        context,
+    )
+    if explicit_female and not explicit_male:
+        return "female"
+    if explicit_male and not explicit_female:
+        return "male"
+
+    def term_score(terms: tuple[str, ...]) -> int:
+        return sum(
+            weight * len(re.findall(rf"(?<!\w){re.escape(term)}(?!\w)", value))
+            for value, weight in weighted_contexts
+            for term in terms
+        )
+
+    female_score = term_score(_FEMALE_VOICE_TERMS)
+    male_score = term_score(_MALE_VOICE_TERMS)
+    if female_score > male_score:
+        return "female"
+    if male_score > female_score:
+        return "male"
+    default_gender = os.environ.get(
+        "LONG_ANIMATE_DEFAULT_VOICE_GENDER", "male"
+    ).strip().casefold()
+    return default_gender if default_gender in {"female", "male"} else "male"
+
+
+def scene_voice(scene: AnimateScene) -> tuple[str, str]:
+    """Select a validated Indonesian neural voice for one scene."""
+    mode = os.environ.get("LONG_ANIMATE_VOICE_MODE", "auto").strip().casefold()
+    gender = infer_scene_voice_gender(scene)
+    if mode in {"manual", "fixed", "single"}:
+        voice = os.environ.get("LONG_ANIMATE_VOICE", "id-ID-ArdiNeural").strip()
+        gender = "manual"
+    elif gender == "female":
+        voice = os.environ.get(
+            "LONG_ANIMATE_VOICE_FEMALE", "id-ID-GadisNeural"
+        ).strip()
+    else:
+        voice = os.environ.get(
+            "LONG_ANIMATE_VOICE_MALE", "id-ID-ArdiNeural"
+        ).strip()
+    if not re.fullmatch(r"[A-Za-z0-9:-]{2,96}", voice):
+        voice = "id-ID-GadisNeural" if gender == "female" else "id-ID-ArdiNeural"
+    scene.voice_gender = gender
+    scene.voice_name = voice
+    return voice, gender
+
+
 def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, str]:
-    voice = os.environ.get("LONG_ANIMATE_VOICE", "id-ID-ArdiNeural").strip()
-    rate = os.environ.get("LONG_ANIMATE_VOICE_RATE", "+8%").strip()
-    pitch = os.environ.get("LONG_ANIMATE_VOICE_PITCH", "+2Hz").strip()
-    volume = os.environ.get("LONG_ANIMATE_VOICE_VOLUME", "+8%").strip()
-    if not re.fullmatch(r"[A-Za-z0-9-]{2,64}", voice):
-        voice = "id-ID-ArdiNeural"
+    voice, voice_gender = scene_voice(scene)
+    rate = os.environ.get("LONG_ANIMATE_VOICE_RATE", "-3%").strip()
+    pitch = os.environ.get("LONG_ANIMATE_VOICE_PITCH", "+0Hz").strip()
+    volume = os.environ.get("LONG_ANIMATE_VOICE_VOLUME", "+0%").strip()
     if not re.fullmatch(r"[+-]\d{1,2}%", rate):
-        rate = "+8%"
+        rate = "-3%"
     if not re.fullmatch(r"[+-]\d{1,3}Hz", pitch):
-        pitch = "+2Hz"
+        pitch = "+0Hz"
     if not re.fullmatch(r"[+-]\d{1,2}%", volume):
-        volume = "+8%"
+        volume = "+0%"
     if not scene.narration.strip():
         silent_path = scene_dir / f"scene_{scene.index:02}.voice.wav"
         _run(
@@ -3478,7 +3576,12 @@ def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, st
             [
                 espeak,
                 "-v",
-                os.environ.get("LONG_ANIMATE_ESPEAK_VOICE", "id+m3"),
+                os.environ.get(
+                    "LONG_ANIMATE_ESPEAK_VOICE_FEMALE"
+                    if voice_gender == "female"
+                    else "LONG_ANIMATE_ESPEAK_VOICE_MALE",
+                    "id+f3" if voice_gender == "female" else "id+m3",
+                ),
                 "-s",
                 os.environ.get("LONG_ANIMATE_ESPEAK_SPEED", "175"),
                 "-p",
@@ -3524,7 +3627,7 @@ def _motion_expression(scene: AnimateScene | AnimateShot, frames: int) -> tuple[
     # sidecar reports that limitation explicitly below.
     framing = getattr(scene, "framing", "medium")
     placement = getattr(scene, "subject_placement", "center")
-    start_zoom, travel = {
+    start_zoom, base_travel = {
         "wide": (1.008, 0.100),
         "medium_wide": (1.015, 0.085),
         "full_body": (1.012, 0.075),
@@ -3534,13 +3637,16 @@ def _motion_expression(scene: AnimateScene | AnimateShot, frames: int) -> tuple[
         "detail_insert": (1.045, 0.042),
         "over_shoulder": (1.030, 0.055),
     }.get(framing, (1.025, 0.070))
+    motion_strength = _image_motion_strength()
+    travel = base_travel * motion_strength
     micro_amplitude = 0.004 if framing in {"close_up", "medium_close_up", "detail_insert"} else 0.007
     micro_motion = f"{micro_amplitude:.3f}*sin(2*PI*on/{max(45, round(frames / 2))})"
     x_center = {"left_third": 0.34, "center": 0.50, "right_third": 0.66}.get(placement, 0.50)
     y_center = 0.30 if framing in {"close_up", "medium_close_up"} else 0.50
     x_static = f"(iw-iw/zoom)*{x_center:.2f}"
     y_static = f"(ih-ih/zoom)*{y_center:.2f}"
-    pan_radius = 0.17 if framing in {"close_up", "medium_close_up", "detail_insert"} else 0.24
+    base_pan_radius = 0.17 if framing in {"close_up", "medium_close_up", "detail_insert"} else 0.24
+    pan_radius = min(0.32, base_pan_radius * motion_strength)
     pan_start = max(0.08, x_center - pan_radius)
     pan_end = min(0.92, x_center + pan_radius)
     vertical_start = max(0.08, y_center - pan_radius)
@@ -3577,13 +3683,29 @@ def trim_voice_silence(scene: AnimateScene, voice_path: Path, scene_dir: Path) -
     if not scene.narration.strip() or scene.voice_provider.startswith("intentional_silence"):
         return voice_path
     output = scene_dir / f"scene_{scene.index:02}.voice.trim.wav"
+    cleanup_filters = [
+        "silenceremove=start_periods=1:start_duration=0.03:start_threshold=-48dB",
+        "areverse",
+        "silenceremove=start_periods=1:start_duration=0.05:start_threshold=-48dB",
+        "areverse",
+    ]
+    if not scene.voice_provider.startswith("edge_neural"):
+        cleanup_filters.append("afftdn=nr=8:nf=-45:tn=1")
+    cleanup_filters.extend(
+        [
+            "highpass=f=65",
+            "lowpass=f=15500",
+            "deesser=i=0.10:m=0.40:f=0.52",
+            "acompressor=threshold=0.14:ratio=1.55:attack=18:release=180:makeup=1.08",
+            "alimiter=limit=0.96:attack=5:release=80",
+            "aresample=48000",
+        ]
+    )
     _run(
         [
             _ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y", "-i", str(voice_path.resolve()),
             "-af",
-            "silenceremove=start_periods=1:start_duration=0.03:start_threshold=-48dB,"
-            "areverse,silenceremove=start_periods=1:start_duration=0.05:start_threshold=-48dB,areverse,"
-            "aresample=48000",
+            ",".join(cleanup_filters),
             "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", str(output.resolve()),
         ]
     )
@@ -3982,7 +4104,7 @@ def render_shot_video(shot: AnimateShot, image_path: Path, scene_dir: Path) -> P
     vf_parts = [
         f"scale={overscan_width}:{overscan_height}:force_original_aspect_ratio=increase,crop={overscan_width}:{overscan_height}",
         f"zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s={output_width}x{output_height}:fps=30",
-        "eq=brightness='0.004*sin(2*PI*t/7)':eval=frame:contrast=1.025:saturation=1.04:gamma=1.005",
+        "eq=brightness='0.006*sin(2*PI*t/7)':eval=frame:contrast=1.025:saturation=1.04:gamma=1.005",
         "unsharp=5:5:0.28:5:5:0.0",
     ]
     if shot.on_screen_text:
@@ -4532,8 +4654,15 @@ def render_long_animate(
                     "framing": shot.framing,
                     "subject_placement": shot.subject_placement,
                     "camera_angle": shot.camera_angle,
+                    "color_mood": shot.color_mood,
+                    "visible_moment": reference_moment,
+                    "generation_prompt_sha256": hashlib.sha256(
+                        _focused_image_generation_prompt(shot).encode("utf-8")
+                    ).hexdigest(),
                     "image_provider": shot.image_provider,
                     "motion_provider": shot.motion_provider,
+                    "voice_gender": source_scene.voice_gender,
+                    "voice_name": source_scene.voice_name,
                     "vision_qa_attempts": shot.qa_attempts,
                     "vision_qa_score": round(shot.qa_score, 3),
                     "vision_qa_notes": shot.qa_reasons,
@@ -4589,14 +4718,15 @@ def render_long_animate(
             for point in cut_points
         ) or "0"
         audio_filter = (
-            "[2:a]volume=0.032,lowpass=f=1250[m1];"
-            "[3:a]volume=0.020,lowpass=f=1850[m2];"
+            "[2:a]volume=0.018,lowpass=f=1250[m1];"
+            "[3:a]volume=0.012,lowpass=f=1850[m2];"
             "[m1][m2]amix=inputs=2:duration=longest:normalize=0[music];"
-            "[1:a]loudnorm=I=-16:TP=-1.5:LRA=9,asplit=2[voice][sidechain];"
+            "[1:a]highpass=f=65,lowpass=f=15500,aresample=48000,asplit=2[voice][sidechain];"
             "[music][sidechain]sidechaincompress=threshold=0.012:ratio=8:attack=18:release=260[ducked];"
-            f"[4:a]highpass=f=900,lowpass=f=4200,volume='0.18*({sfx_window})':eval=frame[sfx];"
+            f"[4:a]highpass=f=900,lowpass=f=4200,volume='0.12*({sfx_window})':eval=frame[sfx];"
             "[voice][ducked][sfx]amix=inputs=3:duration=first:dropout_transition=0:normalize=0,"
-            f"loudnorm=I=-14:TP=-1.0:LRA=9,apad,atrim=0:{duration:.3f}[aout]"
+            f"loudnorm=I=-16:TP=-1.2:LRA=10,alimiter=limit=0.96:attack=5:release=80,"
+            f"apad,atrim=0:{duration:.3f}[aout]"
         )
         quality_crf = {"standard": "19", "high": "16", "max": "14"}.get(video_quality, "16")
 
@@ -4859,8 +4989,9 @@ def render_long_animate(
             "Naskah dipecah menjadi beat storyboard tanpa filler atau pengulangan.",
             "Setiap unit narasi memiliki prompt sinematik, animation direction, continuity anchor, kamera, dan transisi sendiri.",
             "Scene kompleks dipecah menjadi beberapa shot tunggal yang tetap mewarisi karakter, pakaian, lokasi, dan waktu tanpa mengulang voice-over.",
-            f"Voice-over dibuat lebih dulu; durasi hasil TTS menentukan timeline tepat {target_duration:g} detik.",
-            "Fade hitam dan padding audio antar-scene dihapus; musik memakai sidechain ducking.",
+            f"Voice-over pria/wanita dipilih otomatis dari karakter utama scene; durasi TTS menentukan timeline tepat {target_duration:g} detik.",
+            "Voice-over dibersihkan dua sisi, di-de-ess, dikompresi ringan, lalu musik memakai sidechain ducking.",
+            "Setiap keyframe lokal diberi gerak kamera 2.5D scene-aware sesuai framing dan arah kamera.",
             f"Subtitle bertimestamp dan audio AAC 48 kHz digabungkan ke master {output_aspect}.",
             "Thumbnail long-form dan chapter YouTube dibuat otomatis.",
         ],
@@ -4918,6 +5049,24 @@ def render_long_animate(
                 "LONG_ANIMATE_ALLOW_PROCEDURAL_IMAGES", False
             ),
             "api_key_recorded": False,
+            "per_shot_contract": "action_setting_condition_atmosphere_camera_continuity",
+            "prompt_hashes_recorded": True,
+        },
+        "voice_casting": {
+            "mode": os.environ.get("LONG_ANIMATE_VOICE_MODE", "auto"),
+            "male_voice": os.environ.get("LONG_ANIMATE_VOICE_MALE", "id-ID-ArdiNeural"),
+            "female_voice": os.environ.get("LONG_ANIMATE_VOICE_FEMALE", "id-ID-GadisNeural"),
+            "default_gender": os.environ.get("LONG_ANIMATE_DEFAULT_VOICE_GENDER", "male"),
+            "voice_cloning_used": False,
+            "scene_assignments": [
+                {
+                    "scene": scene.index,
+                    "gender": scene.voice_gender,
+                    "voice": scene.voice_name,
+                    "provider": scene.voice_provider,
+                }
+                for scene in storyboard.scenes
+            ],
         },
         "video_generation": {
             "provider": _video_provider(),
@@ -4925,7 +5074,8 @@ def render_long_animate(
             "enabled": _video_provider() != "off",
             "subject_motion_enabled": has_subject_motion,
             "camera_motion_enabled": camera_only_shot_count > 0,
-            "fallback_motion_kind": "camera_pan_zoom_over_still_image",
+            "fallback_motion_kind": "scene_aware_2_5d_pan_zoom_over_generated_keyframe",
+            "image_motion_strength": _image_motion_strength(),
             "paid_api_used": False,
             "api_key_required": False,
             "maximum_free_stock_shots": max(
@@ -4941,7 +5091,7 @@ def render_long_animate(
         "shots": [asdict(shot) for shot in shots],
         "story_arc": [asdict(scene) for scene in storyboard.scenes],
         "scene_prompt_contract": {
-            "version": 4,
+            "version": 5,
             "one_visual_prompt_per_scene": True,
             "one_animation_direction_per_scene": True,
             "camera_and_transition_are_scene_specific": True,
@@ -4949,6 +5099,8 @@ def render_long_animate(
             "adjacent_framing_repetition_allowed": False,
             "close_up_motion_uses_safe_crop": True,
             "character_style_location_time_continuity_locked": True,
+            "action_setting_condition_atmosphere_camera_are_shot_specific": True,
+            "cross_shot_prompt_leakage_allowed": False,
             "render_execution_mode": (
                 "free_real_footage_plus_local_realistic_keyframes"
                 if stock_attributions

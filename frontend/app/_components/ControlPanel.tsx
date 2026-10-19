@@ -12,6 +12,7 @@ import {
   Sparkles,
   Image as ImageIcon,
   UploadCloud,
+  VolumeX,
   WandSparkles,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -42,6 +43,7 @@ type ControlPanelProps = {
   videoDuration: number | null;
   videoQuality: VideoQuality;
   burnSubtitles: boolean;
+  slowMotionNoVoice: boolean;
   captionFontSize: number;
   captionPosition: CaptionPosition;
   captionColor: string;
@@ -57,6 +59,7 @@ type ControlPanelProps = {
   onMaxDurationChange: (value: number) => void;
   onMinDurationChange: (value: number) => void;
   onBurnSubtitlesChange: (value: boolean) => void;
+  onSlowMotionNoVoiceChange: (value: boolean) => void;
   onCaptionFontSizeChange: (value: number) => void;
   onCaptionPositionChange: (value: CaptionPosition) => void;
   onCaptionColorChange: (value: string) => void;
@@ -113,6 +116,7 @@ export function ControlPanel({
   videoDuration,
   videoQuality,
   burnSubtitles,
+  slowMotionNoVoice,
   captionFontSize,
   captionPosition,
   captionColor,
@@ -128,6 +132,7 @@ export function ControlPanel({
   onMaxDurationChange,
   onMinDurationChange,
   onBurnSubtitlesChange,
+  onSlowMotionNoVoiceChange,
   onCaptionFontSizeChange,
   onCaptionPositionChange,
   onCaptionColorChange,
@@ -301,6 +306,7 @@ export function ControlPanel({
           <div className="polishAdvancedBody">
             <div className="shortToggleGrid">
               <ToggleCard checked={burnSubtitles} disabled={disabled} icon={<Captions size={17} />} label="Subtitle" description="Burn-in ke video" onChange={onBurnSubtitlesChange} />
+              <ToggleCard checked={slowMotionNoVoice} disabled={disabled} icon={<VolumeX size={17} />} label="Slow motion" description="0,65× · tanpa suara" onChange={onSlowMotionNoVoiceChange} />
               <ToggleCard checked={aiEnabled} disabled={disabled} icon={<Bot size={17} />} label="Seleksi AI" description={isLong ? "Chapter & alur" : "Hook & konteks"} onChange={onAiEnabledChange} />
               <ToggleCard checked={autoUploadYoutube} disabled={disabled} icon={<UploadCloud size={17} />} label="Antrean YouTube" description="Tetap melalui review" onChange={onAutoUploadYoutubeChange} />
             </div>

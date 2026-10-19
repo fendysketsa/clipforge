@@ -246,10 +246,14 @@ def test_local_image_prompt_keeps_exact_action_and_drops_later_crowd_language():
     prompt = long_animate._focused_image_generation_prompt(shot)
 
     assert "Visible moment: Bagas memasang dasi asal-asalan" in prompt
+    assert "Setting, condition, and immediate context:" in prompt
+    assert "Atmosphere, lighting, weather, time, and color mood: warm morning light" in prompt
+    assert "Do not import an action, location, weather, time, character, prop, or mood" in prompt
     assert "seluruh siswa" not in prompt
     assert "mengangkat tangan" not in prompt
     assert "No waving" not in prompt
-    assert len(prompt) < 1800
+    assert len(prompt) < 2400
+    assert prompt.endswith("immediate moment.")
 
 
 def test_tower_crane_prompt_stays_machine_only_without_hand_tokens():
@@ -806,9 +810,19 @@ def test_close_up_camera_move_is_gentler_than_wide_camera_move():
     wide_zoom, _wide_x, _wide_y = _motion_expression(wide, 300)
     close_zoom, _close_x, close_y = _motion_expression(close, 300)
 
-    assert "0.100*min(1,on/300)" in wide_zoom
-    assert "0.038*min(1,on/300)" in close_zoom
+    assert "0.135*min(1,on/300)" in wide_zoom
+    assert "0.051*min(1,on/300)" in close_zoom
     assert "*0.30" in close_y
+
+
+def test_motion_strength_invalid_config_falls_back_safely(monkeypatch):
+    shot = _motion_test_shot()
+    shot.framing = "wide"
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_MOTION_STRENGTH", "invalid")
+
+    zoom, _x, _y = _motion_expression(shot, 300)
+
+    assert "0.135*min(1,on/300)" in zoom
 
 
 def test_assemble_shots_uses_each_scene_transition(monkeypatch, tmp_path):
@@ -877,7 +891,7 @@ def test_render_shot_has_no_black_fade_or_audio_padding(monkeypatch, tmp_path):
     assert "apad" not in command_text
     assert "-an" in captured["command"]
     assert "sin(2*PI*on" in command_text
-    assert "sin(2*PI*t/7)" in command_text
+    assert "0.006*sin(2*PI*t/7)" in command_text
 
 
 def test_markdown_scene_script_is_parsed_without_production_labels():
@@ -1058,6 +1072,7 @@ def test_long_animate_tts_honors_explicit_indonesian_prosody(monkeypatch, tmp_pa
         return Result()
 
     monkeypatch.setenv("LONG_ANIMATE_VOICE", "id-ID-ArdiNeural")
+    monkeypatch.setenv("LONG_ANIMATE_VOICE_MODE", "manual")
     monkeypatch.setenv("LONG_ANIMATE_VOICE_RATE", "-6%")
     monkeypatch.setenv("LONG_ANIMATE_VOICE_PITCH", "-2Hz")
     monkeypatch.setenv("LONG_ANIMATE_VOICE_VOLUME", "+0%")
@@ -1104,9 +1119,104 @@ def test_long_animate_tts_defaults_to_clear_natural_prosody(monkeypatch, tmp_pat
 
     assert provider == "edge_neural"
     assert output.is_file()
-    assert "--rate=+8%" in captured["command"]
-    assert "--pitch=+2Hz" in captured["command"]
-    assert "--volume=+8%" in captured["command"]
+    assert "--rate=-3%" in captured["command"]
+    assert "--pitch=+0Hz" in captured["command"]
+    assert "--volume=+0%" in captured["command"]
+
+
+def test_voice_casting_prefers_primary_visible_character_gender(monkeypatch):
+    scene = _fallback_storyboard(SCRIPT).scenes[0]
+    scene.title = "Ibu Memasak"
+    scene.narration = (
+        "Seorang ibu memasak sup di dapur saat ayah dan dua putranya menunggu di ruang lain."
+    )
+    scene.visual_prompt = long_animate._compose_visual_prompt(
+        "Seorang ibu memasak sup di dapur",
+        scene.narration,
+        "cinematic realistic",
+        "Ibu, perempuan dewasa",
+        visual_locked=True,
+    )
+    monkeypatch.setenv("LONG_ANIMATE_VOICE_MODE", "auto")
+
+    voice, gender = long_animate.scene_voice(scene)
+
+    assert gender == "female"
+    assert voice == "id-ID-GadisNeural"
+
+
+def test_voice_casting_uses_male_voice_for_primary_male_character(monkeypatch):
+    scene = _fallback_storyboard(SCRIPT).scenes[0]
+    scene.title = "Ayah Membaca"
+    scene.narration = "Seorang ayah membaca buku sementara ibu berada di halaman."
+    scene.visual_prompt = long_animate._compose_visual_prompt(
+        "Seorang ayah membaca buku di ruang keluarga",
+        scene.narration,
+        "cinematic realistic",
+        "Ayah, pria dewasa",
+        visual_locked=True,
+    )
+    monkeypatch.setenv("LONG_ANIMATE_VOICE_MODE", "auto")
+
+    voice, gender = long_animate.scene_voice(scene)
+
+    assert gender == "male"
+    assert voice == "id-ID-ArdiNeural"
+
+
+def test_tts_command_uses_auto_cast_female_voice(monkeypatch, tmp_path):
+    scene = _fallback_storyboard(SCRIPT).scenes[0]
+    scene.title = "Kisah Seorang Ibu"
+    scene.narration = "Seorang ibu menyiapkan sarapan di dapur."
+    scene.visual_prompt = long_animate._compose_visual_prompt(
+        "Seorang ibu menyiapkan sarapan di dapur",
+        scene.narration,
+        "cinematic realistic",
+        "Ibu, perempuan dewasa",
+        visual_locked=True,
+    )
+    captured = {}
+
+    class Result:
+        returncode = 0
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        output_path = command[command.index("--write-media") + 1]
+        long_animate.Path(output_path).write_bytes(b"audio" * 200)
+        return Result()
+
+    monkeypatch.setenv("LONG_ANIMATE_VOICE_MODE", "auto")
+    monkeypatch.setattr(long_animate.subprocess, "run", fake_run)
+
+    output, provider = long_animate.synthesize_narration(scene, tmp_path)
+
+    assert provider == "edge_neural"
+    assert output.is_file()
+    assert captured["command"][captured["command"].index("--voice") + 1] == "id-ID-GadisNeural"
+    assert scene.voice_gender == "female"
+
+
+def test_voice_cleanup_is_two_sided_and_keeps_neural_audio_natural(monkeypatch, tmp_path):
+    scene = _fallback_storyboard(SCRIPT).scenes[0]
+    scene.voice_provider = "edge_neural"
+    source = tmp_path / "voice.mp3"
+    source.write_bytes(b"audio")
+    captured = {}
+    monkeypatch.setattr(
+        long_animate,
+        "_run",
+        lambda command, **kwargs: captured.setdefault("command", command),
+    )
+    monkeypatch.setattr(long_animate, "_media_duration", lambda _path: 2.0)
+
+    long_animate.trim_voice_silence(scene, source, tmp_path)
+
+    audio_filter = captured["command"][captured["command"].index("-af") + 1]
+    assert audio_filter.count("silenceremove=") == 2
+    assert "deesser=" in audio_filter
+    assert "acompressor=" in audio_filter
+    assert "afftdn=" not in audio_filter
 
 
 def test_short_narration_shrinks_timeline_instead_of_slurring(monkeypatch):

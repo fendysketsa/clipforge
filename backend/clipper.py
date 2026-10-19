@@ -2195,6 +2195,7 @@ OutputFormat = Literal["vertical_short", "landscape_compilation"]
 VisualMode = Literal["auto_fyp", "cinematic", "speaker_split", "animated_3d", "retro_tv"]
 BackgroundMode = Literal["auto_clean", "keep", "mosque"]
 VisualTheme = Literal["mystery", "islamic", "warning", "inspiring", "knowledge"]
+SLOW_MOTION_PLAYBACK_RATE = 0.65
 DEFAULT_TRANSCRIPTION_MODEL = "Systran/faster-whisper-medium"
 TRANSCRIPTION_CACHE_VERSION = 3
 YUNET_MODEL_PATH = Path(__file__).resolve().parent / "models" / "face_detection_yunet_2023mar.onnx"
@@ -13823,6 +13824,115 @@ def write_srt(path: Path, segments: list[TranscriptSegment], offset: float, clip
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def retime_srt_for_playback_rate(path: Path, playback_rate: float) -> None:
+    """Stretch an existing SRT so sidecar captions match a slowed final video."""
+    if not path.is_file() or not 0 < playback_rate < 1:
+        return
+    timestamp_pattern = re.compile(
+        r"(?P<start>\d{2}:\d{2}:\d{2},\d{3})\s+-->\s+"
+        r"(?P<end>\d{2}:\d{2}:\d{2},\d{3})"
+    )
+
+    def parse_stamp(value: str) -> float:
+        hours, minutes, remainder = value.split(":")
+        seconds, milliseconds = remainder.split(",")
+        return (
+            int(hours) * 3600
+            + int(minutes) * 60
+            + int(seconds)
+            + int(milliseconds) / 1000
+        )
+
+    def stretch(match: re.Match[str]) -> str:
+        start = parse_stamp(match.group("start")) / playback_rate
+        end = parse_stamp(match.group("end")) / playback_rate
+        return f"{seconds_to_stamp(start, srt=True)} --> {seconds_to_stamp(end, srt=True)}"
+
+    path.write_text(
+        timestamp_pattern.sub(stretch, path.read_text(encoding="utf-8")),
+        encoding="utf-8",
+    )
+
+
+def apply_slow_motion_no_voice(
+    path: Path,
+    video_quality: VideoQuality,
+    *,
+    sidecar: dict[str, object] | None = None,
+    playback_rate: float = SLOW_MOTION_PLAYBACK_RATE,
+) -> float:
+    """Create a silent slow-motion delivery file without touching the source."""
+    if not path.is_file():
+        raise RuntimeError(f"Video hasil tidak ditemukan untuk slow motion: {path}")
+    rate = max(0.4, min(0.9, float(playback_rate)))
+    quality = quality_preset(video_quality)
+    try:
+        preserve_crf = str(max(12, int(str(quality["crf"])) - 1))
+    except ValueError:
+        preserve_crf = "17"
+    temp_path = path.with_name(f".{path.stem}.slow-motion-tmp{path.suffix}")
+    temp_path.unlink(missing_ok=True)
+    try:
+        run(
+            [
+                ffmpeg_path(),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(path.resolve()),
+                "-map",
+                "0:v:0",
+                "-vf",
+                f"setpts=PTS/{rate:.6f}",
+                "-an",
+                "-c:v",
+                "libx264",
+                "-profile:v",
+                str(quality["profile"]),
+                "-level",
+                str(quality["level"]),
+                "-preset",
+                str(quality["preset"]),
+                "-crf",
+                preserve_crf,
+                "-pix_fmt",
+                "yuv420p",
+                *ffmpeg_clean_metadata_args(),
+                "-movflags",
+                "+faststart",
+                str(temp_path.resolve()),
+            ]
+        )
+        os.replace(temp_path, path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+    retime_srt_for_playback_rate(path.with_suffix(".srt"), rate)
+    output_duration = round(probe_media_duration_seconds(path) or 0.0, 3)
+    target = sidecar
+    if target is None and path.with_suffix(".json").is_file():
+        try:
+            loaded = json.loads(path.with_suffix(".json").read_text(encoding="utf-8"))
+            target = loaded if isinstance(loaded, dict) else None
+        except (OSError, json.JSONDecodeError):
+            target = None
+    if target is not None:
+        target["slow_motion_no_voice"] = {
+            "enabled": True,
+            "playback_rate": rate,
+            "audio_removed": True,
+            "source_unchanged": True,
+        }
+        target["output_duration_seconds"] = output_duration
+        if "duration" in target:
+            target["duration"] = output_duration
+        target["audio_present"] = False
+        save_json(path.with_suffix(".json"), target)
+    return output_duration
+
+
 CaptionPosition = Literal["upper", "center", "bottom"]
 
 
@@ -14267,7 +14377,12 @@ def write_dynamic_ass(
 ) -> int:
     """Write keyword-highlighted captions inside the Shorts UI-safe region."""
     font_name = AVAILABLE_FONTS.get(caption.font_family, DEFAULT_FONT)
-    font_size = max(40, min(112, round(max(6, min(120, caption.font_size)) * 6.7)))
+    # The UI value is an editorial scale, not a raw 1080x1920 pixel size.  The
+    # old 6.7x conversion let a perfectly ordinary value such as 18 hit 112px,
+    # which could turn a short phrase into a screen-filling wall of text.
+    # Preserve useful variation while keeping two-line captions proportional.
+    requested_size = max(6, min(36, caption.font_size))
+    font_size = max(42, min(72, round(40 + requested_size * 1.6)))
     primary = _hex_to_ass_color(caption.color)
     outline_color = _hex_to_ass_color(caption.outline_color)
     outline = max(2.0, min(12.0, caption.outline_width * 6.0))
@@ -18160,6 +18275,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--caption-outline", type=float, default=0.5, help="Caption border/outline width (0-8)")
     parser.add_argument("--caption-outline-color", default="#000000", help="Caption border color, hex")
     parser.add_argument(
+        "--slow-motion-no-voice",
+        action="store_true",
+        help="Slow every final clip to 0.65x and remove the complete audio track",
+    )
+    parser.add_argument(
         "--no-enhanced-edit",
         action="store_true",
         help="Disable animated hook, motion, transitions, vignette, and progress graphics",
@@ -18896,6 +19016,16 @@ def render_animated_script(
         required_hashtags=required_hashtags,
         progress=emit_progress,
     )
+    if args.slow_motion_no_voice:
+        emit_progress(96, "render", "Menerapkan slow motion 0,65x tanpa suara")
+        slowed_duration = apply_slow_motion_no_voice(
+            output_path,
+            args.video_quality,
+            sidecar=sidecar,
+        )
+        # Generated-story timestamps describe the delivery timeline rather than
+        # a source excerpt, so keep the candidate boundary aligned as well.
+        sidecar["end"] = slowed_duration
     candidate = ClipCandidate(
         index=int(sidecar.get("index") or 1),
         start=float(sidecar.get("start") or 0.0),
@@ -19901,6 +20031,11 @@ def main() -> int:
                 "render",
                 f"Klip pendek {export_index} dari {total_candidates} selesai",
             )
+
+    if args.slow_motion_no_voice:
+        emit_progress(94, "render", "Menerapkan slow motion 0,65x tanpa suara pada semua hasil")
+        for output_path in exported:
+            apply_slow_motion_no_voice(output_path, args.video_quality)
 
     emit_progress(95, "finalize", "Menyimpan audit, metadata, dan kesiapan monetisasi")
     attach_monetization_provenance(

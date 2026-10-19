@@ -429,6 +429,7 @@ class ClipJobRequest(BaseModel):
     visual_mode: Literal["auto_fyp", "cinematic", "speaker_split", "animated_3d", "retro_tv"] = "auto_fyp"
     background_mode: Literal["auto_clean", "keep", "mosque"] = "keep"
     burn_subtitles: bool = True
+    slow_motion_no_voice: bool = False
     enhanced_edit: bool = True
     remove_running_text: bool = False
     auto_blur_watermarks: bool = True
@@ -1947,6 +1948,7 @@ class AutoViralRequest(BaseModel):
     background_mode: Literal["auto_clean", "keep", "mosque"] = "keep"
     crop_mode: Literal["center", "person", "streamer"] = "person"
     burn_subtitles: bool = True
+    slow_motion_no_voice: bool = False
     ai_enabled: bool = True
     ai_base_url: str = DEFAULT_AI_BASE_URL
     ai_model: str = DEFAULT_AI_MODEL
@@ -11518,6 +11520,8 @@ def build_clipper_command(
     command.extend(["--background-mode", request.background_mode])
     if not request.burn_subtitles:
         command.append("--no-burn-subtitles")
+    if request.slow_motion_no_voice:
+        command.append("--slow-motion-no-voice")
     if not request.enhanced_edit:
         command.append("--no-enhanced-edit")
     if request.remove_running_text:
@@ -14191,6 +14195,7 @@ def create_auto_viral_clip_job(source: dict[str, Any], request: AutoViralRequest
         visual_mode=request.visual_mode,
         background_mode=request.background_mode,
         burn_subtitles=request.burn_subtitles,
+        slow_motion_no_voice=request.slow_motion_no_voice,
         crop_mode=request.crop_mode,
         require_creative_commons=request.require_creative_commons,
         auto_upload_youtube=False,
@@ -14273,6 +14278,7 @@ def create_auto_viral_paired_long_job(
         visual_mode=request.visual_mode,
         background_mode=request.background_mode,
         burn_subtitles=request.burn_subtitles,
+        slow_motion_no_voice=request.slow_motion_no_voice,
         crop_mode=request.crop_mode,
         require_creative_commons=request.require_creative_commons,
         auto_upload_youtube=False,

@@ -3852,6 +3852,17 @@ def test_build_clipper_command_includes_five_minute_highlight_mode():
     assert command[command.index("--background-mode") + 1] == "keep"
 
 
+def test_build_clipper_command_enables_slow_motion_without_voice():
+    request = ClipJobRequest(
+        source_file="/tmp/source.mp4",
+        slow_motion_no_voice=True,
+    )
+
+    command = build_clipper_command(request)
+
+    assert "--slow-motion-no-voice" in command
+
+
 def test_build_clipper_command_passes_companion_short_anchor_ranges():
     request = ClipJobRequest(
         source_file="/tmp/source.mp4",

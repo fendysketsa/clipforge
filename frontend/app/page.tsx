@@ -132,6 +132,7 @@ export default function HomePage() {
   const [cropMode, setCropMode] = useState<CropMode>("person");
   const [camCorner, setCamCorner] = useState<CamCorner>("auto");
   const [burnSubtitles, setBurnSubtitles] = useState(true);
+  const [slowMotionNoVoice, setSlowMotionNoVoice] = useState(false);
   const [captionFontSize, setCaptionFontSize] = useState(DEFAULT_CAPTION_FONT_SIZE);
   const [captionPosition, setCaptionPosition] = useState<CaptionPosition>(DEFAULT_CAPTION_POSITION);
   const [captionColor, setCaptionColor] = useState(DEFAULT_CAPTION_COLOR);
@@ -378,6 +379,7 @@ export default function HomePage() {
         setMaxDuration(restoredJob.request.max_duration);
         setCompilationTargetSeconds(restoredJob.request.compilation_target_seconds);
         setVideoQuality(restoredJob.request.video_quality);
+        setSlowMotionNoVoice(Boolean(restoredJob.request.slow_motion_no_voice));
         setStoryText(restoredJob.request.script_text || "");
         setStoryboardPreview(null);
         if (restoredJob.request.clip_mode === "long_animate") {
@@ -798,6 +800,7 @@ export default function HomePage() {
           visual_mode: visualMode,
           background_mode: backgroundMode,
           burn_subtitles: burnSubtitles,
+          slow_motion_no_voice: slowMotionNoVoice,
           remove_running_text: false,
           auto_blur_watermarks: true,
           crop_mode: cropMode,
@@ -870,6 +873,7 @@ export default function HomePage() {
     minDuration,
     requireCreativeCommons,
     requiredHashtags,
+    slowMotionNoVoice,
     sourceMode,
     sourceProbe,
     storyText,
@@ -910,6 +914,7 @@ export default function HomePage() {
     setMaxDuration(selectedJob.request.max_duration);
     setCompilationTargetSeconds(selectedJob.request.compilation_target_seconds);
     setVideoQuality(selectedJob.request.video_quality);
+    setSlowMotionNoVoice(Boolean(selectedJob.request.slow_motion_no_voice));
     window.dispatchEvent(new Event("clipforge:open-results"));
   }, []);
 
@@ -1501,6 +1506,7 @@ export default function HomePage() {
           onVideoQualityChange={setVideoQuality}
           onTargetClipsChange={handleTargetClipsChange}
           burnSubtitles={burnSubtitles}
+          slowMotionNoVoice={slowMotionNoVoice}
           captionFontSize={captionFontSize}
           captionPosition={captionPosition}
           captionColor={captionColor}
@@ -1517,6 +1523,7 @@ export default function HomePage() {
           onMaxDurationChange={setMaxDuration}
           onMinDurationChange={setMinDuration}
           onBurnSubtitlesChange={setBurnSubtitles}
+          onSlowMotionNoVoiceChange={setSlowMotionNoVoice}
           onCaptionFontSizeChange={setCaptionFontSize}
           onCaptionPositionChange={setCaptionPosition}
           onCaptionColorChange={setCaptionColor}

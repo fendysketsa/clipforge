@@ -7,9 +7,8 @@ export const MAX_SHORT_DURATION = 180;
 export const VIRAL_QUALITY_FLOOR = 85;
 export const DEFAULT_MODEL = "Systran/faster-whisper-medium";
 export const DEFAULT_LANGUAGE = "id";
-// Standard keeps 1080x1920 output while using the faster CPU encode path.
-// Users can still opt into Jernih or Maksimal for difficult source footage.
-export const DEFAULT_VIDEO_QUALITY: VideoQuality = "standard";
+// Favor detail preservation for generated imagery and text-heavy social video.
+export const DEFAULT_VIDEO_QUALITY: VideoQuality = "high";
 export const DEFAULT_CLIP_MODE: ClipMode = "short";
 export const COMPILATION_MIN_SECONDS = 300;
 export const COMPILATION_MAX_SECONDS = 600;
@@ -22,7 +21,7 @@ export const DEFAULT_CAPTION_FONT_SIZE = 8;
 export const DEFAULT_CAPTION_POSITION = "bottom";
 export const DEFAULT_CAPTION_COLOR = "#FFFFFF";
 export const CAPTION_FONT_SIZE_MIN = 8;
-export const CAPTION_FONT_SIZE_MAX = 36;
+export const CAPTION_FONT_SIZE_MAX = 24;
 export const DEFAULT_CAPTION_FONT = "DejaVu Sans";
 export const DEFAULT_CAPTION_OUTLINE = 0.5;
 export const DEFAULT_CAPTION_OUTLINE_COLOR = "#000000";
