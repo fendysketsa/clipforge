@@ -6148,6 +6148,25 @@ details[open] > summary .detailsChevron {
   object-fit: cover;
 }
 
+/* Long Animate can be a portrait master. Never crop a 9:16 story into the
+   wide long-form card: that hid the cart, bowl, hands, and scene context while
+   showing only the speaker's torso. */
+.clipCardLongForm.clipCardPortrait .clipMedia {
+  min-height: min(78vh, 820px);
+  background:
+    radial-gradient(circle at 50% 40%, rgba(94, 234, 212, 0.1), transparent 34%),
+    #010504;
+}
+
+.clipCardLongForm.clipCardPortrait .clipMedia video,
+.clipCard.clipCardLongForm.clipCardPortrait .clipMedia video {
+  width: 100%;
+  height: min(78vh, 820px);
+  max-height: 820px;
+  aspect-ratio: auto;
+  object-fit: contain;
+}
+
 .clipSelect {
   top: 14px;
   left: 14px;

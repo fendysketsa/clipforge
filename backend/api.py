@@ -524,6 +524,8 @@ class StoryboardPreviewShot(BaseModel):
     subject_placement: str
     camera_angle: str
     camera_motion: str
+    director_direction: str
+    property_direction: str
 
 
 class StoryboardPreviewScene(BaseModel):
@@ -537,6 +539,8 @@ class StoryboardPreviewScene(BaseModel):
     camera_motion: str
     color_mood: str
     narrative_role: str
+    director_direction: str
+    property_direction: str
 
 
 class StoryboardImageProvider(BaseModel):
@@ -553,6 +557,8 @@ class StoryboardPreviewResponse(BaseModel):
     art_bible: str
     character_bible: str
     location_bible: str
+    director_bible: str
+    property_bible: str
     production_script: str
     scenes: list[StoryboardPreviewScene]
     expansion: dict[str, object]
@@ -1376,6 +1382,40 @@ MYSTERY_ISLAMIC_SEARCH_QUERIES = [
     "mitos jawa menurut islam",
 ]
 
+# This lane is deliberately cron-only.  It gives the unattended rotation an
+# occasional light break without changing the manual search catalogue or its
+# Islamic/constructive-content filters.  The reference style is conversational
+# Indonesian humour: misunderstandings, wordplay, and spontaneous reactions.
+CRON_HUMOR_SEARCH_QUERIES = [
+    "komedi indonesia salah dengar permainan kata",
+    "sketsa komedi indonesia dialog lucu",
+    "komedi situasi indonesia salah paham",
+    "acara komedi keluarga indonesia full",
+    "podcast komedi indonesia celetukan spontan",
+    "stand up comedy indonesia cerita sehari hari",
+    "lawakan indonesia bersih tanpa prank",
+    "momen lucu natural obrolan indonesia",
+    "sitkom indonesia humor keluarga",
+    "humor warga kampung salah dengar",
+    "dialog pak rt lucu salah paham",
+    "plesetan kata indonesia bikin ngakak",
+]
+
+CRON_HUMOR_SIGNALS = {
+    "bikin ketawa", "candaan", "celetukan", "comedy", "gagal paham",
+    "humor", "kocak", "komedi", "lawak", "lucu", "ngakak", "plesetan",
+    "salah dengar", "salah paham", "sketsa", "sitkom", "stand up",
+}
+CRON_HUMOR_DIALOGUE_SIGNALS = {
+    "dengar", "dialog", "jawab", "ngobrol", "obrolan", "pak rt",
+    "percakapan", "reaksi", "tanya",
+}
+CRON_HUMOR_UNSAFE_SIGNALS = {
+    "18+", "berantem", "bully", "darah", "dewasa", "hajar", "hina",
+    "judi", "kecelakaan", "mabuk", "mempermalukan", "pelecehan", "prank",
+    "sadis", "seksual", "telanjang",
+}
+
 IslamicContentNiche = Literal[
     "auto",
     "faith_prophets_converts",
@@ -1925,6 +1965,9 @@ def normalize_youtube_video_url(value: str) -> str | None:
 class AutoViralRequest(BaseModel):
     niche: IslamicContentNiche = "auto"
     theme_focus: str = Field(default="", max_length=240)
+    # Honoured only when the owning run has trigger="schedule".  Keeping the
+    # marker durable lets an interrupted cron run resume with the same gate.
+    cron_humor_lane: bool = False
     queries: list[str] = Field(default_factory=default_auto_viral_queries)
     video_count: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_VIDEO_COUNT", 5), ge=1, le=7)
     clips_per_video: int = Field(default_factory=youtube_auto_upload_count, ge=1, le=5)
@@ -12694,6 +12737,114 @@ def niche_content_relaxation_reasons(reasons: list[str]) -> list[str]:
     ]
 
 
+def cron_humor_discovery_active(run_id: str, request: AutoViralRequest) -> bool:
+    """Enable humour gates only for a request owned by the scheduler."""
+    if not request.cron_humor_lane:
+        return False
+    with auto_viral_lock:
+        run = auto_viral_runs.get(run_id)
+    return bool(run and run.trigger == "schedule")
+
+
+def cron_humor_score(info: dict[str, Any]) -> float:
+    """Score light conversational humour from metadata, not channel reach."""
+    title_raw = str(info.get("title") or "").casefold()
+    description_raw = str(info.get("description") or "").casefold()
+    tags = info.get("tags") if isinstance(info.get("tags"), list) else []
+    supporting_raw = f"{description_raw} {' '.join(map(str, tags)).casefold()}"
+    normalize = lambda value: re.sub(r"[^a-z0-9+]+", " ", value).strip()
+    title = f" {normalize(title_raw)} "
+    supporting = f" {normalize(supporting_raw)} "
+
+    def hits(text: str, markers: set[str]) -> int:
+        return sum(1 for marker in markers if f" {marker} " in text)
+
+    title_humor = hits(title, CRON_HUMOR_SIGNALS)
+    supporting_humor = hits(supporting, CRON_HUMOR_SIGNALS)
+    dialogue = hits(title, CRON_HUMOR_DIALOGUE_SIGNALS)
+    dialogue += min(2, hits(supporting, CRON_HUMOR_DIALOGUE_SIGNALS))
+    emoji_bonus = 28 if any(symbol in title_raw for symbol in ("😂", "🤣", "😆", "😹")) else 0
+    punctuation_bonus = 5 if "?!" in title_raw or "!?" in title_raw else 0
+    return round(
+        min(
+            100.0,
+            title_humor * 28
+            + min(24, supporting_humor * 8)
+            + min(18, dialogue * 6)
+            + emoji_bonus
+            + punctuation_bonus,
+        ),
+        2,
+    )
+
+
+def cron_humor_candidate_rejection_reason(info: dict[str, Any]) -> str:
+    """Keep the humour insert Indonesian, recognisably funny, and brand-safe."""
+    raw_text = " ".join(
+        [
+            str(info.get("title") or ""),
+            str(info.get("description") or ""),
+            " ".join(map(str, info.get("tags") or [])),
+        ]
+    ).casefold()
+    normalized_text = f" {re.sub(r'[^a-z0-9+]+', ' ', raw_text).strip()} "
+    unsafe_hits = sorted(
+        marker
+        for marker in CRON_HUMOR_UNSAFE_SIGNALS
+        if f" {marker} " in normalized_text
+    )
+    if unsafe_hits:
+        return f"humor tidak aman ({', '.join(unsafe_hits[:3])})"
+    humor_score = cron_humor_score(info)
+    minimum_humor = max(
+        1, min(100, env_int("AUTO_VIRAL_SCHEDULE_HUMOR_MIN_SCORE", 24))
+    )
+    if humor_score < minimum_humor:
+        return f"sinyal humor {humor_score:.0f}/100 di bawah minimum {minimum_humor}/100"
+    language_score = indonesian_language_score(info)
+    minimum_language = max(1, min(100, env_int("VIRAL_CC_MIN_INDONESIAN_SCORE", 15)))
+    if language_score < minimum_language:
+        return (
+            f"sinyal Bahasa Indonesia {language_score:.0f}/100 di bawah minimum "
+            f"{minimum_language}/100"
+        )
+    return ""
+
+
+def apply_cron_humor_ranking(
+    source: dict[str, Any],
+    info: dict[str, Any],
+) -> dict[str, Any]:
+    """Replace Islamic relevance rank only inside the scheduled humour lane."""
+    humor_score = cron_humor_score(info)
+    language_score = float(source.get("language_score") or 0)
+    momentum_score = float(source.get("momentum_score") or 0)
+    conversation_score = min(
+        100.0, float(source.get("fresh_conversation_score") or 0) * 2.25
+    )
+    source.update(
+        {
+            "niche": "cron_light_humor",
+            "niche_label": "Sisipan Humor Ringan (Cronjob)",
+            "niche_score": humor_score,
+            "humor_score": humor_score,
+            "score": round(
+                humor_score * 0.60
+                + language_score * 0.25
+                + conversation_score * 0.10
+                + momentum_score * 0.05,
+                2,
+            ),
+            "ranking_reason": (
+                f"Humor percakapan {humor_score:.0f}/100 • Bahasa Indonesia "
+                f"{language_score:.0f}/100 • aman untuk sisipan cronjob • "
+                f"momentum hanya sinyal {momentum_score:.0f}/100"
+            ),
+        }
+    )
+    return source
+
+
 def compact_source_payload(
     info: dict[str, Any],
     niche: IslamicContentNiche = "auto",
@@ -13192,12 +13343,19 @@ def search_youtube_data_api_viral_sources(
         8, min(90, env_int("VIRAL_CC_FAST_SEARCH_BUDGET_SECONDS", 25))
     )
     trend_tokens: set[str] = set()
+    cron_humor_lane = cron_humor_discovery_active(run_id, request)
     api_queries = youtube_data_api_search_queries(request)
-    try:
-        trend_seeds, trend_tokens = youtube_trend_signals(request, run_id)
-        api_queries = add_trend_seeds_to_queries(api_queries, trend_seeds)
-    except Exception as exc:
-        append_auto_viral_error(run_id, f"Chart tren YouTube gagal; lanjut dengan keyword utama: {exc}")
+    if cron_humor_lane:
+        append_auto_viral_log(
+            run_id,
+            "Jalur humor cronjob aktif; seed tren umum dimatikan agar hasil tetap komedi ringan.",
+        )
+    else:
+        try:
+            trend_seeds, trend_tokens = youtube_trend_signals(request, run_id)
+            api_queries = add_trend_seeds_to_queries(api_queries, trend_seeds)
+        except Exception as exc:
+            append_auto_viral_error(run_id, f"Chart tren YouTube gagal; lanjut dengan keyword utama: {exc}")
     for query in api_queries:
         if stop_after is not None and len(candidates) >= stop_after:
             break
@@ -13318,26 +13476,37 @@ def search_youtube_data_api_viral_sources(
                     f"Skip sumber tidak aman ({rejection_reason}): {payload.get('title') or '-'}",
                 )
                 continue
-            niche_reasons = niche_candidate_relaxation_reasons(payload, request.niche)
-            language_reasons = [
-                reason for reason in niche_reasons if reason.startswith("sinyal Bahasa Indonesia")
-            ]
-            if language_reasons:
-                append_auto_viral_log(
-                    run_id,
-                    f"Skip kandidat bukan Bahasa Indonesia ({'; '.join(language_reasons)}): "
-                    f"{payload.get('title') or '-'}",
-                )
-                continue
-            content_reasons = niche_content_relaxation_reasons(niche_reasons)
-            if content_reasons:
-                append_auto_viral_log(
-                    run_id,
-                    f"Skip kandidat tidak informatif/relevan ({'; '.join(content_reasons)}): "
-                    f"{payload.get('title') or '-'}",
-                )
-                continue
+            if cron_humor_lane:
+                humor_rejection = cron_humor_candidate_rejection_reason(payload)
+                if humor_rejection:
+                    append_auto_viral_log(
+                        run_id,
+                        f"Skip kandidat humor ({humor_rejection}): {payload.get('title') or '-'}",
+                    )
+                    continue
+            else:
+                niche_reasons = niche_candidate_relaxation_reasons(payload, request.niche)
+                language_reasons = [
+                    reason for reason in niche_reasons if reason.startswith("sinyal Bahasa Indonesia")
+                ]
+                if language_reasons:
+                    append_auto_viral_log(
+                        run_id,
+                        f"Skip kandidat bukan Bahasa Indonesia ({'; '.join(language_reasons)}): "
+                        f"{payload.get('title') or '-'}",
+                    )
+                    continue
+                content_reasons = niche_content_relaxation_reasons(niche_reasons)
+                if content_reasons:
+                    append_auto_viral_log(
+                        run_id,
+                        f"Skip kandidat tidak informatif/relevan ({'; '.join(content_reasons)}): "
+                        f"{payload.get('title') or '-'}",
+                    )
+                    continue
             source = compact_source_payload(payload, request.niche)
+            if cron_humor_lane:
+                source = apply_cron_humor_ranking(source, payload)
             source["search_provider"] = "youtube_data_api"
             source_tokens = set(re.findall(r"[a-z0-9]{3,}", (
                 f"{payload.get('title') or ''} {payload.get('description') or ''}"
@@ -13391,6 +13560,7 @@ def search_auto_viral_sources(
     )
     default_search_mode = "ytsearchdate" if request.sort_order == "newest" else "ytsearch"
     search_mode = default_search_mode
+    cron_humor_lane = cron_humor_discovery_active(run_id, request)
     if search_mode not in {"ytsearch", "ytsearchdate"}:
         search_mode = "ytsearchdate"
     for query in request.queries:
@@ -13472,26 +13642,37 @@ def search_auto_viral_sources(
                     f"Skip sumber tidak aman ({rejection_reason}): {metadata.get('title') or url}",
                 )
                 continue
-            niche_reasons = niche_candidate_relaxation_reasons(metadata, request.niche)
-            language_reasons = [
-                reason for reason in niche_reasons if reason.startswith("sinyal Bahasa Indonesia")
-            ]
-            if language_reasons:
-                append_auto_viral_log(
-                    run_id,
-                    f"Skip kandidat bukan Bahasa Indonesia ({'; '.join(language_reasons)}): "
-                    f"{metadata.get('title') or url}",
-                )
-                continue
-            content_reasons = niche_content_relaxation_reasons(niche_reasons)
-            if content_reasons:
-                append_auto_viral_log(
-                    run_id,
-                    f"Skip kandidat tidak informatif/relevan ({'; '.join(content_reasons)}): "
-                    f"{metadata.get('title') or url}",
-                )
-                continue
+            if cron_humor_lane:
+                humor_rejection = cron_humor_candidate_rejection_reason(metadata)
+                if humor_rejection:
+                    append_auto_viral_log(
+                        run_id,
+                        f"Skip kandidat humor ({humor_rejection}): {metadata.get('title') or url}",
+                    )
+                    continue
+            else:
+                niche_reasons = niche_candidate_relaxation_reasons(metadata, request.niche)
+                language_reasons = [
+                    reason for reason in niche_reasons if reason.startswith("sinyal Bahasa Indonesia")
+                ]
+                if language_reasons:
+                    append_auto_viral_log(
+                        run_id,
+                        f"Skip kandidat bukan Bahasa Indonesia ({'; '.join(language_reasons)}): "
+                        f"{metadata.get('title') or url}",
+                    )
+                    continue
+                content_reasons = niche_content_relaxation_reasons(niche_reasons)
+                if content_reasons:
+                    append_auto_viral_log(
+                        run_id,
+                        f"Skip kandidat tidak informatif/relevan ({'; '.join(content_reasons)}): "
+                        f"{metadata.get('title') or url}",
+                    )
+                    continue
             source = compact_source_payload(metadata, request.niche)
+            if cron_humor_lane:
+                source = apply_cron_humor_ranking(source, metadata)
             source["search_provider"] = "yt_dlp_fallback"
             relaxed_reasons: list[str] = []
             relaxed_reasons.extend(filter_reasons)
@@ -14468,6 +14649,14 @@ def auto_viral_retry_until_success() -> bool:
     return env_bool("AUTO_VIRAL_SCHEDULE_RETRY_UNTIL_SUCCESS", False)
 
 
+def auto_viral_max_upload_retries() -> int:
+    """Bound transient upload retries so discovery can never be starved forever."""
+    return max(
+        0,
+        min(96, env_int("AUTO_VIRAL_SCHEDULE_MAX_UPLOAD_RETRIES", 12)),
+    )
+
+
 def auto_viral_daily_upload_limit() -> int:
     """Hard per-platform cap for scheduled uploads on one Jakarta date."""
     return max(
@@ -14524,6 +14713,49 @@ def scheduled_run_started_in_current_boot(
     return started_at >= boot_started_at - timedelta(seconds=5)
 
 
+AUTO_VIRAL_UPLOAD_HOLD_STATUSES = frozenset(
+    {
+        "manual_review_required",
+        "ai_review_failed",
+        "checkpoint_missing",
+        "retry_exhausted",
+    }
+)
+
+
+def auto_viral_upload_item_has_live_checkpoint(
+    request: AutoViralRequest,
+    item: dict[str, Any],
+) -> bool:
+    """Return true only while every rendered job needed for upload still exists."""
+    if (
+        item.get("status") in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
+        or item.get("status") == "completed"
+        or item.get("job_status") != "completed"
+    ):
+        return False
+    job_id = str(item.get("job_id") or "").strip()
+    if not job_id:
+        return False
+    with jobs_lock:
+        short_job = jobs.get(job_id)
+        long_job_id = str(item.get("long_job_id") or "").strip()
+        long_job = jobs.get(long_job_id) if long_job_id else None
+    if (
+        short_job is None
+        or short_job.status != "completed"
+        or not short_job.clips
+    ):
+        return False
+    if request.auto_publish_paired_long_video and (
+        long_job is None
+        or long_job.status != "completed"
+        or not long_job.clips
+    ):
+        return False
+    return True
+
+
 def auto_viral_run_can_resume_upload(run: AutoViralRun | None) -> bool:
     if (
         run is None
@@ -14538,13 +14770,24 @@ def auto_viral_run_can_resume_upload(run: AutoViralRun | None) -> bool:
     completed_jobs = [
         item
         for item in run.processed
-        if str(item.get("job_id") or "")
-        and item.get("job_status") == "completed"
+        if auto_viral_upload_item_has_live_checkpoint(run.request, item)
     ]
     # The configured source count is a target, not a minimum batch size. One
     # completed quality-gated job is a durable upload checkpoint and must not
     # be stranded because other sources produced no acceptable clip.
     return bool(completed_jobs)
+
+
+def hold_auto_viral_upload_item(
+    item: dict[str, Any],
+    reason: str,
+    *,
+    status: str = "checkpoint_missing",
+) -> None:
+    """Make a non-actionable upload checkpoint terminal without deleting files."""
+    item["status"] = status
+    item["error"] = reason
+    item["cleanup"] = "upload otomatis ditahan; file yang masih tersedia dipertahankan"
 
 
 def parse_utc_datetime(value: str | None, fallback: datetime | None = None) -> datetime:
@@ -14703,9 +14946,14 @@ def upload_auto_viral_processed_jobs(
         for item in processed
         if str(item.get("job_id") or "")
         and item.get("job_status") == "completed"
+        and item.get("status") not in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
     ]
     if not upload_items:
-        raise RuntimeError("Tidak ada hasil clip yang dapat masuk fase upload")
+        append_auto_viral_log(
+            run_id,
+            "Tidak ada checkpoint upload aktif; batch lama dilepas agar scheduler dapat mencari konten baru.",
+        )
+        return processed
     total = len(upload_items)
     for position, item in enumerate(upload_items, start=1):
         job_id = str(item.get("job_id") or "")
@@ -14747,13 +14995,37 @@ def upload_auto_viral_processed_jobs(
             long_job_id = str(item.get("long_job_id") or "")
             finished_long_job = jobs.get(long_job_id) if long_job_id else None
         if finished_job is None or finished_job.status != "completed":
-            raise RuntimeError(f"Job {job_id[:10]} tidak siap untuk upload resume")
+            hold_auto_viral_upload_item(
+                item,
+                f"Checkpoint job {job_id[:10]} sudah tidak tersedia; upload resume tidak mungkin dilanjutkan.",
+            )
+            update_auto_viral_run(
+                run_id,
+                processed=processed,
+                progress_current=position,
+            )
+            append_auto_viral_log(
+                run_id,
+                f"Checkpoint {job_id[:10]} ditahan dan dilewati; scheduler tidak akan mengulangnya lagi.",
+            )
+            continue
         if request.auto_publish_paired_long_video and (
             finished_long_job is None or finished_long_job.status != "completed"
         ):
-            raise RuntimeError(
-                f"Long Story pasangan {long_job_id[:10] or '-'} tidak siap untuk auto-public"
+            hold_auto_viral_upload_item(
+                item,
+                f"Checkpoint Long Story {long_job_id[:10] or '-'} sudah tidak tersedia; pasangan Short + Long tidak dapat dipublikasikan otomatis.",
             )
+            update_auto_viral_run(
+                run_id,
+                processed=processed,
+                progress_current=position,
+            )
+            append_auto_viral_log(
+                run_id,
+                f"Checkpoint Long Story {long_job_id[:10] or '-'} ditahan dan tidak akan diulang lagi.",
+            )
+            continue
 
         # A durable backlog may have been rendered by an older policy version.
         # Re-check every requested platform before creating any upload so a
@@ -15089,6 +15361,38 @@ def upload_auto_viral_until_success(
             with auto_viral_lock:
                 current = auto_viral_runs.get(run_id)
                 retry_count = (current.retry_count if current else 0) + 1
+            max_retries = auto_viral_max_upload_retries()
+            if retry_count > max_retries:
+                for item in processed:
+                    if (
+                        item.get("status") != "completed"
+                        and item.get("status") not in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
+                    ):
+                        hold_auto_viral_upload_item(
+                            item,
+                            (
+                                f"Upload otomatis dihentikan setelah {max_retries} retry: {exc}. "
+                                "Batch berikutnya boleh berjalan tanpa menghapus hasil lokal."
+                            ),
+                            status="retry_exhausted",
+                        )
+                append_auto_viral_error(
+                    run_id,
+                    f"Batas {max_retries} retry upload tercapai; backlog ditahan dan scheduler dibebaskan: {exc}",
+                )
+                update_auto_viral_run(
+                    run_id,
+                    status="running",
+                    finished_at=None,
+                    progress_stage="upload_retry_exhausted",
+                    retry_count=retry_count,
+                    processed=processed,
+                    message=(
+                        f"Upload berhenti setelah {max_retries} retry; "
+                        "backlog ditahan dan pencarian batch baru akan dilanjutkan."
+                    ),
+                )
+                return processed
             delay_minutes = auto_viral_retry_delay_minutes()
             retry_at = datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)
             append_auto_viral_error(
@@ -15724,13 +16028,25 @@ def run_auto_viral_campaign(run_id: str) -> None:
 
         with auto_viral_lock:
             run = auto_viral_runs[run_id]
+        verified_count = sum(
+            1 for item in processed if item.get("status") == "completed"
+        )
+        held_count = sum(
+            1
+            for item in processed
+            if item.get("status") in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
+        )
+        if deferred_background_upload and verified_count == 0 and held_count:
+            raise RuntimeError(
+                f"{held_count} batch upload ditahan; scheduler akan mencari sumber baru pada retry berikutnya."
+            )
         update_auto_viral_run(
             run_id,
             status="completed",
             finished_at=now_iso(),
             progress_percent=100,
             progress_stage="complete",
-            progress_current=completed_count,
+            progress_current=(verified_count if deferred_background_upload else completed_count),
             progress_total=run_request.video_count,
             message=(
                 f"Clipping selesai; {completed_count} batch berkualitas siap direview"
@@ -15739,7 +16055,14 @@ def run_auto_viral_campaign(run_id: str) -> None:
                     or run.request.auto_upload_tiktok
                     or run.request.auto_publish_paired_long_video
                 )
-                else f"Automation selesai; {completed_count} batch terverifikasi terupload"
+                else (
+                    f"Automation selesai; {verified_count} batch terverifikasi terupload"
+                    + (
+                        f", {held_count} batch ditahan tanpa menghambat cron"
+                        if held_count
+                        else ""
+                    )
+                )
             ),
         )
         with auto_viral_lock:
@@ -15814,8 +16137,12 @@ def resume_scheduled_auto_viral_upload(run_id: str) -> None:
         held_count = sum(
             1
             for item in processed
-            if item.get("status") in {"manual_review_required", "ai_review_failed"}
+            if item.get("status") in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
         )
+        if verified_count == 0 and held_count:
+            raise RuntimeError(
+                f"{held_count} checkpoint backlog ditahan; scheduler akan mencari sumber baru pada retry berikutnya."
+            )
         update_auto_viral_run(
             run_id,
             status="completed",
@@ -15922,6 +16249,43 @@ def scheduled_auto_viral_theme_focus(niche: IslamicContentNiche) -> str:
     return random.SystemRandom().choice(candidates) if candidates else ""
 
 
+def scheduled_auto_viral_humor_queries() -> list[str]:
+    configured = env_search_queries("AUTO_VIRAL_SCHEDULE_HUMOR_QUERIES")
+    return merge_unique_queries(configured, CRON_HUMOR_SEARCH_QUERIES)
+
+
+def scheduled_auto_viral_humor_theme_focus() -> str:
+    """Rotate a humour search on every Nth cron run, never on manual search."""
+    if not env_bool("AUTO_VIRAL_SCHEDULE_HUMOR_ENABLED", False):
+        return ""
+    every_runs = max(
+        2,
+        min(24, env_int("AUTO_VIRAL_SCHEDULE_HUMOR_EVERY_RUNS", 4)),
+    )
+    with auto_viral_lock:
+        previous_schedule_runs = sorted(
+            (run for run in auto_viral_runs.values() if run.trigger == "schedule"),
+            key=lambda run: run.created_at,
+        )
+    previous_humor_indexes = [
+        index
+        for index, run in enumerate(previous_schedule_runs)
+        if run.request.cron_humor_lane
+    ]
+    # Existing installations have no historical humour markers.  Let the
+    # first run after enabling the feature demonstrate the new lane, then keep
+    # exactly N-1 ordinary runs between humour campaigns.
+    if previous_humor_indexes:
+        runs_since_humor = len(previous_schedule_runs) - previous_humor_indexes[-1] - 1
+        if runs_since_humor < every_runs - 1:
+            return ""
+    queries = scheduled_auto_viral_humor_queries()
+    if not queries:
+        return ""
+    rotation_index = len(previous_humor_indexes) % len(queries)
+    return queries[rotation_index]
+
+
 def scheduled_auto_viral_request() -> AutoViralRequest:
     youtube_upload_requested = env_bool(
         "AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False
@@ -15961,9 +16325,14 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         1,
         min(5, env_int("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", 2)),
     )
+    humor_theme_focus = scheduled_auto_viral_humor_theme_focus()
     return AutoViralRequest(
         niche=niche,  # type: ignore[arg-type]
-        theme_focus=scheduled_auto_viral_theme_focus(niche),  # type: ignore[arg-type]
+        theme_focus=(
+            humor_theme_focus
+            or scheduled_auto_viral_theme_focus(niche)  # type: ignore[arg-type]
+        ),
+        cron_humor_lane=bool(humor_theme_focus),
         video_count=max(1, min(7, env_int("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", 3))),
         clips_per_video=clips_per_video,
         min_views=max(0, env_int("AUTO_VIRAL_SCHEDULE_MIN_VIEWS", 0)),
@@ -16019,14 +16388,16 @@ def pending_scheduled_auto_viral_upload_run() -> AutoViralRun | None:
     only at the newest run strands those clips forever, so drain resumable
     checkpoints in FIFO order before scheduling another campaign.
     """
+    # Copy under the automation lock, then validate jobs outside it.  The
+    # checkpoint validator acquires ``jobs_lock``; avoiding nested locks here
+    # prevents a clip worker and scheduler from deadlocking each other.
     with auto_viral_lock:
-        pending = [
+        candidates = [
             run
             for run in auto_viral_runs.values()
-            if run.trigger == "schedule"
-            and run.status in {"queued", "failed"}
-            and auto_viral_run_can_resume_upload(run)
+            if run.trigger == "schedule" and run.status in {"queued", "failed"}
         ]
+    pending = [run for run in candidates if auto_viral_run_can_resume_upload(run)]
     return min(pending, key=lambda run: run.created_at) if pending else None
 
 
@@ -16412,8 +16783,42 @@ def auto_viral_scheduler_loop() -> None:
 
             if next_run is not None and now >= next_run:
                 try:
+                    stale_resume = bool(
+                        schedule_candidate is not None
+                        and schedule_candidate.status == "queued"
+                        and schedule_candidate.progress_stage == "resume_pending_upload"
+                        and not auto_viral_run_can_resume_upload(schedule_candidate)
+                    )
+                    if stale_resume and schedule_candidate is not None:
+                        stale_processed = [
+                            dict(item) for item in schedule_candidate.processed
+                        ]
+                        for item in stale_processed:
+                            if (
+                                item.get("job_status") == "completed"
+                                and item.get("status") != "completed"
+                                and item.get("status")
+                                not in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
+                            ):
+                                hold_auto_viral_upload_item(
+                                    item,
+                                    "Checkpoint render sudah tidak tersedia setelah restart; batch lama dilepas agar cron mencari sumber baru.",
+                                )
+                        update_auto_viral_run(
+                            schedule_candidate.id,
+                            status="failed",
+                            finished_at=now_iso(),
+                            progress_stage="upload_checkpoint_expired",
+                            processed=stale_processed,
+                            message=(
+                                "Checkpoint upload lama tidak tersedia; "
+                                "scheduler langsung memulai pencarian konten baru."
+                            ),
+                        )
                     resume_upload = bool(
                         schedule_candidate is not None
+                        and not stale_resume
+                        and auto_viral_run_can_resume_upload(schedule_candidate)
                         and (
                             (
                                 schedule_candidate.status == "queued"
@@ -17620,6 +18025,8 @@ def create_storyboard_preview(
                     subject_placement=shot.subject_placement,
                     camera_angle=shot.camera_angle,
                     camera_motion=shot.camera_motion,
+                    director_direction=shot.director_direction,
+                    property_direction=shot.property_direction,
                 )
                 for shot in scene_shots
             ]
@@ -17640,6 +18047,8 @@ def create_storyboard_preview(
                     camera_motion=scene.camera_motion,
                     color_mood=scene.color_mood,
                     narrative_role=scene.narrative_role,
+                    director_direction=scene.director_direction,
+                    property_direction=scene.property_direction,
                 )
             )
 
@@ -17669,6 +18078,8 @@ def create_storyboard_preview(
         art_bible=storyboard.art_bible,
         character_bible=storyboard.character_bible,
         location_bible=storyboard.location_bible,
+        director_bible=storyboard.director_bible,
+        property_bible=storyboard.property_bible,
         production_script=production_script,
         scenes=scenes,
         expansion=expansion,

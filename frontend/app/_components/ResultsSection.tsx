@@ -709,6 +709,11 @@ export function ResultsSection({
             const isLongForm = clip.name.toLowerCase().startsWith("highlight_5menit_")
               || clip.name.toLowerCase().startsWith("resume_cerita_")
               || clip.name.toLowerCase().startsWith("long_animate_");
+            const outputDimensions = clip.output_resolution?.match(/^(\d+)x(\d+)$/i);
+            const isPortraitOutput = Boolean(
+              outputDimensions
+              && Number(outputDimensions[2]) > Number(outputDimensions[1]),
+            );
             const thumbnailVariants = (clip.thumbnail_variants?.length
               ? clip.thumbnail_variants
               : clip.thumbnail_url
@@ -819,7 +824,7 @@ export function ResultsSection({
 
             return (
               <article
-                className={`clipCard ${isLongForm ? "clipCardLongForm" : ""} ${clip.is_correct ? "clipCardCorrect" : ""} ${isSelected ? "selected" : ""}`}
+                className={`clipCard ${isLongForm ? "clipCardLongForm" : ""} ${isPortraitOutput ? "clipCardPortrait" : ""} ${clip.is_correct ? "clipCardCorrect" : ""} ${isSelected ? "selected" : ""}`}
                 key={clip.url}
               >
                 <div className="clipMedia">

@@ -12,5 +12,8 @@ uvicorn==0.38.0
 # The default extra installs yt-dlp-ejs, required for YouTube's current JS
 # challenges. Keep this version aligned with the EJS package it resolves.
 yt-dlp[default]==2026.8.19
-edge-tts>=7.2.0,<8.0.0
+# 7.3.x implements Microsoft's current v2 DRM handshake. Older 7.2.x builds
+# started returning HTTP 403 in October 2026 and silently triggered our local
+# robotic espeak fallback.
+edge-tts>=7.3.1,<8.0.0
 pytest==8.3.4

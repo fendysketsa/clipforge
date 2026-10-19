@@ -91,6 +91,8 @@ class AnimateScene:
     color_mood: str
     narrative_role: str
     animation_direction: str = ""
+    director_direction: str = ""
+    property_direction: str = ""
     transition: str = "cinematic_dissolve"
     continuity_anchor: str = ""
     duration_hint: float = 0.0
@@ -116,6 +118,8 @@ class AnimateStoryboard:
     character_bible: str
     scenes: list[AnimateScene]
     location_bible: str = ""
+    director_bible: str = ""
+    property_bible: str = ""
 
 
 @dataclass
@@ -134,6 +138,8 @@ class AnimateShot:
     subject_placement: str = "center"
     camera_angle: str = "eye_level"
     animation_direction: str = ""
+    director_direction: str = ""
+    property_direction: str = ""
     transition: str = "cinematic_dissolve"
     continuity_anchor: str = ""
     duration: float = 0.0
@@ -184,6 +190,13 @@ STORYBOARD_SYSTEM_PROMPT = (
     "Return art_bible, character_bible, and visual_prompt as short plain descriptive strings, never JSON objects. "
     "Also define a location_bible for recurring places. Treat art_bible, character_bible, and location_bible as "
     "immutable continuity contracts, not suggestions. "
+    "Act as a live-action film director as well as a storyboard artist. Define a director_bible covering motivated "
+    "camera language, actor blocking, screen direction, depth staging, practical lighting, and emotional pacing. "
+    "Define a property_bible listing only story-required hero props, set dressing, food, tools, vehicles, furniture, "
+    "their material, condition, ownership, placement, and state changes. For each scene return director_direction and "
+    "property_direction. Those fields must make the situation visually unmistakable and physically plausible. "
+    "Never substitute a generic portrait for a workplace, shop, food stall, vehicle, room, or event named by the story. "
+    "When the story names a profession or business, show its defining workspace and working properties at readable scale. "
     "Copy explicit NARASI/Narator wording verbatim; visual directions and production instructions are never narration. "
     "Never copy narration labels, scene headings, timestamps, or on-screen text into visual_prompt. "
     "Do not add claims that are absent from the script. "
@@ -515,7 +528,8 @@ def _scene_sections(script: str) -> list[dict[str, object]]:
 
         narration_match = re.search(
             r"(?is)(?:narasi|narration)\s*:\s*(.*?)"
-            r"(?=\n\s*(?:visual|gambar|teks\s*(?:layar|di\s+layar)|on[- ]screen\s+text)\s*:|\Z)",
+            r"(?=\n\s*(?:visual|gambar|arahan\s+sutradara|director\s+direction|properti\s+adegan|scene\s+props|"
+            r"teks\s*(?:layar|di\s+layar)|on[- ]screen\s+text)\s*:|\Z)",
             body,
         )
         narration = _strip_script_markup(narration_match.group(1)) if narration_match else ""
@@ -524,7 +538,16 @@ def _scene_sections(script: str) -> list[dict[str, object]]:
 
         visual_match = re.search(
             r"(?is)(?:visual|gambar)\s*:\s*(.*?)"
-            r"(?=\n\s*(?:narasi|narration|teks\s*(?:layar|di\s+layar)|on[- ]screen\s+text)\s*:|\Z)",
+            r"(?=\n\s*(?:narasi|narration|arahan\s+sutradara|director\s+direction|properti\s+adegan|scene\s+props|"
+            r"teks\s*(?:layar|di\s+layar)|on[- ]screen\s+text)\s*:|\Z)",
+            body,
+        )
+        director_match = re.search(
+            r"(?im)^\s*(?:arahan\s+sutradara|director\s+direction)\s*:\s*(.+)$",
+            body,
+        )
+        property_match = re.search(
+            r"(?im)^\s*(?:properti\s+adegan|scene\s+props)\s*:\s*(.+)$",
             body,
         )
 
@@ -535,6 +558,8 @@ def _scene_sections(script: str) -> list[dict[str, object]]:
                 re.search(r"(?is)on[- ]screen\s+text\s*:", body),
                 re.search(r"(?is)(?:narasi|narration)\s*:", body),
                 re.search(r"(?is)(?:visual|gambar)\s*:", body),
+                re.search(r"(?is)(?:arahan\s+sutradara|director\s+direction)\s*:", body),
+                re.search(r"(?is)(?:properti\s+adegan|scene\s+props)\s*:", body),
             )
             if item is not None
         ]
@@ -560,6 +585,14 @@ def _scene_sections(script: str) -> list[dict[str, object]]:
                 "visual": _clean_text(visual_source, 900),
                 "visuals": visuals,
                 "on_screen_text": on_screen_text,
+                "director_direction": _clean_text(
+                    director_match.group(1) if director_match else "",
+                    900,
+                ),
+                "property_direction": _clean_text(
+                    property_match.group(1) if property_match else "",
+                    1100,
+                ),
             }
         )
     return sections if len(sections) >= 3 else []
@@ -665,6 +698,107 @@ def _location_bible(script: str) -> str:
     return (
         "Location continuity lock: preserve every recurring location exactly as established by the script; "
         "do not substitute an unrelated familiar or stock setting."
+    )
+
+
+def _director_bible(script: str) -> str:
+    match = re.search(
+        r"(?im)^\s*(?:sutradara|director\s+bible|arahan\s+sutradara\s+global)\s*:\s*(.+)$",
+        script,
+    )
+    if match:
+        return (
+            "Director continuity lock: preserve this camera grammar, blocking logic, screen direction, lighting "
+            f"motivation, and pacing throughout the film. Script direction: {_clean_text(match.group(1), 900)}"
+        )
+    return (
+        "Director continuity lock: stage every scene as a believable cinematic event, not a portrait. Establish the "
+        "story-defining environment, block subjects around the actual task, preserve screen direction and spatial "
+        "geography, motivate light from visible practical or natural sources, then use closer coverage only for a "
+        "specific action, reaction, or story object."
+    )
+
+
+def _property_bible(script: str) -> str:
+    match = re.search(
+        r"(?im)^\s*(?:properti\s+konsisten|property\s+bible|props\s+bible)\s*:\s*(.+)$",
+        script,
+    )
+    if match:
+        return (
+            "Property continuity lock: preserve the identity, material, scale, condition, owner, placement, and state "
+            f"of these story properties whenever they recur. Script property facts: {_clean_text(match.group(1), 1000)}"
+        )
+    return (
+        "Property continuity lock: use only objects supported by the story, but include every object required to make "
+        "the named activity, occupation, business, room, vehicle, food, and event immediately recognizable. Preserve "
+        "each recurring hero prop's material, wear, scale, placement, ownership, and cause-and-effect state changes."
+    )
+
+
+_SITUATIONAL_PROPERTY_PROFILES: tuple[tuple[tuple[str, ...], str], ...] = (
+    (
+        ("bakso", "penjual bakso", "tukang bakso"),
+        "Show a complete working bakso setup at readable scale: the same cart or stall, steaming stock pot, ladle, "
+        "meatball and noodle containers, bowls, spoons, condiment bottles, preparation surface, and customer seating "
+        "appropriate to the stated location. Keep food handling, steam, wear, and object placement physically credible.",
+    ),
+    (
+        ("warung", "kedai", "kantin", "restoran"),
+        "Show the named food-service space as a functioning business with a serving counter, preparation tools, "
+        "tableware, seating, ingredients or finished food supported by the story, and natural signs of active service.",
+    ),
+    (
+        ("bengkel", "mekanik", "montir"),
+        "Show a functioning workshop with the story vehicle or machine, correct hand tools, workbench, parts, safety "
+        "equipment, grease and wear patterns, with every tool placed within plausible working reach.",
+    ),
+    (
+        ("pasar", "pedagang", "penjual"),
+        "Show a functioning market or sales setup with the exact goods named by the story, display containers, scales "
+        "or payment surface when relevant, storage, customer circulation, and believable signs of daily use.",
+    ),
+    (
+        ("dapur", "memasak", "koki"),
+        "Show a functional kitchen with the exact ingredients, cookware, utensils, heat source, preparation stage, "
+        "steam or residue required by the visible action; keep hot, sharp, wet, and clean zones physically sensible.",
+    ),
+    (
+        ("dokter", "rumah sakit", "klinik", "perawat"),
+        "Show the stated medical setting with only task-relevant clinical furniture, examination or monitoring tools, "
+        "hygiene supplies, and records, arranged with credible clean workflow and patient access.",
+    ),
+    (
+        ("sekolah", "kelas", "guru", "murid"),
+        "Show the stated learning space with age-appropriate desks, teaching surface, books or task materials, bags, "
+        "and room layout; objects must support the exact lesson or action rather than decorate a generic classroom.",
+    ),
+)
+
+
+def _scene_property_direction(text: str) -> str:
+    matched = [
+        direction
+        for terms, direction in _SITUATIONAL_PROPERTY_PROFILES
+        if _has_any(text, terms)
+    ]
+    if matched:
+        return _clean_text(" ".join(matched[:2]), 1100)
+    return (
+        "Inventory the concrete objects required by this exact visible action and setting. Keep only story-supported "
+        "properties, place the principal object within believable reach, show correct material and signs of use, and "
+        "preserve every recurring object's appearance and state from the preceding applicable scene."
+    )
+
+
+def _scene_director_direction(text: str, camera_motion: str) -> str:
+    _motion, composition = _narrative_camera_plan(text, camera_motion)
+    return _clean_text(
+        f"Stage this as an environmental story beat: {composition}. Block the principal subject in a physically "
+        "believable relationship to the required workspace and properties; preserve eyelines, travel direction, and "
+        "foreground-midground-background depth. Use motivated practical or natural light appropriate to the stated "
+        "time and weather. The location and action must read before facial glamour; avoid a generic portrait.",
+        900,
     )
 
 
@@ -937,6 +1071,10 @@ def _compose_visual_prompt(
     visual_locked: bool = False,
     animation_direction: str = "",
     continuity_anchor: str = "",
+    director_bible: str = "",
+    property_bible: str = "",
+    director_direction: str = "",
+    property_direction: str = "",
 ) -> str:
     aspect_ratio, _output_width, _output_height = _output_geometry()
     visual = _single_visible_moment(visual)
@@ -1034,6 +1172,15 @@ def _compose_visual_prompt(
         animation_direction or _animation_direction(trusted_scene_context),
         650,
     )
+    resolved_director = _clean_text(
+        director_direction
+        or _scene_director_direction(trusted_scene_context, _camera_motion),
+        900,
+    )
+    resolved_properties = _clean_text(
+        property_direction or _scene_property_direction(trusted_scene_context),
+        1100,
+    )
     clothing_rule = (
         "Apply only the religious clothing explicitly requested. A woman wearing a hijab has the hijab as her sole "
         "head covering: never add a peci, kopiah, songkok, cap, or hat over or under her hijab. Male characters may "
@@ -1097,12 +1244,17 @@ def _compose_visual_prompt(
         + clothing_rule
         + f"Continuity bible: {continuity}. "
         + (f"Location bible: {_clean_text(location_bible, 360)}. " if location_bible else "")
+        + (f"DIRECTOR BIBLE: {_clean_text(director_bible, 520)}. " if director_bible else "")
+        + (f"PROPERTY BIBLE: {_clean_text(property_bible, 620)}. " if property_bible else "")
         + f"IMMUTABLE GLOBAL VISUAL STYLE: {_clean_text(art_bible, 320)}. Keep the same medium, rendering technique, "
         "lens language, texture treatment, detail level, and color-science across every shot; scene palette changes "
         "must not change the global style. "
         f"NARRATIVE CAMERA PLAN: {camera_composition}. Compose one frozen instant that supports this motion; do not "
         "describe multiple camera shots, a shot sequence, or a montage inside one image. "
         + narrative_action_rule
+        + f"SCENE DIRECTOR DIRECTION: {resolved_director}. "
+        + f"SCENE PROPERTY DIRECTION: {resolved_properties}. Every required property must be visible at readable scale, "
+        "correctly placed for the action, and consistent with its prior state. "
         + f"SCENE ANIMATION DIRECTION: {resolved_animation}. "
         + animation_guard_rule
         + scene_continuity_rule
@@ -1116,7 +1268,7 @@ def _compose_visual_prompt(
             else ""
         )
         + "The image extends naturally to all four edges.",
-        6000,
+        7600,
     )
 
 
@@ -1168,6 +1320,8 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
         art_bible = "cinematic storybook illustration, natural anatomy, subtle film grain"
     character_bible = _character_bible(script)
     location_bible = _location_bible(script)
+    director_bible = _director_bible(script)
+    property_bible = _property_bible(script)
     motions = ("push_in", "pan_right", "drift_up", "pan_left", "pull_out")
     roles = []
     for index in range(len(chunks)):
@@ -1201,6 +1355,16 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
         )
         scene_text = f"{visual} {chunk}"
         animation_direction = _animation_direction(scene_text)
+        director_direction = (
+            str(section.get("director_direction") or "")
+            if section
+            else ""
+        ) or _scene_director_direction(scene_text, camera_motion)
+        property_direction = (
+            str(section.get("property_direction") or "")
+            if section
+            else ""
+        ) or _scene_property_direction(scene_text)
         transition = _scene_transition(scene_text, first_scene=index == 0)
         continuity_anchor = _continuity_anchor(
             index + 1,
@@ -1222,12 +1386,18 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
                     visual_locked=bool(section),
                     animation_direction=animation_direction,
                     continuity_anchor=continuity_anchor,
+                    director_bible=director_bible,
+                    property_bible=property_bible,
+                    director_direction=director_direction,
+                    property_direction=property_direction,
                 ),
                 on_screen_text=on_screen_text,
                 camera_motion=camera_motion,
                 color_mood=_color_mood(f"{chunk} {visual}", index),
                 narrative_role=roles[index],
                 animation_direction=animation_direction,
+                director_direction=director_direction,
+                property_direction=property_direction,
                 transition=transition,
                 continuity_anchor=continuity_anchor,
                 duration_hint=(
@@ -1258,6 +1428,8 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
         character_bible=character_bible,
         scenes=scenes,
         location_bible=location_bible,
+        director_bible=director_bible,
+        property_bible=property_bible,
     )
 
 
@@ -1324,7 +1496,10 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
         "Hook editor: shot pertama harus memperlihatkan konflik, risiko, pertanyaan visual, atau payoff yang dijanjikan "
         "dalam dua detik pertama; jangan mulai dengan establishing shot generik. "
         "Cold-open harus langsung menjanjikan konflik/manfaat, lalu konteks, perkembangan, jawaban, payoff. "
-        "Jangan menambah filler atau mengulang narasi. Buat art_bible dan character_bible yang konsisten. "
+        "Jangan menambah filler atau mengulang narasi. Buat art_bible, character_bible, location_bible, "
+        "director_bible, dan property_bible yang konsisten. director_bible mengunci bahasa kamera, blocking, arah "
+        "layar, kedalaman staging, sumber cahaya yang masuk akal, dan ritme emosi. property_bible menginventarisasi "
+        "properti utama beserta bahan, kondisi, pemilik, posisi, serta perubahan kondisinya. "
         "character_bible hanya boleh memuat identitas yang benar-benar ada dalam naskah; tulis 'No recurring "
         "character' bila tidak ada. Setiap visual_prompt harus menerjemahkan narasi scene yang sama menjadi aksi "
         "fisik yang konkret, bukan gambar generik yang hanya cocok dengan tema besar. Variasikan wide establishing, "
@@ -1346,10 +1521,17 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
         "didukung narasi—bukan idle waving. Isi transition dengan salah satu hard_cut, smooth_cut, match_action, "
         "match_object, atau cinematic_dissolve. Isi continuity_anchor dengan identitas, pakaian, properti, lokasi, "
         "cuaca, dan waktu yang harus tetap sama dari scene sebelumnya; jangan mengarang detail baru.\n"
+        "Isi director_direction dengan blocking subjek terhadap lokasi dan properti, ukuran shot, sudut kamera, "
+        "arah pandang/gerak, lapisan foreground-midground-background, serta cahaya termotivasi. Isi property_direction "
+        "dengan benda wajib yang membuat pekerjaan, usaha, ruangan, makanan, kendaraan, atau peristiwa langsung "
+        "terbaca nyata. Contoh: penjual bakso harus tampak bersama gerobak/warung, panci kuah beruap, mangkuk, "
+        "sendok, bahan, saus/kecap, area racik, dan tempat pelanggan yang sesuai—bukan potret orang generik.\n"
         "Return JSON exactly as: "
         '{"title":"...","hook":"...","core_message":"...","art_bible":"...","character_bible":"...","location_bible":"...",'
+        '"director_bible":"...","property_bible":"...",'
         '"scenes":[{"title":"...","narration":"...","visual_prompt":"...","shots":["one visible moment", "optional next visible moment"],'
         '"on_screen_text":"maks 7 kata","camera_motion":"push_in|pull_out|pan_left|pan_right|drift_up|tilt_down",'
+        '"director_direction":"blocking, kamera, depth, cahaya","property_direction":"properti wajib, posisi, kondisi",'
         '"animation_direction":"gerak yang tampak","transition":"hard_cut|smooth_cut|match_action|match_object|cinematic_dissolve",'
         '"continuity_anchor":"detail yang diwariskan dari scene sebelumnya",'
         '"color_mood":"...","narrative_role":"cold_open|context|development|evidence_and_answer|payoff_conclusion"}]}\n\n'
@@ -1419,6 +1601,20 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
         if source_sections or _contains_unrequested_defaults(script, proposed_location_bible)
         else proposed_location_bible or fallback.location_bible
     )
+    proposed_director_bible = _clean_text(parsed.get("director_bible"), 900)
+    director_bible = (
+        proposed_director_bible
+        if proposed_director_bible
+        and not _contains_unrequested_defaults(script, proposed_director_bible)
+        else fallback.director_bible
+    )
+    proposed_property_bible = _clean_text(parsed.get("property_bible"), 1000)
+    property_bible = (
+        proposed_property_bible
+        if proposed_property_bible
+        and not _contains_unrequested_defaults(script, proposed_property_bible)
+        else fallback.property_bible
+    )
     for index, raw in enumerate(raw_scenes):
         if not isinstance(raw, dict):
             return fallback
@@ -1458,6 +1654,26 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
         ):
             proposed_animation = ""
         animation_direction = proposed_animation or _animation_direction(scene_text)
+        proposed_director_direction = _clean_text(
+            raw.get("director_direction"),
+            900,
+        )
+        director_direction = (
+            proposed_director_direction
+            if proposed_director_direction
+            and not _contains_unrequested_defaults(script, proposed_director_direction)
+            else _scene_director_direction(scene_text, camera_motion)
+        )
+        proposed_property_direction = _clean_text(
+            raw.get("property_direction"),
+            1100,
+        )
+        property_direction = (
+            proposed_property_direction
+            if proposed_property_direction
+            and not _contains_unrequested_defaults(script, proposed_property_direction)
+            else _scene_property_direction(scene_text)
+        )
         proposed_transition = _clean_text(raw.get("transition"), 40).casefold().replace(" ", "_")
         transition = (
             proposed_transition
@@ -1494,6 +1710,10 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
                     visual_locked=bool(source),
                     animation_direction=animation_direction,
                     continuity_anchor=continuity_anchor,
+                    director_bible=director_bible,
+                    property_bible=property_bible,
+                    director_direction=director_direction,
+                    property_direction=property_direction,
                 ),
                 on_screen_text=(source["on_screen_text"] if source else ""),
                 camera_motion=camera_motion,
@@ -1501,6 +1721,8 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
                 or _color_mood(narration, index),
                 narrative_role=role if role in allowed_roles else "development",
                 animation_direction=animation_direction,
+                director_direction=director_direction,
+                property_direction=property_direction,
                 transition=transition,
                 continuity_anchor=continuity_anchor,
                 duration_hint=(
@@ -1530,6 +1752,8 @@ def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
         character_bible=character_bible,
         scenes=scenes,
         location_bible=location_bible,
+        director_bible=director_bible,
+        property_bible=property_bible,
     )
 
 
@@ -1602,13 +1826,22 @@ def expand_story_outline(
         "Tulis narasi/dubbing alami dalam Bahasa Indonesia; dialog singkat boleh berada di dalam narration dan harus "
         "jelas siapa yang berbicara. Setiap visual berisi 2-3 momen fisik berurutan yang dipisahkan titik koma, dengan "
         "karakter, pakaian, properti, lokasi, waktu, dan arah layar yang konsisten. Visual tidak boleh memuat tulisan. "
+        "Bekerjalah sekaligus sebagai sutradara dan property master. director_bible harus mengunci bahasa kamera, "
+        "blocking, screen direction, depth staging, pencahayaan termotivasi, dan ritme emosi. property_bible harus "
+        "mengunci benda utama beserta bahan, kondisi, pemilik, posisi, dan perubahan kondisinya. Untuk setiap adegan, "
+        "director_direction wajib menjelaskan blocking subjek terhadap lingkungan/properti dan property_direction wajib "
+        "menyebut benda konkret yang membuat situasi, pekerjaan, usaha, makanan, dan lokasi langsung terbaca nyata. "
+        "Jangan membuat portrait generik ketika cerita menyebut ruang kerja atau usaha; misalnya adegan penjual bakso "
+        "harus memperlihatkan setup bakso yang berfungsi, uap kuah, alat racik, bahan, wadah saji, dan area pelanggan. "
         f"Target durasi sekitar {duration:g} detik, sekitar {target_words} kata, dan sekitar {desired_scenes} adegan "
         "(boleh menyesuaikan menjadi 3-14 adegan agar alur pengguna tidak terpotong). "
         "Adegan pertama harus cold open; adegan terakhir harus menyelesaikan janji utama. "
         "Return strict JSON only dengan bentuk: "
         '{"title":"...","art_bible":"cinematic realistic ...","character_bible":"...",'
-        '"location_bible":"...","scenes":[{"title":"...","narration":"...",'
-        '"visual":"momen 1; momen 2; momen 3","on_screen_text":"maks 6 kata"}]}.\n\n'
+        '"location_bible":"...","director_bible":"...","property_bible":"...",'
+        '"scenes":[{"title":"...","narration":"...","visual":"momen 1; momen 2; momen 3",'
+        '"director_direction":"blocking, kamera, depth, cahaya","property_direction":"properti wajib, posisi, kondisi",'
+        '"on_screen_text":"maks 6 kata"}]}.\n\n'
         f"JALAN CERITA:\n{clean_outline[:12000]}"
     )
     try:
@@ -1680,6 +1913,14 @@ def expand_story_outline(
                 "title": _clean_text(raw_scene.get("title"), 64) or f"Bagian {index}",
                 "narration": narration,
                 "visual": visual,
+                "director_direction": _clean_text(
+                    raw_scene.get("director_direction"),
+                    900,
+                ) or _scene_director_direction(visual, "push_in"),
+                "property_direction": _clean_text(
+                    raw_scene.get("property_direction"),
+                    1100,
+                ) or _scene_property_direction(f"{visual} {narration}"),
                 "on_screen_text": _short_on_screen_text(
                     _clean_text(raw_scene.get("on_screen_text"), 64)
                 ),
@@ -1716,11 +1957,19 @@ def expand_story_outline(
     location_bible = _clean_text(parsed.get("location_bible"), 700) or (
         "Preserve every recurring location, era, weather, and spatial layout consistently."
     )
+    director_bible = _clean_text(parsed.get("director_bible"), 900) or _director_bible(
+        clean_outline
+    )
+    property_bible = _clean_text(parsed.get("property_bible"), 1000) or _property_bible(
+        clean_outline
+    )
     blocks = [
         f"JUDUL: {title}",
         f"GAYA VISUAL: {art_bible}",
         f"KARAKTER KONSISTEN: {character_bible}",
         f"LOKASI KONSISTEN: {location_bible}",
+        f"SUTRADARA: {director_bible}",
+        f"PROPERTI KONSISTEN: {property_bible}",
     ]
     for index, scene in enumerate(scenes, start=1):
         blocks.append(
@@ -1728,6 +1977,8 @@ def expand_story_outline(
                 (
                     f"### ADEGAN {index} — {scene['title']}",
                     f"VISUAL: {scene['visual']}",
+                    f"ARAHAN SUTRADARA: {scene['director_direction']}",
+                    f"PROPERTI ADEGAN: {scene['property_direction']}",
                     f"NARASI: {scene['narration']}",
                     f"TEKS LAYAR: {scene['on_screen_text']}",
                 )
@@ -1737,7 +1988,7 @@ def expand_story_outline(
     return production_script, {
         "expanded": True,
         "source": "user_story_outline",
-        "profile": "original_serial_drama_v1",
+        "profile": "cinematic_director_property_master_v2",
         "scene_count": len(scenes),
         "preferred_scene_count": desired_scenes,
         "target_words": target_words,
@@ -1983,12 +2234,28 @@ def _deterministic_choice(values: tuple[str, ...], seed: str, salt: str) -> str:
     return values[int.from_bytes(digest[:4], "big") % len(values)]
 
 
+def _requires_story_environment(text: str) -> bool:
+    """Return True when the location/large prop is part of the story identity."""
+    return _has_any(
+        text,
+        (
+            "gerobak", "warung", "kios", "lapak", "pasar", "toko",
+            "food cart", "pushcart", "street-food stall", "street food stall",
+            "vendor stall",
+        ),
+    )
+
+
 def _framing_candidates(text: str) -> tuple[str, ...]:
     normalized = text.casefold()
     if _has_any(normalized, _BATHING_OR_SWIMMING_TERMS) and _has_any(normalized, _MINOR_VISUAL_TERMS):
         return ("wide", "medium_wide", "medium")
     if _requests_group_scene(normalized):
         return ("wide", "medium_wide", "medium")
+    # A cart, stall, shop, or market is a story subject rather than disposable
+    # background. Close-ups make the frame look like an unrelated talking head.
+    if _requires_story_environment(normalized):
+        return ("medium_wide", "wide", "full_body")
 
     has_people = _has_any(normalized, _PEOPLE_TERMS + _PEOPLE_IDENTITY_TERMS)
     has_travel = _has_any(
@@ -2073,6 +2340,10 @@ def plan_storyboard_shots(storyboard: AnimateStoryboard) -> list[AnimateShot]:
                 visual_locked=scene.visuals_locked,
                 animation_direction=scene.animation_direction,
                 continuity_anchor=scene.continuity_anchor,
+                director_bible=storyboard.director_bible,
+                property_bible=storyboard.property_bible,
+                director_direction=scene.director_direction,
+                property_direction=scene.property_direction,
             )
             if "No recurring character is defined" not in storyboard.character_bible:
                 prompt = _clean_text(
@@ -2111,6 +2382,8 @@ def plan_storyboard_shots(storyboard: AnimateStoryboard) -> list[AnimateShot]:
                     subject_placement=subject_placement,
                     camera_angle=camera_angle,
                     animation_direction=scene.animation_direction,
+                    director_direction=scene.director_direction,
+                    property_direction=scene.property_direction,
                     transition=(scene.transition if local_index == 1 else "match_action"),
                     continuity_anchor=scene.continuity_anchor,
                     duration=shot_duration,
@@ -2470,6 +2743,23 @@ def _physical_action_contract(visible: str, context: str = "") -> str:
     )
     setting = setting_match.group(1) if setting_match else "the named setting"
 
+    if _has_any(lowered, ("gerobak bakso", "penjual bakso", "jualan bakso")):
+        cart_color = "dark-blue " if _has_any(lowered, ("biru tua", "dark blue")) else ""
+        seller_action = (
+            "One hand holds a metal spoon visibly touching a ceramic bowl to make the vendor's calling sound"
+            if _has_any(lowered, ("memukul mangkuk", "mangkuk dengan sendok", "teng"))
+            else "The seller's hands naturally serve one prepared bowl"
+        )
+        return _clean_text(
+            f"STORY-IDENTITY ENVIRONMENT: show an Indonesian mobile bakso seller working at one complete "
+            f"{cart_color}bakso pushcart. The seller is visible from at least the knees up behind or beside the cart. "
+            "The cart body, handle or wheel, glass food display, steaming stockpot, bowl stack, ladle, and one "
+            "prepared bowl of bakso with several round meatballs in broth are all clearly readable in the same frame. "
+            f"{seller_action}. Preserve enough surrounding kampung street context to read immediately as a working "
+            "mobile bakso business.",
+            900,
+        )
+
     if re.search(r"\b(?:makan|memakan|menyantap|melahap|menyuap)\b", lowered):
         food = _action_object_after(
             visible,
@@ -2480,8 +2770,8 @@ def _physical_action_contract(visible: str, context: str = "") -> str:
         ) or "the named food"
         if _has_any(food, ("bakso", "soto", "sup", "bubur", "mi", "mie", "kuah")):
             utensil = (
-                f"A bowl of {food} is fully visible on the table. One hand grips a spoon carrying {food} "
-                "just in front of a naturally open mouth"
+                f"A bowl of {food} is fully visible on the table, including broth and several round meatballs when "
+                f"the named food is bakso. One hand grips a spoon carrying {food} just in front of a naturally open mouth"
             )
         else:
             utensil = (
@@ -2615,6 +2905,11 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
         qa_repair_direction += (
             "QA repair requirement: match the approved recurring character identity, facial structure, hair, clothing, and proportions exactly. "
         )
+    if "story_environment_cropped" in qa_reasons:
+        qa_repair_direction += (
+            "QA repair requirement: pull the camera back to a medium-wide establishing view. Keep the complete "
+            "story-defining cart, stall, shop, or market and its working objects fully visible around the person. "
+        )
     planned_framing = getattr(scene, "framing", "medium")
     planned_placement = getattr(scene, "subject_placement", "center")
     planned_angle = getattr(scene, "camera_angle", "eye_level")
@@ -2627,8 +2922,16 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
         planned_angle,
         _CAMERA_ANGLE_PROMPTS["eye_level"],
     )
+    environment_is_story_subject = _requires_story_environment(f"{visible} {context}")
     composition_rule = (
         f"Use this planned coverage exactly: {framing_direction}. {placement_direction}. Use a {angle_direction}. "
+        "The complete story-defining environment and its large anchor object must occupy at least half of the frame; "
+        "keep the principal person at a medium-wide scale so the location, tools, food, and physical action remain readable. "
+        "Keep the face clear without turning this into a portrait or talking-head composition. "
+        "Use crisp edge definition, realistic skin texture, strong local contrast, controlled depth of field, natural "
+        "lighting, and only the people and objects required by this immediate moment."
+        if has_people and environment_is_story_subject
+        else f"Use this planned coverage exactly: {framing_direction}. {placement_direction}. Use a {angle_direction}. "
         "Keep one principal person large and unobstructed enough for "
         "a clearly readable face, eyes, nose, mouth, hair strands, clothing seams, and natural limb connections. "
         "Use crisp edge definition, realistic skin texture, strong local contrast, controlled depth of field, natural "
@@ -2645,11 +2948,29 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
         getattr(scene, "animation_direction", "") or "natural motion implied by the visible action",
         260,
     ).rstrip(" .;:")
+    director_direction = _clean_text(
+        getattr(scene, "director_direction", ""),
+        420,
+    ).rstrip(" .;:")
+    property_direction = _clean_text(
+        getattr(scene, "property_direction", ""),
+        560,
+    ).rstrip(" .;:")
+    production_contract = (
+        (f"Director blocking and lighting contract: {director_direction}. " if director_direction else "")
+        + (
+            f"Required property and set-dressing contract: {property_direction}. Every named working prop must be "
+            "visible at readable scale, correctly placed for the action, and consistent in material and condition. "
+            if property_direction
+            else ""
+        )
+    )
     return _clean_text(
         f"FULL-BLEED {output_aspect} SINGLE CAMERA FRAME for a {output_type}; use case: {use_case}. "
         f"SHOT-SPECIFIC CONTRACT — Visible moment: {visible}. "
         + (f"Setting, condition, and immediate context: {context}. " if context else "")
         + f"Atmosphere, lighting, weather, time, and color mood: {scene.color_mood}. "
+        + production_contract
         + f"Motion-ready pose/environment direction: {animation_direction}. "
         + "The exact action, setting, conditions, and atmosphere above must be unmistakable. "
         + "Do not import an action, location, weather, time, character, prop, or mood from another shot. "
@@ -2657,7 +2978,7 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
         + (f"{action_contract} " if action_contract else "")
         + f"Immutable style/medium: {style}. "
         + f"Composition/framing: {composition_rule}",
-        2400,
+        2350,
     )
 
 
@@ -3241,6 +3562,9 @@ def inspect_generated_image(
     # one-child bedroom shot look like a valid crowd scene to QA.
     visible_moment = _compiled_visible_moment(shot.visual_prompt)
     story_people_context = visible_moment or shot.narration
+    story_environment_context = _requires_story_environment(
+        f"{visible_moment} {_matching_narration_context(shot.narration, visible_moment)}"
+    )
     expected_people = _visible_people_count(story_people_context, shot.narration)
     explicit_people = _explicit_people_count(story_people_context)
     group_scene = _requests_group_scene(story_people_context)
@@ -3265,9 +3589,33 @@ def inspect_generated_image(
         else:
             x, y, w, h = max(faces, key=lambda item: item[2] * item[3])
             face_area_ratio = (w * h) / max(1, image.shape[0] * image.shape[1])
+            if story_environment_context:
+                max_environment_face_area = max(
+                    0.03,
+                    min(
+                        0.20,
+                        float(
+                            os.environ.get(
+                                "LONG_ANIMATE_QA_MAX_ENVIRONMENT_FACE_AREA",
+                                "0.07",
+                            )
+                        ),
+                    ),
+                )
+                if face_area_ratio > max_environment_face_area:
+                    reasons.append("story_environment_cropped")
+                    score -= 0.4
             min_face_area = max(
                 0.002,
-                min(0.08, float(os.environ.get("LONG_ANIMATE_QA_MIN_FACE_AREA", "0.008"))),
+                min(
+                    0.08,
+                    float(
+                        os.environ.get(
+                            "LONG_ANIMATE_QA_MIN_FACE_AREA",
+                            "0.003" if story_environment_context else "0.008",
+                        )
+                    ),
+                ),
             )
             if face_area_ratio < min_face_area:
                 reasons.append("face_too_small")
@@ -3397,6 +3745,7 @@ def generate_shot_image_with_qa(
         "missing_clear_face",
         "face_too_small",
         "soft_face_detail",
+        "story_environment_cropped",
     }
     technical_failures = [reason for reason in last_reasons if reason in technical_reasons]
     semantic_failures = [reason for reason in last_reasons if reason in semantic_reasons]
@@ -3545,29 +3894,47 @@ def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, st
     edge_path = scene_dir / f"scene_{scene.index:02}.voice.mp3"
     spoken_narration = _tts_pronunciation_text(scene.narration)
     try:
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "edge_tts",
-                "--voice",
-                voice,
-                f"--rate={rate}",
-                f"--pitch={pitch}",
-                f"--volume={volume}",
-                "--text",
-                spoken_narration,
-                "--write-media",
-                str(edge_path.resolve()),
-            ],
-            text=True,
-            capture_output=True,
-            timeout=150,
-        )
-        if result.returncode == 0 and edge_path.is_file() and edge_path.stat().st_size > 512:
-            return edge_path, "edge_neural"
-    except (OSError, subprocess.TimeoutExpired):
-        pass
+        attempts = max(1, min(5, int(os.environ.get("LONG_ANIMATE_TTS_ATTEMPTS", "3"))))
+    except ValueError:
+        attempts = 3
+    edge_failure = "unknown error"
+    for attempt in range(1, attempts + 1):
+        edge_path.unlink(missing_ok=True)
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "edge_tts",
+                    "--voice",
+                    voice,
+                    f"--rate={rate}",
+                    f"--pitch={pitch}",
+                    f"--volume={volume}",
+                    "--text",
+                    spoken_narration,
+                    "--write-media",
+                    str(edge_path.resolve()),
+                ],
+                text=True,
+                capture_output=True,
+                timeout=150,
+            )
+            edge_failure = f"exit code {result.returncode}"
+            if result.returncode == 0 and edge_path.is_file() and edge_path.stat().st_size > 512:
+                return edge_path, "edge_neural"
+        except subprocess.TimeoutExpired:
+            edge_failure = "timeout"
+        except OSError as exc:
+            edge_failure = type(exc).__name__
+        if attempt < attempts:
+            time.sleep(min(2.0, 0.5 * attempt))
+    _logger.warning(
+        "Edge neural TTS scene %s gagal setelah %s percobaan (%s)",
+        scene.index,
+        attempts,
+        edge_failure,
+    )
     edge_path.unlink(missing_ok=True)
     local_path = scene_dir / f"scene_{scene.index:02}.voice.wav"
     espeak = shutil.which("espeak-ng") or shutil.which("espeak")
@@ -4232,14 +4599,17 @@ def _subtitle_chunks(text: str, max_words: int = 5, max_chars: int = 34) -> list
 
 
 def _subtitle_force_style(output_aspect: str) -> str:
-    """Return a restrained, safe-area subtitle style for 1080p delivery."""
-    font_size = 36 if output_aspect == "9:16" else 26
-    horizontal_margin = 64 if output_aspect == "9:16" else 110
-    vertical_margin = 110 if output_aspect == "9:16" else 82
+    """Return a compact safe-area style in libass' 288-unit SRT canvas."""
+    # SRT has no PlayRes metadata, so libass interprets FontSize in a virtual
+    # 288p canvas and scales it to the output. Values such as 36 become roughly
+    # 240 px on a 1920px-tall portrait render and can cover the whole face.
+    font_size = 8 if output_aspect == "9:16" else 7
+    horizontal_margin = 36
+    vertical_margin = 50 if output_aspect == "9:16" else 24
     return (
         f"FontName=DejaVu Sans,FontSize={font_size},Bold=-1,"
-        "PrimaryColour=&H0000E8FF,OutlineColour=&H00101010,BorderStyle=1,"
-        f"Outline=2,Shadow=0,Alignment=2,MarginL={horizontal_margin},"
+        "PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,"
+        f"Outline=0.5,Shadow=0.35,Alignment=2,MarginL={horizontal_margin},"
         f"MarginR={horizontal_margin},MarginV={vertical_margin}"
     )
 
@@ -4462,11 +4832,14 @@ def _synthesize_and_trim_scene(
     """Worker function untuk parallel TTS synthesis dan trimming."""
     voice_path, scene.voice_provider = synthesize_narration(scene, scene_dir)
     if (
-        scene.voice_provider == "silent_fallback_review_required"
+        scene.narration.strip()
+        and scene.voice_provider != "edge_neural"
         and _env_bool("LONG_ANIMATE_TTS_STRICT", True)
+        and not _env_bool("LONG_ANIMATE_ALLOW_ROBOTIC_TTS_FALLBACK", False)
     ):
         raise RuntimeError(
-            f"TTS scene {scene.index} gagal; render dihentikan agar video tidak berisi dead-air."
+            f"TTS neural scene {scene.index} gagal; fallback suara robotik "
+            "ditolak agar hasil tidak diteruskan sebagai video siap review."
         )
     trimmed = trim_voice_silence(scene, voice_path, scene_dir)
     voice_duration = _media_duration(trimmed) if scene.narration.strip() else 0.0
@@ -4481,6 +4854,8 @@ def render_long_animate(
     *,
     video_quality: str = "high",
     required_hashtags: list[str] | None = None,
+    burn_subtitles: bool = True,
+    subtitle_style: str | None = None,
     progress: ProgressCallback | None = None,
 ) -> tuple[Path, dict[str, object]]:
     progress = progress or (lambda *_args: None)
@@ -4524,7 +4899,14 @@ def render_long_animate(
 
         trimmed_voice_paths: list[Path | None] = [None] * len(storyboard.scenes)
         measured_voice_durations: list[float] = [0.0] * len(storyboard.scenes)
-        max_workers = min(4, max(1, os.cpu_count() or 1))
+        try:
+            requested_tts_workers = int(os.environ.get("LONG_ANIMATE_TTS_WORKERS", "2"))
+        except ValueError:
+            requested_tts_workers = 2
+        max_workers = min(
+            len(storyboard.scenes),
+            max(1, min(4, requested_tts_workers, os.cpu_count() or 1)),
+        )
         metrics.tts_parallel_workers = max_workers
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -4685,7 +5067,7 @@ def render_long_animate(
         srt_path = clips_dir / f"{base_name}.srt"
         write_story_subtitles(srt_path, storyboard.scenes)
         output_aspect, output_width, output_height = _output_geometry()
-        subtitles = _supports_filter("subtitles")
+        subtitles = burn_subtitles and _supports_filter("subtitles")
         drawtext = _supports_filter("drawtext")
         vf_parts = [
             "eq=contrast=1.02:saturation=1.04",
@@ -4694,7 +5076,7 @@ def render_long_animate(
         if subtitles and any(scene.narration.strip() for scene in storyboard.scenes):
             vf_parts.append(
                 f"subtitles='{srt_path.name}':original_size={output_width}x{output_height}:"
-                f"force_style='{_subtitle_force_style(output_aspect)}'"
+                f"force_style='{subtitle_style or _subtitle_force_style(output_aspect)}'"
             )
         if drawtext:
             vf_parts.append(
@@ -5034,6 +5416,8 @@ def render_long_animate(
         "art_bible": storyboard.art_bible,
         "character_bible": storyboard.character_bible,
         "location_bible": storyboard.location_bible,
+        "director_bible": storyboard.director_bible,
+        "property_bible": storyboard.property_bible,
         "character_reference": {
             "reference_shot": character_reference.name if character_reference else None,
             "method": "immutable_identity_lock_plus_face_similarity_qa",

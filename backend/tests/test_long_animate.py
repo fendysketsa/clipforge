@@ -3,6 +3,8 @@ import io
 import json
 from pathlib import Path
 
+import pytest
+
 import long_animate
 from llm import AIConfig
 from long_animate import (
@@ -305,6 +307,57 @@ def test_eating_bakso_prompt_requires_food_spoon_mouth_table_and_stall():
     assert "table" in lowered
     assert "warung bakso" in lowered
     assert "shoulders and elbows" in lowered
+
+
+def test_bakso_vendor_prompt_keeps_cart_food_tools_and_kampung_context():
+    visual = (
+        "Pak Darto berdiri di depan gerobak bakso biru tua, "
+        "memukul mangkuk dengan sendok"
+    )
+    narration = (
+        "Di sebuah kampung yang ramai, penjual bakso keliling Pak Darto "
+        "memukul mangkuk dengan sendok di depan gerobak bakso biru tua."
+    )
+    contract = long_animate._physical_action_contract(visual, narration).casefold()
+
+    assert "mobile bakso seller" in contract
+    assert "complete dark-blue bakso pushcart" in contract
+    assert "handle or wheel" in contract
+    assert "steaming stockpot" in contract
+    assert "round meatballs in broth" in contract
+    assert "kampung street context" in contract
+    assert set(long_animate._framing_candidates(f"{visual} {narration}")) == {
+        "medium_wide",
+        "wide",
+        "full_body",
+    }
+
+    shot = long_animate.AnimateShot(
+        index=1,
+        scene_index=1,
+        shot_index=1,
+        shot_count=1,
+        title="Gerobak Bakso Biru Tua",
+        narration=narration,
+        visual_prompt=long_animate._compose_visual_prompt(
+            visual,
+            narration,
+            "cinematic realistic Indonesia",
+            "Pak Darto, pria Indonesia berusia 48 tahun",
+            "kampung Jawa dan gerobak bakso biru tua",
+            visual_locked=True,
+        ),
+        on_screen_text="",
+        camera_motion="push_in",
+        color_mood="dramatic late-afternoon kampung light",
+        duration=6.0,
+        framing="medium_wide",
+    )
+
+    focused = long_animate._focused_image_generation_prompt(shot).casefold()
+    assert "complete story-defining environment" in focused
+    assert "must occupy at least half of the frame" in focused
+    assert "without turning this into a portrait or talking-head composition" in focused
 
 
 def test_tying_necktie_prompt_keeps_both_hands_on_the_tie():
@@ -929,6 +982,52 @@ def test_markdown_scene_script_is_parsed_without_production_labels():
     assert all("Continuity bible:" in scene.visual_prompt for scene in storyboard.scenes)
 
 
+def test_director_and_property_skills_ground_bakso_story_in_real_workplace():
+    script = """
+    JUDUL: Semangkuk Harapan
+    GAYA VISUAL: cinematic realistic documentary-film still
+    KARAKTER KONSISTEN: Pak Darto, penjual bakso berusia lima puluh tahun memakai kaus krem dan celemek hijau
+    LOKASI KONSISTEN: warung bakso kecil terbuka di pinggir jalan pada sore gerimis
+    SUTRADARA: kamera observasional setinggi mata, blocking natural saat bekerja, cahaya warung hangat dari kanan
+    PROPERTI KONSISTEN: gerobak kayu hijau, panci kuah baja, mangkuk ayam jago, sendok, saus dan kecap
+
+    ### ADEGAN 1 — Menyiapkan Dagangan
+    VISUAL: Pak Darto berdiri di balik gerobak dan mengaduk panci kuah bakso yang mengepul.
+    ARAHAN SUTRADARA: medium-wide dari sisi pelanggan, Pak Darto dan seluruh area racik terlihat dalam satu ruang nyata.
+    PROPERTI ADEGAN: gerobak hijau, panci kuah beruap, centong, mangkuk, mi, bakso, saus, kecap, dan meja pelanggan.
+    NARASI: Pak Darto membuka warung baksonya menjelang hujan turun.
+
+    ### ADEGAN 2 — Pelanggan Pertama
+    VISUAL: Pak Darto menuangkan kuah panas ke mangkuk bakso di atas area racik.
+    ARAHAN SUTRADARA: over-shoulder memperlihatkan tangan bekerja, mangkuk, dan pelanggan menunggu di belakang.
+    PROPERTI ADEGAN: mangkuk ayam jago yang sama, centong baja, panci, baki mi, dan botol saus yang sama.
+    NARASI: Pelanggan pertama memesan semangkuk bakso hangat.
+
+    ### ADEGAN 3 — Warung Menghangat
+    VISUAL: Pak Darto menyerahkan mangkuk bakso kepada pelanggan di meja warung.
+    ARAHAN SUTRADARA: pull-out perlahan menampilkan warung aktif, hujan, uap kuah, dan reaksi pelanggan.
+    PROPERTI ADEGAN: mangkuk yang telah terisi, sendok, meja kayu basah di tepi, gerobak dan panci tetap di posisi semula.
+    NARASI: Uap kuah dan percakapan pelanggan membuat warung kecil itu terasa hangat.
+    """
+
+    storyboard = _fallback_storyboard(script)
+    first = storyboard.scenes[0]
+    first_shot = long_animate.plan_storyboard_shots(storyboard)[0]
+    image_prompt = long_animate._focused_image_generation_prompt(first_shot)
+
+    assert "kamera observasional" in storyboard.director_bible
+    assert "gerobak kayu hijau" in storyboard.property_bible
+    assert "medium-wide dari sisi pelanggan" in first.director_direction
+    assert "panci kuah beruap" in first.property_direction
+    assert "SCENE DIRECTOR DIRECTION" in first.visual_prompt
+    assert "SCENE PROPERTY DIRECTION" in first.visual_prompt
+    assert "Required property and set-dressing contract" in image_prompt
+    assert "gerobak hijau" in image_prompt
+    assert "panci kuah beruap" in image_prompt
+    assert "ARAHAN SUTRADARA:" not in first.narration
+    assert "PROPERTI ADEGAN:" not in first.narration
+
+
 def test_structured_ai_art_direction_is_flattened_to_plain_prompt():
     assert long_animate._clean_text(
         {"pakaian_koko_putih": {}, "ruangan": {"cahaya_hangat": {}}}, 200
@@ -1297,13 +1396,28 @@ def test_subtitle_style_is_proportional_and_inside_safe_area():
     landscape = long_animate._subtitle_force_style("16:9")
     portrait = long_animate._subtitle_force_style("9:16")
 
-    assert "FontSize=26" in landscape
-    assert "MarginL=110" in landscape
-    assert "MarginR=110" in landscape
-    assert "Outline=2" in landscape
-    assert "Shadow=0" in landscape
-    assert "FontSize=36" in portrait
-    assert "MarginV=110" in portrait
+    assert "FontSize=7" in landscape
+    assert "MarginL=36" in landscape
+    assert "MarginR=36" in landscape
+    assert "Outline=0.5" in landscape
+    assert "Shadow=0.35" in landscape
+    assert "FontSize=8" in portrait
+    assert "MarginV=50" in portrait
+
+
+def test_robotic_tts_fallback_is_rejected_by_default(monkeypatch, tmp_path):
+    scene = _fallback_storyboard(SCRIPT).scenes[0]
+    voice_path = tmp_path / "scene_01.voice.wav"
+    voice_path.write_bytes(b"voice")
+    monkeypatch.delenv("LONG_ANIMATE_ALLOW_ROBOTIC_TTS_FALLBACK", raising=False)
+    monkeypatch.setattr(
+        long_animate,
+        "synthesize_narration",
+        lambda _scene, _scene_dir: (voice_path, "espeak_local"),
+    )
+
+    with pytest.raises(RuntimeError, match="fallback suara robotik"):
+        long_animate._synthesize_and_trim_scene(scene, tmp_path)
 
 
 def test_gemini_image_payload_uses_native_interactions_api(monkeypatch, tmp_path):

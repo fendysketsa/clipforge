@@ -1344,6 +1344,20 @@ def test_auto_viral_upload_backlog_uses_oldest_resumable_run(monkeypatch):
             oldest.id: oldest,
         },
     )
+    monkeypatch.setattr(
+        api,
+        "jobs",
+        {
+            "job-old": SimpleNamespace(
+                status="completed",
+                clips=[SimpleNamespace(url="/outputs/job-old.mp4")],
+            ),
+            "job-new": SimpleNamespace(
+                status="completed",
+                clips=[SimpleNamespace(url="/outputs/job-new.mp4")],
+            ),
+        },
+    )
 
     assert api.latest_scheduled_auto_viral_run().id == newest_without_clip.id
     assert api.pending_scheduled_auto_viral_upload_run().id == oldest.id
@@ -1507,7 +1521,78 @@ def test_auto_viral_upload_retry_reuses_same_checkpoint(monkeypatch):
     assert api.auto_viral_runs[run.id].retry_count == 1
 
 
-def test_auto_viral_single_completed_job_is_resumable_for_three_source_target():
+def test_auto_viral_upload_retry_limit_releases_scheduler(monkeypatch):
+    import api
+
+    run = api.AutoViralRun(
+        id="retry-limit",
+        status="running",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=AutoViralRequest(video_count=1, auto_upload_youtube=True),
+    )
+    processed = [
+        {
+            "job_id": "transient-job",
+            "job_status": "completed",
+            "status": "awaiting_upload",
+        }
+    ]
+    calls = []
+
+    def always_fail(*_args):
+        calls.append(True)
+        raise RuntimeError("platform tetap gagal")
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RETRY_UNTIL_SUCCESS", "true")
+    monkeypatch.setattr(api, "auto_viral_max_upload_retries", lambda: 1)
+    monkeypatch.setattr(api, "auto_viral_retry_delay_minutes", lambda: 0)
+    monkeypatch.setattr(api, "upload_auto_viral_processed_jobs", always_fail)
+    monkeypatch.setattr(api, "save_auto_viral_runs_unlocked", lambda: None)
+    monkeypatch.setattr(api, "auto_viral_runs", {run.id: run})
+
+    result = api.upload_auto_viral_until_success(run.id, run.request, processed)
+
+    assert len(calls) == 2
+    assert result[0]["status"] == "retry_exhausted"
+    assert "setelah 1 retry" in result[0]["error"]
+    assert api.auto_viral_runs[run.id].progress_stage == "upload_retry_exhausted"
+
+
+def test_missing_upload_job_is_held_instead_of_retried_forever(monkeypatch):
+    import api
+
+    request = AutoViralRequest(video_count=1, auto_upload_youtube=True)
+    run = api.AutoViralRun(
+        id="missing-upload-job",
+        status="running",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=request,
+    )
+    processed = [
+        {
+            "job_id": "already-deleted",
+            "job_status": "completed",
+            "status": "awaiting_upload",
+        }
+    ]
+    monkeypatch.setattr(api, "jobs", {})
+    monkeypatch.setattr(api, "save_auto_viral_runs_unlocked", lambda: None)
+    monkeypatch.setattr(api, "auto_viral_runs", {run.id: run})
+
+    result = api.upload_auto_viral_processed_jobs(run.id, request, processed)
+
+    assert result[0]["status"] == "checkpoint_missing"
+    assert "tidak tersedia" in result[0]["error"]
+    assert "dipertahankan" in result[0]["cleanup"]
+
+
+def test_auto_viral_single_completed_job_is_resumable_for_three_source_target(
+    monkeypatch,
+):
     import api
 
     run = api.AutoViralRun(
@@ -1530,8 +1615,41 @@ def test_auto_viral_single_completed_job_is_resumable_for_three_source_target():
             }
         ],
     )
+    monkeypatch.setattr(
+        api,
+        "jobs",
+        {
+            "only-good-job": SimpleNamespace(
+                status="completed",
+                clips=[SimpleNamespace(url="/outputs/only-good.mp4")],
+            )
+        },
+    )
 
     assert api.auto_viral_run_can_resume_upload(run) is True
+
+
+def test_auto_viral_missing_checkpoint_is_not_resumable(monkeypatch):
+    import api
+
+    run = api.AutoViralRun(
+        id="missing-resume-job",
+        status="failed",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=AutoViralRequest(video_count=1, auto_upload_youtube=True),
+        processed=[
+            {
+                "job_id": "deleted-job",
+                "job_status": "completed",
+                "status": "awaiting_upload",
+            }
+        ],
+    )
+    monkeypatch.setattr(api, "jobs", {})
+
+    assert api.auto_viral_run_can_resume_upload(run) is False
 
 
 def test_scheduled_upload_daily_limit_is_hard_capped_at_seven_wib(monkeypatch):
@@ -2018,6 +2136,86 @@ def test_scheduled_kindness_theme_is_randomized_and_cc_label_is_optional(monkeyp
     assert request.queries[0] == request.theme_focus
     assert request.require_creative_commons is False
     assert request.top == 1
+
+
+def test_scheduled_humor_rotates_only_on_configured_cron_run(monkeypatch):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_HUMOR_ENABLED", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_HUMOR_EVERY_RUNS", "4")
+    monkeypatch.setenv(
+        "AUTO_VIRAL_SCHEDULE_HUMOR_QUERIES",
+        "komedi salah dengar indonesia|dialog lucu indonesia",
+    )
+    prior_runs = {
+        f"prior-{index}": api.AutoViralRun(
+            id=f"prior-{index}",
+            status="completed",
+            trigger="schedule",
+            created_at=api.now_iso(),
+            updated_at=api.now_iso(),
+            request=AutoViralRequest(),
+        )
+        for index in range(3)
+    }
+    monkeypatch.setattr(api, "auto_viral_runs", prior_runs)
+
+    request = api.scheduled_auto_viral_request()
+
+    assert request.cron_humor_lane is True
+    assert request.theme_focus == "komedi salah dengar indonesia"
+    assert request.queries[0] == request.theme_focus
+    assert "komedi salah dengar indonesia" not in api.default_viral_video_search_queries()
+
+    prior_runs["first-humor"] = api.AutoViralRun(
+        id="first-humor",
+        status="completed",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=request,
+    )
+    following_request = api.scheduled_auto_viral_request()
+    assert following_request.cron_humor_lane is False
+
+
+def test_scheduled_humor_gate_rejects_manual_and_unsafe_candidates(monkeypatch):
+    import api
+
+    request = AutoViralRequest(
+        theme_focus="komedi indonesia salah dengar permainan kata",
+        cron_humor_lane=True,
+    )
+    scheduled_run = api.AutoViralRun(
+        id="cron-humor",
+        status="running",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=request,
+    )
+    manual_run = scheduled_run.model_copy(
+        update={"id": "manual-humor", "trigger": "manual"}
+    )
+    monkeypatch.setattr(
+        api,
+        "auto_viral_runs",
+        {scheduled_run.id: scheduled_run, manual_run.id: manual_run},
+    )
+    reference_style = {
+        "title": "Dicari Sule, Pak RT Malah Dengar Bule?! 🤣",
+        "description": "Sketsa komedi Indonesia dengan permainan kata.",
+        "default_language": "id",
+    }
+    unsafe = {
+        **reference_style,
+        "title": "Prank mempermalukan orang sampai berantem 😂",
+    }
+
+    assert api.cron_humor_discovery_active(scheduled_run.id, request) is True
+    assert api.cron_humor_discovery_active(manual_run.id, request) is False
+    assert api.cron_humor_candidate_rejection_reason(reference_style) == ""
+    assert "tidak aman" in api.cron_humor_candidate_rejection_reason(unsafe)
 
 
 def test_non_cc_source_still_passes_only_when_cc_filter_is_disabled():

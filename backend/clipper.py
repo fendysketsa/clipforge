@@ -19014,6 +19014,17 @@ def render_animated_script(
         ai_config,
         video_quality=args.video_quality,
         required_hashtags=required_hashtags,
+        burn_subtitles=not args.no_burn_subtitles,
+        subtitle_style=build_subtitle_style(
+            CaptionStyle(
+                font_size=args.caption_font_size,
+                position=args.caption_position,
+                color=args.caption_color,
+                font_family=args.caption_font,
+                outline_width=args.caption_outline,
+                outline_color=args.caption_outline_color,
+            )
+        ),
         progress=emit_progress,
     )
     if args.slow_motion_no_voice:

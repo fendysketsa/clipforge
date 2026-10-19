@@ -223,6 +223,11 @@ export function QuickStartCard({
                 <div className="storyboardSummary">
                   <strong>{storyboardPreview.title}</strong>
                   <small>{storyboardPreview.hook}</small>
+                  <details>
+                    <summary>Skill Sutradara &amp; Properti aktif</summary>
+                    <p><b>Sutradara:</b> {storyboardPreview.director_bible}</p>
+                    <p><b>Properti:</b> {storyboardPreview.property_bible}</p>
+                  </details>
                 </div>
                 <div className="storyboardSceneRail">
                   {storyboardPreview.scenes.map((scene) => (
@@ -239,6 +244,11 @@ export function QuickStartCard({
                         ))}
                       </div>
                       <small>{scene.narration}</small>
+                      <details>
+                        <summary>Arahan sinematik &amp; properti</summary>
+                        <p><b>Blocking/kamera:</b> {scene.director_direction}</p>
+                        <p><b>Properti adegan:</b> {scene.property_direction}</p>
+                      </details>
                       <details>
                         <summary>Prompt ImageGen</summary>
                         <code>{scene.image_prompt}</code>

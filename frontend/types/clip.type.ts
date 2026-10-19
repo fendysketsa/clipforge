@@ -359,10 +359,14 @@ export type StoryboardPreviewScene = {
     subject_placement: string;
     camera_angle: string;
     camera_motion: string;
+    director_direction: string;
+    property_direction: string;
   }>;
   camera_motion: string;
   color_mood: string;
   narrative_role: string;
+  director_direction: string;
+  property_direction: string;
 };
 
 export type StoryboardPreview = {
@@ -372,6 +376,8 @@ export type StoryboardPreview = {
   art_bible: string;
   character_bible: string;
   location_bible: string;
+  director_bible: string;
+  property_bible: string;
   production_script: string;
   scenes: StoryboardPreviewScene[];
   expansion: Record<string, unknown>;
