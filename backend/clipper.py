@@ -46,9 +46,11 @@ _YOUTUBE_AUTH_REQUIRED = False
 def emit_progress(percent: int, stage: str, detail: str) -> None:
     """Emit a machine-readable milestone consumed by the API progress tracker."""
     clean_detail = re.sub(r"[\r\n|]+", " ", detail).strip()
-    console.print(
+    # This protocol is parsed line-by-line by api.py. Rich wraps long output at
+    # its detected terminal width, which splits speed/ETA into a fake log line.
+    print(
         f"FENDY_CLIPPER_PROGRESS:{max(0, min(100, int(percent)))}|{stage}|{clean_detail}",
-        markup=False,
+        flush=True,
     )
 
 
@@ -130,6 +132,92 @@ class RetryAwareYtdlpLogger:
 
     def error(self, _message: str) -> None:
         return
+
+
+def format_download_bytes(value: object) -> str:
+    """Format yt-dlp byte counters compactly for the live job status."""
+    try:
+        size = max(0.0, float(value))
+    except (TypeError, ValueError):
+        return ""
+    units = ("B", "KB", "MB", "GB", "TB")
+    unit = units[0]
+    for candidate in units:
+        unit = candidate
+        if size < 1024 or candidate == units[-1]:
+            break
+        size /= 1024
+    precision = 0 if unit in {"B", "KB"} or size >= 100 else 1
+    return f"{size:.{precision}f} {unit}"
+
+
+class YtdlpProgressReporter:
+    """Expose quiet yt-dlp transfers to the API without flooding jobs.json."""
+
+    def __init__(
+        self,
+        *,
+        media_label: str,
+        attempt: int,
+        total_attempts: int,
+        min_emit_interval: float = 2.0,
+    ) -> None:
+        self.media_label = media_label
+        self.attempt = max(1, attempt)
+        self.total_attempts = max(1, total_attempts)
+        self.min_emit_interval = max(0.0, min_emit_interval)
+        self.last_emit_at = 0.0
+        self.last_stage_percent = -1
+
+    def __call__(self, payload: dict) -> None:
+        status = str(payload.get("status") or "")
+        if status not in {"downloading", "finished"}:
+            return
+
+        downloaded = max(0, int(payload.get("downloaded_bytes") or 0))
+        total = int(payload.get("total_bytes") or payload.get("total_bytes_estimate") or 0)
+        fraction = min(1.0, downloaded / total) if total > 0 else 0.0
+        transfer_fraction = 1.0 if status == "finished" else fraction
+        stage_percent = max(self.last_stage_percent, 4 + int(transfer_fraction * 11))
+        now = time.monotonic()
+        if (
+            status == "downloading"
+            and self.last_emit_at
+            and stage_percent <= self.last_stage_percent
+            and now - self.last_emit_at < self.min_emit_interval
+        ):
+            return
+
+        route = (
+            f" · jalur {self.attempt}/{self.total_attempts}"
+            if self.total_attempts > 1
+            else ""
+        )
+        if status == "finished":
+            detail = f"Download {self.media_label} selesai; memverifikasi file{route}"
+        else:
+            transfer_percent = f"{fraction * 100:.0f}%" if total > 0 else "berjalan"
+            transferred = format_download_bytes(downloaded)
+            total_label = format_download_bytes(total) if total > 0 else ""
+            amount = (
+                f"{transferred}/{total_label}"
+                if transferred and total_label
+                else transferred
+            )
+            speed = format_download_bytes(payload.get("speed"))
+            speed_label = f" · {speed}/dtk" if speed else ""
+            try:
+                eta_value = max(0, int(payload.get("eta")))
+            except (TypeError, ValueError):
+                eta_value = -1
+            eta_label = f" · ETA {eta_value} dtk" if eta_value >= 0 else ""
+            detail = (
+                f"Mengunduh {self.media_label} {transfer_percent}"
+                f"{f' · {amount}' if amount else ''}{speed_label}{eta_label}{route}"
+            )
+        emit_progress(stage_percent, "source", detail)
+        self.last_emit_at = now
+        self.last_stage_percent = stage_percent
 
 
 def youtube_retry_reason(exc: BaseException) -> str:
@@ -5339,6 +5427,13 @@ def download_video(
             merge_output_format="mp4",
             logger=RetryAwareYtdlpLogger(),
             noprogress=True,
+            progress_hooks=[
+                YtdlpProgressReporter(
+                    media_label="video sumber",
+                    attempt=attempt,
+                    total_attempts=total_attempts,
+                )
+            ],
             ffmpeg_location=ffmpeg_path(),
         )
         if limit_seconds:
@@ -5456,6 +5551,7 @@ def download_review_audio(
     file_path: Path | None = None
     download_errors: list[Exception] = []
     strategies = youtube_review_audio_strategies(work_dir, cache_key)
+    total_attempts = len(strategies)
     for attempt, strategy in enumerate(strategies, start=1):
         strategy_name = str(strategy["name"])
         options = {key: value for key, value in strategy.items() if key != "name"}
@@ -5463,6 +5559,13 @@ def download_review_audio(
             **options,
             use_youtube_auth=_YOUTUBE_AUTH_REQUIRED,
             noprogress=True,
+            progress_hooks=[
+                YtdlpProgressReporter(
+                    media_label="audio analisis",
+                    attempt=attempt,
+                    total_attempts=total_attempts,
+                )
+            ],
             ffmpeg_location=ffmpeg_path(),
         )
         if limit_seconds:

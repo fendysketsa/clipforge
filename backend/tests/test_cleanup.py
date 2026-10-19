@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 import pytest
+import clipper
 
 from api import (
     ClipCandidate,
@@ -492,6 +493,82 @@ def test_ytdlp_base_options_does_not_pin_a_stale_browser_user_agent():
     assert "User-Agent" not in options["http_headers"]
     assert options["http_headers"]["Accept-Language"].startswith("id-ID")
     assert "cookiefile" not in options
+
+
+def test_machine_progress_is_never_wrapped_into_fake_log_lines(capsys):
+    detail = (
+        "Mengunduh video sumber 50% · 450.0 MB/900 MB · 5.0 MB/dtk · "
+        "ETA 90 dtk · jalur 1/5"
+    )
+
+    clipper.emit_progress(9, "source", detail)
+
+    assert capsys.readouterr().out.splitlines() == [
+        f"FENDY_CLIPPER_PROGRESS:9|source|{detail}"
+    ]
+
+
+def test_ytdlp_progress_reporter_emits_bounded_live_download_detail(monkeypatch):
+    emitted = []
+    reporter = clipper.YtdlpProgressReporter(
+        media_label="video sumber",
+        attempt=1,
+        total_attempts=1,
+        min_emit_interval=0,
+    )
+    monkeypatch.setattr(
+        clipper,
+        "emit_progress",
+        lambda percent, stage, detail: emitted.append((percent, stage, detail)),
+    )
+
+    reporter(
+        {
+            "status": "downloading",
+            "downloaded_bytes": 50 * 1024 * 1024,
+            "total_bytes": 100 * 1024 * 1024,
+            "speed": 5 * 1024 * 1024,
+            "eta": 10,
+        }
+    )
+
+    assert emitted == [
+        (
+            9,
+            "source",
+            "Mengunduh video sumber 50% · 50.0 MB/100 MB · 5.0 MB/dtk · ETA 10 dtk",
+        )
+    ]
+
+
+def test_ytdlp_progress_reporter_throttles_same_progress_bucket(monkeypatch):
+    emitted = []
+    ticks = iter((100.0, 100.5, 102.1))
+    reporter = clipper.YtdlpProgressReporter(
+        media_label="video sumber",
+        attempt=1,
+        total_attempts=5,
+        min_emit_interval=2,
+    )
+    monkeypatch.setattr(clipper.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(
+        clipper,
+        "emit_progress",
+        lambda percent, stage, detail: emitted.append((percent, stage, detail)),
+    )
+    payload = {
+        "status": "downloading",
+        "downloaded_bytes": 25,
+        "total_bytes": 100,
+    }
+
+    reporter(payload)
+    reporter(payload)
+    reporter(payload)
+
+    assert len(emitted) == 2
+    assert all(item[0] == 6 for item in emitted)
+    assert all("jalur 1/5" in item[2] for item in emitted)
 
 
 def test_ytdlp_base_options_uses_saved_youtube_login_without_disk_cookie_copy(
