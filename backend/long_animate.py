@@ -144,6 +144,7 @@ class AnimateShot:
     motion_license_url: str = ""
     qa_attempts: int = 0
     qa_score: float = 0.0
+    qa_reasons: list[str] = field(default_factory=list)
 
 
 STORYBOARD_SYSTEM_PROMPT = (
@@ -2218,16 +2219,38 @@ def require_real_image_provider() -> None:
 
     models_url = f"{base.rstrip('/')}/models"
     try:
-        with urllib.request.urlopen(models_url, timeout=8) as response:
-            payload = response.read()
-        if not payload:
-            raise RuntimeError("respons /models kosong")
-    except Exception as exc:
-        detail, _status = _image_error_detail(exc)
-        raise LongAnimateImageError(
-            "Generator gambar realistis lokal belum siap di "
-            f"{models_url}. Jalankan scripts/start-local-image-model.sh. Detail: {detail}"
-        ) from exc
+        ready_timeout = max(
+            0.0,
+            min(
+                600.0,
+                float(os.environ.get("LONG_ANIMATE_IMAGE_READY_TIMEOUT_SECONDS", "120")),
+            ),
+        )
+    except ValueError:
+        ready_timeout = 120.0
+    deadline = time.monotonic() + ready_timeout
+    last_error: Exception | None = None
+    while True:
+        try:
+            with urllib.request.urlopen(models_url, timeout=8) as response:
+                payload = response.read()
+            if not payload:
+                raise RuntimeError("respons /models kosong")
+            return
+        except Exception as exc:
+            last_error = exc
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(3.0, remaining))
+
+    assert last_error is not None
+    detail, _status = _image_error_detail(last_error)
+    raise LongAnimateImageError(
+        "Generator gambar realistis lokal belum siap di "
+        f"{models_url} setelah menunggu {ready_timeout:g} detik. "
+        f"Jalankan scripts/start-local-image-model.sh. Detail: {detail}"
+    ) from last_error
 
 
 def _release_ollama_gpu_models() -> None:
@@ -2561,6 +2584,26 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
         if 0 < count < 5 and not _requests_group_scene(visible)
         else ""
     )
+    qa_reasons = set(getattr(scene, "qa_reasons", []))
+    qa_repair_direction = ""
+    if "too_many_visible_faces" in qa_reasons:
+        requested_count = count if count > 0 else 1
+        qa_repair_direction += (
+            f"QA repair requirement: isolate exactly {requested_count} visible person, appearing once, against a clean "
+            "environmental background with no secondary portraits, reflected faces, or distant bystanders. "
+        )
+    if "unrequested_human_face" in qa_reasons:
+        qa_repair_direction += (
+            "QA repair requirement: make the requested non-human subject fill the composition and keep the environment purely object-based. "
+        )
+    if qa_reasons & {"missing_clear_face", "face_too_small", "soft_face_detail"}:
+        qa_repair_direction += (
+            "QA repair requirement: make the principal person's complete unobstructed face prominent, tack-sharp, naturally lit, and clearly readable. "
+        )
+    if "character_reference_drift" in qa_reasons:
+        qa_repair_direction += (
+            "QA repair requirement: match the approved recurring character identity, facial structure, hair, clothing, and proportions exactly. "
+        )
     planned_framing = getattr(scene, "framing", "medium")
     planned_placement = getattr(scene, "subject_placement", "center")
     planned_angle = getattr(scene, "camera_angle", "eye_level")
@@ -2591,7 +2634,7 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
         f"FULL-BLEED {output_aspect} SINGLE CAMERA FRAME. Use case: {use_case}. "
         f"Asset type: cinematic storyboard keyframe for a {output_type}. "
         f"Visible moment: {visible}. "
-        f"The visible moment is the primary focal action and must be unmistakable. {subject_count}"
+        f"The visible moment is the primary focal action and must be unmistakable. {subject_count}{qa_repair_direction}"
         + (f"Scene/backdrop and immediate story context: {context}. " if context else "")
         + (f"{action_contract} " if action_contract else "")
         + f"Style/medium: {style}. Lighting/mood and color direction: {scene.color_mood}. "
@@ -2748,6 +2791,13 @@ def _remote_scene_image(
             negative_parts.append(
                 "unrequested crowd, extra background people, partial person, unrelated stock character, unrequested cultural clothing"
             )
+        qa_reasons = set(getattr(scene, "qa_reasons", []))
+        if "too_many_visible_faces" in qa_reasons:
+            negative_parts.append(
+                "second person, duplicate person, duplicate face, face in reflection, portrait on wall, face on screen, distant bystander"
+            )
+        if "unrequested_human_face" in qa_reasons:
+            negative_parts.append("human, person, face, portrait, reflection of a person")
         if not _has_any(visible_for_negative, _STOCK_HAND_GESTURE_TERMS):
             negative_parts.append(
                 "palms facing camera, wall of hands, raised-hand crowd, cheering hands, hands reaching toward lens, "
@@ -3270,9 +3320,16 @@ def generate_shot_image_with_qa(
     active_character_reference = character_reference if uses_recurring_character else None
     provider = "unknown"
     last_reasons: list[str] = []
+    best_score = -1.0
+    best_reasons: list[str] = []
+    best_provider = "unknown"
+    best_path = path.with_name(f".{path.stem}.qa-best{path.suffix}")
+    best_path.unlink(missing_ok=True)
+    shot.qa_reasons = []
     for attempt in range(1, attempts + 1):
         shot.qa_attempts = attempt
         if attempt > 1:
+            shot.qa_reasons = list(last_reasons)
             shot.visual_prompt = _clean_text(
                 f"QA REPAIR {attempt}: correct these failures: {', '.join(last_reasons)}. Strictly preserve the "
                 f"character reference lock, global style, requested subject count, action, and setting. {original_prompt}",
@@ -3287,17 +3344,33 @@ def generate_shot_image_with_qa(
             style_reference=style_reference,
             character_reference=active_character_reference,
         )
+        shot.qa_reasons = list(last_reasons)
+        if shot.qa_score > best_score and path.is_file():
+            best_score = shot.qa_score
+            best_reasons = list(last_reasons)
+            best_provider = provider
+            shutil.copy2(path, best_path)
         if not last_reasons:
             shot.visual_prompt = original_prompt
+            best_path.unlink(missing_ok=True)
             return provider
     shot.visual_prompt = original_prompt
+    if best_path.is_file():
+        shutil.copy2(best_path, path)
+        best_path.unlink(missing_ok=True)
+        shot.qa_score = best_score
+        shot.qa_reasons = best_reasons
+        last_reasons = best_reasons
+        provider = best_provider
     # In strict mode a technically valid but semantically impossible frame is
     # still a failed frame. Previously a one-person action could keep a crowd
     # after both retries and receive QA 1.0, which is worse than stopping the
     # render and explaining what must be regenerated.
-    fatal_reasons = {
+    technical_reasons = {
         "image_decode_failed",
         "black_or_empty_frame",
+    }
+    semantic_reasons = {
         "unrequested_human_face",
         "too_many_visible_faces",
         "character_reference_drift",
@@ -3305,10 +3378,15 @@ def generate_shot_image_with_qa(
         "face_too_small",
         "soft_face_detail",
     }
-    fatal_failures = [reason for reason in last_reasons if reason in fatal_reasons]
-    if _env_bool("LONG_ANIMATE_VISION_QA_STRICT", False) and fatal_failures:
+    technical_failures = [reason for reason in last_reasons if reason in technical_reasons]
+    semantic_failures = [reason for reason in last_reasons if reason in semantic_reasons]
+    if technical_failures:
         raise LongAnimateImageError(
-            f"Vision QA shot {shot.index} gagal setelah {attempts} percobaan: {', '.join(fatal_failures)}"
+            f"Vision QA shot {shot.index} gagal setelah {attempts} percobaan: {', '.join(technical_failures)}"
+        )
+    if _env_bool("LONG_ANIMATE_VISION_QA_STRICT", False) and semantic_failures:
+        raise LongAnimateImageError(
+            f"Vision QA shot {shot.index} gagal setelah {attempts} percobaan: {', '.join(semantic_failures)}"
         )
     if last_reasons:
         _logger.warning(
@@ -4233,14 +4311,14 @@ def _slug(value: str) -> str:
 
 @contextmanager
 def animate_work_directory(output_root: Path, script: str) -> Generator[tuple[Path, Path, Path], None, None]:
-    """Context manager untuk automatic cleanup on error."""
+    """Keep partial render assets by default so a failed long job remains diagnosable."""
     work_dir = output_root / _slug(script.splitlines()[0] if script.splitlines() else "long-animate")
     clips_dir = work_dir / "clips"
     scene_dir = work_dir / "animate_scenes"
     clips_dir.mkdir(parents=True, exist_ok=True)
     scene_dir.mkdir(parents=True, exist_ok=True)
 
-    cleanup_on_error = _env_bool("LONG_ANIMATE_CLEANUP_ON_ERROR", True)
+    cleanup_on_error = _env_bool("LONG_ANIMATE_CLEANUP_ON_ERROR", False)
 
     try:
         yield work_dir, clips_dir, scene_dir
@@ -4248,9 +4326,10 @@ def animate_work_directory(output_root: Path, script: str) -> Generator[tuple[Pa
         if cleanup_on_error:
             _logger.warning(f"Cleanup work directory on error: {work_dir}")
             shutil.rmtree(work_dir, ignore_errors=True)
-            # Also cleanup face detector
-            global _FACE_DETECTOR
-            _FACE_DETECTOR = None
+        else:
+            _logger.warning(f"Preserving partial render assets after error: {work_dir}")
+        global _FACE_DETECTOR
+        _FACE_DETECTOR = None
         raise
 
 
@@ -4457,6 +4536,7 @@ def render_long_animate(
                     "motion_provider": shot.motion_provider,
                     "vision_qa_attempts": shot.qa_attempts,
                     "vision_qa_score": round(shot.qa_score, 3),
+                    "vision_qa_notes": shot.qa_reasons,
                 }
             )
 

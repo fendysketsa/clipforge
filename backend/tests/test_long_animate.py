@@ -1383,6 +1383,45 @@ def test_local_real_image_provider_preflight(monkeypatch):
     }
 
 
+def test_local_real_image_provider_waits_for_service_startup(monkeypatch):
+    requests = []
+    sleeps = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"data":[{"id":"z-image-turbo-q4-k"}]}'
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        if len(requests) < 3:
+            raise long_animate.urllib.error.URLError(
+                ConnectionRefusedError(111, "Connection refused")
+            )
+        return Response()
+
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_PROVIDER", "stable-diffusion-cpp")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_BASE_URL", "http://127.0.0.1:7860/v1")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_MODEL", "z-image-turbo-q4-k")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_READY_TIMEOUT_SECONDS", "120")
+    monkeypatch.setattr(long_animate.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(long_animate.time, "sleep", sleeps.append)
+
+    long_animate.require_real_image_provider()
+
+    assert requests == [
+        ("http://127.0.0.1:7860/v1/models", 8),
+        ("http://127.0.0.1:7860/v1/models", 8),
+        ("http://127.0.0.1:7860/v1/models", 8),
+    ]
+    assert sleeps == [3.0, 3.0]
+
+
 def test_local_z_image_uses_sdcpp_images_api_payload(monkeypatch, tmp_path):
     scene = _fallback_storyboard(SCRIPT).scenes[0]
     captured = {}
@@ -1826,6 +1865,83 @@ def test_strict_vision_qa_rejects_undecodable_image(monkeypatch, tmp_path):
         assert "image_decode_failed" in str(exc)
     else:
         raise AssertionError("strict QA must still reject an undecodable image")
+
+
+def test_non_strict_vision_qa_still_rejects_undecodable_image(monkeypatch, tmp_path):
+    shot = _motion_test_shot()
+    monkeypatch.setenv("LONG_ANIMATE_VISION_QA_ATTEMPTS", "1")
+    monkeypatch.setenv("LONG_ANIMATE_VISION_QA_STRICT", "false")
+    monkeypatch.setattr(long_animate, "generate_scene_image", lambda *_args, **_kwargs: "local-z-image")
+    monkeypatch.setattr(
+        long_animate,
+        "inspect_generated_image",
+        lambda *_args, **_kwargs: (0.0, ["image_decode_failed"]),
+    )
+
+    try:
+        long_animate.generate_shot_image_with_qa(
+            shot, tmp_path / "broken.png", "photorealistic documentary"
+        )
+    except long_animate.LongAnimateImageError as exc:
+        assert "image_decode_failed" in str(exc)
+    else:
+        raise AssertionError("an undecodable image must remain fatal in non-strict mode")
+
+
+def test_non_strict_vision_qa_restores_best_candidate_and_continues(monkeypatch, tmp_path):
+    shot = _motion_test_shot()
+    path = tmp_path / "shot.png"
+    attempts = {"count": 0}
+    results = iter(
+        [
+            (0.82, ["too_many_visible_faces"]),
+            (0.41, ["missing_clear_face", "soft_face_detail"]),
+            (0.63, ["face_too_small"]),
+        ]
+    )
+
+    def fake_generate(current_shot, current_path, _art_bible, reference_image=None):
+        attempts["count"] += 1
+        current_path.write_bytes(f"candidate-{attempts['count']}".encode())
+        if attempts["count"] > 1:
+            focused = long_animate._focused_image_generation_prompt(current_shot)
+            assert "QA repair requirement" in focused
+        return "local-z-image"
+
+    monkeypatch.setenv("LONG_ANIMATE_VISION_QA_ATTEMPTS", "3")
+    monkeypatch.setenv("LONG_ANIMATE_VISION_QA_STRICT", "false")
+    monkeypatch.setattr(long_animate, "generate_scene_image", fake_generate)
+    monkeypatch.setattr(long_animate, "inspect_generated_image", lambda *_args, **_kwargs: next(results))
+
+    provider = long_animate.generate_shot_image_with_qa(
+        shot,
+        path,
+        "photorealistic documentary",
+    )
+
+    assert provider == "local-z-image"
+    assert path.read_bytes() == b"candidate-1"
+    assert shot.qa_attempts == 3
+    assert shot.qa_score == 0.82
+    assert shot.qa_reasons == ["too_many_visible_faces"]
+    assert not list(tmp_path.glob("*.qa-best.png"))
+
+
+def test_failed_long_render_preserves_partial_assets_by_default(monkeypatch, tmp_path):
+    monkeypatch.delenv("LONG_ANIMATE_CLEANUP_ON_ERROR", raising=False)
+    partial_path = None
+
+    try:
+        with long_animate.animate_work_directory(tmp_path, "Judul cerita") as (work_dir, _clips, scene_dir):
+            partial_path = scene_dir / "shot_01.png"
+            partial_path.write_bytes(b"partial-image")
+            raise RuntimeError("simulated render failure")
+    except RuntimeError:
+        pass
+
+    assert partial_path is not None
+    assert partial_path.read_bytes() == b"partial-image"
+    assert work_dir.is_dir()
 
 
 def test_object_only_shot_never_receives_human_character_reference(monkeypatch, tmp_path):
