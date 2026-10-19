@@ -9,6 +9,7 @@ import {
   checkSourceHistory,
   checkTikTokSession,
   createJob,
+  createStoryboardPreview,
   createTikTokUpload,
   createTikTokUploadBatch,
   createYouTubeUpload,
@@ -80,6 +81,7 @@ import type {
   CropMode,
   SourceMode,
   SourceHistoryCheck,
+  StoryboardPreview,
   TikTokConfig,
   TikTokUploadJob,
   VideoQuality,
@@ -107,6 +109,8 @@ const TAB_JOB_STORAGE_KEY = "fendy-clipper.activeJobId.v1";
 export default function HomePage() {
   const [url, setUrl] = useState("");
   const [storyText, setStoryText] = useState("");
+  const [storyboardPreview, setStoryboardPreview] = useState<StoryboardPreview | null>(null);
+  const [isGeneratingStoryboard, setIsGeneratingStoryboard] = useState(false);
   const [sourceMode, setSourceMode] = useState<SourceMode>("url");
   const [uploadToken, setUploadToken] = useState("");
   const [uploadFileName, setUploadFileName] = useState("");
@@ -202,6 +206,7 @@ export default function HomePage() {
     setBurnSubtitles(true);
     setAiEnabled(true);
     setConfirmSourceRights(false);
+    setStoryboardPreview(null);
     if (nextMode === "highlight_5m" || nextMode === "long_animate") {
       setMinDuration(30);
       setMaxDuration(90);
@@ -217,12 +222,24 @@ export default function HomePage() {
   const handleUseTrendConcept = useCallback((premise: string) => {
     handleClipModeChange("long_animate");
     setStoryText(premise);
+    setStoryboardPreview(null);
     setConfirmSourceRights(false);
     window.requestAnimationFrame(() => {
       document.getElementById("quick-start-title")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
     toast.success("Premis masuk ke Generator Cerita. Review, konfirmasi hak, lalu produksi.");
   }, [handleClipModeChange]);
+
+  const handleStoryTextChange = useCallback((value: string) => {
+    setStoryText(value);
+    setStoryboardPreview(null);
+    setError("");
+  }, []);
+
+  const handleCompilationTargetSecondsChange = useCallback((value: number) => {
+    setCompilationTargetSeconds(value);
+    setStoryboardPreview(null);
+  }, []);
 
   const handleUrlChange = useCallback((value: string) => {
     setSourceMode("url");
@@ -362,6 +379,7 @@ export default function HomePage() {
         setCompilationTargetSeconds(restoredJob.request.compilation_target_seconds);
         setVideoQuality(restoredJob.request.video_quality);
         setStoryText(restoredJob.request.script_text || "");
+        setStoryboardPreview(null);
         if (restoredJob.request.clip_mode === "long_animate") {
           setConfirmSourceRights(Boolean(restoredJob.request.confirm_long_animate_rights));
         }
@@ -647,6 +665,57 @@ export default function HomePage() {
   }, []);
 
 
+  const handleCreateStoryboard = useCallback(async () => {
+    const trimmedStory = storyText.trim();
+    setError("");
+    if (trimmedStory.length < 60 || trimmedStory.split(/\s+/).length < 12) {
+      setError("Jalan cerita minimal 60 karakter dan 12 kata agar storyboard tidak generik.");
+      return;
+    }
+    if (!aiEnabled || !aiBaseUrl.trim() || !aiModel.trim()) {
+      setError("Pembuatan storyboard membutuhkan AI aktif, base URL, dan model yang valid.");
+      return;
+    }
+
+    setIsGeneratingStoryboard(true);
+    try {
+      const preview = await toast.promise(
+        createStoryboardPreview({
+          story_text: trimmedStory,
+          target_duration_seconds: Math.max(
+            COMPILATION_MIN_SECONDS,
+            Math.min(COMPILATION_MAX_SECONDS, compilationTargetSeconds),
+          ),
+          ai_enabled: aiEnabled,
+          ai_base_url: aiBaseUrl.trim(),
+          ai_model: aiModel.trim(),
+          ai_api_key: aiApiKey.trim(),
+        }),
+        {
+          loading: "Menyusun beat, scene, dan prompt ImageGen...",
+          success: "Storyboard siap direview.",
+          error: "Gagal membuat storyboard",
+        },
+      );
+      setStoryboardPreview(preview);
+      if (!preview.image_provider.ready) {
+        toast.error("Storyboard jadi, tetapi ImageGen lokal belum aktif. Cek pesan preflight di bawah storyboard.");
+      }
+    } catch (storyboardError) {
+      setStoryboardPreview(null);
+      setError(storyboardError instanceof Error ? storyboardError.message : "Gagal membuat storyboard.");
+    } finally {
+      setIsGeneratingStoryboard(false);
+    }
+  }, [
+    aiApiKey,
+    aiBaseUrl,
+    aiEnabled,
+    aiModel,
+    compilationTargetSeconds,
+    storyText,
+  ]);
+
   const handleStartJob = useCallback(async () => {
     const requestedMode: ClipMode = clipMode;
     const isStoryMode = requestedMode === "long_animate";
@@ -662,6 +731,14 @@ export default function HomePage() {
     }
     if (isStoryMode && (trimmedStory.length < 60 || trimmedStory.split(/\s+/).length < 12)) {
       setError("Jalan cerita minimal 60 karakter dan 12 kata agar konflik serta payoff dapat dikembangkan.");
+      return;
+    }
+    if (isStoryMode && !storyboardPreview) {
+      setError("Buat dan review storyboard terlebih dahulu sebelum produksi video.");
+      return;
+    }
+    if (isStoryMode && !storyboardPreview?.image_provider.ready) {
+      setError(storyboardPreview?.image_provider.message || "ImageGen belum siap digunakan.");
       return;
     }
     if (isStoryMode && !confirmSourceRights) {
@@ -706,7 +783,7 @@ export default function HomePage() {
         createJob({
           url: !isStoryMode && requestedSourceMode === "url" ? trimmedUrl : "",
           source_file: !isStoryMode && requestedSourceMode === "upload" ? uploadToken : "",
-          script_text: isStoryMode ? trimmedStory : "",
+          script_text: isStoryMode ? storyboardPreview?.production_script || trimmedStory : "",
           top: requestedMode === "short" && targetClips > 0 ? targetClips : undefined,
           min_duration: minDuration,
           max_duration: effectiveMaxDuration,
@@ -752,8 +829,8 @@ export default function HomePage() {
           ai_api_key: aiApiKey.trim(),
         }),
         {
-          loading: isStoryMode ? "Mengembangkan cerita dan memulai produksi..." : requestedMode === "short" ? "Memulai scan dan render Short..." : "Memulai scan dan susun Long Highlight...",
-          success: isStoryMode ? "Produksi cerita dimulai — naskah, scene, dubbing, dan video dibuat otomatis." : requestedMode === "short" ? "Scan dimulai — kandidat terbaik akan langsung dirender." : "Scan dimulai — chapter terbaik akan langsung disusun.",
+          loading: isStoryMode ? "Mengunci storyboard dan memulai produksi..." : requestedMode === "short" ? "Memulai scan dan render Short..." : "Memulai scan dan susun Long Highlight...",
+          success: isStoryMode ? "Produksi dimulai — ImageGen membuat keyframe lalu ClipForge merakit videonya." : requestedMode === "short" ? "Scan dimulai — kandidat terbaik akan langsung dirender." : "Scan dimulai — chapter terbaik akan langsung disusun.",
           error: isStoryMode ? "Gagal memulai Generator Cerita" : "Gagal memulai proses pemotongan",
         },
       );
@@ -796,6 +873,7 @@ export default function HomePage() {
     sourceMode,
     sourceProbe,
     storyText,
+    storyboardPreview,
     targetClips,
     uploadToken,
     url,
@@ -821,6 +899,7 @@ export default function HomePage() {
     setJob(selectedJob);
     setClipMode(selectedJob.request.clip_mode);
     setStoryText(selectedJob.request.script_text || "");
+    setStoryboardPreview(null);
     setConfirmSourceRights(
       selectedJob.request.clip_mode === "long_animate"
         ? Boolean(selectedJob.request.confirm_long_animate_rights)
@@ -1389,14 +1468,17 @@ export default function HomePage() {
         isCheckingSourceHistory={isCheckingSourceHistory}
         allowReprocessSource={allowReprocessSource}
         confirmSourceRights={confirmSourceRights}
+        storyboardPreview={storyboardPreview}
+        isGeneratingStoryboard={isGeneratingStoryboard}
         isBusy={isBusy}
         isSubmitting={isSubmitting}
         error={error}
         onUrlChange={handleUrlChange}
-        onStoryTextChange={setStoryText}
+        onStoryTextChange={handleStoryTextChange}
         onClipModeChange={handleClipModeChange}
         onAllowReprocessSourceChange={setAllowReprocessSource}
         onConfirmSourceRightsChange={setConfirmSourceRights}
+        onCreateStoryboard={() => { void handleCreateStoryboard(); }}
         onStart={() => { void handleStartJob(); }}
       />
 
@@ -1411,7 +1493,7 @@ export default function HomePage() {
           maxDuration={maxDuration}
           minDuration={minDuration}
           compilationTargetSeconds={compilationTargetSeconds}
-          onCompilationTargetSecondsChange={setCompilationTargetSeconds}
+          onCompilationTargetSecondsChange={handleCompilationTargetSecondsChange}
           targetClips={targetClips}
           maxClips={maxClips}
           videoDuration={videoDuration}

@@ -339,6 +339,69 @@ def test_story_generator_command_uses_script_and_requested_duration(tmp_path):
     assert "--confirm-provider-rights" in command
 
 
+def test_storyboard_preview_returns_locked_scenes_and_imagegen_preflight(monkeypatch):
+    import api
+    import long_animate
+
+    production_script = """
+    JUDUL: Satpam yang Diremehkan
+    GAYA VISUAL: cinematic realistic night thriller
+    KARAKTER KONSISTEN: Raka, satpam dewasa dengan seragam biru tua.
+    LOKASI KONSISTEN: Gedung kantor modern pada malam hujan.
+
+    ### ADEGAN 1 — Alarm
+    VISUAL: Raka berlari menuju panel alarm di lobi gelap.
+    NARASI: Alarm berbunyi sebelum semua orang memahami bahayanya.
+    ### ADEGAN 2 — Kabel
+    VISUAL: Raka membuka panel dan menemukan kabel utama terputus.
+    NARASI: Ia menemukan bukti sabotase di balik panel keamanan.
+    ### ADEGAN 3 — Sistem Pulih
+    VISUAL: Raka mengunci kabel baru saat lampu gedung kembali menyala.
+    NARASI: Keahliannya menyelamatkan gedung dan membuktikan integritasnya.
+    """
+    monkeypatch.setattr(
+        long_animate,
+        "expand_story_outline",
+        lambda *_args, **_kwargs: (production_script, {"expanded": True, "scene_count": 3}),
+    )
+    monkeypatch.setattr(long_animate, "require_real_image_provider", lambda: None)
+    monkeypatch.setattr(
+        long_animate,
+        "_image_endpoint",
+        lambda: ("http://127.0.0.1:7860/v1", "z-image-turbo-q4-k", ""),
+    )
+
+    preview = api.create_storyboard_preview(
+        api.StoryboardPreviewRequest(
+            story_text=(
+                "Seorang satpam diremehkan, lalu memakai keahlian lamanya untuk "
+                "menyelamatkan gedung dari sabotase dan membuktikan integritasnya."
+            ),
+            ai_base_url="http://localhost:11434/v1",
+            ai_model="local",
+        )
+    )
+
+    assert preview.production_script.strip() == production_script.strip()
+    assert preview.title == "Satpam yang Diremehkan"
+    assert [scene.title for scene in preview.scenes] == ["Alarm", "Kabel", "Sistem Pulih"]
+    assert preview.scenes[0].visual_prompt.startswith("Raka berlari")
+    assert "FULL-BLEED" in preview.scenes[0].image_prompt
+    assert "FULL-BLEED 9:16" in preview.scenes[0].image_prompt
+    assert "vertical short video" in preview.scenes[0].image_prompt
+    preview_shots = [shot for scene in preview.scenes for shot in scene.shot_plan]
+    assert preview_shots
+    assert all(shot.framing for shot in preview_shots)
+    assert all(shot.subject_placement for shot in preview_shots)
+    assert all(
+        current.framing != following.framing
+        for current, following in zip(preview_shots, preview_shots[1:])
+    )
+    assert preview.scenes[0].shot_plan[0].framing.replace("_", "-") in preview.scenes[0].image_prompt
+    assert preview.image_provider.ready is True
+    assert preview.image_provider.provider == "local_z_image_turbo"
+
+
 def test_short_defaults_are_retention_dense_but_manual_three_minutes_remains_valid():
     request = ClipJobRequest(source_file="fake.mp4")
 

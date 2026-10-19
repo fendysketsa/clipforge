@@ -18,6 +18,7 @@ import urllib.request
 from http.client import RemoteDisconnected
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, Generator
@@ -127,6 +128,9 @@ class AnimateShot:
     on_screen_text: str
     camera_motion: str
     color_mood: str
+    framing: str = "medium"
+    subject_placement: str = "center"
+    camera_angle: str = "eye_level"
     animation_direction: str = ""
     transition: str = "cinematic_dissolve"
     continuity_anchor: str = ""
@@ -196,8 +200,27 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return value.strip().casefold() in {"1", "true", "yes", "on"}
 
 
+_OUTPUT_ASPECT_OVERRIDE: ContextVar[str | None] = ContextVar(
+    "long_animate_output_aspect_override",
+    default=None,
+)
+
+
+@contextmanager
+def output_aspect_ratio(aspect: str) -> Generator[None, None, None]:
+    """Apply request-local geometry without mutating process-wide environment."""
+    token = _OUTPUT_ASPECT_OVERRIDE.set(aspect if aspect in {"9:16", "16:9"} else "16:9")
+    try:
+        yield
+    finally:
+        _OUTPUT_ASPECT_OVERRIDE.reset(token)
+
+
 def _output_geometry() -> tuple[str, int, int]:
-    aspect = os.environ.get("LONG_ANIMATE_OUTPUT_ASPECT_RATIO", "16:9").strip()
+    aspect = (
+        _OUTPUT_ASPECT_OVERRIDE.get()
+        or os.environ.get("LONG_ANIMATE_OUTPUT_ASPECT_RATIO", "16:9").strip()
+    )
     if aspect == "9:16":
         return aspect, 1080, 1920
     return "16:9", 1920, 1080
@@ -1206,8 +1229,17 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
         )
     first = scenes[0].title if scenes else "Cerita Animasi"
     last = scenes[-1].title if scenes else first
+    explicit_title_match = re.search(
+        r"(?im)^\s*(?:judul|title)\s*:\s*(.+)$",
+        script,
+    )
+    explicit_title = (
+        _clean_text(explicit_title_match.group(1), 80)
+        if explicit_title_match
+        else ""
+    )
     return AnimateStoryboard(
-        title=first[:80],
+        title=explicit_title or first[:80],
         hook=_clean_text(next((chunk for chunk in chunks if chunk), script), 180),
         core_message=f"{first} menuju {last}"[:300],
         art_bible=art_bible,
@@ -1243,6 +1275,11 @@ def _color_mood(text: str, index: int) -> str:
 def build_storyboard(script: str, ai_config: AIConfig) -> AnimateStoryboard:
     fallback = _fallback_storyboard(script)
     source_sections = _scene_sections(script)
+    # A storyboard approved in the UI is serialized as directed ADEGAN blocks.
+    # Those blocks are the production contract: rebuilding them with another
+    # LLM call can silently change the shot plan between preview and render.
+    if source_sections:
+        return fallback
     if not ai_config.enabled or not ai_config.base_url or not ai_config.model:
         return fallback
     grounded_note = ""
@@ -1887,10 +1924,112 @@ def scene_visual_semantic_score(narration: str, visual: str) -> float:
     return len(overlap) / max(1, min(len(narrative_tokens), 8))
 
 
+_FRAMING_PROMPTS = {
+    "wide": (
+        "wide establishing frame with the environment clearly readable, the main subject still prominent, and "
+        "generous movement room"
+    ),
+    "medium_wide": (
+        "medium-wide frame showing the subject, its physical action, and enough surrounding context to understand the beat"
+    ),
+    "full_body": (
+        "full-body action frame with head-to-toe anatomy visible, grounded feet, and clean space in the movement direction"
+    ),
+    "medium": (
+        "medium frame with the primary subject and its relevant prop or action fully visible"
+    ),
+    "medium_close_up": (
+        "medium close-up with a clearly readable face and shoulders while preserving safe headroom and natural anatomy"
+    ),
+    "close_up": (
+        "close-up emphasizing the face or single story-critical subject, with safe headroom and no clipped facial features"
+    ),
+    "detail_insert": (
+        "tight insert of the story-critical subject or object, with its complete relevant shape and interaction clearly visible"
+    ),
+    "over_shoulder": (
+        "over-the-shoulder frame that clearly reveals the story-critical object or action beyond the foreground shoulder"
+    ),
+}
+
+_FRAMING_PLACEMENT_PROMPTS = {
+    "left_third": "Place the primary focal subject on the left third inside the title-safe area",
+    "center": "Place the primary focal subject near the optical center inside the title-safe area",
+    "right_third": "Place the primary focal subject on the right third inside the title-safe area",
+}
+
+_CAMERA_ANGLE_PROMPTS = {
+    "eye_level": "natural eye-level camera",
+    "slightly_low": "subtle low-angle camera that adds energy without distorting anatomy",
+    "high_three_quarter": "gentle high three-quarter camera that keeps faces and actions readable",
+}
+
+
+def _deterministic_choice(values: tuple[str, ...], seed: str, salt: str) -> str:
+    """Choose stable pseudo-random editorial variation for reproducible rerenders."""
+    digest = hashlib.sha256(f"{salt}|{seed}".encode("utf-8")).digest()
+    return values[int.from_bytes(digest[:4], "big") % len(values)]
+
+
+def _framing_candidates(text: str) -> tuple[str, ...]:
+    normalized = text.casefold()
+    if _has_any(normalized, _BATHING_OR_SWIMMING_TERMS) and _has_any(normalized, _MINOR_VISUAL_TERMS):
+        return ("wide", "medium_wide", "medium")
+    if _requests_group_scene(normalized):
+        return ("wide", "medium_wide", "medium")
+
+    has_people = _has_any(normalized, _PEOPLE_TERMS + _PEOPLE_IDENTITY_TERMS)
+    has_travel = _has_any(
+        normalized,
+        ("berjalan", "berlari", "melompat", "menuju", "walk", "run", "jump", "travel", "drives", "flies"),
+    )
+    has_hand_object_action = _has_any(
+        normalized,
+        (
+            "membaca", "menulis", "memegang", "membuka", "memasang", "memperbaiki", "memindai",
+            "read", "write", "holds", "opens", "installs", "repairs", "scans",
+        ),
+    )
+    if has_people and has_travel:
+        return ("full_body", "medium_wide", "medium", "wide")
+    if has_people and has_hand_object_action:
+        return ("medium", "over_shoulder", "detail_insert", "medium_close_up")
+    if has_people:
+        return ("medium_close_up", "medium", "close_up", "medium_wide")
+    return ("wide", "medium_wide", "detail_insert", "close_up")
+
+
+def _plan_shot_framing(
+    text: str,
+    seed: str,
+    previous_framing: str = "",
+    previous_placement: str = "",
+) -> tuple[str, str, str]:
+    """Create varied but safe visual coverage without nondeterministic output."""
+    candidates = _framing_candidates(text)
+    framing = _deterministic_choice(candidates, seed, "framing")
+    if framing == previous_framing and len(candidates) > 1:
+        framing = candidates[(candidates.index(framing) + 1) % len(candidates)]
+
+    placements = ("left_third", "center", "right_third")
+    placement = _deterministic_choice(placements, seed, "placement")
+    if placement == previous_placement:
+        placement = placements[(placements.index(placement) + 1) % len(placements)]
+
+    if _has_any(text, _MINOR_VISUAL_TERMS) or framing in {"close_up", "medium_close_up"}:
+        angles = ("eye_level", "eye_level", "high_three_quarter")
+    else:
+        angles = ("eye_level", "slightly_low", "high_three_quarter")
+    angle = _deterministic_choice(angles, seed, "angle")
+    return framing, placement, angle
+
+
 def plan_storyboard_shots(storyboard: AnimateStoryboard) -> list[AnimateShot]:
     """Expand complex scenes into multiple visual shots without repeating narration."""
     shots: list[AnimateShot] = []
     reference_id = hashlib.sha256(storyboard.character_bible.encode("utf-8")).hexdigest()[:12]
+    previous_framing = ""
+    previous_placement = ""
     for scene in storyboard.scenes:
         raw_prompts = scene.shot_prompts or _visible_shot_moments(scene.narration)
         if scene.duration >= 10 and len(raw_prompts) < 2:
@@ -1929,6 +2068,15 @@ def plan_storyboard_shots(storyboard: AnimateStoryboard) -> list[AnimateShot]:
                     f"reference design exactly. {prompt}",
                     6500,
                 )
+            framing_seed = (
+                f"{storyboard.title}|{scene.index}|{local_index}|{raw_visual}|{scene.narration}"
+            )
+            framing, subject_placement, camera_angle = _plan_shot_framing(
+                f"{raw_visual} {scene.narration}",
+                framing_seed,
+                previous_framing,
+                previous_placement,
+            )
             shots.append(
                 AnimateShot(
                     index=len(shots) + 1,
@@ -1947,12 +2095,17 @@ def plan_storyboard_shots(storyboard: AnimateStoryboard) -> list[AnimateShot]:
                         local_index,
                     ),
                     color_mood=scene.color_mood,
+                    framing=framing,
+                    subject_placement=subject_placement,
+                    camera_angle=camera_angle,
                     animation_direction=scene.animation_direction,
                     transition=(scene.transition if local_index == 1 else "match_action"),
                     continuity_anchor=scene.continuity_anchor,
                     duration=shot_duration,
                 )
             )
+            previous_framing = framing
+            previous_placement = subject_placement
     transition = _transition_seconds()
     if transition > 0:
         for shot in shots[:-1]:
@@ -2393,6 +2546,11 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
         if style_match
         else "cinematic realistic"
     )
+    use_case = (
+        "stylized-concept"
+        if _has_any(style, ("illustration", "3d", "animation", "clay", "paper-cut", "storybook"))
+        else "photorealistic-natural"
+    )
     # The exact visible moment owns the subject count. A broad narration can
     # mention workers or a later crowd without authorizing tiny background
     # people in an architecture-only shot.
@@ -2403,24 +2561,41 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
         if 0 < count < 5 and not _requests_group_scene(visible)
         else ""
     )
+    planned_framing = getattr(scene, "framing", "medium")
+    planned_placement = getattr(scene, "subject_placement", "center")
+    planned_angle = getattr(scene, "camera_angle", "eye_level")
+    framing_direction = _FRAMING_PROMPTS.get(planned_framing, _FRAMING_PROMPTS["medium"])
+    placement_direction = _FRAMING_PLACEMENT_PROMPTS.get(
+        planned_placement,
+        _FRAMING_PLACEMENT_PROMPTS["center"],
+    )
+    angle_direction = _CAMERA_ANGLE_PROMPTS.get(
+        planned_angle,
+        _CAMERA_ANGLE_PROMPTS["eye_level"],
+    )
     composition_rule = (
-        "Use a clean medium or medium-wide composition. Keep one principal person large and unobstructed enough for "
+        f"Use this planned coverage exactly: {framing_direction}. {placement_direction}. Use a {angle_direction}. "
+        "Keep one principal person large and unobstructed enough for "
         "a clearly readable face, eyes, nose, mouth, hair strands, clothing seams, and natural limb connections. "
         "Use crisp edge definition, realistic skin texture, strong local contrast, controlled depth of field, natural "
         "lighting, and only the people and objects required by this immediate moment."
         if has_people
-        else "Use a clear wide or medium-wide composition with accurate architecture or machinery geometry, correct "
+        else f"Use this planned coverage exactly: {framing_direction}. {placement_direction}. Use a {angle_direction}. "
+        "Preserve accurate architecture or machinery geometry, correct "
         "scale, coherent materials, crisp edge definition, fine surface texture, strong local contrast, controlled "
         "depth of field, natural lighting, and only the objects required by this immediate moment."
     )
+    output_aspect = _output_geometry()[0]
+    output_type = "vertical short video" if output_aspect == "9:16" else "landscape video"
     return _clean_text(
-        f"FULL-BLEED {_output_geometry()[0]} SINGLE CAMERA FRAME. "
+        f"FULL-BLEED {output_aspect} SINGLE CAMERA FRAME. Use case: {use_case}. "
+        f"Asset type: cinematic storyboard keyframe for a {output_type}. "
         f"Visible moment: {visible}. "
         f"The visible moment is the primary focal action and must be unmistakable. {subject_count}"
-        + (f"Immediate story context: {context}. " if context else "")
+        + (f"Scene/backdrop and immediate story context: {context}. " if context else "")
         + (f"{action_contract} " if action_contract else "")
-        + f"Visual style: {style}. Color direction: {scene.color_mood}. "
-        + composition_rule,
+        + f"Style/medium: {style}. Lighting/mood and color direction: {scene.color_mood}. "
+        + f"Composition/framing: {composition_rule}",
         1800,
     )
 
@@ -3269,20 +3444,42 @@ def _motion_expression(scene: AnimateScene | AnimateShot, frames: int) -> tuple[
     # Keep the fallback visibly alive even on 15-25 second shots. This remains
     # camera movement over a still keyframe (not subject animation), so the
     # sidecar reports that limitation explicitly below.
-    micro_motion = f"0.009*sin(2*PI*on/{max(45, round(frames / 2))})"
+    framing = getattr(scene, "framing", "medium")
+    placement = getattr(scene, "subject_placement", "center")
+    start_zoom, travel = {
+        "wide": (1.008, 0.100),
+        "medium_wide": (1.015, 0.085),
+        "full_body": (1.012, 0.075),
+        "medium": (1.025, 0.070),
+        "medium_close_up": (1.035, 0.052),
+        "close_up": (1.045, 0.038),
+        "detail_insert": (1.045, 0.042),
+        "over_shoulder": (1.030, 0.055),
+    }.get(framing, (1.025, 0.070))
+    micro_amplitude = 0.004 if framing in {"close_up", "medium_close_up", "detail_insert"} else 0.007
+    micro_motion = f"{micro_amplitude:.3f}*sin(2*PI*on/{max(45, round(frames / 2))})"
+    x_center = {"left_third": 0.34, "center": 0.50, "right_third": 0.66}.get(placement, 0.50)
+    y_center = 0.30 if framing in {"close_up", "medium_close_up"} else 0.50
+    x_static = f"(iw-iw/zoom)*{x_center:.2f}"
+    y_static = f"(ih-ih/zoom)*{y_center:.2f}"
+    pan_radius = 0.17 if framing in {"close_up", "medium_close_up", "detail_insert"} else 0.24
+    pan_start = max(0.08, x_center - pan_radius)
+    pan_end = min(0.92, x_center + pan_radius)
+    vertical_start = max(0.08, y_center - pan_radius)
+    vertical_end = min(0.92, y_center + pan_radius)
     if scene.camera_motion == "pull_out":
-        zoom = f"1.14-0.11*{progress}+{micro_motion}"
-        return zoom, "(iw-iw/zoom)/2", "(ih-ih/zoom)/2"
-    zoom = f"1.015+0.11*{progress}+{micro_motion}"
+        zoom = f"{start_zoom + travel:.3f}-{travel:.3f}*{progress}+{micro_motion}"
+        return zoom, x_static, y_static
+    zoom = f"{start_zoom:.3f}+{travel:.3f}*{progress}+{micro_motion}"
     if scene.camera_motion == "pan_left":
-        return zoom, f"(iw-iw/zoom)*(1-{progress})", "(ih-ih/zoom)/2"
+        return zoom, f"(iw-iw/zoom)*({pan_end:.2f}-{pan_end - pan_start:.2f}*{progress})", y_static
     if scene.camera_motion == "pan_right":
-        return zoom, f"(iw-iw/zoom)*{progress}", "(ih-ih/zoom)/2"
+        return zoom, f"(iw-iw/zoom)*({pan_start:.2f}+{pan_end - pan_start:.2f}*{progress})", y_static
     if scene.camera_motion == "drift_up":
-        return zoom, "(iw-iw/zoom)/2", f"(ih-ih/zoom)*(1-{progress})"
+        return zoom, x_static, f"(ih-ih/zoom)*({vertical_end:.2f}-{vertical_end - vertical_start:.2f}*{progress})"
     if scene.camera_motion == "tilt_down":
-        return zoom, "(iw-iw/zoom)/2", f"(ih-ih/zoom)*{progress}"
-    return zoom, "(iw-iw/zoom)/2", "(ih-ih/zoom)/2"
+        return zoom, x_static, f"(ih-ih/zoom)*({vertical_start:.2f}+{vertical_end - vertical_start:.2f}*{progress})"
+    return zoom, x_static, y_static
 
 
 def _atempo_chain(ratio: float) -> str:
@@ -4253,6 +4450,9 @@ def render_long_animate(
                     "core_message": shot.narration[:180],
                     "content_timed_editing": True,
                     "camera_motion": shot.camera_motion,
+                    "framing": shot.framing,
+                    "subject_placement": shot.subject_placement,
+                    "camera_angle": shot.camera_angle,
                     "image_provider": shot.image_provider,
                     "motion_provider": shot.motion_provider,
                     "vision_qa_attempts": shot.qa_attempts,
@@ -4661,10 +4861,13 @@ def render_long_animate(
         "shots": [asdict(shot) for shot in shots],
         "story_arc": [asdict(scene) for scene in storyboard.scenes],
         "scene_prompt_contract": {
-            "version": 3,
+            "version": 4,
             "one_visual_prompt_per_scene": True,
             "one_animation_direction_per_scene": True,
             "camera_and_transition_are_scene_specific": True,
+            "deterministic_varied_framing_per_shot": True,
+            "adjacent_framing_repetition_allowed": False,
+            "close_up_motion_uses_safe_crop": True,
             "character_style_location_time_continuity_locked": True,
             "render_execution_mode": (
                 "free_real_footage_plus_local_realistic_keyframes"
@@ -4680,7 +4883,14 @@ def render_long_animate(
         },
         "chapter_edit_evidence": chapter_audits,
         "virtual_camera_angles": [
-            {"shot": shot.index, "scene": shot.scene_index, "motion": shot.camera_motion}
+            {
+                "shot": shot.index,
+                "scene": shot.scene_index,
+                "motion": shot.camera_motion,
+                "framing": shot.framing,
+                "placement": shot.subject_placement,
+                "angle": shot.camera_angle,
+            }
             for shot in shots
         ],
         "dynamic_captions": {

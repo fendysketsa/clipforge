@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { formatDuration } from "../../lib/utils";
 import type { SourceProbe } from "../../lib/apiClient";
-import type { ClipMode, SourceHistoryCheck } from "../../types/clip.type";
+import type { ClipMode, SourceHistoryCheck, StoryboardPreview } from "../../types/clip.type";
 
 type QuickStartCardProps = {
   url: string;
@@ -35,6 +35,8 @@ type QuickStartCardProps = {
   isCheckingSourceHistory: boolean;
   allowReprocessSource: boolean;
   confirmSourceRights: boolean;
+  storyboardPreview: StoryboardPreview | null;
+  isGeneratingStoryboard: boolean;
   isBusy: boolean;
   isSubmitting: boolean;
   error: string;
@@ -43,6 +45,7 @@ type QuickStartCardProps = {
   onClipModeChange: (value: ClipMode) => void;
   onAllowReprocessSourceChange: (value: boolean) => void;
   onConfirmSourceRightsChange: (value: boolean) => void;
+  onCreateStoryboard: () => void;
   onStart: () => void;
 };
 
@@ -78,6 +81,8 @@ export function QuickStartCard({
   isCheckingSourceHistory,
   allowReprocessSource,
   confirmSourceRights,
+  storyboardPreview,
+  isGeneratingStoryboard,
   isBusy,
   isSubmitting,
   error,
@@ -86,6 +91,7 @@ export function QuickStartCard({
   onClipModeChange,
   onAllowReprocessSourceChange,
   onConfirmSourceRightsChange,
+  onCreateStoryboard,
   onStart,
 }: QuickStartCardProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -101,11 +107,15 @@ export function QuickStartCard({
     || (quickScore === null
       ? "Gunakan Scan Potensi Viral untuk menilai isi video."
       : `Momentum sumber ${Math.round(quickScore)}/100 hanya sinyal distribusi. Scan transkrip tetap menentukan nilai informasi, hook, konteks, dan payoff.`);
-  const isWorking = isBusy || isSubmitting;
+  const isWorking = isBusy || isSubmitting || isGeneratingStoryboard;
   const isStory = clipMode === "long_animate";
   const storyReady = storyText.trim().length >= 60 && storyText.trim().split(/\s+/).length >= 12;
+  const canCreateStoryboard = storyReady && !isWorking;
   const canStart = isStory
-    ? storyReady && confirmSourceRights && !isWorking
+    ? Boolean(storyboardPreview?.scenes.length)
+      && Boolean(storyboardPreview?.image_provider.ready)
+      && confirmSourceRights
+      && !isWorking
     : hasUrl
       && !invalidUrl
       && !isCheckingSourceHistory
@@ -188,10 +198,10 @@ export function QuickStartCard({
           <div className="storyStudioComposer">
             <header>
               <div className="storyStudioModeSwitch" aria-label="Mode pembuatan">
-                <span className="active"><Film size={14} /> Video</span>
-                <span><WandSparkles size={14} /> AI video</span>
+                <span className={!storyboardPreview ? "active" : "done"}><BookOpen size={14} /> 1. Storyboard</span>
+                <span className={storyboardPreview ? "active" : ""}><Film size={14} /> 2. Video</span>
               </div>
-              <small>CLIPFORGE AI</small>
+              <small>IMAGEGEN STORY DIRECTOR</small>
             </header>
             <label className="storyInputField">
               <span>Sutradarai video Anda</span>
@@ -204,20 +214,61 @@ export function QuickStartCard({
               />
               <small>{storyText.trim().length.toLocaleString("id-ID")} / 30.000 karakter · minimum 60 karakter dan 12 kata</small>
             </label>
+            {storyboardPreview ? (
+              <section className="storyboardPreview" aria-label="Preview storyboard">
+                <header>
+                  <span><CheckCircle2 size={15} /> Storyboard siap</span>
+                  <b>{storyboardPreview.scenes.length} scene · {Math.round(storyboardPreview.scenes.reduce((total, scene) => total + scene.shots.length, 0))} keyframe</b>
+                </header>
+                <div className="storyboardSummary">
+                  <strong>{storyboardPreview.title}</strong>
+                  <small>{storyboardPreview.hook}</small>
+                </div>
+                <div className="storyboardSceneRail">
+                  {storyboardPreview.scenes.map((scene) => (
+                    <article key={scene.index}>
+                      <span>SCENE {String(scene.index).padStart(2, "0")}</span>
+                      <strong>{scene.title}</strong>
+                      <p>{scene.visual_prompt}</p>
+                      <div className="storyboardFramingPlan" aria-label={`Framing scene ${scene.index}`}>
+                        {scene.shot_plan.map((shot) => (
+                          <span key={`${scene.index}-${shot.index}`} title={`${shot.camera_angle.replaceAll("_", " ")} · ${shot.camera_motion.replaceAll("_", " ")}`}>
+                            <b>SHOT {shot.index}</b>
+                            {shot.framing.replaceAll("_", " ")} · {shot.subject_placement.replaceAll("_", " ")}
+                          </span>
+                        ))}
+                      </div>
+                      <small>{scene.narration}</small>
+                      <details>
+                        <summary>Prompt ImageGen</summary>
+                        <code>{scene.image_prompt}</code>
+                      </details>
+                    </article>
+                  ))}
+                </div>
+                <div className={`imageProviderCheck${storyboardPreview.image_provider.ready ? " isReady" : " isBlocked"}`}>
+                  {storyboardPreview.image_provider.ready ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
+                  <span>
+                    <strong>{storyboardPreview.image_provider.ready ? "ImageGen siap" : "ImageGen belum aktif"}</strong>
+                    <small>{storyboardPreview.image_provider.message}</small>
+                  </span>
+                </div>
+              </section>
+            ) : null}
             <footer>
               <div className="storyStudioTools">
-                <span title="AI memilih struktur cerita paling sesuai"><Focus size={15} /> Otomatis</span>
-                <span title="Naskah dan visual produksi ClipForge"><BookOpen size={15} /> Story skill</span>
-                <span title="Format video tujuan"><Film size={15} /> Vertikal 9:16</span>
+                <span title="AI menyusun beat dan shot sebelum render"><Focus size={15} /> Storyboard dulu</span>
+                <span title="Keyframe memakai prompt gambar terstruktur"><WandSparkles size={15} /> ImageGen</span>
+                <span title="Perakitan video lokal tanpa biaya per render"><Film size={15} /> Video lokal</span>
               </div>
               <div className="storyStudioDirector">
-                <span><Sparkles size={14} /> Sutradara</span>
+                <span><Sparkles size={14} /> {storyboardPreview ? "Produksi" : "Susun scene"}</span>
                 <button
-                  aria-label="Buat video dari cerita"
+                  aria-label={storyboardPreview ? "Produksi video dari storyboard" : "Buat storyboard dari cerita"}
                   className="storyStudioSubmit"
-                  disabled={!canStart}
+                  disabled={storyboardPreview ? !canStart : !canCreateStoryboard}
                   type="button"
-                  onClick={onStart}
+                  onClick={storyboardPreview ? onStart : onCreateStoryboard}
                 >
                   {isWorking ? <Loader2 className="spin" size={19} /> : <ArrowRight size={19} />}
                 </button>
@@ -337,7 +388,7 @@ export function QuickStartCard({
           </button>
         </div> : null}
 
-        {!confirmSourceRights && (isStory ? Boolean(storyText.trim()) : hasUrl) ? <p className="sourceHint">Konfirmasi hak dan izin untuk menjalankan produksi.</p> : null}
+        {!confirmSourceRights && (isStory ? Boolean(storyText.trim()) : hasUrl) ? <p className="sourceHint">Storyboard boleh dibuat dulu. Konfirmasi hak dan izin diperlukan saat produksi video.</p> : null}
       </div>
     </section>
   );

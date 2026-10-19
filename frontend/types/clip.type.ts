@@ -342,6 +342,45 @@ export type CreateClipJobInput = {
   ai_api_key?: string;
 };
 
+export type StoryboardPreviewScene = {
+  index: number;
+  title: string;
+  narration: string;
+  visual_prompt: string;
+  image_prompt: string;
+  shots: string[];
+  shot_plan: Array<{
+    index: number;
+    visual_prompt: string;
+    image_prompt: string;
+    framing: string;
+    subject_placement: string;
+    camera_angle: string;
+    camera_motion: string;
+  }>;
+  camera_motion: string;
+  color_mood: string;
+  narrative_role: string;
+};
+
+export type StoryboardPreview = {
+  title: string;
+  hook: string;
+  core_message: string;
+  art_bible: string;
+  character_bible: string;
+  location_bible: string;
+  production_script: string;
+  scenes: StoryboardPreviewScene[];
+  expansion: Record<string, unknown>;
+  image_provider: {
+    ready: boolean;
+    provider: string;
+    model: string;
+    message: string;
+  };
+};
+
 export type SourceHistoryJob = {
   job_id: string;
   status: JobStatus;

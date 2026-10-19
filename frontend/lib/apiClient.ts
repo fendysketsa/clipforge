@@ -7,6 +7,7 @@ import type {
   CreateClipJobInput,
   SourceHistoryCheck,
   SourceUsageLogResponse,
+  StoryboardPreview,
   TikTokConfig,
   TikTokSessionStatus,
   TikTokUploadJob,
@@ -588,6 +589,25 @@ export const createJob = async (input: CreateClipJobInput) => {
   }
 
   return (await response.json()) as ClipJob;
+};
+
+export const createStoryboardPreview = async (input: {
+  story_text: string;
+  target_duration_seconds: number;
+  ai_enabled: boolean;
+  ai_base_url: string;
+  ai_model: string;
+  ai_api_key?: string;
+}) => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/storyboards/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Gagal membuat storyboard"));
+  }
+  return (await response.json()) as StoryboardPreview;
 };
 
 export const getOutputUrl = (path: string) => `${API_BASE}${path}`;

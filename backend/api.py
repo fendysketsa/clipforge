@@ -506,6 +506,58 @@ class ClipJobRequest(BaseModel):
         return self
 
 
+class StoryboardPreviewRequest(BaseModel):
+    story_text: str = Field(min_length=60, max_length=30000)
+    target_duration_seconds: float = Field(default=300, ge=240, le=600)
+    ai_enabled: bool = True
+    ai_base_url: str = DEFAULT_AI_BASE_URL
+    ai_model: str = DEFAULT_AI_MODEL
+    ai_api_key: str = ""
+
+
+class StoryboardPreviewShot(BaseModel):
+    index: int
+    visual_prompt: str
+    image_prompt: str
+    framing: str
+    subject_placement: str
+    camera_angle: str
+    camera_motion: str
+
+
+class StoryboardPreviewScene(BaseModel):
+    index: int
+    title: str
+    narration: str
+    visual_prompt: str
+    image_prompt: str
+    shots: list[str] = Field(default_factory=list)
+    shot_plan: list[StoryboardPreviewShot] = Field(default_factory=list)
+    camera_motion: str
+    color_mood: str
+    narrative_role: str
+
+
+class StoryboardImageProvider(BaseModel):
+    ready: bool
+    provider: str
+    model: str
+    message: str
+
+
+class StoryboardPreviewResponse(BaseModel):
+    title: str
+    hook: str
+    core_message: str
+    art_bible: str
+    character_bible: str
+    location_bible: str
+    production_script: str
+    scenes: list[StoryboardPreviewScene]
+    expansion: dict[str, object]
+    image_provider: StoryboardImageProvider
+
+
 AUTOMATIC_SOURCE_RIGHTS_ATTESTATION = (
     "Konfirmasi pengguna dicatat otomatis: izin komersial audio dan visual dinyatakan tersedia"
 )
@@ -17477,6 +17529,150 @@ def check_source_history(url: str) -> SourceHistoryCheck:
 @app.get("/api/source-usage-log", response_model=SourceUsageLogResponse)
 def get_source_usage_log() -> SourceUsageLogResponse:
     return list_source_usage_log()
+
+
+@app.post("/api/storyboards/preview", response_model=StoryboardPreviewResponse)
+def create_storyboard_preview(
+    request: StoryboardPreviewRequest,
+) -> StoryboardPreviewResponse:
+    story = request.story_text.strip()
+    if len(story) < 60 or len(story.split()) < 12:
+        raise HTTPException(
+            status_code=400,
+            detail="Jalan cerita minimal 60 karakter dan 12 kata agar storyboard tidak generik.",
+        )
+    if not request.ai_enabled or not request.ai_base_url.strip() or not request.ai_model.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Pembuatan storyboard membutuhkan AI aktif, base URL, dan model yang valid.",
+        )
+
+    # Import lazily so ordinary clip endpoints do not pay the OpenCV/model
+    # import cost until the story workflow is actually used.
+    from long_animate import (
+        StoryOutlineExpansionError,
+        _compiled_visible_moment,
+        _fallback_storyboard,
+        _focused_image_generation_prompt,
+        _image_endpoint,
+        _remote_provider_label,
+        _scene_sections,
+        expand_story_outline,
+        output_aspect_ratio,
+        plan_storyboard_shots,
+        require_real_image_provider,
+    )
+
+    ai_config = AIConfig(
+        enabled=True,
+        base_url=request.ai_base_url.strip(),
+        model=request.ai_model.strip(),
+        api_key=request.ai_api_key.strip(),
+        timeout=float(os.environ.get("LONG_ANIMATE_STORYBOARD_TIMEOUT_SECONDS", "180")),
+    )
+    try:
+        with output_aspect_ratio("9:16"):
+            production_script, expansion = expand_story_outline(
+                story,
+                ai_config,
+                target_duration=request.target_duration_seconds,
+            )
+    except StoryOutlineExpansionError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if len(production_script) > 30000:
+        raise HTTPException(
+            status_code=502,
+            detail="Storyboard terlalu panjang untuk diproduksi. Pendekkan premis atau target durasinya.",
+        )
+
+    scenes: list[StoryboardPreviewScene] = []
+    with output_aspect_ratio("9:16"):
+        storyboard = _fallback_storyboard(production_script)
+        source_sections = _scene_sections(production_script)
+        if len(storyboard.scenes) < 3 or len(source_sections) != len(storyboard.scenes):
+            raise HTTPException(
+                status_code=502,
+                detail="AI belum menghasilkan storyboard dengan minimal tiga adegan yang valid.",
+            )
+        preview_scene_duration = request.target_duration_seconds / max(1, len(storyboard.scenes))
+        for scene in storyboard.scenes:
+            scene.duration = max(scene.duration_hint, preview_scene_duration)
+        planned_shots = plan_storyboard_shots(storyboard)
+        shots_by_scene = {
+            scene.index: [shot for shot in planned_shots if shot.scene_index == scene.index]
+            for scene in storyboard.scenes
+        }
+        for scene, source in zip(storyboard.scenes, source_sections):
+            scene_shots = shots_by_scene.get(scene.index, [])
+            shot_plan = [
+                StoryboardPreviewShot(
+                    index=shot.shot_index,
+                    visual_prompt=_compiled_visible_moment(shot.visual_prompt) or shot.visual_prompt,
+                    image_prompt=_focused_image_generation_prompt(shot),
+                    framing=shot.framing,
+                    subject_placement=shot.subject_placement,
+                    camera_angle=shot.camera_angle,
+                    camera_motion=shot.camera_motion,
+                )
+                for shot in scene_shots
+            ]
+            fallback_visual = str(source.get("visual") or "").strip()
+            scenes.append(
+                StoryboardPreviewScene(
+                    index=scene.index,
+                    title=scene.title,
+                    narration=scene.narration,
+                    visual_prompt=fallback_visual,
+                    image_prompt=(
+                        shot_plan[0].image_prompt
+                        if shot_plan
+                        else _focused_image_generation_prompt(scene)
+                    ),
+                    shots=[shot.visual_prompt for shot in shot_plan] or [fallback_visual],
+                    shot_plan=shot_plan,
+                    camera_motion=scene.camera_motion,
+                    color_mood=scene.color_mood,
+                    narrative_role=scene.narrative_role,
+                )
+            )
+
+    image_base, image_model, _image_key = _image_endpoint()
+    image_label = (
+        _remote_provider_label(image_base, image_model)
+        if image_base
+        else "not_configured"
+    )
+    image_ready = False
+    image_message = "Generator gambar belum dikonfigurasi."
+    try:
+        require_real_image_provider()
+        image_ready = bool(image_base)
+        image_message = (
+            "ImageGen lokal siap membuat keyframe sinematik tanpa biaya per gambar."
+            if image_label == "local_z_image_turbo"
+            else "Provider ImageGen siap membuat keyframe storyboard."
+        )
+    except Exception as exc:
+        image_message = str(exc)
+
+    return StoryboardPreviewResponse(
+        title=storyboard.title,
+        hook=storyboard.hook,
+        core_message=storyboard.core_message,
+        art_bible=storyboard.art_bible,
+        character_bible=storyboard.character_bible,
+        location_bible=storyboard.location_bible,
+        production_script=production_script,
+        scenes=scenes,
+        expansion=expansion,
+        image_provider=StoryboardImageProvider(
+            ready=image_ready,
+            provider=image_label,
+            model=image_model,
+            message=image_message,
+        ),
+    )
 
 
 @app.post("/api/jobs", response_model=ClipJob)

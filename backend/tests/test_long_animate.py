@@ -516,6 +516,38 @@ def test_directed_story_script_is_not_rewritten(monkeypatch):
     assert audit["expanded"] is False
 
 
+def test_approved_directed_storyboard_is_not_rebuilt_by_ai(monkeypatch):
+    directed = """
+    GAYA VISUAL: cinematic realistic night thriller
+
+    ### ADEGAN 1 — Alarm
+    VISUAL: Raka berlari menuju panel alarm di lobi gelap.
+    NARASI: Alarm berbunyi sebelum semua orang memahami bahayanya.
+    ### ADEGAN 2 — Kabel
+    VISUAL: Raka membuka panel dan menemukan kabel utama terputus.
+    NARASI: Ia menemukan bukti sabotase di balik panel keamanan.
+    ### ADEGAN 3 — Sistem Pulih
+    VISUAL: Raka mengunci kabel baru saat lampu gedung kembali menyala.
+    NARASI: Keahliannya menyelamatkan gedung dan membuktikan integritasnya.
+    """
+    monkeypatch.setattr(
+        long_animate,
+        "chat_completion",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Approved storyboard must not be regenerated")
+        ),
+    )
+
+    storyboard = build_storyboard(
+        directed,
+        AIConfig(enabled=True, base_url="http://localhost:11434/v1", model="local"),
+    )
+
+    assert [scene.title for scene in storyboard.scenes] == ["Alarm", "Kabel", "Sistem Pulih"]
+    assert storyboard.scenes[0].narration.startswith("Alarm berbunyi")
+    assert "Raka berlari menuju panel alarm" in storyboard.scenes[0].visual_prompt
+
+
 def test_people_prompt_uses_restrained_story_action_instead_of_stock_hands():
     prompt = long_animate._compose_visual_prompt(
         "Seorang guru berjalan perlahan melewati halaman sekolah",
@@ -690,6 +722,93 @@ def test_long_scene_gets_an_alternate_story_shot_without_repeating_voice(monkeyp
     assert sum(shot.duration for shot in shots) == 18.0
     assert shots[0].narration == shots[1].narration
     assert shots[0].visual_prompt != shots[1].visual_prompt
+
+
+def test_shot_framing_is_varied_but_reproducible(monkeypatch):
+    storyboard = _fallback_storyboard(SCRIPT)
+    long_animate.allocate_scene_durations(
+        storyboard.scenes,
+        [3.0] * len(storyboard.scenes),
+        24.0,
+    )
+    monkeypatch.setenv("LONG_ANIMATE_TRANSITION_SECONDS", "0")
+
+    first = long_animate.plan_storyboard_shots(storyboard)
+    second = long_animate.plan_storyboard_shots(storyboard)
+    first_plan = [
+        (shot.framing, shot.subject_placement, shot.camera_angle)
+        for shot in first
+    ]
+    second_plan = [
+        (shot.framing, shot.subject_placement, shot.camera_angle)
+        for shot in second
+    ]
+
+    assert first_plan == second_plan
+    assert len(first_plan) >= 3
+    assert all(
+        current.framing != following.framing
+        for current, following in zip(first, first[1:])
+    )
+    assert all(
+        current.subject_placement != following.subject_placement
+        for current, following in zip(first, first[1:])
+    )
+
+
+def test_planned_framing_is_sent_to_image_generation_prompt():
+    shot = long_animate.AnimateShot(
+        index=1,
+        scene_index=1,
+        shot_index=1,
+        shot_count=1,
+        title="Membaca",
+        narration="Seorang teknisi membaca hasil pemindai di meja.",
+        visual_prompt=long_animate._compose_visual_prompt(
+            "Seorang teknisi membaca hasil pemindai di meja",
+            "Seorang teknisi membaca hasil pemindai di meja.",
+            "cinematic realistic",
+            "One recurring technician",
+            visual_locked=True,
+        ),
+        on_screen_text="",
+        camera_motion="push_in",
+        color_mood="cool blue",
+        framing="over_shoulder",
+        subject_placement="right_third",
+        camera_angle="slightly_low",
+    )
+
+    prompt = long_animate._focused_image_generation_prompt(shot)
+
+    assert "over-the-shoulder frame" in prompt
+    assert "right third" in prompt
+    assert "subtle low-angle camera" in prompt
+
+
+def test_child_water_scene_never_receives_intimate_close_framing():
+    allowed = {"wide", "medium_wide", "medium"}
+
+    for seed in ("one", "two", "three", "four"):
+        framing, _placement, _angle = long_animate._plan_shot_framing(
+            "Anak kecil mandi dan bermain air di sungai dangkal",
+            seed,
+        )
+        assert framing in allowed
+
+
+def test_close_up_camera_move_is_gentler_than_wide_camera_move():
+    wide = _motion_test_shot()
+    wide.framing = "wide"
+    close = _motion_test_shot()
+    close.framing = "close_up"
+
+    wide_zoom, _wide_x, _wide_y = _motion_expression(wide, 300)
+    close_zoom, _close_x, close_y = _motion_expression(close, 300)
+
+    assert "0.100*min(1,on/300)" in wide_zoom
+    assert "0.038*min(1,on/300)" in close_zoom
+    assert "*0.30" in close_y
 
 
 def test_assemble_shots_uses_each_scene_transition(monkeypatch, tmp_path):

@@ -12273,6 +12273,11 @@ body::after {
   box-shadow: inset 0 0 0 1px rgba(196, 181, 253, 0.15);
 }
 
+.storyStudioModeSwitch > span.done {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.09);
+}
+
 .storyStudioComposer .storyInputField {
   padding: 15px 17px 10px;
 }
@@ -12296,6 +12301,145 @@ body::after {
 
 .storyStudioComposer .storyInputField textarea:focus { box-shadow: none; }
 .storyStudioComposer .storyInputField textarea::placeholder { color: #6f6686; }
+
+.storyboardPreview {
+  margin: 0 13px 13px;
+  padding: 12px;
+  border: 1px solid rgba(196, 181, 253, 0.16);
+  border-radius: 14px;
+  background: rgba(4, 6, 17, 0.64);
+}
+
+.storyboardPreview > header,
+.imageProviderCheck,
+.storyboardSummary {
+  display: flex;
+  align-items: center;
+}
+
+.storyboardPreview > header {
+  justify-content: space-between;
+  gap: 10px;
+  color: #a7f3d0;
+  font-size: 9px;
+}
+
+.storyboardPreview > header > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.storyboardPreview > header > b {
+  color: #8b80aa;
+  font: 750 8px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.storyboardSummary {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0 10px;
+}
+
+.storyboardSummary strong { color: #f5f3ff; font-size: 14px; }
+.storyboardSummary small { color: #9b91b4; font-size: 9px; line-height: 1.5; }
+
+.storyboardSceneRail {
+  display: grid;
+  grid-auto-columns: minmax(235px, 42%);
+  grid-auto-flow: column;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 0 9px;
+  scroll-snap-type: x proximity;
+}
+
+.storyboardSceneRail article {
+  min-height: 190px;
+  padding: 11px;
+  border: 1px solid rgba(167, 139, 250, 0.16);
+  border-radius: 12px;
+  background: linear-gradient(150deg, rgba(139, 92, 246, 0.08), rgba(8, 12, 22, 0.8));
+  scroll-snap-align: start;
+}
+
+.storyboardSceneRail article > span {
+  color: #a78bfa;
+  font: 850 7.5px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.12em;
+}
+
+.storyboardSceneRail article > strong {
+  display: block;
+  margin: 7px 0;
+  color: #ede9fe;
+  font-size: 11px;
+}
+
+.storyboardSceneRail article > p,
+.storyboardSceneRail article > small {
+  display: block;
+  margin: 0;
+  color: #b9afd0;
+  font-size: 8.5px;
+  line-height: 1.55;
+}
+
+.storyboardSceneRail article > small {
+  margin-top: 8px;
+  color: #756d91;
+}
+
+.storyboardFramingPlan {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+}
+
+.storyboardFramingPlan > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid rgba(52, 211, 153, 0.18);
+  border-radius: 999px;
+  color: #a7f3d0;
+  background: rgba(16, 185, 129, 0.07);
+  font: 700 7px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-transform: uppercase;
+}
+
+.storyboardFramingPlan b { color: #fbbf24; font-weight: 900; }
+
+.storyboardSceneRail details { margin-top: 9px; }
+.storyboardSceneRail summary { color: #c4b5fd; cursor: pointer; font-size: 8px; font-weight: 800; }
+.storyboardSceneRail code {
+  display: block;
+  max-height: 120px;
+  overflow: auto;
+  margin-top: 7px;
+  color: #9b91b4;
+  font: 7.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+.imageProviderCheck {
+  gap: 8px;
+  margin-top: 3px;
+  padding: 9px 10px;
+  border-radius: 10px;
+}
+
+.imageProviderCheck > span { display: grid; gap: 2px; }
+.imageProviderCheck strong { font-size: 9px; }
+.imageProviderCheck small { font-size: 8px; line-height: 1.4; }
+.imageProviderCheck.isReady { color: #6ee7b7; background: rgba(16, 185, 129, 0.08); }
+.imageProviderCheck.isBlocked { color: #fbbf24; background: rgba(245, 158, 11, 0.09); }
 
 .storyStudioComposer > footer {
   padding: 11px 13px;
@@ -12362,6 +12506,7 @@ body::after {
   .storyStudioTools > span { min-height: 27px; padding: 0 7px; font-size: 7.5px; }
   .storyStudioDirector > span { display: none; }
   .storyStudioModeSwitch > span:last-child { display: none; }
+  .storyboardSceneRail { grid-auto-columns: 86%; }
 }
 
 .sourceNotice small a {
