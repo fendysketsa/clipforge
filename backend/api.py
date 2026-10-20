@@ -46,6 +46,7 @@ from source_rights import (
 )
 from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
 from telemetry import ProcessTelemetrySampler
+from whisper_cache import start_whisper_model_cache_maintenance
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -10253,6 +10254,26 @@ def start_tiktok_login_if_needed() -> YouTubeLoginStatus:
         )
     threading.Thread(target=run_tiktok_login_process, daemon=True).start()
     return tiktok_login_status
+
+
+@app.on_event("startup")
+def start_whisper_cache_updater() -> None:
+    def no_active_media_work() -> bool:
+        with jobs_lock:
+            clip_busy = any(job.status in {"queued", "running"} for job in jobs.values())
+        with youtube_uploads_lock:
+            youtube_busy = any(
+                upload.status in {"queued", "running"}
+                for upload in youtube_uploads.values()
+            )
+        with tiktok_uploads_lock:
+            tiktok_busy = any(
+                upload.status in {"queued", "running"}
+                for upload in tiktok_uploads.values()
+            )
+        return not (clip_busy or youtube_busy or tiktok_busy)
+
+    start_whisper_model_cache_maintenance(no_active_media_work)
 
 
 @app.on_event("startup")

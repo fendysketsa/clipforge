@@ -36,6 +36,7 @@ from source_rights import (
     source_rights_risk_reasons,
 )
 from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
+from whisper_cache import cached_whisper_model_path
 
 
 console = Console()
@@ -6372,46 +6373,6 @@ def load_transcription_audio(audio_path: Path):
     # WAV PCM data is little-endian. Copy to writable float32 because the VAD
     # and feature-extraction path may retain or transform this array.
     return np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
-
-
-def cached_whisper_model_path(model_name: str) -> Path | None:
-    """Resolve a complete Hub snapshot without making a network request."""
-    configured_path = Path(model_name).expanduser()
-    if configured_path.is_dir():
-        return configured_path
-    if "/" not in model_name:
-        return None
-
-    hub_cache = Path(
-        os.environ.get("HF_HUB_CACHE", "").strip()
-        or Path(os.environ.get("HF_HOME", "").strip() or Path.home() / ".cache/huggingface") / "hub"
-    )
-    model_cache = hub_cache / f"models--{model_name.replace('/', '--')}"
-    snapshots = model_cache / "snapshots"
-    candidates: list[Path] = []
-    main_ref = model_cache / "refs" / "main"
-    try:
-        revision = main_ref.read_text(encoding="utf-8").strip()
-    except OSError:
-        revision = ""
-    if revision:
-        candidates.append(snapshots / revision)
-    try:
-        candidates.extend(
-            sorted(
-                (item for item in snapshots.iterdir() if item.is_dir()),
-                key=lambda item: item.stat().st_mtime,
-                reverse=True,
-            )
-        )
-    except OSError:
-        pass
-
-    required = ("config.json", "model.bin", "tokenizer.json")
-    for candidate in candidates:
-        if all((candidate / filename).is_file() for filename in required):
-            return candidate
-    return None
 
 
 def whisper_runtime_candidates() -> list[tuple[str, str]]:

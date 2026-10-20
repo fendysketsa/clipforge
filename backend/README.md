@@ -90,6 +90,7 @@ Default output video:
 - H.264 MP4; jalur default Standar memakai `veryfast`/CRF 20, preset Jernih memakai `fast`/CRF 18, dan Maksimal tetap `slow`/CRF 14
 - source download mencoba sampai 2160p pada preset Jernih/Maksimal (`bestvideo+bestaudio`)
 - default satu job berat diproses pada satu waktu; Whisper otomatis memakai NVIDIA CUDA `float16` bila tersedia dan kembali ke CPU `int8` bila runtime GPU bermasalah. Batas thread CPU dan konkurensi tetap dapat diatur lewat `FENDY_CLIPPER_CPU_THREADS_PER_JOB` dan `FENDY_CLIPPER_MAX_CONCURRENT_JOBS`
+- bobot `Systran/faster-whisper-medium` disimpan permanen di volume `backend/data/huggingface`; saat tidak ada proses clip/upload aktif, backend memeriksa revisi baru setiap 24 jam di latar belakang. Hanya file model/config/tokenizer yang diizinkan, snapshot lama tetap dipakai bila update gagal, dan job aktif tidak pernah diganti di tengah proses
 - source YouTube memakai Deno + `yt-dlp-ejs` untuk challenge JavaScript terbaru; downloader mencoba jalur default, audio-video muxed, web-embedded/EJS, lalu HLS dengan partial file terpisah bila URL media awal ditolak
 - subtitle burned-in
 - caption dinamis menyorot kata penting dari ucapan asli, dengan timing berbobot jumlah kata dan margin aman agar tidak tertutup action rail/judul UI Shorts; file SRT bersih tetap dibuat untuk accessibility

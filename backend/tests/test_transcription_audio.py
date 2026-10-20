@@ -81,8 +81,9 @@ def test_cached_whisper_model_path_resolves_complete_main_snapshot(monkeypatch, 
     snapshot.mkdir(parents=True)
     (model_cache / "refs").mkdir()
     (model_cache / "refs" / "main").write_text("revision-1\n", encoding="utf-8")
-    for filename in ("config.json", "model.bin", "tokenizer.json"):
-        (snapshot / filename).write_bytes(b"ready")
+    (snapshot / "config.json").write_text("{}", encoding="utf-8")
+    (snapshot / "tokenizer.json").write_text("{}", encoding="utf-8")
+    (snapshot / "model.bin").write_bytes(b"ready" * 300)
     monkeypatch.setenv("HF_HUB_CACHE", str(hub))
 
     assert cached_whisper_model_path("Systran/faster-whisper-medium") == snapshot
