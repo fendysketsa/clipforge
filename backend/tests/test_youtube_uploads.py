@@ -51,6 +51,7 @@ from api import (
     youtube_monetization_preflight_issue,
     reviewed_automatic_rebuild_for_private_upload,
     source_risk_requires_automatic_rebuild,
+    skip_targeted_repairs_for_claimed_clip,
     youtube_clip_claim_block,
     youtube_upload_metadata,
     youtube_source_attribution,
@@ -510,6 +511,190 @@ def test_claim_isolated_to_exact_clip_keeps_sibling_uploads_queued(monkeypatch, 
     ) is None
     assert youtube_clip_claim_block("claimed-source", same_source.clip_url) is None
     assert youtube_source_claim_block("safe-source") is None
+
+
+def test_claim_stops_only_matching_targeted_repair(monkeypatch):
+    import api
+
+    request = ClipJobRequest(url="https://youtu.be/source", clip_mode="short")
+    matching = ClipJob(
+        id="matching-repair",
+        status="queued",
+        request=request,
+        created_at="2026-08-30T00:00:00+00:00",
+        updated_at="2026-08-30T00:00:00+00:00",
+        repair_source_job_id="claimed-source",
+        repair_source_clip_url="/outputs/claimed/clip_01.mp4",
+    )
+    sibling = matching.model_copy(
+        update={
+            "id": "sibling-repair",
+            "repair_source_clip_url": "/outputs/claimed/clip_02.mp4",
+        }
+    )
+    monkeypatch.setattr(api, "jobs", {matching.id: matching, sibling.id: sibling})
+    monkeypatch.setattr(api, "cancelled_job_ids", set())
+    monkeypatch.setattr(api, "save_jobs_unlocked", lambda: None)
+    stopped: list[str] = []
+    monkeypatch.setattr(api, "cancel_process", lambda job_id: stopped.append(job_id) or False)
+
+    skipped = skip_targeted_repairs_for_claimed_clip(
+        "claimed-source",
+        matching.repair_source_clip_url or "",
+        "claim-upload",
+    )
+
+    assert skipped == 1
+    assert api.jobs[matching.id].status == "cancelled"
+    assert api.jobs[matching.id].progress_percent == 100
+    assert "CLAIMED_CLIP_REPAIR_SKIPPED:claim-upload" in api.jobs[matching.id].logs
+    assert api.jobs[sibling.id].status == "queued"
+    assert stopped == [matching.id]
+
+
+def test_verified_upload_stops_matching_targeted_repair(monkeypatch):
+    import api
+
+    request = ClipJobRequest(url="https://youtu.be/source", clip_mode="short")
+    repair = ClipJob(
+        id="obsolete-repair",
+        status="queued",
+        request=request,
+        created_at="2026-10-20T00:00:00+00:00",
+        updated_at="2026-10-20T00:00:00+00:00",
+        repair_source_job_id="uploaded-source",
+        repair_source_clip_url="/outputs/uploaded/clip_01.mp4",
+    )
+    monkeypatch.setattr(api, "jobs", {repair.id: repair})
+    monkeypatch.setattr(api, "cancelled_job_ids", set())
+    monkeypatch.setattr(api, "save_jobs_unlocked", lambda: None)
+    stopped: list[str] = []
+    monkeypatch.setattr(api, "cancel_process", lambda job_id: stopped.append(job_id) or False)
+
+    skipped = api.skip_targeted_repairs_for_verified_upload(
+        "uploaded-source",
+        repair.repair_source_clip_url or "",
+        "verified-upload",
+    )
+
+    assert skipped == 1
+    assert api.jobs[repair.id].status == "cancelled"
+    assert "VERIFIED_UPLOAD_REPAIR_SKIPPED:verified-upload" in api.jobs[repair.id].logs
+    assert stopped == [repair.id]
+
+
+def test_claim_cleanup_deletes_local_clip_and_result_card(monkeypatch, tmp_path):
+    import api
+
+    output_root = tmp_path / "outputs"
+    clip_path = output_root / "claimed" / "clips" / "clip_01.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"claimed-rendered-clip")
+    clip = make_clip(1).model_copy(update={"url": "/outputs/claimed/clips/clip_01.mp4"})
+    source_job = ClipJob(
+        id="claimed-source",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source", clip_mode="short"),
+        created_at="2026-08-30T00:00:00+00:00",
+        updated_at="2026-08-30T00:00:00+00:00",
+        clips=[clip],
+    )
+    claim = YouTubeUploadJob(
+        id="claim-upload",
+        source_job_id=source_job.id,
+        clip_url=clip.url,
+        clip_name=clip.name,
+        status="failed",
+        created_at="2026-08-30T00:01:00+00:00",
+        updated_at="2026-08-30T00:02:00+00:00",
+        title="Claimed",
+        logs=["CLAIMED_UPLOAD_ABORTED: zero_active_claim_policy"],
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
+    monkeypatch.setattr(api, "jobs", {source_job.id: source_job})
+    monkeypatch.setattr(api, "youtube_uploads", {claim.id: claim})
+    monkeypatch.setattr(api, "tiktok_uploads", {})
+    monkeypatch.setattr(api, "claimed_clip_cleanup_scheduled", {claim.id})
+    monkeypatch.setattr(api, "save_jobs_unlocked", lambda: None)
+    monkeypatch.setattr(api, "save_youtube_uploads_unlocked", lambda: None)
+
+    api.claimed_clip_cleanup_worker(claim.id)
+
+    assert source_job.id not in api.jobs
+    assert not clip_path.exists()
+    assert api.youtube_uploads[claim.id].clip_deleted_at is not None
+    assert any(
+        line.startswith("CLAIMED_CLIP_DELETED:")
+        for line in api.youtube_uploads[claim.id].logs
+    )
+    assert claim.id not in api.claimed_clip_cleanup_scheduled
+
+
+def test_claimed_clip_cannot_start_manual_repair(monkeypatch, tmp_path):
+    import api
+
+    output_root = tmp_path / "outputs"
+    clip_path = output_root / "claimed" / "clips" / "clip_01.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"claimed-rendered-clip")
+    clip = make_clip(1).model_copy(update={"url": "/outputs/claimed/clips/clip_01.mp4"})
+    source_job = ClipJob(
+        id="claimed-source",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source", clip_mode="short"),
+        created_at="2026-08-30T00:00:00+00:00",
+        updated_at="2026-08-30T00:00:00+00:00",
+        clips=[clip],
+    )
+    claim = YouTubeUploadJob(
+        id="claim-upload",
+        source_job_id=source_job.id,
+        clip_url=clip.url,
+        clip_name=clip.name,
+        clip_sha256=hashlib.sha256(clip_path.read_bytes()).hexdigest(),
+        status="failed",
+        created_at="2026-08-30T00:01:00+00:00",
+        updated_at="2026-08-30T00:02:00+00:00",
+        title="Claimed",
+        logs=["CLAIMED_UPLOAD_ABORTED: zero_active_claim_policy"],
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
+    monkeypatch.setattr(api, "jobs", {source_job.id: source_job})
+    monkeypatch.setattr(api, "youtube_uploads", {claim.id: claim})
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: {})
+
+    assert api.completed_job_upload_retry_ready(
+        [claim],
+        source_job.id,
+        clip.url,
+        now=datetime(2026, 10, 20, tzinfo=timezone.utc),
+    )
+    assert api.pending_completed_job_upload_urls(
+        source_job,
+        [clip.url],
+        platform="youtube",
+    ) == []
+
+    automatic_repairs: list[str] = []
+    monkeypatch.setattr(
+        api,
+        "youtube_monetization_preflight_issue",
+        lambda _job, _clip: "Render ulang dengan Perbaiki Otomatis",
+    )
+    monkeypatch.setattr(
+        api,
+        "repair_job_clip_context",
+        lambda _job_id, _request: automatic_repairs.append(_job_id),
+    )
+    assert api.queue_completed_job_repair_once(source_job) is False
+    assert automatic_repairs == []
+
+    with pytest.raises(HTTPException) as exc_info:
+        repair_job_clip_context(source_job.id, ClipRepairRequest(url=clip.url))
+
+    assert exc_info.value.status_code == 409
+    assert "dilewati" in str(exc_info.value.detail).casefold()
+    assert "render ulang otomatis" in str(exc_info.value.detail).casefold()
 
 
 def test_high_risk_cc_short_is_not_converted_to_source_wide_rebuild():

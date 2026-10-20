@@ -1174,6 +1174,66 @@ def test_auto_viral_schedule_reads_interval_and_safe_review_defaults(monkeypatch
     assert status.next_run_at
 
 
+def test_scheduled_auto_viral_request_targets_five_shorts_and_two_longs(monkeypatch):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", "5")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_COUNT", "2")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "7")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", "5")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET", "2")
+    monkeypatch.setattr(
+        api,
+        "auto_viral_daily_youtube_content_counts",
+        lambda *_args: {"short": 0, "long": 0},
+    )
+
+    request = api.scheduled_auto_viral_request()
+
+    assert request.video_count == 5
+    assert request.create_paired_long_video is True
+    assert request.paired_long_video_count == 2
+    assert api.auto_viral_paired_long_limit(request) == 2
+
+
+def test_scheduled_auto_viral_request_only_fills_remaining_daily_mix(monkeypatch):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", "5")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", "5")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET", "2")
+    monkeypatch.setattr(
+        api,
+        "auto_viral_daily_youtube_content_counts",
+        lambda *_args: {"short": 3, "long": 2},
+    )
+
+    request = api.scheduled_auto_viral_request()
+
+    assert request.video_count == 2
+    assert request.paired_long_video_count == 0
+    assert request.create_paired_long_video is False
+    assert request.auto_publish_paired_long_video is False
+
+
+def test_manual_auto_viral_request_keeps_pair_every_source_compatibility():
+    import api
+
+    manual = AutoViralRequest(video_count=3, create_paired_long_video=True)
+    capped = AutoViralRequest(
+        video_count=5,
+        create_paired_long_video=True,
+        paired_long_video_count=2,
+    )
+
+    assert api.auto_viral_paired_long_limit(manual) == 3
+    assert api.auto_viral_paired_long_limit(capped) == 2
+
+
 def test_auto_viral_schedule_waits_for_machine_uptime_and_previous_completion(monkeypatch):
     import api
 
@@ -1408,6 +1468,75 @@ def test_interrupted_schedule_reclaims_completed_clip_job_for_upload(monkeypatch
     assert recovered.finished_at is None
     assert recovered.processed[0]["job_id"] == job.id
     assert recovered.processed[0]["job_status"] == "completed"
+
+
+def test_interrupted_schedule_refreshes_claimed_running_checkpoint(monkeypatch):
+    import api
+
+    source_url = "https://www.youtube.com/watch?v=claimedjob1"
+    started = datetime(2026, 10, 20, 15, 30, tzinfo=timezone.utc)
+    interrupted = started + timedelta(minutes=25)
+    run = api.AutoViralRun(
+        id="interrupted-claimed-parent",
+        status="failed",
+        trigger="schedule",
+        created_at=started.isoformat(),
+        updated_at=interrupted.isoformat(),
+        finished_at=interrupted.isoformat(),
+        progress_stage="interrupted",
+        progress_percent=46,
+        request=AutoViralRequest(
+            video_count=3,
+            clips_per_video=1,
+            auto_upload_youtube=True,
+            auto_upload_tiktok=True,
+            create_paired_long_video=True,
+            paired_long_video_count=2,
+        ),
+        selected_sources=[{"url": source_url, "title": "Sumber claimed"}],
+        processed=[
+            {
+                "source": {"url": source_url, "title": "Sumber claimed"},
+                "title": "Sumber claimed",
+                "url": source_url,
+                "status": "running",
+                "job_id": "claimed-short-job",
+                "job_status": "queued",
+            }
+        ],
+    )
+    job = ClipJob(
+        id="claimed-short-job",
+        status="completed",
+        request=ClipJobRequest(url=source_url),
+        created_at=(started + timedelta(minutes=10)).isoformat(),
+        updated_at=(interrupted + timedelta(hours=2)).isoformat(),
+        finished_at=(interrupted + timedelta(hours=2)).isoformat(),
+        source_url=source_url,
+        source_title="Sumber claimed",
+        clips=[
+            ClipFile(
+                name="claimed-short.mp4",
+                url="/outputs/claimed-short.mp4",
+                size_bytes=321,
+            )
+        ],
+    )
+    monkeypatch.setattr(api, "auto_viral_runs", {run.id: run})
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+
+    assert api.reconcile_interrupted_scheduled_clip_runs() == 1
+
+    recovered = api.auto_viral_runs[run.id]
+    assert recovered.status == "queued"
+    assert recovered.progress_stage == "resume_pending_upload"
+    assert recovered.finished_at is None
+    assert len(recovered.processed) == 1
+    assert recovered.processed[0]["job_id"] == job.id
+    assert recovered.processed[0]["job_status"] == "completed"
+    assert recovered.processed[0]["status"] == "awaiting_upload"
+    assert recovered.processed[0]["clip_count"] == 1
+    assert "long_job_id" not in recovered.processed[0]
 
 
 def test_interrupted_paired_campaign_recovers_only_with_relevant_long(monkeypatch):
@@ -1736,6 +1865,108 @@ def test_daily_upload_quota_counts_unique_clip_and_reserves_inflight(monkeypatch
     assert api.auto_viral_daily_upload_slots("youtube", now) == 6
 
 
+def test_daily_youtube_content_counts_distinguish_short_and_long(monkeypatch):
+    import api
+
+    now = datetime(2026, 10, 17, 8, 0, tzinfo=timezone.utc)
+    run = api.AutoViralRun(
+        id="daily-mix",
+        status="running",
+        trigger="schedule",
+        created_at=now.isoformat(),
+        updated_at=now.isoformat(),
+        request=AutoViralRequest(video_count=1, auto_upload_youtube=True),
+        processed=[
+            {
+                "job_id": "short-job",
+                "long_job_id": "long-job",
+                "job_status": "completed",
+            }
+        ],
+    )
+
+    def upload(job_id, clip_url):
+        return SimpleNamespace(
+            source_job_id=job_id,
+            clip_url=clip_url,
+            status="completed",
+            upload_confirmed=True,
+            video_url=f"https://youtu.be/{job_id}",
+            dry_run=False,
+            finished_at=now.isoformat(),
+            updated_at=now.isoformat(),
+            created_at=now.isoformat(),
+        )
+
+    monkeypatch.setattr(api, "auto_viral_runs", {run.id: run})
+    monkeypatch.setattr(
+        api,
+        "youtube_uploads",
+        {
+            "short-upload": upload("short-job", "/outputs/short.mp4"),
+            "long-upload": upload("long-job", "/outputs/long.mp4"),
+        },
+    )
+
+    assert api.auto_viral_daily_youtube_content_counts(now) == {
+        "short": 1,
+        "long": 1,
+    }
+
+
+def test_daily_mix_pauses_new_discovery_after_five_shorts(monkeypatch):
+    import api
+
+    now = datetime(2026, 10, 17, 8, 0, tzinfo=timezone.utc)
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "7")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", "5")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET", "2")
+    monkeypatch.setattr(
+        api,
+        "auto_viral_daily_youtube_content_counts",
+        lambda *_args: {"short": 5, "long": 2},
+    )
+
+    assert api.auto_viral_daily_mix_not_before(now) == datetime(
+        2026, 10, 17, 17, 1, tzinfo=timezone.utc
+    )
+
+
+def test_mixed_batch_short_only_checkpoint_does_not_require_long_job(monkeypatch):
+    import api
+
+    request = AutoViralRequest(
+        video_count=2,
+        create_paired_long_video=True,
+        paired_long_video_count=1,
+        auto_publish_paired_long_video=True,
+    )
+    short_job = SimpleNamespace(
+        status="completed",
+        clips=[SimpleNamespace(url="/outputs/short.mp4")],
+    )
+    monkeypatch.setattr(api, "jobs", {"short-job": short_job})
+
+    assert api.auto_viral_upload_item_has_live_checkpoint(
+        request,
+        {
+            "job_id": "short-job",
+            "job_status": "completed",
+            "status": "awaiting_upload",
+        },
+    ) is True
+    assert api.auto_viral_upload_item_has_live_checkpoint(
+        request,
+        {
+            "job_id": "short-job",
+            "long_job_id": "missing-long-job",
+            "job_status": "completed",
+            "status": "awaiting_upload",
+        },
+    ) is False
+
+
 def test_failed_partial_upload_is_due_after_restart_even_from_previous_boot(monkeypatch):
     import api
 
@@ -1899,6 +2130,11 @@ def test_auto_viral_once_per_boot_ignores_old_run_key(monkeypatch):
 def test_scheduled_upload_requires_complete_rights_profile(monkeypatch):
     import api
 
+    monkeypatch.setattr(
+        api,
+        "auto_viral_daily_youtube_content_counts",
+        lambda *_args: {"short": 0, "long": 0},
+    )
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_TIKTOK", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_AUTO_PUBLIC", "true")
@@ -2076,6 +2312,71 @@ def test_completed_job_sweeper_queues_both_public_platforms_without_ui(monkeypat
         "repair": 0,
     }
     assert queued == [("youtube", "public"), ("tiktok", "public")]
+
+    # The per-request YouTube path is queued directly by run_job(); the
+    # background operator must add only TikTok and avoid a duplicate YouTube
+    # upload when it is woken immediately at render completion.
+    direct_youtube_job = job.model_copy(
+        update={
+            "request": job.request.model_copy(
+                update={"auto_upload_youtube": True},
+            )
+        }
+    )
+    monkeypatch.setattr(api, "jobs", {direct_youtube_job.id: direct_youtube_job})
+    queued.clear()
+
+    assert api.queue_completed_job_uploads_once() == {
+        "youtube": 0,
+        "tiktok": 1,
+        "repair": 0,
+    }
+    assert queued == [("tiktok", "public")]
+
+
+def test_completed_job_sweeper_leaves_auto_viral_jobs_to_campaign_uploader(monkeypatch):
+    import api
+
+    clip = ClipFile(
+        name="clip.mp4",
+        url="/outputs/managed/clip.mp4",
+        size_bytes=1024,
+        fyp_score=95,
+        growth_quality_gate_passed=True,
+    )
+    job = ClipJob(
+        id="managed-job",
+        status="completed",
+        request=ClipJobRequest(),
+        created_at="2026-10-18T13:00:00+00:00",
+        updated_at="2026-10-18T13:00:00+00:00",
+        clips=[clip],
+    )
+    run = api.AutoViralRun(
+        id="managed-run",
+        status="running",
+        trigger="schedule",
+        created_at="2026-10-18T12:00:00+00:00",
+        updated_at="2026-10-18T12:00:00+00:00",
+        request=AutoViralRequest(auto_upload_youtube=True),
+        processed=[{"job_id": job.id, "job_status": "completed"}],
+    )
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS", "true")
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "auto_viral_runs", {run.id: run})
+    monkeypatch.setattr(
+        api,
+        "best_automatic_upload_clip_urls",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("campaign job must not enter generic uploader")
+        ),
+    )
+
+    assert api.queue_completed_job_uploads_once() == {
+        "youtube": 0,
+        "tiktok": 0,
+        "repair": 0,
+    }
 
 
 def test_completed_job_sweeper_repairs_quality_failure_instead_of_publishing(monkeypatch):

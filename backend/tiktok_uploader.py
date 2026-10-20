@@ -316,7 +316,7 @@ def validate_target_account(page, target_handle: str, target_email: str = "") ->
     raise UploadError(
         f"Sesi TikTok terdeteksi, tetapi identitas akun @{expected}{account_hint} belum dapat "
         "diverifikasi karena halaman profil belum selesai dimuat. Session tetap disimpan; "
-        "klik Cek sesi TikTok lalu ulangi upload."
+        "uploader akan mencoba ulang otomatis tanpa perlu menekan tombol upload."
     )
 
 

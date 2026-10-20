@@ -74,7 +74,7 @@ function friendlyYouTubeUploadError(message: string, usesChromeDebugging: boolea
   const clean = message.trim();
   const lowered = clean.toLowerCase();
   if (lowered.includes("kebijakan nol-klaim") || lowered.includes("klaim content id")) {
-    return "YouTube menemukan klaim Content ID pada file ini. Ganti bagian audio/visual yang diklaim dengan materi milik sendiri atau berizin, render ulang, lalu upload hasil barunya.";
+    return "YouTube menemukan klaim Content ID. Klip dan kartu hasil ini dihapus otomatis tanpa render ulang; worker ClipForge langsung melanjutkan antrean.";
   }
   if (lowered.includes("connect_over_cdp") || lowered.includes("econnrefused")) {
     return "CDP belum aktif. Klik Login Sekali agar upload memakai Playwright storage-state tanpa CDP.";
@@ -812,7 +812,7 @@ export function ResultsSection({
                 : isAlreadyUploaded
                 ? `Sudah terupload ke YouTube${latestUpload.video_url ? `: ${latestUpload.video_url}` : ""}`
                 : youtubeClaimWasDetected
-                  ? "File ini ditahan karena klaim Content ID. Ganti audio/visual yang diklaim dan render ulang sebelum upload."
+                  ? "Klip terkena klaim Content ID dan sedang dihapus otomatis. Antrean lain tetap lanjut."
                 : isQueuedForYouTube
                   ? "Klip sedang menunggu giliran upload YouTube."
                   : isRunningYouTubeUpload
@@ -995,7 +995,7 @@ export function ResultsSection({
                         {!isUploadReady
                           ? "Quality gate · Ditahan"
                           : youtubeClaimWasDetected
-                            ? "Klaim terdeteksi"
+                            ? "Menghapus · Klaim"
                           : isAlreadyUploaded
                             ? "Sudah YouTube"
                             : isQueuedForYouTube
@@ -1065,7 +1065,7 @@ export function ResultsSection({
                     >
                       <UploadCloud size={14} />
                       <span className="youtubeUploadStatusText">
-                        YouTube: {youtubeClaimWasDetected ? "ditahan · klaim Content ID" : latestUpload.status}
+                        YouTube: {youtubeClaimWasDetected ? "menghapus · klaim Content ID" : latestUpload.status}
                         {!youtubeClaimWasDetected && runningStage ? ` · ${runningStage}` : null}
                         {latestUpload.status === "completed" && latestUpload.visibility === "private"
                           ? " · tersimpan Private"
@@ -1229,7 +1229,7 @@ export function ResultsSection({
                   ) : null}
                   {latestUpload?.status === "failed" && uploadError ? (
                     <div className={`youtubeUploadError ${youtubeClaimWasDetected ? "youtubeUploadError--claim" : ""}`} title={uploadError}>
-                      <strong>{youtubeClaimWasDetected ? "Klaim Content ID terdeteksi" : "Upload gagal"}</strong>
+                      <strong>{youtubeClaimWasDetected ? "Menghapus otomatis · klaim Content ID" : "Upload gagal"}</strong>
                       <span>{uploadError}</span>
                       {showSessionRecovery ? (
                         <>

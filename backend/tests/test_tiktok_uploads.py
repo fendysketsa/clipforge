@@ -877,10 +877,16 @@ def test_rejected_tiktok_state_is_quarantined_and_no_longer_ready(monkeypatch, t
 def test_account_identity_miss_does_not_invalidate_saved_session():
     mismatch = "Akun browser bukan pemilik @titikbalikislami."
     logged_out = "Sesi TikTok belum login."
+    hydration = (
+        "Sesi TikTok terdeteksi, tetapi identitas akun @titikbalikislami belum "
+        "dapat diverifikasi karena halaman profil belum selesai dimuat."
+    )
 
     assert api.tiktok_error_requires_login(mismatch) is True
     assert api.tiktok_error_invalidates_saved_session(mismatch) is False
     assert api.tiktok_error_invalidates_saved_session(logged_out) is True
+    assert api.tiktok_error_is_transient_identity_hydration(hydration) is True
+    assert api.tiktok_error_invalidates_saved_session(hydration) is False
 
 
 def test_tiktok_profile_without_saved_auth_is_not_upload_ready(monkeypatch):

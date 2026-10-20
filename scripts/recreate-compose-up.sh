@@ -3,6 +3,19 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
+
+# Only one rebuild may own BuildKit/containerd at a time. Parallel invocations
+# can leave an image-export writer locked and produce the opaque
+# "mount callback failed / failed to open writer" error.
+RECREATE_LOCK_PATH="${RECREATE_LOCK_PATH:-/tmp/clipforge-recreate-compose-up.lock}"
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$RECREATE_LOCK_PATH"
+  if ! flock -n 9; then
+    echo "Rebuild ClipForge lain masih berjalan. Tunggu proses itu selesai; build kedua tidak dimulai." >&2
+    exit 75
+  fi
+fi
+
 # shellcheck disable=SC1091
 source "$ROOT_DIR/scripts/load-dotenv.sh"
 load_dotenv "$ROOT_DIR/.env"
@@ -116,52 +129,72 @@ wait_for_backend() {
   return 1
 }
 
-refuse_restart_during_active_tiktok_upload() {
-  local python_cmd=""
-  if command -v python3 >/dev/null 2>&1; then
-    python_cmd="$(command -v python3)"
-  elif command -v python >/dev/null 2>&1; then
-    python_cmd="$(command -v python)"
-  else
-    return 0
+wait_for_media_idle_before_recreate() {
+  local timeout_seconds="${COMPOSE_IDLE_WAIT_SECONDS:-21600}"
+  if [[ ! "$timeout_seconds" =~ ^[0-9]+$ ]] || (( timeout_seconds < 1 )); then
+    timeout_seconds=21600
   fi
-  "$python_cmd" - <<'PY'
-import datetime
+  local deadline=$((SECONDS + timeout_seconds))
+  local state=""
+  local check_status=0
+  while true; do
+    set +e
+    state="$(python - <<'PY'
 import json
 import sys
 import urllib.request
 
 try:
-    with urllib.request.urlopen("http://127.0.0.1:8010/api/tiktok/uploads", timeout=3) as response:
-        uploads = json.load(response)
+    with urllib.request.urlopen("http://127.0.0.1:8010/api/health", timeout=4):
+        pass
 except Exception:
+    # A stopped/unreachable backend has no live worker to interrupt. Its
+    # durable queued/running records are handled by startup recovery.
     raise SystemExit(0)
 
-now = datetime.datetime.now(datetime.timezone.utc)
+endpoints = (
+    ("clip", "http://127.0.0.1:8010/api/jobs"),
+    ("YouTube", "http://127.0.0.1:8010/api/youtube/uploads"),
+    ("TikTok", "http://127.0.0.1:8010/api/tiktok/uploads"),
+    ("automation", "http://127.0.0.1:8010/api/automation/viral-cc"),
+)
 active = []
-for upload in uploads if isinstance(uploads, list) else []:
-    if upload.get("status") not in {"queued", "running"}:
-        continue
-    timestamp = upload.get("updated_at") or upload.get("started_at") or upload.get("created_at")
+for label, url in endpoints:
     try:
-        updated = datetime.datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
-        age_seconds = (now - updated.astimezone(datetime.timezone.utc)).total_seconds()
-    except Exception:
-        age_seconds = 0
-    # A fresh upload is genuinely active. A stale record must not permanently
-    # block the restart that lets backend startup recovery mark it failed.
-    if age_seconds <= 600:
-        active.append((str(upload.get("id") or "unknown"), upload.get("status"), int(age_seconds)))
+        with urllib.request.urlopen(url, timeout=4) as response:
+            payload = json.load(response)
+    except Exception as exc:
+        print(f"Tidak dapat memeriksa {label}: {exc}", file=sys.stderr)
+        raise SystemExit(11)
+    for item in payload if isinstance(payload, list) else []:
+        if item.get("status") in {"queued", "running"}:
+            identity = str(item.get("id") or "unknown")[:10]
+            stage = str(item.get("progress_stage") or item.get("status") or "-")
+            active.append(f"{label}:{identity}:{stage}")
 
 if active:
-    details = ", ".join(f"{upload_id} ({status}, {age}s)" for upload_id, status, age in active)
-    print(
-        "Rebuild dibatalkan: upload TikTok masih aktif: " + details + ".\n"
-        "Tunggu sampai selesai/failed, lalu jalankan rebuild lagi agar form TikTok tidak terputus.",
-        file=sys.stderr,
-    )
-    raise SystemExit(1)
+    print(", ".join(active))
+    raise SystemExit(10)
 PY
+    )"
+    check_status=$?
+    set -e
+
+    if (( check_status == 0 )); then
+      echo "Tidak ada render/upload/automation aktif; container aman direcreate."
+      return 0
+    fi
+    if (( check_status != 10 )); then
+      echo "Pemeriksaan pekerjaan aktif gagal (status ${check_status}); rebuild dihentikan agar aman." >&2
+      return 1
+    fi
+    if (( SECONDS >= deadline )); then
+      echo "Batas tunggu pekerjaan aktif tercapai; rebuild tidak memotong proses: ${state}" >&2
+      return 1
+    fi
+    echo "Menunggu pekerjaan media selesai sebelum recreate: ${state}"
+    sleep 15
+  done
 }
 
 tiktok_saved_session_ready() {
@@ -186,6 +219,43 @@ else
   echo "Docker Compose tidak ditemukan (plugin 'docker compose' atau binary 'docker-compose')." >&2
   exit 1
 fi
+
+compose_up_with_retry() {
+  local max_attempts="${COMPOSE_BUILD_RETRY_ATTEMPTS:-4}"
+  if [[ ! "$max_attempts" =~ ^[0-9]+$ ]] || (( max_attempts < 1 )); then
+    max_attempts=4
+  fi
+  local attempt=1
+  local status=1
+  local log_file=""
+  local delay_seconds=0
+  while (( attempt <= max_attempts )); do
+    log_file="$(mktemp /tmp/clipforge-compose-build.XXXXXX.log)"
+    chmod 600 "$log_file"
+    echo "Build/recreate ClipForge percobaan ${attempt}/${max_attempts}..."
+    set +e
+    "${compose_cmd[@]}" --env-file .env up -d --build --force-recreate \
+      backend telegram-bot frontend 2>&1 | tee "$log_file"
+    status=${PIPESTATUS[0]}
+    set -e
+    if (( status == 0 )); then
+      rm -f "$log_file"
+      return 0
+    fi
+    if (( attempt >= max_attempts )) || ! grep -Eqi \
+      'mount callback failed|failed to open writer: ref .* locked|rpc error: code = Unavailable|failed to solve:.*unavailable' \
+      "$log_file"; then
+      echo "Build gagal permanen; log terakhir: ${log_file}" >&2
+      return "$status"
+    fi
+    rm -f "$log_file"
+    delay_seconds=$((attempt * 20))
+    echo "Lock sementara BuildKit/containerd terdeteksi. Menunggu ${delay_seconds} detik lalu melanjutkan dari cache..." >&2
+    sleep "$delay_seconds"
+    attempt=$((attempt + 1))
+  done
+  return "$status"
+}
 
 privilege_cmd=()
 if [[ "$RESTORE_ONLY" != "true" ]] && ! docker info >/dev/null 2>&1; then
@@ -272,8 +342,8 @@ fi
 if [[ "$RESTORE_ONLY" == "true" ]]; then
   echo "Mode restore: menunggu container yang dipulihkan Docker restart policy..."
 else
-  refuse_restart_during_active_tiktok_upload
-  "${compose_cmd[@]}" --env-file .env up -d --build --force-recreate backend telegram-bot frontend
+  wait_for_media_idle_before_recreate
+  compose_up_with_retry
 fi
 
 if ! wait_for_cdp "$YOUTUBE_CDP_PORT"; then

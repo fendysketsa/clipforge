@@ -2007,6 +2007,10 @@ class AutoViralRequest(BaseModel):
     source_rights_evidence: str = Field(default="", max_length=2000)
     creator_perspective: str = Field(default="", max_length=4000)
     create_paired_long_video: bool = False
+    # None preserves the manual/API behavior of pairing every successful
+    # source. Scheduled runs set an explicit cap so Long never becomes 1:1
+    # with Shorts.
+    paired_long_video_count: int | None = Field(default=None, ge=0, le=7)
     paired_long_duration: float = Field(default=300, ge=240, le=600)
     auto_publish_paired_long_video: bool = False
 
@@ -2037,6 +2041,9 @@ class AutoViralRequest(BaseModel):
     def _apply_niche_priority(self) -> "AutoViralRequest":
         if self.auto_publish_paired_long_video:
             self.create_paired_long_video = True
+        if self.paired_long_video_count == 0:
+            self.create_paired_long_video = False
+            self.auto_publish_paired_long_video = False
         if youtube_channel_recovery_mode():
             if self.niche == "auto":
                 self.niche = youtube_recovery_niche()
@@ -3648,6 +3655,8 @@ youtube_login_status = YouTubeLoginStatus(active=False)
 youtube_login_reconnect_cdp = False
 cancelled_job_ids: set[str] = set()
 preserve_job_files_on_cancel: set[str] = set()
+claimed_clip_cleanup_lock = threading.Lock()
+claimed_clip_cleanup_scheduled: set[str] = set()
 process_lock = threading.Lock()
 MAX_CONCURRENT_CLIP_JOBS = max(1, env_int("FENDY_CLIPPER_MAX_CONCURRENT_JOBS", 1))
 clip_job_slots = threading.BoundedSemaphore(MAX_CONCURRENT_CLIP_JOBS)
@@ -3672,6 +3681,7 @@ auto_viral_scheduler_next_run_at: datetime | None = None
 auto_viral_scheduler_thread: threading.Thread | None = None
 completed_job_upload_sweeper_lock = threading.Lock()
 completed_job_upload_sweeper_running = False
+completed_job_upload_sweeper_wakeup = threading.Event()
 youtube_data_api_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 youtube_data_api_cache_lock = threading.Lock()
 
@@ -6696,6 +6706,203 @@ def quarantine_queued_youtube_uploads_from_claimed_source(
     return 0
 
 
+def stop_targeted_repairs_for_clip(
+    source_job_id: str,
+    clip_url: str,
+    *,
+    progress_detail: str,
+    error: str,
+    log_marker: str,
+    log_message: str,
+) -> int:
+    """Stop only repair jobs tied to one exact rendered clip."""
+    with jobs_lock:
+        repair_ids = [
+            job.id
+            for job in jobs.values()
+            if job.repair_source_job_id == source_job_id
+            and job.repair_source_clip_url == clip_url
+            and job.status in {"queued", "running"}
+        ]
+        if not repair_ids:
+            return 0
+
+        finished_at = now_iso()
+        for repair_id in repair_ids:
+            repair_job = jobs[repair_id]
+            cancelled_job_ids.add(repair_id)
+            jobs[repair_id] = repair_job.model_copy(
+                update={
+                    "status": "cancelled",
+                    "finished_at": finished_at,
+                    "progress_percent": 100,
+                    "progress_stage": "complete",
+                    "progress_detail": progress_detail,
+                    "progress_step": 5,
+                    "progress_total_steps": 5,
+                    "updated_at": finished_at,
+                    "error": error,
+                    "logs": [
+                        *repair_job.logs,
+                        log_marker,
+                        log_message,
+                    ][-120:],
+                }
+            )
+        save_jobs_unlocked()
+
+    for repair_id in repair_ids:
+        cancel_process(repair_id)
+    return len(repair_ids)
+
+
+def skip_targeted_repairs_for_claimed_clip(
+    source_job_id: str,
+    clip_url: str,
+    triggering_upload_id: str,
+) -> int:
+    """Stop repairs tied to bytes that YouTube already claimed."""
+    return stop_targeted_repairs_for_clip(
+        source_job_id,
+        clip_url,
+        progress_detail="Dilewati otomatis karena klip terkena klaim Content ID",
+        error=(
+            "Repair dihentikan: klip sumber terkena klaim Content ID dan tidak "
+            "boleh memakai slot render ulang otomatis."
+        ),
+        log_marker=f"CLAIMED_CLIP_REPAIR_SKIPPED:{triggering_upload_id}",
+        log_message=(
+            "Klip dilewati; worker ClipForge dilanjutkan ke job lain tanpa render ulang."
+        ),
+    )
+
+
+def skip_targeted_repairs_for_verified_upload(
+    source_job_id: str,
+    clip_url: str,
+    triggering_upload_id: str,
+) -> int:
+    """Retire queued repairs after the original clip uploads successfully."""
+    return stop_targeted_repairs_for_clip(
+        source_job_id,
+        clip_url,
+        progress_detail="Dihentikan karena klip sumber sudah berhasil diupload",
+        error=(
+            "Repair dibatalkan: klip sumber sudah berhasil diupload dan tidak perlu "
+            "mengambil slot render ulang."
+        ),
+        log_marker=f"VERIFIED_UPLOAD_REPAIR_SKIPPED:{triggering_upload_id}",
+        log_message=(
+            "Upload sudah terverifikasi; worker ClipForge dilanjutkan ke job lain tanpa repair."
+        ),
+    )
+
+
+def claimed_clip_cleanup_worker(upload_id: str) -> None:
+    """Remove a claimed clip card/files without holding the YouTube queue.
+
+    If the same local file is still being transferred to TikTok, this detached
+    worker waits for that transfer only. The YouTube worker is free to continue
+    immediately, and cleanup resumes automatically after a backend restart.
+    """
+    try:
+        while True:
+            with youtube_uploads_lock:
+                upload = youtube_uploads.get(upload_id)
+            if upload is None:
+                return
+
+            with jobs_lock:
+                source_job = jobs.get(upload.source_job_id)
+                clip_exists = bool(
+                    source_job
+                    and any(clip.url == upload.clip_url for clip in source_job.clips)
+                )
+            if not clip_exists:
+                set_youtube_upload(
+                    upload_id,
+                    clip_deleted_at=upload.clip_deleted_at or now_iso(),
+                    clip_delete_error=None,
+                    logs=[
+                        *upload.logs,
+                        "CLAIMED_CLIP_DELETED: kartu/file lokal sudah tidak ada; antrean dilanjutkan.",
+                    ][-160:],
+                )
+                return
+
+            active_uploads = [
+                *active_youtube_uploads_for_job(upload.source_job_id, {upload.clip_url}),
+                *active_tiktok_uploads_for_job(upload.source_job_id, {upload.clip_url}),
+            ]
+            if active_uploads:
+                time.sleep(2)
+                continue
+
+            try:
+                result = delete_job_clips_by_url(
+                    upload.source_job_id,
+                    {upload.clip_url},
+                )
+            except HTTPException as exc:
+                if exc.status_code == 404:
+                    continue
+                set_youtube_upload(
+                    upload_id,
+                    clip_delete_error=str(exc.detail),
+                    logs=[
+                        *upload.logs,
+                        f"Cleanup klip klaim ditunda: {exc.detail}",
+                    ][-160:],
+                )
+                time.sleep(5)
+                continue
+            except Exception as exc:
+                set_youtube_upload(
+                    upload_id,
+                    clip_delete_error=str(exc),
+                    logs=[
+                        *upload.logs,
+                        f"Cleanup klip klaim ditunda: {exc}",
+                    ][-160:],
+                )
+                time.sleep(5)
+                continue
+
+            removed_at = now_iso()
+            set_youtube_upload(
+                upload_id,
+                clip_deleted_at=removed_at,
+                clip_delete_error=None,
+                clip_cleanup_completed_steps=list(YOUTUBE_CLEANUP_STEPS),
+                logs=[
+                    *upload.logs,
+                    (
+                        "CLAIMED_CLIP_DELETED: klip dan kartu job dihapus otomatis; "
+                        f"removed_clips={result.removed_clips}; removed_job={result.removed_job}."
+                    ),
+                    "Worker YouTube tidak menunggu cleanup dan langsung melanjutkan antrean.",
+                ][-160:],
+            )
+            return
+    finally:
+        with claimed_clip_cleanup_lock:
+            claimed_clip_cleanup_scheduled.discard(upload_id)
+
+
+def schedule_claimed_clip_cleanup(upload_id: str) -> bool:
+    with claimed_clip_cleanup_lock:
+        if upload_id in claimed_clip_cleanup_scheduled:
+            return False
+        claimed_clip_cleanup_scheduled.add(upload_id)
+    threading.Thread(
+        target=claimed_clip_cleanup_worker,
+        args=(upload_id,),
+        name=f"claimed-clip-cleanup-{upload_id[:8]}",
+        daemon=True,
+    ).start()
+    return True
+
+
 def verified_duplicate_for_upload(
     upload: YouTubeUploadJob,
     clip_sha256: str,
@@ -6805,9 +7012,9 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         raise HTTPException(
             status_code=409,
             detail=(
-                "File klip yang sama sudah terdeteksi klaim Content ID/audio-visual pada "
-                f"pemeriksaan sebelumnya ('{claimed_upload.clip_name}'). Ganti audio/visual dengan "
-                "materi yang hak komersialnya jelas, render ulang, lalu coba file hasil baru."
+                "Klip ini dilewati otomatis karena file yang sama sudah terdeteksi klaim "
+                f"Content ID/audio-visual ('{claimed_upload.clip_name}'). Sistem tidak akan "
+                "mengupload atau merender ulang klip ini; gunakan sumber lain yang aman."
             ),
         )
     recovery = recoverable_failed_youtube_upload(job_id, clip.url)
@@ -9253,6 +9460,16 @@ def run_youtube_upload(upload_id: str) -> None:
                     logs.append(
                         "Upload selesai tetapi URL YouTube belum terverifikasi; file lokal tidak dihapus."
                     )
+                if upload_confirmed_for_attempt and not upload.dry_run:
+                    skipped_repairs = skip_targeted_repairs_for_verified_upload(
+                        upload.source_job_id,
+                        upload.clip_url,
+                        upload.id,
+                    )
+                    if skipped_repairs:
+                        logs.append(
+                            f"{skipped_repairs} job repair terkait dihentikan karena upload asli sudah terverifikasi."
+                        )
                 set_youtube_upload(
                     upload_id,
                     status="completed",
@@ -9425,17 +9642,28 @@ def run_youtube_upload(upload_id: str) -> None:
                     f"Session YouTube masih belum login pada attempt {attempt}. Jalankan Login Sekali untuk menyegarkan storage-state/profile."
                 )
                 set_youtube_upload(upload_id, logs=logs[-160:], error=normalize_youtube_upload_error(error))
-            if any(
+            claim_detected = any(
                 str(line).startswith(YOUTUBE_CLAIM_ABORT_PREFIX)
                 for line in logs
-            ):
+            )
+            if claim_detected:
+                skipped_repairs = skip_targeted_repairs_for_claimed_clip(
+                    upload.source_job_id,
+                    upload.clip_url,
+                    upload.id,
+                )
                 logs.append(
                     "Klaim diisolasi ke klip ini. Klip lain dari sumber yang sama tetap antre "
                     "dan wajib melewati pemeriksaan Content ID masing-masing."
                 )
                 logs.append(
-                    "Rebuild otomatis dinonaktifkan; klip ini tidak diubah menjadi mode lain."
+                    "SKIPPED_CLAIMED_CLIP: klip dilewati permanen untuk upload dan repair otomatis; "
+                    "cleanup lokal dijadwalkan tanpa menahan worker."
                 )
+                if skipped_repairs:
+                    logs.append(
+                        f"{skipped_repairs} job repair terkait dihentikan agar tidak memakai slot clipper."
+                    )
             set_youtube_upload(
                 upload_id,
                 status="failed",
@@ -9445,6 +9673,8 @@ def run_youtube_upload(upload_id: str) -> None:
                 finished_at=now_iso(),
                 duration_seconds=elapsed_seconds(started_perf),
             )
+            if claim_detected:
+                schedule_claimed_clip_cleanup(upload_id)
             return
     except Exception as exc:
         set_youtube_upload(
@@ -9647,6 +9877,16 @@ def tiktok_error_invalidates_saved_session(message: str) -> bool:
     )
 
 
+def tiktok_error_is_transient_identity_hydration(message: str) -> bool:
+    """Recognize a logged-in profile page that has not rendered its identity yet."""
+    normalized = message.casefold()
+    return bool(
+        "identitas akun" in normalized
+        and "belum dapat diverifikasi" in normalized
+        and "halaman profil belum selesai dimuat" in normalized
+    )
+
+
 def tiktok_error_is_cdp_transport_failure(message: str) -> bool:
     """Identify failures that happen before TikTok upload automation starts."""
     normalized = message.casefold()
@@ -9732,6 +9972,7 @@ def run_tiktok_upload(upload_id: str) -> None:
         used_cdp_recovery = False
         cdp_restart_attempted = False
         cdp_transport_failed = False
+        identity_hydration_attempts = 0
         while True:
             command = build_tiktok_upload_command(upload, allow_cdp=not cdp_transport_failed)
             attempt_logs: list[str] = []
@@ -9766,6 +10007,7 @@ def run_tiktok_upload(upload_id: str) -> None:
                 )
             code = process.wait()
             error = tiktok_error_from_logs(attempt_logs)
+            used_cdp = "--cdp-url" in command
             # Confirmation is terminal. A late browser disconnect or state-save
             # error must not turn a verified post into a failed duplicate retry.
             if confirmed:
@@ -9776,7 +10018,28 @@ def run_tiktok_upload(upload_id: str) -> None:
                 break
             if code == 0 and (upload.dry_run or confirmed):
                 break
-            used_cdp = "--cdp-url" in command
+            if (
+                error
+                and tiktok_error_is_transient_identity_hydration(error)
+                and identity_hydration_attempts < 2
+            ):
+                identity_hydration_attempts += 1
+                # The account cookie is present and no file was selected yet,
+                # so this retry cannot duplicate a post. On the second attempt
+                # prefer the saved context when CDP profile rendering remains
+                # incomplete.
+                if (
+                    used_cdp
+                    and identity_hydration_attempts == 2
+                    and tiktok_auth_state_exists()
+                ):
+                    cdp_transport_failed = True
+                logs.append(
+                    "Profil TikTok belum selesai memuat identitas; "
+                    f"mencoba ulang otomatis {identity_hydration_attempts}/2 tanpa klik pengguna."
+                )
+                time.sleep(2)
+                continue
             if (
                 used_cdp
                 and error
@@ -10285,6 +10548,38 @@ def resume_interrupted_clipping_jobs() -> None:
         for job_id, job in sorted(jobs.items(), key=lambda item: item[1].created_at):
             if job.status not in {"queued", "running"}:
                 continue
+            if (
+                job.repair_source_job_id
+                and job.repair_source_clip_url
+                and youtube_clip_claim_block(
+                    job.repair_source_job_id,
+                    job.repair_source_clip_url,
+                )
+                is not None
+            ):
+                jobs[job_id] = job.model_copy(
+                    update={
+                        "status": "cancelled",
+                        "finished_at": now_iso(),
+                        "progress_percent": 100,
+                        "progress_stage": "complete",
+                        "progress_detail": "Dilewati otomatis karena klip terkena klaim Content ID",
+                        "progress_step": 5,
+                        "progress_total_steps": 5,
+                        "updated_at": now_iso(),
+                        "error": (
+                            "Repair tidak dilanjutkan setelah restart: klip sumber terkena "
+                            "klaim Content ID."
+                        ),
+                        "logs": [
+                            *job.logs,
+                            "CLAIMED_CLIP_REPAIR_SKIPPED:startup-recovery",
+                            "Klip dilewati saat startup; tidak dimasukkan kembali ke antrean render.",
+                        ][-120:],
+                    }
+                )
+                changed = True
+                continue
             if job.request.clip_mode in RETIRED_CLIP_MODES:
                 jobs[job_id] = job.model_copy(
                     update={
@@ -10340,6 +10635,16 @@ def resume_interrupted_clipping_jobs() -> None:
 def resume_queued_youtube_uploads() -> None:
     with youtube_uploads_lock:
         has_queued = any(upload.status == "queued" for upload in youtube_uploads.values())
+        claimed_cleanup_ids = [
+            upload.id
+            for upload in youtube_uploads.values()
+            if upload.status == "failed"
+            and not upload.clip_deleted_at
+            and any(
+                str(line).startswith(YOUTUBE_CLAIM_ABORT_PREFIX)
+                for line in upload.logs
+            )
+        ]
         pending_cleanup_ids = [
             upload.id
             for upload in youtube_uploads.values()
@@ -10352,6 +10657,8 @@ def resume_queued_youtube_uploads() -> None:
         ]
     if has_queued:
         start_youtube_worker_if_needed()
+    for upload_id in claimed_cleanup_ids:
+        schedule_claimed_clip_cleanup(upload_id)
     for upload_id in pending_cleanup_ids:
         schedule_completed_upload_cleanup(upload_id)
     removed_orphans = cleanup_orphan_output_roots()
@@ -10443,7 +10750,10 @@ def pending_completed_job_upload_urls(
     return [
         url
         for url in eligible_urls
-        if completed_job_upload_retry_ready(records, job.id, url)
+        if (
+            (platform != "youtube" or youtube_clip_claim_block(job.id, url) is None)
+            and completed_job_upload_retry_ready(records, job.id, url)
+        )
     ]
 
 
@@ -10452,6 +10762,8 @@ def queue_completed_job_repair_once(job: ClipJob) -> bool:
     if not env_bool("AUTO_REPAIR_COMPLETED_JOBS", True):
         return False
     for clip in job.clips:
+        if youtube_clip_claim_block(job.id, clip.url) is not None:
+            continue
         issue = youtube_monetization_preflight_issue(job, clip)
         if not issue or not any(
             marker.casefold() in issue.casefold()
@@ -10485,12 +10797,26 @@ def queue_completed_job_uploads_once() -> dict[str, int]:
     counts = {"youtube": 0, "tiktok": 0, "repair": 0}
     if not env_bool("AUTO_UPLOAD_COMPLETED_JOBS", False):
         return counts
+    # Auto Viral owns its own delayed, quota-aware cross-platform upload
+    # checkpoint. The generic operator must handle only standalone jobs or it
+    # can publish a Short while the parent campaign is still rendering its
+    # paired Long Story.
+    with auto_viral_lock:
+        managed_auto_viral_job_ids = {
+            managed_job_id
+            for run in auto_viral_runs.values()
+            for item in run.processed
+            for key in ("job_id", "long_job_id")
+            if (managed_job_id := str(item.get(key) or "").strip())
+        }
     with jobs_lock:
         completed_jobs = sorted(
             (
                 item
                 for item in jobs.values()
-                if item.status == "completed" and item.clips
+                if item.status == "completed"
+                and item.clips
+                and item.id not in managed_auto_viral_job_ids
             ),
             key=lambda item: item.created_at,
         )
@@ -10516,7 +10842,10 @@ def queue_completed_job_uploads_once() -> dict[str, int]:
             counts["repair"] += int(queue_completed_job_repair_once(job))
             continue
 
-        if youtube_enabled:
+        # Jobs created with the per-request YouTube auto-upload flag are
+        # queued directly by run_job(). The generic operator still handles
+        # TikTok for them, but must not race that direct YouTube path.
+        if youtube_enabled and not job.request.auto_upload_youtube:
             urls = pending_completed_job_upload_urls(
                 job,
                 eligible_urls,
@@ -10580,12 +10909,13 @@ def completed_job_upload_sweeper_loop() -> None:
     try:
         while env_bool("AUTO_UPLOAD_COMPLETED_JOBS", False):
             queue_completed_job_uploads_once()
-            time.sleep(
-                max(
+            completed_job_upload_sweeper_wakeup.wait(
+                timeout=max(
                     15.0,
                     env_float("AUTO_UPLOAD_COMPLETED_JOBS_SCAN_SECONDS", 60.0),
-                )
+                ),
             )
+            completed_job_upload_sweeper_wakeup.clear()
     finally:
         with completed_job_upload_sweeper_lock:
             completed_job_upload_sweeper_running = False
@@ -12070,6 +12400,13 @@ def run_job(job_id: str) -> None:
                         f"Telegram alert clip berhasil gagal dikirim: {telegram_exc}",
                     ][-120:]
                     set_job(job_id, logs=success_logs)
+            # Wake the single background operator immediately. It performs
+            # the same durable eligibility checks as the periodic sweep, so a
+            # standalone result no longer waits for the user to press either
+            # upload button. Auto Viral child jobs are excluded above and stay
+            # under the campaign's 5 Short + 2 Long quota-aware uploader.
+            if env_bool("AUTO_UPLOAD_COMPLETED_JOBS", False):
+                completed_job_upload_sweeper_wakeup.set()
             if request.auto_upload_youtube:
                 auto_queue_youtube_uploads_for_job(job_id, completion_logs)
         else:
@@ -14686,6 +15023,32 @@ def auto_viral_daily_upload_limit() -> int:
     )
 
 
+def auto_viral_daily_short_upload_target() -> int:
+    """Daily scheduled YouTube Short target within the global hard cap."""
+    return max(
+        0,
+        min(
+            auto_viral_daily_upload_limit(),
+            env_int("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", 5),
+        ),
+    )
+
+
+def auto_viral_daily_long_upload_target() -> int:
+    """Daily scheduled YouTube Long target after reserving Short capacity."""
+    remaining = max(
+        0,
+        auto_viral_daily_upload_limit() - auto_viral_daily_short_upload_target(),
+    )
+    return max(
+        0,
+        min(
+            remaining,
+            env_int("AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET", 2),
+        ),
+    )
+
+
 def auto_viral_next_upload_date(now: datetime | None = None) -> datetime:
     """Return the next Jakarta date in UTC, with a small boundary buffer."""
     current = now or datetime.now(timezone.utc)
@@ -14768,7 +15131,7 @@ def auto_viral_upload_item_has_live_checkpoint(
         or not short_job.clips
     ):
         return False
-    if request.auto_publish_paired_long_video and (
+    if request.auto_publish_paired_long_video and long_job_id and (
         long_job is None
         or long_job.status != "completed"
         or not long_job.clips
@@ -14847,6 +15210,24 @@ def scheduled_auto_viral_job_ids() -> set[str]:
     }
 
 
+def scheduled_auto_viral_job_content_kinds() -> dict[str, Literal["short", "long"]]:
+    """Map durable scheduler job IDs to their intended upload format."""
+    with auto_viral_lock:
+        runs = list(auto_viral_runs.values())
+    kinds: dict[str, Literal["short", "long"]] = {}
+    for run in runs:
+        if run.trigger != "schedule":
+            continue
+        for item in run.processed:
+            short_job_id = str(item.get("job_id") or "").strip()
+            long_job_id = str(item.get("long_job_id") or "").strip()
+            if short_job_id:
+                kinds[short_job_id] = "short"
+            if long_job_id:
+                kinds[long_job_id] = "long"
+    return kinds
+
+
 def auto_viral_daily_platform_upload_keys(
     platform: Literal["youtube", "tiktok"],
     now: datetime | None = None,
@@ -14899,6 +15280,30 @@ def auto_viral_daily_upload_slots(
         0,
         auto_viral_daily_upload_limit()
         - len(auto_viral_daily_platform_upload_keys(platform, now)),
+    )
+
+
+def auto_viral_daily_youtube_content_counts(
+    now: datetime | None = None,
+) -> dict[Literal["short", "long"], int]:
+    """Count today's verified/in-flight scheduled YouTube uploads by format."""
+    kinds = scheduled_auto_viral_job_content_kinds()
+    counts: dict[Literal["short", "long"], int] = {"short": 0, "long": 0}
+    for job_id, _clip_url in auto_viral_daily_platform_upload_keys("youtube", now):
+        kind = kinds.get(job_id)
+        if kind is not None:
+            counts[kind] += 1
+    return counts
+
+
+def auto_viral_paired_long_limit(request: AutoViralRequest) -> int:
+    if not request.create_paired_long_video:
+        return 0
+    configured = request.paired_long_video_count
+    return (
+        request.video_count
+        if configured is None
+        else min(request.video_count, configured)
     )
 
 
@@ -14983,6 +15388,10 @@ def upload_auto_viral_processed_jobs(
         stored_youtube = item.get("youtube_uploads", item.get("uploads", []))
         stored_tiktok = item.get("tiktok_uploads", [])
         stored_paired_long = item.get("paired_long_youtube_uploads", [])
+        long_job_id = str(item.get("long_job_id") or "").strip()
+        publish_item_long = bool(
+            request.auto_publish_paired_long_video and long_job_id
+        )
         expected_groups_verified: list[bool] = []
         if request.auto_upload_youtube:
             expected_groups_verified.append(
@@ -14998,7 +15407,7 @@ def upload_auto_viral_processed_jobs(
                     platform="tiktok",
                 )
             )
-        if request.auto_publish_paired_long_video:
+        if publish_item_long:
             expected_groups_verified.append(
                 persisted_upload_group_is_verified(
                     stored_paired_long,
@@ -15013,7 +15422,6 @@ def upload_auto_viral_processed_jobs(
             continue
         with jobs_lock:
             finished_job = jobs.get(job_id)
-            long_job_id = str(item.get("long_job_id") or "")
             finished_long_job = jobs.get(long_job_id) if long_job_id else None
         if finished_job is None or finished_job.status != "completed":
             hold_auto_viral_upload_item(
@@ -15030,7 +15438,7 @@ def upload_auto_viral_processed_jobs(
                 f"Checkpoint {job_id[:10]} ditahan dan dilewati; scheduler tidak akan mengulangnya lagi.",
             )
             continue
-        if request.auto_publish_paired_long_video and (
+        if publish_item_long and (
             finished_long_job is None or finished_long_job.status != "completed"
         ):
             hold_auto_viral_upload_item(
@@ -15097,7 +15505,7 @@ def upload_auto_viral_processed_jobs(
                 )
                 continue
 
-        if request.auto_publish_paired_long_video and isinstance(
+        if publish_item_long and isinstance(
             finished_long_job, ClipJob
         ):
             eligible_long_urls = best_automatic_upload_clip_urls(
@@ -15248,7 +15656,7 @@ def upload_auto_viral_processed_jobs(
                 if not tiktok_upload_is_verified(upload)
             )
 
-        if request.auto_publish_paired_long_video:
+        if publish_item_long:
             assert isinstance(finished_long_job, ClipJob)
             prior_ids = [
                 str(upload.get("id") or "")
@@ -15325,13 +15733,13 @@ def upload_auto_viral_processed_jobs(
         item["status"] = "completed"
         cleanup = delete_all_job_clips(job_id)
         removed_long_clips = 0
-        if request.auto_publish_paired_long_video and long_job_id:
+        if publish_item_long:
             long_cleanup = delete_all_job_clips(long_job_id)
             removed_long_clips = long_cleanup.removed_clips
         item["cleanup"] = (
             f"{cleanup.removed_clips} short dan {removed_long_clips} long lokal dihapus "
             "setelah upload terverifikasi"
-            if request.auto_publish_paired_long_video
+            if publish_item_long
             else f"{cleanup.removed_clips} clip dihapus"
         )
         update_auto_viral_run(run_id, processed=processed, progress_current=position)
@@ -15510,7 +15918,11 @@ def auto_viral_summary(run: AutoViralRun) -> str:
         f"Status: {run.status}",
         (
             f"Target: {run.request.video_count} sumber, {run.request.clips_per_video} short/sumber"
-            + (" + Long Story relevan" if run.request.create_paired_long_video else "")
+            + (
+                f" + maksimal {auto_viral_paired_long_limit(run.request)} Long Story relevan"
+                if run.request.create_paired_long_video
+                else ""
+            )
         ),
         f"Sukses: {sum(1 for item in run.processed if item.get('status') == 'completed')}",
         "",
@@ -15833,7 +16245,11 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 if finished_job.status != "completed" or not finished_job.clips:
                     raise RuntimeError(finished_job.error or f"Job selesai dengan status {finished_job.status}")
 
-                if run_request.create_paired_long_video:
+                build_paired_long = bool(
+                    run_request.create_paired_long_video
+                    and completed_count < auto_viral_paired_long_limit(run_request)
+                )
+                if build_paired_long:
                     append_auto_viral_log(
                         run_id,
                         f"Membuat Long Story relevan dari sumber yang sama untuk job {finished_job.id[:10]}",
@@ -15917,7 +16333,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
                         raise RuntimeError(
                             "Tidak ada clip yang lolos seluruh gate kualitas dan upload TikTok"
                         )
-                    if run_request.auto_publish_paired_long_video:
+                    if build_paired_long and run_request.auto_publish_paired_long_video:
                         if not run_request.create_paired_long_video:
                             raise RuntimeError(
                                 "Auto-public Long Story aktif tetapi pembuatan pasangan long nonaktif"
@@ -15988,7 +16404,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
                             f"Job {finished_job.id[:10]} selesai; {len(finished_job.clips)} short"
                             + (
                                 " dan Long Story pasangannya siap direview"
-                                if run_request.create_paired_long_video
+                                if build_paired_long
                                 else " siap direview"
                             )
                         ),
@@ -16346,6 +16762,33 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         1,
         min(5, env_int("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", 2)),
     )
+    configured_video_count = max(
+        1,
+        min(7, env_int("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", 5)),
+    )
+    youtube_counts = auto_viral_daily_youtube_content_counts()
+    remaining_shorts = max(
+        0,
+        auto_viral_daily_short_upload_target() - youtube_counts["short"],
+    )
+    remaining_longs = max(
+        0,
+        auto_viral_daily_long_upload_target() - youtube_counts["long"],
+    )
+    scheduled_video_count = (
+        max(1, min(configured_video_count, remaining_shorts))
+        if youtube_upload_requested
+        else configured_video_count
+    )
+    if not paired_long_enabled:
+        scheduled_long_count = 0
+    elif youtube_upload_requested:
+        scheduled_long_count = min(scheduled_video_count, remaining_longs)
+    else:
+        scheduled_long_count = min(
+            scheduled_video_count,
+            max(0, env_int("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_COUNT", 2)),
+        )
     humor_theme_focus = scheduled_auto_viral_humor_theme_focus()
     return AutoViralRequest(
         niche=niche,  # type: ignore[arg-type]
@@ -16354,7 +16797,7 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
             or scheduled_auto_viral_theme_focus(niche)  # type: ignore[arg-type]
         ),
         cron_humor_lane=bool(humor_theme_focus),
-        video_count=max(1, min(7, env_int("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", 3))),
+        video_count=scheduled_video_count,
         clips_per_video=clips_per_video,
         min_views=max(0, env_int("AUTO_VIRAL_SCHEDULE_MIN_VIEWS", 0)),
         upload_date_filter=os.environ.get("AUTO_VIRAL_SCHEDULE_UPLOAD_DATE_FILTER", "this_week"),  # type: ignore[arg-type]
@@ -16374,7 +16817,8 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         source_rights_confirmed=rights_confirmed,
         source_rights_evidence=rights_evidence,
         creator_perspective=creator_perspective,
-        create_paired_long_video=paired_long_enabled,
+        create_paired_long_video=bool(paired_long_enabled and scheduled_long_count),
+        paired_long_video_count=scheduled_long_count,
         paired_long_duration=max(
             240,
             min(600, env_int("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_SECONDS", 300)),
@@ -16438,6 +16882,7 @@ def reconcile_interrupted_scheduled_clip_runs() -> int:
             for job in jobs.values()
             if job.status == "completed" and bool(job.clips)
         ]
+        completed_jobs_by_id = {job.id: job for job in completed_jobs}
     with auto_viral_lock:
         runs = list(auto_viral_runs.values())
         claimed_job_ids = {
@@ -16476,6 +16921,7 @@ def reconcile_interrupted_scheduled_clip_runs() -> int:
                 )
             )
         }
+
         def belongs_to_interrupted_run(job: ClipJob) -> bool:
             job_created_at = parse_utc_datetime(job.created_at, started_at)
             return bool(
@@ -16484,10 +16930,115 @@ def reconcile_interrupted_scheduled_clip_runs() -> int:
                 <= interrupted_at + timedelta(minutes=5)
             )
 
+        processed = [dict(item) for item in run.processed]
+        recovered_pairs: list[tuple[ClipJob, ClipJob | None]] = []
+        recovered_for_run = 0
+
+        # The campaign checkpoints ownership before starting a worker.  When a
+        # restart happens after that write, the job id is correctly "claimed"
+        # but its checkpoint remains stuck at running/queued.  Refresh that
+        # existing item in place once the durable worker completes instead of
+        # treating it as unrelated or appending a duplicate card.
+        for item in processed:
+            job_id = str(item.get("job_id") or "").strip()
+            if not job_id or not (
+                item.get("status") == "running"
+                or item.get("job_status") in {"queued", "running"}
+            ):
+                continue
+            job = completed_jobs_by_id.get(job_id)
+            if job is None or job.request.clip_mode != "short":
+                continue
+            job_url = normalize_youtube_video_url(
+                str(job.source_url or job.request.url or "")
+            )
+            source = selected_by_url.get(job_url)
+            if source is None or not belongs_to_interrupted_run(job):
+                continue
+
+            paired_long_job: ClipJob | None = None
+            relevance_audit: dict[str, Any] | None = None
+            long_job_id = str(item.get("long_job_id") or "").strip()
+            if long_job_id:
+                paired_long_job = completed_jobs_by_id.get(long_job_id)
+                if (
+                    paired_long_job is None
+                    or paired_long_job.request.clip_mode != "highlight_5m"
+                    or not belongs_to_interrupted_run(paired_long_job)
+                    or normalize_youtube_video_url(
+                        str(
+                            paired_long_job.source_url
+                            or paired_long_job.request.url
+                            or ""
+                        )
+                    )
+                    != job_url
+                ):
+                    continue
+                relevance_audit = auto_viral_short_long_relevance_audit(
+                    job,
+                    paired_long_job,
+                )
+                if not relevance_audit["passed"]:
+                    continue
+
+            item.update(
+                {
+                    "source": source,
+                    "title": source.get("title") or job.source_title,
+                    "url": source.get("url") or job.source_url or job.request.url,
+                    "status": "awaiting_upload",
+                    "job_status": "completed",
+                    "clip_count": len(job.clips),
+                    "uploads": (
+                        item.get("uploads")
+                        if isinstance(item.get("uploads"), list)
+                        else []
+                    ),
+                    "cleanup": (
+                        "dipulihkan setelah restart; "
+                        "menunggu upload headless terjadwal"
+                    ),
+                }
+            )
+            if paired_long_job is not None and relevance_audit is not None:
+                long_clip = paired_long_job.clips[0]
+                item.update(
+                    {
+                        "long_job_status": "completed",
+                        "long_clip_count": len(paired_long_job.clips),
+                        "long_clip_urls": [
+                            clip.url for clip in paired_long_job.clips
+                        ],
+                        "short_long_relevance": relevance_audit,
+                        "short_long_pairs": [
+                            {
+                                "short_url": clip.url,
+                                "short_title": clip.title or clip.name,
+                                "long_url": long_clip.url,
+                                "long_title": long_clip.title or long_clip.name,
+                                "source_url": relevance_audit["source_url"],
+                            }
+                            for clip in job.clips
+                        ],
+                    }
+                )
+            recovered_pairs.append((job, paired_long_job))
+            recovered_for_run += 1
+
         matches: list[
             tuple[ClipJob, dict[str, Any], ClipJob | None, dict[str, Any] | None]
         ] = []
-        for job in completed_jobs:
+        paired_recovery_remaining = max(
+            0,
+            auto_viral_paired_long_limit(run.request)
+            - sum(
+                1
+                for item in run.processed
+                if str(item.get("long_job_id") or "").strip()
+            ),
+        )
+        for job in sorted(completed_jobs, key=lambda item: item.created_at):
             # A paired Long Story belongs to its Short checkpoint; never adopt
             # it as a standalone short/upload item after a restart.
             if job.request.clip_mode != "short":
@@ -16507,7 +17058,8 @@ def reconcile_interrupted_scheduled_clip_runs() -> int:
                 continue
             paired_long_job: ClipJob | None = None
             relevance_audit: dict[str, Any] | None = None
-            if run.request.create_paired_long_video:
+            requires_paired_long = bool(paired_recovery_remaining > 0)
+            if requires_paired_long:
                 long_candidates = [
                     candidate
                     for candidate in completed_jobs
@@ -16532,15 +17084,15 @@ def reconcile_interrupted_scheduled_clip_runs() -> int:
                         relevance_audit = candidate_audit
                         break
                 # Never recover a Short-only checkpoint for a campaign that
-                # promises a paired Long Story. The scheduler will check again
-                # after the durable long-form worker finishes.
+                # still owes one of its capped Long Story pairs. The scheduler
+                # will check again after the durable long-form worker finishes.
                 if paired_long_job is None:
                     continue
+                paired_recovery_remaining -= 1
             matches.append((job, source, paired_long_job, relevance_audit))
 
-        if not matches:
+        if not matches and not recovered_for_run:
             continue
-        processed = [dict(item) for item in run.processed]
         for job, source, paired_long_job, relevance_audit in sorted(
             matches,
             key=lambda item: item[0].created_at,
@@ -16582,13 +17134,15 @@ def reconcile_interrupted_scheduled_clip_runs() -> int:
                 claimed_job_ids.add(paired_long_job.id)
             processed.append(recovered_item)
             claimed_job_ids.add(job.id)
-            recovered += 1
+            recovered_for_run += 1
+            recovered_pairs.append((job, paired_long_job))
+        recovered += recovered_for_run
         recovered_at = now_iso()
         latest_clip_finish = max(
             (
                 parse_utc_datetime(job.finished_at or job.updated_at, interrupted_at)
-                for matched_job in matches
-                for job in (matched_job[0], matched_job[2])
+                for recovered_pair in recovered_pairs
+                for job in recovered_pair
                 if job is not None
             ),
             default=interrupted_at,
@@ -16605,12 +17159,12 @@ def reconcile_interrupted_scheduled_clip_runs() -> int:
             progress_current=len(processed),
             processed=processed,
             message=(
-                f"{len(matches)} hasil clip yang selamat dari restart ditemukan; "
+                f"{recovered_for_run} hasil clip yang selamat dari restart ditemukan; "
                 "fase upload terjadwal akan dilanjutkan."
             ),
             logs=[
                 *run.logs,
-                f"{datetime.now().strftime('%H:%M:%S')} Memulihkan {len(matches)} job clip ke antrean upload cron.",
+                f"{datetime.now().strftime('%H:%M:%S')} Memulihkan {recovered_for_run} job clip ke antrean upload cron.",
             ][-160:],
         )
     return recovered
@@ -16704,6 +17258,20 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
     )
 
 
+def auto_viral_daily_mix_not_before(now: datetime) -> datetime | None:
+    """Pause new discovery once today's 5/2 mix has no safe Short capacity."""
+    if not env_bool("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False):
+        return None
+    counts = auto_viral_daily_youtube_content_counts(now)
+    short_target = auto_viral_daily_short_upload_target()
+    if (
+        counts["short"] >= short_target
+        or counts["short"] + counts["long"] >= auto_viral_daily_upload_limit()
+    ):
+        return auto_viral_next_upload_date(now)
+    return None
+
+
 def auto_viral_next_run_at(
     now: datetime,
     latest: AutoViralRun | None,
@@ -16731,6 +17299,9 @@ def auto_viral_next_run_at(
             auto_viral_boot_not_before(now),
             retry_anchor + timedelta(minutes=auto_viral_retry_delay_minutes()),
         )
+    daily_mix_not_before = auto_viral_daily_mix_not_before(now)
+    if daily_mix_not_before is not None:
+        return daily_mix_not_before
     if env_bool("AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT", False):
         if scheduled_run_started_in_current_boot(latest, now):
             if latest is not None and latest.status == "completed":
@@ -18350,6 +18921,18 @@ def repair_job_clip_context(job_id: str, repair: ClipRepairRequest) -> ClipJob:
     clip_path = output_path_from_url(clip.url)
     if clip_path is None or not clip_path.is_file():
         raise HTTPException(status_code=404, detail="File clip yang akan diperbaiki tidak ditemukan")
+    try:
+        clip_fingerprint = file_sha256(clip_path)
+    except OSError as exc:
+        raise HTTPException(status_code=409, detail=f"File clip tidak dapat dibaca: {exc}") from exc
+    if youtube_clip_claim_block(job_id, clip.url, clip_fingerprint) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Klip dilewati karena terkena klaim Content ID. Repair/render ulang otomatis "
+                "dinonaktifkan agar tidak mengganggu antrean ClipForge; gunakan sumber lain."
+            ),
+        )
     if active_youtube_uploads_for_job(job_id, {clip.url}) or active_tiktok_uploads_for_job(job_id, {clip.url}):
         raise HTTPException(
             status_code=409,
