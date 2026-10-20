@@ -1,4 +1,11 @@
 faster-whisper==1.2.1
+# GPU runtime required by current CTranslate2/faster-whisper releases. The
+# backend still falls back to CPU when NVIDIA is unavailable at runtime.
+nvidia-cublas-cu12>=12,<13; platform_system == "Linux" and platform_machine == "x86_64"
+nvidia-cudnn-cu12>=9,<10; platform_system == "Linux" and platform_machine == "x86_64"
+# faster-whisper 1.2.1 passes metadata_errors to av.open(); PyAV 19 removed
+# that keyword. Keep image rebuilds deterministic until a fixed release lands.
+av>=11,<19
 fastapi==0.125.0
 imageio-ffmpeg==0.6.0
 pydantic==2.13.4

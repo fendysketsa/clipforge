@@ -3,6 +3,7 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
+    LD_LIBRARY_PATH=/usr/local/lib/python3.12/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.12/site-packages/nvidia/cudnn/lib \
     IMAGEIO_FFMPEG_EXE=/usr/bin/ffmpeg \
     FFMPEG_BINARY=/usr/bin/ffmpeg \
     PYTHON_SUBPROCESS_FILE=/usr/local/lib/python3.12/subprocess.py \

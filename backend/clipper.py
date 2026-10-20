@@ -6332,6 +6332,116 @@ def transcript_cache_matches(transcript_path: Path, model_name: str, language: s
     )
 
 
+def load_transcription_audio(audio_path: Path):
+    """Load the canonical PCM WAV without routing it through PyAV.
+
+    ``extract_audio`` always creates mono 16 kHz signed 16-bit PCM. Passing a
+    float32 waveform to faster-whisper keeps transcription independent from
+    PyAV's ``av.open`` keyword compatibility (PyAV 19 removed
+    ``metadata_errors``, which faster-whisper 1.2.1 still supplied).
+    """
+    import wave
+
+    import numpy as np
+
+    try:
+        with wave.open(str(audio_path), "rb") as source:
+            channels = source.getnchannels()
+            sample_width = source.getsampwidth()
+            sample_rate = source.getframerate()
+            compression = source.getcomptype()
+            frames = source.readframes(source.getnframes())
+    except (EOFError, OSError, wave.Error) as exc:
+        raise UserFacingError(
+            "Audio hasil ekstraksi tidak dapat dibaca untuk transkripsi. "
+            "Coba ulangi job agar audio dibuat ulang."
+        ) from exc
+
+    if (
+        channels != 1
+        or sample_width != 2
+        or sample_rate != 16000
+        or compression != "NONE"
+        or not frames
+    ):
+        raise UserFacingError(
+            "Format audio transkripsi tidak valid; diperlukan PCM mono 16 kHz 16-bit. "
+            "Coba ulangi job agar audio dibuat ulang."
+        )
+
+    # WAV PCM data is little-endian. Copy to writable float32 because the VAD
+    # and feature-extraction path may retain or transform this array.
+    return np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
+
+
+def cached_whisper_model_path(model_name: str) -> Path | None:
+    """Resolve a complete Hub snapshot without making a network request."""
+    configured_path = Path(model_name).expanduser()
+    if configured_path.is_dir():
+        return configured_path
+    if "/" not in model_name:
+        return None
+
+    hub_cache = Path(
+        os.environ.get("HF_HUB_CACHE", "").strip()
+        or Path(os.environ.get("HF_HOME", "").strip() or Path.home() / ".cache/huggingface") / "hub"
+    )
+    model_cache = hub_cache / f"models--{model_name.replace('/', '--')}"
+    snapshots = model_cache / "snapshots"
+    candidates: list[Path] = []
+    main_ref = model_cache / "refs" / "main"
+    try:
+        revision = main_ref.read_text(encoding="utf-8").strip()
+    except OSError:
+        revision = ""
+    if revision:
+        candidates.append(snapshots / revision)
+    try:
+        candidates.extend(
+            sorted(
+                (item for item in snapshots.iterdir() if item.is_dir()),
+                key=lambda item: item.stat().st_mtime,
+                reverse=True,
+            )
+        )
+    except OSError:
+        pass
+
+    required = ("config.json", "model.bin", "tokenizer.json")
+    for candidate in candidates:
+        if all((candidate / filename).is_file() for filename in required):
+            return candidate
+    return None
+
+
+def whisper_runtime_candidates() -> list[tuple[str, str]]:
+    """Prefer NVIDIA for Whisper while retaining a bounded CPU fallback."""
+    requested = os.environ.get("FENDY_CLIPPER_WHISPER_DEVICE", "auto").strip().casefold()
+    if requested not in {"auto", "cpu", "cuda"}:
+        requested = "auto"
+    cpu_compute = os.environ.get("FENDY_CLIPPER_WHISPER_CPU_COMPUTE_TYPE", "int8").strip() or "int8"
+    cuda_compute = os.environ.get("FENDY_CLIPPER_WHISPER_CUDA_COMPUTE_TYPE", "float16").strip() or "float16"
+    allow_cpu_fallback = env_enabled("FENDY_CLIPPER_WHISPER_CPU_FALLBACK", True)
+
+    if requested == "cpu":
+        return [("cpu", cpu_compute)]
+    if requested == "cuda":
+        candidates = [("cuda", cuda_compute)]
+        if allow_cpu_fallback:
+            candidates.append(("cpu", cpu_compute))
+        return candidates
+
+    try:
+        import ctranslate2
+
+        cuda_available = ctranslate2.get_cuda_device_count() > 0
+    except (ImportError, OSError, RuntimeError):
+        cuda_available = False
+    if cuda_available:
+        return [("cuda", cuda_compute), ("cpu", cpu_compute)]
+    return [("cpu", cpu_compute)]
+
+
 def transcribe(audio_path: Path, transcript_path: Path, model_name: str, language: str, force: bool = False) -> list[TranscriptSegment]:
     if not force and transcript_cache_matches(transcript_path, model_name, language):
         return [
@@ -6352,18 +6462,69 @@ def transcribe(audio_path: Path, transcript_path: Path, model_name: str, languag
         if hub_authenticated
         else "[dim]Hugging Face: model publik + cache persisten (HF_TOKEN opsional).[/dim]"
     )
-    model = WhisperModel(
-        model_name,
-        device="cpu",
-        compute_type="int8",
-        cpu_threads=cpu_threads_per_job(),
-        num_workers=1,
-    )
-    segments, info = model.transcribe(str(audio_path), **transcription_decode_options(language))
+    audio_samples = load_transcription_audio(audio_path)
+    cached_model = cached_whisper_model_path(model_name)
+    model_source = str(cached_model) if cached_model is not None else model_name
+    if cached_model is not None:
+        console.print(f"[dim]Model cache lokal dipakai: {cached_model.name}; tanpa cek jaringan.[/dim]")
 
     rows: list[TranscriptSegment] = []
-    for segment in segments:
-        rows.extend(smart_transcript_segments(segment))
+    info = None
+    runtime_device = "cpu"
+    candidates = whisper_runtime_candidates()
+    highest_reported_percent = 27
+    for attempt, (device, compute_type) in enumerate(candidates, start=1):
+        runtime_device = device
+        console.print(
+            f"[bold cyan]Whisper runtime:[/bold cyan] {device.upper()} ({compute_type})"
+        )
+        model = None
+        try:
+            model = WhisperModel(
+                model_source,
+                device=device,
+                compute_type=compute_type,
+                cpu_threads=cpu_threads_per_job(),
+                num_workers=1,
+                local_files_only=cached_model is not None,
+            )
+            segments, info = model.transcribe(
+                audio_samples,
+                **transcription_decode_options(language),
+            )
+            attempt_rows: list[TranscriptSegment] = []
+            audio_duration = max(0.001, float(audio_samples.size) / 16000.0)
+            for segment in segments:
+                attempt_rows.extend(smart_transcript_segments(segment))
+                percent = min(44, 28 + int(16 * float(segment.end) / audio_duration))
+                if percent > highest_reported_percent:
+                    highest_reported_percent = percent
+                    completed = min(100, round(float(segment.end) / audio_duration * 100))
+                    emit_progress(
+                        percent,
+                        "transcript",
+                        f"Transkripsi {completed}% berjalan di {device.upper()}",
+                    )
+            rows = attempt_rows
+            break
+        except Exception as exc:
+            has_fallback = attempt < len(candidates)
+            if device != "cuda" or not has_fallback:
+                raise
+            console.print(
+                "[yellow]GPU Whisper belum siap; melanjutkan otomatis di CPU "
+                f"({type(exc).__name__}: {str(exc)[:180]}).[/yellow]"
+            )
+        finally:
+            if model is not None:
+                del model
+                if device == "cuda":
+                    import gc
+
+                    gc.collect()
+
+    if info is None:
+        raise UserFacingError("Whisper tidak menghasilkan informasi transkripsi.")
 
     save_json(transcript_path, [asdict(item) for item in rows])
     save_json(
@@ -6375,7 +6536,10 @@ def transcribe(audio_path: Path, transcript_path: Path, model_name: str, languag
             "decode": "accuracy_first_beam_5_smart_word_boundaries",
         },
     )
-    console.print(f"[green]Transcribed[/green] {len(rows)} segments. Detected language: {getattr(info, 'language', language)}")
+    console.print(
+        f"[green]Transcribed[/green] {len(rows)} segments on {runtime_device.upper()}. "
+        f"Detected language: {getattr(info, 'language', language)}"
+    )
     return rows
 
 
