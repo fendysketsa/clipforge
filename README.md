@@ -378,7 +378,7 @@ YOUTUBE_DATA_API_KEY=your_google_api_key
 AUTO_VIRAL_SCHEDULE_ENABLED=true
 AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP=true
 AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT=false
-AUTO_VIRAL_SCHEDULE_RUN_KEY=kindness-daily-v3
+AUTO_VIRAL_SCHEDULE_RUN_KEY=trend-expansion-daily-v4
 AUTO_VIRAL_SCHEDULE_RETRY_UNTIL_SUCCESS=true
 AUTO_VIRAL_SCHEDULE_RETRY_DELAY_MINUTES=5
 AUTO_VIRAL_DAILY_UPLOAD_LIMIT=7
@@ -387,6 +387,12 @@ AUTO_VIRAL_POST_CLIP_UPLOAD_DELAY_MINUTES=0
 AUTO_VIRAL_CYCLE_DELAY_HOURS=24
 AUTO_VIRAL_SCHEDULE_NICHE=kindness_social_good
 AUTO_VIRAL_SCHEDULE_RANDOMIZE_THEMES=true
+AUTO_VIRAL_SCHEDULE_TREND_EXPANSION_ENABLED=true
+AUTO_VIRAL_SCHEDULE_TREND_MIN_SCORE=18
+AUTO_VIRAL_SCHEDULE_TREND_SEED_LIMIT=5
+# Kosong = chart regional lintas kategori khusus cron.
+AUTO_VIRAL_SCHEDULE_TREND_VIDEO_CATEGORY_ID=
+AUTO_VIRAL_SCHEDULE_TREND_QUERIES=
 AUTO_VIRAL_SCHEDULE_HUMOR_ENABLED=true
 AUTO_VIRAL_SCHEDULE_HUMOR_EVERY_RUNS=4
 AUTO_VIRAL_SCHEDULE_HUMOR_MIN_SCORE=24
@@ -416,6 +422,17 @@ becomes due, it catches up after the next boot grace period. Active runs never
 overlap. Upload checkpoints survive a backend restart or shutdown, so a completed
 clip resumes at the upload phase without clipping the same source again or
 duplicating a confirmed upload.
+
+`AUTO_VIRAL_SCHEDULE_TREND_EXPANSION_ENABLED` is cron-only. It reads Google's
+YouTube Data API `mostPopular` chart for region `ID` without the normal single
+category restriction, converts current Indonesian titles into the first search
+queries on every cycle, and uses the built-in safe cross-topic catalogue only as
+a fallback. `AUTO_VIRAL_SCHEDULE_TREND_QUERIES` is optional and can stay empty;
+there is no need to paste reference topics repeatedly. Dashboard/manual discovery
+keeps its existing niche catalogue.
+Trend titles are inspiration only: source-rights, language, age, HD, safety,
+AI/editorial, platform-check, and upload-confirmation gates still run before a
+local file can be deleted.
 
 Scheduled uploads have a hard per-platform limit of seven unique clips for each
 Asia/Jakarta calendar date. Active uploads reserve their slots, while retries of

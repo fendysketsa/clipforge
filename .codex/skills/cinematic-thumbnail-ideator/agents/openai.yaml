@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cinematic Thumbnail Ideator"
+  short_description: "Ide thumbnail sinematik berbasis isi clip"
+  default_prompt: "Use $cinematic-thumbnail-ideator to create three cinematic, truthful thumbnail concepts for this ClipForge clip."

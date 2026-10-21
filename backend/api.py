@@ -450,6 +450,9 @@ class ClipJobRequest(BaseModel):
     confirm_long_animate_rights: bool = False
     automatic_topic_rebuild: bool = False
     auto_upload_youtube: bool = False
+    # Durable provenance marker for scheduler-owned jobs. Public upload copy
+    # may use it after a restart even when the parent run history is pruned.
+    scheduled_public_source_credit: bool = False
     allow_reprocess_source: bool = False
     review_only: bool = False
     ai_enabled: bool = True
@@ -1417,6 +1420,42 @@ CRON_HUMOR_UNSAFE_SIGNALS = {
     "sadis", "seksual", "telanjang",
 }
 
+# Search ideas inspired by YouTube's cross-topic "people also search" surface.
+# They are deliberately owned by the scheduler and describe original discussion,
+# testimony, or recap formats instead of asking for protected movie/TV footage.
+# The live regional mostPopular chart is still the primary freshness signal; this
+# catalogue prevents a quiet chart category from collapsing cron discovery back
+# into one narrow topic.
+CRON_TREND_SEARCH_QUERIES = [
+    "podcast horor indonesia kisah nyata terbaru",
+    "kisah kehidupan nyata penuh pelajaran indonesia",
+    "ngaji cerdas menjawab masalah kehidupan terbaru",
+    "dialog agama dan budaya indonesia terbaru",
+    "wawancara tokoh viral indonesia terbaru",
+    "sinopsis drama korea dan pelajaran hidup pembahasan",
+    "penampakan hantu dan cerita seram indonesia pembahasan",
+    "cerita inspiratif perubahan hidup indonesia",
+    "kesaksian iman dan perjalanan rohani indonesia",
+    "japanese horror podcast bahasa indonesia",
+    "podcast figur publik indonesia cerita kehidupan",
+    "toleransi dan kehidupan lintas agama indonesia",
+    "misteri nusantara pengalaman nyata podcast",
+    "ulasan cerita asia bermakna bahasa indonesia",
+]
+
+CRON_TREND_TOPIC_SIGNALS = {
+    "agama", "budaya", "cerita", "dialog", "drama korea", "hantu", "horor",
+    "inspiratif", "japanese horror", "kehidupan", "kesaksian", "kisah nyata",
+    "lintas agama", "misteri", "ngaji", "pelajaran hidup", "penampakan",
+    "podcast", "rohani", "seram", "sinopsis", "tokoh", "toleransi",
+    "wawancara",
+}
+CRON_TREND_UNSAFE_SIGNALS = {
+    "18+", "adegan berdarah", "bunuh diri", "darah nyata", "eksploitasi",
+    "gore", "judi online", "kekerasan nyata", "pelecehan", "pornografi",
+    "seksual", "telanjang",
+}
+
 IslamicContentNiche = Literal[
     "auto",
     "faith_prophets_converts",
@@ -1968,6 +2007,7 @@ class AutoViralRequest(BaseModel):
     theme_focus: str = Field(default="", max_length=240)
     # Honoured only when the owning run has trigger="schedule".  Keeping the
     # marker durable lets an interrupted cron run resume with the same gate.
+    cron_trend_lane: bool = False
     cron_humor_lane: bool = False
     queries: list[str] = Field(default_factory=default_auto_viral_queries)
     video_count: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_VIDEO_COUNT", 5), ge=1, le=7)
@@ -2055,10 +2095,19 @@ class AutoViralRequest(BaseModel):
             if self.min_duration >= self.max_duration:
                 self.min_duration = max(5.0, self.max_duration - 10.0)
         self.theme_focus = re.sub(r"\s+", " ", self.theme_focus).strip()
-        self.queries = merge_unique_queries(
-            [self.theme_focus] if self.theme_focus else [],
-            prioritized_niche_queries(self.niche, self.queries),
-        )[:80]
+        if self.cron_trend_lane:
+            # Preserve the scheduler-owned cross-topic order across nested
+            # Pydantic validation and durable run reloads. Runtime ownership is
+            # still checked against trigger="schedule" before these are used.
+            self.queries = merge_unique_queries(
+                [self.theme_focus] if self.theme_focus else [],
+                self.queries,
+            )[:80]
+        else:
+            self.queries = merge_unique_queries(
+                [self.theme_focus] if self.theme_focus else [],
+                prioritized_niche_queries(self.niche, self.queries),
+            )[:80]
         if (
             self.niche in {"islamic_current_viral", "islamic_politics_society"}
             and "upload_date_filter" not in self.model_fields_set
@@ -4421,6 +4470,7 @@ def youtube_description_summary(value: str) -> str:
         r"JIKA TOMBOL VIRALKAN TERSEDIA|"
         r"(?:🔥\s*)?DUKUNG(?: CHANNEL INI)?|(?:📱\s*)?CHANNEL|"
         r"(?:⚠️?\s*)?CATATAN KONTEN|"
+        r"Sumber(?: \(CC BY\))?:|"
         r"Atribusi sumber \(CC BY\):|Audit & edit editorial otomatis:)",
         clean,
         maxsplit=1,
@@ -4646,16 +4696,29 @@ def append_youtube_chapters(description: str, clip: ClipFile) -> str:
 
 
 def youtube_source_attribution(job: ClipJob) -> str:
-    """Return required CC attribution without asking the metadata LLM to invent it."""
-    if not job.request.url.strip():
+    """Return verified CC attribution or the cron-required source credit."""
+    if not job.request.url.strip() and not job.source_url:
         return ""
     metadata = metadata_for_job(job)
-    if not is_creative_commons_info(metadata):
+    is_scheduled = scheduled_public_source_credit_required(job)
+    is_creative_commons = is_creative_commons_info(metadata)
+    if not is_creative_commons and not is_scheduled:
         return ""
     title = str(metadata.get("title") or job.source_title or "Video sumber").strip()
     creator = str(metadata.get("uploader") or job.source_uploader or "Kreator sumber").strip()
     source_url = str(metadata.get("webpage_url") or job.source_url or job.request.url).strip()
+    if not source_url:
+        return ""
     license_name = str(metadata.get("license") or "Creative Commons Attribution").strip()
+    if is_scheduled:
+        label = "Sumber (CC BY)" if is_creative_commons else "Sumber"
+        lines = [
+            f"{label}: {creator[:80]} — {title[:140]}",
+            source_url[:500],
+        ]
+        if is_creative_commons:
+            lines.append(f"Lisensi: {license_name[:120]}")
+        return "\n".join(lines)
     return (
         "Atribusi sumber (CC BY):\n"
         f"Judul: {title[:180]}\n"
@@ -4673,6 +4736,35 @@ def append_youtube_source_attribution(description: str, job: ClipJob) -> str:
         return clean[:5000]
     available = max(0, 5000 - len(attribution) - 2)
     return f"{clean[:available].rstrip()}\n\n{attribution}".strip()[:5000]
+
+
+def scheduled_public_source_credit_required(job: ClipJob) -> bool:
+    """Keep cron provenance durable while leaving manual upload copy unchanged."""
+    if job.request.scheduled_public_source_credit:
+        return True
+    return job.id in scheduled_auto_viral_job_ids()
+
+
+def append_scheduled_source_credit(
+    value: str,
+    job: ClipJob,
+    *,
+    max_length: int,
+) -> str:
+    """Append a compact source line to scheduler-owned public captions only."""
+    clean = normalize_public_channel_handle(value.strip())
+    if not scheduled_public_source_credit_required(job):
+        return clean[:max_length]
+    metadata = metadata_for_job(job)
+    title = str(metadata.get("title") or job.source_title or "Video sumber").strip()
+    creator = str(metadata.get("uploader") or job.source_uploader or "Kreator sumber").strip()
+    source_url = str(metadata.get("webpage_url") or job.source_url or job.request.url).strip()
+    if not source_url or source_url in clean:
+        return clean[:max_length]
+    license_label = " (CC BY)" if is_creative_commons_info(metadata) else ""
+    credit = f"Sumber{license_label}: {creator[:80]} — {title[:140]}\n{source_url[:500]}"
+    available = max(0, max_length - len(credit) - 2)
+    return f"{clean[:available].rstrip()}\n\n{credit}".strip()[:max_length]
 
 
 def append_fendy_auditor_attribution(description: str, clip: ClipFile) -> str:
@@ -6418,7 +6510,8 @@ def tiktok_caption_for_clip(job: ClipJob, clip: ClipFile, index: int, requested:
     if not base:
         base = clip.title or default_youtube_title(job, clip, index)
     strategy = current_tiktok_strategy_for_clip(clip)
-    return tiktok_caption_from_strategy(base, strategy)
+    caption = tiktok_caption_from_strategy(base, strategy)
+    return append_scheduled_source_credit(caption, job, max_length=2200)
 
 
 def reusable_tiktok_upload(job_id: str, clip_url: str, fingerprint: str) -> TikTokUploadJob | None:
@@ -13104,6 +13197,120 @@ def cron_humor_discovery_active(run_id: str, request: AutoViralRequest) -> bool:
     return bool(run and run.trigger == "schedule")
 
 
+def cron_trend_discovery_active(run_id: str, request: AutoViralRequest) -> bool:
+    """Enable broad trend discovery only for the persisted scheduler owner."""
+    if not request.cron_trend_lane:
+        return False
+    with auto_viral_lock:
+        run = auto_viral_runs.get(run_id)
+    return bool(run and run.trigger == "schedule")
+
+
+def cron_trend_score(
+    info: dict[str, Any],
+    trend_tokens: set[str] | None = None,
+) -> tuple[float, list[str]]:
+    """Score cron-only topic fit, including live Google/YouTube chart overlap."""
+    title_raw = str(info.get("title") or "").casefold()
+    description_raw = str(info.get("description") or "").casefold()
+    tags = info.get("tags") if isinstance(info.get("tags"), list) else []
+    supporting_raw = f"{description_raw} {' '.join(map(str, tags)).casefold()}"
+    normalize = lambda value: f" {re.sub(r'[^a-z0-9]+', ' ', value).strip()} "
+    title = normalize(title_raw)
+    supporting = normalize(supporting_raw)
+    title_hits = {
+        marker for marker in CRON_TREND_TOPIC_SIGNALS if f" {marker} " in title
+    }
+    supporting_hits = {
+        marker for marker in CRON_TREND_TOPIC_SIGNALS if f" {marker} " in supporting
+    }
+    source_tokens = set(
+        re.findall(r"[a-z0-9]{3,}", f"{title_raw} {description_raw}")
+    )
+    live_matches = sorted(source_tokens.intersection(trend_tokens or set()))
+    score = min(
+        100.0,
+        len(title_hits) * 14
+        + min(24, len(supporting_hits - title_hits) * 4)
+        + min(30, len(live_matches) * 6),
+    )
+    return round(score, 2), live_matches[:8]
+
+
+def cron_trend_candidate_rejection_reason(
+    info: dict[str, Any],
+    trend_tokens: set[str] | None = None,
+) -> str:
+    """Keep cross-topic cron discovery Indonesian, recognisable, and brand-safe."""
+    raw_text = " ".join(
+        [
+            str(info.get("title") or ""),
+            str(info.get("description") or ""),
+            " ".join(map(str, info.get("tags") or [])),
+        ]
+    ).casefold()
+    normalized_text = f" {re.sub(r'[^a-z0-9+]+', ' ', raw_text).strip()} "
+    unsafe_hits = sorted(
+        marker
+        for marker in CRON_TREND_UNSAFE_SIGNALS
+        if f" {marker} " in normalized_text
+    )
+    if unsafe_hits:
+        return f"tren tidak aman ({', '.join(unsafe_hits[:3])})"
+    trend_score, _ = cron_trend_score(info, trend_tokens)
+    minimum_score = max(
+        1, min(100, env_int("AUTO_VIRAL_SCHEDULE_TREND_MIN_SCORE", 18))
+    )
+    if trend_score < minimum_score:
+        return f"sinyal tren {trend_score:.0f}/100 di bawah minimum {minimum_score}/100"
+    language_score = indonesian_language_score(info)
+    minimum_language = max(1, min(100, env_int("VIRAL_CC_MIN_INDONESIAN_SCORE", 15)))
+    if language_score < minimum_language:
+        return (
+            f"sinyal Bahasa Indonesia {language_score:.0f}/100 di bawah minimum "
+            f"{minimum_language}/100"
+        )
+    return ""
+
+
+def apply_cron_trend_ranking(
+    source: dict[str, Any],
+    info: dict[str, Any],
+    trend_tokens: set[str] | None = None,
+) -> dict[str, Any]:
+    """Use topic freshness instead of the normal niche rank in cron trend mode."""
+    trend_score, live_matches = cron_trend_score(info, trend_tokens)
+    language_score = float(source.get("language_score") or 0)
+    momentum_score = float(source.get("momentum_score") or 0)
+    conversation_score = min(
+        100.0, float(source.get("fresh_conversation_score") or 0) * 2.25
+    )
+    source.update(
+        {
+            "niche": "cron_trend_expansion",
+            "niche_label": "Perluasan Tren Google/YouTube (Cronjob)",
+            "niche_score": trend_score,
+            "cron_trend_score": trend_score,
+            "trend_signal_score": min(30, len(live_matches) * 6),
+            "trend_matches": live_matches,
+            "score": round(
+                trend_score * 0.55
+                + language_score * 0.25
+                + conversation_score * 0.15
+                + momentum_score * 0.05,
+                2,
+            ),
+            "ranking_reason": (
+                f"Topik/tren {trend_score:.0f}/100 • Bahasa Indonesia "
+                f"{language_score:.0f}/100 • chart cocok "
+                f"{len(live_matches)} token • momentum hanya sinyal "
+                f"{momentum_score:.0f}/100"
+            ),
+        }
+    )
+    return source
+
+
 def cron_humor_score(info: dict[str, Any]) -> float:
     """Score light conversational humour from metadata, not channel reach."""
     title_raw = str(info.get("title") or "").casefold()
@@ -13574,9 +13781,25 @@ def youtube_data_api_video_payload(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def youtube_data_api_search_queries(request: AutoViralRequest) -> list[str]:
-    """Use one broad OR query in fast mode to spend only one search.list call."""
+def youtube_data_api_search_queries(
+    request: AutoViralRequest | ViralVideoSearchRequest,
+    *,
+    cron_trend: bool = False,
+) -> list[str]:
+    """Build bounded API queries, expanding topics only for a verified cron run."""
     max_api_queries = max(1, min(20, env_int("VIRAL_CC_MAX_API_QUERIES", 1)))
+    if cron_trend:
+        configured_fast_query = re.sub(
+            r"\s+",
+            " ",
+            os.environ.get("VIRAL_CC_FAST_API_QUERY", ""),
+        ).strip()
+        theme_focus = str(getattr(request, "theme_focus", "") or "").strip()
+        return merge_unique_queries(
+            [theme_focus] if theme_focus else [],
+            [configured_fast_query] if configured_fast_query else [],
+            request.queries,
+        )[:max_api_queries]
     if env_bool("VIRAL_CC_FAST_API_ONLY", True):
         theme_focus = str(getattr(request, "theme_focus", "") or "").strip()
         if theme_focus:
@@ -13607,8 +13830,10 @@ YOUTUBE_TREND_STOPWORDS = frozenset(
 
 
 def youtube_trend_signals(
-    request: AutoViralRequest,
+    request: AutoViralRequest | ViralVideoSearchRequest,
     run_id: str,
+    *,
+    cron_trend: bool = False,
 ) -> tuple[list[str], set[str]]:
     """Read YouTube's regional most-popular chart and turn it into search/ranking signals.
 
@@ -13624,7 +13849,12 @@ def youtube_trend_signals(
         "regionCode": os.environ.get("VIRAL_CC_REGION_CODE", "ID").strip() or "ID",
         "maxResults": max(5, min(50, env_int("VIRAL_CC_TREND_CHART_LIMIT", 25))),
     }
-    category_id = os.environ.get("VIRAL_CC_TREND_VIDEO_CATEGORY_ID", "").strip()
+    category_env = (
+        "AUTO_VIRAL_SCHEDULE_TREND_VIDEO_CATEGORY_ID"
+        if cron_trend
+        else "VIRAL_CC_TREND_VIDEO_CATEGORY_ID"
+    )
+    category_id = os.environ.get(category_env, "").strip()
     if category_id:
         params["videoCategoryId"] = category_id
     append_auto_viral_log(
@@ -13652,7 +13882,11 @@ def youtube_trend_signals(
             1, env_int("VIRAL_CC_MIN_INDONESIAN_SCORE", 15)
         ):
             continue
-        if request.niche != "auto" and niche_relevance_score(signal_payload, request.niche) <= 0:
+        if (
+            not cron_trend
+            and request.niche != "auto"
+            and niche_relevance_score(signal_payload, request.niche) <= 0
+        ):
             continue
         eligible_titles.append(title)
         trend_tokens.update(
@@ -13661,18 +13895,50 @@ def youtube_trend_signals(
             if token not in YOUTUBE_TREND_STOPWORDS
         )
 
-    seed_limit = max(0, min(8, env_int("VIRAL_CC_TREND_SEED_LIMIT", 3)))
+    seed_limit_env = (
+        "AUTO_VIRAL_SCHEDULE_TREND_SEED_LIMIT"
+        if cron_trend
+        else "VIRAL_CC_TREND_SEED_LIMIT"
+    )
+    seed_limit = max(0, min(8, env_int(seed_limit_env, 5 if cron_trend else 3)))
     seeds = eligible_titles[:seed_limit]
     append_auto_viral_log(
         run_id,
-        f"Chart tren menghasilkan {len(eligible_titles)} topik relevan; {len(seeds)} dipakai sebagai seed pencarian.",
+        f"Chart tren {'lintas kategori cron' if cron_trend else 'terpilih'} menghasilkan "
+        f"{len(eligible_titles)} topik relevan; {len(seeds)} dipakai sebagai seed pencarian.",
     )
     return seeds, trend_tokens
 
 
-def add_trend_seeds_to_queries(queries: list[str], seeds: list[str]) -> list[str]:
+def live_youtube_trend_queries(seeds: list[str]) -> list[str]:
+    """Turn current chart titles into concise discovery queries for cron."""
+    live_queries: list[str] = []
+    for seed in seeds:
+        tokens: list[str] = []
+        for raw_token in re.findall(r"[\w']{3,}", seed, flags=re.UNICODE):
+            token = raw_token.strip("_'")
+            if not token or token.casefold() in YOUTUBE_TREND_STOPWORDS:
+                continue
+            tokens.append(token)
+            if len(tokens) >= 8:
+                break
+        if tokens:
+            live_queries.append(f"{' '.join(tokens)} pembahasan indonesia"[:180])
+    return merge_unique_queries(live_queries)
+
+
+def add_trend_seeds_to_queries(
+    queries: list[str],
+    seeds: list[str],
+    *,
+    prefer_live: bool = False,
+) -> list[str]:
     if not queries or not seeds:
         return queries
+    if prefer_live:
+        # Cron follows what is trending now. Static/configured queries remain
+        # behind these live queries solely as a fallback when results are thin.
+        return merge_unique_queries(live_youtube_trend_queries(seeds), queries)
     seed_terms = [re.sub(r"[|]", " ", seed).strip()[:100] for seed in seeds if seed.strip()]
     combined = "|".join([queries[0], *seed_terms])[:480]
     return [combined, *queries[1:]]
@@ -13702,7 +13968,11 @@ def search_youtube_data_api_viral_sources(
     )
     trend_tokens: set[str] = set()
     cron_humor_lane = cron_humor_discovery_active(run_id, request)
-    api_queries = youtube_data_api_search_queries(request)
+    cron_trend_lane = cron_trend_discovery_active(run_id, request)
+    api_queries = youtube_data_api_search_queries(
+        request,
+        cron_trend=cron_trend_lane and not cron_humor_lane,
+    )
     if cron_humor_lane:
         append_auto_viral_log(
             run_id,
@@ -13710,8 +13980,24 @@ def search_youtube_data_api_viral_sources(
         )
     else:
         try:
-            trend_seeds, trend_tokens = youtube_trend_signals(request, run_id)
-            api_queries = add_trend_seeds_to_queries(api_queries, trend_seeds)
+            trend_seeds, trend_tokens = youtube_trend_signals(
+                request,
+                run_id,
+                cron_trend=cron_trend_lane,
+            )
+            api_queries = add_trend_seeds_to_queries(
+                api_queries,
+                trend_seeds,
+                prefer_live=cron_trend_lane,
+            )
+            api_queries = api_queries[
+                : max(1, min(20, env_int("VIRAL_CC_MAX_API_QUERIES", 1)))
+            ]
+            if cron_trend_lane and trend_seeds:
+                append_auto_viral_log(
+                    run_id,
+                    "Query live dari chart YouTube diprioritaskan; katalog bawaan hanya fallback.",
+                )
         except Exception as exc:
             append_auto_viral_error(run_id, f"Chart tren YouTube gagal; lanjut dengan keyword utama: {exc}")
     for query in api_queries:
@@ -13842,6 +14128,18 @@ def search_youtube_data_api_viral_sources(
                         f"Skip kandidat humor ({humor_rejection}): {payload.get('title') or '-'}",
                     )
                     continue
+            elif cron_trend_lane:
+                trend_rejection = cron_trend_candidate_rejection_reason(
+                    payload,
+                    trend_tokens,
+                )
+                if trend_rejection:
+                    append_auto_viral_log(
+                        run_id,
+                        f"Skip kandidat perluasan tren ({trend_rejection}): "
+                        f"{payload.get('title') or '-'}",
+                    )
+                    continue
             else:
                 niche_reasons = niche_candidate_relaxation_reasons(payload, request.niche)
                 language_reasons = [
@@ -13865,15 +14163,18 @@ def search_youtube_data_api_viral_sources(
             source = compact_source_payload(payload, request.niche)
             if cron_humor_lane:
                 source = apply_cron_humor_ranking(source, payload)
+            elif cron_trend_lane:
+                source = apply_cron_trend_ranking(source, payload, trend_tokens)
             source["search_provider"] = "youtube_data_api"
             source_tokens = set(re.findall(r"[a-z0-9]{3,}", (
                 f"{payload.get('title') or ''} {payload.get('description') or ''}"
             ).casefold()))
             matching_trend_tokens = sorted(source_tokens.intersection(trend_tokens))
             trend_signal_score = min(20, len(matching_trend_tokens) * 4)
-            source["trend_signal_score"] = trend_signal_score
-            source["trend_matches"] = matching_trend_tokens[:8]
-            source["score"] = round(float(source.get("score") or 0) + trend_signal_score, 2)
+            if not cron_trend_lane:
+                source["trend_signal_score"] = trend_signal_score
+                source["trend_matches"] = matching_trend_tokens[:8]
+                source["score"] = round(float(source.get("score") or 0) + trend_signal_score, 2)
             relaxed_reasons: list[str] = []
             relaxed_reasons.extend(filter_reasons)
             if relaxed_reasons:
@@ -13919,6 +14220,7 @@ def search_auto_viral_sources(
     default_search_mode = "ytsearchdate" if request.sort_order == "newest" else "ytsearch"
     search_mode = default_search_mode
     cron_humor_lane = cron_humor_discovery_active(run_id, request)
+    cron_trend_lane = cron_trend_discovery_active(run_id, request)
     if search_mode not in {"ytsearch", "ytsearchdate"}:
         search_mode = "ytsearchdate"
     for query in request.queries:
@@ -14008,6 +14310,15 @@ def search_auto_viral_sources(
                         f"Skip kandidat humor ({humor_rejection}): {metadata.get('title') or url}",
                     )
                     continue
+            elif cron_trend_lane:
+                trend_rejection = cron_trend_candidate_rejection_reason(metadata)
+                if trend_rejection:
+                    append_auto_viral_log(
+                        run_id,
+                        f"Skip kandidat perluasan tren ({trend_rejection}): "
+                        f"{metadata.get('title') or url}",
+                    )
+                    continue
             else:
                 niche_reasons = niche_candidate_relaxation_reasons(metadata, request.niche)
                 language_reasons = [
@@ -14031,6 +14342,8 @@ def search_auto_viral_sources(
             source = compact_source_payload(metadata, request.niche)
             if cron_humor_lane:
                 source = apply_cron_humor_ranking(source, metadata)
+            elif cron_trend_lane:
+                source = apply_cron_trend_ranking(source, metadata)
             source["search_provider"] = "yt_dlp_fallback"
             relaxed_reasons: list[str] = []
             relaxed_reasons.extend(filter_reasons)
@@ -14714,7 +15027,11 @@ def resolve_selected_auto_viral_sources(
     return sources
 
 
-def create_auto_viral_clip_job(source: dict[str, Any], request: AutoViralRequest) -> ClipJob:
+def create_auto_viral_clip_job(
+    source: dict[str, Any],
+    request: AutoViralRequest,
+    scheduled: bool = False,
+) -> ClipJob:
     strict_rejection = viral_source_rejection_reason(
         source,
         require_creative_commons=request.require_creative_commons,
@@ -14738,6 +15055,7 @@ def create_auto_viral_clip_job(source: dict[str, Any], request: AutoViralRequest
         crop_mode=request.crop_mode,
         require_creative_commons=request.require_creative_commons,
         auto_upload_youtube=False,
+        scheduled_public_source_credit=scheduled,
         confirm_source_rights=request.source_rights_confirmed,
         source_rights_evidence=request.source_rights_evidence,
         creator_perspective=request.creator_perspective,
@@ -14821,6 +15139,7 @@ def create_auto_viral_paired_long_job(
         crop_mode=request.crop_mode,
         require_creative_commons=request.require_creative_commons,
         auto_upload_youtube=False,
+        scheduled_public_source_credit=short_job.request.scheduled_public_source_credit,
         allow_reprocess_source=True,
         confirm_source_rights=request.source_rights_confirmed,
         source_rights_evidence=request.source_rights_evidence,
@@ -15355,6 +15674,54 @@ def wait_for_auto_viral_upload_window(run_id: str) -> None:
         time.sleep(min(15.0, max(0.1, remaining)))
 
 
+def cleanup_uploaded_auto_viral_job(job_id: str) -> int:
+    """Idempotently remove one cron workspace after every upload is verified."""
+    if not job_id:
+        return 0
+    with jobs_lock:
+        if job_id not in jobs:
+            return 0
+    try:
+        return delete_all_job_clips(job_id).removed_clips
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return 0
+        raise
+
+
+def cleanup_verified_auto_viral_item(
+    run_id: str,
+    request: AutoViralRequest,
+    item: dict[str, Any],
+) -> None:
+    """Persist a retryable cleanup checkpoint for a fully uploaded cron item."""
+    job_id = str(item.get("job_id") or "").strip()
+    long_job_id = str(item.get("long_job_id") or "").strip()
+    publish_item_long = bool(request.auto_publish_paired_long_video and long_job_id)
+    item["status"] = "cleanup_pending"
+    item["cleanup"] = "upload terverifikasi; pembersihan file lokal sedang berjalan"
+
+    removed_short = cleanup_uploaded_auto_viral_job(job_id)
+    removed_long = cleanup_uploaded_auto_viral_job(long_job_id) if publish_item_long else 0
+    item["cleanup_removed_short"] = int(item.get("cleanup_removed_short") or 0) + removed_short
+    item["cleanup_removed_long"] = int(item.get("cleanup_removed_long") or 0) + removed_long
+    item["cleanup_completed"] = True
+    item["status"] = "completed"
+    if publish_item_long:
+        item["cleanup"] = (
+            f"{item['cleanup_removed_short']} short dan "
+            f"{item['cleanup_removed_long']} long lokal dihapus setelah upload terverifikasi"
+        )
+    else:
+        item["cleanup"] = (
+            f"{item['cleanup_removed_short']} clip dihapus setelah upload terverifikasi"
+        )
+    append_auto_viral_log(
+        run_id,
+        f"Cleanup cron {job_id[:10]} terkonfirmasi: {item['cleanup']}.",
+    )
+
+
 def upload_auto_viral_processed_jobs(
     run_id: str,
     request: AutoViralRequest,
@@ -15414,11 +15781,17 @@ def upload_auto_viral_processed_jobs(
                     platform="youtube",
                 )
             )
-        if (
-            item.get("status") == "completed"
-            and expected_groups_verified
-            and all(expected_groups_verified)
-        ):
+        if expected_groups_verified and all(expected_groups_verified):
+            if not item.get("cleanup_completed"):
+                item["status"] = "cleanup_pending"
+                item["cleanup"] = "upload terverifikasi; cleanup lokal akan dilanjutkan"
+                update_auto_viral_run(run_id, processed=processed)
+                cleanup_verified_auto_viral_item(run_id, request, item)
+                update_auto_viral_run(
+                    run_id,
+                    processed=processed,
+                    progress_current=position,
+                )
             continue
         with jobs_lock:
             finished_job = jobs.get(job_id)
@@ -15730,18 +16103,10 @@ def upload_auto_viral_processed_jobs(
             item["status"] = "failed"
             update_auto_viral_run(run_id, processed=processed)
             raise RuntimeError("Upload belum sukses semua: " + "; ".join(failures))
-        item["status"] = "completed"
-        cleanup = delete_all_job_clips(job_id)
-        removed_long_clips = 0
-        if publish_item_long:
-            long_cleanup = delete_all_job_clips(long_job_id)
-            removed_long_clips = long_cleanup.removed_clips
-        item["cleanup"] = (
-            f"{cleanup.removed_clips} short dan {removed_long_clips} long lokal dihapus "
-            "setelah upload terverifikasi"
-            if publish_item_long
-            else f"{cleanup.removed_clips} clip dihapus"
-        )
+        item["status"] = "cleanup_pending"
+        item["cleanup"] = "upload terverifikasi; cleanup lokal akan dilanjutkan"
+        update_auto_viral_run(run_id, processed=processed)
+        cleanup_verified_auto_viral_item(run_id, request, item)
         update_auto_viral_run(run_id, processed=processed, progress_current=position)
         append_auto_viral_log(
             run_id,
@@ -16019,9 +16384,14 @@ def discover_auto_viral_campaign_sources(
         fallback_min_views = max(
             0, env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", request.min_views)
         )
-        fallback_queries = prioritized_niche_queries(
-            request.niche,
-            default_auto_viral_queries(),
+        cron_trend_lane = cron_trend_discovery_active(run_id, request)
+        fallback_queries = (
+            request.queries
+            if cron_trend_lane
+            else prioritized_niche_queries(
+                request.niche,
+                default_auto_viral_queries(),
+            )
         )
         if quota_fallback:
             fallback_queries = fallback_queries[:2]
@@ -16215,7 +16585,11 @@ def run_auto_viral_campaign(run_id: str) -> None:
             }
             item_checkpointed = False
             try:
-                job = create_auto_viral_clip_job(source, run_request)
+                job = create_auto_viral_clip_job(
+                    source,
+                    run_request,
+                    run.trigger == "schedule",
+                )
                 item["job_id"] = job.id
                 item["job_status"] = job.status
                 processed.append(item)
@@ -16691,6 +17065,22 @@ def scheduled_auto_viral_humor_queries() -> list[str]:
     return merge_unique_queries(configured, CRON_HUMOR_SEARCH_QUERIES)
 
 
+def scheduled_auto_viral_trend_queries() -> list[str]:
+    """Rotate the cross-topic catalogue reserved for background cron discovery."""
+    configured = env_search_queries("AUTO_VIRAL_SCHEDULE_TREND_QUERIES")
+    queries = merge_unique_queries(configured, CRON_TREND_SEARCH_QUERIES)
+    if not queries:
+        return []
+    with auto_viral_lock:
+        prior_trend_runs = sum(
+            1
+            for run in auto_viral_runs.values()
+            if run.trigger == "schedule" and run.request.cron_trend_lane
+        )
+    offset = prior_trend_runs % len(queries)
+    return [*queries[offset:], *queries[:offset]]
+
+
 def scheduled_auto_viral_humor_theme_focus() -> str:
     """Rotate a humour search on every Nth cron run, never on manual search."""
     if not env_bool("AUTO_VIRAL_SCHEDULE_HUMOR_ENABLED", False):
@@ -16790,12 +17180,17 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
             max(0, env_int("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_COUNT", 2)),
         )
     humor_theme_focus = scheduled_auto_viral_humor_theme_focus()
-    return AutoViralRequest(
+    trend_expansion_enabled = bool(
+        env_bool("AUTO_VIRAL_SCHEDULE_TREND_EXPANSION_ENABLED", True)
+        and not humor_theme_focus
+    )
+    request = AutoViralRequest(
         niche=niche,  # type: ignore[arg-type]
         theme_focus=(
             humor_theme_focus
             or scheduled_auto_viral_theme_focus(niche)  # type: ignore[arg-type]
         ),
+        cron_trend_lane=trend_expansion_enabled,
         cron_humor_lane=bool(humor_theme_focus),
         video_count=scheduled_video_count,
         clips_per_video=clips_per_video,
@@ -16832,6 +17227,26 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
             and not youtube_channel_recovery_mode()
         ),
     )
+    if trend_expansion_enabled:
+        request = request.model_copy(
+            update={
+                "queries": merge_unique_queries(
+                    [request.theme_focus] if request.theme_focus else [],
+                    scheduled_auto_viral_trend_queries(),
+                    request.queries,
+                )[:80]
+            }
+        )
+    elif humor_theme_focus:
+        request = request.model_copy(
+            update={
+                "queries": merge_unique_queries(
+                    [humor_theme_focus],
+                    scheduled_auto_viral_humor_queries(),
+                )[:80]
+            }
+        )
+    return request
 
 
 def auto_viral_schedule_interval_hours() -> float:

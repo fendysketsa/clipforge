@@ -2743,6 +2743,37 @@ def test_default_youtube_description_uses_natural_ai_caption_and_hashtags():
     assert "Channel sumber:" not in description
 
 
+def test_cron_youtube_description_always_adds_compact_source_credit():
+    clip = ClipFile(
+        name="clip_01.mp4",
+        url="/outputs/demo/clips/clip_01.mp4",
+        size_bytes=1,
+        title="Judul Clip",
+        social_caption="Ringkasan singkat untuk penonton.",
+    )
+    job = ClipJob(
+        id="job-cron-source",
+        status="completed",
+        request=ClipJobRequest(
+            url="https://youtu.be/source12345",
+            scheduled_public_source_credit=True,
+        ),
+        created_at="2026-10-21T00:00:00+00:00",
+        updated_at="2026-10-21T00:00:00+00:00",
+        source_title="Ceramah Sumber",
+        source_url="https://youtu.be/source12345",
+        source_uploader="Kreator Asli",
+        clips=[clip],
+    )
+
+    description = default_youtube_description(job, clip)
+
+    assert "Ringkasan singkat untuk penonton." in description
+    assert "Sumber: Kreator Asli — Ceramah Sumber" in description
+    assert "https://youtu.be/source12345" in description
+    assert len(description) <= 5000
+
+
 def test_complete_short_description_is_concise_contextual_and_has_short_tag():
     clip = ClipFile(
         name="clip_01.mp4",

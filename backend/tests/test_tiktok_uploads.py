@@ -90,6 +90,38 @@ def test_tiktok_caption_removes_shorts_and_adds_relevant_islamic_tags():
     assert len(caption) <= 2200
 
 
+def test_tiktok_cron_caption_adds_compact_source_credit_only_for_schedule():
+    clip = ClipFile(
+        name="clip_01.mp4",
+        url="/outputs/demo/clip_01.mp4",
+        size_bytes=10,
+        title="Pelajaran dari sebuah kajian",
+        is_correct=True,
+    )
+    cron_job = ClipJob(
+        id="job-tiktok-cron",
+        status="completed",
+        request=ClipJobRequest(
+            url="https://youtu.be/source12345",
+            scheduled_public_source_credit=True,
+        ),
+        created_at="2026-10-21T00:00:00+00:00",
+        updated_at="2026-10-21T00:00:00+00:00",
+        source_title="Kajian Sumber",
+        source_url="https://youtu.be/source12345",
+        source_uploader="Channel Asli",
+        clips=[clip],
+    )
+
+    cron_caption = tiktok_caption_for_clip(cron_job, clip, 1)
+    manual_caption = tiktok_caption_for_clip(make_job(clip), clip, 1)
+
+    assert "Sumber: Channel Asli — Kajian Sumber" in cron_caption
+    assert "https://youtu.be/source12345" in cron_caption
+    assert "Sumber:" not in manual_caption
+    assert len(cron_caption) <= 2200
+
+
 @pytest.mark.parametrize(
     ("title", "hook", "expected_series"),
     [

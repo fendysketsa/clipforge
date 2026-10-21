@@ -2081,6 +2081,29 @@ def test_scheduled_campaign_uploads_one_quality_batch_when_target_was_three(monk
         api.jobs.pop(finished_job.id, None)
 
 
+def test_scheduled_clip_job_persists_public_source_credit_marker(monkeypatch):
+    import api
+
+    captured: list[ClipJobRequest] = []
+    monkeypatch.setattr(api, "viral_source_rejection_reason", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(api, "wait_for_no_active_clipping_job", lambda: None)
+
+    def capture_request(request: ClipJobRequest):
+        captured.append(request)
+        return request
+
+    monkeypatch.setattr(api, "queue_auto_viral_clip_job", capture_request)
+
+    result = api.create_auto_viral_clip_job(
+        {"url": "https://www.youtube.com/watch?v=source12345"},
+        AutoViralRequest(video_count=1, clips_per_video=1),
+        True,
+    )
+
+    assert result.scheduled_public_source_credit is True
+    assert captured[0].scheduled_public_source_credit is True
+
+
 def test_auto_viral_once_per_boot_ignores_previous_boot_attempt(monkeypatch):
     import api
 
@@ -2517,6 +2540,111 @@ def test_scheduled_humor_gate_rejects_manual_and_unsafe_candidates(monkeypatch):
     assert api.cron_humor_discovery_active(manual_run.id, request) is False
     assert api.cron_humor_candidate_rejection_reason(reference_style) == ""
     assert "tidak aman" in api.cron_humor_candidate_rejection_reason(unsafe)
+
+
+def test_trend_expansion_is_owned_only_by_cron_schedule(monkeypatch):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_TREND_EXPANSION_ENABLED", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_HUMOR_ENABLED", "false")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RANDOMIZE_THEMES", "false")
+    monkeypatch.setattr(api, "auto_viral_runs", {})
+    request = api.scheduled_auto_viral_request()
+    scheduled_run = api.AutoViralRun(
+        id="cron-trend",
+        status="running",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=request,
+    )
+    manual_run = scheduled_run.model_copy(
+        update={"id": "manual-trend", "trigger": "manual"}
+    )
+    monkeypatch.setattr(
+        api,
+        "auto_viral_runs",
+        {scheduled_run.id: scheduled_run, manual_run.id: manual_run},
+    )
+
+    assert request.cron_trend_lane is True
+    assert request.queries[0] == api.CRON_TREND_SEARCH_QUERIES[0]
+    assert api.cron_trend_discovery_active(scheduled_run.id, request) is True
+    assert api.cron_trend_discovery_active(manual_run.id, request) is False
+    assert api.CRON_TREND_SEARCH_QUERIES[0] not in api.default_viral_video_search_queries()
+    assert api.scheduled_auto_viral_trend_queries()[0] == api.CRON_TREND_SEARCH_QUERIES[1]
+
+
+def test_cron_trend_reads_cross_category_youtube_chart(monkeypatch):
+    import api
+
+    monkeypatch.setenv("VIRAL_CC_USE_TREND_CHART", "true")
+    monkeypatch.setenv("VIRAL_CC_TREND_VIDEO_CATEGORY_ID", "25")
+    monkeypatch.delenv("AUTO_VIRAL_SCHEDULE_TREND_VIDEO_CATEGORY_ID", raising=False)
+    observed_params: dict = {}
+
+    def fake_api(path, params):
+        assert path == "videos"
+        observed_params.update(params)
+        return {
+            "items": [
+                {
+                    "snippet": {
+                        "title": "Sinopsis Drama Korea dan Pelajaran Hidup Terbaru",
+                        "description": "Pembahasan cerita dalam Bahasa Indonesia.",
+                        "defaultAudioLanguage": "id",
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr(api, "youtube_data_api_get", fake_api)
+    seeds, tokens = api.youtube_trend_signals(
+        AutoViralRequest(niche="kindness_social_good"),
+        "missing-run",
+        cron_trend=True,
+    )
+
+    assert "videoCategoryId" not in observed_params
+    assert seeds == ["Sinopsis Drama Korea dan Pelajaran Hidup Terbaru"]
+    assert "drama" in tokens
+
+
+def test_cron_prioritizes_live_chart_queries_before_static_fallback():
+    import api
+
+    queries = api.add_trend_seeds_to_queries(
+        ["podcast horor indonesia kisah nyata terbaru"],
+        [
+            "Aruna Wirjoulkito Terbaru Official Video",
+            "Sinopsis Drama Korea Penuh Pelajaran Hidup",
+        ],
+        prefer_live=True,
+    )
+
+    assert queries[:2] == [
+        "Aruna Wirjoulkito pembahasan indonesia",
+        "Sinopsis Drama Korea Penuh Pelajaran Hidup pembahasan indonesia",
+    ]
+    assert queries[-1] == "podcast horor indonesia kisah nyata terbaru"
+
+
+def test_cron_trend_gate_keeps_safe_indonesian_topics(monkeypatch):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_TREND_MIN_SCORE", "18")
+    safe = {
+        "title": "Podcast Horor Indonesia: Kisah Nyata Penuh Misteri",
+        "description": "Cerita seram berbahasa Indonesia untuk pembahasan budaya.",
+        "default_language": "id",
+    }
+    unsafe = {
+        **safe,
+        "title": "Podcast Horor 18+ dengan Gore dan Darah Nyata",
+    }
+
+    assert api.cron_trend_candidate_rejection_reason(safe) == ""
+    assert "tidak aman" in api.cron_trend_candidate_rejection_reason(unsafe)
 
 
 def test_non_cc_source_still_passes_only_when_cc_filter_is_disabled():
@@ -3005,11 +3133,85 @@ def test_deferred_upload_queues_youtube_and_tiktok_before_cleanup(monkeypatch):
     assert queued == ["youtube-1", "tiktok-1"]
     assert processed[0]["youtube_uploads"][0]["status"] == "completed"
     assert processed[0]["tiktok_uploads"][0]["status"] == "completed"
-    assert processed[0]["cleanup"] == "1 clip dihapus"
+    assert processed[0]["cleanup"] == "1 clip dihapus setelah upload terverifikasi"
     with api.auto_viral_lock:
         api.auto_viral_runs.pop(run.id, None)
     with api.jobs_lock:
         api.jobs.pop("job-cross", None)
+
+
+def test_verified_cron_upload_retries_cleanup_without_reupload(monkeypatch):
+    import api
+
+    request = AutoViralRequest(
+        video_count=1,
+        clips_per_video=1,
+        auto_upload_youtube=True,
+    )
+    run = api.AutoViralRun(
+        id="cleanup-retry",
+        status="running",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=request,
+    )
+    processed = [
+        {
+            "job_id": "job-cleanup-retry",
+            "job_status": "completed",
+            "status": "cleanup_pending",
+            "youtube_uploads": [
+                {
+                    "id": "youtube-finished",
+                    "status": "completed",
+                    "video_url": "https://youtu.be/verified",
+                    "upload_confirmed": True,
+                }
+            ],
+        }
+    ]
+    with api.auto_viral_lock:
+        api.auto_viral_runs[run.id] = run
+    with api.jobs_lock:
+        api.jobs["job-cleanup-retry"] = SimpleNamespace(status="completed")
+
+    attempts = 0
+
+    def flaky_cleanup(job_id):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("disk sedang sibuk")
+        with api.jobs_lock:
+            api.jobs.pop(job_id, None)
+        return SimpleNamespace(removed_clips=1)
+
+    monkeypatch.setattr(api, "save_auto_viral_runs_unlocked", lambda: None)
+    monkeypatch.setattr(api, "persisted_upload_group_is_verified", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(api, "delete_all_job_clips", flaky_cleanup)
+    monkeypatch.setattr(
+        api,
+        "create_youtube_upload_batch_records",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("upload terverifikasi tidak boleh dibuat ulang")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="disk sedang sibuk"):
+        api.upload_auto_viral_processed_jobs(run.id, request, processed)
+    assert processed[0]["status"] == "cleanup_pending"
+
+    result = api.upload_auto_viral_processed_jobs(run.id, request, processed)
+
+    assert attempts == 2
+    assert result[0]["status"] == "completed"
+    assert result[0]["cleanup_completed"] is True
+    assert "setelah upload terverifikasi" in result[0]["cleanup"]
+    with api.auto_viral_lock:
+        api.auto_viral_runs.pop(run.id, None)
+    with api.jobs_lock:
+        api.jobs.pop("job-cleanup-retry", None)
 
 
 def test_deferred_upload_queues_every_clipper_result_without_manual_click(monkeypatch):
