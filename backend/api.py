@@ -2010,7 +2010,7 @@ class AutoViralRequest(BaseModel):
     cron_trend_lane: bool = False
     cron_humor_lane: bool = False
     queries: list[str] = Field(default_factory=default_auto_viral_queries)
-    video_count: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_VIDEO_COUNT", 5), ge=1, le=7)
+    video_count: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_VIDEO_COUNT", 5), ge=1, le=15)
     clips_per_video: int = Field(default_factory=youtube_auto_upload_count, ge=1, le=5)
     search_limit_per_query: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_SEARCH_LIMIT", 25), ge=3, le=50)
     min_source_duration: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MIN_SOURCE_SECONDS", 60), ge=30, le=7200)
@@ -2050,7 +2050,7 @@ class AutoViralRequest(BaseModel):
     # None preserves the manual/API behavior of pairing every successful
     # source. Scheduled runs set an explicit cap so Long never becomes 1:1
     # with Shorts.
-    paired_long_video_count: int | None = Field(default=None, ge=0, le=7)
+    paired_long_video_count: int | None = Field(default=None, ge=0, le=15)
     paired_long_duration: float = Field(default=300, ge=240, le=600)
     auto_publish_paired_long_video: bool = False
 
@@ -2075,7 +2075,7 @@ class AutoViralRequest(BaseModel):
             if normalized and normalized not in seen:
                 cleaned.append(normalized)
                 seen.add(normalized)
-        return cleaned[:7]
+        return cleaned[:15]
 
     @model_validator(mode="after")
     def _apply_niche_priority(self) -> "AutoViralRequest":
@@ -2445,6 +2445,7 @@ def load_auto_viral_runs() -> dict[str, AutoViralRun]:
                 "social_upload",
                 "retry_upload",
                 "daily_upload_limit",
+                "youtube_platform_daily_limit",
                 "resume_pending_upload",
             }
         )
@@ -4131,6 +4132,22 @@ def normalize_youtube_upload_error(error: str) -> str:
             "Studio belum siap membaca playlist. Klik Login Sekali untuk refresh session, lalu Retry YouTube."
         )
     return clean
+
+
+def youtube_platform_daily_upload_limit_error(error: str) -> bool:
+    """Recognize Studio's rolling 24-hour channel upload limit."""
+    compact = re.sub(r"[^a-z0-9]", "", str(error or "").casefold())
+    return any(
+        marker in compact
+        for marker in (
+            "youtubedailyuploadlimit",
+            "dailyuploadlimitreached",
+            "youcanuploadmorevideosin24hours",
+            "batasuploadhariantercapai",
+            "bataspenguploadanhariantercapai",
+            "batchdipertahankanuntukdilanjutkansetelah24jam",
+        )
+    )
 
 
 def media_duration_seconds(path: Path) -> float:
@@ -12497,7 +12514,7 @@ def run_job(job_id: str) -> None:
             # the same durable eligibility checks as the periodic sweep, so a
             # standalone result no longer waits for the user to press either
             # upload button. Auto Viral child jobs are excluded above and stay
-            # under the campaign's 5 Short + 2 Long quota-aware uploader.
+            # under the campaign's configurable Short/Long quota-aware uploader.
             if env_bool("AUTO_UPLOAD_COMPLETED_JOBS", False):
                 completed_job_upload_sweeper_wakeup.set()
             if request.auto_upload_youtube:
@@ -15338,7 +15355,7 @@ def auto_viral_daily_upload_limit() -> int:
     """Hard per-platform cap for scheduled uploads on one Jakarta date."""
     return max(
         1,
-        min(7, env_int("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", 7)),
+        min(15, env_int("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", 15)),
     )
 
 
@@ -15348,7 +15365,7 @@ def auto_viral_daily_short_upload_target() -> int:
         0,
         min(
             auto_viral_daily_upload_limit(),
-            env_int("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", 5),
+            env_int("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", 14),
         ),
     )
 
@@ -15363,7 +15380,7 @@ def auto_viral_daily_long_upload_target() -> int:
         0,
         min(
             remaining,
-            env_int("AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET", 2),
+            env_int("AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET", 1),
         ),
     )
 
@@ -15574,7 +15591,7 @@ def auto_viral_daily_platform_upload_keys(
             continue
         # An in-flight upload reserves a slot even when it was queued shortly
         # before midnight. This prevents completions crossing the date boundary
-        # from allowing more than seven real uploads on the new WIB date.
+        # from allowing more than the configured cap on the new WIB date.
         if getattr(record, "status", "") in {"queued", "running"}:
             keys.add((job_id, clip_url))
             continue
@@ -16150,6 +16167,39 @@ def upload_auto_viral_until_success(
                     break
                 time.sleep(min(15.0, max(0.1, remaining)))
         except Exception as exc:
+            if youtube_platform_daily_upload_limit_error(str(exc)):
+                retry_at = datetime.now(timezone.utc) + timedelta(
+                    hours=24,
+                    minutes=1,
+                )
+                for item in processed:
+                    if item.get("status") in {"uploading", "failed"}:
+                        item["status"] = "awaiting_upload"
+                append_auto_viral_log(
+                    run_id,
+                    "YouTube Studio mencapai batas upload rolling 24 jam; "
+                    "batch tersisa dipertahankan tanpa membuat upload duplikat.",
+                )
+                update_auto_viral_run(
+                    run_id,
+                    status="running",
+                    finished_at=None,
+                    upload_not_before=retry_at.isoformat(),
+                    progress_stage="youtube_platform_daily_limit",
+                    processed=processed,
+                    message=(
+                        "Batas upload channel YouTube tercapai; batch aman dan "
+                        f"dilanjutkan setelah {retry_at.astimezone(ZoneInfo('Asia/Jakarta')).strftime('%d-%m-%Y %H:%M')} WIB."
+                    ),
+                )
+                while True:
+                    remaining = (
+                        retry_at - datetime.now(timezone.utc)
+                    ).total_seconds()
+                    if remaining <= 0:
+                        break
+                    time.sleep(min(15.0, max(0.1, remaining)))
+                continue
             if not auto_viral_retry_until_success():
                 raise
             with auto_viral_lock:
@@ -17154,7 +17204,7 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
     )
     configured_video_count = max(
         1,
-        min(7, env_int("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", 5)),
+        min(15, env_int("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", 14)),
     )
     youtube_counts = auto_viral_daily_youtube_content_counts()
     remaining_shorts = max(
@@ -17165,8 +17215,15 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         0,
         auto_viral_daily_long_upload_target() - youtube_counts["long"],
     )
+    # A paired Long is rendered from the same source analysis as a Short, but
+    # it does not require publishing that Short.  Once the daily Short target
+    # is full, keep one source job available for every missing Long and turn
+    # off only the YouTube Short upload path. This avoids stopping with an
+    # incomplete mix or publishing an extra Short before a missing Long uses
+    # the final reserved slot.
+    remaining_source_batches = max(remaining_shorts, remaining_longs)
     scheduled_video_count = (
-        max(1, min(configured_video_count, remaining_shorts))
+        max(1, min(configured_video_count, remaining_source_batches))
         if youtube_upload_requested
         else configured_video_count
     )
@@ -17177,7 +17234,7 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
     else:
         scheduled_long_count = min(
             scheduled_video_count,
-            max(0, env_int("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_COUNT", 2)),
+            max(0, env_int("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_COUNT", 1)),
         )
     humor_theme_focus = scheduled_auto_viral_humor_theme_focus()
     trend_expansion_enabled = bool(
@@ -17205,6 +17262,7 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         ),
         auto_upload_youtube=bool(
             youtube_upload_requested
+            and remaining_shorts > 0
             and rights_profile_ready
             and headless_private_ready
         ),
@@ -17597,6 +17655,11 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
         "AUTO_VIRAL_SCHEDULE_PAIRED_LONG_AUTO_PUBLIC", False
     )
     scheduled_request = scheduled_auto_viral_request()
+    youtube_counts = auto_viral_daily_youtube_content_counts()
+    youtube_short_upload_pending = bool(
+        youtube_upload_requested
+        and youtube_counts["short"] < auto_viral_daily_short_upload_target()
+    )
     latest = latest_scheduled_auto_viral_run()
     with auto_viral_scheduler_lock:
         scheduler_running = auto_viral_scheduler_running
@@ -17606,7 +17669,7 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
     if not enabled:
         message = "Scheduler nonaktif; set AUTO_VIRAL_SCHEDULE_ENABLED=true lalu restart backend."
     elif (
-        youtube_upload_requested
+        youtube_short_upload_pending
         and not scheduled_request.auto_upload_youtube
     ) or (
         tiktok_upload_requested
@@ -17674,17 +17737,42 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
 
 
 def auto_viral_daily_mix_not_before(now: datetime) -> datetime | None:
-    """Pause new discovery once today's 5/2 mix has no safe Short capacity."""
+    """Pause discovery only after the complete Short/Long mix or hard cap."""
     if not env_bool("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False):
         return None
     counts = auto_viral_daily_youtube_content_counts(now)
     short_target = auto_viral_daily_short_upload_target()
+    long_target = (
+        auto_viral_daily_long_upload_target()
+        if env_bool("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", True)
+        and env_bool("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_AUTO_PUBLIC", False)
+        else 0
+    )
     if (
-        counts["short"] >= short_target
+        (
+            counts["short"] >= short_target
+            and counts["long"] >= long_target
+        )
         or counts["short"] + counts["long"] >= auto_viral_daily_upload_limit()
     ):
         return auto_viral_next_upload_date(now)
     return None
+
+
+def auto_viral_daily_mix_incomplete(now: datetime) -> bool:
+    """Return whether another recurring run can still fill today's upload mix."""
+    if not env_bool("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False):
+        return False
+    counts = auto_viral_daily_youtube_content_counts(now)
+    if counts["short"] + counts["long"] >= auto_viral_daily_upload_limit():
+        return False
+    short_missing = counts["short"] < auto_viral_daily_short_upload_target()
+    long_missing = bool(
+        env_bool("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", True)
+        and env_bool("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_AUTO_PUBLIC", False)
+        and counts["long"] < auto_viral_daily_long_upload_target()
+    )
+    return short_missing or long_missing
 
 
 def auto_viral_next_run_at(
@@ -17739,6 +17827,22 @@ def auto_viral_next_run_at(
         return max(
             auto_viral_boot_not_before(now),
             now + timedelta(hours=auto_viral_cycle_delay_hours()),
+        )
+    if (
+        latest is not None
+        and latest.status == "completed"
+        and auto_viral_daily_mix_incomplete(now)
+    ):
+        # A completed run may yield fewer quality-gated items than requested.
+        # Retry the remaining daily mix promptly instead of waiting a full
+        # cycle and permanently carrying an incomplete Short/Long mix.
+        retry_anchor = parse_utc_datetime(
+            latest.finished_at or latest.updated_at or latest.created_at,
+            now,
+        )
+        return max(
+            auto_viral_boot_not_before(now),
+            retry_anchor + timedelta(minutes=auto_viral_retry_delay_minutes()),
         )
     # RUN_ON_STARTUP applies to recurring schedules too.  The old behavior
     # honored it only when there was no history, so restarting the machine left

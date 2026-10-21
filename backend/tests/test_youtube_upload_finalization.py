@@ -6,6 +6,7 @@ import youtube_uploader
 from youtube_uploader import (
     FENDY_CLIPPER_UPLOAD_PAGE_NAME,
     ThumbnailDailyLimitUploadError,
+    VideoDailyLimitUploadError,
     UploadError,
     click_final_upload_action,
     clear_existing_studio_tags,
@@ -27,6 +28,8 @@ from youtube_uploader import (
     set_thumbnail,
     should_upload_custom_thumbnail,
     custom_thumbnail_daily_limit_detected,
+    require_video_daily_upload_slot,
+    video_daily_upload_limit_detected,
     fill_tags,
     normalized_studio_tags,
     validate_thumbnail_file,
@@ -812,6 +815,25 @@ def test_custom_thumbnail_daily_limit_is_detected_in_indonesian():
     )
 
     assert custom_thumbnail_daily_limit_detected(page) is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Daily upload limit reached. You can upload more videos in 24 hours.",
+        "Batas upload harian tercapai. Anda dapat mengunggah lebih banyak video dalam 24 jam.",
+    ],
+)
+def test_video_daily_upload_limit_is_detected_and_raises_stable_marker(
+    monkeypatch,
+    message,
+):
+    page = TextPage(message)
+    monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
+
+    assert video_daily_upload_limit_detected(page) is True
+    with pytest.raises(VideoDailyLimitUploadError, match="YOUTUBE_DAILY_UPLOAD_LIMIT"):
+        require_video_daily_upload_slot(page)
 
 
 def test_thumbnail_daily_limit_stops_waiting_without_resubmitting(monkeypatch, tmp_path):

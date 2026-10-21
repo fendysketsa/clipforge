@@ -378,10 +378,12 @@ YOUTUBE_DATA_API_KEY=your_google_api_key
 AUTO_VIRAL_SCHEDULE_ENABLED=true
 AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP=true
 AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT=false
-AUTO_VIRAL_SCHEDULE_RUN_KEY=trend-expansion-daily-v4
+AUTO_VIRAL_SCHEDULE_RUN_KEY=trend-expansion-daily-14s1l-v5
 AUTO_VIRAL_SCHEDULE_RETRY_UNTIL_SUCCESS=true
 AUTO_VIRAL_SCHEDULE_RETRY_DELAY_MINUTES=5
-AUTO_VIRAL_DAILY_UPLOAD_LIMIT=7
+AUTO_VIRAL_DAILY_UPLOAD_LIMIT=15
+AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET=14
+AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET=1
 AUTO_VIRAL_BOOT_DELAY_MINUTES=30
 AUTO_VIRAL_POST_CLIP_UPLOAD_DELAY_MINUTES=0
 AUTO_VIRAL_CYCLE_DELAY_HOURS=24
@@ -397,8 +399,12 @@ AUTO_VIRAL_SCHEDULE_HUMOR_ENABLED=true
 AUTO_VIRAL_SCHEDULE_HUMOR_EVERY_RUNS=4
 AUTO_VIRAL_SCHEDULE_HUMOR_MIN_SCORE=24
 AUTO_VIRAL_SCHEDULE_REQUIRE_CREATIVE_COMMONS=false
-AUTO_VIRAL_SCHEDULE_VIDEO_COUNT=3
+AUTO_VIRAL_SCHEDULE_VIDEO_COUNT=14
 AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO=1
+AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED=true
+AUTO_VIRAL_SCHEDULE_PAIRED_LONG_COUNT=1
+AUTO_VIRAL_SCHEDULE_PAIRED_LONG_SECONDS=300
+AUTO_VIRAL_SCHEDULE_PAIRED_LONG_AUTO_PUBLIC=true
 AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE=true
 AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_TIKTOK=true
 AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED=true
@@ -434,11 +440,18 @@ Trend titles are inspiration only: source-rights, language, age, HD, safety,
 AI/editorial, platform-check, and upload-confirmation gates still run before a
 local file can be deleted.
 
-Scheduled uploads have a hard per-platform limit of seven unique clips for each
-Asia/Jakarta calendar date. Active uploads reserve their slots, while retries of
+Scheduled uploads have a configurable hard per-platform limit capped at fifteen
+unique clips for each Asia/Jakarta calendar date. The production mix is fourteen
+YouTube Shorts plus one paired Long Story. Active uploads reserve their slots, while retries of
 the same clip do not consume another slot. When the limit is reached, the durable
 batch is held until 00:01 WIB on the next date; if the laptop is off, it resumes
 from that checkpoint after the laptop and backend are running again.
+
+YouTube does not publish one guaranteed numeric daily limit for every channel;
+the effective limit varies with feature eligibility, region, and channel history.
+If Studio reports its own rolling 24-hour upload limit before all fifteen uploads
+finish, ClipForge preserves the remaining batch and resumes after the platform
+window reopens instead of repeatedly submitting duplicate uploads.
 
 `AUTO_VIRAL_SCHEDULE_RUN_KEY` identifies the schedule configuration in durable
 history. Change it when schedule semantics change. It also distinguishes boot

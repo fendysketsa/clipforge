@@ -48,6 +48,10 @@ class ThumbnailDailyLimitUploadError(UploadError):
     """Studio rejected a custom thumbnail because the channel hit its daily limit."""
 
 
+class VideoDailyLimitUploadError(UploadError):
+    """Studio rejected the video because the channel hit its rolling upload limit."""
+
+
 class FinalUploadTransferError(UploadError):
     """Studio explicitly reported that the selected video's transfer failed."""
 
@@ -2870,6 +2874,31 @@ def custom_thumbnail_daily_limit_detected(page) -> bool:
     except Exception:
         page_text = normalized_page_text(page)
         return any(marker in page_text for marker in markers)
+
+
+def video_daily_upload_limit_detected(page) -> bool:
+    """Detect YouTube Studio's channel-level rolling 24-hour video limit."""
+    markers = (
+        "dailyuploadlimitreached",
+        "youcanuploadmorevideosin24hours",
+        "uploadlimitreachedyoucanuploadmorevideosin24hours",
+        "batasuploadhariantercapai",
+        "bataspenguploadanhariantercapai",
+        "andadapatmenguploadlebihbanyakvideodalam24jam",
+        "andadapatmengunggahlebihbanyakvideodalam24jam",
+    )
+    page_text = normalized_page_text(page)
+    return any(marker in page_text for marker in markers)
+
+
+def require_video_daily_upload_slot(page) -> None:
+    if not video_daily_upload_limit_detected(page):
+        return
+    save_debug_artifacts(page, "video-daily-upload-limit")
+    raise VideoDailyLimitUploadError(
+        "YOUTUBE_DAILY_UPLOAD_LIMIT: YouTube Studio menyatakan batas upload video "
+        "rolling 24 jam tercapai; batch dipertahankan untuk dilanjutkan setelah 24 jam."
+    )
 
 
 def dismiss_custom_thumbnail_daily_limit(page) -> None:
@@ -5865,6 +5894,7 @@ def wait_for_final_upload_confirmation(
         body = "\n".join(part for part in (dialog_body, global_body) if part)
         last_body = re.sub(r"\s+", " ", body).strip()[:500]
         if any(re.search(pattern, body, re.I) for pattern in error_patterns):
+            require_video_daily_upload_slot(page)
             save_debug_artifacts(page, "final-upload-failed")
             raise UploadError(
                 "YouTube melaporkan transfer upload gagal. "
@@ -6319,8 +6349,10 @@ def run_upload(args: argparse.Namespace) -> None:
                 args.studio_url,
             )
             select_video_file(page, video_path, timeout_ms=30000)
+            require_video_daily_upload_slot(page)
 
             if not upload_metadata_form_ready(page, timeout_ms=60000):
+                require_video_daily_upload_slot(page)
                 save_debug_artifacts(page, "upload-metadata-form-not-ready")
                 raise UploadError("Form detail upload YouTube belum siap setelah file dipilih.")
             set_upload_text_field(
@@ -6558,6 +6590,7 @@ def run_upload(args: argparse.Namespace) -> None:
                 log("Dry-run aktif; proses berhenti sebelum publish/save final.")
                 return
 
+            require_video_daily_upload_slot(page)
             uploaded_video_url = extract_video_url(page, upload_title)
             click_final_upload_action(
                 page,
