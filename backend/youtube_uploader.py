@@ -2619,9 +2619,166 @@ def click_final_upload_action(
     raise UploadError(f"Tombol final '{label}' tidak ditemukan.")
 
 
+def normalized_studio_tags(tags: str, *, maximum_tags: int = 15) -> list[str]:
+    """Return a conservative, deduplicated tag list for YouTube Studio."""
+    normalized: list[str] = []
+    seen: set[str] = set()
+    total_characters = 0
+    for raw_tag in tags.split(","):
+        tag = re.sub(r"\s+", " ", raw_tag.strip().lstrip("#")).strip()
+        if not tag:
+            continue
+        tag = tag[:100].strip()
+        identity = tag.casefold()
+        if not tag or identity in seen:
+            continue
+        # Studio allows 500 characters. Keep some headroom for separators and
+        # UI-side normalization so a metadata update never fails at the limit.
+        added_characters = len(tag) + (2 if normalized else 0)
+        if total_characters + added_characters > 450:
+            break
+        normalized.append(tag)
+        seen.add(identity)
+        total_characters += added_characters
+        if len(normalized) >= maximum_tags:
+            break
+    return normalized
+
+
+def find_studio_tags_input(page):
+    selectors = (
+        "ytcp-uploads-dialog #tags-container input",
+        "ytcp-video-metadata-editor #tags-container input",
+        "#tags-container input#text-input",
+        'ytcp-uploads-dialog input[aria-label*="tag" i]',
+        'ytcp-uploads-dialog textarea[aria-label*="tag" i]',
+    )
+    for frame in getattr(page, "frames", [page]):
+        for selector in selectors:
+            try:
+                locator = frame.locator(selector).first
+                if locator.count() and locator.is_visible(timeout=300):
+                    return locator
+            except Exception:
+                continue
+    return None
+
+
+def studio_tags_state(page) -> dict[str, object]:
+    """Read only the visible upload dialog's tags container."""
+    try:
+        state = page.evaluate(
+            r"""
+            () => {
+              const visible = (node) => {
+                if (!(node instanceof Element)) return false;
+                const style = window.getComputedStyle(node);
+                const rect = node.getBoundingClientRect();
+                return style.display !== 'none' && style.visibility !== 'hidden' &&
+                  rect.width > 0 && rect.height > 0;
+              };
+              const dialogs = Array.from(document.querySelectorAll('ytcp-uploads-dialog')).filter(visible);
+              const surface = dialogs.at(-1) || document;
+              const container = surface.querySelector('#tags-container') ||
+                surface.querySelector('ytcp-form-input-container[label*="tag" i]');
+              if (!container || !visible(container)) {
+                return {found: false, chips: [], inputValue: '', text: ''};
+              }
+              const input = container.querySelector('input, textarea, [contenteditable="true"]');
+              const chips = Array.from(container.querySelectorAll(
+                'ytcp-chip, tp-yt-paper-chip, [role="option"], .ytcp-chip'
+              )).filter(visible).map((chip) => (chip.innerText || chip.textContent || '').trim())
+                .filter(Boolean);
+              return {
+                found: true,
+                chips,
+                inputValue: input ? (input.value || input.textContent || '').trim() : '',
+                text: (container.innerText || container.textContent || '').trim(),
+              };
+            }
+            """
+        )
+    except Exception:
+        return {"found": False, "chips": [], "inputValue": "", "text": ""}
+    return state if isinstance(state, dict) else {
+        "found": False,
+        "chips": [],
+        "inputValue": "",
+        "text": "",
+    }
+
+
+def clear_existing_studio_tags(page, field) -> None:
+    """Remove Studio/channel-default chips before applying clip-specific tags."""
+    try:
+        field.click(timeout=1500)
+        field.press("Control+A")
+        field.press("Backspace")
+        # Backspace on an empty chip input removes the preceding chip. Studio
+        # re-renders after each removal, hence reacquiring the field each time.
+        for _ in range(40):
+            current = find_studio_tags_input(page)
+            if current is None:
+                break
+            current.click(timeout=500)
+            current.press("Backspace")
+            state = studio_tags_state(page)
+            if state.get("found") and not state.get("chips"):
+                break
+    except Exception as exc:
+        raise UploadError(f"Tag bawaan YouTube tidak dapat dibersihkan: {exc}") from exc
+
+    state = studio_tags_state(page)
+    if not state.get("found"):
+        raise UploadError("Status kolom Tags tidak dapat diverifikasi setelah pembersihan.")
+    if state.get("chips"):
+        raise UploadError(
+            "Tag bawaan channel masih menempel setelah dibersihkan; upload dihentikan agar metadata tidak salah."
+        )
+
+
 def fill_tags(page, tags: str) -> None:
-    if tags.strip():
-        log("Kolom Tags lanjutan dilewati; hashtag sudah dimasukkan ke deskripsi.")
+    requested_tags = normalized_studio_tags(tags)
+    if not requested_tags:
+        return
+
+    open_advanced_upload_settings(page, timeout_ms=8000)
+    field = find_studio_tags_input(page)
+    if field is None:
+        save_debug_artifacts(page, "youtube-tags-input-not-found")
+        raise UploadError("Kolom Tags YouTube Studio tidak ditemukan.")
+
+    clear_existing_studio_tags(page, field)
+    for tag in requested_tags:
+        field = find_studio_tags_input(page)
+        if field is None:
+            raise UploadError("Kolom Tags hilang saat metadata sedang diisi.")
+        field.fill(tag, timeout=1500)
+        field.press("Enter")
+
+    state = studio_tags_state(page)
+    saved_tags = [
+        re.sub(r"\s+", " ", str(item).strip().lstrip("#")).strip()
+        for item in state.get("chips", [])
+        if str(item).strip()
+    ]
+    saved_identities = {tag.casefold() for tag in saved_tags}
+    requested_identities = {tag.casefold() for tag in requested_tags}
+    missing = [tag for tag in requested_tags if tag.casefold() not in saved_identities]
+    unexpected = [tag for tag in saved_tags if tag.casefold() not in requested_identities]
+    if not state.get("found") or missing or unexpected:
+        save_debug_artifacts(page, "youtube-tags-not-saved")
+        problem_parts = []
+        if missing:
+            problem_parts.append("kurang: " + ", ".join(missing))
+        if unexpected:
+            problem_parts.append("tag lama/asing: " + ", ".join(unexpected))
+        if not problem_parts:
+            problem_parts.append("status kolom tidak terbaca")
+        raise UploadError(
+            "Tag YouTube belum tersimpan lengkap/tepat (" + "; ".join(problem_parts) + ")."
+        )
+    log(f"Tags YouTube terverifikasi: {', '.join(requested_tags)}")
 
 
 def validate_thumbnail_file(
@@ -6223,7 +6380,7 @@ def run_upload(args: argparse.Namespace) -> None:
             log("Setelan audiens dipilih.")
             set_altered_content_disclosure(page, args.altered_content)
             if args.tags:
-                log("Kolom Tags lanjutan dilewati; hashtag sudah dimasukkan ke deskripsi.")
+                fill_tags(page, args.tags)
 
             # Studio can re-render the Details form after thumbnail/playlist
             # changes. Verify the exact active fields immediately before we

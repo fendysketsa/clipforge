@@ -8,6 +8,7 @@ from youtube_uploader import (
     ThumbnailDailyLimitUploadError,
     UploadError,
     click_final_upload_action,
+    clear_existing_studio_tags,
     close_duplicate_target_studio_tabs,
     close_idle_fendy_clipper_upload_tabs,
     close_upload_tab,
@@ -26,12 +27,106 @@ from youtube_uploader import (
     set_thumbnail,
     should_upload_custom_thumbnail,
     custom_thumbnail_daily_limit_detected,
+    fill_tags,
+    normalized_studio_tags,
     validate_thumbnail_file,
     verify_saved_video_in_studio,
     wait_for_copyright_checks,
     wait_for_final_upload_confirmation,
     wait_for_review_checks_safe_before_publish,
 )
+
+
+class TagsField:
+    def __init__(self, page):
+        self.page = page
+        self.value = ""
+
+    def fill(self, value, **_kwargs):
+        self.value = value
+
+    def press(self, key):
+        if key == "Enter":
+            self.page.saved_tags.append(self.value)
+            self.value = ""
+        elif key == "Backspace" and not self.value and self.page.existing_tags:
+            self.page.existing_tags.pop()
+
+    def click(self, **_kwargs):
+        return None
+
+
+class TagsPage:
+    def __init__(self):
+        self.saved_tags = []
+        self.existing_tags = []
+        self.field = TagsField(self)
+
+
+def test_studio_tags_are_normalized_deduplicated_and_bounded():
+    raw = "#Shorts, BPJN, shorts,  Asuransi   Pekerja, , Proyek"
+
+    assert normalized_studio_tags(raw) == [
+        "Shorts",
+        "BPJN",
+        "Asuransi Pekerja",
+        "Proyek",
+    ]
+    assert len(normalized_studio_tags(",".join(f"tag-{index}" for index in range(30)))) == 15
+
+
+def test_existing_channel_default_tags_are_removed_before_upload(monkeypatch):
+    page = TagsPage()
+    page.existing_tags = ["cerita horor", "urban legend", "hantu Indonesia"]
+    monkeypatch.setattr(youtube_uploader, "find_studio_tags_input", lambda _page: page.field)
+    monkeypatch.setattr(
+        youtube_uploader,
+        "studio_tags_state",
+        lambda _page: {
+            "found": True,
+            "chips": list(page.existing_tags),
+            "text": " ".join(page.existing_tags),
+        },
+    )
+
+    clear_existing_studio_tags(page, page.field)
+
+    assert page.existing_tags == []
+
+
+def test_fill_tags_replaces_defaults_and_verifies_contextual_tags(monkeypatch):
+    page = TagsPage()
+    logs = []
+    monkeypatch.setattr(youtube_uploader, "open_advanced_upload_settings", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(youtube_uploader, "find_studio_tags_input", lambda _page: page.field)
+    monkeypatch.setattr(youtube_uploader, "clear_existing_studio_tags", lambda *_args: None)
+    monkeypatch.setattr(
+        youtube_uploader,
+        "studio_tags_state",
+        lambda _page: {"found": True, "chips": list(page.saved_tags), "text": ""},
+    )
+    monkeypatch.setattr(youtube_uploader, "log", logs.append)
+
+    fill_tags(page, "#Shorts, BPJN, Asuransi Pekerja, Proyek")
+
+    assert page.saved_tags == ["Shorts", "BPJN", "Asuransi Pekerja", "Proyek"]
+    assert logs == ["Tags YouTube terverifikasi: Shorts, BPJN, Asuransi Pekerja, Proyek"]
+
+
+def test_fill_tags_stops_upload_when_studio_does_not_persist_a_tag(monkeypatch):
+    page = TagsPage()
+    monkeypatch.setattr(youtube_uploader, "open_advanced_upload_settings", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(youtube_uploader, "find_studio_tags_input", lambda _page: page.field)
+    monkeypatch.setattr(youtube_uploader, "clear_existing_studio_tags", lambda *_args: None)
+    monkeypatch.setattr(
+        youtube_uploader,
+        "studio_tags_state",
+        lambda _page: {"found": True, "chips": ["Shorts"], "text": ""},
+    )
+    monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
+
+    with pytest.raises(UploadError, match="belum tersimpan lengkap"):
+        fill_tags(page, "Shorts, BPJN")
 
 
 class TextPage:

@@ -8560,6 +8560,77 @@ def candidate_is_high_information_extended_short(candidate: ClipCandidate) -> bo
     return bool(high_information_extended_short_profile(candidate)["qualified"])
 
 
+def channel_1k_pattern_profile(candidate: ClipCandidate) -> dict[str, object]:
+    """A bounded prior learned from this channel's measured >=1K Shorts.
+
+    It intentionally stays small: historical packaging signals may break a tie,
+    but can never rescue an incomplete, unsafe, or low-retention candidate.
+    """
+    packaging = " ".join(
+        value.strip() for value in (candidate.title, candidate.hook, candidate.text) if value.strip()
+    )
+    normalized = packaging.casefold()
+    opening = " ".join(normalized.split()[:18])
+    conversational = bool(
+        "?" in packaging
+        or re.search(
+            r"\b(apa|apakah|kenapa|mengapa|bagaimana|berapa|kok|kalau|ternyata|tahu(?:kah)?|masa)\b",
+            opening,
+        )
+    )
+    contrast = bool(
+        re.search(
+            r"\b(tapi|tetapi|namun|padahal|bukan|jangan|malah|justru|dibanding|versus|vs)\b",
+            normalized,
+        )
+    )
+    title_words = [
+        word
+        for word in re.findall(r"[\w'-]+", candidate.title, flags=re.UNICODE)
+        if len(word) >= 3
+    ]
+    generic_title_words = {
+        "hal",
+        "ini",
+        "itu",
+        "yang",
+        "tentang",
+        "penting",
+        "nasihat",
+        "hikmah",
+        "pelajaran",
+        "menarik",
+        "viral",
+    }
+    specific_title_words = {
+        word.casefold() for word in title_words if word.casefold() not in generic_title_words
+    }
+    concrete = bool(
+        re.search(r"(?:\b\d+[\d.,]*\b|\brp\s?\d|\b[A-Z]{2,}\b)", packaging)
+        or len(specific_title_words) >= 3
+    )
+    duration_fit = 25.0 <= candidate.duration <= 45.0
+
+    # Concrete context plus at least one delivery signal must cooperate. This
+    # prevents generic clickbait questions from outranking a complete story.
+    signal_count = sum((conversational, contrast, concrete))
+    qualified = bool(duration_fit and concrete and signal_count >= 2)
+    bonus = 0.0
+    if qualified:
+        bonus = 1.25
+        bonus += 0.75 if conversational else 0.0
+        bonus += 0.75 if contrast else 0.0
+        bonus += 0.75 if concrete else 0.0
+    return {
+        "qualified": qualified,
+        "bonus": min(3.5, bonus),
+        "duration_fit": duration_fit,
+        "conversational": conversational,
+        "contrast": contrast,
+        "concrete": concrete,
+    }
+
+
 def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0) -> float:
     micro_thesis = micro_thesis_profile(candidate.text, candidate.duration)
     social_anecdote = social_anecdote_profile(candidate.text, candidate.duration)
@@ -8568,6 +8639,7 @@ def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0
     structured_comparison = structured_comparison_profile(candidate.text, candidate.duration)
     claim_rebuttal = claim_rebuttal_profile(candidate.text, candidate.duration)
     islamic_story = islamic_story_radar_profile(candidate.text, candidate.duration)
+    channel_pattern = channel_1k_pattern_profile(candidate)
     high_information_extended = candidate_is_high_information_extended_short(candidate)
     effective_target = (
         23.0
@@ -8610,6 +8682,7 @@ def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0
         + (4.0 if claim_rebuttal["qualified"] else 0.0)
         + (5.0 if high_information_extended else 0.0)
         + float(islamic_story["score_bonus"])
+        + float(channel_pattern["bonus"])
         + narrative_score
         + duration_priority
         - abs(candidate.duration - effective_target) * 0.08
@@ -9170,6 +9243,10 @@ AI_SYSTEM_PROMPT = (
     "worship detail and preserve the speaker's evidence without inventing rulings; Islamic-history clips must "
     "build an accurate premise-conflict-payoff arc with an explicit lesson for life today. Prefer a specific "
     "problem, correction, contrast, or transformation over generic preaching. "
+    "Use this channel's measured >=1K-view pattern only as a small tie-breaker: complete 25–45 second clips "
+    "with a source-grounded concrete actor, object, number, or practical stake tend to perform better when "
+    "they also open conversationally, ask a direct question, or contain a truthful contrast. Never copy a "
+    "past topic, inflate a claim, or sacrifice context just to match this pattern. "
     "When selecting several clips from one conversation, every clip must answer a different viewer question "
     "or deliver a genuinely different takeaway; never turn paraphrases of one point into a series. Package each "
     "title around a concrete subject or object plus its tension, contrast, or outcome. Keep it truthful and "
@@ -9272,6 +9349,7 @@ def ai_rescore_candidates(
             "high_information_extended_short": candidate_is_high_information_extended_short(
                 candidate
             ),
+            "channel_1k_pattern": channel_1k_pattern_profile(candidate),
             "text": candidate.text[:800],
         }
         for idx, candidate in enumerate(pool)

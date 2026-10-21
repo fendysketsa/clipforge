@@ -9,7 +9,26 @@ cd "$ROOT_DIR"
 # "mount callback failed / failed to open writer" error.
 RECREATE_LOCK_PATH="${RECREATE_LOCK_PATH:-/tmp/clipforge-recreate-compose-up.lock}"
 if command -v flock >/dev/null 2>&1; then
-  exec 9>"$RECREATE_LOCK_PATH"
+  # Open the lock read-only. Linux fs.protected_regular can reject root's
+  # write/truncate open on a user-owned file inside sticky /tmp (and the
+  # inverse can happen after a sudo run), even when the mode bits look
+  # writable. flock itself does not require a writable descriptor.
+  if [[ -L "$RECREATE_LOCK_PATH" ]]; then
+    echo "Refusing symlink recreate lock: ${RECREATE_LOCK_PATH}" >&2
+    exit 73
+  fi
+  if [[ ! -e "$RECREATE_LOCK_PATH" ]]; then
+    (
+      set -o noclobber
+      umask 000
+      : >"$RECREATE_LOCK_PATH"
+    ) 2>/dev/null || true
+  fi
+  if [[ ! -f "$RECREATE_LOCK_PATH" || ! -r "$RECREATE_LOCK_PATH" ]]; then
+    echo "Lock recreate tidak aman/tidak dapat dibaca: ${RECREATE_LOCK_PATH}" >&2
+    exit 73
+  fi
+  exec 9<"$RECREATE_LOCK_PATH"
   if ! flock -n 9; then
     echo "Rebuild ClipForge lain masih berjalan. Tunggu proses itu selesai; build kedua tidak dimulai." >&2
     exit 75

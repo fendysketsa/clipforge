@@ -9,6 +9,7 @@ from clipper import (
     build_long_form_story_sequence,
     candidate_is_high_information_extended_short,
     candidate_rank_score,
+    channel_1k_pattern_profile,
     advertiser_suitability_profile,
     editorial_safety_profile,
     high_information_extended_short_profile,
@@ -96,6 +97,48 @@ def test_ai_brief_requires_distinct_angles_and_specific_titles():
     assert "concrete subject or object" in clipper.AI_SYSTEM_PROMPT
     assert "uppercase emphasis phrase" in clipper.AI_SYSTEM_PROMPT
     assert "constructive lesson" in clipper.AI_SYSTEM_PROMPT
+    assert "measured >=1K-view pattern only as a small tie-breaker" in clipper.AI_SYSTEM_PROMPT
+
+
+def test_channel_1k_pattern_only_adds_a_bounded_tie_breaker():
+    proven_pattern = ClipCandidate(
+        index=0,
+        start=0,
+        end=36,
+        duration=36,
+        score=70,
+        title="Kenapa Gaji 8 Juta Belum Cukup?",
+        hook="Kok gaji segini belum cukup?",
+        reason="heuristic",
+        text="Kalau gaji delapan juta terlihat besar, tapi biaya sewanya mengubah hitungan.",
+        key_point_score=70,
+        boundary_quality="kalimat_tuntas",
+    )
+    generic = ClipCandidate(
+        index=1,
+        start=60,
+        end=96,
+        duration=36,
+        score=70,
+        title="Nasihat Penting Tentang Hal Ini",
+        reason="heuristic",
+        text="Ada nasihat penting yang bisa menjadi pelajaran untuk kita semua.",
+        key_point_score=70,
+        boundary_quality="kalimat_tuntas",
+    )
+
+    profile = channel_1k_pattern_profile(proven_pattern)
+
+    assert profile == {
+        "qualified": True,
+        "bonus": 3.5,
+        "duration_fit": True,
+        "conversational": True,
+        "contrast": True,
+        "concrete": True,
+    }
+    assert channel_1k_pattern_profile(generic)["bonus"] == 0
+    assert candidate_rank_score(proven_pattern) > candidate_rank_score(generic)
 
 
 def test_editorial_safety_rejects_mockery_and_keeps_constructive_victim_context():
