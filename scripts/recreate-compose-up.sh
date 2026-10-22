@@ -4,6 +4,14 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+FORCE_ACTIVE_REQUESTED=false
+for arg in "$@"; do
+  if [[ "$arg" == "--force-active" ]]; then
+    FORCE_ACTIVE_REQUESTED=true
+    break
+  fi
+done
+
 # Only one rebuild may own BuildKit/containerd at a time. Parallel invocations
 # can leave an image-export writer locked and produce the opaque
 # "mount callback failed / failed to open writer" error.
@@ -30,8 +38,45 @@ if command -v flock >/dev/null 2>&1; then
   fi
   exec 9<"$RECREATE_LOCK_PATH"
   if ! flock -n 9; then
-    echo "Rebuild ClipForge lain masih berjalan. Tunggu proses itu selesai; build kedua tidak dimulai." >&2
-    exit 75
+    if [[ "$FORCE_ACTIVE_REQUESTED" != "true" ]]; then
+      echo "Rebuild ClipForge lain masih berjalan. Tunggu proses itu selesai; build kedua tidak dimulai." >&2
+      exit 75
+    fi
+    if ! command -v fuser >/dev/null 2>&1; then
+      echo "Mode paksa tidak dapat memverifikasi pemegang lock karena fuser tidak tersedia." >&2
+      exit 75
+    fi
+    holder_pids="$(fuser "$RECREATE_LOCK_PATH" 2>/dev/null || true)"
+    stopped_holder=false
+    for holder_pid in $holder_pids; do
+      if [[ ! "$holder_pid" =~ ^[0-9]+$ ]] || [[ ! -r "/proc/$holder_pid/cmdline" ]]; then
+        continue
+      fi
+      holder_command="$(tr '\0' ' ' <"/proc/$holder_pid/cmdline")"
+      if [[ "$holder_command" != *"$ROOT_DIR/scripts/recreate-compose-up.sh"* ]]; then
+        echo "Menolak menghentikan PID $holder_pid karena bukan rebuild ClipForge: $holder_command" >&2
+        continue
+      fi
+      echo "Mode paksa mengambil alih rebuild ClipForge lama (PID $holder_pid)."
+      kill -TERM "$holder_pid"
+      stopped_holder=true
+    done
+    if [[ "$stopped_holder" != "true" ]]; then
+      echo "Pemegang lock tidak dapat diverifikasi sebagai rebuild ClipForge; pengambilalihan dibatalkan." >&2
+      exit 75
+    fi
+    lock_acquired=false
+    for _ in {1..20}; do
+      if flock -n 9; then
+        lock_acquired=true
+        break
+      fi
+      sleep 0.5
+    done
+    if [[ "$lock_acquired" != "true" ]]; then
+      echo "Rebuild lama belum melepas lock setelah dihentikan; pengambilalihan dibatalkan." >&2
+      exit 75
+    fi
   fi
 fi
 
@@ -66,6 +111,7 @@ DOWN_FIRST=false
 WATCH_CHROME=false
 RESET_PROFILE=false
 RESTORE_ONLY=false
+FORCE_ACTIVE=false
 
 for arg in "$@"; do
   case "$arg" in
@@ -81,9 +127,13 @@ for arg in "$@"; do
     --restore)
       RESTORE_ONLY=true
       ;;
+    --force-active)
+      FORCE_ACTIVE=true
+      DOWN_FIRST=true
+      ;;
     *)
       echo "Unknown argument: $arg" >&2
-      echo "Usage: $0 [--down-first] [--watch-chrome] [--reset-profile] [--restore]" >&2
+      echo "Usage: $0 [--down-first] [--force-active] [--watch-chrome] [--reset-profile] [--restore]" >&2
       exit 2
       ;;
   esac
@@ -216,6 +266,62 @@ PY
   done
 }
 
+cancel_active_clipforge_work() {
+  python - <<'PY'
+import json
+import urllib.error
+import urllib.request
+
+base = "http://127.0.0.1:8010"
+
+def load(path):
+    with urllib.request.urlopen(base + path, timeout=8) as response:
+        return json.load(response)
+
+def post(path):
+    request = urllib.request.Request(base + path, data=b"", method="POST")
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return json.load(response)
+
+try:
+    load("/api/health")
+except Exception:
+    print("Backend sudah berhenti; tidak ada worker API yang perlu dibatalkan.")
+    raise SystemExit(0)
+
+stopped = []
+try:
+    runs = load("/api/automation/viral-cc")
+    for run in runs if isinstance(runs, list) else []:
+        if run.get("status") not in {"queued", "running"}:
+            continue
+        run_id = str(run.get("id") or "")
+        if run_id:
+            post(f"/api/automation/viral-cc/{run_id}/cancel")
+            stopped.append(f"automation:{run_id[:10]}")
+except urllib.error.HTTPError as exc:
+    # Older containers do not expose the automation cancel endpoint. Compose
+    # down below still terminates the container and every child subprocess.
+    if exc.code != 404:
+        raise
+
+jobs = load("/api/jobs")
+for job in jobs if isinstance(jobs, list) else []:
+    if job.get("status") not in {"queued", "running"}:
+        continue
+    job_id = str(job.get("id") or "")
+    if job_id:
+        post(f"/api/jobs/{job_id}/cancel")
+        stopped.append(f"clip:{job_id[:10]}")
+
+print(
+    "Permintaan stop dikirim: " + ", ".join(stopped)
+    if stopped
+    else "Tidak ada render/automation aktif pada API."
+)
+PY
+}
+
 tiktok_saved_session_ready() {
   python - <<'PY' >/dev/null 2>&1
 import json
@@ -315,8 +421,13 @@ if [[ "$image_provider" =~ ^(stable-diffusion-cpp|stable_diffusion_cpp|sdcpp)$ ]
   "$ROOT_DIR/scripts/start-local-image-model.sh"
 fi
 
+if [[ "$FORCE_ACTIVE" == "true" ]]; then
+  echo "Mode paksa: membatalkan worker API lalu menghentikan seluruh container ClipForge."
+  cancel_active_clipforge_work || echo "Peringatan: cancel API tidak lengkap; compose down tetap dilanjutkan." >&2
+fi
+
 if [[ "$DOWN_FIRST" == "true" ]]; then
-  "${compose_cmd[@]}" --env-file .env down
+  "${compose_cmd[@]}" --env-file .env down --remove-orphans
 fi
 
 if [[ "$RESET_PROFILE" == "true" ]]; then

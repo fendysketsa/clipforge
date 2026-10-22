@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   BarChart3,
   CheckCircle2,
   ChevronDown,
@@ -11,6 +12,7 @@ import {
   LoaderCircle,
   RefreshCw,
   Settings2,
+  ShieldCheck,
   Sparkles,
   Target,
   Trash2,
@@ -158,6 +160,18 @@ function displayTikTokSeriesLabel(label?: string | null, fallback?: string | nul
   if (clean === "Kesalahan Ibadah Sehari-hari") return "Panduan Ibadah";
   if (clean === "Nasihat yang Sering Disalahpahami") return "Nasihat & Hikmah";
   return clean;
+}
+
+const QC_CHECK_LABELS: Record<string, string> = {
+  verify_source_rights_and_permission_evidence: "Verifikasi hak sumber dan bukti izin",
+  review_factual_and_religious_context: "Periksa fakta dan konteks keagamaan",
+  watch_final_render_for_caption_crop_audio_and_timing: "Tonton render final: caption, crop, audio, dan timing",
+  review_title_thumbnail_and_ad_suitability: "Periksa judul, thumbnail, dan kelayakan iklan",
+  upload_private_then_complete_platform_checks: "Upload Private lalu selesaikan pemeriksaan platform",
+};
+
+function qcCheckLabel(value: string) {
+  return QC_CHECK_LABELS[value] || value.replaceAll("_", " ");
 }
 
 function tiktokRunningStage(upload: TikTokUploadJob) {
@@ -742,6 +756,54 @@ export function ResultsSection({
               || typeof clip.fyp_score !== "number"
               || clip.fyp_score >= VIRAL_QUALITY_FLOOR;
             const automaticRepairDidNotPass = Boolean(clip.automatic_repair_available);
+            const automaticQcState = clip.context_recut_required
+              || clip.render_qc_passed === false
+              || clip.youtube_upload_ready === false
+              ? "hold"
+              : clip.render_qc_passed === true && clip.youtube_upload_ready === true
+                ? "passed"
+                : "pending";
+            const automaticQcChecks = [
+              {
+                label: "Render visual",
+                detail: clip.render_qc_status === "review_required"
+                  ? "Perlu pemeriksaan visual"
+                  : clip.render_qc_status || "Belum ada hasil render QC",
+                state: clip.render_qc_passed === true
+                  ? "passed"
+                  : clip.render_qc_passed === false
+                    ? "failed"
+                    : "pending",
+              },
+              {
+                label: "Keutuhan konteks",
+                detail: clip.context_recut_required
+                  ? "Batas kalimat atau makna perlu dipotong ulang"
+                  : clip.religious_context_safe === true
+                    ? "Konteks sumber tetap utuh"
+                    : clip.religious_context_safe === false
+                      ? "Konteks sumber belum aman"
+                      : "Menunggu data audit konteks",
+                state: clip.context_recut_required || clip.religious_context_safe === false
+                  ? "failed"
+                  : clip.religious_context_safe === true
+                    ? "passed"
+                    : "pending",
+              },
+              {
+                label: "Gate upload Private",
+                detail: clip.youtube_upload_ready === true
+                  ? "Lolos untuk tahap review Private"
+                  : clip.youtube_upload_ready === false
+                    ? clip.youtube_upload_issue || "Ditahan oleh quality gate"
+                    : "Belum ada keputusan quality gate",
+                state: clip.youtube_upload_ready === true
+                  ? "passed"
+                  : clip.youtube_upload_ready === false
+                    ? "failed"
+                    : "pending",
+              },
+            ] as const;
             const uploadReviewConfirmed = clip.is_correct;
             const isQueuedForYouTube = latestUpload?.status === "queued";
             const isRunningYouTubeUpload = latestUpload?.status === "running";
@@ -918,10 +980,12 @@ export function ResultsSection({
                         <Video size={14} />
                         Production Desk
                       </span>
-                      <small>
-                        {clip.production_team_status === "ready_for_private_human_review"
-                          ? "Handoff siap"
-                          : "Perlu QC"}
+                      <small className={`productionQcStatus productionQcStatus--${automaticQcState}`}>
+                        {automaticQcState === "passed"
+                          ? "QC otomatis lolos"
+                          : automaticQcState === "hold"
+                            ? "QC otomatis menahan"
+                            : "QC otomatis menunggu"}
                       </small>
                       <ChevronDown size={14} />
                     </summary>
@@ -939,12 +1003,55 @@ export function ResultsSection({
                         <span>{clip.production_distribution_brief || "Paket metadata perlu dilengkapi."}</span>
                       </div>
                       <div>
-                        <strong>Quality Control</strong>
+                        <strong>Quality Control Otomatis</strong>
                         <span>{clip.production_qc_brief || "Hak, konteks, dan render perlu direview."}</span>
                       </div>
                     </div>
+                    <section className={`automaticQcPanel automaticQcPanel--${automaticQcState}`}>
+                      <div className="automaticQcHeader">
+                        <span><ShieldCheck size={15} /> Skill QC Otomatis</span>
+                        <strong>
+                          {automaticQcState === "passed"
+                            ? "Lulus"
+                            : automaticQcState === "hold"
+                              ? "Ditahan"
+                              : "Belum lengkap"}
+                        </strong>
+                      </div>
+                      <p>Dijalankan otomatis setelah render dan sebelum klip boleh masuk antrean upload.</p>
+                      <div className="automaticQcChecks">
+                        {automaticQcChecks.map((check) => (
+                          <div className={`automaticQcCheck automaticQcCheck--${check.state}`} key={check.label}>
+                            {check.state === "passed" ? (
+                              <CheckCircle2 size={14} />
+                            ) : check.state === "failed" ? (
+                              <AlertTriangle size={14} />
+                            ) : (
+                              <Clock3 size={14} />
+                            )}
+                            <span><strong>{check.label}</strong><small>{check.detail}</small></span>
+                          </div>
+                        ))}
+                      </div>
+                      {clip.render_qc_warnings?.length ? (
+                        <div className="automaticQcWarnings">
+                          <strong>Peringatan QC</strong>
+                          <ul>
+                            {clip.render_qc_warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {clip.production_qc_checks?.length ? (
+                        <div className="automaticQcHuman">
+                          <strong>Verifikasi manusia sebelum publikasi</strong>
+                          <ul>
+                            {clip.production_qc_checks.map((check) => <li key={check}>{qcCheckLabel(check)}</li>)}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </section>
                     <p>
-                      Otomatis membantu produksi; izin sumber, fakta, hasil final, dan publikasi tetap disetujui manusia.
+                      QC otomatis boleh menahan klip, tetapi tidak menggantikan persetujuan manusia untuk izin sumber, fakta, hasil final, dan publikasi.
                     </p>
                   </details>
                 ) : null}

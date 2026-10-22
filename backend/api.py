@@ -2128,7 +2128,7 @@ class AutoViralRequest(BaseModel):
 
 class AutoViralRun(BaseModel):
     id: str
-    status: Literal["queued", "running", "completed", "failed"]
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
     created_at: str
     updated_at: str
     finished_at: str | None = None
@@ -3705,6 +3705,7 @@ youtube_login_status = YouTubeLoginStatus(active=False)
 youtube_login_reconnect_cdp = False
 cancelled_job_ids: set[str] = set()
 preserve_job_files_on_cancel: set[str] = set()
+cancelled_auto_viral_run_ids: set[str] = set()
 claimed_clip_cleanup_lock = threading.Lock()
 claimed_clip_cleanup_scheduled: set[str] = set()
 process_lock = threading.Lock()
@@ -15319,6 +15320,11 @@ def auto_viral_post_clip_upload_delay_minutes() -> float:
     )
 
 
+def auto_viral_upload_each_completed_batch() -> bool:
+    """Upload each complete scheduled source without waiting for the full target."""
+    return env_bool("AUTO_VIRAL_UPLOAD_EACH_COMPLETED_BATCH", True)
+
+
 def auto_viral_cycle_delay_hours() -> float:
     return max(
         0.25,
@@ -15467,13 +15473,31 @@ def auto_viral_upload_item_has_live_checkpoint(
         or not short_job.clips
     ):
         return False
-    if request.auto_publish_paired_long_video and long_job_id and (
+    if auto_viral_item_should_publish_long(request, item) and (
         long_job is None
         or long_job.status != "completed"
         or not long_job.clips
     ):
         return False
     return True
+
+
+def auto_viral_item_should_publish_long(
+    request: AutoViralRequest,
+    item: dict[str, Any],
+) -> bool:
+    """Keep an ineligible paired Long from blocking an eligible Short upload."""
+    legacy_error = str(item.get("long_upload_error") or item.get("error") or "")
+    long_is_held = bool(
+        item.get("long_auto_publish_eligible", True) is False
+        or item.get("long_upload_status") == "manual_review_required"
+        or "long story" in legacy_error.casefold()
+    )
+    return bool(
+        request.auto_publish_paired_long_video
+        and str(item.get("long_job_id") or "").strip()
+        and not long_is_held
+    )
 
 
 def auto_viral_run_can_resume_upload(run: AutoViralRun | None) -> bool:
@@ -15706,6 +15730,126 @@ def cleanup_uploaded_auto_viral_job(job_id: str) -> int:
         raise
 
 
+def queue_auto_viral_short_uploads_while_long_renders(
+    run_id: str,
+    request: AutoViralRequest,
+    processed: list[dict[str, Any]],
+    item: dict[str, Any],
+) -> None:
+    """Queue the finished Short while its paired Long Story is still rendering.
+
+    The final upload checkpoint remains responsible for verification and local
+    cleanup. Persisting the upload IDs here makes this safe across restarts and
+    lets the browser uploader overlap a slow long-form source download.
+    """
+    job_id = str(item.get("job_id") or "").strip()
+    if not job_id:
+        raise RuntimeError("Job ID Short hilang sebelum antrean upload dibuat")
+
+    queued_platforms: list[str] = []
+    early_queue_errors: list[str] = []
+    if request.auto_upload_youtube:
+        try:
+            existing_ids = [
+                str(upload.get("id") or "")
+                for upload in item.get("youtube_uploads", item.get("uploads", []))
+                if isinstance(upload, dict) and str(upload.get("id") or "")
+            ]
+            with youtube_uploads_lock:
+                youtube_jobs = [
+                    youtube_uploads[upload_id]
+                    for upload_id in existing_ids
+                    if upload_id in youtube_uploads
+                    and youtube_uploads[upload_id].status
+                    in {"queued", "running", "completed"}
+                ]
+            if not youtube_jobs:
+                with youtube_upload_creation_lock:
+                    available_slots = require_auto_viral_daily_upload_slot("youtube")
+                    youtube_jobs = create_youtube_upload_batch_records(
+                        job_id,
+                        YouTubeBatchUploadRequest(
+                            best_count=min(request.clips_per_video, available_slots),
+                            visibility=youtube_default_visibility(),
+                        ),
+                    )
+                    queue_youtube_upload_jobs(youtube_jobs)
+            item["youtube_uploads"] = item["uploads"] = [
+                {
+                    "platform": "youtube",
+                    "id": upload.id,
+                    "status": upload.status,
+                    "title": upload.title,
+                    "video_url": upload.video_url,
+                    "upload_confirmed": upload.upload_confirmed,
+                    "dry_run": upload.dry_run,
+                    "error": upload.error,
+                }
+                for upload in youtube_jobs
+            ]
+            queued_platforms.append("YouTube")
+        except Exception as exc:
+            early_queue_errors.append(f"YouTube: {exc}")
+
+    if request.auto_upload_tiktok:
+        try:
+            existing_ids = [
+                str(upload.get("id") or "")
+                for upload in item.get("tiktok_uploads", [])
+                if isinstance(upload, dict) and str(upload.get("id") or "")
+            ]
+            with tiktok_uploads_lock:
+                tiktok_jobs = [
+                    tiktok_uploads[upload_id]
+                    for upload_id in existing_ids
+                    if upload_id in tiktok_uploads
+                    and tiktok_uploads[upload_id].status
+                    in {"queued", "running", "completed"}
+                ]
+            if not tiktok_jobs:
+                with tiktok_upload_creation_lock:
+                    available_slots = require_auto_viral_daily_upload_slot("tiktok")
+                    tiktok_jobs = create_tiktok_upload_batch_records(
+                        job_id,
+                        TikTokBatchUploadRequest(
+                            best_count=min(request.clips_per_video, available_slots),
+                            visibility=safe_tiktok_visibility(),
+                        ),
+                        allow_audited_automation=True,
+                    )
+                    queue_tiktok_upload_jobs(tiktok_jobs)
+            item["tiktok_uploads"] = [
+                {
+                    "platform": "tiktok",
+                    "id": upload.id,
+                    "status": upload.status,
+                    "title": upload.clip_name,
+                    "video_url": upload.profile_url,
+                    "upload_confirmed": upload.upload_confirmed,
+                    "dry_run": upload.dry_run,
+                    "error": upload.error,
+                }
+                for upload in tiktok_jobs
+            ]
+            queued_platforms.append("TikTok")
+        except Exception as exc:
+            early_queue_errors.append(f"TikTok: {exc}")
+
+    update_auto_viral_run(run_id, processed=processed)
+    if queued_platforms:
+        append_auto_viral_log(
+            run_id,
+            f"Short {job_id[:10]} langsung masuk worker {' + '.join(queued_platforms)} "
+            "sambil Long Story dirender.",
+        )
+    if early_queue_errors:
+        append_auto_viral_log(
+            run_id,
+            "Antrean awal belum lengkap; checkpoint final akan mencoba lagi: "
+            + "; ".join(early_queue_errors),
+        )
+
+
 def cleanup_verified_auto_viral_item(
     run_id: str,
     request: AutoViralRequest,
@@ -15714,7 +15858,7 @@ def cleanup_verified_auto_viral_item(
     """Persist a retryable cleanup checkpoint for a fully uploaded cron item."""
     job_id = str(item.get("job_id") or "").strip()
     long_job_id = str(item.get("long_job_id") or "").strip()
-    publish_item_long = bool(request.auto_publish_paired_long_video and long_job_id)
+    publish_item_long = auto_viral_item_should_publish_long(request, item)
     item["status"] = "cleanup_pending"
     item["cleanup"] = "upload terverifikasi; pembersihan file lokal sedang berjalan"
 
@@ -15773,9 +15917,7 @@ def upload_auto_viral_processed_jobs(
         stored_tiktok = item.get("tiktok_uploads", [])
         stored_paired_long = item.get("paired_long_youtube_uploads", [])
         long_job_id = str(item.get("long_job_id") or "").strip()
-        publish_item_long = bool(
-            request.auto_publish_paired_long_video and long_job_id
-        )
+        publish_item_long = auto_viral_item_should_publish_long(request, item)
         expected_groups_verified: list[bool] = []
         if request.auto_upload_youtube:
             expected_groups_verified.append(
@@ -16518,6 +16660,10 @@ def run_clip_job_with_campaign_progress(
     segment_start = 18 + ((source_index - 1) * 72 / max(1, source_total))
     segment_size = 72 / max(1, source_total)
     while worker.is_alive():
+        if run_id in cancelled_auto_viral_run_ids:
+            cancel_process(job_id)
+            worker.join(timeout=max(1, CANCEL_GRACE_SECONDS + 1))
+            raise AutoViralCampaignCancelled("Automation dihentikan untuk rebuild paksa")
         with jobs_lock:
             job = jobs.get(job_id)
         if job is not None:
@@ -16538,6 +16684,15 @@ def run_clip_job_with_campaign_progress(
                 last_signature = signature
         worker.join(timeout=2)
     worker.join()
+
+
+class AutoViralCampaignCancelled(RuntimeError):
+    """Stop one campaign without allowing its source loop to create another job."""
+
+
+def ensure_auto_viral_campaign_not_cancelled(run_id: str) -> None:
+    if run_id in cancelled_auto_viral_run_ids:
+        raise AutoViralCampaignCancelled("Automation dihentikan untuk rebuild paksa")
 
 
 def run_auto_viral_campaign(run_id: str) -> None:
@@ -16624,6 +16779,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
         completed_count = 0
         processed: list[dict[str, Any]] = []
         for source_index, source in enumerate(sources, start=1):
+            ensure_auto_viral_campaign_not_cancelled(run_id)
             if completed_count >= run_request.video_count:
                 break
             append_auto_viral_log(run_id, f"Mulai clipping: {source.get('title')}")
@@ -16669,6 +16825,26 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 if finished_job.status != "completed" or not finished_job.clips:
                     raise RuntimeError(finished_job.error or f"Job selesai dengan status {finished_job.status}")
 
+                if deferred_background_upload:
+                    if run_request.auto_upload_youtube and not best_automatic_upload_clip_urls(
+                        finished_job,
+                        run_request.clips_per_video,
+                        allow_audited_automation=True,
+                        require_youtube_fyp_target=True,
+                    ):
+                        raise RuntimeError(
+                            "Tidak ada clip yang lolos seluruh gate kualitas dan upload YouTube"
+                        )
+                    if run_request.auto_upload_tiktok and not best_automatic_upload_clip_urls(
+                        finished_job,
+                        run_request.clips_per_video,
+                        allow_audited_automation=True,
+                        require_youtube_fyp_target=False,
+                    ):
+                        raise RuntimeError(
+                            "Tidak ada clip yang lolos seluruh gate kualitas dan upload TikTok"
+                        )
+
                 build_paired_long = bool(
                     run_request.create_paired_long_video
                     and completed_count < auto_viral_paired_long_limit(run_request)
@@ -16693,6 +16869,16 @@ def run_auto_viral_campaign(run_id: str) -> None:
                             "merakit Long Story pasangannya"
                         ),
                     )
+                    if (
+                        deferred_background_upload
+                        and auto_viral_upload_each_completed_batch()
+                    ):
+                        queue_auto_viral_short_uploads_while_long_renders(
+                            run_id,
+                            run_request,
+                            processed,
+                            item,
+                        )
                     run_clip_job_with_campaign_progress(
                         long_job.id,
                         run_id,
@@ -16739,40 +16925,31 @@ def run_auto_viral_campaign(run_id: str) -> None:
                     )
 
                 if deferred_background_upload:
-                    if run_request.auto_upload_youtube and not best_automatic_upload_clip_urls(
-                        finished_job,
-                        run_request.clips_per_video,
-                        allow_audited_automation=True,
-                        require_youtube_fyp_target=True,
-                    ):
-                        raise RuntimeError(
-                            "Tidak ada clip yang lolos seluruh gate kualitas dan upload YouTube"
-                        )
-                    if run_request.auto_upload_tiktok and not best_automatic_upload_clip_urls(
-                        finished_job,
-                        run_request.clips_per_video,
-                        allow_audited_automation=True,
-                        require_youtube_fyp_target=False,
-                    ):
-                        raise RuntimeError(
-                            "Tidak ada clip yang lolos seluruh gate kualitas dan upload TikTok"
-                        )
                     if build_paired_long and run_request.auto_publish_paired_long_video:
                         if not run_request.create_paired_long_video:
                             raise RuntimeError(
                                 "Auto-public Long Story aktif tetapi pembuatan pasangan long nonaktif"
                             )
-                        if not best_automatic_upload_clip_urls(
+                        long_auto_publish_eligible = bool(best_automatic_upload_clip_urls(
                             finished_long_job,
                             1,
                             allow_audited_automation=True,
                             require_youtube_fyp_target=False,
-                        ):
-                            raise RuntimeError(
-                                "Long Story pasangan tidak lolos audit AI, hak, transformasi, atau QC untuk auto-public"
+                        ))
+                        item["long_auto_publish_eligible"] = long_auto_publish_eligible
+                        if not long_auto_publish_eligible:
+                            item["long_upload_status"] = "manual_review_required"
+                            item["long_upload_error"] = (
+                                "Long Story pasangan tidak lolos audit AI, hak, transformasi, "
+                                "atau QC untuk auto-public"
+                            )
+                            append_auto_viral_log(
+                                run_id,
+                                "Long Story ditahan untuk review; Short yang sudah lolos tetap "
+                                "dilanjutkan ke upload YouTube/TikTok.",
                             )
 
-                item["uploads"] = []
+                item.setdefault("uploads", [])
                 if run_request.auto_upload_youtube and not deferred_background_upload:
                     source_progress = min(
                         90,
@@ -16820,6 +16997,30 @@ def run_auto_viral_campaign(run_id: str) -> None:
                         run_id,
                         f"Job {finished_job.id[:10]} selesai render dan masuk batch upload tertunda.",
                     )
+                    if auto_viral_upload_each_completed_batch():
+                        batch_finished_at = now_iso()
+                        batch_upload_not_before = (
+                            datetime.now(timezone.utc)
+                            + timedelta(
+                                minutes=auto_viral_post_clip_upload_delay_minutes()
+                            )
+                        ).isoformat()
+                        update_auto_viral_run(
+                            run_id,
+                            clipping_finished_at=batch_finished_at,
+                            upload_not_before=batch_upload_not_before,
+                            processed=processed,
+                            message=(
+                                f"Hasil sumber {min(source_index, run_request.video_count)}/"
+                                f"{run_request.video_count} lengkap; langsung masuk upload background"
+                            ),
+                        )
+                        wait_for_auto_viral_upload_window(run_id)
+                        processed = upload_auto_viral_until_success(
+                            run_id,
+                            run_request,
+                            processed,
+                        )
                 else:
                     item["cleanup"] = "hasil clip disimpan untuk review"
                     append_auto_viral_log(
@@ -16833,9 +17034,19 @@ def run_auto_viral_campaign(run_id: str) -> None:
                             )
                         ),
                     )
-                if item.get("status") != "awaiting_upload":
+                if (
+                    item.get("status") != "awaiting_upload"
+                    and item.get("status") not in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
+                ):
                     item["status"] = "completed"
                 completed_count += 1
+            except AutoViralCampaignCancelled:
+                item["status"] = "cancelled"
+                item["error"] = "Automation dihentikan untuk rebuild paksa"
+                if not item_checkpointed:
+                    processed.append(item)
+                update_auto_viral_run(run_id, processed=processed)
+                raise
             except Exception as exc:
                 item["status"] = "failed"
                 item["error"] = str(exc)
@@ -16880,12 +17091,19 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 upload_not_before=upload_not_before,
                 processed=processed,
             )
-            wait_for_auto_viral_upload_window(run_id)
-            processed = upload_auto_viral_until_success(
-                run_id,
-                run_request,
-                processed,
+            pending_upload = any(
+                item.get("job_status") == "completed"
+                and item.get("status") != "completed"
+                and item.get("status") not in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
+                for item in processed
             )
+            if pending_upload:
+                wait_for_auto_viral_upload_window(run_id)
+                processed = upload_auto_viral_until_success(
+                    run_id,
+                    run_request,
+                    processed,
+                )
 
         with auto_viral_lock:
             run = auto_viral_runs[run_id]
@@ -16932,6 +17150,15 @@ def run_auto_viral_campaign(run_id: str) -> None:
             send_telegram_alert(auto_viral_summary(final_run))
         except Exception as telegram_exc:
             append_auto_viral_error(run_id, f"Telegram alert gagal: {telegram_exc}")
+    except AutoViralCampaignCancelled as exc:
+        append_auto_viral_log(run_id, str(exc))
+        update_auto_viral_run(
+            run_id,
+            status="cancelled",
+            finished_at=now_iso(),
+            progress_stage="cancelled",
+            message=str(exc),
+        )
     except Exception as exc:
         append_auto_viral_error(run_id, str(exc))
         update_auto_viral_run(
@@ -16952,6 +17179,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
             if auto_viral_active_run_id == run_id:
                 auto_viral_active_run_id = None
             auto_viral_secrets.pop(run_id, None)
+            cancelled_auto_viral_run_ids.discard(run_id)
 
 
 def resume_scheduled_auto_viral_upload(run_id: str) -> None:
@@ -17414,9 +17642,10 @@ def reconcile_interrupted_scheduled_clip_runs() -> int:
         # treating it as unrelated or appending a duplicate card.
         for item in processed:
             job_id = str(item.get("job_id") or "").strip()
-            if not job_id or not (
-                item.get("status") == "running"
-                or item.get("job_status") in {"queued", "running"}
+            if (
+                not job_id
+                or item.get("status") == "completed"
+                or item.get("status") in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
             ):
                 continue
             job = completed_jobs_by_id.get(job_id)
@@ -18017,6 +18246,40 @@ def list_auto_viral_campaigns() -> list[AutoViralRun]:
 @app.get("/api/automation/viral-cc/schedule", response_model=AutoViralScheduleStatus)
 def get_auto_viral_schedule() -> AutoViralScheduleStatus:
     return auto_viral_schedule_status()
+
+
+@app.post("/api/automation/viral-cc/{run_id}/cancel")
+def cancel_auto_viral_campaign(run_id: str) -> dict[str, Any]:
+    """Cancel the campaign and its active clip workers before a forced rebuild."""
+    with auto_viral_lock:
+        run = auto_viral_runs.get(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Automation run not found")
+        if run.status not in {"queued", "running"}:
+            return {"status": run.status, "cancelled": False, "stopped_jobs": []}
+        child_job_ids = sorted(
+            {
+                job_id
+                for item in run.processed
+                for key in ("job_id", "long_job_id")
+                if (job_id := str(item.get(key) or "").strip())
+            }
+        )
+        cancelled_auto_viral_run_ids.add(run_id)
+
+    stopped_jobs = [job_id for job_id in child_job_ids if cancel_process(job_id)]
+    update_auto_viral_run(
+        run_id,
+        status="cancelled",
+        finished_at=now_iso(),
+        progress_stage="cancelled",
+        message="Automation dihentikan; aman melanjutkan rebuild paksa.",
+    )
+    return {
+        "status": "cancelled",
+        "cancelled": True,
+        "stopped_jobs": stopped_jobs,
+    }
 
 
 @app.post("/api/automation/viral-cc/sources")

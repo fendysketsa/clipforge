@@ -1,7 +1,17 @@
-import { CalendarClock, Clock3, ExternalLink, Film, History, Link2, StopCircle, Trash2 } from "lucide-react";
+import { CalendarClock, Clock3, ExternalLink, Film, History, Link2, MonitorPlay, Smartphone, StopCircle, Trash2 } from "lucide-react";
 import { statusCopy, statusIcon } from "../../lib/constants";
 import { formatDuration, jobElapsedSeconds } from "../../lib/utils";
 import type { ClipJob } from "../../types/clip.type";
+
+function jobFormat(job: ClipJob) {
+  if (job.request.clip_mode === "highlight_5m") {
+    return { aspect: "16:9", kind: "long", label: "LONG", title: "Long Highlight" } as const;
+  }
+  if (job.request.clip_mode === "long_animate") {
+    return { aspect: "9:16", kind: "story", label: "LONG CERITA", title: "Generator Cerita" } as const;
+  }
+  return { aspect: "9:16", kind: "short", label: "SHORT", title: "Viral Short" } as const;
+}
 
 type HistorySectionProps = {
   jobs: ClipJob[];
@@ -97,6 +107,8 @@ export function HistorySection({
           const isSelected = selectedJobIds.includes(item.id);
           const url = sourceUrl(item);
           const elapsedSeconds = jobElapsedSeconds(item);
+          const format = jobFormat(item);
+          const FormatIcon = format.kind === "short" ? Smartphone : MonitorPlay;
 
           return (
             <div className={`jobRow ${isSelected ? "selected" : ""}`} key={item.id}>
@@ -115,10 +127,19 @@ export function HistorySection({
                     <Icon className={item.status === "running" ? "spin" : ""} size={16} />
                     {statusCopy[item.status]}
                   </span>
-                  <strong>
-                    <Film size={14} />
-                    {count}
-                  </strong>
+                  <div className="jobRowTopMeta">
+                    <span
+                      className={`jobFormatBadge jobFormatBadge--${format.kind}`}
+                      title={`${format.title}, rasio ${format.aspect}`}
+                    >
+                      <FormatIcon size={14} />
+                      {format.label} · {format.aspect}
+                    </span>
+                    <strong>
+                      <Film size={14} />
+                      {count}
+                    </strong>
+                  </div>
                 </div>
                 <h3>{sourceLabel(item)}</h3>
                 <div className="jobSourceLine">

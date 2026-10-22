@@ -755,7 +755,7 @@ export type AutoViralRequest = {
 
 export type AutoViralRun = {
   id: string;
-  status: "queued" | "running" | "completed" | "failed";
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
   created_at: string;
   updated_at: string;
   finished_at?: string | null;

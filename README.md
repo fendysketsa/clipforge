@@ -719,6 +719,17 @@ are skipped when the `nvidia` runtime is already registered.
 The existing `setup-nvidia-container-runtime.sh` command now forwards to this
 same full-stack GPU rebuild after configuration succeeds.
 
+To deliberately stop every active ClipForge render/upload and replace an older
+rebuild that is still waiting on the idle gate, use the scoped force mode:
+
+```bash
+sudo /www/wwwroot/clipper/clipforge/scripts/recreate-compose-up.sh --force-active
+```
+
+The force mode verifies that any lock holder is the ClipForge rebuild script
+before terminating it, cancels active API jobs when available, then recreates
+the backend, Telegram bot, and frontend without deleting persistent data.
+
 ## Safety And Legal Notes
 
 Fendy Clipper is intended for local workflows and content you are allowed to process. Make sure you have rights or permission to download, transform, and republish source videos. Follow YouTube terms and applicable copyright law.

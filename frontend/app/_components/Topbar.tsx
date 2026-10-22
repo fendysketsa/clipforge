@@ -1,4 +1,4 @@
-import { Clock3, Film, Lightbulb, ListChecks, RefreshCw, Sparkles } from "lucide-react";
+import { Clock3, Film, ListChecks, RefreshCw, Sparkles } from "lucide-react";
 import Link from "next/link";
 
 type TopbarProps = {
@@ -27,10 +27,6 @@ export function Topbar({ isRefreshing = false, onRefresh, activePage = "workspac
         <Link className={activePage === "workspace" ? "active" : ""} href="/#quick-start-title">
           <Sparkles size={15} />
           Buat video
-        </Link>
-        <Link href="/#content-studio">
-          <Lightbulb size={15} />
-          Ide tren
         </Link>
         <Link href="/#results">
           <Film size={15} />
