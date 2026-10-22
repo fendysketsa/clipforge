@@ -280,6 +280,18 @@ def test_youtube_upload_size_defaults_to_quality_safe_256_mb(monkeypatch):
     assert youtube_max_upload_bytes() == 256 * 1024 * 1024
 
 
+def test_youtube_cdp_upload_size_defaults_below_playwright_50_mb_limit(monkeypatch):
+    monkeypatch.delenv("YOUTUBE_CDP_MAX_UPLOAD_MB", raising=False)
+
+    assert youtube_max_upload_bytes(use_cdp=True) == 49 * 1024 * 1024
+
+
+def test_youtube_cdp_upload_size_clamps_unsafe_configuration(monkeypatch):
+    monkeypatch.setenv("YOUTUBE_CDP_MAX_UPLOAD_MB", "256")
+
+    assert youtube_max_upload_bytes(use_cdp=True) == 49 * 1024 * 1024
+
+
 def test_max_clips_at_least_one():
     assert max_clips_for_duration(40, 35) == 1
 
@@ -1298,6 +1310,48 @@ def test_scheduled_auto_viral_request_fills_missing_long_without_sixth_short(
     assert request.create_paired_long_video is True
     assert request.paired_long_video_count == 1
     assert request.auto_publish_paired_long_video is True
+
+
+def test_scheduled_upload_accepts_ready_live_chrome(monkeypatch):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED", "true")
+    monkeypatch.setenv(
+        "AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_EVIDENCE",
+        "Izin komersial audio visual terdokumentasi dari pemilik sumber",
+    )
+    monkeypatch.setenv(
+        "AUTO_VIRAL_SCHEDULE_CREATOR_PERSPECTIVE",
+        "Perspektif kreator memberi konteks dan pelajaran yang utuh untuk penonton",
+    )
+    monkeypatch.setenv("YOUTUBE_UPLOAD_USE_CDP", "true")
+    monkeypatch.setenv("YOUTUBE_UPLOAD_FORCE_CDP", "true")
+    monkeypatch.setattr(api, "youtube_cdp_ready", lambda *_args: True)
+    monkeypatch.setattr(
+        api,
+        "auto_viral_daily_youtube_content_counts",
+        lambda *_args: {"short": 0, "long": 0},
+    )
+
+    request = api.scheduled_auto_viral_request()
+
+    assert request.auto_upload_youtube is True
+
+
+def test_backend_startup_promotes_ready_cdp_for_automatic_uploads(monkeypatch):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
+    monkeypatch.setenv("YOUTUBE_UPLOAD_USE_CDP", "false")
+    monkeypatch.setenv("YOUTUBE_UPLOAD_FORCE_CDP", "false")
+    monkeypatch.setenv("YOUTUBE_UPLOAD_STORAGE_STATE_FIRST", "true")
+    monkeypatch.setattr(api, "youtube_cdp_ready", lambda *_args: True)
+
+    assert api.enable_ready_youtube_cdp_for_automation() is True
+    assert api.youtube_upload_uses_cdp() is True
+    assert api.youtube_upload_force_cdp() is True
+    assert api.youtube_upload_storage_state_first() is False
 
 
 def test_manual_auto_viral_request_keeps_pair_every_source_compatibility():
@@ -2736,6 +2790,84 @@ def test_completed_job_sweeper_leaves_auto_viral_jobs_to_campaign_uploader(monke
         "tiktok": 0,
         "repair": 0,
     }
+
+
+@pytest.mark.parametrize("terminal_status", ["cancelled", "completed", "failed"])
+def test_completed_job_sweeper_recovers_children_from_terminal_campaigns(
+    monkeypatch,
+    terminal_status,
+):
+    import api
+
+    clip = ClipFile(
+        name="clip.mp4",
+        url="/outputs/released/clip.mp4",
+        size_bytes=1024,
+        fyp_score=95,
+        growth_quality_gate_passed=True,
+    )
+    job = ClipJob(
+        id="released-job",
+        status="completed",
+        request=ClipJobRequest(),
+        created_at="2026-10-18T13:00:00+00:00",
+        updated_at="2026-10-18T13:00:00+00:00",
+        clips=[clip],
+    )
+    run = api.AutoViralRun(
+        id="terminal-run",
+        status=terminal_status,
+        trigger="schedule",
+        created_at="2026-10-18T12:00:00+00:00",
+        updated_at="2026-10-18T12:00:00+00:00",
+        request=AutoViralRequest(auto_upload_youtube=True),
+        # A failed checkpoint with terminal hold cannot be resumed by the
+        # campaign and must be released to the generic automatic operator.
+        processed=[
+            {
+                "job_id": job.id,
+                "job_status": "completed",
+                "status": "retry_exhausted" if terminal_status == "failed" else "awaiting_upload",
+            }
+        ],
+    )
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS", "true")
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS_YOUTUBE", "true")
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS_TIKTOK", "false")
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "auto_viral_runs", {run.id: run})
+    monkeypatch.setattr(
+        api,
+        "best_automatic_upload_clip_urls",
+        lambda *_args, **_kwargs: [clip.url],
+    )
+    monkeypatch.setattr(
+        api,
+        "pending_completed_job_upload_urls",
+        lambda _job, urls, *, platform: urls,
+    )
+    monkeypatch.setattr(api, "youtube_default_visibility", lambda: "public")
+    monkeypatch.setattr(api, "require_youtube_ready", lambda: None)
+    monkeypatch.setattr(
+        api,
+        "create_youtube_upload_batch_records",
+        lambda _job_id, request: [
+            SimpleNamespace(status="queued", visibility=request.visibility)
+        ],
+    )
+    queued: list[str] = []
+    monkeypatch.setattr(
+        api,
+        "queue_youtube_upload_jobs",
+        lambda items: queued.append(items[0].visibility),
+    )
+
+    assert api.queue_completed_job_uploads_once() == {
+        "youtube": 1,
+        "tiktok": 0,
+        "repair": 0,
+    }
+    assert queued == ["public"]
 
 
 def test_completed_job_sweeper_repairs_quality_failure_instead_of_publishing(monkeypatch):

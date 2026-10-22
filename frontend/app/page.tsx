@@ -19,6 +19,7 @@ import {
   deleteJob,
   deleteJobClip,
   deleteSelectedJobClips,
+  deleteYouTubeUpload,
   deleteJobs,
   discoverLocalLlms,
   enableYouTubeDirectProfileUpload,
@@ -1240,6 +1241,19 @@ export default function HomePage() {
     [job, loadYouTubeUploads],
   );
 
+  const handleDeleteYouTubeUpload = useCallback(async (upload: YouTubeUploadJob) => {
+    try {
+      await toast.promise(deleteYouTubeUpload(upload.id), {
+        loading: "Menghapus catatan upload gagal...",
+        success: "Catatan upload gagal sudah dihapus.",
+        error: (error) => error instanceof Error ? error.message : "Gagal menghapus catatan upload",
+      });
+      setYoutubeUploads((current) => current.filter((item) => item.id !== upload.id));
+    } catch {
+      // toast.promise already displayed the actionable status.
+    }
+  }, []);
+
   const handleUploadAllToYouTube = useCallback(async () => {
     if (!job || !job.clips.length) return;
     const bestCount = youtubeConfig?.auto_upload_count ?? 2;
@@ -1553,6 +1567,7 @@ export default function HomePage() {
           onDeleteAllClips={handleDeleteAllClips}
           onDeleteClip={handleDeleteClip}
           onDeleteSelectedClips={handleDeleteSelectedClips}
+          onDeleteYouTubeUpload={handleDeleteYouTubeUpload}
           onCaptureYouTubeSession={handleCaptureYouTubeSession}
           onEnableNoCdpMode={handleEnableNoCdpMode}
           onImportYouTubeCdpCookies={handleImportYouTubeCdpCookies}

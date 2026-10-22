@@ -30,6 +30,11 @@ import numpy as np
 
 from llm import AIConfig, chat_completion, extract_json
 from islamic_text import islamic_indonesian_tts_text, repair_islamic_asr_text
+from remotion_story_renderer import (
+    RemotionRenderError,
+    render_story_with_remotion,
+    write_hypit_script,
+)
 
 # Configure logging for Long Animate
 _logger = logging.getLogger("long_animate")
@@ -4886,6 +4891,10 @@ def render_long_animate(
         progress(18, "selection", "Menyusun storyboard, art bible, dan alur setiap scene")
         sb_start = time.time()
         storyboard = build_storyboard(production_script, ai_config)
+        hypit_script_path = write_hypit_script(
+            storyboard,
+            work_dir / "story.hypit.svml",
+        )
         metrics.storyboard_time = time.time() - sb_start
         logger.info(f"✓ Storyboard ready: {len(storyboard.scenes)} scenes in {metrics.storyboard_time:.1f}s")
 
@@ -4972,6 +4981,14 @@ def render_long_animate(
         visual_start = time.time()
         shot_paths: list[Path] = []
         shot_image_paths: list[Path] = []
+        remotion_assets: list[Path] = []
+        render_engine = os.environ.get(
+            "LONG_ANIMATE_RENDER_ENGINE", "remotion"
+        ).strip().casefold()
+        if render_engine not in {"remotion", "ffmpeg"}:
+            raise LongAnimateVideoError(
+                "LONG_ANIMATE_RENDER_ENGINE harus remotion atau ffmpeg."
+            )
         style_reference: Path | None = None
         character_reference: Path | None = None
         chapter_audits: list[dict[str, object]] = []
@@ -5011,12 +5028,14 @@ def render_long_animate(
             motion_start = time.time()
             motion_source = generate_motion_video(shot, image_path, scene_dir)
             metrics.motion_gen_time += time.time() - motion_start
-            shot_path = (
-                render_motion_shot_video(shot, motion_source, scene_dir)
-                if motion_source is not None
-                else render_shot_video(shot, image_path, scene_dir)
-            )
-            shot_paths.append(shot_path)
+            remotion_assets.append(motion_source or image_path)
+            if render_engine == "ffmpeg":
+                shot_path = (
+                    render_motion_shot_video(shot, motion_source, scene_dir)
+                    if motion_source is not None
+                    else render_shot_video(shot, image_path, scene_dir)
+                )
+                shot_paths.append(shot_path)
             shot_image_paths.append(image_path)
             source_scene = storyboard.scenes[shot.scene_index - 1]
             if not source_scene.image_provider:
@@ -5060,20 +5079,46 @@ def render_long_animate(
         )
 
         progress(82, "render", "Menggabungkan shot tanpa fade hitam atau padding audio antar-scene")
-        assembled = assemble_shot_videos(shot_paths, shots, scene_dir)
+        remotion_manifest_path: Path | None = None
+        if render_engine == "remotion":
+            try:
+                assembled, remotion_manifest_path = render_story_with_remotion(
+                    storyboard=storyboard,
+                    shots=shots,
+                    assets=remotion_assets,
+                    work_dir=work_dir,
+                    scene_dir=scene_dir,
+                    output_path=scene_dir / "assembled-remotion.mp4",
+                    width=_output_geometry()[1],
+                    height=_output_geometry()[2],
+                    duration=target_duration,
+                    transition_seconds=_transition_seconds(),
+                    video_quality=video_quality,
+                    burn_subtitles=burn_subtitles,
+                    progress=progress,
+                )
+            except RemotionRenderError as exc:
+                raise LongAnimateVideoError(str(exc)) from exc
+        else:
+            assembled = assemble_shot_videos(shot_paths, shots, scene_dir)
 
         base_name = f"long_animate_{_slug(storyboard.title)}"
         output_path = clips_dir / f"{base_name}.mp4"
         srt_path = clips_dir / f"{base_name}.srt"
         write_story_subtitles(srt_path, storyboard.scenes)
         output_aspect, output_width, output_height = _output_geometry()
-        subtitles = burn_subtitles and _supports_filter("subtitles")
-        drawtext = _supports_filter("drawtext")
+        subtitles = burn_subtitles
+        ffmpeg_subtitles = (
+            burn_subtitles
+            and render_engine == "ffmpeg"
+            and _supports_filter("subtitles")
+        )
+        drawtext = render_engine == "ffmpeg" and _supports_filter("drawtext")
         vf_parts = [
             "eq=contrast=1.02:saturation=1.04",
             f"tpad=stop_mode=clone:stop_duration=2,trim=duration={target_duration:.3f},setpts=PTS-STARTPTS",
         ]
-        if subtitles and any(scene.narration.strip() for scene in storyboard.scenes):
+        if ffmpeg_subtitles and any(scene.narration.strip() for scene in storyboard.scenes):
             vf_parts.append(
                 f"subtitles='{srt_path.name}':original_size={output_width}x{output_height}:"
                 f"force_style='{subtitle_style or _subtitle_force_style(output_aspect)}'"
@@ -5368,12 +5413,16 @@ def render_long_animate(
             "Uji tiga variasi title-thumbnail melalui fitur A/B YouTube setelah upload Private.",
         ],
         "applied_edits": [
-            "Naskah dipecah menjadi beat storyboard tanpa filler atau pengulangan.",
+            "Naskah dipecah menjadi Script Surface Hypit berbasis scene semantik tanpa timecode.",
             "Setiap unit narasi memiliki prompt sinematik, animation direction, continuity anchor, kamera, dan transisi sendiri.",
             "Scene kompleks dipecah menjadi beberapa shot tunggal yang tetap mewarisi karakter, pakaian, lokasi, dan waktu tanpa mengulang voice-over.",
             f"Voice-over pria/wanita dipilih otomatis dari karakter utama scene; durasi TTS menentukan timeline tepat {target_duration:g} detik.",
             "Voice-over dibersihkan dua sisi, di-de-ess, dikompresi ringan, lalu musik memakai sidechain ducking.",
-            "Setiap keyframe lokal diberi gerak kamera 2.5D scene-aware sesuai framing dan arah kamera.",
+            (
+                "Setiap keyframe/footage dirakit Remotion dengan gerak kamera scene-aware, overlay, dan caption dinamis."
+                if render_engine == "remotion"
+                else "Setiap keyframe lokal diberi gerak kamera 2.5D scene-aware sesuai framing dan arah kamera."
+            ),
             f"Subtitle bertimestamp dan audio AAC 48 kHz digabungkan ke master {output_aspect}.",
             "Thumbnail long-form dan chapter YouTube dibuat otomatis.",
         ],
@@ -5412,6 +5461,25 @@ def render_long_animate(
             },
         ],
         "storyboard_path": "storyboard.json",
+        "hypit_script_path": hypit_script_path.name,
+        "remotion_manifest_path": (
+            remotion_manifest_path.name if remotion_manifest_path else None
+        ),
+        "narrative_authoring": {
+            "engine": "hypit_script_surface",
+            "schema": "@hypit/script@1",
+            "timing": "semantic_scene_anchors_projected_to_measured_tts",
+            "source": hypit_script_path.name,
+            "validated_by_hypit_cli": True,
+        },
+        "motion_design": {
+            "renderer": "remotion",
+            "timeline_source": "measured_tts",
+            "deterministic_per_frame": True,
+            "transition_grammar": "role_aware_aperture_directional_split_match_flash_light_sweep_brush_wipe",
+            "kinetic_typography": "word_stagger_titles_and_phrase_captions",
+            "reference_policy": "motion_grammar_only_no_third_party_assets_or_branding",
+        },
         "scene_assets_directory": "animate_scenes",
         "art_bible": storyboard.art_bible,
         "character_bible": storyboard.character_bible,
@@ -5454,7 +5522,11 @@ def render_long_animate(
         },
         "video_generation": {
             "provider": _video_provider(),
-            "engine": "wikimedia_commons_cc_footage_plus_local_z_image_cinematic",
+            "engine": (
+                "remotion_4_scene_compositor"
+                if render_engine == "remotion"
+                else "ffmpeg_scene_compositor"
+            ),
             "enabled": _video_provider() != "off",
             "subject_motion_enabled": has_subject_motion,
             "camera_motion_enabled": camera_only_shot_count > 0,
@@ -5486,7 +5558,11 @@ def render_long_animate(
             "action_setting_condition_atmosphere_camera_are_shot_specific": True,
             "cross_shot_prompt_leakage_allowed": False,
             "render_execution_mode": (
-                "free_real_footage_plus_local_realistic_keyframes"
+                "remotion_real_footage_plus_generated_keyframes"
+                if render_engine == "remotion" and stock_attributions
+                else "remotion_generated_keyframes_plus_scene_specific_camera_motion"
+                if render_engine == "remotion"
+                else "free_real_footage_plus_local_realistic_keyframes"
                 if stock_attributions
                 else "local_realistic_keyframe_plus_scene_specific_camera_motion"
             ),
@@ -5513,6 +5589,7 @@ def render_long_animate(
             "enabled": subtitles,
             "transcript_grounded": True,
             "scene_timed": True,
+            "renderer": "remotion" if render_engine == "remotion" else "ffmpeg_ass",
         },
         "timing_engine": {
             "version": 3,

@@ -223,6 +223,10 @@ YOUTUBE_UPLOAD_CONFIRMED_PREFIX = "UPLOAD_CONFIRMED:"
 YOUTUBE_FINAL_VISIBILITY_PREFIX = "FINAL_VISIBILITY:"
 YOUTUBE_CLAIM_ABORT_PREFIX = "CLAIMED_UPLOAD_ABORTED:"
 YOUTUBE_RESTART_VERIFY_MARKER = "Recovery restart: verifikasi final Content tanpa upload ulang."
+YOUTUBE_RESTART_VERIFY_ABSENT_MARKER = (
+    "Recovery restart: Content sudah diperiksa dan video tidak ditemukan; "
+    "draft lama dilepas agar satu upload baru dapat dibuat."
+)
 DEFAULT_YOUTUBE_PLAYLIST = "Islam"
 DEFAULT_YOUTUBE_TARGET_CHANNEL = "ryuundyofficial"
 DEFAULT_YOUTUBE_TARGET_EMAIL = "fendysketsa@gmail.com"
@@ -2660,6 +2664,30 @@ def youtube_upload_needs_restart_verification(upload: YouTubeUploadJob) -> bool:
     )
 
 
+def youtube_restart_verification_absence_confirmed(error: str | None) -> bool:
+    """Return true only for a completed Content search that found no video."""
+    lowered = str(error or "").casefold()
+    return any(
+        marker in lowered
+        for marker in (
+            "belum dapat diverifikasi di youtube studio",
+            "belum ditemukan sebagai baris tersimpan di halaman content",
+        )
+    )
+
+
+def youtube_restart_verification_released(upload: YouTubeUploadJob) -> bool:
+    """Return true after read-only Studio verification proved no draft exists."""
+    return bool(
+        upload.status == "failed"
+        and YOUTUBE_RESTART_VERIFY_MARKER in upload.logs
+        and (
+            YOUTUBE_RESTART_VERIFY_ABSENT_MARKER in upload.logs
+            or youtube_restart_verification_absence_confirmed(upload.error)
+        )
+    )
+
+
 def decode_persisted_utf8(payload: bytes) -> str:
     """Recover isolated high-bit flips in otherwise ASCII JSON text.
 
@@ -4215,16 +4243,23 @@ def media_duration_seconds(path: Path) -> float:
     return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
 
 
-def youtube_max_upload_bytes() -> int:
+def youtube_max_upload_bytes(*, use_cdp: bool = False) -> int:
     max_mb = (
-        os.environ.get("YOUTUBE_MAX_UPLOAD_MB", "").strip()
-        or os.environ.get("YOUTUBE_CDP_MAX_UPLOAD_MB", "").strip()
-        or str(DEFAULT_YOUTUBE_MAX_UPLOAD_MB)
+        os.environ.get(
+            "YOUTUBE_CDP_MAX_UPLOAD_MB" if use_cdp else "YOUTUBE_MAX_UPLOAD_MB",
+            "",
+        ).strip()
+        or str(49 if use_cdp else DEFAULT_YOUTUBE_MAX_UPLOAD_MB)
     )
     try:
         mb = float(max_mb)
     except ValueError:
-        mb = DEFAULT_YOUTUBE_MAX_UPLOAD_MB
+        mb = 49 if use_cdp else DEFAULT_YOUTUBE_MAX_UPLOAD_MB
+    if use_cdp:
+        # Playwright refuses payloads larger than 50 MB for a CDP-attached
+        # browser even when Chrome happens to run on the same host.  Keep a
+        # small margin for the strict transfer check and stage/compress first.
+        mb = min(mb, 49)
     return max(1, int(mb * 1024 * 1024))
 
 
@@ -6765,6 +6800,12 @@ def reusable_youtube_upload(
             and not upload.dry_run
         ):
             return upload
+    # A newer read-only Content search that conclusively found no video
+    # releases every older local file-selection checkpoint for this clip.
+    # Otherwise cron keeps reviving the same stale draft forever and can
+    # never create the one real upload that is still missing.
+    if any(youtube_restart_verification_released(upload) for upload in matches):
+        return None
     for upload in matches:
         # A failed local automation can still own a live Studio draft. The
         # assigned id is strongest; the historical "Video dipilih" marker is
@@ -6785,13 +6826,18 @@ def recoverable_failed_youtube_upload(job_id: str, clip_url: str) -> YouTubeUplo
             key=lambda item: item.finished_at or item.updated_at,
             reverse=True,
         )
+    matches = [
+        upload
+        for upload in candidates
+        if upload.source_job_id == job_id and upload.clip_url == clip_url
+    ]
+    if any(youtube_restart_verification_released(upload) for upload in matches):
+        return None
     return next(
         (
             upload
-            for upload in candidates
-            if upload.source_job_id == job_id
-            and upload.clip_url == clip_url
-            and upload.status == "failed"
+            for upload in matches
+            if upload.status == "failed"
             and (
                 youtube_upload_has_remote_checkpoint(upload)
                 or youtube_upload_has_final_save_checkpoint(upload)
@@ -7191,7 +7237,17 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
                 "mengupload atau merender ulang klip ini; gunakan sumber lain yang aman."
             ),
         )
-    recovery = recoverable_failed_youtube_upload(job_id, clip.url)
+    # Prefer a live or already verified record before reviving historical
+    # failures.  The old order searched failed drafts first, so every repeated
+    # cron/API call could requeue one more failed record even while the same
+    # clip was already running.  That produced several verification workers
+    # for one local file and made the upload counter appear stuck.
+    existing = reusable_youtube_upload(job_id, clip.url, clip_fingerprint)
+    recovery = (
+        recoverable_failed_youtube_upload(job_id, clip.url)
+        if existing is None or existing.status == "failed"
+        else None
+    )
     if recovery is not None:
         recovery_logs = [
             *recovery.logs,
@@ -7214,7 +7270,6 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         )
         with youtube_uploads_lock:
             return youtube_uploads.get(recovery.id, recovery)
-    existing = reusable_youtube_upload(job_id, clip.url, clip_fingerprint)
     if request.dry_run and existing is not None and existing.status == "completed":
         existing = None
     if existing is not None:
@@ -8250,7 +8305,7 @@ def build_youtube_upload_command(
     if clip_path is None:
         raise RuntimeError("Clip path is invalid")
     use_cdp = youtube_upload_prefers_cdp() if use_cdp_override is None else use_cdp_override
-    max_upload_bytes = youtube_max_upload_bytes()
+    max_upload_bytes = youtube_max_upload_bytes(use_cdp=use_cdp)
     upload_path = prepare_limited_upload_file(clip_path, max_upload_bytes)
     is_long_form = upload.clip_name.casefold().startswith(
         ("highlight_5menit_", "resume_cerita_", "long_animate_")
@@ -9275,6 +9330,8 @@ def run_youtube_restart_verification(upload_id: str) -> None:
             or f"youtube_uploader.py verify-upload exited with code {code}"
         )
         if code != 0 or not confirmed or not video_url:
+            if youtube_restart_verification_absence_confirmed(error):
+                logs.append(YOUTUBE_RESTART_VERIFY_ABSENT_MARKER)
             set_youtube_upload(
                 upload_id,
                 status="failed",
@@ -10840,8 +10897,32 @@ def resume_interrupted_clipping_jobs() -> None:
         threading.Thread(target=run_job, args=(job_id,), daemon=True).start()
 
 
+def enable_ready_youtube_cdp_for_automation() -> bool:
+    """Prefer the already logged-in host Chrome for unattended uploads.
+
+    The container's isolated Chromium can temporarily lose DNS while the host
+    Chrome CDP remains healthy. Promote that ready session at every backend
+    start so a restart cannot silently put cron back on the broken path.
+    """
+    automatic_upload_requested = bool(
+        env_bool("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False)
+        or (
+            env_bool("AUTO_UPLOAD_COMPLETED_JOBS", False)
+            and env_bool("AUTO_UPLOAD_COMPLETED_JOBS_YOUTUBE", False)
+        )
+    )
+    if not automatic_upload_requested or not youtube_cdp_ready():
+        return False
+    os.environ["YOUTUBE_UPLOAD_USE_CDP"] = "true"
+    os.environ["YOUTUBE_UPLOAD_FORCE_CDP"] = "true"
+    os.environ["YOUTUBE_UPLOAD_STORAGE_STATE_FIRST"] = "false"
+    os.environ["YOUTUBE_UPLOAD_PREFER_CHROMIUM_PROFILE"] = "false"
+    return True
+
+
 @app.on_event("startup")
 def resume_queued_youtube_uploads() -> None:
+    enable_ready_youtube_cdp_for_automation()
     with youtube_uploads_lock:
         has_queued = any(upload.status == "queued" for upload in youtube_uploads.values())
         claimed_cleanup_ids = [
@@ -10915,6 +10996,12 @@ def completed_job_upload_retry_ready(
         for item in exact
     ):
         return False
+    if any(
+        isinstance(item, YouTubeUploadJob)
+        and youtube_restart_verification_released(item)
+        for item in exact
+    ):
+        return True
     failed_times = [
         parsed
         for item in exact
@@ -11006,18 +11093,33 @@ def queue_completed_job_uploads_once() -> dict[str, int]:
     counts = {"youtube": 0, "tiktok": 0, "repair": 0}
     if not env_bool("AUTO_UPLOAD_COMPLETED_JOBS", False):
         return counts
-    # Auto Viral owns its own delayed, quota-aware cross-platform upload
-    # checkpoint. The generic operator must handle only standalone jobs or it
+    # A live Auto Viral run owns its delayed, quota-aware cross-platform upload
+    # checkpoint. The generic operator must leave those live jobs alone or it
     # can publish a Short while the parent campaign is still rendering its
-    # paired Long Story.
+    # paired Long Story. Terminal campaigns release any remaining render to
+    # this fallback operator.
+    # A campaign owns its child jobs only while it can still advance their
+    # upload checkpoint.  Keeping every historical child id here meant that a
+    # completed render from a cancelled, completed, or non-resumable failed
+    # cron run was excluded forever: neither the campaign nor this sweeper
+    # would enqueue it.  Snapshot the runs under their lock, then evaluate
+    # resumability outside it because that check also reads ``jobs``.
     with auto_viral_lock:
-        managed_auto_viral_job_ids = {
-            managed_job_id
-            for run in auto_viral_runs.values()
-            for item in run.processed
-            for key in ("job_id", "long_job_id")
-            if (managed_job_id := str(item.get(key) or "").strip())
-        }
+        campaign_runs = list(auto_viral_runs.values())
+    upload_owning_runs = [
+        run
+        for run in campaign_runs
+        if run.status in {"queued", "running"}
+        or (run.status == "failed" and auto_viral_run_can_resume_upload(run))
+    ]
+    managed_auto_viral_job_ids = {
+        managed_job_id
+        for run in upload_owning_runs
+        for item in run.processed
+        if item.get("status") not in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
+        for key in ("job_id", "long_job_id")
+        if (managed_job_id := str(item.get(key) or "").strip())
+    }
     with jobs_lock:
         completed_jobs = sorted(
             (
@@ -17549,10 +17651,13 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
     creator_perspective = os.environ.get(
         "AUTO_VIRAL_SCHEDULE_CREATOR_PERSPECTIVE", ""
     ).strip()
-    headless_private_ready = bool(
-        env_bool("YOUTUBE_HEADLESS", True)
-        and not env_bool("YOUTUBE_UPLOAD_USE_CDP", False)
-        and not env_bool("YOUTUBE_UPLOAD_FORCE_CDP", False)
+    youtube_browser_ready = bool(
+        (
+            env_bool("YOUTUBE_HEADLESS", True)
+            and not youtube_upload_uses_cdp()
+            and not youtube_upload_force_cdp()
+        )
+        or (youtube_upload_uses_cdp() and youtube_cdp_ready())
     )
     rights_profile_ready = bool(
         rights_confirmed
@@ -17628,7 +17733,7 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
             youtube_upload_requested
             and remaining_shorts > 0
             and rights_profile_ready
-            and headless_private_ready
+            and youtube_browser_ready
         ),
         auto_upload_tiktok=bool(tiktok_upload_requested and rights_profile_ready),
         source_rights_confirmed=rights_confirmed,
@@ -17644,7 +17749,7 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
             paired_long_public_requested
             and paired_long_enabled
             and rights_profile_ready
-            and headless_private_ready
+            and youtube_browser_ready
             and env_bool("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", False)
             and not youtube_channel_recovery_mode()
         ),
@@ -18641,6 +18746,30 @@ def get_youtube_upload(upload_id: str) -> YouTubeUploadJob:
         for item in youtube_uploads_with_queue_positions(uploads)
         if item.id == upload_id
     )
+
+
+@app.delete("/api/youtube/uploads/{upload_id}")
+def delete_youtube_upload(upload_id: str) -> dict[str, str]:
+    """Remove a terminal failed upload record without touching remote videos.
+
+    A failed upload may outlive its source job and local clip (for example after
+    another platform completed and cleaned up the shared clip).  In that case
+    the regular clip deletion route cannot resolve the old job, leaving a
+    permanent error card.  Only failed/cancelled records are removable here;
+    queued, running, and completed uploads stay protected.
+    """
+    with youtube_uploads_lock:
+        upload = youtube_uploads.get(upload_id)
+        if upload is None:
+            raise HTTPException(status_code=404, detail="YouTube upload not found")
+        if upload.status not in {"failed", "cancelled"}:
+            raise HTTPException(
+                status_code=409,
+                detail="Hanya catatan upload YouTube gagal atau dibatalkan yang dapat dihapus",
+            )
+        youtube_uploads.pop(upload_id)
+        save_youtube_uploads_unlocked()
+    return {"status": "ok", "removed_upload_id": upload_id}
 
 
 @app.post(

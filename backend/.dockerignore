@@ -4,6 +4,8 @@ outputs
 uploads
 data
 tests
+remotion/node_modules
+remotion/.hypit
 jobs.json
 *.pyc
 .gitignore

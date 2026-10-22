@@ -1,3 +1,5 @@
+FROM node:22-bookworm-slim AS node-runtime
+
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -12,6 +14,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 ARG DENO_VERSION=2.5.5
+
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && node --version \
+    && npm --version
 
 # The local Docker/BuildKit snapshot has previously contained a raw 0xA0 byte
 # in subprocess.py. Repair that byte before pip (which imports subprocess), then
@@ -59,6 +68,13 @@ RUN python -m playwright install --with-deps chromium
 RUN python -c "import cv2, sys; missing = [name for name in ('VideoCapture', 'CascadeClassifier', 'HOGDescriptor') if not hasattr(cv2, name)]; print(f'OpenCV install is incomplete, missing: {missing}' if missing else f'OpenCV {cv2.__version__} ready'); sys.exit(1 if missing else 0)"
 
 COPY . .
+
+# Hypit authors the semantic narration surface; Remotion owns visual assembly.
+# Install from the audited lockfile without package lifecycle scripts. The
+# renderer reuses Chromium installed by Playwright above.
+RUN cd /app/remotion \
+    && npm ci --omit=dev --ignore-scripts \
+    && npm cache clean --force
 
 RUN chmod 0755 /app/docker-entrypoint.sh \
     && mkdir -p outputs uploads data

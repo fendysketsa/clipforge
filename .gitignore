@@ -17,6 +17,8 @@ scripts/__pycache__/
 
 frontend/.next/
 frontend/node_modules/
+backend/remotion/node_modules/
+backend/remotion/.hypit/
 frontend/out/
 frontend/next-env.d.ts
 frontend/.env

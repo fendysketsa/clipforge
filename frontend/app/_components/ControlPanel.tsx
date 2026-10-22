@@ -216,7 +216,7 @@ export function ControlPanel({
         <span>
           <small>{isStory ? "STORY VIDEO DIRECTOR" : isLong ? "POLISH LONG VIDEO" : "POLISH SHORT"}</small>
           <strong>{isStory ? "Cerita → video lengkap" : isLong ? "Struktur & watch time" : "Gaya edit"}</strong>
-          <em>{isStory ? "Naskah, visual, dubbing, subtitle, musik, dan QC otomatis." : isLong ? "Susun cerita, chapter, dan packaging YouTube." : "Default sudah siap. Buka kalau ingin mengubah karakter hasil."}</em>
+          <em>{isStory ? "Hypit Script, visual Remotion, dubbing adaptif, subtitle, musik, dan QC otomatis." : isLong ? "Susun cerita, chapter, dan packaging YouTube." : "Default sudah siap. Buka kalau ingin mengubah karakter hasil."}</em>
         </span>
         <span className="shortPolishSnapshot">
           <b>{isStory ? `Drama AI · ${targetMinutes} menit` : isLong ? `Story Arc · ${targetMinutes} menit` : editProfileCopy[editProfile].title}</b>
@@ -231,7 +231,7 @@ export function ControlPanel({
             <span><Sparkles size={18} /></span>
             <div>
               <strong>{isStory ? "Story Video Director aktif" : "Long-form Director aktif"}</strong>
-              <small>{isStory ? "Premis dikembangkan menjadi naskah, scene visual, dubbing, subtitle, musik, thumbnail, dan video final." : "Cold open, story arc, chapter cards, cinematic grading, thumbnail, dan audit watch-time diterapkan otomatis."}</small>
+              <small>{isStory ? "Premis menjadi Script Surface Hypit; Remotion menyusun scene, kamera, caption, lalu TTS adaptif mengisi suara." : "Cold open, story arc, chapter cards, cinematic grading, thumbnail, dan audit watch-time diterapkan otomatis."}</small>
             </div>
             <b><Check size={14} /> ON</b>
           </div>

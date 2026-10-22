@@ -51,6 +51,7 @@ type ResultsSectionProps = {
   onDeleteAllClips: () => void;
   onDeleteClip: (clip: ClipFile) => void;
   onDeleteSelectedClips: () => void;
+  onDeleteYouTubeUpload: (upload: YouTubeUploadJob) => Promise<void>;
   onCaptureYouTubeSession: () => void;
   onCheckTikTokSession: () => void;
   onEnableNoCdpMode: () => void;
@@ -322,6 +323,7 @@ export function ResultsSection({
   onDeleteAllClips,
   onDeleteClip,
   onDeleteSelectedClips,
+  onDeleteYouTubeUpload,
   onCaptureYouTubeSession,
   onCheckTikTokSession,
   onEnableNoCdpMode,
@@ -1338,6 +1340,12 @@ export function ResultsSection({
                     <div className={`youtubeUploadError ${youtubeClaimWasDetected ? "youtubeUploadError--claim" : ""}`} title={uploadError}>
                       <strong>{youtubeClaimWasDetected ? "Menghapus otomatis · klaim Content ID" : "Upload gagal"}</strong>
                       <span>{uploadError}</span>
+                      {!youtubeClaimWasDetected ? (
+                        <button type="button" onClick={() => void onDeleteYouTubeUpload(latestUpload)}>
+                          <Trash2 size={14} />
+                          <span>Hapus catatan gagal</span>
+                        </button>
+                      ) : null}
                       {showSessionRecovery ? (
                         <>
                           <button type="button" onClick={onSetupYouTubeOneTimeLogin} disabled={isYouTubeLoginActive}>

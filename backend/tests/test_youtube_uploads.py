@@ -33,6 +33,7 @@ from api import (
     default_youtube_title,
     discover_clips,
     delete_completed_youtube_upload_clip,
+    delete_youtube_upload,
     generate_youtube_description,
     generate_youtube_metadata,
     generated_channel_authenticity_issue,
@@ -1531,6 +1532,113 @@ def test_legacy_failed_file_selection_blocks_a_second_remote_draft(monkeypatch):
     ) is failed
 
 
+def test_verified_missing_remote_draft_releases_old_file_selection(monkeypatch):
+    import api
+
+    stale = YouTubeUploadJob(
+        id="stale-file-selection",
+        source_job_id="job-missing-remote",
+        clip_url="/outputs/job-missing-remote/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="failed",
+        created_at="2026-10-22T00:01:00+00:00",
+        updated_at="2026-10-22T00:02:00+00:00",
+        finished_at="2026-10-22T00:02:00+00:00",
+        title="Stale upload draft",
+        clip_sha256="same-fingerprint",
+        logs=["Video dipilih: clip_01.mp4", "USER_ERROR: metadata gagal"],
+        error="metadata gagal setelah file dipilih",
+    )
+    verified_missing = stale.model_copy(
+        update={
+            "id": "content-check-found-nothing",
+            "created_at": "2026-10-22T00:03:00+00:00",
+            "updated_at": "2026-10-22T00:04:00+00:00",
+            "finished_at": "2026-10-22T00:04:00+00:00",
+            "logs": [
+                *stale.logs,
+                api.YOUTUBE_RESTART_VERIFY_MARKER,
+                "USER_ERROR: Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+            ],
+            "error": (
+                "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. "
+                "Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan."
+            ),
+        }
+    )
+    monkeypatch.setattr(
+        api,
+        "youtube_uploads",
+        {stale.id: stale, verified_missing.id: verified_missing},
+    )
+
+    assert api.youtube_restart_verification_released(verified_missing) is True
+    assert api.recoverable_failed_youtube_upload(stale.source_job_id, stale.clip_url) is None
+    assert api.reusable_youtube_upload(
+        stale.source_job_id,
+        stale.clip_url,
+        stale.clip_sha256 or "",
+    ) is None
+
+
+def test_active_upload_wins_over_older_recoverable_failure(monkeypatch, tmp_path):
+    import api
+
+    outputs = tmp_path / "outputs"
+    clip_path = outputs / "single-owner" / "clips" / "clip_01.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"single-owner-content")
+    clip = ClipFile(
+        name=clip_path.name,
+        url="/outputs/single-owner/clips/clip_01.mp4",
+        size_bytes=clip_path.stat().st_size,
+    )
+    job = ClipJob(
+        id="single-owner",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source"),
+        created_at="2026-10-22T00:00:00+00:00",
+        updated_at="2026-10-22T00:00:00+00:00",
+        clips=[clip],
+    )
+    failed = YouTubeUploadJob(
+        id="older-failed-draft",
+        source_job_id=job.id,
+        clip_url=clip.url,
+        clip_name=clip.name,
+        status="failed",
+        created_at="2026-10-22T00:01:00+00:00",
+        updated_at="2026-10-22T00:02:00+00:00",
+        finished_at="2026-10-22T00:02:00+00:00",
+        title="Older failed draft",
+        clip_sha256=api.file_sha256(clip_path),
+        logs=["Video dipilih: clip_01.mp4", "USER_ERROR: metadata gagal"],
+        error="metadata gagal setelah file dipilih",
+    )
+    active = failed.model_copy(
+        update={
+            "id": "current-active-upload",
+            "status": "queued",
+            "created_at": "2026-10-22T00:03:00+00:00",
+            "updated_at": "2026-10-22T00:03:00+00:00",
+            "finished_at": None,
+            "title": "Current active upload",
+            "error": None,
+        }
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "youtube_uploads", {failed.id: failed, active.id: active})
+
+    selected = create_youtube_upload_record(
+        job.id,
+        YouTubeUploadRequest(clip_url=clip.url),
+    )
+
+    assert selected.id == active.id
+    assert api.youtube_uploads[failed.id].status == "failed"
+
+
 def test_worker_preflight_detects_duplicate_already_in_queue_history(monkeypatch):
     import api
 
@@ -2024,6 +2132,65 @@ def test_completed_upload_cleanup_refuses_unverified_upload(monkeypatch):
 
     with pytest.raises(RuntimeError, match="belum terkonfirmasi"):
         delete_completed_youtube_upload_clip(upload.id)
+
+
+def test_delete_youtube_upload_removes_failed_orphan_record(monkeypatch):
+    import api
+
+    upload = YouTubeUploadJob(
+        id="upload-failed-orphan",
+        source_job_id="missing-job",
+        clip_url="/outputs/missing-job/clips/missing.mp4",
+        clip_name="missing.mp4",
+        status="failed",
+        created_at="2026-10-22T00:00:00+00:00",
+        updated_at="2026-10-22T00:01:00+00:00",
+        title="Failed orphan",
+        error="File lokal sudah tidak ada",
+    )
+    saved = []
+    monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+    monkeypatch.setattr(api, "save_youtube_uploads_unlocked", lambda: saved.append(True))
+
+    result = delete_youtube_upload(upload.id)
+
+    assert result == {"status": "ok", "removed_upload_id": upload.id}
+    assert upload.id not in api.youtube_uploads
+    assert saved == [True]
+
+
+@pytest.mark.parametrize("status", ["queued", "running", "completed"])
+def test_delete_youtube_upload_protects_non_failed_records(monkeypatch, status):
+    import api
+
+    upload = YouTubeUploadJob(
+        id=f"upload-{status}",
+        source_job_id="job-1",
+        clip_url="/outputs/job-1/clips/clip.mp4",
+        clip_name="clip.mp4",
+        status=status,
+        created_at="2026-10-22T00:00:00+00:00",
+        updated_at="2026-10-22T00:01:00+00:00",
+        title="Protected upload",
+    )
+    monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+
+    with pytest.raises(HTTPException) as exc_info:
+        delete_youtube_upload(upload.id)
+
+    assert exc_info.value.status_code == 409
+    assert upload.id in api.youtube_uploads
+
+
+def test_delete_youtube_upload_returns_not_found(monkeypatch):
+    import api
+
+    monkeypatch.setattr(api, "youtube_uploads", {})
+
+    with pytest.raises(HTTPException) as exc_info:
+        delete_youtube_upload("missing-upload")
+
+    assert exc_info.value.status_code == 404
 
 
 def test_completed_upload_cleanup_removes_orphan_workspace_when_job_is_missing(

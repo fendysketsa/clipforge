@@ -343,6 +343,17 @@ export const getYouTubeUploads = async () => {
   return (await response.json()) as YouTubeUploadJob[];
 };
 
+export const deleteYouTubeUpload = async (uploadId: string) => {
+  const response = await fetch(
+    `${CLIENT_API_BASE}/api/youtube/uploads/${encodeURIComponent(uploadId)}`,
+    { method: "DELETE", cache: "no-store" },
+  );
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Gagal menghapus catatan upload YouTube"));
+  }
+  return (await response.json()) as { status: string; removed_upload_id: string };
+};
+
 export const refreshYouTubeUploadPerformance = async (uploadId: string) => {
   const response = await fetch(
     `${CLIENT_API_BASE}/api/youtube/uploads/${encodeURIComponent(uploadId)}/performance/refresh`,

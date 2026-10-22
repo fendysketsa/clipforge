@@ -154,7 +154,7 @@ export function QuickStartCard({
         </h2>
         <p>
           {isStory
-            ? "Tempel premis atau alur cerita. ClipForge menyusun naskah, scene, visual, dubbing, subtitle, musik, lalu merender video secara otomatis."
+            ? "Tempel premis atau alur cerita. Hypit menyusun naskah semantik, Remotion merakit visual dan animasi, lalu ClipForge mengisi dubbing, subtitle, musik, dan QC otomatis."
             : isLong
             ? "AI memilih chapter terbaik, menyusun alur, lalu menyiapkan video panjang yang rapi dan siap direview."
             : "AI menemukan momen terbaik lalu merapikan framing, caption, ritme, dan audio secara otomatis."}
@@ -201,7 +201,7 @@ export function QuickStartCard({
                 <span className={!storyboardPreview ? "active" : "done"}><BookOpen size={14} /> 1. Storyboard</span>
                 <span className={storyboardPreview ? "active" : ""}><Film size={14} /> 2. Video</span>
               </div>
-              <small>IMAGEGEN STORY DIRECTOR</small>
+              <small>HYPIT SCRIPT · REMOTION VIDEO</small>
             </header>
             <label className="storyInputField">
               <span>Sutradarai video Anda</span>

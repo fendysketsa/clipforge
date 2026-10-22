@@ -1,0 +1,26 @@
+{
+  "name": "clipforge-remotion-renderer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "hypit": {
+    "project": true
+  },
+  "scripts": {
+    "render": "node render.mjs",
+    "check": "node --check render.mjs"
+  },
+  "dependencies": {
+    "@hypit/hypit": "0.3.1",
+    "@remotion/bundler": "4.0.538",
+    "@remotion/renderer": "4.0.538",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.538"
+  },
+  "overrides": {
+    "esbuild": "0.28.2",
+    "sharp": "0.35.5",
+    "vite": "8.3.5"
+  }
+}
