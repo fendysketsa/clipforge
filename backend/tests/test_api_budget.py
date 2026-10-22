@@ -1503,6 +1503,45 @@ def test_auto_viral_upload_backlog_uses_oldest_resumable_run(monkeypatch):
     assert api.pending_scheduled_auto_viral_upload_run().id == oldest.id
 
 
+def test_upload_backlog_resume_can_run_while_newer_campaign_is_clipping(monkeypatch):
+    import api
+
+    started = []
+
+    class FakeThread:
+        def __init__(self, *, target, args, name, daemon):
+            started.append(
+                {
+                    "target": target,
+                    "args": args,
+                    "name": name,
+                    "daemon": daemon,
+                }
+            )
+
+        def start(self):
+            return None
+
+    monkeypatch.setattr(api.threading, "Thread", FakeThread)
+    monkeypatch.setattr(api, "auto_viral_active_run_id", "new-clipping-run")
+    monkeypatch.setattr(api, "auto_viral_upload_resume_run_ids", set())
+
+    assert api.start_scheduled_auto_viral_upload_resume(
+        "old-upload-backlog",
+        claim_campaign_slot=False,
+    )
+    assert api.auto_viral_active_run_id == "new-clipping-run"
+    assert api.auto_viral_upload_resume_run_ids == {"old-upload-backlog"}
+    assert started[0]["args"] == ("old-upload-backlog",)
+    assert started[0]["daemon"] is True
+
+    assert not api.start_scheduled_auto_viral_upload_resume(
+        "old-upload-backlog",
+        claim_campaign_slot=False,
+    )
+    assert len(started) == 1
+
+
 def test_interrupted_schedule_reclaims_completed_clip_job_for_upload(monkeypatch):
     import api
 

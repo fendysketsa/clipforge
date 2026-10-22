@@ -5,6 +5,9 @@ services:
       context: ./backend
     container_name: fendy-clipper-backend
     network_mode: host
+    # YouTube Studio is a memory-heavy Chromium app. The Docker default
+    # /dev/shm (64 MB) can crash a page while an upload draft is active.
+    shm_size: "1gb"
     # GPU is part of the default deployment on this host. NVIDIA Container
     # Toolkit still needs to be configured once before the first `up`.
     gpus: all

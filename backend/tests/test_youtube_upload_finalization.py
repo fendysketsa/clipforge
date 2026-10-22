@@ -32,6 +32,7 @@ from youtube_uploader import (
     video_daily_upload_limit_detected,
     fill_tags,
     normalized_studio_tags,
+    wait_for_assigned_video_url,
     validate_thumbnail_file,
     verify_saved_video_in_studio,
     wait_for_copyright_checks,
@@ -44,6 +45,7 @@ class TagsField:
     def __init__(self, page):
         self.page = page
         self.value = ""
+        self.selected_chip = False
 
     def fill(self, value, **_kwargs):
         self.value = value
@@ -52,10 +54,16 @@ class TagsField:
         if key == "Enter":
             self.page.saved_tags.append(self.value)
             self.value = ""
+            self.selected_chip = False
         elif key == "Backspace" and not self.value and self.page.existing_tags:
-            self.page.existing_tags.pop()
+            if self.selected_chip:
+                self.page.existing_tags.pop()
+                self.selected_chip = False
+            else:
+                self.selected_chip = True
 
     def click(self, **_kwargs):
+        self.selected_chip = False
         return None
 
 
@@ -95,6 +103,20 @@ def test_existing_channel_default_tags_are_removed_before_upload(monkeypatch):
     clear_existing_studio_tags(page, page.field)
 
     assert page.existing_tags == []
+
+
+def test_assigned_video_id_is_captured_before_later_upload_steps(monkeypatch):
+    attempts = iter(["", "", "https://www.youtube.com/watch?v=abcDEF12345"])
+    monkeypatch.setattr(
+        youtube_uploader,
+        "extract_video_url",
+        lambda *_args, **_kwargs: next(attempts),
+    )
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+
+    assert wait_for_assigned_video_url(object(), "Upload title", timeout_ms=1000) == (
+        "https://www.youtube.com/watch?v=abcDEF12345"
+    )
 
 
 def test_fill_tags_replaces_defaults_and_verifies_contextual_tags(monkeypatch):

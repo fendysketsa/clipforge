@@ -2631,11 +2631,32 @@ def youtube_upload_has_final_save_checkpoint(upload: YouTubeUploadJob) -> bool:
     return has_final_visibility and has_accepted_action and not has_blocking_abort
 
 
+def youtube_upload_has_remote_checkpoint(upload: YouTubeUploadJob) -> bool:
+    """Return true once YouTube assigned this upload a durable remote id."""
+    return bool(
+        not upload.dry_run
+        and upload.video_url
+        and normalize_youtube_video_url(upload.video_url)
+    )
+
+
+def youtube_upload_has_file_selection_checkpoint(upload: YouTubeUploadJob) -> bool:
+    """Conservatively reserve a clip once Studio accepted its local file."""
+    return bool(
+        not upload.dry_run
+        and any(str(line).startswith("Video dipilih:") for line in upload.logs)
+    )
+
+
 def youtube_upload_needs_restart_verification(upload: YouTubeUploadJob) -> bool:
     return (
         upload.status == "queued"
         and YOUTUBE_RESTART_VERIFY_MARKER in upload.logs
-        and youtube_upload_has_final_save_checkpoint(upload)
+        and (
+            youtube_upload_has_remote_checkpoint(upload)
+            or youtube_upload_has_final_save_checkpoint(upload)
+            or youtube_upload_has_file_selection_checkpoint(upload)
+        )
     )
 
 
@@ -2731,7 +2752,11 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
                         "error": None,
                     }
                 )
-            elif youtube_upload_has_final_save_checkpoint(upload):
+            elif (
+                youtube_upload_has_remote_checkpoint(upload)
+                or youtube_upload_has_final_save_checkpoint(upload)
+                or youtube_upload_has_file_selection_checkpoint(upload)
+            ):
                 upload = upload.model_copy(
                     update={
                         "status": "queued",
@@ -2739,7 +2764,18 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
                         "started_at": None,
                         "finished_at": None,
                         "duration_seconds": None,
-                        "logs": [*upload.logs, YOUTUBE_RESTART_VERIFY_MARKER][-160:],
+                        "logs": [
+                            *upload.logs,
+                            *(
+                                [
+                                    "Recovery restart: video-id remote sudah ada; "
+                                    "hanya verifikasi Content, file tidak boleh dipilih ulang."
+                                ]
+                                if youtube_upload_has_remote_checkpoint(upload)
+                                else []
+                            ),
+                            YOUTUBE_RESTART_VERIFY_MARKER,
+                        ][-160:],
                         "error": None,
                     }
                 )
@@ -2800,7 +2836,11 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
             upload.status == "failed"
             and upload.error
             == "Backend restart setelah file dipilih; upload tidak diulang otomatis untuk mencegah video duplikat."
-            and youtube_upload_has_final_save_checkpoint(upload)
+            and (
+                youtube_upload_has_remote_checkpoint(upload)
+                or youtube_upload_has_final_save_checkpoint(upload)
+                or youtube_upload_has_file_selection_checkpoint(upload)
+            )
         ):
             recovered_at = now_iso()
             upload = upload.model_copy(
@@ -3725,6 +3765,7 @@ runtime_data_cleanup_running = False
 auto_viral_runs: dict[str, AutoViralRun] = load_auto_viral_runs()
 auto_viral_lock = threading.Lock()
 auto_viral_active_run_id: str | None = None
+auto_viral_upload_resume_run_ids: set[str] = set()
 auto_viral_secrets: dict[str, str] = {}
 auto_viral_scheduler_lock = threading.Lock()
 auto_viral_scheduler_running = False
@@ -6699,23 +6740,41 @@ def reusable_youtube_upload(
 ) -> YouTubeUploadJob | None:
     with youtube_uploads_lock:
         uploads = sorted(youtube_uploads.values(), key=lambda item: item.created_at, reverse=True)
-        for upload in uploads:
-            exact_clip = upload.source_job_id == job_id and upload.clip_url == clip_url
-            same_fingerprint = bool(
-                clip_sha256
-                and upload.clip_sha256
-                and upload.clip_sha256 == clip_sha256
-            )
-            if exact_clip and upload.status in {"queued", "running"}:
-                return upload
-            if (
-                upload.status == "completed"
-                and upload.video_url
-                and upload.upload_confirmed
-                and not upload.dry_run
-                and (exact_clip or same_fingerprint)
-            ):
-                return upload
+    matches = [
+        upload
+        for upload in uploads
+        if (
+            upload.source_job_id == job_id
+            and upload.clip_url == clip_url
+        )
+        or bool(
+            clip_sha256
+            and upload.clip_sha256
+            and upload.clip_sha256 == clip_sha256
+        )
+    ]
+    for upload in matches:
+        exact_clip = upload.source_job_id == job_id and upload.clip_url == clip_url
+        if exact_clip and upload.status in {"queued", "running"}:
+            return upload
+    for upload in matches:
+        if (
+            upload.status == "completed"
+            and upload.video_url
+            and upload.upload_confirmed
+            and not upload.dry_run
+        ):
+            return upload
+    for upload in matches:
+        # A failed local automation can still own a live Studio draft. The
+        # assigned id is strongest; the historical "Video dipilih" marker is
+        # a conservative reservation for records created before early ID
+        # capture existed.
+        if (
+            youtube_upload_has_remote_checkpoint(upload)
+            or youtube_upload_has_file_selection_checkpoint(upload)
+        ):
+            return upload
     return None
 
 
@@ -6733,7 +6792,11 @@ def recoverable_failed_youtube_upload(job_id: str, clip_url: str) -> YouTubeUplo
             if upload.source_job_id == job_id
             and upload.clip_url == clip_url
             and upload.status == "failed"
-            and youtube_upload_has_final_save_checkpoint(upload)
+            and (
+                youtube_upload_has_remote_checkpoint(upload)
+                or youtube_upload_has_final_save_checkpoint(upload)
+                or youtube_upload_has_file_selection_checkpoint(upload)
+            )
             and not upload.upload_confirmed
         ),
         None,
@@ -7133,7 +7196,12 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         recovery_logs = [
             *recovery.logs,
             YOUTUBE_RESTART_VERIFY_MARKER,
-            "Retry aman: memeriksa video di halaman Content tanpa memilih file dan tanpa upload ulang.",
+            (
+                f"Retry aman untuk ID {youtube_video_id_from_url(recovery.video_url or '')}: "
+                "memeriksa video di halaman Content tanpa memilih file dan tanpa upload ulang."
+                if youtube_upload_has_remote_checkpoint(recovery)
+                else "Retry aman: memeriksa video di halaman Content tanpa memilih file dan tanpa upload ulang."
+            ),
         ][-160:]
         set_youtube_upload(
             recovery.id,
@@ -9601,6 +9669,36 @@ def run_youtube_upload(upload_id: str) -> None:
                 )
                 if delete_after:
                     schedule_completed_upload_cleanup(upload_id)
+                return
+            if video_url and not upload.dry_run:
+                # YouTube has already created a remote draft. Retrying the
+                # upload command would select the same file again and create a
+                # second Short/Long with a new id. Persist the reservation and
+                # let the next pass run read-only Content verification only.
+                logs.append(
+                    "REMOTE_UPLOAD_CHECKPOINT_LOCKED: video-id sudah ada; "
+                    "retry file baru diblokir permanen untuk clip/fingerprint ini."
+                )
+                claim_detected = any(
+                    str(line).startswith(YOUTUBE_CLAIM_ABORT_PREFIX)
+                    for line in logs
+                )
+                set_youtube_upload(
+                    upload_id,
+                    status="failed",
+                    logs=logs[-160:],
+                    video_url=video_url,
+                    upload_confirmed=False,
+                    error=(
+                        "Draft YouTube sudah memiliki video-id dan tidak akan diupload ulang. "
+                        f"Verifikasi aman akan memakai ID {youtube_video_id_from_url(video_url)}. "
+                        f"Error terakhir: {error}"
+                    ),
+                    finished_at=now_iso(),
+                    duration_seconds=elapsed_seconds(started_perf),
+                )
+                if claim_detected:
+                    schedule_claimed_clip_cleanup(upload_id)
                 return
             if stalled and attempt < max_attempts and stall_repair_attempts < max_stall_repairs:
                 stall_repair_attempts += 1
@@ -17268,9 +17366,47 @@ def resume_scheduled_auto_viral_upload(run_id: str) -> None:
         )
     finally:
         with auto_viral_lock:
+            auto_viral_upload_resume_run_ids.discard(run_id)
             if auto_viral_active_run_id == run_id:
                 auto_viral_active_run_id = None
             auto_viral_secrets.pop(run_id, None)
+
+
+def start_scheduled_auto_viral_upload_resume(
+    run_id: str,
+    *,
+    claim_campaign_slot: bool,
+) -> bool:
+    """Start one durable upload-resume worker without starving behind clipping.
+
+    Browser upload queues already serialize YouTube and TikTok work. A recovered
+    upload checkpoint therefore does not need to wait for a newer campaign's
+    source download/render loop. Keep a separate claim set so the scheduler
+    cannot start two resume threads for the same persisted run.
+    """
+    global auto_viral_active_run_id
+    with auto_viral_lock:
+        if run_id in auto_viral_upload_resume_run_ids:
+            return False
+        if claim_campaign_slot:
+            if auto_viral_active_run_id not in {None, run_id}:
+                return False
+            auto_viral_active_run_id = run_id
+        auto_viral_upload_resume_run_ids.add(run_id)
+    try:
+        threading.Thread(
+            target=resume_scheduled_auto_viral_upload,
+            args=(run_id,),
+            name=f"auto-viral-upload-resume-{run_id[:8]}",
+            daemon=True,
+        ).start()
+    except Exception:
+        with auto_viral_lock:
+            auto_viral_upload_resume_run_ids.discard(run_id)
+            if claim_campaign_slot and auto_viral_active_run_id == run_id:
+                auto_viral_active_run_id = None
+        raise
+    return True
 
 
 def create_and_start_auto_viral_campaign(
@@ -18110,6 +18246,19 @@ def auto_viral_scheduler_loop() -> None:
                 active_id = auto_viral_active_run_id
             latest = latest_scheduled_auto_viral_run()
             upload_backlog = pending_scheduled_auto_viral_upload_run()
+            if (
+                upload_backlog is not None
+                and active_id is not None
+                and active_id != upload_backlog.id
+            ):
+                # A newer clipping campaign may run for hours. Its browser
+                # queues are independent and serialized, so drain the durable
+                # upload checkpoint concurrently instead of starving it until
+                # every new source has rendered.
+                start_scheduled_auto_viral_upload_resume(
+                    upload_backlog.id,
+                    claim_campaign_slot=False,
+                )
             schedule_candidate = upload_backlog or latest
             next_run = auto_viral_next_run_at(now, schedule_candidate, active_id)
             if (
@@ -18172,15 +18321,10 @@ def auto_viral_scheduler_loop() -> None:
                         )
                     )
                     if resume_upload and schedule_candidate is not None:
-                        with auto_viral_lock:
-                            if auto_viral_active_run_id is None:
-                                auto_viral_active_run_id = schedule_candidate.id
-                        threading.Thread(
-                            target=resume_scheduled_auto_viral_upload,
-                            args=(schedule_candidate.id,),
-                            name=f"auto-viral-upload-resume-{schedule_candidate.id[:8]}",
-                            daemon=True,
-                        ).start()
+                        start_scheduled_auto_viral_upload_resume(
+                            schedule_candidate.id,
+                            claim_campaign_slot=True,
+                        )
                     else:
                         create_and_start_auto_viral_campaign(
                             scheduled_auto_viral_request(),

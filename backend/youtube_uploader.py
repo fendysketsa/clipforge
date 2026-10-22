@@ -73,6 +73,18 @@ def env_int(name: str, default: int) -> int:
         return default
 
 
+def chromium_launch_args(profile_directory: str = "") -> list[str]:
+    """Return stable Chromium flags for containerized Studio automation."""
+    args: list[str] = []
+    if env_bool("IN_DOCKER", False):
+        # Docker's default /dev/shm is small enough for a heavy Studio page to
+        # crash while multiple upload drafts are rendering.
+        args.append("--disable-dev-shm-usage")
+    if profile_directory:
+        args.append(f"--profile-directory={profile_directory}")
+    return args
+
+
 def recovery_short_max_seconds() -> float:
     try:
         configured = float(os.environ.get("YOUTUBE_RECOVERY_SHORT_MAX_SECONDS", "60"))
@@ -2689,8 +2701,12 @@ def studio_tags_state(page) -> dict[str, object]:
                 return {found: false, chips: [], inputValue: '', text: ''};
               }
               const input = container.querySelector('input, textarea, [contenteditable="true"]');
+              // Suggestions also use role="option". Counting those as saved
+              // tags made an empty input look as if channel defaults were
+              // still present, which aborted a real upload after the remote
+              // video draft had already been created.
               const chips = Array.from(container.querySelectorAll(
-                'ytcp-chip, tp-yt-paper-chip, [role="option"], .ytcp-chip'
+                'ytcp-chip, tp-yt-paper-chip, .ytcp-chip'
               )).filter(visible).map((chip) => (chip.innerText || chip.textContent || '').trim())
                 .filter(Boolean);
               return {
@@ -2718,13 +2734,16 @@ def clear_existing_studio_tags(page, field) -> None:
         field.click(timeout=1500)
         field.press("Control+A")
         field.press("Backspace")
-        # Backspace on an empty chip input removes the preceding chip. Studio
-        # re-renders after each removal, hence reacquiring the field each time.
+        # In Studio the first Backspace can merely select the preceding chip;
+        # the second one removes it. Re-clicking between those key presses
+        # clears that selection and leaves every default tag in place.
+        # Reacquire only after the pair because Studio re-renders on removal.
         for _ in range(40):
             current = find_studio_tags_input(page)
             if current is None:
                 break
             current.click(timeout=500)
+            current.press("Backspace")
             current.press("Backspace")
             state = studio_tags_state(page)
             if state.get("found") and not state.get("chips"):
@@ -2734,10 +2753,14 @@ def clear_existing_studio_tags(page, field) -> None:
 
     state = studio_tags_state(page)
     if not state.get("found"):
+        save_debug_artifacts(page, "youtube-tags-state-not-found")
         raise UploadError("Status kolom Tags tidak dapat diverifikasi setelah pembersihan.")
     if state.get("chips"):
+        save_debug_artifacts(page, "youtube-default-tags-not-cleared")
+        remaining = ", ".join(str(item) for item in state.get("chips", [])[:8])
         raise UploadError(
             "Tag bawaan channel masih menempel setelah dibersihkan; upload dihentikan agar metadata tidak salah."
+            + (f" Tersisa: {remaining}" if remaining else "")
         )
 
 
@@ -5486,6 +5509,28 @@ def extract_video_url(page, expected_title: str = "") -> str:
     return ""
 
 
+def wait_for_assigned_video_url(
+    page,
+    expected_title: str = "",
+    *,
+    timeout_ms: int = 12000,
+) -> str:
+    """Capture Studio's remote video id as soon as the upload draft exists.
+
+    The id is an idempotency checkpoint, not a success marker.  It must be
+    emitted before metadata/thumbnail/tag work because any of those later
+    steps can fail after YouTube has already created the remote draft.
+    """
+    deadline = time.monotonic() + max(0, timeout_ms) / 1000
+    while True:
+        video_url = extract_video_url(page, expected_title or "assigned-upload")
+        if video_url:
+            return video_url
+        if time.monotonic() >= deadline:
+            return ""
+        time.sleep(0.25)
+
+
 def saved_video_row_snapshot(page, expected_title: str, visibility: str) -> dict[str, str]:
     """Find the exact saved upload row on Studio's Content page."""
     try:
@@ -6010,9 +6055,9 @@ def run_login(args: argparse.Namespace) -> None:
     chromium_user_data_dir = Path(args.chromium_user_data_dir).expanduser().resolve() if args.chromium_user_data_dir else None
     with sync_playwright() as playwright:
         browser = None
-        launch_args = []
-        if chromium_user_data_dir is not None and args.chromium_profile_directory:
-            launch_args.append(f"--profile-directory={args.chromium_profile_directory}")
+        launch_args = chromium_launch_args(
+            args.chromium_profile_directory if chromium_user_data_dir is not None else ""
+        )
         if chromium_user_data_dir is not None:
             chromium_user_data_dir.mkdir(parents=True, exist_ok=True)
             context = playwright.chromium.launch_persistent_context(
@@ -6125,9 +6170,9 @@ def run_check_login(args: argparse.Namespace) -> None:
 
     headless = env_bool("YOUTUBE_LOGIN_HEADLESS", True)
     slow_mo = int(os.environ.get("YOUTUBE_BROWSER_SLOW_MO_MS", "0"))
-    launch_args = []
-    if chromium_user_data_dir is not None and args.chromium_profile_directory:
-        launch_args.append(f"--profile-directory={args.chromium_profile_directory}")
+    launch_args = chromium_launch_args(
+        args.chromium_profile_directory if chromium_user_data_dir is not None else ""
+    )
     with sync_playwright() as playwright:
         browser = None
         if chromium_user_data_dir is not None:
@@ -6174,7 +6219,11 @@ def run_verify_upload(args: argparse.Namespace) -> None:
     slow_mo = int(os.environ.get("YOUTUBE_BROWSER_SLOW_MO_MS", "0"))
     timeout_ms = max(30, int(args.timeout)) * 1000
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=headless, slow_mo=slow_mo)
+        browser = playwright.chromium.launch(
+            headless=headless,
+            slow_mo=slow_mo,
+            args=chromium_launch_args(),
+        )
         context = browser.new_context(
             locale=os.environ.get("YOUTUBE_BROWSER_LOCALE", "en-US"),
             storage_state=str(state_path),
@@ -6285,9 +6334,9 @@ def run_upload(args: argparse.Namespace) -> None:
         browser = None
         context = None
         using_cdp = bool(args.use_cdp)
-        launch_args = []
-        if chromium_user_data_dir is not None and args.chromium_profile_directory:
-            launch_args.append(f"--profile-directory={args.chromium_profile_directory}")
+        launch_args = chromium_launch_args(
+            args.chromium_profile_directory if chromium_user_data_dir is not None else ""
+        )
         if using_cdp:
             log(f"Menggunakan Chrome remote debugging: {args.cdp_url}")
             browser = playwright.chromium.connect_over_cdp(args.cdp_url, timeout=15000)
@@ -6340,6 +6389,7 @@ def run_upload(args: argparse.Namespace) -> None:
         install_browser_dialog_guard(page)
         page.set_default_timeout(30000)
 
+        assigned_video_url = ""
         try:
             open_upload_dialog(
                 page,
@@ -6355,6 +6405,17 @@ def run_upload(args: argparse.Namespace) -> None:
                 require_video_daily_upload_slot(page)
                 save_debug_artifacts(page, "upload-metadata-form-not-ready")
                 raise UploadError("Form detail upload YouTube belum siap setelah file dipilih.")
+            assigned_video_url = wait_for_assigned_video_url(
+                page,
+                upload_title,
+                timeout_ms=int(os.environ.get("YOUTUBE_ASSIGNED_ID_TIMEOUT_MS", "12000")),
+            )
+            if assigned_video_url:
+                # This line is consumed immediately by the backend. From this
+                # point onward the same local fingerprint must never select a
+                # file again, even if a later Details/Checks action fails.
+                log(f"VIDEO_URL: {assigned_video_url}")
+                log("REMOTE_UPLOAD_CHECKPOINT: video-id YouTube sudah dikunci sebelum pengisian metadata lanjutan.")
             set_upload_text_field(
                 page,
                 upload_title,
@@ -6591,7 +6652,7 @@ def run_upload(args: argparse.Namespace) -> None:
                 return
 
             require_video_daily_upload_slot(page)
-            uploaded_video_url = extract_video_url(page, upload_title)
+            uploaded_video_url = assigned_video_url or extract_video_url(page, upload_title)
             click_final_upload_action(
                 page,
                 args.visibility,
@@ -6629,6 +6690,19 @@ def run_upload(args: argparse.Namespace) -> None:
                 "Upload dihentikan oleh kebijakan nol-klaim. Pilih sumber yang hak audio dan "
                 "visualnya benar-benar Anda miliki/izinkan; klaim tidak disimpan sebagai Private."
             ) from exc
+        except Exception:
+            # Preserve a late-created id even when Studio fails before the
+            # final visibility action. The backend will use it for read-only
+            # recovery and will never submit this file as a second draft.
+            checkpoint_url = assigned_video_url or extract_video_url(page, upload_title)
+            if checkpoint_url and checkpoint_url != assigned_video_url:
+                log(f"VIDEO_URL: {checkpoint_url}")
+                log("REMOTE_UPLOAD_CHECKPOINT: video-id YouTube disimpan saat memulihkan error.")
+            try:
+                context.storage_state(path=str(state_path))
+            except Exception:
+                pass
+            raise
         finally:
             close_upload_tab(page, force=using_cdp)
             if not using_cdp:

@@ -1435,6 +1435,102 @@ def test_identical_completed_clip_is_not_uploaded_again(monkeypatch, tmp_path):
     assert "TikTok" in reused.logs[-1]
 
 
+def test_failed_upload_with_assigned_video_id_is_reused_for_safe_verification(
+    monkeypatch,
+    tmp_path,
+):
+    import api
+
+    outputs = tmp_path / "outputs"
+    clip_path = outputs / "remote-checkpoint" / "clips" / "clip_01.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"same-upload-content")
+    clip = ClipFile(
+        name=clip_path.name,
+        url="/outputs/remote-checkpoint/clips/clip_01.mp4",
+        size_bytes=clip_path.stat().st_size,
+    )
+    job = ClipJob(
+        id="remote-checkpoint",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source"),
+        created_at="2026-10-22T00:00:00+00:00",
+        updated_at="2026-10-22T00:00:00+00:00",
+        clips=[clip],
+    )
+    failed = YouTubeUploadJob(
+        id="first-and-only-local-upload",
+        source_job_id=job.id,
+        clip_url=clip.url,
+        clip_name=clip.name,
+        status="failed",
+        created_at="2026-10-22T00:01:00+00:00",
+        updated_at="2026-10-22T00:02:00+00:00",
+        finished_at="2026-10-22T00:02:00+00:00",
+        title="Remote draft already exists",
+        video_url="https://www.youtube.com/watch?v=abcDEF12345",
+        clip_sha256=api.file_sha256(clip_path),
+        logs=[
+            "Video dipilih: clip_01.mp4",
+            "VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345",
+            "USER_ERROR: metadata gagal",
+        ],
+        error="metadata gagal setelah draft dibuat",
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "youtube_uploads", {failed.id: failed})
+    monkeypatch.setattr(
+        api,
+        "generate_youtube_metadata",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("remote checkpoint must bypass a second upload record")
+        ),
+    )
+
+    recovered = create_youtube_upload_record(
+        job.id,
+        YouTubeUploadRequest(clip_url=clip.url),
+    )
+
+    assert recovered.id == failed.id
+    assert recovered.status == "queued"
+    assert recovered.video_url == failed.video_url
+    assert api.YOUTUBE_RESTART_VERIFY_MARKER in recovered.logs
+    assert "tanpa upload ulang" in recovered.logs[-1]
+    assert api.youtube_upload_needs_restart_verification(recovered) is True
+
+
+def test_legacy_failed_file_selection_blocks_a_second_remote_draft(monkeypatch):
+    import api
+
+    failed = YouTubeUploadJob(
+        id="legacy-draft-without-captured-id",
+        source_job_id="job-legacy",
+        clip_url="/outputs/job-legacy/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="failed",
+        created_at="2026-10-22T00:01:00+00:00",
+        updated_at="2026-10-22T00:02:00+00:00",
+        finished_at="2026-10-22T00:02:00+00:00",
+        title="Legacy draft",
+        clip_sha256="same-fingerprint",
+        logs=["Video dipilih: clip_01.mp4", "USER_ERROR: tag gagal"],
+        error="tag gagal setelah file dipilih",
+    )
+    monkeypatch.setattr(api, "youtube_uploads", {failed.id: failed})
+
+    assert api.recoverable_failed_youtube_upload(
+        failed.source_job_id,
+        failed.clip_url,
+    ) is failed
+    assert api.reusable_youtube_upload(
+        failed.source_job_id,
+        failed.clip_url,
+        failed.clip_sha256 or "",
+    ) is failed
+
+
 def test_worker_preflight_detects_duplicate_already_in_queue_history(monkeypatch):
     import api
 
@@ -2125,7 +2221,7 @@ def test_load_youtube_uploads_recovers_isolated_ascii_high_bit_flip(monkeypatch,
     assert recovered.performance_snapshots[0].views == 253
 
 
-def test_running_upload_with_only_early_url_never_recovers_as_completed(monkeypatch, tmp_path):
+def test_running_upload_with_early_remote_id_recovers_as_verification_only(monkeypatch, tmp_path):
     import api
 
     upload = YouTubeUploadJob(
@@ -2151,9 +2247,13 @@ def test_running_upload_with_only_early_url_never_recovers_as_completed(monkeypa
 
     recovered = api.load_youtube_uploads()[upload.id]
 
-    assert recovered.status == "failed"
+    assert recovered.status == "queued"
+    assert recovered.video_url == upload.video_url
+    assert recovered.upload_confirmed is False
     assert recovered.clip_delete_after is None
     assert recovered.clip_deleted_at is None
+    assert recovered.logs[-1] == api.YOUTUBE_RESTART_VERIFY_MARKER
+    assert api.youtube_upload_needs_restart_verification(recovered) is True
 
 
 def test_running_upload_before_file_selection_returns_to_queue(monkeypatch, tmp_path):
@@ -2215,7 +2315,7 @@ def test_legacy_restart_failure_before_file_selection_returns_to_queue(monkeypat
     assert "upload lama" in recovered.logs[-1]
 
 
-def test_running_upload_after_file_selection_is_not_retried(monkeypatch, tmp_path):
+def test_running_upload_after_file_selection_uses_verification_only(monkeypatch, tmp_path):
     import api
 
     upload = YouTubeUploadJob(
@@ -2236,9 +2336,12 @@ def test_running_upload_after_file_selection_is_not_retried(monkeypatch, tmp_pat
 
     recovered = api.load_youtube_uploads()[upload.id]
 
-    assert recovered.status == "failed"
-    assert recovered.finished_at is not None
-    assert "mencegah video duplikat" in (recovered.error or "")
+    assert recovered.status == "queued"
+    assert recovered.started_at is None
+    assert recovered.finished_at is None
+    assert recovered.error is None
+    assert recovered.logs[-1] == api.YOUTUBE_RESTART_VERIFY_MARKER
+    assert api.youtube_upload_needs_restart_verification(recovered) is True
 
 
 def test_running_upload_after_final_save_queues_content_verification(monkeypatch, tmp_path):
