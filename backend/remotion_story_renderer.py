@@ -258,16 +258,24 @@ def render_story_with_remotion(
         )
         cursor = next_cursor
 
-    manifest_scenes = [
-        {
-            "id": f"scene-{scene.index:03d}",
-            "start": round(float(scene.start), 6),
-            "duration": round(float(scene.duration), 6),
-            "narration": str(scene.narration or "").strip(),
-            "role": str(scene.narrative_role or "").strip(),
-        }
-        for scene in storyboard.scenes
-    ]
+    # AnimateScene owns a measured duration, not a mutable start field.  Derive
+    # starts from the authoritative allocated durations so the Remotion
+    # manifest cannot drift from TTS timing (and does not depend on test-only
+    # attributes that are absent in production).
+    scene_cursor = 0.0
+    manifest_scenes: list[dict[str, Any]] = []
+    for scene in storyboard.scenes:
+        scene_duration = max(1 / 30, float(scene.duration))
+        manifest_scenes.append(
+            {
+                "id": f"scene-{scene.index:03d}",
+                "start": round(scene_cursor, 6),
+                "duration": round(scene_duration, 6),
+                "narration": str(scene.narration or "").strip(),
+                "role": str(scene.narrative_role or "").strip(),
+            }
+        )
+        scene_cursor += scene_duration
     manifest = {
         "schema": "clipforge-remotion-story-v1",
         "hypit": {

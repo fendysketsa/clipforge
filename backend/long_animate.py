@@ -1792,6 +1792,55 @@ def _outline_narration_chunks(outline: str, scene_count: int) -> list[str]:
     return chunks[:scene_count]
 
 
+def _normalized_story_payload(payload: object) -> dict[str, object]:
+    """Accept common LLM wrappers and Indonesian aliases for storyboard scenes."""
+    if isinstance(payload, list):
+        return {"scenes": payload}
+    if not isinstance(payload, dict):
+        return {}
+
+    scene_keys = {"scenes", "scene", "adegan", "shots", "shot"}
+    wrapper_keys = {
+        "storyboard",
+        "script",
+        "naskah",
+        "result",
+        "hasil",
+        "output",
+        "data",
+    }
+    candidates: list[dict[object, object]] = [payload]
+    visited: set[int] = set()
+    for _depth in range(3):
+        next_candidates: list[dict[object, object]] = []
+        for candidate in candidates:
+            if id(candidate) in visited:
+                continue
+            visited.add(id(candidate))
+            for key, value in candidate.items():
+                normalized_key = re.sub(r"[^a-z0-9]+", "_", str(key).casefold()).strip("_")
+                if normalized_key in scene_keys and isinstance(value, list):
+                    merged = dict(payload)
+                    merged.update(candidate)
+                    merged["scenes"] = value
+                    return merged
+                if normalized_key in wrapper_keys:
+                    if isinstance(value, list) and all(isinstance(item, dict) for item in value):
+                        merged = dict(payload)
+                        merged["scenes"] = value
+                        return merged
+                    if isinstance(value, dict):
+                        next_candidates.append(value)
+            # Some providers add an arbitrary single wrapper such as
+            # {"response": {"storyboard": ...}}. Traverse it without making
+            # unrelated dictionaries (for example a scene object) candidates.
+            dict_values = [value for value in candidate.values() if isinstance(value, dict)]
+            if len(candidate) == 1 and len(dict_values) == 1:
+                next_candidates.extend(dict_values)
+        candidates = next_candidates
+    return dict(payload)
+
+
 def expand_story_outline(
     outline: str,
     ai_config: AIConfig,
@@ -1849,31 +1898,70 @@ def expand_story_outline(
         '"on_screen_text":"maks 6 kata"}]}.\n\n'
         f"JALAN CERITA:\n{clean_outline[:12000]}"
     )
+    system_prompt = (
+        "Anda showrunner dan editor drama Indonesia. Buat naskah orisinal, sinematik, "
+        "konsisten, aman diproduksi, dan padat beat. Keluarkan JSON valid saja."
+    )
     try:
-        parsed = extract_json(
-            chat_completion(
-                ai_config,
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Anda showrunner dan editor drama Indonesia. Buat naskah orisinal, sinematik, "
-                            "konsisten, aman diproduksi, dan padat beat. Keluarkan JSON valid saja."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-            )
+        raw_response = chat_completion(
+            ai_config,
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt},
+            ],
         )
     except Exception as exc:
         raise StoryOutlineExpansionError(
             f"AI gagal mengembangkan jalan cerita menjadi naskah produksi: {exc}"
         ) from exc
 
-    raw_scenes = parsed.get("scenes") if isinstance(parsed, dict) else None
+    parse_error: Exception | None = None
+    try:
+        parsed = _normalized_story_payload(extract_json(raw_response))
+    except Exception as exc:
+        parse_error = exc
+        parsed = {}
+    raw_scenes = parsed.get("scenes")
+
+    # Small/local models frequently wrap the array in `storyboard`, translate
+    # `scenes` to `adegan`, or stop after one/two scenes. Give them one compact
+    # correction turn instead of exposing a structural model error to users.
+    if not isinstance(raw_scenes, list) or not 3 <= len(raw_scenes) <= 14:
+        scene_count = len(raw_scenes) if isinstance(raw_scenes, list) else 0
+        _logger.warning(
+            "Respons storyboard pertama tidak valid (%d adegan%s); meminta AI memperbaiki format.",
+            scene_count,
+            f", parse error: {parse_error}" if parse_error else "",
+        )
+        repair_prompt = (
+            "Perbaiki respons storyboard berikut. Keluarkan SATU objek JSON valid tanpa markdown, komentar, "
+            "atau teks lain. Objek wajib memiliki key `scenes` berupa array dengan tepat "
+            f"{desired_scenes} adegan (batas aman 3-14). Setiap adegan wajib memiliki title, narration, "
+            "visual, director_direction, property_direction, dan on_screen_text. Jangan menolak hanya karena "
+            "permintaan memuat URL referensi; jangan mengaku telah membuka URL. Pertahankan maksud pengguna "
+            "dan buat konsep orisinal berdasarkan arahan yang tersedia.\n\n"
+            f"PERMINTAAN PENGGUNA:\n{clean_outline[:6000]}\n\n"
+            f"RESPONS YANG HARUS DIPERBAIKI:\n{raw_response[:18000]}"
+        )
+        try:
+            repaired_response = chat_completion(
+                ai_config,
+                [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": repair_prompt},
+                ],
+            )
+            parsed = _normalized_story_payload(extract_json(repaired_response))
+            raw_scenes = parsed.get("scenes")
+        except Exception as exc:
+            raise StoryOutlineExpansionError(
+                f"AI menghasilkan storyboard yang belum valid dan perbaikan otomatis gagal: {exc}"
+            ) from exc
+
     if not isinstance(raw_scenes, list) or not 3 <= len(raw_scenes) <= 14:
         raise StoryOutlineExpansionError(
-            "AI belum menghasilkan minimal 3 dan maksimal 14 adegan yang dapat dirender."
+            "AI belum menghasilkan 3-14 adegan meskipun sudah diperbaiki otomatis. "
+            "Tambahkan ringkasan isi video referensi atau gunakan model AI yang lebih kuat."
         )
     if len(raw_scenes) != desired_scenes:
         _logger.warning(

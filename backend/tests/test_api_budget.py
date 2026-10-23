@@ -292,6 +292,41 @@ def test_youtube_cdp_upload_size_clamps_unsafe_configuration(monkeypatch):
     assert youtube_max_upload_bytes(use_cdp=True) == 49 * 1024 * 1024
 
 
+def test_failed_job_cleanup_can_preserve_expensive_partial_render(monkeypatch, tmp_path):
+    import api
+
+    outputs = tmp_path / "outputs"
+    partial = outputs / "job-long" / "story" / "animate_scenes" / "shot_01.png"
+    partial.parent.mkdir(parents=True)
+    partial.write_bytes(b"generated-image")
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+
+    removed, message = api.cleanup_failed_job_artifacts(
+        outputs / "job-long",
+        preserve=True,
+    )
+
+    assert removed == 0
+    assert partial.read_bytes() == b"generated-image"
+    assert "dipertahankan" in message
+
+
+def test_failed_job_cleanup_still_removes_normal_partial_workspace(monkeypatch, tmp_path):
+    import api
+
+    outputs = tmp_path / "outputs"
+    partial = outputs / "job-short" / "clip.tmp"
+    partial.parent.mkdir(parents=True)
+    partial.write_bytes(b"temporary")
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+
+    removed, message = api.cleanup_failed_job_artifacts(outputs / "job-short")
+
+    assert removed == 1
+    assert not partial.parent.exists()
+    assert "telah dihapus" in message
+
+
 def test_max_clips_at_least_one():
     assert max_clips_for_duration(40, 35) == 1
 
@@ -5049,6 +5084,18 @@ def test_user_error_from_logs_does_not_mislabel_image_connection_as_youtube():
     message = user_error_from_logs(logs) or ""
     assert "Generator gambar lokal" in message
     assert "YouTube" not in message
+
+
+def test_user_error_from_logs_explains_remotion_scene_timeline_bug():
+    message = user_error_from_logs(
+        [
+            "[long_animate] INFO: Visual generation complete",
+            "Error: 'AnimateScene' object has no attribute 'start'",
+        ]
+    ) or ""
+
+    assert "bug sinkronisasi timeline scene" in message
+    assert "bukan karena naskah atau gambar" in message
 
 
 def test_user_error_from_logs_detects_missing_ffmpeg_text_filter():

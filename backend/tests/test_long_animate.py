@@ -495,6 +495,106 @@ def test_story_outline_accepts_safe_scene_count_instead_of_failing_exact_target(
     assert len(long_animate._scene_sections(script)) == 8
 
 
+def test_story_outline_accepts_indonesian_scene_key_inside_storyboard(monkeypatch):
+    outline = (
+        "Raka menemukan dompet seorang pedagang di pasar, lalu mengejar pemiliknya di tengah hujan. "
+        "Kejujurannya membuat warga yang semula mencurigainya akhirnya meminta maaf dan membantunya."
+    )
+    narration = " ".join(
+        "Raka terus bergerak meski keadaan pasar membuat usahanya mengembalikan dompet semakin sulit"
+        for _ in range(4)
+    )
+    payload = {
+        "storyboard": {
+            "title": "Dompet di Tengah Hujan",
+            "adegan": [
+                {
+                    "title": f"Adegan {index}",
+                    "narration": narration,
+                    "visual": (
+                        "Raka berlari di lorong pasar yang basah; "
+                        "Raka melindungi dompet dengan jaketnya; "
+                        "Raka menghampiri pedagang di bawah kanopi"
+                    ),
+                    "on_screen_text": "Tetap jujur",
+                }
+                for index in range(1, 7)
+            ],
+        }
+    }
+    calls = 0
+
+    def fake_completion(_config, _messages):
+        nonlocal calls
+        calls += 1
+        return json.dumps(payload)
+
+    monkeypatch.setattr(long_animate, "chat_completion", fake_completion)
+
+    script, audit = expand_story_outline(
+        outline,
+        AIConfig(enabled=True, base_url="http://localhost:11434/v1", model="local"),
+        target_duration=300,
+    )
+
+    assert calls == 1
+    assert audit["scene_count"] == 6
+    assert "JUDUL: Dompet di Tengah Hujan" in script
+
+
+def test_story_outline_repairs_invalid_scene_count_once(monkeypatch):
+    outline = (
+        "Sari berusaha mempertahankan warung ibunya setelah hujan besar merusak atap dan persediaan. "
+        "Tetangga yang pernah ia bantu datang bergotong royong hingga warung dapat dibuka kembali."
+    )
+    narration = " ".join(
+        "Sari menghadapi kerusakan warung sambil mengingat bantuan kecil yang pernah ia berikan"
+        for _ in range(4)
+    )
+    repaired_payload = {
+        "title": "Warung Sari",
+        "scenes": [
+            {
+                "title": f"Bagian {index}",
+                "narration": narration,
+                "visual": (
+                    "Sari memeriksa atap seng yang bocor; "
+                    "Sari memindahkan persediaan ke meja kering; "
+                    "para tetangga datang membawa alat perbaikan"
+                ),
+                "director_direction": "Kamera mengikuti gerak Sari dari pintu menuju meja warung.",
+                "property_direction": "Atap seng bocor, ember, meja kayu, dan persediaan basah.",
+                "on_screen_text": "Kebaikan kembali",
+            }
+            for index in range(1, 8)
+        ],
+    }
+    responses = iter(
+        (
+            json.dumps({"title": "Warung Sari", "scenes": []}),
+            json.dumps(repaired_payload),
+        )
+    )
+    prompts: list[str] = []
+
+    def fake_completion(_config, messages):
+        prompts.append(messages[-1]["content"])
+        return next(responses)
+
+    monkeypatch.setattr(long_animate, "chat_completion", fake_completion)
+
+    script, audit = expand_story_outline(
+        outline,
+        AIConfig(enabled=True, base_url="http://localhost:11434/v1", model="local"),
+        target_duration=300,
+    )
+
+    assert len(prompts) == 2
+    assert "Perbaiki respons storyboard" in prompts[1]
+    assert audit["scene_count"] == 7
+    assert len(long_animate._scene_sections(script)) == 7
+
+
 def test_story_outline_repairs_thin_scene_from_original_story(monkeypatch):
     outline = " ".join(
         f"Bagian cerita {index} menjelaskan pilihan Raka yang berani, akibatnya bagi warga desa, dan perubahan sikap keluarganya."

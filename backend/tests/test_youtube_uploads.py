@@ -1134,6 +1134,7 @@ def test_restart_verification_command_preserves_assigned_video_url(monkeypatch):
         updated_at="2026-08-30T00:01:00+00:00",
         title="Video baru #Shorts",
         video_url="https://www.youtube.com/watch?v=abcDEF12345",
+        tags=["Islam", "Shorts"],
         logs=["FINAL_VISIBILITY: private"],
     )
     monkeypatch.setenv("YOUTUBE_HEADLESS", "true")
@@ -1141,6 +1142,48 @@ def test_restart_verification_command_preserves_assigned_video_url(monkeypatch):
     command = build_youtube_restart_verification_command(upload)
 
     assert command[command.index("--video-url") + 1] == upload.video_url
+    assert command[command.index("--content-type") + 1] == "shorts"
+    assert command[command.index("--tags") + 1] == "Islam,Shorts"
+
+
+def test_load_repairs_completed_record_that_verified_the_wrong_video_row(monkeypatch, tmp_path):
+    import api
+
+    assigned_url = "https://www.youtube.com/watch?v=assigned123"
+    wrong_url = "https://www.youtube.com/watch?v=public99999"
+    upload = YouTubeUploadJob(
+        id="false-content-row-match",
+        source_job_id="job-1",
+        clip_url="/outputs/demo/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="completed",
+        created_at="2026-08-30T00:00:00+00:00",
+        updated_at="2026-08-30T00:02:00+00:00",
+        started_at="2026-08-30T00:00:01+00:00",
+        finished_at="2026-08-30T00:02:00+00:00",
+        title="Draft yang harus dipulihkan",
+        visibility="public",
+        video_url=wrong_url,
+        upload_confirmed=True,
+        logs=[
+            f"VIDEO_URL: {assigned_url}",
+            "REMOTE_UPLOAD_CHECKPOINT: video-id YouTube sudah dikunci sebelum pengisian metadata lanjutan.",
+            f"VIDEO_URL: {wrong_url}",
+            "UPLOAD_CONFIRMED: video pasca-restart terverifikasi di YouTube Studio.",
+        ],
+    )
+    uploads_path = tmp_path / "youtube_uploads.json"
+    uploads_path.write_text(json.dumps([upload.model_dump()]), encoding="utf-8")
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", uploads_path)
+
+    repaired = api.load_youtube_uploads()[upload.id]
+
+    assert repaired.status == "queued"
+    assert repaired.video_url == assigned_url
+    assert repaired.upload_confirmed is False
+    assert repaired.started_at is None
+    assert repaired.finished_at is None
+    assert repaired.logs[-1] == api.YOUTUBE_RESTART_VERIFY_MARKER
 
 
 def test_upload_command_discloses_realistic_background_replacement(monkeypatch, tmp_path):

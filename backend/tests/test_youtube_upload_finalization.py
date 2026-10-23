@@ -16,12 +16,14 @@ from youtube_uploader import (
     copyright_claim_is_explicitly_non_blocking,
     copyright_issue_detected,
     copyright_issue_blocks_upload,
+    fill_optional_tags,
     mark_fendy_clipper_upload_tab,
     next_upload_step_timeout_ms,
     normalize_youtube_video_url,
     open_advanced_upload_settings,
     private_review_check_options,
     reload_after_publish,
+    resume_saved_draft_and_finalize,
     safe_upload_visibility,
     set_altered_content_disclosure,
     set_upload_text_field,
@@ -152,6 +154,75 @@ def test_fill_tags_stops_upload_when_studio_does_not_persist_a_tag(monkeypatch):
 
     with pytest.raises(UploadError, match="belum tersimpan lengkap"):
         fill_tags(page, "Shorts, BPJN")
+
+
+def test_optional_tags_do_not_strand_upload_as_draft(monkeypatch):
+    logs = []
+    monkeypatch.setattr(
+        youtube_uploader,
+        "fill_tags",
+        lambda *_args: (_ for _ in ()).throw(UploadError("tag UI timeout")),
+    )
+    monkeypatch.setattr(youtube_uploader, "log", logs.append)
+
+    assert fill_optional_tags(object(), "Islam, Shorts") is False
+    assert logs and logs[0].startswith("TAGS_WARNING:")
+
+
+def test_resume_saved_draft_finishes_exact_video_without_reupload(monkeypatch):
+    class DraftPage:
+        def __init__(self):
+            self.goto_calls = []
+
+        def goto(self, url, **kwargs):
+            self.goto_calls.append((url, kwargs))
+
+    page = DraftPage()
+    state = {"step": "DETAILS"}
+    video_url = "https://www.youtube.com/watch?v=abcDEF12345"
+    events = []
+
+    monkeypatch.setattr(youtube_uploader, "ensure_logged_in", lambda _page: None)
+    monkeypatch.setattr(youtube_uploader, "active_upload_dialog_text", lambda *_args, **_kwargs: "draft")
+    monkeypatch.setattr(youtube_uploader, "get_upload_workflow_step", lambda _page: state["step"])
+    monkeypatch.setattr(
+        youtube_uploader,
+        "fill_optional_tags",
+        lambda _page, tags: events.append(("tags", tags)) or True,
+    )
+
+    def next_step(_page, **kwargs):
+        state["step"] = kwargs["expected_step"]
+        events.append(("next", state["step"]))
+
+    monkeypatch.setattr(youtube_uploader, "click_next_upload_step", next_step)
+    monkeypatch.setattr(youtube_uploader, "private_review_check_options", lambda _visibility: (False, False))
+    monkeypatch.setattr(youtube_uploader, "wait_for_copyright_checks", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(youtube_uploader, "wait_for_visibility_step", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "set_visibility", lambda _page, value: events.append(("visibility", value)))
+    monkeypatch.setattr(youtube_uploader, "wait_for_review_checks_safe_before_publish", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "click_final_upload_action", lambda *_args, **_kwargs: events.append(("final", "clicked")))
+    monkeypatch.setattr(youtube_uploader, "wait_for_final_upload_confirmation", lambda *_args, **_kwargs: video_url)
+    monkeypatch.setattr(youtube_uploader, "log", lambda _message: None)
+
+    assert resume_saved_draft_and_finalize(
+        page,
+        "Draft title",
+        "public",
+        video_url=video_url,
+        tags="Islam, Shorts",
+        content_type="shorts",
+        timeout_ms=1000,
+    ) == video_url
+    assert page.goto_calls[0][0] == "https://studio.youtube.com/video/abcDEF12345/edit"
+    assert events == [
+        ("tags", "Islam, Shorts"),
+        ("next", "VIDEO_ELEMENTS"),
+        ("next", "CHECKS"),
+        ("next", "REVIEW"),
+        ("visibility", "public"),
+        ("final", "clicked"),
+    ]
 
 
 class TextPage:

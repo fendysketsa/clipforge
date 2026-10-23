@@ -85,6 +85,17 @@ def chromium_launch_args(profile_directory: str = "") -> list[str]:
     return args
 
 
+def chromium_executable_kwargs() -> dict[str, str]:
+    """Allow maintenance commands to reuse an installed Chrome binary."""
+    configured = os.environ.get("YOUTUBE_BROWSER_EXECUTABLE_PATH", "").strip()
+    if not configured:
+        return {}
+    executable = Path(configured).expanduser().resolve()
+    if not executable.is_file():
+        raise UploadError(f"Executable browser YouTube tidak ditemukan: {executable}")
+    return {"executable_path": str(executable)}
+
+
 def recovery_short_max_seconds() -> float:
     try:
         configured = float(os.environ.get("YOUTUBE_RECOVERY_SHORT_MAX_SECONDS", "60"))
@@ -2705,9 +2716,15 @@ def studio_tags_state(page) -> dict[str, object]:
               // tags made an empty input look as if channel defaults were
               // still present, which aborted a real upload after the remote
               // video draft had already been created.
+              // Do not use `.ytcp-chip` here. Polymer's ShadyDOM applies that
+              // class to descendants as a style scope, so one real chip was
+              // counted several times and made successful cleanup look bad.
               const chips = Array.from(container.querySelectorAll(
-                'ytcp-chip, tp-yt-paper-chip, .ytcp-chip'
-              )).filter(visible).map((chip) => (chip.innerText || chip.textContent || '').trim())
+                'ytcp-chip, tp-yt-paper-chip'
+              )).filter(visible).map((chip) => {
+                const label = chip.querySelector?.('#chip-text');
+                return (label?.innerText || label?.textContent || chip.innerText || chip.textContent || '').trim();
+              })
                 .filter(Boolean);
               return {
                 found: true,
@@ -2731,23 +2748,46 @@ def studio_tags_state(page) -> dict[str, object]:
 def clear_existing_studio_tags(page, field) -> None:
     """Remove Studio/channel-default chips before applying clip-specific tags."""
     try:
-        field.click(timeout=1500)
-        field.press("Control+A")
-        field.press("Backspace")
-        # In Studio the first Backspace can merely select the preceding chip;
-        # the second one removes it. Re-clicking between those key presses
-        # clears that selection and leaves every default tag in place.
-        # Reacquire only after the pair because Studio re-renders on removal.
-        for _ in range(40):
-            current = find_studio_tags_input(page)
-            if current is None:
-                break
-            current.click(timeout=500)
-            current.press("Backspace")
-            current.press("Backspace")
+        # Clear unfinished input text first. A short click timeout used to fail
+        # while Studio was saving, even though the field was already visible.
+        # `fill("")` does not depend on pointer stability.
+        field.fill("", timeout=3000)
+
+        # Current Studio exposes a dedicated delete control on every chip.
+        # Clicking it is deterministic; keyboard Backspace only selects a chip
+        # on some builds and was the source of drafts stranded on Details.
+        for _ in range(80):
             state = studio_tags_state(page)
             if state.get("found") and not state.get("chips"):
                 break
+            removed = False
+            for selector in (
+                "ytcp-uploads-dialog #tags-container ytcp-chip #delete-icon",
+                "ytcp-video-metadata-editor #tags-container ytcp-chip #delete-icon",
+                "#tags-container tp-yt-paper-chip #delete-icon",
+            ):
+                try:
+                    buttons = page.locator(selector)
+                    if not buttons.count():
+                        continue
+                    button = buttons.last
+                    button.click(timeout=3000, force=True)
+                    removed = True
+                    time.sleep(0.08)
+                    break
+                except Exception:
+                    continue
+            if removed:
+                continue
+
+            # Compatibility fallback for older Studio builds without a chip
+            # delete button in the accessible DOM.
+            current = find_studio_tags_input(page)
+            if current is None:
+                break
+            current.click(timeout=1500)
+            current.press("Backspace")
+            current.press("Backspace")
     except Exception as exc:
         raise UploadError(f"Tag bawaan YouTube tidak dapat dibersihkan: {exc}") from exc
 
@@ -2806,6 +2846,23 @@ def fill_tags(page, tags: str) -> None:
             "Tag YouTube belum tersimpan lengkap/tepat (" + "; ".join(problem_parts) + ")."
         )
     log(f"Tags YouTube terverifikasi: {', '.join(requested_tags)}")
+
+
+def fill_optional_tags(page, tags: str) -> bool:
+    """Apply discovery-only metadata without blocking a valid publication."""
+    if not normalized_studio_tags(tags):
+        return True
+    try:
+        fill_tags(page, tags)
+        return True
+    except UploadError as exc:
+        # Tags play only a small discovery role in YouTube. A transient tag UI
+        # failure must not strand an otherwise complete upload as a Draft.
+        log(
+            "TAGS_WARNING: metadata tag belum dapat diverifikasi; "
+            f"upload tetap dilanjutkan ke Pemeriksaan dan Visibilitas. Detail: {exc}"
+        )
+        return False
 
 
 def validate_thumbnail_file(
@@ -5531,15 +5588,27 @@ def wait_for_assigned_video_url(
         time.sleep(0.25)
 
 
-def saved_video_row_snapshot(page, expected_title: str, visibility: str) -> dict[str, str]:
+def saved_video_row_snapshot(
+    page,
+    expected_title: str,
+    visibility: str,
+    expected_video_url: str = "",
+) -> dict[str, str]:
     """Find the exact saved upload row on Studio's Content page."""
     try:
         result = page.evaluate(
             r"""
-            ({ expectedTitle, visibility }) => {
+            ({ expectedTitle, visibility, expectedVideoUrl }) => {
               const normalize = (value) => String(value || '')
                 .replace(/\s+/g, ' ').trim().toLocaleLowerCase();
               const wanted = normalize(expectedTitle);
+              const videoIdOf = (value) => {
+                const match = String(value || '').match(
+                  /(?:[?&]v=|\/shorts\/|\/video\/)([A-Za-z0-9_-]{6,})/i
+                );
+                return match ? match[1] : '';
+              };
+              const expectedVideoId = videoIdOf(expectedVideoUrl);
               const visibilityWords = visibility === 'private'
                 ? ['private', 'pribadi']
                 : visibility === 'unlisted'
@@ -5568,7 +5637,16 @@ def saved_video_row_snapshot(page, expected_title: str, visibility: str) -> dict
                 for (let depth = 0; node && depth < 12; depth += 1) {
                   const tag = String(node.tagName || '').toUpperCase();
                   if (['BODY', 'HTML', 'YTCP-APP', 'YTCP-MAIN'].includes(tag)) break;
-                  values.push(node);
+                  // Only inspect an actual table/video row. The previous code
+                  // climbed into section-level containers; a title from one
+                  // draft and an href from another public video could then be
+                  // combined into a false successful verification.
+                  if (
+                    node.matches?.('ytcp-video-row, ytcp-video-row-v2, tr, [role="row"]')
+                  ) {
+                    values.push(node);
+                    break;
+                  }
                   const root = node.getRootNode?.();
                   node = node.parentElement || (root && root.host) || null;
                 }
@@ -5598,6 +5676,7 @@ def saved_video_row_snapshot(page, expected_title: str, visibility: str) -> dict
                 for (const anchor of anchors) {
                   const href = anchor.href || anchor.getAttribute('href') || '';
                   if (!videoHref(href)) continue;
+                  if (expectedVideoId && videoIdOf(href) !== expectedVideoId) continue;
                   for (const container of ancestors(anchor)) {
                     const text = containerText(container);
                     const stableTitlePrefix = wanted.slice(0, Math.min(48, wanted.length));
@@ -5615,7 +5694,11 @@ def saved_video_row_snapshot(page, expected_title: str, visibility: str) -> dict
               return { href: '', text: '', visibilityOk: false, uploadFailed: false, uploading: false };
             }
             """,
-            {"expectedTitle": expected_title, "visibility": visibility},
+            {
+                "expectedTitle": expected_title,
+                "visibility": visibility,
+                "expectedVideoUrl": expected_video_url,
+            },
         )
     except Exception:
         return {}
@@ -5847,7 +5930,12 @@ def verify_saved_video_in_studio(
                 log_verification_progress(
                     "Mencari video tersimpan pada daftar Content YouTube Studio."
                 )
-                snapshot = saved_video_row_snapshot(verification_page, expected_title, visibility)
+                snapshot = saved_video_row_snapshot(
+                    verification_page,
+                    expected_title,
+                    visibility,
+                    expected_video_url=video_url,
+                )
                 saved_url = normalize_youtube_video_url(snapshot.get("href", ""))
                 if snapshot.get("uploadFailed") == "True":
                     raise FinalUploadTransferError(
@@ -5871,6 +5959,107 @@ def verify_saved_video_in_studio(
                 verification_page.close()
             except Exception:
                 pass
+
+
+def resume_saved_draft_and_finalize(
+    page,
+    expected_title: str,
+    visibility: str,
+    *,
+    video_url: str,
+    tags: str = "",
+    content_type: str = "auto",
+    timeout_ms: int = 120000,
+) -> str:
+    """Resume one exact Studio draft and finish it without selecting a file."""
+    normalized_url = normalize_youtube_video_url(video_url)
+    match = re.search(r"[?&]v=([A-Za-z0-9_-]{6,})", normalized_url or "")
+    if not match:
+        raise UploadError("Draft tidak memiliki video-id YouTube yang valid untuk dipulihkan.")
+    video_id = match.group(1)
+    edit_url = f"https://studio.youtube.com/video/{video_id}/edit"
+    log(f"Memulihkan draft YouTube berdasarkan video-id {video_id}; file tidak diupload ulang.")
+    page.goto(edit_url, wait_until="domcontentloaded", timeout=min(30000, timeout_ms))
+    ensure_logged_in(page)
+
+    deadline = time.monotonic() + timeout_ms / 1000
+    edit_clicked = False
+    while time.monotonic() < deadline:
+        step = get_upload_workflow_step(page)
+        if step in UPLOAD_WORKFLOW_STEP_ORDER and active_upload_dialog_text(page, timeout_ms=500):
+            break
+        if not edit_clicked:
+            edit_clicked = click_text(
+                page,
+                (
+                    r"^edit draft$",
+                    r"^edit draf$",
+                    r"^continue editing$",
+                    r"^lanjutkan mengedit$",
+                ),
+                timeout_ms=1500,
+                optional=True,
+            )
+        time.sleep(0.5)
+    else:
+        save_debug_artifacts(page, "saved-draft-dialog-not-open")
+        raise UploadError(
+            f"Dialog draft {video_id} tidak dapat dibuka dari halaman edit; tidak ada file yang diupload ulang."
+        )
+
+    next_timeout_ms = min(timeout_ms, 120000)
+    step = get_upload_workflow_step(page)
+    if step == "DETAILS":
+        if tags:
+            fill_optional_tags(page, tags)
+        click_next_upload_step(page, timeout_ms=next_timeout_ms, expected_step="VIDEO_ELEMENTS")
+        step = get_upload_workflow_step(page)
+    if step == "VIDEO_ELEMENTS":
+        click_next_upload_step(page, timeout_ms=next_timeout_ms, expected_step="CHECKS")
+        step = get_upload_workflow_step(page)
+    if step == "CHECKS":
+        allow_private_pending, skip_private_pending = private_review_check_options(visibility)
+        wait_for_copyright_checks(
+            page,
+            timeout_ms=timeout_ms,
+            require_checks=True,
+            content_type=content_type,
+            media_duration_seconds=0.0,
+            allow_private_review_while_community_pending=allow_private_pending,
+            skip_pending_checks_for_private_review=skip_private_pending,
+        )
+        click_next_upload_step(page, timeout_ms=next_timeout_ms, expected_step="REVIEW")
+        step = get_upload_workflow_step(page)
+    if step != "REVIEW":
+        save_debug_artifacts(page, "saved-draft-review-not-ready")
+        raise UploadError(f"Draft {video_id} belum mencapai tab Visibilitas; step terakhir: {step or 'tidak terbaca'}.")
+
+    wait_for_visibility_step(page, timeout_ms=20000)
+    set_visibility(page, visibility)
+    wait_for_review_checks_safe_before_publish(
+        page,
+        timeout_ms=timeout_ms,
+        visibility=visibility,
+        content_type=content_type,
+        media_duration_seconds=0.0,
+    )
+    click_final_upload_action(
+        page,
+        visibility,
+        timeout_ms=30000,
+        content_type=content_type,
+        media_duration_seconds=0.0,
+    )
+    log(f"FINAL_VISIBILITY: {visibility}")
+    log(f"VIDEO_URL: {normalized_url}")
+    final_url = wait_for_final_upload_confirmation(
+        page,
+        timeout_ms=timeout_ms,
+        video_url=normalized_url or video_url,
+        expected_title=expected_title,
+        visibility=visibility,
+    )
+    return final_url or normalized_url or video_url
 
 
 def wait_for_final_upload_confirmation(
@@ -6067,6 +6256,7 @@ def run_login(args: argparse.Namespace) -> None:
                 locale=os.environ.get("YOUTUBE_BROWSER_LOCALE", "en-US"),
                 viewport={"width": 1440, "height": 1000},
                 args=launch_args,
+                **chromium_executable_kwargs(),
             )
             log(f"Login memakai profile Chromium: {chromium_user_data_dir}")
         else:
@@ -6074,6 +6264,7 @@ def run_login(args: argparse.Namespace) -> None:
                 headless=headless,
                 slow_mo=int(os.environ.get("YOUTUBE_BROWSER_SLOW_MO_MS", "60")),
                 args=launch_args,
+                **chromium_executable_kwargs(),
             )
             context = browser.new_context(locale=os.environ.get("YOUTUBE_BROWSER_LOCALE", "en-US"))
         install_context_dialog_guard(context)
@@ -6184,11 +6375,17 @@ def run_check_login(args: argparse.Namespace) -> None:
                 locale=os.environ.get("YOUTUBE_BROWSER_LOCALE", "en-US"),
                 viewport={"width": 1440, "height": 1000},
                 args=launch_args,
+                **chromium_executable_kwargs(),
             )
             page = context.pages[0] if context.pages else context.new_page()
         else:
             log(f"Validasi login memakai Playwright storage-state: {state_path}")
-            browser = playwright.chromium.launch(headless=headless, slow_mo=slow_mo, args=launch_args)
+            browser = playwright.chromium.launch(
+                headless=headless,
+                slow_mo=slow_mo,
+                args=launch_args,
+                **chromium_executable_kwargs(),
+            )
             context = browser.new_context(
                 locale=os.environ.get("YOUTUBE_BROWSER_LOCALE", "en-US"),
                 storage_state=str(state_path),
@@ -6223,6 +6420,7 @@ def run_verify_upload(args: argparse.Namespace) -> None:
             headless=headless,
             slow_mo=slow_mo,
             args=chromium_launch_args(),
+            **chromium_executable_kwargs(),
         )
         context = browser.new_context(
             locale=os.environ.get("YOUTUBE_BROWSER_LOCALE", "en-US"),
@@ -6246,8 +6444,25 @@ def run_verify_upload(args: argparse.Namespace) -> None:
                 args.title,
                 args.visibility,
                 video_url=args.video_url,
-                timeout_ms=timeout_ms,
+                # A known id only needs a quick idempotency check. If its
+                # requested visibility is absent, spend the remaining budget
+                # resuming that exact draft instead of polling Content.
+                timeout_ms=min(timeout_ms, 30000),
             )
+            if not video_url and args.video_url:
+                log(
+                    "Video-id ditemukan tetapi visibilitas final belum sesuai; "
+                    "mencoba melanjutkan draft yang sama tanpa upload ulang."
+                )
+                video_url = resume_saved_draft_and_finalize(
+                    page,
+                    args.title,
+                    args.visibility,
+                    video_url=args.video_url,
+                    tags=args.tags,
+                    content_type=args.content_type,
+                    timeout_ms=timeout_ms,
+                )
             if not video_url:
                 raise UploadError(
                     "Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; "
@@ -6373,12 +6588,18 @@ def run_upload(args: argparse.Namespace) -> None:
                 locale=os.environ.get("YOUTUBE_BROWSER_LOCALE", "en-US"),
                 viewport={"width": 1440, "height": 1000},
                 args=launch_args,
+                **chromium_executable_kwargs(),
             )
             install_context_dialog_guard(context)
             studio_pages = [item for item in context.pages if "studio.youtube.com" in item.url.lower()]
             page = studio_pages[0] if studio_pages else (context.pages[0] if context.pages else context.new_page())
         else:
-            browser = playwright.chromium.launch(headless=headless, slow_mo=slow_mo, args=launch_args)
+            browser = playwright.chromium.launch(
+                headless=headless,
+                slow_mo=slow_mo,
+                args=launch_args,
+                **chromium_executable_kwargs(),
+            )
             context = browser.new_context(
                 locale=os.environ.get("YOUTUBE_BROWSER_LOCALE", "en-US"),
                 storage_state=str(state_path),
@@ -6473,7 +6694,7 @@ def run_upload(args: argparse.Namespace) -> None:
             log("Setelan audiens dipilih.")
             set_altered_content_disclosure(page, args.altered_content)
             if args.tags:
-                fill_tags(page, args.tags)
+                fill_optional_tags(page, args.tags)
 
             # Studio can re-render the Details form after thumbnail/playlist
             # changes. Verify the exact active fields immediately before we
@@ -6749,6 +6970,12 @@ def build_parser() -> argparse.ArgumentParser:
     verify_upload.add_argument("--state", default=str(DEFAULT_STATE_PATH))
     verify_upload.add_argument("--title", required=True)
     verify_upload.add_argument("--video-url", default="")
+    verify_upload.add_argument("--tags", default="")
+    verify_upload.add_argument(
+        "--content-type",
+        choices=["auto", "shorts", "long-form"],
+        default="auto",
+    )
     verify_upload.add_argument(
         "--visibility",
         choices=["private", "unlisted", "public"],

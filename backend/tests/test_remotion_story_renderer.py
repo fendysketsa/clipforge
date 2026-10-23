@@ -10,14 +10,12 @@ def _storyboard():
         scenes=[
             SimpleNamespace(
                 index=1,
-                start=0.0,
                 duration=2.0,
                 narration="Raka & Sari melihat tanda <aneh> di dinding @rumah.",
                 narrative_role="cold_open",
             ),
             SimpleNamespace(
                 index=2,
-                start=2.0,
                 duration=3.0,
                 narration="Mereka memilih memeriksa sumber suara bersama-sama.",
                 narrative_role="payoff_conclusion",
@@ -117,6 +115,8 @@ def test_remotion_manifest_projects_hypit_scenes_to_measured_timeline(
     assert composition["shots"][1]["motionDesign"]["transition"] == "light_sweep"
     assert composition["shots"][1]["motionDesign"]["accentColor"] == "#65B7FF"
     assert composition["scenes"][1]["role"] == "payoff_conclusion"
+    assert composition["scenes"][0]["start"] == 0.0
+    assert composition["scenes"][1]["start"] == 2.0
     assert composition["motionDesign"]["deterministic"] is True
     assert composition["motionDesign"]["timelineSource"] == "measured-tts"
 

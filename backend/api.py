@@ -2664,6 +2664,23 @@ def youtube_upload_needs_restart_verification(upload: YouTubeUploadJob) -> bool:
     )
 
 
+def youtube_remote_checkpoint_url(upload: YouTubeUploadJob) -> str | None:
+    """Return the id assigned before metadata work, not a later list-row guess."""
+    logs = [str(line) for line in upload.logs]
+    for index, line in enumerate(logs):
+        if not line.startswith("REMOTE_UPLOAD_CHECKPOINT:"):
+            continue
+        for previous in reversed(logs[:index]):
+            if YOUTUBE_VIDEO_URL_PREFIX not in previous:
+                continue
+            candidate = normalize_youtube_video_url(
+                previous.split(YOUTUBE_VIDEO_URL_PREFIX, 1)[1].strip()
+            )
+            if candidate:
+                return candidate
+    return None
+
+
 def youtube_restart_verification_absence_confirmed(error: str | None) -> bool:
     """Return true only for a completed Content search that found no video."""
     lowered = str(error or "").casefold()
@@ -2746,6 +2763,36 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
                     "title": repaired_title,
                     "description": repaired_description,
                     "tags": repaired_tags,
+                }
+            )
+        assigned_checkpoint_url = youtube_remote_checkpoint_url(upload)
+        if (
+            upload.status == "completed"
+            and upload.upload_confirmed
+            and assigned_checkpoint_url
+            and normalize_youtube_video_url(upload.video_url or "") != assigned_checkpoint_url
+        ):
+            # A historical Content-list bug could combine the draft's title
+            # with a different row's public URL. The originally assigned id is
+            # authoritative and can be resumed without the deleted local file.
+            upload = upload.model_copy(
+                update={
+                    "status": "queued",
+                    "started_at": None,
+                    "finished_at": None,
+                    "duration_seconds": None,
+                    "video_url": assigned_checkpoint_url,
+                    "upload_confirmed": False,
+                    "clip_delete_after": None,
+                    "logs": [
+                        *upload.logs,
+                        (
+                            "FALSE_VERIFICATION_REPAIRED: URL Content lama berbeda dari "
+                            "video-id awal; draft asli dijadwalkan untuk finalisasi tanpa upload ulang."
+                        ),
+                        YOUTUBE_RESTART_VERIFY_MARKER,
+                    ][-160:],
+                    "error": None,
                 }
             )
         if upload.status == "running":
@@ -8383,6 +8430,9 @@ def build_youtube_upload_command(
 
 
 def build_youtube_restart_verification_command(upload: YouTubeUploadJob) -> list[str]:
+    is_long_form = upload.clip_name.casefold().startswith(
+        ("highlight_5menit_", "resume_cerita_", "long_animate_")
+    )
     command = [
         sys.executable,
         "youtube_uploader.py",
@@ -8393,11 +8443,15 @@ def build_youtube_restart_verification_command(upload: YouTubeUploadJob) -> list
         upload.title,
         "--visibility",
         upload.visibility,
+        "--content-type",
+        "long-form" if is_long_form else "shorts",
         "--timeout",
-        os.environ.get("YOUTUBE_RESTART_VERIFY_TIMEOUT_SECONDS", "120"),
+        os.environ.get("YOUTUBE_RESTART_VERIFY_TIMEOUT_SECONDS", "900"),
     ]
     if upload.video_url:
         command.extend(["--video-url", upload.video_url])
+    if upload.tags:
+        command.extend(["--tags", ",".join(upload.tags)])
     if upload.target_channel:
         command.extend(["--target-channel", upload.target_channel])
     target_email = os.environ.get("YOUTUBE_TARGET_EMAIL", DEFAULT_YOUTUBE_TARGET_EMAIL).strip()
@@ -11906,6 +11960,12 @@ def user_error_from_logs(logs: list[str]) -> str | None:
         if is_network_error(line):
             return friendly_network_error()
     combined = combined_recent
+    if "'animatescene' object has no attribute 'start'" in combined:
+        return (
+            "Render Remotion berhenti karena bug sinkronisasi timeline scene, bukan karena naskah "
+            "atau gambar. Start scene sekarang dihitung dari durasi TTS; jalankan ulang setelah "
+            "backend diperbarui."
+        )
     if (
         "subprocess.py" in combined
         and "unicode error" in combined
@@ -12056,8 +12116,17 @@ def cleanup_job_artifacts(output_root: Path) -> int:
         return 0
 
 
-def cleanup_failed_job_artifacts(output_root: Path) -> tuple[int, str]:
-    """Remove every partial artifact after a failed clip/render job."""
+def cleanup_failed_job_artifacts(
+    output_root: Path,
+    *,
+    preserve: bool = False,
+) -> tuple[int, str]:
+    """Remove failed artifacts unless an expensive render explicitly keeps them."""
+    if preserve and output_root.exists():
+        return 0, (
+            "Aset render parsial dipertahankan untuk diagnosis dan retry; "
+            f"lokasi: {output_root}"
+        )
     removed = cleanup_job_artifacts(output_root)
     if output_root.exists():
         return removed, "Cleanup output gagal; workspace sementara masih ada dan perlu dicek."
@@ -12728,7 +12797,14 @@ def run_job(job_id: str) -> None:
                 )
             else:
                 failure_reason = friendly_error or f"clipper.py exited with code {code}"
-            _, cleanup_message = cleanup_failed_job_artifacts(output_root)
+            preserve_partial_render = (
+                request.clip_mode == "long_animate"
+                and not env_bool("LONG_ANIMATE_CLEANUP_ON_ERROR", False)
+            )
+            _, cleanup_message = cleanup_failed_job_artifacts(
+                output_root,
+                preserve=preserve_partial_render,
+            )
             failure_logs = [*logs, cleanup_message][-120:]
             set_job(
                 job_id,
@@ -12749,7 +12825,14 @@ def run_job(job_id: str) -> None:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=CANCEL_GRACE_SECONDS)
-        _, cleanup_message = cleanup_failed_job_artifacts(output_root)
+        preserve_partial_render = (
+            request.clip_mode == "long_animate"
+            and not env_bool("LONG_ANIMATE_CLEANUP_ON_ERROR", False)
+        )
+        _, cleanup_message = cleanup_failed_job_artifacts(
+            output_root,
+            preserve=preserve_partial_render,
+        )
         failure_logs = [*logs, cleanup_message][-120:]
         set_job(
             job_id,
