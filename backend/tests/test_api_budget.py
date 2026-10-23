@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -61,6 +62,35 @@ from api import (
     youtube_max_upload_bytes,
     youtube_published_after,
 )
+
+
+def test_generator_story_has_an_independent_worker_lane(monkeypatch):
+    import api
+
+    clip_slots = threading.BoundedSemaphore(1)
+    story_slots = threading.BoundedSemaphore(1)
+    monkeypatch.setattr(api, "clip_job_slots", clip_slots)
+    monkeypatch.setattr(api, "story_job_slots", story_slots)
+    monkeypatch.setattr(api, "MAX_CONCURRENT_CLIP_JOBS", 1)
+    monkeypatch.setattr(api, "MAX_CONCURRENT_STORY_JOBS", 1)
+
+    short_lane = api.worker_lane_for_request(ClipJobRequest(clip_mode="short"))
+    highlight_lane = api.worker_lane_for_request(ClipJobRequest(clip_mode="highlight_5m"))
+    story_lane = api.worker_lane_for_request(
+        ClipJobRequest(clip_mode="long_animate", script_text="Cerita untuk dirender.")
+    )
+
+    assert short_lane == (clip_slots, 1, "Short/Long Highlight")
+    assert highlight_lane == short_lane
+    assert story_lane == (story_slots, 1, "Generator Cerita")
+
+    assert clip_slots.acquire(blocking=False)
+    assert not highlight_lane[0].acquire(blocking=False)
+    assert story_slots.acquire(blocking=False)
+    assert not story_lane[0].acquire(blocking=False)
+
+    clip_slots.release()
+    story_slots.release()
 
 
 def test_fetch_video_probe_reports_source_rights_risk_before_download(monkeypatch):

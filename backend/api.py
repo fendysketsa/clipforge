@@ -3833,6 +3833,11 @@ claimed_clip_cleanup_scheduled: set[str] = set()
 process_lock = threading.Lock()
 MAX_CONCURRENT_CLIP_JOBS = max(1, env_int("FENDY_CLIPPER_MAX_CONCURRENT_JOBS", 1))
 clip_job_slots = threading.BoundedSemaphore(MAX_CONCURRENT_CLIP_JOBS)
+MAX_CONCURRENT_STORY_JOBS = max(
+    1,
+    env_int("FENDY_CLIPPER_MAX_CONCURRENT_STORY_JOBS", 1),
+)
+story_job_slots = threading.BoundedSemaphore(MAX_CONCURRENT_STORY_JOBS)
 youtube_worker_lock = threading.Lock()
 youtube_worker_running = False
 youtube_performance_collector_lock = threading.Lock()
@@ -12528,6 +12533,15 @@ def queue_claimed_clip_rebuild(upload: YouTubeUploadJob) -> tuple[str | None, st
     )
 
 
+def worker_lane_for_request(
+    request: ClipJobRequest,
+) -> tuple[threading.BoundedSemaphore, int, str]:
+    """Return an independent capacity lane for the requested product."""
+    if request.clip_mode == "long_animate":
+        return story_job_slots, MAX_CONCURRENT_STORY_JOBS, "Generator Cerita"
+    return clip_job_slots, MAX_CONCURRENT_CLIP_JOBS, "Short/Long Highlight"
+
+
 def run_job(job_id: str) -> None:
     with jobs_lock:
         job = jobs.get(job_id)
@@ -12563,6 +12577,7 @@ def run_job(job_id: str) -> None:
         request = request.model_copy(update={"ai_api_key": secret})
 
     output_root = OUTPUTS_DIR / job_id
+    worker_slot, worker_limit, worker_lane = worker_lane_for_request(request)
     queued_started_perf = time.perf_counter()
     queued_started_iso = now_iso()
     if job_id in cancelled_job_ids:
@@ -12585,7 +12600,7 @@ def run_job(job_id: str) -> None:
         progress_percent=0,
         progress_stage="queued",
         progress_detail=(
-            f"Menunggu slot worker paralel (maksimal {MAX_CONCURRENT_CLIP_JOBS} job aktif)"
+            f"Menunggu slot worker {worker_lane} (maksimal {worker_limit} job aktif)"
         ),
         progress_step=0,
         progress_total_steps=5,
@@ -12615,7 +12630,7 @@ def run_job(job_id: str) -> None:
             job_id,
             logs=["Runtime Python dipulihkan otomatis sebelum worker dijalankan."],
         )
-    clip_job_slots.acquire()
+    worker_slot.acquire()
     started_at = time.time()
     started_perf = time.perf_counter()
     started_at_iso = now_iso()
@@ -12632,7 +12647,7 @@ def run_job(job_id: str) -> None:
         cancelled_job_ids.discard(job_id)
         preserve_job_files_on_cancel.discard(job_id)
         job_secrets.pop(job_id, None)
-        clip_job_slots.release()
+        worker_slot.release()
         return
 
     set_job(
@@ -12679,7 +12694,7 @@ def run_job(job_id: str) -> None:
             error=f"Worker clipping gagal dimulai: {exc}. {cleanup_message}",
         )
         job_secrets.pop(job_id, None)
-        clip_job_slots.release()
+        worker_slot.release()
         return
     with process_lock:
         job_processes[job_id] = process
@@ -12902,7 +12917,7 @@ def run_job(job_id: str) -> None:
         job_secrets.pop(job_id, None)
         cancelled_job_ids.discard(job_id)
         preserve_job_files_on_cancel.discard(job_id)
-        clip_job_slots.release()
+        worker_slot.release()
 
         # An uploaded source is only needed during processing; remove it afterwards
         # so large videos don't accumulate in uploads/.
