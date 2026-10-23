@@ -2757,6 +2757,21 @@ def _compiled_visible_moment(prompt: str) -> str:
     return _clean_text(match.group(1), 500) if match else ""
 
 
+def _compiled_human_limit(prompt: str) -> int | None:
+    """Return the human-count contract already resolved for a compiled shot.
+
+    The compiler can use trusted narration and character metadata that are no
+    longer present in the shortened visible-moment string. Re-inferring the
+    count from that shortened string made QA contradict its own prompt (for
+    example, ``VISIBLE HUMAN LIMIT: 1`` was later treated as zero people when
+    a character name appeared mid-sentence).
+    """
+    match = re.search(r"(?i)\bVISIBLE HUMAN LIMIT:\s*([0-9]+)\b", prompt)
+    if not match:
+        return None
+    return max(0, min(20, int(match.group(1))))
+
+
 def _matching_narration_context(narration: str, visible_moment: str) -> str:
     """Pick nearby source sentences that establish the action without prompt pollution."""
     sentences = [
@@ -2971,7 +2986,12 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
     # The exact visible moment owns the subject count. A broad narration can
     # mention workers or a later crowd without authorizing tiny background
     # people in an architecture-only shot.
-    count = _visible_people_count(visible, context)
+    compiled_human_limit = _compiled_human_limit(scene.visual_prompt)
+    count = (
+        compiled_human_limit
+        if compiled_human_limit is not None
+        else _visible_people_count(visible, context)
+    )
     has_people = count > 0 or _requests_group_scene(visible)
     subject_count = (
         f"Visible subject count: exactly {count} person. "
@@ -3208,7 +3228,12 @@ def _remote_scene_image(
         ]
         visible_for_negative = _compiled_visible_moment(scene.visual_prompt) or scene.visual_prompt
         focused_context = _matching_narration_context(scene.narration, visible_for_negative)
-        scene_requests_people = _visible_people_count(visible_for_negative, focused_context) > 0
+        compiled_human_limit = _compiled_human_limit(scene.visual_prompt)
+        scene_requests_people = (
+            compiled_human_limit > 0
+            if compiled_human_limit is not None
+            else _visible_people_count(visible_for_negative, focused_context) > 0
+        )
         if not scene_requests_people:
             negative_parts.append(
                 "person, people, human figure, face, portrait, worker, crowd, hand, hands, arm, arms, body part, "
@@ -3658,7 +3683,12 @@ def inspect_generated_image(
     story_environment_context = _requires_story_environment(
         f"{visible_moment} {_matching_narration_context(shot.narration, visible_moment)}"
     )
-    expected_people = _visible_people_count(story_people_context, shot.narration)
+    compiled_human_limit = _compiled_human_limit(shot.visual_prompt)
+    expected_people = (
+        compiled_human_limit
+        if compiled_human_limit is not None
+        else _visible_people_count(story_people_context, shot.narration)
+    )
     explicit_people = _explicit_people_count(story_people_context)
     group_scene = _requests_group_scene(story_people_context)
     reasons: list[str] = []
@@ -3772,7 +3802,12 @@ def generate_shot_image_with_qa(
     visible_moment = _compiled_visible_moment(shot.visual_prompt) or _single_visible_moment(
         shot.visual_prompt
     )
-    visible_people = _visible_people_count(visible_moment, shot.narration)
+    compiled_human_limit = _compiled_human_limit(shot.visual_prompt)
+    visible_people = (
+        compiled_human_limit
+        if compiled_human_limit is not None
+        else _visible_people_count(visible_moment, shot.narration)
+    )
     uses_recurring_character = visible_people == 1 or _has_any(
         visible_moment, _NONHUMAN_CHARACTER_TERMS
     )

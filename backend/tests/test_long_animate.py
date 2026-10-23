@@ -2146,6 +2146,37 @@ def test_tower_crane_qa_does_not_expect_a_person_from_capitalization(monkeypatch
     assert "missing_clear_face" not in reasons
 
 
+def test_qa_honors_compiled_human_limit_when_name_is_mid_sentence(monkeypatch):
+    visual = (
+        "Punya mobil rumah mewah duit miliaran. Pak Haji sedang menyapu musala "
+        "dan mendengar Udin berdoa."
+    )
+    narration = (
+        "Udin adalah pemuda kampung berusia 25 tahun yang memakai peci hitam "
+        "dan kaos hijau."
+    )
+    shot = _motion_test_shot()
+    shot.narration = narration
+    shot.visual_prompt = long_animate._compose_visual_prompt(
+        visual,
+        narration,
+        "cinematic realistic animation 3D",
+        "Udin, pemuda kampung berusia 25 tahun",
+        visual_locked=True,
+    )
+    image = long_animate.np.random.default_rng(11).integers(
+        0, 256, size=(720, 1280, 3), dtype=long_animate.np.uint8
+    )
+    monkeypatch.setattr(long_animate.cv2, "imread", lambda _path: image)
+    monkeypatch.setattr(long_animate, "_face_boxes", lambda _image: [(300, 120, 180, 180)])
+
+    assert long_animate._compiled_human_limit(shot.visual_prompt) == 1
+
+    _score, reasons = long_animate.inspect_generated_image(shot, Path("udin.png"))
+
+    assert "unrequested_human_face" not in reasons
+
+
 def test_strict_vision_qa_rejects_persistent_extra_people(monkeypatch, tmp_path):
     shot = _motion_test_shot()
     original_prompt = shot.visual_prompt
