@@ -341,6 +341,29 @@ def test_repair_job_clip_context_reuses_existing_repair(monkeypatch, tmp_path):
     assert repair_job_clip_context(source_job.id, ClipRepairRequest(url=clip.url)).id == existing.id
 
 
+def test_repair_job_clip_context_rejects_recursive_repair(monkeypatch):
+    import api
+
+    clip = make_clip(1)
+    repair_result = ClipJob(
+        id="repair-result",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source", clip_mode="short"),
+        created_at="2026-01-01T00:01:00+00:00",
+        updated_at="2026-01-01T00:01:00+00:00",
+        clips=[clip],
+        repair_source_job_id="original-job",
+        repair_source_clip_url="/outputs/original/clips/clip.mp4",
+    )
+    monkeypatch.setattr(api, "jobs", {repair_result.id: repair_result})
+
+    with pytest.raises(HTTPException) as exc_info:
+        repair_job_clip_context(repair_result.id, ClipRepairRequest(url=clip.url))
+
+    assert exc_info.value.status_code == 409
+    assert "tidak boleh diproses ulang" in str(exc_info.value.detail)
+
+
 def test_retire_targeted_repair_source_removes_obsolete_card_after_verified_repair(
     monkeypatch,
     tmp_path,
@@ -381,6 +404,57 @@ def test_retire_targeted_repair_source_removes_obsolete_card_after_verified_repa
     assert [clip.url for clip in api.jobs[source_job.id].clips] == [make_clip(3).url]
     assert not old_path.exists()
     assert "kartu klip lama sudah dipensiunkan" in api.jobs[repair_job.id].logs[-1]
+
+
+def test_failed_targeted_repair_is_deleted_and_original_is_preserved(monkeypatch, tmp_path):
+    import api
+
+    output_root = tmp_path / "outputs"
+    original_path = output_root / "original" / "clips" / "original.mp4"
+    repaired_path = output_root / "repair" / "clips" / "repair.mp4"
+    original_path.parent.mkdir(parents=True)
+    repaired_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"original")
+    repaired_path.write_bytes(b"redundant repair")
+    original_clip = make_clip(1).model_copy(
+        update={"url": "/outputs/original/clips/original.mp4"}
+    )
+    repaired_clip = make_clip(2).model_copy(
+        update={"url": "/outputs/repair/clips/repair.mp4"}
+    )
+    source_job = ClipJob(
+        id="original",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[original_clip],
+    )
+    repair_job = ClipJob(
+        id="repair",
+        status="completed",
+        request=source_job.request.model_copy(update={"source_file": str(original_path)}),
+        created_at="2026-01-01T00:01:00+00:00",
+        updated_at="2026-01-01T00:01:00+00:00",
+        clips=[repaired_clip],
+        repair_source_job_id=source_job.id,
+        repair_source_clip_url=original_clip.url,
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
+    monkeypatch.setattr(api, "jobs", {source_job.id: source_job, repair_job.id: repair_job})
+    monkeypatch.setattr(api, "save_jobs_unlocked", lambda: None)
+    monkeypatch.setattr(
+        api,
+        "youtube_monetization_preflight_issue",
+        lambda *_args: "alur Short belum lengkap",
+    )
+
+    assert retire_targeted_repair_source(repair_job) is False
+    assert source_job.id in api.jobs
+    assert repair_job.id not in api.jobs
+    assert original_path.exists()
+    assert not repaired_path.exists()
+    assert "dibuang karena masih tidak lolos" in api.jobs[source_job.id].logs[-1]
 
 
 def test_content_shingle_similarity_detects_template_copy_not_shared_topic_words():

@@ -2949,6 +2949,32 @@ def test_completed_job_sweeper_repairs_quality_failure_instead_of_publishing(mon
     assert repaired == [(job.id, clip.url)]
 
 
+def test_completed_job_sweeper_never_repairs_a_repair_result(monkeypatch):
+    import api
+
+    clip = ClipFile(name="repair.mp4", url="/outputs/repair.mp4", size_bytes=1024)
+    repair_job = ClipJob(
+        id="repair-result",
+        status="completed",
+        request=ClipJobRequest(clip_mode="short"),
+        created_at="2026-10-23T01:00:00+00:00",
+        updated_at="2026-10-23T01:00:00+00:00",
+        clips=[clip],
+        repair_source_job_id="original-job",
+        repair_source_clip_url="/outputs/original.mp4",
+    )
+    monkeypatch.setenv("AUTO_REPAIR_COMPLETED_JOBS", "true")
+    monkeypatch.setattr(
+        api,
+        "repair_job_clip_context",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("repair output must never be repaired recursively")
+        ),
+    )
+
+    assert api.queue_completed_job_repair_once(repair_job) is False
+
+
 def test_scheduled_kindness_theme_is_randomized_and_cc_label_is_optional(monkeypatch):
     import api
 
@@ -4707,6 +4733,37 @@ def test_source_usage_log_backfills_completed_jobs_but_not_failed_jobs(monkeypat
     archive_payload = json.loads(archive_path.read_text(encoding="utf-8"))
     assert archive_payload["total"] == 1
     assert archive_payload["items"][0]["job_id"] == completed.id
+
+
+def test_source_usage_archive_backfill_prunes_deleted_duplicate_jobs(monkeypatch, tmp_path):
+    import api
+
+    monkeypatch.setattr(api, "SOURCE_USAGE_HISTORY_PATH", tmp_path / "source_usage_history.json")
+    archive_path = tmp_path / "source_usage" / "2026" / "08" / "source_usage.json"
+    archive_path.parent.mkdir(parents=True)
+    original = {
+        "job_id": "original-job",
+        "source_url": "https://www.youtube.com/watch?v=abcDEF12345",
+        "clip_mode": "short",
+        "processed_at": "2026-08-01T10:00:00+00:00",
+    }
+    duplicate = {
+        **original,
+        "job_id": "deleted-repair-job",
+        "processed_at": "2026-08-01T10:05:00+00:00",
+    }
+    archive_path.write_text(
+        json.dumps({"schema_version": 1, "year": 2026, "month": 8, "total": 2, "items": [duplicate, original]}),
+        encoding="utf-8",
+    )
+
+    api.backfill_source_usage_archives(
+        {original["source_url"]: {"events": [original]}}
+    )
+
+    archive_payload = json.loads(archive_path.read_text(encoding="utf-8"))
+    assert archive_payload["total"] == 1
+    assert [item["job_id"] for item in archive_payload["items"]] == ["original-job"]
 
 
 def test_viral_score_prefers_faster_recent_growth():

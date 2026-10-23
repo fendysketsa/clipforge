@@ -2512,7 +2512,11 @@ def source_usage_archive_path(value: str | None) -> Path:
     return source_usage_archive_root() / f"{year:04d}" / f"{month:02d}" / "source_usage.json"
 
 
-def write_source_usage_archive(events: list[dict[str, Any]]) -> None:
+def write_source_usage_archive(
+    events: list[dict[str, Any]],
+    *,
+    replace_partitions: bool = False,
+) -> None:
     """Mirror successful source events into audit folders without replacing the fast index."""
     grouped: dict[Path, list[dict[str, Any]]] = {}
     for event in events:
@@ -2524,13 +2528,14 @@ def write_source_usage_archive(events: list[dict[str, Any]]) -> None:
 
     for archive_path, additions in grouped.items():
         current_items: list[dict[str, Any]] = []
-        try:
-            existing = json.loads(archive_path.read_text(encoding="utf-8"))
-            raw_items = existing.get("items", []) if isinstance(existing, dict) else existing
-            if isinstance(raw_items, list):
-                current_items = [item for item in raw_items if isinstance(item, dict)]
-        except (OSError, json.JSONDecodeError):
-            pass
+        if not replace_partitions:
+            try:
+                existing = json.loads(archive_path.read_text(encoding="utf-8"))
+                raw_items = existing.get("items", []) if isinstance(existing, dict) else existing
+                if isinstance(raw_items, list):
+                    current_items = [item for item in raw_items if isinstance(item, dict)]
+            except (OSError, json.JSONDecodeError):
+                pass
 
         events_by_key = {
             (str(item.get("job_id") or ""), str(item.get("clip_mode") or "")): item
@@ -2574,7 +2579,9 @@ def backfill_source_usage_archives(history: dict[str, dict[str, Any]]) -> None:
         for event in record.get("events", [])
         if isinstance(event, dict)
     ]
-    write_source_usage_archive(events)
+    # The fast index is authoritative. Rebuilding a partition from it also
+    # removes audit rows for jobs that were explicitly deleted as duplicates.
+    write_source_usage_archive(events, replace_partitions=True)
 
 
 def save_jobs_unlocked() -> None:
@@ -11111,6 +11118,11 @@ def queue_completed_job_repair_once(job: ClipJob) -> bool:
     """Create one targeted repair for a quality/context failure, never a rights hold."""
     if not env_bool("AUTO_REPAIR_COMPLETED_JOBS", True):
         return False
+    # A repair consumes an already-rendered Short. Repairing its output again
+    # recursively turns the same 25-45 seconds into a new source on every
+    # sweeper pass and fills the library with near-identical clips.
+    if job.repair_source_job_id or job.repair_source_clip_url:
+        return False
     for clip in job.clips:
         if youtube_clip_claim_block(job.id, clip.url) is not None:
             continue
@@ -12408,15 +12420,48 @@ def retire_targeted_repair_source(repair_job: ClipJob) -> bool:
     source_clip_url = str(repair_job.repair_source_clip_url or "").strip()
     if not source_job_id or not source_clip_url or not repair_job.clips:
         return False
-    if any(
-        youtube_monetization_preflight_issue(repair_job, clip) is not None
-        or clip.context_recut_required
-        or (
-            clip.fyp_score is not None
-            and clip.fyp_score < SHORT_FYP_TARGET_SCORE
-        )
+    replacement_issues = [
+        issue
         for clip in repair_job.clips
-    ):
+        if (
+            issue := (
+                youtube_monetization_preflight_issue(repair_job, clip)
+                or ("konteks masih perlu dipotong ulang" if clip.context_recut_required else "")
+                or (
+                    f"skor FYP {clip.fyp_score} masih di bawah {SHORT_FYP_TARGET_SCORE}"
+                    if clip.fyp_score is not None
+                    and clip.fyp_score < SHORT_FYP_TARGET_SCORE
+                    else ""
+                )
+            )
+        )
+    ]
+    if replacement_issues:
+        # A failed replacement is still the same source segment and has no
+        # publication value. Keep the original card and remove this redundant
+        # render immediately so it cannot become another repair source.
+        discarded_job: ClipJob | None = None
+        with jobs_lock:
+            source_job = jobs.get(source_job_id)
+            live_repair_job = jobs.get(repair_job.id)
+            if source_job is None or live_repair_job is None:
+                return False
+            source_data = source_job.model_dump()
+            source_data["updated_at"] = now_iso()
+            source_data["logs"] = [
+                *source_job.logs,
+                (
+                    f"Hasil Perbaiki Otomatis {repair_job.id[:10]} dibuang karena masih tidak lolos: "
+                    f"{replacement_issues[0]}"
+                ),
+            ][-120:]
+            jobs[source_job_id] = ClipJob(**source_data)
+            discarded_job = jobs.pop(repair_job.id)
+            job_secrets.pop(repair_job.id, None)
+            cancelled_job_ids.discard(repair_job.id)
+            save_jobs_unlocked()
+        if discarded_job is not None:
+            cleanup_job_files(discarded_job)
         return False
     if active_youtube_uploads_for_job(source_job_id, {source_clip_url}):
         return False
@@ -12747,24 +12792,28 @@ def run_job(job_id: str) -> None:
             set_job(job_id, **updates)
             if request.review_only:
                 return
-            remember_processed_source(
-                preview_job.source_url or request.url,
-                clip_mode=request.clip_mode,
-                job_id=job_id,
-                source_title=preview_job.source_title,
-                source_uploader=preview_job.source_uploader,
-                clip_count=len(clips),
-                output_names=[clip.name for clip in clips],
-                processing_duration_seconds=elapsed_seconds(started_perf),
-                compilation_target_seconds=(
-                    request.compilation_target_seconds
-                    if request.clip_mode == "highlight_5m"
-                    else None
-                ),
-                auto_upload_youtube=request.auto_upload_youtube,
-                **source_metrics,
-                processed_at=str(updates["finished_at"]),
-            )
+            # Targeted repair is an edit of an existing clip, not another use
+            # of the original source. Recording every repair as a source run
+            # inflated the history and hid the recursive-repair bug.
+            if not job.repair_source_job_id:
+                remember_processed_source(
+                    preview_job.source_url or request.url,
+                    clip_mode=request.clip_mode,
+                    job_id=job_id,
+                    source_title=preview_job.source_title,
+                    source_uploader=preview_job.source_uploader,
+                    clip_count=len(clips),
+                    output_names=[clip.name for clip in clips],
+                    processing_duration_seconds=elapsed_seconds(started_perf),
+                    compilation_target_seconds=(
+                        request.compilation_target_seconds
+                        if request.clip_mode == "highlight_5m"
+                        else None
+                    ),
+                    auto_upload_youtube=request.auto_upload_youtube,
+                    **source_metrics,
+                    processed_at=str(updates["finished_at"]),
+                )
             with jobs_lock:
                 completed_job = jobs.get(job_id)
             if completed_job is not None:
@@ -20053,6 +20102,14 @@ def repair_job_clip_context(job_id: str, repair: ClipRepairRequest) -> ClipJob:
         raise HTTPException(
             status_code=400,
             detail="Perbaikan otomatis ini hanya untuk Clip Pendek",
+        )
+    if job.repair_source_job_id or job.repair_source_clip_url:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Hasil Perbaiki Otomatis tidak boleh diproses ulang. "
+                "Sistem mempertahankan clip sumber dan membuang hasil repair yang masih gagal."
+            ),
         )
 
     sidecar = clip_sidecar_payload(clip)
