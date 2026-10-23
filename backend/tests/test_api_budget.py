@@ -2615,6 +2615,7 @@ def test_scheduled_upload_requires_complete_rights_profile(monkeypatch):
     )
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_TIKTOK", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_AUTO_PUBLIC", "true")
     monkeypatch.setenv("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", "true")
     monkeypatch.setenv("YOUTUBE_CHANNEL_RECOVERY_MODE", "false")
@@ -3951,6 +3952,78 @@ def test_deferred_upload_queues_youtube_and_tiktok_before_cleanup(monkeypatch):
         api.auto_viral_runs.pop(run.id, None)
     with api.jobs_lock:
         api.jobs.pop("job-cross", None)
+
+
+def test_cron_discards_claimed_youtube_clip_and_continues_without_retry(monkeypatch):
+    import api
+    from types import SimpleNamespace
+
+    request = AutoViralRequest(
+        video_count=1,
+        clips_per_video=1,
+        auto_upload_youtube=True,
+    )
+    run = api.AutoViralRun(
+        id="claimed-cron-upload",
+        status="running",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=request,
+    )
+    queued = SimpleNamespace(
+        id="youtube-claim",
+        status="queued",
+        title="Claimed",
+        video_url=None,
+        upload_confirmed=False,
+        dry_run=False,
+        error=None,
+        logs=[],
+    )
+    claimed = SimpleNamespace(
+        id="youtube-claim",
+        status="failed",
+        title="Claimed",
+        video_url="https://youtu.be/claimed",
+        upload_confirmed=False,
+        dry_run=False,
+        error="Content ID",
+        logs=["CLAIMED_UPLOAD_ABORTED: zero_active_claim_policy"],
+    )
+    with api.auto_viral_lock:
+        api.auto_viral_runs[run.id] = run
+    with api.jobs_lock:
+        api.jobs["job-claimed"] = SimpleNamespace(status="completed")
+    monkeypatch.setattr(api, "save_auto_viral_runs_unlocked", lambda: None)
+    monkeypatch.setattr(
+        api,
+        "create_youtube_upload_batch_records",
+        lambda *_args, **_kwargs: [queued],
+    )
+    monkeypatch.setattr(api, "queue_youtube_upload_jobs", lambda _jobs: None)
+    monkeypatch.setattr(api, "wait_for_uploads", lambda _ids: [claimed])
+    monkeypatch.setattr(
+        api,
+        "cleanup_verified_auto_viral_item",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("claimed clip must not enter verified cleanup")
+        ),
+    )
+
+    processed = api.upload_auto_viral_processed_jobs(
+        run.id,
+        request,
+        [{"job_id": "job-claimed", "job_status": "completed", "status": "awaiting_upload"}],
+    )
+
+    assert processed[0]["status"] == "copyright_claimed"
+    assert "dibuang" in processed[0]["cleanup"]
+    assert processed[0]["status"] in api.AUTO_VIRAL_UPLOAD_HOLD_STATUSES
+    with api.auto_viral_lock:
+        api.auto_viral_runs.pop(run.id, None)
+    with api.jobs_lock:
+        api.jobs.pop("job-claimed", None)
 
 
 def test_verified_cron_upload_retries_cleanup_without_reupload(monkeypatch):

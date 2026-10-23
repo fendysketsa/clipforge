@@ -17,6 +17,7 @@ from youtube_uploader import (
     copyright_issue_detected,
     copyright_issue_blocks_upload,
     fill_optional_tags,
+    discard_studio_video,
     mark_fendy_clipper_upload_tab,
     next_upload_step_timeout_ms,
     normalize_youtube_video_url,
@@ -74,6 +75,45 @@ class TagsPage:
         self.saved_tags = []
         self.existing_tags = []
         self.field = TagsField(self)
+
+
+class DiscardPage:
+    def __init__(self):
+        self.url = ""
+        self.goto_calls = []
+
+    def goto(self, url, **kwargs):
+        self.url = url
+        self.goto_calls.append((url, kwargs))
+
+    def wait_for_load_state(self, *_args, **_kwargs):
+        return None
+
+
+def test_claimed_studio_video_is_deleted_by_exact_video_id(monkeypatch):
+    page = DiscardPage()
+    clicks = []
+    monkeypatch.setattr(youtube_uploader, "ensure_logged_in", lambda _page: None)
+    monkeypatch.setattr(
+        youtube_uploader,
+        "deep_click",
+        lambda *_args, **kwargs: clicks.append(kwargs) or True,
+    )
+    monkeypatch.setattr(
+        youtube_uploader,
+        "normalized_page_text",
+        lambda _page: "Video deleted",
+    )
+    monkeypatch.setattr(youtube_uploader, "log", lambda _message: None)
+
+    assert discard_studio_video(
+        page,
+        "https://www.youtube.com/watch?v=abcDEF12345",
+    ) is True
+    assert page.goto_calls[0][0] == (
+        "https://studio.youtube.com/video/abcDEF12345/edit"
+    )
+    assert len(clicks) == 4
 
 
 def test_studio_tags_are_normalized_deduplicated_and_bounded():

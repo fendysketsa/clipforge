@@ -6062,6 +6062,128 @@ def resume_saved_draft_and_finalize(
     return final_url or normalized_url or video_url
 
 
+def discard_studio_video(
+    page,
+    video_url: str,
+    *,
+    timeout_ms: int = 30000,
+) -> bool:
+    """Permanently delete one exact Studio upload after a confirmed claim."""
+    normalized_url = normalize_youtube_video_url(video_url)
+    match = re.search(r"[?&]v=([A-Za-z0-9_-]{6,})", normalized_url or "")
+    if not match:
+        raise UploadError("Video klaim tidak memiliki video-id YouTube yang valid untuk dihapus.")
+    video_id = match.group(1)
+    edit_url = f"https://studio.youtube.com/video/{video_id}/edit"
+    page.goto(edit_url, wait_until="domcontentloaded", timeout=min(30000, timeout_ms))
+    ensure_logged_in(page)
+    try:
+        page.wait_for_load_state("networkidle", timeout=min(10000, timeout_ms))
+    except Exception:
+        pass
+
+    menu_opened = deep_click(
+        page,
+        selectors=(
+            "ytcp-video-details #more-options",
+            "ytcp-video-metadata-editor #more-options",
+            'ytcp-icon-button[aria-label*="options" i]',
+            'ytcp-icon-button[aria-label*="opsi" i]',
+            '[aria-label*="more actions" i]',
+            '[aria-label*="tindakan lainnya" i]',
+        ),
+        text_patterns=(r"^options$", r"^opsi$", r"^more actions$", r"^tindakan lainnya$"),
+        timeout_ms=min(12000, timeout_ms),
+        optional=True,
+    )
+    if not menu_opened:
+        save_debug_artifacts(page, "claimed-video-delete-menu-not-found")
+        return False
+
+    delete_opened = deep_click(
+        page,
+        selectors=(
+            'tp-yt-paper-item[test-id="VIDEO_DELETE"]',
+            '[test-id="VIDEO_DELETE"]',
+        ),
+        text_patterns=(
+            r"^delete forever$",
+            r"^hapus selamanya$",
+            r"^delete video$",
+            r"^hapus video$",
+            r"^delete$",
+            r"^hapus$",
+        ),
+        timeout_ms=min(8000, timeout_ms),
+        optional=True,
+    )
+    if not delete_opened:
+        save_debug_artifacts(page, "claimed-video-delete-action-not-found")
+        return False
+
+    acknowledged = deep_click(
+        page,
+        selectors=(
+            "ytcp-video-delete-dialog ytcp-checkbox-lit#confirm-checkbox #checkbox",
+            "ytcp-video-delete-dialog ytcp-checkbox-lit#confirm-checkbox",
+            "ytcp-checkbox-lit#delete-checkbox",
+            "tp-yt-paper-checkbox#delete-checkbox",
+            'ytcp-checkbox-lit[aria-label*="permanent" i]',
+            'ytcp-checkbox-lit[aria-label*="permanen" i]',
+        ),
+        text_patterns=(
+            r"I understand.*permanent",
+            r"Saya memahami.*permanen",
+            r"Saya mengerti.*permanen",
+        ),
+        timeout_ms=min(8000, timeout_ms),
+        optional=True,
+    )
+    if not acknowledged:
+        save_debug_artifacts(page, "claimed-video-delete-confirmation-not-found")
+        return False
+
+    confirmed = deep_click(
+        page,
+        selectors=(
+            "ytcp-video-delete-dialog #confirm-button button:not([disabled])",
+            "ytcp-video-delete-dialog #delete-button",
+            "ytcp-button#delete-button",
+            'button[aria-label="Delete draft video" i]',
+            'button[aria-label="Hapus video draf" i]',
+            'button[aria-label="Delete forever" i]',
+            'button[aria-label="Hapus selamanya" i]',
+        ),
+        text_patterns=(
+            r"^delete forever$",
+            r"^hapus selamanya$",
+            r"^delete draft video$",
+            r"^hapus video draf$",
+        ),
+        timeout_ms=min(10000, timeout_ms),
+        optional=True,
+    )
+    if not confirmed:
+        save_debug_artifacts(page, "claimed-video-delete-final-button-not-found")
+        return False
+
+    deadline = time.monotonic() + min(15000, timeout_ms) / 1000
+    while time.monotonic() < deadline:
+        current_url = str(getattr(page, "url", "") or "")
+        page_text = normalized_page_text(page).casefold()
+        if (
+            f"/video/{video_id}/edit" not in current_url
+            or "video deleted" in page_text
+            or "video dihapus" in page_text
+            or "telah dihapus" in page_text
+        ):
+            log(f"CLAIMED_REMOTE_DELETE_CONFIRMED: video-id {video_id} dihapus permanen dari Studio.")
+            return True
+        time.sleep(0.25)
+    save_debug_artifacts(page, "claimed-video-delete-not-confirmed")
+    return False
+
+
 def wait_for_final_upload_confirmation(
     page,
     timeout_ms: int,
@@ -6906,6 +7028,36 @@ def run_upload(args: argparse.Namespace) -> None:
                 "CLAIMED_UPLOAD_ABORTED: zero_active_claim_policy; "
                 "video tidak disimpan sebagai Private dan tidak dipublikasikan."
             )
+            claimed_video_url = assigned_video_url or extract_video_url(page, upload_title)
+            if claimed_video_url:
+                delete_page = None
+                try:
+                    delete_page = page.context.new_page()
+                    install_browser_dialog_guard(delete_page)
+                    deleted = discard_studio_video(
+                        delete_page,
+                        claimed_video_url,
+                        timeout_ms=45000,
+                    )
+                except Exception as delete_exc:
+                    log(f"CLAIMED_REMOTE_DELETE_FAILED: {delete_exc}")
+                else:
+                    if not deleted:
+                        log(
+                            "CLAIMED_REMOTE_DELETE_FAILED: Studio belum mengonfirmasi "
+                            "penghapusan permanen; cron tetap dilanjutkan."
+                        )
+                finally:
+                    try:
+                        if delete_page is not None and not delete_page.is_closed():
+                            delete_page.close()
+                    except Exception:
+                        pass
+            else:
+                log(
+                    "CLAIMED_REMOTE_DELETE_SKIPPED: video-id belum tersedia; "
+                    "tidak ada objek Studio yang dapat ditargetkan."
+                )
             context.storage_state(path=str(state_path))
             raise UploadError(
                 "Upload dihentikan oleh kebijakan nol-klaim. Pilih sumber yang hak audio dan "

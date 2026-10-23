@@ -6972,6 +6972,14 @@ def youtube_clip_claim_block(
     )
 
 
+def youtube_upload_was_claimed(upload: YouTubeUploadJob) -> bool:
+    """Return whether Studio conclusively rejected these exact uploaded bytes."""
+    return any(
+        str(line).startswith(YOUTUBE_CLAIM_ABORT_PREFIX)
+        for line in getattr(upload, "logs", [])
+    )
+
+
 def quarantine_queued_youtube_uploads_from_claimed_source(
     source_job_id: str,
     triggering_upload_id: str,
@@ -15790,6 +15798,7 @@ AUTO_VIRAL_UPLOAD_HOLD_STATUSES = frozenset(
     {
         "manual_review_required",
         "ai_review_failed",
+        "copyright_claimed",
         "checkpoint_missing",
         "retry_exhausted",
     }
@@ -16433,6 +16442,7 @@ def upload_auto_viral_processed_jobs(
         )
         item["status"] = "uploading"
         failures: list[str] = []
+        claimed_youtube_uploads: list[YouTubeUploadJob] = []
 
         if request.auto_upload_youtube:
             prior_ids = [
@@ -16478,10 +16488,18 @@ def upload_auto_viral_processed_jobs(
             ]
             if not finished_youtube:
                 failures.append("YouTube: tidak ada job upload yang selesai")
+            claimed_youtube_uploads = [
+                upload
+                for upload in finished_youtube
+                if youtube_upload_was_claimed(upload)
+            ]
             failures.extend(
                 f"YouTube: {upload.error or 'upload belum terverifikasi di Studio'}"
                 for upload in finished_youtube
-                if not youtube_upload_is_verified(upload)
+                if (
+                    not youtube_upload_is_verified(upload)
+                    and not youtube_upload_was_claimed(upload)
+                )
             )
 
         if request.auto_upload_tiktok:
@@ -16605,6 +16623,28 @@ def upload_auto_viral_processed_jobs(
                         pair["long_public_url"] = public_long_url
 
         update_auto_viral_run(run_id, processed=processed)
+        if claimed_youtube_uploads:
+            claimed_titles = ", ".join(
+                upload.title for upload in claimed_youtube_uploads
+            )
+            item["status"] = "copyright_claimed"
+            item["error"] = (
+                "YouTube mendeteksi klaim Content ID; video dibuang permanen dan "
+                "tidak akan diupload atau dirender ulang."
+            )
+            item["cleanup"] = (
+                "draft YouTube dan file lokal dibuang; cron lanjut ke kandidat berikutnya"
+            )
+            update_auto_viral_run(
+                run_id,
+                processed=processed,
+                progress_current=position,
+            )
+            append_auto_viral_log(
+                run_id,
+                f"Klaim Content ID dibuang tanpa retry ({claimed_titles}); cron dilanjutkan.",
+            )
+            continue
         if failures:
             item["status"] = "failed"
             update_auto_viral_run(run_id, processed=processed)
@@ -17462,9 +17502,15 @@ def run_auto_viral_campaign(run_id: str) -> None:
             for item in processed
             if item.get("status") in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
         )
-        if deferred_background_upload and verified_count == 0 and held_count:
+        blocking_held_count = sum(
+            1
+            for item in processed
+            if item.get("status") in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
+            and item.get("status") != "copyright_claimed"
+        )
+        if deferred_background_upload and verified_count == 0 and blocking_held_count:
             raise RuntimeError(
-                f"{held_count} batch upload ditahan; scheduler akan mencari sumber baru pada retry berikutnya."
+                f"{blocking_held_count} batch upload ditahan; scheduler akan mencari sumber baru pada retry berikutnya."
             )
         update_auto_viral_run(
             run_id,
@@ -17787,7 +17833,7 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         "AUTO_VIRAL_SCHEDULE_PAIRED_LONG_AUTO_PUBLIC", False
     )
     paired_long_enabled = env_bool(
-        "AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", True
+        "AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", False
     )
     rights_confirmed = env_bool(
         "AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED", False
@@ -18361,7 +18407,7 @@ def auto_viral_daily_mix_not_before(now: datetime) -> datetime | None:
     short_target = auto_viral_daily_short_upload_target()
     long_target = (
         auto_viral_daily_long_upload_target()
-        if env_bool("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", True)
+        if env_bool("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", False)
         and env_bool("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_AUTO_PUBLIC", False)
         else 0
     )
@@ -18385,7 +18431,7 @@ def auto_viral_daily_mix_incomplete(now: datetime) -> bool:
         return False
     short_missing = counts["short"] < auto_viral_daily_short_upload_target()
     long_missing = bool(
-        env_bool("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", True)
+        env_bool("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", False)
         and env_bool("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_AUTO_PUBLIC", False)
         and counts["long"] < auto_viral_daily_long_upload_target()
     )
