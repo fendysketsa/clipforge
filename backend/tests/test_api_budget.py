@@ -2686,7 +2686,7 @@ def test_kindness_low_value_reason_is_a_hard_content_search_rejection(monkeypatc
     ]
 
 
-def test_completed_job_upload_retry_respects_durable_records_and_cooldown(monkeypatch):
+def test_completed_job_upload_failure_is_terminal_for_automatic_sweeper(monkeypatch):
     import api
 
     now = datetime(2026, 10, 18, 14, 0, tzinfo=timezone.utc)
@@ -2710,15 +2710,14 @@ def test_completed_job_upload_retry_respects_durable_records_and_cooldown(monkey
         dry_run=False,
         updated_at=(now - timedelta(minutes=5)).isoformat(),
     )
-    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS_RETRY_MINUTES", "15")
     assert not api.completed_job_upload_retry_ready(
         [failed], "job-1", "/outputs/clip.mp4", now=now
     )
-    assert api.completed_job_upload_retry_ready(
+    assert not api.completed_job_upload_retry_ready(
         [failed],
         "job-1",
         "/outputs/clip.mp4",
-        now=now + timedelta(minutes=11),
+        now=now + timedelta(days=30),
     )
 
 
@@ -3386,6 +3385,72 @@ def test_deferred_upload_persists_queue_and_completion_checkpoints(monkeypatch):
         api.jobs.pop("job-1", None)
 
 
+def test_failed_auto_viral_target_is_held_without_automatic_retry(monkeypatch):
+    import api
+    from types import SimpleNamespace
+
+    request = AutoViralRequest(
+        video_count=1,
+        clips_per_video=1,
+        auto_upload_youtube=True,
+    )
+    run = api.AutoViralRun(
+        id="failed-upload-is-terminal",
+        status="running",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=request,
+    )
+    failed_upload = SimpleNamespace(
+        id="youtube-failed-once",
+        status="failed",
+        title="Target gagal",
+        video_url=None,
+        upload_confirmed=False,
+        dry_run=False,
+        logs=[],
+        error="YouTube Studio tidak dapat dibuka",
+    )
+    processed = [
+        {
+            "job_id": "job-failed-once",
+            "job_status": "completed",
+            "status": "awaiting_upload",
+        }
+    ]
+    with api.auto_viral_lock:
+        api.auto_viral_runs[run.id] = run
+    with api.jobs_lock:
+        api.jobs["job-failed-once"] = SimpleNamespace(status="completed")
+
+    created = []
+    monkeypatch.setattr(api, "save_auto_viral_runs_unlocked", lambda: None)
+    monkeypatch.setattr(api, "require_auto_viral_daily_upload_slot", lambda *_args: 1)
+    monkeypatch.setattr(
+        api,
+        "create_youtube_upload_batch_records",
+        lambda *_args, **_kwargs: created.append(failed_upload.id) or [failed_upload],
+    )
+    monkeypatch.setattr(api, "queue_youtube_upload_jobs", lambda _uploads: None)
+    monkeypatch.setattr(api, "wait_for_uploads", lambda _ids: [failed_upload])
+
+    result = api.upload_auto_viral_processed_jobs(run.id, request, processed)
+    assert result[0]["status"] == "upload_failed"
+    assert "tidak akan dicoba ulang" in result[0]["error"]
+    assert created == [failed_upload.id]
+
+    # A later scheduler/sweeper pass must leave the terminal target untouched.
+    result = api.upload_auto_viral_processed_jobs(run.id, request, processed)
+    assert result[0]["status"] == "upload_failed"
+    assert created == [failed_upload.id]
+
+    with api.auto_viral_lock:
+        api.auto_viral_runs.pop(run.id, None)
+    with api.jobs_lock:
+        api.jobs.pop("job-failed-once", None)
+
+
 def test_paired_long_queues_short_platforms_before_long_render(monkeypatch):
     import api
     from types import SimpleNamespace
@@ -3608,7 +3673,7 @@ def test_cancel_auto_viral_campaign_stops_owned_clip_jobs(monkeypatch):
     api.cancelled_auto_viral_run_ids.discard(run.id)
 
 
-def test_deferred_upload_rejects_completed_status_without_platform_confirmation(monkeypatch):
+def test_deferred_upload_holds_unconfirmed_platform_result_without_retry(monkeypatch):
     import api
     from types import SimpleNamespace
 
@@ -3654,18 +3719,20 @@ def test_deferred_upload_rejects_completed_status_without_platform_confirmation(
     monkeypatch.setattr(api, "queue_youtube_upload_jobs", lambda _uploads: None)
     monkeypatch.setattr(api, "wait_for_uploads", lambda _ids: [unverified_upload])
 
-    with pytest.raises(RuntimeError, match="belum terverifikasi di Studio"):
-        api.upload_auto_viral_processed_jobs(
-            run.id,
-            request,
-            [
-                {
-                    "job_id": "job-unverified",
-                    "job_status": "completed",
-                    "status": "awaiting_upload",
-                }
-            ],
-        )
+    processed = api.upload_auto_viral_processed_jobs(
+        run.id,
+        request,
+        [
+            {
+                "job_id": "job-unverified",
+                "job_status": "completed",
+                "status": "awaiting_upload",
+            }
+        ],
+    )
+
+    assert processed[0]["status"] == "upload_failed"
+    assert "belum terverifikasi di Studio" in processed[0]["error"]
 
     with api.auto_viral_lock:
         api.auto_viral_runs.pop(run.id, None)

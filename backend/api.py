@@ -11053,7 +11053,13 @@ def completed_job_upload_retry_ready(
     *,
     now: datetime | None = None,
 ) -> bool:
-    """Return True only when no durable upload or fresh failure owns the clip."""
+    """Return True only when no durable or terminal upload owns the clip.
+
+    Automatic retries used to become eligible again after a short cooldown.
+    That made the sweeper create an unbounded sequence of failed records for
+    the same platform target. A failed automatic attempt is terminal now;
+    retry remains an explicit operator action.
+    """
     exact = [
         item
         for item in records
@@ -11070,39 +11076,10 @@ def completed_job_upload_retry_ready(
         for item in exact
     ):
         return False
-    if any(
-        isinstance(item, YouTubeUploadJob)
-        and youtube_restart_verification_released(item)
+    return not any(
+        getattr(item, "status", "") in {"failed", "cancelled"}
         for item in exact
-    ):
-        return True
-    failed_times = [
-        parsed
-        for item in exact
-        if getattr(item, "status", "") == "failed"
-        and (
-            parsed := parsed_datetime(
-                str(
-                    getattr(item, "updated_at", None)
-                    or getattr(item, "finished_at", None)
-                    or getattr(item, "created_at", None)
-                    or ""
-                )
-            )
-        )
-        is not None
-    ]
-    failed_at = max(failed_times, default=None)
-    if failed_at is None:
-        return True
-    current = now or datetime.now(timezone.utc)
-    cooldown = timedelta(
-        minutes=max(
-            1.0,
-            env_float("AUTO_UPLOAD_COMPLETED_JOBS_RETRY_MINUTES", 15.0),
-        )
     )
-    return current.astimezone(timezone.utc) >= failed_at + cooldown
 
 
 def pending_completed_job_upload_urls(
@@ -15801,6 +15778,7 @@ AUTO_VIRAL_UPLOAD_HOLD_STATUSES = frozenset(
         "copyright_claimed",
         "checkpoint_missing",
         "retry_exhausted",
+        "upload_failed",
     }
 )
 
@@ -15812,6 +15790,7 @@ def auto_viral_upload_item_has_live_checkpoint(
     """Return true only while every rendered job needed for upload still exists."""
     if (
         item.get("status") in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
+        or auto_viral_item_has_failed_upload(item)
         or item.get("status") == "completed"
         or item.get("job_status") != "completed"
     ):
@@ -15888,6 +15867,33 @@ def hold_auto_viral_upload_item(
     item["status"] = status
     item["error"] = reason
     item["cleanup"] = "upload otomatis ditahan; file yang masih tersedia dipertahankan"
+
+
+def auto_viral_item_has_failed_upload(item: dict[str, Any]) -> bool:
+    """Recognize persisted platform failures as terminal for automation.
+
+    Older checkpoints used the generic ``failed`` item status and therefore
+    are not covered by ``AUTO_VIRAL_UPLOAD_HOLD_STATUSES``. Inspect their
+    durable upload snapshots so a restart cannot revive the same target.
+    Manual upload actions may still create a new attempt explicitly.
+    """
+    for key in (
+        "youtube_uploads",
+        "uploads",
+        "tiktok_uploads",
+        "paired_long_youtube_uploads",
+    ):
+        records = item.get(key)
+        if not isinstance(records, list):
+            continue
+        if any(
+            isinstance(record, dict)
+            and str(record.get("status") or "").casefold()
+            in {"failed", "cancelled"}
+            for record in records
+        ):
+            return True
+    return False
 
 
 def parse_utc_datetime(value: str | None, fallback: datetime | None = None) -> datetime:
@@ -16646,9 +16652,22 @@ def upload_auto_viral_processed_jobs(
             )
             continue
         if failures:
-            item["status"] = "failed"
-            update_auto_viral_run(run_id, processed=processed)
-            raise RuntimeError("Upload belum sukses semua: " + "; ".join(failures))
+            hold_auto_viral_upload_item(
+                item,
+                "Upload otomatis gagal dan tidak akan dicoba ulang: "
+                + "; ".join(failures),
+                status="upload_failed",
+            )
+            update_auto_viral_run(
+                run_id,
+                processed=processed,
+                progress_current=position,
+            )
+            append_auto_viral_log(
+                run_id,
+                f"Upload job {job_id[:10]} gagal dan ditahan tanpa retry otomatis.",
+            )
+            continue
         item["status"] = "cleanup_pending"
         item["cleanup"] = "upload terverifikasi; cleanup lokal akan dilanjutkan"
         update_auto_viral_run(run_id, processed=processed)

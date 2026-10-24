@@ -738,7 +738,7 @@ def test_claimed_clip_cannot_start_manual_repair(monkeypatch, tmp_path):
     monkeypatch.setattr(api, "youtube_uploads", {claim.id: claim})
     monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: {})
 
-    assert api.completed_job_upload_retry_ready(
+    assert not api.completed_job_upload_retry_ready(
         [claim],
         source_job.id,
         clip.url,

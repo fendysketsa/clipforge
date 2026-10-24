@@ -379,7 +379,7 @@ AUTO_VIRAL_SCHEDULE_ENABLED=true
 AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP=true
 AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT=false
 AUTO_VIRAL_SCHEDULE_RUN_KEY=trend-expansion-daily-14s1l-v5
-AUTO_VIRAL_SCHEDULE_RETRY_UNTIL_SUCCESS=true
+AUTO_VIRAL_SCHEDULE_RETRY_UNTIL_SUCCESS=false
 AUTO_VIRAL_SCHEDULE_RETRY_DELAY_MINUTES=5
 AUTO_VIRAL_DAILY_UPLOAD_LIMIT=15
 AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET=14
@@ -457,12 +457,13 @@ window reopens instead of repeatedly submitting duplicate uploads.
 history. Change it when schedule semantics change. It also distinguishes boot
 attempts when `AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT=true` is used.
 
-With `AUTO_VIRAL_SCHEDULE_RETRY_UNTIL_SUCCESS=true`, a temporary discovery,
-render, login, network, or platform failure is retried after the configured delay.
-Upload checkpoints are reused: a clip/platform pair is skipped only after the
-platform record contains both a confirmation and its final URL. Completed status
-without platform confirmation is retried. The source count remains a quality target,
-not a minimum required before upload.
+`AUTO_VIRAL_SCHEDULE_RETRY_UNTIL_SUCCESS` is disabled by default. If explicitly
+enabled, it may retry campaign-level failures that happen before a platform target
+finishes. Once a YouTube or TikTok attempt returns failed, cancelled, or lacks final
+platform confirmation, that clip/platform target is held as terminal and is not
+queued again automatically. An operator can still retry it manually after checking
+the platform for a possible draft or duplicate. The source count remains a quality
+target, not a minimum required before upload.
 
 The schedule status and recent logs remain visible in **Radar Viral Otomatis**, but
 no headed upload browser is opened when `YOUTUBE_HEADLESS=true` and CDP upload is
