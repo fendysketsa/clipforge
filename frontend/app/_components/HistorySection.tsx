@@ -109,6 +109,11 @@ export function HistorySection({
           const elapsedSeconds = jobElapsedSeconds(item);
           const format = jobFormat(item);
           const FormatIcon = format.kind === "short" ? Smartphone : MonitorPlay;
+          const isProcessing = item.status === "queued" || item.status === "running";
+          const progressPercent = Math.max(0, Math.min(100, Math.round(item.progress_percent ?? 0)));
+          const progressDetail =
+            item.progress_detail?.trim() ||
+            (item.status === "queued" ? "Menunggu slot worker" : "Memproses video");
 
           return (
             <div className={`jobRow ${isSelected ? "selected" : ""}`} key={item.id}>
@@ -126,6 +131,7 @@ export function HistorySection({
                   <span className={`jobRow-status status-${item.status}`}>
                     <Icon className={item.status === "running" ? "spin" : ""} size={16} />
                     {statusCopy[item.status]}
+                    {isProcessing ? <span className="jobRow-statusPercent">{progressPercent}%</span> : null}
                   </span>
                   <div className="jobRowTopMeta">
                     <span
@@ -142,6 +148,24 @@ export function HistorySection({
                   </div>
                 </div>
                 <h3>{sourceLabel(item)}</h3>
+                {isProcessing ? (
+                  <div className="jobProgress" title={progressDetail}>
+                    <div className="jobProgressMeta">
+                      <span>{progressDetail}</span>
+                      <b>{progressPercent}% selesai</b>
+                    </div>
+                    <div
+                      aria-label={`Progres proses ${progressPercent}%`}
+                      aria-valuemax={100}
+                      aria-valuemin={0}
+                      aria-valuenow={progressPercent}
+                      className="jobProgressTrack"
+                      role="progressbar"
+                    >
+                      <span className="jobProgressFill" style={{ width: `${progressPercent}%` }} />
+                    </div>
+                  </div>
+                ) : null}
                 <div className="jobSourceLine">
                   <Link2 size={14} />
                   <span>{url || "Upload lokal"}</span>

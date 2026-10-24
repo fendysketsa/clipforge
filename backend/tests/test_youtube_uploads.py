@@ -456,6 +456,52 @@ def test_failed_targeted_repair_deletes_repair_and_original_source(monkeypatch, 
     assert not repaired_path.exists()
 
 
+def test_failed_targeted_repair_worker_deletes_repair_and_original_source(
+    monkeypatch,
+    tmp_path,
+):
+    import api
+
+    output_root = tmp_path / "outputs"
+    original_path = output_root / "original" / "clips" / "original.mp4"
+    repair_path = output_root / "repair" / "partial.tmp"
+    original_path.parent.mkdir(parents=True)
+    repair_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"original")
+    repair_path.write_bytes(b"partial")
+    original_clip = make_clip(1).model_copy(
+        update={"url": "/outputs/original/clips/original.mp4"}
+    )
+    source_job = ClipJob(
+        id="original",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/source"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[original_clip],
+    )
+    repair_job = ClipJob(
+        id="repair",
+        status="failed",
+        request=source_job.request.model_copy(update={"source_file": str(original_path)}),
+        created_at="2026-01-01T00:01:00+00:00",
+        updated_at="2026-01-01T00:01:00+00:00",
+        clips=[],
+        repair_source_job_id=source_job.id,
+        repair_source_clip_url=original_clip.url,
+        error="render gagal",
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", output_root)
+    monkeypatch.setattr(api, "jobs", {source_job.id: source_job, repair_job.id: repair_job})
+    monkeypatch.setattr(api, "save_jobs_unlocked", lambda: None)
+
+    assert api.discard_failed_targeted_repair_job(repair_job.id, "render gagal") is True
+    assert source_job.id not in api.jobs
+    assert repair_job.id not in api.jobs
+    assert not original_path.exists()
+    assert not repair_path.exists()
+
+
 def test_content_shingle_similarity_detects_template_copy_not_shared_topic_words():
     template = "Keputusan kecil itu mengubah arah perjalanan dan memaksa tokoh menerima konsekuensinya."
 

@@ -12547,6 +12547,66 @@ def retire_targeted_repair_source(repair_job: ClipJob) -> bool:
     return True
 
 
+def discard_failed_targeted_repair_job(job_id: str, reason: str) -> bool:
+    """Delete a failed one-shot repair and the source clip it replaced.
+
+    A targeted repair is the source clip's only automatic retry.  Keeping the
+    source after the repair worker itself fails would leave a permanently
+    rejected card in history and invite another retry path to revive it.
+    """
+    discarded_repair_job: ClipJob | None = None
+    discarded_source_job: ClipJob | None = None
+    discarded_source_clip: ClipFile | None = None
+    with jobs_lock:
+        repair_job = jobs.get(job_id)
+        if repair_job is None:
+            return False
+        source_job_id = str(repair_job.repair_source_job_id or "").strip()
+        source_clip_url = str(repair_job.repair_source_clip_url or "").strip()
+        if not source_job_id or not source_clip_url:
+            return False
+
+        source_job = jobs.get(source_job_id)
+        if source_job is not None:
+            discarded_source_clip = next(
+                (clip for clip in source_job.clips if clip.url == source_clip_url),
+                None,
+            )
+            remaining_clips = [
+                clip for clip in source_job.clips if clip.url != source_clip_url
+            ]
+            if remaining_clips:
+                source_data = source_job.model_dump()
+                source_data["clips"] = remaining_clips
+                source_data["updated_at"] = now_iso()
+                source_data["logs"] = [
+                    *source_job.logs,
+                    (
+                        f"Sumber klip {discarded_source_clip.name if discarded_source_clip else source_clip_url} "
+                        f"dihapus setelah satu-satunya Perbaiki Otomatis gagal: {reason}"
+                    ),
+                ][-120:]
+                jobs[source_job_id] = ClipJob(**source_data)
+            else:
+                discarded_source_job = jobs.pop(source_job_id)
+                job_secrets.pop(source_job_id, None)
+                cancelled_job_ids.discard(source_job_id)
+
+        discarded_repair_job = jobs.pop(job_id)
+        job_secrets.pop(job_id, None)
+        cancelled_job_ids.discard(job_id)
+        save_jobs_unlocked()
+
+    if discarded_repair_job is not None:
+        cleanup_job_files(discarded_repair_job)
+        cleanup_job_artifacts(OUTPUTS_DIR / discarded_repair_job.id)
+    if discarded_source_job is not None:
+        cleanup_job_files(discarded_source_job)
+    elif discarded_source_clip is not None:
+        cleanup_clip_files(discarded_source_clip)
+    return True
+
+
 def source_risk_requires_automatic_rebuild(logs: list[str]) -> bool:
     """Compatibility hook: source-wide automatic rebuild is disabled."""
     return False
@@ -12601,6 +12661,7 @@ def run_job(job_id: str) -> None:
                 "Gunakan Clip Pendek atau Long Story 5–10 Menit."
             ),
         )
+        discard_failed_targeted_repair_job(job_id, "mode pemrosesan tidak tersedia")
         job_secrets.pop(job_id, None)
         return
 
@@ -12655,6 +12716,7 @@ def run_job(job_id: str) -> None:
                 f"{cleanup_message}"
             ),
         )
+        discard_failed_targeted_repair_job(job_id, str(exc))
         job_secrets.pop(job_id, None)
         return
     if stdlib_repaired:
@@ -12725,6 +12787,7 @@ def run_job(job_id: str) -> None:
             logs=[cleanup_message],
             error=f"Worker clipping gagal dimulai: {exc}. {cleanup_message}",
         )
+        discard_failed_targeted_repair_job(job_id, str(exc))
         job_secrets.pop(job_id, None)
         worker_slot.release()
         return
@@ -12913,6 +12976,7 @@ def run_job(job_id: str) -> None:
                 logs=failure_logs,
                 error=f"{failure_reason} {cleanup_message}",
             )
+            discard_failed_targeted_repair_job(job_id, failure_reason)
     except Exception as exc:
         if process.poll() is None:
             process.terminate()
@@ -12941,6 +13005,7 @@ def run_job(job_id: str) -> None:
             logs=failure_logs,
             error=f"Worker clipping berhenti tidak normal: {exc}. {cleanup_message}",
         )
+        discard_failed_targeted_repair_job(job_id, str(exc))
     finally:
         telemetry_stop.set()
         telemetry_thread.join(timeout=2.0)

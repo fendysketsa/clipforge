@@ -1418,6 +1418,21 @@ h2 {
   text-transform: uppercase;
 }
 
+.jobRow-statusPercent {
+  display: inline-flex;
+  min-width: 38px;
+  min-height: 23px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.1);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
 .status-completed { color: var(--success); }
 .status-running { color: var(--warning); }
 .status-failed { color: var(--danger); }
@@ -1443,6 +1458,58 @@ h2 {
   font-weight: 800;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+
+.jobProgress {
+  display: grid;
+  gap: 7px;
+  padding: 10px 11px;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.055);
+}
+
+.jobProgressMeta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.jobProgressMeta > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jobProgressMeta b {
+  flex: 0 0 auto;
+  color: var(--warning);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.jobProgressTrack {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+}
+
+.jobProgressFill {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #f59e0b, #facc15);
+  box-shadow: 0 0 12px rgba(250, 204, 21, 0.28);
+  transition: width 320ms ease;
 }
 
 .stopJobRowButton {
