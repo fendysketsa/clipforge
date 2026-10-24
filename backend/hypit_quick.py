@@ -16,6 +16,10 @@ from remotion_story_renderer import RENDERER_DIR, RemotionRenderError, validate_
 
 
 HYPIT_COMMAND_RE = re.compile(r"^\s*/hypit(?:\s+|$)", re.IGNORECASE)
+HYPIT_QUICK_INTENT_RE = re.compile(
+    r"\b(?:ranking|rank|tier(?:\s+list)?|peringkat)\b",
+    re.IGNORECASE,
+)
 S_TIER_SUBJECT_RE = re.compile(
     r"(?:puts?|put|menempatkan|taruh|masukkan)\s+(.+?)\s+(?:in|di|ke)\s+s\s*-?\s*tier",
     re.IGNORECASE,
@@ -56,7 +60,18 @@ class DialogueCue:
 
 
 def is_hypit_quick_prompt(value: str) -> bool:
-    return bool(HYPIT_COMMAND_RE.match(value or ""))
+    if not HYPIT_COMMAND_RE.match(value or ""):
+        return False
+    body = _prompt_body(value)
+    # /hypit is also a useful explicit entry point for full story production.
+    # The deterministic Quick renderer only understands ranking/tier requests;
+    # routing arbitrary essays into it silently discards their actual script.
+    return len(body.split()) <= 80 and bool(HYPIT_QUICK_INTENT_RE.search(body))
+
+
+def hypit_prompt_body(value: str) -> str:
+    """Return user story copy without the optional /hypit routing command."""
+    return _prompt_body(value) if HYPIT_COMMAND_RE.match(value or "") else (value or "").strip()
 
 
 def _prompt_body(value: str) -> str:
@@ -334,8 +349,13 @@ def _browser_executable() -> str:
     candidates: list[Path] = []
     for root, pattern in (
         (Path("/root/.cache/ms-playwright"), "chromium-*/chrome-linux/chrome"),
+        (Path("/root/.cache/ms-playwright"), "chromium-*/chrome-linux64/chrome"),
         (Path("/root/.cache/ms-playwright"), "chromium_headless_shell-*/chrome-linux/headless_shell"),
+        (Path("/root/.cache/ms-playwright"), "chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"),
         (Path("/ms-playwright"), "chromium-*/chrome-linux/chrome"),
+        (Path("/ms-playwright"), "chromium-*/chrome-linux64/chrome"),
+        (Path("/ms-playwright"), "chromium_headless_shell-*/chrome-linux/headless_shell"),
+        (Path("/ms-playwright"), "chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"),
     ):
         try:
             candidates.extend(root.glob(pattern))

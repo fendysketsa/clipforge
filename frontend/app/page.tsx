@@ -106,7 +106,14 @@ const isProcessJob = (item: ClipJob | null) =>
 const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
 const CLEANUP_PROGRESS_POLL_MS = 250;
 const TAB_JOB_STORAGE_KEY = "fendy-clipper.activeJobId.v1";
-const isHypitQuickPrompt = (value: string) => /^\s*\/hypit(?:\s+|$)/i.test(value);
+const HYPIT_COMMAND_PATTERN = /^\s*\/hypit(?:\s+|$)/i;
+const HYPIT_QUICK_INTENT_PATTERN = /\b(?:ranking|rank|tier(?:\s+list)?|peringkat)\b/i;
+const isHypitQuickPrompt = (value: string) => {
+  if (!HYPIT_COMMAND_PATTERN.test(value)) return false;
+  const body = value.replace(HYPIT_COMMAND_PATTERN, "").trim();
+  return body.split(/\s+/).filter(Boolean).length <= 80 && HYPIT_QUICK_INTENT_PATTERN.test(body);
+};
+const hypitStoryBody = (value: string) => value.replace(HYPIT_COMMAND_PATTERN, "").trim();
 export default function HomePage() {
   const [url, setUrl] = useState("");
   const [storyText, setStoryText] = useState("");
@@ -283,12 +290,19 @@ export default function HomePage() {
 
   const loadJobs = useCallback(async () => {
     const nextJobs = await getJobs();
+    const failedJobs = nextJobs.filter(
+      (item) => item.status === "failed" || item.status === "cancelled",
+    );
     const failedIds = new Set(
-      nextJobs
-        .filter((item) => item.status === "failed" || item.status === "cancelled")
-        .map((item) => item.id),
+      failedJobs.map((item) => item.id),
     );
     if (failedIds.size) {
+      const newestFailure = [...failedJobs].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
+      const failureMessage = newestFailure.status === "cancelled"
+        ? "Proses dibatalkan. Kartu dan artefaknya dibersihkan otomatis."
+        : `Proses gagal${newestFailure.error ? `: ${newestFailure.error}` : "."} Card dan artefaknya dibersihkan otomatis.`;
+      setError(failureMessage);
+      toast.error(failureMessage, { id: `job-failure-${newestFailure.id}` });
       await deleteFailedJobs();
       const cleanJobs = nextJobs.filter((item) => !failedIds.has(item.id));
       setJobs(cleanJobs);
@@ -430,6 +444,17 @@ export default function HomePage() {
     if (!activeJobId) return;
     window.sessionStorage.setItem(TAB_JOB_STORAGE_KEY, activeJobId);
   }, [activeJobId]);
+
+  useEffect(() => {
+    if (activeJob || !jobs.length) return;
+    const resumableJob = [...jobs]
+      .filter(isActiveJob)
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
+    if (!resumableJob) return;
+    setActiveJob(resumableJob);
+    setJob((current) => current ?? resumableJob);
+    window.sessionStorage.setItem(TAB_JOB_STORAGE_KEY, resumableJob.id);
+  }, [activeJob, jobs]);
 
   useEffect(() => {
     if (!hasPendingYouTubeCleanup) return;
@@ -698,7 +723,7 @@ export default function HomePage() {
 
 
   const handleCreateStoryboard = useCallback(async () => {
-    const trimmedStory = storyText.trim();
+    const trimmedStory = hypitStoryBody(storyText.trim());
     setError("");
     if (trimmedStory.length < 60 || trimmedStory.split(/\s+/).length < 12) {
       setError("Jalan cerita minimal 60 karakter dan 12 kata agar storyboard tidak generik.");
@@ -755,17 +780,26 @@ export default function HomePage() {
     const trimmedUrl = url.trim();
     const trimmedStory = storyText.trim();
     const isHypitQuick = isStoryMode && isHypitQuickPrompt(trimmedStory);
+    const effectiveStory = isStoryMode && !isHypitQuick
+      ? hypitStoryBody(trimmedStory)
+      : trimmedStory;
     const effectiveMaxDuration = requestedMode === "short" ? Math.min(MAX_SHORT_DURATION, maxDuration) : maxDuration;
     setError("");
 
-    if (isActiveJob(activeJob)) {
-      setError("Proses clipping masih berjalan. Tunggu selesai atau batalkan sebelum memulai proses baru.");
+    const existingActiveJob = isActiveJob(activeJob)
+      ? activeJob
+      : jobs.find(isActiveJob) ?? null;
+    if (existingActiveJob) {
+      setActiveJob(existingActiveJob);
+      setJob(existingActiveJob);
+      window.sessionStorage.setItem(TAB_JOB_STORAGE_KEY, existingActiveJob.id);
+      setError("Proses sebelumnya masih berjalan dan sudah ditampilkan kembali. Tidak membuat job duplikat.");
       return;
     }
     if (
       isStoryMode
       && !isHypitQuick
-      && (trimmedStory.length < 60 || trimmedStory.split(/\s+/).length < 12)
+      && (effectiveStory.length < 60 || effectiveStory.split(/\s+/).length < 12)
     ) {
       setError("Jalan cerita minimal 60 karakter dan 12 kata agar konflik serta payoff dapat dikembangkan.");
       return;
@@ -827,7 +861,7 @@ export default function HomePage() {
           script_text: isStoryMode
             ? isHypitQuick
               ? trimmedStory
-              : storyboardPreview?.production_script || trimmedStory
+              : storyboardPreview?.production_script || effectiveStory
             : "",
           top: requestedMode === "short" && targetClips > 0 ? targetClips : undefined,
           min_duration: minDuration,
@@ -928,6 +962,7 @@ export default function HomePage() {
     url,
     videoQuality,
     visualMode,
+    jobs,
   ]);
 
   const handleDeleteAllConfirmed = useCallback(async () => {

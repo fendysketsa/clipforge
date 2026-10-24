@@ -67,6 +67,15 @@ const STORY_STEPS = [
   { icon: Sparkles, label: "Video lengkap", detail: "Dubbing, subtitle, dan musik" },
 ];
 
+const HYPIT_COMMAND_PATTERN = /^\s*\/hypit(?:\s+|$)/i;
+const HYPIT_QUICK_INTENT_PATTERN = /\b(?:ranking|rank|tier(?:\s+list)?|peringkat)\b/i;
+
+const isHypitQuickPrompt = (value: string) => {
+  if (!HYPIT_COMMAND_PATTERN.test(value)) return false;
+  const body = value.replace(HYPIT_COMMAND_PATTERN, "").trim();
+  return body.split(/\s+/).filter(Boolean).length <= 80 && HYPIT_QUICK_INTENT_PATTERN.test(body);
+};
+
 const formatCompactNumber = (value?: number | null) => value === null || value === undefined
   ? "—"
   : new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 1 }).format(value);
@@ -109,7 +118,7 @@ export function QuickStartCard({
       : `Momentum sumber ${Math.round(quickScore)}/100 hanya sinyal distribusi. Scan transkrip tetap menentukan nilai informasi, hook, konteks, dan payoff.`);
   const isWorking = isBusy || isSubmitting || isGeneratingStoryboard;
   const isStory = clipMode === "long_animate";
-  const isHypitPrompt = isStory && /^\s*\/hypit(?:\s+|$)/i.test(storyText);
+  const isHypitPrompt = isStory && isHypitQuickPrompt(storyText);
   const hypitPromptWords = storyText
     .replace(/^\s*\/hypit\s*/i, "")
     .trim()
@@ -218,12 +227,13 @@ export function QuickStartCard({
               <textarea
                 value={storyText}
                 onChange={(event) => onStoryTextChange(event.target.value)}
-                placeholder={'Ketik /hypit lalu deskripsikan video. Contoh: /hypit Make a ranking video that puts Hypit in S tier.'}
+                placeholder={'Tempel naskah panjang langsung tanpa /hypit. Untuk Quick Ranking: /hypit Make a ranking video that puts Hypit in S tier.'}
                 rows={8}
                 maxLength={30000}
               />
               <small>{storyText.trim().length.toLocaleString("id-ID")} / 30.000 karakter · {isHypitPrompt ? "minimum 4 kata setelah /hypit" : "minimum 60 karakter dan 12 kata"}</small>
             </label>
+            <p className="sourceHint">Naskah panjang tidak memerlukan <code>/hypit</code>. Perintah itu khusus Quick Ranking/Tier; bila terlanjur dipakai pada naskah panjang, sistem akan membuang perintahnya dan tetap membuat storyboard penuh.</p>
             {!storyText.trim() ? (
               <div className="hypitPromptExamples" aria-label="Contoh prompt Hypit">
                 <button type="button" onClick={() => onStoryTextChange("/hypit Make a ranking video that puts Hypit in S tier.")}>Ranking Hypit S tier</button>

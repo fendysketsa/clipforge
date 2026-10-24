@@ -37,7 +37,7 @@ from source_rights import (
 )
 from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
 from whisper_cache import cached_whisper_model_path
-from hypit_quick import is_hypit_quick_prompt, render_hypit_quick
+from hypit_quick import hypit_prompt_body, is_hypit_quick_prompt, render_hypit_quick
 
 
 console = Console()
@@ -19471,6 +19471,8 @@ def render_animated_script(
         )
     else:
         from long_animate import render_long_animate
+
+        script = hypit_prompt_body(script)
 
         ai_config = AIConfig(
             enabled=args.ai_enabled,

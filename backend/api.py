@@ -47,7 +47,7 @@ from source_rights import (
 from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
 from telemetry import ProcessTelemetrySampler
 from whisper_cache import start_whisper_model_cache_maintenance
-from hypit_quick import is_hypit_quick_prompt, quick_preview_payload
+from hypit_quick import hypit_prompt_body, is_hypit_quick_prompt, quick_preview_payload
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -20346,12 +20346,13 @@ def get_source_usage_log() -> SourceUsageLogResponse:
 def create_storyboard_preview(
     request: StoryboardPreviewRequest,
 ) -> StoryboardPreviewResponse:
-    story = request.story_text.strip()
-    if is_hypit_quick_prompt(story):
+    raw_story = request.story_text.strip()
+    if is_hypit_quick_prompt(raw_story):
         try:
-            return StoryboardPreviewResponse(**quick_preview_payload(story))
+            return StoryboardPreviewResponse(**quick_preview_payload(raw_story))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+    story = hypit_prompt_body(raw_story)
     if len(story) < 60 or len(story.split()) < 12:
         raise HTTPException(
             status_code=400,
@@ -20517,11 +20518,14 @@ def create_job(request: ClipJobRequest) -> ClipJob:
     request = ensure_source_rights_attestation(request)
 
     if request.clip_mode == "long_animate":
-        story = request.script_text.strip()
-        hypit_quick = is_hypit_quick_prompt(story)
+        raw_story = request.script_text.strip()
+        hypit_quick = is_hypit_quick_prompt(raw_story)
+        story = raw_story if hypit_quick else hypit_prompt_body(raw_story)
+        if story != request.script_text:
+            request = request.model_copy(update={"script_text": story})
         if hypit_quick:
             try:
-                quick_preview_payload(story)
+                quick_preview_payload(raw_story)
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
         elif len(story) < 60 or len(story.split()) < 12:

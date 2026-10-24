@@ -154,8 +154,13 @@ def _browser_executable() -> str:
         return configured
     candidates: Iterable[Path] = (
         *Path("/root/.cache/ms-playwright").glob("chromium-*/chrome-linux/chrome"),
+        *Path("/root/.cache/ms-playwright").glob("chromium-*/chrome-linux64/chrome"),
         *Path("/root/.cache/ms-playwright").glob("chromium_headless_shell-*/chrome-linux/headless_shell"),
+        *Path("/root/.cache/ms-playwright").glob("chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"),
         *Path("/ms-playwright").glob("chromium-*/chrome-linux/chrome"),
+        *Path("/ms-playwright").glob("chromium-*/chrome-linux64/chrome"),
+        *Path("/ms-playwright").glob("chromium_headless_shell-*/chrome-linux/headless_shell"),
+        *Path("/ms-playwright").glob("chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"),
     )
     for candidate in candidates:
         if candidate.is_file():

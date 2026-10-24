@@ -5,6 +5,7 @@ from hypit_quick import (
     _probe_validation_error,
     _ranking_reveal_times,
     build_hypit_quick_plan,
+    hypit_prompt_body,
     is_hypit_quick_prompt,
     quick_preview_payload,
 )
@@ -20,6 +21,18 @@ def test_hypit_quick_recognizes_documented_ranking_prompt():
     assert plan.items[-1].label == "HYPIT"
     assert plan.duration == 30.0
     assert "HYPIT" in plan.payoff
+
+
+def test_hypit_long_story_is_not_misrouted_to_ranking_template():
+    story = (
+        "/hypit HP Android 2026 makin canggih atau makin bikin pusing? "
+        "Baterai cepat habis, perangkat panas, aplikasi berat, dan pengguna "
+        "sebenarnya hanya menginginkan perangkat yang dapat diandalkan."
+    )
+
+    assert is_hypit_quick_prompt(story) is False
+    assert hypit_prompt_body(story).startswith("HP Android 2026")
+    assert "/hypit" not in hypit_prompt_body(story)
 
 
 def test_hypit_quick_php_preset_is_dated_and_fact_scoped():
