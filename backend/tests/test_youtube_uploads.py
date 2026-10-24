@@ -406,7 +406,7 @@ def test_retire_targeted_repair_source_removes_obsolete_card_after_verified_repa
     assert "kartu klip lama sudah dipensiunkan" in api.jobs[repair_job.id].logs[-1]
 
 
-def test_failed_targeted_repair_is_deleted_and_original_is_preserved(monkeypatch, tmp_path):
+def test_failed_targeted_repair_deletes_repair_and_original_source(monkeypatch, tmp_path):
     import api
 
     output_root = tmp_path / "outputs"
@@ -450,11 +450,10 @@ def test_failed_targeted_repair_is_deleted_and_original_is_preserved(monkeypatch
     )
 
     assert retire_targeted_repair_source(repair_job) is False
-    assert source_job.id in api.jobs
+    assert source_job.id not in api.jobs
     assert repair_job.id not in api.jobs
-    assert original_path.exists()
+    assert not original_path.exists()
     assert not repaired_path.exists()
-    assert "dibuang karena masih tidak lolos" in api.jobs[source_job.id].logs[-1]
 
 
 def test_content_shingle_similarity_detects_template_copy_not_shared_topic_words():

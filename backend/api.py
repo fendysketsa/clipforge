@@ -11044,6 +11044,7 @@ AUTO_REPAIRABLE_UPLOAD_ISSUE_MARKERS = (
     "Perbaiki Otomatis",
     "perspektif editorial otomatis belum ditemukan",
 )
+AUTO_REPAIR_ATTEMPT_PREFIX = "AUTO_REPAIR_ATTEMPTED:"
 
 
 def completed_job_upload_retry_ready(
@@ -11126,6 +11127,32 @@ def queue_completed_job_repair_once(job: ClipJob) -> bool:
             job.id, {clip.url}
         ):
             continue
+        attempt_marker = (
+            f"{AUTO_REPAIR_ATTEMPT_PREFIX}"
+            f"{hashlib.sha256(clip.url.encode('utf-8')).hexdigest()}"
+        )
+        # Claim the one automatic attempt durably before creating the repair.
+        # If validation, startup, or the repair worker fails, a later sweeper
+        # must not recreate the same child forever. Manual repair stays
+        # available because it does not consult this automation marker.
+        with jobs_lock:
+            live_job = jobs.get(job.id)
+            if live_job is None:
+                return False
+            if attempt_marker in live_job.logs:
+                continue
+            data = live_job.model_dump()
+            data["updated_at"] = now_iso()
+            data["logs"] = [
+                *live_job.logs,
+                attempt_marker,
+                (
+                    f"Perbaiki Otomatis diklaim satu kali untuk {clip.name}; "
+                    "kegagalan berikutnya ditahan untuk retry manual."
+                ),
+            ][-120:]
+            jobs[job.id] = ClipJob(**data)
+            save_jobs_unlocked()
         try:
             repair_job_clip_context(job.id, ClipRepairRequest(url=clip.url))
             return True
@@ -12427,31 +12454,51 @@ def retire_targeted_repair_source(repair_job: ClipJob) -> bool:
         )
     ]
     if replacement_issues:
-        # A failed replacement is still the same source segment and has no
-        # publication value. Keep the original card and remove this redundant
-        # render immediately so it cannot become another repair source.
+        # One automatic repair is the final chance for this source segment.
+        # If it still cannot pass the upload gate, remove both the repair and
+        # its original source clip so the sweeper has nothing left to revive.
         discarded_job: ClipJob | None = None
+        discarded_source_job: ClipJob | None = None
+        discarded_source_clip: ClipFile | None = None
         with jobs_lock:
             source_job = jobs.get(source_job_id)
             live_repair_job = jobs.get(repair_job.id)
             if source_job is None or live_repair_job is None:
                 return False
-            source_data = source_job.model_dump()
-            source_data["updated_at"] = now_iso()
-            source_data["logs"] = [
-                *source_job.logs,
-                (
-                    f"Hasil Perbaiki Otomatis {repair_job.id[:10]} dibuang karena masih tidak lolos: "
-                    f"{replacement_issues[0]}"
-                ),
-            ][-120:]
-            jobs[source_job_id] = ClipJob(**source_data)
+            discarded_source_clip = next(
+                (clip for clip in source_job.clips if clip.url == source_clip_url),
+                None,
+            )
+            remaining_clips = [
+                clip for clip in source_job.clips if clip.url != source_clip_url
+            ]
+            if remaining_clips:
+                source_data = source_job.model_dump()
+                source_data["clips"] = remaining_clips
+                source_data["updated_at"] = now_iso()
+                source_data["logs"] = [
+                    *source_job.logs,
+                    (
+                        f"Sumber klip {discarded_source_clip.name if discarded_source_clip else source_clip_url} "
+                        f"dihapus setelah Perbaiki Otomatis {repair_job.id[:10]} tetap gagal: "
+                        f"{replacement_issues[0]}"
+                    ),
+                ][-120:]
+                jobs[source_job_id] = ClipJob(**source_data)
+            else:
+                discarded_source_job = jobs.pop(source_job_id)
+                job_secrets.pop(source_job_id, None)
+                cancelled_job_ids.discard(source_job_id)
             discarded_job = jobs.pop(repair_job.id)
             job_secrets.pop(repair_job.id, None)
             cancelled_job_ids.discard(repair_job.id)
             save_jobs_unlocked()
         if discarded_job is not None:
             cleanup_job_files(discarded_job)
+        if discarded_source_job is not None:
+            cleanup_job_files(discarded_source_job)
+        elif discarded_source_clip is not None:
+            cleanup_clip_files(discarded_source_clip)
         return False
     if active_youtube_uploads_for_job(source_job_id, {source_clip_url}):
         return False

@@ -2978,6 +2978,18 @@ def test_completed_job_sweeper_repairs_quality_failure_instead_of_publishing(mon
     }
     assert repaired == [(job.id, clip.url)]
 
+    # Deleting/failing the repair child must not make the sweeper recreate it.
+    assert api.queue_completed_job_uploads_once() == {
+        "youtube": 0,
+        "tiktok": 0,
+        "repair": 0,
+    }
+    assert repaired == [(job.id, clip.url)]
+    assert any(
+        line.startswith(api.AUTO_REPAIR_ATTEMPT_PREFIX)
+        for line in api.jobs[job.id].logs
+    )
+
 
 def test_completed_job_sweeper_never_repairs_a_repair_result(monkeypatch):
     import api
