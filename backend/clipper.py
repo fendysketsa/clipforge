@@ -20562,5 +20562,7 @@ if __name__ == "__main__":
         console.print(f"[red]USER_ERROR:[/red] {exc}")
         raise SystemExit(2)
     except Exception as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        # The API consumes USER_ERROR and surfaces it before failed artifacts
+        # are removed. A generic "exit code 1" hides the only useful cause.
+        console.print(f"[red]USER_ERROR:[/red] {type(exc).__name__}: {exc}")
         raise SystemExit(1)

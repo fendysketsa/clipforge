@@ -3280,7 +3280,7 @@ def _remote_scene_image(
             )
         # Generate one step above 720p so the final 1080p canvas needs only a
         # mild upscale. Providers can still fall back to smaller safe sizes.
-        configured_size = os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "1536x864")
+        configured_size = os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "576x1024")
         size_match = re.fullmatch(r"(\d{3,5})x(\d{3,5})", configured_size)
         if size_match and _output_geometry()[0] == "9:16":
             size_width, size_height = map(int, size_match.groups())
@@ -3797,7 +3797,7 @@ def generate_shot_image_with_qa(
     style_reference: Path | None = None,
     character_reference: Path | None = None,
 ) -> str:
-    attempts = max(1, min(4, int(os.environ.get("LONG_ANIMATE_VISION_QA_ATTEMPTS", "3"))))
+    attempts = max(1, min(4, int(os.environ.get("LONG_ANIMATE_VISION_QA_ATTEMPTS", "1"))))
     original_prompt = shot.visual_prompt
     visible_moment = _compiled_visible_moment(shot.visual_prompt) or _single_visible_moment(
         shot.visual_prompt
@@ -3824,6 +3824,12 @@ def generate_shot_image_with_qa(
     shot.qa_reasons = []
     for attempt in range(1, attempts + 1):
         shot.qa_attempts = attempt
+        _logger.info(
+            "ImageGen shot %s: generasi %s/%s dimulai",
+            shot.index,
+            attempt,
+            attempts,
+        )
         if attempt > 1:
             shot.qa_reasons = list(last_reasons)
             shot.visual_prompt = _clean_text(
@@ -3841,6 +3847,12 @@ def generate_shot_image_with_qa(
             character_reference=active_character_reference,
         )
         shot.qa_reasons = list(last_reasons)
+        _logger.info(
+            "Vision QA shot %s: skor %.2f%s",
+            shot.index,
+            shot.qa_score,
+            f" ({', '.join(last_reasons)})" if last_reasons else " (lolos)",
+        )
         if shot.qa_score > best_score and path.is_file():
             best_score = shot.qa_score
             best_reasons = list(last_reasons)

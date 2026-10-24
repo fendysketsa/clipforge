@@ -208,6 +208,7 @@ IMAGE_GENERATION_ERROR_PATTERNS = (
     "images/generations",
     "longanimateimageerror",
     "image gen timeout",
+    "vision qa shot",
 )
 YTDLP_HTTP_HEADERS = {
     "User-Agent": (

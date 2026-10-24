@@ -5612,6 +5612,17 @@ def test_user_error_from_logs_does_not_mislabel_image_connection_as_youtube():
     assert "YouTube" not in message
 
 
+def test_user_error_from_logs_explains_vision_qa_failure():
+    logs = [
+        "[long_animate] INFO: Generating images and running vision QA",
+        "Error: Vision QA shot 1 gagal setelah 3 percobaan: missing_clear_face",
+    ]
+
+    message = user_error_from_logs(logs) or ""
+    assert "Generator gambar lokal" in message
+    assert "YouTube" not in message
+
+
 def test_user_error_from_logs_explains_remotion_scene_timeline_bug():
     message = user_error_from_logs(
         [
