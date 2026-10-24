@@ -1410,6 +1410,10 @@ CRON_HUMOR_SEARCH_QUERIES = [
     "humor warga kampung salah dengar",
     "dialog pak rt lucu salah paham",
     "plesetan kata indonesia bikin ngakak",
+    "roblox indonesia komentator lucu gameplay cerita",
+    "roblox mabar indonesia komentar kocak penuh pelajaran",
+    "roblox roleplay indonesia lucu plot twist komentator",
+    "roblox obby indonesia reaksi lucu teamwork",
 ]
 
 CRON_HUMOR_SIGNALS = {
@@ -1419,7 +1423,7 @@ CRON_HUMOR_SIGNALS = {
 }
 CRON_HUMOR_DIALOGUE_SIGNALS = {
     "dengar", "dialog", "jawab", "ngobrol", "obrolan", "pak rt",
-    "percakapan", "reaksi", "tanya",
+    "percakapan", "reaksi", "tanya", "komentar", "komentator", "mabar",
 }
 CRON_HUMOR_UNSAFE_SIGNALS = {
     "18+", "berantem", "bully", "darah", "dewasa", "hajar", "hina",
@@ -1466,6 +1470,9 @@ CRON_TREND_UNSAFE_SIGNALS = {
 RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
     "love_betrayal": {
         "label": "Cinta, Pengkhianatan & Sakit Hati",
+        "tone": "emosional, jujur, dan hangat; humor hanya sebagai jeda alami",
+        "short_role": "ambil konflik atau pengakuan paling tajam dan tuntaskan satu mikro-pesan",
+        "long_role": "lengkapi sebab, konsekuensi, pemulihan, dan pelajaran tanpa mengulang hook saja",
         "queries": [
             "podcast kisah cinta pengkhianatan indonesia terbaru",
             "cerita pasangan selingkuh sakit hati kisah nyata",
@@ -1474,6 +1481,9 @@ RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
     },
     "family_conflict": {
         "label": "Konflik Keluarga & Rumah Tangga",
+        "tone": "empatik dan tidak menghakimi, dengan kehangatan percakapan Indonesia",
+        "short_role": "angkat satu benturan yang langsung dipahami dan satu pilihan penting",
+        "long_role": "jelaskan konteks dua sisi, akibat, dan jalan keluar yang relevan",
         "queries": [
             "konflik keluarga penuh pelajaran kisah nyata indonesia",
             "cerita rumah tangga diuji dan bertahan indonesia",
@@ -1482,6 +1492,9 @@ RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
     },
     "friendship_twist": {
         "label": "Persahabatan, Kepercayaan & Plot Twist",
+        "tone": "dekat, reflektif, dan boleh menyelipkan ironi ringan",
+        "short_role": "pilih momen perubahan kepercayaan atau plot twist yang utuh",
+        "long_role": "tunjukkan bagaimana hubungan berubah dan apa yang dapat dipelajari",
         "queries": [
             "kisah persahabatan dikhianati plot twist indonesia",
             "teman berubah jadi musuh cerita nyata indonesia",
@@ -1490,6 +1503,9 @@ RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
     },
     "life_comeback": {
         "label": "Jatuh, Bangkit & Pelajaran Hidup",
+        "tone": "menginspirasi tanpa menggurui; tetap membumi dan manusiawi",
+        "short_role": "angkat titik terendah atau keputusan balik arah dengan payoff jelas",
+        "long_role": "lengkapi proses bangkit, kegagalan kecil, dan pelajaran praktisnya",
         "queries": [
             "cerita jatuh bangun kehidupan nyata indonesia terbaru",
             "kisah bangkit setelah kehilangan indonesia",
@@ -1498,6 +1514,9 @@ RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
     },
     "mystery_story": {
         "label": "Misteri & Kisah Tak Terduga",
+        "tone": "penasaran dan tegang, tetapi tidak mengeksploitasi ketakutan atau klaim palsu",
+        "short_role": "ambil pertanyaan atau anomali paling kuat dan beri penutup yang jujur",
+        "long_role": "susun kronologi, bukti, ketidakpastian, dan refleksi akhirnya",
         "queries": [
             "podcast misteri kisah nyata indonesia terbaru",
             "cerita horor indonesia penuh plot twist",
@@ -1506,10 +1525,16 @@ RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
     },
     "humor_interlude": {
         "label": "Jeda Humor Kehidupan",
+        "tone": "lucu, cepat, bersih, dan tidak mempermalukan; termasuk komentator Roblox bila ada cerita atau interaksi manusiawi",
+        "short_role": "ambil punchline atau reaksi terbaik lalu sisakan satu pesan tentang pilihan, kerja sama, atau konsekuensi",
+        "long_role": "lengkapi setup, dinamika percakapan/gameplay, payoff, dan nilai baik tanpa memaksa ceramah",
         "queries": CRON_HUMOR_SEARCH_QUERIES,
     },
     "faith_life": {
         "label": "Iman, Hijrah & Ujian Hidup",
+        "tone": "tenang, beradab, kontekstual, dan tidak memakai klaim agama di luar sumber",
+        "short_role": "ambil satu nasihat yang utuh dan dapat dipahami tanpa konteks tersembunyi",
+        "long_role": "lengkapi dalil/konteks sumber, perjalanan, dan penerapan kehidupan",
         "queries": [
             "kisah hijrah dan ujian hidup indonesia terbaru",
             "cerita hidayah setelah masalah kehidupan indonesia",
@@ -2094,6 +2119,9 @@ class AutoViralRequest(BaseModel):
     # marker durable lets an interrupted cron run resume with the same gate.
     cron_trend_lane: bool = False
     cron_humor_lane: bool = False
+    cron_editorial_tone: str = Field(default="", max_length=480)
+    cron_short_role: str = Field(default="", max_length=800)
+    cron_long_role: str = Field(default="", max_length=800)
     queries: list[str] = Field(default_factory=default_auto_viral_queries)
     video_count: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_VIDEO_COUNT", 5), ge=1, le=15)
     clips_per_video: int = Field(default_factory=youtube_auto_upload_count, ge=1, le=5)
@@ -2180,6 +2208,11 @@ class AutoViralRequest(BaseModel):
             if self.min_duration >= self.max_duration:
                 self.min_duration = max(5.0, self.max_duration - 10.0)
         self.theme_focus = re.sub(r"\s+", " ", self.theme_focus).strip()
+        self.cron_editorial_tone = re.sub(
+            r"\s+", " ", self.cron_editorial_tone
+        ).strip()
+        self.cron_short_role = re.sub(r"\s+", " ", self.cron_short_role).strip()
+        self.cron_long_role = re.sub(r"\s+", " ", self.cron_long_role).strip()
         self.cron_theme_key = re.sub(
             r"[^a-z0-9_]+", "", self.cron_theme_key.casefold()
         )
@@ -15653,6 +15686,30 @@ def wait_for_no_active_clipping_job(timeout_seconds: int = 3600) -> None:
     raise RuntimeError("Masih ada job clipping aktif terlalu lama")
 
 
+def auto_viral_format_perspective(
+    request: AutoViralRequest,
+    *,
+    long_form: bool,
+) -> str:
+    """Give paired formats complementary editorial jobs under one RYUUNDY voice."""
+    parts = [request.creator_perspective.strip()]
+    if request.cron_editorial_tone:
+        parts.append(f"Identitas editorial RYUUNDY: {request.cron_editorial_tone}.")
+    role = request.cron_long_role if long_form else request.cron_short_role
+    if role:
+        parts.append(
+            f"Peran {'Long' if long_form else 'Short'} dalam pasangan konten: {role}."
+        )
+    if request.cron_short_role or request.cron_long_role:
+        parts.append(
+            "Short dan Long harus saling melengkapi dari sumber yang sama: Short memberi hook, "
+            "humor/emosi, dan satu payoff utuh; Long memberi konteks serta makna tambahan. "
+            "Ambil yang baik dari sumber, buang penghinaan, repetisi kosong, klaim tak terbukti, "
+            "dan bagian yang tidak relevan dengan tema hari ini."
+        )
+    return re.sub(r"\s+", " ", " ".join(part for part in parts if part)).strip()[:4000]
+
+
 def source_theme_hashtags(
     source: dict[str, Any],
     *,
@@ -15667,6 +15724,10 @@ def source_theme_hashtags(
         ]
     ).casefold()
     profiles: list[tuple[set[str], list[str]]] = [
+        (
+            {"roblox", "obby", "mabar", "gameplay", "roleplay roblox"},
+            ["RobloxIndonesia", "RobloxStory", "GamingIndonesia"],
+        ),
         (
             {"selingkuh", "pengkhianatan", "dikhianati", "sakit hati", "gagal nikah"},
             ["Pengkhianatan", "SakitHati", "KisahCinta"],
@@ -15803,7 +15864,7 @@ def create_auto_viral_clip_job(
         scheduled_public_source_credit=scheduled,
         confirm_source_rights=request.source_rights_confirmed,
         source_rights_evidence=request.source_rights_evidence,
-        creator_perspective=request.creator_perspective,
+        creator_perspective=auto_viral_format_perspective(request, long_form=False),
         ai_enabled=request.ai_enabled,
         ai_base_url=request.ai_base_url,
         ai_model=request.ai_model,
@@ -15883,7 +15944,7 @@ def create_auto_viral_paired_long_job(
         allow_reprocess_source=True,
         confirm_source_rights=request.source_rights_confirmed,
         source_rights_evidence=request.source_rights_evidence,
-        creator_perspective=request.creator_perspective,
+        creator_perspective=auto_viral_format_perspective(request, long_form=True),
         ai_enabled=request.ai_enabled,
         ai_base_url=request.ai_base_url,
         ai_model=request.ai_model,
@@ -17591,6 +17652,12 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 "title": source.get("title"),
                 "url": source.get("url"),
                 "status": "running",
+                "editorial_pair": {
+                    "theme": run_request.cron_theme_key,
+                    "tone": run_request.cron_editorial_tone,
+                    "short_role": run_request.cron_short_role,
+                    "long_role": run_request.cron_long_role,
+                },
             }
             item_checkpointed = False
             try:
@@ -18289,7 +18356,7 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         "AUTO_VIRAL_SCHEDULE_PAIRED_LONG_AUTO_PUBLIC", False
     )
     paired_long_enabled = env_bool(
-        "AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", False
+        "AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", True
     )
     rights_confirmed = env_bool(
         "AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED", False
@@ -18361,6 +18428,18 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         if str(item).strip()
     ]
     theme_focus = random.SystemRandom().choice(theme_queries) if theme_queries else ""
+    editorial_tone = str(
+        theme_profile.get("tone")
+        or "story-first, hangat, relevan untuk penonton Indonesia, dengan humor yang tidak merendahkan"
+    ).strip()
+    short_role = str(
+        theme_profile.get("short_role")
+        or "ambil hook paling kuat, satu perubahan emosi, dan satu payoff yang tuntas"
+    ).strip()
+    long_role = str(
+        theme_profile.get("long_role")
+        or "lengkapi konteks, sebab-akibat, dan pesan yang tidak muat di Short"
+    ).strip()
     humor_theme = theme_key == "humor_interlude"
     trend_expansion_enabled = bool(
         env_bool("AUTO_VIRAL_SCHEDULE_TREND_EXPANSION_ENABLED", True)
@@ -18372,6 +18451,9 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         cron_theme_key=theme_key,
         cron_trend_lane=trend_expansion_enabled,
         cron_humor_lane=humor_theme,
+        cron_editorial_tone=editorial_tone,
+        cron_short_role=short_role,
+        cron_long_role=long_role,
         video_count=scheduled_video_count,
         clips_per_video=clips_per_video,
         min_views=max(0, env_int("AUTO_VIRAL_SCHEDULE_MIN_VIEWS", 0)),

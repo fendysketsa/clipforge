@@ -3175,6 +3175,16 @@ def test_scheduled_ryuundy_theme_is_randomized_and_cc_label_is_optional(monkeypa
     assert request.queries[0] == request.theme_focus
     assert request.require_creative_commons is False
     assert request.top == 1
+    assert request.cron_editorial_tone == api.RYUUNDY_CRON_THEME_PROFILES["love_betrayal"]["tone"]
+    assert request.cron_short_role == api.RYUUNDY_CRON_THEME_PROFILES["love_betrayal"]["short_role"]
+    assert request.cron_long_role == api.RYUUNDY_CRON_THEME_PROFILES["love_betrayal"]["long_role"]
+
+    short_direction = api.auto_viral_format_perspective(request, long_form=False)
+    long_direction = api.auto_viral_format_perspective(request, long_form=True)
+    assert request.cron_short_role in short_direction
+    assert request.cron_long_role in long_direction
+    assert "saling melengkapi" in short_direction
+    assert "saling melengkapi" in long_direction
 
 
 def test_scheduled_humor_rotates_only_on_configured_cron_run(monkeypatch):
@@ -3259,6 +3269,27 @@ def test_scheduled_humor_gate_rejects_manual_and_unsafe_candidates(monkeypatch):
     assert api.cron_humor_discovery_active(manual_run.id, request) is False
     assert api.cron_humor_candidate_rejection_reason(reference_style) == ""
     assert "tidak aman" in api.cron_humor_candidate_rejection_reason(unsafe)
+
+
+def test_cron_humor_accepts_safe_roblox_commentary_but_rejects_bullying():
+    import api
+
+    safe = {
+        "title": "Roblox Indonesia: komentator lucu saat mabar obby",
+        "description": "Gameplay cerita dengan reaksi kocak, kerja sama, dan komentar teman.",
+        "default_language": "id",
+    }
+    unsafe = {
+        **safe,
+        "title": "Roblox prank bully teman sampai dipermalukan",
+    }
+
+    assert api.cron_humor_candidate_rejection_reason(safe) == ""
+    assert "tidak aman" in api.cron_humor_candidate_rejection_reason(unsafe)
+
+    hashtags = api.source_theme_hashtags(safe)
+    assert "RobloxIndonesia" in hashtags
+    assert "Islam" not in hashtags
 
 
 def test_trend_expansion_is_owned_only_by_cron_schedule(monkeypatch):

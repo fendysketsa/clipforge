@@ -86,36 +86,36 @@ def build_hypit_quick_plan(prompt: str) -> HypitQuickPlan:
             payoff="PATCH SEKARANG. LALU RESTART WORKER PHP.",
             footer="Cek paket vendor/distro—nomor backport bisa berbeda.",
             duration=26.0,
-            hook_narration="Dua celah R C E kritis baru muncul. PHP kamu ada di tier mana?",
-            payoff_narration="Intinya sederhana: patch sekarang, lalu restart worker PHP.",
+            hook_narration="Ada dua celah R C E kritis. PHP kamu tier berapa?",
+            payoff_narration="Intinya: patch sekarang, lalu restart worker PHP.",
             items=(
                 RankingItem(
                     tier="F",
                     label="PHP 8.1 & LEBIH LAMA",
                     detail="EOL upstream · migrasi atau gunakan backport/LTS vendor",
                     accent="#FF4D6D",
-                    narration="PHP delapan titik satu atau lebih lama masuk F tier. Dukungan upstream-nya sudah berakhir.",
+                    narration="Versi lama sudah E O L. F tier.",
                 ),
                 RankingItem(
                     tier="B",
                     label="BELUM VERIFIKASI",
                     detail="Jangan percaya banner panel—cek php -v dan paket aktif",
                     accent="#FFB84D",
-                    narration="Belum sempat cek versi aktif? B tier dulu. Banner panel belum tentu akurat.",
+                    narration="Belum cek versi aktif? B tier dulu.",
                 ),
                 RankingItem(
                     tier="A",
                     label="VENDOR BACKPORT",
                     detail="Aman bila vendor mengonfirmasi dua CVE sudah ditambal",
                     accent="#65D6A6",
-                    narration="Kalau vendor sudah mengonfirmasi backport keamanannya, naik ke A tier.",
+                    narration="Backport vendor terkonfirmasi? A tier.",
                 ),
                 RankingItem(
                     tier="S",
                     label="8.5.12 · 8.4.27 · 8.3.36 · 8.2.35",
                     detail="Rilis upstream dengan perbaikan CVE-2026-109618/109619",
                     accent="#B6FF4A",
-                    narration="Versi upstream terbaru yang sudah menutup dua C V E itu? S tier.",
+                    narration="Sudah menutup dua C V E? S tier.",
                 ),
             ),
             source_note="PHP security advisory snapshot, 24 October 2026",
@@ -136,35 +136,35 @@ def build_hypit_quick_plan(prompt: str) -> HypitQuickPlan:
         footer="Nilai utama: workflow editable, repeatable, dan agent-native.",
         duration=24.0,
         hook_narration="Tool video A I banyak. Mana yang benar-benar enak dipakai ulang?",
-        payoff_narration=f"Verdiknya jelas. {subject} masuk S tier. Setuju atau tidak?",
+        payoff_narration=f"{subject} masuk S tier. Kamu setuju?",
         items=(
             RankingItem(
                 tier="C",
                 label="ONE-OFF GENERATOR",
                 detail="Cepat, tetapi sulit direvisi secara presisi",
                 accent="#8C93A8",
-                narration="Generator sekali jadi memang cepat, tapi revisinya sering bikin capek. C tier.",
+                narration="Cepat dibuat, susah direvisi. C tier.",
             ),
             RankingItem(
                 tier="B",
                 label="MANUAL TIMELINE",
                 detail="Kontrol kuat, pekerjaan berulang masih banyak",
                 accent="#64B5F6",
-                narration="Timeline manual punya kontrol kuat, cuma pekerjaan berulangnya masih banyak. B tier.",
+                narration="Kontrol kuat, tapi banyak kerja ulang. B tier.",
             ),
             RankingItem(
                 tier="A",
                 label="CODE VIDEO",
                 detail="Animasi konsisten dan dapat di-version-control",
                 accent="#A78BFA",
-                narration="Code video naik ke A tier: konsisten dan bisa masuk version control.",
+                narration="Konsisten dan mudah dilacak. Code video, A tier.",
             ),
             RankingItem(
                 tier="S",
                 label=subject_upper,
                 detail="Agent-native · semantic timing · editable workflow",
                 accent="#B6FF4A",
-                narration=f"Kalau agent-native, timing semantik, dan tetap editable, {subject} masuk S tier.",
+                narration=f"Agent-native dan tetap editable. {subject}, S tier.",
             ),
         ),
         source_note="Original code-rendered comparison; no third-party footage",
@@ -838,7 +838,13 @@ def _mux_audio(
     ffmpeg = shutil.which("ffmpeg")
     music = Path(__file__).resolve().parent / "assets" / "background_music" / "happy-moments.ogg"
     output_path.unlink(missing_ok=True)
+    has_dialogue = bool(dialogue_track and dialogue_track.is_file())
     if not ffmpeg or not music.is_file():
+        if has_dialogue:
+            missing = "ffmpeg" if not ffmpeg else "musik latar Hypit"
+            raise RemotionRenderError(
+                f"{missing} tidak tersedia; video bersuara tidak boleh diterbitkan sebagai video bisu."
+            )
         shutil.copy2(silent_video, output_path)
         return False
     pulses = "+".join(
@@ -862,7 +868,6 @@ def _mux_audio(
         "-i",
         f"sine=frequency=118:sample_rate=48000:duration={duration:.3f}",
     ]
-    has_dialogue = bool(dialogue_track and dialogue_track.is_file())
     if has_dialogue:
         command.extend(["-i", str(dialogue_track)])
         mix_filter = (
@@ -1124,7 +1129,11 @@ def _write_quick_thumbnail_assets(
         variants.append(
             {
                 "id": variant_id,
-                "angle": angle,
+                "angle": {
+                    "human_tension": "Ketegangan utama langsung terbaca dari hook yang benar-benar tampil di video.",
+                    "object_or_evidence": "Bukti visual ranking menjadi pusat rasa penasaran tanpa menambah klaim baru.",
+                    "cinematic_story": "Komposisi lebih lebar memperlihatkan taruhan cerita dan payoff final.",
+                }[angle],
                 "filename": thumb_path.name,
                 "eyebrow": plan.kicker,
                 "headline": headline,
@@ -1138,15 +1147,22 @@ def _write_quick_thumbnail_assets(
                     f"Use only {thumb_path.name}; preserve all text facts and ranking state. "
                     "Enhance contrast only, with no new people, products, or claims."
                 ),
-                "negative_prompt": "no invented person, no fake code, no fabricated CVE, no copied branding, no tiny extra text",
+                "negative_prompt": (
+                    "no distorted anatomy, no altered identity, no duplicate people, no unreadable text, "
+                    "no extra fingers, no fake logos, no watermarks, no clutter, no oversaturation, "
+                    "no plastic skin, no invented person, no fake code, no fabricated CVE, "
+                    "no copied branding, no unsupported object or event"
+                ),
                 "evidence": [plan.hook, plan.payoff, plan.source_note],
-                "score": [92, 86, 90][index],
+                "score": [94, 88, 93][index],
                 "score_breakdown": {
-                    "clarity": [20, 18, 19][index],
-                    "curiosity": [19, 17, 18][index],
-                    "emotion": [16, 15, 17][index],
-                    "contrast": [19, 18, 19][index],
-                    "legibility": [18, 18, 17][index],
+                    "feed_size_readability": [24, 22, 23][index],
+                    "truthful_curiosity": [19, 18, 19][index],
+                    "subject_hierarchy": [19, 18, 18][index],
+                    "emotional_specificity": [13, 12, 14][index],
+                    "cinematic_craft": [9, 9, 10][index],
+                    "brand_distinction": [5, 4, 4][index],
+                    "production_feasibility": [5, 5, 5][index],
                 },
             }
         )
@@ -1157,8 +1173,13 @@ def _write_quick_thumbnail_assets(
         json.dumps(
             {
                 "schema": "clipforge-thumbnail-ideas-v1",
+                "schema_version": 1,
                 "source_clip": output_path.name,
-                "format": "9:16",
+                "format": "shorts_9_16",
+                "status": "READY_FOR_DESIGN",
+                "winner": "A",
+                "selection_reason": "Hook paling cepat terbaca pada ukuran feed dan seluruh klaim terlihat di video.",
+                "needs_frame_review": False,
                 "truthfulness": {
                     "grounded_in_clip_evidence": True,
                     "invented_claims_allowed": False,

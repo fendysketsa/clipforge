@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from hypit_quick import (
+    _dialogue_cues,
     _probe_validation_error,
     build_hypit_quick_plan,
     is_hypit_quick_prompt,
@@ -42,6 +43,26 @@ def test_hypit_quick_preview_needs_no_image_provider():
     assert preview["production_script"].startswith("/hypit")
     assert preview["expansion"]["format"] == "hypit_quick_ranking_v2"
     assert "continuous camera handoff" in preview["director_bible"]
+
+
+def test_hypit_quick_dialogue_alternates_two_indonesian_roles_inside_visual_beats():
+    plan = build_hypit_quick_plan(
+        "/hypit Make a ranking video that puts Hypit in S tier."
+    )
+    cues = _dialogue_cues(plan, [3.8, 7.8, 11.8, 15.8])
+
+    assert [cue.speaker for cue in cues] == [
+        "HOST",
+        "CO-HOST",
+        "HOST",
+        "CO-HOST",
+        "HOST",
+        "CO-HOST",
+    ]
+    assert cues[0].text == plan.hook_narration
+    assert cues[-1].text == plan.payoff_narration
+    assert all(cue.end <= next_cue.start for cue, next_cue in zip(cues, cues[1:]))
+    assert cues[-1].end <= plan.duration
 
 
 def test_hypit_quick_probe_gate_rejects_partial_or_wrong_media():

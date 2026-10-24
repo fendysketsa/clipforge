@@ -1,0 +1,191 @@
+{
+  "index": 1,
+  "start": 0.0,
+  "end": 24.0,
+  "duration": 24.0,
+  "score": 91,
+  "title": "AI VIDEO TOOL TIER LIST",
+  "reason": "Ranking Reel code-rendered dari satu prompt /hypit dengan framing sinematik berkesinambungan; tanpa footage pihak ketiga.",
+  "text": "/hypit Make a ranking video that puts Hypit in S tier.",
+  "transcript": "Tool video A I banyak. Mana yang benar-benar enak dipakai ulang?\nCepat dibuat, susah direvisi. C tier.\nKontrol kuat, tapi banyak kerja ulang. B tier.\nKonsisten dan mudah dilacak. Code video, A tier.\nAgent-native dan tetap editable. Hypit, S tier.\nHypit masuk S tier. Kamu setuju?\nNilai utama: workflow editable, repeatable, dan agent-native.",
+  "hook": "TOOL VIDEO AI MANA YANG BENAR-BENAR BISA DIULANG?",
+  "pov": "HYPIT MASUK S TIER.",
+  "core_message": "HYPIT MASUK S TIER.",
+  "fyp_label": "Sangat kuat",
+  "strengths": [
+    "Hook muncul pada frame awal.",
+    "Setiap reveal meninggalkan state board yang mudah dibaca.",
+    "Payoff S-tier memiliki kontras dan hold yang jelas."
+  ],
+  "weaknesses": [
+    "Dua pembicara masih off-screen; ekspresi utama dibawa oleh suara dan motion graphic."
+  ],
+  "improvement_ideas": [
+    "Uji hook alternatif atau presenter visual tanpa mengubah timing dialog."
+  ],
+  "applied_edits": [
+    "Prompt /hypit dipetakan ke source semantik tervalidasi.",
+    "Tier board, kartu, flash, dan tipografi dianimasikan deterministik di Remotion.",
+    "Musik lokal dan bunyi reveal dipasang tanpa layanan generasi berbayar.",
+    "Kinetic hook, alternating card entries, micro camera-punch, progress rail, dan connected verdict framing diterapkan.",
+    "Dialog TTS neural dua suara, caption berganti pembicara, dan music ducking diterapkan."
+  ],
+  "key_point_score": 94,
+  "loop_score": 84,
+  "retention_score": 94,
+  "boundary_quality": "payoff_tuntas",
+  "mode": "long_animate",
+  "production_model": "hypit_quick_ranking_v2",
+  "source_identity": {
+    "type": "original_code_rendered",
+    "id": "hypit-hypit-s-tier",
+    "title": "AI VIDEO TOOL TIER LIST"
+  },
+  "repair_attempted": false,
+  "output_format": "portrait_short",
+  "aspect_ratio": "9:16",
+  "output_resolution": "1080x1920",
+  "hypit_script_path": "ranking.hypit.svml",
+  "remotion_manifest_path": "ranking.remotion.json",
+  "fact_checked_on": null,
+  "source_note": "Original code-rendered comparison; no third-party footage",
+  "narrative_authoring": {
+    "engine": "hypit_script_surface",
+    "schema": "@hypit/script@1",
+    "timing": "authored_ranking_events",
+    "validated_by_hypit_cli": true
+  },
+  "image_generation": {
+    "provider": "none_code_rendered",
+    "paid_api_used": false
+  },
+  "voice_casting": {
+    "enabled": true,
+    "mode": "two_voice_offscreen_dialogue",
+    "language": "id-ID",
+    "music_ducking": true,
+    "voice_cloning_used": false,
+    "cues": [
+      {
+        "speaker": "HOST",
+        "text": "Tool video A I banyak. Mana yang benar-benar enak dipakai ulang?",
+        "start": 0.15,
+        "duration": 3.279,
+        "provider": "edge_neural",
+        "voice": "id-ID-ArdiNeural",
+        "rate": "+12%",
+        "pitch": "-2Hz",
+        "tempo_fit": 1.386
+      },
+      {
+        "speaker": "CO-HOST",
+        "text": "Cepat dibuat, susah direvisi. C tier.",
+        "start": 3.58,
+        "duration": 3.845,
+        "provider": "edge_neural",
+        "voice": "id-ID-GadisNeural",
+        "rate": "+12%",
+        "pitch": "+2Hz",
+        "tempo_fit": 1.3057
+      },
+      {
+        "speaker": "HOST",
+        "text": "Kontrol kuat, tapi banyak kerja ulang. B tier.",
+        "start": 7.58,
+        "duration": 3.842,
+        "provider": "edge_neural",
+        "voice": "id-ID-ArdiNeural",
+        "rate": "+12%",
+        "pitch": "-2Hz",
+        "tempo_fit": 1.1689
+      },
+      {
+        "speaker": "CO-HOST",
+        "text": "Konsisten dan mudah dilacak. Code video, A tier.",
+        "start": 11.58,
+        "duration": 3.846,
+        "provider": "edge_neural",
+        "voice": "id-ID-GadisNeural",
+        "rate": "+12%",
+        "pitch": "+2Hz",
+        "tempo_fit": 1.3679
+      },
+      {
+        "speaker": "HOST",
+        "text": "Agent-native dan tetap editable. Hypit, S tier.",
+        "start": 15.58,
+        "duration": 4.143,
+        "provider": "edge_neural",
+        "voice": "id-ID-ArdiNeural",
+        "rate": "+12%",
+        "pitch": "-2Hz",
+        "tempo_fit": 1.2
+      },
+      {
+        "speaker": "CO-HOST",
+        "text": "Hypit masuk S tier. Kamu setuju?",
+        "start": 19.88,
+        "duration": 3.961,
+        "provider": "edge_neural",
+        "voice": "id-ID-GadisNeural",
+        "rate": "+12%",
+        "pitch": "+2Hz",
+        "tempo_fit": 1.0734
+      }
+    ]
+  },
+  "rights": {
+    "third_party_footage_used": false,
+    "third_party_voice_used": false,
+    "code_rendered_visuals": true,
+    "human_review_required_before_publication": true
+  },
+  "youtube_policy_guardrails": {
+    "private_upload_review_before_publish": true,
+    "factual_claim_review_required": false,
+    "view_target_is_experiment_not_guarantee": true
+  },
+  "context_safety": {
+    "standalone": true,
+    "claims_labeled_with_date_and_source_note": false,
+    "invented_quote_or_person": false
+  },
+  "monetization_readiness": {
+    "original_visual_composition": true,
+    "third_party_footage": false,
+    "human_review_required": true
+  },
+  "growth_readiness": {
+    "score": 91,
+    "view_guarantee": false,
+    "hook_first_two_seconds": true,
+    "complete_payoff": true
+  },
+  "render_quality_qc": {
+    "quality_gate_passed": true,
+    "output_readable": true,
+    "safe_area_passed": true,
+    "caption_mode": "authored_dialogue_captions"
+  },
+  "thumbnail_variants": [
+    {
+      "id": "A",
+      "angle": "Ketegangan utama langsung terbaca dari hook yang benar-benar tampil di video.",
+      "filename": "long_animate_hypit-s-tier_thumb.jpg",
+      "headline": "TOOL VIDEO AI MANA YANG BENAR-BENAR BISA DIULANG?"
+    },
+    {
+      "id": "B",
+      "angle": "Bukti visual ranking menjadi pusat rasa penasaran tanpa menambah klaim baru.",
+      "filename": "long_animate_hypit-s-tier_thumb_b.jpg",
+      "headline": "AI VIDEO TOOL TIER LIST"
+    },
+    {
+      "id": "C",
+      "angle": "Komposisi lebih lebar memperlihatkan taruhan cerita dan payoff final.",
+      "filename": "long_animate_hypit-s-tier_thumb_c.jpg",
+      "headline": "HYPIT MASUK S TIER."
+    }
+  ],
+  "thumbnail_ideas_manifest": "long_animate_hypit-s-tier_thumbnail_ideas.json"
+}

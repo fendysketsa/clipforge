@@ -1,0 +1,24 @@
+<?svml using="@hypit/markup@1"?>
+<svml>
+  <import from="@hypit/script@1"/>
+  <script id="ranking">
+    <hook>
+      <HOST> Tool video A I banyak. Mana yang benar-benar enak dipakai ulang?
+    </hook>
+    <rank_1>
+      <COHOST> Cepat dibuat, susah direvisi. C tier.
+    </rank_1>
+    <rank_2>
+      <HOST> Kontrol kuat, tapi banyak kerja ulang. B tier.
+    </rank_2>
+    <rank_3>
+      <COHOST> Konsisten dan mudah dilacak. Code video, A tier.
+    </rank_3>
+    <rank_4>
+      <HOST> Agent-native dan tetap editable. Hypit, S tier.
+    </rank_4>
+    <payoff>
+      <COHOST> Hypit masuk S tier. Kamu setuju?
+    </payoff>
+  </script>
+</svml>

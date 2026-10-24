@@ -17,16 +17,17 @@
       "Payoff S-tier memiliki kontras dan hold yang jelas."
     ],
     "weaknesses": [
-      "Format motion-only belum memakai presenter atau voice-over."
+      "Dua pembicara masih off-screen; ekspresi utama dibawa oleh suara dan motion graphic."
     ],
     "improvement_ideas": [
-      "Uji voice-over singkat dan versi hook alternatif."
+      "Uji hook alternatif atau presenter visual tanpa mengubah timing dialog."
     ],
     "applied_edits": [
       "Prompt /hypit dipetakan ke source semantik tervalidasi.",
       "Tier board, kartu, flash, dan tipografi dianimasikan deterministik di Remotion.",
       "Musik lokal dan bunyi reveal dipasang tanpa layanan generasi berbayar.",
-      "Kinetic hook, alternating card entries, micro camera-punch, progress rail, dan connected verdict framing diterapkan."
+      "Kinetic hook, alternating card entries, micro camera-punch, progress rail, dan connected verdict framing diterapkan.",
+      "Dialog TTS neural dua suara, caption berganti pembicara, dan music ducking diterapkan."
     ],
     "key_point_score": 94,
     "loop_score": 84,

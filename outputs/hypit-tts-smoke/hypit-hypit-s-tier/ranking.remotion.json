@@ -1,0 +1,123 @@
+{
+  "schema": "clipforge-hypit-ranking-v2",
+  "hypit": {
+    "scriptSurface": "@hypit/script@1",
+    "source": "ranking.hypit.svml",
+    "validatedByCli": true,
+    "timingModel": "authored-ranking-events"
+  },
+  "publicDir": "/www/wwwroot/clipper/clipforge/outputs/hypit-tts-smoke/hypit-hypit-s-tier/public",
+  "composition": {
+    "template": "ranking",
+    "styleVersion": "developer-reel-cinematic-v2",
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "durationSeconds": 24.0,
+    "title": "AI VIDEO TOOL TIER LIST",
+    "kicker": "NO HYPE · JUST WORKFLOW",
+    "hook": "TOOL VIDEO AI MANA YANG BENAR-BENAR BISA DIULANG?",
+    "payoff": "HYPIT MASUK S TIER.",
+    "footer": "Nilai utama: workflow editable, repeatable, dan agent-native.",
+    "sourceNote": "Original code-rendered comparison; no third-party footage",
+    "dialogue": [
+      {
+        "speaker": "HOST",
+        "text": "Tool video A I banyak. Mana yang benar-benar enak dipakai ulang?",
+        "start": 0.15,
+        "duration": 3.279,
+        "provider": "edge_neural",
+        "voice": "id-ID-ArdiNeural",
+        "rate": "+12%",
+        "pitch": "-2Hz",
+        "tempo_fit": 1.386
+      },
+      {
+        "speaker": "CO-HOST",
+        "text": "Cepat dibuat, susah direvisi. C tier.",
+        "start": 3.58,
+        "duration": 3.845,
+        "provider": "edge_neural",
+        "voice": "id-ID-GadisNeural",
+        "rate": "+12%",
+        "pitch": "+2Hz",
+        "tempo_fit": 1.3057
+      },
+      {
+        "speaker": "HOST",
+        "text": "Kontrol kuat, tapi banyak kerja ulang. B tier.",
+        "start": 7.58,
+        "duration": 3.842,
+        "provider": "edge_neural",
+        "voice": "id-ID-ArdiNeural",
+        "rate": "+12%",
+        "pitch": "-2Hz",
+        "tempo_fit": 1.1689
+      },
+      {
+        "speaker": "CO-HOST",
+        "text": "Konsisten dan mudah dilacak. Code video, A tier.",
+        "start": 11.58,
+        "duration": 3.846,
+        "provider": "edge_neural",
+        "voice": "id-ID-GadisNeural",
+        "rate": "+12%",
+        "pitch": "+2Hz",
+        "tempo_fit": 1.3679
+      },
+      {
+        "speaker": "HOST",
+        "text": "Agent-native dan tetap editable. Hypit, S tier.",
+        "start": 15.58,
+        "duration": 4.143,
+        "provider": "edge_neural",
+        "voice": "id-ID-ArdiNeural",
+        "rate": "+12%",
+        "pitch": "-2Hz",
+        "tempo_fit": 1.2
+      },
+      {
+        "speaker": "CO-HOST",
+        "text": "Hypit masuk S tier. Kamu setuju?",
+        "start": 19.88,
+        "duration": 3.961,
+        "provider": "edge_neural",
+        "voice": "id-ID-GadisNeural",
+        "rate": "+12%",
+        "pitch": "+2Hz",
+        "tempo_fit": 1.0734
+      }
+    ],
+    "items": [
+      {
+        "tier": "C",
+        "label": "ONE-OFF GENERATOR",
+        "detail": "Cepat, tetapi sulit direvisi secara presisi",
+        "accent": "#8C93A8",
+        "revealAt": 3.8
+      },
+      {
+        "tier": "B",
+        "label": "MANUAL TIMELINE",
+        "detail": "Kontrol kuat, pekerjaan berulang masih banyak",
+        "accent": "#64B5F6",
+        "revealAt": 7.8
+      },
+      {
+        "tier": "A",
+        "label": "CODE VIDEO",
+        "detail": "Animasi konsisten dan dapat di-version-control",
+        "accent": "#A78BFA",
+        "revealAt": 11.8
+      },
+      {
+        "tier": "S",
+        "label": "HYPIT",
+        "detail": "Agent-native · semantic timing · editable workflow",
+        "accent": "#B6FF4A",
+        "revealAt": 15.8
+      }
+    ],
+    "watermark": "@ryuundy · HYPIT"
+  }
+}

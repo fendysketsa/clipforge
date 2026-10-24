@@ -1,7 +1,12 @@
 {
   "schema": "clipforge-thumbnail-ideas-v1",
+  "schema_version": 1,
   "source_clip": "long_animate_hypit-s-tier.mp4",
-  "format": "9:16",
+  "format": "shorts_9_16",
+  "status": "READY_FOR_DESIGN",
+  "winner": "A",
+  "selection_reason": "Hook paling cepat terbaca pada ukuran feed dan seluruh klaim terlihat di video.",
+  "needs_frame_review": false,
   "truthfulness": {
     "grounded_in_clip_evidence": true,
     "invented_claims_allowed": false,
@@ -10,7 +15,7 @@
   "variants": [
     {
       "id": "A",
-      "angle": "human_tension",
+      "angle": "Ketegangan utama langsung terbaca dari hook yang benar-benar tampil di video.",
       "filename": "long_animate_hypit-s-tier_thumb.jpg",
       "eyebrow": "NO HYPE · JUST WORKFLOW",
       "headline": "TOOL VIDEO AI MANA YANG BENAR-BENAR BISA DIULANG?",
@@ -19,24 +24,26 @@
       "composition": "9:16 authored frame, one dominant information block, strong dark-to-lime contrast",
       "palette": "deep green-black, white, acid lime, restrained cyan",
       "image_prompt": "Use only long_animate_hypit-s-tier_thumb.jpg; preserve all text facts and ranking state. Enhance contrast only, with no new people, products, or claims.",
-      "negative_prompt": "no invented person, no fake code, no fabricated CVE, no copied branding, no tiny extra text",
+      "negative_prompt": "no distorted anatomy, no altered identity, no duplicate people, no unreadable text, no extra fingers, no fake logos, no watermarks, no clutter, no oversaturation, no plastic skin, no invented person, no fake code, no fabricated CVE, no copied branding, no unsupported object or event",
       "evidence": [
         "TOOL VIDEO AI MANA YANG BENAR-BENAR BISA DIULANG?",
         "HYPIT MASUK S TIER.",
         "Original code-rendered comparison; no third-party footage"
       ],
-      "score": 92,
+      "score": 94,
       "score_breakdown": {
-        "clarity": 20,
-        "curiosity": 19,
-        "emotion": 16,
-        "contrast": 19,
-        "legibility": 18
+        "feed_size_readability": 24,
+        "truthful_curiosity": 19,
+        "subject_hierarchy": 19,
+        "emotional_specificity": 13,
+        "cinematic_craft": 9,
+        "brand_distinction": 5,
+        "production_feasibility": 5
       }
     },
     {
       "id": "B",
-      "angle": "object_or_evidence",
+      "angle": "Bukti visual ranking menjadi pusat rasa penasaran tanpa menambah klaim baru.",
       "filename": "long_animate_hypit-s-tier_thumb_b.jpg",
       "eyebrow": "NO HYPE · JUST WORKFLOW",
       "headline": "AI VIDEO TOOL TIER LIST",
@@ -45,24 +52,26 @@
       "composition": "9:16 authored frame, one dominant information block, strong dark-to-lime contrast",
       "palette": "deep green-black, white, acid lime, restrained cyan",
       "image_prompt": "Use only long_animate_hypit-s-tier_thumb_b.jpg; preserve all text facts and ranking state. Enhance contrast only, with no new people, products, or claims.",
-      "negative_prompt": "no invented person, no fake code, no fabricated CVE, no copied branding, no tiny extra text",
+      "negative_prompt": "no distorted anatomy, no altered identity, no duplicate people, no unreadable text, no extra fingers, no fake logos, no watermarks, no clutter, no oversaturation, no plastic skin, no invented person, no fake code, no fabricated CVE, no copied branding, no unsupported object or event",
       "evidence": [
         "TOOL VIDEO AI MANA YANG BENAR-BENAR BISA DIULANG?",
         "HYPIT MASUK S TIER.",
         "Original code-rendered comparison; no third-party footage"
       ],
-      "score": 86,
+      "score": 88,
       "score_breakdown": {
-        "clarity": 18,
-        "curiosity": 17,
-        "emotion": 15,
-        "contrast": 18,
-        "legibility": 18
+        "feed_size_readability": 22,
+        "truthful_curiosity": 18,
+        "subject_hierarchy": 18,
+        "emotional_specificity": 12,
+        "cinematic_craft": 9,
+        "brand_distinction": 4,
+        "production_feasibility": 5
       }
     },
     {
       "id": "C",
-      "angle": "cinematic_story",
+      "angle": "Komposisi lebih lebar memperlihatkan taruhan cerita dan payoff final.",
       "filename": "long_animate_hypit-s-tier_thumb_c.jpg",
       "eyebrow": "NO HYPE · JUST WORKFLOW",
       "headline": "HYPIT MASUK S TIER.",
@@ -71,19 +80,21 @@
       "composition": "9:16 authored frame, one dominant information block, strong dark-to-lime contrast",
       "palette": "deep green-black, white, acid lime, restrained cyan",
       "image_prompt": "Use only long_animate_hypit-s-tier_thumb_c.jpg; preserve all text facts and ranking state. Enhance contrast only, with no new people, products, or claims.",
-      "negative_prompt": "no invented person, no fake code, no fabricated CVE, no copied branding, no tiny extra text",
+      "negative_prompt": "no distorted anatomy, no altered identity, no duplicate people, no unreadable text, no extra fingers, no fake logos, no watermarks, no clutter, no oversaturation, no plastic skin, no invented person, no fake code, no fabricated CVE, no copied branding, no unsupported object or event",
       "evidence": [
         "TOOL VIDEO AI MANA YANG BENAR-BENAR BISA DIULANG?",
         "HYPIT MASUK S TIER.",
         "Original code-rendered comparison; no third-party footage"
       ],
-      "score": 90,
+      "score": 93,
       "score_breakdown": {
-        "clarity": 19,
-        "curiosity": 18,
-        "emotion": 17,
-        "contrast": 19,
-        "legibility": 17
+        "feed_size_readability": 23,
+        "truthful_curiosity": 19,
+        "subject_hierarchy": 18,
+        "emotional_specificity": 14,
+        "cinematic_craft": 10,
+        "brand_distinction": 4,
+        "production_feasibility": 5
       }
     }
   ],
