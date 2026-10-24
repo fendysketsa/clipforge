@@ -3,22 +3,22 @@
   <import from="@hypit/script@1"/>
   <script id="ranking">
     <hook>
-      <HOST> Tool video A I banyak. Mana yang benar-benar enak dipakai ulang?
+      <HOST> Banyak alat video AI, tapi mana yang benar-benar enak dipakai berulang?
     </hook>
     <rank_1>
-      <COHOST> Cepat dibuat, susah direvisi. C tier.
+      <COHOST> Sekali jadi memang cepat, tapi susah direvisi: C tier.
     </rank_1>
     <rank_2>
-      <HOST> Kontrol kuat, tapi banyak kerja ulang. B tier.
+      <HOST> Timeline manual memberi kontrol kuat, tapi kerja ulangnya banyak: B tier.
     </rank_2>
     <rank_3>
-      <COHOST> Konsisten dan mudah dilacak. Code video, A tier.
+      <COHOST> Video berbasis kode konsisten dan mudah dilacak: A tier.
     </rank_3>
     <rank_4>
-      <HOST> Agent-native dan tetap editable. Hypit, S tier.
+      <HOST> Hypit menyatukan alur agen, timing semantik, dan proses edit: S tier.
     </rank_4>
     <payoff>
-      <COHOST> Hypit masuk S tier. Kamu setuju?
+      <COHOST> Jadi, Hypit masuk S tier, kalau menurut kamu?
     </payoff>
   </script>
 </svml>

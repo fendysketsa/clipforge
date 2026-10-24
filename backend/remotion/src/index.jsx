@@ -391,10 +391,6 @@ const RankingDialogue = ({dialogue = []}) => {
   const reveal = spring({fps, frame: localFrame, config: {damping: 20, stiffness: 170, mass: .68}});
   const exit = interpolate(localFrame, [Math.max(0, durationFrames - 7), durationFrames], [1, 0], clamp);
   const words = String(active.text || '').split(/\s+/).filter(Boolean);
-  const activeWord = Math.min(
-    Math.max(0, words.length - 1),
-    Math.floor((localFrame / durationFrames) * Math.max(1, words.length)),
-  );
   const host = active.speaker === 'HOST';
   const accent = host ? '#6FFFE5' : '#B6FF4A';
   return (
@@ -435,9 +431,9 @@ const RankingDialogue = ({dialogue = []}) => {
           <span key={`${word}-${index}`} style={{
             display: 'inline-block',
             marginRight: '.24em',
-            color: index === activeWord ? accent : '#F7FFFC',
-            textShadow: index === activeWord ? `0 0 20px ${accent}55` : 'none',
-            transform: index === activeWord ? 'translateY(-1px) scale(1.025)' : 'none',
+            color: /^(s|a|b|c|f)$/i.test(word.replace(/[^a-z]/gi, '')) ? accent : '#F7FFFC',
+            textShadow: 'none',
+            transform: 'none',
           }}>{word}</span>
         ))}
       </div>
@@ -461,7 +457,11 @@ const RankingVideo = ({
   const second = frame / fps;
   const intro = spring({fps, frame, config: {damping: 18, stiffness: 155, mass: .72}});
   const boardIn = spring({fps, frame: frame - Math.round(2.25 * fps), config: {damping: 20, stiffness: 125, mass: .78}});
-  const finalStart = Math.max(0, durationInFrames - Math.round(4.3 * fps));
+  const finalCue = dialogue.length ? dialogue[dialogue.length - 1] : null;
+  const finalStartSecond = finalCue
+    ? Number(finalCue.start || 0)
+    : durationInFrames / fps - 5.5;
+  const finalStart = Math.max(0, Math.round(finalStartSecond * fps));
   const finalReveal = spring({fps, frame: frame - finalStart, config: {damping: 17, stiffness: 145, mass: .72}});
   const tiers = ['S', 'A', 'B', 'C', 'D', 'F'];
   const rowHeight = 152;

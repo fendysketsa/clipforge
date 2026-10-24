@@ -85,37 +85,37 @@ def build_hypit_quick_plan(prompt: str) -> HypitQuickPlan:
             hook="DUA CELAH RCE KRITIS. PHP KAMU ADA DI TIER MANA?",
             payoff="PATCH SEKARANG. LALU RESTART WORKER PHP.",
             footer="Cek paket vendor/distro—nomor backport bisa berbeda.",
-            duration=26.0,
-            hook_narration="Ada dua celah R C E kritis. PHP kamu tier berapa?",
-            payoff_narration="Intinya: patch sekarang, lalu restart worker PHP.",
+            duration=32.0,
+            hook_narration="Ada dua celah kritis di PHP. Versimu masuk tier mana?",
+            payoff_narration="Jadi, pasang pembaruan lalu mulai ulang worker PHP.",
             items=(
                 RankingItem(
                     tier="F",
                     label="PHP 8.1 & LEBIH LAMA",
                     detail="EOL upstream · migrasi atau gunakan backport/LTS vendor",
                     accent="#FF4D6D",
-                    narration="Versi lama sudah E O L. F tier.",
+                    narration="Versi lama sudah tidak didukung: F tier.",
                 ),
                 RankingItem(
                     tier="B",
                     label="BELUM VERIFIKASI",
                     detail="Jangan percaya banner panel—cek php -v dan paket aktif",
                     accent="#FFB84D",
-                    narration="Belum cek versi aktif? B tier dulu.",
+                    narration="Belum cek versi yang aktif? Untuk sekarang, B tier.",
                 ),
                 RankingItem(
                     tier="A",
                     label="VENDOR BACKPORT",
                     detail="Aman bila vendor mengonfirmasi dua CVE sudah ditambal",
                     accent="#65D6A6",
-                    narration="Backport vendor terkonfirmasi? A tier.",
+                    narration="Backport keamanan dari vendor sudah terkonfirmasi? A tier.",
                 ),
                 RankingItem(
                     tier="S",
                     label="8.5.12 · 8.4.27 · 8.3.36 · 8.2.35",
                     detail="Rilis upstream dengan perbaikan CVE-2026-109618/109619",
                     accent="#B6FF4A",
-                    narration="Sudah menutup dua C V E? S tier.",
+                    narration="Versi terbaru sudah menutup dua celahnya: S tier.",
                 ),
             ),
             source_note="PHP security advisory snapshot, 24 October 2026",
@@ -134,37 +134,37 @@ def build_hypit_quick_plan(prompt: str) -> HypitQuickPlan:
         hook=f"TOOL VIDEO AI MANA YANG BENAR-BENAR BISA DIULANG?",
         payoff=f"{subject_upper} MASUK S TIER.",
         footer="Nilai utama: workflow editable, repeatable, dan agent-native.",
-        duration=24.0,
-        hook_narration="Tool video A I banyak. Mana yang benar-benar enak dipakai ulang?",
-        payoff_narration=f"{subject} masuk S tier. Kamu setuju?",
+        duration=30.0,
+        hook_narration="Banyak alat video AI, tapi mana yang benar-benar enak dipakai berulang?",
+        payoff_narration=f"Jadi, {subject} masuk S tier, kalau menurut kamu?",
         items=(
             RankingItem(
                 tier="C",
                 label="ONE-OFF GENERATOR",
                 detail="Cepat, tetapi sulit direvisi secara presisi",
                 accent="#8C93A8",
-                narration="Cepat dibuat, susah direvisi. C tier.",
+                narration="Sekali jadi memang cepat, tapi susah direvisi: C tier.",
             ),
             RankingItem(
                 tier="B",
                 label="MANUAL TIMELINE",
                 detail="Kontrol kuat, pekerjaan berulang masih banyak",
                 accent="#64B5F6",
-                narration="Kontrol kuat, tapi banyak kerja ulang. B tier.",
+                narration="Timeline manual memberi kontrol kuat, tapi kerja ulangnya banyak: B tier.",
             ),
             RankingItem(
                 tier="A",
                 label="CODE VIDEO",
                 detail="Animasi konsisten dan dapat di-version-control",
                 accent="#A78BFA",
-                narration="Konsisten dan mudah dilacak. Code video, A tier.",
+                narration="Video berbasis kode konsisten dan mudah dilacak: A tier.",
             ),
             RankingItem(
                 tier="S",
                 label=subject_upper,
                 detail="Agent-native · semantic timing · editable workflow",
                 accent="#B6FF4A",
-                narration=f"Agent-native dan tetap editable. {subject}, S tier.",
+                narration=f"{subject} menyatukan alur agen, timing semantik, dan proses edit: S tier.",
             ),
         ),
         source_note="Original code-rendered comparison; no third-party footage",
@@ -303,9 +303,9 @@ def _write_project_notes(work_dir: Path, prompt: str, plan: HypitQuickPlan) -> N
         "changes the board state, moves the shared camera slightly, and remains as evidence for the payoff.\n",
         encoding="utf-8",
     )
-    reveal_gap = 4.0 if len(plan.items) <= 4 else 3.2
+    reveal_times = _ranking_reveal_times(plan)
     reveal_lines = "\n".join(
-        f"- {3.8 + index * reveal_gap:.1f}s · {item.tier} tier enters, settles, and updates the progress rail."
+        f"- {reveal_times[index]:.1f}s · {item.tier} tier enters, settles, and updates the progress rail."
         for index, item in enumerate(plan.items)
     )
     (work_dir / "TIMELINE.md").write_text(
@@ -315,7 +315,7 @@ def _write_project_notes(work_dir: Path, prompt: str, plan: HypitQuickPlan) -> N
         "attention to the ranking board.\n\n"
         "## 2.8s onward · Persistent ranking state\n\n"
         f"{reveal_lines}\n\n"
-        "## Final 4.3s · Verdict\n\n"
+        "## Final 5.5s · Verdict\n\n"
         "The board stays spatially present beneath a soft blur while a lime verdict card expands from "
         "the same center of attention. The co-host lands the verdict, a short flash marks impact, then "
         "the message holds for reading.\n",
@@ -388,20 +388,28 @@ def _audio_duration(path: Path) -> float:
     return duration
 
 
+def _ranking_reveal_times(plan: HypitQuickPlan) -> list[float]:
+    """Leave enough real speaking time between reveals without tempo-crushing TTS."""
+    reveal_start = 5.1
+    final_start = max(reveal_start + 4.0, plan.duration - 5.5)
+    reveal_gap = (final_start - reveal_start) / max(1, len(plan.items))
+    return [reveal_start + index * reveal_gap for index in range(len(plan.items))]
+
+
 def _dialogue_cues(plan: HypitQuickPlan, reveal_times: list[float]) -> list[DialogueCue]:
-    final_start = max(0.0, plan.duration - 4.3)
-    starts = [0.15, *(max(0.2, value - 0.22) for value in reveal_times), final_start + 0.18]
+    final_start = max(0.0, plan.duration - 5.5)
+    starts = [0.25, *(max(0.25, value - 0.12) for value in reveal_times), final_start]
     texts = [plan.hook_narration, *(item.narration for item in plan.items), plan.payoff_narration]
     speakers = ["HOST", *("CO-HOST" if index % 2 == 0 else "HOST" for index in range(len(plan.items))), "CO-HOST"]
     cues: list[DialogueCue] = []
     for index, (speaker, text, start) in enumerate(zip(speakers, texts, starts, strict=True)):
-        next_start = starts[index + 1] if index + 1 < len(starts) else plan.duration
+        next_start = starts[index + 1] if index + 1 < len(starts) else plan.duration - 0.25
         cues.append(
             DialogueCue(
                 speaker=speaker,
                 text=text,
                 start=start,
-                end=max(start + 0.8, next_start - 0.14),
+                end=max(start + 0.8, next_start - 0.22),
             )
         )
     return cues
@@ -420,13 +428,13 @@ def _synthesize_dialogue_line(cue: DialogueCue, index: int, audio_dir: Path) -> 
         "HYPIT_QUICK_TTS_HOST_VOICE" if cue.speaker == "HOST" else "HYPIT_QUICK_TTS_COHOST_VOICE",
         "id-ID-ArdiNeural" if cue.speaker == "HOST" else "id-ID-GadisNeural",
     )
-    rate = os.environ.get("HYPIT_QUICK_TTS_RATE", "+12%").strip()
+    rate = os.environ.get("HYPIT_QUICK_TTS_RATE", "+0%").strip()
     pitch = os.environ.get(
         "HYPIT_QUICK_TTS_HOST_PITCH" if cue.speaker == "HOST" else "HYPIT_QUICK_TTS_COHOST_PITCH",
-        "-2Hz" if cue.speaker == "HOST" else "+2Hz",
+        "+0Hz",
     ).strip()
     if not re.fullmatch(r"[+-]\d{1,2}%", rate):
-        rate = "+12%"
+        rate = "+0%"
     if not re.fullmatch(r"[+-]\d{1,3}Hz", pitch):
         pitch = "+0Hz"
     neural_path = audio_dir / f"dialogue_{index:02}.mp3"
@@ -529,12 +537,43 @@ def _prepare_dialogue_audio(
     rendered_cues: list[dict[str, object]] = []
     for index, cue in enumerate(cues, start=1):
         source_path, voice_metadata = _synthesize_dialogue_line(cue, index, audio_dir)
-        source_duration = _audio_duration(source_path)
+        trimmed_path = audio_dir / f"dialogue_{index:02}.trimmed.wav"
+        trimmed_path.unlink(missing_ok=True)
+        trim_result = subprocess.run(
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(source_path),
+                "-filter:a",
+                (
+                    "silenceremove=start_periods=1:start_duration=0.03:start_threshold=-45dB,"
+                    "areverse,"
+                    "silenceremove=start_periods=1:start_duration=0.10:start_threshold=-45dB,"
+                    "areverse,aformat=sample_rates=48000:channel_layouts=stereo"
+                ),
+                "-c:a",
+                "pcm_s16le",
+                str(trimmed_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=90,
+            check=False,
+        )
+        if trim_result.returncode != 0 or not trimmed_path.is_file():
+            detail = (trim_result.stderr or trim_result.stdout or "trim TTS gagal").strip()
+            raise RemotionRenderError(f"Gagal memotong jeda TTS Hypit: {detail[-600:]}")
+        source_duration = _audio_duration(trimmed_path)
         available = max(0.8, cue.end - cue.start)
         tempo = max(1.0, source_duration / available)
-        if tempo > 1.42:
+        if tempo > 1.08:
             raise RemotionRenderError(
-                f"Dialog {index} terlalu panjang untuk beat visual ({source_duration:.2f}s > {available:.2f}s)."
+                f"Dialog {index} terlalu panjang untuk delivery natural "
+                f"({source_duration:.2f}s > {available:.2f}s)."
             )
         fitted_path = audio_dir / f"dialogue_{index:02}.fitted.wav"
         fitted_path.unlink(missing_ok=True)
@@ -547,12 +586,12 @@ def _prepare_dialogue_audio(
                 "error",
                 "-y",
                 "-i",
-                str(source_path),
+                str(trimmed_path),
                 "-filter:a",
                 (
                     "aformat=sample_rates=48000:channel_layouts=stereo,"
                     f"atempo={tempo:.5f},afade=t=in:st=0:d=0.04,"
-                    f"afade=t=out:st={max(0.08, fitted_duration - 0.12):.3f}:d=0.10"
+                    f"afade=t=out:st={max(0.08, fitted_duration - 0.08):.3f}:d=0.06"
                 ),
                 "-t",
                 f"{fitted_duration:.3f}",
@@ -646,9 +685,12 @@ def _probe_validation_error(
         return f"codec video bukan H.264 ({video.get('codec_name') or 'unknown'})"
     if (video.get("width"), video.get("height")) != (1080, 1920):
         return f"resolusi bukan 1080x1920 ({video.get('width')}x{video.get('height')})"
-    if require_audio and not any(
-        isinstance(stream, dict) and stream.get("codec_type") == "audio" for stream in streams
-    ):
+    audio_streams = [
+        stream
+        for stream in streams
+        if isinstance(stream, dict) and stream.get("codec_type") == "audio"
+    ]
+    if require_audio and not audio_streams:
         return "stream audio tidak ditemukan"
     format_payload = payload.get("format")
     raw_duration = format_payload.get("duration") if isinstance(format_payload, dict) else None
@@ -658,6 +700,21 @@ def _probe_validation_error(
         return "durasi video tidak dapat dibaca"
     if abs(actual_duration - duration) > 0.75:
         return f"durasi {actual_duration:.3f}s tidak sesuai target {duration:.3f}s"
+    if require_audio:
+        audio_durations: list[float] = []
+        for stream in audio_streams:
+            try:
+                audio_durations.append(float(str(stream.get("duration"))))
+            except (TypeError, ValueError):
+                continue
+        if not audio_durations:
+            return "durasi stream audio tidak dapat dibaca"
+        longest_audio = max(audio_durations)
+        if longest_audio < duration - 0.25:
+            return (
+                f"stream audio berhenti di {longest_audio:.3f}s sebelum target "
+                f"{duration:.3f}s"
+            )
     return None
 
 
@@ -678,7 +735,7 @@ def _video_validation_error(
             "-v",
             "error",
             "-show_entries",
-            "stream=codec_type,codec_name,width,height:format=duration",
+            "stream=codec_type,codec_name,width,height,duration:format=duration",
             "-of",
             "json",
             str(path),
@@ -879,9 +936,10 @@ def _mux_audio(
             "[4:a]aformat=sample_rates=48000:channel_layouts=stereo,highpass=f=82,"
             "lowpass=f=13500,acompressor=threshold=0.10:ratio=3:attack=8:release=90:makeup=1.35,"
             "loudnorm=I=-16:TP=-1.5:LRA=7,asplit=2[voice_sc][voice_mix];"
-            "[music][voice_sc]sidechaincompress=threshold=0.025:ratio=9:attack=12:release=260[ducked_music];"
-            "[ducked_music][voice_mix][click][impact]amix=inputs=4:duration=first:normalize=0,"
-            "alimiter=limit=0.90[aout]"
+            f"[music][voice_sc]sidechaincompress=threshold=0.025:ratio=9:attack=12:release=260,"
+            f"apad,atrim=0:{duration:.3f}[ducked_music];"
+            "[ducked_music][voice_mix][click][impact]amix=inputs=4:duration=longest:normalize=0,"
+            f"alimiter=limit=0.90,apad,atrim=0:{duration:.3f}[aout]"
         )
     else:
         mix_filter = (
@@ -890,8 +948,8 @@ def _mux_audio(
             f"afade=t=in:st=0:d=0.35,afade=t=out:st={max(0.0, duration - 0.8):.3f}:d=0.8[music];"
             f"[2:a]volume='0.11*({pulses})':eval=frame,afade=t=out:st={max(0.0, duration - .3):.3f}:d=0.3[click];"
             f"[3:a]volume='0.18*({pulses})':eval=frame,lowpass=f=220[impact];"
-            "[music][click][impact]amix=inputs=3:duration=first:normalize=0,"
-            "alimiter=limit=0.90[aout]"
+            "[music][click][impact]amix=inputs=3:duration=longest:normalize=0,"
+            f"alimiter=limit=0.90,apad,atrim=0:{duration:.3f}[aout]"
         )
     command.extend(
         [
@@ -907,6 +965,8 @@ def _mux_audio(
             "aac",
             "-b:a",
             "160k",
+            "-ar",
+            "48000",
             "-t",
             f"{duration:.3f}",
             "-movflags",
@@ -1218,8 +1278,7 @@ def finalize_existing_hypit_quick_render(prompt: str, output_root: Path) -> tupl
     output_path = work_dir / "clips" / f"long_animate_{plan.slug}.mp4"
     if not silent_path.is_file() and not output_path.is_file():
         raise RemotionRenderError("Tidak ada render Hypit yang dapat difinalkan.")
-    reveal_gap = 4.0 if len(plan.items) <= 4 else 3.2
-    reveal_times = [3.8 + index * reveal_gap for index in range(len(plan.items))]
+    reveal_times = _ranking_reveal_times(plan)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     dialogue_track, _dialogue_manifest, voice_metadata = _prepare_dialogue_audio(
         plan, work_dir, reveal_times
@@ -1234,7 +1293,7 @@ def finalize_existing_hypit_quick_render(prompt: str, output_root: Path) -> tupl
             silent_path,
             pending_output,
             plan.duration,
-            [*reveal_times, max(0.0, plan.duration - 4.3)],
+            [*reveal_times, max(0.0, plan.duration - 5.5)],
             dialogue_track,
         )
         validation_error = _video_validation_error(
@@ -1251,7 +1310,7 @@ def finalize_existing_hypit_quick_render(prompt: str, output_root: Path) -> tupl
             output_path,
             refreshed_path,
             plan.duration,
-            [*reveal_times, max(0.0, plan.duration - 4.3)],
+            [*reveal_times, max(0.0, plan.duration - 5.5)],
             dialogue_track,
         )
         validation_error = _video_validation_error(
@@ -1293,9 +1352,7 @@ def render_hypit_quick(
 
     progress(12, "selection", "Menerjemahkan prompt /hypit menjadi treatment ranking")
     hypit_path = _write_hypit_source(plan, work_dir / "ranking.hypit.svml")
-    reveal_start = 3.8
-    reveal_gap = 4.0 if len(plan.items) <= 4 else 3.2
-    reveal_times = [reveal_start + index * reveal_gap for index in range(len(plan.items))]
+    reveal_times = _ranking_reveal_times(plan)
     progress(22, "transcript", "Membuat percakapan TTS host dan co-host")
     dialogue_track, dialogue_manifest, voice_metadata = _prepare_dialogue_audio(
         plan, work_dir, reveal_times
@@ -1380,7 +1437,7 @@ def render_hypit_quick(
             silent_path,
             pending_output,
             plan.duration,
-            [*reveal_times, max(0.0, plan.duration - 4.3)],
+            [*reveal_times, max(0.0, plan.duration - 5.5)],
             dialogue_track,
         )
         validation_error = _video_validation_error(

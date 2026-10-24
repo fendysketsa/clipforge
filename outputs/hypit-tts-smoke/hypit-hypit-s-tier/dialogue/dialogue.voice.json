@@ -7,69 +7,69 @@
   "cues": [
     {
       "speaker": "HOST",
-      "text": "Tool video A I banyak. Mana yang benar-benar enak dipakai ulang?",
-      "start": 0.15,
-      "duration": 3.279,
+      "text": "Banyak alat video AI, tapi mana yang benar-benar enak dipakai berulang?",
+      "start": 0.25,
+      "duration": 3.415,
       "provider": "edge_neural",
       "voice": "id-ID-ArdiNeural",
-      "rate": "+12%",
-      "pitch": "-2Hz",
-      "tempo_fit": 1.386
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
     },
     {
       "speaker": "CO-HOST",
-      "text": "Cepat dibuat, susah direvisi. C tier.",
-      "start": 3.58,
-      "duration": 3.845,
+      "text": "Sekali jadi memang cepat, tapi susah direvisi: C tier.",
+      "start": 4.98,
+      "duration": 4.582,
       "provider": "edge_neural",
       "voice": "id-ID-GadisNeural",
-      "rate": "+12%",
-      "pitch": "+2Hz",
-      "tempo_fit": 1.3057
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
     },
     {
       "speaker": "HOST",
-      "text": "Kontrol kuat, tapi banyak kerja ulang. B tier.",
-      "start": 7.58,
-      "duration": 3.842,
+      "text": "Timeline manual memberi kontrol kuat, tapi kerja ulangnya banyak: B tier.",
+      "start": 9.83,
+      "duration": 4.08,
       "provider": "edge_neural",
       "voice": "id-ID-ArdiNeural",
-      "rate": "+12%",
-      "pitch": "-2Hz",
-      "tempo_fit": 1.1689
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
     },
     {
       "speaker": "CO-HOST",
-      "text": "Konsisten dan mudah dilacak. Code video, A tier.",
-      "start": 11.58,
-      "duration": 3.846,
+      "text": "Video berbasis kode konsisten dan mudah dilacak: A tier.",
+      "start": 14.68,
+      "duration": 4.082,
       "provider": "edge_neural",
       "voice": "id-ID-GadisNeural",
-      "rate": "+12%",
-      "pitch": "+2Hz",
-      "tempo_fit": 1.3679
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
     },
     {
       "speaker": "HOST",
-      "text": "Agent-native dan tetap editable. Hypit, S tier.",
-      "start": 15.58,
-      "duration": 4.143,
+      "text": "Hypit menyatukan alur agen, timing semantik, dan proses edit: S tier.",
+      "start": 19.53,
+      "duration": 4.654,
       "provider": "edge_neural",
       "voice": "id-ID-ArdiNeural",
-      "rate": "+12%",
-      "pitch": "-2Hz",
-      "tempo_fit": 1.2
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
     },
     {
       "speaker": "CO-HOST",
-      "text": "Hypit masuk S tier. Kamu setuju?",
-      "start": 19.88,
-      "duration": 3.961,
+      "text": "Jadi, Hypit masuk S tier, kalau menurut kamu?",
+      "start": 24.5,
+      "duration": 3.822,
       "provider": "edge_neural",
       "voice": "id-ID-GadisNeural",
-      "rate": "+12%",
-      "pitch": "+2Hz",
-      "tempo_fit": 1.0734
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
     }
   ]
 }
