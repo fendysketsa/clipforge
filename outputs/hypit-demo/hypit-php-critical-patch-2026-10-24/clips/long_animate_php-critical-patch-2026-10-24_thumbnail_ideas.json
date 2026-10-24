@@ -1,0 +1,91 @@
+{
+  "schema": "clipforge-thumbnail-ideas-v1",
+  "source_clip": "long_animate_php-critical-patch-2026-10-24.mp4",
+  "format": "9:16",
+  "truthfulness": {
+    "grounded_in_clip_evidence": true,
+    "invented_claims_allowed": false,
+    "reference_design_copying_allowed": false
+  },
+  "variants": [
+    {
+      "id": "A",
+      "angle": "human_tension",
+      "filename": "long_animate_php-critical-patch-2026-10-24_thumb.jpg",
+      "eyebrow": "SECURITY ALERT · 24 OKT 2026",
+      "headline": "DUA CELAH RCE KRITIS. PHP KAMU ADA DI TIER MANA?",
+      "support": "Cek paket vendor/distro—nomor backport bisa berbeda.",
+      "keyframe_direction": "Use this exact authored frame; retain the central safe area and the visible factual label.",
+      "composition": "9:16 authored frame, one dominant information block, strong dark-to-lime contrast",
+      "palette": "deep green-black, white, acid lime, restrained cyan",
+      "image_prompt": "Use only long_animate_php-critical-patch-2026-10-24_thumb.jpg; preserve all text facts and ranking state. Enhance contrast only, with no new people, products, or claims.",
+      "negative_prompt": "no invented person, no fake code, no fabricated CVE, no copied branding, no tiny extra text",
+      "evidence": [
+        "DUA CELAH RCE KRITIS. PHP KAMU ADA DI TIER MANA?",
+        "PATCH SEKARANG. LALU RESTART WORKER PHP.",
+        "PHP security advisory snapshot, 24 October 2026"
+      ],
+      "score": 92,
+      "score_breakdown": {
+        "clarity": 20,
+        "curiosity": 19,
+        "emotion": 16,
+        "contrast": 19,
+        "legibility": 18
+      }
+    },
+    {
+      "id": "B",
+      "angle": "object_or_evidence",
+      "filename": "long_animate_php-critical-patch-2026-10-24_thumb_b.jpg",
+      "eyebrow": "SECURITY ALERT · 24 OKT 2026",
+      "headline": "PHP PATCH RANKING",
+      "support": "Cek paket vendor/distro—nomor backport bisa berbeda.",
+      "keyframe_direction": "Use this exact authored frame; retain the central safe area and the visible factual label.",
+      "composition": "9:16 authored frame, one dominant information block, strong dark-to-lime contrast",
+      "palette": "deep green-black, white, acid lime, restrained cyan",
+      "image_prompt": "Use only long_animate_php-critical-patch-2026-10-24_thumb_b.jpg; preserve all text facts and ranking state. Enhance contrast only, with no new people, products, or claims.",
+      "negative_prompt": "no invented person, no fake code, no fabricated CVE, no copied branding, no tiny extra text",
+      "evidence": [
+        "DUA CELAH RCE KRITIS. PHP KAMU ADA DI TIER MANA?",
+        "PATCH SEKARANG. LALU RESTART WORKER PHP.",
+        "PHP security advisory snapshot, 24 October 2026"
+      ],
+      "score": 86,
+      "score_breakdown": {
+        "clarity": 18,
+        "curiosity": 17,
+        "emotion": 15,
+        "contrast": 18,
+        "legibility": 18
+      }
+    },
+    {
+      "id": "C",
+      "angle": "cinematic_story",
+      "filename": "long_animate_php-critical-patch-2026-10-24_thumb_c.jpg",
+      "eyebrow": "SECURITY ALERT · 24 OKT 2026",
+      "headline": "PATCH SEKARANG. LALU RESTART WORKER PHP.",
+      "support": "Cek paket vendor/distro—nomor backport bisa berbeda.",
+      "keyframe_direction": "Use this exact authored frame; retain the central safe area and the visible factual label.",
+      "composition": "9:16 authored frame, one dominant information block, strong dark-to-lime contrast",
+      "palette": "deep green-black, white, acid lime, restrained cyan",
+      "image_prompt": "Use only long_animate_php-critical-patch-2026-10-24_thumb_c.jpg; preserve all text facts and ranking state. Enhance contrast only, with no new people, products, or claims.",
+      "negative_prompt": "no invented person, no fake code, no fabricated CVE, no copied branding, no tiny extra text",
+      "evidence": [
+        "DUA CELAH RCE KRITIS. PHP KAMU ADA DI TIER MANA?",
+        "PATCH SEKARANG. LALU RESTART WORKER PHP.",
+        "PHP security advisory snapshot, 24 October 2026"
+      ],
+      "score": 90,
+      "score_breakdown": {
+        "clarity": 19,
+        "curiosity": 18,
+        "emotion": 17,
+        "contrast": 19,
+        "legibility": 17
+      }
+    }
+  ],
+  "recommended_variant": "A"
+}

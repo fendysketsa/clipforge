@@ -47,6 +47,7 @@ from source_rights import (
 from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
 from telemetry import ProcessTelemetrySampler
 from whisper_cache import start_whisper_model_cache_maintenance
+from hypit_quick import is_hypit_quick_prompt, quick_preview_payload
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -423,7 +424,9 @@ class ClipJobRequest(BaseModel):
     max_duration: float = Field(default=SHORT_DEFAULT_MAX_SECONDS, ge=10, le=600)
     clip_mode: Literal["short", "highlight_5m", "long_animate", "original_rebuild"] = "short"
     # Keep 240s readable for persisted legacy jobs; the current UI offers 300-600s.
-    compilation_target_seconds: float = Field(default=300, ge=240, le=600)
+    # Hypit Quick uses 20–45 second code-rendered Shorts. Ordinary story jobs
+    # remain constrained to 5–10 minutes by the UI and endpoint validation.
+    compilation_target_seconds: float = Field(default=300, ge=20, le=600)
     # Internal long-form jobs may pin the exact source moments used by their
     # companion Shorts. This keeps a paired Long Story grounded in its Short.
     compilation_anchor_ranges: list[tuple[float, float]] = Field(default_factory=list)
@@ -516,8 +519,8 @@ class ClipJobRequest(BaseModel):
 
 
 class StoryboardPreviewRequest(BaseModel):
-    story_text: str = Field(min_length=60, max_length=30000)
-    target_duration_seconds: float = Field(default=300, ge=240, le=600)
+    story_text: str = Field(min_length=1, max_length=30000)
+    target_duration_seconds: float = Field(default=300, ge=20, le=600)
     ai_enabled: bool = True
     ai_base_url: str = DEFAULT_AI_BASE_URL
     ai_model: str = DEFAULT_AI_MODEL
@@ -1431,33 +1434,110 @@ CRON_HUMOR_UNSAFE_SIGNALS = {
 # catalogue prevents a quiet chart category from collapsing cron discovery back
 # into one narrow topic.
 CRON_TREND_SEARCH_QUERIES = [
-    "podcast horor indonesia kisah nyata terbaru",
-    "kisah kehidupan nyata penuh pelajaran indonesia",
-    "ngaji cerdas menjawab masalah kehidupan terbaru",
-    "dialog agama dan budaya indonesia terbaru",
-    "wawancara tokoh viral indonesia terbaru",
-    "sinopsis drama korea dan pelajaran hidup pembahasan",
-    "penampakan hantu dan cerita seram indonesia pembahasan",
+    "podcast kisah cinta pengkhianatan indonesia terbaru",
+    "cerita sakit hati bangkit kembali kisah nyata indonesia",
+    "konflik rumah tangga dan keluarga penuh pelajaran indonesia",
+    "kisah persahabatan dikhianati plot twist indonesia",
+    "cerita kehidupan nyata penuh pelajaran indonesia",
+    "podcast horor misteri indonesia kisah nyata terbaru",
+    "momen lucu di tengah masalah kehidupan indonesia",
+    "kisah hijrah dan ujian hidup indonesia terbaru",
+    "wawancara tokoh viral indonesia cerita kehidupan",
     "cerita inspiratif perubahan hidup indonesia",
-    "kesaksian iman dan perjalanan rohani indonesia",
-    "japanese horror podcast bahasa indonesia",
-    "podcast figur publik indonesia cerita kehidupan",
-    "toleransi dan kehidupan lintas agama indonesia",
-    "misteri nusantara pengalaman nyata podcast",
-    "ulasan cerita asia bermakna bahasa indonesia",
 ]
 
 CRON_TREND_TOPIC_SIGNALS = {
-    "agama", "budaya", "cerita", "dialog", "drama korea", "hantu", "horor",
-    "inspiratif", "japanese horror", "kehidupan", "kesaksian", "kisah nyata",
-    "lintas agama", "misteri", "ngaji", "pelajaran hidup", "penampakan",
-    "podcast", "rohani", "seram", "sinopsis", "tokoh", "toleransi",
-    "wawancara",
+    "agama", "bangkit", "berpisah", "cerita", "cinta", "dialog", "dikhianati",
+    "drama", "gagal nikah", "hantu", "hijrah", "horor", "humor", "inspiratif",
+    "keluarga", "kehidupan", "kisah nyata", "komedi", "lucu", "menyesal",
+    "misteri", "pasangan", "pelajaran hidup", "pengkhianatan", "persahabatan",
+    "podcast", "rumah tangga", "sakit hati", "seram", "tokoh", "wawancara",
 }
 CRON_TREND_UNSAFE_SIGNALS = {
     "18+", "adegan berdarah", "bunuh diri", "darah nyata", "eksploitasi",
     "gore", "judi online", "kekerasan nyata", "pelecehan", "pornografi",
     "seksual", "telanjang",
+}
+
+# RYUUNDY is a story-first channel.  Every scheduler run owns exactly one
+# profile, preventing a live trend from dragging discovery into unrelated
+# news, sport, politics, or generic entertainment.  Humour is an interlude,
+# while faith remains available only when that is what the source discusses.
+RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
+    "love_betrayal": {
+        "label": "Cinta, Pengkhianatan & Sakit Hati",
+        "queries": [
+            "podcast kisah cinta pengkhianatan indonesia terbaru",
+            "cerita pasangan selingkuh sakit hati kisah nyata",
+            "gagal nikah dan bangkit lagi cerita indonesia",
+        ],
+    },
+    "family_conflict": {
+        "label": "Konflik Keluarga & Rumah Tangga",
+        "queries": [
+            "konflik keluarga penuh pelajaran kisah nyata indonesia",
+            "cerita rumah tangga diuji dan bertahan indonesia",
+            "hubungan orang tua anak kisah mengharukan indonesia",
+        ],
+    },
+    "friendship_twist": {
+        "label": "Persahabatan, Kepercayaan & Plot Twist",
+        "queries": [
+            "kisah persahabatan dikhianati plot twist indonesia",
+            "teman berubah jadi musuh cerita nyata indonesia",
+            "kepercayaan rusak dan penyesalan podcast indonesia",
+        ],
+    },
+    "life_comeback": {
+        "label": "Jatuh, Bangkit & Pelajaran Hidup",
+        "queries": [
+            "cerita jatuh bangun kehidupan nyata indonesia terbaru",
+            "kisah bangkit setelah kehilangan indonesia",
+            "perubahan hidup tak terduga podcast indonesia",
+        ],
+    },
+    "mystery_story": {
+        "label": "Misteri & Kisah Tak Terduga",
+        "queries": [
+            "podcast misteri kisah nyata indonesia terbaru",
+            "cerita horor indonesia penuh plot twist",
+            "misteri nusantara pengalaman nyata podcast",
+        ],
+    },
+    "humor_interlude": {
+        "label": "Jeda Humor Kehidupan",
+        "queries": CRON_HUMOR_SEARCH_QUERIES,
+    },
+    "faith_life": {
+        "label": "Iman, Hijrah & Ujian Hidup",
+        "queries": [
+            "kisah hijrah dan ujian hidup indonesia terbaru",
+            "cerita hidayah setelah masalah kehidupan indonesia",
+            "podcast iman dan perjalanan hidup indonesia",
+        ],
+    },
+}
+
+RYUUNDY_CRON_THEME_SIGNALS: dict[str, set[str]] = {
+    "love_betrayal": {
+        "cinta", "pasangan", "selingkuh", "pengkhianatan", "dikhianati",
+        "sakit hati", "gagal nikah", "berpisah", "jodoh",
+    },
+    "family_conflict": {
+        "keluarga", "rumah tangga", "orang tua", "ayah", "ibu", "anak",
+        "suami", "istri",
+    },
+    "friendship_twist": {
+        "teman", "sahabat", "persahabatan", "kepercayaan", "plot twist",
+        "dikhianati", "menyesal",
+    },
+    "life_comeback": {
+        "bangkit", "kehilangan", "perubahan hidup", "pelajaran hidup",
+        "jatuh bangun", "inspiratif", "kisah nyata",
+    },
+    "mystery_story": {"misteri", "horor", "hantu", "seram", "gaib", "kisah nyata"},
+    "humor_interlude": CRON_HUMOR_SIGNALS,
+    "faith_life": {"islam", "iman", "hijrah", "hidayah", "quran", "kajian", "dakwah"},
 }
 
 IslamicContentNiche = Literal[
@@ -2009,6 +2089,7 @@ def normalize_youtube_video_url(value: str) -> str | None:
 class AutoViralRequest(BaseModel):
     niche: IslamicContentNiche = "auto"
     theme_focus: str = Field(default="", max_length=240)
+    cron_theme_key: str = Field(default="", max_length=64)
     # Honoured only when the owning run has trigger="schedule".  Keeping the
     # marker durable lets an interrupted cron run resume with the same gate.
     cron_trend_lane: bool = False
@@ -2099,6 +2180,9 @@ class AutoViralRequest(BaseModel):
             if self.min_duration >= self.max_duration:
                 self.min_duration = max(5.0, self.max_duration - 10.0)
         self.theme_focus = re.sub(r"\s+", " ", self.theme_focus).strip()
+        self.cron_theme_key = re.sub(
+            r"[^a-z0-9_]+", "", self.cron_theme_key.casefold()
+        )
         if self.cron_trend_lane:
             # Preserve the scheduler-owned cross-topic order across nested
             # Pydantic validation and durable run reloads. Runtime ownership is
@@ -3111,6 +3195,8 @@ def clip_artifact_paths(clip: ClipFile) -> set[Path]:
     paths.add(clip_path.with_name(f"{clip_path.stem}_thumb_b.jpg"))
     paths.add(clip_path.with_name(f"{clip_path.stem}_thumb_c.jpg"))
     paths.add(clip_path.with_name(f"{clip_path.stem}_thumb.txt"))
+    paths.add(clip_path.with_name(f"{clip_path.stem}_thumbnail_ideas.json"))
+    paths.add(clip_path.with_name(f"{clip_path.stem}_ai_qc.json"))
     paths.add(clip_path.with_name(f"{clip_path.stem}_caption.txt"))
     paths.add(clip_path.with_name(f"{clip_path.stem}_tiktok_caption.txt"))
     paths.add(clip_path.with_suffix(".srt"))
@@ -3791,6 +3877,26 @@ def cleanup_job_files(job: "ClipJob") -> int:
     }
     removed += cleanup_output_work_dirs(job.clips, protected_dirs)
     return removed
+
+
+def purge_failed_job_card(job_id: str) -> tuple[bool, int]:
+    """Remove a terminal failed/cancelled clip card and every local artifact."""
+    with process_lock:
+        if job_id in job_processes:
+            return False, 0
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if job is None or (
+            job.status not in {"failed", "cancelled"}
+            and not (job.status == "completed" and not job.clips)
+        ):
+            return False, 0
+        removed_outputs = cleanup_job_files(job)
+        jobs.pop(job_id, None)
+        job_secrets.pop(job_id, None)
+        cancelled_job_ids.discard(job_id)
+        save_jobs_unlocked()
+    return True, removed_outputs
 
 
 jobs: dict[str, ClipJob] = load_jobs()
@@ -9081,6 +9187,8 @@ def delete_completed_youtube_upload_clip(
                     clip_path.with_name(f"{clip_path.stem}_thumb_b.jpg"),
                     clip_path.with_name(f"{clip_path.stem}_thumb_c.jpg"),
                     clip_path.with_name(f"{clip_path.stem}_thumb.txt"),
+                    clip_path.with_name(f"{clip_path.stem}_thumbnail_ideas.json"),
+                    clip_path.with_name(f"{clip_path.stem}_ai_qc.json"),
                 }
             )
             for thumbnail_url in target_clip.thumbnail_variants:
@@ -13755,6 +13863,7 @@ def cron_trend_score(
 def cron_trend_candidate_rejection_reason(
     info: dict[str, Any],
     trend_tokens: set[str] | None = None,
+    theme_key: str = "",
 ) -> str:
     """Keep cross-topic cron discovery Indonesian, recognisable, and brand-safe."""
     raw_text = " ".join(
@@ -13772,6 +13881,16 @@ def cron_trend_candidate_rejection_reason(
     )
     if unsafe_hits:
         return f"tren tidak aman ({', '.join(unsafe_hits[:3])})"
+    theme_signals = RYUUNDY_CRON_THEME_SIGNALS.get(theme_key, set())
+    theme_hits = sorted(
+        marker for marker in theme_signals if f" {marker} " in normalized_text
+    )
+    if theme_signals and not theme_hits:
+        theme_label = str(
+            RYUUNDY_CRON_THEME_PROFILES.get(theme_key, {}).get("label")
+            or theme_key
+        )
+        return f"tema tidak cocok dengan rotasi RYUUNDY hari ini ({theme_label})"
     trend_score, _ = cron_trend_score(info, trend_tokens)
     minimum_score = max(
         1, min(100, env_int("AUTO_VIRAL_SCHEDULE_TREND_MIN_SCORE", 18))
@@ -13792,6 +13911,7 @@ def apply_cron_trend_ranking(
     source: dict[str, Any],
     info: dict[str, Any],
     trend_tokens: set[str] | None = None,
+    theme_key: str = "",
 ) -> dict[str, Any]:
     """Use topic freshness instead of the normal niche rank in cron trend mode."""
     trend_score, live_matches = cron_trend_score(info, trend_tokens)
@@ -13808,6 +13928,10 @@ def apply_cron_trend_ranking(
             "cron_trend_score": trend_score,
             "trend_signal_score": min(30, len(live_matches) * 6),
             "trend_matches": live_matches,
+            "cron_theme_key": theme_key,
+            "cron_theme_label": str(
+                RYUUNDY_CRON_THEME_PROFILES.get(theme_key, {}).get("label") or ""
+            ),
             "score": round(
                 trend_score * 0.55
                 + language_score * 0.25
@@ -14647,6 +14771,7 @@ def search_youtube_data_api_viral_sources(
                 trend_rejection = cron_trend_candidate_rejection_reason(
                     payload,
                     trend_tokens,
+                    request.cron_theme_key,
                 )
                 if trend_rejection:
                     append_auto_viral_log(
@@ -14679,7 +14804,9 @@ def search_youtube_data_api_viral_sources(
             if cron_humor_lane:
                 source = apply_cron_humor_ranking(source, payload)
             elif cron_trend_lane:
-                source = apply_cron_trend_ranking(source, payload, trend_tokens)
+                source = apply_cron_trend_ranking(
+                    source, payload, trend_tokens, request.cron_theme_key
+                )
             source["search_provider"] = "youtube_data_api"
             source_tokens = set(re.findall(r"[a-z0-9]{3,}", (
                 f"{payload.get('title') or ''} {payload.get('description') or ''}"
@@ -14826,7 +14953,9 @@ def search_auto_viral_sources(
                     )
                     continue
             elif cron_trend_lane:
-                trend_rejection = cron_trend_candidate_rejection_reason(metadata)
+                trend_rejection = cron_trend_candidate_rejection_reason(
+                    metadata, theme_key=request.cron_theme_key
+                )
                 if trend_rejection:
                     append_auto_viral_log(
                         run_id,
@@ -14858,7 +14987,9 @@ def search_auto_viral_sources(
             if cron_humor_lane:
                 source = apply_cron_humor_ranking(source, metadata)
             elif cron_trend_lane:
-                source = apply_cron_trend_ranking(source, metadata)
+                source = apply_cron_trend_ranking(
+                    source, metadata, theme_key=request.cron_theme_key
+                )
             source["search_provider"] = "yt_dlp_fallback"
             relaxed_reasons: list[str] = []
             relaxed_reasons.extend(filter_reasons)
@@ -15275,6 +15406,52 @@ def processed_job_source_urls() -> set[str]:
     return excluded
 
 
+def recently_processed_job_source_urls(cooldown_days: int = 7) -> set[str]:
+    """Return scheduler exclusions for a rolling cooldown, not a lifetime ban.
+
+    Successful source-use records are timestamped.  Active jobs are always
+    excluded, while completed sources become eligible again after the cooldown
+    so a proven source can re-enter the weekly rotation with a different clip.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, cooldown_days))
+    excluded: set[str] = set()
+    with source_usage_history_lock:
+        history_snapshot = {
+            url: dict(record) for url, record in source_usage_history.items()
+        }
+    for url, record in history_snapshot.items():
+        normalized = normalize_youtube_video_url(url)
+        if not normalized:
+            continue
+        events = record.get("events", [])
+        if not isinstance(events, list):
+            continue
+        for event in events:
+            if not isinstance(event, dict) or not source_usage_event_has_rendered_output(event):
+                continue
+            processed_at = parse_utc_datetime(str(event.get("processed_at") or ""), cutoff)
+            if processed_at >= cutoff:
+                excluded.add(normalized)
+                break
+
+    with jobs_lock:
+        job_snapshot = list(jobs.values())
+    for job in job_snapshot:
+        if job.request.review_only or job.status in {"failed", "cancelled"}:
+            continue
+        try:
+            created_at = parse_utc_datetime(job.created_at, cutoff)
+        except (TypeError, ValueError):
+            created_at = cutoff
+        if job.status not in {"queued", "running"} and created_at < cutoff:
+            continue
+        for value in (job.request.url, job.source_url):
+            normalized = normalize_youtube_video_url(str(value or ""))
+            if normalized:
+                excluded.add(normalized)
+    return excluded
+
+
 def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[str, Any]]:
     search_started = time.perf_counter()
     run_id = f"search-{uuid.uuid4().hex}"
@@ -15476,6 +15653,59 @@ def wait_for_no_active_clipping_job(timeout_seconds: int = 3600) -> None:
     raise RuntimeError("Masih ada job clipping aktif terlalu lama")
 
 
+def source_theme_hashtags(
+    source: dict[str, Any],
+    *,
+    long_form: bool = False,
+) -> list[str]:
+    """Choose truthful hashtags from source semantics instead of a fixed religion set."""
+    text = " ".join(
+        [
+            str(source.get("title") or ""),
+            str(source.get("description") or ""),
+            " ".join(map(str, source.get("tags") or [])),
+        ]
+    ).casefold()
+    profiles: list[tuple[set[str], list[str]]] = [
+        (
+            {"selingkuh", "pengkhianatan", "dikhianati", "sakit hati", "gagal nikah"},
+            ["Pengkhianatan", "SakitHati", "KisahCinta"],
+        ),
+        (
+            {"cinta", "pasangan", "pacar", "jodoh", "pernikahan", "suami", "istri"},
+            ["KisahCinta", "Hubungan", "CeritaKehidupan"],
+        ),
+        (
+            {"keluarga", "rumah tangga", "orang tua", "ayah", "ibu", "anak"},
+            ["KisahKeluarga", "RumahTangga", "PelajaranHidup"],
+        ),
+        (
+            {"teman", "sahabat", "persahabatan", "kepercayaan"},
+            ["Persahabatan", "Kepercayaan", "PlotTwist"],
+        ),
+        (
+            {"lucu", "komedi", "humor", "ngakak", "lawak", "salah paham"},
+            ["HumorIndonesia", "CeritaLucu", "Komedi"],
+        ),
+        (
+            {"horor", "hantu", "misteri", "seram", "gaib"},
+            ["CeritaMisteri", "HororIndonesia", "KisahNyata"],
+        ),
+        (
+            {"islam", "allah", "hijrah", "iman", "quran", "ustadz", "kajian", "dakwah"},
+            ["KisahIslami", "Hijrah", "PelajaranHidup"],
+        ),
+    ]
+    matched: list[str] = []
+    for markers, tags in profiles:
+        if any(marker in text for marker in markers):
+            matched.extend(tags)
+    if not matched:
+        matched.extend(["CeritaKehidupan", "PelajaranHidup", "KisahNyata"])
+    suffix = ["CeritaViral", "VideoPanjang" if long_form else "ShortsIndonesia"]
+    return clean_ai_hashtags([*matched, *suffix])[:6]
+
+
 def resolve_selected_auto_viral_sources(
     request: AutoViralRequest,
     run_id: str,
@@ -15578,12 +15808,7 @@ def create_auto_viral_clip_job(
         ai_base_url=request.ai_base_url,
         ai_model=request.ai_model,
         ai_api_key=request.ai_api_key,
-        required_hashtags=list(
-            dict.fromkeys(
-                DEFAULT_REQUIRED_HASHTAGS
-                + list(ISLAMIC_EVERGREEN_NICHES.get(request.niche, {}).get("hashtags", []))
-            )
-        ),
+        required_hashtags=source_theme_hashtags(source),
     )
     if job_request.max_duration <= job_request.min_duration:
         raise RuntimeError("max_duration must be greater than min_duration")
@@ -15663,12 +15888,7 @@ def create_auto_viral_paired_long_job(
         ai_base_url=request.ai_base_url,
         ai_model=request.ai_model,
         ai_api_key=request.ai_api_key,
-        required_hashtags=list(
-            dict.fromkeys(
-                DEFAULT_REQUIRED_HASHTAGS
-                + list(ISLAMIC_EVERGREEN_NICHES.get(request.niche, {}).get("hashtags", []))
-            )
-        ),
+        required_hashtags=source_theme_hashtags(source, long_form=True),
     )
     job_request = normalize_job_request(job_request)
     return queue_auto_viral_clip_job(job_request)
@@ -15829,7 +16049,7 @@ def auto_viral_cycle_delay_hours() -> float:
             168.0,
             env_float(
                 "AUTO_VIRAL_CYCLE_DELAY_HOURS",
-                env_float("AUTO_VIRAL_SCHEDULE_INTERVAL_HOURS", 0.5),
+                env_float("AUTO_VIRAL_SCHEDULE_INTERVAL_HOURS", 24.0),
             ),
         ),
     )
@@ -17305,7 +17525,14 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 raise RuntimeError(str(exc.detail)) from exc
 
         source_pool_target = max(run_request.video_count * 3, run_request.video_count)
-        excluded_sources = processed_job_source_urls()
+        source_cooldown_days = max(
+            1, min(30, env_int("AUTO_VIRAL_SOURCE_COOLDOWN_DAYS", 7))
+        )
+        excluded_sources = (
+            recently_processed_job_source_urls(source_cooldown_days)
+            if run.trigger == "schedule"
+            else processed_job_source_urls()
+        )
         if run_request.source_urls:
             selected_duplicates = excluded_sources.intersection(run_request.source_urls)
             if selected_duplicates:
@@ -17324,7 +17551,12 @@ def run_auto_viral_campaign(run_id: str) -> None:
         else:
             append_auto_viral_log(
                 run_id,
-                f"Mengecualikan {len(excluded_sources)} sumber yang sudah pernah masuk proses clipping",
+                (
+                    f"Mengecualikan {len(excluded_sources)} sumber dalam cooldown "
+                    f"{source_cooldown_days} hari; sumber berkualitas yang lebih lama boleh berputar kembali"
+                    if run.trigger == "schedule"
+                    else f"Mengecualikan {len(excluded_sources)} sumber yang sudah pernah masuk proses clipping"
+                ),
             )
             sources = discover_auto_viral_campaign_sources(
                 run_request,
@@ -17622,6 +17854,23 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 item["status"] = "failed"
                 item["error"] = str(exc)
                 append_auto_viral_error(run_id, f"{source.get('title')}: {exc}")
+                purged_cards = 0
+                purged_outputs = 0
+                for key in ("job_id", "long_job_id"):
+                    failed_job_id = str(item.get(key) or "").strip()
+                    if not failed_job_id:
+                        continue
+                    purged, removed = purge_failed_job_card(failed_job_id)
+                    purged_cards += int(purged)
+                    purged_outputs += removed
+                if purged_cards:
+                    item["cleanup"] = (
+                        f"{purged_cards} card gagal dan {purged_outputs} artefak dihapus otomatis"
+                    )
+                    append_auto_viral_log(
+                        run_id,
+                        f"Cleanup otomatis: {purged_cards} card job gagal dihapus tanpa menyisakan output.",
+                    )
             if not item_checkpointed:
                 processed.append(item)
             update_auto_viral_run(
@@ -17939,18 +18188,41 @@ def create_and_start_auto_viral_campaign(
     return run
 
 
-def scheduled_auto_viral_theme_focus(niche: IslamicContentNiche) -> str:
-    if not env_bool("AUTO_VIRAL_SCHEDULE_RANDOMIZE_THEMES", False):
-        return ""
-    configured = env_search_queries("AUTO_VIRAL_SCHEDULE_THEME_QUERIES")
-    profile = ISLAMIC_EVERGREEN_NICHES.get(niche, {})
-    profile_queries = profile.get("queries") if isinstance(profile, dict) else []
-    candidates = configured or (
-        [str(item) for item in profile_queries]
-        if isinstance(profile_queries, list)
-        else []
+def scheduled_ryuundy_theme_profile() -> tuple[str, dict[str, Any]]:
+    """Pick one unused RYUUNDY editorial lane for the next daily run."""
+    cooldown_days = max(
+        1, min(14, env_int("AUTO_VIRAL_THEME_COOLDOWN_DAYS", 7))
     )
-    return random.SystemRandom().choice(candidates) if candidates else ""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=cooldown_days)
+    with auto_viral_lock:
+        recent_runs = sorted(
+            (
+                run
+                for run in auto_viral_runs.values()
+                if run.trigger == "schedule"
+                and parse_utc_datetime(run.created_at, cutoff) >= cutoff
+                and run.request.cron_theme_key
+            ),
+            key=lambda run: run.created_at,
+            reverse=True,
+        )
+    used = {run.request.cron_theme_key for run in recent_runs}
+    choices = [
+        key for key in RYUUNDY_CRON_THEME_PROFILES if key not in used
+    ]
+    if not choices:
+        most_recent = recent_runs[0].request.cron_theme_key if recent_runs else ""
+        choices = [key for key in RYUUNDY_CRON_THEME_PROFILES if key != most_recent]
+    key = random.SystemRandom().choice(choices or list(RYUUNDY_CRON_THEME_PROFILES))
+    return key, dict(RYUUNDY_CRON_THEME_PROFILES[key])
+
+
+def scheduled_auto_viral_theme_focus(niche: IslamicContentNiche) -> str:
+    """Compatibility helper returning the selected profile's lead query."""
+    _ = niche
+    _key, profile = scheduled_ryuundy_theme_profile()
+    queries = profile.get("queries", [])
+    return str(queries[0]) if isinstance(queries, list) and queries else ""
 
 
 def scheduled_auto_viral_humor_queries() -> list[str]:
@@ -17958,10 +18230,10 @@ def scheduled_auto_viral_humor_queries() -> list[str]:
     return merge_unique_queries(configured, CRON_HUMOR_SEARCH_QUERIES)
 
 
-def scheduled_auto_viral_trend_queries() -> list[str]:
+def scheduled_auto_viral_trend_queries(profile_queries: list[str] | None = None) -> list[str]:
     """Rotate the cross-topic catalogue reserved for background cron discovery."""
     configured = env_search_queries("AUTO_VIRAL_SCHEDULE_TREND_QUERIES")
-    queries = merge_unique_queries(configured, CRON_TREND_SEARCH_QUERIES)
+    queries = merge_unique_queries(profile_queries or [], configured, CRON_TREND_SEARCH_QUERIES)
     if not queries:
         return []
     with auto_viral_lock:
@@ -18082,19 +18354,24 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
             scheduled_video_count,
             max(0, env_int("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_COUNT", 1)),
         )
-    humor_theme_focus = scheduled_auto_viral_humor_theme_focus()
+    theme_key, theme_profile = scheduled_ryuundy_theme_profile()
+    theme_queries = [
+        str(item).strip()
+        for item in theme_profile.get("queries", [])
+        if str(item).strip()
+    ]
+    theme_focus = random.SystemRandom().choice(theme_queries) if theme_queries else ""
+    humor_theme = theme_key == "humor_interlude"
     trend_expansion_enabled = bool(
         env_bool("AUTO_VIRAL_SCHEDULE_TREND_EXPANSION_ENABLED", True)
-        and not humor_theme_focus
+        and not humor_theme
     )
     request = AutoViralRequest(
         niche=niche,  # type: ignore[arg-type]
-        theme_focus=(
-            humor_theme_focus
-            or scheduled_auto_viral_theme_focus(niche)  # type: ignore[arg-type]
-        ),
+        theme_focus=theme_focus,
+        cron_theme_key=theme_key,
         cron_trend_lane=trend_expansion_enabled,
-        cron_humor_lane=bool(humor_theme_focus),
+        cron_humor_lane=humor_theme,
         video_count=scheduled_video_count,
         clips_per_video=clips_per_video,
         min_views=max(0, env_int("AUTO_VIRAL_SCHEDULE_MIN_VIEWS", 0)),
@@ -18136,16 +18413,15 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
             update={
                 "queries": merge_unique_queries(
                     [request.theme_focus] if request.theme_focus else [],
-                    scheduled_auto_viral_trend_queries(),
-                    request.queries,
+                    scheduled_auto_viral_trend_queries(theme_queries),
                 )[:80]
             }
         )
-    elif humor_theme_focus:
+    elif humor_theme:
         request = request.model_copy(
             update={
                 "queries": merge_unique_queries(
-                    [humor_theme_focus],
+                    [theme_focus],
                     scheduled_auto_viral_humor_queries(),
                 )[:80]
             }
@@ -19989,6 +20265,11 @@ def create_storyboard_preview(
     request: StoryboardPreviewRequest,
 ) -> StoryboardPreviewResponse:
     story = request.story_text.strip()
+    if is_hypit_quick_prompt(story):
+        try:
+            return StoryboardPreviewResponse(**quick_preview_payload(story))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     if len(story) < 60 or len(story.split()) < 12:
         raise HTTPException(
             status_code=400,
@@ -20155,19 +20436,31 @@ def create_job(request: ClipJobRequest) -> ClipJob:
 
     if request.clip_mode == "long_animate":
         story = request.script_text.strip()
-        if len(story) < 60 or len(story.split()) < 12:
+        hypit_quick = is_hypit_quick_prompt(story)
+        if hypit_quick:
+            try:
+                quick_preview_payload(story)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        elif len(story) < 60 or len(story.split()) < 12:
             raise HTTPException(
                 status_code=400,
                 detail="Jalan cerita minimal 60 karakter dan 12 kata agar konflik serta payoff dapat dikembangkan.",
             )
-        if not request.ai_enabled or not request.ai_base_url.strip() or not request.ai_model.strip():
+        if (
+            not hypit_quick
+            and (not request.ai_enabled or not request.ai_base_url.strip() or not request.ai_model.strip())
+        ):
             raise HTTPException(
                 status_code=400,
                 detail="Generator Cerita membutuhkan AI aktif, base URL, dan model yang valid.",
             )
         if (
-            not request.confirm_long_animate_rights
-            or len(request.provider_rights_evidence.split()) < 3
+            not hypit_quick
+            and (
+                not request.confirm_long_animate_rights
+                or len(request.provider_rights_evidence.split()) < 3
+            )
         ):
             raise HTTPException(
                 status_code=400,
@@ -20314,19 +20607,22 @@ def delete_all_jobs() -> dict[str, str | int]:
 @app.delete("/api/jobs/failed")
 def delete_failed_jobs() -> dict[str, str | int]:
     removed_jobs = 0
+    removed_outputs = 0
     with jobs_lock:
-        removable_ids = [
-            job_id
-            for job_id, job in jobs.items()
+        removable_jobs = [
+            job
+            for job in jobs.values()
             if job.status in {"failed", "cancelled"}
         ]
-        for job_id in removable_ids:
-            jobs.pop(job_id)
-            job_secrets.pop(job_id, None)
-            cancelled_job_ids.discard(job_id)
-            removed_jobs += 1
-        save_jobs_unlocked()
-    return {"status": "ok", "removed_jobs": removed_jobs, "removed_outputs": 0}
+    for job in removable_jobs:
+        purged, removed = purge_failed_job_card(job.id)
+        removed_jobs += int(purged)
+        removed_outputs += removed
+    return {
+        "status": "ok",
+        "removed_jobs": removed_jobs,
+        "removed_outputs": removed_outputs,
+    }
 
 
 @app.patch("/api/jobs/{job_id}/clips", response_model=ClipJob)

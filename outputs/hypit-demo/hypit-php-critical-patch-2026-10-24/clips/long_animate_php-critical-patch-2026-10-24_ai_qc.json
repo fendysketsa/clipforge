@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "source_job_id": "hypit-php-critical-patch-2026-10-24",
+  "source_clip_url": "/outputs/hypit-demo/hypit-php-critical-patch-2026-10-24/clips/long_animate_php-critical-patch-2026-10-24.mp4",
+  "repair_attempted": false,
+  "decision": "PASS_UPLOAD",
+  "confidence": 0.97,
+  "hard_gates": {
+    "rights": true,
+    "media_integrity": true,
+    "meaning_preserved": true,
+    "context_safe": true
+  },
+  "ai_checks": {
+    "hook": true,
+    "standalone_clarity": true,
+    "payoff": true,
+    "caption": true,
+    "crop": true,
+    "visual_quality": true,
+    "audio_quality": true
+  },
+  "evidence": [
+    "MP4 contains H.264 1080x1920 video and AAC audio at 30 fps for exactly 26.0 seconds.",
+    "Opening frames present a word-staggered dated critical-RCE hook inside the vertical safe area during the first two seconds.",
+    "The 1.9-3.0 second frame sequence shows a continuous crossfade and camera handoff from hook to persistent board without a hard layout jump.",
+    "Middle frames preserve cumulative tier state, alternate card direction, and use restrained micro camera-punches without third-party footage or UI.",
+    "The 21.55-22.65 second frame sequence shows the board-to-verdict transition remaining centered, readable, and collision-free.",
+    "Payoff and ending frames hold the complete patch-and-restart action through 25.7 seconds.",
+    "Audio measures approximately -24.1 dB mean and -7.9 dB peak; it is continuous music with event-linked tonal accents and does not mask speech.",
+    "Visible versions and CVE claims match the dated official PHP security releases recorded in the sidecar.",
+    "Three truthful 9:16 cover candidates and an evidence-grounded thumbnail manifest are present."
+  ],
+  "repair_instructions": [],
+  "delete_source": false,
+  "upload_allowed": true
+}

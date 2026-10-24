@@ -1,0 +1,55 @@
+{
+  "schema": "clipforge-hypit-ranking-v2",
+  "hypit": {
+    "scriptSurface": "@hypit/script@1",
+    "source": "ranking.hypit.svml",
+    "validatedByCli": true,
+    "timingModel": "authored-ranking-events"
+  },
+  "publicDir": "/www/wwwroot/clipper/clipforge/outputs/hypit-smoke/hypit-hypit-s-tier/public",
+  "composition": {
+    "template": "ranking",
+    "styleVersion": "developer-reel-cinematic-v2",
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "durationSeconds": 24.0,
+    "title": "AI VIDEO TOOL TIER LIST",
+    "kicker": "NO HYPE · JUST WORKFLOW",
+    "hook": "TOOL VIDEO AI MANA YANG BENAR-BENAR BISA DIULANG?",
+    "payoff": "HYPIT MASUK S TIER.",
+    "footer": "Nilai utama: workflow editable, repeatable, dan agent-native.",
+    "sourceNote": "Original code-rendered comparison; no third-party footage",
+    "items": [
+      {
+        "tier": "C",
+        "label": "ONE-OFF GENERATOR",
+        "detail": "Cepat, tetapi sulit direvisi secara presisi",
+        "accent": "#8C93A8",
+        "revealAt": 3.8
+      },
+      {
+        "tier": "B",
+        "label": "MANUAL TIMELINE",
+        "detail": "Kontrol kuat, pekerjaan berulang masih banyak",
+        "accent": "#64B5F6",
+        "revealAt": 7.8
+      },
+      {
+        "tier": "A",
+        "label": "CODE VIDEO",
+        "detail": "Animasi konsisten dan dapat di-version-control",
+        "accent": "#A78BFA",
+        "revealAt": 11.8
+      },
+      {
+        "tier": "S",
+        "label": "HYPIT",
+        "detail": "Agent-native · semantic timing · editable workflow",
+        "accent": "#B6FF4A",
+        "revealAt": 15.8
+      }
+    ],
+    "watermark": "@ryuundy · HYPIT"
+  }
+}

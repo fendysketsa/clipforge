@@ -109,13 +109,23 @@ export function QuickStartCard({
       : `Momentum sumber ${Math.round(quickScore)}/100 hanya sinyal distribusi. Scan transkrip tetap menentukan nilai informasi, hook, konteks, dan payoff.`);
   const isWorking = isBusy || isSubmitting || isGeneratingStoryboard;
   const isStory = clipMode === "long_animate";
-  const storyReady = storyText.trim().length >= 60 && storyText.trim().split(/\s+/).length >= 12;
+  const isHypitPrompt = isStory && /^\s*\/hypit(?:\s+|$)/i.test(storyText);
+  const hypitPromptWords = storyText
+    .replace(/^\s*\/hypit\s*/i, "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+  const storyReady = isHypitPrompt
+    ? hypitPromptWords >= 4
+    : storyText.trim().length >= 60 && storyText.trim().split(/\s+/).length >= 12;
   const canCreateStoryboard = storyReady && !isWorking;
   const canStart = isStory
-    ? Boolean(storyboardPreview?.scenes.length)
-      && Boolean(storyboardPreview?.image_provider.ready)
-      && confirmSourceRights
-      && !isWorking
+    ? isHypitPrompt
+      ? storyReady && !isWorking
+      : Boolean(storyboardPreview?.scenes.length)
+        && Boolean(storyboardPreview?.image_provider.ready)
+        && confirmSourceRights
+        && !isWorking
     : hasUrl
       && !invalidUrl
       && !isCheckingSourceHistory
@@ -198,22 +208,28 @@ export function QuickStartCard({
           <div className="storyStudioComposer">
             <header>
               <div className="storyStudioModeSwitch" aria-label="Mode pembuatan">
-                <span className={!storyboardPreview ? "active" : "done"}><BookOpen size={14} /> 1. Storyboard</span>
-                <span className={storyboardPreview ? "active" : ""}><Film size={14} /> 2. Video</span>
+                <span className={!storyboardPreview ? "active" : "done"}><BookOpen size={14} /> {isHypitPrompt ? "1. Prompt" : "1. Storyboard"}</span>
+                <span className={storyboardPreview || isHypitPrompt ? "active" : ""}><Film size={14} /> 2. Video</span>
               </div>
-              <small>HYPIT SCRIPT · REMOTION VIDEO</small>
+              <small>{isHypitPrompt ? "HYPIT QUICK · CODE RENDERED" : "HYPIT SCRIPT · REMOTION VIDEO"}</small>
             </header>
             <label className="storyInputField">
-              <span>Sutradarai video Anda</span>
+              <span>{isHypitPrompt ? "Prompt Hypit siap dirender" : "Sutradarai video Anda"}</span>
               <textarea
                 value={storyText}
                 onChange={(event) => onStoryTextChange(event.target.value)}
-                placeholder="Ceritakan video yang ingin dibuat—tokoh, lokasi, kejadian, dialog, suasana, gaya visual, dan audio. ClipForge akan mengolahnya menjadi video sinematik lengkap…"
+                placeholder={'Ketik /hypit lalu deskripsikan video. Contoh: /hypit Make a ranking video that puts Hypit in S tier.'}
                 rows={8}
                 maxLength={30000}
               />
-              <small>{storyText.trim().length.toLocaleString("id-ID")} / 30.000 karakter · minimum 60 karakter dan 12 kata</small>
+              <small>{storyText.trim().length.toLocaleString("id-ID")} / 30.000 karakter · {isHypitPrompt ? "minimum 4 kata setelah /hypit" : "minimum 60 karakter dan 12 kata"}</small>
             </label>
+            {!storyText.trim() ? (
+              <div className="hypitPromptExamples" aria-label="Contoh prompt Hypit">
+                <button type="button" onClick={() => onStoryTextChange("/hypit Make a ranking video that puts Hypit in S tier.")}>Ranking Hypit S tier</button>
+                <button type="button" onClick={() => onStoryTextChange("/hypit Buat video ranking tentang patch kritis PHP yang menjadi isu hari ini.")}>Isu PHP hari ini</button>
+              </div>
+            ) : null}
             {storyboardPreview ? (
               <section className="storyboardPreview" aria-label="Preview storyboard">
                 <header>
@@ -272,13 +288,13 @@ export function QuickStartCard({
                 <span title="Perakitan video lokal tanpa biaya per render"><Film size={15} /> Video lokal</span>
               </div>
               <div className="storyStudioDirector">
-                <span><Sparkles size={14} /> {storyboardPreview ? "Produksi" : "Susun scene"}</span>
+                <span><Sparkles size={14} /> {isHypitPrompt ? "Generate video" : storyboardPreview ? "Produksi" : "Susun scene"}</span>
                 <button
-                  aria-label={storyboardPreview ? "Produksi video dari storyboard" : "Buat storyboard dari cerita"}
+                  aria-label={isHypitPrompt ? "Generate video dengan Hypit" : storyboardPreview ? "Produksi video dari storyboard" : "Buat storyboard dari cerita"}
                   className="storyStudioSubmit"
-                  disabled={storyboardPreview ? !canStart : !canCreateStoryboard}
+                  disabled={isHypitPrompt ? !canStart : storyboardPreview ? !canStart : !canCreateStoryboard}
                   type="button"
-                  onClick={storyboardPreview ? onStart : onCreateStoryboard}
+                  onClick={isHypitPrompt ? onStart : storyboardPreview ? onStart : onCreateStoryboard}
                 >
                   {isWorking ? <Loader2 className="spin" size={19} /> : <ArrowRight size={19} />}
                 </button>
@@ -376,14 +392,18 @@ export function QuickStartCard({
           </div>
         ) : null}
 
-        <label className={`sourceRights${confirmSourceRights ? " checked" : ""}`}>
+        {!isHypitPrompt ? <label className={`sourceRights${confirmSourceRights ? " checked" : ""}`}>
           <input
             type="checkbox"
             checked={confirmSourceRights}
             onChange={(event) => onConfirmSourceRightsChange(event.target.checked)}
           />
           <span><ShieldCheck size={16} /><b>{isStory ? "Saya punya hak atas cerita ini dan telah meninjau izin komersial provider AI." : "Saya punya hak/izin untuk audio dan visual sumber ini."}</b></span>
-        </label>
+        </label> : (
+          <div className="sourceNotice isSuccess" role="status">
+            <CheckCircle2 size={17} /><span><strong>Render lokal siap.</strong><small>Visual dibuat dari kode; prompt ini tidak memakai footage, voice clone, atau ImageGen pihak ketiga.</small></span>
+          </div>
+        )}
 
         {error ? <div className="sourceError" role="alert">{error}</div> : null}
 
@@ -398,7 +418,7 @@ export function QuickStartCard({
           </button>
         </div> : null}
 
-        {!confirmSourceRights && (isStory ? Boolean(storyText.trim()) : hasUrl) ? <p className="sourceHint">Storyboard boleh dibuat dulu. Konfirmasi hak dan izin diperlukan saat produksi video.</p> : null}
+        {!isHypitPrompt && !confirmSourceRights && (isStory ? Boolean(storyText.trim()) : hasUrl) ? <p className="sourceHint">Storyboard boleh dibuat dulu. Konfirmasi hak dan izin diperlukan saat produksi video.</p> : null}
       </div>
     </section>
   );

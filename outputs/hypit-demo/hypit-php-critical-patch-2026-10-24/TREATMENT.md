@@ -1,0 +1,3 @@
+# Treatment
+
+Open on the question “DUA CELAH RCE KRITIS. PHP KAMU ADA DI TIER MANA?” as staggered kinetic typography. The camera then glides into a glassy persistent tier board: every answer alternates direction, creates a restrained snap-zoom, and leaves a readable settled state. Ambient grid, particles, progress rail, and moving light preserve visual life between reveals without competing with the facts. The last item receives the brightest color and a connected zoom into the final lock-in: “PATCH SEKARANG. LALU RESTART WORKER PHP.” Music remains continuous while short event-linked tones give each ranking change weight.

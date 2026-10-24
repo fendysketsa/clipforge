@@ -1,0 +1,18 @@
+<?svml using="@hypit/markup@1"?>
+<svml>
+  <import from="@hypit/script@1"/>
+  <script id="ranking">
+    <hook> DUA CELAH RCE KRITIS. PHP KAMU ADA DI TIER MANA?
+    </hook>
+    <row_1> F tier: PHP 8.1 &amp; LEBIH LAMA. EOL upstream · migrasi atau gunakan backport/LTS vendor
+    </row_1>
+    <row_2> B tier: BELUM VERIFIKASI. Jangan percaya banner panel—cek php -v dan paket aktif
+    </row_2>
+    <row_3> A tier: VENDOR BACKPORT. Aman bila vendor mengonfirmasi dua CVE sudah ditambal
+    </row_3>
+    <row_4> S tier: 8.5.12 · 8.4.27 · 8.3.36 · 8.2.35. Rilis upstream dengan perbaikan CVE-2026-109618/109619
+    </row_4>
+    <payoff> PATCH SEKARANG. LALU RESTART WORKER PHP.
+    </payoff>
+  </script>
+</svml>

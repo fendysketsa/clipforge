@@ -1,0 +1,35 @@
+[
+  {
+    "index": 1,
+    "start": 0.0,
+    "end": 26.0,
+    "duration": 26.0,
+    "score": 91,
+    "title": "PHP PATCH RANKING",
+    "reason": "Ranking Reel code-rendered dari satu prompt /hypit dengan framing sinematik berkesinambungan; tanpa footage pihak ketiga.",
+    "text": "/hypit Buat video ranking patch PHP untuk dua issue RCE kritis hari ini",
+    "hook": "DUA CELAH RCE KRITIS. PHP KAMU ADA DI TIER MANA?",
+    "pov": "PATCH SEKARANG. LALU RESTART WORKER PHP.",
+    "fyp_label": "Sangat kuat",
+    "strengths": [
+      "Hook muncul pada frame awal.",
+      "Setiap reveal meninggalkan state board yang mudah dibaca.",
+      "Payoff S-tier memiliki kontras dan hold yang jelas."
+    ],
+    "weaknesses": [
+      "Format motion-only belum memakai presenter atau voice-over."
+    ],
+    "improvement_ideas": [
+      "Uji voice-over singkat dan versi hook alternatif."
+    ],
+    "applied_edits": [
+      "Prompt /hypit dipetakan ke source semantik tervalidasi.",
+      "Tier board, kartu, flash, dan tipografi dianimasikan deterministik di Remotion.",
+      "Musik lokal dan bunyi reveal dipasang tanpa layanan generasi berbayar.",
+      "Kinetic hook, alternating card entries, micro camera-punch, progress rail, dan connected verdict framing diterapkan."
+    ],
+    "key_point_score": 94,
+    "loop_score": 84,
+    "boundary_quality": "payoff_tuntas"
+  }
+]

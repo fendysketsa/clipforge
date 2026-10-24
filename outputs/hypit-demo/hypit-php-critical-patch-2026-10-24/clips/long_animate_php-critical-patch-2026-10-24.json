@@ -1,0 +1,119 @@
+{
+  "index": 1,
+  "start": 0.0,
+  "end": 26.0,
+  "duration": 26.0,
+  "score": 91,
+  "title": "PHP PATCH RANKING",
+  "reason": "Ranking Reel code-rendered dari satu prompt /hypit dengan framing sinematik berkesinambungan; tanpa footage pihak ketiga.",
+  "text": "/hypit Buat video ranking patch PHP untuk dua issue RCE kritis hari ini",
+  "transcript": "DUA CELAH RCE KRITIS. PHP KAMU ADA DI TIER MANA?\nF tier: PHP 8.1 & LEBIH LAMA. EOL upstream · migrasi atau gunakan backport/LTS vendor\nB tier: BELUM VERIFIKASI. Jangan percaya banner panel—cek php -v dan paket aktif\nA tier: VENDOR BACKPORT. Aman bila vendor mengonfirmasi dua CVE sudah ditambal\nS tier: 8.5.12 · 8.4.27 · 8.3.36 · 8.2.35. Rilis upstream dengan perbaikan CVE-2026-109618/109619\nPATCH SEKARANG. LALU RESTART WORKER PHP.\nCek paket vendor/distro—nomor backport bisa berbeda.",
+  "hook": "DUA CELAH RCE KRITIS. PHP KAMU ADA DI TIER MANA?",
+  "pov": "PATCH SEKARANG. LALU RESTART WORKER PHP.",
+  "core_message": "PATCH SEKARANG. LALU RESTART WORKER PHP.",
+  "fyp_label": "Sangat kuat",
+  "strengths": [
+    "Hook muncul pada frame awal.",
+    "Setiap reveal meninggalkan state board yang mudah dibaca.",
+    "Payoff S-tier memiliki kontras dan hold yang jelas."
+  ],
+  "weaknesses": [
+    "Format motion-only belum memakai presenter atau voice-over."
+  ],
+  "improvement_ideas": [
+    "Uji voice-over singkat dan versi hook alternatif."
+  ],
+  "applied_edits": [
+    "Prompt /hypit dipetakan ke source semantik tervalidasi.",
+    "Tier board, kartu, flash, dan tipografi dianimasikan deterministik di Remotion.",
+    "Musik lokal dan bunyi reveal dipasang tanpa layanan generasi berbayar.",
+    "Kinetic hook, alternating card entries, micro camera-punch, progress rail, dan connected verdict framing diterapkan."
+  ],
+  "key_point_score": 94,
+  "loop_score": 84,
+  "retention_score": 94,
+  "boundary_quality": "payoff_tuntas",
+  "mode": "long_animate",
+  "production_model": "hypit_quick_ranking_v2",
+  "source_identity": {
+    "type": "original_code_rendered",
+    "id": "hypit-php-critical-patch-2026-10-24",
+    "title": "PHP PATCH RANKING"
+  },
+  "repair_attempted": false,
+  "output_format": "portrait_short",
+  "aspect_ratio": "9:16",
+  "output_resolution": "1080x1920",
+  "hypit_script_path": "ranking.hypit.svml",
+  "remotion_manifest_path": "ranking.remotion.json",
+  "fact_checked_on": "2026-10-24",
+  "source_note": "PHP security advisory snapshot, 24 October 2026",
+  "narrative_authoring": {
+    "engine": "hypit_script_surface",
+    "schema": "@hypit/script@1",
+    "timing": "authored_ranking_events",
+    "validated_by_hypit_cli": true
+  },
+  "image_generation": {
+    "provider": "none_code_rendered",
+    "paid_api_used": false
+  },
+  "voice_casting": {
+    "mode": "none",
+    "voice_cloning_used": false
+  },
+  "rights": {
+    "third_party_footage_used": false,
+    "third_party_voice_used": false,
+    "code_rendered_visuals": true,
+    "human_review_required_before_publication": true
+  },
+  "youtube_policy_guardrails": {
+    "private_upload_review_before_publish": true,
+    "factual_claim_review_required": true,
+    "view_target_is_experiment_not_guarantee": true
+  },
+  "context_safety": {
+    "standalone": true,
+    "claims_labeled_with_date_and_source_note": true,
+    "invented_quote_or_person": false
+  },
+  "monetization_readiness": {
+    "original_visual_composition": true,
+    "third_party_footage": false,
+    "human_review_required": true
+  },
+  "growth_readiness": {
+    "score": 91,
+    "view_guarantee": false,
+    "hook_first_two_seconds": true,
+    "complete_payoff": true
+  },
+  "render_quality_qc": {
+    "quality_gate_passed": true,
+    "output_readable": true,
+    "safe_area_passed": true,
+    "caption_mode": "authored_motion_graphics"
+  },
+  "thumbnail_variants": [
+    {
+      "id": "A",
+      "angle": "human_tension",
+      "filename": "long_animate_php-critical-patch-2026-10-24_thumb.jpg",
+      "headline": "DUA CELAH RCE KRITIS. PHP KAMU ADA DI TIER MANA?"
+    },
+    {
+      "id": "B",
+      "angle": "object_or_evidence",
+      "filename": "long_animate_php-critical-patch-2026-10-24_thumb_b.jpg",
+      "headline": "PHP PATCH RANKING"
+    },
+    {
+      "id": "C",
+      "angle": "cinematic_story",
+      "filename": "long_animate_php-critical-patch-2026-10-24_thumb_c.jpg",
+      "headline": "PATCH SEKARANG. LALU RESTART WORKER PHP."
+    }
+  ],
+  "thumbnail_ideas_manifest": "long_animate_php-critical-patch-2026-10-24_thumbnail_ideas.json"
+}

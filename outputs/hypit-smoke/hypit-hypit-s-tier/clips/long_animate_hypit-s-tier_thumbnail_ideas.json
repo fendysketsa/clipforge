@@ -1,0 +1,91 @@
+{
+  "schema": "clipforge-thumbnail-ideas-v1",
+  "source_clip": "long_animate_hypit-s-tier.mp4",
+  "format": "9:16",
+  "truthfulness": {
+    "grounded_in_clip_evidence": true,
+    "invented_claims_allowed": false,
+    "reference_design_copying_allowed": false
+  },
+  "variants": [
+    {
+      "id": "A",
+      "angle": "human_tension",
+      "filename": "long_animate_hypit-s-tier_thumb.jpg",
+      "eyebrow": "NO HYPE · JUST WORKFLOW",
+      "headline": "TOOL VIDEO AI MANA YANG BENAR-BENAR BISA DIULANG?",
+      "support": "Nilai utama: workflow editable, repeatable, dan agent-native.",
+      "keyframe_direction": "Use this exact authored frame; retain the central safe area and the visible factual label.",
+      "composition": "9:16 authored frame, one dominant information block, strong dark-to-lime contrast",
+      "palette": "deep green-black, white, acid lime, restrained cyan",
+      "image_prompt": "Use only long_animate_hypit-s-tier_thumb.jpg; preserve all text facts and ranking state. Enhance contrast only, with no new people, products, or claims.",
+      "negative_prompt": "no invented person, no fake code, no fabricated CVE, no copied branding, no tiny extra text",
+      "evidence": [
+        "TOOL VIDEO AI MANA YANG BENAR-BENAR BISA DIULANG?",
+        "HYPIT MASUK S TIER.",
+        "Original code-rendered comparison; no third-party footage"
+      ],
+      "score": 92,
+      "score_breakdown": {
+        "clarity": 20,
+        "curiosity": 19,
+        "emotion": 16,
+        "contrast": 19,
+        "legibility": 18
+      }
+    },
+    {
+      "id": "B",
+      "angle": "object_or_evidence",
+      "filename": "long_animate_hypit-s-tier_thumb_b.jpg",
+      "eyebrow": "NO HYPE · JUST WORKFLOW",
+      "headline": "AI VIDEO TOOL TIER LIST",
+      "support": "Nilai utama: workflow editable, repeatable, dan agent-native.",
+      "keyframe_direction": "Use this exact authored frame; retain the central safe area and the visible factual label.",
+      "composition": "9:16 authored frame, one dominant information block, strong dark-to-lime contrast",
+      "palette": "deep green-black, white, acid lime, restrained cyan",
+      "image_prompt": "Use only long_animate_hypit-s-tier_thumb_b.jpg; preserve all text facts and ranking state. Enhance contrast only, with no new people, products, or claims.",
+      "negative_prompt": "no invented person, no fake code, no fabricated CVE, no copied branding, no tiny extra text",
+      "evidence": [
+        "TOOL VIDEO AI MANA YANG BENAR-BENAR BISA DIULANG?",
+        "HYPIT MASUK S TIER.",
+        "Original code-rendered comparison; no third-party footage"
+      ],
+      "score": 86,
+      "score_breakdown": {
+        "clarity": 18,
+        "curiosity": 17,
+        "emotion": 15,
+        "contrast": 18,
+        "legibility": 18
+      }
+    },
+    {
+      "id": "C",
+      "angle": "cinematic_story",
+      "filename": "long_animate_hypit-s-tier_thumb_c.jpg",
+      "eyebrow": "NO HYPE · JUST WORKFLOW",
+      "headline": "HYPIT MASUK S TIER.",
+      "support": "Nilai utama: workflow editable, repeatable, dan agent-native.",
+      "keyframe_direction": "Use this exact authored frame; retain the central safe area and the visible factual label.",
+      "composition": "9:16 authored frame, one dominant information block, strong dark-to-lime contrast",
+      "palette": "deep green-black, white, acid lime, restrained cyan",
+      "image_prompt": "Use only long_animate_hypit-s-tier_thumb_c.jpg; preserve all text facts and ranking state. Enhance contrast only, with no new people, products, or claims.",
+      "negative_prompt": "no invented person, no fake code, no fabricated CVE, no copied branding, no tiny extra text",
+      "evidence": [
+        "TOOL VIDEO AI MANA YANG BENAR-BENAR BISA DIULANG?",
+        "HYPIT MASUK S TIER.",
+        "Original code-rendered comparison; no third-party footage"
+      ],
+      "score": 90,
+      "score_breakdown": {
+        "clarity": 19,
+        "curiosity": 18,
+        "emotion": 17,
+        "contrast": 19,
+        "legibility": 17
+      }
+    }
+  ],
+  "recommended_variant": "A"
+}

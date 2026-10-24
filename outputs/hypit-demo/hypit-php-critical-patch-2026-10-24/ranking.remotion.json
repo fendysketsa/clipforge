@@ -1,0 +1,55 @@
+{
+  "schema": "clipforge-hypit-ranking-v2",
+  "hypit": {
+    "scriptSurface": "@hypit/script@1",
+    "source": "ranking.hypit.svml",
+    "validatedByCli": true,
+    "timingModel": "authored-ranking-events"
+  },
+  "publicDir": "/www/wwwroot/clipper/clipforge/outputs/hypit-demo/hypit-php-critical-patch-2026-10-24/public",
+  "composition": {
+    "template": "ranking",
+    "styleVersion": "developer-reel-cinematic-v2",
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "durationSeconds": 26.0,
+    "title": "PHP PATCH RANKING",
+    "kicker": "SECURITY ALERT · 24 OKT 2026",
+    "hook": "DUA CELAH RCE KRITIS. PHP KAMU ADA DI TIER MANA?",
+    "payoff": "PATCH SEKARANG. LALU RESTART WORKER PHP.",
+    "footer": "Cek paket vendor/distro—nomor backport bisa berbeda.",
+    "sourceNote": "PHP security advisory snapshot, 24 October 2026",
+    "items": [
+      {
+        "tier": "F",
+        "label": "PHP 8.1 & LEBIH LAMA",
+        "detail": "EOL upstream · migrasi atau gunakan backport/LTS vendor",
+        "accent": "#FF4D6D",
+        "revealAt": 3.8
+      },
+      {
+        "tier": "B",
+        "label": "BELUM VERIFIKASI",
+        "detail": "Jangan percaya banner panel—cek php -v dan paket aktif",
+        "accent": "#FFB84D",
+        "revealAt": 7.8
+      },
+      {
+        "tier": "A",
+        "label": "VENDOR BACKPORT",
+        "detail": "Aman bila vendor mengonfirmasi dua CVE sudah ditambal",
+        "accent": "#65D6A6",
+        "revealAt": 11.8
+      },
+      {
+        "tier": "S",
+        "label": "8.5.12 · 8.4.27 · 8.3.36 · 8.2.35",
+        "detail": "Rilis upstream dengan perbaikan CVE-2026-109618/109619",
+        "accent": "#B6FF4A",
+        "revealAt": 15.8
+      }
+    ],
+    "watermark": "@ryuundy · HYPIT"
+  }
+}

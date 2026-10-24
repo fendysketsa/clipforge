@@ -12097,6 +12097,30 @@ body::after {
 .storyStudioComposer .storyInputField textarea:focus { box-shadow: none; }
 .storyStudioComposer .storyInputField textarea::placeholder { color: #6f6686; }
 
+.hypitPromptExamples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 0 17px 12px;
+}
+
+.hypitPromptExamples button {
+  min-height: 29px;
+  padding: 0 10px;
+  border: 1px solid rgba(94, 234, 212, 0.18);
+  border-radius: 999px;
+  color: #9de7d9;
+  background: rgba(45, 212, 191, 0.055);
+  font-size: 8px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.hypitPromptExamples button:hover {
+  border-color: rgba(94, 234, 212, 0.42);
+  background: rgba(45, 212, 191, 0.11);
+}
+
 .storyboardPreview {
   margin: 0 13px 13px;
   padding: 12px;

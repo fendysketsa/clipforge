@@ -2422,6 +2422,7 @@ def test_scheduled_campaign_uploads_one_quality_batch_when_target_was_three(monk
     monkeypatch.setattr(api, "save_auto_viral_runs_unlocked", lambda: None)
     monkeypatch.setattr(api, "require_youtube_ready", lambda: None)
     monkeypatch.setattr(api, "processed_job_source_urls", lambda: set())
+    monkeypatch.setattr(api, "recently_processed_job_source_urls", lambda *_args: set())
     monkeypatch.setattr(
         api,
         "discover_auto_viral_campaign_sources",
@@ -2511,6 +2512,7 @@ def test_scheduled_campaign_uploads_each_completed_batch_before_rendering_next(m
     monkeypatch.setattr(api, "save_auto_viral_runs_unlocked", lambda: None)
     monkeypatch.setattr(api, "require_youtube_ready", lambda: None)
     monkeypatch.setattr(api, "processed_job_source_urls", lambda: set())
+    monkeypatch.setattr(api, "recently_processed_job_source_urls", lambda *_args: set())
     monkeypatch.setattr(
         api,
         "discover_auto_viral_campaign_sources",
@@ -3155,17 +3157,21 @@ def test_completed_job_sweeper_never_repairs_a_repair_result(monkeypatch):
     assert api.queue_completed_job_repair_once(repair_job) is False
 
 
-def test_scheduled_kindness_theme_is_randomized_and_cc_label_is_optional(monkeypatch):
+def test_scheduled_ryuundy_theme_is_randomized_and_cc_label_is_optional(monkeypatch):
     import api
 
-    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_NICHE", "kindness_social_good")
-    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RANDOMIZE_THEMES", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_REQUIRE_CREATIVE_COMMONS", "false")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", "1")
+    monkeypatch.setattr(
+        api,
+        "scheduled_ryuundy_theme_profile",
+        lambda: ("love_betrayal", api.RYUUNDY_CRON_THEME_PROFILES["love_betrayal"]),
+    )
 
     request = api.scheduled_auto_viral_request()
 
-    assert request.theme_focus in api.ISLAMIC_EVERGREEN_NICHES["kindness_social_good"]["queries"]
+    assert request.cron_theme_key == "love_betrayal"
+    assert request.theme_focus in api.RYUUNDY_CRON_THEME_PROFILES["love_betrayal"]["queries"]
     assert request.queries[0] == request.theme_focus
     assert request.require_creative_commons is False
     assert request.top == 1
@@ -3174,11 +3180,10 @@ def test_scheduled_kindness_theme_is_randomized_and_cc_label_is_optional(monkeyp
 def test_scheduled_humor_rotates_only_on_configured_cron_run(monkeypatch):
     import api
 
-    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_HUMOR_ENABLED", "true")
-    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_HUMOR_EVERY_RUNS", "4")
-    monkeypatch.setenv(
-        "AUTO_VIRAL_SCHEDULE_HUMOR_QUERIES",
-        "komedi salah dengar indonesia|dialog lucu indonesia",
+    monkeypatch.setattr(
+        api,
+        "scheduled_ryuundy_theme_profile",
+        lambda: ("humor_interlude", api.RYUUNDY_CRON_THEME_PROFILES["humor_interlude"]),
     )
     prior_runs = {
         f"prior-{index}": api.AutoViralRun(
@@ -3196,9 +3201,9 @@ def test_scheduled_humor_rotates_only_on_configured_cron_run(monkeypatch):
     request = api.scheduled_auto_viral_request()
 
     assert request.cron_humor_lane is True
-    assert request.theme_focus == "komedi salah dengar indonesia"
+    assert request.theme_focus in api.CRON_HUMOR_SEARCH_QUERIES
     assert request.queries[0] == request.theme_focus
-    assert "komedi salah dengar indonesia" not in api.default_viral_video_search_queries()
+    assert request.theme_focus not in api.default_viral_video_search_queries()
 
     prior_runs["first-humor"] = api.AutoViralRun(
         id="first-humor",
@@ -3207,6 +3212,11 @@ def test_scheduled_humor_rotates_only_on_configured_cron_run(monkeypatch):
         created_at=api.now_iso(),
         updated_at=api.now_iso(),
         request=request,
+    )
+    monkeypatch.setattr(
+        api,
+        "scheduled_ryuundy_theme_profile",
+        lambda: ("life_comeback", api.RYUUNDY_CRON_THEME_PROFILES["life_comeback"]),
     )
     following_request = api.scheduled_auto_viral_request()
     assert following_request.cron_humor_lane is False
@@ -3255,9 +3265,12 @@ def test_trend_expansion_is_owned_only_by_cron_schedule(monkeypatch):
     import api
 
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_TREND_EXPANSION_ENABLED", "true")
-    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_HUMOR_ENABLED", "false")
-    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RANDOMIZE_THEMES", "false")
     monkeypatch.setattr(api, "auto_viral_runs", {})
+    monkeypatch.setattr(
+        api,
+        "scheduled_ryuundy_theme_profile",
+        lambda: ("life_comeback", api.RYUUNDY_CRON_THEME_PROFILES["life_comeback"]),
+    )
     request = api.scheduled_auto_viral_request()
     scheduled_run = api.AutoViralRun(
         id="cron-trend",
@@ -3277,11 +3290,33 @@ def test_trend_expansion_is_owned_only_by_cron_schedule(monkeypatch):
     )
 
     assert request.cron_trend_lane is True
-    assert request.queries[0] == api.CRON_TREND_SEARCH_QUERIES[0]
+    assert request.queries[0] in api.RYUUNDY_CRON_THEME_PROFILES["life_comeback"]["queries"]
     assert api.cron_trend_discovery_active(scheduled_run.id, request) is True
     assert api.cron_trend_discovery_active(manual_run.id, request) is False
     assert api.CRON_TREND_SEARCH_QUERIES[0] not in api.default_viral_video_search_queries()
     assert api.scheduled_auto_viral_trend_queries()[0] == api.CRON_TREND_SEARCH_QUERIES[1]
+
+
+def test_cron_trend_rejects_a_different_ryuundy_theme_for_the_day():
+    import api
+
+    off_theme = {
+        "title": "Podcast horor misteri kisah nyata Indonesia",
+        "description": "Cerita seram terbaru dalam Bahasa Indonesia.",
+        "default_language": "id",
+    }
+    on_theme = {
+        "title": "Dikhianati pasangan lalu bangkit dari sakit hati",
+        "description": "Kisah cinta nyata dalam Bahasa Indonesia.",
+        "default_language": "id",
+    }
+
+    assert "tema tidak cocok" in api.cron_trend_candidate_rejection_reason(
+        off_theme, theme_key="love_betrayal"
+    )
+    assert api.cron_trend_candidate_rejection_reason(
+        on_theme, theme_key="love_betrayal"
+    ) == ""
 
 
 def test_cron_trend_reads_cross_category_youtube_chart(monkeypatch):
@@ -4775,6 +4810,89 @@ def test_processed_job_sources_are_always_excluded(monkeypatch):
         "https://www.youtube.com/watch?v=secondID6789",
         "https://www.youtube.com/watch?v=permanent77",
     }
+
+
+def test_scheduler_hashtags_follow_source_theme_without_forcing_islam():
+    import api
+
+    relationship = api.source_theme_hashtags(
+        {"title": "Dikhianati pasangan, dia bangkit setelah sakit hati"}
+    )
+    comedy = api.source_theme_hashtags(
+        {"title": "Salah paham paling lucu di obrolan keluarga"}
+    )
+    islamic = api.source_theme_hashtags(
+        {"title": "Kisah hijrah setelah ujian hidup dan iman"}
+    )
+
+    assert "Pengkhianatan" in relationship
+    assert "KisahIslami" not in relationship
+    assert "HumorIndonesia" in comedy
+    assert "KisahIslami" not in comedy
+    assert "KisahIslami" in islamic
+
+
+def test_default_cron_cycle_is_daily(monkeypatch):
+    import api
+
+    monkeypatch.delenv("AUTO_VIRAL_CYCLE_DELAY_HOURS", raising=False)
+    monkeypatch.delenv("AUTO_VIRAL_SCHEDULE_INTERVAL_HOURS", raising=False)
+
+    assert api.auto_viral_cycle_delay_hours() == 24.0
+
+
+def test_scheduler_source_cooldown_allows_weekly_reuse(monkeypatch):
+    import api
+
+    recent_url = "https://www.youtube.com/watch?v=recentABC123"
+    old_url = "https://www.youtube.com/watch?v=olderABC1234"
+    now = datetime.now(timezone.utc)
+    recent = ClipJob(
+        id="recent-source",
+        status="completed",
+        request=ClipJobRequest(url=recent_url),
+        created_at=(now - timedelta(days=2)).isoformat(),
+        updated_at=now.isoformat(),
+        source_url=recent_url,
+    )
+    old = ClipJob(
+        id="old-source",
+        status="completed",
+        request=ClipJobRequest(url=old_url),
+        created_at=(now - timedelta(days=8)).isoformat(),
+        updated_at=now.isoformat(),
+        source_url=old_url,
+    )
+    monkeypatch.setattr(api, "jobs", {recent.id: recent, old.id: old})
+    monkeypatch.setattr(api, "source_usage_history", {})
+
+    excluded = api.recently_processed_job_source_urls(7)
+
+    assert recent_url in excluded
+    assert old_url not in excluded
+
+
+def test_failed_job_card_is_purged_with_its_artifacts(monkeypatch):
+    import api
+
+    failed = ClipJob(
+        id="failed-card",
+        status="failed",
+        request=ClipJobRequest(),
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        error="render failed",
+    )
+    monkeypatch.setattr(api, "jobs", {failed.id: failed})
+    monkeypatch.setattr(api, "job_processes", {})
+    monkeypatch.setattr(api, "cleanup_job_files", lambda _job: 4)
+    monkeypatch.setattr(api, "save_jobs_unlocked", lambda: None)
+
+    purged, removed = api.purge_failed_job_card(failed.id)
+
+    assert purged is True
+    assert removed == 4
+    assert failed.id not in api.jobs
 
 
 

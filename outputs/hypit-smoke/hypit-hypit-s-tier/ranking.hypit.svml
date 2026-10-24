@@ -1,0 +1,18 @@
+<?svml using="@hypit/markup@1"?>
+<svml>
+  <import from="@hypit/script@1"/>
+  <script id="ranking">
+    <hook> TOOL VIDEO AI MANA YANG BENAR-BENAR BISA DIULANG?
+    </hook>
+    <row_1> C tier: ONE-OFF GENERATOR. Cepat, tetapi sulit direvisi secara presisi
+    </row_1>
+    <row_2> B tier: MANUAL TIMELINE. Kontrol kuat, pekerjaan berulang masih banyak
+    </row_2>
+    <row_3> A tier: CODE VIDEO. Animasi konsisten dan dapat di-version-control
+    </row_3>
+    <row_4> S tier: HYPIT. Agent-native · semantic timing · editable workflow
+    </row_4>
+    <payoff> HYPIT MASUK S TIER.
+    </payoff>
+  </script>
+</svml>

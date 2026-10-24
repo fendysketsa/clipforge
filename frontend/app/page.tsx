@@ -106,6 +106,7 @@ const isProcessJob = (item: ClipJob | null) =>
 const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
 const CLEANUP_PROGRESS_POLL_MS = 250;
 const TAB_JOB_STORAGE_KEY = "fendy-clipper.activeJobId.v1";
+const isHypitQuickPrompt = (value: string) => /^\s*\/hypit(?:\s+|$)/i.test(value);
 export default function HomePage() {
   const [url, setUrl] = useState("");
   const [storyText, setStoryText] = useState("");
@@ -282,6 +283,20 @@ export default function HomePage() {
 
   const loadJobs = useCallback(async () => {
     const nextJobs = await getJobs();
+    const failedIds = new Set(
+      nextJobs
+        .filter((item) => item.status === "failed" || item.status === "cancelled")
+        .map((item) => item.id),
+    );
+    if (failedIds.size) {
+      await deleteFailedJobs();
+      const cleanJobs = nextJobs.filter((item) => !failedIds.has(item.id));
+      setJobs(cleanJobs);
+      setActiveJob((current) => (current && failedIds.has(current.id) ? null : current));
+      setJob((current) => (current && failedIds.has(current.id) ? null : current));
+      setSelectedHistoryJobIds((current) => current.filter((id) => !failedIds.has(id)));
+      return cleanJobs;
+    }
     setJobs(nextJobs);
     return nextJobs;
   }, []);
@@ -739,6 +754,7 @@ export default function HomePage() {
     const requestedSourceMode = sourceMode;
     const trimmedUrl = url.trim();
     const trimmedStory = storyText.trim();
+    const isHypitQuick = isStoryMode && isHypitQuickPrompt(trimmedStory);
     const effectiveMaxDuration = requestedMode === "short" ? Math.min(MAX_SHORT_DURATION, maxDuration) : maxDuration;
     setError("");
 
@@ -746,23 +762,31 @@ export default function HomePage() {
       setError("Proses clipping masih berjalan. Tunggu selesai atau batalkan sebelum memulai proses baru.");
       return;
     }
-    if (isStoryMode && (trimmedStory.length < 60 || trimmedStory.split(/\s+/).length < 12)) {
+    if (
+      isStoryMode
+      && !isHypitQuick
+      && (trimmedStory.length < 60 || trimmedStory.split(/\s+/).length < 12)
+    ) {
       setError("Jalan cerita minimal 60 karakter dan 12 kata agar konflik serta payoff dapat dikembangkan.");
       return;
     }
-    if (isStoryMode && !storyboardPreview) {
+    if (isHypitQuick && trimmedStory.replace(/^\s*\/hypit\s*/i, "").split(/\s+/).filter(Boolean).length < 4) {
+      setError("Jelaskan video setelah /hypit dengan minimal empat kata.");
+      return;
+    }
+    if (isStoryMode && !isHypitQuick && !storyboardPreview) {
       setError("Buat dan review storyboard terlebih dahulu sebelum produksi video.");
       return;
     }
-    if (isStoryMode && !storyboardPreview?.image_provider.ready) {
+    if (isStoryMode && !isHypitQuick && !storyboardPreview?.image_provider.ready) {
       setError(storyboardPreview?.image_provider.message || "ImageGen belum siap digunakan.");
       return;
     }
-    if (isStoryMode && !confirmSourceRights) {
+    if (isStoryMode && !isHypitQuick && !confirmSourceRights) {
       setError("Konfirmasikan hak atas cerita dan izin komersial provider AI sebelum produksi.");
       return;
     }
-    if (isStoryMode && (!aiEnabled || !aiBaseUrl.trim() || !aiModel.trim())) {
+    if (isStoryMode && !isHypitQuick && (!aiEnabled || !aiBaseUrl.trim() || !aiModel.trim())) {
       setError("Generator Cerita membutuhkan AI aktif, base URL, dan model yang valid.");
       return;
     }
@@ -800,15 +824,21 @@ export default function HomePage() {
         createJob({
           url: !isStoryMode && requestedSourceMode === "url" ? trimmedUrl : "",
           source_file: !isStoryMode && requestedSourceMode === "upload" ? uploadToken : "",
-          script_text: isStoryMode ? storyboardPreview?.production_script || trimmedStory : "",
+          script_text: isStoryMode
+            ? isHypitQuick
+              ? trimmedStory
+              : storyboardPreview?.production_script || trimmedStory
+            : "",
           top: requestedMode === "short" && targetClips > 0 ? targetClips : undefined,
           min_duration: minDuration,
           max_duration: effectiveMaxDuration,
           clip_mode: requestedMode,
-          compilation_target_seconds: Math.max(
-            COMPILATION_MIN_SECONDS,
-            Math.min(COMPILATION_MAX_SECONDS, compilationTargetSeconds),
-          ),
+          compilation_target_seconds: isHypitQuick
+            ? 26
+            : Math.max(
+                COMPILATION_MIN_SECONDS,
+                Math.min(COMPILATION_MAX_SECONDS, compilationTargetSeconds),
+              ),
           model: DEFAULT_MODEL,
           language: DEFAULT_LANGUAGE,
           video_quality: videoQuality,
@@ -832,24 +862,24 @@ export default function HomePage() {
             .filter(Boolean),
           require_creative_commons: !isStoryMode && requireCreativeCommons,
           confirm_source_rights: !isStoryMode && requestedSourceMode === "url" && confirmSourceRights,
-          confirm_long_animate_rights: isStoryMode && confirmSourceRights,
+          confirm_long_animate_rights: isStoryMode && !isHypitQuick && confirmSourceRights,
           source_rights_evidence: "",
-          provider_rights_evidence: isStoryMode
+          provider_rights_evidence: isStoryMode && !isHypitQuick
             ? "Hak cerita dan ketentuan komersial provider AI telah ditinjau pengguna"
             : "",
           creator_perspective: "",
           creator_commentary_file: "",
           auto_upload_youtube: autoUploadYoutube,
           allow_reprocess_source: !isStoryMode && requestedSourceMode === "url" && allowReprocessSource,
-          ai_enabled: aiEnabled,
+          ai_enabled: isHypitQuick ? false : aiEnabled,
           ai_base_url: aiBaseUrl.trim(),
           ai_model: aiModel.trim(),
           ai_api_key: aiApiKey.trim(),
         }),
         {
-          loading: isStoryMode ? "Mengunci storyboard dan memulai produksi..." : requestedMode === "short" ? "Memulai scan dan render Short..." : "Memulai scan dan susun Long Highlight...",
-          success: isStoryMode ? "Produksi dimulai — ImageGen membuat keyframe lalu ClipForge merakit videonya." : requestedMode === "short" ? "Scan dimulai — kandidat terbaik akan langsung dirender." : "Scan dimulai — chapter terbaik akan langsung disusun.",
-          error: isStoryMode ? "Gagal memulai Generator Cerita" : "Gagal memulai proses pemotongan",
+          loading: isHypitQuick ? "Hypit menyusun tier board dan memulai render..." : isStoryMode ? "Mengunci storyboard dan memulai produksi..." : requestedMode === "short" ? "Memulai scan dan render Short..." : "Memulai scan dan susun Long Highlight...",
+          success: isHypitQuick ? "Render Hypit dimulai — hasil akan muncul otomatis di workspace." : isStoryMode ? "Produksi dimulai — ImageGen membuat keyframe lalu ClipForge merakit videonya." : requestedMode === "short" ? "Scan dimulai — kandidat terbaik akan langsung dirender." : "Scan dimulai — chapter terbaik akan langsung disusun.",
+          error: isHypitQuick ? "Gagal memulai Hypit Quick" : isStoryMode ? "Gagal memulai Generator Cerita" : "Gagal memulai proses pemotongan",
         },
       );
 

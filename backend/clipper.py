@@ -37,6 +37,7 @@ from source_rights import (
 )
 from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
 from whisper_cache import cached_whisper_model_path
+from hypit_quick import is_hypit_quick_prompt, render_hypit_quick
 
 
 console = Console()
@@ -14972,6 +14973,97 @@ def render_designed_thumbnail(
     return thumb_path if thumb_path.exists() else None
 
 
+def write_thumbnail_ideas_manifest(
+    video_path: Path,
+    clip: ClipCandidate,
+    sidecar: dict[str, object],
+    variants: list[dict[str, str]],
+) -> Path:
+    """Persist three evidence-grounded thumbnail directions beside the clip."""
+    title = str(sidecar.get("title") or clip.title).strip()
+    hook = str(sidecar.get("hook") or clip.hook or title).strip()
+    core_message = str(sidecar.get("core_message") or clip.pov or title).strip()
+    evidence = [
+        f"title: {title}",
+        f"hook: {hook}",
+        f"core_message: {core_message}",
+    ]
+    angle_specs = [
+        (
+            "A",
+            "human_tension",
+            "Sorot ketegangan manusia dari momen asli, dengan ekspresi/subjek tetap autentik.",
+            91,
+            {"clarity": 19, "curiosity": 19, "emotion": 19, "contrast": 17, "legibility": 17},
+        ),
+        (
+            "B",
+            "object_or_evidence",
+            "Tonjolkan bukti atau detail visual yang benar-benar tampak pada keyframe.",
+            87,
+            {"clarity": 18, "curiosity": 18, "emotion": 16, "contrast": 18, "legibility": 17},
+        ),
+        (
+            "C",
+            "cinematic_story",
+            "Bangun rasa cerita dan payoff tanpa menambah tokoh, kejadian, atau klaim baru.",
+            89,
+            {"clarity": 18, "curiosity": 19, "emotion": 18, "contrast": 17, "legibility": 17},
+        ),
+    ]
+    variants_by_id = {str(item.get("id")): item for item in variants}
+    ideas: list[dict[str, object]] = []
+    for variant_id, angle, direction, score, breakdown in angle_specs:
+        rendered = variants_by_id.get(variant_id, {})
+        headline = str(rendered.get("headline") or hook).replace("\n", " ").strip()
+        ideas.append(
+            {
+                "id": variant_id,
+                "angle": angle,
+                "eyebrow": str(sidecar.get("thumbnail_eyebrow") or "KISAH NYATA"),
+                "headline": headline,
+                "support": first_sentence(core_message, max_words=10),
+                "keyframe_direction": direction,
+                "composition": (
+                    "9:16 actual-video keyframe; one dominant subject; headline kept in the "
+                    "central Shorts-safe area; preserve face and evidence visibility."
+                ),
+                "palette": "source-derived dark contrast with one theme accent and white type",
+                "image_prompt": (
+                    f"Use only the supplied frame from {video_path.name}. Preserve all people, "
+                    f"objects, identity, and event context. Add the exact headline '{headline}' "
+                    "with high mobile legibility and a restrained cinematic grade."
+                ),
+                "negative_prompt": (
+                    "no invented people, no face replacement, no fake evidence, no copied channel "
+                    "branding, no fabricated quote, no unrelated object, no gore, no tiny text"
+                ),
+                "evidence": evidence,
+                "filename": rendered.get("filename"),
+                "score": score,
+                "score_breakdown": breakdown,
+            }
+        )
+    manifest_path = video_path.with_name(f"{video_path.stem}_thumbnail_ideas.json")
+    save_json(
+        manifest_path,
+        {
+            "schema": "clipforge-thumbnail-ideas-v1",
+            "source_clip": video_path.name,
+            "format": str(sidecar.get("aspect_ratio") or "9:16"),
+            "truthfulness": {
+                "grounded_in_clip_evidence": True,
+                "invented_claims_allowed": False,
+                "reference_design_copying_allowed": False,
+                "shorts_custom_thumbnail_guaranteed": False,
+            },
+            "variants": ideas,
+            "recommended_variant": "A",
+        },
+    )
+    return manifest_path
+
+
 def generate_thumbnail_prompt(
     clip: ClipCandidate,
     config: AIConfig,
@@ -17835,8 +17927,65 @@ def export_clip(
             thumb_path,
             label=f"thumbnail final clip {clip.index}",
         )
+        thumbnail_variants: list[dict[str, str]] = []
         if rendered_thumb is not None:
             sidecar_payload["thumbnail_frame_seconds"] = round(thumb_timestamp, 3)
+            thumbnail_variants.append(
+                {
+                    "id": "A",
+                    "angle": "human_tension",
+                    "filename": thumb_path.name,
+                    "headline": cover_copy["headline"].replace("\n", " "),
+                }
+            )
+        variant_sources = [
+            (
+                "B",
+                "object_or_evidence",
+                str(sidecar_payload.get("core_message") or clip.pov or clip.title),
+                clips_dir / f"{base_name}_thumb_b.jpg",
+                max(0.1, duration * 0.52),
+                1,
+            ),
+            (
+                "C",
+                "cinematic_story",
+                clip.pov or clip.title,
+                clips_dir / f"{base_name}_thumb_c.jpg",
+                max(0.1, duration * 0.82),
+                2,
+            ),
+        ]
+        for variant_id, angle, source_copy, variant_path, timestamp, variation in variant_sources:
+            variant_copy = thumbnail_story_copy(
+                clip,
+                first_sentence(source_copy, max_words=7),
+            )
+            if render_designed_thumbnail(
+                out_path,
+                timestamp,
+                variant_path,
+                variant_copy,
+                long_form=False,
+                theme_profile=visual_theme_profile(clip),
+                label=f"thumbnail Short varian {variant_id} clip {clip.index}",
+                variation=variation,
+            ) is not None:
+                thumbnail_variants.append(
+                    {
+                        "id": variant_id,
+                        "angle": angle,
+                        "filename": variant_path.name,
+                        "headline": variant_copy["headline"].replace("\n", " "),
+                    }
+                )
+        sidecar_payload["thumbnail_variants"] = thumbnail_variants
+        sidecar_payload["thumbnail_ideas_manifest"] = write_thumbnail_ideas_manifest(
+            out_path,
+            clip,
+            sidecar_payload,
+            thumbnail_variants,
+        ).name
         if thumb_prompt:
             prompt_path.write_text(
                 f"POV: {cover_copy['headline'].replace(chr(10), ' ')}\n"
@@ -18401,6 +18550,12 @@ def export_compilation(
             f"{thumb_prompt['prompt']}\n",
             encoding="utf-8",
         )
+    compilation_sidecar["thumbnail_ideas_manifest"] = write_thumbnail_ideas_manifest(
+        out_path,
+        compilation,
+        compilation_sidecar,
+        compilation_sidecar.get("thumbnail_variants", []),
+    ).name
     save_json(json_path, compilation_sidecar)
     social_caption = generate_social_caption(
         compilation,
@@ -19303,36 +19458,47 @@ def render_animated_script(
     rebuild_audit: dict[str, object] | None = None,
 ) -> int:
     """Render a script through Scene Cinema and persist mode-specific provenance."""
-    from long_animate import render_long_animate
-
-    ai_config = AIConfig(
-        enabled=args.ai_enabled,
-        base_url=args.ai_base_url,
-        model=args.ai_model,
-        api_key=args.ai_api_key,
-    )
     required_hashtags = [tag.strip() for tag in args.required_hashtags.split(",") if tag.strip()]
-    label = "Original Rebuild" if production_mode == "original_rebuild" else "Long Animate"
-    emit_progress(48 if rebuild_audit else 3, "selection", f"Menyusun {label} lewat Scene Cinema")
-    output_path, sidecar = render_long_animate(
-        script,
-        root,
-        ai_config,
-        video_quality=args.video_quality,
-        required_hashtags=required_hashtags,
-        burn_subtitles=not args.no_burn_subtitles,
-        subtitle_style=build_subtitle_style(
-            CaptionStyle(
-                font_size=args.caption_font_size,
-                position=args.caption_position,
-                color=args.caption_color,
-                font_family=args.caption_font,
-                outline_width=args.caption_outline,
-                outline_color=args.caption_outline_color,
-            )
-        ),
-        progress=emit_progress,
-    )
+    quick_hypit = is_hypit_quick_prompt(script)
+    if quick_hypit:
+        label = "Hypit Quick"
+        emit_progress(3, "selection", "Menyusun ranking Short dari prompt /hypit")
+        output_path, sidecar = render_hypit_quick(
+            script,
+            root,
+            video_quality=args.video_quality,
+            progress=emit_progress,
+        )
+    else:
+        from long_animate import render_long_animate
+
+        ai_config = AIConfig(
+            enabled=args.ai_enabled,
+            base_url=args.ai_base_url,
+            model=args.ai_model,
+            api_key=args.ai_api_key,
+        )
+        label = "Original Rebuild" if production_mode == "original_rebuild" else "Long Animate"
+        emit_progress(48 if rebuild_audit else 3, "selection", f"Menyusun {label} lewat Scene Cinema")
+        output_path, sidecar = render_long_animate(
+            script,
+            root,
+            ai_config,
+            video_quality=args.video_quality,
+            required_hashtags=required_hashtags,
+            burn_subtitles=not args.no_burn_subtitles,
+            subtitle_style=build_subtitle_style(
+                CaptionStyle(
+                    font_size=args.caption_font_size,
+                    position=args.caption_position,
+                    color=args.caption_color,
+                    font_family=args.caption_font,
+                    outline_width=args.caption_outline,
+                    outline_color=args.caption_outline_color,
+                )
+            ),
+            progress=emit_progress,
+        )
     if args.slow_motion_no_voice:
         emit_progress(96, "render", "Menerapkan slow motion 0,65x tanpa suara")
         slowed_duration = apply_slow_motion_no_voice(
@@ -19644,19 +19810,30 @@ def main() -> int:
         console.print("[red]Long Animate membutuhkan --script-file.[/red]")
         return 2
     if args.clip_mode == "long_animate":
+        script_path = Path(args.script_file)
+        script_preview = (
+            script_path.read_text(encoding="utf-8").strip()
+            if script_path.is_file()
+            else ""
+        )
+        quick_hypit = is_hypit_quick_prompt(script_preview)
         target_duration = max(
-            60.0,
+            20.0 if quick_hypit else 60.0,
             min(600.0, float(args.long_animate_target_duration or 300.0)),
         )
         os.environ["LONG_ANIMATE_TARGET_DURATION_SECONDS"] = f"{target_duration:g}"
         os.environ["LONG_ANIMATE_OUTPUT_ASPECT_RATIO"] = "9:16"
-        if not args.ai_enabled or not args.ai_base_url or not args.ai_model:
+        if not quick_hypit and (not args.ai_enabled or not args.ai_base_url or not args.ai_model):
             console.print(
                 "[red]Generator Cerita membutuhkan AI aktif, base URL, dan model.[/red]"
             )
             return 2
     if args.clip_mode == "long_animate" and (
-        not args.confirm_provider_rights or len(args.provider_rights_evidence.split()) < 3
+        not quick_hypit
+        and (
+            not args.confirm_provider_rights
+            or len(args.provider_rights_evidence.split()) < 3
+        )
     ):
         console.print(
             "[red]Long Animate memerlukan konfirmasi dan referensi bukti izin komersial provider.[/red]"
@@ -19706,7 +19883,7 @@ def main() -> int:
             console.print("[red]File naskah Long Animate tidak ditemukan.[/red]")
             return 2
         script = script_path.read_text(encoding="utf-8").strip()
-        if len(script) < 60 or len(script.split()) < 12:
+        if not is_hypit_quick_prompt(script) and (len(script) < 60 or len(script.split()) < 12):
             console.print(
                 "[red]Jalan cerita terlalu pendek. Gunakan minimal 60 karakter dan 12 kata.[/red]"
             )
