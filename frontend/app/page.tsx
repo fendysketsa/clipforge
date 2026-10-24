@@ -171,6 +171,7 @@ export default function HomePage() {
 
   const activeJobId = activeJob?.id;
   const isBusy = isActiveJob(activeJob);
+  const hasActiveHistoryJobs = jobs.some(isActiveJob);
   const activityJob = isBusy ? activeJob : job;
   const latestLogs = useMemo(() => activityJob?.logs.slice(-RECENT_LOG_LIMIT) ?? [], [activityJob]);
   const hasActiveYouTubeUpload = youtubeUploads.some(
@@ -324,6 +325,31 @@ export default function HomePage() {
     loadYouTubeUploads().catch(() => undefined);
     loadTikTokUploads().catch(() => undefined);
   }, [loadJobs, loadTikTokUploads, loadYouTubeUploads]);
+
+  useEffect(() => {
+    if (!hasActiveHistoryJobs) return;
+    let cancelled = false;
+    let requestInFlight = false;
+
+    const refreshActiveHistory = async () => {
+      if (requestInFlight) return;
+      requestInFlight = true;
+      try {
+        const nextJobs = await getJobs();
+        if (!cancelled) setJobs(nextJobs);
+      } catch {
+        // A temporary polling failure must not interrupt the active backend job.
+      } finally {
+        requestInFlight = false;
+      }
+    };
+
+    const interval = window.setInterval(refreshActiveHistory, ACTIVE_JOB_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [hasActiveHistoryJobs]);
 
   useEffect(() => {
     if (!hasActiveTikTokUpload) return;
@@ -1587,6 +1613,8 @@ export default function HomePage() {
         />
         <HistorySection
           jobs={jobs.filter((item) => ["short", "highlight_5m", "long_animate"].includes(item.request.clip_mode))}
+          youtubeUploads={youtubeUploads}
+          tiktokUploads={tiktokUploads}
           selectedJobIds={selectedHistoryJobIds}
           onDeleteAll={handleDeleteAll}
           onDeleteFailed={handleDeleteFailed}

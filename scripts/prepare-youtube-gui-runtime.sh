@@ -117,7 +117,7 @@ if [[ "$MODE" == "start-watcher" ]]; then
       wait "$existing_pid" 2>/dev/null || true
     fi
   fi
-  nohup "$0" --watch >>"$WATCH_LOG_FILE" 2>&1 &
+  nohup "$0" --watch >>"$WATCH_LOG_FILE" 2>&1 9>&- &
   watcher_pid=$!
   printf '%s\n' "$watcher_pid" >"$WATCH_PID_FILE"
   echo "GUI bridge watcher dimulai (PID $watcher_pid)."

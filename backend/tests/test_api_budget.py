@@ -1558,6 +1558,42 @@ def test_auto_viral_recurring_schedule_retries_failed_discovery(monkeypatch):
     assert api.auto_viral_next_run_at(now, latest, None) == now + timedelta(minutes=3)
 
 
+def test_failed_schedule_starts_fresh_discovery_when_daily_short_target_is_incomplete(
+    monkeypatch,
+):
+    import api
+
+    now = datetime(2026, 10, 24, 1, 40, tzinfo=timezone.utc)
+    latest = api.AutoViralRun(
+        id="interrupted-after-restart",
+        status="failed",
+        trigger="schedule",
+        created_at=(now - timedelta(minutes=20)).isoformat(),
+        updated_at=(now - timedelta(minutes=2)).isoformat(),
+        finished_at=(now - timedelta(minutes=2)).isoformat(),
+        request=AutoViralRequest(video_count=14, auto_upload_youtube=True),
+        progress_stage="interrupted",
+    )
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT", "false")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RETRY_UNTIL_SUCCESS", "false")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "15")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", "14")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_RETRY_DELAY_MINUTES", "5")
+    monkeypatch.setenv("AUTO_VIRAL_CYCLE_DELAY_HOURS", "24")
+    monkeypatch.setenv("AUTO_VIRAL_BOOT_DELAY_MINUTES", "0")
+    monkeypatch.setattr(api, "system_uptime_seconds", lambda: 60 * 60)
+    monkeypatch.setattr(
+        api,
+        "auto_viral_daily_youtube_content_counts",
+        lambda *_args: {"short": 1, "long": 0},
+    )
+
+    assert api.auto_viral_next_run_at(now, latest, None) == now + timedelta(
+        minutes=3
+    )
+
+
 def test_auto_viral_upload_backlog_uses_oldest_resumable_run(monkeypatch):
     import api
 
@@ -2719,6 +2755,108 @@ def test_completed_job_upload_failure_is_terminal_for_automatic_sweeper(monkeypa
         "/outputs/clip.mp4",
         now=now + timedelta(days=30),
     )
+
+
+def test_completed_job_sweeper_retries_only_verified_absent_youtube_upload(monkeypatch):
+    import api
+
+    clip = ClipFile(
+        name="clip.mp4",
+        url="/outputs/released/clip.mp4",
+        size_bytes=1024,
+    )
+    job = ClipJob(
+        id="released-youtube-job",
+        status="completed",
+        request=ClipJobRequest(auto_upload_youtube=True),
+        created_at="2026-10-24T01:00:00+00:00",
+        updated_at="2026-10-24T01:00:00+00:00",
+        clips=[clip],
+    )
+    released = api.YouTubeUploadJob(
+        id="released-upload",
+        source_job_id=job.id,
+        clip_url=clip.url,
+        clip_name=clip.name,
+        status="failed",
+        created_at="2026-10-24T01:01:00+00:00",
+        updated_at="2026-10-24T01:02:00+00:00",
+        title="Interrupted upload",
+        logs=[
+            api.YOUTUBE_RESTART_VERIFY_MARKER,
+            api.YOUTUBE_RESTART_VERIFY_ABSENT_MARKER,
+        ],
+        error=(
+            "Video pasca-restart belum terverifikasi; "
+            "video belum ditemukan sebagai baris tersimpan di halaman Content."
+        ),
+    )
+    monkeypatch.setattr(api, "youtube_uploads", {released.id: released})
+
+    assert api.youtube_fresh_retry_released(job.id, clip.url) is True
+    assert api.pending_completed_job_upload_urls(
+        job,
+        [clip.url],
+        platform="youtube",
+    ) == [clip.url]
+
+
+def test_auto_upload_request_is_requeued_after_verified_absence(monkeypatch):
+    import api
+
+    clip = ClipFile(
+        name="clip.mp4",
+        url="/outputs/released/clip.mp4",
+        size_bytes=1024,
+        fyp_score=95,
+        growth_quality_gate_passed=True,
+    )
+    job = ClipJob(
+        id="auto-retry-job",
+        status="completed",
+        request=ClipJobRequest(auto_upload_youtube=True),
+        created_at="2026-10-24T01:00:00+00:00",
+        updated_at="2026-10-24T01:00:00+00:00",
+        clips=[clip],
+    )
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS", "true")
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS_YOUTUBE", "true")
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS_TIKTOK", "false")
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "auto_viral_runs", {})
+    monkeypatch.setattr(
+        api,
+        "best_automatic_upload_clip_urls",
+        lambda *_args, **_kwargs: [clip.url],
+    )
+    monkeypatch.setattr(
+        api,
+        "pending_completed_job_upload_urls",
+        lambda _job, urls, *, platform: urls,
+    )
+    monkeypatch.setattr(api, "youtube_fresh_retry_released", lambda *_args: True)
+    monkeypatch.setattr(api, "youtube_default_visibility", lambda: "private")
+    monkeypatch.setattr(api, "require_youtube_ready", lambda: None)
+    monkeypatch.setattr(
+        api,
+        "create_youtube_upload_batch_records",
+        lambda _job_id, request: [
+            SimpleNamespace(status="queued", visibility=request.visibility)
+        ],
+    )
+    queued: list[str] = []
+    monkeypatch.setattr(
+        api,
+        "queue_youtube_upload_jobs",
+        lambda items: queued.append(items[0].visibility),
+    )
+
+    assert api.queue_completed_job_uploads_once() == {
+        "youtube": 1,
+        "tiktok": 0,
+        "repair": 0,
+    }
+    assert queued == ["private"]
 
 
 def test_completed_job_sweeper_queues_both_public_platforms_without_ui(monkeypatch):

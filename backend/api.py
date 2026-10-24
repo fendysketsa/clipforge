@@ -9404,7 +9404,8 @@ def run_youtube_restart_verification(upload_id: str) -> None:
             or f"youtube_uploader.py verify-upload exited with code {code}"
         )
         if code != 0 or not confirmed or not video_url:
-            if youtube_restart_verification_absence_confirmed(error):
+            absence_confirmed = youtube_restart_verification_absence_confirmed(error)
+            if absence_confirmed:
                 logs.append(YOUTUBE_RESTART_VERIFY_ABSENT_MARKER)
             set_youtube_upload(
                 upload_id,
@@ -9419,6 +9420,11 @@ def run_youtube_restart_verification(upload_id: str) -> None:
                     + error
                 ),
             )
+            if absence_confirmed and env_bool("AUTO_UPLOAD_COMPLETED_JOBS", False):
+                # Wake the unattended operator immediately. It will create one
+                # fresh upload only because the Content check above released
+                # the stale draft; ordinary failures stay terminal.
+                completed_job_upload_sweeper_wakeup.set()
             return
 
         completed_at = now_iso()
@@ -11053,13 +11059,15 @@ def completed_job_upload_retry_ready(
     clip_url_value: str,
     *,
     now: datetime | None = None,
+    allow_released_youtube_verification: bool = False,
 ) -> bool:
     """Return True only when no durable or terminal upload owns the clip.
 
     Automatic retries used to become eligible again after a short cooldown.
     That made the sweeper create an unbounded sequence of failed records for
-    the same platform target. A failed automatic attempt is terminal now;
-    retry remains an explicit operator action.
+    the same platform target. A failed automatic attempt remains terminal
+    unless a read-only YouTube Studio verification conclusively proved that
+    the remote draft is absent; only that case gets one fresh automatic upload.
     """
     exact = [
         item
@@ -11077,9 +11085,39 @@ def completed_job_upload_retry_ready(
         for item in exact
     ):
         return False
-    return not any(
-        getattr(item, "status", "") in {"failed", "cancelled"}
+    terminal = [
+        item
         for item in exact
+        if getattr(item, "status", "") in {"failed", "cancelled"}
+    ]
+    if not terminal:
+        return True
+    # A read-only Studio Content check can conclusively release an interrupted
+    # draft after proving that no remote video exists. Only that narrow YouTube
+    # failure is safe for the unattended operator to replace with one fresh
+    # upload; every other failed/cancelled attempt remains terminal.
+    return bool(
+        allow_released_youtube_verification
+        and all(
+            isinstance(item, YouTubeUploadJob)
+            and youtube_restart_verification_released(item)
+            for item in terminal
+        )
+    )
+
+
+def youtube_fresh_retry_released(job_id: str, clip_url_value: str) -> bool:
+    """Return true only after Studio proved the interrupted upload is absent."""
+    with youtube_uploads_lock:
+        exact = [
+            item
+            for item in youtube_uploads.values()
+            if item.source_job_id == job_id
+            and item.clip_url == clip_url_value
+            and not item.dry_run
+        ]
+    return bool(exact) and any(
+        youtube_restart_verification_released(item) for item in exact
     )
 
 
@@ -11100,7 +11138,12 @@ def pending_completed_job_upload_urls(
         for url in eligible_urls
         if (
             (platform != "youtube" or youtube_clip_claim_block(job.id, url) is None)
-            and completed_job_upload_retry_ready(records, job.id, url)
+            and completed_job_upload_retry_ready(
+                records,
+                job.id,
+                url,
+                allow_released_youtube_verification=platform == "youtube",
+            )
         )
     ]
 
@@ -11239,12 +11282,22 @@ def queue_completed_job_uploads_once() -> dict[str, int]:
         # Jobs created with the per-request YouTube auto-upload flag are
         # queued directly by run_job(). The generic operator still handles
         # TikTok for them, but must not race that direct YouTube path.
-        if youtube_enabled and not job.request.auto_upload_youtube:
+        if youtube_enabled:
             urls = pending_completed_job_upload_urls(
                 job,
                 eligible_urls,
                 platform="youtube",
             )
+            if job.request.auto_upload_youtube:
+                # run_job() owns the normal first upload for this request.
+                # The background operator may take over only after a restart
+                # verification explicitly proved that the interrupted remote
+                # draft does not exist, so it cannot race or duplicate it.
+                urls = [
+                    url
+                    for url in urls
+                    if youtube_fresh_retry_released(job.id, url)
+                ]
             if youtube_default_visibility() == "public":
                 urls = urls[:1]
             if urls:
@@ -18621,6 +18674,24 @@ def auto_viral_next_run_at(
         return max(
             auto_viral_boot_not_before(now),
             now + timedelta(hours=auto_viral_cycle_delay_hours()),
+        )
+    if (
+        latest is not None
+        and latest.status == "failed"
+        and auto_viral_daily_mix_incomplete(now)
+    ):
+        # RETRY_UNTIL_SUCCESS controls retrying the same failed upload target.
+        # It must not leave today's daily quota empty after a restart or a
+        # terminal batch failure. Start a fresh discovery campaign after the
+        # short retry delay; held/failed targets remain terminal and are never
+        # revived by this path.
+        retry_anchor = parse_utc_datetime(
+            latest.finished_at or latest.updated_at or latest.created_at,
+            now,
+        )
+        return max(
+            auto_viral_boot_not_before(now),
+            retry_anchor + timedelta(minutes=auto_viral_retry_delay_minutes()),
         )
     if (
         latest is not None

@@ -84,7 +84,7 @@ fi
 source "$ROOT_DIR/scripts/load-dotenv.sh"
 load_dotenv "$ROOT_DIR/.env"
 
-"$ROOT_DIR/scripts/prepare-youtube-gui-runtime.sh" --start-watcher
+"$ROOT_DIR/scripts/prepare-youtube-gui-runtime.sh" --start-watcher 9>&-
 
 YOUTUBE_CDP_PORT="${YOUTUBE_CDP_PORT:-}"
 if [[ -z "$YOUTUBE_CDP_PORT" && "${YOUTUBE_CDP_URL:-}" =~ :([0-9]+)(/.*)?$ ]]; then
@@ -165,6 +165,13 @@ PY
 start_legacy_tiktok_cdp_proxy() {
   local legacy_port="${TIKTOK_LEGACY_CDP_PORT:-9444}"
   local proxy_log="${TIKTOK_LEGACY_CDP_PROXY_LOG:-/tmp/fendy-clipper-tiktok-cdp-proxy.log}"
+  # Linux fs.protected_regular can reject root appending to a user-owned file
+  # inside sticky /tmp (and vice versa), even when normal mode bits appear
+  # writable. Keep a per-UID fallback so sudo/pkexec rebuilds cannot fail
+  # before the media-idle guard runs.
+  if [[ -e "$proxy_log" && ! -O "$proxy_log" ]]; then
+    proxy_log="${proxy_log}.uid-${EUID}"
+  fi
   if [[ "$legacy_port" == "$YOUTUBE_CDP_PORT" ]]; then
     return 0
   fi
@@ -179,7 +186,7 @@ start_legacy_tiktok_cdp_proxy() {
   nohup socat \
     "TCP-LISTEN:${legacy_port},bind=127.0.0.1,reuseaddr,fork" \
     "TCP:127.0.0.1:${YOUTUBE_CDP_PORT}" \
-    >>"$proxy_log" 2>&1 &
+    >>"$proxy_log" 2>&1 9>&- &
   if ! wait_for_cdp "$legacy_port"; then
     echo "Peringatan: endpoint kompatibilitas TikTok gagal aktif; lihat ${proxy_log}." >&2
     return 0
@@ -452,7 +459,7 @@ if pgrep -af "remote-debugging-port=${YOUTUBE_CDP_PORT}.*${YOUTUBE_LOGIN_PROFILE
   echo "YouTube login Chrome already running on CDP port ${YOUTUBE_CDP_PORT}."
 else
   echo "Starting YouTube login Chrome in background..."
-  nohup "$ROOT_DIR/scripts/open-youtube-login-chrome.sh" >>"$YOUTUBE_CHROME_LAUNCH_LOG" 2>&1 &
+  nohup "$ROOT_DIR/scripts/open-youtube-login-chrome.sh" >>"$YOUTUBE_CHROME_LAUNCH_LOG" 2>&1 9>&- &
   echo "YouTube login Chrome launcher log: ${YOUTUBE_CHROME_LAUNCH_LOG}"
 fi
 
@@ -509,7 +516,7 @@ elif tiktok_saved_session_ready; then
       TIKTOK_CHROME_BACKGROUND=false \
       TIKTOK_CHROME_MINIMIZED=true \
       nohup "$ROOT_DIR/scripts/open-tiktok-login-chrome.sh" \
-      >>"$TIKTOK_HOST_CHROME_LAUNCH_LOG" 2>&1 &
+      >>"$TIKTOK_HOST_CHROME_LAUNCH_LOG" 2>&1 9>&- &
     if ! wait_for_cdp "$TIKTOK_CDP_PORT"; then
       echo "Profile TikTok tersimpan ada, tetapi Chrome background gagal dimulai." >&2
       tail -40 "$TIKTOK_HOST_CHROME_LAUNCH_LOG" >&2 || true
@@ -539,7 +546,7 @@ else
       TIKTOK_CHROME_BACKGROUND=false \
       TIKTOK_CHROME_MINIMIZED=true \
       nohup "$ROOT_DIR/scripts/open-tiktok-login-chrome.sh" \
-      >>"$TIKTOK_HOST_CHROME_LAUNCH_LOG" 2>&1 &
+      >>"$TIKTOK_HOST_CHROME_LAUNCH_LOG" 2>&1 9>&- &
     echo "TikTok host Chrome launcher log: ${TIKTOK_HOST_CHROME_LAUNCH_LOG}"
   fi
 
