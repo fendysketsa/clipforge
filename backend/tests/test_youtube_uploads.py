@@ -746,6 +746,58 @@ def test_claim_cleanup_deletes_local_clip_and_result_card(monkeypatch, tmp_path)
     assert claim.id not in api.claimed_clip_cleanup_scheduled
 
 
+def test_restart_claim_text_is_terminal_only_for_cron_owned_job(monkeypatch):
+    import api
+
+    claim_error = (
+        "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. "
+        "YouTube Studio mendeteksi klaim Content ID/copyright pada clip ini. "
+        "Upload dibatalkan sebelum aksi Simpan/Publikasikan agar channel tetap aman."
+    )
+    scheduled = api.AutoViralRun(
+        id="restart-claim-cron",
+        status="failed",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=api.AutoViralRequest(video_count=1),
+        processed=[
+            {
+                "job_id": "short-job",
+                "long_job_id": "cron-long-claimed",
+                "status": "checkpoint_missing",
+            }
+        ],
+    )
+    cron_claim = YouTubeUploadJob(
+        id="restart-cron-claim",
+        source_job_id="cron-long-claimed",
+        clip_url="/outputs/cron-long-claimed/clip.mp4",
+        clip_name="clip.mp4",
+        status="failed",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        title="Cron claimed",
+        error=claim_error,
+        logs=["USER_ERROR: YouTube Studio mendeteksi klaim Content ID/copyright pada clip ini."],
+    )
+    manual_claim = cron_claim.model_copy(
+        update={"id": "restart-manual-claim", "source_job_id": "manual-job"}
+    )
+    negative_check = cron_claim.model_copy(
+        update={
+            "id": "restart-negative-check",
+            "error": "Video pasca-restart belum terverifikasi.",
+            "logs": ["Tidak ada klaim pada verifikasi akhir; Private tercentang."],
+        }
+    )
+    monkeypatch.setattr(api, "auto_viral_runs", {scheduled.id: scheduled})
+
+    assert api.youtube_upload_was_claimed(cron_claim) is True
+    assert api.youtube_upload_was_claimed(manual_claim) is False
+    assert api.youtube_upload_was_claimed(negative_check) is False
+
+
 def test_claimed_clip_cannot_start_manual_repair(monkeypatch, tmp_path):
     import api
 

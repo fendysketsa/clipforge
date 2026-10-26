@@ -7071,10 +7071,7 @@ def youtube_source_claim_block(upload_or_job_id: YouTubeUploadJob | str) -> YouT
             upload
             for upload in candidates
             if upload.source_job_id == source_job_id
-            and any(
-                str(line).startswith(YOUTUBE_CLAIM_ABORT_PREFIX)
-                for line in upload.logs
-            )
+            and youtube_upload_was_claimed(upload)
         ),
         None,
     )
@@ -7109,20 +7106,71 @@ def youtube_clip_claim_block(
                 or not upload.clip_sha256
                 or upload.clip_sha256 == clip_sha256
             )
-            and any(
-                str(line).startswith(YOUTUBE_CLAIM_ABORT_PREFIX)
-                for line in upload.logs
-            )
+            and youtube_upload_was_claimed(upload)
         ),
         None,
     )
 
 
-def youtube_upload_was_claimed(upload: YouTubeUploadJob) -> bool:
-    """Return whether Studio conclusively rejected these exact uploaded bytes."""
+def youtube_upload_has_explicit_claim_evidence(upload: YouTubeUploadJob) -> bool:
+    """Recognize affirmative claim evidence without matching negative checks."""
+    lines = [
+        *[str(line) for line in getattr(upload, "logs", [])],
+        str(getattr(upload, "error", "") or ""),
+    ]
+    if any(line.startswith(YOUTUBE_CLAIM_ABORT_PREFIX) for line in lines):
+        return True
+    affirmative_markers = (
+        "mendeteksi klaim content id/copyright",
+        "klaim content id/copyright muncul",
+        "klaim content id/copyright terdeteksi",
+        "upload dihentikan oleh kebijakan nol-klaim",
+    )
     return any(
+        marker in line.casefold()
+        for line in lines
+        for marker in affirmative_markers
+    )
+
+
+def youtube_upload_belongs_to_scheduled_run(upload: YouTubeUploadJob) -> bool:
+    """Keep legacy-text claim recovery scoped to unattended cron jobs."""
+    source_job_id = str(getattr(upload, "source_job_id", "") or "").strip()
+    if not source_job_id:
+        return False
+    with auto_viral_lock:
+        runs = list(auto_viral_runs.values())
+    return any(
+        run.trigger == "schedule"
+        and any(
+            source_job_id
+            in {
+                str(item.get("job_id") or "").strip(),
+                str(item.get("long_job_id") or "").strip(),
+            }
+            for item in run.processed
+        )
+        for run in runs
+    )
+
+
+def youtube_upload_was_claimed(upload: YouTubeUploadJob) -> bool:
+    """Return whether Studio conclusively rejected these exact uploaded bytes.
+
+    Current uploader attempts persist a durable marker. Older/restarted cron
+    verifications sometimes retained only YouTube's explicit claim error; that
+    evidence is accepted for scheduled jobs so their cards cannot become stuck.
+    """
+    marker_present = any(
         str(line).startswith(YOUTUBE_CLAIM_ABORT_PREFIX)
         for line in getattr(upload, "logs", [])
+    )
+    if marker_present:
+        return True
+    return bool(
+        getattr(upload, "status", "") in {"failed", "cancelled"}
+        and youtube_upload_belongs_to_scheduled_run(upload)
+        and youtube_upload_has_explicit_claim_evidence(upload)
     )
 
 
@@ -9572,6 +9620,10 @@ def run_youtube_restart_verification(upload_id: str) -> None:
             absence_confirmed = youtube_restart_verification_absence_confirmed(error)
             if absence_confirmed:
                 logs.append(YOUTUBE_RESTART_VERIFY_ABSENT_MARKER)
+            failed_error = (
+                "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. "
+                + error
+            )
             set_youtube_upload(
                 upload_id,
                 status="failed",
@@ -9580,11 +9632,12 @@ def run_youtube_restart_verification(upload_id: str) -> None:
                 upload_confirmed=False,
                 finished_at=now_iso(),
                 duration_seconds=elapsed_seconds(started_perf),
-                error=(
-                    "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. "
-                    + error
-                ),
+                error=failed_error,
             )
+            with youtube_uploads_lock:
+                failed_upload = youtube_uploads.get(upload_id)
+            if failed_upload is not None and youtube_upload_was_claimed(failed_upload):
+                schedule_claimed_clip_cleanup(upload_id)
             if absence_confirmed and env_bool("AUTO_UPLOAD_COMPLETED_JOBS", False):
                 # Wake the unattended operator immediately. It will create one
                 # fresh upload only because the Content check above released
@@ -11175,10 +11228,7 @@ def resume_queued_youtube_uploads() -> None:
             for upload in youtube_uploads.values()
             if upload.status == "failed"
             and not upload.clip_deleted_at
-            and any(
-                str(line).startswith(YOUTUBE_CLAIM_ABORT_PREFIX)
-                for line in upload.logs
-            )
+            and youtube_upload_was_claimed(upload)
         ]
         pending_cleanup_ids = [
             upload.id
