@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -65,6 +66,77 @@ def _motion_title_style(narrative_role: str) -> str:
 def _hypit_text(value: str) -> str:
     """Escape prose while retaining Hypit's semantic Script Surface."""
     return html.escape(" ".join(value.split()), quote=False).replace("@", r"\@")
+
+
+def _caption_phrases(text: str, *, max_words: int = 6, max_chars: int = 38) -> list[list[str]]:
+    phrases: list[list[str]] = []
+    current: list[str] = []
+    for word in text.split():
+        proposed = " ".join([*current, word])
+        if current and (len(current) >= max_words or len(proposed) > max_chars):
+            phrases.append(current)
+            current = [word]
+        else:
+            current.append(word)
+        if current and re.search(r"[.!?;:]$", current[-1]) and len(current) >= 3:
+            phrases.append(current)
+            current = []
+    if current:
+        phrases.append(current)
+    return phrases
+
+
+def _caption_cues(scenes: Iterable[Any], fps: int) -> list[dict[str, Any]]:
+    """Create frame-native, phrase-stable captions from measured TTS timing."""
+    scene_start_frame = 0
+    cues: list[dict[str, Any]] = []
+    for scene in scenes:
+        scene_frames = max(1, round(float(scene.duration) * fps))
+        narration = " ".join(str(scene.narration or "").split())
+        voice_duration = min(
+            float(scene.duration),
+            max(0.0, float(getattr(scene, "voice_duration", 0.0) or 0.0)),
+        )
+        words = list(getattr(scene, "speech_words", []) or [])
+        phrases = _caption_phrases(narration)
+        local_cues: list[dict[str, Any]] = []
+        word_cursor = 0
+        for phrase in phrases:
+            count = len(phrase)
+            timed = words[word_cursor : word_cursor + count]
+            if timed and len(timed) == count:
+                local_start = float(timed[0].get("start", 0.0) or 0.0)
+                local_end = float(timed[-1].get("end", local_start) or local_start)
+            else:
+                total_words = max(1, sum(len(item) for item in phrases))
+                usable = voice_duration or float(scene.duration)
+                local_start = usable * word_cursor / total_words
+                local_end = usable * (word_cursor + count) / total_words
+            start_frame = scene_start_frame + max(0, round(local_start * fps))
+            end_frame = scene_start_frame + min(
+                scene_frames,
+                max(round(local_end * fps), round(local_start * fps) + 1),
+            )
+            local_cues.append(
+                {
+                    "id": f"scene-{int(scene.index):03d}-caption-{len(local_cues) + 1:02d}",
+                    "text": " ".join(phrase),
+                    "startFrame": start_frame,
+                    "endFrame": end_frame,
+                    "scene": int(scene.index),
+                }
+            )
+            word_cursor += count
+        # Hold the current phrase until the next one starts.  Brief pauses from
+        # the TTS service must not blank the layer and create a visible blink.
+        # The final phrase still ends at the measured end of speech.
+        for index in range(len(local_cues) - 1):
+            current = local_cues[index]
+            following = local_cues[index + 1]
+            current["endFrame"] = following["startFrame"]
+        cues.extend(local_cues)
+        scene_start_frame += scene_frames
+    return cues
 
 
 def write_hypit_script(storyboard: Any, output_path: Path) -> Path:
@@ -207,7 +279,9 @@ def render_story_with_remotion(
     asset_dir = public_dir / "assets"
     asset_dir.mkdir(parents=True, exist_ok=True)
 
+    fps = 30
     cursor = 0.0
+    cursor_frame = 0
     manifest_shots: list[dict[str, Any]] = []
     scenes_by_index = {
         int(scene.index): scene for scene in storyboard.scenes
@@ -223,7 +297,8 @@ def render_story_with_remotion(
             if index < len(shots)
             else duration
         )
-        effective_duration = max(1 / 30, next_cursor - cursor)
+        effective_duration = max(1 / fps, next_cursor - cursor)
+        duration_frames = max(1, round(effective_duration * fps))
         scene_index = int(getattr(shot, "scene_index", index) or index)
         source_scene = scenes_by_index.get(scene_index)
         narrative_role = str(
@@ -238,6 +313,8 @@ def render_story_with_remotion(
                 "id": f"shot-{index:03d}",
                 "start": round(cursor, 6),
                 "duration": round(effective_duration, 6),
+                "startFrame": cursor_frame,
+                "durationInFrames": duration_frames,
                 "asset": asset_name,
                 "kind": "video" if suffix in {".mp4", ".mov", ".webm", ".mkv"} else "image",
                 "cameraMotion": str(shot.camera_motion or "push_in"),
@@ -262,27 +339,33 @@ def render_story_with_remotion(
             }
         )
         cursor = next_cursor
+        cursor_frame += duration_frames
 
     # AnimateScene owns a measured duration, not a mutable start field.  Derive
     # starts from the authoritative allocated durations so the Remotion
     # manifest cannot drift from TTS timing (and does not depend on test-only
     # attributes that are absent in production).
     scene_cursor = 0.0
+    scene_cursor_frame = 0
     manifest_scenes: list[dict[str, Any]] = []
     for scene in storyboard.scenes:
         scene_duration = max(1 / 30, float(scene.duration))
+        scene_duration_frames = max(1, round(scene_duration * fps))
         manifest_scenes.append(
             {
                 "id": f"scene-{scene.index:03d}",
                 "start": round(scene_cursor, 6),
                 "duration": round(scene_duration, 6),
+                "startFrame": scene_cursor_frame,
+                "durationInFrames": scene_duration_frames,
                 "narration": str(scene.narration or "").strip(),
                 "role": str(scene.narrative_role or "").strip(),
             }
         )
         scene_cursor += scene_duration
+        scene_cursor_frame += scene_duration_frames
     manifest = {
-        "schema": "clipforge-remotion-story-v1",
+        "schema": "clipforge-remotion-story-v2",
         "hypit": {
             "scriptSurface": "@hypit/script@1",
             "source": hypit_path.name,
@@ -293,15 +376,18 @@ def render_story_with_remotion(
         "composition": {
             "width": width,
             "height": height,
-            "fps": 30,
+            "fps": fps,
             "durationSeconds": round(duration, 6),
             "shots": manifest_shots,
             "scenes": manifest_scenes,
+            "captionCues": _caption_cues(storyboard.scenes, fps),
             "watermark": "@ryuundy",
             "captionsEnabled": burn_subtitles,
             "motionDesign": {
                 "deterministic": True,
                 "timelineSource": "measured-tts",
+                "captionTiming": "measured-tts-frame-native",
+                "captionPresentation": "stable-phrase",
                 "transitionGrammar": [
                     "aperture",
                     "directional_wipe",

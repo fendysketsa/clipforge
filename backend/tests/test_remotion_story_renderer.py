@@ -11,14 +11,18 @@ def _storyboard():
             SimpleNamespace(
                 index=1,
                 duration=2.0,
+                voice_duration=1.8,
                 narration="Raka & Sari melihat tanda <aneh> di dinding @rumah.",
                 narrative_role="cold_open",
+                speech_words=[],
             ),
             SimpleNamespace(
                 index=2,
                 duration=3.0,
+                voice_duration=2.7,
                 narration="Mereka memilih memeriksa sumber suara bersama-sama.",
                 narrative_role="payoff_conclusion",
+                speech_words=[],
             ),
         ]
     )
@@ -117,8 +121,36 @@ def test_remotion_manifest_projects_hypit_scenes_to_measured_timeline(
     assert composition["scenes"][1]["role"] == "payoff_conclusion"
     assert composition["scenes"][0]["start"] == 0.0
     assert composition["scenes"][1]["start"] == 2.0
+    assert composition["scenes"][0]["startFrame"] == 0
+    assert composition["scenes"][1]["startFrame"] == 60
+    assert composition["captionCues"]
+    assert all(cue["endFrame"] > cue["startFrame"] for cue in composition["captionCues"])
     assert composition["motionDesign"]["deterministic"] is True
     assert composition["motionDesign"]["timelineSource"] == "measured-tts"
+    assert composition["motionDesign"]["captionPresentation"] == "stable-phrase"
+
+
+def test_caption_cues_use_measured_word_frames_without_one_frame_flicker():
+    scene = SimpleNamespace(
+        index=1,
+        duration=4.0,
+        voice_duration=3.2,
+        narration="Satu aksi jelas lalu hasilnya terlihat nyata.",
+        speech_words=[
+            {"text": word, "start": index * 0.4, "end": (index + 1) * 0.4}
+            for index, word in enumerate("Satu aksi jelas lalu hasilnya terlihat nyata.".split())
+        ],
+    )
+
+    cues = renderer._caption_cues([scene], 30)
+
+    assert cues[0]["startFrame"] == 0
+    assert cues[-1]["endFrame"] <= 120
+    assert all(cue["text"] for cue in cues)
+    assert all(
+        following["startFrame"] == current["endFrame"]
+        for current, following in zip(cues, cues[1:])
+    )
 
 
 def test_motion_design_uses_a_small_role_aware_transition_grammar():

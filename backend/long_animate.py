@@ -112,6 +112,10 @@ class AnimateScene:
     qa_score: float = 0.0
     visuals_locked: bool = False
     speech_tempo: float = 1.0
+    # Word-boundary evidence emitted by the accepted TTS performance.  These
+    # times are local to the fitted scene audio and are consumed by Remotion;
+    # the displayed wording still comes from ``narration``.
+    speech_words: list[dict[str, object]] = field(default_factory=list)
 
 
 @dataclass
@@ -147,6 +151,7 @@ class AnimateShot:
     property_direction: str = ""
     transition: str = "cinematic_dissolve"
     continuity_anchor: str = ""
+    visuals_locked: bool = False
     duration: float = 0.0
     image_provider: str = ""
     motion_provider: str = ""
@@ -2100,6 +2105,116 @@ def _target_duration_seconds() -> float:
     return max(5.0, min(3600.0, value))
 
 
+_PROMPT_DURATION_PATTERNS = (
+    re.compile(
+        r"(?i)\b(?:buat(?:kan)?|bikin(?:kan)?|create|make)?\s*(\d{1,4}(?:[.,]\d+)?)\s*"
+        r"(?:detik|seconds?|secs?|s)\b"
+    ),
+    re.compile(
+        r"(?i)\b(?:durasi|duration|sepanjang|selama)\s*[:=]?\s*(\d{1,4}(?:[.,]\d+)?)\s*"
+        r"(?:detik|seconds?|secs?|s)?\b(?!\s*(?:menit|minutes?|jam|hours?)\b)"
+    ),
+)
+
+
+def prompt_requested_duration_seconds(script: str, fallback: float) -> float:
+    """Honor an explicit duration in a direct text-to-video prompt.
+
+    The API's duration control remains the fallback, but natural requests such
+    as ``buatkan 10 detik video tentang ...`` are authoritative.  Bounds match
+    the existing Long Animate contract and keep malformed prompts harmless.
+    """
+    normalized = re.sub(r"\s+", " ", script or "").strip()
+    for pattern in _PROMPT_DURATION_PATTERNS:
+        match = pattern.search(normalized)
+        if not match:
+            continue
+        try:
+            seconds = float(match.group(1).replace(",", "."))
+        except (TypeError, ValueError):
+            continue
+        return round(max(5.0, min(3600.0, seconds)), 3)
+    return round(max(5.0, min(3600.0, fallback)), 3)
+
+
+def _coalesce_short_direct_plan(
+    plan: AnimateStoryboard,
+    *,
+    target_duration: float,
+    user_prompt: str = "",
+) -> AnimateStoryboard:
+    """Turn a short prompt into one coherent generated-video performance."""
+    if target_duration > 30 or not plan.scenes:
+        return plan
+    lead = plan.scenes[0]
+    narration = " ".join(
+        scene.narration.strip() for scene in plan.scenes if scene.narration.strip()
+    )
+    # A concise delivery protects the explicitly requested duration instead of
+    # tempo-crushing a long AI expansion into a ten-second clip.
+    max_words = max(6, round(target_duration * 1.6))
+    narration_words = narration.split()
+    if len(narration_words) > max_words:
+        narration = " ".join(narration_words[:max_words]).rstrip(" ,;:-") + "."
+    combined_animation = next(
+        (scene.animation_direction for scene in plan.scenes if scene.animation_direction),
+        lead.animation_direction,
+    )
+    combined_director = next(
+        (scene.director_direction for scene in plan.scenes if scene.director_direction),
+        lead.director_direction,
+    )
+    combined_properties = " ".join(
+        dict.fromkeys(
+            scene.property_direction.strip()
+            for scene in plan.scenes
+            if scene.property_direction.strip()
+        )
+    )
+    lead.narration = narration
+    lead.animation_direction = combined_animation
+    lead.director_direction = combined_director
+    lead.property_direction = _clean_text(combined_properties, 1100)
+    lead.narrative_role = "cold_open_payoff"
+    lead.duration_hint = target_duration
+    # Avoid a second animated text layer competing with the measured caption.
+    # It looked like a flashing duplicate subtitle in short direct renders.
+    lead.on_screen_text = ""
+    # For a short direct request the user's subject/action is the visual
+    # contract.  The planning LLM may enrich narration and directing, but it
+    # must not replace the requested event with a generic interpretation.
+    direct_subject = ""
+    about_match = re.search(
+        r"(?is)\b(?:tentang|mengenai|about)\b\s*[:,-]?\s*(.+)$",
+        user_prompt.strip(),
+    )
+    if about_match:
+        direct_subject = about_match.group(1).strip()
+    if not direct_subject:
+        direct_subject = re.sub(
+            r"(?is)^\s*(?:tolong\s+)?(?:buat(?:kan)?|bikin(?:kan)?|create|make)\s+"
+            r"(?:(?:sebuah|a)\s+)?(?:(?:\d{1,4}(?:[.,]\d+)?)\s*"
+            r"(?:detik|seconds?|secs?|s)\s+)?video\s*(?:tentang|mengenai|about)?\s*[:,-]?\s*",
+            "",
+            user_prompt.strip(),
+            count=1,
+        ).strip()
+    if direct_subject:
+        lead.visual_prompt = _single_visible_moment(direct_subject)
+        lead.visuals_locked = True
+    lead.shot_prompts = [
+        _single_visible_moment(
+            lead.visual_prompt
+            if lead.visuals_locked
+            else _compiled_visible_moment(lead.visual_prompt)
+            or lead.narration
+            or plan.core_message
+        )
+    ]
+    plan.scenes = [lead]
+    return plan
+
+
 def _transition_seconds() -> float:
     try:
         value = float(os.environ.get("LONG_ANIMATE_TRANSITION_SECONDS", "0.12"))
@@ -2280,6 +2395,52 @@ def scene_visual_semantic_score(narration: str, visual: str) -> float:
     return len(overlap) / max(1, min(len(narrative_tokens), 8))
 
 
+def _focused_video_generation_prompt(shot: AnimateShot) -> str:
+    """Compile one model-facing temporal prompt from one semantic scene.
+
+    Image prompts in the legacy path describe a frozen frame and contain many
+    defensive clauses.  Passing those unchanged to a video model diluted the
+    requested action.  This prompt gives the temporal model only facts it can
+    realize: subject/action, setting, continuity, performance and camera.
+    """
+    visible = _compiled_visible_moment(shot.visual_prompt) or _single_visible_moment(
+        shot.narration or shot.visual_prompt
+    )
+    if not shot.visuals_locked and scene_visual_semantic_score(shot.narration, visible) < 0.18:
+        visible = _single_visible_moment(shot.narration)
+    visible = _clean_text(visible, 700).rstrip(" .")
+    clauses = [
+        f"Create one continuous {shot.duration:.2f}-second cinematic video shot",
+        f"EXACT VISIBLE EVENT: {visible}",
+    ]
+    optional_directions = (
+        ("STORY MEANING FOR THIS SHOT ONLY", shot.narration, 520),
+        ("SUBJECT ACTION AND PERFORMANCE", shot.animation_direction, 520),
+        ("DIRECTING AND BLOCKING", shot.director_direction, 620),
+        ("REQUIRED SET AND PROPS", shot.property_direction, 620),
+    )
+    for label, value, limit in optional_directions:
+        cleaned = _clean_text(value, limit).rstrip(" .")
+        if cleaned:
+            clauses.append(f"{label}: {cleaned}")
+    clauses.extend((
+        f"CAMERA: {shot.framing.replace('_', ' ')}, {shot.subject_placement.replace('_', ' ')}, "
+        f"{shot.camera_angle.replace('_', ' ')}, with one motivated {shot.camera_motion.replace('_', ' ')} movement",
+        f"LOOK: {_clean_text(shot.color_mood, 180).rstrip(' .')}",
+    ))
+    continuity = _clean_text(shot.continuity_anchor, 520).rstrip(" .")
+    if continuity:
+        clauses.append(f"CONTINUITY: {continuity}")
+    clauses.append(
+        "Keep the same subjects, wardrobe, location, props, weather, lighting direction, and screen direction "
+        "throughout the clip. Show the stated physical action clearly from setup through its readable result. "
+        "Do not invent another event, person, location, object, claim, cutaway, montage, title card, logo, "
+        "caption, subtitle, floating text, or spoken dialogue. No black frames or fade to black."
+    )
+    prompt = ". ".join(clause.rstrip(" .") for clause in clauses if clause.rstrip(" .")) + "."
+    return _clean_text(prompt, 4900)
+
+
 _FRAMING_PROMPTS = {
     "wide": (
         "wide establishing frame with the environment clearly readable, the main subject still prominent, and "
@@ -2404,7 +2565,10 @@ def plan_storyboard_shots(storyboard: AnimateStoryboard) -> list[AnimateShot]:
     previous_placement = ""
     for scene in storyboard.scenes:
         raw_prompts = scene.shot_prompts or _visible_shot_moments(scene.narration)
-        if scene.duration >= 10 and len(raw_prompts) < 2:
+        direct_text_video = _video_provider() == "hypit"
+        if direct_text_video:
+            raw_prompts = raw_prompts[:1]
+        elif scene.duration >= 10 and len(raw_prompts) < 2:
             raw_prompts = [
                 *raw_prompts,
                 _clean_text(
@@ -2413,7 +2577,7 @@ def plan_storyboard_shots(storyboard: AnimateStoryboard) -> list[AnimateShot]:
                     650,
                 ),
             ]
-        max_for_duration = max(1, min(3, int(scene.duration / 0.75)))
+        max_for_duration = 1 if direct_text_video else max(1, min(3, int(scene.duration / 0.75)))
         selected = raw_prompts[:max_for_duration] or [_single_visible_moment(scene.narration)]
         shot_ms_total = round(scene.duration * 1000)
         base_ms, remainder = divmod(shot_ms_total, len(selected))
@@ -2479,6 +2643,7 @@ def plan_storyboard_shots(storyboard: AnimateStoryboard) -> list[AnimateShot]:
                     property_direction=scene.property_direction,
                     transition=(scene.transition if local_index == 1 else "match_action"),
                     continuity_anchor=scene.continuity_anchor,
+                    visuals_locked=scene.visuals_locked,
                     duration=shot_duration,
                 )
             )
@@ -3999,6 +4164,58 @@ def scene_voice(scene: AnimateScene) -> tuple[str, str]:
     return voice, gender
 
 
+def _srt_seconds(value: str) -> float:
+    match = re.fullmatch(r"(\d{2}):(\d{2}):(\d{2})[,.](\d{3})", value.strip())
+    if not match:
+        raise ValueError(f"Timestamp subtitle tidak valid: {value!r}")
+    hours, minutes, seconds, millis = (int(part) for part in match.groups())
+    return hours * 3600 + minutes * 60 + seconds + millis / 1000.0
+
+
+def _read_edge_speech_words(path: Path, display_text: str) -> list[dict[str, object]]:
+    """Project Edge timing evidence onto the exact display narration.
+
+    Edge may return sentence or word boundaries depending on its service
+    response.  The outer measured speech window is authoritative; distributing
+    the original display words inside it keeps pronunciation substitutions out
+    of captions while retaining the accepted performance's real timing.
+    """
+    if not path.is_file():
+        return []
+    ranges: list[tuple[float, float]] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if "-->" not in line:
+            continue
+        left, right = (part.strip() for part in line.split("-->", 1))
+        try:
+            start = _srt_seconds(left)
+            end = _srt_seconds(right.split()[0])
+        except (ValueError, IndexError):
+            continue
+        if end > start:
+            ranges.append((start, end))
+    words = re.findall(r"\S+", display_text.strip())
+    if not ranges or not words:
+        return []
+    start = min(item[0] for item in ranges)
+    end = max(item[1] for item in ranges)
+    weights = [max(1, len(re.sub(r"\W+", "", word, flags=re.UNICODE))) for word in words]
+    total_weight = max(1, sum(weights))
+    cursor = start
+    result: list[dict[str, object]] = []
+    for index, (word, weight) in enumerate(zip(words, weights, strict=True)):
+        word_end = end if index == len(words) - 1 else cursor + (end - start) * weight / total_weight
+        result.append(
+            {
+                "text": word,
+                "start": round(cursor, 6),
+                "end": round(max(cursor + 0.001, word_end), 6),
+            }
+        )
+        cursor = word_end
+    return result
+
+
 def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, str]:
     voice, voice_gender = scene_voice(scene)
     rate = os.environ.get("LONG_ANIMATE_VOICE_RATE", "-3%").strip()
@@ -4032,6 +4249,7 @@ def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, st
         )
         return silent_path, "intentional_silence"
     edge_path = scene_dir / f"scene_{scene.index:02}.voice.mp3"
+    edge_subtitle_path = scene_dir / f"scene_{scene.index:02}.voice.srt"
     spoken_narration = _tts_pronunciation_text(scene.narration)
     try:
         attempts = max(1, min(5, int(os.environ.get("LONG_ANIMATE_TTS_ATTEMPTS", "3"))))
@@ -4040,6 +4258,7 @@ def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, st
     edge_failure = "unknown error"
     for attempt in range(1, attempts + 1):
         edge_path.unlink(missing_ok=True)
+        edge_subtitle_path.unlink(missing_ok=True)
         try:
             result = subprocess.run(
                 [
@@ -4055,6 +4274,8 @@ def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, st
                     spoken_narration,
                     "--write-media",
                     str(edge_path.resolve()),
+                    "--write-subtitles",
+                    str(edge_subtitle_path.resolve()),
                 ],
                 text=True,
                 capture_output=True,
@@ -4062,6 +4283,10 @@ def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, st
             )
             edge_failure = f"exit code {result.returncode}"
             if result.returncode == 0 and edge_path.is_file() and edge_path.stat().st_size > 512:
+                scene.speech_words = _read_edge_speech_words(
+                    edge_subtitle_path,
+                    scene.narration,
+                )
                 return edge_path, "edge_neural"
         except subprocess.TimeoutExpired:
             edge_failure = "timeout"
@@ -4246,6 +4471,22 @@ def fit_voice_to_scene(scene: AnimateScene, voice_path: Path, scene_dir: Path) -
         ]
     )
     scene.voice_duration = min(target, source_duration / tempo)
+    if scene.speech_words:
+        first_start = float(scene.speech_words[0].get("start", 0.0) or 0.0)
+        fitted_words: list[dict[str, object]] = []
+        for item in scene.speech_words:
+            start = max(0.0, (float(item.get("start", 0.0) or 0.0) - first_start) / tempo)
+            end = max(start + 0.001, (float(item.get("end", 0.0) or 0.0) - first_start) / tempo)
+            if start >= scene.voice_duration:
+                break
+            fitted_words.append(
+                {
+                    "text": str(item.get("text", "")),
+                    "start": round(start, 6),
+                    "end": round(min(scene.voice_duration, end), 6),
+                }
+            )
+        scene.speech_words = fitted_words
     return output
 
 
@@ -4272,6 +4513,10 @@ def _video_provider() -> str:
         "local": "local_free",
         "self_hosted": "local_free",
         "wikimedia": "local_free",
+        "seedance": "hypit",
+        "hypit_seedance": "hypit",
+        "text_to_video": "hypit",
+        "text-to-video": "hypit",
         "none": "off",
         "disabled": "off",
         "static": "off",
@@ -4281,13 +4526,168 @@ def _video_provider() -> str:
 
 
 def require_motion_video_provider() -> None:
-    """Reject paid/cloud motion adapters; this deployment is intentionally free-only."""
+    """Validate the explicitly selected motion path."""
     provider = _video_provider()
-    if provider not in {"off", "local_free"}:
+    if provider not in {"off", "local_free", "hypit"}:
         raise LongAnimateVideoError(
             f"LONG_ANIMATE_VIDEO_PROVIDER={provider!r} tidak diizinkan. "
-            "Generator Cerita ini hanya menerima 'local_free' atau 'off'; tidak ada API berbayar."
+            "Gunakan 'hypit' untuk text-to-video langsung yang dikonfigurasi pengguna, 'local_free' untuk "
+            "mode kompatibilitas, atau 'off'; tidak ada API berbayar tak dikenal yang dipilih otomatis."
         )
+    if provider == "hypit":
+        _require_hypit_runtime_profile()
+
+
+def _hypit_cli() -> Path:
+    cli = Path(__file__).resolve().parent / "remotion" / "node_modules" / ".bin" / "hypit"
+    if not cli.is_file():
+        raise LongAnimateVideoError(
+            "CLI Hypit belum tersedia. Jalankan npm ci di backend/remotion lalu rebuild backend."
+        )
+    return cli
+
+
+def _require_hypit_runtime_profile() -> None:
+    """Fail before planning/TTS when no Hypit execution Runtime is selected."""
+    if os.environ.get("HYPIT_RUNTIME_PROFILE", "").strip():
+        _hypit_cli()
+        return
+    cli = _hypit_cli()
+    project_dir = Path(__file__).resolve().parent / "remotion"
+    checked = subprocess.run(
+        [
+            str(cli),
+            "doctor",
+            "--json",
+            "--color",
+            "never",
+            "--project",
+            str(project_dir),
+        ],
+        cwd=str(project_dir),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    try:
+        payload = json.loads(checked.stdout)
+    except json.JSONDecodeError:
+        payload = {}
+    profile_source = str(payload.get("profileSource") or "none").strip().casefold()
+    if checked.returncode != 0 or profile_source == "none":
+        raise LongAnimateVideoError(
+            "Text-to-video Hypit sudah aktif, tetapi belum ada Runtime Profile. "
+            "Jalankan `hypit runtime init`, lalu isi HYPIT_RUNTIME_PROFILE dengan profile yang memiliki akses "
+            "ke @hypit/seedance. Render dihentikan sebelum memakai AI/TTS agar tidak membuang waktu atau biaya."
+        )
+
+
+def _write_hypit_text_video_request(shot: AnimateShot, project_dir: Path) -> tuple[Path, Path]:
+    project_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / "package.json").write_text(
+        json.dumps({"name": f"clipforge-shot-{shot.index}", "private": True, "type": "module", "hypit": {"project": True}}),
+        encoding="utf-8",
+    )
+    model = os.environ.get("HYPIT_VIDEO_MODEL", "2.5").strip().casefold()
+    if model not in {"standard", "fast", "mini", "2.5"}:
+        model = "2.5"
+    maximum_duration = 30 if model == "2.5" else 15
+    request_duration = max(4, min(maximum_duration, math.ceil(shot.duration)))
+    resolution = os.environ.get("HYPIT_VIDEO_RESOLUTION", "720p").strip().casefold()
+    if resolution not in {"480p", "720p", "1080p"}:
+        resolution = "720p"
+    aspect, _width, _height = _output_geometry()
+    prompt = html.escape(_focused_video_generation_prompt(shot), quote=False).replace("@", r"\@")
+    author_path = project_dir / "shot.svml"
+    author_path.write_text(
+        '<?svml using="@hypit/markup@1"?>\n'
+        '<svml>\n'
+        '  <import as="text" from="@hypit/text@1"/>\n'
+        '  <import as="seedance" from="@hypit/seedance@1"/>\n'
+        f'  <text:Value id="direction">{prompt}</text:Value>\n'
+        f'  <seedance:TextVideo id="take" model="{model}" prompt={{direction}} duration="{request_duration}" '
+        f'resolution="{resolution}" aspect-ratio="{aspect}" generate-audio="false"/>\n'
+        '</svml>\n',
+        encoding="utf-8",
+    )
+    run_path = project_dir / "build.svrun"
+    run_path.write_text(
+        '<?svml using="@hypit/markup/run@1"?>\n'
+        '<svrun version="1">\n'
+        '  <author source="./shot.svml"/>\n'
+        '  <target output="take.video"/>\n'
+        '</svrun>\n',
+        encoding="utf-8",
+    )
+    return author_path, run_path
+
+
+def _hypit_direct_text_video(shot: AnimateShot, scene_dir: Path) -> Path:
+    """Generate one prompt-aligned clip through Hypit's selected Runtime."""
+    cli = _hypit_cli()
+    project_dir = scene_dir / f"shot_{shot.index:02}.hypit"
+    author_path, run_path = _write_hypit_text_video_request(shot, project_dir)
+    check = subprocess.run(
+        [str(cli), "check", str(run_path), "--project", str(project_dir), "--color", "never"],
+        cwd=str(project_dir),
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    if check.returncode != 0:
+        detail = (check.stderr or check.stdout or "validasi request gagal").strip()
+        raise LongAnimateVideoError(f"Request text-to-video Hypit tidak valid: {detail[-1800:]}")
+
+    timeout_seconds = max(300, int(os.environ.get("HYPIT_VIDEO_TIMEOUT_SECONDS", "2400")))
+    command = [
+        str(cli), "build", str(run_path), "--follow", "--json", "--color", "never",
+        "--project", str(project_dir), "--max-wait-ms", str(timeout_seconds * 1000),
+    ]
+    runtime = os.environ.get("HYPIT_RUNTIME_PROFILE", "").strip()
+    if runtime:
+        command.extend(["--runtime", runtime])
+    built = subprocess.run(
+        command,
+        cwd=str(project_dir),
+        capture_output=True,
+        text=True,
+        timeout=timeout_seconds + 120,
+        check=False,
+    )
+    try:
+        payload = json.loads(built.stdout)
+    except json.JSONDecodeError:
+        payload = {}
+    build_view = payload.get("build") if isinstance(payload, dict) else None
+    build_view = build_view if isinstance(build_view, dict) else {}
+    build_id = str(build_view.get("id") or "")
+    work = build_view.get("work") if isinstance(build_view.get("work"), dict) else {}
+    if built.returncode != 0 or not build_id or work.get("outcome") != "complete":
+        detail = (built.stderr or built.stdout or "Build Hypit gagal").strip()
+        raise LongAnimateVideoError(
+            "Text-to-video Hypit belum menghasilkan clip. Pastikan Runtime/Profile dan akun model sudah siap. "
+            f"Detail: {detail[-1800:]}"
+        )
+
+    output = scene_dir / f"shot_{shot.index:02}.hypit.mp4"
+    exported = subprocess.run(
+        [
+            str(cli), "get", build_id, "--output", "take.video", "--to", str(output),
+            "--project", str(project_dir), "--json", "--color", "never",
+        ],
+        cwd=str(project_dir),
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    if exported.returncode != 0 or not output.is_file() or _media_duration(output) <= 0.4:
+        detail = (exported.stderr or exported.stdout or "ekspor clip gagal").strip()
+        raise LongAnimateVideoError(f"Clip Hypit gagal diekspor: {detail[-1600:]}")
+    shot.motion_provider = f"hypit:seedance-{os.environ.get('HYPIT_VIDEO_MODEL', '2.5').strip() or '2.5'}"
+    return output
 
 
 _FREE_STOCK_STOPWORDS = {
@@ -4525,9 +4925,11 @@ def _wikimedia_motion_video(
     return None
 
 
-def generate_motion_video(shot: AnimateShot, image_path: Path, scene_dir: Path) -> Path | None:
-    """Use keyless open footage when available, otherwise animate the local Z-Image frame."""
+def generate_motion_video(shot: AnimateShot, image_path: Path | None, scene_dir: Path) -> Path | None:
+    """Generate direct video or use the explicitly selected compatibility path."""
     provider = _video_provider()
+    if provider == "hypit":
+        return _hypit_direct_text_video(shot, scene_dir)
     if provider == "off":
         shot.motion_provider = "local_z_image_cinematic"
         return None
@@ -4594,6 +4996,22 @@ def render_motion_shot_video(shot: AnimateShot, video_path: Path, scene_dir: Pat
         cwd=scene_dir,
     )
     title_path.unlink(missing_ok=True)
+    return output_path
+
+
+def extract_video_keyframe(video_path: Path, output_path: Path) -> Path:
+    """Create a deterministic review/thumbnail frame from a generated clip."""
+    duration = max(0.1, _media_duration(video_path))
+    timestamp = min(max(0.1, duration * 0.35), max(0.1, duration - 0.1))
+    _run(
+        [
+            _ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y",
+            "-ss", f"{timestamp:.3f}", "-i", str(video_path.resolve()),
+            "-frames:v", "1", "-q:v", "2", str(output_path.resolve()),
+        ]
+    )
+    if not output_path.is_file():
+        raise LongAnimateVideoError("Gagal mengambil keyframe dari hasil text-to-video.")
     return output_path
 
 
@@ -5002,11 +5420,16 @@ def render_long_animate(
     logger = _logger
     metrics = RenderMetrics()
     start_time = time.time()
-    requested_target_duration = _target_duration_seconds()
+    requested_target_duration = prompt_requested_duration_seconds(
+        script,
+        _target_duration_seconds(),
+    )
 
     logger.info(f"Starting Long Animate render for: {script[:100]}")
-    require_real_image_provider()
     require_motion_video_provider()
+    direct_text_video = _video_provider() == "hypit"
+    if not direct_text_video:
+        require_real_image_provider()
 
     with animate_work_directory(output_root, script) as (work_dir, clips_dir, scene_dir):
         progress(8, "selection", "Mengembangkan jalan cerita menjadi beat drama dan naskah dubbing")
@@ -5021,20 +5444,27 @@ def render_long_animate(
             encoding="utf-8",
         )
 
-        # Storyboard
-        logger.info("Building storyboard and art bible")
-        progress(18, "selection", "Menyusun storyboard, art bible, dan alur setiap scene")
+        # Internal semantic scene direction. This is not a user-facing
+        # storyboard gate; it compiles the prompt directly into model requests.
+        logger.info("Compiling direct semantic video plan")
+        progress(18, "selection", "Menyusun prompt text-to-video yang selaras dengan setiap scene")
         sb_start = time.time()
         storyboard = build_storyboard(production_script, ai_config)
+        if direct_text_video:
+            storyboard = _coalesce_short_direct_plan(
+                storyboard,
+                target_duration=requested_target_duration,
+                user_prompt=script,
+            )
         hypit_script_path = write_hypit_script(
             storyboard,
             work_dir / "story.hypit.svml",
         )
         metrics.storyboard_time = time.time() - sb_start
-        logger.info(f"✓ Storyboard ready: {len(storyboard.scenes)} scenes in {metrics.storyboard_time:.1f}s")
+        logger.info(f"✓ Direct video plan ready: {len(storyboard.scenes)} scenes in {metrics.storyboard_time:.1f}s")
 
-        if len(storyboard.scenes) < 3:
-            raise RuntimeError("Long Animate membutuhkan minimal tiga scene bermakna.")
+        if not storyboard.scenes:
+            raise RuntimeError("Prompt belum menghasilkan scene video yang bermakna.")
 
         # TTS Synthesis (PARALLEL)
         logger.info("Synthesizing narration with parallel workers")
@@ -5067,10 +5497,14 @@ def render_long_animate(
         metrics.tts_time = time.time() - tts_start
         logger.info(f"✓ TTS complete: {len(storyboard.scenes)} scenes in {metrics.tts_time:.1f}s ({max_workers} workers)")
 
-        target_duration = _effective_timeline_duration(
-            storyboard.scenes,
-            measured_voice_durations,
-            requested_target_duration,
+        target_duration = (
+            requested_target_duration
+            if direct_text_video and requested_target_duration <= 30
+            else _effective_timeline_duration(
+                storyboard.scenes,
+                measured_voice_durations,
+                requested_target_duration,
+            )
         )
         if target_duration != requested_target_duration:
             logger.warning(
@@ -5088,7 +5522,7 @@ def render_long_animate(
             raise RuntimeError("Hasil TTS tidak lengkap; render dihentikan agar urutan narasi tidak rusak.")
         narration_track = concatenate_voice_track(fitted_voice_paths, scene_dir, target_duration)
         shots = plan_storyboard_shots(storyboard)
-        (work_dir / "storyboard.json").write_text(
+        (work_dir / "video_plan.json").write_text(
             json.dumps(
                 {
                     **asdict(storyboard),
@@ -5111,8 +5545,8 @@ def render_long_animate(
             f"Timeline {target_duration:.3f} detik dan {len(shots)} shot siap; memulai produksi visual",
         )
 
-        # Image Generation (dengan timing tracking)
-        logger.info("Generating images and running vision QA")
+        # Direct video generation (or the legacy compatibility path).
+        logger.info("Generating prompt-aligned visual clips")
         visual_start = time.time()
         shot_paths: list[Path] = []
         shot_image_paths: list[Path] = []
@@ -5132,36 +5566,56 @@ def render_long_animate(
             progress(
                 32 + round(((shot_index - 1) / len(shots)) * 48),
                 "render",
-                f"Membuat dan memeriksa visual shot {shot_index}/{len(shots)}",
+                (
+                    f"Menghasilkan text-to-video shot {shot_index}/{len(shots)} melalui Hypit"
+                    if direct_text_video
+                    else f"Membuat dan memeriksa visual shot {shot_index}/{len(shots)}"
+                ),
             )
-            img_attempt_start = time.time()
+            reference_moment = _compiled_visible_moment(shot.visual_prompt) or _single_visible_moment(shot.visual_prompt)
             image_path = scene_dir / f"shot_{shot.index:02}.png"
-            shot.image_provider = generate_shot_image_with_qa(
-                shot,
-                image_path,
-                storyboard.art_bible,
-                style_reference=style_reference,
-                character_reference=character_reference,
-            )
-            if style_reference is None:
-                style_reference = image_path
-            reference_moment = _compiled_visible_moment(shot.visual_prompt) or _single_visible_moment(
-                shot.visual_prompt
-            )
-            if character_reference is None and (
-                _visible_people_count(reference_moment, shot.narration) == 1
-                or _has_any(reference_moment, _NONHUMAN_CHARACTER_TERMS)
-            ):
-                character_reference = image_path
-
-            elapsed = time.time() - img_attempt_start
-            metrics.image_gen_time += elapsed
-            retries_used = shot.qa_attempts - 1
-            metrics.image_retry_count += retries_used
-            logger.info(f"✓ Shot {shot_index}/{len(shots)}: {elapsed:.1f}s ({retries_used} retries, {shot.image_provider})")
-
             motion_start = time.time()
-            motion_source = generate_motion_video(shot, image_path, scene_dir)
+            if direct_text_video:
+                shot.image_provider = "not_used_direct_text_to_video"
+                shot.qa_attempts = 1
+                shot.qa_score = scene_visual_semantic_score(
+                    shot.narration,
+                    _focused_video_generation_prompt(shot),
+                )
+                motion_source = generate_motion_video(shot, None, scene_dir)
+                if motion_source is None:
+                    raise LongAnimateVideoError("Provider Hypit tidak mengembalikan clip text-to-video.")
+                extract_video_keyframe(motion_source, image_path)
+                elapsed = time.time() - motion_start
+                logger.info(
+                    "✓ Direct T2V shot %s/%s: %.1fs (%s)",
+                    shot_index,
+                    len(shots),
+                    elapsed,
+                    shot.motion_provider,
+                )
+            else:
+                img_attempt_start = time.time()
+                shot.image_provider = generate_shot_image_with_qa(
+                    shot,
+                    image_path,
+                    storyboard.art_bible,
+                    style_reference=style_reference,
+                    character_reference=character_reference,
+                )
+                if style_reference is None:
+                    style_reference = image_path
+                if character_reference is None and (
+                    _visible_people_count(reference_moment, shot.narration) == 1
+                    or _has_any(reference_moment, _NONHUMAN_CHARACTER_TERMS)
+                ):
+                    character_reference = image_path
+                elapsed = time.time() - img_attempt_start
+                metrics.image_gen_time += elapsed
+                retries_used = shot.qa_attempts - 1
+                metrics.image_retry_count += retries_used
+                logger.info(f"✓ Shot {shot_index}/{len(shots)}: {elapsed:.1f}s ({retries_used} retries, {shot.image_provider})")
+                motion_source = generate_motion_video(shot, image_path, scene_dir)
             metrics.motion_gen_time += time.time() - motion_start
             remotion_assets.append(motion_source or image_path)
             if render_engine == "ffmpeg":
@@ -5193,7 +5647,11 @@ def render_long_animate(
                     "color_mood": shot.color_mood,
                     "visible_moment": reference_moment,
                     "generation_prompt_sha256": hashlib.sha256(
-                        _focused_image_generation_prompt(shot).encode("utf-8")
+                        (
+                            _focused_video_generation_prompt(shot)
+                            if direct_text_video
+                            else _focused_image_generation_prompt(shot)
+                        ).encode("utf-8")
                     ).hexdigest(),
                     "image_provider": shot.image_provider,
                     "motion_provider": shot.motion_provider,
@@ -5439,10 +5897,13 @@ def render_long_animate(
             else []
         )
         real_image_provider_passed = bool(
-            shots
-            and all(
-                shot.image_provider not in {"", "unknown", "fendy_local_story_art"}
-                for shot in shots
+            direct_text_video
+            or (
+                shots
+                and all(
+                    shot.image_provider not in {"", "unknown", "fendy_local_story_art"}
+                    for shot in shots
+                )
             )
         )
         if not real_image_provider_passed:
@@ -5455,7 +5916,10 @@ def render_long_animate(
         camera_only_shot_count = sum(
             shot.motion_provider == "local_z_image_cinematic" for shot in shots
         )
-        has_subject_motion = free_stock_shot_count > 0
+        direct_video_shot_count = sum(
+            shot.motion_provider.startswith("hypit:") for shot in shots
+        )
+        has_subject_motion = free_stock_shot_count > 0 or direct_video_shot_count > 0
         if camera_only_shot_count:
             timing_weaknesses.append(
                 f"{camera_only_shot_count}/{len(shots)} shot memakai gambar diam dengan gerak kamera pan/zoom; "
@@ -5463,14 +5927,17 @@ def render_long_animate(
             )
         narrative_roles = [scene.narrative_role for scene in storyboard.scenes]
         animate_quality_gate_passed = bool(
-            len(storyboard.scenes) >= 3
+            len(storyboard.scenes) >= (1 if direct_text_video else 3)
             and score >= 84
             and final_qc.get("passed")
             and real_image_provider_passed
             and has_subject_motion
             and narrative_roles
-            and narrative_roles[0] == "cold_open"
-            and narrative_roles[-1] == "payoff_conclusion"
+            and (
+                narrative_roles == ["cold_open_payoff"]
+                if direct_text_video and len(storyboard.scenes) == 1
+                else narrative_roles[0] == "cold_open" and narrative_roles[-1] == "payoff_conclusion"
+            )
             and bool(narration_audit["passed"])
             and all(
                 scene.voice_provider != "silent_fallback_review_required"
@@ -5534,7 +6001,11 @@ def render_long_animate(
             else "Perlu revisi"
         ),
         "strengths": [
-            "Naskah menjadi alur scene utuh, bukan slideshow acak.",
+            (
+                "Prompt dikompilasi langsung menjadi clip bergerak, bukan slideshow keyframe."
+                if direct_text_video
+                else "Naskah menjadi alur scene utuh, bukan slideshow acak."
+            ),
             "Art bible menjaga kesinambungan visual antar-scene.",
             (
                 "Narasi, footage bergerak, subtitle, dan musik tersinkron."
@@ -5548,13 +6019,19 @@ def render_long_animate(
             "Uji tiga variasi title-thumbnail melalui fitur A/B YouTube setelah upload Private.",
         ],
         "applied_edits": [
-            "Naskah dipecah menjadi Script Surface Hypit berbasis scene semantik tanpa timecode.",
-            "Setiap unit narasi memiliki prompt sinematik, animation direction, continuity anchor, kamera, dan transisi sendiri.",
-            "Scene kompleks dipecah menjadi beberapa shot tunggal yang tetap mewarisi karakter, pakaian, lokasi, dan waktu tanpa mengulang voice-over.",
+            "Prompt dikompilasi menjadi Script Surface dan request TextVideo Hypit berbasis scene semantik.",
+            "Setiap unit narasi memiliki prompt temporal, animation direction, continuity anchor, kamera, dan transisi sendiri.",
+            (
+                "Prompt pendek sampai 30 detik dipertahankan sebagai satu clip utuh agar aksi tidak terpecah."
+                if direct_text_video and target_duration <= 30
+                else "Scene kompleks dipecah menjadi shot yang tetap mewarisi karakter, pakaian, lokasi, dan waktu."
+            ),
             f"Voice-over pria/wanita dipilih otomatis dari karakter utama scene; durasi TTS menentukan timeline tepat {target_duration:g} detik.",
             "Voice-over dibersihkan dua sisi, di-de-ess, dikompresi ringan, lalu musik memakai sidechain ducking.",
             (
-                "Setiap keyframe/footage dirakit Remotion dengan gerak kamera scene-aware, overlay, dan caption dinamis."
+                "Clip text-to-video dirakit Remotion dengan overlay dan caption frasa stabil tanpa active-word flicker."
+                if direct_text_video
+                else "Setiap keyframe/footage dirakit Remotion dengan gerak kamera scene-aware, overlay, dan caption stabil."
                 if render_engine == "remotion"
                 else "Setiap keyframe lokal diberi gerak kamera 2.5D scene-aware sesuai framing dan arah kamera."
             ),
@@ -5595,7 +6072,7 @@ def render_long_animate(
                 "headline": storyboard.title,
             },
         ],
-        "storyboard_path": "storyboard.json",
+        "video_plan_path": "video_plan.json",
         "hypit_script_path": hypit_script_path.name,
         "remotion_manifest_path": (
             remotion_manifest_path.name if remotion_manifest_path else None
@@ -5612,7 +6089,7 @@ def render_long_animate(
             "timeline_source": "measured_tts",
             "deterministic_per_frame": True,
             "transition_grammar": "role_aware_aperture_directional_split_match_flash_light_sweep_brush_wipe",
-            "kinetic_typography": "word_stagger_titles_and_phrase_captions",
+            "kinetic_typography": "word_stagger_titles_and_stable_phrase_captions",
             "reference_policy": "motion_grammar_only_no_third_party_assets_or_branding",
         },
         "scene_assets_directory": "animate_scenes",
@@ -5626,6 +6103,7 @@ def render_long_animate(
             "method": "immutable_identity_lock_plus_face_similarity_qa",
         },
         "image_generation": {
+            "used": not direct_text_video,
             "provider": storyboard.scenes[0].image_provider if storyboard.scenes else "unknown",
             "model": _image_endpoint()[1],
             "size": os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "2K"),
@@ -5665,10 +6143,15 @@ def render_long_animate(
             "enabled": _video_provider() != "off",
             "subject_motion_enabled": has_subject_motion,
             "camera_motion_enabled": camera_only_shot_count > 0,
-            "fallback_motion_kind": "scene_aware_2_5d_pan_zoom_over_generated_keyframe",
+            "fallback_motion_kind": (
+                "none_direct_text_to_video"
+                if direct_text_video
+                else "scene_aware_2_5d_pan_zoom_over_generated_keyframe"
+            ),
             "image_motion_strength": _image_motion_strength(),
-            "paid_api_used": False,
-            "api_key_required": False,
+            "paid_api_used": None if direct_text_video else False,
+            "api_key_required": direct_text_video,
+            "billing_authority": "user_configured_hypit_runtime" if direct_text_video else "not_applicable",
             "maximum_free_stock_shots": max(
                 0, int(os.environ.get("LONG_ANIMATE_FREE_STOCK_MAX_SHOTS", "4"))
             ),
@@ -5693,7 +6176,9 @@ def render_long_animate(
             "action_setting_condition_atmosphere_camera_are_shot_specific": True,
             "cross_shot_prompt_leakage_allowed": False,
             "render_execution_mode": (
-                "remotion_real_footage_plus_generated_keyframes"
+                "remotion_hypit_direct_text_to_video"
+                if direct_text_video and render_engine == "remotion"
+                else "remotion_real_footage_plus_generated_keyframes"
                 if render_engine == "remotion" and stock_attributions
                 else "remotion_generated_keyframes_plus_scene_specific_camera_motion"
                 if render_engine == "remotion"
@@ -5701,7 +6186,7 @@ def render_long_animate(
                 if stock_attributions
                 else "local_realistic_keyframe_plus_scene_specific_camera_motion"
             ),
-            "subject_motion_video_model_claimed": False,
+            "subject_motion_video_model_claimed": direct_text_video,
             "scene_count": len(storyboard.scenes),
             "unique_visual_prompt_count": len(
                 {hashlib.sha256(scene.visual_prompt.encode("utf-8")).hexdigest() for scene in storyboard.scenes}
@@ -5724,6 +6209,8 @@ def render_long_animate(
             "enabled": subtitles,
             "transcript_grounded": True,
             "scene_timed": True,
+            "presentation": "stable_phrase_no_active_word_flicker",
+            "frame_native_timing": render_engine == "remotion",
             "renderer": "remotion" if render_engine == "remotion" else "ffmpeg_ass",
         },
         "timing_engine": {

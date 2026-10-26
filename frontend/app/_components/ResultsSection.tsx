@@ -77,7 +77,7 @@ function friendlyYouTubeUploadError(message: string, usesChromeDebugging: boolea
   const clean = message.trim();
   const lowered = clean.toLowerCase();
   if (lowered.includes("kebijakan nol-klaim") || lowered.includes("klaim content id")) {
-    return "YouTube menemukan klaim Content ID. Klip dan kartu hasil ini dihapus otomatis tanpa render ulang; worker ClipForge langsung melanjutkan antrean.";
+    return "YouTube menemukan klaim Content ID. Klip dan catatan gagal dihapus otomatis; ClipForge langsung mencari sumber baru dan membuat antrean pengganti.";
   }
   if (lowered.includes("connect_over_cdp") || lowered.includes("econnrefused")) {
     return "CDP belum aktif. Klik Login Sekali agar upload memakai Playwright storage-state tanpa CDP.";
@@ -876,7 +876,7 @@ export function ResultsSection({
                 : isAlreadyUploaded
                 ? `Sudah terupload ke YouTube${latestUpload.video_url ? `: ${latestUpload.video_url}` : ""}`
                 : youtubeClaimWasDetected
-                  ? "Klip terkena klaim Content ID dan sedang dihapus otomatis. Antrean lain tetap lanjut."
+                  ? "Klip terkena klaim Content ID, sedang dihapus, dan sumber pengganti akan masuk antrean baru."
                 : isQueuedForYouTube
                   ? "Klip sedang menunggu giliran upload YouTube."
                   : isRunningYouTubeUpload
@@ -1338,7 +1338,7 @@ export function ResultsSection({
                   ) : null}
                   {latestUpload?.status === "failed" && uploadError ? (
                     <div className={`youtubeUploadError ${youtubeClaimWasDetected ? "youtubeUploadError--claim" : ""}`} title={uploadError}>
-                      <strong>{youtubeClaimWasDetected ? "Menghapus otomatis · klaim Content ID" : "Upload gagal"}</strong>
+                      <strong>{youtubeClaimWasDetected ? "Menghapus & mencari pengganti" : "Upload gagal"}</strong>
                       <span>{uploadError}</span>
                       {!youtubeClaimWasDetected ? (
                         <button type="button" onClick={() => void onDeleteYouTubeUpload(latestUpload)}>

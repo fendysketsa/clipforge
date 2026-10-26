@@ -1467,6 +1467,87 @@ def test_auto_viral_first_cycle_obeys_remaining_boot_grace(monkeypatch):
     assert api.auto_viral_next_run_at(now, None, None) == now + timedelta(minutes=18)
 
 
+def test_claimed_scheduled_clip_immediately_searches_for_replacement(monkeypatch):
+    import api
+
+    now = datetime(2026, 10, 25, 12, 0, tzinfo=timezone.utc)
+    latest = api.AutoViralRun(
+        id="claimed-needs-replacement",
+        status="failed",
+        trigger="schedule",
+        created_at=(now - timedelta(minutes=20)).isoformat(),
+        updated_at=(now - timedelta(seconds=10)).isoformat(),
+        finished_at=(now - timedelta(seconds=10)).isoformat(),
+        request=AutoViralRequest(video_count=1, auto_upload_youtube=True),
+        processed=[{"status": "copyright_claimed", "job_id": "deleted-job"}],
+    )
+    monkeypatch.setenv("AUTO_VIRAL_REPLACE_CLAIMED_SOURCE", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
+    monkeypatch.setattr(
+        api,
+        "auto_viral_daily_youtube_content_counts",
+        lambda *_args: {"short": 0, "long": 0},
+    )
+
+    assert api.auto_viral_next_run_at(now, latest, None) == now
+
+
+def test_failed_tiktok_cron_slot_is_replaced_when_youtube_target_is_full(monkeypatch):
+    import api
+    from types import SimpleNamespace
+
+    now = datetime(2026, 10, 25, 12, 0, tzinfo=timezone.utc)
+    youtube_ok = SimpleNamespace(
+        status="completed",
+        upload_confirmed=True,
+        video_url="https://youtu.be/already-published",
+        dry_run=False,
+    )
+    tiktok_failed = SimpleNamespace(
+        status="failed",
+        upload_confirmed=False,
+        profile_url=None,
+        dry_run=False,
+    )
+    latest = api.AutoViralRun(
+        id="tiktok-needs-replacement",
+        status="completed",
+        trigger="schedule",
+        created_at=(now - timedelta(minutes=20)).isoformat(),
+        updated_at=(now - timedelta(seconds=10)).isoformat(),
+        finished_at=(now - timedelta(seconds=10)).isoformat(),
+        request=AutoViralRequest(
+            video_count=1,
+            auto_upload_youtube=True,
+            auto_upload_tiktok=True,
+        ),
+        processed=[
+            {
+                "status": "upload_failed",
+                "failed_platforms": ["tiktok"],
+                "youtube_uploads": [{"id": "youtube-ok"}],
+                "tiktok_uploads": [{"id": "tiktok-failed"}],
+            }
+        ],
+    )
+    monkeypatch.setenv("AUTO_VIRAL_REPLACE_FAILED_SOURCE", "true")
+    monkeypatch.setattr(api, "youtube_uploads", {"youtube-ok": youtube_ok})
+    monkeypatch.setattr(api, "tiktok_uploads", {"tiktok-failed": tiktok_failed})
+    monkeypatch.setattr(api, "auto_viral_daily_mix_incomplete", lambda _now: False)
+    monkeypatch.setattr(
+        api,
+        "auto_viral_daily_upload_slots",
+        lambda platform, _now=None: 1 if platform == "tiktok" else 0,
+    )
+
+    assert api.auto_viral_next_run_at(now, latest, None) == now
+
+    latest.processed = [{"status": "upload_failed", "job_id": "deleted-job"}]
+    monkeypatch.setenv("AUTO_VIRAL_REPLACE_FAILED_SOURCE", "true")
+
+    assert api.auto_viral_next_run_at(now, latest, None) == now
+
+
 def test_auto_viral_recurring_run_on_startup_does_not_wait_for_old_completion(monkeypatch):
     import api
 
@@ -3178,6 +3259,7 @@ def test_scheduled_ryuundy_theme_is_randomized_and_cc_label_is_optional(monkeypa
     assert request.cron_editorial_tone == api.RYUUNDY_CRON_THEME_PROFILES["love_betrayal"]["tone"]
     assert request.cron_short_role == api.RYUUNDY_CRON_THEME_PROFILES["love_betrayal"]["short_role"]
     assert request.cron_long_role == api.RYUUNDY_CRON_THEME_PROFILES["love_betrayal"]["long_role"]
+    assert request.min_views == 1_000
 
     short_direction = api.auto_viral_format_perspective(request, long_form=False)
     long_direction = api.auto_viral_format_perspective(request, long_form=True)
@@ -3185,6 +3267,44 @@ def test_scheduled_ryuundy_theme_is_randomized_and_cc_label_is_optional(monkeypa
     assert request.cron_long_role in long_direction
     assert "saling melengkapi" in short_direction
     assert "saling melengkapi" in long_direction
+
+
+def test_source_view_floor_is_strict_for_every_cron_theme_but_not_manual(monkeypatch):
+    import api
+
+    request = AutoViralRequest(min_views=0)
+    scheduled = api.AutoViralRun(
+        id="cron-source-floor",
+        status="running",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=request,
+    )
+    manual = scheduled.model_copy(
+        update={"id": "manual-source-floor", "trigger": "manual"}
+    )
+    monkeypatch.setattr(
+        api,
+        "auto_viral_runs",
+        {scheduled.id: scheduled, manual.id: manual},
+    )
+
+    assert "di bawah minimum cron 1,000" in api.scheduled_source_view_rejection_reason(
+        scheduled.id,
+        request,
+        {"view_count": 999},
+    )
+    assert api.scheduled_source_view_rejection_reason(
+        scheduled.id,
+        request,
+        {"view_count": 1_000},
+    ) == ""
+    assert api.scheduled_source_view_rejection_reason(
+        manual.id,
+        request,
+        {"view_count": 0},
+    ) == ""
 
 
 def test_scheduled_humor_rotates_only_on_configured_cron_run(monkeypatch):
@@ -3665,6 +3785,100 @@ def test_failed_auto_viral_target_is_held_without_automatic_retry(monkeypatch):
         api.auto_viral_runs.pop(run.id, None)
     with api.jobs_lock:
         api.jobs.pop("job-failed-once", None)
+
+
+def test_failed_cron_upload_discards_local_batch_but_manual_keeps_it(monkeypatch):
+    import api
+    from types import SimpleNamespace
+
+    request = AutoViralRequest(video_count=1, auto_upload_youtube=True)
+    scheduled = api.AutoViralRun(
+        id="discard-failed-cron",
+        status="running",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=request,
+    )
+    manual = scheduled.model_copy(
+        update={"id": "keep-failed-manual", "trigger": "manual"}
+    )
+    failed_youtube = SimpleNamespace(
+        id="failed-youtube-record",
+        status="failed",
+        upload_confirmed=False,
+        video_url=None,
+        dry_run=False,
+    )
+    verified_tiktok = SimpleNamespace(
+        id="verified-tiktok-record",
+        status="completed",
+        upload_confirmed=True,
+        profile_url="https://www.tiktok.com/@channel",
+        dry_run=False,
+    )
+    failed_manual = SimpleNamespace(
+        id="failed-manual-record",
+        status="failed",
+        upload_confirmed=False,
+        video_url=None,
+        dry_run=False,
+    )
+    monkeypatch.setattr(
+        api,
+        "auto_viral_runs",
+        {scheduled.id: scheduled, manual.id: manual},
+    )
+    monkeypatch.setattr(
+        api,
+        "youtube_uploads",
+        {
+            failed_youtube.id: failed_youtube,
+            failed_manual.id: failed_manual,
+        },
+    )
+    monkeypatch.setattr(
+        api,
+        "tiktok_uploads",
+        {verified_tiktok.id: verified_tiktok},
+    )
+    monkeypatch.setattr(api, "save_youtube_uploads_unlocked", lambda: None)
+    monkeypatch.setattr(api, "save_tiktok_uploads_unlocked", lambda: None)
+    removed_jobs: list[str] = []
+    monkeypatch.setattr(
+        api,
+        "delete_all_job_clips",
+        lambda job_id: removed_jobs.append(job_id)
+        or SimpleNamespace(removed_job=True, removed_clips=1),
+    )
+
+    scheduled_item = {
+        "job_id": "cron-short-job",
+        "long_job_id": "cron-long-job",
+        "youtube_uploads": [{"id": failed_youtube.id}],
+        "tiktok_uploads": [{"id": verified_tiktok.id}],
+    }
+    summary = api.discard_failed_scheduled_auto_viral_item(
+        scheduled.id,
+        scheduled_item,
+    )
+
+    assert summary is not None
+    assert failed_youtube.id not in api.youtube_uploads
+    assert verified_tiktok.id in api.tiktok_uploads
+    assert removed_jobs == ["cron-short-job", "cron-long-job"]
+    assert scheduled_item["cleanup_completed"] is True
+
+    manual_item = {
+        "job_id": "manual-job",
+        "youtube_uploads": [{"id": failed_manual.id}],
+    }
+    assert api.discard_failed_scheduled_auto_viral_item(
+        manual.id,
+        manual_item,
+    ) is None
+    assert failed_manual.id in api.youtube_uploads
+    assert "manual-job" not in removed_jobs
 
 
 def test_paired_long_queues_short_platforms_before_long_render(monkeypatch):

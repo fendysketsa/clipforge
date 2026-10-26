@@ -198,24 +198,10 @@ const Shot = ({shot}) => {
   );
 };
 
-const Caption = ({scene}) => {
-  const frame = useCurrentFrame();
-  const {fps, height, width} = useVideoConfig();
-  if (!scene?.narration) return null;
-  const words = scene.narration.trim().split(/\s+/).filter(Boolean);
-  const localFrame = Math.max(0, frame - Math.round(scene.start * fps));
-  const sceneFrames = Math.max(1, Math.round(scene.duration * fps));
-  const active = Math.min(words.length - 1, Math.floor((localFrame / sceneFrames) * words.length));
+const Caption = ({cue}) => {
+  const {height, width} = useVideoConfig();
+  if (!cue?.text) return null;
   const portrait = height > width;
-  const phraseSize = portrait ? 7 : 10;
-  const phraseStart = Math.floor(active / phraseSize) * phraseSize;
-  const phrase = words.slice(phraseStart, phraseStart + phraseSize);
-  const phraseStartFrame = Math.floor(sceneFrames * phraseStart / Math.max(1, words.length));
-  const phraseReveal = spring({
-    fps,
-    frame: Math.max(0, localFrame - phraseStartFrame),
-    config: {damping: 20, stiffness: 170, mass: .65},
-  });
   return (
     <div style={{
       position: 'absolute',
@@ -229,45 +215,37 @@ const Caption = ({scene}) => {
       fontWeight: 800,
       color: '#fff',
       textShadow: '0 3px 3px #000, 0 0 14px rgba(0,0,0,.9)',
-      opacity: phraseReveal,
-      transform: `translateY(${(1 - phraseReveal) * 18}px)`,
+      padding: portrait ? '14px 20px 16px' : '10px 18px 12px',
+      borderRadius: 18,
+      background: 'rgba(0,0,0,.46)',
+      boxShadow: '0 8px 28px rgba(0,0,0,.24)',
+      opacity: 1,
+      transform: 'translate3d(0,0,0)',
     }}>
-      {phrase.map((word, index) => {
-        const absoluteIndex = phraseStart + index;
-        return (
-          <span key={`${absoluteIndex}-${word}`} style={{
-            color: absoluteIndex === active ? '#FFD54A' : '#fff',
-            display: 'inline-block',
-            marginRight: '.26em',
-            transform: absoluteIndex === active ? 'scale(1.045)' : 'scale(1)',
-          }}>{word}</span>
-        );
-      })}
+      {cue.text}
     </div>
   );
 };
 
-const Story = ({shots = [], scenes = [], watermark = '@ryuundy', captionsEnabled = true}) => {
+const Story = ({shots = [], captionCues = [], watermark = '@ryuundy', captionsEnabled = true}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  const activeScene = scenes.find((scene) => {
-    const start = Math.round(scene.start * fps);
-    const end = start + Math.round(scene.duration * fps);
-    return frame >= start && frame < end;
-  });
+  const activeCaption = captionCues.find((cue) => (
+    frame >= Number(cue.startFrame || 0) && frame < Number(cue.endFrame || 0)
+  ));
   return (
     <AbsoluteFill style={{backgroundColor: '#05070b'}}>
       {shots.map((shot) => (
         <Sequence
           key={shot.id}
-          from={Math.round(shot.start * fps)}
-          durationInFrames={Math.max(1, Math.round(shot.duration * fps))}
+          from={Number.isFinite(shot.startFrame) ? shot.startFrame : Math.round(shot.start * fps)}
+          durationInFrames={Number.isFinite(shot.durationInFrames) ? shot.durationInFrames : Math.max(1, Math.round(shot.duration * fps))}
           premountFor={Math.round(fps * .5)}
         >
           <Shot shot={shot}/>
         </Sequence>
       ))}
-      {captionsEnabled ? <Caption scene={activeScene}/> : null}
+      {captionsEnabled ? <Caption cue={activeCaption}/> : null}
       <div style={{
         position: 'absolute',
         left: 0,
@@ -386,10 +364,6 @@ const RankingDialogue = ({dialogue = []}) => {
     && second < Number(cue.start || 0) + Number(cue.duration || 0)
   ));
   if (!active) return null;
-  const localFrame = Math.max(0, frame - Math.round(Number(active.start || 0) * fps));
-  const durationFrames = Math.max(1, Math.round(Number(active.duration || 0) * fps));
-  const reveal = spring({fps, frame: localFrame, config: {damping: 20, stiffness: 170, mass: .68}});
-  const exit = interpolate(localFrame, [Math.max(0, durationFrames - 7), durationFrames], [1, 0], clamp);
   const words = String(active.text || '').split(/\s+/).filter(Boolean);
   const host = active.speaker === 'HOST';
   const accent = host ? '#6FFFE5' : '#B6FF4A';
@@ -410,8 +384,8 @@ const RankingDialogue = ({dialogue = []}) => {
       border: `1px solid ${accent}66`,
       boxShadow: `0 20px 65px rgba(0,0,0,.46), 0 0 38px ${accent}18`,
       backdropFilter: 'blur(18px)',
-      opacity: reveal * exit,
-      transform: `translateY(${(1 - reveal) * 34 + (1 - exit) * 12}px) scale(${.965 + reveal * .035})`,
+      opacity: 1,
+      transform: 'translate3d(0,0,0)',
     }}>
       <span style={{
         flex: '0 0 auto',
@@ -706,6 +680,7 @@ const defaultProps = {
   durationSeconds: 10,
   shots: [],
   scenes: [],
+  captionCues: [],
   watermark: '@ryuundy',
   captionsEnabled: true,
 };

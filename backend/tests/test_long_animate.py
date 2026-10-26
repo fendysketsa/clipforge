@@ -2,6 +2,7 @@ import base64
 import io
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -1428,6 +1429,58 @@ def test_short_narration_shrinks_timeline_instead_of_slurring(monkeypatch):
     assert duration == 16.05
 
 
+def test_direct_prompt_duration_overrides_long_form_default():
+    assert long_animate.prompt_requested_duration_seconds(
+        "Buatkan 10 detik video tentang kucing berlari di kebun.",
+        300.0,
+    ) == 10.0
+    assert long_animate.prompt_requested_duration_seconds(
+        "Create a 12 second video about a lighthouse in a storm.",
+        300.0,
+    ) == 12.0
+    assert long_animate.prompt_requested_duration_seconds(
+        "Buat video dengan durasi 2 menit tentang sejarah kota.",
+        180.0,
+    ) == 180.0
+
+
+def test_direct_video_prompt_keeps_scene_action_and_excludes_caption_generation():
+    storyboard = _fallback_storyboard(
+        "Seekor kucing oranye berlari mengejar kupu-kupu di kebun saat matahari terbit."
+    )
+    scene = storyboard.scenes[0]
+    scene.duration = 10.0
+    shot = long_animate.plan_storyboard_shots(storyboard)[0]
+    shot.duration = 10.0
+
+    prompt = long_animate._focused_video_generation_prompt(shot)
+
+    assert "10.00-second" in prompt
+    assert "kucing" in prompt.casefold()
+    assert "kebun" in prompt.casefold()
+    assert "Do not invent another event" in prompt
+    assert "caption, subtitle" in prompt
+    assert "SINGLE FRAME" not in prompt
+
+
+def test_short_direct_plan_locks_the_users_visible_event():
+    storyboard = _fallback_storyboard(
+        "Narasi hasil AI yang terlalu umum dan tidak menyebut kebun."
+    )
+
+    result = long_animate._coalesce_short_direct_plan(
+        storyboard,
+        target_duration=10.0,
+        user_prompt="Buatkan 10 detik video tentang seekor kucing oranye berlari di kebun saat matahari terbit.",
+    )
+    shot = long_animate.plan_storyboard_shots(result)[0]
+    prompt = long_animate._focused_video_generation_prompt(shot)
+
+    assert result.scenes[0].visuals_locked is True
+    assert "kucing oranye berlari di kebun" in prompt.casefold()
+    assert "EXACT VISIBLE EVENT" in prompt
+
+
 def test_generic_repeated_narration_cannot_receive_high_quality_score():
     storyboard = _fallback_storyboard(SCRIPT)
     storyboard.scenes = storyboard.scenes[:5]
@@ -2370,6 +2423,41 @@ def test_motion_provider_preflight_rejects_paid_muapi(monkeypatch):
         assert "tidak ada API berbayar" in str(exc)
     else:
         raise AssertionError("adapter video berbayar tidak boleh aktif")
+
+
+def test_hypit_preflight_accepts_explicit_runtime_profile(monkeypatch, tmp_path):
+    cli = tmp_path / "hypit"
+    cli.write_text("", encoding="utf-8")
+    monkeypatch.setenv("LONG_ANIMATE_VIDEO_PROVIDER", "hypit")
+    monkeypatch.setenv("HYPIT_RUNTIME_PROFILE", "production-video")
+    monkeypatch.setattr(long_animate, "_hypit_cli", lambda: cli)
+
+    long_animate.require_motion_video_provider()
+
+
+def test_hypit_preflight_stops_before_generation_without_runtime(monkeypatch, tmp_path):
+    cli = tmp_path / "hypit"
+    cli.write_text("", encoding="utf-8")
+    monkeypatch.setenv("LONG_ANIMATE_VIDEO_PROVIDER", "hypit")
+    monkeypatch.delenv("HYPIT_RUNTIME_PROFILE", raising=False)
+    monkeypatch.setattr(long_animate, "_hypit_cli", lambda: cli)
+    monkeypatch.setattr(
+        long_animate.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout='{"ok":true,"profileSource":"none"}',
+            stderr="",
+        ),
+    )
+
+    try:
+        long_animate.require_motion_video_provider()
+    except long_animate.LongAnimateVideoError as exc:
+        assert "Runtime Profile" in str(exc)
+        assert "sebelum memakai AI/TTS" in str(exc)
+    else:
+        raise AssertionError("provider Hypit tanpa Runtime seharusnya dihentikan")
 
 
 def test_wikimedia_free_video_search_preserves_license_metadata(monkeypatch):

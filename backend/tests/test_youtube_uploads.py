@@ -742,11 +742,7 @@ def test_claim_cleanup_deletes_local_clip_and_result_card(monkeypatch, tmp_path)
 
     assert source_job.id not in api.jobs
     assert not clip_path.exists()
-    assert api.youtube_uploads[claim.id].clip_deleted_at is not None
-    assert any(
-        line.startswith("CLAIMED_CLIP_DELETED:")
-        for line in api.youtube_uploads[claim.id].logs
-    )
+    assert claim.id not in api.youtube_uploads
     assert claim.id not in api.claimed_clip_cleanup_scheduled
 
 

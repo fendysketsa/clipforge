@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { formatDuration } from "../../lib/utils";
 import type { SourceProbe } from "../../lib/apiClient";
-import type { ClipMode, SourceHistoryCheck, StoryboardPreview } from "../../types/clip.type";
+import type { ClipMode, SourceHistoryCheck } from "../../types/clip.type";
 
 type QuickStartCardProps = {
   url: string;
@@ -35,8 +35,6 @@ type QuickStartCardProps = {
   isCheckingSourceHistory: boolean;
   allowReprocessSource: boolean;
   confirmSourceRights: boolean;
-  storyboardPreview: StoryboardPreview | null;
-  isGeneratingStoryboard: boolean;
   isBusy: boolean;
   isSubmitting: boolean;
   error: string;
@@ -45,7 +43,6 @@ type QuickStartCardProps = {
   onClipModeChange: (value: ClipMode) => void;
   onAllowReprocessSourceChange: (value: boolean) => void;
   onConfirmSourceRightsChange: (value: boolean) => void;
-  onCreateStoryboard: () => void;
   onStart: () => void;
 };
 
@@ -90,8 +87,6 @@ export function QuickStartCard({
   isCheckingSourceHistory,
   allowReprocessSource,
   confirmSourceRights,
-  storyboardPreview,
-  isGeneratingStoryboard,
   isBusy,
   isSubmitting,
   error,
@@ -100,7 +95,6 @@ export function QuickStartCard({
   onClipModeChange,
   onAllowReprocessSourceChange,
   onConfirmSourceRightsChange,
-  onCreateStoryboard,
   onStart,
 }: QuickStartCardProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -116,7 +110,7 @@ export function QuickStartCard({
     || (quickScore === null
       ? "Gunakan Scan Potensi Viral untuk menilai isi video."
       : `Momentum sumber ${Math.round(quickScore)}/100 hanya sinyal distribusi. Scan transkrip tetap menentukan nilai informasi, hook, konteks, dan payoff.`);
-  const isWorking = isBusy || isSubmitting || isGeneratingStoryboard;
+  const isWorking = isBusy || isSubmitting;
   const isStory = clipMode === "long_animate";
   const isHypitPrompt = isStory && isHypitQuickPrompt(storyText);
   const hypitPromptWords = storyText
@@ -124,17 +118,9 @@ export function QuickStartCard({
     .trim()
     .split(/\s+/)
     .filter(Boolean).length;
-  const storyReady = isHypitPrompt
-    ? hypitPromptWords >= 4
-    : storyText.trim().length >= 60 && storyText.trim().split(/\s+/).length >= 12;
-  const canCreateStoryboard = storyReady && !isWorking;
+  const storyReady = hypitPromptWords >= 4;
   const canStart = isStory
-    ? isHypitPrompt
-      ? storyReady && !isWorking
-      : Boolean(storyboardPreview?.scenes.length)
-        && Boolean(storyboardPreview?.image_provider.ready)
-        && confirmSourceRights
-        && !isWorking
+    ? storyReady && confirmSourceRights && !isWorking
     : hasUrl
       && !invalidUrl
       && !isCheckingSourceHistory
@@ -217,94 +203,43 @@ export function QuickStartCard({
           <div className="storyStudioComposer">
             <header>
               <div className="storyStudioModeSwitch" aria-label="Mode pembuatan">
-                <span className={!storyboardPreview ? "active" : "done"}><BookOpen size={14} /> {isHypitPrompt ? "1. Prompt" : "1. Storyboard"}</span>
-                <span className={storyboardPreview || isHypitPrompt ? "active" : ""}><Film size={14} /> 2. Video</span>
+                <span className="active"><BookOpen size={14} /> 1. Prompt</span>
+                <span className={storyReady ? "active" : ""}><Film size={14} /> 2. Video</span>
               </div>
-              <small>{isHypitPrompt ? "HYPIT QUICK · CODE RENDERED" : "HYPIT SCRIPT · REMOTION VIDEO"}</small>
+              <small>{isHypitPrompt ? "HYPIT QUICK · CODE RENDERED" : "HYPIT TEXT-TO-VIDEO · REMOTION"}</small>
             </header>
             <label className="storyInputField">
-              <span>{isHypitPrompt ? "Prompt Hypit siap dirender" : "Sutradarai video Anda"}</span>
+              <span>Prompt video siap dirender</span>
               <textarea
                 value={storyText}
                 onChange={(event) => onStoryTextChange(event.target.value)}
-                placeholder={'Tempel naskah panjang langsung tanpa /hypit. Untuk Quick Ranking: /hypit Make a ranking video that puts Hypit in S tier.'}
+                placeholder={'Contoh: Buatkan 10 detik video tentang seekor kucing yang berlari di kebun saat matahari terbit.'}
                 rows={8}
                 maxLength={30000}
               />
-              <small>{storyText.trim().length.toLocaleString("id-ID")} / 30.000 karakter · {isHypitPrompt ? "minimum 4 kata setelah /hypit" : "minimum 60 karakter dan 12 kata"}</small>
+              <small>{storyText.trim().length.toLocaleString("id-ID")} / 30.000 karakter · minimum 4 kata · durasi dapat ditulis langsung di prompt</small>
             </label>
-            <p className="sourceHint">Naskah panjang tidak memerlukan <code>/hypit</code>. Perintah itu khusus Quick Ranking/Tier; bila terlanjur dipakai pada naskah panjang, sistem akan membuang perintahnya dan tetap membuat storyboard penuh.</p>
+            <p className="sourceHint">Prompt langsung dikompilasi menjadi clip text-to-video Hypit. Remotion hanya merakit clip, caption stabil, audio, dan hasil akhir—tanpa tahap storyboard.</p>
             {!storyText.trim() ? (
               <div className="hypitPromptExamples" aria-label="Contoh prompt Hypit">
                 <button type="button" onClick={() => onStoryTextChange("/hypit Make a ranking video that puts Hypit in S tier.")}>Ranking Hypit S tier</button>
                 <button type="button" onClick={() => onStoryTextChange("/hypit Buat video ranking tentang patch kritis PHP yang menjadi isu hari ini.")}>Isu PHP hari ini</button>
               </div>
             ) : null}
-            {storyboardPreview ? (
-              <section className="storyboardPreview" aria-label="Preview storyboard">
-                <header>
-                  <span><CheckCircle2 size={15} /> Storyboard siap</span>
-                  <b>{storyboardPreview.scenes.length} scene · {Math.round(storyboardPreview.scenes.reduce((total, scene) => total + scene.shots.length, 0))} keyframe</b>
-                </header>
-                <div className="storyboardSummary">
-                  <strong>{storyboardPreview.title}</strong>
-                  <small>{storyboardPreview.hook}</small>
-                  <details>
-                    <summary>Skill Sutradara &amp; Properti aktif</summary>
-                    <p><b>Sutradara:</b> {storyboardPreview.director_bible}</p>
-                    <p><b>Properti:</b> {storyboardPreview.property_bible}</p>
-                  </details>
-                </div>
-                <div className="storyboardSceneRail">
-                  {storyboardPreview.scenes.map((scene) => (
-                    <article key={scene.index}>
-                      <span>SCENE {String(scene.index).padStart(2, "0")}</span>
-                      <strong>{scene.title}</strong>
-                      <p>{scene.visual_prompt}</p>
-                      <div className="storyboardFramingPlan" aria-label={`Framing scene ${scene.index}`}>
-                        {scene.shot_plan.map((shot) => (
-                          <span key={`${scene.index}-${shot.index}`} title={`${shot.camera_angle.replaceAll("_", " ")} · ${shot.camera_motion.replaceAll("_", " ")}`}>
-                            <b>SHOT {shot.index}</b>
-                            {shot.framing.replaceAll("_", " ")} · {shot.subject_placement.replaceAll("_", " ")}
-                          </span>
-                        ))}
-                      </div>
-                      <small>{scene.narration}</small>
-                      <details>
-                        <summary>Arahan sinematik &amp; properti</summary>
-                        <p><b>Blocking/kamera:</b> {scene.director_direction}</p>
-                        <p><b>Properti adegan:</b> {scene.property_direction}</p>
-                      </details>
-                      <details>
-                        <summary>Prompt ImageGen</summary>
-                        <code>{scene.image_prompt}</code>
-                      </details>
-                    </article>
-                  ))}
-                </div>
-                <div className={`imageProviderCheck${storyboardPreview.image_provider.ready ? " isReady" : " isBlocked"}`}>
-                  {storyboardPreview.image_provider.ready ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
-                  <span>
-                    <strong>{storyboardPreview.image_provider.ready ? "ImageGen siap" : "ImageGen belum aktif"}</strong>
-                    <small>{storyboardPreview.image_provider.message}</small>
-                  </span>
-                </div>
-              </section>
-            ) : null}
             <footer>
               <div className="storyStudioTools">
-                <span title="AI menyusun beat dan shot sebelum render"><Focus size={15} /> Storyboard dulu</span>
-                <span title="Keyframe memakai prompt gambar terstruktur"><WandSparkles size={15} /> ImageGen</span>
-                <span title="Perakitan video lokal tanpa biaya per render"><Film size={15} /> Video lokal</span>
+                <span title="Prompt diikat ke satu aksi scene yang terukur"><Focus size={15} /> Prompt → scene</span>
+                <span title="Hypit menghasilkan clip bergerak langsung"><WandSparkles size={15} /> Text-to-video</span>
+                <span title="Remotion merakit clip tanpa caption berkedip"><Film size={15} /> Remotion stabil</span>
               </div>
               <div className="storyStudioDirector">
-                <span><Sparkles size={14} /> {isHypitPrompt ? "Generate video" : storyboardPreview ? "Produksi" : "Susun scene"}</span>
+                <span><Sparkles size={14} /> Generate video</span>
                 <button
-                  aria-label={isHypitPrompt ? "Generate video dengan Hypit" : storyboardPreview ? "Produksi video dari storyboard" : "Buat storyboard dari cerita"}
+                  aria-label="Generate video langsung dengan Hypit"
                   className="storyStudioSubmit"
-                  disabled={isHypitPrompt ? !canStart : storyboardPreview ? !canStart : !canCreateStoryboard}
+                  disabled={!canStart}
                   type="button"
-                  onClick={isHypitPrompt ? onStart : storyboardPreview ? onStart : onCreateStoryboard}
+                  onClick={onStart}
                 >
                   {isWorking ? <Loader2 className="spin" size={19} /> : <ArrowRight size={19} />}
                 </button>

@@ -9,7 +9,6 @@ import {
   checkSourceHistory,
   checkTikTokSession,
   createJob,
-  createStoryboardPreview,
   createTikTokUpload,
   createTikTokUploadBatch,
   createYouTubeUpload,
@@ -82,7 +81,6 @@ import type {
   CropMode,
   SourceMode,
   SourceHistoryCheck,
-  StoryboardPreview,
   TikTokConfig,
   TikTokUploadJob,
   VideoQuality,
@@ -114,11 +112,16 @@ const isHypitQuickPrompt = (value: string) => {
   return body.split(/\s+/).filter(Boolean).length <= 80 && HYPIT_QUICK_INTENT_PATTERN.test(body);
 };
 const hypitStoryBody = (value: string) => value.replace(HYPIT_COMMAND_PATTERN, "").trim();
+export const promptDurationSeconds = (value: string, fallback: number) => {
+  const match = value.match(/\b(\d{1,4}(?:[.,]\d+)?)\s*(?:detik|seconds?|secs?|s)\b/i)
+    || value.match(/\b(?:durasi|duration|sepanjang|selama)\s*[:=]?\s*(\d{1,4}(?:[.,]\d+)?)\b(?!\s*(?:menit|minutes?|jam|hours?))/i);
+  if (!match) return fallback;
+  const parsed = Number.parseFloat(match[1].replace(",", "."));
+  return Number.isFinite(parsed) ? Math.max(5, Math.min(600, parsed)) : fallback;
+};
 export default function HomePage() {
   const [url, setUrl] = useState("");
   const [storyText, setStoryText] = useState("");
-  const [storyboardPreview, setStoryboardPreview] = useState<StoryboardPreview | null>(null);
-  const [isGeneratingStoryboard, setIsGeneratingStoryboard] = useState(false);
   const [sourceMode, setSourceMode] = useState<SourceMode>("url");
   const [uploadToken, setUploadToken] = useState("");
   const [uploadFileName, setUploadFileName] = useState("");
@@ -216,7 +219,6 @@ export default function HomePage() {
     setBurnSubtitles(true);
     setAiEnabled(true);
     setConfirmSourceRights(false);
-    setStoryboardPreview(null);
     if (nextMode === "highlight_5m" || nextMode === "long_animate") {
       setMinDuration(30);
       setMaxDuration(90);
@@ -231,13 +233,11 @@ export default function HomePage() {
 
   const handleStoryTextChange = useCallback((value: string) => {
     setStoryText(value);
-    setStoryboardPreview(null);
     setError("");
   }, []);
 
   const handleCompilationTargetSecondsChange = useCallback((value: number) => {
     setCompilationTargetSeconds(value);
-    setStoryboardPreview(null);
   }, []);
 
   const handleUrlChange = useCallback((value: string) => {
@@ -425,7 +425,6 @@ export default function HomePage() {
         setVideoQuality(restoredJob.request.video_quality);
         setSlowMotionNoVoice(Boolean(restoredJob.request.slow_motion_no_voice));
         setStoryText(restoredJob.request.script_text || "");
-        setStoryboardPreview(null);
         if (restoredJob.request.clip_mode === "long_animate") {
           setConfirmSourceRights(Boolean(restoredJob.request.confirm_long_animate_rights));
         }
@@ -721,58 +720,6 @@ export default function HomePage() {
     }
   }, []);
 
-
-  const handleCreateStoryboard = useCallback(async () => {
-    const trimmedStory = hypitStoryBody(storyText.trim());
-    setError("");
-    if (trimmedStory.length < 60 || trimmedStory.split(/\s+/).length < 12) {
-      setError("Jalan cerita minimal 60 karakter dan 12 kata agar storyboard tidak generik.");
-      return;
-    }
-    if (!aiEnabled || !aiBaseUrl.trim() || !aiModel.trim()) {
-      setError("Pembuatan storyboard membutuhkan AI aktif, base URL, dan model yang valid.");
-      return;
-    }
-
-    setIsGeneratingStoryboard(true);
-    try {
-      const preview = await toast.promise(
-        createStoryboardPreview({
-          story_text: trimmedStory,
-          target_duration_seconds: Math.max(
-            COMPILATION_MIN_SECONDS,
-            Math.min(COMPILATION_MAX_SECONDS, compilationTargetSeconds),
-          ),
-          ai_enabled: aiEnabled,
-          ai_base_url: aiBaseUrl.trim(),
-          ai_model: aiModel.trim(),
-          ai_api_key: aiApiKey.trim(),
-        }),
-        {
-          loading: "Menyusun beat, scene, dan prompt ImageGen...",
-          success: "Storyboard siap direview.",
-          error: "Gagal membuat storyboard",
-        },
-      );
-      setStoryboardPreview(preview);
-      if (!preview.image_provider.ready) {
-        toast.error("Storyboard jadi, tetapi ImageGen lokal belum aktif. Cek pesan preflight di bawah storyboard.");
-      }
-    } catch (storyboardError) {
-      setStoryboardPreview(null);
-      setError(storyboardError instanceof Error ? storyboardError.message : "Gagal membuat storyboard.");
-    } finally {
-      setIsGeneratingStoryboard(false);
-    }
-  }, [
-    aiApiKey,
-    aiBaseUrl,
-    aiEnabled,
-    aiModel,
-    compilationTargetSeconds,
-    storyText,
-  ]);
-
   const handleStartJob = useCallback(async () => {
     const requestedMode: ClipMode = clipMode;
     const isStoryMode = requestedMode === "long_animate";
@@ -796,24 +743,12 @@ export default function HomePage() {
       setError("Proses sebelumnya masih berjalan dan sudah ditampilkan kembali. Tidak membuat job duplikat.");
       return;
     }
-    if (
-      isStoryMode
-      && !isHypitQuick
-      && (effectiveStory.length < 60 || effectiveStory.split(/\s+/).length < 12)
-    ) {
-      setError("Jalan cerita minimal 60 karakter dan 12 kata agar konflik serta payoff dapat dikembangkan.");
+    if (isStoryMode && effectiveStory.split(/\s+/).filter(Boolean).length < 4) {
+      setError("Jelaskan video dengan minimal empat kata.");
       return;
     }
     if (isHypitQuick && trimmedStory.replace(/^\s*\/hypit\s*/i, "").split(/\s+/).filter(Boolean).length < 4) {
       setError("Jelaskan video setelah /hypit dengan minimal empat kata.");
-      return;
-    }
-    if (isStoryMode && !isHypitQuick && !storyboardPreview) {
-      setError("Buat dan review storyboard terlebih dahulu sebelum produksi video.");
-      return;
-    }
-    if (isStoryMode && !isHypitQuick && !storyboardPreview?.image_provider.ready) {
-      setError(storyboardPreview?.image_provider.message || "ImageGen belum siap digunakan.");
       return;
     }
     if (isStoryMode && !isHypitQuick && !confirmSourceRights) {
@@ -859,9 +794,7 @@ export default function HomePage() {
           url: !isStoryMode && requestedSourceMode === "url" ? trimmedUrl : "",
           source_file: !isStoryMode && requestedSourceMode === "upload" ? uploadToken : "",
           script_text: isStoryMode
-            ? isHypitQuick
-              ? trimmedStory
-              : storyboardPreview?.production_script || effectiveStory
+            ? isHypitQuick ? trimmedStory : effectiveStory
             : "",
           top: requestedMode === "short" && targetClips > 0 ? targetClips : undefined,
           min_duration: minDuration,
@@ -869,6 +802,8 @@ export default function HomePage() {
           clip_mode: requestedMode,
           compilation_target_seconds: isHypitQuick
             ? 26
+            : isStoryMode
+              ? promptDurationSeconds(effectiveStory, compilationTargetSeconds)
             : Math.max(
                 COMPILATION_MIN_SECONDS,
                 Math.min(COMPILATION_MAX_SECONDS, compilationTargetSeconds),
@@ -911,8 +846,8 @@ export default function HomePage() {
           ai_api_key: aiApiKey.trim(),
         }),
         {
-          loading: isHypitQuick ? "Hypit menyusun tier board dan memulai render..." : isStoryMode ? "Mengunci storyboard dan memulai produksi..." : requestedMode === "short" ? "Memulai scan dan render Short..." : "Memulai scan dan susun Long Highlight...",
-          success: isHypitQuick ? "Render Hypit dimulai — hasil akan muncul otomatis di workspace." : isStoryMode ? "Produksi dimulai — ImageGen membuat keyframe lalu ClipForge merakit videonya." : requestedMode === "short" ? "Scan dimulai — kandidat terbaik akan langsung dirender." : "Scan dimulai — chapter terbaik akan langsung disusun.",
+          loading: isHypitQuick ? "Hypit menyusun tier board dan memulai render..." : isStoryMode ? "Mengirim prompt ke text-to-video Hypit..." : requestedMode === "short" ? "Memulai scan dan render Short..." : "Memulai scan dan susun Long Highlight...",
+          success: isHypitQuick ? "Render Hypit dimulai — hasil akan muncul otomatis di workspace." : isStoryMode ? "Text-to-video dimulai — Remotion akan merakit clip dan caption stabil." : requestedMode === "short" ? "Scan dimulai — kandidat terbaik akan langsung dirender." : "Scan dimulai — chapter terbaik akan langsung disusun.",
           error: isHypitQuick ? "Gagal memulai Hypit Quick" : isStoryMode ? "Gagal memulai Generator Cerita" : "Gagal memulai proses pemotongan",
         },
       );
@@ -956,7 +891,6 @@ export default function HomePage() {
     sourceMode,
     sourceProbe,
     storyText,
-    storyboardPreview,
     targetClips,
     uploadToken,
     url,
@@ -983,7 +917,6 @@ export default function HomePage() {
     setJob(selectedJob);
     setClipMode(selectedJob.request.clip_mode);
     setStoryText(selectedJob.request.script_text || "");
-    setStoryboardPreview(null);
     setConfirmSourceRights(
       selectedJob.request.clip_mode === "long_animate"
         ? Boolean(selectedJob.request.confirm_long_animate_rights)
@@ -1566,8 +1499,6 @@ export default function HomePage() {
         isCheckingSourceHistory={isCheckingSourceHistory}
         allowReprocessSource={allowReprocessSource}
         confirmSourceRights={confirmSourceRights}
-        storyboardPreview={storyboardPreview}
-        isGeneratingStoryboard={isGeneratingStoryboard}
         isBusy={isBusy}
         isSubmitting={isSubmitting}
         error={error}
@@ -1576,7 +1507,6 @@ export default function HomePage() {
         onClipModeChange={handleClipModeChange}
         onAllowReprocessSourceChange={setAllowReprocessSource}
         onConfirmSourceRightsChange={setConfirmSourceRights}
-        onCreateStoryboard={() => { void handleCreateStoryboard(); }}
         onStart={() => { void handleStartJob(); }}
       />
 

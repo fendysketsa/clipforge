@@ -424,10 +424,9 @@ class ClipJobRequest(BaseModel):
     min_duration: float = Field(default=SHORT_GROWTH_MIN_SECONDS, ge=5, le=600)
     max_duration: float = Field(default=SHORT_DEFAULT_MAX_SECONDS, ge=10, le=600)
     clip_mode: Literal["short", "highlight_5m", "long_animate", "original_rebuild"] = "short"
-    # Keep 240s readable for persisted legacy jobs; the current UI offers 300-600s.
-    # Hypit Quick uses 20–45 second code-rendered Shorts. Ordinary story jobs
-    # remain constrained to 5–10 minutes by the UI and endpoint validation.
-    compilation_target_seconds: float = Field(default=300, ge=20, le=600)
+    # Direct text-to-video prompts may request a short clip (for example ten
+    # seconds); Long Highlight still applies its own 5–10 minute UI bounds.
+    compilation_target_seconds: float = Field(default=300, ge=5, le=600)
     # Internal long-form jobs may pin the exact source moments used by their
     # companion Shorts. This keeps a paired Long Story grounded in its Short.
     compilation_anchor_ranges: list[tuple[float, float]] = Field(default_factory=list)
@@ -1431,6 +1430,12 @@ CRON_HUMOR_UNSAFE_SIGNALS = {
     "judi", "kecelakaan", "mabuk", "mempermalukan", "pelecehan", "prank",
     "sadis", "seksual", "telanjang",
 }
+
+# The scheduled publisher should only spend download, render, QC, and upload
+# capacity on sources that already have a small amount of real audience
+# validation. This is deliberately cron-only; manual URLs remain usable for
+# private footage, new channels, and operator-led experiments.
+AUTO_VIRAL_SCHEDULE_SOURCE_VIEW_FLOOR = 1_000
 
 # Search ideas inspired by YouTube's cross-topic "people also search" surface.
 # They are deliberately owned by the scheduler and describe original discussion,
@@ -3998,6 +4003,7 @@ auto_viral_scheduler_lock = threading.Lock()
 auto_viral_scheduler_running = False
 auto_viral_scheduler_next_run_at: datetime | None = None
 auto_viral_scheduler_thread: threading.Thread | None = None
+auto_viral_scheduler_wakeup = threading.Event()
 completed_job_upload_sweeper_lock = threading.Lock()
 completed_job_upload_sweeper_running = False
 completed_job_upload_sweeper_wakeup = threading.Event()
@@ -7120,6 +7126,21 @@ def youtube_upload_was_claimed(upload: YouTubeUploadJob) -> bool:
     )
 
 
+def delete_claimed_youtube_upload_record(upload_id: str) -> bool:
+    """Remove the terminal claim card after its local clip cleanup finishes."""
+    with youtube_uploads_lock:
+        upload = youtube_uploads.get(upload_id)
+        if (
+            upload is None
+            or upload.status not in {"failed", "cancelled"}
+            or not youtube_upload_was_claimed(upload)
+        ):
+            return False
+        youtube_uploads.pop(upload_id, None)
+        save_youtube_uploads_unlocked()
+    return True
+
+
 def quarantine_queued_youtube_uploads_from_claimed_source(
     source_job_id: str,
     triggering_upload_id: str,
@@ -7255,6 +7276,7 @@ def claimed_clip_cleanup_worker(upload_id: str) -> None:
                         "CLAIMED_CLIP_DELETED: kartu/file lokal sudah tidak ada; antrean dilanjutkan.",
                     ][-160:],
                 )
+                delete_claimed_youtube_upload_record(upload_id)
                 return
 
             active_uploads = [
@@ -7310,6 +7332,7 @@ def claimed_clip_cleanup_worker(upload_id: str) -> None:
                     "Worker YouTube tidak menunggu cleanup dan langsung melanjutkan antrean.",
                 ][-160:],
             )
+            delete_claimed_youtube_upload_record(upload_id)
             return
     finally:
         with claimed_clip_cleanup_lock:
@@ -13854,6 +13877,28 @@ def cron_humor_discovery_active(run_id: str, request: AutoViralRequest) -> bool:
     return bool(run and run.trigger == "schedule")
 
 
+def scheduled_auto_viral_discovery_active(run_id: str) -> bool:
+    """Return whether discovery belongs to the unattended cron scheduler."""
+    with auto_viral_lock:
+        run = auto_viral_runs.get(run_id)
+    return bool(run and run.trigger == "schedule")
+
+
+def scheduled_source_view_rejection_reason(
+    run_id: str,
+    request: AutoViralRequest,
+    info: dict[str, Any],
+) -> str:
+    """Apply the 1K source-view floor only to unattended cron discovery."""
+    if not scheduled_auto_viral_discovery_active(run_id):
+        return ""
+    minimum_views = max(AUTO_VIRAL_SCHEDULE_SOURCE_VIEW_FLOOR, request.min_views)
+    views = max(0, int(info.get("view_count") or 0))
+    if views < minimum_views:
+        return f"tayangan {views:,} di bawah minimum cron {minimum_views:,}"
+    return ""
+
+
 def cron_trend_discovery_active(run_id: str, request: AutoViralRequest) -> bool:
     """Enable broad trend discovery only for the persisted scheduler owner."""
     if not request.cron_trend_lane:
@@ -14759,6 +14804,15 @@ def search_youtube_data_api_viral_sources(
             duration = float(payload.get("duration") or 0)
             if duration < request.min_source_duration or duration > request.max_source_duration:
                 continue
+            cron_view_rejection = scheduled_source_view_rejection_reason(
+                run_id, request, payload
+            )
+            if cron_view_rejection:
+                append_auto_viral_log(
+                    run_id,
+                    f"Skip sumber cron ({cron_view_rejection}): {payload.get('title') or '-'}",
+                )
+                continue
             momentum_rejection = viral_source_momentum_rejection_reason(payload, request)
             if momentum_rejection and env_bool("VIRAL_CC_REQUIRE_MOMENTUM", False):
                 append_auto_viral_log(
@@ -14938,6 +14992,15 @@ def search_auto_viral_sources(
 
             duration = float(metadata.get("duration") or 0)
             if duration < request.min_source_duration or duration > request.max_source_duration:
+                continue
+            cron_view_rejection = scheduled_source_view_rejection_reason(
+                run_id, request, metadata
+            )
+            if cron_view_rejection:
+                append_auto_viral_log(
+                    run_id,
+                    f"Skip sumber cron ({cron_view_rejection}): {metadata.get('title') or url}",
+                )
                 continue
             momentum_rejection = viral_source_momentum_rejection_reason(metadata, request)
             if momentum_rejection and env_bool("VIRAL_CC_REQUIRE_MOMENTUM", False):
@@ -16229,6 +16292,20 @@ AUTO_VIRAL_UPLOAD_HOLD_STATUSES = frozenset(
     }
 )
 
+AUTO_VIRAL_SOURCE_REPLACEMENT_STATUSES = frozenset(
+    {"copyright_claimed", "upload_failed"}
+)
+
+
+def auto_viral_item_needs_source_replacement(item: dict[str, Any]) -> bool:
+    """Return whether a discarded cron source should be replaced immediately."""
+    status = str(item.get("status") or "")
+    if status == "copyright_claimed":
+        return env_bool("AUTO_VIRAL_REPLACE_CLAIMED_SOURCE", True)
+    if status == "upload_failed":
+        return env_bool("AUTO_VIRAL_REPLACE_FAILED_SOURCE", True)
+    return False
+
 
 def auto_viral_upload_item_has_live_checkpoint(
     request: AutoViralRequest,
@@ -16314,6 +16391,100 @@ def hold_auto_viral_upload_item(
     item["status"] = status
     item["error"] = reason
     item["cleanup"] = "upload otomatis ditahan; file yang masih tersedia dipertahankan"
+
+
+def discard_failed_scheduled_auto_viral_item(
+    run_id: str,
+    item: dict[str, Any],
+) -> str | None:
+    """Delete a failed cron batch while preserving successful remote posts.
+
+    Manual automation runs intentionally keep their failed cards and local
+    files for operator review. For a scheduled run, terminal/unverified upload
+    records and every local render owned by the source are removed immediately
+    so the next discovery cycle can fill the missing publishing slot.
+    """
+    with auto_viral_lock:
+        run = auto_viral_runs.get(run_id)
+    if run is None or run.trigger != "schedule":
+        return None
+
+    youtube_ids: set[str] = set()
+    tiktok_ids: set[str] = set()
+    for key in ("youtube_uploads", "uploads", "paired_long_youtube_uploads"):
+        records = item.get(key)
+        if isinstance(records, list):
+            youtube_ids.update(
+                str(record.get("id") or "").strip()
+                for record in records
+                if isinstance(record, dict) and str(record.get("id") or "").strip()
+            )
+    records = item.get("tiktok_uploads")
+    if isinstance(records, list):
+        tiktok_ids.update(
+            str(record.get("id") or "").strip()
+            for record in records
+            if isinstance(record, dict) and str(record.get("id") or "").strip()
+        )
+
+    removed_upload_records = 0
+    with youtube_uploads_lock:
+        for upload_id in youtube_ids:
+            upload = youtube_uploads.get(upload_id)
+            if (
+                upload is not None
+                and upload.status not in {"queued", "running"}
+                and not youtube_upload_is_verified(upload)
+            ):
+                youtube_uploads.pop(upload_id, None)
+                removed_upload_records += 1
+        if removed_upload_records:
+            save_youtube_uploads_unlocked()
+
+    removed_tiktok_records = 0
+    with tiktok_uploads_lock:
+        for upload_id in tiktok_ids:
+            upload = tiktok_uploads.get(upload_id)
+            if (
+                upload is not None
+                and upload.status not in {"queued", "running"}
+                and not tiktok_upload_is_verified(upload)
+            ):
+                tiktok_uploads.pop(upload_id, None)
+                removed_tiktok_records += 1
+        if removed_tiktok_records:
+            save_tiktok_uploads_unlocked()
+    removed_upload_records += removed_tiktok_records
+
+    removed_jobs = 0
+    removed_clips = 0
+    cleanup_errors: list[str] = []
+    for key in ("job_id", "long_job_id"):
+        job_id = str(item.get(key) or "").strip()
+        if not job_id:
+            continue
+        try:
+            result = delete_all_job_clips(job_id)
+            removed_jobs += int(result.removed_job)
+            removed_clips += result.removed_clips
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                cleanup_errors.append(f"{job_id[:10]}: {exc.detail}")
+        except Exception as exc:
+            cleanup_errors.append(f"{job_id[:10]}: {exc}")
+
+    item["cleanup_completed"] = not cleanup_errors
+    item["cleanup_removed_jobs"] = removed_jobs
+    item["cleanup_removed_clips"] = removed_clips
+    item["cleanup_removed_upload_records"] = removed_upload_records
+    summary = (
+        f"cron: {removed_jobs} job lokal, {removed_clips} clip, dan "
+        f"{removed_upload_records} catatan upload gagal dibuang; sumber pengganti dijadwalkan"
+    )
+    if cleanup_errors:
+        summary += "; cleanup tertunda: " + "; ".join(cleanup_errors)
+    item["cleanup"] = summary
+    return summary
 
 
 def auto_viral_item_has_failed_upload(item: dict[str, Any]) -> bool:
@@ -16895,6 +17066,7 @@ def upload_auto_viral_processed_jobs(
         )
         item["status"] = "uploading"
         failures: list[str] = []
+        failed_platforms: set[str] = set()
         claimed_youtube_uploads: list[YouTubeUploadJob] = []
 
         if request.auto_upload_youtube:
@@ -16941,6 +17113,7 @@ def upload_auto_viral_processed_jobs(
             ]
             if not finished_youtube:
                 failures.append("YouTube: tidak ada job upload yang selesai")
+                failed_platforms.add("youtube")
             claimed_youtube_uploads = [
                 upload
                 for upload in finished_youtube
@@ -16954,6 +17127,12 @@ def upload_auto_viral_processed_jobs(
                     and not youtube_upload_was_claimed(upload)
                 )
             )
+            if any(
+                not youtube_upload_is_verified(upload)
+                and not youtube_upload_was_claimed(upload)
+                for upload in finished_youtube
+            ):
+                failed_platforms.add("youtube")
 
         if request.auto_upload_tiktok:
             prior_ids = [
@@ -17000,11 +17179,17 @@ def upload_auto_viral_processed_jobs(
             ]
             if not finished_tiktok:
                 failures.append("TikTok: tidak ada job upload yang selesai")
+                failed_platforms.add("tiktok")
             failures.extend(
                 f"TikTok: {upload.error or 'posting belum terverifikasi'}"
                 for upload in finished_tiktok
                 if not tiktok_upload_is_verified(upload)
             )
+            if any(
+                not tiktok_upload_is_verified(upload)
+                for upload in finished_tiktok
+            ):
+                failed_platforms.add("tiktok")
 
         if publish_item_long:
             assert isinstance(finished_long_job, ClipJob)
@@ -17054,12 +17239,19 @@ def upload_auto_viral_processed_jobs(
             ]
             if not finished_long_uploads:
                 failures.append("YouTube Long: tidak ada job upload yang selesai")
+                failed_platforms.add("youtube_long")
             failures.extend(
                 f"YouTube Long: {upload.error or 'publikasi belum terverifikasi'}"
                 for upload in finished_long_uploads
                 if not youtube_upload_is_verified(upload)
                 or upload.visibility != "public"
             )
+            if any(
+                not youtube_upload_is_verified(upload)
+                or upload.visibility != "public"
+                for upload in finished_long_uploads
+            ):
+                failed_platforms.add("youtube_long")
             public_long_url = next(
                 (
                     upload.video_url
@@ -17081,6 +17273,9 @@ def upload_auto_viral_processed_jobs(
                 upload.title for upload in claimed_youtube_uploads
             )
             item["status"] = "copyright_claimed"
+            item["failed_platforms"] = sorted(
+                {*failed_platforms, "youtube"}
+            )
             item["error"] = (
                 "YouTube mendeteksi klaim Content ID; video dibuang permanen dan "
                 "tidak akan diupload atau dirender ulang."
@@ -17088,6 +17283,9 @@ def upload_auto_viral_processed_jobs(
             item["cleanup"] = (
                 "draft YouTube dan file lokal dibuang; cron lanjut ke kandidat berikutnya"
             )
+            cleanup_summary = discard_failed_scheduled_auto_viral_item(
+                run_id, item
+            )
             update_auto_viral_run(
                 run_id,
                 processed=processed,
@@ -17095,16 +17293,29 @@ def upload_auto_viral_processed_jobs(
             )
             append_auto_viral_log(
                 run_id,
-                f"Klaim Content ID dibuang tanpa retry ({claimed_titles}); cron dilanjutkan.",
+                (
+                    f"Klaim Content ID dibuang tanpa retry ({claimed_titles}); "
+                    f"{cleanup_summary or 'cleanup klip klaim tetap berjalan'}; cron dilanjutkan."
+                ),
             )
             continue
         if failures:
-            hold_auto_viral_upload_item(
-                item,
+            failure_reason = (
                 "Upload otomatis gagal dan tidak akan dicoba ulang: "
-                + "; ".join(failures),
-                status="upload_failed",
+                + "; ".join(failures)
             )
+            item["status"] = "upload_failed"
+            item["failed_platforms"] = sorted(failed_platforms)
+            item["error"] = failure_reason
+            cleanup_summary = discard_failed_scheduled_auto_viral_item(
+                run_id, item
+            )
+            if cleanup_summary is None:
+                hold_auto_viral_upload_item(
+                    item,
+                    failure_reason,
+                    status="upload_failed",
+                )
             update_auto_viral_run(
                 run_id,
                 processed=processed,
@@ -17112,7 +17323,11 @@ def upload_auto_viral_processed_jobs(
             )
             append_auto_viral_log(
                 run_id,
-                f"Upload job {job_id[:10]} gagal dan ditahan tanpa retry otomatis.",
+                (
+                    f"Upload job {job_id[:10]} gagal; {cleanup_summary}; cron mencari sumber pengganti."
+                    if cleanup_summary
+                    else f"Upload job {job_id[:10]} gagal dan ditahan tanpa retry otomatis."
+                ),
             )
             continue
         item["status"] = "cleanup_pending"
@@ -18007,7 +18222,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
             1
             for item in processed
             if item.get("status") in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
-            and item.get("status") != "copyright_claimed"
+            and item.get("status") not in AUTO_VIRAL_SOURCE_REPLACEMENT_STATUSES
         )
         if deferred_background_upload and verified_count == 0 and blocking_held_count:
             raise RuntimeError(
@@ -18069,11 +18284,22 @@ def run_auto_viral_campaign(run_id: str) -> None:
         except Exception as telegram_exc:
             append_auto_viral_error(run_id, f"Telegram alert gagal: {telegram_exc}")
     finally:
+        source_replacement_pending = False
         with auto_viral_lock:
+            finished_run = auto_viral_runs.get(run_id)
+            source_replacement_pending = bool(
+                finished_run
+                and any(
+                    auto_viral_item_needs_source_replacement(item)
+                    for item in finished_run.processed
+                )
+            )
             if auto_viral_active_run_id == run_id:
                 auto_viral_active_run_id = None
             auto_viral_secrets.pop(run_id, None)
             cancelled_auto_viral_run_ids.discard(run_id)
+        if source_replacement_pending:
+            auto_viral_scheduler_wakeup.set()
 
 
 def resume_scheduled_auto_viral_upload(run_id: str) -> None:
@@ -18122,9 +18348,15 @@ def resume_scheduled_auto_viral_upload(run_id: str) -> None:
             for item in processed
             if item.get("status") in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
         )
-        if verified_count == 0 and held_count:
+        blocking_held_count = sum(
+            1
+            for item in processed
+            if item.get("status") in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
+            and item.get("status") not in AUTO_VIRAL_SOURCE_REPLACEMENT_STATUSES
+        )
+        if verified_count == 0 and blocking_held_count:
             raise RuntimeError(
-                f"{held_count} checkpoint backlog ditahan; scheduler akan mencari sumber baru pada retry berikutnya."
+                f"{blocking_held_count} checkpoint backlog ditahan; scheduler akan mencari sumber baru pada retry berikutnya."
             )
         update_auto_viral_run(
             run_id,
@@ -18161,11 +18393,22 @@ def resume_scheduled_auto_viral_upload(run_id: str) -> None:
             message=str(exc),
         )
     finally:
+        source_replacement_pending = False
         with auto_viral_lock:
+            finished_run = auto_viral_runs.get(run_id)
+            source_replacement_pending = bool(
+                finished_run
+                and any(
+                    auto_viral_item_needs_source_replacement(item)
+                    for item in finished_run.processed
+                )
+            )
             auto_viral_upload_resume_run_ids.discard(run_id)
             if auto_viral_active_run_id == run_id:
                 auto_viral_active_run_id = None
             auto_viral_secrets.pop(run_id, None)
+        if source_replacement_pending:
+            auto_viral_scheduler_wakeup.set()
 
 
 def start_scheduled_auto_viral_upload_resume(
@@ -18457,7 +18700,13 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         cron_long_role=long_role,
         video_count=scheduled_video_count,
         clips_per_video=clips_per_video,
-        min_views=max(0, env_int("AUTO_VIRAL_SCHEDULE_MIN_VIEWS", 0)),
+        min_views=max(
+            AUTO_VIRAL_SCHEDULE_SOURCE_VIEW_FLOOR,
+            env_int(
+                "AUTO_VIRAL_SCHEDULE_MIN_VIEWS",
+                AUTO_VIRAL_SCHEDULE_SOURCE_VIEW_FLOOR,
+            ),
+        ),
         upload_date_filter=os.environ.get("AUTO_VIRAL_SCHEDULE_UPLOAD_DATE_FILTER", "this_week"),  # type: ignore[arg-type]
         duration_filter=os.environ.get("AUTO_VIRAL_SCHEDULE_DURATION_FILTER", "over_20"),  # type: ignore[arg-type]
         definition_filter="hd",
@@ -18981,6 +19230,71 @@ def auto_viral_daily_mix_incomplete(now: datetime) -> bool:
     return short_missing or long_missing
 
 
+def auto_viral_run_needs_source_replacement(
+    run: AutoViralRun | None,
+    now: datetime,
+) -> bool:
+    """Check capacity only on the platform that rejected the cron source."""
+    if run is None or run.trigger != "schedule":
+        return False
+    for item in run.processed:
+        if not auto_viral_item_needs_source_replacement(item):
+            continue
+        status = str(item.get("status") or "")
+        failed_platforms = (
+            {
+                str(platform)
+                for platform in item.get("failed_platforms", [])
+                if str(platform)
+            }
+            if isinstance(item.get("failed_platforms"), list)
+            else set()
+        )
+        youtube_missing = bool(
+            status == "copyright_claimed"
+            or failed_platforms.intersection({"youtube", "youtube_long"})
+        )
+        if (
+            status == "upload_failed"
+            and not failed_platforms
+            and (
+                run.request.auto_upload_youtube
+                or run.request.auto_publish_paired_long_video
+            )
+        ):
+            youtube_groups = [
+                item.get("youtube_uploads", item.get("uploads", []))
+            ]
+            if run.request.auto_publish_paired_long_video:
+                youtube_groups.append(item.get("paired_long_youtube_uploads", []))
+            youtube_missing = any(
+                not persisted_upload_group_is_verified(
+                    group,
+                    platform="youtube",
+                )
+                for group in youtube_groups
+            )
+        tiktok_missing = bool(
+            status in AUTO_VIRAL_SOURCE_REPLACEMENT_STATUSES
+            and run.request.auto_upload_tiktok
+            and (
+                "tiktok" in failed_platforms
+                or (
+                    not failed_platforms
+                    and not persisted_upload_group_is_verified(
+                        item.get("tiktok_uploads", []),
+                        platform="tiktok",
+                    )
+                )
+            )
+        )
+        if youtube_missing and auto_viral_daily_mix_incomplete(now):
+            return True
+        if tiktok_missing and auto_viral_daily_upload_slots("tiktok", now) > 0:
+            return True
+    return False
+
+
 def auto_viral_next_run_at(
     now: datetime,
     latest: AutoViralRun | None,
@@ -18994,6 +19308,15 @@ def auto_viral_next_run_at(
         and latest.status == "queued"
         and latest.progress_stage == "resume_pending_upload"
     ):
+        return now
+    if (
+        latest is not None
+        and latest.status in {"completed", "failed"}
+        and auto_viral_run_needs_source_replacement(latest, now)
+    ):
+        # A failed cron source is terminal and its local batch has already been
+        # deleted. Fill the missing publishing slot with a fresh discovery
+        # campaign now instead of waiting for the ordinary retry/cycle delay.
         return now
     if (
         latest is not None
@@ -19205,7 +19528,8 @@ def auto_viral_scheduler_loop() -> None:
                     min(30.0, (next_run - datetime.now(timezone.utc)).total_seconds()),
                 )
             )
-            time.sleep(wait_seconds)
+            auto_viral_scheduler_wakeup.wait(wait_seconds)
+            auto_viral_scheduler_wakeup.clear()
     finally:
         with auto_viral_scheduler_lock:
             auto_viral_scheduler_running = False
@@ -20529,10 +20853,10 @@ def create_job(request: ClipJobRequest) -> ClipJob:
                 quick_preview_payload(raw_story)
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
-        elif len(story) < 60 or len(story.split()) < 12:
+        elif len(story.split()) < 4:
             raise HTTPException(
                 status_code=400,
-                detail="Jalan cerita minimal 60 karakter dan 12 kata agar konflik serta payoff dapat dikembangkan.",
+                detail="Jelaskan video dengan minimal empat kata.",
             )
         if (
             not hypit_quick
