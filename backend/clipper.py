@@ -9942,6 +9942,44 @@ def split_subtitle_text(text: str, max_chars: int = SUBTITLE_MAX_CHARS, max_line
     return chunks
 
 
+def editorial_card_text(text: str, output_format: OutputFormat) -> str:
+    """Bound editorial copy to the card instead of relying on drawtext wrapping.
+
+    FFmpeg's drawtext filter preserves newlines but does not wrap a textfile to
+    the width of a drawbox. Keeping this formatting at the asset boundary also
+    makes the result deterministic across FFmpeg builds and prevents a long
+    creator perspective from spilling over the card or the spoken captions.
+    """
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if not normalized:
+        return ""
+    max_chars, max_lines = (
+        (52, 3) if output_format == "landscape_compilation" else (44, 3)
+    )
+    chunks = split_subtitle_text(
+        normalized,
+        max_chars=max_chars,
+        max_lines=max_lines,
+    )
+    return chunks[0] if chunks else normalized
+
+
+def visible_creator_perspective(text: str) -> str:
+    """Remove auto-viral workflow directions from viewer-facing commentary."""
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if not normalized:
+        return ""
+    workflow_marker = re.compile(
+        r"(?i)(?:"
+        r"\bidentitas editorial ryuundy\s*:|"
+        r"\bperan (?:long|short) dalam pasangan konten\s*:|"
+        r"\bshort dan long harus saling melengkapi\b|"
+        r"\bambil yang baik dari sumber\b"
+        r")"
+    )
+    return workflow_marker.split(normalized, maxsplit=1)[0].strip(" .,!?:;-")
+
+
 def content_edit_variation(clip: ClipCandidate, variants: int = 6) -> int:
     """Choose a stable look from story content, not export order.
 
@@ -12531,6 +12569,67 @@ def creative_surprise_sound_cue(
     )
 
 
+def add_editorial_card_sound_cues(
+    cues: list[SoundEffectCue],
+    duration: float,
+    output_format: OutputFormat,
+    theme: VisualTheme,
+    *,
+    limit: int = 3,
+    dialogue_first: bool = False,
+    reverent: bool = False,
+) -> list[SoundEffectCue]:
+    """Add restrained UI-like accents for visible editorial card reveals.
+
+    Existing transcript-grounded cues keep priority. Long-form dialogue gets
+    only the card reveal when a dialogue-first treatment is active, while a
+    reverent treatment stays silent. Warning stories may use the verified
+    local impact asset; other themes use the much lighter pop asset.
+    """
+    if limit <= 0 or reverent:
+        return cues[: max(0, limit)]
+
+    safe_duration = max(0.1, duration)
+    additions: list[SoundEffectCue] = []
+    if output_format == "landscape_compilation":
+        if not dialogue_first and safe_duration > 0.7:
+            frequency, effect_duration, volume = SOUND_EFFECT_PROFILES["emphasis"]
+            additions.append(
+                SoundEffectCue(
+                    kind="emphasis",
+                    start=0.18,
+                    duration=effect_duration,
+                    frequency=frequency,
+                    volume=min(0.065, volume),
+                    trigger="chapter card reveal",
+                )
+            )
+        if safe_duration > 6.0:
+            kind: SoundEffectKind = (
+                "warning" if theme == "warning" else "important"
+            )
+            frequency, effect_duration, volume = SOUND_EFFECT_PROFILES[kind]
+            additions.append(
+                SoundEffectCue(
+                    kind=kind,
+                    start=5.20,
+                    duration=effect_duration,
+                    frequency=frequency,
+                    volume=min(0.11 if kind == "warning" else 0.07, volume),
+                    trigger="editorial card reveal",
+                )
+            )
+
+    merged = list(cues[:limit])
+    for addition in additions:
+        if len(merged) >= limit:
+            break
+        if any(abs(addition.start - cue.start) < 1.35 for cue in merged):
+            continue
+        merged.append(addition)
+    return sorted(merged, key=lambda cue: cue.start)
+
+
 def contextual_audio_mix_filter(
     base_filter: str,
     cues: list[SoundEffectCue],
@@ -12980,17 +13079,19 @@ def landscape_compilation_edit_filter(
     ):
         filters.extend(
             [
-                "drawbox=x=98:y=816:w=1030:h=170:color=black@0.68:t=fill:"
+                "drawbox=x=98:y=620:w=1030:h=184:color=black@0.74:t=fill:"
                 f"enable='between(t,{editorial_start:.3f},{editorial_end:.3f})'",
-                f"drawbox=x=98:y=816:w=10:h=170:color={secondary}@0.98:t=fill:"
+                f"drawbox=x=98:y=620:w=10:h=184:color={secondary}@0.98:t=fill:"
+                f"enable='between(t,{editorial_start:.3f},{editorial_end:.3f})'",
+                f"drawbox=x=108:y=620:w=1020:h=3:color={accent}@0.82:t=fill:"
                 f"enable='between(t,{editorial_start:.3f},{editorial_end:.3f})'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
                 f"text='CATATAN EDITOR':expansion=none:fontcolor={secondary}:fontsize=21:"
-                f"x=132:y=838:enable='between(t,{editorial_start:.3f},{editorial_end:.3f})'",
+                f"x=132:y=642:enable='between(t,{editorial_start:.3f},{editorial_end:.3f})'",
                 "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
                 f"textfile='{editorial_text_filename}':reload=0:expansion=none:"
-                "fontcolor=white:fontsize=29:line_spacing=6:borderw=1:bordercolor=black@0.78:"
-                f"x=132:y=878:enable='between(t,{editorial_start:.3f},{editorial_end:.3f})'",
+                "fontcolor=white:fontsize=27:line_spacing=5:borderw=1:bordercolor=black@0.78:"
+                f"x=132:y=680:enable='between(t,{editorial_start:.3f},{editorial_end:.3f})'",
             ]
         )
 
@@ -15902,7 +16003,7 @@ def export_clip(
                 key=lambda cue: cue.start,
             )[:maximum_camera_cuts]
     core_message = payoff_banner_text(clip, clip_segments)
-    human_creator_perspective = re.sub(r"\s+", " ", creator_perspective).strip()
+    human_creator_perspective = visible_creator_perspective(creator_perspective)
     editorial_angle = (
         first_sentence(human_creator_perspective, max_words=18)
         if human_creator_perspective
@@ -16024,6 +16125,15 @@ def export_clip(
                 sound_effect_cues = sound_effect_cues[: maximum_sound_effects - 1]
             sound_effect_cues.append(surprise_sound)
             sound_effect_cues.sort(key=lambda cue: cue.start)
+        sound_effect_cues = add_editorial_card_sound_cues(
+            sound_effect_cues,
+            duration,
+            output_format,
+            theme_profile["theme"],
+            limit=maximum_sound_effects,
+            dialogue_first=auto_visual_accent == "dialogue_focus",
+            reverent=auto_visual_accent == "reverent_focus",
+        )
         sound_effect_cues = sound_effect_cues[:maximum_sound_effects]
     sound_effect_tracks = select_local_sound_effect_tracks(sound_effect_cues)
     local_sound_effect_count = sum(track is not None for track in sound_effect_tracks)
@@ -17095,8 +17205,14 @@ def export_clip(
     if enhanced_edit:
         if drawtext_supported:
             hook_text_path.write_text(hook_banner_text(clip) + "\n", encoding="utf-8")
-            pov_text_path.write_text(editorial_angle + "\n", encoding="utf-8")
-            payoff_text_path.write_text(core_message + "\n", encoding="utf-8")
+            pov_text_path.write_text(
+                editorial_card_text(editorial_angle, output_format) + "\n",
+                encoding="utf-8",
+            )
+            payoff_text_path.write_text(
+                editorial_card_text(core_message, output_format) + "\n",
+                encoding="utf-8",
+            )
             if output_format == "vertical_short":
                 if not clean_detail_pipeline:
                     applied_edits.append(

@@ -22,6 +22,7 @@ from clipper import (
     TranscriptSegment,
     WatermarkRegion,
     _hex_to_ass_color,
+    add_editorial_card_sound_cues,
     adaptive_text_backdrop_split_filter,
     attach_monetization_provenance,
     apply_codex_audio_cues,
@@ -66,6 +67,7 @@ from clipper import (
     embedded_split_subject_filter,
     evidence_stage_overlay_filter,
     emphasis_timestamps,
+    editorial_card_text,
     editorial_transformation_profile,
     enhanced_edit_filter,
     extended_short_story_profile,
@@ -113,6 +115,7 @@ from clipper import (
     select_split_companion_candidates,
     segments_for_clip,
     split_subtitle_text,
+    visible_creator_perspective,
     subtitle_cues,
     shorts_cover_frame_timestamp,
     shorts_engagement_prompt,
@@ -1197,6 +1200,51 @@ def test_landscape_compilation_edit_uses_chapters_and_sparse_emphasis():
     assert "y=1072" in value
     assert "text='CATATAN EDITOR'" in value
     assert "textfile='part.editorial.txt'" in value
+    assert "drawbox=x=98:y=620:w=1030:h=184" in value
+    assert "x=132:y=680" in value
+
+
+def test_editorial_card_copy_is_wrapped_inside_landscape_safe_width():
+    value = editorial_card_text(
+        "Kebaikan perlu disampaikan dengan lembut agar kita saling mengingatkan tanpa "
+        "menghakimi identitas orang lain dalam percakapan.",
+        "landscape_compilation",
+    )
+
+    lines = value.splitlines()
+    assert len(lines) == 3
+    assert all(len(line) <= 52 for line in lines)
+    assert "\n" in value
+
+
+def test_visible_creator_perspective_does_not_leak_auto_viral_workflow_copy():
+    value = visible_creator_perspective(
+        "Kebaikan perlu disampaikan dengan lembut agar kita saling mengingatkan tanpa "
+        "menghakimi. Identitas editorial RYUUNDY: menginspirasi tanpa menggurui. "
+        "Peran Long dalam pasangan konten: lengkapi proses bangkit."
+    )
+
+    assert value == (
+        "Kebaikan perlu disampaikan dengan lembut agar kita saling mengingatkan "
+        "tanpa menghakimi"
+    )
+    assert "RYUUNDY" not in value
+    assert "Peran Long" not in value
+
+
+def test_editorial_card_sound_uses_quiet_local_kind_without_covering_dialogue():
+    cues = add_editorial_card_sound_cues(
+        [],
+        30,
+        "landscape_compilation",
+        "warning",
+        limit=3,
+        dialogue_first=True,
+    )
+
+    assert [(cue.kind, cue.start) for cue in cues] == [("warning", 5.2)]
+    assert cues[0].volume <= 0.11
+    assert cues[0].trigger == "editorial card reveal"
 
 
 def test_landscape_compilation_opening_uses_truthful_blinking_attention_dot():
