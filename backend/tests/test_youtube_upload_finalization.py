@@ -620,6 +620,43 @@ def test_checks_wait_when_one_item_is_safe_but_another_is_checking(monkeypatch):
         wait_for_copyright_checks(page, timeout_ms=100, require_checks=True)
 
 
+def test_checks_emit_heartbeat_when_modal_text_is_temporarily_blank(monkeypatch):
+    clock = iter((0.0, 0.0, 61.0, 121.0))
+    logs = []
+    monkeypatch.setenv("YOUTUBE_CHECKS_PROGRESS_LOG_INTERVAL_SECONDS", "60")
+    monkeypatch.setattr(youtube_uploader.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
+    monkeypatch.setattr(youtube_uploader, "log", logs.append)
+
+    with pytest.raises(UploadError, match="Step 3 Checks belum selesai"):
+        wait_for_copyright_checks(TextPage(""), timeout_ms=120_000, require_checks=True)
+
+    heartbeats = [message for message in logs if "uploader tetap aktif" in message]
+    assert len(heartbeats) == 2
+
+
+def test_review_wait_emits_heartbeat_while_publish_button_is_not_ready(monkeypatch):
+    clock = iter((0.0, 0.0, 0.0, 61.0, 61.0, 121.0))
+    logs = []
+    monkeypatch.setenv("YOUTUBE_CHECKS_PROGRESS_LOG_INTERVAL_SECONDS", "60")
+    monkeypatch.setattr(youtube_uploader.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "get_upload_workflow_step", lambda _page: "REVIEW")
+    monkeypatch.setattr(youtube_uploader, "visibility_is_selected", lambda *_args: True)
+    monkeypatch.setattr(youtube_uploader, "final_action_button_is_ready", lambda *_args: False)
+    monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
+    monkeypatch.setattr(youtube_uploader, "log", logs.append)
+
+    with pytest.raises(UploadError, match="belum siap"):
+        wait_for_review_checks_safe_before_publish(TextPage("Tidak ada klaim"), 120_000)
+
+    heartbeats = [message for message in logs if "Verifikasi akhir masih berjalan" in message]
+    assert len(heartbeats) == 2
+
+
 def test_private_review_does_not_wait_for_pending_community_check(monkeypatch):
     logs = []
     monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)

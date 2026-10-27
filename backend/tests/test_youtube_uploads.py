@@ -1305,12 +1305,39 @@ def test_restart_verification_command_preserves_assigned_video_url(monkeypatch):
         logs=["FINAL_VISIBILITY: private"],
     )
     monkeypatch.setenv("YOUTUBE_HEADLESS", "true")
+    monkeypatch.setenv("YOUTUBE_UPLOAD_USE_CDP", "false")
 
     command = build_youtube_restart_verification_command(upload)
 
     assert command[command.index("--video-url") + 1] == upload.video_url
     assert command[command.index("--content-type") + 1] == "shorts"
     assert command[command.index("--tags") + 1] == "Islam,Shorts"
+    assert "--use-cdp" not in command
+
+
+def test_restart_verification_reuses_active_cdp_browser(monkeypatch):
+    import api
+
+    upload = YouTubeUploadJob(
+        id="verify-known-video-cdp",
+        source_job_id="job-1",
+        clip_url="/outputs/demo/clips/resume_cerita_5menit_demo.mp4",
+        clip_name="resume_cerita_5menit_demo.mp4",
+        status="queued",
+        created_at="2026-10-26T00:00:00+00:00",
+        updated_at="2026-10-26T00:01:00+00:00",
+        title="Video long-form",
+        video_url="https://www.youtube.com/watch?v=abcDEF12345",
+    )
+    monkeypatch.setenv("YOUTUBE_UPLOAD_USE_CDP", "true")
+    monkeypatch.setattr(api, "YOUTUBE_CDP_URL", "http://127.0.0.1:9333")
+
+    command = build_youtube_restart_verification_command(upload)
+
+    assert command[command.index("--use-cdp") + 1 :] == [
+        "--cdp-url",
+        "http://127.0.0.1:9333",
+    ]
 
 
 def test_load_repairs_completed_record_that_verified_the_wrong_video_row(monkeypatch, tmp_path):

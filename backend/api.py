@@ -7641,45 +7641,71 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
     monetization_issue = youtube_monetization_preflight_issue(job, clip)
     if monetization_issue:
         raise HTTPException(status_code=409, detail=monetization_issue)
+    with youtube_uploads_lock:
+        released_retry = next(
+            (
+                item
+                for item in sorted(
+                    youtube_uploads.values(),
+                    key=lambda candidate: candidate.created_at,
+                    reverse=True,
+                )
+                if item.source_job_id == job_id
+                and item.clip_url == clip.url
+                and youtube_restart_verification_released(item)
+            ),
+            None,
+        )
     fallback_tags = request.tags or default_youtube_tags(job, clip)
-    ai_metadata, metadata_source = youtube_upload_metadata(job, clip, fallback_tags)
-    if env_bool("YOUTUBE_REQUIRE_AI_METADATA", True) and not isinstance(ai_metadata, dict):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "AI belum berhasil membuat metadata baru setelah mencoba model utama dan model lokal. "
-                "Pastikan Ollama aktif, lalu coba upload lagi; upload belum dimulai dan metadata lama tidak dipakai."
-            ),
+    if released_retry is not None:
+        # Studio conclusively proved that the old remote object is gone. Keep
+        # the already-reviewed metadata stable and create exactly one fresh
+        # upload without blocking the retry on another AI generation call.
+        metadata_source = "released_remote_retry"
+        tags = list(released_retry.tags) or [
+            repair_public_hashtag_typos(tag) for tag in fallback_tags
+        ]
+        packaged_title = released_retry.title
+        description = released_retry.description
+    else:
+        ai_metadata, metadata_source = youtube_upload_metadata(job, clip, fallback_tags)
+        if env_bool("YOUTUBE_REQUIRE_AI_METADATA", True) and not isinstance(ai_metadata, dict):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "AI belum berhasil membuat metadata baru setelah mencoba model utama dan model lokal. "
+                    "Pastikan Ollama aktif, lalu coba upload lagi; upload belum dimulai dan metadata lama tidak dipakai."
+                ),
+            )
+        ai_title = ai_metadata.get("title") if isinstance(ai_metadata, dict) else None
+        ai_description = ai_metadata.get("description") if isinstance(ai_metadata, dict) else None
+        ai_hashtags = ai_metadata.get("hashtags") if isinstance(ai_metadata, dict) else None
+        tags = clean_ai_hashtags(ai_hashtags if isinstance(ai_hashtags, list) else []) or [
+            repair_public_hashtag_typos(tag) for tag in fallback_tags
+        ]
+        if env_bool("YOUTUBE_REQUIRE_AI_METADATA", True) and not clean_ai_hashtags(
+            ai_hashtags if isinstance(ai_hashtags, list) else []
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "AI belum menghasilkan minimal 3 hashtag kontekstual. "
+                    "Coba upload lagi; metadata lama tidak dipakai."
+                ),
+            )
+        title = (ai_title if isinstance(ai_title, str) and ai_title.strip() else "") or request.title or default_youtube_title(job, clip, index)
+        description = (
+            (ai_description if isinstance(ai_description, str) and ai_description.strip() else "")
+            or request.description
+            or default_youtube_description(job, clip)
         )
-    ai_title = ai_metadata.get("title") if isinstance(ai_metadata, dict) else None
-    ai_description = ai_metadata.get("description") if isinstance(ai_metadata, dict) else None
-    ai_hashtags = ai_metadata.get("hashtags") if isinstance(ai_metadata, dict) else None
-    tags = clean_ai_hashtags(ai_hashtags if isinstance(ai_hashtags, list) else []) or [
-        repair_public_hashtag_typos(tag) for tag in fallback_tags
-    ]
-    if env_bool("YOUTUBE_REQUIRE_AI_METADATA", True) and not clean_ai_hashtags(
-        ai_hashtags if isinstance(ai_hashtags, list) else []
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "AI belum menghasilkan minimal 3 hashtag kontekstual. "
-                "Coba upload lagi; metadata lama tidak dipakai."
-            ),
+        title = repair_known_public_typos(title)
+        description = repair_known_public_typos(description)
+        packaged_title = (
+            youtube_long_form_title(title)
+            if is_compilation_clip(job, clip)
+            else youtube_shorts_title(title)
         )
-    title = (ai_title if isinstance(ai_title, str) and ai_title.strip() else "") or request.title or default_youtube_title(job, clip, index)
-    description = (
-        (ai_description if isinstance(ai_description, str) and ai_description.strip() else "")
-        or request.description
-        or default_youtube_description(job, clip)
-    )
-    title = repair_known_public_typos(title)
-    description = repair_known_public_typos(description)
-    packaged_title = (
-        youtube_long_form_title(title)
-        if is_compilation_clip(job, clip)
-        else youtube_shorts_title(title)
-    )
     title_issue = public_title_quality_issue(
         packaged_title,
         is_compilation=is_compilation_clip(job, clip),
@@ -7692,12 +7718,15 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
                 "diperiksa sebelum masuk antrean Private."
             ),
         )
-    description = complete_youtube_description(job, clip, description, tags)
-    description = append_youtube_chapters(description, clip)
-    description = append_youtube_source_attribution(description, job)
+    if released_retry is None:
+        description = complete_youtube_description(job, clip, description, tags)
+        description = append_youtube_chapters(description, clip)
+        description = append_youtube_source_attribution(description, job)
     altered_content = clip_requires_altered_content_disclosure(clip)
     playlist = (
-        automatic_long_form_playlist(job, clip, title, description)
+        released_retry.playlist
+        if released_retry is not None and released_retry.playlist
+        else automatic_long_form_playlist(job, clip, packaged_title, description)
         if is_compilation_clip(job, clip)
         else request.playlist
     )
@@ -7746,6 +7775,13 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
                     "Metadata upload dibuat dari naskah Original Rebuild terverifikasi karena provider AI metadata sedang tidak tersedia."
                 ]
                 if metadata_source == "original_rebuild_render"
+                else []
+            )
+            + (
+                [
+                    "Draft lama dipastikan sudah dihapus YouTube; metadata yang sudah direview dipakai ulang tanpa menunggu AI."
+                ]
+                if metadata_source == "released_remote_retry"
                 else []
             )
             + (
@@ -8694,6 +8730,8 @@ def build_youtube_restart_verification_command(upload: YouTubeUploadJob) -> list
     studio_url = os.environ.get("YOUTUBE_STUDIO_URL", "").strip()
     if studio_url:
         command.extend(["--studio-url", studio_url])
+    if youtube_upload_prefers_cdp():
+        command.extend(["--use-cdp", "--cdp-url", YOUTUBE_CDP_URL])
     if not env_bool("YOUTUBE_HEADLESS", True):
         command.append("--no-headless")
     return command

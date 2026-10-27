@@ -1457,6 +1457,20 @@ def ensure_studio_page_healthy(page, page_text: str | None = None) -> None:
     app_error = studio_app_load_error(page, page_text)
     if not app_error:
         return
+    # Studio renders its generic app-error screen for an edit URL whose
+    # underlying draft has already been deleted. The bootstrap payload still
+    # exposes the authoritative state, so treat this as a confirmed absence
+    # instead of repeatedly asking the operator to refresh a healthy session.
+    try:
+        page_html = page.content()
+    except Exception:
+        page_html = ""
+    if re.search(r'"status"\s*:\s*"VIDEO_STATUS_DELETED"', page_html):
+        save_debug_artifacts(page, "youtube-video-deleted")
+        raise UploadError(
+            "Video belum ditemukan sebagai baris tersimpan di halaman Content; "
+            "YouTube Studio menandai video-id ini sebagai VIDEO_STATUS_DELETED."
+        )
     save_debug_artifacts(page, "youtube-studio-app-load-error")
     raise UploadError(
         f"YouTube Studio gagal memuat aplikasi ({app_error}). "
@@ -2451,7 +2465,13 @@ def wait_for_review_checks_safe_before_publish(
     deadline = time.monotonic() + timeout_ms / 1000
     last_body = ""
     consecutive_safe_observations = 0
+    progress_log_interval_seconds = max(
+        15,
+        int(os.environ.get("YOUTUBE_CHECKS_PROGRESS_LOG_INTERVAL_SECONDS", "60")),
+    )
+    next_progress_log_at = 0.0
     while time.monotonic() < deadline:
+        now = time.monotonic()
         dismiss_reload_prompt(page, timeout_ms=300)
         body = active_upload_dialog_text(page, timeout_ms=3000)
         last_body = re.sub(r"\s+", " ", body).strip()[:700]
@@ -2480,6 +2500,12 @@ def wait_for_review_checks_safe_before_publish(
                 return
         else:
             consecutive_safe_observations = 0
+        if now >= next_progress_log_at:
+            log(
+                "Verifikasi akhir masih berjalan; menunggu status hak cipta "
+                f"dan tombol {action_label} siap."
+            )
+            next_progress_log_at = now + progress_log_interval_seconds
         time.sleep(1)
 
     save_debug_artifacts(page, "publish-button-not-ready")
@@ -5354,6 +5380,13 @@ def wait_for_copyright_checks(
         dismiss_reload_prompt(page, timeout_ms=300)
         body = active_upload_dialog_text(page, timeout_ms=3000)
         if not body:
+            if now >= next_progress_log_at:
+                remaining_minutes = max(1, math.ceil((deadline - now) / 60))
+                log(
+                    "Checks masih berjalan; status modal belum terbaca, uploader tetap aktif "
+                    f"(maksimal sekitar {remaining_minutes} menit lagi)."
+                )
+                next_progress_log_at = now + progress_log_interval_seconds
             time.sleep(1)
             continue
         lowered = body.lower()
@@ -5415,6 +5448,13 @@ def wait_for_copyright_checks(
         if has_all_clear:
             log("YouTube Studio Checks aman: hak cipta dan pedoman komunitas sudah centang.")
             return False
+        if now >= next_progress_log_at:
+            remaining_minutes = max(1, math.ceil((deadline - now) / 60))
+            log(
+                "Checks belum menampilkan hasil final; uploader tetap memantau "
+                f"(maksimal sekitar {remaining_minutes} menit lagi)."
+            )
+            next_progress_log_at = now + progress_log_interval_seconds
         time.sleep(2)
 
     if require_checks:
@@ -6531,26 +6571,51 @@ def run_verify_upload(args: argparse.Namespace) -> None:
     """Recover a post-save upload without selecting the local file again."""
     sync_playwright, _ = import_playwright()
     state_path = Path(args.state).expanduser().resolve()
-    if not state_path.is_file():
+    if not args.use_cdp and not state_path.is_file():
         raise UploadError(f"File sesi YouTube belum ada: {state_path}")
 
     headless = args.headless if args.headless is not None else env_bool("YOUTUBE_HEADLESS", True)
     slow_mo = int(os.environ.get("YOUTUBE_BROWSER_SLOW_MO_MS", "0"))
     timeout_ms = max(30, int(args.timeout)) * 1000
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(
-            headless=headless,
-            slow_mo=slow_mo,
-            args=chromium_launch_args(),
-            **chromium_executable_kwargs(),
-        )
-        context = browser.new_context(
-            locale=os.environ.get("YOUTUBE_BROWSER_LOCALE", "en-US"),
-            storage_state=str(state_path),
-            viewport={"width": 1440, "height": 1000},
-        )
+        using_cdp = bool(args.use_cdp)
+        if using_cdp:
+            log(f"Recovery memakai Chrome remote debugging: {args.cdp_url}")
+            browser = playwright.chromium.connect_over_cdp(args.cdp_url, timeout=15000)
+            contexts = browser.contexts or [browser.new_context()]
+            for existing_context in contexts:
+                install_context_dialog_guard(existing_context)
+            studio_pages = [
+                item
+                for existing_context in contexts
+                for item in existing_context.pages
+                if "studio.youtube.com" in item.url.lower()
+            ]
+            target_page = next(
+                (
+                    item
+                    for item in studio_pages
+                    if page_url_matches_channel_id(item, args.target_channel_id)
+                ),
+                studio_pages[0] if studio_pages else None,
+            )
+            context = target_page.context if target_page is not None else contexts[0]
+            page = context.new_page()
+            mark_fendy_clipper_upload_tab(page)
+        else:
+            browser = playwright.chromium.launch(
+                headless=headless,
+                slow_mo=slow_mo,
+                args=chromium_launch_args(),
+                **chromium_executable_kwargs(),
+            )
+            context = browser.new_context(
+                locale=os.environ.get("YOUTUBE_BROWSER_LOCALE", "en-US"),
+                storage_state=str(state_path),
+                viewport={"width": 1440, "height": 1000},
+            )
+            page = context.new_page()
         install_context_dialog_guard(context)
-        page = context.new_page()
         install_browser_dialog_guard(page)
         try:
             goto_studio(page, studio_url=args.studio_url)
@@ -6595,8 +6660,11 @@ def run_verify_upload(args: argparse.Namespace) -> None:
             log(f"VIDEO_URL: {video_url}")
             context.storage_state(path=str(state_path))
         finally:
-            context.close()
-            browser.close()
+            if using_cdp:
+                close_upload_tab(page, force=True)
+            else:
+                context.close()
+                browser.close()
 
 
 def run_upload(args: argparse.Namespace) -> None:
@@ -7137,6 +7205,8 @@ def build_parser() -> argparse.ArgumentParser:
     verify_upload.add_argument("--target-email", default=DEFAULT_TARGET_EMAIL)
     verify_upload.add_argument("--target-channel-id", default=DEFAULT_TARGET_CHANNEL_ID)
     verify_upload.add_argument("--studio-url", default=DEFAULT_STUDIO_URL)
+    verify_upload.add_argument("--use-cdp", action="store_true")
+    verify_upload.add_argument("--cdp-url", default=DEFAULT_CDP_URL)
     verify_upload.add_argument("--timeout", type=int, default=120)
     verify_upload.add_argument("--headless", action=argparse.BooleanOptionalAction, default=None)
 

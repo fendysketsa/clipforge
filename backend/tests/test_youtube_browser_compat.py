@@ -3,6 +3,7 @@ import pytest
 import youtube_uploader
 from youtube_uploader import (
     UploadError,
+    ensure_studio_page_healthy,
     ensure_supported_studio_browser,
     ensure_target_identity,
     goto_upload_page,
@@ -18,10 +19,12 @@ class CompatibilityPage:
         url="https://studio.youtube.com/channel/demo",
         active_channel_id="",
         body_text="Dashboard channel",
+        body_html="",
     ):
         self.url = url
         self.active_channel_id = active_channel_id
         self.body_text = body_text
+        self.body_html = body_html
         self.goto_calls = []
         self.wait_calls = []
 
@@ -39,6 +42,9 @@ class CompatibilityPage:
 
     def locator(self, selector):
         return CompatibilityLocator(self, selector)
+
+    def content(self):
+        return self.body_html
 
 
 class CompatibilityLocator:
@@ -98,6 +104,25 @@ def test_browser_approval_rejects_studio_app_load_error(monkeypatch):
         ensure_supported_studio_browser(page)
 
     assert debug_labels == ["youtube-studio-app-load-error"]
+
+
+def test_deleted_video_bootstrap_releases_stale_remote_checkpoint(monkeypatch):
+    page = CompatibilityPage(
+        url="https://studio.youtube.com/video/rfbqkjiyuc4/edit",
+        body_text="Maaf, ada yang tidak beres",
+        body_html='<script>resolve({"videoId":"rfbqkjiyuc4","status":"VIDEO_STATUS_DELETED"})</script>',
+    )
+    debug_labels = []
+    monkeypatch.setattr(
+        youtube_uploader,
+        "save_debug_artifacts",
+        lambda _page, label: debug_labels.append(label),
+    )
+
+    with pytest.raises(UploadError, match="belum ditemukan sebagai baris tersimpan"):
+        ensure_studio_page_healthy(page)
+
+    assert debug_labels == ["youtube-video-deleted"]
 
 
 def test_browser_approval_preserves_restore_navigation_error(monkeypatch):
