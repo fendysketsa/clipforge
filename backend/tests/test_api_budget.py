@@ -2680,6 +2680,8 @@ def test_scheduled_clip_job_persists_public_source_credit_marker(monkeypatch):
     assert captured[0].scheduled_social_card_layout is True
     assert result.scheduled_reaction_avatar_layout is True
     assert captured[0].scheduled_reaction_avatar_layout is True
+    assert result.scheduled_subscribe_pulse is True
+    assert captured[0].scheduled_subscribe_pulse is True
 
 
 def test_auto_viral_once_per_boot_ignores_previous_boot_attempt(monkeypatch):
@@ -3352,6 +3354,7 @@ def test_cron_worker_features_are_isolated_from_manual_jobs(monkeypatch):
     monkeypatch.setenv("SHORTS_SCHEDULED_SOCIAL_CARD_PERCENT", "99")
     monkeypatch.setenv("SHORTS_SCHEDULED_REACTION_AVATAR_ENABLED", "true")
     monkeypatch.setenv("SHORTS_SCHEDULED_REACTION_AVATAR_PERCENT", "99")
+    monkeypatch.setenv("SHORTS_SCHEDULED_SUBSCRIBE_PULSE_ENABLED", "true")
     monkeypatch.delenv("SHORTS_BACKGROUND_MUSIC_ENABLED", raising=False)
     monkeypatch.delenv("SHORTS_ALLOW_THIRD_PARTY_MUSIC", raising=False)
 
@@ -3362,6 +3365,7 @@ def test_cron_worker_features_are_isolated_from_manual_jobs(monkeypatch):
             scheduled_contextual_audio=True,
             scheduled_social_card_layout=True,
             scheduled_reaction_avatar_layout=True,
+            scheduled_subscribe_pulse=True,
         )
     )
 
@@ -3369,6 +3373,7 @@ def test_cron_worker_features_are_isolated_from_manual_jobs(monkeypatch):
     assert "SHORTS_SCHEDULED_CONTEXTUAL_AUDIO_ENABLED" not in manual_environment
     assert "SHORTS_SCHEDULED_SOCIAL_CARD_ENABLED" not in manual_environment
     assert "SHORTS_SCHEDULED_REACTION_AVATAR_ENABLED" not in manual_environment
+    assert "SHORTS_SCHEDULED_SUBSCRIBE_PULSE_ENABLED" not in manual_environment
     assert "SHORTS_BACKGROUND_MUSIC_ENABLED" not in manual_environment
     assert cron_environment["SHORTS_SCHEDULED_HUMAN_EDITOR_ENABLED"] == "true"
     assert cron_environment["SHORTS_SCHEDULED_CONTEXTUAL_AUDIO_ENABLED"] == "true"
@@ -3378,6 +3383,7 @@ def test_cron_worker_features_are_isolated_from_manual_jobs(monkeypatch):
     assert cron_environment["SHORTS_SCHEDULED_SOCIAL_CARD_PERCENT"] == "30"
     assert cron_environment["SHORTS_SCHEDULED_REACTION_AVATAR_ENABLED"] == "true"
     assert cron_environment["SHORTS_SCHEDULED_REACTION_AVATAR_PERCENT"] == "15"
+    assert cron_environment["SHORTS_SCHEDULED_SUBSCRIBE_PULSE_ENABLED"] == "true"
 
 
 def test_source_view_floor_is_strict_for_every_cron_theme_but_not_manual(monkeypatch):
@@ -3557,6 +3563,56 @@ def test_trend_expansion_is_owned_only_by_cron_schedule(monkeypatch):
     assert api.cron_trend_discovery_active(manual_run.id, request) is False
     assert api.CRON_TREND_SEARCH_QUERIES[0] not in api.default_viral_video_search_queries()
     assert api.scheduled_auto_viral_trend_queries()[0] == api.CRON_TREND_SEARCH_QUERIES[1]
+
+
+def test_cron_prefers_recent_gaming_winner_without_ending_exploration(monkeypatch):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PERFORMANCE_WINNER_ENABLED", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PERFORMANCE_WINNER_SHARE_PERCENT", "75")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PERFORMANCE_MIN_SAMPLES", "3")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PERFORMANCE_MIN_MEDIAN_VIEWS", "1000")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PERFORMANCE_MIN_LIFT", "1.5")
+
+    def upload(upload_id: str, title: str, views: int):
+        return api.YouTubeUploadJob(
+            id=upload_id,
+            source_job_id=f"job-{upload_id}",
+            clip_url=f"/outputs/{upload_id}/{title.casefold().replace(' ', '-')}.mp4",
+            clip_name=f"clip_{upload_id}.mp4",
+            status="completed",
+            created_at=api.now_iso(),
+            updated_at=api.now_iso(),
+            title=title,
+            video_url=f"https://www.youtube.com/watch?v={upload_id}",
+            upload_confirmed=True,
+            performance_snapshots=[
+                api.YouTubePerformanceSnapshot(
+                    captured_at=api.now_iso(),
+                    source="youtube_public",
+                    views=views,
+                )
+            ],
+        )
+
+    uploads = [
+        upload("game1", "Kak Yuta Bebasin Mio di Roblox", 5000),
+        upload("game2", "Godzilla Muncul Saat Mabar Roblox", 1900),
+        upload("game3", "Mio dan Baby Celine Jadi Admin", 1600),
+        upload("story1", "Kisah Kehidupan di Kantor", 180),
+        upload("story2", "Malam yang Terasa Berbeda", 20),
+    ]
+    monkeypatch.setattr(api, "youtube_uploads", {item.id: item for item in uploads})
+    monkeypatch.setattr(api, "auto_viral_runs", {})
+
+    key, profile = api.scheduled_performance_winner_profile() or ("", {})
+
+    assert key == "gaming_story"
+    assert profile["performance_winner"] is True
+    evidence = profile["performance_evidence"]
+    assert evidence["gaming_samples"] == 3
+    assert evidence["gaming_median_views"] == 1900
+    assert evidence["lift_ratio"] > 10
 
 
 def test_cron_trend_rejects_a_different_ryuundy_theme_for_the_day():

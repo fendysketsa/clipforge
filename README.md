@@ -408,6 +408,13 @@ AUTO_VIRAL_SCHEDULE_SOCIAL_CARD_ENABLED=true
 AUTO_VIRAL_SCHEDULE_SOCIAL_CARD_PERCENT=30
 AUTO_VIRAL_SCHEDULE_REACTION_AVATAR_ENABLED=true
 AUTO_VIRAL_SCHEDULE_REACTION_AVATAR_PERCENT=15
+AUTO_VIRAL_SCHEDULE_PERFORMANCE_WINNER_ENABLED=true
+AUTO_VIRAL_SCHEDULE_PERFORMANCE_WINNER_SHARE_PERCENT=75
+AUTO_VIRAL_SCHEDULE_PERFORMANCE_LOOKBACK_DAYS=14
+AUTO_VIRAL_SCHEDULE_PERFORMANCE_MIN_SAMPLES=3
+AUTO_VIRAL_SCHEDULE_PERFORMANCE_MIN_MEDIAN_VIEWS=1000
+AUTO_VIRAL_SCHEDULE_PERFORMANCE_MIN_LIFT=1.5
+AUTO_VIRAL_SCHEDULE_SUBSCRIBE_PULSE_ENABLED=true
 AUTO_VIRAL_SCHEDULE_REQUIRE_CREATIVE_COMMONS=false
 AUTO_VIRAL_SCHEDULE_VIDEO_COUNT=19
 AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO=1
@@ -457,7 +464,11 @@ local file can be deleted.
 The cron rotation includes a dedicated `gaming_story` lane for Roblox,
 Minecraft, mabar, obby, roleplay, and other gameplay that contains a real player
 goal, turn, reaction, and payoff. Every scheduled source has a hard 1,000-view
-floor. `AUTO_VIRAL_SCHEDULE_HUMAN_EDITOR_ENABLED` adds source-grounded human
+floor. When at least three recent gaming uploads clear a 1,000-view median and
+beat the other lanes by 1.5x, the performance winner owns 75% of cron runs; the
+remaining 25% still explores other safe themes. This preference is calculated
+from recorded public performance and never changes manual jobs.
+`AUTO_VIRAL_SCHEDULE_HUMAN_EDITOR_ENABLED` adds source-grounded human
 story judgment to candidate ideas, while
 `AUTO_VIRAL_SCHEDULE_CONTEXTUAL_AUDIO_ENABLED` gives only cron-owned Shorts a
 quiet, ducked CC0 instrumental and sparse semantic SFX. Manual jobs retain their
@@ -470,6 +481,10 @@ or paired Long Stories.
 for reaction-friendly, non-reverent topics. A persistent disclosed virtual host
 appears above the source video with local blink/head motion and speech-window
 mouth animation; it does not replace source audio or claim phoneme-perfect lip sync.
+`AUTO_VIRAL_SCHEDULE_SUBSCRIBE_PULSE_ENABLED` adds one silent 1.45-second
+subscribe/follow cue after the initial value beat in eligible cron Shorts. It
+stays above the subtitle safe area, does not extend the clip, and suppresses the
+older end-card CTA so the request is not repeated.
 The gaming lane also searches BANGJBLOX through its exact YouTube Channel ID as
 an alternative source. This is discovery priority only, never a rights whitelist:
 the 1,000-view floor, source-rights and Content ID checks, score floor, editorial

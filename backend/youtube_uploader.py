@@ -276,9 +276,11 @@ def youtube_shorts_title(value: str) -> str:
     clean = re.sub(r"\s+", " ", value).strip()
     clean = re.sub(r"(?:\s*#(?:islam|shorts)\b)+", " ", clean, flags=re.I)
     clean = re.sub(r"\s+", " ", clean).strip()
-    suffix = " #Islam #Shorts"
+    # Topic hashtags live in the description. Never label every scheduled
+    # gaming/mystery/story clip as Islamic merely because it is a Short.
+    suffix = " #Shorts"
     clean = trim_public_title(clean, 100 - len(suffix))
-    return f"{clean}{suffix}"[:100] if clean else "Clip #Islam #Shorts"
+    return f"{clean}{suffix}"[:100] if clean else "Clip #Shorts"
 
 
 def import_playwright():

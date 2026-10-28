@@ -124,6 +124,7 @@ from clipper import (
     shorts_cover_frame_timestamp,
     shorts_engagement_prompt,
     shorts_cta_overlay_filter,
+    shorts_mid_subscribe_pulse_filter,
     shorts_cta_voiceover_mix_filter,
     shorts_cta_voiceover_text,
     shorts_policy_compliance,
@@ -1863,6 +1864,17 @@ def test_scheduled_reaction_avatar_filter_animates_only_source_speech_windows():
     assert "fendy-reaction-avatar-talk-mouth.png" in value
     assert "fendy-reaction-avatar-blink-eyes.png" in value
     assert "generate-audio" not in value
+
+
+def test_cron_subscribe_pulse_is_brief_mid_video_and_caption_safe():
+    value = shorts_mid_subscribe_pulse_filter(30.0)
+
+    assert "SUBSCRIBE" in value
+    assert "LANJUTKAN SERI INI" in value
+    assert "between(t,11.400,12.850)" in value
+    assert "y=286" in value
+    assert "t-11.400" in value
+    assert "t-12.690" in value
 
 
 def test_editorial_transformation_contract_requires_new_grounded_analysis():

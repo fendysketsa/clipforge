@@ -468,6 +468,7 @@ class ClipJobRequest(BaseModel):
     scheduled_contextual_audio: bool = False
     scheduled_social_card_layout: bool = False
     scheduled_reaction_avatar_layout: bool = False
+    scheduled_subscribe_pulse: bool = False
     allow_reprocess_source: bool = False
     review_only: bool = False
     ai_enabled: bool = True
@@ -3452,6 +3453,36 @@ def automatic_long_form_playlist(
     )
 
 
+def scheduled_short_playlist(*values: str) -> str:
+    """Keep cron Shorts out of the Islam playlist unless the clip is Islamic.
+
+    The Studio account currently has no verified gaming/general Shorts
+    playlist. Returning an empty value is safer than putting Roblox, horror,
+    football, or life-story clips into an unrelated religious playlist.
+    """
+    searchable = " ".join(value for value in values if isinstance(value, str)).casefold()
+    islamic_markers = (
+        "islam",
+        "allah",
+        "al-qur",
+        "quran",
+        "hadis",
+        "hadits",
+        "ustad",
+        "ustadz",
+        "kajian",
+        "dakwah",
+        "hijrah",
+        "iman",
+        "muslim",
+        "masjid",
+        "sholat",
+        "salat",
+        "sedekah",
+    )
+    return "Islam" if any(marker in searchable for marker in islamic_markers) else ""
+
+
 def enrich_clips_with_candidate_titles(
     clips: list[ClipFile],
     candidates: list[ClipCandidate],
@@ -4741,10 +4772,13 @@ def youtube_shorts_title(value: str) -> str:
     clean = re.sub(r"\s+", " ", value).strip()
     clean = re.sub(r"(?:\s*#(?:islam|shorts)\b)+", " ", clean, flags=re.I)
     clean = re.sub(r"\s+", " ", clean).strip()
-    suffix = " #Islam #Shorts"
+    # The channel is now multi-niche. A fixed #Islam suffix mislabeled Roblox,
+    # superhero, mystery, and life-story clips. Keep the format marker only;
+    # topic-specific hashtags are generated separately from source semantics.
+    suffix = " #Shorts"
     max_length = 78
     clean = trim_public_title(clean, max_length - len(suffix))
-    return f"{clean}{suffix}"[:max_length] if clean else "Clip #Islam #Shorts"
+    return f"{clean}{suffix}"[:max_length] if clean else "Clip #Shorts"
 
 
 def youtube_description_highlights(context: str, *, is_compilation: bool) -> list[str]:
@@ -6554,7 +6588,7 @@ def generate_youtube_metadata(job: ClipJob, clip: ClipFile, tags: list[str]) -> 
         "Aturan:\n"
         "- Pahami konteks transkrip klip ini saja; jangan memakai metadata video sumber.\n"
         "- Title baru harus kuat, natural, 35-68 karakter, maksimal 70 karakter, tanpa hashtag agar terbaca utuh di ponsel; "
-        "aplikasi akan menambahkan #Islam #Shorts secara otomatis untuk Shorts.\n"
+        "aplikasi hanya menambahkan #Shorts pada judul; hashtag topik wajib mengikuti isi klip.\n"
         "- Title harus menyebut objek/topik yang tepat dari transkrip. Jangan mencampur uang takziah, harta waris, "
         "sedekah, atau objek terkait lain seolah semuanya sama.\n"
         "- Jangan memakai ekor generik seperti 'Penjelasan Lengkap', 'Begini Aturannya', 'Wajib Tahu', "
@@ -7845,6 +7879,15 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         if released_retry is not None and released_retry.playlist
         else automatic_long_form_playlist(job, clip, packaged_title, description)
         if is_compilation_clip(job, clip)
+        else scheduled_short_playlist(
+            packaged_title,
+            description,
+            " ".join(tags),
+            job.source_title or "",
+            clip.title or "",
+            clip.social_caption or "",
+        )
+        if job.request.scheduled_public_source_credit
         else request.playlist
     )
     upload_id = uuid.uuid4().hex
@@ -13115,6 +13158,7 @@ def clipper_worker_environment(request: ClipJobRequest) -> dict[str, str]:
         "SHORTS_SCHEDULED_SOCIAL_CARD_PERCENT",
         "SHORTS_SCHEDULED_REACTION_AVATAR_ENABLED",
         "SHORTS_SCHEDULED_REACTION_AVATAR_PERCENT",
+        "SHORTS_SCHEDULED_SUBSCRIBE_PULSE_ENABLED",
     ):
         environment.pop(scheduler_flag, None)
     if request.scheduled_human_editor:
@@ -13164,6 +13208,8 @@ def clipper_worker_environment(request: ClipJobRequest) -> dict[str, str]:
                 ),
             }
         )
+    if request.scheduled_subscribe_pulse:
+        environment["SHORTS_SCHEDULED_SUBSCRIBE_PULSE_ENABLED"] = "true"
     return environment
 
 
@@ -16427,6 +16473,10 @@ def create_auto_viral_clip_job(
             scheduled
             and env_bool("AUTO_VIRAL_SCHEDULE_REACTION_AVATAR_ENABLED", True)
         ),
+        scheduled_subscribe_pulse=bool(
+            scheduled
+            and env_bool("AUTO_VIRAL_SCHEDULE_SUBSCRIBE_PULSE_ENABLED", True)
+        ),
         confirm_source_rights=request.source_rights_confirmed,
         source_rights_evidence=request.source_rights_evidence,
         creator_perspective=auto_viral_format_perspective(request, long_form=False),
@@ -16511,6 +16561,7 @@ def create_auto_viral_paired_long_job(
         # Portrait/card composition is a vertical Shorts-only cron treatment.
         scheduled_social_card_layout=False,
         scheduled_reaction_avatar_layout=False,
+        scheduled_subscribe_pulse=False,
         allow_reprocess_source=True,
         confirm_source_rights=request.source_rights_confirmed,
         source_rights_evidence=request.source_rights_evidence,
@@ -19049,8 +19100,104 @@ def create_and_start_auto_viral_campaign(
     return run
 
 
+CRON_GAMING_WINNER_SIGNALS = frozenset(
+    {
+        "roblox", "yuta", "mio", "baby celine", "baby-celine", "godzilla",
+        "obby", "mabar", "gameplay", "gaming", "minecraft", "streamer",
+    }
+)
+
+
+def scheduled_performance_winner_profile() -> tuple[str, dict[str, Any]] | None:
+    """Turn recent public performance into a bounded cron niche preference.
+
+    A winner owns only a configured share of scheduled runs. The remaining
+    runs keep exploring other safe themes, so one temporary spike cannot lock
+    the channel forever.
+    """
+    if not env_bool("AUTO_VIRAL_SCHEDULE_PERFORMANCE_WINNER_ENABLED", True):
+        return None
+    lookback_days = max(
+        3,
+        min(60, env_int("AUTO_VIRAL_SCHEDULE_PERFORMANCE_LOOKBACK_DAYS", 14)),
+    )
+    cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+    with youtube_uploads_lock:
+        uploads = list(youtube_uploads.values())
+
+    gaming_views: list[int] = []
+    other_views: list[int] = []
+    for upload in uploads:
+        if (
+            upload.status != "completed"
+            or not upload.upload_confirmed
+            or not upload.performance_snapshots
+            or parse_utc_datetime(upload.created_at, cutoff) < cutoff
+            or upload.clip_name.startswith(("highlight_5menit_", "resume_cerita_", "long_animate_"))
+        ):
+            continue
+        latest = upload.performance_snapshots[-1]
+        searchable = f"{upload.title} {upload.clip_name} {upload.clip_url}".casefold()
+        target = (
+            gaming_views
+            if any(signal in searchable for signal in CRON_GAMING_WINNER_SIGNALS)
+            else other_views
+        )
+        target.append(max(0, int(latest.views)))
+
+    minimum_samples = max(
+        2,
+        min(20, env_int("AUTO_VIRAL_SCHEDULE_PERFORMANCE_MIN_SAMPLES", 3)),
+    )
+    if len(gaming_views) < minimum_samples:
+        return None
+    gaming_median = float(median(gaming_views))
+    other_median = float(median(other_views)) if other_views else 0.0
+    minimum_views = max(
+        100,
+        env_int("AUTO_VIRAL_SCHEDULE_PERFORMANCE_MIN_MEDIAN_VIEWS", 1000),
+    )
+    lift_ratio = gaming_median / max(1.0, other_median)
+    minimum_lift = max(
+        1.1,
+        min(
+            10.0,
+            env_float("AUTO_VIRAL_SCHEDULE_PERFORMANCE_MIN_LIFT", 1.5),
+        ),
+    )
+    if gaming_median < minimum_views or lift_ratio < minimum_lift:
+        return None
+
+    share_percent = max(
+        25,
+        min(90, env_int("AUTO_VIRAL_SCHEDULE_PERFORMANCE_WINNER_SHARE_PERCENT", 75)),
+    )
+    with auto_viral_lock:
+        scheduled_run_count = sum(
+            run.trigger == "schedule" for run in auto_viral_runs.values()
+        )
+    if (scheduled_run_count * 37) % 100 >= share_percent:
+        return None
+
+    profile = dict(RYUUNDY_CRON_THEME_PROFILES["gaming_story"])
+    profile["performance_winner"] = True
+    profile["performance_evidence"] = {
+        "lookback_days": lookback_days,
+        "gaming_samples": len(gaming_views),
+        "other_samples": len(other_views),
+        "gaming_median_views": round(gaming_median),
+        "other_median_views": round(other_median),
+        "lift_ratio": round(lift_ratio, 2),
+        "scheduled_share_percent": share_percent,
+    }
+    return "gaming_story", profile
+
+
 def scheduled_ryuundy_theme_profile() -> tuple[str, dict[str, Any]]:
-    """Pick one unused RYUUNDY editorial lane for the next daily run."""
+    """Pick a performance-led lane, then safely explore unused themes."""
+    winner = scheduled_performance_winner_profile()
+    if winner is not None:
+        return winner
     cooldown_days = max(
         1, min(14, env_int("AUTO_VIRAL_THEME_COOLDOWN_DAYS", 7))
     )
@@ -21384,6 +21531,7 @@ def create_job(request: ClipJobRequest) -> ClipJob:
             "scheduled_contextual_audio": False,
             "scheduled_social_card_layout": False,
             "scheduled_reaction_avatar_layout": False,
+            "scheduled_subscribe_pulse": False,
         }
     )
     if request.clip_mode not in ACTIVE_CLIP_MODES:

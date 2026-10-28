@@ -11033,6 +11033,7 @@ def shorts_cover_frame_timestamp(duration: float) -> float:
 SHORTS_TITLE_OVERLAY_SECONDS = 3.2
 SHORTS_COVER_SELECTION_WINDOW = (0.55, 1.25)
 SHORTS_CTA_OVERLAY_SECONDS = 1.85
+SHORTS_SUBSCRIBE_PULSE_SECONDS = 1.45
 LONG_FORM_SUBSCRIBE_OVERLAY_SECONDS = 5.2
 QURAN_OUTRO_SECONDS = 2.8
 DEFAULT_SHORTS_CTA_VOICEOVER_TEXT = "Tulis pendapatmu dan lanjutkan diskusinya!"
@@ -11359,6 +11360,47 @@ def shorts_cta_overlay_filter(
             f"drawbox=x=120:y=1116:w=742:h=46:color=#FF1744@0.94:t=fill:{active}",
             subscribe_filter,
             f"drawbox=x=120:y=1168:w=180:h=4:color=#FFF200@1.0:t=fill:{active}",
+        ]
+    )
+
+
+def shorts_mid_subscribe_pulse_filter(duration: float) -> str:
+    """Show one compact animated subscribe cue after the initial value beat.
+
+    This is intentionally brief, silent, and above the caption safe area. It
+    does not extend the video, cover the payoff, or repeat at the ending.
+    """
+    safe_duration = max(0.1, duration)
+    start = min(max(6.0, safe_duration * 0.38), max(6.0, safe_duration - 5.5))
+    end = min(safe_duration - 2.2, start + SHORTS_SUBSCRIBE_PULSE_SECONDS)
+    if end - start < 0.75:
+        return "null"
+    enter_end = start + 0.16
+    exit_start = end - 0.16
+    x_expr = (
+        f"if(lt(t,{enter_end:.3f}),1080-(t-{start:.3f})*920/0.160,"
+        f"if(gt(t,{exit_start:.3f}),160+(t-{exit_start:.3f})*920/0.160,160))"
+    )
+    active = f"enable='between(t,{start:.3f},{end:.3f})'"
+    font_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    font_regular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    return ",".join(
+        [
+            f"drawbox=x=160:y=286:w=760:h=108:color=black@0.72:t=fill:{active}",
+            f"drawbox=x=160:y=286:w=760:h=5:color=#FF3158@1.0:t=fill:{active}",
+            f"drawbox=x=178:y=306:w=178:h=66:color=#FF1744@0.98:t=fill:{active}",
+            "drawtext="
+            f"fontfile={font_bold}:text='SUBSCRIBE':expansion=none:"
+            "fontcolor=white:fontsize=24:"
+            f"x='{x_expr}+38':y=327:{active}",
+            "drawtext="
+            f"fontfile={font_bold}:text='LANJUTKAN SERI INI':expansion=none:"
+            "fontcolor=white:fontsize=25:borderw=1:bordercolor=black@0.70:"
+            f"x='{x_expr}+222':y=311:{active}",
+            "drawtext="
+            f"fontfile={font_regular}:text='Cerita baru, gaya yang sama':expansion=none:"
+            "fontcolor=#D9F7FF:fontsize=18:"
+            f"x='{x_expr}+224':y=348:{active}",
         ]
     )
 
@@ -16633,7 +16675,15 @@ def export_clip(
         tiktok_strategy["series_identity_embedded"] = bool(
             automatic_short_title and auto_visual_accent != "evidence_stage"
         )
-    subscriber_cta_planned = (
+    subscribe_pulse_planned = bool(
+        output_format == "vertical_short"
+        and drawtext_supported
+        and duration >= 18.0
+        and env_enabled("SHORTS_SCHEDULED_SUBSCRIBE_PULSE_ENABLED", False)
+        and not social_card_selected
+        and not reaction_avatar_selected
+    )
+    subscriber_cta_planned = not subscribe_pulse_planned and (
         output_format == "vertical_short"
         or compilation_part_number == compilation_part_count
     ) and not (
@@ -17242,11 +17292,18 @@ def export_clip(
         "growth_readiness": five_k_experiment_readiness(clip, output_format),
         "subscriber_conversion": {
             "version": 1,
-            "enabled": bool(drawtext_supported and subscriber_cta_planned),
+            "enabled": bool(
+                drawtext_supported
+                and (subscriber_cta_planned or subscribe_pulse_planned)
+            ),
             "value_proposition": subscribe_prompt,
             "content_theme_derived": True,
             "shown_after_payoff": bool(drawtext_supported and subscriber_cta_planned),
+            "shown_after_initial_value_beat": bool(subscribe_pulse_planned),
             "strategy": (
+                "single_silent_mid_video_series_subscribe_pulse"
+                if subscribe_pulse_planned
+                else
                 "social_card_then_native_description_related_video_and_pinned_comment"
                 if social_card_selected
                 else
@@ -17931,7 +17988,27 @@ def export_clip(
         applied_edits.append(
             f"Watermark channel {CHANNEL_WATERMARK} dipoles sebagai signature seal hijau-emas yang ringkas dan transparan di tengah; detail audit disimpan di metadata."
         )
-        if output_format == "vertical_short" and subscriber_cta_planned:
+        if output_format == "vertical_short" and subscribe_pulse_planned:
+            vf = f"{vf},{shorts_mid_subscribe_pulse_filter(duration)}"
+            sidecar_payload["mid_subscribe_pulse"] = {
+                "enabled": True,
+                "version": 1,
+                "copy": "SUBSCRIBE • LANJUTKAN SERI INI",
+                "duration_seconds": SHORTS_SUBSCRIBE_PULSE_SECONDS,
+                "placement": "upper_caption_safe_after_initial_value",
+                "silent": True,
+                "extends_video_duration": False,
+                "cron_only": True,
+                "repeat_count": 1,
+            }
+            sidecar_payload["end_cta"] = {
+                "enabled": False,
+                "reason": "mid_subscribe_pulse_already_shown_once",
+            }
+            applied_edits.append(
+                "CTA Subscribe animasi tampil satu kali setelah beat nilai awal, tanpa suara, tanpa menutup subtitle, dan tanpa mengganggu payoff akhir."
+            )
+        elif output_format == "vertical_short" and subscriber_cta_planned:
             engagement_text_path.write_text(engagement_prompt + "\n", encoding="utf-8")
             subscribe_text_path.write_text(subscribe_prompt + "\n", encoding="utf-8")
             vf = (

@@ -48,6 +48,7 @@ from api import (
     queue_claimed_clip_rebuild,
     repair_job_clip_context,
     reviewed_quality_only_short_for_private_upload,
+    scheduled_short_playlist,
     scheduled_score_floor_short_for_automatic_upload,
     retire_targeted_repair_source,
     youtube_monetization_preflight_issue,
@@ -1464,6 +1465,19 @@ def test_long_form_playlist_is_classified_without_user_ui(story, expected):
     assert classify_long_form_playlist(story) == expected
 
 
+@pytest.mark.parametrize(
+    ("story", "expected"),
+    [
+        ("Ustadz menjelaskan sedekah dan iman", "Islam"),
+        ("Kak Yuta menyelamatkan Mio di Roblox", ""),
+        ("Kisah horor di rumah kosong", ""),
+        ("Suami bangkit setelah kehilangan pekerjaan", ""),
+    ],
+)
+def test_scheduled_short_playlist_only_uses_islam_for_islamic_clips(story, expected):
+    assert scheduled_short_playlist(story) == expected
+
+
 def test_youtube_growth_targets_ignore_stale_short_sidecar_target():
     clip = make_clip(1).model_copy(
         update={"growth_target_views": 5000, "growth_target_subscribers": 5}
@@ -1963,7 +1977,7 @@ def test_normalized_upload_metadata_recovers_when_title_is_description(tmp_path)
         "",
     )
 
-    assert title == "Tuh Sekarang Kalau Bapak Ya #Islam #Shorts"
+    assert title == "Tuh Sekarang Kalau Bapak Ya #Shorts"
     assert description.startswith("Sumber: https://www.youtube.com/watch?v=demo")
 
 
@@ -1977,7 +1991,7 @@ def test_normalized_upload_metadata_uses_filename_when_sidecar_missing(tmp_path)
         "Deskripsi benar dari @ryuundyofficial",
     )
 
-    assert title == "Ini Judul Dari File #Islam #Shorts"
+    assert title == "Ini Judul Dari File #Shorts"
     assert description == "Deskripsi benar dari @ryuundy.studio"
 
 
@@ -5261,7 +5275,7 @@ def test_generate_youtube_description_uses_llm(monkeypatch):
     )
 
     assert generate_youtube_metadata(job, clip, ["islam", "shorts"]) == {
-        "title": "Nasihat Singkat Tentang Asef #Islam #Shorts",
+        "title": "Nasihat Singkat Tentang Asef #Shorts",
         "description": (
             "Nasihat penting dengan konteks yang mudah dipahami.\n\n"
             "Simak poin utamanya agar pesan yang disampaikan dapat diterapkan dengan tepat."
@@ -5298,7 +5312,7 @@ def test_generate_youtube_metadata_accepts_indonesian_ollama_keys(monkeypatch):
     )
 
     assert generate_youtube_metadata(job, clip, ["islam", "shorts"]) == {
-        "title": "Pelajaran Rezeki Hari Ini #Islam #Shorts",
+        "title": "Pelajaran Rezeki Hari Ini #Shorts",
         "description": (
             "Renungan ini membahas makna rezeki dan pentingnya rasa syukur dalam kehidupan.\n\n"
             "Pesannya mengajak kita melihat nikmat dengan hati yang lebih jernih."
@@ -5333,7 +5347,7 @@ def test_generate_youtube_metadata_falls_back_when_primary_model_fails(monkeypat
     monkeypatch.setattr(api, "chat_completion", fake_chat_completion)
 
     assert generate_youtube_metadata(job, clip, ["islam"]) == {
-        "title": "Nasihat Baru yang Layak Diperhatikan #Islam #Shorts",
+        "title": "Nasihat Baru yang Layak Diperhatikan #Shorts",
         "description": (
             "Model fallback menjelaskan inti nasihat secara segar berdasarkan konteks klip.\n\n"
             "Deskripsi ini tetap ringkas, informatif, dan tidak mengambil metadata lama."
@@ -5548,7 +5562,7 @@ def test_normalized_generated_metadata_accepts_nested_ollama_payload():
     }
 
     assert normalized_generated_metadata(payload, is_compilation=False) == {
-        "title": "Sabar Saat Ujian Mengubah Cara Kita Melihat Hidup #Islam #Shorts",
+        "title": "Sabar Saat Ujian Mengubah Cara Kita Melihat Hidup #Shorts",
         "description": (
             "Bagaimana kesabaran menjaga hati ketika ujian datang.\n\n"
             "Pesannya mengajak penonton memahami hikmah tanpa mengabaikan proses yang berat."
@@ -5569,7 +5583,7 @@ def test_short_title_trim_does_not_leave_dangling_connector():
         (uploader_youtube_shorts_title, 100),
     ):
         title = title_builder(source)
-        visible_title = title.removesuffix(" #Islam #Shorts")
+        visible_title = title.removesuffix(" #Shorts")
 
         assert len(title) <= max_length
         assert visible_title.casefold().split()[-1] not in {
@@ -5642,7 +5656,7 @@ def test_normalized_generated_metadata_deduplicates_required_title_hashtags():
     result = normalized_generated_metadata(payload, is_compilation=False)
 
     assert result is not None
-    assert result["title"] == "Jamaah Tablig dan Makna Sabar #Islam #Shorts"
+    assert result["title"] == "Jamaah Tablig dan Makna Sabar #Shorts"
 
 
 def test_normalized_metadata_removes_generic_title_tail_and_english_leak():
@@ -5661,7 +5675,7 @@ def test_normalized_metadata_removes_generic_title_tail_and_english_leak():
     result = normalized_generated_metadata(payload, is_compilation=False)
 
     assert result is not None
-    assert result["title"] == "Harta Waris Belum Dibagi, Bolehkah Disedekahkan? #Islam #Shorts"
+    assert result["title"] == "Harta Waris Belum Dibagi, Bolehkah Disedekahkan? #Shorts"
     assert len(str(result["title"])) <= 78
     assert "restriction" not in str(result["description"])
     assert "tanpa batasan" in str(result["description"])
