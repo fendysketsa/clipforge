@@ -73,7 +73,7 @@ def test_ai_ranked_candidate_beats_higher_heuristic_score(monkeypatch):
 
     assert selected[0].title == "Kesalahan Pertama"
     assert selected[0].score == 84
-    assert selected[0].fyp_label == "Perlu review"
+    assert selected[0].fyp_label == "Layak"
     assert selected[0].pov == "Penonton merasa sedang diingatkan sebelum rugi."
     assert selected[0].reason.startswith("AI FYP:")
     assert generic.score < selected[0].score
@@ -433,9 +433,9 @@ def test_short_repair_drops_candidate_that_cannot_reach_minimum_duration():
     ) == []
 
 
-def test_final_short_quality_gate_discards_result_below_fyp_85():
+def test_final_short_quality_gate_discards_result_below_fyp_80():
     below_target = make_candidate(0, 0, 77, "Poin lengkap tetapi belum cukup kuat.")
-    ready = make_candidate(1, 90, 85, "Hook, isi, dan payoff sudah kuat.")
+    ready = make_candidate(1, 90, 80, "Hook, isi, dan payoff sudah kuat.")
 
     assert select_candidates(
         [below_target, ready],
@@ -448,7 +448,7 @@ def test_short_export_prefers_candidates_at_quality_target():
     review_only = make_candidate(
         0,
         0,
-        82,
+        79,
         "Poin aman dan lengkap tetapi prediksi FYP belum mencapai target.",
     )
     ready = make_candidate(
@@ -469,7 +469,7 @@ def test_short_export_prefers_candidates_at_quality_target():
 
 def test_short_export_preserves_safe_below_target_candidates_for_review():
     candidates = [
-        make_candidate(index, index * 90, 82 - index, f"Poin aman berbeda nomor {index} dengan jawaban tuntas.")
+        make_candidate(index, index * 90, 79 - index, f"Poin aman berbeda nomor {index} dengan jawaban tuntas.")
         for index in range(5)
     ]
 

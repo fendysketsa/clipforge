@@ -109,6 +109,10 @@ from clipper import (
     resolve_codex_ideas,
     score_window,
     scale_watermark_region,
+    scheduled_social_card_layout_filter,
+    scheduled_social_card_layout_profile,
+    scheduled_reaction_avatar_layout_filter,
+    scheduled_reaction_avatar_layout_profile,
     select_multi_person_profiles,
     select_background_music_track,
     select_local_sound_effect_tracks,
@@ -356,6 +360,43 @@ def test_creative_director_drops_unsubstantiated_surprise_and_music_drop(monkeyp
     assert plan["creative_director"]["surprise_treatment"] == "none"
     assert plan["creative_director"]["surprise_beat"] is None
     assert plan["creative_director"]["music_arc"] == "steady_ducked"
+
+
+def test_scheduled_human_editor_prompt_prioritizes_real_gameplay_story(monkeypatch):
+    monkeypatch.setenv("SHORTS_SCHEDULED_HUMAN_EDITOR_ENABLED", "true")
+
+    prompt = clipper_module.candidate_editor_system_prompt()
+
+    assert "selective human editor" in prompt
+    assert "gameplay alone is not a story" in prompt
+    assert "random noise" in prompt
+
+
+def test_scheduled_contextual_audio_adds_ducked_music_without_random_beats(monkeypatch):
+    monkeypatch.setenv("SHORTS_SCHEDULED_CONTEXTUAL_AUDIO_ENABLED", "true")
+    clip = ClipCandidate(
+        1,
+        0,
+        30,
+        30,
+        86,
+        "Roblox gagal lalu comeback",
+        "test",
+        "Kami gagal di obby, mengubah strategi, lalu berhasil bersama pada percobaan terakhir.",
+        hook="Kenapa strategi pertama gagal?",
+    )
+
+    plan = creative_director_plan(
+        clip,
+        [TranscriptSegment(0, 8, clip.text)],
+        "vertical_short",
+        None,
+    )
+    direction = plan["creative_director"]
+
+    assert direction["music_arc"] == "steady_ducked"
+    assert direction["sound_style"] in {"subtle_accents", "contextual"}
+    assert direction["surprise_beat"] is None
 
 
 def test_huggingface_environment_supports_public_model_without_token(monkeypatch):
@@ -1697,6 +1738,133 @@ def test_clean_detail_edit_adds_two_clip_specific_editorial_windows():
     assert "between(t,20.400,23.700)" in value
 
 
+def test_scheduled_social_card_layout_is_cron_only_and_topic_limited(monkeypatch):
+    islamic = ClipCandidate(
+        1,
+        0,
+        30,
+        30,
+        88,
+        "Nasihat tentang salat",
+        "test",
+        "Pembicara menjelaskan hikmah salat dan doa dengan konteks lengkap.",
+    )
+    football = ClipCandidate(
+        2,
+        0,
+        30,
+        30,
+        88,
+        "Striker mencetak gol penentu",
+        "test",
+        "Pemain membaca arah kiper lalu menuntaskan penalti.",
+    )
+    generic = ClipCandidate(3, 0, 30, 30, 88, "Tips memasak", "test", "Cara menumis sayur.")
+
+    monkeypatch.delenv("SHORTS_SCHEDULED_SOCIAL_CARD_ENABLED", raising=False)
+    assert scheduled_social_card_layout_profile(islamic)["selected"] is False
+
+    monkeypatch.setenv("SHORTS_SCHEDULED_SOCIAL_CARD_ENABLED", "true")
+    monkeypatch.setenv("SHORTS_SCHEDULED_SOCIAL_CARD_PERCENT", "100")
+    islamic_profile = scheduled_social_card_layout_profile(islamic)
+    football_profile = scheduled_social_card_layout_profile(football)
+    generic_profile = scheduled_social_card_layout_profile(generic)
+
+    assert islamic_profile["selected"] is True
+    assert islamic_profile["subject_label"] == "PEMBICARA SUMBER"
+    assert football_profile["selected"] is True
+    assert football_profile["subject_label"] == "MOMEN PEMAIN"
+    assert generic_profile["eligible"] is False
+    assert generic_profile["selected"] is False
+    assert islamic_profile["fabricated_comments"] is False
+
+
+def test_scheduled_social_card_filter_uses_only_source_frames():
+    value = scheduled_social_card_layout_filter(
+        30,
+        subject_label="MOMEN PEMAIN",
+    )
+
+    assert "split=3[sc_bg_src][sc_main_src][sc_portrait_src]" in value
+    assert "tpad=stop_mode=clone:stop_duration=30.000" in value
+    assert "text='MOMEN PEMAIN'" in value
+    assert "movie=" not in value
+    assert "comment" not in value.casefold()
+
+
+def test_clean_detail_social_card_places_grounded_copy_in_lower_panels():
+    value = clean_detail_edit_filter(
+        30,
+        "clip.hook.txt",
+        editorial_text_filename="clip.editorial.txt",
+        takeaway_text_filename="clip.takeaway.txt",
+        social_card_mode=True,
+    )
+
+    assert "scale=w='trunc((" not in value
+    assert "drawbox=x=74:y=1035:w=932:h=260" in value
+    assert "drawbox=x=350:y=1385:w=656:h=380" in value
+    assert "textfile='clip.editorial.txt'" in value
+    assert "textfile='clip.takeaway.txt'" in value
+
+
+def test_scheduled_reaction_avatar_is_cron_only_and_avoids_reverent_topics(monkeypatch):
+    gaming = ClipCandidate(
+        1,
+        0,
+        30,
+        30,
+        88,
+        "Roblox gagal lalu comeback",
+        "test",
+        "Pemain kaget karena strategi mabar ternyata berhasil.",
+    )
+    islamic = ClipCandidate(
+        2,
+        0,
+        30,
+        30,
+        88,
+        "Hikmah salat",
+        "test",
+        "Ustad menjelaskan doa dan salat dengan tenang.",
+    )
+
+    monkeypatch.delenv("SHORTS_SCHEDULED_REACTION_AVATAR_ENABLED", raising=False)
+    assert scheduled_reaction_avatar_layout_profile(gaming)["selected"] is False
+
+    monkeypatch.setenv("SHORTS_SCHEDULED_REACTION_AVATAR_ENABLED", "true")
+    monkeypatch.setenv("SHORTS_SCHEDULED_REACTION_AVATAR_PERCENT", "100")
+    gaming_profile = scheduled_reaction_avatar_layout_profile(gaming)
+    islamic_profile = scheduled_reaction_avatar_layout_profile(islamic)
+
+    assert gaming_profile["selected"] is True
+    assert gaming_profile["assets_ready"] is True
+    assert gaming_profile["synthetic_avatar_disclosed"] is True
+    assert islamic_profile["selected"] is False
+    assert islamic_profile["religious_or_reverent_topic_excluded"] is True
+
+
+def test_scheduled_reaction_avatar_filter_animates_only_source_speech_windows():
+    value = scheduled_reaction_avatar_layout_filter(
+        30,
+        100,
+        [
+            TranscriptSegment(100.5, 103.0, "Kalimat pertama."),
+            TranscriptSegment(105.0, 108.0, "Kalimat kedua."),
+        ],
+    )
+
+    assert "HOST VIRTUAL • REACTION" in value
+    assert "between(t,0.500,3.000)" in value
+    assert "between(t,5.000,8.000)" in value
+    assert "lt(mod(t+0.030,0.240),0.105)" in value
+    assert "lt(mod(t+0.410,4.700),0.115)" in value
+    assert "fendy-reaction-avatar-talk-mouth.png" in value
+    assert "fendy-reaction-avatar-blink-eyes.png" in value
+    assert "generate-audio" not in value
+
+
 def test_editorial_transformation_contract_requires_new_grounded_analysis():
     clip = ClipCandidate(
         1,
@@ -1983,7 +2151,7 @@ def test_twenty_k_readiness_is_a_stability_experiment_not_a_view_guarantee():
     assert readiness["target_subscribers_per_1000_views"] == 1.0
     assert readiness["stretch_target_views"] == 50000
     assert readiness["quality_metric"] == "engaged_views"
-    assert readiness["minimum_short_export_score"] == 85
+    assert readiness["minimum_short_export_score"] == 80
     assert readiness["quality_gate_passed"] is True
     assert readiness["status"] == "ready_to_test"
     assert readiness["guarantee"] is False

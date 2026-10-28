@@ -48,6 +48,7 @@ from api import (
     queue_claimed_clip_rebuild,
     repair_job_clip_context,
     reviewed_quality_only_short_for_private_upload,
+    scheduled_score_floor_short_for_automatic_upload,
     retire_targeted_repair_source,
     youtube_monetization_preflight_issue,
     reviewed_automatic_rebuild_for_private_upload,
@@ -113,7 +114,7 @@ def make_candidate(index: int, score: int) -> ClipCandidate:
 
 
 def test_clip_success_message_marks_below_target_short_as_manual_review():
-    clip = make_clip(1).model_copy(update={"fyp_score": 82})
+    clip = make_clip(1).model_copy(update={"fyp_score": 79})
     job = ClipJob(
         id="job-review-fallback",
         status="completed",
@@ -4842,6 +4843,103 @@ def test_quality_only_short_stays_blocked_without_human_review(monkeypatch):
     assert "alur Short belum lengkap" in (
         youtube_monetization_preflight_issue(job, clip) or ""
     )
+
+
+def test_scheduled_score_80_fallback_can_auto_upload_after_all_safety_gates(monkeypatch):
+    import api
+
+    clip = make_clip(1).model_copy(
+        update={
+            "fyp_score": 80,
+            "growth_quality_gate_passed": False,
+            "render_qc_passed": True,
+        }
+    )
+    request = make_monetization_ready_url_request(
+        scheduled_public_source_credit=True,
+        scheduled_human_editor=True,
+    )
+    job = ClipJob(
+        id="job-scheduled-score-floor",
+        status="completed",
+        request=request,
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[clip],
+    )
+    sidecar = {
+        "output_format": "vertical_short",
+        "boundary_quality": "payoff_tuntas",
+        "key_point_score": 65,
+        "retention_score": 84,
+        "narrative_arc_score": 55,
+        "narrative_arc_complete": False,
+        "religious_context_safe": True,
+        "religious_context_integrity": {"safe_for_automatic_export": True},
+        "editorial_safety": {"safe_for_selection": True},
+        "advertiser_suitability": {"automatic_selection_allowed": True},
+        "duration": 31,
+        "aspect_ratio": "9:16",
+        "thumbnail_strategy": "embedded_shorts_cover_frame",
+        "source_provenance": {"uploaded_source": True},
+        "monetization_readiness": {
+            "audit_version": 1,
+            "eligible_for_private_upload_review": True,
+            "signals": {"enhanced_edit": True, "substantive_visual_edits": True},
+            "originality_score": 7,
+            "minimum_originality_score": 3,
+        },
+    }
+    monkeypatch.setattr(
+        api,
+        "metadata_for_job",
+        lambda _job: {"license": "Creative Commons Attribution license"},
+    )
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: sidecar)
+    monkeypatch.setattr(api, "best_youtube_clip_urls", lambda _job, _count: [clip.url])
+
+    assert scheduled_score_floor_short_for_automatic_upload(job, clip, sidecar) is True
+    assert youtube_monetization_preflight_issue(job, clip) is None
+    assert api.best_automatic_upload_clip_urls(job, 1) == [clip.url]
+
+
+def test_scheduled_quality_fallback_does_not_relax_score_or_editorial_safety():
+    base_clip = make_clip(1).model_copy(
+        update={"growth_quality_gate_passed": False, "render_qc_passed": True}
+    )
+    job = ClipJob(
+        id="job-scheduled-unsafe-floor",
+        status="completed",
+        request=ClipJobRequest(
+            source_file="/tmp/owned.mp4",
+            scheduled_public_source_credit=True,
+            scheduled_human_editor=True,
+        ),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[base_clip],
+    )
+    sidecar = {
+        "output_format": "vertical_short",
+        "boundary_quality": "payoff_tuntas",
+        "key_point_score": 90,
+        "retention_score": 90,
+        "narrative_arc_score": 80,
+        "narrative_arc_complete": False,
+        "religious_context_safe": True,
+        "religious_context_integrity": {"safe_for_automatic_export": True},
+        "editorial_safety": {"safe_for_selection": True},
+        "advertiser_suitability": {"automatic_selection_allowed": True},
+    }
+
+    below_floor = base_clip.model_copy(update={"fyp_score": 79})
+    unsafe = base_clip.model_copy(update={"fyp_score": 80})
+    unsafe_sidecar = {
+        **sidecar,
+        "editorial_safety": {"safe_for_selection": False},
+    }
+    assert scheduled_score_floor_short_for_automatic_upload(job, below_floor, sidecar) is False
+    assert scheduled_score_floor_short_for_automatic_upload(job, unsafe, unsafe_sidecar) is False
 
 
 def test_monetization_preflight_blocks_short_with_dangling_religious_context(monkeypatch):

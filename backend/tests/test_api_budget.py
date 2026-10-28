@@ -1275,16 +1275,16 @@ def test_scheduled_auto_viral_request_targets_five_shorts_and_two_longs(monkeypa
     assert api.auto_viral_paired_long_limit(request) == 2
 
 
-def test_scheduled_auto_viral_request_supports_fourteen_shorts_and_one_long(
+def test_scheduled_auto_viral_request_supports_nineteen_shorts_and_one_long(
     monkeypatch,
 ):
     import api
 
-    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", "14")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", "19")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
-    monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "15")
-    monkeypatch.setenv("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", "14")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "20")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", "19")
     monkeypatch.setenv("AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET", "1")
     monkeypatch.setattr(
         api,
@@ -1294,7 +1294,7 @@ def test_scheduled_auto_viral_request_supports_fourteen_shorts_and_one_long(
 
     request = api.scheduled_auto_viral_request()
 
-    assert request.video_count == 14
+    assert request.video_count == 19
     assert request.create_paired_long_video is True
     assert request.paired_long_video_count == 1
     assert api.auto_viral_paired_long_limit(request) == 1
@@ -2197,7 +2197,7 @@ def test_auto_viral_missing_checkpoint_is_not_resumable(monkeypatch):
     assert api.auto_viral_run_can_resume_upload(run) is False
 
 
-def test_scheduled_upload_daily_limit_is_hard_capped_at_fifteen_wib(monkeypatch):
+def test_scheduled_upload_daily_limit_is_hard_capped_at_twenty_wib(monkeypatch):
     import api
     from types import SimpleNamespace
 
@@ -2208,10 +2208,10 @@ def test_scheduled_upload_daily_limit_is_hard_capped_at_fifteen_wib(monkeypatch)
         trigger="schedule",
         created_at=now.isoformat(),
         updated_at=now.isoformat(),
-        request=AutoViralRequest(video_count=15, auto_upload_youtube=True),
+        request=AutoViralRequest(video_count=20, auto_upload_youtube=True),
         processed=[
             {"job_id": f"cron-job-{index}", "job_status": "completed"}
-            for index in range(1, 16)
+            for index in range(1, 21)
         ],
     )
     uploads = {
@@ -2226,13 +2226,13 @@ def test_scheduled_upload_daily_limit_is_hard_capped_at_fifteen_wib(monkeypatch)
             updated_at=now.isoformat(),
             created_at=now.isoformat(),
         )
-        for index in range(1, 16)
+        for index in range(1, 21)
     }
     monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "99")
     monkeypatch.setattr(api, "auto_viral_runs", {run.id: run})
     monkeypatch.setattr(api, "youtube_uploads", uploads)
 
-    assert api.auto_viral_daily_upload_limit() == 15
+    assert api.auto_viral_daily_upload_limit() == 20
     assert api.auto_viral_daily_upload_slots("youtube", now) == 0
     with pytest.raises(api.AutoViralDailyUploadLimitReached) as caught:
         api.require_auto_viral_daily_upload_slot("youtube", now)
@@ -2676,6 +2676,10 @@ def test_scheduled_clip_job_persists_public_source_credit_marker(monkeypatch):
 
     assert result.scheduled_public_source_credit is True
     assert captured[0].scheduled_public_source_credit is True
+    assert result.scheduled_social_card_layout is True
+    assert captured[0].scheduled_social_card_layout is True
+    assert result.scheduled_reaction_avatar_layout is True
+    assert captured[0].scheduled_reaction_avatar_layout is True
 
 
 def test_auto_viral_once_per_boot_ignores_previous_boot_attempt(monkeypatch):
@@ -3267,6 +3271,113 @@ def test_scheduled_ryuundy_theme_is_randomized_and_cc_label_is_optional(monkeypa
     assert request.cron_long_role in long_direction
     assert "saling melengkapi" in short_direction
     assert "saling melengkapi" in long_direction
+    assert "keputusan editor manusia" in short_direction
+
+
+def test_cron_gaming_theme_accepts_story_gameplay_and_rejects_unrelated_source():
+    import api
+
+    gaming = {
+        "title": "Roblox Indonesia: mabar obby gagal lalu comeback",
+        "description": "Gameplay bersama teman dengan keputusan, reaksi, dan plot twist lucu.",
+        "default_language": "id",
+    }
+    unrelated = {
+        "title": "Podcast konflik rumah tangga Indonesia",
+        "description": "Cerita keluarga dan pasangan penuh pelajaran.",
+        "default_language": "id",
+    }
+
+    assert api.cron_trend_candidate_rejection_reason(
+        gaming, theme_key="gaming_story"
+    ) == ""
+    assert "tema tidak cocok" in api.cron_trend_candidate_rejection_reason(
+        unrelated, theme_key="gaming_story"
+    )
+
+
+def test_cron_gaming_search_prioritizes_exact_bangjblox_channel(monkeypatch):
+    import api
+
+    request = AutoViralRequest(
+        cron_theme_key="gaming_story",
+        cron_trend_lane=True,
+        queries=["gaming indonesia"],
+    )
+    run = api.AutoViralRun(
+        id="gaming-bangjblox-source",
+        status="running",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=request,
+    )
+    with api.auto_viral_lock:
+        api.auto_viral_runs[run.id] = run
+
+    monkeypatch.setenv("YOUTUBE_DATA_API_KEY", "configured-test-key")
+    monkeypatch.setenv("VIRAL_CC_MAX_API_QUERIES", "1")
+    monkeypatch.setenv("VIRAL_CC_USE_TREND_CHART", "false")
+    monkeypatch.delenv(
+        "AUTO_VIRAL_SCHEDULE_GAMING_SOURCE_CHANNEL_IDS",
+        raising=False,
+    )
+    observed: list[tuple[str, dict[str, object]]] = []
+
+    def fake_api(path, params):
+        observed.append((path, dict(params)))
+        return {"items": []}
+
+    monkeypatch.setattr(api, "youtube_data_api_get", fake_api)
+    try:
+        assert search_youtube_data_api_viral_sources(request, run.id) == []
+    finally:
+        with api.auto_viral_lock:
+            api.auto_viral_runs.pop(run.id, None)
+
+    assert observed
+    assert observed[0][0] == "search"
+    assert observed[0][1]["channelId"] == api.BANGJBLOX_CHANNEL_ID
+    assert observed[0][1]["q"] == api.DEFAULT_CRON_GAMING_CHANNEL_QUERY
+
+
+def test_cron_worker_features_are_isolated_from_manual_jobs(monkeypatch):
+    import api
+
+    monkeypatch.delenv("SHORTS_SCHEDULED_HUMAN_EDITOR_ENABLED", raising=False)
+    monkeypatch.delenv("SHORTS_SCHEDULED_CONTEXTUAL_AUDIO_ENABLED", raising=False)
+    # Even a stale process-level scheduler switch must be stripped from a
+    # manual child process and rebuilt only for the cron-owned request.
+    monkeypatch.setenv("SHORTS_SCHEDULED_SOCIAL_CARD_ENABLED", "true")
+    monkeypatch.setenv("SHORTS_SCHEDULED_SOCIAL_CARD_PERCENT", "99")
+    monkeypatch.setenv("SHORTS_SCHEDULED_REACTION_AVATAR_ENABLED", "true")
+    monkeypatch.setenv("SHORTS_SCHEDULED_REACTION_AVATAR_PERCENT", "99")
+    monkeypatch.delenv("SHORTS_BACKGROUND_MUSIC_ENABLED", raising=False)
+    monkeypatch.delenv("SHORTS_ALLOW_THIRD_PARTY_MUSIC", raising=False)
+
+    manual_environment = api.clipper_worker_environment(ClipJobRequest())
+    cron_environment = api.clipper_worker_environment(
+        ClipJobRequest(
+            scheduled_human_editor=True,
+            scheduled_contextual_audio=True,
+            scheduled_social_card_layout=True,
+            scheduled_reaction_avatar_layout=True,
+        )
+    )
+
+    assert "SHORTS_SCHEDULED_HUMAN_EDITOR_ENABLED" not in manual_environment
+    assert "SHORTS_SCHEDULED_CONTEXTUAL_AUDIO_ENABLED" not in manual_environment
+    assert "SHORTS_SCHEDULED_SOCIAL_CARD_ENABLED" not in manual_environment
+    assert "SHORTS_SCHEDULED_REACTION_AVATAR_ENABLED" not in manual_environment
+    assert "SHORTS_BACKGROUND_MUSIC_ENABLED" not in manual_environment
+    assert cron_environment["SHORTS_SCHEDULED_HUMAN_EDITOR_ENABLED"] == "true"
+    assert cron_environment["SHORTS_SCHEDULED_CONTEXTUAL_AUDIO_ENABLED"] == "true"
+    assert cron_environment["SHORTS_BACKGROUND_MUSIC_ENABLED"] == "true"
+    assert cron_environment["SHORTS_ALLOW_THIRD_PARTY_MUSIC"] == "true"
+    assert cron_environment["SHORTS_SCHEDULED_SOCIAL_CARD_ENABLED"] == "true"
+    assert cron_environment["SHORTS_SCHEDULED_SOCIAL_CARD_PERCENT"] == "30"
+    assert cron_environment["SHORTS_SCHEDULED_REACTION_AVATAR_ENABLED"] == "true"
+    assert cron_environment["SHORTS_SCHEDULED_REACTION_AVATAR_PERCENT"] == "15"
 
 
 def test_source_view_floor_is_strict_for_every_cron_theme_but_not_manual(monkeypatch):
@@ -3476,6 +3587,7 @@ def test_cron_trend_reads_cross_category_youtube_chart(monkeypatch):
     monkeypatch.setenv("VIRAL_CC_USE_TREND_CHART", "true")
     monkeypatch.setenv("VIRAL_CC_TREND_VIDEO_CATEGORY_ID", "25")
     monkeypatch.delenv("AUTO_VIRAL_SCHEDULE_TREND_VIDEO_CATEGORY_ID", raising=False)
+    monkeypatch.setattr(api, "google_trends_rss_signals", lambda _run_id: ([], set()))
     observed_params: dict = {}
 
     def fake_api(path, params):
@@ -3503,6 +3615,61 @@ def test_cron_trend_reads_cross_category_youtube_chart(monkeypatch):
     assert "videoCategoryId" not in observed_params
     assert seeds == ["Sinopsis Drama Korea dan Pelajaran Hidup Terbaru"]
     assert "drama" in tokens
+
+
+def test_cron_google_trends_rss_adds_live_safe_indonesia_signals(monkeypatch):
+    import api
+
+    rss = b"""<?xml version="1.0" encoding="UTF-8"?>
+    <rss><channel>
+      <item><title>Sumpah Pemuda 2026</title></item>
+      <item><title>Timnas Indonesia vs Jepang</title></item>
+      <item><title>Gore darah nyata 18+</title></item>
+    </channel></rss>"""
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return rss
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_GOOGLE_TRENDS_ENABLED", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_GOOGLE_TRENDS_CACHE_TTL_SECONDS", "0")
+    monkeypatch.setattr(api.urllib.request, "urlopen", lambda request, timeout: FakeResponse())
+
+    titles, tokens = api.google_trends_rss_signals("rss-run")
+
+    assert titles == ["Sumpah Pemuda 2026", "Timnas Indonesia vs Jepang"]
+    assert {"sumpah", "pemuda", "timnas", "jepang"}.issubset(tokens)
+
+
+def test_cron_google_trends_survives_youtube_chart_failure(monkeypatch):
+    import api
+
+    monkeypatch.setenv("VIRAL_CC_USE_TREND_CHART", "true")
+    monkeypatch.setattr(
+        api,
+        "google_trends_rss_signals",
+        lambda _run_id: (["Sumpah Pemuda 2026"], {"sumpah", "pemuda"}),
+    )
+    monkeypatch.setattr(
+        api,
+        "youtube_data_api_get",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("quota habis")),
+    )
+
+    seeds, tokens = api.youtube_trend_signals(
+        AutoViralRequest(niche="kindness_social_good"),
+        "fallback-run",
+        cron_trend=True,
+    )
+
+    assert seeds == ["Sumpah Pemuda 2026"]
+    assert {"sumpah", "pemuda"}.issubset(tokens)
 
 
 def test_cron_prioritizes_live_chart_queries_before_static_fallback():
@@ -5500,15 +5667,15 @@ def test_source_quick_check_labels_momentum_without_blocking_scan(monkeypatch):
         "duration": 900,
     }
 
-    monkeypatch.setattr("api.auto_viral_candidate_score", lambda _info: 252)
+    monkeypatch.setattr("api.auto_viral_candidate_score", lambda _info: 237)
     below_floor = source_quick_check(info)
-    assert below_floor["momentum_score"] == 84
+    assert below_floor["momentum_score"] == 79
     assert below_floor["momentum_label"] == "Momentum rendah — tetap layak di-scan"
     assert below_floor["quick_check_recommendation"] == "scan"
 
-    monkeypatch.setattr("api.auto_viral_candidate_score", lambda _info: 255)
+    monkeypatch.setattr("api.auto_viral_candidate_score", lambda _info: 240)
     at_floor = source_quick_check(info)
-    assert at_floor["momentum_score"] == 85
+    assert at_floor["momentum_score"] == 80
     assert at_floor["momentum_label"] == "Layak di-scan"
     assert at_floor["quick_check_recommendation"] == "scan"
 
@@ -5560,7 +5727,7 @@ def test_candidate_viral_rubric_never_inflates_native_score():
 
 
 
-def test_candidate_viral_quality_gate_rejects_84_and_accepts_85():
+def test_candidate_viral_quality_gate_rejects_79_and_accepts_80():
     base = {
         "index": 1,
         "start": 12,
@@ -5578,12 +5745,12 @@ def test_candidate_viral_quality_gate_rejects_84_and_accepts_85():
         "boundary_quality": "utuh",
     }
 
-    below_floor = assess_viral_candidate(ClipCandidate(score=84, **base))
-    at_floor = assess_viral_candidate(ClipCandidate(score=85, **base))
+    below_floor = assess_viral_candidate(ClipCandidate(score=79, **base))
+    at_floor = assess_viral_candidate(ClipCandidate(score=80, **base))
 
-    assert below_floor.viral_score == 84
+    assert below_floor.viral_score == 79
     assert not below_floor.viral_quality_gate_passed
-    assert at_floor.viral_score == 85
+    assert at_floor.viral_score == 80
     assert at_floor.viral_quality_gate_passed
 
 

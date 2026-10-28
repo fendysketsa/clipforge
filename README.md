@@ -378,11 +378,11 @@ YOUTUBE_DATA_API_KEY=your_google_api_key
 AUTO_VIRAL_SCHEDULE_ENABLED=true
 AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP=true
 AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT=false
-AUTO_VIRAL_SCHEDULE_RUN_KEY=trend-expansion-daily-14s1l-v5
+AUTO_VIRAL_SCHEDULE_RUN_KEY=trend-expansion-daily-19s1l-v7
 AUTO_VIRAL_SCHEDULE_RETRY_UNTIL_SUCCESS=false
 AUTO_VIRAL_SCHEDULE_RETRY_DELAY_MINUTES=5
-AUTO_VIRAL_DAILY_UPLOAD_LIMIT=15
-AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET=14
+AUTO_VIRAL_DAILY_UPLOAD_LIMIT=20
+AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET=19
 AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET=1
 AUTO_VIRAL_BOOT_DELAY_MINUTES=30
 AUTO_VIRAL_POST_CLIP_UPLOAD_DELAY_MINUTES=0
@@ -392,19 +392,30 @@ AUTO_VIRAL_SCHEDULE_RANDOMIZE_THEMES=true
 AUTO_VIRAL_SCHEDULE_TREND_EXPANSION_ENABLED=true
 AUTO_VIRAL_SCHEDULE_TREND_MIN_SCORE=18
 AUTO_VIRAL_SCHEDULE_TREND_SEED_LIMIT=5
+AUTO_VIRAL_SCHEDULE_GOOGLE_TRENDS_ENABLED=true
+AUTO_VIRAL_SCHEDULE_GOOGLE_TRENDS_LIMIT=10
+AUTO_VIRAL_SCHEDULE_GOOGLE_TRENDS_CACHE_TTL_SECONDS=900
+AUTO_VIRAL_SCHEDULE_GOOGLE_TRENDS_TIMEOUT_SECONDS=8
 # Kosong = chart regional lintas kategori khusus cron.
 AUTO_VIRAL_SCHEDULE_TREND_VIDEO_CATEGORY_ID=
 AUTO_VIRAL_SCHEDULE_TREND_QUERIES=
 AUTO_VIRAL_SCHEDULE_HUMOR_ENABLED=true
 AUTO_VIRAL_SCHEDULE_HUMOR_EVERY_RUNS=4
 AUTO_VIRAL_SCHEDULE_HUMOR_MIN_SCORE=24
+AUTO_VIRAL_SCHEDULE_HUMAN_EDITOR_ENABLED=true
+AUTO_VIRAL_SCHEDULE_CONTEXTUAL_AUDIO_ENABLED=true
+AUTO_VIRAL_SCHEDULE_SOCIAL_CARD_ENABLED=true
+AUTO_VIRAL_SCHEDULE_SOCIAL_CARD_PERCENT=30
+AUTO_VIRAL_SCHEDULE_REACTION_AVATAR_ENABLED=true
+AUTO_VIRAL_SCHEDULE_REACTION_AVATAR_PERCENT=15
 AUTO_VIRAL_SCHEDULE_REQUIRE_CREATIVE_COMMONS=false
-AUTO_VIRAL_SCHEDULE_VIDEO_COUNT=14
+AUTO_VIRAL_SCHEDULE_VIDEO_COUNT=19
 AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO=1
 AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED=true
 AUTO_VIRAL_SCHEDULE_PAIRED_LONG_COUNT=1
 AUTO_VIRAL_SCHEDULE_PAIRED_LONG_SECONDS=300
 AUTO_VIRAL_SCHEDULE_PAIRED_LONG_AUTO_PUBLIC=true
+AUTO_VIRAL_SCHEDULE_MIN_VIEWS=1000
 AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE=true
 AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_TIKTOK=true
 AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED=true
@@ -429,19 +440,43 @@ overlap. Upload checkpoints survive a backend restart or shutdown, so a complete
 clip resumes at the upload phase without clipping the same source again or
 duplicating a confirmed upload.
 
-`AUTO_VIRAL_SCHEDULE_TREND_EXPANSION_ENABLED` is cron-only. It reads Google's
-YouTube Data API `mostPopular` chart for region `ID` without the normal single
-category restriction, converts current Indonesian titles into the first search
-queries on every cycle, and uses the built-in safe cross-topic catalogue only as
-a fallback. `AUTO_VIRAL_SCHEDULE_TREND_QUERIES` is optional and can stay empty;
+`AUTO_VIRAL_SCHEDULE_TREND_EXPANSION_ENABLED` is cron-only. Its dual live-trend
+radar reads the official Google Trends RSS feed and the YouTube Data API
+`mostPopular` chart for region `ID` without the normal single-category
+restriction. Current Indonesian search/video topics become the first discovery
+queries on every cycle, while the built-in safe cross-topic catalogue remains a
+fallback. The RSS cache defaults to fifteen minutes so each batch stays fresh
+without hammering Google. If either live source is unavailable, the other keeps
+working. `AUTO_VIRAL_SCHEDULE_TREND_QUERIES` is optional and can stay empty;
 there is no need to paste reference topics repeatedly. Dashboard/manual discovery
 keeps its existing niche catalogue.
 Trend titles are inspiration only: source-rights, language, age, HD, safety,
 AI/editorial, platform-check, and upload-confirmation gates still run before a
 local file can be deleted.
 
-Scheduled uploads have a configurable hard per-platform limit capped at fifteen
-unique clips for each Asia/Jakarta calendar date. The production mix is fourteen
+The cron rotation includes a dedicated `gaming_story` lane for Roblox,
+Minecraft, mabar, obby, roleplay, and other gameplay that contains a real player
+goal, turn, reaction, and payoff. Every scheduled source has a hard 1,000-view
+floor. `AUTO_VIRAL_SCHEDULE_HUMAN_EDITOR_ENABLED` adds source-grounded human
+story judgment to candidate ideas, while
+`AUTO_VIRAL_SCHEDULE_CONTEXTUAL_AUDIO_ENABLED` gives only cron-owned Shorts a
+quiet, ducked CC0 instrumental and sparse semantic SFX. Manual jobs retain their
+normal audio policy, and serious/reverent clips can still suppress music/effects.
+`AUTO_VIRAL_SCHEDULE_SOCIAL_CARD_ENABLED` gives a deterministic percentage of
+eligible Islamic/football cron Shorts a source-derived portrait/card layout.
+It never fabricates comments or social proof, and it never changes manual jobs
+or paired Long Stories.
+`AUTO_VIRAL_SCHEDULE_REACTION_AVATAR_ENABLED` adds a second cron-only variant
+for reaction-friendly, non-reverent topics. A persistent disclosed virtual host
+appears above the source video with local blink/head motion and speech-window
+mouth animation; it does not replace source audio or claim phoneme-perfect lip sync.
+The gaming lane also searches BANGJBLOX through its exact YouTube Channel ID as
+an alternative source. This is discovery priority only, never a rights whitelist:
+the 1,000-view floor, source-rights and Content ID checks, score floor, editorial
+safety, and final QC still apply to every selected video.
+
+Scheduled uploads have a configurable hard per-platform limit capped at twenty
+unique clips for each Asia/Jakarta calendar date. The production mix is nineteen
 YouTube Shorts plus one paired Long Story. Active uploads reserve their slots, while retries of
 the same clip do not consume another slot. When the limit is reached, the durable
 batch is held until 00:01 WIB on the next date; if the laptop is off, it resumes
@@ -449,7 +484,7 @@ from that checkpoint after the laptop and backend are running again.
 
 YouTube does not publish one guaranteed numeric daily limit for every channel;
 the effective limit varies with feature eligibility, region, and channel history.
-If Studio reports its own rolling 24-hour upload limit before all fifteen uploads
+If Studio reports its own rolling 24-hour upload limit before all twenty uploads
 finish, ClipForge preserves the remaining batch and resumes after the platform
 window reopens instead of repeatedly submitting duplicate uploads.
 

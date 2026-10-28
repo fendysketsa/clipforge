@@ -108,7 +108,7 @@ export function ViralAnalysisResults({ candidates, sourceTitle }: Props) {
               <div className="viralCandidateTop">
                 <span className="viralRank">#{rank + 1}</span>
                 <div className="viralCandidateTitle">
-                  <span>{passes ? <CheckCircle2 size={14} /> : <XCircle size={14} />}{passes ? "MENCAPAI TARGET 85" : "DI BAWAH TARGET · REVIEW"}</span>
+                  <span>{passes ? <CheckCircle2 size={14} /> : <XCircle size={14} />}{passes ? `MENCAPAI TARGET ${VIRAL_QUALITY_FLOOR}` : "DI BAWAH TARGET · REVIEW"}</span>
                   <h3>{candidate.title}</h3>
                 </div>
                 <div className="viralScoreDial">

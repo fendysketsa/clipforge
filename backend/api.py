@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from urllib.parse import parse_qs, quote, urlencode, unquote, urlparse
 from urllib.error import HTTPError, URLError
 import urllib.request
+import xml.etree.ElementTree as ET
 
 import imageio_ffmpeg
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -143,7 +144,7 @@ YOUTUBE_SHORTS_MAX_SECONDS = 180
 SHORT_GROWTH_MIN_SECONDS = 25
 SHORT_GROWTH_MAX_SECONDS = 180
 SHORT_DEFAULT_MAX_SECONDS = 45
-SHORT_FYP_TARGET_SCORE = 85
+SHORT_FYP_TARGET_SCORE = 80
 ACTIVE_CLIP_MODES = frozenset({"short", "highlight_5m", "long_animate"})
 RETIRED_CLIP_MODES = frozenset({"original_rebuild"})
 SHORT_GROWTH_TARGET_VIEWS = 20000
@@ -460,6 +461,13 @@ class ClipJobRequest(BaseModel):
     # Durable provenance marker for scheduler-owned jobs. Public upload copy
     # may use it after a restart even when the parent run history is pruned.
     scheduled_public_source_credit: bool = False
+    # Internal scheduler-only switches. Manual/API jobs keep both disabled, so
+    # cron can request a more human editorial pass and licensed contextual
+    # audio without silently changing operator-led renders.
+    scheduled_human_editor: bool = False
+    scheduled_contextual_audio: bool = False
+    scheduled_social_card_layout: bool = False
+    scheduled_reaction_avatar_layout: bool = False
     allow_reprocess_source: bool = False
     review_only: bool = False
     ai_enabled: bool = True
@@ -1454,6 +1462,9 @@ CRON_TREND_SEARCH_QUERIES = [
     "kisah hijrah dan ujian hidup indonesia terbaru",
     "wawancara tokoh viral indonesia cerita kehidupan",
     "cerita inspiratif perubahan hidup indonesia",
+    "roblox indonesia gameplay cerita lucu terbaru",
+    "game mabar indonesia teamwork dan plot twist",
+    "minecraft indonesia survival cerita seru",
 ]
 
 CRON_TREND_TOPIC_SIGNALS = {
@@ -1461,13 +1472,19 @@ CRON_TREND_TOPIC_SIGNALS = {
     "drama", "gagal nikah", "hantu", "hijrah", "horor", "humor", "inspiratif",
     "keluarga", "kehidupan", "kisah nyata", "komedi", "lucu", "menyesal",
     "misteri", "pasangan", "pelajaran hidup", "pengkhianatan", "persahabatan",
-    "podcast", "rumah tangga", "sakit hati", "seram", "tokoh", "wawancara",
+    "game", "gameplay", "gaming", "minecraft", "mabar", "obby", "podcast",
+    "roblox", "roleplay", "rumah tangga", "sakit hati", "seram", "streamer",
+    "tokoh", "wawancara",
 }
 CRON_TREND_UNSAFE_SIGNALS = {
     "18+", "adegan berdarah", "bunuh diri", "darah nyata", "eksploitasi",
     "gore", "judi online", "kekerasan nyata", "pelecehan", "pornografi",
     "seksual", "telanjang",
 }
+
+BANGJBLOX_CHANNEL_ID = "UClfw7Mx0Vmh4hDAT0STSohw"
+DEFAULT_CRON_GAMING_SOURCE_CHANNEL_IDS = (BANGJBLOX_CHANNEL_ID,)
+DEFAULT_CRON_GAMING_CHANNEL_QUERY = "roblox roleplay cerita lucu indonesia"
 
 # RYUUNDY is a story-first channel.  Every scheduler run owns exactly one
 # profile, preventing a live trend from dragging discovery into unrelated
@@ -1536,6 +1553,21 @@ RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
         "long_role": "lengkapi setup, dinamika percakapan/gameplay, payoff, dan nilai baik tanpa memaksa ceramah",
         "queries": CRON_HUMOR_SEARCH_QUERIES,
     },
+    "gaming_story": {
+        "label": "Game, Mabar & Cerita Pemain",
+        "tone": "enerjik, natural, dan terasa seperti editor gaming manusia; utamakan interaksi, keputusan, kegagalan, comeback, atau punchline asli",
+        "short_role": "pilih satu momen gameplay yang langsung punya taruhan manusiawi, perubahan situasi, dan payoff; jangan mengambil gameplay datar tanpa cerita",
+        "long_role": "susun setup permainan, keputusan pemain, konsekuensi, reaksi asli, dan hasil akhirnya sebagai cerita yang mudah diikuti",
+        "queries": [
+            "BANGJBLOX roblox roleplay indonesia terbaru",
+            "BANGJBLOX gameplay cerita lucu indonesia",
+            "roblox indonesia komentator lucu gameplay cerita terbaru",
+            "roblox mabar indonesia teamwork plot twist",
+            "roblox obby indonesia gagal lalu comeback",
+            "minecraft indonesia survival mabar cerita seru",
+            "game multiplayer indonesia reaksi natural dan lucu",
+        ],
+    },
     "faith_life": {
         "label": "Iman, Hijrah & Ujian Hidup",
         "tone": "tenang, beradab, kontekstual, dan tidak memakai klaim agama di luar sumber",
@@ -1568,6 +1600,10 @@ RYUUNDY_CRON_THEME_SIGNALS: dict[str, set[str]] = {
     },
     "mystery_story": {"misteri", "horor", "hantu", "seram", "gaib", "kisah nyata"},
     "humor_interlude": CRON_HUMOR_SIGNALS,
+    "gaming_story": {
+        "game", "gameplay", "gaming", "minecraft", "mabar", "obby", "roblox",
+        "roleplay", "streamer", "survival",
+    },
     "faith_life": {"islam", "iman", "hijrah", "hidayah", "quran", "kajian", "dakwah"},
 }
 
@@ -2129,7 +2165,7 @@ class AutoViralRequest(BaseModel):
     cron_short_role: str = Field(default="", max_length=800)
     cron_long_role: str = Field(default="", max_length=800)
     queries: list[str] = Field(default_factory=default_auto_viral_queries)
-    video_count: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_VIDEO_COUNT", 5), ge=1, le=15)
+    video_count: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_VIDEO_COUNT", 5), ge=1, le=20)
     clips_per_video: int = Field(default_factory=youtube_auto_upload_count, ge=1, le=5)
     search_limit_per_query: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_SEARCH_LIMIT", 25), ge=3, le=50)
     min_source_duration: int = Field(default_factory=lambda: env_int("AUTO_VIRAL_MIN_SOURCE_SECONDS", 60), ge=30, le=7200)
@@ -2169,7 +2205,7 @@ class AutoViralRequest(BaseModel):
     # None preserves the manual/API behavior of pairing every successful
     # source. Scheduled runs set an explicit cap so Long never becomes 1:1
     # with Shorts.
-    paired_long_video_count: int | None = Field(default=None, ge=0, le=15)
+    paired_long_video_count: int | None = Field(default=None, ge=0, le=20)
     paired_long_duration: float = Field(default=300, ge=240, le=600)
     auto_publish_paired_long_video: bool = False
 
@@ -2194,7 +2230,7 @@ class AutoViralRequest(BaseModel):
             if normalized and normalized not in seen:
                 cleaned.append(normalized)
                 seen.add(normalized)
-        return cleaned[:15]
+        return cleaned[:20]
 
     @model_validator(mode="after")
     def _apply_niche_priority(self) -> "AutoViralRequest":
@@ -4009,6 +4045,8 @@ completed_job_upload_sweeper_running = False
 completed_job_upload_sweeper_wakeup = threading.Event()
 youtube_data_api_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 youtube_data_api_cache_lock = threading.Lock()
+google_trends_rss_cache: dict[str, tuple[float, list[str], set[str]]] = {}
+google_trends_rss_cache_lock = threading.Lock()
 
 
 def clip_url(path: Path) -> str:
@@ -5454,6 +5492,74 @@ def reviewed_quality_only_short_for_private_upload(
     )
 
 
+def scheduled_score_floor_short_for_automatic_upload(
+    job: ClipJob,
+    clip: ClipFile,
+    sidecar: dict[str, Any],
+) -> bool:
+    """Accept a scheduler-owned score-floor fallback without relaxing safety.
+
+    Cron renders sometimes miss the strict five-beat narrative prediction even
+    though the selected excerpt ends on a complete sentence/payoff.  At the
+    configured score floor, let that narrow quality-only miss continue to the
+    Private upload checks. Rights, Content ID, advertiser, editorial, religious,
+    duration, format, and render-QC gates remain enforced by the normal path.
+    Manual/API jobs cannot opt into this scheduler-only exception.
+    """
+    if not (
+        job.request.clip_mode == "short"
+        and job.request.scheduled_public_source_credit
+        and job.request.scheduled_human_editor
+        and str(sidecar.get("output_format") or "") == "vertical_short"
+        and clip.render_qc_passed is True
+        and not clip.context_recut_required
+        and clip.fyp_score is not None
+        and clip.fyp_score >= SHORT_FYP_TARGET_SCORE
+        and sidecar.get("narrative_arc_complete") is not True
+    ):
+        return False
+
+    if str(sidecar.get("boundary_quality") or "") not in {
+        "payoff_tuntas",
+        "kalimat_tuntas",
+    }:
+        return False
+    editorial_safety = sidecar.get("editorial_safety")
+    if not isinstance(editorial_safety, dict) or editorial_safety.get(
+        "safe_for_selection"
+    ) is not True:
+        return False
+    advertiser_suitability = sidecar.get("advertiser_suitability")
+    if not isinstance(advertiser_suitability, dict) or advertiser_suitability.get(
+        "automatic_selection_allowed"
+    ) is not True:
+        return False
+    religious_review = sidecar.get("religious_claim_review")
+    if isinstance(religious_review, dict) and (
+        religious_review.get("recommended_decision") == "reject_and_recut"
+        or religious_review.get("review_required") is True
+    ):
+        return False
+    religious_integrity = sidecar.get("religious_context_integrity")
+    if sidecar.get("religious_context_safe") is False or (
+        isinstance(religious_integrity, dict)
+        and religious_integrity.get("safe_for_automatic_export") is not True
+    ):
+        return False
+
+    try:
+        key_point_score = int(sidecar.get("key_point_score") or 0)
+        retention_score = int(sidecar.get("retention_score") or 0)
+        narrative_arc_score = int(sidecar.get("narrative_arc_score") or 0)
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        key_point_score >= 55
+        and retention_score >= 58
+        and narrative_arc_score > 0
+    )
+
+
 def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | None:
     """Return a hard block or a review hold before the Private upload stage."""
     sidecar = clip_sidecar_payload(clip)
@@ -5707,6 +5813,9 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             clip,
             sidecar,
         )
+        scheduled_score_floor_fallback = (
+            scheduled_score_floor_short_for_automatic_upload(job, clip, sidecar)
+        )
         religious_claim_review = sidecar.get("religious_claim_review")
         if isinstance(religious_claim_review, dict):
             if religious_claim_review.get("recommended_decision") == "reject_and_recut":
@@ -5732,6 +5841,7 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
                 narrative_arc_score > 0
                 and sidecar.get("narrative_arc_complete") is not True
                 and not reviewed_quality_fallback
+                and not scheduled_score_floor_fallback
             ):
                 return (
                     "Upload diblokir: alur Short belum lengkap. Klip harus memiliki hook, "
@@ -6962,7 +7072,14 @@ def best_automatic_upload_clip_urls(
             (clip := clips_by_url.get(clip_url)) is not None
             and (clip.is_correct or allow_audited_automation)
             and youtube_monetization_preflight_issue(job, clip) is None
-            and clip.growth_quality_gate_passed is not False
+            and (
+                clip.growth_quality_gate_passed is not False
+                or scheduled_score_floor_short_for_automatic_upload(
+                    job,
+                    clip,
+                    clip_sidecar_payload(clip),
+                )
+            )
             and (
                 not require_youtube_fyp_target
                 or job.request.clip_mode != "short"
@@ -11298,6 +11415,9 @@ AUTO_REPAIRABLE_UPLOAD_ISSUE_MARKERS = (
     "alur Short belum lengkap",
     "kesiapan retention",
     "konteks kajian tidak utuh",
+    "Sudut Editorial",
+    "kartu editorial",
+    "alur editorial yang utuh",
     "dipotong ulang",
     "Render ulang",
     "Perbaiki Otomatis",
@@ -11401,15 +11521,17 @@ def pending_completed_job_upload_urls(
     ]
 
 
-def queue_completed_job_repair_once(job: ClipJob) -> bool:
+def _create_completed_job_repair_once(
+    job: ClipJob,
+) -> tuple[bool, ClipJob | None]:
     """Create one targeted repair for a quality/context failure, never a rights hold."""
     if not env_bool("AUTO_REPAIR_COMPLETED_JOBS", True):
-        return False
+        return False, None
     # A repair consumes an already-rendered Short. Repairing its output again
     # recursively turns the same 25-45 seconds into a new source on every
     # sweeper pass and fills the library with near-identical clips.
     if job.repair_source_job_id or job.repair_source_clip_url:
-        return False
+        return False, None
     for clip in job.clips:
         if youtube_clip_claim_block(job.id, clip.url) is not None:
             continue
@@ -11434,7 +11556,7 @@ def queue_completed_job_repair_once(job: ClipJob) -> bool:
         with jobs_lock:
             live_job = jobs.get(job.id)
             if live_job is None:
-                return False
+                return False, None
             if attempt_marker in live_job.logs:
                 continue
             data = live_job.model_dump()
@@ -11450,21 +11572,59 @@ def queue_completed_job_repair_once(job: ClipJob) -> bool:
             jobs[job.id] = ClipJob(**data)
             save_jobs_unlocked()
         try:
-            repair_job_clip_context(job.id, ClipRepairRequest(url=clip.url))
-            return True
+            repair_job = repair_job_clip_context(
+                job.id,
+                ClipRepairRequest(url=clip.url),
+            )
+            return True, repair_job if isinstance(repair_job, ClipJob) else None
         except HTTPException as exc:
             print(
                 f"Auto-repair backlog melewati job {job.id[:10]}: {exc.detail}",
                 flush=True,
             )
-            return False
+            return False, None
         except Exception as exc:
             print(
                 f"Auto-repair backlog gagal untuk job {job.id[:10]}: {exc}",
                 flush=True,
             )
-            return False
-    return False
+            return False, None
+    return False, None
+
+
+def create_completed_job_repair_once(job: ClipJob) -> ClipJob | None:
+    """Return the queued child job when the caller needs to await its rebuild."""
+    _, repair_job = _create_completed_job_repair_once(job)
+    return repair_job
+
+
+def queue_completed_job_repair_once(job: ClipJob) -> bool:
+    """Queue a one-shot repair and expose the historical boolean contract."""
+    attempted, _ = _create_completed_job_repair_once(job)
+    return attempted
+
+
+def wait_for_auto_viral_repair(repair_job_id: str, run_id: str) -> ClipJob:
+    """Wait for one campaign-owned targeted repair to reach a terminal state."""
+    while True:
+        ensure_auto_viral_campaign_not_cancelled(run_id)
+        with jobs_lock:
+            repair_job = jobs.get(repair_job_id)
+        if repair_job is None:
+            raise RuntimeError(
+                "Perbaiki Otomatis gagal audit; klip sumber dan hasil repair dibuang"
+            )
+        if repair_job.status not in {"queued", "running"}:
+            return repair_job
+        update_auto_viral_run(
+            run_id,
+            progress_stage="quality_repair",
+            message=(
+                "Skor sudah mencapai batas, tetapi audit kualitas meminta satu rebuild "
+                "editorial otomatis"
+            ),
+        )
+        time.sleep(1.0)
 
 
 def queue_completed_job_uploads_once() -> dict[str, int]:
@@ -12940,6 +13100,73 @@ def worker_lane_for_request(
     return clip_job_slots, MAX_CONCURRENT_CLIP_JOBS, "Short/Long Highlight"
 
 
+def clipper_worker_environment(request: ClipJobRequest) -> dict[str, str]:
+    """Build isolated feature flags for one worker process.
+
+    These flags are injected only into scheduler-owned child processes. They
+    never mutate ``os.environ``, so cron treatment cannot leak into a manual
+    job running beside it.
+    """
+    environment = os.environ.copy()
+    for scheduler_flag in (
+        "SHORTS_SCHEDULED_HUMAN_EDITOR_ENABLED",
+        "SHORTS_SCHEDULED_CONTEXTUAL_AUDIO_ENABLED",
+        "SHORTS_SCHEDULED_SOCIAL_CARD_ENABLED",
+        "SHORTS_SCHEDULED_SOCIAL_CARD_PERCENT",
+        "SHORTS_SCHEDULED_REACTION_AVATAR_ENABLED",
+        "SHORTS_SCHEDULED_REACTION_AVATAR_PERCENT",
+    ):
+        environment.pop(scheduler_flag, None)
+    if request.scheduled_human_editor:
+        environment["SHORTS_SCHEDULED_HUMAN_EDITOR_ENABLED"] = "true"
+    if request.scheduled_contextual_audio:
+        environment.update(
+            {
+                "SHORTS_SCHEDULED_CONTEXTUAL_AUDIO_ENABLED": "true",
+                "SHORTS_BACKGROUND_MUSIC_ENABLED": "true",
+                "SHORTS_ALLOW_THIRD_PARTY_MUSIC": "true",
+                "SHORTS_MUSIC_DUCKING": "true",
+            }
+        )
+    if request.scheduled_social_card_layout:
+        environment.update(
+            {
+                "SHORTS_SCHEDULED_SOCIAL_CARD_ENABLED": "true",
+                "SHORTS_SCHEDULED_SOCIAL_CARD_PERCENT": str(
+                    max(
+                        1,
+                        min(
+                            100,
+                            env_int(
+                                "AUTO_VIRAL_SCHEDULE_SOCIAL_CARD_PERCENT",
+                                30,
+                            ),
+                        ),
+                    )
+                ),
+            }
+        )
+    if request.scheduled_reaction_avatar_layout:
+        environment.update(
+            {
+                "SHORTS_SCHEDULED_REACTION_AVATAR_ENABLED": "true",
+                "SHORTS_SCHEDULED_REACTION_AVATAR_PERCENT": str(
+                    max(
+                        1,
+                        min(
+                            100,
+                            env_int(
+                                "AUTO_VIRAL_SCHEDULE_REACTION_AVATAR_PERCENT",
+                                15,
+                            ),
+                        ),
+                    )
+                ),
+            }
+        )
+    return environment
+
+
 def run_job(job_id: str) -> None:
     with jobs_lock:
         job = jobs.get(job_id)
@@ -13073,6 +13300,7 @@ def run_job(job_id: str) -> None:
         process = subprocess.Popen(
             command,
             cwd=BASE_DIR,
+            env=clipper_worker_environment(request),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -14626,6 +14854,51 @@ def youtube_data_api_search_queries(
     return request.queries[:max_api_queries]
 
 
+def cron_gaming_source_channel_ids() -> list[str]:
+    """Return exact gaming channels used only as discovery alternatives.
+
+    A preferred discovery channel is deliberately not a trusted-rights channel.
+    Videos found here still pass the normal source-rights, Content ID, view,
+    editorial-safety, score, and upload gates.
+    """
+    configured = env_csv("AUTO_VIRAL_SCHEDULE_GAMING_SOURCE_CHANNEL_IDS")
+    raw_values = configured or list(DEFAULT_CRON_GAMING_SOURCE_CHANNEL_IDS)
+    return list(
+        dict.fromkeys(
+            channel_id
+            for value in raw_values
+            if (
+                channel_id := re.sub(r"[^A-Za-z0-9_-]", "", value.strip())
+            )
+            and channel_id.startswith("UC")
+            and len(channel_id) >= 20
+        )
+    )[:5]
+
+
+def cron_gaming_channel_query_specs(
+    request: AutoViralRequest,
+    run_id: str,
+) -> list[tuple[str, str]]:
+    """Build exact-channel YouTube API searches for the scheduled gaming lane."""
+    if (
+        request.cron_theme_key != "gaming_story"
+        or not scheduled_auto_viral_discovery_active(run_id)
+    ):
+        return []
+    query = re.sub(
+        r"\s+",
+        " ",
+        os.environ.get(
+            "AUTO_VIRAL_SCHEDULE_GAMING_CHANNEL_QUERY",
+            DEFAULT_CRON_GAMING_CHANNEL_QUERY,
+        ),
+    ).strip()[:180]
+    if not query:
+        query = DEFAULT_CRON_GAMING_CHANNEL_QUERY
+    return [(query, channel_id) for channel_id in cron_gaming_source_channel_ids()]
+
+
 YOUTUBE_TREND_STOPWORDS = frozenset(
     {
         "yang", "dan", "di", "ke", "dari", "untuk", "dengan", "ini", "itu",
@@ -14633,6 +14906,88 @@ YOUTUBE_TREND_STOPWORDS = frozenset(
         "terbaru", "viral", "trending", "indonesia", "hari", "episode", "part",
     }
 )
+
+
+def google_trends_rss_signals(run_id: str) -> tuple[list[str], set[str]]:
+    """Read Google's official Trending Now RSS feed for the cron trend lane.
+
+    The feed is a discovery signal only. It never bypasses source-rights,
+    language, freshness, topic, view-floor, or clip-quality gates.
+    """
+    if not env_bool("AUTO_VIRAL_SCHEDULE_GOOGLE_TRENDS_ENABLED", True):
+        return [], set()
+    region = re.sub(
+        r"[^A-Z]",
+        "",
+        os.environ.get("VIRAL_CC_REGION_CODE", "ID").strip().upper(),
+    )[:2] or "ID"
+    cache_ttl = max(
+        0,
+        min(
+            3600,
+            env_int("AUTO_VIRAL_SCHEDULE_GOOGLE_TRENDS_CACHE_TTL_SECONDS", 900),
+        ),
+    )
+    if cache_ttl:
+        with google_trends_rss_cache_lock:
+            cached = google_trends_rss_cache.get(region)
+        if cached is not None and time.monotonic() - cached[0] <= cache_ttl:
+            return list(cached[1]), set(cached[2])
+
+    url = f"https://trends.google.com/trending/rss?geo={region}"
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/rss+xml, application/xml;q=0.9",
+            "User-Agent": "ClipForge-Trend-Radar/1.0",
+        },
+    )
+    timeout_seconds = max(
+        3,
+        min(20, env_int("AUTO_VIRAL_SCHEDULE_GOOGLE_TRENDS_TIMEOUT_SECONDS", 8)),
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            payload = response.read()
+        root = ET.fromstring(payload)
+    except (ET.ParseError, HTTPError, URLError, TimeoutError, OSError) as exc:
+        raise RuntimeError(f"Google Trends RSS Indonesia gagal: {exc}") from exc
+
+    limit = max(
+        1,
+        min(25, env_int("AUTO_VIRAL_SCHEDULE_GOOGLE_TRENDS_LIMIT", 10)),
+    )
+    titles: list[str] = []
+    trend_tokens: set[str] = set()
+    for item in root.findall("./channel/item"):
+        title = re.sub(r"\s+", " ", str(item.findtext("title") or "")).strip()
+        if not 3 <= len(title) <= 160:
+            continue
+        normalized = f" {re.sub(r'[^a-z0-9+]+', ' ', title.casefold()).strip()} "
+        if any(f" {marker} " in normalized for marker in CRON_TREND_UNSAFE_SIGNALS):
+            continue
+        titles.append(title)
+        trend_tokens.update(
+            token
+            for token in re.findall(r"[a-z0-9]{3,}", title.casefold())
+            if token not in YOUTUBE_TREND_STOPWORDS
+        )
+        if len(titles) >= limit:
+            break
+
+    titles = merge_unique_queries(titles)
+    if cache_ttl:
+        with google_trends_rss_cache_lock:
+            google_trends_rss_cache[region] = (
+                time.monotonic(),
+                list(titles),
+                set(trend_tokens),
+            )
+    append_auto_viral_log(
+        run_id,
+        f"Google Trends RSS {region} memberi {len(titles)} sinyal pencarian live yang aman.",
+    )
+    return titles, trend_tokens
 
 
 def youtube_trend_signals(
@@ -14647,8 +15002,18 @@ def youtube_trend_signals(
     has to pass the configured license policy plus language, freshness, quality,
     and rights-risk gates.
     """
-    if not env_bool("VIRAL_CC_USE_TREND_CHART", True):
-        return [], set()
+    google_titles: list[str] = []
+    trend_tokens: set[str] = set()
+    if cron_trend:
+        try:
+            google_titles, google_tokens = google_trends_rss_signals(run_id)
+            trend_tokens.update(google_tokens)
+        except RuntimeError as exc:
+            append_auto_viral_error(
+                run_id,
+                f"Radar Google Trends gagal; chart YouTube tetap dipakai: {exc}",
+            )
+    youtube_chart_enabled = env_bool("VIRAL_CC_USE_TREND_CHART", True)
     params: dict[str, Any] = {
         "part": "snippet,statistics",
         "chart": "mostPopular",
@@ -14663,13 +15028,22 @@ def youtube_trend_signals(
     category_id = os.environ.get(category_env, "").strip()
     if category_id:
         params["videoCategoryId"] = category_id
-    append_auto_viral_log(
-        run_id,
-        "Membaca chart mostPopular YouTube regional sebagai sinyal tren saat ini.",
-    )
-    payload = youtube_data_api_get("videos", params)
+    payload: dict[str, Any] = {"items": []}
+    if youtube_chart_enabled:
+        append_auto_viral_log(
+            run_id,
+            "Membaca chart mostPopular YouTube regional sebagai sinyal tren saat ini.",
+        )
+        try:
+            payload = youtube_data_api_get("videos", params)
+        except RuntimeError as exc:
+            if not google_titles:
+                raise
+            append_auto_viral_error(
+                run_id,
+                f"Chart YouTube gagal; radar Google Trends tetap dipakai: {exc}",
+            )
     eligible_titles: list[str] = []
-    trend_tokens: set[str] = set()
     for item in payload.get("items", []):
         if not isinstance(item, dict):
             continue
@@ -14707,11 +15081,12 @@ def youtube_trend_signals(
         else "VIRAL_CC_TREND_SEED_LIMIT"
     )
     seed_limit = max(0, min(8, env_int(seed_limit_env, 5 if cron_trend else 3)))
-    seeds = eligible_titles[:seed_limit]
+    seeds = merge_unique_queries(google_titles, eligible_titles)[:seed_limit]
     append_auto_viral_log(
         run_id,
-        f"Chart tren {'lintas kategori cron' if cron_trend else 'terpilih'} menghasilkan "
-        f"{len(eligible_titles)} topik relevan; {len(seeds)} dipakai sebagai seed pencarian.",
+        f"Radar tren {'Google + YouTube lintas kategori cron' if cron_trend else 'YouTube terpilih'} "
+        f"menghasilkan {len(google_titles) + len(eligible_titles)} topik; "
+        f"{len(seeds)} dipakai sebagai seed pencarian.",
     )
     return seeds, trend_tokens
 
@@ -14806,7 +15181,22 @@ def search_youtube_data_api_viral_sources(
                 )
         except Exception as exc:
             append_auto_viral_error(run_id, f"Chart tren YouTube gagal; lanjut dengan keyword utama: {exc}")
-    for query in api_queries:
+    max_api_queries = max(1, min(20, env_int("VIRAL_CC_MAX_API_QUERIES", 1)))
+    preferred_specs = cron_gaming_channel_query_specs(request, run_id)
+    query_specs: list[tuple[str, str]] = []
+    for spec in [*preferred_specs, *((query, "") for query in api_queries)]:
+        if spec not in query_specs:
+            query_specs.append(spec)
+    query_specs = query_specs[:max_api_queries]
+    if preferred_specs:
+        append_auto_viral_log(
+            run_id,
+            (
+                "Jalur gaming memprioritaskan kanal BANGJBLOX melalui Channel ID; "
+                "status kanal prioritas tidak melewati audit hak atau QC."
+            ),
+        )
+    for query, preferred_channel_id in query_specs:
         if stop_after is not None and len(candidates) >= stop_after:
             break
         if time.monotonic() >= search_deadline:
@@ -14835,6 +15225,8 @@ def search_youtube_data_api_viral_sources(
             "relevanceLanguage": relevance_language,
             "safeSearch": "strict",
         }
+        if preferred_channel_id:
+            search_params["channelId"] = preferred_channel_id
         if request.require_creative_commons:
             search_params["videoLicense"] = "creativeCommon"
         # CC, selected duration, and selected HD definition are hard requirements.
@@ -15859,6 +16251,11 @@ def auto_viral_format_perspective(
             "Ambil yang baik dari sumber, buang penghinaan, repetisi kosong, klaim tak terbukti, "
             "dan bagian yang tidak relevan dengan tema hari ini."
         )
+        parts.append(
+            "Gunakan keputusan editor manusia, bukan template generik: cari ekspresi, pilihan, "
+            "benturan, perubahan emosi, atau konsekuensi yang benar-benar terdengar/terlihat di "
+            "sumber; hook harus cepat dan payoff wajib tuntas tanpa mengarang dialog."
+        )
     return re.sub(r"\s+", " ", " ".join(part for part in parts if part)).strip()[:4000]
 
 
@@ -16014,6 +16411,22 @@ def create_auto_viral_clip_job(
         require_creative_commons=request.require_creative_commons,
         auto_upload_youtube=False,
         scheduled_public_source_credit=scheduled,
+        scheduled_human_editor=bool(
+            scheduled
+            and env_bool("AUTO_VIRAL_SCHEDULE_HUMAN_EDITOR_ENABLED", True)
+        ),
+        scheduled_contextual_audio=bool(
+            scheduled
+            and env_bool("AUTO_VIRAL_SCHEDULE_CONTEXTUAL_AUDIO_ENABLED", True)
+        ),
+        scheduled_social_card_layout=bool(
+            scheduled
+            and env_bool("AUTO_VIRAL_SCHEDULE_SOCIAL_CARD_ENABLED", True)
+        ),
+        scheduled_reaction_avatar_layout=bool(
+            scheduled
+            and env_bool("AUTO_VIRAL_SCHEDULE_REACTION_AVATAR_ENABLED", True)
+        ),
         confirm_source_rights=request.source_rights_confirmed,
         source_rights_evidence=request.source_rights_evidence,
         creator_perspective=auto_viral_format_perspective(request, long_form=False),
@@ -16093,6 +16506,11 @@ def create_auto_viral_paired_long_job(
         require_creative_commons=request.require_creative_commons,
         auto_upload_youtube=False,
         scheduled_public_source_credit=short_job.request.scheduled_public_source_credit,
+        scheduled_human_editor=short_job.request.scheduled_human_editor,
+        scheduled_contextual_audio=short_job.request.scheduled_contextual_audio,
+        # Portrait/card composition is a vertical Shorts-only cron treatment.
+        scheduled_social_card_layout=False,
+        scheduled_reaction_avatar_layout=False,
         allow_reprocess_source=True,
         confirm_source_rights=request.source_rights_confirmed,
         source_rights_evidence=request.source_rights_evidence,
@@ -16291,7 +16709,7 @@ def auto_viral_daily_upload_limit() -> int:
     """Hard per-platform cap for scheduled uploads on one Jakarta date."""
     return max(
         1,
-        min(15, env_int("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", 15)),
+        min(20, env_int("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", 20)),
     )
 
 
@@ -16301,7 +16719,7 @@ def auto_viral_daily_short_upload_target() -> int:
         0,
         min(
             auto_viral_daily_upload_limit(),
-            env_int("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", 14),
+            env_int("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", 19),
         ),
     )
 
@@ -18000,6 +18418,50 @@ def run_auto_viral_campaign(run_id: str) -> None:
                     raise RuntimeError(finished_job.error or f"Job selesai dengan status {finished_job.status}")
 
                 if deferred_background_upload:
+                    youtube_ready = bool(
+                        not run_request.auto_upload_youtube
+                        or best_automatic_upload_clip_urls(
+                            finished_job,
+                            run_request.clips_per_video,
+                            allow_audited_automation=True,
+                            require_youtube_fyp_target=True,
+                        )
+                    )
+                    tiktok_ready = bool(
+                        not run_request.auto_upload_tiktok
+                        or best_automatic_upload_clip_urls(
+                            finished_job,
+                            run_request.clips_per_video,
+                            allow_audited_automation=True,
+                            require_youtube_fyp_target=False,
+                        )
+                    )
+                    if not (youtube_ready and tiktok_ready):
+                        repair_job = create_completed_job_repair_once(finished_job)
+                        if repair_job is not None:
+                            append_auto_viral_log(
+                                run_id,
+                                (
+                                    f"Job {finished_job.id[:10]} mencapai skor minimum tetapi "
+                                    f"memerlukan rebuild editorial satu kali ({repair_job.id[:10]})."
+                                ),
+                            )
+                            repaired_job = wait_for_auto_viral_repair(
+                                repair_job.id,
+                                run_id,
+                            )
+                            if repaired_job.status != "completed" or not repaired_job.clips:
+                                raise RuntimeError(
+                                    repaired_job.error
+                                    or "Perbaiki Otomatis tidak menghasilkan klip yang aman"
+                                )
+                            item["repair_source_job_id"] = finished_job.id
+                            item["repair_job_id"] = repaired_job.id
+                            item["job_id"] = repaired_job.id
+                            item["job_status"] = repaired_job.status
+                            item["clip_count"] = len(repaired_job.clips)
+                            finished_job = repaired_job
+
                     if run_request.auto_upload_youtube and not best_automatic_upload_clip_urls(
                         finished_job,
                         run_request.clips_per_video,
@@ -18721,7 +19183,7 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
     )
     configured_video_count = max(
         1,
-        min(15, env_int("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", 14)),
+        min(20, env_int("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", 19)),
     )
     youtube_counts = auto_viral_daily_youtube_content_counts()
     remaining_shorts = max(
@@ -18801,7 +19263,7 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         sort_order="relevance",
         top=clips_per_video,
         require_creative_commons=env_bool(
-            "AUTO_VIRAL_SCHEDULE_REQUIRE_CREATIVE_COMMONS", True
+            "AUTO_VIRAL_SCHEDULE_REQUIRE_CREATIVE_COMMONS", False
         ),
         auto_upload_youtube=bool(
             youtube_upload_requested
@@ -20913,6 +21375,17 @@ def create_storyboard_preview(
 
 @app.post("/api/jobs", response_model=ClipJob)
 def create_job(request: ClipJobRequest) -> ClipJob:
+    # Public/manual callers cannot opt into scheduler-only treatment by sending
+    # the internal fields directly. Automation jobs bypass this endpoint and
+    # receive the flags only from ``create_auto_viral_clip_job``.
+    request = request.model_copy(
+        update={
+            "scheduled_human_editor": False,
+            "scheduled_contextual_audio": False,
+            "scheduled_social_card_layout": False,
+            "scheduled_reaction_avatar_layout": False,
+        }
+    )
     if request.clip_mode not in ACTIVE_CLIP_MODES:
         raise HTTPException(
             status_code=410,
