@@ -93,6 +93,25 @@ def test_generator_story_has_an_independent_worker_lane(monkeypatch):
     story_slots.release()
 
 
+def test_editable_storyboard_worker_does_not_inherit_hypit_runtime(monkeypatch):
+    import api
+
+    monkeypatch.setenv("LONG_ANIMATE_VIDEO_PROVIDER", "hypit")
+    monkeypatch.delenv("LONG_ANIMATE_STORYBOARD_VIDEO_PROVIDER", raising=False)
+    storyboard_request = ClipJobRequest(
+        clip_mode="long_animate",
+        script_text=(
+            "### ADEGAN 1 — Pembuka\n"
+            "VISUAL: Seorang penjaga berdiri di lobi.\n"
+            "NARASI: Malam itu alarm berbunyi tanpa peringatan."
+        ),
+    )
+
+    environment = api.clipper_worker_environment(storyboard_request)
+
+    assert environment["LONG_ANIMATE_VIDEO_PROVIDER"] == "local_free"
+
+
 def test_fetch_video_probe_reports_source_rights_risk_before_download(monkeypatch):
     import api
 
@@ -450,10 +469,7 @@ def test_storyboard_preview_returns_locked_scenes_and_imagegen_preflight(monkeyp
 
     preview = api.create_storyboard_preview(
         api.StoryboardPreviewRequest(
-            story_text=(
-                "Seorang satpam diremehkan, lalu memakai keahlian lamanya untuk "
-                "menyelamatkan gedung dari sabotase dan membuktikan integritasnya."
-            ),
+            story_text="Satpam Hebat",
             ai_base_url="http://localhost:11434/v1",
             ai_model="local",
         )
@@ -463,6 +479,7 @@ def test_storyboard_preview_returns_locked_scenes_and_imagegen_preflight(monkeyp
     assert preview.title == "Satpam yang Diremehkan"
     assert [scene.title for scene in preview.scenes] == ["Alarm", "Kabel", "Sistem Pulih"]
     assert preview.scenes[0].visual_prompt.startswith("Raka berlari")
+    assert preview.scenes[0].on_screen_text == ""
     assert "FULL-BLEED" in preview.scenes[0].image_prompt
     assert "FULL-BLEED 9:16" in preview.scenes[0].image_prompt
     assert "vertical short video" in preview.scenes[0].image_prompt

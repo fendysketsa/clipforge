@@ -9,6 +9,7 @@ import {
   checkSourceHistory,
   checkTikTokSession,
   createJob,
+  createStoryboardPreview,
   createTikTokUpload,
   createTikTokUploadBatch,
   createYouTubeUpload,
@@ -81,6 +82,7 @@ import type {
   CropMode,
   SourceMode,
   SourceHistoryCheck,
+  StoryboardPreview,
   TikTokConfig,
   TikTokUploadJob,
   VideoQuality,
@@ -119,9 +121,44 @@ export const promptDurationSeconds = (value: string, fallback: number) => {
   const parsed = Number.parseFloat(match[1].replace(",", "."));
   return Number.isFinite(parsed) ? Math.max(5, Math.min(600, parsed)) : fallback;
 };
+
+const compactStoryboardField = (value: string, maximum: number) => value
+  .replace(/^\s*#{1,6}\s*ADEGAN\b.*$/gim, "")
+  .replace(/^\s*(?:VISUAL|NARASI|ARAHAN SUTRADARA|PROPERTI ADEGAN|TEKS LAYAR)\s*:/gim, "")
+  .replace(/\s+/g, " ")
+  .trim()
+  .slice(0, maximum);
+
+const serializeStoryboard = (storyboard: StoryboardPreview) => {
+  const blocks = [
+    `JUDUL: ${compactStoryboardField(storyboard.title, 100)}`,
+    `GAYA VISUAL: ${compactStoryboardField(storyboard.art_bible, 600)}`,
+    `KARAKTER KONSISTEN: ${compactStoryboardField(storyboard.character_bible, 900)}`,
+    `LOKASI KONSISTEN: ${compactStoryboardField(storyboard.location_bible, 700)}`,
+    `SUTRADARA: ${compactStoryboardField(storyboard.director_bible, 900)}`,
+    `PROPERTI KONSISTEN: ${compactStoryboardField(storyboard.property_bible, 1000)}`,
+  ];
+  storyboard.scenes.forEach((scene, position) => {
+    const camera = compactStoryboardField(scene.camera_motion, 80);
+    const direction = compactStoryboardField(scene.director_direction, 900);
+    blocks.push([
+      `### ADEGAN ${position + 1} — ${compactStoryboardField(scene.title, 64) || `Bagian ${position + 1}`}`,
+      `VISUAL: ${compactStoryboardField(scene.visual_prompt, 900)}`,
+      `ARAHAN SUTRADARA: ${[camera ? `Gerak kamera ${camera}.` : "", direction].filter(Boolean).join(" ")}`,
+      `PROPERTI ADEGAN: ${compactStoryboardField(scene.property_direction, 1100)}`,
+      `NARASI: ${compactStoryboardField(scene.narration, 5000)}`,
+      `TEKS LAYAR: ${compactStoryboardField(scene.on_screen_text, 64)}`,
+    ].join("\n"));
+  });
+  return blocks.join("\n\n").trim();
+};
+
 export default function HomePage() {
   const [url, setUrl] = useState("");
   const [storyText, setStoryText] = useState("");
+  const [storyboardPreview, setStoryboardPreview] = useState<StoryboardPreview | null>(null);
+  const [isGeneratingStoryboard, setIsGeneratingStoryboard] = useState(false);
+  const [storyboardError, setStoryboardError] = useState("");
   const [sourceMode, setSourceMode] = useState<SourceMode>("url");
   const [uploadToken, setUploadToken] = useState("");
   const [uploadFileName, setUploadFileName] = useState("");
@@ -219,6 +256,8 @@ export default function HomePage() {
     setBurnSubtitles(true);
     setAiEnabled(true);
     setConfirmSourceRights(false);
+    setStoryboardPreview(null);
+    setStoryboardError("");
     if (nextMode === "highlight_5m" || nextMode === "long_animate") {
       setMinDuration(30);
       setMaxDuration(90);
@@ -233,6 +272,8 @@ export default function HomePage() {
 
   const handleStoryTextChange = useCallback((value: string) => {
     setStoryText(value);
+    setStoryboardPreview(null);
+    setStoryboardError("");
     setError("");
   }, []);
 
@@ -720,16 +761,55 @@ export default function HomePage() {
     }
   }, []);
 
-  const handleStartJob = useCallback(async () => {
+  const handleGenerateStoryboard = useCallback(async () => {
+    const source = hypitStoryBody(storyText).trim();
+    if (source.length < 6 || source.split(/\s+/).filter(Boolean).length < 2) {
+      setStoryboardError("Masukkan minimal judul dua kata. Deskripsi yang lebih lengkap membuat adegan lebih spesifik.");
+      return;
+    }
+    if (!aiEnabled || !aiBaseUrl.trim() || !aiModel.trim()) {
+      setStoryboardError("Storyboard membutuhkan AI aktif, base URL, dan model yang valid.");
+      return;
+    }
+    setStoryboardError("");
+    setIsGeneratingStoryboard(true);
+    try {
+      const targetSeconds = promptDurationSeconds(source, compilationTargetSeconds);
+      const preview = await toast.promise(
+        createStoryboardPreview({
+          story_text: source,
+          target_duration_seconds: targetSeconds,
+          ai_enabled: aiEnabled,
+          ai_base_url: aiBaseUrl.trim(),
+          ai_model: aiModel.trim(),
+          ai_api_key: aiApiKey.trim(),
+        }),
+        {
+          loading: "Menyusun storyboard dan shot plan…",
+          success: "Storyboard siap direvisi.",
+          error: "Gagal membuat storyboard",
+        },
+      );
+      setCompilationTargetSeconds(targetSeconds);
+      setStoryboardPreview(preview);
+    } catch (previewError) {
+      setStoryboardError(previewError instanceof Error ? previewError.message : "Gagal membuat storyboard.");
+    } finally {
+      setIsGeneratingStoryboard(false);
+    }
+  }, [aiApiKey, aiBaseUrl, aiEnabled, aiModel, compilationTargetSeconds, storyText]);
+
+  const handleStartJob = useCallback(async (storyOverride?: string) => {
     const requestedMode: ClipMode = clipMode;
     const isStoryMode = requestedMode === "long_animate";
     const requestedSourceMode = sourceMode;
     const trimmedUrl = url.trim();
-    const trimmedStory = storyText.trim();
+    const trimmedStory = (storyOverride ?? storyText).trim();
     const isHypitQuick = isStoryMode && isHypitQuickPrompt(trimmedStory);
     const effectiveStory = isStoryMode && !isHypitQuick
       ? hypitStoryBody(trimmedStory)
       : trimmedStory;
+    const isDirectedStoryboard = isStoryMode && /^###\s*ADEGAN\b/im.test(effectiveStory);
     const effectiveMaxDuration = requestedMode === "short" ? Math.min(MAX_SHORT_DURATION, maxDuration) : maxDuration;
     setError("");
 
@@ -803,7 +883,9 @@ export default function HomePage() {
           compilation_target_seconds: isHypitQuick
             ? 26
             : isStoryMode
-              ? promptDurationSeconds(effectiveStory, compilationTargetSeconds)
+              ? isDirectedStoryboard
+                ? compilationTargetSeconds
+                : promptDurationSeconds(effectiveStory, compilationTargetSeconds)
             : Math.max(
                 COMPILATION_MIN_SECONDS,
                 Math.min(COMPILATION_MAX_SECONDS, compilationTargetSeconds),
@@ -846,8 +928,8 @@ export default function HomePage() {
           ai_api_key: aiApiKey.trim(),
         }),
         {
-          loading: isHypitQuick ? "Hypit menyusun tier board dan memulai render..." : isStoryMode ? "Mengirim prompt ke text-to-video Hypit..." : requestedMode === "short" ? "Memulai scan dan render Short..." : "Memulai scan dan susun Long Highlight...",
-          success: isHypitQuick ? "Render Hypit dimulai — hasil akan muncul otomatis di workspace." : isStoryMode ? "Text-to-video dimulai — Remotion akan merakit clip dan caption stabil." : requestedMode === "short" ? "Scan dimulai — kandidat terbaik akan langsung dirender." : "Scan dimulai — chapter terbaik akan langsung disusun.",
+          loading: isHypitQuick ? "Hypit menyusun tier board dan memulai render..." : isStoryMode ? "Memulai produksi storyboard lewat Scene Cinema..." : requestedMode === "short" ? "Memulai scan dan render Short..." : "Memulai scan dan susun Long Highlight...",
+          success: isHypitQuick ? "Render Hypit dimulai — hasil akan muncul otomatis di workspace." : isStoryMode ? "Produksi dimulai — ImageGen dan Remotion merakit setiap adegan." : requestedMode === "short" ? "Scan dimulai — kandidat terbaik akan langsung dirender." : "Scan dimulai — chapter terbaik akan langsung disusun.",
           error: isHypitQuick ? "Gagal memulai Hypit Quick" : isStoryMode ? "Gagal memulai Generator Cerita" : "Gagal memulai proses pemotongan",
         },
       );
@@ -899,6 +981,25 @@ export default function HomePage() {
     jobs,
   ]);
 
+  const handleRenderStoryboard = useCallback(() => {
+    if (!storyboardPreview || storyboardPreview.scenes.length < 3) {
+      setStoryboardError("Storyboard minimal memiliki tiga adegan sebelum dirender.");
+      return;
+    }
+    if (!confirmSourceRights) {
+      setStoryboardError("Konfirmasikan hak cerita dan izin komersial provider AI sebelum render.");
+      return;
+    }
+    const directedScript = serializeStoryboard(storyboardPreview);
+    if (directedScript.length > 30000) {
+      setStoryboardError("Storyboard hasil revisi terlalu panjang. Ringkas narasi atau visual beberapa adegan.");
+      return;
+    }
+    setStoryboardError("");
+    setStoryText(directedScript);
+    void handleStartJob(directedScript);
+  }, [confirmSourceRights, handleStartJob, storyboardPreview]);
+
   const handleDeleteAllConfirmed = useCallback(async () => {
     await toast.promise(deleteJobs(), {
       loading: "Membatalkan job aktif dan menghapus catatan proses...",
@@ -917,6 +1018,8 @@ export default function HomePage() {
     setJob(selectedJob);
     setClipMode(selectedJob.request.clip_mode);
     setStoryText(selectedJob.request.script_text || "");
+    setStoryboardPreview(null);
+    setStoryboardError("");
     setConfirmSourceRights(
       selectedJob.request.clip_mode === "long_animate"
         ? Boolean(selectedJob.request.confirm_long_animate_rights)
@@ -1492,6 +1595,9 @@ export default function HomePage() {
       <QuickStartCard
         url={url}
         storyText={storyText}
+        storyboardPreview={storyboardPreview}
+        isGeneratingStoryboard={isGeneratingStoryboard}
+        storyboardError={storyboardError}
         clipMode={clipMode}
         videoDuration={videoDuration}
         sourceHistory={sourceHistory}
@@ -1504,6 +1610,9 @@ export default function HomePage() {
         error={error}
         onUrlChange={handleUrlChange}
         onStoryTextChange={handleStoryTextChange}
+        onStoryboardChange={setStoryboardPreview}
+        onGenerateStoryboard={() => { void handleGenerateStoryboard(); }}
+        onRenderStoryboard={handleRenderStoryboard}
         onClipModeChange={handleClipModeChange}
         onAllowReprocessSourceChange={setAllowReprocessSource}
         onConfirmSourceRightsChange={setConfirmSourceRights}

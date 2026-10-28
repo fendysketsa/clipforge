@@ -561,6 +561,7 @@ class StoryboardPreviewScene(BaseModel):
     narrative_role: str
     director_direction: str
     property_direction: str
+    on_screen_text: str = ""
 
 
 class StoryboardImageProvider(BaseModel):
@@ -13151,6 +13152,19 @@ def clipper_worker_environment(request: ClipJobRequest) -> dict[str, str]:
     job running beside it.
     """
     environment = os.environ.copy()
+    if request.clip_mode == "long_animate" and not is_hypit_quick_prompt(
+        request.script_text
+    ):
+        # The editable storyboard promises generated keyframes plus Scene
+        # Cinema assembly. Keep that path isolated from the optional Hypit
+        # text-to-video runtime, even if a host-level legacy variable still
+        # points at Hypit. `/hypit` remains the only explicit Hypit route.
+        storyboard_provider = os.environ.get(
+            "LONG_ANIMATE_STORYBOARD_VIDEO_PROVIDER", "local_free"
+        ).strip().casefold()
+        if storyboard_provider not in {"local_free", "off"}:
+            storyboard_provider = "local_free"
+        environment["LONG_ANIMATE_VIDEO_PROVIDER"] = storyboard_provider
     for scheduler_flag in (
         "SHORTS_SCHEDULED_HUMAN_EDITOR_ENABLED",
         "SHORTS_SCHEDULED_CONTEXTUAL_AUDIO_ENABLED",
@@ -21375,10 +21389,10 @@ def create_storyboard_preview(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     story = hypit_prompt_body(raw_story)
-    if len(story) < 60 or len(story.split()) < 12:
+    if len(story) < 6 or len(story.split()) < 2:
         raise HTTPException(
             status_code=400,
-            detail="Jalan cerita minimal 60 karakter dan 12 kata agar storyboard tidak generik.",
+            detail="Masukkan minimal judul dua kata. Deskripsi atau naskah yang lebih lengkap akan menghasilkan storyboard yang lebih spesifik.",
         )
     if not request.ai_enabled or not request.ai_base_url.strip() or not request.ai_model.strip():
         raise HTTPException(
@@ -21477,6 +21491,7 @@ def create_storyboard_preview(
                     narrative_role=scene.narrative_role,
                     director_direction=scene.director_direction,
                     property_direction=scene.property_direction,
+                    on_screen_text=str(source.get("on_screen_text") or ""),
                 )
             )
 

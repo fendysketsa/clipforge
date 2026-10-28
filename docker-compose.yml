@@ -232,8 +232,10 @@ services:
       LONG_ANIMATE_RENDER_ENGINE: ${LONG_ANIMATE_RENDER_ENGINE:-remotion}
       LONG_ANIMATE_REMOTION_TIMEOUT_SECONDS: ${LONG_ANIMATE_REMOTION_TIMEOUT_SECONDS:-7200}
       REMOTION_CONCURRENCY: ${REMOTION_CONCURRENCY:-25%}
-      # Direct text-to-video through the explicitly selected Hypit Runtime.
-      LONG_ANIMATE_VIDEO_PROVIDER: ${LONG_ANIMATE_VIDEO_PROVIDER:-hypit}
+      # Generator Cerita defaults to the local Scene Cinema pipeline. Hypit
+      # text-to-video is opt-in and must never be selected without a Runtime.
+      LONG_ANIMATE_VIDEO_PROVIDER: ${LONG_ANIMATE_VIDEO_PROVIDER:-local_free}
+      LONG_ANIMATE_STORYBOARD_VIDEO_PROVIDER: ${LONG_ANIMATE_STORYBOARD_VIDEO_PROVIDER:-local_free}
       LONG_ANIMATE_OUTPUT_ASPECT_RATIO: ${LONG_ANIMATE_OUTPUT_ASPECT_RATIO:-9:16}
       HYPIT_RUNTIME_PROFILE: ${HYPIT_RUNTIME_PROFILE:-}
       HYPIT_VIDEO_MODEL: ${HYPIT_VIDEO_MODEL:-2.5}

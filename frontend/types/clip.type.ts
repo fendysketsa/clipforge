@@ -367,6 +367,7 @@ export type StoryboardPreviewScene = {
   narrative_role: string;
   director_direction: string;
   property_direction: string;
+  on_screen_text: string;
 };
 
 export type StoryboardPreview = {

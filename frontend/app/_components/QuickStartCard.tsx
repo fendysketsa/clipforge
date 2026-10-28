@@ -9,25 +9,36 @@ import {
   BookOpen,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   ClipboardPaste,
   Clock3,
+  Copy,
   Focus,
   Film,
+  GripVertical,
   Link2,
+  ListVideo,
   Loader2,
+  Play,
+  RefreshCw,
   Scissors,
   ShieldCheck,
   Sparkles,
   Subtitles,
+  Trash2,
   WandSparkles,
 } from "lucide-react";
 import { formatDuration } from "../../lib/utils";
 import type { SourceProbe } from "../../lib/apiClient";
-import type { ClipMode, SourceHistoryCheck } from "../../types/clip.type";
+import type { ClipMode, SourceHistoryCheck, StoryboardPreview } from "../../types/clip.type";
 
 type QuickStartCardProps = {
   url: string;
   storyText: string;
+  storyboardPreview: StoryboardPreview | null;
+  isGeneratingStoryboard: boolean;
+  storyboardError: string;
   clipMode: ClipMode;
   videoDuration: number | null;
   sourceHistory: SourceHistoryCheck | null;
@@ -40,6 +51,9 @@ type QuickStartCardProps = {
   error: string;
   onUrlChange: (value: string) => void;
   onStoryTextChange: (value: string) => void;
+  onStoryboardChange: (value: StoryboardPreview) => void;
+  onGenerateStoryboard: () => void;
+  onRenderStoryboard: () => void;
   onClipModeChange: (value: ClipMode) => void;
   onAllowReprocessSourceChange: (value: boolean) => void;
   onConfirmSourceRightsChange: (value: boolean) => void;
@@ -80,6 +94,9 @@ const formatCompactNumber = (value?: number | null) => value === null || value =
 export function QuickStartCard({
   url,
   storyText,
+  storyboardPreview,
+  isGeneratingStoryboard,
+  storyboardError,
   clipMode,
   videoDuration,
   sourceHistory,
@@ -92,6 +109,9 @@ export function QuickStartCard({
   error,
   onUrlChange,
   onStoryTextChange,
+  onStoryboardChange,
+  onGenerateStoryboard,
+  onRenderStoryboard,
   onClipModeChange,
   onAllowReprocessSourceChange,
   onConfirmSourceRightsChange,
@@ -118,9 +138,11 @@ export function QuickStartCard({
     .trim()
     .split(/\s+/)
     .filter(Boolean).length;
-  const storyReady = hypitPromptWords >= 4;
+  const storyReady = isHypitPrompt
+    ? hypitPromptWords >= 4
+    : storyText.trim().length >= 6 && hypitPromptWords >= 2;
   const canStart = isStory
-    ? storyReady && confirmSourceRights && !isWorking
+    ? storyReady && (isHypitPrompt || confirmSourceRights) && !isWorking
     : hasUrl
       && !invalidUrl
       && !isCheckingSourceHistory
@@ -128,6 +150,49 @@ export function QuickStartCard({
       && !sourceRightsBlocked
       && confirmSourceRights
       && !isWorking;
+
+  const replaceScenes = (scenes: StoryboardPreview["scenes"]) => {
+    if (!storyboardPreview) return;
+    onStoryboardChange({
+      ...storyboardPreview,
+      scenes: scenes.map((scene, index) => ({ ...scene, index: index + 1 })),
+    });
+  };
+
+  const updateScene = (position: number, patch: Partial<StoryboardPreview["scenes"][number]>) => {
+    if (!storyboardPreview) return;
+    replaceScenes(storyboardPreview.scenes.map((scene, index) => (
+      index === position ? { ...scene, ...patch } : scene
+    )));
+  };
+
+  const moveScene = (position: number, offset: -1 | 1) => {
+    if (!storyboardPreview) return;
+    const target = position + offset;
+    if (target < 0 || target >= storyboardPreview.scenes.length) return;
+    const scenes = [...storyboardPreview.scenes];
+    [scenes[position], scenes[target]] = [scenes[target], scenes[position]];
+    replaceScenes(scenes);
+  };
+
+  const duplicateScene = (position: number) => {
+    if (!storyboardPreview || storyboardPreview.scenes.length >= 14) return;
+    const source = storyboardPreview.scenes[position];
+    const duplicate = {
+      ...source,
+      title: `${source.title} — variasi`,
+      shot_plan: source.shot_plan.map((shot) => ({ ...shot })),
+      shots: [...source.shots],
+    };
+    const scenes = [...storyboardPreview.scenes];
+    scenes.splice(position + 1, 0, duplicate);
+    replaceScenes(scenes);
+  };
+
+  const removeScene = (position: number) => {
+    if (!storyboardPreview || storyboardPreview.scenes.length <= 3) return;
+    replaceScenes(storyboardPreview.scenes.filter((_, index) => index !== position));
+  };
 
   const pasteFromClipboard = async () => {
     try {
@@ -150,7 +215,7 @@ export function QuickStartCard({
   const polishSteps = isStory ? STORY_STEPS : isLong ? LONG_STEPS : SHORT_STEPS;
 
   return (
-    <section className={`clipperHero${isLong ? " isLong" : ""}${isWorking ? " isWorking" : ""}`} aria-labelledby="quick-start-title">
+    <section className={`clipperHero${isLong ? " isLong" : ""}${isWorking ? " isWorking" : ""}${storyboardPreview ? " hasStoryboard" : ""}`} aria-labelledby="quick-start-title">
       <div className="clipperHeroCopy">
         <span className="clipperKicker">{isStory ? <BookOpen size={14} /> : isLong ? <Film size={14} /> : <Scissors size={14} />} AI PRODUCTION ENGINE</span>
         <h2 id="quick-start-title">
@@ -203,39 +268,124 @@ export function QuickStartCard({
           <div className="storyStudioComposer">
             <header>
               <div className="storyStudioModeSwitch" aria-label="Mode pembuatan">
-                <span className="active"><BookOpen size={14} /> 1. Prompt</span>
-                <span className={storyReady ? "active" : ""}><Film size={14} /> 2. Video</span>
+                <span className="active"><BookOpen size={14} /> 1. Brief</span>
+                <span className={storyboardPreview ? "active" : ""}><ListVideo size={14} /> 2. Storyboard</span>
+                <span className={isWorking ? "active" : ""}><Film size={14} /> 3. Render</span>
               </div>
-              <small>{isHypitPrompt ? "HYPIT QUICK · CODE RENDERED" : "HYPIT TEXT-TO-VIDEO · REMOTION"}</small>
+              <small>{isHypitPrompt ? "HYPIT QUICK · DIRECT" : "CLIPFORGE STORY FLOW · EDITABLE"}</small>
             </header>
             <label className="storyInputField">
-              <span>Prompt video siap dirender</span>
+              <span>Judul, deskripsi, atau naskah</span>
               <textarea
                 value={storyText}
                 onChange={(event) => onStoryTextChange(event.target.value)}
-                placeholder={'Contoh: Buatkan 10 detik video tentang seekor kucing yang berlari di kebun saat matahari terbit.'}
-                rows={8}
+                placeholder={'Contoh judul: Kucing Polisi Memecahkan Misteri Kota\n\nAtau tempel deskripsi/naskah lengkap. AI akan menyusunnya menjadi daftar adegan yang bisa direvisi sebelum render.'}
+                rows={storyboardPreview ? 4 : 8}
                 maxLength={30000}
               />
-              <small>{storyText.trim().length.toLocaleString("id-ID")} / 30.000 karakter · minimum 4 kata · durasi dapat ditulis langsung di prompt</small>
+              <small>{storyText.trim().length.toLocaleString("id-ID")} / 30.000 karakter · minimal judul 2 kata · durasi dapat ditulis di brief</small>
             </label>
-            <p className="sourceHint">Prompt langsung dikompilasi menjadi clip text-to-video Hypit. Remotion hanya merakit clip, caption stabil, audio, dan hasil akhir—tanpa tahap storyboard.</p>
+            <p className="sourceHint">Brief disusun menjadi storyboard terarah. Revisi narasi, visual, urutan, kamera, dan teks layar terlebih dahulu; render memakai versi yang sudah Anda setujui.</p>
             {!storyText.trim() ? (
               <div className="hypitPromptExamples" aria-label="Contoh prompt Hypit">
-                <button type="button" onClick={() => onStoryTextChange("/hypit Make a ranking video that puts Hypit in S tier.")}>Ranking Hypit S tier</button>
-                <button type="button" onClick={() => onStoryTextChange("/hypit Buat video ranking tentang patch kritis PHP yang menjadi isu hari ini.")}>Isu PHP hari ini</button>
+                <button type="button" onClick={() => onStoryTextChange("Kucing Polisi Memecahkan Misteri Kota")}>Mulai dari judul</button>
+                <button type="button" onClick={() => onStoryTextChange("Seorang pedagang kecil dituduh mencuri, lalu bukti tersembunyi membalik keadaan. Buat drama hangat 5 menit dengan akhir memuaskan.")}>Mulai dari deskripsi</button>
+                <button type="button" onClick={() => onStoryTextChange("/hypit Make a ranking video that puts Hypit in S tier.")}>Hypit Quick</button>
               </div>
             ) : null}
+
+            {!isHypitPrompt ? (
+              <div className="storyboardBuildBar">
+                <span>
+                  <ListVideo size={17} />
+                  <b>{storyboardPreview ? `${storyboardPreview.scenes.length} adegan siap direvisi` : "Buat draft sebelum memakai kredit render"}<small>Storyboard tidak langsung menghasilkan video.</small></b>
+                </span>
+                <button type="button" disabled={!storyReady || isWorking || isGeneratingStoryboard} onClick={onGenerateStoryboard}>
+                  {isGeneratingStoryboard ? <Loader2 className="spin" size={16} /> : storyboardPreview ? <RefreshCw size={16} /> : <WandSparkles size={16} />}
+                  {isGeneratingStoryboard ? "Menyusun…" : storyboardPreview ? "Susun ulang" : "Buat storyboard"}
+                </button>
+              </div>
+            ) : null}
+
+            {storyboardError ? <div className="storyboardInlineError" role="alert">{storyboardError}</div> : null}
+
+            {storyboardPreview && !isHypitPrompt ? (
+              <section className="storyboardPreview" aria-label="Storyboard yang dapat direvisi">
+                <header>
+                  <span><Sparkles size={15} /> Storyboard produksi</span>
+                  <b>{storyboardPreview.scenes.length} ADEGAN · 9:16</b>
+                </header>
+                <div className="storyboardSummary">
+                  <label>
+                    <span>Judul video</span>
+                    <input value={storyboardPreview.title} maxLength={100} onChange={(event) => onStoryboardChange({ ...storyboardPreview, title: event.target.value })} />
+                  </label>
+                  <small>{storyboardPreview.hook || storyboardPreview.core_message}</small>
+                </div>
+                <div className={`imageProviderCheck ${storyboardPreview.image_provider.ready ? "isReady" : "isBlocked"}`}>
+                  {storyboardPreview.image_provider.ready ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+                  <span><strong>{storyboardPreview.image_provider.ready ? "Visual provider siap" : "Visual provider perlu dicek"}</strong><small>{storyboardPreview.image_provider.message}</small></span>
+                </div>
+
+                <div className="storyboardSceneList">
+                  {storyboardPreview.scenes.map((scene, position) => (
+                    <article key={`${scene.index}-${position}`}>
+                      <aside>
+                        <GripVertical size={16} />
+                        <b>{String(position + 1).padStart(2, "0")}</b>
+                        <small>{scene.narrative_role.replaceAll("_", " ")}</small>
+                      </aside>
+                      <div className="storyboardSceneEditor">
+                        <header>
+                          <input aria-label={`Judul adegan ${position + 1}`} value={scene.title} maxLength={64} onChange={(event) => updateScene(position, { title: event.target.value })} />
+                          <div>
+                            <button title="Pindah ke atas" type="button" disabled={position === 0} onClick={() => moveScene(position, -1)}><ChevronUp size={15} /></button>
+                            <button title="Pindah ke bawah" type="button" disabled={position === storyboardPreview.scenes.length - 1} onClick={() => moveScene(position, 1)}><ChevronDown size={15} /></button>
+                            <button title="Duplikat adegan" type="button" disabled={storyboardPreview.scenes.length >= 14} onClick={() => duplicateScene(position)}><Copy size={14} /></button>
+                            <button title="Hapus adegan" className="danger" type="button" disabled={storyboardPreview.scenes.length <= 3} onClick={() => removeScene(position)}><Trash2 size={14} /></button>
+                          </div>
+                        </header>
+                        <div className="storyboardSceneFields">
+                          <label><span>Narasi / dubbing</span><textarea value={scene.narration} maxLength={5000} rows={4} onChange={(event) => updateScene(position, { narration: event.target.value })} /></label>
+                          <label><span>Visual adegan</span><textarea value={scene.visual_prompt} maxLength={900} rows={4} onChange={(event) => updateScene(position, { visual_prompt: event.target.value })} /></label>
+                        </div>
+                        <div className="storyboardSceneMeta">
+                          <label><span>Gerak kamera</span><select value={scene.camera_motion} onChange={(event) => updateScene(position, { camera_motion: event.target.value })}><option value="push_in">Push in</option><option value="pull_out">Pull out</option><option value="pan_left">Pan kiri</option><option value="pan_right">Pan kanan</option><option value="drift_up">Drift naik</option><option value="static">Statis</option></select></label>
+                          <label><span>Teks layar</span><input value={scene.on_screen_text} maxLength={64} placeholder="Opsional" onChange={(event) => updateScene(position, { on_screen_text: event.target.value })} /></label>
+                          <span><b>{scene.shot_plan.length || scene.shots.length}</b> shot</span>
+                        </div>
+                        <details>
+                          <summary>Arahan lanjutan sutradara & properti</summary>
+                          <div className="storyboardDirectionGrid">
+                            <label><span>Arahan sutradara</span><textarea value={scene.director_direction} maxLength={900} rows={3} onChange={(event) => updateScene(position, { director_direction: event.target.value })} /></label>
+                            <label><span>Properti wajib</span><textarea value={scene.property_direction} maxLength={1100} rows={3} onChange={(event) => updateScene(position, { property_direction: event.target.value })} /></label>
+                          </div>
+                        </details>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+
+                <footer className="storyboardRenderBar">
+                  <span><ShieldCheck size={16} /><b>Storyboard terkunci saat render<small>Generator memakai urutan dan revisi card ini, tanpa menulis ulang ceritanya.</small></b></span>
+                  <button type="button" disabled={isWorking || !confirmSourceRights || storyboardPreview.scenes.length < 3} onClick={onRenderStoryboard}>
+                    {isWorking ? <Loader2 className="spin" size={17} /> : <Play size={17} />}
+                    Generate video
+                  </button>
+                </footer>
+              </section>
+            ) : null}
+
             <footer>
               <div className="storyStudioTools">
-                <span title="Prompt diikat ke satu aksi scene yang terukur"><Focus size={15} /> Prompt → scene</span>
-                <span title="Hypit menghasilkan clip bergerak langsung"><WandSparkles size={15} /> Text-to-video</span>
-                <span title="Remotion merakit clip tanpa caption berkedip"><Film size={15} /> Remotion stabil</span>
+                <span title="Brief dikembangkan menjadi adegan terarah"><Focus size={15} /> Brief → scene</span>
+                <span title="Setiap card dapat direvisi sebelum produksi"><ListVideo size={15} /> Edit per adegan</span>
+                <span title="Hypit dan Remotion merakit hasil akhir"><Film size={15} /> Render stabil</span>
               </div>
-              <div className="storyStudioDirector">
-                <span><Sparkles size={14} /> Generate video</span>
+              {isHypitPrompt ? <div className="storyStudioDirector">
+                <span><Sparkles size={14} /> Hypit Quick</span>
                 <button
-                  aria-label="Generate video langsung dengan Hypit"
+                  aria-label="Generate video Hypit Quick"
                   className="storyStudioSubmit"
                   disabled={!canStart}
                   type="button"
@@ -243,7 +393,7 @@ export function QuickStartCard({
                 >
                   {isWorking ? <Loader2 className="spin" size={19} /> : <ArrowRight size={19} />}
                 </button>
-              </div>
+              </div> : null}
             </footer>
           </div>
         ) : <label className="sourceUrlField">

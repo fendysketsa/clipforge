@@ -12251,6 +12251,192 @@ body::after {
   white-space: pre-wrap;
 }
 
+.clipperHero.hasStoryboard {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 24px;
+}
+
+.clipperHero.hasStoryboard .clipperHeroCopy { display: none; }
+.clipperHero.hasStoryboard .sourceComposer { width: 100%; max-width: none; }
+
+.storyboardBuildBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 13px 13px;
+  padding: 12px 13px;
+  border: 1px solid rgba(167, 139, 250, 0.2);
+  border-radius: 12px;
+  background: linear-gradient(105deg, rgba(139, 92, 246, 0.1), rgba(56, 189, 248, 0.045));
+}
+
+.storyboardBuildBar > span,
+.storyboardRenderBar > span {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  color: #c4b5fd;
+}
+
+.storyboardBuildBar b,
+.storyboardRenderBar b { display: grid; gap: 3px; color: #ede9fe; font-size: 11px; }
+.storyboardBuildBar small,
+.storyboardRenderBar small { color: #81789e; font-size: 8.5px; font-weight: 600; }
+
+.storyboardBuildBar > button,
+.storyboardRenderBar > button {
+  display: inline-flex;
+  min-height: 39px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 14px;
+  border: 1px solid rgba(196, 181, 253, 0.28);
+  border-radius: 10px;
+  color: #f5f3ff;
+  background: rgba(139, 92, 246, 0.18);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.storyboardBuildBar > button:disabled,
+.storyboardRenderBar > button:disabled { cursor: not-allowed; filter: saturate(0.3); opacity: 0.42; }
+
+.storyboardInlineError {
+  margin: 0 13px 13px;
+  padding: 10px 12px;
+  border: 1px solid rgba(251, 113, 133, 0.24);
+  border-radius: 10px;
+  color: #fda4af;
+  background: rgba(251, 113, 133, 0.07);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.storyboardSummary label { display: grid; width: 100%; gap: 5px; }
+.storyboardSummary label > span { color: #8b80aa; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
+.storyboardSummary input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid rgba(196, 181, 253, 0.16);
+  border-radius: 9px;
+  outline: 0;
+  color: #f5f3ff;
+  background: rgba(8, 7, 21, 0.8);
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.storyboardSceneList { display: grid; gap: 12px; margin-top: 13px; }
+
+.storyboardSceneList > article {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  min-height: 250px;
+  overflow: hidden;
+  border: 1px solid rgba(196, 181, 253, 0.17);
+  border-radius: 15px;
+  background: linear-gradient(125deg, rgba(139, 92, 246, 0.08), rgba(6, 10, 20, 0.92) 34%);
+  box-shadow: 0 12px 32px rgba(2, 2, 10, 0.2);
+}
+
+.storyboardSceneList > article > aside {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  padding: 18px 8px;
+  border-right: 1px solid rgba(196, 181, 253, 0.12);
+  color: #71678b;
+  background: linear-gradient(180deg, rgba(139, 92, 246, 0.12), rgba(8, 7, 20, 0.32));
+}
+
+.storyboardSceneList > article > aside b { color: #ddd6fe; font: 900 21px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.storyboardSceneList > article > aside small { color: #847a9f; font-size: 7.5px; font-weight: 800; line-height: 1.35; text-align: center; text-transform: uppercase; }
+
+.storyboardSceneEditor { display: grid; gap: 12px; padding: 15px; }
+.storyboardSceneEditor > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.storyboardSceneEditor > header > input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: #f5f3ff;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.storyboardSceneEditor > header > div { display: inline-flex; flex: 0 0 auto; gap: 5px; }
+.storyboardSceneEditor > header button {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border: 1px solid rgba(196, 181, 253, 0.14);
+  border-radius: 8px;
+  color: #a99fc4;
+  background: rgba(139, 92, 246, 0.06);
+  cursor: pointer;
+}
+.storyboardSceneEditor > header button.danger { color: #fb8a9b; }
+.storyboardSceneEditor > header button:disabled { cursor: not-allowed; opacity: 0.28; }
+
+.storyboardSceneFields,
+.storyboardDirectionGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.storyboardSceneFields label,
+.storyboardDirectionGrid label,
+.storyboardSceneMeta label { display: grid; min-width: 0; gap: 5px; }
+.storyboardSceneFields label > span,
+.storyboardDirectionGrid label > span,
+.storyboardSceneMeta label > span { color: #8b80aa; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+
+.storyboardSceneEditor textarea,
+.storyboardSceneEditor input,
+.storyboardSceneEditor select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(196, 181, 253, 0.13);
+  border-radius: 9px;
+  outline: 0;
+  color: #ddd6fe;
+  background: rgba(5, 6, 16, 0.72);
+  font: 500 10.5px/1.55 var(--font-sans);
+}
+.storyboardSceneEditor textarea { min-height: 96px; resize: vertical; padding: 10px; }
+.storyboardSceneEditor input,
+.storyboardSceneEditor select { height: 37px; padding: 0 9px; }
+.storyboardSceneEditor textarea:focus,
+.storyboardSceneEditor input:focus,
+.storyboardSceneEditor select:focus { border-color: rgba(167, 139, 250, 0.48); box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.07); }
+
+.storyboardSceneMeta { display: grid; grid-template-columns: minmax(160px, 0.7fr) minmax(180px, 1fr) auto; align-items: end; gap: 10px; }
+.storyboardSceneMeta > span { display: inline-flex; min-height: 37px; align-items: center; gap: 5px; padding: 0 10px; border: 1px solid rgba(52, 211, 153, 0.14); border-radius: 9px; color: #7fbaaa; background: rgba(16, 185, 129, 0.05); font-size: 8px; white-space: nowrap; }
+.storyboardSceneMeta > span b { color: #a7f3d0; font-size: 11px; }
+
+.storyboardSceneEditor details { border-top: 1px solid rgba(196, 181, 253, 0.09); padding-top: 10px; }
+.storyboardSceneEditor details > summary { color: #a99fc4; cursor: pointer; font-size: 9px; font-weight: 800; }
+.storyboardDirectionGrid { margin-top: 10px; }
+
+.storyboardRenderBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 13px;
+  padding: 13px;
+  border: 1px solid rgba(52, 211, 153, 0.19);
+  border-radius: 12px;
+  background: linear-gradient(105deg, rgba(16, 185, 129, 0.08), rgba(56, 189, 248, 0.04));
+}
+
+.storyboardRenderBar > button { border-color: rgba(110, 231, 183, 0.3); color: #041410; background: linear-gradient(110deg, #a7f3d0, #67e8f9); box-shadow: 0 10px 24px rgba(45, 212, 191, 0.14); }
+
 .imageProviderCheck {
   gap: 8px;
   margin-top: 3px;
@@ -12330,6 +12516,20 @@ body::after {
   .storyStudioDirector > span { display: none; }
   .storyStudioModeSwitch > span:last-child { display: none; }
   .storyboardSceneRail { grid-auto-columns: 86%; }
+  .clipperHero.hasStoryboard { padding: 14px 9px; }
+  .storyboardBuildBar,
+  .storyboardRenderBar { align-items: stretch; flex-direction: column; }
+  .storyboardBuildBar > button,
+  .storyboardRenderBar > button { width: 100%; }
+  .storyboardSceneList > article { grid-template-columns: 52px minmax(0, 1fr); }
+  .storyboardSceneList > article > aside { padding: 14px 5px; }
+  .storyboardSceneList > article > aside small { display: none; }
+  .storyboardSceneEditor { padding: 12px 10px; }
+  .storyboardSceneEditor > header { align-items: flex-start; flex-direction: column; }
+  .storyboardSceneFields,
+  .storyboardDirectionGrid,
+  .storyboardSceneMeta { grid-template-columns: minmax(0, 1fr); }
+  .storyboardSceneMeta > span { justify-content: center; }
 }
 
 .sourceNotice small a {
