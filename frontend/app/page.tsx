@@ -129,6 +129,15 @@ const compactStoryboardField = (value: string, maximum: number) => value
   .trim()
   .slice(0, maximum);
 
+const compactDialogueTurns = (scene: StoryboardPreview["scenes"][number]) => scene.dialogue_turns
+  .map((turn) => ({
+    speaker: compactStoryboardField(turn.speaker, 48),
+    gender: turn.gender,
+    text: compactStoryboardField(turn.text, 900),
+  }))
+  .filter((turn) => turn.speaker && turn.text)
+  .slice(0, 24);
+
 const serializeStoryboard = (storyboard: StoryboardPreview) => {
   const blocks = [
     `JUDUL: ${compactStoryboardField(storyboard.title, 100)}`,
@@ -147,6 +156,8 @@ const serializeStoryboard = (storyboard: StoryboardPreview) => {
       `ARAHAN SUTRADARA: ${[camera ? `Gerak kamera ${camera}.` : "", direction].filter(Boolean).join(" ")}`,
       `PROPERTI ADEGAN: ${compactStoryboardField(scene.property_direction, 1100)}`,
       `NARASI: ${compactStoryboardField(scene.narration, 5000)}`,
+      `DIALOG JSON: ${JSON.stringify(compactDialogueTurns(scene))}`,
+      `KEYFRAME: ${scene.keyframe_file}`,
       `TEKS LAYAR: ${compactStoryboardField(scene.on_screen_text, 64)}`,
     ].join("\n"));
   });
@@ -785,8 +796,8 @@ export default function HomePage() {
           ai_api_key: aiApiKey.trim(),
         }),
         {
-          loading: "Menyusun storyboard dan shot plan…",
-          success: "Storyboard siap direvisi.",
+          loading: "Menyusun storyboard, voice cast, dan keyframe gambar…",
+          success: "Storyboard bergambar siap direvisi.",
           error: "Gagal membuat storyboard",
         },
       );
@@ -988,6 +999,10 @@ export default function HomePage() {
     }
     if (!confirmSourceRights) {
       setStoryboardError("Konfirmasikan hak cerita dan izin komersial provider AI sebelum render.");
+      return;
+    }
+    if (storyboardPreview.scenes.some((scene) => scene.image_status !== "ready" || !scene.keyframe_file)) {
+      setStoryboardError("Semua keyframe storyboard harus siap sebelum video dianimasikan. Susun ulang storyboard bila ada visual yang berubah.");
       return;
     }
     const directedScript = serializeStoryboard(storyboardPreview);

@@ -2496,11 +2496,30 @@ def test_motion_provider_preflight_rejects_paid_muapi(monkeypatch):
 def test_hypit_preflight_accepts_explicit_runtime_profile(monkeypatch, tmp_path):
     cli = tmp_path / "hypit"
     cli.write_text("", encoding="utf-8")
+    profile = tmp_path / "hypit.runtime.json"
+    profile.write_text('{"endpoints":{"hypihub.default":{"use":"@hypit/provider-hypihub"}}}', encoding="utf-8")
     monkeypatch.setenv("LONG_ANIMATE_VIDEO_PROVIDER", "hypit")
-    monkeypatch.setenv("HYPIT_RUNTIME_PROFILE", "production-video")
+    monkeypatch.setenv("HYPIT_RUNTIME_PROFILE", str(profile))
     monkeypatch.setattr(long_animate, "_hypit_cli", lambda: cli)
 
     long_animate.require_motion_video_provider()
+
+
+def test_hypit_preflight_rejects_configured_missing_runtime_file(monkeypatch, tmp_path):
+    cli = tmp_path / "hypit"
+    cli.write_text("", encoding="utf-8")
+    missing = tmp_path / "missing.runtime.json"
+    monkeypatch.setenv("LONG_ANIMATE_VIDEO_PROVIDER", "hypit")
+    monkeypatch.setenv("HYPIT_RUNTIME_PROFILE", str(missing))
+    monkeypatch.setattr(long_animate, "_hypit_cli", lambda: cli)
+
+    try:
+        long_animate.require_motion_video_provider()
+    except long_animate.LongAnimateVideoError as exc:
+        assert str(missing) in str(exc)
+        assert "belum tersedia" in str(exc)
+    else:
+        raise AssertionError("path Runtime Hypit yang hilang harus ditolak sebelum render")
 
 
 def test_hypit_preflight_stops_before_generation_without_runtime(monkeypatch, tmp_path):
@@ -2642,3 +2661,114 @@ def test_disabled_motion_provider_uses_local_frame_without_network(monkeypatch, 
 
     assert long_animate.generate_motion_video(shot, tmp_path / "shot.png", tmp_path) is None
     assert shot.motion_provider == "local_z_image_cinematic"
+
+
+def test_directed_storyboard_preserves_dialogue_cast_and_approved_keyframe(monkeypatch):
+    script = """
+    JUDUL: Percakapan di Warung
+    GAYA VISUAL: cinematic realistic
+    KARAKTER KONSISTEN: Raka pria dewasa dan Sari wanita dewasa.
+
+    ### ADEGAN 1 — Pertanyaan
+    VISUAL: Raka dan Sari duduk berhadapan di warung.
+    NARASI: Kamu yakin? Aku melihatnya sendiri.
+    DIALOG JSON: [{"speaker":"Raka","gender":"male","text":"Kamu yakin?"},{"speaker":"Sari","gender":"female","text":"Aku melihatnya sendiri."}]
+    KEYFRAME: storyboards/0123456789abcdef/scene_01.png
+    ### ADEGAN 2 — Bukti
+    VISUAL: Sari menunjukkan foto kepada Raka.
+    NARASI: Ini buktinya.
+    DIALOG JSON: [{"speaker":"Sari","gender":"female","text":"Ini buktinya."}]
+    KEYFRAME: storyboards/0123456789abcdef/scene_02.png
+    ### ADEGAN 3 — Jawaban
+    VISUAL: Raka mengangguk dan menyimpan foto.
+    NARASI: Sekarang aku percaya.
+    DIALOG JSON: [{"speaker":"Raka","gender":"male","text":"Sekarang aku percaya."}]
+    KEYFRAME: storyboards/0123456789abcdef/scene_03.png
+    """
+    storyboard = _fallback_storyboard(script)
+    for scene in storyboard.scenes:
+        scene.duration = 6.0
+
+    shots = long_animate.plan_storyboard_shots(storyboard)
+
+    assert [turn["speaker"] for turn in storyboard.scenes[0].dialogue_turns] == ["Raka", "Sari"]
+    assert storyboard.scenes[0].keyframe_file.endswith("scene_01.png")
+    assert len(shots) == 3
+    assert shots[0].keyframe_file.endswith("scene_01.png")
+    assert shots[0].shot_count == 1
+
+
+def test_scene_sections_remove_repeated_trailing_voice_over_before_tts():
+    script = """
+    ### ADEGAN 1 — Pulang
+    VISUAL: Raka membuka pintu rumah dengan ragu.
+    NARASI: Raka akhirnya pulang setelah bertahun-tahun menghindari keluarganya.
+    ### ADEGAN 2 — Menatap
+    VISUAL: Ibunya menatap Raka dari ruang tamu.
+    NARASI: Ibunya menunggu penjelasan yang selama ini tidak pernah datang.
+    ### ADEGAN 3 — Meminta Maaf
+    VISUAL: Raka menunduk dan meminta maaf dengan tulus.
+    NARASI: Ia mulai merasa bahwa ia telah memperbaiki hubungannya dengan orang tua.
+    ### ADEGAN 4 — Duplikat Satu
+    VISUAL: Ibunya menarik napas dan mendengarkan.
+    NARASI: Ia mulai merasa bahwa ia telah memperbaiki hubungannya dengan orang tua.
+    ### ADEGAN 5 — Duplikat Dua
+    VISUAL: Mereka berdiri berhadapan di dekat pintu.
+    NARASI: Ia mulai merasa bahwa ia telah memperbaiki hubungannya dengan orang tua.
+    """
+
+    sections = long_animate._scene_sections(script)
+    storyboard = _fallback_storyboard(script)
+
+    assert len(sections) == 3
+    assert len(storyboard.scenes) == 3
+    assert [scene.title for scene in storyboard.scenes] == ["Pulang", "Menatap", "Meminta Maaf"]
+    spoken = [scene.narration for scene in storyboard.scenes]
+    assert len(spoken) == len(set(spoken))
+
+
+def test_scene_sections_silence_duplicate_voice_when_three_cards_must_remain():
+    script = """
+    ### ADEGAN 1 — Awal
+    VISUAL: Seorang ayah membaca surat di meja makan.
+    NARASI: Surat itu menjelaskan alasan anaknya pergi tanpa pernah berpamitan.
+    ### ADEGAN 2 — Kenangan
+    VISUAL: Sang ayah melihat foto lama di dekat surat.
+    NARASI: Surat itu menjelaskan alasan anaknya pergi tanpa pernah berpamitan.
+    ### ADEGAN 3 — Penutup
+    VISUAL: Sang ayah menyimpan surat dan membuka jendela.
+    NARASI: Pagi itu ia memilih memaafkan dan menunggu kepulangan anaknya.
+    """
+
+    sections = long_animate._scene_sections(script)
+
+    assert len(sections) == 3
+    assert sections[0]["narration"]
+    assert sections[1]["narration"] == ""
+    assert sections[2]["narration"]
+
+
+def test_speaker_voice_profile_is_stable_and_distinct_by_character():
+    raka = {"speaker": "Raka", "gender": "male", "text": "Aku akan memeriksanya."}
+    sari = {"speaker": "Sari", "gender": "female", "text": "Aku menunggu di sini."}
+
+    raka_first = long_animate._speaker_voice_profile(raka)
+    raka_second = long_animate._speaker_voice_profile(raka)
+    sari_profile = long_animate._speaker_voice_profile(sari)
+
+    assert raka_first == raka_second
+    assert raka_first[1] == "male"
+    assert sari_profile[1] == "female"
+    assert raka_first != sari_profile
+
+
+def test_resolve_storyboard_keyframe_rejects_path_traversal(monkeypatch, tmp_path):
+    fake_module = tmp_path / "long_animate.py"
+    fake_module.write_text("# test", encoding="utf-8")
+    monkeypatch.setattr(long_animate, "__file__", str(fake_module))
+    valid = tmp_path / "outputs" / "storyboards" / "0123456789abcdef" / "scene_01.png"
+    valid.parent.mkdir(parents=True)
+    valid.write_bytes(b"png")
+
+    assert long_animate._resolve_storyboard_keyframe("storyboards/0123456789abcdef/scene_01.png") == valid
+    assert long_animate._resolve_storyboard_keyframe("../secret.png") is None

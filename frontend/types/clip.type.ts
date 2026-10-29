@@ -368,9 +368,19 @@ export type StoryboardPreviewScene = {
   director_direction: string;
   property_direction: string;
   on_screen_text: string;
+  dialogue_turns: Array<{
+    speaker: string;
+    gender: "male" | "female" | "neutral";
+    text: string;
+  }>;
+  keyframe_file: string;
+  image_url: string;
+  image_status: "ready" | "pending" | "error";
+  image_error: string;
 };
 
 export type StoryboardPreview = {
+  storyboard_id: string;
   title: string;
   hook: string;
   core_message: string;
@@ -388,6 +398,7 @@ export type StoryboardPreview = {
     model: string;
     message: string;
   };
+  animation_mode: string;
 };
 
 export type SourceHistoryJob = {

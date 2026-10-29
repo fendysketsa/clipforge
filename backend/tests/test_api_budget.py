@@ -435,7 +435,7 @@ def test_story_generator_command_uses_script_and_requested_duration(tmp_path):
     assert "--confirm-provider-rights" in command
 
 
-def test_storyboard_preview_returns_locked_scenes_and_imagegen_preflight(monkeypatch):
+def test_storyboard_preview_returns_locked_scenes_and_imagegen_preflight(monkeypatch, tmp_path):
     import api
     import long_animate
 
@@ -466,6 +466,14 @@ def test_storyboard_preview_returns_locked_scenes_and_imagegen_preflight(monkeyp
         "_image_endpoint",
         lambda: ("http://127.0.0.1:7860/v1", "z-image-turbo-q4-k", ""),
     )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", tmp_path)
+
+    def fake_generate(_shot, output, _art_bible, **_kwargs):
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"png-keyframe")
+        return "local_z_image_turbo"
+
+    monkeypatch.setattr(long_animate, "generate_shot_image_with_qa", fake_generate)
 
     preview = api.create_storyboard_preview(
         api.StoryboardPreviewRequest(
@@ -494,6 +502,11 @@ def test_storyboard_preview_returns_locked_scenes_and_imagegen_preflight(monkeyp
     assert preview.scenes[0].shot_plan[0].framing.replace("_", "-") in preview.scenes[0].image_prompt
     assert preview.image_provider.ready is True
     assert preview.image_provider.provider == "local_z_image_turbo"
+    assert preview.storyboard_id
+    assert all(scene.image_status == "ready" for scene in preview.scenes)
+    assert all(scene.keyframe_file.startswith("storyboards/") for scene in preview.scenes)
+    assert all(scene.image_url.startswith("/outputs/storyboards/") for scene in preview.scenes)
+    assert preview.scenes[0].dialogue_turns[0].speaker == "NARATOR"
 
 
 def test_short_defaults_are_retention_dense_but_manual_three_minutes_remains_valid():

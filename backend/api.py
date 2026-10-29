@@ -554,6 +554,12 @@ class StoryboardPreviewShot(BaseModel):
     property_direction: str
 
 
+class StoryboardSpeakerTurn(BaseModel):
+    speaker: str
+    gender: Literal["male", "female", "neutral"] = "neutral"
+    text: str
+
+
 class StoryboardPreviewScene(BaseModel):
     index: int
     title: str
@@ -568,6 +574,11 @@ class StoryboardPreviewScene(BaseModel):
     director_direction: str
     property_direction: str
     on_screen_text: str = ""
+    dialogue_turns: list[StoryboardSpeakerTurn] = Field(default_factory=list)
+    keyframe_file: str = ""
+    image_url: str = ""
+    image_status: Literal["ready", "pending", "error"] = "pending"
+    image_error: str = ""
 
 
 class StoryboardImageProvider(BaseModel):
@@ -578,6 +589,7 @@ class StoryboardImageProvider(BaseModel):
 
 
 class StoryboardPreviewResponse(BaseModel):
+    storyboard_id: str = ""
     title: str
     hook: str
     core_message: str
@@ -590,6 +602,24 @@ class StoryboardPreviewResponse(BaseModel):
     scenes: list[StoryboardPreviewScene]
     expansion: dict[str, object]
     image_provider: StoryboardImageProvider
+    animation_mode: str = "approved_keyframe_scene_cinema"
+
+
+class StoryboardKeyframeRequest(BaseModel):
+    storyboard_id: str = Field(min_length=16, max_length=64, pattern=r"^[a-f0-9]+$")
+    scene: StoryboardPreviewScene
+    art_bible: str = Field(max_length=900)
+    character_bible: str = Field(max_length=1200)
+    location_bible: str = Field(default="", max_length=900)
+    director_bible: str = Field(default="", max_length=1200)
+    property_bible: str = Field(default="", max_length=1400)
+
+
+class StoryboardKeyframeResponse(BaseModel):
+    keyframe_file: str
+    image_url: str
+    image_status: Literal["ready"] = "ready"
+    image_error: str = ""
 
 
 AUTOMATIC_SOURCE_RIGHTS_ATTESTATION = (
@@ -21904,6 +21934,7 @@ def create_storyboard_preview(
         _remote_provider_label,
         _scene_sections,
         expand_story_outline,
+        generate_shot_image_with_qa,
         output_aspect_ratio,
         plan_storyboard_shots,
         require_real_image_provider,
@@ -21932,6 +21963,8 @@ def create_storyboard_preview(
             detail="Storyboard terlalu panjang untuk diproduksi. Pendekkan premis atau target durasinya.",
         )
 
+    storyboard_id = uuid.uuid4().hex
+    preview_dir = OUTPUTS_DIR / "storyboards" / storyboard_id
     scenes: list[StoryboardPreviewScene] = []
     with output_aspect_ratio("9:16"):
         storyboard = _fallback_storyboard(production_script)
@@ -21985,6 +22018,13 @@ def create_storyboard_preview(
                     director_direction=scene.director_direction,
                     property_direction=scene.property_direction,
                     on_screen_text=str(source.get("on_screen_text") or ""),
+                    dialogue_turns=[
+                        StoryboardSpeakerTurn(**turn)
+                        for turn in (
+                            scene.dialogue_turns
+                            or ([{"speaker": "NARATOR", "gender": "neutral", "text": scene.narration}] if scene.narration else [])
+                        )
+                    ],
                 )
             )
 
@@ -22007,7 +22047,50 @@ def create_storyboard_preview(
     except Exception as exc:
         image_message = str(exc)
 
+    if image_ready and os.environ.get(
+        "LONG_ANIMATE_STORYBOARD_PREVIEW_IMAGES", "true"
+    ).strip().casefold() in {"1", "true", "yes", "on"}:
+        preview_dir.mkdir(parents=True, exist_ok=True)
+        style_reference: Path | None = None
+        character_reference: Path | None = None
+        for scene_model, source_scene in zip(scenes, storyboard.scenes, strict=True):
+            candidates = shots_by_scene.get(source_scene.index, [])
+            shot = candidates[0] if candidates else None
+            if shot is None:
+                scene_model.image_status = "error"
+                scene_model.image_error = "Shot keyframe tidak tersedia."
+                continue
+            image_path = preview_dir / f"scene_{source_scene.index:02}.png"
+            try:
+                provider = generate_shot_image_with_qa(
+                    shot,
+                    image_path,
+                    storyboard.art_bible,
+                    style_reference=style_reference,
+                    character_reference=character_reference,
+                )
+                if not image_path.is_file():
+                    raise RuntimeError("Provider tidak menghasilkan file keyframe.")
+                if style_reference is None:
+                    style_reference = image_path
+                if character_reference is None:
+                    character_reference = image_path
+                relative = image_path.resolve().relative_to(OUTPUTS_DIR.resolve()).as_posix()
+                scene_model.keyframe_file = relative
+                scene_model.image_url = f"/outputs/{relative}"
+                scene_model.image_status = "ready"
+                source_scene.keyframe_file = relative
+                source_scene.image_provider = provider
+            except Exception as exc:
+                scene_model.image_status = "error"
+                scene_model.image_error = str(exc)[:500]
+                print(
+                    f"Storyboard keyframe scene {source_scene.index} gagal: {exc}",
+                    file=sys.stderr,
+                )
+
     return StoryboardPreviewResponse(
+        storyboard_id=storyboard_id,
         title=storyboard.title,
         hook=storyboard.hook,
         core_message=storyboard.core_message,
@@ -22025,6 +22108,82 @@ def create_storyboard_preview(
             model=image_model,
             message=image_message,
         ),
+    )
+
+
+@app.post("/api/storyboards/keyframe", response_model=StoryboardKeyframeResponse)
+def regenerate_storyboard_keyframe(
+    request: StoryboardKeyframeRequest,
+) -> StoryboardKeyframeResponse:
+    from long_animate import (
+        AnimateShot,
+        _animation_direction,
+        _compose_visual_prompt,
+        generate_shot_image_with_qa,
+        output_aspect_ratio,
+        require_real_image_provider,
+    )
+
+    require_real_image_provider()
+    preview_dir = (OUTPUTS_DIR / "storyboards" / request.storyboard_id).resolve()
+    root = (OUTPUTS_DIR / "storyboards").resolve()
+    try:
+        preview_dir.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Storyboard ID tidak valid.") from exc
+    preview_dir.mkdir(parents=True, exist_ok=True)
+    scene = request.scene
+    visual = scene.visual_prompt.strip() or scene.narration.strip()
+    if not visual:
+        raise HTTPException(status_code=400, detail="Visual adegan tidak boleh kosong.")
+    compiled_prompt = _compose_visual_prompt(
+        visual,
+        scene.narration,
+        request.art_bible,
+        request.character_bible,
+        request.location_bible,
+        visual_locked=True,
+        animation_direction=_animation_direction(f"{visual} {scene.narration}"),
+        director_bible=request.director_bible,
+        property_bible=request.property_bible,
+        director_direction=scene.director_direction,
+        property_direction=scene.property_direction,
+    )
+    shot = AnimateShot(
+        index=scene.index,
+        scene_index=scene.index,
+        shot_index=1,
+        shot_count=1,
+        title=scene.title,
+        narration=scene.narration,
+        visual_prompt=compiled_prompt,
+        on_screen_text="",
+        camera_motion=scene.camera_motion,
+        color_mood=scene.color_mood,
+        director_direction=scene.director_direction,
+        property_direction=scene.property_direction,
+        duration=8.0,
+        visuals_locked=True,
+    )
+    image_path = preview_dir / f"scene_{scene.index:02}.png"
+    style_reference = preview_dir / "scene_01.png"
+    if style_reference.resolve() == image_path.resolve() or not style_reference.is_file():
+        style_reference = None
+    try:
+        with output_aspect_ratio("9:16"):
+            generate_shot_image_with_qa(
+                shot,
+                image_path,
+                request.art_bible,
+                style_reference=style_reference,
+                character_reference=style_reference,
+            )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Gagal membuat ulang keyframe: {exc}") from exc
+    relative = image_path.resolve().relative_to(OUTPUTS_DIR.resolve()).as_posix()
+    return StoryboardKeyframeResponse(
+        keyframe_file=relative,
+        image_url=f"/outputs/{relative}?v={int(time.time())}",
     )
 
 

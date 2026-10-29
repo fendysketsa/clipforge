@@ -19,7 +19,7 @@ from http.client import RemoteDisconnected
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Generator
 from urllib.parse import urlencode, urlparse
@@ -116,6 +116,10 @@ class AnimateScene:
     # times are local to the fitted scene audio and are consumed by Remotion;
     # the displayed wording still comes from ``narration``.
     speech_words: list[dict[str, object]] = field(default_factory=list)
+    dialogue_turns: list[dict[str, str]] = field(default_factory=list)
+    keyframe_file: str = ""
+    voice_rate: str = ""
+    voice_pitch: str = ""
 
 
 @dataclass
@@ -163,6 +167,7 @@ class AnimateShot:
     qa_attempts: int = 0
     qa_score: float = 0.0
     qa_reasons: list[str] = field(default_factory=list)
+    keyframe_file: str = ""
 
 
 @dataclass(frozen=True)
@@ -663,6 +668,57 @@ def _extract_quoted_text(value: str, marker_pattern: str) -> str:
     return _strip_script_markup(match.group(1)) if match else ""
 
 
+def _clean_dialogue_turns(value: object) -> list[dict[str, str]]:
+    """Normalize an ordered speaker script without inventing dialogue."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError):
+            value = []
+    if not isinstance(value, list):
+        return []
+    turns: list[dict[str, str]] = []
+    for raw in value[:24]:
+        if not isinstance(raw, dict):
+            continue
+        speaker = _clean_text(raw.get("speaker") or raw.get("character"), 48).strip(" :")
+        text = _clean_text(raw.get("text") or raw.get("dialogue") or raw.get("line"), 900)
+        gender = _clean_text(raw.get("gender"), 16).casefold()
+        if not speaker or not text:
+            continue
+        if gender not in {"male", "female", "neutral"}:
+            gender = "neutral"
+        turns.append({"speaker": speaker, "gender": gender, "text": text})
+    return turns
+
+
+def _parse_scene_dialogue(body: str) -> list[dict[str, str]]:
+    match = re.search(r"(?im)^\s*DIALOG\s+JSON\s*:\s*(\[[^\n]*\])\s*$", body)
+    return _clean_dialogue_turns(match.group(1)) if match else []
+
+
+def _safe_keyframe_file(value: object) -> str:
+    clean = str(value or "").strip().replace("\\", "/").lstrip("/")
+    if not clean or ".." in Path(clean).parts:
+        return ""
+    if not re.fullmatch(r"storyboards/[a-f0-9]{16,64}/scene_\d{2}\.png", clean):
+        return ""
+    return clean
+
+
+def _resolve_storyboard_keyframe(value: str) -> Path | None:
+    relative = _safe_keyframe_file(value)
+    if not relative:
+        return None
+    root = (Path(__file__).resolve().parent / "outputs").resolve()
+    candidate = (root / relative).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    return candidate if candidate.is_file() else None
+
+
 def _directed_paragraph_sections(script: str) -> list[dict[str, object]]:
     """Parse prose prompts that explicitly separate narrator copy from visuals."""
     paragraphs = [item.strip() for item in re.split(r"\n\s*\n+", script) if item.strip()]
@@ -710,7 +766,52 @@ def _directed_paragraph_sections(script: str) -> list[dict[str, object]]:
                 "on_screen_text": _clean_text(on_screen_text, 48),
             }
         )
-    return sections if len(sections) >= 3 else []
+    return _collapse_repeated_voice_sections(sections) if len(sections) >= 3 else []
+
+
+def _spoken_section_fingerprint(section: dict[str, object]) -> str:
+    """Return a conservative identity for a substantial spoken passage.
+
+    Short dramatic replies may intentionally repeat.  The guard therefore
+    targets only full-sentence passages, which is the failure mode that used to
+    create several identical TTS scenes at the end of generated stories.
+    """
+    turns = _clean_dialogue_turns(section.get("dialogue_turns"))
+    spoken = " ".join(turn["text"] for turn in turns) if turns else str(section.get("narration") or "")
+    normalized = re.sub(r"[^\w]+", " ", spoken.casefold(), flags=re.UNICODE).strip()
+    return normalized if len(normalized.split()) >= 6 and len(normalized) >= 28 else ""
+
+
+def _collapse_repeated_voice_sections(
+    sections: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Remove consecutive duplicate voice scenes before TTS and ImageGen.
+
+    At least three storyboard cards are retained.  If collapsing would make a
+    valid storyboard too short, the redundant card becomes a silent visual
+    beat instead of replaying the same voice-over.
+    """
+    if len(sections) < 3:
+        return sections
+    duplicate_indexes: set[int] = set()
+    previous_fingerprint = ""
+    for index, section in enumerate(sections):
+        fingerprint = _spoken_section_fingerprint(section)
+        if fingerprint and fingerprint == previous_fingerprint:
+            duplicate_indexes.add(index)
+        previous_fingerprint = fingerprint
+    if not duplicate_indexes:
+        return sections
+    if len(sections) - len(duplicate_indexes) >= 3:
+        return [section for index, section in enumerate(sections) if index not in duplicate_indexes]
+    result: list[dict[str, object]] = []
+    for index, section in enumerate(sections):
+        copy = dict(section)
+        if index in duplicate_indexes:
+            copy["narration"] = ""
+            copy["dialogue_turns"] = []
+        result.append(copy)
+    return result
 
 
 def _scene_sections(script: str) -> list[dict[str, object]]:
@@ -732,11 +833,17 @@ def _scene_sections(script: str) -> list[dict[str, object]]:
         on_screen_text = _short_on_screen_text(
             (text_match.group(1) or text_match.group(2)) if text_match else ""
         )
+        dialogue_turns = _parse_scene_dialogue(body)
+        keyframe_match = re.search(
+            r"(?im)^\s*KEYFRAME\s*:\s*([^\n]+)\s*$",
+            body,
+        )
+        keyframe_file = _safe_keyframe_file(keyframe_match.group(1) if keyframe_match else "")
 
         narration_match = re.search(
             r"(?is)(?:narasi|narration)\s*:\s*(.*?)"
             r"(?=\n\s*(?:visual|gambar|arahan\s+sutradara|director\s+direction|properti\s+adegan|scene\s+props|"
-            r"teks\s*(?:layar|di\s+layar)|on[- ]screen\s+text)\s*:|\Z)",
+            r"dialog\s+json|keyframe|teks\s*(?:layar|di\s+layar)|on[- ]screen\s+text)\s*:|\Z)",
             body,
         )
         narration = _strip_script_markup(narration_match.group(1)) if narration_match else ""
@@ -746,7 +853,7 @@ def _scene_sections(script: str) -> list[dict[str, object]]:
         visual_match = re.search(
             r"(?is)(?:visual|gambar)\s*:\s*(.*?)"
             r"(?=\n\s*(?:narasi|narration|arahan\s+sutradara|director\s+direction|properti\s+adegan|scene\s+props|"
-            r"teks\s*(?:layar|di\s+layar)|on[- ]screen\s+text)\s*:|\Z)",
+            r"dialog\s+json|keyframe|teks\s*(?:layar|di\s+layar)|on[- ]screen\s+text)\s*:|\Z)",
             body,
         )
         director_match = re.search(
@@ -767,6 +874,8 @@ def _scene_sections(script: str) -> list[dict[str, object]]:
                 re.search(r"(?is)(?:visual|gambar)\s*:", body),
                 re.search(r"(?is)(?:arahan\s+sutradara|director\s+direction)\s*:", body),
                 re.search(r"(?is)(?:properti\s+adegan|scene\s+props)\s*:", body),
+                re.search(r"(?im)^\s*DIALOG\s+JSON\s*:", body),
+                re.search(r"(?im)^\s*KEYFRAME\s*:", body),
             )
             if item is not None
         ]
@@ -792,6 +901,8 @@ def _scene_sections(script: str) -> list[dict[str, object]]:
                 "visual": _clean_text(visual_source, 900),
                 "visuals": visuals,
                 "on_screen_text": on_screen_text,
+                "dialogue_turns": dialogue_turns,
+                "keyframe_file": keyframe_file,
                 "director_direction": _clean_text(
                     director_match.group(1) if director_match else "",
                     900,
@@ -802,7 +913,7 @@ def _scene_sections(script: str) -> list[dict[str, object]]:
                 ),
             }
         )
-    return sections if len(sections) >= 3 else []
+    return _collapse_repeated_voice_sections(sections) if len(sections) >= 3 else []
 
 
 def _character_bible(script: str) -> str:
@@ -1552,7 +1663,17 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
         title = section["title"] if section and section["title"] else _scene_title(title_source, index)
         visual = section["visual"] if section else chunk
         on_screen_text = section["on_screen_text"] if section else ""
-        raw_shots = section.get("visuals") if section else _visible_shot_moments(str(visual))
+        dialogue_turns = (
+            list(section.get("dialogue_turns") or [])
+            if section
+            else []
+        )
+        keyframe_file = str(section.get("keyframe_file") or "") if section else ""
+        raw_shots = (
+            [visual]
+            if keyframe_file
+            else section.get("visuals") if section else _visible_shot_moments(str(visual))
+        )
         shot_prompts = [
             _clean_text(item, 650)
             for item in (raw_shots if isinstance(raw_shots, list) else [visual])
@@ -1616,6 +1737,8 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
                 ),
                 shot_prompts=shot_prompts,
                 visuals_locked=bool(section),
+                dialogue_turns=dialogue_turns,
+                keyframe_file=keyframe_file,
             )
         )
     first = scenes[0].title if scenes else "Cerita Animasi"
@@ -2081,8 +2204,11 @@ def expand_story_outline(
         "atau identitas channel mana pun. Jangan mengubah fakta wajib, tokoh, latar, genre, atau akhir yang ditulis "
         "pengguna. Tambahkan detail fiksi hanya untuk menyambungkan alur secara logis. Hindari filler, sapaan channel, "
         "CTA, pengulangan ringkasan, klaim faktual baru, tokoh publik, merek, logo, dan karakter berhak cipta. "
-        "Tulis narasi/dubbing alami dalam Bahasa Indonesia; dialog singkat boleh berada di dalam narration dan harus "
-        "jelas siapa yang berbicara. Setiap visual berisi 2-3 momen fisik berurutan yang dipisahkan titik koma, dengan "
+        "Tulis seluruh ucapan alami dalam Bahasa Indonesia sebagai dialogue berurutan. Setiap turn wajib memiliki "
+        "speaker, gender (male/female/neutral), dan text; gunakan speaker NARATOR untuk voice-over, dan nama karakter "
+        "untuk dialog yang benar-benar mereka ucapkan. Jangan menaruh label pembicara di dalam text. Narration harus "
+        "menjadi gabungan bersih seluruh text sesuai urutan agar subtitle tetap tepat. Setiap visual berisi 2-3 momen "
+        "fisik berurutan yang dipisahkan titik koma, dengan "
         "karakter, pakaian, properti, lokasi, waktu, dan arah layar yang konsisten. Visual tidak boleh memuat tulisan. "
         "Bekerjalah sekaligus sebagai sutradara dan property master. director_bible harus mengunci bahasa kamera, "
         "blocking, screen direction, depth staging, pencahayaan termotivasi, dan ritme emosi. property_bible harus "
@@ -2098,6 +2224,7 @@ def expand_story_outline(
         '{"title":"...","art_bible":"cinematic realistic ...","character_bible":"...",'
         '"location_bible":"...","director_bible":"...","property_bible":"...",'
         '"scenes":[{"title":"...","narration":"...","visual":"momen 1; momen 2; momen 3",'
+        '"dialogue":[{"speaker":"NARATOR|nama karakter","gender":"male|female|neutral","text":"..."}],'
         '"director_direction":"blocking, kamera, depth, cahaya","property_direction":"properti wajib, posisi, kondisi",'
         '"on_screen_text":"maks 6 kata"}]}.\n\n'
         f"JALAN CERITA:\n{clean_outline[:12000]}"
@@ -2141,7 +2268,7 @@ def expand_story_outline(
             "Perbaiki respons storyboard berikut. Keluarkan SATU objek JSON valid tanpa markdown, komentar, "
             "atau teks lain. Objek wajib memiliki key `scenes` berupa array dengan tepat "
             f"{desired_scenes} adegan (batas aman 3-14). Setiap adegan wajib memiliki title, narration, "
-            "visual, director_direction, property_direction, dan on_screen_text. Jangan menolak hanya karena "
+            "visual, dialogue, director_direction, property_direction, dan on_screen_text. Jangan menolak hanya karena "
             "permintaan memuat URL referensi; jangan mengaku telah membuka URL. Pertahankan maksud pengguna "
             "dan buat konsep orisinal berdasarkan arahan yang tersedia.\n\n"
             f"PERMINTAAN PENGGUNA:\n{clean_outline[:6000]}\n\n"
@@ -2175,7 +2302,7 @@ def expand_story_outline(
         )
 
     source_narrations = _outline_narration_chunks(outline, len(raw_scenes))
-    scenes: list[dict[str, str]] = []
+    scenes: list[dict[str, object]] = []
     total_words = 0
     for index, raw_scene in enumerate(raw_scenes, start=1):
         if not isinstance(raw_scene, dict):
@@ -2198,6 +2325,16 @@ def expand_story_outline(
                 source_narration or raw_scene.get("title") or clean_outline,
                 5000,
             )
+        dialogue_turns = _clean_dialogue_turns(raw_scene.get("dialogue"))
+        if dialogue_turns:
+            narration = _clean_text(
+                " ".join(turn["text"] for turn in dialogue_turns),
+                5000,
+            )
+        elif narration:
+            dialogue_turns = [
+                {"speaker": "NARATOR", "gender": "neutral", "text": narration}
+            ]
         if len(visual.split()) < 8:
             _logger.warning(
                 "Visual adegan %d terlalu tipis; menurunkannya dari narasi adegan.",
@@ -2209,6 +2346,7 @@ def expand_story_outline(
             {
                 "title": _clean_text(raw_scene.get("title"), 64) or f"Bagian {index}",
                 "narration": narration,
+                "dialogue_turns": dialogue_turns,
                 "visual": visual,
                 "director_direction": _clean_text(
                     raw_scene.get("director_direction"),
@@ -2234,7 +2372,11 @@ def expand_story_outline(
             )
             for index, scene in enumerate(scenes):
                 if index < len(source_narrations):
-                    scene["narration"] = _clean_text(source_narrations[index], 5000)
+                    replacement = _clean_text(source_narrations[index], 5000)
+                    scene["narration"] = replacement
+                    scene["dialogue_turns"] = [
+                        {"speaker": "NARATOR", "gender": "neutral", "text": replacement}
+                    ]
             total_words = sum(len(scene["narration"].split()) for scene in scenes)
         if total_words < min_words:
             _logger.warning(
@@ -2277,6 +2419,11 @@ def expand_story_outline(
                     f"ARAHAN SUTRADARA: {scene['director_direction']}",
                     f"PROPERTI ADEGAN: {scene['property_direction']}",
                     f"NARASI: {scene['narration']}",
+                    "DIALOG JSON: " + json.dumps(
+                        scene["dialogue_turns"],
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ),
                     f"TEKS LAYAR: {scene['on_screen_text']}",
                 )
             )
@@ -2763,7 +2910,11 @@ def plan_storyboard_shots(storyboard: AnimateStoryboard) -> list[AnimateShot]:
     previous_framing = ""
     previous_placement = ""
     for scene in storyboard.scenes:
-        raw_prompts = scene.shot_prompts or _visible_shot_moments(scene.narration)
+        raw_prompts = (
+            [scene.shot_prompts[0] if scene.shot_prompts else _single_visible_moment(scene.narration)]
+            if scene.keyframe_file
+            else scene.shot_prompts or _visible_shot_moments(scene.narration)
+        )
         direct_text_video = _video_provider() == "hypit"
         if direct_text_video:
             raw_prompts = raw_prompts[:1]
@@ -2844,6 +2995,7 @@ def plan_storyboard_shots(storyboard: AnimateStoryboard) -> list[AnimateShot]:
                     continuity_anchor=scene.continuity_anchor,
                     visuals_locked=scene.visuals_locked,
                     duration=shot_duration,
+                    keyframe_file=scene.keyframe_file,
                 )
             )
             previous_framing = framing
@@ -4352,7 +4504,10 @@ def scene_voice(scene: AnimateScene) -> tuple[str, str]:
     """Select a validated Indonesian neural voice for one scene."""
     mode = os.environ.get("LONG_ANIMATE_VOICE_MODE", "auto").strip().casefold()
     gender = infer_scene_voice_gender(scene)
-    if mode in {"manual", "fixed", "single"}:
+    if scene.voice_name and re.fullmatch(r"[A-Za-z0-9:-]{2,96}", scene.voice_name):
+        voice = scene.voice_name
+        gender = scene.voice_gender if scene.voice_gender in {"female", "male", "neutral"} else gender
+    elif mode in {"manual", "fixed", "single"}:
         voice = os.environ.get("LONG_ANIMATE_VOICE", "id-ID-ArdiNeural").strip()
         gender = "manual"
     elif gender == "female":
@@ -4368,6 +4523,99 @@ def scene_voice(scene: AnimateScene) -> tuple[str, str]:
     scene.voice_gender = gender
     scene.voice_name = voice
     return voice, gender
+
+
+def _speaker_voice_profile(turn: dict[str, str]) -> tuple[str, str, str, str]:
+    speaker = _clean_text(turn.get("speaker"), 48) or "NARATOR"
+    text = _clean_text(turn.get("text"), 900)
+    gender = str(turn.get("gender") or "neutral").casefold()
+    if gender not in {"male", "female"}:
+        probe = AnimateScene(
+            index=0,
+            title=speaker,
+            narration=text,
+            visual_prompt=speaker,
+            on_screen_text="",
+            camera_motion="static",
+            color_mood="",
+            narrative_role="dialogue",
+        )
+        gender = infer_scene_voice_gender(probe)
+    narrator = speaker.casefold() in {"narator", "narrator", "voice over", "voice-over", "vo"}
+    voice = os.environ.get(
+        "LONG_ANIMATE_VOICE_FEMALE" if gender == "female" else "LONG_ANIMATE_VOICE_MALE",
+        "id-ID-GadisNeural" if gender == "female" else "id-ID-ArdiNeural",
+    ).strip()
+    if narrator:
+        return (
+            voice,
+            gender,
+            os.environ.get("LONG_ANIMATE_VOICE_RATE", "-3%").strip(),
+            os.environ.get("LONG_ANIMATE_VOICE_PITCH", "+0Hz").strip(),
+        )
+    digest = hashlib.sha256(speaker.casefold().encode("utf-8")).digest()
+    rates = ("-7%", "-3%", "+1%", "+4%")
+    pitches = ("-8Hz", "-3Hz", "+3Hz", "+8Hz")
+    return voice, gender, rates[digest[0] % len(rates)], pitches[digest[1] % len(pitches)]
+
+
+def _synthesize_dialogue_scene(scene: AnimateScene, scene_dir: Path) -> tuple[Path, str]:
+    turns = _clean_dialogue_turns(scene.dialogue_turns)
+    if not turns:
+        raise RuntimeError("Dialog karakter kosong setelah normalisasi.")
+    paths: list[Path] = []
+    providers: list[str] = []
+    combined_words: list[dict[str, object]] = []
+    cursor = 0.0
+    cast_labels: list[str] = []
+    for turn_index, turn in enumerate(turns, start=1):
+        voice, gender, rate, pitch = _speaker_voice_profile(turn)
+        cast_labels.append(f"{turn['speaker']}={voice}@{rate}/{pitch}")
+        turn_scene = replace(
+            scene,
+            index=scene.index * 100 + turn_index,
+            narration=turn["text"],
+            dialogue_turns=[],
+            speech_words=[],
+            voice_name=voice,
+            voice_gender=gender,
+            voice_rate=rate,
+            voice_pitch=pitch,
+        )
+        voice_path, provider = synthesize_narration(turn_scene, scene_dir)
+        turn_scene.voice_provider = provider
+        trimmed = trim_voice_silence(turn_scene, voice_path, scene_dir)
+        duration = _media_duration(trimmed)
+        paths.append(trimmed)
+        providers.append(provider)
+        for item in turn_scene.speech_words:
+            combined_words.append(
+                {
+                    "text": str(item.get("text", "")),
+                    "start": round(cursor + float(item.get("start", 0.0) or 0.0), 6),
+                    "end": round(cursor + float(item.get("end", 0.0) or 0.0), 6),
+                }
+            )
+        cursor += duration
+    concat_manifest = scene_dir / f"scene_{scene.index:02}.dialogue.concat.txt"
+    concat_manifest.write_text(
+        "\n".join(f"file '{path.name}'" for path in paths) + "\n",
+        encoding="utf-8",
+    )
+    output = scene_dir / f"scene_{scene.index:02}.voice.dialogue.wav"
+    _run(
+        [
+            _ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "concat", "-safe", "0", "-i", concat_manifest.name,
+            "-af", "aresample=48000", "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", output.name,
+        ],
+        cwd=scene_dir,
+    )
+    scene.speech_words = combined_words
+    scene.voice_gender = "multi_character" if len({turn["speaker"].casefold() for turn in turns}) > 1 else turns[0]["gender"]
+    scene.voice_name = "; ".join(dict.fromkeys(cast_labels))[:900]
+    provider = "edge_neural_multispeaker" if all(item == "edge_neural" for item in providers) else "multispeaker_fallback"
+    return output, provider
 
 
 def _srt_seconds(value: str) -> float:
@@ -4423,9 +4671,11 @@ def _read_edge_speech_words(path: Path, display_text: str) -> list[dict[str, obj
 
 
 def synthesize_narration(scene: AnimateScene, scene_dir: Path) -> tuple[Path, str]:
+    if scene.dialogue_turns:
+        return _synthesize_dialogue_scene(scene, scene_dir)
     voice, voice_gender = scene_voice(scene)
-    rate = os.environ.get("LONG_ANIMATE_VOICE_RATE", "-3%").strip()
-    pitch = os.environ.get("LONG_ANIMATE_VOICE_PITCH", "+0Hz").strip()
+    rate = scene.voice_rate or os.environ.get("LONG_ANIMATE_VOICE_RATE", "-3%").strip()
+    pitch = scene.voice_pitch or os.environ.get("LONG_ANIMATE_VOICE_PITCH", "+0Hz").strip()
     volume = os.environ.get("LONG_ANIMATE_VOICE_VOLUME", "+0%").strip()
     if not re.fullmatch(r"[+-]\d{1,2}%", rate):
         rate = "-3%"
@@ -4755,8 +5005,26 @@ def _hypit_cli() -> Path:
 
 def _require_hypit_runtime_profile() -> None:
     """Fail before planning/TTS when no Hypit execution Runtime is selected."""
-    if os.environ.get("HYPIT_RUNTIME_PROFILE", "").strip():
+    configured_runtime = os.environ.get("HYPIT_RUNTIME_PROFILE", "").strip()
+    if configured_runtime:
         _hypit_cli()
+        runtime_path = Path(configured_runtime).expanduser()
+        if not runtime_path.is_file():
+            raise LongAnimateVideoError(
+                "Runtime Profile Hypit dikonfigurasi tetapi file belum tersedia: "
+                f"{runtime_path}. Jalankan `hypit runtime init` dan sambungkan provider video "
+                "reference-driven sebelum mengaktifkan animasi wajah/lip-sync."
+            )
+        try:
+            payload = json.loads(runtime_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise LongAnimateVideoError(
+                f"Runtime Profile Hypit tidak dapat dibaca sebagai JSON valid: {runtime_path}."
+            ) from exc
+        if not isinstance(payload, dict) or not isinstance(payload.get("endpoints"), dict):
+            raise LongAnimateVideoError(
+                f"Runtime Profile Hypit belum memiliki konfigurasi endpoints yang valid: {runtime_path}."
+            )
         return
     cli = _hypit_cli()
     project_dir = Path(__file__).resolve().parent / "remotion"
@@ -5599,7 +5867,7 @@ def _synthesize_and_trim_scene(
     voice_path, scene.voice_provider = synthesize_narration(scene, scene_dir)
     if (
         scene.narration.strip()
-        and scene.voice_provider != "edge_neural"
+        and not scene.voice_provider.startswith("edge_neural")
         and _env_bool("LONG_ANIMATE_TTS_STRICT", True)
         and not _env_bool("LONG_ANIMATE_ALLOW_ROBOTIC_TTS_FALLBACK", False)
     ):
@@ -5803,14 +6071,21 @@ def render_long_animate(
                     shot.motion_provider,
                 )
             else:
+                approved_keyframe = _resolve_storyboard_keyframe(shot.keyframe_file)
                 img_attempt_start = time.time()
-                shot.image_provider = generate_shot_image_with_qa(
-                    shot,
-                    image_path,
-                    storyboard.art_bible,
-                    style_reference=style_reference,
-                    character_reference=character_reference,
-                )
+                if approved_keyframe is not None:
+                    shutil.copy2(approved_keyframe, image_path)
+                    shot.image_provider = "approved_storyboard_keyframe"
+                    shot.qa_attempts = 1
+                    shot.qa_score = 1.0
+                else:
+                    shot.image_provider = generate_shot_image_with_qa(
+                        shot,
+                        image_path,
+                        storyboard.art_bible,
+                        style_reference=style_reference,
+                        character_reference=character_reference,
+                    )
                 if style_reference is None:
                     style_reference = image_path
                 if character_reference is None and (
@@ -5823,7 +6098,11 @@ def render_long_animate(
                 retries_used = shot.qa_attempts - 1
                 metrics.image_retry_count += retries_used
                 logger.info(f"✓ Shot {shot_index}/{len(shots)}: {elapsed:.1f}s ({retries_used} retries, {shot.image_provider})")
-                motion_source = generate_motion_video(shot, image_path, scene_dir)
+                if approved_keyframe is not None:
+                    shot.motion_provider = "approved_keyframe_scene_cinema"
+                    motion_source = None
+                else:
+                    motion_source = generate_motion_video(shot, image_path, scene_dir)
             metrics.motion_gen_time += time.time() - motion_start
             remotion_assets.append(motion_source or image_path)
             if render_engine == "ffmpeg":
@@ -6117,7 +6396,11 @@ def render_long_animate(
             shot.motion_provider == "free_stock:wikimedia_commons" for shot in shots
         )
         camera_only_shot_count = sum(
-            shot.motion_provider == "local_z_image_cinematic" for shot in shots
+            shot.motion_provider in {
+                "local_z_image_cinematic",
+                "approved_keyframe_scene_cinema",
+            }
+            for shot in shots
         )
         direct_video_shot_count = sum(
             shot.motion_provider.startswith("hypit:") for shot in shots

@@ -621,4 +621,27 @@ export const createStoryboardPreview = async (input: {
   return (await response.json()) as StoryboardPreview;
 };
 
+export const regenerateStoryboardKeyframe = async (input: {
+  storyboard_id: string;
+  scene: StoryboardPreview["scenes"][number];
+  art_bible: string;
+  character_bible: string;
+  location_bible: string;
+  director_bible: string;
+  property_bible: string;
+}) => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/storyboards/keyframe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Gagal membuat ulang keyframe"));
+  }
+  return (await response.json()) as Pick<
+    StoryboardPreview["scenes"][number],
+    "keyframe_file" | "image_url" | "image_status" | "image_error"
+  >;
+};
+
 export const getOutputUrl = (path: string) => `${API_BASE}${path}`;

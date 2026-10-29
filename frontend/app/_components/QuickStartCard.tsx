@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import toast from "react-hot-toast";
 import {
   AlertTriangle,
   BarChart3,
@@ -30,7 +31,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { formatDuration } from "../../lib/utils";
-import type { SourceProbe } from "../../lib/apiClient";
+import { API_BASE, regenerateStoryboardKeyframe, type SourceProbe } from "../../lib/apiClient";
 import type { ClipMode, SourceHistoryCheck, StoryboardPreview } from "../../types/clip.type";
 
 type QuickStartCardProps = {
@@ -119,6 +120,7 @@ export function QuickStartCard({
 }: QuickStartCardProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [pasteMessage, setPasteMessage] = useState("");
+  const [regeneratingKeyframe, setRegeneratingKeyframe] = useState<number | null>(null);
   const hasUrl = Boolean(url.trim());
   const invalidUrl = Boolean(hasUrl && sourceHistory && !sourceHistory.valid_youtube_url);
   const duplicateBlocked = Boolean(sourceHistory?.found && !allowReprocessSource);
@@ -150,6 +152,10 @@ export function QuickStartCard({
       && !sourceRightsBlocked
       && confirmSourceRights
       && !isWorking;
+  const allStoryboardKeyframesReady = Boolean(
+    storyboardPreview?.scenes.length
+    && storyboardPreview.scenes.every((scene) => scene.image_status === "ready" && scene.keyframe_file),
+  );
 
   const replaceScenes = (scenes: StoryboardPreview["scenes"]) => {
     if (!storyboardPreview) return;
@@ -183,10 +189,81 @@ export function QuickStartCard({
       title: `${source.title} — variasi`,
       shot_plan: source.shot_plan.map((shot) => ({ ...shot })),
       shots: [...source.shots],
+      dialogue_turns: source.dialogue_turns.map((turn) => ({ ...turn })),
     };
     const scenes = [...storyboardPreview.scenes];
     scenes.splice(position + 1, 0, duplicate);
     replaceScenes(scenes);
+  };
+
+  const replaceDialogueTurns = (
+    position: number,
+    turns: StoryboardPreview["scenes"][number]["dialogue_turns"],
+  ) => {
+    updateScene(position, {
+      dialogue_turns: turns,
+      narration: turns.map((turn) => turn.text.trim()).filter(Boolean).join(" "),
+    });
+  };
+
+  const updateDialogueTurn = (
+    position: number,
+    turnIndex: number,
+    patch: Partial<StoryboardPreview["scenes"][number]["dialogue_turns"][number]>,
+  ) => {
+    const scene = storyboardPreview?.scenes[position];
+    if (!scene) return;
+    replaceDialogueTurns(position, scene.dialogue_turns.map((turn, index) => (
+      index === turnIndex ? { ...turn, ...patch } : turn
+    )));
+  };
+
+  const addDialogueTurn = (position: number) => {
+    const scene = storyboardPreview?.scenes[position];
+    if (!scene || scene.dialogue_turns.length >= 24) return;
+    replaceDialogueTurns(position, [
+      ...scene.dialogue_turns,
+      { speaker: "NARATOR", gender: "neutral", text: "" },
+    ]);
+  };
+
+  const removeDialogueTurn = (position: number, turnIndex: number) => {
+    const scene = storyboardPreview?.scenes[position];
+    if (!scene || scene.dialogue_turns.length <= 1) return;
+    replaceDialogueTurns(position, scene.dialogue_turns.filter((_, index) => index !== turnIndex));
+  };
+
+  const regenerateKeyframe = async (position: number) => {
+    const scene = storyboardPreview?.scenes[position];
+    if (!storyboardPreview || !scene || regeneratingKeyframe !== null) return;
+    setRegeneratingKeyframe(position);
+    updateScene(position, { image_status: "pending", image_error: "Membuat keyframe baru…" });
+    try {
+      const result = await toast.promise(
+        regenerateStoryboardKeyframe({
+          storyboard_id: storyboardPreview.storyboard_id,
+          scene,
+          art_bible: storyboardPreview.art_bible,
+          character_bible: storyboardPreview.character_bible,
+          location_bible: storyboardPreview.location_bible,
+          director_bible: storyboardPreview.director_bible,
+          property_bible: storyboardPreview.property_bible,
+        }),
+        {
+          loading: `Membuat ulang keyframe adegan ${position + 1}…`,
+          success: "Keyframe baru siap.",
+          error: "Gagal membuat keyframe",
+        },
+      );
+      updateScene(position, result);
+    } catch (keyframeError) {
+      updateScene(position, {
+        image_status: "error",
+        image_error: keyframeError instanceof Error ? keyframeError.message : "Gagal membuat keyframe.",
+      });
+    } finally {
+      setRegeneratingKeyframe(null);
+    }
   };
 
   const removeScene = (position: number) => {
@@ -345,10 +422,29 @@ export function QuickStartCard({
                             <button title="Hapus adegan" className="danger" type="button" disabled={storyboardPreview.scenes.length <= 3} onClick={() => removeScene(position)}><Trash2 size={14} /></button>
                           </div>
                         </header>
-                        <div className="storyboardSceneFields">
-                          <label><span>Narasi / dubbing</span><textarea value={scene.narration} maxLength={5000} rows={4} onChange={(event) => updateScene(position, { narration: event.target.value })} /></label>
-                          <label><span>Visual adegan</span><textarea value={scene.visual_prompt} maxLength={900} rows={4} onChange={(event) => updateScene(position, { visual_prompt: event.target.value })} /></label>
+                        <div className="storyboardKeyframeGrid">
+                          <figure className={`storyboardKeyframe is-${scene.image_status}`}>
+                            {scene.image_url ? <img src={`${API_BASE}${scene.image_url}`} alt={`Keyframe adegan ${position + 1}: ${scene.title}`} /> : <div><Film size={24} /><span>{scene.image_status === "error" ? "Keyframe gagal" : "Menunggu keyframe"}</span></div>}
+                            <figcaption><b>KEYFRAME {String(position + 1).padStart(2, "0")}</b><span>{scene.image_status === "ready" ? "Dipakai langsung saat animasi" : scene.image_error || "Belum dibuat"}</span><button type="button" disabled={regeneratingKeyframe !== null} onClick={() => { void regenerateKeyframe(position); }}>{regeneratingKeyframe === position ? <Loader2 className="spin" size={12} /> : <RefreshCw size={12} />} Buat ulang</button></figcaption>
+                          </figure>
+                          <div className="storyboardSceneFields">
+                            <label><span>Subtitle / urutan ucapan</span><textarea value={scene.narration} maxLength={5000} rows={4} readOnly /></label>
+                            <label><span>Visual adegan</span><textarea value={scene.visual_prompt} maxLength={900} rows={4} onChange={(event) => updateScene(position, { visual_prompt: event.target.value, keyframe_file: "", image_url: "", image_status: "pending", image_error: "Visual berubah; susun ulang storyboard untuk membuat keyframe baru." })} /></label>
+                          </div>
                         </div>
+                        <section className="storyboardDialogueEditor" aria-label={`Dialog dan voice cast adegan ${position + 1}`}>
+                          <header><span>Voice cast per karakter</span><button type="button" disabled={scene.dialogue_turns.length >= 24} onClick={() => addDialogueTurn(position)}>+ Tambah giliran</button></header>
+                          <div>
+                            {scene.dialogue_turns.map((turn, turnIndex) => (
+                              <article key={`${turn.speaker}-${turnIndex}`}>
+                                <input aria-label={`Pembicara ${turnIndex + 1}`} value={turn.speaker} maxLength={48} placeholder="Nama karakter" onChange={(event) => updateDialogueTurn(position, turnIndex, { speaker: event.target.value })} />
+                                <select aria-label={`Gender suara ${turnIndex + 1}`} value={turn.gender} onChange={(event) => updateDialogueTurn(position, turnIndex, { gender: event.target.value as "male" | "female" | "neutral" })}><option value="neutral">Auto</option><option value="male">Pria</option><option value="female">Wanita</option></select>
+                                <textarea aria-label={`Dialog ${turnIndex + 1}`} value={turn.text} maxLength={900} rows={2} placeholder="Kalimat yang diucapkan" onChange={(event) => updateDialogueTurn(position, turnIndex, { text: event.target.value })} />
+                                <button className="danger" title="Hapus giliran" type="button" disabled={scene.dialogue_turns.length <= 1} onClick={() => removeDialogueTurn(position, turnIndex)}><Trash2 size={14} /></button>
+                              </article>
+                            ))}
+                          </div>
+                        </section>
                         <div className="storyboardSceneMeta">
                           <label><span>Gerak kamera</span><select value={scene.camera_motion} onChange={(event) => updateScene(position, { camera_motion: event.target.value })}><option value="push_in">Push in</option><option value="pull_out">Pull out</option><option value="pan_left">Pan kiri</option><option value="pan_right">Pan kanan</option><option value="drift_up">Drift naik</option><option value="static">Statis</option></select></label>
                           <label><span>Teks layar</span><input value={scene.on_screen_text} maxLength={64} placeholder="Opsional" onChange={(event) => updateScene(position, { on_screen_text: event.target.value })} /></label>
@@ -367,8 +463,8 @@ export function QuickStartCard({
                 </div>
 
                 <footer className="storyboardRenderBar">
-                  <span><ShieldCheck size={16} /><b>Storyboard terkunci saat render<small>Generator memakai urutan dan revisi card ini, tanpa menulis ulang ceritanya.</small></b></span>
-                  <button type="button" disabled={isWorking || !confirmSourceRights || storyboardPreview.scenes.length < 3} onClick={onRenderStoryboard}>
+                  <span><ShieldCheck size={16} /><b>Storyboard bergambar terkunci saat render<small>{allStoryboardKeyframesReady ? "Keyframe ini menjadi sumber animasi; dialog memakai voice cast per karakter." : "Semua keyframe harus siap. Susun ulang bila visual card diubah."}</small></b></span>
+                  <button type="button" disabled={isWorking || !confirmSourceRights || storyboardPreview.scenes.length < 3 || !allStoryboardKeyframesReady} onClick={onRenderStoryboard}>
                     {isWorking ? <Loader2 className="spin" size={17} /> : <Play size={17} />}
                     Generate video
                   </button>
