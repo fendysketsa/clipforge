@@ -1219,7 +1219,19 @@ def test_scheduled_discovery_prefers_youtube_api_over_ytdlp(monkeypatch):
     monkeypatch.setattr(
         api,
         "search_youtube_data_api_viral_sources",
-        lambda *_args, **_kwargs: [{"url": "https://youtube.com/watch?v=api-first", "score": 90}],
+        lambda *_args, **_kwargs: [
+            {
+                "url": "https://youtube.com/watch?v=api-first",
+                "title": "Podcast Indonesia dengan tiga cerita kuat",
+                "score": 90,
+                "momentum_score": 90,
+                "language_score": 100,
+                "engagement_rate": 0.02,
+                "views_per_day": 20_000,
+                "age_days": 2,
+                "duration": 1_800,
+            }
+        ],
     )
     monkeypatch.setattr(
         api,
@@ -1285,6 +1297,7 @@ def test_scheduled_auto_viral_request_targets_five_shorts_and_two_longs(monkeypa
     import api
 
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", "5")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", "1")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_COUNT", "2")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
@@ -1311,6 +1324,7 @@ def test_scheduled_auto_viral_request_supports_nineteen_shorts_and_one_long(
     import api
 
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", "19")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", "1")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
     monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "20")
@@ -1348,6 +1362,7 @@ def test_scheduled_auto_viral_request_only_fills_remaining_daily_mix(monkeypatch
     import api
 
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", "5")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", "1")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
     monkeypatch.setenv("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", "5")
@@ -3334,6 +3349,103 @@ def test_scheduled_podcast_theme_reuses_one_episode_for_three_distinct_clips(mon
     assert "intro/sponsor/filler" in request.cron_short_role
 
 
+def test_scheduled_cron_targets_nineteen_shorts_from_seven_three_clip_sources(
+    monkeypatch,
+):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", "19")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", "3")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", "19")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET", "1")
+    monkeypatch.setattr(
+        api,
+        "auto_viral_daily_youtube_content_counts",
+        lambda *_args: {"short": 0, "long": 0},
+    )
+    monkeypatch.setattr(
+        api,
+        "scheduled_ryuundy_theme_profile",
+        lambda: ("gaming_story", api.RYUUNDY_CRON_THEME_PROFILES["gaming_story"]),
+    )
+
+    request = api.scheduled_auto_viral_request()
+
+    assert request.video_count == 7
+    assert request.clips_per_video == 3
+    assert request.top == 3
+    assert request.paired_long_video_count == 1
+
+
+def test_scheduled_cron_recalculates_sources_from_actual_remaining_short_count(
+    monkeypatch,
+):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", "19")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", "3")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", "19")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET", "1")
+    monkeypatch.setattr(
+        api,
+        "auto_viral_daily_youtube_content_counts",
+        lambda *_args: {"short": 13, "long": 1},
+    )
+    monkeypatch.setattr(
+        api,
+        "scheduled_ryuundy_theme_profile",
+        lambda: ("gaming_story", api.RYUUNDY_CRON_THEME_PROFILES["gaming_story"]),
+    )
+
+    request = api.scheduled_auto_viral_request()
+
+    assert request.video_count == 2
+    assert request.clips_per_video == 3
+    assert request.paired_long_video_count == 0
+
+
+def test_scheduled_source_preflight_skips_weak_metadata_before_download(monkeypatch):
+    import api
+
+    strong = {
+        "title": "Roblox Indonesia Plot Twist dan Comeback",
+        "score": 82,
+        "momentum_score": 92,
+        "language_score": 100,
+        "engagement_rate": 0.02,
+        "views_per_day": 18_000,
+        "age_days": 2,
+        "duration": 1_800,
+    }
+    weak = {
+        "title": "Gameplay datar tanpa cerita",
+        "score": 12,
+        "momentum_score": 4,
+        "language_score": 20,
+        "engagement_rate": 0.0,
+        "views_per_day": 1,
+        "age_days": 90,
+        "duration": 100,
+    }
+    request = AutoViralRequest(clips_per_video=3)
+    logs = []
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_SOURCE_PREFLIGHT_MIN_SCORE", "60")
+    monkeypatch.setattr(
+        api, "scheduled_auto_viral_discovery_active", lambda _run_id: True
+    )
+    monkeypatch.setattr(api, "append_auto_viral_log", lambda _run_id, text: logs.append(text))
+
+    selected = api.preflight_scheduled_sources([weak, strong], request, "cron-run")
+
+    assert [item["title"] for item in selected] == [strong["title"]]
+    assert selected[0]["source_preflight_score"] >= 60
+    assert selected[0]["source_preflight_decision"] == "scan_transcript"
+    assert selected[0]["source_preflight_breakdown"]["multi_clip_opportunity"] == 100
+    assert any("SKIP pra-rating" in line for line in logs)
+
+
 def test_cron_podcast_theme_accepts_interview_and_rejects_gameplay():
     import api
 
@@ -3390,6 +3502,112 @@ def test_non_faith_cron_never_uses_legacy_islam_playlist(monkeypatch):
     assert api.auto_viral_youtube_playlist(
         AutoViralRequest(cron_theme_key="faith_life")
     ) == "Islam"
+
+
+def test_islamic_animation_lanes_have_correct_audience_and_playlist(monkeypatch):
+    import api
+
+    monkeypatch.setenv("YOUTUBE_DEFAULT_PLAYLIST", "Islam")
+    kids = AutoViralRequest(cron_theme_key="islamic_animation_kids")
+    general = AutoViralRequest(cron_theme_key="islamic_animation_general")
+
+    assert api.auto_viral_youtube_made_for_kids(kids) is True
+    assert api.auto_viral_youtube_made_for_kids(general) is False
+    assert api.auto_viral_youtube_playlist(kids) == "Islam"
+    assert api.auto_viral_youtube_playlist(general) == "Islam"
+
+
+def test_cron_islamic_animation_requires_both_visual_and_faith_signals():
+    import api
+
+    valid = {
+        "title": "Animasi Kisah Nabi untuk Anak Muslim Indonesia",
+        "description": "Kartun Islami tentang adab dan akhlak dengan cerita yang utuh.",
+        "default_language": "id",
+    }
+    non_faith_cartoon = {
+        "title": "Animasi Petualangan Anak Indonesia",
+        "description": "Kartun lucu tentang sekolah dan permainan.",
+        "default_language": "id",
+    }
+    non_animated_lecture = {
+        "title": "Kajian Islam tentang Adab dan Akhlak",
+        "description": "Ceramah ustadz untuk keluarga Muslim.",
+        "default_language": "id",
+    }
+
+    assert api.cron_trend_candidate_rejection_reason(
+        valid, theme_key="islamic_animation_kids"
+    ) == ""
+    assert "konteks Islam" in api.cron_trend_candidate_rejection_reason(
+        non_faith_cartoon, theme_key="islamic_animation_kids"
+    )
+    assert "sumber animasi" in api.cron_trend_candidate_rejection_reason(
+        non_animated_lecture, theme_key="islamic_animation_general"
+    )
+
+
+def test_islamic_animation_trial_runs_kids_then_general(monkeypatch):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_ISLAMIC_ANIMATION_TRIAL", "true")
+    monkeypatch.setattr(api, "auto_viral_runs", {})
+
+    first_key, first_profile = api.scheduled_islamic_animation_trial_profile() or ("", {})
+    assert first_key == "islamic_animation_kids"
+    assert first_profile["new_lane_trial"] is True
+
+    kids_run = api.AutoViralRun(
+        id="kids-animation-trial",
+        status="completed",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=AutoViralRequest(cron_theme_key="islamic_animation_kids"),
+    )
+    monkeypatch.setattr(api, "auto_viral_runs", {kids_run.id: kids_run})
+
+    second_key, _ = api.scheduled_islamic_animation_trial_profile() or ("", {})
+    assert second_key == "islamic_animation_general"
+
+
+def test_scheduled_islamic_animation_uses_short_source_filter_and_safe_effects(monkeypatch):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "false")
+    monkeypatch.setattr(
+        api,
+        "scheduled_ryuundy_theme_profile",
+        lambda: (
+            "islamic_animation_kids",
+            api.RYUUNDY_CRON_THEME_PROFILES["islamic_animation_kids"],
+        ),
+    )
+
+    request = api.scheduled_auto_viral_request()
+
+    assert request.cron_theme_key == "islamic_animation_kids"
+    assert request.duration_filter == "any"
+    assert request.min_views >= 1_000
+    assert "tidak mengarang dalil" in request.cron_editorial_tone
+
+    monkeypatch.setattr(api, "viral_source_rejection_reason", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(api, "wait_for_no_active_clipping_job", lambda: None)
+    monkeypatch.setattr(api, "normalize_job_request", lambda value: value)
+    monkeypatch.setattr(api, "queue_auto_viral_clip_job", lambda value: value)
+    clip_request = api.create_auto_viral_clip_job(
+        {
+            "url": "https://www.youtube.com/watch?v=animasiIslam1",
+            "title": "Animasi Kisah Nabi untuk Anak Muslim",
+            "description": "Kartun Islami tentang adab.",
+        },
+        request,
+        scheduled=True,
+    )
+
+    assert clip_request.scheduled_contextual_audio is False
+    assert clip_request.scheduled_reaction_avatar_layout is False
+    assert "AnimasiIslami" in clip_request.required_hashtags
 
 
 def test_cron_gaming_theme_accepts_story_gameplay_and_rejects_unrelated_source():

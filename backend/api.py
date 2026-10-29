@@ -1518,6 +1518,8 @@ CRON_TREND_TOPIC_SIGNALS = {
     "roblox", "roleplay", "rumah tangga", "sakit hati", "seram", "streamer",
     "tokoh", "wawancara", "bola", "sepak bola", "football", "barcelona",
     "real madrid", "timnas", "pemain", "pertandingan", "gol", "liga",
+    "animasi", "kartun", "anak muslim", "cerita islami", "kisah nabi",
+    "kisah teladan", "adab", "doa harian",
 }
 CRON_TREND_UNSAFE_SIGNALS = {
     "18+", "adegan berdarah", "bunuh diri", "darah nyata", "eksploitasi",
@@ -1611,6 +1613,42 @@ RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
             "game multiplayer indonesia reaksi natural dan lucu",
         ],
     },
+    "islamic_animation_kids": {
+        "label": "Animasi Islami Anak & Keluarga",
+        "tone": "hangat, mudah dipahami anak, penuh petualangan dan rasa ingin tahu; tetap beradab, tidak menakut-nakuti, dan tidak mengarang dalil",
+        "short_role": "pilih satu konflik sederhana, pilihan karakter, dan akibat yang tuntas; jaga doa, ayat, hadis, pertanyaan, jawaban, serta kesimpulan tetap satu konteks",
+        "long_role": "susun petualangan, keputusan karakter, konsekuensi, dan teladan Islami secara utuh tanpa memotong sumber agama atau menjadikan ibadah sebagai bahan lelucon",
+        "duration_filter": "any",
+        "made_for_kids": True,
+        "requires_islamic_animation": True,
+        "queries": [
+            "animasi kisah islami anak indonesia terbaru",
+            "kartun islami anak adab dan akhlak indonesia",
+            "animasi kisah nabi dan sahabat anak indonesia",
+            "cerita anak muslim animasi petualangan indonesia",
+            "animasi doa harian anak muslim indonesia",
+            "game edukasi islam anak cerita indonesia",
+            "roblox islami indonesia cerita anak muslim",
+        ],
+    },
+    "islamic_animation_general": {
+        "label": "Animasi Kisah Islami Umum & Dewasa",
+        "tone": "sinematik, reflektif, dan emosional tanpa menggurui; visual boleh penuh petualangan seperti cerita game tetapi makna agama harus tetap sesuai sumber",
+        "short_role": "ambil keputusan, ujian, atau perubahan karakter yang langsung dipahami dan berakhir pada pelajaran yang didukung sumber; jangan memotong dalil atau pengecualian",
+        "long_role": "bangun alur sebab-akibat dan perkembangan karakter, pertahankan atribusi ayat/hadis/ulama, lalu tutup dengan refleksi yang tidak membuat janji spiritual absolut",
+        "duration_filter": "any",
+        "made_for_kids": False,
+        "requires_islamic_animation": True,
+        "queries": [
+            "animasi cerita islami dewasa indonesia terbaru",
+            "film animasi islami indonesia pelajaran hidup",
+            "animasi kisah hijrah dan ujian hidup indonesia",
+            "animasi sejarah islam kisah sahabat indonesia",
+            "cerita islami animasi sinematik indonesia",
+            "animasi misteri sejarah islam indonesia",
+            "game cerita islami indonesia penuh pelajaran",
+        ],
+    },
     "podcast_conversation": {
         "label": "Podcast, Wawancara & Cerita Narasumber",
         "tone": "natural seperti editor podcast manusia: tajam, hangat, tidak clickbait palsu, dan tidak memotong ucapan hingga berubah makna",
@@ -1676,6 +1714,14 @@ RYUUNDY_CRON_THEME_SIGNALS: dict[str, set[str]] = {
         "game", "gameplay", "gaming", "minecraft", "mabar", "obby", "roblox",
         "roleplay", "streamer", "survival", "kak yuta", "dunia budi", "baby celine",
     },
+    "islamic_animation_kids": {
+        "animasi", "kartun", "anak muslim", "cerita anak", "kisah nabi",
+        "kisah teladan", "adab", "akhlak", "doa harian", "islami",
+    },
+    "islamic_animation_general": {
+        "animasi", "film animasi", "cerita islami", "kisah nabi", "hijrah",
+        "sejarah islam", "kisah sahabat", "islami", "muslim",
+    },
     "podcast_conversation": {
         "podcast", "wawancara", "obrolan", "narasumber", "bintang tamu",
         "pengakuan", "cerita hidup", "percakapan", "talkshow",
@@ -1689,6 +1735,25 @@ RYUUNDY_CRON_THEME_SIGNALS: dict[str, set[str]] = {
         "nabi", "muhammad", "mukjizat", "ustaz", "ustadz", "ceramah",
     },
 }
+
+CRON_ISLAMIC_ANIMATION_THEME_KEYS = frozenset(
+    {"islamic_animation_kids", "islamic_animation_general"}
+)
+CRON_ISLAMIC_THEME_KEYS = frozenset(
+    {"faith_life", *CRON_ISLAMIC_ANIMATION_THEME_KEYS}
+)
+CRON_ISLAMIC_ANIMATION_VISUAL_SIGNALS = frozenset(
+    {
+        "animasi", "kartun", "film animasi", "3d animation", "3d animasi",
+        "cerita anak", "game edukasi", "game cerita", "roblox islami",
+    }
+)
+CRON_ISLAMIC_ANIMATION_FAITH_SIGNALS = frozenset(
+    {
+        "islam", "islami", "muslim", "nabi", "sahabat", "hijrah", "iman",
+        "adab", "akhlak", "doa", "quran", "hadis", "hadits", "allah",
+    }
+)
 
 IslamicContentNiche = Literal[
     "auto",
@@ -14411,6 +14476,126 @@ def scheduled_source_view_rejection_reason(
     return ""
 
 
+def scheduled_source_preflight_score(
+    source: dict[str, Any],
+    *,
+    clips_per_video: int = 3,
+) -> tuple[float, dict[str, float]]:
+    """Estimate multi-clip potential before an unattended source is downloaded.
+
+    This is deliberately a metadata preflight, not a promise that a video will
+    go viral. Theme fit remains the largest component; public reach only helps
+    break close calls. Transcript-level hook, payoff, context, and the strict
+    80-point Short gate still decide which rendered clips may be uploaded.
+    """
+    editorial_fit = max(0.0, min(100.0, float(source.get("score") or 0)))
+    momentum = max(0.0, min(100.0, float(source.get("momentum_score") or 0)))
+    language = max(0.0, min(100.0, float(source.get("language_score") or 0)))
+    engagement_rate = max(0.0, float(source.get("engagement_rate") or 0))
+    engagement = min(100.0, engagement_rate * 5_000.0)
+    views_per_day = max(0.0, float(source.get("views_per_day") or 0))
+    velocity = min(100.0, log10(views_per_day + 1.0) * 20.0)
+    age_days = source.get("age_days")
+    freshness = (
+        max(0.0, min(100.0, 100.0 * exp(-max(0.0, float(age_days)) / 30.0)))
+        if age_days is not None
+        else 35.0
+    )
+    duration = max(0.0, float(source.get("duration") or 0))
+    desired = max(1, min(5, int(clips_per_video)))
+    # Budget at least 90 source seconds per distinct 25-45 second Short so
+    # "three clips" cannot become three overlapping cuts of one moment.
+    estimated_distinct_clips = max(0, int(duration // 90))
+    multi_clip_opportunity = min(
+        100.0,
+        estimated_distinct_clips / desired * 100.0,
+    )
+    breakdown = {
+        "editorial_fit": round(editorial_fit, 2),
+        "momentum": round(momentum, 2),
+        "language": round(language, 2),
+        "engagement": round(engagement, 2),
+        "velocity": round(velocity, 2),
+        "freshness": round(freshness, 2),
+        "multi_clip_opportunity": round(multi_clip_opportunity, 2),
+    }
+    score = (
+        editorial_fit * 0.40
+        + momentum * 0.15
+        + language * 0.10
+        + engagement * 0.10
+        + velocity * 0.10
+        + freshness * 0.10
+        + multi_clip_opportunity * 0.05
+    )
+    return round(min(100.0, score), 2), breakdown
+
+
+def preflight_scheduled_sources(
+    sources: list[dict[str, Any]],
+    request: AutoViralRequest,
+    run_id: str,
+) -> list[dict[str, Any]]:
+    """Rate cron sources before download and skip weak metadata candidates."""
+    if not scheduled_auto_viral_discovery_active(run_id):
+        return sources
+    minimum = max(
+        1,
+        min(
+            100,
+            env_int("AUTO_VIRAL_SCHEDULE_SOURCE_PREFLIGHT_MIN_SCORE", 60),
+        ),
+    )
+    qualified: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    for original in sources:
+        source = dict(original)
+        score, breakdown = scheduled_source_preflight_score(
+            source,
+            clips_per_video=request.clips_per_video,
+        )
+        source.update(
+            {
+                "source_preflight_score": score,
+                "source_preflight_floor": minimum,
+                "source_preflight_breakdown": breakdown,
+                "source_preflight_decision": (
+                    "scan_transcript" if score >= minimum else "skip_source"
+                ),
+                "source_preflight_reason": (
+                    f"Pra-rating {score:.0f}/100 lolos minimum {minimum}; "
+                    "hook/payoff tetap wajib lolos audit transkrip dan skor clip 80."
+                    if score >= minimum
+                    else f"Pra-rating {score:.0f}/100 di bawah minimum {minimum}; "
+                    "sumber dilewati sebelum download berat."
+                ),
+            }
+        )
+        (qualified if score >= minimum else rejected).append(source)
+    qualified.sort(
+        key=lambda item: float(item.get("source_preflight_score") or 0),
+        reverse=True,
+    )
+    if rejected:
+        append_auto_viral_log(
+            run_id,
+            f"Pra-rating sumber melewati {len(rejected)} kandidat lemah sebelum download; "
+            f"{len(qualified)} kandidat mencapai minimum {minimum}/100.",
+        )
+        for source in rejected[:8]:
+            append_auto_viral_log(
+                run_id,
+                f"SKIP pra-rating {float(source['source_preflight_score']):.0f}/100: "
+                f"{source.get('title')}",
+            )
+    elif qualified:
+        append_auto_viral_log(
+            run_id,
+            f"Semua {len(qualified)} kandidat mencapai pra-rating minimum {minimum}/100.",
+        )
+    return qualified
+
+
 def cron_trend_discovery_active(run_id: str, request: AutoViralRequest) -> bool:
     """Enable broad trend discovery only for the persisted scheduler owner."""
     if not request.cron_trend_lane:
@@ -14482,6 +14667,21 @@ def cron_trend_candidate_rejection_reason(
             or theme_key
         )
         return f"tema tidak cocok dengan rotasi RYUUNDY hari ini ({theme_label})"
+    if theme_key in CRON_ISLAMIC_ANIMATION_THEME_KEYS:
+        visual_hits = sorted(
+            marker
+            for marker in CRON_ISLAMIC_ANIMATION_VISUAL_SIGNALS
+            if f" {marker} " in normalized_text
+        )
+        faith_hits = sorted(
+            marker
+            for marker in CRON_ISLAMIC_ANIMATION_FAITH_SIGNALS
+            if f" {marker} " in normalized_text
+        )
+        if not visual_hits:
+            return "lane animasi Islami membutuhkan sumber animasi/kartun/game cerita"
+        if not faith_hits:
+            return "lane animasi Islami membutuhkan konteks Islam yang nyata pada sumber"
     trend_score, _ = cron_trend_score(info, trend_tokens)
     minimum_score = max(
         1, min(100, env_int("AUTO_VIRAL_SCHEDULE_TREND_MIN_SCORE", 18))
@@ -16850,7 +17050,7 @@ def auto_viral_format_perspective(
     # every other cron lane is governed by its own source-grounded profile so a
     # game or podcast can never inherit sermon wording or religious metadata.
     parts: list[str] = []
-    if not request.cron_theme_key or request.cron_theme_key == "faith_life":
+    if not request.cron_theme_key or request.cron_theme_key in CRON_ISLAMIC_THEME_KEYS:
         parts.append(request.creator_perspective.strip())
     if request.cron_editorial_tone:
         parts.append(f"Identitas editorial RYUUNDY: {request.cron_editorial_tone}.")
@@ -16876,9 +17076,14 @@ def auto_viral_format_perspective(
 
 def auto_viral_youtube_playlist(request: AutoViralRequest) -> str:
     """Keep the legacy Islam playlist exclusive to the matching cron lane."""
-    if request.cron_theme_key and request.cron_theme_key != "faith_life":
+    if request.cron_theme_key and request.cron_theme_key not in CRON_ISLAMIC_THEME_KEYS:
         return ""
     return os.environ.get("YOUTUBE_DEFAULT_PLAYLIST", DEFAULT_YOUTUBE_PLAYLIST).strip()
+
+
+def auto_viral_youtube_made_for_kids(request: AutoViralRequest) -> bool:
+    """Apply YouTube's child-audience setting only to the explicit kids lane."""
+    return request.cron_theme_key == "islamic_animation_kids"
 
 
 def source_theme_hashtags(
@@ -16898,6 +17103,13 @@ def source_theme_hashtags(
         (
             {"roblox", "obby", "mabar", "gameplay", "roleplay roblox"},
             ["RobloxIndonesia", "RobloxStory", "GamingIndonesia"],
+        ),
+        (
+            {
+                "animasi islami", "kartun islami", "cerita anak muslim",
+                "kisah nabi animasi", "film animasi islami", "roblox islami",
+            },
+            ["AnimasiIslami", "CeritaMuslim", "KisahTeladan"],
         ),
         (
             {"selingkuh", "pengkhianatan", "dikhianati", "sakit hati", "gagal nikah"},
@@ -17019,6 +17231,7 @@ def create_auto_viral_clip_job(
             f"{strict_rejection}"
         )
     wait_for_no_active_clipping_job()
+    islamic_cron_theme = request.cron_theme_key in CRON_ISLAMIC_THEME_KEYS
     job_request = ClipJobRequest(
         url=str(source["url"]),
         top=request.top,
@@ -17039,6 +17252,7 @@ def create_auto_viral_clip_job(
         ),
         scheduled_contextual_audio=bool(
             scheduled
+            and not islamic_cron_theme
             and env_bool("AUTO_VIRAL_SCHEDULE_CONTEXTUAL_AUDIO_ENABLED", True)
         ),
         scheduled_social_card_layout=bool(
@@ -17047,6 +17261,7 @@ def create_auto_viral_clip_job(
         ),
         scheduled_reaction_avatar_layout=bool(
             scheduled
+            and not islamic_cron_theme
             and env_bool("AUTO_VIRAL_SCHEDULE_REACTION_AVATAR_ENABLED", True)
         ),
         scheduled_subscribe_pulse=bool(
@@ -17885,6 +18100,7 @@ def queue_auto_viral_short_uploads_while_long_renders(
                             best_count=min(request.clips_per_video, available_slots),
                             visibility=youtube_default_visibility(),
                             playlist=auto_viral_youtube_playlist(request),
+                            made_for_kids=auto_viral_youtube_made_for_kids(request),
                         ),
                     )
                     queue_youtube_upload_jobs(youtube_jobs)
@@ -18229,6 +18445,7 @@ def upload_auto_viral_processed_jobs(
                             best_count=min(request.clips_per_video, available_slots),
                             visibility=youtube_default_visibility(),
                             playlist=auto_viral_youtube_playlist(request),
+                            made_for_kids=auto_viral_youtube_made_for_kids(request),
                         ),
                     )
                     queue_youtube_upload_jobs(youtube_jobs)
@@ -18353,6 +18570,7 @@ def upload_auto_viral_processed_jobs(
                             best_count=1,
                             visibility="public",
                             playlist=auto_viral_youtube_playlist(request),
+                            made_for_kids=auto_viral_youtube_made_for_kids(request),
                         ),
                     )
                     queue_youtube_upload_jobs(long_upload_jobs)
@@ -18824,6 +19042,7 @@ def discover_auto_viral_campaign_sources(
             )
         )
     sort_viral_source_payloads(sources, request.sort_order)
+    sources = preflight_scheduled_sources(sources, request, run_id)
     diverse_prefix = diverse_viral_source_payloads(
         sources,
         request.video_count,
@@ -19238,6 +19457,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
                             YouTubeBatchUploadRequest(
                                 best_count=run_request.clips_per_video,
                                 playlist=auto_viral_youtube_playlist(run_request),
+                                made_for_kids=auto_viral_youtube_made_for_kids(run_request),
                             ),
                         )
                         queue_youtube_upload_jobs(uploads)
@@ -19824,8 +20044,29 @@ def scheduled_search_term_winner_profile() -> tuple[str, dict[str, Any]] | None:
     return theme_key, profile
 
 
+def scheduled_islamic_animation_trial_profile() -> tuple[str, dict[str, Any]] | None:
+    """Try both new animation lanes once before returning to normal rotation."""
+    if not env_bool("AUTO_VIRAL_SCHEDULE_ISLAMIC_ANIMATION_TRIAL", False):
+        return None
+    with auto_viral_lock:
+        used = {
+            run.request.cron_theme_key
+            for run in auto_viral_runs.values()
+            if run.trigger == "schedule" and run.request.cron_theme_key
+        }
+    for key in ("islamic_animation_kids", "islamic_animation_general"):
+        if key not in used:
+            profile = dict(RYUUNDY_CRON_THEME_PROFILES[key])
+            profile["new_lane_trial"] = True
+            return key, profile
+    return None
+
+
 def scheduled_ryuundy_theme_profile() -> tuple[str, dict[str, Any]]:
     """Pick a performance-led lane, then safely explore unused themes."""
+    animation_trial = scheduled_islamic_animation_trial_profile()
+    if animation_trial is not None:
+        return animation_trial
     winner = scheduled_performance_winner_profile()
     if winner is not None:
         return winner
@@ -19960,7 +20201,7 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         niche = "auto"
     clips_per_video = max(
         1,
-        min(5, env_int("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", 2)),
+        min(5, env_int("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", 3)),
     )
     configured_video_count = max(
         1,
@@ -19975,27 +20216,6 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         0,
         auto_viral_daily_long_upload_target() - youtube_counts["long"],
     )
-    # A paired Long is rendered from the same source analysis as a Short, but
-    # it does not require publishing that Short.  Once the daily Short target
-    # is full, keep one source job available for every missing Long and turn
-    # off only the YouTube Short upload path. This avoids stopping with an
-    # incomplete mix or publishing an extra Short before a missing Long uses
-    # the final reserved slot.
-    remaining_source_batches = max(remaining_shorts, remaining_longs)
-    scheduled_video_count = (
-        max(1, min(configured_video_count, remaining_source_batches))
-        if youtube_upload_requested
-        else configured_video_count
-    )
-    if not paired_long_enabled:
-        scheduled_long_count = 0
-    elif youtube_upload_requested:
-        scheduled_long_count = min(scheduled_video_count, remaining_longs)
-    else:
-        scheduled_long_count = min(
-            scheduled_video_count,
-            max(0, env_int("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_COUNT", 1)),
-        )
     theme_key, theme_profile = scheduled_ryuundy_theme_profile()
     if theme_key == "podcast_conversation":
         profile_clip_count = int(theme_profile.get("clips_per_source") or 3)
@@ -20009,44 +20229,56 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
                 ),
             ),
         )
-        if youtube_upload_requested:
-            short_source_batches = (
-                ceil(remaining_shorts / clips_per_video)
-                if remaining_shorts > 0
-                else 0
-            )
-            long_source_batches = (
-                remaining_longs if paired_long_enabled else 0
-            )
-            scheduled_video_count = max(
-                1,
-                min(
-                    configured_video_count,
-                    max(short_source_batches, long_source_batches, 1),
-                ),
-            )
-        else:
-            scheduled_video_count = max(
-                1,
-                min(
-                    configured_video_count,
-                    env_int("AUTO_VIRAL_SCHEDULE_PODCAST_SOURCE_COUNT", 7),
-                ),
-            )
-        if not paired_long_enabled:
-            scheduled_long_count = 0
-        elif youtube_upload_requested:
-            scheduled_long_count = min(scheduled_video_count, remaining_longs)
-        else:
-            scheduled_long_count = min(
-                scheduled_video_count,
-                max(0, env_int("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_COUNT", 1)),
-            )
+    # Count the daily target in actual Shorts, not source links. With the
+    # default 19-Short target and three distinct clips per source this plans
+    # seven successful source batches. A source that yields fewer uploadable
+    # clips leaves the daily counter incomplete, so the scheduler discovers a
+    # replacement source on its bounded follow-up run instead of inflating a
+    # weak candidate to fill quota.
+    if youtube_upload_requested:
+        short_source_batches = (
+            ceil(remaining_shorts / clips_per_video)
+            if remaining_shorts > 0
+            else 0
+        )
+        long_source_batches = remaining_longs if paired_long_enabled else 0
+        scheduled_video_count = max(
+            1,
+            min(
+                configured_video_count,
+                max(short_source_batches, long_source_batches, 1),
+            ),
+        )
+    elif theme_key == "podcast_conversation":
+        scheduled_video_count = max(
+            1,
+            min(
+                configured_video_count,
+                env_int("AUTO_VIRAL_SCHEDULE_PODCAST_SOURCE_COUNT", 7),
+            ),
+        )
+    else:
+        scheduled_video_count = configured_video_count
+    if not paired_long_enabled:
+        scheduled_long_count = 0
+    elif youtube_upload_requested:
+        scheduled_long_count = min(scheduled_video_count, remaining_longs)
+    else:
+        scheduled_long_count = min(
+            scheduled_video_count,
+            max(0, env_int("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_COUNT", 1)),
+        )
     theme_queries = [
         str(item).strip()
         for item in theme_profile.get("queries", [])
         if str(item).strip()
     ]
+    duration_filter = str(
+        theme_profile.get("duration_filter")
+        or os.environ.get("AUTO_VIRAL_SCHEDULE_DURATION_FILTER", "over_20")
+    ).strip()
+    if duration_filter not in {"any", "under_3", "between_3_20", "over_20"}:
+        duration_filter = "over_20"
     theme_focus = random.SystemRandom().choice(theme_queries) if theme_queries else ""
     editorial_tone = str(
         theme_profile.get("tone")
@@ -20084,7 +20316,7 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
             ),
         ),
         upload_date_filter=os.environ.get("AUTO_VIRAL_SCHEDULE_UPLOAD_DATE_FILTER", "this_week"),  # type: ignore[arg-type]
-        duration_filter=os.environ.get("AUTO_VIRAL_SCHEDULE_DURATION_FILTER", "over_20"),  # type: ignore[arg-type]
+        duration_filter=duration_filter,  # type: ignore[arg-type]
         definition_filter="hd",
         sort_order="relevance",
         top=clips_per_video,
