@@ -88,6 +88,12 @@ AUTO_VIRAL_RUNS_PATH = Path(
         BASE_DIR / "data" / "auto_viral_runs.json",
     )
 )
+YOUTUBE_SEARCH_TERMS_CACHE_PATH = Path(
+    os.environ.get(
+        "YOUTUBE_SEARCH_TERMS_CACHE_PATH",
+        BASE_DIR / "data" / "youtube_search_terms.json",
+    )
+)
 SOURCE_USAGE_ARCHIVE_DIR_OVERRIDE = os.environ.get("SOURCE_USAGE_ARCHIVE_DIR", "").strip()
 YOUTUBE_PLAYWRIGHT_STATE = Path(os.environ.get("YOUTUBE_PLAYWRIGHT_STATE", BASE_DIR / "data" / "youtube_storage_state.json"))
 YOUTUBE_CHROMIUM_USER_DATA_DIR = os.environ.get("YOUTUBE_CHROMIUM_USER_DATA_DIR", "").strip()
@@ -1476,7 +1482,8 @@ CRON_TREND_TOPIC_SIGNALS = {
     "misteri", "pasangan", "pelajaran hidup", "pengkhianatan", "persahabatan",
     "game", "gameplay", "gaming", "minecraft", "mabar", "obby", "podcast",
     "roblox", "roleplay", "rumah tangga", "sakit hati", "seram", "streamer",
-    "tokoh", "wawancara",
+    "tokoh", "wawancara", "bola", "sepak bola", "football", "barcelona",
+    "real madrid", "timnas", "pemain", "pertandingan", "gol", "liga",
 }
 CRON_TREND_UNSAFE_SIGNALS = {
     "18+", "adegan berdarah", "bunuh diri", "darah nyata", "eksploitasi",
@@ -1570,6 +1577,19 @@ RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
             "game multiplayer indonesia reaksi natural dan lucu",
         ],
     },
+    "football_story": {
+        "label": "Bola, Rivalitas & Cerita Pertandingan",
+        "tone": "enerjik dan tajam seperti komentator bola, tetapi tetap faktual, sportif, dan tidak memakai cuplikan broadcaster berisiko",
+        "short_role": "pilih satu keputusan, duel, gol, comeback, atau reaksi pemain yang utuh dan langsung punya payoff",
+        "long_role": "susun konteks pertandingan, perubahan momentum, keputusan pemain, dan hasil akhirnya tanpa mengarang statistik",
+        "queries": [
+            "cerita pertandingan sepak bola terbaru komentar indonesia",
+            "momen pemain bola comeback dan reaksi komentator indonesia",
+            "rivalitas klub sepak bola analisis indonesia terbaru",
+            "barcelona real madrid cerita pertandingan komentar indonesia",
+            "timnas indonesia momen pertandingan penuh cerita",
+        ],
+    },
     "faith_life": {
         "label": "Iman, Hijrah & Ujian Hidup",
         "tone": "tenang, beradab, kontekstual, dan tidak memakai klaim agama di luar sumber",
@@ -1604,9 +1624,16 @@ RYUUNDY_CRON_THEME_SIGNALS: dict[str, set[str]] = {
     "humor_interlude": CRON_HUMOR_SIGNALS,
     "gaming_story": {
         "game", "gameplay", "gaming", "minecraft", "mabar", "obby", "roblox",
-        "roleplay", "streamer", "survival",
+        "roleplay", "streamer", "survival", "kak yuta", "dunia budi", "baby celine",
     },
-    "faith_life": {"islam", "iman", "hijrah", "hidayah", "quran", "kajian", "dakwah"},
+    "football_story": {
+        "bola", "sepak bola", "football", "soccer", "barcelona", "real madrid",
+        "timnas", "pemain", "pertandingan", "match", "gol", "liga", "champions",
+    },
+    "faith_life": {
+        "islam", "iman", "hijrah", "hidayah", "quran", "kajian", "dakwah",
+        "nabi", "muhammad", "mukjizat", "ustaz", "ustadz", "ceramah",
+    },
 }
 
 IslamicContentNiche = Literal[
@@ -4079,6 +4106,7 @@ youtube_data_api_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 youtube_data_api_cache_lock = threading.Lock()
 google_trends_rss_cache: dict[str, tuple[float, list[str], set[str]]] = {}
 google_trends_rss_cache_lock = threading.Lock()
+youtube_search_terms_cache_lock = threading.Lock()
 
 
 def clip_url(path: Path) -> str:
@@ -15050,6 +15078,400 @@ def google_trends_rss_signals(run_id: str) -> tuple[list[str], set[str]]:
     return titles, trend_tokens
 
 
+def normalize_youtube_search_term(value: str) -> str:
+    """Keep a real viewer query useful without turning it into executable input."""
+    clean = re.sub(r"\s+", " ", str(value or "")).strip(" \t\r\n.,;:|/")
+    folded = clean.casefold()
+    if (
+        not 2 <= len(clean) <= 120
+        or folded in {"null", "unknown", "tidak diketahui", "not set", "(not set)"}
+        or "http://" in folded
+        or "https://" in folded
+        or any(marker in folded for marker in CRON_TREND_UNSAFE_SIGNALS)
+    ):
+        return ""
+    return clean
+
+
+def parse_youtube_studio_search_terms(
+    body_text: str,
+    *,
+    video_views: int = 0,
+) -> list[dict[str, Any]]:
+    """Parse the visible Studio search-term card in Indonesian or English."""
+    lowered = body_text.casefold()
+    marker_index = -1
+    for marker in ("istilah penelusuran youtube", "youtube search terms"):
+        marker_index = lowered.find(marker)
+        if marker_index >= 0:
+            break
+    if marker_index < 0:
+        return []
+    segment = body_text[marker_index : marker_index + 4_000]
+    stop_indexes = [
+        index
+        for marker in ("Lihat lainnya", "See more")
+        if (index := segment.casefold().find(marker.casefold())) >= 0
+    ]
+    if stop_indexes:
+        segment = segment[: min(stop_indexes)]
+    lines = [re.sub(r"\s+", " ", line).strip() for line in segment.splitlines()]
+    lines = [line for line in lines if line]
+    excluded = {
+        "istilah penelusuran youtube",
+        "youtube search terms",
+        "penayangan · sejak dipublikasikan",
+        "views · since published",
+        "proporsi dari total traffic anda:",
+        "proportion of your total traffic:",
+    }
+    records: list[dict[str, Any]] = []
+    for index, line in enumerate(lines):
+        if index == 0 or not re.fullmatch(r"\d+(?:[.,]\d+)?%", line):
+            continue
+        term = normalize_youtube_search_term(lines[index - 1])
+        if not term or term.casefold() in excluded or "traffic" in term.casefold():
+            continue
+        share = float(line.rstrip("%").replace(",", "."))
+        if not 0 < share <= 100:
+            continue
+        records.append(
+            {
+                "term": term,
+                "views": max(0, round(video_views * share / 100)),
+                "share_percentage": share,
+                "score": round(share * max(1.0, log10(max(10, video_views))), 3),
+                "source": "youtube_studio",
+            }
+        )
+    return records
+
+
+def youtube_analytics_search_term_records() -> list[dict[str, Any]]:
+    """Read channel-wide YT_SEARCH terms through the supported Analytics API."""
+    access_token = youtube_analytics_access_token()
+    if not access_token:
+        return []
+    lookback_days = max(
+        7,
+        min(180, env_int("AUTO_VIRAL_SCHEDULE_SEARCH_TERMS_LOOKBACK_DAYS", 28)),
+    )
+    end_date = datetime.now(timezone.utc).date()
+    start_date = end_date - timedelta(days=lookback_days)
+    limit = max(
+        1,
+        min(25, env_int("AUTO_VIRAL_SCHEDULE_SEARCH_TERMS_LIMIT", 12)),
+    )
+    url = "https://youtubeanalytics.googleapis.com/v2/reports?" + urlencode(
+        {
+            "ids": "channel==MINE",
+            "startDate": start_date.isoformat(),
+            "endDate": end_date.isoformat(),
+            "metrics": "views,estimatedMinutesWatched",
+            "dimensions": "insightTrafficSourceDetail",
+            "filters": "insightTrafficSourceType==YT_SEARCH",
+            "sort": "-views",
+            "maxResults": limit,
+        }
+    )
+    request = urllib.request.Request(
+        url,
+        headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Query search terms YouTube Analytics gagal: {exc}") from exc
+    headers = payload.get("columnHeaders") if isinstance(payload, dict) else []
+    rows = payload.get("rows") if isinstance(payload, dict) else []
+    if not isinstance(headers, list) or not isinstance(rows, list):
+        return []
+    names = [str(item.get("name") or "") for item in headers if isinstance(item, dict)]
+    records: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, list):
+            continue
+        values = dict(zip(names, row, strict=False))
+        term = normalize_youtube_search_term(
+            str(values.get("insightTrafficSourceDetail") or "")
+        )
+        if not term:
+            continue
+        views = max(0, int(values.get("views") or 0))
+        watch_minutes = max(0.0, float(values.get("estimatedMinutesWatched") or 0))
+        records.append(
+            {
+                "term": term,
+                "views": views,
+                "watch_minutes": round(watch_minutes, 3),
+                "score": round(views + watch_minutes * 0.25, 3),
+                "source": "youtube_analytics",
+            }
+        )
+    return records
+
+
+def youtube_studio_search_term_records() -> list[dict[str, Any]]:
+    """Best-effort fallback using the already authenticated Studio session."""
+    if not playwright_installed():
+        return []
+    state_path = Path(
+        os.environ.get(
+            "YOUTUBE_PLAYWRIGHT_STATE",
+            BASE_DIR / "data" / "youtube_storage_state.json",
+        )
+    )
+    if not state_path.is_file():
+        return []
+    limit = max(
+        1,
+        min(6, env_int("AUTO_VIRAL_SCHEDULE_STUDIO_TERM_VIDEO_LIMIT", 3)),
+    )
+    with youtube_uploads_lock:
+        uploads = list(youtube_uploads.values())
+    ranked_uploads: list[tuple[int, str]] = []
+    for upload in uploads:
+        if upload.status != "completed" or not upload.upload_confirmed:
+            continue
+        video_id = youtube_video_id_from_url(upload.video_url or "")
+        if not video_id:
+            continue
+        latest = latest_performance_snapshot(upload)
+        ranked_uploads.append((max(0, int(latest.views if latest else 0)), video_id))
+    ranked_uploads.sort(reverse=True)
+    ranked_uploads = ranked_uploads[:limit]
+    if not ranked_uploads:
+        return []
+
+    from playwright.sync_api import sync_playwright
+
+    aggregated: dict[str, dict[str, Any]] = {}
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+        )
+        try:
+            context = browser.new_context(
+                storage_state=str(state_path),
+                locale="id-ID",
+                timezone_id="Asia/Jakarta",
+            )
+            page = context.new_page()
+            page.set_default_timeout(8_000)
+            for views, video_id in ranked_uploads:
+                url = (
+                    f"https://studio.youtube.com/video/{video_id}/analytics/"
+                    "tab-reach_viewers/period-since_publish"
+                )
+                try:
+                    page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+                    page.wait_for_timeout(1_500)
+                    bypass = page.get_by_text("LANGSUNG KE YOUTUBE STUDIO", exact=False)
+                    if bypass.count():
+                        bypass.first.click()
+                    body = ""
+                    for _attempt in range(12):
+                        page.wait_for_timeout(750)
+                        body = page.locator("body").inner_text(timeout=8_000)
+                        if any(
+                            marker in body.casefold()
+                            for marker in (
+                                "istilah penelusuran youtube",
+                                "youtube search terms",
+                            )
+                        ):
+                            break
+                    for record in parse_youtube_studio_search_terms(
+                        body,
+                        video_views=views,
+                    ):
+                        key = str(record["term"]).casefold()
+                        current = aggregated.setdefault(
+                            key,
+                            {
+                                "term": record["term"],
+                                "views": 0,
+                                "score": 0.0,
+                                "source_videos": 0,
+                                "source": "youtube_studio",
+                            },
+                        )
+                        current["views"] += int(record.get("views") or 0)
+                        current["score"] += float(record.get("score") or 0)
+                        current["source_videos"] += 1
+                except Exception:
+                    continue
+            context.close()
+        finally:
+            browser.close()
+    records = list(aggregated.values())
+    records.sort(
+        key=lambda item: (
+            float(item.get("score") or 0),
+            int(item.get("views") or 0),
+        ),
+        reverse=True,
+    )
+    return records
+
+
+def load_youtube_search_term_cache(*, max_age_seconds: int) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(YOUTUBE_SEARCH_TERMS_CACHE_PATH.read_text(encoding="utf-8"))
+        captured_at = datetime.fromisoformat(str(payload.get("captured_at") or ""))
+        if captured_at.tzinfo is None:
+            captured_at = captured_at.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - captured_at.astimezone(timezone.utc)).total_seconds()
+        records = payload.get("records")
+        if age > max_age_seconds or not isinstance(records, list):
+            return []
+        return [record for record in records if isinstance(record, dict)]
+    except (OSError, ValueError, json.JSONDecodeError, AttributeError):
+        return []
+
+
+def save_youtube_search_term_cache(records: list[dict[str, Any]]) -> None:
+    payload = {
+        "schema_version": 1,
+        "captured_at": now_iso(),
+        "records": records[:25],
+    }
+    with youtube_search_terms_cache_lock:
+        YOUTUBE_SEARCH_TERMS_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary = YOUTUBE_SEARCH_TERMS_CACHE_PATH.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        temporary.replace(YOUTUBE_SEARCH_TERMS_CACHE_PATH)
+
+
+def youtube_channel_search_term_records(run_id: str) -> list[dict[str, Any]]:
+    """Return fresh channel demand signals without ever making cron depend on them."""
+    if not env_bool("AUTO_VIRAL_SCHEDULE_CHANNEL_SEARCH_TERMS_ENABLED", True):
+        return []
+    ttl_seconds = max(
+        900,
+        min(
+            86_400,
+            env_int("AUTO_VIRAL_SCHEDULE_SEARCH_TERMS_CACHE_TTL_SECONDS", 21_600),
+        ),
+    )
+    cached = load_youtube_search_term_cache(max_age_seconds=ttl_seconds)
+    if cached:
+        append_auto_viral_log(
+            run_id,
+            f"Memakai {len(cached)} search term channel dari cache dinamis.",
+        )
+        return cached
+    records: list[dict[str, Any]] = []
+    errors: list[str] = []
+    try:
+        records = youtube_analytics_search_term_records()
+    except RuntimeError as exc:
+        errors.append(str(exc))
+    if not records:
+        try:
+            records = youtube_studio_search_term_records()
+        except Exception as exc:
+            errors.append(f"fallback Studio gagal: {exc}")
+    if records:
+        records.sort(
+            key=lambda item: (
+                float(item.get("score") or 0),
+                int(item.get("views") or 0),
+            ),
+            reverse=True,
+        )
+        save_youtube_search_term_cache(records)
+        append_auto_viral_log(
+            run_id,
+            f"Radar demand channel membaca {len(records)} istilah penelusuran aktual.",
+        )
+        return records
+    stale = load_youtube_search_term_cache(max_age_seconds=7 * 86_400)
+    if stale:
+        append_auto_viral_log(
+            run_id,
+            f"Refresh search terms gagal; memakai {len(stale)} sinyal cache lama yang masih aman.",
+        )
+        return stale
+    if errors:
+        append_auto_viral_error(run_id, "; ".join(errors[-2:]))
+    return []
+
+
+def cron_theme_signal_score(value: str, theme_key: str) -> int:
+    normalized = f" {re.sub(r'[^a-z0-9+]+', ' ', value.casefold()).strip()} "
+    return sum(
+        1
+        for marker in RYUUNDY_CRON_THEME_SIGNALS.get(theme_key, set())
+        if f" {marker} " in normalized
+    )
+
+
+def youtube_channel_search_term_signals(
+    run_id: str,
+    theme_key: str,
+) -> tuple[list[str], set[str]]:
+    records = youtube_channel_search_term_records(run_id)
+    if not records:
+        return [], set()
+    matched = [
+        record
+        for record in records
+        if cron_theme_signal_score(str(record.get("term") or ""), theme_key) > 0
+    ]
+    # A proven search term is still useless when it belongs to a different
+    # editorial lane. Keep it cached for that lane's turn instead of spending
+    # quota on an off-theme query that the downstream gate would reject.
+    ordered = matched
+    limit = max(
+        1,
+        min(8, env_int("AUTO_VIRAL_SCHEDULE_SEARCH_TERMS_QUERY_LIMIT", 4)),
+    )
+    queries = merge_unique_queries(
+        [normalize_youtube_search_term(str(record.get("term") or "")) for record in ordered]
+    )[:limit]
+    tokens = {
+        token
+        for record in records
+        for token in re.findall(r"[a-z0-9]{3,}", str(record.get("term") or "").casefold())
+        if token not in YOUTUBE_TREND_STOPWORDS
+    }
+    return queries, tokens
+
+
+def interleave_query_lanes(
+    *lanes: list[str],
+    limit: int,
+) -> list[str]:
+    """Give demand, live trend, and editorial lanes a fair bounded API budget."""
+    output: list[str] = []
+    seen: set[str] = set()
+    indexes = [0] * len(lanes)
+    while len(output) < limit:
+        added = False
+        for lane_index, lane in enumerate(lanes):
+            while indexes[lane_index] < len(lane):
+                value = re.sub(r"\s+", " ", lane[indexes[lane_index]]).strip()[:480]
+                indexes[lane_index] += 1
+                key = value.casefold()
+                if not value or key in seen:
+                    continue
+                output.append(value)
+                seen.add(key)
+                added = True
+                break
+            if len(output) >= limit:
+                break
+        if not added:
+            break
+    return output
+
+
 def youtube_trend_signals(
     request: AutoViralRequest | ViralVideoSearchRequest,
     run_id: str,
@@ -15214,34 +15636,53 @@ def search_youtube_data_api_viral_sources(
         request,
         cron_trend=cron_trend_lane and not cron_humor_lane,
     )
+    max_api_queries = max(1, min(20, env_int("VIRAL_CC_MAX_API_QUERIES", 1)))
+    channel_term_queries: list[str] = []
     if cron_humor_lane:
         append_auto_viral_log(
             run_id,
             "Jalur humor cronjob aktif; seed tren umum dimatikan agar hasil tetap komedi ringan.",
         )
     else:
+        if cron_trend_lane:
+            channel_term_queries, channel_term_tokens = youtube_channel_search_term_signals(
+                run_id,
+                request.cron_theme_key,
+            )
+            trend_tokens.update(channel_term_tokens)
         try:
-            trend_seeds, trend_tokens = youtube_trend_signals(
+            trend_seeds, live_trend_tokens = youtube_trend_signals(
                 request,
                 run_id,
                 cron_trend=cron_trend_lane,
             )
-            api_queries = add_trend_seeds_to_queries(
-                api_queries,
-                trend_seeds,
-                prefer_live=cron_trend_lane,
-            )
-            api_queries = api_queries[
-                : max(1, min(20, env_int("VIRAL_CC_MAX_API_QUERIES", 1)))
-            ]
+            trend_tokens.update(live_trend_tokens)
+            if cron_trend_lane:
+                api_queries = interleave_query_lanes(
+                    channel_term_queries,
+                    live_youtube_trend_queries(trend_seeds),
+                    api_queries,
+                    limit=max_api_queries,
+                )
+            else:
+                api_queries = add_trend_seeds_to_queries(
+                    api_queries,
+                    trend_seeds,
+                    prefer_live=False,
+                )[:max_api_queries]
             if cron_trend_lane and trend_seeds:
                 append_auto_viral_log(
                     run_id,
-                    "Query live dari chart YouTube diprioritaskan; katalog bawaan hanya fallback.",
+                    "Budget query dibagi dinamis antara search terms channel, tren live, dan tema editorial.",
                 )
         except Exception as exc:
             append_auto_viral_error(run_id, f"Chart tren YouTube gagal; lanjut dengan keyword utama: {exc}")
-    max_api_queries = max(1, min(20, env_int("VIRAL_CC_MAX_API_QUERIES", 1)))
+            if cron_trend_lane:
+                api_queries = interleave_query_lanes(
+                    channel_term_queries,
+                    api_queries,
+                    limit=max_api_queries,
+                )
     preferred_specs = cron_gaming_channel_query_specs(request, run_id)
     query_specs: list[tuple[str, str]] = []
     for spec in [*preferred_specs, *((query, "") for query in api_queries)]:
@@ -19207,11 +19648,63 @@ def scheduled_performance_winner_profile() -> tuple[str, dict[str, Any]] | None:
     return "gaming_story", profile
 
 
+def scheduled_search_term_winner_profile() -> tuple[str, dict[str, Any]] | None:
+    """Let proven channel demand steer part of cron rotation without locking it."""
+    if not env_bool("AUTO_VIRAL_SCHEDULE_CHANNEL_SEARCH_TERMS_ENABLED", True):
+        return None
+    records = load_youtube_search_term_cache(max_age_seconds=7 * 86_400)
+    if not records:
+        return None
+    theme_scores: Counter[str] = Counter()
+    matched_terms: dict[str, list[str]] = {}
+    for record in records:
+        term = normalize_youtube_search_term(str(record.get("term") or ""))
+        if not term:
+            continue
+        weight = max(
+            1.0,
+            float(record.get("score") or 0),
+            float(record.get("views") or 0),
+        )
+        for theme_key in RYUUNDY_CRON_THEME_PROFILES:
+            if theme_key == "humor_interlude":
+                continue
+            hits = cron_theme_signal_score(term, theme_key)
+            if not hits:
+                continue
+            theme_scores[theme_key] += weight * hits
+            matched_terms.setdefault(theme_key, []).append(term)
+    if not theme_scores:
+        return None
+    theme_key, score = theme_scores.most_common(1)[0]
+    share_percent = max(
+        10,
+        min(80, env_int("AUTO_VIRAL_SCHEDULE_SEARCH_TERM_THEME_SHARE_PERCENT", 50)),
+    )
+    with auto_viral_lock:
+        scheduled_run_count = sum(
+            run.trigger == "schedule" for run in auto_viral_runs.values()
+        )
+    if (scheduled_run_count * 53) % 100 >= share_percent:
+        return None
+    profile = dict(RYUUNDY_CRON_THEME_PROFILES[theme_key])
+    profile["search_term_winner"] = True
+    profile["search_term_evidence"] = {
+        "score": round(float(score), 2),
+        "matched_terms": merge_unique_queries(matched_terms.get(theme_key, []))[:5],
+        "scheduled_share_percent": share_percent,
+    }
+    return theme_key, profile
+
+
 def scheduled_ryuundy_theme_profile() -> tuple[str, dict[str, Any]]:
     """Pick a performance-led lane, then safely explore unused themes."""
     winner = scheduled_performance_winner_profile()
     if winner is not None:
         return winner
+    demand_winner = scheduled_search_term_winner_profile()
+    if demand_winner is not None:
+        return demand_winner
     cooldown_days = max(
         1, min(14, env_int("AUTO_VIRAL_THEME_COOLDOWN_DAYS", 7))
     )

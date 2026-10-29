@@ -165,6 +165,28 @@ class AnimateShot:
     qa_reasons: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class StoryAudioAsset:
+    path: Path
+    title: str
+    artist: str
+    license: str
+    license_url: str
+    source_url: str
+    moods: tuple[str, ...] = ()
+    kinds: tuple[str, ...] = ()
+    trim_start: float = 0.0
+    max_duration: float = 0.8
+    mix_gain: float = 0.1
+
+
+@dataclass(frozen=True)
+class StorySoundCue:
+    time: float
+    kind: str
+    asset: StoryAudioAsset
+
+
 STORYBOARD_SYSTEM_PROMPT = (
     "You are an animation director and storyboard editor fluent in Indonesian. Turn a user-authored script "
     "into a coherent, original story composed for the requested output aspect ratio. "
@@ -287,6 +309,170 @@ def _plain_text_value(value: object) -> str:
 def _clean_text(value: object, limit: int) -> str:
     clean = re.sub(r"\s+", " ", _plain_text_value(value)).strip()
     return repair_islamic_asr_text(clean)[:limit]
+
+
+def _verified_story_audio_assets(kind: str) -> list[StoryAudioAsset]:
+    """Load only bundled, hash-verified CC0 audio used by Generator Video."""
+    if kind == "music":
+        configured = os.environ.get("BACKGROUND_MUSIC_LIBRARY_DIR", "").strip()
+        root = Path(configured) if configured else Path(__file__).resolve().parent / "assets" / "background_music"
+        collection = "tracks"
+    else:
+        configured = os.environ.get("SOUND_EFFECT_LIBRARY_DIR", "").strip()
+        root = Path(configured) if configured else Path(__file__).resolve().parent / "assets" / "sound_effects"
+        collection = "effects"
+    catalog_path = root / "catalog.json"
+    try:
+        payload = json.loads(catalog_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return []
+    assets: list[StoryAudioAsset] = []
+    for raw in payload.get(collection, []):
+        if not isinstance(raw, dict) or str(raw.get("kind") or "") != kind:
+            continue
+        path = root / Path(str(raw.get("file") or "")).name
+        expected_hash = str(raw.get("sha256") or "").casefold()
+        if not path.is_file() or len(expected_hash) != 64:
+            continue
+        if hashlib.sha256(path.read_bytes()).hexdigest().casefold() != expected_hash:
+            continue
+        assets.append(
+            StoryAudioAsset(
+                path=path,
+                title=_clean_text(raw.get("title"), 120),
+                artist=_clean_text(raw.get("artist"), 120),
+                license=_clean_text(raw.get("license"), 60),
+                license_url=_clean_text(raw.get("license_url"), 300),
+                source_url=_clean_text(raw.get("source_url"), 500),
+                moods=tuple(_clean_text(item, 40).casefold() for item in raw.get("moods", []) if item),
+                kinds=tuple(_clean_text(item, 40).casefold() for item in raw.get("kinds", []) if item),
+                trim_start=max(0.0, float(raw.get("trim_start") or 0.0)),
+                max_duration=max(0.03, float(raw.get("max_duration") or 0.8)),
+                mix_gain=max(0.01, min(0.35, float(raw.get("mix_gain") or 0.1))),
+            )
+        )
+    return assets
+
+
+def _story_music_mood(storyboard: AnimateStoryboard) -> str:
+    text = " ".join(
+        [storyboard.title, storyboard.hook, storyboard.core_message]
+        + [f"{scene.narration} {scene.color_mood}" for scene in storyboard.scenes]
+    ).casefold()
+    if _has_any(text, ("bahaya", "misteri", "tegang", "ancaman", "gagal", "gelap", "jahat", "takut", "suspense")):
+        return "suspense"
+    if _has_any(text, ("berhasil", "bahagia", "harapan", "menang", "lucu", "ceria", "inspirasi", "uplifting")):
+        return "hopeful"
+    return "reflective"
+
+
+def _select_story_music(storyboard: AnimateStoryboard) -> StoryAudioAsset | None:
+    tracks = _verified_story_audio_assets("music")
+    if not tracks:
+        return None
+    mood = _story_music_mood(storyboard)
+    wanted = {
+        "suspense": {"suspense", "tense", "dramatic", "dark"},
+        "hopeful": {"hopeful", "happy", "uplifting", "inspirational", "bright"},
+        "reflective": {"reflective", "calm", "ambient", "educational"},
+    }[mood]
+    return max(
+        tracks,
+        key=lambda track: (
+            len(wanted.intersection(track.moods)),
+            -len(track.title),
+            track.path.name,
+        ),
+    )
+
+
+def _plan_story_sound_cues(
+    storyboard: AnimateStoryboard,
+    shots: list[AnimateShot],
+    *,
+    transition_seconds: float,
+) -> list[StorySoundCue]:
+    """Place a few semantic accents, never a random effect on every cut."""
+    effects = _verified_story_audio_assets("sound_effect")
+    if not effects or not shots:
+        return []
+    by_kind = {
+        cue_kind: asset
+        for asset in effects
+        for cue_kind in asset.kinds
+    }
+    scene_roles = {scene.index: scene.narrative_role for scene in storyboard.scenes}
+    cursor = 0.0
+    planned: list[StorySoundCue] = []
+    last_time = -10.0
+    for index, shot in enumerate(shots):
+        text = f"{shot.narration} {shot.title}".casefold()
+        role = scene_roles.get(shot.scene_index, "development")
+        kind = ""
+        if _has_any(text, ("tertawa", "tawa", "ngakak", "lucu")):
+            kind = "laugh"
+        elif role == "cold_open" and _has_any(
+            text,
+            ("bahaya", "misteri", "gagal", "ancaman", "jahat", "takut", "mengejutkan", "peringatan"),
+        ):
+            kind = "shock"
+        elif role == "payoff_conclusion" or _has_any(
+            text,
+            ("akhirnya", "ternyata", "jawaban", "berhasil", "terungkap", "solusi"),
+        ):
+            kind = "emphasis"
+        event_time = 0.18 if index == 0 else cursor + 0.04
+        asset = by_kind.get(kind)
+        if asset is not None and event_time - last_time >= 2.5:
+            planned.append(StorySoundCue(time=event_time, kind=kind, asset=asset))
+            last_time = event_time
+        if len(planned) >= 3:
+            break
+        cursor += max(0.0, shot.duration - (transition_seconds if index < len(shots) - 1 else 0.0))
+    return planned
+
+
+def _story_audio_filter(
+    *,
+    duration: float,
+    music_input_index: int | None,
+    cues: list[StorySoundCue],
+    cue_input_indices: list[int],
+) -> str:
+    filters = [
+        "[1:a]highpass=f=65,lowpass=f=15500,aresample=48000,asplit=2[voice][sidechain]"
+        if music_input_index is not None
+        else "[1:a]highpass=f=65,lowpass=f=15500,aresample=48000[voice]"
+    ]
+    mix_labels = ["[voice]"]
+    if music_input_index is not None:
+        fade_out_start = max(0.0, duration - min(1.25, duration * 0.12))
+        filters.append(
+            f"[{music_input_index}:a]atrim=0:{duration:.3f},asetpts=PTS-STARTPTS,"
+            f"afade=t=in:st=0:d={min(0.8, duration / 4):.3f},"
+            f"afade=t=out:st={fade_out_start:.3f}:d={max(0.2, duration - fade_out_start):.3f},"
+            "highpass=f=45,lowpass=f=14500,volume=0.13[music]"
+        )
+        filters.append(
+            "[music][sidechain]sidechaincompress=threshold=0.010:ratio=10:attack=14:release=300[ducked]"
+        )
+        mix_labels.append("[ducked]")
+    for cue_index, (cue, input_index) in enumerate(zip(cues, cue_input_indices, strict=True)):
+        delay_ms = max(0, round(cue.time * 1000))
+        label = f"sfx{cue_index}"
+        filters.append(
+            f"[{input_index}:a]atrim=start={cue.asset.trim_start:.3f}:duration={cue.asset.max_duration:.3f},"
+            f"asetpts=PTS-STARTPTS,afade=t=out:st={max(0.0, cue.asset.max_duration - 0.12):.3f}:d=0.12,"
+            f"volume={cue.asset.mix_gain:.3f},adelay={delay_ms}|{delay_ms}[{label}]"
+        )
+        mix_labels.append(f"[{label}]")
+    filters.append(
+        "".join(mix_labels)
+        + f"amix=inputs={len(mix_labels)}:duration=first:dropout_transition=0:normalize=0,"
+        "loudnorm=I=-16:TP=-1.2:LRA=10,alimiter=limit=0.96:attack=5:release=80,"
+        f"apad,atrim=0:{duration:.3f}[aout]"
+    )
+    return ";".join(filters)
 
 
 def _sentence_chunks(script: str, target_words: int = 38, max_chunks: int = 14) -> list[str]:
@@ -456,6 +642,17 @@ def _short_on_screen_text(value: str, max_words: int = 6, max_chars: int = 48) -
     if len(shortened) > max_chars:
         shortened = shortened[:max_chars].rsplit(" ", 1)[0]
     return shortened.rstrip(" ,;:-")
+
+
+def _viewer_on_screen_text(value: str) -> str:
+    """Remove internal storyboard headings while preserving real viewer copy."""
+    clean = _short_on_screen_text(value, max_words=12, max_chars=96)
+    if re.match(
+        r"(?i)^\s*(?:adegan|scene|bagian|chapter)\s*\d+\s*(?:[:\-—–]|$)",
+        clean,
+    ):
+        return ""
+    return clean
 
 
 def _extract_quoted_text(value: str, marker_pattern: str) -> str:
@@ -1320,9 +1517,11 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
         "documentary_cinematic",
     }:
         art_bible = (
-            "cinematic realistic documentary-film still, photorealistic subjects and environments, natural anatomy, "
-            "authentic period and cultural details supported by the narration, dramatic motivated lighting, rich depth, "
-            "crisp focal detail, restrained premium color grade, no cartoon or toy-like proportions"
+            "cinematic realistic documentary-film frame captured through a real camera, photorealistic subjects and "
+            "inhabited environments, natural anatomy and unposed body language, authentic period and cultural details "
+            "supported by the narration, one motivated practical light source, tactile imperfect materials, believable "
+            "atmospheric depth, crisp focal detail, gentle highlight roll-off, restrained premium film color grade, "
+            "no cartoon, glossy CGI, plastic skin, or toy-like proportions"
         )
     elif default_visual_style in {"3d", "3d_animated", "animated_3d", "3d-animation"}:
         art_bible = art_styles[int(seed[:2], 16) % len(art_styles)]
@@ -3243,6 +3442,12 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
             else ""
         )
     )
+    photographic_capture = (
+        "Capture: premium live-action documentary frame, natural perspective, motivated practical light, tactile "
+        "imperfect materials, gentle highlight roll-off, and restrained film grain; no glossy CGI or plastic skin. "
+        if use_case == "photorealistic-natural"
+        else "Capture language: preserve the requested authored medium while using cinematic depth, motivated light, tactile surfaces, and restrained color. "
+    )
     return _clean_text(
         f"FULL-BLEED {output_aspect} SINGLE CAMERA FRAME for a {output_type}; use case: {use_case}. "
         f"SHOT-SPECIFIC CONTRACT — Visible moment: {visible}. "
@@ -3250,6 +3455,7 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
         + f"Atmosphere, lighting, weather, time, and color mood: {scene.color_mood}. "
         + production_contract
         + f"Motion-ready pose/environment direction: {animation_direction}. "
+        + photographic_capture
         + "The exact action, setting, conditions, and atmosphere above must be unmistakable. "
         + "Do not import an action, location, weather, time, character, prop, or mood from another shot. "
         + f"{subject_count}{qa_repair_direction}"
@@ -4962,8 +5168,9 @@ def render_motion_shot_video(shot: AnimateShot, video_path: Path, scene_dir: Pat
     """Normalize provider video to the exact timeline while discarding paid native audio."""
     _aspect, output_width, output_height = _output_geometry()
     title_path = scene_dir / f"shot_{shot.index:02}.title.txt"
-    if shot.on_screen_text:
-        title_path.write_text(shot.on_screen_text + "\n", encoding="utf-8")
+    display_text = _viewer_on_screen_text(shot.on_screen_text)
+    if display_text:
+        title_path.write_text(display_text + "\n", encoding="utf-8")
     output_path = scene_dir / f"shot_{shot.index:02}.mp4"
     title_end = min(3.8, max(0.45, shot.duration - 0.08))
     vf_parts = [
@@ -4976,7 +5183,7 @@ def render_motion_shot_video(shot: AnimateShot, video_path: Path, scene_dir: Pat
         "eq=contrast=1.02:saturation=1.035",
         "unsharp=5:5:0.20:5:5:0.0",
     ]
-    if shot.on_screen_text:
+    if display_text:
         vf_parts.extend(
             [
                 f"drawbox=x=86:y=76:w=720:h=142:color=black@0.58:t=fill:enable='between(t,0.08,{title_end:.3f})'",
@@ -5022,8 +5229,9 @@ def render_shot_video(shot: AnimateShot, image_path: Path, scene_dir: Path) -> P
     frames = max(1, round(shot.duration * 30))
     zoom, x, y = _motion_expression(shot, frames)
     title_path = scene_dir / f"shot_{shot.index:02}.title.txt"
-    if shot.on_screen_text:
-        title_path.write_text(shot.on_screen_text + "\n", encoding="utf-8")
+    display_text = _viewer_on_screen_text(shot.on_screen_text)
+    if display_text:
+        title_path.write_text(display_text + "\n", encoding="utf-8")
     output_path = scene_dir / f"shot_{shot.index:02}.mp4"
     title_end = min(3.8, max(0.45, shot.duration - 0.08))
     vf_parts = [
@@ -5032,7 +5240,7 @@ def render_shot_video(shot: AnimateShot, image_path: Path, scene_dir: Path) -> P
         "eq=brightness='0.006*sin(2*PI*t/7)':eval=frame:contrast=1.025:saturation=1.04:gamma=1.005",
         "unsharp=5:5:0.28:5:5:0.0",
     ]
-    if shot.on_screen_text:
+    if display_text:
         vf_parts.extend(
             [
                 f"drawbox=x=86:y=76:w=720:h=142:color=black@0.58:t=fill:enable='between(t,0.08,{title_end:.3f})'",
@@ -5730,23 +5938,29 @@ def render_long_animate(
         for shot in shots[:-1]:
             cut_cursor += shot.duration - transition_seconds
             cut_points.append(cut_cursor)
-        story_seed = int(hashlib.sha256(production_script.encode()).hexdigest()[:8], 16)
-        freq_a = 110 + story_seed % 55
-        freq_b = 165 + (story_seed // 7) % 70
-        sfx_window = "+".join(
-            f"between(t\\,{max(0.0, point - 0.05):.3f}\\,{min(duration, point + 0.10):.3f})"
-            for point in cut_points
-        ) or "0"
-        audio_filter = (
-            "[2:a]volume=0.018,lowpass=f=1250[m1];"
-            "[3:a]volume=0.012,lowpass=f=1850[m2];"
-            "[m1][m2]amix=inputs=2:duration=longest:normalize=0[music];"
-            "[1:a]highpass=f=65,lowpass=f=15500,aresample=48000,asplit=2[voice][sidechain];"
-            "[music][sidechain]sidechaincompress=threshold=0.012:ratio=8:attack=18:release=260[ducked];"
-            f"[4:a]highpass=f=900,lowpass=f=4200,volume='0.12*({sfx_window})':eval=frame[sfx];"
-            "[voice][ducked][sfx]amix=inputs=3:duration=first:dropout_transition=0:normalize=0,"
-            f"loudnorm=I=-16:TP=-1.2:LRA=10,alimiter=limit=0.96:attack=5:release=80,"
-            f"apad,atrim=0:{duration:.3f}[aout]"
+        story_music = _select_story_music(storyboard)
+        story_sound_cues = _plan_story_sound_cues(
+            storyboard,
+            shots,
+            transition_seconds=transition_seconds,
+        )
+        audio_inputs: list[str] = []
+        next_audio_input = 2
+        music_input_index: int | None = None
+        if story_music is not None:
+            music_input_index = next_audio_input
+            audio_inputs.extend(["-stream_loop", "-1", "-i", str(story_music.path.resolve())])
+            next_audio_input += 1
+        cue_input_indices: list[int] = []
+        for cue in story_sound_cues:
+            cue_input_indices.append(next_audio_input)
+            audio_inputs.extend(["-i", str(cue.asset.path.resolve())])
+            next_audio_input += 1
+        audio_filter = _story_audio_filter(
+            duration=duration,
+            music_input_index=music_input_index,
+            cues=story_sound_cues,
+            cue_input_indices=cue_input_indices,
         )
         quality_crf = {"standard": "19", "high": "16", "max": "14"}.get(video_quality, "16")
 
@@ -5763,18 +5977,7 @@ def render_long_animate(
             str(assembled.resolve()),
             "-i",
             str(narration_track.resolve()),
-            "-f",
-            "lavfi",
-            "-i",
-            f"sine=frequency={freq_a}:sample_rate=48000:duration={duration:.3f}",
-            "-f",
-            "lavfi",
-            "-i",
-            f"sine=frequency={freq_b}:sample_rate=48000:duration={duration:.3f}",
-            "-f",
-            "lavfi",
-            "-i",
-            f"anoisesrc=color=pink:amplitude=0.08:sample_rate=48000:duration={duration:.3f}",
+            *audio_inputs,
             "-filter_complex",
             audio_filter,
             "-vf",
@@ -6213,6 +6416,35 @@ def render_long_animate(
             "frame_native_timing": render_engine == "remotion",
             "renderer": "remotion" if render_engine == "remotion" else "ffmpeg_ass",
         },
+        "audio_design": {
+            "version": 2,
+            "speech_priority": True,
+            "music_ducking": "sidechain_under_narration" if story_music else "not_available",
+            "music_mood": _story_music_mood(storyboard),
+            "music": (
+                {
+                    "title": story_music.title,
+                    "artist": story_music.artist,
+                    "license": story_music.license,
+                    "license_url": story_music.license_url,
+                    "source_url": story_music.source_url,
+                }
+                if story_music
+                else None
+            ),
+            "sound_effect_policy": "semantic_story_beats_only_max_3",
+            "sound_effects": [
+                {
+                    "time": round(cue.time, 3),
+                    "kind": cue.kind,
+                    "title": cue.asset.title,
+                    "artist": cue.asset.artist,
+                    "license": cue.asset.license,
+                    "source_url": cue.asset.source_url,
+                }
+                for cue in story_sound_cues
+            ],
+        },
         "timing_engine": {
             "version": 3,
             "requested_target_duration": requested_target_duration,
@@ -6264,8 +6496,8 @@ def render_long_animate(
             "ai_or_procedural_images": True,
             "ai_generated_video": False,
             "synthetic_or_neural_voice": True,
-            "procedural_music": True,
-            "procedural_transition_sfx": True,
+            "procedural_music": False,
+            "procedural_transition_sfx": False,
             "youtube_ai_use_disclosure": "required_conservative_default",
             "real_person_impersonation_allowed": False,
             "public_figure_likeness_allowed": False,
@@ -6279,7 +6511,9 @@ def render_long_animate(
                 }
                 for scene in storyboard.scenes
             ),
-            "third_party_music_used": False,
+            "third_party_music_used": story_music is not None,
+            "third_party_music_license": story_music.license if story_music else None,
+            "third_party_music_attribution_required": False,
             "third_party_video_used": bool(stock_attributions),
             "third_party_video_attribution_recorded": bool(stock_attributions),
         },

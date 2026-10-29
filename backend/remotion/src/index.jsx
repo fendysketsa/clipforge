@@ -53,8 +53,8 @@ const Atmosphere = ({shot}) => {
   return (
     <AbsoluteFill style={{
       pointerEvents: 'none',
-      opacity: .28,
-      mixBlendMode: 'screen',
+      opacity: .10,
+      mixBlendMode: 'soft-light',
       transform: `translate3d(${driftX}%, ${driftY}%, 0)`,
       background: [
         `radial-gradient(circle at ${20 + seed % 45}% ${18 + seed % 30}%, ${accent}42 0%, transparent 34%)`,
@@ -67,11 +67,14 @@ const Atmosphere = ({shot}) => {
 const TransitionOverlay = ({design = {}}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  const length = Math.max(4, Math.round(fps * .38));
+  const length = Math.max(4, Math.round(fps * .24));
   if (frame > length) return null;
   const p = interpolate(frame, [0, length], [0, 1], clamp);
   const accent = design.accentColor || '#65B7FF';
   const type = design.transition || 'directional_wipe';
+  if (type === 'film_fade') {
+    return <AbsoluteFill style={{background: '#030507', opacity: interpolate(p, [0, 1], [1, 0], clamp)}}/>;
+  }
   if (type === 'match_flash') {
     return <AbsoluteFill style={{background: '#fff', opacity: interpolate(p, [0, .22, 1], [.62, .08, 0], clamp)}}/>;
   }
@@ -123,6 +126,34 @@ const TransitionOverlay = ({design = {}}) => {
   }}/>;
 };
 
+const CinematicFinish = ({shot}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const seed = stableNumber(shot.id);
+  const grainX = ((frame * 17 + seed) % 23) - 11;
+  const grainY = ((frame * 29 + seed) % 19) - 9;
+  const breathe = .018 + Math.sin((frame / fps) * .72 + seed) * .006;
+  return (
+    <AbsoluteFill style={{pointerEvents: 'none'}}>
+      <AbsoluteFill style={{
+        boxShadow: 'inset 0 0 150px rgba(0,0,0,.46)',
+        background: `linear-gradient(180deg, rgba(255,244,226,${breathe}) 0%, transparent 38%, rgba(0,8,18,.055) 100%)`,
+      }}/>
+      <AbsoluteFill style={{
+        inset: '-3%',
+        opacity: .038,
+        mixBlendMode: 'soft-light',
+        transform: `translate3d(${grainX}px, ${grainY}px, 0)`,
+        backgroundImage: [
+          'repeating-radial-gradient(circle at 20% 30%, rgba(255,255,255,.85) 0 .7px, transparent .9px 3px)',
+          'repeating-radial-gradient(circle at 70% 60%, rgba(0,0,0,.75) 0 .6px, transparent .8px 2.7px)',
+        ].join(','),
+        backgroundSize: '7px 9px, 9px 8px',
+      }}/>
+    </AbsoluteFill>
+  );
+};
+
 const Shot = ({shot}) => {
   const frame = useCurrentFrame();
   const {fps, width, height} = useVideoConfig();
@@ -138,7 +169,7 @@ const Shot = ({shot}) => {
     height: '100%',
     objectFit: 'cover',
     transform: cameraTransform(shot.cameraMotion, progress, portrait, design.intensity),
-    filter: 'saturate(1.05) contrast(1.035)',
+    filter: 'saturate(1.025) contrast(1.045) brightness(.995)',
   };
   const src = staticFile(`assets/${shot.asset}`);
 
@@ -193,6 +224,7 @@ const Shot = ({shot}) => {
           })}
         </div>
       ) : null}
+      <CinematicFinish shot={shot}/>
       <TransitionOverlay design={design}/>
     </AbsoluteFill>
   );

@@ -25,6 +25,23 @@ _MOTION_ACCENTS: tuple[tuple[tuple[str, ...], str], ...] = (
     (("blue", "cyan", "night", "biru", "malam", "dingin"), "#65B7FF"),
 )
 _FALLBACK_ACCENTS = ("#65B7FF", "#F6C453", "#A98BFF", "#63C995", "#F08AA5")
+_PRODUCTION_LABEL_RE = re.compile(
+    r"(?i)^\s*(?:adegan|scene|bagian|chapter)\s*\d+\s*(?:[:\-—–]|$)"
+)
+
+
+def _viewer_overlay_text(shot: Any) -> str:
+    """Keep authored viewer copy while hiding internal production headings.
+
+    Scene titles are useful in the storyboard and sidecar, but they must never
+    leak into the finished picture as ``Adegan 3: ...``.  An empty
+    ``on_screen_text`` intentionally stays empty instead of falling back to
+    the internal shot title.
+    """
+    value = " ".join(str(getattr(shot, "on_screen_text", "") or "").split())
+    if not value or _PRODUCTION_LABEL_RE.match(value):
+        return ""
+    return value[:120]
 
 
 def _motion_accent(color_mood: str, seed: str) -> str:
@@ -39,7 +56,7 @@ def _motion_accent(color_mood: str, seed: str) -> str:
 def _motion_transition(shot: Any, narrative_role: str, index: int) -> str:
     """Translate editorial intent into a small, consistent transition grammar."""
     if index == 1:
-        return "aperture"
+        return "film_fade"
     raw = str(getattr(shot, "transition", "") or "").casefold()
     local_index = int(getattr(shot, "shot_index", 1) or 1)
     if local_index > 1 or any(token in raw for token in ("match", "action", "cut")):
@@ -325,7 +342,7 @@ def render_story_with_remotion(
                 "cameraAngle": str(
                     getattr(shot, "camera_angle", "eye_level") or "eye_level"
                 ),
-                "onScreenText": str(shot.on_screen_text or shot.title or "").strip()[:120],
+                "onScreenText": _viewer_overlay_text(shot),
                 "narration": str(shot.narration or "").strip(),
                 "colorMood": str(shot.color_mood or "").strip(),
                 "narrativeRole": narrative_role,
@@ -389,7 +406,7 @@ def render_story_with_remotion(
                 "captionTiming": "measured-tts-frame-native",
                 "captionPresentation": "stable-phrase",
                 "transitionGrammar": [
-                    "aperture",
+                    "film_fade",
                     "directional_wipe",
                     "split_wipe",
                     "match_flash",

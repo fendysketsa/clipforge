@@ -111,13 +111,15 @@ def test_remotion_manifest_projects_hypit_scenes_to_measured_timeline(
     assert composition["shots"][1]["duration"] == 3.0
     assert composition["shots"][0]["narrativeRole"] == "cold_open"
     assert composition["shots"][0]["motionDesign"] == {
-        "transition": "aperture",
+        "transition": "film_fade",
         "accentColor": "#F6C453",
         "titleStyle": "impact",
         "intensity": 1.12,
     }
     assert composition["shots"][1]["motionDesign"]["transition"] == "light_sweep"
     assert composition["shots"][1]["motionDesign"]["accentColor"] == "#65B7FF"
+    assert composition["shots"][0]["onScreenText"] == "Tanda Aneh"
+    assert composition["shots"][1]["onScreenText"] == ""
     assert composition["scenes"][1]["role"] == "payoff_conclusion"
     assert composition["scenes"][0]["start"] == 0.0
     assert composition["scenes"][1]["start"] == 2.0
@@ -161,3 +163,16 @@ def test_motion_design_uses_a_small_role_aware_transition_grammar():
     assert renderer._motion_transition(matched, "development", 3) == "match_flash"
     assert renderer._motion_title_style("evidence_and_answer") == "proof"
     assert renderer._motion_accent("suasana hijau hutan", "seed") == "#63C995"
+
+
+def test_viewer_overlay_never_falls_back_to_internal_scene_title():
+    empty = SimpleNamespace(on_screen_text="", title="Adegan 3: Kegagalan Anjing Baik")
+    leaked = SimpleNamespace(
+        on_screen_text="Adegan 3: Kegagalan Anjing Baik",
+        title="Kegagalan Anjing Baik",
+    )
+    authored = SimpleNamespace(on_screen_text="Kesetiaan Itu Diuji", title="Bagian 3")
+
+    assert renderer._viewer_overlay_text(empty) == ""
+    assert renderer._viewer_overlay_text(leaked) == ""
+    assert renderer._viewer_overlay_text(authored) == "Kesetiaan Itu Diuji"

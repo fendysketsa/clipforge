@@ -3720,6 +3720,109 @@ def test_cron_google_trends_rss_adds_live_safe_indonesia_signals(monkeypatch):
     assert {"sumpah", "pemuda", "timnas", "jepang"}.issubset(tokens)
 
 
+def test_cron_parses_real_youtube_studio_search_terms():
+    import api
+
+    body = """
+    Istilah penelusuran YouTube
+    Penayangan · Sejak dipublikasikan
+    Proporsi dari total traffic Anda:
+    3,0%
+    dunia budi roblox
+    7,5%
+    kak yuta
+    2,7%
+    barcelona vs real madrid 2-5
+    1,7%
+    Lihat lainnya
+    """
+
+    records = api.parse_youtube_studio_search_terms(body, video_views=5000)
+
+    assert [record["term"] for record in records] == [
+        "dunia budi roblox",
+        "kak yuta",
+        "barcelona vs real madrid 2-5",
+    ]
+    assert records[0]["source"] == "youtube_studio"
+    assert records[0]["score"] > records[1]["score"]
+
+
+def test_cron_channel_search_terms_match_theme_and_share_query_budget(monkeypatch):
+    import api
+
+    monkeypatch.setattr(
+        api,
+        "youtube_channel_search_term_records",
+        lambda _run_id: [
+            {"term": "barcelona vs real madrid 2-5", "score": 20},
+            {"term": "kak yuta roblox", "score": 18},
+            {"term": "timnas indonesia", "score": 10},
+            {"term": "baby shark", "score": 4},
+        ],
+    )
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_SEARCH_TERMS_QUERY_LIMIT", "3")
+
+    queries, tokens = api.youtube_channel_search_term_signals(
+        "cron-demand",
+        "football_story",
+    )
+    distributed = api.interleave_query_lanes(
+        queries,
+        ["Timnas Indonesia vs Jepang pembahasan indonesia"],
+        ["cerita pertandingan sepak bola terbaru komentar indonesia"],
+        limit=4,
+    )
+
+    assert queries[0] == "barcelona vs real madrid 2-5"
+    assert {"barcelona", "madrid", "roblox"}.issubset(tokens)
+    assert api.cron_theme_signal_score("mukjizat nabi muhammad", "faith_life") > 0
+    assert distributed == [
+        "barcelona vs real madrid 2-5",
+        "Timnas Indonesia vs Jepang pembahasan indonesia",
+        "cerita pertandingan sepak bola terbaru komentar indonesia",
+        "timnas indonesia",
+    ]
+
+
+def test_cron_cached_search_demand_can_choose_next_theme(monkeypatch):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_CHANNEL_SEARCH_TERMS_ENABLED", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_SEARCH_TERM_THEME_SHARE_PERCENT", "80")
+    monkeypatch.setattr(api, "auto_viral_runs", {})
+    monkeypatch.setattr(
+        api,
+        "load_youtube_search_term_cache",
+        lambda **_kwargs: [
+            {"term": "dunia budi roblox", "score": 40, "views": 12},
+            {"term": "kak yuta", "score": 25, "views": 8},
+            {"term": "barcelona real madrid", "score": 5, "views": 2},
+        ],
+    )
+
+    key, profile = api.scheduled_search_term_winner_profile() or ("", {})
+
+    assert key == "gaming_story"
+    assert profile["search_term_winner"] is True
+    assert "dunia budi roblox" in profile["search_term_evidence"]["matched_terms"]
+
+
+def test_cron_football_theme_accepts_relevant_commentary():
+    import api
+
+    source = {
+        "title": "Barcelona vs Real Madrid, gol comeback bikin komentator kaget",
+        "description": "Analisis pertandingan sepak bola dalam Bahasa Indonesia.",
+        "default_language": "id",
+    }
+
+    assert api.cron_trend_candidate_rejection_reason(
+        source,
+        theme_key="football_story",
+    ) == ""
+
+
 def test_cron_google_trends_survives_youtube_chart_failure(monkeypatch):
     import api
 

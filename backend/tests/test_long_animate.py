@@ -219,6 +219,74 @@ def test_motion_expression_varies_direction_without_static_slideshow():
     assert "sin(2*PI*on" in zoom
 
 
+def test_internal_scene_heading_is_not_rendered_as_viewer_copy():
+    assert long_animate._viewer_on_screen_text("Adegan 3: Kegagalan Anjing Baik") == ""
+    assert long_animate._viewer_on_screen_text("Scene 2 — Mencari Jawaban") == ""
+    assert long_animate._viewer_on_screen_text("Kesetiaan Itu Diuji") == "Kesetiaan Itu Diuji"
+
+
+def test_story_audio_uses_verified_mood_music_and_semantic_effects(monkeypatch):
+    monkeypatch.delenv("BACKGROUND_MUSIC_LIBRARY_DIR", raising=False)
+    monkeypatch.delenv("SOUND_EFFECT_LIBRARY_DIR", raising=False)
+    storyboard = _fallback_storyboard(
+        "Misteri gelap mengancam seekor anjing baik. Akhirnya kebenaran terungkap dan anjing itu berhasil pulang."
+    )
+    storyboard.scenes[0].narration = "Bahaya misterius membuat semua orang takut."
+    storyboard.scenes[0].narrative_role = "cold_open"
+    storyboard.scenes[-1].narration = "Akhirnya jawaban terungkap."
+    storyboard.scenes[-1].narrative_role = "payoff_conclusion"
+    shots = [
+        long_animate.AnimateShot(
+            index=index,
+            scene_index=scene.index,
+            shot_index=1,
+            shot_count=1,
+            title=scene.title,
+            narration=scene.narration,
+            visual_prompt=scene.visual_prompt,
+            on_screen_text="",
+            camera_motion=scene.camera_motion,
+            color_mood=scene.color_mood,
+            duration=4.0,
+        )
+        for index, scene in enumerate((storyboard.scenes[0], storyboard.scenes[-1]), start=1)
+    ]
+
+    music = long_animate._select_story_music(storyboard)
+    cues = long_animate._plan_story_sound_cues(storyboard, shots, transition_seconds=0.1)
+
+    assert music is not None
+    assert music.path.name == "suspense.ogg"
+    assert [cue.kind for cue in cues] == ["shock", "emphasis"]
+    assert all(cue.asset.license == "CC0-1.0" for cue in cues)
+
+
+def test_story_audio_filter_ducks_music_and_places_real_sfx():
+    asset = long_animate.StoryAudioAsset(
+        path=Path("effect.wav"),
+        title="Effect",
+        artist="Artist",
+        license="CC0-1.0",
+        license_url="https://creativecommons.org/publicdomain/zero/1.0/",
+        source_url="https://example.test/effect",
+        kinds=("emphasis",),
+        trim_start=0.1,
+        max_duration=0.5,
+        mix_gain=0.08,
+    )
+    value = long_animate._story_audio_filter(
+        duration=12.0,
+        music_input_index=2,
+        cues=[long_animate.StorySoundCue(time=4.2, kind="emphasis", asset=asset)],
+        cue_input_indices=[3],
+    )
+
+    assert "sidechaincompress" in value
+    assert "adelay=4200|4200" in value
+    assert "sine=" not in value
+    assert "anoisesrc" not in value
+
+
 def test_local_image_prompt_keeps_exact_action_and_drops_later_crowd_language():
     shot = long_animate.AnimateShot(
         index=3,
