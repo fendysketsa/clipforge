@@ -128,6 +128,44 @@ def test_studio_tags_are_normalized_deduplicated_and_bounded():
     assert len(normalized_studio_tags(",".join(f"tag-{index}" for index in range(30)))) == 15
 
 
+def test_large_video_input_uses_extended_timeout(tmp_path, monkeypatch):
+    video_path = tmp_path / "long.mp4"
+    video_path.write_bytes(b"0" * (2 * 1024 * 1024))
+    calls = []
+
+    class FileInput:
+        def set_input_files(self, path, **kwargs):
+            calls.append((path, kwargs))
+
+    monkeypatch.setenv("YOUTUBE_SET_INPUT_FILES_TIMEOUT_MS", "120000")
+    monkeypatch.setenv("YOUTUBE_LARGE_FILE_INPUT_THRESHOLD_MB", "1")
+    monkeypatch.setenv("YOUTUBE_LARGE_FILE_SET_INPUT_FILES_TIMEOUT_MS", "900000")
+    monkeypatch.setenv("YOUTUBE_FILE_INPUT_HEARTBEAT_SECONDS", "60")
+    monkeypatch.setattr(youtube_uploader, "log", lambda _message: None)
+
+    assert youtube_uploader.set_video_input_files(None, FileInput(), video_path) is True
+    assert calls == [(str(video_path), {"timeout": 900000})]
+
+
+def test_small_video_input_keeps_normal_timeout(tmp_path, monkeypatch):
+    video_path = tmp_path / "short.mp4"
+    video_path.write_bytes(b"short")
+    timeouts = []
+
+    class FileInput:
+        def set_input_files(self, _path, **kwargs):
+            timeouts.append(kwargs["timeout"])
+
+    monkeypatch.setenv("YOUTUBE_SET_INPUT_FILES_TIMEOUT_MS", "120000")
+    monkeypatch.setenv("YOUTUBE_LARGE_FILE_INPUT_THRESHOLD_MB", "24")
+    monkeypatch.setenv("YOUTUBE_LARGE_FILE_SET_INPUT_FILES_TIMEOUT_MS", "900000")
+    monkeypatch.setenv("YOUTUBE_FILE_INPUT_HEARTBEAT_SECONDS", "60")
+    monkeypatch.setattr(youtube_uploader, "log", lambda _message: None)
+
+    assert youtube_uploader.set_video_input_files(None, FileInput(), video_path) is True
+    assert timeouts == [120000]
+
+
 def test_existing_channel_default_tags_are_removed_before_upload(monkeypatch):
     page = TagsPage()
     page.existing_tags = ["cerita horor", "urban legend", "hantu Indonesia"]

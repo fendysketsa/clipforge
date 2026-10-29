@@ -3306,6 +3306,92 @@ def test_scheduled_ryuundy_theme_is_randomized_and_cc_label_is_optional(monkeypa
     assert "keputusan editor manusia" in short_direction
 
 
+def test_scheduled_podcast_theme_reuses_one_episode_for_three_distinct_clips(monkeypatch):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "false")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", "19")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PODCAST_SOURCE_COUNT", "7")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PODCAST_CLIPS_PER_VIDEO", "3")
+    monkeypatch.setattr(
+        api,
+        "scheduled_ryuundy_theme_profile",
+        lambda: (
+            "podcast_conversation",
+            api.RYUUNDY_CRON_THEME_PROFILES["podcast_conversation"],
+        ),
+    )
+
+    request = api.scheduled_auto_viral_request()
+
+    assert request.cron_theme_key == "podcast_conversation"
+    assert request.video_count == 7
+    assert request.clips_per_video == 3
+    assert request.top == 3
+    assert request.duration_filter == "over_20"
+    assert request.min_views >= 1_000
+    assert "maksimal 2 detik" in request.cron_short_role
+    assert "intro/sponsor/filler" in request.cron_short_role
+
+
+def test_cron_podcast_theme_accepts_interview_and_rejects_gameplay():
+    import api
+
+    podcast = {
+        "title": "Podcast Indonesia: Pengakuan Narasumber Setelah Gagal Usaha",
+        "description": "Obrolan jujur tentang cerita hidup, kegagalan, dan comeback.",
+        "default_language": "id",
+    }
+    gameplay = {
+        "title": "Roblox Obby Mabar Indonesia",
+        "description": "Gameplay lucu bersama teman.",
+        "default_language": "id",
+    }
+
+    assert api.cron_trend_candidate_rejection_reason(
+        podcast, theme_key="podcast_conversation"
+    ) == ""
+    assert "tema tidak cocok" in api.cron_trend_candidate_rejection_reason(
+        gameplay, theme_key="podcast_conversation"
+    )
+
+
+def test_non_faith_cron_does_not_inherit_legacy_islamic_perspective():
+    import api
+
+    request = AutoViralRequest(
+        cron_theme_key="podcast_conversation",
+        creator_perspective=(
+            "Kebaikan perlu disampaikan dengan lembut agar kita saling "
+            "mengingatkan tanpa menghakimi"
+        ),
+        cron_editorial_tone="natural seperti editor podcast manusia",
+        cron_short_role="ambil jawaban yang tuntas",
+    )
+
+    direction = api.auto_viral_format_perspective(request, long_form=False)
+
+    assert "saling mengingatkan" not in direction
+    assert "editor podcast manusia" in direction
+    assert "jawaban yang tuntas" in direction
+
+
+def test_non_faith_cron_never_uses_legacy_islam_playlist(monkeypatch):
+    import api
+
+    monkeypatch.setenv("YOUTUBE_DEFAULT_PLAYLIST", "Islam")
+
+    assert api.auto_viral_youtube_playlist(
+        AutoViralRequest(cron_theme_key="podcast_conversation")
+    ) == ""
+    assert api.auto_viral_youtube_playlist(
+        AutoViralRequest(cron_theme_key="gaming_story")
+    ) == ""
+    assert api.auto_viral_youtube_playlist(
+        AutoViralRequest(cron_theme_key="faith_life")
+    ) == "Islam"
+
+
 def test_cron_gaming_theme_accepts_story_gameplay_and_rejects_unrelated_source():
     import api
 

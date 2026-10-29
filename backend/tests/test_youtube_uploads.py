@@ -2734,6 +2734,104 @@ def test_legacy_restart_failure_before_file_selection_returns_to_queue(monkeypat
     assert "upload lama" in recovered.logs[-1]
 
 
+def test_file_input_timeout_before_selection_retries_once_on_startup(monkeypatch, tmp_path):
+    import api
+
+    outputs = tmp_path / "outputs"
+    clip_path = outputs / "demo" / "clips" / "long.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"video")
+    upload = YouTubeUploadJob(
+        id="recover-large-file-input-timeout",
+        source_job_id="job-long",
+        clip_url="/outputs/demo/clips/long.mp4",
+        clip_name="long.mp4",
+        status="failed",
+        created_at="2026-10-29T01:00:00+00:00",
+        updated_at="2026-10-29T01:02:00+00:00",
+        started_at="2026-10-29T01:00:01+00:00",
+        finished_at="2026-10-29T01:02:00+00:00",
+        title="Long upload",
+        logs=["Input file upload ditemukan."],
+        error="Upload YouTube gagal: Locator.set_input_files: Timeout 120000ms exceeded.",
+    )
+    uploads_path = tmp_path / "youtube_uploads.json"
+    uploads_path.write_text(json.dumps([upload.model_dump()]), encoding="utf-8")
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", uploads_path)
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setenv("YOUTUBE_RETRY_FILE_INPUT_TIMEOUT_ON_STARTUP", "true")
+
+    recovered = api.load_youtube_uploads()[upload.id]
+
+    assert recovered.status == "queued"
+    assert recovered.error is None
+    assert recovered.logs[-1] == api.YOUTUBE_FILE_INPUT_TIMEOUT_RETRY_MARKER
+
+
+def test_file_input_timeout_marker_blocks_endless_startup_retry(monkeypatch, tmp_path):
+    import api
+
+    outputs = tmp_path / "outputs"
+    clip_path = outputs / "demo" / "clips" / "long.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"video")
+    upload = YouTubeUploadJob(
+        id="do-not-retry-large-file-twice",
+        source_job_id="job-long",
+        clip_url="/outputs/demo/clips/long.mp4",
+        clip_name="long.mp4",
+        status="failed",
+        created_at="2026-10-29T01:00:00+00:00",
+        updated_at="2026-10-29T01:02:00+00:00",
+        title="Long upload",
+        logs=[api.YOUTUBE_FILE_INPUT_TIMEOUT_RETRY_MARKER],
+        error="Upload YouTube gagal: Locator.set_input_files: Timeout 900000ms exceeded.",
+    )
+    uploads_path = tmp_path / "youtube_uploads.json"
+    uploads_path.write_text(json.dumps([upload.model_dump()]), encoding="utf-8")
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", uploads_path)
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setenv("YOUTUBE_RETRY_FILE_INPUT_TIMEOUT_ON_STARTUP", "true")
+
+    recovered = api.load_youtube_uploads()[upload.id]
+
+    assert recovered.status == "failed"
+    assert recovered.error == upload.error
+
+
+def test_remote_checkpoint_failure_recovers_as_read_only_verification(monkeypatch, tmp_path):
+    import api
+
+    upload = YouTubeUploadJob(
+        id="recover-remote-checkpoint",
+        source_job_id="job-long",
+        clip_url="/outputs/demo/clips/long.mp4",
+        clip_name="long.mp4",
+        status="failed",
+        created_at="2026-10-29T01:00:00+00:00",
+        updated_at="2026-10-29T01:30:00+00:00",
+        title="Long upload",
+        video_url="https://www.youtube.com/watch?v=f03ZC5G-_wU",
+        logs=[
+            "VIDEO_URL: https://www.youtube.com/watch?v=f03ZC5G-_wU",
+            "REMOTE_UPLOAD_CHECKPOINT: f03ZC5G-_wU",
+            "REMOTE_UPLOAD_CHECKPOINT_LOCKED: video-id sudah ada; retry file baru diblokir permanen.",
+        ],
+        error="Draft YouTube sudah memiliki video-id dan tidak akan diupload ulang.",
+    )
+    uploads_path = tmp_path / "youtube_uploads.json"
+    uploads_path.write_text(json.dumps([upload.model_dump()]), encoding="utf-8")
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", uploads_path)
+
+    recovered = api.load_youtube_uploads()[upload.id]
+
+    assert recovered.status == "queued"
+    assert recovered.video_url == upload.video_url
+    assert recovered.error is None
+    assert recovered.logs[-1] == api.YOUTUBE_RESTART_VERIFY_MARKER
+    assert api.youtube_upload_needs_restart_verification(recovered) is True
+
+
 def test_running_upload_after_file_selection_uses_verification_only(monkeypatch, tmp_path):
     import api
 

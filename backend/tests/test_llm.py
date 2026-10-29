@@ -196,3 +196,97 @@ def test_chat_completion_plain_mode_omits_json_response_format(monkeypatch):
     assert result == "naskah biasa"
     assert captured["temperature"] == 0.35
     assert "response_format" not in captured
+
+
+def test_transient_primary_failure_can_use_opt_in_freellmapi(monkeypatch):
+    requests = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {"choices": [{"message": {"content": '{"ok": true}'}}]}
+            ).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        if "primary.test" in request.full_url:
+            raise urllib.error.URLError("temporary unavailable")
+        return Response()
+
+    monkeypatch.setattr(llm.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setenv("FREELLMAPI_ENABLED", "true")
+    monkeypatch.setenv("FREELLMAPI_BASE_URL", "http://gateway.test/v1")
+    monkeypatch.setenv("FREELLMAPI_API_KEY", "test-unified-key")
+    monkeypatch.setenv("FREELLMAPI_MODEL", "auto:reliable")
+
+    result = chat_completion(
+        AIConfig(base_url="http://primary.test/v1", model="primary-model"),
+        [{"role": "user", "content": "test"}],
+    )
+
+    assert result == '{"ok": true}'
+    assert len(requests) == 2
+    fallback_request = requests[-1][0]
+    fallback_payload = json.loads(fallback_request.data.decode("utf-8"))
+    fallback_headers = {key.casefold(): value for key, value in fallback_request.headers.items()}
+    assert fallback_payload["model"] == "auto:reliable"
+    assert fallback_headers["x-freellm-cache"] == "on"
+    assert fallback_headers["x-freellm-compress"] == "lossless"
+    assert fallback_headers["x-freellm-task-type"] == "chat"
+
+
+def test_deterministic_http_error_does_not_burn_fallback_quota(monkeypatch):
+    calls = []
+    payload_error = urllib.error.HTTPError(
+        "http://primary.test/v1/chat/completions",
+        413,
+        "payload too large",
+        {},
+        None,
+    )
+
+    def fake_urlopen(request, timeout):
+        calls.append(request.full_url)
+        raise payload_error
+
+    monkeypatch.setattr(llm.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setenv("FREELLMAPI_ENABLED", "true")
+    monkeypatch.setenv("FREELLMAPI_BASE_URL", "http://gateway.test/v1")
+    monkeypatch.setenv("FREELLMAPI_API_KEY", "test-unified-key")
+
+    with pytest.raises(urllib.error.HTTPError) as raised:
+        chat_completion(
+            AIConfig(base_url="http://primary.test/v1", model="primary-model"),
+            [{"role": "user", "content": "test"}],
+        )
+
+    assert raised.value.code == 413
+    assert calls == ["http://primary.test/v1/chat/completions"]
+
+
+def test_oversized_prompt_is_not_resent_to_freellmapi(monkeypatch):
+    calls = []
+
+    def fake_urlopen(request, timeout):
+        calls.append(request.full_url)
+        raise urllib.error.URLError("temporary unavailable")
+
+    monkeypatch.setattr(llm.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setenv("FREELLMAPI_ENABLED", "true")
+    monkeypatch.setenv("FREELLMAPI_BASE_URL", "http://gateway.test/v1")
+    monkeypatch.setenv("FREELLMAPI_API_KEY", "test-unified-key")
+    monkeypatch.setenv("FREELLMAPI_MAX_REQUEST_CHARS", "10000")
+
+    with pytest.raises(urllib.error.URLError):
+        chat_completion(
+            AIConfig(base_url="http://primary.test/v1", model="primary-model"),
+            [{"role": "user", "content": "x" * 12000}],
+        )
+
+    assert calls == ["http://primary.test/v1/chat/completions"]

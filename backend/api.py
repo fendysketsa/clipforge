@@ -232,6 +232,10 @@ YOUTUBE_UPLOAD_CONFIRMED_PREFIX = "UPLOAD_CONFIRMED:"
 YOUTUBE_FINAL_VISIBILITY_PREFIX = "FINAL_VISIBILITY:"
 YOUTUBE_CLAIM_ABORT_PREFIX = "CLAIMED_UPLOAD_ABORTED:"
 YOUTUBE_RESTART_VERIFY_MARKER = "Recovery restart: verifikasi final Content tanpa upload ulang."
+YOUTUBE_FILE_INPUT_TIMEOUT_RETRY_MARKER = (
+    "Recovery startup: timeout terjadi sebelum file diterima Studio; "
+    "satu retry aman dijadwalkan dengan batas waktu file besar."
+)
 YOUTUBE_RESTART_VERIFY_ABSENT_MARKER = (
     "Recovery restart: Content sudah diperiksa dan video tidak ditemukan; "
     "draft lama dilepas agar satu upload baru dapat dibuat."
@@ -1607,6 +1611,22 @@ RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
             "game multiplayer indonesia reaksi natural dan lucu",
         ],
     },
+    "podcast_conversation": {
+        "label": "Podcast, Wawancara & Cerita Narasumber",
+        "tone": "natural seperti editor podcast manusia: tajam, hangat, tidak clickbait palsu, dan tidak memotong ucapan hingga berubah makna",
+        "short_role": "dari satu episode pilih beberapa percakapan berbeda yang masing-masing mandiri: gagasan utama mulai maksimal 2 detik, tanpa intro/sponsor/filler, lalu berakhir pada jawaban, reveal, punchline, atau takeaway yang tuntas",
+        "long_role": "pertahankan konteks pertanyaan dan jawaban, perubahan emosi, serta kesimpulan narasumber tanpa menggabungkan klaim dari bagian yang tidak berhubungan",
+        "clips_per_source": 3,
+        "queries": [
+            "podcast indonesia terbaru cerita hidup narasumber",
+            "podcast indonesia obrolan jujur pengalaman hidup",
+            "wawancara tokoh indonesia kisah jatuh bangun terbaru",
+            "podcast karier usaha kegagalan dan comeback indonesia",
+            "podcast hubungan keluarga persahabatan indonesia terbaru",
+            "podcast komedi indonesia percakapan lucu natural",
+            "podcast misteri pengalaman nyata indonesia terbaru",
+        ],
+    },
     "football_story": {
         "label": "Bola, Rivalitas & Cerita Pertandingan",
         "tone": "enerjik dan tajam seperti komentator bola, tetapi tetap faktual, sportif, dan tidak memakai cuplikan broadcaster berisiko",
@@ -1655,6 +1675,10 @@ RYUUNDY_CRON_THEME_SIGNALS: dict[str, set[str]] = {
     "gaming_story": {
         "game", "gameplay", "gaming", "minecraft", "mabar", "obby", "roblox",
         "roleplay", "streamer", "survival", "kak yuta", "dunia budi", "baby celine",
+    },
+    "podcast_conversation": {
+        "podcast", "wawancara", "obrolan", "narasumber", "bintang tamu",
+        "pengakuan", "cerita hidup", "percakapan", "talkshow",
     },
     "football_story": {
         "bola", "sepak bola", "football", "soccer", "barcelona", "real madrid",
@@ -3128,6 +3152,60 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
                     "logs": [
                         *upload.logs,
                         "Recovery restart: upload lama belum memilih file dan dikembalikan ke antrean dengan aman.",
+                    ][-160:],
+                    "error": None,
+                }
+            )
+        if (
+            upload.status == "failed"
+            and youtube_upload_has_remote_checkpoint(upload)
+            and any(
+                str(line).startswith("REMOTE_UPLOAD_CHECKPOINT_LOCKED:")
+                for line in upload.logs
+            )
+            and YOUTUBE_RESTART_VERIFY_MARKER not in upload.logs
+        ):
+            recovered_at = now_iso()
+            upload = upload.model_copy(
+                update={
+                    "status": "queued",
+                    "updated_at": recovered_at,
+                    "started_at": None,
+                    "finished_at": None,
+                    "duration_seconds": None,
+                    "logs": [
+                        *upload.logs,
+                        "Recovery startup: video-id remote dipertahankan; upload file baru diblokir.",
+                        YOUTUBE_RESTART_VERIFY_MARKER,
+                    ][-160:],
+                    "error": None,
+                }
+            )
+        if (
+            upload.status == "failed"
+            and env_bool("YOUTUBE_RETRY_FILE_INPUT_TIMEOUT_ON_STARTUP", True)
+            and "locator.set_input_files" in str(upload.error or "").casefold()
+            and "timeout" in str(upload.error or "").casefold()
+            and not upload.video_url
+            and not youtube_upload_has_file_selection_checkpoint(upload)
+            and YOUTUBE_FILE_INPUT_TIMEOUT_RETRY_MARKER not in upload.logs
+            and (
+                (retry_clip_path := output_path_from_url(upload.clip_url))
+                is not None
+                and retry_clip_path.is_file()
+            )
+        ):
+            recovered_at = now_iso()
+            upload = upload.model_copy(
+                update={
+                    "status": "queued",
+                    "updated_at": recovered_at,
+                    "started_at": None,
+                    "finished_at": None,
+                    "duration_seconds": None,
+                    "logs": [
+                        *upload.logs,
+                        YOUTUBE_FILE_INPUT_TIMEOUT_RETRY_MARKER,
                     ][-160:],
                     "error": None,
                 }
@@ -16767,7 +16845,13 @@ def auto_viral_format_perspective(
     long_form: bool,
 ) -> str:
     """Give paired formats complementary editorial jobs under one RYUUNDY voice."""
-    parts = [request.creator_perspective.strip()]
+    # The persisted creator perspective predates multi-theme cron and can carry
+    # faith-specific wording. Use it for manual jobs and the faith lane only;
+    # every other cron lane is governed by its own source-grounded profile so a
+    # game or podcast can never inherit sermon wording or religious metadata.
+    parts: list[str] = []
+    if not request.cron_theme_key or request.cron_theme_key == "faith_life":
+        parts.append(request.creator_perspective.strip())
     if request.cron_editorial_tone:
         parts.append(f"Identitas editorial RYUUNDY: {request.cron_editorial_tone}.")
     role = request.cron_long_role if long_form else request.cron_short_role
@@ -16788,6 +16872,13 @@ def auto_viral_format_perspective(
             "sumber; hook harus cepat dan payoff wajib tuntas tanpa mengarang dialog."
         )
     return re.sub(r"\s+", " ", " ".join(part for part in parts if part)).strip()[:4000]
+
+
+def auto_viral_youtube_playlist(request: AutoViralRequest) -> str:
+    """Keep the legacy Islam playlist exclusive to the matching cron lane."""
+    if request.cron_theme_key and request.cron_theme_key != "faith_life":
+        return ""
+    return os.environ.get("YOUTUBE_DEFAULT_PLAYLIST", DEFAULT_YOUTUBE_PLAYLIST).strip()
 
 
 def source_theme_hashtags(
@@ -17793,6 +17884,7 @@ def queue_auto_viral_short_uploads_while_long_renders(
                         YouTubeBatchUploadRequest(
                             best_count=min(request.clips_per_video, available_slots),
                             visibility=youtube_default_visibility(),
+                            playlist=auto_viral_youtube_playlist(request),
                         ),
                     )
                     queue_youtube_upload_jobs(youtube_jobs)
@@ -18136,6 +18228,7 @@ def upload_auto_viral_processed_jobs(
                         YouTubeBatchUploadRequest(
                             best_count=min(request.clips_per_video, available_slots),
                             visibility=youtube_default_visibility(),
+                            playlist=auto_viral_youtube_playlist(request),
                         ),
                     )
                     queue_youtube_upload_jobs(youtube_jobs)
@@ -18259,6 +18352,7 @@ def upload_auto_viral_processed_jobs(
                         YouTubeBatchUploadRequest(
                             best_count=1,
                             visibility="public",
+                            playlist=auto_viral_youtube_playlist(request),
                         ),
                     )
                     queue_youtube_upload_jobs(long_upload_jobs)
@@ -19141,7 +19235,10 @@ def run_auto_viral_campaign(run_id: str) -> None:
                     with youtube_upload_creation_lock:
                         uploads = create_youtube_upload_batch_records(
                             finished_job.id,
-                            YouTubeBatchUploadRequest(best_count=run_request.clips_per_video),
+                            YouTubeBatchUploadRequest(
+                                best_count=run_request.clips_per_video,
+                                playlist=auto_viral_youtube_playlist(run_request),
+                            ),
                         )
                         queue_youtube_upload_jobs(uploads)
                     append_auto_viral_log(run_id, f"{len(uploads)} upload YouTube masuk antrean untuk job {finished_job.id[:10]}")
@@ -19900,6 +19997,51 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
             max(0, env_int("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_COUNT", 1)),
         )
     theme_key, theme_profile = scheduled_ryuundy_theme_profile()
+    if theme_key == "podcast_conversation":
+        profile_clip_count = int(theme_profile.get("clips_per_source") or 3)
+        clips_per_video = max(
+            2,
+            min(
+                5,
+                env_int(
+                    "AUTO_VIRAL_SCHEDULE_PODCAST_CLIPS_PER_VIDEO",
+                    profile_clip_count,
+                ),
+            ),
+        )
+        if youtube_upload_requested:
+            short_source_batches = (
+                ceil(remaining_shorts / clips_per_video)
+                if remaining_shorts > 0
+                else 0
+            )
+            long_source_batches = (
+                remaining_longs if paired_long_enabled else 0
+            )
+            scheduled_video_count = max(
+                1,
+                min(
+                    configured_video_count,
+                    max(short_source_batches, long_source_batches, 1),
+                ),
+            )
+        else:
+            scheduled_video_count = max(
+                1,
+                min(
+                    configured_video_count,
+                    env_int("AUTO_VIRAL_SCHEDULE_PODCAST_SOURCE_COUNT", 7),
+                ),
+            )
+        if not paired_long_enabled:
+            scheduled_long_count = 0
+        elif youtube_upload_requested:
+            scheduled_long_count = min(scheduled_video_count, remaining_longs)
+        else:
+            scheduled_long_count = min(
+                scheduled_video_count,
+                max(0, env_int("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_COUNT", 1)),
+            )
     theme_queries = [
         str(item).strip()
         for item in theme_profile.get("queries", [])

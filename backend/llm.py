@@ -77,12 +77,53 @@ def normalize_openai_base_url(base_url: str) -> str:
     return base
 
 
-def chat_completion(
+def _http_error_is_retryable(exc: HTTPError) -> bool:
+    return exc.code in {408, 409, 425, 429} or 500 <= exc.code <= 599
+
+
+def _message_character_count(messages: list[dict]) -> int:
+    return sum(
+        len(json.dumps(message, ensure_ascii=False, separators=(",", ":")))
+        for message in messages
+    )
+
+
+def _freellmapi_fallback_config() -> AIConfig | None:
+    if os.environ.get("FREELLMAPI_ENABLED", "").strip().casefold() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return None
+    base_url = os.environ.get("FREELLMAPI_BASE_URL", "").strip()
+    api_key = os.environ.get("FREELLMAPI_API_KEY", "").strip()
+    if not base_url or not api_key:
+        return None
+    try:
+        timeout = max(
+            10.0,
+            float(os.environ.get("FREELLMAPI_TIMEOUT_SECONDS", "120")),
+        )
+    except ValueError:
+        timeout = 120.0
+    return AIConfig(
+        enabled=True,
+        base_url=base_url,
+        model=os.environ.get("FREELLMAPI_MODEL", "auto:reliable").strip()
+        or "auto:reliable",
+        api_key=api_key,
+        timeout=timeout,
+    )
+
+
+def _completion_request(
     config: AIConfig,
     messages: list[dict],
     *,
-    json_mode: bool = True,
-    temperature: float = 0.2,
+    json_mode: bool,
+    temperature: float,
+    freellmapi: bool = False,
 ) -> str:
     payload: dict[str, Any] = {
         "model": config.model,
@@ -94,7 +135,6 @@ def chat_completion(
     body = json.dumps(payload).encode("utf-8")
 
     last_error: Exception | None = None
-    last_response_error: HTTPError | None = None
     for base_url in candidate_base_urls(config.base_url):
         url = base_url + "/chat/completions"
         request = urllib.request.Request(url, data=body, method="POST")
@@ -105,36 +145,97 @@ def chat_completion(
         if "openrouter.ai" in base_url:
             request.add_header(
                 "X-OpenRouter-Title",
-                os.environ.get("OPENROUTER_APP_TITLE", "Fendy Clipper").strip() or "Fendy Clipper",
+                os.environ.get("OPENROUTER_APP_TITLE", "Fendy Clipper").strip()
+                or "Fendy Clipper",
             )
             referer = os.environ.get("OPENROUTER_HTTP_REFERER", "").strip()
             if referer:
                 request.add_header("HTTP-Referer", referer)
+        if freellmapi:
+            request.add_header(
+                "X-FreeLLM-Cache",
+                os.environ.get("FREELLMAPI_CACHE", "on").strip() or "on",
+            )
+            request.add_header(
+                "X-FreeLLM-Compress",
+                os.environ.get("FREELLMAPI_COMPRESSION", "lossless").strip()
+                or "lossless",
+            )
+            request.add_header("X-FreeLLM-Task-Type", "chat")
 
         try:
             with urllib.request.urlopen(request, timeout=config.timeout) as response:
                 raw = response.read().decode("utf-8")
             return _content_from_response(raw)
+        except HTTPError as exc:
+            if not _http_error_is_retryable(exc):
+                raise
+            last_error = exc
         except Exception as exc:
             last_error = exc
-            if isinstance(exc, HTTPError):
-                # The server is reachable but rejected this model/request. Keep
-                # that distinction so callers can try a different model instead
-                # of incorrectly treating Ollama as offline.
-                last_response_error = exc
-            continue
+    if last_error is not None:
+        raise last_error
+    raise ValueError("LLM base_url is not set")
+
+
+def chat_completion(
+    config: AIConfig,
+    messages: list[dict],
+    *,
+    json_mode: bool = True,
+    temperature: float = 0.2,
+) -> str:
+    last_error: Exception | None = None
+    try:
+        return _completion_request(
+            config,
+            messages,
+            json_mode=json_mode,
+            temperature=temperature,
+        )
+    except HTTPError as exc:
+        # Invalid credentials, unsupported models, and oversized/context errors
+        # are deterministic. Retrying the same payload through another provider
+        # can consume quota without any chance of success.
+        if not _http_error_is_retryable(exc):
+            raise
+        last_error = exc
+    except Exception as exc:
+        last_error = exc
+
     if _is_ollama_base_url(config.base_url):
-        if last_response_error is not None:
-            raise last_response_error
         if shutil.which("ollama"):
-            return _ollama_cli_chat_completion(
-                config,
+            try:
+                return _ollama_cli_chat_completion(
+                    config,
+                    messages,
+                    json_mode=json_mode,
+                )
+            except Exception as exc:
+                last_error = exc
+
+    freellmapi_config = _freellmapi_fallback_config()
+    if freellmapi_config is not None:
+        try:
+            configured_max_chars = int(
+                os.environ.get("FREELLMAPI_MAX_REQUEST_CHARS", "180000")
+            )
+        except ValueError:
+            configured_max_chars = 180000
+        max_chars = max(10000, configured_max_chars)
+        if _message_character_count(messages) <= max_chars:
+            return _completion_request(
+                freellmapi_config,
                 messages,
                 json_mode=json_mode,
+                temperature=temperature,
+                freellmapi=True,
             )
+
+    if _is_ollama_base_url(config.base_url):
         detail = f" ({last_error})" if last_error is not None else ""
         raise LLMUnavailableError(
-            "Ollama API tidak terjangkau dan Ollama CLI tidak terpasang; fallback lokal digunakan"
+            "Ollama API tidak terjangkau dan fallback LLM tidak tersedia; fallback lokal digunakan"
             + detail
         )
     if last_error is not None:

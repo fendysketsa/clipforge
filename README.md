@@ -749,6 +749,26 @@ The frontend also uses `BACKEND_API_BASE` internally for proxying API requests i
 BACKEND_API_BASE=http://backend:8010
 ```
 
+### Optional FreeLLMAPI fallback
+
+ClipForge can use a separately hosted FreeLLMAPI instance as an opt-in
+OpenAI-compatible fallback when the primary LLM is temporarily unavailable.
+It is disabled by default and never installs, starts, or sends data to an
+external gateway automatically.
+
+```env
+FREELLMAPI_ENABLED=true
+FREELLMAPI_BASE_URL=http://host.docker.internal:3001/v1
+FREELLMAPI_API_KEY=freellmapi-your-unified-key
+FREELLMAPI_MODEL=auto:reliable
+```
+
+Only transient failures (timeouts, rate limits, and server errors) use the
+fallback. Invalid credentials, unsupported requests, and oversized/context
+errors stop immediately. Requests above `FREELLMAPI_MAX_REQUEST_CHARS` are not
+resent through the gateway, preventing one large prompt from consuming several
+provider quotas.
+
 ## NVIDIA GPU Deployment
 
 GPU access is enabled directly on the default `backend` service. After NVIDIA

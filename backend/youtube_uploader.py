@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Iterable
@@ -1729,7 +1730,45 @@ def click_select_files_entry(page, timeout_ms: int = 5000) -> bool:
 
 
 def set_video_input_files(page, file_input, video_path: Path) -> bool:
-    timeout_ms = max(30000, int(os.environ.get("YOUTUBE_SET_INPUT_FILES_TIMEOUT_MS", "120000")))
+    base_timeout_ms = max(
+        30000,
+        env_int("YOUTUBE_SET_INPUT_FILES_TIMEOUT_MS", 120000),
+    )
+    large_file_threshold_bytes = max(
+        1,
+        env_int("YOUTUBE_LARGE_FILE_INPUT_THRESHOLD_MB", 24),
+    ) * 1024 * 1024
+    file_size_bytes = video_path.stat().st_size
+    timeout_ms = base_timeout_ms
+    if file_size_bytes >= large_file_threshold_bytes:
+        timeout_ms = max(
+            base_timeout_ms,
+            env_int("YOUTUBE_LARGE_FILE_SET_INPUT_FILES_TIMEOUT_MS", 900000),
+        )
+    heartbeat_seconds = max(
+        5,
+        env_int("YOUTUBE_FILE_INPUT_HEARTBEAT_SECONDS", 15),
+    )
+    stop_heartbeat = threading.Event()
+
+    def report_file_transfer_progress() -> None:
+        while not stop_heartbeat.wait(heartbeat_seconds):
+            log(
+                "Transfer file ke Chrome masih berjalan: "
+                f"{video_path.name} ({file_size_bytes / (1024 * 1024):.1f} MB)."
+            )
+
+    heartbeat = threading.Thread(
+        target=report_file_transfer_progress,
+        name="youtube-file-input-heartbeat",
+        daemon=True,
+    )
+    log(
+        "Menyerahkan file ke YouTube Studio: "
+        f"{video_path.name} ({file_size_bytes / (1024 * 1024):.1f} MB), "
+        f"batas waktu {timeout_ms // 1000} detik."
+    )
+    heartbeat.start()
     try:
         file_input.set_input_files(str(video_path), timeout=timeout_ms)
         log(f"Video dipilih: {video_path.name}")
@@ -1743,6 +1782,9 @@ def set_video_input_files(page, file_input, video_path: Path) -> bool:
             log(f"Detail timeout input file: {exc}")
             return True
         raise
+    finally:
+        stop_heartbeat.set()
+        heartbeat.join(timeout=1.0)
 
 
 def select_video_file(page, video_path: Path, timeout_ms: int = 30000) -> None:
