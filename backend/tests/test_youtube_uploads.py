@@ -50,6 +50,7 @@ from api import (
     reviewed_quality_only_short_for_private_upload,
     scheduled_short_playlist,
     scheduled_score_floor_short_for_automatic_upload,
+    short_has_selectable_cover_frame,
     retire_targeted_repair_source,
     youtube_monetization_preflight_issue,
     reviewed_automatic_rebuild_for_private_upload,
@@ -1169,6 +1170,55 @@ def test_automatic_batch_queues_only_shorts_reaching_fyp_80(monkeypatch):
     )
 
     assert [upload.clip_url for upload in uploads] == [strong.url]
+
+
+def test_automatic_batch_uploads_every_scored_short_at_target_as_private(monkeypatch):
+    import api
+
+    weak = make_clip(1).model_copy(update={"fyp_score": 79})
+    strong_a = make_clip(2).model_copy(update={"fyp_score": 81})
+    strong_b = make_clip(3).model_copy(update={"fyp_score": 93})
+    job = ClipJob(
+        id="job-upload-all-fyp-80",
+        status="completed",
+        request=ClipJobRequest(source_file="/tmp/owned.mp4"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[weak, strong_a, strong_b],
+        candidates=[
+            make_candidate(1, 97),
+            make_candidate(2, 95),
+            make_candidate(3, 90),
+        ],
+    )
+    created_requests = []
+    monkeypatch.setenv("YOUTUBE_UPLOAD_ALL_ABOVE_FYP_TARGET", "true")
+    monkeypatch.setenv("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", "true")
+    monkeypatch.setitem(api.jobs, job.id, job)
+    monkeypatch.setattr(api, "youtube_monetization_preflight_issue", lambda _job, _clip: None)
+
+    def create_upload(_job_id, request):
+        created_requests.append(request)
+        return YouTubeUploadJob(
+            id=request.clip_url,
+            source_job_id=job.id,
+            clip_url=request.clip_url,
+            clip_name=request.clip_url.rsplit("/", 1)[-1],
+            status="queued",
+            title="Test upload",
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+        )
+
+    monkeypatch.setattr(api, "create_youtube_upload_record", create_upload)
+
+    uploads = create_youtube_upload_batch_records(
+        job.id,
+        api.YouTubeBatchUploadRequest(best_count=1, visibility="public"),
+    )
+
+    assert [upload.clip_url for upload in uploads] == [strong_a.url, strong_b.url]
+    assert {request.visibility for request in created_requests} == {"private"}
 
 
 def test_automatic_batch_excludes_manual_review_quality_fallback(monkeypatch):
@@ -4212,6 +4262,32 @@ def test_monetization_preflight_requires_rights_and_substantive_edit(monkeypatch
 
     monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: {})
     assert "Render ulang" in (youtube_monetization_preflight_issue(job, clip) or "")
+
+
+def test_legacy_reaction_rendered_frame_is_a_selectable_shorts_cover():
+    sidecar = {
+        "thumbnail_strategy": "rendered_video_frame",
+        "scheduled_reaction_avatar_layout": {"selected": True},
+        "shorts_policy_compliance": {
+            "embedded_cover_frame_retained_as_fallback": True,
+            "thumbnail_strategy": "custom_upload_with_rendered_frame_fallback",
+        },
+    }
+
+    assert short_has_selectable_cover_frame(sidecar) is True
+
+
+def test_unproven_rendered_frame_does_not_bypass_cover_gate():
+    sidecar = {
+        "thumbnail_strategy": "rendered_video_frame",
+        "scheduled_reaction_avatar_layout": {"selected": False},
+        "shorts_policy_compliance": {
+            "embedded_cover_frame_retained_as_fallback": True,
+            "thumbnail_strategy": "custom_upload_with_rendered_frame_fallback",
+        },
+    }
+
+    assert short_has_selectable_cover_frame(sidecar) is False
 
 
 def test_monetization_preflight_accepts_v8_transformation_after_documented_rights(monkeypatch):

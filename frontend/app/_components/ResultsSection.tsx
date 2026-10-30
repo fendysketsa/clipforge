@@ -40,6 +40,7 @@ type ResultsSectionProps = {
   youtubeEnabled: boolean;
   youtubeStatusMessage: string;
   youtubeAutoUploadCount: number;
+  youtubeUploadAllAboveTarget: boolean;
   youtubeUploads: YouTubeUploadJob[];
   tiktokEnabled: boolean;
   tiktokStatusMessage: string;
@@ -312,6 +313,7 @@ export function ResultsSection({
   youtubeEnabled,
   youtubeStatusMessage,
   youtubeAutoUploadCount,
+  youtubeUploadAllAboveTarget,
   youtubeUploads,
   tiktokEnabled,
   tiktokStatusMessage,
@@ -449,12 +451,18 @@ export function ResultsSection({
                 disabled={!youtubeEnabled}
                 title={
                   youtubeEnabled
-                    ? `Upload ${Math.min(youtubeAutoUploadCount, clips.length)} klip terbaik sebagai Private dengan pemeriksaan nol-klaim`
+                    ? youtubeUploadAllAboveTarget
+                      ? `Upload semua klip dengan skor FYP ≥80 sebagai Private dengan pemeriksaan nol-klaim`
+                      : `Upload ${Math.min(youtubeAutoUploadCount, clips.length)} klip terbaik sebagai Private dengan pemeriksaan nol-klaim`
                     : youtubeStatusMessage
                 }
               >
                 <UploadCloud size={16} />
-                <span>Upload {Math.min(youtubeAutoUploadCount, clips.length)} terbaik</span>
+                <span>
+                  {youtubeUploadAllAboveTarget
+                    ? "Upload semua ≥80"
+                    : `Upload ${Math.min(youtubeAutoUploadCount, clips.length)} terbaik`}
+                </span>
               </button>
               <button
                 type="button"

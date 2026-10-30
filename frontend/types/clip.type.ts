@@ -476,6 +476,7 @@ export type YouTubeConfig = {
   target_channel: string;
   target_email: string;
   auto_upload_count: number;
+  upload_all_above_fyp_target: boolean;
   public_daily_limit: number;
   public_min_gap_hours: number;
   public_cadence_message: string;

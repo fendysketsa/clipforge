@@ -394,6 +394,11 @@ def youtube_auto_upload_count() -> int:
     return 1 if youtube_channel_recovery_mode() else configured
 
 
+def youtube_upload_all_above_fyp_target() -> bool:
+    """Select every scored Short at the quality floor for Private-first upload."""
+    return env_bool("YOUTUBE_UPLOAD_ALL_ABOVE_FYP_TARGET", False)
+
+
 def youtube_public_daily_limit() -> int:
     configured = max(
         1,
@@ -1037,6 +1042,7 @@ class YouTubeConfig(BaseModel):
     target_channel: str
     target_email: str
     auto_upload_count: int
+    upload_all_above_fyp_target: bool = False
     public_daily_limit: int
     public_min_gap_hours: float
     public_cadence_message: str
@@ -4577,6 +4583,7 @@ def youtube_config_payload() -> YouTubeConfig:
         target_channel=os.environ.get("YOUTUBE_TARGET_CHANNEL", DEFAULT_YOUTUBE_TARGET_CHANNEL).strip(),
         target_email=os.environ.get("YOUTUBE_TARGET_EMAIL", DEFAULT_YOUTUBE_TARGET_EMAIL).strip(),
         auto_upload_count=youtube_auto_upload_count(),
+        upload_all_above_fyp_target=youtube_upload_all_above_fyp_target(),
         public_daily_limit=youtube_public_daily_limit(),
         public_min_gap_hours=youtube_public_min_gap_hours(),
         public_cadence_message=(
@@ -5728,6 +5735,33 @@ def reviewed_quality_only_short_for_private_upload(
     )
 
 
+def short_has_selectable_cover_frame(sidecar: dict[str, Any]) -> bool:
+    """Recognize both current embedded covers and legacy reaction frames.
+
+    Scheduled reaction renders intentionally use their composed host/source
+    opening as the selectable Shorts cover. Older sidecars named that proven
+    path ``rendered_video_frame`` while upload preflight only recognized the
+    newer ``embedded_shorts_cover_frame`` label. Keep the legacy allowance
+    narrow: the disclosed reaction layout must actually have been selected and
+    its Shorts compliance record must confirm the rendered-frame fallback.
+    """
+    strategy = str(sidecar.get("thumbnail_strategy") or "").strip()
+    if not strategy or strategy == "embedded_shorts_cover_frame":
+        return True
+    if strategy != "rendered_video_frame":
+        return False
+    reaction_layout = sidecar.get("scheduled_reaction_avatar_layout")
+    compliance = sidecar.get("shorts_policy_compliance")
+    return bool(
+        isinstance(reaction_layout, dict)
+        and reaction_layout.get("selected") is True
+        and isinstance(compliance, dict)
+        and compliance.get("embedded_cover_frame_retained_as_fallback") is True
+        and compliance.get("thumbnail_strategy")
+        == "custom_upload_with_rendered_frame_fallback"
+    )
+
+
 def scheduled_score_floor_short_for_automatic_upload(
     job: ClipJob,
     clip: ClipFile,
@@ -6147,8 +6181,7 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
                 f"Upload diblokir: rasio {aspect_ratio} tidak memenuhi format vertikal/persegi Shorts. "
                 "Render ulang dalam 9:16."
             )
-        thumbnail_strategy = str(sidecar.get("thumbnail_strategy") or "").strip()
-        if thumbnail_strategy and thumbnail_strategy != "embedded_shorts_cover_frame":
+        if not short_has_selectable_cover_frame(sidecar):
             return (
                 "Upload diblokir: Short belum memiliki frame cover tertanam yang dapat dipilih. "
                 "Render ulang dengan Fendy Clipper terbaru."
@@ -7298,6 +7331,7 @@ def best_automatic_upload_clip_urls(
     *,
     allow_audited_automation: bool = True,
     require_youtube_fyp_target: bool = True,
+    require_numeric_fyp_score: bool = False,
 ) -> list[str]:
     """Return every actually uploadable clip, including a single good result."""
     clips_by_url = {clip.url: clip for clip in job.clips}
@@ -7319,8 +7353,11 @@ def best_automatic_upload_clip_urls(
             and (
                 not require_youtube_fyp_target
                 or job.request.clip_mode != "short"
-                or clip.fyp_score is None
-                or clip.fyp_score >= SHORT_FYP_TARGET_SCORE
+                or (clip.fyp_score is None and not require_numeric_fyp_score)
+                or (
+                    clip.fyp_score is not None
+                    and clip.fyp_score >= SHORT_FYP_TARGET_SCORE
+                )
             )
         )
     ][: max(1, best_count)]
@@ -8185,14 +8222,16 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
     if request.clip_urls:
         clip_urls = list(dict.fromkeys(request.clip_urls))
     else:
+        upload_all_above_target = youtube_upload_all_above_fyp_target()
         # Rank the complete set first, then keep only clips that will pass the
         # same preflight used by single uploads. One rejected top-ranked clip
         # must not abort an otherwise valid automatic batch.
         clip_urls = best_automatic_upload_clip_urls(
             job,
-            request.best_count,
+            len(job.clips) if upload_all_above_target else request.best_count,
             allow_audited_automation=True,
             require_youtube_fyp_target=True,
+            require_numeric_fyp_score=upload_all_above_target,
         )
     if not clip_urls:
         raise HTTPException(
@@ -8214,22 +8253,28 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
             )
         clip_urls = clip_urls[:1]
 
+    upload_visibility = request.visibility
     if safe_youtube_visibility(request.visibility) == "public" and len(clip_urls) > 1:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Batch public diblokir untuk mencegah publikasi massal. "
-                "Kirim batch sebagai Private, review, lalu terbitkan maksimal dua video per hari "
-                "dengan jarak sedikitnya enam jam."
-            ),
-        )
+        if not explicitly_selected and youtube_upload_all_above_fyp_target():
+            # Upload every qualifying render for Studio Checks, but keep mass
+            # publication behind the existing cadence/review controls.
+            upload_visibility = "private"
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Batch public diblokir untuk mencegah publikasi massal. "
+                    "Kirim batch sebagai Private, review, lalu terbitkan maksimal dua video per hari "
+                    "dengan jarak sedikitnya enam jam."
+                ),
+            )
 
     uploads = [
         create_youtube_upload_record(
             job_id,
             YouTubeUploadRequest(
                 clip_url=clip_url,
-                visibility=request.visibility,
+                visibility=upload_visibility,
                 made_for_kids=request.made_for_kids,
                 tags=request.tags,
                 playlist=request.playlist,
@@ -11872,6 +11917,74 @@ def wait_for_auto_viral_repair(repair_job_id: str, run_id: str) -> ClipJob:
         time.sleep(1.0)
 
 
+def cleanup_terminal_repair_outcomes(job: ClipJob) -> int:
+    """Resolve a one-shot repair without leaving the rejected original behind.
+
+    The source clip is retained while its repair worker is active because that
+    MP4 is the worker input. Once the child reaches a terminal state, the
+    original is obsolete: a successful child continues toward upload, while a
+    failed/non-uploadable child and all of its local artifacts are discarded.
+    """
+    if job.repair_source_job_id or job.repair_source_clip_url:
+        return 0
+    with jobs_lock:
+        children = sorted(
+            (
+                candidate
+                for candidate in jobs.values()
+                if candidate.repair_source_job_id == job.id
+                and candidate.repair_source_clip_url
+                and candidate.status not in {"queued", "running"}
+            ),
+            key=lambda candidate: candidate.created_at,
+            reverse=True,
+        )
+    removed = 0
+    handled_sources: set[str] = set()
+    for child in children:
+        source_url = str(child.repair_source_clip_url or "").strip()
+        if not source_url or source_url in handled_sources:
+            continue
+        handled_sources.add(source_url)
+        with jobs_lock:
+            live_parent = jobs.get(job.id)
+        if live_parent is None or not any(
+            clip.url == source_url for clip in live_parent.clips
+        ):
+            continue
+        uploadable_child_urls = (
+            best_automatic_upload_clip_urls(
+                child,
+                max(1, len(child.clips)),
+                allow_audited_automation=True,
+                require_youtube_fyp_target=True,
+                require_numeric_fyp_score=True,
+            )
+            if child.status == "completed" and child.clips
+            else []
+        )
+        try:
+            removed += delete_job_clips_by_url(job.id, {source_url}).removed_clips
+        except HTTPException as exc:
+            if exc.status_code not in {404, 409}:
+                raise
+            continue
+        if uploadable_child_urls:
+            # The improved render is now the only local candidate and will be
+            # deleted by normal confirmed-upload cleanup.
+            continue
+        try:
+            if child.clips:
+                removed += delete_all_job_clips(child.id).removed_clips
+            else:
+                _, removed_outputs = purge_failed_job_card(child.id)
+                removed += removed_outputs
+        except HTTPException as exc:
+            if exc.status_code not in {404, 409}:
+                raise
+    return removed
+
+
 def queue_completed_job_uploads_once() -> dict[str, int]:
     """Act as the background operator for completed clips without requiring the UI."""
     counts = {"youtube": 0, "tiktok": 0, "repair": 0}
@@ -11925,6 +12038,12 @@ def queue_completed_job_uploads_once() -> dict[str, int]:
         env_bool("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_TIKTOK", False),
     )
     for job in completed_jobs:
+        cleanup_terminal_repair_outcomes(job)
+        with jobs_lock:
+            live_job = jobs.get(job.id)
+        if live_job is None or live_job.status != "completed" or not live_job.clips:
+            continue
+        job = live_job
         # Use the stricter YouTube quality floor as the common selection gate so
         # both platforms receive the same approved edit.
         eligible_urls = best_automatic_upload_clip_urls(
@@ -11933,8 +12052,8 @@ def queue_completed_job_uploads_once() -> dict[str, int]:
             allow_audited_automation=True,
             require_youtube_fyp_target=True,
         )
+        counts["repair"] += int(queue_completed_job_repair_once(job))
         if not eligible_urls:
-            counts["repair"] += int(queue_completed_job_repair_once(job))
             continue
 
         # Jobs created with the per-request YouTube auto-upload flag are
@@ -18043,19 +18162,76 @@ def wait_for_auto_viral_upload_window(run_id: str) -> None:
         time.sleep(min(15.0, max(0.1, remaining)))
 
 
-def cleanup_uploaded_auto_viral_job(job_id: str) -> int:
-    """Idempotently remove one cron workspace after every upload is verified."""
+def cleanup_uploaded_auto_viral_job(
+    job_id: str,
+    clip_urls: set[str] | None = None,
+) -> int:
+    """Remove only cron outputs whose required uploads are verified.
+
+    ``clip_urls=None`` is reserved for a one-output job such as a paired Long
+    Story. Short jobs can contain a mix of uploadable, repairable, and rejected
+    candidates, so their caller must provide the exact verified URL set.
+    """
     if not job_id:
         return 0
+    if clip_urls is not None and not clip_urls:
+        return 0
     with jobs_lock:
-        if job_id not in jobs:
+        job = jobs.get(job_id)
+        if job is None:
             return 0
+        selected_urls = (
+            {clip.url for clip in job.clips}
+            if clip_urls is None
+            else {clip.url for clip in job.clips if clip.url in clip_urls}
+        )
+    if not selected_urls:
+        return 0
     try:
-        return delete_all_job_clips(job_id).removed_clips
+        return delete_job_clips_by_url(job_id, selected_urls).removed_clips
     except HTTPException as exc:
         if exc.status_code == 404:
             return 0
         raise
+
+
+def verified_auto_viral_short_clip_urls(
+    request: AutoViralRequest,
+    item: dict[str, Any],
+) -> set[str]:
+    """Return the intersection verified on every enabled Short platform."""
+    verified_sets: list[set[str]] = []
+    if request.auto_upload_youtube:
+        youtube_ids = {
+            str(value.get("id") or "")
+            for value in item.get("youtube_uploads", item.get("uploads", []))
+            if isinstance(value, dict) and str(value.get("id") or "")
+        }
+        with youtube_uploads_lock:
+            verified_sets.append(
+                {
+                    upload.clip_url
+                    for upload_id, upload in youtube_uploads.items()
+                    if upload_id in youtube_ids and youtube_upload_is_verified(upload)
+                }
+            )
+    if request.auto_upload_tiktok:
+        tiktok_ids = {
+            str(value.get("id") or "")
+            for value in item.get("tiktok_uploads", [])
+            if isinstance(value, dict) and str(value.get("id") or "")
+        }
+        with tiktok_uploads_lock:
+            verified_sets.append(
+                {
+                    upload.clip_url
+                    for upload_id, upload in tiktok_uploads.items()
+                    if upload_id in tiktok_ids and tiktok_upload_is_verified(upload)
+                }
+            )
+    if not verified_sets:
+        return set()
+    return set.intersection(*verified_sets)
 
 
 def queue_auto_viral_short_uploads_while_long_renders(
@@ -18108,6 +18284,7 @@ def queue_auto_viral_short_uploads_while_long_renders(
                 {
                     "platform": "youtube",
                     "id": upload.id,
+                    "clip_url": getattr(upload, "clip_url", None),
                     "status": upload.status,
                     "title": upload.title,
                     "video_url": upload.video_url,
@@ -18152,6 +18329,7 @@ def queue_auto_viral_short_uploads_while_long_renders(
                 {
                     "platform": "tiktok",
                     "id": upload.id,
+                    "clip_url": getattr(upload, "clip_url", None),
                     "status": upload.status,
                     "title": upload.clip_name,
                     "video_url": upload.profile_url,
@@ -18192,20 +18370,44 @@ def cleanup_verified_auto_viral_item(
     item["status"] = "cleanup_pending"
     item["cleanup"] = "upload terverifikasi; pembersihan file lokal sedang berjalan"
 
-    removed_short = cleanup_uploaded_auto_viral_job(job_id)
+    verified_short_urls = verified_auto_viral_short_clip_urls(request, item)
+    removed_short = cleanup_uploaded_auto_viral_job(job_id, verified_short_urls)
     removed_long = cleanup_uploaded_auto_viral_job(long_job_id) if publish_item_long else 0
     item["cleanup_removed_short"] = int(item.get("cleanup_removed_short") or 0) + removed_short
     item["cleanup_removed_long"] = int(item.get("cleanup_removed_long") or 0) + removed_long
+    with jobs_lock:
+        remaining_short_job = jobs.get(job_id)
+        remaining_short_count = (
+            len(remaining_short_job.clips)
+            if isinstance(remaining_short_job, ClipJob)
+            else 0
+        )
+    item["cleanup_remaining_short"] = remaining_short_count
+    if isinstance(remaining_short_job, ClipJob) and remaining_short_job.clips:
+        # A mixed-quality source can upload its winners while one weaker clip
+        # receives exactly one targeted repair. Never delete or repair a file
+        # while one of its own uploads is active.
+        queue_completed_job_repair_once(remaining_short_job)
     item["cleanup_completed"] = True
     item["status"] = "completed"
     if publish_item_long:
         item["cleanup"] = (
             f"{item['cleanup_removed_short']} short dan "
             f"{item['cleanup_removed_long']} long lokal dihapus setelah upload terverifikasi"
+            + (
+                f"; {remaining_short_count} short lain menunggu upload/repair"
+                if remaining_short_count
+                else ""
+            )
         )
     else:
         item["cleanup"] = (
             f"{item['cleanup_removed_short']} clip dihapus setelah upload terverifikasi"
+            + (
+                f"; {remaining_short_count} clip lain menunggu upload/repair"
+                if remaining_short_count
+                else ""
+            )
         )
     append_auto_viral_log(
         run_id,
@@ -18454,6 +18656,7 @@ def upload_auto_viral_processed_jobs(
                 {
                     "platform": "youtube",
                     "id": upload.id,
+                    "clip_url": getattr(upload, "clip_url", None),
                     "status": upload.status,
                     "title": upload.title,
                     "video_url": upload.video_url,
@@ -18520,6 +18723,7 @@ def upload_auto_viral_processed_jobs(
                 {
                     "platform": "tiktok",
                     "id": upload.id,
+                    "clip_url": getattr(upload, "clip_url", None),
                     "status": upload.status,
                     "title": upload.clip_name,
                     "video_url": upload.profile_url,
@@ -18581,6 +18785,7 @@ def upload_auto_viral_processed_jobs(
                 {
                     "platform": "youtube_long",
                     "id": upload.id,
+                    "clip_url": getattr(upload, "clip_url", None),
                     "status": upload.status,
                     "title": upload.title,
                     "video_url": upload.video_url,

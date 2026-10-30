@@ -3289,6 +3289,229 @@ def test_completed_job_sweeper_never_repairs_a_repair_result(monkeypatch):
     assert api.queue_completed_job_repair_once(repair_job) is False
 
 
+def test_completed_job_sweeper_uploads_winner_and_repairs_weaker_clip_once(monkeypatch):
+    import api
+
+    weak = ClipFile(
+        name="score_77.mp4",
+        url="/outputs/mixed/score_77.mp4",
+        size_bytes=1024,
+        fyp_score=77,
+    )
+    winner = ClipFile(
+        name="score_93.mp4",
+        url="/outputs/mixed/score_93.mp4",
+        size_bytes=1024,
+        fyp_score=93,
+        growth_quality_gate_passed=True,
+    )
+    job = ClipJob(
+        id="mixed-quality-job",
+        status="completed",
+        request=ClipJobRequest(clip_mode="short"),
+        created_at="2026-10-30T01:00:00+00:00",
+        updated_at="2026-10-30T01:00:00+00:00",
+        clips=[weak, winner],
+    )
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS", "true")
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS_YOUTUBE", "true")
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS_TIKTOK", "false")
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "auto_viral_runs", {})
+    monkeypatch.setattr(api, "cleanup_terminal_repair_outcomes", lambda _job: 0)
+    monkeypatch.setattr(
+        api,
+        "best_automatic_upload_clip_urls",
+        lambda *_args, **_kwargs: [winner.url],
+    )
+    repaired: list[str] = []
+    monkeypatch.setattr(
+        api,
+        "queue_completed_job_repair_once",
+        lambda _job: repaired.append(weak.url) or True,
+    )
+    monkeypatch.setattr(
+        api,
+        "pending_completed_job_upload_urls",
+        lambda _job, urls, *, platform: urls,
+    )
+    monkeypatch.setattr(api, "youtube_default_visibility", lambda: "private")
+    monkeypatch.setattr(api, "require_youtube_ready", lambda: None)
+    queued_urls: list[str] = []
+    monkeypatch.setattr(
+        api,
+        "create_youtube_upload_batch_records",
+        lambda _job_id, request: [
+            SimpleNamespace(status="queued", clip_url=url)
+            for url in request.clip_urls
+        ],
+    )
+    monkeypatch.setattr(
+        api,
+        "queue_youtube_upload_jobs",
+        lambda uploads: queued_urls.extend(upload.clip_url for upload in uploads),
+    )
+
+    assert api.queue_completed_job_uploads_once() == {
+        "youtube": 1,
+        "tiktok": 0,
+        "repair": 1,
+    }
+    assert queued_urls == [winner.url]
+    assert repaired == [weak.url]
+
+
+def test_cron_cleanup_deletes_only_clip_verified_on_every_enabled_platform(monkeypatch):
+    import api
+
+    uploaded = ClipFile(
+        name="score_81.mp4",
+        url="/outputs/source/score_81.mp4",
+        size_bytes=1024,
+        fyp_score=81,
+    )
+    waiting = ClipFile(
+        name="score_93.mp4",
+        url="/outputs/source/score_93.mp4",
+        size_bytes=1024,
+        fyp_score=93,
+    )
+    repairable = ClipFile(
+        name="score_77.mp4",
+        url="/outputs/source/score_77.mp4",
+        size_bytes=1024,
+        fyp_score=77,
+    )
+    job = ClipJob(
+        id="cross-platform-cleanup",
+        status="completed",
+        request=ClipJobRequest(clip_mode="short"),
+        created_at="2026-10-30T01:00:00+00:00",
+        updated_at="2026-10-30T01:00:00+00:00",
+        clips=[uploaded, waiting, repairable],
+    )
+    youtube_records = {
+        "yt-81": SimpleNamespace(
+            source_job_id=job.id,
+            clip_url=uploaded.url,
+            status="completed",
+            upload_confirmed=True,
+            video_url="https://youtu.be/score81",
+            dry_run=False,
+        ),
+        "yt-93": SimpleNamespace(
+            source_job_id=job.id,
+            clip_url=waiting.url,
+            status="completed",
+            upload_confirmed=True,
+            video_url="https://youtu.be/score93",
+            dry_run=False,
+        ),
+    }
+    tiktok_records = {
+        "tt-81": SimpleNamespace(
+            source_job_id=job.id,
+            clip_url=uploaded.url,
+            status="completed",
+            upload_confirmed=True,
+            profile_url="https://tiktok.com/@target/video/81",
+            dry_run=False,
+        )
+    }
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "youtube_uploads", youtube_records)
+    monkeypatch.setattr(api, "tiktok_uploads", tiktok_records)
+    monkeypatch.setattr(api, "save_jobs_unlocked", lambda: None)
+    monkeypatch.setattr(api, "cleanup_clip_files", lambda _clip: None)
+    monkeypatch.setattr(api, "cleanup_output_work_dirs", lambda *_args: None)
+    repair_checks: list[list[str]] = []
+    monkeypatch.setattr(
+        api,
+        "queue_completed_job_repair_once",
+        lambda remaining_job: repair_checks.append(
+            [clip.url for clip in remaining_job.clips]
+        )
+        or False,
+    )
+    item = {
+        "job_id": job.id,
+        "youtube_uploads": [{"id": "yt-81"}, {"id": "yt-93"}],
+        "tiktok_uploads": [{"id": "tt-81"}],
+    }
+
+    api.cleanup_verified_auto_viral_item(
+        "missing-run-is-fine",
+        AutoViralRequest(auto_upload_youtube=True, auto_upload_tiktok=True),
+        item,
+    )
+
+    assert item["cleanup_removed_short"] == 1
+    assert item["cleanup_remaining_short"] == 2
+    assert [clip.url for clip in api.jobs[job.id].clips] == [waiting.url, repairable.url]
+    assert repair_checks == [[waiting.url, repairable.url]]
+
+
+@pytest.mark.parametrize("repair_uploadable", [True, False])
+def test_terminal_repair_retires_original_and_discards_failed_replacement(
+    monkeypatch,
+    repair_uploadable,
+):
+    import api
+
+    original = ClipFile(
+        name="score_77.mp4",
+        url="/outputs/repair-life/score_77.mp4",
+        size_bytes=1024,
+        fyp_score=77,
+    )
+    sibling = ClipFile(
+        name="score_93.mp4",
+        url="/outputs/repair-life/score_93.mp4",
+        size_bytes=1024,
+        fyp_score=93,
+    )
+    replacement = ClipFile(
+        name="score_77_repaired.mp4",
+        url="/outputs/repair-life/score_77_repaired.mp4",
+        size_bytes=1024,
+        fyp_score=86 if repair_uploadable else 76,
+    )
+    parent = ClipJob(
+        id="repair-parent",
+        status="completed",
+        request=ClipJobRequest(clip_mode="short"),
+        created_at="2026-10-30T01:00:00+00:00",
+        updated_at="2026-10-30T01:00:00+00:00",
+        clips=[original, sibling],
+    )
+    child = ClipJob(
+        id="repair-child",
+        status="completed",
+        request=ClipJobRequest(clip_mode="short"),
+        created_at="2026-10-30T01:01:00+00:00",
+        updated_at="2026-10-30T01:01:00+00:00",
+        clips=[replacement],
+        repair_source_job_id=parent.id,
+        repair_source_clip_url=original.url,
+    )
+    monkeypatch.setattr(api, "jobs", {parent.id: parent, child.id: child})
+    monkeypatch.setattr(api, "save_jobs_unlocked", lambda: None)
+    monkeypatch.setattr(api, "cleanup_clip_files", lambda _clip: None)
+    monkeypatch.setattr(api, "cleanup_job_files", lambda _job: None)
+    monkeypatch.setattr(api, "cleanup_output_work_dirs", lambda *_args: None)
+    monkeypatch.setattr(api, "active_youtube_uploads_for_job", lambda *_args: [])
+    monkeypatch.setattr(api, "active_tiktok_uploads_for_job", lambda *_args: [])
+    monkeypatch.setattr(
+        api,
+        "best_automatic_upload_clip_urls",
+        lambda *_args, **_kwargs: [replacement.url] if repair_uploadable else [],
+    )
+
+    assert api.cleanup_terminal_repair_outcomes(parent) >= 1
+    assert [clip.url for clip in api.jobs[parent.id].clips] == [sibling.url]
+    assert (child.id in api.jobs) is repair_uploadable
+
+
 def test_scheduled_ryuundy_theme_is_randomized_and_cc_label_is_optional(monkeypatch):
     import api
 
@@ -4695,8 +4918,8 @@ def test_ineligible_paired_long_does_not_block_short_upload(monkeypatch):
     monkeypatch.setattr(api, "wait_for_uploads", lambda _ids: [finished_upload])
     monkeypatch.setattr(
         api,
-        "delete_all_job_clips",
-        lambda job_id: deleted.append(job_id) or SimpleNamespace(removed_clips=1),
+        "cleanup_uploaded_auto_viral_job",
+        lambda job_id, _clip_urls=None: deleted.append(job_id) or 1,
     )
 
     processed = api.upload_auto_viral_processed_jobs(
@@ -4917,8 +5140,8 @@ def test_deferred_upload_auto_publishes_verified_paired_long(monkeypatch):
     monkeypatch.setattr(api, "wait_for_uploads", lambda _ids: [finished_upload])
     monkeypatch.setattr(
         api,
-        "delete_all_job_clips",
-        lambda job_id: deleted.append(job_id) or SimpleNamespace(removed_clips=1),
+        "cleanup_uploaded_auto_viral_job",
+        lambda job_id, _clip_urls=None: deleted.append(job_id) or 1,
     )
 
     processed = api.upload_auto_viral_processed_jobs(
@@ -5093,7 +5316,11 @@ def test_deferred_upload_queues_youtube_and_tiktok_before_cleanup(monkeypatch):
     monkeypatch.setattr(api, "queue_tiktok_upload_jobs", lambda jobs: queued.extend(job.id for job in jobs))
     monkeypatch.setattr(api, "wait_for_uploads", lambda _ids: [youtube_done])
     monkeypatch.setattr(api, "wait_for_tiktok_uploads", lambda _ids: [tiktok_done])
-    monkeypatch.setattr(api, "delete_all_job_clips", lambda _job_id: SimpleNamespace(removed_clips=1))
+    monkeypatch.setattr(
+        api,
+        "cleanup_uploaded_auto_viral_job",
+        lambda _job_id, _clip_urls=None: 1,
+    )
 
     processed = api.upload_auto_viral_processed_jobs(
         run.id,
@@ -5221,18 +5448,18 @@ def test_verified_cron_upload_retries_cleanup_without_reupload(monkeypatch):
 
     attempts = 0
 
-    def flaky_cleanup(job_id):
+    def flaky_cleanup(job_id, _clip_urls=None):
         nonlocal attempts
         attempts += 1
         if attempts == 1:
             raise RuntimeError("disk sedang sibuk")
         with api.jobs_lock:
             api.jobs.pop(job_id, None)
-        return SimpleNamespace(removed_clips=1)
+        return 1
 
     monkeypatch.setattr(api, "save_auto_viral_runs_unlocked", lambda: None)
     monkeypatch.setattr(api, "persisted_upload_group_is_verified", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(api, "delete_all_job_clips", flaky_cleanup)
+    monkeypatch.setattr(api, "cleanup_uploaded_auto_viral_job", flaky_cleanup)
     monkeypatch.setattr(
         api,
         "create_youtube_upload_batch_records",
@@ -5359,8 +5586,8 @@ def test_deferred_upload_queues_every_clipper_result_without_manual_click(monkey
     monkeypatch.setattr(api, "wait_for_tiktok_uploads", finish_tiktok)
     monkeypatch.setattr(
         api,
-        "delete_all_job_clips",
-        lambda job_id: deleted.append(job_id) or SimpleNamespace(removed_clips=1),
+        "cleanup_uploaded_auto_viral_job",
+        lambda job_id, _clip_urls=None: deleted.append(job_id) or 1,
     )
 
     result = api.upload_auto_viral_processed_jobs(run.id, request, processed)

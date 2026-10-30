@@ -1842,28 +1842,62 @@ def test_scheduled_reaction_avatar_is_cron_only_and_avoids_reverent_topics(monke
     assert gaming_profile["selected"] is True
     assert gaming_profile["assets_ready"] is True
     assert gaming_profile["synthetic_avatar_disclosed"] is True
+    assert gaming_profile["listener_performance"] is True
+    assert gaming_profile["transcript_grounded_body_language"] is True
+    assert gaming_profile["speech_window_driven_mouth"] is False
+    assert gaming_profile["reaction_cue_driven_expression_states"] is True
+    assert gaming_profile["cinematic_performance_motion"] is True
     assert islamic_profile["selected"] is False
     assert islamic_profile["religious_or_reverent_topic_excluded"] is True
 
 
-def test_scheduled_reaction_avatar_filter_animates_only_source_speech_windows():
+def test_scheduled_reaction_avatar_filter_uses_contextual_listener_body_language():
     value = scheduled_reaction_avatar_layout_filter(
         30,
-        100,
-        [
-            TranscriptSegment(100.5, 103.0, "Kalimat pertama."),
-            TranscriptSegment(105.0, 108.0, "Kalimat kedua."),
+        performance_cues=[
+            ReactionCue("shock", 5.2, 7.05, "right", "ternyata"),
+            ReactionCue("important", 12.0, 13.85, "left", "penting"),
         ],
     )
 
     assert "HOST VIRTUAL • REACTION" in value
-    assert "between(t,0.500,3.000)" in value
-    assert "between(t,5.000,8.000)" in value
-    assert "lt(mod(t+0.030,0.240),0.105)" in value
-    assert "lt(mod(t+0.410,4.700),0.115)" in value
+    assert "between(t,5.200,7.050)" in value
+    assert "between(t,12.000,13.850)" in value
+    assert "-26*between(t,5.200,7.050)" in value
+    assert "9*between(t,12.000,13.850)" in value
+    assert "lt(mod(t+0.030,0.260),0.145)" in value
+    assert "between(t,1.850,1.955)" in value
+    assert "0.006*sin(0.70*t)" in value
+    assert "exp(-4*(t-5.200))" in value
     assert "fendy-reaction-avatar-talk-mouth.png" in value
     assert "fendy-reaction-avatar-blink-eyes.png" in value
+    assert "fendy-reaction-avatar-shock-v2.png" in value
+    assert "fendy-reaction-avatar-laugh-v2.png" in value
+    assert "fendy-reaction-avatar-skeptical-v2.png" in value
+    assert "vignette=PI/9" in value
     assert "generate-audio" not in value
+
+
+def test_reaction_avatar_can_respond_to_an_early_hook():
+    clip = ClipCandidate(
+        1,
+        100,
+        130,
+        30,
+        90,
+        "Ternyata pemain kaget",
+        "test",
+        "Ternyata bolanya masuk dan semua kaget.",
+    )
+    cues = detect_reaction_cues(
+        clip,
+        [TranscriptSegment(100.0, 102.0, "Ternyata bolanya masuk, kaget!")],
+        earliest_start=0.2,
+    )
+
+    assert len(cues) == 1
+    assert cues[0].kind == "shock"
+    assert 0.2 <= cues[0].start < 3.45
 
 
 def test_cron_subscribe_pulse_is_brief_mid_video_and_caption_safe():

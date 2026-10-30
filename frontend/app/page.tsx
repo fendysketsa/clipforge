@@ -1399,9 +1399,12 @@ export default function HomePage() {
   const handleUploadAllToYouTube = useCallback(async () => {
     if (!job || !job.clips.length) return;
     const bestCount = youtubeConfig?.auto_upload_count ?? 2;
+    const uploadAllAboveTarget = youtubeConfig?.upload_all_above_fyp_target ?? false;
     try {
       const uploads = await toast.promise(createYouTubeUploadBatch(job.id, [], bestCount), {
-        loading: `Memasukkan ${Math.min(bestCount, job.clips.length)} klip terbaik ke antrean YouTube...`,
+        loading: uploadAllAboveTarget
+          ? "Memilih semua klip dengan skor FYP ≥80 dan memasukkannya ke antrean YouTube Private..."
+          : `Memasukkan ${Math.min(bestCount, job.clips.length)} klip terbaik ke antrean YouTube...`,
         success: (uploads) => {
           const activeCount = uploads.filter(
             (upload) => upload.status === "queued" || upload.status === "running",
@@ -1424,7 +1427,12 @@ export default function HomePage() {
     } catch {
       // toast.promise already displayed the actionable status.
     }
-  }, [job, loadYouTubeUploads, youtubeConfig?.auto_upload_count]);
+  }, [
+    job,
+    loadYouTubeUploads,
+    youtubeConfig?.auto_upload_count,
+    youtubeConfig?.upload_all_above_fyp_target,
+  ]);
 
   const handleRefreshYouTubePerformance = useCallback(async (upload: YouTubeUploadJob) => {
     try {
@@ -1701,6 +1709,7 @@ export default function HomePage() {
             youtubeConfig?.public_cadence_message,
           ].filter(Boolean).join(" · ")}
           youtubeAutoUploadCount={youtubeConfig?.auto_upload_count ?? 2}
+          youtubeUploadAllAboveTarget={youtubeConfig?.upload_all_above_fyp_target ?? false}
           youtubeUploads={youtubeUploads}
           tiktokEnabled={Boolean(tiktokConfig?.enabled)}
           tiktokStatusMessage={tiktokConfig?.auth_status_message ?? "Session TikTok belum siap"}
