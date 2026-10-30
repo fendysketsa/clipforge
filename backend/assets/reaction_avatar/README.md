@@ -33,3 +33,22 @@ hoodie, facial hair, semi-realistic illustration style, front head-and-shoulders
 scale, and transparent alpha; change only the natural surprised double-take,
 contained laugh, or skeptical side-eye expression. No text, logo, watermark,
 extra props, or grotesque caricature.
+
+Version 3 is the default cinematic host. A photorealistic transparent master
+was derived from the same approved identity reference, then every expression
+was edited from that master rather than generated independently:
+
+- `fendy-reaction-avatar-real-neutral-v3.png`
+- `fendy-reaction-avatar-real-blink-v3.png`
+- `fendy-reaction-avatar-real-shock-v3.png`
+- `fendy-reaction-avatar-real-laugh-v3.png`
+- `fendy-reaction-avatar-real-skeptical-v3.png`
+- `fendy-reaction-avatar-real-warm-v3.png`
+
+The v3 prompt set locks the Indonesian man's facial structure, warm medium skin,
+eye color, moustache/goatee, backwards gray cap, black hoodie, camera distance,
+shoulder silhouette, soft camera-left key, cool rim light, and transparent alpha.
+Only eyelids, eye direction, eyebrows, mouth, and a two-to-three-degree head
+incline may change. The renderer uses irregular neutral blinks plus a blink-cut
+around a 40–55 ms alpha dissolve so expression changes do not create a ghosted
+double face. The UI disclosure remains `HOST VIRTUAL • REACTION`.

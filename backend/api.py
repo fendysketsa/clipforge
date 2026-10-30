@@ -94,6 +94,12 @@ YOUTUBE_SEARCH_TERMS_CACHE_PATH = Path(
         BASE_DIR / "data" / "youtube_search_terms.json",
     )
 )
+YOUTUBE_STUDIO_TRENDS_CACHE_PATH = Path(
+    os.environ.get(
+        "YOUTUBE_STUDIO_TRENDS_CACHE_PATH",
+        BASE_DIR / "data" / "youtube_studio_trends.json",
+    )
+)
 SOURCE_USAGE_ARCHIVE_DIR_OVERRIDE = os.environ.get("SOURCE_USAGE_ARCHIVE_DIR", "").strip()
 YOUTUBE_PLAYWRIGHT_STATE = Path(os.environ.get("YOUTUBE_PLAYWRIGHT_STATE", BASE_DIR / "data" / "youtube_storage_state.json"))
 YOUTUBE_CHROMIUM_USER_DATA_DIR = os.environ.get("YOUTUBE_CHROMIUM_USER_DATA_DIR", "").strip()
@@ -1712,7 +1718,7 @@ RYUUNDY_CRON_THEME_SIGNALS: dict[str, set[str]] = {
     },
     "life_comeback": {
         "bangkit", "kehilangan", "perubahan hidup", "pelajaran hidup",
-        "jatuh bangun", "inspiratif", "kisah nyata",
+        "jatuh bangun", "inspiratif", "kisah nyata", "pertolongan",
     },
     "mystery_story": {"misteri", "horor", "hantu", "seram", "gaib", "kisah nyata"},
     "humor_interlude": CRON_HUMOR_SIGNALS,
@@ -1722,11 +1728,11 @@ RYUUNDY_CRON_THEME_SIGNALS: dict[str, set[str]] = {
     },
     "islamic_animation_kids": {
         "animasi", "kartun", "anak muslim", "cerita anak", "kisah nabi",
-        "kisah teladan", "adab", "akhlak", "doa harian", "islami",
+        "kisah teladan", "adab", "akhlak", "doa harian", "islami", "ngaji",
     },
     "islamic_animation_general": {
         "animasi", "film animasi", "cerita islami", "kisah nabi", "hijrah",
-        "sejarah islam", "kisah sahabat", "islami", "muslim",
+        "sejarah islam", "kisah sahabat", "islami", "muslim", "ngaji",
     },
     "podcast_conversation": {
         "podcast", "wawancara", "obrolan", "narasumber", "bintang tamu",
@@ -1738,8 +1744,43 @@ RYUUNDY_CRON_THEME_SIGNALS: dict[str, set[str]] = {
     },
     "faith_life": {
         "islam", "iman", "hijrah", "hidayah", "quran", "kajian", "dakwah",
-        "nabi", "muhammad", "mukjizat", "ustaz", "ustadz", "ceramah",
+        "nabi", "muhammad", "mukjizat", "ustaz", "ustadz", "ceramah", "ngaji",
     },
+}
+
+# Snapshot supplied by the channel owner on 2026-10-30. It is deliberately a
+# short-lived bootstrap, not a permanent keyword list: the authenticated Studio
+# Trends reader below replaces it whenever live cards are available, and the
+# snapshot expires automatically so yesterday's trend cannot become a rule.
+RYUUNDY_STUDIO_TREND_BOOTSTRAP_CAPTURED_AT = "2026-10-30T00:00:00+07:00"
+RYUUNDY_STUDIO_TREND_BOOTSTRAP_TERMS = (
+    "indonesian horror podcast",
+    "penampakan hantu terjelas dan seram",
+    "indonesian horror movie based on true story",
+    "ngaji cerdas",
+    "indo korean drama",
+    "pertolongan dibalik layar",
+    "kesaksian kristen",
+    "cerita hantu",
+    "rangkum film",
+    "drama kisah nyata",
+    "japanese horror podcast",
+    "film komedi indonesia",
+)
+
+# Search rewrites retain the viewer intent while avoiding queries that ask for
+# protected movie/TV footage or present supernatural material as verified fact.
+RYUUNDY_STUDIO_TREND_QUERY_REWRITES = {
+    "indonesian horror podcast": "podcast horor indonesia",
+    "penampakan hantu terjelas dan seram": "cerita penampakan hantu indonesia pembahasan",
+    "indonesian horror movie based on true story": "kisah horor indonesia terinspirasi kisah nyata pembahasan",
+    "indo korean drama": "cerita hubungan penuh plot twist indonesia",
+    "pertolongan dibalik layar": "kisah pertolongan di balik layar indonesia",
+    "cerita hantu": "cerita hantu indonesia pembahasan",
+    "rangkum film": "rangkuman cerita dan pelajaran hidup indonesia",
+    "drama kisah nyata": "cerita drama kisah nyata indonesia",
+    "japanese horror podcast": "podcast horor jepang bahasa indonesia",
+    "film komedi indonesia": "cerita komedi indonesia dialog lucu",
 }
 
 CRON_ISLAMIC_ANIMATION_THEME_KEYS = frozenset(
@@ -4286,6 +4327,7 @@ youtube_data_api_cache_lock = threading.Lock()
 google_trends_rss_cache: dict[str, tuple[float, list[str], set[str]]] = {}
 google_trends_rss_cache_lock = threading.Lock()
 youtube_search_terms_cache_lock = threading.Lock()
+youtube_studio_trends_cache_lock = threading.Lock()
 
 
 def clip_url(path: Path) -> str:
@@ -15520,6 +15562,273 @@ def normalize_youtube_search_term(value: str) -> str:
     return clean
 
 
+def parse_youtube_studio_trend_terms(body_text: str) -> list[str]:
+    """Parse the Studio Trends card without treating surrounding UI as topics."""
+    lines = [re.sub(r"\s+", " ", line).strip() for line in body_text.splitlines()]
+    lines = [line for line in lines if line]
+    marker_index = -1
+    for index, line in enumerate(lines):
+        if line.casefold() in {
+            "yang dicari orang-orang",
+            "what people are searching for",
+            "what your audience is searching for",
+        }:
+            marker_index = index
+            break
+    if marker_index < 0:
+        return []
+
+    stop_headings = {
+        "kesenjangan konten untuk shorts",
+        "content gaps for shorts",
+        "video terbaru",
+        "latest videos",
+        "ide untuk anda",
+        "ideas for you",
+    }
+    ignored = {
+        "ringkasan", "konten", "audiens", "tren", "overview", "content",
+        "audience", "trends", "simpan", "save", "lihat semua", "see all",
+    }
+    terms: list[str] = []
+    seen: set[str] = set()
+    for line in lines[marker_index + 1 : marker_index + 60]:
+        folded = line.casefold().strip()
+        if folded in stop_headings:
+            break
+        term = normalize_youtube_search_term(line)
+        if (
+            not term
+            or folded in ignored
+            or folded in seen
+            or len(term.split()) > 14
+            or re.fullmatch(r"[\d.,%]+", term)
+            or folded.startswith(("bagaimana ", "berapa ", "ringkas "))
+        ):
+            continue
+        seen.add(folded)
+        terms.append(term)
+        if len(terms) >= 24:
+            break
+    return terms
+
+
+def load_youtube_studio_trend_cache(*, max_age_seconds: int) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(
+            YOUTUBE_STUDIO_TRENDS_CACHE_PATH.read_text(encoding="utf-8")
+        )
+        captured_at = datetime.fromisoformat(str(payload.get("captured_at") or ""))
+        if captured_at.tzinfo is None:
+            captured_at = captured_at.replace(tzinfo=timezone.utc)
+        age = (
+            datetime.now(timezone.utc) - captured_at.astimezone(timezone.utc)
+        ).total_seconds()
+        records = payload.get("records")
+        if age > max_age_seconds or not isinstance(records, list):
+            return []
+        return [record for record in records if isinstance(record, dict)]
+    except (OSError, ValueError, json.JSONDecodeError, AttributeError):
+        return []
+
+
+def save_youtube_studio_trend_cache(records: list[dict[str, Any]]) -> None:
+    payload = {
+        "schema_version": 1,
+        "captured_at": now_iso(),
+        "records": records[:24],
+    }
+    with youtube_studio_trends_cache_lock:
+        YOUTUBE_STUDIO_TRENDS_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary = YOUTUBE_STUDIO_TRENDS_CACHE_PATH.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        temporary.replace(YOUTUBE_STUDIO_TRENDS_CACHE_PATH)
+
+
+def youtube_studio_live_trend_records() -> list[dict[str, Any]]:
+    """Read the authenticated Studio Trends page for the RYUUNDY channel."""
+    if not env_bool("AUTO_VIRAL_SCHEDULE_STUDIO_TRENDS_ENABLED", True):
+        return []
+    ttl_seconds = max(
+        900,
+        min(
+            86_400,
+            env_int("AUTO_VIRAL_SCHEDULE_STUDIO_TRENDS_CACHE_TTL_SECONDS", 21_600),
+        ),
+    )
+    cached = load_youtube_studio_trend_cache(max_age_seconds=ttl_seconds)
+    if cached:
+        return cached
+    if not playwright_installed() or not YOUTUBE_PLAYWRIGHT_STATE.is_file():
+        return []
+
+    studio_url = os.environ.get("YOUTUBE_STUDIO_URL", "").strip().rstrip("/")
+    channel_match = re.search(
+        r"https://studio\.youtube\.com/channel/[A-Za-z0-9_-]+",
+        studio_url,
+    )
+    if not channel_match:
+        return []
+    trends_url = f"{channel_match.group(0)}/analytics/tab-trends/period-default"
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+        )
+        context = None
+        try:
+            context = browser.new_context(
+                storage_state=str(YOUTUBE_PLAYWRIGHT_STATE),
+                locale="id-ID",
+                timezone_id="Asia/Jakarta",
+            )
+            page = context.new_page()
+            page.set_default_timeout(8_000)
+            page.goto(trends_url, wait_until="domcontentloaded", timeout=45_000)
+            body = ""
+            for _attempt in range(16):
+                page.wait_for_timeout(750)
+                body = page.locator("body").inner_text(timeout=8_000)
+                if any(
+                    marker in body.casefold()
+                    for marker in (
+                        "yang dicari orang-orang",
+                        "what people are searching for",
+                        "what your audience is searching for",
+                    )
+                ):
+                    break
+            terms = parse_youtube_studio_trend_terms(body)
+        finally:
+            if context is not None:
+                context.close()
+            browser.close()
+    records = [
+        {
+            "term": term,
+            "rank": index + 1,
+            "score": max(1, 100 - index * 4),
+            "source": "youtube_studio_trends",
+        }
+        for index, term in enumerate(terms)
+    ]
+    if records:
+        save_youtube_studio_trend_cache(records)
+    return records
+
+
+def youtube_studio_bootstrap_trend_records(
+    *,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Return the owner's dated screenshot only while it is still fresh."""
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    captured_at = datetime.fromisoformat(RYUUNDY_STUDIO_TREND_BOOTSTRAP_CAPTURED_AT)
+    ttl_days = max(
+        1,
+        min(
+            180,
+            env_int("AUTO_VIRAL_SCHEDULE_STUDIO_TRENDS_BOOTSTRAP_TTL_DAYS", 45),
+        ),
+    )
+    age_days = (current - captured_at.astimezone(current.tzinfo)).total_seconds() / 86_400
+    if age_days < 0 or age_days > ttl_days:
+        return []
+    return [
+        {
+            "term": term,
+            "rank": index + 1,
+            "score": max(1, 60 - index * 3),
+            "source": "owner_studio_trends_snapshot",
+            "captured_at": RYUUNDY_STUDIO_TREND_BOOTSTRAP_CAPTURED_AT,
+        }
+        for index, term in enumerate(RYUUNDY_STUDIO_TREND_BOOTSTRAP_TERMS)
+    ]
+
+
+def ryuundy_studio_trend_query(term: str, theme_key: str) -> str:
+    """Convert a Studio idea into a theme-safe topic query, or reject it."""
+    clean = normalize_youtube_search_term(term)
+    if not clean:
+        return ""
+    folded = clean.casefold()
+    # RYUUNDY's faith lanes are Islamic. Cross-faith demand remains useful for
+    # market awareness but must not silently redefine the channel identity.
+    if "kesaksian kristen" in folded:
+        return ""
+    rewritten = RYUUNDY_STUDIO_TREND_QUERY_REWRITES.get(folded, clean)
+    if max(
+        cron_theme_signal_score(clean, theme_key),
+        cron_theme_signal_score(rewritten, theme_key),
+    ) <= 0:
+        return ""
+    if theme_key in CRON_ISLAMIC_ANIMATION_THEME_KEYS and "animasi" not in rewritten.casefold():
+        rewritten = f"animasi {rewritten}"
+    return rewritten[:180]
+
+
+def youtube_studio_trend_reference_signals(
+    run_id: str,
+    theme_key: str,
+) -> list[str]:
+    """Return low-priority Studio ideas; never add them to ranking tokens."""
+    records: list[dict[str, Any]] = []
+    source_label = "live"
+    try:
+        records = youtube_studio_live_trend_records()
+    except Exception as exc:
+        append_auto_viral_error(
+            run_id,
+            f"Radar Tren YouTube Studio gagal; fallback aman tetap tersedia: {exc}",
+        )
+    if not records:
+        stale_days = max(
+            1,
+            min(
+                14,
+                env_int("AUTO_VIRAL_SCHEDULE_STUDIO_TRENDS_STALE_MAX_DAYS", 7),
+            ),
+        )
+        records = load_youtube_studio_trend_cache(
+            max_age_seconds=stale_days * 86_400
+        )
+        source_label = "cache lama"
+    if not records:
+        records = youtube_studio_bootstrap_trend_records()
+        source_label = "snapshot pemilik bertanggal"
+    limit = max(
+        1,
+        min(
+            6,
+            env_int("AUTO_VIRAL_SCHEDULE_STUDIO_TRENDS_QUERY_LIMIT", 3),
+        ),
+    )
+    queries = merge_unique_queries(
+        [
+            ryuundy_studio_trend_query(
+                str(record.get("term") or ""),
+                theme_key,
+            )
+            for record in records
+        ]
+    )[:limit]
+    jakarta_now = datetime.now(ZoneInfo("Asia/Jakarta"))
+    append_auto_viral_log(
+        run_id,
+        f"Studio Trends ({source_label}) memberi {len(queries)} referensi yang cocok "
+        f"tema {theme_key or '-'} pada {jakarta_now:%Y-%m-%d} WIB; referensi tidak "
+        "menambah skor dan kalender diperbarui otomatis.",
+    )
+    return queries
+
+
 def parse_youtube_studio_search_terms(
     body_text: str,
     *,
@@ -15864,7 +16173,7 @@ def youtube_channel_search_term_signals(
     )[:limit]
     tokens = {
         token
-        for record in records
+        for record in matched
         for token in re.findall(r"[a-z0-9]{3,}", str(record.get("term") or "").casefold())
         if token not in YOUTUBE_TREND_STOPWORDS
     }
@@ -16053,9 +16362,6 @@ def search_youtube_data_api_viral_sources(
     api_error_count = 0
     api_query_count = 0
     last_api_error = ""
-    search_deadline = time.monotonic() + max(
-        8, min(90, env_int("VIRAL_CC_FAST_SEARCH_BUDGET_SECONDS", 25))
-    )
     trend_tokens: set[str] = set()
     cron_humor_lane = cron_humor_discovery_active(run_id, request)
     cron_trend_lane = cron_trend_discovery_active(run_id, request)
@@ -16065,6 +16371,7 @@ def search_youtube_data_api_viral_sources(
     )
     max_api_queries = max(1, min(20, env_int("VIRAL_CC_MAX_API_QUERIES", 1)))
     channel_term_queries: list[str] = []
+    studio_trend_queries: list[str] = []
     if cron_humor_lane:
         append_auto_viral_log(
             run_id,
@@ -16077,6 +16384,10 @@ def search_youtube_data_api_viral_sources(
                 request.cron_theme_key,
             )
             trend_tokens.update(channel_term_tokens)
+            studio_trend_queries = youtube_studio_trend_reference_signals(
+                run_id,
+                request.cron_theme_key,
+            )
         try:
             trend_seeds, live_trend_tokens = youtube_trend_signals(
                 request,
@@ -16089,6 +16400,7 @@ def search_youtube_data_api_viral_sources(
                     channel_term_queries,
                     live_youtube_trend_queries(trend_seeds),
                     api_queries,
+                    studio_trend_queries,
                     limit=max_api_queries,
                 )
             else:
@@ -16100,7 +16412,8 @@ def search_youtube_data_api_viral_sources(
             if cron_trend_lane and trend_seeds:
                 append_auto_viral_log(
                     run_id,
-                    "Budget query dibagi dinamis antara search terms channel, tren live, dan tema editorial.",
+                    "Budget query dibagi dinamis antara demand channel, tren live, tema editorial, "
+                    "dan referensi Studio berbobot rendah.",
                 )
         except Exception as exc:
             append_auto_viral_error(run_id, f"Chart tren YouTube gagal; lanjut dengan keyword utama: {exc}")
@@ -16108,6 +16421,7 @@ def search_youtube_data_api_viral_sources(
                 api_queries = interleave_query_lanes(
                     channel_term_queries,
                     api_queries,
+                    studio_trend_queries,
                     limit=max_api_queries,
                 )
     preferred_specs = cron_gaming_channel_query_specs(request, run_id)
@@ -16124,6 +16438,12 @@ def search_youtube_data_api_viral_sources(
                 "status kanal prioritas tidak melewati audit hak atau QC."
             ),
         )
+    # Signal refreshes have their own bounded network/browser timeouts. Start
+    # the actual API-search budget only after those references are ready so a
+    # cold Studio Trends refresh cannot consume the source-discovery window.
+    search_deadline = time.monotonic() + max(
+        8, min(90, env_int("VIRAL_CC_FAST_SEARCH_BUDGET_SECONDS", 25))
+    )
     for query, preferred_channel_id in query_specs:
         if stop_after is not None and len(candidates) >= stop_after:
             break

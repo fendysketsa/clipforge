@@ -4288,6 +4288,73 @@ def test_cron_parses_real_youtube_studio_search_terms():
     assert records[0]["score"] > records[1]["score"]
 
 
+def test_cron_parses_studio_people_searching_card_and_ignores_ui():
+    import api
+
+    body = """
+    Ringkasan
+    Konten
+    Audiens
+    Tren
+    Yang dicari orang-orang
+    indonesian horror podcast
+    penampakan hantu terjelas dan seram
+    ngaji cerdas
+    drama kisah nyata
+    film komedi indonesia
+    Kesenjangan konten untuk Shorts
+    video lain yang tidak boleh ikut
+    """
+
+    assert api.parse_youtube_studio_trend_terms(body) == [
+        "indonesian horror podcast",
+        "penampakan hantu terjelas dan seram",
+        "ngaji cerdas",
+        "drama kisah nyata",
+        "film komedi indonesia",
+    ]
+
+
+def test_owner_studio_trend_snapshot_is_temporary_and_theme_guarded(monkeypatch):
+    import api
+
+    current = datetime.fromisoformat("2026-10-30T12:00:00+07:00")
+    expired = datetime.fromisoformat("2027-01-01T12:00:00+07:00")
+
+    assert api.youtube_studio_bootstrap_trend_records(now=current)
+    assert api.youtube_studio_bootstrap_trend_records(now=expired) == []
+    assert (
+        api.ryuundy_studio_trend_query(
+            "indonesian horror movie based on true story",
+            "mystery_story",
+        )
+        == "kisah horor indonesia terinspirasi kisah nyata pembahasan"
+    )
+    assert api.ryuundy_studio_trend_query("ngaji cerdas", "faith_life") == "ngaji cerdas"
+    assert api.ryuundy_studio_trend_query("ngaji cerdas", "gaming_story") == ""
+    assert api.ryuundy_studio_trend_query("kesaksian kristen", "faith_life") == ""
+
+
+def test_studio_trends_are_query_only_low_weight_references(monkeypatch):
+    import api
+
+    monkeypatch.setattr(
+        api,
+        "youtube_studio_live_trend_records",
+        lambda: [
+            {"term": "cerita hantu", "source": "youtube_studio_trends"},
+            {"term": "film komedi indonesia", "source": "youtube_studio_trends"},
+        ],
+    )
+
+    queries = api.youtube_studio_trend_reference_signals(
+        "missing-run",
+        "mystery_story",
+    )
+
+    assert queries == ["cerita hantu indonesia pembahasan"]
+
+
 def test_cron_channel_search_terms_match_theme_and_share_query_budget(monkeypatch):
     import api
 
@@ -4315,7 +4382,8 @@ def test_cron_channel_search_terms_match_theme_and_share_query_budget(monkeypatc
     )
 
     assert queries[0] == "barcelona vs real madrid 2-5"
-    assert {"barcelona", "madrid", "roblox"}.issubset(tokens)
+    assert {"barcelona", "madrid", "timnas"}.issubset(tokens)
+    assert "roblox" not in tokens
     assert api.cron_theme_signal_score("mukjizat nabi muhammad", "faith_life") > 0
     assert distributed == [
         "barcelona vs real madrid 2-5",

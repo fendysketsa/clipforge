@@ -1839,6 +1839,7 @@ def test_scheduled_reaction_avatar_is_cron_only_and_avoids_reverent_topics(monke
     gaming_profile = scheduled_reaction_avatar_layout_profile(gaming)
     islamic_profile = scheduled_reaction_avatar_layout_profile(islamic)
 
+    assert gaming_profile["version"] == 3
     assert gaming_profile["selected"] is True
     assert gaming_profile["assets_ready"] is True
     assert gaming_profile["synthetic_avatar_disclosed"] is True
@@ -1847,6 +1848,8 @@ def test_scheduled_reaction_avatar_is_cron_only_and_avoids_reverent_topics(monke
     assert gaming_profile["speech_window_driven_mouth"] is False
     assert gaming_profile["reaction_cue_driven_expression_states"] is True
     assert gaming_profile["cinematic_performance_motion"] is True
+    assert gaming_profile["photorealistic_synthetic_host"] is True
+    assert gaming_profile["expression_crossfades"] is True
     assert islamic_profile["selected"] is False
     assert islamic_profile["religious_or_reverent_topic_excluded"] is True
 
@@ -1865,16 +1868,21 @@ def test_scheduled_reaction_avatar_filter_uses_contextual_listener_body_language
     assert "between(t,12.000,13.850)" in value
     assert "-26*between(t,5.200,7.050)" in value
     assert "9*between(t,12.000,13.850)" in value
-    assert "lt(mod(t+0.030,0.260),0.145)" in value
+    assert "between(t,5.020,5.200)" in value
     assert "between(t,1.850,1.955)" in value
-    assert "0.006*sin(0.70*t)" in value
+    assert "0.004*sin(0.70*t)" in value
     assert "exp(-4*(t-5.200))" in value
-    assert "fendy-reaction-avatar-talk-mouth.png" in value
-    assert "fendy-reaction-avatar-blink-eyes.png" in value
-    assert "fendy-reaction-avatar-shock-v2.png" in value
-    assert "fendy-reaction-avatar-laugh-v2.png" in value
-    assert "fendy-reaction-avatar-skeptical-v2.png" in value
+    assert "between(t,5.110,5.218)" in value
+    assert "fade=t=in:st=5.200:d=0.055:alpha=1" in value
+    assert "fendy-reaction-avatar-real-neutral-v3.png" in value
+    assert "fendy-reaction-avatar-real-blink-v3.png" in value
+    assert "fendy-reaction-avatar-real-shock-v3.png" in value
+    assert "fendy-reaction-avatar-real-laugh-v3.png" in value
+    assert "fendy-reaction-avatar-real-skeptical-v3.png" in value
+    assert "fendy-reaction-avatar-real-warm-v3.png" in value
     assert "vignette=PI/9" in value
+    assert value.count("shortest=1") >= 6
+    assert "trim=duration=30.000" in value
     assert "generate-audio" not in value
 
 

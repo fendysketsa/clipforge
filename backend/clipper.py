@@ -12125,6 +12125,24 @@ REACTION_AVATAR_LAUGH_PATH = (
 REACTION_AVATAR_SKEPTICAL_PATH = (
     REACTION_AVATAR_ASSET_DIR / "fendy-reaction-avatar-skeptical-v2.png"
 )
+REACTION_AVATAR_REAL_NEUTRAL_PATH = (
+    REACTION_AVATAR_ASSET_DIR / "fendy-reaction-avatar-real-neutral-v3.png"
+)
+REACTION_AVATAR_REAL_BLINK_PATH = (
+    REACTION_AVATAR_ASSET_DIR / "fendy-reaction-avatar-real-blink-v3.png"
+)
+REACTION_AVATAR_REAL_SHOCK_PATH = (
+    REACTION_AVATAR_ASSET_DIR / "fendy-reaction-avatar-real-shock-v3.png"
+)
+REACTION_AVATAR_REAL_LAUGH_PATH = (
+    REACTION_AVATAR_ASSET_DIR / "fendy-reaction-avatar-real-laugh-v3.png"
+)
+REACTION_AVATAR_REAL_SKEPTICAL_PATH = (
+    REACTION_AVATAR_ASSET_DIR / "fendy-reaction-avatar-real-skeptical-v3.png"
+)
+REACTION_AVATAR_REAL_WARM_PATH = (
+    REACTION_AVATAR_ASSET_DIR / "fendy-reaction-avatar-real-warm-v3.png"
+)
 REACTION_AVATAR_TOPIC_WORDS = {
     "aneh",
     "bola",
@@ -12273,12 +12291,18 @@ def scheduled_reaction_avatar_layout_profile(
             REACTION_AVATAR_SHOCK_PATH,
             REACTION_AVATAR_LAUGH_PATH,
             REACTION_AVATAR_SKEPTICAL_PATH,
+            REACTION_AVATAR_REAL_NEUTRAL_PATH,
+            REACTION_AVATAR_REAL_BLINK_PATH,
+            REACTION_AVATAR_REAL_SHOCK_PATH,
+            REACTION_AVATAR_REAL_LAUGH_PATH,
+            REACTION_AVATAR_REAL_SKEPTICAL_PATH,
+            REACTION_AVATAR_REAL_WARM_PATH,
         )
     )
     eligible = bool(topic_eligible and respectful_topic and assets_ready)
     selected = bool(requested and eligible and bucket < percent)
     return {
-        "version": 2,
+        "version": 3,
         "requested_by_scheduler": requested,
         "eligible": eligible,
         "selected": selected,
@@ -12296,6 +12320,8 @@ def scheduled_reaction_avatar_layout_profile(
         "reaction_cue_driven_mouth": True,
         "reaction_cue_driven_expression_states": True,
         "cinematic_performance_motion": True,
+        "photorealistic_synthetic_host": True,
+        "expression_crossfades": True,
         "exact_phoneme_lip_sync": False,
         "source_audio_replaced": False,
         "reason": (
@@ -14081,11 +14107,12 @@ def scheduled_reaction_avatar_layout_filter(
     scale_terms: list[str] = []
     source_x_terms: list[str] = []
     source_y_terms: list[str] = []
-    expressive_mouth_ranges: list[str] = []
     shock_ranges: list[str] = []
     shock_flash_ranges: list[str] = []
     laugh_ranges: list[str] = []
     skeptical_ranges: list[str] = []
+    warm_ranges: list[str] = []
+    expression_windows: dict[str, tuple[float, float]] = {}
     for cue in bounded_cues:
         start = max(0.0, min(safe_duration, cue.start))
         end = max(start, min(safe_duration, cue.end))
@@ -14096,6 +14123,36 @@ def scheduled_reaction_avatar_layout_filter(
         span = max(0.08, end - start)
         arc = f"sin(PI*{elapsed}/{span:.3f})"
         direction = -1 if cue.side == "right" else 1
+        anticipation_start = max(0.0, start - 0.180)
+        anticipation_span = max(0.08, start - anticipation_start)
+        anticipation_active = (
+            f"between(t,{anticipation_start:.3f},{start:.3f})"
+        )
+        anticipation_elapsed = f"(t-{anticipation_start:.3f})"
+        anticipation_arc = (
+            f"sin(PI*{anticipation_elapsed}/{anticipation_span:.3f})"
+        )
+        settle_end = min(safe_duration, end + 0.320)
+        settle_span = max(0.08, settle_end - end)
+        settle_active = f"between(t,{end:.3f},{settle_end:.3f})"
+        settle_elapsed = f"(t-{end:.3f})"
+        if cue.kind in {"shock", "laugh", "think"}:
+            # Real reactions begin with a tiny preparatory inhale/lean and end
+            # with residual motion instead of stopping on a single frame.
+            y_terms.append(f"3*{anticipation_active}*{anticipation_arc}")
+            angle_terms.append(
+                f"{direction * -0.010:.3f}*{anticipation_active}*{anticipation_arc}"
+            )
+            scale_terms.append(
+                f"-0.006*{anticipation_active}*{anticipation_arc}"
+            )
+            x_terms.append(
+                f"{direction * 4}*{settle_active}*sin(PI*{settle_elapsed}/{settle_span:.3f})"
+            )
+            angle_terms.append(
+                f"{direction * 0.008:.3f}*{settle_active}*"
+                f"sin(PI*{settle_elapsed}/{settle_span:.3f})"
+            )
         if cue.kind == "shock":
             # Anticipation -> recoil -> damped double-take.  A dedicated face
             # state sells the expression while the movement remains bounded.
@@ -14112,8 +14169,8 @@ def scheduled_reaction_avatar_layout_filter(
             source_y_terms.append(
                 f"4*{active}*cos(31*{elapsed})*exp(-4*{elapsed})"
             )
-            expressive_mouth_ranges.append(active)
             shock_ranges.append(active)
+            expression_windows["shock"] = (start, end)
             shock_flash_ranges.append(
                 f"between(t,{start:.3f},{min(end, start + 0.100):.3f})"
             )
@@ -14133,8 +14190,8 @@ def scheduled_reaction_avatar_layout_filter(
                 f"0.016*{active}*abs(sin(7*{elapsed}))*exp(-0.45*{elapsed})"
             )
             source_y_terms.append(f"2*{active}*sin(10*{elapsed})")
-            expressive_mouth_ranges.append(active)
             laugh_ranges.append(active)
+            expression_windows["laugh"] = (start, end)
         elif cue.kind == "think":
             # Hold a dry side-eye long enough for the comedic pause to read.
             x_terms.append(f"{direction * 13}*{active}*{arc}")
@@ -14142,6 +14199,7 @@ def scheduled_reaction_avatar_layout_filter(
             angle_terms.append(f"{direction * -0.034:.3f}*{active}*{arc}")
             scale_terms.append(f"0.012*{active}*{arc}")
             skeptical_ranges.append(active)
+            expression_windows["skeptical"] = (start, end)
         elif cue.kind in {"warning", "important"}:
             # One deliberate nod with deceleration on consequential information.
             y_terms.append(
@@ -14153,6 +14211,8 @@ def scheduled_reaction_avatar_layout_filter(
         elif cue.kind == "heart":
             y_terms.append(f"-5*{active}*{arc}")
             scale_terms.append(f"0.014*{active}*{arc}")
+            warm_ranges.append(active)
+            expression_windows["warm"] = (start, end)
 
     authored_x = "+".join(x_terms) or "0"
     authored_y = "+".join(y_terms) or "0"
@@ -14160,9 +14220,6 @@ def scheduled_reaction_avatar_layout_filter(
     authored_scale = "+".join(scale_terms) or "0"
     source_x = "+".join(source_x_terms) or "0"
     source_y = "+".join(source_y_terms) or "0"
-    mouth_expression = "+".join(expressive_mouth_ranges) or "0"
-    mouth_enable = f"gt({mouth_expression},0)*lt(mod(t+0.030,0.260),0.145)"
-
     # Irregular deterministic blinking avoids the robotic four-second loop.
     blink_ranges: list[str] = []
     blink_at = 1.85
@@ -14180,17 +14237,36 @@ def scheduled_reaction_avatar_layout_filter(
             )
         blink_at += blink_gaps[blink_index % len(blink_gaps)]
         blink_index += 1
+    for cue in bounded_cues:
+        if cue.kind not in {"shock", "laugh", "think", "heart"}:
+            continue
+        start = max(0.0, min(safe_duration, cue.start))
+        end = max(start, min(safe_duration, cue.end))
+        # A blink masks the one-to-two-frame expression dissolve the same way
+        # a real actor naturally resets their face.  This avoids a ghosted
+        # double face while keeping the transition softer than a hard cut.
+        blink_ranges.append(
+            f"between(t,{max(0.0, start - 0.090):.3f},"
+            f"{min(safe_duration, start + 0.018):.3f})"
+        )
+        blink_ranges.append(
+            f"between(t,{max(start, end - 0.052):.3f},"
+            f"{min(safe_duration, end + 0.045):.3f})"
+        )
     blink_enable = f"gt({'+'.join(blink_ranges) or '0'},0)"
     shock_enable = f"gt({'+'.join(shock_ranges) or '0'},0)"
     laugh_enable = f"gt({'+'.join(laugh_ranges) or '0'},0)"
     skeptical_enable = f"gt({'+'.join(skeptical_ranges) or '0'},0)"
+    warm_enable = f"gt({'+'.join(warm_ranges) or '0'},0)"
     shock_flash_enable = f"gt({'+'.join(shock_flash_ranges) or '0'},0)"
 
-    avatar_angle = f"0.006*sin(0.70*t)+{authored_angle}"
-    avatar_scale = f"1+0.008*sin(1.25*t)+{authored_scale}"
+    avatar_angle = f"0.004*sin(0.70*t)+0.002*sin(1.91*t+0.4)+{authored_angle}"
+    avatar_scale = f"1+0.006*sin(1.25*t)+0.002*sin(0.43*t)+{authored_scale}"
     scaled_avatar_width = f"trunc((720*({avatar_scale}))/2)*2"
-    host_x = f"(W-w)/2+3*sin(0.53*t)+1.5*sin(1.37*t)+{authored_x}"
-    host_y = f"62+2*sin(1.25*t)+{authored_y}"
+    host_x = (
+        f"(W-w)/2+2.4*sin(0.53*t)+0.8*sin(2.31*t+0.7)+{authored_x}"
+    )
+    host_y = f"62+1.8*sin(1.25*t)+0.6*sin(0.47*t+0.2)+{authored_y}"
 
     def escaped_asset(path: Path) -> str:
         return (
@@ -14200,16 +14276,55 @@ def scheduled_reaction_avatar_layout_filter(
             .replace("'", r"\'")
         )
 
-    neutral_path = escaped_asset(REACTION_AVATAR_DISPLAY_PATH)
-    blink_path = escaped_asset(REACTION_AVATAR_BLINK_EYES_PATH)
-    talk_path = escaped_asset(REACTION_AVATAR_TALK_MOUTH_PATH)
-    shock_path = escaped_asset(REACTION_AVATAR_SHOCK_PATH)
-    laugh_path = escaped_asset(REACTION_AVATAR_LAUGH_PATH)
-    skeptical_path = escaped_asset(REACTION_AVATAR_SKEPTICAL_PATH)
+    neutral_path = escaped_asset(REACTION_AVATAR_REAL_NEUTRAL_PATH)
+    blink_path = escaped_asset(REACTION_AVATAR_REAL_BLINK_PATH)
+    shock_path = escaped_asset(REACTION_AVATAR_REAL_SHOCK_PATH)
+    laugh_path = escaped_asset(REACTION_AVATAR_REAL_LAUGH_PATH)
+    skeptical_path = escaped_asset(REACTION_AVATAR_REAL_SKEPTICAL_PATH)
+    warm_path = escaped_asset(REACTION_AVATAR_REAL_WARM_PATH)
     avatar_motion_filter = (
         f"scale=w='{scaled_avatar_width}':h=-2:eval=frame,"
         "pad=760:760:(ow-iw)/2:(oh-ih)/2:color=0x00000000,"
         f"rotate=angle='{avatar_angle}':ow=iw:oh=ih:fillcolor=none"
+    )
+
+    def expression_asset_filter(
+        path: str,
+        label: str,
+        size: int,
+        state: str,
+    ) -> str:
+        window = expression_windows.get(state)
+        if window is None:
+            return (
+                f"movie='{path}',format=rgba,scale={size}:{size}:flags=lanczos,"
+                "pad=760:760:(ow-iw)/2:(oh-ih)/2:color=0x00000000"
+                f"[avatar_{label}];"
+            )
+        start, end = window
+        fade_duration = min(0.055, max(0.040, (end - start) * 0.08))
+        fade_out_start = max(start + fade_duration, end - fade_duration)
+        return (
+            f"movie='{path}',loop=loop=-1:size=1:start=0,setpts=N/(30*TB),"
+            f"format=rgba,scale={size}:{size}:flags=lanczos,"
+            "pad=760:760:(ow-iw)/2:(oh-ih)/2:color=0x00000000,"
+            f"fade=t=in:st={start:.3f}:d={fade_duration:.3f}:alpha=1,"
+            f"fade=t=out:st={fade_out_start:.3f}:d={fade_duration:.3f}:alpha=1"
+            f"[avatar_{label}];"
+        )
+
+    expression_assets = "".join(
+        (
+            expression_asset_filter(shock_path, "shock", 744, "shock"),
+            expression_asset_filter(laugh_path, "laugh", 732, "laugh"),
+            expression_asset_filter(
+                skeptical_path,
+                "skeptical",
+                730,
+                "skeptical",
+            ),
+            expression_asset_filter(warm_path, "warm", 728, "warm"),
+        )
     )
     return (
         "split=2[reaction_bg_src][reaction_video_src];"
@@ -14221,17 +14336,9 @@ def scheduled_reaction_avatar_layout_filter(
         f"crop=1000:990:x='20+{source_x}':y='20+{source_y}'[reaction_video];"
         f"movie='{neutral_path}',loop=loop=-1:size=1:start=0,"
         "setpts=N/(30*TB),format=rgba[avatar_neutral];"
-        f"movie='{talk_path}',format=rgba[avatar_mouth];"
-        f"movie='{blink_path}',format=rgba[avatar_eyes];"
-        f"movie='{shock_path}',format=rgba,scale=744:744:flags=lanczos,"
-        "pad=760:760:(ow-iw)/2:(oh-ih)/2:color=0x00000000[avatar_shock];"
-        f"movie='{laugh_path}',format=rgba,scale=732:732:flags=lanczos,"
-        "pad=760:760:(ow-iw)/2:(oh-ih)/2:color=0x00000000[avatar_laugh];"
-        f"movie='{skeptical_path}',format=rgba,scale=730:730:flags=lanczos,"
-        "pad=760:760:(ow-iw)/2:(oh-ih)/2:color=0x00000000[avatar_skeptical];"
-        "[avatar_neutral][avatar_mouth]overlay=x=210:y=388:eof_action=repeat:"
-        f"enable='{mouth_enable}'[avatar_neutral_mouth];"
-        "[avatar_neutral_mouth][avatar_eyes]overlay=x=145:y=238:eof_action=repeat:"
+        f"movie='{blink_path}',format=rgba[avatar_blink];"
+        f"{expression_assets}"
+        "[avatar_neutral][avatar_blink]overlay=x=0:y=0:eof_action=repeat:"
         f"enable='{blink_enable}',{avatar_motion_filter}[avatar_performance];"
         "[reaction_bg]drawbox=x=36:y=34:w=1008:h=786:color=black@0.66:t=fill,"
         f"drawbox=x=36:y=34:w=1008:h=7:color={accent}@0.96:t=fill,"
@@ -14242,15 +14349,18 @@ def scheduled_reaction_avatar_layout_filter(
         "x=(w-text_w)/2:y=58[reaction_canvas];"
         "[reaction_canvas][reaction_video]overlay=x=40:y=858:shortest=1:eof_action=pass[reaction_stage];"
         f"[reaction_stage][avatar_performance]overlay=x='{host_x}':"
-        f"y='{host_y}':eof_action=repeat[reaction_host];"
+        f"y='{host_y}':eof_action=repeat:shortest=1[reaction_host];"
         f"[reaction_host][avatar_shock]overlay=x='{host_x}':y='{host_y}':"
-        f"eof_action=repeat:enable='{shock_enable}'[reaction_shock];"
+        f"eof_action=repeat:shortest=1:enable='{shock_enable}'[reaction_shock];"
         f"[reaction_shock][avatar_laugh]overlay=x='{host_x}':y='{host_y}':"
-        f"eof_action=repeat:enable='{laugh_enable}'[reaction_laugh];"
+        f"eof_action=repeat:shortest=1:enable='{laugh_enable}'[reaction_laugh];"
         f"[reaction_laugh][avatar_skeptical]overlay=x='{host_x}':y='{host_y}':"
-        f"eof_action=repeat:enable='{skeptical_enable}',"
+        f"eof_action=repeat:shortest=1:enable='{skeptical_enable}'[reaction_skeptical];"
+        f"[reaction_skeptical][avatar_warm]overlay=x='{host_x}':y='{host_y}':"
+        f"eof_action=repeat:shortest=1:enable='{warm_enable}',"
         f"drawbox=x=0:y=0:w=iw:h=ih:color=white@0.08:t=fill:enable='{shock_flash_enable}',"
-        "vignette=PI/9:eval=frame"
+        f"vignette=PI/9:eval=frame,trim=duration={safe_duration:.3f},"
+        "setpts=PTS-STARTPTS"
     )
 
 
@@ -17696,17 +17806,18 @@ def export_clip(
         sidecar_payload["layout"] = "scheduled_reaction_avatar_split"
         sidecar_payload["scheduled_reaction_avatar_layout"] = {
             **reaction_avatar_profile,
-            "top_panel": "persistent_animated_virtual_host",
+            "top_panel": "persistent_photorealistic_synthetic_virtual_host",
             "bottom_panel": "source_video",
             "blink_motion": "deterministic_irregular",
+            "expression_transition": "blink_masked_one_to_two_frame_dissolve",
             "listener_role": True,
             "mouth_motion": "laugh_or_shock_reaction_cues_only",
             "facial_expression_motion": (
-                "cue_grounded_shock_laugh_or_skeptical_state"
+                "cue_grounded_shock_laugh_skeptical_or_warm_state"
             ),
             "body_language_motion": (
-                "transcript_grounded_breath_head_tilt_recoil_double_take_"
-                "damped_laugh_lean_or_nod"
+                "transcript_grounded_micro_breath_head_settle_anticipation_"
+                "recoil_double_take_damped_laugh_lean_or_nod"
             ),
             "cinematic_motion": "subtle_push_in_source_shake_flash_and_vignette",
             "performance_cues": [asdict(cue) for cue in reaction_avatar_performance_cues],
@@ -17719,7 +17830,7 @@ def export_clip(
             asdict(cue) for cue in reaction_avatar_performance_cues
         ]
         applied_edits.append(
-            "Alternatif reaction khusus cron menempatkan host virtual sebagai pendengar di atas dan video sumber di bawah; napas mikro, head tilt, double-take, tawa mereda, side-eye, nod, mimik wajah, serta kedip irregular mengikuti cue transkrip tanpa meniru ucapan pembicara sumber."
+            "Alternatif reaction khusus cron menempatkan host virtual fotorealistik sebagai pendengar di atas dan video sumber di bawah; napas mikro, head settle, anticipation, blink-cut, double-take, tawa mereda, side-eye, nod, serta mimik wajah mengikuti cue transkrip tanpa meniru ucapan pembicara sumber."
         )
     if social_card_selected:
         vf = (
@@ -17856,6 +17967,12 @@ def export_clip(
                     "25",
                     "-pix_fmt",
                     "yuv420p",
+                    # ``movie=...,loop=-1`` expression assets are legitimate
+                    # infinite secondary streams.  Keep an output-side duration
+                    # fence so a future overlay regression cannot turn the
+                    # watermark probe into an endless encode.
+                    "-t",
+                    f"{duration:.3f}",
                     str(watermark_preview_path.name),
                 ],
                 cwd=clips_dir,
@@ -18389,6 +18506,11 @@ def export_clip(
                 str(quality["crf"]),
                 "-pix_fmt",
                 "yuv420p",
+                # Input ``-t`` alone does not cap a filtergraph containing an
+                # infinite movie/loop source.  This output fence guarantees the
+                # render closes its MP4 and writes the moov atom on schedule.
+                "-t",
+                f"{duration:.3f}",
                 *(
                     [
                         "-force_key_frames",

@@ -450,11 +450,18 @@ duplicating a confirmed upload.
 `AUTO_VIRAL_SCHEDULE_TREND_EXPANSION_ENABLED` is cron-only. Its dual live-trend
 radar reads the official Google Trends RSS feed and the YouTube Data API
 `mostPopular` chart for region `ID` without the normal single-category
-restriction. Current Indonesian search/video topics become the first discovery
-queries on every cycle, while the built-in safe cross-topic catalogue remains a
-fallback. The RSS cache defaults to fifteen minutes so each batch stays fresh
-without hammering Google. If either live source is unavailable, the other keeps
-working. `AUTO_VIRAL_SCHEDULE_TREND_QUERIES` is optional and can stay empty;
+restriction. It also reads the authenticated YouTube Studio Trends card
+**Yang dicari orang-orang** every six hours. Studio ideas are query-only,
+low-priority references: they add no ranking points, must match the active
+RYUUNDY theme, and protected-film wording is rewritten as discussion/story
+intent. The owner-provided 2026-10-30 screenshot is only a 45-day bootstrap and
+expires automatically as live Studio data replaces it. Current Indonesian
+search/video topics become the first discovery queries on every cycle, while the
+built-in safe cross-topic catalogue remains a fallback. Google RSS refreshes
+every fifteen minutes, Studio every six hours, channel demand covers the latest
+28 days, and all windows follow the server calendar automatically across months
+and years. If a live source is unavailable, the remaining sources keep working.
+`AUTO_VIRAL_SCHEDULE_TREND_QUERIES` is optional and can stay empty;
 there is no need to paste reference topics repeatedly. Dashboard/manual discovery
 keeps its existing niche catalogue.
 Trend titles are inspiration only: source-rights, language, age, HD, safety,
