@@ -17,6 +17,7 @@ from api import (
     YouTubeUploadRequest,
     YouTubeUploadJob,
     append_youtube_chapters,
+    audited_score_floor_short_for_automatic_upload,
     automatic_editorial_perspective_ready,
     automatic_source_risk_rebuild_request,
     best_youtube_clip_urls,
@@ -2413,6 +2414,87 @@ def test_completed_upload_cleanup_deletes_real_file_and_updates_job(monkeypatch,
     assert list(step_details) == list(api.YOUTUBE_CLEANUP_STEPS)
     assert all(item.completed_at for item in step_details.values())
     assert all(item.duration_ms is not None for item in step_details.values())
+
+
+def test_verified_score_floor_upload_cleans_entire_job_including_low_score_sibling(
+    monkeypatch,
+    tmp_path,
+):
+    import api
+
+    outputs = tmp_path / "outputs"
+    clip_dir = outputs / "demo" / "clips"
+    clip_dir.mkdir(parents=True)
+    strong = make_clip(1).model_copy(update={"fyp_score": 86})
+    weak = make_clip(2).model_copy(update={"fyp_score": 71})
+    for clip in (strong, weak):
+        clip_path = clip_dir / clip.name
+        clip_path.write_bytes(b"video")
+        clip_path.with_suffix(".json").write_text("{}", encoding="utf-8")
+        clip_path.with_name(f"{clip_path.stem}_thumb.jpg").write_bytes(b"thumb")
+
+    job = ClipJob(
+        id="job-score-floor-cleanup",
+        status="completed",
+        request=ClipJobRequest(source_file="/tmp/owned.mp4"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[strong, weak],
+    )
+    upload = YouTubeUploadJob(
+        id="upload-score-floor",
+        source_job_id=job.id,
+        clip_url=strong.url,
+        clip_name=strong.name,
+        status="completed",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:01:00+00:00",
+        finished_at="2026-01-01T00:01:00+00:00",
+        title="Uploaded",
+        video_url="https://www.youtube.com/watch?v=abcDEF12345",
+        upload_confirmed=True,
+    )
+    tiktok_upload = TikTokUploadJob(
+        id="tiktok-score-floor",
+        source_job_id=job.id,
+        clip_url=strong.url,
+        clip_name=strong.name,
+        status="completed",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:01:00+00:00",
+        caption="caption",
+        target_handle="titikbalikislami",
+        upload_confirmed=True,
+    )
+    monkeypatch.setenv("YOUTUBE_UPLOAD_ALL_ABOVE_FYP_TARGET", "true")
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+    monkeypatch.setattr(api, "tiktok_uploads", {tiktok_upload.id: tiktok_upload})
+    monkeypatch.setattr(
+        api,
+        "best_automatic_upload_clip_urls",
+        lambda *_args, **_kwargs: [strong.url],
+    )
+
+    delete_completed_youtube_upload_clip(upload.id, steps=("thumbnail",))
+    assert api.YOUTUBE_CLEANUP_ENTIRE_JOB_MARKER in api.youtube_uploads[upload.id].logs
+
+    # The cleanup scope must survive after sidecar metadata has been deleted.
+    monkeypatch.setattr(
+        api,
+        "best_automatic_upload_clip_urls",
+        lambda *_args, **_kwargs: [],
+    )
+    removed_job = False
+    for step in ("metadata", "video", "workspace", "job_sync"):
+        _, removed_job = delete_completed_youtube_upload_clip(upload.id, steps=(step,))
+
+    assert removed_job is True
+    assert job.id not in api.jobs
+    assert not (clip_dir / strong.name).exists()
+    assert not (clip_dir / weak.name).exists()
+    assert not clip_dir.parent.exists()
 
 
 def test_completed_upload_cleanup_refuses_unverified_upload(monkeypatch):
@@ -5089,6 +5171,69 @@ def test_scheduled_score_80_fallback_can_auto_upload_after_all_safety_gates(monk
     assert scheduled_score_floor_short_for_automatic_upload(job, clip, sidecar) is True
     assert youtube_monetization_preflight_issue(job, clip) is None
     assert api.best_automatic_upload_clip_urls(job, 1) == [clip.url]
+
+
+def test_displayed_fyp_score_86_uploads_while_score_71_is_skipped(monkeypatch):
+    import api
+
+    strong = make_clip(1).model_copy(
+        update={
+            "fyp_score": 86,
+            "growth_quality_gate_passed": False,
+            "render_qc_passed": False,
+        }
+    )
+    weak = make_clip(2).model_copy(
+        update={"fyp_score": 71, "growth_quality_gate_passed": False}
+    )
+    job = ClipJob(
+        id="job-displayed-score-floor",
+        status="completed",
+        request=make_monetization_ready_url_request(),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[strong, weak],
+        candidates=[make_candidate(1, 86), make_candidate(2, 71)],
+    )
+    sidecar = {
+        "output_format": "vertical_short",
+        "output_duration_seconds": 31.27,
+        "aspect_ratio": "9:16",
+        "thumbnail_strategy": "embedded_shorts_cover_frame",
+        "boundary_quality": "payoff_tuntas",
+        "key_point_score": 71,
+        "retention_score": 79,
+        "narrative_arc_score": 82,
+        "narrative_arc_complete": False,
+        "religious_context_safe": True,
+        "religious_context_integrity": {"safe_for_automatic_export": True},
+        "editorial_safety": {"safe_for_selection": True},
+        "advertiser_suitability": {"automatic_selection_allowed": True},
+        "render_quality_qc": {"passed": False, "blocking": False},
+        "editorial_framing": {
+            "enabled": True,
+            "content_derived": True,
+            "generated_for_this_clip": True,
+            "editorial_angle": "Sudut editorial khusus yang berasal dari isi sumber",
+            "transformation_contract": {
+                "passed": True,
+                "adds_interpretive_value": True,
+                "takeaway_grounded_in_source": True,
+            },
+        },
+    }
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: sidecar)
+    monkeypatch.setattr(api, "metadata_for_job", lambda _job: {})
+    monkeypatch.setattr(
+        api,
+        "best_youtube_clip_urls",
+        lambda _job, _count: [strong.url, weak.url],
+    )
+
+    assert audited_score_floor_short_for_automatic_upload(job, strong, sidecar) is True
+    assert audited_score_floor_short_for_automatic_upload(job, weak, sidecar) is False
+    assert youtube_monetization_preflight_issue(job, strong) is None
+    assert api.best_automatic_upload_clip_urls(job, 2) == [strong.url]
 
 
 def test_scheduled_quality_fallback_does_not_relax_score_or_editorial_safety():

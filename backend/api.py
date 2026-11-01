@@ -180,6 +180,7 @@ YOUTUBE_CLEANUP_STEPS = (
     "workspace",
     "job_sync",
 )
+YOUTUBE_CLEANUP_ENTIRE_JOB_MARKER = "AUTO_CLEANUP_SCOPE: entire_source_job"
 YOUTUBE_CLEANUP_STEP_RATIOS = {
     "thumbnail": 0.25,
     "metadata": 0.50,
@@ -6117,10 +6118,114 @@ def scheduled_score_floor_short_for_automatic_upload(
     )
 
 
+def audited_score_floor_short_for_automatic_upload(
+    job: ClipJob,
+    clip: ClipFile,
+    sidecar: dict[str, Any],
+) -> bool:
+    """Allow a score-floor Short when the persisted evidence passes hard gates.
+
+    The dashboard displays ``ClipFile.fyp_score``. Automatic upload must use
+    that same score instead of silently rejecting a passing card because a
+    different quality prediction failed. This fallback only waives the
+    five-beat/monetization-sidecar quality hold; rights, transformation,
+    editorial safety, context, duration, and blocking render QC stay required.
+    """
+    if not (
+        job.request.clip_mode == "short"
+        and str(sidecar.get("output_format") or "") == "vertical_short"
+        and clip.fyp_score is not None
+        and clip.fyp_score >= SHORT_FYP_TARGET_SCORE
+        and not clip.context_recut_required
+    ):
+        return False
+
+    if job.request.url.strip() and not (
+        job.request.confirm_source_rights
+        and len(job.request.source_rights_evidence.split()) >= 6
+    ):
+        return False
+    if str(sidecar.get("boundary_quality") or "") not in {
+        "payoff_tuntas",
+        "kalimat_tuntas",
+    }:
+        return False
+
+    editorial_safety = sidecar.get("editorial_safety")
+    if not isinstance(editorial_safety, dict) or editorial_safety.get(
+        "safe_for_selection"
+    ) is not True:
+        return False
+    advertiser_suitability = sidecar.get("advertiser_suitability")
+    if not isinstance(advertiser_suitability, dict) or advertiser_suitability.get(
+        "automatic_selection_allowed"
+    ) is not True:
+        return False
+
+    religious_review = sidecar.get("religious_claim_review")
+    if isinstance(religious_review, dict) and (
+        religious_review.get("recommended_decision") == "reject_and_recut"
+        or religious_review.get("review_required") is True
+    ):
+        return False
+    religious_integrity = sidecar.get("religious_context_integrity")
+    if sidecar.get("religious_context_safe") is False or (
+        isinstance(religious_integrity, dict)
+        and religious_integrity.get("safe_for_automatic_export") is not True
+    ):
+        return False
+
+    editorial_framing = sidecar.get("editorial_framing")
+    transformation = (
+        editorial_framing.get("transformation_contract")
+        if isinstance(editorial_framing, dict)
+        else None
+    )
+    if not (
+        automatic_editorial_perspective_ready(sidecar)
+        and isinstance(transformation, dict)
+        and transformation.get("passed") is True
+        and transformation.get("adds_interpretive_value") is True
+        and transformation.get("takeaway_grounded_in_source") is True
+    ):
+        return False
+
+    render_qc = sidecar.get("render_quality_qc")
+    if isinstance(render_qc, dict) and render_qc.get("blocking") is True:
+        return False
+    if clip.render_qc_passed is False and not (
+        isinstance(render_qc, dict) and render_qc.get("blocking") is False
+    ):
+        return False
+
+    try:
+        key_point_score = int(sidecar.get("key_point_score") or 0)
+        retention_score = int(sidecar.get("retention_score") or 0)
+        narrative_arc_score = int(sidecar.get("narrative_arc_score") or 0)
+        duration = float(
+            sidecar.get("output_duration_seconds")
+            or sidecar.get("duration")
+            or 0
+        )
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        key_point_score >= 55
+        and retention_score >= 58
+        and narrative_arc_score > 0
+        and SHORT_GROWTH_MIN_SECONDS <= duration <= YOUTUBE_SHORTS_MAX_SECONDS
+    )
+
+
 def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | None:
     """Return a hard block or a review hold before the Private upload stage."""
     sidecar = clip_sidecar_payload(clip)
     metadata = metadata_for_job(job)
+    audited_score_floor_fallback = audited_score_floor_short_for_automatic_upload(
+        job,
+        clip,
+        sidecar,
+    )
     editorial_safety = sidecar.get("editorial_safety")
     if isinstance(editorial_safety, dict) and editorial_safety.get("safe_for_selection") is not True:
         return (
@@ -6372,6 +6477,7 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
         )
         scheduled_score_floor_fallback = (
             scheduled_score_floor_short_for_automatic_upload(job, clip, sidecar)
+            or audited_score_floor_fallback
         )
         religious_claim_review = sidecar.get("religious_claim_review")
         if isinstance(religious_claim_review, dict):
@@ -6498,6 +6604,8 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             )
     readiness = sidecar.get("monetization_readiness") if isinstance(sidecar, dict) else None
     if not isinstance(readiness, dict):
+        if audited_score_floor_fallback:
+            return None
         return (
             "Upload diblokir: output lama belum memiliki audit monetisasi. "
             "Render ulang clip dengan Fendy Clipper terbaru."
@@ -6573,7 +6681,7 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
         reviewed_private_transformation_ready = False
     if not monetization_readiness_is_eligible(
         sidecar, readiness
-    ) and not reviewed_private_transformation_ready:
+    ) and not reviewed_private_transformation_ready and not audited_score_floor_fallback:
         return monetization_preflight_transformation_message(sidecar, readiness)
     return None
 
@@ -7635,6 +7743,11 @@ def best_automatic_upload_clip_urls(
             and (
                 clip.growth_quality_gate_passed is not False
                 or scheduled_score_floor_short_for_automatic_upload(
+                    job,
+                    clip,
+                    clip_sidecar_payload(clip),
+                )
+                or audited_score_floor_short_for_automatic_upload(
                     job,
                     clip,
                     clip_sidecar_payload(clip),
@@ -10083,11 +10196,65 @@ def delete_completed_youtube_upload_clip(
                 "File dipertahankan sampai upload TikTok nyata untuk clip yang sama terkonfirmasi selesai"
             )
 
-        clip_path = output_path_from_url(target_clip.url)
-        video_paths = {clip_path} if clip_path is not None else set()
+        cleanup_entire_job = YOUTUBE_CLEANUP_ENTIRE_JOB_MARKER in upload.logs
+        if youtube_upload_all_above_fyp_target() and not cleanup_entire_job:
+            qualifying_urls = set(
+                best_automatic_upload_clip_urls(
+                    job,
+                    len(job.clips),
+                    allow_audited_automation=True,
+                    require_youtube_fyp_target=True,
+                    require_numeric_fyp_score=True,
+                )
+            )
+            with youtube_uploads_lock:
+                confirmed_youtube_urls = {
+                    item.clip_url
+                    for item in youtube_uploads.values()
+                    if item.source_job_id == job.id
+                    and item.status == "completed"
+                    and item.upload_confirmed
+                    and not item.dry_run
+                }
+            confirmed_youtube_urls.add(upload.clip_url)
+            confirmed_tiktok_urls = {
+                item.clip_url
+                for item in matching_tiktok
+                if item.status == "completed"
+                and item.upload_confirmed
+                and not item.dry_run
+            }
+            with tiktok_uploads_lock:
+                confirmed_tiktok_urls.update(
+                    item.clip_url
+                    for item in tiktok_uploads.values()
+                    if item.source_job_id == job.id
+                    and item.status == "completed"
+                    and item.upload_confirmed
+                    and not item.dry_run
+                )
+            job_urls = {clip.url for clip in job.clips}
+            cleanup_entire_job = bool(
+                qualifying_urls
+                and qualifying_urls.issubset(confirmed_youtube_urls)
+                and qualifying_urls.issubset(confirmed_tiktok_urls)
+                and not active_youtube_uploads_for_job(job.id, job_urls)
+            )
+            if cleanup_entire_job:
+                set_youtube_upload(
+                    upload_id,
+                    logs=[*upload.logs, YOUTUBE_CLEANUP_ENTIRE_JOB_MARKER][-160:],
+                )
+
+        cleanup_clips = list(job.clips) if cleanup_entire_job else [target_clip]
+        video_paths: set[Path] = set()
         thumbnail_paths: set[Path] = set()
         metadata_paths: set[Path] = set()
-        if clip_path is not None:
+        for cleanup_clip in cleanup_clips:
+            clip_path = output_path_from_url(cleanup_clip.url)
+            if clip_path is None:
+                continue
+            video_paths.add(clip_path)
             thumbnail_paths.update(
                 {
                     clip_path.with_name(f"{clip_path.stem}_thumb.jpg"),
@@ -10098,10 +10265,6 @@ def delete_completed_youtube_upload_clip(
                     clip_path.with_name(f"{clip_path.stem}_ai_qc.json"),
                 }
             )
-            for thumbnail_url in target_clip.thumbnail_variants:
-                variant_path = output_path_from_url(thumbnail_url)
-                if variant_path is not None:
-                    thumbnail_paths.add(variant_path)
             metadata_paths.update(
                 {
                     clip_path.with_name(f"{clip_path.stem}_caption.txt"),
@@ -10111,10 +10274,14 @@ def delete_completed_youtube_upload_clip(
                     clip_path.with_suffix(".json"),
                 }
             )
-        if target_clip.thumbnail_url:
-            thumbnail_path = output_path_from_url(target_clip.thumbnail_url)
-            if thumbnail_path is not None:
-                thumbnail_paths.add(thumbnail_path)
+            for thumbnail_url in cleanup_clip.thumbnail_variants:
+                variant_path = output_path_from_url(thumbnail_url)
+                if variant_path is not None:
+                    thumbnail_paths.add(variant_path)
+            if cleanup_clip.thumbnail_url:
+                thumbnail_path = output_path_from_url(cleanup_clip.thumbnail_url)
+                if thumbnail_path is not None:
+                    thumbnail_paths.add(thumbnail_path)
 
         removed = 0
         if "thumbnail" in selected_steps:
@@ -10124,7 +10291,11 @@ def delete_completed_youtube_upload_clip(
         if "video" in selected_steps:
             removed += complete_file_step("video", video_paths)
 
-        remaining_clips = [clip for clip in job.clips if clip.url != target_clip.url]
+        remaining_clips = (
+            []
+            if cleanup_entire_job
+            else [clip for clip in job.clips if clip.url != target_clip.url]
+        )
         if "workspace" in selected_steps:
             workspace_started_perf = time.perf_counter()
             workspace_started_at = now_iso()
