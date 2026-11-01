@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { CalendarClock, Clock3, ExternalLink, Film, History, Link2, Music2, MonitorPlay, Smartphone, StopCircle, Trash2, Youtube } from "lucide-react";
 import { statusCopy, statusIcon } from "../../lib/constants";
 import { formatDuration, jobElapsedSeconds } from "../../lib/utils";
@@ -234,7 +234,11 @@ export function HistorySection({
             : null;
 
           return (
-            <div className={`jobRow ${isSelected ? "selected" : ""}`} key={item.id}>
+            <div
+              className={`jobRow jobRow--${item.status} ${isSelected ? "selected" : ""}`}
+              key={item.id}
+              style={{ "--job-progress": `${item.status === "completed" ? 100 : progressPercent}%` } as CSSProperties}
+            >
               {canSelectForDelete ? (
                 <input
                   aria-label={`Pilih riwayat ${statusCopy[item.status]} untuk dihapus`}
@@ -247,8 +251,10 @@ export function HistorySection({
               <button className="jobRowMain" type="button" onClick={() => onSelectJob(item)}>
                 <div className="jobRowTop">
                   <span className={`jobRow-status status-${item.status}`}>
-                    <Icon className={item.status === "running" ? "spin" : ""} size={16} />
-                    {statusCopy[item.status]}
+                    <span className="jobRow-statusIcon">
+                      <Icon className={item.status === "running" ? "spin" : ""} size={15} />
+                    </span>
+                    <span className="jobRow-statusLabel">{statusCopy[item.status]}</span>
                     {isProcessing ? <span className="jobRow-statusPercent">{progressPercent}%</span> : null}
                   </span>
                   <div className="jobRowTopMeta">
@@ -266,62 +272,77 @@ export function HistorySection({
                   </div>
                 </div>
                 <h3>{sourceLabel(item)}</h3>
-                {youtubeSummary && tiktokSummary ? (
-                  <div className="jobPlatformStatuses" aria-label="Status upload YouTube dan TikTok">
-                    <span
-                      className={`jobPlatformStatus state-${youtubeSummary.state}`}
-                      title={youtubeSummary.title}
-                    >
-                      <Youtube size={15} />
-                      <span><small>YouTube</small><strong>{youtubeSummary.label}</strong></span>
-                    </span>
-                    <span
-                      className={`jobPlatformStatus state-${tiktokSummary.state}`}
-                      title={tiktokSummary.title}
-                    >
-                      <Music2 size={15} />
-                      <span><small>TikTok</small><strong>{tiktokSummary.label}</strong></span>
-                    </span>
-                  </div>
-                ) : null}
-                {isProcessing ? (
-                  <div className="jobProgress" title={progressDetail}>
-                    <div className="jobProgressMeta">
-                      <span>{progressDetail}</span>
-                      <b>{progressPercent}% selesai</b>
+                <div className={`jobRowContent${youtubeSummary && tiktokSummary ? " hasPlatforms" : ""}`}>
+                  <div className="jobRowCore">
+                    {isProcessing ? (
+                      <div className="jobProgress" title={progressDetail}>
+                        <div className="jobProgressMeta">
+                          <span>{progressDetail}</span>
+                          <b>{progressPercent}% selesai</b>
+                        </div>
+                        <div
+                          aria-label={`Progres proses ${progressPercent}%`}
+                          aria-valuemax={100}
+                          aria-valuemin={0}
+                          aria-valuenow={progressPercent}
+                          className="jobProgressTrack"
+                          role="progressbar"
+                        >
+                          <span className="jobProgressFill" style={{ width: `${progressPercent}%` }} />
+                        </div>
                     </div>
-                    <div
-                      aria-label={`Progres proses ${progressPercent}%`}
-                      aria-valuemax={100}
-                      aria-valuemin={0}
-                      aria-valuenow={progressPercent}
-                      className="jobProgressTrack"
-                      role="progressbar"
-                    >
-                      <span className="jobProgressFill" style={{ width: `${progressPercent}%` }} />
+                    ) : null}
+                    <div className="jobSourceLine">
+                      <Link2 size={14} />
+                      <span>{url || "Upload lokal"}</span>
+                    </div>
+                    <div className="jobDetailGrid">
+                      <span>
+                        <CalendarClock size={13} />
+                        <small>Dibuat</small>
+                        <b>{formatDate(item.created_at)}</b>
+                      </span>
+                      {elapsedSeconds !== null ? (
+                        <span>
+                          <Clock3 size={13} />
+                          <small>Durasi proses</small>
+                          <b>{formatDuration(elapsedSeconds)}</b>
+                        </span>
+                      ) : null}
+                      {item.source_uploader ? (
+                        <span>
+                          <small>Sumber</small>
+                          <b>{item.source_uploader}</b>
+                        </span>
+                      ) : null}
+                      <span>
+                        <small>Preset</small>
+                        <b>{item.request.crop_mode} · {item.request.video_quality}</b>
+                      </span>
+                      <span>
+                        <small>Pipeline</small>
+                        <b>{item.request.ai_enabled ? `Auto FYP · ${item.request.ai_model || "AI lokal"}` : "Auto FYP · AI off"}</b>
+                      </span>
                     </div>
                   </div>
-                ) : null}
-                <div className="jobSourceLine">
-                  <Link2 size={14} />
-                  <span>{url || "Upload lokal"}</span>
-                </div>
-                <div className="jobDetailGrid">
-                  <span>
-                    <CalendarClock size={13} />
-                    {formatDate(item.created_at)}
-                  </span>
-                  {item.source_uploader ? <span>{item.source_uploader}</span> : null}
-                  {elapsedSeconds !== null ? (
-                    <span>
-                      <Clock3 size={13} />
-                      {formatDuration(elapsedSeconds)}
-                    </span>
+                  {youtubeSummary && tiktokSummary ? (
+                    <div className="jobPlatformStatuses" aria-label="Status upload YouTube dan TikTok">
+                      <span
+                        className={`jobPlatformStatus state-${youtubeSummary.state}`}
+                        title={youtubeSummary.title}
+                      >
+                        <Youtube size={15} />
+                        <span><small>YouTube</small><strong>{youtubeSummary.label}</strong></span>
+                      </span>
+                      <span
+                        className={`jobPlatformStatus state-${tiktokSummary.state}`}
+                        title={tiktokSummary.title}
+                      >
+                        <Music2 size={15} />
+                        <span><small>TikTok</small><strong>{tiktokSummary.label}</strong></span>
+                      </span>
+                    </div>
                   ) : null}
-                  <span>{item.request.crop_mode}</span>
-                  <span>{item.request.video_quality}</span>
-                  <span>Auto FYP adaptif</span>
-                  {item.request.ai_enabled ? <span>AI: {item.request.ai_model || "local"}</span> : <span>AI off</span>}
                 </div>
                 {url ? (
                   <span className="jobOpenHint">

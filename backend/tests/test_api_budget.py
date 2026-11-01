@@ -1372,6 +1372,11 @@ def test_scheduled_auto_viral_request_only_fills_remaining_daily_mix(monkeypatch
         "auto_viral_daily_youtube_content_counts",
         lambda *_args: {"short": 3, "long": 2},
     )
+    monkeypatch.setattr(
+        api,
+        "scheduled_ryuundy_theme_profile",
+        lambda: ("gaming_story", api.RYUUNDY_CRON_THEME_PROFILES["gaming_story"]),
+    )
 
     request = api.scheduled_auto_viral_request()
 
@@ -3855,7 +3860,7 @@ def test_cron_gaming_theme_accepts_story_gameplay_and_rejects_unrelated_source()
     )
 
 
-def test_cron_gaming_search_prioritizes_exact_bangjblox_channel(monkeypatch):
+def test_cron_gaming_search_is_open_to_all_channels_by_default(monkeypatch):
     import api
 
     request = AutoViralRequest(
@@ -3864,7 +3869,7 @@ def test_cron_gaming_search_prioritizes_exact_bangjblox_channel(monkeypatch):
         queries=["gaming indonesia"],
     )
     run = api.AutoViralRun(
-        id="gaming-bangjblox-source",
+        id="gaming-all-channel-source",
         status="running",
         trigger="schedule",
         created_at=api.now_iso(),
@@ -3896,8 +3901,69 @@ def test_cron_gaming_search_prioritizes_exact_bangjblox_channel(monkeypatch):
 
     assert observed
     assert observed[0][0] == "search"
-    assert observed[0][1]["channelId"] == api.BANGJBLOX_CHANNEL_ID
-    assert observed[0][1]["q"] == api.DEFAULT_CRON_GAMING_CHANNEL_QUERY
+    assert "channelId" not in observed[0][1]
+
+
+def test_cron_gaming_channel_ids_remain_optional_operator_hints(monkeypatch):
+    import api
+
+    monkeypatch.setenv(
+        "AUTO_VIRAL_SCHEDULE_GAMING_SOURCE_CHANNEL_IDS",
+        f"{api.BANGJBLOX_CHANNEL_ID},invalid,{api.BANGJBLOX_CHANNEL_ID}",
+    )
+
+    assert api.cron_gaming_source_channel_ids() == [api.BANGJBLOX_CHANNEL_ID]
+
+
+def test_new_ryuundy_source_lanes_accept_matching_metadata_and_reject_cross_theme():
+    import api
+
+    cases = {
+        "lecture_wisdom": {
+            "title": "Kajian tanya jawab ustadz tentang ujian kehidupan",
+            "description": "Ceramah Indonesia dengan jawaban jamaah yang utuh.",
+            "default_language": "id",
+        },
+        "famous_game_reaction": {
+            "title": "Reaction game horror Indonesia: gagal lalu comeback lucu",
+            "description": "Streamer mabar dengan reaksi dan payoff yang jelas.",
+            "default_language": "id",
+        },
+        "quirky_animation": {
+            "title": "Kartun absurd Indonesia dengan plot twist nyeleneh",
+            "description": "Animasi cerita lucu yang punya penutup.",
+            "default_language": "id",
+        },
+        "reaction_clip_story": {
+            "title": "Reaction clip lucu Indonesia dengan momen spontan",
+            "description": "Cerita singkat, reaksi natural, dan punchline tuntas.",
+            "default_language": "id",
+        },
+    }
+
+    for theme_key, metadata in cases.items():
+        assert api.cron_trend_candidate_rejection_reason(
+            metadata, theme_key=theme_key
+        ) == ""
+
+    assert "tema tidak cocok" in api.cron_trend_candidate_rejection_reason(
+        cases["quirky_animation"], theme_key="lecture_wisdom"
+    )
+
+
+def test_new_ryuundy_source_lanes_are_part_of_theme_rotation():
+    import api
+
+    expected = {
+        "lecture_wisdom",
+        "famous_game_reaction",
+        "quirky_animation",
+        "reaction_clip_story",
+    }
+
+    assert expected.issubset(api.RYUUNDY_CRON_THEME_PROFILES)
+    assert expected.issubset(api.RYUUNDY_CRON_THEME_SIGNALS)
+    assert "lecture_wisdom" in api.CRON_ISLAMIC_THEME_KEYS
 
 
 def test_cron_worker_features_are_isolated_from_manual_jobs(monkeypatch):

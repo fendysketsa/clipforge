@@ -1524,6 +1524,13 @@ CRON_TREND_SEARCH_QUERIES = [
     "roblox indonesia gameplay cerita lucu terbaru",
     "game mabar indonesia teamwork dan plot twist",
     "minecraft indonesia survival cerita seru",
+    "ceramah singkat indonesia nasihat kehidupan terbaru",
+    "kajian tanya jawab islam indonesia potongan utuh",
+    "reaction game horror indonesia lucu terbaru",
+    "gta v mobile legends free fire reaction indonesia lucu",
+    "kartun animasi absurd indonesia cerita lucu",
+    "animasi nyeleneh plot twist indonesia",
+    "reaction clip lucu indonesia dengan cerita dan payoff",
 ]
 
 CRON_TREND_TOPIC_SIGNALS = {
@@ -1536,7 +1543,10 @@ CRON_TREND_TOPIC_SIGNALS = {
     "tokoh", "wawancara", "bola", "sepak bola", "football", "barcelona",
     "real madrid", "timnas", "pemain", "pertandingan", "gol", "liga",
     "animasi", "kartun", "anak muslim", "cerita islami", "kisah nabi",
-    "kisah teladan", "adab", "doa harian",
+    "kisah teladan", "adab", "doa harian", "ceramah", "kajian", "tausiyah",
+    "ustaz", "ustadz", "tanya jawab", "reaction", "reaksi", "gta", "gta v",
+    "mobile legends", "free fire", "game horror", "valorant", "pubg",
+    "simulator", "absurd", "nyeleneh", "parodi", "clip lucu", "momen lucu",
 }
 CRON_TREND_UNSAFE_SIGNALS = {
     "18+", "adegan berdarah", "bunuh diri", "darah nyata", "eksploitasi",
@@ -1545,8 +1555,11 @@ CRON_TREND_UNSAFE_SIGNALS = {
 }
 
 BANGJBLOX_CHANNEL_ID = "UClfw7Mx0Vmh4hDAT0STSohw"
-DEFAULT_CRON_GAMING_SOURCE_CHANNEL_IDS = (BANGJBLOX_CHANNEL_ID,)
-DEFAULT_CRON_GAMING_CHANNEL_QUERY = "roblox roleplay cerita lucu indonesia"
+# Channel IDs are optional operator hints, never a whitelist. Empty by default
+# keeps scheduled discovery open to every channel whose source passes the same
+# topic, rights, duration, editorial, and upload-safety gates.
+DEFAULT_CRON_GAMING_SOURCE_CHANNEL_IDS: tuple[str, ...] = ()
+DEFAULT_CRON_GAMING_CHANNEL_QUERY = "reaction game populer indonesia lucu cerita"
 
 # RYUUNDY is a story-first channel.  Every scheduler run owns exactly one
 # profile, preventing a live trend from dragging discovery into unrelated
@@ -1630,6 +1643,51 @@ RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
             "game multiplayer indonesia reaksi natural dan lucu",
         ],
     },
+    "famous_game_reaction": {
+        "label": "Reaction Game Populer, Gagal Lucu & Comeback",
+        "tone": "cepat, ekspresif, dan lucu secara natural; nilai momen dari reaksi asli, keputusan pemain, dan payoff, bukan nama besar game atau kreatornya",
+        "short_role": "ambil reaksi yang langsung terbaca, jelaskan pemicunya, lalu tuntaskan kegagalan, kejutan, kemenangan, atau punchline dalam satu klip mandiri",
+        "long_role": "susun konteks permainan, eskalasi, reaksi pemain, dan hasil akhir tanpa mengulang teriakan atau gameplay kosong",
+        "queries": [
+            "reaction game horror indonesia lucu terbaru",
+            "gta v indonesia momen lucu reaction streamer",
+            "mobile legends indonesia mabar lucu comeback reaction",
+            "free fire indonesia momen lucu reaksi pemain",
+            "minecraft roblox indonesia gagal lucu dan comeback",
+            "game simulator co op indonesia reaction lucu",
+            "valorant pubg indonesia mabar kocak plot twist",
+            "game viral terbaru reaction indonesia lucu",
+        ],
+    },
+    "quirky_animation": {
+        "label": "Kartun Nyeleneh, Animasi Absurd & Plot Twist",
+        "tone": "aneh, kreatif, cepat, dan tetap aman ditonton; pertahankan logika dunia kartun serta jangan mengarang dialog atau makna yang tidak ada",
+        "short_role": "pilih satu keanehan visual atau keputusan karakter dengan setup singkat, eskalasi jelas, dan punchline atau akibat yang tuntas",
+        "long_role": "rangkum aturan dunia, konflik karakter, perkembangan absurditas, dan penutup cerita tanpa menjadikan montase acak sebagai narasi",
+        "duration_filter": "any",
+        "queries": [
+            "kartun absurd indonesia cerita lucu terbaru",
+            "animasi nyeleneh indonesia plot twist",
+            "kartun parodi indonesia dialog lucu",
+            "animasi pendek aneh tapi lucu indonesia",
+            "kartun surreal cerita kocak bahasa indonesia",
+            "animasi game lucu indonesia cerita absurd",
+        ],
+    },
+    "reaction_clip_story": {
+        "label": "Clip Lucu, Reaction Natural & Cerita Singkat",
+        "tone": "spontan, ringan, dan tidak mempermalukan; hanya pilih sumber dengan konteks, reaksi, dan hasil yang dapat dipahami tanpa judul palsu",
+        "short_role": "mulai dari pemicu maksimal dua detik, tampilkan reaksi atau perubahan situasi, lalu akhiri pada punchline atau konsekuensi yang tuntas",
+        "long_role": "jelaskan asal situasi, eskalasi, reaksi orang yang terlibat, dan hasil akhirnya; buang kompilasi acak, prank berbahaya, dan potongan tanpa konteks",
+        "queries": [
+            "reaction clip lucu indonesia cerita lengkap terbaru",
+            "momen lucu natural indonesia reaksi spontan",
+            "clip percakapan lucu indonesia plot twist",
+            "reaction video viral indonesia dengan konteks",
+            "momen keluarga teman lucu indonesia cerita utuh",
+            "kompilasi reaction lucu indonesia satu cerita",
+        ],
+    },
     "islamic_animation_kids": {
         "label": "Animasi Islami Anak & Keluarga",
         "tone": "hangat, mudah dipahami anak, penuh petualangan dan rasa ingin tahu; tetap beradab, tidak menakut-nakuti, dan tidak mengarang dalil",
@@ -1706,6 +1764,20 @@ RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
             "podcast iman dan perjalanan hidup indonesia",
         ],
     },
+    "lecture_wisdom": {
+        "label": "Ceramah, Kajian & Tanya Jawab Kehidupan",
+        "tone": "tenang, beradab, akurat, dan kontekstual; jangan memotong pertanyaan, dalil, pengecualian, atau kesimpulan hingga maknanya berubah",
+        "short_role": "pilih satu pertanyaan atau masalah yang cepat dipahami dan satu jawaban utuh minimal 25 detik; dilarang mengunggah fragmen salam, jeda, atau kutipan dua detik",
+        "long_role": "pertahankan rangkaian pertanyaan, dasar jawaban, batasan, contoh penerapan, dan kesimpulan pembicara tanpa mencampur bagian yang tidak berhubungan",
+        "queries": [
+            "ceramah singkat indonesia nasihat kehidupan terbaru",
+            "kajian tanya jawab islam indonesia masalah sehari hari",
+            "tausiyah indonesia keluarga rezeki sabar ujian hidup",
+            "ustadz indonesia menjawab pertanyaan jamaah terbaru",
+            "kajian pemuda indonesia hijrah pergaulan dan kehidupan",
+            "ceramah lucu indonesia penuh hikmah konteks utuh",
+        ],
+    },
 }
 
 RYUUNDY_CRON_THEME_SIGNALS: dict[str, set[str]] = {
@@ -1731,6 +1803,20 @@ RYUUNDY_CRON_THEME_SIGNALS: dict[str, set[str]] = {
         "game", "gameplay", "gaming", "minecraft", "mabar", "obby", "roblox",
         "roleplay", "streamer", "survival", "kak yuta", "dunia budi", "baby celine",
     },
+    "famous_game_reaction": {
+        "game", "gameplay", "gaming", "reaction", "reaksi", "streamer",
+        "gta", "gta v", "mobile legends", "free fire", "minecraft", "roblox",
+        "valorant", "pubg", "game horror", "simulator", "mabar", "comeback",
+    },
+    "quirky_animation": {
+        "animasi", "kartun", "animated", "animation", "absurd", "nyeleneh",
+        "aneh", "surreal", "parodi", "plot twist", "cerita lucu", "kocak",
+    },
+    "reaction_clip_story": {
+        "reaction", "reaksi", "clip lucu", "klip lucu", "momen lucu",
+        "spontan", "plot twist", "percakapan lucu", "video viral", "kocak",
+        "ngakak", "komedi", "lucu",
+    },
     "islamic_animation_kids": {
         "animasi", "kartun", "anak muslim", "cerita anak", "kisah nabi",
         "kisah teladan", "adab", "akhlak", "doa harian", "islami", "ngaji",
@@ -1750,6 +1836,11 @@ RYUUNDY_CRON_THEME_SIGNALS: dict[str, set[str]] = {
     "faith_life": {
         "islam", "iman", "hijrah", "hidayah", "quran", "kajian", "dakwah",
         "nabi", "muhammad", "mukjizat", "ustaz", "ustadz", "ceramah", "ngaji",
+    },
+    "lecture_wisdom": {
+        "ceramah", "kajian", "tausiyah", "ustaz", "ustadz", "dakwah",
+        "ngaji", "tanya jawab", "jamaah", "nasihat", "islam", "muslim",
+        "hijrah", "iman", "quran", "hadis", "kehidupan",
     },
 }
 
@@ -1792,7 +1883,7 @@ CRON_ISLAMIC_ANIMATION_THEME_KEYS = frozenset(
     {"islamic_animation_kids", "islamic_animation_general"}
 )
 CRON_ISLAMIC_THEME_KEYS = frozenset(
-    {"faith_life", *CRON_ISLAMIC_ANIMATION_THEME_KEYS}
+    {"faith_life", "lecture_wisdom", *CRON_ISLAMIC_ANIMATION_THEME_KEYS}
 )
 CRON_ISLAMIC_ANIMATION_VISUAL_SIGNALS = frozenset(
     {
@@ -15590,11 +15681,11 @@ def youtube_data_api_search_queries(
 
 
 def cron_gaming_source_channel_ids() -> list[str]:
-    """Return exact gaming channels used only as discovery alternatives.
+    """Return optional exact-channel hints supplied by the operator.
 
-    A preferred discovery channel is deliberately not a trusted-rights channel.
-    Videos found here still pass the normal source-rights, Content ID, view,
-    editorial-safety, score, and upload gates.
+    With no configured IDs discovery stays open to every channel. A preferred
+    channel remains only an extra search lane and never becomes a trusted-rights
+    source; every video still passes the normal gates.
     """
     configured = env_csv("AUTO_VIRAL_SCHEDULE_GAMING_SOURCE_CHANNEL_IDS")
     raw_values = configured or list(DEFAULT_CRON_GAMING_SOURCE_CHANNEL_IDS)
@@ -15617,7 +15708,7 @@ def cron_gaming_channel_query_specs(
 ) -> list[tuple[str, str]]:
     """Build exact-channel YouTube API searches for the scheduled gaming lane."""
     if (
-        request.cron_theme_key != "gaming_story"
+        request.cron_theme_key not in {"gaming_story", "famous_game_reaction"}
         or not scheduled_auto_viral_discovery_active(run_id)
     ):
         return []
@@ -16612,8 +16703,9 @@ def search_youtube_data_api_viral_sources(
         append_auto_viral_log(
             run_id,
             (
-                "Jalur gaming memprioritaskan kanal BANGJBLOX melalui Channel ID; "
-                "status kanal prioritas tidak melewati audit hak atau QC."
+                "Jalur gaming menambahkan kanal pilihan operator melalui Channel ID; "
+                "pencarian umum semua channel tetap aktif dan kanal pilihan tidak "
+                "melewati audit hak atau QC."
             ),
         )
     # Signal refreshes have their own bounded network/browser timeouts. Start
