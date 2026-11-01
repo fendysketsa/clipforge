@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import json
+
+import hypit_quick
+from llm import AIConfig
 from hypit_quick import (
     _dialogue_cues,
+    _quick_manifest,
+    _quick_reveal_times,
     _probe_validation_error,
     _ranking_reveal_times,
     build_hypit_quick_plan,
     hypit_prompt_body,
+    is_hypit_infographic_auto_prompt,
+    is_hypit_infographic_prompt,
     is_hypit_quick_prompt,
     quick_preview_payload,
 )
@@ -33,6 +41,232 @@ def test_hypit_long_story_is_not_misrouted_to_ranking_template():
     assert is_hypit_quick_prompt(story) is False
     assert hypit_prompt_body(story).startswith("HP Android 2026")
     assert "/hypit" not in hypit_prompt_body(story)
+
+
+def test_hypit_infographic_routes_explicit_visual_explainer_and_preserves_claims(tmp_path):
+    prompt = (
+        "/hypit infographic Baterai HP tidak bocor tiba-tiba | "
+        "Persentase baterai adalah perkiraan dari arus dan tegangan | "
+        "Chip fuel gauge menghitung arus masuk dan keluar | "
+        "Kurva tegangan baterai lithium hampir datar | "
+        "Kuis: Saat baterai hampir habis, tegangannya bagaimana? / DATAR / TURUN TAJAM"
+    )
+
+    assert is_hypit_infographic_prompt(prompt) is True
+    assert is_hypit_quick_prompt(prompt) is True
+    plan = build_hypit_quick_plan(prompt)
+
+    assert plan.slug.startswith("infographic-")
+    assert [beat.visual for beat in plan.beats] == ["chart", "chip", "chart", "quiz"]
+    assert plan.beats[-1].quiz_options == ("DATAR", "TURUN TAJAM")
+    assert "fuel gauge" in plan.beats[1].narration
+    assert plan.source_note.endswith("supplied by the user")
+
+    reveal_times = _quick_reveal_times(plan)
+    manifest = _quick_manifest(
+        plan,
+        tmp_path,
+        tmp_path / "infographic.hypit.svml",
+        [],
+        reveal_times,
+    )
+    assert manifest["schema"] == "clipforge-hypit-infographic-v1"
+    assert manifest["composition"]["template"] == "infographic"
+    assert manifest["composition"]["beats"][1]["visual"] == "chip"
+    assert manifest["composition"]["beats"][-1]["quizOptions"] == ["DATAR", "TURUN TAJAM"]
+
+
+def test_hypit_infographic_requires_user_supplied_points():
+    prompt = "/hypit infographic Jelaskan baterai HP"
+
+    assert is_hypit_infographic_prompt(prompt) is True
+    try:
+        build_hypit_quick_plan(prompt)
+    except ValueError as exc:
+        assert "minimal dua poin" in str(exc)
+    else:
+        raise AssertionError("Prompt tanpa poin tidak boleh menghasilkan klaim generik")
+
+
+def test_hypit_infographic_preview_uses_local_code_rendered_visuals():
+    preview = quick_preview_payload(
+        "/hypit explainer Kenapa indikator bisa berubah? | Sensor membaca arus masuk dan keluar | "
+        "Grafik dipakai untuk melihat perubahan | Kuis: Sudah paham? / YA / BELUM"
+    )
+
+    assert preview["expansion"]["format"] == "hypit_infographic_explainer_v1"
+    assert preview["image_provider"]["provider"] == "code_rendered_local"
+    assert preview["scenes"][-1]["narrative_role"] == "interactive_payoff"
+
+
+def _auto_prompt() -> str:
+    return (
+        "/hypit infographic auto\n"
+        "Analogi: indikator baterai seperti petugas yang memperkirakan isi tangki.\n"
+        "Teks: Ponsel memperkirakan sisa baterai dari arus yang masuk dan keluar serta perubahan tegangan. "
+        "Tegangan baterai lithium berubah relatif landai pada sebagian besar rentang pemakaian. "
+        "Perkiraan dapat dikoreksi ketika kondisi baterai berubah."
+    )
+
+
+def _auto_response(*, narration: str | None = None) -> str:
+    return json.dumps(
+        {
+            "title": "Mengapa indikator baterai bisa berubah",
+            "hook": "Indikator baterai bekerja seperti petugas yang memperkirakan isi tangki.",
+            "payoff": "Angkanya adalah hasil perkiraan yang terus dikoreksi.",
+            "beats": [
+                {
+                    "kicker": "BUKAN MELIHAT LANGSUNG",
+                    "title": "MEMPERKIRAKAN SISA DAYA",
+                    "narration": narration or "Ponsel memperkirakan sisa baterai seperti petugas memperkirakan isi tangki.",
+                    "visual": "phone",
+                    "source_quote": "Ponsel memperkirakan sisa baterai",
+                    "quiz_options": [],
+                },
+                {
+                    "kicker": "DATA MASUK",
+                    "title": "ARUS DAN TEGANGAN",
+                    "narration": "Arus yang masuk dan keluar serta perubahan tegangan menjadi dasar perkiraan.",
+                    "visual": "chip",
+                    "source_quote": "arus yang masuk dan keluar serta perubahan tegangan",
+                    "quiz_options": [],
+                },
+                {
+                    "kicker": "TITIK SULIT",
+                    "title": "KURVANYA RELATIF LANDAI",
+                    "narration": "Tegangan yang relatif landai membuat isi tangki tidak mudah diperkirakan langsung.",
+                    "visual": "chart",
+                    "source_quote": "Tegangan baterai lithium berubah relatif landai",
+                    "quiz_options": [],
+                },
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+
+def test_hypit_auto_infographic_expands_analogy_and_text_with_grounded_ai(monkeypatch):
+    monkeypatch.setattr(hypit_quick, "chat_completion", lambda *_args, **_kwargs: _auto_response())
+    config = AIConfig(enabled=True, base_url="http://llm.test/v1", model="test-model")
+
+    assert is_hypit_infographic_auto_prompt(_auto_prompt()) is True
+    plan = build_hypit_quick_plan(_auto_prompt(), config)
+
+    assert plan.auto_expanded is True
+    assert plan.analogy.startswith("indikator baterai")
+    assert plan.slug.startswith("infographic-auto-")
+    assert [beat.visual for beat in plan.beats] == ["phone", "chip", "chart"]
+    assert plan.beats[0].source_quote == "Ponsel memperkirakan sisa baterai"
+    assert "tanpa riset eksternal" in plan.source_note
+
+
+def test_hypit_auto_infographic_repairs_new_numbers_from_ai(monkeypatch):
+    monkeypatch.setattr(
+        hypit_quick,
+        "chat_completion",
+        lambda *_args, **_kwargs: _auto_response(
+            narration="Ponsel langsung mengurangi perkiraan baterai sebanyak 50 persen."
+        ),
+    )
+    config = AIConfig(enabled=True, base_url="http://llm.test/v1", model="test-model")
+
+    plan = build_hypit_quick_plan(_auto_prompt(), config)
+
+    assert "50" not in plan.beats[0].narration
+    assert plan.beats[0].narration == "Inti penjelasannya: Ponsel memperkirakan sisa baterai"
+
+
+def test_hypit_auto_infographic_repairs_weak_paraphrase_instead_of_failing(monkeypatch):
+    weak = json.loads(_auto_response())
+    weak["beats"][1]["narration"] = (
+        "Mesin ajaib bekerja diam-diam dengan pendekatan misterius yang sulit ditebak siapa pun."
+    )
+    monkeypatch.setattr(
+        hypit_quick,
+        "chat_completion",
+        lambda *_args, **_kwargs: json.dumps(weak, ensure_ascii=False),
+    )
+    config = AIConfig(enabled=True, base_url="http://llm.test/v1", model="test-model")
+
+    plan = build_hypit_quick_plan(_auto_prompt(), config)
+
+    assert plan.beats[1].narration == "arus yang masuk dan keluar serta perubahan tegangan"
+    assert "misterius" not in plan.beats[1].narration
+
+
+def test_hypit_auto_infographic_recovers_invalid_source_quote(monkeypatch):
+    weak = json.loads(_auto_response())
+    weak["beats"][1]["source_quote"] = "kutipan ini tidak ada"
+    monkeypatch.setattr(
+        hypit_quick,
+        "chat_completion",
+        lambda *_args, **_kwargs: json.dumps(weak, ensure_ascii=False),
+    )
+    config = AIConfig(enabled=True, base_url="http://llm.test/v1", model="test-model")
+
+    plan = build_hypit_quick_plan(_auto_prompt(), config)
+
+    assert plan.beats[1].source_quote in _auto_prompt()
+    assert "arus yang masuk dan keluar" in plan.beats[1].source_quote
+
+
+def test_hypit_auto_infographic_repairs_too_few_beats_locally(monkeypatch):
+    short = json.loads(_auto_response())
+    short["beats"] = short["beats"][:2]
+    monkeypatch.setattr(
+        hypit_quick,
+        "chat_completion",
+        lambda *_args, **_kwargs: json.dumps(short, ensure_ascii=False),
+    )
+    config = AIConfig(enabled=True, base_url="http://llm.test/v1", model="test-model")
+
+    plan = build_hypit_quick_plan(_auto_prompt(), config)
+
+    assert 3 <= len(plan.beats) <= 7
+    assert plan.duration == 39.0
+    assert plan.planning_mode == "local_fallback"
+    assert plan.title == "CARA PONSEL MEMPERKIRAKAN SISA BATERAI"
+    assert all(beat.source_quote in _auto_prompt() for beat in plan.beats)
+
+
+def test_hypit_auto_infographic_falls_back_when_provider_returns_invalid_json(monkeypatch):
+    monkeypatch.setattr(
+        hypit_quick,
+        "chat_completion",
+        lambda *_args, **_kwargs: "bukan json",
+    )
+    config = AIConfig(enabled=True, base_url="http://llm.test/v1", model="test-model")
+
+    plan = build_hypit_quick_plan(_auto_prompt(), config)
+
+    assert len(plan.beats) >= 3
+    assert plan.planning_mode == "local_fallback"
+
+
+def test_hypit_auto_infographic_works_without_ai_configuration():
+    plan = build_hypit_quick_plan(_auto_prompt())
+
+    assert len(plan.beats) >= 3
+    assert plan.duration == 39.0
+    assert plan.planning_mode == "local_fallback"
+    assert plan.beats[0].title == "ARUS MASUK DAN KELUAR"
+    assert plan.beats[1].title == "TEGANGAN BERUBAH RELATIF LANDAI"
+    assert plan.beats[2].title == "PERKIRAAN DAPAT DIKOREKSI"
+
+
+def test_hypit_auto_infographic_preflight_does_not_call_ai(monkeypatch):
+    monkeypatch.setattr(
+        hypit_quick,
+        "chat_completion",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("AI tidak boleh dipanggil saat preflight")),
+    )
+
+    preview = quick_preview_payload(_auto_prompt())
+
+    assert preview["expansion"]["format"] == "hypit_infographic_auto_explainer_v1"
+    assert preview["expansion"]["pending"] is True
+    assert preview["image_provider"]["provider"] == "code_rendered_local"
 
 
 def test_hypit_quick_php_preset_is_dated_and_fact_scoped():

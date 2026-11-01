@@ -37,7 +37,13 @@ from source_rights import (
 )
 from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
 from whisper_cache import cached_whisper_model_path
-from hypit_quick import hypit_prompt_body, is_hypit_quick_prompt, render_hypit_quick
+from hypit_quick import (
+    hypit_prompt_body,
+    is_hypit_infographic_auto_prompt,
+    is_hypit_infographic_prompt,
+    is_hypit_quick_prompt,
+    render_hypit_quick,
+)
 
 
 console = Console()
@@ -2384,8 +2390,26 @@ SOURCE_BRANDING_PATTERNS = (
 )
 
 
-def run(command: list[str], cwd: Path | None = None) -> None:
-    process = subprocess.run(command, cwd=cwd, text=True)
+def run(
+    command: list[str],
+    cwd: Path | None = None,
+    *,
+    timeout_seconds: float | None = None,
+) -> None:
+    try:
+        process = subprocess.run(
+            command,
+            cwd=cwd,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        timeout_label = (
+            f"{timeout_seconds:g}" if timeout_seconds is not None else "unknown"
+        )
+        raise RuntimeError(
+            f"Command timed out after {timeout_label} seconds: {' '.join(command)}"
+        ) from exc
     if process.returncode != 0:
         raise RuntimeError(f"Command failed with exit code {process.returncode}: {' '.join(command)}")
 
@@ -3066,6 +3090,35 @@ def probe_media_duration_seconds(path: Path) -> float | None:
     return int(match.group(1)) * 3600 + int(match.group(2)) * 60 + float(match.group(3))
 
 
+def ensure_rendered_duration(
+    path: Path,
+    expected_seconds: float,
+    *,
+    minimum_seconds: float = 0.0,
+) -> float:
+    """Reject MP4s whose real timeline differs from the authored contract."""
+    expected = max(0.1, float(expected_seconds))
+    actual = float(probe_media_duration_seconds(path) or 0.0)
+    tolerance = max(0.75, expected * 0.03)
+    minimum = max(0.0, float(minimum_seconds))
+    if actual + 0.05 < minimum:
+        raise RuntimeError(
+            "Render lebih pendek dari batas produk: "
+            f"hasil {actual:.3f} detik, minimum {minimum:.3f} detik."
+        )
+    if actual + tolerance < expected:
+        raise RuntimeError(
+            "Render terpotong sebelum durasi target: "
+            f"hasil {actual:.3f} detik, target {expected:.3f} detik."
+        )
+    if actual - tolerance > expected:
+        raise RuntimeError(
+            "Render melewati durasi target: "
+            f"hasil {actual:.3f} detik, target {expected:.3f} detik."
+        )
+    return actual
+
+
 def source_media_candidates(work_dir: Path) -> list[Path]:
     """List only finalized source video files; yt-dlp partials must never be reused."""
     candidates: list[Path] = []
@@ -3186,6 +3239,25 @@ def localized_watermark_blur_filter(
         f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{alpha}'[wm_patch];"
         f"[wm_base][wm_patch]overlay={x}:{y}:shortest=1:eof_action=pass,setsar=1"
     )
+
+
+def watermark_probe_skip_reason(
+    *,
+    auto_blur_watermarks: bool,
+    multi_clip_split: bool,
+    reaction_avatar_selected: bool,
+    social_card_selected: bool,
+) -> str | None:
+    """Return why source watermark coordinates cannot be probed safely."""
+    if not auto_blur_watermarks:
+        return "disabled"
+    if multi_clip_split:
+        return "multi_clip_split_uses_independent_visual_inputs"
+    if reaction_avatar_selected:
+        return "reaction_avatar_composite_changes_source_coordinates"
+    if social_card_selected:
+        return "social_card_composite_changes_source_coordinates"
+    return None
 
 
 def detect_static_watermark_region(
@@ -14053,7 +14125,9 @@ def scheduled_social_card_layout_filter(
         (subject_label or "SUBJEK SUMBER").upper(),
     ).strip() or "SUBJEK SUMBER"
     return (
-        "split=3[sc_bg_src][sc_main_src][sc_portrait_src];"
+        # Normalize input-seek timestamps before mixing a frozen portrait
+        # branch whose PTS deliberately starts at zero.
+        "setpts=PTS-STARTPTS,split=3[sc_bg_src][sc_main_src][sc_portrait_src];"
         "[sc_bg_src]scale=270:480:flags=bilinear,gblur=sigma=22,"
         "scale=1080:1920:flags=bilinear,"
         "eq=brightness=-0.22:contrast=1.06:saturation=0.88[sc_bg];"
@@ -14297,7 +14371,8 @@ def scheduled_reaction_avatar_layout_filter(
         window = expression_windows.get(state)
         if window is None:
             return (
-                f"movie='{path}',format=rgba,scale={size}:{size}:flags=lanczos,"
+                f"movie='{path}',loop=loop=-1:size=1:start=0,setpts=N/(30*TB),"
+                f"format=rgba,scale={size}:{size}:flags=lanczos,"
                 "pad=760:760:(ow-iw)/2:(oh-ih)/2:color=0x00000000"
                 f"[avatar_{label}];"
             )
@@ -14327,7 +14402,11 @@ def scheduled_reaction_avatar_layout_filter(
         )
     )
     return (
-        "split=2[reaction_bg_src][reaction_video_src];"
+        # Input seeking can preserve a large non-zero source PTS. Internal
+        # ``movie=`` avatar streams always begin at zero, so framesync would
+        # otherwise burn CPU generating those streams until it catches up to
+        # (for example) minute 18 of the source before emitting frame one.
+        "setpts=PTS-STARTPTS,split=2[reaction_bg_src][reaction_video_src];"
         "[reaction_bg_src]scale=270:480:flags=bilinear,gblur=sigma=24,"
         "scale=1080:1920:flags=bilinear,"
         "eq=brightness=-0.30:contrast=1.05:saturation=0.82[reaction_bg];"
@@ -14336,7 +14415,8 @@ def scheduled_reaction_avatar_layout_filter(
         f"crop=1000:990:x='20+{source_x}':y='20+{source_y}'[reaction_video];"
         f"movie='{neutral_path}',loop=loop=-1:size=1:start=0,"
         "setpts=N/(30*TB),format=rgba[avatar_neutral];"
-        f"movie='{blink_path}',format=rgba[avatar_blink];"
+        f"movie='{blink_path}',loop=loop=-1:size=1:start=0,"
+        "setpts=N/(30*TB),format=rgba[avatar_blink];"
         f"{expression_assets}"
         "[avatar_neutral][avatar_blink]overlay=x=0:y=0:eof_action=repeat:"
         f"enable='{blink_enable}',{avatar_motion_filter}[avatar_performance];"
@@ -17938,7 +18018,13 @@ def export_clip(
         ffmpeg_has_filter(name) for name in ("crop", "gblur", "overlay", "split")
     )
     watermark_delogo_supported = ffmpeg_has_filter("delogo")
-    if auto_blur_watermarks and watermark_filters_supported and not multi_clip_split:
+    watermark_skip_reason = watermark_probe_skip_reason(
+        auto_blur_watermarks=auto_blur_watermarks,
+        multi_clip_split=multi_clip_split,
+        reaction_avatar_selected=reaction_avatar_selected,
+        social_card_selected=social_card_selected,
+    )
+    if watermark_skip_reason is None and watermark_filters_supported:
         preview_scale_width = 540 if output_format == "vertical_short" else 640
         try:
             run(
@@ -17976,6 +18062,11 @@ def export_clip(
                     str(watermark_preview_path.name),
                 ],
                 cwd=clips_dir,
+                # This probe is optional. Corrupt H.264 frames or a stalled
+                # filter graph must not hold the whole clip worker forever.
+                # The caller already falls back to rendering without source
+                # watermark repair when this bounded command fails.
+                timeout_seconds=max(60.0, min(180.0, duration * 3.0)),
             )
             preview_region = detect_static_watermark_region(watermark_preview_path)
             if preview_region is not None:
@@ -18018,6 +18109,15 @@ def export_clip(
             )
         finally:
             watermark_preview_path.unlink(missing_ok=True)
+    effective_watermark_skip_reason = (
+        "disabled_by_request"
+        if watermark_skip_reason == "disabled"
+        else watermark_skip_reason
+        if watermark_skip_reason
+        else "required_filters_unavailable"
+        if not watermark_filters_supported
+        else None
+    )
     sidecar_payload["source_watermark_blur"] = {
         "enabled": auto_blur_watermarks,
         "detected": watermark_region is not None,
@@ -18033,11 +18133,7 @@ def export_clip(
         "applied_before_fendy_clipper_overlays": True,
         "feathered_boundary": watermark_region is not None,
         "scope": "detected_region_only",
-        "skip_reason": (
-            "multi_clip_split_uses_independent_visual_inputs"
-            if auto_blur_watermarks and multi_clip_split
-            else None
-        ),
+        "skip_reason": effective_watermark_skip_reason,
     }
     if automatic_short_title:
         cover_text_path.write_text(cover_copy["headline"] + "\n", encoding="utf-8")
@@ -18856,6 +18952,15 @@ def export_clip(
             str(out_path.name),
         ],
         cwd=clips_dir,
+    )
+    ensure_rendered_duration(
+        out_path,
+        output_duration,
+        minimum_seconds=(
+            FENDY_CLIPPER_SHORTS_MIN_SECONDS
+            if output_format == "vertical_short"
+            else 1.0
+        ),
     )
     temp_video_path.unlink(missing_ok=True)
     temp_audio_path.unlink(missing_ok=True)
@@ -20471,12 +20576,31 @@ def render_animated_script(
     quick_hypit = is_hypit_quick_prompt(script)
     if quick_hypit:
         label = "Hypit Quick"
-        emit_progress(3, "selection", "Menyusun ranking Short dari prompt /hypit")
+        auto_infographic = is_hypit_infographic_auto_prompt(script)
+        quick_format = (
+            "auto infographic explainer"
+            if auto_infographic
+            else "infographic explainer"
+            if is_hypit_infographic_prompt(script)
+            else "ranking Short"
+        )
+        emit_progress(3, "selection", f"Menyusun {quick_format} dari prompt /hypit")
+        ai_config = (
+            AIConfig(
+                enabled=args.ai_enabled,
+                base_url=args.ai_base_url,
+                model=args.ai_model,
+                api_key=args.ai_api_key,
+            )
+            if auto_infographic
+            else None
+        )
         output_path, sidecar = render_hypit_quick(
             script,
             root,
             video_quality=args.video_quality,
             progress=emit_progress,
+            ai_config=ai_config,
         )
     else:
         from long_animate import render_long_animate
@@ -20834,7 +20958,9 @@ def main() -> int:
         )
         os.environ["LONG_ANIMATE_TARGET_DURATION_SECONDS"] = f"{target_duration:g}"
         os.environ["LONG_ANIMATE_OUTPUT_ASPECT_RATIO"] = "9:16"
-        if not quick_hypit and (not args.ai_enabled or not args.ai_base_url or not args.ai_model):
+        if not quick_hypit and (
+            not args.ai_enabled or not args.ai_base_url or not args.ai_model
+        ):
             console.print(
                 "[red]Generator Cerita membutuhkan AI aktif, base URL, dan model.[/red]"
             )

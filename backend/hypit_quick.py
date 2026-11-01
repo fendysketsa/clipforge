@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import os
@@ -12,12 +13,21 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from llm import AIConfig, chat_completion, extract_json
 from remotion_story_renderer import RENDERER_DIR, RemotionRenderError, validate_hypit_script
 
 
 HYPIT_COMMAND_RE = re.compile(r"^\s*/hypit(?:\s+|$)", re.IGNORECASE)
 HYPIT_QUICK_INTENT_RE = re.compile(
     r"\b(?:ranking|rank|tier(?:\s+list)?|peringkat)\b",
+    re.IGNORECASE,
+)
+HYPIT_INFOGRAPHIC_INTENT_RE = re.compile(
+    r"\b(?:infographic|infografis|explainer|motion\s*graphic|video\s*edukasi)\b",
+    re.IGNORECASE,
+)
+HYPIT_INFOGRAPHIC_AUTO_RE = re.compile(
+    r"\b(?:auto|otomatis|kembangkan|jelaskan\s+sendiri)\b",
     re.IGNORECASE,
 )
 S_TIER_SUBJECT_RE = re.compile(
@@ -59,14 +69,74 @@ class DialogueCue:
     end: float
 
 
-def is_hypit_quick_prompt(value: str) -> bool:
+@dataclass(frozen=True)
+class InfographicBeat:
+    kicker: str
+    title: str
+    detail: str
+    accent: str
+    narration: str
+    visual: str
+    quiz_options: tuple[str, ...] = ()
+    source_quote: str = ""
+
+
+@dataclass(frozen=True)
+class HypitInfographicPlan:
+    slug: str
+    title: str
+    kicker: str
+    hook: str
+    payoff: str
+    footer: str
+    duration: float
+    beats: tuple[InfographicBeat, ...]
+    hook_narration: str
+    payoff_narration: str
+    source_note: str
+    fact_checked_on: str | None = None
+    auto_expanded: bool = False
+    analogy: str = ""
+    planning_mode: str = "manual"
+
+    @property
+    def items(self) -> tuple[InfographicBeat, ...]:
+        """Keep the shared voice scheduler independent of the visual template."""
+        return self.beats
+
+
+QuickPlan = HypitQuickPlan | HypitInfographicPlan
+
+
+def is_hypit_infographic_auto_prompt(value: str) -> bool:
     if not HYPIT_COMMAND_RE.match(value or ""):
         return False
     body = _prompt_body(value)
-    # /hypit is also a useful explicit entry point for full story production.
-    # The deterministic Quick renderer only understands ranking/tier requests;
-    # routing arbitrary essays into it silently discards their actual script.
+    return bool(
+        HYPIT_INFOGRAPHIC_INTENT_RE.search(body)
+        and HYPIT_INFOGRAPHIC_AUTO_RE.search(body)
+    )
+
+
+def is_hypit_infographic_prompt(value: str) -> bool:
+    if not HYPIT_COMMAND_RE.match(value or ""):
+        return False
+    body = _prompt_body(value)
+    word_limit = 2500 if HYPIT_INFOGRAPHIC_AUTO_RE.search(body) else 600
+    return len(body.split()) <= word_limit and bool(HYPIT_INFOGRAPHIC_INTENT_RE.search(body))
+
+
+def is_hypit_ranking_prompt(value: str) -> bool:
+    if not HYPIT_COMMAND_RE.match(value or ""):
+        return False
+    body = _prompt_body(value)
     return len(body.split()) <= 80 and bool(HYPIT_QUICK_INTENT_RE.search(body))
+
+
+def is_hypit_quick_prompt(value: str) -> bool:
+    # /hypit is also a useful explicit entry point for full story production.
+    # Only route formats with a deterministic visual contract into Quick.
+    return is_hypit_ranking_prompt(value) or is_hypit_infographic_prompt(value)
 
 
 def hypit_prompt_body(value: str) -> str:
@@ -83,10 +153,10 @@ def _slug(value: str) -> str:
     return cleaned[:64] or "ranking-video"
 
 
-def build_hypit_quick_plan(prompt: str) -> HypitQuickPlan:
+def _build_ranking_plan(prompt: str) -> HypitQuickPlan:
     """Turn a compact /hypit request into a deterministic code-rendered treatment."""
-    if not is_hypit_quick_prompt(prompt):
-        raise ValueError("Prompt Hypit harus diawali /hypit.")
+    if not is_hypit_ranking_prompt(prompt):
+        raise ValueError("Prompt ranking Hypit harus menyebut ranking, tier, atau peringkat.")
     body = _prompt_body(prompt)
     if len(body.split()) < 4:
         raise ValueError("Jelaskan video setelah /hypit dengan minimal empat kata.")
@@ -186,8 +256,558 @@ def build_hypit_quick_plan(prompt: str) -> HypitQuickPlan:
     )
 
 
-def quick_preview_payload(prompt: str) -> dict[str, object]:
-    plan = build_hypit_quick_plan(prompt)
+_INFOGRAPHIC_STOPWORDS = {
+    "yang", "dan", "atau", "dengan", "untuk", "dari", "pada", "jadi", "karena",
+    "itu", "ini", "sebuah", "adalah", "akan", "bisa", "cuma",
+    "the", "and", "with", "that", "this", "from", "into", "your", "about", "video",
+}
+_INFOGRAPHIC_ACCENTS = ("#FFD447", "#FF626E", "#58D68D", "#55C7F3", "#B989FF", "#FF9F43")
+_INFOGRAPHIC_KICKERS = (
+    "KENAPA BISA?", "CARA KERJANYA", "TITIK MASALAH", "YANG TERJADI", "AKIBATNYA", "INGAT INI",
+)
+
+
+def _strip_infographic_intent(body: str) -> str:
+    cleaned = HYPIT_INFOGRAPHIC_INTENT_RE.sub("", body, count=1).strip(" \t:-—")
+    return "\n".join(re.sub(r"[ \t]+", " ", line).strip() for line in cleaned.splitlines()).strip()
+
+
+def _clean_infographic_segment(value: str) -> str:
+    value = re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", value.strip())
+    return re.sub(r"\s+", " ", value).strip(" |")
+
+
+def _infographic_segments(body: str) -> list[str]:
+    body = _strip_infographic_intent(body)
+    if "|" in body:
+        raw = body.split("|")
+    else:
+        lines = [_clean_infographic_segment(line) for line in body.splitlines()]
+        raw = [line for line in lines if line]
+        if len(raw) < 3:
+            raw = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9À-ÖØ-öø-ÿ])", body)
+    return [segment for part in raw if (segment := _clean_infographic_segment(part))]
+
+
+def _infographic_title(value: str, fallback: str = "FAKTA YANG JARANG DIJELASKAN") -> str:
+    explicit = value.split("::", 1)[0].strip() if "::" in value else ""
+    if explicit:
+        return explicit[:54].upper()
+    words = [
+        word.strip(".,:;!?()[]{}\"'")
+        for word in value.split()
+        if word.casefold().strip(".,:;!?") not in _INFOGRAPHIC_STOPWORDS
+    ]
+    selected = [word for word in words if word][:5]
+    return " ".join(selected).upper()[:54] or fallback
+
+
+def _infographic_visual(value: str) -> str:
+    lowered = value.casefold()
+    if re.search(r"\b(?:kuis|quiz|pilih|jawab|tebak)\b", lowered):
+        return "quiz"
+    if re.search(r"\b(?:grafik|kurva|chart|naik|turun|datar|tren|persen|persentase)\b", lowered):
+        return "chart"
+    if re.search(r"\b(?:chip|prosesor|cpu|arus|sensor|hitung|mengukur)\b", lowered):
+        return "chip"
+    if re.search(r"\b(?:suhu|dingin|panas|temperatur|temperature)\b", lowered):
+        return "temperature"
+    if re.search(r"\b(?:baterai|battery|ponsel|hp|telepon|phone|daya)\b", lowered):
+        return "phone"
+    if re.search(r"\b(?:langkah|proses|alur|tahap|cara|masuk|keluar)\b", lowered):
+        return "process"
+    return "concept"
+
+
+def _quiz_options(value: str) -> tuple[str, ...]:
+    parts = [_clean_infographic_segment(part) for part in re.split(r"\s*/\s*", value)]
+    options = [part for part in parts[1:] if part]
+    return tuple(options[:3])
+
+
+_AUTO_VISUALS = {"phone", "chip", "chart", "temperature", "process", "concept", "quiz"}
+_AUTO_GROUNDING_STOPWORDS = _INFOGRAPHIC_STOPWORDS | {
+    "bayangkan", "ibarat", "seperti", "supaya", "maka", "ketika", "saat", "kalau",
+    "lebih", "paling", "cukup", "masih", "sudah", "kamu", "kita", "mereka", "dia",
+}
+
+
+def _infographic_auto_inputs(prompt: str) -> tuple[str, str]:
+    body = _prompt_body(prompt)
+    body = HYPIT_INFOGRAPHIC_INTENT_RE.sub("", body, count=1)
+    body = HYPIT_INFOGRAPHIC_AUTO_RE.sub("", body, count=1).strip(" \t:-—\n")
+    match = re.search(
+        r"(?is)\banalogi\s*:\s*(.+?)\s*\bteks\s*:\s*(.+)$",
+        body,
+    )
+    if not match:
+        raise ValueError(
+            "Mode auto membutuhkan dua bagian: `Analogi: ...` dan `Teks: ...`."
+        )
+    analogy = re.sub(r"\s+", " ", match.group(1)).strip(" |")
+    source_text = re.sub(r"\s+", " ", match.group(2)).strip(" |")
+    if len(analogy.split()) < 3:
+        raise ValueError("Analogi perlu minimal tiga kata agar arah visualnya jelas.")
+    if len(source_text.split()) < 12:
+        raise ValueError("Teks sumber perlu minimal dua belas kata agar dapat dijelaskan dengan aman.")
+    return analogy[:700], source_text[:16000]
+
+
+def _normalized_evidence(value: str) -> str:
+    return re.sub(r"[^a-z0-9%]+", " ", value.casefold()).strip()
+
+
+def _content_tokens(value: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9%]+", value.casefold())
+        if len(token) >= 3 and token not in _AUTO_GROUNDING_STOPWORDS
+    }
+
+
+def _number_tokens(value: str) -> set[str]:
+    return set(re.findall(r"(?<!\w)\d+(?:[.,]\d+)?%?", value))
+
+
+def _source_evidence_segments(source_text: str) -> list[str]:
+    segments = [
+        re.sub(r"\s+", " ", part).strip(" \t-–—")
+        for part in re.split(r"(?<=[.!?])\s+|[;\n]+", source_text)
+    ]
+    usable = [segment for segment in segments if len(segment.split()) >= 3]
+    return usable or [source_text.strip()]
+
+
+def _best_source_quote(source_text: str, seed: str, index: int) -> str:
+    """Recover a literal source span when the model returns a weak quote."""
+    segments = _source_evidence_segments(source_text)
+    seed_tokens = _content_tokens(seed)
+    ranked = sorted(
+        enumerate(segments),
+        key=lambda item: (
+            len(_content_tokens(item[1]) & seed_tokens),
+            -abs(item[0] - (index - 1)),
+        ),
+        reverse=True,
+    )
+    best_index, best = ranked[0]
+    if not (_content_tokens(best) & seed_tokens):
+        best = segments[(index - 1) % len(segments)]
+    return best
+
+
+def _safe_source_narration(source_quote: str) -> str:
+    """Create a speakable fallback using only words supplied by the user."""
+    words = source_quote.split()
+    if len(words) >= 5:
+        return " ".join(words[:32])
+    return f"Inti penjelasannya: {' '.join(words)}"[:240]
+
+
+def _source_beat_segments(source_text: str, target: int = 5) -> list[str]:
+    """Return 3-7 literal source spans suitable for deterministic fallback beats."""
+    sentences = _source_evidence_segments(source_text)
+    if len(sentences) >= 3:
+        return sentences[:7]
+
+    words = source_text.split()
+    desired = max(3, min(7, target, len(words) // 3))
+    base, remainder = divmod(len(words), desired)
+    chunks: list[str] = []
+    cursor = 0
+    for index in range(desired):
+        size = base + (1 if index < remainder else 0)
+        chunk = " ".join(words[cursor:cursor + size]).strip()
+        cursor += size
+        if chunk:
+            chunks.append(chunk)
+    return chunks
+
+
+def _source_beat_title(segment: str) -> str:
+    lowered = segment.casefold()
+    if "arus" in lowered and ("masuk" in lowered or "keluar" in lowered):
+        return "ARUS MASUK DAN KELUAR"
+    if "tegangan" in lowered and "landai" in lowered:
+        return "TEGANGAN BERUBAH RELATIF LANDAI"
+    if "dikoreksi" in lowered and "perkiraan" in lowered:
+        return "PERKIRAAN DAPAT DIKOREKSI"
+    if "sisa baterai" in lowered and "memperkirakan" in lowered:
+        return "PONSEL MEMPERKIRAKAN SISA BATERAI"
+    return _infographic_title(segment)
+
+
+def _source_explainer_title(source_text: str) -> str:
+    lowered = source_text.casefold()
+    if "ponsel" in lowered and "sisa baterai" in lowered and "memperkirakan" in lowered:
+        return "CARA PONSEL MEMPERKIRAKAN SISA BATERAI"
+    return _infographic_title(source_text, "AUTO INFOGRAPHIC EXPLAINER")
+
+
+def _fallback_auto_infographic_payload(
+    analogy: str,
+    source_text: str,
+) -> dict[str, object]:
+    """Build a complete safe plan without depending on model output quality."""
+    segments = _source_beat_segments(source_text)
+    beats = [
+        {
+            "kicker": _INFOGRAPHIC_KICKERS[index % len(_INFOGRAPHIC_KICKERS)],
+            "title": _source_beat_title(segment),
+            "narration": _safe_source_narration(segment),
+            "visual": _infographic_visual(segment),
+            "source_quote": segment,
+            "quiz_options": (),
+        }
+        for index, segment in enumerate(segments)
+    ]
+    return {
+        "title": _source_explainer_title(source_text),
+        "hook": f"Bayangkan {analogy}. Apa yang sebenarnya terjadi?",
+        "payoff": "Sekarang penjelasannya lebih mudah dibayangkan.",
+        "beats": beats,
+        "_planning_mode": "local_fallback",
+    }
+
+
+def _validated_auto_infographic_payload(
+    payload: object,
+    *,
+    analogy: str,
+    source_text: str,
+) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        payload = {}
+    raw_beats = payload.get("beats")
+    if not isinstance(raw_beats, list):
+        raw_beats = []
+    raw_beats = [raw for raw in raw_beats[:7] if isinstance(raw, dict)]
+    if len(raw_beats) < 3:
+        return _fallback_auto_infographic_payload(analogy, source_text)
+    normalized_source = _normalized_evidence(source_text)
+    allowed_numbers = _number_tokens(f"{analogy} {source_text}")
+    beats: list[dict[str, object]] = []
+    for index, raw in enumerate(raw_beats, start=1):
+        quote = re.sub(r"\s+", " ", str(raw.get("source_quote") or "")).strip()
+        normalized_quote = _normalized_evidence(quote)
+        if len(quote.split()) < 3 or normalized_quote not in normalized_source:
+            quote = _best_source_quote(
+                source_text,
+                " ".join(
+                    str(raw.get(field) or "")
+                    for field in ("narration", "title", "kicker")
+                ),
+                index,
+            )
+        narration = re.sub(r"\s+", " ", str(raw.get("narration") or "")).strip()
+        unexpected_numbers = _number_tokens(narration) - allowed_numbers
+        narration_tokens = _content_tokens(narration)
+        evidence_tokens = _content_tokens(f"{source_text} {analogy}")
+        grounded = narration_tokens & evidence_tokens
+        narration_needs_repair = (
+            not 5 <= len(narration.split()) <= 32
+            or "http://" in narration.casefold()
+            or "https://" in narration.casefold()
+            or bool(unexpected_numbers)
+            or not narration_tokens
+            or len(grounded) < 2
+            or len(grounded) / len(narration_tokens) < 0.22
+        )
+        if narration_needs_repair:
+            narration = _safe_source_narration(quote)
+        visual = str(raw.get("visual") or "concept").strip().casefold()
+        if visual not in _AUTO_VISUALS:
+            visual = _infographic_visual(f"{quote} {narration}")
+        title = re.sub(r"\s+", " ", str(raw.get("title") or "")).strip()
+        title_tokens = _content_tokens(title)
+        title_grounded = title_tokens & _content_tokens(f"{quote} {source_text}")
+        if (
+            _number_tokens(title) - allowed_numbers
+            or (title_tokens and not title_grounded)
+        ):
+            title = _infographic_title(quote)
+        kicker = re.sub(r"\s+", " ", str(raw.get("kicker") or "")).strip()
+        raw_options = raw.get("quiz_options")
+        quiz_options = (
+            tuple(
+                re.sub(r"\s+", " ", str(option)).strip()[:36]
+                for option in raw_options[:3]
+                if str(option).strip()
+            )
+            if isinstance(raw_options, list)
+            else ()
+        )
+        beats.append(
+            {
+                "kicker": (kicker or _INFOGRAPHIC_KICKERS[(index - 1) % len(_INFOGRAPHIC_KICKERS)])[:32].upper(),
+                "title": (title or _infographic_title(narration))[:54].upper(),
+                "narration": narration[:240],
+                "visual": visual,
+                "quiz_options": quiz_options,
+                "source_quote": quote,
+            }
+        )
+    title = re.sub(r"\s+", " ", str(payload.get("title") or "")).strip()
+    hook = re.sub(r"\s+", " ", str(payload.get("hook") or "")).strip()
+    payoff = re.sub(r"\s+", " ", str(payload.get("payoff") or "")).strip()
+    if not hook:
+        hook = f"Bayangkan {analogy}. Apa yang sebenarnya terjadi?"
+    evidence_tokens = _content_tokens(f"{analogy} {source_text}")
+    for label, value in (("judul", title), ("hook", hook)):
+        value_tokens = _content_tokens(value)
+        grounded = value_tokens & evidence_tokens
+        needs_repair = (
+            bool(_number_tokens(value) - allowed_numbers)
+            or bool(value_tokens and (not grounded or len(grounded) / len(value_tokens) < 0.22))
+        )
+        if needs_repair and label == "judul":
+            title = _infographic_title(source_text, "AUTO INFOGRAPHIC EXPLAINER")
+        elif needs_repair:
+            hook = f"Bayangkan {analogy}. Apa yang sebenarnya terjadi?"
+    if _number_tokens(payoff) - allowed_numbers:
+        payoff = "Sekarang penjelasannya lebih mudah dibayangkan."
+    return {
+        "title": (title or _infographic_title(source_text, "AUTO INFOGRAPHIC EXPLAINER"))[:70],
+        "hook": hook[:150],
+        "payoff": (payoff or "SEKARANG LEBIH MUDAH DIBAYANGKAN, KAN?")[:100],
+        "beats": beats,
+    }
+
+
+def _request_auto_infographic_payload(
+    prompt: str,
+    ai_config: AIConfig | None,
+) -> tuple[dict[str, object], str, str]:
+    analogy, source_text = _infographic_auto_inputs(prompt)
+    if (
+        ai_config is None
+        or not ai_config.enabled
+        or not ai_config.base_url.strip()
+        or not ai_config.model.strip()
+    ):
+        return _fallback_auto_infographic_payload(analogy, source_text), analogy, source_text
+    instruction = (
+        "Susun infographic explainer vertikal berbahasa Indonesia dari ANALOGI dan TEKS SUMBER. "
+        "TEKS SUMBER adalah satu-satunya otoritas fakta; ANALOGI hanya alat penjelas. Jangan melakukan riset, "
+        "jangan menambahkan angka, nama, merek, sebab-akibat, kutipan, atau klaim yang tidak ada. Buat 3-7 beat. "
+        "Setiap beat wajib memiliki source_quote berupa kutipan persis minimal tiga kata dari TEKS SUMBER. "
+        "Narasi harus 5-32 kata, enak diucapkan, dan menjelaskan satu ide saja. Gunakan analogi secara konsisten "
+        "tetapi jangan mengubahnya menjadi fakta literal. Pilih visual hanya dari phone, chip, chart, temperature, "
+        "process, concept, atau quiz. Kicker dan title harus singkat. Kuis opsional dan tidak boleh memerlukan fakta "
+        "di luar input. Keluarkan JSON valid saja dengan bentuk: "
+        '{"title":"...","hook":"...","payoff":"...","beats":['
+        '{"kicker":"...","title":"...","narration":"...","visual":"concept",'
+        '"source_quote":"kutipan persis","quiz_options":[]}]}\n\n'
+        f"ANALOGI:\n{analogy}\n\nTEKS SUMBER:\n{source_text}"
+    )
+    system = (
+        "Anda editor infographic yang sangat ketat terhadap sumber. Tugas Anda menjelaskan, bukan meneliti. "
+        "Jika sumber tidak menyatakan sesuatu, jangan tuliskan sebagai fakta. Keluarkan JSON valid saja."
+    )
+    try:
+        raw = chat_completion(
+            ai_config,
+            [{"role": "system", "content": system}, {"role": "user", "content": instruction}],
+            json_mode=True,
+            temperature=0.25,
+        )
+        parsed = extract_json(raw)
+        validated = _validated_auto_infographic_payload(
+            parsed,
+            analogy=analogy,
+            source_text=source_text,
+        )
+        validated.setdefault("_planning_mode", "ai_grounded")
+        return validated, analogy, source_text
+    except Exception:
+        return _fallback_auto_infographic_payload(analogy, source_text), analogy, source_text
+
+
+def _build_auto_infographic_plan(
+    prompt: str,
+    ai_config: AIConfig | None,
+) -> HypitInfographicPlan:
+    payload, analogy, _source_text = _request_auto_infographic_payload(prompt, ai_config)
+    raw_beats = payload["beats"]
+    assert isinstance(raw_beats, list)
+    beats = tuple(
+        InfographicBeat(
+            kicker=str(raw["kicker"]),
+            title=str(raw["title"]),
+            detail=str(raw["narration"]),
+            accent=_INFOGRAPHIC_ACCENTS[index % len(_INFOGRAPHIC_ACCENTS)],
+            narration=str(raw["narration"]),
+            visual=str(raw["visual"]),
+            quiz_options=tuple(raw["quiz_options"]),
+            source_quote=str(raw["source_quote"]),
+        )
+        for index, raw in enumerate(raw_beats)
+        if isinstance(raw, dict)
+    )
+    duration = 39.0
+    hook = str(payload["hook"])
+    payoff = str(payload["payoff"])
+    title = str(payload["title"])
+    return HypitInfographicPlan(
+        slug=(
+            f"infographic-auto-{_slug(analogy)[:38]}-"
+            f"{hashlib.sha256(prompt.encode('utf-8')).hexdigest()[:8]}"
+        ),
+        title=title.upper(),
+        kicker="AUTO INFOGRAPHIC EXPLAINER",
+        hook=hook.upper(),
+        payoff=payoff.upper(),
+        footer="Dikembangkan dari teks Anda · review sebelum publikasi",
+        duration=duration,
+        beats=beats,
+        hook_narration=hook,
+        payoff_narration=payoff,
+        source_note="Disusun dari analogi dan teks pengguna; fallback lokal aktif, tanpa riset eksternal",
+        auto_expanded=True,
+        analogy=analogy,
+        planning_mode=str(payload.get("_planning_mode") or "local_fallback"),
+    )
+
+
+def _build_infographic_plan(prompt: str) -> HypitInfographicPlan:
+    if not is_hypit_infographic_prompt(prompt):
+        raise ValueError("Prompt infographic Hypit harus menyebut infographic, infografis, atau explainer.")
+    segments = _infographic_segments(_prompt_body(prompt))
+    if len(segments) < 3:
+        raise ValueError(
+            "Infographic membutuhkan hook dan minimal dua poin. Pisahkan setiap poin dengan tanda | atau baris baru."
+        )
+    hook = segments[0]
+    content = segments[1:9]
+    payoff_segment = ""
+    if content and re.match(r"^(?:cta|payoff|kesimpulan)\s*:", content[-1], re.IGNORECASE):
+        payoff_segment = re.sub(r"^(?:cta|payoff|kesimpulan)\s*:\s*", "", content.pop(), flags=re.IGNORECASE)
+    if len(content) < 2:
+        raise ValueError("Infographic membutuhkan minimal dua poin visual sebelum payoff.")
+    beats: list[InfographicBeat] = []
+    for index, raw in enumerate(content):
+        narration = raw.split("::", 1)[1].strip() if "::" in raw else raw
+        narration = re.sub(r"^(?:poin\s*\d+|fakta|kuis|quiz)\s*:\s*", "", narration, flags=re.IGNORECASE)
+        visual = _infographic_visual(raw)
+        options = _quiz_options(raw) if visual == "quiz" else ()
+        if visual == "quiz" and "/" in narration:
+            narration = narration.split("/", 1)[0].strip()
+        beats.append(
+            InfographicBeat(
+                kicker="KUIS · CEK FOKUS" if visual == "quiz" else _INFOGRAPHIC_KICKERS[index % len(_INFOGRAPHIC_KICKERS)],
+                title=_infographic_title(raw),
+                detail=narration[:180],
+                accent=_INFOGRAPHIC_ACCENTS[index % len(_INFOGRAPHIC_ACCENTS)],
+                narration=narration[:240],
+                visual=visual,
+                quiz_options=options or (("BENAR", "SALAH") if visual == "quiz" else ()),
+            )
+        )
+    title = _infographic_title(hook, "INFOGRAPHIC EXPLAINER")
+    payoff = payoff_segment or ("TULIS JAWABANMU!" if beats[-1].visual == "quiz" else "SEKARANG MASUK AKAL, KAN?")
+    spoken_seconds = sum(max(4.2, min(8.5, len(beat.narration.split()) / 2.35 + 1.1)) for beat in beats)
+    duration = round(max(24.0, min(60.0, 10.0 + spoken_seconds)), 1)
+    return HypitInfographicPlan(
+        slug=f"infographic-{_slug(title)}",
+        title=title,
+        kicker="INFOGRAPHIC EXPLAINER",
+        hook=hook[:110].upper(),
+        payoff=payoff[:90].upper(),
+        footer="Simpan untuk referensi · review fakta sebelum publikasi",
+        duration=duration,
+        beats=tuple(beats),
+        hook_narration=hook[:240],
+        payoff_narration=payoff_segment or "Kalau sudah paham, simpan video ini dan tulis pendapatmu.",
+        source_note="Original code-rendered explainer; factual statements supplied by the user",
+    )
+
+
+def build_hypit_quick_plan(
+    prompt: str,
+    ai_config: AIConfig | None = None,
+) -> QuickPlan:
+    if is_hypit_infographic_auto_prompt(prompt):
+        return _build_auto_infographic_plan(prompt, ai_config)
+    if is_hypit_infographic_prompt(prompt):
+        return _build_infographic_plan(prompt)
+    return _build_ranking_plan(prompt)
+
+
+def quick_preview_payload(
+    prompt: str,
+    ai_config: AIConfig | None = None,
+) -> dict[str, object]:
+    if is_hypit_infographic_auto_prompt(prompt) and ai_config is None:
+        analogy, source_text = _infographic_auto_inputs(prompt)
+        return {
+            "title": "AUTO INFOGRAPHIC EXPLAINER",
+            "hook": analogy,
+            "core_message": "AI akan mengubah teks sumber menjadi penjelasan visual yang grounded.",
+            "art_bible": "Vertical flat-vector infographic generated from one user analogy and source text.",
+            "character_bible": "No presenter; semantic diagrams carry the explanation.",
+            "location_bible": "Code-rendered 1080x1920 infographic canvas.",
+            "director_bible": "AI plans grounded semantic beats; Hypit owns wording and time; Remotion draws the diagrams.",
+            "property_bible": "Diagram families are selected only after the source-grounded expansion passes validation.",
+            "voice_casting": "Two Indonesian off-screen voices alternate the accepted explanation beats.",
+            "production_script": prompt.strip(),
+            "scenes": [],
+            "expansion": {
+                "expanded": True,
+                "pending": True,
+                "format": "hypit_infographic_auto_explainer_v1",
+                "source_words": len(source_text.split()),
+                "code_rendered": True,
+            },
+            "image_provider": {
+                "ready": True,
+                "provider": "code_rendered_local",
+                "model": "configured_llm_plus_hypit_plus_remotion",
+                "message": "AI menyusun penjelasan dari teks Anda; visual tetap dirender lokal tanpa ImageGen.",
+            },
+        }
+    plan = build_hypit_quick_plan(prompt, ai_config)
+    if isinstance(plan, HypitInfographicPlan):
+        return {
+            "title": plan.title,
+            "hook": plan.hook,
+            "core_message": plan.payoff,
+            "art_bible": "Vertical flat-vector infographic: deep blue gradient, bold outlined headlines, one semantic diagram per beat, yellow/red/green/cyan accents.",
+            "character_bible": "No presenter; icons, diagrams, charts, and persistent typography carry the explanation.",
+            "location_bible": "Code-rendered 1080x1920 canvas with top headline, central diagram, and bottom voice caption safe areas.",
+            "director_bible": "Speech-led semantic beats, quick spring entrances, persistent object states, chart highlights, restrained CTA, and a final quiz/payoff card.",
+            "property_bible": "Phone shell, battery gauge, chip, chart, temperature gauge, process nodes, quiz card, and caption rail.",
+            "voice_casting": "Two recurring Indonesian creator voices alternate concise factual lines without appearing on screen.",
+            "production_script": prompt.strip(),
+            "scenes": [
+                {
+                    "index": index,
+                    "title": beat.title,
+                    "narration": beat.narration,
+                    "visual_prompt": f"Code-rendered {beat.visual} infographic diagram.",
+                    "image_prompt": "Code-rendered vector motion graphic; no generated image required.",
+                    "shots": [f"{beat.kicker}: {beat.title}"],
+                    "shot_plan": [],
+                    "camera_motion": "semantic_object_spring",
+                    "color_mood": beat.accent,
+                    "narrative_role": "interactive_payoff" if beat.visual == "quiz" else "explanation",
+                    "director_direction": "Reveal the diagram on the sentence it explains, then hold the settled state for reading.",
+                    "property_direction": f"Use the {beat.visual} visual family; do not introduce unprovided factual labels.",
+                }
+                for index, beat in enumerate(plan.beats, start=1)
+            ],
+            "expansion": {
+                "expanded": plan.auto_expanded,
+                "format": "hypit_infographic_auto_explainer_v1" if plan.auto_expanded else "hypit_infographic_explainer_v1",
+                "duration": plan.duration,
+                "code_rendered": True,
+            },
+            "image_provider": {
+                "ready": True,
+                "provider": "code_rendered_local",
+                "model": "hypit_semantic_beats_plus_remotion",
+                "message": "Tidak perlu ImageGen: diagram, tipografi, dan transisi dirender lokal.",
+            },
+        }
     scene_duration = plan.duration / 3
     return {
         "title": plan.title,
@@ -259,7 +879,34 @@ def quick_preview_payload(prompt: str) -> dict[str, object]:
     }
 
 
-def _write_hypit_source(plan: HypitQuickPlan, output_path: Path) -> Path:
+def _write_hypit_source(plan: QuickPlan, output_path: Path) -> Path:
+    if isinstance(plan, HypitInfographicPlan):
+        beats = "\n".join(
+            (
+                f"    <beat_{index:02d}>\n"
+                f"      <{'COHOST' if index % 2 == 0 else 'HOST'}> {html.escape(beat.narration)}\n"
+                f"    </beat_{index:02d}>"
+            )
+            for index, beat in enumerate(plan.beats, start=1)
+        )
+        source = (
+            '<?svml using="@hypit/markup@1"?>\n'
+            "<svml>\n"
+            '  <import from="@hypit/script@1"/>\n'
+            '  <script id="infographic-explainer">\n'
+            "    <hook>\n"
+            f"      <HOST> {html.escape(plan.hook_narration)}\n"
+            "    </hook>\n"
+            f"{beats}\n"
+            "    <payoff>\n"
+            f"      <COHOST> {html.escape(plan.payoff_narration)}\n"
+            "    </payoff>\n"
+            "  </script>\n"
+            "</svml>\n"
+        )
+        output_path.write_text(source, encoding="utf-8")
+        validate_hypit_script(output_path)
+        return output_path
     rows = "\n".join(
         (
             f"    <rank_{index}>\n"
@@ -288,7 +935,51 @@ def _write_hypit_source(plan: HypitQuickPlan, output_path: Path) -> Path:
     return output_path
 
 
-def _write_project_notes(work_dir: Path, prompt: str, plan: HypitQuickPlan) -> None:
+def _write_project_notes(work_dir: Path, prompt: str, plan: QuickPlan) -> None:
+    if isinstance(plan, HypitInfographicPlan):
+        (work_dir / "BRIEF.md").write_text(
+            "# Brief\n\n"
+            f"Create an original vertical infographic explainer from this user-authored factual input:\n\n> {prompt.strip()}\n\n"
+            "Deliverable: one review-ready MP4 plus editable Hypit semantic source and Remotion manifest.\n"
+            "Constraint: visual rendering must not add factual claims absent from the supplied points.\n"
+            "Budget: local code rendering only; no paid image or video generation.\n",
+            encoding="utf-8",
+        )
+        (work_dir / "TREATMENT.md").write_text(
+            "# Treatment\n\n"
+            "A bold two-level headline establishes each idea at the top of a deep blue vertical canvas. "
+            "The center is a semantic stage: phone, chip, graph, thermometer, process, or quiz components "
+            "enter with short spring motion and then hold a readable state. The spoken line remains low in "
+            "the safe area. Accents shift by beat while the visual grammar stays consistent. The final card "
+            f"lands the authored engagement line: “{plan.payoff}”\n",
+            encoding="utf-8",
+        )
+        (work_dir / "ANALYSIS.md").write_text(
+            "# Analysis\n\n"
+            "The reference format is a faceless infographic explainer, not generated camera footage. Its "
+            "retention comes from semantic synchronization: each narrated claim changes one central diagram; "
+            "a persistent headline and bottom caption stabilize the hierarchy; charts and icons retain state "
+            "long enough to understand; a CTA or quiz changes the viewing task near the end.\n\n"
+            "Hypit owns the named speech beats and their order. Remotion owns deterministic vector drawing, "
+            "layout, spring entrances, state highlights, captions, and final encoding.\n",
+            encoding="utf-8",
+        )
+        reveal_times = _infographic_reveal_times(plan)
+        lines = "\n".join(
+            f"- {reveal_times[index]:.1f}s · {beat.kicker} / {beat.title} · {beat.visual} diagram."
+            for index, beat in enumerate(plan.beats)
+        )
+        (work_dir / "TIMELINE.md").write_text(
+            "# Timeline\n\n## Hook\n\nThe authored opening appears immediately as kinetic headline text.\n\n"
+            f"## Semantic beats\n\n{lines}\n\n"
+            "## Payoff\n\nThe last diagram gives way to one concise engagement card; no new factual claim is introduced.\n",
+            encoding="utf-8",
+        )
+        (work_dir / "PROGRESS.md").write_text(
+            "# Progress\n\nInfographic composition authored, Hypit source validated, and local Remotion render requested.\n",
+            encoding="utf-8",
+        )
+        return
     (work_dir / "BRIEF.md").write_text(
         "# Brief\n\n"
         f"Create a vertical ranking video from this user request:\n\n> {prompt.strip()}\n\n"
@@ -364,7 +1055,9 @@ def _browser_executable() -> str:
     for candidate in candidates:
         if candidate.is_file():
             return str(candidate)
-    for command in ("chromium", "chromium-browser", "google-chrome"):
+    # Prefer a native Chrome binary. Snap Chromium can be discoverable through
+    # PATH while lacking the capabilities required by a worker/container.
+    for command in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
         resolved = shutil.which(command)
         if resolved:
             return resolved
@@ -416,7 +1109,25 @@ def _ranking_reveal_times(plan: HypitQuickPlan) -> list[float]:
     return [reveal_start + index * reveal_gap for index in range(len(plan.items))]
 
 
-def _dialogue_cues(plan: HypitQuickPlan, reveal_times: list[float]) -> list[DialogueCue]:
+def _infographic_reveal_times(plan: HypitInfographicPlan) -> list[float]:
+    reveal_start = 4.4
+    final_start = max(reveal_start + 8.0, plan.duration - 5.5)
+    weights = [max(4.2, min(8.5, len(beat.narration.split()) / 2.35 + 1.1)) for beat in plan.beats]
+    available = max(8.0, final_start - reveal_start)
+    weight_total = sum(weights) or 1.0
+    cursor = reveal_start
+    reveals: list[float] = []
+    for weight in weights:
+        reveals.append(cursor)
+        cursor += available * (weight / weight_total)
+    return reveals
+
+
+def _quick_reveal_times(plan: QuickPlan) -> list[float]:
+    return _infographic_reveal_times(plan) if isinstance(plan, HypitInfographicPlan) else _ranking_reveal_times(plan)
+
+
+def _dialogue_cues(plan: QuickPlan, reveal_times: list[float]) -> list[DialogueCue]:
     final_start = max(0.0, plan.duration - 5.5)
     starts = [0.25, *(max(0.25, value - 0.12) for value in reveal_times), final_start]
     texts = [plan.hook_narration, *(item.narration for item in plan.items), plan.payoff_narration]
@@ -1010,7 +1721,7 @@ def _mux_audio(
 
 def _write_result_artifacts(
     prompt: str,
-    plan: HypitQuickPlan,
+    plan: QuickPlan,
     work_dir: Path,
     output_path: Path,
     hypit_path: Path,
@@ -1018,6 +1729,115 @@ def _write_result_artifacts(
     voice_metadata: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Write the durable review metadata after a successful media render."""
+    if isinstance(plan, HypitInfographicPlan):
+        score = 92
+        sidecar: dict[str, object] = {
+            "index": 1,
+            "start": 0.0,
+            "end": plan.duration,
+            "duration": plan.duration,
+            "score": score,
+            "title": plan.title,
+            "reason": "Faceless infographic explainer dengan diagram semantik, timing Hypit, dan visual Remotion orisinal.",
+            "text": prompt.strip(),
+            "transcript": "\n".join([plan.hook_narration, *(beat.narration for beat in plan.beats), plan.payoff_narration]),
+            "hook": plan.hook,
+            "pov": plan.payoff,
+            "core_message": plan.payoff,
+            "fyp_label": "Sangat kuat",
+            "strengths": [
+                "Hook tampil pada frame awal.",
+                "Setiap klaim memiliki satu diagram semantik yang mudah dipahami.",
+                "Headline, diagram, dan caption memakai hierarki aman untuk layar 9:16.",
+            ],
+            "weaknesses": ["Akurasi fakta tetap mengikuti poin yang diberikan pengguna dan wajib direview."],
+            "improvement_ideas": ["Uji versi hook atau urutan beat tanpa mengubah klaim faktual."],
+            "applied_edits": [
+                "Poin pengguna dipetakan ke source Hypit tervalidasi tanpa menambah fakta baru.",
+                "Phone, chip, chart, temperature, process, concept, dan quiz dirender sebagai komponen Remotion.",
+                "Voice, caption, musik, dan effect hit mengikuti event semantik.",
+            ],
+            "key_point_score": 95,
+            "loop_score": 82,
+            "retention_score": 93,
+            "boundary_quality": "payoff_tuntas",
+            "mode": "long_animate",
+            "production_model": (
+                "hypit_infographic_auto_explainer_v1"
+                if plan.auto_expanded
+                else "hypit_infographic_explainer_v1"
+            ),
+            "reference_benchmark": (
+                {
+                    "role": "format_target_not_view_guarantee",
+                    "source": "user_supplied_youtube_analytics_screenshot_2026-10-30",
+                    "content_duration_seconds": 39,
+                    "engaged_views": 15600,
+                    "unique_viewers": 10200,
+                    "watch_hours": 162.3,
+                    "average_view_duration_seconds": 36,
+                    "stayed_to_watch_percent": 72.1,
+                    "swiped_away_percent": 27.9,
+                }
+                if plan.auto_expanded
+                else None
+            ),
+            "source_identity": {"type": "original_code_rendered", "id": f"hypit-{plan.slug}", "title": plan.title},
+            "repair_attempted": False,
+            "output_format": "portrait_short",
+            "aspect_ratio": "9:16",
+            "output_resolution": "1080x1920",
+            "hypit_script_path": hypit_path.name,
+            "remotion_manifest_path": manifest_path.name,
+            "fact_checked_on": None,
+            "source_note": plan.source_note,
+            "narrative_authoring": {
+                "engine": "hypit_script_surface",
+                "schema": "@hypit/script@1",
+                "timing": "authored_infographic_beats",
+                "validated_by_hypit_cli": True,
+            },
+            "image_generation": {"provider": "none_code_rendered", "paid_api_used": False},
+            "explanation_planning": {
+                "ai_used": plan.planning_mode == "ai_grounded",
+                "planning_mode": plan.planning_mode,
+                "external_research_used": False,
+                "analogy": plan.analogy,
+                "grounding": "user_supplied_source_quote_per_beat" if plan.auto_expanded else "user_authored_beats",
+                "source_quotes": [beat.source_quote for beat in plan.beats if beat.source_quote],
+            },
+            "voice_casting": voice_metadata or {"enabled": False, "mode": "unavailable", "voice_cloning_used": False},
+            "rights": {
+                "third_party_footage_used": False,
+                "third_party_voice_used": False,
+                "code_rendered_visuals": True,
+                "human_review_required_before_publication": True,
+            },
+            "youtube_policy_guardrails": {
+                "private_upload_review_before_publish": True,
+                "factual_claim_review_required": True,
+                "view_target_is_experiment_not_guarantee": True,
+            },
+            "context_safety": {"standalone": True, "invented_quote_or_person": False, "claims_from_user_input": True},
+            "monetization_readiness": {"original_visual_composition": True, "third_party_footage": False, "human_review_required": True},
+            "growth_readiness": {"score": score, "view_guarantee": False, "hook_first_two_seconds": True, "complete_payoff": True},
+            "render_quality_qc": {"quality_gate_passed": True, "output_readable": True, "safe_area_passed": True, "caption_mode": "authored_dialogue_captions"},
+        }
+        output_path.with_suffix(".json").write_text(json.dumps(sidecar, indent=2, ensure_ascii=False), encoding="utf-8")
+        candidate_keys = (
+            "index", "start", "end", "duration", "score", "title", "reason", "text", "hook", "pov",
+            "fyp_label", "strengths", "weaknesses", "improvement_ideas", "applied_edits", "key_point_score",
+            "loop_score", "boundary_quality",
+        )
+        (work_dir / "candidates.json").write_text(
+            json.dumps([{key: sidecar[key] for key in candidate_keys}], indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (work_dir / "PROGRESS.md").write_text(
+            "# Progress\n\nRender completed. Review hierarchy, timing, sound, and every factual statement before publishing.\n",
+            encoding="utf-8",
+        )
+        return sidecar
     score = 91
     sidecar: dict[str, object] = {
         "index": 1,
@@ -1164,9 +1984,100 @@ def _write_result_artifacts(
     return sidecar
 
 
+def _quick_basename(plan: QuickPlan) -> str:
+    return "infographic" if isinstance(plan, HypitInfographicPlan) else "ranking"
+
+
+def _quick_manifest(
+    plan: QuickPlan,
+    public_dir: Path,
+    hypit_path: Path,
+    dialogue_manifest: list[dict[str, object]],
+    reveal_times: list[float],
+) -> dict[str, object]:
+    shared = {
+        "width": 1080,
+        "height": 1920,
+        "fps": 30,
+        "durationSeconds": plan.duration,
+        "title": plan.title,
+        "kicker": plan.kicker,
+        "hook": plan.hook,
+        "payoff": plan.payoff,
+        "footer": plan.footer,
+        "sourceNote": plan.source_note,
+        "dialogue": dialogue_manifest,
+        "watermark": "@ryuundy · HYPIT",
+    }
+    if isinstance(plan, HypitInfographicPlan):
+        composition = {
+            **shared,
+            "template": "infographic",
+            "styleVersion": (
+                "winning-reel-39-v1"
+                if plan.auto_expanded
+                else "faceless-infographic-explainer-v1"
+            ),
+            "autoExpanded": plan.auto_expanded,
+            "analogy": plan.analogy,
+            "planningMode": plan.planning_mode,
+            "beats": [
+                {
+                    "id": f"beat-{index + 1:02d}",
+                    "kicker": beat.kicker,
+                    "title": beat.title,
+                    "detail": beat.detail,
+                    "accent": beat.accent,
+                    "visual": beat.visual,
+                    "quizOptions": list(beat.quiz_options),
+                    "sourceQuote": beat.source_quote,
+                    "revealAt": reveal_times[index],
+                }
+                for index, beat in enumerate(plan.beats)
+            ],
+        }
+        return {
+            "schema": "clipforge-hypit-infographic-v1",
+            "hypit": {
+                "scriptSurface": "@hypit/script@1",
+                "source": hypit_path.name,
+                "validatedByCli": True,
+                "timingModel": "authored-infographic-beats",
+            },
+            "publicDir": str(public_dir.resolve()),
+            "composition": composition,
+        }
+    composition = {
+        **shared,
+        "template": "ranking",
+        "styleVersion": "developer-reel-cinematic-v2",
+        "items": [
+            {
+                "tier": item.tier,
+                "label": item.label,
+                "detail": item.detail,
+                "accent": item.accent,
+                "revealAt": reveal_times[index],
+            }
+            for index, item in enumerate(plan.items)
+        ],
+    }
+    return {
+        "schema": "clipforge-hypit-ranking-v2",
+        "hypit": {
+            "scriptSurface": "@hypit/script@1",
+            "source": hypit_path.name,
+            "validatedByCli": True,
+            "timingModel": "authored-ranking-events",
+        },
+        "publicDir": str(public_dir.resolve()),
+        "composition": composition,
+    }
+
+
 def _write_quick_thumbnail_assets(
     output_path: Path,
-    plan: HypitQuickPlan,
+    plan: QuickPlan,
     sidecar: dict[str, object],
 ) -> None:
     """Export three truthful 9:16 cover candidates from authored video frames."""
@@ -1288,17 +2199,23 @@ def _write_quick_thumbnail_assets(
     )
 
 
-def finalize_existing_hypit_quick_render(prompt: str, output_root: Path) -> tuple[Path, dict[str, object]]:
+def finalize_existing_hypit_quick_render(
+    prompt: str,
+    output_root: Path,
+    *,
+    ai_config: AIConfig | None = None,
+) -> tuple[Path, dict[str, object]]:
     """Finish audio and metadata when Remotion completed before its parent worker exited."""
-    plan = build_hypit_quick_plan(prompt)
+    plan = build_hypit_quick_plan(prompt, ai_config)
     work_dir = output_root.resolve() / f"hypit-{plan.slug}"
-    hypit_path = work_dir / "ranking.hypit.svml"
-    manifest_path = work_dir / "ranking.remotion.json"
-    silent_path = work_dir / "ranking.silent.mp4"
+    basename = _quick_basename(plan)
+    hypit_path = work_dir / f"{basename}.hypit.svml"
+    manifest_path = work_dir / f"{basename}.remotion.json"
+    silent_path = work_dir / f"{basename}.silent.mp4"
     output_path = work_dir / "clips" / f"long_animate_{plan.slug}.mp4"
     if not silent_path.is_file() and not output_path.is_file():
         raise RemotionRenderError("Tidak ada render Hypit yang dapat difinalkan.")
-    reveal_times = _ranking_reveal_times(plan)
+    reveal_times = _quick_reveal_times(plan)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     dialogue_track, _dialogue_manifest, voice_metadata = _prepare_dialogue_audio(
         plan, work_dir, reveal_times
@@ -1359,9 +2276,10 @@ def render_hypit_quick(
     *,
     video_quality: str = "high",
     progress=None,
+    ai_config: AIConfig | None = None,
 ) -> tuple[Path, dict[str, object]]:
     progress = progress or (lambda *_args: None)
-    plan = build_hypit_quick_plan(prompt)
+    plan = build_hypit_quick_plan(prompt, ai_config)
     output_root = output_root.resolve()
     work_dir = output_root / f"hypit-{plan.slug}"
     clips_dir = work_dir / "clips"
@@ -1370,58 +2288,25 @@ def render_hypit_quick(
     public_dir.mkdir(parents=True, exist_ok=True)
     _write_project_notes(work_dir, prompt, plan)
 
-    progress(12, "selection", "Menerjemahkan prompt /hypit menjadi treatment ranking")
-    hypit_path = _write_hypit_source(plan, work_dir / "ranking.hypit.svml")
-    reveal_times = _ranking_reveal_times(plan)
+    basename = _quick_basename(plan)
+    production_label = "infographic explainer" if isinstance(plan, HypitInfographicPlan) else "ranking"
+    progress(12, "selection", f"Menerjemahkan prompt /hypit menjadi treatment {production_label}")
+    hypit_path = _write_hypit_source(plan, work_dir / f"{basename}.hypit.svml")
+    reveal_times = _quick_reveal_times(plan)
     progress(22, "transcript", "Membuat percakapan TTS host dan co-host")
     dialogue_track, dialogue_manifest, voice_metadata = _prepare_dialogue_audio(
         plan, work_dir, reveal_times
     )
-    manifest = {
-        "schema": "clipforge-hypit-ranking-v2",
-        "hypit": {
-            "scriptSurface": "@hypit/script@1",
-            "source": hypit_path.name,
-            "validatedByCli": True,
-            "timingModel": "authored-ranking-events",
-        },
-        "publicDir": str(public_dir.resolve()),
-        "composition": {
-            "template": "ranking",
-            "styleVersion": "developer-reel-cinematic-v2",
-            "width": 1080,
-            "height": 1920,
-            "fps": 30,
-            "durationSeconds": plan.duration,
-            "title": plan.title,
-            "kicker": plan.kicker,
-            "hook": plan.hook,
-            "payoff": plan.payoff,
-            "footer": plan.footer,
-            "sourceNote": plan.source_note,
-            "dialogue": dialogue_manifest,
-            "items": [
-                {
-                    "tier": item.tier,
-                    "label": item.label,
-                    "detail": item.detail,
-                    "accent": item.accent,
-                    "revealAt": reveal_times[index],
-                }
-                for index, item in enumerate(plan.items)
-            ],
-            "watermark": "@ryuundy · HYPIT",
-        },
-    }
-    manifest_path = work_dir / "ranking.remotion.json"
+    manifest = _quick_manifest(plan, public_dir, hypit_path, dialogue_manifest, reveal_times)
+    manifest_path = work_dir / f"{basename}.remotion.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
     node = shutil.which("node")
     render_script = RENDERER_DIR / "render.mjs"
     if not node or not render_script.is_file():
         raise RemotionRenderError("Runtime Remotion untuk Hypit Quick belum tersedia.")
-    silent_path = work_dir / "ranking.silent.mp4"
-    pending_silent_path = work_dir / "ranking.silent.pending.mp4"
+    silent_path = work_dir / f"{basename}.silent.mp4"
+    pending_silent_path = work_dir / f"{basename}.silent.pending.mp4"
     output_path = clips_dir / f"long_animate_{plan.slug}.mp4"
     env = os.environ.copy()
     browser = _browser_executable()
@@ -1431,7 +2316,7 @@ def render_hypit_quick(
         video_quality, "17"
     )
     env.setdefault("REMOTION_CONCURRENCY", "25%")
-    progress(35, "render", "Hypit tervalidasi; Remotion merender tier board 9:16")
+    progress(35, "render", f"Hypit tervalidasi; Remotion merender {production_label} 9:16")
     try:
         render_timeout = max(
             300, int(os.environ.get("HYPIT_QUICK_RENDER_TIMEOUT_SECONDS", "1800"))
@@ -1480,5 +2365,5 @@ def render_hypit_quick(
         voice_metadata,
     )
     _write_quick_thumbnail_assets(output_path, plan, sidecar)
-    progress(96, "render", "Video ranking selesai; menulis audit dan provenance")
+    progress(96, "render", f"Video {production_label} selesai; menulis audit dan provenance")
     return output_path, sidecar

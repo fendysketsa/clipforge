@@ -7267,6 +7267,161 @@ def test_delete_job_allows_queued_job_that_is_not_running(monkeypatch, tmp_path)
     assert queued.id not in api.job_secrets
 
 
+def test_delete_completed_job_rejects_live_upload_process(monkeypatch, tmp_path):
+    import api
+
+    completed = ClipJob(
+        id="completed-uploading-job",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/uploading"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        clips=[
+            ClipFile(
+                name="clip.mp4",
+                url="/outputs/completed-uploading-job/clip.mp4",
+                size_bytes=4,
+            )
+        ],
+    )
+
+    upload = SimpleNamespace(
+        id="live-upload",
+        status="running",
+        updated_at="2026-01-01T00:00:00+00:00",
+        upload_confirmed=False,
+        profile_url=None,
+        logs=[],
+    )
+    process = SimpleNamespace(poll=lambda: None)
+
+    monkeypatch.setattr(api, "JOBS_PATH", tmp_path / "jobs.json")
+    monkeypatch.setattr(api, "jobs", {completed.id: completed})
+    monkeypatch.setattr(api, "job_processes", {})
+    monkeypatch.setattr(api, "youtube_upload_processes", {upload.id: process})
+    monkeypatch.setattr(api, "tiktok_upload_processes", {})
+    monkeypatch.setattr(api, "active_youtube_uploads_for_job", lambda _job_id: [upload])
+    monkeypatch.setattr(api, "active_tiktok_uploads_for_job", lambda _job_id: [])
+
+    with pytest.raises(api.HTTPException, match="upload nyata sedang aktif"):
+        api.delete_job(completed.id)
+
+    assert api.jobs[completed.id] == completed
+
+
+def test_delete_completed_job_discards_empty_stale_upload(monkeypatch, tmp_path):
+    import api
+
+    completed = ClipJob(
+        id="completed-stale-upload-job",
+        status="completed",
+        request=ClipJobRequest(url="https://youtu.be/stale"),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    upload = SimpleNamespace(
+        id="stale-empty-upload",
+        status="running",
+        updated_at="2026-01-01T00:00:00+00:00",
+        upload_confirmed=False,
+        profile_url=None,
+        logs=[],
+    )
+
+    monkeypatch.setattr(api, "OUTPUTS_DIR", tmp_path / "outputs")
+    monkeypatch.setattr(api, "UPLOADS_DIR", tmp_path / "uploads")
+    monkeypatch.setattr(api, "JOBS_PATH", tmp_path / "jobs.json")
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", tmp_path / "youtube.json")
+    monkeypatch.setattr(api, "jobs", {completed.id: completed})
+    monkeypatch.setattr(api, "job_processes", {})
+    monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+    monkeypatch.setattr(api, "tiktok_uploads", {})
+    monkeypatch.setattr(api, "youtube_upload_processes", {})
+    monkeypatch.setattr(api, "tiktok_upload_processes", {})
+    monkeypatch.setattr(api, "active_youtube_uploads_for_job", lambda _job_id: [upload])
+    monkeypatch.setattr(api, "active_tiktok_uploads_for_job", lambda _job_id: [])
+
+    result = api.delete_job(completed.id)
+
+    assert result["status"] == "ok"
+    assert completed.id not in api.jobs
+    assert upload.id not in api.youtube_uploads
+
+
+def test_upload_media_duration_gate_uses_actual_mp4_duration(monkeypatch, tmp_path):
+    import api
+
+    clip_path = tmp_path / "broken-two-second-clip.mp4"
+    clip_path.write_bytes(b"broken-render")
+    monkeypatch.setattr(api, "media_duration_seconds", lambda _path: 2.87)
+
+    issue = api.upload_media_duration_issue(clip_path)
+
+    assert issue is not None
+    assert "aktual hanya 2.9 detik" in issue
+    assert "minimum 25 detik" in issue
+
+
+def test_upload_media_duration_gate_accepts_valid_short(monkeypatch, tmp_path):
+    import api
+
+    clip_path = tmp_path / "valid-short.mp4"
+    clip_path.write_bytes(b"valid-render")
+    monkeypatch.setattr(api, "media_duration_seconds", lambda _path: 31.4)
+
+    assert api.upload_media_duration_issue(clip_path) is None
+
+
+def test_completed_job_gate_rejects_truncated_mp4_before_completed(monkeypatch, tmp_path):
+    import api
+
+    outputs = tmp_path / "outputs"
+    clip_path = outputs / "job" / "clips" / "clip_01.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"x" * 2048)
+    clip = ClipFile(
+        name=clip_path.name,
+        url="/outputs/job/clips/clip_01.mp4",
+        size_bytes=clip_path.stat().st_size,
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "media_duration_seconds", lambda _path: 2.866667)
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: {"duration": 30.0})
+
+    issue = api.completed_clip_integrity_issue(
+        ClipJobRequest(url="https://youtu.be/test", min_duration=25, max_duration=58),
+        [clip],
+    )
+
+    assert issue is not None
+    assert "durasi aktual 2.867 detik" in issue
+    assert "minimum produk 25.000 detik" in issue
+
+
+def test_completed_job_gate_accepts_actual_duration_matching_sidecar(monkeypatch, tmp_path):
+    import api
+
+    outputs = tmp_path / "outputs"
+    clip_path = outputs / "job" / "clips" / "clip_01.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"x" * 2048)
+    clip = ClipFile(
+        name=clip_path.name,
+        url="/outputs/job/clips/clip_01.mp4",
+        size_bytes=clip_path.stat().st_size,
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "media_duration_seconds", lambda _path: 30.04)
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: {"duration": 30.0})
+
+    issue = api.completed_clip_integrity_issue(
+        ClipJobRequest(url="https://youtu.be/test", min_duration=25, max_duration=58),
+        [clip],
+    )
+
+    assert issue is None
+
+
 def test_youtube_cdp_start_needed_detects_remote_debugging_error():
     assert youtube_cdp_start_needed(
         "Chrome remote debugging belum aktif. Jalur utama upload memakai Playwright storage-state"

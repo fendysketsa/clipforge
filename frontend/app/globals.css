@@ -1598,7 +1598,8 @@ h2 {
   transition: width 320ms ease;
 }
 
-.stopJobRowButton {
+.stopJobRowButton,
+.deleteJobRowButton {
   flex: 0 0 auto;
   align-self: flex-start;
   display: inline-flex;
@@ -1612,7 +1613,8 @@ h2 {
   white-space: nowrap;
 }
 
-.stopJobRowButton svg {
+.stopJobRowButton svg,
+.deleteJobRowButton svg {
   flex: 0 0 auto;
   color: currentColor;
 }
@@ -6570,7 +6572,8 @@ a svg {
   border-radius: 8px;
 }
 
-.stopJobRowButton {
+.stopJobRowButton,
+.deleteJobRowButton {
   min-height: 34px;
   padding: 0 10px;
   font-size: 10px;
@@ -6876,11 +6879,13 @@ a svg {
     padding: 14px;
   }
 
-  .stopJobRowButton span {
+  .stopJobRowButton span,
+  .deleteJobRowButton span {
     display: none;
   }
 
-  .stopJobRowButton {
+  .stopJobRowButton,
+  .deleteJobRowButton {
     width: 34px;
     padding: 0;
   }

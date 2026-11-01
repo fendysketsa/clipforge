@@ -241,20 +241,27 @@ def _browser_executable() -> str:
     configured = os.environ.get("REMOTION_BROWSER_EXECUTABLE", "").strip()
     if configured and Path(configured).is_file():
         return configured
-    candidates: Iterable[Path] = (
-        *Path("/root/.cache/ms-playwright").glob("chromium-*/chrome-linux/chrome"),
-        *Path("/root/.cache/ms-playwright").glob("chromium-*/chrome-linux64/chrome"),
-        *Path("/root/.cache/ms-playwright").glob("chromium_headless_shell-*/chrome-linux/headless_shell"),
-        *Path("/root/.cache/ms-playwright").glob("chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"),
-        *Path("/ms-playwright").glob("chromium-*/chrome-linux/chrome"),
-        *Path("/ms-playwright").glob("chromium-*/chrome-linux64/chrome"),
-        *Path("/ms-playwright").glob("chromium_headless_shell-*/chrome-linux/headless_shell"),
-        *Path("/ms-playwright").glob("chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"),
-    )
+    candidates: list[Path] = []
+    for root, pattern in (
+        (Path("/root/.cache/ms-playwright"), "chromium-*/chrome-linux/chrome"),
+        (Path("/root/.cache/ms-playwright"), "chromium-*/chrome-linux64/chrome"),
+        (Path("/root/.cache/ms-playwright"), "chromium_headless_shell-*/chrome-linux/headless_shell"),
+        (Path("/root/.cache/ms-playwright"), "chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"),
+        (Path("/ms-playwright"), "chromium-*/chrome-linux/chrome"),
+        (Path("/ms-playwright"), "chromium-*/chrome-linux64/chrome"),
+        (Path("/ms-playwright"), "chromium_headless_shell-*/chrome-linux/headless_shell"),
+        (Path("/ms-playwright"), "chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"),
+    ):
+        try:
+            candidates.extend(root.glob(pattern))
+        except PermissionError:
+            continue
     for candidate in candidates:
         if candidate.is_file():
             return str(candidate)
-    for command in ("chromium", "chromium-browser", "google-chrome"):
+    # Prefer native Chrome before Snap Chromium, which may be present but
+    # unusable inside a worker/container due to missing Linux capabilities.
+    for command in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
         resolved = shutil.which(command)
         if resolved:
             return resolved

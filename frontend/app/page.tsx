@@ -108,10 +108,19 @@ const CLEANUP_PROGRESS_POLL_MS = 250;
 const TAB_JOB_STORAGE_KEY = "fendy-clipper.activeJobId.v1";
 const HYPIT_COMMAND_PATTERN = /^\s*\/hypit(?:\s+|$)/i;
 const HYPIT_QUICK_INTENT_PATTERN = /\b(?:ranking|rank|tier(?:\s+list)?|peringkat)\b/i;
+const HYPIT_INFOGRAPHIC_INTENT_PATTERN = /\b(?:infographic|infografis|explainer|motion\s*graphic|video\s*edukasi)\b/i;
+const HYPIT_INFOGRAPHIC_AUTO_PATTERN = /\b(?:auto|otomatis|kembangkan|jelaskan\s+sendiri)\b/i;
+const isHypitAutoPrompt = (value: string) => {
+  if (!HYPIT_COMMAND_PATTERN.test(value)) return false;
+  const body = value.replace(HYPIT_COMMAND_PATTERN, "").trim();
+  return HYPIT_INFOGRAPHIC_INTENT_PATTERN.test(body) && HYPIT_INFOGRAPHIC_AUTO_PATTERN.test(body);
+};
 const isHypitQuickPrompt = (value: string) => {
   if (!HYPIT_COMMAND_PATTERN.test(value)) return false;
   const body = value.replace(HYPIT_COMMAND_PATTERN, "").trim();
-  return body.split(/\s+/).filter(Boolean).length <= 80 && HYPIT_QUICK_INTENT_PATTERN.test(body);
+  const words = body.split(/\s+/).filter(Boolean).length;
+  return (words <= 80 && HYPIT_QUICK_INTENT_PATTERN.test(body))
+    || (words <= (HYPIT_INFOGRAPHIC_AUTO_PATTERN.test(body) ? 2500 : 600) && HYPIT_INFOGRAPHIC_INTENT_PATTERN.test(body));
 };
 const hypitStoryBody = (value: string) => value.replace(HYPIT_COMMAND_PATTERN, "").trim();
 export const promptDurationSeconds = (value: string, fallback: number) => {
@@ -817,6 +826,7 @@ export default function HomePage() {
     const trimmedUrl = url.trim();
     const trimmedStory = (storyOverride ?? storyText).trim();
     const isHypitQuick = isStoryMode && isHypitQuickPrompt(trimmedStory);
+    const isHypitAuto = isStoryMode && isHypitAutoPrompt(trimmedStory);
     const effectiveStory = isStoryMode && !isHypitQuick
       ? hypitStoryBody(trimmedStory)
       : trimmedStory;
@@ -891,7 +901,9 @@ export default function HomePage() {
           min_duration: minDuration,
           max_duration: effectiveMaxDuration,
           clip_mode: requestedMode,
-          compilation_target_seconds: isHypitQuick
+          compilation_target_seconds: isHypitAuto
+            ? promptDurationSeconds(trimmedStory, 40)
+            : isHypitQuick
             ? 26
             : isStoryMode
               ? isDirectedStoryboard
@@ -933,15 +945,15 @@ export default function HomePage() {
           creator_commentary_file: "",
           auto_upload_youtube: autoUploadYoutube,
           allow_reprocess_source: !isStoryMode && requestedSourceMode === "url" && allowReprocessSource,
-          ai_enabled: isHypitQuick ? false : aiEnabled,
+          ai_enabled: isHypitAuto ? aiEnabled : isHypitQuick ? false : aiEnabled,
           ai_base_url: aiBaseUrl.trim(),
           ai_model: aiModel.trim(),
           ai_api_key: aiApiKey.trim(),
         }),
         {
-          loading: isHypitQuick ? "Hypit menyusun tier board dan memulai render..." : isStoryMode ? "Memulai produksi storyboard lewat Scene Cinema..." : requestedMode === "short" ? "Memulai scan dan render Short..." : "Memulai scan dan susun Long Highlight...",
-          success: isHypitQuick ? "Render Hypit dimulai — hasil akan muncul otomatis di workspace." : isStoryMode ? "Produksi dimulai — ImageGen dan Remotion merakit setiap adegan." : requestedMode === "short" ? "Scan dimulai — kandidat terbaik akan langsung dirender." : "Scan dimulai — chapter terbaik akan langsung disusun.",
-          error: isHypitQuick ? "Gagal memulai Hypit Quick" : isStoryMode ? "Gagal memulai Generator Cerita" : "Gagal memulai proses pemotongan",
+          loading: isHypitAuto ? "Menyusun pola Reel 39 detik dari teks sumber..." : isHypitQuick ? "Hypit menyusun motion graphic dan memulai render..." : isStoryMode ? "Memulai produksi storyboard lewat Scene Cinema..." : requestedMode === "short" ? "Memulai scan dan render Short..." : "Memulai scan dan susun Long Highlight...",
+          success: isHypitAuto ? "Produksi 39 detik dimulai — fallback lokal siap jika AI tidak valid." : isHypitQuick ? "Render Hypit dimulai — hasil akan muncul otomatis di workspace." : isStoryMode ? "Produksi dimulai — ImageGen dan Remotion merakit setiap adegan." : requestedMode === "short" ? "Scan dimulai — kandidat terbaik akan langsung dirender." : "Scan dimulai — chapter terbaik akan langsung disusun.",
+          error: isHypitAuto ? "Gagal memulai Infographic Auto" : isHypitQuick ? "Gagal memulai Hypit Quick" : isStoryMode ? "Gagal memulai Generator Cerita" : "Gagal memulai proses pemotongan",
         },
       );
 
@@ -1097,6 +1109,31 @@ export default function HomePage() {
       />
     ), { duration: Infinity });
   }, [handleDeleteSelectedConfirmed, selectedHistoryJobIds.length]);
+
+  const handleDeleteHistoryJobConfirmed = useCallback(async (jobId: string) => {
+    await toast.promise(deleteJob(jobId), {
+      loading: "Menghapus kartu riwayat...",
+      success: "Kartu riwayat berhasil dihapus.",
+      error: (error) => error instanceof Error ? error.message : "Gagal menghapus kartu riwayat",
+    });
+
+    setSelectedHistoryJobIds((current) => current.filter((id) => id !== jobId));
+    setActiveJob((current) => (current?.id === jobId ? null : current));
+    setJob((current) => (current?.id === jobId ? null : current));
+    await loadJobs();
+  }, [loadJobs]);
+
+  const handleDeleteHistoryJob = useCallback((jobId: string) => {
+    toast((item) => (
+      <DeleteAllToast
+        toastId={item.id}
+        title="Hapus kartu riwayat ini?"
+        description="Sistem akan mengecek uploader nyata. Jika upload benar-benar aktif, kartu ditahan; status running kosong akan dibersihkan lalu kartu dihapus."
+        confirmLabel="Hapus Kartu"
+        onConfirm={() => handleDeleteHistoryJobConfirmed(jobId)}
+      />
+    ), { duration: Infinity });
+  }, [handleDeleteHistoryJobConfirmed]);
 
   const handleDeleteFailedConfirmed = useCallback(async () => {
     await toast.promise(deleteFailedJobs(), {
@@ -1746,6 +1783,7 @@ export default function HomePage() {
           selectedJobIds={selectedHistoryJobIds}
           onDeleteAll={handleDeleteAll}
           onDeleteFailed={handleDeleteFailed}
+          onDeleteJob={handleDeleteHistoryJob}
           onDeleteSelected={handleDeleteSelected}
           onSelectJob={handleSelectHistoryJob}
           onStopJob={handleCancelJob}

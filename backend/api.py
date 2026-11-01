@@ -48,7 +48,12 @@ from source_rights import (
 from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
 from telemetry import ProcessTelemetrySampler
 from whisper_cache import start_whisper_model_cache_maintenance
-from hypit_quick import hypit_prompt_body, is_hypit_quick_prompt, quick_preview_payload
+from hypit_quick import (
+    hypit_prompt_body,
+    is_hypit_infographic_auto_prompt,
+    is_hypit_quick_prompt,
+    quick_preview_payload,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -2780,6 +2785,16 @@ def load_auto_viral_runs() -> dict[str, AutoViralRun]:
     """Load durable automation history and retire work interrupted by a restart."""
     try:
         payload = json.loads(AUTO_VIRAL_RUNS_PATH.read_text(encoding="utf-8"))
+    except UnicodeDecodeError:
+        # A legacy writer once persisted a handful of invalid UTF-8 bytes
+        # inside otherwise valid JSON text. Recover only those code points so
+        # a backend restart does not discard the complete campaign history.
+        try:
+            payload = json.loads(
+                AUTO_VIRAL_RUNS_PATH.read_bytes().decode("utf-8", errors="replace")
+            )
+        except (OSError, json.JSONDecodeError):
+            return {}
     except (OSError, json.JSONDecodeError):
         return {}
     if not isinstance(payload, list):
@@ -4768,6 +4783,19 @@ def media_duration_seconds(path: Path) -> float:
     return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
 
 
+def upload_media_duration_issue(path: Path) -> str | None:
+    """Validate the actual MP4, never only the render sidecar's claimed duration."""
+    duration = media_duration_seconds(path)
+    if duration <= 0:
+        return "Upload diblokir: durasi file video aktual tidak dapat dibaca. Render ulang clip."
+    if duration + 0.05 < SHORT_GROWTH_MIN_SECONDS:
+        return (
+            f"Upload diblokir: file video aktual hanya {duration:.1f} detik; minimum "
+            f"{SHORT_GROWTH_MIN_SECONDS} detik. Output rusak/terpotong harus dihapus dan dirender ulang."
+        )
+    return None
+
+
 def youtube_max_upload_bytes(*, use_cdp: bool = False) -> int:
     max_mb = (
         os.environ.get(
@@ -5252,6 +5280,64 @@ def clip_sidecar_payload(clip: ClipFile) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def completed_clip_integrity_issue(
+    request: ClipJobRequest,
+    clips: list[ClipFile],
+) -> str | None:
+    """Re-probe finalized MP4s before a worker may mark its job completed.
+
+    This is deliberately independent from the renderer and upload gates. A
+    filter graph can exit with code zero after ending early, and an old or
+    alternate renderer might omit its own duration assertion. The API must
+    therefore distrust both the process exit code and sidecar duration until
+    the actual MP4 timeline agrees with the product contract.
+    """
+    minimum = (
+        max(float(SHORT_GROWTH_MIN_SECONDS), float(request.min_duration))
+        if request.clip_mode == "short"
+        else 1.0
+    )
+    maximum = float(request.max_duration) if request.clip_mode == "short" else None
+    for clip in clips:
+        clip_path = output_path_from_url(clip.url)
+        if clip_path is None or not clip_path.is_file():
+            return f"Output final {clip.name} tidak ditemukan setelah worker selesai."
+        if clip_path.stat().st_size < 1024:
+            return f"Output final {clip.name} terlalu kecil dan dianggap rusak."
+        actual = media_duration_seconds(clip_path)
+        if actual <= 0:
+            return f"Durasi aktual output {clip.name} tidak dapat dibaca."
+        if actual + 0.05 < minimum:
+            return (
+                f"Output {clip.name} terpotong: durasi aktual {actual:.3f} detik, "
+                f"minimum produk {minimum:.3f} detik."
+            )
+        if maximum is not None and actual - 0.75 > maximum:
+            return (
+                f"Output {clip.name} melewati batas Short: durasi aktual "
+                f"{actual:.3f} detik, maksimum {maximum:.3f} detik."
+            )
+
+        sidecar = clip_sidecar_payload(clip)
+        try:
+            expected = float(sidecar.get("duration") or 0)
+        except (TypeError, ValueError):
+            expected = 0.0
+        if expected > 0:
+            tolerance = max(0.75, expected * 0.03)
+            if actual + tolerance < expected:
+                return (
+                    f"Output {clip.name} berakhir terlalu cepat: durasi aktual "
+                    f"{actual:.3f} detik, kontrak render {expected:.3f} detik."
+                )
+            if actual - tolerance > expected:
+                return (
+                    f"Output {clip.name} terlalu panjang: durasi aktual "
+                    f"{actual:.3f} detik, kontrak render {expected:.3f} detik."
+                )
+    return None
 
 
 def youtube_timestamp(seconds: float) -> str:
@@ -7281,6 +7367,9 @@ def create_tiktok_upload_record(
     clip_path = output_path_from_url(clip.url)
     if clip_path is None or not clip_path.is_file():
         raise HTTPException(status_code=404, detail="File clip tidak ditemukan di outputs")
+    duration_issue = upload_media_duration_issue(clip_path)
+    if duration_issue:
+        raise HTTPException(status_code=409, detail=duration_issue.replace("Upload", "Upload TikTok", 1))
     fingerprint = file_sha256(clip_path)
     existing = reusable_tiktok_upload(job_id, clip.url, fingerprint)
     if existing is not None and not (request.dry_run and existing.status == "completed"):
@@ -7888,6 +7977,66 @@ def active_tiktok_uploads_for_job(job_id: str, clip_urls: set[str] | None = None
         ]
 
 
+def upload_record_has_real_work(
+    upload: YouTubeUploadJob | TikTokUploadJob,
+    process: subprocess.Popen[str] | None,
+    *,
+    platform: Literal["youtube", "tiktok"],
+    start_grace_seconds: int = 90,
+) -> bool:
+    """Distinguish a real/pending upload from an orphaned ``running`` row.
+
+    A live subprocess is authoritative. Queued work is also protected because
+    the worker may claim it at any moment. For YouTube, selecting the file or
+    obtaining a remote video id means real remote work already exists even if
+    the local subprocess later disappeared. The short grace window closes the
+    race between setting ``running`` and registering the child process.
+    """
+    if upload.status == "queued":
+        return True
+    if upload.status != "running":
+        return False
+    if process is not None:
+        try:
+            if process.poll() is None:
+                return True
+        except (AttributeError, OSError):
+            pass
+    if platform == "youtube" and isinstance(upload, YouTubeUploadJob):
+        if (
+            youtube_upload_has_file_selection_checkpoint(upload)
+            or youtube_upload_has_remote_checkpoint(upload)
+            or youtube_upload_has_final_save_checkpoint(upload)
+        ):
+            return True
+    if platform == "tiktok" and (
+        upload.upload_confirmed
+        or bool(getattr(upload, "profile_url", None))
+        or any(str(line).startswith("Video dipilih:") for line in upload.logs)
+    ):
+        return True
+    updated_at = parse_utc_datetime(upload.updated_at)
+    age_seconds = max(0.0, (datetime.now(timezone.utc) - updated_at).total_seconds())
+    return age_seconds <= max(5, start_grace_seconds)
+
+
+def discard_empty_upload_records(
+    youtube_ids: set[str],
+    tiktok_ids: set[str],
+) -> None:
+    """Drop only stale upload rows that have no live process or remote work."""
+    if youtube_ids:
+        with youtube_uploads_lock:
+            for upload_id in youtube_ids:
+                youtube_uploads.pop(upload_id, None)
+            save_youtube_uploads_unlocked()
+    if tiktok_ids:
+        with tiktok_uploads_lock:
+            for upload_id in tiktok_ids:
+                tiktok_uploads.pop(upload_id, None)
+            save_tiktok_uploads_unlocked()
+
+
 def youtube_uploads_with_queue_positions(
     uploads: list[YouTubeUploadJob],
 ) -> list[YouTubeUploadJob]:
@@ -7933,6 +8082,9 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
     clip_path = output_path_from_url(clip.url)
     if clip_path is None or not clip_path.is_file():
         raise HTTPException(status_code=404, detail="File clip tidak ditemukan di outputs")
+    duration_issue = upload_media_duration_issue(clip_path)
+    if duration_issue:
+        raise HTTPException(status_code=409, detail=duration_issue)
     try:
         clip_fingerprint = file_sha256(clip_path)
     except OSError as exc:
@@ -9094,8 +9246,12 @@ def build_youtube_upload_command(
     thumbnail_content_type = "long-form" if is_long_form else "shorts"
     command.extend(["--thumbnail-content-type", thumbnail_content_type])
     media_duration = media_duration_seconds(clip_path)
-    if media_duration > 0:
-        command.extend(["--media-duration-seconds", f"{media_duration:.3f}"])
+    if media_duration <= 0 or media_duration + 0.05 < SHORT_GROWTH_MIN_SECONDS:
+        raise RuntimeError(
+            "Upload dibatalkan: file video aktual tidak terbaca atau lebih pendek dari "
+            f"{SHORT_GROWTH_MIN_SECONDS} detik."
+        )
+    command.extend(["--media-duration-seconds", f"{media_duration:.3f}"])
     if upload.thumbnail_url:
         thumbnail_path = output_path_from_url(upload.thumbnail_url)
         if is_long_form and (thumbnail_path is None or not thumbnail_path.is_file()):
@@ -11005,6 +11161,15 @@ def run_tiktok_upload(upload_id: str) -> None:
     clip_path = output_path_from_url(upload.clip_url)
     if clip_path is None or not clip_path.is_file():
         set_tiktok_upload(upload_id, status="failed", finished_at=now_iso(), error="File clip tidak ditemukan.")
+        return
+    duration_issue = upload_media_duration_issue(clip_path)
+    if duration_issue:
+        set_tiktok_upload(
+            upload_id,
+            status="failed",
+            finished_at=now_iso(),
+            error=duration_issue.replace("Upload", "Upload TikTok", 1),
+        )
         return
     started = time.perf_counter()
     logs = list(upload.logs[-20:])
@@ -13795,12 +13960,21 @@ def run_job(job_id: str) -> None:
         candidates = discover_candidates(started_at, output_root)
         if clips and candidates:
             clips = enrich_clips_with_candidate_titles(clips, candidates)
-        salvaged_native_exit = salvageable_completed_clipper_result(
-            code,
-            logs,
-            clips,
-            candidates,
-            output_root,
+        completion_integrity_error = completed_clip_integrity_issue(request, clips)
+        if completion_integrity_error:
+            logs = [
+                *logs,
+                f"OUTPUT_INTEGRITY_REJECTED: {completion_integrity_error}",
+            ][-120:]
+        salvaged_native_exit = bool(
+            not completion_integrity_error
+            and salvageable_completed_clipper_result(
+                code,
+                logs,
+                clips,
+                candidates,
+                output_root,
+            )
         )
         completion_logs = logs
         if salvaged_native_exit:
@@ -13815,7 +13989,11 @@ def run_job(job_id: str) -> None:
         # Active clip modes always write candidates.json before rendering. A
         # video file without any surviving candidate audit is not a valid
         # result and its entire job workspace must be removed below.
-        has_complete_result = bool(candidates and (clips or request.review_only))
+        has_complete_result = bool(
+            not completion_integrity_error
+            and candidates
+            and (clips or request.review_only)
+        )
         if (code == 0 or salvaged_native_exit) and has_complete_result:
             updates = {
                 "status": "completed",
@@ -13905,7 +14083,7 @@ def run_job(job_id: str) -> None:
             if request.auto_upload_youtube:
                 auto_queue_youtube_uploads_for_job(job_id, completion_logs)
         else:
-            friendly_error = user_error_from_logs(logs)
+            friendly_error = completion_integrity_error or user_error_from_logs(logs)
             if code == 0:
                 failure_reason = friendly_error or (
                     "Proses selesai tanpa menghasilkan clip yang dapat dipakai."
@@ -22807,7 +22985,19 @@ def create_storyboard_preview(
     raw_story = request.story_text.strip()
     if is_hypit_quick_prompt(raw_story):
         try:
-            return StoryboardPreviewResponse(**quick_preview_payload(raw_story))
+            auto_config = (
+                AIConfig(
+                    enabled=request.ai_enabled,
+                    base_url=request.ai_base_url.strip(),
+                    model=request.ai_model.strip(),
+                    api_key=request.ai_api_key.strip(),
+                )
+                if is_hypit_infographic_auto_prompt(raw_story)
+                else None
+            )
+            return StoryboardPreviewResponse(
+                **quick_preview_payload(raw_story, auto_config)
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     story = hypit_prompt_body(raw_story)
@@ -23133,9 +23323,8 @@ def create_job(request: ClipJobRequest) -> ClipJob:
                 status_code=400,
                 detail="Jelaskan video dengan minimal empat kata.",
             )
-        if (
-            not hypit_quick
-            and (not request.ai_enabled or not request.ai_base_url.strip() or not request.ai_model.strip())
+        if not hypit_quick and (
+            not request.ai_enabled or not request.ai_base_url.strip() or not request.ai_model.strip()
         ):
             raise HTTPException(
                 status_code=400,
@@ -23545,6 +23734,10 @@ def get_job(job_id: str) -> ClipJob:
 def delete_job(job_id: str) -> dict[str, str | int]:
     with process_lock:
         is_running = job_id in job_processes
+        youtube_processes = dict(youtube_upload_processes)
+        tiktok_processes = dict(tiktok_upload_processes)
+    stale_youtube_ids: set[str] = set()
+    stale_tiktok_ids: set[str] = set()
     with jobs_lock:
         job = jobs.get(job_id)
         if not job:
@@ -23553,18 +23746,48 @@ def delete_job(job_id: str) -> dict[str, str | int]:
             raise HTTPException(status_code=409, detail="Batalkan proses aktif sebelum menghapus riwayatnya")
         if job.status == "queued":
             cancelled_job_ids.add(job_id)
-        active_uploads = [*active_youtube_uploads_for_job(job_id), *active_tiktok_uploads_for_job(job_id)]
-        if active_uploads:
+        youtube_active = active_youtube_uploads_for_job(job_id)
+        tiktok_active = active_tiktok_uploads_for_job(job_id)
+        real_youtube = [
+            upload
+            for upload in youtube_active
+            if upload_record_has_real_work(
+                upload,
+                youtube_processes.get(upload.id),
+                platform="youtube",
+            )
+        ]
+        real_tiktok = [
+            upload
+            for upload in tiktok_active
+            if upload_record_has_real_work(
+                upload,
+                tiktok_processes.get(upload.id),
+                platform="tiktok",
+            )
+        ]
+        if real_youtube or real_tiktok:
+            platforms = []
+            if real_youtube:
+                platforms.append(f"YouTube ({len(real_youtube)})")
+            if real_tiktok:
+                platforms.append(f"TikTok ({len(real_tiktok)})")
             raise HTTPException(
                 status_code=409,
-                detail=f"Tunggu {len(active_uploads)} upload YouTube aktif selesai sebelum menghapus job",
+                detail=(
+                    f"Belum bisa dihapus: upload nyata sedang aktif di {', '.join(platforms)}. "
+                    "Tunggu upload selesai agar file video tidak rusak."
+                ),
             )
+        stale_youtube_ids = {upload.id for upload in youtube_active}
+        stale_tiktok_ids = {upload.id for upload in tiktok_active}
 
         removed_outputs = cleanup_job_files(job)
         jobs.pop(job_id, None)
         job_secrets.pop(job_id, None)
         cancelled_job_ids.discard(job_id)
         save_jobs_unlocked()
+    discard_empty_upload_records(stale_youtube_ids, stale_tiktok_ids)
     return {"status": "ok", "removed_jobs": 1, "removed_outputs": removed_outputs}
 
 

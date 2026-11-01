@@ -69,6 +69,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Start jobs and receive complete results from a private Telegram bot.
 - Queue completed clips for YouTube Studio upload through Playwright.
 - Run locally with Python/Node or with Docker Compose.
+- Produce original faceless infographic explainers with `/hypit infographic`: user-supplied points become Hypit semantic beats, then Remotion renders a consistent 9:16 system of phone/battery, chip, chart, temperature, process, concept, and quiz components without adding factual claims.
 
 ## Requirements
 
@@ -144,6 +145,41 @@ Successful source audits keep a compact duplicate-detection index and are also
 mirrored into `backend/data/source_usage/YYYY/MM/source_usage.json`. Existing
 history is migrated with `scripts/migrate-source-usage-folders.py`; rerunning
 the migrator is safe because entries are deduplicated by job ID and clip mode.
+
+### Hypit infographic explainer
+
+In **Generator Cerita**, choose the **Infographic Explainer** example or write a
+prompt whose hook and factual points are separated by `|` (new lines also work):
+
+```text
+/hypit infographic Kenapa indikator baterai bisa berubah tiba-tiba? |
+Persentase baterai adalah perkiraan dari arus dan tegangan |
+Chip fuel gauge menghitung arus masuk dan keluar |
+Kurva tegangan baterai lithium hampir datar di bagian tengah |
+Kuis: Saat baterai hampir habis, tegangannya bagaimana? / DATAR / TURUN TAJAM
+```
+
+Use `JUDUL :: narasi lengkap` when a beat needs an explicit short headline.
+The renderer keeps the supplied narration as factual source text and selects a
+matching local diagram family. Review every factual statement before publishing.
+
+For automatic explanation, provide one visual analogy and the source text:
+
+```text
+/hypit infographic auto
+Analogi: indikator baterai seperti petugas yang memperkirakan isi tangki.
+Teks: Ponsel memperkirakan sisa baterai dari arus yang masuk dan keluar serta
+perubahan tegangan. Tegangan baterai lithium berubah relatif landai pada
+sebagian besar rentang pemakaian.
+```
+
+This mode may use the configured text AI to structure the supplied material,
+but it does not depend on a valid model response. Empty or malformed JSON,
+fewer than three beats, unsupported numbers, URLs, and weakly grounded
+paraphrases are repaired deterministically from literal `Teks:` spans. The Auto
+profile produces a 39-second retention experiment with 3-7 beats. Hypit owns
+the accepted narration and timing; Remotion renders local diagram components
+without an image-generation call. Views are never guaranteed.
 
 ## Telegram Bot
 

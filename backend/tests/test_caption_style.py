@@ -2,6 +2,7 @@ import hashlib
 import json
 import importlib.util
 import os
+import subprocess
 from datetime import date
 from pathlib import Path
 
@@ -67,6 +68,7 @@ from clipper import (
     embedded_split_subject_filter,
     evidence_stage_overlay_filter,
     emphasis_timestamps,
+    ensure_rendered_duration,
     editorial_card_text,
     editorial_transformation_profile,
     enhanced_edit_filter,
@@ -107,8 +109,9 @@ from clipper import (
     retime_srt_for_playback_rate,
     refresh_candidate_export_context,
     resolve_codex_ideas,
-    score_window,
     scale_watermark_region,
+    score_window,
+    watermark_probe_skip_reason,
     scheduled_social_card_layout_filter,
     scheduled_social_card_layout_profile,
     scheduled_reaction_avatar_layout_filter,
@@ -728,6 +731,100 @@ def test_preview_watermark_region_scales_to_final_short_canvas():
 
     assert (result.x, result.y, result.width, result.height) == (402, 1184, 286, 74)
     assert result.confidence == 0.84
+
+
+def test_watermark_probe_skips_reaction_avatar_composite():
+    reason = watermark_probe_skip_reason(
+        auto_blur_watermarks=True,
+        multi_clip_split=False,
+        reaction_avatar_selected=True,
+        social_card_selected=False,
+    )
+
+    assert reason == "reaction_avatar_composite_changes_source_coordinates"
+
+
+def test_watermark_probe_keeps_plain_single_source_layout_enabled():
+    reason = watermark_probe_skip_reason(
+        auto_blur_watermarks=True,
+        multi_clip_split=False,
+        reaction_avatar_selected=False,
+        social_card_selected=False,
+    )
+
+    assert reason is None
+
+
+def test_bounded_media_command_converts_timeout_to_render_fallback(monkeypatch):
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(clipper_module.subprocess, "run", fake_run)
+
+    try:
+        clipper_module.run(["ffmpeg", "-i", "source.mp4"], timeout_seconds=12)
+    except RuntimeError as exc:
+        assert "timed out after 12 seconds" in str(exc)
+    else:
+        raise AssertionError("bounded command must convert TimeoutExpired")
+
+    assert captured["kwargs"]["timeout"] == 12
+    assert captured["kwargs"]["text"] is True
+
+
+def test_rendered_duration_gate_rejects_truncated_mp4(monkeypatch, tmp_path):
+    output = tmp_path / "truncated.mp4"
+    output.write_bytes(b"mp4")
+    monkeypatch.setattr(
+        clipper_module,
+        "probe_media_duration_seconds",
+        lambda _path: 0.021,
+    )
+
+    try:
+        ensure_rendered_duration(output, 38.891)
+    except RuntimeError as exc:
+        assert "hasil 0.021 detik, target 38.891 detik" in str(exc)
+    else:
+        raise AssertionError("truncated render must not pass finalization")
+
+
+def test_rendered_duration_gate_rejects_below_product_minimum(monkeypatch, tmp_path):
+    output = tmp_path / "too-short.mp4"
+    output.write_bytes(b"mp4")
+    monkeypatch.setattr(
+        clipper_module,
+        "probe_media_duration_seconds",
+        lambda _path: 2.866667,
+    )
+
+    try:
+        ensure_rendered_duration(output, 2.866667, minimum_seconds=25)
+    except RuntimeError as exc:
+        assert "hasil 2.867 detik, minimum 25.000 detik" in str(exc)
+    else:
+        raise AssertionError("short render must fail even when its sidecar target is also wrong")
+
+
+def test_rendered_duration_gate_rejects_excess_timeline(monkeypatch, tmp_path):
+    output = tmp_path / "too-long.mp4"
+    output.write_bytes(b"mp4")
+    monkeypatch.setattr(
+        clipper_module,
+        "probe_media_duration_seconds",
+        lambda _path: 45.0,
+    )
+
+    try:
+        ensure_rendered_duration(output, 30.0, minimum_seconds=25)
+    except RuntimeError as exc:
+        assert "hasil 45.000 detik, target 30.000 detik" in str(exc)
+    else:
+        raise AssertionError("overlong render must not pass finalization")
 
 
 def test_watermark_detector_hugs_persistent_logo_without_morphology_halo(tmp_path):
@@ -1786,7 +1883,7 @@ def test_scheduled_social_card_filter_uses_only_source_frames():
         subject_label="MOMEN PEMAIN",
     )
 
-    assert "split=3[sc_bg_src][sc_main_src][sc_portrait_src]" in value
+    assert value.startswith("setpts=PTS-STARTPTS,split=3")
     assert "tpad=stop_mode=clone:stop_duration=30.000" in value
     assert "text='MOMEN PEMAIN'" in value
     assert "movie=" not in value
@@ -1863,6 +1960,7 @@ def test_scheduled_reaction_avatar_filter_uses_contextual_listener_body_language
         ],
     )
 
+    assert value.startswith("setpts=PTS-STARTPTS,split=2")
     assert "HOST VIRTUAL • REACTION" in value
     assert "between(t,5.200,7.050)" in value
     assert "between(t,12.000,13.850)" in value
@@ -1880,6 +1978,9 @@ def test_scheduled_reaction_avatar_filter_uses_contextual_listener_body_language
     assert "fendy-reaction-avatar-real-laugh-v3.png" in value
     assert "fendy-reaction-avatar-real-skeptical-v3.png" in value
     assert "fendy-reaction-avatar-real-warm-v3.png" in value
+    # Every static avatar stream spans the full timeline. Do not depend on
+    # overlay EOF behavior for even the one-frame blink asset.
+    assert value.count("loop=loop=-1:size=1:start=0") == 6
     assert "vignette=PI/9" in value
     assert value.count("shortest=1") >= 6
     assert "trim=duration=30.000" in value

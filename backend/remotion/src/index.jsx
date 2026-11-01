@@ -701,9 +701,203 @@ const RankingVideo = ({
   );
 };
 
+const InfographicBackdrop = ({accent = '#55C7F3'}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const second = frame / fps;
+  return <AbsoluteFill style={{
+    background: [
+      `radial-gradient(circle at ${18 + Math.sin(second * .25) * 5}% 13%, ${accent}2F 0%, transparent 34%)`,
+      `radial-gradient(circle at 82% ${72 + Math.cos(second * .2) * 5}%, #6E4BD42E 0%, transparent 38%)`,
+      'linear-gradient(155deg, #0B5670 0%, #164E7A 42%, #27346F 72%, #34285E 100%)',
+    ].join(','),
+    overflow: 'hidden',
+  }}>
+    <div style={{position: 'absolute', width: 720, height: 720, borderRadius: '50%', left: -300, top: 520, background: `${accent}14`, transform: `scale(${1 + Math.sin(second * .35) * .035})`}}/>
+    <div style={{position: 'absolute', width: 560, height: 560, borderRadius: '50%', right: -260, top: 160, border: '2px solid rgba(255,255,255,.055)'}}/>
+    <AbsoluteFill style={{opacity: .035, backgroundImage: 'radial-gradient(rgba(255,255,255,.9) .8px, transparent .8px)', backgroundSize: '22px 22px'}}/>
+  </AbsoluteFill>;
+};
+
+const WinningReelBackdrop = ({accent = '#F44B9B'}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const second = frame / fps;
+  const laneOffset = (frame * 18) % 260;
+  const cars = [
+    {lane: 0, color: '#FFD447', delay: 0},
+    {lane: 1, color: '#55D9FF', delay: 105},
+    {lane: 2, color: '#F44B9B', delay: 210},
+    {lane: 0, color: '#FFFFFF', delay: 330},
+    {lane: 2, color: '#7CFF7A', delay: 440},
+  ];
+  return <AbsoluteFill style={{overflow: 'hidden', background: 'linear-gradient(180deg,#142C3D 0%,#305F55 38%,#17202E 100%)'}}>
+    <div style={{position: 'absolute', inset: '0 0 56%', background: 'radial-gradient(circle at 50% 100%,rgba(255,212,71,.28),transparent 55%)'}}/>
+    <div style={{position: 'absolute', left: -100, right: -100, top: 410, bottom: -180, background: 'linear-gradient(90deg,#24343A 0 12%,#151A22 12% 88%,#24343A 88%)', clipPath: 'polygon(34% 0,66% 0,100% 100%,0 100%)', boxShadow: `0 0 90px ${accent}22`}}>
+      {[0, 1].map((lane) => <div key={lane} style={{position: 'absolute', left: `${44 + lane * 12}%`, top: -260 + laneOffset, width: 13, height: '150%', background: 'repeating-linear-gradient(180deg,rgba(255,255,255,.9) 0 90px,transparent 90px 210px)', opacity: .55, transform: 'perspective(500px) rotateX(14deg)'}}/>)}
+      {cars.map((car, index) => {
+        const travel = ((frame * (7.8 + index * .35) + car.delay) % 1480) - 170;
+        const scale = .35 + Math.max(0, travel) / 1320 * .9;
+        return <div key={index} style={{position: 'absolute', left: `${39 + car.lane * 11.5}%`, top: travel, width: 105, height: 175, borderRadius: 24, background: `linear-gradient(150deg,${car.color},#202636)`, border: '5px solid rgba(0,0,0,.65)', boxShadow: `0 18px 34px rgba(0,0,0,.45),0 0 24px ${car.color}55`, transform: `translateX(-50%) scale(${scale})`, transformOrigin: '50% 0'}}>
+          <i style={{position: 'absolute', left: 19, right: 19, top: 24, height: 54, borderRadius: 12, background: '#9CEBFF99'}}/>
+          <i style={{position: 'absolute', left: 11, bottom: 18, width: 24, height: 30, borderRadius: 8, background: '#FF315F'}}/>
+          <i style={{position: 'absolute', right: 11, bottom: 18, width: 24, height: 30, borderRadius: 8, background: '#FF315F'}}/>
+        </div>;
+      })}
+    </div>
+    <AbsoluteFill style={{background: `radial-gradient(circle at ${50 + Math.sin(second * .7) * 8}% 48%,transparent 0 28%,rgba(3,8,18,.42) 76%)`}}/>
+    <AbsoluteFill style={{opacity: .055, backgroundImage: 'radial-gradient(#fff 1px,transparent 1px)', backgroundSize: '20px 20px'}}/>
+  </AbsoluteFill>;
+};
+
+const PhoneGraphic = ({accent, progress}) => <div style={{
+  width: 430, height: 690, borderRadius: 66, padding: 18, background: '#1B2035',
+  border: '5px solid rgba(0,0,0,.55)', boxShadow: '0 36px 70px rgba(2,8,28,.42)',
+  transform: `translateY(${(1 - progress) * 55}px) rotate(${(1 - progress) * -4}deg) scale(${.88 + progress * .12})`,
+}}>
+  <div style={{height: '100%', borderRadius: 49, background: 'linear-gradient(160deg,#F7F1DF,#E7E6EB)', display: 'grid', placeItems: 'center', position: 'relative'}}>
+    <div style={{position: 'absolute', top: 15, left: '36%', right: '36%', height: 20, borderRadius: 99, background: '#141827'}}/>
+    <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 25}}>
+      <div style={{width: 205, height: 100, border: '10px solid #202437', borderRadius: 20, padding: 9, position: 'relative'}}>
+        <div style={{position: 'absolute', right: -23, top: 29, width: 15, height: 38, borderRadius: '0 8px 8px 0', background: '#202437'}}/>
+        <div style={{width: `${22 + progress * 32}%`, height: '100%', borderRadius: 7, background: accent, boxShadow: `0 0 28px ${accent}77`}}/>
+      </div>
+      <strong style={{fontSize: 88, color: accent, WebkitTextStroke: '3px #202437', paintOrder: 'stroke fill', letterSpacing: '-.06em'}}>{Math.round(5 + progress * 15)}%</strong>
+    </div>
+  </div>
+</div>;
+
+const ChipGraphic = ({accent, progress}) => {
+  const pins = Array.from({length: 7});
+  return <div style={{position: 'relative', width: 690, height: 610, display: 'grid', placeItems: 'center'}}>
+    <div style={{position: 'absolute', width: 520, height: 520, borderRadius: '50%', background: `${accent}28`, transform: `scale(${.72 + progress * .28})`}}/>
+    <svg width="690" height="610" viewBox="0 0 690 610" style={{position: 'absolute'}}>
+      <path d="M80 520 C180 500 150 380 285 350" fill="none" stroke={accent} strokeWidth="8" strokeDasharray="15 13" strokeDashoffset={-(progress * 85)}/>
+      <path d="M610 520 C500 500 540 380 405 350" fill="none" stroke="#FFD447" strokeWidth="8" strokeDasharray="15 13" strokeDashoffset={progress * 95}/>
+    </svg>
+    <div style={{position: 'relative', width: 310, height: 310, borderRadius: 38, color: '#fff', background: 'linear-gradient(145deg,#232847,#171A31)', border: '8px solid #0E1122', boxShadow: `0 25px 70px rgba(0,0,0,.35), 0 0 55px ${accent}25`, display: 'grid', placeItems: 'center', transform: `scale(${.78 + progress * .22}) rotate(${(1 - progress) * 7}deg)`}}>
+      {pins.map((_, index) => <React.Fragment key={index}>
+        <i style={{position: 'absolute', left: -30, top: 32 + index * 38, width: 31, height: 13, borderRadius: 5, background: '#D7DCE9'}}/>
+        <i style={{position: 'absolute', right: -30, top: 32 + index * 38, width: 31, height: 13, borderRadius: 5, background: '#D7DCE9'}}/>
+      </React.Fragment>)}
+      <strong style={{fontSize: 46, lineHeight: 1.02, textAlign: 'center'}}>SMART<br/>CHIP</strong>
+    </div>
+    <span style={{position: 'absolute', left: 35, bottom: 10, fontSize: 25, fontWeight: 900}}>masuk</span>
+    <span style={{position: 'absolute', right: 25, bottom: 10, fontSize: 25, fontWeight: 900}}>keluar</span>
+  </div>;
+};
+
+const ChartGraphic = ({accent, progress}) => <div style={{width: 850, height: 650, padding: '46px 48px 60px 76px', borderRadius: 34, background: '#F7F3E8', border: '7px solid #17203A', boxShadow: '0 35px 75px rgba(0,0,0,.3)', transform: `translateY(${(1 - progress) * 50}px) scale(${.9 + progress * .1})`}}>
+  <svg width="100%" height="100%" viewBox="0 0 720 520">
+    <path d="M32 16 V470 H696" fill="none" stroke="#202841" strokeWidth="6"/>
+    <rect x="190" y="165" width="350" height="120" rx="18" fill={`${accent}45`} opacity={progress}/>
+    <rect x="535" y="130" width="145" height="340" rx="16" fill="#FF626E35" opacity={progress}/>
+    <path d="M48 42 C105 165 150 205 220 220 C320 240 425 220 515 250 C590 274 598 410 672 456" fill="none" stroke="#2586E7" strokeWidth="14" strokeLinecap="round" strokeDasharray="920" strokeDashoffset={(1 - progress) * 920}/>
+    <text x="280" y="210" fontSize="34" fontWeight="900" fill="#1A2440">AREA KUNCI</text>
+    <text x="10" y="505" fontSize="24" fontWeight="800" fill="#27304A">waktu →</text>
+  </svg>
+</div>;
+
+const TemperatureGraphic = ({accent, progress}) => <div style={{width: 780, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 75, transform: `scale(${.84 + progress * .16})`}}>
+  <div style={{width: 285, height: 430, borderRadius: 44, background: '#AAB2C5', border: '7px solid #242A43', display: 'grid', placeItems: 'center', position: 'relative'}}>
+    <span style={{fontSize: 95, opacity: .75}}>⚡</span>
+    <small style={{position: 'absolute', bottom: 25, fontSize: 27, fontWeight: 900}}>DAYA</small>
+  </div>
+  <div style={{position: 'relative', width: 150, height: 480}}>
+    <div style={{position: 'absolute', left: 52, top: 10, width: 55, height: 370, borderRadius: 40, background: '#fff', border: '6px solid #22283E', overflow: 'hidden'}}>
+      <div style={{position: 'absolute', left: 10, right: 10, bottom: 0, height: `${24 + progress * 48}%`, borderRadius: 30, background: accent}}/>
+    </div>
+    <div style={{position: 'absolute', left: 24, bottom: 0, width: 112, height: 112, borderRadius: '50%', border: '6px solid #22283E', background: accent, boxShadow: `0 0 36px ${accent}66`}}/>
+    <span style={{position: 'absolute', left: 130, top: 80, fontSize: 52}}>❄</span>
+    <span style={{position: 'absolute', left: -10, top: 190, fontSize: 44}}>❄</span>
+  </div>
+</div>;
+
+const ProcessGraphic = ({accent, progress}) => <div style={{width: 850, display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+  {['INPUT', 'PROSES', 'HASIL'].map((label, index) => {
+    const local = Math.max(0, Math.min(1, progress * 1.5 - index * .22));
+    return <React.Fragment key={label}>
+      <div style={{width: 210, height: 210, borderRadius: 38, background: index === 1 ? '#1E2746' : '#F5F1E5', border: `7px solid ${index === 1 ? accent : '#202841'}`, color: index === 1 ? '#fff' : '#202841', boxShadow: index === 1 ? `0 0 48px ${accent}44` : '0 24px 45px rgba(0,0,0,.22)', display: 'grid', placeItems: 'center', fontSize: 31, fontWeight: 950, transform: `translateY(${(1 - local) * 45}px) scale(${.85 + local * .15})`, opacity: local}}>{label}</div>
+      {index < 2 ? <div style={{fontSize: 62, color: accent, transform: `scaleX(${progress})`}}>→</div> : null}
+    </React.Fragment>;
+  })}
+</div>;
+
+const QuizGraphic = ({accent, progress, detail, options = []}) => <div style={{width: 900, padding: '52px 44px 40px', borderRadius: 34, color: '#242941', background: '#FAF8F0', border: '6px solid #1C2239', boxShadow: '0 34px 75px rgba(0,0,0,.32)', transform: `translateY(${(1 - progress) * 55}px) scale(${.88 + progress * .12})`}}>
+  <div style={{fontSize: 37, lineHeight: 1.14, fontWeight: 900, textAlign: 'center', color: '#E84B5B'}}>{detail}</div>
+  <div style={{display: 'grid', gridTemplateColumns: `repeat(${Math.max(1, Math.min(3, options.length))}, 1fr)`, gap: 20, marginTop: 42}}>
+    {options.map((option, index) => <div key={`${option}-${index}`} style={{padding: '24px 16px', borderRadius: 17, border: '4px solid #252B43', background: index === 1 ? `${accent}33` : '#fff', textAlign: 'center', fontSize: 29, fontWeight: 950}}>{option}</div>)}
+  </div>
+</div>;
+
+const ConceptGraphic = ({accent, progress, detail}) => <div style={{width: 760, height: 610, borderRadius: '50%', background: `${accent}26`, display: 'grid', placeItems: 'center', transform: `scale(${.72 + progress * .28})`}}>
+  <div style={{width: 540, padding: '68px 46px', borderRadius: 44, background: '#F8F5EA', border: '7px solid #202741', color: '#202741', textAlign: 'center', boxShadow: '0 32px 70px rgba(0,0,0,.3)'}}>
+    <div style={{fontSize: 85, marginBottom: 25}}>✦</div>
+    <strong style={{fontSize: 40, lineHeight: 1.1}}>{detail}</strong>
+  </div>
+</div>;
+
+const InfographicGraphic = ({beat, progress}) => {
+  if (!beat) return null;
+  const props = {accent: beat.accent || '#55C7F3', progress, detail: beat.detail || '', options: beat.quizOptions || []};
+  if (beat.visual === 'phone') return <PhoneGraphic {...props}/>;
+  if (beat.visual === 'chip') return <ChipGraphic {...props}/>;
+  if (beat.visual === 'chart') return <ChartGraphic {...props}/>;
+  if (beat.visual === 'temperature') return <TemperatureGraphic {...props}/>;
+  if (beat.visual === 'process') return <ProcessGraphic {...props}/>;
+  if (beat.visual === 'quiz') return <QuizGraphic {...props}/>;
+  return <ConceptGraphic {...props}/>;
+};
+
+const InfographicVideo = ({
+  title = 'INFOGRAPHIC EXPLAINER', hook = 'SATU HAL YANG PERLU KAMU TAHU', payoff = 'SUDAH MASUK AKAL?',
+  footer = '', sourceNote = '', beats = [], watermark = '@ryuundy · HYPIT', styleVersion = '',
+}) => {
+  const frame = useCurrentFrame();
+  const {fps, durationInFrames} = useVideoConfig();
+  const second = frame / fps;
+  const activeIndex = beats.reduce((latest, beat, index) => second >= Number(beat.revealAt || 0) ? index : latest, -1);
+  const beat = activeIndex >= 0 ? beats[activeIndex] : null;
+  const accent = beat?.accent || '#FFD447';
+  const revealFrame = beat ? frame - Math.round(Number(beat.revealAt || 0) * fps) : frame;
+  const reveal = spring({fps, frame: Math.max(0, revealFrame), config: {damping: 17, stiffness: 145, mass: .72}});
+  const hookIn = spring({fps, frame, config: {damping: 18, stiffness: 165, mass: .68}});
+  const finalStart = Math.max(0, durationInFrames - Math.round(5.5 * fps));
+  const final = spring({fps, frame: frame - finalStart, config: {damping: 17, stiffness: 140, mass: .76}});
+  const finalActive = frame >= finalStart;
+  const progress = beats.length ? Math.max(0, activeIndex + 1) / beats.length : 0;
+  const winningStyle = styleVersion === 'winning-reel-39-v1';
+  return <AbsoluteFill style={{fontFamily: 'Arial, Helvetica, sans-serif', color: '#fff', overflow: 'hidden'}}>
+    {winningStyle ? <WinningReelBackdrop accent={accent}/> : <InfographicBackdrop accent={accent}/>}
+    <div style={{position: 'absolute', left: 42, top: 45, zIndex: 8, fontSize: 17, fontWeight: 900, letterSpacing: '.06em', textShadow: '0 2px 8px rgba(0,0,0,.45)'}}>{watermark}</div>
+    <div style={{position: 'absolute', right: 42, top: 45, zIndex: 8, fontSize: 15, fontWeight: 800, opacity: .72}}>{winningStyle ? 'PATTERN TEST · 39S' : 'INFO · 9:16'}</div>
+    <div style={{position: 'absolute', left: 60, right: 60, top: winningStyle ? 92 : 108, zIndex: 5, textAlign: 'center', opacity: finalActive ? 1 - final : 1}}>
+      <div style={{fontSize: 31, lineHeight: 1, fontWeight: 950, letterSpacing: '.02em', color: '#fff', textShadow: '0 4px 12px rgba(0,0,0,.4)', transform: `translateY(${(1 - (beat ? reveal : hookIn)) * -22}px)`}}>{beat?.kicker || 'WAJIB TAHU'}</div>
+      <div style={{display: 'inline-block', maxWidth: '100%', boxSizing: 'border-box', overflowWrap: 'anywhere', marginTop: 12, padding: winningStyle ? '16px 22px 20px' : 0, borderRadius: winningStyle ? 18 : 0, background: winningStyle ? 'rgba(5,8,15,.88)' : 'transparent', fontSize: beat ? 72 : winningStyle ? 54 : 66, lineHeight: .98, fontWeight: 950, letterSpacing: '-.045em', color: beat ? accent : '#FFD447', WebkitTextStroke: '4px rgba(18,25,55,.9)', paintOrder: 'stroke fill', textTransform: 'uppercase', boxShadow: winningStyle ? `0 12px 0 ${accent}` : 'none', transform: `scale(${.93 + (beat ? reveal : hookIn) * .07})`}}>{beat?.title || hook}</div>
+      <div style={{width: 310, height: 8, margin: '25px auto 0', borderRadius: 99, background: 'rgba(255,255,255,.14)', overflow: 'hidden'}}><div style={{height: '100%', width: `${Math.max(7, progress * 100)}%`, borderRadius: 99, background: accent, boxShadow: `0 0 20px ${accent}`}}/></div>
+    </div>
+    <div style={{position: 'absolute', left: 45, right: 45, top: winningStyle ? 460 : 440, height: winningStyle ? 840 : 920, display: 'grid', placeItems: 'center', opacity: finalActive ? 1 - final : beat ? (winningStyle ? .93 : 1) : .35, transform: winningStyle ? 'scale(.82)' : 'none'}}>
+      {beat ? <InfographicGraphic key={beat.id || activeIndex} beat={beat} progress={reveal}/> : <ConceptGraphic accent="#FFD447" progress={hookIn} detail={title}/>}
+    </div>
+    <div style={{position: 'absolute', left: 66, right: 66, bottom: 155, minHeight: 140, zIndex: 7, display: 'grid', placeItems: 'center', textAlign: 'center', opacity: finalActive ? 1 - final : 1}}>
+      <div style={{maxWidth: '100%', boxSizing: 'border-box', overflowWrap: 'anywhere', padding: winningStyle ? '22px 30px' : '20px 25px', borderRadius: winningStyle ? 14 : 24, background: winningStyle ? '#EF3F91' : 'rgba(13,23,56,.52)', backdropFilter: 'blur(12px)', border: winningStyle ? '5px solid #fff' : '1px solid rgba(255,255,255,.1)', boxShadow: winningStyle ? '0 12px 0 rgba(7,10,18,.8)' : 'none', fontSize: winningStyle ? 36 : 32, lineHeight: 1.16, fontWeight: 900, textShadow: '0 3px 9px rgba(0,0,0,.6)'}}>{beat?.detail || hook}</div>
+      <small style={{marginTop: 14, fontSize: 17, opacity: .7}}>{sourceNote}</small>
+    </div>
+    {finalActive ? <AbsoluteFill style={{zIndex: 20, display: 'grid', placeItems: 'center', padding: 70, background: `rgba(22,30,72,${.35 + final * .58})`, backdropFilter: `blur(${final * 10}px)`}}>
+      <div style={{width: '100%', padding: '75px 45px 58px', borderRadius: 46, background: 'linear-gradient(150deg,#FFD447,#FFB62E)', color: '#1D2542', border: '7px solid #1B213B', boxShadow: '0 38px 95px rgba(0,0,0,.36)', textAlign: 'center', opacity: final, transform: `translateY(${(1 - final) * 90}px) scale(${.8 + final * .2}) rotate(${(1 - final) * -3}deg)`}}>
+        <div style={{fontSize: 25, fontWeight: 950, letterSpacing: '.08em'}}>SEBELUM SELESAI</div>
+        <div style={{marginTop: 18, fontSize: 78, lineHeight: .96, fontWeight: 950, letterSpacing: '-.055em'}}>{payoff}</div>
+        <div style={{display: 'inline-block', marginTop: 38, padding: '18px 30px', borderRadius: 18, color: '#fff', background: '#1D2542', fontSize: 26, fontWeight: 950}}>{footer}</div>
+      </div>
+    </AbsoluteFill> : null}
+  </AbsoluteFill>;
+};
+
 const ClipForgeComposition = (props) => props.template === 'ranking'
   ? <RankingVideo {...props}/>
-  : <Story {...props}/>;
+  : props.template === 'infographic'
+    ? <InfographicVideo {...props}/>
+    : <Story {...props}/>;
 
 const defaultProps = {
   width: 1080,

@@ -23,6 +23,7 @@ type HistorySectionProps = {
   selectedJobIds: string[];
   onDeleteAll: () => void;
   onDeleteFailed: () => void;
+  onDeleteJob: (jobId: string) => void;
   onDeleteSelected: () => void;
   onSelectJob: (job: ClipJob) => void;
   onStopJob: (jobId: string) => void;
@@ -119,6 +120,7 @@ export function HistorySection({
   selectedJobIds,
   onDeleteAll,
   onDeleteFailed,
+  onDeleteJob,
   onDeleteSelected,
   onSelectJob,
   onStopJob,
@@ -337,6 +339,18 @@ export function HistorySection({
                 >
                   <StopCircle size={15} />
                   <span>Stop</span>
+                </button>
+              ) : null}
+              {canSelectForDelete ? (
+                <button
+                  aria-label={`Hapus riwayat ${statusCopy[item.status]}`}
+                  className="uiButton uiButton--ghostDanger deleteJobRowButton"
+                  type="button"
+                  onClick={() => onDeleteJob(item.id)}
+                  title="Hapus kartu dari riwayat"
+                >
+                  <Trash2 size={15} />
+                  <span>Hapus</span>
                 </button>
               ) : null}
             </div>

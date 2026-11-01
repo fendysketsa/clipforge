@@ -81,11 +81,21 @@ const STORY_STEPS = [
 
 const HYPIT_COMMAND_PATTERN = /^\s*\/hypit(?:\s+|$)/i;
 const HYPIT_QUICK_INTENT_PATTERN = /\b(?:ranking|rank|tier(?:\s+list)?|peringkat)\b/i;
+const HYPIT_INFOGRAPHIC_INTENT_PATTERN = /\b(?:infographic|infografis|explainer|motion\s*graphic|video\s*edukasi)\b/i;
+const HYPIT_INFOGRAPHIC_AUTO_PATTERN = /\b(?:auto|otomatis|kembangkan|jelaskan\s+sendiri)\b/i;
 
 const isHypitQuickPrompt = (value: string) => {
   if (!HYPIT_COMMAND_PATTERN.test(value)) return false;
   const body = value.replace(HYPIT_COMMAND_PATTERN, "").trim();
-  return body.split(/\s+/).filter(Boolean).length <= 80 && HYPIT_QUICK_INTENT_PATTERN.test(body);
+  const words = body.split(/\s+/).filter(Boolean).length;
+  return (words <= 80 && HYPIT_QUICK_INTENT_PATTERN.test(body))
+    || (words <= (HYPIT_INFOGRAPHIC_AUTO_PATTERN.test(body) ? 2500 : 600) && HYPIT_INFOGRAPHIC_INTENT_PATTERN.test(body));
+};
+
+const isHypitAutoPrompt = (value: string) => {
+  if (!HYPIT_COMMAND_PATTERN.test(value)) return false;
+  const body = value.replace(HYPIT_COMMAND_PATTERN, "").trim();
+  return HYPIT_INFOGRAPHIC_INTENT_PATTERN.test(body) && HYPIT_INFOGRAPHIC_AUTO_PATTERN.test(body);
 };
 
 const formatCompactNumber = (value?: number | null) => value === null || value === undefined
@@ -135,6 +145,7 @@ export function QuickStartCard({
   const isWorking = isBusy || isSubmitting;
   const isStory = clipMode === "long_animate";
   const isHypitPrompt = isStory && isHypitQuickPrompt(storyText);
+  const isHypitAuto = isStory && isHypitAutoPrompt(storyText);
   const hypitPromptWords = storyText
     .replace(/^\s*\/hypit\s*/i, "")
     .trim()
@@ -349,7 +360,7 @@ export function QuickStartCard({
                 <span className={storyboardPreview ? "active" : ""}><ListVideo size={14} /> 2. Storyboard</span>
                 <span className={isWorking ? "active" : ""}><Film size={14} /> 3. Render</span>
               </div>
-              <small>{isHypitPrompt ? "HYPIT QUICK · DIRECT" : "CLIPFORGE STORY FLOW · EDITABLE"}</small>
+              <small>{isHypitAuto ? "HYPIT · AUTO EXPLAINER" : isHypitPrompt ? "HYPIT QUICK · DIRECT" : "CLIPFORGE STORY FLOW · EDITABLE"}</small>
             </header>
             <label className="storyInputField">
               <span>Judul, deskripsi, atau naskah</span>
@@ -362,12 +373,14 @@ export function QuickStartCard({
               />
               <small>{storyText.trim().length.toLocaleString("id-ID")} / 30.000 karakter · minimal judul 2 kata · durasi dapat ditulis di brief</small>
             </label>
-            <p className="sourceHint">Brief disusun menjadi storyboard terarah. Revisi narasi, visual, urutan, kamera, dan teks layar terlebih dahulu; render memakai versi yang sudah Anda setujui.</p>
+            <p className="sourceHint">{isHypitAuto ? "Berikan analogi dan teks sumber. Sistem membuat pola Reel 39 detik; bila keluaran AI kurang lengkap, beat diperbaiki otomatis dari teks Anda tanpa menggagalkan render." : "Brief disusun menjadi storyboard terarah. Revisi narasi, visual, urutan, kamera, dan teks layar terlebih dahulu; render memakai versi yang sudah Anda setujui."}</p>
             {!storyText.trim() ? (
               <div className="hypitPromptExamples" aria-label="Contoh prompt Hypit">
                 <button type="button" onClick={() => onStoryTextChange("Kucing Polisi Memecahkan Misteri Kota")}>Mulai dari judul</button>
                 <button type="button" onClick={() => onStoryTextChange("Seorang pedagang kecil dituduh mencuri, lalu bukti tersembunyi membalik keadaan. Buat drama hangat 5 menit dengan akhir memuaskan.")}>Mulai dari deskripsi</button>
                 <button type="button" onClick={() => onStoryTextChange("/hypit Make a ranking video that puts Hypit in S tier.")}>Hypit Quick</button>
+                <button type="button" onClick={() => onStoryTextChange("/hypit infographic Baterai HP tidak bocor tiba-tiba | Persentase baterai adalah perkiraan dari arus dan tegangan | Chip fuel gauge menghitung arus masuk dan keluar | Kurva tegangan baterai lithium hampir datar di bagian tengah | Kuis: Saat baterai hampir habis, tegangannya bagaimana? / DATAR / TURUN TAJAM")}>Infographic Explainer</button>
+                <button type="button" onClick={() => onStoryTextChange("/hypit infographic auto\nAnalogi: indikator baterai seperti petugas yang memperkirakan isi tangki, bukan melihat isinya secara langsung.\nTeks: Ponsel memperkirakan sisa baterai dari arus yang masuk dan keluar serta perubahan tegangan. Pada sebagian besar rentang pemakaian, tegangan baterai lithium berubah relatif landai sehingga perkiraan dapat dikoreksi ketika kondisi berubah.")}>Auto dari Analogi + Teks</button>
               </div>
             ) : null}
 
