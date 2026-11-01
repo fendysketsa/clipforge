@@ -296,20 +296,42 @@ def _infographic_segments(body: str) -> list[str]:
 def _infographic_title(value: str, fallback: str = "FAKTA YANG JARANG DIJELASKAN") -> str:
     explicit = value.split("::", 1)[0].strip() if "::" in value else ""
     if explicit:
-        return explicit[:54].upper()
+        return explicit[:64].upper()
     words = [
         word.strip(".,:;!?()[]{}\"'")
         for word in value.split()
         if word.casefold().strip(".,:;!?") not in _INFOGRAPHIC_STOPWORDS
     ]
-    selected = [word for word in words if word][:5]
-    return " ".join(selected).upper()[:54] or fallback
+    selected = [word for word in words if word]
+    title_words: list[str] = []
+    for word in selected[:9]:
+        candidate = " ".join([*title_words, word])
+        if len(candidate) > 64:
+            break
+        title_words.append(word)
+    return " ".join(title_words).upper() or fallback
 
 
 def _infographic_visual(value: str) -> str:
     lowered = value.casefold()
     if re.search(r"\b(?:kuis|quiz|pilih|jawab|tebak)\b", lowered):
         return "quiz"
+    if re.search(
+        r"\b(?:wi[ -]?fi|router|packet loss|ping|latensi|lag|kabel lan|ethernet|game|gaming)\b",
+        lowered,
+    ):
+        return "gaming_network"
+    if re.search(r"\b(?:busi|spark[ -]?plug)\b", lowered):
+        return "sparkplug"
+    if re.search(r"\b(?:cvt|v[ -]?belt|kampas kopling|kopling ganda|puli|pulley)\b", lowered):
+        return "cvt"
+    if re.search(
+        r"\b(?:oli|pelumas|pelumasan|lubrikasi|piston|silinder|keausan|gesekan mesin)\b",
+        lowered,
+    ):
+        return "engine_oil"
+    if re.search(r"\b(?:motor matic|sepeda motor|skuter|scooter|motor)\b", lowered):
+        return "motorcycle"
     if re.search(r"\b(?:aman|keamanan|security|kunci|enkripsi|privasi|serangan|risiko|bahaya|lindung)\b", lowered):
         return "security"
     if re.search(r"\b(?:jaringan|network|internet|server|api|koneksi|node|terhubung|sinyal)\b", lowered):
@@ -363,6 +385,11 @@ def _visual_direction(
         "money": "coins stack while the value path becomes visible",
         "timeline": "events assemble along one continuous time rail",
         "machine": "gears transfer motion into a visible output",
+        "motorcycle": "the scooter rides forward while both wheels spin and the body visibly responds",
+        "cvt": "two pulleys rotate while the V-belt transfers motion through the CVT housing",
+        "sparkplug": "a recognizable spark plug assembles and fires a bright electric spark",
+        "engine_oil": "a cutaway engine pumps oil around a moving piston while friction and heat become visible",
+        "gaming_network": "game packets travel from the player through the router to the server while ping and packet loss react",
         "concept": "parts orbit, connect, and resolve into one visual idea",
     }
     motions = {
@@ -371,6 +398,8 @@ def _visual_direction(
         "network": "flow", "security": "pulse", "journey": "flow",
         "comparison": "compare", "people": "flow", "money": "assemble",
         "timeline": "assemble", "machine": "transform", "concept": "orbit",
+        "motorcycle": "flow", "cvt": "transform", "sparkplug": "pulse",
+        "engine_oil": "transform", "gaming_network": "flow",
     }
     return {
         "visual_subject": subject,
@@ -386,10 +415,58 @@ def _quiz_options(value: str) -> tuple[str, ...]:
     return tuple(options[:3])
 
 
+_QUIZ_OPTION_RE = re.compile(r"^\s*[A-D][.)]\s*(.+?)\s*$", re.IGNORECASE)
+_ENGAGEMENT_CTA_RE = re.compile(
+    r"^(?:(?:cta|payoff|kesimpulan)\s*:\s*)?"
+    r"(?:jawab|tulis|ketik|klik|tekan|silakan|ayo|jangan lupa|like|komen|komentar|"
+    r"simpan|ikuti|follow|share|bagikan)\b",
+    re.IGNORECASE,
+)
+
+
+def _manual_infographic_sections(segments: list[str]) -> tuple[str, list[str], str]:
+    """Keep quiz answers and CTA semantics together instead of making fake fact scenes."""
+    hook = segments[0]
+    content: list[str] = []
+    payoff = ""
+    cursor = 1
+    while cursor < len(segments):
+        raw = segments[cursor]
+        if _ENGAGEMENT_CTA_RE.match(raw):
+            payoff = re.sub(
+                r"^(?:cta|payoff|kesimpulan)\s*:\s*",
+                "",
+                raw,
+                flags=re.IGNORECASE,
+            ).strip()
+            cursor += 1
+            continue
+        if re.match(r"^(?:kuis|quiz)\s*:", raw, re.IGNORECASE):
+            options: list[str] = []
+            lookahead = cursor + 1
+            while lookahead < len(segments):
+                option_match = _QUIZ_OPTION_RE.match(segments[lookahead])
+                if not option_match:
+                    break
+                options.append(option_match.group(1).strip())
+                lookahead += 1
+            content.append(" / ".join([raw, *options]) if options else raw)
+            cursor = lookahead
+            continue
+        option_match = _QUIZ_OPTION_RE.match(raw)
+        if option_match and content and _infographic_visual(content[-1]) == "quiz":
+            content[-1] = f"{content[-1]} / {option_match.group(1).strip()}"
+        else:
+            content.append(raw)
+        cursor += 1
+    return hook, content[:8], payoff
+
+
 _AUTO_VISUALS = {
     "phone", "chip", "chart", "temperature", "process", "concept", "quiz",
     "network", "security", "journey", "comparison", "people", "money",
     "timeline", "machine",
+    "motorcycle", "cvt", "sparkplug", "engine_oil", "gaming_network",
 }
 _AUTO_MOTIONS = {"assemble", "flow", "orbit", "transform", "compare", "pulse", "zoom"}
 _AUTO_GROUNDING_STOPWORDS = _INFOGRAPHIC_STOPWORDS | {
@@ -587,6 +664,9 @@ def _validated_auto_infographic_payload(
         visual = str(raw.get("visual") or "concept").strip().casefold()
         if visual not in _AUTO_VISUALS:
             visual = _infographic_visual(f"{quote} {narration}")
+        detected_visual = _infographic_visual(f"{quote} {narration}")
+        if detected_visual in {"engine_oil", "gaming_network", "cvt", "sparkplug"}:
+            visual = detected_visual
         title = re.sub(r"\s+", " ", str(raw.get("title") or "")).strip()
         title_tokens = _content_tokens(title)
         title_grounded = title_tokens & _content_tokens(f"{quote} {source_text}")
@@ -636,7 +716,7 @@ def _validated_auto_infographic_payload(
         beats.append(
             {
                 "kicker": (kicker or _INFOGRAPHIC_KICKERS[(index - 1) % len(_INFOGRAPHIC_KICKERS)])[:32].upper(),
-                "title": (title or _infographic_title(narration))[:54].upper(),
+                "title": (title or _infographic_title(narration))[:64].upper(),
                 "narration": narration[:240],
                 "visual": visual,
                 "quiz_options": quiz_options,
@@ -694,7 +774,11 @@ def _request_auto_infographic_payload(
         "Narasi harus 5-32 kata, enak diucapkan, dan menjelaskan satu ide saja. Gunakan analogi secara konsisten "
         "tetapi jangan mengubahnya menjadi fakta literal. Setiap beat harus menjadi adegan ilustrasi yang bergerak, "
         "bukan kartu teks. Pilih visual hanya dari phone, chip, chart, temperature, process, concept, quiz, network, "
-        "security, journey, comparison, people, money, timeline, atau machine. Isi visual_subject dengan objek utama, "
+        "security, journey, comparison, people, money, timeline, machine, motorcycle, cvt, sparkplug, "
+        "engine_oil, atau gaming_network. "
+        "Gunakan motorcycle untuk motor/skuter, cvt untuk CVT/V-belt/kampas kopling, dan sparkplug untuk busi. "
+        "Gunakan engine_oil untuk oli/pelumasan/piston/gesekan mesin dan gaming_network untuk WiFi/ping/packet loss/game. "
+        "Isi visual_subject dengan objek utama, "
         "visual_action dengan aksi yang terlihat, visual_metaphor dengan analogi visual yang berasal dari input, dan "
         "motion hanya dari assemble, flow, orbit, transform, compare, pulse, atau zoom. Kicker dan title harus singkat. "
         "Kuis opsional dan tidak boleh memerlukan fakta "
@@ -786,11 +870,7 @@ def _build_infographic_plan(prompt: str) -> HypitInfographicPlan:
         raise ValueError(
             "Infographic membutuhkan hook dan minimal dua poin. Pisahkan setiap poin dengan tanda | atau baris baru."
         )
-    hook = segments[0]
-    content = segments[1:9]
-    payoff_segment = ""
-    if content and re.match(r"^(?:cta|payoff|kesimpulan)\s*:", content[-1], re.IGNORECASE):
-        payoff_segment = re.sub(r"^(?:cta|payoff|kesimpulan)\s*:\s*", "", content.pop(), flags=re.IGNORECASE)
+    hook, content, payoff_segment = _manual_infographic_sections(segments)
     if len(content) < 2:
         raise ValueError("Infographic membutuhkan minimal dua poin visual sebelum payoff.")
     beats: list[InfographicBeat] = []
@@ -798,6 +878,8 @@ def _build_infographic_plan(prompt: str) -> HypitInfographicPlan:
         narration = raw.split("::", 1)[1].strip() if "::" in raw else raw
         narration = re.sub(r"^(?:poin\s*\d+|fakta|kuis|quiz)\s*:\s*", "", narration, flags=re.IGNORECASE)
         visual = _infographic_visual(raw)
+        if visual == "concept" and re.search(r"\b(?:motor|skuter|scooter)\b", hook, re.IGNORECASE):
+            visual = "motorcycle"
         options = _quiz_options(raw) if visual == "quiz" else ()
         if visual == "quiz" and "/" in narration:
             narration = narration.split("/", 1)[0].strip()
@@ -805,7 +887,7 @@ def _build_infographic_plan(prompt: str) -> HypitInfographicPlan:
         beats.append(
             InfographicBeat(
                 kicker="KUIS · CEK FOKUS" if visual == "quiz" else _INFOGRAPHIC_KICKERS[index % len(_INFOGRAPHIC_KICKERS)],
-                title=_infographic_title(raw),
+                title=_infographic_title(narration if visual == "quiz" else raw),
                 detail=narration[:180],
                 accent=_INFOGRAPHIC_ACCENTS[index % len(_INFOGRAPHIC_ACCENTS)],
                 narration=narration[:240],
@@ -1243,9 +1325,13 @@ def _quick_reveal_times(plan: QuickPlan) -> list[float]:
     return _infographic_reveal_times(plan) if isinstance(plan, HypitInfographicPlan) else _ranking_reveal_times(plan)
 
 
+def _mid_cta_start(plan: QuickPlan) -> float:
+    return round(max(8.0, min(plan.duration - 8.0, plan.duration * 0.5)), 3)
+
+
 def _dialogue_cues(plan: QuickPlan, reveal_times: list[float]) -> list[DialogueCue]:
     final_start = max(0.0, plan.duration - 5.5)
-    starts = [0.25, *(max(0.25, value - 0.12) for value in reveal_times), final_start]
+    starts = [0.0, *(max(0.25, value - 0.12) for value in reveal_times), final_start]
     texts = [plan.hook_narration, *(item.narration for item in plan.items), plan.payoff_narration]
     speakers = ["HOST", *("CO-HOST" if index % 2 == 0 else "HOST" for index in range(len(plan.items))), "CO-HOST"]
     cues: list[DialogueCue] = []
@@ -1771,32 +1857,38 @@ def _mux_audio(
         "lavfi",
         "-i",
         f"sine=frequency=118:sample_rate=48000:duration={duration:.3f}",
+        "-f",
+        "lavfi",
+        "-i",
+        f"anoisesrc=color=pink:amplitude=0.22:sample_rate=48000:duration={duration:.3f}",
     ]
     if has_dialogue:
         command.extend(["-i", str(dialogue_track)])
         mix_filter = (
-            f"[1:a]apad=pad_dur={duration:.3f},atrim=0:{duration:.3f},"
+            f"[1:a]atrim=0:{duration:.3f},"
             "loudnorm=I=-23:TP=-2:LRA=7,"
             f"afade=t=in:st=0:d=0.35,afade=t=out:st={max(0.0, duration - 0.8):.3f}:d=0.8[music];"
             f"[2:a]volume='0.095*({pulses})':eval=frame,afade=t=out:st={max(0.0, duration - .3):.3f}:d=0.3[click];"
             f"[3:a]volume='0.15*({pulses})':eval=frame,lowpass=f=220[impact];"
-            "[4:a]aformat=sample_rates=48000:channel_layouts=stereo,highpass=f=82,"
+            f"[4:a]highpass=f=900,lowpass=f=6200,volume='0.10*({pulses})':eval=frame[swoosh];"
+            "[5:a]aformat=sample_rates=48000:channel_layouts=stereo,highpass=f=82,"
             "lowpass=f=13500,acompressor=threshold=0.10:ratio=3:attack=8:release=90:makeup=1.35,"
             "loudnorm=I=-16:TP=-1.5:LRA=7,asplit=2[voice_sc][voice_mix];"
             f"[music][voice_sc]sidechaincompress=threshold=0.025:ratio=9:attack=12:release=260,"
-            f"apad,atrim=0:{duration:.3f}[ducked_music];"
-            "[ducked_music][voice_mix][click][impact]amix=inputs=4:duration=longest:normalize=0,"
-            f"alimiter=limit=0.90,apad,atrim=0:{duration:.3f}[aout]"
+            f"atrim=0:{duration:.3f}[ducked_music];"
+            "[ducked_music][voice_mix][click][impact][swoosh]amix=inputs=5:duration=longest:normalize=0,"
+            f"alimiter=limit=0.90,atrim=0:{duration:.3f}[aout]"
         )
     else:
         mix_filter = (
-            f"[1:a]apad=pad_dur={duration:.3f},atrim=0:{duration:.3f},"
+            f"[1:a]atrim=0:{duration:.3f},"
             "loudnorm=I=-23:TP=-2:LRA=7,"
             f"afade=t=in:st=0:d=0.35,afade=t=out:st={max(0.0, duration - 0.8):.3f}:d=0.8[music];"
             f"[2:a]volume='0.11*({pulses})':eval=frame,afade=t=out:st={max(0.0, duration - .3):.3f}:d=0.3[click];"
             f"[3:a]volume='0.18*({pulses})':eval=frame,lowpass=f=220[impact];"
-            "[music][click][impact]amix=inputs=3:duration=longest:normalize=0,"
-            f"alimiter=limit=0.90,apad,atrim=0:{duration:.3f}[aout]"
+            f"[4:a]highpass=f=900,lowpass=f=6200,volume='0.12*({pulses})':eval=frame[swoosh];"
+            "[music][click][impact][swoosh]amix=inputs=4:duration=longest:normalize=0,"
+            f"alimiter=limit=0.90,atrim=0:{duration:.3f}[aout]"
         )
     command.extend(
         [
@@ -2127,10 +2219,18 @@ def _quick_manifest(
         "sourceNote": plan.source_note,
         "dialogue": dialogue_manifest,
         "captionPresentation": {
-            "mode": "persistent_cue_rail",
+            "mode": "editorial_single_line",
             "animateText": False,
             "holdUntilNextCue": True,
             "transition": "instant_content_swap",
+        },
+        "midCta": {
+            "enabled": True,
+            "start": _mid_cta_start(plan),
+            "duration": 2.8,
+            "eyebrow": "SEBELUM LANJUT",
+            "title": "LIKE + KOMEN DULU",
+            "body": "Tulis pendapatmu, lalu kita lanjut.",
         },
         "watermark": "@ryuundy · HYPIT",
     }
@@ -2138,11 +2238,7 @@ def _quick_manifest(
         composition = {
             **shared,
             "template": "infographic",
-            "styleVersion": (
-                "illustrated-winning-reel-v2"
-                if plan.auto_expanded
-                else "illustrated-infographic-explainer-v2"
-            ),
+            "styleVersion": "editorial-explainer-v3",
             "autoExpanded": plan.auto_expanded,
             "analogy": plan.analogy,
             "planningMode": plan.planning_mode,
@@ -2359,7 +2455,7 @@ def finalize_existing_hypit_quick_render(
             silent_path,
             pending_output,
             plan.duration,
-            [*reveal_times, max(0.0, plan.duration - 5.5)],
+            [*reveal_times, _mid_cta_start(plan), max(0.0, plan.duration - 5.5)],
             dialogue_track,
         )
         validation_error = _video_validation_error(
@@ -2376,7 +2472,7 @@ def finalize_existing_hypit_quick_render(
             output_path,
             refreshed_path,
             plan.duration,
-            [*reveal_times, max(0.0, plan.duration - 5.5)],
+            [*reveal_times, _mid_cta_start(plan), max(0.0, plan.duration - 5.5)],
             dialogue_track,
         )
         validation_error = _video_validation_error(
@@ -2471,7 +2567,7 @@ def render_hypit_quick(
             silent_path,
             pending_output,
             plan.duration,
-            [*reveal_times, max(0.0, plan.duration - 5.5)],
+            [*reveal_times, _mid_cta_start(plan), max(0.0, plan.duration - 5.5)],
             dialogue_track,
         )
         validation_error = _video_validation_error(

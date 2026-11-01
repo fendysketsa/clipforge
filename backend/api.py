@@ -5415,7 +5415,6 @@ def completed_clip_integrity_issue(
         if request.clip_mode == "short"
         else 1.0
     )
-    maximum = float(request.max_duration) if request.clip_mode == "short" else None
     for clip in clips:
         clip_path = output_path_from_url(clip.url)
         if clip_path is None or not clip_path.is_file():
@@ -5430,17 +5429,45 @@ def completed_clip_integrity_issue(
                 f"Output {clip.name} terpotong: durasi aktual {actual:.3f} detik, "
                 f"minimum produk {minimum:.3f} detik."
             )
-        if maximum is not None and actual - 0.75 > maximum:
-            return (
-                f"Output {clip.name} melewati batas Short: durasi aktual "
-                f"{actual:.3f} detik, maksimum {maximum:.3f} detik."
-            )
-
         sidecar = clip_sidecar_payload(clip)
+        # ``duration`` belongs to the original ClipCandidate (source window).
+        # The finalized timeline can legitimately be longer, for example when
+        # the renderer appends a Quran outro.  New sidecars record that authored
+        # timeline explicitly; keep ``duration`` only as a legacy fallback.
         try:
-            expected = float(sidecar.get("duration") or 0)
+            expected = float(
+                sidecar.get("output_duration_seconds")
+                or sidecar.get("duration")
+                or 0
+            )
         except (TypeError, ValueError):
             expected = 0.0
+        if request.clip_mode == "short":
+            try:
+                source_duration = float(
+                    sidecar.get("source_duration_seconds")
+                    or sidecar.get("duration")
+                    or 0
+                )
+            except (TypeError, ValueError):
+                source_duration = 0.0
+            authored_extension = (
+                max(0.0, expected - source_duration)
+                if sidecar.get("output_duration_seconds") is not None
+                and expected > 0
+                and source_duration > 0
+                else 0.0
+            )
+            maximum = min(
+                float(YOUTUBE_SHORTS_MAX_SECONDS),
+                max(float(request.max_duration), source_duration)
+                + authored_extension,
+            )
+            if actual - 0.75 > maximum:
+                return (
+                    f"Output {clip.name} melewati batas Short: durasi aktual "
+                    f"{actual:.3f} detik, maksimum {maximum:.3f} detik."
+                )
         if expected > 0:
             tolerance = max(0.75, expected * 0.03)
             if actual + tolerance < expected:
@@ -5454,6 +5481,22 @@ def completed_clip_integrity_issue(
                     f"{actual:.3f} detik, kontrak render {expected:.3f} detik."
                 )
     return None
+
+
+def partition_completed_clips_by_integrity(
+    request: ClipJobRequest,
+    clips: list[ClipFile],
+) -> tuple[list[ClipFile], list[tuple[ClipFile, str]]]:
+    """Keep healthy finalized clips when a sibling render is damaged."""
+    valid: list[ClipFile] = []
+    rejected: list[tuple[ClipFile, str]] = []
+    for clip in clips:
+        issue = completed_clip_integrity_issue(request, [clip])
+        if issue is None:
+            valid.append(clip)
+        else:
+            rejected.append((clip, issue))
+    return valid, rejected
 
 
 def youtube_timestamp(seconds: float) -> str:
@@ -14210,14 +14253,34 @@ def run_job(job_id: str) -> None:
             return
 
         clips = discover_clips(started_at, output_root)
+        had_rendered_clips = bool(clips)
         candidates = discover_candidates(started_at, output_root)
         if clips and candidates:
             clips = enrich_clips_with_candidate_titles(clips, candidates)
-        completion_integrity_error = completed_clip_integrity_issue(request, clips)
-        if completion_integrity_error:
+        clips, integrity_rejections = partition_completed_clips_by_integrity(
+            request,
+            clips,
+        )
+        completion_integrity_error = (
+            integrity_rejections[0][1]
+            if integrity_rejections and not clips
+            else None
+        )
+        if integrity_rejections:
             logs = [
                 *logs,
-                f"OUTPUT_INTEGRITY_REJECTED: {completion_integrity_error}",
+                *(
+                    f"OUTPUT_INTEGRITY_REJECTED: {issue}"
+                    for _clip, issue in integrity_rejections
+                ),
+                (
+                    "PARTIAL_OUTPUT_SALVAGED: "
+                    f"{len(clips)} klip valid dipertahankan; "
+                    f"{len(integrity_rejections)} klip ditahan untuk diagnosis."
+                    if clips
+                    else "OUTPUT_RECOVERY_PRESERVED: Semua MP4 ditahan untuk diagnosis; "
+                    "workspace tidak boleh dihapus otomatis."
+                ),
             ][-120:]
         salvaged_native_exit = bool(
             not completion_integrity_error
@@ -14239,23 +14302,43 @@ def run_job(job_id: str) -> None:
                     "sehingga hasil dipertahankan."
                 ),
             ][-120:]
-        # Active clip modes always write candidates.json before rendering. A
-        # video file without any surviving candidate audit is not a valid
-        # result and its entire job workspace must be removed below.
+        salvaged_partial_exit = bool(
+            code != 0
+            and not completion_integrity_error
+            and clips
+            and candidates
+        )
+        if salvaged_partial_exit:
+            completion_logs = [
+                *completion_logs,
+                (
+                    "RECOVERED_PARTIAL_OUTPUT: worker berhenti tidak normal, tetapi "
+                    f"{len(clips)} MP4 final beserta sidecar dan kandidat telah "
+                    "diverifikasi sehingga hasil dipertahankan."
+                ),
+            ][-120:]
+        # Active clip modes write candidates.json before rendering. A video
+        # without surviving candidate audit cannot be published automatically;
+        # finalized MP4s are still preserved below for diagnosis and recovery.
         has_complete_result = bool(
             not completion_integrity_error
             and candidates
             and (clips or request.review_only)
         )
-        if (code == 0 or salvaged_native_exit) and has_complete_result:
+        if (code == 0 or salvaged_native_exit or salvaged_partial_exit) and has_complete_result:
             updates = {
                 "status": "completed",
                 "logs": completion_logs[-120:],
                 "progress_percent": 100,
                 "progress_stage": "complete",
                 "progress_detail": (
-                    "Hasil final terverifikasi dan siap direview serta diunduh"
+                    f"{len(clips)} klip valid siap direview; "
+                    f"{len(integrity_rejections)} render bermasalah dipisahkan"
+                    if integrity_rejections
+                    else "Hasil final terverifikasi dan siap direview serta diunduh"
                     if salvaged_native_exit
+                    else "Hasil final yang valid dipulihkan dan siap direview"
+                    if salvaged_partial_exit
                     else "Ranking potensi viral siap direview"
                     if request.review_only
                     else "Semua hasil siap direview dan diunduh"
@@ -14344,8 +14427,11 @@ def run_job(job_id: str) -> None:
             else:
                 failure_reason = friendly_error or f"clipper.py exited with code {code}"
             preserve_partial_render = (
-                request.clip_mode == "long_animate"
-                and not env_bool("LONG_ANIMATE_CLEANUP_ON_ERROR", False)
+                had_rendered_clips
+                or (
+                    request.clip_mode == "long_animate"
+                    and not env_bool("LONG_ANIMATE_CLEANUP_ON_ERROR", False)
+                )
             )
             _, cleanup_message = cleanup_failed_job_artifacts(
                 output_root,
@@ -14372,7 +14458,7 @@ def run_job(job_id: str) -> None:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=CANCEL_GRACE_SECONDS)
-        preserve_partial_render = (
+        preserve_partial_render = any(output_root.rglob("clips/*.mp4")) or (
             request.clip_mode == "long_animate"
             and not env_bool("LONG_ANIMATE_CLEANUP_ON_ERROR", False)
         )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import hypit_quick
 from llm import AIConfig
@@ -78,11 +79,74 @@ def test_hypit_infographic_routes_explicit_visual_explainer_and_preserves_claims
     assert manifest["composition"]["beats"][1]["visualAction"]
     assert manifest["composition"]["beats"][1]["motion"] == "flow"
     assert manifest["composition"]["captionPresentation"] == {
-        "mode": "persistent_cue_rail",
+        "mode": "editorial_single_line",
         "animateText": False,
         "holdUntilNextCue": True,
         "transition": "instant_content_swap",
     }
+    assert manifest["composition"]["styleVersion"] == "editorial-explainer-v3"
+    assert manifest["composition"]["midCta"]["title"] == "LIKE + KOMEN DULU"
+
+
+def test_motor_infographic_keeps_quiz_options_and_uses_specific_illustrations():
+    prompt = (
+        "/hypit infographic\n"
+        "Kenapa motor matic bergetar saat digas?\n"
+        "Kampas kopling CVT kotor bisa menyebabkan getaran.\n"
+        "V-belt aus juga dapat mengganggu penyaluran tenaga.\n"
+        "Getaran berlebihan menandakan komponen perlu diperiksa.\n"
+        "Solusinya, lakukan pemeriksaan CVT secara berkala.\n"
+        "Kuis: Komponen apa yang menyalurkan tenaga pada CVT?\n"
+        "A. V-belt\n"
+        "B. Busi\n"
+        "Jawab di komentar!"
+    )
+
+    plan = build_hypit_quick_plan(prompt)
+
+    assert [beat.visual for beat in plan.beats] == [
+        "cvt", "cvt", "motorcycle", "cvt", "quiz",
+    ]
+    assert plan.beats[-1].quiz_options == ("V-belt", "Busi")
+    assert "A. V-belt" not in [beat.narration for beat in plan.beats]
+    assert plan.payoff == "JAWAB DI KOMENTAR!"
+
+
+def test_motor_oil_and_gaming_internet_use_topic_specific_visual_worlds():
+    oil = build_hypit_quick_plan(
+        "/hypit infographic\n"
+        "Apa akibat motor jarang ganti oli?\n"
+        "Kualitas oli menurun seiring pemakaian.\n"
+        "Gesekan mesin bisa meningkat saat pelumasan memburuk.\n"
+        "Komponen mesin berisiko mengalami keausan lebih cepat.\n"
+        "Solusinya, ganti oli sesuai jadwal buku manual motor."
+    )
+    gaming = build_hypit_quick_plan(
+        "/hypit infographic\n"
+        "Kenapa internet putus saat bermain game?\n"
+        "Sinyal WiFi lemah bisa menyebabkan packet loss.\n"
+        "Jaringan padat dapat meningkatkan ping secara drastis.\n"
+        "Akibatnya, game lag atau terputus dari server.\n"
+        "Solusinya, gunakan kabel LAN atau WiFi yang stabil."
+    )
+
+    assert {beat.visual for beat in oil.beats} == {"engine_oil"}
+    assert {beat.visual for beat in gaming.beats} == {"gaming_network"}
+
+
+def test_dialogue_caption_avoids_chromium_backdrop_compositor_flicker():
+    renderer = (
+        Path(__file__).resolve().parents[1] / "remotion" / "src" / "index.jsx"
+    ).read_text(encoding="utf-8")
+    caption_component = renderer.split(
+        "const StableDialogueCaption", 1
+    )[1].split("const MidVideoEngagement", 1)[0]
+
+    assert "backdropFilter" not in caption_component
+    assert "zIndex: 60" in caption_component
+    assert "editorial_single_line" not in caption_component
+    assert "opacity: 1" in caption_component
+    assert "textShadow: '0 4px 0 #17204C" in caption_component
 
 
 def test_hypit_infographic_requires_user_supplied_points():

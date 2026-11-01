@@ -391,59 +391,94 @@ const StableDialogueCaption = ({dialogue = [], palette = 'ranking', bottom = 248
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const second = frame / fps;
-  // Hold the last complete cue until the next one starts. This keeps the caption
-  // rail mounted through natural speech gaps instead of flashing off and on.
-  const active = dialogue.reduce(
-    (latest, cue) => second >= Number(cue.start || 0) ? cue : latest,
-    null,
+  const activeIndex = dialogue.reduce(
+    (latest, cue, index) => second >= Number(cue.start || 0) ? index : latest,
+    -1,
   );
+  const active = activeIndex >= 0 ? dialogue[activeIndex] : null;
   if (!active) return null;
-  const host = active.speaker === 'HOST';
   const infographic = palette === 'infographic';
-  const accent = infographic
-    ? host ? '#FFD447' : '#55D9FF'
-    : host ? '#6FFFE5' : '#B6FF4A';
-  const text = String(active.text || '');
-  const fontSize = text.length > 150 ? 29 : text.length > 105 ? 32 : 35;
+  if (infographic) {
+    const words = String(active?.text || '').split(/\s+/).filter(Boolean);
+    const emphasisIndex = words.reduce((picked, word, index) => {
+      const clean = word.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ0-9-]/g, '');
+      return clean.length >= 6 ? index : picked;
+    }, Math.max(0, words.length - 1));
+    return <div style={{
+      position: 'absolute', zIndex: 60, left: 72, right: 72, bottom,
+      minHeight: 78, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      textAlign: 'center', color: '#FFFFFF', fontFamily: 'Arial Black, Arial, Helvetica, sans-serif',
+      fontSize: words.length > 20 ? 28 : words.length > 14 ? 31 : 34,
+      lineHeight: 1.24, fontWeight: 900, letterSpacing: '-.02em',
+      textShadow: '0 4px 0 #17204C, 0 8px 20px rgba(0,0,0,.55)',
+      opacity: 1,
+    }}>
+      <span>{words.map((word, index) => <React.Fragment key={`${word}-${index}`}>
+        {index ? ' ' : ''}<span style={{color: index === emphasisIndex ? '#FFD447' : '#FFFFFF'}}>{word}</span>
+      </React.Fragment>)}</span>
+    </div>;
+  }
+  const renderCue = (cue) => {
+    const host = cue?.speaker === 'HOST';
+    const accent = infographic ? '#55D9FF' : '#6FFFE5';
+    const text = String(cue?.text || '');
+    const fontSize = text.length > 150 ? 29 : text.length > 105 ? 32 : 35;
+    return <div style={{position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', gap: 17}}>
+      <span style={{
+        flex: '0 0 auto', marginTop: 2, padding: '8px 11px', borderRadius: 11,
+        color: '#06110E', background: accent, fontSize: 15, lineHeight: 1,
+        fontWeight: 950, letterSpacing: '.08em', boxShadow: `0 0 24px ${accent}55`,
+      }}>{host ? 'HOST' : 'CO-HOST'}</span>
+      <div style={{fontSize, lineHeight: 1.18, fontWeight: 850, letterSpacing: '-.025em'}}>{text}</div>
+    </div>;
+  };
   return (
     <div style={{
       position: 'absolute',
-      zIndex: 20,
+      zIndex: 60,
       left: 62,
       right: 62,
       bottom,
       minHeight: 132,
-      display: 'flex',
-      alignItems: 'center',
-      gap: 17,
       padding: '20px 25px 22px',
       borderRadius: 27,
       color: '#F7FFFC',
-      background: infographic
-        ? 'linear-gradient(120deg, rgba(13,20,42,.96), rgba(26,17,52,.94))'
-        : 'linear-gradient(120deg, rgba(3,13,17,.94), rgba(8,10,22,.91))',
-      border: `1px solid ${accent}66`,
-      boxShadow: `0 20px 65px rgba(0,0,0,.46), 0 0 38px ${accent}18`,
-      backdropFilter: 'blur(18px)',
+      background: infographic ? '#11172D' : '#071014',
+      border: `1px solid ${infographic ? '#55D9FF55' : '#6FFFE555'}`,
+      boxShadow: `0 20px 65px rgba(0,0,0,.46), 0 0 38px ${infographic ? '#55D9FF16' : '#6FFFE516'}`,
       opacity: 1,
-      transform: 'translate3d(0,0,0)',
     }}>
-      <span style={{
-        flex: '0 0 auto',
-        marginTop: 2,
-        padding: '8px 11px',
-        borderRadius: 11,
-        color: '#06110E',
-        background: accent,
-        fontSize: 15,
-        lineHeight: 1,
-        fontWeight: 950,
-        letterSpacing: '.08em',
-        boxShadow: `0 0 24px ${accent}55`,
-      }}>{host ? 'HOST' : 'CO-HOST'}</span>
-      <div style={{fontSize, lineHeight: 1.18, fontWeight: 850, letterSpacing: '-.025em'}}>{text}</div>
+      <div style={{position: 'relative', width: '100%', minHeight: 88}}>
+        {renderCue(active)}
+      </div>
     </div>
   );
+};
+
+const MidVideoEngagement = ({config = {}}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  if (config.enabled !== true) return null;
+  const start = Number(config.start || 0);
+  const duration = Number(config.duration || 2.8);
+  const local = frame - Math.round(start * fps);
+  const total = Math.max(1, Math.round(duration * fps));
+  if (local < 0 || local > total) return null;
+  const enter = spring({fps, frame: local, config: {damping: 15, stiffness: 190, mass: .68}});
+  const exit = interpolate(local, [Math.max(0, total - Math.round(.32 * fps)), total], [1, 0], clamp);
+  const visible = enter * exit;
+  const pulse = 1 + Math.sin(local * .18) * .025;
+  return <AbsoluteFill style={{zIndex: 32, display: 'grid', placeItems: 'center', padding: 70, pointerEvents: 'none', background: `rgba(4,8,20,${visible * .72})`}}>
+    <div style={{width: '100%', padding: '54px 42px 48px', borderRadius: 40, textAlign: 'center', color: '#17213B', background: 'linear-gradient(145deg,#FFD447,#FFB936)', border: '7px solid #17213B', boxShadow: '0 34px 100px rgba(0,0,0,.42)', opacity: visible, transform: `translateY(${(1-visible)*90}px) scale(${(.78 + visible*.22)*pulse})`}}>
+      <div style={{fontSize: 25, fontWeight: 950, letterSpacing: '.12em'}}>{config.eyebrow || 'SEBELUM LANJUT'}</div>
+      <div style={{display: 'flex', justifyContent: 'center', gap: 24, margin: '28px 0 20px'}}>
+        <span style={{width: 112, height: 112, borderRadius: 32, display: 'grid', placeItems: 'center', color: '#fff', background: '#FF5265', border: '6px solid #17213B', fontSize: 60}}>♥</span>
+        <span style={{width: 112, height: 112, borderRadius: 32, display: 'grid', placeItems: 'center', color: '#17213B', background: '#F8F5EA', border: '6px solid #17213B', fontSize: 47}}>●●</span>
+      </div>
+      <div style={{fontSize: 67, lineHeight: .96, fontWeight: 950, letterSpacing: '-.05em'}}>{config.title || 'LIKE + KOMEN DULU'}</div>
+      <div style={{marginTop: 18, fontSize: 28, lineHeight: 1.15, fontWeight: 800}}>{config.body || 'Tulis pendapatmu, lalu kita lanjut.'}</div>
+    </div>
+  </AbsoluteFill>;
 };
 
 const RankingVideo = ({
@@ -455,6 +490,7 @@ const RankingVideo = ({
   sourceNote = '',
   dialogue = [],
   items = [],
+  midCta = {},
   watermark = '@ryuundy · HYPIT',
 }) => {
   const frame = useCurrentFrame();
@@ -657,7 +693,6 @@ const RankingVideo = ({
         justifyContent: 'center',
         padding: 68,
         background: `rgba(4,12,13,${interpolate(finalReveal, [0, 1], [0, .91], clamp)})`,
-        backdropFilter: `blur(${finalReveal * 9}px)`,
       }}>
         <div style={{
           position: 'absolute',
@@ -695,6 +730,7 @@ const RankingVideo = ({
           mixBlendMode: 'screen',
         }}/>
       </AbsoluteFill> : null}
+      <MidVideoEngagement config={midCta}/>
       <StableDialogueCaption dialogue={dialogue}/>
     </AbsoluteFill>
   );
@@ -715,6 +751,27 @@ const InfographicBackdrop = ({accent = '#55C7F3'}) => {
     <div style={{position: 'absolute', width: 720, height: 720, borderRadius: '50%', left: -300, top: 520, background: `${accent}14`, transform: `scale(${1 + Math.sin(second * .35) * .035})`}}/>
     <div style={{position: 'absolute', width: 560, height: 560, borderRadius: '50%', right: -260, top: 160, border: '2px solid rgba(255,255,255,.055)'}}/>
     <AbsoluteFill style={{opacity: .035, backgroundImage: 'radial-gradient(rgba(255,255,255,.9) .8px, transparent .8px)', backgroundSize: '22px 22px'}}/>
+  </AbsoluteFill>;
+};
+
+const EditorialExplainerBackdrop = ({accent = '#55C7F3'}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const second = frame / fps;
+  const specks = [
+    [9, 18, 3, .4], [18, 43, 2, .8], [83, 17, 2, 1.1], [91, 39, 3, 1.5],
+    [12, 72, 2, 2.0], [76, 64, 2, 2.4], [88, 82, 3, 2.9], [32, 86, 2, 3.4],
+  ];
+  return <AbsoluteFill style={{overflow: 'hidden', background: 'linear-gradient(180deg,#202D66 0%,#1B285D 52%,#172250 100%)'}}>
+    <div style={{position: 'absolute', width: 720, height: 720, left: -400, top: 340, borderRadius: '50%', background: `${accent}0D`, filter: 'blur(12px)'}}/>
+    <div style={{position: 'absolute', width: 620, height: 620, right: -420, top: 780, borderRadius: '50%', background: '#6C56D70C', filter: 'blur(14px)'}}/>
+    {specks.map(([left, top, size, delay], index) => <i key={index} style={{
+      position: 'absolute', left: `${left}%`, top: `${top}%`, width: size, height: size,
+      borderRadius: '50%', background: index % 3 ? '#FFFFFF' : accent,
+      opacity: .24 + (Math.sin(second * .85 + delay) + 1) * .13,
+      transform: `translateY(${Math.sin(second * .42 + delay) * 10}px)`,
+    }}/>) }
+    <AbsoluteFill style={{opacity: .028, backgroundImage: 'linear-gradient(rgba(255,255,255,.4) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.4) 1px,transparent 1px)', backgroundSize: '72px 72px'}}/>
   </AbsoluteFill>;
 };
 
@@ -822,10 +879,20 @@ const ProcessGraphic = ({accent, progress}) => <div style={{width: 850, display:
   })}
 </div>;
 
-const QuizGraphic = ({accent, progress, detail, options = []}) => <div style={{width: 900, padding: '52px 44px 40px', borderRadius: 34, color: '#242941', background: '#FAF8F0', border: '6px solid #1C2239', boxShadow: '0 34px 75px rgba(0,0,0,.32)', transform: `translateY(${(1 - progress) * 55}px) scale(${.88 + progress * .12})`}}>
+const QuizOptionIcon = ({option, accent}) => {
+  if (/v[ -]?belt/i.test(option)) return <svg width="124" height="96" viewBox="0 0 124 96"><ellipse cx="62" cy="48" rx="50" ry="31" fill="none" stroke="#202741" strokeWidth="18"/><ellipse cx="62" cy="48" rx="50" ry="31" fill="none" stroke={accent} strokeWidth="7" strokeDasharray="12 8"/></svg>;
+  if (/busi|spark[ -]?plug/i.test(option)) return <svg width="88" height="118" viewBox="0 0 88 118"><rect x="34" y="5" width="20" height="22" rx="5" fill="#9EA9BA" stroke="#202741" strokeWidth="5"/><rect x="22" y="23" width="44" height="42" rx="13" fill="#F8F5EA" stroke="#202741" strokeWidth="6"/><path d="M14 63 H74 L64 82 H24 Z" fill={accent} stroke="#202741" strokeWidth="6"/><rect x="29" y="80" width="30" height="30" fill="#AAB4C2" stroke="#202741" strokeWidth="6"/><path d="M44 108 V116 M65 105 V114 H51" fill="none" stroke="#202741" strokeWidth="6" strokeLinecap="round"/></svg>;
+  if (/ping|lag|packet/i.test(option)) return <svg width="126" height="105" viewBox="0 0 126 105"><path d="M15 88 A49 49 0 0 1 111 88" fill={accent} stroke="#202741" strokeWidth="10"/><path d="M63 82 L94 38" stroke="#202741" strokeWidth="10" strokeLinecap="round"/><circle cx="63" cy="82" r="13" fill="#F8F5EA" stroke="#202741" strokeWidth="7"/></svg>;
+  if (/layar|terang|brightness/i.test(option)) return <svg width="112" height="112" viewBox="0 0 112 112"><circle cx="56" cy="56" r="28" fill="#FFD447" stroke="#202741" strokeWidth="8"/>{[0,45,90,135].map((angle) => <line key={angle} x1="56" y1="5" x2="56" y2="20" stroke="#202741" strokeWidth="8" strokeLinecap="round" transform={`rotate(${angle} 56 56)`}/>)}</svg>;
+  if (/awet|stabil|aman/i.test(option)) return <svg width="112" height="112" viewBox="0 0 112 112"><path d="M56 7 L98 22 V55 C98 80 82 98 56 106 C30 98 14 80 14 55 V22Z" fill="#66E39B" stroke="#202741" strokeWidth="8"/><path d="M34 56 L49 71 L79 40" fill="none" stroke="#202741" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+  if (/aus|komponen|mesin|oli|pelumas/i.test(option)) return <svg width="118" height="112" viewBox="0 0 118 112"><path d="M59 5 C78 31 90 47 90 68 A31 31 0 1 1 28 68 C28 47 40 31 59 5Z" fill="#FFD447" stroke="#202741" strokeWidth="8"/><path d="M47 73 L57 83 L76 57" fill="none" stroke={accent} strokeWidth="9" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+  return <div style={{height: 96, display: 'grid', placeItems: 'center', fontSize: 58, color: accent}}>?</div>;
+};
+
+const QuizGraphic = ({accent, progress, detail, options = []}) => <div style={{width: 900, padding: '45px 44px 36px', borderRadius: 34, color: '#242941', background: '#FAF8F0', border: '6px solid #1C2239', boxShadow: '0 34px 75px rgba(0,0,0,.32)', transform: `translateY(${(1 - progress) * 55}px) scale(${.88 + progress * .12})`}}>
   <div style={{fontSize: 37, lineHeight: 1.14, fontWeight: 900, textAlign: 'center', color: '#E84B5B'}}>{detail}</div>
-  <div style={{display: 'grid', gridTemplateColumns: `repeat(${Math.max(1, Math.min(3, options.length))}, 1fr)`, gap: 20, marginTop: 42}}>
-    {options.map((option, index) => <div key={`${option}-${index}`} style={{padding: '24px 16px', borderRadius: 17, border: '4px solid #252B43', background: index === 1 ? `${accent}33` : '#fff', textAlign: 'center', fontSize: 29, fontWeight: 950}}>{option}</div>)}
+  <div style={{display: 'grid', gridTemplateColumns: `repeat(${Math.max(1, Math.min(3, options.length))}, 1fr)`, gap: 20, marginTop: 32}}>
+    {options.map((option, index) => <div key={`${option}-${index}`} style={{minHeight: 190, padding: '18px 16px', borderRadius: 20, border: '4px solid #252B43', background: index === 1 ? `${accent}24` : '#fff', textAlign: 'center', fontSize: 29, fontWeight: 950, display: 'grid', placeItems: 'center'}}><QuizOptionIcon option={option} accent={accent}/><span>{option}</span></div>)}
   </div>
 </div>;
 
@@ -835,6 +902,116 @@ const SubjectPlate = ({subject, accent, dark = false}) => <div style={{
   border: `5px solid ${dark ? '#202741' : accent}`, boxShadow: `0 14px 0 ${accent}55`,
   fontSize: 32, lineHeight: 1.05, fontWeight: 950, textTransform: 'uppercase',
 }}>{subject || 'IDE UTAMA'}</div>;
+
+const stagedProgress = (second, start, duration = .34) => interpolate(second, [start, start + duration], [0, 1], clamp);
+
+const CalloutPill = ({children, color = '#FFD447', progress = 1, style = {}}) => <div style={{
+  padding: '12px 20px 13px', borderRadius: 999, color: '#202741', background: color,
+  border: '5px solid #202741', boxShadow: '0 9px 0 rgba(15,20,48,.28)',
+  fontSize: 24, lineHeight: 1, fontWeight: 950, textTransform: 'uppercase',
+  opacity: progress, transform: `translateY(${(1-progress)*24}px) scale(${.82+progress*.18})`,
+  ...style,
+}}>{children}</div>;
+
+const EngineOilGraphic = ({accent, progress, subject, detail, localSeconds = 0}) => {
+  const frame = useCurrentFrame();
+  const pistonY = 44 + Math.sin(frame * .17) * 37;
+  const crank = frame * 5.4;
+  const oilIn = stagedProgress(localSeconds, .45);
+  const frictionIn = stagedProgress(localSeconds, 1.35);
+  const heatIn = stagedProgress(localSeconds, 2.15);
+  const warning = /jarang|turun|buruk|gesekan|aus|keausan|risiko/i.test(`${subject} ${detail}`);
+  return <div style={{position: 'relative', width: 900, height: 720, transform: `translateY(${(1-progress)*54}px) scale(${.82+progress*.18})`}}>
+    <svg width="900" height="720" viewBox="0 0 900 720" style={{filter: 'drop-shadow(0 26px 30px rgba(0,0,0,.28))'}}>
+      <path d="M225 118 H680 Q735 118 735 175 V548 Q735 602 680 602 H225 Q170 602 170 548 V175 Q170 118 225 118Z" fill="#F7F4E9" stroke="#202741" strokeWidth="14"/>
+      <path d="M272 176 H622 V470 Q622 526 565 526 H329 Q272 526 272 470Z" fill="#D9E2EA" stroke="#202741" strokeWidth="12"/>
+      <rect x="338" y="186" width="220" height="220" rx="28" fill="#263554" stroke="#202741" strokeWidth="12"/>
+      <g transform={`translate(448 ${pistonY})`}>
+        <rect x="-82" y="178" width="164" height="80" rx="18" fill={warning ? '#FFCE49' : accent} stroke="#202741" strokeWidth="11"/>
+        <rect x="-70" y="195" width="140" height="13" rx="7" fill="#F7F4E9" opacity=".72"/>
+        <path d="M0 258 L0 346" stroke="#202741" strokeWidth="22" strokeLinecap="round"/>
+      </g>
+      <g transform={`translate(448 492) rotate(${crank})`}>
+        <circle r="88" fill={accent} stroke="#202741" strokeWidth="13"/>
+        <circle r="25" fill="#F7F4E9" stroke="#202741" strokeWidth="10"/>
+        <line x1="0" y1="0" x2="62" y2="0" stroke="#202741" strokeWidth="18" strokeLinecap="round"/>
+        <circle cx="62" cy="0" r="18" fill="#FFD447" stroke="#202741" strokeWidth="8"/>
+      </g>
+      <path d="M228 530 C210 425 218 255 310 234 M587 234 C683 255 695 420 666 532" fill="none" stroke="#D89A18" strokeWidth="34" strokeLinecap="round" opacity=".22"/>
+      <path d="M228 530 C210 425 218 255 310 234 M587 234 C683 255 695 420 666 532" fill="none" stroke="#FFD447" strokeWidth="12" strokeLinecap="round" strokeDasharray="25 20" strokeDashoffset={-frame*5} opacity={oilIn}/>
+      {[0,1,2].map((drop) => <path key={drop} d="M0 -24 C18 2 28 19 28 35 A28 28 0 1 1 -28 35 C-28 19 -18 2 0 -24Z" transform={`translate(${236 + drop*210} ${232 + ((frame*5 + drop*110)%270)}) scale(.55)`} fill="#FFD447" stroke="#202741" strokeWidth="8" opacity={oilIn}/>) }
+      {warning ? <g opacity={heatIn}>
+        <path d="M705 244 C761 207 754 159 724 127 C785 144 811 213 778 272Z" fill="#FF5D64" stroke="#202741" strokeWidth="10"/>
+        <path d="M727 239 C754 218 753 193 741 173 C770 188 775 220 758 248Z" fill="#FFD447"/>
+      </g> : null}
+      <g transform="translate(76 444) rotate(-7)" opacity={oilIn}>
+        <path d="M8 70 H112 L127 111 V220 Q127 247 98 247 H23 Q-7 247 -7 219 V111Z" fill="#FFD447" stroke="#202741" strokeWidth="11"/>
+        <path d="M19 68 V28 H98 V69" fill="#55D9FF" stroke="#202741" strokeWidth="11"/>
+        <text x="60" y="170" textAnchor="middle" fontSize="39" fontWeight="950" fill="#202741">OLI</text>
+      </g>
+      <g opacity={frictionIn} transform="translate(650 430)">
+        {[0,1,2].map((spark) => <path key={spark} d={`M${spark*34} 0 l12 24 l22 -10 l-8 28`} fill="none" stroke="#FF5D64" strokeWidth="9" strokeLinecap="round"/>) }
+      </g>
+    </svg>
+    <CalloutPill color="#FFD447" progress={oilIn} style={{position: 'absolute', left: 34, top: 140}}>oli mengalir</CalloutPill>
+    <CalloutPill color="#FF777F" progress={frictionIn} style={{position: 'absolute', right: 8, top: 355}}>{warning ? 'gesekan naik' : 'gesekan turun'}</CalloutPill>
+    <CalloutPill color={accent} progress={heatIn} style={{position: 'absolute', left: 305, bottom: 3}}>{warning ? 'komponen cepat aus' : 'mesin terlindungi'}</CalloutPill>
+  </div>;
+};
+
+const GamingNetworkGraphic = ({accent, progress, subject, detail, localSeconds = 0}) => {
+  const frame = useCurrentFrame();
+  const routerIn = stagedProgress(localSeconds, .35);
+  const serverIn = stagedProgress(localSeconds, 1.05);
+  const metricIn = stagedProgress(localSeconds, 1.75);
+  const problem = /lemah|loss|padat|tinggi|lag|putus|terputus/i.test(`${subject} ${detail}`);
+  const wired = /kabel lan|ethernet/i.test(`${subject} ${detail}`);
+  const packetTravel = (frame * 7.5) % 590;
+  return <div style={{position: 'relative', width: 900, height: 700, transform: `scale(${.82+progress*.18})`}}>
+    <svg width="900" height="700" viewBox="0 0 900 700" style={{filter: 'drop-shadow(0 24px 28px rgba(0,0,0,.25))'}}>
+      <path d="M178 345 H744" fill="none" stroke="rgba(255,255,255,.32)" strokeWidth="12" strokeDasharray="22 17"/>
+      <path d="M178 345 H744" fill="none" stroke={wired ? '#66E39B' : accent} strokeWidth={wired ? 12 : 7} strokeDasharray={wired ? undefined : '22 17'} strokeDashoffset={wired ? 0 : -frame*4} opacity={serverIn}/>
+      {[0,1,2].map((packet) => {
+        const x = 178 + ((packetTravel + packet*190) % 566);
+        const lost = problem && packet === 1 && x > 420 && x < 545;
+        return <g key={packet} opacity={serverIn} transform={`translate(${x} 345)`}>
+          <rect x="-18" y="-18" width="36" height="36" rx="9" fill={lost ? '#FF626E' : '#FFD447'} stroke="#202741" strokeWidth="7"/>
+          {lost ? <path d="M-12 -12 L12 12 M12 -12 L-12 12" stroke="#fff" strokeWidth="6" strokeLinecap="round"/> : null}
+        </g>;
+      })}
+      <g transform="translate(118 345)">
+        <rect x="-83" y="-150" width="166" height="300" rx="34" fill="#F7F4E9" stroke="#202741" strokeWidth="12"/>
+        <rect x="-57" y="-112" width="114" height="155" rx="18" fill="#97E58B" stroke="#202741" strokeWidth="8"/>
+        <path d="M-42 -26 L-5 -56 L28 -32 L55 -66" fill="none" stroke="#fff" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round"/>
+        <circle cy="99" r="14" fill={accent}/>
+      </g>
+      <g transform={`translate(450 345) scale(${.72+routerIn*.28})`} opacity={routerIn}>
+        <rect x="-112" y="-66" width="224" height="132" rx="34" fill="#55D9FF" stroke="#202741" strokeWidth="12"/>
+        <line x1="-68" y1="-59" x2="-94" y2="-145" stroke="#202741" strokeWidth="13" strokeLinecap="round"/>
+        <line x1="68" y1="-59" x2="94" y2="-145" stroke="#202741" strokeWidth="13" strokeLinecap="round"/>
+        {[0,1,2].map((ring) => <path key={ring} d={`M${-58-ring*28} ${-92-ring*18} Q0 ${-145-ring*24} ${58+ring*28} ${-92-ring*18}`} fill="none" stroke={problem && ring===2 ? '#FF626E' : '#FFD447'} strokeWidth="11" strokeLinecap="round" opacity={.9-ring*.18}/>) }
+        {[0,1,2].map((light) => <circle key={light} cx={-48+light*48} cy="16" r="10" fill={light===2&&problem ? '#FF626E' : '#202741'}/>) }
+      </g>
+      {wired ? <g transform="translate(274 345)" opacity={routerIn}>
+        <rect x="-34" y="-25" width="68" height="50" rx="9" fill="#66E39B" stroke="#202741" strokeWidth="8"/>
+        {[0,1,2,3].map((pin) => <line key={pin} x1={-17+pin*11} y1="-19" x2={-17+pin*11} y2="-7" stroke="#202741" strokeWidth="4"/>)}
+      </g> : null}
+      <g transform={`translate(790 345) scale(${.72+serverIn*.28})`} opacity={serverIn}>
+        <rect x="-76" y="-178" width="152" height="356" rx="24" fill="#F7F4E9" stroke="#202741" strokeWidth="12"/>
+        {[-112,-20,72].map((y,index) => <g key={y}><rect x="-49" y={y} width="98" height="61" rx="12" fill={index===1 ? accent : '#D9E2EA'} stroke="#202741" strokeWidth="7"/><circle cx="25" cy={y+30} r="8" fill={problem&&index===1 ? '#FF626E' : '#57D98A'}/></g>) }
+      </g>
+      <g transform="translate(40 535)">
+        <path d="M0 32 Q78 -36 156 32" fill="none" stroke="#F7F4E9" strokeWidth="28" strokeLinecap="round"/>
+        <rect x="50" y="8" width="56" height="22" rx="8" fill="#202741"/>
+        <circle cx="38" cy="36" r="12" fill="#202741"/><circle cx="119" cy="36" r="12" fill="#202741"/>
+        <circle cx="124" cy="13" r="8" fill="#FF626E"/><circle cx="143" cy="27" r="8" fill="#FFD447"/>
+      </g>
+    </svg>
+    <CalloutPill color="#55D9FF" progress={routerIn} style={{position: 'absolute', left: 330, top: 65}}>router / wifi</CalloutPill>
+    <CalloutPill color={problem ? '#FF777F' : '#66E39B'} progress={metricIn} style={{position: 'absolute', left: wired ? 292 : 320, bottom: 22}}>{problem ? 'ping naik · packet hilang' : wired ? 'kabel LAN · stabil' : 'koneksi stabil'}</CalloutPill>
+    <CalloutPill color={accent} progress={serverIn} style={{position: 'absolute', right: 8, top: 80}}>server game</CalloutPill>
+  </div>;
+};
 
 const NetworkGraphic = ({accent, progress, subject}) => {
   const frame = useCurrentFrame();
@@ -926,6 +1103,77 @@ const MachineGraphic = ({accent, progress, subject}) => {
   </div>;
 };
 
+const MotorcycleGraphic = ({accent, progress, subject, detail}) => {
+  const frame = useCurrentFrame();
+  const wheelTurn = frame * 5.2;
+  const ride = Math.sin(frame * .095) * 5;
+  const shake = /getar/i.test(`${subject} ${detail}`) ? Math.sin(frame * .9) * 7 : 0;
+  return <div style={{position: 'relative', width: 900, height: 650, transform: `translateX(${(1-progress)*-170}px) scale(${.82+progress*.18})`}}>
+    <svg width="900" height="650" viewBox="0 0 900 650" style={{overflow: 'visible', filter: 'drop-shadow(0 25px 28px rgba(0,0,0,.28))'}}>
+      <path d="M45 515 H855" stroke="rgba(255,255,255,.32)" strokeWidth="14" strokeLinecap="round" strokeDasharray="70 34" strokeDashoffset={-frame*8}/>
+      <g transform={`translate(${shake} ${ride})`}>
+        {[[245,465],[672,465]].map(([x,y], index) => <g key={index} transform={`translate(${x} ${y}) rotate(${wheelTurn} ${0} ${0})`}>
+          <circle r="104" fill="#15213B" stroke="#F8F5EA" strokeWidth="14"/>
+          <circle r="63" fill="#293654" stroke={accent} strokeWidth="10"/>
+          {[0,45,90,135].map((angle) => <line key={angle} x1="-54" y1="0" x2="54" y2="0" stroke="#F8F5EA" strokeWidth="9" strokeLinecap="round" transform={`rotate(${angle})`}/>) }
+          <circle r="18" fill={accent}/>
+        </g>)}
+        <path d="M245 452 C280 318 363 278 492 282 L603 298 C640 305 670 344 677 422 L638 427 C622 368 585 352 530 355 L395 357 C340 358 309 389 294 452 Z" fill={accent} stroke="#202741" strokeWidth="14" strokeLinejoin="round"/>
+        <path d="M405 292 C438 214 516 187 578 217 L615 302 L511 302 L475 255 L429 309 Z" fill="#F8F5EA" stroke="#202741" strokeWidth="13" strokeLinejoin="round"/>
+        <path d="M578 214 L642 184" stroke="#202741" strokeWidth="16" strokeLinecap="round"/><path d="M624 178 H685" stroke="#202741" strokeWidth="14" strokeLinecap="round"/>
+        <path d="M354 282 C380 242 436 228 500 244" stroke="#202741" strokeWidth="22" strokeLinecap="round"/>
+        <rect x="332" y="343" width="167" height="72" rx="34" fill="#263453" stroke="#202741" strokeWidth="10"/>
+        <circle cx="598" cy="286" r="23" fill="#FFD447" stroke="#202741" strokeWidth="8"/>
+      </g>
+      {[0,1,2].map((smoke) => <circle key={smoke} cx={110-((frame*3+smoke*45)%120)} cy={395-smoke*28-Math.sin(frame*.08+smoke)*12} r={13+smoke*7} fill="rgba(255,255,255,.28)"/>)}
+    </svg>
+    <div style={{position: 'absolute', left: 175, right: 175, bottom: 0, display: 'grid', placeItems: 'center'}}><SubjectPlate subject={subject || 'MOTOR MATIC'} accent={accent}/></div>
+  </div>;
+};
+
+const CvtGraphic = ({accent, progress, subject, detail}) => {
+  const frame = useCurrentFrame();
+  const dirty = /kotor|debu|kampas/i.test(`${subject} ${detail}`);
+  const rotation = frame * 4.8;
+  return <div style={{position: 'relative', width: 900, height: 650, transform: `scale(${.8+progress*.2})`}}>
+    <svg width="900" height="650" viewBox="0 0 900 650" style={{filter: 'drop-shadow(0 28px 34px rgba(0,0,0,.3))'}}>
+      <path d="M105 155 Q115 80 215 72 H682 Q790 80 800 175 V440 Q790 530 690 542 H208 Q110 530 98 435 Z" fill="#F8F5EA" stroke="#202741" strokeWidth="14"/>
+      <path d="M270 216 C370 135 530 135 640 215 C691 255 693 360 640 405 C530 485 370 485 270 404 C220 362 220 258 270 216 Z" fill="none" stroke="#202741" strokeWidth="46" strokeLinecap="round"/>
+      <path d="M270 216 C370 135 530 135 640 215 C691 255 693 360 640 405 C530 485 370 485 270 404 C220 362 220 258 270 216 Z" fill="none" stroke={accent} strokeWidth="15" strokeDasharray="28 20" strokeDashoffset={-frame*5} strokeLinecap="round"/>
+      {[[280,310,118],[650,310,92]].map(([x,y,r], index) => <g key={index} transform={`translate(${x} ${y}) rotate(${rotation*(index ? -1.25 : 1)})`}>
+        <circle r={r} fill={index ? '#55D9FF' : '#FFD447'} stroke="#202741" strokeWidth="13"/>
+        {[0,60,120].map((angle) => <rect key={angle} x="-13" y={-r+18} width="26" height={r-32} rx="13" fill="#202741" transform={`rotate(${angle})`}/>) }
+        <circle r="31" fill="#F8F5EA" stroke="#202741" strokeWidth="10"/>
+      </g>)}
+      <rect x="360" y="102" width="180" height="53" rx="26" fill="#202741"/><text x="450" y="139" textAnchor="middle" fill="#fff" fontSize="30" fontWeight="900">V-BELT</text>
+      <rect x="175" y="448" width="220" height="53" rx="26" fill="#202741"/><text x="285" y="485" textAnchor="middle" fill="#fff" fontSize="27" fontWeight="900">KAMPAS CVT</text>
+      {dirty ? [0,1,2,3,4,5,6].map((dot) => <circle key={dot} cx={170+(dot*87)%560} cy={155+(dot*73)%290} r={8+(dot%3)*4} fill="#9A7657" opacity={.55+Math.sin(frame*.08+dot)*.2}/>) : null}
+    </svg>
+    <div style={{position: 'absolute', left: 175, right: 175, bottom: 0, display: 'grid', placeItems: 'center'}}><SubjectPlate subject={subject || 'TRANSMISI CVT'} accent={accent}/></div>
+  </div>;
+};
+
+const SparkPlugGraphic = ({accent, progress, subject}) => {
+  const frame = useCurrentFrame();
+  const flash = Math.max(0, Math.sin(frame*.34));
+  return <div style={{position: 'relative', width: 780, height: 650, display: 'grid', placeItems: 'center', transform: `translateY(${(1-progress)*90}px) scale(${.76+progress*.24})`}}>
+    <svg width="610" height="590" viewBox="0 0 610 590" style={{filter: 'drop-shadow(0 28px 32px rgba(0,0,0,.3))'}}>
+      <g transform="translate(305 40) rotate(10)">
+        <rect x="-34" y="0" width="68" height="78" rx="18" fill="#C9D1DC" stroke="#202741" strokeWidth="11"/>
+        <rect x="-72" y="68" width="144" height="218" rx="49" fill="#F8F5EA" stroke="#202741" strokeWidth="13"/>
+        {[0,1,2,3].map((rib) => <rect key={rib} x="-82" y={98+rib*39} width="164" height="18" rx="9" fill="#D9E0E7" stroke="#202741" strokeWidth="6"/>)}
+        <path d="M-101 276 L101 276 L77 352 L-77 352 Z" fill={accent} stroke="#202741" strokeWidth="13"/>
+        <rect x="-67" y="344" width="134" height="132" rx="9" fill="#AEB8C6" stroke="#202741" strokeWidth="12"/>
+        {[0,1,2,3,4].map((thread) => <line key={thread} x1="-58" y1={368+thread*21} x2="58" y2={368+thread*21} stroke="#657188" strokeWidth="8"/>)}
+        <rect x="-19" y="470" width="38" height="70" rx="8" fill="#C9D1DC" stroke="#202741" strokeWidth="9"/>
+        <path d="M62 468 V526 Q62 552 37 552 H17" fill="none" stroke="#202741" strokeWidth="18" strokeLinecap="round"/>
+        <path d="M17 536 L-8 554 L22 564 L-3 582" fill="none" stroke="#FFF47A" strokeWidth={8+flash*8} strokeLinecap="round" strokeLinejoin="round" style={{filter: `drop-shadow(0 0 ${10+flash*25}px #55D9FF)`}}/>
+      </g>
+    </svg>
+    <div style={{position: 'absolute', left: 120, right: 120, bottom: 0, display: 'grid', placeItems: 'center'}}><SubjectPlate subject={subject || 'BUSI'} accent={accent}/></div>
+  </div>;
+};
+
 const ConceptGraphic = ({accent, progress, subject, metaphor}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
@@ -940,9 +1188,9 @@ const ConceptGraphic = ({accent, progress, subject, metaphor}) => {
   </div>;
 };
 
-const InfographicGraphic = ({beat, progress}) => {
+const InfographicGraphic = ({beat, progress, localSeconds = 0, beatDuration = 4}) => {
   if (!beat) return null;
-  const props = {accent: beat.accent || '#55C7F3', progress, detail: beat.detail || '', options: beat.quizOptions || [], subject: beat.visualSubject || beat.title || '', metaphor: beat.visualMetaphor || ''};
+  const props = {accent: beat.accent || '#55C7F3', progress, localSeconds, beatDuration, detail: beat.detail || '', options: beat.quizOptions || [], subject: beat.visualSubject || beat.title || '', metaphor: beat.visualMetaphor || ''};
   if (beat.visual === 'phone') return <PhoneGraphic {...props}/>;
   if (beat.visual === 'chip') return <ChipGraphic {...props}/>;
   if (beat.visual === 'chart') return <ChartGraphic {...props}/>;
@@ -957,18 +1205,24 @@ const InfographicGraphic = ({beat, progress}) => {
   if (beat.visual === 'money') return <MoneyGraphic {...props}/>;
   if (beat.visual === 'timeline') return <TimelineGraphic {...props}/>;
   if (beat.visual === 'machine') return <MachineGraphic {...props}/>;
+  if (beat.visual === 'motorcycle') return <MotorcycleGraphic {...props}/>;
+  if (beat.visual === 'cvt') return <CvtGraphic {...props}/>;
+  if (beat.visual === 'sparkplug') return <SparkPlugGraphic {...props}/>;
+  if (beat.visual === 'engine_oil') return <EngineOilGraphic {...props}/>;
+  if (beat.visual === 'gaming_network') return <GamingNetworkGraphic {...props}/>;
   return <ConceptGraphic {...props}/>;
 };
 
 const InfographicVideo = ({
   title = 'INFOGRAPHIC EXPLAINER', hook = 'SATU HAL YANG PERLU KAMU TAHU', payoff = 'SUDAH MASUK AKAL?',
-  footer = '', sourceNote = '', beats = [], dialogue = [], watermark = '@ryuundy · HYPIT', styleVersion = '',
+  footer = '', sourceNote = '', beats = [], dialogue = [], midCta = {}, watermark = '@ryuundy · HYPIT', styleVersion = '',
 }) => {
   const frame = useCurrentFrame();
   const {fps, durationInFrames} = useVideoConfig();
   const second = frame / fps;
   const activeIndex = beats.reduce((latest, beat, index) => second >= Number(beat.revealAt || 0) ? index : latest, -1);
   const beat = activeIndex >= 0 ? beats[activeIndex] : null;
+  const hookBeat = beats[0] || null;
   const accent = beat?.accent || '#FFD447';
   const revealFrame = beat ? frame - Math.round(Number(beat.revealAt || 0) * fps) : frame;
   const reveal = spring({fps, frame: Math.max(0, revealFrame), config: {damping: 17, stiffness: 145, mass: .72}});
@@ -976,37 +1230,43 @@ const InfographicVideo = ({
     ? Number(beats[activeIndex + 1].revealAt || durationInFrames / fps)
     : durationInFrames / fps - 5.5;
   const currentRevealAt = Number(beat?.revealAt || 0);
-  const sceneExit = beat && nextRevealAt > currentRevealAt + .35
-    ? interpolate(second, [Math.max(currentRevealAt + .01, nextRevealAt - .34), nextRevealAt], [1, 0], clamp)
-    : 1;
-  const pictureProgress = reveal * sceneExit;
+  const localSeconds = Math.max(0, second - currentRevealAt);
+  const beatDuration = Math.max(.5, nextRevealAt - currentRevealAt);
+  // Keep a composed picture visible until the next beat replaces it. Fading the
+  // outgoing scene to empty frames made both the illustration and subtitle feel
+  // like they were blinking at every narration boundary.
+  const pictureProgress = reveal;
   const hookIn = spring({fps, frame, config: {damping: 18, stiffness: 165, mass: .68}});
   const finalStart = Math.max(0, durationInFrames - Math.round(5.5 * fps));
   const final = spring({fps, frame: frame - finalStart, config: {damping: 17, stiffness: 140, mass: .76}});
   const finalActive = frame >= finalStart;
   const progress = beats.length ? Math.max(0, activeIndex + 1) / beats.length : 0;
-  const winningStyle = styleVersion === 'winning-reel-39-v1' || styleVersion === 'illustrated-winning-reel-v2';
-  return <AbsoluteFill style={{fontFamily: 'Arial, Helvetica, sans-serif', color: '#fff', overflow: 'hidden'}}>
-    {winningStyle ? <WinningReelBackdrop accent={accent}/> : <InfographicBackdrop accent={accent}/>}
+  const legacyWinningStyle = styleVersion === 'winning-reel-39-v1' || styleVersion === 'illustrated-winning-reel-v2';
+  const editorialStyle = styleVersion === 'editorial-explainer-v3';
+  const headlineText = beat?.title || hook;
+  const editorialHeadlineSize = String(headlineText).length > 52 ? 59 : String(headlineText).length > 39 ? 65 : 72;
+  return <AbsoluteFill style={{fontFamily: 'Arial Black, Arial, Helvetica, sans-serif', color: '#fff', overflow: 'hidden'}}>
+    {editorialStyle ? <EditorialExplainerBackdrop accent={accent}/> : legacyWinningStyle ? <WinningReelBackdrop accent={accent}/> : <InfographicBackdrop accent={accent}/>} 
     <div style={{position: 'absolute', left: 42, top: 45, zIndex: 8, fontSize: 17, fontWeight: 900, letterSpacing: '.06em', textShadow: '0 2px 8px rgba(0,0,0,.45)'}}>{watermark}</div>
-    <div style={{position: 'absolute', right: 42, top: 45, zIndex: 8, fontSize: 15, fontWeight: 800, opacity: .72}}>{winningStyle ? 'PATTERN TEST · 39S' : 'INFO · 9:16'}</div>
-    <div style={{position: 'absolute', left: 60, right: 60, top: winningStyle ? 92 : 108, zIndex: 5, textAlign: 'center', opacity: finalActive ? 1 - final : 1}}>
+    <div style={{position: 'absolute', right: 42, top: 45, zIndex: 8, fontSize: 15, fontWeight: 800, opacity: .72}}>{editorialStyle ? 'VISUAL EXPLAINER' : legacyWinningStyle ? 'PATTERN TEST · 39S' : 'INFO · 9:16'}</div>
+    <div style={{position: 'absolute', left: 60, right: 60, top: editorialStyle ? 104 : legacyWinningStyle ? 92 : 108, zIndex: 5, textAlign: 'center', opacity: finalActive ? 1 - final : 1}}>
       <div style={{fontSize: 31, lineHeight: 1, fontWeight: 950, letterSpacing: '.02em', color: '#fff', textShadow: '0 4px 12px rgba(0,0,0,.4)', transform: `translateY(${(1 - (beat ? reveal : hookIn)) * -22}px)`}}>{beat?.kicker || 'WAJIB TAHU'}</div>
-      <div style={{display: 'inline-block', maxWidth: '100%', boxSizing: 'border-box', overflowWrap: 'anywhere', marginTop: 12, padding: winningStyle ? '16px 22px 20px' : 0, borderRadius: winningStyle ? 18 : 0, background: winningStyle ? 'rgba(5,8,15,.88)' : 'transparent', fontSize: beat ? 72 : winningStyle ? 54 : 66, lineHeight: .98, fontWeight: 950, letterSpacing: '-.045em', color: beat ? accent : '#FFD447', WebkitTextStroke: '4px rgba(18,25,55,.9)', paintOrder: 'stroke fill', textTransform: 'uppercase', boxShadow: winningStyle ? `0 12px 0 ${accent}` : 'none', transform: `scale(${.93 + (beat ? reveal : hookIn) * .07})`}}>{beat?.title || hook}</div>
+      <div style={{display: 'inline-block', maxWidth: '100%', boxSizing: 'border-box', overflowWrap: 'anywhere', marginTop: 12, padding: legacyWinningStyle ? '16px 22px 20px' : 0, borderRadius: legacyWinningStyle ? 18 : 0, background: legacyWinningStyle ? 'rgba(5,8,15,.88)' : 'transparent', fontSize: editorialStyle ? editorialHeadlineSize : beat ? 72 : legacyWinningStyle ? 54 : 66, lineHeight: .98, fontWeight: 950, letterSpacing: '-.045em', color: beat ? accent : '#FFD447', WebkitTextStroke: '4px rgba(18,25,55,.9)', paintOrder: 'stroke fill', textTransform: 'uppercase', boxShadow: legacyWinningStyle ? `0 12px 0 ${accent}` : 'none', transform: `scale(${.93 + (beat ? reveal : hookIn) * .07})`}}>{headlineText}</div>
       <div style={{width: 310, height: 8, margin: '25px auto 0', borderRadius: 99, background: 'rgba(255,255,255,.14)', overflow: 'hidden'}}><div style={{height: '100%', width: `${Math.max(7, progress * 100)}%`, borderRadius: 99, background: accent, boxShadow: `0 0 20px ${accent}`}}/></div>
     </div>
-    <div style={{position: 'absolute', left: 45, right: 45, top: winningStyle ? 390 : 410, height: winningStyle ? 870 : 900, display: 'grid', placeItems: 'center', opacity: finalActive ? 1 - final : beat ? (winningStyle ? .96 : 1) : .35, transform: `${winningStyle ? 'scale(.88)' : 'scale(1)'} translateY(${(1-pictureProgress)*28}px)`, transformOrigin: '50% 48%'}}>
-      {beat ? <InfographicGraphic key={beat.id || activeIndex} beat={beat} progress={pictureProgress}/> : <ConceptGraphic accent="#FFD447" progress={hookIn} subject={title}/>}
+    <div style={{position: 'absolute', left: 45, right: 45, top: editorialStyle ? 365 : legacyWinningStyle ? 390 : 410, height: editorialStyle ? 990 : legacyWinningStyle ? 870 : 900, display: 'grid', placeItems: 'center', opacity: finalActive ? 1 - final : beat ? (legacyWinningStyle ? .96 : 1) : .35, transform: `${legacyWinningStyle ? 'scale(.88)' : 'scale(1)'} translateY(${(1-pictureProgress)*28}px)`, transformOrigin: '50% 48%'}}>
+      {beat ? <InfographicGraphic key={beat.id || activeIndex} beat={beat} progress={pictureProgress} localSeconds={localSeconds} beatDuration={beatDuration}/> : hookBeat ? <InfographicGraphic beat={hookBeat} progress={hookIn} localSeconds={second} beatDuration={Number(hookBeat.revealAt || 4.4)}/> : <ConceptGraphic accent="#FFD447" progress={hookIn} subject={title}/>} 
     </div>
     <small style={{position: 'absolute', left: 65, right: 65, bottom: 68, zIndex: 7, textAlign: 'center', fontSize: 16, opacity: .66}}>{sourceNote}</small>
-    {finalActive ? <AbsoluteFill style={{zIndex: 20, display: 'grid', placeItems: 'center', padding: 70, background: `rgba(22,30,72,${.35 + final * .58})`, backdropFilter: `blur(${final * 10}px)`}}>
+    {finalActive ? <AbsoluteFill style={{zIndex: 20, display: 'grid', placeItems: 'center', padding: 70, background: `rgba(22,30,72,${.35 + final * .58})`}}>
       <div style={{width: '100%', padding: '75px 45px 58px', borderRadius: 46, background: 'linear-gradient(150deg,#FFD447,#FFB62E)', color: '#1D2542', border: '7px solid #1B213B', boxShadow: '0 38px 95px rgba(0,0,0,.36)', textAlign: 'center', opacity: final, transform: `translateY(${(1 - final) * 90}px) scale(${.8 + final * .2}) rotate(${(1 - final) * -3}deg)`}}>
         <div style={{fontSize: 25, fontWeight: 950, letterSpacing: '.08em'}}>SEBELUM SELESAI</div>
         <div style={{marginTop: 18, fontSize: 78, lineHeight: .96, fontWeight: 950, letterSpacing: '-.055em'}}>{payoff}</div>
         <div style={{display: 'inline-block', marginTop: 38, padding: '18px 30px', borderRadius: 18, color: '#fff', background: '#1D2542', fontSize: 26, fontWeight: 950}}>{footer}</div>
       </div>
     </AbsoluteFill> : null}
-    <StableDialogueCaption dialogue={dialogue} palette="infographic" bottom={132}/>
+    <MidVideoEngagement config={midCta}/>
+    <StableDialogueCaption dialogue={dialogue} palette="infographic" bottom={218}/>
   </AbsoluteFill>;
 };
 

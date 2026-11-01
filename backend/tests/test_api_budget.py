@@ -7793,6 +7793,160 @@ def test_completed_job_gate_accepts_actual_duration_matching_sidecar(monkeypatch
     assert issue is None
 
 
+def test_completed_job_gate_uses_authored_output_duration_instead_of_source_window(
+    monkeypatch, tmp_path
+):
+    import api
+
+    outputs = tmp_path / "outputs"
+    clip_path = outputs / "job" / "clips" / "clip_01.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"x" * 2048)
+    clip = ClipFile(
+        name=clip_path.name,
+        url="/outputs/job/clips/clip_01.mp4",
+        size_bytes=clip_path.stat().st_size,
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "media_duration_seconds", lambda _path: 31.27)
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "duration": 28.49,
+            "source_duration_seconds": 28.49,
+            "output_duration_seconds": 31.27,
+            "quran_outro": {"enabled": True, "duration_seconds": 2.78},
+        },
+    )
+
+    issue = api.completed_clip_integrity_issue(
+        ClipJobRequest(url="https://youtu.be/test", min_duration=25, max_duration=58),
+        [clip],
+    )
+
+    assert issue is None
+
+
+def test_completed_job_gate_allows_authored_outro_after_source_duration_limit(
+    monkeypatch, tmp_path
+):
+    import api
+
+    outputs = tmp_path / "outputs"
+    clip_path = outputs / "job" / "clips" / "clip_01.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"x" * 2048)
+    clip = ClipFile(
+        name=clip_path.name,
+        url="/outputs/job/clips/clip_01.mp4",
+        size_bytes=clip_path.stat().st_size,
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "media_duration_seconds", lambda _path: 47.77)
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "duration": 44.97,
+            "source_duration_seconds": 44.97,
+            "output_duration_seconds": 47.77,
+            "quran_outro": {"enabled": True, "duration_seconds": 2.8},
+        },
+    )
+
+    issue = api.completed_clip_integrity_issue(
+        ClipJobRequest(url="https://youtu.be/test", min_duration=25, max_duration=45),
+        [clip],
+    )
+
+    assert issue is None
+
+
+def test_completed_job_gate_allows_automatic_source_window_expansion(
+    monkeypatch, tmp_path
+):
+    import api
+
+    outputs = tmp_path / "outputs"
+    clip_path = outputs / "job" / "clips" / "clip_02.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"x" * 2048)
+    clip = ClipFile(
+        name=clip_path.name,
+        url="/outputs/job/clips/clip_02.mp4",
+        size_bytes=clip_path.stat().st_size,
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(api, "media_duration_seconds", lambda _path: 49.936)
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "duration": 47.136,
+            "source_duration_seconds": 47.136,
+            "output_duration_seconds": 49.936,
+            "quran_outro": {"enabled": True, "duration_seconds": 2.8},
+        },
+    )
+
+    issue = api.completed_clip_integrity_issue(
+        ClipJobRequest(url="https://youtu.be/test", min_duration=25, max_duration=45),
+        [clip],
+    )
+
+    assert issue is None
+
+
+def test_completed_job_gate_salvages_valid_sibling_when_one_render_is_bad(
+    monkeypatch, tmp_path
+):
+    import api
+
+    outputs = tmp_path / "outputs"
+    good_path = outputs / "job" / "clips" / "clip_01.mp4"
+    bad_path = outputs / "job" / "clips" / "clip_02.mp4"
+    good_path.parent.mkdir(parents=True)
+    good_path.write_bytes(b"g" * 2048)
+    bad_path.write_bytes(b"b" * 2048)
+    good = ClipFile(
+        name=good_path.name,
+        url="/outputs/job/clips/clip_01.mp4",
+        size_bytes=good_path.stat().st_size,
+    )
+    bad = ClipFile(
+        name=bad_path.name,
+        url="/outputs/job/clips/clip_02.mp4",
+        size_bytes=bad_path.stat().st_size,
+    )
+    durations = {good_path.name: 31.27, bad_path.name: 2.0}
+    monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
+    monkeypatch.setattr(
+        api,
+        "media_duration_seconds",
+        lambda path: durations[path.name],
+    )
+    monkeypatch.setattr(
+        api,
+        "clip_sidecar_payload",
+        lambda _clip: {
+            "duration": 28.49,
+            "source_duration_seconds": 28.49,
+            "output_duration_seconds": 31.27,
+        },
+    )
+
+    valid, rejected = api.partition_completed_clips_by_integrity(
+        ClipJobRequest(url="https://youtu.be/test", min_duration=25, max_duration=45),
+        [good, bad],
+    )
+
+    assert valid == [good]
+    assert len(rejected) == 1
+    assert rejected[0][0] == bad
+    assert "durasi aktual 2.000 detik" in rejected[0][1]
+
+
 def test_youtube_cdp_start_needed_detects_remote_debugging_error():
     assert youtube_cdp_start_needed(
         "Chrome remote debugging belum aktif. Jalur utama upload memakai Playwright storage-state"
