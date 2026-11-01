@@ -354,48 +354,57 @@ export function QuickStartCard({
 
         {isStory ? (
           <div className="storyStudioComposer">
-            <header>
-              <div className="storyStudioModeSwitch" aria-label="Mode pembuatan">
-                <span className="active"><BookOpen size={14} /> 1. Brief</span>
-                <span className={storyboardPreview ? "active" : ""}><ListVideo size={14} /> 2. Storyboard</span>
-                <span className={isWorking ? "active" : ""}><Film size={14} /> 3. Render</span>
-              </div>
-              <small>{isHypitAuto ? "HYPIT · AUTO EXPLAINER" : isHypitPrompt ? "HYPIT QUICK · DIRECT" : "CLIPFORGE STORY FLOW · EDITABLE"}</small>
-            </header>
             <label className="storyInputField">
-              <span>Judul, deskripsi, atau naskah</span>
+              <span>{isHypitAuto ? "Analogi dan teks sumber" : "Ide, deskripsi, atau naskah"}</span>
               <textarea
                 value={storyText}
                 onChange={(event) => onStoryTextChange(event.target.value)}
-                placeholder={'Contoh judul: Kucing Polisi Memecahkan Misteri Kota\n\nAtau tempel deskripsi/naskah lengkap. AI akan menyusunnya menjadi daftar adegan yang bisa direvisi sebelum render.'}
+                placeholder={isHypitAuto
+                  ? "Analogi: jelaskan perumpamaan visualnya.\nTeks: tempel materi yang harus dijelaskan."
+                  : "Contoh: Buat video tentang kucing polisi yang memecahkan misteri kota."}
                 rows={storyboardPreview ? 4 : 8}
                 maxLength={30000}
               />
-              <small>{storyText.trim().length.toLocaleString("id-ID")} / 30.000 karakter · minimal judul 2 kata · durasi dapat ditulis di brief</small>
+              <small>
+                <span>{storyText.trim().length.toLocaleString("id-ID")} / 30.000 karakter</span>
+                <span>{isHypitPrompt ? "Render langsung" : "Storyboard dapat direvisi sebelum render"}</span>
+              </small>
             </label>
-            <p className="sourceHint">{isHypitAuto ? "Berikan analogi dan teks sumber. Sistem membuat pola Reel 39 detik; bila keluaran AI kurang lengkap, beat diperbaiki otomatis dari teks Anda tanpa menggagalkan render." : "Brief disusun menjadi storyboard terarah. Revisi narasi, visual, urutan, kamera, dan teks layar terlebih dahulu; render memakai versi yang sudah Anda setujui."}</p>
             {!storyText.trim() ? (
-              <div className="hypitPromptExamples" aria-label="Contoh prompt Hypit">
-                <button type="button" onClick={() => onStoryTextChange("Kucing Polisi Memecahkan Misteri Kota")}>Mulai dari judul</button>
-                <button type="button" onClick={() => onStoryTextChange("Seorang pedagang kecil dituduh mencuri, lalu bukti tersembunyi membalik keadaan. Buat drama hangat 5 menit dengan akhir memuaskan.")}>Mulai dari deskripsi</button>
-                <button type="button" onClick={() => onStoryTextChange("/hypit Make a ranking video that puts Hypit in S tier.")}>Hypit Quick</button>
-                <button type="button" onClick={() => onStoryTextChange("/hypit infographic Baterai HP tidak bocor tiba-tiba | Persentase baterai adalah perkiraan dari arus dan tegangan | Chip fuel gauge menghitung arus masuk dan keluar | Kurva tegangan baterai lithium hampir datar di bagian tengah | Kuis: Saat baterai hampir habis, tegangannya bagaimana? / DATAR / TURUN TAJAM")}>Infographic Explainer</button>
-                <button type="button" onClick={() => onStoryTextChange("/hypit infographic auto\nAnalogi: indikator baterai seperti petugas yang memperkirakan isi tangki, bukan melihat isinya secara langsung.\nTeks: Ponsel memperkirakan sisa baterai dari arus yang masuk dan keluar serta perubahan tegangan. Pada sebagian besar rentang pemakaian, tegangan baterai lithium berubah relatif landai sehingga perkiraan dapat dikoreksi ketika kondisi berubah.")}>Auto dari Analogi + Teks</button>
+              <div className="storyPromptExamples" aria-label="Contoh isi video">
+                <span>Mulai dengan contoh</span>
+                <div>
+                  <button type="button" onClick={() => onStoryTextChange("Seorang pedagang kecil dituduh mencuri, lalu bukti tersembunyi membalik keadaan. Buat drama hangat 5 menit dengan akhir memuaskan.")}><BookOpen size={14} /> Cerita dramatis</button>
+                  <button type="button" onClick={() => onStoryTextChange("/hypit Make a ranking video that puts Hypit in S tier.")}><BarChart3 size={14} /> Video ranking</button>
+                  <button type="button" onClick={() => onStoryTextChange("/hypit infographic Baterai HP tidak bocor tiba-tiba | Persentase baterai adalah perkiraan dari arus dan tegangan | Chip fuel gauge menghitung arus masuk dan keluar | Kurva tegangan baterai lithium hampir datar di bagian tengah | Kuis: Saat baterai hampir habis, tegangannya bagaimana? / DATAR / TURUN TAJAM")}><Film size={14} /> Explainer animasi</button>
+                  <button type="button" onClick={() => onStoryTextChange("/hypit infographic auto\nAnalogi: indikator baterai seperti petugas yang memperkirakan isi tangki, bukan melihat isinya secara langsung.\nTeks: Ponsel memperkirakan sisa baterai dari arus yang masuk dan keluar serta perubahan tegangan. Pada sebagian besar rentang pemakaian, tegangan baterai lithium berubah relatif landai sehingga perkiraan dapat dikoreksi ketika kondisi berubah.")}><Sparkles size={14} /> Auto dari teks</button>
+                </div>
               </div>
             ) : null}
 
             {!isHypitPrompt ? (
-              <div className="storyboardBuildBar">
+              <div className="storyComposerActions">
                 <span>
                   <ListVideo size={17} />
-                  <b>{storyboardPreview ? `${storyboardPreview.scenes.length} adegan siap direvisi` : "Buat draft sebelum memakai kredit render"}<small>Storyboard tidak langsung menghasilkan video.</small></b>
+                  <b>{storyboardPreview ? `${storyboardPreview.scenes.length} adegan siap direvisi` : "Buat storyboard dulu"}<small>Belum memakai kredit render.</small></b>
                 </span>
                 <button type="button" disabled={!storyReady || isWorking || isGeneratingStoryboard} onClick={onGenerateStoryboard}>
                   {isGeneratingStoryboard ? <Loader2 className="spin" size={16} /> : storyboardPreview ? <RefreshCw size={16} /> : <WandSparkles size={16} />}
                   {isGeneratingStoryboard ? "Menyusun…" : storyboardPreview ? "Susun ulang" : "Buat storyboard"}
                 </button>
               </div>
-            ) : null}
+            ) : (
+              <div className="storyComposerActions isDirect">
+                <span>
+                  <Sparkles size={17} />
+                  <b>{isHypitAuto ? "Explainer animasi siap dibuat" : "Video Hypit siap dibuat"}<small>Ilustrasi, suara, dan caption dirakit otomatis.</small></b>
+                </span>
+                <button type="button" disabled={!canStart} onClick={onStart}>
+                  {isWorking ? <Loader2 className="spin" size={17} /> : <Play size={17} />}
+                  Generate video
+                </button>
+              </div>
+            )}
 
             {storyboardError ? <div className="storyboardInlineError" role="alert">{storyboardError}</div> : null}
 
@@ -485,25 +494,6 @@ export function QuickStartCard({
               </section>
             ) : null}
 
-            <footer>
-              <div className="storyStudioTools">
-                <span title="Brief dikembangkan menjadi adegan terarah"><Focus size={15} /> Brief → scene</span>
-                <span title="Setiap card dapat direvisi sebelum produksi"><ListVideo size={15} /> Edit per adegan</span>
-                <span title="Hypit dan Remotion merakit hasil akhir"><Film size={15} /> Render stabil</span>
-              </div>
-              {isHypitPrompt ? <div className="storyStudioDirector">
-                <span><Sparkles size={14} /> Hypit Quick</span>
-                <button
-                  aria-label="Generate video Hypit Quick"
-                  className="storyStudioSubmit"
-                  disabled={!canStart}
-                  type="button"
-                  onClick={onStart}
-                >
-                  {isWorking ? <Loader2 className="spin" size={19} /> : <ArrowRight size={19} />}
-                </button>
-              </div> : null}
-            </footer>
           </div>
         ) : <label className="sourceUrlField">
           <span>Link video sumber</span>

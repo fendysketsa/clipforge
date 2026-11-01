@@ -387,32 +387,41 @@ const KineticHeadline = ({text, accent = '#B6FF4A', progress = 1}) => {
   );
 };
 
-const RankingDialogue = ({dialogue = []}) => {
+const StableDialogueCaption = ({dialogue = [], palette = 'ranking', bottom = 248}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const second = frame / fps;
-  const active = dialogue.find((cue) => (
-    second >= Number(cue.start || 0)
-    && second < Number(cue.start || 0) + Number(cue.duration || 0)
-  ));
+  // Hold the last complete cue until the next one starts. This keeps the caption
+  // rail mounted through natural speech gaps instead of flashing off and on.
+  const active = dialogue.reduce(
+    (latest, cue) => second >= Number(cue.start || 0) ? cue : latest,
+    null,
+  );
   if (!active) return null;
-  const words = String(active.text || '').split(/\s+/).filter(Boolean);
   const host = active.speaker === 'HOST';
-  const accent = host ? '#6FFFE5' : '#B6FF4A';
+  const infographic = palette === 'infographic';
+  const accent = infographic
+    ? host ? '#FFD447' : '#55D9FF'
+    : host ? '#6FFFE5' : '#B6FF4A';
+  const text = String(active.text || '');
+  const fontSize = text.length > 150 ? 29 : text.length > 105 ? 32 : 35;
   return (
     <div style={{
       position: 'absolute',
       zIndex: 20,
       left: 62,
       right: 62,
-      bottom: 248,
+      bottom,
+      minHeight: 132,
       display: 'flex',
-      alignItems: 'flex-start',
+      alignItems: 'center',
       gap: 17,
-      padding: '22px 25px 24px',
+      padding: '20px 25px 22px',
       borderRadius: 27,
       color: '#F7FFFC',
-      background: 'linear-gradient(120deg, rgba(3,13,17,.94), rgba(8,10,22,.91))',
+      background: infographic
+        ? 'linear-gradient(120deg, rgba(13,20,42,.96), rgba(26,17,52,.94))'
+        : 'linear-gradient(120deg, rgba(3,13,17,.94), rgba(8,10,22,.91))',
       border: `1px solid ${accent}66`,
       boxShadow: `0 20px 65px rgba(0,0,0,.46), 0 0 38px ${accent}18`,
       backdropFilter: 'blur(18px)',
@@ -432,17 +441,7 @@ const RankingDialogue = ({dialogue = []}) => {
         letterSpacing: '.08em',
         boxShadow: `0 0 24px ${accent}55`,
       }}>{host ? 'HOST' : 'CO-HOST'}</span>
-      <div style={{fontSize: 34, lineHeight: 1.17, fontWeight: 850, letterSpacing: '-.025em'}}>
-        {words.map((word, index) => (
-          <span key={`${word}-${index}`} style={{
-            display: 'inline-block',
-            marginRight: '.24em',
-            color: /^(s|a|b|c|f)$/i.test(word.replace(/[^a-z]/gi, '')) ? accent : '#F7FFFC',
-            textShadow: 'none',
-            transform: 'none',
-          }}>{word}</span>
-        ))}
-      </div>
+      <div style={{fontSize, lineHeight: 1.18, fontWeight: 850, letterSpacing: '-.025em'}}>{text}</div>
     </div>
   );
 };
@@ -696,7 +695,7 @@ const RankingVideo = ({
           mixBlendMode: 'screen',
         }}/>
       </AbsoluteFill> : null}
-      <RankingDialogue dialogue={dialogue}/>
+      <StableDialogueCaption dialogue={dialogue}/>
     </AbsoluteFill>
   );
 };
@@ -830,28 +829,140 @@ const QuizGraphic = ({accent, progress, detail, options = []}) => <div style={{w
   </div>
 </div>;
 
-const ConceptGraphic = ({accent, progress, detail}) => <div style={{width: 760, height: 610, borderRadius: '50%', background: `${accent}26`, display: 'grid', placeItems: 'center', transform: `scale(${.72 + progress * .28})`}}>
-  <div style={{width: 540, padding: '68px 46px', borderRadius: 44, background: '#F8F5EA', border: '7px solid #202741', color: '#202741', textAlign: 'center', boxShadow: '0 32px 70px rgba(0,0,0,.3)'}}>
-    <div style={{fontSize: 85, marginBottom: 25}}>✦</div>
-    <strong style={{fontSize: 40, lineHeight: 1.1}}>{detail}</strong>
-  </div>
+const SubjectPlate = ({subject, accent, dark = false}) => <div style={{
+  maxWidth: 520, padding: '17px 26px 19px', borderRadius: 18, textAlign: 'center',
+  color: dark ? '#202741' : '#fff', background: dark ? '#F8F5EA' : '#202741',
+  border: `5px solid ${dark ? '#202741' : accent}`, boxShadow: `0 14px 0 ${accent}55`,
+  fontSize: 32, lineHeight: 1.05, fontWeight: 950, textTransform: 'uppercase',
+}}>{subject || 'IDE UTAMA'}</div>;
+
+const NetworkGraphic = ({accent, progress, subject}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const nodes = [[110,310],[260,130],[430,300],[610,130],[770,315],[455,520]];
+  return <div style={{position: 'relative', width: 880, height: 650, transform: `scale(${.82 + progress * .18})`}}>
+    <svg width="880" height="650" viewBox="0 0 880 650" style={{position: 'absolute'}}>
+      {[[0,1],[1,2],[2,3],[3,4],[2,5],[5,4]].map(([a,b], index) => <path key={index} d={`M${nodes[a][0]} ${nodes[a][1]} L${nodes[b][0]} ${nodes[b][1]}`} stroke="rgba(255,255,255,.42)" strokeWidth="10" strokeLinecap="round" strokeDasharray="18 18" strokeDashoffset={-(frame * (1.5 + index * .12))}/>) }
+      {nodes.map(([x,y], index) => <g key={index} transform={`translate(${x} ${y}) scale(${.65 + progress * .35})`}>
+        <circle r="64" fill={index === 2 ? accent : '#F8F5EA'} stroke="#202741" strokeWidth="8"/>
+        <circle r={18 + Math.sin(frame / fps * 3 + index) * 4} fill={index === 2 ? '#202741' : accent}/>
+      </g>)}
+      <circle r="13" fill="#fff" cx={110 + ((frame * 8) % 660)} cy={310 - Math.sin((frame / 83) * Math.PI) * 180} style={{filter: `drop-shadow(0 0 12px ${accent})`}}/>
+    </svg>
+    <div style={{position: 'absolute', left: 180, right: 180, bottom: 0, display: 'grid', placeItems: 'center'}}><SubjectPlate subject={subject} accent={accent}/></div>
+  </div>;
+};
+
+const SecurityGraphic = ({accent, progress, subject}) => {
+  const frame = useCurrentFrame();
+  const pulse = 1 + Math.sin(frame * .08) * .035;
+  return <div style={{position: 'relative', width: 790, height: 650, display: 'grid', placeItems: 'center', transform: `scale(${(.8 + progress * .2) * pulse})`}}>
+    {[0,1,2].map((ring) => <div key={ring} style={{position: 'absolute', width: 370 + ring * 120, height: 370 + ring * 120, borderRadius: '50%', border: `4px solid ${accent}${ring === 0 ? '88' : '30'}`, transform: `scale(${.84 + progress * .16}) rotate(${frame * (ring % 2 ? -.08 : .06)}deg)`}}/>)}
+    <svg width="430" height="500" viewBox="0 0 430 500" style={{filter: 'drop-shadow(0 28px 35px rgba(0,0,0,.28))'}}>
+      <path d="M215 20 L390 82 V225 C390 340 318 431 215 475 C112 431 40 340 40 225 V82 Z" fill={accent} stroke="#202741" strokeWidth="14"/>
+      <path d="M125 245 L187 307 L315 166" fill="none" stroke="#202741" strokeWidth="28" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="300" strokeDashoffset={(1-progress)*300}/>
+    </svg>
+    {[0,1,2,3,4,5].map((dot) => <i key={dot} style={{position: 'absolute', width: 24, height: 24, borderRadius: 7, background: dot % 2 ? '#FF626E' : '#fff', left: `${7 + (dot * 17) % 88}%`, top: `${12 + (dot * 29) % 72}%`, transform: `translateY(${Math.sin(frame * .06 + dot) * 22}px) scale(${progress})`}}/>)}
+    <div style={{position: 'absolute', bottom: -5}}><SubjectPlate subject={subject} accent={accent}/></div>
+  </div>;
+};
+
+const JourneyGraphic = ({accent, progress, subject}) => {
+  const frame = useCurrentFrame();
+  const travel = Math.min(1, ((frame % 150) / 100)) * progress;
+  return <div style={{position: 'relative', width: 900, height: 650}}>
+    <svg width="900" height="650" viewBox="0 0 900 650">
+      <path d="M70 525 C220 120 510 560 820 135" fill="none" stroke="rgba(255,255,255,.28)" strokeWidth="34" strokeLinecap="round"/>
+      <path d="M70 525 C220 120 510 560 820 135" fill="none" stroke={accent} strokeWidth="13" strokeLinecap="round" strokeDasharray="20 18" strokeDashoffset={-frame * 2}/>
+      <circle cx="70" cy="525" r="45" fill="#F8F5EA" stroke="#202741" strokeWidth="8"/>
+      <path d="M780 110 L850 110 L850 215 L815 190 L780 215 Z" fill="#FF626E" stroke="#202741" strokeWidth="8"/>
+      <g transform={`translate(${70 + travel * 745} ${525 - Math.sin(travel * Math.PI) * 245 - travel * 135}) rotate(${-20 + travel * 10})`}>
+        <rect x="-58" y="-38" width="116" height="76" rx="22" fill="#FFD447" stroke="#202741" strokeWidth="8"/>
+        <circle cx="-35" cy="42" r="18" fill="#202741"/><circle cx="35" cy="42" r="18" fill="#202741"/>
+      </g>
+    </svg>
+    <div style={{position: 'absolute', left: 190, right: 190, bottom: 5, display: 'grid', placeItems: 'center'}}><SubjectPlate subject={subject} accent={accent}/></div>
+  </div>;
+};
+
+const ComparisonGraphic = ({accent, progress, subject}) => <div style={{position: 'relative', width: 900, height: 650, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 35}}>
+  {[0,1].map((side) => <div key={side} style={{width: 375, height: 470, borderRadius: 42, display: 'grid', placeItems: 'center', color: '#202741', background: side ? accent : '#F8F5EA', border: '8px solid #202741', boxShadow: '0 28px 60px rgba(0,0,0,.28)', transform: `translateX(${(1-progress)*(side ? 140 : -140)}px) rotate(${(1-progress)*(side ? 8 : -8)}deg)`}}>
+    <div style={{width: 180, height: 180, borderRadius: side ? 48 : '50%', background: side ? '#202741' : accent, display: 'grid', placeItems: 'center', color: side ? '#fff' : '#202741', fontSize: 86, fontWeight: 950}}>{side ? 'B' : 'A'}</div>
+  </div>)}
+  <div style={{position: 'absolute', left: '50%', top: '42%', width: 110, height: 110, marginLeft: -55, borderRadius: '50%', display: 'grid', placeItems: 'center', background: '#FF626E', border: '7px solid #202741', fontSize: 36, fontWeight: 950, transform: `scale(${.65 + progress * .35})`}}>VS</div>
+  <div style={{position: 'absolute', left: 185, right: 185, bottom: 0, display: 'grid', placeItems: 'center'}}><SubjectPlate subject={subject} accent={accent}/></div>
 </div>;
+
+const PeopleGraphic = ({accent, progress, subject}) => {
+  const frame = useCurrentFrame();
+  return <div style={{position: 'relative', width: 900, height: 650, display: 'flex', justifyContent: 'space-around', alignItems: 'center'}}>
+    {[0,1,2].map((person) => <div key={person} style={{position: 'relative', width: 220, height: 430, transform: `translateY(${(1-progress)*(person%2 ? -80 : 80)}px)`}}>
+      <div style={{position: 'absolute', left: 55, top: 20, width: 110, height: 110, borderRadius: '50%', background: person === 1 ? accent : '#F8F5EA', border: '7px solid #202741'}}/>
+      <div style={{position: 'absolute', left: 25, top: 125, width: 170, height: 250, borderRadius: '70px 70px 38px 38px', background: person === 1 ? '#F8F5EA' : accent, border: '7px solid #202741'}}/>
+    </div>)}
+    <div style={{position: 'absolute', top: 155, left: 125 + ((frame * 5) % 590), width: 78, height: 78, borderRadius: 22, background: '#FFD447', border: '7px solid #202741', transform: `rotate(${frame * 1.2}deg) scale(${progress})`}}/>
+    <div style={{position: 'absolute', left: 190, right: 190, bottom: 5, display: 'grid', placeItems: 'center'}}><SubjectPlate subject={subject} accent={accent}/></div>
+  </div>;
+};
+
+const MoneyGraphic = ({accent, progress, subject}) => <div style={{position: 'relative', width: 850, height: 650, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 28, paddingBottom: 115}}>
+  {[.38,.58,.78,1].map((height, index) => <div key={index} style={{width: 145, height: 360 * height * progress, minHeight: 35, borderRadius: '20px 20px 10px 10px', background: index === 3 ? accent : '#FFD447', border: '7px solid #202741', boxShadow: '0 18px 35px rgba(0,0,0,.23)', position: 'relative'}}>{[0,1,2].map((line) => <i key={line} style={{position: 'absolute', left: 15, right: 15, top: 20 + line * 45, height: 9, borderRadius: 9, background: 'rgba(32,39,65,.28)'}}/>)}</div>)}
+  <svg width="760" height="360" viewBox="0 0 760 360" style={{position: 'absolute', left: 45, top: 15}}><path d="M35 300 C190 280 260 205 360 210 C500 218 585 85 720 55" fill="none" stroke="#fff" strokeWidth="15" strokeLinecap="round" strokeDasharray="900" strokeDashoffset={(1-progress)*900}/><path d="M680 35 L730 52 L704 98" fill="none" stroke="#fff" strokeWidth="15" strokeLinecap="round" strokeLinejoin="round"/></svg>
+  <div style={{position: 'absolute', left: 180, right: 180, bottom: 5, display: 'grid', placeItems: 'center'}}><SubjectPlate subject={subject} accent={accent}/></div>
+</div>;
+
+const TimelineGraphic = ({accent, progress, subject}) => <div style={{position: 'relative', width: 900, height: 650, display: 'grid', placeItems: 'center'}}>
+  <div style={{position: 'absolute', left: 75, right: 75, top: 300, height: 18, borderRadius: 99, background: 'rgba(255,255,255,.25)', overflow: 'hidden'}}><div style={{height: '100%', width: `${progress*100}%`, background: accent}}/></div>
+  {[0,1,2,3].map((event) => { const local = Math.max(0, Math.min(1, progress*1.5-event*.18)); return <div key={event} style={{position: 'absolute', left: 80+event*205, top: event%2 ? 320 : 120, width: 180, height: 155, borderRadius: 28, background: event===3 ? accent : '#F8F5EA', color: '#202741', border: '7px solid #202741', display: 'grid', placeItems: 'center', fontSize: 36, fontWeight: 950, opacity: local, transform: `translateY(${(1-local)*(event%2 ? 45 : -45)}px)`}}>{String(event+1).padStart(2,'0')}</div>; })}
+  <div style={{position: 'absolute', left: 180, right: 180, bottom: 5, display: 'grid', placeItems: 'center'}}><SubjectPlate subject={subject} accent={accent}/></div>
+</div>;
+
+const MachineGraphic = ({accent, progress, subject}) => {
+  const frame = useCurrentFrame();
+  const gears = [{x:170,y:260,s:210,d:1},{x:365,y:135,s:270,d:-1},{x:590,y:310,s:230,d:1}];
+  return <div style={{position: 'relative', width: 850, height: 650}}>
+    {gears.map((gear,index) => <div key={index} style={{position: 'absolute', left: gear.x, top: gear.y, width: gear.s, height: gear.s, borderRadius: '50%', background: index===1 ? accent : '#F8F5EA', border: '18px dashed #202741', boxShadow: '0 24px 50px rgba(0,0,0,.25)', transform: `rotate(${frame*gear.d*.7}deg) scale(${.7+progress*.3})`, display: 'grid', placeItems: 'center'}}><i style={{width: gear.s*.28, height: gear.s*.28, borderRadius: '50%', background: '#202741'}}/></div>)}
+    <div style={{position: 'absolute', left: 165, right: 165, bottom: 0, display: 'grid', placeItems: 'center'}}><SubjectPlate subject={subject} accent={accent}/></div>
+  </div>;
+};
+
+const ConceptGraphic = ({accent, progress, subject, metaphor}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const objects = [0,1,2,3,4];
+  return <div style={{position: 'relative', width: 790, height: 650, display: 'grid', placeItems: 'center', transform: `scale(${.74 + progress * .26})`}}>
+    <div style={{position: 'absolute', width: 540, height: 540, borderRadius: '50%', background: `${accent}24`, border: `4px solid ${accent}55`}}/>
+    {objects.map((item) => { const angle = frame/fps*.45 + item*Math.PI*2/objects.length; return <div key={item} style={{position: 'absolute', left: 365+Math.cos(angle)*270, top: 280+Math.sin(angle)*210, width: 86, height: 86, borderRadius: item%2 ? 24 : '50%', background: item%2 ? accent : '#F8F5EA', border: '7px solid #202741', transform: `rotate(${angle*42}deg) scale(${progress})`}}/>; })}
+    <div style={{position: 'relative', width: 430, height: 320, borderRadius: 48, background: '#F8F5EA', border: '8px solid #202741', display: 'grid', placeItems: 'center', color: '#202741', boxShadow: '0 32px 70px rgba(0,0,0,.3)', textAlign: 'center', padding: 35}}>
+      <svg width="155" height="150" viewBox="0 0 155 150"><path d="M77 8 L96 57 L148 75 L97 94 L77 143 L58 94 L7 75 L58 56 Z" fill={accent} stroke="#202741" strokeWidth="8"/></svg>
+      <strong style={{fontSize: 35, lineHeight: 1.05, textTransform: 'uppercase'}}>{subject || metaphor || 'IDE UTAMA'}</strong>
+    </div>
+  </div>;
+};
 
 const InfographicGraphic = ({beat, progress}) => {
   if (!beat) return null;
-  const props = {accent: beat.accent || '#55C7F3', progress, detail: beat.detail || '', options: beat.quizOptions || []};
+  const props = {accent: beat.accent || '#55C7F3', progress, detail: beat.detail || '', options: beat.quizOptions || [], subject: beat.visualSubject || beat.title || '', metaphor: beat.visualMetaphor || ''};
   if (beat.visual === 'phone') return <PhoneGraphic {...props}/>;
   if (beat.visual === 'chip') return <ChipGraphic {...props}/>;
   if (beat.visual === 'chart') return <ChartGraphic {...props}/>;
   if (beat.visual === 'temperature') return <TemperatureGraphic {...props}/>;
   if (beat.visual === 'process') return <ProcessGraphic {...props}/>;
   if (beat.visual === 'quiz') return <QuizGraphic {...props}/>;
+  if (beat.visual === 'network') return <NetworkGraphic {...props}/>;
+  if (beat.visual === 'security') return <SecurityGraphic {...props}/>;
+  if (beat.visual === 'journey') return <JourneyGraphic {...props}/>;
+  if (beat.visual === 'comparison') return <ComparisonGraphic {...props}/>;
+  if (beat.visual === 'people') return <PeopleGraphic {...props}/>;
+  if (beat.visual === 'money') return <MoneyGraphic {...props}/>;
+  if (beat.visual === 'timeline') return <TimelineGraphic {...props}/>;
+  if (beat.visual === 'machine') return <MachineGraphic {...props}/>;
   return <ConceptGraphic {...props}/>;
 };
 
 const InfographicVideo = ({
   title = 'INFOGRAPHIC EXPLAINER', hook = 'SATU HAL YANG PERLU KAMU TAHU', payoff = 'SUDAH MASUK AKAL?',
-  footer = '', sourceNote = '', beats = [], watermark = '@ryuundy · HYPIT', styleVersion = '',
+  footer = '', sourceNote = '', beats = [], dialogue = [], watermark = '@ryuundy · HYPIT', styleVersion = '',
 }) => {
   const frame = useCurrentFrame();
   const {fps, durationInFrames} = useVideoConfig();
@@ -861,12 +972,20 @@ const InfographicVideo = ({
   const accent = beat?.accent || '#FFD447';
   const revealFrame = beat ? frame - Math.round(Number(beat.revealAt || 0) * fps) : frame;
   const reveal = spring({fps, frame: Math.max(0, revealFrame), config: {damping: 17, stiffness: 145, mass: .72}});
+  const nextRevealAt = activeIndex >= 0 && activeIndex + 1 < beats.length
+    ? Number(beats[activeIndex + 1].revealAt || durationInFrames / fps)
+    : durationInFrames / fps - 5.5;
+  const currentRevealAt = Number(beat?.revealAt || 0);
+  const sceneExit = beat && nextRevealAt > currentRevealAt + .35
+    ? interpolate(second, [Math.max(currentRevealAt + .01, nextRevealAt - .34), nextRevealAt], [1, 0], clamp)
+    : 1;
+  const pictureProgress = reveal * sceneExit;
   const hookIn = spring({fps, frame, config: {damping: 18, stiffness: 165, mass: .68}});
   const finalStart = Math.max(0, durationInFrames - Math.round(5.5 * fps));
   const final = spring({fps, frame: frame - finalStart, config: {damping: 17, stiffness: 140, mass: .76}});
   const finalActive = frame >= finalStart;
   const progress = beats.length ? Math.max(0, activeIndex + 1) / beats.length : 0;
-  const winningStyle = styleVersion === 'winning-reel-39-v1';
+  const winningStyle = styleVersion === 'winning-reel-39-v1' || styleVersion === 'illustrated-winning-reel-v2';
   return <AbsoluteFill style={{fontFamily: 'Arial, Helvetica, sans-serif', color: '#fff', overflow: 'hidden'}}>
     {winningStyle ? <WinningReelBackdrop accent={accent}/> : <InfographicBackdrop accent={accent}/>}
     <div style={{position: 'absolute', left: 42, top: 45, zIndex: 8, fontSize: 17, fontWeight: 900, letterSpacing: '.06em', textShadow: '0 2px 8px rgba(0,0,0,.45)'}}>{watermark}</div>
@@ -876,13 +995,10 @@ const InfographicVideo = ({
       <div style={{display: 'inline-block', maxWidth: '100%', boxSizing: 'border-box', overflowWrap: 'anywhere', marginTop: 12, padding: winningStyle ? '16px 22px 20px' : 0, borderRadius: winningStyle ? 18 : 0, background: winningStyle ? 'rgba(5,8,15,.88)' : 'transparent', fontSize: beat ? 72 : winningStyle ? 54 : 66, lineHeight: .98, fontWeight: 950, letterSpacing: '-.045em', color: beat ? accent : '#FFD447', WebkitTextStroke: '4px rgba(18,25,55,.9)', paintOrder: 'stroke fill', textTransform: 'uppercase', boxShadow: winningStyle ? `0 12px 0 ${accent}` : 'none', transform: `scale(${.93 + (beat ? reveal : hookIn) * .07})`}}>{beat?.title || hook}</div>
       <div style={{width: 310, height: 8, margin: '25px auto 0', borderRadius: 99, background: 'rgba(255,255,255,.14)', overflow: 'hidden'}}><div style={{height: '100%', width: `${Math.max(7, progress * 100)}%`, borderRadius: 99, background: accent, boxShadow: `0 0 20px ${accent}`}}/></div>
     </div>
-    <div style={{position: 'absolute', left: 45, right: 45, top: winningStyle ? 460 : 440, height: winningStyle ? 840 : 920, display: 'grid', placeItems: 'center', opacity: finalActive ? 1 - final : beat ? (winningStyle ? .93 : 1) : .35, transform: winningStyle ? 'scale(.82)' : 'none'}}>
-      {beat ? <InfographicGraphic key={beat.id || activeIndex} beat={beat} progress={reveal}/> : <ConceptGraphic accent="#FFD447" progress={hookIn} detail={title}/>}
+    <div style={{position: 'absolute', left: 45, right: 45, top: winningStyle ? 390 : 410, height: winningStyle ? 870 : 900, display: 'grid', placeItems: 'center', opacity: finalActive ? 1 - final : beat ? (winningStyle ? .96 : 1) : .35, transform: `${winningStyle ? 'scale(.88)' : 'scale(1)'} translateY(${(1-pictureProgress)*28}px)`, transformOrigin: '50% 48%'}}>
+      {beat ? <InfographicGraphic key={beat.id || activeIndex} beat={beat} progress={pictureProgress}/> : <ConceptGraphic accent="#FFD447" progress={hookIn} subject={title}/>}
     </div>
-    <div style={{position: 'absolute', left: 66, right: 66, bottom: 155, minHeight: 140, zIndex: 7, display: 'grid', placeItems: 'center', textAlign: 'center', opacity: finalActive ? 1 - final : 1}}>
-      <div style={{maxWidth: '100%', boxSizing: 'border-box', overflowWrap: 'anywhere', padding: winningStyle ? '22px 30px' : '20px 25px', borderRadius: winningStyle ? 14 : 24, background: winningStyle ? '#EF3F91' : 'rgba(13,23,56,.52)', backdropFilter: 'blur(12px)', border: winningStyle ? '5px solid #fff' : '1px solid rgba(255,255,255,.1)', boxShadow: winningStyle ? '0 12px 0 rgba(7,10,18,.8)' : 'none', fontSize: winningStyle ? 36 : 32, lineHeight: 1.16, fontWeight: 900, textShadow: '0 3px 9px rgba(0,0,0,.6)'}}>{beat?.detail || hook}</div>
-      <small style={{marginTop: 14, fontSize: 17, opacity: .7}}>{sourceNote}</small>
-    </div>
+    <small style={{position: 'absolute', left: 65, right: 65, bottom: 68, zIndex: 7, textAlign: 'center', fontSize: 16, opacity: .66}}>{sourceNote}</small>
     {finalActive ? <AbsoluteFill style={{zIndex: 20, display: 'grid', placeItems: 'center', padding: 70, background: `rgba(22,30,72,${.35 + final * .58})`, backdropFilter: `blur(${final * 10}px)`}}>
       <div style={{width: '100%', padding: '75px 45px 58px', borderRadius: 46, background: 'linear-gradient(150deg,#FFD447,#FFB62E)', color: '#1D2542', border: '7px solid #1B213B', boxShadow: '0 38px 95px rgba(0,0,0,.36)', textAlign: 'center', opacity: final, transform: `translateY(${(1 - final) * 90}px) scale(${.8 + final * .2}) rotate(${(1 - final) * -3}deg)`}}>
         <div style={{fontSize: 25, fontWeight: 950, letterSpacing: '.08em'}}>SEBELUM SELESAI</div>
@@ -890,6 +1006,7 @@ const InfographicVideo = ({
         <div style={{display: 'inline-block', marginTop: 38, padding: '18px 30px', borderRadius: 18, color: '#fff', background: '#1D2542', fontSize: 26, fontWeight: 950}}>{footer}</div>
       </div>
     </AbsoluteFill> : null}
+    <StableDialogueCaption dialogue={dialogue} palette="infographic" bottom={132}/>
   </AbsoluteFill>;
 };
 

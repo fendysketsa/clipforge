@@ -74,6 +74,15 @@ def test_hypit_infographic_routes_explicit_visual_explainer_and_preserves_claims
     assert manifest["composition"]["template"] == "infographic"
     assert manifest["composition"]["beats"][1]["visual"] == "chip"
     assert manifest["composition"]["beats"][-1]["quizOptions"] == ["DATAR", "TURUN TAJAM"]
+    assert manifest["composition"]["beats"][1]["visualSubject"]
+    assert manifest["composition"]["beats"][1]["visualAction"]
+    assert manifest["composition"]["beats"][1]["motion"] == "flow"
+    assert manifest["composition"]["captionPresentation"] == {
+        "mode": "persistent_cue_rail",
+        "animateText": False,
+        "holdUntilNextCue": True,
+        "transition": "instant_content_swap",
+    }
 
 
 def test_hypit_infographic_requires_user_supplied_points():
@@ -158,7 +167,26 @@ def test_hypit_auto_infographic_expands_analogy_and_text_with_grounded_ai(monkey
     assert plan.slug.startswith("infographic-auto-")
     assert [beat.visual for beat in plan.beats] == ["phone", "chip", "chart"]
     assert plan.beats[0].source_quote == "Ponsel memperkirakan sisa baterai"
+    assert plan.beats[0].visual_subject
+    assert plan.beats[0].visual_action
+    assert plan.beats[0].motion == "orbit"
     assert "tanpa riset eksternal" in plan.source_note
+
+
+def test_hypit_infographic_selects_picture_first_visual_families():
+    prompt = (
+        "/hypit explainer Kenapa data tetap aman? | "
+        "Enkripsi melindungi data saat berpindah di jaringan | "
+        "Server terhubung dan mengirim sinyal ke pengguna | "
+        "Tim membandingkan pilihan sebelum menentukan tujuan"
+    )
+
+    plan = build_hypit_quick_plan(prompt)
+
+    assert [beat.visual for beat in plan.beats] == ["security", "network", "comparison"]
+    assert all(beat.visual_subject for beat in plan.beats)
+    assert all(beat.visual_action for beat in plan.beats)
+    assert all(beat.motion in {"assemble", "flow", "orbit", "transform", "compare", "pulse", "zoom"} for beat in plan.beats)
 
 
 def test_hypit_auto_infographic_repairs_new_numbers_from_ai(monkeypatch):

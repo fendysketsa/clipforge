@@ -79,6 +79,10 @@ class InfographicBeat:
     visual: str
     quiz_options: tuple[str, ...] = ()
     source_quote: str = ""
+    visual_subject: str = ""
+    visual_action: str = ""
+    visual_metaphor: str = ""
+    motion: str = "assemble"
 
 
 @dataclass(frozen=True)
@@ -306,10 +310,26 @@ def _infographic_visual(value: str) -> str:
     lowered = value.casefold()
     if re.search(r"\b(?:kuis|quiz|pilih|jawab|tebak)\b", lowered):
         return "quiz"
+    if re.search(r"\b(?:aman|keamanan|security|kunci|enkripsi|privasi|serangan|risiko|bahaya|lindung)\b", lowered):
+        return "security"
+    if re.search(r"\b(?:jaringan|network|internet|server|api|koneksi|node|terhubung|sinyal)\b", lowered):
+        return "network"
+    if re.search(r"\b(?:uang|harga|biaya|profit|untung|rugi|rupiah|dolar|budget|anggaran)\b", lowered):
+        return "money"
+    if re.search(r"\b(?:banding|membandingkan|perbandingan|versus|vs\.?|berbeda|lebih baik|pilihan|sebelum|sesudah)\b", lowered):
+        return "comparison"
+    if re.search(r"\b(?:orang|pengguna|tim|pelanggan|manusia|pekerja|audiens|komunitas)\b", lowered):
+        return "people"
+    if re.search(r"\b(?:sejarah|timeline|dulu|sekarang|kemudian|tahun|masa depan|evolusi)\b", lowered):
+        return "timeline"
+    if re.search(r"\b(?:jalan|perjalanan|rute|tujuan|berpindah|kirim|sampai|distribusi)\b", lowered):
+        return "journey"
     if re.search(r"\b(?:grafik|kurva|chart|naik|turun|datar|tren|persen|persentase)\b", lowered):
         return "chart"
     if re.search(r"\b(?:chip|prosesor|cpu|arus|sensor|hitung|mengukur)\b", lowered):
         return "chip"
+    if re.search(r"\b(?:mesin|engine|otomasi|robot|gear|roda gigi|pabrik|sistem bekerja)\b", lowered):
+        return "machine"
     if re.search(r"\b(?:suhu|dingin|panas|temperatur|temperature)\b", lowered):
         return "temperature"
     if re.search(r"\b(?:baterai|battery|ponsel|hp|telepon|phone|daya)\b", lowered):
@@ -319,13 +339,59 @@ def _infographic_visual(value: str) -> str:
     return "concept"
 
 
+def _visual_direction(
+    visual: str,
+    evidence: str,
+    analogy: str = "",
+    index: int = 0,
+) -> dict[str, str]:
+    """Create concise, picture-first direction without introducing factual claims."""
+    subject = _infographic_title(evidence, "IDE UTAMA").title()[:44]
+    metaphor = re.sub(r"\s+", " ", analogy).strip(" .")[:72]
+    actions = {
+        "phone": "meter fills while data cards orbit the phone",
+        "chip": "signals enter, get processed, and leave as one clear result",
+        "chart": "the line draws itself and the important region lights up",
+        "temperature": "energy rises while the gauge responds",
+        "process": "one object travels through three connected stages",
+        "quiz": "answer cards fan out and wait for the viewer",
+        "network": "a signal hops across connected nodes",
+        "security": "a shield intercepts incoming particles around the subject",
+        "journey": "the subject follows a curved route toward a destination",
+        "comparison": "two alternatives enter and settle side by side",
+        "people": "characters pass one idea from person to person",
+        "money": "coins stack while the value path becomes visible",
+        "timeline": "events assemble along one continuous time rail",
+        "machine": "gears transfer motion into a visible output",
+        "concept": "parts orbit, connect, and resolve into one visual idea",
+    }
+    motions = {
+        "phone": "orbit", "chip": "flow", "chart": "assemble",
+        "temperature": "pulse", "process": "flow", "quiz": "assemble",
+        "network": "flow", "security": "pulse", "journey": "flow",
+        "comparison": "compare", "people": "flow", "money": "assemble",
+        "timeline": "assemble", "machine": "transform", "concept": "orbit",
+    }
+    return {
+        "visual_subject": subject,
+        "visual_action": actions.get(visual, actions["concept"]),
+        "visual_metaphor": metaphor or subject,
+        "motion": motions.get(visual, ("assemble", "flow", "orbit", "transform")[index % 4]),
+    }
+
+
 def _quiz_options(value: str) -> tuple[str, ...]:
     parts = [_clean_infographic_segment(part) for part in re.split(r"\s*/\s*", value)]
     options = [part for part in parts[1:] if part]
     return tuple(options[:3])
 
 
-_AUTO_VISUALS = {"phone", "chip", "chart", "temperature", "process", "concept", "quiz"}
+_AUTO_VISUALS = {
+    "phone", "chip", "chart", "temperature", "process", "concept", "quiz",
+    "network", "security", "journey", "comparison", "people", "money",
+    "timeline", "machine",
+}
+_AUTO_MOTIONS = {"assemble", "flow", "orbit", "transform", "compare", "pulse", "zoom"}
 _AUTO_GROUNDING_STOPWORDS = _INFOGRAPHIC_STOPWORDS | {
     "bayangkan", "ibarat", "seperti", "supaya", "maka", "ketika", "saat", "kalau",
     "lebih", "paling", "cukup", "masih", "sudah", "kamu", "kita", "mereka", "dia",
@@ -450,17 +516,20 @@ def _fallback_auto_infographic_payload(
 ) -> dict[str, object]:
     """Build a complete safe plan without depending on model output quality."""
     segments = _source_beat_segments(source_text)
-    beats = [
-        {
-            "kicker": _INFOGRAPHIC_KICKERS[index % len(_INFOGRAPHIC_KICKERS)],
-            "title": _source_beat_title(segment),
-            "narration": _safe_source_narration(segment),
-            "visual": _infographic_visual(segment),
-            "source_quote": segment,
-            "quiz_options": (),
-        }
-        for index, segment in enumerate(segments)
-    ]
+    beats = []
+    for index, segment in enumerate(segments):
+        visual = _infographic_visual(segment)
+        beats.append(
+            {
+                "kicker": _INFOGRAPHIC_KICKERS[index % len(_INFOGRAPHIC_KICKERS)],
+                "title": _source_beat_title(segment),
+                "narration": _safe_source_narration(segment),
+                "visual": visual,
+                "source_quote": segment,
+                "quiz_options": (),
+                **_visual_direction(visual, segment, analogy, index),
+            }
+        )
     return {
         "title": _source_explainer_title(source_text),
         "hook": f"Bayangkan {analogy}. Apa yang sebenarnya terjadi?",
@@ -537,6 +606,33 @@ def _validated_auto_infographic_payload(
             if isinstance(raw_options, list)
             else ()
         )
+        direction = _visual_direction(visual, quote, analogy, index - 1)
+        visual_subject = re.sub(r"\s+", " ", str(raw.get("visual_subject") or "")).strip()
+        subject_tokens = _content_tokens(visual_subject)
+        subject_grounded = subject_tokens & evidence_tokens
+        if (
+            not visual_subject
+            or len(visual_subject) > 52
+            or bool(_number_tokens(visual_subject) - allowed_numbers)
+            or (subject_tokens and not subject_grounded)
+        ):
+            visual_subject = direction["visual_subject"]
+        visual_action = re.sub(r"\s+", " ", str(raw.get("visual_action") or "")).strip()
+        if not visual_action or len(visual_action) > 120 or "http" in visual_action.casefold():
+            visual_action = direction["visual_action"]
+        visual_metaphor = re.sub(r"\s+", " ", str(raw.get("visual_metaphor") or "")).strip()
+        metaphor_tokens = _content_tokens(visual_metaphor)
+        metaphor_grounded = metaphor_tokens & evidence_tokens
+        if (
+            not visual_metaphor
+            or len(visual_metaphor) > 80
+            or bool(_number_tokens(visual_metaphor) - allowed_numbers)
+            or (metaphor_tokens and not metaphor_grounded)
+        ):
+            visual_metaphor = direction["visual_metaphor"]
+        motion = str(raw.get("motion") or "").strip().casefold()
+        if motion not in _AUTO_MOTIONS:
+            motion = direction["motion"]
         beats.append(
             {
                 "kicker": (kicker or _INFOGRAPHIC_KICKERS[(index - 1) % len(_INFOGRAPHIC_KICKERS)])[:32].upper(),
@@ -545,6 +641,10 @@ def _validated_auto_infographic_payload(
                 "visual": visual,
                 "quiz_options": quiz_options,
                 "source_quote": quote,
+                "visual_subject": visual_subject[:52],
+                "visual_action": visual_action[:120],
+                "visual_metaphor": visual_metaphor[:80],
+                "motion": motion,
             }
         )
     title = re.sub(r"\s+", " ", str(payload.get("title") or "")).strip()
@@ -592,12 +692,17 @@ def _request_auto_infographic_payload(
         "jangan menambahkan angka, nama, merek, sebab-akibat, kutipan, atau klaim yang tidak ada. Buat 3-7 beat. "
         "Setiap beat wajib memiliki source_quote berupa kutipan persis minimal tiga kata dari TEKS SUMBER. "
         "Narasi harus 5-32 kata, enak diucapkan, dan menjelaskan satu ide saja. Gunakan analogi secara konsisten "
-        "tetapi jangan mengubahnya menjadi fakta literal. Pilih visual hanya dari phone, chip, chart, temperature, "
-        "process, concept, atau quiz. Kicker dan title harus singkat. Kuis opsional dan tidak boleh memerlukan fakta "
+        "tetapi jangan mengubahnya menjadi fakta literal. Setiap beat harus menjadi adegan ilustrasi yang bergerak, "
+        "bukan kartu teks. Pilih visual hanya dari phone, chip, chart, temperature, process, concept, quiz, network, "
+        "security, journey, comparison, people, money, timeline, atau machine. Isi visual_subject dengan objek utama, "
+        "visual_action dengan aksi yang terlihat, visual_metaphor dengan analogi visual yang berasal dari input, dan "
+        "motion hanya dari assemble, flow, orbit, transform, compare, pulse, atau zoom. Kicker dan title harus singkat. "
+        "Kuis opsional dan tidak boleh memerlukan fakta "
         "di luar input. Keluarkan JSON valid saja dengan bentuk: "
         '{"title":"...","hook":"...","payoff":"...","beats":['
         '{"kicker":"...","title":"...","narration":"...","visual":"concept",'
-        '"source_quote":"kutipan persis","quiz_options":[]}]}\n\n'
+        '"visual_subject":"...","visual_action":"...","visual_metaphor":"...",'
+        '"motion":"assemble","source_quote":"kutipan persis","quiz_options":[]}]}\n\n'
         f"ANALOGI:\n{analogy}\n\nTEKS SUMBER:\n{source_text}"
     )
     system = (
@@ -640,6 +745,10 @@ def _build_auto_infographic_plan(
             visual=str(raw["visual"]),
             quiz_options=tuple(raw["quiz_options"]),
             source_quote=str(raw["source_quote"]),
+            visual_subject=str(raw.get("visual_subject") or ""),
+            visual_action=str(raw.get("visual_action") or ""),
+            visual_metaphor=str(raw.get("visual_metaphor") or ""),
+            motion=str(raw.get("motion") or "assemble"),
         )
         for index, raw in enumerate(raw_beats)
         if isinstance(raw, dict)
@@ -692,6 +801,7 @@ def _build_infographic_plan(prompt: str) -> HypitInfographicPlan:
         options = _quiz_options(raw) if visual == "quiz" else ()
         if visual == "quiz" and "/" in narration:
             narration = narration.split("/", 1)[0].strip()
+        direction = _visual_direction(visual, raw, "", index)
         beats.append(
             InfographicBeat(
                 kicker="KUIS · CEK FOKUS" if visual == "quiz" else _INFOGRAPHIC_KICKERS[index % len(_INFOGRAPHIC_KICKERS)],
@@ -701,6 +811,10 @@ def _build_infographic_plan(prompt: str) -> HypitInfographicPlan:
                 narration=narration[:240],
                 visual=visual,
                 quiz_options=options or (("BENAR", "SALAH") if visual == "quiz" else ()),
+                visual_subject=direction["visual_subject"],
+                visual_action=direction["visual_action"],
+                visual_metaphor=direction["visual_metaphor"],
+                motion=direction["motion"],
             )
         )
     title = _infographic_title(hook, "INFOGRAPHIC EXPLAINER")
@@ -771,11 +885,11 @@ def quick_preview_payload(
             "title": plan.title,
             "hook": plan.hook,
             "core_message": plan.payoff,
-            "art_bible": "Vertical flat-vector infographic: deep blue gradient, bold outlined headlines, one semantic diagram per beat, yellow/red/green/cyan accents.",
-            "character_bible": "No presenter; icons, diagrams, charts, and persistent typography carry the explanation.",
+            "art_bible": "Vertical illustrated explainer: one animated picture-world per idea, layered depth, bold silhouettes, restrained labels, and a shared editorial palette.",
+            "character_bible": "No presenter; objects and simple illustrated characters act out each narrated idea instead of sitting as static cards.",
             "location_bible": "Code-rendered 1080x1920 canvas with top headline, central diagram, and bottom voice caption safe areas.",
-            "director_bible": "Speech-led semantic beats, quick spring entrances, persistent object states, chart highlights, restrained CTA, and a final quiz/payoff card.",
-            "property_bible": "Phone shell, battery gauge, chip, chart, temperature gauge, process nodes, quiz card, and caption rail.",
+            "director_bible": "Speech-led semantic scenes: establish the subject, animate one explanatory action, hold the resolved picture, then hand off with continuous motion. Captions stay in one stable rail and never blink between voice cues.",
+            "property_bible": "Phones, machines, people, paths, shields, networks, comparisons, timelines, charts, and quiz objects are drawn as reusable animated illustrations.",
             "voice_casting": "Two recurring Indonesian creator voices alternate concise factual lines without appearing on screen.",
             "production_script": prompt.strip(),
             "scenes": [
@@ -783,11 +897,11 @@ def quick_preview_payload(
                     "index": index,
                     "title": beat.title,
                     "narration": beat.narration,
-                    "visual_prompt": f"Code-rendered {beat.visual} infographic diagram.",
-                    "image_prompt": "Code-rendered vector motion graphic; no generated image required.",
+                    "visual_prompt": f"Animated {beat.visual} illustration of {beat.visual_subject}; {beat.visual_action}.",
+                    "image_prompt": f"Layered editorial illustration; visual metaphor: {beat.visual_metaphor}.",
                     "shots": [f"{beat.kicker}: {beat.title}"],
                     "shot_plan": [],
-                    "camera_motion": "semantic_object_spring",
+                    "camera_motion": beat.motion,
                     "color_mood": beat.accent,
                     "narrative_role": "interactive_payoff" if beat.visual == "quiz" else "explanation",
                     "director_direction": "Reveal the diagram on the sentence it explains, then hold the settled state for reading.",
@@ -805,7 +919,7 @@ def quick_preview_payload(
                 "ready": True,
                 "provider": "code_rendered_local",
                 "model": "hypit_semantic_beats_plus_remotion",
-                "message": "Tidak perlu ImageGen: diagram, tipografi, dan transisi dirender lokal.",
+                "message": "Ilustrasi animasi, objek, karakter sederhana, dan transisi dirender lokal tanpa biaya ImageGen.",
             },
         }
     scene_duration = plan.duration / 3
@@ -948,9 +1062,11 @@ def _write_project_notes(work_dir: Path, prompt: str, plan: QuickPlan) -> None:
         (work_dir / "TREATMENT.md").write_text(
             "# Treatment\n\n"
             "A bold two-level headline establishes each idea at the top of a deep blue vertical canvas. "
-            "The center is a semantic stage: phone, chip, graph, thermometer, process, or quiz components "
-            "enter with short spring motion and then hold a readable state. The spoken line remains low in "
-            "the safe area. Accents shift by beat while the visual grammar stays consistent. The final card "
+            "The center becomes a new illustrated world for every beat: objects, characters, paths, networks, "
+            "machines, comparisons, and diagrams visibly act out the narrated relationship. Each scene enters, "
+            "performs one explanatory action, and holds its resolved picture before handing off. Spoken captions "
+            "remain in one persistent low safe-area rail without disappearing between cues. Accents shift by beat "
+            "while the visual grammar stays consistent. The final card "
             f"lands the authored engagement line: “{plan.payoff}”\n",
             encoding="utf-8",
         )
@@ -958,10 +1074,10 @@ def _write_project_notes(work_dir: Path, prompt: str, plan: QuickPlan) -> None:
             "# Analysis\n\n"
             "The reference format is a faceless infographic explainer, not generated camera footage. Its "
             "retention comes from semantic synchronization: each narrated claim changes one central diagram; "
-            "a persistent headline and bottom caption stabilize the hierarchy; charts and icons retain state "
+            "a persistent headline and bottom caption stabilize the hierarchy; illustrated objects retain state "
             "long enough to understand; a CTA or quiz changes the viewing task near the end.\n\n"
-            "Hypit owns the named speech beats and their order. Remotion owns deterministic vector drawing, "
-            "layout, spring entrances, state highlights, captions, and final encoding.\n",
+            "Hypit owns the named speech beats, picture direction, and their order. Remotion owns deterministic "
+            "layered illustration, object choreography, layout, stable captions, and final encoding.\n",
             encoding="utf-8",
         )
         reveal_times = _infographic_reveal_times(plan)
@@ -1252,7 +1368,7 @@ def _synthesize_dialogue_line(cue: DialogueCue, index: int, audio_dir: Path) -> 
 
 
 def _prepare_dialogue_audio(
-    plan: HypitQuickPlan,
+    plan: QuickPlan,
     work_dir: Path,
     reveal_times: list[float],
 ) -> tuple[Path | None, list[dict[str, object]], dict[str, object]]:
@@ -1747,15 +1863,17 @@ def _write_result_artifacts(
             "fyp_label": "Sangat kuat",
             "strengths": [
                 "Hook tampil pada frame awal.",
-                "Setiap klaim memiliki satu diagram semantik yang mudah dipahami.",
-                "Headline, diagram, dan caption memakai hierarki aman untuk layar 9:16.",
+                "Setiap ide memiliki adegan ilustrasi dengan objek dan aksi yang menjelaskan narasi.",
+                "Caption memakai rail persisten dan tidak menghilang di sela cue suara.",
+                "Headline, ilustrasi, dan caption memakai hierarki aman untuk layar 9:16.",
             ],
             "weaknesses": ["Akurasi fakta tetap mengikuti poin yang diberikan pengguna dan wajib direview."],
             "improvement_ideas": ["Uji versi hook atau urutan beat tanpa mengubah klaim faktual."],
             "applied_edits": [
                 "Poin pengguna dipetakan ke source Hypit tervalidasi tanpa menambah fakta baru.",
-                "Phone, chip, chart, temperature, process, concept, dan quiz dirender sebagai komponen Remotion.",
-                "Voice, caption, musik, dan effect hit mengikuti event semantik.",
+                "Setiap beat membawa subjek, aksi, metafora, dan motion direction yang dapat diedit.",
+                "Phone, machine, people, network, security, journey, comparison, chart, timeline, dan visual lain dirender sebagai ilustrasi Remotion berlapis.",
+                "Voice, caption persisten, musik, dan effect hit mengikuti event semantik.",
             ],
             "key_point_score": 95,
             "loop_score": 82,
@@ -1797,7 +1915,7 @@ def _write_result_artifacts(
                 "timing": "authored_infographic_beats",
                 "validated_by_hypit_cli": True,
             },
-            "image_generation": {"provider": "none_code_rendered", "paid_api_used": False},
+            "image_generation": {"provider": "local_layered_illustration", "paid_api_used": False},
             "explanation_planning": {
                 "ai_used": plan.planning_mode == "ai_grounded",
                 "planning_mode": plan.planning_mode,
@@ -1811,6 +1929,7 @@ def _write_result_artifacts(
                 "third_party_footage_used": False,
                 "third_party_voice_used": False,
                 "code_rendered_visuals": True,
+                "animated_illustration_scenes": True,
                 "human_review_required_before_publication": True,
             },
             "youtube_policy_guardrails": {
@@ -2007,6 +2126,12 @@ def _quick_manifest(
         "footer": plan.footer,
         "sourceNote": plan.source_note,
         "dialogue": dialogue_manifest,
+        "captionPresentation": {
+            "mode": "persistent_cue_rail",
+            "animateText": False,
+            "holdUntilNextCue": True,
+            "transition": "instant_content_swap",
+        },
         "watermark": "@ryuundy · HYPIT",
     }
     if isinstance(plan, HypitInfographicPlan):
@@ -2014,9 +2139,9 @@ def _quick_manifest(
             **shared,
             "template": "infographic",
             "styleVersion": (
-                "winning-reel-39-v1"
+                "illustrated-winning-reel-v2"
                 if plan.auto_expanded
-                else "faceless-infographic-explainer-v1"
+                else "illustrated-infographic-explainer-v2"
             ),
             "autoExpanded": plan.auto_expanded,
             "analogy": plan.analogy,
@@ -2031,6 +2156,10 @@ def _quick_manifest(
                     "visual": beat.visual,
                     "quizOptions": list(beat.quiz_options),
                     "sourceQuote": beat.source_quote,
+                    "visualSubject": beat.visual_subject,
+                    "visualAction": beat.visual_action,
+                    "visualMetaphor": beat.visual_metaphor,
+                    "motion": beat.motion,
                     "revealAt": reveal_times[index],
                 }
                 for index, beat in enumerate(plan.beats)

@@ -964,7 +964,7 @@ export default function HomePage() {
           ai_api_key: aiApiKey.trim(),
         }),
         {
-          loading: isHypitAuto ? "Menyusun pola Reel 39 detik dari teks sumber..." : isHypitQuick ? "Hypit menyusun motion graphic dan memulai render..." : isStoryMode ? "Memulai produksi storyboard lewat Scene Cinema..." : requestedMode === "short" ? "Memulai scan dan render Short..." : "Memulai scan dan susun Long Highlight...",
+          loading: isHypitAuto ? "Menyutradarai ilustrasi animasi 39 detik dari teks sumber..." : isHypitQuick ? "Hypit menyusun adegan ilustrasi dan memulai render..." : isStoryMode ? "Memulai produksi storyboard lewat Scene Cinema..." : requestedMode === "short" ? "Memulai scan dan render Short..." : "Memulai scan dan susun Long Highlight...",
           success: isHypitAuto ? "Produksi 39 detik dimulai — fallback lokal siap jika AI tidak valid." : isHypitQuick ? "Render Hypit dimulai — hasil akan muncul otomatis di workspace." : isStoryMode ? "Produksi dimulai — ImageGen dan Remotion merakit setiap adegan." : requestedMode === "short" ? "Scan dimulai — kandidat terbaik akan langsung dirender." : "Scan dimulai — chapter terbaik akan langsung disusun.",
           error: isHypitAuto ? "Gagal memulai Infographic Auto" : isHypitQuick ? "Gagal memulai Hypit Quick" : isStoryMode ? "Gagal memulai Generator Cerita" : "Gagal memulai proses pemotongan",
         },

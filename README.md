@@ -69,7 +69,7 @@ Local-first tool for turning long YouTube videos into ready-to-post vertical cli
 - Start jobs and receive complete results from a private Telegram bot.
 - Queue completed clips for YouTube Studio upload through Playwright.
 - Run locally with Python/Node or with Docker Compose.
-- Produce original faceless infographic explainers with `/hypit infographic`: user-supplied points become Hypit semantic beats, then Remotion renders a consistent 9:16 system of phone/battery, chip, chart, temperature, process, concept, and quiz components without adding factual claims.
+- Produce original faceless animated explainers with `/hypit infographic`: user-supplied points become picture-directed Hypit beats (subject, visible action, metaphor, and motion), then Remotion renders layered 9:16 illustration scenes for people, machines, networks, security, journeys, comparisons, timelines, charts, phones, and quizzes without adding factual claims. Spoken captions stay in one persistent rail between voice cues instead of flashing on and off.
 
 ## Requirements
 
@@ -161,7 +161,9 @@ Kuis: Saat baterai hampir habis, tegangannya bagaimana? / DATAR / TURUN TAJAM
 
 Use `JUDUL :: narasi lengkap` when a beat needs an explicit short headline.
 The renderer keeps the supplied narration as factual source text and selects a
-matching local diagram family. Review every factual statement before publishing.
+matching local illustration family. Every beat gets a dominant subject, a
+visible action, a visual metaphor, and a motion pattern; captions remain steady
+until the next spoken cue. Review every factual statement before publishing.
 
 For automatic explanation, provide one visual analogy and the source text:
 
@@ -178,8 +180,9 @@ but it does not depend on a valid model response. Empty or malformed JSON,
 fewer than three beats, unsupported numbers, URLs, and weakly grounded
 paraphrases are repaired deterministically from literal `Teks:` spans. The Auto
 profile produces a 39-second retention experiment with 3-7 beats. Hypit owns
-the accepted narration and timing; Remotion renders local diagram components
-without an image-generation call. Views are never guaranteed.
+the accepted narration, picture direction, and timing; Remotion renders local
+layered illustration scenes without an image-generation call. Views are never
+guaranteed.
 
 ## Telegram Bot
 
