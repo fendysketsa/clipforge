@@ -1,13 +1,24 @@
-import { Clock3, Film, ListChecks, RefreshCw, Sparkles } from "lucide-react";
+import { Clock3, Film, ListChecks, Loader2, Power, RefreshCw, Sparkles } from "lucide-react";
 import Link from "next/link";
+import type { AutoViralScheduleStatus } from "../../types/clip.type";
 
 type TopbarProps = {
   isRefreshing?: boolean;
   onRefresh?: () => void;
   activePage?: "workspace" | "source-log";
+  cronSchedule?: AutoViralScheduleStatus | null;
+  isTogglingCron?: boolean;
+  onToggleCron?: () => void;
 };
 
-export function Topbar({ isRefreshing = false, onRefresh, activePage = "workspace" }: TopbarProps) {
+export function Topbar({
+  isRefreshing = false,
+  onRefresh,
+  activePage = "workspace",
+  cronSchedule,
+  isTogglingCron = false,
+  onToggleCron,
+}: TopbarProps) {
   return (
     <header className="topbar">
       <div className="topbar-brand">
@@ -47,6 +58,20 @@ export function Topbar({ isRefreshing = false, onRefresh, activePage = "workspac
           <i aria-hidden="true" />
           Studio siap
         </span>
+        {onToggleCron ? (
+          <button
+            className={`cronToggleButton ${cronSchedule?.enabled ? "isEnabled" : ""}`}
+            type="button"
+            onClick={onToggleCron}
+            disabled={isTogglingCron || !cronSchedule}
+            aria-pressed={Boolean(cronSchedule?.enabled)}
+            title={cronSchedule?.message ?? "Membaca status cron"}
+          >
+            {isTogglingCron ? <Loader2 className="spin" size={15} /> : <Power size={15} />}
+            <span>Cron {cronSchedule?.enabled ? "ON" : "OFF"}</span>
+            <i aria-hidden="true" />
+          </button>
+        ) : null}
         {onRefresh ? (
           <button
             className="syncDataButton"

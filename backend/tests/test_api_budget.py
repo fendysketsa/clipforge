@@ -1293,6 +1293,32 @@ def test_auto_viral_schedule_reads_interval_and_safe_review_defaults(monkeypatch
     assert status.next_run_at
 
 
+def test_auto_viral_schedule_frontend_override_is_durable(monkeypatch, tmp_path):
+    import api
+
+    control_path = tmp_path / "schedule-control.json"
+    monkeypatch.setattr(api, "AUTO_VIRAL_SCHEDULE_CONTROL_PATH", control_path)
+    monkeypatch.setattr(api, "auto_viral_schedule_enabled_override", None)
+    monkeypatch.setattr(api, "auto_viral_scheduler_thread", None)
+    monkeypatch.setattr(api, "auto_viral_scheduler_running", False)
+    monkeypatch.setattr(api, "start_auto_viral_scheduler_if_enabled", lambda: None)
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_ENABLED", "true")
+
+    disabled = api.set_auto_viral_schedule(
+        api.AutoViralScheduleControlRequest(enabled=False)
+    )
+
+    assert disabled.enabled is False
+    assert json.loads(control_path.read_text(encoding="utf-8"))["enabled"] is False
+
+    enabled = api.set_auto_viral_schedule(
+        api.AutoViralScheduleControlRequest(enabled=True)
+    )
+
+    assert enabled.enabled is True
+    assert api.load_auto_viral_schedule_override() is True
+
+
 def test_scheduled_auto_viral_request_targets_five_shorts_and_two_longs(monkeypatch):
     import api
 
@@ -3915,6 +3941,27 @@ def test_cron_gaming_channel_ids_remain_optional_operator_hints(monkeypatch):
     assert api.cron_gaming_source_channel_ids() == [api.BANGJBLOX_CHANNEL_ID]
 
 
+def test_cron_gaming_source_handle_resolves_to_exact_channel(monkeypatch):
+    import api
+
+    request = AutoViralRequest(
+        cron_theme_key="gaming_story",
+        cron_trend_lane=True,
+    )
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_GAMING_SOURCE_CHANNEL_IDS", "")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_GAMING_SOURCE_HANDLES", "@sapipurba")
+    monkeypatch.setattr(api, "scheduled_auto_viral_discovery_active", lambda _run_id: True)
+    monkeypatch.setattr(
+        api,
+        "youtube_channel_id_for_handle",
+        lambda handle: "UCsapipurbaExactChannel01" if handle == "sapipurba" else "",
+    )
+
+    specs = api.cron_gaming_channel_query_specs(request, "run-sapi-purba")
+
+    assert specs == [("", "UCsapipurbaExactChannel01")]
+
+
 def test_new_ryuundy_source_lanes_accept_matching_metadata_and_reject_cross_theme():
     import api
 
@@ -4787,10 +4834,18 @@ def test_failed_auto_viral_target_is_held_without_automatic_retry(monkeypatch):
     )
     monkeypatch.setattr(api, "queue_youtube_upload_jobs", lambda _uploads: None)
     monkeypatch.setattr(api, "wait_for_uploads", lambda _ids: [failed_upload])
+    monkeypatch.setattr(
+        api,
+        "discard_failed_scheduled_auto_viral_item",
+        lambda *_args, **_kwargs: pytest.fail(
+            "cron must preserve local files after an unverified upload"
+        ),
+    )
 
     result = api.upload_auto_viral_processed_jobs(run.id, request, processed)
     assert result[0]["status"] == "upload_failed"
     assert "tidak akan dicoba ulang" in result[0]["error"]
+    assert "file yang masih tersedia dipertahankan" in result[0]["cleanup"]
     assert created == [failed_upload.id]
 
     # A later scheduler/sweeper pass must leave the terminal target untouched.
@@ -4802,6 +4857,249 @@ def test_failed_auto_viral_target_is_held_without_automatic_retry(monkeypatch):
         api.auto_viral_runs.pop(run.id, None)
     with api.jobs_lock:
         api.jobs.pop("job-failed-once", None)
+
+
+def test_partial_cron_upload_cleans_only_verified_clip_and_keeps_failed_sibling(
+    monkeypatch,
+):
+    import api
+    from types import SimpleNamespace
+
+    uploaded = ClipFile(
+        name="winner.mp4",
+        url="/outputs/partial/winner.mp4",
+        size_bytes=1024,
+        fyp_score=92,
+        growth_quality_gate_passed=True,
+    )
+    failed = ClipFile(
+        name="failed.mp4",
+        url="/outputs/partial/failed.mp4",
+        size_bytes=1024,
+        fyp_score=88,
+        growth_quality_gate_passed=True,
+    )
+    job = ClipJob(
+        id="partial-cron-job",
+        status="completed",
+        request=ClipJobRequest(clip_mode="short"),
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        clips=[uploaded, failed],
+    )
+    request = AutoViralRequest(
+        video_count=1,
+        clips_per_video=2,
+        auto_upload_youtube=True,
+    )
+    run = api.AutoViralRun(
+        id="partial-upload-run",
+        status="running",
+        trigger="schedule",
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        request=request,
+    )
+    verified_upload = SimpleNamespace(
+        id="youtube-verified-sibling",
+        source_job_id=job.id,
+        clip_url=uploaded.url,
+        status="completed",
+        title="Winner",
+        video_url="https://youtu.be/winner",
+        upload_confirmed=True,
+        dry_run=False,
+        logs=[],
+        error=None,
+    )
+    failed_upload = SimpleNamespace(
+        id="youtube-failed-sibling",
+        source_job_id=job.id,
+        clip_url=failed.url,
+        status="failed",
+        title="Failed sibling",
+        video_url=None,
+        upload_confirmed=False,
+        dry_run=False,
+        logs=[],
+        error="browser upload interrupted",
+    )
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "auto_viral_runs", {run.id: run})
+    monkeypatch.setattr(
+        api,
+        "youtube_uploads",
+        {
+            verified_upload.id: verified_upload,
+            failed_upload.id: failed_upload,
+        },
+    )
+    monkeypatch.setattr(api, "save_auto_viral_runs_unlocked", lambda: None)
+    monkeypatch.setattr(api, "save_jobs_unlocked", lambda: None)
+    monkeypatch.setattr(api, "cleanup_clip_files", lambda _clip: None)
+    monkeypatch.setattr(api, "cleanup_output_work_dirs", lambda *_args: None)
+    monkeypatch.setattr(api, "require_auto_viral_daily_upload_slot", lambda *_args: 2)
+    monkeypatch.setattr(
+        api,
+        "best_automatic_upload_clip_urls",
+        lambda *_args, **_kwargs: [uploaded.url, failed.url],
+    )
+    monkeypatch.setattr(
+        api,
+        "create_youtube_upload_batch_records",
+        lambda *_args, **_kwargs: [verified_upload, failed_upload],
+    )
+    monkeypatch.setattr(api, "queue_youtube_upload_jobs", lambda _uploads: None)
+    monkeypatch.setattr(
+        api,
+        "wait_for_uploads",
+        lambda _ids: [verified_upload, failed_upload],
+    )
+    monkeypatch.setattr(
+        api,
+        "discard_failed_scheduled_auto_viral_item",
+        lambda *_args, **_kwargs: pytest.fail(
+            "one failed sibling must not discard the source batch"
+        ),
+    )
+    repair_requests: list[set[str]] = []
+    monkeypatch.setattr(
+        api,
+        "queue_failed_upload_clip_repairs_once",
+        lambda _job, urls: repair_requests.append(set(urls)) or ["repair-once"],
+    )
+
+    result = api.upload_auto_viral_processed_jobs(
+        run.id,
+        request,
+        [
+            {
+                "job_id": job.id,
+                "job_status": "completed",
+                "status": "awaiting_upload",
+            }
+        ],
+    )
+
+    assert result[0]["status"] == "completed"
+    assert result[0]["partial_upload"] is True
+    assert result[0]["cleanup_removed_short"] == 1
+    assert result[0]["cleanup_remaining_short"] == 1
+    assert result[0]["repair_job_ids"] == ["repair-once"]
+    assert result[0]["repair_pending_count"] == 1
+    assert repair_requests == [{failed.url}]
+    assert [clip.url for clip in api.jobs[job.id].clips] == [failed.url]
+    assert "tetap disimpan" in result[0]["cleanup"]
+
+
+def test_repaired_clip_failed_upload_is_discarded_after_single_chance(monkeypatch):
+    import api
+    from types import SimpleNamespace
+
+    repaired_clip = ClipFile(
+        name="repair-final.mp4",
+        url="/outputs/repair-final/clip.mp4",
+        size_bytes=1024,
+        fyp_score=91,
+        growth_quality_gate_passed=True,
+    )
+    repair_job = ClipJob(
+        id="repair-final-job",
+        status="completed",
+        request=ClipJobRequest(clip_mode="short"),
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        clips=[repaired_clip],
+        repair_source_job_id="original-job",
+        repair_source_clip_url="/outputs/original/failed.mp4",
+    )
+    failed_upload = SimpleNamespace(
+        id="repair-upload-failed",
+        source_job_id=repair_job.id,
+        clip_url=repaired_clip.url,
+        status="failed",
+        upload_confirmed=False,
+        video_url=None,
+        dry_run=False,
+    )
+    monkeypatch.setenv("AUTO_UPLOAD_COMPLETED_JOBS", "true")
+    monkeypatch.setattr(api, "jobs", {repair_job.id: repair_job})
+    monkeypatch.setattr(api, "auto_viral_runs", {})
+    monkeypatch.setattr(api, "youtube_uploads", {failed_upload.id: failed_upload})
+    monkeypatch.setattr(api, "tiktok_uploads", {})
+    discarded: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        api,
+        "discard_failed_targeted_repair_job",
+        lambda job_id, reason: discarded.append((job_id, reason)) or True,
+    )
+
+    counts = api.queue_completed_job_uploads_once()
+
+    assert counts == {"youtube": 0, "tiktok": 0, "repair": 0}
+    assert discarded == [
+        (repair_job.id, "hasil repair satu-kali tetap gagal upload di YouTube")
+    ]
+
+
+def test_cross_platform_partial_success_does_not_create_duplicate_repair(monkeypatch):
+    import api
+    from types import SimpleNamespace
+
+    clip = ClipFile(
+        name="same-clip.mp4",
+        url="/outputs/cross-platform/same-clip.mp4",
+        size_bytes=1024,
+        fyp_score=90,
+    )
+    job = ClipJob(
+        id="cross-platform-partial",
+        status="completed",
+        request=ClipJobRequest(clip_mode="short"),
+        created_at=api.now_iso(),
+        updated_at=api.now_iso(),
+        clips=[clip],
+    )
+    youtube_upload = SimpleNamespace(
+        source_job_id=job.id,
+        clip_url=clip.url,
+        status="completed",
+        upload_confirmed=True,
+        video_url="https://youtu.be/already-live",
+        dry_run=False,
+    )
+    tiktok_upload = SimpleNamespace(
+        source_job_id=job.id,
+        clip_url=clip.url,
+        status="failed",
+        upload_confirmed=False,
+        profile_url=None,
+        dry_run=False,
+    )
+    monkeypatch.setattr(api, "jobs", {job.id: job})
+    monkeypatch.setattr(api, "youtube_uploads", {"yt-live": youtube_upload})
+    monkeypatch.setattr(api, "tiktok_uploads", {"tt-failed": tiktok_upload})
+    repairs: list[set[str]] = []
+    monkeypatch.setattr(
+        api,
+        "queue_failed_upload_clip_repairs_once",
+        lambda _job, urls: repairs.append(set(urls)) or ["must-not-happen"],
+    )
+    item = {
+        "job_id": job.id,
+        "youtube_uploads": [{"id": "yt-live"}],
+        "tiktok_uploads": [{"id": "tt-failed"}],
+    }
+
+    api.cleanup_partially_verified_auto_viral_item(
+        "missing-run-is-fine",
+        AutoViralRequest(auto_upload_youtube=True, auto_upload_tiktok=True),
+        item,
+    )
+
+    assert repairs == []
+    assert item["repair_pending_count"] == 0
+    assert [value.url for value in api.jobs[job.id].clips] == [clip.url]
 
 
 def test_failed_cron_upload_discards_local_batch_but_manual_keeps_it(monkeypatch):
@@ -5472,7 +5770,7 @@ def test_deferred_upload_queues_youtube_and_tiktok_before_cleanup(monkeypatch):
         api.jobs.pop("job-cross", None)
 
 
-def test_cron_discards_claimed_youtube_clip_and_continues_without_retry(monkeypatch):
+def test_cron_holds_claimed_youtube_clip_without_deleting_local_file(monkeypatch):
     import api
     from types import SimpleNamespace
 
@@ -5528,6 +5826,13 @@ def test_cron_discards_claimed_youtube_clip_and_continues_without_retry(monkeypa
             AssertionError("claimed clip must not enter verified cleanup")
         ),
     )
+    monkeypatch.setattr(
+        api,
+        "discard_failed_scheduled_auto_viral_item",
+        lambda *_args, **_kwargs: pytest.fail(
+            "an unverified Content ID result must not delete the local source batch"
+        ),
+    )
 
     processed = api.upload_auto_viral_processed_jobs(
         run.id,
@@ -5536,7 +5841,7 @@ def test_cron_discards_claimed_youtube_clip_and_continues_without_retry(monkeypa
     )
 
     assert processed[0]["status"] == "copyright_claimed"
-    assert "dibuang" in processed[0]["cleanup"]
+    assert "file yang masih tersedia dipertahankan" in processed[0]["cleanup"]
     assert processed[0]["status"] in api.AUTO_VIRAL_UPLOAD_HOLD_STATUSES
     with api.auto_viral_lock:
         api.auto_viral_runs.pop(run.id, None)

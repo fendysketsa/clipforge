@@ -588,6 +588,18 @@ export const getAutoViralSchedule = async () => {
   return (await response.json()) as import("../types/clip.type").AutoViralScheduleStatus;
 };
 
+export const setAutoViralScheduleEnabled = async (enabled: boolean) => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/automation/viral-cc/schedule`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "Gagal mengubah status cron"));
+  }
+  return (await response.json()) as import("../types/clip.type").AutoViralScheduleStatus;
+};
+
 export const createJob = async (input: CreateClipJobInput) => {
   const response = await fetch(`${CLIENT_API_BASE}/api/jobs`, {
     method: "POST",

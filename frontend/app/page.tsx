@@ -24,6 +24,7 @@ import {
   discoverLocalLlms,
   enableYouTubeDirectProfileUpload,
   fetchModels,
+  getAutoViralSchedule,
   getJob,
   getJobs,
   getTikTokConfig,
@@ -36,6 +37,7 @@ import {
   refreshYouTubeUploadPerformance,
   updateYouTubeUploadPerformance,
   setupYouTubeOneTimeLogin,
+  setAutoViralScheduleEnabled,
   startYouTubeLogin,
   startTikTokLogin,
   updateJobClipStatus,
@@ -73,6 +75,7 @@ import {
 import { isActiveJob } from "../lib/utils";
 import type {
   BackgroundMode,
+  AutoViralScheduleStatus,
   CamCorner,
   CaptionFont,
   CaptionPosition,
@@ -227,6 +230,8 @@ export default function HomePage() {
   const [youtubeUploads, setYoutubeUploads] = useState<YouTubeUploadJob[]>([]);
   const [tiktokConfig, setTiktokConfig] = useState<TikTokConfig | null>(null);
   const [tiktokUploads, setTiktokUploads] = useState<TikTokUploadJob[]>([]);
+  const [cronSchedule, setCronSchedule] = useState<AutoViralScheduleStatus | null>(null);
+  const [isTogglingCron, setIsTogglingCron] = useState(false);
   const [isYouTubeLoginActive, setIsYouTubeLoginActive] = useState(false);
   const [isTikTokLoginActive, setIsTikTokLoginActive] = useState(false);
   const [selectedHistoryJobIds, setSelectedHistoryJobIds] = useState<string[]>([]);
@@ -236,11 +241,18 @@ export default function HomePage() {
   const [error, setError] = useState("");
   const restoredTabJob = useRef(false);
   const cleanupConfirmationTimer = useRef<number | null>(null);
+  const reportedFailureIds = useRef(new Set<string>());
 
   const activeJobId = activeJob?.id;
   const isBusy = isActiveJob(activeJob);
   const hasActiveHistoryJobs = jobs.some(isActiveJob);
-  const activityJob = isBusy ? activeJob : job;
+  const latestActiveHistoryJob = useMemo(
+    () => [...jobs]
+      .filter(isActiveJob)
+      .sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] ?? null,
+    [jobs],
+  );
+  const activityJob = latestActiveHistoryJob ?? (isBusy ? activeJob : job);
   const latestLogs = useMemo(() => activityJob?.logs.slice(-RECENT_LOG_LIMIT) ?? [], [activityJob]);
   const hasActiveYouTubeUpload = youtubeUploads.some(
     (upload) =>
@@ -354,23 +366,17 @@ export default function HomePage() {
     const failedJobs = nextJobs.filter(
       (item) => item.status === "failed" || item.status === "cancelled",
     );
-    const failedIds = new Set(
-      failedJobs.map((item) => item.id),
+    const unreportedFailures = failedJobs.filter(
+      (item) => !reportedFailureIds.current.has(item.id),
     );
-    if (failedIds.size) {
-      const newestFailure = [...failedJobs].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
+    if (unreportedFailures.length) {
+      const newestFailure = [...unreportedFailures].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
       const failureMessage = newestFailure.status === "cancelled"
-        ? "Proses dibatalkan. Kartu dan artefaknya dibersihkan otomatis."
-        : `Proses gagal${newestFailure.error ? `: ${newestFailure.error}` : "."} Card dan artefaknya dibersihkan otomatis.`;
+        ? "Proses dibatalkan. Card tetap disimpan di Riwayat sampai dihapus manual."
+        : `Proses gagal${newestFailure.error ? `: ${newestFailure.error}` : "."} Card tetap disimpan agar penyebabnya bisa diperiksa.`;
       setError(failureMessage);
       toast.error(failureMessage, { id: `job-failure-${newestFailure.id}` });
-      await deleteFailedJobs();
-      const cleanJobs = nextJobs.filter((item) => !failedIds.has(item.id));
-      setJobs(cleanJobs);
-      setActiveJob((current) => (current && failedIds.has(current.id) ? null : current));
-      setJob((current) => (current && failedIds.has(current.id) ? null : current));
-      setSelectedHistoryJobIds((current) => current.filter((id) => !failedIds.has(id)));
-      return cleanJobs;
+      unreportedFailures.forEach((item) => reportedFailureIds.current.add(item.id));
     }
     setJobs(nextJobs);
     return nextJobs;
@@ -390,11 +396,17 @@ export default function HomePage() {
     return uploads;
   }, []);
 
+  const loadCronSchedule = useCallback(async () => {
+    const schedule = await getAutoViralSchedule();
+    setCronSchedule(schedule);
+    return schedule;
+  }, []);
+
   const handleSyncData = useCallback(async () => {
     if (isRefreshingData) return;
     setIsRefreshingData(true);
     try {
-      await Promise.all([loadJobs(), loadYouTubeUploads(), loadTikTokUploads()]);
+      await Promise.all([loadJobs(), loadYouTubeUploads(), loadTikTokUploads(), loadCronSchedule()]);
       if (activeJobId) {
         const nextJob = await getJob(activeJobId).catch(() => null);
         if (nextJob) {
@@ -408,13 +420,14 @@ export default function HomePage() {
     } finally {
       setIsRefreshingData(false);
     }
-  }, [activeJobId, isRefreshingData, loadJobs, loadTikTokUploads, loadYouTubeUploads]);
+  }, [activeJobId, isRefreshingData, loadCronSchedule, loadJobs, loadTikTokUploads, loadYouTubeUploads]);
 
   useEffect(() => {
     loadJobs().catch(() => undefined);
     loadYouTubeUploads().catch(() => undefined);
     loadTikTokUploads().catch(() => undefined);
-  }, [loadJobs, loadTikTokUploads, loadYouTubeUploads]);
+    loadCronSchedule().catch(() => undefined);
+  }, [loadCronSchedule, loadJobs, loadTikTokUploads, loadYouTubeUploads]);
 
   useEffect(() => {
     if (!hasActiveHistoryJobs) return;
@@ -1645,12 +1658,37 @@ export default function HomePage() {
     await loadJobs();
   }, [activeJobId, jobs, loadJobs]);
 
+  const handleToggleCron = useCallback(async () => {
+    if (!cronSchedule || isTogglingCron) return;
+    const nextEnabled = !cronSchedule.enabled;
+    setIsTogglingCron(true);
+    try {
+      const nextSchedule = await setAutoViralScheduleEnabled(nextEnabled);
+      setCronSchedule(nextSchedule);
+      toast.success(
+        nextEnabled
+          ? "Cron aktif. Scheduler akan menjalankan siklus berikutnya sesuai jadwal."
+          : "Cron nonaktif. Job yang sedang berjalan tetap diselesaikan.",
+      );
+    } catch (toggleError) {
+      toast.error(toggleError instanceof Error ? toggleError.message : "Gagal mengubah status cron");
+    } finally {
+      setIsTogglingCron(false);
+    }
+  }, [cronSchedule, isTogglingCron]);
+
   return (
     <main className="shell">
       <BrowserTaskIndicator
         job={activityJob}
       />
-      <Topbar isRefreshing={isRefreshingData} onRefresh={handleSyncData} />
+      <Topbar
+        isRefreshing={isRefreshingData}
+        onRefresh={handleSyncData}
+        cronSchedule={cronSchedule}
+        isTogglingCron={isTogglingCron}
+        onToggleCron={handleToggleCron}
+      />
 
       <QuickStartCard
         url={url}

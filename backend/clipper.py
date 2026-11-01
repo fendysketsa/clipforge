@@ -18603,10 +18603,11 @@ def export_clip(
                 "-pix_fmt",
                 "yuv420p",
                 # Input ``-t`` alone does not cap a filtergraph containing an
-                # infinite movie/loop source.  This output fence guarantees the
-                # render closes its MP4 and writes the moov atom on schedule.
+                # infinite movie/loop source.  Fence the authored timeline,
+                # including a real appended outro.  Using ``duration`` here
+                # silently cut every 2.8-second Qur'an outro before muxing.
                 "-t",
-                f"{duration:.3f}",
+                f"{output_duration:.3f}",
                 *(
                     [
                         "-force_key_frames",
