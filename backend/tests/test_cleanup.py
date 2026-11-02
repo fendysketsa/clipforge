@@ -191,7 +191,7 @@ def test_failed_or_empty_job_removes_entire_partial_workspace(monkeypatch, tmp_p
     assert "telah dihapus" in failed.logs[-1]
 
 
-def test_rendered_file_without_surviving_candidate_audit_is_deleted(monkeypatch, tmp_path):
+def test_rendered_file_without_surviving_candidate_audit_is_preserved_for_diagnosis(monkeypatch, tmp_path):
     import api
 
     outputs = tmp_path / "outputs"
@@ -231,7 +231,8 @@ def test_rendered_file_without_surviving_candidate_audit_is_deleted(monkeypatch,
 
     failed = api.jobs[job.id]
     assert failed.status == "failed"
-    assert not workspace.exists()
+    assert workspace.exists()
+    assert clip_path.exists()
     assert telegram_calls == []
 
 
@@ -275,6 +276,11 @@ def test_completed_clip_job_sends_telegram_success_alert(monkeypatch, tmp_path):
     monkeypatch.setattr(api.subprocess, "Popen", lambda *_args, **_kwargs: FinishedClipperProcess(0))
     monkeypatch.setattr(api, "discover_clips", lambda *_args, **_kwargs: [clip])
     monkeypatch.setattr(api, "discover_candidates", lambda *_args, **_kwargs: [candidate])
+    monkeypatch.setattr(
+        api,
+        "partition_completed_clips_by_integrity",
+        lambda _request, clips: (clips, []),
+    )
     monkeypatch.setattr(api, "remember_processed_source", lambda *_args, **_kwargs: None)
     telegram_calls = []
     monkeypatch.setattr(api, "send_clip_success_telegram_alert", telegram_calls.append)

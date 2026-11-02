@@ -77,6 +77,7 @@ from api import (
     sync_youtube_cdp,
     youtube_final_visibility_from_logs,
     youtube_chapters_from_sidecar,
+    youtube_cadence_safe_visibility,
     youtube_video_url_from_logs,
 )
 from youtube_uploader import (
@@ -1000,6 +1001,78 @@ def test_public_cadence_allows_slot_after_six_hours(monkeypatch):
     assert youtube_public_cadence_issue(now) is None
 
 
+def test_closed_public_cadence_demotes_upload_to_private(monkeypatch):
+    import api
+
+    monkeypatch.setenv("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", "true")
+    monkeypatch.setattr(
+        api,
+        "youtube_public_cadence_issue",
+        lambda **_kwargs: "Publikasi public hari ini sudah 3/3.",
+    )
+
+    visibility, issue = youtube_cadence_safe_visibility("public")
+
+    assert visibility == "private"
+    assert issue == "Publikasi public hari ini sudah 3/3."
+
+
+def test_open_public_cadence_keeps_public_visibility(monkeypatch):
+    import api
+
+    monkeypatch.setenv("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", "true")
+    monkeypatch.setattr(
+        api,
+        "youtube_public_cadence_issue",
+        lambda **_kwargs: None,
+    )
+
+    assert youtube_cadence_safe_visibility("public") == ("public", None)
+
+
+def test_worker_hard_gate_demotes_stale_public_queue_to_private(monkeypatch, tmp_path):
+    import api
+
+    clip_path = tmp_path / "clip.mp4"
+    clip_path.write_bytes(b"video")
+    upload = YouTubeUploadJob(
+        id="cadence-worker",
+        source_job_id="job-cadence-worker",
+        clip_url="/outputs/demo/clip.mp4",
+        clip_name="clip.mp4",
+        status="queued",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        title="Cadence worker",
+        visibility="public",
+        clip_sha256="fingerprint",
+    )
+    completed_as_duplicate = []
+    monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+    monkeypatch.setattr(api, "output_path_from_url", lambda _url: clip_path)
+    monkeypatch.setattr(
+        api,
+        "youtube_cadence_safe_visibility",
+        lambda *_args, **_kwargs: ("private", "Jarak publikasi belum aman."),
+    )
+    monkeypatch.setattr(
+        api,
+        "verified_duplicate_for_upload",
+        lambda *_args, **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        api,
+        "complete_youtube_upload_as_duplicate",
+        lambda upload_id, *_args, **_kwargs: completed_as_duplicate.append(upload_id),
+    )
+
+    api.run_youtube_upload(upload.id)
+
+    assert api.youtube_uploads[upload.id].visibility == "private"
+    assert "Hard gate cadence" in " ".join(api.youtube_uploads[upload.id].logs)
+    assert completed_as_duplicate == [upload.id]
+
+
 def test_channel_recovery_profile_clamps_upload_volume_and_cadence(monkeypatch):
     monkeypatch.setenv("YOUTUBE_CHANNEL_RECOVERY_MODE", "true")
     monkeypatch.setenv("YOUTUBE_AUTO_UPLOAD_COUNT", "5")
@@ -1343,6 +1416,122 @@ def test_upload_command_marks_shorts_type_even_without_thumbnail(monkeypatch, tm
     assert command[command.index("--media-duration-seconds") + 1] == "59.900"
 
 
+def test_upload_and_recovery_commands_keep_native_publish_schedule(monkeypatch, tmp_path):
+    import api
+
+    video_path = tmp_path / "clip_01.mp4"
+    video_path.write_bytes(b"video")
+    monkeypatch.setattr(api, "output_path_from_url", lambda _url: video_path)
+    monkeypatch.setattr(api, "prepare_limited_upload_file", lambda path, _limit: path)
+    monkeypatch.setattr(api, "media_duration_seconds", lambda _path: 40.0)
+    monkeypatch.setattr(api, "youtube_upload_prefers_cdp", lambda: False)
+    monkeypatch.setattr(api, "youtube_profile_upload_allowed", lambda: False)
+    publish_at = "2026-11-03T00:00:00+00:00"
+    upload = YouTubeUploadJob(
+        id="upload-scheduled",
+        source_job_id="job-scheduled",
+        clip_url="/outputs/demo/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="queued",
+        created_at="2026-11-02T00:00:00+00:00",
+        updated_at="2026-11-02T00:00:00+00:00",
+        title="Judul kontekstual",
+        visibility="public",
+        publish_at=publish_at,
+        video_url="https://www.youtube.com/watch?v=abcDEF12345",
+    )
+
+    command = build_youtube_upload_command(upload)
+    recovery = build_youtube_restart_verification_command(upload)
+
+    assert command[command.index("--publish-at") + 1] == publish_at
+    assert recovery[recovery.index("--publish-at") + 1] == publish_at
+
+
+def test_next_native_schedule_uses_wib_slots_and_skips_reserved(monkeypatch):
+    import api
+
+    monkeypatch.setenv("YOUTUBE_PUBLISH_TIMEZONE", "Asia/Jakarta")
+    monkeypatch.setenv("YOUTUBE_SHORT_PUBLISH_SLOTS", "07:00,09:30,12:00")
+    monkeypatch.setenv("YOUTUBE_SCHEDULE_MIN_LEAD_MINUTES", "30")
+    now = datetime(2026, 11, 1, 22, 30, tzinfo=timezone.utc)  # 02 Nov 05:30 WIB
+    reserved = {datetime(2026, 11, 2, 0, 0, tzinfo=timezone.utc)}  # 07:00 WIB
+
+    slot = api.youtube_next_publish_slot(
+        long_form=False,
+        reserved=reserved,
+        now=now,
+    )
+
+    assert slot == datetime(2026, 11, 2, 2, 30, tzinfo=timezone.utc)  # 09:30 WIB
+
+
+def test_worker_rebases_schedule_that_is_too_close_before_recovery(monkeypatch, tmp_path):
+    import api
+
+    upload = YouTubeUploadJob(
+        id="rebase-scheduled-upload",
+        source_job_id="job-rebase",
+        clip_url="/outputs/demo/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="queued",
+        created_at="2026-11-02T00:00:00+00:00",
+        updated_at="2026-11-02T00:00:00+00:00",
+        title="Jadwal yang perlu dipindah",
+        visibility="public",
+        publish_at="2020-01-01T00:00:00+00:00",
+    )
+    replacement = datetime(2099, 1, 2, 0, 0, tzinfo=timezone.utc)
+    observed = []
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", tmp_path / "youtube_uploads.json")
+    monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+    monkeypatch.setattr(api, "youtube_next_publish_slot", lambda **_kwargs: replacement)
+    monkeypatch.setattr(api, "youtube_upload_needs_restart_verification", lambda _upload: True)
+    monkeypatch.setattr(
+        api,
+        "run_youtube_restart_verification",
+        lambda upload_id: observed.append(api.youtube_uploads[upload_id].publish_at),
+    )
+
+    api.run_youtube_upload(upload.id)
+
+    assert observed == [replacement.isoformat()]
+    assert any("dipindah otomatis" in line for line in api.youtube_uploads[upload.id].logs)
+
+
+def test_worker_migrates_legacy_scheduled_public_queue_to_native_schedule(monkeypatch, tmp_path):
+    import api
+
+    upload = YouTubeUploadJob(
+        id="migrate-legacy-public-upload",
+        source_job_id="job-legacy-schedule",
+        clip_url="/outputs/demo/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="queued",
+        created_at="2026-11-02T00:00:00+00:00",
+        updated_at="2026-11-02T00:00:00+00:00",
+        title="Antrean otomatis lama",
+        visibility="public",
+    )
+    replacement = datetime(2099, 1, 2, 0, 0, tzinfo=timezone.utc)
+    observed = []
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", tmp_path / "youtube_uploads.json")
+    monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+    monkeypatch.setattr(api, "youtube_upload_belongs_to_scheduled_run", lambda _upload: True)
+    monkeypatch.setattr(api, "youtube_next_publish_slot", lambda **_kwargs: replacement)
+    monkeypatch.setattr(api, "youtube_upload_needs_restart_verification", lambda _upload: True)
+    monkeypatch.setattr(
+        api,
+        "run_youtube_restart_verification",
+        lambda upload_id: observed.append(api.youtube_uploads[upload_id].publish_at),
+    )
+
+    api.run_youtube_upload(upload.id)
+
+    assert observed == [replacement.isoformat()]
+    assert any("dimigrasikan" in line for line in api.youtube_uploads[upload.id].logs)
+
+
 def test_restart_verification_command_preserves_assigned_video_url(monkeypatch):
     upload = YouTubeUploadJob(
         id="verify-known-video",
@@ -1440,6 +1629,7 @@ def test_upload_command_discloses_realistic_background_replacement(monkeypatch, 
     video_path.write_bytes(b"video")
     monkeypatch.setattr(api, "output_path_from_url", lambda _url: video_path)
     monkeypatch.setattr(api, "prepare_limited_upload_file", lambda path, _limit: path)
+    monkeypatch.setattr(api, "media_duration_seconds", lambda _path: 30.0)
     monkeypatch.setattr(api, "youtube_upload_prefers_cdp", lambda: False)
     monkeypatch.setattr(api, "youtube_profile_upload_allowed", lambda: False)
     upload = YouTubeUploadJob(
@@ -1480,6 +1670,7 @@ def test_story_resume_upload_requires_automatic_thumbnail(monkeypatch, tmp_path)
     monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
     monkeypatch.setattr(api, "jobs", {job.id: job})
     monkeypatch.setattr(api, "youtube_uploads", {})
+    monkeypatch.setattr(api, "upload_media_duration_issue", lambda _path: None)
 
     with pytest.raises(HTTPException) as exc_info:
         create_youtube_upload_record(job.id, YouTubeUploadRequest(clip_url=clip.url))
@@ -1717,6 +1908,7 @@ def test_identical_completed_clip_is_not_uploaded_again(monkeypatch, tmp_path):
     monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
     monkeypatch.setattr(api, "jobs", {job.id: job})
     monkeypatch.setattr(api, "youtube_uploads", {completed.id: completed})
+    monkeypatch.setattr(api, "upload_media_duration_issue", lambda _path: None)
     monkeypatch.setattr(
         api,
         "generate_youtube_metadata",
@@ -1784,6 +1976,7 @@ def test_failed_upload_with_assigned_video_id_is_reused_for_safe_verification(
     monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
     monkeypatch.setattr(api, "jobs", {job.id: job})
     monkeypatch.setattr(api, "youtube_uploads", {failed.id: failed})
+    monkeypatch.setattr(api, "upload_media_duration_issue", lambda _path: None)
     monkeypatch.setattr(
         api,
         "generate_youtube_metadata",
@@ -1932,6 +2125,7 @@ def test_active_upload_wins_over_older_recoverable_failure(monkeypatch, tmp_path
     monkeypatch.setattr(api, "OUTPUTS_DIR", outputs)
     monkeypatch.setattr(api, "jobs", {job.id: job})
     monkeypatch.setattr(api, "youtube_uploads", {failed.id: failed, active.id: active})
+    monkeypatch.setattr(api, "upload_media_duration_issue", lambda _path: None)
 
     selected = create_youtube_upload_record(
         job.id,
@@ -3554,12 +3748,42 @@ def test_complete_short_description_is_concise_contextual_and_has_short_tag():
     assert "Untuk direnungkan:" in description
     assert sum(
         phrase in description
-        for phrase in ("Simpan video ini", "Bagikan pembahasan ini", "Ikuti channel ini")
+        for phrase in ("Simpan jika", "Kirim kepada", "Tulis satu hikmah")
     ) == 1
     assert "YouTube · @ryuundyofficial" not in description
     assert "@ryuundy.studio" in description
     assert "@ryuundyofficial" not in description
     assert "#Islam #Hikmah #Shorts" in description
+
+
+def test_complete_short_description_uses_relationship_context_not_generic_cta():
+    clip = ClipFile(
+        name="clip_cemburu.mp4",
+        url="/outputs/demo/clips/clip_cemburu.mp4",
+        size_bytes=1,
+        title="Cemburu Parah di Kampus",
+        hook="Teman mengambil nomor HP tanpa izin.",
+        core_message="Kisah ini membahas kepercayaan, privasi, dan batas pertemanan.",
+    )
+    job = ClipJob(
+        id="job-contextual-description",
+        status="completed",
+        request=ClipJobRequest(source_file="owned.mp4"),
+        created_at="2026-11-02T00:00:00+00:00",
+        updated_at="2026-11-02T00:00:00+00:00",
+        clips=[clip],
+    )
+
+    description = complete_youtube_description(
+        job,
+        clip,
+        "Seseorang merasa cemburu setelah nomor HP dibagikan tanpa persetujuan.",
+        ["CemburuKampus", "Privasi"],
+    )
+
+    assert "Poin mana yang paling membuka sudut pandangmu?" not in description
+    assert "Bagikan kepada orang yang mungkin mendapat manfaat" not in description
+    assert any(word in description.casefold() for word in ("batas", "privasi", "kepercayaan"))
 
 
 def test_complete_long_description_is_more_detailed_and_removes_short_tag():

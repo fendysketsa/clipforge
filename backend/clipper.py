@@ -37,6 +37,7 @@ from source_rights import (
 )
 from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
 from whisper_cache import cached_whisper_model_path
+from metadata_copy import choose_contextual_cta, contextual_engagement_copy
 from hypit_quick import (
     hypit_prompt_body,
     is_hypit_infographic_auto_prompt,
@@ -16133,58 +16134,18 @@ def format_social_description(
                 + " ".join(sentences[split_at:])
             )
 
-    description_words = set(
-        re.findall(r"[\w']+", f"{clip.title} {clip.text}".casefold())
-    )
     theme = detect_visual_theme(clip)
     has_islamic_context = clip_has_islamic_context(clip)
-    if description_words.intersection(
-        {"waris", "warisan", "pewaris", "ahliwaris", "takziah"}
-    ):
-        discussion_label = "Mari diskusikan:"
-        question = "Bagian aturan warisan mana yang paling sering disalahpahami?"
-        cta_options = [
-            "Simpan video ini sebagai pengingat sebelum membahas hak keluarga.",
-            "Bagikan pembahasan ini kepada keluarga yang mungkin membutuhkannya.",
-            "Ikuti channel ini untuk pembahasan hukum keluarga dan hikmah Islam berikutnya.",
-        ]
-    else:
-        question = re.sub(
-            r"(?i)^menurutmu[,:]?\s*",
-            "",
-            shorts_engagement_prompt(clip),
-        ).capitalize().rstrip(" .!?") + "?"
-        if theme == "mystery" and has_islamic_context:
-            discussion_label = "Coba telaah:"
-            question = "Bagian mana yang bersumber dari dalil, penafsiran, atau cerita?"
-            cta_options = [
-                "Simpan video ini untuk menelaah kembali konteks pembahasannya.",
-                "Bagikan jika pembahasan ini membantu memisahkan dalil, penafsiran, dan cerita.",
-                "Ikuti channel ini untuk kajian kontekstual dan cek fakta berikutnya.",
-            ]
-        elif theme == "mystery":
-            discussion_label = "Coba bedakan:"
-            cta_options = [
-                "Simpan video ini sebagai pengingat untuk memeriksa konteks sebelum percaya.",
-                "Bagikan jika pembahasan ini membantu membedakan cerita, penafsiran, dan fakta.",
-                "Ikuti channel ini untuk cerita kontekstual dan cek fakta berikutnya.",
-            ]
-        elif theme == "islamic":
-            discussion_label = "Untuk direnungkan:"
-            cta_options = [
-                "Simpan video ini jika ingin merenungkan kembali pesannya.",
-                "Bagikan pembahasan ini kepada orang yang mungkin membutuhkannya.",
-                "Ikuti channel ini untuk hikmah dan pembahasan kontekstual berikutnya.",
-            ]
-        else:
-            discussion_label = "Menurutmu:"
-            cta_options = [
-                "Simpan video ini jika ingin melihat kembali poin utamanya.",
-                "Bagikan kepada orang yang mungkin mendapat manfaat dari pembahasan ini.",
-                subscribe_value_prompt(clip).capitalize().rstrip(" .!?") + ".",
-            ]
-    cta_seed = f"{clip.title}|{clean_summary}".encode("utf-8")
-    contextual_cta = cta_options[hashlib.sha256(cta_seed).digest()[0] % len(cta_options)]
+    discussion_label, question, cta_options = contextual_engagement_copy(
+        title=clip.title,
+        context=f"{clip.hook} {clip.text} {clean_summary}",
+        islamic=has_islamic_context or theme == "islamic",
+        mystery=theme == "mystery",
+    )
+    contextual_cta = choose_contextual_cta(
+        f"{clip.title}|{clean_summary}",
+        cta_options,
+    )
     if long_form:
         contextual_cta = (
             "Jika tombol Viralkan tersedia pada 7 hari pertama, tekan bila video ini "

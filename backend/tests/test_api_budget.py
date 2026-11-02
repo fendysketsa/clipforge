@@ -1370,6 +1370,34 @@ def test_scheduled_auto_viral_request_supports_nineteen_shorts_and_one_long(
     assert api.auto_viral_paired_long_limit(request) == 1
 
 
+def test_scheduled_monetization_profile_uses_three_distinct_short_sources(monkeypatch):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", "3")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", "1")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PODCAST_CLIPS_PER_VIDEO", "1")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", "false")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_AUTO_PUBLIC", "false")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "3")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", "3")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET", "0")
+    monkeypatch.setattr(
+        api,
+        "auto_viral_daily_youtube_content_counts",
+        lambda *_args: {"short": 0, "long": 0},
+    )
+
+    request = api.scheduled_auto_viral_request()
+
+    assert request.video_count == 3
+    assert request.clips_per_video == 1
+    assert request.create_paired_long_video is False
+    assert api.auto_viral_daily_upload_limit() == 3
+    assert api.auto_viral_daily_short_upload_target() == 3
+    assert api.auto_viral_daily_long_upload_target() == 0
+
+
 @pytest.mark.parametrize(
     "error",
     [
@@ -1391,6 +1419,7 @@ def test_scheduled_auto_viral_request_only_fills_remaining_daily_mix(monkeypatch
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", "1")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "7")
     monkeypatch.setenv("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", "5")
     monkeypatch.setenv("AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET", "2")
     monkeypatch.setattr(
@@ -2273,7 +2302,7 @@ def test_auto_viral_missing_checkpoint_is_not_resumable(monkeypatch):
     assert api.auto_viral_run_can_resume_upload(run) is False
 
 
-def test_scheduled_upload_daily_limit_is_hard_capped_at_twenty_wib(monkeypatch):
+def test_scheduled_upload_daily_limit_is_hard_capped_at_twenty_five_wib(monkeypatch):
     import api
     from types import SimpleNamespace
 
@@ -2287,7 +2316,7 @@ def test_scheduled_upload_daily_limit_is_hard_capped_at_twenty_wib(monkeypatch):
         request=AutoViralRequest(video_count=20, auto_upload_youtube=True),
         processed=[
             {"job_id": f"cron-job-{index}", "job_status": "completed"}
-            for index in range(1, 21)
+            for index in range(1, 26)
         ],
     )
     uploads = {
@@ -2302,13 +2331,13 @@ def test_scheduled_upload_daily_limit_is_hard_capped_at_twenty_wib(monkeypatch):
             updated_at=now.isoformat(),
             created_at=now.isoformat(),
         )
-        for index in range(1, 21)
+        for index in range(1, 26)
     }
     monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "99")
     monkeypatch.setattr(api, "auto_viral_runs", {run.id: run})
     monkeypatch.setattr(api, "youtube_uploads", uploads)
 
-    assert api.auto_viral_daily_upload_limit() == 20
+    assert api.auto_viral_daily_upload_limit() == 25
     assert api.auto_viral_daily_upload_slots("youtube", now) == 0
     with pytest.raises(api.AutoViralDailyUploadLimitReached) as caught:
         api.require_auto_viral_daily_upload_slot("youtube", now)
@@ -2818,6 +2847,9 @@ def test_scheduled_upload_requires_complete_rights_profile(monkeypatch):
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_TIKTOK", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_AUTO_PUBLIC", "true")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "4")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", "3")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET", "1")
     monkeypatch.setenv("YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD", "true")
     monkeypatch.setenv("YOUTUBE_CHANNEL_RECOVERY_MODE", "false")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED", "false")
@@ -3611,8 +3643,10 @@ def test_scheduled_cron_targets_nineteen_shorts_from_seven_three_clip_sources(
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", "19")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", "3")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "20")
     monkeypatch.setenv("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", "19")
     monkeypatch.setenv("AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET", "1")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", "true")
     monkeypatch.setattr(
         api,
         "auto_viral_daily_youtube_content_counts",
@@ -3640,8 +3674,10 @@ def test_scheduled_cron_recalculates_sources_from_actual_remaining_short_count(
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", "19")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_CLIPS_PER_VIDEO", "3")
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "20")
     monkeypatch.setenv("AUTO_VIRAL_DAILY_SHORT_UPLOAD_TARGET", "19")
     monkeypatch.setenv("AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET", "1")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", "true")
     monkeypatch.setattr(
         api,
         "auto_viral_daily_youtube_content_counts",
@@ -4714,6 +4750,7 @@ def test_deferred_upload_persists_queue_and_completion_checkpoints(monkeypatch):
     from types import SimpleNamespace
 
     request = AutoViralRequest(video_count=1, clips_per_video=1, auto_upload_youtube=True)
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "20")
     run = api.AutoViralRun(
         id="deferred-upload",
         status="running",
@@ -5427,6 +5464,7 @@ def test_deferred_upload_holds_unconfirmed_platform_result_without_retry(monkeyp
         clips_per_video=1,
         auto_upload_youtube=True,
     )
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "20")
     run = api.AutoViralRun(
         id="unverified-single-upload",
         status="running",
@@ -5704,6 +5742,7 @@ def test_deferred_upload_queues_youtube_and_tiktok_before_cleanup(monkeypatch):
         auto_upload_youtube=True,
         auto_upload_tiktok=True,
     )
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "20")
     run = api.AutoViralRun(
         id="deferred-cross-platform",
         status="running",
@@ -5779,6 +5818,7 @@ def test_cron_holds_claimed_youtube_clip_without_deleting_local_file(monkeypatch
         clips_per_video=1,
         auto_upload_youtube=True,
     )
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "20")
     run = api.AutoViralRun(
         id="claimed-cron-upload",
         status="running",

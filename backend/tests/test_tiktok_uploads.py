@@ -39,6 +39,12 @@ from tiktok_uploader import (
 from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
 
 
+@pytest.fixture(autouse=True)
+def valid_test_upload_duration(monkeypatch):
+    """Synthetic byte fixtures stand in for already validated rendered MP4s."""
+    monkeypatch.setattr(api, "upload_media_duration_issue", lambda _path: None)
+
+
 def make_job(clip: ClipFile) -> ClipJob:
     return ClipJob(
         id="job-tiktok",

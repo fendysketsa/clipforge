@@ -9,8 +9,10 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import imageio_ffmpeg
 
@@ -2158,11 +2160,13 @@ def set_visibility(page, visibility: str) -> None:
         "private": [r"private", r"pribadi"],
         "unlisted": [r"unlisted", r"tidak publik"],
         "public": [r"public", r"publik"],
+        "scheduled": [r"schedule", r"jadwalkan", r"dijadwalkan"],
     }[visibility]
     radio_name = {
         "private": "PRIVATE",
         "unlisted": "UNLISTED",
         "public": "PUBLIC",
+        "scheduled": "SCHEDULE",
     }[visibility]
     log(f"Mengatur visibilitas: {visibility}.")
     script = """
@@ -2280,6 +2284,121 @@ def set_visibility(page, visibility: str) -> None:
     raise UploadError(f"Opsi visibilitas '{visibility}' tidak berhasil dipilih.")
 
 
+def set_scheduled_publish_time(page, publish_at: str) -> None:
+    """Select Studio Schedule and fill its date/time controls."""
+    try:
+        scheduled_at = datetime.fromisoformat(publish_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise UploadError(f"Format jadwal publikasi tidak valid: {publish_at}") from exc
+    if scheduled_at.tzinfo is None:
+        raise UploadError("Jadwal publikasi wajib memiliki zona waktu")
+    if scheduled_at <= datetime.now(timezone.utc) + timedelta(minutes=15):
+        raise UploadError("Jadwal publikasi terlalu dekat atau sudah lewat")
+
+    set_visibility(page, "scheduled")
+    timezone_name = os.environ.get("YOUTUBE_PUBLISH_TIMEZONE", "Asia/Jakarta").strip()
+    try:
+        publish_timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise UploadError(
+            f"Zona waktu jadwal YouTube tidak tersedia: {timezone_name}"
+        ) from exc
+    local = scheduled_at.astimezone(publish_timezone)
+    payload = {
+        "isoDate": local.strftime("%Y-%m-%d"),
+        "slashDate": local.strftime("%m/%d/%Y"),
+        "dayFirstDate": local.strftime("%d/%m/%Y"),
+        "time": local.strftime("%H:%M"),
+        "year": local.strftime("%Y"),
+    }
+    script = r"""
+    ({ isoDate, slashDate, dayFirstDate, time, year }) => {
+      const roots = [];
+      const seen = new Set();
+      const addRoot = (root) => {
+        if (root && !seen.has(root)) { seen.add(root); roots.push(root); }
+      };
+      addRoot(document);
+      for (let index = 0; index < roots.length; index += 1) {
+        const root = roots[index];
+        const elements = root.querySelectorAll ? Array.from(root.querySelectorAll('*')) : [];
+        for (const element of elements) if (element.shadowRoot) addRoot(element.shadowRoot);
+      }
+      const visible = (element) => {
+        if (!element?.getBoundingClientRect) return false;
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style &&
+          style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+      };
+      const label = (element) => [
+        element.getAttribute?.('aria-label'), element.getAttribute?.('placeholder'),
+        element.getAttribute?.('name'), element.id, element.closest?.('ytcp-form-input-container')?.innerText,
+        element.parentElement?.innerText,
+      ].filter(Boolean).join(' ').toLowerCase();
+      const setNativeValue = (element, value) => {
+        const prototype = element instanceof HTMLTextAreaElement
+          ? HTMLTextAreaElement.prototype
+          : element instanceof HTMLInputElement
+            ? HTMLInputElement.prototype
+            : HTMLElement.prototype;
+        const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
+        if (descriptor?.set) descriptor.set.call(element, value);
+        else if ('value' in element) element.value = value;
+        else element.textContent = value;
+        for (const eventName of ['input', 'change', 'blur']) {
+          element.dispatchEvent(new Event(eventName, { bubbles: true, composed: true }));
+        }
+      };
+      const fields = [];
+      for (const root of roots) {
+        const elements = root.querySelectorAll
+          ? Array.from(root.querySelectorAll('input, textarea, [contenteditable="true"]'))
+          : [];
+        for (const element of elements) if (visible(element)) fields.push(element);
+      }
+      let dateField = fields.find((field) => field.type === 'date');
+      let timeField = fields.find((field) => field.type === 'time');
+      dateField ||= fields.find((field) => /date|tanggal/.test(label(field)));
+      timeField ||= fields.find((field) => /time|waktu/.test(label(field)));
+      if (!dateField || !timeField || dateField === timeField) {
+        return { ok: false, reason: 'date_or_time_field_missing' };
+      }
+      const dateValue = dateField.type === 'date'
+        ? isoDate
+        : /dd|tanggal/.test(label(dateField))
+          ? dayFirstDate
+          : slashDate;
+      setNativeValue(dateField, dateValue);
+      setNativeValue(timeField, time);
+      const dateText = String(dateField.value || dateField.textContent || '');
+      const timeText = String(timeField.value || timeField.textContent || '');
+      return {
+        ok: dateText.includes(year) && timeText.replace('.', ':').includes(time),
+        dateText,
+        timeText,
+      };
+    }
+    """
+    deadline = time.monotonic() + 15
+    last_result = None
+    while time.monotonic() < deadline:
+        dismiss_reload_prompt(page, timeout_ms=300)
+        try:
+            last_result = page.evaluate(script, payload)
+            if isinstance(last_result, dict) and last_result.get("ok"):
+                log(
+                    "Jadwal YouTube terpasang: "
+                    f"{local.strftime('%d-%m-%Y %H:%M %Z')}."
+                )
+                return
+        except Exception:
+            pass
+        time.sleep(0.5)
+    save_debug_artifacts(page, "scheduled-publish-time-not-set")
+    raise UploadError(f"Tanggal/waktu Schedule tidak berhasil diisi: {last_result}")
+
+
 def get_upload_workflow_step(page) -> str:
     script = """
     () => {
@@ -2393,6 +2512,7 @@ def visibility_is_selected(page, visibility: str) -> bool:
         "private": "PRIVATE",
         "unlisted": "UNLISTED",
         "public": "PUBLIC",
+        "scheduled": "SCHEDULE",
     }[visibility]
     script = """
     ({ radioName }) => {
@@ -2446,7 +2566,13 @@ def visibility_is_selected(page, visibility: str) -> bool:
 
 
 def final_action_button_is_ready(page, visibility: str) -> bool:
-    patterns = [r"publish", r"publikasikan"] if visibility == "public" else [r"save", r"done", r"simpan", r"selesai"]
+    patterns = (
+        [r"schedule", r"jadwalkan"]
+        if visibility == "scheduled"
+        else [r"publish", r"publikasikan"]
+        if visibility == "public"
+        else [r"save", r"done", r"simpan", r"selesai"]
+    )
     script = """
     ({ patterns }) => {
       const isVisible = (element) => {
@@ -2501,7 +2627,13 @@ def wait_for_review_checks_safe_before_publish(
     media_duration_seconds: float = 0.0,
     previously_verified_non_blocking_claim: bool = False,
 ) -> None:
-    action_label = "Publikasikan" if visibility == "public" else "Simpan"
+    action_label = (
+        "Jadwalkan"
+        if visibility == "scheduled"
+        else "Publikasikan"
+        if visibility == "public"
+        else "Simpan"
+    )
     log(
         "Memastikan ulang status hak cipta tetap aman dan tombol "
         f"{action_label} siap..."
@@ -2593,7 +2725,10 @@ def click_final_upload_action(
             "Klaim Content ID/copyright terdeteksi tepat sebelum aksi final. "
             "Upload dibatalkan agar channel tetap aman."
         )
-    if visibility == "public":
+    if visibility == "scheduled":
+        patterns = [r"schedule", r"jadwalkan"]
+        label = "Schedule/Jadwalkan"
+    elif visibility == "public":
         patterns = [r"publish", r"publikasikan"]
         label = "Publish/Publikasikan"
     else:
@@ -5697,7 +5832,9 @@ def saved_video_row_snapshot(
                 ? ['private', 'pribadi']
                 : visibility === 'unlisted'
                   ? ['unlisted', 'tidak publik']
-                  : ['public', 'publik'];
+                  : visibility === 'scheduled'
+                    ? ['scheduled', 'schedule', 'dijadwalkan', 'terjadwal']
+                    : ['public', 'publik'];
               const roots = [];
               const seen = new Set();
               const addRoot = (root) => {
@@ -5804,7 +5941,9 @@ def saved_video_edit_snapshot(page, expected_title: str, visibility: str) -> dic
                 ? ['private', 'pribadi']
                 : visibility === 'unlisted'
                   ? ['unlisted', 'tidak publik']
-                  : ['public', 'publik'];
+                  : visibility === 'scheduled'
+                    ? ['scheduled', 'schedule', 'dijadwalkan', 'terjadwal']
+                    : ['public', 'publik'];
               const roots = [];
               const seen = new Set();
               const addRoot = (root) => {
@@ -6053,6 +6192,7 @@ def resume_saved_draft_and_finalize(
     video_url: str,
     tags: str = "",
     content_type: str = "auto",
+    publish_at: str = "",
     timeout_ms: int = 120000,
 ) -> str:
     """Resume one exact Studio draft and finish it without selecting a file."""
@@ -6119,29 +6259,37 @@ def resume_saved_draft_and_finalize(
         raise UploadError(f"Draft {video_id} belum mencapai tab Visibilitas; step terakhir: {step or 'tidak terbaca'}.")
 
     wait_for_visibility_step(page, timeout_ms=20000)
-    set_visibility(page, visibility)
+    effective_visibility = "scheduled" if publish_at else visibility
+    if publish_at:
+        if visibility != "public":
+            raise UploadError("Recovery jadwal hanya boleh memakai visibility public.")
+        set_scheduled_publish_time(page, publish_at)
+    else:
+        set_visibility(page, visibility)
     wait_for_review_checks_safe_before_publish(
         page,
         timeout_ms=timeout_ms,
-        visibility=visibility,
+        visibility=effective_visibility,
         content_type=content_type,
         media_duration_seconds=0.0,
     )
     click_final_upload_action(
         page,
-        visibility,
+        effective_visibility,
         timeout_ms=30000,
         content_type=content_type,
         media_duration_seconds=0.0,
     )
     log(f"FINAL_VISIBILITY: {visibility}")
+    if publish_at:
+        log(f"SCHEDULED_PUBLISH_AT: {publish_at}")
     log(f"VIDEO_URL: {normalized_url}")
     final_url = wait_for_final_upload_confirmation(
         page,
         timeout_ms=timeout_ms,
         video_url=normalized_url or video_url,
         expected_title=expected_title,
-        visibility=visibility,
+        visibility=effective_visibility,
     )
     return final_url or normalized_url or video_url
 
@@ -6279,10 +6427,13 @@ def wait_for_final_upload_confirmation(
     deadline = time.monotonic() + timeout_ms / 1000
     done_patterns = (
         r"video (published|uploaded)",
+        r"video (scheduled|has been scheduled)",
         r"upload complete",
         r"processing will begin shortly",
         r"checks? will begin shortly",
         r"video (berhasil )?(telah )?dipublikasikan",
+        r"video (berhasil )?(telah )?dijadwalkan",
+        r"berhasil dijadwalkan",
         r"berhasil dipublikasikan",
         r"upload selesai",
         r"upload telah selesai",
@@ -6670,10 +6821,11 @@ def run_verify_upload(args: argparse.Namespace) -> None:
                 args.target_email,
                 args.target_channel_id,
             )
+            effective_visibility = "scheduled" if args.publish_at else args.visibility
             video_url = verify_saved_video_in_studio(
                 page,
                 args.title,
-                args.visibility,
+                effective_visibility,
                 video_url=args.video_url,
                 # A known id only needs a quick idempotency check. If its
                 # requested visibility is absent, spend the remaining budget
@@ -6692,6 +6844,7 @@ def run_verify_upload(args: argparse.Namespace) -> None:
                     video_url=args.video_url,
                     tags=args.tags,
                     content_type=args.content_type,
+                    publish_at=args.publish_at,
                     timeout_ms=timeout_ms,
                 )
             if not video_url:
@@ -6700,6 +6853,8 @@ def run_verify_upload(args: argparse.Namespace) -> None:
                     "file lokal dipertahankan."
                 )
             log(f"FINAL_VISIBILITY: {args.visibility}")
+            if args.publish_at:
+                log(f"SCHEDULED_PUBLISH_AT: {args.publish_at}")
             log("UPLOAD_CONFIRMED: video pasca-restart terverifikasi di YouTube Studio.")
             log(f"VIDEO_URL: {video_url}")
             context.storage_state(path=str(state_path))
@@ -6729,6 +6884,11 @@ def run_upload(args: argparse.Namespace) -> None:
 
     requested_visibility = args.visibility
     args.visibility = safe_upload_visibility(args.visibility)
+    if args.publish_at and (requested_visibility != "public" or args.visibility != "public"):
+        raise UploadError(
+            "Jadwal otomatis membutuhkan auto-upload Public yang diizinkan. "
+            "Pastikan visibility public dan YOUTUBE_ALLOW_PUBLIC_AUTO_UPLOAD=true."
+        )
     if requested_visibility != args.visibility:
         log(
             "Mode aman aktif: upload otomatis disimpan Private. "
@@ -7084,20 +7244,24 @@ def run_upload(args: argparse.Namespace) -> None:
             log("Masuk ke tab Visibilitas.")
             wait_for_visibility_step(page, timeout_ms=20000)
 
-            set_visibility(page, args.visibility)
+            effective_visibility = "scheduled" if args.publish_at else args.visibility
+            if args.publish_at:
+                set_scheduled_publish_time(page, args.publish_at)
+            else:
+                set_visibility(page, args.visibility)
             time.sleep(0.8)
-            if not visibility_is_selected(page, args.visibility):
+            if not visibility_is_selected(page, effective_visibility):
                 save_debug_artifacts(page, "visibility-not-selected-before-final-action")
                 raise UploadError(
-                    f"Visibilitas '{args.visibility}' belum tercentang sebelum aksi final."
+                    f"Visibilitas '{effective_visibility}' belum tercentang sebelum aksi final."
                 )
-            log(f"Step 4 Visibilitas terverifikasi: {args.visibility}.")
+            log(f"Step 4 Visibilitas terverifikasi: {effective_visibility}.")
             if effective_require_copyright_checks:
                 review_timeout_ms = int(os.environ.get("YOUTUBE_PRE_PUBLISH_REVIEW_TIMEOUT_SECONDS", "900")) * 1000
                 wait_for_review_checks_safe_before_publish(
                     page,
                     timeout_ms=review_timeout_ms,
-                    visibility=args.visibility,
+                    visibility=effective_visibility,
                     content_type=args.thumbnail_content_type,
                     media_duration_seconds=args.media_duration_seconds,
                 )
@@ -7110,13 +7274,15 @@ def run_upload(args: argparse.Namespace) -> None:
             uploaded_video_url = assigned_video_url or extract_video_url(page, upload_title)
             click_final_upload_action(
                 page,
-                args.visibility,
+                effective_visibility,
                 timeout_ms=30000,
                 content_type=args.thumbnail_content_type,
                 media_duration_seconds=args.media_duration_seconds,
             )
             final_url = uploaded_video_url or extract_video_url(page, upload_title)
             log(f"FINAL_VISIBILITY: {args.visibility}")
+            if args.publish_at:
+                log(f"SCHEDULED_PUBLISH_AT: {args.publish_at}")
             if final_url:
                 # Persist the assigned video id before the potentially long
                 # transfer-confirmation wait. This is a recovery checkpoint,
@@ -7127,7 +7293,7 @@ def run_upload(args: argparse.Namespace) -> None:
                 timeout_ms=timeout_ms,
                 video_url=final_url,
                 expected_title=upload_title,
-                visibility=args.visibility,
+                visibility=effective_visibility,
             )
             log("UPLOAD_CONFIRMED: YouTube Studio mengonfirmasi transfer video selesai.")
             if final_url and final_url != uploaded_video_url:
@@ -7245,6 +7411,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["private", "unlisted", "public"],
         default="private",
     )
+    verify_upload.add_argument(
+        "--publish-at",
+        default="",
+        help="ISO-8601 time for a native YouTube Schedule recovery.",
+    )
     verify_upload.add_argument("--target-channel", default=os.environ.get("YOUTUBE_TARGET_CHANNEL", "ryuundyofficial"))
     verify_upload.add_argument("--target-email", default=DEFAULT_TARGET_EMAIL)
     verify_upload.add_argument("--target-channel-id", default=DEFAULT_TARGET_CHANNEL_ID)
@@ -7273,6 +7444,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Durasi media untuk menerapkan aturan Content ID Shorts 1-3 menit.",
     )
     upload.add_argument("--visibility", choices=["private", "unlisted", "public"], default=os.environ.get("YOUTUBE_DEFAULT_VISIBILITY", "private"))
+    upload.add_argument(
+        "--publish-at",
+        default="",
+        help="ISO-8601 time to publish through YouTube Studio Schedule.",
+    )
     upload.add_argument("--tags", default="")
     upload.add_argument("--playlist", default=os.environ.get("YOUTUBE_DEFAULT_PLAYLIST", "Islam"))
     upload.add_argument("--target-channel", default=os.environ.get("YOUTUBE_TARGET_CHANNEL", "ryuundyofficial"))

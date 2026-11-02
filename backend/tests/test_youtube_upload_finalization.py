@@ -303,6 +303,74 @@ def test_resume_saved_draft_finishes_exact_video_without_reupload(monkeypatch):
     ]
 
 
+def test_schedule_time_is_converted_to_wib_and_verified(monkeypatch):
+    class SchedulePage:
+        def __init__(self):
+            self.payload = None
+
+        def evaluate(self, _script, payload):
+            self.payload = payload
+            return {
+                "ok": True,
+                "dateText": payload["dayFirstDate"],
+                "timeText": payload["time"],
+            }
+
+    page = SchedulePage()
+    selected = []
+    logs = []
+    monkeypatch.setenv("YOUTUBE_PUBLISH_TIMEZONE", "Asia/Jakarta")
+    monkeypatch.setattr(
+        youtube_uploader,
+        "set_visibility",
+        lambda _page, visibility: selected.append(visibility),
+    )
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "log", logs.append)
+
+    youtube_uploader.set_scheduled_publish_time(
+        page,
+        "2099-01-02T00:00:00+00:00",
+    )
+
+    assert selected == ["scheduled"]
+    assert page.payload["isoDate"] == "2099-01-02"
+    assert page.payload["time"] == "07:00"
+    assert any("07:00" in line for line in logs)
+
+
+def test_cli_accepts_publish_at_for_upload_and_recovery():
+    parser = youtube_uploader.build_parser()
+    publish_at = "2026-11-03T00:00:00+00:00"
+
+    upload = parser.parse_args(
+        [
+            "upload",
+            "clip.mp4",
+            "--title",
+            "Judul",
+            "--visibility",
+            "public",
+            "--publish-at",
+            publish_at,
+        ]
+    )
+    recovery = parser.parse_args(
+        [
+            "verify-upload",
+            "--title",
+            "Judul",
+            "--visibility",
+            "public",
+            "--publish-at",
+            publish_at,
+        ]
+    )
+
+    assert upload.publish_at == publish_at
+    assert recovery.publish_at == publish_at
+
+
 class TextPage:
     def __init__(self, body):
         self.body = body
