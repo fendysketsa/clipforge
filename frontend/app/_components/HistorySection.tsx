@@ -5,7 +5,7 @@ import { CalendarClock, Clock3, ExternalLink, Film, History, Link2, Music2, Moni
 import { statusCopy, statusIcon } from "../../lib/constants";
 import { formatDuration, jobElapsedSeconds } from "../../lib/utils";
 import type { ClipJob, JobStatus, TikTokUploadJob, YouTubeUploadJob } from "../../types/clip.type";
-import {articleText, isArticlePresenterPrompt} from "../../lib/storyInput";
+import {articleText, articleFilmText, isArticlePresenterPrompt} from "../../lib/storyInput";
 
 function jobFormat(job: ClipJob) {
   if (job.request.clip_mode === "highlight_5m") {
@@ -15,7 +15,7 @@ function jobFormat(job: ClipJob) {
     if (isArticlePresenterPrompt(job.request.script_text || "")) {
       return { aspect: "9:16", kind: "story", label: "PRESENTASI", title: "Presenter Animasi" } as const;
     }
-    return { aspect: "9:16", kind: "story", label: "LONG CERITA", title: "Generator Cerita" } as const;
+    return { aspect: job.request.story_aspect_ratio || "9:16", kind: "story", label: "LONG CERITA", title: "Generator Cerita" } as const;
   }
   return { aspect: "9:16", kind: "short", label: "SHORT", title: "Viral Short" } as const;
 }
@@ -146,7 +146,7 @@ export function HistorySection({
   const sourceLabel = (job: ClipJob) => {
     if (job.source_title?.trim()) return job.source_title.trim();
     if (job.request.clip_mode === "long_animate" && job.request.script_text.trim()) {
-      return articleText(job.request.script_text).replace(/\s+/g, " ").slice(0, 72);
+      return articleFilmText(articleText(job.request.script_text)).replace(/\s+/g, " ").slice(0, 72);
     }
     if (job.request.source_file) return job.request.source_file.split("/").pop() || "Upload video";
     if (!job.request.url) return "Video tanpa judul";

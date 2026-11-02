@@ -39,6 +39,8 @@ type QuickStartCardProps = {
   url: string;
   storyText: string;
   storyFormat: StoryInputFormat;
+  storyAspectRatio: "9:16" | "16:9";
+  onStoryAspectRatioChange: (aspect: "9:16" | "16:9") => void;
   onStoryFormatChange: (format: StoryInputFormat) => void;
   storyboardPreview: StoryboardPreview | null;
   isGeneratingStoryboard: boolean;
@@ -95,6 +97,8 @@ export function QuickStartCard({
   url,
   storyText,
   storyFormat,
+  storyAspectRatio,
+  onStoryAspectRatioChange,
   onStoryFormatChange,
   storyboardPreview,
   isGeneratingStoryboard,
@@ -139,6 +143,7 @@ export function QuickStartCard({
   const isPresenter = isStory && isArticlePresenterPrompt(preparedInput);
   const isHypitPrompt = isStory && isHypitQuickPrompt(preparedInput);
   const isHypitAuto = isStory && isHypitAutoPrompt(preparedInput);
+  const landscapeStoryboard = (storyboardPreview?.story_aspect_ratio || storyAspectRatio) === "16:9";
   const hypitPromptWords = storyText
     .replace(/^\s*\/hypit\s*/i, "")
     .trim()
@@ -186,7 +191,7 @@ export function QuickStartCard({
   };
 
   const duplicateScene = (position: number) => {
-    if (!storyboardPreview || storyboardPreview.scenes.length >= 14) return;
+    if (!storyboardPreview || storyboardPreview.scenes.length >= 36) return;
     const source = storyboardPreview.scenes[position];
     const duplicate = {
       ...source,
@@ -246,6 +251,7 @@ export function QuickStartCard({
       const result = await toast.promise(
         regenerateStoryboardKeyframe({
           storyboard_id: storyboardPreview.storyboard_id,
+          story_aspect_ratio: storyboardPreview.story_aspect_ratio || storyAspectRatio,
           scene,
           art_bible: storyboardPreview.art_bible,
           character_bible: storyboardPreview.character_bible,
@@ -324,7 +330,7 @@ export function QuickStartCard({
       <div className="sourceComposer">
         <div className="sourceComposerTop">
           <span><WandSparkles size={16} /> {isWorking ? "Sedang meracik video" : isPresenter ? "Mulai dari artikel" : isStory ? "Mulai dari jalan cerita" : "Mulai dari link video"}</span>
-          <b>{isStory ? "9:16 · AI VIDEO" : isLong ? "16:9 · 5–10 menit" : "9:16 · 25–45 dtk"}</b>
+          <b>{isStory ? `${isPresenter || isHypitPrompt ? "9:16" : storyAspectRatio} · AI VIDEO` : isLong ? "16:9 · 5–10 menit" : "9:16 · 25–45 dtk"}</b>
         </div>
 
         <div className="formatChoice" role="group" aria-label="Pilih jenis hasil video">
@@ -340,7 +346,7 @@ export function QuickStartCard({
           </button>
           <button className={isStory ? "active" : ""} type="button" disabled={isWorking} onClick={() => onClipModeChange("long_animate")}>
             <span><BookOpen size={17} /></span>
-            <b>Generator Video<small>Artikel atau cerita → animasi · 9:16</small></b>
+            <b>Generator Video<small>Artikel atau cerita → animasi · {isPresenter || isHypitPrompt ? "9:16" : storyAspectRatio}</small></b>
             {isStory ? <CheckCircle2 size={16} /> : null}
           </button>
         </div>
@@ -350,23 +356,29 @@ export function QuickStartCard({
             <div className="storyPromptExamples" role="group" aria-label="Jenis teks untuk video">
               <div>
                 <button type="button" aria-pressed={storyFormat === "article"} disabled={isWorking} onClick={() => onStoryFormatChange("article")}><BookOpen size={14}/>{storyFormat === "article" ? "✓ " : ""}Artikel → presentasi</button>
+                <button type="button" aria-pressed={storyFormat === "article_story"} disabled={isWorking} onClick={() => onStoryFormatChange("article_story")}><Film size={14}/>{storyFormat === "article_story" ? "✓ " : ""}Artikel → film cerita</button>
                 <button type="button" aria-pressed={storyFormat === "story"} disabled={isWorking} onClick={() => onStoryFormatChange("story")}><Film size={14}/>{storyFormat === "story" ? "✓ " : ""}Cerita / naskah</button>
               </div>
             </div>
+            {!isPresenter && !isHypitPrompt ? <div className="storyPromptExamples" role="group" aria-label="Format gambar film">
+              <div>{(["16:9", "9:16"] as const).map((aspect) => <button key={aspect} type="button" aria-pressed={storyAspectRatio === aspect} disabled={isWorking || isGeneratingStoryboard} onClick={() => onStoryAspectRatioChange(aspect)}>
+                <Film size={14}/>{storyAspectRatio === aspect ? "✓ " : ""}{aspect === "16:9" ? "16:9 · Film layar lebar" : "9:16 · Film vertikal"}
+              </button>)}</div>
+            </div> : null}
             <label className="storyInputField">
-              <span>{isPresenter ? "Tempel artikel yang ingin dijelaskan" : isHypitAuto ? "Analogi dan teks sumber" : "Ide, deskripsi, atau naskah"}</span>
+              <span>{storyFormat === "article_story" ? "Artikel sumber dan arahan gaya film Anda" : isPresenter ? "Tempel artikel yang ingin dijelaskan" : isHypitAuto ? "Analogi dan teks sumber" : "Ide, deskripsi, atau naskah"}</span>
               <textarea
                 value={storyText}
                 onChange={(event) => onStoryTextChange(event.target.value)}
-                placeholder={isPresenter ? "Tempel artikel lengkap di sini. Sistem menyusun alur presentasi, narasi, objek, dan animasi penjelas secara otomatis. Tidak perlu format prompt khusus." : isHypitAuto
+                placeholder={storyFormat === "article_story" ? "Tempel artikel, lalu tambahkan arahan seperti: durasi 5–10 menit, ilustrasi sinematik hangat, narator tenang. Fakta sumber dipertahankan saat disusun menjadi alur cerita dan adegan." : isPresenter ? "Tempel artikel lengkap di sini. Sistem menyusun alur presentasi, narasi, objek, dan animasi penjelas secara otomatis. Tidak perlu format prompt khusus." : isHypitAuto
                   ? "Analogi: jelaskan perumpamaan visualnya.\nTeks: tempel materi yang harus dijelaskan."
                   : "Contoh: Buat video tentang kucing polisi yang memecahkan misteri kota."}
                 rows={storyboardPreview ? 4 : 8}
-                maxLength={isPresenter ? 29950 : 30000}
+                maxLength={isPresenter || storyFormat === "article_story" ? 29950 : 30000}
               />
               <small>
-                <span>{storyText.trim().length.toLocaleString("id-ID")} / {isPresenter ? "29.950" : "30.000"} karakter</span>
-                <span>{isPresenter ? "Presentasi otomatis · maksimal 5 menit" : isHypitPrompt ? "Render langsung" : "Storyboard dapat direvisi sebelum render"}</span>
+                <span>{storyText.trim().length.toLocaleString("id-ID")} / {isPresenter || storyFormat === "article_story" ? "29.950" : "30.000"} karakter</span>
+                <span>{storyFormat === "article_story" ? "Film 5–10 menit · durasi mengikuti narasi" : isPresenter ? "Presentasi otomatis · maksimal 5 menit" : isHypitPrompt ? "Render langsung" : "Storyboard dapat direvisi sebelum render"}</span>
               </small>
             </label>
             {!storyText.trim() ? (
@@ -411,7 +423,7 @@ export function QuickStartCard({
               <section className="storyboardPreview" aria-label="Storyboard yang dapat direvisi">
                 <header>
                   <span><Sparkles size={15} /> Storyboard produksi</span>
-                  <b>{storyboardPreview.scenes.length} ADEGAN · 9:16</b>
+                  <b>{storyboardPreview.scenes.length} ADEGAN · {storyboardPreview.story_aspect_ratio || storyAspectRatio}</b>
                 </header>
                 <div className="storyboardSummary">
                   <label>
@@ -439,12 +451,12 @@ export function QuickStartCard({
                           <div>
                             <button title="Pindah ke atas" type="button" disabled={position === 0} onClick={() => moveScene(position, -1)}><ChevronUp size={15} /></button>
                             <button title="Pindah ke bawah" type="button" disabled={position === storyboardPreview.scenes.length - 1} onClick={() => moveScene(position, 1)}><ChevronDown size={15} /></button>
-                            <button title="Duplikat adegan" type="button" disabled={storyboardPreview.scenes.length >= 14} onClick={() => duplicateScene(position)}><Copy size={14} /></button>
+                            <button title="Duplikat adegan" type="button" disabled={storyboardPreview.scenes.length >= 36} onClick={() => duplicateScene(position)}><Copy size={14} /></button>
                             <button title="Hapus adegan" className="danger" type="button" disabled={storyboardPreview.scenes.length <= 3} onClick={() => removeScene(position)}><Trash2 size={14} /></button>
                           </div>
                         </header>
-                        <div className="storyboardKeyframeGrid">
-                          <figure className={`storyboardKeyframe is-${scene.image_status}`}>
+                        <div className="storyboardKeyframeGrid" style={landscapeStoryboard ? {gridTemplateColumns: "minmax(0, 1fr)"} : undefined}>
+                          <figure className={`storyboardKeyframe is-${scene.image_status}`} style={landscapeStoryboard ? {aspectRatio: "16 / 9", minHeight: 0, alignSelf: "start"} : undefined}>
                             {scene.image_url ? <img src={`${API_BASE}${scene.image_url}`} alt={`Keyframe adegan ${position + 1}: ${scene.title}`} /> : <div><Film size={24} /><span>{scene.image_status === "error" ? "Keyframe gagal" : "Menunggu keyframe"}</span></div>}
                             <figcaption><b>KEYFRAME {String(position + 1).padStart(2, "0")}</b><span>{scene.image_status === "ready" ? "Dipakai langsung saat animasi" : scene.image_error || "Belum dibuat"}</span><button type="button" disabled={regeneratingKeyframe !== null} onClick={() => { void regenerateKeyframe(position); }}>{regeneratingKeyframe === position ? <Loader2 className="spin" size={12} /> : <RefreshCw size={12} />} Buat ulang</button></figcaption>
                           </figure>

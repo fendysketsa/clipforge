@@ -479,6 +479,7 @@ class ClipJobRequest(BaseModel):
     # Direct text-to-video prompts may request a short clip (for example ten
     # seconds); Long Highlight still applies its own 5–10 minute UI bounds.
     compilation_target_seconds: float = Field(default=300, ge=5, le=600)
+    story_aspect_ratio: Literal["9:16", "16:9"] = "9:16"
     # Internal long-form jobs may pin the exact source moments used by their
     # companion Shorts. This keeps a paired Long Story grounded in its Short.
     compilation_anchor_ranges: list[tuple[float, float]] = Field(default_factory=list)
@@ -581,6 +582,7 @@ class ClipJobRequest(BaseModel):
 class StoryboardPreviewRequest(BaseModel):
     story_text: str = Field(min_length=1, max_length=30000)
     target_duration_seconds: float = Field(default=300, ge=20, le=600)
+    story_aspect_ratio: Literal["9:16", "16:9"] = "9:16"
     ai_enabled: bool = True
     ai_base_url: str = DEFAULT_AI_BASE_URL
     ai_model: str = DEFAULT_AI_MODEL
@@ -635,6 +637,7 @@ class StoryboardImageProvider(BaseModel):
 
 class StoryboardPreviewResponse(BaseModel):
     storyboard_id: str = ""
+    story_aspect_ratio: Literal["9:16", "16:9"] = "9:16"
     title: str
     hook: str
     core_message: str
@@ -652,6 +655,7 @@ class StoryboardPreviewResponse(BaseModel):
 
 class StoryboardKeyframeRequest(BaseModel):
     storyboard_id: str = Field(min_length=16, max_length=64, pattern=r"^[a-f0-9]+$")
+    story_aspect_ratio: Literal["9:16", "16:9"] = "9:16"
     scene: StoryboardPreviewScene
     art_bible: str = Field(max_length=900)
     character_bible: str = Field(max_length=1200)
@@ -14112,7 +14116,8 @@ def build_clipper_command(
         )
     if request.clip_mode == "long_animate":
         command.extend(
-            ["--long-animate-target-duration", str(request.compilation_target_seconds)]
+            ["--long-animate-target-duration", str(request.compilation_target_seconds),
+             "--long-animate-output-aspect", request.story_aspect_ratio]
         )
 
     if request.review_only:
@@ -24109,7 +24114,7 @@ def create_storyboard_preview(
         timeout=float(os.environ.get("LONG_ANIMATE_STORYBOARD_TIMEOUT_SECONDS", "180")),
     )
     try:
-        with output_aspect_ratio("9:16"):
+        with output_aspect_ratio(request.story_aspect_ratio):
             production_script, expansion = expand_story_outline(
                 story,
                 ai_config,
@@ -24127,7 +24132,7 @@ def create_storyboard_preview(
     storyboard_id = uuid.uuid4().hex
     preview_dir = OUTPUTS_DIR / "storyboards" / storyboard_id
     scenes: list[StoryboardPreviewScene] = []
-    with output_aspect_ratio("9:16"):
+    with output_aspect_ratio(request.story_aspect_ratio):
         storyboard = _fallback_storyboard(production_script)
         source_sections = _scene_sections(production_script)
         if len(storyboard.scenes) < 3 or len(source_sections) != len(storyboard.scenes):
@@ -24223,13 +24228,14 @@ def create_storyboard_preview(
                 continue
             image_path = preview_dir / f"scene_{source_scene.index:02}.png"
             try:
-                provider = generate_shot_image_with_qa(
-                    shot,
-                    image_path,
-                    storyboard.art_bible,
-                    style_reference=style_reference,
-                    character_reference=character_reference,
-                )
+                with output_aspect_ratio(request.story_aspect_ratio):
+                    provider = generate_shot_image_with_qa(
+                        shot,
+                        image_path,
+                        storyboard.art_bible,
+                        style_reference=style_reference,
+                        character_reference=character_reference,
+                    )
                 if not image_path.is_file():
                     raise RuntimeError("Provider tidak menghasilkan file keyframe.")
                 if style_reference is None:
@@ -24252,6 +24258,7 @@ def create_storyboard_preview(
 
     return StoryboardPreviewResponse(
         storyboard_id=storyboard_id,
+        story_aspect_ratio=request.story_aspect_ratio,
         title=storyboard.title,
         hook=storyboard.hook,
         core_message=storyboard.core_message,
@@ -24297,19 +24304,20 @@ def regenerate_storyboard_keyframe(
     visual = scene.visual_prompt.strip() or scene.narration.strip()
     if not visual:
         raise HTTPException(status_code=400, detail="Visual adegan tidak boleh kosong.")
-    compiled_prompt = _compose_visual_prompt(
-        visual,
-        scene.narration,
-        request.art_bible,
-        request.character_bible,
-        request.location_bible,
-        visual_locked=True,
-        animation_direction=_animation_direction(f"{visual} {scene.narration}"),
-        director_bible=request.director_bible,
-        property_bible=request.property_bible,
-        director_direction=scene.director_direction,
-        property_direction=scene.property_direction,
-    )
+    with output_aspect_ratio(request.story_aspect_ratio):
+        compiled_prompt = _compose_visual_prompt(
+            visual,
+            scene.narration,
+            request.art_bible,
+            request.character_bible,
+            request.location_bible,
+            visual_locked=True,
+            animation_direction=_animation_direction(f"{visual} {scene.narration}"),
+            director_bible=request.director_bible,
+            property_bible=request.property_bible,
+            director_direction=scene.director_direction,
+            property_direction=scene.property_direction,
+        )
     shot = AnimateShot(
         index=scene.index,
         scene_index=scene.index,
@@ -24331,7 +24339,7 @@ def regenerate_storyboard_keyframe(
     if style_reference.resolve() == image_path.resolve() or not style_reference.is_file():
         style_reference = None
     try:
-        with output_aspect_ratio("9:16"):
+        with output_aspect_ratio(request.story_aspect_ratio):
             generate_shot_image_with_qa(
                 shot,
                 image_path,

@@ -103,7 +103,7 @@ import { ResultsSection } from "./_components/ResultsSection";
 import { StatusPanel } from "./_components/StatusPanel";
 import { Topbar } from "./_components/Topbar";
 import { ViralAnalysisResults } from "./_components/ViralAnalysisResults";
-import {articleText, hypitStoryBody, isArticlePresenterPrompt, isHypitAutoPrompt, isHypitQuickPrompt, prepareStoryInput, promptDurationSeconds, type StoryInputFormat} from "../lib/storyInput";
+import {articleText, articleFilmText, hypitStoryBody, isArticleFilmPrompt, isArticlePresenterPrompt, isHypitAutoPrompt, isHypitQuickPrompt, prepareStoryInput, promptDurationSeconds, type StoryInputFormat} from "../lib/storyInput";
 
 const isProcessJob = (item: ClipJob | null) =>
   item?.status === "queued" || item?.status === "running" || item?.status === "failed" || item?.status === "cancelled";
@@ -156,6 +156,7 @@ export default function HomePage() {
   const [url, setUrl] = useState("");
   const [storyText, setStoryText] = useState("");
   const [storyFormat, setStoryFormat] = useState<StoryInputFormat>("article");
+  const [storyAspectRatio, setStoryAspectRatio] = useState<"9:16" | "16:9">("16:9");
   const [storyboardPreview, setStoryboardPreview] = useState<StoryboardPreview | null>(null);
   const [isGeneratingStoryboard, setIsGeneratingStoryboard] = useState(false);
   const [storyboardError, setStoryboardError] = useState("");
@@ -473,10 +474,11 @@ export default function HomePage() {
         setMinDuration(restoredJob.request.min_duration);
         setMaxDuration(restoredJob.request.max_duration);
         setCompilationTargetSeconds(restoredJob.request.compilation_target_seconds);
+        setStoryAspectRatio(restoredJob.request.story_aspect_ratio || "9:16");
         setVideoQuality(restoredJob.request.video_quality);
         setSlowMotionNoVoice(Boolean(restoredJob.request.slow_motion_no_voice));
-        setStoryText(isArticlePresenterPrompt(restoredJob.request.script_text || "") ? articleText(restoredJob.request.script_text) : restoredJob.request.script_text || "");
-        setStoryFormat(isArticlePresenterPrompt(restoredJob.request.script_text || "") ? "article" : "story");
+        setStoryText(isArticlePresenterPrompt(restoredJob.request.script_text || "") ? articleText(restoredJob.request.script_text) : isArticleFilmPrompt(restoredJob.request.script_text || "") ? articleFilmText(restoredJob.request.script_text) : restoredJob.request.script_text || "");
+        setStoryFormat(isArticlePresenterPrompt(restoredJob.request.script_text || "") ? "article" : isArticleFilmPrompt(restoredJob.request.script_text || "") ? "article_story" : "story");
         if (restoredJob.request.clip_mode === "long_animate") {
           setConfirmSourceRights(Boolean(restoredJob.request.confirm_long_animate_rights));
         }
@@ -773,7 +775,7 @@ export default function HomePage() {
   }, []);
 
   const handleGenerateStoryboard = useCallback(async () => {
-    const source = hypitStoryBody(storyText).trim();
+    const source = hypitStoryBody(prepareStoryInput(storyText, storyFormat)).trim();
     if (source.length < 6 || source.split(/\s+/).filter(Boolean).length < 2) {
       setStoryboardError("Masukkan minimal judul dua kata. Deskripsi yang lebih lengkap membuat adegan lebih spesifik.");
       return;
@@ -790,6 +792,7 @@ export default function HomePage() {
         createStoryboardPreview({
           story_text: source,
           target_duration_seconds: targetSeconds,
+          story_aspect_ratio: storyAspectRatio,
           ai_enabled: aiEnabled,
           ai_base_url: aiBaseUrl.trim(),
           ai_model: aiModel.trim(),
@@ -808,7 +811,7 @@ export default function HomePage() {
     } finally {
       setIsGeneratingStoryboard(false);
     }
-  }, [aiApiKey, aiBaseUrl, aiEnabled, aiModel, compilationTargetSeconds, storyText]);
+  }, [aiApiKey, aiBaseUrl, aiEnabled, aiModel, compilationTargetSeconds, storyText, storyFormat, storyAspectRatio]);
 
   const handleStartJob = useCallback(async (storyOverride?: string) => {
     const requestedMode: ClipMode = clipMode;
@@ -897,6 +900,7 @@ export default function HomePage() {
           min_duration: minDuration,
           max_duration: effectiveMaxDuration,
           clip_mode: requestedMode,
+          story_aspect_ratio: isHypitQuick ? "9:16" : storyAspectRatio,
           compilation_target_seconds: isPresenter ? 300 : isHypitAuto
             ? promptDurationSeconds(trimmedStory, 40)
             : isHypitQuick
@@ -993,6 +997,7 @@ export default function HomePage() {
     sourceProbe,
     storyText,
     storyFormat,
+    storyAspectRatio,
     targetClips,
     uploadToken,
     url,
@@ -1041,8 +1046,8 @@ export default function HomePage() {
   const handleSelectHistoryJob = useCallback((selectedJob: ClipJob) => {
     setJob(selectedJob);
     setClipMode(selectedJob.request.clip_mode);
-    setStoryText(isArticlePresenterPrompt(selectedJob.request.script_text || "") ? articleText(selectedJob.request.script_text) : selectedJob.request.script_text || "");
-    setStoryFormat(isArticlePresenterPrompt(selectedJob.request.script_text || "") ? "article" : "story");
+    setStoryText(isArticlePresenterPrompt(selectedJob.request.script_text || "") ? articleText(selectedJob.request.script_text) : isArticleFilmPrompt(selectedJob.request.script_text || "") ? articleFilmText(selectedJob.request.script_text) : selectedJob.request.script_text || "");
+    setStoryFormat(isArticlePresenterPrompt(selectedJob.request.script_text || "") ? "article" : isArticleFilmPrompt(selectedJob.request.script_text || "") ? "article_story" : "story");
     setStoryboardPreview(null);
     setStoryboardError("");
     setConfirmSourceRights(
@@ -1054,6 +1059,7 @@ export default function HomePage() {
     setMinDuration(selectedJob.request.min_duration);
     setMaxDuration(selectedJob.request.max_duration);
     setCompilationTargetSeconds(selectedJob.request.compilation_target_seconds);
+    setStoryAspectRatio(selectedJob.request.story_aspect_ratio || "9:16");
     setVideoQuality(selectedJob.request.video_quality);
     setSlowMotionNoVoice(Boolean(selectedJob.request.slow_motion_no_voice));
     window.dispatchEvent(new Event("clipforge:open-results"));
@@ -1679,6 +1685,8 @@ export default function HomePage() {
         url={url}
         storyText={storyText}
         storyFormat={storyFormat}
+        storyAspectRatio={storyAspectRatio}
+        onStoryAspectRatioChange={(aspect) => { setStoryAspectRatio(aspect); setStoryboardPreview(null); setStoryboardError(""); }}
         onStoryFormatChange={(format) => { setStoryFormat(format); setStoryboardPreview(null); setStoryboardError(""); }}
         storyboardPreview={storyboardPreview}
         isGeneratingStoryboard={isGeneratingStoryboard}
@@ -1706,6 +1714,7 @@ export default function HomePage() {
 
       <section className={`workspace studioGrid${isBusy ? " isProcessing" : ""}`} id="workspace">
         <ControlPanel
+          storyAspectRatio={isHypitQuickPrompt(prepareStoryInput(storyText, storyFormat)) ? "9:16" : storyAspectRatio}
           clipMode={clipMode}
           presentationMode={clipMode === "long_animate" && isArticlePresenterPrompt(prepareStoryInput(storyText, storyFormat))}
           cropMode={cropMode}

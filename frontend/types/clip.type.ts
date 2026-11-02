@@ -267,6 +267,7 @@ export type ClipJob = {
     max_duration: number;
     clip_mode: ClipMode;
     compilation_target_seconds: number;
+    story_aspect_ratio?: "9:16" | "16:9";
     model: string;
     language: string;
     analyze_seconds: number | null;
@@ -312,6 +313,7 @@ export type CreateClipJobInput = {
   max_duration: number;
   clip_mode?: ClipMode;
   compilation_target_seconds?: number;
+  story_aspect_ratio?: "9:16" | "16:9";
   model: string;
   language: string;
   analyze_seconds?: number | null;
@@ -381,6 +383,7 @@ export type StoryboardPreviewScene = {
 
 export type StoryboardPreview = {
   storyboard_id: string;
+  story_aspect_ratio?: "9:16" | "16:9";
   title: string;
   hook: string;
   core_message: string;

@@ -435,7 +435,8 @@ def test_story_generator_command_uses_script_and_requested_duration(tmp_path):
     assert "--confirm-provider-rights" in command
 
 
-def test_storyboard_preview_returns_locked_scenes_and_imagegen_preflight(monkeypatch, tmp_path):
+@pytest.mark.parametrize("aspect", ["9:16", "16:9"])
+def test_storyboard_preview_returns_locked_scenes_and_imagegen_preflight(monkeypatch, tmp_path, aspect):
     import api
     import long_animate
 
@@ -469,6 +470,7 @@ def test_storyboard_preview_returns_locked_scenes_and_imagegen_preflight(monkeyp
     monkeypatch.setattr(api, "OUTPUTS_DIR", tmp_path)
 
     def fake_generate(_shot, output, _art_bible, **_kwargs):
+        assert long_animate._output_geometry()[0] == aspect
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"png-keyframe")
         return "local_z_image_turbo"
@@ -478,6 +480,7 @@ def test_storyboard_preview_returns_locked_scenes_and_imagegen_preflight(monkeyp
     preview = api.create_storyboard_preview(
         api.StoryboardPreviewRequest(
             story_text="Satpam Hebat",
+            story_aspect_ratio=aspect,
             ai_base_url="http://localhost:11434/v1",
             ai_model="local",
         )
@@ -489,8 +492,9 @@ def test_storyboard_preview_returns_locked_scenes_and_imagegen_preflight(monkeyp
     assert preview.scenes[0].visual_prompt.startswith("Raka berlari")
     assert preview.scenes[0].on_screen_text == ""
     assert "FULL-BLEED" in preview.scenes[0].image_prompt
-    assert "FULL-BLEED 9:16" in preview.scenes[0].image_prompt
-    assert "vertical short video" in preview.scenes[0].image_prompt
+    assert f"FULL-BLEED {aspect}" in preview.scenes[0].image_prompt
+    assert ("vertical short video" if aspect == "9:16" else "landscape video") in preview.scenes[0].image_prompt
+    assert preview.story_aspect_ratio == aspect
     preview_shots = [shot for scene in preview.scenes for shot in scene.shot_plan]
     assert preview_shots
     assert all(shot.framing for shot in preview_shots)
@@ -537,7 +541,8 @@ def test_story_resume_accepts_ten_minute_target():
     assert request.compilation_target_seconds == 600
 
 
-def test_long_animate_normalization_and_command_use_script_file(tmp_path):
+@pytest.mark.parametrize("aspect", ["9:16", "16:9"])
+def test_long_animate_normalization_and_command_use_script_file(tmp_path, aspect):
     script = (
         "Perubahan yang bertahan lama dimulai dari kebiasaan kecil. "
         "Kita menyusun satu tindakan sederhana, mengulanginya, lalu mengevaluasi hasilnya "
@@ -546,6 +551,7 @@ def test_long_animate_normalization_and_command_use_script_file(tmp_path):
     request = normalize_job_request(
         ClipJobRequest(
             clip_mode="long_animate",
+            story_aspect_ratio=aspect,
             script_text=script,
             confirm_long_animate_rights=True,
         )
@@ -561,6 +567,7 @@ def test_long_animate_normalization_and_command_use_script_file(tmp_path):
     assert request.require_creative_commons is False
     assert command[command.index("--clip-mode") + 1] == "long_animate"
     assert command[command.index("--script-file") + 1] == str(script_path)
+    assert command[command.index("--long-animate-output-aspect") + 1] == aspect
 
 
 def test_original_rebuild_normalization_keeps_source_and_enforces_safe_flags(monkeypatch, tmp_path):

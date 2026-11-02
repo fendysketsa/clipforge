@@ -617,6 +617,7 @@ export const createJob = async (input: CreateClipJobInput) => {
 export const createStoryboardPreview = async (input: {
   story_text: string;
   target_duration_seconds: number;
+  story_aspect_ratio?: "9:16" | "16:9";
   ai_enabled: boolean;
   ai_base_url: string;
   ai_model: string;
@@ -635,6 +636,7 @@ export const createStoryboardPreview = async (input: {
 
 export const regenerateStoryboardKeyframe = async (input: {
   storyboard_id: string;
+  story_aspect_ratio?: "9:16" | "16:9";
   scene: StoryboardPreview["scenes"][number];
   art_bible: string;
   character_bible: string;

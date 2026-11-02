@@ -54,22 +54,37 @@ def _motion_accent(color_mood: str, seed: str) -> str:
 
 
 def _motion_transition(shot: Any, narrative_role: str, index: int) -> str:
-    """Translate editorial intent into a small, consistent transition grammar."""
+    """Keep continuous action crisp and blend a change of time or place."""
     if index == 1:
-        return "film_fade"
+        return "cut"
     raw = str(getattr(shot, "transition", "") or "").casefold()
     local_index = int(getattr(shot, "shot_index", 1) or 1)
     if local_index > 1 or any(token in raw for token in ("match", "action", "cut")):
-        return "match_flash"
-    if any(token in raw for token in ("iris", "aperture", "circle")):
-        return "aperture"
-    if any(token in raw for token in ("brush", "ink", "paint", "paper")):
-        return "brush_wipe"
-    if narrative_role == "payoff_conclusion":
-        return "light_sweep"
-    if narrative_role == "evidence_and_answer":
-        return "split_wipe"
-    return "directional_wipe"
+        return "cut"
+    return "cross_dissolve"
+
+
+def _apply_picture_overlaps(shots: list[dict[str, Any]], fps: int, seconds: float) -> None:
+    """Extend outgoing pictures under the incoming dissolve, preserving speech boundaries.
+
+    Only the incoming layer fades; the outgoing picture remains fully opaque.
+    This avoids both a black dip and the luminance loss of fading both layers.
+    Bound overlaps to half of each shot so a short insert cannot cause three
+    pictures to blend together. All windows share the integer frame clock.
+    """
+    for shot in shots:
+        shot["transitionInFrames"] = 0
+        shot["durationInFrames"] = shot["bodyDurationInFrames"]
+    for previous, incoming in zip(shots, shots[1:]):
+        if incoming["motionDesign"]["transition"] != "cross_dissolve":
+            continue
+        overlap = min(
+            max(0, round(seconds * fps)),
+            previous["bodyDurationInFrames"] // 2,
+            incoming["bodyDurationInFrames"] // 2,
+        )
+        incoming["transitionInFrames"] = overlap
+        previous["durationInFrames"] += overlap
 
 
 def _motion_title_style(narrative_role: str) -> str:
@@ -106,9 +121,11 @@ def _caption_phrases(text: str, *, max_words: int = 6, max_chars: int = 38) -> l
 def _caption_cues(scenes: Iterable[Any], fps: int) -> list[dict[str, Any]]:
     """Create frame-native, phrase-stable captions from measured TTS timing."""
     scene_start_frame = 0
+    scene_cursor = 0.0
     cues: list[dict[str, Any]] = []
     for scene in scenes:
-        scene_frames = max(1, round(float(scene.duration) * fps))
+        scene_cursor += float(scene.duration)
+        scene_frames = max(1, round(scene_cursor * fps) - scene_start_frame)
         narration = " ".join(str(scene.narration or "").split())
         voice_duration = min(
             float(scene.duration),
@@ -179,6 +196,18 @@ def write_hypit_script(storyboard: Any, output_path: Path) -> Path:
         "</svml>\n"
     )
     output_path.write_text(source, encoding="utf-8")
+    return output_path
+
+
+def write_story_article(storyboard: Any, output_path: Path) -> Path:
+    """Keep the accepted story readable and reusable, without production labels.
+
+    This is the actual narration used for the film, rather than another model
+    rewrite that could change its facts, dialogue or ending.
+    """
+    paragraphs = [str(scene.narration).strip() for scene in storyboard.scenes if str(scene.narration).strip()]
+    title = str(getattr(storyboard, "title", "Cerita")).strip()
+    output_path.write_text(f"# {title}\n\n" + "\n\n".join(paragraphs) + "\n", encoding="utf-8")
     return output_path
 
 
@@ -322,7 +351,10 @@ def render_story_with_remotion(
             else duration
         )
         effective_duration = max(1 / fps, next_cursor - cursor)
-        duration_frames = max(1, round(effective_duration * fps))
+        # Round cumulative boundaries, not each duration: a long film must not
+        # gain or lose frames relative to its independently measured soundtrack.
+        next_cursor_frame = max(cursor_frame + 1, round(next_cursor * fps))
+        duration_frames = next_cursor_frame - cursor_frame
         scene_index = int(getattr(shot, "scene_index", index) or index)
         source_scene = scenes_by_index.get(scene_index)
         narrative_role = str(
@@ -339,6 +371,7 @@ def render_story_with_remotion(
                 "duration": round(effective_duration, 6),
                 "startFrame": cursor_frame,
                 "durationInFrames": duration_frames,
+                "bodyDurationInFrames": duration_frames,
                 "asset": asset_name,
                 "kind": "video" if suffix in {".mp4", ".mov", ".webm", ".mkv"} else "image",
                 "cameraMotion": str(shot.camera_motion or "push_in"),
@@ -365,6 +398,8 @@ def render_story_with_remotion(
         cursor = next_cursor
         cursor_frame += duration_frames
 
+    _apply_picture_overlaps(manifest_shots, fps, transition_seconds)
+
     # AnimateScene owns a measured duration, not a mutable start field.  Derive
     # starts from the authoritative allocated durations so the Remotion
     # manifest cannot drift from TTS timing (and does not depend on test-only
@@ -374,7 +409,7 @@ def render_story_with_remotion(
     manifest_scenes: list[dict[str, Any]] = []
     for scene in storyboard.scenes:
         scene_duration = max(1 / 30, float(scene.duration))
-        scene_duration_frames = max(1, round(scene_duration * fps))
+        scene_duration_frames = max(1, round((scene_cursor + scene_duration) * fps) - scene_cursor_frame)
         manifest_scenes.append(
             {
                 "id": f"scene-{scene.index:03d}",
@@ -412,14 +447,8 @@ def render_story_with_remotion(
                 "timelineSource": "measured-tts",
                 "captionTiming": "measured-tts-frame-native",
                 "captionPresentation": "stable-phrase",
-                "transitionGrammar": [
-                    "film_fade",
-                    "directional_wipe",
-                    "split_wipe",
-                    "match_flash",
-                    "light_sweep",
-                    "brush_wipe",
-                ],
+                "transitionGrammar": ["cut", "cross_dissolve"],
+                "pictureOverlap": "outgoing-handle-under-incoming-opacity",
                 "kineticTypography": True,
                 "safeAreaPercent": 7,
             },
@@ -437,7 +466,7 @@ def render_story_with_remotion(
         "high": "16",
         "max": "14",
     }.get(video_quality, "16")
-    env.setdefault("REMOTION_CONCURRENCY", "25%")
+    env.setdefault("REMOTION_CONCURRENCY", "1")
     if progress:
         progress(82, "render", "Remotion merakit kamera, animasi, overlay, dan caption")
     completed = subprocess.run(

@@ -111,12 +111,16 @@ def test_remotion_manifest_projects_hypit_scenes_to_measured_timeline(
     assert composition["shots"][1]["duration"] == 3.0
     assert composition["shots"][0]["narrativeRole"] == "cold_open"
     assert composition["shots"][0]["motionDesign"] == {
-        "transition": "film_fade",
+        "transition": "cut",
         "accentColor": "#F6C453",
         "titleStyle": "impact",
         "intensity": 1.12,
     }
-    assert composition["shots"][1]["motionDesign"]["transition"] == "light_sweep"
+    assert composition["shots"][1]["motionDesign"]["transition"] == "cross_dissolve"
+    assert composition["shots"][0]["durationInFrames"] == 63
+    assert composition["shots"][0]["bodyDurationInFrames"] == 60
+    assert composition["shots"][1]["startFrame"] == 60
+    assert composition["shots"][1]["transitionInFrames"] == 3
     assert composition["shots"][1]["motionDesign"]["accentColor"] == "#65B7FF"
     assert composition["shots"][0]["onScreenText"] == "Tanda Aneh"
     assert composition["shots"][1]["onScreenText"] == ""
@@ -159,8 +163,8 @@ def test_motion_design_uses_a_small_role_aware_transition_grammar():
     brush = SimpleNamespace(transition="ink brush", shot_index=1)
     matched = SimpleNamespace(transition="match_action", shot_index=2)
 
-    assert renderer._motion_transition(brush, "development", 2) == "brush_wipe"
-    assert renderer._motion_transition(matched, "development", 3) == "match_flash"
+    assert renderer._motion_transition(brush, "development", 2) == "cross_dissolve"
+    assert renderer._motion_transition(matched, "development", 3) == "cut"
     assert renderer._motion_title_style("evidence_and_answer") == "proof"
     assert renderer._motion_accent("suasana hijau hutan", "seed") == "#63C995"
 
@@ -176,3 +180,44 @@ def test_viewer_overlay_never_falls_back_to_internal_scene_title():
     assert renderer._viewer_overlay_text(empty) == ""
     assert renderer._viewer_overlay_text(leaked) == ""
     assert renderer._viewer_overlay_text(authored) == "Kesetiaan Itu Diuji"
+
+
+def test_picture_overlap_keeps_cut_boundary_and_short_insert_readable():
+    shots = [
+        {"startFrame": 0, "bodyDurationInFrames": 90, "motionDesign": {"transition": "cut"}},
+        {"startFrame": 90, "bodyDurationInFrames": 5, "motionDesign": {"transition": "cross_dissolve"}},
+        {"startFrame": 95, "bodyDurationInFrames": 60, "motionDesign": {"transition": "cross_dissolve"}},
+        {"startFrame": 155, "bodyDurationInFrames": 45, "motionDesign": {"transition": "cut"}},
+    ]
+    renderer._apply_picture_overlaps(shots, 30, .4)
+
+    assert [shot["startFrame"] for shot in shots] == [0, 90, 95, 155]
+    assert shots[0]["durationInFrames"] == 92
+    assert shots[1]["transitionInFrames"] == 2
+    assert shots[1]["durationInFrames"] == 7
+    assert shots[2]["durationInFrames"] == 60
+    assert shots[3]["transitionInFrames"] == 0
+    assert max(shot["startFrame"] + shot["durationInFrames"] for shot in shots) == 200
+
+
+def test_long_film_captions_follow_cumulative_frames_without_drift():
+    # Each duration rounds up individually. Summing those rounded durations
+    # used to move captions by 18 frames over a 600-second film.
+    scenes = [
+        SimpleNamespace(index=index + 1, duration=16.65, voice_duration=16.4,
+                        narration="Cahaya kecil memberi arah pulang.", speech_words=[])
+        for index in range(36)
+    ]
+    cues = renderer._caption_cues(scenes, 30)
+    assert cues[-1]["startFrame"] == round(35 * 16.65 * 30)
+    assert cues[-1]["endFrame"] <= round(36 * 16.65 * 30)
+
+
+def test_article_keeps_accepted_narration_and_ending_without_visual_directions(tmp_path):
+    board = _storyboard()
+    board.title = "Tanda di Dinding"
+    path = renderer.write_story_article(board, tmp_path / "article.md")
+    article = path.read_text()
+    assert article.startswith("# Tanda di Dinding\n\n")
+    assert board.scenes[-1].narration in article
+    assert "<NARRATOR>" not in article

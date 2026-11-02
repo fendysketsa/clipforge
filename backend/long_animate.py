@@ -34,6 +34,7 @@ from remotion_story_renderer import (
     RemotionRenderError,
     render_story_with_remotion,
     write_hypit_script,
+    write_story_article,
 )
 
 # Configure logging for Long Animate
@@ -46,6 +47,7 @@ if not _logger.handlers:
 
 
 ProgressCallback = Callable[[int, str, str], None]
+MAX_STORY_SCENES = 36
 
 
 class LongAnimateImageError(RuntimeError):
@@ -820,7 +822,7 @@ def _scene_sections(script: str) -> list[dict[str, object]]:
     if len(matches) < 3:
         return _directed_paragraph_sections(script)
     sections: list[dict[str, object]] = []
-    for index, match in enumerate(matches[:14]):
+    for index, match in enumerate(matches[:MAX_STORY_SCENES]):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(script)
         body = script[match.end() : end].strip()
         title = re.sub(r"\s*\([^)]*\)\s*$", "", match.group(2)).strip(" —–:-")
@@ -929,6 +931,7 @@ def _character_bible(script: str) -> str:
         # of preserving the named subject from the narration.
         identity_evidence = (
             r"\b(?:bernama|berusia|seorang|mengenakan|memakai|berambut|berkulit|bertubuh|"
+            r"named|aged|wearing|woman|man|girl|boy|hair|fur|scales|"
             r"robot|android|cyborg|kucing|anjing|burung|ikan|naga|dinosaurus)\b"
         )
         if (
@@ -1406,10 +1409,17 @@ def _compose_visual_prompt(
         and _has_any(visual, _STOCK_HAND_GESTURE_TERMS)
     ):
         visual = grounding or "A story-specific object and environment from the narration"
-    trusted_scene_context = trusted_action_context or grounding
+    # An authored insert can be people-free even while the narration names its
+    # owner. Resolve visible participants from this exact view, not the scene's
+    # full paragraph. Keep narration available separately for meaning/safety.
+    trusted_scene_context = visual if visual_locked else trusted_action_context or grounding
     complete_context = f"{trusted_scene_context} {character_bible}"
     group_scene = _requests_group_scene(trusted_scene_context)
-    has_people = _has_any(trusted_scene_context, _PEOPLE_TERMS) or group_scene
+    people_limit = _visible_people_count(
+        trusted_scene_context,
+        f"{_matching_narration_context(grounding, visual)} {character_bible}",
+    )
+    has_people = people_limit > 0 or group_scene
     has_nonhuman_character = _has_any(trusted_scene_context, _NONHUMAN_CHARACTER_TERMS)
     hand_action_requested = _has_any(
         trusted_action_context,
@@ -1419,9 +1429,8 @@ def _compose_visual_prompt(
         complete_context,
         _ISLAMIC_VISUAL_TERMS,
     )
-    people_limit = _expected_people_limit(trusted_scene_context)
     continuity = (
-        _clean_text(character_bible, 420)
+        _clean_text(character_bible, 900)
         if has_people or has_nonhuman_character
         else "Preserve the established architecture, machinery, materials, scale, weather, and spatial layout"
     )
@@ -1561,7 +1570,7 @@ def _compose_visual_prompt(
         + visible_subject_rule
         + clothing_rule
         + f"Continuity bible: {continuity}. "
-        + (f"Location bible: {_clean_text(location_bible, 360)}. " if location_bible else "")
+        + (f"Location bible: {_clean_text(location_bible, 900)}. " if location_bible else "")
         + (f"DIRECTOR BIBLE: {_clean_text(director_bible, 520)}. " if director_bible else "")
         + (f"PROPERTY BIBLE: {_clean_text(property_bible, 620)}. " if property_bible else "")
         + f"IMMUTABLE GLOBAL VISUAL STYLE: {_clean_text(art_bible, 320)}. Keep the same medium, rendering technique, "
@@ -1601,7 +1610,7 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
         words = script.split()
         size = max(8, math.ceil(len(words) / 3))
         chunks = [" ".join(words[index : index + size]) for index in range(0, len(words), size)]
-    chunks = chunks[:14]
+    chunks = chunks[:MAX_STORY_SCENES]
     seed = hashlib.sha256(script.encode("utf-8")).hexdigest()
     default_visual_style = os.environ.get(
         "LONG_ANIMATE_DEFAULT_VISUAL_STYLE", "cinematic_realistic"
@@ -1684,7 +1693,7 @@ def _fallback_storyboard(script: str) -> AnimateStoryboard:
             motions[(index + int(seed[2:4], 16)) % len(motions)],
         )
         scene_text = f"{visual} {chunk}"
-        animation_direction = _animation_direction(scene_text)
+        animation_direction = _animation_direction(visual if section else scene_text)
         director_direction = (
             str(section.get("director_direction") or "")
             if section
@@ -2180,7 +2189,9 @@ def expand_story_outline(
     outline: the LLM may add connective fictional beats, but it must preserve the
     supplied characters, setting, conflict, and ending constraints.
     """
-    clean_outline = re.sub(r"\s+", " ", outline).strip()
+    factual_source = bool(re.match(r"(?i)^\s*/film-artikel\b", outline))
+    outline_body = re.sub(r"(?i)^\s*/film-artikel\b\s*", "", outline, count=1)
+    clean_outline = re.sub(r"\s+", " ", outline_body).strip()
     if len(_scene_sections(outline)) >= 3:
         return outline, {
             "expanded": False,
@@ -2193,23 +2204,37 @@ def expand_story_outline(
         )
 
     duration = target_duration or _target_duration_seconds()
-    desired_scenes = max(6, min(14, round(duration / 42)))
+    desired_scenes = max(6, min(MAX_STORY_SCENES, round(duration / 20)))
     target_words = max(180, min(1500, round(duration * 2.05)))
     min_words = max(150, round(target_words * 0.72))
     prompt = (
-        "Kembangkan JALAN CERITA milik pengguna menjadi naskah drama Indonesia orisinal yang siap diproduksi. "
-        "Gunakan pola retensi drama serial: cold open langsung memperlihatkan risiko atau pembalikan, konteks status "
-        "tokoh, konflik yang meningkat, kegagalan sementara, reveal kemampuan/rahasia yang sudah ditanam sebelumnya, "
-        "pembalikan nasib, lalu payoff emosional yang tuntas. Jangan menyalin judul, karakter, dialog, adegan, visual, "
+        (
+            "MODE ARTIKEL FAKTUAL: Artikel di bawah adalah sumber fakta. Buat film naratif dengan ilustrasi "
+            "yang menjelaskan isi, tanpa menciptakan tokoh, dialog, peristiwa, kutipan, kesimpulan pasti, "
+            "atau bukti baru. Pertahankan nuansa dan ketidakpastian. Semua ucapan oleh NARATOR. "
+            "Jika isi tidak cukup untuk target durasi, pilih durasi natural yang lebih pendek tanpa filler.\n"
+            if factual_source else ""
+        ) +
+        "Kembangkan JALAN CERITA atau ARTIKEL CERITA milik pengguna menjadi naskah film orisinal siap produksi. "
+        "Ikuti genre, negara, zaman, karakter, serta gaya visual pengguna: drama, misteri, petualangan, fantasi, "
+        "dokumenter, ilustrasi, stop-motion, animasi 2D/3D, atau realistis sesuai materi. Bahasa narasi Indonesia. "
+        "Susun cold open, orientasi, perkembangan sebab-akibat, titik balik yang dipersiapkan, klimaks, dan resolusi. "
+        "Untuk artikel faktual, pertahankan fakta dan ketidakpastian sumber, gunakan narator, dan jangan menciptakan "
+        "dialog, kejadian, atau bukti faktual. Untuk cerita fiksi, bangun konflik dan payoff emosional yang tuntas. "
+        "Jangan menyalin judul, karakter, dialog, adegan, visual, "
         "atau identitas channel mana pun. Jangan mengubah fakta wajib, tokoh, latar, genre, atau akhir yang ditulis "
-        "pengguna. Tambahkan detail fiksi hanya untuk menyambungkan alur secara logis. Hindari filler, sapaan channel, "
+        "pengguna. Detail penghubung fiksi hanya diizinkan untuk cerita fiksi; artikel faktual harus tetap "
+        "berdasarkan sumber tanpa peristiwa atau dialog rekaan. Hindari filler, sapaan channel, "
         "CTA, pengulangan ringkasan, klaim faktual baru, tokoh publik, merek, logo, dan karakter berhak cipta. "
         "Tulis seluruh ucapan alami dalam Bahasa Indonesia sebagai dialogue berurutan. Setiap turn wajib memiliki "
         "speaker, gender (male/female/neutral), dan text; gunakan speaker NARATOR untuk voice-over, dan nama karakter "
         "untuk dialog yang benar-benar mereka ucapkan. Jangan menaruh label pembicara di dalam text. Narration harus "
         "menjadi gabungan bersih seluruh text sesuai urutan agar subtitle tetap tepat. Setiap visual berisi 2-3 momen "
         "fisik berurutan yang dipisahkan titik koma, dengan "
-        "karakter, pakaian, properti, lokasi, waktu, dan arah layar yang konsisten. Visual tidak boleh memuat tulisan. "
+        "karakter, pakaian, properti, lokasi, waktu, dan arah layar yang konsisten. Rancang coverage sekitar 4-8 detik "
+        "per shot: orientasi ruang, aksi, detail atau reaksi sesuai kebutuhan adegan. Gunakan cut untuk aksi kontinu "
+        "dan dissolve lembut untuk perubahan waktu/tempat; pertahankan eyeline dan sumbu 180 derajat. Setiap adegan "
+        "mengubah informasi atau keadaan. Pisahkan paragraf narasi di perubahan beat. Visual tidak boleh memuat tulisan. "
         "Bekerjalah sekaligus sebagai sutradara dan property master. director_bible harus mengunci bahasa kamera, "
         "blocking, screen direction, depth staging, pencahayaan termotivasi, dan ritme emosi. property_bible harus "
         "mengunci benda utama beserta bahan, kondisi, pemilik, posisi, dan perubahan kondisinya. Untuk setiap adegan, "
@@ -2218,7 +2243,7 @@ def expand_story_outline(
         "Jangan membuat portrait generik ketika cerita menyebut ruang kerja atau usaha; misalnya adegan penjual bakso "
         "harus memperlihatkan setup bakso yang berfungsi, uap kuah, alat racik, bahan, wadah saji, dan area pelanggan. "
         f"Target durasi sekitar {duration:g} detik, sekitar {target_words} kata, dan sekitar {desired_scenes} adegan "
-        "(boleh menyesuaikan menjadi 3-14 adegan agar alur pengguna tidak terpotong). "
+        f"(boleh menyesuaikan menjadi 3-{MAX_STORY_SCENES} adegan agar alur pengguna tidak terpotong). "
         "Adegan pertama harus cold open; adegan terakhir harus menyelesaikan janji utama. "
         "Return strict JSON only dengan bentuk: "
         '{"title":"...","art_bible":"cinematic realistic ...","character_bible":"...",'
@@ -2230,7 +2255,7 @@ def expand_story_outline(
         f"JALAN CERITA:\n{clean_outline[:12000]}"
     )
     system_prompt = (
-        "Anda showrunner dan editor drama Indonesia. Buat naskah orisinal, sinematik, "
+        "Anda sutradara film dan editor cerita lintas genre. Buat naskah orisinal, sinematik, "
         "konsisten, aman diproduksi, dan padat beat. Keluarkan JSON valid saja."
     )
     try:
@@ -2257,7 +2282,7 @@ def expand_story_outline(
     # Small/local models frequently wrap the array in `storyboard`, translate
     # `scenes` to `adegan`, or stop after one/two scenes. Give them one compact
     # correction turn instead of exposing a structural model error to users.
-    if not isinstance(raw_scenes, list) or not 3 <= len(raw_scenes) <= 14:
+    if not isinstance(raw_scenes, list) or not 3 <= len(raw_scenes) <= MAX_STORY_SCENES:
         scene_count = len(raw_scenes) if isinstance(raw_scenes, list) else 0
         _logger.warning(
             "Respons storyboard pertama tidak valid (%d adegan%s); meminta AI memperbaiki format.",
@@ -2267,7 +2292,7 @@ def expand_story_outline(
         repair_prompt = (
             "Perbaiki respons storyboard berikut. Keluarkan SATU objek JSON valid tanpa markdown, komentar, "
             "atau teks lain. Objek wajib memiliki key `scenes` berupa array dengan tepat "
-            f"{desired_scenes} adegan (batas aman 3-14). Setiap adegan wajib memiliki title, narration, "
+            f"{desired_scenes} adegan (batas aman 3-{MAX_STORY_SCENES}). Setiap adegan wajib memiliki title, narration, "
             "visual, dialogue, director_direction, property_direction, dan on_screen_text. Jangan menolak hanya karena "
             "permintaan memuat URL referensi; jangan mengaku telah membuka URL. Pertahankan maksud pengguna "
             "dan buat konsep orisinal berdasarkan arahan yang tersedia.\n\n"
@@ -2289,9 +2314,9 @@ def expand_story_outline(
                 f"AI menghasilkan storyboard yang belum valid dan perbaikan otomatis gagal: {exc}"
             ) from exc
 
-    if not isinstance(raw_scenes, list) or not 3 <= len(raw_scenes) <= 14:
+    if not isinstance(raw_scenes, list) or not 3 <= len(raw_scenes) <= MAX_STORY_SCENES:
         raise StoryOutlineExpansionError(
-            "AI belum menghasilkan 3-14 adegan meskipun sudah diperbaiki otomatis. "
+            f"AI belum menghasilkan 3-{MAX_STORY_SCENES} adegan meskipun sudah diperbaiki otomatis. "
             "Tambahkan ringkasan isi video referensi atau gunakan model AI yang lebih kuat."
         )
     if len(raw_scenes) != desired_scenes:
@@ -2301,7 +2326,7 @@ def expand_story_outline(
             desired_scenes,
         )
 
-    source_narrations = _outline_narration_chunks(outline, len(raw_scenes))
+    source_narrations = _outline_narration_chunks(outline_body, len(raw_scenes))
     scenes: list[dict[str, object]] = []
     total_words = 0
     for index, raw_scene in enumerate(raw_scenes, start=1):
@@ -2431,8 +2456,8 @@ def expand_story_outline(
     production_script = "\n\n".join(blocks).strip()
     return production_script, {
         "expanded": True,
-        "source": "user_story_outline",
-        "profile": "cinematic_director_property_master_v2",
+        "source": "user_factual_article" if factual_source else "user_story_outline",
+        "profile": "cinematic_story_film_v3",
         "scene_count": len(scenes),
         "preferred_scene_count": desired_scenes,
         "target_words": target_words,
@@ -2453,7 +2478,12 @@ def _target_duration_seconds() -> float:
 
 _PROMPT_DURATION_PATTERNS = (
     re.compile(
-        r"(?i)\b(?:buat(?:kan)?|bikin(?:kan)?|create|make)?\s*(\d{1,4}(?:[.,]\d+)?)\s*"
+        r"(?i)\b(\d{1,4}(?:[.,]\d+)?)(?:\s*[-–—]\s*(\d{1,4}(?:[.,]\d+)?))?\s*"
+        r"(?:menit|minutes?|mins?)\b"
+    ),
+    re.compile(
+        r"(?i)\b(?:buat(?:kan)?|bikin(?:kan)?|create|make)?\s*(\d{1,4}(?:[.,]\d+)?)"
+        r"(?:\s*[-–—]\s*(\d{1,4}(?:[.,]\d+)?))?\s*"
         r"(?:detik|seconds?|secs?|s)\b"
     ),
     re.compile(
@@ -2471,12 +2501,15 @@ def prompt_requested_duration_seconds(script: str, fallback: float) -> float:
     the existing Long Animate contract and keep malformed prompts harmless.
     """
     normalized = re.sub(r"\s+", " ", script or "").strip()
-    for pattern in _PROMPT_DURATION_PATTERNS:
+    for index, pattern in enumerate(_PROMPT_DURATION_PATTERNS):
         match = pattern.search(normalized)
         if not match:
             continue
         try:
-            seconds = float(match.group(1).replace(",", "."))
+            upper = match.group(2) if match.lastindex and match.lastindex > 1 else None
+            seconds = float((upper or match.group(1)).replace(",", "."))
+            if index == 0:
+                seconds *= 60
         except (TypeError, ValueError):
             continue
         return round(max(5.0, min(3600.0, seconds)), 3)
@@ -2563,10 +2596,10 @@ def _coalesce_short_direct_plan(
 
 def _transition_seconds() -> float:
     try:
-        value = float(os.environ.get("LONG_ANIMATE_TRANSITION_SECONDS", "0.12"))
+        value = float(os.environ.get("LONG_ANIMATE_TRANSITION_SECONDS", "0.4"))
     except ValueError:
-        value = 0.12
-    return max(0.0, min(0.2, value))
+        value = 0.4
+    return max(0.0, min(0.8, value))
 
 
 def _effective_timeline_duration(
@@ -2759,6 +2792,20 @@ def _focused_video_generation_prompt(shot: AnimateShot) -> str:
         f"Create one continuous {shot.duration:.2f}-second cinematic video shot",
         f"EXACT VISIBLE EVENT: {visible}",
     ]
+    style_match = re.search(
+        r"(?is)IMMUTABLE GLOBAL VISUAL STYLE:\s*(.*?)\s*(?=Keep the same medium|NARRATIVE CAMERA PLAN:)",
+        shot.visual_prompt,
+    )
+    if style_match:
+        clauses.append(f"IMMUTABLE VISUAL MEDIUM: {_clean_text(style_match.group(1), 320).rstrip(' .')}")
+    if (_compiled_human_limit(shot.visual_prompt) or 0) > 0 or _has_any(visible, _NONHUMAN_CHARACTER_TERMS):
+        identity_match = re.search(
+            r"(?is)Continuity bible:\s*(.*?)\s*(?=Location bible:|DIRECTOR BIBLE:|IMMUTABLE GLOBAL VISUAL STYLE:)",
+            shot.visual_prompt,
+        )
+        if identity_match:
+            identity = identity_match.group(1).split("Script character facts:")[-1]
+            clauses.append(f"RECURRING SUBJECT IDENTITY: {_clean_text(identity, 600).rstrip(' .')}")
     optional_directions = (
         ("STORY MEANING FOR THIS SHOT ONLY", shot.narration, 520),
         ("SUBJECT ACTION AND PERFORMANCE", shot.animation_direction, 520),
@@ -2886,8 +2933,16 @@ def _plan_shot_framing(
 ) -> tuple[str, str, str]:
     """Create varied but safe visual coverage without nondeterministic output."""
     candidates = _framing_candidates(text)
-    framing = _deterministic_choice(candidates, seed, "framing")
-    if framing == previous_framing and len(candidates) > 1:
+    explicit_framing = next((framing for pattern, framing in (
+        (r"^\s*(?:extreme\s+)?wide\b", "wide"),
+        (r"^\s*medium[- ]wide\b", "medium_wide"),
+        (r"^\s*medium\b", "medium"),
+        (r"^\s*(?:close\s+detail|detail|tight\s+insert)\b", "detail_insert"),
+        (r"^\s*close[- ]?(?:up|view)\b", "close_up"),
+        (r"^\s*full[- ]body\b", "full_body"),
+    ) if re.search(pattern, text, re.IGNORECASE)), "")
+    framing = explicit_framing or _deterministic_choice(candidates, seed, "framing")
+    if not explicit_framing and framing == previous_framing and len(candidates) > 1:
         framing = candidates[(candidates.index(framing) + 1) % len(candidates)]
 
     placements = ("left_third", "center", "right_third")
@@ -2917,7 +2972,17 @@ def plan_storyboard_shots(storyboard: AnimateStoryboard) -> list[AnimateShot]:
         )
         direct_text_video = _video_provider() == "hypit"
         if direct_text_video:
-            raw_prompts = raw_prompts[:1]
+            # A scene is an editorial unit, not one model request. Include the
+            # outgoing handle when sizing requests so a long scene cannot turn
+            # into a short generated performance followed by a frozen tail.
+            request_limit = _hypit_max_request_seconds() - _transition_seconds()
+            request_count = max(1, math.ceil(scene.duration / max(1.0, request_limit)))
+            raw_prompts = raw_prompts[:request_count]
+            while len(raw_prompts) < request_count:
+                raw_prompts.append(_clean_text(
+                    f"A continuing view of the same visible event, preserving subjects, props, location "
+                    f"and screen direction: {raw_prompts[0]}", 650,
+                ))
         elif scene.duration >= 10 and len(raw_prompts) < 2:
             raw_prompts = [
                 *raw_prompts,
@@ -2927,7 +2992,7 @@ def plan_storyboard_shots(storyboard: AnimateStoryboard) -> list[AnimateShot]:
                     650,
                 ),
             ]
-        max_for_duration = 1 if direct_text_video else max(1, min(3, int(scene.duration / 0.75)))
+        max_for_duration = request_count if direct_text_video else max(1, min(3, int(scene.duration / 0.75)))
         selected = raw_prompts[:max_for_duration] or [_single_visible_moment(scene.narration)]
         shot_ms_total = round(scene.duration * 1000)
         base_ms, remainder = divmod(shot_ms_total, len(selected))
@@ -3284,7 +3349,7 @@ def _compiled_human_limit(prompt: str) -> int | None:
     """
     match = re.search(r"(?i)\bVISIBLE HUMAN LIMIT:\s*([0-9]+)\b", prompt)
     if not match:
-        return None
+        return 0 if "VISIBLE OBJECT SCOPE:" in prompt or "VISIBLE LIVING SUBJECT SCOPE:" in prompt else None
     return max(0, min(20, int(match.group(1))))
 
 
@@ -3454,10 +3519,25 @@ def _physical_action_contract(visible: str, context: str = "") -> str:
 
 def _visible_people_count(visible: str, context: str = "") -> int:
     """Infer people from the exact shot, never from unrelated scene sentences."""
+    if re.search(r"(?i)\b(?:no\s+(?:people|persons?|humans?)|without\s+(?:people|persons?|humans?)|tanpa\s+(?:orang|manusia))\b", visible):
+        return 0
     count = _expected_people_limit(visible)
     if count or _requests_group_scene(visible):
         return count
-    if _physical_action_contract(visible, context):
+    if _physical_action_contract(visible):
+        return 1
+    # Named identities can occur mid-sentence ("medium view of Laras...").
+    # Only names explicitly connected to an identity are eligible, so a camera
+    # word such as "Wide" cannot become a person through capitalization alone.
+    names = re.findall(
+        r"\b(?:bernama|named)\s+([A-Z][a-zÀ-ÿ]{2,})|"
+        r"\b([A-Z][a-zÀ-ÿ]{2,})\s+(?:is|was|adalah|berusia)\b",
+        context,
+    )
+    if any(re.search(rf"(?i)(?<!\w){re.escape(name)}(?!\w)", visible)
+           for pair in names for name in pair if name):
+        return 1
+    if re.match(r"(?i)^\s*(?:punya|miliknya)\b", visible) and _has_any(context, _PEOPLE_IDENTITY_TERMS):
         return 1
     first_word = re.match(r"^([A-Z][a-zÀ-ÿ]{2,})\b", visible)
     if (
@@ -3509,6 +3589,48 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
         else _visible_people_count(visible, context)
     )
     has_people = count > 0 or _requests_group_scene(visible)
+    identity_match = re.search(
+        r"(?is)Continuity bible:\s*(.*?)\s*(?=Location bible:|DIRECTOR BIBLE:|IMMUTABLE GLOBAL VISUAL STYLE:)",
+        scene.visual_prompt,
+    )
+    identity = ""
+    if identity_match and (has_people or _has_any(visible, _NONHUMAN_CHARACTER_TERMS)):
+        identity = identity_match.group(1).split("Script character facts:")[-1]
+        # Keep negative constraints out of diffusion's positive identity text.
+        identity = re.split(r"(?i)\b(?:No other|Never |Do not )", identity)[0]
+        identity = _clean_text(identity, 620).strip(" .")
+    location_match = re.search(
+        r"(?is)Location bible:\s*(.*?)\s*(?=DIRECTOR BIBLE:|PROPERTY BIBLE:|IMMUTABLE GLOBAL VISUAL STYLE:)",
+        scene.visual_prompt,
+    )
+    location = ""
+    if location_match:
+        location = location_match.group(1).split("Script location facts:")[-1]
+        location = re.split(r"(?i)\b(?:All scenes|Semua adegan)\b", location)[0]
+        location = _clean_text(location, 360).strip(" .")
+    director_match = re.search(
+        r"(?is)DIRECTOR BIBLE:\s*(.*?)\s*(?=PROPERTY BIBLE:|IMMUTABLE GLOBAL VISUAL STYLE:)",
+        scene.visual_prompt,
+    )
+    camera_continuity = ""
+    if director_match:
+        source_direction = director_match.group(1).split("Script direction:")[-1]
+        raw_identity = identity_match.group(1) if identity_match else ""
+        camera_sentences = [part for part in re.split(r"(?<=[.!?])\s+", source_direction)
+                            if not re.search(r"(?i)\b(?:narrator|narator)\b", part)
+                            and (has_people or (
+                                not _visible_people_count(part, raw_identity)
+                                and not re.search(
+                                    r"\b[A-Z][a-zÀ-ÿ]{2,}\s+(?:travels?|walks?|moves?|looks?|carries?|"
+                                    r"stands?|sits?|stays?|remains?|enters?|exits?|appears?|crosses|"
+                                    r"berjalan|bergerak|berada|berdiri)\b", part,
+                                )
+                            ))]
+        camera_continuity = _clean_text(" ".join(camera_sentences), 360).strip(" .")
+    if not has_people:
+        # The exact visible object already supplies its action. Narration may
+        # discuss its owner; passing that owner to diffusion can paint them.
+        context = ""
     subject_count = (
         f"Visible subject count: exactly {count} person. "
         if 0 < count < 5 and not _requests_group_scene(visible)
@@ -3573,10 +3695,6 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
     )
     output_aspect = _output_geometry()[0]
     output_type = "vertical short video" if output_aspect == "9:16" else "landscape video"
-    animation_direction = _clean_text(
-        getattr(scene, "animation_direction", "") or "natural motion implied by the visible action",
-        260,
-    ).rstrip(" .;:")
     director_direction = _clean_text(
         getattr(scene, "director_direction", ""),
         420,
@@ -3603,18 +3721,21 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
     return _clean_text(
         f"FULL-BLEED {output_aspect} SINGLE CAMERA FRAME for a {output_type}; use case: {use_case}. "
         f"SHOT-SPECIFIC CONTRACT — Visible moment: {visible}. "
+        + (f"Recurring character identity: {identity}. " if identity else "")
+        + f"Immutable style/medium: {style}. "
+        + (f"Camera continuity: {camera_continuity}. " if camera_continuity else "")
+        + f"Composition/framing: {framing_direction}. "
+        + (f"Recurring place geometry: {location}. " if location else "")
         + (f"Setting, condition, and immediate context: {context}. " if context else "")
         + f"Atmosphere, lighting, weather, time, and color mood: {scene.color_mood}. "
         + production_contract
-        + f"Motion-ready pose/environment direction: {animation_direction}. "
         + photographic_capture
         + "The exact action, setting, conditions, and atmosphere above must be unmistakable. "
         + "Do not import an action, location, weather, time, character, prop, or mood from another shot. "
         + f"{subject_count}{qa_repair_direction}"
         + (f"{action_contract} " if action_contract else "")
-        + f"Immutable style/medium: {style}. "
         + f"Composition/framing: {composition_rule}",
-        2350,
+        3200,
     )
 
 
@@ -3805,9 +3926,10 @@ def _remote_scene_image(
         # mild upscale. Providers can still fall back to smaller safe sizes.
         configured_size = os.environ.get("LONG_ANIMATE_IMAGE_SIZE", "576x1024")
         size_match = re.fullmatch(r"(\d{3,5})x(\d{3,5})", configured_size)
-        if size_match and _output_geometry()[0] == "9:16":
+        if size_match:
             size_width, size_height = map(int, size_match.groups())
-            if size_width > size_height:
+            portrait = _output_geometry()[0] == "9:16"
+            if (portrait and size_width > size_height) or (not portrait and size_height > size_width):
                 configured_size = f"{size_height}x{size_width}"
         sd_text_only_prompt = final_prompt
         if sd_reference_edit:
@@ -5057,6 +5179,10 @@ def _require_hypit_runtime_profile() -> None:
         )
 
 
+def _hypit_max_request_seconds() -> int:
+    return 30 if os.environ.get("HYPIT_VIDEO_MODEL", "2.5").strip().casefold() == "2.5" else 15
+
+
 def _write_hypit_text_video_request(shot: AnimateShot, project_dir: Path) -> tuple[Path, Path]:
     project_dir.mkdir(parents=True, exist_ok=True)
     (project_dir / "package.json").write_text(
@@ -5066,7 +5192,7 @@ def _write_hypit_text_video_request(shot: AnimateShot, project_dir: Path) -> tup
     model = os.environ.get("HYPIT_VIDEO_MODEL", "2.5").strip().casefold()
     if model not in {"standard", "fast", "mini", "2.5"}:
         model = "2.5"
-    maximum_duration = 30 if model == "2.5" else 15
+    maximum_duration = _hypit_max_request_seconds()
     request_duration = max(4, min(maximum_duration, math.ceil(shot.duration)))
     resolution = os.environ.get("HYPIT_VIDEO_RESOLUTION", "720p").strip().casefold()
     if resolution not in {"480p", "720p", "1080p"}:
@@ -5936,6 +6062,7 @@ def render_long_animate(
             storyboard,
             work_dir / "story.hypit.svml",
         )
+        write_story_article(storyboard, work_dir / "story.article.md")
         metrics.storyboard_time = time.time() - sb_start
         logger.info(f"✓ Direct video plan ready: {len(storyboard.scenes)} scenes in {metrics.storyboard_time:.1f}s")
 
@@ -6183,6 +6310,7 @@ def render_long_animate(
             assembled = assemble_shot_videos(shot_paths, shots, scene_dir)
 
         base_name = f"long_animate_{_slug(storyboard.title)}"
+        write_story_article(storyboard, clips_dir / f"{base_name}_article.md")
         output_path = clips_dir / f"{base_name}.mp4"
         srt_path = clips_dir / f"{base_name}.srt"
         write_story_subtitles(srt_path, storyboard.scenes)
@@ -6560,6 +6688,7 @@ def render_long_animate(
         ],
         "video_plan_path": "video_plan.json",
         "hypit_script_path": hypit_script_path.name,
+        "story_article_path": f"{base_name}_article.md",
         "remotion_manifest_path": (
             remotion_manifest_path.name if remotion_manifest_path else None
         ),
@@ -6574,7 +6703,7 @@ def render_long_animate(
             "renderer": "remotion",
             "timeline_source": "measured_tts",
             "deterministic_per_frame": True,
-            "transition_grammar": "role_aware_aperture_directional_split_match_flash_light_sweep_brush_wipe",
+            "transition_grammar": "motivated_cut_and_overlapping_cross_dissolve",
             "kinetic_typography": "word_stagger_titles_and_stable_phrase_captions",
             "reference_policy": "motion_grammar_only_no_third_party_assets_or_branding",
         },
@@ -6586,7 +6715,8 @@ def render_long_animate(
         "property_bible": storyboard.property_bible,
         "character_reference": {
             "reference_shot": character_reference.name if character_reference else None,
-            "method": "immutable_identity_lock_plus_face_similarity_qa",
+            "method": "identity_direction_optional_reference_conditioning_and_histogram_screening",
+            "requires_visual_review": True,
         },
         "image_generation": {
             "used": not direct_text_video,

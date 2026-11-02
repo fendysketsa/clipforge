@@ -158,24 +158,29 @@ const CinematicFinish = ({shot}) => {
 const Shot = ({shot}) => {
   const frame = useCurrentFrame();
   const {fps, width, height} = useVideoConfig();
-  const duration = Math.max(1, Math.round(shot.duration * fps));
+  const duration = Math.max(2, shot.durationInFrames || Math.round(shot.duration * fps));
   const progress = interpolate(frame, [0, duration - 1], [0, 1], clamp);
   const reveal = spring({fps, frame, config: {damping: 18, stiffness: 115}});
   const portrait = height > width;
   const design = shot.motionDesign || {};
+  const transitionFrames = Number(shot.transitionInFrames || 0);
+  const pictureOpacity = transitionFrames > 0
+    ? interpolate(frame, [0, transitionFrames], [0, 1], clamp)
+    : 1;
   const accent = design.accentColor || '#65B7FF';
   const titleOnRight = !portrait && shot.subjectPlacement === 'left_third';
   const mediaStyle = {
     width: '100%',
     height: '100%',
     objectFit: 'cover',
-    transform: cameraTransform(shot.cameraMotion, progress, portrait, design.intensity),
+    // Generated footage already owns its camera. Keep the authored camera for stills.
+    transform: shot.kind === 'video' ? undefined : cameraTransform(shot.cameraMotion, progress, portrait, design.intensity),
     filter: 'saturate(1.025) contrast(1.045) brightness(.995)',
   };
   const src = staticFile(`assets/${shot.asset}`);
 
   return (
-    <AbsoluteFill style={{backgroundColor: '#05070b', overflow: 'hidden'}}>
+    <AbsoluteFill style={{backgroundColor: '#05070b', overflow: 'hidden', opacity: pictureOpacity}}>
       {shot.kind === 'video' ? (
         <OffthreadVideo src={src} muted loop style={mediaStyle}/>
       ) : (
@@ -226,7 +231,7 @@ const Shot = ({shot}) => {
         </div>
       ) : null}
       <CinematicFinish shot={shot}/>
-      <TransitionOverlay design={design}/>
+      {['cut', 'cross_dissolve'].includes(design.transition) ? null : <TransitionOverlay design={design}/>}
     </AbsoluteFill>
   );
 };

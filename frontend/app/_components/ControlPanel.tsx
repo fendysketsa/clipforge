@@ -33,6 +33,7 @@ import type {
 type ControlPanelProps = {
   clipMode: ClipMode;
   presentationMode?: boolean;
+  storyAspectRatio?: "9:16" | "16:9";
   cropMode: CropMode;
   isBusy: boolean;
   isSubmitting: boolean;
@@ -105,6 +106,7 @@ function ToggleCard({ checked, description, disabled, icon, label, onChange }: {
 }
 
 export function ControlPanel({
+  storyAspectRatio = "9:16",
   presentationMode = false,
   clipMode,
   cropMode,
@@ -221,8 +223,8 @@ export function ControlPanel({
           <em>{isStory ? "Hypit Script, visual Remotion, dubbing adaptif, subtitle, musik, dan QC otomatis." : isLong ? "Susun cerita, chapter, dan packaging YouTube." : "Default sudah siap. Buka kalau ingin mengubah karakter hasil."}</em>
         </span>
         <span className="shortPolishSnapshot">
-          <b>{presentationMode ? "Durasi otomatis · maks. 5 menit" : isStory ? `Drama AI · ${targetMinutes} menit` : isLong ? `Story Arc · ${targetMinutes} menit` : editProfileCopy[editProfile].title}</b>
-          <small>{isStory ? "9:16 · video lengkap" : isLong ? "16:9 · chapter lengkap" : `${minDuration}–${maxDuration} dtk · ${selectedQuality?.label}`}</small>
+          <b>{presentationMode ? "Durasi otomatis · maks. 5 menit" : isStory ? `Film AI · ${targetMinutes} menit` : isLong ? `Story Arc · ${targetMinutes} menit` : editProfileCopy[editProfile].title}</b>
+          <small>{isStory ? `${presentationMode ? "9:16" : storyAspectRatio} · video lengkap` : isLong ? "16:9 · chapter lengkap" : `${minDuration}–${maxDuration} dtk · ${selectedQuality?.label}`}</small>
         </span>
         <ChevronDown size={18} />
       </summary>
@@ -242,10 +244,10 @@ export function ControlPanel({
         {isLong ? (
           <>
             <section className="polishSection">
-              <header><span>01</span><div><strong>{presentationMode ? "Presentasi yang menjelaskan" : isStory ? "Mesin drama sinematik" : "Mesin retention long-form"}</strong><small>Setiap bagian punya fungsi dalam perjalanan penonton.</small></div></header>
+              <header><span>01</span><div><strong>{presentationMode ? "Presentasi yang menjelaskan" : isStory ? "Mesin cerita sinematik" : "Mesin retention long-form"}</strong><small>Setiap bagian punya fungsi dalam perjalanan penonton.</small></div></header>
               <div className="longFeatureGrid">
                 <span><Sparkles size={17} /><b>{presentationMode ? "Pembuka topik" : "Cold open"}<small>{presentationMode ? "Pertanyaan yang dijawab artikel" : "Segmen terkuat membuka video"}</small></b></span>
-                <span><BookOpen size={17} /><b>{presentationMode ? "Penjelasan bertahap" : isStory ? "Drama beats" : "Chapter story"}<small>{presentationMode ? "Subjek → proses → hasil" : "Konteks → tensi → reveal → payoff"}</small></b></span>
+                <span><BookOpen size={17} /><b>{presentationMode ? "Penjelasan bertahap" : isStory ? "Beat cerita" : "Chapter story"}<small>{presentationMode ? "Subjek → proses → hasil" : "Konteks → perkembangan → jawaban → payoff"}</small></b></span>
                 <span><ImageIcon size={17} /><b>{presentationMode ? "Objek menjelaskan" : isStory ? "Visual konsisten" : "CTR package"}<small>{presentationMode ? "Gambar dan gerak mengikuti kalimat" : isStory ? "Tokoh, kostum, dan lokasi terkunci" : "Thumbnail dan judul satu janji"}</small></b></span>
               </div>
             </section>

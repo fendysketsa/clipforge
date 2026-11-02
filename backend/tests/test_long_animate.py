@@ -560,7 +560,7 @@ def test_story_outline_accepts_safe_scene_count_instead_of_failing_exact_target(
     )
 
     assert audit["scene_count"] == 8
-    assert audit["preferred_scene_count"] == 7
+    assert audit["preferred_scene_count"] == 15
     assert len(long_animate._scene_sections(script)) == 8
 
 
@@ -926,7 +926,7 @@ def test_complex_scene_expands_to_multiple_gapless_shots(monkeypatch):
     monkeypatch.setenv("LONG_ANIMATE_TRANSITION_SECONDS", "0.12")
 
     shots = long_animate.plan_storyboard_shots(storyboard)
-    effective_duration = sum(shot.duration for shot in shots) - 0.12 * (len(shots) - 1)
+    effective_duration = sum(shot.duration for shot in shots) - long_animate._transition_seconds() * (len(shots) - 1)
 
     assert len(shots) == 4
     assert shots[0].scene_index == shots[1].scene_index == 1
@@ -1509,7 +1509,114 @@ def test_direct_prompt_duration_overrides_long_form_default():
     assert long_animate.prompt_requested_duration_seconds(
         "Buat video dengan durasi 2 menit tentang sejarah kota.",
         180.0,
-    ) == 180.0
+    ) == 120.0
+
+
+@pytest.mark.parametrize(("prompt", "expected"), [
+    ("Buat cerita 5 menit.", 300),
+    ("Film durasi 5–10 menit.", 600),
+    ("Film 7,5 menit tentang dermaga.", 450),
+    ("Make a 10 minute mystery.", 600),
+    ("Durasi 25-45 detik.", 45),
+])
+def test_story_duration_supports_minutes_and_ranges(prompt, expected):
+    assert long_animate.prompt_requested_duration_seconds(prompt, 180) == expected
+
+
+def test_directed_long_film_retains_all_scenes_and_final_payoff():
+    script = "\n\n".join(
+        f"### ADEGAN {index} — Bagian {index}\n"
+        f"VISUAL: Lentera {index} di meja kayu dekat jendela.\n"
+        f"NARASI: Peristiwa {index} mengubah arah perjalanan menuju mercusuar."
+        for index in range(1, 31)
+    )
+    board = _fallback_storyboard(script)
+    assert len(board.scenes) == 30
+    assert "Peristiwa 30" in board.scenes[-1].narration
+    assert board.scenes[-1].narrative_role == "payoff_conclusion"
+
+
+def test_generated_footage_splits_at_model_limit_instead_of_freezing_long_scene(monkeypatch):
+    board = _fallback_storyboard(SCRIPT)
+    board.scenes = board.scenes[:1]
+    board.scenes[0].duration = 35
+    monkeypatch.setenv("LONG_ANIMATE_VIDEO_PROVIDER", "hypit")
+    monkeypatch.setenv("HYPIT_VIDEO_MODEL", "mini")
+    monkeypatch.setenv("LONG_ANIMATE_TRANSITION_SECONDS", ".4")
+    shots = long_animate.plan_storyboard_shots(board)
+    assert len(shots) == 3
+    assert all(shot.duration <= 15 for shot in shots)
+    assert sum(shot.duration for shot in shots) - .4 * (len(shots) - 1) == pytest.approx(35)
+
+
+def test_article_to_film_planning_preserves_factual_mode_without_speaking_command(monkeypatch):
+    prompts = []
+    narration = "Sebuah mercusuar membantu menandai posisi pantai ketika kondisi pandangan berubah."
+    payload = {"title": "Cahaya Pantai", "scenes": [
+        {"title": f"Bagian {i}", "narration": narration,
+         "visual": "Mercusuar putih berdiri di tepi pantai dengan cahaya hangat."}
+        for i in range(3)
+    ]}
+    def complete(config, messages):
+        prompts.append(messages[-1]["content"])
+        return json.dumps(payload)
+    monkeypatch.setattr(long_animate, "chat_completion", complete)
+    script, audit = expand_story_outline(
+        "/film-artikel\n" + narration,
+        AIConfig(enabled=True, base_url="http://localhost:11434/v1", model="local"),
+        target_duration=300,
+    )
+    assert "MODE ARTIKEL FAKTUAL" in prompts[0]
+    assert "tanpa peristiwa atau dialog rekaan" in prompts[0]
+    assert audit["source"] == "user_factual_article"
+    assert "/film-artikel" not in script
+
+
+def test_directed_architecture_insert_does_not_inherit_narrated_person():
+    narration = "Laras menutup tasnya. Ia memandang mercusuar yang gelap di ujung dermaga."
+    compiled = long_animate._compose_visual_prompt(
+        "Wide view of the cream lighthouse with red roof above a wooden pier.",
+        narration, "hand-painted cinematic illustration",
+        "Laras is an Indonesian woman aged 29 wearing a red raincoat.",
+        visual_locked=True,
+        director_bible="Script direction: The lighthouse remains screen right. Laras travels left to right. One calm narrator across the film.",
+    )
+    assert long_animate._compiled_human_limit(compiled) == 0
+    shot = _motion_test_shot()
+    shot.narration = narration
+    shot.visual_prompt = compiled
+    prompt = long_animate._focused_image_generation_prompt(shot)
+    assert "Recurring character identity:" not in prompt
+    assert "hand contact" not in prompt
+    assert "exactly 1 person" not in prompt
+    assert "Laras" not in prompt
+    assert "One calm narrator" not in prompt
+    assert "lighthouse remains screen right" in prompt
+
+
+def test_named_english_identity_reaches_generation_prompt_before_other_direction():
+    script = "\n\n".join([
+        "KARAKTER KONSISTEN: Laras is an Indonesian woman aged 29 with short curly black hair, a red raincoat and mustard tool bag.",
+        *[f"### ADEGAN {i} — Dermaga {i}\nVISUAL: Medium view of Laras standing beside the wooden pier.\n"
+          f"NARASI: Laras memandang cahaya {i} dari ujung dermaga." for i in range(1, 4)],
+    ])
+    board = _fallback_storyboard(script)
+    board.scenes[0].duration = 10
+    shots = long_animate.plan_storyboard_shots(board)
+    prompt = long_animate._focused_image_generation_prompt(shots[0])
+    assert "woman aged 29" in board.character_bible
+    assert "short curly black hair" in prompt
+    assert "red raincoat" in prompt
+    assert "mustard tool bag" in prompt
+    assert prompt.index("Recurring character identity:") < prompt.index("Director blocking")
+    assert shots[0].framing == "medium"
+
+
+def test_explicit_people_free_insert_overrides_mentions_of_its_owner():
+    assert long_animate._visible_people_count(
+        "Close detail of the lantern on the table, no people or hands in frame.",
+        "Laras is a woman aged 29 who places the lantern on her table.",
+    ) == 0
 
 
 def test_direct_video_prompt_keeps_scene_action_and_excludes_caption_generation():
@@ -1867,7 +1974,13 @@ def test_local_real_image_provider_waits_for_service_startup(monkeypatch):
     assert sleeps == [3.0, 3.0]
 
 
-def test_local_z_image_uses_sdcpp_images_api_payload(monkeypatch, tmp_path):
+@pytest.mark.parametrize(("aspect", "configured_size", "expected_size"), [
+    ("16:9", "1024x576", "1024x576"),
+    ("16:9", "576x1024", "1024x576"),
+    ("9:16", "1024x576", "576x1024"),
+    ("9:16", "576x1024", "576x1024"),
+])
+def test_local_z_image_uses_sdcpp_images_api_payload(monkeypatch, tmp_path, aspect, configured_size, expected_size):
     scene = _fallback_storyboard(SCRIPT).scenes[0]
     captured = {}
 
@@ -1894,15 +2007,16 @@ def test_local_z_image_uses_sdcpp_images_api_payload(monkeypatch, tmp_path):
     monkeypatch.setenv("LONG_ANIMATE_IMAGE_BASE_URL", "http://127.0.0.1:7860/v1")
     monkeypatch.setenv("LONG_ANIMATE_IMAGE_MODEL", "z-image-turbo-q3")
     monkeypatch.setenv("LONG_ANIMATE_IMAGE_API_KEY", "")
-    monkeypatch.setenv("LONG_ANIMATE_IMAGE_SIZE", "1024x576")
+    monkeypatch.setenv("LONG_ANIMATE_IMAGE_SIZE", configured_size)
     monkeypatch.setenv("LONG_ANIMATE_IMAGE_TIMEOUT_SECONDS", "900")
     monkeypatch.setenv("LONG_ANIMATE_IMAGE_RETRIES", "1")
     monkeypatch.setattr(long_animate.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(long_animate, "_normalize_scene_image", lambda path: True)
 
-    assert long_animate._remote_scene_image(scene, tmp_path / "scene.png") is True
+    with long_animate.output_aspect_ratio(aspect):
+        assert long_animate._remote_scene_image(scene, tmp_path / "scene.png") is True
     assert captured["url"] == "http://127.0.0.1:7860/v1/images/generations"
-    assert captured["payload"]["size"] == "1024x576"
+    assert captured["payload"]["size"] == expected_size
     assert captured["payload"]["output_format"] == "png"
     assert "fused fingers" in captured["payload"]["negative_prompt"]
     assert "disembodied hands" in captured["payload"]["negative_prompt"]

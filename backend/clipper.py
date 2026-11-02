@@ -19879,6 +19879,10 @@ def parse_args() -> argparse.Namespace:
         help=argparse.SUPPRESS,
     )
     parser.add_argument(
+        "--long-animate-output-aspect", choices=["16:9", "9:16"], default="9:16",
+        help="Aspect ratio for generated story films.",
+    )
+    parser.add_argument(
         "--confirm-provider-rights",
         action="store_true",
         help=argparse.SUPPRESS,
@@ -20922,7 +20926,7 @@ def main() -> int:
             min(600.0, float(args.long_animate_target_duration or 300.0)),
         )
         os.environ["LONG_ANIMATE_TARGET_DURATION_SECONDS"] = f"{target_duration:g}"
-        os.environ["LONG_ANIMATE_OUTPUT_ASPECT_RATIO"] = "9:16"
+        os.environ["LONG_ANIMATE_OUTPUT_ASPECT_RATIO"] = "9:16" if quick_hypit else args.long_animate_output_aspect
         if not quick_hypit and (
             not args.ai_enabled or not args.ai_base_url or not args.ai_model
         ):
