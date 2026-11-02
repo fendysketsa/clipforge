@@ -1,0 +1,99 @@
+{
+  "enabled": true,
+  "mode": "two_voice_offscreen_dialogue",
+  "language": "id-ID",
+  "music_ducking": true,
+  "voice_cloning_used": false,
+  "timing_model": "measured-speech",
+  "duration_seconds": 58.2,
+  "cues": [
+    {
+      "speaker": "HOST",
+      "text": "Mari kita pahami mengapa tumbuhan bernapas melalui daun.",
+      "start": 0.0,
+      "duration": 2.706,
+      "provider": "edge_neural",
+      "voice": "id-ID-ArdiNeural",
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
+    },
+    {
+      "speaker": "HOST",
+      "text": "Tumbuhan membutuhkan oksigen untuk menghasilkan energi.",
+      "start": 6.582,
+      "duration": 2.641,
+      "provider": "edge_neural",
+      "voice": "id-ID-ArdiNeural",
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
+    },
+    {
+      "speaker": "HOST",
+      "text": "Pada permukaan daun terdapat pori-pori kecil bernama stomata.",
+      "start": 12.578,
+      "duration": 3.092,
+      "provider": "edge_neural",
+      "voice": "id-ID-ArdiNeural",
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
+    },
+    {
+      "speaker": "HOST",
+      "text": "Stomata menjadi tempat pertukaran oksigen dan karbon dioksida.",
+      "start": 19.28,
+      "duration": 3.131,
+      "provider": "edge_neural",
+      "voice": "id-ID-ArdiNeural",
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
+    },
+    {
+      "speaker": "HOST",
+      "text": "Saat fotosintesis, daun menyerap karbon dioksida dan menghasilkan oksigen.",
+      "start": 25.982,
+      "duration": 4.208,
+      "provider": "edge_neural",
+      "voice": "id-ID-ArdiNeural",
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
+    },
+    {
+      "speaker": "HOST",
+      "text": "Saat respirasi, tumbuhan menggunakan oksigen untuk menghasilkan energi.",
+      "start": 33.271,
+      "duration": 3.903,
+      "provider": "edge_neural",
+      "voice": "id-ID-ArdiNeural",
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
+    },
+    {
+      "speaker": "HOST",
+      "text": "Respirasi berlangsung pada siang dan malam hari, bukan hanya saat ada matahari.",
+      "start": 39.973,
+      "duration": 4.139,
+      "provider": "edge_neural",
+      "voice": "id-ID-ArdiNeural",
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
+    },
+    {
+      "speaker": "HOST",
+      "text": "Respirasi berlangsung pada siang dan malam hari, bukan hanya saat ada matahari.",
+      "start": 49.147,
+      "duration": 4.139,
+      "provider": "edge_neural",
+      "voice": "id-ID-ArdiNeural",
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
+    }
+  ]
+}

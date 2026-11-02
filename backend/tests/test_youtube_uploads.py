@@ -3158,6 +3158,63 @@ def test_remote_checkpoint_failure_recovers_as_read_only_verification(monkeypatc
     assert api.youtube_upload_needs_restart_verification(recovered) is True
 
 
+@pytest.mark.parametrize(
+    "schedule_error",
+    [
+        "Video pasca-restart belum terverifikasi. Opsi visibilitas 'scheduled' tidak berhasil dipilih.",
+        "Video pasca-restart belum terverifikasi. Tanggal/waktu Schedule tidak berhasil diisi: "
+        "{'ok': False, 'reason': 'date_or_time_field_missing'}",
+    ],
+)
+def test_failed_remote_schedule_draft_retries_once_after_ui_fix(
+    monkeypatch,
+    tmp_path,
+    schedule_error,
+):
+    import api
+
+    upload = YouTubeUploadJob(
+        id="recover-schedule-ui-draft",
+        source_job_id="job-schedule",
+        clip_url="/outputs/demo/clips/clip_01.mp4",
+        clip_name="clip_01.mp4",
+        status="failed",
+        created_at="2026-11-02T01:00:00+00:00",
+        updated_at="2026-11-02T01:30:00+00:00",
+        started_at="2026-11-02T01:01:00+00:00",
+        finished_at="2026-11-02T01:30:00+00:00",
+        title="Schedule recovery",
+        visibility="public",
+        publish_at="2026-11-03T05:00:00+00:00",
+        video_url="https://www.youtube.com/watch?v=abcDEF12345",
+        logs=[
+            "VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345",
+            "REMOTE_UPLOAD_CHECKPOINT: abcDEF12345",
+            "REMOTE_UPLOAD_CHECKPOINT_LOCKED: video-id sudah ada; retry file baru diblokir permanen.",
+            api.YOUTUBE_RESTART_VERIFY_MARKER,
+        ],
+        error=schedule_error,
+    )
+    uploads_path = tmp_path / "youtube_uploads.json"
+    uploads_path.write_text(json.dumps([upload.model_dump()]), encoding="utf-8")
+    monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", uploads_path)
+
+    recovered = api.load_youtube_uploads()[upload.id]
+
+    assert recovered.status == "queued"
+    assert recovered.started_at is None
+    assert recovered.finished_at is None
+    assert recovered.error is None
+    assert api.YOUTUBE_SCHEDULE_UI_RETRY_MARKER in recovered.logs
+    assert recovered.logs[-1] == api.YOUTUBE_RESTART_VERIFY_MARKER
+    assert api.youtube_upload_needs_restart_verification(recovered) is True
+
+    uploads_path.write_text(json.dumps([recovered.model_dump()]), encoding="utf-8")
+    retried_once = api.load_youtube_uploads()[upload.id]
+    assert retried_once.status == "queued"
+    assert retried_once.logs.count(api.YOUTUBE_SCHEDULE_UI_RETRY_MARKER) == 1
+
+
 def test_running_upload_after_file_selection_uses_verification_only(monkeypatch, tmp_path):
     import api
 

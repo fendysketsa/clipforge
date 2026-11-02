@@ -1,0 +1,214 @@
+{
+  "index": 1,
+  "start": 0.0,
+  "end": 44.5,
+  "duration": 44.5,
+  "score": 92,
+  "title": "MENGAPA TUMBUHAN BERNAPAS MELALUI DAUN",
+  "reason": "Faceless infographic explainer dengan diagram semantik, timing Hypit, dan visual Remotion orisinal.",
+  "text": "/hypit infographic Mengapa tumbuhan bernapas melalui daun? | Pada permukaan daun terdapat pori-pori kecil bernama stomata | Saat fotosintesis, daun menyerap karbon dioksida dan menghasilkan oksigen | Pada malam hari, tumbuhan menggunakan oksigen untuk menghasilkan energi | Daun di kebun bergerak saat hujan turun | Kuis: Apakah tumbuhan juga bernapas pada malam hari? / YA / TIDAK | Tulis jawabanmu di komentar!",
+  "transcript": "Mengapa tumbuhan bernapas melalui daun?\nPada permukaan daun terdapat pori-pori kecil bernama stomata\nSaat fotosintesis, daun menyerap karbon dioksida dan menghasilkan oksigen\nPada malam hari, tumbuhan menggunakan oksigen untuk menghasilkan energi\nDaun di kebun bergerak saat hujan turun\nApakah tumbuhan juga bernapas pada malam hari?\nTulis jawabanmu di komentar!",
+  "hook": "MENGAPA TUMBUHAN BERNAPAS MELALUI DAUN?",
+  "pov": "TULIS JAWABANMU DI KOMENTAR!",
+  "core_message": "TULIS JAWABANMU DI KOMENTAR!",
+  "fyp_label": "Sangat kuat",
+  "strengths": [
+    "Hook tampil pada frame awal.",
+    "Setiap ide memiliki adegan ilustrasi dengan objek dan aksi yang menjelaskan narasi.",
+    "Caption memakai rail persisten dan tidak menghilang di sela cue suara.",
+    "Headline, ilustrasi, dan caption memakai hierarki aman untuk layar 9:16."
+  ],
+  "weaknesses": [
+    "Akurasi fakta tetap mengikuti poin yang diberikan pengguna dan wajib direview."
+  ],
+  "improvement_ideas": [
+    "Uji versi hook atau urutan beat tanpa mengubah klaim faktual."
+  ],
+  "applied_edits": [
+    "Poin pengguna dipetakan ke source Hypit tervalidasi tanpa menambah fakta baru.",
+    "Setiap beat membawa subjek, aksi, metafora, dan motion direction yang dapat diedit.",
+    "Phone, machine, people, network, security, journey, comparison, chart, timeline, dan visual lain dirender sebagai ilustrasi Remotion berlapis.",
+    "Voice, caption persisten, musik, dan effect hit mengikuti event semantik."
+  ],
+  "key_point_score": 95,
+  "loop_score": 82,
+  "retention_score": 93,
+  "boundary_quality": "payoff_tuntas",
+  "mode": "long_animate",
+  "production_model": "hypit_infographic_explainer_v1",
+  "reference_benchmark": null,
+  "source_identity": {
+    "type": "original_code_rendered",
+    "id": "hypit-infographic-mengapa-tumbuhan-bernapas-melalui-daun",
+    "title": "MENGAPA TUMBUHAN BERNAPAS MELALUI DAUN"
+  },
+  "repair_attempted": false,
+  "output_format": "portrait_short",
+  "aspect_ratio": "9:16",
+  "output_resolution": "1080x1920",
+  "hypit_script_path": "infographic.hypit.svml",
+  "remotion_manifest_path": "infographic.remotion.json",
+  "fact_checked_on": null,
+  "source_note": "Original code-rendered explainer; factual statements supplied by the user",
+  "narrative_authoring": {
+    "engine": "hypit_script_surface",
+    "schema": "@hypit/script@1",
+    "timing": "measured_speech",
+    "validated_by_hypit_cli": true
+  },
+  "image_generation": {
+    "provider": "local_layered_illustration",
+    "paid_api_used": false
+  },
+  "explanation_planning": {
+    "ai_used": false,
+    "planning_mode": "manual",
+    "external_research_used": false,
+    "analogy": "",
+    "grounding": "user_authored_beats",
+    "source_quotes": []
+  },
+  "voice_casting": {
+    "enabled": true,
+    "mode": "two_voice_offscreen_dialogue",
+    "language": "id-ID",
+    "music_ducking": true,
+    "voice_cloning_used": false,
+    "timing_model": "existing-render-timeline",
+    "duration_seconds": 44.5,
+    "cues": [
+      {
+        "speaker": "HOST",
+        "text": "Mengapa tumbuhan bernapas melalui daun?",
+        "start": 0.0,
+        "duration": 1.834,
+        "provider": "edge_neural",
+        "voice": "id-ID-ArdiNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz",
+        "tempo_fit": 1.0
+      },
+      {
+        "speaker": "CO-HOST",
+        "text": "Pada permukaan daun terdapat pori-pori kecil bernama stomata",
+        "start": 4.821,
+        "duration": 4.153,
+        "provider": "edge_neural",
+        "voice": "id-ID-GadisNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz",
+        "tempo_fit": 1.0
+      },
+      {
+        "speaker": "HOST",
+        "text": "Saat fotosintesis, daun menyerap karbon dioksida dan menghasilkan oksigen",
+        "start": 11.527,
+        "duration": 4.208,
+        "provider": "edge_neural",
+        "voice": "id-ID-ArdiNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz",
+        "tempo_fit": 1.0
+      },
+      {
+        "speaker": "CO-HOST",
+        "text": "Pada malam hari, tumbuhan menggunakan oksigen untuk menghasilkan energi",
+        "start": 18.821,
+        "duration": 4.927,
+        "provider": "edge_neural",
+        "voice": "id-ID-GadisNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz",
+        "tempo_fit": 1.0
+      },
+      {
+        "speaker": "HOST",
+        "text": "Daun di kebun bergerak saat hujan turun",
+        "start": 26.115,
+        "duration": 1.99,
+        "provider": "edge_neural",
+        "voice": "id-ID-ArdiNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz",
+        "tempo_fit": 1.0
+      },
+      {
+        "speaker": "CO-HOST",
+        "text": "Apakah tumbuhan juga bernapas pada malam hari?",
+        "start": 32.233,
+        "duration": 2.974,
+        "provider": "edge_neural",
+        "voice": "id-ID-GadisNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz",
+        "tempo_fit": 1.0
+      },
+      {
+        "speaker": "CO-HOST",
+        "text": "Tulis jawabanmu di komentar!",
+        "start": 38.5,
+        "duration": 1.993,
+        "provider": "edge_neural",
+        "voice": "id-ID-GadisNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz",
+        "tempo_fit": 1.0
+      }
+    ]
+  },
+  "rights": {
+    "third_party_footage_used": false,
+    "third_party_voice_used": false,
+    "code_rendered_visuals": true,
+    "animated_illustration_scenes": true,
+    "human_review_required_before_publication": true
+  },
+  "youtube_policy_guardrails": {
+    "private_upload_review_before_publish": true,
+    "factual_claim_review_required": true,
+    "view_target_is_experiment_not_guarantee": true
+  },
+  "context_safety": {
+    "standalone": true,
+    "invented_quote_or_person": false,
+    "claims_from_user_input": true
+  },
+  "monetization_readiness": {
+    "original_visual_composition": true,
+    "third_party_footage": false,
+    "human_review_required": true
+  },
+  "growth_readiness": {
+    "score": 92,
+    "view_guarantee": false,
+    "hook_first_two_seconds": true,
+    "complete_payoff": true
+  },
+  "render_quality_qc": {
+    "quality_gate_passed": true,
+    "output_readable": true,
+    "safe_area_passed": true,
+    "caption_mode": "authored_dialogue_captions"
+  },
+  "thumbnail_variants": [
+    {
+      "id": "A",
+      "angle": "Ketegangan utama langsung terbaca dari hook yang benar-benar tampil di video.",
+      "filename": "long_animate_infographic-mengapa-tumbuhan-bernapas-melalui-daun_thumb.jpg",
+      "headline": "MENGAPA TUMBUHAN BERNAPAS MELALUI DAUN?"
+    },
+    {
+      "id": "B",
+      "angle": "Bukti visual ranking menjadi pusat rasa penasaran tanpa menambah klaim baru.",
+      "filename": "long_animate_infographic-mengapa-tumbuhan-bernapas-melalui-daun_thumb_b.jpg",
+      "headline": "MENGAPA TUMBUHAN BERNAPAS MELALUI DAUN"
+    },
+    {
+      "id": "C",
+      "angle": "Komposisi lebih lebar memperlihatkan taruhan cerita dan payoff final.",
+      "filename": "long_animate_infographic-mengapa-tumbuhan-bernapas-melalui-daun_thumb_c.jpg",
+      "headline": "TULIS JAWABANMU DI KOMENTAR!"
+    }
+  ],
+  "thumbnail_ideas_manifest": "long_animate_infographic-mengapa-tumbuhan-bernapas-melalui-daun_thumbnail_ideas.json"
+}

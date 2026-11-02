@@ -336,7 +336,56 @@ def test_schedule_time_is_converted_to_wib_and_verified(monkeypatch):
     assert selected == ["scheduled"]
     assert page.payload["isoDate"] == "2099-01-02"
     assert page.payload["time"] == "07:00"
+    assert page.payload["monthIndex"] == 0
+    assert page.payload["day"] == 2
+    assert page.payload["minutes"] == 7 * 60
     assert any("07:00" in line for line in logs)
+
+
+def test_scheduled_visibility_expands_current_studio_schedule_panel(monkeypatch):
+    class ScheduleMouse:
+        def __init__(self, page):
+            self.page = page
+
+        def move(self, _x, _y):
+            return None
+
+        def down(self):
+            self.page.schedule_panel_open = True
+
+        def up(self):
+            return None
+
+    class ScheduleVisibilityPage:
+        def __init__(self):
+            self.schedule_panel_open = False
+            self.payloads = []
+            self.scripts = []
+            self.mouse = ScheduleMouse(self)
+
+        def evaluate(self, script, payload):
+            self.scripts.append(script)
+            self.payloads.append(payload)
+            return {
+                "already": self.schedule_panel_open,
+                "x": 540,
+                "y": 600,
+                "exact": True,
+            }
+
+    page = ScheduleVisibilityPage()
+    logs = []
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(youtube_uploader, "log", logs.append)
+
+    youtube_uploader.set_visibility(page, "scheduled")
+
+    assert page.schedule_panel_open is True
+    assert all(payload["isScheduled"] is True for payload in page.payloads)
+    assert all(payload["radioName"] == "SCHEDULE" for payload in page.payloads)
+    assert "#second-container-expand-button" in page.scripts[0]
+    assert logs[-1] == "Visibilitas diklik dan terverifikasi: scheduled."
 
 
 def test_cli_accepts_publish_at_for_upload_and_recovery():

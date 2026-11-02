@@ -242,7 +242,10 @@ services:
       HYPIT_QUICK_ALLOW_ROBOTIC_TTS_FALLBACK: ${HYPIT_QUICK_ALLOW_ROBOTIC_TTS_FALLBACK:-false}
       LONG_ANIMATE_RENDER_ENGINE: ${LONG_ANIMATE_RENDER_ENGINE:-remotion}
       LONG_ANIMATE_REMOTION_TIMEOUT_SECONDS: ${LONG_ANIMATE_REMOTION_TIMEOUT_SECONDS:-7200}
-      REMOTION_CONCURRENCY: ${REMOTION_CONCURRENCY:-25%}
+      # Reliability first: percentage concurrency opened five Chromium workers
+      # on this 20-core host and could kill 1080x1920 renders midway.
+      REMOTION_CONCURRENCY: ${REMOTION_CONCURRENCY:-1}
+      HYPIT_QUICK_RENDER_TIMEOUT_SECONDS: ${HYPIT_QUICK_RENDER_TIMEOUT_SECONDS:-1800}
       # Generator Cerita defaults to the local Scene Cinema pipeline. Hypit
       # text-to-video is opt-in and must never be selected without a Runtime.
       LONG_ANIMATE_VIDEO_PROVIDER: ${LONG_ANIMATE_VIDEO_PROVIDER:-local_free}

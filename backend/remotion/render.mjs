@@ -18,7 +18,12 @@ const serveUrl = await bundle({
   onProgress: () => undefined,
 });
 const inputProps = manifest.composition;
-const concurrencyValue = process.env.REMOTION_CONCURRENCY || '25%';
+// A 1080x1920 frame is memory-heavy. Percentage-based concurrency scales with
+// the host CPU count and previously opened five Chromium workers on the
+// 20-core production host, which could terminate the renderer mid-build with
+// no JavaScript exception. One worker is slower, but deterministic and safe
+// for authored videos up to five minutes.
+const concurrencyValue = process.env.REMOTION_CONCURRENCY || '1';
 const concurrency = /^\d+$/.test(concurrencyValue)
   ? Number.parseInt(concurrencyValue, 10)
   : concurrencyValue;

@@ -32,6 +32,7 @@ import type {
 
 type ControlPanelProps = {
   clipMode: ClipMode;
+  presentationMode?: boolean;
   cropMode: CropMode;
   isBusy: boolean;
   isSubmitting: boolean;
@@ -104,6 +105,7 @@ function ToggleCard({ checked, description, disabled, icon, label, onChange }: {
 }
 
 export function ControlPanel({
+  presentationMode = false,
   clipMode,
   cropMode,
   isBusy,
@@ -214,12 +216,12 @@ export function ControlPanel({
       <summary className="shortPolishSummary">
         <span className="shortPolishIcon"><WandSparkles size={19} /></span>
         <span>
-          <small>{isStory ? "STORY VIDEO DIRECTOR" : isLong ? "POLISH LONG VIDEO" : "POLISH SHORT"}</small>
-          <strong>{isStory ? "Cerita → video lengkap" : isLong ? "Struktur & watch time" : "Gaya edit"}</strong>
+          <small>{presentationMode ? "ARTICLE PRESENTER" : isStory ? "STORY VIDEO DIRECTOR" : isLong ? "POLISH LONG VIDEO" : "POLISH SHORT"}</small>
+          <strong>{presentationMode ? "Artikel → presentasi animasi" : isStory ? "Cerita → video lengkap" : isLong ? "Struktur & watch time" : "Gaya edit"}</strong>
           <em>{isStory ? "Hypit Script, visual Remotion, dubbing adaptif, subtitle, musik, dan QC otomatis." : isLong ? "Susun cerita, chapter, dan packaging YouTube." : "Default sudah siap. Buka kalau ingin mengubah karakter hasil."}</em>
         </span>
         <span className="shortPolishSnapshot">
-          <b>{isStory ? `Drama AI · ${targetMinutes} menit` : isLong ? `Story Arc · ${targetMinutes} menit` : editProfileCopy[editProfile].title}</b>
+          <b>{presentationMode ? "Durasi otomatis · maks. 5 menit" : isStory ? `Drama AI · ${targetMinutes} menit` : isLong ? `Story Arc · ${targetMinutes} menit` : editProfileCopy[editProfile].title}</b>
           <small>{isStory ? "9:16 · video lengkap" : isLong ? "16:9 · chapter lengkap" : `${minDuration}–${maxDuration} dtk · ${selectedQuality?.label}`}</small>
         </span>
         <ChevronDown size={18} />
@@ -230,7 +232,7 @@ export function ControlPanel({
           <div className="autoPolishBanner">
             <span><Sparkles size={18} /></span>
             <div>
-              <strong>{isStory ? "Story Video Director aktif" : "Long-form Director aktif"}</strong>
+              <strong>{presentationMode ? "Article Presenter aktif" : isStory ? "Story Video Director aktif" : "Long-form Director aktif"}</strong>
               <small>{isStory ? "Premis menjadi Script Surface Hypit; Remotion menyusun scene, kamera, caption, lalu TTS adaptif mengisi suara." : "Cold open, story arc, chapter cards, cinematic grading, thumbnail, dan audit watch-time diterapkan otomatis."}</small>
             </div>
             <b><Check size={14} /> ON</b>
@@ -240,24 +242,24 @@ export function ControlPanel({
         {isLong ? (
           <>
             <section className="polishSection">
-              <header><span>01</span><div><strong>{isStory ? "Mesin drama sinematik" : "Mesin retention long-form"}</strong><small>Setiap bagian punya fungsi dalam perjalanan penonton.</small></div></header>
+              <header><span>01</span><div><strong>{presentationMode ? "Presentasi yang menjelaskan" : isStory ? "Mesin drama sinematik" : "Mesin retention long-form"}</strong><small>Setiap bagian punya fungsi dalam perjalanan penonton.</small></div></header>
               <div className="longFeatureGrid">
-                <span><Sparkles size={17} /><b>Cold open<small>Segmen terkuat membuka video</small></b></span>
-                <span><BookOpen size={17} /><b>{isStory ? "Drama beats" : "Chapter story"}<small>Konteks → tensi → reveal → payoff</small></b></span>
-                <span><ImageIcon size={17} /><b>{isStory ? "Visual konsisten" : "CTR package"}<small>{isStory ? "Tokoh, kostum, dan lokasi terkunci" : "Thumbnail dan judul satu janji"}</small></b></span>
+                <span><Sparkles size={17} /><b>{presentationMode ? "Pembuka topik" : "Cold open"}<small>{presentationMode ? "Pertanyaan yang dijawab artikel" : "Segmen terkuat membuka video"}</small></b></span>
+                <span><BookOpen size={17} /><b>{presentationMode ? "Penjelasan bertahap" : isStory ? "Drama beats" : "Chapter story"}<small>{presentationMode ? "Subjek → proses → hasil" : "Konteks → tensi → reveal → payoff"}</small></b></span>
+                <span><ImageIcon size={17} /><b>{presentationMode ? "Objek menjelaskan" : isStory ? "Visual konsisten" : "CTR package"}<small>{presentationMode ? "Gambar dan gerak mengikuti kalimat" : isStory ? "Tokoh, kostum, dan lokasi terkunci" : "Thumbnail dan judul satu janji"}</small></b></span>
               </div>
             </section>
 
             <section className="polishSection">
-              <header><span>02</span><div><strong>Target panjang cerita</strong><small>{isStory ? "AI menyesuaikan jumlah adegan dan kepadatan dubbing." : "Lebih panjang hanya jika materi memang cukup kuat."}</small></div></header>
-              <div className="longDurationGrid" role="group" aria-label="Pilih panjang Long Highlight">
+              <header><span>02</span><div><strong>{presentationMode ? "Durasi mengikuti penjelasan" : "Target panjang cerita"}</strong><small>{presentationMode ? "Adegan mengikuti durasi narasi, maksimal lima menit." : isStory ? "AI menyesuaikan jumlah adegan dan kepadatan dubbing." : "Lebih panjang hanya jika materi memang cukup kuat."}</small></div></header>
+              {!presentationMode ? <div className="longDurationGrid" role="group" aria-label="Pilih panjang Long Highlight">
                 {[300, 480, 600].map((seconds) => (
                   <button className={compilationTargetSeconds === seconds ? "active" : ""} type="button" key={seconds} disabled={disabled} onClick={() => onCompilationTargetSecondsChange(seconds)}>
                     <Film size={16} /><span><strong>{seconds / 60} menit</strong><small>{seconds === 300 ? "Padat" : seconds === 480 ? "Seimbang" : "Mendalam"}</small></span>
                     {compilationTargetSeconds === seconds ? <Check size={15} /> : null}
                   </button>
                 ))}
-              </div>
+              </div> : null}
               {!isStory && videoDuration ? <p className="targetSourceNote"><Clock3 size={13} /> Sumber {Math.round(videoDuration / 60)} menit · AI hanya mengambil chapter dengan alur dan konteks yang utuh</p> : null}
             </section>
           </>

@@ -33,10 +33,13 @@ import {
 import { formatDuration } from "../../lib/utils";
 import { API_BASE, regenerateStoryboardKeyframe, type SourceProbe } from "../../lib/apiClient";
 import type { ClipMode, SourceHistoryCheck, StoryboardPreview } from "../../types/clip.type";
+import {articleText, isArticlePresenterPrompt, isHypitAutoPrompt, isHypitQuickPrompt, prepareStoryInput, type StoryInputFormat} from "../../lib/storyInput";
 
 type QuickStartCardProps = {
   url: string;
   storyText: string;
+  storyFormat: StoryInputFormat;
+  onStoryFormatChange: (format: StoryInputFormat) => void;
   storyboardPreview: StoryboardPreview | null;
   isGeneratingStoryboard: boolean;
   storyboardError: string;
@@ -78,25 +81,11 @@ const STORY_STEPS = [
   { icon: Film, label: "Scene sinematik", detail: "Tokoh, lokasi, dan gerak" },
   { icon: Sparkles, label: "Video lengkap", detail: "Dubbing, subtitle, dan musik" },
 ];
-
-const HYPIT_COMMAND_PATTERN = /^\s*\/hypit(?:\s+|$)/i;
-const HYPIT_QUICK_INTENT_PATTERN = /\b(?:ranking|rank|tier(?:\s+list)?|peringkat)\b/i;
-const HYPIT_INFOGRAPHIC_INTENT_PATTERN = /\b(?:infographic|infografis|explainer|motion\s*graphic|video\s*edukasi)\b/i;
-const HYPIT_INFOGRAPHIC_AUTO_PATTERN = /\b(?:auto|otomatis|kembangkan|jelaskan\s+sendiri)\b/i;
-
-const isHypitQuickPrompt = (value: string) => {
-  if (!HYPIT_COMMAND_PATTERN.test(value)) return false;
-  const body = value.replace(HYPIT_COMMAND_PATTERN, "").trim();
-  const words = body.split(/\s+/).filter(Boolean).length;
-  return (words <= 80 && HYPIT_QUICK_INTENT_PATTERN.test(body))
-    || (words <= (HYPIT_INFOGRAPHIC_AUTO_PATTERN.test(body) ? 2500 : 600) && HYPIT_INFOGRAPHIC_INTENT_PATTERN.test(body));
-};
-
-const isHypitAutoPrompt = (value: string) => {
-  if (!HYPIT_COMMAND_PATTERN.test(value)) return false;
-  const body = value.replace(HYPIT_COMMAND_PATTERN, "").trim();
-  return HYPIT_INFOGRAPHIC_INTENT_PATTERN.test(body) && HYPIT_INFOGRAPHIC_AUTO_PATTERN.test(body);
-};
+const PRESENTER_STEPS = [
+  { icon: BookOpen, label: "Pahami artikel", detail: "Inti, alur, dan kesimpulan" },
+  { icon: Film, label: "Jelaskan lewat gambar", detail: "Objek dan hubungan bergerak" },
+  { icon: Sparkles, label: "Presentasi lengkap", detail: "Narasi, animasi, dan subtitle" },
+];
 
 const formatCompactNumber = (value?: number | null) => value === null || value === undefined
   ? "—"
@@ -105,6 +94,8 @@ const formatCompactNumber = (value?: number | null) => value === null || value =
 export function QuickStartCard({
   url,
   storyText,
+  storyFormat,
+  onStoryFormatChange,
   storyboardPreview,
   isGeneratingStoryboard,
   storyboardError,
@@ -144,14 +135,16 @@ export function QuickStartCard({
       : `Momentum sumber ${Math.round(quickScore)}/100 hanya sinyal distribusi. Scan transkrip tetap menentukan nilai informasi, hook, konteks, dan payoff.`);
   const isWorking = isBusy || isSubmitting;
   const isStory = clipMode === "long_animate";
-  const isHypitPrompt = isStory && isHypitQuickPrompt(storyText);
-  const isHypitAuto = isStory && isHypitAutoPrompt(storyText);
+  const preparedInput = prepareStoryInput(storyText, storyFormat);
+  const isPresenter = isStory && isArticlePresenterPrompt(preparedInput);
+  const isHypitPrompt = isStory && isHypitQuickPrompt(preparedInput);
+  const isHypitAuto = isStory && isHypitAutoPrompt(preparedInput);
   const hypitPromptWords = storyText
     .replace(/^\s*\/hypit\s*/i, "")
     .trim()
     .split(/\s+/)
     .filter(Boolean).length;
-  const storyReady = isHypitPrompt
+  const storyReady = isPresenter ? articleText(preparedInput).split(/\s+/).filter(Boolean).length >= 12 : isHypitPrompt
     ? hypitPromptWords >= 4
     : storyText.trim().length >= 6 && hypitPromptWords >= 2;
   const canStart = isStory
@@ -300,18 +293,18 @@ export function QuickStartCard({
 
   const sourceReady = Boolean(sourceProbe?.title || videoDuration);
   const isLong = clipMode !== "short";
-  const polishSteps = isStory ? STORY_STEPS : isLong ? LONG_STEPS : SHORT_STEPS;
+  const polishSteps = isPresenter ? PRESENTER_STEPS : isStory ? STORY_STEPS : isLong ? LONG_STEPS : SHORT_STEPS;
 
   return (
     <section className={`clipperHero${isLong ? " isLong" : ""}${isWorking ? " isWorking" : ""}${storyboardPreview ? " hasStoryboard" : ""}`} aria-labelledby="quick-start-title">
       <div className="clipperHeroCopy">
         <span className="clipperKicker">{isStory ? <BookOpen size={14} /> : isLong ? <Film size={14} /> : <Scissors size={14} />} AI PRODUCTION ENGINE</span>
         <h2 id="quick-start-title">
-          {isStory ? "Satu ide cerita masuk." : "Satu video masuk."}<br />
-          <em>{isStory ? "Video lengkap siap direview." : isLong ? "Cerita utuh siap ditonton." : "Short terbaik siap tayang."}</em>
+          {isPresenter ? "Cukup tempel artikel." : isStory ? "Satu ide cerita masuk." : "Satu video masuk."}<br />
+          <em>{isPresenter ? "Jadi presentasi animasi." : isStory ? "Video lengkap siap direview." : isLong ? "Cerita utuh siap ditonton." : "Short terbaik siap tayang."}</em>
         </h2>
         <p>
-          {isStory
+          {isPresenter ? "Sistem memahami artikel, menyusun penjelasan seperti presenter, lalu menggambar objek dan menganimasikan hubungan sesuai kalimat. Narasi dan subtitle dirakit otomatis, maksimal lima menit." : isStory
             ? "Tempel premis atau alur cerita. Hypit menyusun naskah semantik, Remotion merakit visual dan animasi, lalu ClipForge mengisi dubbing, subtitle, musik, dan QC otomatis."
             : isLong
             ? "AI memilih chapter terbaik, menyusun alur, lalu menyiapkan video panjang yang rapi dan siap direview."
@@ -330,7 +323,7 @@ export function QuickStartCard({
 
       <div className="sourceComposer">
         <div className="sourceComposerTop">
-          <span><WandSparkles size={16} /> {isWorking ? "Sedang meracik video" : isStory ? "Mulai dari jalan cerita" : "Mulai dari link video"}</span>
+          <span><WandSparkles size={16} /> {isWorking ? "Sedang meracik video" : isPresenter ? "Mulai dari artikel" : isStory ? "Mulai dari jalan cerita" : "Mulai dari link video"}</span>
           <b>{isStory ? "9:16 · AI VIDEO" : isLong ? "16:9 · 5–10 menit" : "9:16 · 25–45 dtk"}</b>
         </div>
 
@@ -347,38 +340,44 @@ export function QuickStartCard({
           </button>
           <button className={isStory ? "active" : ""} type="button" disabled={isWorking} onClick={() => onClipModeChange("long_animate")}>
             <span><BookOpen size={17} /></span>
-            <b>Generator Cerita<small>Premis → video jadi · 9:16</small></b>
+            <b>Generator Video<small>Artikel atau cerita → animasi · 9:16</small></b>
             {isStory ? <CheckCircle2 size={16} /> : null}
           </button>
         </div>
 
         {isStory ? (
           <div className="storyStudioComposer">
+            <div className="storyPromptExamples" role="group" aria-label="Jenis teks untuk video">
+              <div>
+                <button type="button" aria-pressed={storyFormat === "article"} disabled={isWorking} onClick={() => onStoryFormatChange("article")}><BookOpen size={14}/>{storyFormat === "article" ? "✓ " : ""}Artikel → presentasi</button>
+                <button type="button" aria-pressed={storyFormat === "story"} disabled={isWorking} onClick={() => onStoryFormatChange("story")}><Film size={14}/>{storyFormat === "story" ? "✓ " : ""}Cerita / naskah</button>
+              </div>
+            </div>
             <label className="storyInputField">
-              <span>{isHypitAuto ? "Analogi dan teks sumber" : "Ide, deskripsi, atau naskah"}</span>
+              <span>{isPresenter ? "Tempel artikel yang ingin dijelaskan" : isHypitAuto ? "Analogi dan teks sumber" : "Ide, deskripsi, atau naskah"}</span>
               <textarea
                 value={storyText}
                 onChange={(event) => onStoryTextChange(event.target.value)}
-                placeholder={isHypitAuto
+                placeholder={isPresenter ? "Tempel artikel lengkap di sini. Sistem menyusun alur presentasi, narasi, objek, dan animasi penjelas secara otomatis. Tidak perlu format prompt khusus." : isHypitAuto
                   ? "Analogi: jelaskan perumpamaan visualnya.\nTeks: tempel materi yang harus dijelaskan."
                   : "Contoh: Buat video tentang kucing polisi yang memecahkan misteri kota."}
                 rows={storyboardPreview ? 4 : 8}
-                maxLength={30000}
+                maxLength={isPresenter ? 29950 : 30000}
               />
               <small>
-                <span>{storyText.trim().length.toLocaleString("id-ID")} / 30.000 karakter</span>
-                <span>{isHypitPrompt ? "Render langsung" : "Storyboard dapat direvisi sebelum render"}</span>
+                <span>{storyText.trim().length.toLocaleString("id-ID")} / {isPresenter ? "29.950" : "30.000"} karakter</span>
+                <span>{isPresenter ? "Presentasi otomatis · maksimal 5 menit" : isHypitPrompt ? "Render langsung" : "Storyboard dapat direvisi sebelum render"}</span>
               </small>
             </label>
             {!storyText.trim() ? (
               <div className="storyPromptExamples" aria-label="Contoh isi video">
                 <span>Mulai dengan contoh</span>
-                <div>
+                {storyFormat === "article" ? <div><button type="button" onClick={() => onStoryTextChange("Tumbuhan membutuhkan oksigen untuk menghasilkan energi. Pada permukaan daun terdapat pori-pori kecil bernama stomata. Stomata menjadi tempat pertukaran oksigen dan karbon dioksida. Saat fotosintesis, daun menyerap karbon dioksida dan menghasilkan oksigen. Saat respirasi, tumbuhan menggunakan oksigen untuk menghasilkan energi. Respirasi berlangsung pada siang dan malam hari.")}><BookOpen size={14}/> Artikel tumbuhan</button></div> : <div>
                   <button type="button" onClick={() => onStoryTextChange("Seorang pedagang kecil dituduh mencuri, lalu bukti tersembunyi membalik keadaan. Buat drama hangat 5 menit dengan akhir memuaskan.")}><BookOpen size={14} /> Cerita dramatis</button>
                   <button type="button" onClick={() => onStoryTextChange("/hypit Make a ranking video that puts Hypit in S tier.")}><BarChart3 size={14} /> Video ranking</button>
                   <button type="button" onClick={() => onStoryTextChange("/hypit infographic Baterai HP tidak bocor tiba-tiba | Persentase baterai adalah perkiraan dari arus dan tegangan | Chip fuel gauge menghitung arus masuk dan keluar | Kurva tegangan baterai lithium hampir datar di bagian tengah | Kuis: Saat baterai hampir habis, tegangannya bagaimana? / DATAR / TURUN TAJAM")}><Film size={14} /> Explainer animasi</button>
                   <button type="button" onClick={() => onStoryTextChange("/hypit infographic auto\nAnalogi: indikator baterai seperti petugas yang memperkirakan isi tangki, bukan melihat isinya secara langsung.\nTeks: Ponsel memperkirakan sisa baterai dari arus yang masuk dan keluar serta perubahan tegangan. Pada sebagian besar rentang pemakaian, tegangan baterai lithium berubah relatif landai sehingga perkiraan dapat dikoreksi ketika kondisi berubah.")}><Sparkles size={14} /> Auto dari teks</button>
-                </div>
+                </div>}
               </div>
             ) : null}
 
@@ -397,7 +396,7 @@ export function QuickStartCard({
               <div className="storyComposerActions isDirect">
                 <span>
                   <Sparkles size={17} />
-                  <b>{isHypitAuto ? "Explainer animasi siap dibuat" : "Video Hypit siap dibuat"}<small>Ilustrasi, suara, dan caption dirakit otomatis.</small></b>
+                  <b>{isPresenter ? "Artikel → presentasi animasi" : isHypitAuto ? "Explainer animasi siap dibuat" : "Video Hypit siap dibuat"}<small>{isPresenter ? "Alur, objek, gambar, narasi, dan animasi disusun otomatis dari artikel." : "Ilustrasi, suara, dan caption dirakit otomatis."}</small></b>
                 </span>
                 <button type="button" disabled={!canStart} onClick={onStart}>
                   {isWorking ? <Loader2 className="spin" size={17} /> : <Play size={17} />}
@@ -595,7 +594,7 @@ export function QuickStartCard({
           <span><ShieldCheck size={16} /><b>{isStory ? "Saya punya hak atas cerita ini dan telah meninjau izin komersial provider AI." : "Saya punya hak/izin untuk audio dan visual sumber ini."}</b></span>
         </label> : (
           <div className="sourceNotice isSuccess" role="status">
-            <CheckCircle2 size={17} /><span><strong>Render lokal siap.</strong><small>Visual dibuat dari kode; prompt ini tidak memakai footage, voice clone, atau ImageGen pihak ketiga.</small></span>
+            <CheckCircle2 size={17} /><span><strong>{isPresenter ? "Presenter animasi siap." : "Render lokal siap."}</strong><small>{isPresenter ? "LLM yang dipilih menyusun objek dan penjelasan; ilustrasi serta animasi digambar lokal. Jika LLM tidak tersedia, perencana lokal memakai isi artikel." : "Visual dibuat dari kode; prompt ini tidak memakai footage, voice clone, atau ImageGen pihak ketiga."}</small></span>
           </div>
         )}
 

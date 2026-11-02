@@ -103,37 +103,13 @@ import { ResultsSection } from "./_components/ResultsSection";
 import { StatusPanel } from "./_components/StatusPanel";
 import { Topbar } from "./_components/Topbar";
 import { ViralAnalysisResults } from "./_components/ViralAnalysisResults";
+import {articleText, hypitStoryBody, isArticlePresenterPrompt, isHypitAutoPrompt, isHypitQuickPrompt, prepareStoryInput, promptDurationSeconds, type StoryInputFormat} from "../lib/storyInput";
 
 const isProcessJob = (item: ClipJob | null) =>
   item?.status === "queued" || item?.status === "running" || item?.status === "failed" || item?.status === "cancelled";
 const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
 const CLEANUP_PROGRESS_POLL_MS = 250;
 const TAB_JOB_STORAGE_KEY = "fendy-clipper.activeJobId.v1";
-const HYPIT_COMMAND_PATTERN = /^\s*\/hypit(?:\s+|$)/i;
-const HYPIT_QUICK_INTENT_PATTERN = /\b(?:ranking|rank|tier(?:\s+list)?|peringkat)\b/i;
-const HYPIT_INFOGRAPHIC_INTENT_PATTERN = /\b(?:infographic|infografis|explainer|motion\s*graphic|video\s*edukasi)\b/i;
-const HYPIT_INFOGRAPHIC_AUTO_PATTERN = /\b(?:auto|otomatis|kembangkan|jelaskan\s+sendiri)\b/i;
-const isHypitAutoPrompt = (value: string) => {
-  if (!HYPIT_COMMAND_PATTERN.test(value)) return false;
-  const body = value.replace(HYPIT_COMMAND_PATTERN, "").trim();
-  return HYPIT_INFOGRAPHIC_INTENT_PATTERN.test(body) && HYPIT_INFOGRAPHIC_AUTO_PATTERN.test(body);
-};
-const isHypitQuickPrompt = (value: string) => {
-  if (!HYPIT_COMMAND_PATTERN.test(value)) return false;
-  const body = value.replace(HYPIT_COMMAND_PATTERN, "").trim();
-  const words = body.split(/\s+/).filter(Boolean).length;
-  return (words <= 80 && HYPIT_QUICK_INTENT_PATTERN.test(body))
-    || (words <= (HYPIT_INFOGRAPHIC_AUTO_PATTERN.test(body) ? 2500 : 600) && HYPIT_INFOGRAPHIC_INTENT_PATTERN.test(body));
-};
-const hypitStoryBody = (value: string) => value.replace(HYPIT_COMMAND_PATTERN, "").trim();
-export const promptDurationSeconds = (value: string, fallback: number) => {
-  const match = value.match(/\b(\d{1,4}(?:[.,]\d+)?)\s*(?:detik|seconds?|secs?|s)\b/i)
-    || value.match(/\b(?:durasi|duration|sepanjang|selama)\s*[:=]?\s*(\d{1,4}(?:[.,]\d+)?)\b(?!\s*(?:menit|minutes?|jam|hours?))/i);
-  if (!match) return fallback;
-  const parsed = Number.parseFloat(match[1].replace(",", "."));
-  return Number.isFinite(parsed) ? Math.max(5, Math.min(600, parsed)) : fallback;
-};
-
 const compactStoryboardField = (value: string, maximum: number) => value
   .replace(/^\s*#{1,6}\s*ADEGAN\b.*$/gim, "")
   .replace(/^\s*(?:VISUAL|NARASI|ARAHAN SUTRADARA|PROPERTI ADEGAN|TEKS LAYAR)\s*:/gim, "")
@@ -179,6 +155,7 @@ const serializeStoryboard = (storyboard: StoryboardPreview) => {
 export default function HomePage() {
   const [url, setUrl] = useState("");
   const [storyText, setStoryText] = useState("");
+  const [storyFormat, setStoryFormat] = useState<StoryInputFormat>("article");
   const [storyboardPreview, setStoryboardPreview] = useState<StoryboardPreview | null>(null);
   const [isGeneratingStoryboard, setIsGeneratingStoryboard] = useState(false);
   const [storyboardError, setStoryboardError] = useState("");
@@ -498,7 +475,8 @@ export default function HomePage() {
         setCompilationTargetSeconds(restoredJob.request.compilation_target_seconds);
         setVideoQuality(restoredJob.request.video_quality);
         setSlowMotionNoVoice(Boolean(restoredJob.request.slow_motion_no_voice));
-        setStoryText(restoredJob.request.script_text || "");
+        setStoryText(isArticlePresenterPrompt(restoredJob.request.script_text || "") ? articleText(restoredJob.request.script_text) : restoredJob.request.script_text || "");
+        setStoryFormat(isArticlePresenterPrompt(restoredJob.request.script_text || "") ? "article" : "story");
         if (restoredJob.request.clip_mode === "long_animate") {
           setConfirmSourceRights(Boolean(restoredJob.request.confirm_long_animate_rights));
         }
@@ -837,7 +815,8 @@ export default function HomePage() {
     const isStoryMode = requestedMode === "long_animate";
     const requestedSourceMode = sourceMode;
     const trimmedUrl = url.trim();
-    const trimmedStory = (storyOverride ?? storyText).trim();
+    const trimmedStory = prepareStoryInput(storyOverride ?? storyText, storyFormat);
+    const isPresenter = isStoryMode && isArticlePresenterPrompt(trimmedStory);
     const isHypitQuick = isStoryMode && isHypitQuickPrompt(trimmedStory);
     const isHypitAuto = isStoryMode && isHypitAutoPrompt(trimmedStory);
     const effectiveStory = isStoryMode && !isHypitQuick
@@ -859,6 +838,10 @@ export default function HomePage() {
     }
     if (isStoryMode && effectiveStory.split(/\s+/).filter(Boolean).length < 4) {
       setError("Jelaskan video dengan minimal empat kata.");
+      return;
+    }
+    if (isPresenter && articleText(trimmedStory).split(/\s+/).filter(Boolean).length < 12) {
+      setError("Tempel artikel minimal dua belas kata agar dapat dijelaskan dengan animasi.");
       return;
     }
     if (isHypitQuick && trimmedStory.replace(/^\s*\/hypit\s*/i, "").split(/\s+/).filter(Boolean).length < 4) {
@@ -914,7 +897,7 @@ export default function HomePage() {
           min_duration: minDuration,
           max_duration: effectiveMaxDuration,
           clip_mode: requestedMode,
-          compilation_target_seconds: isHypitAuto
+          compilation_target_seconds: isPresenter ? 300 : isHypitAuto
             ? promptDurationSeconds(trimmedStory, 40)
             : isHypitQuick
             ? 26
@@ -1009,6 +992,7 @@ export default function HomePage() {
     sourceMode,
     sourceProbe,
     storyText,
+    storyFormat,
     targetClips,
     uploadToken,
     url,
@@ -1057,7 +1041,8 @@ export default function HomePage() {
   const handleSelectHistoryJob = useCallback((selectedJob: ClipJob) => {
     setJob(selectedJob);
     setClipMode(selectedJob.request.clip_mode);
-    setStoryText(selectedJob.request.script_text || "");
+    setStoryText(isArticlePresenterPrompt(selectedJob.request.script_text || "") ? articleText(selectedJob.request.script_text) : selectedJob.request.script_text || "");
+    setStoryFormat(isArticlePresenterPrompt(selectedJob.request.script_text || "") ? "article" : "story");
     setStoryboardPreview(null);
     setStoryboardError("");
     setConfirmSourceRights(
@@ -1693,6 +1678,8 @@ export default function HomePage() {
       <QuickStartCard
         url={url}
         storyText={storyText}
+        storyFormat={storyFormat}
+        onStoryFormatChange={(format) => { setStoryFormat(format); setStoryboardPreview(null); setStoryboardError(""); }}
         storyboardPreview={storyboardPreview}
         isGeneratingStoryboard={isGeneratingStoryboard}
         storyboardError={storyboardError}
@@ -1720,6 +1707,7 @@ export default function HomePage() {
       <section className={`workspace studioGrid${isBusy ? " isProcessing" : ""}`} id="workspace">
         <ControlPanel
           clipMode={clipMode}
+          presentationMode={clipMode === "long_animate" && isArticlePresenterPrompt(prepareStoryInput(storyText, storyFormat))}
           cropMode={cropMode}
           isBusy={isBusy}
           isSubmitting={isSubmitting}

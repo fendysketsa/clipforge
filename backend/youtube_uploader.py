@@ -2170,7 +2170,7 @@ def set_visibility(page, visibility: str) -> None:
     }[visibility]
     log(f"Mengatur visibilitas: {visibility}.")
     script = """
-    ({ patterns, radioName }) => {
+    ({ patterns, radioName, isScheduled }) => {
       const roots = [];
       const seen = new Set();
       const addRoot = (root) => {
@@ -2205,7 +2205,20 @@ def set_visibility(page, visibility: str) -> None:
       ].filter(Boolean).join('\\n').trim();
       const clickable = (element) =>
         element.closest?.('tp-yt-paper-radio-button, ytcp-radio-button, label, [role="radio"], button, [role="button"]') || element;
+      const scheduleSelected = (element) => {
+        const visibilitySelect = element?.closest?.('ytcp-video-visibility-select');
+        if (!visibilitySelect) return false;
+        const scheduleContainer = visibilitySelect.querySelector('#second-container');
+        const scheduler = visibilitySelect.querySelector(
+          '#publish-from-private-non-sponsor-selector, ytcp-visibility-scheduler'
+        );
+        if (!scheduleContainer || !scheduler) return false;
+        const parent = scheduler.closest?.('#publish-from-private-non-sponsor') || scheduler.parentElement;
+        return !scheduleContainer.hidden && !scheduler.hidden && !parent?.hidden
+          && isVisible(scheduleContainer) && isVisible(scheduler);
+      };
       const selected = (element) =>
+        (isScheduled && scheduleSelected(element)) ||
         element.checked ||
         element.hasAttribute?.('checked') ||
         element.hasAttribute?.('active') ||
@@ -2213,6 +2226,31 @@ def set_visibility(page, visibility: str) -> None:
         element.getAttribute?.('aria-checked') === 'true';
       const candidates = [];
       for (const root of roots) {
+        if (isScheduled) {
+          const exactButton = root.querySelector?.(
+            'ytcp-uploads-dialog ytcp-video-visibility-select #second-container-expand-button'
+          );
+          const roleButton = root.querySelector?.(
+            'ytcp-uploads-dialog ytcp-video-visibility-select #second-container [role="button"]'
+          );
+          const container = root.querySelector?.(
+            'ytcp-uploads-dialog ytcp-video-visibility-select #second-container'
+          );
+          const scheduleButtons = [exactButton, roleButton, container].filter(
+            (element, index, values) => element && values.indexOf(element) === index
+          );
+          for (const element of scheduleButtons) {
+            const target = clickable(element);
+            if (!isVisible(element) && !isVisible(target)) continue;
+            const rect = target.getBoundingClientRect();
+            return {
+              already: scheduleSelected(element),
+              x: rect.left + rect.width / 2,
+              y: rect.top + rect.height / 2,
+              exact: true,
+            };
+          }
+        }
         const exactSelector = [
           `ytcp-uploads-dialog tp-yt-paper-radio-button[name="${radioName}"]`,
           `ytcp-uploads-dialog ytcp-radio-button[name="${radioName}"]`,
@@ -2266,14 +2304,28 @@ def set_visibility(page, visibility: str) -> None:
     while time.monotonic() < deadline:
         dismiss_reload_prompt(page, timeout_ms=300)
         try:
-            target = page.evaluate(script, {"patterns": labels, "radioName": radio_name})
+            target = page.evaluate(
+                script,
+                {
+                    "patterns": labels,
+                    "radioName": radio_name,
+                    "isScheduled": visibility == "scheduled",
+                },
+            )
             if isinstance(target, dict) and target.get("x") is not None and target.get("y") is not None:
                 page.mouse.move(float(target["x"]), float(target["y"]))
                 page.mouse.down()
                 time.sleep(0.08)
                 page.mouse.up()
                 time.sleep(0.8)
-                verify = page.evaluate(script, {"patterns": labels, "radioName": radio_name})
+                verify = page.evaluate(
+                    script,
+                    {
+                        "patterns": labels,
+                        "radioName": radio_name,
+                        "isScheduled": visibility == "scheduled",
+                    },
+                )
                 if isinstance(verify, dict) and verify.get("already"):
                     log(f"Visibilitas diklik dan terverifikasi: {visibility}.")
                     return
@@ -2310,9 +2362,12 @@ def set_scheduled_publish_time(page, publish_at: str) -> None:
         "dayFirstDate": local.strftime("%d/%m/%Y"),
         "time": local.strftime("%H:%M"),
         "year": local.strftime("%Y"),
+        "monthIndex": local.month - 1,
+        "day": local.day,
+        "minutes": local.hour * 60 + local.minute,
     }
     script = r"""
-    ({ isoDate, slashDate, dayFirstDate, time, year }) => {
+    ({ isoDate, slashDate, dayFirstDate, time, year, monthIndex, day, minutes }) => {
       const roots = [];
       const seen = new Set();
       const addRoot = (root) => {
@@ -2350,6 +2405,40 @@ def set_scheduled_publish_time(page, publish_at: str) -> None:
           element.dispatchEvent(new Event(eventName, { bubbles: true, composed: true }));
         }
       };
+      const scheduler = roots.flatMap((root) => root.querySelectorAll
+        ? Array.from(root.querySelectorAll(
+            'ytcp-uploads-dialog ytcp-visibility-scheduler, '
+            + 'ytcp-uploads-dialog #publish-from-private-non-sponsor-selector'
+          ))
+        : []).find(visible);
+      if (!scheduler) return { ok: false, reason: 'scheduler_missing' };
+
+      // Studio's current date control is a ytcp-text-dropdown-trigger rather
+      // than an input. Update the Polymer/Lit model through its public binding
+      // and emit the same two-way binding event the date picker uses. Older
+      // Studio variants still fall through to their native date input below.
+      const currentModel = scheduler.model && typeof scheduler.model === 'object'
+        ? scheduler.model
+        : {};
+      const nextModel = {
+        ...currentModel,
+        date: { year: Number(year), month: Number(monthIndex), day: Number(day) },
+        selectedTimeOfDayValue: Number(minutes),
+      };
+      try {
+        if (typeof scheduler.set === 'function') {
+          scheduler.set('model.date', nextModel.date);
+          scheduler.set('model.selectedTimeOfDayValue', nextModel.selectedTimeOfDayValue);
+        } else {
+          scheduler.model = nextModel;
+        }
+        scheduler.dispatchEvent(new CustomEvent('model-changed', {
+          detail: { value: nextModel }, bubbles: true, composed: true,
+        }));
+      } catch (_) {
+        scheduler.model = nextModel;
+      }
+
       const fields = [];
       for (const root of roots) {
         const elements = root.querySelectorAll
@@ -2359,24 +2448,49 @@ def set_scheduled_publish_time(page, publish_at: str) -> None:
       }
       let dateField = fields.find((field) => field.type === 'date');
       let timeField = fields.find((field) => field.type === 'time');
+      timeField ||= roots.flatMap((root) => root.querySelectorAll
+        ? Array.from(root.querySelectorAll(
+            'ytcp-uploads-dialog ytcp-datetime-picker #time-of-day-container input, '
+            + 'ytcp-uploads-dialog ytcp-datetime-picker tp-yt-paper-input input'
+          ))
+        : []).find(visible);
       dateField ||= fields.find((field) => /date|tanggal/.test(label(field)));
       timeField ||= fields.find((field) => /time|waktu/.test(label(field)));
-      if (!dateField || !timeField || dateField === timeField) {
-        return { ok: false, reason: 'date_or_time_field_missing' };
+      if (!timeField) {
+        return { ok: false, reason: 'time_field_missing' };
       }
-      const dateValue = dateField.type === 'date'
-        ? isoDate
-        : /dd|tanggal/.test(label(dateField))
-          ? dayFirstDate
-          : slashDate;
-      setNativeValue(dateField, dateValue);
-      setNativeValue(timeField, time);
-      const dateText = String(dateField.value || dateField.textContent || '');
+      if (dateField && dateField !== timeField) {
+        const dateValue = dateField.type === 'date'
+          ? isoDate
+          : /dd|tanggal/.test(label(dateField))
+            ? dayFirstDate
+            : slashDate;
+        setNativeValue(dateField, dateValue);
+      }
+      const currentTime = String(timeField.value || timeField.textContent || '');
+      const localizedTime = currentTime.includes('.') ? time.replace(':', '.') : time;
+      setNativeValue(timeField, localizedTime);
+      const dateTrigger = scheduler.querySelector?.('#datepicker-trigger');
+      const dateText = String(
+        dateField?.value || dateField?.textContent || dateTrigger?.innerText
+        || dateTrigger?.textContent || ''
+      );
       const timeText = String(timeField.value || timeField.textContent || '');
+      const appliedModel = scheduler.model && typeof scheduler.model === 'object'
+        ? scheduler.model
+        : nextModel;
+      const appliedDate = appliedModel.date || {};
+      const modelDateOk = Number(appliedDate.year) === Number(year)
+        && Number(appliedDate.month) === Number(monthIndex)
+        && Number(appliedDate.day) === Number(day);
+      const modelTimeOk = Number(appliedModel.selectedTimeOfDayValue) === Number(minutes);
       return {
-        ok: dateText.includes(year) && timeText.replace('.', ':').includes(time),
+        ok: modelDateOk && modelTimeOk
+          && dateText.includes(year) && timeText.replace('.', ':').includes(time),
         dateText,
         timeText,
+        modelDateOk,
+        modelTimeOk,
       };
     }
     """
@@ -2515,7 +2629,7 @@ def visibility_is_selected(page, visibility: str) -> bool:
         "scheduled": "SCHEDULE",
     }[visibility]
     script = """
-    ({ radioName }) => {
+    ({ radioName, isScheduled }) => {
       const roots = [];
       const seen = new Set();
       const addRoot = (root) => {
@@ -2540,7 +2654,34 @@ def visibility_is_selected(page, visibility: str) -> bool:
           element.classList?.contains('iron-selected') ||
           element.getAttribute?.('aria-checked') === 'true'
         );
+      const isVisible = (element) => {
+        if (!element || !element.getBoundingClientRect) return false;
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return Boolean(
+          rect.width > 0 && rect.height > 0 && style &&
+          style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0'
+        );
+      };
       for (const root of roots) {
+        if (isScheduled) {
+          const visibilitySelects = root.querySelectorAll
+            ? Array.from(root.querySelectorAll('ytcp-uploads-dialog ytcp-video-visibility-select'))
+            : [];
+          for (const visibilitySelect of visibilitySelects) {
+            const scheduleContainer = visibilitySelect.querySelector('#second-container');
+            const scheduler = visibilitySelect.querySelector(
+              '#publish-from-private-non-sponsor-selector, ytcp-visibility-scheduler'
+            );
+            if (!scheduleContainer || !scheduler) continue;
+            const parent = scheduler.closest?.('#publish-from-private-non-sponsor') || scheduler.parentElement;
+            if (
+              !scheduleContainer.hidden && !scheduler.hidden && !parent?.hidden &&
+              isVisible(scheduleContainer) && isVisible(scheduler)
+            ) return true;
+          }
+          continue;
+        }
         const selector = [
           `ytcp-uploads-dialog tp-yt-paper-radio-button[name="${radioName}"]`,
           `ytcp-uploads-dialog ytcp-radio-button[name="${radioName}"]`,
@@ -2560,7 +2701,15 @@ def visibility_is_selected(page, visibility: str) -> bool:
     }
     """
     try:
-        return bool(page.evaluate(script, {"radioName": radio_name}))
+        return bool(
+            page.evaluate(
+                script,
+                {
+                    "radioName": radio_name,
+                    "isScheduled": visibility == "scheduled",
+                },
+            )
+        )
     except Exception:
         return False
 

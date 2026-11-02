@@ -45,6 +45,7 @@ from hypit_quick import (
     is_hypit_quick_prompt,
     render_hypit_quick,
 )
+from article_presenter import is_article_presenter_prompt
 
 
 console = Console()
@@ -20538,9 +20539,11 @@ def render_animated_script(
     quick_hypit = is_hypit_quick_prompt(script)
     if quick_hypit:
         label = "Hypit Quick"
-        auto_infographic = is_hypit_infographic_auto_prompt(script)
+        article_presenter = is_article_presenter_prompt(script)
+        auto_infographic = is_hypit_infographic_auto_prompt(script) or article_presenter
         quick_format = (
-            "auto infographic explainer"
+            "presentasi animasi dari artikel"
+            if article_presenter else "auto infographic explainer"
             if auto_infographic
             else "infographic explainer"
             if is_hypit_infographic_prompt(script)

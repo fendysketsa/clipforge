@@ -1,0 +1,4 @@
+interface:
+  display_name: "Article Presenter"
+  short_description: "Ubah artikel menjadi presentasi animasi yang jelas"
+  default_prompt: "Gunakan $article-presenter untuk mengubah artikel saya menjadi video presentasi dengan narasi dan ilustrasi animasi yang menjelaskan isinya."

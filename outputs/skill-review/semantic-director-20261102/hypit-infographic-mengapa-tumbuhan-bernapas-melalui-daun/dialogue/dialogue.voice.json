@@ -1,0 +1,88 @@
+{
+  "enabled": true,
+  "mode": "two_voice_offscreen_dialogue",
+  "language": "id-ID",
+  "music_ducking": true,
+  "voice_cloning_used": false,
+  "timing_model": "existing-render-timeline",
+  "duration_seconds": 44.5,
+  "cues": [
+    {
+      "speaker": "HOST",
+      "text": "Mengapa tumbuhan bernapas melalui daun?",
+      "start": 0.0,
+      "duration": 1.834,
+      "provider": "edge_neural",
+      "voice": "id-ID-ArdiNeural",
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
+    },
+    {
+      "speaker": "CO-HOST",
+      "text": "Pada permukaan daun terdapat pori-pori kecil bernama stomata",
+      "start": 4.821,
+      "duration": 4.153,
+      "provider": "edge_neural",
+      "voice": "id-ID-GadisNeural",
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
+    },
+    {
+      "speaker": "HOST",
+      "text": "Saat fotosintesis, daun menyerap karbon dioksida dan menghasilkan oksigen",
+      "start": 11.527,
+      "duration": 4.208,
+      "provider": "edge_neural",
+      "voice": "id-ID-ArdiNeural",
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
+    },
+    {
+      "speaker": "CO-HOST",
+      "text": "Pada malam hari, tumbuhan menggunakan oksigen untuk menghasilkan energi",
+      "start": 18.821,
+      "duration": 4.927,
+      "provider": "edge_neural",
+      "voice": "id-ID-GadisNeural",
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
+    },
+    {
+      "speaker": "HOST",
+      "text": "Daun di kebun bergerak saat hujan turun",
+      "start": 26.115,
+      "duration": 1.99,
+      "provider": "edge_neural",
+      "voice": "id-ID-ArdiNeural",
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
+    },
+    {
+      "speaker": "CO-HOST",
+      "text": "Apakah tumbuhan juga bernapas pada malam hari?",
+      "start": 32.233,
+      "duration": 2.974,
+      "provider": "edge_neural",
+      "voice": "id-ID-GadisNeural",
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
+    },
+    {
+      "speaker": "CO-HOST",
+      "text": "Tulis jawabanmu di komentar!",
+      "start": 38.5,
+      "duration": 1.993,
+      "provider": "edge_neural",
+      "voice": "id-ID-GadisNeural",
+      "rate": "+0%",
+      "pitch": "+0Hz",
+      "tempo_fit": 1.0
+    }
+  ]
+}

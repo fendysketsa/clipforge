@@ -55,6 +55,7 @@ from hypit_quick import (
     is_hypit_quick_prompt,
     quick_preview_payload,
 )
+from article_presenter import is_article_presenter_prompt
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -254,6 +255,10 @@ YOUTUBE_RESTART_VERIFY_MARKER = "Recovery restart: verifikasi final Content tanp
 YOUTUBE_FILE_INPUT_TIMEOUT_RETRY_MARKER = (
     "Recovery startup: timeout terjadi sebelum file diterima Studio; "
     "satu retry aman dijadwalkan dengan batas waktu file besar."
+)
+YOUTUBE_SCHEDULE_UI_RETRY_MARKER = (
+    "Recovery startup: kontrol Jadwalkan YouTube Studio sudah diperbarui; "
+    "draft remote diantrikan satu kali tanpa upload file ulang."
 )
 YOUTUBE_RESTART_VERIFY_ABSENT_MARKER = (
     "Recovery restart: Content sudah diperiksa dan video tidak ditemukan; "
@@ -3421,6 +3426,37 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
                     "logs": [
                         *upload.logs,
                         "Recovery startup: video-id remote dipertahankan; upload file baru diblokir.",
+                        YOUTUBE_RESTART_VERIFY_MARKER,
+                    ][-160:],
+                    "error": None,
+                }
+            )
+        schedule_error = str(upload.error or "").casefold()
+        if (
+            upload.status == "failed"
+            and youtube_upload_has_remote_checkpoint(upload)
+            and YOUTUBE_SCHEDULE_UI_RETRY_MARKER not in upload.logs
+            and any(
+                marker in schedule_error
+                for marker in (
+                    "opsi visibilitas 'scheduled' tidak berhasil dipilih",
+                    "tanggal/waktu schedule tidak berhasil diisi",
+                    "date_or_time_field_missing",
+                    "time_field_missing",
+                )
+            )
+        ):
+            recovered_at = now_iso()
+            upload = upload.model_copy(
+                update={
+                    "status": "queued",
+                    "updated_at": recovered_at,
+                    "started_at": None,
+                    "finished_at": None,
+                    "duration_seconds": None,
+                    "logs": [
+                        *upload.logs,
+                        YOUTUBE_SCHEDULE_UI_RETRY_MARKER,
                         YOUTUBE_RESTART_VERIFY_MARKER,
                     ][-160:],
                     "error": None,
@@ -14862,6 +14898,10 @@ def run_job(job_id: str) -> None:
                 had_rendered_clips
                 or (
                     request.clip_mode == "long_animate"
+                    and is_hypit_quick_prompt(request.script_text)
+                )
+                or (
+                    request.clip_mode == "long_animate"
                     and not env_bool("LONG_ANIMATE_CLEANUP_ON_ERROR", False)
                 )
             )
@@ -14890,9 +14930,16 @@ def run_job(job_id: str) -> None:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=CANCEL_GRACE_SECONDS)
-        preserve_partial_render = any(output_root.rglob("clips/*.mp4")) or (
-            request.clip_mode == "long_animate"
-            and not env_bool("LONG_ANIMATE_CLEANUP_ON_ERROR", False)
+        preserve_partial_render = (
+            any(output_root.rglob("clips/*.mp4"))
+            or (
+                request.clip_mode == "long_animate"
+                and is_hypit_quick_prompt(request.script_text)
+            )
+            or (
+                request.clip_mode == "long_animate"
+                and not env_bool("LONG_ANIMATE_CLEANUP_ON_ERROR", False)
+            )
         )
         _, cleanup_message = cleanup_failed_job_artifacts(
             output_root,
@@ -24017,7 +24064,7 @@ def create_storyboard_preview(
                     model=request.ai_model.strip(),
                     api_key=request.ai_api_key.strip(),
                 )
-                if is_hypit_infographic_auto_prompt(raw_story)
+                if is_hypit_infographic_auto_prompt(raw_story) or is_article_presenter_prompt(raw_story)
                 else None
             )
             return StoryboardPreviewResponse(

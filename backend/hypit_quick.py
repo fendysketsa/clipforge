@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import math
 import os
 import re
 import signal
@@ -10,10 +11,11 @@ import shutil
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from llm import AIConfig, chat_completion, extract_json
+from article_presenter import article_from_prompt, is_article_presenter_prompt, plan_article_presentation
 from remotion_story_renderer import RENDERER_DIR, RemotionRenderError, validate_hypit_script
 
 
@@ -59,6 +61,7 @@ class HypitQuickPlan:
     payoff_narration: str
     source_note: str
     fact_checked_on: str | None = None
+    dialogue_timeline: tuple[DialogueCue, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -83,6 +86,14 @@ class InfographicBeat:
     visual_action: str = ""
     visual_metaphor: str = ""
     motion: str = "assemble"
+    scene_setting: str = "abstract"
+    scene_time: str = "neutral"
+    scene_weather: str = "clear"
+    scene_mood: str = "curious"
+    camera: str = "medium"
+    situation: str = "explanation"
+    environment_details: tuple[str, ...] = ()
+    presentation_scene: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -102,6 +113,9 @@ class HypitInfographicPlan:
     auto_expanded: bool = False
     analogy: str = ""
     planning_mode: str = "manual"
+    dialogue_timeline: tuple[DialogueCue, ...] = ()
+    presentation_mode: bool = False
+    source_article: str = ""
 
     @property
     def items(self) -> tuple[InfographicBeat, ...]:
@@ -140,7 +154,7 @@ def is_hypit_ranking_prompt(value: str) -> bool:
 def is_hypit_quick_prompt(value: str) -> bool:
     # /hypit is also a useful explicit entry point for full story production.
     # Only route formats with a deterministic visual contract into Quick.
-    return is_hypit_ranking_prompt(value) or is_hypit_infographic_prompt(value)
+    return is_article_presenter_prompt(value) or is_hypit_ranking_prompt(value) or is_hypit_infographic_prompt(value)
 
 
 def hypit_prompt_body(value: str) -> str:
@@ -316,6 +330,45 @@ def _infographic_visual(value: str) -> str:
     lowered = value.casefold()
     if re.search(r"\b(?:kuis|quiz|pilih|jawab|tebak)\b", lowered):
         return "quiz"
+    plant_context = bool(
+        re.search(r"\b(?:tumbuhan|tanaman|daun|pohon|pepohonan|akar|batang)\b", lowered)
+    )
+    if plant_context and re.search(r"\bsiang\b", lowered) and re.search(r"\bmalam\b", lowered):
+        return "plant_day_night"
+    if re.search(r"\b(?:stomata|stoma|pori[ -]?pori\s+daun)\b", lowered):
+        return "stomata"
+    if re.search(
+        r"\b(?:fotosintesis|klorofil|cahaya\s+matahari|karbon\s+dioksida|co2|co₂)\b",
+        lowered,
+    ):
+        return "photosynthesis"
+    if plant_context and re.search(
+        r"\b(?:respirasi|bernapas|oksigen|o2|o₂|energi)\b",
+        lowered,
+    ):
+        return "plant_respiration"
+    if plant_context:
+        return "plant_life"
+    tech_context = bool(
+        re.search(
+            r"\b(?:android|hp|ponsel|smartphone|aplikasi|software|penyimpanan|storage|memori|cache|ram)\b",
+            lowered,
+        )
+    )
+    if tech_context and re.search(
+        r"\b(?:kosongkan|hapus|update|perbarui|restart|hindari|bersihkan)\b",
+        lowered,
+    ):
+        return "process"
+    if re.search(r"\b(?:suhu|dingin|panas|temperatur|temperature|overheat)\b", lowered):
+        return "temperature"
+    if re.search(r"\b(?:ram|memori|cache|aplikasi\s+latar|background\s+app)\b", lowered):
+        return "chip"
+    if re.search(
+        r"\b(?:android|aplikasi|software|penyimpanan|storage|smartphone|gawai)\b",
+        lowered,
+    ):
+        return "phone"
     if re.search(
         r"\b(?:wi[ -]?fi|router|packet loss|ping|latensi|lag|kabel lan|ethernet|game|gaming)\b",
         lowered,
@@ -390,6 +443,11 @@ def _visual_direction(
         "sparkplug": "a recognizable spark plug assembles and fires a bright electric spark",
         "engine_oil": "a cutaway engine pumps oil around a moving piston while friction and heat become visible",
         "gaming_network": "game packets travel from the player through the router to the server while ping and packet loss react",
+        "plant_life": "a living tree sways above visible roots while leaves and a small ant keep the habitat active",
+        "stomata": "the camera moves into a leaf surface where stomata open and gas particles cross the pores",
+        "photosynthesis": "sunlight reaches the canopy while carbon dioxide enters the leaves and oxygen exits",
+        "plant_respiration": "oxygen enters leaf tissue and a warm energy pulse travels through the living plant",
+        "plant_day_night": "the sky changes from sun to moon while the same tree continues exchanging gases",
         "concept": "parts orbit, connect, and resolve into one visual idea",
     }
     motions = {
@@ -400,12 +458,147 @@ def _visual_direction(
         "timeline": "assemble", "machine": "transform", "concept": "orbit",
         "motorcycle": "flow", "cvt": "transform", "sparkplug": "pulse",
         "engine_oil": "transform", "gaming_network": "flow",
+        "plant_life": "flow", "stomata": "zoom", "photosynthesis": "flow",
+        "plant_respiration": "pulse", "plant_day_night": "transform",
     }
     return {
         "visual_subject": subject,
         "visual_action": actions.get(visual, actions["concept"]),
         "visual_metaphor": metaphor or subject,
         "motion": motions.get(visual, ("assemble", "flow", "orbit", "transform")[index % 4]),
+        **_scene_direction(visual, evidence, index),
+    }
+
+
+def _scene_direction(visual: str, evidence: str, index: int = 0) -> dict[str, object]:
+    """Translate one sentence into a grounded, filmable situation."""
+    lowered = evidence.casefold()
+
+    explicit_settings = (
+        ("forest", r"\b(?:hutan|kebun|pepohonan|pohon|daun|tumbuhan|tanaman)\b"),
+        ("home", r"\b(?:rumah|kamar|dapur|keluarga)\b"),
+        ("school", r"\b(?:sekolah|kelas|murid|guru|kampus)\b"),
+        ("office", r"\b(?:kantor|tempat kerja|pegawai|bisnis)\b"),
+        ("road", r"\b(?:jalan|lalu lintas|kendaraan|motor|mobil|perjalanan)\b"),
+        ("workshop", r"\b(?:bengkel|mesin|cvt|busi|oli|piston)\b"),
+        ("laboratory", r"\b(?:laboratorium|mikroskop|sel|sensor|eksperimen)\b"),
+        ("market", r"\b(?:pasar|toko|harga|uang|biaya|pelanggan)\b"),
+        ("server_room", r"\b(?:server|jaringan|internet|router|data|api)\b"),
+    )
+    setting = next(
+        (name for name, pattern in explicit_settings if re.search(pattern, lowered)),
+        {
+            "phone": "desk", "chip": "device_cutaway", "chart": "analysis_room",
+            "temperature": "device_cutaway", "network": "server_room",
+            "gaming_network": "gaming_desk", "people": "public_space",
+            "money": "market", "security": "control_room", "journey": "road",
+            "motorcycle": "road", "cvt": "workshop", "sparkplug": "workshop",
+            "engine_oil": "workshop", "plant_life": "forest", "stomata": "forest",
+            "photosynthesis": "forest", "plant_respiration": "forest",
+            "plant_day_night": "forest",
+        }.get(visual, "abstract"),
+    )
+    if visual == "process" and re.search(
+        r"\b(?:android|hp|ponsel|smartphone|aplikasi|software|penyimpanan|storage|memori|cache|ram)\b",
+        lowered,
+    ):
+        setting = "desk"
+
+    if re.search(r"\b(?:malam|tengah malam|gelap)\b", lowered):
+        scene_time = "night"
+    elif re.search(r"\b(?:pagi|fajar)\b", lowered):
+        scene_time = "morning"
+    elif re.search(r"\b(?:sore|senja)\b", lowered):
+        scene_time = "evening"
+    elif re.search(r"\b(?:siang|matahari|fotosintesis)\b", lowered):
+        scene_time = "day"
+    else:
+        scene_time = "neutral"
+
+    if re.search(r"\b(?:hujan|badai|petir)\b", lowered):
+        weather = "rain"
+    elif re.search(r"\b(?:panas|suhu tinggi|overheat)\b", lowered):
+        weather = "hot"
+    elif re.search(r"\b(?:dingin|beku)\b", lowered):
+        weather = "cold"
+    elif re.search(r"\b(?:kabut|berasap|asap)\b", lowered):
+        weather = "haze"
+    else:
+        weather = "clear"
+
+    if re.search(
+        r"\b(?:solusi|kosongkan|hapus|update|perbarui|restart|hindari|aman|berhasil|sehat|stabil)\b",
+        lowered,
+    ):
+        mood = "relief"
+    elif re.search(r"\b(?:bahaya|gagal|rusak|masalah|penuh|beban|membeban\w*|lemot|lag|panas|turun|tersendat)\b", lowered):
+        mood = "pressure"
+    elif re.search(r"\b(?:baik|cepat)\b", lowered):
+        mood = "relief"
+    elif re.search(r"\b(?:aneh|misteri|mengapa|kenapa|kuis|tebak)\b", lowered):
+        mood = "curious"
+    else:
+        mood = ("focused", "curious", "energetic")[index % 3]
+
+    if visual in {"stomata", "chip", "cvt", "sparkplug", "engine_oil"} or re.search(
+        r"\b(?:kecil|detail|di dalam|bagian dalam|pori|sel|chip|ram)\b", lowered
+    ):
+        camera = "macro_cutaway"
+    elif visual in {"comparison", "plant_day_night"} or re.search(
+        r"\b(?:banding|sebelum|sesudah|siang dan malam)\b", lowered
+    ):
+        camera = "split_wide"
+    elif visual in {"journey", "motorcycle", "network", "gaming_network"}:
+        camera = "tracking"
+    elif setting in {"forest", "road", "public_space", "market"}:
+        camera = "wide_environment"
+    else:
+        camera = "medium_focus"
+
+    if re.search(r"\b(?:karena|membuat|menyebabkan|akibat|sehingga|menurunkan|membeban\w*)\b", lowered):
+        situation = "cause_effect"
+    elif visual == "comparison" or re.search(r"\b(?:versus|dibanding|berbeda)\b", lowered):
+        situation = "comparison"
+    elif re.search(r"\b(?:berubah|menjadi|dari .+ ke|lama-lama)\b", lowered):
+        situation = "transformation"
+    elif visual == "quiz":
+        situation = "question"
+    elif visual in {"process", "journey", "network", "photosynthesis", "plant_respiration"}:
+        situation = "process"
+    else:
+        situation = "explanation"
+
+    details: list[str] = []
+    detail_rules = (
+        ("heat_waves", r"\b(?:panas|suhu|overheat)\b"),
+        ("warning_badge", r"\b(?:penuh|bahaya|gagal|rusak|masalah|lemot|lag)\b"),
+        ("notification_cards", r"\b(?:aplikasi|background|latar belakang|notifikasi)\b"),
+        ("storage_blocks", r"\b(?:penyimpanan|storage|memori|cache)\b"),
+        ("data_particles", r"\b(?:data|sinyal|internet|server|jaringan|ram)\b"),
+        ("people_in_background", r"\b(?:orang|pengguna|tim|keluarga|murid|guru|pelanggan)\b"),
+        ("moving_traffic", r"\b(?:jalan|motor|mobil|kendaraan|perjalanan)\b"),
+        ("moving_leaves", r"\b(?:daun|pohon|tumbuhan|tanaman|hutan)\b"),
+        ("small_creature", r"\b(?:daun|pohon|tumbuhan|tanaman|hutan)\b"),
+        ("tool_bench", r"\b(?:bengkel|mesin|cvt|busi|oli|piston)\b"),
+    )
+    for detail, pattern in detail_rules:
+        if re.search(pattern, lowered):
+            details.append(detail)
+    if not details:
+        details.append({
+            "desk": "ambient_desk_items", "office": "people_in_background",
+            "server_room": "data_particles", "forest": "moving_leaves",
+            "road": "moving_traffic", "workshop": "tool_bench",
+        }.get(setting, "ambient_particles"))
+
+    return {
+        "scene_setting": setting,
+        "scene_time": scene_time,
+        "scene_weather": weather,
+        "scene_mood": mood,
+        "camera": camera,
+        "situation": situation,
+        "environment_details": tuple(details[:4]),
     }
 
 
@@ -467,6 +660,7 @@ _AUTO_VISUALS = {
     "network", "security", "journey", "comparison", "people", "money",
     "timeline", "machine",
     "motorcycle", "cvt", "sparkplug", "engine_oil", "gaming_network",
+    "plant_life", "stomata", "photosynthesis", "plant_respiration", "plant_day_night",
 }
 _AUTO_MOTIONS = {"assemble", "flow", "orbit", "transform", "compare", "pulse", "zoom"}
 _AUTO_GROUNDING_STOPWORDS = _INFOGRAPHIC_STOPWORDS | {
@@ -621,13 +815,14 @@ def _validated_auto_infographic_payload(
     *,
     analogy: str,
     source_text: str,
+    max_beats: int = 7,
 ) -> dict[str, object]:
     if not isinstance(payload, dict):
         payload = {}
     raw_beats = payload.get("beats")
     if not isinstance(raw_beats, list):
         raw_beats = []
-    raw_beats = [raw for raw in raw_beats[:7] if isinstance(raw, dict)]
+    raw_beats = [raw for raw in raw_beats[:max_beats] if isinstance(raw, dict)]
     if len(raw_beats) < 3:
         return _fallback_auto_infographic_payload(analogy, source_text)
     normalized_source = _normalized_evidence(source_text)
@@ -665,7 +860,11 @@ def _validated_auto_infographic_payload(
         if visual not in _AUTO_VISUALS:
             visual = _infographic_visual(f"{quote} {narration}")
         detected_visual = _infographic_visual(f"{quote} {narration}")
-        if detected_visual in {"engine_oil", "gaming_network", "cvt", "sparkplug"}:
+        if detected_visual in {
+            "engine_oil", "gaming_network", "cvt", "sparkplug",
+            "plant_life", "stomata", "photosynthesis", "plant_respiration",
+            "plant_day_night",
+        }:
             visual = detected_visual
         title = re.sub(r"\s+", " ", str(raw.get("title") or "")).strip()
         title_tokens = _content_tokens(title)
@@ -725,6 +924,13 @@ def _validated_auto_infographic_payload(
                 "visual_action": visual_action[:120],
                 "visual_metaphor": visual_metaphor[:80],
                 "motion": motion,
+                "scene_setting": direction["scene_setting"],
+                "scene_time": direction["scene_time"],
+                "scene_weather": direction["scene_weather"],
+                "scene_mood": direction["scene_mood"],
+                "camera": direction["camera"],
+                "situation": direction["situation"],
+                "environment_details": direction["environment_details"],
             }
         )
     title = re.sub(r"\s+", " ", str(payload.get("title") or "")).strip()
@@ -775,9 +981,12 @@ def _request_auto_infographic_payload(
         "tetapi jangan mengubahnya menjadi fakta literal. Setiap beat harus menjadi adegan ilustrasi yang bergerak, "
         "bukan kartu teks. Pilih visual hanya dari phone, chip, chart, temperature, process, concept, quiz, network, "
         "security, journey, comparison, people, money, timeline, machine, motorcycle, cvt, sparkplug, "
-        "engine_oil, atau gaming_network. "
+        "engine_oil, gaming_network, plant_life, stomata, photosynthesis, plant_respiration, atau plant_day_night. "
         "Gunakan motorcycle untuk motor/skuter, cvt untuk CVT/V-belt/kampas kopling, dan sparkplug untuk busi. "
         "Gunakan engine_oil untuk oli/pelumasan/piston/gesekan mesin dan gaming_network untuk WiFi/ping/packet loss/game. "
+        "Untuk topik tumbuhan, gunakan plant_life untuk dunia pohon secara umum, stomata untuk pori daun, "
+        "photosynthesis untuk cahaya matahari dan pertukaran CO2/O2, plant_respiration untuk oksigen menjadi energi, "
+        "dan plant_day_night untuk proses yang tetap berlangsung saat siang berganti malam. "
         "Isi visual_subject dengan objek utama, "
         "visual_action dengan aksi yang terlihat, visual_metaphor dengan analogi visual yang berasal dari input, dan "
         "motion hanya dari assemble, flow, orbit, transform, compare, pulse, atau zoom. Kicker dan title harus singkat. "
@@ -817,6 +1026,12 @@ def _build_auto_infographic_plan(
     ai_config: AIConfig | None,
 ) -> HypitInfographicPlan:
     payload, analogy, _source_text = _request_auto_infographic_payload(prompt, ai_config)
+    return _build_planned_infographic(prompt, payload, analogy)
+
+
+def _build_planned_infographic(
+    prompt: str, payload: dict[str, object], analogy: str = "", *, source_article: str = "",
+) -> HypitInfographicPlan:
     raw_beats = payload["beats"]
     assert isinstance(raw_beats, list)
     beats = tuple(
@@ -833,32 +1048,42 @@ def _build_auto_infographic_plan(
             visual_action=str(raw.get("visual_action") or ""),
             visual_metaphor=str(raw.get("visual_metaphor") or ""),
             motion=str(raw.get("motion") or "assemble"),
+            scene_setting=str(raw.get("scene_setting") or "abstract"),
+            scene_time=str(raw.get("scene_time") or "neutral"),
+            scene_weather=str(raw.get("scene_weather") or "clear"),
+            scene_mood=str(raw.get("scene_mood") or "curious"),
+            camera=str(raw.get("camera") or "medium_focus"),
+            situation=str(raw.get("situation") or "explanation"),
+            environment_details=tuple(raw.get("environment_details") or ()),
+            presentation_scene=raw.get("presentation_scene"),
         )
         for index, raw in enumerate(raw_beats)
         if isinstance(raw, dict)
     )
-    duration = 39.0
     hook = str(payload["hook"])
     payoff = str(payload["payoff"])
     title = str(payload["title"])
+    duration = _infographic_duration(hook, beats, payoff)
     return HypitInfographicPlan(
         slug=(
-            f"infographic-auto-{_slug(analogy)[:38]}-"
+            f"{'presenter' if source_article else 'infographic-auto'}-{_slug(title if source_article else analogy)[:38]}-"
             f"{hashlib.sha256(prompt.encode('utf-8')).hexdigest()[:8]}"
         ),
         title=title.upper(),
-        kicker="AUTO INFOGRAPHIC EXPLAINER",
+        kicker="PRESENTASI ARTIKEL" if source_article else "AUTO INFOGRAPHIC EXPLAINER",
         hook=hook.upper(),
         payoff=payoff.upper(),
-        footer="Dikembangkan dari teks Anda · review sebelum publikasi",
+        footer="Ringkasan dari artikel Anda" if source_article else "Dikembangkan dari teks Anda · review sebelum publikasi",
         duration=duration,
         beats=beats,
         hook_narration=hook,
         payoff_narration=payoff,
-        source_note="Disusun dari analogi dan teks pengguna; fallback lokal aktif, tanpa riset eksternal",
+        source_note="Presentasi animasi dari artikel pengguna" if source_article else "Disusun dari analogi dan teks pengguna; fallback lokal aktif, tanpa riset eksternal",
         auto_expanded=True,
         analogy=analogy,
         planning_mode=str(payload.get("_planning_mode") or "local_fallback"),
+        presentation_mode=bool(source_article),
+        source_article=source_article,
     )
 
 
@@ -897,12 +1122,23 @@ def _build_infographic_plan(prompt: str) -> HypitInfographicPlan:
                 visual_action=direction["visual_action"],
                 visual_metaphor=direction["visual_metaphor"],
                 motion=direction["motion"],
+                scene_setting=str(direction["scene_setting"]),
+                scene_time=str(direction["scene_time"]),
+                scene_weather=str(direction["scene_weather"]),
+                scene_mood=str(direction["scene_mood"]),
+                camera=str(direction["camera"]),
+                situation=str(direction["situation"]),
+                environment_details=tuple(direction["environment_details"]),
             )
         )
     title = _infographic_title(hook, "INFOGRAPHIC EXPLAINER")
     payoff = payoff_segment or ("TULIS JAWABANMU!" if beats[-1].visual == "quiz" else "SEKARANG MASUK AKAL, KAN?")
-    spoken_seconds = sum(max(4.2, min(8.5, len(beat.narration.split()) / 2.35 + 1.1)) for beat in beats)
-    duration = round(max(24.0, min(60.0, 10.0 + spoken_seconds)), 1)
+    payoff_narration = (
+        payoff_segment[:240]
+        if payoff_segment
+        else "Kalau sudah paham, simpan video ini dan tulis pendapatmu."
+    )
+    duration = _infographic_duration(hook, tuple(beats), payoff_narration)
     return HypitInfographicPlan(
         slug=f"infographic-{_slug(title)}",
         title=title,
@@ -913,7 +1149,7 @@ def _build_infographic_plan(prompt: str) -> HypitInfographicPlan:
         duration=duration,
         beats=tuple(beats),
         hook_narration=hook[:240],
-        payoff_narration=payoff_segment or "Kalau sudah paham, simpan video ini dan tulis pendapatmu.",
+        payoff_narration=payoff_narration,
         source_note="Original code-rendered explainer; factual statements supplied by the user",
     )
 
@@ -922,6 +1158,11 @@ def build_hypit_quick_plan(
     prompt: str,
     ai_config: AIConfig | None = None,
 ) -> QuickPlan:
+    if is_article_presenter_prompt(prompt):
+        article = article_from_prompt(prompt)
+        return _build_planned_infographic(
+            prompt, plan_article_presentation(article, ai_config), source_article=article,
+        )
     if is_hypit_infographic_auto_prompt(prompt):
         return _build_auto_infographic_plan(prompt, ai_config)
     if is_hypit_infographic_prompt(prompt):
@@ -933,7 +1174,7 @@ def quick_preview_payload(
     prompt: str,
     ai_config: AIConfig | None = None,
 ) -> dict[str, object]:
-    if is_hypit_infographic_auto_prompt(prompt) and ai_config is None:
+    if not is_article_presenter_prompt(prompt) and is_hypit_infographic_auto_prompt(prompt) and ai_config is None:
         analogy, source_text = _infographic_auto_inputs(prompt)
         return {
             "title": "AUTO INFOGRAPHIC EXPLAINER",
@@ -972,7 +1213,7 @@ def quick_preview_payload(
             "location_bible": "Code-rendered 1080x1920 canvas with top headline, central diagram, and bottom voice caption safe areas.",
             "director_bible": "Speech-led semantic scenes: establish the subject, animate one explanatory action, hold the resolved picture, then hand off with continuous motion. Captions stay in one stable rail and never blink between voice cues.",
             "property_bible": "Phones, machines, people, paths, shields, networks, comparisons, timelines, charts, and quiz objects are drawn as reusable animated illustrations.",
-            "voice_casting": "Two recurring Indonesian creator voices alternate concise factual lines without appearing on screen.",
+            "voice_casting": "One Indonesian presenter explains the article." if plan.presentation_mode else "Two recurring Indonesian creator voices alternate concise factual lines without appearing on screen.",
             "production_script": prompt.strip(),
             "scenes": [
                 {
@@ -993,7 +1234,8 @@ def quick_preview_payload(
             ],
             "expansion": {
                 "expanded": plan.auto_expanded,
-                "format": "hypit_infographic_auto_explainer_v1" if plan.auto_expanded else "hypit_infographic_explainer_v1",
+                "format": "article_presenter_v1" if plan.presentation_mode else "hypit_infographic_auto_explainer_v1" if plan.auto_expanded else "hypit_infographic_explainer_v1",
+                "planning_mode": plan.planning_mode,
                 "duration": plan.duration,
                 "code_rendered": True,
             },
@@ -1080,7 +1322,7 @@ def _write_hypit_source(plan: QuickPlan, output_path: Path) -> Path:
         beats = "\n".join(
             (
                 f"    <beat_{index:02d}>\n"
-                f"      <{'COHOST' if index % 2 == 0 else 'HOST'}> {html.escape(beat.narration)}\n"
+                f"      <{'HOST' if plan.presentation_mode else 'COHOST' if index % 2 else 'HOST'}> {html.escape(beat.narration)}\n"
                 f"    </beat_{index:02d}>"
             )
             for index, beat in enumerate(plan.beats, start=1)
@@ -1095,7 +1337,7 @@ def _write_hypit_source(plan: QuickPlan, output_path: Path) -> Path:
             "    </hook>\n"
             f"{beats}\n"
             "    <payoff>\n"
-            f"      <COHOST> {html.escape(plan.payoff_narration)}\n"
+            f"      <{'HOST' if plan.presentation_mode else 'COHOST'}> {html.escape(plan.payoff_narration)}\n"
             "    </payoff>\n"
             "  </script>\n"
             "</svml>\n"
@@ -1132,6 +1374,12 @@ def _write_hypit_source(plan: QuickPlan, output_path: Path) -> Path:
 
 
 def _write_project_notes(work_dir: Path, prompt: str, plan: QuickPlan) -> None:
+    if isinstance(plan, HypitInfographicPlan) and plan.presentation_mode:
+        (work_dir / "article.source.txt").write_text(plan.source_article, encoding="utf-8")
+        (work_dir / "presenter.plan.json").write_text(
+            json.dumps({"schema": "article-presenter-plan-v1", "plan": asdict(plan)}, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
     if isinstance(plan, HypitInfographicPlan):
         (work_dir / "BRIEF.md").write_text(
             "# Brief\n\n"
@@ -1144,8 +1392,11 @@ def _write_project_notes(work_dir: Path, prompt: str, plan: QuickPlan) -> None:
         (work_dir / "TREATMENT.md").write_text(
             "# Treatment\n\n"
             "A bold two-level headline establishes each idea at the top of a deep blue vertical canvas. "
-            "The center becomes a new illustrated world for every beat: objects, characters, paths, networks, "
-            "machines, comparisons, and diagrams visibly act out the narrated relationship. Each scene enters, "
+            "The center becomes a directed illustrated world: objects, characters, habitats, paths, networks, "
+            "machines, comparisons, and diagrams visibly act out the narrated relationship. Related beats reuse "
+            "the same recognizable world while camera scale and state change with the explanation. Small grounded "
+            "environment actions—moving leaves, passing creatures, light, weather, and material flow—keep the image "
+            "alive without adding a factual claim. Each scene enters, "
             "performs one explanatory action, and holds its resolved picture before handing off. Spoken captions "
             "remain in one persistent low safe-area rail without disappearing between cues. Accents shift by beat "
             "while the visual grammar stays consistent. The final card "
@@ -1155,14 +1406,14 @@ def _write_project_notes(work_dir: Path, prompt: str, plan: QuickPlan) -> None:
         (work_dir / "ANALYSIS.md").write_text(
             "# Analysis\n\n"
             "The reference format is a faceless infographic explainer, not generated camera footage. Its "
-            "retention comes from semantic synchronization: each narrated claim changes one central diagram; "
+            "retention comes from semantic synchronization: each narrated claim changes one central visual world; "
             "a persistent headline and bottom caption stabilize the hierarchy; illustrated objects retain state "
             "long enough to understand; a CTA or quiz changes the viewing task near the end.\n\n"
             "Hypit owns the named speech beats, picture direction, and their order. Remotion owns deterministic "
             "layered illustration, object choreography, layout, stable captions, and final encoding.\n",
             encoding="utf-8",
         )
-        reveal_times = _infographic_reveal_times(plan)
+        reveal_times = _quick_reveal_times(plan)
         lines = "\n".join(
             f"- {reveal_times[index]:.1f}s · {beat.kicker} / {beat.title} · {beat.visual} diagram."
             for index, beat in enumerate(plan.beats)
@@ -1299,6 +1550,29 @@ def _audio_duration(path: Path) -> float:
     return duration
 
 
+def _speech_slot_seconds(text: str, *, minimum: float) -> float:
+    """Conservative Indonesian speech slot including a short visual handoff."""
+    words = re.findall(r"\b[\w'-]+\b", text, flags=re.UNICODE)
+    estimated_delivery = len(words) / 1.70 + 1.5
+    return round(max(minimum, min(40.0, estimated_delivery + 0.5)), 3)
+
+
+def _infographic_duration(
+    hook: str,
+    beats: tuple[InfographicBeat, ...],
+    payoff: str,
+) -> float:
+    natural_duration = (
+        _speech_slot_seconds(hook, minimum=4.8)
+        + sum(
+            _speech_slot_seconds(beat.narration, minimum=6.0)
+            for beat in beats
+        )
+        + _speech_slot_seconds(payoff, minimum=6.0)
+    )
+    return round(max(24.0, min(300.0, natural_duration)), 1)
+
+
 def _ranking_reveal_times(plan: HypitQuickPlan) -> list[float]:
     """Leave enough real speaking time between reveals without tempo-crushing TTS."""
     reveal_start = 5.1
@@ -1308,20 +1582,29 @@ def _ranking_reveal_times(plan: HypitQuickPlan) -> list[float]:
 
 
 def _infographic_reveal_times(plan: HypitInfographicPlan) -> list[float]:
-    reveal_start = 4.4
-    final_start = max(reveal_start + 8.0, plan.duration - 5.5)
-    weights = [max(4.2, min(8.5, len(beat.narration.split()) / 2.35 + 1.1)) for beat in plan.beats]
-    available = max(8.0, final_start - reveal_start)
-    weight_total = sum(weights) or 1.0
-    cursor = reveal_start
+    slots = _infographic_slots(plan)
+    cursor = slots[0]
     reveals: list[float] = []
-    for weight in weights:
+    for slot in slots[1:-1]:
         reveals.append(cursor)
-        cursor += available * (weight / weight_total)
+        cursor += slot
     return reveals
 
 
+def _infographic_slots(plan: HypitInfographicPlan) -> list[float]:
+    slots = [
+        _speech_slot_seconds(plan.hook_narration, minimum=4.8),
+        *(_speech_slot_seconds(beat.narration, minimum=6.0) for beat in plan.beats),
+        _speech_slot_seconds(plan.payoff_narration, minimum=6.0),
+    ]
+    # Preview and audio-disabled builds must obey the same finite timeline.
+    scale = min(1.0, plan.duration / sum(slots))
+    return [slot * scale for slot in slots]
+
+
 def _quick_reveal_times(plan: QuickPlan) -> list[float]:
+    if plan.dialogue_timeline:
+        return [cue.start + 0.12 for cue in plan.dialogue_timeline[1:-1]]
     return _infographic_reveal_times(plan) if isinstance(plan, HypitInfographicPlan) else _ranking_reveal_times(plan)
 
 
@@ -1329,11 +1612,26 @@ def _mid_cta_start(plan: QuickPlan) -> float:
     return round(max(8.0, min(plan.duration - 8.0, plan.duration * 0.5)), 3)
 
 
+def _final_dialogue_start(plan: QuickPlan) -> float:
+    if plan.dialogue_timeline:
+        return plan.dialogue_timeline[-1].start
+    closing_window = (
+        _infographic_slots(plan)[-1]
+        if isinstance(plan, HypitInfographicPlan)
+        else 5.5
+    )
+    return max(0.0, plan.duration - closing_window)
+
+
 def _dialogue_cues(plan: QuickPlan, reveal_times: list[float]) -> list[DialogueCue]:
-    final_start = max(0.0, plan.duration - 5.5)
+    if plan.dialogue_timeline:
+        return list(plan.dialogue_timeline)
+    final_start = _final_dialogue_start(plan)
     starts = [0.0, *(max(0.25, value - 0.12) for value in reveal_times), final_start]
     texts = [plan.hook_narration, *(item.narration for item in plan.items), plan.payoff_narration]
     speakers = ["HOST", *("CO-HOST" if index % 2 == 0 else "HOST" for index in range(len(plan.items))), "CO-HOST"]
+    if isinstance(plan, HypitInfographicPlan) and plan.presentation_mode:
+        speakers = ["HOST"] * len(texts)
     cues: list[DialogueCue] = []
     for index, (speaker, text, start) in enumerate(zip(speakers, texts, starts, strict=True)):
         next_start = starts[index + 1] if index + 1 < len(starts) else plan.duration - 0.25
@@ -1346,6 +1644,44 @@ def _dialogue_cues(plan: QuickPlan, reveal_times: list[float]) -> list[DialogueC
             )
         )
     return cues
+
+
+def _plan_measured_dialogue(plan: QuickPlan, durations: list[float]) -> QuickPlan:
+    """Allocate speech and picture together, extending before applying mild tempo fit."""
+    cues = _dialogue_cues(plan, _quick_reveal_times(plan))
+    if len(durations) != len(cues) or any(not math.isfinite(d) or d <= 0 for d in durations):
+        raise RemotionRenderError("Pengukuran durasi dialog Hypit tidak valid.")
+    starts = [cue.start for cue in cues] + [plan.duration]
+    desired = [
+        max(starts[index + 1] - cue.start, duration + 0.45)
+        for index, (cue, duration) in enumerate(zip(cues, durations, strict=True))
+    ]
+    if sum(desired) <= 300.0:
+        duration = min(300.0, math.ceil(sum(desired) * 30) / 30)
+        slots = desired
+        slots[-1] += duration - sum(slots)
+    else:
+        # First reclaim spare visual holds; only speed up when speech itself
+        # cannot fit. Never truncate speech or move a scene outside the video.
+        minimum = [source / 1.35 + 0.45 for source in durations]
+        if sum(minimum) > 300.0:
+            raise RemotionRenderError(
+                "Narasi melebihi kapasitas video 5 menit pada tempo natural. "
+                "Ringkas teks agar seluruh kalimat tetap terdengar; audio tidak dipotong."
+            )
+        natural = [source + 0.45 for source in durations]
+        baseline = natural if sum(natural) <= 300.0 else minimum
+        spare = 300.0 - sum(baseline)
+        weights = [max(0.0, wanted - base) for wanted, base in zip(desired, baseline, strict=True)]
+        weight_sum = sum(weights)
+        slots = [base + spare * weight / weight_sum for base, weight in zip(baseline, weights, strict=True)]
+        duration = 300.0
+    cursor = 0.0
+    timeline: list[DialogueCue] = []
+    for cue, slot in zip(cues, slots, strict=True):
+        timeline.append(replace(cue, start=cursor, end=cursor + slot - 0.34))
+        cursor += slot
+    return replace(plan, duration=duration, dialogue_timeline=tuple(timeline))
 
 
 def _validated_voice(name: str, default: str) -> str:
@@ -1457,15 +1793,18 @@ def _prepare_dialogue_audio(
     plan: QuickPlan,
     work_dir: Path,
     reveal_times: list[float],
-) -> tuple[Path | None, list[dict[str, object]], dict[str, object]]:
+    *,
+    retime: bool = True,
+) -> tuple[QuickPlan, Path | None, list[dict[str, object]], dict[str, object]]:
     if not _env_enabled("HYPIT_QUICK_TTS_ENABLED", True):
-        return None, [], {"enabled": False, "reason": "disabled_by_environment"}
+        return plan, None, [], {"enabled": False, "reason": "disabled_by_environment"}
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise RemotionRenderError("ffmpeg diperlukan untuk merakit dialog TTS Hypit.")
     audio_dir = work_dir / "dialogue"
     audio_dir.mkdir(parents=True, exist_ok=True)
     cues = _dialogue_cues(plan, reveal_times)
+    prepared: list[tuple[Path, float, dict[str, object]]] = []
     fitted_paths: list[Path] = []
     rendered_cues: list[dict[str, object]] = []
     for index, cue in enumerate(cues, start=1):
@@ -1483,9 +1822,9 @@ def _prepare_dialogue_audio(
                 str(source_path),
                 "-filter:a",
                 (
-                    "silenceremove=start_periods=1:start_duration=0.03:start_threshold=-45dB,"
+                    "silenceremove=start_periods=1:start_duration=0.03:start_silence=0.03:start_threshold=-45dB,"
                     "areverse,"
-                    "silenceremove=start_periods=1:start_duration=0.10:start_threshold=-45dB,"
+                    "silenceremove=start_periods=1:start_duration=0.10:start_silence=0.10:start_threshold=-45dB,"
                     "areverse,aformat=sample_rates=48000:channel_layouts=stereo"
                 ),
                 "-c:a",
@@ -1501,12 +1840,21 @@ def _prepare_dialogue_audio(
             detail = (trim_result.stderr or trim_result.stdout or "trim TTS gagal").strip()
             raise RemotionRenderError(f"Gagal memotong jeda TTS Hypit: {detail[-600:]}")
         source_duration = _audio_duration(trimmed_path)
+        prepared.append((trimmed_path, source_duration, voice_metadata))
+
+    if retime:
+        plan = _plan_measured_dialogue(plan, [duration for _, duration, _ in prepared])
+        cues = _dialogue_cues(plan, _quick_reveal_times(plan))
+    for index, (cue, (trimmed_path, source_duration, voice_metadata)) in enumerate(
+        zip(cues, prepared, strict=True), start=1
+    ):
         available = max(0.8, cue.end - cue.start)
         tempo = max(1.0, source_duration / available)
-        if tempo > 1.08:
+        if tempo > 1.35:
             raise RemotionRenderError(
-                f"Dialog {index} terlalu panjang untuk delivery natural "
-                f"({source_duration:.2f}s > {available:.2f}s)."
+                f"Timing render lama tidak cukup untuk dialog {index} "
+                f"({source_duration:.2f}s > {available:.2f}s). "
+                "Buat render baru agar durasi adegan mengikuti suara."
             )
         fitted_path = audio_dir / f"dialogue_{index:02}.fitted.wav"
         fitted_path.unlink(missing_ok=True)
@@ -1591,12 +1939,14 @@ def _prepare_dialogue_audio(
         "language": "id-ID",
         "music_ducking": True,
         "voice_cloning_used": False,
+        "timing_model": "measured-speech" if retime else "existing-render-timeline",
+        "duration_seconds": plan.duration,
         "cues": rendered_cues,
     }
     (audio_dir / "dialogue.voice.json").write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8"
     )
-    return dialogue_track, rendered_cues, metadata
+    return plan, dialogue_track, rendered_cues, metadata
 
 
 def _probe_validation_error(
@@ -1759,6 +2109,31 @@ def duration_from_manifest(manifest_path: Path) -> float:
         raise RemotionRenderError("Durasi manifest Hypit tidak valid.") from exc
 
 
+def _hypit_render_timeout(duration: float) -> int:
+    """Give a single-worker portrait render enough time to finish naturally."""
+    try:
+        configured = int(os.environ.get("HYPIT_QUICK_RENDER_TIMEOUT_SECONDS", "1800"))
+    except ValueError:
+        configured = 1800
+    # A conservative 45 seconds of render time per output second plus startup
+    # room keeps five-minute work valid without imposing that cost on Shorts.
+    duration_budget = math.ceil(max(0.0, duration) * 45.0 + 300.0)
+    return max(300, configured, duration_budget)
+
+
+def _process_exit_detail(returncode: int | None) -> str:
+    if returncode is None:
+        return "status proses tidak tersedia"
+    if returncode >= 0:
+        return f"exit code {returncode}"
+    signal_number = -returncode
+    try:
+        signal_name = signal.Signals(signal_number).name
+    except ValueError:
+        signal_name = f"signal {signal_number}"
+    return f"dibunuh oleh {signal_name} ({signal_number})"
+
+
 def _render_remotion(
     *,
     node: str,
@@ -1808,11 +2183,13 @@ def _render_remotion(
         pending_path, duration=duration_from_manifest(manifest_path)
     )
     if returncode != 0 or validation_error:
-        pending_path.unlink(missing_ok=True)
+        status_detail = _process_exit_detail(returncode)
         detail = _log_tail(log_path) or validation_error or "Remotion tidak menghasilkan video"
         if validation_error:
             detail = f"{validation_error}. {detail}"
-        raise RemotionRenderError(f"Render Hypit Quick gagal: {detail[-1800:]}")
+        raise RemotionRenderError(
+            f"Render Hypit Quick gagal ({status_detail}): {detail[-1800:]}"
+        )
     if completed_from_sentinel:
         with log_path.open("a", encoding="utf-8") as render_log:
             render_log.write("\nCLIPFORGE_RECOVERY: accepted validated output after browser cleanup hang\n")
@@ -2004,17 +2381,19 @@ def _write_result_artifacts(
             "narrative_authoring": {
                 "engine": "hypit_script_surface",
                 "schema": "@hypit/script@1",
-                "timing": "authored_infographic_beats",
+                "timing": "measured_speech" if plan.dialogue_timeline else "authored_infographic_beats",
                 "validated_by_hypit_cli": True,
             },
             "image_generation": {"provider": "local_layered_illustration", "paid_api_used": False},
             "explanation_planning": {
-                "ai_used": plan.planning_mode == "ai_grounded",
+                "ai_used": plan.planning_mode.startswith("ai_"),
                 "planning_mode": plan.planning_mode,
                 "external_research_used": False,
                 "analogy": plan.analogy,
                 "grounding": "user_supplied_source_quote_per_beat" if plan.auto_expanded else "user_authored_beats",
                 "source_quotes": [beat.source_quote for beat in plan.beats if beat.source_quote],
+                "presenter_skill": "article-presenter" if plan.presentation_mode else None,
+                "presentation_scenes": [beat.presentation_scene for beat in plan.beats] if plan.presentation_mode else [],
             },
             "voice_casting": voice_metadata or {"enabled": False, "mode": "unavailable", "voice_cloning_used": False},
             "rights": {
@@ -2107,7 +2486,7 @@ def _write_result_artifacts(
         "narrative_authoring": {
             "engine": "hypit_script_surface",
             "schema": "@hypit/script@1",
-            "timing": "authored_ranking_events",
+            "timing": "measured_speech" if plan.dialogue_timeline else "authored_ranking_events",
             "validated_by_hypit_cli": True,
         },
         "image_generation": {
@@ -2211,6 +2590,11 @@ def _quick_manifest(
         "height": 1920,
         "fps": 30,
         "durationSeconds": plan.duration,
+        "finalStart": _final_dialogue_start(plan),
+        "dialogueTimeline": [
+            {"speaker": cue.speaker, "text": cue.text, "start": cue.start, "end": cue.end}
+            for cue in _dialogue_cues(plan, reveal_times)
+        ],
         "title": plan.title,
         "kicker": plan.kicker,
         "hook": plan.hook,
@@ -2225,7 +2609,7 @@ def _quick_manifest(
             "transition": "instant_content_swap",
         },
         "midCta": {
-            "enabled": True,
+            "enabled": not (isinstance(plan, HypitInfographicPlan) and plan.presentation_mode),
             "start": _mid_cta_start(plan),
             "duration": 2.8,
             "eyebrow": "SEBELUM LANJUT",
@@ -2238,7 +2622,9 @@ def _quick_manifest(
         composition = {
             **shared,
             "template": "infographic",
-            "styleVersion": "editorial-explainer-v3",
+            "styleVersion": "presenter-explainer-v1" if plan.presentation_mode else "editorial-explainer-v3",
+            "presentationMode": plan.presentation_mode,
+            "presenterSkill": "article-presenter" if plan.presentation_mode else None,
             "autoExpanded": plan.auto_expanded,
             "analogy": plan.analogy,
             "planningMode": plan.planning_mode,
@@ -2256,6 +2642,14 @@ def _quick_manifest(
                     "visualAction": beat.visual_action,
                     "visualMetaphor": beat.visual_metaphor,
                     "motion": beat.motion,
+                    "sceneSetting": beat.scene_setting,
+                    "sceneTime": beat.scene_time,
+                    "sceneWeather": beat.scene_weather,
+                    "sceneMood": beat.scene_mood,
+                    "camera": beat.camera,
+                    "situation": beat.situation,
+                    "environmentDetails": list(beat.environment_details),
+                    "presentationScene": beat.presentation_scene,
                     "revealAt": reveal_times[index],
                 }
                 for index, beat in enumerate(plan.beats)
@@ -2267,7 +2661,7 @@ def _quick_manifest(
                 "scriptSurface": "@hypit/script@1",
                 "source": hypit_path.name,
                 "validatedByCli": True,
-                "timingModel": "authored-infographic-beats",
+                "timingModel": "measured-speech" if plan.dialogue_timeline else "authored-infographic-beats",
             },
             "publicDir": str(public_dir.resolve()),
             "composition": composition,
@@ -2293,7 +2687,7 @@ def _quick_manifest(
             "scriptSurface": "@hypit/script@1",
             "source": hypit_path.name,
             "validatedByCli": True,
-            "timingModel": "authored-ranking-events",
+            "timingModel": "measured-speech" if plan.dialogue_timeline else "authored-ranking-events",
         },
         "publicDir": str(public_dir.resolve()),
         "composition": composition,
@@ -2440,10 +2834,24 @@ def finalize_existing_hypit_quick_render(
     output_path = work_dir / "clips" / f"long_animate_{plan.slug}.mp4"
     if not silent_path.is_file() and not output_path.is_file():
         raise RemotionRenderError("Tidak ada render Hypit yang dapat difinalkan.")
+    stored_payload = None
+    if manifest_path.is_file():
+        stored_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        stored = stored_payload["composition"]
+        plan = replace(plan, duration=float(stored["durationSeconds"]))
+        stored_timeline = stored.get("dialogueTimeline")
+        if stored_timeline:
+            if len(stored_timeline) != len(plan.items) + 2:
+                raise RemotionRenderError("Timeline render tersimpan tidak sesuai naskah.")
+            plan = replace(plan, dialogue_timeline=tuple(DialogueCue(**cue) for cue in stored_timeline))
+        elif isinstance(plan, HypitInfographicPlan):
+            # Legacy files predate measured timing. Retain their encoded reveals.
+            reveals = [float(beat["revealAt"]) for beat in stored["beats"]]
+            plan = replace(plan, dialogue_timeline=tuple(_dialogue_cues(plan, reveals)))
     reveal_times = _quick_reveal_times(plan)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    dialogue_track, _dialogue_manifest, voice_metadata = _prepare_dialogue_audio(
-        plan, work_dir, reveal_times
+    plan, dialogue_track, dialogue_manifest, voice_metadata = _prepare_dialogue_audio(
+        plan, work_dir, reveal_times, retime=False
     )
     if silent_path.is_file():
         validation_error = _video_validation_error(silent_path, duration=plan.duration)
@@ -2455,7 +2863,7 @@ def finalize_existing_hypit_quick_render(
             silent_path,
             pending_output,
             plan.duration,
-            [*reveal_times, _mid_cta_start(plan), max(0.0, plan.duration - 5.5)],
+            [*reveal_times, _mid_cta_start(plan), _final_dialogue_start(plan)],
             dialogue_track,
         )
         validation_error = _video_validation_error(
@@ -2472,7 +2880,7 @@ def finalize_existing_hypit_quick_render(
             output_path,
             refreshed_path,
             plan.duration,
-            [*reveal_times, _mid_cta_start(plan), max(0.0, plan.duration - 5.5)],
+            [*reveal_times, _mid_cta_start(plan), _final_dialogue_start(plan)],
             dialogue_track,
         )
         validation_error = _video_validation_error(
@@ -2482,6 +2890,9 @@ def finalize_existing_hypit_quick_render(
             refreshed_path.unlink(missing_ok=True)
             raise RemotionRenderError(f"Penyegaran audio Hypit gagal validasi: {validation_error}")
         refreshed_path.replace(output_path)
+    if stored_payload is not None:
+        stored_payload["composition"]["dialogue"] = dialogue_manifest
+        manifest_path.write_text(json.dumps(stored_payload, indent=2, ensure_ascii=False), encoding="utf-8")
     sidecar = _write_result_artifacts(
         prompt,
         plan,
@@ -2519,9 +2930,11 @@ def render_hypit_quick(
     hypit_path = _write_hypit_source(plan, work_dir / f"{basename}.hypit.svml")
     reveal_times = _quick_reveal_times(plan)
     progress(22, "transcript", "Membuat percakapan TTS host dan co-host")
-    dialogue_track, dialogue_manifest, voice_metadata = _prepare_dialogue_audio(
+    plan, dialogue_track, dialogue_manifest, voice_metadata = _prepare_dialogue_audio(
         plan, work_dir, reveal_times
     )
+    reveal_times = _quick_reveal_times(plan)
+    _write_project_notes(work_dir, prompt, plan)
     manifest = _quick_manifest(plan, public_dir, hypit_path, dialogue_manifest, reveal_times)
     manifest_path = work_dir / f"{basename}.remotion.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -2540,14 +2953,9 @@ def render_hypit_quick(
     env["REMOTION_CRF"] = {"standard": "20", "high": "17", "max": "15"}.get(
         video_quality, "17"
     )
-    env.setdefault("REMOTION_CONCURRENCY", "25%")
+    env.setdefault("REMOTION_CONCURRENCY", "1")
     progress(35, "render", f"Hypit tervalidasi; Remotion merender {production_label} 9:16")
-    try:
-        render_timeout = max(
-            300, int(os.environ.get("HYPIT_QUICK_RENDER_TIMEOUT_SECONDS", "1800"))
-        )
-    except ValueError:
-        render_timeout = 1800
+    render_timeout = _hypit_render_timeout(plan.duration)
     silent_path.unlink(missing_ok=True)
     _render_remotion(
         node=node,
@@ -2567,7 +2975,7 @@ def render_hypit_quick(
             silent_path,
             pending_output,
             plan.duration,
-            [*reveal_times, _mid_cta_start(plan), max(0.0, plan.duration - 5.5)],
+            [*reveal_times, _mid_cta_start(plan), _final_dialogue_start(plan)],
             dialogue_track,
         )
         validation_error = _video_validation_error(

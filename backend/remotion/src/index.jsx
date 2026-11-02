@@ -1,4 +1,5 @@
 import React from 'react';
+import {PresenterSceneGraphic} from './presenter';
 import {
   AbsoluteFill,
   Composition,
@@ -1174,6 +1175,124 @@ const SparkPlugGraphic = ({accent, progress, subject}) => {
   </div>;
 };
 
+const PlantWorldGraphic = ({accent, progress, localSeconds = 0, mode = 'plant_life', subject, sceneTime = 'neutral', sceneWeather = 'clear'}) => {
+  const sway = Math.sin(localSeconds * 1.7);
+  const pulse = (Math.sin(localSeconds * 3.1) + 1) / 2;
+  const night = sceneTime === 'night';
+  const sceneScale = .86 + progress * .14;
+  const gasParticles = [0, 1, 2, 3];
+  const leaves = [
+    [245, 280, -28], [330, 220, -8], [415, 255, 16], [510, 215, 25],
+    [575, 300, 43], [370, 335, -15], [475, 355, 20], [295, 390, -35],
+  ];
+
+  if (mode === 'stomata') {
+    const poreOpen = 20 + pulse * 15;
+    return <div style={{position: 'relative', width: 820, height: 760, transform: `scale(${sceneScale})`, filter: 'drop-shadow(0 30px 40px rgba(0,0,0,.28))'}}>
+      <svg width="820" height="700" viewBox="0 0 820 700">
+        <defs>
+          <linearGradient id="leafMacro" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#9BE55F"/><stop offset="1" stopColor="#2B9B58"/></linearGradient>
+          <filter id="stomataGlow"><feGaussianBlur stdDeviation="9" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+        <rect x="25" y="25" width="770" height="630" rx="82" fill="url(#leafMacro)" stroke="#173D36" strokeWidth="12"/>
+        <path d="M80 530 C260 430 450 290 745 120" fill="none" stroke="#D9FF9E" strokeWidth="22" opacity=".5"/>
+        {[0,1,2,3].map((row) => [0,1,2,3,4].map((col) => <path key={`${row}-${col}`} d={`M${70+col*145+(row%2)*35} ${75+row*135} q58 -38 116 0 l18 75 q-55 50 -122 12 z`} fill="rgba(255,255,220,.13)" stroke="rgba(25,78,55,.36)" strokeWidth="6"/>))}
+        <g transform={`translate(410 345) scale(${.82 + progress * .18})`} filter="url(#stomataGlow)">
+          <ellipse cx="-92" cy="0" rx="98" ry="145" fill="#69C85A" stroke="#183F38" strokeWidth="12" transform="rotate(-18)"/>
+          <ellipse cx="92" cy="0" rx="98" ry="145" fill="#69C85A" stroke="#183F38" strokeWidth="12" transform="rotate(18)"/>
+          <ellipse cx="0" cy="0" rx={poreOpen} ry="104" fill="#13263B" stroke="#D7FFB2" strokeWidth="8"/>
+          <circle cx="-95" cy="-12" r="18" fill="#D7FF72"/><circle cx="95" cy="12" r="18" fill="#D7FF72"/>
+        </g>
+        {gasParticles.map((item) => {
+          const travel = ((localSeconds * .35 + item * .22) % 1);
+          const entering = item % 2 === 0;
+          const x = entering ? 90 + travel * 285 : 445 + travel * 285;
+          const y = 300 + (item % 2 ? 1 : -1) * (1 - travel) * 95 + Math.sin(localSeconds * 2 + item) * 12;
+          return <g key={item} transform={`translate(${x} ${y})`} opacity={.55 + progress * .45}>
+            <circle r="34" fill={entering ? '#FFD447' : '#69E7FF'} stroke="#17304A" strokeWidth="7"/>
+            <text y="9" textAnchor="middle" fontSize="24" fontWeight="900" fill="#17233D">{entering ? 'CO₂' : 'O₂'}</text>
+          </g>;
+        })}
+        <text x="410" y="625" textAnchor="middle" fontSize="28" fontWeight="950" fill="#173D36">PERTUKARAN GAS MELALUI STOMATA</text>
+      </svg>
+      <div style={{position: 'absolute', left: 115, right: 115, bottom: 0}}><SubjectPlate subject="STOMATA · PORI DAUN" accent={accent}/></div>
+    </div>;
+  }
+
+  const photosynthesis = mode === 'photosynthesis';
+  const respiration = mode === 'plant_respiration';
+  const dayNight = mode === 'plant_day_night';
+  const skyTop = night ? '#18285C' : sceneWeather === 'rain' ? '#536D89' : photosynthesis ? '#48BEE8' : '#5AADE0';
+  const skyBottom = night ? '#46356F' : sceneWeather === 'rain' ? '#ACBFC5' : '#D9F4C8';
+  const antTravel = 300 + ((localSeconds * 48) % 190);
+
+  return <div style={{position: 'relative', width: 840, height: 790, transform: `translateY(${(1-progress)*36}px) scale(${sceneScale})`, filter: 'drop-shadow(0 30px 42px rgba(0,0,0,.3))'}}>
+    <svg width="840" height="735" viewBox="0 0 840 735">
+      <defs>
+        <linearGradient id="plantSky" x1="0" y1="0" x2="0" y2="1"><stop stopColor={skyTop}/><stop offset="1" stopColor={skyBottom}/></linearGradient>
+        <linearGradient id="plantGround" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#63B45B"/><stop offset="1" stopColor="#245B43"/></linearGradient>
+        <filter id="energyGlow"><feGaussianBlur stdDeviation="12" result="g"/><feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+      <rect x="18" y="18" width="804" height="675" rx="74" fill="url(#plantSky)" stroke="#182B46" strokeWidth="12"/>
+      {dayNight ? <>
+        <path d="M420 25 H750 Q815 25 815 90 V685 H420 Z" fill="#28345F"/>
+        <path d="M420 25 H90 Q25 25 25 90 V685 H420 Z" fill="#98D9E7"/>
+        <path d="M420 25 V690" stroke="rgba(255,255,255,.38)" strokeWidth="5" strokeDasharray="14 18"/>
+        <circle cx="165" cy="125" r="62" fill="#FFD447" stroke="#F58C35" strokeWidth="10" style={{filter: 'drop-shadow(0 0 25px #FFD44799)'}}/>
+        <path d="M690 72 a70 70 0 1 0 54 112 a62 62 0 1 1 -54 -112" fill="#F8F4CE" stroke="#B9C8EF" strokeWidth="9"/>
+        {[0,1,2,3,4].map((star) => <circle key={star} cx={555+star*48} cy={205+(star%2)*55} r={5+(star%3)} fill="#FFF7C8" opacity={.75 + pulse*.25}/>) }
+      </> : night ? <>
+        <path d="M145 68 a62 62 0 1 0 48 100 a55 55 0 1 1 -48 -100" fill="#F8F4CE" stroke="#B9C8EF" strokeWidth="9"/>
+        {[0,1,2,3,4].map((star) => <circle key={star} cx={300+star*98} cy={85+(star%2)*65} r={5+(star%3)} fill="#FFF7C8" opacity={.75+pulse*.25}/>)}
+      </> : <>
+        <circle cx="145" cy="130" r={58+pulse*5} fill="#FFD447" stroke="#F58C35" strokeWidth="10" style={{filter: 'drop-shadow(0 0 32px #FFD447AA)'}}/>
+        {[0,1,2,3,4,5,6,7].map((ray) => <line key={ray} x1="145" y1="130" x2={145+Math.cos(ray*Math.PI/4)*(95+pulse*18)} y2={130+Math.sin(ray*Math.PI/4)*(95+pulse*18)} stroke="#FFF2A2" strokeWidth="9" strokeLinecap="round"/>) }
+      </>}
+      <path d="M25 555 Q160 485 295 550 T565 545 T815 525 V690 H25 Z" fill="url(#plantGround)"/>
+      <path d="M390 535 C360 600 315 625 270 660 M410 540 C430 600 475 630 530 665 M400 548 V680" fill="none" stroke="#75482D" strokeWidth="22" strokeLinecap="round"/>
+      <path d="M402 565 C380 680 350 692 323 700 M418 570 C445 665 490 684 550 700" fill="none" stroke="#D6A05E" strokeWidth="8" strokeLinecap="round" opacity=".8"/>
+      <path d="M405 560 C410 455 403 330 420 245" fill="none" stroke="#75482D" strokeWidth="58" strokeLinecap="round"/>
+      <path d="M405 395 C345 350 300 324 245 308 M412 350 C475 305 530 286 585 270 M407 455 C340 430 305 410 265 380 M412 420 C480 390 535 365 590 340" fill="none" stroke="#75482D" strokeWidth="30" strokeLinecap="round"/>
+      {[[285,255,105],[380,205,125],[490,235,118],[575,300,105],[315,355,112],[455,335,130],[555,395,100]].map(([cx,cy,r], index) => <circle key={index} cx={cx} cy={cy} r={r} fill={index%2 ? '#2F9E58' : '#44B865'} stroke="#1B6948" strokeWidth="9" style={{transformOrigin: `${cx}px ${cy}px`, transform: `scale(${1 + Math.sin(localSeconds*1.2+index)*.018})`}}/>) }
+      {leaves.map(([x,y,rotate], index) => <ellipse key={index} cx={x} cy={y} rx="42" ry="20" fill={index%2 ? '#91DF5A' : '#B8EE6B'} stroke="#245C40" strokeWidth="6" transform={`rotate(${rotate+sway*3} ${x} ${y})`}/>) }
+      <g transform={`translate(${antTravel} 375)`}>
+        <circle cx="-18" cy="0" r="8" fill="#291E26"/><circle cx="0" cy="0" r="10" fill="#291E26"/><circle cx="20" cy="0" r="12" fill="#291E26"/>
+        {[[-7,-14],[5,-15],[15,-15],[-7,14],[5,15],[15,15]].map(([x,y], index) => <line key={index} x1={x} y1="0" x2={x+(index<3?-11:11)} y2={y} stroke="#291E26" strokeWidth="4" strokeLinecap="round"/>) }
+      </g>
+      {photosynthesis ? <>
+        {[0,1,2].map((item) => { const t=(localSeconds*.28+item*.28)%1; return <g key={`co-${item}`} transform={`translate(${70+t*260} ${340+item*65-Math.sin(t*Math.PI)*65})`}><circle r="31" fill="#FFD447" stroke="#243653" strokeWidth="7"/><text y="9" textAnchor="middle" fontSize="23" fontWeight="900" fill="#243653">CO₂</text></g>; })}
+        {[0,1,2].map((item) => { const t=(localSeconds*.3+item*.3)%1; return <g key={`ox-${item}`} transform={`translate(${545+t*210} ${250+item*72-Math.sin(t*Math.PI)*80})`}><circle r="31" fill="#6EE7FF" stroke="#243653" strokeWidth="7"/><text y="9" textAnchor="middle" fontSize="24" fontWeight="900" fill="#243653">O₂</text></g>; })}
+        <path d="M190 190 Q285 240 355 285" fill="none" stroke="#FFF3A5" strokeWidth="14" strokeLinecap="round" strokeDasharray="22 15" strokeDashoffset={-localSeconds*35}/>
+        <text x="170" y="255" fontSize="24" fontWeight="950" fill="#5B4520">CAHAYA</text>
+      </> : null}
+      {respiration ? <>
+        {[0,1,2].map((item) => { const t=(localSeconds*.32+item*.31)%1; return <g key={item} transform={`translate(${735-t*285} ${280+item*88})`}><circle r="30" fill="#6EE7FF" stroke="#243653" strokeWidth="7"/><text y="9" textAnchor="middle" fontSize="24" fontWeight="900" fill="#243653">O₂</text></g>; })}
+        <circle cx="410" cy="420" r={52+pulse*18} fill="#FFD447" opacity={.36+pulse*.4} filter="url(#energyGlow)"/>
+        <path d="M405 500 L370 438 L410 452 L445 390 L438 445 L480 438 Z" fill="#FFF47A" stroke="#744B22" strokeWidth="8" filter="url(#energyGlow)"/>
+        <text x="500" y="500" fontSize="25" fontWeight="950" fill="#243653">ENERGI</text>
+      </> : null}
+      {dayNight ? <>
+        <path d="M105 390 C210 350 255 330 320 350" fill="none" stroke="#6EE7FF" strokeWidth="12" strokeDasharray="20 14" strokeDashoffset={-localSeconds*30}/>
+        <path d="M735 405 C640 360 585 345 520 365" fill="none" stroke="#6EE7FF" strokeWidth="12" strokeDasharray="20 14" strokeDashoffset={-localSeconds*30}/>
+        <text x="95" y="440" fontSize="25" fontWeight="950" fill="#183350">TETAP BERNAPAS</text>
+        <text x="570" y="455" fontSize="25" fontWeight="950" fill="#F8F4CE">TETAP BERNAPAS</text>
+      </> : null}
+      {mode === 'plant_life' ? <>
+        <path d="M110 485 Q220 430 300 455" fill="none" stroke="#E5FFF2" strokeWidth="9" strokeLinecap="round" strokeDasharray="18 16" strokeDashoffset={-localSeconds*24}/>
+        <circle cx="110" cy="485" r="18" fill="#6EE7FF"/><circle cx="145" cy="465" r="13" fill="#6EE7FF"/>
+      </> : null}
+      {sceneWeather === 'rain' ? <g>
+        {[0,1,2,3,4,5,6,7,8,9].map((drop) => <line key={drop} x1={65+drop*76} y1={65+((localSeconds*190+drop*51)%490)} x2={55+drop*76} y2={96+((localSeconds*190+drop*51)%490)} stroke="#DBF4FF" strokeWidth="6" strokeLinecap="round" opacity=".8"/>)}
+        <path d="M65 95 Q35 52 85 46 Q110 12 148 43 Q197 27 215 70 Q244 98 212 115 H80 Z" fill="#C9D6E0" stroke="#53657A" strokeWidth="6"/>
+      </g> : null}
+      {sceneWeather === 'hot' ? [0,1,2].map((wave) => <path key={wave} d={`M${90+wave*300} 480 q-20 -45 0 -90 t0 -90`} fill="none" stroke="#FFB56B" strokeWidth="9" opacity={.4+pulse*.25} transform={`translate(0 ${sway*10})`}/>) : null}
+      {sceneWeather === 'cold' ? [0,1,2,3].map((flake) => <text key={flake} x={95+flake*195} y={120+((localSeconds*35+flake*110)%340)} fontSize="34" fill="#F1FAFF">❄</text>) : null}
+      {sceneWeather === 'haze' ? <path d="M40 230 H800 M40 290 H800 M40 350 H800" stroke="#DDE5DD" strokeWidth="32" opacity=".28"/> : null}
+    </svg>
+    <div style={{position: 'absolute', left: 110, right: 110, bottom: 0}}><SubjectPlate subject={photosynthesis ? 'CO₂ MASUK · O₂ KELUAR' : respiration ? 'OKSIGEN → ENERGI' : dayNight ? 'BERNAPAS SIANG & MALAM' : 'DUNIA TUMBUHAN'} accent={accent}/></div>
+  </div>;
+};
+
 const ConceptGraphic = ({accent, progress, subject, metaphor}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
@@ -1188,34 +1307,103 @@ const ConceptGraphic = ({accent, progress, subject, metaphor}) => {
   </div>;
 };
 
+const DirectedSceneContext = ({beat, progress, localSeconds}) => {
+  const setting = beat.sceneSetting || 'abstract';
+  const time = beat.sceneTime || 'neutral';
+  const weather = beat.sceneWeather || 'clear';
+  const mood = beat.sceneMood || 'curious';
+  const situation = beat.situation || 'explanation';
+  const details = Array.isArray(beat.environmentDetails) ? beat.environmentDetails : [];
+  const pressure = mood === 'pressure';
+  const outdoor = ['forest', 'road', 'public_space', 'market'].includes(setting);
+  const desk = ['desk', 'office', 'gaming_desk', 'analysis_room', 'device_cutaway'].includes(setting);
+  const night = time === 'night';
+  const pulse = (Math.sin(localSeconds * 2.4) + 1) / 2;
+  const accent = beat.accent || '#55C7F3';
+  const topColor = night ? '#18234E' : pressure ? '#6C4052' : '#56A6C9';
+  const bottomColor = night ? '#40325E' : pressure ? '#E49A68' : '#D8E9C1';
+
+  return <AbsoluteFill style={{overflow: 'hidden', borderRadius: 62, border: `7px solid ${pressure ? '#FF8A6A' : '#172A45'}`, background: `linear-gradient(180deg,${topColor},${bottomColor})`, boxShadow: '0 30px 70px rgba(0,0,0,.28)'}}>
+    {outdoor ? <>
+      {night ? <div style={{position: 'absolute', right: 78, top: 56, width: 84, height: 84, borderRadius: '50%', background: '#FFF5C5', boxShadow: '0 0 34px #FFF5C577'}}/> : <div style={{position: 'absolute', right: 70, top: 54, width: 92, height: 92, borderRadius: '50%', background: '#FFD447', boxShadow: '0 0 38px #FFD44799', transform: `scale(${1+pulse*.05})`}}/>}
+      <div style={{position: 'absolute', left: -80, right: -80, bottom: 0, height: 250, borderRadius: '50% 50% 0 0', background: setting === 'road' ? '#4A5660' : '#4F9C59', transform: 'translateY(80px)'}}/>
+      {setting === 'road' ? <div style={{position: 'absolute', left: 300, top: 350, width: 260, height: 430, background: '#232C36', clipPath: 'polygon(39% 0,61% 0,100% 100%,0 100%)'}}><i style={{position: 'absolute', left: '49%', top: 30, width: 9, height: 380, background: 'repeating-linear-gradient(#FFF 0 32px,transparent 32px 68px)', opacity: .7}}/></div> : null}
+      {setting === 'forest' ? [0,1,2,3].map((tree) => <div key={tree} style={{position: 'absolute', left: 35+tree*210, bottom: 80+(tree%2)*30, width: 44, height: 185, borderRadius: 20, background: '#79523A', opacity: .5}}><i style={{position: 'absolute', width: 150, height: 150, borderRadius: '50%', left: -53, top: -90, background: tree%2 ? '#267B52' : '#3B9360'}}/></div>) : null}
+    </> : null}
+    {desk ? <>
+      <div style={{position: 'absolute', left: 52, right: 52, top: 44, height: 285, borderRadius: 34, background: night ? '#152544' : '#BDE4F0', border: '8px solid #273653', overflow: 'hidden'}}>
+        {night ? [0,1,2,3,4].map((star) => <i key={star} style={{position: 'absolute', left: 55+star*125, top: 40+(star%2)*65, width: 8, height: 8, borderRadius: '50%', background: '#FFF2B0'}}/>) : <div style={{position: 'absolute', right: 58, top: 42, width: 72, height: 72, borderRadius: '50%', background: '#FFD447'}}/>}
+      </div>
+      <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, height: 235, background: setting === 'gaming_desk' ? '#26304A' : '#8B6548', borderTop: '12px solid #342B31'}}/>
+      <div style={{position: 'absolute', left: 76, bottom: 90, width: 135, height: 90, borderRadius: 18, background: '#F5E5BC', border: '7px solid #26304A'}}/>
+      <div style={{position: 'absolute', right: 75, bottom: 100, width: 72, height: 125, borderRadius: '10px 10px 35px 35px', background: '#83C97B', border: '7px solid #26304A'}}/>
+    </> : null}
+    {setting === 'server_room' || setting === 'control_room' ? <>
+      {[0,1,2].map((rack) => <div key={rack} style={{position: 'absolute', left: 55+rack*250, top: 85, width: 190, height: 545, borderRadius: 24, background: '#18243A', border: '8px solid #334764'}}>{[0,1,2,3,4,5].map((row) => <i key={row} style={{position: 'absolute', left: 20, right: 20, top: 30+row*82, height: 48, borderRadius: 10, background: '#283958', border: '3px solid #4E6486'}}><b style={{position: 'absolute', right: 13, top: 13, width: 15, height: 15, borderRadius: '50%', background: row%2 ? '#6FFFA1' : accent, boxShadow: `0 0 12px ${accent}`}}/></i>)}</div>)}
+    </> : null}
+    {setting === 'workshop' ? <>
+      <div style={{position: 'absolute', inset: 0, background: 'linear-gradient(180deg,#6C7883,#3E4852)'}}/>
+      <div style={{position: 'absolute', left: 45, right: 45, top: 55, height: 185, borderRadius: 28, background: '#2B3744', border: '8px solid #202936'}}>{[0,1,2,3].map((tool) => <i key={tool} style={{position: 'absolute', left: 75+tool*170, top: 35, width: 25, height: 100, borderRadius: 12, background: tool%2 ? '#FFD447' : '#D6DEE8', transform: `rotate(${tool%2 ? 22 : -18}deg)`}}/>)}</div>
+      <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, height: 210, background: '#8B6548', borderTop: '12px solid #2A3038'}}/>
+    </> : null}
+    {setting === 'laboratory' ? <>
+      <div style={{position: 'absolute', inset: 0, background: 'linear-gradient(180deg,#C8EEF0,#76B9BF)'}}/>
+      <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, height: 190, background: '#ECF4F1', borderTop: '10px solid #254B5B'}}/>
+      {[0,1,2].map((glass) => <div key={glass} style={{position: 'absolute', left: 90+glass*285, bottom: 72, width: 86, height: 120+glass*18, border: '8px solid #315A6A', borderTop: 0, borderRadius: '0 0 30px 30px', background: `${glass%2 ? '#F4A4C5' : '#6EE7FF'}99`}}/>)}
+    </> : null}
+    {!outdoor && !desk && !['server_room','control_room','workshop','laboratory'].includes(setting) ? <>
+      <AbsoluteFill style={{background: `radial-gradient(circle at 50% 42%,${accent}35,transparent 45%),linear-gradient(160deg,#273467,#182451)`}}/>
+      <AbsoluteFill style={{opacity: .08, backgroundImage: 'linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)', backgroundSize: '58px 58px'}}/>
+    </> : null}
+    {situation === 'cause_effect' ? <svg width="100%" height="100%" viewBox="0 0 840 760" style={{position: 'absolute', opacity: .48}}><path d="M95 565 C240 470 560 470 735 565" fill="none" stroke={pressure ? '#FF7A68' : accent} strokeWidth="18" strokeLinecap="round" strokeDasharray="28 20" strokeDashoffset={-localSeconds*42}/><path d="M710 535 L760 565 L710 595" fill="none" stroke={pressure ? '#FF7A68' : accent} strokeWidth="18" strokeLinecap="round" strokeLinejoin="round"/></svg> : null}
+    {situation === 'comparison' ? <div style={{position: 'absolute', left: '50%', top: 45, bottom: 45, width: 5, background: 'rgba(255,255,255,.65)', boxShadow: '0 0 22px #fff'}}/> : null}
+    {situation === 'process' ? <div style={{position: 'absolute', left: 80, right: 80, bottom: 65, height: 12, background: `repeating-linear-gradient(90deg,${accent} 0 24px,transparent 24px 42px)`, transform: `translateX(${(localSeconds*20)%42-42}px)`, opacity: .75}}/> : null}
+    {details.includes('notification_cards') ? [0,1,2].map((card) => <div key={card} style={{position: 'absolute', right: 42+card*20, top: 170+card*82, width: 180, height: 64, borderRadius: 18, background: card%2 ? '#F0F4FF' : '#FFD8E7', border: '5px solid #25314A', transform: `translateX(${Math.sin(localSeconds*1.7+card)*12}px) rotate(${card*2-2}deg)`, opacity: .82}}/>) : null}
+    {details.includes('storage_blocks') ? [0,1,2,3,4].map((block) => <div key={block} style={{position: 'absolute', left: 38+block*58, bottom: 48, width: 48, height: 42+block*14, borderRadius: 9, background: block>2 ? '#FF756B' : '#FFD447', border: '4px solid #27314A'}}/>) : null}
+    {details.includes('warning_badge') ? <div style={{position: 'absolute', right: 35, top: 35, width: 86, height: 86, borderRadius: '50%', display: 'grid', placeItems: 'center', background: '#FF655F', color: '#fff', border: '7px solid #2B3045', fontSize: 52, fontWeight: 950, transform: `scale(${.92+pulse*.12})`}}>!</div> : null}
+    {details.includes('heat_waves') ? [0,1,2].map((wave) => <div key={wave} style={{position: 'absolute', left: 170+wave*235, top: 100+(wave%2)*80, width: 34, height: 150, borderRadius: '50%', borderLeft: '10px solid #FF8A5C', transform: `translateY(${Math.sin(localSeconds*2+wave)*18}px) rotate(12deg)`, opacity: .7}}/>) : null}
+    {details.includes('data_particles') ? [0,1,2,3,4,5].map((dot) => <i key={dot} style={{position: 'absolute', left: `${12+((localSeconds*11+dot*17)%76)}%`, top: `${14+(dot%3)*25}%`, width: 13+dot%2*7, height: 13+dot%2*7, borderRadius: '50%', background: dot%2 ? accent : '#FFD447', boxShadow: `0 0 18px ${accent}`}}/>) : null}
+    {weather === 'rain' ? [0,1,2,3,4,5,6,7].map((drop) => <i key={drop} style={{position: 'absolute', left: `${8+drop*12}%`, top: `${((localSeconds*170+drop*83)%700)-80}px`, width: 5, height: 44, borderRadius: 8, background: '#BDEBFF', transform: 'rotate(12deg)', opacity: .75}}/>) : null}
+    {weather === 'hot' ? <AbsoluteFill style={{background: 'linear-gradient(180deg,rgba(255,97,52,.16),transparent 42%)'}}/> : null}
+    {weather === 'haze' ? <AbsoluteFill style={{background: 'rgba(226,224,211,.25)', backdropFilter: 'blur(5px)'}}/> : null}
+  </AbsoluteFill>;
+};
+
 const InfographicGraphic = ({beat, progress, localSeconds = 0, beatDuration = 4}) => {
   if (!beat) return null;
-  const props = {accent: beat.accent || '#55C7F3', progress, localSeconds, beatDuration, detail: beat.detail || '', options: beat.quizOptions || [], subject: beat.visualSubject || beat.title || '', metaphor: beat.visualMetaphor || ''};
-  if (beat.visual === 'phone') return <PhoneGraphic {...props}/>;
-  if (beat.visual === 'chip') return <ChipGraphic {...props}/>;
-  if (beat.visual === 'chart') return <ChartGraphic {...props}/>;
-  if (beat.visual === 'temperature') return <TemperatureGraphic {...props}/>;
-  if (beat.visual === 'process') return <ProcessGraphic {...props}/>;
+  if (beat.presentationScene?.objects?.length) return <PresenterSceneGraphic beat={beat} progress={progress} localSeconds={localSeconds}/>;
+  const props = {accent: beat.accent || '#55C7F3', progress, localSeconds, beatDuration, detail: beat.detail || '', options: beat.quizOptions || [], subject: beat.visualSubject || beat.title || '', metaphor: beat.visualMetaphor || '', sceneTime: beat.sceneTime, sceneWeather: beat.sceneWeather};
   if (beat.visual === 'quiz') return <QuizGraphic {...props}/>;
-  if (beat.visual === 'network') return <NetworkGraphic {...props}/>;
-  if (beat.visual === 'security') return <SecurityGraphic {...props}/>;
-  if (beat.visual === 'journey') return <JourneyGraphic {...props}/>;
-  if (beat.visual === 'comparison') return <ComparisonGraphic {...props}/>;
-  if (beat.visual === 'people') return <PeopleGraphic {...props}/>;
-  if (beat.visual === 'money') return <MoneyGraphic {...props}/>;
-  if (beat.visual === 'timeline') return <TimelineGraphic {...props}/>;
-  if (beat.visual === 'machine') return <MachineGraphic {...props}/>;
-  if (beat.visual === 'motorcycle') return <MotorcycleGraphic {...props}/>;
-  if (beat.visual === 'cvt') return <CvtGraphic {...props}/>;
-  if (beat.visual === 'sparkplug') return <SparkPlugGraphic {...props}/>;
-  if (beat.visual === 'engine_oil') return <EngineOilGraphic {...props}/>;
-  if (beat.visual === 'gaming_network') return <GamingNetworkGraphic {...props}/>;
-  return <ConceptGraphic {...props}/>;
+  if (['plant_life', 'stomata', 'photosynthesis', 'plant_respiration', 'plant_day_night'].includes(beat.visual)) return <PlantWorldGraphic {...props} mode={beat.visual}/>;
+  const visual = beat.visual === 'phone' ? <PhoneGraphic {...props}/>
+    : beat.visual === 'chip' ? <ChipGraphic {...props}/>
+    : beat.visual === 'chart' ? <ChartGraphic {...props}/>
+    : beat.visual === 'temperature' ? <TemperatureGraphic {...props}/>
+    : beat.visual === 'process' ? <ProcessGraphic {...props}/>
+    : beat.visual === 'network' ? <NetworkGraphic {...props}/>
+    : beat.visual === 'security' ? <SecurityGraphic {...props}/>
+    : beat.visual === 'journey' ? <JourneyGraphic {...props}/>
+    : beat.visual === 'comparison' ? <ComparisonGraphic {...props}/>
+    : beat.visual === 'people' ? <PeopleGraphic {...props}/>
+    : beat.visual === 'money' ? <MoneyGraphic {...props}/>
+    : beat.visual === 'timeline' ? <TimelineGraphic {...props}/>
+    : beat.visual === 'machine' ? <MachineGraphic {...props}/>
+    : beat.visual === 'motorcycle' ? <MotorcycleGraphic {...props}/>
+    : beat.visual === 'cvt' ? <CvtGraphic {...props}/>
+    : beat.visual === 'sparkplug' ? <SparkPlugGraphic {...props}/>
+    : beat.visual === 'engine_oil' ? <EngineOilGraphic {...props}/>
+    : beat.visual === 'gaming_network' ? <GamingNetworkGraphic {...props}/>
+    : <ConceptGraphic {...props}/>;
+  const cameraScale = beat.camera === 'macro_cutaway' ? 1.04 : beat.camera === 'wide_environment' ? .88 : .94;
+  return <div style={{position: 'relative', width: 840, height: 760, display: 'grid', placeItems: 'center'}}>
+    <DirectedSceneContext beat={beat} progress={progress} localSeconds={localSeconds}/>
+    <div style={{position: 'relative', zIndex: 2, transform: `scale(${cameraScale})`, transformOrigin: '50% 52%'}}>{visual}</div>
+  </div>;
 };
 
 const InfographicVideo = ({
   title = 'INFOGRAPHIC EXPLAINER', hook = 'SATU HAL YANG PERLU KAMU TAHU', payoff = 'SUDAH MASUK AKAL?',
-  footer = '', sourceNote = '', beats = [], dialogue = [], midCta = {}, watermark = '@ryuundy · HYPIT', styleVersion = '',
+  footer = '', sourceNote = '', beats = [], dialogue = [], midCta = {}, watermark = '@ryuundy · HYPIT', styleVersion = '', finalStart: authoredFinalStart,
 }) => {
   const frame = useCurrentFrame();
   const {fps, durationInFrames} = useVideoConfig();
@@ -1228,7 +1416,7 @@ const InfographicVideo = ({
   const reveal = spring({fps, frame: Math.max(0, revealFrame), config: {damping: 17, stiffness: 145, mass: .72}});
   const nextRevealAt = activeIndex >= 0 && activeIndex + 1 < beats.length
     ? Number(beats[activeIndex + 1].revealAt || durationInFrames / fps)
-    : durationInFrames / fps - 5.5;
+    : Number(authoredFinalStart ?? dialogue[dialogue.length - 1]?.start ?? durationInFrames / fps - 5.5);
   const currentRevealAt = Number(beat?.revealAt || 0);
   const localSeconds = Math.max(0, second - currentRevealAt);
   const beatDuration = Math.max(.5, nextRevealAt - currentRevealAt);
@@ -1237,12 +1425,12 @@ const InfographicVideo = ({
   // like they were blinking at every narration boundary.
   const pictureProgress = reveal;
   const hookIn = spring({fps, frame, config: {damping: 18, stiffness: 165, mass: .68}});
-  const finalStart = Math.max(0, durationInFrames - Math.round(5.5 * fps));
+  const finalStart = Math.max(0, Math.round(Number(authoredFinalStart ?? dialogue[dialogue.length - 1]?.start ?? durationInFrames / fps - 5.5) * fps));
   const final = spring({fps, frame: frame - finalStart, config: {damping: 17, stiffness: 140, mass: .76}});
   const finalActive = frame >= finalStart;
   const progress = beats.length ? Math.max(0, activeIndex + 1) / beats.length : 0;
   const legacyWinningStyle = styleVersion === 'winning-reel-39-v1' || styleVersion === 'illustrated-winning-reel-v2';
-  const editorialStyle = styleVersion === 'editorial-explainer-v3';
+  const editorialStyle = styleVersion === 'editorial-explainer-v3' || styleVersion === 'presenter-explainer-v1';
   const headlineText = beat?.title || hook;
   const editorialHeadlineSize = String(headlineText).length > 52 ? 59 : String(headlineText).length > 39 ? 65 : 72;
   return <AbsoluteFill style={{fontFamily: 'Arial Black, Arial, Helvetica, sans-serif', color: '#fff', overflow: 'hidden'}}>
