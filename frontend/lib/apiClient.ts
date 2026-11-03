@@ -614,6 +614,15 @@ export const createJob = async (input: CreateClipJobInput) => {
   return (await response.json()) as ClipJob;
 };
 
+export type StoryboardProgress = {
+  stage: string;
+  detail: string;
+  completed?: number;
+  current?: number;
+  total?: number;
+  preview?: StoryboardPreview;
+};
+
 export const createStoryboardPreview = async (input: {
   story_text: string;
   target_duration_seconds: number;
@@ -622,16 +631,63 @@ export const createStoryboardPreview = async (input: {
   ai_base_url: string;
   ai_model: string;
   ai_api_key?: string;
-}) => {
-  const response = await fetch(`${CLIENT_API_BASE}/api/storyboards/preview`, {
+}, onProgress?: (progress: StoryboardProgress) => void) => {
+  const controller = new AbortController();
+  let response = await fetch(`${CLIENT_API_BASE}/api/storyboards/preview/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
+    signal: controller.signal,
   });
+  // A frontend rollout may precede its backend. Only fall back when the new
+  // route is absent; never resubmit work after a stream has already started.
+  if (response.status === 404) {
+    onProgress?.({ stage: "legacy", detail: "Backend sedang menyusun naskah dan seluruh gambar. Progres per adegan memerlukan backend terbaru." });
+    response = await fetch(`${CLIENT_API_BASE}/api/storyboards/preview`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    });
+    if (!response.ok) throw new Error(await responseErrorMessage(response, "Gagal membuat storyboard"));
+    return (await response.json()) as StoryboardPreview;
+  }
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response, "Gagal membuat storyboard"));
   }
-  return (await response.json()) as StoryboardPreview;
+  if (!response.body) throw new Error("Koneksi progres storyboard tidak tersedia.");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  try {
+    while (true) {
+      // The backend sends a heartbeat every ten seconds, even while a single
+      // image is taking minutes. Detect a lost connection without a fake ETA.
+      watchdog = setTimeout(() => controller.abort(), 45_000);
+      const { done, value } = await reader.read();
+      clearTimeout(watchdog);
+      buffer += decoder.decode(value, { stream: !done });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      if (done && buffer.trim()) lines.push(buffer);
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line) as StoryboardProgress & { type: string; preview?: StoryboardPreview };
+        if (event.type === "error") throw new Error(event.detail || "Gagal membuat storyboard");
+        if (event.type === "result" && event.preview) return event.preview;
+        if (event.type === "progress") onProgress?.(event);
+      }
+      if (done) break;
+    }
+    throw new Error("Koneksi storyboard terputus sebelum selesai. Gambar yang sudah dibuat tetap tersimpan di server.");
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error("Koneksi progres tidak merespons selama 45 detik. Gambar di server tetap disimpan; jangan memulai ulang berulang kali.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(watchdog);
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
 };
 
 export const regenerateStoryboardKeyframe = async (input: {

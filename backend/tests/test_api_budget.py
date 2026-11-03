@@ -477,13 +477,15 @@ def test_storyboard_preview_returns_locked_scenes_and_imagegen_preflight(monkeyp
 
     monkeypatch.setattr(long_animate, "generate_shot_image_with_qa", fake_generate)
 
-    preview = api.create_storyboard_preview(
+    updates = []
+    preview = api.build_storyboard_preview(
         api.StoryboardPreviewRequest(
             story_text="Satpam Hebat",
             story_aspect_ratio=aspect,
             ai_base_url="http://localhost:11434/v1",
             ai_model="local",
-        )
+        ),
+        progress=updates.append,
     )
 
     assert preview.production_script.strip() == production_script.strip()
@@ -491,9 +493,8 @@ def test_storyboard_preview_returns_locked_scenes_and_imagegen_preflight(monkeyp
     assert [scene.title for scene in preview.scenes] == ["Alarm", "Kabel", "Sistem Pulih"]
     assert preview.scenes[0].visual_prompt.startswith("Raka berlari")
     assert preview.scenes[0].on_screen_text == ""
-    assert "FULL-BLEED" in preview.scenes[0].image_prompt
-    assert f"FULL-BLEED {aspect}" in preview.scenes[0].image_prompt
-    assert ("vertical short video" if aspect == "9:16" else "landscape video") in preview.scenes[0].image_prompt
+    assert preview.scenes[0].image_prompt.startswith("A single cinematic frame depicting Raka")
+    assert "FULL-BLEED" not in preview.scenes[0].image_prompt
     assert preview.story_aspect_ratio == aspect
     preview_shots = [shot for scene in preview.scenes for shot in scene.shot_plan]
     assert preview_shots
@@ -511,6 +512,61 @@ def test_storyboard_preview_returns_locked_scenes_and_imagegen_preflight(monkeyp
     assert all(scene.keyframe_file.startswith("storyboards/") for scene in preview.scenes)
     assert all(scene.image_url.startswith("/outputs/storyboards/") for scene in preview.scenes)
     assert preview.scenes[0].dialogue_turns[0].speaker == "NARATOR"
+    assert updates[0]["stage"] == "script"
+    planned = next(update for update in updates if update["stage"] == "planned")
+    assert planned["completed"] == 0
+    assert all(scene["image_status"] == "pending" for scene in planned["preview"]["scenes"])
+    completed = [update for update in updates if update.get("preview") and update["stage"] == "images"]
+    assert [update["completed"] for update in completed] == [1, 2, 3]
+    assert completed[0]["preview"]["scenes"][1]["image_status"] == "pending"
+
+
+def test_storyboard_stream_delivers_progress_before_generation_finishes(monkeypatch):
+    import asyncio
+    import api
+
+    release = threading.Event()
+
+    def generate(_request, progress):
+        progress({"type": "progress", "stage": "images", "detail": "Gambar pertama selesai", "completed": 1, "total": 3})
+        assert release.wait(timeout=5)
+        return SimpleNamespace(model_dump=lambda **_kwargs: {"title": "Storyboard selesai"})
+
+    monkeypatch.setattr(api, "build_storyboard_preview", generate)
+    response = api.stream_storyboard_preview(api.StoryboardPreviewRequest(story_text="Cerita saya"))
+
+    async def consume():
+        iterator = response.body_iterator
+        try:
+            first = json.loads(await anext(iterator))
+            assert first["type"] == "progress"
+            assert first["completed"] == 1
+            release.set()
+            last = json.loads(await anext(iterator))
+            assert last["type"] == "result"
+            assert last["preview"]["title"] == "Storyboard selesai"
+        finally:
+            release.set()
+            await iterator.aclose()
+
+    asyncio.run(consume())
+    assert response.headers["x-accel-buffering"] == "no"
+
+
+def test_storyboard_stream_exposes_provider_errors(monkeypatch):
+    import asyncio
+    import api
+
+    def fail(_request, progress):
+        raise api.HTTPException(status_code=502, detail="Generator gambar tidak siap")
+
+    monkeypatch.setattr(api, "build_storyboard_preview", fail)
+    response = api.stream_storyboard_preview(api.StoryboardPreviewRequest(story_text="Cerita saya"))
+
+    async def consume():
+        return [json.loads(chunk) async for chunk in response.body_iterator]
+
+    assert asyncio.run(consume()) == [{"type": "error", "detail": "Generator gambar tidak siap"}]
 
 
 def test_short_defaults_are_retention_dense_but_manual_three_minutes_remains_valid():

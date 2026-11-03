@@ -1,0 +1,40 @@
+{
+  "apply": false,
+  "allocated_before": 1800880128,
+  "protected_sha256": {
+    "storyboards/1bec8f01c8ae43a3bc00c6897fa27ca1/scene_04.png": "fa757f4ac6045c72b5acc12712c86e489186ef4a34734de52268fd179e95da6d",
+    "storyboards/1bec8f01c8ae43a3bc00c6897fa27ca1/scene_06.png": "3f2b348de240990144b4829f33cfe2461a3e0c2b50f754f776737174d8c4d409",
+    "storyboards/1bec8f01c8ae43a3bc00c6897fa27ca1/scene_03.png": "42caa40a8096bf9a601f6c201cebb190349e6b1d1af977ab7dc8a21f2ea78a68",
+    "523db0c917494d5ab823804f6449305b/terungkap-kisah-perjalanan-pak-kasja-dari-suku-baduy-hingga-memeluk-agama-islam/clips/clip_01_nabi-nya-nabi-adam-jadi-agama-di-badu_thumb_c.jpg": "af53205cc64931a0aca2fe35bdb1bed2684686d3f59132585f7e750b032eb4c3",
+    "storyboards/1bec8f01c8ae43a3bc00c6897fa27ca1/scene_02.png": "3b812a7ed282671670565ffd883b554af1d2f8a09c56fa1b4fc543b80962caa1",
+    "storyboards/1bec8f01c8ae43a3bc00c6897fa27ca1/scene_01.png": "afc681e6622e4b47565d674469d912c56097b1da432602c76539da2e11723309",
+    "36a225c2e1c9493bac98e12d760f9bc2/judul-kebenaran-kebaikan/clips/long_animate_kebenaran-kebaikan.mp4": "db11d992bf866f1a40468e874dd2447fbbec91b26201ac88fb69536063b2a791",
+    "523db0c917494d5ab823804f6449305b/terungkap-kisah-perjalanan-pak-kasja-dari-suku-baduy-hingga-memeluk-agama-islam/clips/clip_01_nabi-nya-nabi-adam-jadi-agama-di-badu_thumb_b.jpg": "40204978daabe0c4825aba695b83d04a4240b89473f637dcc5d5c52acf0bbf77",
+    "storyboards/1bec8f01c8ae43a3bc00c6897fa27ca1/scene_07.png": "7f448be07f8d411b62a87fe8056128c93a73fbe5f910405c2236b8844f6fd261",
+    "storyboards/1bec8f01c8ae43a3bc00c6897fa27ca1/scene_09.png": "2bbadaeca8aab20097062ad0e98d6f6fd9e3c97a6b83a9107461e67727eb5a9f",
+    "36a225c2e1c9493bac98e12d760f9bc2/judul-kebenaran-kebaikan/clips/long_animate_kebenaran-kebaikan_thumb.jpg": "73c5939725ad1c712ae40b2c29a0a8155080fb2944e4c6af4c865e159c70782a",
+    "storyboards/1bec8f01c8ae43a3bc00c6897fa27ca1/scene_08.png": "ba2260b479e3d5d725c09977f6197f9a2de276407436661bf4b80e0b0eec8170",
+    "809f39bf83a040a3acfc5fe23b1eb880/yuta-mio-ketemu-hantu-opah-kayang-di-rumah-upin-ipin-seram-banget-roblox/clips/clip_01_apa-kenapa-orang-gitu-kakak-baby-celin-ditangkap_thumb_c.jpg": "b5bde4187fb37ce6583fb9d3b3ce877ab1073ff5fcec79fb2bd58c89019ec425",
+    "809f39bf83a040a3acfc5fe23b1eb880/yuta-mio-ketemu-hantu-opah-kayang-di-rumah-upin-ipin-seram-banget-roblox/clips/clip_01_apa-kenapa-orang-gitu-kakak-baby-celin-ditangkap_thumb.jpg": "5f9365a19c5c4975f984871b803eadeb8bf43c06be8e5e5993efcc07fa25b4c8",
+    "36a225c2e1c9493bac98e12d760f9bc2/judul-kebenaran-kebaikan/clips/long_animate_kebenaran-kebaikan_thumb_c.jpg": "574b0b36bd7538366e231d76cfa972374b652d23582df3c64af3dd89185a0548",
+    "809f39bf83a040a3acfc5fe23b1eb880/yuta-mio-ketemu-hantu-opah-kayang-di-rumah-upin-ipin-seram-banget-roblox/clips/clip_01_apa-kenapa-orang-gitu-kakak-baby-celin-ditangkap.mp4": "76ef04cc1bc84e3f7d2759e585e3738d4240b60e5b4418e2ad07df828fc7b1e9",
+    "523db0c917494d5ab823804f6449305b/terungkap-kisah-perjalanan-pak-kasja-dari-suku-baduy-hingga-memeluk-agama-islam/clips/clip_01_nabi-nya-nabi-adam-jadi-agama-di-badu_thumb.jpg": "1cd7c9ff7bf529abdeafb3d0c68b0659c6fd632889e1a39468050d6e357e0d6a",
+    "storyboards/1bec8f01c8ae43a3bc00c6897fa27ca1/scene_05.png": "6b42ef25119d85a3a2fbc1d35160d2859894a303d5999a222daa8c7ceecd6306",
+    "809f39bf83a040a3acfc5fe23b1eb880/yuta-mio-ketemu-hantu-opah-kayang-di-rumah-upin-ipin-seram-banget-roblox/clips/clip_01_apa-kenapa-orang-gitu-kakak-baby-celin-ditangkap_thumb_b.jpg": "6b04de7e811a0bf76d9b826fbc3f35d97ac09002b39c1101b8c60afd61a200da",
+    "523db0c917494d5ab823804f6449305b/terungkap-kisah-perjalanan-pak-kasja-dari-suku-baduy-hingga-memeluk-agama-islam/clips/clip_01_nabi-nya-nabi-adam-jadi-agama-di-badu.mp4": "2aae38f7053396008b48148281d6775fc2de5452a65829589359bf0e09a7136b",
+    "36a225c2e1c9493bac98e12d760f9bc2/judul-kebenaran-kebaikan/clips/long_animate_kebenaran-kebaikan_thumb_b.jpg": "9dab0bb67aa6148f26ef7337c4545b114189d42b84b03b49d1fbbe72493b5fe6"
+  },
+  "targets": [
+    {
+      "path": "5a3b213c654d4abfbc08bff05c1162cd",
+      "allocated_bytes": 432476160
+    },
+    {
+      "path": "storyboards/807d31beb37f4b01b7131708d62cb79a",
+      "allocated_bytes": 11649024
+    }
+  ],
+  "removed": [],
+  "errors": [],
+  "allocated_after": 1800880128
+}

@@ -45,6 +45,7 @@ import {
   type ClipDeleteResult,
   type LocalLlmProvider,
   type SourceProbe,
+  type StoryboardProgress,
 } from "../lib/apiClient";
 import {
   DEFAULT_AI_BASE_URL,
@@ -161,6 +162,7 @@ export default function HomePage() {
   const [storyAspectRatio, setStoryAspectRatio] = useState<"9:16" | "16:9">("16:9");
   const [storyboardPreview, setStoryboardPreview] = useState<StoryboardPreview | null>(null);
   const [isGeneratingStoryboard, setIsGeneratingStoryboard] = useState(false);
+  const [storyboardProgress, setStoryboardProgress] = useState<StoryboardProgress | null>(null);
   const [storyboardError, setStoryboardError] = useState("");
   const [sourceMode, setSourceMode] = useState<SourceMode>("url");
   const [uploadToken, setUploadToken] = useState("");
@@ -800,6 +802,8 @@ export default function HomePage() {
     }
     setStoryboardError("");
     setIsGeneratingStoryboard(true);
+    setStoryboardPreview(null);
+    setStoryboardProgress({ stage: "connecting", detail: "Menghubungkan ke generator storyboard…" });
     try {
       const targetSeconds = promptDurationSeconds(source, compilationTargetSeconds);
       const preview = await toast.promise(
@@ -811,6 +815,9 @@ export default function HomePage() {
           ai_base_url: aiBaseUrl.trim(),
           ai_model: aiModel.trim(),
           ai_api_key: aiApiKey.trim(),
+        }, (progress) => {
+          setStoryboardProgress(progress);
+          if (progress.preview) setStoryboardPreview(progress.preview);
         }),
         {
           loading: "Menyusun storyboard, voice cast, dan keyframe gambar…",
@@ -1711,6 +1718,7 @@ export default function HomePage() {
         onStoryFormatChange={(format) => { setStoryFormat(format); setStoryboardPreview(null); setStoryboardError(""); }}
         storyboardPreview={storyboardPreview}
         isGeneratingStoryboard={isGeneratingStoryboard}
+        storyboardProgress={storyboardProgress}
         storyboardError={storyboardError}
         clipMode={clipMode}
         videoDuration={videoDuration}

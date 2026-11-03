@@ -12795,6 +12795,22 @@ body::after {
 .storyComposerActions > button:disabled,
 .storyboardRenderBar > button:disabled { cursor: not-allowed; filter: saturate(0.3); opacity: 0.42; }
 
+.storyPromptInputs { display: contents; }
+
+.storyboardLiveProgress {
+  display: grid;
+  gap: 10px;
+  padding: 14px 0;
+  border-top: 1px solid rgba(196, 181, 253, 0.18);
+  color: #ddd6fe;
+  overflow-wrap: anywhere;
+}
+.storyboardLiveProgress > div { display: grid; gap: 6px; }
+.storyboardLiveProgress strong { font-size: 12px; line-height: 1.6; }
+.storyboardLiveProgress small { color: #aaa1bf; font-size: 11px; line-height: 1.6; }
+.storyboardLiveProgress progress { width: 100%; height: 9px; accent-color: #c4b5fd; }
+.storyboardLiveProgress > span { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+
 .storyboardInlineError {
   margin: 0;
   padding: 10px 12px;

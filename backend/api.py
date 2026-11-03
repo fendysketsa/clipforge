@@ -20,7 +20,7 @@ from math import ceil, exp, log10
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from statistics import median
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from urllib.parse import parse_qs, quote, urlencode, unquote, urlparse
 from urllib.error import HTTPError, URLError
@@ -30,6 +30,7 @@ import xml.etree.ElementTree as ET
 import imageio_ffmpeg
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator, model_validator
 from yt_dlp import YoutubeDL
@@ -4243,7 +4244,10 @@ def cleanup_orphan_output_roots(*, min_age_seconds: int | None = None) -> int:
         if min_age_seconds is not None
         else env_int("OUTPUT_ORPHAN_CLEANUP_MIN_AGE_SECONDS", 3600),
     )
-    protected: set[Path] = set()
+    # Storyboards are shared source assets, not job-owned temporary outputs.
+    # A retained story's KEYFRAME entries can still point here after rendering.
+    # Individual unused boards are pruned by the reference-aware cleanup script.
+    protected: set[Path] = {(root / "storyboards").resolve()}
     for job in jobs.values():
         job_root = (root / job.id).resolve()
         if job_root.parent == root:
@@ -24059,6 +24063,18 @@ def get_source_usage_log() -> SourceUsageLogResponse:
 def create_storyboard_preview(
     request: StoryboardPreviewRequest,
 ) -> StoryboardPreviewResponse:
+    return build_storyboard_preview(request)
+
+
+def build_storyboard_preview(
+    request: StoryboardPreviewRequest,
+    progress: Callable[[dict[str, Any]], None] | None = None,
+) -> StoryboardPreviewResponse:
+    def report(stage: str, detail: str, **fields: Any) -> None:
+        if progress is not None:
+            progress({"type": "progress", "stage": stage, "detail": detail, **fields})
+
+    report("script", "AI sedang menyusun naskah, dialog, dan urutan adegan.")
     raw_story = request.story_text.strip()
     if is_hypit_quick_prompt(raw_story):
         try:
@@ -24202,6 +24218,7 @@ def create_storyboard_preview(
     )
     image_ready = False
     image_message = "Generator gambar belum dikonfigurasi."
+    report("provider", "Naskah selesai. Memeriksa kesiapan generator gambar.")
     try:
         require_real_image_provider()
         image_ready = bool(image_base)
@@ -24213,6 +24230,30 @@ def create_storyboard_preview(
     except Exception as exc:
         image_message = str(exc)
 
+    def snapshot() -> StoryboardPreviewResponse:
+        return StoryboardPreviewResponse(
+            storyboard_id=storyboard_id,
+            story_aspect_ratio=request.story_aspect_ratio,
+            title=storyboard.title,
+            hook=storyboard.hook,
+            core_message=storyboard.core_message,
+            art_bible=storyboard.art_bible,
+            character_bible=storyboard.character_bible,
+            location_bible=storyboard.location_bible,
+            director_bible=storyboard.director_bible,
+            property_bible=storyboard.property_bible,
+            production_script=production_script,
+            scenes=scenes,
+            expansion=expansion,
+            image_provider=StoryboardImageProvider(
+                ready=image_ready, provider=image_label, model=image_model, message=image_message,
+            ),
+        )
+
+    report(
+        "planned", f"Naskah siap: {len(scenes)} adegan. Menyiapkan gambar pertama.",
+        completed=0, total=len(scenes), preview=snapshot().model_dump(mode="json"),
+    )
     if image_ready and os.environ.get(
         "LONG_ANIMATE_STORYBOARD_PREVIEW_IMAGES", "true"
     ).strip().casefold() in {"1", "true", "yes", "on"}:
@@ -24220,6 +24261,11 @@ def create_storyboard_preview(
         style_reference: Path | None = None
         character_reference: Path | None = None
         for scene_model, source_scene in zip(scenes, storyboard.scenes, strict=True):
+            report(
+                "images", f"Membuat gambar adegan {source_scene.index}/{len(scenes)}: {source_scene.title}",
+                completed=sum(scene.image_status == "ready" for scene in scenes),
+                current=source_scene.index, total=len(scenes),
+            )
             candidates = shots_by_scene.get(source_scene.index, [])
             shot = candidates[0] if candidates else None
             if shot is None:
@@ -24255,27 +24301,45 @@ def create_storyboard_preview(
                     f"Storyboard keyframe scene {source_scene.index} gagal: {exc}",
                     file=sys.stderr,
                 )
+            report(
+                "images", f"Gambar adegan {source_scene.index}/{len(scenes)} "
+                + ("selesai." if scene_model.image_status == "ready" else "gagal; detail tersedia di kartu adegan."),
+                completed=sum(scene.image_status == "ready" for scene in scenes),
+                current=source_scene.index, total=len(scenes),
+                preview=snapshot().model_dump(mode="json"),
+            )
 
-    return StoryboardPreviewResponse(
-        storyboard_id=storyboard_id,
-        story_aspect_ratio=request.story_aspect_ratio,
-        title=storyboard.title,
-        hook=storyboard.hook,
-        core_message=storyboard.core_message,
-        art_bible=storyboard.art_bible,
-        character_bible=storyboard.character_bible,
-        location_bible=storyboard.location_bible,
-        director_bible=storyboard.director_bible,
-        property_bible=storyboard.property_bible,
-        production_script=production_script,
-        scenes=scenes,
-        expansion=expansion,
-        image_provider=StoryboardImageProvider(
-            ready=image_ready,
-            provider=image_label,
-            model=image_model,
-            message=image_message,
-        ),
+    return snapshot()
+
+
+@app.post("/api/storyboards/preview/stream")
+def stream_storyboard_preview(request: StoryboardPreviewRequest) -> StreamingResponse:
+    """Send real stages and completed keyframes while a preview is being built."""
+    events: queue.Queue[dict[str, Any]] = queue.Queue()
+
+    def produce() -> None:
+        try:
+            result = build_storyboard_preview(request, progress=events.put)
+            events.put({"type": "result", "preview": result.model_dump(mode="json")})
+        except HTTPException as exc:
+            events.put({"type": "error", "detail": str(exc.detail)})
+        except Exception as exc:
+            events.put({"type": "error", "detail": f"Pembuatan storyboard gagal: {exc}"})
+
+    def stream():
+        threading.Thread(target=produce, name="storyboard-preview", daemon=True).start()
+        while True:
+            try:
+                event = events.get(timeout=10)
+            except queue.Empty:
+                event = {"type": "heartbeat"}
+            yield json.dumps(event, ensure_ascii=False) + "\n"
+            if event["type"] in {"result", "error"}:
+                break
+
+    return StreamingResponse(
+        stream(), media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
     )
 
 

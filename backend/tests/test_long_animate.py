@@ -25,6 +25,74 @@ SCRIPT = (
 )
 
 
+def test_breakfast_scene_realigns_stale_dialogue_visual_and_placeholder_props():
+    narration = (
+        "Tiba-tiba, seorang pemuda sederhana bernama Dimas yang baru pulang membeli sarapan melihat nenek tersebut. "
+        'Dimas segera menghampirinya. "Nek, mau menyeberang jalan, ya?" tanyanya lembut.'
+    )
+    scene = {
+        "narration": narration, "visual": "Terima kasih banyak, Nak.",
+        "director_direction": "blocking, kamera, depth, cahaya",
+        "property_direction": "tangan, posisi, kondisi",
+    }
+    long_animate._align_scene_direction(scene, force=True)
+    assert "membeli sarapan" in scene["visual"]
+    assert "Terima kasih" not in scene["visual"]
+    assert "breakfast" in scene["property_direction"]
+    assert "food packet" in scene["property_direction"]
+    assert "Dimas" in scene["director_direction"]
+    assert "workbench" not in scene["property_direction"]
+    assert scene["narration"] == narration
+
+
+def test_source_narration_fallback_also_replaces_stale_ai_dialogue_and_visual(monkeypatch):
+    outline = (
+        "Pagi itu Dimas membeli sarapan di pasar sebelum pulang ke rumah. Ia melihat seorang nenek membawa "
+        "belanjaan dan tongkat di pinggir jalan yang dipenuhi kendaraan. "
+        "Dimas menghampiri nenek itu untuk menawarkan pertolongan agar ia dapat menyeberang jalan dengan aman. "
+        "Nenek menunggu dengan sabar sambil berpegangan pada tongkat kayunya. "
+        "Dimas membantu membawa dua kantong belanjaan nenek itu dan menggandeng lengannya saat kendaraan berhenti. "
+        "Mereka berjalan perlahan menuju trotoar di seberang jalan sampai nenek berhasil tiba dengan selamat."
+    )
+    payload = {"title": "Menolong Nenek", "character_bible": "No recurring character is defined.",
+               "scenes": [{"title": str(i), "narration": "Dimas diam.", "visual": "Terima kasih banyak, Nak.",
+                           "dialogue": [{"speaker": "DIMAS", "gender": "male", "text": "Kapal berlayar."}],
+                           "director_direction": "blocking, kamera, depth, cahaya",
+                           "property_direction": "tangan, posisi, kondisi"} for i in range(3)]}
+    monkeypatch.setattr(long_animate, "chat_completion", lambda *_: json.dumps(payload))
+    script, audit = expand_story_outline(outline, AIConfig(enabled=True, base_url="http://local/v1", model="test"), target_duration=60)
+    sections = long_animate._scene_sections(script)
+    assert audit["source_realigned_scene_indices"] == [1, 2, 3]
+    assert "Kapal berlayar" not in script
+    assert all("Terima kasih banyak" not in scene["visual"] for scene in sections)
+    assert "nenek" in long_animate._character_bible(script).casefold()
+    assert "Dimas" in long_animate._character_bible(script)
+
+
+def test_named_helper_and_elderly_person_both_remain_visible():
+    context = "Seorang pemuda bernama Dimas menghampiri seorang nenek berusia 75 tahun."
+    assert long_animate._visible_people_count("Dimas menghampiri nenek di tepi jalan.", context) == 2
+    assert long_animate._visible_people_count("Mereka menyeberang jalan dengan selamat.", context) == 2
+    assert long_animate._visible_people_count("Dimas membawa sarapan di trotoar.", context) == 1
+
+
+def test_breakfast_prompt_prioritizes_food_and_action_over_camera_metadata():
+    visual = "Seorang pemuda bernama Dimas pulang membeli sarapan di tepi pasar."
+    shot = long_animate.AnimateShot(
+        index=1, scene_index=1, shot_index=1, shot_count=1, title="Sarapan", narration=visual,
+        visual_prompt=long_animate._compose_visual_prompt(visual, visual, "cinematic realistic",
+                                                         "Dimas, pemuda berusia 26 tahun", visual_locked=True),
+        on_screen_text="", camera_motion="pan_right", color_mood="morning light", duration=5,
+        framing="medium_wide", property_direction=long_animate._scene_property_direction(visual),
+    )
+    prompt = long_animate._focused_image_generation_prompt(shot)
+    assert prompt.startswith("A single cinematic frame depicting Seorang pemuda")
+    assert "food packet" in prompt[:700]
+    assert "FULL-BLEED" not in prompt
+    assert "9:16" not in prompt
+    assert "medium-wide" in prompt
+
+
 def test_fallback_storyboard_has_story_arc_without_duplicate_filler():
     storyboard = _fallback_storyboard(SCRIPT)
 
@@ -2105,7 +2173,7 @@ def test_local_reference_edit_falls_back_after_server_crash(monkeypatch, tmp_pat
             raise long_animate.urllib.error.HTTPError(
                 request.full_url, 502, "reference server stopped", {}, io.BytesIO(b"{}")
             )
-        assert json.loads(request.data.decode())["prompt"].startswith("FULL-BLEED")
+        assert json.loads(request.data.decode())["prompt"].startswith("A single cinematic frame depicting")
         return Response()
 
     monkeypatch.setenv("LONG_ANIMATE_IMAGE_PROVIDER", "stable-diffusion-cpp")

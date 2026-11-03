@@ -565,7 +565,7 @@ def _single_visible_moment(value: str) -> str:
             r"\b(?:anak|bayi|remaja|pria|wanita|laki-laki|perempuan|ibu|ayah|guru|"
             r"ustaz|ustadz|dokter|petani|nelayan|astronaut|ilmuwan|robot|hewan|kucing|"
             r"anjing|burung|ikan|mobil|motor|kapal|pesawat|kereta|rumah|gedung|gunung|"
-            r"hutan|laut|planet|ia)\b",
+            r"hutan|laut|planet|ia|nenek|kakek|pemuda|gadis|lelaki|pedagang)\b",
             lowered,
         ):
             score += 4
@@ -576,11 +576,16 @@ def _single_visible_moment(value: str) -> str:
                 "membaca", "menulis", "membuka", "meletakkan", "membasuh", "menutup",
                 "menyimpan", "menoleh", "mengangkat", "mendorong", "menarik", "memasak",
                 "menanam", "memperbaiki", "mendarat", "meledak", "runtuh", "menyala",
+                "membeli", "sarapan", "menyeberang", "menghampiri", "menggandeng", "berpamitan",
             )
         ):
             score += 2
         if any(token in lowered for token in ("suasana", "cahaya matahari", "burung terdengar")):
             score -= 2
+        if "?" in sentence or re.match(r'^["“]', sentence):
+            score -= 6
+        if re.search(r"(?i)^(?:pesan moral|pertanyaan penutup|terkadang,|kebaikan terbesar)", sentence):
+            score -= 8
         return score
 
     selected = max(candidates, key=visible_score) if candidates else clean
@@ -599,6 +604,43 @@ def _single_visible_moment(value: str) -> str:
     if len(words) > 58:
         selected = " ".join(words[:58]).rstrip(" ,;:-") + "."
     return selected
+
+
+def _grounded_narration_visual(narration: str) -> str:
+    """Use an action from this narration when an AI scene has lost its meaning."""
+    action_text = re.sub(r'["“][^"”]*["”]', ' ', narration)
+    action_text = re.sub(r"(?is)\b(?:pesan moral|pertanyaan penutup)\s*:.*$", "", action_text)
+    action_text = re.sub(r"\s+", " ", action_text).strip(' "“”')
+    return _clean_text(_single_visible_moment(action_text or narration), 650)
+
+
+def _placeholder_direction(value: str) -> bool:
+    return bool(
+        not value.strip()
+        or len(value.split()) < 6
+        or re.search(r"(?i)\b(?:blocking,? kamera,? depth,? cahaya|posisi,? kondisi)\b", value)
+    )
+
+
+def _nonvisual_story_copy(value: str) -> bool:
+    return bool(re.search(
+        r"(?i)^\s*(?:[\"“]|terima kasih|tidak perlu|iya,? nak|mau menyeberang|"
+        r"pesan moral|pertanyaan penutup|kalau kamu|semoga allah|doakan saja)", value,
+    ))
+
+
+def _align_scene_direction(scene: dict[str, object], *, force: bool = False) -> None:
+    """Keep visual/blocking/props coupled when source narration replaces AI copy."""
+    narration = str(scene["narration"])
+    visual = str(scene.get("visual") or "")
+    if force or _nonvisual_story_copy(visual) or len(visual.split()) < 8:
+        visual = _grounded_narration_visual(narration)
+        scene["visual"] = visual
+    context = f"{visual} {narration}"
+    if force or _placeholder_direction(str(scene.get("director_direction") or "")):
+        scene["director_direction"] = _scene_director_direction(context, "push_in")
+    if force or _placeholder_direction(str(scene.get("property_direction") or "")):
+        scene["property_direction"] = _scene_property_direction(context)
 
 
 def _visible_shot_moments(value: str, max_shots: int = 3) -> list[str]:
@@ -957,6 +999,7 @@ def _character_bible(script: str) -> str:
         "ayah",
         "tokoh",
         "karakter",
+        "nenek", "kakek", "pemuda", "gadis", "lelaki", "pedagang",
         "mengenakan",
         "memakai",
     )
@@ -978,10 +1021,18 @@ def _character_bible(script: str) -> str:
     for sentence in re.split(r"(?<=[.!?])\s+|\n+", script):
         clean = _strip_script_markup(sentence)
         lowered = clean.casefold()
+        named_action = re.search(
+            r"\b(?!Pagi\b|Namun\b|Ketika\b|Setelah\b|Sebelum\b|Tiba\b)"
+            r"([A-Z][a-zÀ-ÿ]{2,})\s+(?:membeli|menghampiri|menolong|membantu|menggandeng|"
+            r"berjalan|berlari|berdiri|memegang|membawa|tersenyum|berpamitan)\b",
+            clean,
+        )
         if (
             clean
-            and any(cue in lowered for cue in cues)
-            and any(marker in lowered for marker in identity_markers)
+            and (
+                (any(cue in lowered for cue in cues) and any(marker in lowered for marker in identity_markers))
+                or (named_action and _has_any(script, _PEOPLE_IDENTITY_TERMS))
+            )
         ):
             if not re.match(r"(?i)^(buat|gunakan|video harus|target|format|resolusi)\b", clean):
                 candidates.append(clean)
@@ -1059,6 +1110,25 @@ def _property_bible(script: str) -> str:
 
 _SITUATIONAL_PROPERTY_PROFILES: tuple[tuple[tuple[str, ...], str], ...] = (
     (
+        ("sarapan", "breakfast", "takeaway food"),
+        "Show the purchased breakfast as a clearly visible takeaway food packet carried by its buyer. "
+        "Keep the packet, the buyer's attached hand, and the stated street or food stall in the same frame. "
+        "If the buyer is returning, the purchase has already happened: depict carrying the food.",
+    ),
+    (
+        ("kantong belanjaan", "tongkat kayu", "shopping bags", "walking cane"),
+        "Keep the named shopping bags (kantong belanjaan) and wooden walking cane (tongkat kayu) visible "
+        "when this scene names them. Preserve each object's owner, count, and state. Show the cane touching "
+        "the ground to support its elderly owner; hang bags naturally from a load-bearing hand rather than "
+        "treating hands as separate props.",
+    ),
+    (
+        ("menyeberang", "crossing the road", "cross the street"),
+        "Show the road, curb, and opposite pavement in one readable street geography, with the named traffic "
+        "in the carriageway. Keep the walkers on the ground between the two pavements and show their actual "
+        "walking or waiting action at medium-wide scale. Maintain the same direction across the road.",
+    ),
+    (
         ("bakso", "penjual bakso", "tukang bakso"),
         "Show a complete working bakso setup at readable scale: the same cart or stall, steaming stock pot, ladle, "
         "meatball and noodle containers, bowls, spoons, condiment bottles, preparation surface, and customer seating "
@@ -1114,8 +1184,9 @@ def _scene_property_direction(text: str) -> str:
 
 def _scene_director_direction(text: str, camera_motion: str) -> str:
     _motion, composition = _narrative_camera_plan(text, camera_motion)
+    literal_action = _grounded_narration_visual(text)
     return _clean_text(
-        f"Stage this as an environmental story beat: {composition}. Block the principal subject in a physically "
+        f"Stage this exact action: {literal_action}. Camera: {composition}. Block the principal subject in a physically "
         "believable relationship to the required workspace and properties; preserve eyelines, travel direction, and "
         "foreground-midground-background depth. Use motivated practical or natural light appropriate to the stated "
         "time and weather. The location and action must read before facial glamour; avoid a generic portrait.",
@@ -2242,6 +2313,11 @@ def expand_story_outline(
         "menyebut benda konkret yang membuat situasi, pekerjaan, usaha, makanan, dan lokasi langsung terbaca nyata. "
         "Jangan membuat portrait generik ketika cerita menyebut ruang kerja atau usaha; misalnya adegan penjual bakso "
         "harus memperlihatkan setup bakso yang berfungsi, uap kuah, alat racik, bahan, wadah saji, dan area pelanggan. "
+        "SUTRADARA PER ADEGAN: kolom visual wajib menggambarkan aksi fisik dari narration adegan itu sendiri; "
+        "jangan mengisi visual dengan kutipan dialog, pesan moral, pertanyaan penonton, atau kejadian dari adegan lain. "
+        "PROPERTY MASTER PER ADEGAN: sebut benda nyata, pemiliknya, posisi saat dipakai, dan keadaan sebelum/sesudah aksi. "
+        "Gunakan deskripsi konkret, bukan label seperti 'blocking, kamera, depth, cahaya' atau 'posisi, kondisi'. "
+        "Kunci identitas tiap tokoh dari cerita sumber; jangan menyatakan tidak ada tokoh berulang bila tokohnya jelas ada. "
         f"Target durasi sekitar {duration:g} detik, sekitar {target_words} kata, dan sekitar {desired_scenes} adegan "
         f"(boleh menyesuaikan menjadi 3-{MAX_STORY_SCENES} adegan agar alur pengguna tidak terpotong). "
         "Adegan pertama harus cold open; adegan terakhir harus menyelesaikan janji utama. "
@@ -2250,7 +2326,7 @@ def expand_story_outline(
         '"location_bible":"...","director_bible":"...","property_bible":"...",'
         '"scenes":[{"title":"...","narration":"...","visual":"momen 1; momen 2; momen 3",'
         '"dialogue":[{"speaker":"NARATOR|nama karakter","gender":"male|female|neutral","text":"..."}],'
-        '"director_direction":"blocking, kamera, depth, cahaya","property_direction":"properti wajib, posisi, kondisi",'
+        '"director_direction":"","property_direction":"",'
         '"on_screen_text":"maks 6 kata"}]}.\n\n'
         f"JALAN CERITA:\n{clean_outline[:12000]}"
     )
@@ -2328,6 +2404,7 @@ def expand_story_outline(
 
     source_narrations = _outline_narration_chunks(outline_body, len(raw_scenes))
     scenes: list[dict[str, object]] = []
+    source_replaced_scenes: set[int] = set()
     total_words = 0
     for index, raw_scene in enumerate(raw_scenes, start=1):
         if not isinstance(raw_scene, dict):
@@ -2345,13 +2422,15 @@ def expand_story_outline(
                 index,
             )
             narration = _clean_text(source_narration, 5000)
+            source_replaced_scenes.add(index)
         if len(narration.split()) < 3:
             narration = _clean_text(
                 source_narration or raw_scene.get("title") or clean_outline,
                 5000,
             )
+            source_replaced_scenes.add(index)
         dialogue_turns = _clean_dialogue_turns(raw_scene.get("dialogue"))
-        if dialogue_turns:
+        if dialogue_turns and index not in source_replaced_scenes:
             narration = _clean_text(
                 " ".join(turn["text"] for turn in dialogue_turns),
                 5000,
@@ -2402,6 +2481,7 @@ def expand_story_outline(
                     scene["dialogue_turns"] = [
                         {"speaker": "NARATOR", "gender": "neutral", "text": replacement}
                     ]
+                    source_replaced_scenes.add(index + 1)
             total_words = sum(len(scene["narration"].split()) for scene in scenes)
         if total_words < min_words:
             _logger.warning(
@@ -2410,14 +2490,19 @@ def expand_story_outline(
                 min_words,
             )
 
+    # Narration and its image are one editorial unit. Never retain an unrelated
+    # AI visual, dialogue, or prop list after substituting the user's prose.
+    for index, scene in enumerate(scenes, start=1):
+        _align_scene_direction(scene, force=index in source_replaced_scenes)
+
     title = _clean_text(parsed.get("title"), 100) or _scene_title(clean_outline, 0)
     art_bible = _clean_text(parsed.get("art_bible"), 600) or (
         "cinematic realistic original drama, expressive natural acting, practical locations, "
         f"consistent film lighting, {_output_geometry()[0]} composition"
     )
-    character_bible = _clean_text(parsed.get("character_bible"), 900) or (
-        "Preserve every user-defined character identity, age, wardrobe, and relationship consistently."
-    )
+    character_bible = _clean_text(parsed.get("character_bible"), 900)
+    if not character_bible or character_bible.casefold().startswith("no recurring character"):
+        character_bible = _character_bible(outline_body)
     location_bible = _clean_text(parsed.get("location_bible"), 700) or (
         "Preserve every recurring location, era, weather, and spatial layout consistently."
     )
@@ -2465,6 +2550,7 @@ def expand_story_outline(
         "outline_sha256": hashlib.sha256(outline.encode("utf-8")).hexdigest(),
         "production_script_sha256": hashlib.sha256(production_script.encode("utf-8")).hexdigest(),
         "copyrighted_reference_assets_used": False,
+        "source_realigned_scene_indices": sorted(source_replaced_scenes),
     }
 
 
@@ -2887,6 +2973,7 @@ def _requires_story_environment(text: str) -> bool:
         text,
         (
             "gerobak", "warung", "kios", "lapak", "pasar", "toko",
+            "sarapan", "menyeberang", "trotoar", "breakfast", "crossing the road",
             "food cart", "pushcart", "street-food stall", "street food stall",
             "vendor stall",
         ),
@@ -3432,6 +3519,23 @@ def _physical_action_contract(visible: str, context: str = "") -> str:
     )
     setting = setting_match.group(1) if setting_match else "the named setting"
 
+    if _has_any(visible, ("sarapan", "breakfast")) and _has_any(
+        visible, ("membeli", "pulang", "bought", "returning"),
+    ):
+        return (
+            "PHYSICAL ACTION LAYOUT: the buyer walks along the stated market street carrying a visible "
+            "takeaway breakfast food packet in one naturally lowered hand. Show the buyer, the food packet, "
+            "the pavement, and the direction of the buyer's gaze in the same medium-wide frame. "
+            "The food has already been purchased. The other hand remains free for the next stated action."
+        )
+    if _has_any(visible, ("menyeberang", "crossing the road", "cross the street")):
+        return (
+            "PHYSICAL ACTION LAYOUT: the named walkers move from one curb toward the opposite pavement "
+            "on the same market road. Show their grounded feet, direction of travel, road surface, and "
+            "traffic yielding behind them in one medium-wide view. Any stated helper supports the elderly "
+            "person at the arm; carried bags hang from the helper's free hand and a stated cane touches the ground."
+        )
+
     if _has_any(lowered, ("gerobak bakso", "penjual bakso", "jualan bakso")):
         cart_color = "dark-blue " if _has_any(lowered, ("biru tua", "dark blue")) else ""
         seller_action = (
@@ -3521,6 +3625,23 @@ def _visible_people_count(visible: str, context: str = "") -> int:
     """Infer people from the exact shot, never from unrelated scene sentences."""
     if re.search(r"(?i)\b(?:no\s+(?:people|persons?|humans?)|without\s+(?:people|persons?|humans?)|tanpa\s+(?:orang|manusia))\b", visible):
         return 0
+    # A helping encounter needs both participants. Do not collapse the named
+    # helper and the elderly person into the old default of one isolated face.
+    named_people = [name for pair in re.findall(
+        r"\b(?:bernama|named)\s+([A-Z][a-zÀ-ÿ]{2,})|\b([A-Z][a-zÀ-ÿ]{2,})\s+(?:is|was|adalah|berusia)\b",
+        context,
+    ) for name in pair if name]
+    has_named_actor = any(re.search(rf"(?i)\b{re.escape(name)}\b", visible) for name in named_people)
+    helper_encounter = _has_any(visible, ("menghampiri", "menggandeng", "menolong", "membantu", "melihat nenek"))
+    has_elderly_person = _has_any(visible, ("nenek", "kakek", "elderly woman", "elderly man"))
+    if (_explicit_people_count(visible) or 0) < 2 and helper_encounter and has_elderly_person and (
+        has_named_actor or _has_any(visible, ("pemuda", "young man", "lelaki", "pria"))
+    ):
+        return 2
+    if _has_any(visible, ("keduanya", "kedua orang", "both people")):
+        return 2
+    if _has_any(visible, ("mereka", "they")) and _has_any(visible, ("menyeberang", "crossing")) and named_people and _has_any(context, ("nenek", "kakek")):
+        return 2
     count = _expected_people_limit(visible)
     if count or _requests_group_scene(visible):
         return count
@@ -3693,8 +3814,6 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
         "scale, coherent materials, crisp edge definition, fine surface texture, strong local contrast, controlled "
         "depth of field, natural lighting, and only the objects required by this immediate moment."
     )
-    output_aspect = _output_geometry()[0]
-    output_type = "vertical short video" if output_aspect == "9:16" else "landscape video"
     director_direction = _clean_text(
         getattr(scene, "director_direction", ""),
         420,
@@ -3719,8 +3838,9 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
         else "Capture language: preserve the requested authored medium while using cinematic depth, motivated light, tactile surfaces, and restrained color. "
     )
     return _clean_text(
-        f"FULL-BLEED {output_aspect} SINGLE CAMERA FRAME for a {output_type}; use case: {use_case}. "
-        f"SHOT-SPECIFIC CONTRACT — Visible moment: {visible}. "
+        f"A single cinematic frame depicting {visible}. "
+        + (f"{action_contract} " if action_contract else "")
+        + f"SHOT-SPECIFIC CONTRACT — Visible moment: {visible}. "
         + (f"Recurring character identity: {identity}. " if identity else "")
         + f"Immutable style/medium: {style}. "
         + (f"Camera continuity: {camera_continuity}. " if camera_continuity else "")
@@ -3733,7 +3853,6 @@ def _focused_image_generation_prompt(scene: AnimateScene | AnimateShot) -> str:
         + "The exact action, setting, conditions, and atmosphere above must be unmistakable. "
         + "Do not import an action, location, weather, time, character, prop, or mood from another shot. "
         + f"{subject_count}{qa_repair_direction}"
-        + (f"{action_contract} " if action_contract else "")
         + f"Composition/framing: {composition_rule}",
         3200,
     )

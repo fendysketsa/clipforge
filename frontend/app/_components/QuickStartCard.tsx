@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
   AlertTriangle,
@@ -31,7 +31,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { formatDuration } from "../../lib/utils";
-import { API_BASE, regenerateStoryboardKeyframe, type SourceProbe } from "../../lib/apiClient";
+import { API_BASE, regenerateStoryboardKeyframe, type SourceProbe, type StoryboardProgress } from "../../lib/apiClient";
 import type { ClipMode, SourceHistoryCheck, StoryboardPreview } from "../../types/clip.type";
 import {articleText, isArticlePresenterPrompt, isHypitAutoPrompt, isHypitQuickPrompt, prepareStoryInput, type StoryInputFormat} from "../../lib/storyInput";
 
@@ -44,6 +44,7 @@ type QuickStartCardProps = {
   onStoryFormatChange: (format: StoryInputFormat) => void;
   storyboardPreview: StoryboardPreview | null;
   isGeneratingStoryboard: boolean;
+  storyboardProgress: StoryboardProgress | null;
   storyboardError: string;
   clipMode: ClipMode;
   videoDuration: number | null;
@@ -102,6 +103,7 @@ export function QuickStartCard({
   onStoryFormatChange,
   storyboardPreview,
   isGeneratingStoryboard,
+  storyboardProgress,
   storyboardError,
   clipMode,
   videoDuration,
@@ -126,6 +128,14 @@ export function QuickStartCard({
   const inputRef = useRef<HTMLInputElement>(null);
   const [pasteMessage, setPasteMessage] = useState("");
   const [regeneratingKeyframe, setRegeneratingKeyframe] = useState<number | null>(null);
+  const [storyboardElapsed, setStoryboardElapsed] = useState(0);
+  useEffect(() => {
+    if (!isGeneratingStoryboard) return;
+    const started = Date.now();
+    setStoryboardElapsed(0);
+    const timer = window.setInterval(() => setStoryboardElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => window.clearInterval(timer);
+  }, [isGeneratingStoryboard]);
   const hasUrl = Boolean(url.trim());
   const invalidUrl = Boolean(hasUrl && sourceHistory && !sourceHistory.valid_youtube_url);
   const duplicateBlocked = Boolean(sourceHistory?.found && !allowReprocessSource);
@@ -334,17 +344,17 @@ export function QuickStartCard({
         </div>
 
         <div className="formatChoice" role="group" aria-label="Pilih jenis hasil video">
-          <button className={!isLong ? "active" : ""} type="button" disabled={isSubmitting} onClick={() => onClipModeChange("short")}>
+          <button className={!isLong ? "active" : ""} type="button" disabled={isSubmitting || isGeneratingStoryboard} onClick={() => onClipModeChange("short")}>
             <span><Scissors size={17} /></span>
             <b>Viral Short<small>Retention feed · 9:16</small></b>
             {!isLong ? <CheckCircle2 size={16} /> : null}
           </button>
-          <button className={clipMode === "highlight_5m" ? "active" : ""} type="button" disabled={isSubmitting} onClick={() => onClipModeChange("highlight_5m")}>
+          <button className={clipMode === "highlight_5m" ? "active" : ""} type="button" disabled={isSubmitting || isGeneratingStoryboard} onClick={() => onClipModeChange("highlight_5m")}>
             <span><Film size={17} /></span>
             <b>Long Highlight<small>Watch time · 16:9</small></b>
             {clipMode === "highlight_5m" ? <CheckCircle2 size={16} /> : null}
           </button>
-          <button className={isStory ? "active" : ""} type="button" disabled={isSubmitting} onClick={() => onClipModeChange("long_animate")}>
+          <button className={isStory ? "active" : ""} type="button" disabled={isSubmitting || isGeneratingStoryboard} onClick={() => onClipModeChange("long_animate")}>
             <span><BookOpen size={17} /></span>
             <b>Generator Video<small>Artikel atau cerita → animasi · {isPresenter || isHypitPrompt ? "9:16" : storyAspectRatio}</small></b>
             {isStory ? <CheckCircle2 size={16} /> : null}
@@ -352,7 +362,8 @@ export function QuickStartCard({
         </div>
 
         {isStory ? (
-          <div className="storyStudioComposer">
+          <div className="storyStudioComposer" aria-busy={isGeneratingStoryboard}>
+            <div className="storyPromptInputs" inert={isGeneratingStoryboard}>
             <div className="storyPromptExamples" role="group" aria-label="Jenis teks untuk video">
               <div>
                 <button type="button" aria-pressed={storyFormat === "article"} disabled={isWorking} onClick={() => onStoryFormatChange("article")}><BookOpen size={14}/>{storyFormat === "article" ? "✓ " : ""}Artikel → presentasi</button>
@@ -393,11 +404,12 @@ export function QuickStartCard({
               </div>
             ) : null}
 
+            </div>
             {!isHypitPrompt ? (
               <div className="storyComposerActions">
                 <span>
                   <ListVideo size={17} />
-                  <b>{storyboardPreview ? `${storyboardPreview.scenes.length} adegan siap direvisi` : "Buat storyboard dulu"}<small>Belum memakai kredit render.</small></b>
+                  <b>{isGeneratingStoryboard ? "Storyboard sedang dikerjakan" : storyboardPreview ? `${storyboardPreview.scenes.length} adegan siap direvisi` : "Buat storyboard dulu"}<small>Naskah dan gambar disusun sebelum render video.</small></b>
                 </span>
                 <button type="button" disabled={!storyReady || isWorking || isGeneratingStoryboard} onClick={onGenerateStoryboard}>
                   {isGeneratingStoryboard ? <Loader2 className="spin" size={16} /> : storyboardPreview ? <RefreshCw size={16} /> : <WandSparkles size={16} />}
@@ -417,10 +429,24 @@ export function QuickStartCard({
               </div>
             )}
 
+            {isGeneratingStoryboard ? (
+              <div className="storyboardLiveProgress">
+                <div role="status" aria-live="polite">
+                  <strong>{storyboardProgress?.detail || "Menghubungkan ke generator storyboard…"}</strong>
+                  <small>{storyboardProgress?.total
+                    ? `${storyboardProgress.completed ?? 0} dari ${storyboardProgress.total} gambar selesai. Gambar muncul satu per satu di bawah.`
+                    : "AI menyusun cerita terlebih dahulu, lalu membuat gambar setiap adegan."}</small>
+                </div>
+                <progress aria-label="Gambar storyboard selesai" max={storyboardProgress?.total || 1} value={storyboardProgress?.total ? storyboardProgress.completed ?? 0 : undefined} />
+                <span><Clock3 size={13} /> {formatDuration(storyboardElapsed)} berjalan</span>
+                <small>Gambar lokal dapat memerlukan beberapa menit per adegan. Biarkan halaman ini terbuka.</small>
+              </div>
+            ) : null}
+
             {storyboardError ? <div className="storyboardInlineError" role="alert">{storyboardError}</div> : null}
 
             {storyboardPreview && !isHypitPrompt ? (
-              <section className="storyboardPreview" aria-label="Storyboard yang dapat direvisi">
+              <section className="storyboardPreview" inert={isGeneratingStoryboard} aria-label={isGeneratingStoryboard ? "Storyboard sedang dibuat" : "Storyboard yang dapat direvisi"}>
                 <header>
                   <span><Sparkles size={15} /> Storyboard produksi</span>
                   <b>{storyboardPreview.scenes.length} ADEGAN · {storyboardPreview.story_aspect_ratio || storyAspectRatio}</b>
