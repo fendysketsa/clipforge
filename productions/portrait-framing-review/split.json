@@ -1,0 +1,34 @@
+{
+  "enabled": true,
+  "layout": "synchronized_conversation_split",
+  "source_width": 1920,
+  "source_height": 1080,
+  "canvas_width": 1080,
+  "canvas_height": 1920,
+  "preserve_source_aspect_ratio": true,
+  "uses_other_timeline_clips": false,
+  "all_panels_synchronized": true,
+  "full_source_frame_visible": false,
+  "panel_width": 1024,
+  "panel_height": 576,
+  "reason": "two_people_visible_together_in_same_source_frames",
+  "panel_y": 672,
+  "speaker_crops": [
+    [
+      960,
+      540,
+      0,
+      270
+    ],
+    [
+      960,
+      540,
+      960,
+      270
+    ]
+  ],
+  "panel_ys": [
+    330,
+    930
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "layout": "landscape_in_portrait",
+  "source_width": 1920,
+  "source_height": 1080,
+  "canvas_width": 1080,
+  "canvas_height": 1920,
+  "preserve_source_aspect_ratio": true,
+  "uses_other_timeline_clips": false,
+  "all_panels_synchronized": true,
+  "full_source_frame_visible": true,
+  "panel_width": 1024,
+  "panel_height": 576,
+  "reason": "keep_complete_landscape_shot",
+  "panel_y": 672
+}

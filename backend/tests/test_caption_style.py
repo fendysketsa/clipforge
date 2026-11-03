@@ -1497,6 +1497,13 @@ def test_production_team_handoff_maps_grounded_peak_and_keeps_human_boundary():
             },
             "auto_fyp_visual_plan": {"accent": "payoff_teaser"},
             "dynamic_captions": {"enabled": True},
+            "evidence_direction": {
+                "enabled": True,
+                "manual_context_review_required": True,
+                "unresolved_reference_ids": ["article-1"],
+                "overlays_rendered": True,
+                "beats": [{"id": "article-1", "status": "unresolved", "source": None}],
+            },
             "render_quality_qc": {"quality_gate_passed": True},
             "religious_context_integrity": {"safe_for_automatic_export": True},
         },
@@ -1516,6 +1523,9 @@ def test_production_team_handoff_maps_grounded_peak_and_keeps_human_boundary():
     assert researcher["hook_type"] == "question"
     assert researcher["peak_moment_seconds"] == 12.4
     assert editor["surprise_treatment"] == "reveal_punch_in"
+    assert team["roles"]["truth_researcher"]["status"] == "needs_source_review"
+    assert team["roles"]["creative_team"]["unresolved_references"] == 1
+    assert team["roles"]["director"]["source_panels_rendered"] is True
     assert team["overall_status"] == "ready_for_private_human_review"
     assert team["automation_boundary"]["human_must_approve_publication"] is True
     assert team["automation_boundary"]["views_or_monetization_guaranteed"] is False

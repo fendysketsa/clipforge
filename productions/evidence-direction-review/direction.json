@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "enabled": true,
+  "beats": [
+    {
+      "id": "a8cca818245fa9ab",
+      "kind": "allegation",
+      "start": 0.08,
+      "end": 5.21,
+      "utterance": "Admin punya masalah sama Indonesia sepertinya.",
+      "source_start": 1005.13,
+      "query": "Emil Audero Admin punya masalah sama Indonesia sepertinya.",
+      "named_source": "",
+      "status": "opinion_only",
+      "label": "PENILAIAN PEMBICARA",
+      "note": "Tuduhan atau motif belum dibuktikan oleh klip ini.",
+      "source": null,
+      "search": {
+        "status": "not_attempted",
+        "candidates": []
+      },
+      "treatment": "single_accent_then_readable_hold",
+      "rendered": true
+    },
+    {
+      "id": "1647827dca5daebf",
+      "kind": "written_source",
+      "start": 5.36,
+      "end": 10.86,
+      "utterance": "Menuliskan berita paragraf pertama itu motifnya apa?",
+      "source_start": 1010.41,
+      "query": "Astro Awani Emil Audero Menuliskan berita paragraf pertama itu motifnya apa?",
+      "named_source": "Astro Awani",
+      "status": "unresolved",
+      "label": "SUMBER TULISAN BELUM TERVERIFIKASI",
+      "note": "Periksa artikel lengkap dan paragraf yang dimaksud.",
+      "source": null,
+      "search": {
+        "status": "search_unavailable",
+        "candidates": [],
+        "error_type": "URLError",
+        "facts_verified": false
+      },
+      "treatment": "single_accent_then_readable_hold",
+      "rendered": true
+    },
+    {
+      "id": "f248d7c9011514e1",
+      "kind": "social_source",
+      "start": 19.97,
+      "end": 25.47,
+      "utterance": "Dari Instagram klubnya Emil Audero,",
+      "source_start": 1025.02,
+      "query": "Emil Audero Dari Instagram klubnya Emil Audero,",
+      "named_source": "",
+      "status": "unresolved",
+      "label": "UNGGAHAN ASLI BELUM TERVERIFIKASI",
+      "note": "Periksa akun, tanggal, dan unggahan aslinya.",
+      "source": null,
+      "search": {
+        "status": "search_unavailable",
+        "candidates": [],
+        "error_type": "URLError",
+        "facts_verified": false
+      },
+      "treatment": "single_accent_then_readable_hold",
+      "rendered": true
+    }
+  ],
+  "source_context": "Ternyata asosiasi Sepak Bola Maledes ini nakal ya, bandel ya. Itu hukumannya itu sampai sudah melebihi dari 53.000 USD. Nggak apa -apa lah ya, Maledes kan itu berjaya, orang kaya, nggak apa -apa. Nggak dibayar juga mungkin nggak apa -apa. Kan ada ordal di AFC. Tapi yang jelas itu hukumannya sudah lebih dari 53.000 USD ya. Kalau warganet Maledes itu agak pintar dikit gitu ya, itu uangnya itu uang siapa? Ya itu pasti uang dari pajak rakyat dong. itu asosiasi Sepak Bola Maledes kan dimiliki oleh rakyat Maledes. Berarti uang pajak rakyat yang digunakan untuk membayar denda itu. Nggak apa -apa ya, warganet Maledes kan kaya. Kan ringgit berjaya, nggak ada masalah itu. Berapa? 53.000 USD, tipis lah itu. Berita berikutnya, ini sangat menarik teman -teman. Ditulis oleh Astro Awani. Kembalinya penjaga gol yang baru menjuarai piala ASEAN VIVA bersama Indonesia. Jadi maksudnya itu siapa? Emil Audiro. Itu dicemari oleh incident protest. Artikel penuh di ruangan komentar. Teman -teman, kalau teman -teman membaca paragraf pertama, untuk warganet Maledes yang waham, yang kalau ada berita yang sepertinya negatif kepada Indonesia, itu langsung dilahap tanpa dilihat sendiri isi beritanya itu apa? Kalau kita membaca paragraf pertama, kalau kita warganet Maledes, itu senang banget itu. Pasti senang banget itu. lihat itu, kehadiran kembali penjaga gawang Indonesia yang baru menjuarai piala ASEAN VIVA bersama Indonesia, tercoreng akibat incident protest. Wah ini pasti nih, penjaga gawang Indonesia ini memang, sok -sokan ini mentang -mentang udah menang, udah juara, sok -sokan di klubnya gitu. Komentar dari warganet Indonesia itu sangat pintar. Admin punya masalah sama Indonesia sepertinya. Betul. Apa coba? Motifnya apa? Menuliskan berita paragraf pertama itu motifnya apa? Coba jawab yang jujur. Kalau kalian berani jujur tentunya. yakin kalian nggak akan berani untuk menjawab dengan jujur. Motifnya apa? Menuliskan. Seperti itu. Dan ternyata teman -teman apa? Dari Instagram klubnya Emil Audero, klub itu memberikan penghormatan kepada Emil Audero karena dia sebagai salah satu tim yang berhasil menjuarai piala ASEAN VIVA dengan Indonesia. Dan protes yang dilakukan oleh pendukung klubnya Emil Audero itu justru setelah sambutan kepada Emil Audero ini. Jadi sekitar 15 menit sambutan kepada Emil Audero dan semua penonton memberikan sambutan yang sangat entusias. Namun setelah itu pertandingan harus dihentikan karena penonton itu melakukan protes kepada pemilik klub di mana Emil Audero bernau. Jadi insiden protes itu bukan kepada Emil Audero",
+  "media_named_in_transcript": [
+    "Astro Awani"
+  ],
+  "manifest_error": null,
+  "unresolved_reference_ids": [
+    "a8cca818245fa9ab",
+    "1647827dca5daebf",
+    "f248d7c9011514e1"
+  ],
+  "manual_context_review_required": true,
+  "search_results_are_evidence": false,
+  "facts_verified": false,
+  "roles": {
+    "truth_researcher": "find_exact_source_and_preserve_context",
+    "creative_team": "highlight_relevant_excerpt_and_show_attribution",
+    "director": "insert_on_spoken_reference_then_hold_for_reading"
+  },
+  "overlays_rendered": true
+}
