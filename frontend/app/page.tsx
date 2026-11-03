@@ -107,6 +107,8 @@ import {articleText, articleFilmText, hypitStoryBody, isArticleFilmPrompt, isArt
 
 const isProcessJob = (item: ClipJob | null) =>
   item?.status === "queued" || item?.status === "running" || item?.status === "failed" || item?.status === "cancelled";
+const sharesWorkerLane = (jobMode: ClipMode, requestedMode: ClipMode) =>
+  (jobMode === "long_animate") === (requestedMode === "long_animate");
 const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
 const CLEANUP_PROGRESS_POLL_MS = 250;
 const TAB_JOB_STORAGE_KEY = "fendy-clipper.activeJobId.v1";
@@ -222,7 +224,19 @@ export default function HomePage() {
   const reportedFailureIds = useRef(new Set<string>());
 
   const activeJobId = activeJob?.id;
-  const isBusy = isActiveJob(activeJob);
+  const isTrackedJobBusy = isActiveJob(activeJob);
+  const selectedLaneActiveJob = useMemo(() => {
+    const candidates = [
+      ...(activeJob && isActiveJob(activeJob) ? [activeJob] : []),
+      ...jobs.filter(isActiveJob),
+    ].filter((item) => sharesWorkerLane(item.request.clip_mode, clipMode));
+    return candidates
+      .filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index)
+      .sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] ?? null;
+  }, [activeJob, clipMode, jobs]);
+  // The backend has separate capacity lanes for source clipping and text-to-video.
+  // Only lock the composer when the lane currently selected by the user is busy.
+  const isBusy = Boolean(selectedLaneActiveJob);
   const hasActiveHistoryJobs = jobs.some(isActiveJob);
   const latestActiveHistoryJob = useMemo(
     () => [...jobs]
@@ -230,7 +244,7 @@ export default function HomePage() {
       .sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] ?? null,
     [jobs],
   );
-  const activityJob = latestActiveHistoryJob ?? (isBusy ? activeJob : job);
+  const activityJob = latestActiveHistoryJob ?? (isTrackedJobBusy ? activeJob : job);
   const latestLogs = useMemo(() => activityJob?.logs.slice(-RECENT_LOG_LIMIT) ?? [], [activityJob]);
   const hasActiveYouTubeUpload = youtubeUploads.some(
     (upload) =>
@@ -590,7 +604,7 @@ export default function HomePage() {
   }, [job]);
 
   useEffect(() => {
-    if (!activeJobId || !isBusy) return;
+    if (!activeJobId || !isTrackedJobBusy) return;
 
     const interval = window.setInterval(async () => {
       const nextJob = await getJob(activeJobId);
@@ -603,10 +617,10 @@ export default function HomePage() {
     }, ACTIVE_JOB_POLL_INTERVAL_MS);
 
     return () => window.clearInterval(interval);
-  }, [activeJobId, isBusy, loadJobs]);
+  }, [activeJobId, isTrackedJobBusy, loadJobs]);
 
   useEffect(() => {
-    if (!activeJobId || !isBusy) return;
+    if (!activeJobId || !isTrackedJobBusy) return;
 
     const message = "Proses masih berjalan. Hindari refresh jika tidak perlu; jika dilanjutkan, backend tetap bekerja dan tab ini akan menyambung kembali ke task yang sama.";
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -619,7 +633,7 @@ export default function HomePage() {
     return () => {
       window.removeEventListener("beforeunload", warnBeforeUnload);
     };
-  }, [activeJobId, isBusy]);
+  }, [activeJobId, isTrackedJobBusy]);
 
   const handleLoadModels = useCallback(async () => {
     const base = aiBaseUrl.trim();
@@ -829,14 +843,21 @@ export default function HomePage() {
     const effectiveMaxDuration = requestedMode === "short" ? Math.min(MAX_SHORT_DURATION, maxDuration) : maxDuration;
     setError("");
 
-    const existingActiveJob = isActiveJob(activeJob)
-      ? activeJob
-      : jobs.find(isActiveJob) ?? null;
+    const existingActiveJob = [
+      ...(activeJob && isActiveJob(activeJob) ? [activeJob] : []),
+      ...jobs.filter(isActiveJob),
+    ]
+      .filter((item) => sharesWorkerLane(item.request.clip_mode, requestedMode))
+      .sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] ?? null;
     if (existingActiveJob) {
       setActiveJob(existingActiveJob);
       setJob(existingActiveJob);
       window.sessionStorage.setItem(TAB_JOB_STORAGE_KEY, existingActiveJob.id);
-      setError("Proses sebelumnya masih berjalan dan sudah ditampilkan kembali. Tidak membuat job duplikat.");
+      setError(
+        requestedMode === "long_animate"
+          ? "Generator Video sebelumnya masih berjalan dan sudah ditampilkan kembali. Job clipper di lane lain tidak mengunci form ini."
+          : "Proses Short/Long Highlight sebelumnya masih berjalan dan sudah ditampilkan kembali. Generator Video memakai lane lain.",
+      );
       return;
     }
     if (isStoryMode && effectiveStory.split(/\s+/).filter(Boolean).length < 4) {

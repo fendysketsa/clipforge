@@ -13461,7 +13461,7 @@ body::after {
 .clipperHero.isWorking .clipperPromise { display: none; }
 .clipperHero.isWorking .sourceComposer { gap: 9px; padding: 11px 13px; border-radius: 13px; }
 .clipperHero.isWorking .sourceComposerTop { min-height: 34px; padding-bottom: 8px; }
-.clipperHero.isWorking .sourceComposer > :not(.sourceComposerTop):not(.sourceActionGrid) { display: none; }
+.clipperHero.isWorking .sourceComposer > :not(.sourceComposerTop):not(.formatChoice):not(.sourceActionGrid) { display: none; }
 .clipperHero.isWorking .sourceActionGrid .createShortButton { min-height: 45px; padding: 6px 12px; }
 .clipperHero.isWorking .sourceActionGrid .createShortButton:disabled {
   border-color: rgba(94, 234, 212, 0.28);

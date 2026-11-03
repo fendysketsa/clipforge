@@ -334,17 +334,17 @@ export function QuickStartCard({
         </div>
 
         <div className="formatChoice" role="group" aria-label="Pilih jenis hasil video">
-          <button className={!isLong ? "active" : ""} type="button" disabled={isWorking} onClick={() => onClipModeChange("short")}>
+          <button className={!isLong ? "active" : ""} type="button" disabled={isSubmitting} onClick={() => onClipModeChange("short")}>
             <span><Scissors size={17} /></span>
             <b>Viral Short<small>Retention feed · 9:16</small></b>
             {!isLong ? <CheckCircle2 size={16} /> : null}
           </button>
-          <button className={clipMode === "highlight_5m" ? "active" : ""} type="button" disabled={isWorking} onClick={() => onClipModeChange("highlight_5m")}>
+          <button className={clipMode === "highlight_5m" ? "active" : ""} type="button" disabled={isSubmitting} onClick={() => onClipModeChange("highlight_5m")}>
             <span><Film size={17} /></span>
             <b>Long Highlight<small>Watch time · 16:9</small></b>
             {clipMode === "highlight_5m" ? <CheckCircle2 size={16} /> : null}
           </button>
-          <button className={isStory ? "active" : ""} type="button" disabled={isWorking} onClick={() => onClipModeChange("long_animate")}>
+          <button className={isStory ? "active" : ""} type="button" disabled={isSubmitting} onClick={() => onClipModeChange("long_animate")}>
             <span><BookOpen size={17} /></span>
             <b>Generator Video<small>Artikel atau cerita → animasi · {isPresenter || isHypitPrompt ? "9:16" : storyAspectRatio}</small></b>
             {isStory ? <CheckCircle2 size={16} /> : null}
