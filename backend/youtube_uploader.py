@@ -15,6 +15,7 @@ from typing import Iterable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import imageio_ffmpeg
+from youtube_playlists import classify_youtube_playlist
 
 from islamic_text import (
     public_title_has_complete_ending,
@@ -2228,13 +2229,13 @@ def set_visibility(page, visibility: str) -> None:
       for (const root of roots) {
         if (isScheduled) {
           const exactButton = root.querySelector?.(
-            'ytcp-uploads-dialog ytcp-video-visibility-select #second-container-expand-button'
+            'ytcp-video-visibility-select #second-container-expand-button'
           );
           const roleButton = root.querySelector?.(
-            'ytcp-uploads-dialog ytcp-video-visibility-select #second-container [role="button"]'
+            'ytcp-video-visibility-select #second-container [role="button"]'
           );
           const container = root.querySelector?.(
-            'ytcp-uploads-dialog ytcp-video-visibility-select #second-container'
+            'ytcp-video-visibility-select #second-container'
           );
           const scheduleButtons = [exactButton, roleButton, container].filter(
             (element, index, values) => element && values.indexOf(element) === index
@@ -2312,6 +2313,9 @@ def set_visibility(page, visibility: str) -> None:
                     "isScheduled": visibility == "scheduled",
                 },
             )
+            if isinstance(target, dict) and target.get("already"):
+                log(f"Visibilitas sudah terpilih dan terverifikasi: {visibility}.")
+                return
             if isinstance(target, dict) and target.get("x") is not None and target.get("y") is not None:
                 page.mouse.move(float(target["x"]), float(target["y"]))
                 page.mouse.down()
@@ -2336,6 +2340,26 @@ def set_visibility(page, visibility: str) -> None:
     raise UploadError(f"Opsi visibilitas '{visibility}' tidak berhasil dipilih.")
 
 
+def set_native_schedule_controls(page, local: datetime) -> None:
+    scheduler = page.locator('ytcp-visibility-scheduler:visible').first
+    scheduler.locator('#datepicker-trigger').click()
+    date_input = page.locator('ytcp-date-picker #textbox input:visible').first
+    formatted_date = page.evaluate("""({ year, month, day }) => new Intl.DateTimeFormat(
+        document.documentElement.lang || navigator.language,
+        { day: 'numeric', month: 'short', year: 'numeric' }
+    ).format(new Date(year, month - 1, day))""", {"year": local.year, "month": local.month, "day": local.day})
+    date_input.fill(formatted_date)
+    date_input.press('Enter')
+    date_input.wait_for(state='hidden', timeout=10000)
+    time_input = scheduler.locator('input:visible').first
+    time_input.fill(local.strftime('%H:%M'))
+    time_input.press('Tab')
+    model = scheduler.evaluate('(element) => element.model')
+    expected_date = {"year": local.year, "month": local.month - 1, "day": local.day}
+    if not isinstance(model, dict) or model.get('date') != expected_date or model.get('selectedTimeOfDayValue') != local.hour * 3600 + local.minute * 60:
+        raise UploadError(f"Kontrol kalender/jam belum cocok dengan jadwal: {model}")
+
+
 def set_scheduled_publish_time(page, publish_at: str) -> None:
     """Select Studio Schedule and fill its date/time controls."""
     try:
@@ -2347,8 +2371,11 @@ def set_scheduled_publish_time(page, publish_at: str) -> None:
     if scheduled_at <= datetime.now(timezone.utc) + timedelta(minutes=15):
         raise UploadError("Jadwal publikasi terlalu dekat atau sudah lewat")
 
-    set_visibility(page, "scheduled")
     timezone_name = os.environ.get("YOUTUBE_PUBLISH_TIMEZONE", "Asia/Jakarta").strip()
+    browser_timezone = page.evaluate("() => Intl.DateTimeFormat().resolvedOptions().timeZone", {})
+    if isinstance(browser_timezone, str) and browser_timezone != timezone_name:
+        raise UploadError(f"Zona waktu browser {browser_timezone} berbeda dari jadwal {timezone_name}.")
+    set_visibility(page, "scheduled")
     try:
         publish_timezone = ZoneInfo(timezone_name)
     except ZoneInfoNotFoundError as exc:
@@ -2356,6 +2383,10 @@ def set_scheduled_publish_time(page, publish_at: str) -> None:
             f"Zona waktu jadwal YouTube tidak tersedia: {timezone_name}"
         ) from exc
     local = scheduled_at.astimezone(publish_timezone)
+    if hasattr(page, 'locator') and page.locator('ytcp-visibility-scheduler:visible #datepicker-trigger').count():
+        set_native_schedule_controls(page, local)
+        log(f"Jadwal YouTube terpasang melalui kontrol kalender/jam: {local.strftime('%d-%m-%Y %H:%M %Z')}.")
+        return
     payload = {
         "isoDate": local.strftime("%Y-%m-%d"),
         "slashDate": local.strftime("%m/%d/%Y"),
@@ -2365,9 +2396,10 @@ def set_scheduled_publish_time(page, publish_at: str) -> None:
         "monthIndex": local.month - 1,
         "day": local.day,
         "minutes": local.hour * 60 + local.minute,
+        "seconds": local.hour * 3600 + local.minute * 60,
     }
     script = r"""
-    ({ isoDate, slashDate, dayFirstDate, time, year, monthIndex, day, minutes }) => {
+    ({ isoDate, slashDate, dayFirstDate, time, year, monthIndex, day, minutes, seconds }) => {
       const roots = [];
       const seen = new Set();
       const addRoot = (root) => {
@@ -2407,8 +2439,8 @@ def set_scheduled_publish_time(page, publish_at: str) -> None:
       };
       const scheduler = roots.flatMap((root) => root.querySelectorAll
         ? Array.from(root.querySelectorAll(
-            'ytcp-uploads-dialog ytcp-visibility-scheduler, '
-            + 'ytcp-uploads-dialog #publish-from-private-non-sponsor-selector'
+            'ytcp-visibility-scheduler, '
+            + 'ytcp-video-visibility-select #publish-from-private-non-sponsor-selector'
           ))
         : []).find(visible);
       if (!scheduler) return { ok: false, reason: 'scheduler_missing' };
@@ -2423,12 +2455,14 @@ def set_scheduled_publish_time(page, publish_at: str) -> None:
       const nextModel = {
         ...currentModel,
         date: { year: Number(year), month: Number(monthIndex), day: Number(day) },
-        selectedTimeOfDayValue: Number(minutes),
+        selectedTimeOfDayValue: Number(seconds),
+        selectedTimezoneIndex: 0,
       };
       try {
         if (typeof scheduler.set === 'function') {
           scheduler.set('model.date', nextModel.date);
           scheduler.set('model.selectedTimeOfDayValue', nextModel.selectedTimeOfDayValue);
+          scheduler.set('model.selectedTimezoneIndex', 0);
         } else {
           scheduler.model = nextModel;
         }
@@ -2450,8 +2484,8 @@ def set_scheduled_publish_time(page, publish_at: str) -> None:
       let timeField = fields.find((field) => field.type === 'time');
       timeField ||= roots.flatMap((root) => root.querySelectorAll
         ? Array.from(root.querySelectorAll(
-            'ytcp-uploads-dialog ytcp-datetime-picker #time-of-day-container input, '
-            + 'ytcp-uploads-dialog ytcp-datetime-picker tp-yt-paper-input input'
+            'ytcp-datetime-picker #time-of-day-container input, '
+            + 'ytcp-datetime-picker tp-yt-paper-input input'
           ))
         : []).find(visible);
       dateField ||= fields.find((field) => /date|tanggal/.test(label(field)));
@@ -2470,6 +2504,26 @@ def set_scheduled_publish_time(page, publish_at: str) -> None:
       const currentTime = String(timeField.value || timeField.textContent || '');
       const localizedTime = currentTime.includes('.') ? time.replace(':', '.') : time;
       setNativeValue(timeField, localizedTime);
+      // The saved-video popup compares whole visibility models to enable Done.
+      // Updating only the child scheduler can paint the requested date while
+      // leaving the parent model (and final submitted time) stale.
+      const visibilitySelect = scheduler.closest?.('ytcp-video-visibility-select');
+      if (visibilitySelect?.model) {
+        const visibilityModel = {
+          ...visibilitySelect.model,
+          schedulingDate: { ...nextModel },
+          scheduleSelectionType: 'SCHEDULE',
+          scheduleType: 'SCHEDULED_PUBLISHING',
+          scheduleSource: 'PUBLISH_FROM_PRIVATE',
+          visibility: 'PRIVATE',
+          userInteracted: true,
+        };
+        if (typeof visibilitySelect.set === 'function') visibilitySelect.set('model', visibilityModel);
+        else visibilitySelect.model = visibilityModel;
+        visibilitySelect.dispatchEvent(new CustomEvent('model-changed', {
+          detail: { value: visibilityModel }, bubbles: true, composed: true,
+        }));
+      }
       const dateTrigger = scheduler.querySelector?.('#datepicker-trigger');
       const dateText = String(
         dateField?.value || dateField?.textContent || dateTrigger?.innerText
@@ -2483,7 +2537,7 @@ def set_scheduled_publish_time(page, publish_at: str) -> None:
       const modelDateOk = Number(appliedDate.year) === Number(year)
         && Number(appliedDate.month) === Number(monthIndex)
         && Number(appliedDate.day) === Number(day);
-      const modelTimeOk = Number(appliedModel.selectedTimeOfDayValue) === Number(minutes);
+      const modelTimeOk = Number(appliedModel.selectedTimeOfDayValue) === Number(seconds);
       return {
         ok: modelDateOk && modelTimeOk
           && dateText.includes(year) && timeText.replace('.', ':').includes(time),
@@ -2666,7 +2720,7 @@ def visibility_is_selected(page, visibility: str) -> bool:
       for (const root of roots) {
         if (isScheduled) {
           const visibilitySelects = root.querySelectorAll
-            ? Array.from(root.querySelectorAll('ytcp-uploads-dialog ytcp-video-visibility-select'))
+            ? Array.from(root.querySelectorAll('ytcp-video-visibility-select'))
             : [];
           for (const visibilitySelect of visibilitySelects) {
             const scheduleContainer = visibilitySelect.querySelector('#second-container');
@@ -4355,6 +4409,7 @@ def select_playlist(page, playlist: str) -> None:
             persisted = playlist_is_selected(page, playlist_name, timeout_ms=2200)
             if persisted and click_playlist_done(page, timeout_ms=5000):
                 log(f"PLAYLIST_CONFIRMED_BY_REOPEN: {playlist_name}")
+                log(f"PLAYLIST_CONFIRMED: {playlist_name}")
                 return
             if playlist_dialog_open(page, timeout_ms=500):
                 click_playlist_done(page, timeout_ms=1500)
@@ -6911,6 +6966,85 @@ def run_check_login(args: argparse.Namespace) -> None:
     log(f"Session YouTube valid dan tersimpan: {state_path}")
 
 
+def schedule_saved_video(page, video_url: str, publish_at: str) -> str:
+    """Edit a saved video's native schedule and verify its persisted date/time."""
+    normalized_url = normalize_youtube_video_url(video_url)
+    match = re.search(r"[?&]v=([A-Za-z0-9_-]{6,})", normalized_url or "")
+    if not match:
+        raise UploadError("Penjadwalan ulang membutuhkan video-id yang valid.")
+    expected_timezone = os.environ.get("YOUTUBE_PUBLISH_TIMEZONE", "Asia/Jakarta").strip()
+    browser_timezone = page.evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone")
+    if browser_timezone != expected_timezone:
+        raise UploadError(f"Zona waktu browser {browser_timezone} berbeda dari jadwal {expected_timezone}.")
+    edit_url = f"https://studio.youtube.com/video/{match.group(1)}/edit"
+    page.goto(edit_url, wait_until="domcontentloaded", timeout=30000)
+    ensure_logged_in(page)
+    trigger = page.locator('ytcp-video-metadata-visibility #select-button').first
+    trigger.wait_for(state="visible", timeout=30000)
+    if copyright_issue_detected(normalized_page_text(page)):
+        raise UploadError("Penjadwalan ulang ditahan karena indikasi klaim pada video tersimpan.")
+    trigger.click()
+    popup = page.locator('ytcp-video-visibility-edit-popup')
+    local = datetime.fromisoformat(publish_at.replace('Z', '+00:00')).astimezone(ZoneInfo(expected_timezone))
+    expected_date = {"year": local.year, "month": local.month - 1, "day": local.day}
+
+    def matches(model) -> bool:
+        return isinstance(model, dict) and model.get('date') == expected_date and model.get('selectedTimeOfDayValue') == local.hour * 3600 + local.minute * 60 and model.get('selectedTimezoneIndex') == 0
+
+    scheduler = popup.locator('ytcp-visibility-scheduler:visible')
+    if scheduler.count() and matches(scheduler.first.evaluate('(element) => element.model')):
+        log(f"SCHEDULE_PERSISTED_CONFIRMED: {publish_at}")
+        return normalized_url
+
+    def save_visibility_change() -> None:
+        done = page.get_by_role('button', name=re.compile(r'^(Selesai|Done)$', re.I))
+        if not done.is_enabled():
+            raise UploadError("Tombol Selesai jadwal belum aktif setelah perubahan tanggal/jam.")
+        done.evaluate('(button) => button.click()')
+        save = page.get_by_role('button', name=re.compile(r'^(Simpan|Save)$', re.I))
+        # Save is disabled while Studio obtains a reauthentication token too.
+        # Wait for the actual metadata write before reloading, or navigation
+        # can cancel the write and leave the previous visibility unchanged.
+        with page.expect_response(
+            lambda response: '/video_manager/metadata_update' in response.url,
+            timeout=60000,
+        ) as saved:
+            save.click(timeout=30000)
+        response = saved.value
+        if response.status != 200:
+            raise UploadError(f"Penyimpanan metadata jadwal ditolak Studio (HTTP {response.status}).")
+        payload = response.json()
+        if isinstance(payload, dict) and (payload.get('error') or payload.get('errors')):
+            raise UploadError("Penyimpanan metadata jadwal ditolak Studio; jadwal belum dianggap terverifikasi.")
+        page.wait_for_function("""() => [...document.querySelectorAll('button')].some(
+            button => /^(Simpan|Save)$/i.test(button.innerText.trim()) && button.disabled)""", timeout=30000)
+
+    visibility_model = popup.locator('ytcp-video-visibility-select').first.evaluate('(element) => element.model')
+    if isinstance(visibility_model, dict) and visibility_model.get('visibility') == 'PUBLIC':
+        # Studio requires an already-published video to be saved Private
+        # before it accepts a future Schedule for that same video ID.
+        private_radio = popup.locator('[name="PRIVATE"]').first
+        private_radio.click()
+        save_visibility_change()
+        page.reload(wait_until="domcontentloaded")
+        page.locator('ytcp-video-metadata-visibility #select-button').first.click(timeout=30000)
+        private_model = popup.locator('ytcp-video-visibility-select').first.evaluate('(element) => element.model')
+        if not isinstance(private_model, dict) or private_model.get('visibility') != 'PRIVATE':
+            raise UploadError("Status Private belum tersimpan; penjadwalan video ditahan.")
+        log("Private tersimpan pada video-id yang sama; melanjutkan jadwal yang disetujui.")
+    set_scheduled_publish_time(page, publish_at)
+    # Done updates the editor asynchronously. Wait for Save to become enabled
+    # instead of treating its briefly disabled state as a completed save.
+    save_visibility_change()
+    page.reload(wait_until="domcontentloaded")
+    page.locator('ytcp-video-metadata-visibility #select-button').first.click(timeout=30000)
+    model = popup.locator('ytcp-visibility-scheduler:visible').first.evaluate('(element) => element.model')
+    if not matches(model):
+        raise UploadError(f"Jadwal tersimpan belum cocok dengan target {publish_at}: {model}")
+    log(f"SCHEDULE_PERSISTED_CONFIRMED: {publish_at}")
+    return normalized_url
+
+
 def run_verify_upload(args: argparse.Namespace) -> None:
     """Recover a post-save upload without selecting the local file again."""
     sync_playwright, _ = import_playwright()
@@ -6957,6 +7091,7 @@ def run_verify_upload(args: argparse.Namespace) -> None:
                 locale=os.environ.get("YOUTUBE_BROWSER_LOCALE", "en-US"),
                 storage_state=str(state_path),
                 viewport={"width": 1440, "height": 1000},
+                timezone_id=os.environ.get("YOUTUBE_PUBLISH_TIMEZONE", "Asia/Jakarta"),
             )
             page = context.new_page()
         install_context_dialog_guard(context)
@@ -6971,7 +7106,7 @@ def run_verify_upload(args: argparse.Namespace) -> None:
                 args.target_channel_id,
             )
             effective_visibility = "scheduled" if args.publish_at else args.visibility
-            video_url = verify_saved_video_in_studio(
+            video_url = schedule_saved_video(page, args.video_url, args.publish_at) if getattr(args, "schedule_existing", False) else verify_saved_video_in_studio(
                 page,
                 args.title,
                 effective_visibility,
@@ -7015,11 +7150,34 @@ def run_verify_upload(args: argparse.Namespace) -> None:
                 browser.close()
 
 
+def upload_playlist_for_video(video_path: Path, title: str, requested: str = "") -> str:
+    """Resolve at execution time too, including records queued by older APIs."""
+    if not env_bool("YOUTUBE_AUTO_PLAYLIST", True):
+        return requested.strip()
+    try:
+        sidecar = json.loads(video_path.with_suffix(".json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        sidecar = {}
+    if not isinstance(sidecar, dict):
+        sidecar = {}
+    return classify_youtube_playlist(
+        title,
+        video_path.stem.replace("_", " ").replace("-", " "),
+        video_path.parent.parent.name.replace("-", " ") if video_path.parent.name == "clips" else "",
+        *(str(sidecar.get(key) or "") for key in ("title", "text", "hook", "core_message")),
+    )
+
+
 def run_upload(args: argparse.Namespace) -> None:
     sync_playwright, PlaywrightTimeoutError = import_playwright()
     video_path = Path(args.video).expanduser().resolve()
     if not video_path.is_file():
         raise UploadError(f"File video tidak ditemukan: {video_path}")
+
+    if not getattr(args, "playlist_resolved", False):
+        args.playlist = upload_playlist_for_video(video_path, args.title, args.playlist)
+    if env_bool("YOUTUBE_AUTO_PLAYLIST", True):
+        log(f"PLAYLIST_AUTO_SELECTED: {args.playlist}")
 
     state_path = Path(args.state).expanduser().resolve()
     chromium_user_data_dir = Path(args.chromium_user_data_dir).expanduser().resolve() if args.chromium_user_data_dir else None
@@ -7130,6 +7288,7 @@ def run_upload(args: argparse.Namespace) -> None:
                 slow_mo=slow_mo,
                 locale=os.environ.get("YOUTUBE_BROWSER_LOCALE", "en-US"),
                 viewport={"width": 1440, "height": 1000},
+                timezone_id=os.environ.get("YOUTUBE_PUBLISH_TIMEZONE", "Asia/Jakarta"),
                 args=launch_args,
                 **chromium_executable_kwargs(),
             )
@@ -7147,6 +7306,7 @@ def run_upload(args: argparse.Namespace) -> None:
                 locale=os.environ.get("YOUTUBE_BROWSER_LOCALE", "en-US"),
                 storage_state=str(state_path),
                 viewport={"width": 1440, "height": 1000},
+                timezone_id=os.environ.get("YOUTUBE_PUBLISH_TIMEZONE", "Asia/Jakarta"),
             )
             install_context_dialog_guard(context)
             page = context.new_page()
@@ -7444,6 +7604,8 @@ def run_upload(args: argparse.Namespace) -> None:
                 expected_title=upload_title,
                 visibility=effective_visibility,
             )
+            if args.publish_at:
+                final_url = schedule_saved_video(page, final_url, args.publish_at)
             log("UPLOAD_CONFIRMED: YouTube Studio mengonfirmasi transfer video selesai.")
             if final_url and final_url != uploaded_video_url:
                 log(f"VIDEO_URL: {final_url}")
@@ -7549,6 +7711,7 @@ def build_parser() -> argparse.ArgumentParser:
     verify_upload.add_argument("--state", default=str(DEFAULT_STATE_PATH))
     verify_upload.add_argument("--title", required=True)
     verify_upload.add_argument("--video-url", default="")
+    verify_upload.add_argument("--schedule-existing", action="store_true")
     verify_upload.add_argument("--tags", default="")
     verify_upload.add_argument(
         "--content-type",
@@ -7600,6 +7763,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     upload.add_argument("--tags", default="")
     upload.add_argument("--playlist", default=os.environ.get("YOUTUBE_DEFAULT_PLAYLIST", "Islam"))
+    upload.add_argument("--playlist-resolved", action="store_true", help="Playlist sudah dipilih dari konteks sumber oleh API.")
     upload.add_argument("--target-channel", default=os.environ.get("YOUTUBE_TARGET_CHANNEL", "ryuundyofficial"))
     upload.add_argument("--target-email", default=DEFAULT_TARGET_EMAIL)
     upload.add_argument("--target-channel-id", default=DEFAULT_TARGET_CHANNEL_ID)

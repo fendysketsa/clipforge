@@ -1,0 +1,26 @@
+{
+  "verified_at": "2026-11-03T11:20:04.442451+00:00",
+  "verified_schedule_count": 11,
+  "cron_enabled": true,
+  "scheduler_running": true,
+  "active_run_id": "acdcac610fe24fc0a413cd4d1ec2e4f8",
+  "next_run_at": null,
+  "policy": {
+    "public_daily_limit": 7,
+    "public_min_gap_hours": 2.25,
+    "cron_private_buffer_limit": 5,
+    "cron_private_buffer_count": 0,
+    "scheduled_backlog_limit": 11,
+    "scheduled_backlog_count": 11,
+    "short_publish_slots": [
+      "07:00",
+      "09:15",
+      "11:30",
+      "13:45",
+      "16:00",
+      "18:15",
+      "20:30"
+    ]
+  },
+  "video_ids_unchanged": true
+}

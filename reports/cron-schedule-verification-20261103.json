@@ -1,0 +1,183 @@
+{
+  "verified_at": "2026-11-03T11:17:47.326976+00:00",
+  "method": "Independent read-only Studio tabs, native schedule model",
+  "verified_count": 11,
+  "items": [
+    {
+      "id": "ee0bce3ed9144d71b27c9161cf23f436",
+      "verified": true,
+      "visibility": "PRIVATE",
+      "scheduleType": "SCHEDULED_PUBLISHING",
+      "schedulingDate": {
+        "date": {
+          "year": 2026,
+          "month": 10,
+          "day": 4
+        },
+        "selectedTimeOfDayValue": 73800,
+        "selectedTimezoneIndex": 0
+      },
+      "publish_at": "2026-11-04T13:30:00+00:00"
+    },
+    {
+      "id": "2330894ea1604b7ebeef17b9e0625799",
+      "verified": true,
+      "visibility": "PRIVATE",
+      "scheduleType": "SCHEDULED_PUBLISHING",
+      "schedulingDate": {
+        "date": {
+          "year": 2026,
+          "month": 10,
+          "day": 4
+        },
+        "selectedTimeOfDayValue": 25200,
+        "selectedTimezoneIndex": 0
+      },
+      "publish_at": "2026-11-04T00:00:00+00:00"
+    },
+    {
+      "id": "40093a6351134e04925753e6a947753c",
+      "verified": true,
+      "visibility": "PRIVATE",
+      "scheduleType": "SCHEDULED_PUBLISHING",
+      "schedulingDate": {
+        "date": {
+          "year": 2026,
+          "month": 10,
+          "day": 4
+        },
+        "selectedTimeOfDayValue": 33300,
+        "selectedTimezoneIndex": 0
+      },
+      "publish_at": "2026-11-04T02:15:00+00:00"
+    },
+    {
+      "id": "a202543c6d854b178865ffc4177c15d3",
+      "verified": true,
+      "visibility": "PRIVATE",
+      "scheduleType": "SCHEDULED_PUBLISHING",
+      "schedulingDate": {
+        "date": {
+          "year": 2026,
+          "month": 10,
+          "day": 4
+        },
+        "selectedTimeOfDayValue": 41400,
+        "selectedTimezoneIndex": 0
+      },
+      "publish_at": "2026-11-04T04:30:00+00:00"
+    },
+    {
+      "id": "5501e2510b484e868749b8c9abe5b7df",
+      "verified": true,
+      "visibility": "PRIVATE",
+      "scheduleType": "SCHEDULED_PUBLISHING",
+      "schedulingDate": {
+        "date": {
+          "year": 2026,
+          "month": 10,
+          "day": 4
+        },
+        "selectedTimeOfDayValue": 49500,
+        "selectedTimezoneIndex": 0
+      },
+      "publish_at": "2026-11-04T06:45:00+00:00"
+    },
+    {
+      "id": "2222e177580a483cbea76c293e2d64b9",
+      "verified": true,
+      "visibility": "PRIVATE",
+      "scheduleType": "SCHEDULED_PUBLISHING",
+      "schedulingDate": {
+        "date": {
+          "year": 2026,
+          "month": 10,
+          "day": 4
+        },
+        "selectedTimeOfDayValue": 57600,
+        "selectedTimezoneIndex": 0
+      },
+      "publish_at": "2026-11-04T09:00:00+00:00"
+    },
+    {
+      "id": "f8064d86d8764d9a867197411a26c134",
+      "verified": true,
+      "visibility": "PRIVATE",
+      "scheduleType": "SCHEDULED_PUBLISHING",
+      "schedulingDate": {
+        "date": {
+          "year": 2026,
+          "month": 10,
+          "day": 4
+        },
+        "selectedTimeOfDayValue": 65700,
+        "selectedTimezoneIndex": 0
+      },
+      "publish_at": "2026-11-04T11:15:00+00:00"
+    },
+    {
+      "id": "7f03144ddc3b41a986e148fc3a42278e",
+      "verified": true,
+      "visibility": "PRIVATE",
+      "scheduleType": "SCHEDULED_PUBLISHING",
+      "schedulingDate": {
+        "date": {
+          "year": 2026,
+          "month": 10,
+          "day": 5
+        },
+        "selectedTimeOfDayValue": 25200,
+        "selectedTimezoneIndex": 0
+      },
+      "publish_at": "2026-11-05T00:00:00+00:00"
+    },
+    {
+      "id": "ca6a6699a5e34074be24f6ede8530696",
+      "verified": true,
+      "visibility": "PRIVATE",
+      "scheduleType": "SCHEDULED_PUBLISHING",
+      "schedulingDate": {
+        "date": {
+          "year": 2026,
+          "month": 10,
+          "day": 5
+        },
+        "selectedTimeOfDayValue": 33300,
+        "selectedTimezoneIndex": 0
+      },
+      "publish_at": "2026-11-05T02:15:00+00:00"
+    },
+    {
+      "id": "9937500066514745834d4039234225a9",
+      "verified": true,
+      "visibility": "PRIVATE",
+      "scheduleType": "SCHEDULED_PUBLISHING",
+      "schedulingDate": {
+        "date": {
+          "year": 2026,
+          "month": 10,
+          "day": 5
+        },
+        "selectedTimeOfDayValue": 41400,
+        "selectedTimezoneIndex": 0
+      },
+      "publish_at": "2026-11-05T04:30:00+00:00"
+    },
+    {
+      "id": "433fe962da484e9aa3763753c151f830",
+      "verified": true,
+      "visibility": "PRIVATE",
+      "scheduleType": "SCHEDULED_PUBLISHING",
+      "schedulingDate": {
+        "date": {
+          "year": 2026,
+          "month": 10,
+          "day": 5
+        },
+        "selectedTimeOfDayValue": 49500,
+        "selectedTimezoneIndex": 0
+      },
+      "publish_at": "2026-11-05T06:45:00+00:00"
+    }
+  ]
+}

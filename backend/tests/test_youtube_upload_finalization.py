@@ -309,6 +309,8 @@ def test_schedule_time_is_converted_to_wib_and_verified(monkeypatch):
             self.payload = None
 
         def evaluate(self, _script, payload):
+            if "Intl.DateTimeFormat" in _script:
+                return "Asia/Jakarta"
             self.payload = payload
             return {
                 "ok": True,
@@ -339,6 +341,7 @@ def test_schedule_time_is_converted_to_wib_and_verified(monkeypatch):
     assert page.payload["monthIndex"] == 0
     assert page.payload["day"] == 2
     assert page.payload["minutes"] == 7 * 60
+    assert page.payload["seconds"] == 7 * 3600
     assert any("07:00" in line for line in logs)
 
 
@@ -1537,3 +1540,13 @@ def test_final_action_rechecks_claim_notice_immediately_before_click(monkeypatch
             TextPage("Konten yang diklaim ditemukan di video ini"),
             "public",
         )
+
+
+def test_selected_schedule_panel_is_not_toggled_closed(monkeypatch):
+    class SelectedPage:
+        def evaluate(self, _script, _payload):
+            return {"already": True, "x": 20, "y": 20}
+    page = SelectedPage()
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    youtube_uploader.set_visibility(page, "scheduled")
+    # No mouse API: toggling an already-open schedule panel would fail here.

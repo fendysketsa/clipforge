@@ -1454,6 +1454,9 @@ def test_next_native_schedule_uses_wib_slots_and_skips_reserved(monkeypatch):
     monkeypatch.setenv("YOUTUBE_PUBLISH_TIMEZONE", "Asia/Jakarta")
     monkeypatch.setenv("YOUTUBE_SHORT_PUBLISH_SLOTS", "07:00,09:30,12:00")
     monkeypatch.setenv("YOUTUBE_SCHEDULE_MIN_LEAD_MINUTES", "30")
+    monkeypatch.setenv("YOUTUBE_PUBLIC_MIN_GAP_HOURS", "2")
+    monkeypatch.setenv("YOUTUBE_PUBLIC_DAILY_LIMIT", "7")
+    monkeypatch.setattr(api, "youtube_recent_publication_times", lambda **_kwargs: [])
     now = datetime(2026, 11, 1, 22, 30, tzinfo=timezone.utc)  # 02 Nov 05:30 WIB
     reserved = {datetime(2026, 11, 2, 0, 0, tzinfo=timezone.utc)}  # 07:00 WIB
 
@@ -1711,9 +1714,9 @@ def test_long_form_playlist_is_classified_without_user_ui(story, expected):
     ("story", "expected"),
     [
         ("Ustadz menjelaskan sedekah dan iman", "Islam"),
-        ("Kak Yuta menyelamatkan Mio di Roblox", ""),
-        ("Kisah horor di rumah kosong", ""),
-        ("Suami bangkit setelah kehilangan pekerjaan", ""),
+        ("Kak Yuta menyelamatkan Mio di Roblox", "Gaming"),
+        ("Kisah horor di rumah kosong", "Horor"),
+        ("Suami bangkit setelah kehilangan pekerjaan", "Inspiratif"),
     ],
 )
 def test_scheduled_short_playlist_only_uses_islam_for_islamic_clips(story, expected):
@@ -3369,6 +3372,16 @@ def test_upload_falls_back_to_storage_state_when_cdp_launcher_fails(monkeypatch,
     [
         (
             [
+                "PLAYLIST_AUTO_SELECTED: Gaming",
+                "PLAYLIST_CONFIRMED_BY_REOPEN: Gaming",
+                "UPLOAD_CONFIRMED: transfer selesai",
+                "VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345",
+            ],
+            "completed",
+            True,
+        ),
+        (
+            [
                 "PLAYLIST_CONFIRMED: Islam",
                 "UPLOAD_CONFIRMED: transfer selesai",
                 "VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345",
@@ -3437,6 +3450,8 @@ def test_upload_requires_playlist_confirmation_marker(
     result = api.youtube_uploads[upload.id]
     assert result.status == expected_status
     assert result.playlist_confirmed is expected_confirmed
+    if "PLAYLIST_AUTO_SELECTED: Gaming" in uploader_lines:
+        assert result.playlist == "Gaming"
     if expected_status == "failed":
         assert "belum mengonfirmasi playlist" in (result.error or "")
 

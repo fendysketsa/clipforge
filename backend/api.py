@@ -50,6 +50,7 @@ from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
 from telemetry import ProcessTelemetrySampler
 from whisper_cache import start_whisper_model_cache_maintenance
 from metadata_copy import choose_contextual_cta, contextual_engagement_copy
+from youtube_playlists import classify_youtube_playlist
 from hypit_quick import (
     hypit_prompt_body,
     is_hypit_infographic_auto_prompt,
@@ -440,7 +441,7 @@ def youtube_public_daily_limit() -> int:
     configured = max(
         1,
         min(
-            3,
+            7,
             env_int("YOUTUBE_PUBLIC_DAILY_LIMIT", DEFAULT_YOUTUBE_PUBLIC_DAILY_LIMIT),
         ),
     )
@@ -1088,6 +1089,11 @@ class YouTubeConfig(BaseModel):
     public_min_gap_hours: float
     public_cadence_message: str
     active_upload_id: str | None = None
+    cron_private_buffer_limit: int = 5
+    cron_private_buffer_count: int = 0
+    scheduled_backlog_limit: int = 11
+    scheduled_backlog_count: int = 0
+    short_publish_slots: list[str] = Field(default_factory=list)
 
 
 class YouTubeUploadRequest(BaseModel):
@@ -1108,6 +1114,7 @@ class YouTubeUploadRequest(BaseModel):
     )
     dry_run: bool = Field(default_factory=lambda: env_bool("YOUTUBE_DRY_RUN", False))
     publish_at: str | None = None
+    cron_private_buffer: bool = False
 
     @field_validator("title")
     @classmethod
@@ -1211,6 +1218,7 @@ class YouTubeUploadJob(BaseModel):
     thumbnail_attached: bool = False
     visibility: Literal["private", "unlisted", "public"] = "private"
     publish_at: str | None = None
+    cron_private_buffer: bool = False
     made_for_kids: bool = False
     altered_content: bool = False
     tags: list[str] = Field(default_factory=list)
@@ -3862,11 +3870,9 @@ def automatic_long_form_playlist(
             "thumbnail_support",
         )
     ]
-    return classify_long_form_playlist(
+    return classify_youtube_playlist(
         title,
-        description,
         clip.title or "",
-        clip.social_caption or "",
         clip.hook or "",
         clip.core_message or "",
         job.source_title or "",
@@ -3876,33 +3882,24 @@ def automatic_long_form_playlist(
 
 
 def scheduled_short_playlist(*values: str) -> str:
-    """Keep cron Shorts out of the Islam playlist unless the clip is Islamic.
+    """Use the same content routing for Shorts as for long-form uploads."""
+    return classify_youtube_playlist(*values)
 
-    The Studio account currently has no verified gaming/general Shorts
-    playlist. Returning an empty value is safer than putting Roblox, horror,
-    football, or life-story clips into an unrelated religious playlist.
-    """
-    searchable = " ".join(value for value in values if isinstance(value, str)).casefold()
-    islamic_markers = (
-        "islam",
-        "allah",
-        "al-qur",
-        "quran",
-        "hadis",
-        "hadits",
-        "ustad",
-        "ustadz",
-        "kajian",
-        "dakwah",
-        "hijrah",
-        "iman",
-        "muslim",
-        "masjid",
-        "sholat",
-        "salat",
-        "sedekah",
+
+def automatic_youtube_playlist(
+    job: "ClipJob", clip: ClipFile, title: str = ""
+) -> str:
+    """Route all upload entry points from source/clip evidence, not boilerplate."""
+    sidecar = clip_sidecar_payload(clip)
+    return classify_youtube_playlist(
+        title,
+        clip.title or "",
+        clip.hook or "",
+        clip.core_message or "",
+        job.source_title or "",
+        job.request.script_text[:30000],
+        *(str(sidecar.get(key) or "") for key in ("title", "text", "hook", "core_message")),
     )
-    return "Islam" if any(marker in searchable for marker in islamic_markers) else ""
 
 
 def enrich_clips_with_candidate_titles(
@@ -4686,9 +4683,9 @@ def youtube_recent_publication_times(
             # Public publishing remains guarded by local records when the API is unavailable.
             pass
 
-    return sorted(
-        set(published_by_video_id.values()) | set(reservations_without_video_id)
-    )
+    # Different videos published at the same second still consume separate
+    # daily slots. Only video IDs, not timestamps, may deduplicate activity.
+    return sorted([*published_by_video_id.values(), *reservations_without_video_id])
 
 
 def youtube_public_cadence_issue(
@@ -4772,8 +4769,46 @@ def youtube_auto_schedule_enabled() -> bool:
 
 
 def youtube_schedule_backlog_limit() -> int:
-    """Maximum future Shorts held in YouTube Studio at one time."""
+    """Maximum future videos held in YouTube Studio at one time."""
     return max(5, min(100, env_int("YOUTUBE_SCHEDULE_BACKLOG_LIMIT", 20)))
+
+
+def youtube_cron_buffer_enabled() -> bool:
+    return env_bool("YOUTUBE_CRON_BUFFER_ENABLED", False) and youtube_auto_schedule_enabled()
+
+
+def youtube_cron_private_buffer_limit() -> int:
+    return max(0, min(20, env_int("YOUTUBE_CRON_PRIVATE_BUFFER_LIMIT", 5)))
+
+
+def youtube_cron_private_buffer_count() -> int:
+    # Only new, explicitly marked cron reserves belong to this buffer. Legacy
+    # Private videos and deliberate manual Private uploads remain untouched.
+    with youtube_uploads_lock:
+        return sum(
+            upload.cron_private_buffer and not upload.dry_run
+            and (upload.status in {"queued", "running", "completed"} or (upload.status == "failed" and bool(upload.video_url)))
+            and (upload.visibility == "private" or upload.status == "failed")
+            for upload in youtube_uploads.values()
+        )
+
+
+def youtube_cron_capacity_room() -> int:
+    return max(0, youtube_schedule_backlog_limit() - youtube_scheduled_backlog_count()) + max(
+        0, youtube_cron_private_buffer_limit() - youtube_cron_private_buffer_count()
+    )
+
+
+def youtube_cron_capacity_retry_at(now: datetime | None = None) -> datetime:
+    current = now or datetime.now(timezone.utc)
+    with youtube_uploads_lock:
+        future = [
+            when for upload in youtube_uploads.values()
+            if upload.visibility == "public" and not upload.dry_run
+            and upload.status in {"queued", "running", "completed"}
+            and (when := parsed_datetime(upload.publish_at)) is not None and when > current
+        ]
+    return min(future) + timedelta(minutes=1) if future else current + timedelta(minutes=5)
 
 
 def youtube_publish_slot_minutes(*, long_form: bool) -> list[int]:
@@ -4815,6 +4850,8 @@ def youtube_next_publish_slot(
     long_form: bool,
     reserved: set[datetime] | None = None,
     now: datetime | None = None,
+    exclude_upload_id: str | None = None,
+    publications_override: list[datetime] | None = None,
 ) -> datetime:
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     lead = timedelta(
@@ -4823,7 +4860,13 @@ def youtube_next_publish_slot(
     earliest = current + lead
     publish_tz = youtube_publish_timezone()
     earliest_local = earliest.astimezone(publish_tz)
-    occupied = set(reserved or youtube_reserved_publish_times())
+    occupied = set(reserved if reserved is not None else youtube_reserved_publish_times(exclude_upload_id=exclude_upload_id))
+    publications = publications_override if publications_override is not None else youtube_recent_publication_times(exclude_upload_id=exclude_upload_id)
+    occupied.update(publications)
+    counted_times = [*publications, *(when for when in occupied if when not in publications)]
+    minimum_gap = timedelta(hours=youtube_public_min_gap_hours())
+    daily_limit = youtube_public_daily_limit()
+    pause_until = parsed_datetime(os.environ.get("YOUTUBE_PUBLIC_PAUSE_UNTIL", ""))
     slot_minutes = youtube_publish_slot_minutes(long_form=long_form)
     for day_offset in range(0, 366):
         day = earliest_local.date() + timedelta(days=day_offset)
@@ -4840,7 +4883,13 @@ def youtube_next_publish_slot(
                 second=0,
                 microsecond=0,
             )
-            if candidate >= earliest and candidate not in occupied:
+            if candidate < earliest or (pause_until is not None and candidate < pause_until):
+                continue
+            if sum(when.astimezone(publish_tz).date() == day for when in counted_times) >= daily_limit:
+                continue
+            if any(abs(candidate - when) < minimum_gap for when in occupied):
+                continue
+            if candidate not in occupied:
                 return candidate
     raise RuntimeError("Tidak ada slot jadwal YouTube yang tersedia dalam 365 hari")
 
@@ -4856,8 +4905,10 @@ def youtube_scheduled_backlog_count(*, long_form: bool | None = None) -> int:
         if (
             publish_at is None
             or publish_at <= now
-            or upload.status in {"failed", "cancelled"}
+            or upload.status == "cancelled"
+            or (upload.status == "failed" and not (upload.cron_private_buffer and upload.video_url))
             or upload.dry_run
+            or upload.visibility != "public"
         ):
             continue
         if long_form is not None:
@@ -4866,6 +4917,99 @@ def youtube_scheduled_backlog_count(*, long_form: bool | None = None) -> int:
                 continue
         count += 1
     return count
+
+
+def queue_youtube_private_buffer_promotions_once() -> int:
+    """Schedule our new Private reserves by editing the same remote video ID."""
+    if not youtube_cron_buffer_enabled():
+        return 0
+    promoted: list[YouTubeUploadJob] = []
+    with youtube_upload_creation_lock:
+        room = max(0, youtube_schedule_backlog_limit() - youtube_scheduled_backlog_count())
+        with youtube_uploads_lock:
+            private_uploads = sorted(
+                (upload for upload in youtube_uploads.values()
+                 if upload.cron_private_buffer and upload.visibility == "private"
+                 and upload.status == "completed" and upload.upload_confirmed
+                 and upload.video_url and not upload.dry_run
+                 and not youtube_upload_was_claimed(upload)),
+                key=lambda upload: upload.created_at,
+            )[:room]
+        reserved = youtube_reserved_publish_times()
+        for upload in private_uploads:
+            slot = youtube_next_publish_slot(
+                long_form=upload.clip_name.startswith(("highlight_5menit_", "resume_cerita_", "long_animate_")),
+                reserved=reserved,
+                exclude_upload_id=upload.id,
+            )
+            reserved.add(slot)
+            set_youtube_upload(
+                upload.id, status="queued", visibility="public", publish_at=slot.isoformat(),
+                started_at=None, finished_at=None, error=None,
+                logs=[*upload.logs, YOUTUBE_RESTART_VERIFY_MARKER,
+                      "CRON_PRIVATE_PROMOTION: cadangan Private dijadwalkan dengan video-id yang sama; tanpa upload ulang."][-160:],
+            )
+            with youtube_uploads_lock:
+                promoted.append(youtube_uploads[upload.id])
+        if promoted:
+            queue_youtube_upload_jobs(promoted)
+    return len(promoted)
+
+
+def reconcile_youtube_cron_schedules(plan: dict[str, str] | None = None) -> list[YouTubeUploadJob]:
+    """Replan our existing future schedules under one shared daily/gap budget."""
+    if not youtube_cron_buffer_enabled():
+        return []
+    current = datetime.now(timezone.utc)
+    scheduled_ids = scheduled_auto_viral_job_ids()
+    with youtube_upload_creation_lock:
+        with youtube_uploads_lock:
+            if any(upload.status in {"queued", "running"} for upload in youtube_uploads.values()):
+                raise HTTPException(status_code=409, detail="Tunggu upload YouTube aktif selesai sebelum merapikan jadwal.")
+            future = sorted(
+                (upload for upload in youtube_uploads.values()
+                 if upload.source_job_id in scheduled_ids and (
+                     upload.status == "completed" or (
+                         upload.status == "failed" and any(line.startswith("CRON_SCHEDULE_RECONCILE:") for line in upload.logs)
+                     )
+                 )
+                 and upload.visibility == "public" and upload.video_url and not upload.dry_run
+                 and (when := parsed_datetime(upload.publish_at)) is not None and when > current),
+                key=lambda upload: upload.publish_at or "",
+            )
+        old_times = {parsed_datetime(upload.publish_at) for upload in future}
+        history = [when for when in youtube_recent_publication_times() if when not in old_times]
+        reserved = set(history)
+        if plan is not None:
+            by_id = {upload.id: upload for upload in future}
+            if set(plan) != set(by_id):
+                raise HTTPException(status_code=409, detail="Antrean berubah; tinjau ulang rencana jadwal sebelum menyimpan.")
+            validation = list(history)
+            for value in sorted(plan.values()):
+                candidate = parsed_datetime(value)
+                if candidate is None or candidate < current + timedelta(minutes=30):
+                    raise HTTPException(status_code=409, detail="Jadwal rencana terlalu dekat atau tidak valid.")
+                if sum(t.astimezone(youtube_publish_timezone()).date() == candidate.astimezone(youtube_publish_timezone()).date() for t in validation) >= youtube_public_daily_limit() or any(abs(t - candidate) < timedelta(hours=youtube_public_min_gap_hours()) for t in validation):
+                    raise HTTPException(status_code=409, detail="Rencana melampaui batas harian atau jarak publikasi.")
+                validation.append(candidate)
+        changed: list[YouTubeUploadJob] = []
+        for upload in future:
+            slot = parsed_datetime(plan[upload.id]) if plan is not None else youtube_next_publish_slot(
+                long_form=upload.clip_name.startswith(("highlight_5menit_", "resume_cerita_", "long_animate_")),
+                now=current, reserved=reserved, publications_override=history,
+            )
+            reserved.add(slot)
+            set_youtube_upload(
+                upload.id, status="queued", publish_at=slot.isoformat(),
+                started_at=None, finished_at=None, error=None,
+                logs=[*upload.logs, YOUTUBE_RESTART_VERIFY_MARKER,
+                      "CRON_SCHEDULE_RECONCILE: jadwal dirapikan sesuai batas harian dan jarak publikasi; video-id tetap sama."][-160:],
+            )
+            with youtube_uploads_lock:
+                changed.append(youtube_uploads[upload.id])
+        if changed:
+            queue_youtube_upload_jobs(changed)
+        return changed
 
 
 def active_youtube_upload_id() -> str | None:
@@ -4954,6 +5098,11 @@ def youtube_config_payload() -> YouTubeConfig:
             )
         ),
         active_upload_id=active_youtube_upload_id(),
+        cron_private_buffer_limit=youtube_cron_private_buffer_limit(),
+        cron_private_buffer_count=youtube_cron_private_buffer_count(),
+        scheduled_backlog_limit=youtube_schedule_backlog_limit(),
+        scheduled_backlog_count=youtube_scheduled_backlog_count(),
+        short_publish_slots=[f"{minute // 60:02d}:{minute % 60:02d}" for minute in youtube_publish_slot_minutes(long_form=False)],
     )
 
 
@@ -8621,6 +8770,21 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
             }
         )
 
+    cron_private_buffer = False
+    if youtube_cron_buffer_enabled() and job.request.scheduled_public_source_credit and not request.dry_run:
+        if request.cron_private_buffer or (
+            requested_visibility == "public"
+            and youtube_scheduled_backlog_count() >= youtube_schedule_backlog_limit()
+        ):
+            if youtube_cron_private_buffer_count() >= youtube_cron_private_buffer_limit():
+                raise YouTubeCronCapacityReached(youtube_cron_capacity_retry_at())
+            publish_at = None
+            upload_visibility, cadence_hold = "private", None
+            cron_private_buffer = True
+        elif requested_visibility == "public" and publish_at is None:
+            publish_at = youtube_next_publish_slot(long_form=is_compilation_clip(job, clip))
+            upload_visibility, cadence_hold = "public", None
+
     thumbnail_url = request.thumbnail_url or clip.thumbnail_url
     thumbnail_path = output_path_from_url(thumbnail_url) if thumbnail_url else None
     if (thumbnail_path is None or not thumbnail_path.is_file()) and is_compilation_clip(job, clip):
@@ -8741,12 +8905,15 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         description = append_youtube_chapters(description, clip)
         description = append_youtube_source_attribution(description, job)
     altered_content = clip_requires_altered_content_disclosure(clip)
-    playlist = (
-        released_retry.playlist
-        if released_retry is not None and released_retry.playlist
-        else automatic_long_form_playlist(job, clip, packaged_title, description)
-        if is_compilation_clip(job, clip)
-        else scheduled_short_playlist(
+    auto_playlist_enabled = env_bool("YOUTUBE_AUTO_PLAYLIST", True)
+    if auto_playlist_enabled:
+        playlist = automatic_youtube_playlist(job, clip, packaged_title)
+    elif released_retry is not None and released_retry.playlist:
+        playlist = released_retry.playlist
+    elif is_compilation_clip(job, clip):
+        playlist = automatic_long_form_playlist(job, clip, packaged_title, description)
+    elif job.request.scheduled_public_source_credit:
+        playlist = scheduled_short_playlist(
             packaged_title,
             description,
             " ".join(tags),
@@ -8754,9 +8921,8 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
             clip.title or "",
             clip.social_caption or "",
         )
-        if job.request.scheduled_public_source_credit
-        else request.playlist
-    )
+    else:
+        playlist = request.playlist
     upload_id = uuid.uuid4().hex
     now = now_iso()
     return YouTubeUploadJob(
@@ -8773,6 +8939,7 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         thumbnail_attached=False,
         visibility=upload_visibility,
         publish_at=publish_at.isoformat() if publish_at is not None else None,
+        cron_private_buffer=cron_private_buffer,
         made_for_kids=request.made_for_kids,
         altered_content=altered_content,
         tags=tags,
@@ -8798,6 +8965,14 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
             + [
                 f"Preflight monetisasi lolos untuk upload {upload_visibility}; keputusan akhir tetap mengikuti pemeriksaan YouTube."
             ]
+            + (
+                ["CRON_PRIVATE_BUFFER: antrean jadwal penuh; video menjadi cadangan Private dan akan dijadwalkan otomatis saat slot tersedia."]
+                if cron_private_buffer else []
+            )
+            + (
+                [f"Playlist dipilih otomatis dari isi video: {playlist}."]
+                if auto_playlist_enabled else []
+            )
             + (
                 [
                     "Auto-public ditahan dan upload dialihkan ke Private: "
@@ -8901,8 +9076,9 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
             )
         clip_urls = clip_urls[:1]
 
+    cron_buffer_policy = youtube_cron_buffer_enabled() and job.request.scheduled_public_source_credit and not request.dry_run
     schedule_batch = bool(
-        not explicitly_selected
+        (not explicitly_selected or cron_buffer_policy)
         and safe_youtube_visibility(request.visibility) == "public"
         and youtube_auto_schedule_enabled()
         and job.request.scheduled_public_source_credit
@@ -8927,12 +9103,19 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
             )
 
     clips_by_url = {clip.url: clip for clip in job.clips}
+    schedule_room = max(0, youtube_schedule_backlog_limit() - youtube_scheduled_backlog_count())
+    if cron_buffer_policy and schedule_batch:
+        room = youtube_cron_capacity_room()
+        if not room:
+            raise YouTubeCronCapacityReached(youtube_cron_capacity_retry_at())
+        clip_urls = clip_urls[:room]
     reserved = youtube_reserved_publish_times()
     uploads: list[YouTubeUploadJob] = []
-    for clip_url in clip_urls:
+    for index, clip_url in enumerate(clip_urls):
         publish_at: str | None = None
         clip = clips_by_url.get(clip_url)
-        if schedule_batch and clip is not None:
+        buffered = bool(cron_buffer_policy and schedule_batch and index >= schedule_room)
+        if schedule_batch and clip is not None and not buffered:
             slot = youtube_next_publish_slot(
                 long_form=is_compilation_clip(job, clip),
                 reserved=reserved,
@@ -8944,8 +9127,9 @@ def create_youtube_upload_batch_records(job_id: str, request: YouTubeBatchUpload
                 job_id,
                 YouTubeUploadRequest(
                     clip_url=clip_url,
-                    visibility=upload_visibility,
+                    visibility="private" if buffered else upload_visibility,
                     publish_at=publish_at,
+                    cron_private_buffer=buffered,
                     made_for_kids=request.made_for_kids,
                     tags=request.tags,
                     playlist=request.playlist,
@@ -9745,6 +9929,8 @@ def build_youtube_upload_command(
         command.extend(["--tags", ",".join(upload.tags)])
     if upload.playlist:
         command.extend(["--playlist", upload.playlist])
+        if any(line.startswith("Playlist dipilih otomatis dari isi video:") for line in upload.logs):
+            command.append("--playlist-resolved")
     if upload.target_channel:
         command.extend(["--target-channel", upload.target_channel])
     target_email = os.environ.get("YOUTUBE_TARGET_EMAIL", DEFAULT_YOUTUBE_TARGET_EMAIL).strip()
@@ -9802,6 +9988,8 @@ def build_youtube_restart_verification_command(upload: YouTubeUploadJob) -> list
         command.extend(["--video-url", upload.video_url])
     if upload.publish_at:
         command.extend(["--publish-at", upload.publish_at])
+        if any(line.startswith(("CRON_PRIVATE_PROMOTION:", "CRON_SCHEDULE_RECONCILE:")) for line in upload.logs):
+            command.append("--schedule-existing")
     if upload.tags:
         command.extend(["--tags", ",".join(upload.tags)])
     if upload.target_channel:
@@ -11147,6 +11335,7 @@ def run_youtube_upload(upload_id: str) -> None:
                 youtube_upload_processes[upload_id] = process
 
             def record_upload_log(cleaned: str) -> None:
+                nonlocal upload
                 nonlocal playlist_confirmed_for_attempt
                 nonlocal thumbnail_attached_for_attempt
                 nonlocal thumbnail_requirement_waived_for_attempt
@@ -11162,7 +11351,12 @@ def run_youtube_upload(upload_id: str) -> None:
                     # an earlier thumbnail selection during a form re-render.
                     # Do not leave a stale positive badge in the frontend.
                     thumbnail_attached_for_attempt = False
-                if cleaned.startswith("PLAYLIST_CONFIRMED:"):
+                if cleaned.startswith("PLAYLIST_AUTO_SELECTED:"):
+                    selected_playlist = cleaned.partition(":")[2].strip()
+                    if selected_playlist:
+                        upload = upload.model_copy(update={"playlist": selected_playlist})
+                        set_youtube_upload(upload_id, playlist=selected_playlist)
+                if cleaned.startswith(("PLAYLIST_CONFIRMED:", "PLAYLIST_CONFIRMED_BY_REOPEN:")):
                     playlist_confirmed_for_attempt = True
                 if cleaned.startswith(YOUTUBE_UPLOAD_CONFIRMED_PREFIX):
                     upload_confirmed_for_attempt = True
@@ -19370,6 +19564,14 @@ class AutoViralDailyUploadLimitReached(RuntimeError):
         )
 
 
+class YouTubeCronCapacityReached(AutoViralDailyUploadLimitReached):
+    def __init__(self, retry_at: datetime):
+        self.platform = "youtube"
+        self.used = self.limit = youtube_schedule_backlog_limit() + youtube_cron_private_buffer_limit()
+        self.retry_at = retry_at
+        RuntimeError.__init__(self, "Cadangan Private dan antrean jadwal cron penuh; menunggu slot terbit berikutnya.")
+
+
 def scheduled_auto_viral_job_ids() -> set[str]:
     """Identify clip jobs owned by the cron scheduler, including resumed runs."""
     with auto_viral_lock:
@@ -20460,11 +20662,11 @@ def upload_auto_viral_until_success(
                 status="running",
                 finished_at=None,
                 upload_not_before=exc.retry_at.isoformat(),
-                progress_stage="daily_upload_limit",
+                progress_stage="cron_capacity_wait" if isinstance(exc, YouTubeCronCapacityReached) else "daily_upload_limit",
                 processed=processed,
                 message=(
-                    f"Batas harian {exc.limit} upload {exc.platform} tercapai; "
-                    "sisa batch aman dan akan dilanjutkan tanggal berikutnya."
+                    str(exc) if isinstance(exc, YouTubeCronCapacityReached) else
+                    f"Batas harian {exc.limit} upload {exc.platform} tercapai; sisa batch aman dan akan dilanjutkan tanggal berikutnya."
                 ),
             )
             while True:
@@ -20958,6 +21160,9 @@ def run_auto_viral_campaign(run_id: str) -> None:
         for source_index, source in enumerate(sources, start=1):
             ensure_auto_viral_campaign_not_cancelled(run_id)
             if completed_count >= run_request.video_count:
+                break
+            if run.trigger == "schedule" and run_request.auto_upload_youtube and youtube_cron_buffer_enabled() and not youtube_cron_capacity_room():
+                append_auto_viral_log(run_id, "Cadangan Private dan antrean jadwal penuh; pencarian sumber baru menunggu slot tersedia.")
                 break
             append_auto_viral_log(run_id, f"Mulai clipping: {source.get('title')}")
             item: dict[str, Any] = {
@@ -21941,7 +22146,7 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
             youtube_schedule_backlog_limit()
             - youtube_scheduled_backlog_count(long_form=False),
         )
-        remaining_shorts = min(remaining_shorts, backlog_room)
+        remaining_shorts = min(remaining_shorts, youtube_cron_capacity_room() if youtube_cron_buffer_enabled() else backlog_room)
     remaining_longs = max(
         0,
         auto_viral_daily_long_upload_target() - youtube_counts["long"],
@@ -22550,6 +22755,8 @@ def auto_viral_daily_mix_not_before(now: datetime) -> datetime | None:
     """Pause discovery only after the complete Short/Long mix or hard cap."""
     if not env_bool("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False):
         return None
+    if youtube_cron_buffer_enabled() and not youtube_cron_capacity_room():
+        return youtube_cron_capacity_retry_at(now)
     counts = auto_viral_daily_youtube_content_counts(now)
     short_target = auto_viral_daily_short_upload_target()
     long_target = (
@@ -22559,7 +22766,7 @@ def auto_viral_daily_mix_not_before(now: datetime) -> datetime | None:
         else 0
     )
     short_backlog_full = bool(
-        youtube_auto_schedule_enabled()
+        youtube_auto_schedule_enabled() and not youtube_cron_buffer_enabled()
         and youtube_scheduled_backlog_count(long_form=False)
         >= youtube_schedule_backlog_limit()
     )
@@ -22578,11 +22785,13 @@ def auto_viral_daily_mix_incomplete(now: datetime) -> bool:
     """Return whether another recurring run can still fill today's upload mix."""
     if not env_bool("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False):
         return False
+    if youtube_cron_buffer_enabled() and not youtube_cron_capacity_room():
+        return False
     counts = auto_viral_daily_youtube_content_counts(now)
     if counts["short"] + counts["long"] >= auto_viral_daily_upload_limit():
         return False
     short_backlog_full = bool(
-        youtube_auto_schedule_enabled()
+        youtube_auto_schedule_enabled() and not youtube_cron_buffer_enabled()
         and youtube_scheduled_backlog_count(long_form=False)
         >= youtube_schedule_backlog_limit()
     )
@@ -22671,6 +22880,8 @@ def auto_viral_next_run_at(
     """Calculate the next cycle from boot uptime and the prior completion."""
     if active_run_id:
         return None
+    if youtube_cron_buffer_enabled() and not youtube_cron_capacity_room() and not auto_viral_run_can_resume_upload(latest):
+        return youtube_cron_capacity_retry_at(now)
     if (
         latest is not None
         and latest.status == "queued"
@@ -22791,6 +23002,10 @@ def auto_viral_scheduler_loop() -> None:
     try:
         while auto_viral_schedule_enabled():
             now = datetime.now(timezone.utc)
+            try:
+                queue_youtube_private_buffer_promotions_once()
+            except Exception as exc:
+                print(f"Promosi cadangan Private ditunda: {exc}", flush=True)
             reconcile_interrupted_scheduled_clip_runs()
             with auto_viral_lock:
                 active_id = auto_viral_active_run_id
@@ -23166,6 +23381,11 @@ def create_tiktok_upload_batch(job_id: str, request: TikTokBatchUploadRequest) -
 @app.get("/api/youtube/config", response_model=YouTubeConfig)
 def get_youtube_config() -> YouTubeConfig:
     return youtube_config_payload()
+
+
+@app.post("/api/youtube/cron-policy/reconcile", response_model=list[YouTubeUploadJob])
+def reconcile_youtube_cron_policy(plan: dict[str, str]) -> list[YouTubeUploadJob]:
+    return reconcile_youtube_cron_schedules(plan)
 
 
 @app.post("/api/youtube/upload-mode/direct-profile", response_model=YouTubeConfig)

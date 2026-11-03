@@ -8,6 +8,10 @@ def isolate_runtime_state_files(monkeypatch, tmp_path):
     """Never let unit tests overwrite the application's persisted runtime state."""
     api = sys.modules.get("api")
     if api is not None:
+        for name in ("jobs", "youtube_uploads", "tiktok_uploads", "auto_viral_runs"):
+            monkeypatch.setattr(api, name, {})
+        monkeypatch.setattr(api, "auto_viral_schedule_enabled_override", None)
+        monkeypatch.setattr(api, "AUTO_VIRAL_SCHEDULE_CONTROL_PATH", tmp_path / "schedule_control.json")
         monkeypatch.setattr(api, "JOBS_PATH", tmp_path / "jobs.json")
         monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", tmp_path / "youtube_uploads.json")
         monkeypatch.setattr(
