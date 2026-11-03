@@ -5,6 +5,7 @@
 **/.next
 **/node_modules
 **/.env
+/outputs/
 backend/outputs
 backend/jobs.json
 frontend/bun.lock
