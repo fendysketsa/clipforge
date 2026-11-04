@@ -790,6 +790,7 @@ class ClipFile(BaseModel):
     render_experiment_variant: str | None = None
     render_recipe_hash: str | None = None
     render_qc_passed: bool | None = None
+    render_qc_blocking: bool | None = None
     render_qc_status: str | None = None
     render_qc_warnings: list[str] = Field(default_factory=list)
     production_team_status: str | None = None
@@ -4120,6 +4121,10 @@ def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
     changed = False
     for clip in enriched.clips:
         issue = preflight(enriched, clip)
+        render_qc = clip_sidecar_payload(clip).get("render_quality_qc")
+        render_qc_blocking = (
+            render_qc.get("blocking") if isinstance(render_qc, dict) else None
+        )
         tiktok_strategy = current_tiktok_strategy_for_clip(clip)
         tiktok_strategy_changed = clip.tiktok_series_id != tiktok_strategy["series_id"]
         automatic_repair_available = clip_automatic_repair_available(
@@ -4128,6 +4133,7 @@ def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
             issue,
         )
         updates = {
+            "render_qc_blocking": render_qc_blocking if isinstance(render_qc_blocking, bool) else None,
             "youtube_upload_ready": issue is None,
             "youtube_upload_issue": issue,
             "automatic_repair_available": automatic_repair_available,
@@ -13654,6 +13660,11 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
                 render_qc_status=(
                     str(render_quality_qc.get("status") or "").strip() or None
                 ),
+                render_qc_blocking=(
+                    render_quality_qc.get("blocking")
+                    if isinstance(render_quality_qc.get("blocking"), bool)
+                    else None
+                ),
                 render_qc_warnings=render_qc_warnings,
                 production_team_status=(
                     str(production_team.get("overall_status") or "").strip() or None
@@ -22089,6 +22100,25 @@ def scheduled_auto_viral_humor_theme_focus() -> str:
     return queries[rotation_index]
 
 
+def scheduled_auto_viral_rights_profile_ready() -> bool:
+    return bool(
+        env_bool("AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED", False)
+        and len(os.environ.get("AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_EVIDENCE", "").split()) >= 6
+        and len(os.environ.get("AUTO_VIRAL_SCHEDULE_CREATOR_PERSPECTIVE", "").split()) >= 8
+    )
+
+
+def scheduled_auto_viral_youtube_browser_ready() -> bool:
+    return bool(
+        (
+            env_bool("YOUTUBE_HEADLESS", True)
+            and not youtube_upload_uses_cdp()
+            and not youtube_upload_force_cdp()
+        )
+        or ((youtube_upload_uses_cdp() or youtube_upload_force_cdp()) and youtube_cdp_ready())
+    )
+
+
 def scheduled_auto_viral_request() -> AutoViralRequest:
     youtube_upload_requested = env_bool(
         "AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False
@@ -22111,19 +22141,8 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
     creator_perspective = os.environ.get(
         "AUTO_VIRAL_SCHEDULE_CREATOR_PERSPECTIVE", ""
     ).strip()
-    youtube_browser_ready = bool(
-        (
-            env_bool("YOUTUBE_HEADLESS", True)
-            and not youtube_upload_uses_cdp()
-            and not youtube_upload_force_cdp()
-        )
-        or (youtube_upload_uses_cdp() and youtube_cdp_ready())
-    )
-    rights_profile_ready = bool(
-        rights_confirmed
-        and len(rights_evidence.split()) >= 6
-        and len(creator_perspective.split()) >= 8
-    )
+    youtube_browser_ready = scheduled_auto_viral_youtube_browser_ready()
+    rights_profile_ready = scheduled_auto_viral_rights_profile_ready()
     niche = os.environ.get("AUTO_VIRAL_SCHEDULE_NICHE", "auto")
     if niche not in {"auto", *ISLAMIC_EVERGREEN_NICHES.keys()}:
         niche = "auto"
@@ -22671,10 +22690,6 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
     )
     scheduled_request = scheduled_auto_viral_request()
     youtube_counts = auto_viral_daily_youtube_content_counts()
-    youtube_short_upload_pending = bool(
-        youtube_upload_requested
-        and youtube_counts["short"] < auto_viral_daily_short_upload_target()
-    )
     latest = latest_scheduled_auto_viral_run()
     with auto_viral_scheduler_lock:
         scheduler_running = auto_viral_scheduler_running
@@ -22683,22 +22698,25 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
         active_id = auto_viral_active_run_id
     if not enabled:
         message = "Cron nonaktif dari kontrol frontend; proses yang sudah berjalan tetap diselesaikan."
+    elif active_id:
+        message = "Automation sedang berjalan; jadwal berikutnya tidak akan membuat run tumpang tindih."
     elif (
-        youtube_short_upload_pending
-        and not scheduled_request.auto_upload_youtube
-    ) or (
-        tiktok_upload_requested
-        and not scheduled_request.auto_upload_tiktok
-    ) or (
-        paired_long_public_requested
-        and not scheduled_request.auto_publish_paired_long_video
-    ):
+        youtube_upload_requested or tiktok_upload_requested or paired_long_public_requested
+    ) and not scheduled_auto_viral_rights_profile_ready():
         message = (
             "Siklus background aktif, tetapi upload otomatis ditahan sampai konfirmasi hak, "
             "referensi bukti izin, dan perspektif kreator diisi."
         )
-    elif active_id:
-        message = "Automation sedang berjalan; jadwal berikutnya tidak akan membuat run tumpang tindih."
+    elif youtube_upload_requested and not scheduled_auto_viral_youtube_browser_ready():
+        message = "Upload YouTube menunggu koneksi browser Studio; scheduler tetap aktif."
+    elif youtube_upload_requested and youtube_cron_buffer_enabled() and not youtube_cron_capacity_room():
+        message = "Antrean jadwal dan cadangan Private penuh; cron menunggu kapasitas setelah publikasi berikutnya."
+    elif (
+        youtube_upload_requested
+        and youtube_counts["short"] >= auto_viral_daily_short_upload_target()
+        and not scheduled_request.auto_publish_paired_long_video
+    ):
+        message = "Target Short harian tercapai; scheduler menunggu jadwal berikutnya."
     elif (
         env_bool("AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT", False)
         and scheduled_run_started_in_current_boot(
@@ -23001,118 +23019,128 @@ def auto_viral_scheduler_loop() -> None:
     retry_not_before: datetime | None = None
     try:
         while auto_viral_schedule_enabled():
-            now = datetime.now(timezone.utc)
             try:
-                queue_youtube_private_buffer_promotions_once()
-            except Exception as exc:
-                print(f"Promosi cadangan Private ditunda: {exc}", flush=True)
-            reconcile_interrupted_scheduled_clip_runs()
-            with auto_viral_lock:
-                active_id = auto_viral_active_run_id
-            latest = latest_scheduled_auto_viral_run()
-            upload_backlog = pending_scheduled_auto_viral_upload_run()
-            if (
-                upload_backlog is not None
-                and active_id is not None
-                and active_id != upload_backlog.id
-            ):
-                # A newer clipping campaign may run for hours. Its browser
-                # queues are independent and serialized, so drain the durable
-                # upload checkpoint concurrently instead of starving it until
-                # every new source has rendered.
-                start_scheduled_auto_viral_upload_resume(
-                    upload_backlog.id,
-                    claim_campaign_slot=False,
-                )
-            schedule_candidate = upload_backlog or latest
-            next_run = auto_viral_next_run_at(now, schedule_candidate, active_id)
-            if (
-                next_run is not None
-                and retry_not_before is not None
-                and retry_not_before > next_run
-            ):
-                next_run = retry_not_before
-            with auto_viral_scheduler_lock:
-                auto_viral_scheduler_next_run_at = next_run
-
-            if next_run is not None and now >= next_run:
+                now = datetime.now(timezone.utc)
                 try:
-                    stale_resume = bool(
-                        schedule_candidate is not None
-                        and schedule_candidate.status == "queued"
-                        and schedule_candidate.progress_stage == "resume_pending_upload"
-                        and not auto_viral_run_can_resume_upload(schedule_candidate)
-                    )
-                    if stale_resume and schedule_candidate is not None:
-                        stale_processed = [
-                            dict(item) for item in schedule_candidate.processed
-                        ]
-                        for item in stale_processed:
-                            if (
-                                item.get("job_status") == "completed"
-                                and item.get("status") != "completed"
-                                and item.get("status")
-                                not in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
-                            ):
-                                hold_auto_viral_upload_item(
-                                    item,
-                                    "Checkpoint render sudah tidak tersedia setelah restart; batch lama dilepas agar cron mencari sumber baru.",
-                                )
-                        update_auto_viral_run(
-                            schedule_candidate.id,
-                            status="failed",
-                            finished_at=now_iso(),
-                            progress_stage="upload_checkpoint_expired",
-                            processed=stale_processed,
-                            message=(
-                                "Checkpoint upload lama tidak tersedia; "
-                                "scheduler langsung memulai pencarian konten baru."
-                            ),
-                        )
-                    resume_upload = bool(
-                        schedule_candidate is not None
-                        and not stale_resume
-                        and auto_viral_run_can_resume_upload(schedule_candidate)
-                        and (
-                            (
-                                schedule_candidate.status == "queued"
-                                and schedule_candidate.progress_stage == "resume_pending_upload"
-                            )
-                            or (
-                                schedule_candidate.status == "failed"
-                                and auto_viral_retry_until_success()
-                                and auto_viral_run_can_resume_upload(schedule_candidate)
-                            )
-                        )
-                    )
-                    if resume_upload and schedule_candidate is not None:
-                        start_scheduled_auto_viral_upload_resume(
-                            schedule_candidate.id,
-                            claim_campaign_slot=True,
-                        )
-                    else:
-                        create_and_start_auto_viral_campaign(
-                            scheduled_auto_viral_request(),
-                            trigger="schedule",
-                        )
-                    retry_not_before = None
-                except HTTPException as exc:
-                    if exc.status_code != 409:
-                        print(f"Auto Viral scheduler gagal membuat run: {exc.detail}", flush=True)
-                        retry_not_before = now + timedelta(minutes=5)
+                    queue_youtube_private_buffer_promotions_once()
                 except Exception as exc:
-                    print(f"Konfigurasi Auto Viral scheduler tidak valid: {exc}", flush=True)
-                    retry_not_before = now + timedelta(minutes=5)
-            wait_seconds = (
-                15.0
-                if next_run is None
-                else max(
-                    1.0,
-                    min(30.0, (next_run - datetime.now(timezone.utc)).total_seconds()),
+                    print(f"Promosi cadangan Private ditunda: {exc}", flush=True)
+                reconcile_interrupted_scheduled_clip_runs()
+                with auto_viral_lock:
+                    active_id = auto_viral_active_run_id
+                latest = latest_scheduled_auto_viral_run()
+                upload_backlog = pending_scheduled_auto_viral_upload_run()
+                if (
+                    upload_backlog is not None
+                    and active_id is not None
+                    and active_id != upload_backlog.id
+                ):
+                    # A newer clipping campaign may run for hours. Its browser
+                    # queues are independent and serialized, so drain the durable
+                    # upload checkpoint concurrently instead of starving it until
+                    # every new source has rendered.
+                    start_scheduled_auto_viral_upload_resume(
+                        upload_backlog.id,
+                        claim_campaign_slot=False,
+                    )
+                schedule_candidate = upload_backlog or latest
+                next_run = auto_viral_next_run_at(now, schedule_candidate, active_id)
+                if (
+                    next_run is not None
+                    and retry_not_before is not None
+                    and retry_not_before > next_run
+                ):
+                    next_run = retry_not_before
+                with auto_viral_scheduler_lock:
+                    auto_viral_scheduler_next_run_at = next_run
+
+                if next_run is not None and now >= next_run:
+                    try:
+                        stale_resume = bool(
+                            schedule_candidate is not None
+                            and schedule_candidate.status == "queued"
+                            and schedule_candidate.progress_stage == "resume_pending_upload"
+                            and not auto_viral_run_can_resume_upload(schedule_candidate)
+                        )
+                        if stale_resume and schedule_candidate is not None:
+                            stale_processed = [
+                                dict(item) for item in schedule_candidate.processed
+                            ]
+                            for item in stale_processed:
+                                if (
+                                    item.get("job_status") == "completed"
+                                    and item.get("status") != "completed"
+                                    and item.get("status")
+                                    not in AUTO_VIRAL_UPLOAD_HOLD_STATUSES
+                                ):
+                                    hold_auto_viral_upload_item(
+                                        item,
+                                        "Checkpoint render sudah tidak tersedia setelah restart; batch lama dilepas agar cron mencari sumber baru.",
+                                    )
+                            update_auto_viral_run(
+                                schedule_candidate.id,
+                                status="failed",
+                                finished_at=now_iso(),
+                                progress_stage="upload_checkpoint_expired",
+                                processed=stale_processed,
+                                message=(
+                                    "Checkpoint upload lama tidak tersedia; "
+                                    "scheduler langsung memulai pencarian konten baru."
+                                ),
+                            )
+                        resume_upload = bool(
+                            schedule_candidate is not None
+                            and not stale_resume
+                            and auto_viral_run_can_resume_upload(schedule_candidate)
+                            and (
+                                (
+                                    schedule_candidate.status == "queued"
+                                    and schedule_candidate.progress_stage == "resume_pending_upload"
+                                )
+                                or (
+                                    schedule_candidate.status == "failed"
+                                    and auto_viral_retry_until_success()
+                                    and auto_viral_run_can_resume_upload(schedule_candidate)
+                                )
+                            )
+                        )
+                        if resume_upload and schedule_candidate is not None:
+                            start_scheduled_auto_viral_upload_resume(
+                                schedule_candidate.id,
+                                claim_campaign_slot=True,
+                            )
+                        else:
+                            create_and_start_auto_viral_campaign(
+                                scheduled_auto_viral_request(),
+                                trigger="schedule",
+                            )
+                        retry_not_before = None
+                    except HTTPException as exc:
+                        if exc.status_code != 409:
+                            print(f"Auto Viral scheduler gagal membuat run: {exc.detail}", flush=True)
+                            retry_not_before = now + timedelta(minutes=5)
+                    except Exception as exc:
+                        print(f"Konfigurasi Auto Viral scheduler tidak valid: {exc}", flush=True)
+                        retry_not_before = now + timedelta(minutes=5)
+                wait_seconds = (
+                    15.0
+                    if next_run is None
+                    else max(
+                        1.0,
+                        min(30.0, (next_run - datetime.now(timezone.utc)).total_seconds()),
+                    )
                 )
-            )
-            auto_viral_scheduler_wakeup.wait(wait_seconds)
-            auto_viral_scheduler_wakeup.clear()
+                auto_viral_scheduler_wakeup.wait(wait_seconds)
+                auto_viral_scheduler_wakeup.clear()
+            except Exception as exc:
+                # Discovery, checkpoint reconciliation, and schedule calculation
+                # can fail too. A transient error must not kill the cron thread.
+                print(f"Auto Viral scheduler pulih dari error sementara: {exc}", flush=True)
+                with auto_viral_scheduler_lock:
+                    auto_viral_scheduler_next_run_at = datetime.now(timezone.utc) + timedelta(seconds=30)
+                auto_viral_scheduler_wakeup.wait(30.0)
+                auto_viral_scheduler_wakeup.clear()
+
     finally:
         with auto_viral_scheduler_lock:
             auto_viral_scheduler_running = False

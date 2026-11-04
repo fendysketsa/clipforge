@@ -766,8 +766,11 @@ export function ResultsSection({
               || typeof clip.fyp_score !== "number"
               || clip.fyp_score >= VIRAL_QUALITY_FLOOR;
             const automaticRepairDidNotPass = Boolean(clip.automatic_repair_available);
+            const renderQcWarning = clip.render_qc_passed === false && clip.render_qc_blocking === false;
+            const renderQcHold = clip.render_qc_blocking === true
+              || (clip.render_qc_passed === false && !renderQcWarning);
             const automaticQcState = clip.context_recut_required
-              || clip.render_qc_passed === false
+              || renderQcHold
               || clip.youtube_upload_ready === false
               ? "hold"
               : clip.render_qc_passed === true && clip.youtube_upload_ready === true
@@ -776,12 +779,14 @@ export function ResultsSection({
             const automaticQcChecks = [
               {
                 label: "Render visual",
-                detail: clip.render_qc_status === "review_required"
+                detail: renderQcWarning
+                  ? "Catatan visual; tidak memblokir upload. Lihat peringatan QC."
+                  : clip.render_qc_status === "review_required"
                   ? "Perlu pemeriksaan visual"
                   : clip.render_qc_status || "Belum ada hasil render QC",
                 state: clip.render_qc_passed === true
                   ? "passed"
-                  : clip.render_qc_passed === false
+                  : renderQcHold
                     ? "failed"
                     : "pending",
               },
@@ -995,6 +1000,8 @@ export function ResultsSection({
                           ? "QC otomatis lolos"
                           : automaticQcState === "hold"
                             ? "QC otomatis menahan"
+                            : renderQcWarning && clip.youtube_upload_ready === true
+                              ? "QC: catatan visual"
                             : "QC otomatis menunggu"}
                       </small>
                       <ChevronDown size={14} />
@@ -1025,6 +1032,8 @@ export function ResultsSection({
                             ? "Lulus"
                             : automaticQcState === "hold"
                               ? "Ditahan"
+                              : renderQcWarning && clip.youtube_upload_ready === true
+                                ? "Catatan visual"
                               : "Belum lengkap"}
                         </strong>
                       </div>

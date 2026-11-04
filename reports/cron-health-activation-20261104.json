@@ -1,0 +1,61 @@
+{
+  "verified_at_wib": "2026-11-04T14:34:53.694333+07:00",
+  "backend_schema_updated": true,
+  "frontend_updated_assets": [
+    "/_next/static/chunks/1j1zwmypdz5we.js"
+  ],
+  "runtime_settings_retained": {
+    "interval_hours": 24.0,
+    "run_on_startup": true,
+    "once_per_boot": false,
+    "boot_delay_minutes": 5.0,
+    "post_clip_upload_delay_minutes": 0.0,
+    "paired_long_video_enabled": false,
+    "paired_long_duration": 300.0,
+    "paired_long_auto_public_enabled": false,
+    "background_upload_enabled": true
+  },
+  "scheduler": {
+    "enabled": true,
+    "interval_hours": 24.0,
+    "run_on_startup": true,
+    "once_per_boot": false,
+    "scheduler_running": true,
+    "boot_delay_minutes": 5.0,
+    "post_clip_upload_delay_minutes": 0.0,
+    "background_upload_enabled": true,
+    "paired_long_video_enabled": false,
+    "paired_long_duration": 300.0,
+    "paired_long_auto_public_enabled": false,
+    "active_run_id": null,
+    "last_run_id": "e78910eb52d048bd8c1da3b4b945ca4a",
+    "last_started_at": "2026-11-04T04:57:21.208193+00:00",
+    "last_finished_at": "2026-11-04T07:34:04.286236+00:00",
+    "next_run_at": "2026-11-04T09:01:00+00:00",
+    "message": "Antrean jadwal dan cadangan Private penuh; cron menunggu kapasitas setelah publikasi berikutnya."
+  },
+  "youtube_policy": {
+    "scheduled_backlog_limit": 11,
+    "scheduled_backlog_count": 11,
+    "cron_private_buffer_limit": 5,
+    "cron_private_buffer_count": 5,
+    "public_daily_limit": 7,
+    "public_min_gap_hours": 2.25
+  },
+  "local_api_sha256": "c8b332884679b51e2151825c75b85c1497356949d7147fb4cd41e06bd3378b39",
+  "post_activation_health_check_at_wib": "2026-11-04T14:35:26.753613+07:00",
+  "backend_health": "ok",
+  "frontend_http_status": 200,
+  "activation_processes_running": false,
+  "last_campaign_summary": {
+    "id": "e78910eb52d048bd8c1da3b4b945ca4a",
+    "status": "completed",
+    "finished_at": "2026-11-04T07:34:04.286236+00:00",
+    "message": "Automation selesai; 6 batch terverifikasi terupload, 1 batch ditahan tanpa menghambat cron",
+    "processed_status_counts": {
+      "failed": 2,
+      "completed": 6,
+      "manual_review_required": 1
+    }
+  }
+}

@@ -63,6 +63,7 @@ export type ClipFile = {
   render_experiment_variant?: string | null;
   render_recipe_hash?: string | null;
   render_qc_passed?: boolean | null;
+  render_qc_blocking?: boolean | null;
   render_qc_status?: string | null;
   render_qc_warnings?: string[];
   production_team_status?: string | null;

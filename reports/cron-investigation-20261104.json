@@ -1,0 +1,64 @@
+{
+  "checked_at_wib": "2026-11-04T12:34:29.871221+07:00",
+  "scheduler": {
+    "enabled": true,
+    "interval_hours": 24.0,
+    "run_on_startup": true,
+    "once_per_boot": false,
+    "scheduler_running": true,
+    "boot_delay_minutes": 5.0,
+    "post_clip_upload_delay_minutes": 0.0,
+    "background_upload_enabled": true,
+    "paired_long_video_enabled": false,
+    "paired_long_duration": 300.0,
+    "paired_long_auto_public_enabled": false,
+    "active_run_id": "e78910eb52d048bd8c1da3b4b945ca4a",
+    "last_run_id": "e78910eb52d048bd8c1da3b4b945ca4a",
+    "last_started_at": "2026-11-04T04:57:21.208193+00:00",
+    "last_finished_at": null,
+    "next_run_at": null,
+    "message": "Siklus background aktif, tetapi upload otomatis ditahan sampai konfirmasi hak, referensi bukti izin, dan perspektif kreator diisi."
+  },
+  "active_jobs": [
+    {
+      "id": "6a81b1e6660c41f89aa0108bb90166cf",
+      "status": "running",
+      "progress_stage": "transcript",
+      "progress_detail": "Transkripsi 69% berjalan di CUDA",
+      "progress_percent": 39,
+      "updated_at": "2026-11-04T05:34:29.389142+00:00"
+    }
+  ],
+  "screenshot_clip_youtube_uploads": [
+    {
+      "id": "ea0c43f9126341b49633bf0f7e8061af",
+      "source_job_id": "10e4939544f1442eb64bcbebc9a4ab82",
+      "status": "completed",
+      "upload_confirmed": true,
+      "video_url": "https://www.youtube.com/watch?v=acvluAUrObI",
+      "finished_at": "2026-11-04T05:25:01.732925+00:00",
+      "publish_at": "2026-11-05T09:00:00+00:00",
+      "visibility": "public",
+      "render_qc_passed": false,
+      "render_qc_warnings": [
+        "Exposure output perlu review: shadow/highlight atau median luminans melewati batas aman."
+      ]
+    }
+  ],
+  "screenshot_clip_tiktok_uploads": [
+    {
+      "id": "29a9cca5ec2440c7b8ec9f73fec1395b",
+      "source_job_id": "10e4939544f1442eb64bcbebc9a4ab82",
+      "status": "completed",
+      "upload_confirmed": true,
+      "finished_at": "2026-11-04T05:25:12.407585+00:00"
+    }
+  ],
+  "youtube_capacity": {
+    "active_upload_id": null,
+    "cron_private_buffer_limit": 5,
+    "cron_private_buffer_count": 1,
+    "scheduled_backlog_limit": 11,
+    "scheduled_backlog_count": 10
+  }
+}
