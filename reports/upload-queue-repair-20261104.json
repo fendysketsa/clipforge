@@ -1,0 +1,131 @@
+{
+  "checked_at_wib": "2026-11-04T15:59:19.072845+07:00",
+  "repair_status": "completed_and_runtime_verified",
+  "changes_deployed": true,
+  "target_job_id": "12becc7cd0a14d929072e571caa1512a",
+  "old_reserve": {
+    "id": "c3491accb5a84921abc14e246ebf5671",
+    "status": "cancelled",
+    "cron_private_buffer": false,
+    "video_url": "https://www.youtube.com/watch?v=wGJD-V4ae_0",
+    "error": "Reservasi dilepas: YouTube mengonfirmasi video dihapus oleh uploader. Video lama tidak diupload ulang."
+  },
+  "old_reserve_deletion_evidence": [
+    "REMOTE_VIDEO_DELETED_CONFIRMED:{\"video_id\": \"wGJD-V4ae_0\", \"deleted_by_uploader\": true, \"reason\": \"Video ini telah dihapus oleh uploader\", \"checked_at\": \"2026-11-04T08:33:39.147042+00:00\"}"
+  ],
+  "youtube_uploads": [
+    {
+      "id": "c9e987c2ade94f08b351fb0fd2eda6c8",
+      "status": "completed",
+      "title": "Kerja Jauh Tanpa Dukungan Uang, Penting Sehat dan Halal untuk Teman #Shorts",
+      "created_at": "2026-11-04T08:50:39.659574+00:00",
+      "finished_at": "2026-11-04T08:53:33.985103+00:00",
+      "visibility": "private",
+      "video_url": "https://www.youtube.com/watch?v=X51zOpHOhnM",
+      "upload_confirmed": true,
+      "dry_run": false,
+      "error": null,
+      "clip_sha256": "533c89bab226d1cdee7aaf120b91b9a640e88ce047a7998a1b9495219546fb03"
+    },
+    {
+      "id": "6e9f0883897b4c42bb340d523f3ee789",
+      "status": "failed",
+      "title": "Nggak Ada Bekal, Bisa Dipaksakan? Kata Saya Sehat Halal #Shorts",
+      "created_at": "2026-11-04T08:38:12.503312+00:00",
+      "finished_at": "2026-11-04T08:39:49.728187+00:00",
+      "visibility": "private",
+      "video_url": null,
+      "upload_confirmed": false,
+      "dry_run": false,
+      "error": "Session YouTube Studio belum login. Jalankan Login Sekali untuk menyimpan ulang cookies/storage-state atau pakai Ambil Cookies CDP jika memang ingin mengambil session dari Chrome CDP.",
+      "clip_sha256": "533c89bab226d1cdee7aaf120b91b9a640e88ce047a7998a1b9495219546fb03"
+    }
+  ],
+  "tiktok_uploads": [
+    {
+      "id": "9ea54af4b95c42b19dc04fa403aa0394",
+      "status": "completed",
+      "title": null,
+      "created_at": "2026-11-04T08:06:18.483513+00:00",
+      "finished_at": "2026-11-04T08:07:40.142643+00:00",
+      "visibility": "public",
+      "video_url": null,
+      "upload_confirmed": true,
+      "dry_run": false,
+      "error": null,
+      "clip_sha256": "533c89bab226d1cdee7aaf120b91b9a640e88ce047a7998a1b9495219546fb03"
+    }
+  ],
+  "youtube_login": {
+    "active": false,
+    "started_at": "2026-11-04T08:52:06.107334+00:00",
+    "finished_at": "2026-11-04T08:58:45.018102+00:00",
+    "error": "youtube_uploader.py login exited with code -15"
+  },
+  "production_browser_test": {
+    "idle_to_queued_without_reload": true,
+    "queued_to_completed_without_reload": true,
+    "initial_status_reads": 1,
+    "queued_status_reads": 2,
+    "final_status_reads": 3,
+    "actual_backend_read": {
+      "status": 200,
+      "records": 614,
+      "active": 0
+    }
+  },
+  "frontend_network": "clipforge_default",
+  "validation": {
+    "backend_tests_passed": 356,
+    "production_build_passed": true,
+    "typecheck_passed": true
+  },
+  "source_bytes_unchanged": true,
+  "youtube_confirmation_logs": [
+    "FINAL_VISIBILITY: private",
+    "VIDEO_URL: https://www.youtube.com/watch?v=X51zOpHOhnM",
+    "Menunggu konfirmasi final transfer dari YouTube Studio.",
+    "Memverifikasi URL video langsung di halaman edit YouTube Studio.",
+    "Konfirmasi final dipulihkan dari halaman Content/edit: video baru terdaftar dengan judul dan visibilitas yang benar.",
+    "UPLOAD_CONFIRMED: YouTube Studio mengonfirmasi transfer video selesai.",
+    "Publish sudah diterima; menunggu 10 detik sebelum reload terakhir.",
+    "Page direload sekali; proses upload selesai.",
+    "Tab upload YouTube ditutup.",
+    "Upload YouTube dan TikTok terverifikasi; file lokal akan dihapus otomatis dalam 30 detik.",
+    "AUTO_CLEANUP_SCOPE: entire_source_job",
+    "File klip dan pendukungnya terhapus otomatis (14 item); job sumber ikut dibersihkan."
+  ],
+  "source_cleanup_confirmed": true,
+  "youtube_login_note": "Temporary login helper started during investigation was stopped after the real upload completed; no further login is required for this target.",
+  "scheduler": {
+    "enabled": true,
+    "interval_hours": 24.0,
+    "run_on_startup": true,
+    "once_per_boot": false,
+    "scheduler_running": true,
+    "boot_delay_minutes": 5.0,
+    "post_clip_upload_delay_minutes": 0.0,
+    "background_upload_enabled": true,
+    "paired_long_video_enabled": false,
+    "paired_long_duration": 300.0,
+    "paired_long_auto_public_enabled": false,
+    "active_run_id": "7cc472058db149fd8b15750d48daab00",
+    "last_run_id": "7cc472058db149fd8b15750d48daab00",
+    "last_started_at": "2026-11-04T08:40:12.888202+00:00",
+    "last_finished_at": null,
+    "next_run_at": null,
+    "message": "Automation sedang berjalan; jadwal berikutnya tidak akan membuat run tumpang tindih."
+  },
+  "current_upload_status_counts": {
+    "youtube": {
+      "completed": 528,
+      "failed": 87,
+      "cancelled": 1
+    },
+    "tiktok": {
+      "completed": 386,
+      "failed": 141
+    }
+  },
+  "session_preservation_image_build_passed": true
+}

@@ -58,6 +58,8 @@ from hypit_quick import (
     quick_preview_payload,
 )
 from article_presenter import is_article_presenter_prompt
+from religious_review import reassess_casual_work_wish
+from youtube_remote_status import read_deleted_video_evidence
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -4121,7 +4123,9 @@ def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
     changed = False
     for clip in enriched.clips:
         issue = preflight(enriched, clip)
-        render_qc = clip_sidecar_payload(clip).get("render_quality_qc")
+        sidecar = clip_sidecar_payload(clip)
+        render_qc = sidecar.get("render_quality_qc")
+        religious_review = sidecar.get("religious_claim_review")
         render_qc_blocking = (
             render_qc.get("blocking") if isinstance(render_qc, dict) else None
         )
@@ -4152,6 +4156,16 @@ def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
                 clip.tiktok_series_identity_embedded and not tiktok_strategy_changed
             ),
         }
+        if (
+            isinstance(religious_review, dict)
+            and religious_review.get("classification_correction")
+        ):
+            updates.update({
+                "religious_review_required": religious_review.get("review_required"),
+                "religious_review_risk": religious_review.get("risk_level"),
+                "religious_claim_count": len(religious_review.get("claims", [])),
+                "religious_review_checks": religious_review.get("required_checks", []),
+            })
         if any(getattr(clip, key) != value for key, value in updates.items()):
             changed = True
             clips.append(clip.model_copy(update=updates))
@@ -4504,6 +4518,7 @@ auto_viral_schedule_enabled_override = load_auto_viral_schedule_override()
 completed_job_upload_sweeper_lock = threading.Lock()
 completed_job_upload_sweeper_running = False
 completed_job_upload_sweeper_wakeup = threading.Event()
+youtube_reserve_deletion_checks: dict[str, float] = {}
 youtube_data_api_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 youtube_data_api_cache_lock = threading.Lock()
 google_trends_rss_cache: dict[str, tuple[float, list[str], set[str]]] = {}
@@ -4803,6 +4818,47 @@ def youtube_cron_capacity_room() -> int:
     return max(0, youtube_schedule_backlog_limit() - youtube_scheduled_backlog_count()) + max(
         0, youtube_cron_private_buffer_limit() - youtube_cron_private_buffer_count()
     )
+
+
+def reconcile_deleted_youtube_reserves_once() -> int:
+    """Release only failed cron reserves positively deleted by their uploader."""
+    if not youtube_cron_buffer_enabled():
+        return 0
+    with youtube_upload_creation_lock:
+        with youtube_uploads_lock:
+            if any(upload.status in {"queued", "running"} for upload in youtube_uploads.values()):
+                return 0
+            candidates = sorted((
+                upload for upload in youtube_uploads.values()
+                if upload.status == "failed" and upload.cron_private_buffer
+                and upload.visibility == "private" and not upload.dry_run
+                and youtube_video_id_from_url(upload.video_url or "")
+            ), key=lambda upload: upload.created_at)
+        for upload in candidates:
+            now = time.monotonic()
+            if now < youtube_reserve_deletion_checks.get(upload.id, 0):
+                continue
+            youtube_reserve_deletion_checks[upload.id] = now + 900
+            video_id = youtube_video_id_from_url(upload.video_url or "")
+            try:
+                evidence = read_deleted_video_evidence(video_id, YOUTUBE_CDP_URL)
+            except Exception as exc:
+                print(f"Verifikasi reservasi YouTube {upload.id[:10]} ditunda: {type(exc).__name__}", flush=True)
+                return 0
+            if not (
+                isinstance(evidence, dict)
+                and evidence.get("video_id") == video_id
+                and evidence.get("deleted_by_uploader") is True
+            ):
+                return 0
+            set_youtube_upload(
+                upload.id, status="cancelled", cron_private_buffer=False,
+                publish_at=None, upload_confirmed=False,
+                error="Reservasi dilepas: YouTube mengonfirmasi video dihapus oleh uploader. Video lama tidak diupload ulang.",
+                logs=[*upload.logs, "REMOTE_VIDEO_DELETED_CONFIRMED:" + json.dumps(evidence, ensure_ascii=False)][-160:],
+            )
+            return 1
+    return 0
 
 
 def youtube_cron_capacity_retry_at(now: datetime | None = None) -> datetime:
@@ -5701,7 +5757,7 @@ def clip_sidecar_payload(clip: ClipFile) -> dict[str, Any]:
         payload = json.loads(json_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
-    return payload if isinstance(payload, dict) else {}
+    return reassess_casual_work_wish(payload) if isinstance(payload, dict) else {}
 
 
 def completed_clip_integrity_issue(
@@ -13311,7 +13367,11 @@ def completed_job_upload_sweeper_loop() -> None:
     global completed_job_upload_sweeper_running
     try:
         while env_bool("AUTO_UPLOAD_COMPLETED_JOBS", False):
-            queue_completed_job_uploads_once()
+            try:
+                reconcile_deleted_youtube_reserves_once()
+                queue_completed_job_uploads_once()
+            except Exception as exc:
+                print(f"Operator upload pulih dari error sementara: {type(exc).__name__}", flush=True)
             completed_job_upload_sweeper_wakeup.wait(
                 timeout=max(
                     15.0,

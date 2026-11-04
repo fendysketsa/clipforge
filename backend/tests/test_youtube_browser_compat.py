@@ -1,4 +1,6 @@
 import pytest
+from pathlib import Path
+from types import SimpleNamespace
 
 import youtube_uploader
 from youtube_uploader import (
@@ -11,6 +13,28 @@ from youtube_uploader import (
 
 
 UNSUPPORTED_TEXT = "sempurnakanpengalamanandabrowseryangtidakdidukungversibrowserlama"
+
+
+def test_cdp_upload_does_not_overwrite_live_session_by_default(monkeypatch):
+    monkeypatch.delenv("YOUTUBE_CDP_HYDRATE_STORAGE_STATE", raising=False)
+    page = object()
+    context = SimpleNamespace(new_page=lambda: page)
+    monkeypatch.setattr(youtube_uploader, "hydrate_context_and_open_studio_page", lambda *_: pytest.fail("must not inject old cookies into live Chrome"))
+    assert youtube_uploader.open_cdp_upload_page(context, Path("stale-state.json")) is page
+
+
+def test_cdp_cookie_hydration_requires_explicit_opt_in(monkeypatch):
+    monkeypatch.setenv("YOUTUBE_CDP_HYDRATE_STORAGE_STATE", "true")
+    page = object()
+    monkeypatch.setattr(youtube_uploader, "hydrate_context_and_open_studio_page", lambda *_: page)
+    assert youtube_uploader.open_cdp_upload_page(object(), Path("state.json")) is page
+
+
+def test_capture_session_reads_chrome_without_cookie_hydration_by_default():
+    args = youtube_uploader.build_parser().parse_args(["capture-session"])
+    assert args.hydrate_storage_state is False
+    requested = youtube_uploader.build_parser().parse_args(["capture-session", "--hydrate-storage-state"])
+    assert requested.hydrate_storage_state is True
 
 
 class CompatibilityPage:

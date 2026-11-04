@@ -395,6 +395,16 @@ def hydrate_context_and_open_studio_page(context, state_path: Path, studio_url: 
     return page
 
 
+def open_cdp_upload_page(context, state_path: Path, studio_url: str = ""):
+    # A saved state may be older or signed out. Never overwrite the live
+    # Chrome login implicitly when starting an upload.
+    if os.environ.get("YOUTUBE_CDP_HYDRATE_STORAGE_STATE", "false").strip().lower() in {"1", "true", "yes", "on"}:
+        hydrated_page = hydrate_context_and_open_studio_page(context, state_path, studio_url)
+        if hydrated_page is not None:
+            return hydrated_page
+    return context.new_page()
+
+
 def find_file_input(page, timeout_ms: int = 10000):
     deadline = time.monotonic() + timeout_ms / 1000
     last_error: Exception | None = None
@@ -7274,11 +7284,7 @@ def run_upload(args: argparse.Namespace) -> None:
                 context = primary_studio_page.context
             else:
                 context = contexts[0]
-            hydrated_page = hydrate_context_and_open_studio_page(context, state_path, args.studio_url)
-            if hydrated_page is not None:
-                page = hydrated_page
-            else:
-                page = context.new_page()
+            page = open_cdp_upload_page(context, state_path, args.studio_url)
             mark_fendy_clipper_upload_tab(page)
         elif chromium_user_data_dir is not None:
             log(f"Menggunakan profile Chromium: {chromium_user_data_dir}")
@@ -7693,7 +7699,7 @@ def build_parser() -> argparse.ArgumentParser:
     capture.add_argument("--target-email", default=DEFAULT_TARGET_EMAIL)
     capture.add_argument("--target-channel-id", default=DEFAULT_TARGET_CHANNEL_ID)
     capture.add_argument("--studio-url", default=DEFAULT_STUDIO_URL)
-    capture.add_argument("--hydrate-storage-state", action=argparse.BooleanOptionalAction, default=True)
+    capture.add_argument("--hydrate-storage-state", action=argparse.BooleanOptionalAction, default=False)
 
     check_login = subparsers.add_parser("check-login", help="Validasi sesi YouTube dan simpan ulang storage-state.")
     check_login.add_argument("--state", default=str(DEFAULT_STATE_PATH))

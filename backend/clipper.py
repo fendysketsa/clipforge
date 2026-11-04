@@ -48,6 +48,9 @@ from hypit_quick import (
 from article_presenter import is_article_presenter_prompt
 from evidence_director import build_evidence_plan, evidence_overlay_filter
 from portrait_framing import landscape_portrait_plan, portrait_source_filter
+from religious_review import (
+    RELIGIOUS_ATTRIBUTION_MARKERS, RELIGIOUS_RULING_WORDS, religious_ruling_terms,
+)
 
 
 console = Console()
@@ -2237,28 +2240,6 @@ SHORT_NARRATIVE_STRONG_END_MARKERS = (
     "pelajarannya",
     "yang penting",
 )
-RELIGIOUS_ATTRIBUTION_MARKERS = (
-    "allah berfirman",
-    "dalam alquran",
-    "dalam al-quran",
-    "dalam hadis",
-    "dalam hadits",
-    "menurut ulama",
-    "nabi bersabda",
-    "rasulullah bersabda",
-    "surat ",
-)
-RELIGIOUS_RULING_WORDS = {
-    "dosa",
-    "halal",
-    "haram",
-    "hukum",
-    "makruh",
-    "pahala",
-    "sunnah",
-    "syariat",
-    "wajib",
-}
 
 
 def is_low_value_filler_segment(value: TranscriptSegment | str) -> bool:
@@ -7321,7 +7302,7 @@ def religious_context_integrity_profile(
     word_set = set(words)
     religious = bool(word_set.intersection(ISLAMIC_WORDS))
     attribution_present = any(marker in normalized for marker in RELIGIOUS_ATTRIBUTION_MARKERS)
-    ruling_present = bool(word_set.intersection(RELIGIOUS_RULING_WORDS))
+    ruling_present = bool(religious_ruling_terms(text))
     first_word = words[0] if words else ""
     context_dependent_opening = bool(
         religious and first_word in CONTEXT_DEPENDENT_STARTS
@@ -7396,14 +7377,13 @@ def religious_claim_review_packet(
 
     for segment in clip_segments:
         normalized = re.sub(r"\s+", " ", segment.text).strip().casefold()
-        words = set(re.findall(r"[\w']+", normalized))
         claim_types: list[str] = []
         if any(marker in normalized for marker in RELIGIOUS_ATTRIBUTION_MARKERS):
             if any(marker in normalized for marker in ("hadis", "hadits", "bersabda")):
                 claim_types.append("hadith_attribution")
             if any(marker in normalized for marker in ("alquran", "al-quran", "allah berfirman", "surat ")):
                 claim_types.append("quran_attribution")
-        ruling_hits = sorted(words.intersection(RELIGIOUS_RULING_WORDS))
+        ruling_hits = sorted(religious_ruling_terms(segment.text))
         if ruling_hits:
             claim_types.append("religious_ruling_or_consequence")
         if not claim_types:

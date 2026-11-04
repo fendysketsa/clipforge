@@ -424,6 +424,46 @@ export default function HomePage() {
   }, [loadCronSchedule, loadJobs, loadTikTokUploads, loadYouTubeUploads]);
 
   useEffect(() => {
+    let refreshing = false;
+    let cancelled = false;
+    const refreshServerState = async () => {
+      if (refreshing || document.hidden) return;
+      refreshing = true;
+      try {
+        const [jobResult, uploadResult] = await Promise.allSettled([
+          loadJobs(), loadYouTubeUploads(), loadTikTokUploads(), loadCronSchedule(),
+        ]);
+        if (cancelled || jobResult.status !== "fulfilled") return;
+        const nextJobs = jobResult.value;
+        const nextUploads = uploadResult.status === "fulfilled" ? uploadResult.value : [];
+        setJob((current) => {
+          if (!current || isActiveJob(current)) return current;
+          const next = nextJobs.find((item) => item.id === current.id);
+          if (next) return next;
+          const recentCleanup = nextUploads.some((upload) => (
+            upload.source_job_id === current.id && upload.clip_deleted_at
+            && Date.now() - Date.parse(upload.clip_deleted_at) < CLEANUP_SUCCESS_DISPLAY_MS
+          ));
+          return recentCleanup ? current : null;
+        });
+      } finally {
+        refreshing = false;
+      }
+    };
+    // Cron and other tabs can enqueue/finish work while this tab looks idle.
+    // Keep discovering those changes instead of polling only known active rows.
+    const interval = window.setInterval(refreshServerState, 15_000);
+    window.addEventListener("focus", refreshServerState);
+    document.addEventListener("visibilitychange", refreshServerState);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshServerState);
+      document.removeEventListener("visibilitychange", refreshServerState);
+    };
+  }, [loadCronSchedule, loadJobs, loadTikTokUploads, loadYouTubeUploads]);
+
+  useEffect(() => {
     if (!hasActiveHistoryJobs) return;
     let cancelled = false;
     let requestInFlight = false;
