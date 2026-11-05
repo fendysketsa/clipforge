@@ -1,10 +1,12 @@
 from types import SimpleNamespace
+import json
 import sys
 import types
 
 import pytest
 
 import api
+import youtube_remote_status as remote
 from youtube_remote_status import uploader_deleted_video, read_deleted_video_evidence
 
 
@@ -93,15 +95,37 @@ def test_unknown_reserve_check_has_cooldown(reserve, monkeypatch):
     assert len(calls) == 1
 
 
-def test_read_only_check_closes_only_its_new_page(monkeypatch):
-    events = []
-    class Page:
-        url = ""
-        def goto(self, url, **_kwargs): self.url = url; events.append("goto")
-        def wait_for_function(self, *_args, **_kwargs): pass
-        def evaluate(self, *_args): return response("Video ini telah dihapus oleh uploader")
-        def close(self): events.append("page_closed")
-    context = SimpleNamespace(new_page=lambda: Page())
+@pytest.fixture
+def http_watch(monkeypatch):
+    watch = SimpleNamespace(
+        url="https://www.youtube.com/watch?v=wGJD-V4ae_0",
+        status=200, body="", requests=[],
+    )
+    class Result:
+        status = property(lambda self: watch.status)
+        def __enter__(self): return self
+        def __exit__(self, *_args): pass
+        def geturl(self): return watch.url
+        def read(self, size): return watch.body.encode()[:size]
+    def build_opener(processor):
+        watch.jar = processor.cookiejar
+        def open_request(request, **kwargs):
+            watch.requests.append(request)
+            return Result()
+        return SimpleNamespace(open=open_request)
+    monkeypatch.setattr(remote, "build_opener", build_opener)
+    watch.body = '<script>var ytInitialPlayerResponse = ' + json.dumps(response(
+        "Video ini telah dihapus oleh uploader")) + ';</script>'
+    return watch
+
+
+def test_read_only_check_uses_cookie_snapshot_without_opening_or_closing_tabs(monkeypatch, http_watch):
+    cookie = dict(name="SID", value="test-session", domain=".youtube.com", path="/", secure=True, expires=-1)
+    context = SimpleNamespace(
+        cookies=lambda urls: [cookie],
+        new_page=lambda: pytest.fail("background checks must never create tabs"),
+        close=lambda: pytest.fail("borrowed context must stay open"),
+    )
     browser = SimpleNamespace(contexts=[context], close=lambda: pytest.fail("borrowed browser must stay open"))
     class Playwright:
         def __enter__(self): return SimpleNamespace(chromium=SimpleNamespace(connect_over_cdp=lambda *_args, **_kwargs: browser))
@@ -114,7 +138,53 @@ def test_read_only_check_closes_only_its_new_page(monkeypatch):
     monkeypatch.setitem(sys.modules, "playwright.sync_api", child)
     proof = read_deleted_video_evidence("wGJD-V4ae_0", "http://127.0.0.1:9333")
     assert proof["deleted_by_uploader"] is True
-    assert events == ["goto", "page_closed"]
+    assert len(http_watch.requests) == 1
+    copied_cookie = next(iter(http_watch.jar))
+    copied_cookie.value = "response-cookie-change"
+    assert cookie["value"] == "test-session"
+
+
+@pytest.mark.parametrize("url", [
+    "https://accounts.google.com/ServiceLogin?v=wGJD-V4ae_0",
+    "https://consent.youtube.com/watch?v=wGJD-V4ae_0",
+    "https://www.youtube.com/watch?v=different01",
+    "https://www.youtube.com/watch?v=wGJD-V4ae_0&v=different01",
+])
+def test_http_redirect_or_wrong_id_never_releases_reserve(http_watch, url):
+    http_watch.url = url
+    assert read_deleted_video_evidence("wGJD-V4ae_0", "unused", context=SimpleNamespace(cookies=lambda urls: [])) is None
+
+
+@pytest.mark.parametrize("body", [
+    '<script>var ytInitialPlayerResponse = {};</script>',
+    '<script>var ytInitialPlayerResponse = invalid;</script>',
+    '<p>This video has been removed by the uploader</p>',
+    '<script>var ytInitialPlayerResponse = {"playabilityStatus":{"status":"OK"}};</script>',
+    '<script>var ytInitialPlayerResponse = {"playabilityStatus":{"status":"ERROR","errorScreen":{"reason":"This video is private"}}};</script>',
+])
+def test_unknown_or_private_html_is_not_deletion_evidence(http_watch, body):
+    http_watch.body = body
+    assert read_deleted_video_evidence("wGJD-V4ae_0", "unused", context=SimpleNamespace(cookies=lambda urls: [])) is None
+
+
+def test_player_id_mismatch_rejects_deletion_text(http_watch):
+    data = response("This video has been removed by the uploader")
+    data["videoDetails"] = {"videoId": "different01"}
+    http_watch.body = '<script>window["ytInitialPlayerResponse"] = ' + json.dumps(data) + ';</script>'
+    assert read_deleted_video_evidence("wGJD-V4ae_0", "unused", context=SimpleNamespace(cookies=lambda urls: [])) is None
+
+
+def test_window_assignment_returns_exact_video_evidence(http_watch):
+    http_watch.body = http_watch.body.replace('var ytInitialPlayerResponse', 'window["ytInitialPlayerResponse"]')
+    proof = read_deleted_video_evidence("wGJD-V4ae_0", "unused", context=SimpleNamespace(cookies=lambda urls: []))
+    assert proof["video_id"] == "wGJD-V4ae_0"
+
+
+def test_network_failure_does_not_touch_tabs(monkeypatch):
+    def unavailable(*args, **kwargs): raise TimeoutError("offline")
+    monkeypatch.setattr(remote, "build_opener", lambda *args: SimpleNamespace(open=unavailable))
+    with pytest.raises(TimeoutError):
+        read_deleted_video_evidence("wGJD-V4ae_0", "unused", context=SimpleNamespace(cookies=lambda urls: []))
 
 
 def test_upload_operator_survives_one_failed_cycle(monkeypatch):

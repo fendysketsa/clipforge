@@ -5018,7 +5018,11 @@ def queue_youtube_private_buffer_promotions_once() -> int:
     if not youtube_cron_buffer_enabled():
         return 0
     promoted: list[YouTubeUploadJob] = []
-    with youtube_upload_creation_lock:
+    # Metadata creation may be waiting on a provider. A maintenance tick must
+    # not block the scheduler's checkpoint recovery behind that same lock.
+    if not youtube_upload_creation_lock.acquire(blocking=False):
+        return 0
+    try:
         room = max(0, youtube_schedule_backlog_limit() - youtube_scheduled_backlog_count())
         with youtube_uploads_lock:
             private_uploads = sorted(
@@ -5047,6 +5051,8 @@ def queue_youtube_private_buffer_promotions_once() -> int:
                 promoted.append(youtube_uploads[upload.id])
         if promoted:
             queue_youtube_upload_jobs(promoted)
+    finally:
+        youtube_upload_creation_lock.release()
     return len(promoted)
 
 
@@ -15328,6 +15334,10 @@ def update_auto_viral_run(run_id: str, **updates) -> None:
         current = auto_viral_runs.get(run_id)
         if current is None:
             return
+        if current.status == "failed" and current.progress_stage == "upload_checkpoint_expired":
+            # A late response from the retired worker cannot revive its lease
+            # or overwrite the recovery decision with a stale checkpoint.
+            return
         data = current.model_dump()
         data.update(updates)
         data["updated_at"] = now_iso()
@@ -19253,12 +19263,18 @@ def auto_viral_short_long_relevance_audit(
     }
 
 
+class UploadCheckpointMissing(RuntimeError):
+    """An expected upload row disappeared; its remote outcome is unknown."""
+
+
 def wait_for_uploads(upload_ids: list[str], timeout_seconds: int = 7200) -> list[YouTubeUploadJob]:
     terminal = {"completed", "failed", "cancelled"}
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
         with youtube_uploads_lock:
             uploads = [youtube_uploads[upload_id] for upload_id in upload_ids if upload_id in youtube_uploads]
+        if len(uploads) != len(upload_ids):
+            raise UploadCheckpointMissing("Catatan upload YouTube hilang; hasil remote perlu verifikasi, bukan upload ulang.")
         if len(uploads) == len(upload_ids) and all(upload.status in terminal for upload in uploads):
             return uploads
         time.sleep(5)
@@ -19278,6 +19294,8 @@ def wait_for_tiktok_uploads(
                 for upload_id in upload_ids
                 if upload_id in tiktok_uploads
             ]
+        if len(uploads) != len(upload_ids):
+            raise UploadCheckpointMissing("Catatan upload TikTok hilang; hasil remote perlu verifikasi, bukan posting ulang.")
         if len(uploads) == len(upload_ids) and all(
             upload.status in terminal for upload in uploads
         ):
@@ -19892,6 +19910,7 @@ def wait_for_auto_viral_upload_window(run_id: str) -> None:
         ),
     )
     while True:
+        ensure_auto_viral_campaign_not_cancelled(run_id)
         remaining = (not_before - datetime.now(timezone.utc)).total_seconds()
         if remaining <= 0:
             return
@@ -20337,6 +20356,7 @@ def upload_auto_viral_processed_jobs(
         return processed
     total = len(upload_items)
     for position, item in enumerate(upload_items, start=1):
+        ensure_auto_viral_campaign_not_cancelled(run_id)
         job_id = str(item.get("job_id") or "")
         if not job_id:
             raise RuntimeError("Job ID clip hilang pada fase upload")
@@ -20517,6 +20537,7 @@ def upload_auto_viral_processed_jobs(
         claimed_youtube_uploads: list[YouTubeUploadJob] = []
 
         if request.auto_upload_youtube:
+            ensure_auto_viral_campaign_not_cancelled(run_id)
             prior_ids = [
                 str(upload.get("id") or "")
                 for upload in stored_youtube
@@ -20535,6 +20556,7 @@ def upload_auto_viral_processed_jobs(
             ]
             if not youtube_jobs:
                 with youtube_upload_creation_lock:
+                    ensure_auto_viral_campaign_not_cancelled(run_id)
                     available_slots = require_auto_viral_daily_upload_slot("youtube")
                     youtube_jobs = create_youtube_upload_batch_records(
                         job_id,
@@ -20545,6 +20567,7 @@ def upload_auto_viral_processed_jobs(
                             made_for_kids=auto_viral_youtube_made_for_kids(request),
                         ),
                     )
+                    ensure_auto_viral_campaign_not_cancelled(run_id)
                     queue_youtube_upload_jobs(youtube_jobs)
             finished_youtube = wait_for_uploads([upload.id for upload in youtube_jobs])
             item["youtube_uploads"] = item["uploads"] = [
@@ -20585,6 +20608,7 @@ def upload_auto_viral_processed_jobs(
                 failed_platforms.add("youtube")
 
         if request.auto_upload_tiktok:
+            ensure_auto_viral_campaign_not_cancelled(run_id)
             prior_ids = [
                 str(upload.get("id") or "")
                 for upload in stored_tiktok
@@ -20603,6 +20627,7 @@ def upload_auto_viral_processed_jobs(
             ]
             if not tiktok_jobs:
                 with tiktok_upload_creation_lock:
+                    ensure_auto_viral_campaign_not_cancelled(run_id)
                     available_slots = require_auto_viral_daily_upload_slot("tiktok")
                     tiktok_jobs = create_tiktok_upload_batch_records(
                         job_id,
@@ -20612,6 +20637,7 @@ def upload_auto_viral_processed_jobs(
                         ),
                         allow_audited_automation=True,
                     )
+                    ensure_auto_viral_campaign_not_cancelled(run_id)
                     queue_tiktok_upload_jobs(tiktok_jobs)
             finished_tiktok = wait_for_tiktok_uploads([upload.id for upload in tiktok_jobs])
             item["tiktok_uploads"] = [
@@ -20643,6 +20669,7 @@ def upload_auto_viral_processed_jobs(
                 failed_platforms.add("tiktok")
 
         if publish_item_long:
+            ensure_auto_viral_campaign_not_cancelled(run_id)
             assert isinstance(finished_long_job, ClipJob)
             prior_ids = [
                 str(upload.get("id") or "")
@@ -20662,6 +20689,7 @@ def upload_auto_viral_processed_jobs(
             ]
             if not long_upload_jobs:
                 with youtube_upload_creation_lock:
+                    ensure_auto_viral_campaign_not_cancelled(run_id)
                     require_auto_viral_daily_upload_slot("youtube")
                     long_upload_jobs = create_youtube_upload_batch_records(
                         finished_long_job.id,
@@ -20672,6 +20700,7 @@ def upload_auto_viral_processed_jobs(
                             made_for_kids=auto_viral_youtube_made_for_kids(request),
                         ),
                     )
+                    ensure_auto_viral_campaign_not_cancelled(run_id)
                     queue_youtube_upload_jobs(long_upload_jobs)
             finished_long_uploads = wait_for_uploads(
                 [upload.id for upload in long_upload_jobs]
@@ -20721,6 +20750,7 @@ def upload_auto_viral_processed_jobs(
                     if isinstance(pair, dict):
                         pair["long_public_url"] = public_long_url
 
+        ensure_auto_viral_campaign_not_cancelled(run_id)
         update_auto_viral_run(run_id, processed=processed)
         if claimed_youtube_uploads:
             claimed_titles = ", ".join(
@@ -20814,8 +20844,17 @@ def upload_auto_viral_until_success(
 ) -> list[dict[str, Any]]:
     """Retry the same durable non-empty batch until every platform confirms it."""
     while True:
+        ensure_auto_viral_campaign_not_cancelled(run_id)
         try:
             return upload_auto_viral_processed_jobs(run_id, request, processed)
+        except AutoViralCampaignCancelled:
+            raise
+        except UploadCheckpointMissing as exc:
+            for item in processed:
+                if item.get("status") == "uploading":
+                    hold_auto_viral_upload_item(item, str(exc))
+            update_auto_viral_run(run_id, processed=processed)
+            return processed
         except AutoViralDailyUploadLimitReached as exc:
             for item in processed:
                 if item.get("status") == "uploading":
@@ -20837,6 +20876,7 @@ def upload_auto_viral_until_success(
                 ),
             )
             while True:
+                ensure_auto_viral_campaign_not_cancelled(run_id)
                 remaining = (exc.retry_at - datetime.now(timezone.utc)).total_seconds()
                 if remaining <= 0:
                     break
@@ -20868,6 +20908,7 @@ def upload_auto_viral_until_success(
                     ),
                 )
                 while True:
+                    ensure_auto_viral_campaign_not_cancelled(run_id)
                     remaining = (
                         retry_at - datetime.now(timezone.utc)
                     ).total_seconds()
@@ -20931,6 +20972,7 @@ def upload_auto_viral_until_success(
                 ),
             )
             while True:
+                ensure_auto_viral_campaign_not_cancelled(run_id)
                 remaining = (retry_at - datetime.now(timezone.utc)).total_seconds()
                 if remaining <= 0:
                     break
@@ -21225,7 +21267,12 @@ class AutoViralCampaignCancelled(RuntimeError):
 
 
 def ensure_auto_viral_campaign_not_cancelled(run_id: str) -> None:
-    if run_id in cancelled_auto_viral_run_ids:
+    with auto_viral_lock:
+        run = auto_viral_runs.get(run_id)
+    if run_id in cancelled_auto_viral_run_ids or (
+        run is not None and run.status in {"cancelled", "failed"}
+        and run.progress_stage in {"cancelled", "upload_checkpoint_expired"}
+    ):
         raise AutoViralCampaignCancelled("Automation dihentikan untuk rebuild paksa")
 
 
@@ -22586,6 +22633,106 @@ def pending_scheduled_auto_viral_upload_run() -> AutoViralRun | None:
     return min(pending, key=lambda run: run.created_at) if pending else None
 
 
+def reconcile_stalled_scheduled_upload_runs(now: datetime | None = None) -> int:
+    """Release an old upload lease only after its jobs and active uploads are gone.
+
+    Quota waits, delayed uploads, and render stages are intentionally excluded.
+    Remote upload records stay authoritative and are never removed or retried.
+    """
+    global auto_viral_active_run_id
+    current_time = now or datetime.now(timezone.utc)
+    with auto_viral_lock:
+        active = auto_viral_runs.get(auto_viral_active_run_id or "")
+        if auto_viral_active_run_id and (active is None or active.status not in {"queued", "running"}):
+            auto_viral_active_run_id = None
+        candidates = [
+            run for run in auto_viral_runs.values()
+            if run.trigger == "schedule" and (
+                (run.status == "queued" and run.progress_stage == "resume_pending_upload")
+                or (run.status == "running" and run.progress_stage in {"social_upload", "youtube_upload"}
+                    and current_time - parse_utc_datetime(run.updated_at, current_time) >= timedelta(minutes=15))
+            )
+        ]
+    recovered = 0
+    for run in candidates:
+        job_ids = {
+            str(item.get(key) or "").strip()
+            for item in run.processed for key in ("job_id", "long_job_id")
+            if str(item.get(key) or "").strip()
+        }
+        if not job_ids:
+            continue
+        if not youtube_upload_creation_lock.acquire(blocking=False):
+            continue
+        try:
+            if not tiktok_upload_creation_lock.acquire(blocking=False):
+                continue
+            try:
+                with jobs_lock:
+                    if any(job_id in jobs for job_id in job_ids):
+                        continue
+                with process_lock:
+                    if any(
+                        process is not None and process.poll() is None
+                        for job_id in job_ids if (process := job_processes.get(job_id)) is not None
+                    ):
+                        continue
+                with youtube_uploads_lock:
+                    youtube_records = [u for u in youtube_uploads.values() if u.source_job_id in job_ids]
+                with tiktok_uploads_lock:
+                    tiktok_records = [u for u in tiktok_uploads.values() if u.source_job_id in job_ids]
+                if any(u.status in {"queued", "running"} for u in [*youtube_records, *tiktok_records]):
+                    continue
+                with process_lock:
+                    if any(
+                        process is not None and process.poll() is None
+                        for records, processes in (
+                            (youtube_records, youtube_upload_processes),
+                            (tiktok_records, tiktok_upload_processes),
+                        )
+                        for upload in records if (process := processes.get(upload.id)) is not None
+                    ):
+                        continue
+                processed = [dict(item) for item in run.processed]
+                reason = "Checkpoint clip sudah tidak tersedia dan tidak ada upload aktif; run lama dilepas tanpa upload ulang."
+                for item in processed:
+                    # Restore remote successes that reached the upload store before
+                    # the stalled parent managed to persist its per-platform snapshot.
+                    for platform, records in (("youtube", youtube_records), ("tiktok", tiktok_records)):
+                        verified = youtube_upload_is_verified if platform == "youtube" else tiktok_upload_is_verified
+                        matches = [u for u in records if u.source_job_id == item.get("job_id") and verified(u)]
+                        if matches:
+                            item[platform + "_uploads"] = [
+                                {"id": u.id, "platform": platform, "status": u.status,
+                                 "clip_url": u.clip_url, "upload_confirmed": u.upload_confirmed,
+                                 "video_url": u.video_url if platform == "youtube" else u.profile_url,
+                                 "dry_run": u.dry_run, "error": u.error}
+                                for u in matches
+                            ]
+                    if item.get("status") != "completed" and item.get("status") not in AUTO_VIRAL_UPLOAD_HOLD_STATUSES:
+                        hold_auto_viral_upload_item(item, reason)
+                with auto_viral_lock:
+                    latest = auto_viral_runs.get(run.id)
+                    if latest is None or latest.updated_at != run.updated_at or latest.status != run.status:
+                        continue
+                    cancelled_auto_viral_run_ids.add(run.id)
+                    auto_viral_runs[run.id] = latest.model_copy(update={
+                        "status": "failed", "progress_stage": "upload_checkpoint_expired",
+                        "updated_at": current_time.isoformat(), "finished_at": current_time.isoformat(),
+                        "message": reason, "processed": processed,
+                        "logs": [*latest.logs, "STALE_UPLOAD_CHECKPOINT_RELEASED: " + reason][-160:],
+                    })
+                    if auto_viral_active_run_id == run.id:
+                        auto_viral_active_run_id = None
+                    save_auto_viral_runs_unlocked()
+                recovered += 1
+            finally:
+                tiktok_upload_creation_lock.release()
+        finally:
+            youtube_upload_creation_lock.release()
+    return recovered
+
+
 def reconcile_interrupted_scheduled_clip_runs() -> int:
     """Reconnect clip jobs that survived a backend restart to their cron run.
 
@@ -23181,6 +23328,13 @@ def auto_viral_next_run_at(
     daily_mix_not_before = auto_viral_daily_mix_not_before(now)
     if daily_mix_not_before is not None:
         return daily_mix_not_before
+    if (
+        latest is not None and latest.status == "failed"
+        and latest.progress_stage == "upload_checkpoint_expired"
+    ):
+        # The missing checkpoint is terminal. Start a fresh source rather than
+        # retrying its upload or imposing another full 24-hour cycle delay.
+        return auto_viral_boot_not_before(now)
     if env_bool("AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT", False):
         if scheduled_run_started_in_current_boot(latest, now):
             if latest is not None and latest.status == "completed":
@@ -23271,6 +23425,7 @@ def auto_viral_scheduler_loop() -> None:
         while auto_viral_schedule_enabled():
             try:
                 now = datetime.now(timezone.utc)
+                reconcile_stalled_scheduled_upload_runs(now)
                 try:
                     queue_youtube_private_buffer_promotions_once()
                 except Exception as exc:

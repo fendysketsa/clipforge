@@ -64,22 +64,16 @@ def test_remote_confirmation_reuses_the_open_playwright_context(monkeypatch):
     import playwright.sync_api as pw_api
     import youtube_remote_status
     monkeypatch.setattr(pw_api, "sync_playwright", lambda: pytest.fail("must not nest sync Playwright"))
-    events = []
-    class Page:
-        url = "https://www.youtube.com/watch?v=abcDEF12345"
-        def goto(self, *args, **kwargs):
-            pass
-        def wait_for_function(self, *args, **kwargs):
-            pass
-        def evaluate(self, *args):
-            return {"playabilityStatus": {"status": "ERROR", "errorScreen": {"reason": "This video has been removed by the uploader"}}}
-        def close(self):
-            events.append("closed")
+    context = SimpleNamespace(new_page=lambda: pytest.fail("must not open a verification tab"))
+    def fetch(existing_context, video_id):
+        assert existing_context is context
+        assert video_id == "abcDEF12345"
+        return {"playabilityStatus": {"status": "ERROR", "errorScreen": {"reason": "This video has been removed by the uploader"}}}
+    monkeypatch.setattr(youtube_remote_status, "_fetch_player_response", fetch)
     proof = youtube_remote_status.read_deleted_video_evidence(
-        "abcDEF12345", "http://127.0.0.1:9333", context=SimpleNamespace(new_page=Page)
+        "abcDEF12345", "http://127.0.0.1:9333", context=context
     )
     assert proof["deleted_by_uploader"]
-    assert events == ["closed"]
 
 
 @pytest.mark.parametrize("changed_status,proof,expected,scan_fails", [

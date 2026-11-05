@@ -1,0 +1,14 @@
+{
+  "mode": "offline_simulation_of_observed_state",
+  "recovered_count": 1,
+  "before_status": "running",
+  "after_status": "failed",
+  "after_stage": "upload_checkpoint_expired",
+  "active_run_released": true,
+  "retained_tiktok_upload_ids": [
+    "08a5812983e64132add4e55de33de57d"
+  ],
+  "youtube_records_unchanged": true,
+  "tiktok_records_unchanged": true,
+  "production_state_files_unchanged": true
+}

@@ -2,7 +2,85 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from html.parser import HTMLParser
+from http.cookiejar import Cookie, CookieJar
+import json
+import re
 from urllib.parse import parse_qs, urlparse
+from urllib.request import HTTPCookieProcessor, Request, build_opener
+
+
+class _PlayerResponseParser(HTMLParser):
+    """Read inline player JSON without executing scripts or loading media."""
+
+    def __init__(self):
+        super().__init__()
+        self.in_script = False
+        self.scripts = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "script":
+            self.in_script = True
+
+    def handle_endtag(self, tag):
+        if tag == "script":
+            self.in_script = False
+
+    def handle_data(self, data):
+        if self.in_script:
+            self.scripts.append(data)
+
+
+def _player_response(html: str) -> dict | None:
+    parser = _PlayerResponseParser()
+    parser.feed(html)
+    assignment = re.compile(
+        r'''(?:\bytInitialPlayerResponse|\bwindow\s*\[\s*["']ytInitialPlayerResponse["']\s*\])\s*=\s*'''
+    )
+    for script in parser.scripts:
+        for match in assignment.finditer(script):
+            try:
+                value, _ = json.JSONDecoder().raw_decode(script[match.end():])
+            except ValueError:
+                continue
+            if isinstance(value, dict) and isinstance(value.get("playabilityStatus"), dict):
+                return value
+    return None
+
+
+def _fetch_player_response(context, video_id: str) -> dict | None:
+    url = f"https://www.youtube.com/watch?v={video_id}&autoplay=0"
+    # Use an independent cookie jar. Set-Cookie responses must never change
+    # the user's live Chrome login; domain/path scoping also survives redirects.
+    jar = CookieJar()
+    for cookie in context.cookies([url]):
+        domain = cookie["domain"]
+        expires = cookie.get("expires", -1)
+        jar.set_cookie(Cookie(
+            version=0, name=cookie["name"], value=cookie["value"],
+            port=None, port_specified=False, domain=domain,
+            domain_specified=domain.startswith("."), domain_initial_dot=domain.startswith("."),
+            path=cookie.get("path", "/"), path_specified=True,
+            secure=cookie.get("secure", False), expires=int(expires) if expires > 0 else None,
+            discard=expires <= 0, comment=None, comment_url=None, rest={},
+        ))
+    opener = build_opener(HTTPCookieProcessor(jar))
+    request = Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9"})
+    with opener.open(request, timeout=20) as result:
+        final_url = urlparse(result.geturl())
+        if (result.status != 200 or final_url.scheme != "https"
+                or final_url.hostname != "www.youtube.com" or final_url.path != "/watch"
+                or parse_qs(final_url.query).get("v") != [video_id]):
+            return None
+        # A changed/oversized HTML response is unknown, never deletion evidence.
+        body = result.read(8 * 1024 * 1024 + 1)
+        if len(body) > 8 * 1024 * 1024:
+            return None
+        response = _player_response(body.decode("utf-8", errors="replace"))
+        details = response.get("videoDetails", {}) if response else {}
+        if details.get("videoId", video_id) != video_id:
+            return None
+        return response
 
 
 def uploader_deleted_video(response: dict) -> str | None:
@@ -30,36 +108,23 @@ def uploader_deleted_video(response: dict) -> str | None:
 
 
 def read_deleted_video_evidence(video_id: str, cdp_url: str, *, context=None) -> dict | None:
-    """Borrow one page from Chrome, read playability, and close only that page.
+    """Read playability over HTTP using a snapshot of Chrome's cookies.
 
     Private videos, unavailable videos, login failures, timeouts, and claims
     are not evidence of deletion. Never choose a file or edit Studio metadata.
     """
+    if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+        return None
+
     def read_from_context(existing_context):
-        page = existing_context.new_page()
-        try:
-            page.goto(
-                f"https://www.youtube.com/watch?v={video_id}&autoplay=0",
-                wait_until="domcontentloaded", timeout=20_000,
-            )
-            page.wait_for_function(
-                "() => !!window.ytInitialPlayerResponse?.playabilityStatus",
-                timeout=12_000,
-            )
-            if parse_qs(urlparse(page.url).query).get("v") != [video_id]:
-                return None
-            response = page.evaluate("() => window.ytInitialPlayerResponse")
-            reason = uploader_deleted_video(response) if isinstance(response, dict) else None
-            if not reason:
-                return None
-            return {
-                "video_id": video_id, "deleted_by_uploader": True,
-                "reason": reason, "checked_at": datetime.now(timezone.utc).isoformat(),
-            }
-        finally:
-            # This is the user's borrowed browser; do not close its context or
-            # browser, or touch any pre-existing upload tab.
-            page.close()
+        response = _fetch_player_response(existing_context, video_id)
+        reason = uploader_deleted_video(response) if isinstance(response, dict) else None
+        if not reason:
+            return None
+        return {
+            "video_id": video_id, "deleted_by_uploader": True,
+            "reason": reason, "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
 
     if context is not None:
         return read_from_context(context)
