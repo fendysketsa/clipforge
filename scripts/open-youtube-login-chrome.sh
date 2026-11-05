@@ -130,6 +130,13 @@ if curl -fsS --max-time 2 "http://127.0.0.1:${YOUTUBE_CDP_PORT}/json/version" >/
   exit 0
 fi
 
+# The desktop user owns the shared profile and its OS keyring. A container
+# must attach over CDP; starting another Chromium here corrupts that boundary.
+if [[ "${IN_DOCKER:-}" == "1" && "$SOCIAL_BROWSER_SHARED" == "true" ]]; then
+  echo "Shared Chrome is owned by the desktop service; wait for its CDP port instead of opening its profile from Docker." >&2
+  exit 75
+fi
+
 # Both the systemd user service and a legacy desktop-autostart entry may call
 # this launcher during login. Hold one lock for the lifetime of Chrome so that
 # the startup race can never create a second browser instance.
@@ -308,9 +315,16 @@ fi
 YOUTUBE_LOGIN_PROFILE_DIRECTORY="$(detect_youtube_profile_directory "$YOUTUBE_LOGIN_PROFILE_DIR" "$YOUTUBE_LOGIN_PROFILE_DIRECTORY")"
 YOUTUBE_CHROME_LOG="$(ensure_writable_log "$YOUTUBE_CHROME_LOG")"
 mkdir -p "$YOUTUBE_LOGIN_PROFILE_DIR" "$(dirname "$YOUTUBE_CHROME_LOG")"
-if [[ "$CLI_YOUTUBE_USE_DESKTOP_PROFILE" != "true" ]]; then
-  find "$YOUTUBE_LOGIN_PROFILE_DIR" -maxdepth 2 -name 'Singleton*' -delete 2>/dev/null || true
+if [[ "$SOCIAL_BROWSER_SHARED" == "true" ]]; then
+  for profile_file in "Local State" "$YOUTUBE_LOGIN_PROFILE_DIRECTORY/Preferences" "$YOUTUBE_LOGIN_PROFILE_DIRECTORY/Cookies"; do
+    if [[ -e "$YOUTUBE_LOGIN_PROFILE_DIR/$profile_file" && ! -O "$YOUTUBE_LOGIN_PROFILE_DIR/$profile_file" ]]; then
+      echo "Shared Chrome profile contains a file owned by another user: $profile_file. Use a clean desktop-owned profile; do not mix backend Chromium with desktop Chrome." >&2
+      exit 75
+    fi
+  done
 fi
+# Chrome handles stale locks itself within the desktop PID namespace. Never
+# remove Singleton files while another browser may still own this profile.
 
 # The bridge is a readable copy of the host Xauthority. It is needed on Docker
 # installations where user namespace mapping cannot traverse /run/user/<uid>.

@@ -29,19 +29,14 @@ def uploader_deleted_video(response: dict) -> str | None:
     return None
 
 
-def read_deleted_video_evidence(video_id: str, cdp_url: str) -> dict | None:
+def read_deleted_video_evidence(video_id: str, cdp_url: str, *, context=None) -> dict | None:
     """Borrow one page from Chrome, read playability, and close only that page.
 
     Private videos, unavailable videos, login failures, timeouts, and claims
     are not evidence of deletion. Never choose a file or edit Studio metadata.
     """
-    from playwright.sync_api import sync_playwright
-
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.connect_over_cdp(cdp_url, timeout=10_000)
-        if not browser.contexts:
-            return None
-        page = browser.contexts[0].new_page()
+    def read_from_context(existing_context):
+        page = existing_context.new_page()
         try:
             page.goto(
                 f"https://www.youtube.com/watch?v={video_id}&autoplay=0",
@@ -65,3 +60,14 @@ def read_deleted_video_evidence(video_id: str, cdp_url: str) -> dict | None:
             # This is the user's borrowed browser; do not close its context or
             # browser, or touch any pre-existing upload tab.
             page.close()
+
+    if context is not None:
+        return read_from_context(context)
+
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.connect_over_cdp(cdp_url, timeout=10_000)
+        if not browser.contexts:
+            return None
+        return read_from_context(browser.contexts[0])

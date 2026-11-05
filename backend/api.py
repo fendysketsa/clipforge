@@ -51,6 +51,10 @@ from telemetry import ProcessTelemetrySampler
 from whisper_cache import start_whisper_model_cache_maintenance
 from metadata_copy import choose_contextual_cta, contextual_engagement_copy
 from youtube_playlists import classify_youtube_playlist
+from news_hot import (
+    NEWS_HOT_THEME, NEWS_HOT_QUERIES, NEWS_HOT_TONE, NEWS_HOT_ROLE, NEWS_HOT_TOPIC_SIGNALS,
+    news_hot_topic_rejection_reason,
+)
 from hypit_quick import (
     hypit_prompt_body,
     is_hypit_infographic_auto_prompt,
@@ -517,6 +521,7 @@ class ClipJobRequest(BaseModel):
     # Durable provenance marker for scheduler-owned jobs. Public upload copy
     # may use it after a restart even when the parent run history is pruned.
     scheduled_public_source_credit: bool = False
+    scheduled_news_hot: bool = False
     # Internal scheduler-only switches. Manual/API jobs keep both disabled, so
     # cron can request a more human editorial pass and licensed contextual
     # audio without silently changing operator-led renders.
@@ -2621,6 +2626,15 @@ class AutoViralRequest(BaseModel):
             }[self.upload_date_filter]
         if self.source_urls:
             self.video_count = min(self.video_count, len(self.source_urls))
+        if self.cron_theme_key == NEWS_HOT_THEME:
+            # Enforce the durable series contract again on persisted reloads;
+            # default query validators otherwise inject unrelated faith lanes.
+            self.queries = list(NEWS_HOT_QUERIES)
+            self.video_count = self.clips_per_video = self.top = 1
+            self.max_age_days = min(2, self.max_age_days)
+            self.auto_upload_youtube = self.auto_upload_tiktok = False
+            self.create_paired_long_video = self.auto_publish_paired_long_video = False
+            self.paired_long_video_count = 0
         return self
 
 
@@ -2665,6 +2679,11 @@ class AutoViralScheduleStatus(BaseModel):
     last_started_at: str | None = None
     last_finished_at: str | None = None
     next_run_at: str | None = None
+    news_hot_enabled: bool = False
+    news_hot_daily_limit: int = 0
+    news_hot_daily_reserved: int = 0
+    news_hot_playlist: str = "News"
+    news_hot_review_required: bool = True
     message: str
 
 
@@ -3116,6 +3135,14 @@ def save_auto_viral_runs_unlocked() -> None:
         key=lambda run: run.created_at,
         reverse=True,
     )[:limit]
+    # Keep today's News reservations beyond the display-history limit so a
+    # busy main rotation plus restart cannot reset the three-Short cap.
+    retained = {run.id for run in runs_list}
+    current = datetime.now(timezone.utc)
+    runs_list.extend(
+        run for run in auto_viral_runs.values()
+        if run.id not in retained and news_hot_run_reserved_on_date(run, current)
+    )
     payload = [run.model_dump() for run in runs_list]
     AUTO_VIRAL_RUNS_PATH.parent.mkdir(parents=True, exist_ok=True)
     data = json.dumps(payload, indent=2, ensure_ascii=False)
@@ -3893,6 +3920,8 @@ def automatic_youtube_playlist(
     job: "ClipJob", clip: ClipFile, title: str = ""
 ) -> str:
     """Route all upload entry points from source/clip evidence, not boilerplate."""
+    if job.request.scheduled_news_hot:
+        return "News"
     sidecar = clip_sidecar_payload(clip)
     return classify_youtube_playlist(
         title,
@@ -4577,11 +4606,14 @@ def youtube_login_source_profile_ready() -> bool:
 
 
 def youtube_profile_upload_allowed() -> bool:
-    return env_bool("YOUTUBE_ALLOW_CHROMIUM_PROFILE_UPLOAD", False)
+    return (
+        not social_browser_is_shared()
+        and env_bool("YOUTUBE_ALLOW_CHROMIUM_PROFILE_UPLOAD", False)
+    )
 
 
 def youtube_upload_uses_cdp() -> bool:
-    return env_bool("YOUTUBE_UPLOAD_USE_CDP", False)
+    return social_browser_is_shared() or env_bool("YOUTUBE_UPLOAD_USE_CDP", False)
 
 
 def youtube_upload_force_cdp() -> bool:
@@ -4593,7 +4625,7 @@ def youtube_upload_last_resort_fallback_allowed() -> bool:
 
 
 def youtube_upload_storage_state_first() -> bool:
-    return env_bool("YOUTUBE_UPLOAD_STORAGE_STATE_FIRST", True)
+    return not social_browser_is_shared() and env_bool("YOUTUBE_UPLOAD_STORAGE_STATE_FIRST", True)
 
 
 def youtube_upload_prefers_chromium_profile() -> bool:
@@ -6580,6 +6612,12 @@ def audited_score_floor_short_for_automatic_upload(
 
 def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | None:
     """Return a hard block or a review hold before the Private upload stage."""
+    if job.request.scheduled_news_hot and not clip.is_correct:
+        return (
+            "News Hot ditahan untuk review manusia: verifikasi fakta, atribusi/opini/tuduhan, "
+            "tanggal kejadian, bukti tulisan, konteks, judul/thumbnail, dan hak penggunaan "
+            "sebelum menandai clip benar dan mengunggah ke playlist News."
+        )
     sidecar = clip_sidecar_payload(clip)
     metadata = metadata_for_job(job)
     audited_score_floor_fallback = audited_score_floor_short_for_automatic_upload(
@@ -8966,9 +9004,20 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         description = complete_youtube_description(job, clip, description, tags)
         description = append_youtube_chapters(description, clip)
         description = append_youtube_source_attribution(description, job)
+    if job.request.scheduled_news_hot:
+        metadata = metadata_for_job(job)
+        news_note = (
+            "Seri: News Hot RYUUNDY\n"
+            f"Tanggal unggah sumber: {metadata.get('upload_date') or 'belum terverifikasi'}. "
+            "Tanggal unggah dapat berbeda dari tanggal kejadian. "
+            "Opini dan pernyataan narasumber harus dipahami dalam konteks sumber asli."
+        )
+        description = f"{description[:5000 - len(news_note) - 2]}\n\n{news_note}"
     altered_content = clip_requires_altered_content_disclosure(clip)
     auto_playlist_enabled = env_bool("YOUTUBE_AUTO_PLAYLIST", True)
-    if auto_playlist_enabled:
+    if job.request.scheduled_news_hot:
+        playlist = "News"
+    elif auto_playlist_enabled:
         playlist = automatic_youtube_playlist(job, clip, packaged_title)
     elif released_retry is not None and released_retry.playlist:
         playlist = released_retry.playlist
@@ -10073,6 +10122,10 @@ def build_youtube_restart_verification_command(upload: YouTubeUploadJob) -> list
 
 
 def build_youtube_login_command(*, timeout_seconds: str | None = None) -> list[str]:
+    if social_browser_is_shared():
+        # A root-owned backend must attach to the desktop browser, never open
+        # its bind-mounted profile with a second Chromium/user/keyring.
+        return build_youtube_capture_command(hydrate_storage_state=False)
     command = [
         sys.executable,
         "youtube_uploader.py",
@@ -10094,6 +10147,8 @@ def build_youtube_login_command(*, timeout_seconds: str | None = None) -> list[s
 
 
 def build_youtube_check_login_command(*, use_chromium_profile: bool = False) -> list[str]:
+    if social_browser_is_shared():
+        return build_youtube_capture_command(hydrate_storage_state=False)
     command = [
         sys.executable,
         "youtube_uploader.py",
@@ -10117,7 +10172,7 @@ def build_youtube_check_login_command(*, use_chromium_profile: bool = False) -> 
     return command
 
 
-def build_youtube_capture_command(*, hydrate_storage_state: bool = True) -> list[str]:
+def build_youtube_capture_command(*, hydrate_storage_state: bool = False) -> list[str]:
     command = [
         sys.executable,
         "youtube_uploader.py",
@@ -10171,7 +10226,7 @@ def run_youtube_check_login_once(*, use_chromium_profile: bool = False) -> tuple
     return check_code, check_logs, check_error
 
 
-def run_youtube_capture_once(*, hydrate_storage_state: bool = True) -> tuple[int, list[str], str | None]:
+def run_youtube_capture_once(*, hydrate_storage_state: bool = False) -> tuple[int, list[str], str | None]:
     capture_logs: list[str] = []
     process = subprocess.Popen(
         build_youtube_capture_command(hydrate_storage_state=hydrate_storage_state),
@@ -10469,7 +10524,7 @@ def run_youtube_login_process() -> None:
         error = youtube_upload_error_from_logs(logs) if code != 0 else None
         with process_lock:
             reconnect_cdp = youtube_login_reconnect_cdp
-        if code == 0 and reconnect_cdp:
+        if code == 0 and reconnect_cdp and not social_browser_is_shared():
             logs.append("Login berhasil; mengaktifkan kembali Chrome remote debugging secara otomatis.")
             set_youtube_login_status(logs=logs[-80:])
             try:
@@ -10503,7 +10558,7 @@ def start_youtube_login_if_needed(*, reconnect_cdp: bool = False) -> YouTubeLogi
     with process_lock:
         if reconnect_cdp:
             youtube_login_reconnect_cdp = True
-        if youtube_login_process is not None and youtube_login_process.poll() is None:
+        if youtube_login_status.active or (youtube_login_process is not None and youtube_login_process.poll() is None):
             return youtube_login_status
         started_at = now_iso()
         set_youtube_login_status(active=True, started_at=started_at, finished_at=None, error=None, logs=[])
@@ -12330,10 +12385,10 @@ def tiktok_cdp_ready() -> bool:
 
 
 def social_browser_is_shared() -> bool:
-    return (
-        env_bool("SOCIAL_BROWSER_SHARED", False)
-        and TIKTOK_CDP_URL.rstrip("/") == YOUTUBE_CDP_URL.rstrip("/")
-    )
+    # Two forwarding ports may reach the same browser (e.g. 9333 and 9444).
+    # The explicit mode owns the policy; URL string equality cannot identify
+    # a browser and previously allowed a competing persistent-profile login.
+    return env_bool("SOCIAL_BROWSER_SHARED", False)
 
 
 def tiktok_chrome_rendering_broken() -> bool:
@@ -15519,6 +15574,9 @@ def viral_search_hard_filter_rejection_reason(
     proxy for informational value or clip quality.
     """
     age_days = upload_age_days(info)
+    if getattr(request, "cron_theme_key", "") == NEWS_HOT_THEME:
+        if age_days is None or age_days < 0 or age_days > request.max_age_days:
+            return "News Hot memerlukan tanggal unggah terverifikasi dalam jendela freshness"
     if age_days is None and env_bool("VIRAL_CC_REQUIRE_UPLOAD_DATE", True):
         return "tanggal unggah tidak tersedia"
     adaptive_max_age_days = max(
@@ -16088,6 +16146,10 @@ def cron_trend_candidate_rejection_reason(
     )
     if unsafe_hits:
         return f"tren tidak aman ({', '.join(unsafe_hits[:3])})"
+    if theme_key == NEWS_HOT_THEME:
+        rejection = news_hot_topic_rejection_reason(info)
+        if rejection:
+            return rejection
     theme_signals = RYUUNDY_CRON_THEME_SIGNALS.get(theme_key, set())
     theme_hits = sorted(
         marker for marker in theme_signals if f" {marker} " in normalized_text
@@ -16117,7 +16179,7 @@ def cron_trend_candidate_rejection_reason(
     minimum_score = max(
         1, min(100, env_int("AUTO_VIRAL_SCHEDULE_TREND_MIN_SCORE", 18))
     )
-    if trend_score < minimum_score:
+    if trend_score < minimum_score and theme_key != NEWS_HOT_THEME:
         return f"sinyal tren {trend_score:.0f}/100 di bawah minimum {minimum_score}/100"
     language_score = indonesian_language_score(info)
     minimum_language = max(1, min(100, env_int("VIRAL_CC_MIN_INDONESIAN_SCORE", 15)))
@@ -16137,6 +16199,10 @@ def apply_cron_trend_ranking(
 ) -> dict[str, Any]:
     """Use topic freshness instead of the normal niche rank in cron trend mode."""
     trend_score, live_matches = cron_trend_score(info, trend_tokens)
+    if theme_key == NEWS_HOT_THEME:
+        words = set(re.findall(r"[a-z0-9]+", str(info.get("title") or "").casefold()))
+        # This measures metadata fit only. Facts/event dates remain unverified.
+        trend_score = min(100.0, 14.0 * len(words & NEWS_HOT_TOPIC_SIGNALS))
     language_score = float(source.get("language_score") or 0)
     momentum_score = float(source.get("momentum_score") or 0)
     conversation_score = min(
@@ -16145,7 +16211,7 @@ def apply_cron_trend_ranking(
     source.update(
         {
             "niche": "cron_trend_expansion",
-            "niche_label": "Perluasan Tren Google/YouTube (Cronjob)",
+            "niche_label": "News Hot Indonesia" if theme_key == NEWS_HOT_THEME else "Perluasan Tren Google/YouTube (Cronjob)",
             "niche_score": trend_score,
             "cron_trend_score": trend_score,
             "trend_signal_score": min(30, len(live_matches) * 6),
@@ -17680,7 +17746,10 @@ def search_youtube_data_api_viral_sources(
     max_api_queries = max(1, min(20, env_int("VIRAL_CC_MAX_API_QUERIES", 1)))
     channel_term_queries: list[str] = []
     studio_trend_queries: list[str] = []
-    if cron_humor_lane:
+    if request.cron_theme_key == NEWS_HOT_THEME and cron_trend_lane:
+        api_queries = list(NEWS_HOT_QUERIES)[:max_api_queries]
+        append_auto_viral_log(run_id, "News Hot memakai pencarian politik Indonesia dengan freshness ketat; hasil pencarian bukan bukti fakta.")
+    elif cron_humor_lane:
         append_auto_viral_log(
             run_id,
             "Jalur humor cronjob aktif; seed tren umum dimatikan agar hasil tetap komedi ringan.",
@@ -18810,6 +18879,8 @@ def auto_viral_format_perspective(
         parts.append(
             f"Peran {'Long' if long_form else 'Short'} dalam pasangan konten: {role}."
         )
+    if request.cron_theme_key == NEWS_HOT_THEME:
+        return " ".join(parts)[:4000]
     if request.cron_short_role or request.cron_long_role:
         parts.append(
             "Short dan Long harus saling melengkapi dari sumber yang sama: Short memberi hook, "
@@ -18827,6 +18898,8 @@ def auto_viral_format_perspective(
 
 def auto_viral_youtube_playlist(request: AutoViralRequest) -> str:
     """Keep the legacy Islam playlist exclusive to the matching cron lane."""
+    if request.cron_theme_key == NEWS_HOT_THEME:
+        return "News"
     if request.cron_theme_key and request.cron_theme_key not in CRON_ISLAMIC_THEME_KEYS:
         return ""
     return os.environ.get("YOUTUBE_DEFAULT_PLAYLIST", DEFAULT_YOUTUBE_PLAYLIST).strip()
@@ -18983,6 +19056,14 @@ def create_auto_viral_clip_job(
         )
     wait_for_no_active_clipping_job()
     islamic_cron_theme = request.cron_theme_key in CRON_ISLAMIC_THEME_KEYS
+    news_hot = scheduled and request.cron_theme_key == NEWS_HOT_THEME
+    perspective = auto_viral_format_perspective(request, long_form=False)
+    if news_hot:
+        perspective += (
+            f" Sumber asli: {source.get('url')}; judul: {source.get('title')}; "
+            f"tanggal unggah sumber: {source.get('upload_date') or 'belum terverifikasi'}. "
+            "Tanggal kejadian dan kebenaran klaim harus diverifikasi terpisah saat review."
+        )
     job_request = ClipJobRequest(
         url=str(source["url"]),
         top=request.top,
@@ -18997,12 +19078,14 @@ def create_auto_viral_clip_job(
         require_creative_commons=request.require_creative_commons,
         auto_upload_youtube=False,
         scheduled_public_source_credit=scheduled,
+        scheduled_news_hot=news_hot,
         scheduled_human_editor=bool(
             scheduled
             and env_bool("AUTO_VIRAL_SCHEDULE_HUMAN_EDITOR_ENABLED", True)
         ),
         scheduled_contextual_audio=bool(
             scheduled
+            and not news_hot
             and not islamic_cron_theme
             and env_bool("AUTO_VIRAL_SCHEDULE_CONTEXTUAL_AUDIO_ENABLED", True)
         ),
@@ -19012,6 +19095,7 @@ def create_auto_viral_clip_job(
         ),
         scheduled_reaction_avatar_layout=bool(
             scheduled
+            and not news_hot
             and not islamic_cron_theme
             and env_bool("AUTO_VIRAL_SCHEDULE_REACTION_AVATAR_ENABLED", True)
         ),
@@ -19021,12 +19105,12 @@ def create_auto_viral_clip_job(
         ),
         confirm_source_rights=request.source_rights_confirmed,
         source_rights_evidence=request.source_rights_evidence,
-        creator_perspective=auto_viral_format_perspective(request, long_form=False),
+        creator_perspective=perspective[:4000],
         ai_enabled=request.ai_enabled,
         ai_base_url=request.ai_base_url,
         ai_model=request.ai_model,
         ai_api_key=request.ai_api_key,
-        required_hashtags=source_theme_hashtags(source),
+        required_hashtags=["NewsHot", "PolitikIndonesia", "KebijakanPublik"] if news_hot else source_theme_hashtags(source),
     )
     if job_request.max_duration <= job_request.min_duration:
         raise RuntimeError("max_duration must be greater than min_duration")
@@ -19683,6 +19767,18 @@ def auto_viral_daily_platform_upload_keys(
     current = now or datetime.now(timezone.utc)
     local_date = current.astimezone(ZoneInfo("Asia/Jakarta")).date()
     scheduled_job_ids = scheduled_auto_viral_job_ids()
+    # Reviewed News uploads belong to the separate three-Short series, so
+    # they do not reduce the main cron's Short/Long production target. Public
+    # cadence/backlog checks still see every upload through their own records.
+    with auto_viral_lock:
+        news_job_ids = {
+            str(item.get(key) or "")
+            for run in auto_viral_runs.values()
+            if run.trigger == "schedule" and run.request.cron_theme_key == NEWS_HOT_THEME
+            for item in run.processed
+            for key in ("job_id", "long_job_id")
+        }
+    scheduled_job_ids.difference_update(news_job_ids)
     if platform == "youtube":
         with youtube_uploads_lock:
             records: list[Any] = list(youtube_uploads.values())
@@ -21211,6 +21307,9 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 excluded_sources,
                 source_pool_target,
             )
+        if run_request.cron_theme_key == NEWS_HOT_THEME:
+            # A reserved News slot renders at most one source/one Short.
+            sources = sources[:1]
         if not sources:
             raise RuntimeError(
                 "Tidak menemukan kandidat aman setelah pencarian diperluas; "
@@ -21520,6 +21619,9 @@ def run_auto_viral_campaign(run_id: str) -> None:
                         )
                 else:
                     item["cleanup"] = "hasil clip disimpan untuk review"
+                    if run_request.cron_theme_key == NEWS_HOT_THEME:
+                        item["status"] = "manual_review_required"
+                        item["cleanup"] = "News Hot disimpan untuk review fakta, konteks, dan tanggal kejadian sebelum upload ke News"
                     append_auto_viral_log(
                         run_id,
                         (
@@ -21868,6 +21970,10 @@ def create_and_start_auto_viral_campaign(
             active = auto_viral_runs.get(auto_viral_active_run_id)
             if active and active.status in {"queued", "running"}:
                 raise HTTPException(status_code=409, detail=f"Automation masih berjalan: {active.id}")
+        if trigger == "schedule" and request.cron_theme_key == NEWS_HOT_THEME:
+            if news_hot_daily_reserved(runs=list(auto_viral_runs.values())) >= news_hot_daily_limit():
+                raise HTTPException(status_code=409, detail="Slot News Hot harian WIB sudah habis")
+            request = scheduled_news_hot_request()
         run_id = uuid.uuid4().hex
         secret = request.ai_api_key
         safe_request = request.model_copy(update={"ai_api_key": ""})
@@ -22179,7 +22285,75 @@ def scheduled_auto_viral_youtube_browser_ready() -> bool:
     )
 
 
+def news_hot_daily_limit() -> int:
+    if not env_bool("AUTO_VIRAL_SCHEDULE_NEWS_HOT_ENABLED", False):
+        return 0
+    return max(0, min(3, env_int("AUTO_VIRAL_SCHEDULE_NEWS_HOT_DAILY_LIMIT", 3)))
+
+
+def news_hot_daily_reserved(
+    now: datetime | None = None, *, runs: list[AutoViralRun] | None = None,
+) -> int:
+    """Reserve one attempt per Short, including failures and restart history.
+
+    Failures may leave fewer than three clips; never loop to fill a quota.
+    In-flight attempts across midnight reserve space on the new WIB day too.
+    """
+    current = now or datetime.now(timezone.utc)
+    if runs is None:
+        with auto_viral_lock:
+            runs = list(auto_viral_runs.values())
+    return sum(
+        max(1, run.request.video_count * run.request.clips_per_video)
+        for run in runs
+        if news_hot_run_reserved_on_date(run, current)
+    )
+
+
+def news_hot_run_reserved_on_date(run: AutoViralRun, current: datetime) -> bool:
+    if run.trigger != "schedule" or run.request.cron_theme_key != NEWS_HOT_THEME:
+        return False
+    local_date = current.astimezone(ZoneInfo("Asia/Jakarta")).date()
+    return run.status in {"queued", "running"} or any(
+        value and parse_utc_datetime(value, current).astimezone(ZoneInfo("Asia/Jakarta")).date() == local_date
+        for value in (run.created_at, run.finished_at)
+    )
+
+
+def scheduled_news_hot_due(now: datetime | None = None) -> bool:
+    limit = news_hot_daily_limit()
+    if not limit or news_hot_daily_reserved(now) >= limit:
+        return False
+    latest = latest_scheduled_auto_viral_run()
+    if latest is None or latest.request.cron_theme_key != NEWS_HOT_THEME:
+        return True
+    # Interleave an ordinary campaign when it has upload capacity. News is
+    # held locally for review, independently of the Studio publication queue.
+    return not auto_viral_daily_mix_incomplete(now or datetime.now(timezone.utc))
+
+
+def scheduled_news_hot_request() -> AutoViralRequest:
+    request = AutoViralRequest(
+        niche="auto", cron_theme_key=NEWS_HOT_THEME, cron_trend_lane=True,
+        theme_focus=NEWS_HOT_QUERIES[0], queries=NEWS_HOT_QUERIES,
+        cron_editorial_tone=NEWS_HOT_TONE, cron_short_role=NEWS_HOT_ROLE,
+        video_count=1, clips_per_video=1, top=1,
+        min_views=0, max_age_days=2, upload_date_filter="this_week",
+        duration_filter="any", definition_filter="hd",
+        require_creative_commons=env_bool("AUTO_VIRAL_SCHEDULE_REQUIRE_CREATIVE_COMMONS", False),
+        source_rights_confirmed=env_bool("AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED", False),
+        source_rights_evidence=os.environ.get("AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_EVIDENCE", "").strip(),
+        # Political news awaits fact/context review before any platform upload.
+        auto_upload_youtube=False, auto_upload_tiktok=False,
+        create_paired_long_video=False, paired_long_video_count=0,
+        auto_publish_paired_long_video=False,
+    )
+    return request.model_copy(update={"queries": list(NEWS_HOT_QUERIES)})
+
+
 def scheduled_auto_viral_request() -> AutoViralRequest:
+    if scheduled_news_hot_due():
+        return scheduled_news_hot_request()
     youtube_upload_requested = env_bool(
         "AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False
     )
@@ -22760,6 +22934,8 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
         message = "Cron nonaktif dari kontrol frontend; proses yang sudah berjalan tetap diselesaikan."
     elif active_id:
         message = "Automation sedang berjalan; jadwal berikutnya tidak akan membuat run tumpang tindih."
+    elif scheduled_request.cron_theme_key == NEWS_HOT_THEME:
+        message = "Sisipan News Hot menunggu giliran render; hasil disimpan untuk review sebelum upload ke playlist News."
     elif (
         youtube_upload_requested or tiktok_upload_requested or paired_long_public_requested
     ) and not scheduled_auto_viral_rights_profile_ready():
@@ -22825,7 +23001,13 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
         last_started_at=latest.created_at if latest else None,
         last_finished_at=latest.finished_at if latest else None,
         next_run_at=next_run_at.isoformat() if next_run_at else None,
-        message=message,
+        news_hot_enabled=news_hot_daily_limit() > 0,
+        news_hot_daily_limit=news_hot_daily_limit(),
+        news_hot_daily_reserved=news_hot_daily_reserved(),
+        message=message + (
+            f" News Hot: {news_hot_daily_reserved()}/{news_hot_daily_limit()} slot harian WIB; playlist News, review sebelum upload."
+            if news_hot_daily_limit() else ""
+        ),
     )
 
 
@@ -22958,6 +23140,14 @@ def auto_viral_next_run_at(
     """Calculate the next cycle from boot uptime and the prior completion."""
     if active_run_id:
         return None
+    if scheduled_news_hot_due(now) and not auto_viral_run_can_resume_upload(latest):
+        anchor = parse_utc_datetime(
+            latest.finished_at or latest.updated_at or latest.created_at, now,
+        ) if latest else now - timedelta(minutes=auto_viral_retry_delay_minutes())
+        return max(
+            auto_viral_boot_not_before(now),
+            anchor + timedelta(minutes=auto_viral_retry_delay_minutes()),
+        )
     if youtube_cron_buffer_enabled() and not youtube_cron_capacity_room() and not auto_viral_run_can_resume_upload(latest):
         return youtube_cron_capacity_retry_at(now)
     if (
@@ -23420,6 +23610,18 @@ def check_tiktok_session() -> TikTokSessionStatus:
                 logs=combined_logs[-80:],
             )
         error = tiktok_error_from_logs(logs) or f"Validasi TikTok gagal (exit {result.returncode})."
+        if tiktok_error_is_transient_identity_hydration(error):
+            # The live browser has auth cookies but its identity UI is late.
+            # A signed-out isolated fallback cannot invalidate that live
+            # session or justify quarantining the saved state.
+            return TikTokSessionStatus(
+                ok=False,
+                target_handle=tiktok_target_handle(),
+                state_path=str(TIKTOK_PLAYWRIGHT_STATE),
+                message="Session TikTok terdeteksi; identitas akun sedang dimuat. Login tidak perlu diulang.",
+                error=error,
+                logs=combined_logs[-80:],
+            )
     if error and tiktok_error_invalidates_saved_session(error):
         rejected_state = quarantine_tiktok_auth_state()
         if rejected_state is not None:

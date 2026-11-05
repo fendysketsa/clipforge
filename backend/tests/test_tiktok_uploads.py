@@ -927,6 +927,54 @@ def test_account_identity_miss_does_not_invalidate_saved_session():
     assert api.tiktok_error_invalidates_saved_session(hydration) is False
 
 
+def test_current_profile_handle_uses_authenticated_app_context():
+    import tiktok_uploader
+
+    class Page:
+        def evaluate(self, script):
+            assert "webapp.app-context" in script
+            assert "webapp.user-detail" not in script
+            return "titikbalikislami"
+
+    assert tiktok_uploader.current_profile_handle(Page()) == "titikbalikislami"
+
+
+def test_live_identity_loading_does_not_quarantine_state_via_failed_fallback(monkeypatch):
+    monkeypatch.setattr(api, "playwright_installed", lambda: True)
+    monkeypatch.setattr(api, "tiktok_cdp_ready", lambda: True)
+    monkeypatch.setattr(api, "tiktok_auth_state_exists", lambda: True)
+    monkeypatch.setenv("TIKTOK_UPLOAD_USE_CDP", "true")
+    commands = []
+    error = "Sesi TikTok terdeteksi, tetapi identitas akun @titikbalikislami belum dapat diverifikasi karena halaman profil belum selesai dimuat."
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        return SimpleNamespace(returncode=1, stdout="USER_ERROR:" + error, stderr="")
+
+    monkeypatch.setattr(api.subprocess, "run", run)
+    monkeypatch.setattr(api, "quarantine_tiktok_auth_state", lambda: pytest.fail("Live session was quarantined"))
+    status = api.check_tiktok_session()
+    assert not status.ok
+    assert "Login tidak perlu diulang" in status.message
+    assert len(commands) == 1
+
+
+@pytest.mark.parametrize("shared", [True, False])
+def test_shared_cdp_never_overwrites_live_login_even_with_legacy_hydration_flag(monkeypatch, shared):
+    import tiktok_uploader
+
+    monkeypatch.setenv("SOCIAL_BROWSER_SHARED", "true" if shared else "false")
+    monkeypatch.setenv("TIKTOK_CDP_HYDRATE_STORAGE_STATE", "true")
+    context = SimpleNamespace()
+    browser = SimpleNamespace(contexts=[context])
+    playwright = SimpleNamespace(chromium=SimpleNamespace(connect_over_cdp=lambda *_args, **_kwargs: browser))
+    hydrated = []
+    monkeypatch.setattr(tiktok_uploader, "hydrate_cdp_context_from_state", lambda *_: hydrated.append(True))
+    args = SimpleNamespace(no_headless=False, cdp_url="http://127.0.0.1:9333", state="state.json")
+    assert tiktok_uploader.open_context(playwright, args) == (context, browser)
+    assert bool(hydrated) is (not shared)
+
+
 def test_tiktok_profile_without_saved_auth_is_not_upload_ready(monkeypatch):
     monkeypatch.setattr(api, "playwright_installed", lambda: True)
     monkeypatch.setattr(api, "tiktok_auth_state_exists", lambda: False)

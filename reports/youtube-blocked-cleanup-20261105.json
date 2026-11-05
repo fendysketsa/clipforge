@@ -1,0 +1,61 @@
+{
+  "verified_at": "2026-11-05T07:59:00.937541+00:00",
+  "channel": "RYUUNDY",
+  "initial_automatic_run": {
+    "run_id": "9f533a05441744198d3e630839bcbb8c",
+    "started_at": "2026-11-05T07:56:23.697875+00:00",
+    "channel_id": "UCAOZF9Qzj6DYoXKtLnP4UUQ",
+    "apply": true,
+    "status": "completed",
+    "scan_complete": true,
+    "scanned": 2297,
+    "buckets": {
+      "upload": {
+        "scanned": 193,
+        "pages": 7,
+        "complete": true
+      },
+      "short": {
+        "scanned": 2099,
+        "pages": 70,
+        "complete": true
+      },
+      "live": {
+        "scanned": 5,
+        "pages": 1,
+        "complete": true
+      }
+    },
+    "candidates": [],
+    "actions": [],
+    "finished_at": "2026-11-05T07:59:00.937541+00:00"
+  },
+  "maintenance": {
+    "interval_hours": 12,
+    "jitter_max_minutes": 10,
+    "max_deletions_per_run": 5,
+    "requires_idle_upload_queues": true,
+    "timer": "clipforge-youtube-blocked-cleanup.timer",
+    "enabled": true,
+    "active": true,
+    "next_run": "NEXT                        LEFT LAST                         PASSED UNIT                                    ACTIVATES\nFri 2026-11-06 03:02:48 WIB  12h Thu 2026-11-05 14:59:21 WIB 44s ago clipforge-youtube-blocked-cleanup.timer clipforge-youtube-blocked-cleanup.service\n\n1 timers listed."
+  },
+  "preserved": {
+    "original_youtube_dashboard": true,
+    "original_tiktok_tab": true,
+    "private_scheduled_drafts": true,
+    "partial_blocks_and_ordinary_claims": true,
+    "local_source_media": true
+  },
+  "validation": {
+    "tests_passed": 113,
+    "live_deletions": 0,
+    "live_deletion_confirmation_exercised": false,
+    "reason": "No fully blocked candidates found"
+  },
+  "source_sha256": {
+    "backend/youtube_blocked_cleanup.py": "542ef547d4d0e7a82a42db2a79dc59063f86ff26e055ab0d288e889ae65d74f0",
+    "backend/youtube_remote_status.py": "fefdf7bdf0f7d55b739d3e56d0afb7396c430b282cff117a7d0eca568b6402e4",
+    "backend/youtube_uploader.py": "3d4b6c8850a703efb4920d72aeb238c86d7025e42ff72f456ee9acb07476e898"
+  }
+}

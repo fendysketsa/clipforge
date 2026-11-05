@@ -89,6 +89,18 @@ def test_can_use_requested_playlist_when_automatic_routing_is_disabled(upload_co
     assert upload.playlist == "Lucu"
 
 
+@pytest.mark.parametrize("automatic", ["true", "false"])
+def test_news_series_routes_to_news_even_with_stale_default(upload_context, monkeypatch, automatic):
+    api, job, clip = upload_context
+    job.request.scheduled_news_hot = True
+    monkeypatch.setenv("YOUTUBE_AUTO_PLAYLIST", automatic)
+    upload = api.create_youtube_upload_record(
+        job.id, api.YouTubeUploadRequest(clip_url=clip.url, playlist="Islam", visibility="private")
+    )
+    assert upload.playlist == "News"
+    assert "Seri: News Hot RYUUNDY" in upload.description
+
+
 def test_long_video_uses_gaming_rather_than_folklore_default(upload_context):
     api, job, clip = upload_context
     job.request.clip_mode = "highlight_5m"

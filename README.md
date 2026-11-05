@@ -274,9 +274,13 @@ browser session only after the active TikTok profile is verified against
 that saved session. When a session is already present it does not start login
 again. Normal uploads can reuse a dedicated host-owned Chrome profile over CDP
 while its window stays minimized in the background. Set
-`SOCIAL_BROWSER_SHARED=true`, point `TIKTOK_CDP_URL` at `YOUTUBE_CDP_URL`, and
-enable `TIKTOK_CDP_HYDRATE_STORAGE_STATE=true` to use one Chrome window with a
-YouTube Studio tab and a TikTok Studio tab. The window only
+`SOCIAL_BROWSER_SHARED=true` and point `TIKTOK_CDP_URL` at `YOUTUBE_CDP_URL`
+(or forwarding ports for that same browser) to use one Chrome window with a
+YouTube Studio tab and a TikTok Studio tab. Keep both platforms' CDP cookie
+hydration disabled: shared mode preserves the active browser login, including
+when an older deployment still sets the TikTok hydration flag. The dedicated
+desktop profile must be owned only by the desktop user; backend Chromium must
+never open that same directory with a different user/keyring. The window only
 needs user attention for the first login, CAPTCHA, or a genuinely expired
 session. Set `TIKTOK_UPLOAD_USE_CDP=false` only to troubleshoot with a copied
 headless storage-state; some TikTok sessions reject that separate context.
@@ -329,6 +333,27 @@ closed or the desktop starts again after a reboot, systemd opens the same
 profile automatically. The saved cookies and Playwright storage-state are
 reused; another manual login is only needed when Google/TikTok revokes the
 session or requires a new CAPTCHA.
+
+Optional blocked-video maintenance runs on the host using
+`deploy/clipforge-youtube-blocked-cleanup.timer` and the existing Chrome CDP
+session. Set `YOUTUBE_BLOCKED_CLEANUP_ENABLED=true` only when permanent deletion
+of fully blocked videos is authorized. The timer checks about every 12 hours,
+skips active uploads, and checks Videos, Shorts and Live. It preserves Private,
+scheduled and draft videos, partial regional blocks, ordinary copyright claims
+and limited monetization. It rechecks each exact video immediately before the
+native Studio delete confirmation, deletes at most five per pass, and records
+success only after independent, exact-ID uploader-deletion evidence. An
+incomplete scan or an unavailable session/API authorizes no deletion. It never
+starts a second Chrome profile or imports cookies. Audit reports are in
+`backend/data/youtube-blocked-cleanup/`; source media remains untouched.
+
+For a read-only scan, run
+`backend/.venv/bin/python backend/youtube_blocked_cleanup.py --force`.
+The host virtualenv needs `playwright` and `imageio-ffmpeg`. Link both maintenance
+units with `systemctl --user link "$PWD/deploy/clipforge-youtube-blocked-cleanup.service" "$PWD/deploy/clipforge-youtube-blocked-cleanup.timer"`,
+then run `systemctl --user daemon-reload` and
+`systemctl --user enable --now clipforge-youtube-blocked-cleanup.timer`.
+Disable with `systemctl --user disable --now clipforge-youtube-blocked-cleanup.timer`.
 
 Alternatively, reuse a Chromium/Chrome profile that is already logged in to the
 target YouTube channel by setting:
@@ -408,6 +433,23 @@ source with a stronger informative story can beat a higher-view but shallow sour
 Rendered Shorts then use a content lane—Qur'an/hadith, politics, podcast, history,
 practical guidance, or faith reflection—to select motion, editorial-card labels,
 pacing, and restraint.
+
+The optional `News Hot` series adds up to three separate one-Short attempts per
+Jakarta date, interleaved with the main cron rotation. Enable
+`AUTO_VIRAL_SCHEDULE_NEWS_HOT_ENABLED=true` and set
+`AUTO_VIRAL_SCHEDULE_NEWS_HOT_DAILY_LIMIT=3`. Sources must concern Indonesian
+politics/public policy and have a known upload date within two days; adaptive
+search cannot relax this freshness gate. Upload date does not establish event
+date or verify a claim. The RYUUNDY brief requires a complete story, causes,
+consequences for people, clear attribution, and a constructive takeaway.
+News outputs remain local for human fact/context/rights review before upload;
+reviewed uploads route to `News`. Failed or cancelled attempts consume their
+daily slot, so the maximum is enforced without forcing weak clips. Main upload
+targets and public release limits remain separate. The `News` playlist must
+exist in Studio; the uploader stops if it cannot confirm its checkbox.
+Use `sudo bash scripts/activate-cron-news-hot.sh` to build the backend, wait for
+active work, preserve runtime settings, and verify activation without stopping
+an active render.
 
 Enable the internal cron-style scheduler in `.env` (restart the backend after
 changing these values):

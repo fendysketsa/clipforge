@@ -1,0 +1,13 @@
+[Unit]
+Description=Occasional cleanup of explicitly blocked YouTube Studio videos
+
+[Service]
+Type=oneshot
+WorkingDirectory=/www/wwwroot/clipper/clipforge
+ExecStart=/www/wwwroot/clipper/clipforge/backend/.venv/bin/python /www/wwwroot/clipper/clipforge/backend/youtube_blocked_cleanup.py --apply
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=25min
+

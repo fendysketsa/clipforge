@@ -1,0 +1,11 @@
+[Unit]
+Description=Check blocked YouTube videos occasionally while the desktop browser is available
+
+[Timer]
+OnStartupSec=15min
+OnUnitInactiveSec=12h
+RandomizedDelaySec=10min
+Unit=clipforge-youtube-blocked-cleanup.service
+
+[Install]
+WantedBy=timers.target

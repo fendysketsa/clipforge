@@ -236,6 +236,20 @@ def goto(page, url: str, timeout_ms: int = 45_000) -> None:
 
 
 def current_profile_handle(page) -> str:
+    # TikTok's current navigation can render icon-only links while the profile
+    # panel is still hydrating. The app-context user is the authenticated
+    # viewer; webapp.user-detail is the PUBLIC profile and must not be used.
+    try:
+        signed_in = page.evaluate("""() => {
+          const element = document.getElementById('__UNIVERSAL_DATA_FOR_REHYDRATION__');
+          if (!element) return '';
+          const data = JSON.parse(element.textContent || '{}');
+          return data.__DEFAULT_SCOPE__?.['webapp.app-context']?.user?.uniqueId || '';
+        }""")
+        if isinstance(signed_in, str) and re.fullmatch(r"[A-Za-z0-9._]+", signed_in):
+            return clean_handle(signed_in)
+    except Exception:
+        pass
     selectors = (
         '[data-e2e="nav-profile"]',
         'a[aria-label="Profile"]',
@@ -1632,7 +1646,10 @@ def open_context(playwright, args):
             "menghubungkan browser login GUI",
         )
         context = browser.contexts[0] if browser.contexts else browser.new_context(locale="id-ID")
-        if env_bool("TIKTOK_CDP_HYDRATE_STORAGE_STATE", False):
+        if (
+            env_bool("TIKTOK_CDP_HYDRATE_STORAGE_STATE", False)
+            and not env_bool("SOCIAL_BROWSER_SHARED", False)
+        ):
             hydrate_cdp_context_from_state(context, Path(args.state))
         return context, browser
     profile_dir = Path(args.chromium_user_data_dir).expanduser() if args.chromium_user_data_dir else None

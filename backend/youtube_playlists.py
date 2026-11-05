@@ -22,6 +22,8 @@ def classify_youtube_playlist(*values: str) -> str:
         "mobile legends", "free fire", "valorant", "pubg", "gta", "bangjblox",
     ):
         return "Gaming"
+    if contains("news hot", "politik indonesia", "dpr ri", "kebijakan publik indonesia"):
+        return "News"
     if contains("cerita rakyat", "folklor", "folklore", "dongeng nusantara"):
         return "Cerita Rakyat"
     if contains("legenda", "legend of", "asal usul"):

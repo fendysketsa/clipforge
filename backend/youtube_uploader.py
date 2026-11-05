@@ -11,7 +11,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import imageio_ffmpeg
@@ -98,6 +98,16 @@ def chromium_executable_kwargs() -> dict[str, str]:
     if not executable.is_file():
         raise UploadError(f"Executable browser YouTube tidak ditemukan: {executable}")
     return {"executable_path": str(executable)}
+
+
+def require_dedicated_profile_mode() -> None:
+    """Keep the shared desktop profile out of backend Chromium processes."""
+    if env_bool("SOCIAL_BROWSER_SHARED", False):
+        raise UploadError(
+            "Profile Chrome dipakai browser bersama YouTube/TikTok. "
+            "Gunakan Chrome CDP yang sudah terbuka; backend tidak boleh "
+            "membuka persistent profile kedua untuk login/check/upload."
+        )
 
 
 def recovery_short_max_seconds() -> float:
@@ -6513,8 +6523,9 @@ def discard_studio_video(
     video_url: str,
     *,
     timeout_ms: int = 30000,
+    before_confirm: Callable[[str], bool] | None = None,
 ) -> bool:
-    """Permanently delete one exact Studio upload after a confirmed claim."""
+    """Delete an exact Studio video, with an optional final policy recheck."""
     normalized_url = normalize_youtube_video_url(video_url)
     match = re.search(r"[?&]v=([A-Za-z0-9_-]{6,})", normalized_url or "")
     if not match:
@@ -6588,6 +6599,9 @@ def discard_studio_video(
     if not acknowledged:
         save_debug_artifacts(page, "claimed-video-delete-confirmation-not-found")
         return False
+
+    if before_confirm is not None and before_confirm(video_id) is not True:
+        raise UploadError("Penghapusan dibatalkan: pemeriksaan terakhir video tidak lagi memenuhi syarat.")
 
     confirmed = deep_click(
         page,
@@ -6819,6 +6833,7 @@ def run_login(args: argparse.Namespace) -> None:
             args.chromium_profile_directory if chromium_user_data_dir is not None else ""
         )
         if chromium_user_data_dir is not None:
+            require_dedicated_profile_mode()
             chromium_user_data_dir.mkdir(parents=True, exist_ok=True)
             context = playwright.chromium.launch_persistent_context(
                 str(chromium_user_data_dir),
@@ -6939,6 +6954,7 @@ def run_check_login(args: argparse.Namespace) -> None:
         browser = None
         if chromium_user_data_dir is not None:
             log(f"Validasi login memakai profile Chromium: {chromium_user_data_dir}")
+            require_dedicated_profile_mode()
             context = playwright.chromium.launch_persistent_context(
                 str(chromium_user_data_dir),
                 headless=headless,
@@ -7288,6 +7304,7 @@ def run_upload(args: argparse.Namespace) -> None:
             mark_fendy_clipper_upload_tab(page)
         elif chromium_user_data_dir is not None:
             log(f"Menggunakan profile Chromium: {chromium_user_data_dir}")
+            require_dedicated_profile_mode()
             context = playwright.chromium.launch_persistent_context(
                 str(chromium_user_data_dir),
                 headless=headless,
