@@ -1,0 +1,184 @@
+{
+  "verified_at": "2026-11-06T03:06:59.441414+00:00",
+  "timezone": "Asia/Jakarta",
+  "evidence": "Read-only live backend API; historical activation report for module hashes.",
+  "checks": {
+    "api_healthy": true,
+    "scheduler_enabled_and_running": true,
+    "no_active_run_or_queued_running_work": true,
+    "next_run_after_next_publication": true,
+    "schedule_and_private_buffers_full": true,
+    "old_run_terminal": true,
+    "confirmed_old_tiktok_preserved": true,
+    "source_matches_historical_activation_hashes": true,
+    "successful_post_activation_uploads_on_both_platforms": true
+  },
+  "health": {
+    "status": "ok"
+  },
+  "schedule": {
+    "enabled": true,
+    "interval_hours": 24.0,
+    "run_on_startup": true,
+    "once_per_boot": false,
+    "scheduler_running": true,
+    "boot_delay_minutes": 5.0,
+    "post_clip_upload_delay_minutes": 0.0,
+    "background_upload_enabled": true,
+    "paired_long_video_enabled": false,
+    "paired_long_duration": 300.0,
+    "paired_long_auto_public_enabled": false,
+    "active_run_id": null,
+    "last_run_id": "2175aa1929294417803ba2d37fb1938b",
+    "last_started_at": "2026-11-06T02:15:05.955191+00:00",
+    "last_finished_at": "2026-11-06T02:41:27.013979+00:00",
+    "next_run_at": "2026-11-06T04:31:00+00:00",
+    "news_hot_enabled": false,
+    "news_hot_daily_limit": 0,
+    "news_hot_daily_reserved": 0,
+    "news_hot_playlist": "News",
+    "news_hot_review_required": true,
+    "message": "Antrean jadwal dan cadangan Private penuh; cron menunggu kapasitas setelah publikasi berikutnya."
+  },
+  "capacity": {
+    "public_daily_limit": 7,
+    "public_min_gap_hours": 2.25,
+    "scheduled_backlog_count": 11,
+    "scheduled_backlog_limit": 11,
+    "cron_private_buffer_count": 5,
+    "cron_private_buffer_limit": 5
+  },
+  "next_reserved_publication_at": "2026-11-06T04:30:00+00:00",
+  "queues": {
+    "jobs": {
+      "total": 0,
+      "statuses": {},
+      "active_ids": []
+    },
+    "youtube/uploads": {
+      "total": 633,
+      "statuses": {
+        "completed": 536,
+        "failed": 95,
+        "cancelled": 2
+      },
+      "active_ids": []
+    },
+    "tiktok/uploads": {
+      "total": 542,
+      "statuses": {
+        "completed": 400,
+        "failed": 142
+      },
+      "active_ids": []
+    },
+    "automation/viral-cc": {
+      "total": 103,
+      "statuses": {
+        "completed": 42,
+        "failed": 56,
+        "cancelled": 5
+      },
+      "active_ids": []
+    }
+  },
+  "post_activation_runs": [
+    {
+      "id": "e2580ecc68b14e868a656aef97125c15",
+      "status": "failed",
+      "progress_stage": "failed",
+      "created_at": "2026-11-06T00:00:04.497374+00:00",
+      "finished_at": "2026-11-06T00:06:41.879219+00:00",
+      "message": "Tidak menemukan kandidat aman setelah pencarian diperluas; semua sumber yang pernah diproses tetap dilewati",
+      "errors": [
+        "Search gagal untuk 'cerita anak muslim animasi petualangan indonesia': ERROR: [youtube] Xdn_4384v54: This video is not available",
+        "Tidak menemukan kandidat aman setelah pencarian diperluas; semua sumber yang pernah diproses tetap dilewati"
+      ],
+      "uploads": []
+    },
+    {
+      "id": "91d53cff9203473caf1845a11289b8a0",
+      "status": "completed",
+      "progress_stage": "complete",
+      "created_at": "2026-11-06T00:11:41.891015+00:00",
+      "finished_at": "2026-11-06T01:00:00.173214+00:00",
+      "message": "Automation selesai; 1 batch terverifikasi terupload",
+      "errors": [
+        "PERJALANAN ATUN & MOMON DARI TELOR SAMPAI MENJADI DINOSAURUS DEWASA !! Feat @sapipurba  Minecraft: Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus."
+      ],
+      "uploads": [
+        {
+          "platform": "youtube",
+          "id": "da3e7651550a472380d6015ff23a3533",
+          "status": "completed",
+          "upload_confirmed": true,
+          "dry_run": false
+        },
+        {
+          "platform": "tiktok",
+          "id": "94b8410ab1a3428990358a2b88325169",
+          "status": "completed",
+          "upload_confirmed": true,
+          "dry_run": false
+        }
+      ]
+    },
+    {
+      "id": "2175aa1929294417803ba2d37fb1938b",
+      "status": "completed",
+      "progress_stage": "complete",
+      "created_at": "2026-11-06T02:15:05.955191+00:00",
+      "finished_at": "2026-11-06T02:41:27.013979+00:00",
+      "message": "Automation selesai; 1 batch terverifikasi terupload",
+      "errors": [
+        "PERJALANAN ATUN & MOMON DARI TELOR SAMPAI MENJADI DINOSAURUS DEWASA !! Feat @sapipurba  Minecraft: Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus."
+      ],
+      "uploads": [
+        {
+          "platform": "youtube",
+          "id": "d9f753b4915d4903a2992580ce0620b4",
+          "status": "completed",
+          "upload_confirmed": true,
+          "dry_run": false
+        },
+        {
+          "platform": "tiktok",
+          "id": "d1c2450e33784789baccf4fe1bb29859",
+          "status": "completed",
+          "upload_confirmed": true,
+          "dry_run": false
+        }
+      ]
+    }
+  ],
+  "old_run": {
+    "id": "9c52d940a4fa42cb81bf70c1e9325478",
+    "status": "failed",
+    "progress_stage": "failed",
+    "message": "Upload YouTube belum selesai sampai batas waktu",
+    "updated_at": "2026-11-05T11:03:06.900248+00:00"
+  },
+  "old_tiktok": {
+    "id": "08a5812983e64132add4e55de33de57d",
+    "status": "completed",
+    "upload_confirmed": true,
+    "updated_at": "2026-11-05T09:04:24.803052+00:00"
+  },
+  "source_sha256": {
+    "api": "23ac93601286a4a406d58c2f07f40d1ba7dbb390caa01124386e72e838dadf8d",
+    "youtube_remote_status": "fc9bf806a466abdf382d2356260ca01cbb5b36650e8787b9a42280850da8753a"
+  },
+  "historical_activation_verified_at": "2026-11-05T23:09:47.307635+00:00",
+  "validation": {
+    "deployment_idle_guard": {
+      "passed": 39,
+      "command": "backend/.venv/bin/python -m pytest -q backend/tests/test_deployment_idle_guard.py"
+    }
+  },
+  "limitations": [
+    "Fresh Docker process and runtime hash inspection unavailable: Docker socket access denied; sudo requires a password.",
+    "Application regression suite not rerun: local backend virtual environment lacks fastapi.",
+    "Upload confirmation reflects backend records; no independent Studio verification in this follow-up.",
+    "News Hot remains disabled in the live scheduler; this follow-up only verifies cron/upload recovery."
+  ]
+}

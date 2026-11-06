@@ -1,0 +1,35 @@
+{
+  "stalled_run_ids": [],
+  "verified_at": 1793953856.3681104,
+  "schedule": {
+    "enabled": true,
+    "interval_hours": 24.0,
+    "run_on_startup": true,
+    "once_per_boot": false,
+    "scheduler_running": true,
+    "boot_delay_minutes": 5.0,
+    "post_clip_upload_delay_minutes": 0.0,
+    "background_upload_enabled": true,
+    "paired_long_video_enabled": false,
+    "paired_long_duration": 300.0,
+    "paired_long_auto_public_enabled": false,
+    "active_run_id": null,
+    "last_run_id": "f3f93dfa992a448cb573d9dd1d3eb50a",
+    "last_started_at": "2026-11-06T06:45:02.451156+00:00",
+    "last_finished_at": "2026-11-06T07:33:02.393295+00:00",
+    "next_run_at": "2026-11-06T09:01:00+00:00",
+    "news_hot_enabled": false,
+    "news_hot_daily_limit": 0,
+    "news_hot_daily_reserved": 0,
+    "news_hot_playlist": "News",
+    "news_hot_review_required": true,
+    "message": "Antrean jadwal dan cadangan Private penuh; cron menunggu kapasitas setelah publikasi berikutnya."
+  },
+  "sha256": {
+    "api": "397dfbb3af6505f16d83d5e8f4ca07aa0c21eeb99e8f7dcd981897f248b5dda2",
+    "youtube_remote_status": "fc9bf806a466abdf382d2356260ca01cbb5b36650e8787b9a42280850da8753a",
+    "ryuundy_reference_learning": "07a7613ab1fdf5410acca21e777b4a76be0a9599c8dc4efff99e569670ed91b9",
+    "clipper": "5dbde24f388a5077bb0901527bfd0bde120944c766187e26f9397986302574ad",
+    "ryuundy_motion": "5280031546db1769d12a2d8dfd6ebf9e96b8ca3d89b808a7fb5d6cabd9e8a4d4"
+  }
+}

@@ -1,0 +1,151 @@
+{
+  "observed_at": "2026-11-06T05:02:57.026654+00:00",
+  "schedule": {
+    "enabled": true,
+    "interval_hours": 24.0,
+    "run_on_startup": true,
+    "once_per_boot": false,
+    "scheduler_running": true,
+    "boot_delay_minutes": 5.0,
+    "post_clip_upload_delay_minutes": 0.0,
+    "background_upload_enabled": true,
+    "paired_long_video_enabled": false,
+    "paired_long_duration": 300.0,
+    "paired_long_auto_public_enabled": false,
+    "active_run_id": "8b79fcdf86e049c7ae20cbc411c29871",
+    "last_run_id": "8b79fcdf86e049c7ae20cbc411c29871",
+    "last_started_at": "2026-11-06T04:41:18.347944+00:00",
+    "last_finished_at": null,
+    "next_run_at": null,
+    "news_hot_enabled": false,
+    "news_hot_daily_limit": 0,
+    "news_hot_daily_reserved": 0,
+    "news_hot_playlist": "News",
+    "news_hot_review_required": true,
+    "message": "Automation sedang berjalan; jadwal berikutnya tidak akan membuat run tumpang tindih."
+  },
+  "jobs": [
+    {
+      "id": "2b704d87e6ab40ef8bf7205a9d9af67a",
+      "status": "running",
+      "source_url": "https://www.youtube.com/watch?v=d_QKCUP345Y",
+      "created_at": "2026-11-06T04:54:01.710224+00:00",
+      "updated_at": "2026-11-06T05:02:43.619839+00:00",
+      "progress_stage": "transcript",
+      "progress_percent": 37,
+      "progress_detail": "Transkripsi 57% berjalan di CUDA",
+      "error": null,
+      "logs": [
+        "Fetching metadata...",
+        "Fetching video...",
+        "Memverifikasi decode sumber hasil jalur default: source.mp4...",
+        "Extracting audio...",
+        "Loading model: Systran/faster-whisper-medium",
+        "Hugging Face: model publik + cache persisten (HF_TOKEN opsional).",
+        "Model cache lokal dipakai: 08e178d48790749d25932bbc082711ddcfdfbc4f; tanpa cek",
+        "jaringan.",
+        "Whisper runtime: CUDA (float16)"
+      ]
+    },
+    {
+      "id": "1a98bb5047864991bd72cc2af7b2750e",
+      "status": "failed",
+      "source_url": "https://www.youtube.com/watch?v=9FOhn2EOVsE",
+      "created_at": "2026-11-06T04:41:49.062615+00:00",
+      "updated_at": "2026-11-06T04:54:00.008692+00:00",
+      "progress_stage": "failed",
+      "progress_percent": 59,
+      "progress_detail": "Proses gagal; tidak ada hasil final yang dapat dipertahankan",
+      "error": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus.",
+      "logs": [
+        "Fetching metadata...",
+        "Fetching video...",
+        "Memverifikasi decode sumber hasil jalur default: source.mp4...",
+        "Extracting audio...",
+        "Loading model: Systran/faster-whisper-medium",
+        "Hugging Face: model publik + cache persisten (HF_TOKEN opsional).",
+        "Model cache lokal dipakai: 08e178d48790749d25932bbc082711ddcfdfbc4f; tanpa cek",
+        "jaringan.",
+        "Whisper runtime: CUDA (float16)",
+        "Transcribed 58 segments on CUDA. Detected language: id",
+        "Smart Split: scoring sentence-aligned candidate clips...",
+        "AI agent scoring 13 candidates via llama3.2-id:latest...",
+        "AI agent returned no usable clips; keeping heuristic scores.",
+        "Auto-repairing a broader shortlist before final FYP selection...",
+        "No complete Short yet; automatically expanding candidate windows from 45 to 105",
+        "seconds...",
+        "AI agent scoring 13 candidates via llama3.2-id:latest...",
+        "AI agent returned no usable clips; keeping heuristic scores.",
+        "Tidak ada kandidat dengan alur utuh, retensi memadai, batas kalimat aman, dan",
+        "konteks editorial yang layak. Perluasan durasi otomatis sudah dicoba; gunakan",
+        "sumber lain.",
+        "Workspace dan seluruh file sementara proses gagal telah dihapus."
+      ]
+    }
+  ],
+  "repeated_source_attempts": [
+    {
+      "run_id": "8b79fcdf86e049c7ae20cbc411c29871",
+      "run_status": "running",
+      "run_created_at": "2026-11-06T04:41:18.347944+00:00",
+      "run_updated_at": "2026-11-06T05:02:45.507453+00:00",
+      "item_status": "failed",
+      "job_id": "1a98bb5047864991bd72cc2af7b2750e",
+      "error": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus."
+    },
+    {
+      "run_id": "2175aa1929294417803ba2d37fb1938b",
+      "run_status": "completed",
+      "run_created_at": "2026-11-06T02:15:05.955191+00:00",
+      "run_updated_at": "2026-11-06T02:41:27.014096+00:00",
+      "item_status": "failed",
+      "job_id": "e1f375b3ac234482add9f2c0d9021149",
+      "error": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus."
+    },
+    {
+      "run_id": "91d53cff9203473caf1845a11289b8a0",
+      "run_status": "completed",
+      "run_created_at": "2026-11-06T00:11:41.891015+00:00",
+      "run_updated_at": "2026-11-06T01:00:00.173317+00:00",
+      "item_status": "failed",
+      "job_id": "ce3a0ef484b143a8b4143de58b3363c1",
+      "error": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus."
+    },
+    {
+      "run_id": "49c7ae41896c484a87c23b7c54cf22cd",
+      "run_status": "completed",
+      "run_created_at": "2026-11-05T19:15:23.321578+00:00",
+      "run_updated_at": "2026-11-05T20:19:13.175505+00:00",
+      "item_status": "failed",
+      "job_id": "ceacebfd78d24e41aa9df5057e1eed51",
+      "error": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus."
+    },
+    {
+      "run_id": "52ec556e0c67466292b8b4e9b7dad960",
+      "run_status": "completed",
+      "run_created_at": "2026-11-05T11:59:32.025050+00:00",
+      "run_updated_at": "2026-11-05T17:16:38.035671+00:00",
+      "item_status": "failed",
+      "job_id": "60be675022034baaa3ce12f139af43e7",
+      "error": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus."
+    },
+    {
+      "run_id": "4d31b576637d4791b2e163dd195b796c",
+      "run_status": "completed",
+      "run_created_at": "2026-11-05T06:03:34.787704+00:00",
+      "run_updated_at": "2026-11-05T08:40:25.388299+00:00",
+      "item_status": "failed",
+      "job_id": "459b9e23ae514d47b845151e9dbf2107",
+      "error": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus."
+    }
+  ],
+  "diagnosis": {
+    "failed_source": "https://www.youtube.com/watch?v=9FOhn2EOVsE",
+    "cause_of_repeat": "Scheduler rolling cooldown used successful source-use events and ignored failed job cards; terminal selection rejections were not excluded from later scheduled discovery.",
+    "selection_result": "No usable AI rankings; heuristic and expanded selection up to 105 seconds produced no acceptable clips. The deleted transcript/candidate workspace prevents deeper retrospective scoring analysis.",
+    "repair": "24-hour cooldown for exact no-candidate selection failures, read from durable campaign checkpoints even after job cleanup.",
+    "runtime_status": "new_cooldown_patch_not_activated",
+    "tests_passed": 191,
+    "offline_replay": "reports/selection-rejection-replay-20261106.json"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "recorded_at": "2026-11-06T05:39:56.950087+00:00",
+  "source_sha256": {
+    "api": "2cd729e1905c793927cfd8e282f36cdc0c1a29d1e8df93bd5e174be05ecca23d",
+    "youtube_remote_status": "fc9bf806a466abdf382d2356260ca01cbb5b36650e8787b9a42280850da8753a",
+    "ryuundy_reference_learning": "07a7613ab1fdf5410acca21e777b4a76be0a9599c8dc4efff99e569670ed91b9",
+    "clipper": "5dbde24f388a5077bb0901527bfd0bde120944c766187e26f9397986302574ad",
+    "ryuundy_motion": "5280031546db1769d12a2d8dfd6ebf9e96b8ca3d89b808a7fb5d6cabd9e8a4d4"
+  },
+  "test_sha256": {
+    "backend/tests/test_ryuundy_motion.py": "10a56dcede5ff7e9168d63e648ab42d0a112c98a604a4499d1577bd78f289bf4",
+    "backend/tests/test_rejected_source_cooldown.py": "ec2a99dc6a5467ce894a3fe117ba9abdfbd9a08e286342511968921e1332f4da",
+    "backend/tests/test_ryuundy_reference_learning.py": "c072dd3bbfc74e0965196f81649d687f1a36b5af29e153186b2410e2eb9d1f34",
+    "backend/tests/test_ai_clip_selection.py": "90dccd12ab5563833a890e0bbccbc73fba419574a7cb915dc4da102c69d20a9d",
+    "backend/tests/test_news_hot.py": "4df24c1041fff4a053c13eb23718436a4f89ff58bd043d2a805698d919b8e724",
+    "backend/tests/test_deployment_idle_guard.py": "a77b77b35acdc641acef3229a5306ba5afd23242fc4318292ffa602515f1b1c5",
+    "backend/tests/test_caption_style.py": "bd02d29a16f3d570bbc6245d53f2ea8630fc8da7b8bf649a358d30c8186ffa06",
+    "backend/tests/test_api_budget.py": "062e3fe67ed0b68be05bc88d9492e9ad30d249c0d87bc5cec4668ed2475a1023"
+  },
+  "tests": {
+    "related_unique_tests_passed": 436,
+    "initial_combined_group_passed": 395,
+    "api_related_group_passed": 41,
+    "motion_deployment_final_rerun_passed": 71
+  },
+  "encoded_regression": {
+    "uncovered_frame_checksums_equal": true,
+    "frames_compared": 300,
+    "decoded_audio_hashes_equal": true,
+    "finite_overlay_eof_without_duration_cap": true
+  },
+  "scope": "Source tests and actual encoded module regression; source integration smoke is synthetic, no publication approval.",
+  "export_smoke": "reports/ryuundy-motion-export-smoke-20261106.json",
+  "demo": "reports/ryuundy-motion-demo-20261106.mp4"
+}

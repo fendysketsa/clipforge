@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "daily_target": 1,
+  "attempts": [
+    {
+      "day": "2026-11-06",
+      "short_job_id": "7d07d87619814350a4a9ba1e2d2c5900",
+      "job_id": "62e39379843d4f019cca79cc7415182c",
+      "source_run_id": "8b79fcdf86e049c7ae20cbc411c29871",
+      "status": "queued",
+      "review_required": true
+    }
+  ],
+  "production": {
+    "status": "queued",
+    "job_id": "62e39379843d4f019cca79cc7415182c",
+    "short_job_id": "7d07d87619814350a4a9ba1e2d2c5900"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "target_source": "https://www.youtube.com/watch?v=9FOhn2EOVsE",
+  "campaigns_loaded": 100,
+  "job_cards_removed_for_replay": true,
+  "target_excluded_from_scheduled_discovery": true,
+  "target_not_marked_as_success_or_lifetime_processed": true,
+  "campaign_models_unchanged": true,
+  "runtime_state_paths": "/tmp/rejected-source-replay-sska5aey",
+  "production_state_written": false,
+  "cooldown_hours": 24,
+  "source_api_sha256": "2cd729e1905c793927cfd8e282f36cdc0c1a29d1e8df93bd5e174be05ecca23d"
+}

@@ -1,0 +1,97 @@
+{
+  "video": "/www/wwwroot/clipper/clipforge/reports/ryuundy-motion-demo-20261106.mp4",
+  "duration": 18.0,
+  "width": 1080,
+  "height": 1920,
+  "fps": "30/1",
+  "audio_stream_preserved": true,
+  "silent_visual_study": true,
+  "narration_produced": false,
+  "source": "Original vector scene and authored example text; no external footage.",
+  "plans": [
+    {
+      "version": 1,
+      "enabled": true,
+      "rendered": false,
+      "cues": [
+        {
+          "kind": "freeze_inset",
+          "start": 3.0,
+          "end": 5.8,
+          "source_frame_at": 3.0,
+          "quote": "Perhatikan satu momen ini sebelum mengambil keputusan berikutnya.",
+          "region": null,
+          "region_reviewed": false,
+          "source_grounded": true,
+          "inserted_timeline_seconds": 0,
+          "asset": ".ryuundy-motion/freeze_inset_motion_0.mp4",
+          "asset_prepared": true
+        }
+      ],
+      "reason": "source_timed_editorial_insert",
+      "source_clock_unchanged": true,
+      "captions_clock_unchanged": true,
+      "source_audio_unchanged": true,
+      "human_segmentation_claimed": false,
+      "object_animation_fps": 12
+    },
+    {
+      "version": 1,
+      "enabled": true,
+      "rendered": false,
+      "cues": [
+        {
+          "kind": "step_diagram",
+          "start": 7.0,
+          "end": 10.6,
+          "source_frame_at": 7.0,
+          "quote": "Pisahkan subtitle menjadi dua baris sesuai akhir kalimat pembicara.",
+          "region": null,
+          "region_reviewed": false,
+          "source_grounded": true,
+          "inserted_timeline_seconds": 0,
+          "asset": ".ryuundy-motion/step_diagram_motion_0.mp4",
+          "asset_prepared": true
+        }
+      ],
+      "reason": "source_timed_editorial_insert",
+      "source_clock_unchanged": true,
+      "captions_clock_unchanged": true,
+      "source_audio_unchanged": true,
+      "human_segmentation_claimed": false,
+      "object_animation_fps": 12
+    },
+    {
+      "version": 1,
+      "enabled": true,
+      "rendered": false,
+      "cues": [
+        {
+          "kind": "cutout_stop_motion",
+          "start": 12.0,
+          "end": 14.8,
+          "source_frame_at": 12.0,
+          "quote": "Bagian gambar ini tetap diambil dari frame sumber yang sama.",
+          "region": [
+            0.33,
+            0.48,
+            0.36,
+            0.25
+          ],
+          "region_reviewed": true,
+          "source_grounded": true,
+          "inserted_timeline_seconds": 0,
+          "asset": ".ryuundy-motion/cutout_stop_motion_motion_0.mp4",
+          "asset_prepared": true
+        }
+      ],
+      "reason": "source_timed_editorial_insert",
+      "source_clock_unchanged": true,
+      "captions_clock_unchanged": true,
+      "source_audio_unchanged": true,
+      "human_segmentation_claimed": false,
+      "object_animation_fps": 12
+    }
+  ],
+  "sha256": "e5150b3418c34c5cec4c6c42fefff3ad70e2f1406e6aeb0225461352bb50a888"
+}

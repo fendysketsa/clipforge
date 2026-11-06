@@ -1,0 +1,37 @@
+{
+  "output": "/tmp/ryuundy-export-smoke-owfmlyni/clips/clip_01_subtitle-panjang-tetap-terbaca.mp4",
+  "sidecar": "/tmp/ryuundy-export-smoke-owfmlyni/clips/clip_01_subtitle-panjang-tetap-terbaca.json",
+  "motion": {
+    "version": 1,
+    "enabled": true,
+    "rendered": true,
+    "cues": [
+      {
+        "kind": "step_diagram",
+        "start": 5.0,
+        "end": 8.6,
+        "source_frame_at": 5.0,
+        "quote": "Coba pisahkan subtitle menjadi dua baris dan atur jeda sesuai akhir kalimat pembicara.",
+        "region": null,
+        "region_reviewed": false,
+        "source_grounded": true,
+        "inserted_timeline_seconds": 0,
+        "asset": ".ryuundy-motion/clip_01_subtitle-panjang-tetap-terbaca_motion_0.mp4",
+        "asset_prepared": true
+      }
+    ],
+    "reason": "source_timed_editorial_insert",
+    "source_clock_unchanged": true,
+    "captions_clock_unchanged": true,
+    "source_audio_unchanged": true,
+    "human_segmentation_claimed": false,
+    "object_animation_fps": 12,
+    "placement": {
+      "width": 668,
+      "y": 140
+    }
+  },
+  "duration": 30.0,
+  "synthetic_source_only": true,
+  "pipeline": "clipper.export_clip"
+}

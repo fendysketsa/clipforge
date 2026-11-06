@@ -1,0 +1,37 @@
+{
+  "checked_at": "2026-11-06T08:29:36.803426+00:00",
+  "status": "source_ready_activation_pending",
+  "production_started": false,
+  "user_activation_status": "belum",
+  "cause": [
+    "daily Long upload target is zero",
+    "Short buffer capacity gate prevents paired Long campaign"
+  ],
+  "implementation": {
+    "daily_render_target": 1,
+    "duration_seconds": 300,
+    "independent_of_short_capacity": true,
+    "publication_review_required": true,
+    "durable_attempt_limit_per_day": 3,
+    "authoritative_short_anchors_preserved": true
+  },
+  "tests": {
+    "passed": 110,
+    "deselected": 258,
+    "command": "/tmp/clipforge-ryuundy-tests/bin/python /tmp/run-ryuundy-tests.py -q --disable-warnings tests/test_long_production.py tests/test_api_budget.py tests/test_cron_upload_recovery.py tests/test_deployment_idle_guard.py -k \"long_production or paired_long or completed_job_sweeper or scheduled_auto_viral or scheduler or cron_upload_recovery or deployment_idle_guard\""
+  },
+  "eligible_short_job_id": "7d07d87619814350a4a9ba1e2d2c5900",
+  "eligible_parent_run_id": "8b79fcdf86e049c7ae20cbc411c29871",
+  "live_preflight": {
+    "active_clip_jobs": 0,
+    "active_campaign": null,
+    "source_metadata_available": true,
+    "rights_attestation_available": true
+  },
+  "activation_command": "sudo bash /www/wwwroot/clipper/clipforge/scripts/activate-ryuundy-long.sh",
+  "sha256": {
+    "backend/api.py": "397dfbb3af6505f16d83d5e8f4ca07aa0c21eeb99e8f7dcd981897f248b5dda2",
+    "backend/tests/test_long_production.py": "d632223cbd7064aee76311d430fb3db73870798065d725d783aae159a1818451",
+    "scripts/activate-ryuundy-long.sh": "61e148ba71e9b9485c34367a6c60cffe66b79cf7876e66443f1c425fe20687a0"
+  }
+}
