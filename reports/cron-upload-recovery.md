@@ -1,6 +1,11 @@
 # Cron upload recovery and quiet YouTube status checks
 
-Status: source changes validated; production activation is pending Docker/root access.
+Status: activation was recorded on 6 November 2026 at 06:09 WIB; the live API
+follow-up confirms completed cron/upload cycles and a healthy scheduler waiting
+for buffer capacity. Fresh Docker process/hash inspection still requires sudo.
+
+The diagnosis and activation attempts below are historical. See the final
+section and `cron-upload-recovery-verification-20261106.json` for current evidence.
 
 The production API reported scheduled run `9c52d940a4fa42cb81bf70c1e9325478`
 still running in `social_upload`, last updated at 16:03 WIB on 5 November 2026.
@@ -31,10 +36,10 @@ Validation: 147 focused tests passed; Python compilation, embedded activation
 script Python compilation, shell syntax checks, and `git diff --check` passed.
 An offline replay of the observed persisted records released the stale active
 slot, retained the confirmed TikTok record, and left the production state files
-unchanged. See `cron-upload-recovery-check.json`. No production render or
-post-deployment scheduler recovery has been verified yet.
+unchanged. See `cron-upload-recovery-check.json`. At that initial validation
+stage, no production render or post-deployment scheduler recovery had been verified.
 
-Activate both fixes:
+Activation procedure (already recorded as completed):
 
 ```bash
 sudo bash /www/wwwroot/clipper/clipforge/scripts/activate-cron-upload-recovery.sh
@@ -96,3 +101,42 @@ confirmed `enabled=true`, `scheduler_running=true`, and a next-run timestamp;
 the error did not leave cron paused. Live execution of the corrected Docker
 command still requires a sudo password. Only the host-side guard and its test
 changed for this fix, so the built backend image can be reused.
+
+## Live follow-up, 6 November 2026 at 10:06 WIB
+
+The existing activation JSON records successful activation at 06:09 WIB with
+runtime hash and scheduler verification. Source hashes for `api.py`
+and `youtube_remote_status.py` at the 10:06 WIB follow-up matched that recorded activation. This
+follow-up could not independently reread container hashes or processes: direct
+Docker socket access was denied and `sudo -n` required a password.
+
+Read-only live API checks confirm:
+
+- Backend health is OK; cron is enabled and its scheduler worker is running.
+- No render jobs, active campaigns, or queued/running platform uploads remain.
+- Two campaigns created after activation completed with confirmed, non-dry-run
+  YouTube and TikTok uploads. The latest finished at 09:41 WIB.
+- A preceding 07:00 WIB campaign failed to find safe source candidates. Later
+  successful campaigns demonstrate that this failure did not block scheduling.
+- All 11 future-publication slots and all 5 cron Private reserves are occupied.
+  The next reserved publication is 11:30 WIB, and the next scheduler check is
+  11:31 WIB. The current capacity wait matches these records.
+- Old run `9c52d940a4fa42cb81bf70c1e9325478` is terminal with an upload-timeout
+  message; it no longer occupies the active slot. Its confirmed TikTok record
+  `08a5812983e64132add4e55de33de57d` remains intact. The live record does not
+  establish that the new checkpoint reconciler was the mechanism that ended it.
+- News Hot remains disabled. This follow-up verifies cron/upload recovery only.
+
+All 39 deployment-idle-guard tests passed locally. The application regression
+suite was not rerun because the local backend virtual environment lacks
+`fastapi`; the earlier 147-test result remains historical. Upload confirmation
+here reflects backend records, without an independent Studio check.
+
+Evidence: `cron-upload-recovery-verification-20261106.json`. This follow-up did
+not restart the backend, change cron controls, retry uploads, or edit publication
+visibility/schedules.
+
+Subsequent RYUUNDY reference-learning changes modify source after this snapshot.
+Their deployment status is tracked separately in
+`ryuundy-reference-learning-20261106.md`; the earlier verification JSON does not
+establish that those later changes are active.

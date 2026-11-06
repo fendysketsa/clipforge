@@ -64,6 +64,9 @@ from hypit_quick import (
 from article_presenter import is_article_presenter_prompt
 from religious_review import reassess_casual_work_wish
 from youtube_remote_status import read_deleted_video_evidence
+from ryuundy_reference_learning import (
+    RYUUNDY_REFERENCE_EDITOR_BRIEF, TREND_NOISE_WORDS, clean_topic_text, source_trend_matches,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -473,6 +476,8 @@ def youtube_public_min_gap_hours() -> float:
 
 
 class ClipJobRequest(BaseModel):
+    paired_short_job_id: str = ""
+    publication_review_required: bool = False
     url: str = ""
     source_file: str = ""
     script_text: str = Field(default="", max_length=30000)
@@ -2689,6 +2694,11 @@ class AutoViralScheduleStatus(BaseModel):
 
 class AutoViralScheduleControlRequest(BaseModel):
     enabled: bool
+
+
+class LongProductionControlRequest(BaseModel):
+    enabled: bool
+    daily_target: int = Field(default=1, ge=1, le=3)
 
 
 class ViralVideoSearchRequest(BaseModel):
@@ -8137,6 +8147,8 @@ def best_automatic_upload_clip_urls(
     require_numeric_fyp_score: bool = False,
 ) -> list[str]:
     """Return every actually uploadable clip, including a single good result."""
+    if job.request.publication_review_required:
+        return []
     clips_by_url = {clip.url: clip for clip in job.clips}
     return [
         clip_url
@@ -13312,6 +13324,7 @@ def queue_completed_job_uploads_once() -> dict[str, int]:
                 for item in jobs.values()
                 if item.status == "completed"
                 and item.clips
+                and not item.request.publication_review_required
                 and item.id not in managed_auto_viral_job_ids
             ),
             key=lambda item: item.created_at,
@@ -16109,10 +16122,10 @@ def cron_trend_score(
     trend_tokens: set[str] | None = None,
 ) -> tuple[float, list[str]]:
     """Score cron-only topic fit, including live Google/YouTube chart overlap."""
-    title_raw = str(info.get("title") or "").casefold()
-    description_raw = str(info.get("description") or "").casefold()
+    title_raw = clean_topic_text(str(info.get("title") or ""))
+    description_raw = clean_topic_text(str(info.get("description") or ""))
     tags = info.get("tags") if isinstance(info.get("tags"), list) else []
-    supporting_raw = f"{description_raw} {' '.join(map(str, tags)).casefold()}"
+    supporting_raw = f"{description_raw} {clean_topic_text(' '.join(map(str, tags)))}"
     normalize = lambda value: f" {re.sub(r'[^a-z0-9]+', ' ', value).strip()} "
     title = normalize(title_raw)
     supporting = normalize(supporting_raw)
@@ -16122,10 +16135,7 @@ def cron_trend_score(
     supporting_hits = {
         marker for marker in CRON_TREND_TOPIC_SIGNALS if f" {marker} " in supporting
     }
-    source_tokens = set(
-        re.findall(r"[a-z0-9]{3,}", f"{title_raw} {description_raw}")
-    )
-    live_matches = sorted(source_tokens.intersection(trend_tokens or set()))
+    live_matches = source_trend_matches(info, trend_tokens)
     score = min(
         100.0,
         len(title_hits) * 14
@@ -16840,7 +16850,7 @@ def cron_gaming_channel_query_specs(
     return list(dict.fromkeys(specs))[:5]
 
 
-YOUTUBE_TREND_STOPWORDS = frozenset(
+YOUTUBE_TREND_STOPWORDS = TREND_NOISE_WORDS | frozenset(
     {
         "yang", "dan", "di", "ke", "dari", "untuk", "dengan", "ini", "itu",
         "the", "a", "an", "of", "to", "in", "on", "official", "video", "full",
@@ -18015,10 +18025,7 @@ def search_youtube_data_api_viral_sources(
                     source, payload, trend_tokens, request.cron_theme_key
                 )
             source["search_provider"] = "youtube_data_api"
-            source_tokens = set(re.findall(r"[a-z0-9]{3,}", (
-                f"{payload.get('title') or ''} {payload.get('description') or ''}"
-            ).casefold()))
-            matching_trend_tokens = sorted(source_tokens.intersection(trend_tokens))
+            matching_trend_tokens = source_trend_matches(payload, trend_tokens)
             trend_signal_score = min(20, len(matching_trend_tokens) * 4)
             if not cron_trend_lane:
                 source["trend_signal_score"] = trend_signal_score
@@ -18622,15 +18629,57 @@ def processed_job_source_urls() -> set[str]:
     return excluded
 
 
+SHORT_SELECTION_REJECTION_PREFIX = (
+    "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, "
+    "retensi memadai, dan konteks aman."
+)
+
+
+def recently_rejected_scheduled_source_urls(now: datetime | None = None) -> set[str]:
+    """Avoid repeating a completed, unsuccessful selection scan for one day.
+
+    Campaign checkpoints survive cleanup of failed jobs. Only the exact
+    terminal no-candidate outcome qualifies; network, model, render, upload,
+    cancellation, and human-review outcomes remain outside this cooldown.
+    Manual processing and successful-source history are unchanged.
+    """
+    current = now or datetime.now(timezone.utc)
+    cooldown = timedelta(hours=max(
+        1, min(168, env_int("AUTO_VIRAL_REJECTED_SOURCE_COOLDOWN_HOURS", 24))
+    ))
+    with auto_viral_lock:
+        snapshot = [
+            (run.finished_at or run.updated_at, [dict(item) for item in run.processed])
+            for run in auto_viral_runs.values() if run.trigger == "schedule"
+        ]
+    excluded: set[str] = set()
+    for run_time, items in snapshot:
+        for item in items:
+            if (item.get("status") != "failed" or item.get("job_status") != "failed"
+                    or item.get("clip_count") != 0
+                    or not str(item.get("error") or "").startswith(SHORT_SELECTION_REJECTION_PREFIX)):
+                continue
+            rejected_at = parsed_datetime(str(item.get("selection_rejected_at") or run_time or ""))
+            if rejected_at is None or not current - cooldown < rejected_at <= current:
+                continue
+            source = item.get("source")
+            source = source if isinstance(source, dict) else {}
+            url = normalize_youtube_video_url(str(item.get("url") or source.get("url") or ""))
+            if url:
+                excluded.add(url)
+    return excluded
+
+
 def recently_processed_job_source_urls(cooldown_days: int = 7) -> set[str]:
     """Return scheduler exclusions for a rolling cooldown, not a lifetime ban.
 
-    Successful source-use records are timestamped.  Active jobs are always
-    excluded, while completed sources become eligible again after the cooldown
+    Successful source-use records are timestamped. Terminal selection failures
+    get a separate short cooldown from durable campaign checkpoints. Active
+    jobs are always excluded, while completed sources become eligible after the cooldown
     so a proven source can re-enter the weekly rotation with a different clip.
     """
     cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, cooldown_days))
-    excluded: set[str] = set()
+    excluded = recently_rejected_scheduled_source_urls()
     with source_usage_history_lock:
         history_snapshot = {
             url: dict(record) for url, record in source_usage_history.items()
@@ -18891,6 +18940,8 @@ def auto_viral_format_perspective(
         )
     if request.cron_theme_key == NEWS_HOT_THEME:
         return " ".join(parts)[:4000]
+    if request.cron_theme_key:
+        parts.append(RYUUNDY_REFERENCE_EDITOR_BRIEF)
     if request.cron_short_role or request.cron_long_role:
         parts.append(
             "Short dan Long harus saling melengkapi dari sumber yang sama: Short memberi hook, "
@@ -19155,6 +19206,9 @@ def create_auto_viral_paired_long_job(
     source: dict[str, Any],
     request: AutoViralRequest,
     short_job: ClipJob,
+    *,
+    wait_for_slot: bool = True,
+    publication_review_required: bool = False,
 ) -> ClipJob:
     """Create a Long Story whose selected parts must include every Short beat."""
     strict_rejection = viral_source_rejection_reason(
@@ -19174,10 +19228,13 @@ def create_auto_viral_paired_long_job(
     if not anchors:
         raise RuntimeError("Short selesai tanpa timestamp kandidat untuk anchor Long Story")
 
-    wait_for_no_active_clipping_job()
+    if wait_for_slot:
+        wait_for_no_active_clipping_job()
     job_request = ClipJobRequest(
         url=str(source["url"]),
         top=max(4, math.ceil(request.paired_long_duration / 60)),
+        paired_short_job_id=short_job.id,
+        publication_review_required=publication_review_required,
         min_duration=request.min_duration,
         max_duration=request.max_duration,
         clip_mode="highlight_5m",
@@ -19210,6 +19267,136 @@ def create_auto_viral_paired_long_job(
     )
     job_request = normalize_job_request(job_request)
     return queue_auto_viral_clip_job(job_request)
+
+
+long_production_lock = threading.RLock()
+
+
+def long_production_path() -> Path:
+    return AUTO_VIRAL_SCHEDULE_CONTROL_PATH.with_name("long_production.json")
+
+
+def long_production_state() -> dict[str, Any]:
+    path = long_production_path()
+    if not path.exists():
+        return {"enabled": False, "daily_target": 1, "attempts": []}
+    # A damaged checkpoint must never silently reset the daily reservation.
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def save_long_production_state(state: dict[str, Any]) -> None:
+    path = long_production_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(path)
+
+
+def paired_short_snapshot(job: ClipJob) -> dict[str, Any]:
+    return job.model_dump(include={
+        "id", "status", "request", "created_at", "updated_at", "candidates", "source_url",
+    })
+
+
+def run_review_long_job(job_id: str, short_job: ClipJob) -> None:
+    try:
+        run_job(job_id)
+    finally:
+        with jobs_lock:
+            job = jobs.get(job_id)
+        with long_production_lock:
+            state = long_production_state()
+            for attempt in state["attempts"]:
+                if attempt.get("job_id") == job_id and job is not None:
+                    attempt.update(status=job.status, error=job.error)
+                    if job.status == "completed":
+                        attempt["relevance"] = auto_viral_short_long_relevance_audit(short_job, job)
+                        attempt["review_required"] = True
+            save_long_production_state(state)
+
+
+def queue_review_long_once() -> dict[str, Any]:
+    """Backfill a review-only Long independently of Short publication capacity."""
+    with long_production_lock:
+        state = long_production_state()
+        if not state["enabled"]:
+            return {"status": "disabled"}
+        with jobs_lock:
+            current_jobs = dict(jobs)
+        if any(job.status in {"queued", "running"} for job in current_jobs.values()):
+            return {"status": "waiting_for_render"}
+        with auto_viral_lock:
+            if auto_viral_active_run_id is not None:
+                return {"status": "waiting_for_campaign"}
+            campaigns = sorted(auto_viral_runs.values(), key=lambda run: run.created_at, reverse=True)
+        day = datetime.now(ZoneInfo("Asia/Jakarta")).date().isoformat()
+        attempts = state["attempts"]
+        today = [row for row in attempts if row["day"] == day]
+        completed_ids: set[str] = set()
+        for row in today:
+            job = current_jobs.get(row.get("job_id"))
+            status = job.status if job else row.get("status")
+            if status in {"queued", "running"}:
+                # Includes an interrupted durable reservation; require inspection.
+                return {"status": "reserved", "job_id": row.get("job_id")}
+            if status == "completed":
+                completed_ids.add(str(row.get("job_id")))
+        completed_ids.update(
+            job.id for job in current_jobs.values()
+            if job.request.clip_mode == "highlight_5m" and job.status == "completed"
+            and parse_utc_datetime(job.created_at).astimezone(ZoneInfo("Asia/Jakarta")).date().isoformat() == day
+        )
+        if len(completed_ids) >= state["daily_target"]:
+            return {"status": "daily_target_reached"}
+        if len(today) >= state["daily_target"] + 2:
+            return {"status": "daily_attempt_limit"}
+        used = {row["short_job_id"] for row in attempts}
+        used.update(job.request.paired_short_job_id for job in current_jobs.values())
+        for run in campaigns:
+            if run.trigger != "schedule" or run.request.cron_theme_key == NEWS_HOT_THEME:
+                continue
+            for item in run.processed:
+                short_id = str(item.get("job_id") or "")
+                if not short_id or short_id in used or item.get("long_job_id"):
+                    continue
+                short = current_jobs.get(short_id)
+                if short is None and item.get("paired_short_snapshot"):
+                    short = ClipJob.model_validate(item["paired_short_snapshot"])
+                if short is None or short.status != "completed" or not short.candidates:
+                    continue
+                source = item.get("source") or next(
+                    (s for s in run.selected_sources if s.get("url") == item.get("url")), None
+                )
+                if not source or not run.request.source_rights_confirmed or not run.request.source_rights_evidence.strip():
+                    continue
+                request = run.request.model_copy(deep=True, update={
+                    "create_paired_long_video": True, "paired_long_video_count": 1,
+                    "paired_long_duration": 300, "auto_publish_paired_long_video": False,
+                    "auto_upload_youtube": False, "auto_upload_tiktok": False,
+                })
+                try:
+                    job = create_auto_viral_paired_long_job(
+                        source, request, short, wait_for_slot=False, publication_review_required=True,
+                    )
+                except Exception as exc:
+                    with jobs_lock:
+                        if any(j.status in {"queued", "running"} for j in jobs.values()):
+                            return {"status": "waiting_for_render"}
+                    attempts.append({
+                        "day": day, "short_job_id": short.id, "source_run_id": run.id,
+                        "status": "failed", "error": str(exc),
+                    })
+                    save_long_production_state(state)
+                    # Try a different source on the next tick, with a durable cap.
+                    return {"status": "source_rejected", "error": str(exc)}
+                attempts.append({
+                    "day": day, "short_job_id": short.id, "job_id": job.id,
+                    "source_run_id": run.id, "status": "queued", "review_required": True,
+                })
+                save_long_production_state(state)
+                threading.Thread(target=run_review_long_job, args=(job.id, short), daemon=True).start()
+                return {"status": "queued", "job_id": job.id, "short_job_id": short.id}
+        return {"status": "waiting_for_eligible_short"}
 
 
 def auto_viral_short_long_relevance_audit(
@@ -21498,6 +21685,10 @@ def run_auto_viral_campaign(run_id: str) -> None:
                     run_request.create_paired_long_video
                     and completed_count < auto_viral_paired_long_limit(run_request)
                 )
+                # Keep authoritative timestamps after verified Short uploads clean
+                # their workspace, so independent Long production can recover.
+                item["paired_short_snapshot"] = paired_short_snapshot(finished_job)
+                update_auto_viral_run(run_id, processed=processed)
                 if build_paired_long:
                     append_auto_viral_log(
                         run_id,
@@ -21696,6 +21887,9 @@ def run_auto_viral_campaign(run_id: str) -> None:
             except Exception as exc:
                 item["status"] = "failed"
                 item["error"] = str(exc)
+                if (run.trigger == "schedule" and item.get("job_status") == "failed" and item.get("clip_count") == 0
+                        and item["error"].startswith(SHORT_SELECTION_REJECTION_PREFIX)):
+                    item["selection_rejected_at"] = now_iso()
                 append_auto_viral_error(run_id, f"{source.get('title')}: {exc}")
                 item["cleanup"] = (
                     "Card gagal dipertahankan agar error dapat diperiksa; "
@@ -23431,6 +23625,10 @@ def auto_viral_scheduler_loop() -> None:
                 except Exception as exc:
                     print(f"Promosi cadangan Private ditunda: {exc}", flush=True)
                 reconcile_interrupted_scheduled_clip_runs()
+                try:
+                    queue_review_long_once()
+                except Exception as exc:
+                    print(f"Produksi Long untuk review ditunda: {exc}", flush=True)
                 with auto_viral_lock:
                     active_id = auto_viral_active_run_id
                 latest = latest_scheduled_auto_viral_run()
@@ -23613,6 +23811,23 @@ def set_auto_viral_schedule(
         ):
             scheduler_thread.join(timeout=1.0)
     return auto_viral_schedule_status()
+
+
+@app.get("/api/automation/viral-cc/long-production")
+def get_long_production() -> dict[str, Any]:
+    with long_production_lock:
+        return long_production_state()
+
+
+@app.post("/api/automation/viral-cc/long-production")
+def set_long_production(request: LongProductionControlRequest) -> dict[str, Any]:
+    with long_production_lock:
+        state = long_production_state()
+        state.update(enabled=request.enabled, daily_target=request.daily_target)
+        save_long_production_state(state)
+    result = queue_review_long_once()
+    auto_viral_scheduler_wakeup.set()
+    return {**get_long_production(), "production": result}
 
 
 @app.post("/api/automation/viral-cc/{run_id}/cancel")

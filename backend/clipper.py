@@ -51,6 +51,10 @@ from portrait_framing import landscape_portrait_plan, portrait_source_filter
 from religious_review import (
     RELIGIOUS_ATTRIBUTION_MARKERS, RELIGIOUS_RULING_WORDS, religious_ruling_terms,
 )
+from ryuundy_reference_learning import RYUUNDY_REFERENCE_EDITOR_BRIEF, practical_payoff_profile
+from ryuundy_motion import (
+    build_motion_plan, load_motion_manifest, motion_overlay_filter, prepare_motion_assets,
+)
 
 
 console = Console()
@@ -8725,6 +8729,7 @@ def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0
     islamic_story = islamic_story_radar_profile(candidate.text, candidate.duration)
     channel_pattern = channel_1k_pattern_profile(candidate)
     high_information_extended = candidate_is_high_information_extended_short(candidate)
+    practical = practical_payoff_profile(candidate.text, candidate.duration)
     effective_target = (
         23.0
         if social_anecdote["qualified"]
@@ -8767,6 +8772,7 @@ def candidate_rank_score(candidate: ClipCandidate, target_duration: float = 38.0
         + (5.0 if high_information_extended else 0.0)
         + float(islamic_story["score_bonus"])
         + float(channel_pattern["bonus"])
+        + float(practical["rank_bonus"])
         + narrative_score
         + duration_priority
         - abs(candidate.duration - effective_target) * 0.08
@@ -9362,6 +9368,8 @@ def candidate_editor_system_prompt() -> str:
     return (
         AI_SYSTEM_PROMPT
         + " For this scheduler-owned batch, think like a selective human editor, not a clip factory. "
+        + RYUUNDY_REFERENCE_EDITOR_BRIEF
+        + " "
         "Prefer moments with recognizable human stakes: a choice, mistake, reaction, disagreement, "
         "small win, failure-to-comeback turn, teamwork beat, or earned punchline. For game footage, "
         "gameplay alone is not a story; require a clear player goal, change, and payoff supported by "
@@ -9450,6 +9458,7 @@ def ai_rescore_candidates(
                 candidate
             ),
             "channel_1k_pattern": channel_1k_pattern_profile(candidate),
+            "practical_payoff": practical_payoff_profile(candidate.text, candidate.duration),
             "text": candidate.text[:800],
         }
         for idx, candidate in enumerate(pool)
@@ -10924,6 +10933,10 @@ def creative_director_plan(
             ),
         },
     }
+    plan["ryuundy_motion"] = build_motion_plan(clip, clip_segments, plan)
+    plan["creative_director"]["motion_insert"] = (
+        plan["ryuundy_motion"]["cues"][0]["kind"] if plan["ryuundy_motion"]["enabled"] else "none"
+    )
     return plan
 
 
@@ -15284,6 +15297,10 @@ def codex_growth_blueprint(
         "knowledge": ("Poin yang Membuka Pikiran", "satu penjelasan spesifik tanpa filler"),
     }
     series_name, audience_promise = series_profiles[theme]
+    practical = practical_payoff_profile(clip.text, clip.duration)
+    if output_format == "vertical_short" and theme == "knowledge" and practical["qualified"]:
+        series_name = str(practical["series_suggestion"])
+        audience_promise = "satu masalah nyata, satu langkah sumber, dan hasil yang dijelaskan"
     is_short = output_format == "vertical_short"
     micro_thesis = micro_thesis_profile(clip.text, clip.duration)
     social_anecdote = social_anecdote_profile(clip.text, clip.duration)
@@ -15344,6 +15361,7 @@ def codex_growth_blueprint(
             "contrast_banter_strategy": contrast_banter if is_short else None,
             "structured_comparison_strategy": structured_comparison if is_short else None,
             "claim_rebuttal_strategy": claim_rebuttal if is_short else None,
+            "practical_payoff_strategy": practical if is_short else None,
             "first_30_editorial_readiness_score": clip.retention_score if is_short else None,
             "actual_retention_prediction": False,
         },
@@ -15355,6 +15373,7 @@ def codex_growth_blueprint(
                 "podcast_setup_contrast_authentic_reaction_payoff",
                 "question_three_evidence_beats_fair_resolution",
                 "allegation_direct_answer_evidence_stake_fair_principle",
+                "problem_concrete_action_specific_result",
             ],
             "applies_when_detected": bool(
                 is_short
@@ -15365,6 +15384,7 @@ def codex_growth_blueprint(
                     or contrast_banter["qualified"]
                     or structured_comparison["qualified"]
                     or claim_rebuttal["qualified"]
+                    or practical["qualified"]
                     or extended_short_ready
                 )
             ),
@@ -18540,6 +18560,48 @@ def export_clip(
                 "enabled": False,
                 "reason": "ffmpeg_drawtext_unavailable",
             }
+    # Source playback/audio/caption timing never freezes. Only the separate
+    # analysis picture or semantic vector object has a stepped visual rhythm.
+    motion_plan = auto_visual_plan.get("ryuundy_motion") or {
+        "enabled": False, "rendered": False, "cues": [], "reason": "manual_visual_mode",
+    }
+    motion_assets: list[Path] = []
+    motion_filter = ""
+    if output_format == "vertical_short" and enhanced_edit and visual_mode == "auto_fyp":
+        authored_motion = load_motion_manifest(clips_dir.parent / "motion.json", clip)
+        if authored_motion is not None:
+            motion_plan = build_motion_plan(clip, clip_segments, auto_visual_plan, manifest=authored_motion)
+        if motion_plan.get("enabled"):
+            if preserve_landscape and source_size:
+                source_top = (1920 - 1080 * source_size[1] / source_size[0]) / 2
+                available = min(480, int(source_top - 180))
+                if available < 350:
+                    motion_plan.update(enabled=False, reason="no_safe_space_above_landscape_source")
+                else:
+                    motion_plan["placement"] = {"width": int(available * 900 / 640) // 2 * 2, "y": 140}
+        if motion_plan.get("enabled"):
+            if (multi_clip_split or social_card_selected or reaction_avatar_selected
+                    or evidence_direction["enabled"]):
+                motion_plan.update(enabled=False, reason="preserve_existing_layout_and_context")
+            elif all(ffmpeg_has_filter(name) for name in ("movie", "overlay", "split", "nullsink")):
+                try:
+                    motion_assets = prepare_motion_assets(
+                        motion_plan, video_path, clips_dir, base_name,
+                        source_size=source_size or get_video_size(video_path), ffmpeg=ffmpeg_path(),
+                        run_command=lambda command: run(command, cwd=clips_dir, timeout_seconds=60),
+                    )
+                    motion_filter = motion_overlay_filter(motion_plan)
+                    if motion_filter:
+                        vf = f"{vf},{motion_filter}"
+                except (RuntimeError, OSError, ValueError, TypeError) as exc:
+                    motion_plan.update(enabled=False, reason="optional_motion_asset_unavailable",
+                                       preparation_error=type(exc).__name__)
+                    console.print(f"[yellow]Motion insert dilewati: {type(exc).__name__}[/yellow]")
+            else:
+                motion_plan.update(enabled=False, reason="required_motion_filters_unavailable")
+    else:
+        motion_plan = {"enabled": False, "rendered": False, "cues": [], "reason": "not_auto_short"}
+    sidecar_payload["ryuundy_motion"] = motion_plan
     if evidence_direction["enabled"]:
         if drawtext_supported:
             evidence_filter = evidence_overlay_filter(evidence_direction, clips_dir, base_name)
@@ -18698,6 +18760,12 @@ def export_clip(
             ],
             cwd=clips_dir,
         )
+        if motion_filter:
+            motion_plan["rendered"] = True
+            applied_edits.append(
+                "Sisipan visual RYUUNDY memakai frame/kutipan sumber dan gerak objek bertahap; "
+                "video sumber, dialog, serta caption mempertahankan waktu aslinya."
+            )
     finally:
         hook_text_path.unlink(missing_ok=True)
         pov_text_path.unlink(missing_ok=True)
@@ -18709,6 +18777,8 @@ def export_clip(
         quran_quote_source_path.unlink(missing_ok=True)
         clean_background_path.unlink(missing_ok=True)
         watermark_preview_path.unlink(missing_ok=True)
+        # Derived inserts live in .ryuundy-motion, outside the public clips/*.mp4
+        # index, and remain available with this job for inspection and re-editing.
     audio_filter = (
         "highpass=f=70,lowpass=f=15000,"
         "acompressor=threshold=0.125:ratio=2.5:attack=20:release=250:makeup=1.35,"

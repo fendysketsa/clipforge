@@ -4,11 +4,13 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 recover_stalled_cron=false
+ryuundy_learning=false
 skip_build=false
 wait_seconds=21600
 while (( $# )); do
   case "$1" in
     --recover-stalled-cron) recover_stalled_cron=true ;;
+    --ryuundy-learning) ryuundy_learning=true ;;
     --skip-build) skip_build=true ;;
     --no-wait) wait_seconds=0 ;;
     --wait-seconds)
@@ -17,7 +19,7 @@ while (( $# )); do
       shift
       ;;
     --help|-h)
-      echo "Usage: $0 [--recover-stalled-cron] [--skip-build] [--wait-seconds N | --no-wait]"
+      echo "Usage: $0 [--recover-stalled-cron] [--ryuundy-learning] [--skip-build] [--wait-seconds N | --no-wait]"
       echo "Waits up to six hours for active work; --skip-build verifies and reuses the built image."
       exit 0
       ;;
@@ -25,6 +27,12 @@ while (( $# )); do
   esac
   shift
 done
+modules=(api youtube_remote_status ryuundy_reference_learning)
+activation_report=reports/cron-upload-recovery-activation.json
+if [[ "$ryuundy_learning" == true ]]; then
+  modules+=(clipper ryuundy_motion)
+  activation_report=reports/ryuundy-reference-learning-activation.json
+fi
 if (( EUID != 0 )); then
   echo "Run: sudo bash $ROOT_DIR/scripts/activate-youtube-quiet-check.sh" >&2
   exit 77
@@ -36,7 +44,9 @@ if [[ ! -e "$lock" ]]; then
 fi
 exec 9<"$lock"
 flock -n 9 || { echo "Another ClipForge deployment is active." >&2; exit 75; }
-python -m py_compile backend/api.py backend/youtube_remote_status.py
+module_paths=()
+for module in "${modules[@]}"; do module_paths+=("backend/$module.py"); done
+python -m py_compile "${module_paths[@]}"
 # Refresh the durable image first; restart the existing container to retain
 # its exact environment, mounts, and network settings.
 if [[ "$skip_build" != true ]]; then
@@ -45,17 +55,24 @@ if [[ "$skip_build" != true ]]; then
 fi
 image_id="$(docker image inspect clipforge-backend:latest --format '{{.Id}}')"
 verify_image_sources() {
-  python - "$image_id" <<'PY'
+  python - "$image_id" "${modules[@]}" <<'PY'
 import hashlib, pathlib, subprocess, sys
 lines = subprocess.check_output([
     'docker', 'run', '--rm', '--network', 'none', '--read-only',
-    '--entrypoint', 'sha256sum', sys.argv[1], '/app/api.py', '/app/youtube_remote_status.py',
-], text=True).splitlines()
+    '--entrypoint', 'sha256sum', sys.argv[1],
+] + ['/app/' + name + '.py' for name in sys.argv[2:]], text=True).splitlines()
 actual = dict((line.split()[1], line.split()[0]) for line in lines)
-for name in ('api', 'youtube_remote_status'):
+for name in sys.argv[2:]:
     expected = hashlib.sha256(pathlib.Path('backend/' + name + '.py').read_bytes()).hexdigest()
     if actual.get('/app/' + name + '.py') != expected:
         raise SystemExit('Built image does not match backend/' + name + '.py; rerun without --skip-build.')
+if 'ryuundy_motion' in sys.argv[2:]:
+    decoders = subprocess.check_output([
+        'docker', 'run', '--rm', '--network', 'none', '--read-only',
+        '--entrypoint', 'ffmpeg', sys.argv[1], '-hide_banner', '-decoders',
+    ], text=True, stderr=subprocess.STDOUT)
+    if 'librsvg' not in decoders:
+        raise SystemExit('Built backend lacks the SVG decoder required for motion inserts; cron was not paused.')
 PY
 }
 verify_image_sources
@@ -96,12 +113,12 @@ python scripts/wait-for-backend-idle.py "${idle_args[@]}" --wait-seconds "$wait_
 # Source may have changed while draining jobs. Keep the durable image and the
 # staged runtime modules consistent before touching the existing container.
 verify_image_sources
-for module in api youtube_remote_status; do
+for module in "${modules[@]}"; do
   docker cp "backend/$module.py" "fendy-clipper-backend:/app/$module.py.quiet-check"
 done
-docker exec fendy-clipper-backend python -c 'import pathlib; [compile(pathlib.Path(f"/app/{name}.py.quiet-check").read_text(), name, "exec") for name in ("api", "youtube_remote_status")]'
+docker exec fendy-clipper-backend python -c 'import pathlib,sys,subprocess; [compile(pathlib.Path(f"/app/{name}.py.quiet-check").read_text(), name, "exec") for name in sys.argv[1:]]; assert "ryuundy_motion" not in sys.argv[1:] or "librsvg" in subprocess.check_output(["ffmpeg", "-hide_banner", "-decoders"], text=True, stderr=subprocess.STDOUT), "Runtime FFmpeg lacks the SVG decoder"' "${modules[@]}"
 python scripts/wait-for-backend-idle.py "${idle_args[@]}" --wait-seconds 0
-docker exec fendy-clipper-backend python -c 'import os; [os.replace(f"/app/{name}.py.quiet-check", f"/app/{name}.py") for name in ("api", "youtube_remote_status")]'
+docker exec fendy-clipper-backend python -c 'import os,sys; [os.replace(f"/app/{name}.py.quiet-check", f"/app/{name}.py") for name in sys.argv[1:]]' "${modules[@]}"
 # The API imports this function at startup, so replacing the file alone does
 # not stop the old in-memory checker. Restart only after the idle check above.
 docker restart fendy-clipper-backend >/dev/null
@@ -115,15 +132,19 @@ for attempt in range(90):
         if attempt == 89: raise
         time.sleep(1)
 PY
-for module in api youtube_remote_status; do
+for module in "${modules[@]}"; do
   expected="$(sha256sum "backend/$module.py")"
   actual="$(docker exec fendy-clipper-backend sha256sum "/app/$module.py")"
   [[ "${expected%% *}" == "${actual%% *}" ]] || { echo "Runtime source verification failed: $module" >&2; exit 1; }
 done
 docker exec fendy-clipper-backend python -c 'import inspect,youtube_remote_status as m; assert "new_page" not in inspect.getsource(m)'
+if [[ "$ryuundy_learning" == true ]]; then
+  docker exec fendy-clipper-backend python -c 'from ryuundy_reference_learning import meaningful_trend_tokens; assert meaningful_trend_tokens("com www jangan roblox") == {"roblox"}'
+  docker exec fendy-clipper-backend python -c 'from ryuundy_motion import KINDS; assert {"freeze_inset", "cutout_stop_motion", "step_diagram"} <= KINDS'
+fi
 restore_schedule
 trap 'rm -f "$activation_state"' EXIT
-python - "$activation_state" "$schedule_was_enabled" <<'PY'
+python - "$activation_state" "$schedule_was_enabled" "$activation_report" "${modules[@]}" <<'PY'
 import hashlib, json, pathlib, sys, time, urllib.request
 base = 'http://127.0.0.1:8010/api/'
 state = json.loads(pathlib.Path(sys.argv[1]).read_text())
@@ -143,12 +164,15 @@ for attempt in range(90):
 assert schedule['enabled'] == (sys.argv[2] == 'true')
 state.update({'verified_at': time.time(), 'schedule': schedule, 'sha256': {
     name: hashlib.sha256(pathlib.Path('backend/' + name + '.py').read_bytes()).hexdigest()
-    for name in ('api', 'youtube_remote_status')
+    for name in sys.argv[4:]
 }})
-path = pathlib.Path('reports/cron-upload-recovery-activation.json')
+path = pathlib.Path(sys.argv[3])
 path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + '\n')
 print(json.dumps(schedule, ensure_ascii=False))
 PY
 rm -f "$activation_state"
 trap - EXIT
 echo "Quiet YouTube checks and cron recovery activated; runtime hashes and scheduler verified."
+if [[ "$ryuundy_learning" == true ]]; then
+  echo "RYUUNDY learning, selection cooldown, and motion inserts activated; all runtime module hashes verified."
+fi

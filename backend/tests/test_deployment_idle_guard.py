@@ -164,7 +164,9 @@ def test_invalid_options_fail_before_any_side_effects(args):
 
 
 @pytest.mark.parametrize("enabled", ["true", "false"])
-def test_failed_drain_restores_original_cron_without_touching_runtime(tmp_path, enabled):
+@pytest.mark.parametrize("mode", [[], ["--ryuundy-learning"]])
+@pytest.mark.parametrize("failure", ["drain", "image-mismatch"])
+def test_activation_failures_preserve_original_cron_without_touching_runtime(tmp_path, enabled, mode, failure):
     # Exercise the real shell trap/order, replacing only host/root dependencies.
     # The copy stays outside the repository and uses a private deployment lock.
     root = tmp_path / "repo"
@@ -189,7 +191,12 @@ if sys.argv[1] == 'scripts/wait-for-backend-idle.py':
     event('drain'); sys.exit(4)
 body = sys.stdin.read()
 if "print('true'" in body: print(os.environ['ORIGINAL_CRON'])
-elif 'sha256sum' in body: event('verify-image')
+elif 'sha256sum' in body:
+    expected = ['api', 'youtube_remote_status', 'ryuundy_reference_learning']
+    if os.environ['LEARNING_MODE'] == 'true': expected.extend(['clipper', 'ryuundy_motion'])
+    assert sys.argv[3:] == expected, sys.argv
+    event('verify-image')
+    if os.environ['FAILURE_MODE'] == 'image-mismatch': sys.exit(5)
 elif 'for attempt in range(30)' in body: event('restore:' + sys.argv[2])
 elif 'data=b' in body: event('pause')
 else: raise SystemExit('Unexpected Python invocation')
@@ -204,10 +211,23 @@ else: sys.exit('Runtime must not be changed before drain completes')
     python.chmod(0o755)
     docker.chmod(0o755)
     env = {**os.environ, "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
-           "EVENT_LOG": str(events), "ORIGINAL_CRON": enabled}
-    result = subprocess.run(["bash", str(script), "--skip-build", "--no-wait"], env=env, capture_output=True, text=True)
-    assert result.returncode == 4, result.stderr
-    assert events.read_text().splitlines() == [
+           "EVENT_LOG": str(events), "ORIGINAL_CRON": enabled,
+           "LEARNING_MODE": "true" if mode else "false", "FAILURE_MODE": failure}
+    result = subprocess.run(["bash", str(script), "--skip-build", "--no-wait", *mode], env=env, capture_output=True, text=True)
+    assert result.returncode == (5 if failure == "image-mismatch" else 4), result.stderr
+    expected = [
         "docker:image inspect clipforge-backend:latest --format {{.Id}}",
-        "verify-image", "pause", "drain", "restore:" + enabled,
+        "verify-image",
     ]
+    if failure == "drain":
+        expected += ["pause", "drain", "restore:" + enabled]
+    assert events.read_text().splitlines() == expected
+
+
+def test_reference_learning_wrapper_exposes_safe_deployment_options():
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts/activate-ryuundy-reference-learning.sh"), "--help"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    assert all(option in result.stdout for option in ("--ryuundy-learning", "--skip-build", "--wait-seconds"))
