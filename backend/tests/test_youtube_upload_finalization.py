@@ -247,7 +247,8 @@ def test_optional_tags_do_not_strand_upload_as_draft(monkeypatch):
     assert logs and logs[0].startswith("TAGS_WARNING:")
 
 
-def test_resume_saved_draft_finishes_exact_video_without_reupload(monkeypatch):
+@pytest.mark.parametrize("identity_matches", [True, False])
+def test_resume_saved_draft_finishes_exact_video_without_reupload(monkeypatch, identity_matches):
     class DraftPage:
         def __init__(self):
             self.goto_calls = []
@@ -277,11 +278,18 @@ def test_resume_saved_draft_finishes_exact_video_without_reupload(monkeypatch):
     monkeypatch.setattr(youtube_uploader, "private_review_check_options", lambda _visibility: (False, False))
     monkeypatch.setattr(youtube_uploader, "wait_for_copyright_checks", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(youtube_uploader, "wait_for_visibility_step", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "saved_draft_identity_matches", lambda *_args: identity_matches)
     monkeypatch.setattr(youtube_uploader, "set_visibility", lambda _page, value: events.append(("visibility", value)))
     monkeypatch.setattr(youtube_uploader, "wait_for_review_checks_safe_before_publish", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(youtube_uploader, "click_final_upload_action", lambda *_args, **_kwargs: events.append(("final", "clicked")))
     monkeypatch.setattr(youtube_uploader, "wait_for_final_upload_confirmation", lambda *_args, **_kwargs: video_url)
     monkeypatch.setattr(youtube_uploader, "log", lambda _message: None)
+
+    if not identity_matches:
+        with pytest.raises(UploadError, match="ID draft aktif berubah"):
+            resume_saved_draft_and_finalize(page, "Draft title", "public", video_url=video_url, timeout_ms=1000)
+        assert not any(event[0] in {"visibility", "final"} for event in events)
+        return
 
     assert resume_saved_draft_and_finalize(
         page,
@@ -1030,6 +1038,37 @@ def test_generic_checks_complete_is_not_treated_as_explicitly_safe(monkeypatch):
         wait_for_copyright_checks(TextPage("Pemeriksaan selesai."), timeout_ms=100, require_checks=True)
 
 
+@pytest.mark.parametrize("summary", [
+    "Pemeriksaan selesai. Tidak ditemukan masalah.",
+    "Checks complete. No issues found.",
+])
+def test_checks_accept_explicit_safe_visibility_footer(monkeypatch, summary):
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    assert wait_for_copyright_checks(TextPage(summary), timeout_ms=100, require_checks=True) is False
+
+
+def test_safe_footer_never_overrides_active_claim(monkeypatch):
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
+    with pytest.raises(UploadError, match="Content ID"):
+        wait_for_copyright_checks(TextPage(
+            "Pemeriksaan selesai. Tidak ditemukan masalah. Konten yang diklaim ditemukan."
+        ), timeout_ms=100, require_checks=True)
+
+
+def test_safe_footer_never_overrides_pending_check(monkeypatch):
+    clock = iter((0.0, 0.0, 1.0))
+    monkeypatch.setattr(youtube_uploader.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args: None)
+    monkeypatch.delenv("YOUTUBE_CONTINUE_WHEN_CHECKS_STUCK", raising=False)
+    with pytest.raises(UploadError, match="Step 3 Checks belum selesai"):
+        wait_for_copyright_checks(TextPage(
+            "Pemeriksaan selesai. Tidak ditemukan masalah. Pedoman komunitas masih memeriksa."
+        ), timeout_ms=100, require_checks=True)
+
+
 def test_review_blocks_claim_before_publication(monkeypatch):
     monkeypatch.setattr(youtube_uploader, "dismiss_reload_prompt", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(youtube_uploader, "get_upload_workflow_step", lambda _page: "REVIEW")
@@ -1462,6 +1501,7 @@ def test_normalize_youtube_video_url_accepts_studio_edit_link():
 def test_reload_runs_once_after_ten_second_publish_delay(monkeypatch):
     delays = []
     page = ReloadPage()
+    monkeypatch.delenv("SOCIAL_BROWSER_SHARED", raising=False)
     monkeypatch.setenv("YOUTUBE_RELOAD_AFTER_PUBLISH", "true")
     monkeypatch.setenv("YOUTUBE_RELOAD_AFTER_PUBLISH_DELAY_SECONDS", "10")
     monkeypatch.setattr(youtube_uploader.time, "sleep", delays.append)
@@ -1470,6 +1510,33 @@ def test_reload_runs_once_after_ten_second_publish_delay(monkeypatch):
 
     assert delays == [10]
     assert page.reload_calls == [{"wait_until": "domcontentloaded", "timeout": 30000}]
+
+
+def test_shared_browser_skips_reload_even_with_legacy_flag(monkeypatch):
+    page = ReloadPage()
+    monkeypatch.setenv("SOCIAL_BROWSER_SHARED", "true")
+    monkeypatch.setenv("YOUTUBE_RELOAD_AFTER_PUBLISH", "true")
+    monkeypatch.setattr(youtube_uploader.time, "sleep", lambda *_: pytest.fail("must not delay confirmed uploads"))
+    reload_after_publish(page)
+    assert page.reload_calls == []
+
+
+def test_reload_is_disabled_by_default(monkeypatch):
+    page = ReloadPage()
+    monkeypatch.delenv("SOCIAL_BROWSER_SHARED", raising=False)
+    monkeypatch.delenv("YOUTUBE_RELOAD_AFTER_PUBLISH", raising=False)
+    reload_after_publish(page)
+    assert page.reload_calls == []
+
+
+def test_optional_reload_failure_preserves_confirmed_upload(monkeypatch):
+    page = ReloadPage()
+    monkeypatch.delenv("SOCIAL_BROWSER_SHARED", raising=False)
+    monkeypatch.setenv("YOUTUBE_RELOAD_AFTER_PUBLISH", "true")
+    monkeypatch.setenv("YOUTUBE_RELOAD_AFTER_PUBLISH_DELAY_SECONDS", "0")
+    monkeypatch.setattr(page, "reload", lambda **_: (_ for _ in ()).throw(TimeoutError("reload failed")))
+    monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_: None)
+    reload_after_publish(page)
 
 
 def test_owned_upload_tab_is_marked_and_force_closed_even_when_setting_is_disabled(monkeypatch):
@@ -1496,12 +1563,13 @@ def test_idle_cleanup_only_closes_marked_fendy_clipper_tabs():
 
 def test_duplicate_cleanup_preserves_primary_and_unrelated_tabs():
     primary = BrowserPage("https://studio.youtube.com/channel/target")
-    duplicate = BrowserPage("https://studio.youtube.com/channel/target/videos")
+    duplicate = BrowserPage("https://studio.youtube.com/channel/target/videos", FENDY_CLIPPER_UPLOAD_PAGE_NAME)
+    user_duplicate = BrowserPage("https://studio.youtube.com/channel/target/videos")
     other_channel = BrowserPage("https://studio.youtube.com/channel/other")
     unrelated = BrowserPage("https://www.youtube.com/watch?v=demo")
 
     closed = close_duplicate_target_studio_tabs(
-        [primary, duplicate, other_channel, unrelated],
+        [primary, duplicate, user_duplicate, other_channel, unrelated],
         primary,
         "target",
     )
@@ -1509,6 +1577,7 @@ def test_duplicate_cleanup_preserves_primary_and_unrelated_tabs():
     assert closed == 1
     assert primary.closed is False
     assert duplicate.closed is True
+    assert user_duplicate.closed is False
     assert other_channel.closed is False
     assert unrelated.closed is False
 

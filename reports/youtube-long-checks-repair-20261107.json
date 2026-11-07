@@ -1,0 +1,17 @@
+{
+  "video_id": "H0dB6_lP89c",
+  "upload_id": "2e2e0aacf7044cf7897cbe167bfa5494",
+  "observed_issue": "Worker reports checks result unknown while supplied Studio screenshot shows explicit checks complete and no issues found.",
+  "source_fix": "Recognize Indonesian and English explicit safe completion summaries, while retaining claim and pending vetoes.",
+  "validation": {
+    "focused_tests_passed": 96,
+    "py_compile": true,
+    "diff_check": true
+  },
+  "deployment": "pending_sudo_access",
+  "live_recovery": "not_executed; existing worker and remote checkpoint preserved",
+  "limitations": [
+    "Host CDP inspection did not expose the upload dialog shown in the supplied screenshot; exact active-dialog comparison unavailable.",
+    "No publication click, file resubmission, or worker cancellation performed."
+  ]
+}

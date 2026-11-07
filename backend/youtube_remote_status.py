@@ -132,7 +132,7 @@ def read_deleted_video_evidence(video_id: str, cdp_url: str, *, context=None) ->
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.connect_over_cdp(cdp_url, timeout=10_000)
+        browser = playwright.chromium.connect_over_cdp(cdp_url, no_defaults=True, timeout=10_000)
         if not browser.contexts:
             return None
         return read_from_context(browser.contexts[0])

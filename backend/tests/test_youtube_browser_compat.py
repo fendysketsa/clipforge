@@ -1,3 +1,4 @@
+import ast
 import pytest
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,6 +14,24 @@ from youtube_uploader import (
 
 
 UNSUPPORTED_TEXT = "sempurnakanpengalamanandabrowseryangtidakdidukungversibrowserlama"
+
+
+@pytest.mark.parametrize("relative", [
+    "backend/youtube_uploader.py", "backend/tiktok_uploader.py",
+    "backend/youtube_remote_status.py", "backend/youtube_blocked_cleanup.py",
+    "scripts/delete-youtube-studio-video.py",
+])
+def test_shared_cdp_connections_never_override_user_media_preferences(relative):
+    # Every attach changes all existing pages unless no_defaults is set,
+    # including attaches used only to snapshot cookies in the background.
+    root = Path(__file__).resolve().parents[2]
+    tree = ast.parse((root / relative).read_text())
+    connections = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                   and isinstance(node.func, ast.Attribute) and node.func.attr == "connect_over_cdp"]
+    assert connections
+    for call in connections:
+        assert any(kw.arg == "no_defaults" and isinstance(kw.value, ast.Constant)
+                   and kw.value.value is True for kw in call.keywords), (relative, call.lineno)
 
 
 def test_cdp_upload_does_not_overwrite_live_session_by_default(monkeypatch):

@@ -1,0 +1,51 @@
+{
+  "verified_at": "2026-11-07T03:55:14.523514+00:00",
+  "checks": {
+    "theme_preserved": true,
+    "dark_theme_readable": true,
+    "no_page_created_or_closed": true,
+    "no_navigation_or_reload": true
+  },
+  "before": {
+    "url": "https://studio.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ",
+    "nav": 1794023470640.6,
+    "dark": true,
+    "bg": "rgb(15, 15, 15)",
+    "heading": [
+      {
+        "text": "Dasbor channel",
+        "color": "rgb(241, 241, 241)"
+      }
+    ]
+  },
+  "during": {
+    "url": "https://studio.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ",
+    "nav": 1794023470640.6,
+    "dark": true,
+    "bg": "rgb(15, 15, 15)",
+    "heading": [
+      {
+        "text": "Dasbor channel",
+        "color": "rgb(241, 241, 241)"
+      }
+    ]
+  },
+  "after": {
+    "url": "https://studio.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ",
+    "nav": 1794023470640.6,
+    "dark": true,
+    "bg": "rgb(15, 15, 15)",
+    "heading": [
+      {
+        "text": "Dasbor channel",
+        "color": "rgb(241, 241, 241)"
+      }
+    ]
+  },
+  "page_count": 2,
+  "deployment": "pending_root_activation",
+  "limitations": [
+    "Production Docker access denied; sudo requires a password.",
+    "Automatic approval review rejected attempted root activation with --no-wait; no restart executed."
+  ]
+}

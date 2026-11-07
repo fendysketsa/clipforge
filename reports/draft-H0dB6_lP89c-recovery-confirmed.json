@@ -1,0 +1,30 @@
+{
+  "verified_at": "2026-11-07T05:45:59.460137+00:00",
+  "video_id": "H0dB6_lP89c",
+  "video_url": "https://www.youtube.com/watch?v=H0dB6_lP89c",
+  "remote_status": "scheduled",
+  "publish_at": "2026-11-08T13:30:00+00:00",
+  "publish_at_wib": "2026-11-08 20:30 WIB",
+  "model": {
+    "date": {
+      "year": 2026,
+      "month": 10,
+      "day": 8
+    },
+    "selectedTimeOfDayValue": 73800,
+    "selectedTimezoneIndex": 0
+  },
+  "verification": "fresh authenticated Studio edit tab, persisted native scheduler model",
+  "file_resubmitted": false,
+  "backend_record_sync": "pending deployment of missing-job recovery fix",
+  "source_validation": {
+    "focused_tests_passed": 363,
+    "compile_and_diff_checks": true
+  },
+  "pending_runtime_changes": [
+    "Recover remote drafts after the local source job has been removed.",
+    "Restore only an already-open native dialog with exact video ID and expected title.",
+    "Reject final publication if the active draft ID changes.",
+    "Resume one recent failed Checks checkpoint automatically and retain its saved visibility/schedule."
+  ]
+}

@@ -2034,10 +2034,12 @@ def close_idle_fendy_clipper_upload_tabs(pages: Iterable) -> int:
 
 
 def close_duplicate_target_studio_tabs(pages: Iterable, keep_page, target_channel_id: str) -> int:
-    """Close duplicate target-channel Studio tabs while preserving one primary tab."""
+    """Close only marked automation tabs; a matching URL does not imply ownership."""
     closed = 0
     for page in pages:
         if page is keep_page:
+            continue
+        if not is_fendy_clipper_upload_tab(page):
             continue
         try:
             url = page.url.lower()
@@ -2362,20 +2364,22 @@ def set_visibility(page, visibility: str) -> None:
 
 def set_native_schedule_controls(page, local: datetime) -> None:
     scheduler = page.locator('ytcp-visibility-scheduler:visible').first
-    scheduler.locator('#datepicker-trigger').click()
-    date_input = page.locator('ytcp-date-picker #textbox input:visible').first
-    formatted_date = page.evaluate("""({ year, month, day }) => new Intl.DateTimeFormat(
-        document.documentElement.lang || navigator.language,
-        { day: 'numeric', month: 'short', year: 'numeric' }
-    ).format(new Date(year, month - 1, day))""", {"year": local.year, "month": local.month, "day": local.day})
-    date_input.fill(formatted_date)
-    date_input.press('Enter')
-    date_input.wait_for(state='hidden', timeout=10000)
+    expected_date = {"year": local.year, "month": local.month - 1, "day": local.day}
+    current_model = scheduler.evaluate('(element) => element.model')
+    if not isinstance(current_model, dict) or current_model.get('date') != expected_date:
+        scheduler.locator('#datepicker-trigger').click()
+        date_input = page.locator('ytcp-date-picker #textbox input:visible').first
+        formatted_date = page.evaluate("""({ year, month, day }) => new Intl.DateTimeFormat(
+            document.documentElement.lang || navigator.language,
+            { day: 'numeric', month: 'short', year: 'numeric' }
+        ).format(new Date(year, month - 1, day))""", {"year": local.year, "month": local.month, "day": local.day})
+        date_input.fill(formatted_date)
+        date_input.press('Enter')
+        date_input.wait_for(state='hidden', timeout=10000)
     time_input = scheduler.locator('input:visible').first
     time_input.fill(local.strftime('%H:%M'))
     time_input.press('Tab')
     model = scheduler.evaluate('(element) => element.model')
-    expected_date = {"year": local.year, "month": local.month - 1, "day": local.day}
     if not isinstance(model, dict) or model.get('date') != expected_date or model.get('selectedTimeOfDayValue') != local.hour * 3600 + local.minute * 60:
         raise UploadError(f"Kontrol kalender/jam belum cocok dengan jadwal: {model}")
 
@@ -5605,6 +5609,10 @@ COPYRIGHT_ISSUE_PATTERNS = (
 COPYRIGHT_ALL_CLEAR_PATTERNS = (
     (r"hak cipta\s+tidak ditemukan masalah", r"pedoman komunitas\s+tidak ditemukan masalah"),
     (r"copyright\s+no issues found", r"community guidelines\s+no issues found"),
+    # On Visibility Studio collapses the two checks into this explicit footer.
+    # A bare "Checks complete" remains insufficient; require the safe result.
+    (r"\bpemeriksaan selesai\s*[.!:]?\s*tidak ditemukan masalah\b",),
+    (r"\bchecks complete\s*[.!:]?\s*no issues found\b",),
 )
 
 COPYRIGHT_NON_BLOCKING_VIDEO_PATTERNS = (
@@ -6408,6 +6416,37 @@ def verify_saved_video_in_studio(
                 pass
 
 
+def restore_saved_draft_dialog_surface(page, video_id: str, expected_title: str) -> bool:
+    """Repair an already-open exact draft's hidden native dialog surface."""
+    try:
+        return bool(page.evaluate("""({videoId,title}) => {
+          const host = [...document.querySelectorAll('ytcp-uploads-dialog')].find(
+            h => h.getAttribute('video-id') === videoId);
+          const dialog = host?.querySelector('tp-yt-paper-dialog#dialog');
+          if (!host || !dialog?.opened || !title || !host.textContent.includes(title)) return false;
+          if (dialog.style.display === 'none') {
+            dialog.style.removeProperty('display');
+            dialog.notifyResize?.();
+          }
+          const rect = dialog.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && getComputedStyle(dialog).display !== 'none';
+        }""", {"videoId": video_id, "title": expected_title}))
+    except Exception:
+        return False
+
+
+def saved_draft_identity_matches(page, video_id: str) -> bool:
+    try:
+        return bool(page.evaluate("""videoId => [...document.querySelectorAll('ytcp-uploads-dialog')].some(host => {
+          const surface = host.querySelector('tp-yt-paper-dialog#dialog');
+          if (host.getAttribute('video-id') !== videoId || !surface?.opened) return false;
+          const rect = surface.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && getComputedStyle(surface).display !== 'none';
+        })""", video_id))
+    except Exception:
+        return False
+
+
 def resume_saved_draft_and_finalize(
     page,
     expected_title: str,
@@ -6432,7 +6471,10 @@ def resume_saved_draft_and_finalize(
 
     deadline = time.monotonic() + timeout_ms / 1000
     edit_clicked = False
+    direct_draft_route_opened = False
+    draft_route_fallback_at = time.monotonic() + 5
     while time.monotonic() < deadline:
+        restore_saved_draft_dialog_surface(page, video_id, expected_title)
         step = get_upload_workflow_step(page)
         if step in UPLOAD_WORKFLOW_STEP_ORDER and active_upload_dialog_text(page, timeout_ms=500):
             break
@@ -6448,6 +6490,14 @@ def resume_saved_draft_and_finalize(
                 timeout_ms=1500,
                 optional=True,
             )
+        if not direct_draft_route_opened and time.monotonic() >= draft_route_fallback_at:
+            channel_id = effective_channel_id(page)
+            if channel_id:
+                page.goto(
+                    f"https://studio.youtube.com/channel/{channel_id}/videos/upload?d=ud&udvid={video_id}",
+                    wait_until="domcontentloaded", timeout=min(30000, timeout_ms),
+                )
+                direct_draft_route_opened = True
         time.sleep(0.5)
     else:
         save_debug_artifacts(page, "saved-draft-dialog-not-open")
@@ -6483,6 +6533,8 @@ def resume_saved_draft_and_finalize(
         raise UploadError(f"Draft {video_id} belum mencapai tab Visibilitas; step terakhir: {step or 'tidak terbaca'}.")
 
     wait_for_visibility_step(page, timeout_ms=20000)
+    if not saved_draft_identity_matches(page, video_id):
+        raise UploadError("ID draft aktif berubah; finalisasi dihentikan tanpa mengirim file baru.")
     effective_visibility = "scheduled" if publish_at else visibility
     if publish_at:
         if visibility != "public":
@@ -6497,6 +6549,8 @@ def resume_saved_draft_and_finalize(
         content_type=content_type,
         media_duration_seconds=0.0,
     )
+    if not saved_draft_identity_matches(page, video_id):
+        raise UploadError("ID draft aktif berubah sebelum aksi final; publikasi ditahan.")
     click_final_upload_action(
         page,
         effective_visibility,
@@ -6795,7 +6849,10 @@ def wait_for_final_upload_confirmation(
 
 
 def reload_after_publish(page) -> None:
-    if not env_bool("YOUTUBE_RELOAD_AFTER_PUBLISH", True):
+    if env_bool("SOCIAL_BROWSER_SHARED", False):
+        log("Upload terkonfirmasi; browser bersama dipertahankan tanpa reload tambahan.")
+        return
+    if not env_bool("YOUTUBE_RELOAD_AFTER_PUBLISH", False):
         log("Reload otomatis setelah publish dinonaktifkan.")
         return
     try:
@@ -6818,7 +6875,9 @@ def reload_after_publish(page) -> None:
         log("Page direload sekali; proses upload selesai.")
     except Exception as exc:
         save_debug_artifacts(page, "reload-after-publish-failed")
-        raise UploadError(f"Publish sudah diklik, tetapi reload terakhir gagal: {exc}") from exc
+        # Transfer was already confirmed. A cosmetic refresh must not turn a
+        # successful remote upload into a failed/retryable local record.
+        log(f"Upload sudah terkonfirmasi; reload tambahan gagal: {exc}")
 
 
 def run_login(args: argparse.Namespace) -> None:
@@ -6895,7 +6954,7 @@ def run_capture_session(args: argparse.Namespace) -> None:
     with sync_playwright() as playwright:
         log(f"Menghubungkan ke Chrome remote debugging: {args.cdp_url}")
         try:
-            browser = playwright.chromium.connect_over_cdp(args.cdp_url, timeout=15000)
+            browser = playwright.chromium.connect_over_cdp(args.cdp_url, no_defaults=True, timeout=15000)
         except Exception as exc:
             raise UploadError(
                 "Chrome remote debugging belum aktif. Jalur utama upload memakai Playwright storage-state; "
@@ -7085,7 +7144,7 @@ def run_verify_upload(args: argparse.Namespace) -> None:
         using_cdp = bool(args.use_cdp)
         if using_cdp:
             log(f"Recovery memakai Chrome remote debugging: {args.cdp_url}")
-            browser = playwright.chromium.connect_over_cdp(args.cdp_url, timeout=15000)
+            browser = playwright.chromium.connect_over_cdp(args.cdp_url, no_defaults=True, timeout=15000)
             contexts = browser.contexts or [browser.new_context()]
             for existing_context in contexts:
                 install_context_dialog_guard(existing_context)
@@ -7281,7 +7340,7 @@ def run_upload(args: argparse.Namespace) -> None:
         )
         if using_cdp:
             log(f"Menggunakan Chrome remote debugging: {args.cdp_url}")
-            browser = playwright.chromium.connect_over_cdp(args.cdp_url, timeout=15000)
+            browser = playwright.chromium.connect_over_cdp(args.cdp_url, no_defaults=True, timeout=15000)
             contexts = browser.contexts or [browser.new_context()]
             for item in contexts:
                 install_context_dialog_guard(item)

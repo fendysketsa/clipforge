@@ -1,0 +1,90 @@
+{
+  "verified_at": "2026-11-07T04:02:26.756223+00:00",
+  "schedule": {
+    "enabled": true,
+    "interval_hours": 24.0,
+    "run_on_startup": true,
+    "once_per_boot": false,
+    "scheduler_running": true,
+    "boot_delay_minutes": 5.0,
+    "post_clip_upload_delay_minutes": 0.0,
+    "background_upload_enabled": true,
+    "paired_long_video_enabled": false,
+    "paired_long_duration": 300.0,
+    "paired_long_auto_public_enabled": false,
+    "active_run_id": "7e8dbb47d93a4172a0a9dde13133ebd7",
+    "last_run_id": "7e8dbb47d93a4172a0a9dde13133ebd7",
+    "last_started_at": "2026-11-07T03:31:01.984289+00:00",
+    "last_finished_at": null,
+    "next_run_at": null,
+    "news_hot_enabled": false,
+    "news_hot_daily_limit": 0,
+    "news_hot_daily_reserved": 0,
+    "news_hot_playlist": "News",
+    "news_hot_review_required": true,
+    "message": "Automation sedang berjalan; jadwal berikutnya tidak akan membuat run tumpang tindih."
+  },
+  "jobs": [
+    {
+      "id": "582fb850ce30461d8f7f5eb54cd15c04",
+      "status": "completed",
+      "finished_at": "2026-11-07T04:00:20.400561+00:00",
+      "source_title": "KISAH VIRAL DI BOGOR! URBAN LEGEND ANGKOT BIRU GAIB, SEMUA PENUMPANG SUDAH MENINGGAL #OMMAMAT",
+      "publication_review_required": false,
+      "clips": [
+        {
+          "name": "clip_01_tapi-memang-kalau-waktu-gue-masih-zaman-pelajar.mp4",
+          "youtube_upload_ready": true,
+          "youtube_upload_issue": null,
+          "religious_review_required": false,
+          "render_qc_blocking": false
+        }
+      ],
+      "uploads": [
+        {
+          "platform": "youtube",
+          "id": "99365a0fb7d94bd7b930fb2702991c9a",
+          "status": "running",
+          "upload_confirmed": false,
+          "error": null,
+          "publish_at": "2026-11-08T06:45:00+00:00",
+          "video_url": "https://www.youtube.com/watch?v=_wbgEaIy3B8"
+        }
+      ]
+    },
+    {
+      "id": "62e39379843d4f019cca79cc7415182c",
+      "status": "completed",
+      "finished_at": "2026-11-06T09:30:45.672271+00:00",
+      "source_title": "Yuta Mio Coba Bermain Game Roblox Versi Seram Di Jam 3 Pagi! | ROBLOX",
+      "publication_review_required": true,
+      "clips": [
+        {
+          "name": "resume_cerita_5menit_seven-sin-betul-sekali-tujuh-dosa-besar-manusia.mp4",
+          "youtube_upload_ready": true,
+          "youtube_upload_issue": null,
+          "religious_review_required": null,
+          "render_qc_blocking": null
+        }
+      ],
+      "uploads": []
+    },
+    {
+      "id": "7d07d87619814350a4a9ba1e2d2c5900",
+      "status": "completed",
+      "finished_at": "2026-11-06T05:17:37.985116+00:00",
+      "source_title": "Yuta Mio Coba Bermain Game Roblox Versi Seram Di Jam 3 Pagi! | ROBLOX",
+      "publication_review_required": false,
+      "clips": [
+        {
+          "name": "clip_01_seven-sin-betul-sekali-tujuh-dosa-besar-manusia.mp4",
+          "youtube_upload_ready": false,
+          "youtube_upload_issue": "Upload diblokir: clip memuat ayat, hadis, atau pernyataan hukum. Bandingkan dengan konteks sumber dan selesaikan checklist review sebelum upload Private.",
+          "religious_review_required": true,
+          "render_qc_blocking": false
+        }
+      ],
+      "uploads": []
+    }
+  ]
+}

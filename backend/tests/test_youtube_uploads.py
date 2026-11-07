@@ -2833,6 +2833,71 @@ def test_upload_watchdog_terminates_silent_process():
     assert logs == ["started"]
 
 
+def test_upload_watchdog_bounds_repeated_unknown_checks_despite_heartbeat():
+    process = subprocess.Popen(
+        [sys.executable, "-u", "-c", "import time\nfor _ in range(200):\n print('Checks belum menampilkan hasil final; uploader tetap memantau'); time.sleep(.02)"],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    )
+    logs = []
+    code, stalled = monitor_youtube_upload_process(
+        process, logs.append, stall_timeout_seconds=2, unknown_checks_timeout_seconds=.1,
+    )
+    assert stalled and code != 0
+    assert any(line.startswith("CHECKS_STATUS_UNREADABLE:") for line in logs)
+    assert process.poll() is not None
+
+
+@pytest.mark.parametrize("already_recovered", [False, True])
+def test_unreadable_checks_recover_same_remote_id_only_once(monkeypatch, tmp_path, already_recovered):
+    import api
+    clip_path = tmp_path / "outputs" / "demo" / "clip.mp4"
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"video")
+    upload = YouTubeUploadJob(
+        id="checks-recovery", source_job_id="checks-job", clip_url="/outputs/demo/clip.mp4",
+        clip_name="clip.mp4", title="Existing draft", visibility="private", status="queued",
+        created_at="2026-11-07T00:00:00+00:00", updated_at="2026-11-07T00:00:00+00:00",
+        logs=["CHECKS_DRAFT_RECOVERY_ONCE: prior attempt"] if already_recovered else [],
+    )
+    monkeypatch.setattr(api, "OUTPUTS_DIR", tmp_path / "outputs")
+    monkeypatch.setattr(api, "youtube_uploads", {upload.id: upload})
+    monkeypatch.setattr(api, "youtube_upload_needs_restart_verification", lambda _: False)
+    monkeypatch.setattr(api, "youtube_upload_prefers_cdp", lambda: False)
+    monkeypatch.setattr(api, "youtube_auth_state_exists", lambda: False)
+    monkeypatch.setattr(api, "youtube_chromium_profile_ready", lambda: False)
+    commands = []
+    monkeypatch.setattr(api, "build_youtube_upload_command", lambda *_a, **_k: [sys.executable, "youtube_uploader.py", "upload", str(clip_path)])
+    monkeypatch.setattr(api.subprocess, "Popen", lambda command, **_k: commands.append(command) or object())
+    def monitor(_process, on_line, **_kwargs):
+        on_line("VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345")
+        on_line("CHECKS_STATUS_UNREADABLE: repeated unknown result")
+        return 1, True
+    monkeypatch.setattr(api, "monitor_youtube_upload_process", monitor)
+    monkeypatch.setattr(api, "cleanup_youtube_staging_file", lambda *_: False)
+    recovered = []
+    def verify(upload_id):
+        recovered.append(api.youtube_uploads[upload_id].video_url)
+        assert any(s.startswith("CHECKS_DRAFT_RECOVERY_ONCE:") for s in api.youtube_uploads[upload_id].logs)
+    monkeypatch.setattr(api, "run_youtube_restart_verification", verify)
+    api.run_youtube_upload(upload.id)
+    assert len(commands) == 1
+    assert recovered == ([] if already_recovered else ["https://www.youtube.com/watch?v=abcDEF12345"])
+    assert api.youtube_uploads[upload.id].video_url == "https://www.youtube.com/watch?v=abcDEF12345"
+
+
+def test_upload_watchdog_preserves_genuinely_pending_checks():
+    process = subprocess.Popen(
+        [sys.executable, "-u", "-c", "import time\nfor _ in range(12):\n print('Checks masih berjalan; menunggu sampai semua centang aman'); time.sleep(.02)"],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    )
+    logs = []
+    code, stalled = monitor_youtube_upload_process(
+        process, logs.append, stall_timeout_seconds=2, unknown_checks_timeout_seconds=.1,
+    )
+    assert (code, stalled) == (0, False)
+    assert not any(line.startswith("CHECKS_STATUS_UNREADABLE:") for line in logs)
+
+
 def test_upload_watchdog_does_not_treat_early_video_url_as_success():
     process = subprocess.Popen(
         [

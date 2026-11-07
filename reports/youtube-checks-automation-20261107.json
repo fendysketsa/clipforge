@@ -1,0 +1,21 @@
+{
+  "status": "implemented_not_activated",
+  "recovery_policy": {
+    "unknown_checks_timeout_seconds": 90,
+    "automatic_draft_resume_attempts": 1,
+    "remote_id_preserved": true,
+    "pending_checks_not_treated_as_unknown": true,
+    "failed_recovery_releases_queue": true
+  },
+  "validation": {
+    "focused_regression_tests_passed": 357,
+    "compile_and_diff_checks": true
+  },
+  "activation_command": "sudo bash /www/wwwroot/clipper/clipforge/scripts/activate-youtube-checks-recovery.sh",
+  "activation_attempt_result": "sudo: a password is required",
+  "current_upload_id": "2e2e0aacf7044cf7897cbe167bfa5494",
+  "current_video_id": "H0dB6_lP89c",
+  "limitations": [
+    "Running worker has not been stopped or resumed; privileged activation remains pending."
+  ]
+}

@@ -60,7 +60,7 @@ def main() -> int:
     with sync_playwright() as playwright:
         launched_locally = False
         try:
-            browser = playwright.chromium.connect_over_cdp(args.cdp_url, timeout=8000)
+            browser = playwright.chromium.connect_over_cdp(args.cdp_url, no_defaults=True, timeout=8000)
             contexts = browser.contexts
             if not contexts:
                 raise RuntimeError("Chrome CDP tidak memiliki browser context aktif.")

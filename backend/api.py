@@ -8761,8 +8761,70 @@ def youtube_uploads_with_queue_positions(
     return positioned
 
 
+def reuse_youtube_remote_draft(job_id: str, request: YouTubeUploadRequest) -> YouTubeUploadJob | None:
+    """Resume a recorded remote ID even when its local job/file was cleaned up."""
+    if request.dry_run:
+        return None
+    existing = reusable_youtube_upload(job_id, request.clip_url, "")
+    if existing is not None and existing.status in {"queued", "running", "completed"}:
+        return existing
+    recovery = recoverable_failed_youtube_upload(job_id, request.clip_url)
+    if recovery is None or not youtube_upload_has_remote_checkpoint(recovery):
+        return None
+    if youtube_upload_was_claimed(recovery):
+        raise HTTPException(status_code=409, detail="Draft berklaim ditahan; tidak dipublikasikan otomatis.")
+    set_youtube_upload(
+        recovery.id, status="queued", started_at=None, finished_at=None,
+        duration_seconds=None, error=None,
+        logs=[*recovery.logs, YOUTUBE_RESTART_VERIFY_MARKER,
+              "REMOTE_DRAFT_RESUME: menyelesaikan video-id tersimpan dengan metadata dan target publikasi semula; file tidak dikirim ulang."][-160:],
+    )
+    with youtube_uploads_lock:
+        return youtube_uploads.get(recovery.id, recovery)
+
+
+def queue_youtube_draft_recoveries_once() -> int:
+    if not env_bool("YOUTUBE_AUTO_RECOVER_DRAFTS", True):
+        return 0
+    if not youtube_upload_creation_lock.acquire(blocking=False):
+        return 0
+    try:
+        with youtube_uploads_lock:
+            rows = list(youtube_uploads.values())
+        if any(row.status in {"queued", "running"} for row in rows):
+            return 0
+        now = datetime.now(timezone.utc)
+        for row in sorted(rows, key=lambda item: item.updated_at):
+            if (row.status != "failed" or not youtube_upload_has_remote_checkpoint(row)
+                    or youtube_upload_was_claimed(row) or youtube_restart_verification_released(row)
+                    or YOUTUBE_RESTART_VERIFY_MARKER in row.logs
+                    or any(line.startswith("CHECKS_DRAFT_RECOVERY_ONCE:") for line in row.logs)):
+                continue
+            age = (now - parse_utc_datetime(row.updated_at)).total_seconds()
+            if not 0 <= age <= 86400 or not any(text in (row.error or "") for text in (
+                "Step 3 Checks belum selesai", "CHECKS_STATUS_UNREADABLE", "Checks tidak terbaca",
+            )):
+                continue
+            queued = reuse_youtube_remote_draft(row.source_job_id, YouTubeUploadRequest(
+                clip_url=row.clip_url, visibility=row.visibility, publish_at=row.publish_at,
+            ))
+            if queued is not None:
+                queue_youtube_upload_jobs([queued])
+                return 1
+        return 0
+    finally:
+        youtube_upload_creation_lock.release()
+
+
 def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> YouTubeUploadJob:
-    job, clip, index = find_job_clip(job_id, request.clip_url)
+    try:
+        job, clip, index = find_job_clip(job_id, request.clip_url)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            recovery = reuse_youtube_remote_draft(job_id, request)
+            if recovery is not None:
+                return recovery
+        raise
     requested_visibility = safe_youtube_visibility(request.visibility)
     # Public is honored only when the operator explicitly enables it and a
     # real cadence slot is open. A closed slot keeps the asset useful as a
@@ -8782,6 +8844,9 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
     growth_target_views, growth_target_subscribers = youtube_growth_targets(job, clip)
     clip_path = output_path_from_url(clip.url)
     if clip_path is None or not clip_path.is_file():
+        recovery = reuse_youtube_remote_draft(job_id, request)
+        if recovery is not None:
+            return recovery
         raise HTTPException(status_code=404, detail="File clip tidak ditemukan di outputs")
     duration_issue = upload_media_duration_issue(clip_path)
     if duration_issue:
@@ -9905,6 +9970,7 @@ def monitor_youtube_upload_process(
     stall_timeout_seconds: float,
     terminal_success_prefix: str = YOUTUBE_UPLOAD_CONFIRMED_PREFIX,
     terminal_grace_seconds: float = 60.0,
+    unknown_checks_timeout_seconds: float | None = None,
 ) -> tuple[int, bool]:
     """Stream output without allowing a silent uploader subprocess to hang forever."""
     if process.stdout is None:
@@ -9923,9 +9989,20 @@ def monitor_youtube_upload_process(
     last_progress = time.monotonic()
     timeout = max(0.1, float(stall_timeout_seconds))
     terminal_success_at: float | None = None
+    unknown_checks_since: float | None = None
+    unknown_checks_timeout = (
+        max(0.1, float(unknown_checks_timeout_seconds))
+        if unknown_checks_timeout_seconds is not None
+        else max(30, env_int("YOUTUBE_UNKNOWN_CHECKS_TIMEOUT_SECONDS", 90))
+    )
 
     while True:
         now = time.monotonic()
+        if (terminal_success_at is None and unknown_checks_since is not None
+                and now - unknown_checks_since >= unknown_checks_timeout):
+            on_line("CHECKS_STATUS_UNREADABLE: status Checks tidak terbaca berulang; memulihkan draft yang sama.")
+            terminate_youtube_upload_process(process)
+            return process.wait(), True
         if terminal_success_at is not None:
             terminal_remaining = max(0.0, terminal_grace_seconds - (now - terminal_success_at))
             if terminal_remaining <= 0:
@@ -9947,6 +10024,13 @@ def monitor_youtube_upload_process(
         cleaned = line.rstrip()
         if cleaned:
             last_progress = time.monotonic()
+            if cleaned.startswith(("Checks belum menampilkan hasil final;", "Checks masih berjalan; status modal belum terbaca,")):
+                if unknown_checks_since is None:
+                    unknown_checks_since = last_progress
+            else:
+                # Real pending-check reports and actual workflow progress
+                # retain their normal longer deadline.
+                unknown_checks_since = None
             on_line(cleaned)
             if terminal_success_prefix and cleaned.startswith(terminal_success_prefix):
                 terminal_success_at = time.monotonic()
@@ -11099,7 +11183,7 @@ def run_youtube_restart_verification(upload_id: str) -> None:
         set_youtube_upload(
             upload_id,
             logs=logs[-160:],
-            video_url=youtube_video_url_from_logs(logs),
+            video_url=youtube_video_url_from_logs(logs) or upload.video_url,
             visibility=youtube_final_visibility_from_logs(logs) or upload.visibility,
             upload_confirmed=confirmed,
         )
@@ -11113,7 +11197,7 @@ def run_youtube_restart_verification(upload_id: str) -> None:
                 env_int("YOUTUBE_RESTART_VERIFY_STALL_TIMEOUT_SECONDS", 180),
             ),
         )
-        video_url = youtube_video_url_from_logs(logs)
+        video_url = youtube_video_url_from_logs(logs) or upload.video_url
         error = (
             "Verifikasi Content YouTube tidak mengirim progres."
             if stalled
@@ -11661,6 +11745,13 @@ def run_youtube_upload(upload_id: str) -> None:
                 )
                 if claim_detected:
                     schedule_claimed_clip_cleanup(upload_id)
+                elif (any(line.startswith("CHECKS_STATUS_UNREADABLE:") for line in logs)
+                      and not any(line.startswith("CHECKS_DRAFT_RECOVERY_ONCE:") for line in logs)):
+                    # The original process has exited. Verify/resume its exact
+                    # remote checkpoint once; never resubmit the local file.
+                    recovery_logs = [*logs, "CHECKS_DRAFT_RECOVERY_ONCE: melanjutkan video-id tersimpan tanpa upload file baru."][-160:]
+                    set_youtube_upload(upload_id, logs=recovery_logs, video_url=video_url)
+                    run_youtube_restart_verification(upload_id)
                 return
             if stalled and attempt < max_attempts and stall_repair_attempts < max_stall_repairs:
                 stall_repair_attempts += 1
@@ -12837,6 +12928,8 @@ def enable_ready_youtube_cdp_for_automation() -> bool:
 @app.on_event("startup")
 def resume_queued_youtube_uploads() -> None:
     enable_ready_youtube_cdp_for_automation()
+    if env_bool("AUTO_UPLOAD_COMPLETED_JOBS", False):
+        queue_youtube_draft_recoveries_once()
     with youtube_uploads_lock:
         has_queued = any(upload.status == "queued" for upload in youtube_uploads.values())
         claimed_cleanup_ids = [
@@ -13443,6 +13536,7 @@ def completed_job_upload_sweeper_loop() -> None:
         while env_bool("AUTO_UPLOAD_COMPLETED_JOBS", False):
             try:
                 reconcile_deleted_youtube_reserves_once()
+                queue_youtube_draft_recoveries_once()
                 queue_completed_job_uploads_once()
             except Exception as exc:
                 print(f"Operator upload pulih dari error sementara: {type(exc).__name__}", flush=True)

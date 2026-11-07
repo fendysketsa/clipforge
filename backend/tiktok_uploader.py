@@ -1642,7 +1642,7 @@ def open_context(playwright, args):
     browser_args = ["--disable-dev-shm-usage"]
     if args.cdp_url:
         browser = _launch_with_retry(
-            lambda: playwright.chromium.connect_over_cdp(args.cdp_url, timeout=15_000),
+            lambda: playwright.chromium.connect_over_cdp(args.cdp_url, no_defaults=True, timeout=15_000),
             "menghubungkan browser login GUI",
         )
         context = browser.contexts[0] if browser.contexts else browser.new_context(locale="id-ID")

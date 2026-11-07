@@ -175,7 +175,7 @@ def run(config: dict, *, apply: bool, force: bool, data_dir: Path = DATA) -> dic
             with sync_playwright() as playwright, ExitStack() as pages:
                 # Never launch another browser, load a persistent profile, or
                 # inject saved cookies during this maintenance task.
-                browser = playwright.chromium.connect_over_cdp(config["YOUTUBE_CDP_URL"], timeout=15_000)
+                browser = playwright.chromium.connect_over_cdp(config["YOUTUBE_CDP_URL"], no_defaults=True, timeout=15_000)
                 if not browser.contexts:
                     raise RuntimeError("The live browser has no authenticated context")
                 context = browser.contexts[0]

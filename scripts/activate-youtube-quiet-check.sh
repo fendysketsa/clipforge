@@ -6,12 +6,14 @@ cd "$ROOT_DIR"
 recover_stalled_cron=false
 ryuundy_learning=false
 skip_build=false
+preserve_browser=false
 wait_seconds=21600
 while (( $# )); do
   case "$1" in
     --recover-stalled-cron) recover_stalled_cron=true ;;
     --ryuundy-learning) ryuundy_learning=true ;;
     --skip-build) skip_build=true ;;
+    --preserve-browser) preserve_browser=true ;;
     --no-wait) wait_seconds=0 ;;
     --wait-seconds)
       [[ "${2:-}" =~ ^[0-9]+$ ]] || { echo "--wait-seconds requires a nonnegative integer." >&2; exit 2; }
@@ -19,7 +21,7 @@ while (( $# )); do
       shift
       ;;
     --help|-h)
-      echo "Usage: $0 [--recover-stalled-cron] [--ryuundy-learning] [--skip-build] [--wait-seconds N | --no-wait]"
+      echo "Usage: $0 [--recover-stalled-cron] [--ryuundy-learning] [--preserve-browser] [--skip-build] [--wait-seconds N | --no-wait]"
       echo "Waits up to six hours for active work; --skip-build verifies and reuses the built image."
       exit 0
       ;;
@@ -29,6 +31,10 @@ while (( $# )); do
 done
 modules=(api youtube_remote_status ryuundy_reference_learning)
 activation_report=reports/cron-upload-recovery-activation.json
+if [[ "$preserve_browser" == true ]]; then
+  modules+=(youtube_uploader tiktok_uploader youtube_blocked_cleanup)
+  activation_report=reports/youtube-browser-preservation-activation.json
+fi
 if [[ "$ryuundy_learning" == true ]]; then
   modules+=(clipper ryuundy_motion)
   activation_report=reports/ryuundy-reference-learning-activation.json
@@ -113,6 +119,13 @@ python scripts/wait-for-backend-idle.py "${idle_args[@]}" --wait-seconds "$wait_
 # Source may have changed while draining jobs. Keep the durable image and the
 # staged runtime modules consistent before touching the existing container.
 verify_image_sources
+if [[ "$preserve_browser" == true ]]; then
+  # no_defaults is needed even for cookie-only background CDP attaches.
+  # Upgrade only after draining work, and keep the built image durable too.
+  if ! docker exec fendy-clipper-backend python -c 'import inspect; from playwright.sync_api import BrowserType; assert "no_defaults" in inspect.signature(BrowserType.connect_over_cdp).parameters'; then
+    docker exec fendy-clipper-backend python -m pip install 'playwright>=1.64.1,<2.0.0'
+  fi
+fi
 for module in "${modules[@]}"; do
   docker cp "backend/$module.py" "fendy-clipper-backend:/app/$module.py.quiet-check"
 done
@@ -138,6 +151,9 @@ for module in "${modules[@]}"; do
   [[ "${expected%% *}" == "${actual%% *}" ]] || { echo "Runtime source verification failed: $module" >&2; exit 1; }
 done
 docker exec fendy-clipper-backend python -c 'import inspect,youtube_remote_status as m; assert "new_page" not in inspect.getsource(m)'
+if [[ "$preserve_browser" == true ]]; then
+  docker exec fendy-clipper-backend python -c 'import ast,inspect,pathlib; from playwright.sync_api import BrowserType; assert "no_defaults" in inspect.signature(BrowserType.connect_over_cdp).parameters; paths=[pathlib.Path("/app/"+n+".py") for n in ("youtube_uploader","tiktok_uploader","youtube_remote_status","youtube_blocked_cleanup")]; calls=[n for p in paths for n in ast.walk(ast.parse(p.read_text())) if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and n.func.attr=="connect_over_cdp"]; assert calls and all(any(k.arg=="no_defaults" and isinstance(k.value,ast.Constant) and k.value.value is True for k in n.keywords) for n in calls)'
+fi
 if [[ "$ryuundy_learning" == true ]]; then
   docker exec fendy-clipper-backend python -c 'from ryuundy_reference_learning import meaningful_trend_tokens; assert meaningful_trend_tokens("com www jangan roblox") == {"roblox"}'
   docker exec fendy-clipper-backend python -c 'from ryuundy_motion import KINDS; assert {"freeze_inset", "cutout_stop_motion", "step_diagram"} <= KINDS'
@@ -173,6 +189,9 @@ PY
 rm -f "$activation_state"
 trap - EXIT
 echo "Quiet YouTube checks and cron recovery activated; runtime hashes and scheduler verified."
+if [[ "$preserve_browser" == true ]]; then
+  echo "Browser preservation activated; CDP defaults, upload modules, and runtime hashes verified."
+fi
 if [[ "$ryuundy_learning" == true ]]; then
   echo "RYUUNDY learning, selection cooldown, and motion inserts activated; all runtime module hashes verified."
 fi
