@@ -46,7 +46,7 @@ from source_rights import (
     source_rights_review_reasons,
     source_rights_risk_reasons,
 )
-from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
+from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy, TIKTOK_STRATEGY_VERSION
 from telemetry import ProcessTelemetrySampler
 from whisper_cache import start_whisper_model_cache_maintenance
 from metadata_copy import choose_contextual_cta, contextual_engagement_copy
@@ -63,6 +63,9 @@ from hypit_quick import (
 )
 from article_presenter import is_article_presenter_prompt
 from religious_review import reassess_casual_work_wish
+import long_video_qc
+import cron_source_policy
+import automatic_retry
 from youtube_remote_status import read_deleted_video_evidence
 from ryuundy_reference_learning import (
     RYUUNDY_REFERENCE_EDITOR_BRIEF, TREND_NOISE_WORDS, clean_topic_text, source_trend_matches,
@@ -531,6 +534,7 @@ class ClipJobRequest(BaseModel):
     # cron can request a more human editorial pass and licensed contextual
     # audio without silently changing operator-led renders.
     scheduled_human_editor: bool = False
+    scheduled_director_effects: bool = False
     scheduled_contextual_audio: bool = False
     scheduled_social_card_layout: bool = False
     scheduled_reaction_avatar_layout: bool = False
@@ -1241,6 +1245,7 @@ class YouTubeUploadJob(BaseModel):
     dry_run: bool = False
     video_url: str | None = None
     upload_confirmed: bool = False
+    storage_state_verification_attempted: bool = False
     clip_sha256: str | None = None
     queue_position: int | None = None
     queue_total: int | None = None
@@ -1361,6 +1366,12 @@ class TikTokPerformanceUpdateRequest(BaseModel):
 
 
 class TikTokUploadJob(BaseModel):
+    auto_retry_count: int = Field(default=0, ge=0)
+    auto_retry_at: str | None = None
+    auto_retry_reason: str = ''
+    auto_retry_original_caption: str | None = None
+    submission_started: bool = False
+    submission_accepted: bool = False
     id: str
     source_job_id: str
     clip_url: str
@@ -2668,6 +2679,13 @@ class AutoViralRun(BaseModel):
 
 
 class AutoViralScheduleStatus(BaseModel):
+    tiktok_strategy_version: int = TIKTOK_STRATEGY_VERSION
+    tiktok_automatic_retry_enabled: bool = Field(default_factory=lambda: env_bool('TIKTOK_AUTOMATIC_RETRY_ENABLED',True))
+    tiktok_automatic_retry_limit: int = 3
+    cron_source_process_limit: int = 2
+    cron_follow_cta_adaptive: bool = True
+    cron_director_effects_required: bool = True
+    cron_director_effects_policy_version: int = 2
     enabled: bool
     interval_hours: float
     run_on_startup: bool
@@ -2699,6 +2717,8 @@ class AutoViralScheduleControlRequest(BaseModel):
 class LongProductionControlRequest(BaseModel):
     enabled: bool
     daily_target: int = Field(default=1, ge=1, le=3)
+    auto_qc_enabled: bool | None = None
+    auto_qc_private_upload: bool | None = None
 
 
 class ViralVideoSearchRequest(BaseModel):
@@ -4557,6 +4577,11 @@ auto_viral_schedule_enabled_override = load_auto_viral_schedule_override()
 completed_job_upload_sweeper_lock = threading.Lock()
 completed_job_upload_sweeper_running = False
 completed_job_upload_sweeper_wakeup = threading.Event()
+tiktok_retry_sweeper_lock = threading.Lock()
+tiktok_retry_sweeper_running = False
+tiktok_retry_sweeper_wakeup = threading.Event()
+tiktok_retry_sweeper_stop = threading.Event()
+tiktok_retry_sweeper_thread: threading.Thread | None = None
 youtube_reserve_deletion_checks: dict[str, float] = {}
 youtube_data_api_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 youtube_data_api_cache_lock = threading.Lock()
@@ -6635,6 +6660,12 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             "sebelum menandai clip benar dan mengunggah ke playlist News."
         )
     sidecar = clip_sidecar_payload(clip)
+    if job.request.scheduled_director_effects:
+        accents = sidecar.get("cron_director_effects") or {}
+        if not (accents.get("rendered") is True and isinstance(accents.get("cue_count"), int)
+                and accents["cue_count"] >= 1
+                and accents.get("verification") == "duration_frame_count_and_geometry_preserved"):
+            return "Upload cron ditahan: aksen sutradara wajib belum terverifikasi pada hasil video."
     metadata = metadata_for_job(job)
     audited_score_floor_fallback = audited_score_floor_short_for_automatic_upload(
         job,
@@ -8056,6 +8087,16 @@ def create_tiktok_upload_record(
     existing = reusable_tiktok_upload(job_id, clip.url, fingerprint)
     if existing is not None and not (request.dry_run and existing.status == "completed"):
         return existing
+    if allow_audited_automation and not request.dry_run:
+        # The bounded retry operator owns failed attempts. A campaign/sweeper
+        # must not reset its budget by minting another upload ID every tick.
+        with tiktok_uploads_lock:
+            terminal = sorted((item for item in tiktok_uploads.values()
+                if not item.dry_run and item.status in {'failed','cancelled'}
+                and (item.source_job_id==job_id and item.clip_url==clip.url
+                     or item.clip_sha256==fingerprint)),key=lambda item:item.created_at,reverse=True)
+        if terminal:
+            return terminal[0]
     now = now_iso()
     strategy = current_tiktok_strategy_for_clip(clip)
     return TikTokUploadJob(
@@ -8968,6 +9009,12 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
             publish_at = youtube_next_publish_slot(long_form=is_compilation_clip(job, clip))
             upload_visibility, cadence_hold = "public", None
 
+    if job.request.clip_mode == 'short' and not request.thumbnail_url:
+        try:
+            from shorts_thumbnail import install_pack
+            install_pack(clip_path, clip_sidecar_payload(clip))
+        except Exception as exc:
+            print(f'Thumbnail curiosity fallback {job.id[:10]}: {type(exc).__name__}', flush=True)
     thumbnail_url = request.thumbnail_url or clip.thumbnail_url
     thumbnail_path = output_path_from_url(thumbnail_url) if thumbnail_url else None
     if (thumbnail_path is None or not thumbnail_path.is_file()) and is_compilation_clip(job, clip):
@@ -11188,6 +11235,7 @@ def run_youtube_restart_verification(upload_id: str) -> None:
             upload_confirmed=confirmed,
         )
 
+    verification_log_start = len(logs)
     try:
         code, stalled = monitor_youtube_upload_process(
             process,
@@ -11201,9 +11249,59 @@ def run_youtube_restart_verification(upload_id: str) -> None:
         error = (
             "Verifikasi Content YouTube tidak mengirim progres."
             if stalled
-            else youtube_upload_error_from_logs(logs)
+            else youtube_upload_error_from_logs(logs[verification_log_start:])
             or f"youtube_uploader.py verify-upload exited with code {code}"
         )
+        fallback_marker = "STORAGE_STATE_VERIFY_ONCE:"
+        transient_studio_failure = (
+            youtube_login_refresh_needed(error)
+            or "dialog-not-found" in error.casefold()
+            or "modal upload tidak ditemukan" in error.casefold()
+        )
+        if (
+            code != 0 and not confirmed and upload.video_url
+            and "--use-cdp" in command and youtube_auth_state_exists()
+            and transient_studio_failure
+            and not upload.storage_state_verification_attempted
+            and not youtube_restart_verification_absence_confirmed(error)
+            and not any(str(line).startswith((fallback_marker, YOUTUBE_CLAIM_ABORT_PREFIX)) for line in logs)
+        ):
+            # Retry only verification/finalization of the SAME remote ID using
+            # saved auth. Never alter the global mode, hydrate the borrowed
+            # browser, select a file, or infer a pass from an earlier attempt.
+            logs.append(fallback_marker + " verifikasi ID tersimpan memakai session Playwright; tanpa upload file.")
+            set_youtube_upload(upload_id, logs=logs[-160:], error=None, upload_confirmed=False,
+                storage_state_verification_attempted=True)
+            fallback_command = list(command)
+            fallback_command.remove("--use-cdp")
+            if "--cdp-url" in fallback_command:
+                cdp_arg = fallback_command.index("--cdp-url")
+                del fallback_command[cdp_arg:cdp_arg + 2]
+            fallback_process = subprocess.Popen(
+                fallback_command, cwd=BASE_DIR, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                errors="replace", bufsize=1,
+            )
+            with process_lock:
+                youtube_upload_processes[upload_id] = fallback_process
+            confirmed = False
+            verification_log_start = len(logs)
+            code, stalled = monitor_youtube_upload_process(
+                fallback_process, record_verification_log,
+                stall_timeout_seconds=max(30, env_int("YOUTUBE_RESTART_VERIFY_STALL_TIMEOUT_SECONDS", 180)),
+            )
+            video_url = youtube_video_url_from_logs(logs) or upload.video_url
+            error = (
+                "Verifikasi Content YouTube tidak mengirim progres."
+                if stalled else youtube_upload_error_from_logs(logs[verification_log_start:])
+                or f"youtube_uploader.py verify-upload exited with code {code}"
+            )
+        if upload.video_url and video_url and (
+            youtube_video_id_from_url(video_url) != youtube_video_id_from_url(upload.video_url)
+        ):
+            error = "Verifikasi mengembalikan ID video berbeda; checkpoint asli dipertahankan."
+            logs.append(error)
+            video_url, confirmed, code = upload.video_url, False, 1
         if code != 0 or not confirmed or not video_url:
             absence_confirmed = youtube_restart_verification_absence_confirmed(error)
             if absence_confirmed:
@@ -11525,6 +11623,7 @@ def run_youtube_upload(upload_id: str) -> None:
                 thumbnail_attached=False,
                 playlist_confirmed=False,
                 upload_confirmed=False,
+                error=None,
             )
             if attempt > 1:
                 if use_cdp_for_attempt:
@@ -11698,6 +11797,7 @@ def run_youtube_upload(upload_id: str) -> None:
                 set_youtube_upload(
                     upload_id,
                     status="completed",
+                    error=None,
                     thumbnail_attached=thumbnail_attached_for_attempt,
                     playlist_confirmed=playlist_confirmed_for_attempt,
                     logs=logs[-160:],
@@ -12213,6 +12313,14 @@ def run_tiktok_upload(upload_id: str) -> None:
         upload = tiktok_uploads.get(upload_id)
     if upload is None:
         return
+    if upload.upload_confirmed and upload.profile_url and not upload.dry_run:
+        set_tiktok_upload(upload_id,status='completed',error=None,auto_retry_at=None)
+        return
+    if automatic_retry.tiktok_submission_possible(upload.logs,
+            started=upload.submission_started,accepted=upload.submission_accepted):
+        set_tiktok_upload(upload_id,status='failed',auto_retry_at=None,
+            error='Hasil Post TikTok belum pasti; periksa posting yang sama sebelum transfer ulang agar tidak duplikat.')
+        return
     clip_path = output_path_from_url(upload.clip_url)
     if clip_path is None or not clip_path.is_file():
         set_tiktok_upload(upload_id, status="failed", finished_at=now_iso(), error="File clip tidak ditemukan.")
@@ -12270,11 +12378,15 @@ def run_tiktok_upload(upload_id: str) -> None:
                     confirmed = True
                 if cleaned.startswith("VIDEO_URL:"):
                     profile_url = cleaned.split("VIDEO_URL:", 1)[1].strip()
+                with tiktok_uploads_lock:
+                    live = tiktok_uploads.get(upload_id)
                 set_tiktok_upload(
                     upload_id,
                     logs=logs[-120:],
                     upload_confirmed=confirmed,
                     profile_url=profile_url,
+                    submission_started=bool((live and live.submission_started) or cleaned.startswith('POST_SUBMIT_INTENT:') or 'Tombol Post diklik' in cleaned),
+                    submission_accepted=bool((live and live.submission_accepted) or cleaned.startswith('POST_API_ACCEPTED:')),
                 )
             code = process.wait()
             error = tiktok_error_from_logs(attempt_logs)
@@ -12289,6 +12401,11 @@ def run_tiktok_upload(upload_id: str) -> None:
                 break
             if code == 0 and (upload.dry_run or confirmed):
                 break
+            with tiktok_uploads_lock:
+                live = tiktok_uploads.get(upload_id)
+            if automatic_retry.tiktok_submission_possible(logs,
+                    started=bool(live and live.submission_started),accepted=bool(live and live.submission_accepted)):
+                raise RuntimeError(error or 'Status posting TikTok belum pasti; verifikasi Studio diperlukan sebelum transfer ulang.')
             if (
                 error
                 and tiktok_error_is_transient_identity_hydration(error)
@@ -12395,6 +12512,8 @@ def run_tiktok_upload(upload_id: str) -> None:
             finished_at=now_iso(),
             duration_seconds=elapsed_seconds(started),
             error=None,
+            auto_retry_at=None,
+            auto_retry_reason='',
         )
         with tiktok_uploads_lock:
             completed_upload = tiktok_uploads.get(upload_id)
@@ -12424,6 +12543,7 @@ def run_tiktok_upload(upload_id: str) -> None:
             duration_seconds=elapsed_seconds(started),
             error=error_message,
         )
+        schedule_tiktok_upload_retry(upload_id)
     finally:
         with process_lock:
             tiktok_upload_processes.pop(upload_id, None)
@@ -13378,6 +13498,194 @@ def cleanup_terminal_repair_outcomes(job: ClipJob) -> int:
     return removed
 
 
+def schedule_tiktok_upload_retry(upload_id: str) -> None:
+    with tiktok_uploads_lock:
+        upload=tiktok_uploads.get(upload_id)
+        if upload is None or upload.status!='failed' or upload.dry_run or upload.upload_confirmed or upload.profile_url:
+            return
+        reason=automatic_retry.tiktok_retry_reason(upload.error,upload.logs,
+            started=upload.submission_started,accepted=upload.submission_accepted)
+        count=automatic_retry.retry_count(upload)
+        due=(datetime.now(timezone.utc)+timedelta(seconds=automatic_retry.backoff_seconds(count))).isoformat()
+        tiktok_uploads[upload_id]=upload.model_copy(update={
+            'auto_retry_at':due if reason and count<automatic_retry.MAX_RETRIES else None,
+            'auto_retry_reason':reason,'auto_retry_count':count})
+        save_tiktok_uploads_unlocked()
+    tiktok_retry_sweeper_wakeup.set()
+
+
+def queue_retryable_tiktok_uploads_once(now: datetime | None = None) -> int:
+    """Claim one due retry of an existing approved file, preserving caption and visibility."""
+    if not env_bool('TIKTOK_AUTOMATIC_RETRY_ENABLED',True) or tiktok_login_is_active():
+        return 0
+    current=now or datetime.now(timezone.utc)
+    with youtube_uploads_lock:
+        if any(item.status in {'queued','running'} for item in youtube_uploads.values()):return 0
+    with tiktok_upload_creation_lock:
+        with tiktok_uploads_lock:rows=list(tiktok_uploads.values())
+        if any(item.status in {'queued','running'} for item in rows):return 0
+        for upload in sorted(rows,key=lambda item:item.updated_at):
+            count=automatic_retry.retry_count(upload)
+            reason=automatic_retry.tiktok_retry_reason(upload.error,upload.logs,
+                started=upload.submission_started,accepted=upload.submission_accepted)
+            if (upload.status!='failed' or upload.dry_run or upload.upload_confirmed or upload.profile_url
+                    or count>=automatic_retry.MAX_RETRIES or not reason
+                    or upload.target_handle.casefold().lstrip('@')!=tiktok_target_handle().casefold().lstrip('@')):
+                continue
+            siblings=[item for item in rows if item.id!=upload.id and not item.dry_run and
+                ((item.source_job_id==upload.source_job_id and item.clip_url==upload.clip_url)
+                 or (upload.clip_sha256 and item.clip_sha256==upload.clip_sha256))]
+            if any(item.upload_confirmed or item.profile_url or automatic_retry.tiktok_submission_possible(item.logs,
+                    started=item.submission_started,accepted=item.submission_accepted)
+                    or (item.source_job_id==upload.source_job_id and item.clip_url==upload.clip_url
+                        and (item.created_at,item.id)>(upload.created_at,upload.id)) for item in siblings):
+                continue
+            due=parsed_datetime(upload.auto_retry_at)
+            if due is None:
+                failed_at=parsed_datetime(upload.finished_at or upload.updated_at) or current
+                due=failed_at+timedelta(seconds=automatic_retry.backoff_seconds(count))
+            if due>current:
+                if not upload.auto_retry_at:
+                    with tiktok_uploads_lock:
+                        live=tiktok_uploads.get(upload.id)
+                        if live and live.status=='failed' and live.updated_at==upload.updated_at:
+                            tiktok_uploads[upload.id]=live.model_copy(update={'auto_retry_at':due.isoformat(),'auto_retry_reason':reason})
+                            save_tiktok_uploads_unlocked()
+                continue
+            try:
+                job,clip,_=find_job_clip(upload.source_job_id,upload.clip_url)
+                media=output_path_from_url(clip.url)
+                if (media is None or not media.is_file() or not upload.clip_sha256
+                        or file_sha256(media)!=upload.clip_sha256 or youtube_monetization_preflight_issue(job,clip)
+                        or upload_media_duration_issue(media)):
+                    continue
+                require_tiktok_ready()
+                strategy=current_tiktok_strategy_for_clip(clip)
+                legacy_template=bool(re.search(r'(?i)#(?:KajianIslam|BelajarIslam|DakwahIslam|TanyaJawabIslam|CekIbadah)\b|inti kajian',upload.caption))
+                repair_caption=legacy_template and strategy['series_id'] in {'gaming','komedi','kuliner','konteks_publik','cerita_umum'}
+                caption=tiktok_caption_for_clip(job,clip,1,requested=clip.title or upload.clip_name) if repair_caption else upload.caption
+                with tiktok_uploads_lock:
+                    live=tiktok_uploads.get(upload.id)
+                    if live is None or live.status!='failed' or live.updated_at!=upload.updated_at:continue
+                    markers=['CAPTION_READY_RETRY_ONCE'] if reason=='caption_not_ready' and count==0 else []
+                    recovered=live.model_copy(update={'status':'queued','error':None,'started_at':None,'finished_at':None,
+                        'updated_at':now_iso(),'auto_retry_at':None,'auto_retry_count':count+1,'auto_retry_reason':reason,
+                        'caption':caption,
+                        'auto_retry_original_caption':(live.auto_retry_original_caption or live.caption) if repair_caption else live.auto_retry_original_caption,
+                        **({
+                            'series_id':strategy['series_id'],'series_label':strategy['series_label'],
+                            'opening_hook':strategy['opening_hook'],'visual_recipe':strategy['visual_recipe'],
+                            'cta':strategy['cta'],'experiment_id':strategy['experiment_id'],
+                        } if repair_caption else {}),
+                        'logs':[*live.logs,*markers,f'AUTO_RETRY_RESERVED:{count+1}/{automatic_retry.MAX_RETRIES}:{reason}',
+                            'Template caption disesuaikan dengan tema sumber; file, akun dan privasi tetap.' if repair_caption else
+                            'Retry otomatis file identik sebelum Post; caption, akun dan privasi dipertahankan.'][-160:]})
+                    tiktok_uploads[upload.id]=recovered
+                    save_tiktok_uploads_unlocked()
+                queue_tiktok_upload_jobs([recovered])
+                return 1
+            except (HTTPException,OSError):
+                continue
+    return 0
+
+
+def queue_tiktok_caption_recoveries_once() -> int:
+    return queue_retryable_tiktok_uploads_once()
+
+
+def adopt_reviewed_recovery_outputs_once() -> int:
+    """Attach locally reviewed rescues to their exact failed source jobs.
+
+    This is an operator-owned data manifest, not an HTTP upload/approval API.
+    A matching source identity, unchanged file digest, explicit source-rights
+    confirmation and a completed QC audit are all required. No platform
+    records or publication settings are changed here.
+    """
+    path=SOURCE_USAGE_HISTORY_PATH.with_name('reviewed_recovery_outputs.json')
+    if not path.exists():return 0
+    rows=json.loads(path.read_text())
+    if not isinstance(rows,list):raise RuntimeError('Recovery manifest must contain a list')
+    adopted=0
+    for item in rows:
+        if not isinstance(item,dict) or item.get('status')=='adopted':continue
+        key=str(item.get('source_job_id') or '')
+        with jobs_lock:job=jobs.get(key)
+        if job is None:continue
+        clip_url_value=str(item.get('clip_url') or '')
+        if job.status=='completed' and any(clip.url==clip_url_value for clip in job.clips):
+            item['status']='adopted';continue
+        if job.status!='failed' or job.clips or not job.request.confirm_source_rights or not job.request.source_rights_evidence.strip():continue
+        with process_lock:
+            if key in job_processes:continue
+        media=output_path_from_url(clip_url_value)
+        if (media is None or not media.is_file() or media.parent.name!='clips'
+                or not media.name.startswith('clip_') or not item.get('sha256')):continue
+        side=json.loads(media.with_suffix('.json').read_text())
+        audit=side.get('recovery_ai_qc') or {}
+        source=normalize_youtube_video_url(str(side.get('source_url') or ''))
+        if (side.get('recovery_source_job_id')!=key or not source
+                or source!=normalize_youtube_video_url(job.request.url)
+                or audit.get('decision')!='PASS_UPLOAD' or audit.get('upload_allowed') is not True
+                or audit.get('output_sha256')!=item['sha256']
+                or file_sha256(media)!=item['sha256']):continue
+        found=[clip for clip in discover_clips(0,media.parent.parent) if clip.url==clip_url_value]
+        if len(found)!=1 or upload_media_duration_issue(media):continue
+        valid,rejected=partition_completed_clips_by_integrity(job.request,found)
+        if rejected or not valid:continue
+        candidate=ClipCandidate.model_validate(item['candidate'])
+        if (abs(float(side.get('source_original_start',-1))-candidate.start)>.05
+                or abs(float(side.get('source_original_end',-1))-candidate.end)>.05):continue
+        with jobs_lock:
+            live=jobs.get(key)
+            if live is None or live.status!='failed' or live.updated_at!=job.updated_at or live.clips:continue
+            jobs[key]=live.model_copy(update={'status':'completed','updated_at':now_iso(),'finished_at':now_iso(),
+                'progress_percent':100,'progress_stage':'complete','progress_detail':'Klip diselamatkan dari adegan utuh dan lolos QC.',
+                'source_title':item.get('source_title') or live.source_title,'source_uploader':item.get('source_uploader') or live.source_uploader,
+                'source_url':source,'clips':valid,'candidates':[candidate],'error':None,
+                'logs':[*live.logs,f'REVIEWED_OUTPUT_RECOVERED:{item["sha256"]}: adegan sumber diverifikasi dan dirender ulang.'][-120:]})
+            save_jobs_unlocked()
+        item['status']='adopted';adopted+=1
+    temporary=path.with_suffix('.json.tmp')
+    temporary.write_text(json.dumps(rows,indent=2)+'\n');temporary.replace(path)
+    return adopted
+
+
+def tiktok_retry_sweeper_loop() -> None:
+    global tiktok_retry_sweeper_running
+    try:
+        while env_bool('TIKTOK_AUTOMATIC_RETRY_ENABLED',True) and not tiktok_retry_sweeper_stop.is_set():
+            try:adopt_reviewed_recovery_outputs_once()
+            except Exception as exc:
+                print(f'Pemulihan hasil ditunda: {type(exc).__name__}',flush=True)
+            try:queue_retryable_tiktok_uploads_once()
+            except Exception as exc:
+                print(f'Retry TikTok ditunda: {type(exc).__name__}',flush=True)
+            tiktok_retry_sweeper_wakeup.wait(timeout=15)
+            tiktok_retry_sweeper_wakeup.clear()
+    finally:
+        with tiktok_retry_sweeper_lock:tiktok_retry_sweeper_running=False
+
+
+@app.on_event('startup')
+def start_tiktok_retry_sweeper_if_needed() -> None:
+    global tiktok_retry_sweeper_running,tiktok_retry_sweeper_thread
+    if not env_bool('TIKTOK_AUTOMATIC_RETRY_ENABLED',True):return
+    with tiktok_retry_sweeper_lock:
+        if tiktok_retry_sweeper_running:return
+        tiktok_retry_sweeper_running=True
+        tiktok_retry_sweeper_stop.clear()
+    tiktok_retry_sweeper_thread=threading.Thread(target=tiktok_retry_sweeper_loop,daemon=True,name='tiktok-safe-retry')
+    tiktok_retry_sweeper_thread.start()
+
+
+@app.on_event('shutdown')
+def stop_tiktok_retry_sweeper() -> None:
+    tiktok_retry_sweeper_stop.set()
+    tiktok_retry_sweeper_wakeup.set()
+    if tiktok_retry_sweeper_thread and tiktok_retry_sweeper_thread is not threading.current_thread():
+        tiktok_retry_sweeper_thread.join(timeout=5)
+
+
 def queue_completed_job_uploads_once() -> dict[str, int]:
     """Act as the background operator for completed clips without requiring the UI."""
     counts = {"youtube": 0, "tiktok": 0, "repair": 0}
@@ -13537,6 +13845,7 @@ def completed_job_upload_sweeper_loop() -> None:
             try:
                 reconcile_deleted_youtube_reserves_once()
                 queue_youtube_draft_recoveries_once()
+                queue_tiktok_caption_recoveries_once()
                 queue_completed_job_uploads_once()
             except Exception as exc:
                 print(f"Operator upload pulih dari error sementara: {type(exc).__name__}", flush=True)
@@ -14485,7 +14794,11 @@ def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
     elif data["top"] is not None:
         data["top"] = max(1, min(int(data["top"]), MAX_REQUESTED_CLIPS))
 
-    if request.clip_mode != "long_animate" and request.analyze_seconds is None:
+    if request.clip_mode == "highlight_5m" and request.analyze_seconds is None:
+        # A Long needs the ending, which often lies past the Short analysis
+        # budget. Never turn full-source Long analysis into a 20-minute prefix.
+        data["analyze_seconds"] = None
+    elif request.clip_mode != "long_animate" and request.analyze_seconds is None:
         data["analyze_seconds"] = choose_auto_analyze_seconds(duration)
 
     if request.ai_enabled:
@@ -14899,6 +15212,7 @@ def clipper_worker_environment(request: ClipJobRequest) -> dict[str, str]:
             storyboard_provider = "local_free"
         environment["LONG_ANIMATE_VIDEO_PROVIDER"] = storyboard_provider
     for scheduler_flag in (
+        "CLIPFORGE_CRON_DIRECTOR_EFFECTS",
         "SHORTS_SCHEDULED_HUMAN_EDITOR_ENABLED",
         "SHORTS_SCHEDULED_CONTEXTUAL_AUDIO_ENABLED",
         "SHORTS_SCHEDULED_SOCIAL_CARD_ENABLED",
@@ -14908,6 +15222,8 @@ def clipper_worker_environment(request: ClipJobRequest) -> dict[str, str]:
         "SHORTS_SCHEDULED_SUBSCRIBE_PULSE_ENABLED",
     ):
         environment.pop(scheduler_flag, None)
+    if request.scheduled_director_effects:
+        environment["CLIPFORGE_CRON_DIRECTOR_EFFECTS"] = "true"
     if request.scheduled_human_editor:
         environment["SHORTS_SCHEDULED_HUMAN_EDITOR_ENABLED"] = "true"
     if request.scheduled_contextual_audio:
@@ -15090,6 +15406,8 @@ def run_job(job_id: str) -> None:
             script_path = output_root / "story_input.txt"
             script_path.write_text(request.script_text.strip() + "\n", encoding="utf-8")
         command = build_clipper_command(request, output_root, script_path)
+        if not request.review_only and normalize_youtube_video_url(request.url):
+            remember_source_processing_attempt(job_id, request)
         process = subprocess.Popen(
             command,
             cwd=BASE_DIR,
@@ -15101,6 +15419,13 @@ def run_job(job_id: str) -> None:
             errors="replace",
             bufsize=1,
         )
+    except cron_source_policy.SourceProcessLimitReached as exc:
+        set_job(job_id,status='cancelled',started_at=None,**finish_job_updates(started_perf),
+            progress_stage='skipped_source_limit',progress_detail='Sumber dilewati; batas dua proses tercapai.',
+            logs=[str(exc)],error=None)
+        job_secrets.pop(job_id,None)
+        worker_slot.release()
+        return
     except Exception as exc:
         _, cleanup_message = cleanup_failed_job_artifacts(output_root)
         set_job(
@@ -18764,16 +19089,93 @@ def recently_rejected_scheduled_source_urls(now: datetime | None = None) -> set[
     return excluded
 
 
+def source_processing_ledger_path() -> Path:
+    return SOURCE_USAGE_HISTORY_PATH.with_name('source_process_attempts.json')
+
+
+def source_processing_snapshot(exclude_job_id: str = '') -> dict[str, set[str]]:
+    """Collect distinct processing jobs, including historical/deleted failures."""
+    observed: dict[str, set[str]] = {}
+    def add(url: str, job_id: str) -> None:
+        normalized = normalize_youtube_video_url(url)
+        if normalized and job_id and job_id != exclude_job_id:
+            observed.setdefault(normalized,set()).add(job_id)
+    with source_usage_history_lock:
+        history = {url:dict(record) for url,record in source_usage_history.items()}
+    for url, record in history.items():
+        events = record.get('events') or []
+        for event in events:
+            if isinstance(event,dict) and source_usage_event_has_rendered_output(event):
+                add(url,str(event.get('job_id') or ''))
+        if not events:
+            for job_id in record.get('job_ids') or []:
+                add(url,str(job_id))
+    # Bootstrap the lifetime ledger from monthly archives once, before the
+    # fast/display indices can truncate older successfully rendered sources.
+    if not source_processing_ledger_path().exists():
+        for path in source_usage_archive_root().glob('*/*/source_usage.json'):
+            payload = json.loads(path.read_text())
+            events = payload.get('items',[]) if isinstance(payload,dict) else payload
+            for event in events:
+                if isinstance(event,dict) and source_usage_event_has_rendered_output(event):
+                    add(str(event.get('source_url') or ''),str(event.get('job_id') or ''))
+    with jobs_lock:
+        job_snapshot = list(jobs.values())
+    for job in job_snapshot:
+        if job.request.review_only or job.id == exclude_job_id:
+            continue
+        if job.progress_stage=='skipped_source_limit':
+            continue
+        if str(job.error or '').startswith('Proses dibatalkan sebelum'):
+            continue
+        if job.started_at or job.status in {'running','completed'}:
+            add(job.source_url or job.request.url,job.id)
+    with auto_viral_lock:
+        run_items = [dict(item) for run in auto_viral_runs.values() for item in run.processed]
+    for item in run_items:
+        if item.get('skip_reason')=='source_process_limit':
+            continue
+        source = item.get('source') if isinstance(item.get('source'),dict) else {}
+        url = str(item.get('url') or source.get('url') or '')
+        for key,status_key in [('job_id','job_status'),('long_job_id','long_job_status')]:
+            if item.get(status_key) in {'completed','failed','cancelled'}:
+                add(url,str(item.get(key) or ''))
+    return observed
+
+
+def source_processing_counts() -> dict[str, int]:
+    records = cron_source_policy.merge_attempts(source_processing_ledger_path(),source_processing_snapshot())
+    return {url:len(ids) for url,ids in records.items()}
+
+
+def cron_source_process_limit_reached(value: str) -> bool:
+    normalized = normalize_youtube_video_url(value)
+    return bool(normalized and source_processing_counts().get(normalized,0) >= cron_source_policy.PROCESS_LIMIT)
+
+
+def remember_source_processing_attempt(job_id: str, request: ClipJobRequest) -> None:
+    source = normalize_youtube_video_url(request.url)
+    if not source:
+        return
+    cron_source_policy.merge_attempts(
+        source_processing_ledger_path(),source_processing_snapshot(exclude_job_id=job_id),
+        source=source,job_id=job_id,
+        enforce=bool(request.scheduled_director_effects or request.scheduled_public_source_credit),
+    )
+
+
 def recently_processed_job_source_urls(cooldown_days: int = 7) -> set[str]:
-    """Return scheduler exclusions for a rolling cooldown, not a lifetime ban.
+    """Respect the lifetime two-process cap in addition to the rolling cooldown.
 
     Successful source-use records are timestamped. Terminal selection failures
     get a separate short cooldown from durable campaign checkpoints. Active
-    jobs are always excluded, while completed sources become eligible after the cooldown
-    so a proven source can re-enter the weekly rotation with a different clip.
+    jobs are always excluded. A source below the lifetime cap can re-enter
+    after its cooldown; the third processing pass is never admitted by cron.
     """
     cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, cooldown_days))
     excluded = recently_rejected_scheduled_source_urls()
+    excluded.update(url for url,count in source_processing_counts().items()
+                    if count >= cron_source_policy.PROCESS_LIMIT)
     with source_usage_history_lock:
         history_snapshot = {
             url: dict(record) for url, record in source_usage_history.items()
@@ -19233,6 +19635,7 @@ def create_auto_viral_clip_job(
         require_creative_commons=request.require_creative_commons,
         auto_upload_youtube=False,
         scheduled_public_source_credit=scheduled,
+        scheduled_director_effects=scheduled,
         scheduled_news_hot=news_hot,
         scheduled_human_editor=bool(
             scheduled
@@ -19275,6 +19678,8 @@ def create_auto_viral_clip_job(
 
 def queue_auto_viral_clip_job(job_request: ClipJobRequest) -> ClipJob:
     """Persist one already-normalized automation job without starting it."""
+    if (job_request.scheduled_director_effects or job_request.scheduled_public_source_credit) and cron_source_process_limit_reached(job_request.url):
+        raise cron_source_policy.SourceProcessLimitReached('Sumber mencapai batas dua proses; cron memilih sumber lain.')
     secret = job_request.ai_api_key
     job_id = uuid.uuid4().hex
     if secret:
@@ -19343,6 +19748,7 @@ def create_auto_viral_paired_long_job(
         require_creative_commons=request.require_creative_commons,
         auto_upload_youtube=False,
         scheduled_public_source_credit=short_job.request.scheduled_public_source_credit,
+        scheduled_director_effects=bool(short_job.request.scheduled_director_effects or short_job.request.scheduled_public_source_credit),
         scheduled_human_editor=short_job.request.scheduled_human_editor,
         scheduled_contextual_audio=short_job.request.scheduled_contextual_audio,
         # Portrait/card composition is a vertical Shorts-only cron treatment.
@@ -19364,6 +19770,148 @@ def create_auto_viral_paired_long_job(
 
 
 long_production_lock = threading.RLock()
+long_qc_lock = threading.RLock()
+long_qc_active: set[str] = set()
+
+
+def long_qc_path(job_id: str, clip_url: str) -> Path:
+    key = hashlib.sha256((job_id + "\n" + clip_url).encode()).hexdigest()
+    return long_production_path().parent / "long_review_qc" / (key + ".json")
+
+
+def save_long_qc(path: Path, record: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(path)
+
+
+def long_qc_context(job: ClipJob, clip: ClipFile) -> dict[str, Any]:
+    return {
+        "source_job_id": job.id, "source_clip_url": clip.url,
+        "source_url": job.source_url or job.request.url,
+        "rights_confirmed": job.request.confirm_source_rights,
+        "rights_evidence": job.request.source_rights_evidence,
+        "rights_risks": source_rights_risk_reasons(metadata_for_job(job)),
+        "claim_block": youtube_clip_claim_block(job.id, clip.url),
+        "news_hot": job.request.scheduled_news_hot,
+        "repair_attempted": bool(job.repair_source_job_id or job.repair_source_clip_url
+            or any(line.startswith(AUTO_REPAIR_ATTEMPT_PREFIX) for line in job.logs)),
+        "score_floor_met": (clip.fyp_score is not None and clip.fyp_score >= SHORT_FYP_TARGET_SCORE
+                            and clip.growth_quality_gate_passed is not False),
+    }
+
+
+def run_long_qc(job_id: str, clip_url: str) -> None:
+    """Review one exact artifact and enqueue only Private, without human-signoff spoofing."""
+    key = job_id + "\n" + clip_url
+    path = long_qc_path(job_id, clip_url)
+    try:
+        job, clip, _ = find_job_clip(job_id, clip_url)
+        media = output_path_from_url(clip_url)
+        if media is None:
+            return
+        context = long_qc_context(job, clip)
+        signature = long_video_qc.fingerprint(media, context)
+        record = json.loads(path.read_text()) if path.exists() else {}
+        if record.get("fingerprint") != signature or record.get("status") != "reviewed":
+            result = long_video_qc.audit_long(media, context)
+            record = {**result, "fingerprint": signature, "source_job_id": job_id,
+                      "source_clip_url": clip_url, "updated_at": now_iso()}
+            if result["status"] != "reviewed":
+                record["retry_at"] = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+            save_long_qc(path, record)
+        audit = record.get("audit") or {}
+        if audit.get("decision"):
+            with long_production_lock:
+                state = long_production_state()
+                for attempt in state["attempts"]:
+                    if attempt.get("job_id") == job_id:
+                        attempt["qc_decision"] = audit["decision"]
+                save_long_production_state(state)
+        # REPAIR_ONCE is a durable editorial handoff. The existing recut
+        # executor accepts Shorts only; never send a Long into it or retry it.
+        if audit.get("decision") != "PASS_UPLOAD" or audit.get("upload_allowed") is not True:
+            return
+        with long_production_lock:
+            policy = long_production_state()
+        if not policy.get("auto_qc_enabled") or not policy.get("auto_qc_private_upload"):
+            return
+        # File, claim, rights and score can change while the model is running.
+        job, clip, _ = find_job_clip(job_id, clip_url)
+        if long_video_qc.fingerprint(media, long_qc_context(job, clip)) != signature:
+            record.update(status="evidence_changed", audit=None)
+            save_long_qc(path, record)
+            return
+        issue = youtube_monetization_preflight_issue(job, clip)
+        if issue:
+            record["upload_hold"] = issue
+            save_long_qc(path, record)
+            return
+        with youtube_upload_creation_lock:
+            pending = pending_completed_job_upload_urls(job, [clip_url], platform="youtube")
+            if not pending:
+                return
+            require_youtube_ready()
+            upload = create_youtube_upload_record(job_id, YouTubeUploadRequest(
+                clip_url=clip_url, visibility="private",
+            ))
+            # Persist the real queue before the QC pointer. After a crash in
+            # either gap, startup resumes the same ID and pending() blocks a
+            # second upload. Never leave an ID pointing at an unpersisted job.
+            with youtube_uploads_lock:
+                if upload.id not in youtube_uploads:
+                    youtube_uploads[upload.id] = upload
+                save_youtube_uploads_unlocked()
+            record.update(upload_id=upload.id, upload_visibility=upload.visibility)
+            save_long_qc(path, record)
+            queue_youtube_upload_jobs([upload])
+    except Exception as exc:
+        # Do not lose a completed audit or an unknown remote checkpoint.
+        record = json.loads(path.read_text()) if path.exists() else {}
+        record.update(worker_error=type(exc).__name__,
+            retry_at=(datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat())
+        save_long_qc(path, record)
+    finally:
+        with long_qc_lock:
+            long_qc_active.discard(key)
+
+
+def queue_review_long_qc_once() -> int:
+    with long_production_lock:
+        state = long_production_state()
+    if not state.get("auto_qc_enabled"):
+        return 0
+    with jobs_lock:
+        review_jobs = [job for job in jobs.values() if job.status == "completed"
+            and job.request.clip_mode == "highlight_5m" and job.request.publication_review_required]
+    for job in review_jobs:
+        for clip in job.clips:
+            path = long_qc_path(job.id, clip.url)
+            record = json.loads(path.read_text()) if path.exists() else {}
+            if record.get("retry_at") and parse_utc_datetime(record["retry_at"]) > datetime.now(timezone.utc):
+                continue
+            if record.get("upload_id"):
+                continue
+            # All three terminal decisions stay cached while exact evidence
+            # remains unchanged. Missing AI retries are rate-limited above.
+            media = output_path_from_url(clip.url)
+            if media is None:
+                continue
+            signature = long_video_qc.fingerprint(media, long_qc_context(job, clip))
+            if record.get("status") == "reviewed" and record.get("fingerprint") == signature:
+                if (record.get("audit") or {}).get("decision") != "PASS_UPLOAD":
+                    continue
+                if not state.get("auto_qc_private_upload") or record.get("upload_hold"):
+                    continue
+            key = job.id + "\n" + clip.url
+            with long_qc_lock:
+                if long_qc_active:
+                    return 0
+                long_qc_active.add(key)
+            threading.Thread(target=run_long_qc, args=(job.id, clip.url), daemon=True).start()
+            return 1
+    return 0
 
 
 def long_production_path() -> Path:
@@ -19426,6 +19974,8 @@ def queue_review_long_once() -> dict[str, Any]:
         day = datetime.now(ZoneInfo("Asia/Jakarta")).date().isoformat()
         attempts = state["attempts"]
         today = [row for row in attempts if row["day"] == day]
+        rejected_ids = {row.get("job_id") for row in attempts
+                        if row.get("qc_decision") in {"DROP_SOURCE", "REPAIR_ONCE"}}
         completed_ids: set[str] = set()
         for row in today:
             job = current_jobs.get(row.get("job_id"))
@@ -19434,10 +19984,16 @@ def queue_review_long_once() -> dict[str, Any]:
                 # Includes an interrupted durable reservation; require inspection.
                 return {"status": "reserved", "job_id": row.get("job_id")}
             if status == "completed":
+                if state.get("auto_qc_enabled"):
+                    if row.get("job_id") in rejected_ids:
+                        continue
+                    if row.get("qc_decision") != "PASS_UPLOAD":
+                        return {"status": "waiting_for_qc", "job_id": row.get("job_id")}
                 completed_ids.add(str(row.get("job_id")))
         completed_ids.update(
             job.id for job in current_jobs.values()
             if job.request.clip_mode == "highlight_5m" and job.status == "completed"
+            and job.id not in rejected_ids
             and parse_utc_datetime(job.created_at).astimezone(ZoneInfo("Asia/Jakarta")).date().isoformat() == day
         )
         if len(completed_ids) >= state["daily_target"]:
@@ -19462,6 +20018,8 @@ def queue_review_long_once() -> dict[str, Any]:
                     (s for s in run.selected_sources if s.get("url") == item.get("url")), None
                 )
                 if not source or not run.request.source_rights_confirmed or not run.request.source_rights_evidence.strip():
+                    continue
+                if cron_source_process_limit_reached(str(source.get('url') or '')):
                     continue
                 request = run.request.model_copy(deep=True, update={
                     "create_paired_long_video": True, "paired_long_video_count": 1,
@@ -21624,7 +22182,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 run_id,
                 (
                     f"Mengecualikan {len(excluded_sources)} sumber dalam cooldown "
-                    f"{source_cooldown_days} hari; sumber berkualitas yang lebih lama boleh berputar kembali"
+                    f"{source_cooldown_days} hari serta batas dua proses sepanjang riwayat; sumber yang penuh dilewati"
                     if run.trigger == "schedule"
                     else f"Mengecualikan {len(excluded_sources)} sumber yang sudah pernah masuk proses clipping"
                 ),
@@ -21659,6 +22217,9 @@ def run_auto_viral_campaign(run_id: str) -> None:
             ensure_auto_viral_campaign_not_cancelled(run_id)
             if completed_count >= run_request.video_count:
                 break
+            if run.trigger == 'schedule' and cron_source_process_limit_reached(str(source.get('url') or '')):
+                append_auto_viral_log(run_id,f"Lewati {source.get('title')}: sumber sudah mencapai batas dua proses; mencari kandidat lain.")
+                continue
             if run.trigger == "schedule" and run_request.auto_upload_youtube and youtube_cron_buffer_enabled() and not youtube_cron_capacity_room():
                 append_auto_viral_log(run_id, "Cadangan Private dan antrean jadwal penuh; pencarian sumber baru menunggu slot tersedia.")
                 break
@@ -21708,6 +22269,8 @@ def run_auto_viral_campaign(run_id: str) -> None:
                     raise RuntimeError("Job hilang setelah clipping")
                 item["job_status"] = finished_job.status
                 item["clip_count"] = len(finished_job.clips)
+                if finished_job.progress_stage=='skipped_source_limit':
+                    raise cron_source_policy.SourceProcessLimitReached('Sumber mencapai dua proses; worker dilewati sebelum download.')
                 if finished_job.status != "completed" or not finished_job.clips:
                     raise RuntimeError(finished_job.error or f"Job selesai dengan status {finished_job.status}")
 
@@ -21779,6 +22342,10 @@ def run_auto_viral_campaign(run_id: str) -> None:
                     run_request.create_paired_long_video
                     and completed_count < auto_viral_paired_long_limit(run_request)
                 )
+                if build_paired_long and run.trigger == 'schedule' and cron_source_process_limit_reached(str(source.get('url') or '')):
+                    build_paired_long = False
+                    item['long_job_status'] = 'skipped_source_limit'
+                    append_auto_viral_log(run_id,'Pasangan Long dilewati karena sumber mencapai dua proses; Short yang sudah selesai tetap dilanjutkan.')
                 # Keep authoritative timestamps after verified Short uploads clean
                 # their workspace, so independent Long production can recover.
                 item["paired_short_snapshot"] = paired_short_snapshot(finished_job)
@@ -21971,6 +22538,13 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 ):
                     item["status"] = "completed"
                 completed_count += 1
+            except cron_source_policy.SourceProcessLimitReached as exc:
+                item['status'] = 'skipped'
+                item['skip_reason'] = 'source_process_limit'
+                if not item_checkpointed:
+                    processed.append(item)
+                append_auto_viral_log(run_id,str(exc))
+                update_auto_viral_run(run_id,processed=processed)
             except AutoViralCampaignCancelled:
                 item["status"] = "cancelled"
                 item["error"] = "Automation dihentikan untuk rebuild paksa"
@@ -23720,6 +24294,7 @@ def auto_viral_scheduler_loop() -> None:
                     print(f"Promosi cadangan Private ditunda: {exc}", flush=True)
                 reconcile_interrupted_scheduled_clip_runs()
                 try:
+                    queue_review_long_qc_once()
                     queue_review_long_once()
                 except Exception as exc:
                     print(f"Produksi Long untuk review ditunda: {exc}", flush=True)
@@ -23910,7 +24485,12 @@ def set_auto_viral_schedule(
 @app.get("/api/automation/viral-cc/long-production")
 def get_long_production() -> dict[str, Any]:
     with long_production_lock:
-        return long_production_state()
+        state = long_production_state()
+    records = long_production_path().parent / "long_review_qc"
+    state["qc_reviews"] = [json.loads(path.read_text()) for path in sorted(records.glob("*.json"))]
+    provider = long_video_qc.provider_config()
+    state["qc_vision_configured"] = bool(provider["base_url"] and provider["model"])
+    return state
 
 
 @app.post("/api/automation/viral-cc/long-production")
@@ -23918,7 +24498,12 @@ def set_long_production(request: LongProductionControlRequest) -> dict[str, Any]
     with long_production_lock:
         state = long_production_state()
         state.update(enabled=request.enabled, daily_target=request.daily_target)
+        for field in ("auto_qc_enabled", "auto_qc_private_upload"):
+            value = getattr(request, field)
+            if value is not None:
+                state[field] = value
         save_long_production_state(state)
+    queue_review_long_qc_once()
     result = queue_review_long_once()
     auto_viral_scheduler_wakeup.set()
     return {**get_long_production(), "production": result}
@@ -25402,6 +25987,7 @@ def create_job(request: ClipJobRequest) -> ClipJob:
     request = request.model_copy(
         update={
             "scheduled_human_editor": False,
+            "scheduled_director_effects": False,
             "scheduled_contextual_audio": False,
             "scheduled_social_card_layout": False,
             "scheduled_reaction_avatar_layout": False,
@@ -25520,7 +26106,7 @@ def create_job(request: ClipJobRequest) -> ClipJob:
             )
         if request.review_only:
             request = request.model_copy(update={"auto_upload_youtube": False})
-        else:
+        elif not (request.confirm_source_rights and len(request.source_rights_evidence.split()) >= 6):
             request = request.model_copy(update={"require_creative_commons": True})
 
     request = normalize_job_request(request)

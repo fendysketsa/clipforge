@@ -1,0 +1,7 @@
+{
+  "read_only_audit": true,
+  "known_sources": 510,
+  "sources_at_or_above_two": 78,
+  "max_distinct_processes": 46,
+  "note": "Existing persisted jobs, source usage, monthly successful-render archives and campaign checkpoints. No queue or remote platform changed."
+}

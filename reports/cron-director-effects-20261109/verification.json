@@ -1,0 +1,75 @@
+{
+  "feature": "cron-only adaptive director accents",
+  "source_ready": true,
+  "production_activated": false,
+  "runtime_checked_local_time": "2026-11-09T19:35:29+07:00",
+  "runtime_observation": {
+    "enabled": true,
+    "scheduler_running": true,
+    "active_run_id": "8c1f5746160945be80a470c42d296a48",
+    "cron_director_effects_required": null,
+    "cron_director_effects_policy_version": null
+  },
+  "activation_blocker": "Interactive sudo password required; no production restart performed.",
+  "activation_command": "sudo bash /www/wwwroot/clipper/clipforge/scripts/activate-cron-director-effects.sh",
+  "policy": {
+    "short_cues": "1-2 per cron clip",
+    "long_cues": "1-2 across selected chapters",
+    "manual_enabled": false,
+    "sensitive_context": "one quiet silent cue",
+    "source_timing": "estimated phrase offsets inside timed source segments; no claim of word-level alignment",
+    "placement": "final-frame motion/detail, optional face detection, geometric and caption guards; conservative edge fallback",
+    "new_cron_upload_gate": "rendered cues and unchanged-clock verification required"
+  },
+  "checks": [
+    {
+      "scope": "backend/tests/test_cron_director_effects.py",
+      "passed": 34,
+      "latest": true
+    },
+    {
+      "scope": "previous combined effects, long_production, deployment_idle_guard, youtube_uploads",
+      "passed": 309,
+      "note": "Included 33 effects tests before the final additional source-rights guard test."
+    },
+    {
+      "scope": "backend/tests/test_caption_style.py",
+      "passed": 220
+    },
+    {
+      "scope": "backend/tests/test_api_budget.py -k \"cron or scheduled or worker or manual\"",
+      "passed": 61,
+      "deselected": 216
+    },
+    {
+      "scope": "real clipper.export_clip synthetic integration",
+      "passed": true,
+      "proof": "full-export-verification.json"
+    },
+    {
+      "scope": "30fps and 30000/1001 actual encoding",
+      "passed": true,
+      "assertions": [
+        "270 frames preserved",
+        "geometry preserved",
+        "duration preserved",
+        "audio packet MD5 preserved",
+        "cue bounding boxes avoid protected regions"
+      ]
+    },
+    {
+      "scope": "python compilation, activation shell syntax, git diff whitespace",
+      "passed": true
+    }
+  ],
+  "unresolved_validation": "Broader test_api_budget run stopped at unrelated streaming storyboard test; full file not reported as passed.",
+  "demo": {
+    "video": "cron-adaptive-preview.mp4",
+    "animation": "impact-preview.gif",
+    "still": "preview-burst.jpg",
+    "vocabulary": "effect-vocabulary.jpg",
+    "plan": "preview-plan.json",
+    "uploaded": false,
+    "original_modified": false
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "verified_at": "2026-11-09T22:39:19.502849+00:00",
+  "original_failure": "containerd failed to open writer: ref moby/1/... locked ... unavailable during image export",
+  "repair": "Retry recognized export lock once from cache, then build through a daemon-scoped docker-container builder with default-load=true. Maximum three build attempts. Other failures stop immediately.",
+  "runtime_activation_confirmed": false,
+  "privileged_access": "sudo -n requires a password; direct Docker socket access denied",
+  "latest_operator_response": "Still reports an error; requested the last 15-25 terminal lines because the new build helper has not generated a live report.",
+  "live_build_report_exists": true,
+  "validation": {
+    "focused_tests_passed": 75,
+    "shell_syntax": "pass",
+    "git_diff_check": "pass"
+  },
+  "hashes": {
+    "scripts/build-backend-image.py": "184a5320b55759b07e4fb7a6fac5de59ba20ff0bbe901abd21ce73eaab80f79b",
+    "scripts/activate-youtube-quiet-check.sh": "b6189b05867cc45811ecb635b1133a8f39c375b5ad566c2dee9203f076b2cd7e",
+    "scripts/activate-cron-director-effects.sh": "209e7c5e1e36ca219009b0f7809b3d05488e56dd13d5a26c23cd104458979339",
+    "backend/tests/test_backend_image_build.py": "03455a04a7a5e692934c730f10d3a926e332efcc459defc1dc31db105b67b26c",
+    "backend/tests/test_deployment_idle_guard.py": "b58f44a016aa5ef349972d8a4417af06aa83eaa3c338909ee4920cc9c6e16fdd"
+  },
+  "documentation": [
+    "https://docs.docker.com/reference/cli/docker/compose/build/",
+    "https://docs.docker.com/build/builders/drivers/docker-container/"
+  ]
+}

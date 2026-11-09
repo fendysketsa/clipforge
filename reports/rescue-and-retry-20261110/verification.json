@@ -1,0 +1,93 @@
+{
+  "checked_at": "2026-11-10T05:30:27+07:00",
+  "implemented": {
+    "history_three_cards": true,
+    "cron_director_accents": true,
+    "source_grounded_statement": true,
+    "source_process_limit": 2,
+    "topic_follow_once": true,
+    "tiktok_safe_retry_count": 3,
+    "tiktok_retry_backoff_seconds": [
+      60,
+      180,
+      600
+    ],
+    "source_topic_strategy_version": 3,
+    "reviewed_failed_job_recovery": true
+  },
+  "tests": [
+    {
+      "scope": "TikTok retry/upload + captions + deployment + source cap/effects + Long + recovery adoption + YouTube verification",
+      "passed": 500
+    },
+    {
+      "scope": "relevant API budget cron/scheduled/history/worker/manual",
+      "passed": 66,
+      "deselected": 211
+    }
+  ],
+  "live_caption_control": {
+    "existing_draft": true,
+    "new_page_created": false,
+    "file_selected": false,
+    "post_clicked": false,
+    "editor_contenteditable": "true",
+    "visibility_state": "hidden",
+    "caption_round_trip_verified": true,
+    "caption_preserved": true
+  },
+  "adoption_integration": {
+    "isolated_state_only": true,
+    "adopted": 2,
+    "jobs": [
+      {
+        "id": "d96655e1b1914bfa8464a376c642c221",
+        "status": "completed",
+        "clip_count": 1,
+        "upload_issue": null
+      },
+      {
+        "id": "1fe4bceba66e497cbe533557f2ab1917",
+        "status": "completed",
+        "clip_count": 1,
+        "upload_issue": null
+      }
+    ]
+  },
+  "recovered_clips": [
+    {
+      "source_id": "DAKio0d-_LQ",
+      "source_job_id": "d96655e1b1914bfa8464a376c642c221",
+      "output": "/www/wwwroot/clipper/clipforge/backend/outputs/manual-rescue-20261110/DAKio0d-_LQ/clips/clip_01_scanner-minecraft-ini-bisa-menemukan-ponsel-di-inventory.mp4",
+      "duration_seconds": 60.366667,
+      "decision": "PASS_UPLOAD",
+      "output_sha256": "3354bca00caf5fc3523464acebaa2200048f42356363bc9becbdfd236b706c75",
+      "upload_performed": false,
+      "backend_adoption": "pending_activation"
+    },
+    {
+      "source_id": "Y65eFkC2nS0",
+      "source_job_id": "1fe4bceba66e497cbe533557f2ab1917",
+      "output": "/www/wwwroot/clipper/clipforge/backend/outputs/manual-rescue-20261110/Y65eFkC2nS0/clips/clip_01_mau-main-drum-malah-mencari-sumber-bunyinya.mp4",
+      "duration_seconds": 29.3,
+      "decision": "PASS_UPLOAD",
+      "output_sha256": "f03d4efc5f9cdba13cac444c0bf81272359da13fe2612ddad82f72d118b2b4fc",
+      "upload_performed": false,
+      "backend_adoption": "pending_activation"
+    }
+  ],
+  "production": {
+    "new_backend_features_active": false,
+    "last_probe_new_capabilities_present": false,
+    "activation_process_last_observed": false,
+    "sudo_available_without_password": false,
+    "existing_uploaded_videos_untouched": true,
+    "posting_performed_in_live_control_test": false
+  },
+  "operator_manifests": {
+    "recovery": "backend/data/reviewed_recovery_outputs.json",
+    "source_counts": "backend/data/source_process_attempts.json",
+    "private_intake": "backend/data/automatic_upload_policy.json"
+  },
+  "activation_command": "sudo bash /www/wwwroot/clipper/clipforge/scripts/activate-cron-director-effects.sh"
+}

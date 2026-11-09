@@ -1,0 +1,9 @@
+# Failed clip review and authorized local cleanup
+
+Two failed analysis jobs (`272ddadc5dc444f387dd7dd50cbf127d`, `3a57f59bd0754397b3b88e45ecc8e929`) produced no clips after candidate expansion through 105 seconds. Both exact jobs were removed through the API and verified absent (GET 404). Their transient media had already been cleaned by the renderer.
+
+The rendered Nyamuk clip (`82cf9657a36e4dcea341cfbb86cd7cbd`) failed platform finalization because the Studio upload dialog/Next controls were missing; TikTok also failed on its caption control. This technical failure did not by itself prove poor source quality. The subsequent local QC review inspected the exact transcript, sidecar, all seven warning timestamps, opening/middle/payoff/ending frames including the 42.8-second outro, complete media decode and audio levels. The clip's question had no payoff in its 40-second excerpt, its ending cut to an unrelated quote, and its distribution caption misrepresented game mechanics as real mosquito information. Decision: DROP_SOURCE. FYP 92 did not override this semantic failure. Audio perceptual quality was not claimed assessed.
+
+The rejected clip's local source/result work directory and job were removed through the API (14 removed items), its policy IDs withdrawn from automatic intake, and file absence plus GET 404 confirmed. No active job/transfer or confirmed publication was tied to this target. All 972 previously confirmed platform upload records remained intact. The failed YouTube checkpoint for `NdEKBl4Xfrg` and failed TikTok history are preserved, along with a concise exact-ID audit. No remote YouTube video was deleted and no retransmission was attempted. This is a local cleanup result, not a claim about the current remote draft state.
+
+Evidence: `deleted-failed-jobs.json`, `qc-drop-source.json`, `rejected-clip-cleanup.json`, `media-check.json`, `contact-sheet.jpg`, and the ending frames.

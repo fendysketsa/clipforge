@@ -1,0 +1,18 @@
+{
+  "isolated_state_only": true,
+  "adopted": 2,
+  "jobs": [
+    {
+      "id": "d96655e1b1914bfa8464a376c642c221",
+      "status": "completed",
+      "clip_count": 1,
+      "upload_issue": null
+    },
+    {
+      "id": "1fe4bceba66e497cbe533557f2ab1917",
+      "status": "completed",
+      "clip_count": 1,
+      "upload_issue": null
+    }
+  ]
+}

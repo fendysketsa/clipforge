@@ -24,6 +24,8 @@ from rich.table import Table
 from slugify import slugify
 from yt_dlp import YoutubeDL
 
+import cron_director_effects
+
 from llm import AIConfig, chat_completion, extract_json, is_llm_unavailable_error
 from islamic_text import (
     islamic_indonesian_tts_text,
@@ -10707,6 +10709,7 @@ def _validated_creative_director_response(
     reason = re.sub(r"\s+", " ", str(value.get("reason") or "")).strip()
     if not intent or not reason:
         return None
+    result["accent_beats"] = cron_director_effects.validate_beats(value.get("accent_beats"))
     result.update(
         {
             "source": "ai",
@@ -10782,6 +10785,15 @@ def creative_director_plan(
             "bukan musik keras sepanjang klip. Gunakan contextual reaction/sound hanya bila ucapan jelas "
             "mendukung dan topiknya ringan.\n"
             f"{scheduled_editor_note}\n"
+            + ("Khusus cron: tambahkan accent_beats berisi 1-2 objek {quote, mood, statement}. "
+               "Quote harus frasa persis dari transkrip, minimal dua kata. Mood hanya surprise, delight, "
+               "action, question, realization, celebration, humor, emphasis, calm. Pilih beat yang memang "
+               "mendukung reaksi/aksi; jangan beri koordinat, timestamp, kode filter, atau fakta baru. "
+               "Statement opsional: frasa persis 2-8 kata yang layak ditegaskan secara tipografis; "
+               "pertahankan kata bukan/tidak/belum/diduga/menurut/katanya dan syarat kalimat. "
+               "Jangan ubah pertanyaan, opini, atau pengandaian menjadi fakta; jangan buat slogan seragam. "
+               "Kosongkan statement bila konteks tidak mendukung. Untuk konteks sensitif gunakan calm.\n" if env_enabled("CLIPFORGE_CRON_DIRECTOR_EFFECTS", False) else "")
+            +
             f"Judul: {clip.title}\nHook: {clip.hook}\nPOV: {clip.pov}\n"
             f"Lane: {plan.get('content_lane')}\nAccent aman: {plan.get('accent')}\n"
             f"Durasi: {clip.duration:.2f} detik\n"
@@ -11078,6 +11090,11 @@ def thumbnail_story_copy(
     raw_hook = suggested_hook or clip.hook or clip.title
     if is_source_branding_segment(raw_hook):
         raw_hook = clip.title if not is_source_branding_segment(clip.title) else raw_pov
+    if not long_form and not suggested_hook and len(clip.text.split()) >= 30:
+        from shorts_thumbnail import headline_options
+        choices = headline_options({'text': clip.text, 'hook': clip.hook, 'title': clip.title})
+        if choices and choices[0]['curiosity_score'] >= 15:
+            raw_hook = choices[0]['headline']
 
     if long_form:
         headline_source = raw_hook
@@ -11464,7 +11481,7 @@ def shorts_cta_overlay_filter(
     )
 
 
-def shorts_mid_subscribe_pulse_filter(duration: float) -> str:
+def shorts_mid_subscribe_pulse_filter(duration: float, *, follow_plan: dict | None = None) -> str:
     """Show one compact animated subscribe cue after the initial value beat.
 
     This is intentionally brief, silent, and above the caption safe area. It
@@ -11473,6 +11490,11 @@ def shorts_mid_subscribe_pulse_filter(duration: float) -> str:
     safe_duration = max(0.1, duration)
     start = min(max(6.0, safe_duration * 0.38), max(6.0, safe_duration - 5.5))
     end = min(safe_duration - 2.2, start + SHORTS_SUBSCRIBE_PULSE_SECONDS)
+    copy = dict(action='SUBSCRIBE',headline='LANJUTKAN SERI INI',support='Cerita baru, gaya yang sama')
+    if follow_plan and follow_plan.get('enabled'):
+        start,end=float(follow_plan['start']),float(follow_plan['end'])
+        copy.update(follow_plan['copy'])
+    safe = lambda key: re.sub(r'[^A-Za-z0-9 &!?/.-]','',str(copy[key]))[:42]
     if end - start < 0.75:
         return "null"
     enter_end = start + 0.16
@@ -11490,15 +11512,15 @@ def shorts_mid_subscribe_pulse_filter(duration: float) -> str:
             f"drawbox=x=160:y=286:w=760:h=5:color=#FF3158@1.0:t=fill:{active}",
             f"drawbox=x=178:y=306:w=178:h=66:color=#FF1744@0.98:t=fill:{active}",
             "drawtext="
-            f"fontfile={font_bold}:text='SUBSCRIBE':expansion=none:"
+            f"fontfile={font_bold}:text='{safe('action')}':expansion=none:"
             "fontcolor=white:fontsize=24:"
             f"x='{x_expr}+38':y=327:{active}",
             "drawtext="
-            f"fontfile={font_bold}:text='LANJUTKAN SERI INI':expansion=none:"
+            f"fontfile={font_bold}:text='{safe('headline')}':expansion=none:"
             "fontcolor=white:fontsize=25:borderw=1:bordercolor=black@0.70:"
             f"x='{x_expr}+222':y=311:{active}",
             "drawtext="
-            f"fontfile={font_regular}:text='Cerita baru, gaya yang sama':expansion=none:"
+            f"fontfile={font_regular}:text='{safe('support')}':expansion=none:"
             "fontcolor=#D9F7FF:fontsize=18:"
             f"x='{x_expr}+224':y=348:{active}",
         ]
@@ -16411,6 +16433,7 @@ def export_clip(
     creator_commentary_file: Path | None = None,
     progress_unit_number: int | None = None,
     progress_unit_count: int | None = None,
+    cron_effect_budget: int = 2,
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     base_name = base_name_override or f"clip_{clip.index:02}_{slugify(clip.title)[:72] or 'auto'}"
@@ -17090,7 +17113,21 @@ def export_clip(
         tiktok_strategy["series_identity_embedded"] = bool(
             automatic_short_title and auto_visual_accent != "evidence_stage"
         )
-    subscribe_pulse_planned = bool(
+    cron_accents_enabled = env_enabled('CLIPFORGE_CRON_DIRECTOR_EFFECTS', False)
+    cron_accent_plan = cron_director_effects.build_plan(
+        clip,clip_segments,creative_direction,enabled=cron_accents_enabled,
+        budget=cron_effect_budget,seed=str(video_path),
+    )
+    cron_follow_plan = cron_director_effects.follow_plan(
+        clip,clip_segments,cron_accent_plan,
+        enabled=bool(cron_accents_enabled and output_format=='vertical_short' and drawtext_supported
+                     and env_enabled('SHORTS_SCHEDULED_SUBSCRIBE_PULSE_ENABLED', True)),
+        protected_layout=bool(social_card_selected or reaction_avatar_selected),
+        protect_ending=shorts_should_protect_payoff(clip),
+    )
+    if cron_accents_enabled:
+        subscribe_prompt = cron_director_effects.follow_copy(clip)['prompt'].upper()
+    subscribe_pulse_planned = bool(cron_follow_plan['enabled']) if cron_accents_enabled else bool(
         output_format == "vertical_short"
         and drawtext_supported
         and duration >= 18.0
@@ -17104,6 +17141,8 @@ def export_clip(
     ) and not (
         output_format == "vertical_short" and shorts_should_protect_payoff(clip)
     ) and not social_card_selected and not reaction_avatar_selected
+    if cron_accents_enabled and output_format=='vertical_short':
+        subscriber_cta_planned = False  # The adaptive plan owns the one permitted invitation.
     applied_edits = list(clip.applied_edits)
     if creative_direction:
         director_label = (
@@ -17716,9 +17755,12 @@ def export_clip(
             ),
             "value_proposition": subscribe_prompt,
             "content_theme_derived": True,
-            "shown_after_payoff": bool(drawtext_supported and subscriber_cta_planned),
-            "shown_after_initial_value_beat": bool(subscribe_pulse_planned),
+            "shown_after_payoff": bool(drawtext_supported and (subscriber_cta_planned or cron_follow_plan.get('position')=='ending')),
+            "shown_after_initial_value_beat": bool(subscribe_pulse_planned and cron_follow_plan.get('position')!='ending'),
             "strategy": (
+                'single_silent_adaptive_follow_invitation'
+                if cron_follow_plan['enabled']
+                else
                 "single_silent_mid_video_series_subscribe_pulse"
                 if subscribe_pulse_planned
                 else
@@ -18457,6 +18499,8 @@ def export_clip(
             ),
         }
     if drawtext_supported:
+        if cron_accents_enabled and output_format=='vertical_short':
+            sidecar_payload['follow_cta'] = cron_follow_plan
         vf = f"{vf},{channel_watermark_filter(output_format)}"
         sidecar_payload["channel_watermark"] = {
             "enabled": True,
@@ -18474,24 +18518,25 @@ def export_clip(
             f"Watermark channel {CHANNEL_WATERMARK} dipoles sebagai signature seal hijau-emas yang ringkas dan transparan di tengah; detail audit disimpan di metadata."
         )
         if output_format == "vertical_short" and subscribe_pulse_planned:
-            vf = f"{vf},{shorts_mid_subscribe_pulse_filter(duration)}"
+            vf = f"{vf},{shorts_mid_subscribe_pulse_filter(duration, follow_plan=cron_follow_plan)}"
+            sidecar_payload['follow_cta'] = cron_follow_plan
             sidecar_payload["mid_subscribe_pulse"] = {
-                "enabled": True,
+                "enabled": cron_follow_plan.get('position')!='ending',
                 "version": 1,
-                "copy": "SUBSCRIBE • LANJUTKAN SERI INI",
-                "duration_seconds": SHORTS_SUBSCRIBE_PULSE_SECONDS,
-                "placement": "upper_caption_safe_after_initial_value",
+                "copy": ('FOLLOW • '+cron_follow_plan['copy']['support']) if cron_follow_plan['enabled'] else "SUBSCRIBE • LANJUTKAN SERI INI",
+                "duration_seconds": round(cron_follow_plan['end']-cron_follow_plan['start'],3) if cron_follow_plan['enabled'] else SHORTS_SUBSCRIBE_PULSE_SECONDS,
+                "placement": "upper_caption_safe_"+str(cron_follow_plan.get('position') or 'after_initial_value'),
                 "silent": True,
                 "extends_video_duration": False,
                 "cron_only": True,
                 "repeat_count": 1,
             }
             sidecar_payload["end_cta"] = {
-                "enabled": False,
-                "reason": "mid_subscribe_pulse_already_shown_once",
+                "enabled": cron_follow_plan.get('position')=='ending',
+                "reason": 'adaptive_follow_ending' if cron_follow_plan.get('position')=='ending' else "mid_subscribe_pulse_already_shown_once",
             }
             applied_edits.append(
-                "CTA Subscribe animasi tampil satu kali setelah beat nilai awal, tanpa suara, tanpa menutup subtitle, dan tanpa mengganggu payoff akhir."
+                "CTA Follow tampil satu kali pada jendela aman sesuai tema sumber; tanpa suara tambahan dan tanpa menggeser dialog atau payoff."
             )
         elif output_format == "vertical_short" and subscriber_cta_planned:
             engagement_text_path.write_text(engagement_prompt + "\n", encoding="utf-8")
@@ -18760,6 +18805,19 @@ def export_clip(
             ],
             cwd=clips_dir,
         )
+        if cron_accent_plan.get("required"):
+            emit_render_task(0.58, "Menempatkan aksen sutradara sesuai momen dan area aman")
+            cron_director_effects.render_effects(
+                temp_video_path, cron_accent_plan, ffmpeg=ffmpeg_path(),
+                layout=dict(portrait=portrait_framing, caption_position=effective_caption.position,
+                    evidence=evidence_direction["enabled"], social_card=social_card_selected,
+                    reaction_avatar=reaction_avatar_selected, multi_split=multi_clip_split),
+                crf=int(quality["crf"]), preset=str(quality["preset"]), threads=cpu_threads_per_job(),
+            )
+            applied_edits.append("Sutradara cron memasang " + str(cron_accent_plan["cue_count"])
+                + " aksen kontekstual: " + ", ".join(cue["kind"] for cue in cron_accent_plan["cues"])
+                + "; dialog, subtitle, wajah, dan durasi tetap dijaga.")
+        sidecar_payload["cron_director_effects"] = cron_accent_plan
         if motion_filter:
             motion_plan["rendered"] = True
             applied_edits.append(
@@ -19255,6 +19313,13 @@ def export_clip(
                 encoding="utf-8",
             )
 
+        if output_format == 'vertical_short':
+            try:
+                from shorts_thumbnail import install_pack
+                install_pack(out_path, sidecar_payload, source_video=video_path, source_start=clip.start)
+            except Exception as exc:
+                console.print(f'[yellow]Thumbnail curiosity fallback untuk clip {clip.index}: {type(exc).__name__}[/yellow]')
+
         save_json(json_path, sidecar_payload)
 
         social_caption = generate_social_caption(clip, ai_config or AIConfig(), required_hashtags)
@@ -19328,6 +19393,7 @@ def export_compilation(
     prompt_path = clips_dir / f"{base_name}_thumb.txt"
     thumb_path = clips_dir / f"{base_name}_thumb.jpg"
 
+    cron_accent_parts = cron_director_effects.compilation_parts(candidates, narrative_roles)
     part_paths: list[Path] = []
     part_audits: list[dict[str, object]] = []
     altered_content_disclosure_required = False
@@ -19371,6 +19437,7 @@ def export_compilation(
                 creator_commentary_file=(creator_commentary_file if idx == 1 else None),
                 progress_unit_number=idx,
                 progress_unit_count=total_parts,
+                cron_effect_budget=1 if idx in cron_accent_parts else 0,
             )
             part_paths.append(part_path)
             part_done = 70 + round((idx / max(1, total_parts)) * 20)
@@ -19389,6 +19456,8 @@ def export_compilation(
                 part_audits.append(
                     {
                         "part": idx,
+                        "output_duration_seconds": part_payload.get("output_duration_seconds", candidate.duration),
+                        "cron_director_effects": part_payload.get("cron_director_effects"),
                         "narrative_role": narrative_role,
                         "hook": str(part_payload.get("hook") or "").strip()[:120],
                         "pov": str(part_payload.get("pov") or "").strip()[:180],
@@ -19661,6 +19730,7 @@ def export_compilation(
             for index, item in enumerate(candidates)
         ],
         "chapter_edit_evidence": part_audits,
+        "cron_director_effects": cron_director_effects.aggregate_parts(part_audits),
         "retention_strategy": {
             "version": 3,
             "opening": "sentence_complete_teaser_without_duplicate_runtime",

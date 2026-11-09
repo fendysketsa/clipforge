@@ -1,0 +1,33 @@
+{
+  "id": "1fe4bceba66e497cbe533557f2ab1917",
+  "status": "failed",
+  "source_url": "https://www.youtube.com/watch?v=Y65eFkC2nS0",
+  "source_title": null,
+  "source_uploader": null,
+  "logs": [
+    "Fetching metadata...",
+    "Fetching video...",
+    "Memverifikasi decode sumber hasil jalur default: source.mp4...",
+    "Extracting audio...",
+    "Loading model: Systran/faster-whisper-medium",
+    "Hugging Face: model publik + cache persisten (HF_TOKEN opsional).",
+    "Model cache lokal dipakai: 08e178d48790749d25932bbc082711ddcfdfbc4f; tanpa cek",
+    "jaringan.",
+    "Whisper runtime: CUDA (float16)",
+    "Transcribed 195 segments on CUDA. Detected language: id",
+    "Smart Split: scoring sentence-aligned candidate clips...",
+    "Auto-repairing a broader shortlist before final FYP selection...",
+    "No complete Short yet; automatically expanding candidate windows from 45 to 105",
+    "seconds...",
+    "Tidak ada kandidat dengan alur utuh, retensi memadai, batas kalimat aman, dan",
+    "konteks editorial yang layak. Perluasan durasi otomatis sudah dicoba; gunakan",
+    "sumber lain.",
+    "Workspace dan seluruh file sementara proses gagal telah dihapus."
+  ],
+  "error": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus.",
+  "candidates": [],
+  "clips": [],
+  "created_at": "2026-11-09T12:19:45.273795+00:00",
+  "started_at": "2026-11-09T12:19:45.649317+00:00",
+  "finished_at": "2026-11-09T12:28:34.348793+00:00"
+}

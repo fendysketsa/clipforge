@@ -6452,3 +6452,45 @@ def test_public_metadata_repairs_compound_asr_phrases_from_existing_jobs():
     assert "mengertos" not in str(result).casefold()
     assert "ke sana" in str(result["title"]).casefold()
     assert "dapat memahami" in str(result["description"]).casefold()
+
+
+def test_successful_storage_state_retry_clears_previous_cdp_error(monkeypatch, tmp_path):
+    import api
+    clip_path = tmp_path / 'outputs/demo/clip_01.mp4'
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b'video')
+    upload = YouTubeUploadJob(id='retry-clears-error', source_job_id='job',
+        clip_url='/outputs/demo/clip_01.mp4', clip_name='clip_01.mp4', status='queued',
+        created_at='2026-11-09T00:00:00+00:00', updated_at='2026-11-09T00:00:00+00:00',
+        title='Retry after Studio recovery', visibility='private')
+    monkeypatch.setattr(api, 'OUTPUTS_DIR', tmp_path / 'outputs')
+    monkeypatch.setattr(api, 'YOUTUBE_UPLOADS_PATH', tmp_path / 'uploads.json')
+    monkeypatch.setattr(api, 'youtube_uploads', {upload.id: upload})
+    monkeypatch.setattr(api, 'youtube_upload_prefers_cdp', lambda: True)
+    monkeypatch.setattr(api, 'youtube_upload_uses_cdp', lambda: True)
+    monkeypatch.setattr(api, 'youtube_cdp_ready', lambda: True)
+    monkeypatch.setattr(api, 'youtube_auth_state_exists', lambda: True)
+    monkeypatch.setattr(api, 'youtube_chromium_profile_ready', lambda: False)
+    monkeypatch.setenv('YOUTUBE_CDP_UPLOAD_MAX_ATTEMPTS', '2')
+    monkeypatch.setenv('YOUTUBE_UPLOAD_FORCE_CDP', 'true')
+    monkeypatch.setattr(api, 'build_youtube_upload_command', lambda *a, **k: [sys.executable, 'youtube_uploader.py', 'upload', str(clip_path)])
+    monkeypatch.setattr(api.subprocess, 'Popen', lambda *a, **k: object())
+    attempts = []
+    def monitor(process, on_line, **kwargs):
+        attempts.append(True)
+        assert api.youtube_uploads[upload.id].error is None
+        if len(attempts) == 1:
+            on_line('USER_ERROR: YouTube Studio gagal memuat aplikasi (Maaf, ada yang tidak beres). Session atau channel aktif perlu disegarkan lewat Login Sekali.')
+            return 1, False
+        on_line('VIDEO_URL: https://www.youtube.com/watch?v=abcDEF12345')
+        on_line('UPLOAD_CONFIRMED: transfer selesai')
+        return 0, False
+    monkeypatch.setattr(api, 'monitor_youtube_upload_process', monitor)
+    monkeypatch.setattr(api, 'cleanup_youtube_staging_file', lambda *a: False)
+    monkeypatch.setattr(api, 'cross_platform_cleanup_after', lambda *a: None)
+    api.run_youtube_upload(upload.id)
+    result = api.youtube_uploads[upload.id]
+    assert len(attempts) == 2
+    assert result.status == 'completed' and result.upload_confirmed, (result.error, result.logs[-8:])
+    assert result.error is None
+    assert any('USER_ERROR:' in line for line in result.logs)

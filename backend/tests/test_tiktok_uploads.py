@@ -85,7 +85,7 @@ def test_tiktok_caption_removes_shorts_and_adds_relevant_islamic_tags():
         name="clip_01.mp4",
         url="/outputs/demo/clip_01.mp4",
         size_bytes=10,
-        title="Nasihat menjaga lisan #Shorts",
+        title="Nasihat ustadz tentang menjaga lisan #Shorts",
         is_correct=True,
     )
     caption = tiktok_caption_for_clip(make_job(clip), clip, 1)
@@ -135,7 +135,7 @@ def test_tiktok_cron_caption_adds_compact_source_credit_only_for_schedule():
         ("Kesalahan wudhu yang sering terjadi", "Periksa bagian ini", "kesalahan_ibadah_sehari_hari"),
         ("Makna sabar saat diuji", "Sabar bukan berarti diam", "nasihat_sering_disalahpahami"),
         ("Ini yang membuat hati terasa indah", "Simak penjelasan ustadz", "kajian_islam_ringkas"),
-        ("Pertama, masyarakat sudah siap", "Siapa pun dapat mengambil pelajaran", "kajian_islam_ringkas"),
+        ("Pertama, masyarakat sudah siap", "Siapa pun dapat mengambil pelajaran", "cerita_umum"),
     ],
 )
 def test_tiktok_strategy_selects_a_stable_content_series(title, hook, expected_series):
@@ -171,6 +171,21 @@ def test_tiktok_strategy_caption_keeps_source_copy_and_adds_non_coercive_cta():
     assert "#Shorts" not in caption
     assert "share kalau Muslim" not in caption
     assert len(caption) <= 600
+
+
+@pytest.mark.parametrize('title,expected',[
+    ('Yuta dan Mio takut saat bermain Roblox','gaming'),
+    ('Scanner Minecraft membaca inventory','gaming'),
+    ('Niatnya jadi drummer, malah mencari bunyinya','komedi'),
+    ('Warung ini menyajikan makanan gurih','kuliner'),
+    ('Kebijakan pemerintah dibahas warga','konteks_publik'),
+    ('Cerita perjalanan seorang teman','cerita_umum'),
+])
+def test_unrelated_topics_never_get_a_religious_series_or_hashtags(title,expected):
+    strategy=build_tiktok_strategy(title=title,text=title,stable_key=title)
+    assert strategy['series_id']==expected
+    caption=tiktok_caption_from_strategy(title,strategy)
+    assert not any(word in (caption+strategy['series_eyebrow']).casefold() for word in ['kajian','ibadah','#islam','dakwah'])
 
 
 def test_tiktok_caption_uses_new_handle_and_platform_hashtags():
@@ -1740,7 +1755,7 @@ def test_tiktok_caption_recovers_when_a_late_modal_intercepts_the_first_click(mo
     set_caption(Page(), expected)
 
     assert editor.value == expected
-    assert editor.clicks == 2
+    assert editor.clicks == 1
     assert dismiss_calls == [True]
 
 

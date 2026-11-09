@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "source_clip": "clip_01_nisa-menyusun-semua-ini-dari-siang-sampai-malam.mp4",
+  "source_job_id": "837214a9973245b593bab55592af1da6",
+  "source_url": "https://www.youtube.com/watch?v=WfkQAjtSoy8",
+  "format": "shorts_9_16",
+  "status": "READY_FOR_DESIGN",
+  "winner": "A",
+  "selection_reason": "Real expressive close-up and complete source-grounded contradiction; clear type at mobile size. Design score is not a CTR forecast.",
+  "needs_frame_review": false,
+  "variants": [
+    {
+      "id": "A",
+      "angle": "human_tension",
+      "eyebrow": "",
+      "headline": "BUKAN NISA YANG MERUSAK KELUARGA",
+      "support": "",
+      "keyframe_direction": "Actual final Short at 35s",
+      "composition": {
+        "font_size": 72,
+        "headline_lines": [
+          "BUKAN NISA YANG",
+          "MERUSAK KELUARGA"
+        ],
+        "headline_zone": [
+          78,
+          1300,
+          960,
+          1488
+        ],
+        "subject_crop": "face_anchored"
+      },
+      "palette": [
+        "black",
+        "white",
+        "yellow"
+      ],
+      "image_prompt": "Use only the actual supplied 9:16 frame at 35s; preserve identity, scene and expression. Emphasize the real subject and place exact text 'BUKAN NISA YANG MERUSAK KELUARGA' inside the central safe area.",
+      "negative_prompt": "No invented expressions, people, events, quotes, evidence, copied branding or unrelated objects.",
+      "evidence": [
+        "Bukan Nisa yang merusak keluarga ini."
+      ],
+      "filename": "Nisa-A.jpg",
+      "score": 87,
+      "score_breakdown": {
+        "readability": 20,
+        "truthful_curiosity": 19,
+        "subject_hierarchy": 20,
+        "emotional_specificity": 10,
+        "cinematic_craft": 8,
+        "brand_distinction": 5,
+        "production_feasibility": 5
+      }
+    },
+    {
+      "id": "B",
+      "angle": "source_context",
+      "eyebrow": "",
+      "headline": "BUKAN SEMUA ORANG YANG HARUS BERUBAH",
+      "support": "",
+      "keyframe_direction": "Actual final Short at 2s",
+      "composition": {
+        "font_size": 66,
+        "headline_lines": [
+          "BUKAN SEMUA ORANG",
+          "YANG HARUS BERUBAH"
+        ],
+        "headline_zone": [
+          78,
+          1240,
+          960,
+          1416
+        ],
+        "subject_crop": "real_scene"
+      },
+      "palette": [
+        "black",
+        "white",
+        "teal"
+      ],
+      "image_prompt": "Use only the actual supplied 9:16 frame at 2s; preserve identity, scene and expression. Emphasize the real subject and place exact text 'BUKAN SEMUA ORANG YANG HARUS BERUBAH' inside the central safe area.",
+      "negative_prompt": "No invented expressions, people, events, quotes, evidence, copied branding or unrelated objects.",
+      "evidence": [
+        "ternyata bukan semua orang yang harus berubah."
+      ],
+      "filename": "Nisa-B.jpg",
+      "score": 74,
+      "score_breakdown": {
+        "readability": 20,
+        "truthful_curiosity": 18,
+        "subject_hierarchy": 13,
+        "emotional_specificity": 5,
+        "cinematic_craft": 8,
+        "brand_distinction": 5,
+        "production_feasibility": 5
+      }
+    },
+    {
+      "id": "C",
+      "angle": "cinematic_story",
+      "eyebrow": "",
+      "headline": "DIA NGGAK MINTA APA APA",
+      "support": "",
+      "keyframe_direction": "Actual final Short at 28s",
+      "composition": {
+        "font_size": 100,
+        "headline_lines": [
+          "DIA NGGAK",
+          "MINTA APA APA"
+        ],
+        "headline_zone": [
+          78,
+          1260,
+          960,
+          1504
+        ],
+        "subject_crop": "real_scene"
+      },
+      "palette": [
+        "black",
+        "white",
+        "orange"
+      ],
+      "image_prompt": "Use only the actual supplied 9:16 frame at 28s; preserve identity, scene and expression. Emphasize the real subject and place exact text 'DIA NGGAK MINTA APA APA' inside the central safe area.",
+      "negative_prompt": "No invented expressions, people, events, quotes, evidence, copied branding or unrelated objects.",
+      "evidence": [
+        "Dia nggak minta apa -apa?"
+      ],
+      "filename": "Nisa-C.jpg",
+      "score": 78,
+      "score_breakdown": {
+        "readability": 25,
+        "truthful_curiosity": 17,
+        "subject_hierarchy": 13,
+        "emotional_specificity": 5,
+        "cinematic_craft": 8,
+        "brand_distinction": 5,
+        "production_feasibility": 5
+      }
+    }
+  ]
+}

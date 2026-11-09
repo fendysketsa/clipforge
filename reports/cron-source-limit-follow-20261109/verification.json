@@ -1,0 +1,80 @@
+{
+  "source_ready": true,
+  "production_activated": false,
+  "activation_blocker": "Interactive sudo password required. Live API does not expose the new source cap or follow capability.",
+  "runtime": {
+    "enabled": true,
+    "scheduler_running": true,
+    "active_run_id": "8c1f5746160945be80a470c42d296a48",
+    "cron_source_process_limit": null,
+    "cron_follow_cta_adaptive": null,
+    "cron_director_effects_policy_version": null,
+    "checked_at": "2026-11-09T19:53:45+07:00"
+  },
+  "source_policy": {
+    "max_distinct_processing_jobs": 2,
+    "formats_count_separately": [
+      "short",
+      "highlight_5m"
+    ],
+    "failed_started_attempts_count": true,
+    "same_job_restart_deduplicated": true,
+    "upload_retry_counted": false,
+    "review_only_counted": false,
+    "unstarted_cancel_counted": false,
+    "scope_of_limit": "cron only; explicit manual processing can exceed the cap",
+    "persistent_file": "backend/data/source_process_attempts.json",
+    "legacy_bootstrap": "usage index, monthly archives, jobs, terminal campaign checkpoints",
+    "checks": [
+      "discovery exclusion",
+      "candidate recheck",
+      "queue admission",
+      "locked worker-start admission"
+    ],
+    "unknown_or_corrupt_ledger": "hold cron, never reset count"
+  },
+  "follow_policy": {
+    "once_per_short": true,
+    "topic_specific_copy": true,
+    "position": "middle after a source boundary or ending after complete value",
+    "avoids_statement_effect_windows": true,
+    "protected_layouts": "skip overlay",
+    "existing_long_ending_invitation": "kept with topic-specific copy",
+    "no_added_speech": true,
+    "no_added_timeline_time": true,
+    "views_guaranteed": false
+  },
+  "tests": [
+    {
+      "scope": "source policy, director effects, captions, deployment guard, Long production",
+      "passed": 362
+    },
+    {
+      "scope": "API budget and YouTube uploads selected cron/scheduled/history/cooldown/worker/manual",
+      "passed": 86,
+      "deselected": 403
+    },
+    {
+      "scope": "actual 26-second vertical export_clip",
+      "passed": true,
+      "evidence": "full-export-verification.json"
+    },
+    {
+      "scope": "native FFmpeg CTA + director effects on local clip copy",
+      "passed": true,
+      "evidence": "follow-preview.mp4"
+    },
+    {
+      "scope": "Python compilation, shell syntax and whitespace diff",
+      "passed": true
+    }
+  ],
+  "audit": {
+    "read_only_audit": true,
+    "known_sources": 510,
+    "sources_at_or_above_two": 78,
+    "max_distinct_processes": 46,
+    "note": "Existing persisted jobs, source usage, monthly successful-render archives and campaign checkpoints. No queue or remote platform changed."
+  },
+  "activation_command": "sudo bash /www/wwwroot/clipper/clipforge/scripts/activate-cron-director-effects.sh"
+}

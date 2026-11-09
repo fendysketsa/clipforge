@@ -1,0 +1,16 @@
+[Unit]
+Description=ClipForge curiosity thumbnail operator for Shorts
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/www/wwwroot/clipper/clipforge
+ExecStart=/usr/bin/python -u /www/wwwroot/clipper/clipforge/scripts/shorts-thumbnail-operator.py
+Restart=on-failure
+RestartSec=15
+Nice=10
+NoNewPrivileges=true
+MemoryMax=768M
+
+[Install]
+WantedBy=default.target

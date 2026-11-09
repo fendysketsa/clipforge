@@ -7,7 +7,7 @@ from typing import Any
 from islamic_text import repair_islamic_asr_text
 
 
-TIKTOK_STRATEGY_VERSION = 2
+TIKTOK_STRATEGY_VERSION = 3
 
 _SERIES: dict[str, dict[str, Any]] = {
     "tanya_jawab_islam": {
@@ -88,6 +88,26 @@ _LEGACY_SERIES_IDS = {
     "jawaban_ustadz_30_detik": "tanya_jawab_islam",
 }
 
+_RELIGIOUS_TERMS = re.compile(r'\b(islam|muslim|allah|quran|alquran|hadis|hadits|ustadz|ustaz|fiqih|ibadah|wudhu|shalat|salat|doa|kajian|dakwah|sabar|ikhlas|tawakal|rezeki|hijrah)\b',re.I)
+_STRONG_RELIGIOUS_TERMS = re.compile(r'\b(quran|alquran|hadis|hadits|ustadz|ustaz|fiqih|ibadah|wudhu|shalat|salat|kajian|dakwah)\b',re.I)
+_TOPIC_MARKERS = (
+    ('gaming',r'\b(roblox|minecraft|gameplay|inventory|mabar|obby|yuta|mio|game)\b'),
+    ('komedi',r'\b(komedi|drummer|lelucon|ngakak|prank|meme|guyon|lucu)\b'),
+    ('kuliner',r'\b(kuliner|warung|restoran|gurih|lezat|makanan|masakan)\b'),
+    ('konteks_publik',r'\b(pemilu|pemerintah|kebijakan|berita|parlemen)\b'),
+)
+for _key,_label,_eyebrow,_tags in (
+    ('gaming','Cerita Game','MOMEN GAME',['#GamingIndonesia','#CeritaGame']),
+    ('komedi','Komedi & Reaksi','MOMEN LUCU',['#KomediIndonesia','#CeritaLucu']),
+    ('kuliner','Cerita Kuliner','KULINER',['#KulinerIndonesia','#UlasanKuliner']),
+    ('konteks_publik','Konteks Publik','CEK KONTEKS',['#KonteksPublik','#PembahasanIndonesia']),
+    ('cerita_umum','Cerita & Penjelasan','POIN CERITA',['#CeritaIndonesia','#PenjelasanSingkat']),
+):
+    _SERIES[_key]=dict(label=_label,eyebrow=_eyebrow,pillar=_key,cta='Ikuti untuk klip dengan tema serupa.',hashtags=_tags,
+        visuals=['Pertahankan subjek dan konteks asli; tekankan satu momen yang benar-benar ada.',
+                 'Gunakan frasa sumber yang lengkap tanpa menambah klaim atau mengubah pertanyaan menjadi fakta.',
+                 'Pertahankan pembuka, aksi atau penjelasan, dan payoff dari adegan yang sama.'])
+
 _ERROR_MARKERS = (
     "batal", "haram", "dosa", "makruh",
 )
@@ -123,6 +143,12 @@ def _stable_variant(stable_key: str, series_id: str) -> int:
 
 def _select_series(content: str, headline: str) -> tuple[str, str]:
     lowered = f" {content.casefold()} "
+    if not _STRONG_RELIGIOUS_TERMS.search(content):
+        for topic,pattern in _TOPIC_MARKERS:
+            if re.search(pattern,content,re.I):
+                return topic,'Tema dipilih dari isi sumber; tidak memakai label agama untuk sumber umum.'
+    if not _RELIGIOUS_TERMS.search(content):
+        return 'cerita_umum','Tidak ada bukti konteks agama; memakai kategori umum.'
     if any(marker in lowered for marker in _STRONG_MISUNDERSTANDING_MARKERS):
         return "nasihat_sering_disalahpahami", "Isi clip secara eksplisit meluruskan pemahaman nasihat."
     if any(marker in lowered for marker in _STRONG_ERROR_MARKERS):
@@ -194,6 +220,7 @@ def build_tiktok_strategy(
 
 
 def tiktok_caption_from_strategy(base_caption: str, strategy: dict[str, Any]) -> str:
+    religious = str(strategy.get('series_id') or '') in {'tanya_jawab_islam','kesalahan_ibadah_sehari_hari','nasihat_sering_disalahpahami','kajian_islam_ringkas','jawaban_ustadz_30_detik'}
     generic_tags = {
         "#shorts", "#fyp", "#fypシ", "#viral", "#trending", "#viralindonesia",
         "#trendingindonesia", "#kontenpilihan",
@@ -214,8 +241,9 @@ def tiktok_caption_from_strategy(base_caption: str, strategy: dict[str, Any]) ->
             "",
             text,
         ).strip()
-        text = casual_fillers.sub(".", text).strip()
-        text = repair_islamic_asr_text(text)
+        if religious:
+            text = casual_fillers.sub(".", text).strip()
+            text = repair_islamic_asr_text(text)
         text = re.sub(r"@ryuundyofficial\b", "@ryuundy.studio", text, flags=re.IGNORECASE)
         text = re.sub(r"(?i)\borang islam\b", "orang Islam", text)
         text = re.sub(r"(?i)\bngena\b", "mengena", text)
@@ -264,6 +292,11 @@ def tiktok_caption_from_strategy(base_caption: str, strategy: dict[str, Any]) ->
     series_id = _LEGACY_SERIES_IDS.get(series_id, series_id)
     profile = _SERIES.get(series_id, {})
     context_by_series = {
+        'gaming':'Cuplikan ini menampilkan adegan di dalam game.',
+        'komedi':'Satu adegan komedi dengan konteks dan reaksi aslinya.',
+        'kuliner':'Ulasan mengikuti makanan dan pengalaman yang ditampilkan sumber.',
+        'konteks_publik':'Klaim, konteks, dan sumber perlu dibaca bersama.',
+        'cerita_umum':'Simak konteks dan akhir penjelasannya.',
         "tanya_jawab_islam": (
             "Penjelasan lengkapnya penting agar pertanyaan dan jawaban tidak dipahami "
             "di luar konteks."

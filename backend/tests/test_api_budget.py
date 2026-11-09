@@ -2657,11 +2657,11 @@ def test_scheduled_campaign_uploads_one_quality_batch_when_target_was_three(monk
         updated_at=api.now_iso(),
         request=request,
     )
-    finished_job = SimpleNamespace(
-        id="only-quality-job",
-        status="completed",
-        clips=[SimpleNamespace(url="/outputs/only-quality.mp4")],
-        error=None,
+    finished_job = api.ClipJob(
+        id="only-quality-job", status="completed",
+        created_at=api.now_iso(), updated_at=api.now_iso(),
+        request=ClipJobRequest(url="https://youtube.com/watch?v=onegood", scheduled_director_effects=True),
+        clips=[api.ClipFile(name="clip_01.mp4", url="/outputs/only-quality.mp4", size_bytes=1)],
     )
     with api.auto_viral_lock:
         api.auto_viral_runs[run.id] = run
@@ -2743,11 +2743,11 @@ def test_scheduled_campaign_uploads_each_completed_batch_before_rendering_next(m
         {"url": "https://youtube.com/watch?v=increment02", "title": "Sumber dua"},
     ]
     jobs = {
-        source["url"]: SimpleNamespace(
-            id=f"job-{index}",
-            status="completed",
-            clips=[SimpleNamespace(url=f"/outputs/job-{index}.mp4")],
-            error=None,
+        source["url"]: api.ClipJob(
+            id=f"job-{index}", status="completed",
+            created_at=api.now_iso(), updated_at=api.now_iso(),
+            request=ClipJobRequest(url=source["url"], scheduled_director_effects=True),
+            clips=[api.ClipFile(name="clip_01.mp4", url=f"/outputs/job-{index}.mp4", size_bytes=1)],
         )
         for index, source in enumerate(sources, start=1)
     }
@@ -2842,6 +2842,7 @@ def test_scheduled_clip_job_persists_public_source_credit_marker(monkeypatch):
         True,
     )
 
+    assert result.scheduled_director_effects is True
     assert result.scheduled_public_source_credit is True
     assert captured[0].scheduled_public_source_credit is True
     assert result.scheduled_social_card_layout is True

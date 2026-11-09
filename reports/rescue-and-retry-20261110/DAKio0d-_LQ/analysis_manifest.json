@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "source": "https://www.youtube.com/watch?v=DAKio0d-_LQ",
+  "source_metadata_path": "reports/rescue-and-retry-20261110/DAKio0d-_LQ/metadata.json",
+  "native_candidates_path": null,
+  "parameters": {
+    "min_duration": 25,
+    "max_duration": 105,
+    "candidate_limit": 1
+  },
+  "outcome": "READY_FOR_SELECTION",
+  "candidates": [
+    {
+      "index": 1,
+      "start": 88.2,
+      "end": 148.55,
+      "duration": 60.35000000000001,
+      "transcript": "Nah, Atun, aku barusan menciptakan alat yang bisa scan apa pun yang orang sedang bawa saat ini nih. Kamu lihat mesinnya di belakang aku keren, kan? Masa sih sehebat itu, He he he he, kamu nggak percaya? Ya udah, coba aja berdiri di dalam sana. Oke deh, baiklah. Coba kita berdiri di sini. Oke, sebentar aku akan menyalakannya. Oke. He, apa yang terjadi? Aku mulai di-scan. Nah, sudah nih, coba keluar lihat. Tubuh kamu itu ada ponsel. Waaah, ponsel di inventory aku, pesan makanan gitu loh.",
+      "hook": "Mesin di Minecraft ini bisa membaca barang yang dibawa?",
+      "recommended_title": "Scanner Minecraft Ini Bisa Menemukan Ponsel di Inventory",
+      "standalone_score": 90,
+      "viral_score": 86,
+      "religious_context_safe": true,
+      "risk_flags": [
+        "source rights carried from the original explicitly confirmed job",
+        "visual narrative assessed in source frames"
+      ],
+      "reason": "Demonstrasi di dalam game: klaim alat diuji, lalu ponsel di inventory terlihat. Ini fitur rekaan Minecraft, bukan alat pemindai dunia nyata."
+    }
+  ]
+}

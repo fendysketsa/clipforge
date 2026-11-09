@@ -1,0 +1,70 @@
+{
+  "source_job_id": "837214a9973245b593bab55592af1da6",
+  "source_url": "https://www.youtube.com/watch?v=WfkQAjtSoy8",
+  "frame_provenance": "Real cached frames previously extracted from the final Short; no new identities or expressions generated",
+  "variants": [
+    {
+      "id": "A",
+      "headline": "BUKAN NISA YANG MERUSAK KELUARGA",
+      "evidence": "Bukan Nisa yang merusak keluarga ini.",
+      "source_timestamp_seconds": 35,
+      "filename": "Nisa-A.jpg",
+      "geometry": {
+        "font_size": 72,
+        "headline_lines": [
+          "BUKAN NISA YANG",
+          "MERUSAK KELUARGA"
+        ],
+        "headline_zone": [
+          78,
+          1300,
+          960,
+          1488
+        ],
+        "subject_crop": "face_anchored"
+      }
+    },
+    {
+      "id": "B",
+      "headline": "BUKAN SEMUA ORANG YANG HARUS BERUBAH",
+      "evidence": "Selama ini saya selalu merasa paling tapi saat jatuh, ternyata bukan semua orang yang harus berubah.",
+      "source_timestamp_seconds": 2,
+      "filename": "Nisa-B.jpg",
+      "geometry": {
+        "font_size": 66,
+        "headline_lines": [
+          "BUKAN SEMUA ORANG",
+          "YANG HARUS BERUBAH"
+        ],
+        "headline_zone": [
+          78,
+          1240,
+          960,
+          1416
+        ],
+        "subject_crop": "real_scene"
+      }
+    },
+    {
+      "id": "C",
+      "headline": "JATUH TERNYATA BUKAN SEMUA ORANG",
+      "evidence": "Selama ini saya selalu merasa paling tapi saat jatuh, ternyata bukan semua orang yang harus berubah.",
+      "source_timestamp_seconds": 28,
+      "filename": "Nisa-C.jpg",
+      "geometry": {
+        "font_size": 68,
+        "headline_lines": [
+          "JATUH TERNYATA",
+          "BUKAN SEMUA ORANG"
+        ],
+        "headline_zone": [
+          78,
+          1260,
+          960,
+          1440
+        ],
+        "subject_crop": "real_scene"
+      }
+    }
+  ]
+}

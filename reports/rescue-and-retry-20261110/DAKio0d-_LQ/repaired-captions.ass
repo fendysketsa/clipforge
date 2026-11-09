@@ -1,0 +1,99 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+ScaledBorderAndShadow: yes
+WrapStyle: 2
+
+[V4+ Styles]
+Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
+Style: Shorts,DejaVu Sans,72,&H00FFFFFF&,&H00FFFFFF&,&H00000000&,&H78000000,-1,0,0,0,100,100,0,0,1,4.0,1,2,80,160,330,1
+
+[Events]
+Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
+Dialogue: 0,0:00:00.07,0:00:00.40,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}Nah,{\r} Atun, aku barusan
+Dialogue: 0,0:00:00.40,0:00:00.84,Shorts,,0,0,0,,Nah, {\c&H0000D4FF&\b1}Atun,{\r} aku barusan
+Dialogue: 0,0:00:00.84,0:00:01.18,Shorts,,0,0,0,,Nah, Atun, {\c&H0000D4FF&\b1}aku{\r} barusan
+Dialogue: 0,0:00:01.18,0:00:01.95,Shorts,,0,0,0,,Nah, Atun, aku {\c&H0000D4FF&\b1}barusan{\r}
+Dialogue: 0,0:00:01.95,0:00:03.04,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}menciptakan{\r} alat yang bisa
+Dialogue: 0,0:00:03.04,0:00:03.43,Shorts,,0,0,0,,menciptakan {\c&H0000D4FF&\b1}alat{\r} yang bisa
+Dialogue: 0,0:00:03.43,0:00:03.83,Shorts,,0,0,0,,menciptakan alat {\c&H0000D4FF&\b1}yang{\r} bisa
+Dialogue: 0,0:00:03.83,0:00:04.22,Shorts,,0,0,0,,menciptakan alat yang {\c&H0000D4FF&\b1}bisa{\r}
+Dialogue: 0,0:00:04.22,0:00:04.62,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}scan{\r} apa pun yang orang
+Dialogue: 0,0:00:04.62,0:00:04.92,Shorts,,0,0,0,,{\b1}scan{\r} {\c&H0000D4FF&\b1}apa{\r} pun yang orang
+Dialogue: 0,0:00:04.92,0:00:05.21,Shorts,,0,0,0,,{\b1}scan{\r} apa {\c&H0000D4FF&\b1}pun{\r} yang orang
+Dialogue: 0,0:00:05.21,0:00:05.61,Shorts,,0,0,0,,{\b1}scan{\r} apa pun {\c&H0000D4FF&\b1}yang{\r} orang
+Dialogue: 0,0:00:05.61,0:00:06.10,Shorts,,0,0,0,,{\b1}scan{\r} apa pun yang {\c&H0000D4FF&\b1}orang{\r}
+Dialogue: 0,0:00:06.10,0:00:06.73,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}sedang{\r} bawa saat ini nih.
+Dialogue: 0,0:00:06.73,0:00:07.14,Shorts,,0,0,0,,sedang {\c&H0000D4FF&\b1}bawa{\r} saat ini nih.
+Dialogue: 0,0:00:07.14,0:00:07.56,Shorts,,0,0,0,,sedang bawa {\c&H0000D4FF&\b1}saat{\r} ini nih.
+Dialogue: 0,0:00:07.56,0:00:07.87,Shorts,,0,0,0,,sedang bawa saat {\c&H0000D4FF&\b1}ini{\r} nih.
+Dialogue: 0,0:00:07.87,0:00:08.18,Shorts,,0,0,0,,sedang bawa saat ini {\c&H0000D4FF&\b1}nih.{\r}
+Dialogue: 0,0:00:08.24,0:00:08.47,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}Kamu{\r} lihat mesinnya di
+Dialogue: 0,0:00:08.47,0:00:08.76,Shorts,,0,0,0,,Kamu {\c&H0000D4FF&\b1}lihat{\r} mesinnya di
+Dialogue: 0,0:00:08.76,0:00:09.22,Shorts,,0,0,0,,Kamu lihat {\c&H0000D4FF&\b1}mesinnya{\r} di
+Dialogue: 0,0:00:09.22,0:00:09.33,Shorts,,0,0,0,,Kamu lihat mesinnya {\c&H0000D4FF&\b1}di{\r}
+Dialogue: 0,0:00:09.33,0:00:09.84,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}belakang{\r} aku keren, kan?
+Dialogue: 0,0:00:09.84,0:00:10.03,Shorts,,0,0,0,,belakang {\c&H0000D4FF&\b1}aku{\r} keren, kan?
+Dialogue: 0,0:00:10.03,0:00:10.35,Shorts,,0,0,0,,belakang aku {\c&H0000D4FF&\b1}keren,{\r} kan?
+Dialogue: 0,0:00:10.35,0:00:10.54,Shorts,,0,0,0,,belakang aku keren, {\c&H0000D4FF&\b1}kan?{\r}
+Dialogue: 0,0:00:10.88,0:00:11.28,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}Masa{\r} sih sehebat itu,
+Dialogue: 0,0:00:11.28,0:00:11.58,Shorts,,0,0,0,,Masa {\c&H0000D4FF&\b1}sih{\r} sehebat itu,
+Dialogue: 0,0:00:11.58,0:00:12.28,Shorts,,0,0,0,,Masa sih {\c&H0000D4FF&\b1}sehebat{\r} itu,
+Dialogue: 0,0:00:12.28,0:00:12.58,Shorts,,0,0,0,,Masa sih sehebat {\c&H0000D4FF&\b1}itu,{\r}
+Dialogue: 0,0:00:13.32,0:00:13.49,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}He{\r} he he he, kamu
+Dialogue: 0,0:00:13.49,0:00:13.65,Shorts,,0,0,0,,He {\c&H0000D4FF&\b1}he{\r} he he, kamu
+Dialogue: 0,0:00:13.65,0:00:13.82,Shorts,,0,0,0,,He he {\c&H0000D4FF&\b1}he{\r} he, kamu
+Dialogue: 0,0:00:13.82,0:00:13.99,Shorts,,0,0,0,,He he he {\c&H0000D4FF&\b1}he,{\r} kamu
+Dialogue: 0,0:00:13.99,0:00:14.32,Shorts,,0,0,0,,He he he he, {\c&H0000D4FF&\b1}kamu{\r}
+Dialogue: 0,0:00:14.32,0:00:14.74,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}nggak{\r} percaya?
+Dialogue: 0,0:00:14.74,0:00:15.32,Shorts,,0,0,0,,nggak {\c&H0000D4FF&\b1}percaya?{\r}
+Dialogue: 0,0:00:15.44,0:00:15.59,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}Ya{\r} udah, coba aja berdiri
+Dialogue: 0,0:00:15.59,0:00:15.89,Shorts,,0,0,0,,Ya {\c&H0000D4FF&\b1}udah,{\r} coba aja berdiri
+Dialogue: 0,0:00:15.89,0:00:16.18,Shorts,,0,0,0,,Ya udah, {\c&H0000D4FF&\b1}coba{\r} aja berdiri
+Dialogue: 0,0:00:16.18,0:00:16.41,Shorts,,0,0,0,,Ya udah, coba {\c&H0000D4FF&\b1}aja{\r} berdiri
+Dialogue: 0,0:00:16.41,0:00:16.93,Shorts,,0,0,0,,Ya udah, coba aja {\c&H0000D4FF&\b1}berdiri{\r}
+Dialogue: 0,0:00:16.93,0:00:17.08,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}di{\r} dalam sana.
+Dialogue: 0,0:00:17.08,0:00:17.47,Shorts,,0,0,0,,di {\c&H0000D4FF&\b1}dalam{\r} sana.
+Dialogue: 0,0:00:17.47,0:00:17.78,Shorts,,0,0,0,,di dalam {\c&H0000D4FF&\b1}sana.{\r}
+Dialogue: 0,0:00:18.96,0:00:19.34,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}Oke{\r} deh, baiklah.
+Dialogue: 0,0:00:19.34,0:00:19.72,Shorts,,0,0,0,,Oke {\c&H0000D4FF&\b1}deh,{\r} baiklah.
+Dialogue: 0,0:00:19.72,0:00:20.60,Shorts,,0,0,0,,Oke deh, {\c&H0000D4FF&\b1}baiklah.{\r}
+Dialogue: 0,0:00:20.72,0:00:21.04,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}Coba{\r} kita berdiri di sini.
+Dialogue: 0,0:00:21.04,0:00:21.37,Shorts,,0,0,0,,Coba {\c&H0000D4FF&\b1}kita{\r} berdiri di sini.
+Dialogue: 0,0:00:21.37,0:00:21.93,Shorts,,0,0,0,,Coba kita {\c&H0000D4FF&\b1}berdiri{\r} di sini.
+Dialogue: 0,0:00:21.93,0:00:22.10,Shorts,,0,0,0,,Coba kita berdiri {\c&H0000D4FF&\b1}di{\r} sini.
+Dialogue: 0,0:00:22.10,0:00:22.42,Shorts,,0,0,0,,Coba kita berdiri di {\c&H0000D4FF&\b1}sini.{\r}
+Dialogue: 0,0:00:22.96,0:00:23.29,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}Oke,{\r} sebentar aku akan
+Dialogue: 0,0:00:23.29,0:00:24.16,Shorts,,0,0,0,,Oke, {\c&H0000D4FF&\b1}sebentar{\r} aku akan
+Dialogue: 0,0:00:24.16,0:00:24.49,Shorts,,0,0,0,,Oke, sebentar {\c&H0000D4FF&\b1}aku{\r} akan
+Dialogue: 0,0:00:24.49,0:00:24.93,Shorts,,0,0,0,,Oke, sebentar aku {\c&H0000D4FF&\b1}akan{\r}
+Dialogue: 0,0:00:24.93,0:00:26.38,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}menyalakannya.{\r}
+Dialogue: 0,0:00:29.16,0:00:29.72,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}Oke.{\r}
+Dialogue: 0,0:00:30.50,0:00:30.67,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}He,{\r} apa yang terjadi?
+Dialogue: 0,0:00:30.67,0:00:30.93,Shorts,,0,0,0,,He, {\c&H0000D4FF&\b1}apa{\r} yang terjadi?
+Dialogue: 0,0:00:30.93,0:00:31.28,Shorts,,0,0,0,,He, apa {\c&H0000D4FF&\b1}yang{\r} terjadi?
+Dialogue: 0,0:00:31.28,0:00:31.88,Shorts,,0,0,0,,He, apa yang {\c&H0000D4FF&\b1}terjadi?{\r}
+Dialogue: 0,0:00:35.32,0:00:35.50,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}Aku{\r} mulai di-scan.
+Dialogue: 0,0:00:35.50,0:00:35.79,Shorts,,0,0,0,,Aku {\c&H0000D4FF&\b1}mulai{\r} di-scan.
+Dialogue: 0,0:00:35.79,0:00:36.14,Shorts,,0,0,0,,Aku mulai {\c&H0000D4FF&\b1}di-scan.{\r}
+Dialogue: 0,0:00:37.29,0:00:37.57,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}Nah,{\r} sudah nih, coba
+Dialogue: 0,0:00:37.57,0:00:38.05,Shorts,,0,0,0,,Nah, {\c&H0000D4FF&\b1}sudah{\r} nih, coba
+Dialogue: 0,0:00:38.05,0:00:38.33,Shorts,,0,0,0,,Nah, sudah {\c&H0000D4FF&\b1}nih,{\r} coba
+Dialogue: 0,0:00:38.33,0:00:38.71,Shorts,,0,0,0,,Nah, sudah nih, {\c&H0000D4FF&\b1}coba{\r}
+Dialogue: 0,0:00:38.71,0:00:39.25,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}keluar{\r} lihat.
+Dialogue: 0,0:00:39.25,0:00:39.71,Shorts,,0,0,0,,keluar {\c&H0000D4FF&\b1}lihat.{\r}
+Dialogue: 0,0:00:47.87,0:00:48.24,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}Tubuh{\r} kamu itu ada {\b1}ponsel.{\r}
+Dialogue: 0,0:00:48.24,0:00:48.53,Shorts,,0,0,0,,Tubuh {\c&H0000D4FF&\b1}kamu{\r} itu ada {\b1}ponsel.{\r}
+Dialogue: 0,0:00:48.53,0:00:48.75,Shorts,,0,0,0,,Tubuh kamu {\c&H0000D4FF&\b1}itu{\r} ada {\b1}ponsel.{\r}
+Dialogue: 0,0:00:48.75,0:00:48.97,Shorts,,0,0,0,,Tubuh kamu itu {\c&H0000D4FF&\b1}ada{\r} {\b1}ponsel.{\r}
+Dialogue: 0,0:00:48.97,0:00:49.41,Shorts,,0,0,0,,Tubuh kamu itu ada {\c&H0000D4FF&\b1}ponsel.{\r}
+Dialogue: 0,0:00:50.09,0:00:51.46,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}Waaah,{\r} {\b1}ponsel{\r} di {\b1}inventory{\r}
+Dialogue: 0,0:00:51.46,0:00:53.10,Shorts,,0,0,0,,Waaah, {\c&H0000D4FF&\b1}ponsel{\r} di {\b1}inventory{\r}
+Dialogue: 0,0:00:53.10,0:00:53.65,Shorts,,0,0,0,,Waaah, {\b1}ponsel{\r} {\c&H0000D4FF&\b1}di{\r} {\b1}inventory{\r}
+Dialogue: 0,0:00:53.65,0:00:56.11,Shorts,,0,0,0,,Waaah, {\b1}ponsel{\r} di {\c&H0000D4FF&\b1}inventory{\r}
+Dialogue: 0,0:00:56.11,0:00:57.16,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}aku,{\r}
+Dialogue: 0,0:00:59.20,0:00:59.48,Shorts,,0,0,0,,{\c&H0000D4FF&\b1}pesan{\r} makanan gitu loh.
+Dialogue: 0,0:00:59.48,0:00:59.87,Shorts,,0,0,0,,pesan {\c&H0000D4FF&\b1}makanan{\r} gitu loh.
+Dialogue: 0,0:00:59.87,0:01:00.09,Shorts,,0,0,0,,pesan makanan {\c&H0000D4FF&\b1}gitu{\r} loh.
+Dialogue: 0,0:01:00.09,0:01:00.26,Shorts,,0,0,0,,pesan makanan gitu {\c&H0000D4FF&\b1}loh.{\r}

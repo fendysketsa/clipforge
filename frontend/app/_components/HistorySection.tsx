@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, type CSSProperties } from "react";
-import { CalendarClock, Clock3, ExternalLink, Film, History, Link2, Music2, MonitorPlay, Smartphone, StopCircle, Trash2, Youtube } from "lucide-react";
+import { ArrowUpRight, CalendarClock, CheckCheck, Clock3, Film, History, Link2, Music2, MonitorPlay, Smartphone, StopCircle, Trash2, Youtube } from "lucide-react";
+import { API_BASE } from "../../lib/apiClient";
 import { statusCopy, statusIcon } from "../../lib/constants";
 import { formatDuration, jobElapsedSeconds } from "../../lib/utils";
 import type { ClipJob, JobStatus, TikTokUploadJob, YouTubeUploadJob } from "../../types/clip.type";
@@ -42,6 +43,31 @@ type PlatformUploadSummary = {
   label: string;
   title: string;
 };
+
+type AutomaticIntake = {
+  enabled?: boolean;
+  checked_epoch?: number;
+  clips?: { source_job_id: string; clip_url: string; status?: string }[];
+};
+
+function intakeSummary(job: ClipJob, intake: AutomaticIntake | null): PlatformUploadSummary | null {
+  if (!intake?.enabled) return null;
+  const rows = intake.clips?.filter((row) => row.source_job_id === job.id) ?? [];
+  if (!rows.length) return null;
+  if (rows.some((row) => row.status === "preflight_hold")) {
+    return { state: "unverified", label: "Tertahan pemeriksaan", title: "Upload otomatis menunggu pemeriksaan file atau metadata backend." };
+  }
+  if (rows.some((row) => row.status === "needs_remote_verification")) {
+    return { state: "unverified", label: "Menunggu verifikasi", title: "Sistem memeriksa hasil request sebelumnya agar video tidak terupload dua kali." };
+  }
+  if (rows.some((row) => row.status === "submitting")) {
+    return { state: "queued", label: "Menyiapkan upload", title: "Metadata dan antrean sedang disiapkan otomatis oleh server." };
+  }
+  if (rows.some((row) => !row.status || row.status === "pending")) {
+    return { state: "queued", label: "Antrean otomatis", title: "Operator akan melanjutkan upload Private setelah antrean sebelumnya selesai." };
+  }
+  return null;
+}
 
 function uploadSummary<T extends PlatformUpload>(
   job: ClipJob,
@@ -131,6 +157,7 @@ export function HistorySection({
   onToggleJobSelection,
 }: HistorySectionProps) {
   const hasActiveJobs = jobs.some((item) => item.status === "queued" || item.status === "running");
+  const [intake, setIntake] = useState<AutomaticIntake | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const failedJobs = jobs.filter((item) => item.status === "failed" || item.status === "cancelled");
   const processJobs = jobs.filter(
@@ -139,6 +166,7 @@ export function HistorySection({
   const selectedCount = selectedJobIds.length;
   const formatDate = (value: string) =>
     new Intl.DateTimeFormat("id-ID", {
+      timeZone: "Asia/Jakarta",
       dateStyle: "medium",
       timeStyle: "short",
     }).format(new Date(value));
@@ -167,15 +195,44 @@ export function HistorySection({
     return () => window.clearInterval(interval);
   }, [hasActiveJobs]);
 
+  useEffect(() => {
+    let cancelled = false;
+    let inFlight = false;
+    const refresh = async () => {
+      if (document.hidden || inFlight) return;
+      inFlight = true;
+      try {
+        const response = await fetch(`${API_BASE}/outputs/_automation/upload-status.json`, { cache: "no-store", signal: AbortSignal.timeout(8000) });
+        if (response.ok) {
+          const snapshot = await response.json() as AutomaticIntake;
+          if (!cancelled) setIntake(snapshot);
+        }
+      } catch { /* Uploads continue independently of this optional status feed. */ }
+      finally { inFlight = false; }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 15000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, []);
+
   return (
     <section className="history" id="history">
       <div className="sectionHeader">
         <div className="sectionTitle">
           <span className="sectionEyebrow">Workspace</span>
           <h2>Riwayat Proses</h2>
-          <p>Lihat kembali proses dan buka hasil klip sebelumnya.</p>
+          <p>Progres produksi, hasil video, dan status upload dalam satu tempat.</p>
         </div>
         <div className="historyActions">
+          <span className="historyLiveCount"><span />{jobs.filter((item) => item.status === "running" || item.status === "queued").length} diproses</span>
+          <span className="historyReadyCount"><CheckCheck size={15} />{jobs.filter((item) => item.status === "completed").length} selesai</span>
           <span className="sectionBadge">{jobs.length} total</span>
           {failedJobs.length > 0 ? (
             <button type="button" onClick={onDeleteFailed} className="uiButton uiButton--ghostDanger">
@@ -193,7 +250,7 @@ export function HistorySection({
             <button
               type="button"
               onClick={onDeleteAll}
-              className="uiButton uiButton--danger"
+              className="uiButton uiButton--ghostDanger"
               title="Hapus catatan job queued, running, failed, dan cancelled"
             >
               <Trash2 size={16} />
@@ -219,7 +276,7 @@ export function HistorySection({
           const progressDetail =
             item.progress_detail?.trim() ||
             (item.status === "queued" ? "Menunggu slot worker" : "Memproses video");
-          const youtubeSummary = item.status === "completed"
+          const recordedYoutubeSummary = item.status === "completed"
             ? uploadSummary(
                 item,
                 youtubeUploads,
@@ -229,6 +286,9 @@ export function HistorySection({
                   && Boolean(upload.video_url),
               )
             : null;
+          const youtubeSummary = recordedYoutubeSummary && (recordedYoutubeSummary.state === "idle" || recordedYoutubeSummary.state === "failed")
+            ? intakeSummary(item, intake) ?? recordedYoutubeSummary
+            : recordedYoutubeSummary;
           const tiktokSummary = item.status === "completed"
             ? uploadSummary(
                 item,
@@ -237,8 +297,11 @@ export function HistorySection({
               )
             : null;
 
+          const thumbnail = item.clips.find((clip) => clip.thumbnail_url)?.thumbnail_url;
+          const score = Math.max(0, ...item.clips.map((clip) => clip.fyp_score ?? 0));
+
           return (
-            <div
+            <article
               className={`jobRow jobRow--${item.status} ${isSelected ? "selected" : ""}`}
               key={item.id}
               style={{ "--job-progress": `${item.status === "completed" ? 100 : progressPercent}%` } as CSSProperties}
@@ -252,7 +315,14 @@ export function HistorySection({
                   onChange={() => onToggleJobSelection(item.id)}
                 />
               ) : null}
-              <button className="jobRowMain" type="button" onClick={() => onSelectJob(item)}>
+              <button className="jobRowMain" type="button" onClick={() => onSelectJob(item)} aria-label={`Buka ${sourceLabel(item)}`}>
+                <div className={`jobCardPreview${thumbnail ? " hasThumbnail" : ""}`}>
+                  {thumbnail ? <img src={`${API_BASE}${thumbnail}`} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = "none"; }} /> : null}
+                  <div className="jobCardPreviewFallback"><FormatIcon size={32} strokeWidth={1.3} /><span>{format.title}</span></div>
+                  <span className={`jobFormatBadge jobFormatBadge--${format.kind}`}><FormatIcon size={13} />{format.label} · {format.aspect}</span>
+                  <span className="jobPreviewOpen"><ArrowUpRight size={18} /></span>
+                </div>
+                <div className="jobCardBody">
                 <div className="jobRowTop">
                   <span className={`jobRow-status status-${item.status}`}>
                     <span className="jobRow-statusIcon">
@@ -261,21 +331,9 @@ export function HistorySection({
                     <span className="jobRow-statusLabel">{statusCopy[item.status]}</span>
                     {isProcessing ? <span className="jobRow-statusPercent">{progressPercent}%</span> : null}
                   </span>
-                  <div className="jobRowTopMeta">
-                    <span
-                      className={`jobFormatBadge jobFormatBadge--${format.kind}`}
-                      title={`${format.title}, rasio ${format.aspect}`}
-                    >
-                      <FormatIcon size={14} />
-                      {format.label} · {format.aspect}
-                    </span>
-                    <strong>
-                      <Film size={14} />
-                      {count}
-                    </strong>
-                  </div>
+                  <span className="jobClipCount"><Film size={13} />{count}</span>
                 </div>
-                <h3>{sourceLabel(item)}</h3>
+                <h3 title={sourceLabel(item)}>{sourceLabel(item)}</h3>
                 <div className={`jobRowContent${youtubeSummary && tiktokSummary ? " hasPlatforms" : ""}`}>
                   <div className="jobRowCore">
                     {isProcessing ? (
@@ -296,9 +354,10 @@ export function HistorySection({
                         </div>
                     </div>
                     ) : null}
-                    <div className="jobSourceLine">
+                    {item.error ? <p className="jobCardError" title={item.error}>{item.error}</p> : null}
+                    <div className="jobSourceLine" title={url || "Upload lokal"}>
                       <Link2 size={14} />
-                      <span>{url || "Upload lokal"}</span>
+                      <span>{item.source_uploader || url || "Upload lokal"}</span>
                     </div>
                     <div className="jobDetailGrid">
                       <span>
@@ -313,19 +372,13 @@ export function HistorySection({
                           <b>{formatDuration(elapsedSeconds)}</b>
                         </span>
                       ) : null}
-                      {item.source_uploader ? (
-                        <span>
-                          <small>Sumber</small>
-                          <b>{item.source_uploader}</b>
-                        </span>
-                      ) : null}
                       <span>
                         <small>Preset</small>
                         <b>{item.request.crop_mode} · {item.request.video_quality}</b>
                       </span>
-                      <span>
-                        <small>Pipeline</small>
-                        <b>{item.request.ai_enabled ? `Auto FYP · ${item.request.ai_model || "AI lokal"}` : "Auto FYP · AI off"}</b>
+                      <span title={item.request.ai_enabled ? item.request.ai_model || "AI lokal" : "AI nonaktif"}>
+                        <small>{score ? "Skor FYP" : "Pipeline"}</small>
+                        <b>{score ? `${score}/100` : item.request.ai_enabled ? "Auto FYP · AI" : "Auto FYP"}</b>
                       </span>
                     </div>
                   </div>
@@ -348,12 +401,8 @@ export function HistorySection({
                     </div>
                   ) : null}
                 </div>
-                {url ? (
-                  <span className="jobOpenHint">
-                    <ExternalLink size={13} />
-                    Klik kartu untuk membuka hasil klip
-                  </span>
-                ) : null}
+                <span className="jobOpenHint"><span>{isProcessing ? "Lihat progres" : "Buka hasil video"}</span><ArrowUpRight size={16} /></span>
+                </div>
               </button>
               {canStop ? (
                 <button
@@ -375,10 +424,10 @@ export function HistorySection({
                   title="Hapus kartu dari riwayat"
                 >
                   <Trash2 size={15} />
-                  <span>Hapus</span>
+                  <span className="jobDeleteLabel">Hapus</span>
                 </button>
               ) : null}
-            </div>
+            </article>
           );
         })}
       </div>

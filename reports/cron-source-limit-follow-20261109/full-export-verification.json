@@ -1,0 +1,104 @@
+{
+  "passed": true,
+  "output": "/tmp/clipforge-cron-full-export-gss9tsf4/clips/clip_01_pratinjau-pengujian-efek-cron.mp4",
+  "cron_director_effects": {
+    "version": 2,
+    "cron_only": true,
+    "enabled": true,
+    "required": true,
+    "rendered": true,
+    "cues": [
+      {
+        "kind": "statement_focus",
+        "mood": "realization",
+        "start": 16.44,
+        "end": 18.18,
+        "quote": "Sekarang kita bisa melihat hasil akhirnya.",
+        "statement": "Sekarang kita bisa melihat hasil akhirnya",
+        "statement_rendered": true,
+        "directed_by": "source_sentence",
+        "timing_method": "estimated_phrase_offset_within_timed_source_segment",
+        "palette": [
+          157,
+          208,
+          255
+        ],
+        "variation": 183,
+        "source_grounded": true,
+        "sound": "none",
+        "box": [
+          0.1,
+          0.19,
+          0.76,
+          0.14
+        ],
+        "radius": 63,
+        "placement_reason": "source_statement_outside_faces_and_caption_guards",
+        "protected_regions": [
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.18
+          ],
+          [
+            0.82,
+            0.7,
+            0.18,
+            0.3
+          ],
+          [
+            0.08,
+            0.72,
+            0.84,
+            0.28
+          ],
+          [
+            0.29140740740740745,
+            0.365,
+            0.4171851851851852,
+            0.153
+          ]
+        ],
+        "face_samples": 0,
+        "accent_kind": "swoosh",
+        "statement_style": "clean"
+      }
+    ],
+    "source_clock_unchanged": true,
+    "captions_clock_unchanged": true,
+    "audio_unchanged": true,
+    "inserted_timeline_seconds": 0,
+    "reason": "source_timed_director_accents",
+    "required_min_count": 1,
+    "cue_count": 1,
+    "sensitive_context": false,
+    "seeded_variation": true,
+    "canvas": [
+      1080,
+      1920
+    ],
+    "renderer": "procedural_rgba_accents",
+    "verification": "duration_frame_count_and_geometry_preserved"
+  },
+  "output_duration_seconds": 26.0,
+  "follow_cta": {
+    "enabled": true,
+    "cron_only": true,
+    "repeat_count": 1,
+    "silent": true,
+    "extends_video_duration": false,
+    "version": 1,
+    "start": 9.12,
+    "end": 10.87,
+    "position": "middle",
+    "timing_method": "source_sentence_boundary",
+    "copy": {
+      "action": "FOLLOW",
+      "headline": "SUKA KLIP SEPERTI INI?",
+      "support": "CERITA & KLIP LAINNYA",
+      "prompt": "Ikuti untuk cerita dan klip lainnya"
+    },
+    "avoids_director_accents": true
+  }
+}

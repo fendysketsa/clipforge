@@ -1,0 +1,16 @@
+[Unit]
+Description=ClipForge Long QC and Private upload operator
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/www/wwwroot/clipper/clipforge
+ExecStart=/usr/bin/python -u /www/wwwroot/clipper/clipforge/scripts/long-qc-operator.py
+Restart=on-failure
+RestartSec=20
+Nice=10
+NoNewPrivileges=true
+MemoryMax=3G
+
+[Install]
+WantedBy=default.target

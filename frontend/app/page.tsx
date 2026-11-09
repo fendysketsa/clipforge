@@ -363,18 +363,17 @@ export default function HomePage() {
     const unreportedFailures = failedJobs.filter(
       (item) => !reportedFailureIds.current.has(item.id),
     );
-    if (unreportedFailures.length) {
-      const newestFailure = [...unreportedFailures].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
-      const failureMessage = newestFailure.status === "cancelled"
-        ? "Proses dibatalkan. Card tetap disimpan di Riwayat sampai dihapus manual."
-        : `Proses gagal${newestFailure.error ? `: ${newestFailure.error}` : "."} Card tetap disimpan agar penyebabnya bisa diperiksa.`;
-      setError(failureMessage);
-      toast.error(failureMessage, { id: `job-failure-${newestFailure.id}` });
-      unreportedFailures.forEach((item) => reportedFailureIds.current.add(item.id));
+    // Historical failures remain on their cards. A background job must not
+    // replace the current job's error or re-toast on every page visit.
+    const currentFailure = unreportedFailures.find((item) => item.id === activeJobId);
+    if (currentFailure) {
+      const message = currentFailure.status === "cancelled" ? "Proses dibatalkan." : "Sumber belum menghasilkan klip layak. Detail tersedia di Riwayat.";
+      toast.error(message, { id: `job-failure-${currentFailure.id}` });
     }
+    unreportedFailures.forEach((item) => reportedFailureIds.current.add(item.id));
     setJobs(nextJobs);
     return nextJobs;
-  }, []);
+  }, [activeJobId]);
 
   const loadYouTubeUploads = useCallback(async () => {
     const [config, uploads] = await Promise.all([getYouTubeConfig(), getYouTubeUploads()]);

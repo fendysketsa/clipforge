@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "source_job_id": "d96655e1b1914bfa8464a376c642c221",
+  "source_clip_url": "/outputs/manual-rescue-20261110/DAKio0d-_LQ/clips/clip_01_scanner-minecraft-ini-bisa-menemukan-ponsel-di-inventory.mp4",
+  "repair_attempted": true,
+  "decision": "PASS_UPLOAD",
+  "confidence": 0.86,
+  "hard_gates": {
+    "rights": true,
+    "media_integrity": true,
+    "meaning_preserved": true,
+    "context_safe": true
+  },
+  "ai_checks": {
+    "hook": true,
+    "standalone_clarity": true,
+    "payoff": true,
+    "caption": true,
+    "crop": true,
+    "visual_quality": true,
+    "audio_quality": true
+  },
+  "evidence": [
+    "Original user source-rights confirmation retained from the failed job.",
+    "One continuous source scene: setup/action/payoff; no unrelated compilation moments stitched together.",
+    "Source frames, exact timed speech/captions and final opening/middle/payoff/ending frames inspected.",
+    "1080x1920 H264/AAC output, full decode and loudness/peak metrics passed.",
+    "Frame QC exposure/sharpness/safe areas passed after one bounded repair.",
+    "Source-specific analytical comparison and takeaway appear in distinct timed windows.",
+    "Current native upload preflight returned no blocking issue."
+  ],
+  "repair_instructions": [],
+  "delete_source": false,
+  "upload_allowed": true,
+  "output_sha256": "3354bca00caf5fc3523464acebaa2200048f42356363bc9becbdfd236b706c75",
+  "scope_note": "Local content/media QC and retained user rights confirmation; not platform acceptance or independent contract verification."
+}

@@ -1,0 +1,6 @@
+# Downloaded/derived review media are runtime assets, not source-control payloads.
+*.mp4
+*.part
+*.wav
+initial-render/
+.cron-director/

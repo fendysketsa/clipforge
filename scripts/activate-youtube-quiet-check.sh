@@ -29,14 +29,14 @@ while (( $# )); do
   esac
   shift
 done
-modules=(api youtube_remote_status ryuundy_reference_learning)
+modules=(api clipper cron_director_effects cron_source_policy automatic_retry tiktok_strategy youtube_remote_status ryuundy_reference_learning long_video_qc shorts_thumbnail)
 activation_report=reports/cron-upload-recovery-activation.json
 if [[ "$preserve_browser" == true ]]; then
   modules+=(youtube_uploader tiktok_uploader youtube_blocked_cleanup)
   activation_report=reports/youtube-browser-preservation-activation.json
 fi
 if [[ "$ryuundy_learning" == true ]]; then
-  modules+=(clipper ryuundy_motion)
+  modules+=(ryuundy_motion)
   activation_report=reports/ryuundy-reference-learning-activation.json
 fi
 if (( EUID != 0 )); then
@@ -56,8 +56,7 @@ python -m py_compile "${module_paths[@]}"
 # Refresh the durable image first; restart the existing container to retain
 # its exact environment, mounts, and network settings.
 if [[ "$skip_build" != true ]]; then
-  if docker compose version >/dev/null 2>&1; then compose=(docker compose); else compose=(docker-compose); fi
-  "${compose[@]}" --env-file .env build backend
+  python scripts/build-backend-image.py
 fi
 image_id="$(docker image inspect clipforge-backend:latest --format '{{.Id}}')"
 verify_image_sources() {
@@ -119,6 +118,9 @@ python scripts/wait-for-backend-idle.py "${idle_args[@]}" --wait-seconds "$wait_
 # Source may have changed while draining jobs. Keep the durable image and the
 # staged runtime modules consistent before touching the existing container.
 verify_image_sources
+if ! docker exec fendy-clipper-backend python -c 'from PIL import Image, ImageDraw, ImageFont'; then
+  docker exec fendy-clipper-backend python -m pip install 'Pillow>=10.2,<13'
+fi
 if [[ "$preserve_browser" == true ]]; then
   # no_defaults is needed even for cookie-only background CDP attaches.
   # Upgrade only after draining work, and keep the built image durable too.

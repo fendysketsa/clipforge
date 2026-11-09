@@ -1,0 +1,50 @@
+[
+  {
+    "job_id": "272ddadc5dc444f387dd7dd50cbf127d",
+    "source_url": "https://www.youtube.com/watch?v=DAKio0d-_LQ",
+    "reason": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus.",
+    "logs": [
+      "AI agent returned no usable clips; keeping heuristic scores.",
+      "Auto-repairing a broader shortlist before final FYP selection...",
+      "No complete Short yet; automatically expanding candidate windows from 45 to 105",
+      "seconds...",
+      "AI agent scoring 40 candidates via llama3.2-id:latest...",
+      "AI agent returned no usable clips; keeping heuristic scores.",
+      "Tidak ada kandidat dengan alur utuh, retensi memadai, batas kalimat aman, dan",
+      "konteks editorial yang layak. Perluasan durasi otomatis sudah dicoba; gunakan",
+      "sumber lain.",
+      "Workspace dan seluruh file sementara proses gagal telah dihapus."
+    ],
+    "checked_at": "2026-11-09T19:00:32.477576+07:00",
+    "delete_response": {
+      "status": "ok",
+      "removed_jobs": 1,
+      "removed_outputs": 0
+    },
+    "verified_removed": true
+  },
+  {
+    "job_id": "3a57f59bd0754397b3b88e45ecc8e929",
+    "source_url": "https://www.youtube.com/watch?v=d_QKCUP345Y",
+    "reason": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus.",
+    "logs": [
+      "AI agent returned no usable clips; keeping heuristic scores.",
+      "Auto-repairing a broader shortlist before final FYP selection...",
+      "No complete Short yet; automatically expanding candidate windows from 45 to 105",
+      "seconds...",
+      "AI agent scoring 30 candidates via llama3.2-id:latest...",
+      "AI agent returned no usable clips; keeping heuristic scores.",
+      "Tidak ada kandidat dengan alur utuh, retensi memadai, batas kalimat aman, dan",
+      "konteks editorial yang layak. Perluasan durasi otomatis sudah dicoba; gunakan",
+      "sumber lain.",
+      "Workspace dan seluruh file sementara proses gagal telah dihapus."
+    ],
+    "checked_at": "2026-11-09T19:00:32.500473+07:00",
+    "delete_response": {
+      "status": "ok",
+      "removed_jobs": 1,
+      "removed_outputs": 0
+    },
+    "verified_removed": true
+  }
+]

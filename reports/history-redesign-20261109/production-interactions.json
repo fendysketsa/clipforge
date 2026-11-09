@@ -1,0 +1,19 @@
+[
+  {
+    "tracks": 3,
+    "previews": 16,
+    "overflow": false,
+    "viewport": 1280
+  },
+  {
+    "tracks": 1,
+    "previews": 16,
+    "overflow": false,
+    "viewport": 390
+  },
+  {
+    "selection_preserves_history": true,
+    "card_opens_results": true,
+    "errors": []
+  }
+]

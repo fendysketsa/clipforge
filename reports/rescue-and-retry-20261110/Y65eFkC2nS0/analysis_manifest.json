@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "source": "https://www.youtube.com/watch?v=Y65eFkC2nS0",
+  "source_metadata_path": "reports/rescue-and-retry-20261110/Y65eFkC2nS0/metadata.json",
+  "native_candidates_path": null,
+  "parameters": {
+    "min_duration": 25,
+    "max_duration": 105,
+    "candidate_limit": 1
+  },
+  "outcome": "READY_FOR_SELECTION",
+  "candidates": [
+    {
+      "index": 1,
+      "start": 26.2,
+      "end": 55.5,
+      "duration": 29.3,
+      "transcript": "malah jadi detektif. Drum bunyi sendiri orangnya keliling nyari sumber. Ternyata ada manusia iseng di balik layar.",
+      "hook": "Niatnya jadi drummer, malah jadi detektif.",
+      "recommended_title": "Mau Main Drum, Malah Mencari Sumber Bunyinya",
+      "standalone_score": 90,
+      "viral_score": 85,
+      "religious_context_safe": true,
+      "risk_flags": [
+        "source rights carried from the original explicitly confirmed job",
+        "visual narrative assessed in source frames"
+      ],
+      "reason": "Satu lelucon visual: bunyi drum membuat pemain mencari sumbernya, lalu orang yang membuat bunyi terlihat. Tidak menggabungkan adegan kompilasi lain."
+    }
+  ]
+}

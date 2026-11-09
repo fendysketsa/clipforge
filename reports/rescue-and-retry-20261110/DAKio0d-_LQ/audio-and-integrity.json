@@ -1,0 +1,16 @@
+{
+  "full_decode_passed": true,
+  "decode_error": "",
+  "audio_metrics": {
+    "input_i": "-15.72",
+    "input_tp": "-4.08",
+    "input_lra": "2.90",
+    "input_thresh": "-25.84",
+    "output_i": "-15.79",
+    "output_tp": "-4.18",
+    "output_lra": "2.90",
+    "output_thresh": "-25.92",
+    "normalization_type": "dynamic",
+    "target_offset": "-0.21"
+  }
+}

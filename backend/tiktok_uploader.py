@@ -524,9 +524,17 @@ def caption_editor_text(editor) -> str:
 
 def clear_caption_editor(page, editor) -> None:
     """Remove TikTok's filename-derived caption from the actual text control."""
-    try:
-        editor.click(timeout=5_000)
-    except Exception as first_error:
+    # TikTok can show DraftJS before upload/processing enables interaction.
+    # A five-second retry treated that normal transfer phase as a modal error.
+    # Keep normal click actionability checks; never force-click through UI.
+    deadline = time.monotonic() + env_int("TIKTOK_CAPTION_READY_TIMEOUT_SECONDS", 300)
+    first_error = None
+    while time.monotonic() < deadline:
+        try:
+            editor.click(timeout=5_000)
+            break
+        except Exception as exc:
+            first_error = exc
         dismissed, modal_text = dismiss_blocking_modal(page)
         if not dismissed:
             save_debug(page, "caption-blocked-by-modal")
@@ -536,13 +544,24 @@ def clear_caption_editor(page, editor) -> None:
                 "Video belum diposting."
             ) from first_error
         try:
-            editor.click(timeout=5_000)
-        except Exception as retry_error:
-            save_debug(page, "caption-click-failed")
-            raise UploadError(
-                "Kolom caption TikTok tetap tidak dapat diklik setelah dialog ditutup; "
-                "video belum diposting."
-            ) from retry_error
+            # Background/minimized Chromium may stop animation frames, so
+            # click() cannot establish stability even for an editable field.
+            # fill() uses the real input events without a mouse-stability wait.
+            # Only try it after verifying that no blocking modal remains, and
+            # read the field back so DraftJS cannot silently retain filenames.
+            editor.fill("", timeout=5_000)
+            if not normalized_caption_text(caption_editor_text(editor)):
+                return
+        except Exception:
+            pass
+        log("Menunggu transfer/pemrosesan TikTok dan editor caption siap...")
+        page.wait_for_timeout(1000)
+    else:
+        save_debug(page, "caption-click-failed")
+        raise UploadError(
+            "Kolom caption TikTok belum siap setelah batas tunggu transfer/pemrosesan; "
+            "video belum diposting."
+        ) from first_error
     try:
         editor.press("Control+A", timeout=2_000)
         editor.press("Backspace", timeout=2_000)
@@ -1565,6 +1584,7 @@ def upload_video(
         )
     submission_state, response_handler = monitor_post_submission_response(page)
     try:
+        log('POST_SUBMIT_INTENT: Post akan dicoba; hasil tanpa konfirmasi harus diverifikasi sebelum transfer ulang.')
         post_button.click(timeout=10_000)
         log(f"Tombol Post diklik setelah privasi {visibility} terverifikasi.")
         if background_tick is not None:

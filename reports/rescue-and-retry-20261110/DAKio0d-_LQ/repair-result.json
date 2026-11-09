@@ -1,0 +1,49 @@
+{
+  "output": "/www/wwwroot/clipper/clipforge/backend/outputs/manual-rescue-20261110/DAKio0d-_LQ/clips/clip_01_scanner-minecraft-ini-bisa-menemukan-ponsel-di-inventory.mp4",
+  "repair_attempted": true,
+  "render_qc": {
+    "version": 1,
+    "available": true,
+    "status": "passed",
+    "quality_gate_passed": true,
+    "requires_manual_review": false,
+    "blocking": false,
+    "sample_count": 7,
+    "frame_timestamps_seconds": [
+      7.546,
+      15.092,
+      22.638,
+      30.183,
+      37.729,
+      45.275,
+      52.821
+    ],
+    "exposure": {
+      "passed": true,
+      "median_luminance": 54.0,
+      "shadow_clip_percent": 30.401,
+      "highlight_clip_percent": 0.313,
+      "dark_frame_ratio": 0.143
+    },
+    "sharpness": {
+      "passed": true,
+      "median_laplacian_variance": 612.76,
+      "minimum": 18.0
+    },
+    "head_crop": {
+      "assessed": false,
+      "passed": null,
+      "detected_faces": 0,
+      "safe_face_ratio": null
+    },
+    "subtitle_safe_area": {
+      "assessed": true,
+      "passed": true,
+      "position": "bottom",
+      "method": "renderer_geometry_contract",
+      "shorts_ui_safe": true
+    },
+    "warnings": []
+  },
+  "output_sha256": "f8578b4bda183894f47069c5e5165c26f08247bc349ff83f542b8be2e34c6bc2"
+}

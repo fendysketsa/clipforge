@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "scheduler_running": true,
+  "cron_director_effects_policy_version": null,
+  "cron_source_process_limit": null,
+  "cron_follow_cta_adaptive": null,
+  "tiktok_strategy_version": null,
+  "tiktok_automatic_retry_enabled": null,
+  "checked_at": "2026-11-10T05:30:59+07:00"
+}

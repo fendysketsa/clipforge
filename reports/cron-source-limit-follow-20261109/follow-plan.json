@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "cron_only": true,
+  "repeat_count": 1,
+  "silent": true,
+  "extends_video_duration": false,
+  "version": 1,
+  "start": 6.147,
+  "end": 7.897,
+  "position": "middle",
+  "timing_method": "source_sentence_boundary",
+  "copy": {
+    "action": "FOLLOW",
+    "headline": "SUKA KLIP SEPERTI INI?",
+    "support": "CERITA & KLIP LAINNYA",
+    "prompt": "Ikuti untuk cerita dan klip lainnya"
+  },
+  "avoids_director_accents": true
+}

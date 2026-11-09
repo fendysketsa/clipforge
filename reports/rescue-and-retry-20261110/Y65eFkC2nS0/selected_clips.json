@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "source": "https://www.youtube.com/watch?v=Y65eFkC2nS0",
+  "quality_floor": 80,
+  "selected": [
+    {
+      "index": 1,
+      "start": 26.2,
+      "end": 55.5,
+      "duration": 29.3,
+      "transcript": "malah jadi detektif. Drum bunyi sendiri orangnya keliling nyari sumber. Ternyata ada manusia iseng di balik layar.",
+      "hook": "Niatnya jadi drummer, malah jadi detektif.",
+      "recommended_title": "Mau Main Drum, Malah Mencari Sumber Bunyinya",
+      "standalone_score": 90,
+      "viral_score": 85,
+      "religious_context_safe": true,
+      "risk_flags": [
+        "source rights carried from the original explicitly confirmed job",
+        "visual narrative assessed in source frames"
+      ],
+      "reason": "Satu lelucon visual: bunyi drum membuat pemain mencari sumbernya, lalu orang yang membuat bunyi terlihat. Tidak menggabungkan adegan kompilasi lain.",
+      "component_scores": {
+        "hook_immediacy": 17,
+        "standalone_clarity": 18,
+        "payoff_and_ending": 14,
+        "retention_density": 11,
+        "emotional_or_practical_value": 8,
+        "specificity_novelty": 8,
+        "editability": 4,
+        "metadata_fit": 5
+      },
+      "rights_review_required": false,
+      "rights_basis": "Original job contains confirm_source_rights=true and recorded commercial-use confirmation for source audio and visuals.",
+      "title": "Mau Main Drum, Malah Mencari Sumber Bunyinya",
+      "description": "Satu lelucon visual: bunyi drum membuat pemain mencari sumbernya, lalu orang yang membuat bunyi terlihat. Tidak menggabungkan adegan kompilasi lain.",
+      "hashtags": [
+        "KomediIndonesia",
+        "Drummer",
+        "LeluconVisual"
+      ],
+      "cta": "Bagian mana yang paling membuatmu penasaran?",
+      "hook_overlay": "Niatnya jadi drummer, malah jadi detektif.",
+      "edit_notes": [
+        "Preserve the one complete scene.",
+        "Do not add dialogue, claim real-world scanner capability, or combine unrelated jokes."
+      ]
+    }
+  ],
+  "rejected": [],
+  "selection_summary": {
+    "requested": 1,
+    "selected": 1,
+    "outcome": "READY_FOR_RENDER"
+  }
+}

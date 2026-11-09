@@ -1,0 +1,24 @@
+{
+  "checked_at": "2026-11-09T19:04:02.995543+07:00",
+  "source_job_id": "82cf9657a36e4dcea341cfbb86cd7cbd",
+  "source_url": "https://www.youtube.com/watch?v=uP8yMRXy5g8",
+  "clip_url": "/outputs/82cf9657a36e4dcea341cfbb86cd7cbd/yuta-mio-dan-baby-celine-digigit-nyamuk-sampai-kurus-roblox/clips/clip_01_apakah-ini-akan-bagus-guys-lihat-nih-ini.mp4",
+  "media_sha256": "fd84b354ae6f9e1cfe9ca4d83a31edde131bd95ed61f7d984316c25fc32c7231",
+  "media_size": 52295033,
+  "clip_transcript": "Apakah ini akan bagus guys? Lihat nih! Ini matanya merah! Apakah ini mirip sama yang itu? Tapi kan beda ibunya! Kita coba ya! Butuh waktu sekitar 6 menit 37 detik untuk bisa menetaskan telur nyamuk yang ini guys! Kira -kira dia akan jadi nyamuk seperti apa ya guys? Soalnya ada cahaya -cahaya di sekitar badannya! Mio? Iya! Eh! Kayu -ta pengen nyamuk yang besar -besar di sini! Gimana caranya ya? Kayaknya itu harus diambilnya yang jauh dik! Iya! Kayaknya kayu -ta harus beli juga alat yang bagus! Eh! Ada pemukul! Nyamuk Mio! Ini nih! Lihat nih!",
+  "rejected_social_caption": "Apa kamu tahu bahwa telur nyamuk bisa menetas dalam waktu 6 menit 37 detik? Kita akan membahas tentang cara menetaskan telur nyamuk dan bagaimana membuatnya menjadi nyamuk yang sehat.\n\nApakah kamu siap untuk mencoba ini?\n\nMenurutmu:\nBagian dari “Apakah ini akan bagus guys? lihat nih! ini” mana yang paling mengubah pandanganmu?\n\nKirim ke teman yang mungkin melihat situasi ini dari sudut berbeda.\n\n#RobloxIndonesia #RobloxStory #GamingIndonesia #CeritaViral #Shorts\n",
+  "remote_upload_id": "186c011c48684c3dacb13423475fab1d",
+  "remote_video_url": "https://www.youtube.com/watch?v=NdEKBl4Xfrg",
+  "remote_state": "unverified existing checkpoint; preserved, no remote deletion requested",
+  "decision": "DROP_SOURCE",
+  "delete_response": {
+    "status": "ok",
+    "removed_jobs": 1,
+    "removed_outputs": 14
+  },
+  "verified_removed": true,
+  "media_removed": true,
+  "remote_checkpoint_preserved": true,
+  "previous_confirmed_uploads_preserved": true,
+  "completed_at": "2026-11-09T19:04:11.407367+07:00"
+}

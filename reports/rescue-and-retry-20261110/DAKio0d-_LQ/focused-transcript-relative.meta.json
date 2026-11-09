@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "model": "Systran/faster-whisper-medium",
+  "language": "id",
+  "decode": "accuracy_first_beam_5_smart_word_boundaries"
+}

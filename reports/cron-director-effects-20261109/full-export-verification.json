@@ -1,0 +1,75 @@
+{
+  "passed": true,
+  "output": "/tmp/clipforge-cron-full-export-oajhlh68/clips/clip_01_pratinjau-pengujian-efek-cron.mp4",
+  "cron_director_effects": {
+    "version": 1,
+    "cron_only": true,
+    "enabled": true,
+    "required": true,
+    "rendered": true,
+    "cues": [
+      {
+        "kind": "focus_brackets",
+        "mood": "emphasis",
+        "start": 4.22,
+        "end": 5.04,
+        "quote": "Perhatikan bagian ini.",
+        "directed_by": "source_sentence",
+        "timing_method": "estimated_phrase_offset_within_timed_source_segment",
+        "palette": [
+          125,
+          240,
+          217
+        ],
+        "variation": 181,
+        "source_grounded": true,
+        "sound": "none",
+        "box": [
+          0.104896,
+          0.524259,
+          0.130208,
+          0.231481
+        ],
+        "radius": 119,
+        "placement_reason": "measured_motion_detail_outside_protected_regions",
+        "protected_regions": [
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.16
+          ],
+          [
+            0.05,
+            0.77,
+            0.9,
+            0.23
+          ],
+          [
+            0.28,
+            0.05,
+            0.44,
+            0.51
+          ]
+        ],
+        "face_samples": 0
+      }
+    ],
+    "source_clock_unchanged": true,
+    "captions_clock_unchanged": true,
+    "audio_unchanged": true,
+    "inserted_timeline_seconds": 0,
+    "reason": "source_timed_director_accents",
+    "required_min_count": 1,
+    "cue_count": 1,
+    "sensitive_context": false,
+    "seeded_variation": true,
+    "canvas": [
+      1920,
+      1080
+    ],
+    "renderer": "procedural_rgba_accents",
+    "verification": "duration_frame_count_and_geometry_preserved"
+  },
+  "output_duration_seconds": 8.0
+}

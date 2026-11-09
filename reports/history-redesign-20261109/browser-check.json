@@ -1,0 +1,60 @@
+[
+  {
+    "tracks": 3,
+    "width": 1406,
+    "cardWidth": 455.328125,
+    "bodyOverflow": false,
+    "cardOverflow": false,
+    "cards": 16,
+    "viewport": 1920
+  },
+  {
+    "tracks": 3,
+    "width": 1346,
+    "cardWidth": 435.328125,
+    "bodyOverflow": false,
+    "cardOverflow": false,
+    "cards": 16,
+    "viewport": 1440
+  },
+  {
+    "tracks": 3,
+    "width": 1186,
+    "cardWidth": 382,
+    "bodyOverflow": false,
+    "cardOverflow": false,
+    "cards": 16,
+    "viewport": 1280
+  },
+  {
+    "tracks": 2,
+    "width": 930,
+    "cardWidth": 455,
+    "bodyOverflow": false,
+    "cardOverflow": false,
+    "cards": 16,
+    "viewport": 1024
+  },
+  {
+    "tracks": 1,
+    "width": 340,
+    "cardWidth": 340,
+    "bodyOverflow": false,
+    "cardOverflow": false,
+    "cards": 16,
+    "viewport": 390
+  },
+  {
+    "tracks": 1,
+    "width": 270,
+    "cardWidth": 270,
+    "bodyOverflow": false,
+    "cardOverflow": false,
+    "cards": 16,
+    "viewport": 320
+  },
+  {
+    "focusOutline": "solid",
+    "errors": []
+  }
+]

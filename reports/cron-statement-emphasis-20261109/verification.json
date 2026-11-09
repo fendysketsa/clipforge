@@ -1,0 +1,50 @@
+{
+  "policy_version": 2,
+  "source_ready": true,
+  "production_activated": false,
+  "runtime_checked_at": "2026-11-09T19:42:04+07:00",
+  "runtime_observation": {
+    "enabled": true,
+    "scheduler_running": true,
+    "cron_director_effects_required": null,
+    "cron_director_effects_policy_version": null
+  },
+  "activation": "sudo bash /www/wwwroot/clipper/clipforge/scripts/activate-cron-director-effects.sh",
+  "policy": {
+    "scope": "new cron renders only",
+    "statement_optional": true,
+    "max_statements_per_short": 1,
+    "total_visual_cue_budget": "1-2",
+    "exact_source_words": true,
+    "negation_attribution_conditions_preserved": true,
+    "question_to_fact": false,
+    "sensitive_context_text": false,
+    "safe_area_required": true,
+    "animation": "one arrival then steady hold",
+    "timeline_audio_unchanged": true
+  },
+  "tests": {
+    "current_effects_suite": {
+      "passed": 55
+    },
+    "previous_combined_effects_caption_long_deployment": {
+      "passed": 333,
+      "note": "Included 49 effects tests before six final qualifier/fragment cases."
+    },
+    "actual_export_clip": {
+      "passed": true,
+      "proof": "full-export-verification.json"
+    },
+    "real_clip_preview": {
+      "passed": true,
+      "original_modified": false,
+      "uploaded": false
+    },
+    "syntax_and_whitespace": true
+  },
+  "limitations": [
+    "Phrase timing is estimated within timed transcript segments, not verified word-level alignment.",
+    "Placement uses optional face detection and conservative frame geometry, not semantic object tracking.",
+    "Text is skipped when source meaning, complete phrase, sensitive context or clear space does not support it."
+  ]
+}

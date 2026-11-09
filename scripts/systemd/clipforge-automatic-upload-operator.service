@@ -1,0 +1,15 @@
+[Unit]
+Description=ClipForge automatic Private upload intake
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/www/wwwroot/clipper/clipforge
+ExecStart=/usr/bin/python -u /www/wwwroot/clipper/clipforge/scripts/automatic-upload-operator.py
+Restart=on-failure
+RestartSec=20
+NoNewPrivileges=true
+MemoryMax=256M
+
+[Install]
+WantedBy=default.target

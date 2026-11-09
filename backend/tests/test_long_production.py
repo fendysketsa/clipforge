@@ -58,6 +58,18 @@ def test_long_queues_even_with_full_short_buffers_and_zero_upload_quota(setup_lo
     assert len(api.long_production_state()['attempts']) == 1
 
 
+def test_long_skips_source_at_lifetime_cap_and_uses_another_short(setup_long):
+    short,run,_=setup_long
+    prior=short.model_copy(deep=True,update={'id':'previous-process'})
+    api.jobs[prior.id]=prior
+    other=short.model_copy(deep=True,update={'id':'other-short'})
+    other.request.url='https://www.youtube.com/watch?v=otherABC123'
+    api.jobs[other.id]=other
+    run.processed.append({'job_id':other.id,'source':dict(url=other.request.url,title='Other source')})
+    result=api.queue_review_long_once()
+    assert result['status']=='queued' and result['short_job_id']==other.id
+
+
 def test_cleaned_short_uses_persisted_authoritative_snapshot(setup_long):
     short, run, _ = setup_long
     run.processed[0]['paired_short_snapshot'] = api.paired_short_snapshot(short)
@@ -162,3 +174,27 @@ def test_control_persists_policy_and_starts_real_queue(setup_long):
     assert result['enabled']
     assert result['production']['status'] == 'queued'
     assert api.get_long_production()['attempts'][0]['job_id'] == result['production']['job_id']
+
+
+def test_qc_rejection_does_not_consume_daily_success_target(setup_long):
+    short, run, _ = setup_long
+    stamp = api.now_iso()
+    rejected = short.model_copy(deep=True, update={'id': 'rejected'})
+    rejected.request.clip_mode = 'highlight_5m'
+    # A failed Long from another source must not consume today's success quota.
+    rejected.request.url = 'https://www.youtube.com/watch?v=otherABC123'
+    api.jobs[rejected.id] = rejected
+    state = api.long_production_state()
+    state.update(auto_qc_enabled=True, attempts=[dict(day=datetime.now(api.ZoneInfo('Asia/Jakarta')).date().isoformat(),
+        job_id='rejected', short_job_id='old-short', status='completed', qc_decision='DROP_SOURCE')])
+    api.save_long_production_state(state)
+    assert api.queue_review_long_once()['status'] == 'queued'
+
+
+def test_long_full_analysis_is_not_replaced_with_short_prefix(monkeypatch):
+    monkeypatch.setattr(api, 'fetch_video_duration', lambda url: 7200)
+    request = api.ClipJobRequest(url='https://www.youtube.com/watch?v=MtoYogBMyII',
+        clip_mode='highlight_5m', ai_enabled=False)
+    assert api.normalize_job_request(request).analyze_seconds is None
+    short = request.model_copy(update={'clip_mode': 'short'})
+    assert api.normalize_job_request(short).analyze_seconds == 1200

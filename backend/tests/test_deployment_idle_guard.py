@@ -157,6 +157,22 @@ def test_recovery_wrapper_forwards_help_without_docker_or_root():
     assert "--skip-build" in result.stdout and "--wait-seconds" in result.stdout
 
 
+@pytest.mark.parametrize("flag", ["--help", "-h"])
+def test_director_wrapper_help_does_not_probe_backend_or_docker(tmp_path, flag):
+    # A child printing help and exiting 0 must not trigger post-activation checks.
+    for name in ("python", "docker"):
+        binary = tmp_path / name
+        binary.write_text("#!/bin/sh\nexit 99\n")
+        binary.chmod(0o755)
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts/activate-cron-director-effects.sh"), flag],
+        env={**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"]},
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Usage:" in result.stdout and not result.stderr
+
+
 @pytest.mark.parametrize("args", [["--wait-seconds", "oops"], ["--wait-seconds"], ["--unknown"]])
 def test_invalid_options_fail_before_any_side_effects(args):
     result = subprocess.run(["bash", str(ROOT / "scripts/activate-cron-upload-recovery.sh"), *args], capture_output=True, text=True)
@@ -165,7 +181,7 @@ def test_invalid_options_fail_before_any_side_effects(args):
 
 @pytest.mark.parametrize("enabled", ["true", "false"])
 @pytest.mark.parametrize("mode", [[], ["--ryuundy-learning"]])
-@pytest.mark.parametrize("failure", ["drain", "image-mismatch"])
+@pytest.mark.parametrize("failure", ["build", "drain", "image-mismatch"])
 def test_activation_failures_preserve_original_cron_without_touching_runtime(tmp_path, enabled, mode, failure):
     # Exercise the real shell trap/order, replacing only host/root dependencies.
     # The copy stays outside the repository and uses a private deployment lock.
@@ -187,13 +203,15 @@ import os, pathlib, sys
 def event(value):
     with open(os.environ['EVENT_LOG'], 'a') as stream: stream.write(value + '\\n')
 if sys.argv[1:3] == ['-m', 'py_compile']: sys.exit(0)
+if sys.argv[1] == 'scripts/build-backend-image.py':
+    event('build'); sys.exit(6)
 if sys.argv[1] == 'scripts/wait-for-backend-idle.py':
     event('drain'); sys.exit(4)
 body = sys.stdin.read()
 if "print('true'" in body: print(os.environ['ORIGINAL_CRON'])
 elif 'sha256sum' in body:
-    expected = ['api', 'youtube_remote_status', 'ryuundy_reference_learning']
-    if os.environ['LEARNING_MODE'] == 'true': expected.extend(['clipper', 'ryuundy_motion'])
+    expected = ['api', 'clipper', 'cron_director_effects', 'cron_source_policy', 'automatic_retry', 'tiktok_strategy', 'youtube_remote_status', 'ryuundy_reference_learning', 'long_video_qc', 'shorts_thumbnail']
+    if os.environ['LEARNING_MODE'] == 'true': expected.extend(['ryuundy_motion'])
     assert sys.argv[3:] == expected, sys.argv
     event('verify-image')
     if os.environ['FAILURE_MODE'] == 'image-mismatch': sys.exit(5)
@@ -213,14 +231,17 @@ else: sys.exit('Runtime must not be changed before drain completes')
     env = {**os.environ, "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
            "EVENT_LOG": str(events), "ORIGINAL_CRON": enabled,
            "LEARNING_MODE": "true" if mode else "false", "FAILURE_MODE": failure}
-    result = subprocess.run(["bash", str(script), "--skip-build", "--no-wait", *mode], env=env, capture_output=True, text=True)
-    assert result.returncode == (5 if failure == "image-mismatch" else 4), result.stderr
+    build_args = [] if failure == "build" else ["--skip-build"]
+    result = subprocess.run(["bash", str(script), *build_args, "--no-wait", *mode], env=env, capture_output=True, text=True)
+    assert result.returncode == {"build": 6, "image-mismatch": 5, "drain": 4}[failure], result.stderr
     expected = [
         "docker:image inspect clipforge-backend:latest --format {{.Id}}",
         "verify-image",
     ]
     if failure == "drain":
         expected += ["pause", "drain", "restore:" + enabled]
+    if failure == "build":
+        expected = ["build"]
     assert events.read_text().splitlines() == expected
 
 

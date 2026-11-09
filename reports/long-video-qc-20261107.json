@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "source_job_id": "d14fe9c4666a441799a4033509e93df3",
+  "source_clip_url": "/outputs/d14fe9c4666a441799a4033509e93df3/kisah-viral-di-bogor-urban-legend-angkot-biru-gaib-semua-penumpang-sudah-meningg/clips/resume_cerita_5menit_kenapa-mas-waktu-itu-sempat-ngirim-cerita-ke.mp4",
+  "repair_attempted": false,
+  "decision": "DROP_SOURCE",
+  "confidence": 1.0,
+  "hard_gates": {
+    "rights": true,
+    "media_integrity": true,
+    "meaning_preserved": null,
+    "context_safe": false
+  },
+  "ai_checks": {
+    "hook": null,
+    "standalone_clarity": null,
+    "payoff": null,
+    "caption": null,
+    "crop": null,
+    "visual_quality": null,
+    "audio_quality": null
+  },
+  "evidence": [
+    "AI provider explicitly declined this source during content safety screening; automatic upload rejected without resubmitting the same source."
+  ],
+  "repair_instructions": [],
+  "delete_source": true,
+  "upload_allowed": false
+}

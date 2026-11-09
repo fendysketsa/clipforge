@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "scheduler_running": true,
+  "active_run_id": "8c1f5746160945be80a470c42d296a48",
+  "cron_source_process_limit": null,
+  "cron_follow_cta_adaptive": null,
+  "cron_director_effects_policy_version": null,
+  "checked_at": "2026-11-09T19:53:45+07:00"
+}

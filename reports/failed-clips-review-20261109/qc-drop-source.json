@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "source_job_id": "82cf9657a36e4dcea341cfbb86cd7cbd",
+  "source_clip_url": "/outputs/82cf9657a36e4dcea341cfbb86cd7cbd/yuta-mio-dan-baby-celine-digigit-nyamuk-sampai-kurus-roblox/clips/clip_01_apakah-ini-akan-bagus-guys-lihat-nih-ini.mp4",
+  "repair_attempted": false,
+  "decision": "DROP_SOURCE",
+  "confidence": 0.94,
+  "hard_gates": {
+    "rights": true,
+    "media_integrity": true,
+    "meaning_preserved": false,
+    "context_safe": false
+  },
+  "ai_checks": {
+    "hook": false,
+    "standalone_clarity": false,
+    "payoff": false,
+    "caption": false,
+    "crop": true,
+    "visual_quality": true,
+    "audio_quality": null
+  },
+  "evidence": [
+    "Izin operator tersimpan dan preflight backend lolos; keputusan DROP ini tidak didasarkan pada ketiadaan label CC.",
+    "MP4 1080x1920 sepanjang 43.167 detik dapat didekode penuh, berisi audio/video; mean audio -21.6 dB dan peak -3.9 dB. Penilaian kejernihan suara secara perseptual tidak dilakukan karena gate semantik sudah gagal.",
+    "Klip sumber 504.351-544.720 membuka pertanyaan tentang telur nyamuk dalam Roblox dan menyebut timer 6 menit 37 detik. Tidak ada jawaban/hasil penetasan dalam cuplikan ini.",
+    "Transkrip akhir berhenti pada Ini nih! Lihat nih!; frame 39.6-40.2 masih memperlihatkan karakter permainan. Frame 42.8 berisi penutup QS Al-Isra 17:23 yang tidak menyelesaikan janji pembuka.",
+    "Social caption mengubah timer mekanik permainan menjadi informasi penetasan nyamuk sungguhan dan menambah klaim nyamuk sehat yang tidak didukung cuplikan.",
+    "Caption mengandung salah tulis nama Kayu -ta; skor FYP 92 dan arc score 100 tidak mengatasi alur yang tidak selesai.",
+    "Peringatan exposure terutama dipicu latar hitam portrait; bidang permainan sendiri terang. Ini bukan alasan status upload failed.",
+    "Penyebab kegagalan upload nyata: modal/Next Studio tidak tersedia saat finalisasi ID NdEKBl4Xfrg. Metadata dan kelemahan momen menjadi alasan terpisah untuk membuang hasil ini.",
+    "Pemotongan ulang dari MP4 40 detik yang sama tidak menyediakan payoff penetasan yang hilang; pilih momen/sumber lain."
+  ],
+  "repair_instructions": [],
+  "delete_source": true,
+  "upload_allowed": false
+}

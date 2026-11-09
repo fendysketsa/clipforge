@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "source": "https://www.youtube.com/watch?v=DAKio0d-_LQ",
+  "quality_floor": 80,
+  "selected": [
+    {
+      "index": 1,
+      "start": 88.2,
+      "end": 148.55,
+      "duration": 60.35000000000001,
+      "transcript": "Nah, Atun, aku barusan menciptakan alat yang bisa scan apa pun yang orang sedang bawa saat ini nih. Kamu lihat mesinnya di belakang aku keren, kan? Masa sih sehebat itu, He he he he, kamu nggak percaya? Ya udah, coba aja berdiri di dalam sana. Oke deh, baiklah. Coba kita berdiri di sini. Oke, sebentar aku akan menyalakannya. Oke. He, apa yang terjadi? Aku mulai di-scan. Nah, sudah nih, coba keluar lihat. Tubuh kamu itu ada ponsel. Waaah, ponsel di inventory aku, pesan makanan gitu loh.",
+      "hook": "Mesin di Minecraft ini bisa membaca barang yang dibawa?",
+      "recommended_title": "Scanner Minecraft Ini Bisa Menemukan Ponsel di Inventory",
+      "standalone_score": 90,
+      "viral_score": 86,
+      "religious_context_safe": true,
+      "risk_flags": [
+        "source rights carried from the original explicitly confirmed job",
+        "visual narrative assessed in source frames"
+      ],
+      "reason": "Demonstrasi di dalam game: klaim alat diuji, lalu ponsel di inventory terlihat. Ini fitur rekaan Minecraft, bukan alat pemindai dunia nyata.",
+      "component_scores": {
+        "hook_immediacy": 16,
+        "standalone_clarity": 18,
+        "payoff_and_ending": 15,
+        "retention_density": 11,
+        "emotional_or_practical_value": 7,
+        "specificity_novelty": 9,
+        "editability": 5,
+        "metadata_fit": 5
+      },
+      "rights_review_required": false,
+      "rights_basis": "Original job contains confirm_source_rights=true and recorded commercial-use confirmation for source audio and visuals.",
+      "title": "Scanner Minecraft Ini Bisa Menemukan Ponsel di Inventory",
+      "description": "Demonstrasi di dalam game: klaim alat diuji, lalu ponsel di inventory terlihat. Ini fitur rekaan Minecraft, bukan alat pemindai dunia nyata.",
+      "hashtags": [
+        "MinecraftIndonesia",
+        "GamingIndonesia",
+        "DemoMinecraft"
+      ],
+      "cta": "Bagian mana yang paling membuatmu penasaran?",
+      "hook_overlay": "Mesin di Minecraft ini bisa membaca barang yang dibawa?",
+      "edit_notes": [
+        "Preserve the one complete scene.",
+        "Do not add dialogue, claim real-world scanner capability, or combine unrelated jokes."
+      ]
+    }
+  ],
+  "rejected": [],
+  "selection_summary": {
+    "requested": 1,
+    "selected": 1,
+    "outcome": "READY_FOR_RENDER"
+  }
+}

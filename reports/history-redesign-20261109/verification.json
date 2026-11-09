@@ -1,0 +1,176 @@
+{
+  "checked_at": "2026-11-09T18:58:29.499122+07:00",
+  "frontend": {
+    "build_id": "wYGQ2LH5DtKIEJIijM8rK",
+    "built": true,
+    "preview_port": 3002,
+    "production_deployment": "active; production browser confirms three columns, sixteen new cards, no overflow or JavaScript errors",
+    "browser_validation": "browser-check.json",
+    "preview_running": false,
+    "production_browser_validation": "production-browser-check.json",
+    "production_interaction_validation": "production-interactions.json"
+  },
+  "operator": {
+    "enabled": true,
+    "scope_job_ids": [
+      "272ddadc5dc444f387dd7dd50cbf127d",
+      "755bd27102f64802980b2b66d6be99e3",
+      "a89301a88e7b4bb49fca86703d567598",
+      "69a727a4ed9044e6bd7bc01b18aea493",
+      "0bbee80131314110b75d72129a140bb6",
+      "cc14ae6b476a459bbdb70e23db02de11",
+      "f7e8c6dfc7c548a5a42f155aff17d164",
+      "cefde431453e4d7d86eaa5b791924ea3",
+      "58b7de41a9a84e8b8440a0c1a6e55e3e",
+      "818a39daa0d44005941cc2265b2aaf06",
+      "82cf9657a36e4dcea341cfbb86cd7cbd",
+      "60646d1b4607453180c42595a49699a2",
+      "60da3eb153194ef9ac443c184bdbd8c9",
+      "d14fe9c4666a441799a4033509e93df3"
+    ],
+    "follow_completed_jobs": false,
+    "visibility": "private",
+    "service": "clipforge-automatic-upload-operator.service",
+    "same_id_recovery": "enabled once backend exposes saved-session verification capability; legacy backend is held"
+  },
+  "uploads": [
+    {
+      "id": "49d2a65d12484c05ad1a445aca6f67e9",
+      "source_job_id": "755bd27102f64802980b2b66d6be99e3",
+      "clip_url": "/outputs/755bd27102f64802980b2b66d6be99e3/yuta-mio-buat-rumah-rahasia-di-dalam-patung-super-bear-adventure-roblox/clips/resume_cerita_5menit_temen-temen-hari-ini-kak-yuta-mio-dan.mp4",
+      "status": "completed",
+      "visibility": "private",
+      "upload_confirmed": true,
+      "video_url": "https://www.youtube.com/watch?v=1peJcSIbMbM",
+      "error": "YouTube Studio gagal memuat aplikasi (Maaf, ada yang tidak beres). Session atau channel aktif perlu disegarkan lewat Login Sekali."
+    },
+    {
+      "id": "925166f50c5e4fec98228922acb09bb9",
+      "source_job_id": "60646d1b4607453180c42595a49699a2",
+      "clip_url": "/outputs/60646d1b4607453180c42595a49699a2/hidayah-mertua-galak-kamu-tidak-pantas-jadi-menantuku-tapi-akhirnya-menyesal/clips/resume_cerita_5menit_nisa-menyusun-semua-ini-dari-siang-sampai-malam.mp4",
+      "status": "completed",
+      "visibility": "private",
+      "upload_confirmed": true,
+      "video_url": "https://www.youtube.com/watch?v=i3Zgdibvib8",
+      "error": "YouTube Studio gagal memuat aplikasi (Maaf, ada yang tidak beres). Session atau channel aktif perlu disegarkan lewat Login Sekali."
+    },
+    {
+      "id": "06f2a7e9f0f04855a2a85f90f44bcff1",
+      "source_job_id": "60da3eb153194ef9ac443c184bdbd8c9",
+      "clip_url": "/outputs/60da3eb153194ef9ac443c184bdbd8c9/mio-baby-celine-sakit-tapi-yuta-tidak-peduli-sedih-banget-roblox/clips/resume_cerita_5menit_hah-yuta-ada-apa-lihat-lihat-mio-baby.mp4",
+      "status": "completed",
+      "visibility": "private",
+      "upload_confirmed": true,
+      "video_url": "https://www.youtube.com/watch?v=Pmg3KKaLRRo",
+      "error": "YouTube Studio gagal memuat aplikasi (Maaf, ada yang tidak beres). Session atau channel aktif perlu disegarkan lewat Login Sekali."
+    },
+    {
+      "id": "3f4ec8d0166342d9a7d03063da3fb869",
+      "source_job_id": "d14fe9c4666a441799a4033509e93df3",
+      "clip_url": "/outputs/d14fe9c4666a441799a4033509e93df3/kisah-viral-di-bogor-urban-legend-angkot-biru-gaib-semua-penumpang-sudah-meningg/clips/resume_cerita_5menit_kenapa-mas-waktu-itu-sempat-ngirim-cerita-ke.mp4",
+      "status": "completed",
+      "visibility": "private",
+      "upload_confirmed": true,
+      "video_url": "https://www.youtube.com/watch?v=4wOZFjhatxg",
+      "error": "YouTube Studio gagal memuat aplikasi (Maaf, ada yang tidak beres). Session atau channel aktif perlu disegarkan lewat Login Sekali."
+    },
+    {
+      "id": "9b4b9c8a08ec479e8e773b5299c9a13b",
+      "source_job_id": "a89301a88e7b4bb49fca86703d567598",
+      "clip_url": "/outputs/a89301a88e7b4bb49fca86703d567598/yuta-mio-panik-drone-merekam-squishy-dumpling-butter-raksasa-mengerikan-roblox/clips/clip_01_minyak-goreng-harum-enggak-enggak-harum-astaga-itu.mp4",
+      "status": "completed",
+      "visibility": "public",
+      "upload_confirmed": true,
+      "video_url": "https://www.youtube.com/watch?v=dk-FJXWHAqI",
+      "error": "YouTube Studio gagal memuat aplikasi (Maaf, ada yang tidak beres). Session atau channel aktif perlu disegarkan lewat Login Sekali."
+    },
+    {
+      "id": "963439af40ea4f6abe524ca5fe0f25bf",
+      "source_job_id": "69a727a4ed9044e6bd7bc01b18aea493",
+      "clip_url": "/outputs/69a727a4ed9044e6bd7bc01b18aea493/yuta-mio-jualan-kentang-goreng-di-malam-hari-yang-beli-anomali-roblox/clips/clip_01_awal-awal-kita-akan-belajar-dulu-kayaknya-ini.mp4",
+      "status": "completed",
+      "visibility": "public",
+      "upload_confirmed": true,
+      "video_url": "https://www.youtube.com/watch?v=uzLknCnDRgg",
+      "error": "YouTube Studio gagal memuat aplikasi (Maaf, ada yang tidak beres). Session atau channel aktif perlu disegarkan lewat Login Sekali."
+    },
+    {
+      "id": "8aca40897283470b867e07d67a428119",
+      "source_job_id": "0bbee80131314110b75d72129a140bb6",
+      "clip_url": "/outputs/0bbee80131314110b75d72129a140bb6/yuta-mio-di-kejar-locust-doctor-nowhere-saat-belanja-jam-3-pagi-di-supermarket-r/clips/clip_01_aluh-itu-kenapa-lagi-itu-mio-kenapa-mio.mp4",
+      "status": "completed",
+      "visibility": "public",
+      "upload_confirmed": true,
+      "video_url": "https://www.youtube.com/watch?v=F_LVpbm5Skw",
+      "error": "YouTube Studio gagal memuat aplikasi (Maaf, ada yang tidak beres). Session atau channel aktif perlu disegarkan lewat Login Sekali."
+    },
+    {
+      "id": "e0ab824dadc5463385004f0a836ce66c",
+      "source_job_id": "cc14ae6b476a459bbdb70e23db02de11",
+      "clip_url": "/outputs/cc14ae6b476a459bbdb70e23db02de11/yuta-pilih-kasih-mio-baby-celine-kabur-dari-rumah-karena-anak-baru-roblox/clips/clip_01_kenapa-mio-mio-nyapinya-cuma-tiga-loh-bahannya.mp4",
+      "status": "completed",
+      "visibility": "public",
+      "upload_confirmed": true,
+      "video_url": "https://www.youtube.com/watch?v=6OnNIKGxsOc",
+      "error": "YouTube Studio gagal memuat aplikasi (Maaf, ada yang tidak beres). Session atau channel aktif perlu disegarkan lewat Login Sekali."
+    },
+    {
+      "id": "df8143b9547d4b89a1368a094eaeab81",
+      "source_job_id": "f7e8c6dfc7c548a5a42f155aff17d164",
+      "clip_url": "/outputs/f7e8c6dfc7c548a5a42f155aff17d164/yuta-mio-jualan-ice-cream-di-malam-hari-tapi-yang-beli-anomali-roblox/clips/clip_01_ampun-kak-yuta-baru-bilang-jangan-asal-asalan.mp4",
+      "status": "completed",
+      "visibility": "public",
+      "upload_confirmed": true,
+      "video_url": "https://www.youtube.com/watch?v=yznywkYuQjQ",
+      "error": "YouTube Studio gagal memuat aplikasi (Maaf, ada yang tidak beres). Session atau channel aktif perlu disegarkan lewat Login Sekali."
+    },
+    {
+      "id": "e625d7a99a1c4af79bd0c01f59caa319",
+      "source_job_id": "cefde431453e4d7d86eaa5b791924ea3",
+      "clip_url": "/outputs/cefde431453e4d7d86eaa5b791924ea3/yuta-mio-panik-cctv-merekam-hantu-cikgu-besar-cikgu-jasmin-serem-banget-roblox/clips/clip_01_waduh-berarti-kita-harus-nurut-sama-ceku-besar.mp4",
+      "status": "completed",
+      "visibility": "public",
+      "upload_confirmed": true,
+      "video_url": "https://www.youtube.com/watch?v=1M0ZCBmHaEs",
+      "error": "YouTube Studio gagal memuat aplikasi (Maaf, ada yang tidak beres). Session atau channel aktif perlu disegarkan lewat Login Sekali."
+    },
+    {
+      "id": "9d45c52db5b0436192da1919fcb2a992",
+      "source_job_id": "58b7de41a9a84e8b8440a0c1a6e55e3e",
+      "clip_url": "/outputs/58b7de41a9a84e8b8440a0c1a6e55e3e/yuta-mio-dan-baby-celine-merawat-bayi-popo-mimi-anomali-roblox/clips/clip_01_benarkah-iya-malah-dipakai-sama-baby-celin-iya.mp4",
+      "status": "completed",
+      "visibility": "public",
+      "upload_confirmed": true,
+      "video_url": "https://www.youtube.com/watch?v=Lz3dXPa0C5g",
+      "error": "YouTube Studio gagal memuat aplikasi (Maaf, ada yang tidak beres). Session atau channel aktif perlu disegarkan lewat Login Sekali."
+    },
+    {
+      "id": "fa32f5c67ede42c8b7f0a43da9a61b4e",
+      "source_job_id": "818a39daa0d44005941cc2265b2aaf06",
+      "clip_url": "/outputs/818a39daa0d44005941cc2265b2aaf06/yuta-mio-akhirnya-lanjut-petualangan-gurun-pasir-super-bear-adventure-susah-bang/clips/clip_01_bintang-oke-kita-harus-cari-kunci-logo-bintang.mp4",
+      "status": "completed",
+      "visibility": "public",
+      "upload_confirmed": true,
+      "video_url": "https://www.youtube.com/watch?v=4qcMsc9weBM",
+      "error": "YouTube Studio gagal memuat aplikasi (Maaf, ada yang tidak beres). Session atau channel aktif perlu disegarkan lewat Login Sekali."
+    },
+    {
+      "id": "186c011c48684c3dacb13423475fab1d",
+      "source_job_id": "82cf9657a36e4dcea341cfbb86cd7cbd",
+      "clip_url": "/outputs/82cf9657a36e4dcea341cfbb86cd7cbd/yuta-mio-dan-baby-celine-digigit-nyamuk-sampai-kurus-roblox/clips/clip_01_apakah-ini-akan-bagus-guys-lihat-nih-ini.mp4",
+      "status": "failed",
+      "visibility": "public",
+      "upload_confirmed": false,
+      "video_url": "https://www.youtube.com/watch?v=NdEKBl4Xfrg",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Tombol Berikutnya/Next modal upload tidak ditemukan atau masih disabled. Terakhir: dialog-not-found"
+    }
+  ],
+  "validation": {
+    "backend_tests_passed": 333,
+    "operator_and_qc_tests_passed": 19,
+    "typecheck": true,
+    "production_build": true,
+    "deployment_verifier_tests_passed": 4
+  },
+  "backend_fix_deployment": "stale error and saved-session exact-ID recovery fixes tested; root activation pending"
+}

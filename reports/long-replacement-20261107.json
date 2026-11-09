@@ -1,0 +1,69 @@
+{
+  "enabled": true,
+  "daily_target": 2,
+  "attempts": [
+    {
+      "day": "2026-11-06",
+      "short_job_id": "7d07d87619814350a4a9ba1e2d2c5900",
+      "job_id": "62e39379843d4f019cca79cc7415182c",
+      "source_run_id": "8b79fcdf86e049c7ae20cbc411c29871",
+      "status": "completed",
+      "review_required": true,
+      "error": null,
+      "relevance": {
+        "passed": true,
+        "same_source": true,
+        "source_url": "https://www.youtube.com/watch?v=MtoYogBMyII",
+        "required_short_count": 1,
+        "matched_short_count": 1,
+        "matches": [
+          {
+            "short_index": 1,
+            "long_part_index": 7,
+            "source_overlap_seconds": 43.56,
+            "short_coverage": 1.0,
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "day": "2026-11-07",
+      "short_job_id": "582fb850ce30461d8f7f5eb54cd15c04",
+      "job_id": "d14fe9c4666a441799a4033509e93df3",
+      "source_run_id": "7e8dbb47d93a4172a0a9dde13133ebd7",
+      "status": "completed",
+      "review_required": true,
+      "error": null,
+      "relevance": {
+        "passed": true,
+        "same_source": true,
+        "source_url": "https://www.youtube.com/watch?v=5-BdF3thmQA",
+        "required_short_count": 1,
+        "matched_short_count": 1,
+        "matches": [
+          {
+            "short_index": 1,
+            "long_part_index": 7,
+            "source_overlap_seconds": 27.667,
+            "short_coverage": 1.0,
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "day": "2026-11-07",
+      "short_job_id": "e09f658360544a76a5d8ac5e6859f69c",
+      "job_id": "60da3eb153194ef9ac443c184bdbd8c9",
+      "source_run_id": "c1abe8b22c16473b9795d33e989a4b59",
+      "status": "queued",
+      "review_required": true
+    }
+  ],
+  "production": {
+    "status": "queued",
+    "job_id": "60da3eb153194ef9ac443c184bdbd8c9",
+    "short_job_id": "e09f658360544a76a5d8ac5e6859f69c"
+  }
+}
