@@ -1,0 +1,9 @@
+{
+  "available": false,
+  "method": "sampled_motion_and_detail",
+  "sample_count": 5,
+  "reason": "focus_not_stable",
+  "readable_detail": true,
+  "temporal_agreement": 0.4,
+  "detail_contrast": 1.099
+}

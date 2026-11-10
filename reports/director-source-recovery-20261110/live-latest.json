@@ -1,0 +1,80 @@
+{
+  "checked_at": "2026-11-10T10:05:37.287295+00:00",
+  "youtube": [
+    {
+      "id": "8c381436148f4e3aa04f03a740bd2067",
+      "status": "failed",
+      "upload_confirmed": false,
+      "video_url": "https://www.youtube.com/watch?v=tbAoI9h_Gis",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. ID draft aktif berubah; perubahan metadata dihentikan.",
+      "queue_position": null,
+      "queue_total": null,
+      "updated_at": "2026-11-10T09:58:25.511455+00:00",
+      "recent_logs": [
+        "Memverifikasi URL video langsung di halaman edit YouTube Studio.",
+        "Memverifikasi URL video langsung di halaman edit YouTube Studio.",
+        "Video-id ditemukan tetapi visibilitas final belum sesuai; mencoba melanjutkan draft yang sama tanpa upload ulang.",
+        "Memulihkan draft YouTube berdasarkan video-id tbAoI9h_Gis; file tidak diupload ulang.",
+        "Tab upload YouTube ditutup.",
+        "USER_ERROR: ID draft aktif berubah; perubahan metadata dihentikan."
+      ]
+    }
+  ],
+  "tiktok": [
+    {
+      "id": "ed4f640f211644ae94ee9429d19403a8",
+      "status": "failed",
+      "upload_confirmed": false,
+      "video_url": null,
+      "error": "Kontrol TikTok tidak dapat diklik karena halaman belum siap. Video belum diposting; coba ulang setelah halaman Studio selesai dimuat.",
+      "queue_position": null,
+      "queue_total": null,
+      "updated_at": "2026-11-10T09:59:41.749333+00:00",
+      "recent_logs": [
+        "USER_ERROR:Uploader TikTok gagal: Locator.click: Timeout 20000ms exceeded.",
+        "Call log:",
+        "  - waiting for locator(\"button:has-text(\\\"Everyone\\\")\").first",
+        "    - locator resolved to <button type=\"button\" role=\"combobox\" data-open=\"false\" data-form-control=\"\" aria-expanded=\"false\" aria-haspopup=\"dialog\" class=\"Select__trigger Select__trigger--variant-fill Select__trigger Select__trigger--variant-fill\">…</button>",
+        "  - attempting click action",
+        "    - waiting for element to be visible, enabled and stable"
+      ]
+    },
+    {
+      "id": "c78db5cffa7b4dcab79db7b27163d3c1",
+      "status": "failed",
+      "upload_confirmed": false,
+      "video_url": null,
+      "error": "Kontrol TikTok tidak dapat diklik karena halaman belum siap. Video belum diposting; coba ulang setelah halaman Studio selesai dimuat.",
+      "queue_position": null,
+      "queue_total": null,
+      "updated_at": "2026-11-10T09:57:24.571293+00:00",
+      "recent_logs": [
+        "USER_ERROR:Uploader TikTok gagal: Locator.click: Timeout 20000ms exceeded.",
+        "Call log:",
+        "  - waiting for locator(\"button:has-text(\\\"Everyone\\\")\").first",
+        "    - locator resolved to <button type=\"button\" role=\"combobox\" data-open=\"false\" data-form-control=\"\" aria-expanded=\"false\" aria-haspopup=\"dialog\" class=\"Select__trigger Select__trigger--variant-fill Select__trigger Select__trigger--variant-fill\">…</button>",
+        "  - attempting click action",
+        "    - waiting for element to be visible, enabled and stable"
+      ]
+    },
+    {
+      "id": "406bd8430a854c1786b499b0237170fe",
+      "status": "failed",
+      "upload_confirmed": false,
+      "video_url": null,
+      "error": "Kolom caption TikTok belum siap setelah batas tunggu transfer/pemrosesan; video belum diposting.",
+      "queue_position": null,
+      "queue_total": null,
+      "updated_at": "2026-11-10T09:54:28.713178+00:00",
+      "recent_logs": [
+        "Menunggu transfer/pemrosesan TikTok dan editor caption siap...",
+        "Menunggu transfer/pemrosesan TikTok dan editor caption siap...",
+        "Menunggu transfer/pemrosesan TikTok dan editor caption siap...",
+        "Menunggu transfer/pemrosesan TikTok dan editor caption siap...",
+        "Menunggu transfer/pemrosesan TikTok dan editor caption siap...",
+        "USER_ERROR:Kolom caption TikTok belum siap setelah batas tunggu transfer/pemrosesan; video belum diposting."
+      ]
+    }
+  ],
+  "new_backend_active": false
+}

@@ -1,0 +1,101 @@
+{
+  "verified_at": "2026-11-10T10:26:02.298496+00:00",
+  "source_ready": true,
+  "backend_activation_verified": false,
+  "activation_blocker": "sudo requires user terminal password",
+  "tests": {
+    "regression_passed": 963,
+    "regression_failed": 0,
+    "native_boundary_context_tests_passed": 32,
+    "excluded": [
+      "test_storyboard_stream_delivers_progress_before_generation_finishes",
+      "test_storyboard_stream_exposes_provider_errors"
+    ],
+    "exclusion_reason": "Unrelated storyboard streaming test hung under host async test environment; broad run stopped and rerun excluding those two.",
+    "total_passed": 995
+  },
+  "frontend_build_id": "41a0pvA5Yu0Xhd91HgzKb",
+  "browser": {
+    "fixture_only": true,
+    "viewports": [
+      1920,
+      1440,
+      1280,
+      1100,
+      900,
+      390,
+      320
+    ],
+    "page_errors": [],
+    "queue_information_present": true
+  },
+  "features": [
+    "one compact malformed-JSON ranking retry",
+    "quote-aware JSON extraction",
+    "repair structural boundaries before rejecting raw safe candidates",
+    "one source-grounded director pass with exact segment IDs and quotes",
+    "native quality, religious context, rights and upload gates retained",
+    "one durable fresh-source search budget per scheduled campaign after story rejection",
+    "new source brief reaches actual clip worker",
+    "source attempt cap remains two",
+    "metadata and private recovery evidence preserved before failed workspace cleanup",
+    "History explains actual replacement source; four desktop columns and upload queue positions retained",
+    "TikTok privacy picker keyboard recovery with actual selected-value verification",
+    "known pre-Post legacy privacy failures enter bounded retry without replaying unknown submissions",
+    "YouTube waits for exact-ID draft dialog before metadata changes",
+    "one durable exact-ID readiness recovery; no new file transfer, final-save/claim states held",
+    "cron directly polls scheduler-owned YouTube/TikTok recoveries even if AUTO_UPLOAD_COMPLETED_JOBS is false",
+    "recovery continues while another campaign renders; per-platform temporary failures do not stop the scheduler",
+    "cron recovery ownership excludes manual jobs and review-only News Hot",
+    "schedule API exposes last recovery tick, queue counts and transient error types",
+    "activation verifies the cron recovery hook executed after restart"
+  ],
+  "source_sha256": {
+    "backend/api.py": "cd1ed76f7f3d33587543dc04baa2abfeba25124fedbe359cfd65d223cabd5387",
+    "backend/clipper.py": "ada9871a8777e8dc5253cbfe2a67e195413a60864439d5174ad4ab3f8fa08d80",
+    "backend/llm.py": "6015e4d668845836751eb9da29db6445347254945d35ae8c3e94382ada5310be",
+    "backend/automatic_retry.py": "ffc69fd1f80f0a8dbe88038c766c1353bcc9d1762c4ab0b6e0c0e797672a708a",
+    "backend/tiktok_uploader.py": "0d17923c9993db86f3be8b5e88519110b990195e1acc15687878e50fec647b44",
+    "backend/youtube_uploader.py": "ac8cd846806fd2af3493c2e27ec84f8fadd8483a6782586d948262278645eb48",
+    "scripts/activate-director-source-recovery.sh": "76748097743f45f92885e7cf90054425d52c0535e8091ed0c030157b47da4513"
+  },
+  "rendered_recovery_not_yet_proven": true,
+  "activation_command": "sudo bash /www/wwwroot/clipper/clipforge/scripts/activate-director-source-recovery.sh",
+  "auto_git": "User service verified active with --settle-seconds 1800; no manual commit or push performed.",
+  "privacy_browser": {
+    "fixture_only": true,
+    "post_control_present": false,
+    "cases": [
+      {
+        "keyboard_keys": [
+          "Enter",
+          "Enter"
+        ],
+        "initial": "Everyone",
+        "target": "Only you",
+        "selected": "Only you",
+        "moving_controls": true
+      },
+      {
+        "keyboard_keys": [
+          "Enter",
+          "Enter"
+        ],
+        "initial": "Only you",
+        "target": "Everyone",
+        "selected": "Everyone",
+        "moving_controls": true
+      }
+    ]
+  },
+  "latest_live_upload_evidence": "live-latest.json: rendered source completed, YouTube draft held and TikTok attempts failed; not confirmed uploaded.",
+  "latest_runtime_status": {
+    "cron_enabled": true,
+    "scheduler_running": true,
+    "active_run_id": "a4388a33323446828ff9cdb22cef03f9",
+    "job_id": "0084167a8da24371a65768f0297f33c3",
+    "job_progress_percent": 78,
+    "job_stage": "render",
+    "autonomous_recovery_hook_active": false
+  }
+}

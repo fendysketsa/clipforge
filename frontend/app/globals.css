@@ -11531,6 +11531,9 @@ body::after {
 .outputWorkspacePane .deleteJobRowButton { position: absolute; z-index: 4; top: 12px; right: 12px; display: inline-flex; justify-content: center; min-width: 32px; min-height: 32px; margin: 0; padding: 0 8px; border: 1px solid #ffffff20; border-radius: 8px; background: #081512dc; color: #ffa6af; }
 .outputWorkspacePane .jobDeleteLabel { display: none; }
 .outputWorkspacePane .jobCardError { display: -webkit-box; overflow: hidden; margin: 0; padding: 10px 12px; border-left: 2px solid #ffa3ae; border-radius: 4px; background: #ffa3ae09; color: #ffc0c6; font-size: 11px; line-height: 1.6; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.outputWorkspacePane .jobDirectorRecovery { display: grid; gap: 5px; padding: 10px 12px; border-left: 2px solid #79dfcb; border-radius: 4px; background: #79dfcb08; color: #b5cec8; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.outputWorkspacePane .jobDirectorRecovery strong { min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: #91ead8; font-weight: 600; }
+.outputWorkspacePane .jobDirectorRecovery small { color: #d7e9e4; font-size: inherit; }
 .historyLiveCount, .historyReadyCount { display: inline-flex; align-items: center; gap: 7px; color: #a8c3b6; font-size: 12px; }
 .historyLiveCount > span { width: 6px; height: 6px; border-radius: 50%; background: #fbd778; }
 @media (max-width: 1279px) { .outputWorkspacePane .jobList { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

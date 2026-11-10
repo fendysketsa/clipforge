@@ -8,8 +8,9 @@ from pathlib import Path
 import re
 import subprocess
 
-POLICY_VERSION = 2
+POLICY_VERSION = 3
 MOODS = {
+    'shout': ('reaction_ticks', 'shock_rays', 'pressure_ring'),
     'surprise': ('impact_burst', 'ripple'),
     'delight': ('sparkle', 'ripple'),
     'action': ('speed_streak', 'impact_burst'),
@@ -30,10 +31,93 @@ SIGNALS = (
     ('question', r'\b(kenapa|mengapa|bagaimana|gimana|apakah|kok)\b'),
     ('emphasis', r'\b(ingat|penting|perhatikan|lihat|kuncinya|jadi|sebab|karena)\b'),
 )
-SENSITIVE = re.compile(r'\b(ayat|hadis|hadits|quran|al.?qur.?an|doa|allah|ustaz|ustadz|salat|shalat|ibadah|duka|meninggal|korban|tragedi|kecelakaan|tewas|bencana|terluka|kanker|pengungsi|pemerkosaan|bunuh diri|tuduhan|korupsi|fatwa)\b', re.I)
+SENSITIVE = re.compile(r'\b(ayat|hadis|hadits|quran|al.?qur.?an|doa|berdoa|dzikir|zikir|mengaji|tilawah|allah|ustaz|ustadz|salat|shalat|ibadah|duka|berduka|meninggal|korban|tragedi|kecelakaan|tewas|bencana|terluka|kanker|pengungsi|pemerkosaan|bunuh diri|tuduhan|korupsi|fatwa)\b', re.I)
 PALETTES = [(255, 245, 220), (125, 240, 217), (255, 210, 100), (157, 208, 255)]
 QUALIFIERS = re.compile(r'\b(tidak|bukan|belum|jangan|kurang|enggak|nggak|gak|tak|hanya|cuma|diduga|menurut|menurutnya|menurutku|katanya|kataku|kata|bilang|ujar|mungkin|sepertinya|konon|kalau|jika|seandainya|misalnya|seolah|bisa|akan|ingin|mau)\b', re.I)
 STATEMENT_SIGNAL = re.compile(r'\b(takut|jangan|harus|bukan|tidak|belum|ingat|penting|kuncinya|ternyata|rupanya|akhirnya|enak|lezat|gurih|mantap|berhasil|menang|gagal|bahaya|numpuk)\b', re.I)
+REACTION_WORDS = re.compile(r'\b(a{2,}h*|h?a{2,}|w[oa]+w|wow|woy|woi|hei|hey|aduh|waduh|astaga|awas|tolong|teriak|jerit)\b', re.I)
+
+
+def analyze_reactions(video, clip, segments, *, enabled=False, sensitive=False, ffmpeg='ffmpeg'):
+    """Bounded source-audio evidence, never a loudness-only claim of a scream.
+
+    Speech-timed sustained voiced rises need both a relative level jump and
+    reaction wording, or an unusually strong pitch/level rise. Music, silence,
+    impulses and unavailable evidence abstain. This is a heuristic, not ASR.
+    """
+    result = dict(version=1, enabled=bool(enabled), events=[], source_audio_only=True,
+                  method='voiced_level_rise_with_timed_dialogue', audio_modified=False)
+    if not enabled or sensitive or SENSITIVE.search(clip.text):
+        return dict(result, reason='manual_disabled_or_sensitive_context')
+    duration = float(clip.end-clip.start)
+    if not math.isfinite(duration) or not .8 <= duration <= 600:
+        return dict(result, reason='unsupported_source_interval')
+    try:
+        import numpy as np
+        decoded = subprocess.run([ffmpeg,'-v','error','-ss',str(clip.start),'-i',str(video),
+            '-t',str(duration),'-vn','-ac','1','-ar','16000','-f','f32le','-'],
+            check=True,capture_output=True,timeout=45).stdout
+        samples = np.frombuffer(decoded,dtype='<f4')
+        if len(samples) < 8000 or not np.isfinite(samples).all():
+            return dict(result, reason='missing_or_invalid_audio')
+        # 40 ms windows, 20 ms hops. No gain normalization before comparison.
+        size,hop,rate = 640,320,16000
+        frames=np.lib.stride_tricks.sliding_window_view(samples,size)[::hop]
+        levels=20*np.log10(np.sqrt(np.mean(frames*frames,axis=1))+1e-8)
+        active=levels[levels>-48]
+        if len(active)<8:
+            return dict(result, reason='insufficient_active_audio')
+        baseline=float(np.median(active))
+        times=np.arange(len(frames))*hop/rate+.02
+        low,high=rate//650,rate//85
+        # Keep FFT working memory bounded even for a long compilation chapter.
+        periodicity=np.zeros(len(frames));pitch=np.zeros(len(frames))
+        for offset in range(0,len(frames),256):
+            batch=frames[offset:offset+256]
+            spectrum=np.abs(np.fft.rfft(batch*np.hanning(size),n=2048))**2
+            autocorr=np.fft.irfft(spectrum,n=2048,axis=1)[:,:size]
+            lag=autocorr[:,low:high].argmax(axis=1)+low
+            periodicity[offset:offset+len(batch)]=autocorr[np.arange(len(batch)),lag]/np.maximum(autocorr[:,0],1e-12)
+            pitch[offset:offset+len(batch)]=rate/lag
+        voice=(periodicity>=.35)&(levels>-38)
+        base_pitch=float(np.median(pitch[voice])) if voice.any() else 0
+        result.update(available=True,baseline_dbfs=round(baseline,2),baseline_pitch_hz=round(base_pitch,1))
+        voiced_rise=(levels>=max(-27.,baseline+6.))&voice
+        indices=np.flatnonzero(voiced_rise)
+        groups=[]
+        for index in indices:
+            if not groups or (index-groups[-1][-1])*hop/rate>.08:
+                groups.append([int(index)])
+            else:groups[-1].append(int(index))
+        candidates=[]
+        for group in groups:
+            if len(group)*hop/rate<.12:continue
+            peak=max(group,key=lambda i:float(levels[i]))
+            at=float(times[peak]);rise=float(levels[peak]-baseline)
+            utterance=next((row for row in segments if clip.start<=float(row.start)<float(row.end)<=clip.end
+                and float(row.start)-clip.start<=at<=float(row.end)-clip.start),None)
+            if utterance is None:continue
+            quote=str(utterance.text).strip()
+            if not quote or (' '+_text(quote)+' ') not in (' '+_text(clip.text)+' '):continue
+            explicit=bool(REACTION_WORDS.search(quote) or '!' in quote)
+            pitch_rise=float(np.median(pitch[group]))/max(1.,base_pitch)
+            if not explicit and (rise<10. or pitch_rise<1.3):continue
+            # A full long sentence is not evidence of the exact shouted word.
+            # Record the utterance, not a fabricated on-screen shout caption.
+            onset=max(0.,float(times[group[0]])-.02)
+            candidates.append(dict(start=round(onset,3),peak=round(at,3),
+                end=round(min(duration,float(times[group[-1]])+.04),3),quote=quote[:220],
+                rise_db=round(rise,2),pitch_ratio=round(pitch_rise,2),
+                evidence='timed_reaction_and_voiced_rise' if explicit else 'timed_speech_strong_pitch_and_level_rise',
+                confidence='heuristic',score=rise+(2 if explicit else 0)))
+        for event in sorted(candidates,key=lambda e:-e['score']):
+            if all(abs(event['peak']-old['peak'])>=5 for old in result['events']):
+                result['events'].append(event)
+            if len(result['events'])>=2:break
+        result['events'].sort(key=lambda e:e['start'])
+        return dict(result,reason='source_reactions_measured' if result['events'] else 'no_supported_raised_voice')
+    except (ImportError,OSError,ValueError,subprocess.SubprocessError) as exc:
+        return dict(result,available=False,reason='audio_analysis_unavailable',error_type=type(exc).__name__)
 
 
 def _text(value):
@@ -52,7 +136,7 @@ def validate_beats(raw):
         statement=row.get('statement', '').strip()[:100] if isinstance(row.get('statement'), str) else '')
         for row in raw[:4] if isinstance(row, dict)
         and isinstance(row.get('quote'), str) and 2 <= len(_text(row['quote']).split()) <= 24
-        and isinstance(row.get('mood'), str) and row['mood'] in MOODS]
+        and isinstance(row.get('mood'), str) and row['mood'] in MOODS and row['mood'] != 'shout']
 
 
 def statement_phrase(quote, proposed='', *, sensitive=False):
@@ -82,7 +166,7 @@ def statement_phrase(quote, proposed='', *, sensitive=False):
     return phrase
 
 
-def build_plan(clip, segments, direction=None, *, enabled=False, budget=2, seed=''):
+def build_plan(clip, segments, direction=None, *, enabled=False, budget=2, seed='', audio_reactions=None):
     plan = dict(version=POLICY_VERSION, cron_only=True, enabled=bool(enabled), required=bool(enabled and budget),
         rendered=False, cues=[], source_clock_unchanged=True, captions_clock_unchanged=True,
         audio_unchanged=True, inserted_timeline_seconds=0, reason='manual_job' if not enabled else 'chapter_not_selected')
@@ -131,6 +215,16 @@ def build_plan(clip, segments, direction=None, *, enabled=False, budget=2, seed=
         rows.append((max(weight,8)+2 if statement else weight, _seed(salt, quote), at, quote, 'calm' if sensitive else mood, owner, statement))
     if not rows:
         rows = [(0, salt, max(.12, min(duration-.8, duration*(.30+(salt%20)/100))), '', 'calm' if sensitive else 'emphasis', 'quiet_fallback_no_timed_dialogue', '')]
+    reactions = audio_reactions or {}
+    supported = []
+    if not sensitive:
+        for event in reactions.get('events', [])[:2]:
+            at=float(event['start']);peak=float(event['peak'])
+            quote=str(event.get('quote',''))
+            if not math.isfinite(at+peak) or not 0<=at<=peak<duration or duration-at<.16 or not quote or (' '+_text(quote)+' ') not in (' '+_text(clip.text)+' '):continue
+            supported.append(event)
+            rows.append((30, _seed(salt,quote,at), max(.02,at), quote, 'shout', 'measured_source_audio_reaction', ''))
+    plan['audio_reactions'] = dict(reactions, events=supported) if audio_reactions else dict(enabled=False, events=[])
     selected = []
     for _, _, at, quote, mood, owner, statement in sorted(rows, key=lambda row: (-row[0], row[1])):
         if any(abs(at-c['start']) < 5 for c in selected):
@@ -139,7 +233,7 @@ def build_plan(clip, segments, direction=None, *, enabled=False, budget=2, seed=
         used = {c['kind'] for c in selected}
         options = [kind for kind in variants if kind not in used] or list(variants)
         kind = options[_seed(salt, quote, len(selected)) % len(options)]
-        span = .95 if mood == 'calm' else .68 if kind in {'impact_burst', 'speed_streak'} else .82
+        span = .62 if mood == 'shout' else .95 if mood == 'calm' else .68 if kind in {'impact_burst', 'speed_streak'} else .82
         end = min(duration-.04, at+span)
         if statement and not any(c.get('statement') for c in selected) and duration-at >= 1.2:
             end = min(duration-.04, at+min(2., 1.2+len(statement.split())*.09))
@@ -147,7 +241,7 @@ def build_plan(clip, segments, direction=None, *, enabled=False, budget=2, seed=
             statement = ''
         selected.append(dict(kind=kind, mood=mood, start=round(at,3), end=round(end,3), quote=quote[:220],
             statement=statement, statement_rendered=False,
-            directed_by=owner, timing_method='estimated_phrase_offset_within_timed_source_segment', palette=list(PALETTES[_seed(salt, quote)%len(PALETTES)]),
+            directed_by=owner, timing_method='measured_source_audio_onset' if mood=='shout' else 'estimated_phrase_offset_within_timed_source_segment', palette=list(PALETTES[_seed(salt, quote)%len(PALETTES)]),
             variation=_seed(salt, quote)%360, source_grounded=bool(quote), sound='none'))
         if len(selected) >= limit:
             break
@@ -169,11 +263,11 @@ def compilation_parts(candidates, roles):
     return {row[-1] for row in sorted(ranked, reverse=True)[:min(2, len(ranked))]}
 
 
-def follow_copy(clip):
+def follow_copy(clip, *, topic_hint=''):
     """An honest topical invitation, without promising a nonexistent sequel."""
-    text=f'{clip.text} {getattr(clip,"title","")}'.casefold()
+    text=f'{clip.text} {getattr(clip,"title","")} {topic_hint}'.casefold()
     choices=[
-        (r'\b(roblox|gameplay|mabar|obby|minecraft)\b','CERITA & GAMEPLAY LAINNYA','Ikuti untuk cerita dan gameplay lain'),
+        (r'\b(roblox|gameplay|gaming|mabar|obby|minecraft)\b','CERITA & GAMEPLAY LAINNYA','Ikuti untuk cerita dan gameplay lain'),
         (r'\b(makanan|kuliner|warung|masakan|gurih|lezat|restoran)\b','ULASAN KULINER LAINNYA','Ikuti untuk ulasan kuliner lainnya'),
         (r'\b(kajian|allah|quran|ibadah|ustaz|ustadz|hikmah)\b','HIKMAH & PENGINGAT LAINNYA','Ikuti untuk hikmah dan pengingat lain'),
         (r'\b(berita|kebijakan|pemerintah|pemilu)\b','KONTEKS & PEMBAHASAN LAINNYA','Ikuti untuk konteks dan pembahasan lain'),
@@ -188,7 +282,7 @@ def follow_copy(clip):
     return dict(action='FOLLOW',headline='SUKA KLIP SEPERTI INI?',support=support,prompt=prompt)
 
 
-def follow_plan(clip, segments, accents, *, enabled=False, protected_layout=False, protect_ending=True):
+def follow_plan(clip, segments, accents, *, enabled=False, protected_layout=False, protect_ending=True, topic_hint=''):
     plan=dict(enabled=False,cron_only=True,repeat_count=0,silent=True,extends_video_duration=False)
     if not enabled or protected_layout or clip.end-clip.start<12:
         return dict(plan,reason='manual_disabled_protected_layout_or_too_short')
@@ -209,7 +303,7 @@ def follow_plan(clip, segments, accents, *, enabled=False, protected_layout=Fals
         if not chosen:return dict(plan,reason='no_clear_window_without_covering_statement_or_payoff')
         at,owner=chosen;position='middle'
     return dict(plan,enabled=True,version=1,repeat_count=1,start=round(at,3),end=round(at+1.75,3),
-                position=position,timing_method=owner,copy=follow_copy(clip),avoids_director_accents=True)
+                position=position,timing_method=owner,copy=follow_copy(clip,topic_hint=topic_hint),avoids_director_accents=True)
 
 
 def _probe(path, ffprobe='ffprobe'):
@@ -306,7 +400,23 @@ def effect_frame(kind, side, progress, color, variation=0):
     p=max(0.,min(1.,progress));alpha=round(235*min(1.,p/.13,(1-p)/.25))
     rgba=tuple(color)+(max(0,alpha),);white=(255,255,249,max(0,alpha))
     c=size/2;r=size*.34;ease=1-(1-p)**3;rot=math.radians(variation%45)
-    if kind=='impact_burst':
+    if kind in {'reaction_ticks','shock_rays','pressure_ring'}:
+        # Authored comic stress marks: one arrival, no flash, no solid center.
+        # The safe placement box is checked against faces and caption regions.
+        if kind=='pressure_ring':
+            rr=r*(.48+.45*ease)
+            for i in range(3):
+                d.arc((c-rr,c-rr,c+rr,c+rr),start=variation+i*120+8,
+                      end=variation+i*120+92,fill=white,width=max(2,size//75))
+        count=3 if kind=='reaction_ticks' else 7 if kind=='shock_rays' else 4
+        for i in range(count):
+            a=rot+(-1.1+i*.65 if kind=='reaction_ticks' else i*math.tau/count)
+            inner=r*(.5+.18*ease);outer=r*(.85+.25*ease)*(1-.12*(i%2))
+            width=.065 if kind=='reaction_ticks' else .045
+            d.polygon([(c+math.cos(a-width)*outer,c+math.sin(a-width)*outer),
+                       (c+math.cos(a+width)*outer,c+math.sin(a+width)*outer),
+                       (c+math.cos(a)*inner,c+math.sin(a)*inner)],fill=white)
+    elif kind=='impact_burst':
         rr=r*(.32+.68*ease)
         for part in range(3):
             d.arc((c-rr,c-rr,c+rr,c+rr),start=part*120+variation%25,end=part*120+100+variation%25,fill=white,width=max(2,round(size*.019*(1-p*.4))))

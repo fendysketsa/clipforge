@@ -19,6 +19,20 @@ def test_extract_json_plain():
     assert extract_json('{"a": 1}') == {"a": 1}
 
 
+@pytest.mark.parametrize('payload', [
+    {'reason': 'Kurung } tetap bagian kutipan, bukan akhir JSON.', 'clips': [{'id': 1}]},
+    {'reason': 'Kutipan " lalu \\ dan { [ ] } tetap teks.'},
+    [{'id': 0, 'reason': 'Awal [ dan akhir }'}],
+])
+def test_extract_json_balances_only_outside_strings(payload):
+    assert extract_json('```json\n' + json.dumps(payload) + '\n``` trailing data') == payload
+
+
+def test_extract_json_does_not_invent_truncated_dialogue():
+    with pytest.raises(ValueError):
+        extract_json('{"clips":[{"id":0,"reason":"cerita belum')
+
+
 def test_extract_json_strips_think_tags():
     raw = '<think>reasoning {ignored}</think>\n{"clips": [{"id": 0}]}'
     assert extract_json(raw) == {"clips": [{"id": 0}]}

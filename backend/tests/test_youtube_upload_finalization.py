@@ -247,7 +247,7 @@ def test_optional_tags_do_not_strand_upload_as_draft(monkeypatch):
     assert logs and logs[0].startswith("TAGS_WARNING:")
 
 
-@pytest.mark.parametrize("identity_matches", [True, False])
+@pytest.mark.parametrize("identity_matches", [True, False, "late"])
 @pytest.mark.parametrize("initial_step", ["DETAILS", "VIDEO_ELEMENTS", "CHECKS", "REVIEW"])
 def test_resume_saved_draft_finishes_exact_video_without_reupload(monkeypatch, identity_matches, initial_step):
     class DraftPage:
@@ -268,6 +268,8 @@ def test_resume_saved_draft_finishes_exact_video_without_reupload(monkeypatch, i
     monkeypatch.setattr(youtube_uploader, "ensure_upload_metadata_fields", lambda _page, title, description:
         events.append(("metadata", title, description)))
     def back(_page, patterns, **kwargs):
+        if kwargs.get('optional'):
+            return False
         assert r"^back$" in patterns
         state['step'] = {'REVIEW':'CHECKS', 'CHECKS':'VIDEO_ELEMENTS', 'VIDEO_ELEMENTS':'DETAILS'}[state['step']]
         events.append(('back',state['step']))
@@ -287,7 +289,11 @@ def test_resume_saved_draft_finishes_exact_video_without_reupload(monkeypatch, i
     monkeypatch.setattr(youtube_uploader, "private_review_check_options", lambda _visibility: (False, False))
     monkeypatch.setattr(youtube_uploader, "wait_for_copyright_checks", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(youtube_uploader, "wait_for_visibility_step", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(youtube_uploader, "saved_draft_identity_matches", lambda *_args: identity_matches)
+    identity_checks = []
+    def identity_ready(*args):
+        identity_checks.append(True)
+        return identity_matches is True or (identity_matches == 'late' and len(identity_checks) > 1)
+    monkeypatch.setattr(youtube_uploader, "saved_draft_identity_matches", identity_ready)
     monkeypatch.setattr(youtube_uploader, "set_visibility", lambda _page, value: events.append(("visibility", value)))
     monkeypatch.setattr(youtube_uploader, "wait_for_review_checks_safe_before_publish", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(youtube_uploader, "click_final_upload_action", lambda *_args, **_kwargs: events.append(("final", "clicked")))
@@ -295,9 +301,9 @@ def test_resume_saved_draft_finishes_exact_video_without_reupload(monkeypatch, i
     monkeypatch.setattr(youtube_uploader, "log", lambda _message: None)
 
     if not identity_matches:
-        with pytest.raises(UploadError, match="ID draft aktif berubah"):
+        with pytest.raises(UploadError, match="Dialog draft .* ID yang cocok"):
             resume_saved_draft_and_finalize(page, "Draft title", "public", video_url=video_url, description="Reviewed description", timeout_ms=1000)
-        assert not any(event[0] in {"visibility", "final"} for event in events)
+        assert not any(event[0] in {"metadata", "tags", "next", "visibility", "final"} for event in events)
         return
 
     assert resume_saved_draft_and_finalize(

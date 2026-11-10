@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "enabled": true,
+  "events": [],
+  "source_audio_only": true,
+  "method": "voiced_level_rise_with_timed_dialogue",
+  "audio_modified": false,
+  "available": true,
+  "baseline_dbfs": -16.87,
+  "baseline_pitch_hz": 280.7,
+  "reason": "no_supported_raised_voice"
+}

@@ -148,13 +148,13 @@ def test_news_ranking_measures_politics_rather_than_story_keyword_overlap():
 
 
 def test_campaign_renders_one_news_source_and_retains_it_for_review(news, monkeypatch):
-    from types import SimpleNamespace
-
     request = api.scheduled_news_hot_request()
     campaign = run("news-campaign", datetime.now(timezone.utc), status="queued")
     campaign.request = request
-    finished_job = SimpleNamespace(
-        id="news-job", status="completed", clips=[SimpleNamespace(url="/outputs/news.mp4")], error=None,
+    finished_job = api.ClipJob(
+        id="news-job", status="completed", created_at=api.now_iso(), updated_at=api.now_iso(),
+        request=api.ClipJobRequest(url="https://youtube.com/watch?v=news12345"),
+        clips=[api.ClipFile(name="news.mp4", url="/outputs/news.mp4", size_bytes=1)], error=None,
     )
     monkeypatch.setattr(api, "auto_viral_runs", {campaign.id: campaign})
     monkeypatch.setattr(api, "jobs", {finished_job.id: finished_job})
@@ -175,7 +175,7 @@ def test_campaign_renders_one_news_source_and_retains_it_for_review(news, monkey
     monkeypatch.setattr(api, "queue_youtube_private_buffer_promotions_once", lambda: 0)
     api.run_auto_viral_campaign(campaign.id)
     result = api.auto_viral_runs[campaign.id]
-    assert result.status == "completed"
+    assert result.status == "completed", result.errors
     assert len(rendered) == 1 and result.progress_current == 1
     assert result.processed[0]["status"] == "manual_review_required"
     assert finished_job.id in api.jobs

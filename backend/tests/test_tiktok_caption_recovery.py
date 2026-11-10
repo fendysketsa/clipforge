@@ -45,6 +45,15 @@ def test_pre_post_caption_failure_retries_same_record_once(failed_caption):
     assert api.queue_tiktok_caption_recoveries_once() == 0
 
 
+def test_cron_retry_filter_cannot_claim_an_unrelated_upload(failed_caption):
+    _, upload, started = failed_caption
+    assert api.queue_retryable_tiktok_uploads_once(source_job_ids=set()) == 0
+    assert api.queue_retryable_tiktok_uploads_once(source_job_ids={'another-job'}) == 0
+    assert not started
+    assert api.queue_retryable_tiktok_uploads_once(source_job_ids={upload.source_job_id}) == 1
+    assert [item.id for item in started] == [upload.id]
+
+
 @pytest.mark.parametrize('risk', ['post', 'accepted', 'changed', 'gate', 'hash', 'other_success', 'other_error'])
 def test_unsafe_caption_recovery_never_retries(failed_caption, monkeypatch, risk):
     path, upload, started = failed_caption
@@ -78,6 +87,8 @@ def test_background_editor_uses_verified_fill_when_click_is_unstable(monkeypatch
     ('Transfer file CDP TikTok gagal sebelum posting; tidak ada posting yang dibuat.','file_transfer_before_post'),
     ('Tombol Post TikTok belum aktif setelah 600 detik; video tidak diterbitkan.','post_button_not_ready'),
     ('Input upload TikTok tidak ditemukan. Periksa sesi dan halaman TikTok Studio.','upload_form_not_ready'),
+    ('Kontrol privasi TikTok belum siap. Video belum diposting.','privacy_control_not_ready'),
+    ('Pilihan privasi TikTok belum terverifikasi pada kontrol. Video belum diposting.','privacy_control_not_ready'),
     ('BrowserType.connect_over_cdp: Timeout 15000ms exceeded.','browser_connection_before_post'),
     ('Status tidak diketahui setelah upload.',''),
     ('CAPTCHA required; kolom caption TikTok belum siap; video belum diposting.',''),

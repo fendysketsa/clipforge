@@ -34,3 +34,7 @@ Thumbs.db
 outputs/
 reports/backend-build-*/
 reports/runtime-record-protection-*/
+reports/cron-short-presentation-*/**/*.mp4
+reports/cron-short-presentation-*/**/*.wav
+reports/cron-reaction-effects-*/**/*.mp4
+reports/cron-reaction-effects-*/**/*.wav

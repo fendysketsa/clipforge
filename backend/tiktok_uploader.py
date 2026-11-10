@@ -788,6 +788,41 @@ def dismiss_upload_overlays(page) -> None:
         )
 
 
+def activate_privacy_control(page, control) -> None:
+    """Use native keyboard activation if a background tab cannot stabilize.
+
+    This helper is only for the reversible privacy picker, never Post. A
+    blocking modal or disabled control still prevents any interaction.
+    """
+    try:
+        control.click(timeout=4_000)
+        return
+    except Exception as exc:
+        dismissed, detail = dismiss_blocking_modal(page)
+        if not dismissed:
+            raise UploadError(f'Dialog TikTok menghalangi privasi: {detail}. Video belum diposting.') from exc
+        if not control.is_visible() or not control.is_enabled():
+            raise UploadError('Kontrol privasi TikTok belum siap. Video belum diposting.') from exc
+        # A click can open the menu just before its timeout. Do not toggle an
+        # already-open combobox closed when recovering that case.
+        if control.get_attribute('aria-expanded') == 'true':
+            return
+        try:
+            log('Kontrol privasi belum stabil; memakai aktivasi keyboard setelah pemeriksaan dialog.')
+            control.focus(timeout=3_000)
+            control.press('Enter', timeout=3_000)
+        except Exception as keyboard_error:
+            save_debug(page, 'privacy-control-not-ready')
+            raise UploadError('Kontrol privasi TikTok belum siap. Video belum diposting.') from keyboard_error
+
+
+def verify_privacy_selection(trigger, pattern: str) -> None:
+    # Menu options/body text are not evidence that the selected value changed.
+    selected = trigger.inner_text(timeout=5_000).strip()
+    if not re.fullmatch(pattern, selected, re.I):
+        raise UploadError('Pilihan privasi TikTok belum terverifikasi pada kontrol. Video belum diposting.')
+
+
 def set_only_you(page) -> None:
     trigger = first_visible(
         page,
@@ -815,29 +850,30 @@ def set_only_you(page) -> None:
         current_visibility = trigger.inner_text(timeout=3_000).strip()
     except Exception:
         current_visibility = ""
-    if re.search(r"only you|hanya anda|hanya kamu", current_visibility, re.I):
+    if re.fullmatch(r"only you|hanya anda|hanya kamu", current_visibility, re.I):
         log("FINAL_VISIBILITY:private")
         return
-    trigger.click()
+    activate_privacy_control(page, trigger)
     option = first_visible(
         page,
         [
             '[role="option"]:has-text("Only you")',
             '[role="option"]:has-text("Hanya Anda")',
             '[role="option"]:has-text("Hanya kamu")',
-            'div:has-text("Only you")',
-            'div:has-text("Hanya Anda")',
-            'div:has-text("Hanya kamu")',
+            '[role="menuitem"]:has-text("Only you")',
+            '[role="menuitem"]:has-text("Hanya Anda")',
+            '[role="menuitem"]:has-text("Hanya kamu")',
+            'button:has-text("Only you")',
+            'button:has-text("Hanya Anda")',
+            'button:has-text("Hanya kamu")',
         ],
         timeout_ms=7000,
     )
     if option is None:
         raise UploadError("Pilihan Only you/Hanya Anda tidak ditemukan; upload tidak diterbitkan.")
-    option.click()
+    activate_privacy_control(page, option)
     page.wait_for_timeout(500)
-    visible_text = page.locator("body").inner_text(timeout=5000)
-    if not re.search(r"only you|hanya anda|hanya kamu", visible_text, re.I):
-        raise UploadError("Privasi Only you tidak dapat diverifikasi; upload tidak diterbitkan.")
+    verify_privacy_selection(trigger, r'only you|hanya anda|hanya kamu')
     log("FINAL_VISIBILITY:private")
 
 
@@ -866,27 +902,27 @@ def set_public(page) -> None:
         current_visibility = trigger.inner_text(timeout=3_000).strip()
     except Exception:
         current_visibility = ""
-    if re.search(r"everyone|semua orang", current_visibility, re.I):
+    if re.fullmatch(r"everyone|semua orang", current_visibility, re.I):
         log("FINAL_VISIBILITY:public")
         return
-    trigger.click()
+    activate_privacy_control(page, trigger)
     option = first_visible(
         page,
         [
             '[role="option"]:has-text("Everyone")',
             '[role="option"]:has-text("Semua orang")',
-            'div:has-text("Everyone")',
-            'div:has-text("Semua orang")',
+            '[role="menuitem"]:has-text("Everyone")',
+            '[role="menuitem"]:has-text("Semua orang")',
+            'button:has-text("Everyone")',
+            'button:has-text("Semua orang")',
         ],
         timeout_ms=7000,
     )
     if option is None:
         raise UploadError("Pilihan Everyone/Semua orang tidak ditemukan; upload tidak diterbitkan.")
-    option.click()
+    activate_privacy_control(page, option)
     page.wait_for_timeout(500)
-    visible_text = page.locator("body").inner_text(timeout=5000)
-    if not re.search(r"everyone|semua orang", visible_text, re.I):
-        raise UploadError("Privasi publik TikTok tidak dapat diverifikasi; upload tidak diterbitkan.")
+    verify_privacy_selection(trigger, r'everyone|semua orang')
     log("FINAL_VISIBILITY:public")
 
 

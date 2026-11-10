@@ -1,0 +1,26 @@
+{
+  "fixture_only": true,
+  "post_control_present": false,
+  "cases": [
+    {
+      "keyboard_keys": [
+        "Enter",
+        "Enter"
+      ],
+      "initial": "Everyone",
+      "target": "Only you",
+      "selected": "Only you",
+      "moving_controls": true
+    },
+    {
+      "keyboard_keys": [
+        "Enter",
+        "Enter"
+      ],
+      "initial": "Only you",
+      "target": "Everyone",
+      "selected": "Everyone",
+      "moving_controls": true
+    }
+  ]
+}

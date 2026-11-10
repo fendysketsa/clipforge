@@ -1,0 +1,65 @@
+{
+  "jobs": [
+    {
+      "id": "2ea6701395ef481b9c74b343d32c1194",
+      "status": "completed",
+      "source_title": "Yuta Mio Modifikasi Motor Drag Paling Cepat Untuk Ikut Kontes | ROBLOX",
+      "progress_percent": 100,
+      "error": null
+    },
+    {
+      "id": "d264a446f42e4065a7da406bfba9921e",
+      "status": "failed",
+      "source_title": null,
+      "progress_percent": 59,
+      "error": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus."
+    }
+  ],
+  "uploads": {
+    "youtube": [
+      {
+        "id": "8c381436148f4e3aa04f03a740bd2067",
+        "source_job_id": "2ea6701395ef481b9c74b343d32c1194",
+        "status": "running",
+        "upload_confirmed": false,
+        "video_url": "https://www.youtube.com/watch?v=tbAoI9h_Gis",
+        "error": null,
+        "queue_position": null,
+        "queue_total": null
+      }
+    ],
+    "tiktok": [
+      {
+        "id": "c78db5cffa7b4dcab79db7b27163d3c1",
+        "source_job_id": "2ea6701395ef481b9c74b343d32c1194",
+        "status": "running",
+        "upload_confirmed": false,
+        "video_url": null,
+        "error": null,
+        "queue_position": null,
+        "queue_total": null
+      },
+      {
+        "id": "406bd8430a854c1786b499b0237170fe",
+        "source_job_id": "2ea6701395ef481b9c74b343d32c1194",
+        "status": "failed",
+        "upload_confirmed": false,
+        "video_url": null,
+        "error": "Kolom caption TikTok belum siap setelah batas tunggu transfer/pemrosesan; video belum diposting.",
+        "queue_position": null,
+        "queue_total": null
+      }
+    ]
+  },
+  "schedule": {
+    "enabled": true,
+    "scheduler_running": true,
+    "active_run_id": null,
+    "message": "Antrean jadwal dan cadangan Private penuh; cron menunggu kapasitas setelah publikasi berikutnya. News Hot: 3/3 slot harian WIB; playlist News, review sebelum upload."
+  },
+  "live_ui": {
+    "four_column_marker": true,
+    "director_recovery_marker": false
+  },
+  "backend_recovery_schema": false
+}

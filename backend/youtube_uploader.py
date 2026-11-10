@@ -6537,7 +6537,8 @@ def resume_saved_draft_and_finalize(
     while time.monotonic() < deadline:
         restore_saved_draft_dialog_surface(page, video_id, expected_title)
         step = get_upload_workflow_step(page)
-        if step in UPLOAD_WORKFLOW_STEP_ORDER and active_upload_dialog_text(page, timeout_ms=500):
+        if (step in UPLOAD_WORKFLOW_STEP_ORDER and active_upload_dialog_text(page, timeout_ms=500)
+                and saved_draft_identity_matches(page, video_id)):
             break
         if not edit_clicked:
             edit_clicked = click_text(
@@ -6563,7 +6564,7 @@ def resume_saved_draft_and_finalize(
     else:
         save_debug_artifacts(page, "saved-draft-dialog-not-open")
         raise UploadError(
-            f"Dialog draft {video_id} tidak dapat dibuka dari halaman edit; tidak ada file yang diupload ulang."
+            f"Dialog draft {video_id} belum siap dengan ID yang cocok; metadata tidak diubah dan tidak ada file yang diupload ulang."
         )
 
     next_timeout_ms = min(timeout_ms, 120000)

@@ -980,6 +980,7 @@ class ClipJob(BaseModel):
     source_uploader: str | None = None
     repair_source_job_id: str | None = None
     repair_source_clip_url: str | None = None
+    director_recovery: dict[str, Any] | None = None
     logs: list[str] = []
     clips: list[ClipFile] = []
     candidates: list[ClipCandidate] = []
@@ -1247,6 +1248,7 @@ class YouTubeUploadJob(BaseModel):
     video_url: str | None = None
     upload_confirmed: bool = False
     storage_state_verification_attempted: bool = False
+    draft_ui_recovery_attempted: bool = False
     clip_sha256: str | None = None
     queue_position: int | None = None
     queue_total: int | None = None
@@ -2518,6 +2520,7 @@ class AutoViralRequest(BaseModel):
     # marker durable lets an interrupted cron run resume with the same gate.
     cron_trend_lane: bool = False
     cron_humor_lane: bool = False
+    director_source_recovery: bool = False
     cron_editorial_tone: str = Field(default="", max_length=480)
     cron_short_role: str = Field(default="", max_length=800)
     cron_long_role: str = Field(default="", max_length=800)
@@ -2672,6 +2675,7 @@ class AutoViralRun(BaseModel):
     progress_current: int = Field(default=0, ge=0)
     progress_total: int = Field(default=0, ge=0)
     search_provider: str | None = None
+    director_source_search_attempted: bool = False
     selected_sources: list[dict[str, Any]] = Field(default_factory=list)
     processed: list[dict[str, Any]] = Field(default_factory=list)
     retry_count: int = Field(default=0, ge=0)
@@ -2680,13 +2684,14 @@ class AutoViralRun(BaseModel):
 
 
 class AutoViralScheduleStatus(BaseModel):
+    cron_upload_recovery: dict[str, Any] = Field(default_factory=dict)
     tiktok_strategy_version: int = TIKTOK_STRATEGY_VERSION
     tiktok_automatic_retry_enabled: bool = Field(default_factory=lambda: env_bool('TIKTOK_AUTOMATIC_RETRY_ENABLED',True))
     tiktok_automatic_retry_limit: int = 3
     cron_source_process_limit: int = 2
     cron_follow_cta_adaptive: bool = True
     cron_director_effects_required: bool = True
-    cron_director_effects_policy_version: int = 2
+    cron_director_effects_policy_version: int = 3
     enabled: bool
     interval_hours: float
     run_on_startup: bool
@@ -4055,7 +4060,12 @@ def output_work_dirs_for_job(job: "ClipJob") -> list[Path]:
 
 
 def metadata_for_job(job: "ClipJob") -> dict:
-    for work_dir in output_work_dirs_for_job(job):
+    work_dirs = output_work_dirs_for_job(job)
+    job_root = OUTPUTS_DIR / job.id
+    if job_root.resolve().is_relative_to(OUTPUTS_DIR.resolve()) and job_root != OUTPUTS_DIR:
+        work_dirs = list(dict.fromkeys([*work_dirs, job_root,
+            *(path.parent for path in job_root.glob('*/metadata.json'))]))
+    for work_dir in work_dirs:
         metadata_path = work_dir / "metadata.json"
         if not metadata_path.is_file():
             continue
@@ -4091,7 +4101,36 @@ def metadata_for_job(job: "ClipJob") -> dict:
         }
         if any(str(value or "").strip() for value in payload.values()):
             return payload
+    # Failed workspaces are cleaned. Their owning campaign still carries the
+    # exact source identity, so History must not degrade to youtube.com/watch.
+    for run in list(globals().get('auto_viral_runs', {}).values()):
+        for item in getattr(run, 'processed', []):
+            if item.get('job_id') != job.id: continue
+            source = item.get('source') or {}
+            return dict(title=source.get('title') or item.get('title'),
+                webpage_url=source.get('url') or item.get('url') or job.request.url,
+                uploader=source.get('uploader'), license=source.get('license'))
     return {}
+
+
+def enrich_job_director_recovery(job: "ClipJob") -> "ClipJob":
+    if job.status != 'failed' or not (job.error or '').startswith('Tidak ditemukan potongan'):
+        return job
+    for run in list(globals().get('auto_viral_runs', {}).values()):
+        rows = getattr(run, 'processed', [])
+        for index, item in enumerate(rows):
+            if item.get('job_id') != job.id: continue
+            following = next((row for row in rows[index+1:]
+                if row.get('job_id') and row.get('job_status') in {'queued','running','completed'}
+                and row.get('status') not in {'cancelled','skipped'}
+                and (row.get('status') != 'failed' or row.get('job_status') == 'completed')), None)
+            if following:
+                source = following.get('source') or {}
+                recovery = {**(job.director_recovery or {}), 'outcome':'source_replaced',
+                    'summary':'Alur sumber ini belum layak. Sumber alternatif sudah masuk pipeline.',
+                    'next_job_id':following['job_id'], 'next_source_title':source.get('title') or following.get('title')}
+                return job.model_copy(update={'director_recovery':recovery})
+    return job
 
 
 def enrich_job_source_metadata(job: "ClipJob") -> "ClipJob":
@@ -4171,6 +4210,7 @@ def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
     enriched = enrich_job_source_metadata(
         enrich_job_codex_feedback(enrich_job_clip_titles(job))
     )
+    enriched = enrich_job_director_recovery(enriched)
     if enriched.status != "completed" or not enriched.clips:
         return attach_job_telemetry(enriched)
 
@@ -4576,6 +4616,9 @@ auto_viral_scheduler_running = False
 auto_viral_scheduler_next_run_at: datetime | None = None
 auto_viral_scheduler_thread: threading.Thread | None = None
 auto_viral_scheduler_wakeup = threading.Event()
+auto_viral_upload_recovery_status: dict[str, Any] = {
+    'last_tick_at': None, 'queued': {'youtube': 0, 'tiktok': 0}, 'errors': {},
+}
 auto_viral_schedule_control_lock = threading.Lock()
 auto_viral_schedule_enabled_override = load_auto_viral_schedule_override()
 completed_job_upload_sweeper_lock = threading.Lock()
@@ -8845,7 +8888,7 @@ def reuse_youtube_remote_draft(job_id: str, request: YouTubeUploadRequest) -> Yo
         return youtube_uploads.get(recovery.id, recovery)
 
 
-def queue_youtube_draft_recoveries_once() -> int:
+def queue_youtube_draft_recoveries_once(*, source_job_ids: set[str] | None = None) -> int:
     if not env_bool("YOUTUBE_AUTO_RECOVER_DRAFTS", True):
         return 0
     if not youtube_upload_creation_lock.acquire(blocking=False):
@@ -8857,6 +8900,34 @@ def queue_youtube_draft_recoveries_once() -> int:
             return 0
         now = datetime.now(timezone.utc)
         for row in sorted(rows, key=lambda item: item.updated_at):
+            if source_job_ids is not None and row.source_job_id not in source_job_ids:
+                continue
+            # The previous worker could inspect a loading/hidden dialog before
+            # its exact-ID surface was ready. One retry resumes only that
+            # recorded draft; it can never select/upload another file.
+            ui_marker = 'DRAFT_UI_READY_RECOVERY_ONCE:v1'
+            ui_error = str(row.error or '')
+            ui_retry = (
+                'ID draft aktif berubah; perubahan metadata dihentikan.' in ui_error
+                or 'belum siap dengan ID yang cocok; metadata tidak diubah' in ui_error
+            )
+            if (ui_retry and row.status == 'failed' and not row.dry_run and not row.upload_confirmed
+                    and youtube_upload_has_remote_checkpoint(row)
+                    and normalize_youtube_video_url(row.video_url or '')
+                    and not youtube_upload_was_claimed(row)
+                    and not youtube_upload_has_final_save_checkpoint(row)
+                    and not any(str(line).startswith(('Tombol final diklik', 'UPLOAD_CONFIRMED:')) for line in row.logs)
+                    and not row.draft_ui_recovery_attempted and ui_marker not in row.logs
+                    and not verified_duplicate_for_upload(row, row.clip_sha256 or '')
+                    and 0 <= (now - parse_utc_datetime(row.updated_at)).total_seconds() <= 86400):
+                set_youtube_upload(row.id, status='queued', started_at=None, finished_at=None,
+                    duration_seconds=None, error=None, draft_ui_recovery_attempted=True,
+                    logs=[*row.logs, ui_marker, YOUTUBE_RESTART_VERIFY_MARKER,
+                        'REMOTE_DRAFT_RESUME: ulang sekali saat dialog siap; ID, metadata dan privasi semula dipertahankan; file tidak dikirim ulang.'][-160:])
+                with youtube_uploads_lock:
+                    queued = youtube_uploads[row.id]
+                queue_youtube_upload_jobs([queued])
+                return 1
             if (row.status != "failed" or not youtube_upload_has_remote_checkpoint(row)
                     or youtube_upload_was_claimed(row) or youtube_restart_verification_released(row)
                     or YOUTUBE_RESTART_VERIFY_MARKER in row.logs
@@ -13541,7 +13612,7 @@ def schedule_tiktok_upload_retry(upload_id: str) -> None:
     tiktok_retry_sweeper_wakeup.set()
 
 
-def queue_retryable_tiktok_uploads_once(now: datetime | None = None) -> int:
+def queue_retryable_tiktok_uploads_once(now: datetime | None = None, *, source_job_ids: set[str] | None = None) -> int:
     """Claim one due retry of an existing approved file, preserving caption and visibility."""
     if not env_bool('TIKTOK_AUTOMATIC_RETRY_ENABLED',True) or tiktok_login_is_active():
         return 0
@@ -13552,6 +13623,8 @@ def queue_retryable_tiktok_uploads_once(now: datetime | None = None) -> int:
         with tiktok_uploads_lock:rows=list(tiktok_uploads.values())
         if any(item.status in {'queued','running'} for item in rows):return 0
         for upload in sorted(rows,key=lambda item:item.updated_at):
+            if source_job_ids is not None and upload.source_job_id not in source_job_ids:
+                continue
             count=automatic_retry.retry_count(upload)
             reason=automatic_retry.tiktok_retry_reason(upload.error,upload.logs,
                 started=upload.submission_started,accepted=upload.submission_accepted)
@@ -14723,6 +14796,37 @@ def cleanup_job_artifacts(output_root: Path) -> int:
         return 0
 
 
+def preserve_director_recovery_evidence(job_id: str, output_root: Path) -> None:
+    """Keep bounded planning evidence before removing failed media workspaces."""
+    with jobs_lock:
+        job = jobs.get(job_id)
+    if job is None: return
+    enriched = enrich_job_source_metadata(job)
+    updates = {key:getattr(enriched,key) for key in ('source_title','source_url','source_uploader')}
+    path = output_root / 'director_recovery.json'
+    if path.is_file():
+        try:
+            if path.stat().st_size > 256_000: raise ValueError('Director evidence exceeds size limit')
+            audit = json.loads(path.read_text())
+            expected_url = normalize_youtube_video_url(job.request.url) or job.request.url.strip()
+            actual_url = str(audit.get('source_url') or '') if isinstance(audit, dict) else ''
+            actual_url = normalize_youtube_video_url(actual_url) or actual_url.strip()
+            if not isinstance(audit,dict) or actual_url != expected_url:
+                raise ValueError('Director source identity mismatch')
+            folder = SOURCE_USAGE_HISTORY_PATH.parent / 'director_recovery'
+            folder.mkdir(parents=True,exist_ok=True)
+            target = folder / (job_id+'.json')
+            temporary = target.with_suffix('.tmp')
+            temporary.write_text(json.dumps(audit,ensure_ascii=False,indent=2)+'\n')
+            temporary.chmod(0o600);temporary.replace(target)
+            updates['director_recovery'] = {key:audit[key] for key in
+                ('schema_version','genre','recipes','attempted','outcome','summary','reason','selected') if key in audit}
+        except (OSError,ValueError,TypeError):
+            updates['director_recovery'] = dict(outcome='evidence_unavailable',
+                summary='Bukti perencanaan belum dapat diverifikasi; sumber lain tetap dapat dipilih.')
+    set_job(job_id,**updates)
+
+
 def cleanup_failed_job_artifacts(
     output_root: Path,
     *,
@@ -15514,6 +15618,7 @@ def run_job(job_id: str) -> None:
             )
             return
 
+        preserve_director_recovery_evidence(job_id, output_root)
         clips = discover_clips(started_at, output_root)
         had_rendered_clips = bool(clips)
         candidates = discover_candidates(started_at, output_root)
@@ -15724,6 +15829,7 @@ def run_job(job_id: str) -> None:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=CANCEL_GRACE_SECONDS)
+        preserve_director_recovery_evidence(job_id, output_root)
         preserve_partial_render = (
             any(output_root.rglob("clips/*.mp4"))
             or (
@@ -16561,6 +16667,13 @@ def cron_trend_discovery_active(run_id: str, request: AutoViralRequest) -> bool:
     with auto_viral_lock:
         run = auto_viral_runs.get(run_id)
     return bool(run and run.trigger == "schedule")
+
+
+def director_source_discovery_active(run_id: str, request: AutoViralRequest) -> bool:
+    with auto_viral_lock:
+        run = auto_viral_runs.get(run_id)
+    return bool(request.director_source_recovery and request.cron_theme_key != NEWS_HOT_THEME
+        and run and run.trigger == 'schedule' and run.director_source_search_attempted)
 
 
 def cron_trend_score(
@@ -18205,6 +18318,7 @@ def search_youtube_data_api_viral_sources(
     trend_tokens: set[str] = set()
     cron_humor_lane = cron_humor_discovery_active(run_id, request)
     cron_trend_lane = cron_trend_discovery_active(run_id, request)
+    director_lane = director_source_discovery_active(run_id, request)
     api_queries = youtube_data_api_search_queries(
         request,
         cron_trend=cron_trend_lane and not cron_humor_lane,
@@ -18212,7 +18326,10 @@ def search_youtube_data_api_viral_sources(
     max_api_queries = max(1, min(20, env_int("VIRAL_CC_MAX_API_QUERIES", 1)))
     channel_term_queries: list[str] = []
     studio_trend_queries: list[str] = []
-    if request.cron_theme_key == NEWS_HOT_THEME and cron_trend_lane:
+    if director_lane:
+        api_queries = request.queries[:max_api_queries]
+        append_auto_viral_log(run_id, 'Pencarian pengganti memakai brief sutradara; gate sumber dan hak tetap berlaku.')
+    elif request.cron_theme_key == NEWS_HOT_THEME and cron_trend_lane:
         api_queries = list(NEWS_HOT_QUERIES)[:max_api_queries]
         append_auto_viral_log(run_id, "News Hot memakai pencarian politik Indonesia dengan freshness ketat; hasil pencarian bukan bukti fakta.")
     elif cron_humor_lane:
@@ -18267,7 +18384,7 @@ def search_youtube_data_api_viral_sources(
                     studio_trend_queries,
                     limit=max_api_queries,
                 )
-    preferred_specs = cron_gaming_channel_query_specs(request, run_id)
+    preferred_specs = [] if director_lane else cron_gaming_channel_query_specs(request, run_id)
     query_specs: list[tuple[str, str]] = []
     for spec in [*preferred_specs, *((query, "") for query in api_queries)]:
         if spec not in query_specs:
@@ -22102,7 +22219,7 @@ def discover_auto_viral_campaign_sources(
         cron_trend_lane = cron_trend_discovery_active(run_id, request)
         fallback_queries = (
             request.queries
-            if cron_trend_lane
+            if cron_trend_lane or director_source_discovery_active(run_id, request)
             else prioritized_niche_queries(
                 request.niche,
                 default_auto_viral_queries(),
@@ -22224,6 +22341,53 @@ def ensure_auto_viral_campaign_not_cancelled(run_id: str) -> None:
         raise AutoViralCampaignCancelled("Automation dihentikan untuk rebuild paksa")
 
 
+def director_replacement_request(request: AutoViralRequest, item: dict) -> AutoViralRequest | None:
+    """A failed story may change the search brief, never the evidence gates."""
+    if (request.source_urls or request.cron_theme_key == NEWS_HOT_THEME
+            or item.get('job_status') != 'failed' or item.get('clip_count') != 0
+            or not str(item.get('error') or '').startswith(SHORT_SELECTION_REJECTION_PREFIX)):
+        return None
+    audit = item.get('director_recovery') or {}
+    if audit.get('reason') == 'provider_rejected':
+        return None
+    source = item.get('source') or {}
+    title = str(source.get('title') or item.get('title') or '').casefold()
+    if re.search(r'minecraft|roblox|gameplay|gaming|mabar', title):
+        subject = 'Minecraft' if 'minecraft' in title else 'Roblox' if 'roblox' in title else 'gameplay'
+        queries = [f'{subject} Indonesia misi lengkap tantangan solusi hasil',
+                   f'{subject} Indonesia kejadian reaksi akhir cerita']
+        brief = 'Pilih satu tujuan pemain, hambatan, tindakan dan hasil yang benar-benar terlihat serta terucap.'
+    elif re.search(r'kajian|ceramah|ustadz|hadis|hadits|fiqih|tafsir', title) or audit.get('genre') == 'religious':
+        queries = [f'{request.theme_focus or "kajian Indonesia"} tanya jawab penjelasan lengkap',
+                   f'{request.theme_focus or "ceramah Indonesia"} contoh kehidupan kesimpulan']
+        brief = 'Pertanyaan dan jawaban utuh, contoh serta kesimpulan; pertahankan dalil, negasi dan batasan.'
+    else:
+        subject = request.theme_focus or ('podcast Indonesia' if 'podcast' in title else 'cerita Indonesia')
+        queries = [f'{subject} masalah pilihan akibat akhir cerita', f'{subject} pertanyaan jawaban pengalaman lengkap']
+        brief = 'Cari konflik atau pertanyaan konkret dengan konteks dan jawaban/akibat yang tuntas.'
+    suffix = ' Sudut pengganti: ' + brief
+    role = request.cron_short_role
+    if len(role) + len(suffix) <= 800:
+        role += suffix
+    return request.model_copy(update={'queries': queries, 'cron_short_role': role,
+        'director_source_recovery': True})
+
+
+def discover_director_replacement(request: AutoViralRequest, run_id: str,
+        item: dict, excluded: set[str]) -> list[dict]:
+    """One extra source at most; caller owns the once-per-campaign budget."""
+    replacement = director_replacement_request(request, item)
+    if replacement is None:
+        return []
+    append_auto_viral_log(run_id, 'Sutradara mengganti brief pencarian: mencari alur dengan pemicu dan hasil utuh, maksimal satu sumber tambahan.')
+    blocked = {normalize_youtube_video_url(url) or url for url in excluded}
+    for source in discover_auto_viral_campaign_sources(replacement, run_id, blocked, 1):
+        url = normalize_youtube_video_url(str(source.get('url') or ''))
+        if url and url not in blocked and not cron_source_process_limit_reached(url):
+            return [{**source, 'url': url, 'director_short_role': replacement.cron_short_role}]
+    return []
+
+
 def run_auto_viral_campaign(run_id: str) -> None:
     global auto_viral_active_run_id
     try:
@@ -22322,6 +22486,8 @@ def run_auto_viral_campaign(run_id: str) -> None:
 
         completed_count = 0
         processed: list[dict[str, Any]] = []
+        director_discovery_used = run.director_source_search_attempted
+        weak_story_item: dict | None = None
         for source_index, source in enumerate(sources, start=1):
             ensure_auto_viral_campaign_not_cancelled(run_id)
             if completed_count >= run_request.video_count:
@@ -22333,6 +22499,10 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 append_auto_viral_log(run_id, "Cadangan Private dan antrean jadwal penuh; pencarian sumber baru menunggu slot tersedia.")
                 break
             append_auto_viral_log(run_id, f"Mulai clipping: {source.get('title')}")
+            source_request = run_request
+            if source.get('director_short_role'):
+                source_request = run_request.model_copy(update={
+                    'cron_short_role': str(source['director_short_role'])[:800]})
             item: dict[str, Any] = {
                 "source": source,
                 "title": source.get("title"),
@@ -22341,7 +22511,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 "editorial_pair": {
                     "theme": run_request.cron_theme_key,
                     "tone": run_request.cron_editorial_tone,
-                    "short_role": run_request.cron_short_role,
+                    "short_role": source_request.cron_short_role,
                     "long_role": run_request.cron_long_role,
                 },
             }
@@ -22349,7 +22519,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
             try:
                 job = create_auto_viral_clip_job(
                     source,
-                    run_request,
+                    source_request,
                     run.trigger == "schedule",
                 )
                 item["job_id"] = job.id
@@ -22378,7 +22548,9 @@ def run_auto_viral_campaign(run_id: str) -> None:
                     raise RuntimeError("Job hilang setelah clipping")
                 item["job_status"] = finished_job.status
                 item["clip_count"] = len(finished_job.clips)
-                if finished_job.progress_stage=='skipped_source_limit':
+                if getattr(finished_job, 'director_recovery', None):
+                    item['director_recovery'] = finished_job.director_recovery
+                if getattr(finished_job, 'progress_stage', None)=='skipped_source_limit':
                     raise cron_source_policy.SourceProcessLimitReached('Sumber mencapai dua proses; worker dilewati sebelum download.')
                 if finished_job.status != "completed" or not finished_job.clips:
                     raise RuntimeError(finished_job.error or f"Job selesai dengan status {finished_job.status}")
@@ -22667,6 +22839,8 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 if (run.trigger == "schedule" and item.get("job_status") == "failed" and item.get("clip_count") == 0
                         and item["error"].startswith(SHORT_SELECTION_REJECTION_PREFIX)):
                     item["selection_rejected_at"] = now_iso()
+                    if director_replacement_request(run_request, item) is not None:
+                        weak_story_item = item
                 append_auto_viral_error(run_id, f"{source.get('title')}: {exc}")
                 item["cleanup"] = (
                     "Card gagal dipertahankan agar error dapat diperiksa; "
@@ -22685,6 +22859,23 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 progress_total=run_request.video_count,
                 message=f"{completed_count}/{run_request.video_count} video sukses",
             )
+            if (run.trigger == 'schedule' and source_index == len(sources)
+                    and completed_count < run_request.video_count and weak_story_item
+                    and not director_discovery_used):
+                director_discovery_used = True
+                update_auto_viral_run(run_id, director_source_search_attempted=True)
+                ensure_auto_viral_campaign_not_cancelled(run_id)
+                try:
+                    extra = discover_director_replacement(run_request, run_id, weak_story_item,
+                        excluded_sources | {str(row.get('url') or '') for row in sources})
+                    sources.extend(extra)
+                    update_auto_viral_run(run_id, selected_sources=sources)
+                    append_auto_viral_log(run_id, 'Sumber alternatif masuk antrean.' if extra else
+                        'Pencarian alternatif belum menemukan sumber baru yang layak; berhenti tanpa memaksa clip.')
+                except AutoViralCampaignCancelled:
+                    raise
+                except Exception as exc:
+                    append_auto_viral_error(run_id, f'Pencarian alternatif sutradara berhenti: {exc}')
 
         if completed_count == 0:
             suffix = (
@@ -24046,6 +24237,7 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
     with auto_viral_scheduler_lock:
         scheduler_running = auto_viral_scheduler_running
         next_run_at = auto_viral_scheduler_next_run_at
+        upload_recovery = dict(auto_viral_upload_recovery_status)
     with auto_viral_lock:
         active_id = auto_viral_active_run_id
     if not enabled:
@@ -24102,6 +24294,8 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
         run_on_startup=env_bool("AUTO_VIRAL_SCHEDULE_RUN_ON_STARTUP", False),
         once_per_boot=env_bool("AUTO_VIRAL_SCHEDULE_ONCE_PER_BOOT", False),
         scheduler_running=scheduler_running,
+        cron_upload_recovery={**upload_recovery, 'enabled': bool(enabled and (
+            youtube_upload_requested or tiktok_upload_requested or paired_long_public_requested))},
         boot_delay_minutes=auto_viral_boot_delay_minutes(),
         post_clip_upload_delay_minutes=auto_viral_post_clip_upload_delay_minutes(),
         background_upload_enabled=bool(
@@ -24389,6 +24583,51 @@ def auto_viral_next_run_at(
     )
 
 
+def scheduled_upload_recovery_source_ids(platform: str) -> set[str]:
+    """Only recover uploads the scheduler originally requested for this lane."""
+    with auto_viral_lock:
+        runs = list(auto_viral_runs.values())
+    owned: set[str] = set()
+    for run in runs:
+        if run.trigger != 'schedule' or run.request.cron_theme_key == NEWS_HOT_THEME:
+            continue
+        short_enabled = (run.request.auto_upload_youtube if platform == 'youtube'
+            else run.request.auto_upload_tiktok)
+        long_enabled = (run.request.auto_publish_paired_long_video if platform == 'youtube'
+            else run.request.auto_upload_tiktok)
+        keys = (['job_id', 'repair_job_id'] if short_enabled else []) + (['long_job_id'] if long_enabled else [])
+        for item in run.processed:
+            owned.update(str(item[key]) for key in keys if item.get(key))
+    return owned
+
+
+def queue_scheduled_upload_recoveries_once() -> dict[str, int]:
+    """Cron owns its recovery tick independently of the UI/generic operator."""
+    counts = {'youtube': 0, 'tiktok': 0}
+    if not auto_viral_schedule_enabled():
+        return counts
+    errors: dict[str, str] = {}
+    for platform, recover in (('youtube', queue_youtube_draft_recoveries_once),
+                              ('tiktok', queue_retryable_tiktok_uploads_once)):
+        requested = env_bool(f'AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_{platform.upper()}', False)
+        if platform == 'youtube':
+            requested = requested or env_bool('AUTO_VIRAL_SCHEDULE_PAIRED_LONG_AUTO_PUBLIC', False)
+        if not requested:
+            continue
+        try:
+            source_ids = scheduled_upload_recovery_source_ids(platform)
+            if source_ids:
+                counts[platform] = recover(source_job_ids=source_ids)
+        except Exception as exc:
+            # A temporary failure in one lane must not stop the other lane or
+            # the scheduler. The next tick can recheck durable state safely.
+            errors[platform] = type(exc).__name__
+            print(f'Pemulihan upload cron {platform} ditunda: {type(exc).__name__}', flush=True)
+    with auto_viral_scheduler_lock:
+        auto_viral_upload_recovery_status.update(last_tick_at=now_iso(), queued=counts, errors=errors)
+    return counts
+
+
 def auto_viral_scheduler_loop() -> None:
     global auto_viral_active_run_id, auto_viral_scheduler_running, auto_viral_scheduler_next_run_at
     retry_not_before: datetime | None = None
@@ -24396,6 +24635,7 @@ def auto_viral_scheduler_loop() -> None:
         while auto_viral_schedule_enabled():
             try:
                 now = datetime.now(timezone.utc)
+                queue_scheduled_upload_recoveries_once()
                 reconcile_stalled_scheduled_upload_runs(now)
                 try:
                     queue_youtube_private_buffer_promotions_once()

@@ -19,6 +19,7 @@ class AIConfig:
     model: str = ""
     api_key: str = ""
     timeout: float = 120.0
+    terminal_failure: str = ""
 
 
 class LLMUnavailableError(ConnectionError):
@@ -419,19 +420,31 @@ def _loads_lenient(text: str) -> dict:
     return _sanitize_json_unicode(parsed)
 
 
-def extract_json(raw: str) -> dict:
+def extract_json(raw: str) -> Any:
     raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
     raw = re.sub(r"```[a-zA-Z]*\n?", "", raw).replace("```", "").strip()
-    start = raw.find("{")
-    if start == -1:
+    positions = [position for position in (raw.find('{'), raw.find('[')) if position >= 0]
+    if not positions:
         return _loads_lenient(raw)
-
+    start = min(positions)
     depth = 0
+    in_string = False
+    escaped = False
     for idx in range(start, len(raw)):
         char = raw[idx]
-        if char == "{":
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == '\\':
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in '{[':
             depth += 1
-        elif char == "}":
+        elif char in '}]':
             depth -= 1
             if depth == 0:
                 return _loads_lenient(raw[start : idx + 1])

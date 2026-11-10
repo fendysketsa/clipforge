@@ -1,0 +1,8 @@
+{
+  "backend_health": "ok",
+  "cron_enabled": true,
+  "scheduler_running": true,
+  "runtime_director_policy_version": 2,
+  "expected_policy_version": 3,
+  "message": "Automation sedang berjalan; jadwal berikutnya tidak akan membuat run tumpang tindih. News Hot: 3/3 slot harian WIB; playlist News, review sebelum upload."
+}

@@ -373,6 +373,13 @@ export function HistorySection({
                     </div>
                     ) : null}
                     {item.error ? <p className="jobCardError" title={item.error}>{item.error}</p> : null}
+                    {item.director_recovery?.summary ? (
+                      <div className="jobDirectorRecovery">
+                        <strong>{item.director_recovery.outcome === "source_replaced" ? "Sumber pengganti diproses" : "Rencana sutradara"}</strong>
+                        <span>{item.director_recovery.summary}</span>
+                        {item.director_recovery.next_source_title ? <small>{item.director_recovery.next_source_title}</small> : null}
+                      </div>
+                    ) : null}
                     <div className="jobSourceLine" title={url || "Upload lokal"}>
                       <Link2 size={14} />
                       <span>{item.source_uploader || url || "Upload lokal"}</span>

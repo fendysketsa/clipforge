@@ -1,0 +1,12 @@
+{
+  "backend_health": "ok",
+  "new_recovery_schema": false,
+  "privileged_activation": "pending_sudo_password",
+  "cron": {
+    "enabled": true,
+    "scheduler_running": true,
+    "active_run_id": null,
+    "next_run_at": "2026-11-10T11:16:00+00:00",
+    "message": "Antrean jadwal dan cadangan Private penuh; cron menunggu kapasitas setelah publikasi berikutnya. News Hot: 3/3 slot harian WIB; playlist News, review sebelum upload."
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "read_only": true,
+  "youtube": [
+    {
+      "upload_id": "00ac6bbb0a864c14b834c94ec6bc0055",
+      "video_id": "FjGZqDI8x0w",
+      "url": "https://studio.youtube.com/video/FjGZqDI8x0w/edit",
+      "visible_fields": [
+        "clip 01 nanti kalo dia terbuka gimana maksudnya pinjabi kita",
+        ""
+      ],
+      "status_markers": [],
+      "title_matches": false
+    },
+    {
+      "upload_id": "8c381436148f4e3aa04f03a740bd2067",
+      "video_id": "tbAoI9h_Gis",
+      "url": "https://studio.youtube.com/video/tbAoI9h_Gis/edit",
+      "visible_fields": [
+        "Kak Yuta bisa borong Rp1,78 juta? Ngeri! #Shorts",
+        "Berapa uang Kak Yuta? Rp1,78 juta. Kakaknya dan teman-temannya seolah mengecek, lalu bereaksi kagum banget.\n\nDari situ mereka bahas berapa besar itu, menghabiskan simpanan, dan akhirnya Kak Yuta bisa "
+      ],
+      "status_markers": [
+        "Publik"
+      ],
+      "title_matches": true
+    }
+  ],
+  "tiktok": {
+    "url": "https://www.tiktok.com/tiktokstudio/content",
+    "visible_video_ids": [
+      "7706415757357272340",
+      "7706416266482896148",
+      "7706416860450868501",
+      "7706439824395341077",
+      "7706497856722504981"
+    ],
+    "caption_matches": [
+      {
+        "upload_id": "0ea19ab252a040f5ba55daf94d8d64c7",
+        "caption_prefix": "Apa yang akan terjadi jika kita membuka rahasia helikopter Pinjabi? Simak konteks dan akhir penjelas",
+        "found_on_first_content_page": false,
+        "submission_started": true
+      },
+      {
+        "upload_id": "ed4f640f211644ae94ee9429d19403a8",
+        "caption_prefix": "Menurutmu: Bagian dari “Sumpah, kakak pahli. hehehe. aku nggak mau sama” mana yang paling mengubah p",
+        "found_on_first_content_page": false,
+        "submission_started": false
+      },
+      {
+        "upload_id": "c78db5cffa7b4dcab79db7b27163d3c1",
+        "caption_prefix": "Menurutmu: Bagian dari “Sumpah, kakak pahli. hehehe. aku nggak mau sama” mana yang paling mengubah p",
+        "found_on_first_content_page": false,
+        "submission_started": false
+      },
+      {
+        "upload_id": "406bd8430a854c1786b499b0237170fe",
+        "caption_prefix": "Menurutmu: Bagian dari “Sumpah, kakak pahli. hehehe. aku nggak mau sama” mana yang paling mengubah p",
+        "found_on_first_content_page": false,
+        "submission_started": false
+      }
+    ],
+    "login_required": false,
+    "note": "Absence on one page does not prove no post; unknown submission remains held."
+  },
+  "no_upload_or_post": true
+}

@@ -15,6 +15,7 @@ ACTIVATORS = (
     'activate-upload-queue-ui.sh',
     'activate-upload-submission-recovery.sh',
     'activate-history-four-cards.sh',
+    'activate-director-source-recovery.sh',
 )
 
 

@@ -35,6 +35,15 @@ def test_full_capacity_is_not_reported_as_missing_permission(schedule_state):
     assert "izin" not in status.message
 
 
+def test_schedule_reports_actual_recovery_tick_even_while_new_production_waits_for_capacity(schedule_state,monkeypatch):
+    state={'last_tick_at':'2026-11-10T10:00:00+00:00',
+        'queued':{'youtube':1,'tiktok':0},'errors':{'tiktok':'OSError'}}
+    monkeypatch.setattr(api,'auto_viral_upload_recovery_status',state)
+    status=api.auto_viral_schedule_status()
+    assert not status.background_upload_enabled
+    assert status.cron_upload_recovery==dict(state,enabled=True)
+
+
 def test_active_run_takes_priority_over_next_request_capacity(schedule_state, monkeypatch):
     monkeypatch.setattr(api, "auto_viral_active_run_id", "active-run")
     status = api.auto_viral_schedule_status()

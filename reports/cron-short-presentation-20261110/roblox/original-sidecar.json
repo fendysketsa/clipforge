@@ -1,0 +1,2345 @@
+{
+  "index": 1,
+  "start": 566.395,
+  "end": 597.5600000000001,
+  "duration": 31.165000000000077,
+  "score": 95,
+  "title": "Sumpah, kakak pahli. hehehe. aku nggak mau sama.",
+  "reason": "durasi prioritas 25–45 detik, ada keyword hook: harus, ada payoff: akhirnya, punya momen humor/tertawa yang natural, memancing rasa penasaran, ada angka konkret, speech padat, ending terasa selesai, hook 3 detik awal kuat, alur 30 detik awal cukup, tempo awal padat, satu point penting terbentuk jelas, payoff ditempatkan dekat ending, hook dan payoff membentuk loop semantik, ritme 30 detik awal menjaga beat informasi tetap aktif, hook, konteks, konflik, jawaban, dan ending terbentuk utuh",
+  "text": "Sumpah, kakak pahli. Hehehe. Aku nggak mau sama. Ya, Kak Yuta harus beli dua kali berarti. Ya udah, tidak apa -apa, kita beli. Jebum -jebum, kita habiskan rumpa kita, guys. Jebum -jebum. Woow, tahu nggak uang Kak Yuta berapa? Rp1.78 juta. Woow, GG. Ngeri -ngeri, boskyu, ngeri -ngeri. Kak Yuta bisa borong motor GP, Beli -beli, guys. Kakak! Let's go kita beli, guys. Poom, akhirnya Kak Yuta bisa mendapatkan Muge, Mio, Babyselin.",
+  "hook": "Sumpah, kakak pahli. hehehe. aku nggak mau sama.",
+  "pov": "Sumpah, kakak pahli. hehehe: uji jawaban, asumsi, dan konteks lengkap.",
+  "fyp_label": "Sangat kuat",
+  "strengths": [
+    "3 detik awal punya pemicu rasa penasaran",
+    "30 detik awal cukup padat dan memiliki arah cerita",
+    "tempo bicara padat untuk short-form",
+    "memiliki payoff atau kesimpulan yang bisa ditunggu"
+  ],
+  "weaknesses": [],
+  "improvement_ideas": [],
+  "applied_edits": [
+    "AI Creative Director memilih ritme measured, hook context_card, payoff natural_hold, serta batas cut/audio berdasarkan isi transkrip klip ini.",
+    "Cinematic finish v2 diterapkan: exposure/white balance adaptif yang dibatasi, highlight roll-off lembut, split-tone sesuai tema, debanding, hook push-in, dan grain tipis hanya pada bitrate tinggi.",
+    "Kartu konteks adaptif otomatis ditanam di awal: headline berasal dari hook, sedangkan label dan warna mengikuti isi cerita.",
+    "Identitas seri TikTok 'Cerita Game' ditanam pada kartu pembuka; variasi visual dipilih stabil dari isi clip.",
+    "Hook diberi impact pulse dan accent audio pada detik pertama.",
+    "Titik akhir dipertahankan pada payoff yang terhubung ke hook, tanpa kartu callback atau fade hitam.",
+    "Arahan visual diterapkan: poin utama diberi emphasis pulse, aksen frame, dan variasi angle virtual medium/close-up.",
+    "Caption dinamis menyorot kata penting dan ditempatkan di safe area UI Shorts.",
+    "Frame landscape utuh ditempatkan dalam kanvas portrait tanpa crop pembicara atau konteks.",
+    "Watermark sumber diperbaiki di koordinat sumber sebelum virtual-camera, sehingga tetap tertutup saat cut wide/close-up.",
+    "Judul hook bergaya Shorts ditampilkan otomatis pada 2.0 detik pertama dan ditandai keyframe untuk cover.",
+    "Pipeline clean-detail menjaga frame tanpa blur/gradient, lalu memberi reframe singkat hanya pada beat ucapan penting.",
+    "Dua kartu spesifik clip memakai label 'SUDUT EDITORIAL' dan 'MAKNA UTAMA'; isinya mengikuti POV serta payoff hasil analisis, bukan teks template umum.",
+    "Watermark channel @ryuundy dipoles sebagai signature seal hijau-emas yang ringkas dan transparan di tengah; detail audit disimpan di metadata.",
+    "CTA Follow tampil satu kali pada jendela aman sesuai tema sumber; tanpa suara tambahan dan tanpa menggeser dialog atau payoff.",
+    "Kartu penutup menampilkan kutipan Al-Qur'an terkurasi (QS. Al-Insyirah [94]: 5); teks ayat tidak dibuat oleh AI.",
+    "Sutradara cron memasang 2 aksen kontekstual: statement_focus, sparkle; dialog, subtitle, wajah, dan durasi tetap dijaga.",
+    "Sisipan visual RYUUNDY memakai frame/kutipan sumber dan gerak objek bertahap; video sumber, dialog, serta caption mempertahankan waktu aslinya.",
+    "Backsong CC0 lokal 'Calm Theme' dipilih sesuai tema dan dicampur maksimal 20% di bawah dialog 80%; tidak ada unduhan saat render."
+  ],
+  "key_point_score": 96,
+  "loop_score": 77,
+  "boundary_quality": "payoff_tuntas",
+  "retention_score": 83,
+  "narrative_arc_score": 100,
+  "narrative_arc_complete": true,
+  "religious_context_safe": true,
+  "editorial_safety": {
+    "version": 1,
+    "safe_for_selection": true,
+    "direct_ridicule_or_insult": false,
+    "protected_group_attack": false,
+    "celebrates_harm": false,
+    "sensitive_story": false,
+    "constructive_takeaway": true,
+    "sensitive_without_takeaway": false,
+    "matched_risk_terms": [],
+    "automated_preflight_is_policy_guarantee": false
+  },
+  "advertiser_suitability": {
+    "version": 2,
+    "risk_tier": "low_risk",
+    "high_risk_for_full_ads": false,
+    "manual_self_certification_review_required": false,
+    "automatic_selection_allowed": true,
+    "publication_disposition": "standard_private_review",
+    "monetization_disposition": "standard_review",
+    "political_claim_or_allegation": false,
+    "religious_comparison_or_claim": false,
+    "matched_topics": [],
+    "matched_terms": [],
+    "recommended_action": "standard_human_review",
+    "context_can_change_outcome": true,
+    "automatic_full_monetization_guarantee": false,
+    "official_guideline": "https://support.google.com/youtube/answer/6162278"
+  },
+  "high_information_extended_short": {
+    "version": 1,
+    "qualified": false,
+    "duration_fit_60_105_seconds": false,
+    "timing_audit_ready": true,
+    "transcript_progression_ready": false,
+    "speech_density_words_per_second": 2.342,
+    "progression_marker_count": 1,
+    "semantic_unit_count": 8,
+    "distinct_content_word_ratio": 0.642,
+    "opening_hook": true,
+    "closing_resolution": true,
+    "length_alone_is_quality_signal": false
+  },
+  "short_narrative_arc": {
+    "version": 1,
+    "qualified": true,
+    "arc_score": 100,
+    "duration_priority_25_45_seconds": true,
+    "beats": {
+      "hook": true,
+      "context": true,
+      "tension": true,
+      "answer": true,
+      "strong_end": true
+    },
+    "missing_beats": [],
+    "single_message_coherence": true,
+    "opening_seconds": 3.0,
+    "answer_search_starts_at_ratio": 0.42,
+    "strong_end_window_seconds": 7.48
+  },
+  "religious_context_integrity": {
+    "version": 1,
+    "is_religious_content": false,
+    "safe_for_automatic_export": true,
+    "context_dependent_opening": false,
+    "dangling_connector": false,
+    "quoted_claim_incomplete": false,
+    "attribution_present": false,
+    "ruling_present": false,
+    "ruling_has_explanation": true,
+    "manual_source_and_claim_review_required": false,
+    "theological_accuracy_guaranteed": false
+  },
+  "religious_claim_review": {
+    "version": 1,
+    "enabled": true,
+    "review_required": false,
+    "risk_level": "low",
+    "automatic_theological_approval": false,
+    "clip_start": 566.395,
+    "clip_end": 597.56,
+    "claims": [],
+    "before_context": [
+      {
+        "start": 551.19,
+        "end": 552.67,
+        "text": "Nanti kita bagus -bagusan modifnya."
+      },
+      {
+        "start": 552.67,
+        "end": 555.85,
+        "text": "Oke, Rp500 juta, tuh, guys, Rp360 juta."
+      },
+      {
+        "start": 556.19,
+        "end": 556.63,
+        "text": "Zabum."
+      },
+      {
+        "start": 559.44,
+        "end": 560.14,
+        "text": "Kau Saki yang mana?"
+      },
+      {
+        "start": 560.26,
+        "end": 563.63,
+        "text": "Linjeng, Kak, mau ke GP."
+      },
+      {
+        "start": 564.69,
+        "end": 566.23,
+        "text": "ya berarti masih kencangan Kak Yuta."
+      }
+    ],
+    "after_context": [
+      {
+        "start": 611.99,
+        "end": 625.12,
+        "text": "-liat -"
+      }
+    ],
+    "integrity": {
+      "version": 1,
+      "is_religious_content": false,
+      "safe_for_automatic_export": true,
+      "context_dependent_opening": false,
+      "dangling_connector": false,
+      "quoted_claim_incomplete": false,
+      "attribution_present": false,
+      "ruling_present": false,
+      "ruling_has_explanation": true,
+      "manual_source_and_claim_review_required": false,
+      "theological_accuracy_guaranteed": false
+    },
+    "required_checks": [
+      "confirm_clip_does_not_reverse_the_speaker_meaning",
+      "confirm_audio_visual_and_music_rights",
+      "review_private_upload_in_youtube_checks"
+    ],
+    "recommended_decision": "standard_editorial_review",
+    "clip_transcript_sha256": "329acb693b572fd65cc9ef0362ad3a23132c850a3f9b8a46229fab98355ed4c1",
+    "context_transcript_sha256": "3a1462817fc35df6af5bacc915863fb314758e34a7fc35d15fd9bf4431a71858",
+    "source_context_seconds_each_side": 20.0,
+    "legacy_pipeline_changed": false
+  },
+  "quran_outro": {
+    "enabled": true,
+    "text": "Sesungguhnya beserta kesulitan ada kemudahan.",
+    "source": "QS. Al-Insyirah [94]: 5",
+    "source_url": "https://quran.kemenag.go.id/quran/per-ayat/surah/94?from=5&to=5",
+    "translation_source": "Terjemahan Kemenag RI 2019",
+    "duration_seconds": 2.8,
+    "selection": "topic_matched_deterministic_from_locked_catalog",
+    "ai_generated_wording": false,
+    "applied_once_at_end_of_long_video": false,
+    "disabled_reason": null
+  },
+  "source_duration_seconds": 31.165,
+  "output_duration_seconds": 33.965,
+  "enhanced_edit": true,
+  "remove_running_text": false,
+  "auto_blur_watermarks": true,
+  "visual_theme": "knowledge",
+  "scheduled_social_card_layout": {
+    "version": 1,
+    "requested_by_scheduler": true,
+    "eligible": false,
+    "selected": false,
+    "selection_percent": 30,
+    "deterministic_bucket": 62,
+    "subject_kind": null,
+    "subject_label": null,
+    "portrait_source": null,
+    "external_portrait_asset_used": false,
+    "fabricated_comments": false,
+    "transcript_grounded_cards": true,
+    "reference_layout_copied": false,
+    "reason": "topic_not_islamic_or_football"
+  },
+  "scheduled_reaction_avatar_layout": {
+    "version": 3,
+    "requested_by_scheduler": true,
+    "eligible": false,
+    "selected": false,
+    "selection_percent": 15,
+    "deterministic_bucket": 68,
+    "topic_signal_found": false,
+    "religious_or_reverent_topic_excluded": false,
+    "assets_ready": true,
+    "avatar_identity": "fendy_reaction_host",
+    "avatar_source": "user_supplied_reference_derived_asset",
+    "synthetic_avatar_disclosed": true,
+    "listener_performance": true,
+    "transcript_grounded_body_language": true,
+    "speech_window_driven_mouth": false,
+    "reaction_cue_driven_mouth": true,
+    "reaction_cue_driven_expression_states": true,
+    "cinematic_performance_motion": true,
+    "photorealistic_synthetic_host": true,
+    "expression_crossfades": true,
+    "exact_phoneme_lip_sync": false,
+    "source_audio_replaced": false,
+    "reason": "topic_not_reaction_friendly"
+  },
+  "emphasis_times": [
+    26.565
+  ],
+  "first_30_retention_profile": {
+    "version": 1,
+    "retention_readiness_score": 83,
+    "hook_score": 88,
+    "pacing_score": 67,
+    "progression_score": 94,
+    "opening_latency_seconds": 0.0,
+    "longest_silence_seconds": 1.42,
+    "speech_coverage_ratio": 0.769,
+    "beat_coverage_ratio": 1.0,
+    "covered_beats": 5,
+    "expected_beats": 5,
+    "context_dependent_opening": false,
+    "actual_retention_prediction": false
+  },
+  "cinematic_pov_windows": [],
+  "virtual_camera_angles": [],
+  "reaction_cues": [],
+  "sound_effect_cues": [],
+  "sound_effects": {
+    "enabled": false,
+    "cue_count": 0,
+    "local_asset_count": 0,
+    "synthetic_fallback_count": 0,
+    "runtime_downloaded": false,
+    "dialogue_priority": true,
+    "assets": [],
+    "reason": "narrative_message_dialogue_first_or_no_matching_cue"
+  },
+  "background_music": {
+    "enabled": true,
+    "requested": true,
+    "title": "Calm Theme",
+    "artist": "pebonius",
+    "source": "local_open_music_library",
+    "source_url": "https://opengameart.org/content/calm-music-0",
+    "asset_sha256": "8a701a803f365c8fe1257b2e18276a7fa8b0d62a9af601f973d43ccf4e354705",
+    "license": "CC0-1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "attribution_required": false,
+    "third_party_recording": true,
+    "instrumental": true,
+    "runtime_downloaded": false,
+    "moods": [
+      "calm",
+      "ambient",
+      "reflective",
+      "educational"
+    ],
+    "genres": [
+      "ambient"
+    ],
+    "themes": [
+      "knowledge",
+      "islamic"
+    ],
+    "selection": {
+      "theme": "knowledge",
+      "desired_tags": [
+        "ambient",
+        "calm",
+        "documentary",
+        "educational",
+        "knowledge"
+      ],
+      "score": 28,
+      "matched_by": [
+        "theme:knowledge",
+        "mood:ambient",
+        "mood:calm",
+        "mood:educational",
+        "mood:knowledge"
+      ],
+      "reason": "theme_and_mood_match"
+    },
+    "dialogue_gain": 0.8,
+    "music_gain_ceiling": 0.2,
+    "ducking": true,
+    "music_arc": "steady_ducked",
+    "surprise_drop_start": null
+  },
+  "drawtext_supported": true,
+  "subtitles_supported": true,
+  "reaction_overlays_supported": true,
+  "dynamic_captions": {
+    "enabled": true,
+    "cue_count": 16,
+    "keyword_highlight": true,
+    "shorts_ui_safe_area": true
+  },
+  "content_edit_signature": {
+    "version": 1,
+    "variation": 0,
+    "derived_from_story": true
+  },
+  "auditor_identity": {
+    "version": 1,
+    "name": "Fendy",
+    "brand": "Fendy Clipper",
+    "display_signature": "FENDY AUDIT",
+    "audit_id": "FND-2F6C272249B5",
+    "role": "editorial_quality_auditor",
+    "audit_mode": "automated_preflight_with_owner_accountability",
+    "manual_human_review_claimed": false,
+    "output_format": "vertical_short",
+    "visible_video_signature": true,
+    "embedded_mp4_provenance": true,
+    "claim_scope": "editorial_transformations_only",
+    "source_content_ownership_claimed": false,
+    "claimed_contributions": [
+      "editorial_selection",
+      "editing",
+      "subtitles",
+      "original_overlays",
+      "original_thumbnail_assets"
+    ],
+    "codex_growth_framework_version": 4
+  },
+  "codex_growth_blueprint": {
+    "version": 4,
+    "owner": "Fendy",
+    "framework": "Codex compounding audience loop",
+    "series": {
+      "name": "Poin yang Membuka Pikiran",
+      "theme": "knowledge",
+      "audience_promise": "satu penjelasan spesifik tanpa filler",
+      "consistent_branding": true,
+      "episode_identity": "ff15f5f5f6"
+    },
+    "tiktok": {
+      "version": 3,
+      "series_id": "gaming",
+      "series_label": "Cerita Game",
+      "series_eyebrow": "MOMEN GAME",
+      "content_pillar": "gaming",
+      "selection_reason": "Tema dipilih dari isi sumber; tidak memakai label agama untuk sumber umum.",
+      "hook_variant": 2,
+      "opening_hook": "Jangan berhenti di potongan awal: Sumpah, kakak pahli. hehehe. aku nggak mau sama",
+      "hook_window_seconds": 3,
+      "visual_recipe": "Gunakan frasa sumber yang lengkap tanpa menambah klaim atau mengubah pertanyaan menjadi fakta.",
+      "cta": "Ikuti untuk klip dengan tema serupa.",
+      "hashtags": [
+        "#GamingIndonesia",
+        "#CeritaGame"
+      ],
+      "experiment_id": "fd6452c0e9c4",
+      "measure": [
+        "views",
+        "watched_full_percentage",
+        "average_watch_time_seconds",
+        "shares",
+        "saves",
+        "comments",
+        "followers_gained"
+      ],
+      "guardrails": [
+        "Tidak menambah dalil, hukum, atau klaim yang tidak diucapkan sumber.",
+        "Variasi visual harus memperjelas isi dan tidak menutupi pembicara.",
+        "Performa adalah eksperimen terukur, bukan jaminan FYP atau monetisasi."
+      ],
+      "series_identity_embedded": true
+    },
+    "acquisition": {
+      "truthful_topic_specific_packaging": true,
+      "title_thumbnail_match_opening": true,
+      "long_form_ab_test_title_thumbnail": false,
+      "shorts_embedded_cover_frame": true,
+      "avoid_generic_clickbait": true
+    },
+    "retention": {
+      "hook_window_seconds": 3,
+      "duration_strategy": "shortest_complete_story_up_to_180_seconds",
+      "maximum_short_seconds": 180,
+      "force_three_minute_duration": false,
+      "extended_short_ready": false,
+      "strongest_relevant_moment_first": true,
+      "single_clear_promise": "Sumpah, kakak pahli. hehehe. aku nggak mau sama",
+      "payoff_required": true,
+      "semantic_loop_only_when_earned": true,
+      "chapters_recommended": false,
+      "micro_thesis_strategy": {
+        "version": 1,
+        "qualified": false,
+        "structure_score": 16,
+        "duration_fit_20_32_seconds": true,
+        "word_count_fit": true,
+        "speech_density_words_per_second": 2.342,
+        "speech_density_fit": true,
+        "dilemma_in_opening": false,
+        "nuance_present": false,
+        "safety_boundary": false,
+        "closing_safety_boundary": false,
+        "nonjudgmental_payoff": false,
+        "closing_resolution": false,
+        "copied_reference_assets": false
+      },
+      "social_anecdote_strategy": {
+        "version": 1,
+        "qualified": false,
+        "structure_score": 44,
+        "duration_fit_18_32_seconds": true,
+        "word_count_fit": true,
+        "speech_density_words_per_second": 2.342,
+        "speech_density_fit": true,
+        "first_person_opening": true,
+        "social_friction": false,
+        "chronological_motion": false,
+        "comparison_turn": true,
+        "closing_payoff": false,
+        "self_directed_payoff": false,
+        "synthetic_outrage_or_harassment_added": false,
+        "copied_reference_assets": false
+      },
+      "delayed_punchline_strategy": {
+        "version": 1,
+        "qualified": false,
+        "structure_score": 5,
+        "duration_fit_16_26_seconds": false,
+        "word_count_fit": false,
+        "speech_density_words_per_second": 2.342,
+        "speech_density_fit": true,
+        "question_setup": false,
+        "answer_turn": false,
+        "late_punchline": false,
+        "self_directed_payoff": false,
+        "truthful_teaser_eligible": false,
+        "attacks_someone_else": false,
+        "authentic_source_reaction_only": true,
+        "synthetic_ridicule_or_harassment_added": false,
+        "copied_reference_assets": false
+      },
+      "contrast_banter_strategy": {
+        "version": 1,
+        "qualified": false,
+        "structure_score": 48,
+        "duration_fit_22_50_seconds": true,
+        "word_count_fit": true,
+        "speech_density_words_per_second": 2.342,
+        "speech_density_fit": true,
+        "clear_setup": true,
+        "contrast_beat_count": 0,
+        "conversational_turn": true,
+        "closing_payoff": false,
+        "authentic_source_reaction": false,
+        "health_sensitive_topic": false,
+        "harmful_product_promotion": false,
+        "manual_health_context_review_required": false,
+        "synthetic_laughter_or_ridicule_added": false,
+        "copied_reference_assets": false
+      },
+      "structured_comparison_strategy": {
+        "version": 1,
+        "qualified": false,
+        "structure_score": 19,
+        "duration_fit_38_60_seconds": false,
+        "word_count_fit": true,
+        "speech_density_words_per_second": 2.342,
+        "speech_density_fit": true,
+        "question_setup": false,
+        "comparison_beat_count": 0,
+        "evidence_beat_count": 1,
+        "qualified_resolution": false,
+        "self_reflective_closing": true,
+        "sensitive_religious_comparison": false,
+        "manual_claim_and_context_review_required": false,
+        "attacks_protected_group": false,
+        "duplicated_cold_open_required": false,
+        "copied_reference_logo_pattern_photos_or_layout": false
+      },
+      "claim_rebuttal_strategy": {
+        "version": 1,
+        "qualified": false,
+        "structure_score": 11,
+        "duration_fit_36_58_seconds": false,
+        "word_count_fit": true,
+        "speech_density_words_per_second": 2.342,
+        "speech_density_fit": true,
+        "allegation_or_challenge_in_opening": false,
+        "direct_denial": false,
+        "evidence_marker_count": 1,
+        "personal_stake": false,
+        "impartial_closing": false,
+        "complete_arc": false,
+        "sensitive_identity_claim": false,
+        "manual_claim_and_context_review_required": false,
+        "attacks_protected_group_or_person": false,
+        "intrusive_share_overlay_required": false,
+        "duplicated_source_branding_systems": false,
+        "copied_reference_assets": false
+      },
+      "practical_payoff_strategy": {
+        "version": 1,
+        "pattern": "problem_concrete_action_specific_result",
+        "qualified": false,
+        "evidence": {
+          "problem": "",
+          "action": "",
+          "result_or_boundary": ""
+        },
+        "rank_bonus": 0.0,
+        "series_suggestion": null,
+        "visual_demonstration_verified": false,
+        "claims_verified": false,
+        "actual_retention_prediction": false,
+        "bypasses_quality_or_review_gates": false
+      },
+      "first_30_editorial_readiness_score": 83,
+      "actual_retention_prediction": false
+    },
+    "reference_learning": {
+      "adopted_patterns": [
+        "dilemma_nuance_safety_boundary_nonjudgmental_payoff",
+        "social_friction_chronology_comparison_self_directed_payoff",
+        "question_answer_truthful_teaser_late_self_directed_punchline",
+        "podcast_setup_contrast_authentic_reaction_payoff",
+        "question_three_evidence_beats_fair_resolution",
+        "allegation_direct_answer_evidence_stake_fair_principle",
+        "problem_concrete_action_specific_result"
+      ],
+      "applies_when_detected": false,
+      "single_reference_is_outlier_not_baseline": true,
+      "copy_speaker_branding_wording_or_footage": false,
+      "manufacture_ridicule_or_harassment": false,
+      "teaser_quotes_transcript_and_clears_before_payoff": false,
+      "static_reference_frame_logo_pattern_or_photos_copied": false,
+      "duplicated_cold_open_excerpt": false,
+      "sensitive_religious_comparison_requires_manual_claim_review": false,
+      "claim_rebuttal_requires_manual_claim_review": false,
+      "health_sensitive_banter_requires_manual_context_review": false,
+      "reference_channel_used_for_ideas_not_source_media": true,
+      "intrusive_share_overlay_or_mixed_source_branding_copied": false,
+      "rights_and_originality_gate_unchanged": true
+    },
+    "conversion": {
+      "engagement_prompt": "POIN MANA YANG PALING NGENA?",
+      "subscribe_value": "SUBSCRIBE UNTUK PELAJARAN BERIKUTNYA",
+      "cta_after_value": true,
+      "visible_end_card": false,
+      "protect_story_punchline_and_natural_loop": true,
+      "short_to_related_long_form": true,
+      "incentive_or_fake_urgency": false
+    },
+    "subscriber_intent": {
+      "score": 85,
+      "label": "layak",
+      "reasons": [
+        "hook dan janji episode jelas",
+        "payoff tuntas membangun kepercayaan",
+        "nilai utama cukup spesifik",
+        "durasi mendukung konsumsi seri",
+        "ending mendorong tontonan ulang tanpa janji palsu"
+      ],
+      "value_proposition": "SUBSCRIBE UNTUK PELAJARAN BERIKUTNYA",
+      "requires_post_publish_calibration": true
+    },
+    "compounding_loop": {
+      "goal": "new_to_casual_to_regular_viewer",
+      "repeat_proven_topic_as_series": true,
+      "change_one_packaging_variable_per_test": true,
+      "never_copy_low_value_template_at_scale": true,
+      "review_window_days": [
+        7,
+        28,
+        90
+      ]
+    },
+    "youtube_recommendation_alignment": {
+      "audience_response_over_algorithm_guessing": true,
+      "choose_to_view": true,
+      "average_view_duration": true,
+      "average_percentage_viewed": true,
+      "viewer_satisfaction": true,
+      "compare_same_format": true,
+      "avoid_fixed_posting_frequency_claim": true
+    },
+    "measure_after_publish": [
+      "engaged_views",
+      "viewed_vs_swiped",
+      "audience_retention",
+      "average_view_duration",
+      "average_percentage_viewed",
+      "rewatches",
+      "related_video_clicks",
+      "subscribers_gained",
+      "returning_viewers"
+    ],
+    "official_guidance": [
+      "https://support.google.com/youtube/answer/12942217",
+      "https://support.google.com/youtube/answer/11914225",
+      "https://support.google.com/youtube/answer/16533387",
+      "https://support.google.com/youtube/answer/12220281",
+      "https://support.google.com/youtube/answer/16391400",
+      "https://support.google.com/youtube/answer/14075157",
+      "https://support.google.com/youtube/answer/10246996"
+    ],
+    "view_or_subscriber_guarantee": false
+  },
+  "tiktok_strategy": {
+    "version": 3,
+    "series_id": "gaming",
+    "series_label": "Cerita Game",
+    "series_eyebrow": "MOMEN GAME",
+    "content_pillar": "gaming",
+    "selection_reason": "Tema dipilih dari isi sumber; tidak memakai label agama untuk sumber umum.",
+    "hook_variant": 2,
+    "opening_hook": "Jangan berhenti di potongan awal: Sumpah, kakak pahli. hehehe. aku nggak mau sama",
+    "hook_window_seconds": 3,
+    "visual_recipe": "Gunakan frasa sumber yang lengkap tanpa menambah klaim atau mengubah pertanyaan menjadi fakta.",
+    "cta": "Ikuti untuk klip dengan tema serupa.",
+    "hashtags": [
+      "#GamingIndonesia",
+      "#CeritaGame"
+    ],
+    "experiment_id": "fd6452c0e9c4",
+    "measure": [
+      "views",
+      "watched_full_percentage",
+      "average_watch_time_seconds",
+      "shares",
+      "saves",
+      "comments",
+      "followers_gained"
+    ],
+    "guardrails": [
+      "Tidak menambah dalil, hukum, atau klaim yang tidak diucapkan sumber.",
+      "Variasi visual harus memperjelas isi dan tidak menutupi pembicara.",
+      "Performa adalah eksperimen terukur, bukan jaminan FYP atau monetisasi."
+    ],
+    "series_identity_embedded": true
+  },
+  "codex_ideas_resolved": 1,
+  "codex_edit_plan": {
+    "hook_boost": true,
+    "tempo_boost": false,
+    "ending_boost": false,
+    "loop_boost": true
+  },
+  "video_quality": "high",
+  "output_format": "vertical_short",
+  "visual_mode": "auto_fyp",
+  "auto_fyp_visual_plan": {
+    "version": 9,
+    "base": "cinematic_clean_detail",
+    "accent": "narrative_message",
+    "reason": "hook_context_tension_answer_strong_end",
+    "content_derived": true,
+    "variation": 0,
+    "editorial_motion_style": "editorial_clean",
+    "content_lane": "general_knowledge",
+    "transformation_recipe": {
+      "editorial_goal": "add_context_and_a_clear_takeaway",
+      "layers": [
+        "hook",
+        "context",
+        "takeaway"
+      ],
+      "card_labels": [
+        "SUDUT EDITORIAL",
+        "MAKNA UTAMA"
+      ],
+      "source_dialogue_preserved": true,
+      "synthetic_claims_allowed": false,
+      "transcript_grounded": true
+    },
+    "micro_thesis": {
+      "version": 1,
+      "qualified": false,
+      "structure_score": 16,
+      "duration_fit_20_32_seconds": true,
+      "word_count_fit": true,
+      "speech_density_words_per_second": 2.342,
+      "speech_density_fit": true,
+      "dilemma_in_opening": false,
+      "nuance_present": false,
+      "safety_boundary": false,
+      "closing_safety_boundary": false,
+      "nonjudgmental_payoff": false,
+      "closing_resolution": false,
+      "copied_reference_assets": false
+    },
+    "social_anecdote": {
+      "version": 1,
+      "qualified": false,
+      "structure_score": 44,
+      "duration_fit_18_32_seconds": true,
+      "word_count_fit": true,
+      "speech_density_words_per_second": 2.342,
+      "speech_density_fit": true,
+      "first_person_opening": true,
+      "social_friction": false,
+      "chronological_motion": false,
+      "comparison_turn": true,
+      "closing_payoff": false,
+      "self_directed_payoff": false,
+      "synthetic_outrage_or_harassment_added": false,
+      "copied_reference_assets": false
+    },
+    "delayed_punchline": {
+      "version": 1,
+      "qualified": false,
+      "structure_score": 5,
+      "duration_fit_16_26_seconds": false,
+      "word_count_fit": false,
+      "speech_density_words_per_second": 2.342,
+      "speech_density_fit": true,
+      "question_setup": false,
+      "answer_turn": false,
+      "late_punchline": false,
+      "self_directed_payoff": false,
+      "truthful_teaser_eligible": false,
+      "attacks_someone_else": false,
+      "authentic_source_reaction_only": true,
+      "synthetic_ridicule_or_harassment_added": false,
+      "copied_reference_assets": false
+    },
+    "contrast_banter": {
+      "version": 1,
+      "qualified": false,
+      "structure_score": 48,
+      "duration_fit_22_50_seconds": true,
+      "word_count_fit": true,
+      "speech_density_words_per_second": 2.342,
+      "speech_density_fit": true,
+      "clear_setup": true,
+      "contrast_beat_count": 0,
+      "conversational_turn": true,
+      "closing_payoff": false,
+      "authentic_source_reaction": false,
+      "health_sensitive_topic": false,
+      "harmful_product_promotion": false,
+      "manual_health_context_review_required": false,
+      "synthetic_laughter_or_ridicule_added": false,
+      "copied_reference_assets": false
+    },
+    "structured_comparison": {
+      "version": 1,
+      "qualified": false,
+      "structure_score": 19,
+      "duration_fit_38_60_seconds": false,
+      "word_count_fit": true,
+      "speech_density_words_per_second": 2.342,
+      "speech_density_fit": true,
+      "question_setup": false,
+      "comparison_beat_count": 0,
+      "evidence_beat_count": 1,
+      "qualified_resolution": false,
+      "self_reflective_closing": true,
+      "sensitive_religious_comparison": false,
+      "manual_claim_and_context_review_required": false,
+      "attacks_protected_group": false,
+      "duplicated_cold_open_required": false,
+      "copied_reference_logo_pattern_photos_or_layout": false
+    },
+    "claim_rebuttal": {
+      "version": 1,
+      "qualified": false,
+      "structure_score": 11,
+      "duration_fit_36_58_seconds": false,
+      "word_count_fit": true,
+      "speech_density_words_per_second": 2.342,
+      "speech_density_fit": true,
+      "allegation_or_challenge_in_opening": false,
+      "direct_denial": false,
+      "evidence_marker_count": 1,
+      "personal_stake": false,
+      "impartial_closing": false,
+      "complete_arc": false,
+      "sensitive_identity_claim": false,
+      "manual_claim_and_context_review_required": false,
+      "attacks_protected_group_or_person": false,
+      "intrusive_share_overlay_required": false,
+      "duplicated_source_branding_systems": false,
+      "copied_reference_assets": false
+    },
+    "narrative_arc": {
+      "score": 100,
+      "complete": true,
+      "semantic_visual_change_cadence_seconds": 2.4
+    },
+    "opening_context_seconds": 2.0,
+    "persistent_truthful_payoff_teaser": false,
+    "three_beat_evidence_rail": false,
+    "visual_restraint": {
+      "stable_speaker_priority": false,
+      "face_and_gesture_priority": true,
+      "maximum_virtual_camera_cuts": 2,
+      "reaction_stickers_allowed": false,
+      "authentic_source_reaction_priority": false,
+      "cinematic_smoke_allowed": false,
+      "dialogue_first_audio": true,
+      "target_reframe_cadence_seconds": 8.5,
+      "maximum_sound_effects": 0
+    },
+    "speaker_split": "off",
+    "stack_all_effects": false,
+    "evidence_direction": {
+      "manual_context_review_required": false,
+      "beats": []
+    },
+    "creative_director": {
+      "version": 1,
+      "source": "ai",
+      "pacing": "measured",
+      "hook_treatment": "context_card",
+      "payoff_treatment": "natural_hold",
+      "reaction_policy": "authentic_only",
+      "sound_style": "dialogue_only",
+      "surprise_treatment": "none",
+      "music_arc": "steady_ducked",
+      "editorial_intent": "Menunjukkan sumpah dan kegembiraan Kak Yuta dalam membeli motor GP, serta reaksi positif dari kakaknya.",
+      "reason": "Transkrip menunjukkan sumpah dan kegembiraan Kak Yuta dalam membeli motor GP, serta reaksi positif dari kakaknya. Editor dapat menggunakan steady_ducked untuk menciptakan suasana yang santai dan menyenangkan.",
+      "accent_beats": [],
+      "surprise_beat": null,
+      "model": "llama3.2-id:latest",
+      "safety_override_applied": false,
+      "executed_controls": {
+        "opening_context_seconds": 2.0,
+        "maximum_virtual_camera_cuts": 2,
+        "target_reframe_cadence_seconds": 8.5,
+        "reaction_stickers_allowed": false,
+        "maximum_sound_effects": 0,
+        "music_arc": "steady_ducked",
+        "surprise_beat_start": null
+      },
+      "motion_insert": "freeze_inset"
+    },
+    "ryuundy_motion": {
+      "version": 1,
+      "enabled": true,
+      "rendered": true,
+      "cues": [
+        {
+          "kind": "freeze_inset",
+          "start": 26.565,
+          "end": 29.365,
+          "source_frame_at": 592.96,
+          "quote": "Poom, akhirnya Kak Yuta bisa mendapatkan Muge, Mio, Babyselin.",
+          "region": null,
+          "region_reviewed": false,
+          "source_grounded": true,
+          "inserted_timeline_seconds": 0,
+          "asset": ".ryuundy-motion/clip_01_sumpah-kakak-pahli-hehehe-aku-nggak-mau-sama_motion_0.mp4",
+          "asset_prepared": true
+        }
+      ],
+      "reason": "source_timed_editorial_insert",
+      "source_clock_unchanged": true,
+      "captions_clock_unchanged": true,
+      "source_audio_unchanged": true,
+      "human_segmentation_claimed": false,
+      "object_animation_fps": 12,
+      "placement": {
+        "width": 668,
+        "y": 140
+      }
+    }
+  },
+  "creative_director_plan": {
+    "version": 1,
+    "source": "ai",
+    "pacing": "measured",
+    "hook_treatment": "context_card",
+    "payoff_treatment": "natural_hold",
+    "reaction_policy": "authentic_only",
+    "sound_style": "dialogue_only",
+    "surprise_treatment": "none",
+    "music_arc": "steady_ducked",
+    "editorial_intent": "Menunjukkan sumpah dan kegembiraan Kak Yuta dalam membeli motor GP, serta reaksi positif dari kakaknya.",
+    "reason": "Transkrip menunjukkan sumpah dan kegembiraan Kak Yuta dalam membeli motor GP, serta reaksi positif dari kakaknya. Editor dapat menggunakan steady_ducked untuk menciptakan suasana yang santai dan menyenangkan.",
+    "accent_beats": [],
+    "surprise_beat": null,
+    "model": "llama3.2-id:latest",
+    "safety_override_applied": false,
+    "executed_controls": {
+      "opening_context_seconds": 2.0,
+      "maximum_virtual_camera_cuts": 2,
+      "target_reframe_cadence_seconds": 8.5,
+      "reaction_stickers_allowed": false,
+      "maximum_sound_effects": 0,
+      "music_arc": "steady_ducked",
+      "surprise_beat_start": null
+    },
+    "motion_insert": "freeze_inset"
+  },
+  "evidence_direction": {
+    "version": 1,
+    "enabled": false,
+    "beats": [],
+    "source_context": "Ini maka berjuang dong. Terlebih dahulu, Kak. Kalah lanjutin. Tapi, aku udah capek. Iya, Kak Yuta. Kak Yuta tidak mau deh, guys. Kita harus cari cara cepet, guys. Bisa nungguin aja, Kak Si? Hei, Kak Yuta penasaran. Apakah bisa beli pakai robot, guys? Kita pakai kekuatan robot kita aja, ya guys, Let's go, let's go, kita kesana, guys. Kakak mau petuin. Kalian robotnya banyak, ya. Iya, Mio enggak, Mio enggak. mau mau kok. Dimana sih dealer motor, oh itu dia. Yes, nemu, Al Pamal Cumber. Kakak maaf ya, sampai malem ini mau ke pagi lagi. Parah -parah, marahin Mio aja, Kakak. Hihihi, jangan, Kakak. Mio kuning soalnya. Eh, Babyselin udah sampai sini. Hei, Kak Yuta sama Babyselin di dealer motor, mau beli motor. Oke, oke, tunggu, Kakak. Mio rating -nya 3,9, karena lama. Parah, muter -muter dulu. Oke, guys, let's go, kita buka lagi, guys. Ini Rp716 juta. Oh my God, kita harus beli pakai Game Pass. Kamu butuh Game Pass, oh my God. Mio, Babyselin, Game Pass -nya dimana? Sini, Kak. Oh iya, Rp500 juta, Rp394 juta, guys. Tapi kita harus beli Pass mewah dulu. ya? Gak apa -apa, guys, kita beli, guys, kita beli semuanya, guys. Zabum -zabum, kita beli -beli -beli. Kak Yuta mau pakai motor gede, guys, mau gede, mau gede. Kakak mau pakai, Kakak boleh nggak? Boleh, nanti kita modif ya, Mio, Babyselin. Nanti kita bagus -bagusan modifnya. Oke, Rp500 juta, tuh, guys, Rp360 juta. Zabum. Kau Saki yang mana? Linjeng, Kak, mau ke GP. ya berarti masih kencangan Kak Yuta. Sumpah, kakak pahli. Hehehe. Aku nggak mau sama. Ya, Kak Yuta harus beli dua kali berarti. Ya udah, tidak apa -apa, kita beli. Jebum -jebum, kita habiskan rumpa kita, guys. Jebum -jebum. Woow, tahu nggak uang Kak Yuta berapa? Rp1.78 juta. Woow, GG. Ngeri -ngeri, boskyu, ngeri -ngeri. Kak Yuta bisa borong motor GP, Beli -beli, guys. Kakak! Let's go kita beli, guys. Poom, akhirnya Kak Yuta bisa mendapatkan Muge, Mio, Babyselin. Muge, Muge liat -liat -liat -liat -liat -liat -liat -liat -liat -liat -liat -liat -liat -liat -liat -liat -liat -liat -liat -liat -liat -liat -liat -liat -liat -liat -liat - Oh, kelihatan, kelihatan!",
+    "media_named_in_transcript": [],
+    "manifest_error": null,
+    "unresolved_reference_ids": [],
+    "manual_context_review_required": false,
+    "search_results_are_evidence": false,
+    "facts_verified": false,
+    "roles": {
+      "truth_researcher": "find_exact_source_and_preserve_context",
+      "creative_team": "highlight_relevant_excerpt_and_show_attribution",
+      "director": "insert_on_spoken_reference_then_hold_for_reading"
+    }
+  },
+  "micro_thesis_strategy": {
+    "version": 1,
+    "qualified": false,
+    "structure_score": 16,
+    "duration_fit_20_32_seconds": true,
+    "word_count_fit": true,
+    "speech_density_words_per_second": 2.342,
+    "speech_density_fit": true,
+    "dilemma_in_opening": false,
+    "nuance_present": false,
+    "safety_boundary": false,
+    "closing_safety_boundary": false,
+    "nonjudgmental_payoff": false,
+    "closing_resolution": false,
+    "copied_reference_assets": false,
+    "generalized_from_public_performance_pattern": true,
+    "reference_wording_speaker_branding_or_footage_copied": false,
+    "outlier_performance_is_not_a_channel_baseline": true,
+    "original_or_properly_licensed_source_still_required": true
+  },
+  "social_anecdote_strategy": {
+    "version": 1,
+    "qualified": false,
+    "structure_score": 44,
+    "duration_fit_18_32_seconds": true,
+    "word_count_fit": true,
+    "speech_density_words_per_second": 2.342,
+    "speech_density_fit": true,
+    "first_person_opening": true,
+    "social_friction": false,
+    "chronological_motion": false,
+    "comparison_turn": true,
+    "closing_payoff": false,
+    "self_directed_payoff": false,
+    "synthetic_outrage_or_harassment_added": false,
+    "copied_reference_assets": false,
+    "generalized_pattern": "social_friction_chronology_comparison_self_directed_payoff",
+    "opening_context_seconds": 2.0,
+    "preserve_authentic_source_reaction": true,
+    "synthetic_ridicule_or_harassment_added": false,
+    "reference_wording_speaker_branding_or_footage_copied": false,
+    "original_or_properly_licensed_source_still_required": true
+  },
+  "delayed_punchline_strategy": {
+    "version": 1,
+    "qualified": false,
+    "structure_score": 5,
+    "duration_fit_16_26_seconds": false,
+    "word_count_fit": false,
+    "speech_density_words_per_second": 2.342,
+    "speech_density_fit": true,
+    "question_setup": false,
+    "answer_turn": false,
+    "late_punchline": false,
+    "self_directed_payoff": false,
+    "truthful_teaser_eligible": false,
+    "attacks_someone_else": false,
+    "authentic_source_reaction_only": true,
+    "synthetic_ridicule_or_harassment_added": false,
+    "copied_reference_assets": false,
+    "generalized_pattern": "question_answer_truthful_teaser_late_self_directed_punchline",
+    "opening_context_seconds": 2.0,
+    "teaser_source": "late_transcript_quote",
+    "teaser_clears_before_spoken_payoff": true,
+    "preserve_authentic_source_reaction": true,
+    "reference_wording_speaker_branding_or_footage_copied": false,
+    "original_or_properly_licensed_source_still_required": true
+  },
+  "contrast_banter_strategy": {
+    "version": 1,
+    "qualified": false,
+    "structure_score": 48,
+    "duration_fit_22_50_seconds": true,
+    "word_count_fit": true,
+    "speech_density_words_per_second": 2.342,
+    "speech_density_fit": true,
+    "clear_setup": true,
+    "contrast_beat_count": 0,
+    "conversational_turn": true,
+    "closing_payoff": false,
+    "authentic_source_reaction": false,
+    "health_sensitive_topic": false,
+    "harmful_product_promotion": false,
+    "manual_health_context_review_required": false,
+    "synthetic_laughter_or_ridicule_added": false,
+    "copied_reference_assets": false,
+    "generalized_pattern": "podcast_setup_contrast_authentic_reaction_payoff",
+    "opening_context_seconds": 2.0,
+    "preserve_detected_speaker_composition": true,
+    "preserve_authentic_source_reaction": true,
+    "reference_headline_bar_branding_layout_or_footage_copied": false,
+    "reference_channel_is_idea_source_only": true,
+    "original_episode_and_provable_rights_still_required": true
+  },
+  "structured_comparison_strategy": {
+    "version": 1,
+    "qualified": false,
+    "structure_score": 19,
+    "duration_fit_38_60_seconds": false,
+    "word_count_fit": true,
+    "speech_density_words_per_second": 2.342,
+    "speech_density_fit": true,
+    "question_setup": false,
+    "comparison_beat_count": 0,
+    "evidence_beat_count": 1,
+    "qualified_resolution": false,
+    "self_reflective_closing": true,
+    "sensitive_religious_comparison": false,
+    "manual_claim_and_context_review_required": false,
+    "attacks_protected_group": false,
+    "duplicated_cold_open_required": false,
+    "copied_reference_logo_pattern_photos_or_layout": false,
+    "generalized_pattern": "question_three_evidence_beats_fair_resolution",
+    "opening_context_seconds": 2.0,
+    "three_beat_evidence_rail": false,
+    "duplicate_cold_open_excerpt": false,
+    "reference_logo_pattern_photos_or_layout_copied": false,
+    "protected_group_attack_allowed": false,
+    "original_or_properly_licensed_source_still_required": true
+  },
+  "claim_rebuttal_strategy": {
+    "version": 1,
+    "qualified": false,
+    "structure_score": 11,
+    "duration_fit_36_58_seconds": false,
+    "word_count_fit": true,
+    "speech_density_words_per_second": 2.342,
+    "speech_density_fit": true,
+    "allegation_or_challenge_in_opening": false,
+    "direct_denial": false,
+    "evidence_marker_count": 1,
+    "personal_stake": false,
+    "impartial_closing": false,
+    "complete_arc": false,
+    "sensitive_identity_claim": false,
+    "manual_claim_and_context_review_required": false,
+    "attacks_protected_group_or_person": false,
+    "intrusive_share_overlay_required": false,
+    "duplicated_source_branding_systems": false,
+    "copied_reference_assets": false,
+    "generalized_pattern": "allegation_direct_answer_evidence_stake_fair_principle",
+    "opening_context_seconds": 2.0,
+    "speaker_and_gesture_remain_primary": true,
+    "intrusive_share_overlay": false,
+    "mixed_reference_branding_systems": false,
+    "reference_wording_caption_layout_logo_or_footage_copied": false,
+    "manual_claim_review_before_publication": true,
+    "original_or_properly_licensed_source_still_required": true
+  },
+  "manual_publication_review": {
+    "required": false,
+    "checks": [
+      "verify_exact_written_spoken_and_social_references",
+      "verify_comparative_factual_claims",
+      "verify_allegation_denial_and_supporting_evidence",
+      "verify_quran_hadith_attribution_and_religious_rulings",
+      "preserve_context_and_attribution",
+      "remove_protected_group_attacks_or_inferiority_claims",
+      "confirm_source_rights_before_publication",
+      "review_health_sensitive_products_without_glamorization"
+    ]
+  },
+  "background_mode": "keep",
+  "clean_detail_pipeline": true,
+  "detail_encoding": {
+    "crf": 18,
+    "preset": "fast",
+    "clarity_filter": "cas=strength=0.18",
+    "x264_tune": "film",
+    "adaptive_quantization": "aq-mode=3:aq-strength=0.85"
+  },
+  "cinematic_finish": {
+    "version": 2,
+    "enabled": true,
+    "style": "restrained_film_finish",
+    "theme": "knowledge",
+    "adaptive_color": true,
+    "source_analysis": {
+      "version": 1,
+      "available": true,
+      "status": "analyzed",
+      "sample_count": 5,
+      "face_sample_count": 0,
+      "luminance_median": 57.0,
+      "protected_luminance_median": 57.0,
+      "shadow_clip_percent": 18.102,
+      "highlight_clip_percent": 3.375,
+      "channel_means_rgb": [
+        74.36,
+        68.18,
+        62.96
+      ],
+      "exposure_brightness": 0.0321,
+      "gamma_multiplier": 1.055,
+      "white_balance_gains": [
+        0.965,
+        1.0047,
+        1.035
+      ],
+      "color_cast": "warm",
+      "skin_tone_protected": false,
+      "correction_limits": {
+        "brightness": [
+          -0.035,
+          0.042
+        ],
+        "gamma": [
+          0.96,
+          1.055
+        ],
+        "channel_gain": [
+          0.965,
+          1.035
+        ]
+      },
+      "decisions": [
+        "adaptive_exposure",
+        "bounded_white_balance"
+      ]
+    },
+    "highlight_rolloff": true,
+    "theme_split_tone": true,
+    "bounded_white_balance": true,
+    "deband": true,
+    "fine_grain": true,
+    "grain_strength": 0.85,
+    "opening_push_in_pixels": 26,
+    "opening_push_in_seconds": 0.72,
+    "heavy_blur": false,
+    "black_bars": false,
+    "face_and_caption_safe": true,
+    "view_guarantee": false
+  },
+  "render_experiment": {
+    "version": 1,
+    "experiment_id": "cinematic_adaptive_v2",
+    "variant": "adaptive_a_restrained",
+    "recipe_hash": "b427f53aa71bef79",
+    "recipe": {
+      "family": "cinematic_adaptive_v2",
+      "variant": "adaptive_a_restrained",
+      "theme": "knowledge",
+      "adaptive_color": true,
+      "intro_push_in_pixels": 26,
+      "intro_push_in_seconds": 0.72,
+      "grain_strength": 0.85,
+      "video_quality": "high"
+    },
+    "assignment": "stable_content_hash",
+    "controlled_variable": "opening_push_in_strength",
+    "performance_metrics": [
+      "shown_in_feed",
+      "stayed_to_watch_percentage",
+      "engaged_views",
+      "average_view_percentage",
+      "subscribers_gained"
+    ],
+    "causal_claim": false,
+    "view_guarantee": false
+  },
+  "aspect_ratio": "9:16",
+  "narrative_role": null,
+  "source_metadata_embedded": false,
+  "core_message": "POOM, AKHIRNYA KAK YUTA BISA MENDAPATKAN MUGE, MIO,",
+  "original_creator_commentary": false,
+  "original_creator_commentary_format": "ai_editorial_card",
+  "creator_commentary": {
+    "enabled": false,
+    "verified_user_recording": false,
+    "voice_cloned": false,
+    "source": "none"
+  },
+  "editorial_framing": {
+    "version": 2,
+    "enabled": true,
+    "content_derived": true,
+    "editorial_angle": "Sumpah, kakak pahli. hehehe: uji jawaban, asumsi, dan konteks lengkap",
+    "takeaway": "POOM, AKHIRNYA KAK YUTA BISA MENDAPATKAN MUGE, MIO,",
+    "distinct_timed_windows": 2,
+    "presentation": "content_lane_editorial_then_takeaway",
+    "content_lane": "general_knowledge",
+    "card_labels": [
+      "SUDUT EDITORIAL",
+      "MAKNA UTAMA"
+    ],
+    "generated_for_this_clip": true,
+    "generation_source": "ai_candidate_analysis",
+    "human_creator_perspective_present": false,
+    "source_dialogue_replaced": false,
+    "creator_voice_or_presence_claimed": false,
+    "human_review_required": true,
+    "transformation_contract": {
+      "version": 1,
+      "passed": true,
+      "content_specific": true,
+      "adds_interpretive_value": true,
+      "interpretive_marker_present": true,
+      "takeaway_grounded_in_source": true,
+      "shared_source_concept_count": 4,
+      "new_editorial_concept_count": 4,
+      "distinct_timed_windows": 2,
+      "visible_commentary_seconds": 6.9,
+      "meaningful_layers": [
+        "opening_context",
+        "mid_clip_analysis",
+        "source_grounded_takeaway",
+        "content_timed_visual_direction"
+      ],
+      "cosmetic_changes_not_counted": [
+        "crop",
+        "blur",
+        "speed_change",
+        "watermark",
+        "subtitle_only"
+      ],
+      "human_review_required": true
+    }
+  },
+  "thumbnail_strategy": "embedded_shorts_cover_frame",
+  "thumbnail_eyebrow": "",
+  "thumbnail_headline": "TAHU NGGAK UANG KAK YUTA BERAPA",
+  "thumbnail_support": "",
+  "context_card": {
+    "version": 5,
+    "reference_pattern": "fast_scan_context_headline",
+    "transcript_grounded": true,
+    "eyebrow": "MOMEN GAME",
+    "theme_accent": "#FACC15",
+    "layout_variation": 0,
+    "content_derived_variation": true,
+    "shorts_ui_safe": true
+  },
+  "embedded_cover_window_seconds": 2.0,
+  "thumbnail_keyframe_seconds": 0.78,
+  "thumbnail_selection": {
+    "method": "desktop_studio_custom_upload_then_mobile_frame_fallback",
+    "custom_upload_filename": "clip_01_sumpah-kakak-pahli-hehehe-aku-nggak-mau-sama_thumb.jpg",
+    "custom_upload_requires_verified_account": true,
+    "recommended_seconds": 0.78,
+    "recommended_window_seconds": [
+      0.55,
+      1.25
+    ],
+    "desktop_autogenerated_choice_guaranteed": false,
+    "manual_confirmation_required": true
+  },
+  "shorts_policy_compliance": {
+    "reviewed_on": "2026-09-23",
+    "policy_snapshot": {
+      "snapshot_version": 7,
+      "reviewed_on": "2026-09-23",
+      "review_due_on": "2027-03-22",
+      "review_required": false,
+      "rules_are_runtime_guarantee": false,
+      "future_year_assumed_unchanged": false,
+      "claimed_short_over_one_minute_change_effective_on": "2026-09-24",
+      "claimed_short_over_one_minute_automatic_block_currently_applies": false,
+      "zero_active_claim_workflow_is_stricter_than_youtube": true,
+      "official_sources": [
+        "https://support.google.com/youtube/answer/15424877",
+        "https://support.google.com/youtube/answer/1311392",
+        "https://support.google.com/youtube/answer/6162278",
+        "https://support.google.com/youtube/answer/3376882",
+        "https://support.google.com/youtube/answer/14328491",
+        "https://support.google.com/youtube/answer/12504220",
+        "https://support.google.com/youtube/answer/16559650",
+        "https://support.google.com/youtube/answer/2801973",
+        "https://support.google.com/youtube/answer/6013276",
+        "https://support.google.com/youtube/answer/9783148",
+        "https://support.google.com/youtube/answer/2797468",
+        "https://support.google.com/youtube/answer/2802268",
+        "https://support.google.com/youtube/answer/2490020",
+        "https://support.google.com/youtube/answer/72431"
+      ]
+    },
+    "official_max_seconds": 180,
+    "fendy_clipper_min_seconds": 25,
+    "fendy_clipper_max_seconds": 180,
+    "duration_seconds": 31.165,
+    "duration_within_official_limit": true,
+    "duration_within_growth_window": true,
+    "duration_within_fendy_clipper_limit": true,
+    "vertical_aspect_ratio": "9:16",
+    "official_short_classification": "square_or_vertical_up_to_180_seconds",
+    "views_counting_since_2025_03_31": "starts_or_replays_without_minimum_watch_time",
+    "engaged_views_retained_as_quality_metric": true,
+    "custom_thumbnail_upload_supported": true,
+    "custom_thumbnail_requires_verified_account": true,
+    "custom_thumbnail_studio_surface": "desktop_youtube_studio",
+    "custom_thumbnail_recommended_aspect_ratio": "9:16",
+    "embedded_cover_frame_retained_as_fallback": true,
+    "thumbnail_strategy": "custom_upload_with_embedded_frame_fallback",
+    "source_promos_removed_from_candidate_windows": true,
+    "inauthentic_content_policy_reviewed": true,
+    "mass_produced_or_repetitive_content_not_assumed_monetizable": true,
+    "automated_or_synthetic_mass_production_allowed": false,
+    "duplicate_main_points_allowed_in_one_batch": false,
+    "same_source_series_requires_distinct_viewer_questions": true,
+    "fresh_conversation_pattern_is_editorial_signal_only": true,
+    "freshness_crop_captions_or_titles_do_not_create_reuse_rights": true,
+    "direct_reupload_pattern_treated_as_monetization_strategy": false,
+    "split_layout_requires_unique_visible_subjects": true,
+    "non_original_shorts_views_may_be_ineligible": true,
+    "contextual_engagement_prompt_preferred": true,
+    "repeated_subscribe_template_avoided": true,
+    "content_specific_subscribe_value_proposition": true,
+    "subscription_incentive_or_reward_offered": false,
+    "viewer_satisfaction_not_watch_time_alone": true,
+    "filler_avoidance_required": true,
+    "claimed_content_over_one_minute_block_risk": false,
+    "claimed_content_over_one_minute_platform_behavior": "may_remain_playable_but_claim_and_monetization_consequences_still_apply",
+    "fendy_zero_active_claim_upload_policy": true,
+    "non_blocking_claims_also_stop_fendy_upload": true,
+    "creative_commons_metadata_is_not_chain_of_title_proof": true,
+    "credit_crop_subtitles_or_short_duration_do_not_prevent_content_id": true,
+    "content_id_claim_check_required_before_publication": true,
+    "rights_and_originality_review_required": true,
+    "channel_level_review_still_applies": true,
+    "religion_treated_as_protected_group": true,
+    "comparative_religion_claims_require_context_and_fact_review": true,
+    "protected_group_inferiority_or_dehumanization_allowed": false,
+    "direct_ridicule_or_harassment_allowed": false,
+    "negative_story_requires_constructive_context": true,
+    "recommendation_or_monetization_guarantee": false
+  },
+  "five_k_experiment_readiness": {
+    "version": 12,
+    "experiment_name": "sustainable_20k_20_subscriber_growth",
+    "target_views": 20000,
+    "target_subscribers": 20,
+    "target_subscribers_per_1000_views": 1.0,
+    "stretch_target_views": 50000,
+    "target_metric": "shorts_views_starts_or_replays",
+    "quality_metric": "engaged_views",
+    "minimum_short_export_score": 80,
+    "fyp_target_reached": true,
+    "quality_gate_passed": true,
+    "readiness_score": 95,
+    "status": "ready_to_test",
+    "next_action": "Publikasikan setelah review Private; ukur terhadap 10 upload terakhir dengan format dan seri yang sama.",
+    "guarantee": false,
+    "format": "vertical_short",
+    "stability_definition": {
+      "window": "last_5_comparable_publications",
+      "success_rule": "at_least_3_reach_20000_views_and_20_subscribers",
+      "comparison_baseline": "rolling_median_last_10_same_format_and_series",
+      "minimum_sample_warning": "do_not_call_stable_before_5_comparable_publications"
+    },
+    "signals": {
+      "hook_present": true,
+      "single_key_point_score": 96,
+      "semantic_loop_score": 77,
+      "first_30_retention_readiness_score": 83,
+      "narrative_arc_score": 100,
+      "hook_context_tension_answer_strong_end_complete": true,
+      "religious_context_safe_for_automatic_export": true,
+      "retention_score_is_editorial_diagnostic_not_prediction": true,
+      "complete_boundary": true,
+      "content_specific_subscribe_value": true,
+      "subscriber_intent_score": 85,
+      "micro_thesis_20_32_seconds": false,
+      "micro_thesis_structure_score": 16,
+      "social_anecdote_18_32_seconds": false,
+      "social_anecdote_structure_score": 44,
+      "delayed_punchline_16_26_seconds": false,
+      "delayed_punchline_structure_score": 5,
+      "contrast_banter_22_50_seconds": false,
+      "contrast_banter_structure_score": 48,
+      "structured_comparison_38_60_seconds": false,
+      "structured_comparison_structure_score": 19,
+      "claim_rebuttal_36_58_seconds": false,
+      "claim_rebuttal_structure_score": 11,
+      "extended_short_60_180_seconds": false,
+      "three_minutes_is_ceiling_not_target": true,
+      "manual_claim_and_context_review_required": false
+    },
+    "measure_after_publish": [
+      "shown_in_feed",
+      "engaged_views",
+      "how_many_chose_to_view",
+      "viewed_vs_swiped",
+      "audience_retention",
+      "average_view_duration",
+      "rewatches",
+      "shares",
+      "comments",
+      "subscribers_gained"
+    ],
+    "iteration_order": [
+      "opening_hook_if_viewers_swipe",
+      "trim_drop_off_before_payoff",
+      "strengthen_topic_specific_subscribe_reason",
+      "repeat_winning_topic_not_identical_template"
+    ],
+    "review_checkpoints": [
+      1000,
+      5000,
+      10000,
+      20000
+    ],
+    "review_windows_hours": [
+      6,
+      48,
+      168,
+      672
+    ],
+    "youtube_studio_review_flow": [
+      {
+        "after_hours": 6,
+        "focus": [
+          "shown_in_feed",
+          "views",
+          "how_many_chose_to_view"
+        ],
+        "decision": "diagnose_first_frame_or_hook_only_if_swipe_signal_is_weak"
+      },
+      {
+        "after_hours": 48,
+        "focus": [
+          "engaged_views",
+          "audience_retention",
+          "average_view_duration",
+          "average_percentage_viewed"
+        ],
+        "decision": "trim_drop_off_and_move_payoff_earlier_if_below_same_format_baseline"
+      },
+      {
+        "after_hours": 168,
+        "focus": [
+          "shares",
+          "comments",
+          "subscribers_gained"
+        ],
+        "decision": "repeat_the_topic_as_a_series_only_when_viewer_response_supports_it"
+      },
+      {
+        "after_hours": 672,
+        "focus": [
+          "returning_viewers",
+          "subscribers_gained"
+        ],
+        "decision": "compare_with_last_10_same_format_and_series_before_changing_strategy"
+      }
+    ],
+    "iteration_guardrails": {
+      "change_one_variable_per_test": true,
+      "compare_same_format_and_series": true,
+      "delete_and_reupload_to_reset_distribution": false,
+      "publish_near_duplicate_variants": false,
+      "misleading_packaging": false,
+      "optimize_for_viewer_satisfaction_not_views_alone": true,
+      "treat_single_viral_reference_as_outlier_not_baseline": true,
+      "copy_reference_speaker_branding_wording_or_footage": false,
+      "manufacture_ridicule_conflict_or_harassment": false,
+      "payoff_teaser_must_quote_late_transcript": true,
+      "payoff_teaser_promises_missing_context": false,
+      "copy_reference_logo_pattern_photos_or_layout": false,
+      "demean_or_attack_protected_religious_group": false,
+      "sensitive_comparison_requires_manual_claim_review": true,
+      "duplicate_cold_open_excerpt": false,
+      "reference_aggregator_used_as_production_source": false,
+      "health_sensitive_banter_requires_manual_context_review": true
+    }
+  },
+  "growth_readiness": {
+    "version": 12,
+    "experiment_name": "sustainable_20k_20_subscriber_growth",
+    "target_views": 20000,
+    "target_subscribers": 20,
+    "target_subscribers_per_1000_views": 1.0,
+    "stretch_target_views": 50000,
+    "target_metric": "shorts_views_starts_or_replays",
+    "quality_metric": "engaged_views",
+    "minimum_short_export_score": 80,
+    "fyp_target_reached": true,
+    "quality_gate_passed": true,
+    "readiness_score": 95,
+    "status": "ready_to_test",
+    "next_action": "Publikasikan setelah review Private; ukur terhadap 10 upload terakhir dengan format dan seri yang sama.",
+    "guarantee": false,
+    "format": "vertical_short",
+    "stability_definition": {
+      "window": "last_5_comparable_publications",
+      "success_rule": "at_least_3_reach_20000_views_and_20_subscribers",
+      "comparison_baseline": "rolling_median_last_10_same_format_and_series",
+      "minimum_sample_warning": "do_not_call_stable_before_5_comparable_publications"
+    },
+    "signals": {
+      "hook_present": true,
+      "single_key_point_score": 96,
+      "semantic_loop_score": 77,
+      "first_30_retention_readiness_score": 83,
+      "narrative_arc_score": 100,
+      "hook_context_tension_answer_strong_end_complete": true,
+      "religious_context_safe_for_automatic_export": true,
+      "retention_score_is_editorial_diagnostic_not_prediction": true,
+      "complete_boundary": true,
+      "content_specific_subscribe_value": true,
+      "subscriber_intent_score": 85,
+      "micro_thesis_20_32_seconds": false,
+      "micro_thesis_structure_score": 16,
+      "social_anecdote_18_32_seconds": false,
+      "social_anecdote_structure_score": 44,
+      "delayed_punchline_16_26_seconds": false,
+      "delayed_punchline_structure_score": 5,
+      "contrast_banter_22_50_seconds": false,
+      "contrast_banter_structure_score": 48,
+      "structured_comparison_38_60_seconds": false,
+      "structured_comparison_structure_score": 19,
+      "claim_rebuttal_36_58_seconds": false,
+      "claim_rebuttal_structure_score": 11,
+      "extended_short_60_180_seconds": false,
+      "three_minutes_is_ceiling_not_target": true,
+      "manual_claim_and_context_review_required": false
+    },
+    "measure_after_publish": [
+      "shown_in_feed",
+      "engaged_views",
+      "how_many_chose_to_view",
+      "viewed_vs_swiped",
+      "audience_retention",
+      "average_view_duration",
+      "rewatches",
+      "shares",
+      "comments",
+      "subscribers_gained"
+    ],
+    "iteration_order": [
+      "opening_hook_if_viewers_swipe",
+      "trim_drop_off_before_payoff",
+      "strengthen_topic_specific_subscribe_reason",
+      "repeat_winning_topic_not_identical_template"
+    ],
+    "review_checkpoints": [
+      1000,
+      5000,
+      10000,
+      20000
+    ],
+    "review_windows_hours": [
+      6,
+      48,
+      168,
+      672
+    ],
+    "youtube_studio_review_flow": [
+      {
+        "after_hours": 6,
+        "focus": [
+          "shown_in_feed",
+          "views",
+          "how_many_chose_to_view"
+        ],
+        "decision": "diagnose_first_frame_or_hook_only_if_swipe_signal_is_weak"
+      },
+      {
+        "after_hours": 48,
+        "focus": [
+          "engaged_views",
+          "audience_retention",
+          "average_view_duration",
+          "average_percentage_viewed"
+        ],
+        "decision": "trim_drop_off_and_move_payoff_earlier_if_below_same_format_baseline"
+      },
+      {
+        "after_hours": 168,
+        "focus": [
+          "shares",
+          "comments",
+          "subscribers_gained"
+        ],
+        "decision": "repeat_the_topic_as_a_series_only_when_viewer_response_supports_it"
+      },
+      {
+        "after_hours": 672,
+        "focus": [
+          "returning_viewers",
+          "subscribers_gained"
+        ],
+        "decision": "compare_with_last_10_same_format_and_series_before_changing_strategy"
+      }
+    ],
+    "iteration_guardrails": {
+      "change_one_variable_per_test": true,
+      "compare_same_format_and_series": true,
+      "delete_and_reupload_to_reset_distribution": false,
+      "publish_near_duplicate_variants": false,
+      "misleading_packaging": false,
+      "optimize_for_viewer_satisfaction_not_views_alone": true,
+      "treat_single_viral_reference_as_outlier_not_baseline": true,
+      "copy_reference_speaker_branding_wording_or_footage": false,
+      "manufacture_ridicule_conflict_or_harassment": false,
+      "payoff_teaser_must_quote_late_transcript": true,
+      "payoff_teaser_promises_missing_context": false,
+      "copy_reference_logo_pattern_photos_or_layout": false,
+      "demean_or_attack_protected_religious_group": false,
+      "sensitive_comparison_requires_manual_claim_review": true,
+      "duplicate_cold_open_excerpt": false,
+      "reference_aggregator_used_as_production_source": false,
+      "health_sensitive_banter_requires_manual_context_review": true
+    }
+  },
+  "subscriber_conversion": {
+    "version": 1,
+    "enabled": true,
+    "value_proposition": "IKUTI UNTUK CERITA DAN KLIP LAINNYA",
+    "content_theme_derived": true,
+    "shown_after_payoff": false,
+    "shown_after_initial_value_beat": true,
+    "strategy": "single_silent_adaptive_follow_invitation",
+    "forced_or_incentivized_subscription": false
+  },
+  "background_replaced": false,
+  "layout": "landscape_in_portrait",
+  "portrait_framing": {
+    "enabled": true,
+    "layout": "landscape_in_portrait",
+    "source_width": 1920,
+    "source_height": 1080,
+    "canvas_width": 1080,
+    "canvas_height": 1920,
+    "preserve_source_aspect_ratio": true,
+    "uses_other_timeline_clips": false,
+    "all_panels_synchronized": true,
+    "full_source_frame_visible": true,
+    "panel_width": 1024,
+    "panel_height": 576,
+    "reason": "keep_complete_landscape_shot",
+    "panel_y": 672
+  },
+  "adaptive_text_split": {
+    "enabled": false,
+    "reason": "not_text_heavy_or_embedded_split"
+  },
+  "source_watermark_blur": {
+    "enabled": true,
+    "detected": true,
+    "method": "pre_camera_multi_frame_delogo_feather_v3",
+    "detector_version": 3,
+    "region": {
+      "x": 30,
+      "y": 668,
+      "width": 336,
+      "height": 46,
+      "source_width": 1080,
+      "source_height": 1920,
+      "confidence": 0.951,
+      "persistence": 0.986
+    },
+    "coordinate_space": "pre_virtual_camera_source_crop",
+    "survives_wide_close_wide_cuts": true,
+    "applied_before_fendy_clipper_overlays": true,
+    "feathered_boundary": true,
+    "scope": "detected_region_only",
+    "skip_reason": null
+  },
+  "motion_impact": {
+    "style": "clean_detail",
+    "cinematic_finish_version": 2,
+    "editorial_motion_style": "editorial_clean",
+    "procedural_topic_animation": false,
+    "source_frame_geometry_preserved": true,
+    "third_party_visual_assets": false,
+    "continuous_motion": false,
+    "blurred_frame": false,
+    "gradient_overlay": false,
+    "large_editorial_cards": false,
+    "persistent_reaction_avatar": false,
+    "story_timed_camera_cuts": 0
+  },
+  "cinematic_smoke": {
+    "enabled": false,
+    "reason": "narrative_message_visual_restraint"
+  },
+  "follow_cta": {
+    "enabled": true,
+    "cron_only": true,
+    "repeat_count": 1,
+    "silent": true,
+    "extends_video_duration": false,
+    "version": 1,
+    "start": 13.685,
+    "end": 15.435,
+    "position": "middle",
+    "timing_method": "source_sentence_boundary",
+    "copy": {
+      "action": "FOLLOW",
+      "headline": "SUKA KLIP SEPERTI INI?",
+      "support": "CERITA & KLIP LAINNYA",
+      "prompt": "Ikuti untuk cerita dan klip lainnya"
+    },
+    "avoids_director_accents": true
+  },
+  "channel_watermark": {
+    "enabled": true,
+    "text": "@ryuundy",
+    "auditor": "Fendy",
+    "brand": "Fendy Clipper",
+    "audit_id": "FND-2F6C272249B5",
+    "position": "center_compact_signature_seal",
+    "opacity": 0.72,
+    "backplate_opacity": 0.28,
+    "ornament": "green_gold_geometric",
+    "source_ownership_claimed": false
+  },
+  "mid_subscribe_pulse": {
+    "enabled": true,
+    "version": 1,
+    "copy": "FOLLOW • CERITA & KLIP LAINNYA",
+    "duration_seconds": 1.75,
+    "placement": "upper_caption_safe_middle",
+    "silent": true,
+    "extends_video_duration": false,
+    "cron_only": true,
+    "repeat_count": 1
+  },
+  "end_cta": {
+    "enabled": false,
+    "reason": "mid_subscribe_pulse_already_shown_once",
+    "voiceover": {
+      "enabled": false,
+      "reason": "disabled_by_environment"
+    }
+  },
+  "ryuundy_motion": {
+    "version": 1,
+    "enabled": true,
+    "rendered": true,
+    "cues": [
+      {
+        "kind": "freeze_inset",
+        "start": 26.565,
+        "end": 29.365,
+        "source_frame_at": 592.96,
+        "quote": "Poom, akhirnya Kak Yuta bisa mendapatkan Muge, Mio, Babyselin.",
+        "region": null,
+        "region_reviewed": false,
+        "source_grounded": true,
+        "inserted_timeline_seconds": 0,
+        "asset": ".ryuundy-motion/clip_01_sumpah-kakak-pahli-hehehe-aku-nggak-mau-sama_motion_0.mp4",
+        "asset_prepared": true
+      }
+    ],
+    "reason": "source_timed_editorial_insert",
+    "source_clock_unchanged": true,
+    "captions_clock_unchanged": true,
+    "source_audio_unchanged": true,
+    "human_segmentation_claimed": false,
+    "object_animation_fps": 12,
+    "placement": {
+      "width": 668,
+      "y": 140
+    }
+  },
+  "caption_backdrop": {
+    "enabled": false,
+    "reason": "preserve_clear_source_pixels_and_faces"
+  },
+  "cron_director_effects": {
+    "version": 2,
+    "cron_only": true,
+    "enabled": true,
+    "required": true,
+    "rendered": true,
+    "cues": [
+      {
+        "kind": "statement_focus",
+        "mood": "emphasis",
+        "start": 3.315,
+        "end": 5.235,
+        "quote": "Ya, Kak Yuta harus beli dua kali berarti.",
+        "statement": "Ya Kak Yuta harus beli dua kali berarti",
+        "statement_rendered": true,
+        "directed_by": "source_sentence",
+        "timing_method": "estimated_phrase_offset_within_timed_source_segment",
+        "palette": [
+          125,
+          240,
+          217
+        ],
+        "variation": 113,
+        "source_grounded": true,
+        "sound": "none",
+        "box": [
+          0.1,
+          0.19,
+          0.76,
+          0.14
+        ],
+        "radius": 63,
+        "placement_reason": "source_statement_outside_faces_and_caption_guards",
+        "protected_regions": [
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.18
+          ],
+          [
+            0.82,
+            0.7,
+            0.18,
+            0.3
+          ],
+          [
+            0.08,
+            0.72,
+            0.84,
+            0.28
+          ],
+          [
+            0.29140740740740745,
+            0.365,
+            0.4171851851851852,
+            0.153
+          ]
+        ],
+        "face_samples": 0,
+        "accent_kind": "ripple",
+        "statement_style": "clean"
+      },
+      {
+        "kind": "sparkle",
+        "mood": "realization",
+        "start": 27.175,
+        "end": 27.995,
+        "quote": "Poom, akhirnya Kak Yuta bisa mendapatkan Muge, Mio, Babyselin.",
+        "statement": "",
+        "statement_rendered": false,
+        "directed_by": "source_sentence",
+        "timing_method": "estimated_phrase_offset_within_timed_source_segment",
+        "palette": [
+          157,
+          208,
+          255
+        ],
+        "variation": 139,
+        "source_grounded": true,
+        "sound": "none",
+        "box": [
+          0.085296,
+          0.404062,
+          0.127778,
+          0.071875
+        ],
+        "radius": 63,
+        "placement_reason": "measured_motion_detail_outside_protected_regions",
+        "protected_regions": [
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.18
+          ],
+          [
+            0.82,
+            0.7,
+            0.18,
+            0.3
+          ],
+          [
+            0.08,
+            0.72,
+            0.84,
+            0.28
+          ],
+          [
+            0.29140740740740745,
+            0.365,
+            0.4171851851851852,
+            0.153
+          ]
+        ],
+        "face_samples": 0
+      }
+    ],
+    "source_clock_unchanged": true,
+    "captions_clock_unchanged": true,
+    "audio_unchanged": true,
+    "inserted_timeline_seconds": 0,
+    "reason": "source_timed_director_accents",
+    "required_min_count": 1,
+    "cue_count": 2,
+    "sensitive_context": false,
+    "seeded_variation": true,
+    "canvas": [
+      1080,
+      1920
+    ],
+    "renderer": "procedural_rgba_accents",
+    "verification": "duration_frame_count_and_geometry_preserved"
+  },
+  "output_width": 1080,
+  "output_height": 1920,
+  "output_resolution": "1080x1920",
+  "render_quality_qc": {
+    "version": 1,
+    "available": true,
+    "status": "review_required",
+    "quality_gate_passed": false,
+    "requires_manual_review": true,
+    "blocking": false,
+    "sample_count": 7,
+    "frame_timestamps_seconds": [
+      4.246,
+      8.492,
+      12.738,
+      16.983,
+      21.229,
+      25.475,
+      29.721
+    ],
+    "exposure": {
+      "passed": false,
+      "median_luminance": 13.0,
+      "shadow_clip_percent": 65.629,
+      "highlight_clip_percent": 1.359,
+      "dark_frame_ratio": 1.0
+    },
+    "sharpness": {
+      "passed": true,
+      "median_laplacian_variance": 1251.4,
+      "minimum": 18.0
+    },
+    "head_crop": {
+      "assessed": false,
+      "passed": null,
+      "detected_faces": 0,
+      "safe_face_ratio": null
+    },
+    "subtitle_safe_area": {
+      "assessed": true,
+      "passed": true,
+      "position": "bottom",
+      "method": "renderer_geometry_contract",
+      "shorts_ui_safe": true
+    },
+    "warnings": [
+      "Exposure output perlu review: shadow/highlight atau median luminans melewati batas aman."
+    ]
+  },
+  "provenance": {
+    "version": 1,
+    "brand": "Fendy Clipper",
+    "audit_id": "FND-2F6C272249B5",
+    "output_sha256": "a7549f5f7ae96ea127d809b1cde1cfa288aae0dc19a00bb56f71bcded323dcad",
+    "embedded_mp4_metadata": true,
+    "visible_watermark": true,
+    "claim_scope": "editorial_transformations_only",
+    "source_content_ownership_claimed": false
+  },
+  "thumbnail_frame_seconds": 25.867,
+  "thumbnail_variants": [
+    {
+      "id": "A",
+      "angle": "human_tension",
+      "eyebrow": "",
+      "headline": "AKHIRNYA KAK YUTA BISA MENDAPATKAN MUGE",
+      "support": "",
+      "keyframe_direction": {
+        "timestamp_seconds": 1.247,
+        "source_timestamp_seconds": 567.6419999999999,
+        "observed_faces": 0
+      },
+      "composition": {
+        "font_size": 58,
+        "headline_lines": [
+          "AKHIRNYA KAK YUTA BISA",
+          "MENDAPATKAN MUGE"
+        ],
+        "headline_zone": [
+          78,
+          1300,
+          960,
+          1460
+        ],
+        "subject_crop": "real_scene"
+      },
+      "palette": [
+        "#111111",
+        "#FFFFFF",
+        "#FFCF32"
+      ],
+      "image_prompt": "Use the real 9:16 cover source frame at 1.247s. Preserve the subject identity and actual expression. Add only the exact copy 'AKHIRNYA KAK YUTA BISA MENDAPATKAN MUGE'; keep eyes clear and headline in the central UI-safe zone.",
+      "negative_prompt": "No invented expressions, people, events, claims, fake quotes, fake evidence, copied branding or extra badges.",
+      "evidence": [
+        "akhirnya Kak Yuta bisa mendapatkan Muge,"
+      ],
+      "filename": "clip_01_sumpah-kakak-pahli-hehehe-aku-nggak-mau-sama_thumb_b.jpg",
+      "score": 73,
+      "score_breakdown": {
+        "readability": 20,
+        "truthful_curiosity": 17,
+        "subject_hierarchy": 13,
+        "emotional_specificity": 5,
+        "cinematic_craft": 8,
+        "brand_distinction": 5,
+        "production_feasibility": 5
+      }
+    },
+    {
+      "id": "B",
+      "angle": "source_context",
+      "eyebrow": "",
+      "headline": "TAHU NGGAK UANG KAK YUTA BERAPA",
+      "support": "",
+      "keyframe_direction": {
+        "timestamp_seconds": 25.867,
+        "source_timestamp_seconds": 592.262,
+        "observed_faces": 0
+      },
+      "composition": {
+        "font_size": 78,
+        "headline_lines": [
+          "TAHU NGGAK UANG",
+          "KAK YUTA BERAPA"
+        ],
+        "headline_zone": [
+          78,
+          1240,
+          960,
+          1440
+        ],
+        "subject_crop": "real_scene"
+      },
+      "palette": [
+        "#111111",
+        "#FFFFFF",
+        "#4BE4D4"
+      ],
+      "image_prompt": "Use the real 9:16 cover source frame at 25.867s. Preserve the subject identity and actual expression. Add only the exact copy 'TAHU NGGAK UANG KAK YUTA BERAPA'; keep eyes clear and headline in the central UI-safe zone.",
+      "negative_prompt": "No invented expressions, people, events, claims, fake quotes, fake evidence, copied branding or extra badges.",
+      "evidence": [
+        "tahu nggak uang Kak Yuta berapa?"
+      ],
+      "filename": "clip_01_sumpah-kakak-pahli-hehehe-aku-nggak-mau-sama_thumb.jpg",
+      "score": 78,
+      "score_breakdown": {
+        "readability": 25,
+        "truthful_curiosity": 17,
+        "subject_hierarchy": 13,
+        "emotional_specificity": 5,
+        "cinematic_craft": 8,
+        "brand_distinction": 5,
+        "production_feasibility": 5
+      }
+    },
+    {
+      "id": "C",
+      "angle": "cinematic_story",
+      "eyebrow": "",
+      "headline": "AKU NGGAK MAU SAMA",
+      "support": "",
+      "keyframe_direction": {
+        "timestamp_seconds": 1.247,
+        "source_timestamp_seconds": 567.6419999999999,
+        "observed_faces": 0
+      },
+      "composition": {
+        "font_size": 106,
+        "headline_lines": [
+          "AKU NGGAK",
+          "MAU SAMA"
+        ],
+        "headline_zone": [
+          78,
+          1260,
+          960,
+          1516
+        ],
+        "subject_crop": "real_scene"
+      },
+      "palette": [
+        "#111111",
+        "#FFFFFF",
+        "#FF8E48"
+      ],
+      "image_prompt": "Use the real 9:16 cover source frame at 1.247s. Preserve the subject identity and actual expression. Add only the exact copy 'AKU NGGAK MAU SAMA'; keep eyes clear and headline in the central UI-safe zone.",
+      "negative_prompt": "No invented expressions, people, events, claims, fake quotes, fake evidence, copied branding or extra badges.",
+      "evidence": [
+        "Aku nggak mau sama."
+      ],
+      "filename": "clip_01_sumpah-kakak-pahli-hehehe-aku-nggak-mau-sama_thumb_c.jpg",
+      "score": 77,
+      "score_breakdown": {
+        "readability": 25,
+        "truthful_curiosity": 16,
+        "subject_hierarchy": 13,
+        "emotional_specificity": 5,
+        "cinematic_craft": 8,
+        "brand_distinction": 5,
+        "production_feasibility": 5
+      }
+    }
+  ],
+  "thumbnail_ideas_manifest": "clip_01_sumpah-kakak-pahli-hehehe-aku-nggak-mau-sama_thumbnail_ideas.json",
+  "thumbnail_curiosity": {
+    "policy_version": 1,
+    "winner": "B",
+    "headline": "TAHU NGGAK UANG KAK YUTA BERAPA",
+    "source_video_sha256": "a7549f5f7ae96ea127d809b1cde1cfa288aae0dc19a00bb56f71bcded323dcad",
+    "method": "real_frame_selection_and_verbatim_curiosity",
+    "ctr_guarantee": false
+  },
+  "tiktok_caption": "Menurutmu: Bagian dari “Sumpah, kakak pahli. hehehe. aku nggak mau sama” mana yang paling mengubah pandanganmu?\n\nCuplikan ini menampilkan adegan di dalam game.\n\nIkuti untuk klip dengan tema serupa.\n\n#GamingIndonesia #CeritaGame",
+  "source_provenance": {
+    "title": "Yuta Mio Modifikasi Motor Drag Paling Cepat Untuk Ikut Kontes | ROBLOX",
+    "creator": "Dunia Budi Roblox",
+    "url": "https://www.youtube.com/watch?v=RibRV2OCg4g",
+    "license": "",
+    "rights_basis": "unverified",
+    "rights_verified": false,
+    "rights_confirmed_by_user": true,
+    "license_metadata_verified": false,
+    "operator_trusted_channel": false,
+    "chain_of_title_verified": false,
+    "commercial_rights_confirmation_required": true,
+    "creative_commons_label_alone_guarantees_no_content_id_claim": false,
+    "attribution_required": false,
+    "uploaded_source": false,
+    "research_only_source": false,
+    "source_audio_or_video_used_in_output": true
+  },
+  "monetization_readiness": {
+    "status": "blocked_unverified_rights",
+    "eligible_for_private_upload_review": false,
+    "transformation_ready_for_private_review": true,
+    "commercial_rights_confirmation_required": true,
+    "originality_score": 13,
+    "minimum_originality_score": 7,
+    "audit_version": 8,
+    "signals": {
+      "editorial_hook_and_context": true,
+      "original_core_message": true,
+      "cohesive_editorial_arc": true,
+      "substantive_visual_edits": true,
+      "transcript_timed_camera_direction": false,
+      "content_timed_editing": true,
+      "dynamic_keyword_captions": true,
+      "content_derived_visual_variation": true,
+      "content_adaptive_visual_direction": true,
+      "content_specific_engagement_prompt": false,
+      "content_specific_subscribe_value": true,
+      "visible_editorial_interpretation": true,
+      "substantive_editorial_contract": true,
+      "chapter_specific_editorial_framing": false,
+      "structured_story_arc": false,
+      "custom_thumbnail_strategy": true,
+      "enhanced_edit": true
+    },
+    "substantive_transformation": true,
+    "original_creator_commentary_present": false,
+    "automated_editorial_interpretation_present": true,
+    "note": "Lolos audit teknis untuk review Private, bukan jaminan YPP. Komentar/kehadiran kreator asli tetap merupakan bukti transformasi terkuat. Metadata CC tidak membuktikan uploader menguasai seluruh hak audio/visual.",
+    "channel_level_review_still_applies": true,
+    "youtube_policy_reviewed_on": "2026-09-23",
+    "youtube_policy_snapshot": {
+      "snapshot_version": 7,
+      "reviewed_on": "2026-09-23",
+      "review_due_on": "2027-03-22",
+      "review_required": false,
+      "rules_are_runtime_guarantee": false,
+      "future_year_assumed_unchanged": false,
+      "claimed_short_over_one_minute_change_effective_on": "2026-09-24",
+      "claimed_short_over_one_minute_automatic_block_currently_applies": false,
+      "zero_active_claim_workflow_is_stricter_than_youtube": true,
+      "official_sources": [
+        "https://support.google.com/youtube/answer/15424877",
+        "https://support.google.com/youtube/answer/1311392",
+        "https://support.google.com/youtube/answer/6162278",
+        "https://support.google.com/youtube/answer/3376882",
+        "https://support.google.com/youtube/answer/14328491",
+        "https://support.google.com/youtube/answer/12504220",
+        "https://support.google.com/youtube/answer/16559650",
+        "https://support.google.com/youtube/answer/2801973",
+        "https://support.google.com/youtube/answer/6013276",
+        "https://support.google.com/youtube/answer/9783148",
+        "https://support.google.com/youtube/answer/2797468",
+        "https://support.google.com/youtube/answer/2802268",
+        "https://support.google.com/youtube/answer/2490020",
+        "https://support.google.com/youtube/answer/72431"
+      ]
+    },
+    "auditor_identity_required": true,
+    "codex_growth_blueprint_required": true,
+    "inauthentic_content_policy": {
+      "mass_produced_or_repetitive_content_ineligible": true,
+      "content_specific_story_and_visual_direction_required": true,
+      "reused_content_policy_separately_applies": true,
+      "channel_wide_manual_review_still_applies": true
+    },
+    "guarantee": false
+  },
+  "production_team_handoff": {
+    "version": 1,
+    "operating_model": "one_person_virtual_production_desk",
+    "handoff_order": [
+      "content_researcher_curator",
+      "truth_researcher",
+      "creative_team",
+      "director",
+      "clipper_video_editor",
+      "distribution_specialist",
+      "quality_control_coordinator"
+    ],
+    "overall_status": "needs_qc_or_rights_review",
+    "ready_for_private_human_review": false,
+    "controversial_hook_required": false,
+    "source_grounded_hook_required": true,
+    "roles": {
+      "truth_researcher": {
+        "status": "no_external_reference_detected",
+        "references": [],
+        "search_results_are_evidence": false,
+        "facts_verified": false
+      },
+      "creative_team": {
+        "source_inserts": 0,
+        "unresolved_references": 0,
+        "treatment": "highlight_exact_excerpt_show_publisher_date_and_url"
+      },
+      "director": {
+        "treatment": "spoken_reference_single_accent_then_readable_hold",
+        "source_panels_rendered": false,
+        "opinions_presented_as_facts": false
+      },
+      "content_researcher_curator": {
+        "status": "ready",
+        "hook_window_seconds": [
+          0,
+          3
+        ],
+        "hook_type": "emotion",
+        "hook": "Sumpah, kakak pahli. hehehe. aku nggak mau sama.",
+        "peak_moment_seconds": 26.565,
+        "selection_reason": "durasi prioritas 25–45 detik, ada keyword hook: harus, ada payoff: akhirnya, punya momen humor/tertawa yang natural, memancing rasa penasaran, ada angka konkret, speech padat, ending terasa selesai, hook 3 detik awal kuat, alur 30 detik awa",
+        "invented_controversy": false
+      },
+      "clipper_video_editor": {
+        "status": "ready",
+        "format": "vertical_short",
+        "aspect_ratio": "9:16",
+        "pacing": "measured",
+        "visual_accent": "narrative_message",
+        "surprise_treatment": "none",
+        "dynamic_captions": true,
+        "effects_follow_transcript": true
+      },
+      "distribution_specialist": {
+        "status": "package_ready",
+        "platforms": [
+          "youtube_shorts",
+          "tiktok",
+          "instagram_reels"
+        ],
+        "series": "Poin yang Membuka Pikiran",
+        "platform_specific_captioning": true,
+        "analytics_feedback_loop": true,
+        "automatic_publication": false
+      },
+      "quality_control_coordinator": {
+        "status": "hold",
+        "rights_basis": "unverified",
+        "rights_verified": false,
+        "rights_confirmed_by_user": true,
+        "substantive_transformation": true,
+        "render_qc_passed": false,
+        "context_safe": true,
+        "required_human_checks": [
+          "verify_source_rights_and_permission_evidence",
+          "review_factual_and_religious_context",
+          "watch_final_render_for_caption_crop_audio_and_timing",
+          "review_title_thumbnail_and_ad_suitability",
+          "upload_private_then_complete_platform_checks"
+        ],
+        "publication_mode": "private_first"
+      }
+    },
+    "automation_boundary": {
+      "human_must_verify_rights": true,
+      "human_must_review_facts_and_context": true,
+      "human_must_watch_final_render": true,
+      "human_must_approve_publication": true,
+      "views_or_monetization_guaranteed": false
+    }
+  }
+}

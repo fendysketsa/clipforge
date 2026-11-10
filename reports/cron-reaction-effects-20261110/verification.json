@@ -1,0 +1,385 @@
+{
+  "policy_version": 3,
+  "cron_only": true,
+  "reference_url": "https://youtube.com/shorts/BmRQ1YnaFDM",
+  "reference_access": "Web fetch unavailable; provided screenshot used as visual reference; no reference assets copied",
+  "tests": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "1241",
+    "time": "27.716",
+    "timestamp": "2026-11-10T18:18:41.071296+07:00",
+    "hostname": "fendycnugraha"
+  },
+  "unrelated_storyboard_stream_tests_deselected": 2,
+  "demo": {
+    "synthetic_scene": true,
+    "real_scream_detected": false,
+    "preview_only": true,
+    "upload_queued": false,
+    "variants": [
+      {
+        "synthetic_calibration": true,
+        "never_upload": true,
+        "plan": {
+          "version": 3,
+          "cron_only": true,
+          "enabled": true,
+          "required": true,
+          "rendered": true,
+          "cues": [
+            {
+              "kind": "reaction_ticks",
+              "mood": "shout",
+              "start": 2.18,
+              "end": 2.8,
+              "quote": "Awas!",
+              "statement": "",
+              "statement_rendered": false,
+              "directed_by": "measured_source_audio_reaction",
+              "timing_method": "measured_source_audio_onset",
+              "palette": [
+                157,
+                208,
+                255
+              ],
+              "variation": 63,
+              "source_grounded": true,
+              "sound": "none",
+              "face_detector_fallback": "ModuleNotFoundError",
+              "box": [
+                0.042222,
+                0.568125,
+                0.255556,
+                0.14375
+              ],
+              "radius": 40,
+              "placement_reason": "measured_motion_detail_outside_protected_regions",
+              "protected_regions": [
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.18
+                ],
+                [
+                  0.82,
+                  0.7,
+                  0.18,
+                  0.3
+                ],
+                [
+                  0.08,
+                  0.72,
+                  0.84,
+                  0.28
+                ],
+                [
+                  0.28,
+                  0.05,
+                  0.44,
+                  0.51
+                ]
+              ],
+              "face_samples": 0
+            }
+          ],
+          "source_clock_unchanged": true,
+          "captions_clock_unchanged": true,
+          "audio_unchanged": true,
+          "inserted_timeline_seconds": 0,
+          "reason": "source_timed_director_accents",
+          "audio_reactions": {
+            "version": 1,
+            "enabled": true,
+            "events": [
+              {
+                "start": 2.18,
+                "peak": 2.44,
+                "end": 2.72,
+                "quote": "Awas!",
+                "rise_db": 20.72,
+                "pitch_ratio": 1.0,
+                "evidence": "timed_reaction_and_voiced_rise",
+                "confidence": "heuristic",
+                "score": 22.721460342407227
+              }
+            ],
+            "source_audio_only": true,
+            "method": "voiced_level_rise_with_timed_dialogue",
+            "audio_modified": false,
+            "available": true,
+            "baseline_dbfs": -29.5,
+            "baseline_pitch_hz": 190.5,
+            "reason": "source_reactions_measured"
+          },
+          "required_min_count": 1,
+          "cue_count": 1,
+          "sensitive_context": false,
+          "seeded_variation": true,
+          "canvas": [
+            360,
+            640
+          ],
+          "renderer": "procedural_rgba_accents",
+          "verification": "duration_frame_count_and_geometry_preserved"
+        },
+        "audio_packets_unchanged": true,
+        "geometry_clock_unchanged": true
+      },
+      {
+        "synthetic_calibration": true,
+        "never_upload": true,
+        "plan": {
+          "version": 3,
+          "cron_only": true,
+          "enabled": true,
+          "required": true,
+          "rendered": true,
+          "cues": [
+            {
+              "kind": "shock_rays",
+              "mood": "shout",
+              "start": 2.18,
+              "end": 2.8,
+              "quote": "Awas!",
+              "statement": "",
+              "statement_rendered": false,
+              "directed_by": "measured_source_audio_reaction",
+              "timing_method": "measured_source_audio_onset",
+              "palette": [
+                157,
+                208,
+                255
+              ],
+              "variation": 63,
+              "source_grounded": true,
+              "sound": "none",
+              "face_detector_fallback": "ModuleNotFoundError",
+              "box": [
+                0.042222,
+                0.568125,
+                0.255556,
+                0.14375
+              ],
+              "radius": 40,
+              "placement_reason": "measured_motion_detail_outside_protected_regions",
+              "protected_regions": [
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.18
+                ],
+                [
+                  0.82,
+                  0.7,
+                  0.18,
+                  0.3
+                ],
+                [
+                  0.08,
+                  0.72,
+                  0.84,
+                  0.28
+                ],
+                [
+                  0.28,
+                  0.05,
+                  0.44,
+                  0.51
+                ]
+              ],
+              "face_samples": 0
+            }
+          ],
+          "source_clock_unchanged": true,
+          "captions_clock_unchanged": true,
+          "audio_unchanged": true,
+          "inserted_timeline_seconds": 0,
+          "reason": "source_timed_director_accents",
+          "audio_reactions": {
+            "version": 1,
+            "enabled": true,
+            "events": [
+              {
+                "start": 2.18,
+                "peak": 2.44,
+                "end": 2.72,
+                "quote": "Awas!",
+                "rise_db": 20.72,
+                "pitch_ratio": 1.0,
+                "evidence": "timed_reaction_and_voiced_rise",
+                "confidence": "heuristic",
+                "score": 22.721460342407227
+              }
+            ],
+            "source_audio_only": true,
+            "method": "voiced_level_rise_with_timed_dialogue",
+            "audio_modified": false,
+            "available": true,
+            "baseline_dbfs": -29.5,
+            "baseline_pitch_hz": 190.5,
+            "reason": "source_reactions_measured"
+          },
+          "required_min_count": 1,
+          "cue_count": 1,
+          "sensitive_context": false,
+          "seeded_variation": true,
+          "canvas": [
+            360,
+            640
+          ],
+          "renderer": "procedural_rgba_accents",
+          "verification": "duration_frame_count_and_geometry_preserved"
+        },
+        "audio_packets_unchanged": true,
+        "geometry_clock_unchanged": true
+      },
+      {
+        "synthetic_calibration": true,
+        "never_upload": true,
+        "plan": {
+          "version": 3,
+          "cron_only": true,
+          "enabled": true,
+          "required": true,
+          "rendered": true,
+          "cues": [
+            {
+              "kind": "pressure_ring",
+              "mood": "shout",
+              "start": 2.18,
+              "end": 2.8,
+              "quote": "Awas!",
+              "statement": "",
+              "statement_rendered": false,
+              "directed_by": "measured_source_audio_reaction",
+              "timing_method": "measured_source_audio_onset",
+              "palette": [
+                157,
+                208,
+                255
+              ],
+              "variation": 63,
+              "source_grounded": true,
+              "sound": "none",
+              "face_detector_fallback": "ModuleNotFoundError",
+              "box": [
+                0.042222,
+                0.568125,
+                0.255556,
+                0.14375
+              ],
+              "radius": 40,
+              "placement_reason": "measured_motion_detail_outside_protected_regions",
+              "protected_regions": [
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.18
+                ],
+                [
+                  0.82,
+                  0.7,
+                  0.18,
+                  0.3
+                ],
+                [
+                  0.08,
+                  0.72,
+                  0.84,
+                  0.28
+                ],
+                [
+                  0.28,
+                  0.05,
+                  0.44,
+                  0.51
+                ]
+              ],
+              "face_samples": 0
+            }
+          ],
+          "source_clock_unchanged": true,
+          "captions_clock_unchanged": true,
+          "audio_unchanged": true,
+          "inserted_timeline_seconds": 0,
+          "reason": "source_timed_director_accents",
+          "audio_reactions": {
+            "version": 1,
+            "enabled": true,
+            "events": [
+              {
+                "start": 2.18,
+                "peak": 2.44,
+                "end": 2.72,
+                "quote": "Awas!",
+                "rise_db": 20.72,
+                "pitch_ratio": 1.0,
+                "evidence": "timed_reaction_and_voiced_rise",
+                "confidence": "heuristic",
+                "score": 22.721460342407227
+              }
+            ],
+            "source_audio_only": true,
+            "method": "voiced_level_rise_with_timed_dialogue",
+            "audio_modified": false,
+            "available": true,
+            "baseline_dbfs": -29.5,
+            "baseline_pitch_hz": 190.5,
+            "reason": "source_reactions_measured"
+          },
+          "required_min_count": 1,
+          "cue_count": 1,
+          "sensitive_context": false,
+          "seeded_variation": true,
+          "canvas": [
+            360,
+            640
+          ],
+          "renderer": "procedural_rgba_accents",
+          "verification": "duration_frame_count_and_geometry_preserved"
+        },
+        "audio_packets_unchanged": true,
+        "geometry_clock_unchanged": true
+      }
+    ]
+  },
+  "real_source_probe": {
+    "version": 1,
+    "enabled": true,
+    "events": [],
+    "source_audio_only": true,
+    "method": "voiced_level_rise_with_timed_dialogue",
+    "audio_modified": false,
+    "available": true,
+    "baseline_dbfs": -16.87,
+    "baseline_pitch_hz": 280.7,
+    "reason": "no_supported_raised_voice"
+  },
+  "runtime": {
+    "backend_health": "ok",
+    "cron_enabled": true,
+    "scheduler_running": true,
+    "runtime_director_policy_version": 2,
+    "expected_policy_version": 3,
+    "message": "Automation sedang berjalan; jadwal berikutnya tidak akan membuat run tumpang tindih. News Hot: 3/3 slot harian WIB; playlist News, review sebelum upload."
+  },
+  "limitations": [
+    "Heuristic detection can abstain on compressed audio or uncertain shouting; no detection guarantee.",
+    "Synthetic calibration demo is not evidence of a real person screaming.",
+    "Existing source rights, review, and upload gates remain required."
+  ],
+  "source_sha256": {
+    "backend/cron_director_effects.py": "2cbafa00d1773c7b80bccd0ada0918c358064191843b5bd2f3a9f5c9d3ecdea9",
+    "backend/clipper.py": "72b160b9c5e742f0f1d9605a36d856af2b94cbd37387decc599cbf626acf6dbe",
+    "backend/api.py": "1119ab2f28c6c1cf133a6ab2d08472c75aaf30ea666f7aa7c14ed90595fc5b97",
+    "scripts/activate-cron-director-effects.sh": "277c09578be004632aca73dada57b0bee50abf38e5aeeffb509dabe559742f53"
+  },
+  "production_activation_confirmed": false,
+  "upload_queued": false
+}

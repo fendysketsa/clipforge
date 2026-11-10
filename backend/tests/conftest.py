@@ -14,6 +14,9 @@ def isolate_runtime_state_files(monkeypatch, tmp_path):
         monkeypatch.setattr(api,'processed_source_history',set())
         monkeypatch.setattr(api,'SOURCE_USAGE_ARCHIVE_DIR_OVERRIDE','')
         monkeypatch.setattr(api, "auto_viral_schedule_enabled_override", None)
+        monkeypatch.setattr(api, 'auto_viral_upload_recovery_status', {
+            'last_tick_at': None, 'queued': {'youtube': 0, 'tiktok': 0}, 'errors': {},
+        })
         monkeypatch.setattr(api, "AUTO_VIRAL_SCHEDULE_CONTROL_PATH", tmp_path / "schedule_control.json")
         monkeypatch.setattr(api, "JOBS_PATH", tmp_path / "jobs.json")
         monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", tmp_path / "youtube_uploads.json")

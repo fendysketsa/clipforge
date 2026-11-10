@@ -1,0 +1,9 @@
+# Cron: source-timed reaction accents
+
+Version 3 adds optional bounded source audio analysis before the existing 1-2 accent planner. Only cron workers receive the internal environment flag; manual requests cannot enable it. The original waveform is read without gain normalization. Sustained voiced level rises must coincide with source transcript intervals, with reaction wording or strong additional pitch evidence. Noise, isolated impulses, constant loudness, missing evidence, recitation, prayer, grief and serious contexts abstain. The model cannot choose a shout mood without measured audio evidence.
+
+Three original procedural variants follow the supplied screenshot direction: reaction ticks, comic rays and a pressure ring. Each arrives once then fades over 0.62 seconds, uses no additional sound, and stays outside the final frame's face/caption guards. They share the existing accent budget and avoid the CTA window. Protected complex layouts keep the existing quiet margin fallback. No zoom/crop, inserted frames, repeated flashes, or source dialogue changes are added by these accents.
+
+The linked YouTube reference could not be fetched by the browser tool. Its supplied screenshot is the visual reference; no frames, voice, music or assets were copied. `reaction-variants-demo.mp4` is a locally authored illustrated calibration scene with a synthetic tone, not a person shouting or a publishable source candidate. Each variant passed frame/geometry/duration and audio packet preservation checks. `real-source-analysis.json` records that the previous Roblox sample did not provide sufficient acoustic evidence, so no shout cue was forced on it.
+
+Production runtime still reports version 2. Version 3 needs the existing guarded sudo activation (`scripts/activate-director-source-recovery.sh`); source/tests and a local preview do not prove deployment. Review and rights gates remain in force; no preview was queued or uploaded.

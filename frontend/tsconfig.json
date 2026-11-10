@@ -36,7 +36,9 @@
     ".next-submission/types/**/*.ts",
     ".next-submission/dev/types/**/*.ts",
     ".next-history-four/types/**/*.ts",
-    ".next-history-four/dev/types/**/*.ts"
+    ".next-history-four/dev/types/**/*.ts",
+    ".next-director-recovery/types/**/*.ts",
+    ".next-director-recovery/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

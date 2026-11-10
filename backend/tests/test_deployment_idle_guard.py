@@ -236,7 +236,7 @@ if sys.argv[1] == 'scripts/wait-for-backend-idle.py':
 body = sys.stdin.read()
 if "print('true'" in body: print(os.environ['ORIGINAL_CRON'])
 elif 'sha256sum' in body:
-    expected = ['api', 'clipper', 'cron_director_effects', 'cron_source_policy', 'automatic_retry', 'tiktok_strategy', 'youtube_remote_status', 'ryuundy_reference_learning', 'long_video_qc', 'shorts_thumbnail']
+    expected = ['api', 'clipper', 'llm', 'cron_director_effects', 'cron_short_director', 'cron_source_policy', 'automatic_retry', 'tiktok_strategy', 'youtube_remote_status', 'ryuundy_reference_learning', 'long_video_qc', 'shorts_thumbnail']
     if os.environ['LEARNING_MODE'] == 'true': expected.extend(['ryuundy_motion'])
     assert sys.argv[3:] == expected, sys.argv
     event('verify-image')

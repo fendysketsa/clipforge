@@ -251,6 +251,13 @@ export type ClipJob = {
   source_uploader?: string | null;
   repair_source_job_id?: string | null;
   repair_source_clip_url?: string | null;
+  director_recovery?: {
+    outcome?: string;
+    summary?: string;
+    attempted?: boolean;
+    next_job_id?: string;
+    next_source_title?: string;
+  } | null;
   logs: string[];
   clips: ClipFile[];
   candidates: ClipCandidate[];
