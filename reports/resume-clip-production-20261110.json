@@ -1,0 +1,28 @@
+{
+  "requested_at": "2026-11-10T04:04:00.603112+00:00",
+  "mode": "one_manual_production_batch",
+  "reference_run_id": "cb9b5d60f3e9422091e91f3bc184b859",
+  "request_outcome_unknown": false,
+  "prior_active_jobs": 0,
+  "cron_enabled": true,
+  "prior_scheduler_message": "Antrean jadwal dan cadangan Private penuh; cron menunggu kapasitas setelah publikasi berikutnya. News Hot: 3/3 slot harian WIB; playlist News, review sebelum upload.",
+  "auto_upload_this_manual_batch": false,
+  "reason": "Continue clip production now; leave the full scheduled/private publication policy unchanged.",
+  "run_id": "2767b530a27049058018f8ac29acd209",
+  "status": "queued",
+  "progress_stage": "queued",
+  "verified_at": "2026-11-10T04:06:06.979384+00:00",
+  "runtime": {
+    "id": "2767b530a27049058018f8ac29acd209",
+    "status": "running",
+    "progress_stage": "fallback_discovery",
+    "progress_percent": 10,
+    "message": "Kandidat API 0/3; menjalankan fallback terbatas",
+    "updated_at": "2026-11-10T04:06:02.661836+00:00",
+    "errors": [],
+    "logs": [
+      "04:06:02 Skip karena filter wajib (usia 2604 hari melewati batas adaptif 90 hari): Video Inspirasi | GURU TELADAN KEHIDUPAN",
+      "04:06:02 Mencari kandidat YouTube: pendidikan karakter anak dan remaja indonesia"
+    ]
+  }
+}

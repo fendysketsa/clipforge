@@ -1,12 +1,24 @@
 #!/usr/bin/env bash
 # Activate quiet status checks and cron upload recovery while actual work is idle.
 set -euo pipefail
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Bash normally reads later commands from the file after a long-running wait.
+# Execute a validated, in-memory copy so editing the source cannot corrupt a
+# deployment already waiting for work to finish.
+activation_script_path="$(realpath -- "${BASH_SOURCE[0]:-$0}")"
+if [[ "${CLIPFORGE_ACTIVATION_SNAPSHOT:-}" != "$activation_script_path" ]]; then
+  activation_script_text="$(< "$activation_script_path")"
+  bash -n <<< "$activation_script_text"
+  export CLIPFORGE_ACTIVATION_SNAPSHOT="$activation_script_path"
+  exec bash -c "$activation_script_text" "$activation_script_path" "$@"
+fi
+unset CLIPFORGE_ACTIVATION_SNAPSHOT
+ROOT_DIR="$(cd "$(dirname "$activation_script_path")/.." && pwd)"
 cd "$ROOT_DIR"
 recover_stalled_cron=false
 ryuundy_learning=false
 skip_build=false
 preserve_browser=false
+force_active=false
 wait_seconds=21600
 while (( $# )); do
   case "$1" in
@@ -14,6 +26,7 @@ while (( $# )); do
     --ryuundy-learning) ryuundy_learning=true ;;
     --skip-build) skip_build=true ;;
     --preserve-browser) preserve_browser=true ;;
+    --force-active) force_active=true ;;
     --no-wait) wait_seconds=0 ;;
     --wait-seconds)
       [[ "${2:-}" =~ ^[0-9]+$ ]] || { echo "--wait-seconds requires a nonnegative integer." >&2; exit 2; }
@@ -21,8 +34,9 @@ while (( $# )); do
       shift
       ;;
     --help|-h)
-      echo "Usage: $0 [--recover-stalled-cron] [--ryuundy-learning] [--preserve-browser] [--skip-build] [--wait-seconds N | --no-wait]"
+      echo "Usage: $0 [--recover-stalled-cron] [--ryuundy-learning] [--preserve-browser] [--skip-build] [--force-active] [--wait-seconds N | --no-wait]"
       echo "Waits up to six hours for active work; --skip-build verifies and reuses the built image."
+      echo "--force-active interrupts current work, preserves upload checkpoints, and restarts without waiting for idle."
       exit 0
       ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
@@ -113,8 +127,12 @@ with urllib.request.urlopen(request, timeout=15): pass
 PY
 idle_args=(--state-file "$activation_state")
 if [[ "$recover_stalled_cron" == true ]]; then idle_args+=(--recover-stalled-cron); fi
-echo "Future cron launches paused; waiting for existing work to finish (limit ${wait_seconds}s)."
-python scripts/wait-for-backend-idle.py "${idle_args[@]}" --wait-seconds "$wait_seconds"
+if [[ "$force_active" != true ]]; then
+  echo "Future cron launches paused; waiting for existing work to finish (limit ${wait_seconds}s)."
+  python scripts/wait-for-backend-idle.py "${idle_args[@]}" --wait-seconds "$wait_seconds"
+else
+  echo "Future cron launches paused. Explicit force mode: interrupting active work after source verification; no idle wait."
+fi
 # Source may have changed while draining jobs. Keep the durable image and the
 # staged runtime modules consistent before touching the existing container.
 verify_image_sources
@@ -132,11 +150,13 @@ for module in "${modules[@]}"; do
   docker cp "backend/$module.py" "fendy-clipper-backend:/app/$module.py.quiet-check"
 done
 docker exec fendy-clipper-backend python -c 'import pathlib,sys,subprocess; [compile(pathlib.Path(f"/app/{name}.py.quiet-check").read_text(), name, "exec") for name in sys.argv[1:]]; assert "ryuundy_motion" not in sys.argv[1:] or "librsvg" in subprocess.check_output(["ffmpeg", "-hide_banner", "-decoders"], text=True, stderr=subprocess.STDOUT), "Runtime FFmpeg lacks the SVG decoder"' "${modules[@]}"
-python scripts/wait-for-backend-idle.py "${idle_args[@]}" --wait-seconds 0
-docker exec fendy-clipper-backend python -c 'import os,sys; [os.replace(f"/app/{name}.py.quiet-check", f"/app/{name}.py") for name in sys.argv[1:]]' "${modules[@]}"
-# The API imports this function at startup, so replacing the file alone does
-# not stop the old in-memory checker. Restart only after the idle check above.
-docker restart fendy-clipper-backend >/dev/null
+if [[ "$force_active" == true ]]; then
+  python scripts/force-backend-activation.py --state-file "$activation_state" "${modules[@]}"
+else
+  python scripts/wait-for-backend-idle.py "${idle_args[@]}" --wait-seconds 0
+  docker exec fendy-clipper-backend python -c 'import os,sys; [os.replace(f"/app/{name}.py.quiet-check", f"/app/{name}.py") for name in sys.argv[1:]]' "${modules[@]}"
+  docker restart fendy-clipper-backend >/dev/null
+fi
 python - <<'PY'
 import time, urllib.request
 for attempt in range(90):

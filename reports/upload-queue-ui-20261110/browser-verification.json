@@ -1,0 +1,40 @@
+{
+  "fixture_only": true,
+  "mutations_blocked": [],
+  "viewports": [
+    {
+      "width": 1920,
+      "scrollWidth": 1920,
+      "columns": 3,
+      "cards": 3
+    },
+    {
+      "width": 1280,
+      "scrollWidth": 1280,
+      "columns": 3,
+      "cards": 3
+    },
+    {
+      "width": 390,
+      "scrollWidth": 390,
+      "columns": 1,
+      "cards": 3
+    },
+    {
+      "width": 320,
+      "scrollWidth": 320,
+      "columns": 1,
+      "cards": 3
+    }
+  ],
+  "page_errors": [],
+  "initial_labels": [
+    "YouTubeMengunggah · 1/32 video menunggu setelah ini",
+    "TikTokAntrean 1/3Giliran berikutnya",
+    "YouTubeAntrean 2/31 video di depan",
+    "TikTokAntrean 2/31 video di depan",
+    "YouTubeAntrean 3/32 video di depan",
+    "TikTokAntrean 3/32 video di depan"
+  ],
+  "queue_advanced_without_reload": true
+}

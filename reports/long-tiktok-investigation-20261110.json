@@ -1,0 +1,62 @@
+{
+  "checked_at": "2026-11-09T23:26:14.919193+00:00",
+  "longs": [
+    {
+      "job_id": "60646d1b4607453180c42595a49699a2",
+      "title": "HIDAYAH MERTUA GALAK — Kamu tidak pantas jadi menantuku! Tapi Akhirnya Menyesal",
+      "qc_decision": "DROP_SOURCE",
+      "evidence": [
+        "Invalid or overlapping output caption timing"
+      ],
+      "provider_refusal_terminal": false,
+      "cached_fingerprint_matches_current_context": true,
+      "caption_timing_failures": [
+        {
+          "start": 96.58,
+          "end": 96.1,
+          "previous_end": 96.58
+        }
+      ],
+      "caption_timing_failure_count": 1,
+      "media_exists": true
+    },
+    {
+      "job_id": "60da3eb153194ef9ac443c184bdbd8c9",
+      "title": "Mio & Baby Celine Sakit Tapi Yuta Tidak Peduli, SEDIH BANGET! | ROBLOX",
+      "qc_decision": "DROP_SOURCE",
+      "evidence": [
+        "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+      ],
+      "provider_refusal_terminal": true,
+      "cached_fingerprint_matches_current_context": true,
+      "caption_timing_failures": [],
+      "caption_timing_failure_count": 0,
+      "media_exists": true
+    },
+    {
+      "job_id": "d14fe9c4666a441799a4033509e93df3",
+      "title": "KISAH VIRAL DI BOGOR! URBAN LEGEND ANGKOT BIRU GAIB, SEMUA PENUMPANG SUDAH MENINGGAL #OMMAMAT",
+      "qc_decision": "DROP_SOURCE",
+      "evidence": [
+        "AI provider explicitly declined this source during content safety screening; automatic upload rejected without resubmitting the same source."
+      ],
+      "provider_refusal_terminal": true,
+      "cached_fingerprint_matches_current_context": true,
+      "caption_timing_failures": [],
+      "caption_timing_failure_count": 0,
+      "media_exists": true
+    }
+  ],
+  "backend_activation_pending": true,
+  "tests_passed": 295,
+  "frontend_build": "frontend/.next-history",
+  "runtime_policy": {
+    "auto_qc_enabled": null,
+    "auto_qc_private_upload": null,
+    "auto_qc_tiktok_upload": null,
+    "tiktok_qc_upload_supported": null
+  },
+  "subtitle_carry_correction": "prepared_requires_root_activation",
+  "activation_script": "scripts/activate-long-tiktok-upload.sh",
+  "frontend_build_id": "yUTrZiyN-cDv-mpy4IKHx"
+}

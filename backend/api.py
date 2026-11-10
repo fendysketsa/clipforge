@@ -825,6 +825,7 @@ class ClipFile(BaseModel):
     tiktok_series_identity_embedded: bool = False
     youtube_upload_ready: bool | None = None
     youtube_upload_issue: str | None = None
+    tiktok_upload_issue: str | None = None
     automatic_repair_available: bool = False
     monetization_strategy: list[str] = Field(default_factory=list)
     is_correct: bool = False
@@ -2719,6 +2720,7 @@ class LongProductionControlRequest(BaseModel):
     daily_target: int = Field(default=1, ge=1, le=3)
     auto_qc_enabled: bool | None = None
     auto_qc_private_upload: bool | None = None
+    auto_qc_tiktok_upload: bool | None = None
 
 
 class ViralVideoSearchRequest(BaseModel):
@@ -4199,6 +4201,7 @@ def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
             "render_qc_blocking": render_qc_blocking if isinstance(render_qc_blocking, bool) else None,
             "youtube_upload_ready": issue is None,
             "youtube_upload_issue": issue,
+            "tiktok_upload_issue": long_tiktok_review_hold(enriched, clip) or issue,
             "automatic_repair_available": automatic_repair_available,
             "monetization_strategy": codex_monetization_strategy(
                 enriched, clip, issue
@@ -10237,6 +10240,8 @@ def build_youtube_restart_verification_command(upload: YouTubeUploadJob) -> list
         str(YOUTUBE_PLAYWRIGHT_STATE),
         "--title",
         upload.title,
+        "--description",
+        upload.description,
         "--visibility",
         upload.visibility,
         "--content-type",
@@ -11257,6 +11262,10 @@ def run_youtube_restart_verification(upload_id: str) -> None:
             youtube_login_refresh_needed(error)
             or "dialog-not-found" in error.casefold()
             or "modal upload tidak ditemukan" in error.casefold()
+            or any(marker in error.casefold() for marker in (
+                "gagal mengisi judul", "gagal mengisi deskripsi",
+                "metadata judul belum terverifikasi", "metadata deskripsi belum terverifikasi",
+            ))
         )
         if (
             code != 0 and not confirmed and upload.video_url
@@ -19802,6 +19811,44 @@ def long_qc_context(job: ClipJob, clip: ClipFile) -> dict[str, Any]:
     }
 
 
+def long_tiktok_review_hold(job: ClipJob, clip: ClipFile) -> str | None:
+    """Explain the Long review hold without treating YouTube success as QC."""
+    if job.request.clip_mode != "highlight_5m" or not job.request.publication_review_required:
+        return None
+    try:
+        path = long_qc_path(job.id, clip.url)
+        record = json.loads(path.read_text()) if path.exists() else {}
+    except (OSError, ValueError):
+        return "Long menunggu pemeriksaan QC sebelum upload TikTok."
+    audit = record.get("audit") or {}
+    if long_video_qc.terminal_provider_rejection(record):
+        return "Long ditahan: sumber ditolak pemeriksaan konten; tidak dikirim ulang otomatis."
+    if audit.get("decision") == "DROP_SOURCE":
+        if any("caption timing" in str(line).casefold() for line in audit.get("evidence", [])):
+            return "Long ditahan QC: waktu subtitle tidak valid atau bertumpuk."
+        return "Long ditahan QC; periksa hasil audit sebelum upload TikTok."
+    if audit.get("decision") == "REPAIR_ONCE":
+        return "Long menunggu satu perbaikan sesuai audit QC sebelum upload TikTok."
+    if audit.get("decision") != "PASS_UPLOAD" or audit.get("upload_allowed") is not True:
+        return "Long menunggu pemeriksaan QC sebelum upload TikTok."
+    return None
+
+
+def sync_long_qc_decision(job_id: str, audit: dict[str, Any]) -> None:
+    decision = audit.get("decision")
+    if decision not in {"PASS_UPLOAD", "REPAIR_ONCE", "DROP_SOURCE"}:
+        return
+    with long_production_lock:
+        state = long_production_state()
+        changed = False
+        for attempt in state.get("attempts", []):
+            if attempt.get("job_id") == job_id and attempt.get("qc_decision") != decision:
+                attempt["qc_decision"] = decision
+                changed = True
+        if changed:
+            save_long_production_state(state)
+
+
 def run_long_qc(job_id: str, clip_url: str) -> None:
     """Review one exact artifact and enqueue only Private, without human-signoff spoofing."""
     key = job_id + "\n" + clip_url
@@ -19814,7 +19861,8 @@ def run_long_qc(job_id: str, clip_url: str) -> None:
         context = long_qc_context(job, clip)
         signature = long_video_qc.fingerprint(media, context)
         record = json.loads(path.read_text()) if path.exists() else {}
-        if record.get("fingerprint") != signature or record.get("status") != "reviewed":
+        if (not long_video_qc.terminal_provider_rejection(record)
+                and (record.get("fingerprint") != signature or record.get("status") != "reviewed")):
             result = long_video_qc.audit_long(media, context)
             record = {**result, "fingerprint": signature, "source_job_id": job_id,
                       "source_clip_url": clip_url, "updated_at": now_iso()}
@@ -19822,20 +19870,16 @@ def run_long_qc(job_id: str, clip_url: str) -> None:
                 record["retry_at"] = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
             save_long_qc(path, record)
         audit = record.get("audit") or {}
-        if audit.get("decision"):
-            with long_production_lock:
-                state = long_production_state()
-                for attempt in state["attempts"]:
-                    if attempt.get("job_id") == job_id:
-                        attempt["qc_decision"] = audit["decision"]
-                save_long_production_state(state)
+        sync_long_qc_decision(job_id, audit)
         # REPAIR_ONCE is a durable editorial handoff. The existing recut
         # executor accepts Shorts only; never send a Long into it or retry it.
         if audit.get("decision") != "PASS_UPLOAD" or audit.get("upload_allowed") is not True:
             return
         with long_production_lock:
             policy = long_production_state()
-        if not policy.get("auto_qc_enabled") or not policy.get("auto_qc_private_upload"):
+        if not policy.get("auto_qc_enabled") or not (
+            policy.get("auto_qc_private_upload") or policy.get("auto_qc_tiktok_upload")
+        ):
             return
         # File, claim, rights and score can change while the model is running.
         job, clip, _ = find_job_clip(job_id, clip_url)
@@ -19848,24 +19892,64 @@ def run_long_qc(job_id: str, clip_url: str) -> None:
             record["upload_hold"] = issue
             save_long_qc(path, record)
             return
-        with youtube_upload_creation_lock:
-            pending = pending_completed_job_upload_urls(job, [clip_url], platform="youtube")
-            if not pending:
-                return
-            require_youtube_ready()
-            upload = create_youtube_upload_record(job_id, YouTubeUploadRequest(
-                clip_url=clip_url, visibility="private",
-            ))
-            # Persist the real queue before the QC pointer. After a crash in
-            # either gap, startup resumes the same ID and pending() blocks a
-            # second upload. Never leave an ID pointing at an unpersisted job.
-            with youtube_uploads_lock:
-                if upload.id not in youtube_uploads:
-                    youtube_uploads[upload.id] = upload
-                save_youtube_uploads_unlocked()
-            record.update(upload_id=upload.id, upload_visibility=upload.visibility)
-            save_long_qc(path, record)
-            queue_youtube_upload_jobs([upload])
+        # Each platform owns an independent checkpoint. A completed YouTube
+        # upload must not return early and starve TikTok.
+        if policy.get("auto_qc_private_upload"):
+            try:
+                with youtube_upload_creation_lock:
+                    pending = pending_completed_job_upload_urls(job, [clip_url], platform="youtube")
+                    if pending:
+                        require_youtube_ready()
+                        upload = create_youtube_upload_record(job_id, YouTubeUploadRequest(
+                            clip_url=clip_url, visibility="private",
+                        ))
+                        with youtube_uploads_lock:
+                            if upload.id not in youtube_uploads:
+                                youtube_uploads[upload.id] = upload
+                            save_youtube_uploads_unlocked()
+                        record.update(upload_id=upload.id, upload_visibility=upload.visibility)
+                        record.pop("youtube_worker_error", None)
+                        save_long_qc(path, record)
+                        queue_youtube_upload_jobs([upload])
+            except Exception as exc:
+                record["youtube_worker_error"] = type(exc).__name__
+                record["retry_at"] = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+                save_long_qc(path, record)
+        if policy.get("auto_qc_tiktok_upload"):
+            try:
+                with tiktok_upload_creation_lock:
+                    pending = pending_completed_job_upload_urls(job, [clip_url], platform="tiktok")
+                    if pending:
+                        require_tiktok_ready()
+                        if tiktok_login_is_active():
+                            raise RuntimeError("TikTok login is active")
+                        live_job, live_clip, _ = find_job_clip(job_id, clip_url)
+                        if long_video_qc.fingerprint(media, long_qc_context(live_job, live_clip)) != signature:
+                            record.update(status="evidence_changed", audit=None)
+                            save_long_qc(path, record)
+                            return
+                        live_issue = youtube_monetization_preflight_issue(live_job, live_clip)
+                        if live_issue:
+                            record["upload_hold"] = live_issue
+                            save_long_qc(path, record)
+                            return
+                        upload = create_tiktok_upload_record(job_id, TikTokUploadRequest(
+                            clip_url=clip_url, visibility="only_you",
+                        ), allow_audited_automation=True)
+                        # Persist before the QC pointer and before starting
+                        # the worker so a crash cannot mint a new submission.
+                        with tiktok_uploads_lock:
+                            if upload.id not in tiktok_uploads:
+                                tiktok_uploads[upload.id] = upload
+                            save_tiktok_uploads_unlocked()
+                        record.update(tiktok_upload_id=upload.id, tiktok_upload_visibility=upload.visibility)
+                        record.pop("tiktok_worker_error", None)
+                        save_long_qc(path, record)
+                        queue_tiktok_upload_jobs([upload])
+            except Exception as exc:
+                record["tiktok_worker_error"] = type(exc).__name__
+                record["retry_at"] = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+                save_long_qc(path, record)
     except Exception as exc:
         # Do not lose a completed audit or an unknown remote checkpoint.
         record = json.loads(path.read_text()) if path.exists() else {}
@@ -19891,7 +19975,8 @@ def queue_review_long_qc_once() -> int:
             record = json.loads(path.read_text()) if path.exists() else {}
             if record.get("retry_at") and parse_utc_datetime(record["retry_at"]) > datetime.now(timezone.utc):
                 continue
-            if record.get("upload_id"):
+            if long_video_qc.terminal_provider_rejection(record):
+                sync_long_qc_decision(job.id, record.get("audit") or {})
                 continue
             # All three terminal decisions stay cached while exact evidence
             # remains unchanged. Missing AI retries are rate-limited above.
@@ -19900,9 +19985,15 @@ def queue_review_long_qc_once() -> int:
                 continue
             signature = long_video_qc.fingerprint(media, long_qc_context(job, clip))
             if record.get("status") == "reviewed" and record.get("fingerprint") == signature:
+                sync_long_qc_decision(job.id, record.get("audit") or {})
                 if (record.get("audit") or {}).get("decision") != "PASS_UPLOAD":
                     continue
-                if not state.get("auto_qc_private_upload") or record.get("upload_hold"):
+                if record.get("upload_hold"):
+                    continue
+                if not any(
+                    state.get(setting) and pending_completed_job_upload_urls(job, [clip.url], platform=platform)
+                    for setting, platform in (("auto_qc_private_upload", "youtube"), ("auto_qc_tiktok_upload", "tiktok"))
+                ):
                     continue
             key = job.id + "\n" + clip.url
             with long_qc_lock:
@@ -24490,6 +24581,7 @@ def get_long_production() -> dict[str, Any]:
     state["qc_reviews"] = [json.loads(path.read_text()) for path in sorted(records.glob("*.json"))]
     provider = long_video_qc.provider_config()
     state["qc_vision_configured"] = bool(provider["base_url"] and provider["model"])
+    state["tiktok_qc_upload_supported"] = True
     return state
 
 
@@ -24498,7 +24590,7 @@ def set_long_production(request: LongProductionControlRequest) -> dict[str, Any]
     with long_production_lock:
         state = long_production_state()
         state.update(enabled=request.enabled, daily_target=request.daily_target)
-        for field in ("auto_qc_enabled", "auto_qc_private_upload"):
+        for field in ("auto_qc_enabled", "auto_qc_private_upload", "auto_qc_tiktok_upload"):
             value = getattr(request, field)
             if value is not None:
                 state[field] = value

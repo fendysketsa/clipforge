@@ -17,6 +17,7 @@ import type {
   YouTubeLoginStatus,
   YouTubeUploadJob,
 } from "../types/clip.type";
+import { createQueueSubmitter } from "./queueSubmission";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8010";
 const CLIENT_API_BASE = API_BASE;
@@ -45,6 +46,12 @@ const responseErrorMessage = async (response: Response, fallback: string) => {
   const detail = await response.text().catch(() => "");
   return detail || fallback;
 };
+
+const submitQueuedUpload = createQueueSubmitter(
+  (...args) => fetch(...args),
+  () => typeof window === "undefined" ? null : window.sessionStorage,
+  responseErrorMessage,
+);
 
 export const uploadVideo = async (file: File) => {
   const form = new FormData();
@@ -493,15 +500,7 @@ export const syncYouTubeCdpSession = async () => {
 };
 
 export const createYouTubeUpload = async (jobId: string, clipUrl: string) => {
-  const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}/youtube-uploads`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ clip_url: clipUrl }),
-  });
-  if (!response.ok) {
-    throw new Error(await responseErrorMessage(response, "Failed to queue YouTube upload"));
-  }
-  return (await response.json()) as YouTubeUploadJob;
+  return submitQueuedUpload<YouTubeUploadJob>({ platform: "youtube", jobId, clipUrl, baseUrl: CLIENT_API_BASE });
 };
 
 export const createYouTubeUploadBatch = async (jobId: string, clipUrls: string[] = [], bestCount = 3) => {
@@ -517,15 +516,7 @@ export const createYouTubeUploadBatch = async (jobId: string, clipUrls: string[]
 };
 
 export const createTikTokUpload = async (jobId: string, clipUrl: string) => {
-  const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}/tiktok-uploads`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ clip_url: clipUrl, visibility: "only_you" }),
-  });
-  if (!response.ok) {
-    throw new Error(await responseErrorMessage(response, "Gagal memasukkan upload TikTok"));
-  }
-  return (await response.json()) as TikTokUploadJob;
+  return submitQueuedUpload<TikTokUploadJob>({ platform: "tiktok", jobId, clipUrl, baseUrl: CLIENT_API_BASE });
 };
 
 export const createTikTokUploadBatch = async (jobId: string, clipUrls: string[] = [], bestCount = 2) => {

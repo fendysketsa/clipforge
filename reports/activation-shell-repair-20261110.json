@@ -1,0 +1,15 @@
+{
+  "checked_at": "2026-11-10T00:38:13.779108+00:00",
+  "diagnosis": "A running Bash activation continued reading an edited source file after the idle wait; live-edit syntax error reproduced in regression test.",
+  "repair": "Validated in-memory execution snapshot for each activation entry point.",
+  "scripts": [
+    "scripts/activate-youtube-quiet-check.sh",
+    "scripts/activate-cron-director-effects.sh",
+    "scripts/activate-long-tiktok-upload.sh",
+    "scripts/activate-history-card-layout.sh"
+  ],
+  "tests_passed": 70,
+  "shell_syntax": "pass",
+  "runtime_activation_claimed": false,
+  "retry_command": "sudo bash /www/wwwroot/clipper/clipforge/scripts/activate-long-tiktok-upload.sh --skip-build --force-active"
+}

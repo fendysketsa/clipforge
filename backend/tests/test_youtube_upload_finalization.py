@@ -248,7 +248,8 @@ def test_optional_tags_do_not_strand_upload_as_draft(monkeypatch):
 
 
 @pytest.mark.parametrize("identity_matches", [True, False])
-def test_resume_saved_draft_finishes_exact_video_without_reupload(monkeypatch, identity_matches):
+@pytest.mark.parametrize("initial_step", ["DETAILS", "VIDEO_ELEMENTS", "CHECKS", "REVIEW"])
+def test_resume_saved_draft_finishes_exact_video_without_reupload(monkeypatch, identity_matches, initial_step):
     class DraftPage:
         def __init__(self):
             self.goto_calls = []
@@ -257,13 +258,21 @@ def test_resume_saved_draft_finishes_exact_video_without_reupload(monkeypatch, i
             self.goto_calls.append((url, kwargs))
 
     page = DraftPage()
-    state = {"step": "DETAILS"}
+    state = {"step": initial_step}
     video_url = "https://www.youtube.com/watch?v=abcDEF12345"
     events = []
 
     monkeypatch.setattr(youtube_uploader, "ensure_logged_in", lambda _page: None)
     monkeypatch.setattr(youtube_uploader, "active_upload_dialog_text", lambda *_args, **_kwargs: "draft")
     monkeypatch.setattr(youtube_uploader, "get_upload_workflow_step", lambda _page: state["step"])
+    monkeypatch.setattr(youtube_uploader, "ensure_upload_metadata_fields", lambda _page, title, description:
+        events.append(("metadata", title, description)))
+    def back(_page, patterns, **kwargs):
+        assert r"^back$" in patterns
+        state['step'] = {'REVIEW':'CHECKS', 'CHECKS':'VIDEO_ELEMENTS', 'VIDEO_ELEMENTS':'DETAILS'}[state['step']]
+        events.append(('back',state['step']))
+    monkeypatch.setattr(youtube_uploader, 'click_text', back)
+    monkeypatch.setattr(youtube_uploader, 'wait_for_upload_workflow_step', lambda _page, expected, **kwargs: state['step'])
     monkeypatch.setattr(
         youtube_uploader,
         "fill_optional_tags",
@@ -287,7 +296,7 @@ def test_resume_saved_draft_finishes_exact_video_without_reupload(monkeypatch, i
 
     if not identity_matches:
         with pytest.raises(UploadError, match="ID draft aktif berubah"):
-            resume_saved_draft_and_finalize(page, "Draft title", "public", video_url=video_url, timeout_ms=1000)
+            resume_saved_draft_and_finalize(page, "Draft title", "public", video_url=video_url, description="Reviewed description", timeout_ms=1000)
         assert not any(event[0] in {"visibility", "final"} for event in events)
         return
 
@@ -296,13 +305,18 @@ def test_resume_saved_draft_finishes_exact_video_without_reupload(monkeypatch, i
         "Draft title",
         "public",
         video_url=video_url,
+        description="Reviewed description",
         tags="Islam, Shorts",
         content_type="shorts",
         timeout_ms=1000,
     ) == video_url
     assert page.goto_calls[0][0] == "https://studio.youtube.com/video/abcDEF12345/edit"
-    assert events == [
+    backwards = {'DETAILS': [], 'VIDEO_ELEMENTS': [('back','DETAILS')],
+        'CHECKS': [('back','VIDEO_ELEMENTS'),('back','DETAILS')],
+        'REVIEW': [('back','CHECKS'),('back','VIDEO_ELEMENTS'),('back','DETAILS')]}[initial_step]
+    assert events == backwards + [
         ("tags", "Islam, Shorts"),
+        ("metadata", "Draft title", "Reviewed description"),
         ("next", "VIDEO_ELEMENTS"),
         ("next", "CHECKS"),
         ("next", "REVIEW"),

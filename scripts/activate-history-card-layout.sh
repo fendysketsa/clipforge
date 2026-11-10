@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 # Install the reviewed frontend and verify the assets served by port 3000.
 set -euo pipefail
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+activation_script_path="$(realpath -- "${BASH_SOURCE[0]:-$0}")"
+if [[ "${CLIPFORGE_ACTIVATION_SNAPSHOT:-}" != "$activation_script_path" ]]; then
+  activation_script_text="$(< "$activation_script_path")"
+  bash -n <<< "$activation_script_text"
+  export CLIPFORGE_ACTIVATION_SNAPSHOT="$activation_script_path"
+  exec bash -c "$activation_script_text" "$activation_script_path" "$@"
+fi
+unset CLIPFORGE_ACTIVATION_SNAPSHOT
+SCRIPT_DIR="$(cd -- "$(dirname -- "$activation_script_path")" && pwd)"
 PROJECT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 FRONTEND_CONTAINER="fendy-clipper-frontend"
 BUILD_DIR="$PROJECT_DIR/frontend/${CLIPFORGE_BUILD_DIR:-.next-history}"

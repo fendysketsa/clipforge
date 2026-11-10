@@ -1,0 +1,24 @@
+{
+  "video_id": "y5_Wt18PKdI",
+  "new_file_selected": false,
+  "visibility_change_requested": false,
+  "network": [
+    {
+      "path": "/youtubei/v1/security/get_web_reauth_url",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/video_manager/metadata_update",
+      "status": 200
+    }
+  ],
+  "before": {
+    "title": "mau main drum malah mencari sumber bunyinya",
+    "description": "",
+    "visibility": "Visibilitas\nPublik"
+  },
+  "metadata_save_http_status": 200,
+  "error": "Locator.wait_for: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"#title-textarea #textbox\").first to be visible\n",
+  "page_text": "Sempurnakan pengalaman Anda\nAnda menggunakan browser yang tidak didukung atau versi browser lama yang dapat menyebabkan performa YouTube Studio menjadi lambat atau tidak dapat diandalkan. Harap update browser Anda atau coba versi terbaru dari salah satu browser ini.\nFirefox\nMozilla\nChrome\nGoogle\nOpera\nOpera Software\nEdge\nMicrosoft\nSafari\nApple\nLANGSUNG KE YOUTUBE STUDIO",
+  "checked_at": "2026-11-10T00:55:28.476248+00:00"
+}

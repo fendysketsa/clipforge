@@ -99,6 +99,11 @@ def tick():
             if row.get('upload_outcome_unknown') or row.get('upload_id'):
                 row['status'] = 'needs_remote_verification'
                 continue
+            if (job['request'].get('clip_mode') == 'highlight_5m'
+                    and job['request'].get('publication_review_required')):
+                # Native Long QC owns both platforms; do not bypass its hold.
+                row.update(status='waiting_for_long_qc', error=None)
+                continue
             if row.get('retry_after_epoch', 0) > time.time():
                 continue
             if clip.get('youtube_upload_ready') is False:

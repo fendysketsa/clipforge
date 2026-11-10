@@ -158,14 +158,15 @@ def test_recovery_wrapper_forwards_help_without_docker_or_root():
 
 
 @pytest.mark.parametrize("flag", ["--help", "-h"])
-def test_director_wrapper_help_does_not_probe_backend_or_docker(tmp_path, flag):
+@pytest.mark.parametrize("wrapper", ["activate-cron-director-effects.sh", "activate-long-tiktok-upload.sh"])
+def test_director_wrapper_help_does_not_probe_backend_or_docker(tmp_path, flag, wrapper):
     # A child printing help and exiting 0 must not trigger post-activation checks.
     for name in ("python", "docker"):
         binary = tmp_path / name
         binary.write_text("#!/bin/sh\nexit 99\n")
         binary.chmod(0o755)
     result = subprocess.run(
-        ["bash", str(ROOT / "scripts/activate-cron-director-effects.sh"), flag],
+        ["bash", str(ROOT / "scripts" / wrapper), flag],
         env={**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"]},
         capture_output=True, text=True,
     )

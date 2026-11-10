@@ -1,0 +1,73 @@
+{
+  "verified_at": "2026-11-10T03:58:55.033820+00:00",
+  "build_id": "AhR6UoVCWhZInOD7ipw05",
+  "state": "built_and_browser_verified_activation_pending",
+  "preview_port": 3012,
+  "browser": {
+    "fixture_only": true,
+    "mutations_blocked": [],
+    "viewports": [
+      {
+        "width": 1920,
+        "scrollWidth": 1920,
+        "columns": 3,
+        "cards": 3
+      },
+      {
+        "width": 1280,
+        "scrollWidth": 1280,
+        "columns": 3,
+        "cards": 3
+      },
+      {
+        "width": 390,
+        "scrollWidth": 390,
+        "columns": 1,
+        "cards": 3
+      },
+      {
+        "width": 320,
+        "scrollWidth": 320,
+        "columns": 1,
+        "cards": 3
+      }
+    ],
+    "page_errors": [],
+    "initial_labels": [
+      "YouTubeMengunggah · 1/32 video menunggu setelah ini",
+      "TikTokAntrean 1/3Giliran berikutnya",
+      "YouTubeAntrean 2/31 video di depan",
+      "TikTokAntrean 2/31 video di depan",
+      "YouTubeAntrean 3/32 video di depan",
+      "TikTokAntrean 3/32 video di depan"
+    ],
+    "queue_advanced_without_reload": true
+  },
+  "tests": {
+    "frontend_submission": 7,
+    "frontend_queue_order": 3,
+    "backend_tiktok_and_store_isolation": 121,
+    "activation_snapshot": 7
+  },
+  "source_sha256": {
+    "frontend/lib/uploadQueue.ts": "44c11ba0458a0f96483b4697eb96a22f273050afffb27f4a9df6234d3b694fbf",
+    "frontend/lib/queueSubmission.ts": "901b25ec34fffc6aebc9a709098652e736492faf8e01c25b311ddf5f4ec01aa9",
+    "frontend/lib/apiClient.ts": "c3dea35af2501fbda28274c927d5915e7cde22df4eb91928f143d9e2efb82861",
+    "frontend/app/_components/HistorySection.tsx": "dc262b4bda8e3ebf904c4492e2b18db6cf221ddd5cc13b17113499ace1b496bf",
+    "frontend/app/_components/ResultsSection.tsx": "a2a65aae5353745c20c27f474cd9876cffa16ebf1bc6d4679b9901f05f4eca24",
+    "frontend/app/globals.css": "4af0a349c644feb21a75ecda2788167a55991fb4731329303b27a901fe90f73b",
+    "scripts/activate-upload-queue-ui.sh": "bda3a68e46f16dddbae265072f55c46c4f1409d73e069e7d6245b53936346fac"
+  },
+  "deployment_command": "sudo bash /www/wwwroot/clipper/clipforge/scripts/activate-upload-queue-ui.sh",
+  "backend_restart_required": false,
+  "network_incident": {
+    "historical_failed_fetch_reproduced": false,
+    "controlled_single_submission_succeeded": true,
+    "new_upload_id": "9df70aeceb4d4d44a5fef28b2057bc8b",
+    "upload_confirmed": true,
+    "video_url": "https://www.youtube.com/watch?v=PFVPqg4vlTs",
+    "visibility": "private",
+    "unused_same_origin_proxy_health_http_status": 502,
+    "proxy_repair_claimed": false
+  }
+}

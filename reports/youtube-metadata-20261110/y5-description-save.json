@@ -1,0 +1,85 @@
+{
+  "video_id": "y5_Wt18PKdI",
+  "file_selected": false,
+  "visibility_changed": false,
+  "network": [
+    {
+      "path": "/youtubei/v1/att/get",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/creator/get_creator_communications",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/notification/get_unseen_count",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/creator/get_creator_communications",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/creator/get_creator_videos",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/get_creator_social_suggestions",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/get_creator_social_suggestions",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/creator/list_creator_playlists",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/post/list_creator_posts",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/upload/feedback",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/promotions/get_account",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/creator/get_creator_videos",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/feature_eligibility/check_feature_rate_limit",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/feature_eligibility/check_feature_rate_limit",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/crowdsourcing/get_video_translations",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/crowdsourcing/get_video_translations",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/log_event",
+      "status": 200
+    },
+    {
+      "path": "/youtubei/v1/get_survey",
+      "status": 200
+    }
+  ],
+  "title": "mau main drum malah mencari sumber bunyinya",
+  "description_before": "",
+  "visibility": "Visibilitas\nPublik",
+  "error": "Locator.click: Timeout 10000ms exceeded.\nCall log:\n  - waiting for locator(\"#description-textarea #textbox\").first\n    - locator resolved to <div id=\"textbox\" slot=\"input\" tabindex=\"0\" role=\"textbox\" aria-invalid=\"false\" aria-disabled=\"false\" aria-required=\"false\" contenteditable=\"true\" class=\"style-scope ytcp-social-suggestions-textbox\" aria-label=\"Beri tahu penonton tentang video Anda (ketik @ untuk menyebutkan channel)\"></div>\n  - attempting click action\n    - waiting for element to be visible, enabled and stable\n",
+  "error_body": "Lewati navigasi\nMinta Studio\nBuat\nKonten channel\n0.30\nVideo Anda\nmau main drum malah mencari sumber bunyinya\nDetail\nAnalytics\nEditor\nKomentar\nBahasa\nKlaim\nKlip dan Video Shorts\nSetelan\nKirim masukan\nDetail video\nUrungkan perubahan\nSimpan\nJudul (wajib diisi)\nmau main drum malah mencari sumber bunyinya\nHashtag yang disarankan\nDeskripsi\nThumbnail\nGunakan thumbnail yang menarik dan memikat perhatian penonton. Pelajari lebih lanjut\nUpload file\nPilih dari video\nDapatkan saran\nPlaylist\nTambahkan video Anda ke satu atau beberapa playlist untuk menata konten Anda bagi penonton. Pelajari lebih lanjut\nPilih\nAudiens\nVideo ini ditetapkan sebagai Tidak Dibuat untuk Anak-Anak \nDitetapkan oleh Anda\nDi mana pun Anda berada, Anda diwajibkan secara hukum untuk mematuhi Children's Online Privacy Protection Act (COPPA) dan/atau peraturan lainnya. Anda diwajibkan untuk memberi tahu kami apakah video Anda Dibuat untuk Anak-Anak atau tidak. Apa yang dimaksud dengan konten yang Dibuat untuk Anak-Anak?\nFitur seperti iklan yang dipersonalisasi dan notifikasi tidak akan tersedia di video yang Dibuat untuk Anak-Anak. Video yang ditetapkan sebagai Dibuat untuk Anak-Anak oleh Anda lebih mungkin direkomendasikan bersama video anak-anak lainnya. Pelajari lebih lanjut\nYa, video ini Dibuat untuk Anak-Anak\n.\nFitur seperti iklan yang dipersonalisasi dan notifikasi tidak akan tersedia di video yang Dibuat untuk Anak-Anak. Video yang ditetapkan sebagai Dibuat untuk Anak-Anak oleh Anda lebih mungkin direkomendasikan bersama video anak-anak lainnya. Pelajari lebih lanjut\nTidak, video ini tidak Dibuat untuk Anak-Anak\nPembatasan usia\nTampilkan lebih banyak\nPromosi berbayar, kolaborasi, dan lainnya\n \n0:00 / 0:30\nLink video\nhttps://youtube.com/shorts/y5_Wt18PKdI\nNama file\nclip_01_mau-main-drum-malah-mencari-sumber-bunyinya.mp4\nKualitas video\nPemberitahuan\n—\nVisibilitas\nPublik\nVideo terkait\nTidak ada\nSubtitel",
+  "checked_at": "2026-11-10T00:49:17.340949+00:00"
+}

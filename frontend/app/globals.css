@@ -1483,6 +1483,16 @@ h2 {
   flex: 0 0 auto;
 }
 
+.jobPlatformHold,
+.jobPlatformQueue {
+  color: var(--text-secondary);
+  font-size: 9.5px;
+  font-style: normal;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
 .jobPlatformStatus > span {
   display: grid;
   width: 100%;

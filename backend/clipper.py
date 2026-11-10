@@ -5290,8 +5290,9 @@ def streamer_crop_filter(video_path: Path, clip: ClipCandidate, cam_corner: str)
 
 def seconds_to_stamp(seconds: float, srt: bool = False) -> str:
     seconds = max(0, seconds)
-    millis = int(round((seconds - math.floor(seconds)) * 1000))
-    whole = int(math.floor(seconds))
+    # Round before splitting so 96.9999 becomes 00:01:37,000,
+    # rather than emitting the invalid four-digit suffix 00:01:36,1000.
+    whole, millis = divmod(int(round(seconds * 1000)), 1000)
     h = whole // 3600
     m = (whole % 3600) // 60
     s = whole % 60

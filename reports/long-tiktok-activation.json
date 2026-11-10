@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "daily_target": 1,
+  "auto_qc_enabled": true,
+  "auto_qc_private_upload": true,
+  "auto_qc_tiktok_upload": true,
+  "tiktok_qc_upload_supported": true,
+  "production": {
+    "status": "waiting_for_qc",
+    "job_id": "ba8226bb1e104699a20b36a285001d24"
+  },
+  "frontend_long_tiktok_status_verified": true
+}

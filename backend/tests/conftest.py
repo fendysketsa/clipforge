@@ -17,6 +17,9 @@ def isolate_runtime_state_files(monkeypatch, tmp_path):
         monkeypatch.setattr(api, "AUTO_VIRAL_SCHEDULE_CONTROL_PATH", tmp_path / "schedule_control.json")
         monkeypatch.setattr(api, "JOBS_PATH", tmp_path / "jobs.json")
         monkeypatch.setattr(api, "YOUTUBE_UPLOADS_PATH", tmp_path / "youtube_uploads.json")
+        monkeypatch.setattr(api, "TIKTOK_UPLOADS_PATH", tmp_path / "tiktok_uploads.json")
+        monkeypatch.setattr(api, "YOUTUBE_PLAYWRIGHT_STATE", tmp_path / "youtube_storage_state.json")
+        monkeypatch.setattr(api, "TIKTOK_PLAYWRIGHT_STATE", tmp_path / "tiktok_storage_state.json")
         monkeypatch.setattr(
             api,
             "PROCESSED_SOURCE_HISTORY_PATH",

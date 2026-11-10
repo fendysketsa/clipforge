@@ -15,7 +15,7 @@ def intake(monkeypatch, tmp_path):
     monkeypatch.setattr(module, 'PUBLIC_STATE', tmp_path / 'public/status.json')
     module.POLICY.write_text(json.dumps(dict(enabled=True, visibility='private', follow_completed_jobs=True)))
     state = dict(uploads=[], calls=[], jobs=[dict(id='long', created_at='2026-11-09', status='completed',
-        request=dict(clip_mode='highlight_5m', publication_review_required=True),
+        request=dict(clip_mode='highlight_5m', publication_review_required=False),
         clips=[dict(url='/outputs/long.mp4', youtube_upload_ready=True)])])
     def request(path, payload=None):
         if path == '/api/jobs': return state['jobs']
@@ -29,10 +29,20 @@ def intake(monkeypatch, tmp_path):
     return module, state
 
 
-def test_long_private_intake_keeps_review_flag_and_is_idempotent(intake):
+def test_non_review_long_private_intake_is_idempotent(intake):
     module, state = intake
     module.tick(); module.tick()
     assert state['calls'] == [dict(clip_url='/outputs/long.mp4', visibility='private')]
+    assert state['jobs'][0]['request']['publication_review_required'] is False
+
+
+def test_review_long_is_owned_by_native_qc_and_cannot_bypass_rejection(intake):
+    module, state = intake
+    state['jobs'][0]['request']['publication_review_required'] = True
+    module.tick(); module.tick()
+    assert not state['calls']
+    row = next(iter(json.loads(module.STATE.read_text())['clips'].values()))
+    assert row['status'] == 'waiting_for_long_qc'
     assert state['jobs'][0]['request']['publication_review_required'] is True
 
 

@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 # Deploy the cron-only director and renderer after active jobs/uploads drain.
 set -euo pipefail
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+activation_script_path="$(realpath -- "${BASH_SOURCE[0]:-$0}")"
+if [[ "${CLIPFORGE_ACTIVATION_SNAPSHOT:-}" != "$activation_script_path" ]]; then
+  activation_script_text="$(< "$activation_script_path")"
+  bash -n <<< "$activation_script_text"
+  export CLIPFORGE_ACTIVATION_SNAPSHOT="$activation_script_path"
+  exec bash -c "$activation_script_text" "$activation_script_path" "$@"
+fi
+unset CLIPFORGE_ACTIVATION_SNAPSHOT
+ROOT_DIR="$(cd -- "$(dirname -- "$activation_script_path")/.." && pwd)"
 for argument in "$@"; do
   if [[ "$argument" == --help || "$argument" == -h ]]; then
     exec bash "$ROOT_DIR/scripts/activate-youtube-quiet-check.sh" --help

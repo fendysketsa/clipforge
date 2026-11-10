@@ -3,7 +3,7 @@ import api
 import pytest
 
 
-@pytest.mark.parametrize('outcome', ['confirmed', 'unconfirmed', 'failed', 'claim', 'wrong_id', 'no_saved_session', 'already_attempted', 'legacy_log_marker'])
+@pytest.mark.parametrize('outcome', ['confirmed', 'unconfirmed', 'failed', 'claim', 'wrong_id', 'no_saved_session', 'already_attempted', 'legacy_log_marker', 'metadata_field_not_ready', 'empty_metadata', 'filename_title'])
 def test_verification_fallback_keeps_exact_id_without_file_selection(monkeypatch, tmp_path, outcome):
     url = 'https://www.youtube.com/watch?v=abcDEF12345'
     upload = api.YouTubeUploadJob(id='verify-existing', source_job_id='job',
@@ -27,7 +27,12 @@ def test_verification_fallback_keeps_exact_id_without_file_selection(monkeypatch
         attempts.append(True)
         if len(attempts) == 1:
             if outcome == 'claim': on_line(api.YOUTUBE_CLAIM_ABORT_PREFIX + ' explicit copyright block')
-            on_line('USER_ERROR: Tombol Berikutnya/Next modal upload tidak ditemukan; dialog-not-found')
+            messages = {
+                'metadata_field_not_ready':'Gagal mengisi judul dengan benar di tab Detail YouTube Studio.',
+                'empty_metadata':'Metadata ditahan: deskripsi tersimpan masih kosong; finalisasi tidak dijalankan.',
+                'filename_title':'Metadata ditahan: judul kosong atau masih memakai nama file internal clip/klip.',
+            }
+            on_line('USER_ERROR: ' + messages.get(outcome,'Tombol Berikutnya/Next modal upload tidak ditemukan; dialog-not-found'))
             return 1, False
         assert '--use-cdp' not in commands[-1] and '--cdp-url' not in commands[-1]
         assert commands[-1][commands[-1].index('--video-url') + 1] == url
@@ -47,7 +52,7 @@ def test_verification_fallback_keeps_exact_id_without_file_selection(monkeypatch
     api.run_youtube_restart_verification(upload.id)
     result = api.youtube_uploads[upload.id]
     assert result.video_url == url
-    expected_attempts = 1 if outcome in {'claim', 'no_saved_session', 'already_attempted', 'legacy_log_marker'} else 2
+    expected_attempts = 1 if outcome in {'claim', 'no_saved_session', 'already_attempted', 'legacy_log_marker', 'empty_metadata', 'filename_title'} else 2
     assert len(commands) == expected_attempts
     if expected_attempts == 2: assert result.storage_state_verification_attempted is True
     assert result.status == ('completed' if outcome == 'confirmed' else 'failed')

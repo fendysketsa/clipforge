@@ -24,6 +24,7 @@ import { getOutputUrl } from "../../lib/apiClient";
 import { VIRAL_QUALITY_FLOOR } from "../../lib/constants";
 import { clipDisplayTitle, handleCopyTitle, handleDownload } from "../../lib/utils";
 import type { ClipFile, TikTokUploadJob, YouTubeUploadJob } from "../../types/clip.type";
+import { uploadQueuePosition } from "../../lib/uploadQueue";
 
 const COMPLETED_UPLOAD_STATUS_TTL_MS = 30_000;
 const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
@@ -831,17 +832,15 @@ export function ResultsSection({
             const isAlreadyOnTikTok = latestTikTokUpload?.status === "completed" && latestTikTokUpload.upload_confirmed;
             const shouldRetryTikTokUpload = isTikTokFileTransferError(latestTikTokUpload?.error)
               || !tiktokUploadErrorNeedsSessionRepair(latestTikTokUpload?.error);
-            const hasRunningUpload = youtubeUploads.some((upload) => upload.status === "running");
+            const youtubeQueue = uploadQueuePosition(latestUpload, youtubeUploads);
+            const tiktokQueue = uploadQueuePosition(latestTikTokUpload, tiktokUploads);
             const runningStage = latestUpload ? youtubeRunningStage(latestUpload) : "";
             const queuePosition = latestUpload?.status === "queued"
-              ? latestUpload.queue_position ?? null
+              ? youtubeQueue?.position ?? null
               : null;
             const queueTotal = latestUpload?.status === "queued"
-              ? latestUpload.queue_total ?? null
+              ? youtubeQueue?.total ?? null
               : null;
-            const processTurn = queuePosition === null
-              ? null
-              : queuePosition + (hasRunningUpload ? 1 : 0);
             const showLatestUploadStatus = Boolean(
               latestUpload && completedUploadStatusIsVisible(latestUpload, uploadStatusNow),
             );
@@ -1221,8 +1220,8 @@ export function ResultsSection({
                         {latestUpload.status === "queued" && queuePosition !== null
                           ? ` · antrean ${queuePosition} dari ${queueTotal ?? queuePosition}`
                           : null}
-                        {latestUpload.status === "queued" && processTurn !== null
-                          ? ` · giliran proses ke-${processTurn}`
+                        {latestUpload.status === "queued" && youtubeQueue
+                          ? ` · ${youtubeQueue.hint}`
                           : null}
                         {latestUpload.status === "completed"
                           ? latestUpload.clip_delete_error
@@ -1249,7 +1248,7 @@ export function ResultsSection({
                       {latestUpload.status === "queued" && queuePosition !== null ? (
                         <span
                           className="queuePositionBadge"
-                          title={`${queuePosition - 1} antrean menunggu di depan${hasRunningUpload ? ", 1 upload sedang diproses" : ""}`}
+                          title={youtubeQueue?.hint}
                         >
                           #{queuePosition}/{queueTotal ?? queuePosition}
                         </span>
@@ -1401,8 +1400,8 @@ export function ResultsSection({
                         {latestTikTokUpload.status === "completed" && latestTikTokUpload.upload_confirmed
                           ? " · tersimpan Only you"
                           : null}
-                        {latestTikTokUpload.status === "queued" && latestTikTokUpload.queue_position
-                          ? ` · antrean ${latestTikTokUpload.queue_position}/${latestTikTokUpload.queue_total ?? latestTikTokUpload.queue_position}`
+                        {latestTikTokUpload.status === "queued" && tiktokQueue?.position
+                          ? ` · antrean ${tiktokQueue.position}/${tiktokQueue.total} · ${tiktokQueue.hint}`
                           : null}
                         {latestTikTokUpload.profile_url ? (
                           <> · <a href={latestTikTokUpload.profile_url} target="_blank" rel="noreferrer">profil</a></>

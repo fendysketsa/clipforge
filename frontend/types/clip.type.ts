@@ -82,6 +82,7 @@ export type ClipFile = {
   tiktok_series_identity_embedded?: boolean;
   youtube_upload_ready?: boolean | null;
   youtube_upload_issue?: string | null;
+  tiktok_upload_issue?: string | null;
   automatic_repair_available?: boolean;
   monetization_strategy?: string[];
   is_correct: boolean;

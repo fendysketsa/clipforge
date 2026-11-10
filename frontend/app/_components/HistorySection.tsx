@@ -7,6 +7,7 @@ import { statusCopy, statusIcon } from "../../lib/constants";
 import { formatDuration, jobElapsedSeconds } from "../../lib/utils";
 import type { ClipJob, JobStatus, TikTokUploadJob, YouTubeUploadJob } from "../../types/clip.type";
 import {articleText, articleFilmText, isArticlePresenterPrompt} from "../../lib/storyInput";
+import { uploadQueuePosition } from "../../lib/uploadQueue";
 
 function jobFormat(job: ClipJob) {
   if (job.request.clip_mode === "highlight_5m") {
@@ -42,6 +43,7 @@ type PlatformUploadSummary = {
   state: PlatformUploadState;
   label: string;
   title: string;
+  queueHint?: string;
 };
 
 type AutomaticIntake = {
@@ -54,6 +56,9 @@ function intakeSummary(job: ClipJob, intake: AutomaticIntake | null): PlatformUp
   if (!intake?.enabled) return null;
   const rows = intake.clips?.filter((row) => row.source_job_id === job.id) ?? [];
   if (!rows.length) return null;
+  if (rows.some((row) => row.status === "waiting_for_long_qc")) {
+    return { state: "unverified", label: "Menunggu QC Long", title: "Video menunggu audit kualitas sebelum upload otomatis." };
+  }
   if (rows.some((row) => row.status === "preflight_hold")) {
     return { state: "unverified", label: "Tertahan pemeriksaan", title: "Upload otomatis menunggu pemeriksaan file atau metadata backend." };
   }
@@ -96,17 +101,25 @@ function uploadSummary<T extends PlatformUpload>(
   const failed = latest.find((upload) => upload.status === "failed");
 
   if (statuses.has("running")) {
+    const queue = uploadQueuePosition(latest.find((upload) => upload.status === "running"), uploads);
     return {
       state: "running",
-      label: verified ? `Mengunggah · ${verified}/${total} terverifikasi` : "Sedang mengunggah",
+      label: queue?.position ? `Mengunggah · ${queue.position}/${queue.total}`
+        : verified ? `Mengunggah · ${verified}/${total} terverifikasi` : "Sedang mengunggah",
       title: "Upload sedang berlangsung dan belum seluruhnya terverifikasi.",
+      queueHint: queue?.hint,
     };
   }
   if (statuses.has("queued")) {
+    const next = latest.filter((upload) => upload.status === "queued")
+      .sort((left, right) => (left.queue_position ?? Infinity) - (right.queue_position ?? Infinity))[0];
+    const queue = uploadQueuePosition(next, uploads);
     return {
       state: "queued",
-      label: verified ? `Antrean · ${verified}/${total} terverifikasi` : "Menunggu antrean",
-      title: "Upload sudah masuk antrean backend.",
+      label: queue?.position ? `Antrean ${queue.position}/${queue.total}`
+        : verified ? `Antrean · ${verified}/${total} terverifikasi` : "Menunggu antrean",
+      title: queue ? `Urutan proses platform ini, termasuk upload aktif. ${queue.hint}.` : "Upload sudah masuk antrean backend.",
+      queueHint: queue?.hint,
     };
   }
   if (failed) {
@@ -289,13 +302,18 @@ export function HistorySection({
           const youtubeSummary = recordedYoutubeSummary && (recordedYoutubeSummary.state === "idle" || recordedYoutubeSummary.state === "failed")
             ? intakeSummary(item, intake) ?? recordedYoutubeSummary
             : recordedYoutubeSummary;
-          const tiktokSummary = item.status === "completed"
+          const recordedTiktokSummary = item.status === "completed"
             ? uploadSummary(
                 item,
                 tiktokUploads,
                 (upload) => upload.status === "completed" && upload.upload_confirmed && !upload.dry_run,
               )
             : null;
+
+          const tiktokHold = item.clips.find((clip) => clip.tiktok_upload_issue)?.tiktok_upload_issue;
+          const tiktokSummary: PlatformUploadSummary | null = recordedTiktokSummary?.state === "idle" && tiktokHold
+            ? { state: "unverified", label: "Tertahan pemeriksaan", title: tiktokHold }
+            : recordedTiktokSummary;
 
           const thumbnail = item.clips.find((clip) => clip.thumbnail_url)?.thumbnail_url;
           const score = Math.max(0, ...item.clips.map((clip) => clip.fyp_score ?? 0));
@@ -389,14 +407,21 @@ export function HistorySection({
                         title={youtubeSummary.title}
                       >
                         <Youtube size={15} />
-                        <span><small>YouTube</small><strong>{youtubeSummary.label}</strong></span>
+                        <span>
+                          <small>YouTube</small><strong>{youtubeSummary.label}</strong>
+                          {youtubeSummary.queueHint ? <em className="jobPlatformQueue">{youtubeSummary.queueHint}</em> : null}
+                        </span>
                       </span>
                       <span
                         className={`jobPlatformStatus state-${tiktokSummary.state}`}
                         title={tiktokSummary.title}
                       >
                         <Music2 size={15} />
-                        <span><small>TikTok</small><strong>{tiktokSummary.label}</strong></span>
+                        <span>
+                          <small>TikTok</small><strong>{tiktokSummary.label}</strong>
+                          {tiktokSummary.queueHint ? <em className="jobPlatformQueue">{tiktokSummary.queueHint}</em> : null}
+                          {recordedTiktokSummary?.state === "idle" && tiktokHold ? <em className="jobPlatformHold">{tiktokHold}</em> : null}
+                        </span>
                       </span>
                     </div>
                   ) : null}

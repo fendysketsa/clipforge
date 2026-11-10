@@ -27,6 +27,16 @@ CHECKS = ("hook", "standalone_clarity", "payoff", "caption", "crop",
           "visual_quality", "audio_quality")
 GATES = ("rights", "media_integrity", "meaning_preserved", "context_safe")
 POLICY_VERSION = 2
+
+
+def terminal_provider_rejection(record: dict) -> bool:
+    """A safety refusal stays terminal even if metadata or providers change."""
+    audit = record.get("audit") or {}
+    return bool(audit.get("decision") == "DROP_SOURCE"
+                and (audit.get("hard_gates") or {}).get("context_safe") is False
+                and any("provider explicitly declined" in str(line).casefold()
+                        and "content safety screening" in str(line).casefold()
+                        for line in audit.get("evidence", [])))
 PROVIDER_CONFIG_PATH = Path(__file__).resolve().parent / "data" / "long_qc_provider.json"
 
 

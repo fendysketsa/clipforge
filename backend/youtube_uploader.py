@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Iterable
@@ -228,6 +229,8 @@ def normalized_upload_metadata(video_path: Path, title: str, description: str) -
 
 
 def upload_title_quality_issue(value: str, *, is_long_form: bool = False) -> str | None:
+    if internal_upload_title(value):
+        return "judul masih memakai nama file internal clip/klip bernomor"
     clean = re.sub(r"(?:\s*#[\w\d_]+)+\s*$", "", value).strip()
     words = re.findall(r"[^\W_]+", clean.casefold(), flags=re.UNICODE)
     maximum_length = 96 if is_long_form else 70
@@ -1428,6 +1431,62 @@ def upload_text_field_contains(
             pass
         time.sleep(0.2)
     return False
+
+
+def internal_upload_title(value: str) -> bool:
+    return bool(re.match(r"^(?:clip|klip)[\s_-]*\d+(?:[\s_.:-]|$)", value.strip(), re.I))
+
+
+def require_reviewed_upload_metadata(title: str, description: str) -> None:
+    if not title.strip() or internal_upload_title(title):
+        raise UploadError("Metadata ditahan: judul kosong atau masih memakai nama file internal clip/klip.")
+    if not description.strip():
+        raise UploadError("Metadata ditahan: deskripsi tersimpan masih kosong; finalisasi tidak dijalankan.")
+
+
+def ensure_upload_metadata_fields(page, title: str, description: str) -> None:
+    """Apply the same two-field gate to initial upload and resumed drafts."""
+    require_reviewed_upload_metadata(title, description)
+    fields = (
+        (title, "judul", "title", (r"(^|\n)(title|judul)(\n|$)", r"add a title", r"tambahkan judul"), (r"description", r"deskripsi")),
+        (description, "deskripsi", "description", (r"(^|\n)(description|deskripsi)(\n|$)", r"tell viewers", r"beri tahu penonton"), (r"(^|\n)(title|judul)(\n|$)",)),
+    )
+    for value, label, kind, patterns, rejects in fields:
+        if not upload_text_field_contains(page, value, patterns, reject_patterns=rejects,
+                                          timeout_ms=1500, field_kind=kind):
+            set_upload_text_field(page, value, label, patterns, reject_patterns=rejects)
+    # Read both after the last edit: a Studio rerender may reset the other field.
+    for value, label, kind, patterns, rejects in fields:
+        if not upload_text_field_contains(page, value, patterns, reject_patterns=rejects,
+                                          timeout_ms=3000, field_kind=kind):
+            raise UploadError(f"Metadata {label} belum terverifikasi; finalisasi ditahan.")
+    log("METADATA_FIELDS_CONFIRMED: judul dan deskripsi sesuai metadata tersimpan.")
+
+
+def verify_saved_video_metadata(page, video_url: str, title: str, description: str) -> None:
+    """Require persisted field values on the exact ID before reporting success."""
+    require_reviewed_upload_metadata(title, description)
+    normalized = normalize_youtube_video_url(video_url)
+    match = re.search(r"[?&]v=([A-Za-z0-9_-]{6,})", normalized or "")
+    if not match:
+        raise UploadError("Metadata tidak dapat diverifikasi tanpa video-id yang valid.")
+    edit_url = f"https://studio.youtube.com/video/{match.group(1)}/edit"
+    page.goto(edit_url, wait_until="domcontentloaded", timeout=30000)
+    ensure_logged_in(page)
+    title_box = page.locator('#title-textarea #textbox').first
+    description_box = page.locator('#description-textarea #textbox').first
+    title_box.wait_for(state="visible", timeout=30000)
+    if page.url.split('?', 1)[0].rstrip('/') != edit_url:
+        raise UploadError("ID halaman metadata berubah; konfirmasi upload ditahan.")
+    def clean(value):
+        text = unicodedata.normalize('NFKC', value)
+        text = re.sub(r'[\u200B-\u200D\u2066-\u2069\uFE00-\uFE0F\uFEFF]', '', text)
+        return ' '.join(text.split()).casefold()
+    actual_title, actual_description = title_box.inner_text(), description_box.inner_text()
+    if internal_upload_title(actual_title) or not actual_description.strip() or (
+            clean(actual_title) != clean(title) or clean(actual_description) != clean(description)):
+        raise UploadError("Metadata tersimpan di Studio belum sesuai: judul/deskripsi perlu diperbaiki; upload belum dikonfirmasi.")
+    log("SAVED_METADATA_CONFIRMED: judul dan deskripsi tersimpan pada video-id yang sama.")
 
 
 def ensure_logged_in(page) -> None:
@@ -6453,12 +6512,14 @@ def resume_saved_draft_and_finalize(
     visibility: str,
     *,
     video_url: str,
+    description: str = "",
     tags: str = "",
     content_type: str = "auto",
     publish_at: str = "",
     timeout_ms: int = 120000,
 ) -> str:
     """Resume one exact Studio draft and finish it without selecting a file."""
+    require_reviewed_upload_metadata(expected_title, description)
     normalized_url = normalize_youtube_video_url(video_url)
     match = re.search(r"[?&]v=([A-Za-z0-9_-]{6,})", normalized_url or "")
     if not match:
@@ -6507,9 +6568,22 @@ def resume_saved_draft_and_finalize(
 
     next_timeout_ms = min(timeout_ms, 120000)
     step = get_upload_workflow_step(page)
+    if not saved_draft_identity_matches(page, video_id):
+        raise UploadError("ID draft aktif berubah; perubahan metadata dihentikan.")
+    # Revisit Details even if an older interrupted worker reached a later step
+    # without completing metadata. Never publish a filename title after restart.
+    for _ in range(3):
+        if step == "DETAILS":
+            break
+        if step not in {"VIDEO_ELEMENTS", "CHECKS", "REVIEW"}:
+            raise UploadError("Tab Detail draft belum dapat diverifikasi; finalisasi ditahan.")
+        previous = {"VIDEO_ELEMENTS": "DETAILS", "CHECKS": "VIDEO_ELEMENTS", "REVIEW": "CHECKS"}[step]
+        click_text(page, (r"^back$", r"^kembali$"), timeout_ms=10000)
+        step = wait_for_upload_workflow_step(page, (previous,), timeout_ms=15000)
     if step == "DETAILS":
         if tags:
             fill_optional_tags(page, tags)
+        ensure_upload_metadata_fields(page, expected_title, description)
         click_next_upload_step(page, timeout_ms=next_timeout_ms, expected_step="VIDEO_ELEMENTS")
         step = get_upload_workflow_step(page)
     if step == "VIDEO_ELEMENTS":
@@ -7132,6 +7206,7 @@ def schedule_saved_video(page, video_url: str, publish_at: str) -> str:
 
 def run_verify_upload(args: argparse.Namespace) -> None:
     """Recover a post-save upload without selecting the local file again."""
+    require_reviewed_upload_metadata(args.title, getattr(args, 'description', ''))
     sync_playwright, _ = import_playwright()
     state_path = Path(args.state).expanduser().resolve()
     if not args.use_cdp and not state_path.is_file():
@@ -7191,6 +7266,8 @@ def run_verify_upload(args: argparse.Namespace) -> None:
                 args.target_channel_id,
             )
             effective_visibility = "scheduled" if args.publish_at else args.visibility
+            if getattr(args, "schedule_existing", False):
+                verify_saved_video_metadata(page, args.video_url, args.title, args.description)
             video_url = schedule_saved_video(page, args.video_url, args.publish_at) if getattr(args, "schedule_existing", False) else verify_saved_video_in_studio(
                 page,
                 args.title,
@@ -7211,6 +7288,7 @@ def run_verify_upload(args: argparse.Namespace) -> None:
                     args.title,
                     args.visibility,
                     video_url=args.video_url,
+                    description=args.description,
                     tags=args.tags,
                     content_type=args.content_type,
                     publish_at=args.publish_at,
@@ -7221,6 +7299,7 @@ def run_verify_upload(args: argparse.Namespace) -> None:
                     "Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; "
                     "file lokal dipertahankan."
                 )
+            verify_saved_video_metadata(page, video_url, args.title, args.description)
             log(f"FINAL_VISIBILITY: {args.visibility}")
             if args.publish_at:
                 log(f"SCHEDULED_PUBLISH_AT: {args.publish_at}")
@@ -7317,6 +7396,7 @@ def run_upload(args: argparse.Namespace) -> None:
         )
 
     upload_title, upload_description = normalized_upload_metadata(video_path, args.title, args.description)
+    require_reviewed_upload_metadata(upload_title, upload_description)
     if env_bool("YOUTUBE_CHANNEL_RECOVERY_MODE", False):
         title_issue = upload_title_quality_issue(
             upload_title,
@@ -7688,6 +7768,7 @@ def run_upload(args: argparse.Namespace) -> None:
             )
             if args.publish_at:
                 final_url = schedule_saved_video(page, final_url, args.publish_at)
+            verify_saved_video_metadata(page, final_url, upload_title, upload_description)
             log("UPLOAD_CONFIRMED: YouTube Studio mengonfirmasi transfer video selesai.")
             if final_url and final_url != uploaded_video_url:
                 log(f"VIDEO_URL: {final_url}")
@@ -7792,6 +7873,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     verify_upload.add_argument("--state", default=str(DEFAULT_STATE_PATH))
     verify_upload.add_argument("--title", required=True)
+    verify_upload.add_argument("--description", default="")
     verify_upload.add_argument("--video-url", default="")
     verify_upload.add_argument("--schedule-existing", action="store_true")
     verify_upload.add_argument("--tags", default="")

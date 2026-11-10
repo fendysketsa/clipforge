@@ -1,0 +1,15 @@
+{
+  "prepared_at": "2026-11-09T23:41:26.911300+00:00",
+  "request": "User explicitly requested forced activation without waiting for idle.",
+  "cancelled_campaign_id": "1cf454d1d5ee41858c1fa901f1d8cc27",
+  "force_mode_tests_passed": 60,
+  "privileged_force_restart_executed": false,
+  "activation_command": "sudo bash /www/wwwroot/clipper/clipforge/scripts/activate-long-tiktok-upload.sh --skip-build --force-active",
+  "preserves": [
+    "existing backend container environment and mounts",
+    "persisted video IDs and Post-intent checkpoints",
+    "media files",
+    "rollback copies of replaced modules"
+  ],
+  "requires": "Interrupt the waiting activation with Ctrl+C before running the forced activation to release its deployment lock."
+}

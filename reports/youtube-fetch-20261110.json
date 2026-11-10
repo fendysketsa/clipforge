@@ -1,0 +1,44 @@
+{
+  "job_id": "0093888d10ba4c7290ab1673be7fd24e",
+  "clip_url": "/outputs/0093888d10ba4c7290ab1673be7fd24e/yuta-mio-dan-baby-celine-digigit-nyamuk-sampai-kurus-roblox/clips/resume_cerita_5menit_apakah-ini-akan-bagus-guys-lihat-nih-ini.mp4",
+  "requested_visibility": "private",
+  "checked_at": "2026-11-10T03:27:46.413264+00:00",
+  "existing_ids": [],
+  "request_outcome_unknown": false,
+  "http_status": 200,
+  "response_headers": {
+    "date": "Tue, 10 Nov 2026 03:27:46 GMT",
+    "server": "uvicorn",
+    "content-length": "3767",
+    "content-type": "application/json",
+    "access-control-allow-credentials": "true",
+    "access-control-allow-origin": "http://localhost:3000",
+    "vary": "Origin",
+    "Connection": "close"
+  },
+  "upload_id": "9df70aeceb4d4d44a5fef28b2057bc8b",
+  "status": "queued",
+  "video_url": null,
+  "records_after_request": [
+    {
+      "id": "9df70aeceb4d4d44a5fef28b2057bc8b",
+      "status": "running",
+      "video_url": null,
+      "created_at": "2026-11-10T03:29:01.365062+00:00",
+      "error": null
+    }
+  ],
+  "verified_outcome": {
+    "id": "9df70aeceb4d4d44a5fef28b2057bc8b",
+    "source_job_id": "0093888d10ba4c7290ab1673be7fd24e",
+    "status": "completed",
+    "upload_confirmed": true,
+    "video_url": "https://www.youtube.com/watch?v=PFVPqg4vlTs",
+    "title": "Memelihara Nyamuk Hingga Bertelur, Akhirnya Harus Dipukul",
+    "visibility": "private",
+    "error": null,
+    "completed_at": null,
+    "updated_at": "2026-11-10T03:33:20.291057+00:00",
+    "metadata_verified": true
+  }
+}

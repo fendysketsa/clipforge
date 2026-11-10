@@ -269,3 +269,137 @@ def test_upload_record_is_durable_before_worker_starts(worker, monkeypatch):
         assert saved[0]['id'] == record['upload_id'] == rows[0].id
     monkeypatch.setattr(api, 'queue_youtube_upload_jobs', start)
     api.run_long_qc(job.id, job.clips[0].url)
+
+
+@pytest.fixture
+def tiktok_long(worker, monkeypatch):
+    job, media, youtube, audit = worker
+    state = api.long_production_state()
+    state['auto_qc_tiktok_upload'] = True
+    api.save_long_production_state(state)
+    monkeypatch.setattr(api, 'require_tiktok_ready', lambda: None)
+    monkeypatch.setattr(api, 'tiktok_login_is_active', lambda: False)
+    created = []
+    def create(job_id, request, *, allow_audited_automation=False):
+        assert request.visibility == 'only_you' and allow_audited_automation
+        row = api.TikTokUploadJob(id='tiktok-long', source_job_id=job_id,
+            clip_url=request.clip_url, clip_name='video.mp4', status='queued',
+            created_at=api.now_iso(), updated_at=api.now_iso(), caption='Test', visibility='only_you', target_handle='test')
+        created.append(row)
+        return row
+    def start(rows):
+        record = json.loads(api.long_qc_path(job.id, job.clips[0].url).read_text())
+        assert rows[0].id in api.tiktok_uploads
+        assert record['tiktok_upload_id'] == rows[0].id
+        saved = json.loads(api.TIKTOK_UPLOADS_PATH.read_text())
+        assert any(row['id'] == rows[0].id for row in saved)
+    monkeypatch.setattr(api, 'create_tiktok_upload_record', create)
+    monkeypatch.setattr(api, 'queue_tiktok_upload_jobs', start)
+    return job, media, youtube, created, audit
+
+
+def confirmed_youtube_for(job):
+    return api.YouTubeUploadJob(id='already-youtube', source_job_id=job.id,
+        clip_url=job.clips[0].url, clip_name='video.mp4', status='completed',
+        created_at=api.now_iso(), updated_at=api.now_iso(), title='Existing',
+        upload_confirmed=True, video_url='https://www.youtube.com/watch?v=abcdefghijk')
+
+
+def test_youtube_success_does_not_starve_tiktok_long_and_restart_cannot_duplicate(tiktok_long):
+    job, _, youtube, tiktok, _ = tiktok_long
+    existing = confirmed_youtube_for(job)
+    api.youtube_uploads[existing.id] = existing
+    api.run_long_qc(job.id, job.clips[0].url)
+    api.run_long_qc(job.id, job.clips[0].url)
+    assert not youtube and len(tiktok) == 1
+    assert api.youtube_uploads[existing.id].upload_confirmed
+    assert job.request.publication_review_required and not job.clips[0].is_correct
+
+
+def test_youtube_outage_does_not_block_tiktok_long(tiktok_long, monkeypatch):
+    job, _, _, tiktok, _ = tiktok_long
+    def unavailable():
+        raise RuntimeError('YouTube temporarily unavailable')
+    monkeypatch.setattr(api, 'require_youtube_ready', unavailable)
+    api.run_long_qc(job.id, job.clips[0].url)
+    assert len(tiktok) == 1
+    record = json.loads(api.long_qc_path(job.id, job.clips[0].url).read_text())
+    assert record['youtube_worker_error'] == 'RuntimeError'
+    assert record['tiktok_upload_visibility'] == 'only_you'
+
+
+@pytest.mark.parametrize('hold', ['drop', 'repair', 'preflight', 'disabled', 'login', 'unknown_submission'])
+def test_tiktok_long_holds_do_not_submit(tiktok_long, monkeypatch, hold):
+    job, _, _, tiktok, audit = tiktok_long
+    if hold in {'drop', 'repair'}:
+        audit.update(decision='DROP_SOURCE' if hold == 'drop' else 'REPAIR_ONCE', upload_allowed=False)
+    if hold == 'preflight':
+        monkeypatch.setattr(api, 'youtube_monetization_preflight_issue', lambda *a: 'Rights hold')
+    if hold == 'disabled':
+        state = api.long_production_state(); state['auto_qc_tiktok_upload'] = False
+        api.save_long_production_state(state)
+    if hold == 'login': monkeypatch.setattr(api, 'tiktok_login_is_active', lambda: True)
+    if hold == 'unknown_submission':
+        old = api.TikTokUploadJob(id='uncertain', source_job_id=job.id,
+            clip_url=job.clips[0].url, clip_name='video.mp4', status='failed',
+            created_at=api.now_iso(), updated_at=api.now_iso(), caption='Test', submission_started=True, target_handle='test')
+        api.tiktok_uploads[old.id] = old
+    api.run_long_qc(job.id, job.clips[0].url)
+    assert not tiktok
+
+
+def test_queue_does_not_skip_passed_long_with_youtube_pointer_but_no_tiktok(tiktok_long, monkeypatch):
+    job, media, _, _, audit = tiktok_long
+    existing = confirmed_youtube_for(job)
+    api.youtube_uploads[existing.id] = existing
+    api.save_long_qc(api.long_qc_path(job.id, job.clips[0].url), dict(status='reviewed',
+        audit=audit, fingerprint=qc.fingerprint(media, api.long_qc_context(job, job.clips[0])),
+        upload_id=existing.id))
+    started = []
+    monkeypatch.setattr(api.threading, 'Thread', lambda **kwargs: SimpleNamespace(start=lambda: started.append(kwargs)))
+    assert api.queue_review_long_qc_once() == 1
+    assert started[0]['args'] == (job.id, job.clips[0].url)
+
+
+def test_provider_refusal_is_not_resubmitted_after_fingerprint_change(tiktok_long, monkeypatch):
+    job, _, youtube, tiktok, audit = tiktok_long
+    audit.update(decision='DROP_SOURCE', upload_allowed=False,
+        hard_gates={**audit['hard_gates'], 'context_safe':False},
+        evidence=['AI provider explicitly declined this source during content safety screening.'])
+    api.save_long_qc(api.long_qc_path(job.id, job.clips[0].url), dict(status='reviewed',
+        audit=audit, fingerprint='old-before-provider-or-metadata-change'))
+    monkeypatch.setattr(qc, 'audit_long', lambda *a: pytest.fail('A terminal source was sent to the provider again'))
+    assert api.queue_review_long_qc_once() == 0
+    api.run_long_qc(job.id, job.clips[0].url)
+    assert not youtube and not tiktok
+    assert 'ditolak pemeriksaan konten' in api.long_tiktok_review_hold(job, job.clips[0])
+
+
+def test_long_hold_display_explains_caption_failure(tiktok_long):
+    job, _, _, _, audit = tiktok_long
+    audit.update(decision='DROP_SOURCE', upload_allowed=False,
+        evidence=['Invalid or overlapping output caption timing'])
+    api.save_long_qc(api.long_qc_path(job.id, job.clips[0].url), dict(status='reviewed', audit=audit))
+    assert 'subtitle' in api.long_tiktok_review_hold(job, job.clips[0])
+
+
+def test_changed_media_during_platform_setup_cannot_enter_tiktok(tiktok_long, monkeypatch):
+    job, media, _, tiktok, _ = tiktok_long
+    monkeypatch.setattr(api, 'require_tiktok_ready', lambda: media.write_bytes(b'changed after review'))
+    api.run_long_qc(job.id, job.clips[0].url)
+    assert not tiktok
+    record = json.loads(api.long_qc_path(job.id, job.clips[0].url).read_text())
+    assert record['status'] == 'evidence_changed' and record['audit'] is None
+
+
+def test_cached_rejection_releases_daily_success_count_without_reaudit(tiktok_long, monkeypatch):
+    job, media, _, _, audit = tiktok_long
+    state = api.long_production_state()
+    state['attempts'] = [dict(job_id=job.id, status='completed')]
+    api.save_long_production_state(state)
+    audit.update(decision='DROP_SOURCE', upload_allowed=False)
+    api.save_long_qc(api.long_qc_path(job.id, job.clips[0].url), dict(status='reviewed', audit=audit,
+        fingerprint=qc.fingerprint(media, api.long_qc_context(job, job.clips[0]))))
+    monkeypatch.setattr(qc, 'audit_long', lambda *a: pytest.fail('Unchanged rejected Long was reaudited'))
+    assert api.queue_review_long_qc_once() == 0
+    assert api.long_production_state()['attempts'][0]['qc_decision'] == 'DROP_SOURCE'

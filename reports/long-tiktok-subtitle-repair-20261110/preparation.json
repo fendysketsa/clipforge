@@ -1,0 +1,14 @@
+{
+  "source_job_id": "60646d1b4607453180c42595a49699a2",
+  "media": "backend/outputs/60646d1b4607453180c42595a49699a2/hidayah-mertua-galak-kamu-tidak-pantas-jadi-menantuku-tapi-akhirnya-menyesal/clips/resume_cerita_5menit_nisa-menyusun-semua-ini-dari-siang-sampai-malam.mp4",
+  "subtitle": "backend/outputs/60646d1b4607453180c42595a49699a2/hidayah-mertua-galak-kamu-tidak-pantas-jadi-menantuku-tapi-akhirnya-menyesal/clips/resume_cerita_5menit_nisa-menyusun-semua-ini-dari-siang-sampai-malam.srt",
+  "media_sha256": "c8580c2346172d40c5f634352594c27e56c71a13cef24fa9d2c298011510c171",
+  "before_sha256": "f378230b28829e9a77bda5c5ef82c91829b714cc3d576a08e2a25bd3c0af31cd",
+  "after_sha256": "a15133c2d3e4a9364035566db7d2f919596a13ac1866a9f1fa4ed28ecc4c9d3b",
+  "status": "prepared_requires_root_activation",
+  "change": {
+    "from": "00:01:36,1000",
+    "to": "00:01:37,000"
+  },
+  "encoded_video_modified": false
+}
