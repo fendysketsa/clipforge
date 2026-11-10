@@ -42,4 +42,4 @@ container_build="$(docker exec "$FRONTEND_CONTAINER" cat "$runtime_dist/BUILD_ID
 test "$local_build" = "$container_build"
 printf '[4/4] Memeriksa aset yang benar-benar disajikan port 3000...\n'
 python "$SCRIPT_DIR/verify-history-frontend.py"
-printf 'UI tiga kolom aktif; build %s terverifikasi. Backend dan upload tetap berjalan.\n' "$local_build"
+printf 'UI kartu Riwayat aktif; build %s terverifikasi. Backend dan upload tetap berjalan.\n' "$local_build"

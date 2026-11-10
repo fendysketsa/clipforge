@@ -273,7 +273,7 @@ export function HistorySection({
         </div>
       </div>
 
-      <div className="jobList">
+      <div className="jobList" data-layout="history-four-columns">
         {jobs.map((item) => {
           const Icon = statusIcon[item.status];
           const count = item.clips.length ? `${item.clips.length} klip` : `${item.candidates.length} kandidat`;
