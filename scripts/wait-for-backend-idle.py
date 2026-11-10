@@ -19,7 +19,7 @@ MEDIA_PROCESS = re.compile(
 )
 
 
-def classify_work(snapshots, recover_stalled_cron, now):
+def classify_work(snapshots, recover_stalled_cron, now, allow_capacity_wait=False):
     blockers, stalled = [], []
     for endpoint in ENDPOINTS[:-1]:
         for row in snapshots[endpoint]:
@@ -31,6 +31,15 @@ def classify_work(snapshots, recover_stalled_cron, now):
     job_ids = {row["id"] for row in snapshots["jobs"]}
     for run in snapshots["automation/viral-cc"]:
         if run.get("status") not in {"queued", "running"}:
+            continue
+        if (allow_capacity_wait and run.get("trigger") == "schedule"
+                and run.get("progress_stage") == "cron_capacity_wait"
+                and run.get("processed") and all(
+                    item.get("job_id") and item.get("job_status") == "completed"
+                    and item.get("status") == "awaiting_upload"
+                    for item in run["processed"])):
+            # Its saved batch resumes after restart. API jobs/uploads and real
+            # subprocesses are still checked independently; none may be active.
             continue
         children = {
             str(item.get(key) or "")
@@ -72,11 +81,11 @@ def active_subprocesses(container):
     return [line for line in commands.splitlines()[1:] if MEDIA_PROCESS.search(line)]
 
 
-def wait_until_idle(*, base_url, container, recover_stalled_cron, wait_seconds, poll_seconds=15):
+def wait_until_idle(*, base_url, container, recover_stalled_cron, wait_seconds, poll_seconds=15, allow_capacity_wait=False):
     deadline = time.monotonic() + wait_seconds
     while True:
         blockers, stalled = classify_work(
-            read_snapshots(base_url), recover_stalled_cron, datetime.now(timezone.utc)
+            read_snapshots(base_url), recover_stalled_cron, datetime.now(timezone.utc), allow_capacity_wait
         )
         if not blockers:
             # Missing/terminal API rows alone cannot justify interrupting media work.
@@ -99,6 +108,7 @@ def main():
     parser.add_argument("--base-url", default="http://127.0.0.1:8010/api/")
     parser.add_argument("--container", default="fendy-clipper-backend")
     parser.add_argument("--recover-stalled-cron", action="store_true")
+    parser.add_argument("--allow-capacity-wait", action="store_true")
     parser.add_argument("--wait-seconds", type=int, default=21600)
     parser.add_argument("--state-file", type=Path, required=True)
     args = parser.parse_args()
@@ -107,6 +117,7 @@ def main():
     stalled = wait_until_idle(
         base_url=args.base_url, container=args.container,
         recover_stalled_cron=args.recover_stalled_cron, wait_seconds=args.wait_seconds,
+        allow_capacity_wait=args.allow_capacity_wait,
     )
     previous = json.loads(args.state_file.read_text()) if args.state_file.exists() and args.state_file.stat().st_size else {}
     args.state_file.write_text(json.dumps({

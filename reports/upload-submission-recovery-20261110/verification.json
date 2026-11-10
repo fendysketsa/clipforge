@@ -1,0 +1,41 @@
+{
+  "verified_at": "2026-11-10T06:06:35.917462+00:00",
+  "state": "source_tests_build_browser_verified_activation_pending",
+  "tests": {
+    "backend": 210,
+    "frontend_submission": 12,
+    "frontend_queue": 3
+  },
+  "frontend_build_id": "nI4-m1b8uOk87f1sc9fEG",
+  "browser": {
+    "fixture_only": true,
+    "real_mutations": 0,
+    "legacy_browser_reservation_recovered": true,
+    "ordinary_upload_post_count": 0,
+    "guarded_recovery_count": 1,
+    "page_errors": [],
+    "calls": [
+      {
+        "path": "/api/jobs/submission-preview/youtube-uploads/reconcile",
+        "method": "POST"
+      }
+    ]
+  },
+  "sha256": {
+    "backend/api.py": "0de13d4af87fbcce7277c927d938916111e5544b1de4fca7fdc0710e29f16942",
+    "frontend/lib/queueSubmission.ts": "da9df78f633840b56290659c7876fb39e4252c53cc4ff58ae6feb2b777f89690",
+    "scripts/activate-upload-submission-recovery.sh": "1b8268a3c37263c11065346003eac4c98e4ea3e44599aa5de2888a808a3fe662",
+    "scripts/wait-for-backend-idle.py": "2cb11b2247fd8ebe262ea1c16e14c021f2145163b3ef23219efe7979bc8d6676",
+    "scripts/activate-youtube-quiet-check.sh": "c4087549d86d750bec9433b2d363e8c361c5e070e8149fe69a3adc25a63b8af4"
+  },
+  "activation_command": "sudo bash /www/wwwroot/clipper/clipforge/scripts/activate-upload-submission-recovery.sh",
+  "recovered_upload": {
+    "id": "8c3d68b3bb6d44f18ab5170ca653c4f1",
+    "status": "completed",
+    "title": "Kok Bumbu Doang? Kak Yuta Bikin Konslet, Mio & Selin Pilih Makanan #Shorts",
+    "video_url": "https://www.youtube.com/watch?v=FbDB7M0I1pI",
+    "upload_confirmed": true,
+    "visibility": "private",
+    "error": null
+  }
+}

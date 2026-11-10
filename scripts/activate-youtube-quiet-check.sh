@@ -19,6 +19,7 @@ ryuundy_learning=false
 skip_build=false
 preserve_browser=false
 force_active=false
+allow_capacity_wait=false
 wait_seconds=21600
 while (( $# )); do
   case "$1" in
@@ -27,6 +28,7 @@ while (( $# )); do
     --skip-build) skip_build=true ;;
     --preserve-browser) preserve_browser=true ;;
     --force-active) force_active=true ;;
+    --allow-capacity-wait) allow_capacity_wait=true ;;
     --no-wait) wait_seconds=0 ;;
     --wait-seconds)
       [[ "${2:-}" =~ ^[0-9]+$ ]] || { echo "--wait-seconds requires a nonnegative integer." >&2; exit 2; }
@@ -37,6 +39,7 @@ while (( $# )); do
       echo "Usage: $0 [--recover-stalled-cron] [--ryuundy-learning] [--preserve-browser] [--skip-build] [--force-active] [--wait-seconds N | --no-wait]"
       echo "Waits up to six hours for active work; --skip-build verifies and reuses the built image."
       echo "--force-active interrupts current work, preserves upload checkpoints, and restarts without waiting for idle."
+      echo "--allow-capacity-wait preserves sleeping cron batches while still requiring idle render/upload queues."
       exit 0
       ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
@@ -127,6 +130,7 @@ with urllib.request.urlopen(request, timeout=15): pass
 PY
 idle_args=(--state-file "$activation_state")
 if [[ "$recover_stalled_cron" == true ]]; then idle_args+=(--recover-stalled-cron); fi
+if [[ "$allow_capacity_wait" == true ]]; then idle_args+=(--allow-capacity-wait); fi
 if [[ "$force_active" != true ]]; then
   echo "Future cron launches paused; waiting for existing work to finish (limit ${wait_seconds}s)."
   python scripts/wait-for-backend-idle.py "${idle_args[@]}" --wait-seconds "$wait_seconds"

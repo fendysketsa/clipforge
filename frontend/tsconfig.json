@@ -32,7 +32,9 @@
     ".next-history/types/**/*.ts",
     ".next-history/dev/types/**/*.ts",
     ".next-queue/types/**/*.ts",
-    ".next-queue/dev/types/**/*.ts"
+    ".next-queue/dev/types/**/*.ts",
+    ".next-submission/types/**/*.ts",
+    ".next-submission/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

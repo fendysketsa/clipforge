@@ -3008,6 +3008,7 @@ def load_auto_viral_runs() -> dict[str, AutoViralRun]:
                 "social_upload",
                 "retry_upload",
                 "daily_upload_limit",
+                "cron_capacity_wait",
                 "youtube_platform_daily_limit",
                 "resume_pending_upload",
             }
@@ -8047,6 +8048,23 @@ def reusable_tiktok_upload(job_id: str, clip_url: str, fingerprint: str) -> TikT
         if upload.status == "completed" and upload.upload_confirmed and not upload.dry_run and (exact or same_file):
             return upload
     return None
+
+
+def existing_submission_recovery_record(
+    records: list[Any], job_id: str, clip_url_value: str, *, dry_run: bool = False,
+) -> Any | None:
+    """An uncertain HTTP request may not mint a second platform attempt.
+
+    Call under the platform creation lock. Every worker's record is persisted
+    before it can transfer a file; even a failed or cancelled record therefore
+    owns the uncertain request until its actual error/checkpoint is inspected.
+    """
+    exact = sorted((item for item in records
+        if item.source_job_id == job_id and item.clip_url == clip_url_value
+        and bool(item.dry_run) == dry_run), key=lambda item: item.created_at, reverse=True)
+    return next((item for item in exact if item.status in {"queued", "running"}), None) or next(
+        (item for item in exact if item.status == "completed" and item.upload_confirmed), None,
+    ) or next(iter(exact), None)
 
 
 def tiktok_upload_is_confirmed(job_id: str, clip_url: str) -> bool:
@@ -24797,6 +24815,25 @@ def create_tiktok_upload(job_id: str, request: TikTokUploadRequest) -> TikTokUpl
         return tiktok_uploads.get(upload.id, upload)
 
 
+@app.post("/api/jobs/{job_id}/tiktok-uploads/reconcile", response_model=TikTokUploadJob)
+def reconcile_tiktok_upload_submission(job_id: str, request: TikTokUploadRequest) -> TikTokUploadJob:
+    """Recover a lost response, serializing with the original request."""
+    with tiktok_upload_creation_lock:
+        with tiktok_uploads_lock:
+            existing = existing_submission_recovery_record(
+                list(tiktok_uploads.values()), job_id, request.clip_url, dry_run=request.dry_run,
+            )
+        if existing is not None:
+            return existing
+        require_tiktok_ready()
+        if tiktok_login_is_active():
+            raise HTTPException(status_code=409, detail="Selesaikan login TikTok terlebih dahulu; session sedang disimpan.")
+        upload = create_tiktok_upload_record(job_id, request)
+        queue_tiktok_upload_jobs([upload])
+    with tiktok_uploads_lock:
+        return tiktok_uploads.get(upload.id, upload)
+
+
 @app.post("/api/jobs/{job_id}/tiktok-uploads/batch", response_model=list[TikTokUploadJob])
 def create_tiktok_upload_batch(job_id: str, request: TikTokBatchUploadRequest) -> list[TikTokUploadJob]:
     require_tiktok_ready()
@@ -25463,6 +25500,27 @@ def stop_youtube_cdp() -> dict[str, bool | str]:
 def create_youtube_upload(job_id: str, request: YouTubeUploadRequest) -> YouTubeUploadJob:
     require_youtube_ready()
     with youtube_upload_creation_lock:
+        upload = create_youtube_upload_record(job_id, request)
+        queue_youtube_upload_jobs([upload])
+    return get_youtube_upload(upload.id)
+
+
+@app.post("/api/jobs/{job_id}/youtube-uploads/reconcile", response_model=YouTubeUploadJob)
+def reconcile_youtube_upload_submission(job_id: str, request: YouTubeUploadRequest) -> YouTubeUploadJob:
+    """An empty GET is insufficient: recheck under the creation lock.
+
+    The original HTTP request can still be generating metadata. Wait for its
+    lock, reuse its persisted result (including failures), or create only when
+    no attempt ever reached the upload queue. Normal media/QC gates still run.
+    """
+    with youtube_upload_creation_lock:
+        with youtube_uploads_lock:
+            existing = existing_submission_recovery_record(
+                list(youtube_uploads.values()), job_id, request.clip_url, dry_run=request.dry_run,
+            )
+        if existing is not None:
+            return existing
+        require_youtube_ready()
         upload = create_youtube_upload_record(job_id, request)
         queue_youtube_upload_jobs([upload])
     return get_youtube_upload(upload.id)

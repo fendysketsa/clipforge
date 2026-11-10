@@ -13,6 +13,7 @@ ACTIVATORS = (
     'activate-long-tiktok-upload.sh',
     'activate-history-card-layout.sh',
     'activate-upload-queue-ui.sh',
+    'activate-upload-submission-recovery.sh',
 )
 
 

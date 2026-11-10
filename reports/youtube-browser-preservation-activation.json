@@ -1,6 +1,6 @@
 {
   "stalled_run_ids": [],
-  "verified_at": 1794277358.2318451,
+  "verified_at": 1794291938.82973,
   "schedule": {
     "tiktok_strategy_version": 3,
     "tiktok_automatic_retry_enabled": true,
@@ -21,10 +21,10 @@
     "paired_long_duration": 300.0,
     "paired_long_auto_public_enabled": false,
     "active_run_id": null,
-    "last_run_id": "cb9b5d60f3e9422091e91f3bc184b859",
-    "last_started_at": "2026-11-10T00:02:39.917147+00:00",
-    "last_finished_at": "2026-11-10T02:22:24.759660+00:00",
-    "next_run_at": "2026-11-10T04:31:00+00:00",
+    "last_run_id": "b1ae21fef424485e81163e7bf0739c10",
+    "last_started_at": "2026-11-10T05:15:12.829881+00:00",
+    "last_finished_at": "2026-11-10T06:25:38.489945+00:00",
+    "next_run_at": "2026-11-10T06:46:00+00:00",
     "news_hot_enabled": true,
     "news_hot_daily_limit": 3,
     "news_hot_daily_reserved": 3,
@@ -33,7 +33,7 @@
     "message": "Antrean jadwal dan cadangan Private penuh; cron menunggu kapasitas setelah publikasi berikutnya. News Hot: 3/3 slot harian WIB; playlist News, review sebelum upload."
   },
   "sha256": {
-    "api": "ad0020632d75f03b2cd300174307a2d0e514818dfd75763f0479811a9c113a66",
+    "api": "0de13d4af87fbcce7277c927d938916111e5544b1de4fca7fdc0710e29f16942",
     "clipper": "23189be152e0aed476d0e3a1266ba78f2ef63a822b90cd0cf3d792453647f84b",
     "cron_director_effects": "92a1455daaf40de05cc94f23b00cf75a7644e242d243c27a9291bc010e1b71a2",
     "cron_source_policy": "f6fefa2c1e4395b020971c9872746568865fb4509df1983dc1a527e5e85a4376",

@@ -4,12 +4,19 @@
     {
       "attempt": 1,
       "mode": "compose",
+      "exit_code": 1,
+      "log": "/www/wwwroot/clipper/clipforge/reports/backend-build-ckzqbsfm/attempt-1.log",
+      "export_writer_lock": true
+    },
+    {
+      "attempt": 2,
+      "mode": "compose",
       "exit_code": 0,
-      "log": "/www/wwwroot/clipper/clipforge/reports/backend-build-2cxazz8p/attempt-1.log",
+      "log": "/www/wwwroot/clipper/clipforge/reports/backend-build-ckzqbsfm/attempt-2.log",
       "export_writer_lock": false
     }
   ],
-  "log_directory": "/www/wwwroot/clipper/clipforge/reports/backend-build-2cxazz8p",
+  "log_directory": "/www/wwwroot/clipper/clipforge/reports/backend-build-ckzqbsfm",
   "application_runtime_changed": false,
   "recovery_builder": null
 }

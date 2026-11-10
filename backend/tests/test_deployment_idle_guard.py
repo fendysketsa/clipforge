@@ -69,6 +69,31 @@ def test_existing_child_even_if_terminal_protects_campaign(snapshots, key):
     assert guard.classify_work(snapshots, True, datetime.now(timezone.utc))[0]
 
 
+def test_explicit_capacity_wait_drain_keeps_saved_batch_and_checks_actual_workers(snapshots, monkeypatch):
+    snapshots['automation/viral-cc'] = [orphan(progress_stage='cron_capacity_wait',
+        processed=[dict(job_id='saved', job_status='completed', status='awaiting_upload')])]
+    now = datetime.now(timezone.utc)
+    assert guard.classify_work(snapshots, True, now)[0]
+    assert guard.classify_work(snapshots, True, now, allow_capacity_wait=True) == ([], [])
+    snapshots['youtube/uploads'] = [dict(id='active', status='running')]
+    assert guard.classify_work(snapshots, True, now, allow_capacity_wait=True)[0]
+    snapshots['youtube/uploads'] = []
+    monkeypatch.setattr(guard, 'read_snapshots', lambda _: snapshots)
+    monkeypatch.setattr(guard, 'active_subprocesses', lambda _: ['ffmpeg -i source.mp4'])
+    with pytest.raises(SystemExit, match='subprocess'):
+        guard.wait_until_idle(base_url='unused', container='unused', recover_stalled_cron=True,
+            wait_seconds=0, allow_capacity_wait=True)
+
+
+@pytest.mark.parametrize('changes', [dict(trigger='manual'), dict(progress_stage='clip_source'),
+    dict(processed=[]), dict(processed=[dict(job_id='saved', job_status='running', status='awaiting_upload')])])
+def test_capacity_wait_drain_never_allows_unknown_or_rendering_campaigns(snapshots, changes):
+    values=dict(progress_stage='cron_capacity_wait', processed=[dict(job_id='saved', job_status='completed', status='awaiting_upload')])
+    values.update(changes)
+    snapshots['automation/viral-cc']=[orphan(**values)]
+    assert guard.classify_work(snapshots, True, datetime.now(timezone.utc), allow_capacity_wait=True)[0]
+
+
 @pytest.mark.parametrize("command", [
     "ffmpeg -i source.mp4", "/usr/bin/ffprobe source.mp4",
     "python /app/clipper.py --job abc", "python youtube_uploader.py",

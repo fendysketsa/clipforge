@@ -6,7 +6,7 @@ type Store = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 type Reservation = { baseline: Record<string, string> };
 type Input = { platform: "youtube" | "tiktok"; jobId: string; clipUrl: string; baseUrl: string };
 
-/** Reconcile a lost response with GET; never replay an uncertain POST. */
+/** Recover lost responses through the server's serialized admission check. */
 export function createQueueSubmitter(
   fetcher: typeof fetch, getStore: () => Store | null,
   errorMessage: (response: Response, fallback: string) => Promise<string>,
@@ -56,13 +56,53 @@ export function createQueueSubmitter(
         if (row.status === "failed" || row.status === "cancelled") throw new Error(row.error || "Upload belum berhasil masuk proses.");
         return row;
       };
+      const payload = JSON.stringify({ clip_url: input.clipUrl,
+        ...(input.platform === "tiktok" ? { visibility: "only_you" } : {}) });
+      const endpoint = `${input.baseUrl}/api/jobs/${input.jobId}/${input.platform}-uploads`;
+      const recoverMissing = async (): Promise<UploadRecord> => {
+        // An empty GET does not prove the original request stopped. This
+        // endpoint waits for its creation lock and reuses ANY persisted
+        // attempt, including failed/Post-unknown records, before admitting one.
+        let response: Response;
+        try {
+          response = await fetcher(`${endpoint}/reconcile`, {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: payload,
+          });
+        } catch {
+          throw new Error("Koneksi pemulihan upload belum tersedia. Catatan pengiriman tetap disimpan; coba lagi setelah koneksi pulih.");
+        }
+        if ([404, 405].includes(response.status)) {
+          const detail = await errorMessage(response, "Not Found");
+          if (response.status === 405 || detail.trim().toLowerCase() === "not found") {
+            // Old backend: do not replay a normal POST or discard the guard.
+            throw new Error("Backend belum mendukung pemulihan pengiriman. Perbarui backend agar upload yang tertahan dapat dilanjutkan dengan aman.");
+          }
+          clear();
+          throw new Error(detail);
+        }
+        if (!response.ok) {
+          if (response.status >= 400 && response.status < 500) {
+            clear();
+            throw new Error(await errorMessage(response, "Upload ditahan pemeriksaan backend."));
+          }
+          throw new Error("Pemulihan upload belum selesai. Catatan pengiriman disimpan dan akan diperiksa lagi saat dicoba kembali.");
+        }
+        let recovered: UploadRecord;
+        try { recovered = await response.json() as UploadRecord; } catch {
+          throw new Error("Respons pemulihan upload terputus. Catatan pengiriman tetap disimpan untuk pemeriksaan berikutnya.");
+        }
+        if (!recovered || !recovered.id || recovered.source_job_id !== input.jobId || recovered.clip_url !== input.clipUrl) {
+          throw new Error("Identitas hasil pemulihan upload tidak cocok. Pengiriman ditahan untuk mencegah duplikat.");
+        }
+        return finish(recovered);
+      };
       const rows = await read();
       const existing = known(rows);
       if (existing) return finish(existing);
       if (reservation) {
         const changed = rows.find((row) => reservation!.baseline[row.id] !== signature(row));
         if (changed) return finish(changed);
-        throw new Error("Hasil pengiriman sebelumnya belum pasti. Antrean akan diperiksa; upload tidak dikirim dua kali.");
+        return recoverMissing();
       }
       reservation = { baseline: Object.fromEntries(rows.map((row) => [row.id, signature(row)])) };
       reservations.set(key, reservation);
@@ -71,13 +111,13 @@ export function createQueueSubmitter(
         const current = await read().catch(() => []);
         const accepted = known(current) ?? current.find((row) => reservation!.baseline[row.id] !== signature(row));
         if (accepted) return finish(accepted);
-        throw new Error("Koneksi terputus sebelum status upload diterima. Sistem memeriksa antrean; jangan mengirim ulang berulang kali.");
+        return recoverMissing();
       };
       let response: Response;
       try {
-        response = await fetcher(`${input.baseUrl}/api/jobs/${input.jobId}/${input.platform}-uploads`, {
+        response = await fetcher(endpoint, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clip_url: input.clipUrl, ...(input.platform === "tiktok" ? { visibility: "only_you" } : {}) }),
+          body: payload,
         });
       } catch { return reconcile(); }
       if (!response.ok) {
@@ -89,7 +129,7 @@ export function createQueueSubmitter(
       }
       let result: UploadRecord;
       try { result = await response.json() as UploadRecord; } catch { return reconcile(); }
-      if (!result.id || result.source_job_id !== input.jobId || result.clip_url !== input.clipUrl) return reconcile();
+      if (!result || !result.id || result.source_job_id !== input.jobId || result.clip_url !== input.clipUrl) return reconcile();
       return finish(result);
     };
     const promise = run().finally(() => active.delete(key));

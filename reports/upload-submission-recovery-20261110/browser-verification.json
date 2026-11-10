@@ -1,0 +1,14 @@
+{
+  "fixture_only": true,
+  "real_mutations": 0,
+  "legacy_browser_reservation_recovered": true,
+  "ordinary_upload_post_count": 0,
+  "guarded_recovery_count": 1,
+  "page_errors": [],
+  "calls": [
+    {
+      "path": "/api/jobs/submission-preview/youtube-uploads/reconcile",
+      "method": "POST"
+    }
+  ]
+}
