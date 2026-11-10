@@ -889,6 +889,43 @@ The force mode verifies that any lock holder is the ClipForge rebuild script
 before terminating it, cancels active API jobs when available, then recreates
 the backend, Telegram bot, and frontend without deleting persistent data.
 
+## Automatic Git Commit And Push
+
+The user timer checks `origin/master` every five minutes. After changed files
+have been quiet for 30 seconds, it stages additions, modifications and deletions
+with `git add -A`, creates one timestamped commit, and pushes it. A clean tree
+does not create an empty commit. Failed network attempts retain local commits
+and retry on the next timer tick.
+
+Install for the logged-in desktop user (without sudo):
+
+```bash
+bash scripts/install-git-auto-sync.sh
+systemctl --user status clipforge-git-auto-sync.timer
+```
+
+The job uses the existing Git identity and SSH configuration. It stays pinned
+to `master`, waits during merges/rebases and active Git operations, and never
+pulls, rebases or force-pushes a diverged branch. Runtime data, uploads, build
+directories, login-state files and credentials are excluded. Credential-shaped
+content and files over 20 MiB are held, including blobs in unpushed commits.
+Existing tracked runtime snapshots are retained locally and are not removed.
+
+Inspect or run the worker manually:
+
+```bash
+python3 scripts/git-auto-sync.py --dry-run
+python3 scripts/git-auto-sync.py
+cat .git/clipforge-auto-sync-status.json
+journalctl --user -u clipforge-git-auto-sync.service -n 30 --no-pager
+```
+
+Disable future automatic runs with:
+
+```bash
+systemctl --user disable --now clipforge-git-auto-sync.timer
+```
+
 ## Safety And Legal Notes
 
 Fendy Clipper is intended for local workflows and content you are allowed to process. Make sure you have rights or permission to download, transform, and republish source videos. Follow YouTube terms and applicable copyright law.

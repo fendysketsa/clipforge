@@ -5,6 +5,7 @@
 
 backend/.venv/
 backend/outputs/
+backend/uploads/
 backend/data/
 backend/jobs.json
 backend/jobs.json.tmp
@@ -31,3 +32,5 @@ frontend/.env.*
 Thumbs.db
 
 outputs/
+reports/backend-build-*/
+reports/runtime-record-protection-*/

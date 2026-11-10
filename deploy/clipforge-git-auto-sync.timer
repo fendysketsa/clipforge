@@ -1,0 +1,11 @@
+[Unit]
+Description=Check ClipForge source changes every five minutes
+
+[Timer]
+OnStartupSec=2min
+OnUnitInactiveSec=5min
+AccuracySec=15s
+Unit=clipforge-git-auto-sync.service
+
+[Install]
+WantedBy=timers.target

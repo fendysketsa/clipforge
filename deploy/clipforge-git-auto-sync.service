@@ -1,0 +1,14 @@
+[Unit]
+Description=ClipForge automatic commit and fast-forward push
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/www/wwwroot/clipper/clipforge
+ExecStart=/usr/bin/python3 /www/wwwroot/clipper/clipforge/scripts/git-auto-sync.py --remote origin --branch master
+Environment=GIT_TERMINAL_PROMPT=0
+UMask=0077
+Nice=10
+NoNewPrivileges=true
+MemoryMax=256M
+TimeoutStartSec=5min
