@@ -140,8 +140,8 @@
   "queue_information_present": true,
   "status_variants": {
     "queued": 1,
-    "failed": 1,
     "completed": 5,
+    "failed": 1,
     "running": 1
   }
 }

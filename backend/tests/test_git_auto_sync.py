@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import subprocess
 import time
+import os
 
 import pytest
 
@@ -127,3 +128,123 @@ def test_active_auto_sync_lock_prevents_parallel_commit(repository):
     with (repo / '.git/clipforge-auto-sync.lock').open('a') as lock:
         sync_module.fcntl.flock(lock, sync_module.fcntl.LOCK_EX | sync_module.fcntl.LOCK_NB)
         assert sync.run()['state'] == 'already_running'
+
+
+def clock(monkeypatch):
+    now = [1_000_000.0]
+    monkeypatch.setattr(sync_module.time, 'time', lambda: now[0])
+    return now
+
+
+def test_thirty_minute_deadline_resets_on_new_edit_and_survives_worker_restart(repository, monkeypatch):
+    repo, remote = repository;now = clock(monkeypatch)
+    before = git(remote, 'rev-parse', 'master')
+    (repo / 'tracked.txt').write_text('first edit\n')
+    first = worker(repo, settle_seconds=1800).run()
+    assert first['state'] == 'waiting_for_quiet' and first['remaining_seconds'] == 1800
+    now[0] += 1799
+    assert worker(repo, settle_seconds=1800).run()['remaining_seconds'] == 1
+    (repo / 'tracked.txt').write_text('second edit\n')
+    assert worker(repo, settle_seconds=1800).run()['remaining_seconds'] == 1800
+    assert not git(repo, 'diff', '--cached', '--name-only')
+    assert git(repo, 'rev-parse', 'HEAD') == git(remote, 'rev-parse', 'master') == before
+    now[0] += 1799
+    assert worker(repo, settle_seconds=1800).run()['remaining_seconds'] == 1
+    now[0] += 1
+    done = worker(repo, settle_seconds=1800).run()
+    assert done['state'] == 'synced' and done['committed'] and done['pushed']
+    assert git(remote, 'show', 'master:tracked.txt') == 'second edit'
+
+
+def test_deletion_waits_thirty_minutes_even_without_an_mtime(repository, monkeypatch):
+    repo, remote = repository;now = clock(monkeypatch)
+    worker(repo, settle_seconds=1800).run()
+    now[0] += 2000
+    (repo / 'delete.txt').unlink()
+    assert worker(repo, settle_seconds=1800).run()['remaining_seconds'] == 1800
+    now[0] += 1800
+    done = worker(repo, settle_seconds=1800).run()
+    assert done['state'] == 'synced' and done['committed']
+    assert 'delete.txt' not in git(remote, 'ls-tree', '--name-only', 'master').splitlines()
+
+
+def test_preserved_mtime_and_staging_activity_still_reset_countdown(repository, monkeypatch):
+    repo, _ = repository;now = clock(monkeypatch);file = repo / 'tracked.txt'
+    file.write_text('first edit\n');original = file.stat()
+    worker(repo, settle_seconds=1800).run()
+    now[0] += 1700
+    file.write_text('second edit\n');os.utime(file, ns=(original.st_atime_ns, original.st_mtime_ns))
+    assert worker(repo, settle_seconds=1800).run()['remaining_seconds'] == 1800
+    now[0] += 1700
+    git(repo, 'add', 'tracked.txt')
+    assert worker(repo, settle_seconds=1800).run()['remaining_seconds'] == 1800
+
+
+def test_report_churn_neither_resets_code_deadline_nor_creates_report_only_commits(repository, monkeypatch):
+    repo, remote = repository;now = clock(monkeypatch)
+    (repo / 'tracked.txt').write_text('code edit\n')
+    report = repo / 'reports/status.json';report.parent.mkdir()
+    worker(repo, settle_seconds=1800).run()
+    now[0] += 1700;report.write_text('{"progress": 40}\n')
+    assert worker(repo, settle_seconds=1800).run()['remaining_seconds'] == 100
+    now[0] += 100
+    assert worker(repo, settle_seconds=1800).run()['committed']
+    assert git(remote, 'show', 'master:reports/status.json') == '{"progress": 40}'
+    head = git(repo, 'rev-parse', 'HEAD')
+    now[0] += 60;report.write_text('{"progress": 90}\n')
+    done = worker(repo, settle_seconds=1800).run()
+    assert done['state'] == 'synced' and not done['committed'] and not done['pushed']
+    assert git(repo, 'rev-parse', 'HEAD') == git(remote, 'rev-parse', 'master') == head
+
+
+def test_network_retry_keeps_completed_quiet_period_but_another_edit_holds_push(repository, monkeypatch):
+    repo, remote = repository;now = clock(monkeypatch)
+    (repo / 'tracked.txt').write_text('code edit\n')
+    worker(repo, settle_seconds=1800).run()
+    git(repo, 'remote', 'set-url', 'origin', str(remote.parent / 'offline.git'))
+    now[0] += 1800
+    assert worker(repo, settle_seconds=1800).run()['state'] == 'retry_later'
+    saved_head = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'remote', 'set-url', 'origin', str(remote));now[0] += 60
+    done = worker(repo, settle_seconds=1800).run()
+    assert done['pushed'] and not done['committed']
+    assert git(remote, 'rev-parse', 'master') == saved_head
+    (repo / 'tracked.txt').write_text('new editing session\n')
+    assert worker(repo, settle_seconds=1800).run()['remaining_seconds'] == 1800
+
+
+@pytest.mark.parametrize('during', ['add', 'fetch'])
+def test_new_edit_during_git_preparation_prevents_premature_push(repository, monkeypatch, during):
+    repo, remote = repository;now = clock(monkeypatch)
+    (repo / 'tracked.txt').write_text('finished edit\n')
+    instance = worker(repo, settle_seconds=1800);instance.run()
+    now[0] += 1800;original_git = instance.git;before = git(remote, 'rev-parse', 'master')
+    def changing_git(*args, **kwargs):
+        output = original_git(*args, **kwargs)
+        if args[0] == during: (repo / 'tracked.txt').write_text('editing resumed during preparation\n')
+        return output
+    monkeypatch.setattr(instance, 'git', changing_git)
+    held = instance.run()
+    assert held['state'] == 'waiting_for_quiet' and held['remaining_seconds'] == 1800
+    assert git(remote, 'rev-parse', 'master') == before
+
+
+def test_commit_message_describes_staged_code_and_actual_line_counts(repository):
+    repo, remote = repository;file = repo / 'scripts/git-auto-sync.py';file.parent.mkdir()
+    file.write_text('QUIET_SECONDS = 1800\ndef quiet_gate():\n    return 1800\n\ndef commit_message():\n    return "summary"\n')
+    assert worker(repo).run()['committed']
+    message = git(remote, 'log', '-1', '--format=%B')
+    assert message.startswith('chore(git): perbarui jeda auto-sync 30 menit dan ringkasan pesan commit')
+    assert 'A scripts/git-auto-sync.py (+6/-0 baris)' in message
+    assert 'quiet_gate, commit_message' in message
+    assert 'auto-sync 2026-' not in message
+
+
+def test_history_commit_subject_comes_from_layout_diff(repository):
+    repo, remote = repository;folder = repo / 'frontend';folder.mkdir()
+    (folder / 'HistorySection.tsx').write_text('export function HistorySection() { return null; }\n')
+    (folder / 'globals.css').write_text('.jobList { grid-template-columns: repeat(4, minmax(0, 1fr)); }\n')
+    assert worker(repo).run()['committed']
+    message = git(remote, 'log', '-1', '--format=%B')
+    assert message.startswith('style(history): atur 4 kartu per baris')
+    assert 'A frontend/HistorySection.tsx' in message and 'A frontend/globals.css' in message

@@ -1,11 +1,11 @@
 [Unit]
-Description=ClipForge automatic commit and fast-forward push
+Description=ClipForge commit and push after thirty minutes without code changes
 After=network-online.target
 
 [Service]
 Type=oneshot
 WorkingDirectory=/www/wwwroot/clipper/clipforge
-ExecStart=/usr/bin/python3 /www/wwwroot/clipper/clipforge/scripts/git-auto-sync.py --remote origin --branch master
+ExecStart=/usr/bin/python3 /www/wwwroot/clipper/clipforge/scripts/git-auto-sync.py --remote origin --branch master --settle-seconds 1800
 Environment=GIT_TERMINAL_PROMPT=0
 UMask=0077
 Nice=10

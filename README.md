@@ -891,11 +891,22 @@ the backend, Telegram bot, and frontend without deleting persistent data.
 
 ## Automatic Git Commit And Push
 
-The user timer checks `origin/master` every five minutes. After changed files
-have been quiet for 30 seconds, it stages additions, modifications and deletions
-with `git add -A`, creates one timestamped commit, and pushes it. A clean tree
-does not create an empty commit. Failed network attempts retain local commits
-and retry on the next timer tick.
+Automatic commit/push starts only after **30 minutes without code changes**.
+Every new edit, addition, deletion, staging change or manual commit restarts
+that countdown. A lightweight timer observes the workspace once a minute;
+observation does not stage, commit, fetch or push during the quiet period.
+The countdown persists across service restarts. Its first observation begins
+a fresh quiet period, including for deletions and files with preserved timestamps.
+
+After the quiet period, additions, modifications and deletions are staged with
+`git add -A`. Commit subjects describe the affected code area; the body lists
+the actual staged files, line counts, and changed function names when present.
+Messages are generated locally from Git's diff. They are not timestamp-only.
+A clean tree does not create an empty commit. Network failures retain local
+commits for retry after the workspace is still quiet.
+
+Generated reports do not restart the coding countdown or create commits on
+their own. Pending reports are included with the next actual code change.
 
 Install for the logged-in desktop user (without sudo):
 

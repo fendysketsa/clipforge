@@ -15,6 +15,7 @@ for suffix in service timer; do
 done
 systemctl --user daemon-reload
 systemctl --user enable --now clipforge-git-auto-sync.timer
+systemctl --user restart clipforge-git-auto-sync.timer
 systemctl --user is-enabled clipforge-git-auto-sync.timer
 systemctl --user is-active clipforge-git-auto-sync.timer
 systemctl --user list-timers clipforge-git-auto-sync.timer --no-pager

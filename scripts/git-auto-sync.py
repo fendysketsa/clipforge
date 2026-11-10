@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,7 @@ import time
 
 
 MAX_BYTES = 20 * 1024 * 1024
+QUIET_SECONDS = 30 * 60
 SECRET = re.compile(rb'-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----|'
     rb'\bgh[pousr]_[A-Za-z0-9]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{40,}\b|'
     rb'\bsk-(?:or-v1-|proj-)[A-Za-z0-9_-]{40,}\b')
@@ -35,6 +37,11 @@ def protected(path: str) -> bool:
         or name.endswith(('.key', '.p12', '.pfx'))
         or path in {'backend/jobs.json', 'backend/jobs.json.tmp'}
     )
+
+
+def source_activity(path: str) -> bool:
+    # Render/QC reports can change continuously while nobody is editing code.
+    return not protected(path) and not path.startswith('reports/')
 
 
 class GitError(RuntimeError):
@@ -77,6 +84,99 @@ class Sync:
 
     def paths(self, *args):
         return [os.fsdecode(path) for path in self.git(*args).split(b'\0') if path]
+
+    def source_snapshot(self):
+        files = []
+        for path in sorted(set(self.paths('ls-files', '--cached', '--others', '--exclude-standard', '-z'))):
+            if not source_activity(path): continue
+            try:
+                stat = (self.repo / path).lstat()
+                files.append((path, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size, stat.st_mode))
+            except FileNotFoundError:
+                # Missing paths must stay absent both before and after our
+                # own git add stages a deletion. The previous snapshot still
+                # detects the moment the formerly present file disappears.
+                continue
+        index = [os.fsdecode(entry) for entry in self.git('ls-files', '--stage', '-z').split(b'\0')
+                 if entry and source_activity(os.fsdecode(entry.split(b'\t', 1)[1]))]
+        digest = lambda value: hashlib.sha256(json.dumps(value, ensure_ascii=True).encode()).hexdigest()
+        return dict(files=digest(files), index=digest(index), head=self.git('rev-parse', 'HEAD').decode().strip())
+
+    def remember_activity(self, snapshot, last_activity):
+        target = self.gitdir / 'clipforge-auto-sync-activity.json'
+        temporary = target.with_suffix('.tmp')
+        temporary.write_text(json.dumps(dict(version=1, snapshot=snapshot,
+            last_activity_epoch=last_activity, quiet_seconds=self.settle_seconds)) + '\n')
+        temporary.chmod(0o600)
+        temporary.replace(target)
+
+    def quiet_gate(self, snapshot):
+        now = time.time()
+        if not self.settle_seconds: return None, now
+        try:
+            previous = json.loads((self.gitdir / 'clipforge-auto-sync-activity.json').read_text())
+        except (OSError, ValueError):
+            previous = {}
+        last = previous.get('last_activity_epoch')
+        if (previous.get('version') != 1 or previous.get('snapshot') != snapshot
+                or previous.get('quiet_seconds') != self.settle_seconds
+                or not isinstance(last, (int, float)) or last > now):
+            last = now
+            self.remember_activity(snapshot, last)
+        remaining = max(0, self.settle_seconds - (now - last))
+        if remaining:
+            return self.save('waiting_for_quiet', idle_seconds=round(now-last),
+                remaining_seconds=round(remaining), quiet_seconds=self.settle_seconds,
+                eligible_after=datetime.fromtimestamp(last+self.settle_seconds, ZoneInfo('Asia/Jakarta')).isoformat()), last
+        return None, last
+
+    def commit_message(self):
+        changes = []
+        for item in self.git('diff', '--cached', '--numstat', '--no-renames', '-z').split(b'\0'):
+            if item:
+                added, removed, path = item.split(b'\t', 2)
+                changes.append((os.fsdecode(path), added.decode(), removed.decode()))
+        statuses = self.git('diff', '--cached', '--name-status', '--no-renames', '-z').split(b'\0')
+        actions = {os.fsdecode(statuses[i+1]): statuses[i].decode() for i in range(0, len(statuses)-1, 2)}
+        sources = [path for path, _, _ in changes if source_activity(path)]
+        scopes = {'git' if 'git-auto-sync' in path else 'frontend' if path.startswith('frontend/')
+            else 'tests' if '/tests/' in path else 'backend' if path.startswith('backend/')
+            else 'docs' if path.endswith('.md') else 'repo' for path in sources}
+        scope = next(iter(scopes)) if len(scopes) == 1 else 'app'
+        diff = self.git('diff', '--cached', '--no-ext-diff', '--no-color', '--unified=0', '--', *sources).decode(errors='replace') if sources else ''
+        additions = '\n'.join(line[1:] for line in diff.splitlines() if line.startswith('+') and not line.startswith('+++'))
+        if 'git' in scopes:
+            scope = 'git'
+            topics = []
+            if 'quiet_gate' in additions or 'QUIET_SECONDS' in additions:
+                seconds = re.search(r'^\s*QUIET_SECONDS\s*=\s*(\d+)(?:\s*\*\s*(\d+))?', additions, re.MULTILINE)
+                if seconds:
+                    value = int(seconds.group(1)) * int(seconds.group(2) or 1)
+                    topics.append(f'jeda auto-sync {value // 60} menit' if value % 60 == 0 else f'jeda auto-sync {value} detik')
+                else:
+                    topics.append('jeda mengikuti aktivitas kode')
+            if 'def commit_message' in additions: topics.append('ringkasan pesan commit')
+            subject = 'chore(git): perbarui ' + (' dan '.join(topics) or 'otomatisasi commit dan push')
+        elif any('HistorySection' in path for path in sources) or '.jobProgressMeta' in additions or 'history-four-columns' in additions:
+            columns = re.search(r'\.jobList\s*\{[^}]*grid-template-columns:\s*repeat\((\d+)', additions)
+            subject = f'style(history): atur {columns.group(1)} kartu per baris' if columns else 'style(history): perjelas tampilan dan progres kartu'
+        else:
+            names = list(dict.fromkeys(Path(path).stem.replace('_', '-') for path in sources))
+            label = ', '.join(names[:3]) or 'laporan perubahan'
+            only_added = all(actions.get(path) == 'A' for path in sources) and bool(sources)
+            only_removed = all(actions.get(path) == 'D' for path in sources) and bool(sources)
+            kind = 'docs' if scope == 'docs' else 'test' if scope == 'tests' else 'style' if sources and all(path.endswith('.css') for path in sources) else 'feat' if only_added else 'chore'
+            verb = 'tambahkan' if only_added else 'hapus' if only_removed else 'perbarui'
+            subject = f'{kind}({scope}): {verb} {label}'
+        if len(subject) > 100: subject = subject[:97].rsplit(' ', 1)[0] + '...'
+        body = [subject, '', 'Ringkasan perubahan staged:']
+        for path, added, removed in changes[:50]:
+            count = 'binary' if added == '-' else f'+{added}/-{removed} baris'
+            body.append(f'- {actions.get(path, "M")} {path} ({count})')
+        if len(changes) > 50: body.append(f'- {len(changes)-50} file tambahan')
+        symbols = list(dict.fromkeys(re.findall(r'^[+-]\s*(?:async\s+def|def|(?:export\s+)?(?:async\s+)?function)\s+([A-Za-z_]\w*)', diff, re.MULTILINE)))
+        if symbols: body += ['', 'Simbol kode yang diubah: ' + ', '.join(symbols[:12])]
+        return '\n'.join(body)
 
     def blob_issue(self, oid, path):
         if protected(path): return f'protected path: {path}'
@@ -125,6 +225,9 @@ class Sync:
             return self.save('git_operation_in_progress')
         if self.paths('diff', '--name-only', '--diff-filter=U', '-z'):
             return self.save('git_operation_in_progress')
+        observed = self.source_snapshot()
+        waiting, last_activity = self.quiet_gate(observed)
+        if waiting: return waiting
         issue = self.staged_issue()
         if issue: return self.save('held', error=issue)
         changed = set(self.paths('ls-files', '--modified', '--deleted', '--others', '--exclude-standard', '-z'))
@@ -135,16 +238,16 @@ class Sync:
             file = self.repo / path
             if file.is_symlink() or not file.exists(): continue
             if not file.is_file(): return self.save('held', error=f'Nested repository or directory: {path}')
-            if time.time() - file.stat().st_mtime < self.settle_seconds:
-                return self.save('waiting_for_quiet', changed_files=len(eligible))
             if file.stat().st_size > self.max_bytes:
                 return self.save('held', error=f'File exceeds size limit: {path}')
             if SECRET.search(file.read_bytes()):
                 return self.save('held', error=f'Credential detected: {path}')
         if dry_run:
-            return self.save('dry_run', eligible_files=eligible, protected_files_skipped=ignored)
+            return self.save('dry_run', eligible_files=eligible, protected_files_skipped=ignored,
+                             quiet_seconds=self.settle_seconds)
         committed = False
-        if eligible:
+        code_changed = any(source_activity(path) for path in eligible)
+        if eligible and code_changed:
             self.git('add', '--all', '--pathspec-from-file=-', '--pathspec-file-nul',
                      input=b''.join(b':(literal)' + os.fsencode(path) + b'\0' for path in eligible))
             issue = self.staged_issue()
@@ -152,11 +255,30 @@ class Sync:
             if os.fsdecode(self.git('symbolic-ref', '--quiet', '--short', 'HEAD')).strip() != self.branch:
                 return self.save('wrong_branch')
             if self.paths('diff', '--cached', '--name-only', '-z'):
-                stamp = datetime.now(ZoneInfo('Asia/Jakarta')).strftime('%Y-%m-%d %H:%M:%S WIB')
-                self.git('commit', '-m', f'chore: auto-sync {stamp}')
+                prepared = self.source_snapshot()
+                if prepared['files'] != observed['files'] or prepared['head'] != observed['head']:
+                    waiting, _ = self.quiet_gate(prepared)
+                    return waiting or self.save('waiting_for_quiet')
+                message = self.commit_message()
+                current = self.source_snapshot()
+                if current != prepared:
+                    waiting, _ = self.quiet_gate(current)
+                    return waiting or self.save('waiting_for_quiet')
+                self.git('commit', '-m', message)
                 committed = True
+        current = self.source_snapshot()
+        if current['files'] != observed['files']:
+            waiting, _ = self.quiet_gate(current)
+            return waiting or self.save('waiting_for_quiet')
+        # Our own staging/commit must not restart the idle clock on a network
+        # retry; the next external edit or manual commit still restarts it.
+        self.remember_activity(current, last_activity)
         head = self.git('rev-parse', 'HEAD').decode().strip()
         remote_ref = f'refs/remotes/{self.remote}/{self.branch}'
+        if not code_changed and head == self.git('rev-parse', '--verify', remote_ref, check=False).decode().strip():
+            return self.save('synced', head=head, committed=False, pushed=False, changed_files=0,
+                             generated_files_pending=len(eligible), quiet_seconds=self.settle_seconds,
+                             protected_files_skipped=ignored)
         self.git('fetch', '--no-tags', self.remote, f'refs/heads/{self.branch}:{remote_ref}')
         remote_head = self.git('rev-parse', remote_ref).decode().strip()
         ancestor = self.git('merge-base', head, remote_head).decode().strip()
@@ -170,6 +292,9 @@ class Sync:
             if self.git('cat-file', '-t', oid.decode()).strip() != b'blob': continue
             issue = self.blob_issue(oid.decode(), os.fsdecode(raw_path))
             if issue: return self.save('held', head=head, error=issue)
+        if self.source_snapshot() != current:
+            waiting, _ = self.quiet_gate(self.source_snapshot())
+            return waiting or self.save('waiting_for_quiet')
         if head != remote_head:
             self.git('push', '--porcelain', self.remote, f'{head}:refs/heads/{self.branch}')
         return self.save('synced', head=head, committed=committed,
@@ -181,7 +306,7 @@ def main():
     parser.add_argument('--repo', type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument('--remote', default='origin')
     parser.add_argument('--branch', default='master')
-    parser.add_argument('--settle-seconds', type=int, default=30)
+    parser.add_argument('--settle-seconds', type=int, default=QUIET_SECONDS)
     parser.add_argument('--max-bytes', type=int, default=MAX_BYTES)
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()

@@ -1,0 +1,17 @@
+{
+  "activated": true,
+  "head_unchanged": true,
+  "head": "e36213c3359de79a5400a908599b3a9cc7cc2b4d",
+  "quiet_seconds": 1800,
+  "tests_passed": 23,
+  "runtime": {
+    "state": "waiting_for_quiet",
+    "checked_at": "2026-11-10T14:23:04.673739+07:00",
+    "remote": "origin",
+    "branch": "master",
+    "idle_seconds": 0,
+    "remaining_seconds": 1800,
+    "quiet_seconds": 1800,
+    "eligible_after": "2026-11-10T14:53:04.673072+07:00"
+  }
+}

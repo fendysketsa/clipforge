@@ -11495,7 +11495,7 @@ body::after {
 .outputWorkspacePane .jobRowCore { display: grid; min-width: 0; gap: 12px; }
 .outputWorkspacePane .jobProgress { position: relative; overflow: hidden; gap: 8px; padding: 12px; border: 1px solid rgba(var(--job-accent-rgb), .15); border-radius: 8px; background: rgba(var(--job-accent-rgb), .035); }
 .outputWorkspacePane .jobProgressMeta { display: flex; align-items: flex-start; gap: 10px; font-size: 11px; line-height: 1.5; color: #c2d3cb; }
-.outputWorkspacePane .jobProgressMeta span { min-width: 0; overflow-wrap: anywhere; }
+.outputWorkspacePane .jobProgressMeta span { min-width: 0; overflow: visible; white-space: normal; overflow-wrap: anywhere; }
 .outputWorkspacePane .jobProgressMeta b { flex-shrink: 0; font-size: 11px; color: var(--job-accent); }
 .outputWorkspacePane .jobProgressTrack { height: 5px; background: #ffffff14; }
 .outputWorkspacePane .jobProgressFill { background: var(--job-accent); transition: width 500ms ease; }

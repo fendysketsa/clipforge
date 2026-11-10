@@ -1,0 +1,167 @@
+{
+  "verified_at": "2026-11-10T07:08:55.848556+00:00",
+  "state": "built_browser_verified_activation_pending",
+  "desktop_columns": 4,
+  "responsive_columns": {
+    "1280_and_above": 4,
+    "1024_to_1279": 3,
+    "761_to_1023": 2,
+    "760_and_below": 1
+  },
+  "build_id": "Z40d8OcO4LJV0jkn0kGaP",
+  "browser": {
+    "fixture_only": true,
+    "page_errors": [],
+    "mutations_blocked": [],
+    "viewports": [
+      {
+        "width": 1920,
+        "scrollWidth": 1920,
+        "columns": 4,
+        "cardWidths": [
+          340,
+          340,
+          340,
+          340,
+          340,
+          340,
+          340,
+          340
+        ],
+        "cards": 8,
+        "cardOverflow": false,
+        "titleLines": "3",
+        "smallestAction": 24
+      },
+      {
+        "width": 1440,
+        "scrollWidth": 1440,
+        "columns": 4,
+        "cardWidths": [
+          325,
+          325,
+          325,
+          325,
+          325,
+          325,
+          325,
+          325
+        ],
+        "cards": 8,
+        "cardOverflow": false,
+        "titleLines": "3",
+        "smallestAction": 24
+      },
+      {
+        "width": 1280,
+        "scrollWidth": 1280,
+        "columns": 4,
+        "cardWidths": [
+          285,
+          285,
+          285,
+          285,
+          285,
+          285,
+          285,
+          285
+        ],
+        "cards": 8,
+        "cardOverflow": false,
+        "titleLines": "3",
+        "smallestAction": 24
+      },
+      {
+        "width": 1100,
+        "scrollWidth": 1100,
+        "columns": 3,
+        "cardWidths": [
+          325,
+          325,
+          325,
+          325,
+          325,
+          325,
+          325,
+          325
+        ],
+        "cards": 8,
+        "cardOverflow": false,
+        "titleLines": "3",
+        "smallestAction": 24
+      },
+      {
+        "width": 900,
+        "scrollWidth": 900,
+        "columns": 2,
+        "cardWidths": [
+          403,
+          403,
+          403,
+          403,
+          403,
+          403,
+          403,
+          403
+        ],
+        "cards": 8,
+        "cardOverflow": false,
+        "titleLines": "3",
+        "smallestAction": 24
+      },
+      {
+        "width": 390,
+        "scrollWidth": 390,
+        "columns": 1,
+        "cardWidths": [
+          340,
+          340,
+          340,
+          340,
+          340,
+          340,
+          340,
+          340
+        ],
+        "cards": 8,
+        "cardOverflow": false,
+        "titleLines": "3",
+        "smallestAction": 24
+      },
+      {
+        "width": 320,
+        "scrollWidth": 320,
+        "columns": 1,
+        "cardWidths": [
+          270,
+          270,
+          270,
+          270,
+          270,
+          270,
+          270,
+          270
+        ],
+        "cards": 8,
+        "cardOverflow": false,
+        "titleLines": "3",
+        "smallestAction": 24
+      }
+    ],
+    "queue_information_present": true,
+    "status_variants": {
+      "queued": 1,
+      "completed": 5,
+      "failed": 1,
+      "running": 1
+    }
+  },
+  "activation_tests_passed": 13,
+  "sha256": {
+    "frontend/app/globals.css": "966f28ac2cb46ad3982b4b9e855fea9df3c25d47002b888a3f91eead36ef5711",
+    "frontend/app/_components/HistorySection.tsx": "cab7a607535ca0c73565e78994d852e039d30aade4e21b3bedc6aa6b24b736b7",
+    "scripts/activate-history-four-cards.sh": "4165006ea52f0d6a8c0b3901c545e0f701add793820f8bb505731e78e0a7f3d0"
+  },
+  "activation_command": "sudo bash /www/wwwroot/clipper/clipforge/scripts/activate-history-four-cards.sh",
+  "backend_restart_required": false
+}
