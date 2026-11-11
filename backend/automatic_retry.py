@@ -4,6 +4,10 @@ from tiktok_dialogs import is_cancel_upload_confirmation
 
 MAX_RETRIES = 3
 BACKOFF_SECONDS = (60, 180, 600)
+TIKTOK_BROWSER_UNAVAILABLE = (
+    'Chrome TikTok belum tersedia. Sesi login tersimpan dipertahankan; '
+    'menunggu koneksi browser pulih. File belum dipilih dan Post belum dikirim.'
+)
 
 
 def tiktok_submission_possible(logs, *, started=False, accepted=False):
@@ -17,6 +21,8 @@ def tiktok_submission_possible(logs, *, started=False, accepted=False):
 def tiktok_retry_reason(error, logs, *, started=False, accepted=False):
     if tiktok_submission_possible(logs,started=started,accepted=accepted):
         return ''
+    if error == TIKTOK_BROWSER_UNAVAILABLE:
+        return 'browser_connection_before_post'
     message=str(error or '').casefold()
     if any(word in message for word in ('captcha','wrong_account','akun browser bukan','content safety',
             'copyright','hak cipta','content id','community guideline','pelanggaran','batas harian',

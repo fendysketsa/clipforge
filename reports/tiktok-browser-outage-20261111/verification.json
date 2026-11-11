@@ -1,0 +1,24 @@
+{
+  "checked_at": "2026-11-11T10:58:55.893803+00:00",
+  "tests": {
+    "tests": 178,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_sha256": {
+    "backend/api.py": "0c825491f93f1b82165c7f215a269265c42c30369dec265dae7dd3e62c250959",
+    "backend/automatic_retry.py": "c0ddcf3d774e8032dce27fca555c74e4bd809ae4e62a6d5b608c959e5d840b98",
+    "backend/tests/test_tiktok_browser_outage.py": "882df7ad92dab1901f4cd11351858f773d64cfbd79fe173e492f3198a2f1cb9e"
+  },
+  "expected_release_id": "338471eb192802fb74785d5db19d2ea33d30c423e5d824690a935d582b3d173a",
+  "observed_runtime_release_id": "7646145fd517a92fead41e5cc6f124f46d1c36cda5c9c19c3f750e5d9b653293",
+  "runtime_release_matches_source": false,
+  "live_session_check_ok": true,
+  "validated_target_handle": "titikbalikislami",
+  "new_upload_or_post_performed": false,
+  "affected_long_upload_confirmed": false,
+  "docker_rebuild_performed": false,
+  "activation_performed": false,
+  "activation_blocker": "Docker socket access denied; sudo requires interactive password"
+}

@@ -12393,6 +12393,15 @@ def build_tiktok_upload_command(
         and tiktok_cdp_ready()
         else ""
     )
+    if (
+        allow_cdp
+        and env_bool("TIKTOK_UPLOAD_USE_CDP", True)
+        and env_bool("TIKTOK_CDP_EXTERNAL_BROWSER", False)
+        and not cdp_url
+    ):
+        # An unavailable host browser says nothing about its authenticated
+        # session. An isolated context can reject otherwise valid cookies.
+        raise RuntimeError(automatic_retry.TIKTOK_BROWSER_UNAVAILABLE)
     command = [
         *build_tiktok_base_command(cdp_url=cdp_url),
         "upload",
@@ -12710,6 +12719,8 @@ def run_tiktok_upload(upload_id: str) -> None:
                         if tiktok_cdp_ready():
                             logs.append("Chrome TikTok pulih; mengulangi upload pada job yang sama.")
                             continue
+                if env_bool("TIKTOK_CDP_EXTERNAL_BROWSER", False):
+                    raise RuntimeError(automatic_retry.TIKTOK_BROWSER_UNAVAILABLE)
                 if not cdp_transport_failed and tiktok_auth_state_exists():
                     cdp_transport_failed = True
                     logs.append(
@@ -25231,6 +25242,14 @@ def check_tiktok_session() -> TikTokSessionStatus:
     cdp_ready = tiktok_cdp_ready()
     state_ready = tiktok_auth_state_exists()
     prefer_cdp = env_bool("TIKTOK_UPLOAD_USE_CDP", True)
+    if prefer_cdp and env_bool("TIKTOK_CDP_EXTERNAL_BROWSER", False) and not cdp_ready:
+        return TikTokSessionStatus(
+            ok=False,
+            target_handle=tiktok_target_handle(),
+            state_path=str(TIKTOK_PLAYWRIGHT_STATE),
+            message="Koneksi Chrome TikTok belum tersedia; status login belum dapat diperiksa.",
+            error=automatic_retry.TIKTOK_BROWSER_UNAVAILABLE,
+        )
     if state_ready and not prefer_cdp:
         attempts.append(build_tiktok_base_command() + ["check-login"])
     if cdp_ready:
