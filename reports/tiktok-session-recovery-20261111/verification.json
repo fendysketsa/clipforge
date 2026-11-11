@@ -1,0 +1,158 @@
+{
+  "checked_at": "2026-11-11T13:14:07.280112+00:00",
+  "affected_upload_id": "6a0c263d509749d3ab61e02f67cace3a",
+  "source_job_id": "2a08735031e3425faa863fd198665238",
+  "source_sha256": {
+    "backend/api.py": "6724b0df1ea415f71048fbb2074ebcab00bcf0a8f91723b5e42a264d7b27a9e8",
+    "backend/automatic_retry.py": "e3da034a209221b07e788f0491b33aa85a87b1d5b75a693c35db92957215c4e2",
+    "backend/tiktok_uploader.py": "7887993beded792f2968cf0ed13ace155350da6ad721b6822c304c5db3770336",
+    "frontend/app/page.tsx": "01e4865c8e2cb1637bfeedf1384b4920bf1f6f5f35f7c311a6d45001721549c6"
+  },
+  "expected_backend_release_id": "c4d805e82a2587e6a339691ed5feebbae04c071d92c73215d2a112509fef9f09",
+  "observed_runtime_release_id": "c4d805e82a2587e6a339691ed5feebbae04c071d92c73215d2a112509fef9f09",
+  "runtime_matches_source": true,
+  "live_session_valid": true,
+  "live_target_handle": "titikbalikislami",
+  "new_check_preserves_existing_tabs": true,
+  "frontend_typecheck_passed": true,
+  "frontend_production_build_passed": true,
+  "queue_submission_tests_passed": true,
+  "docker_rebuild_performed": true,
+  "activation_performed": true,
+  "affected_upload_confirmed": true,
+  "upload_retry_performed": true,
+  "activation_blocker": null,
+  "activation_command": "sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot",
+  "tests": {
+    "tests": {
+      "tests": 216,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "browser": {
+      "tests": 31,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "privacy_repair_backend": {
+      "tests": 251,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "privacy_repair_browser": {
+      "tests": 32,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "banner_repair_backend": {
+      "tests": 256,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "banner_repair_browser": {
+      "tests": 33,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "source_collision_backend": {
+      "tests": 274,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "source_collision_browser": {
+      "tests": 34,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "browser_test_environment": "Chromium requires escalated execution; initial restricted launch errors are retained in browser-deployment.xml; rerun browser.xml passed.",
+  "activation_by": "user desktop terminal",
+  "backend_health_verified": true,
+  "scheduler_running": true,
+  "frontend": {
+    "schema": 1,
+    "build_id": "MKj-MyVVIKvLk7EnWNSl-",
+    "release_id": "fed9c71af579ca357c023d9dce8218ef0f56dc40bfeb9c29696acbff2da4fde1",
+    "ui_verified": true
+  },
+  "reused_original_upload_id": true,
+  "retry_visibility": "only_you",
+  "retry_count": 3,
+  "session_fix_activation_confirmed": true,
+  "privacy_readback_fix_activation_confirmed": true,
+  "remaining_automatic_retries": 0,
+  "observed_privacy_selection": "Only you",
+  "privacy_readback_false_negative_confirmed": true,
+  "draft_only_repair_implemented": true,
+  "draft_only_repair_submitted": true,
+  "last_live_upload": {
+    "id": "6a0c263d509749d3ab61e02f67cace3a",
+    "status": "completed",
+    "visibility": "only_you",
+    "auto_retry_count": 3,
+    "upload_confirmed": true,
+    "submission_started": true,
+    "submission_accepted": true,
+    "profile_url": "https://www.tiktok.com/@titikbalikislami/video/7706901093179067668",
+    "error": null
+  },
+  "banner_selector_fix_activation_confirmed": true,
+  "live_draft_selector_proof": {
+    "live_draft_recovered": true,
+    "original_hash_verified": true,
+    "privacy_readback": "Only you",
+    "new_file_transfer": false,
+    "post_clicked": false,
+    "old_continue_count": 0,
+    "new_continue_count": 1
+  },
+  "draft_only_repair_completed": true,
+  "caption_source_collision_fix_activation_confirmed": true,
+  "full_pre_post_flow_proof": {
+    "full_pre_post_flow_verified": true,
+    "original_hash_verified": true,
+    "privacy_readback": "Only you",
+    "activation_ready": "keyboard",
+    "new_file_transfer": false,
+    "post_clicked": false,
+    "logs": [
+      "TARGET_ACCOUNT_CONFIRMED:@titikbalikislami",
+      "POST_BASELINE_MATCHES:0",
+      "POST_BASELINE_VISIBLE_IDS:5",
+      "Draft TikTok ditemukan; melanjutkan editor tanpa membuang file yang sudah ditransfer.",
+      "DRAFT_FILE_RECOVERED:clipforge-2233599bd112696999d618e8063979c05e630b2feaa69aa9b6d498efd43b45f1.mp4",
+      "DRAFT_RESUME_ONLY: hash file yang sama terverifikasi; transfer file baru dilarang.",
+      "Video draft dilanjutkan: resume_cerita_5menit_ok-berarti-intinya-adalah-kita-butuh-bahan-dan.mp4",
+      "Caption TikTok terisi tanpa nama file.",
+      "PRIVACY_REQUESTED:Only you",
+      "FINAL_VISIBILITY:private",
+      "Menunggu pemrosesan video selesai dan tombol Post aktif...",
+      "Caption TikTok terisi tanpa nama file.",
+      "PRIVACY_REQUESTED:Only you",
+      "FINAL_VISIBILITY:private",
+      "ACTIVATION_READY_BEFORE_POST: keyboard native dipilih sebelum percobaan Post; belum ada posting."
+    ]
+  },
+  "live_source_collision_proof": {
+    "matching_template_openings": 1,
+    "exact_existing_post": null,
+    "all_collisions_are_different_sources": true,
+    "target_source_id": "B3anNkNUqrg",
+    "conflicting_source_id": "Jr2AVxsP3Vk",
+    "new_upload_or_post": false
+  },
+  "remote_url": "https://www.tiktok.com/@titikbalikislami/video/7706901093179067668",
+  "remote_video_id": "7706901093179067668",
+  "remote_visibility": "only_you",
+  "remote_full_caption_verified": true,
+  "tiktok_content_review_pending": true,
+  "new_file_transfer_during_final_recovery": false
+}

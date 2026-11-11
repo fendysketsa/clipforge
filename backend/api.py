@@ -1343,6 +1343,10 @@ class TikTokUploadRequest(BaseModel):
         return value.strip()[:2200]
 
 
+class TikTokRemoteVerifyRequest(BaseModel):
+    video_url: str
+
+
 class TikTokBatchUploadRequest(BaseModel):
     clip_urls: list[str] = Field(default_factory=list)
     visibility: Literal["only_you", "public"] = Field(
@@ -1384,6 +1388,7 @@ class TikTokUploadJob(BaseModel):
     auto_retry_original_caption: str | None = None
     submission_started: bool = False
     submission_accepted: bool = False
+    resume_existing_draft_only: bool = False
     id: str
     source_job_id: str
     clip_url: str
@@ -12413,6 +12418,8 @@ def build_tiktok_upload_command(
     ]
     if upload.dry_run:
         command.append("--dry-run")
+    if upload.resume_existing_draft_only:
+        command.append('--resume-existing-draft-only')
     if tiktok_source_is_cron(upload.source_job_id):
         command.append('--cron-fresh-upload')
     return command
@@ -12665,6 +12672,7 @@ def run_tiktok_upload(upload_id: str) -> None:
                     used_cdp
                     and identity_hydration_attempts == 2
                     and tiktok_auth_state_exists()
+                    and not env_bool("TIKTOK_CDP_EXTERNAL_BROWSER", False)
                 ):
                     cdp_transport_failed = True
                 logs.append(
@@ -12678,6 +12686,7 @@ def run_tiktok_upload(upload_id: str) -> None:
                 and error
                 and tiktok_error_is_cdp_file_transfer_failure(error)
                 and tiktok_auth_state_exists()
+                and not env_bool("TIKTOK_CDP_EXTERNAL_BROWSER", False)
             ):
                 # set_input_files failed before caption/privacy/Post, so retrying
                 # in a fresh local context cannot duplicate a published video.
@@ -12693,6 +12702,7 @@ def run_tiktok_upload(upload_id: str) -> None:
                 and error
                 and tiktok_error_requires_login(error)
                 and tiktok_auth_state_exists()
+                and not env_bool("TIKTOK_CDP_EXTERNAL_BROWSER", False)
             ):
                 # The visible Chrome profile and the portable Playwright state
                 # are independent copies of the same reusable login. A logout
@@ -13748,7 +13758,8 @@ def cleanup_terminal_repair_outcomes(job: ClipJob) -> int:
 def schedule_tiktok_upload_retry(upload_id: str) -> None:
     with tiktok_uploads_lock:
         upload=tiktok_uploads.get(upload_id)
-        if upload is None or upload.status!='failed' or upload.dry_run or upload.upload_confirmed or upload.profile_url:
+        if (upload is None or upload.status!='failed' or upload.dry_run or upload.upload_confirmed
+                or upload.profile_url or upload.resume_existing_draft_only):
             return
         reason=automatic_retry.tiktok_retry_reason(upload.error,upload.logs,
             started=upload.submission_started,accepted=upload.submission_accepted)
@@ -13761,7 +13772,8 @@ def schedule_tiktok_upload_retry(upload_id: str) -> None:
     tiktok_retry_sweeper_wakeup.set()
 
 
-def queue_retryable_tiktok_uploads_once(now: datetime | None = None, *, source_job_ids: set[str] | None = None) -> int:
+def queue_retryable_tiktok_uploads_once(now: datetime | None = None, *, source_job_ids: set[str] | None = None,
+                                      upload_ids: set[str] | None = None, verified_session: bool = False) -> int:
     """Claim one due retry of an existing approved file, preserving caption and visibility."""
     if not env_bool('TIKTOK_AUTOMATIC_RETRY_ENABLED',True) or tiktok_login_is_active():
         return 0
@@ -13769,12 +13781,18 @@ def queue_retryable_tiktok_uploads_once(now: datetime | None = None, *, source_j
     with tiktok_upload_creation_lock:
         with tiktok_uploads_lock:rows=list(tiktok_uploads.values())
         for upload in sorted(rows,key=lambda item:item.updated_at):
+            if upload_ids is not None and upload.id not in upload_ids:
+                continue
             if source_job_ids is not None and upload.source_job_id not in source_job_ids:
                 continue
             count=automatic_retry.retry_count(upload)
             reason=automatic_retry.tiktok_retry_reason(upload.error,upload.logs,
                 started=upload.submission_started,accepted=upload.submission_accepted)
+            if not reason and verified_session:
+                reason=automatic_retry.tiktok_verified_session_recovery_reason(upload.error,upload.logs,
+                    started=upload.submission_started,accepted=upload.submission_accepted)
             if (upload.status!='failed' or upload.dry_run or upload.upload_confirmed or upload.profile_url
+                    or upload.resume_existing_draft_only
                     or count>=automatic_retry.MAX_RETRIES or not reason
                     or upload.target_handle.casefold().lstrip('@')!=tiktok_target_handle().casefold().lstrip('@')):
                 continue
@@ -25234,8 +25252,170 @@ def start_tiktok_login() -> YouTubeLoginStatus:
     return start_tiktok_login_if_needed()
 
 
+@app.post('/api/tiktok/uploads/{upload_id}/resume-draft', response_model=TikTokUploadJob)
+def resume_tiktok_privacy_draft(upload_id: str, *, repair_banner: bool = False,
+                              repair_caption_collision: bool = False) -> TikTokUploadJob:
+    """One explicit repair of a pre-Post privacy failure, with no new transfer."""
+    require_tiktok_ready()
+    if tiktok_login_is_active():
+        raise HTTPException(status_code=409, detail='Selesaikan login TikTok terlebih dahulu.')
+    with tiktok_upload_creation_lock:
+        with tiktok_uploads_lock:
+            upload = tiktok_uploads.get(upload_id)
+        if upload is None:
+            raise HTTPException(status_code=404, detail='Upload TikTok tidak ditemukan.')
+        if upload.upload_confirmed and upload.profile_url:
+            return upload
+        # The old direct-text Continue selector could miss a wrapped label,
+        # stopping before any draft was opened. One explicit selector repair
+        # may re-enter draft-only mode; no Post checkpoint or transfer is reset.
+        banner_repair = bool(repair_banner and upload.resume_existing_draft_only
+            and upload.status == 'failed'
+            and upload.error == 'Draf file yang sama tidak tersedia; pemulihan ditahan tanpa transfer atau Post baru.'
+            and 'DRAFT_BANNER_SELECTOR_REPAIR_RESERVED' not in upload.logs
+            and not automatic_retry.tiktok_submission_possible(upload.logs,
+                started=upload.submission_started, accepted=upload.submission_accepted))
+        caption_repair = bool(repair_caption_collision and upload.resume_existing_draft_only
+            and upload.status == 'failed'
+            and upload.error == 'Caption serupa sudah ada di TikTok, tetapi ID, caption lengkap, dan privasi belum cocok; transfer ulang ditahan.'
+            and 'DRAFT_CAPTION_SOURCE_REPAIR_RESERVED' not in upload.logs
+            and not automatic_retry.tiktok_submission_possible(upload.logs,
+                started=upload.submission_started, accepted=upload.submission_accepted))
+        if (upload.resume_existing_draft_only or 'DRAFT_PRIVACY_REPAIR_RESERVED' in upload.logs) and not (banner_repair or caption_repair):
+            return upload
+        reason = automatic_retry.tiktok_retry_reason(upload.error, upload.logs,
+            started=upload.submission_started, accepted=upload.submission_accepted)
+        if (upload.status != 'failed' or upload.dry_run or upload.visibility != 'only_you'
+                or upload.profile_url or upload.upload_confirmed
+                or (reason != 'privacy_control_not_ready' and not (banner_repair or caption_repair))
+                or 'PRIVACY_REQUESTED:Only you' not in upload.logs
+                or upload.target_handle.casefold().lstrip('@') != tiktok_target_handle().casefold().lstrip('@')
+                or not upload.clip_sha256):
+            raise HTTPException(status_code=409, detail='Draf ini tidak memenuhi pemulihan privasi sebelum Post.')
+        checked = create_tiktok_upload_record(upload.source_job_id, TikTokUploadRequest(
+            clip_url=upload.clip_url, caption=upload.caption, visibility=upload.visibility, dry_run=False))
+        media = output_path_from_url(upload.clip_url)
+        if (checked.id != upload.id or media is None or not media.is_file()
+                or file_sha256(media) != upload.clip_sha256):
+            raise HTTPException(status_code=409, detail='Identitas file atau percobaan upload berubah; pemulihan ditahan.')
+        with tiktok_uploads_lock:
+            live = tiktok_uploads.get(upload.id)
+            if live is None or live.updated_at != upload.updated_at or live.status != 'failed':
+                raise HTTPException(status_code=409, detail='Status upload berubah; periksa percobaan yang sama.')
+            recovered = live.model_copy(update=dict(status='queued', queued_at=now_iso(),
+                updated_at=now_iso(), error=None, started_at=None, finished_at=None,
+                auto_retry_at=None, auto_retry_reason='privacy_draft_repair_once',
+                resume_existing_draft_only=True,
+                logs=[*live.logs, 'DRAFT_CAPTION_SOURCE_REPAIR_RESERVED' if caption_repair else
+                    'DRAFT_BANNER_SELECTOR_REPAIR_RESERVED' if banner_repair else 'DRAFT_PRIVACY_REPAIR_RESERVED',
+                    'Draf yang sama dilanjutkan sekali; penghitung retry tetap dan transfer file baru dilarang.'][-160:]))
+            tiktok_uploads[upload.id] = recovered
+            save_tiktok_uploads_unlocked()
+        queue_tiktok_upload_jobs([recovered])
+    return recovered
+
+
+@app.post('/api/tiktok/uploads/{upload_id}/retry', response_model=TikTokUploadJob)
+def retry_failed_tiktok_short(upload_id: str) -> TikTokUploadJob:
+    """Resume an existing approved Short only before any possible Post."""
+    with tiktok_uploads_lock:
+        upload = tiktok_uploads.get(upload_id)
+    if upload is None:
+        raise HTTPException(status_code=404, detail='Upload TikTok tidak ditemukan.')
+    if upload.status in {'queued','running'} or upload.upload_confirmed and upload.profile_url:
+        return upload
+    reason = automatic_retry.tiktok_retry_reason(upload.error, upload.logs,
+        started=upload.submission_started, accepted=upload.submission_accepted) or automatic_retry.tiktok_verified_session_recovery_reason(
+        upload.error, upload.logs, started=upload.submission_started, accepted=upload.submission_accepted)
+    if (upload.status != 'failed' or upload.dry_run or upload.profile_url or not reason
+            or upload.resume_existing_draft_only or automatic_retry.retry_count(upload) >= automatic_retry.MAX_RETRIES):
+        raise HTTPException(status_code=409, detail='Percobaan ini perlu verifikasi posting; retry transfer tidak diizinkan.')
+    job, clip, _ = find_job_clip(upload.source_job_id, upload.clip_url)
+    if job.request.clip_mode != 'short':
+        raise HTTPException(status_code=409, detail='Pemulihan ini hanya untuk Short, bukan Long.')
+    if not clip.is_correct and not (clip.render_qc_passed is True and not job.request.publication_review_required):
+        raise HTTPException(status_code=409, detail='Review atau QC Short belum lolos.')
+    status = check_tiktok_session()
+    if not status.ok:
+        raise HTTPException(status_code=409, detail=status.error or status.message)
+    queued = queue_retryable_tiktok_uploads_once(upload_ids={upload.id}, verified_session=True)
+    with tiktok_uploads_lock:
+        result = tiktok_uploads.get(upload.id, upload)
+    if not queued and result.status == 'failed':
+        raise HTTPException(status_code=409, detail='File, preflight, jeda retry, atau percobaan terkait masih menahan pemulihan.')
+    return result
+
+
+@app.post('/api/tiktok/uploads/{upload_id}/verify-remote', response_model=TikTokUploadJob)
+def reconcile_tiktok_remote_post(upload_id: str, request: TikTokRemoteVerifyRequest) -> TikTokUploadJob:
+    """Reconcile an exact remote row even after its local job/media was cleaned."""
+    with tiktok_uploads_lock:
+        upload = tiktok_uploads.get(upload_id)
+    if upload is None:
+        raise HTTPException(status_code=404, detail='Upload TikTok tidak ditemukan.')
+    if upload.clip_name.startswith(('resume_cerita_', 'highlight_5menit_', 'long_animate_')):
+        raise HTTPException(status_code=409, detail='Rekonsiliasi ini hanya untuk Short, bukan Long.')
+    expected_handle = tiktok_target_handle().casefold().lstrip('@')
+    match = re.fullmatch(r'https://www\.tiktok\.com/@([\w.]+)/video/\d{10,25}', request.video_url)
+    if (not match or match[1].casefold() != expected_handle
+            or upload.target_handle.casefold().lstrip('@') != expected_handle
+            or upload.status in {'queued','running'} or upload.dry_run):
+        raise HTTPException(status_code=409, detail='ID, akun, atau status posting tidak memenuhi verifikasi.')
+    if not social_upload_execution_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail='Browser sedang dipakai upload; verifikasi ditunda.')
+    try:
+        if not tiktok_cdp_ready():
+            raise HTTPException(status_code=503, detail=automatic_retry.TIKTOK_BROWSER_UNAVAILABLE)
+        command = [*build_tiktok_base_command(cdp_url=TIKTOK_CDP_URL), 'verify-post', request.video_url,
+            '--caption', upload.caption, '--visibility', upload.visibility]
+        try:
+            result = subprocess.run(command, cwd=BASE_DIR, capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=180, check=False)
+        except subprocess.TimeoutExpired as exc:
+            raise HTTPException(status_code=409, detail='Verifikasi posting melewati batas waktu; status lokal dipertahankan.') from exc
+        logs = [line for line in (result.stdout+'\n'+result.stderr).splitlines() if line.strip()]
+        proofs = [line.split('REMOTE_POST_CONFIRMED:',1)[1] for line in logs if line.startswith('REMOTE_POST_CONFIRMED:')]
+        try:
+            proof = json.loads(proofs[-1]) if result.returncode == 0 and proofs else {}
+        except (ValueError,TypeError):
+            proof = {}
+        expected_caption = ' '.join(upload.caption[:2200].replace('\r\n','\n').replace('\r','\n').replace('\xa0',' ').replace('\u200b','').strip().split())
+        if (proof.get('video_url') != request.video_url or proof.get('visibility') != upload.visibility
+                or proof.get('caption_sha256') != hashlib.sha256(expected_caption.encode()).hexdigest()):
+            raise HTTPException(status_code=409, detail=tiktok_error_from_logs(logs) or 'Posting belum terverifikasi; status lokal dipertahankan.')
+        with tiktok_upload_creation_lock:
+            with tiktok_uploads_lock:
+                live = tiktok_uploads.get(upload.id)
+                if live is None or live.updated_at != upload.updated_at or live.status in {'queued','running'}:
+                    raise HTTPException(status_code=409, detail='Status upload berubah; rekonsiliasi ditahan.')
+                reconciled = live.model_copy(update=dict(status='completed', upload_confirmed=True,
+                    profile_url=request.video_url, error=None, auto_retry_at=None, auto_retry_reason='',
+                    updated_at=now_iso(), finished_at=live.finished_at or now_iso(),
+                    logs=[*live.logs, 'REMOTE_POST_RECONCILED:'+request.video_url,
+                        'ID, caption lengkap dan privasi terverifikasi di Studio; tidak ada transfer atau Post baru.'][-160:]))
+                tiktok_uploads[upload.id] = reconciled
+                save_tiktok_uploads_unlocked()
+        return reconciled
+    finally:
+        social_upload_execution_lock.release()
+
+
 @app.post("/api/tiktok/session/check", response_model=TikTokSessionStatus)
 def check_tiktok_session() -> TikTokSessionStatus:
+    # Session validation navigates TikTok pages too. Share the browser mutex
+    # with both upload workers, without making UI checks wait for a long upload.
+    if not social_upload_execution_lock.acquire(blocking=False):
+        return TikTokSessionStatus(ok=False, target_handle=tiktok_target_handle(),
+            state_path=str(TIKTOK_PLAYWRIGHT_STATE),
+            message="Browser sedang dipakai upload. Tunggu upload selesai sebelum memeriksa sesi.",
+            error="Browser sedang dipakai upload; pemeriksaan sesi ditunda agar upload tidak terganggu.")
+    try:
+        return check_tiktok_session_unlocked()
+    finally:
+        social_upload_execution_lock.release()
+
+
+def check_tiktok_session_unlocked() -> TikTokSessionStatus:
     if not playwright_installed():
         raise HTTPException(status_code=503, detail="Playwright belum terpasang di backend")
     attempts: list[list[str]] = []
@@ -25254,7 +25434,7 @@ def check_tiktok_session() -> TikTokSessionStatus:
         attempts.append(build_tiktok_base_command() + ["check-login"])
     if cdp_ready:
         attempts.append(build_tiktok_base_command(cdp_url=TIKTOK_CDP_URL) + ["check-login"])
-    if state_ready and prefer_cdp:
+    if state_ready and prefer_cdp and not env_bool("TIKTOK_CDP_EXTERNAL_BROWSER", False):
         attempts.append(build_tiktok_base_command() + ["check-login"])
     if not cdp_ready and not state_ready and tiktok_chromium_profile_ready():
         attempts.append(build_tiktok_base_command(force_profile=True) + ["check-login"])
@@ -25343,6 +25523,14 @@ def create_tiktok_upload(job_id: str, request: TikTokUploadRequest) -> TikTokUpl
     with tiktok_upload_creation_lock:
         upload = create_tiktok_upload_record(job_id, request)
         queue_tiktok_upload_jobs([upload])
+    if upload.status == 'failed' and automatic_retry.tiktok_verified_session_recovery_reason(
+            upload.error, upload.logs, started=upload.submission_started, accepted=upload.submission_accepted):
+        # An explicit retry click may revive the same pre-Post record after
+        # live account validation. A session check alone never submits media.
+        status = check_tiktok_session()
+        if not status.ok:
+            raise HTTPException(status_code=409, detail=status.error or status.message)
+        queue_retryable_tiktok_uploads_once(upload_ids={upload.id}, verified_session=True)
     with tiktok_uploads_lock:
         return tiktok_uploads.get(upload.id, upload)
 

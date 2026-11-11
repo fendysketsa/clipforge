@@ -1,0 +1,97 @@
+{
+  "created_at": "2026-11-11T13:33:12.705675+00:00",
+  "scope": "TikTok Shorts only; Long excluded",
+  "initial_failed_records": 28,
+  "unique_entries": 12,
+  "real_unique_files": 11,
+  "retry_upload_ids": [
+    "a73ad80494d8444eb4ec2ecd4827e9d5"
+  ],
+  "verify_remote": [
+    {
+      "upload_id": "8c6a17ff099e44189b7704ce9fed44f7",
+      "video_url": "https://www.tiktok.com/@titikbalikislami/video/7706778926332251393",
+      "visibility": "only_you",
+      "clip_sha256": "6139498aba07a6b604ae2ce85aa2748949327872304fef79c1d9c90b68a62298",
+      "caption_sha256": "3ed8db33d7ab3953723659f003f768b11448b4ad248cf62f31447b4fea9f5a9e"
+    },
+    {
+      "upload_id": "0ea19ab252a040f5ba55daf94d8d64c7",
+      "video_url": "https://www.tiktok.com/@titikbalikislami/video/7706787118877609237",
+      "visibility": "public",
+      "clip_sha256": "5c0d0ab35e9e8504db899f1ae4cd9318e7dbaebba17bdb6b946d04456edac6df",
+      "caption_sha256": "53fe825faf999ec3bc836422da7515258b7807c3ba4a16cb2154af05da8ec033"
+    },
+    {
+      "upload_id": "406bd8430a854c1786b499b0237170fe",
+      "video_url": "https://www.tiktok.com/@titikbalikislami/video/7706571020089429269",
+      "visibility": "public",
+      "clip_sha256": "a7549f5f7ae96ea127d809b1cde1cfa288aae0dc19a00bb56f71bcded323dcad",
+      "caption_sha256": "59d576e739cb20617ede1b75b007042062578a448cbe4624b35a86407175c17d"
+    },
+    {
+      "upload_id": "7f622739c51c4859aa2f90add61ecd67",
+      "video_url": "https://www.tiktok.com/@titikbalikislami/video/7706416860450868501",
+      "visibility": "only_you",
+      "clip_sha256": "d4f8a93f3ce3046d039fff03d2a456470fc1f9f31e2a656a64a7efa20a385ce0",
+      "caption_sha256": "2ad5aaaeb28dfce514b38ae7beb635fd2114c2cfae8564bfa413545de8ce44e6"
+    },
+    {
+      "upload_id": "cfd628e633f5494aa8ae260c9f383e1c",
+      "video_url": "https://www.tiktok.com/@titikbalikislami/video/7706416266482896148",
+      "visibility": "only_you",
+      "clip_sha256": "2c3aee1423cf506581dbae45fc25fc481f02576df95d4b5c04e34de4abd91b34",
+      "caption_sha256": "7d3cf908b8a8ea0368e7e74b76326c7a68c0ac45e20f2582d35c1e6d8ed4f3e8"
+    },
+    {
+      "upload_id": "52e909e7468d4912801848664e40d333",
+      "video_url": "https://www.tiktok.com/@titikbalikislami/video/7706415757357272340",
+      "visibility": "only_you",
+      "clip_sha256": "9d2fdbe64437178aacc41702effa43a964b908450ed6d5e062cb91d19df2178d",
+      "caption_sha256": "853655dc9c637da9cb04932b845cf57294267348ab8ef7e2f5a6339d6a5f4ada"
+    },
+    {
+      "upload_id": "2cb6e0efa3f64065b6be1d92580f326c",
+      "video_url": "https://www.tiktok.com/@titikbalikislami/video/7706311648990235925",
+      "visibility": "public",
+      "clip_sha256": "3354bca00caf5fc3523464acebaa2200048f42356363bc9becbdfd236b706c75",
+      "caption_sha256": "6aad0616f18e39ec92152f26694533e814c42838b1d17dd3d79230ba3e436b4a"
+    },
+    {
+      "upload_id": "32bc654ad2ff43968b734cae17aa9389",
+      "video_url": "https://www.tiktok.com/@titikbalikislami/video/7706311356974320917",
+      "visibility": "public",
+      "clip_sha256": "f03d4efc5f9cdba13cac444c0bf81272359da13fe2612ddad82f72d118b2b4fc",
+      "caption_sha256": "029c948401b54c9e2ac9ad4a5637e6f7476537c18f85dd05c693420e0f2a1417"
+    }
+  ],
+  "existing_remote_file_count": 8,
+  "legacy_profile_urls_to_fix": 0,
+  "newly_uploaded": [
+    {
+      "upload_id": "864a5c5c78d04fc889306aab6f8c2996",
+      "video_url": "https://www.tiktok.com/@titikbalikislami/video/7706903370652585237",
+      "visibility": "only_you",
+      "clip_sha256": "991f493586f1047a42e2fcd23e25ac5ab1a389b792dfe9b7c1da516aa2cede9b",
+      "caption_sha256": "1530a9a50f2c0ecd5e82abbf763e665dd08e8113d26bb291120f730d0e425550"
+    }
+  ],
+  "blocked": [
+    {
+      "upload_ids": [
+        "583000a30142427cade21d8d9d332db7",
+        "ba61438a0f2e4a27804ab102a6cc44d6",
+        "0abf129145a54e7186f8e095188ad9ef",
+        "aee89716f6b040ccab195408c1fa65d2"
+      ],
+      "clip_url": "/outputs/b9f424ca5a364685b39c807d47d0b70d/momon-panik-atun-jadi-buta-di-minecraft/clips/clip_01_ada-telepon-sebentar-ya-halo-pak-presiden-hah.mp4",
+      "reason": "local job and media missing; a prior Post was accepted but no exact current remote match was verified"
+    },
+    {
+      "upload_ids": [
+        "upload"
+      ],
+      "reason": "synthetic test record; no real job or media"
+    }
+  ]
+}

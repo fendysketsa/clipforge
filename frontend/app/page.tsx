@@ -224,6 +224,8 @@ export default function HomePage() {
   const restoredTabJob = useRef(false);
   const cleanupConfirmationTimer = useRef<number | null>(null);
   const reportedFailureIds = useRef(new Set<string>());
+  const tiktokSessionCheckInFlight = useRef(false);
+  const tiktokLoginStartInFlight = useRef(false);
 
   const activeJobId = activeJob?.id;
   const isTrackedJobBusy = isActiveJob(activeJob);
@@ -497,17 +499,25 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!isTikTokLoginActive) return;
+    let cancelled = false;
+    let requestInFlight = false;
+    let finished = false;
     const interval = window.setInterval(async () => {
+      if (requestInFlight || finished) return;
+      requestInFlight = true;
       const status = await getTikTokLogin().catch(() => null);
-      if (!status) return;
+      requestInFlight = false;
+      if (cancelled || !status) return;
       setIsTikTokLoginActive(status.active);
       if (!status.active) {
+        finished = true;
+        window.clearInterval(interval);
         loadTikTokUploads().catch(() => undefined);
-        if (status.error) toast.error(status.error);
-        else toast.success("Login TikTok tersimpan dan siap dipakai.");
+        if (status.error) toast.error(status.error, { id: "tiktok-session" });
+        else toast.success("Login TikTok tersimpan dan siap dipakai.", { id: "tiktok-session" });
       }
     }, 1500);
-    return () => window.clearInterval(interval);
+    return () => { cancelled = true; window.clearInterval(interval); };
   }, [isTikTokLoginActive, loadTikTokUploads]);
 
   useEffect(() => {
@@ -1391,6 +1401,8 @@ export default function HomePage() {
   );
 
   const handleCheckTikTokSession = useCallback(async () => {
+    if (tiktokSessionCheckInFlight.current) return;
+    tiktokSessionCheckInFlight.current = true;
     try {
       await toast.promise(checkTikTokSession().then((status) => {
         if (!status.ok) throw new Error(status.error || status.message);
@@ -1399,15 +1411,18 @@ export default function HomePage() {
         loading: "Memeriksa akun TikTok tanpa mengunggah file...",
         success: (status) => `Session @${status.target_handle} valid.`,
         error: (sessionError) => sessionError instanceof Error ? sessionError.message : "Gagal memeriksa TikTok",
-      });
+      }, { id: "tiktok-session" });
     } catch {
       // toast.promise already renders the request or validation error once.
     } finally {
+      tiktokSessionCheckInFlight.current = false;
       await loadTikTokUploads().catch(() => undefined);
     }
   }, [loadTikTokUploads]);
 
   const handleStartTikTokLogin = useCallback(async () => {
+    if (tiktokLoginStartInFlight.current || tiktokSessionCheckInFlight.current) return;
+    tiktokLoginStartInFlight.current = true;
     try {
       const status = await startTikTokLogin();
       setIsTikTokLoginActive(status.active);
@@ -1415,10 +1430,13 @@ export default function HomePage() {
         status.active
           ? `Chrome TikTok sedang dibuka. Pilih Continue with Google, gunakan ${tiktokConfig?.target_email ?? "akun Google target"}, lalu pastikan akun @${tiktokConfig?.target_handle ?? "titikbalikislami"} yang aktif.`
           : status.logs.at(-1) ?? "Session TikTok masih aktif; login tidak perlu diulang.",
+        { id: "tiktok-session" },
       );
       if (!status.active) await loadTikTokUploads();
     } catch (loginError) {
-      toast.error(loginError instanceof Error ? loginError.message : "Gagal membuka login TikTok");
+      toast.error(loginError instanceof Error ? loginError.message : "Gagal membuka login TikTok", { id: "tiktok-session" });
+    } finally {
+      tiktokLoginStartInFlight.current = false;
     }
   }, [loadTikTokUploads, tiktokConfig?.target_handle]);
 

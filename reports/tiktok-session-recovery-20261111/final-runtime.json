@@ -1,0 +1,61 @@
+{
+  "backend": {
+    "schema": 1,
+    "verified": true,
+    "role": "backend",
+    "release_id": "c4d805e82a2587e6a339691ed5feebbae04c071d92c73215d2a112509fef9f09",
+    "source_verified": true,
+    "hostname": "fendycnugraha",
+    "app_pid": 57,
+    "prepared_at": 1794402645.0563934,
+    "command": [
+      "python",
+      "-m",
+      "uvicorn",
+      "api:app",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "8010"
+    ]
+  },
+  "health": {
+    "verified": true,
+    "checked_at": 1794402846.8797245,
+    "release_id": "c4d805e82a2587e6a339691ed5feebbae04c071d92c73215d2a112509fef9f09",
+    "duplicate_guard_version": 2,
+    "cron_draft_policy": "discard",
+    "cron_enabled": true,
+    "scheduler_running": true,
+    "director_policy": 4,
+    "source_process_limit": 2
+  },
+  "bot": {
+    "schema": 1,
+    "verified": true,
+    "role": "telegram-bot",
+    "release_id": "c4d805e82a2587e6a339691ed5feebbae04c071d92c73215d2a112509fef9f09",
+    "source_verified": true,
+    "hostname": "fendycnugraha",
+    "app_pid": 7,
+    "prepared_at": 1794402656.0674598,
+    "command": [
+      "python",
+      "telegram_bot.py"
+    ],
+    "backend": {
+      "duplicate_guard_version": 2,
+      "cron_draft_policy": "discard",
+      "cron_enabled": true,
+      "scheduler_running": true,
+      "director_policy": 4,
+      "source_process_limit": 2
+    },
+    "frontend": {
+      "schema": 1,
+      "build_id": "MKj-MyVVIKvLk7EnWNSl-",
+      "release_id": "fed9c71af579ca357c023d9dce8218ef0f56dc40bfeb9c29696acbff2da4fde1",
+      "ui_verified": true
+    }
+  }
+}

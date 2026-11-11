@@ -1,0 +1,25 @@
+{
+  "full_pre_post_flow_verified": true,
+  "original_hash_verified": true,
+  "privacy_readback": "Only you",
+  "activation_ready": "keyboard",
+  "new_file_transfer": false,
+  "post_clicked": false,
+  "logs": [
+    "TARGET_ACCOUNT_CONFIRMED:@titikbalikislami",
+    "POST_BASELINE_MATCHES:0",
+    "POST_BASELINE_VISIBLE_IDS:5",
+    "Draft TikTok ditemukan; melanjutkan editor tanpa membuang file yang sudah ditransfer.",
+    "DRAFT_FILE_RECOVERED:clipforge-2233599bd112696999d618e8063979c05e630b2feaa69aa9b6d498efd43b45f1.mp4",
+    "DRAFT_RESUME_ONLY: hash file yang sama terverifikasi; transfer file baru dilarang.",
+    "Video draft dilanjutkan: resume_cerita_5menit_ok-berarti-intinya-adalah-kita-butuh-bahan-dan.mp4",
+    "Caption TikTok terisi tanpa nama file.",
+    "PRIVACY_REQUESTED:Only you",
+    "FINAL_VISIBILITY:private",
+    "Menunggu pemrosesan video selesai dan tombol Post aktif...",
+    "Caption TikTok terisi tanpa nama file.",
+    "PRIVACY_REQUESTED:Only you",
+    "FINAL_VISIBILITY:private",
+    "ACTIVATION_READY_BEFORE_POST: keyboard native dipilih sebelum percobaan Post; belum ada posting."
+  ]
+}

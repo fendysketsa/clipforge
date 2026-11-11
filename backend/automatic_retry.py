@@ -80,5 +80,24 @@ def retry_count(upload):
     return max(upload.auto_retry_count, int('CAPTION_READY_RETRY_ONCE' in upload.logs))
 
 
+def tiktok_verified_session_recovery_reason(error, logs, *, started=False, accepted=False):
+    """An old isolated-browser rejection is recoverable only after live validation."""
+    if tiktok_submission_possible(logs, started=started, accepted=accepted):
+        return ''
+    if str(error or '') == 'Backend restart saat upload TikTok berlangsung. Periksa TikTok Studio sebelum retry agar tidak membuat posting duplikat.':
+        if (any(str(line).startswith('TARGET_ACCOUNT_CONFIRMED:') for line in logs)
+                and any(str(line).startswith('POST_BASELINE_VISIBLE_IDS:')
+                        and not str(line).endswith('unavailable') for line in logs)):
+            return 'restart_before_post_revalidated'
+        return ''
+    if str(error or '') != 'Sesi TikTok belum login. Klik Login TikTok lalu lanjutkan dengan Google di Chrome.':
+        return ''
+    if (any(str(line).startswith('TARGET_ACCOUNT_CONFIRMED:') for line in logs)
+            and any(str(line).startswith('Storage-state TikTok ditolak;') for line in logs)
+            and any(str(line).startswith('Recovery Chrome TikTok belum tersedia:') for line in logs)):
+        return 'live_session_revalidated_before_post'
+    return ''
+
+
 def backoff_seconds(count):
     return BACKOFF_SECONDS[min(max(0,count),len(BACKOFF_SECONDS)-1)]

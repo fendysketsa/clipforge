@@ -1,5 +1,6 @@
 """Browser regressions for the actual Studio Select/DraftJS failure shapes."""
 import pytest
+from pathlib import Path
 
 import tiktok_uploader as uploader
 
@@ -56,6 +57,58 @@ def test_native_privacy_reacquires_trigger_after_label_and_element_change(studio
     assert studio_page.locator('#privacy-trigger').inner_text() == 'Only you'
     uploader.set_public(studio_page)
     assert studio_page.locator('#privacy-trigger').inner_text() == 'Everyone'
+
+
+def test_real_nested_studio_labels_are_detected_before_and_after_selection(studio_page):
+    studio_page.evaluate('''() => {
+      const original = renderPrivacy;
+      window.renderPrivacy = () => {
+        original();
+        const button = document.querySelector('#privacy-trigger');
+        const label = button.innerText;
+        button.innerHTML = `<div class="Select__triggerInner"><div>${label}</div></div><span><svg></svg></span>`;
+      };
+      renderPrivacy();
+    }''')
+    assert studio_page.locator(uploader.PRIVACY_TRIGGER_SELECTOR).count() == 1
+    uploader.set_only_you(studio_page)
+    assert uploader.current_privacy_trigger(studio_page).inner_text() == 'Only you'
+    uploader.set_public(studio_page)
+    assert uploader.current_privacy_trigger(studio_page).inner_text() == 'Everyone'
+
+
+def test_real_wrapped_continue_button_recovers_exact_existing_draft(studio_page):
+    studio_page.set_content('''
+      <div>A video you were editing wasn’t saved. Continue editing?</div>
+      <button onclick="document.body.innerHTML='clipforge-fixture.mp4'"><div><span>Continue</span></div></button>
+      <div>Select video to upload</div>
+    ''')
+    assert studio_page.locator('button:text-is("Continue")').count() == 0
+    assert uploader.recover_interrupted_upload_draft(studio_page,Path('clipforge-fixture.mp4'))
+
+
+def test_shared_template_opening_with_distinct_source_ids_is_not_a_duplicate(studio_page):
+    opening='Kalau di tempat kerja: Menurutmu, siapa yang perlu memulai komunikasi lebih dulu dalam situasi ini?'
+    requested=opening+'\n\nSumber: BANGJBLOX https://www.youtube.com/watch?v=B3anNkNUqrg'
+    other=opening+' Sumber: Nadia Omara https://www.youtube.com/watch?v=Jr2AVxsP3Vk'
+    studio_page.set_content(f'<div data-tt="components_RowLayout_FlexRow"><a href="/@owner/video/7706894101328809217">{other}</a><div>Everyone</div></div>')
+    assert uploader.exact_existing_tiktok_post(studio_page,requested,'owner') is None
+    assert uploader.caption_prefix_matches_are_other_sources(studio_page,requested,'owner',1)
+
+
+@pytest.mark.parametrize('case',['exact','caption','privacy','owner'])
+def test_remote_verifier_only_accepts_exact_id_caption_owner_and_privacy(studio_page,monkeypatch,case):
+    caption='Caption lengkap. Sumber: kanal https://youtu.be/abcdefghijk'
+    owner='different' if case=='owner' else 'owner'
+    text='Different caption' if case=='caption' else caption
+    privacy='Everyone' if case=='privacy' else 'Only me'
+    studio_page.set_content(f'<div data-tt="components_RowLayout_FlexRow"><a href="/@{owner}/video/7706778926332251393">{text}</a><div>{privacy}</div></div>')
+    monkeypatch.setattr(uploader,'goto',lambda *_:None)
+    if case=='exact':
+        proof=uploader.verify_remote_post(studio_page,'https://www.tiktok.com/@owner/video/7706778926332251393',caption,'owner','only_you')
+        assert proof['visibility']=='only_you'
+    else:
+        with pytest.raises(uploader.UploadError):uploader.verify_remote_post(studio_page,'https://www.tiktok.com/@owner/video/7706778926332251393',caption,'owner','only_you')
 
 
 def test_animated_option_uses_native_key_without_escaping_its_own_menu(studio_page):

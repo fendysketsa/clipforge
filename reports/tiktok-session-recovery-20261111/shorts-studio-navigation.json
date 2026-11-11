@@ -1,0 +1,106 @@
+{
+  "schemas": [],
+  "scroll": [],
+  "buttons": [
+    {
+      "text": "Upload",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Home",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Posts",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Analytics",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Comments",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Inspiration",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Creator Academy",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Monetization",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Royalty-free sounds",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Smart Split",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Feedback",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Posts (Created on)",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Views",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Likes",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Comments",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Only me",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Everyone",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Everyone",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Everyone",
+      "label": null,
+      "title": null
+    },
+    {
+      "text": "Only me",
+      "label": null,
+      "title": null
+    }
+  ]
+}

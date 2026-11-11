@@ -1,0 +1,32 @@
+{
+  "expected_backend_release_id": "ce7e303b1836477ab4463dc081ef54af8ba057a98d56e1e02d85dac69673d869",
+  "observed_runtime_release_id": "ce7e303b1836477ab4463dc081ef54af8ba057a98d56e1e02d85dac69673d869",
+  "source_sha256": {
+    "backend/api.py": "4b204834d420f5baa6ec16177582fc5caabe3a1e8fee47db803fcb0f443f8209",
+    "backend/automatic_retry.py": "2b057d5440caebfe56ff1b95a4bc057f0892776e65a790afeb57209d56cbd9dc",
+    "backend/tiktok_uploader.py": "1c9640f0f3b950909db9be3f60f71ef8bf3a609807171308c191490741baa799"
+  },
+  "activation_performed": true,
+  "activation_blocker": null,
+  "live_read_only_verifier_proved": true,
+  "first_short_confirmed_url": "https://www.tiktok.com/@titikbalikislami/video/7706903370652585237",
+  "tests": {
+    "backend": {
+      "tests": 301,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "browser": {
+      "tests": 38,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "checked_at": "2026-11-11T13:53:14.855173+00:00",
+  "remaining_local_short_upload_id": "a73ad80494d8444eb4ec2ecd4827e9d5",
+  "remote_reconciliation_pending": true,
+  "runtime_matches_source": true,
+  "scheduler_running": true
+}

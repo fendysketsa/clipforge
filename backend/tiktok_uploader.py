@@ -712,6 +712,16 @@ def recover_interrupted_upload_draft(page, video_path: Path) -> bool:
         timeout_ms=1_200,
     )
     if button is None:
+        # Current Studio uses an inline draft banner and a plain Continue
+        # button. Match its complete upload-specific prompt before accepting
+        # that otherwise ambiguous button label.
+        try:
+            body = page.locator('body').inner_text(timeout=2000)
+        except Exception:
+            body = ''
+        if re.search(r'A video you were editing wasn[\u2019\']t saved\. Continue editing\?', body):
+            button = first_visible(page, ['button:is(:text-is("Continue"), :has(:text-is("Continue")))'], timeout_ms=1200)
+    if button is None:
         return False
     try:
         button.click(timeout=5_000)
@@ -723,9 +733,11 @@ def recover_interrupted_upload_draft(page, video_path: Path) -> bool:
             "File tidak dibuang dan upload baru tidak dimulai."
         ) from exc
 
-    if upload_editor_has_requested_file(page, video_path):
-        log(f"DRAFT_FILE_RECOVERED:{video_path.name}")
-        return True
+    for _attempt in range(20):
+        if upload_editor_has_requested_file(page, video_path):
+            log(f"DRAFT_FILE_RECOVERED:{video_path.name}")
+            return True
+        page.wait_for_timeout(1000)
 
     save_debug(page, "draft-recovered-unverified")
     raise UploadError(
@@ -998,18 +1010,19 @@ def verify_privacy_selection(trigger, pattern: str) -> None:
         raise UploadError('Pilihan privasi TikTok belum terverifikasi pada kontrol. Video belum diposting.')
 
 
-PRIVACY_TRIGGER_SELECTOR = (
-    'button[role="combobox"][aria-haspopup="dialog"]'
-    ':text-matches("^(Everyone|Friends|Only you|Semua orang|Teman|Hanya Anda|Hanya kamu|Pengikut)$", "i")'
-)
+PRIVACY_LABEL_MATCH = ':text-matches("^(Everyone|Friends|Only you|Semua orang|Teman|Hanya Anda|Hanya kamu|Pengikut)$", "i")'
+# :text-matches selects the smallest matching element. Real Studio wraps its
+# label in divs, so matching only the button itself misses a valid selection.
+PRIVACY_LABEL_SELECTOR = f':is({PRIVACY_LABEL_MATCH}, :has({PRIVACY_LABEL_MATCH}))'
+PRIVACY_TRIGGER_SELECTOR = 'button[role="combobox"][aria-haspopup="dialog"]' + PRIVACY_LABEL_SELECTOR
 
 
 def current_privacy_trigger(page):
     return first_visible(page, [
         PRIVACY_TRIGGER_SELECTOR,
         '[data-e2e="privacy-level"]',
-        'button:text-matches("^(Everyone|Friends|Only you|Semua orang|Teman|Hanya Anda|Hanya kamu|Pengikut)$", "i")',
-        'div[role="combobox"]:text-matches("^(Everyone|Friends|Only you|Semua orang|Teman|Hanya Anda|Hanya kamu|Pengikut)$", "i")',
+        'button' + PRIVACY_LABEL_SELECTOR,
+        'div[role="combobox"]' + PRIVACY_LABEL_SELECTOR,
     ], timeout_ms=2_000)
 
 
@@ -1261,10 +1274,13 @@ def tiktok_content_snapshot(page, caption: str) -> tuple[int, set[str] | None]:
     while True:
         body_text = page.locator("body").inner_text(timeout=20_000)
         post_ids = visible_tiktok_post_ids(page)
-        ids_available = bool(post_ids) or bool(
-            re.search(r"\b(?:posts|postingan)\s*0\b", body_text, re.I)
-        )
-        if ids_available or time.monotonic() >= deadline:
+        # Studio briefly renders Posts 0 before its first response, including
+        # accounts with hundreds of posts. Only trust an empty account after
+        # the entire readiness window has elapsed.
+        expired = time.monotonic() >= deadline
+        ids_available = bool(post_ids) or bool(expired and
+            re.search(r"\b(?:posts|postingan)\s*0\b", body_text, re.I))
+        if ids_available or expired:
             return content_caption_matches(body_text, caption), post_ids if ids_available else None
         page.wait_for_timeout(500)
 
@@ -1288,6 +1304,82 @@ def exact_existing_tiktok_post(page, caption: str, target_handle: str):
         visibility = 'only_you' if private and not public else 'public' if public and not private else ''
         matches[match[2]] = (f'https://www.tiktok.com/@{clean_handle(target_handle)}/video/{match[2]}', visibility)
     return next(iter(matches.values())) if len(matches) == 1 else None
+
+
+def caption_prefix_matches_are_other_sources(page, caption: str, target_handle: str, expected_count: int) -> bool:
+    """Permit a shared template opening only when every row cites another source."""
+    def source_id(text):
+        normalized = ' '.join(normalized_caption_text(text).split())
+        credit = list(re.finditer(r'\b(?:Sumber|Source):', normalized, re.I))
+        if not credit:
+            return ''
+        match = re.search(r'https://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([A-Za-z0-9_-]{11})(?:[&?][^\s]*)?$',
+                          normalized[credit[-1].end():])
+        return match[1] if match else ''
+
+    expected_source = source_id(caption)
+    if not expected_source or expected_count <= 0:
+        return False
+    prefix = ' '.join(content_caption_key(caption).split())
+    observed = []
+    try:
+        links = page.locator('a[href*="/video/"]').all()
+    except Exception:
+        return False
+    for link in links:
+        try:
+            text = ' '.join(normalized_caption_text(link.inner_text(timeout=1000)).split())
+            href = str(link.get_attribute('href', timeout=750) or '')
+        except Exception:
+            return False
+        if not prefix or not text.startswith(prefix):
+            continue
+        owner = re.fullmatch(r'(?:https://(?:www\.)?tiktok\.com)?/@([\w.]+)/video/\d{10,25}(?:[?#].*)?', href)
+        actual_source = source_id(text)
+        if (not owner or clean_handle(owner[1]) != clean_handle(target_handle)
+                or not actual_source or actual_source == expected_source):
+            return False
+        observed.append(actual_source)
+    return len(observed) == expected_count
+
+
+def verify_remote_post(page, video_url: str, caption: str, target_handle: str, visibility: str):
+    """Verify one exact existing Studio row without selecting media or posting."""
+    expected = clean_handle(target_handle)
+    match = re.fullmatch(r'https://www\.tiktok\.com/@([\w.]+)/video/(\d{10,25})', video_url)
+    if not match or clean_handle(match[1]) != expected:
+        raise UploadError('ID atau pemilik posting TikTok tidak cocok dengan akun target.')
+    post_id = match[2]
+    expected_caption = ' '.join(normalized_caption_text(caption[:2200]).split())
+    if not expected_caption:
+        raise UploadError('Caption lengkap tidak tersedia; posting tidak dapat diverifikasi.')
+    goto(page, TIKTOK_CONTENT_URL)
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        link = page.locator(f'a[href*="/video/{post_id}"]').first
+        if link.count():
+            href = str(link.get_attribute('href', timeout=1000) or '')
+            owner = re.fullmatch(r'(?:https://(?:www\.)?tiktok\.com)?/@([\w.]+)/video/(\d{10,25})(?:[?#].*)?', href)
+            if not owner or clean_handle(owner[1]) != expected or owner[2] != post_id:
+                raise UploadError('Baris posting TikTok memiliki ID atau pemilik berbeda.')
+            actual_caption = ' '.join(normalized_caption_text(link.inner_text(timeout=3000)).split())
+            if actual_caption != expected_caption:
+                raise UploadError('Caption lengkap posting TikTok tidak cocok; status lokal tidak diubah.')
+            row_text = link.evaluate('''a=>(a.closest('[data-tt="components_RowLayout_FlexRow"]')||
+                a.closest('tr,[role="row"]'))?.innerText||'' ''')
+            labels = {line.strip().casefold() for line in row_text.splitlines()}
+            private = bool(labels & {'only me','only you','hanya saya','hanya anda','hanya kamu'})
+            public = bool(labels & {'everyone','semua orang'})
+            actual = 'only_you' if private and not public else 'public' if public and not private else ''
+            if actual != visibility:
+                raise UploadError('Privasi posting TikTok berbeda atau belum terbaca; status lokal tidak diubah.')
+            return dict(video_url=video_url, visibility=actual,
+                caption_sha256=hashlib.sha256(expected_caption.encode()).hexdigest())
+        page.evaluate('''()=>{const e=[...document.querySelectorAll('div')].find(e=>e.clientHeight>200&&
+            e.scrollHeight>e.clientHeight+100&&e.querySelector('a[href*="/video/"]'));
+            if(e)e.scrollTop=Math.min(e.scrollHeight,e.scrollTop+e.clientHeight*.8)}''')
+        page.wait_for_timeout(1000)
+    raise UploadError('ID posting TikTok belum ditemukan di Studio; status lokal tidak diubah.')
 
 
 POST_SUBMISSION_SUCCESS_PATTERNS = (
@@ -1716,6 +1808,7 @@ def upload_video(
     remote_browser: bool = False,
     background_tick: Callable[[], bool] | None = None,
     cron_fresh_upload: bool = False,
+    resume_existing_draft_only: bool = False,
 ) -> None:
     previous_content_matches: int | None = None
     previous_post_ids: set[str] | None = None
@@ -1748,7 +1841,9 @@ def upload_video(
     ):
         # Recover after a worker/browser disconnect that happened after TikTok
         # accepted the post. Selecting the same file again would duplicate it.
-        raise UploadError('Caption serupa sudah ada di TikTok, tetapi ID, caption lengkap, dan privasi belum cocok; transfer ulang ditahan.')
+        if not caption_prefix_matches_are_other_sources(page, caption, target_handle, previous_content_matches):
+            raise UploadError('Caption serupa sudah ada di TikTok, tetapi ID, caption lengkap, dan privasi belum cocok; transfer ulang ditahan.')
+        log('CAPTION_PREFIX_OTHER_SOURCE: pembuka template sama, tetapi seluruh ID sumber berbeda; bukan posting file ini.')
     identity_path = upload_source_identity(video_path)
     goto(page, UPLOAD_URL)
     page.wait_for_timeout(1500)
@@ -1756,7 +1851,14 @@ def upload_video(
         background_tick()
     if "/login" in page.url.casefold():
         raise UploadError("TikTok meminta login ulang; file belum dipilih.")
-    if cron_fresh_upload:
+    if resume_existing_draft_only:
+        recovered_draft = recover_interrupted_upload_draft(page, identity_path)
+        if not recovered_draft:
+            recovered_draft = upload_editor_has_requested_file(page, identity_path)
+        if not recovered_draft:
+            raise UploadError('Draf file yang sama tidak tersedia; pemulihan ditahan tanpa transfer atau Post baru.')
+        log('DRAFT_RESUME_ONLY: hash file yang sama terverifikasi; transfer file baru dilarang.')
+    elif cron_fresh_upload:
         discard_cron_upload_draft(page)
         recovered_draft = False
     else:
@@ -2064,19 +2166,20 @@ def run(args) -> int:
     with sync_playwright() as playwright:
         context, browser = open_context(playwright, args)
         page_activity = None
-        owned_cron_page = None
+        owned_page = None
         try:
-            if args.command == 'upload' and getattr(args, 'cron_fresh_upload', False):
-                owned_cron_page = context.new_page()
-                page = owned_cron_page
+            if args.command in ('check-login', 'verify-post') or (args.command == 'upload' and (
+                    getattr(args, 'cron_fresh_upload', False) or getattr(args, 'resume_existing_draft_only', False))):
+                owned_page = context.new_page()
+                page = owned_page
             else:
                 page = select_tiktok_page(context)
-            if args.cdp_url and args.command == 'upload':
+            if args.cdp_url and args.command in ('upload', 'check-login', 'verify-post'):
                 page_activity = start_background_page_activity(page)
             page.set_default_timeout(20_000)
             if (
                 args.cdp_url
-                and args.command != "login"
+                and args.command == "upload"
                 and env_bool("TIKTOK_MINIMIZE_CDP_BROWSER", True)
                 and not env_bool("SOCIAL_BROWSER_SHARED", False)
             ):
@@ -2108,6 +2211,10 @@ def run(args) -> int:
             log(f"SESSION_SAVED:{args.state}")
             if args.command == "check-login":
                 return 0
+            if args.command == 'verify-post':
+                proof = verify_remote_post(page, args.video_url, args.caption, args.target_handle, args.visibility)
+                log('REMOTE_POST_CONFIRMED:' + json.dumps(proof, separators=(',', ':')))
+                return 0
             video_path = Path(args.video).expanduser()
             if not video_path.is_file():
                 raise UploadError(f"File video tidak ditemukan: {video_path}")
@@ -2128,14 +2235,15 @@ def run(args) -> int:
                 remote_browser=bool(args.cdp_url),
                 background_tick=background_tick,
                 cron_fresh_upload=getattr(args, 'cron_fresh_upload', False),
+                resume_existing_draft_only=getattr(args, 'resume_existing_draft_only', False),
             )
             save_session_state(context, Path(args.state))
             return 0
         finally:
             stop_background_page_activity(page_activity)
-            if owned_cron_page is not None:
+            if owned_page is not None:
                 try:
-                    owned_cron_page.close()
+                    owned_page.close()
                 except Exception:
                     pass
             # A CDP browser is the user's persistent TikTok login browser. Only
@@ -2161,6 +2269,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-headless", action="store_true")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("check-login")
+    verify = subparsers.add_parser('verify-post')
+    verify.add_argument('video_url')
+    verify.add_argument('--caption', required=True)
+    verify.add_argument('--visibility', choices=['only_you','public'], required=True)
     login = subparsers.add_parser("login")
     login.add_argument("--timeout", type=int, default=300)
     upload = subparsers.add_parser("upload")
@@ -2170,6 +2282,8 @@ def build_parser() -> argparse.ArgumentParser:
     upload.add_argument("--dry-run", action="store_true")
     upload.add_argument('--cron-fresh-upload', action='store_true',
         help='Cron only: Discard unsubmitted draft prompts and transfer the current job file afresh.')
+    upload.add_argument('--resume-existing-draft-only', action='store_true',
+        help='Resume only the exact hash-matched existing draft; never transfer another file.')
     return parser
 
 
