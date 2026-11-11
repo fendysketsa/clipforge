@@ -8,5 +8,6 @@ remotion/node_modules
 remotion/.hypit
 jobs.json
 *.pyc
+deployment-manifest.json
 .gitignore
 .pytest_cache

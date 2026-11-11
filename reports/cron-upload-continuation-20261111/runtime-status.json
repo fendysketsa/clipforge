@@ -1,0 +1,208 @@
+{
+  "checked_at": "2026-11-11T05:33:16.678656+00:00",
+  "schedule": {
+    "enabled": false,
+    "scheduler_running": false,
+    "cron_director_effects_policy_version": 3,
+    "social_upload_serialized": true,
+    "cron_source_process_limit": 2,
+    "cron_follow_cta_adaptive": true
+  },
+  "youtube": {
+    "counts": {
+      "queued": 2,
+      "running": 1,
+      "failed": 108,
+      "completed": 572,
+      "cancelled": 2
+    },
+    "recent": [
+      {
+        "id": "f860dcd264754c5e8e9a26c436d29874",
+        "source_job_id": "b9f424ca5a364685b39c807d47d0b70d",
+        "status": "queued",
+        "queue_position": 2,
+        "queue_total": 2,
+        "upload_confirmed": false,
+        "video_url": null,
+        "profile_url": null,
+        "error": null,
+        "submission_started": null,
+        "submission_accepted": null
+      },
+      {
+        "id": "adddcef4526b43eaa45d9a082e9a4dc5",
+        "source_job_id": "fad974d18c6b47138917d7b06e08d400",
+        "status": "queued",
+        "queue_position": 1,
+        "queue_total": 2,
+        "upload_confirmed": false,
+        "video_url": null,
+        "profile_url": null,
+        "error": null,
+        "submission_started": null,
+        "submission_accepted": null
+      },
+      {
+        "id": "d9f3d2de61fc4f419f24311ea22053b0",
+        "source_job_id": "0084167a8da24371a65768f0297f33c3",
+        "status": "running",
+        "queue_position": null,
+        "queue_total": null,
+        "upload_confirmed": false,
+        "video_url": null,
+        "profile_url": null,
+        "error": null,
+        "submission_started": null,
+        "submission_accepted": null
+      },
+      {
+        "id": "2c2a74a9fb954c7cafefc4176c9a1fe4",
+        "source_job_id": "b9f424ca5a364685b39c807d47d0b70d",
+        "status": "failed",
+        "queue_position": null,
+        "queue_total": null,
+        "upload_confirmed": false,
+        "video_url": null,
+        "profile_url": null,
+        "error": "YouTube Studio gagal memuat aplikasi (Maaf, ada yang tidak beres). Session atau channel aktif perlu disegarkan lewat Login Sekali.",
+        "submission_started": null,
+        "submission_accepted": null
+      },
+      {
+        "id": "c142089ba39a41beb351e653bbe2e63e",
+        "source_job_id": "0084167a8da24371a65768f0297f33c3",
+        "status": "failed",
+        "queue_position": null,
+        "queue_total": null,
+        "upload_confirmed": false,
+        "video_url": null,
+        "profile_url": null,
+        "error": "Halaman upload YouTube Studio tidak bisa dibuka atau input file tidak ditemukan. Detail: Page.goto: Target page, context or browser has been closed",
+        "submission_started": null,
+        "submission_accepted": null
+      },
+      {
+        "id": "e139c85321ba4c09bd61344243711902",
+        "source_job_id": "fad974d18c6b47138917d7b06e08d400",
+        "status": "failed",
+        "queue_position": null,
+        "queue_total": null,
+        "upload_confirmed": false,
+        "video_url": null,
+        "profile_url": null,
+        "error": "YouTube Studio gagal memuat aplikasi (Maaf, ada yang tidak beres). Session atau channel aktif perlu disegarkan lewat Login Sekali.",
+        "submission_started": null,
+        "submission_accepted": null
+      }
+    ]
+  },
+  "tiktok": {
+    "counts": {
+      "queued": 2,
+      "failed": 25,
+      "completed": 12
+    },
+    "recent": [
+      {
+        "id": "8c6a17ff099e44189b7704ce9fed44f7",
+        "source_job_id": "fad974d18c6b47138917d7b06e08d400",
+        "status": "queued",
+        "queue_position": 2,
+        "queue_total": 2,
+        "upload_confirmed": false,
+        "video_url": null,
+        "profile_url": null,
+        "error": null,
+        "submission_started": false,
+        "submission_accepted": false
+      },
+      {
+        "id": "5f1ddb10ae9c445db8f52961b1085439",
+        "source_job_id": "0084167a8da24371a65768f0297f33c3",
+        "status": "queued",
+        "queue_position": 1,
+        "queue_total": 2,
+        "upload_confirmed": false,
+        "video_url": null,
+        "profile_url": null,
+        "error": null,
+        "submission_started": false,
+        "submission_accepted": false
+      },
+      {
+        "id": "56ef99113f7445f5ba1d53d474701416",
+        "source_job_id": "2ea6701395ef481b9c74b343d32c1194",
+        "status": "failed",
+        "queue_position": null,
+        "queue_total": null,
+        "upload_confirmed": false,
+        "video_url": null,
+        "profile_url": null,
+        "error": "Kontrol privasi TikTok belum siap. Video belum diposting.",
+        "submission_started": false,
+        "submission_accepted": false
+      },
+      {
+        "id": "0abf129145a54e7186f8e095188ad9ef",
+        "source_job_id": "b9f424ca5a364685b39c807d47d0b70d",
+        "status": "failed",
+        "queue_position": null,
+        "queue_total": null,
+        "upload_confirmed": false,
+        "video_url": null,
+        "profile_url": null,
+        "error": "Kolom caption TikTok belum siap setelah batas tunggu transfer/pemrosesan; video belum diposting.",
+        "submission_started": false,
+        "submission_accepted": false
+      },
+      {
+        "id": "3deb3e53d6ad4e1fa846587b60820779",
+        "source_job_id": "fad974d18c6b47138917d7b06e08d400",
+        "status": "failed",
+        "queue_position": null,
+        "queue_total": null,
+        "upload_confirmed": false,
+        "video_url": null,
+        "profile_url": null,
+        "error": "Uploader TikTok gagal: Locator.inner_text: Timeout 5000ms exceeded.",
+        "submission_started": false,
+        "submission_accepted": false
+      },
+      {
+        "id": "0b26418c71c04d519e67715b6b90929e",
+        "source_job_id": "0084167a8da24371a65768f0297f33c3",
+        "status": "failed",
+        "queue_position": null,
+        "queue_total": null,
+        "upload_confirmed": false,
+        "video_url": null,
+        "profile_url": null,
+        "error": "Kontrol privasi TikTok belum siap. Video belum diposting.",
+        "submission_started": false,
+        "submission_accepted": false
+      }
+    ]
+  },
+  "long": {
+    "enabled": true,
+    "auto_qc_enabled": true,
+    "auto_qc_private_upload": true,
+    "auto_qc_tiktok_upload": true,
+    "tiktok_qc_upload_supported": true
+  },
+  "history_ui": {
+    "four_columns": true,
+    "queue_position_component": true
+  },
+  "git_auto_sync": {
+    "state": "waiting_for_quiet",
+    "checked_at": "2026-11-11T12:33:14.012197+07:00",
+    "remote": "origin",
+    "branch": "master",
+    "idle_seconds": 61,
+    "remaining_seconds": 1739,
+    "quiet_seconds": 1800,
+    "eligible_after": "2026-11-11T13:02:12.977241+07:00"
+  }
+}

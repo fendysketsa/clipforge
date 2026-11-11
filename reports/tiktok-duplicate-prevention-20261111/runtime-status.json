@@ -1,0 +1,404 @@
+{
+  "checked_at": "2026-11-11T06:09:12.819818+00:00",
+  "/api/health": {
+    "status": "ok"
+  },
+  "/api/tiktok/config": {
+    "enabled": true,
+    "active_upload_id": null
+  },
+  "/api/automation/viral-cc/schedule": {
+    "enabled": false,
+    "scheduler_running": false,
+    "cron_director_effects_policy_version": 3
+  },
+  "local_same_media_groups": [
+    {
+      "target_handle": "titikbalikislami",
+      "sha256": "3742f5972a87465b8131e6a04c3b11fff3fe300acc850a3a0aeb60734b0175a6",
+      "attempts": [
+        {
+          "id": "ba61438a0f2e4a27804ab102a6cc44d6",
+          "source_job_id": "b9f424ca5a364685b39c807d47d0b70d",
+          "status": "failed",
+          "created_at": "2026-11-11T05:52:28.672849+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        },
+        {
+          "id": "0abf129145a54e7186f8e095188ad9ef",
+          "source_job_id": "b9f424ca5a364685b39c807d47d0b70d",
+          "status": "failed",
+          "created_at": "2026-11-11T05:06:33.022661+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        },
+        {
+          "id": "aee89716f6b040ccab195408c1fa65d2",
+          "source_job_id": "b9f424ca5a364685b39c807d47d0b70d",
+          "status": "failed",
+          "created_at": "2026-11-10T16:26:24.485663+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": true,
+          "submission_accepted": true
+        }
+      ]
+    },
+    {
+      "target_handle": "titikbalikislami",
+      "sha256": "6139498aba07a6b604ae2ce85aa2748949327872304fef79c1d9c90b68a62298",
+      "attempts": [
+        {
+          "id": "8c6a17ff099e44189b7704ce9fed44f7",
+          "source_job_id": "fad974d18c6b47138917d7b06e08d400",
+          "status": "failed",
+          "created_at": "2026-11-11T05:19:43.263990+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        },
+        {
+          "id": "3deb3e53d6ad4e1fa846587b60820779",
+          "source_job_id": "fad974d18c6b47138917d7b06e08d400",
+          "status": "failed",
+          "created_at": "2026-11-11T05:05:57.747130+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        },
+        {
+          "id": "33e5b5252c594db3845ca4868222fd57",
+          "source_job_id": "fad974d18c6b47138917d7b06e08d400",
+          "status": "failed",
+          "created_at": "2026-11-10T11:58:44.097721+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": true,
+          "submission_accepted": false
+        }
+      ]
+    },
+    {
+      "target_handle": "titikbalikislami",
+      "sha256": "5c0d0ab35e9e8504db899f1ae4cd9318e7dbaebba17bdb6b946d04456edac6df",
+      "attempts": [
+        {
+          "id": "5f1ddb10ae9c445db8f52961b1085439",
+          "source_job_id": "0084167a8da24371a65768f0297f33c3",
+          "status": "failed",
+          "created_at": "2026-11-11T05:19:36.387907+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        },
+        {
+          "id": "0b26418c71c04d519e67715b6b90929e",
+          "source_job_id": "0084167a8da24371a65768f0297f33c3",
+          "status": "failed",
+          "created_at": "2026-11-11T05:05:35.802727+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        },
+        {
+          "id": "0ea19ab252a040f5ba55daf94d8d64c7",
+          "source_job_id": "0084167a8da24371a65768f0297f33c3",
+          "status": "failed",
+          "created_at": "2026-11-10T10:42:07.954724+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": true,
+          "submission_accepted": false
+        }
+      ]
+    },
+    {
+      "target_handle": "titikbalikislami",
+      "sha256": "a7549f5f7ae96ea127d809b1cde1cfa288aae0dc19a00bb56f71bcded323dcad",
+      "attempts": [
+        {
+          "id": "56ef99113f7445f5ba1d53d474701416",
+          "source_job_id": "2ea6701395ef481b9c74b343d32c1194",
+          "status": "failed",
+          "created_at": "2026-11-11T05:19:28.915279+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        },
+        {
+          "id": "b374323118a74e40a9e84b0eade2f186",
+          "source_job_id": "2ea6701395ef481b9c74b343d32c1194",
+          "status": "failed",
+          "created_at": "2026-11-11T05:05:20.967261+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        },
+        {
+          "id": "ed4f640f211644ae94ee9429d19403a8",
+          "source_job_id": "2ea6701395ef481b9c74b343d32c1194",
+          "status": "failed",
+          "created_at": "2026-11-10T09:57:43.163537+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        },
+        {
+          "id": "c78db5cffa7b4dcab79db7b27163d3c1",
+          "source_job_id": "2ea6701395ef481b9c74b343d32c1194",
+          "status": "failed",
+          "created_at": "2026-11-10T09:55:26.707868+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        },
+        {
+          "id": "406bd8430a854c1786b499b0237170fe",
+          "source_job_id": "2ea6701395ef481b9c74b343d32c1194",
+          "status": "failed",
+          "created_at": "2026-11-10T09:48:30.825079+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        }
+      ]
+    },
+    {
+      "target_handle": "titikbalikislami",
+      "sha256": "d4f8a93f3ce3046d039fff03d2a456470fc1f9f31e2a656a64a7efa20a385ce0",
+      "attempts": [
+        {
+          "id": "7f622739c51c4859aa2f90add61ecd67",
+          "source_job_id": "75280bd283a240a994371b6b96f5c90e",
+          "status": "completed",
+          "created_at": "2026-11-10T05:47:48.640788+00:00",
+          "upload_confirmed": true,
+          "profile_url": "https://www.tiktok.com/@titikbalikislami",
+          "submission_started": true,
+          "submission_accepted": true
+        },
+        {
+          "id": "dc85e5bed4324b6da5bc6e6db3ca5c0f",
+          "source_job_id": "75280bd283a240a994371b6b96f5c90e",
+          "status": "failed",
+          "created_at": "2026-11-10T05:39:27.958126+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        }
+      ]
+    },
+    {
+      "target_handle": "titikbalikislami",
+      "sha256": "2c3aee1423cf506581dbae45fc25fc481f02576df95d4b5c04e34de4abd91b34",
+      "attempts": [
+        {
+          "id": "cfd628e633f5494aa8ae260c9f383e1c",
+          "source_job_id": "3eb2e7d1947347a198cfb66299d7589d",
+          "status": "completed",
+          "created_at": "2026-11-10T05:46:35.609640+00:00",
+          "upload_confirmed": true,
+          "profile_url": "https://www.tiktok.com/@titikbalikislami",
+          "submission_started": true,
+          "submission_accepted": true
+        },
+        {
+          "id": "ce5d0d58e4e64d0480b828b8dd964ae3",
+          "source_job_id": "3eb2e7d1947347a198cfb66299d7589d",
+          "status": "failed",
+          "created_at": "2026-11-10T05:37:21.518353+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        },
+        {
+          "id": "30296bbd48224268bcc5cb298da94765",
+          "source_job_id": "3eb2e7d1947347a198cfb66299d7589d",
+          "status": "failed",
+          "created_at": "2026-11-10T05:21:04.147880+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        },
+        {
+          "id": "ed43a656ef494c6198ee72112532493d",
+          "source_job_id": "3eb2e7d1947347a198cfb66299d7589d",
+          "status": "failed",
+          "created_at": "2026-11-10T05:03:41.597453+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": true,
+          "submission_accepted": false
+        }
+      ]
+    },
+    {
+      "target_handle": "titikbalikislami",
+      "sha256": "9d2fdbe64437178aacc41702effa43a964b908450ed6d5e062cb91d19df2178d",
+      "attempts": [
+        {
+          "id": "52e909e7468d4912801848664e40d333",
+          "source_job_id": "71655579ddce4740beb64531d09829ec",
+          "status": "completed",
+          "created_at": "2026-11-10T05:40:26.804204+00:00",
+          "upload_confirmed": true,
+          "profile_url": "https://www.tiktok.com/@titikbalikislami",
+          "submission_started": true,
+          "submission_accepted": true
+        },
+        {
+          "id": "982ee0b9cd074e8ea9ae989ec66efce2",
+          "source_job_id": "71655579ddce4740beb64531d09829ec",
+          "status": "failed",
+          "created_at": "2026-11-10T05:37:12.127310+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        },
+        {
+          "id": "9868c7bff8cd4ca39021ff72111b1e06",
+          "source_job_id": "71655579ddce4740beb64531d09829ec",
+          "status": "failed",
+          "created_at": "2026-11-10T05:20:42.775264+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        },
+        {
+          "id": "f7510530dc0d4b6183a96316728bf30c",
+          "source_job_id": "71655579ddce4740beb64531d09829ec",
+          "status": "failed",
+          "created_at": "2026-11-10T04:34:06.606453+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        }
+      ]
+    },
+    {
+      "target_handle": "titikbalikislami",
+      "sha256": "c8580c2346172d40c5f634352594c27e56c71a13cef24fa9d2c298011510c171",
+      "attempts": [
+        {
+          "id": "1126e80a9b41478190d9c4e1d54fd95a",
+          "source_job_id": "60646d1b4607453180c42595a49699a2",
+          "status": "completed",
+          "created_at": "2026-11-10T01:05:50.358106+00:00",
+          "upload_confirmed": true,
+          "profile_url": "https://www.tiktok.com/@titikbalikislami",
+          "submission_started": true,
+          "submission_accepted": true
+        },
+        {
+          "id": "a24a33a9b5a74eaa89fa94aa5d3163c9",
+          "source_job_id": "60646d1b4607453180c42595a49699a2",
+          "status": "failed",
+          "created_at": "2026-11-10T00:42:15.628961+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        }
+      ]
+    },
+    {
+      "target_handle": "titikbalikislami",
+      "sha256": "d2ee8d8970033de9fa0d155d85650c7856b0fa6192fb29d06e3ee68dfca59648",
+      "attempts": [
+        {
+          "id": "e2e1411c19144e3098a5e3269ccf9aff",
+          "source_job_id": "755bd27102f64802980b2b66d6be99e3",
+          "status": "completed",
+          "created_at": "2026-11-10T01:05:30.731585+00:00",
+          "upload_confirmed": true,
+          "profile_url": "https://www.tiktok.com/@titikbalikislami",
+          "submission_started": true,
+          "submission_accepted": true
+        },
+        {
+          "id": "48f033c5ddac4a97bebfbadf4c0ad0fb",
+          "source_job_id": "755bd27102f64802980b2b66d6be99e3",
+          "status": "failed",
+          "created_at": "2026-11-10T00:42:28.586105+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        }
+      ]
+    },
+    {
+      "target_handle": "titikbalikislami",
+      "sha256": "4e59c13acb1e4c3d78f9111386a0c12dbc756a705caa83c8108f4f4a9bafb16a",
+      "attempts": [
+        {
+          "id": "5c39c9f2aad340678995a7abaad06987",
+          "source_job_id": "d14fe9c4666a441799a4033509e93df3",
+          "status": "completed",
+          "created_at": "2026-11-10T00:55:49.208446+00:00",
+          "upload_confirmed": true,
+          "profile_url": "https://www.tiktok.com/@titikbalikislami",
+          "submission_started": true,
+          "submission_accepted": true
+        },
+        {
+          "id": "77d4a0f1f9174caea99b8f943967b023",
+          "source_job_id": "d14fe9c4666a441799a4033509e93df3",
+          "status": "failed",
+          "created_at": "2026-11-10T00:41:41.177917+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        }
+      ]
+    },
+    {
+      "target_handle": "titikbalikislami",
+      "sha256": "3354bca00caf5fc3523464acebaa2200048f42356363bc9becbdfd236b706c75",
+      "attempts": [
+        {
+          "id": "d4a0e4e215bd4766986fa9a73e182981",
+          "source_job_id": "d96655e1b1914bfa8464a376c642c221",
+          "status": "failed",
+          "created_at": "2026-11-10T00:41:12.648244+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": false,
+          "submission_accepted": false
+        },
+        {
+          "id": "2cb6e0efa3f64065b6be1d92580f326c",
+          "source_job_id": "d96655e1b1914bfa8464a376c642c221",
+          "status": "failed",
+          "created_at": "2026-11-09T23:34:57.172122+00:00",
+          "upload_confirmed": false,
+          "profile_url": null,
+          "submission_started": true,
+          "submission_accepted": false
+        }
+      ]
+    }
+  ],
+  "active_uploads": []
+}

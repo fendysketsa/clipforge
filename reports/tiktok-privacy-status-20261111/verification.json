@@ -1,0 +1,42 @@
+{
+  "tests": {
+    "focused": {
+      "tests": 157,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "browser": {
+      "tests": 22,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "regression": {
+      "tests": 1365,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "final-checks": {
+      "tests": 127,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "frontend_typecheck": true,
+  "frontend_build_id": "PtAstJSZ6LmOwZKVpg4be",
+  "source_sha256": {
+    "backend/tiktok_uploader.py": "5534bc9e9c2c320204c3ea2bd13be30d37a1bd7dafaee6396a13a70d2048fe0f",
+    "backend/automatic_retry.py": "180fb568007498e742676e4ab1a63d03ddea4f30c74fdf7cff0c8fc5b0c2bfa0",
+    "frontend/lib/tiktokRetry.ts": "623c07500a6ed05897cfc40102be2215959bd092be17531bafe519898c365352",
+    "frontend/app/_components/ResultsSection.tsx": "2554f5404ae7309fdd8c5b0ec4f2244b3886c30d718338e77a574efce408e60c",
+    "frontend/app/_components/HistorySection.tsx": "d4fb602b14da6a6908892a2fe834d0ab3bd9400925ab2641651b93c2500bda3a",
+    "scripts/activate-director-source-recovery.sh": "568c942e62cdd8d7ed76001f4492b04859f7b4de3073dfed02da422479efdaad"
+  },
+  "activation_completed": false,
+  "activation_blocker": "sudo requires password in user terminal",
+  "remote_upload_confirmed_for_affected_clip": false,
+  "remote_mutations_performed": false
+}

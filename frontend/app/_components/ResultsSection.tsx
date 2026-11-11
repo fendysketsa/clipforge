@@ -25,6 +25,7 @@ import { VIRAL_QUALITY_FLOOR } from "../../lib/constants";
 import { clipDisplayTitle, handleCopyTitle, handleDownload } from "../../lib/utils";
 import type { ClipFile, TikTokUploadJob, YouTubeUploadJob } from "../../types/clip.type";
 import { uploadQueuePosition } from "../../lib/uploadQueue";
+import { tiktokAutomaticRetryLabel, tiktokUploadForClip } from "../../lib/tiktokRetry";
 
 const COMPLETED_UPLOAD_STATUS_TTL_MS = 30_000;
 const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
@@ -116,9 +117,12 @@ function youtubeUploadErrorNeedsSessionRepair(message: string) {
   ].some((marker) => lowered.includes(marker));
 }
 
-function friendlyTikTokUploadError(message: string) {
+function friendlyTikTokUploadError(message: string, visibility?: "only_you" | "public") {
   const clean = message.trim();
   const lowered = clean.toLowerCase();
+  if (lowered.includes("kontrol privasi tiktok") || lowered.includes("pilihan privasi tiktok")) {
+    return `File sudah masuk ke form. Job meminta ${visibility === "public" ? "Everyone" : "Only you"}, tetapi pilihan itu belum terverifikasi. Post belum dikirim.`;
+  }
   if (
     lowered.includes("transfer file cdp tiktok gagal sebelum posting")
     || (lowered.includes("set_input_files") && lowered.includes("tidak dapat menerima file video"))
@@ -722,7 +726,8 @@ export function ResultsSection({
             const url = getOutputUrl(clip.url);
             const isSelected = selectedClipUrls.includes(clip.url);
             const latestUpload = youtubeUploads.find((upload) => upload.clip_url === clip.url);
-            const latestTikTokUpload = tiktokUploads.find((upload) => upload.clip_url === clip.url);
+            const tiktokState = tiktokUploadForClip(tiktokUploads, clip.url);
+            const latestTikTokUpload = tiktokState.latest;
             const tiktokSeriesLabel = displayTikTokSeriesLabel(
               clip.tiktok_series_label,
               clip.growth_series,
@@ -829,6 +834,8 @@ export function ResultsSection({
               latestUpload?.logs?.some((line) => line.startsWith("CLAIMED_UPLOAD_ABORTED:")),
             );
             const isUploadingToTikTok = latestTikTokUpload?.status === "queued" || latestTikTokUpload?.status === "running";
+            const hasPendingTikTokPost = tiktokState.uncertain && !isUploadingToTikTok;
+            const tiktokPrivacyPending = latestTikTokUpload?.status === "failed" && Boolean(latestTikTokUpload.error?.toLowerCase().includes("privasi tiktok"));
             const isAlreadyOnTikTok = latestTikTokUpload?.status === "completed" && latestTikTokUpload.upload_confirmed;
             const shouldRetryTikTokUpload = isTikTokFileTransferError(latestTikTokUpload?.error)
               || !tiktokUploadErrorNeedsSessionRepair(latestTikTokUpload?.error);
@@ -1139,7 +1146,7 @@ export function ResultsSection({
                       className={`tiktokUploadButton ${!tiktokEnabled ? "tiktokUploadButton--login" : ""}`}
                       onClick={() => tiktokEnabled ? onUploadClipToTikTok(clip) : onStartTikTokLogin()}
                       disabled={tiktokEnabled
-                        ? !isUploadReady || !uploadReviewConfirmed || isUploadingToTikTok || isAlreadyOnTikTok
+                        ? !isUploadReady || !uploadReviewConfirmed || isUploadingToTikTok || isAlreadyOnTikTok || hasPendingTikTokPost
                         : isTikTokLoginActive}
                       aria-label={!tiktokEnabled
                         ? tiktokStatusMessage
@@ -1148,8 +1155,10 @@ export function ResultsSection({
                           : !uploadReviewConfirmed
                             ? "Centang review konteks, fakta, dan hak penggunaan."
                             : isAlreadyOnTikTok
-                              ? `Sudah dikirim ke @${tiktokTargetHandle} sebagai Only you.`
-                              : `Kirim ke @${tiktokTargetHandle} sebagai Only you.`}
+                              ? `Sudah dikirim ke @${tiktokTargetHandle}.`
+                              : hasPendingTikTokPost
+                                ? "Hasil Post sebelumnya perlu diperiksa sebelum pengiriman berikutnya."
+                                : `Kirim ke @${tiktokTargetHandle} sebagai Only you.`}
                     >
                       {tiktokEnabled ? <UploadCloud size={16} /> : <ExternalLink size={16} />}
                       <span>{!tiktokEnabled
@@ -1162,6 +1171,8 @@ export function ResultsSection({
                             ? "Review dulu"
                             : isAlreadyOnTikTok
                               ? "Sudah TikTok"
+                              : hasPendingTikTokPost
+                                ? "Periksa status TikTok"
                               : latestTikTokUpload?.status === "queued"
                                 ? "Antrean TikTok"
                                 : latestTikTokUpload?.status === "running"
@@ -1392,13 +1403,14 @@ export function ResultsSection({
                     <div className={`youtubeUploadStatus tiktokUploadStatus status-${latestTikTokUpload.status}`}>
                       <UploadCloud size={14} />
                       <span className="youtubeUploadStatusText">
-                        TikTok: {latestTikTokUpload.status}
+                        TikTok: {hasPendingTikTokPost ? "hasil Post belum pasti" : tiktokPrivacyPending ? "pengaturan privasi tertunda" : latestTikTokUpload.status}
+                        {` · tujuan ${latestTikTokUpload.visibility === "public" ? "Everyone" : "Only you"}`}
                         {uploadTikTokSeriesLabel ? ` · ${uploadTikTokSeriesLabel}` : null}
                         {latestTikTokUpload.status === "running"
                           ? ` · ${tiktokRunningStage(latestTikTokUpload)}`
                           : null}
                         {latestTikTokUpload.status === "completed" && latestTikTokUpload.upload_confirmed
-                          ? " · tersimpan Only you"
+                          ? " · posting terverifikasi"
                           : null}
                         {latestTikTokUpload.status === "queued" && tiktokQueue?.position
                           ? ` · antrean ${tiktokQueue.position}/${tiktokQueue.total} · ${tiktokQueue.hint}`
@@ -1411,9 +1423,13 @@ export function ResultsSection({
                   ) : null}
                   {latestTikTokUpload?.status === "failed" && latestTikTokUpload.error ? (
                     <div className="youtubeUploadError tiktokUploadError" title={latestTikTokUpload.error}>
-                      <strong>Upload TikTok gagal</strong>
-                      <span>{friendlyTikTokUploadError(latestTikTokUpload.error)}</span>
-                      <button
+                      <strong>{hasPendingTikTokPost ? "Hasil posting perlu diperiksa" : tiktokAutomaticRetryLabel(latestTikTokUpload) ? "TikTok dijadwalkan ulang otomatis" : tiktokPrivacyPending ? "Pengaturan privasi belum selesai" : "Upload TikTok gagal"}</strong>
+                      <span>{hasPendingTikTokPost ? "Post pernah dicoba, tetapi hasil akhirnya belum terkonfirmasi. Periksa daftar posting sebelum mengirim video yang sama lagi." : tiktokAutomaticRetryLabel(latestTikTokUpload) || friendlyTikTokUploadError(latestTikTokUpload.error, latestTikTokUpload.visibility)}</span>
+                      {hasPendingTikTokPost ? (
+                        <a href="https://www.tiktok.com/tiktokstudio/content" target="_blank" rel="noreferrer">Buka daftar posting TikTok</a>
+                      ) : tiktokAutomaticRetryLabel(latestTikTokUpload) ? (
+                        <span>Backend akan memasukkan percobaan baru ke antrean. Anda tidak perlu menekan Ulangi.</span>
+                      ) : <button
                         type="button"
                         onClick={shouldRetryTikTokUpload
                           ? () => onUploadClipToTikTok(clip)
@@ -1426,7 +1442,7 @@ export function ResultsSection({
                           : shouldRetryTikTokUpload
                             ? "Ulangi TikTok"
                             : "Cek sesi TikTok"}</span>
-                      </button>
+                      </button>}
                     </div>
                   ) : null}
                 </div>

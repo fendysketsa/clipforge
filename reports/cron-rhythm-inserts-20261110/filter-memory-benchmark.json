@@ -1,0 +1,12 @@
+[
+  {
+    "insert_start": 2.0,
+    "returncode": 0,
+    "memory": "MAXRSS_KB=48824\n"
+  },
+  {
+    "insert_start": 60.0,
+    "returncode": 0,
+    "memory": "MAXRSS_KB=48796\n"
+  }
+]

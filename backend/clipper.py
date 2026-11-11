@@ -329,6 +329,7 @@ class ReactionCue:
 
 
 SoundEffectKind = Literal[
+    "beat_thump",
     "laugh",
     "shock",
     "think",
@@ -13378,6 +13379,12 @@ def contextual_audio_mix_filter(
                 f"afade=t=in:st=0:d={fade_in:.3f},"
                 f"afade=t=out:st={fade_out_start:.3f}:d={fade_out_duration:.3f}"
             )
+        elif cue.kind == 'beat_thump':
+            filters = (
+                f"sine=frequency={cue.frequency}:sample_rate=48000:duration={cue.duration:.3f},"
+                f"volume='{cue.volume:.3f}*exp(-18*t)':eval=frame,"
+                "afade=t=in:st=0:d=0.006,afade=t=out:st=0.11:d=0.07"
+            )
         else:
             filters = (
                 f"sine=frequency={cue.frequency}:sample_rate=48000:duration={cue.duration:.3f},"
@@ -13397,7 +13404,9 @@ def contextual_audio_mix_filter(
     chains.append(
         "".join(mix_inputs)
         + f"amix=inputs={len(mix_inputs)}:duration=first:dropout_transition=0:normalize=0,"
-        "alimiter=limit=0.95:attack=5:release=50[audio_out]"
+        + ("alimiter=limit=0.84:attack=5:release=50:level=false:latency=true[audio_out]"
+           if any(cue.kind=='beat_thump' for cue in cues) else
+           "alimiter=limit=0.95:attack=5:release=50[audio_out]")
     )
     return ";".join(chains)
 
@@ -17304,6 +17313,26 @@ def export_clip(
         clip,clip_segments,creative_direction,enabled=cron_accents_enabled,
         budget=cron_effect_budget,seed=str(video_path),audio_reactions=cron_audio_reactions,
     )
+    cron_rhythm_plan = cron_director_effects.plan_rhythm_insert(
+        clip,clip_segments,cron_accent_plan,
+        enabled=bool(cron_accents_enabled and output_format=='vertical_short' and enhanced_edit
+            and ffmpeg_has_filter('perspective')),
+        protected=bool(social_card_selected or reaction_avatar_selected or multi_clip_split
+            or evidence_direction['enabled'] or clip_has_islamic_context(clip)
+            or creative_direction.get('safety_override_applied')),
+        seed=str(video_path),
+    )
+    if cron_rhythm_plan['enabled']:
+        levels=cron_director_effects.rhythm_bass_levels(video_path,clip,cron_rhythm_plan,ffmpeg=ffmpeg_path())
+        if levels:
+            # One compact authored rhythm replaces unrelated decorative SFX.
+            sound_effect_cues=[SoundEffectCue('beat_thump',at,.18,58-i*4,level,
+                'SFX sintetis untuk reaksi sumber: '+cron_rhythm_plan['quote'])
+                for i,(at,level) in enumerate(zip(cron_rhythm_plan['beats'],levels))]
+            sound_effect_tracks=[None]*len(sound_effect_cues)
+            local_sound_effect_count=0
+            synthetic_sound_effect_count=len(sound_effect_cues)
+            cron_accent_plan['audio_unchanged']=False
     cron_follow_plan = cron_director_effects.follow_plan(
         clip,clip_segments,cron_accent_plan,
         enabled=bool(cron_accents_enabled and output_format=='vertical_short' and drawtext_supported
@@ -17500,6 +17529,7 @@ def export_clip(
     )
     sidecar_payload = {
         **asdict(clip),
+        'cron_rhythm_insert': cron_rhythm_plan,
         'cron_short_presentation': {'version': cron_short_director.POLICY_VERSION,
             'requested_by_scheduler': cron_presentation_requested, 'opening': cron_opening,
             'caption_baseline_y': effective_caption.baseline_y,
@@ -18208,6 +18238,8 @@ def export_clip(
         and not preserve_landscape
     ):
         vf = f"{vf},{remove_running_text_filter()}"
+    if cron_rhythm_plan['enabled']:
+        vf = f"{vf},{cron_director_effects.rhythm_source_filter(cron_rhythm_plan)}"
     if reaction_avatar_selected:
         vf = (
             f"{vf},"
@@ -19021,6 +19053,12 @@ def export_clip(
             ],
             cwd=clips_dir,
         )
+        if cron_rhythm_plan['enabled']:
+            cron_rhythm_plan['rendered']=True
+            for cue in cron_accent_plan['cues']:
+                if cue['kind']=='rhythm_depth':cue['visual_rendered']=True
+            applied_edits.append('Sisipan ritmis cron mengikuti reaksi sumber yang selesai; '
+                'bingkai bertingkat bergerak singkat sebelum caption, tanpa memotong atau mengulang dialog.')
         if cron_accent_plan.get("required"):
             emit_render_task(0.58, "Menempatkan aksen sutradara sesuai momen dan area aman")
             cron_director_effects.render_effects(

@@ -38,7 +38,9 @@
     ".next-history-four/types/**/*.ts",
     ".next-history-four/dev/types/**/*.ts",
     ".next-director-recovery/types/**/*.ts",
-    ".next-director-recovery/dev/types/**/*.ts"
+    ".next-director-recovery/dev/types/**/*.ts",
+    ".next-compose-check/types/**/*.ts",
+    ".next-compose-check/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

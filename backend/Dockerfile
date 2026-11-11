@@ -77,7 +77,8 @@ RUN cd /app/remotion \
     && npm cache clean --force
 
 RUN chmod 0755 /app/docker-entrypoint.sh \
-    && mkdir -p outputs uploads data
+    && mkdir -p outputs uploads data \
+    && python /app/deployment_runtime.py build
 
 EXPOSE 8010
 

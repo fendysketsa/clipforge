@@ -1,0 +1,21 @@
+{
+  "cause": "Already-staged deletions covered by new .gitignore rules were passed back to git add, causing exit 1.",
+  "fix": "Stage only paths currently present in the index or nonignored untracked set; preserve already staged deletions for commit.",
+  "tests_passed": 28,
+  "real_repository_add_dry_run_exit": 0,
+  "retained_staged_deletions": 3,
+  "timer_observed_fix": true,
+  "timer_status": {
+    "state": "waiting_for_quiet",
+    "checked_at": "2026-11-11T16:05:12.113467+07:00",
+    "remote": "origin",
+    "branch": "master",
+    "idle_seconds": 61,
+    "remaining_seconds": 1739,
+    "quiet_seconds": 1800,
+    "eligible_after": "2026-11-11T16:34:11.184834+07:00"
+  },
+  "manual_service_start_rejected_by_approval_review": true,
+  "manual_push_performed": false,
+  "script_sha256": "7a2df6af1482185f8cee5fccc47f02ab6ace27189d1180e4301475b3874b37d6"
+}

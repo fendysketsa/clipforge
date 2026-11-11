@@ -8,9 +8,10 @@ from pathlib import Path
 import re
 import subprocess
 
-POLICY_VERSION = 3
+POLICY_VERSION = 4
 MOODS = {
     'shout': ('reaction_ticks', 'shock_rays', 'pressure_ring'),
+    'singing': ('floating_notes', 'melody_orbit'),
     'surprise': ('impact_burst', 'ripple'),
     'delight': ('sparkle', 'ripple'),
     'action': ('speed_streak', 'impact_burst'),
@@ -36,6 +37,139 @@ PALETTES = [(255, 245, 220), (125, 240, 217), (255, 210, 100), (157, 208, 255)]
 QUALIFIERS = re.compile(r'\b(tidak|bukan|belum|jangan|kurang|enggak|nggak|gak|tak|hanya|cuma|diduga|menurut|menurutnya|menurutku|katanya|kataku|kata|bilang|ujar|mungkin|sepertinya|konon|kalau|jika|seandainya|misalnya|seolah|bisa|akan|ingin|mau)\b', re.I)
 STATEMENT_SIGNAL = re.compile(r'\b(takut|jangan|harus|bukan|tidak|belum|ingat|penting|kuncinya|ternyata|rupanya|akhirnya|enak|lezat|gurih|mantap|berhasil|menang|gagal|bahaya|numpuk)\b', re.I)
 REACTION_WORDS = re.compile(r'\b(a{2,}h*|h?a{2,}|w[oa]+w|wow|woy|woi|hei|hey|aduh|waduh|astaga|awas|tolong|teriak|jerit)\b', re.I)
+PLAYFUL = re.compile(r'\b(ha(?:ha)+|he(?:he)+|ngakak|kocak|wow|woow|waduh|astaga|gg|mantap|menang)\b', re.I)
+
+
+def plan_rhythm_insert(clip, segments, accents, *, enabled=False, protected=False, seed=''):
+    """One brief source-grounded payoff treatment inside the existing FX budget."""
+    plan=dict(version=1,enabled=False,rendered=False,cron_only=True,
+        source_clock_unchanged=True,captions_clock_unchanged=True,
+        full_source_frame_visible=True,inserted_timeline_seconds=0,
+        source_audio_reordered=False,reference='CxRqjbfZWxA',reason='no_supported_playful_payoff')
+    if not enabled or protected or not accents.get('required') or accents.get('sensitive_context') or SENSITIVE.search(clip.text):
+        return dict(plan,reason='manual_protected_or_sensitive_context')
+    replaceable=[cue for cue in accents.get('cues',[]) if cue['mood'] not in {'shout','singing'}]
+    if not replaceable:return dict(plan,reason='existing_vocal_accents_own_budget')
+    duration=float(clip.end-clip.start)
+    candidates=[]
+    for row in segments:
+        quote=str(row.text).strip()
+        if not PLAYFUL.search(quote) or not clip.start<=row.start<row.end<=clip.end:
+            continue
+        if (' '+_text(quote)+' ') not in (' '+_text(clip.text)+' '):continue
+        at=float(row.end)-clip.start+.04
+        if at<3.0:continue
+        span=1.42
+        if at+span>duration-.5:continue
+        owner=min(replaceable,key=lambda cue:abs(cue['start']-at))
+        if any(cue is not owner and not (at+span+.5<=cue['start'] or at>=cue['end']+.5)
+                for cue in accents['cues']):continue
+        weight=4 if re.search(r'\b(woow|wow|gg|astaga|menang)\b',quote,re.I) else 2
+        candidates.append((weight,_seed(seed,quote),at,quote,owner))
+    if not candidates:return plan
+    _,salt,at,quote,owner=max(candidates,key=lambda item:(item[0],item[1]))
+    spacing=.40 if len(quote.split())<=6 else .46
+    beats=[round(at+spacing*i,3) for i in range(3)]
+    style=('depth_bounce','stack_snap')[salt%2]
+    owner.update(kind='rhythm_depth',mood='humor',start=round(at,3),end=round(at+1.42,3),
+        quote=quote,statement='',statement_rendered=False,visual_rendered=False,
+        directed_by='complete_source_reaction_boundary',timing_method='after_complete_timed_source_utterance',
+        sound='bounded_procedural_bass_if_audio_verified')
+    accents['cues'].sort(key=lambda cue:cue['start'])
+    plan.update(enabled=True,style=style,start=owner['start'],end=owner['end'],beats=beats,
+        quote=quote,variation=salt%360,source_utterance_end=round(at-.04,3),
+        timing_method='after_complete_timed_source_utterance',
+        one_existing_accent_replaced=True,beat_detection='authored_short_cadence_not_claimed_music_detection',
+        source_frame_frozen=False,reason='source_grounded_playful_payoff',bass_enabled=False)
+    return plan
+
+
+def rhythm_source_filter(plan, width=1080, height=1920):
+    """Three small perspective poses; timeline-disabled filters cost no frame queue.
+
+    Keep a single live frame stream. Splitting/trimming a late secondary
+    stream queues all preceding full-resolution frames in FFmpeg framesync.
+    Destination corners stay inside the canvas and retain the complete image.
+    """
+    if not plan.get('enabled'):return ''
+    start,end=float(plan['start']),float(plan['end'])
+    poses=[(.035,.028,.970,.037,.028,.966,.965,.974),
+           (.030,.039,.965,.027,.035,.974,.974,.963),
+           (.020,.020,.982,.024,.018,.978,.978,.982)]
+    if plan['style']=='stack_snap':
+        poses=[(.040,.028,.980,.043,.022,.973,.956,.959),
+               (.020,.041,.957,.025,.043,.959,.980,.978),
+               (.026,.020,.979,.026,.020,.979,.973,.983)]
+    times=[start,float(plan['beats'][1]),float(plan['beats'][2]),end]
+    rim='0x91C9BC@0.28' if plan['style']=='depth_bounce' else '0xD7BC86@0.28'
+    filters=[f"drawbox=x=0:y=0:w=iw:h=ih:color={rim}:t={max(1,round(width*.0018))}:"
+             f"enable='gte(t,{start:.3f})*lt(t,{end:.3f})'"]
+    for index,pose in enumerate(poses):
+        values=[]
+        for corner in range(4):
+            values.extend([f'x{corner}={pose[corner*2]:.4f}*W',f'y{corner}={pose[corner*2+1]:.4f}*H'])
+        filters.append('perspective='+':'.join(values)+':sense=destination:interpolation=linear:'
+            +f"enable='gte(t,{times[index]:.3f})*lt(t,{times[index+1]:.3f})'")
+    return ','.join(filters)
+
+
+def rhythm_bass_levels(video, clip, plan, *, ffmpeg='ffmpeg'):
+    """Duck the authored low hits under source speech; missing audio abstains."""
+    if not plan.get('enabled'):return []
+    try:
+        import numpy as np
+        start=float(plan['start']);span=float(plan['end'])-start
+        result=subprocess.run([ffmpeg,'-v','error','-ss',str(clip.start+start),'-i',str(video),
+            '-t',str(span),'-vn','-ac','1','-ar','16000','-f','f32le','-'],
+            check=True,capture_output=True,timeout=20)
+        samples=np.frombuffer(result.stdout,dtype='<f4')
+        if len(samples)<span*16000*.85 or not np.isfinite(samples).all():return []
+        levels=[]
+        for beat in plan['beats']:
+            a=round((beat-start)*16000);part=samples[a:a+3200]
+            rms=float(np.sqrt(np.mean(part*part))) if len(part) else 1.
+            levels.append(.18 if rms>.035 else .48)
+        plan.update(bass_enabled=True,bass_source='locally_synthesized_short_sine_hits',
+            speech_ducked=True,borrowed_reference_audio=False,reference_assets_used=False)
+        return levels
+    except (ImportError,OSError,ValueError,subprocess.SubprocessError):
+        plan['bass_skip_reason']='source_audio_measurement_unavailable'
+        return []
+
+
+def _singing_events(clip, segments, times, voice, pitch):
+    """Conservative sustained-note evidence within real, timed vocal text."""
+    import numpy as np
+    events=[]
+    for row in segments:
+        start,end=float(row.start)-clip.start,float(row.end)-clip.start
+        quote=str(row.text).strip()
+        if start<0 or end>clip.end-clip.start or not 1.2<=end-start<=12 or not quote:
+            continue
+        if (' '+_text(quote)+' ') not in (' '+_text(clip.text)+' '):continue
+        indexes=np.flatnonzero((times>=start)&(times<end))
+        if len(indexes)<30:continue
+        voiced=voice[indexes]
+        if float(voiced.mean())<.72:continue
+        semitones=12*np.log2(np.maximum(pitch[indexes],1)/55)
+        holds=[];begin=0
+        for i in range(1,len(indexes)+1):
+            if i==len(indexes) or not voiced[i] or not voiced[begin] or abs(semitones[i]-float(np.median(semitones[begin:i])))>.65:
+                if voiced[begin] and (i-begin)*.02>=.24:
+                    holds.append((float(times[indexes[begin]]),float(np.median(semitones[begin:i])),(i-begin)*.02))
+                begin=i
+        distinct={round(note/2) for _,note,_ in holds}
+        coverage=sum(span for _,_,span in holds)/(end-start)
+        annotated=bool(re.search(r'[♪♫]|\[(?:menyanyi|singing|humming|bersenandung)\]|\b(?:la|na|hm){3,}\b',quote,re.I))
+        slow_vocal=len(_text(quote).split())/(end-start)<=2.5
+        if coverage<.60 or (not annotated and (len(holds)<3 or len(distinct)<3 or not slow_vocal)):
+            continue
+        if annotated and not holds:continue
+        onset=holds[0][0]
+        events.append(dict(start=round(onset,3),peak=round(onset+.2,3),end=round(min(end,onset+1.5),3),
+            quote=quote[:220],mood='singing',evidence='timed_vocal_text_and_sustained_melodic_notes',
+            stable_note_count=len(holds),note_coverage=round(coverage,3),confidence='heuristic',score=12+coverage))
+    return events
 
 
 def analyze_reactions(video, clip, segments, *, enabled=False, sensitive=False, ffmpeg='ffmpeg'):
@@ -46,7 +180,7 @@ def analyze_reactions(video, clip, segments, *, enabled=False, sensitive=False, 
     impulses and unavailable evidence abstain. This is a heuristic, not ASR.
     """
     result = dict(version=1, enabled=bool(enabled), events=[], source_audio_only=True,
-                  method='voiced_level_rise_with_timed_dialogue', audio_modified=False)
+                  method='timed_vocal_dynamics_and_sustained_notes', audio_modified=False)
     if not enabled or sensitive or SENSITIVE.search(clip.text):
         return dict(result, reason='manual_disabled_or_sensitive_context')
     duration = float(clip.end-clip.start)
@@ -89,7 +223,7 @@ def analyze_reactions(video, clip, segments, *, enabled=False, sensitive=False, 
             if not groups or (index-groups[-1][-1])*hop/rate>.08:
                 groups.append([int(index)])
             else:groups[-1].append(int(index))
-        candidates=[]
+        candidates=_singing_events(clip,segments,times,voice,pitch)
         for group in groups:
             if len(group)*hop/rate<.12:continue
             peak=max(group,key=lambda i:float(levels[i]))
@@ -107,6 +241,7 @@ def analyze_reactions(video, clip, segments, *, enabled=False, sensitive=False, 
             onset=max(0.,float(times[group[0]])-.02)
             candidates.append(dict(start=round(onset,3),peak=round(at,3),
                 end=round(min(duration,float(times[group[-1]])+.04),3),quote=quote[:220],
+                mood='shout',
                 rise_db=round(rise,2),pitch_ratio=round(pitch_rise,2),
                 evidence='timed_reaction_and_voiced_rise' if explicit else 'timed_speech_strong_pitch_and_level_rise',
                 confidence='heuristic',score=rise+(2 if explicit else 0)))
@@ -136,7 +271,7 @@ def validate_beats(raw):
         statement=row.get('statement', '').strip()[:100] if isinstance(row.get('statement'), str) else '')
         for row in raw[:4] if isinstance(row, dict)
         and isinstance(row.get('quote'), str) and 2 <= len(_text(row['quote']).split()) <= 24
-        and isinstance(row.get('mood'), str) and row['mood'] in MOODS and row['mood'] != 'shout']
+        and isinstance(row.get('mood'), str) and row['mood'] in MOODS and row['mood'] not in {'shout','singing'}]
 
 
 def statement_phrase(quote, proposed='', *, sensitive=False):
@@ -223,7 +358,8 @@ def build_plan(clip, segments, direction=None, *, enabled=False, budget=2, seed=
             quote=str(event.get('quote',''))
             if not math.isfinite(at+peak) or not 0<=at<=peak<duration or duration-at<.16 or not quote or (' '+_text(quote)+' ') not in (' '+_text(clip.text)+' '):continue
             supported.append(event)
-            rows.append((30, _seed(salt,quote,at), max(.02,at), quote, 'shout', 'measured_source_audio_reaction', ''))
+            mood='singing' if event.get('mood')=='singing' else 'shout'
+            rows.append((29 if mood=='singing' else 30, _seed(salt,quote,at), max(.02,at), quote, mood, 'measured_source_audio_reaction', ''))
     plan['audio_reactions'] = dict(reactions, events=supported) if audio_reactions else dict(enabled=False, events=[])
     selected = []
     for _, _, at, quote, mood, owner, statement in sorted(rows, key=lambda row: (-row[0], row[1])):
@@ -233,7 +369,7 @@ def build_plan(clip, segments, direction=None, *, enabled=False, budget=2, seed=
         used = {c['kind'] for c in selected}
         options = [kind for kind in variants if kind not in used] or list(variants)
         kind = options[_seed(salt, quote, len(selected)) % len(options)]
-        span = .62 if mood == 'shout' else .95 if mood == 'calm' else .68 if kind in {'impact_burst', 'speed_streak'} else .82
+        span = 1.5 if mood == 'singing' else .62 if mood == 'shout' else .95 if mood == 'calm' else .68 if kind in {'impact_burst', 'speed_streak'} else .82
         end = min(duration-.04, at+span)
         if statement and not any(c.get('statement') for c in selected) and duration-at >= 1.2:
             end = min(duration-.04, at+min(2., 1.2+len(statement.split())*.09))
@@ -241,7 +377,7 @@ def build_plan(clip, segments, direction=None, *, enabled=False, budget=2, seed=
             statement = ''
         selected.append(dict(kind=kind, mood=mood, start=round(at,3), end=round(end,3), quote=quote[:220],
             statement=statement, statement_rendered=False,
-            directed_by=owner, timing_method='measured_source_audio_onset' if mood=='shout' else 'estimated_phrase_offset_within_timed_source_segment', palette=list(PALETTES[_seed(salt, quote)%len(PALETTES)]),
+            directed_by=owner, timing_method='measured_source_audio_onset' if mood in {'shout','singing'} else 'estimated_phrase_offset_within_timed_source_segment', palette=list(PALETTES[_seed(salt, quote)%len(PALETTES)]),
             variation=_seed(salt, quote)%360, source_grounded=bool(quote), sound='none'))
         if len(selected) >= limit:
             break
@@ -335,6 +471,10 @@ def place_cues(plan, video, *, ffmpeg='ffmpeg', layout=None):
     if layout.get('caption_position')=='center': protected.append((.08,.36,.84,.28))
     complex_layout = any(layout.get(key) for key in ('evidence','social_card','reaction_avatar','multi_split')) or panel.get('layout')=='synchronized_conversation_split'
     for cue in plan['cues']:
+        if cue['kind']=='rhythm_depth':
+            cue.update(box=[0.,0.,1.,1.],protected_regions=[],
+                placement_reason='whole_source_card_before_stable_captions')
+            continue
         samples=[]
         for t in [max(0.,cue['start']-.10), (cue['start']+cue['end'])/2, cue['end']]:
             raw=subprocess.run([ffmpeg,'-v','error','-threads','1','-ss',str(t),'-i',str(video),'-frames:v','1','-vf','scale=540:-2','-threads','1','-f','image2pipe','-vcodec','mjpeg','-'],check=True,capture_output=True,timeout=30).stdout
@@ -400,7 +540,20 @@ def effect_frame(kind, side, progress, color, variation=0):
     p=max(0.,min(1.,progress));alpha=round(235*min(1.,p/.13,(1-p)/.25))
     rgba=tuple(color)+(max(0,alpha),);white=(255,255,249,max(0,alpha))
     c=size/2;r=size*.34;ease=1-(1-p)**3;rot=math.radians(variation%45)
-    if kind in {'reaction_ticks','shock_rays','pressure_ring'}:
+    if kind in {'floating_notes','melody_orbit'}:
+        colors=[(255,105,208,alpha),(118,242,224,alpha),(255,211,87,alpha),(184,142,255,alpha)]
+        for i in range(3):
+            a=rot+i*math.tau/3+.2*p
+            x=c+math.cos(a)*r*.62;y=c+math.sin(a)*r*.47-r*p*.20
+            q=r*(.12+.025*(i%2));note_color=colors[(i+variation)%len(colors)]
+            d.ellipse((x-q,y-q*.55,x+q,y+q*.55),fill=note_color)
+            d.line((x+q*.8,y,x+q*.8,y-q*3.5),fill=note_color,width=max(2,size//65))
+            if kind=='floating_notes':
+                d.polygon([(x+q*.8,y-q*3.5),(x+q*2.5,y-q*2.6),(x+q*2.3,y-q*1.5),(x+q*.8,y-q*2.3)],fill=note_color)
+            else:
+                d.line((x+q*.8,y-q*3.5,x+q*2.6,y-q*3.9),fill=note_color,width=max(2,size//65))
+        # No added music and no lyric text; the original vocal remains intact.
+    elif kind in {'reaction_ticks','shock_rays','pressure_ring'}:
         # Authored comic stress marks: one arrival, no flash, no solid center.
         # The safe placement box is checked against faces and caption regions.
         if kind=='pressure_ring':
@@ -539,6 +692,10 @@ def render_effects(video, plan, *, ffmpeg='ffmpeg', layout=None, crf=18, preset=
         graph=['[0:v]setpts=PTS-STARTPTS[accent_base]'];previous='accent_base'
         stem=re.sub(r'[^a-zA-Z0-9_-]','_',video.stem)[:70]
         for i,cue in enumerate(plan['cues']):
+            if cue['kind']=='rhythm_depth':
+                if not cue.get('visual_rendered'):
+                    raise ValueError('Rhythm card must render before stable captions')
+                continue
             x,y,bw,bh=cue['box'];w,h=before['width'],before['height']
             if cue['kind']=='edge_focus':
                 graph.append(f'[{previous}]drawbox=x={round(w*x)}:y={round(h*y)}:w={max(3,round(w*bw))}:h={round(h*bh)}:color=0x8EDBCE@0.30:t=3:enable=\'between(t,{cue["start"]},{cue["end"]})\'[accent_{i}]')

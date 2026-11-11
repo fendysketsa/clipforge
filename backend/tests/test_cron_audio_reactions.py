@@ -133,3 +133,53 @@ def test_real_encoding_reaction_preserves_clock_and_audio_packets(tmp_path):
     assert plan['rendered'] and plan['renderer']=='procedural_rgba_accents'
     assert plan['cues'][0]['kind'] in fx.MOODS['shout']
     assert all(not fx._overlaps(cue['box'],g) for cue in plan['cues'] for g in cue['protected_regions'])
+
+
+def singing_audio(path):
+    rate=16000;t=np.arange(rate*8)/rate
+    frequency=np.full(len(t),180.)
+    for start,end,hz in [(2,2.7,220),(2.7,3.4,294),(3.4,4.1,247),(4.1,4.8,330)]:
+        frequency[(t>=start)&(t<end)]=hz
+    phase=np.cumsum(frequency)*2*np.pi/rate
+    samples=.12*(np.sin(phase)+.35*np.sin(phase*2))
+    with wave.open(str(path),'wb') as file:
+        file.setnchannels(1);file.setsampwidth(2);file.setframerate(rate)
+        file.writeframes((samples*32767).astype('<i2').tobytes())
+    return path
+
+
+def test_sustained_melodic_vocal_evidence_gets_silent_music_notes(tmp_path):
+    text='[menyanyi] Lalala lalala lalala.'
+    c=candidate(text)
+    rows=[NS(start=2,end=4.8,text=text)]
+    source=singing_audio(tmp_path/'melody.wav')
+    before=source.read_bytes()
+    analysis=fx.analyze_reactions(source,c,rows,enabled=True)
+    assert len(analysis['events'])==1 and analysis['events'][0]['mood']=='singing'
+    assert analysis['events'][0]['stable_note_count']>=3
+    plan=fx.build_plan(c,rows,enabled=True,audio_reactions=analysis)
+    cue=plan['cues'][0]
+    assert cue['kind'] in fx.MOODS['singing'] and cue['end']-cue['start']==pytest.approx(1.5)
+    assert cue['sound']=='none' and not cue['statement'] and source.read_bytes()==before
+    # Mere mention of singing over a constant voice does not prove singing.
+    flat=write_audio(tmp_path/'speech.wav','constant')
+    assert not fx.analyze_reactions(flat,candidate('Dia sedang menyanyi di rumah.'),
+        [NS(start=2,end=4.8,text='Dia sedang menyanyi di rumah.')],enabled=True)['events']
+    # Instrumental audio without timed source vocal text cannot get notes.
+    assert not fx.analyze_reactions(source,c,[],enabled=True)['events']
+
+
+@pytest.mark.parametrize('kind',fx.MOODS['singing'])
+def test_music_note_art_has_colored_middle_and_transparent_ends(kind):
+    first=fx.effect_frame(kind,180,0,(255,255,255))
+    middle=fx.effect_frame(kind,180,.5,(255,255,255))
+    last=fx.effect_frame(kind,180,1,(255,255,255))
+    assert first.getchannel('A').getbbox() is None and last.getchannel('A').getbbox() is None
+    assert middle.getchannel('A').getbbox() is not None
+    assert len({pixel[:3] for pixel in middle.getdata() if pixel[3]>200})>3
+
+
+def test_singing_and_shouting_evidence_cannot_be_fabricated_by_director():
+    c=candidate('[menyanyi] Lalala lalala lalala.')
+    hints={'accent_beats':[dict(quote='Lalala lalala lalala',mood='singing')]}
+    assert all(cue['mood']!='singing' for cue in fx.build_plan(c,[NS(start=2,end=5,text=c.text)],hints,enabled=True)['cues'])

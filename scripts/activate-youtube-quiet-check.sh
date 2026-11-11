@@ -49,7 +49,7 @@ done
 modules=(api clipper llm cron_director_effects cron_short_director cron_source_policy automatic_retry tiktok_strategy youtube_remote_status ryuundy_reference_learning long_video_qc shorts_thumbnail)
 activation_report=reports/cron-upload-recovery-activation.json
 if [[ "$preserve_browser" == true ]]; then
-  modules+=(youtube_uploader tiktok_uploader youtube_blocked_cleanup)
+  modules+=(youtube_uploader tiktok_uploader youtube_blocked_cleanup browser_page_activity)
   activation_report=reports/youtube-browser-preservation-activation.json
 fi
 if [[ "$ryuundy_learning" == true ]]; then
@@ -70,9 +70,22 @@ flock -n 9 || { echo "Another ClipForge deployment is active." >&2; exit 75; }
 module_paths=()
 for module in "${modules[@]}"; do module_paths+=("backend/$module.py"); done
 python -m py_compile "${module_paths[@]}"
+source_fingerprint() {
+  python - "${modules[@]}" <<'PY'
+import hashlib, pathlib, sys
+digest = hashlib.sha256()
+for name in sys.argv[1:]:
+    digest.update(name.encode() + b'\0')
+    digest.update(hashlib.sha256(pathlib.Path('backend/' + name + '.py').read_bytes()).digest())
+print(digest.hexdigest())
+PY
+}
+build_source_fingerprint=''
+source_rebuilds=0
 # Refresh the durable image first; restart the existing container to retain
 # its exact environment, mounts, and network settings.
 if [[ "$skip_build" != true ]]; then
+  build_source_fingerprint="$(source_fingerprint)"
   python scripts/build-backend-image.py
 fi
 image_id="$(docker image inspect clipforge-backend:latest --format '{{.Id}}')"
@@ -87,7 +100,7 @@ actual = dict((line.split()[1], line.split()[0]) for line in lines)
 for name in sys.argv[2:]:
     expected = hashlib.sha256(pathlib.Path('backend/' + name + '.py').read_bytes()).hexdigest()
     if actual.get('/app/' + name + '.py') != expected:
-        raise SystemExit('Built image does not match backend/' + name + '.py; rerun without --skip-build.')
+        raise SystemExit('Built image does not match current backend/' + name + '.py.')
 if 'ryuundy_motion' in sys.argv[2:]:
     decoders = subprocess.check_output([
         'docker', 'run', '--rm', '--network', 'none', '--read-only',
@@ -97,7 +110,36 @@ if 'ryuundy_motion' in sys.argv[2:]:
         raise SystemExit('Built backend lacks the SVG decoder required for motion inserts; cron was not paused.')
 PY
 }
-verify_image_sources
+ensure_image_sources() {
+  local current_source_fingerprint verification_status
+  while true; do
+    if verify_image_sources; then
+      break
+    else
+      verification_status=$?
+    fi
+    if [[ "$skip_build" == true ]]; then
+      echo "Image mismatch in --skip-build mode; rerun without --skip-build. Runtime untouched." >&2
+      return "$verification_status"
+    fi
+    current_source_fingerprint="$(source_fingerprint)" || return $?
+    if [[ "$current_source_fingerprint" == "$build_source_fingerprint" ]]; then
+      echo "Source files stayed unchanged, but image verification failed. Activation stopped; inspect the image/build context." >&2
+      return "$verification_status"
+    fi
+    if (( source_rebuilds >= 2 )); then
+      echo "Source changed repeatedly during activation. Finish editing code before rerunning; runtime untouched." >&2
+      return "$verification_status"
+    fi
+    source_rebuilds=$((source_rebuilds + 1))
+    echo "Source changed since the image build started; rebuilding from cache (${source_rebuilds}/2). No runtime modules replaced."
+    build_source_fingerprint="$(source_fingerprint)"
+    python scripts/build-backend-image.py || return $?
+    image_id="$(docker image inspect clipforge-backend:latest --format '{{.Id}}')" || return $?
+  done
+  echo "Image and current source hashes verified; runtime activation still follows the idle guard."
+}
+ensure_image_sources
 schedule_was_enabled="$(python - <<'PY'
 import json, urllib.request
 with urllib.request.urlopen('http://127.0.0.1:8010/api/automation/viral-cc/schedule', timeout=15) as response:
@@ -139,7 +181,7 @@ else
 fi
 # Source may have changed while draining jobs. Keep the durable image and the
 # staged runtime modules consistent before touching the existing container.
-verify_image_sources
+ensure_image_sources
 if ! docker exec fendy-clipper-backend python -c 'from PIL import Image, ImageDraw, ImageFont'; then
   docker exec fendy-clipper-backend python -m pip install 'Pillow>=10.2,<13'
 fi

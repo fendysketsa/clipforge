@@ -1,0 +1,31 @@
+{
+  "tests": {
+    "focused": {
+      "tests": 14,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    },
+    "regression": {
+      "tests": 1380,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    }
+  },
+  "compose_config_valid": true,
+  "compose_cli_version": "v5.5.0",
+  "local_dependency_probe_passed": true,
+  "activation_completed": false,
+  "docker_rebuild_performed": false,
+  "blocker": "Interactive sudo password is required in the user terminal",
+  "source_sha256": {
+    "docker-compose.yml": "4e27956d8a1913db2e65989005c73933b97b177252f2d8c5137cec79d2a7262e",
+    "backend/Dockerfile": "8469f918f359a9bb951fc6d306462e3a6a3f8cd7b19e511700910715dfcc040e",
+    "backend/docker-entrypoint.sh": "b7a910f901f9bd7ce2b6484295aea3500e5f5e6606aec1e86f3f27f22e97fc36",
+    "backend/deployment_runtime.py": "309cb863123d738daccf6e0ad7df6841e7009659b72123eb040e334b6597c899",
+    "frontend/Dockerfile": "cebac87a96f33a796987c20a028429f12649c33f0edfbc20fe43b92831c2b77e",
+    "frontend/docker-entrypoint.sh": "39b96081d462ad42e19486e8647e49d8e9914651446ec8859d8d00f6a3095999",
+    "frontend/scripts/deployment-health.cjs": "5b104880b00e7c92187ecab364d3d1471d151d50e12b502e046de90b5ab95e14"
+  }
+}

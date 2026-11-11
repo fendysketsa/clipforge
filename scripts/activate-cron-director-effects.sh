@@ -21,7 +21,7 @@ import json, urllib.request
 with urllib.request.urlopen('http://127.0.0.1:8010/api/automation/viral-cc/schedule', timeout=15) as response:
     state = json.load(response)
 assert state.get('cron_director_effects_required') is True
-assert state.get('cron_director_effects_policy_version') == 3
+assert state.get('cron_director_effects_policy_version') == 4
 assert state.get('cron_source_process_limit') == 2
 assert state.get('cron_follow_cta_adaptive') is True
 assert state.get('tiktok_automatic_retry_enabled') is True

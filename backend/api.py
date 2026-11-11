@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from contextlib import contextmanager
 import hashlib
 import json
 import importlib.util
@@ -980,6 +981,7 @@ class ClipJob(BaseModel):
     source_uploader: str | None = None
     repair_source_job_id: str | None = None
     repair_source_clip_url: str | None = None
+    source_recovery_parent_job_id: str | None = None
     director_recovery: dict[str, Any] | None = None
     logs: list[str] = []
     clips: list[ClipFile] = []
@@ -1306,6 +1308,8 @@ class YouTubeLoginStatus(BaseModel):
 
 
 class TikTokConfig(BaseModel):
+    duplicate_guard_version: int = 2
+    cron_draft_policy: Literal['discard'] = 'discard'
     enabled: bool
     playwright_installed: bool
     auth_state_exists: bool
@@ -1369,6 +1373,7 @@ class TikTokPerformanceUpdateRequest(BaseModel):
 
 
 class TikTokUploadJob(BaseModel):
+    queued_at: str | None = None
     auto_retry_count: int = Field(default=0, ge=0)
     auto_retry_at: str | None = None
     auto_retry_reason: str = ''
@@ -2691,7 +2696,11 @@ class AutoViralScheduleStatus(BaseModel):
     cron_source_process_limit: int = 2
     cron_follow_cta_adaptive: bool = True
     cron_director_effects_required: bool = True
-    cron_director_effects_policy_version: int = 3
+    cron_director_effects_policy_version: int = 4
+    social_upload_serialized: bool = True
+    social_upload_min_gap_seconds: int = Field(default_factory=lambda: max(0,min(600,env_int('SOCIAL_UPLOAD_MIN_GAP_SECONDS',45))))
+    social_upload_failure_gap_seconds: int = Field(default_factory=lambda: max(0,min(600,env_int('SOCIAL_UPLOAD_FAILURE_GAP_SECONDS',90))))
+    cron_requested_source_rescue_supported: bool = True
     enabled: bool
     interval_hours: float
     run_on_startup: bool
@@ -4601,6 +4610,9 @@ youtube_performance_collector_lock = threading.Lock()
 youtube_performance_collector_running = False
 tiktok_worker_lock = threading.Lock()
 tiktok_worker_running = False
+social_upload_execution_lock = threading.Lock()
+social_upload_turn_condition = threading.Condition()
+social_upload_waiting_turns: list[object] = []
 tiktok_cdp_lock = threading.Lock()
 youtube_cleanup_lock = threading.Lock()
 youtube_cleanup_scheduled: set[str] = set()
@@ -8083,14 +8095,19 @@ def tiktok_caption_for_clip(job: ClipJob, clip: ClipFile, index: int, requested:
 def reusable_tiktok_upload(job_id: str, clip_url: str, fingerprint: str) -> TikTokUploadJob | None:
     with tiktok_uploads_lock:
         uploads = sorted(tiktok_uploads.values(), key=lambda item: item.created_at, reverse=True)
+    matching = []
     for upload in uploads:
         exact = upload.source_job_id == job_id and upload.clip_url == clip_url
         same_file = bool(fingerprint and upload.clip_sha256 == fingerprint)
-        if exact and upload.status in {"queued", "running"}:
-            return upload
-        if upload.status == "completed" and upload.upload_confirmed and not upload.dry_run and (exact or same_file):
-            return upload
-    return None
+        same_account = upload.target_handle.casefold().lstrip('@') == tiktok_target_handle().casefold().lstrip('@')
+        if (exact or same_file) and same_account and not upload.dry_run:
+            matching.append(upload)
+    # A new caption, privacy value, job ID or manual click must never erase
+    # the reservation left by an accepted/uncertain Post of identical media.
+    return next((u for u in matching if u.upload_confirmed and u.profile_url), None) or next(
+        (u for u in matching if u.profile_url or automatic_retry.tiktok_submission_possible(
+            u.logs, started=u.submission_started, accepted=u.submission_accepted)), None,
+    ) or next((u for u in matching if u.status in {'queued','running'}), None)
 
 
 def existing_submission_recovery_record(
@@ -8151,12 +8168,13 @@ def create_tiktok_upload_record(
     existing = reusable_tiktok_upload(job_id, clip.url, fingerprint)
     if existing is not None and not (request.dry_run and existing.status == "completed"):
         return existing
-    if allow_audited_automation and not request.dry_run:
-        # The bounded retry operator owns failed attempts. A campaign/sweeper
-        # must not reset its budget by minting another upload ID every tick.
+    if not request.dry_run:
+        # Manual clicks and automation share the same bounded retry record;
+        # neither may reset its budget by minting another upload ID.
         with tiktok_uploads_lock:
             terminal = sorted((item for item in tiktok_uploads.values()
                 if not item.dry_run and item.status in {'failed','cancelled'}
+                and item.target_handle.casefold().lstrip('@') == tiktok_target_handle().casefold().lstrip('@')
                 and (item.source_job_id==job_id and item.clip_url==clip.url
                      or item.clip_sha256==fingerprint)),key=lambda item:item.created_at,reverse=True)
         if terminal:
@@ -8169,6 +8187,7 @@ def create_tiktok_upload_record(
         clip_url=clip.url,
         clip_name=clip.name,
         status="queued",
+        queued_at=now,
         created_at=now,
         updated_at=now,
         caption=repair_known_public_typos(
@@ -8453,6 +8472,10 @@ def youtube_upload_belongs_to_scheduled_run(upload: YouTubeUploadJob) -> bool:
     source_job_id = str(getattr(upload, "source_job_id", "") or "").strip()
     if not source_job_id:
         return False
+    with jobs_lock:
+        source_job = jobs.get(source_job_id)
+    if source_job and source_job.source_recovery_parent_job_id:
+        source_job_id = source_job.source_recovery_parent_job_id
     with auto_viral_lock:
         runs = list(auto_viral_runs.values())
     return any(
@@ -8910,6 +8933,8 @@ def queue_youtube_draft_recoveries_once(*, source_job_ids: set[str] | None = Non
             ui_retry = (
                 'ID draft aktif berubah; perubahan metadata dihentikan.' in ui_error
                 or 'belum siap dengan ID yang cocok; metadata tidak diubah' in ui_error
+                or 'Gagal mengisi judul dengan benar di tab Detail' in ui_error
+                or 'Gagal mengisi deskripsi dengan benar di tab Detail' in ui_error
             )
             if (ui_retry and row.status == 'failed' and not row.dry_run and not row.upload_confirmed
                     and youtube_upload_has_remote_checkpoint(row)
@@ -11321,6 +11346,8 @@ def run_youtube_restart_verification(upload_id: str) -> None:
         if cleaned.startswith(YOUTUBE_UPLOAD_CONFIRMED_PREFIX):
             confirmed = True
         logs.append(cleaned)
+        if cleaned.startswith('EXISTING_PUBLICATION_CONFIRMED:'):
+            set_youtube_upload(upload_id, publish_at=None)
         set_youtube_upload(
             upload_id,
             logs=logs[-160:],
@@ -12150,6 +12177,70 @@ def run_youtube_upload(upload_id: str) -> None:
             youtube_upload_processes.pop(upload_id, None)
 
 
+def social_upload_cooldown_remaining(now: datetime | None = None) -> float:
+    """A durable gap between actual browser uploads, shared across platforms."""
+    current = now or datetime.now(timezone.utc)
+    with youtube_uploads_lock:
+        rows = list(youtube_uploads.values())
+    with tiktok_uploads_lock:
+        rows += list(tiktok_uploads.values())
+    remaining = 0.0
+    for row in rows:
+        if row.dry_run or not row.started_at or row.status not in {'completed', 'failed'}:
+            continue
+        finished = parsed_datetime(row.finished_at)
+        if finished is None or finished > current + timedelta(seconds=60):
+            continue
+        gap = max(0, min(600, env_int('SOCIAL_UPLOAD_FAILURE_GAP_SECONDS' if row.status == 'failed'
+            else 'SOCIAL_UPLOAD_MIN_GAP_SECONDS', 90 if row.status == 'failed' else 45)))
+        remaining = max(remaining, (finished-current).total_seconds()+gap)
+    return max(0.0, remaining)
+
+
+@contextmanager
+def social_upload_turn():
+    """Hand off to an already waiting platform before accepting another turn."""
+    ticket = object()
+    with social_upload_turn_condition:
+        social_upload_waiting_turns.append(ticket)
+        try:
+            social_upload_turn_condition.wait_for(lambda: social_upload_waiting_turns[0] is ticket)
+        except BaseException:
+            social_upload_waiting_turns.remove(ticket)
+            social_upload_turn_condition.notify_all()
+            raise
+    try:
+        with social_upload_execution_lock:
+            yield
+    finally:
+        with social_upload_turn_condition:
+            social_upload_waiting_turns.remove(ticket)
+            social_upload_turn_condition.notify_all()
+
+
+def execute_social_upload(platform: Literal['youtube', 'tiktok'], upload_id: str) -> None:
+    """Keep browser UI operations serial; queued cards stay queued while waiting."""
+    with social_upload_turn():
+        lock, records = (youtube_uploads_lock, youtube_uploads) if platform == 'youtube' else (tiktok_uploads_lock, tiktok_uploads)
+        with lock:
+            upload = records.get(upload_id)
+        if upload is None or upload.status != 'queued':
+            return
+        remaining = social_upload_cooldown_remaining()
+        if remaining > 1:
+            setter = set_youtube_upload if platform == 'youtube' else set_tiktok_upload
+            setter(upload_id, logs=[*upload.logs,
+                f'UPLOAD_BROWSER_COOLDOWN: menunggu jeda {math.ceil(remaining)} detik; tidak ada transfer atau Post bersamaan.'][-120:])
+        while remaining > 0:
+            time.sleep(min(1.0, remaining))
+            with lock:
+                live = records.get(upload_id)
+            if live is None or live.status != 'queued':
+                return
+            remaining = social_upload_cooldown_remaining()
+        (run_youtube_upload if platform == 'youtube' else run_tiktok_upload)(upload_id)
+
+
 def youtube_upload_worker_loop() -> None:
     global youtube_worker_running
     while True:
@@ -12160,7 +12251,7 @@ def youtube_upload_worker_loop() -> None:
                 if upload.status == "queued"
             ]
         if queued:
-            run_youtube_upload(queued[0].id)
+            execute_social_upload('youtube', queued[0].id)
             continue
 
         with youtube_worker_lock:
@@ -12222,7 +12313,7 @@ def record_tiktok_performance(
 
 
 def tiktok_uploads_with_queue_positions(items: list[TikTokUploadJob]) -> list[TikTokUploadJob]:
-    queued = sorted((item for item in items if item.status == "queued"), key=lambda item: item.created_at)
+    queued = sorted((item for item in items if item.status == "queued"), key=tiktok_queue_order)
     positions = {item.id: index for index, item in enumerate(queued, start=1)}
     return [
         item.model_copy(update={
@@ -12231,6 +12322,16 @@ def tiktok_uploads_with_queue_positions(items: list[TikTokUploadJob]) -> list[Ti
         })
         for item in items
     ]
+
+
+def tiktok_queue_order(upload: TikTokUploadJob) -> tuple[str, str]:
+    return (upload.queued_at or upload.created_at, upload.id)
+
+
+def tiktok_source_is_cron(job_id: str) -> bool:
+    with jobs_lock:
+        job = jobs.get(job_id)
+    return bool(job and scheduled_public_source_credit_required(job)) or job_id in scheduled_upload_recovery_source_ids('tiktok')
 
 
 def build_tiktok_base_command(*, force_profile: bool = False, cdp_url: str = "") -> list[str]:
@@ -12285,6 +12386,8 @@ def build_tiktok_upload_command(
     ]
     if upload.dry_run:
         command.append("--dry-run")
+    if tiktok_source_is_cron(upload.source_job_id):
+        command.append('--cron-fresh-upload')
     return command
 
 
@@ -12295,6 +12398,11 @@ def tiktok_error_from_logs(logs: list[str]) -> str | None:
             message = line.split("USER_ERROR:", 1)[1].strip()
             normalized = message.casefold()
             if "locator.click" in normalized and "timeout" in normalized:
+                if automatic_retry.tiktok_submission_possible(logs):
+                    return (
+                        'Hasil Post TikTok belum pasti setelah batas tunggu kontrol. '
+                        'Verifikasi posting yang sama diperlukan; transfer ulang otomatis ditahan agar tidak duplikat.'
+                    )
                 if "tuxmodal-overlay" in recent_detail or "intercepts pointer events" in recent_detail:
                     return (
                         "Dialog TikTok menutupi form upload sehingga kolom caption tidak dapat diklik. "
@@ -12411,6 +12519,18 @@ def run_tiktok_upload(upload_id: str) -> None:
         upload = tiktok_uploads.get(upload_id)
     if upload is None:
         return
+    # Recheck legacy queues immediately before browser work. They may have
+    # been created by an older API that only checked successful siblings.
+    if not upload.dry_run:
+        blocker = reusable_tiktok_upload(upload.source_job_id, upload.clip_url, upload.clip_sha256 or '')
+        if blocker is not None and blocker.id != upload.id:
+            confirmed = bool(blocker.upload_confirmed and blocker.profile_url)
+            set_tiktok_upload(upload_id, status='completed' if confirmed else 'failed',
+                upload_confirmed=confirmed, profile_url=blocker.profile_url if confirmed else None,
+                finished_at=now_iso(), auto_retry_at=None,
+                error=None if confirmed else 'File yang sama sudah memiliki percobaan Post TikTok; verifikasi ID lama diperlukan, upload baru ditahan.',
+                logs=[*upload.logs, f'TIKTOK_DUPLICATE_GUARD:{blocker.id}: file identik tidak ditransfer ulang.'][-120:])
+            return
     if upload.upload_confirmed and upload.profile_url and not upload.dry_run:
         set_tiktok_upload(upload_id,status='completed',error=None,auto_retry_at=None)
         return
@@ -12653,10 +12773,10 @@ def tiktok_worker_loop() -> None:
         with tiktok_uploads_lock:
             queued = sorted(
                 (item for item in tiktok_uploads.values() if item.status == "queued"),
-                key=lambda item: item.created_at,
+                key=tiktok_queue_order,
             )
         if queued:
-            run_tiktok_upload(queued[0].id)
+            execute_social_upload('tiktok', queued[0].id)
             continue
         with tiktok_worker_lock:
             with tiktok_uploads_lock:
@@ -13617,11 +13737,8 @@ def queue_retryable_tiktok_uploads_once(now: datetime | None = None, *, source_j
     if not env_bool('TIKTOK_AUTOMATIC_RETRY_ENABLED',True) or tiktok_login_is_active():
         return 0
     current=now or datetime.now(timezone.utc)
-    with youtube_uploads_lock:
-        if any(item.status in {'queued','running'} for item in youtube_uploads.values()):return 0
     with tiktok_upload_creation_lock:
         with tiktok_uploads_lock:rows=list(tiktok_uploads.values())
-        if any(item.status in {'queued','running'} for item in rows):return 0
         for upload in sorted(rows,key=lambda item:item.updated_at):
             if source_job_ids is not None and upload.source_job_id not in source_job_ids:
                 continue
@@ -13632,13 +13749,21 @@ def queue_retryable_tiktok_uploads_once(now: datetime | None = None, *, source_j
                     or count>=automatic_retry.MAX_RETRIES or not reason
                     or upload.target_handle.casefold().lstrip('@')!=tiktok_target_handle().casefold().lstrip('@')):
                 continue
-            siblings=[item for item in rows if item.id!=upload.id and not item.dry_run and
+            siblings=[item for item in rows if item.id!=upload.id and not item.dry_run
+                and item.target_handle.casefold().lstrip('@')==upload.target_handle.casefold().lstrip('@') and
                 ((item.source_job_id==upload.source_job_id and item.clip_url==upload.clip_url)
                  or (upload.clip_sha256 and item.clip_sha256==upload.clip_sha256))]
-            if any(item.upload_confirmed or item.profile_url or automatic_retry.tiktok_submission_possible(item.logs,
+            if any(item.status in {'queued','running'} or item.upload_confirmed or item.profile_url or automatic_retry.tiktok_submission_possible(item.logs,
                     started=item.submission_started,accepted=item.submission_accepted)
                     or (item.source_job_id==upload.source_job_id and item.clip_url==upload.clip_url
                         and (item.created_at,item.id)>(upload.created_at,upload.id)) for item in siblings):
+                if upload.auto_retry_at:
+                    with tiktok_uploads_lock:
+                        live=tiktok_uploads.get(upload.id)
+                        if live and live.status=='failed' and live.updated_at==upload.updated_at:
+                            tiktok_uploads[upload.id]=live.model_copy(update={
+                                'auto_retry_at':None,'auto_retry_reason':'existing_media_attempt'})
+                            save_tiktok_uploads_unlocked()
                 continue
             due=parsed_datetime(upload.auto_retry_at)
             if due is None:
@@ -13668,7 +13793,7 @@ def queue_retryable_tiktok_uploads_once(now: datetime | None = None, *, source_j
                     live=tiktok_uploads.get(upload.id)
                     if live is None or live.status!='failed' or live.updated_at!=upload.updated_at:continue
                     markers=['CAPTION_READY_RETRY_ONCE'] if reason=='caption_not_ready' and count==0 else []
-                    recovered=live.model_copy(update={'status':'queued','error':None,'started_at':None,'finished_at':None,
+                    recovered=live.model_copy(update={'status':'queued','queued_at':current.isoformat(),'error':None,'started_at':None,'finished_at':None,
                         'updated_at':now_iso(),'auto_retry_at':None,'auto_retry_count':count+1,'auto_retry_reason':reason,
                         'caption':caption,
                         'auto_retry_original_caption':(live.auto_retry_original_caption or live.caption) if repair_caption else live.auto_retry_original_caption,
@@ -13679,7 +13804,7 @@ def queue_retryable_tiktok_uploads_once(now: datetime | None = None, *, source_j
                         } if repair_caption else {}),
                         'logs':[*live.logs,*markers,f'AUTO_RETRY_RESERVED:{count+1}/{automatic_retry.MAX_RETRIES}:{reason}',
                             'Template caption disesuaikan dengan tema sumber; file, akun dan privasi tetap.' if repair_caption else
-                            'Retry otomatis file identik sebelum Post; caption, akun dan privasi dipertahankan.'][-160:]})
+                            'Retry otomatis masuk giliran baru di ekor antrean; file, akun dan privasi dipertahankan.'][-160:]})
                     tiktok_uploads[upload.id]=recovered
                     save_tiktok_uploads_unlocked()
                 queue_tiktok_upload_jobs([recovered])
@@ -19820,7 +19945,7 @@ def create_auto_viral_clip_job(
     return queue_auto_viral_clip_job(job_request)
 
 
-def queue_auto_viral_clip_job(job_request: ClipJobRequest) -> ClipJob:
+def queue_auto_viral_clip_job(job_request: ClipJobRequest, *, source_recovery_parent_job_id: str | None = None) -> ClipJob:
     """Persist one already-normalized automation job without starting it."""
     if (job_request.scheduled_director_effects or job_request.scheduled_public_source_credit) and cron_source_process_limit_reached(job_request.url):
         raise cron_source_policy.SourceProcessLimitReached('Sumber mencapai batas dua proses; cron memilih sumber lain.')
@@ -19835,6 +19960,7 @@ def queue_auto_viral_clip_job(job_request: ClipJobRequest) -> ClipJob:
         request=job_request,
         created_at=now_iso(),
         updated_at=now_iso(),
+        source_recovery_parent_job_id=source_recovery_parent_job_id,
     )
     with jobs_lock:
         if any(item.status in {"queued", "running"} for item in jobs.values()):
@@ -24598,7 +24724,111 @@ def scheduled_upload_recovery_source_ids(platform: str) -> set[str]:
         keys = (['job_id', 'repair_job_id'] if short_enabled else []) + (['long_job_id'] if long_enabled else [])
         for item in run.processed:
             owned.update(str(item[key]) for key in keys if item.get(key))
+    with jobs_lock:
+        owned.update(job.id for job in jobs.values() if job.source_recovery_parent_job_id in owned)
     return owned
+
+
+def queue_missing_scheduled_uploads_once() -> dict[str, int]:
+    """First intake for completed cron outputs left by terminal campaigns.
+
+    A recorded attempt belongs to recovery, not this path. Live campaigns keep
+    their own delay/paired-format checkpoint; News/review-only jobs stay held.
+    """
+    counts={'youtube':0,'tiktok':0}
+    if not auto_viral_schedule_enabled():return counts
+    with auto_viral_lock:
+        live_ids={str(item.get(key) or '') for run in auto_viral_runs.values()
+            if run.status in {'queued','running'} for item in run.processed
+            for key in ('job_id','long_job_id','repair_job_id')}
+    with jobs_lock:
+        snapshot=list(jobs.values())
+    for platform in ('youtube','tiktok'):
+        if not env_bool(f'AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_{platform.upper()}',False):continue
+        owned=scheduled_upload_recovery_source_ids(platform)
+        lock,records=(youtube_uploads_lock,youtube_uploads) if platform=='youtube' else (tiktok_uploads_lock,tiktok_uploads)
+        with lock:
+            attempted={(item.source_job_id,item.clip_url) for item in records.values() if not item.dry_run}
+        for job in sorted(snapshot,key=lambda item:item.created_at):
+            if (job.id not in owned or job.id in live_ids or job.source_recovery_parent_job_id in live_ids
+                    or job.status!='completed' or not job.clips or job.request.publication_review_required
+                    or job.request.review_only or job.request.scheduled_news_hot):continue
+            eligible=best_automatic_upload_clip_urls(job,1,allow_audited_automation=True,
+                require_youtube_fyp_target=True,require_numeric_fyp_score=True)
+            urls=[url for url in eligible if (job.id,url) not in attempted]
+            urls=pending_completed_job_upload_urls(job,urls,platform=platform)
+            if not urls:continue
+            try:
+                if platform=='youtube':
+                    require_youtube_ready()
+                    with youtube_upload_creation_lock:
+                        uploads=create_youtube_upload_batch_records(job.id,YouTubeBatchUploadRequest(
+                            clip_urls=urls,visibility=youtube_default_visibility()))
+                        queue_youtube_upload_jobs(uploads)
+                else:
+                    require_tiktok_ready()
+                    with tiktok_upload_creation_lock:
+                        uploads=create_tiktok_upload_batch_records(job.id,TikTokBatchUploadRequest(clip_urls=urls))
+                        queue_tiktok_upload_jobs(uploads)
+                counts[platform]+=sum(item.status=='queued' for item in uploads)
+                break  # One new intake per platform per tick.
+            except (HTTPException,OSError,ValueError,RuntimeError) as exc:
+                print(f'Intake cron {platform} ditunda: {type(exc).__name__}',flush=True)
+    return counts
+
+
+def queue_requested_source_rescues_once() -> dict[str, int]:
+    """Consume explicit operator requests using one new attempt under the 2-use cap.
+
+    Old workers deleted failed workspaces before the grounded director existed.
+    A durable child identity permits one re-download/re-analysis, never a score
+    override. Successful children use the normal rights, QC and upload gates.
+    """
+    counts = {'source': 0, 'youtube': 0, 'tiktok': 0}
+    path = SOURCE_USAGE_HISTORY_PATH.parent / 'legacy_source_rescue_requests.json'
+    if not auto_viral_schedule_enabled() or not path.is_file():
+        return counts
+    try:
+        if path.stat().st_size > 64000:
+            raise ValueError('Source rescue manifest too large')
+        manifest = json.loads(path.read_text())
+        if not isinstance(manifest,dict) or not isinstance(manifest.get('requests'),list) or any(not isinstance(row,dict) for row in manifest['requests']):
+            raise ValueError('Invalid source rescue manifest')
+        requests = manifest.get('requests', []) if manifest.get('schema_version') == 1 else []
+        youtube_owned = scheduled_upload_recovery_source_ids('youtube')
+        tiktok_owned = scheduled_upload_recovery_source_ids('tiktok')
+        with jobs_lock:
+            snapshot = list(jobs.values())
+        for request in requests[:20]:
+            parent = next((job for job in snapshot if job.id == request.get('job_id')), None)
+            if (parent is None or parent.status != 'failed' or parent.clips
+                    or parent.request.scheduled_news_hot or not parent.request.scheduled_director_effects
+                    or parent.id not in youtube_owned | tiktok_owned
+                    or normalize_youtube_video_url(parent.request.url) != normalize_youtube_video_url(request.get('source_url', ''))
+                    or not str(parent.error or '').startswith(SHORT_SELECTION_REJECTION_PREFIX)):
+                continue
+            children = [job for job in snapshot if job.source_recovery_parent_job_id == parent.id]
+            if children:
+                continue
+            if (parent.director_recovery or not parent.request.confirm_source_rights
+                    or not parent.request.source_rights_evidence.strip()
+                    or youtube_source_claim_block(parent.id)
+                    or any('content safety screening' in line.casefold() or 'provider_rejected' in line.casefold() for line in parent.logs)
+                    or cron_source_process_limit_reached(parent.request.url)
+                    or any(job.status in {'queued','running'} for job in snapshot)):
+                continue
+            child_request = normalize_job_request(parent.request.model_copy(update={
+                'allow_reprocess_source': True, 'auto_upload_youtube': False}))
+            child = queue_auto_viral_clip_job(child_request, source_recovery_parent_job_id=parent.id)
+            set_job(parent.id, director_recovery=dict(outcome='source_rescue_queued',
+                child_job_id=child.id, attempted=True,
+                summary='Satu analisis ulang dengan sutradara baru; batas dua proses dan gate kualitas tetap berlaku.'))
+            threading.Thread(target=run_job,args=(child.id,),daemon=True).start()
+            counts['source'] += 1
+            break
+    except (HTTPException,OSError,ValueError,RuntimeError) as exc:
+        print(f'Pemulihan sumber terdaftar ditunda: {type(exc).__name__}', flush=True)
+    return counts
 
 
 def queue_scheduled_upload_recoveries_once() -> dict[str, int]:
@@ -24623,8 +24853,12 @@ def queue_scheduled_upload_recoveries_once() -> dict[str, int]:
             # the scheduler. The next tick can recheck durable state safely.
             errors[platform] = type(exc).__name__
             print(f'Pemulihan upload cron {platform} ditunda: {type(exc).__name__}', flush=True)
+    intake = queue_missing_scheduled_uploads_once()
+    for platform in counts:
+        counts[platform] += intake[platform]
     with auto_viral_scheduler_lock:
         auto_viral_upload_recovery_status.update(last_tick_at=now_iso(), queued=counts, errors=errors)
+    queue_requested_source_rescues_once()
     return counts
 
 

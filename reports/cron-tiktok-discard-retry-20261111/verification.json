@@ -1,0 +1,57 @@
+{
+  "checked_at": "2026-11-11T06:33:15.331665+00:00",
+  "tests": {
+    "focused": {
+      "tests": 151,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "regression": {
+      "tests": 1360,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "browser": {
+      "tests": 25,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "activation": {
+      "tests": 81,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "source_sha256": {
+    "backend/api.py": "0dad80aa457bc524c56ea55ba5b7a7ac00caa06a76365a06c4ac0ba35a7d6fa3",
+    "backend/tiktok_uploader.py": "bab02b9f92684220bb95fedae3ee00fb8cd65f14c0b275be07a719497223088e",
+    "backend/automatic_retry.py": "62276d5758967d4d7bbae45324753a34bcabe5b9a279e00e33c71e86ade6d519",
+    "frontend/app/_components/HistorySection.tsx": "a94abb12e20e37da3b215408dbed7d9b12038e16581b75eaae8b5368228b9541",
+    "frontend/app/_components/ResultsSection.tsx": "3d122a2f9d8a8ce69f26ec25b08233cd6443017796f3bf5c6a3f801322bd1b88",
+    "frontend/lib/tiktokRetry.ts": "1cb198f082e69af1f8d7884372a1b41d8feaa77e4a468da215187f99a1dc06e2",
+    "frontend/types/clip.type.ts": "5cdfa9fa47b96df80fc0dbb08dec87c08becd780712cae1ba3eeed76dd5cf9f2",
+    "scripts/activate-director-source-recovery.sh": "a1194e0b8e5104568bb07fb6c5653cde6568fd66473144b4c68cb3bf6992c414"
+  },
+  "frontend": {
+    "build_id": "4-0_gppt4EMxHm1yUALyL",
+    "automatic_retry_label_present": true,
+    "retry_clock_present": true,
+    "queue_positions_present": true,
+    "four_columns_marker_present": true
+  },
+  "runtime_activation_verified": false,
+  "activation_blocker": "sudo requires a password",
+  "cron_draft_policy_prepared": "discard",
+  "fresh_transfer_retries_maximum": 3,
+  "backoff_seconds": [
+    60,
+    180,
+    600
+  ],
+  "unknown_post_retransmission_allowed": false,
+  "production_drafts_discarded_by_tests": 0
+}

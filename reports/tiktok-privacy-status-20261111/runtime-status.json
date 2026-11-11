@@ -1,0 +1,66 @@
+{
+  "checked_at": "2026-11-11T06:47:44.955682+00:00",
+  "health": {
+    "status": "ok"
+  },
+  "config": {
+    "enabled": true,
+    "duplicate_guard_version": null,
+    "cron_draft_policy": null
+  },
+  "schedule": {
+    "enabled": false,
+    "scheduler_running": false,
+    "cron_director_effects_policy_version": 3
+  },
+  "screenshot_clip_uploads": [
+    {
+      "id": "583000a30142427cade21d8d9d332db7",
+      "status": "failed",
+      "visibility": "only_you",
+      "submission_started": false,
+      "submission_accepted": false,
+      "upload_confirmed": false,
+      "profile_url": null,
+      "auto_retry_at": "2026-11-11T06:16:55.139592+00:00",
+      "auto_retry_count": 0,
+      "error": "Kontrol privasi TikTok belum siap. Video belum diposting."
+    },
+    {
+      "id": "ba61438a0f2e4a27804ab102a6cc44d6",
+      "status": "failed",
+      "visibility": "only_you",
+      "submission_started": false,
+      "submission_accepted": false,
+      "upload_confirmed": false,
+      "profile_url": null,
+      "auto_retry_at": "2026-11-11T06:07:44.639272+00:00",
+      "auto_retry_count": 0,
+      "error": "Input upload TikTok tidak ditemukan. Periksa sesi dan halaman TikTok Studio."
+    },
+    {
+      "id": "0abf129145a54e7186f8e095188ad9ef",
+      "status": "failed",
+      "visibility": "only_you",
+      "submission_started": false,
+      "submission_accepted": false,
+      "upload_confirmed": false,
+      "profile_url": null,
+      "auto_retry_at": "2026-11-11T05:27:42.017793+00:00",
+      "auto_retry_count": 0,
+      "error": "Kolom caption TikTok belum siap setelah batas tunggu transfer/pemrosesan; video belum diposting."
+    },
+    {
+      "id": "aee89716f6b040ccab195408c1fa65d2",
+      "status": "failed",
+      "visibility": "public",
+      "submission_started": true,
+      "submission_accepted": true,
+      "upload_confirmed": false,
+      "profile_url": null,
+      "auto_retry_at": null,
+      "auto_retry_count": 0,
+      "error": "Uploader TikTok gagal: Page.wait_for_timeout: Target page, context or browser has been closed"
+    }
+  ]
+}

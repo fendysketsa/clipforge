@@ -1,0 +1,27 @@
+{
+  "verified": true,
+  "verified_at": 1794324983.0254486,
+  "module_sha256": {
+    "api": "e69bdd8021411ab9a700b387fa84d728960ee42642803d74f66534677982b194",
+    "clipper": "72b160b9c5e742f0f1d9605a36d856af2b94cbd37387decc599cbf626acf6dbe",
+    "llm": "6015e4d668845836751eb9da29db6445347254945d35ae8c3e94382ada5310be",
+    "cron_short_director": "d352c8c7bc416a315beae0aa25e9fb9d6e8cd29d59d6856ffc380c2866aa7b2a",
+    "automatic_retry": "ffc69fd1f80f0a8dbe88038c766c1353bcc9d1762c4ab0b6e0c0e797672a708a",
+    "tiktok_uploader": "8f3d59a591dfd319d1f232b6a2d21da1dbc9e2c5dd4b19dc636256dfd3a8c7a7",
+    "youtube_uploader": "401e80ab1e4993455d78106e86ac2d93f8c89c75794732f6805b6362eb301ddb"
+  },
+  "frontend_build_id": "41a0pvA5Yu0Xhd91HgzKb",
+  "desktop_columns": 4,
+  "queue_positions_preserved": true,
+  "cron_checkpoints_preserved": true,
+  "cron_upload_recovery": {
+    "last_tick_at": "2026-11-10T15:36:21.977372+00:00",
+    "queued": {
+      "youtube": 0,
+      "tiktok": 0
+    },
+    "errors": {},
+    "enabled": true
+  },
+  "note": "Runtime verified; creative render outcomes require per-job evidence."
+}

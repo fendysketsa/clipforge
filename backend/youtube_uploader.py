@@ -16,6 +16,7 @@ from typing import Callable, Iterable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import imageio_ffmpeg
+from browser_page_activity import start_background_page_activity, stop_background_page_activity
 from youtube_playlists import classify_youtube_playlist
 
 from islamic_text import (
@@ -1155,6 +1156,24 @@ def fill_textbox(page, index: int, value: str, label: str) -> None:
         raise UploadError(f"Gagal mengisi {label}. UI YouTube Studio mungkin berubah.") from exc
 
 
+def fill_scoped_upload_text_field(page, value, expected, patterns, reject_patterns, field_kind):
+    """Native input on the exact visible upload field; read back before success."""
+    field_id = 'description-textarea' if field_kind == 'description' else 'title-textarea'
+    try:
+        fields = page.locator(f'ytcp-uploads-dialog #{field_id} #textbox[contenteditable="true"]').all()
+        for field in reversed(fields):
+            if not field.is_visible():
+                continue
+            field.fill(value, timeout=3000)
+            field.press('Tab', timeout=1000)
+            if upload_text_field_contains(page, expected, patterns,
+                    reject_patterns=reject_patterns, timeout_ms=1500, field_kind=field_kind):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def set_upload_text_field(
     page,
     value: str,
@@ -1283,6 +1302,12 @@ def set_upload_text_field(
     last_error: Exception | None = None
     while time.monotonic() < deadline:
         try:
+            # Scope native input events to the exact visible upload field.
+            # Global keyboard focus can drift when another browser tab works
+            # in the background. Retain the existing verified fallback below.
+            if fill_scoped_upload_text_field(page, value, expected, pattern_list, reject_patterns, field_kind):
+                log(f'{label} diisi dan diverifikasi pada field upload aktif.')
+                return
             if page.evaluate(
                 script,
                 {
@@ -1901,9 +1926,10 @@ def goto_upload_page(page, channel_id: str = "", target_email: str = "", studio_
     resolved_channel_id = effective_channel_id(page, channel_id)
     channel_urls = (
         (
+            f"https://studio.youtube.com/channel/{resolved_channel_id}",
+            f"https://studio.youtube.com/channel/{resolved_channel_id}/videos",
             f"https://studio.youtube.com/channel/{resolved_channel_id}/videos/upload",
             f"https://studio.youtube.com/channel/{resolved_channel_id}/upload",
-            f"https://studio.youtube.com/channel/{resolved_channel_id}/videos",
         )
         if resolved_channel_id
         else ()
@@ -1949,6 +1975,11 @@ def goto_upload_page(page, channel_id: str = "", target_email: str = "", studio_
                 ):
                     log("Dialog upload siap.")
                     return
+                if click_dashboard_upload_entry(page, timeout_ms=5000) and wait_for_file_input(
+                    page, timeout_ms=input_timeout
+                ):
+                    log("Dialog upload siap dari dashboard channel.")
+                    return
                 if click_create_upload_by_topbar_position(page) and wait_for_file_input(
                     page, timeout_ms=input_timeout
                 ):
@@ -1971,6 +2002,23 @@ def goto_upload_page(page, channel_id: str = "", target_email: str = "", studio_
 
 
 def click_upload_menu_item(page, timeout_ms: int = 8000) -> bool:
+    # A broad DOM search can "click" the menu container whose label includes
+    # Upload video without ever activating the actual menu item. Prefer the
+    # exact visible label with native input, then verify the upload surface.
+    pattern = re.compile(r'^\s*(?:upload videos?|unggah video)\s*$', re.I)
+    try:
+        candidates = page.get_by_text(pattern).all()
+    except Exception:
+        candidates = []
+    for item in candidates:
+        try:
+            if not item.is_visible():
+                continue
+            item.click(timeout=min(2_000, timeout_ms))
+            if wait_for_file_input(page, timeout_ms=min(3_000, timeout_ms)):
+                return True
+        except Exception:
+            continue
     menu_clicked = deep_click(
         page,
         selectors=(
@@ -1985,9 +2033,10 @@ def click_upload_menu_item(page, timeout_ms: int = 8000) -> bool:
         timeout_ms=timeout_ms,
         optional=True,
     )
-    if menu_clicked:
+    if menu_clicked and wait_for_file_input(page, timeout_ms=min(3_000, timeout_ms)):
         return True
-    return click_text(page, [r"upload videos?", r"unggah video", r"upload video"], timeout_ms=timeout_ms, optional=True)
+    clicked = click_text(page, [r"^upload videos?$", r"^unggah video$"], timeout_ms=timeout_ms, optional=True)
+    return bool(clicked and wait_for_file_input(page, timeout_ms=min(3_000, timeout_ms)))
 
 
 def click_create_upload_by_topbar_position(page) -> bool:
@@ -7257,7 +7306,10 @@ def run_verify_upload(args: argparse.Namespace) -> None:
             page = context.new_page()
         install_context_dialog_guard(context)
         install_browser_dialog_guard(page)
+        page_activity = None
         try:
+            if using_cdp:
+                page_activity = start_background_page_activity(page)
             goto_studio(page, studio_url=args.studio_url)
             ensure_logged_in(page)
             ensure_target_identity(
@@ -7267,9 +7319,16 @@ def run_verify_upload(args: argparse.Namespace) -> None:
                 args.target_channel_id,
             )
             effective_visibility = "scheduled" if args.publish_at else args.visibility
+            existing_public_url = ''
+            if args.publish_at and args.video_url and not getattr(args, 'schedule_existing', False):
+                # An operator may have already published the exact stored ID.
+                # A stale local schedule must not turn that confirmed success
+                # into an attempt to reopen/re-schedule a nonexistent draft.
+                existing_public_url = verify_saved_video_in_studio(page, args.title, 'public',
+                    video_url=args.video_url, timeout_ms=min(timeout_ms, 10000))
             if getattr(args, "schedule_existing", False):
                 verify_saved_video_metadata(page, args.video_url, args.title, args.description)
-            video_url = schedule_saved_video(page, args.video_url, args.publish_at) if getattr(args, "schedule_existing", False) else verify_saved_video_in_studio(
+            video_url = existing_public_url or (schedule_saved_video(page, args.video_url, args.publish_at) if getattr(args, "schedule_existing", False) else verify_saved_video_in_studio(
                 page,
                 args.title,
                 effective_visibility,
@@ -7278,7 +7337,7 @@ def run_verify_upload(args: argparse.Namespace) -> None:
                 # requested visibility is absent, spend the remaining budget
                 # resuming that exact draft instead of polling Content.
                 timeout_ms=min(timeout_ms, 30000),
-            )
+            ))
             if not video_url and args.video_url:
                 log(
                     "Video-id ditemukan tetapi visibilitas final belum sesuai; "
@@ -7301,13 +7360,16 @@ def run_verify_upload(args: argparse.Namespace) -> None:
                     "file lokal dipertahankan."
                 )
             verify_saved_video_metadata(page, video_url, args.title, args.description)
-            log(f"FINAL_VISIBILITY: {args.visibility}")
-            if args.publish_at:
+            log(f"FINAL_VISIBILITY: {'public' if existing_public_url else args.visibility}")
+            if existing_public_url:
+                log('EXISTING_PUBLICATION_CONFIRMED: video-id dan metadata persis sudah Publik; jadwal lokal lama tidak diterapkan ulang.')
+            elif args.publish_at:
                 log(f"SCHEDULED_PUBLISH_AT: {args.publish_at}")
             log("UPLOAD_CONFIRMED: video pasca-restart terverifikasi di YouTube Studio.")
             log(f"VIDEO_URL: {video_url}")
             context.storage_state(path=str(state_path))
         finally:
+            stop_background_page_activity(page_activity)
             if using_cdp:
                 close_upload_tab(page, force=True)
             else:
@@ -7477,7 +7539,10 @@ def run_upload(args: argparse.Namespace) -> None:
         page.set_default_timeout(30000)
 
         assigned_video_url = ""
+        page_activity = None
         try:
+            if using_cdp:
+                page_activity = start_background_page_activity(page)
             open_upload_dialog(
                 page,
                 args.target_channel,
@@ -7830,6 +7895,7 @@ def run_upload(args: argparse.Namespace) -> None:
                 pass
             raise
         finally:
+            stop_background_page_activity(page_activity)
             close_upload_tab(page, force=using_cdp)
             if not using_cdp:
                 context.close()

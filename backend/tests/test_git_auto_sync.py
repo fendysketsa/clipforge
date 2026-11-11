@@ -248,3 +248,50 @@ def test_history_commit_subject_comes_from_layout_diff(repository):
     message = git(remote, 'log', '-1', '--format=%B')
     assert message.startswith('style(history): atur 4 kartu per baris')
     assert 'A frontend/HistorySection.tsx' in message and 'A frontend/globals.css' in message
+
+
+def test_mixed_commit_describes_upload_behavior_before_incidental_history_marker(repository):
+    repo,remote=repository
+    folder=repo/'backend';folder.mkdir()
+    (folder/'browser_page_activity.py').write_text('def start_background_page_activity(page):\n    return page\n')
+    (folder/'api.py').write_text('def social_upload_turn():\n    return True\n')
+    script=repo/'scripts';script.mkdir()
+    (script/'activate-ui.sh').write_text('# history-four-columns\n')
+    assert worker(repo).run()['committed']
+    message=git(remote,'log','-1','--format=%B')
+    assert message.startswith('fix(automation): fokus browser upload dan giliran antrean upload')
+    assert 'Perilaku yang diperbarui:' in message
+
+
+def test_upload_symbols_in_test_fixtures_do_not_claim_a_production_fix(repository):
+    repo,remote=repository
+    tests=repo/'backend/tests';tests.mkdir(parents=True)
+    (tests/'test_fixture.py').write_text('def social_upload_turn():\n    return True\n')
+    assert worker(repo).run()['committed']
+    message=git(remote,'log','-1','--format=%B')
+    assert message.startswith('test(tests):') and 'fix(automation)' not in message
+
+
+@pytest.mark.parametrize('recreated', [False, True])
+def test_staged_deletion_newly_ignored_does_not_block_commit_and_push(repository,recreated):
+    repo,remote=repository
+    # Initial tracked report is now deliberately removed from version control.
+    report=repo/'old-report.json';report.write_text('{"old":true}')
+    git(repo,'add','old-report.json');git(repo,'commit','-m','old report');git(repo,'push')
+    git(repo,'rm','old-report.json')
+    (repo/'.gitignore').write_text('old-report.json\n')
+    if recreated:report.write_text('private local runtime record')
+    (repo/'tracked.txt').write_text('actual code update\n')
+    result=worker(repo).run()
+    assert result['state']=='synced' and result['pushed']
+    assert 'old-report.json' not in git(remote,'ls-tree','--name-only','master').splitlines()
+    assert git(remote,'show','master:tracked.txt')=='actual code update'
+    if recreated:assert report.read_text()=='private local runtime record'
+
+
+def test_already_staged_missing_source_deletion_can_be_the_only_change(repository):
+    repo,remote=repository
+    git(repo,'rm','delete.txt')
+    result=worker(repo).run()
+    assert result['state']=='synced' and result['pushed']
+    assert 'delete.txt' not in git(remote,'ls-tree','--name-only','master').splitlines()

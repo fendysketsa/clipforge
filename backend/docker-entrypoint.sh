@@ -17,4 +17,10 @@ fi
 # Fail at startup with a useful message instead of failing later inside a job.
 python -m py_compile "$stdlib_file" /app/api.py /app/clipper.py
 
+# Compose builds contain every activation module, and check it before starting
+# any workers. Ad-hoc image commands retain the normal image entrypoint.
+if [ -n "${CLIPFORGE_SERVICE:-}" ]; then
+  python /app/deployment_runtime.py prepare "$@"
+fi
+
 exec "$@"

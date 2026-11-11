@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from browser_page_activity import start_background_page_activity, stop_background_page_activity
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -554,6 +557,21 @@ def clear_caption_editor(page, editor) -> None:
                 return
         except Exception:
             pass
+        try:
+            # DraftJS can stay selected while fill() waits on a background
+            # renderer. Native keys do not need mouse animation stability.
+            # Keep them scoped to the verified editable, never global focus.
+            editor.focus(timeout=2_000)
+            if not editor.evaluate('''el => el === el.ownerDocument.activeElement &&
+                (el.isContentEditable || /^(INPUT|TEXTAREA)$/.test(el.tagName)) &&
+                !el.disabled && !el.readOnly'''):
+                raise ValueError('Caption does not own editable keyboard focus')
+            editor.press('Control+A', timeout=2_000)
+            editor.press('Backspace', timeout=2_000)
+            if not normalized_caption_text(caption_editor_text(editor)):
+                return
+        except Exception:
+            pass
         log("Menunggu transfer/pemrosesan TikTok dan editor caption siap...")
         page.wait_for_timeout(1000)
     else:
@@ -621,6 +639,39 @@ def set_caption(page, caption: str) -> None:
     )
 
 
+def prepare_post_activation(page, button, *, prefer_keyboard: bool = False) -> str:
+    """Choose one native activation before recording submission intent.
+
+    A trial click sends no click. Background Chrome may never report stable
+    animation frames; focus plus Enter works without that mouse prerequisite.
+    After the real action starts, callers must never try another activation.
+    """
+    dismissed, detail = dismiss_blocking_modal(page)
+    if not dismissed:
+        raise UploadError(f'Dialog TikTok menghalangi tombol Post: {detail}. Video belum diposting.')
+    if not button.is_visible() or not post_button_is_enabled(button):
+        raise UploadError('Tombol Post TikTok belum siap; video belum diposting.')
+    try:
+        if not prefer_keyboard:
+            button.click(trial=True, timeout=1500)
+            return 'click'
+    except Exception:
+        pass
+    # In CDP/background mode a successful trial can lose stability again
+    # before the real click. Choose the keyboard path up front in that mode.
+    dismissed, detail = dismiss_blocking_modal(page)
+    if not dismissed or not button.is_visible() or not post_button_is_enabled(button):
+        raise UploadError('Tombol Post TikTok belum siap setelah pemeriksaan dialog; video belum diposting.')
+    try:
+        button.focus(timeout=3000)
+        if not button.evaluate('(el) => el === el.ownerDocument.activeElement'):
+            raise ValueError('Post does not own keyboard focus')
+    except Exception as focus_error:
+        raise UploadError('Tombol Post TikTok belum dapat menerima fokus; video belum diposting.') from focus_error
+    log('ACTIVATION_READY_BEFORE_POST: keyboard native dipilih sebelum percobaan Post; belum ada posting.')
+    return 'keyboard'
+
+
 def upload_editor_has_requested_file(page, video_path: Path) -> bool:
     """Return true only when the visible editor plausibly owns this job's file."""
     try:
@@ -629,21 +680,22 @@ def upload_editor_has_requested_file(page, video_path: Path) -> bool:
         body_text = ""
     requested_names = {video_path.name.casefold(), video_path.stem.casefold()}
     filename_matches = any(name and name in body_text.casefold() for name in requested_names)
-    editor_ready = first_visible(
-        page,
-        (
-            *POST_BUTTON_SELECTORS,
-            '[data-e2e="caption-editor"]',
-            '[class*="caption-editor"]',
-        ),
-        timeout_ms=1_500,
-    ) is not None
     empty_picker = first_visible(
         page,
         ('text="Select video to upload"', 'text="Pilih video untuk diunggah"'),
         timeout_ms=500,
     ) is not None
-    return (filename_matches or editor_ready) and not empty_picker
+    # A ready editor can belong to a different queued clip. Its presence is
+    # not evidence that this job's file was transferred.
+    return filename_matches and not empty_picker
+
+
+def upload_source_identity(video_path: Path) -> Path:
+    digest = hashlib.sha256()
+    with video_path.open('rb') as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return Path(f'clipforge-{digest.hexdigest()}.mp4')
 
 
 def recover_interrupted_upload_draft(page, video_path: Path) -> bool:
@@ -681,6 +733,64 @@ def recover_interrupted_upload_draft(page, video_path: Path) -> bool:
     )
 
 
+def discard_cron_upload_draft(page) -> bool:
+    """Discard only the unsubmitted draft prompt, then prove an empty picker."""
+    dialog = first_visible(page, (
+        '[role="dialog"]:has-text("Continue editing"):has-text("Discard")',
+        '[data-floating-ui-portal]:has-text("Continue editing"):has-text("Discard")',
+        '[role="dialog"]:has-text("Lanjutkan mengedit"):has-text("Buang")',
+        '[role="dialog"]:has-text("Lanjut mengedit"):has-text("Buang")',
+    ), timeout_ms=800)
+    if dialog is None:
+        return False
+
+    def activate_discard(modal):
+        button = modal.get_by_role('button', name=re.compile(r'^\s*(?:Discard(?: changes| draft)?|Buang(?: perubahan| draf)?)\s*$', re.I)).first
+        try:
+            button.click(timeout=3000)
+        except Exception as exc:
+            # Use native keys only when the intended Discard owns focus and
+            # is uncovered. Never force input through another blocking modal.
+            try:
+                if not button.is_visible() or not button.is_enabled():
+                    raise ValueError('Discard is unavailable')
+                button.focus(timeout=2000)
+                if not button.evaluate('''el => {
+                    const r=el.getBoundingClientRect();
+                    const hit=el.ownerDocument.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+                    return el===el.ownerDocument.activeElement && !!hit && el.contains(hit);
+                }'''):
+                    raise ValueError('Discard is not the active unobscured control')
+                button.press('Enter', timeout=2000)
+            except Exception as activation_error:
+                raise UploadError('Draft TikTok belum dapat dibuang; file belum dipilih dan belum diposting.') from activation_error
+
+    activate_discard(dialog)
+    deadline = time.monotonic() + 20
+    confirmation_used = False
+    while time.monotonic() < deadline:
+        empty_picker = first_visible(page, (
+            'text="Select video to upload"', 'text="Select video"',
+            'text="Pilih video untuk diunggah"', 'text="Pilih video"',
+        ), timeout_ms=200)
+        if empty_picker is not None and visible_blocking_modal(page) is None:
+            log('CRON_DRAFT_DISCARDED: Discard dipilih; picker kosong terverifikasi, file job akan ditransfer baru.')
+            return True
+        if not confirmation_used:
+            confirmation = first_visible(page, (
+                '[role="dialog"]:has-text("Discard changes")',
+                '[role="dialog"]:has-text("Discard draft")',
+                '[role="dialog"]:has-text("Buang perubahan")',
+            ), timeout_ms=200)
+            if confirmation is not None:
+                text = confirmation.inner_text(timeout=1000)
+                if not re.search(r'continue editing|lanjut.*mengedit|delete post|hapus posting', text, re.I):
+                    activate_discard(confirmation)
+                    confirmation_used = True
+        page.wait_for_timeout(250)
+    raise UploadError('Draft TikTok belum dapat dibuang sampai picker kosong; file belum dipilih dan belum diposting.')
+
+
 BLOCKING_MODAL_SELECTORS = (
     '[role="dialog"]:has-text("Continue to post?")',
     '[role="dialog"]:has-text("Content may be restricted")',
@@ -691,7 +801,28 @@ BLOCKING_MODAL_SELECTORS = (
 
 
 def visible_blocking_modal(page, timeout_ms: int = 500):
-    return first_visible(page, BLOCKING_MODAL_SELECTORS, timeout_ms=timeout_ms)
+    # Current Studio renders the privacy Select popover as role=dialog too.
+    # Escape would close the very menu whose option we are trying to select.
+    # Exempt only its controlled, expanded privacy picker with exact choices;
+    # text in an unrelated confirmation/safety dialog must still block input.
+    for selector in BLOCKING_MODAL_SELECTORS:
+        for modal in page.locator(selector).all():
+            if not modal.is_visible():
+                continue
+            try:
+                privacy_picker = modal.evaluate('''el => {
+                    const text = (el.innerText || '').replace(/\\s+/g, ' ').trim();
+                    const choices = /^(Everyone Friends(?: Followers you follow back)? Only you|Semua orang Teman(?: Pengikut yang Anda ikuti kembali)? Hanya (?:Anda|kamu))$/i;
+                    if (!choices.test(text) || el.querySelector('.TUXModal-overlay')) return false;
+                    return [...el.ownerDocument.querySelectorAll('button[role="combobox"][aria-haspopup="dialog"][aria-expanded="true"]')]
+                        .some(trigger => /^(Everyone|Friends|Only you|Semua orang|Teman|Hanya Anda|Hanya kamu)$/i.test(trigger.innerText.trim()) &&
+                            (!trigger.getAttribute('aria-controls') || trigger.getAttribute('aria-controls') === el.id));
+                }''')
+            except Exception:
+                privacy_picker = False
+            if not privacy_picker:
+                return modal
+    return None
 
 
 def dismiss_blocking_modal(page) -> tuple[bool, str]:
@@ -794,6 +925,10 @@ def activate_privacy_control(page, control) -> None:
     This helper is only for the reversible privacy picker, never Post. A
     blocking modal or disabled control still prevents any interaction.
     """
+    # A successful open can happen just before Playwright's stability timeout.
+    # Check this before dismissing anything, so the picker is not toggled shut.
+    if control.get_attribute('aria-expanded') == 'true':
+        return
     try:
         control.click(timeout=4_000)
         return
@@ -818,15 +953,31 @@ def activate_privacy_control(page, control) -> None:
 
 def verify_privacy_selection(trigger, pattern: str) -> None:
     # Menu options/body text are not evidence that the selected value changed.
-    selected = trigger.inner_text(timeout=5_000).strip()
+    selected = ' '.join(trigger.inner_text(timeout=5_000).split())
     if not re.fullmatch(pattern, selected, re.I):
         raise UploadError('Pilihan privasi TikTok belum terverifikasi pada kontrol. Video belum diposting.')
+
+
+PRIVACY_TRIGGER_SELECTOR = (
+    'button[role="combobox"][aria-haspopup="dialog"]'
+    ':text-matches("^(Everyone|Friends|Only you|Semua orang|Teman|Hanya Anda|Hanya kamu|Pengikut)$", "i")'
+)
+
+
+def current_privacy_trigger(page):
+    return first_visible(page, [
+        PRIVACY_TRIGGER_SELECTOR,
+        '[data-e2e="privacy-level"]',
+        'button:text-matches("^(Everyone|Friends|Only you|Semua orang|Teman|Hanya Anda|Hanya kamu|Pengikut)$", "i")',
+        'div[role="combobox"]:text-matches("^(Everyone|Friends|Only you|Semua orang|Teman|Hanya Anda|Hanya kamu|Pengikut)$", "i")',
+    ], timeout_ms=2_000)
 
 
 def set_only_you(page) -> None:
     trigger = first_visible(
         page,
         [
+            PRIVACY_TRIGGER_SELECTOR,
             '[data-e2e="privacy-level"]',
             'button:has-text("Only you")',
             'button:has-text("Hanya Anda")',
@@ -847,7 +998,7 @@ def set_only_you(page) -> None:
         save_debug(page, "privacy-control-missing")
         raise UploadError("Kontrol privasi TikTok tidak ditemukan; upload tidak diterbitkan.")
     try:
-        current_visibility = trigger.inner_text(timeout=3_000).strip()
+        current_visibility = ' '.join(trigger.inner_text(timeout=3_000).split())
     except Exception:
         current_visibility = ""
     if re.fullmatch(r"only you|hanya anda|hanya kamu", current_visibility, re.I):
@@ -873,7 +1024,12 @@ def set_only_you(page) -> None:
         raise UploadError("Pilihan Only you/Hanya Anda tidak ditemukan; upload tidak diterbitkan.")
     activate_privacy_control(page, option)
     page.wait_for_timeout(500)
-    verify_privacy_selection(trigger, r'only you|hanya anda|hanya kamu')
+    # The old locator included has-text("Everyone"). After choosing Only you,
+    # that locator no longer matched, despite a successful privacy change.
+    selected_trigger = current_privacy_trigger(page)
+    if selected_trigger is None:
+        raise UploadError('Kontrol privasi TikTok belum siap. Video belum diposting.')
+    verify_privacy_selection(selected_trigger, r'only you|hanya anda|hanya kamu')
     log("FINAL_VISIBILITY:private")
 
 
@@ -881,6 +1037,7 @@ def set_public(page) -> None:
     trigger = first_visible(
         page,
         [
+            PRIVACY_TRIGGER_SELECTOR,
             '[data-e2e="privacy-level"]',
             'button:has-text("Everyone")',
             'button:has-text("Semua orang")',
@@ -899,7 +1056,7 @@ def set_public(page) -> None:
         save_debug(page, "privacy-control-missing")
         raise UploadError("Kontrol privasi TikTok tidak ditemukan; upload tidak diterbitkan.")
     try:
-        current_visibility = trigger.inner_text(timeout=3_000).strip()
+        current_visibility = ' '.join(trigger.inner_text(timeout=3_000).split())
     except Exception:
         current_visibility = ""
     if re.fullmatch(r"everyone|semua orang", current_visibility, re.I):
@@ -922,8 +1079,31 @@ def set_public(page) -> None:
         raise UploadError("Pilihan Everyone/Semua orang tidak ditemukan; upload tidak diterbitkan.")
     activate_privacy_control(page, option)
     page.wait_for_timeout(500)
-    verify_privacy_selection(trigger, r'everyone|semua orang')
+    selected_trigger = current_privacy_trigger(page)
+    if selected_trigger is None:
+        raise UploadError('Kontrol privasi TikTok belum siap. Video belum diposting.')
+    verify_privacy_selection(selected_trigger, r'everyone|semua orang')
     log("FINAL_VISIBILITY:public")
+
+
+def configure_requested_privacy(page, visibility: str) -> None:
+    """Report the requested/observed privacy without confusing transfer and Post."""
+    expected = 'Everyone' if visibility == 'public' else 'Only you'
+    log(f'PRIVACY_REQUESTED:{expected}')
+    try:
+        (set_public if visibility == 'public' else set_only_you)(page)
+    except Exception as exc:
+        observed = 'belum terbaca'
+        try:
+            trigger = current_privacy_trigger(page)
+            if trigger is not None:
+                observed = ' '.join(trigger.inner_text(timeout=1000).split())[:80] or observed
+        except Exception:
+            pass
+        raise UploadError(
+            f'Pengaturan privasi TikTok belum selesai: diminta {expected}, terbaca {observed}. '
+            f'File sudah ditransfer; Post belum dikirim. Detail: {str(exc)[:240]}'
+        ) from exc
 
 
 POST_BUTTON_SELECTORS = (
@@ -1034,15 +1214,40 @@ def visible_tiktok_post_ids(page) -> set[str]:
 def tiktok_content_snapshot(page, caption: str) -> tuple[int, set[str] | None]:
     """Capture both caption matches and post IDs before submitting a video."""
     page.goto(TIKTOK_CONTENT_URL, wait_until="domcontentloaded", timeout=45_000)
-    body_text = page.locator("body").inner_text(timeout=20_000)
-    post_ids = visible_tiktok_post_ids(page)
+    deadline = time.monotonic() + min(60, env_int('TIKTOK_CONTENT_READY_TIMEOUT_SECONDS', 20))
     # An empty baseline is only trustworthy for a genuinely empty account.
     # If links have not hydrated yet, treating them as an empty set would make
     # every old row look like a new post on the next page load.
-    ids_available = bool(post_ids) or bool(
-        re.search(r"\b(?:posts|postingan)\s*0\b", body_text, re.I)
-    )
-    return content_caption_matches(body_text, caption), post_ids if ids_available else None
+    while True:
+        body_text = page.locator("body").inner_text(timeout=20_000)
+        post_ids = visible_tiktok_post_ids(page)
+        ids_available = bool(post_ids) or bool(
+            re.search(r"\b(?:posts|postingan)\s*0\b", body_text, re.I)
+        )
+        if ids_available or time.monotonic() >= deadline:
+            return content_caption_matches(body_text, caption), post_ids if ids_available else None
+        page.wait_for_timeout(500)
+
+
+def exact_existing_tiktok_post(page, caption: str, target_handle: str):
+    """Associate a complete caption with one owner, post ID and row privacy."""
+    expected = ' '.join(normalized_caption_text(caption[:2200]).split())
+    matches = {}
+    for link in page.locator('a[href*="/video/"]').all():
+        href = str(link.get_attribute('href', timeout=750) or '')
+        match = re.fullmatch(r'(?:https://(?:www\.)?tiktok\.com)?/@([\w.]+)/video/(\d{10,25})(?:[?#].*)?', href)
+        if not match or clean_handle(match[1]) != clean_handle(target_handle):
+            continue
+        if ' '.join(normalized_caption_text(link.inner_text(timeout=1000)).split()) != expected:
+            continue
+        row_text = link.evaluate('''a => (a.closest('[data-tt="components_RowLayout_FlexRow"]') ||
+            a.closest('tr,[role="row"]'))?.innerText || '' ''')
+        labels = {line.strip().casefold() for line in row_text.splitlines()}
+        private = bool(labels & {'only me', 'only you', 'hanya saya', 'hanya anda', 'hanya kamu'})
+        public = bool(labels & {'everyone', 'semua orang'})
+        visibility = 'only_you' if private and not public else 'public' if public and not private else ''
+        matches[match[2]] = (f'https://www.tiktok.com/@{clean_handle(target_handle)}/video/{match[2]}', visibility)
+    return next(iter(matches.values())) if len(matches) == 1 else None
 
 
 POST_SUBMISSION_SUCCESS_PATTERNS = (
@@ -1305,7 +1510,9 @@ def wait_for_new_tiktok_post(
     timeout_ms: int = 300_000,
     background_tick: Callable[[], bool] | None = None,
     previous_post_ids: set[str] | None = None,
-) -> bool:
+    target_handle: str = '',
+    visibility: str = '',
+) -> bool | str:
     """Confirm a new Studio row by ID or caption; transfer text is never proof."""
     deadline = time.monotonic() + max(5_000, timeout_ms) / 1000
     required_matches = (previous_matches + 1) if previous_matches is not None else 1
@@ -1331,10 +1538,18 @@ def wait_for_new_tiktok_post(
             matches = content_caption_matches(body_text, caption)
             current_ids = visible_tiktok_post_ids(page)
             new_ids = current_ids - baseline_ids if baseline_ids is not None else set()
-            if new_ids:
+            if target_handle:
+                existing = exact_existing_tiktok_post(page, caption, target_handle)
+                if existing:
+                    url, saved_visibility = existing
+                    post_id = url.rsplit('/', 1)[-1]
+                    if post_id in new_ids and saved_visibility == visibility:
+                        log(f'POST_CONFIRMED_BY_EXACT_ROW:{post_id}')
+                        return url
+            elif new_ids:
                 log(f"POST_CONFIRMED_BY_NEW_ID:{sorted(new_ids)[0]}")
                 return True
-            if matches >= required_matches:
+            if not target_handle and matches >= required_matches:
                 log(f"POST_CONFIRMED_IN_CONTENT_LIST:{content_caption_key(caption)}")
                 return True
         except Exception:
@@ -1460,6 +1675,7 @@ def upload_video(
     visibility: str = "only_you",
     remote_browser: bool = False,
     background_tick: Callable[[], bool] | None = None,
+    cron_fresh_upload: bool = False,
 ) -> None:
     previous_content_matches: int | None = None
     previous_post_ids: set[str] | None = None
@@ -1472,6 +1688,18 @@ def upload_video(
             log(f"POST_BASELINE_VISIBLE_IDS:{len(previous_post_ids)}")
     except Exception as exc:
         log(f"POST_BASELINE_UNAVAILABLE:{str(exc).splitlines()[0][:180]}")
+    if not dry_run and previous_post_ids is None:
+        raise UploadError('Daftar posting TikTok belum siap diverifikasi; file belum dipilih dan belum diposting.')
+    if not dry_run:
+        existing = exact_existing_tiktok_post(page, caption, target_handle)
+        if existing:
+            url, saved_visibility = existing
+            log(f'VIDEO_URL:{url}')
+            if saved_visibility != visibility:
+                raise UploadError('Posting TikTok yang sama sudah ada, tetapi privasinya berbeda atau belum terverifikasi; transfer ulang ditahan.')
+            log(f'POST_ALREADY_PRESENT:{content_caption_key(caption)}')
+            log(f"UPLOAD_CONFIRMED:{'public' if visibility == 'public' else 'private'}")
+            return
     if (
         not dry_run
         and previous_content_matches
@@ -1480,19 +1708,19 @@ def upload_video(
     ):
         # Recover after a worker/browser disconnect that happened after TikTok
         # accepted the post. Selecting the same file again would duplicate it.
-        log(f"POST_ALREADY_PRESENT:{content_caption_key(caption)}")
-        log(f"UPLOAD_CONFIRMED:{'public' if visibility == 'public' else 'private'}")
-        log(f"VIDEO_URL:https://www.tiktok.com/@{clean_handle(target_handle)}")
-        return
+        raise UploadError('Caption serupa sudah ada di TikTok, tetapi ID, caption lengkap, dan privasi belum cocok; transfer ulang ditahan.')
+    identity_path = upload_source_identity(video_path)
     goto(page, UPLOAD_URL)
     page.wait_for_timeout(1500)
     if background_tick is not None:
         background_tick()
     if "/login" in page.url.casefold():
         raise UploadError("TikTok meminta login ulang; file belum dipilih.")
-    # Resume rather than discard: the browser may already hold the fully
-    # transferred file from an interrupted worker.
-    recovered_draft = recover_interrupted_upload_draft(page, video_path)
+    if cron_fresh_upload:
+        discard_cron_upload_draft(page)
+        recovered_draft = False
+    else:
+        recovered_draft = recover_interrupted_upload_draft(page, identity_path)
     dismiss_upload_overlays(page)
     file_input = None
     if not recovered_draft:
@@ -1504,27 +1732,26 @@ def upload_video(
             raise UploadError("Input upload TikTok tidak ditemukan. Periksa sesi dan halaman TikTok Studio.") from exc
     staging_directory: tempfile.TemporaryDirectory[str] | None = None
     try:
-        if remote_browser:
+        if file_input is not None:
+            staging_directory = tempfile.TemporaryDirectory(prefix="clipforge-tiktok-source-")
+            upload_path = Path(staging_directory.name) / identity_path.name
+            direct_max_bytes, target_bytes = remote_file_staging_sizes()
             # Let Playwright use its supported remote-file transfer. Payload
             # dictionaries bypass its 50 MiB guard and can freeze DraftJS/CDP.
-            upload_path = video_path
-            direct_max_bytes, target_bytes = remote_file_staging_sizes()
-            if video_path.stat().st_size >= direct_max_bytes:
-                staging_directory = tempfile.TemporaryDirectory(prefix="clipforge-tiktok-cdp-")
+            if remote_browser and video_path.stat().st_size >= direct_max_bytes:
                 upload_path = transcode_for_remote_upload(
                     video_path,
-                    Path(staging_directory.name) / video_path.name,
+                    upload_path,
                     target_bytes,
                 )
                 log(
                     f"Video {video_path.stat().st_size / (1024 * 1024):.2f} MiB "
                     f"disiapkan menjadi {upload_path.stat().st_size / (1024 * 1024):.2f} MiB untuk CDP."
                 )
+            else:
+                shutil.copyfile(video_path, upload_path)
             upload_file: str = str(upload_path.resolve())
-            log(f"Mengirim {video_path.name} ke Chrome TikTok melalui transfer file CDP...")
-        else:
-            upload_file = str(video_path.resolve())
-        if file_input is not None:
+            log(f"Mengirim {video_path.name} dengan identitas file {identity_path.stem}...")
             file_input.set_input_files(
                 upload_file,
                 timeout=env_int(
@@ -1535,11 +1762,13 @@ def upload_video(
             )
     except Exception as exc:
         transfer_recovered = False
-        if remote_browser:
+        if cron_fresh_upload:
+            discard_cron_upload_draft(page)
+        elif remote_browser:
             try:
-                transfer_recovered = upload_editor_has_requested_file(page, video_path)
+                transfer_recovered = upload_editor_has_requested_file(page, identity_path)
                 if not transfer_recovered:
-                    transfer_recovered = recover_interrupted_upload_draft(page, video_path)
+                    transfer_recovered = recover_interrupted_upload_draft(page, identity_path)
             except UploadError:
                 raise
         if transfer_recovered:
@@ -1563,6 +1792,11 @@ def upload_video(
     finally:
         if staging_directory is not None:
             staging_directory.cleanup()
+    identity_deadline = time.monotonic() + 15
+    while not upload_editor_has_requested_file(page, identity_path):
+        if time.monotonic() >= identity_deadline:
+            raise UploadError('File di editor TikTok belum cocok dengan hash sumber job ini; belum ada Post dan transfer ulang ditahan.')
+        page.wait_for_timeout(500)
     log(
         f"Video draft dilanjutkan: {video_path.name}"
         if recovered_draft
@@ -1572,10 +1806,7 @@ def upload_video(
         background_tick()
     dismiss_upload_overlays(page)
     set_caption(page, caption)
-    if visibility == "public":
-        set_public(page)
-    else:
-        set_only_you(page)
+    configure_requested_privacy(page, visibility)
     if background_tick is not None:
         background_tick()
 
@@ -1606,6 +1837,7 @@ def upload_video(
     # processed. Replace and verify the caption again at the last safe moment,
     # after processing finishes but before Post is clicked.
     set_caption(page, caption)
+    configure_requested_privacy(page, visibility)
     if not post_button_is_enabled(post_button):
         post_button = wait_for_post_button(
             page,
@@ -1618,10 +1850,16 @@ def upload_video(
             "Tombol Post TikTok menjadi tidak aktif setelah caption diverifikasi; "
             "video tidak diterbitkan."
         )
+    if not upload_editor_has_requested_file(page, identity_path):
+        raise UploadError('Identitas file TikTok berubah saat pemrosesan; Post ditahan agar klip lain tidak terkirim.')
+    activation = prepare_post_activation(page, post_button, prefer_keyboard=bool(remote_browser))
     submission_state, response_handler = monitor_post_submission_response(page)
     try:
         log('POST_SUBMIT_INTENT: Post akan dicoba; hasil tanpa konfirmasi harus diverifikasi sebelum transfer ulang.')
-        post_button.click(timeout=10_000)
+        if activation == 'keyboard':
+            post_button.press('Enter', timeout=5000)
+        else:
+            post_button.click(timeout=10_000)
         log(f"Tombol Post diklik setelah privasi {visibility} terverifikasi.")
         if background_tick is not None:
             background_tick()
@@ -1651,6 +1889,8 @@ def upload_video(
         ),
         background_tick=background_tick,
         previous_post_ids=previous_post_ids,
+        target_handle=target_handle,
+        visibility=visibility,
     )
     if not confirmed:
         save_debug(page, "confirmation-missing")
@@ -1658,8 +1898,10 @@ def upload_video(
             "TikTok tidak menampilkan video baru di Studio Posts setelah tombol Post diklik. "
             "Status tidak ditandai berhasil; periksa daftar Posts sebelum mencoba ulang."
         )
+    if not isinstance(confirmed, str):
+        raise UploadError('ID posting TikTok yang sesuai caption dan privasi belum terverifikasi; transfer ulang ditahan.')
     log(f"UPLOAD_CONFIRMED:{'public' if visibility == 'public' else 'private'}")
-    log(f"VIDEO_URL:https://www.tiktok.com/@{clean_handle(target_handle)}")
+    log(f"VIDEO_URL:{confirmed}")
 
 
 def _is_retryable_browser_launch_error(exc: Exception) -> bool:
@@ -1781,8 +2023,16 @@ def run(args) -> int:
     sync_playwright, _ = import_playwright()
     with sync_playwright() as playwright:
         context, browser = open_context(playwright, args)
+        page_activity = None
+        owned_cron_page = None
         try:
-            page = select_tiktok_page(context)
+            if args.command == 'upload' and getattr(args, 'cron_fresh_upload', False):
+                owned_cron_page = context.new_page()
+                page = owned_cron_page
+            else:
+                page = select_tiktok_page(context)
+            if args.cdp_url and args.command == 'upload':
+                page_activity = start_background_page_activity(page)
             page.set_default_timeout(20_000)
             if (
                 args.cdp_url
@@ -1837,10 +2087,17 @@ def run(args) -> int:
                 visibility=args.visibility,
                 remote_browser=bool(args.cdp_url),
                 background_tick=background_tick,
+                cron_fresh_upload=getattr(args, 'cron_fresh_upload', False),
             )
             save_session_state(context, Path(args.state))
             return 0
         finally:
+            stop_background_page_activity(page_activity)
+            if owned_cron_page is not None:
+                try:
+                    owned_cron_page.close()
+                except Exception:
+                    pass
             # A CDP browser is the user's persistent TikTok login browser. Only
             # disconnect when Playwright exits; closing its default context or
             # Browser object here would kill the reusable Chrome session.
@@ -1871,6 +2128,8 @@ def build_parser() -> argparse.ArgumentParser:
     upload.add_argument("--caption", default="")
     upload.add_argument("--visibility", choices=["only_you", "public"], default="only_you")
     upload.add_argument("--dry-run", action="store_true")
+    upload.add_argument('--cron-fresh-upload', action='store_true',
+        help='Cron only: Discard unsubmitted draft prompts and transfer the current job file afresh.')
     return parser
 
 

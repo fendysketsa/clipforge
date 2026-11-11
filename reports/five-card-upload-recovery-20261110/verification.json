@@ -1,0 +1,296 @@
+{
+  "tests": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "1269",
+    "time": "30.727",
+    "timestamp": "2026-11-10T21:55:41.886114+07:00",
+    "hostname": "fendycnugraha"
+  },
+  "unrelated_stream_tests_deselected": 2,
+  "source_hashes": {
+    "backend/api.py": "e69bdd8021411ab9a700b387fa84d728960ee42642803d74f66534677982b194",
+    "backend/automatic_retry.py": "ffc69fd1f80f0a8dbe88038c766c1353bcc9d1762c4ab0b6e0c0e797672a708a",
+    "backend/tiktok_uploader.py": "8f3d59a591dfd319d1f232b6a2d21da1dbc9e2c5dd4b19dc636256dfd3a8c7a7",
+    "backend/youtube_uploader.py": "401e80ab1e4993455d78106e86ac2d93f8c89c75794732f6805b6362eb301ddb",
+    "backend/cron_director_effects.py": "3f4542bf1c14b3bdba4ad125e0a07bc265e2d5711a0e36d10452570a4017ac78",
+    "backend/clipper.py": "72b160b9c5e742f0f1d9605a36d856af2b94cbd37387decc599cbf626acf6dbe",
+    "backend/cron_short_director.py": "d352c8c7bc416a315beae0aa25e9fb9d6e8cd29d59d6856ffc380c2866aa7b2a",
+    "scripts/activate-director-source-recovery.sh": "481f04fe29f8e3a6432d7c598d8ad839c1565d011483a7dcefaa2dae0f3b6952"
+  },
+  "root_causes": [
+    "Two legacy zero-candidate source failures; one included malformed LLM JSON.",
+    "YouTube metadata readiness and stale scheduled-draft state; exact Roblox ID already Public in live audit.",
+    "TikTok privacy/Post click stability waits in background Chrome; one legacy Post outcome remains uncertain."
+  ],
+  "repairs": [
+    "Serialize browser upload workers across YouTube and TikTok with durable finish-based 45/90-second gaps.",
+    "Prepare Post action before intent; keyboard alternative selected only before one real action; no second action after uncertainty.",
+    "Fill exact visible YouTube upload metadata and verify persisted values.",
+    "Preserve exact ID and detect an already-Public video before trying an obsolete schedule.",
+    "Autonomous first intake for eligible terminal cron outputs with no previous real upload attempt.",
+    "Explicit two-source rescue manifest, one child per parent, two-process cap, existing rights/QC gates.",
+    "Cron singing/scream cues with source-audio evidence, bounded 1-2 accents, no extra music."
+  ],
+  "source_rescue_request_file": "backend/data/legacy_source_rescue_requests.json",
+  "production_activation_confirmed": false,
+  "activation_blocker": "sudo requires interactive password",
+  "activation_command": "sudo bash /www/wwwroot/clipper/clipforge/scripts/activate-director-source-recovery.sh --resume-cron",
+  "remote_confirmation": "Remote audit proves tbAoI9h_Gis is Public with matching title. FjGZqDI8x0w still has filename-derived metadata. TikTok first-page absence does not prove a post failed.",
+  "all_five_uploaded": false,
+  "singing_preview": "reports/cron-reaction-effects-20261110/singing-variants-demo.mp4",
+  "source_rescue_cap_audit": [
+    {
+      "job_id": "0c76e67ae5024ba59914ad788f24348c",
+      "source_url": "https://www.youtube.com/watch?v=Th91TYjnApw",
+      "previous_attempts": 2,
+      "action": "SKIP_AND_FIND_OTHER_SOURCE"
+    },
+    {
+      "job_id": "d264a446f42e4065a7da406bfba9921e",
+      "source_url": "https://www.youtube.com/watch?v=nKIhvvMUZlY",
+      "previous_attempts": 1,
+      "action": "ONE_GROUNDED_RESCUE_AFTER_ACTIVATION"
+    }
+  ],
+  "runtime": {
+    "enabled": false,
+    "scheduler_running": false,
+    "cron_director_effects_policy_version": 2,
+    "social_upload_serialized": null,
+    "social_upload_min_gap_seconds": null,
+    "cron_requested_source_rescue_supported": null,
+    "source_rescue_schema": false,
+    "all_new_upload_fixes_active": false
+  },
+  "singing_encoded_checks": {
+    "synthetic_scene": true,
+    "real_singing_detected": false,
+    "preview_only": true,
+    "upload_queued": false,
+    "variants": [
+      {
+        "synthetic_calibration": true,
+        "never_upload": true,
+        "plan": {
+          "version": 3,
+          "cron_only": true,
+          "enabled": true,
+          "required": true,
+          "rendered": true,
+          "cues": [
+            {
+              "kind": "floating_notes",
+              "mood": "singing",
+              "start": 2.02,
+              "end": 3.52,
+              "quote": "[menyanyi] Lalala lalala lalala.",
+              "statement": "",
+              "statement_rendered": false,
+              "directed_by": "measured_source_audio_reaction",
+              "timing_method": "measured_source_audio_onset",
+              "palette": [
+                125,
+                240,
+                217
+              ],
+              "variation": 221,
+              "source_grounded": true,
+              "sound": "none",
+              "face_detector_fallback": "ModuleNotFoundError",
+              "box": [
+                0.042222,
+                0.568125,
+                0.255556,
+                0.14375
+              ],
+              "radius": 40,
+              "placement_reason": "measured_motion_detail_outside_protected_regions",
+              "protected_regions": [
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.18
+                ],
+                [
+                  0.82,
+                  0.7,
+                  0.18,
+                  0.3
+                ],
+                [
+                  0.08,
+                  0.72,
+                  0.84,
+                  0.28
+                ],
+                [
+                  0.28,
+                  0.05,
+                  0.44,
+                  0.51
+                ]
+              ],
+              "face_samples": 0
+            }
+          ],
+          "source_clock_unchanged": true,
+          "captions_clock_unchanged": true,
+          "audio_unchanged": true,
+          "inserted_timeline_seconds": 0,
+          "reason": "source_timed_director_accents",
+          "audio_reactions": {
+            "version": 1,
+            "enabled": true,
+            "events": [
+              {
+                "start": 2.02,
+                "peak": 2.22,
+                "end": 3.52,
+                "quote": "[menyanyi] Lalala lalala lalala.",
+                "mood": "singing",
+                "evidence": "timed_vocal_text_and_sustained_melodic_notes",
+                "stable_note_count": 4,
+                "note_coverage": 0.971,
+                "confidence": "heuristic",
+                "score": 12.971428571428572
+              }
+            ],
+            "source_audio_only": true,
+            "method": "voiced_level_rise_with_timed_dialogue",
+            "audio_modified": false,
+            "available": true,
+            "baseline_dbfs": -20.93,
+            "baseline_pitch_hz": 181.8,
+            "reason": "source_reactions_measured"
+          },
+          "required_min_count": 1,
+          "cue_count": 1,
+          "sensitive_context": false,
+          "seeded_variation": true,
+          "canvas": [
+            360,
+            640
+          ],
+          "renderer": "procedural_rgba_accents",
+          "verification": "duration_frame_count_and_geometry_preserved"
+        },
+        "audio_packets_unchanged": true,
+        "geometry_clock_unchanged": true
+      },
+      {
+        "synthetic_calibration": true,
+        "never_upload": true,
+        "plan": {
+          "version": 3,
+          "cron_only": true,
+          "enabled": true,
+          "required": true,
+          "rendered": true,
+          "cues": [
+            {
+              "kind": "melody_orbit",
+              "mood": "singing",
+              "start": 2.02,
+              "end": 3.52,
+              "quote": "[menyanyi] Lalala lalala lalala.",
+              "statement": "",
+              "statement_rendered": false,
+              "directed_by": "measured_source_audio_reaction",
+              "timing_method": "measured_source_audio_onset",
+              "palette": [
+                125,
+                240,
+                217
+              ],
+              "variation": 221,
+              "source_grounded": true,
+              "sound": "none",
+              "face_detector_fallback": "ModuleNotFoundError",
+              "box": [
+                0.042222,
+                0.568125,
+                0.255556,
+                0.14375
+              ],
+              "radius": 40,
+              "placement_reason": "measured_motion_detail_outside_protected_regions",
+              "protected_regions": [
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.18
+                ],
+                [
+                  0.82,
+                  0.7,
+                  0.18,
+                  0.3
+                ],
+                [
+                  0.08,
+                  0.72,
+                  0.84,
+                  0.28
+                ],
+                [
+                  0.28,
+                  0.05,
+                  0.44,
+                  0.51
+                ]
+              ],
+              "face_samples": 0
+            }
+          ],
+          "source_clock_unchanged": true,
+          "captions_clock_unchanged": true,
+          "audio_unchanged": true,
+          "inserted_timeline_seconds": 0,
+          "reason": "source_timed_director_accents",
+          "audio_reactions": {
+            "version": 1,
+            "enabled": true,
+            "events": [
+              {
+                "start": 2.02,
+                "peak": 2.22,
+                "end": 3.52,
+                "quote": "[menyanyi] Lalala lalala lalala.",
+                "mood": "singing",
+                "evidence": "timed_vocal_text_and_sustained_melodic_notes",
+                "stable_note_count": 4,
+                "note_coverage": 0.971,
+                "confidence": "heuristic",
+                "score": 12.971428571428572
+              }
+            ],
+            "source_audio_only": true,
+            "method": "voiced_level_rise_with_timed_dialogue",
+            "audio_modified": false,
+            "available": true,
+            "baseline_dbfs": -20.93,
+            "baseline_pitch_hz": 181.8,
+            "reason": "source_reactions_measured"
+          },
+          "required_min_count": 1,
+          "cue_count": 1,
+          "sensitive_context": false,
+          "seeded_variation": true,
+          "canvas": [
+            360,
+            640
+          ],
+          "renderer": "procedural_rgba_accents",
+          "verification": "duration_frame_count_and_geometry_preserved"
+        },
+        "audio_packets_unchanged": true,
+        "geometry_clock_unchanged": true
+      }
+    ]
+  }
+}

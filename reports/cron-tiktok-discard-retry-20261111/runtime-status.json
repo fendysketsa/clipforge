@@ -1,0 +1,15 @@
+{
+  "checked_at": "2026-11-11T06:32:09.534377+00:00",
+  "/api/health": {
+    "status": "ok"
+  },
+  "/api/tiktok/config": {
+    "enabled": true,
+    "active_upload_id": null
+  },
+  "/api/automation/viral-cc/schedule": {
+    "enabled": false,
+    "scheduler_running": false,
+    "cron_director_effects_policy_version": 3
+  }
+}

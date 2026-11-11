@@ -1,0 +1,45 @@
+{
+  "checked_at": "2026-11-11T06:09:58.068274+00:00",
+  "tests": {
+    "focused": {
+      "tests": 169,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "regression": {
+      "tests": 1344,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "browser": {
+      "tests": 21,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "activation": {
+      "tests": 31,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "source_sha256": {
+    "backend/api.py": "f44b4ab362d0f7395d269e45feaaae52d05a14a5dec01b99cbfa96c55be18c29",
+    "backend/tiktok_uploader.py": "2e00a0086dc311daa13184080e7342a94b8438d0369eb8edaa76f491e71f61f5",
+    "scripts/activate-director-source-recovery.sh": "50133de3d2afa4899db0ca40249d8731f6ae927a0b600b9f2d39722fd213fd20"
+  },
+  "prepared_duplicate_guard_version": 2,
+  "runtime_duplicate_guard_version": null,
+  "backend_activation_verified": false,
+  "activation_blocker": "sudo requires a password",
+  "remote_deletions_performed": 0,
+  "fresh_uploads_submitted_by_audit": 0,
+  "remote_inventory_complete": false,
+  "remote_posts_observed": 383,
+  "caption_candidate_groups": 10,
+  "media_equivalence_verified": false,
+  "clarification_pending": "TikTok profile duplicates versus ClipForge upload-history duplicates"
+}

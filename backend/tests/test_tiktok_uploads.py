@@ -1,4 +1,5 @@
 import json
+import hashlib
 import re
 from types import SimpleNamespace
 
@@ -1329,7 +1330,8 @@ def test_tiktok_cdp_upload_uses_playwright_remote_file_transfer(monkeypatch, tmp
             pass
 
         def set_input_files(self, value, **kwargs):
-            selected.append((value, kwargs))
+            from pathlib import Path
+            selected.append((value, kwargs, Path(value).read_bytes()))
 
     class Locator:
         first = FileInput()
@@ -1348,6 +1350,7 @@ def test_tiktok_cdp_upload_uses_playwright_remote_file_transfer(monkeypatch, tmp
     monkeypatch.setattr("tiktok_uploader.dismiss_upload_overlays", lambda *_args: None)
     monkeypatch.setattr("tiktok_uploader.set_caption", lambda *_args: None)
     monkeypatch.setattr("tiktok_uploader.set_only_you", lambda *_args: None)
+    monkeypatch.setattr("tiktok_uploader.upload_editor_has_requested_file", lambda *_args: True)
 
     upload_video(
         Page(),
@@ -1359,8 +1362,11 @@ def test_tiktok_cdp_upload_uses_playwright_remote_file_transfer(monkeypatch, tmp
         background_tick=lambda: background_ticks.append(True) or True,
     )
 
-    payload, kwargs = selected[0]
-    assert payload == str(video.resolve())
+    from pathlib import Path
+    payload, kwargs, sent_bytes = selected[0]
+    assert Path(payload).name == 'clipforge-' + hashlib.sha256(b'video-payload').hexdigest() + '.mp4'
+    assert sent_bytes == video.read_bytes() == b'video-payload'
+    assert not Path(payload).exists()  # Only the staging copy is cleaned up.
     assert kwargs["timeout"] == 300_000
     assert len(background_ticks) >= 3
 
@@ -1444,7 +1450,9 @@ def test_tiktok_transfer_status_is_not_post_confirmation():
     ) == 1
 
 
-def test_tiktok_post_id_baseline_is_unavailable_until_existing_rows_hydrate():
+def test_tiktok_post_id_baseline_is_unavailable_until_existing_rows_hydrate(monkeypatch):
+    clock=iter([0,21])
+    monkeypatch.setattr(tiktok_uploader.time, 'monotonic', lambda: next(clock))
     class EmptyLinks:
         def all(self):
             return []

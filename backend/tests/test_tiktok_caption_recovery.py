@@ -54,6 +54,21 @@ def test_cron_retry_filter_cannot_claim_an_unrelated_upload(failed_caption):
     assert [item.id for item in started] == [upload.id]
 
 
+def test_retry_gets_new_tail_position_even_with_other_platform_and_file_queued(failed_caption):
+    _,upload,started=failed_caption
+    other=upload.model_copy(update={'id':'other','source_job_id':'other-job','clip_url':'/outputs/other.mp4',
+        'clip_sha256':'different-file','status':'queued','created_at':api.now_iso()})
+    api.tiktok_uploads[other.id]=other
+    api.youtube_uploads['yt']=object()  # Its backlog must not starve TikTok retry intake.
+    now=datetime.now(timezone.utc)
+    assert api.queue_retryable_tiktok_uploads_once(now)==1
+    live=api.tiktok_uploads[upload.id]
+    assert live.id==upload.id and live.queued_at==now.isoformat() and live.auto_retry_count==1
+    positions={row.id:row.queue_position for row in api.tiktok_uploads_with_queue_positions(list(api.tiktok_uploads.values()))}
+    assert positions=={upload.id:2,'other':1}
+    assert api.queue_retryable_tiktok_uploads_once(now)==0
+
+
 @pytest.mark.parametrize('risk', ['post', 'accepted', 'changed', 'gate', 'hash', 'other_success', 'other_error'])
 def test_unsafe_caption_recovery_never_retries(failed_caption, monkeypatch, risk):
     path, upload, started = failed_caption
@@ -87,6 +102,9 @@ def test_background_editor_uses_verified_fill_when_click_is_unstable(monkeypatch
     ('Transfer file CDP TikTok gagal sebelum posting; tidak ada posting yang dibuat.','file_transfer_before_post'),
     ('Tombol Post TikTok belum aktif setelah 600 detik; video tidak diterbitkan.','post_button_not_ready'),
     ('Input upload TikTok tidak ditemukan. Periksa sesi dan halaman TikTok Studio.','upload_form_not_ready'),
+    ('Daftar posting TikTok belum siap diverifikasi; file belum dipilih dan belum diposting.','post_baseline_not_ready'),
+    ('Draft TikTok belum dapat dibuang; file belum dipilih dan belum diposting.','draft_discard_not_ready'),
+    ('Pilihan Only you/Hanya Anda tidak ditemukan; upload tidak diterbitkan.','privacy_control_not_ready'),
     ('Kontrol privasi TikTok belum siap. Video belum diposting.','privacy_control_not_ready'),
     ('Pilihan privasi TikTok belum terverifikasi pada kontrol. Video belum diposting.','privacy_control_not_ready'),
     ('BrowserType.connect_over_cdp: Timeout 15000ms exceeded.','browser_connection_before_post'),

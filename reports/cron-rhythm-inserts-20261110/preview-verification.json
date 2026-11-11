@@ -1,0 +1,297 @@
+{
+  "preview_only": true,
+  "upload_queued": false,
+  "publication_review_required": true,
+  "source_is_previously_rendered_derivative": true,
+  "source_rights": {
+    "title": "Yuta Mio Modifikasi Motor Drag Paling Cepat Untuk Ikut Kontes | ROBLOX",
+    "creator": "Dunia Budi Roblox",
+    "url": "https://www.youtube.com/watch?v=RibRV2OCg4g",
+    "license": "",
+    "rights_basis": "unverified",
+    "rights_verified": false,
+    "rights_confirmed_by_user": true,
+    "license_metadata_verified": false,
+    "operator_trusted_channel": false,
+    "chain_of_title_verified": false,
+    "commercial_rights_confirmation_required": true,
+    "creative_commons_label_alone_guarantees_no_content_id_claim": false,
+    "attribution_required": false,
+    "uploaded_source": false,
+    "research_only_source": false,
+    "source_audio_or_video_used_in_output": true
+  },
+  "original_unchanged": true,
+  "output": "reports/cron-rhythm-inserts-20261110/preview/cron-rhythm-preview.mp4",
+  "layout": {
+    "enabled": true,
+    "layout": "source_context_detail",
+    "source_width": 1024,
+    "source_height": 576,
+    "canvas_width": 1080,
+    "canvas_height": 1920,
+    "preserve_source_aspect_ratio": true,
+    "uses_other_timeline_clips": false,
+    "all_panels_synchronized": true,
+    "full_source_frame_visible": true,
+    "panel_width": 1080,
+    "panel_height": 606,
+    "reason": "cron_source_aware_presentation",
+    "panel_y": 360,
+    "policy_version": 1,
+    "cron_only": true,
+    "background": "blurred_same_source_frame",
+    "source_clock_unchanged": true,
+    "audio_unchanged": true,
+    "hook_y": 220,
+    "caption_baseline": 1550,
+    "focus_analysis": {
+      "available": false,
+      "method": "sampled_motion_and_detail",
+      "sample_count": 5,
+      "reason": "focus_not_stable",
+      "readable_detail": true,
+      "temporal_agreement": 0.4,
+      "detail_contrast": 1.099
+    },
+    "focus_selection": "neutral_center_without_object_tracking",
+    "reference_principles": [
+      "immediate_source_grounded_hook",
+      "source_aware_reframing",
+      "readable_phrase_captions"
+    ],
+    "detail_crop": [
+      532,
+      298,
+      246,
+      172
+    ],
+    "detail_x": 64,
+    "detail_y": 1000,
+    "detail_width": 832,
+    "detail_height": 468,
+    "detail_label": "LIHAT DETAILNYA"
+  },
+  "opening": {
+    "enabled": true,
+    "text": "Kak Yuta bisa borong motor GP,",
+    "method": "source_sentence_preview",
+    "source_start": 20.085,
+    "source_end": 21.865,
+    "source_words_only": true,
+    "audio_reordered": false,
+    "display_text": "KAK YUTA BISA BORONG\nMOTOR GP",
+    "font_size": 52
+  },
+  "original_duration": 33.965,
+  "new_duration": 31.165,
+  "retained_source_duration": 31.165000000000077,
+  "quran_outro": {
+    "enabled": false,
+    "text": null,
+    "source": null,
+    "source_url": null,
+    "translation_source": "Terjemahan Kemenag RI 2019",
+    "duration_seconds": 0.0,
+    "selection": "topic_matched_deterministic_from_locked_catalog",
+    "ai_generated_wording": false,
+    "applied_once_at_end_of_long_video": false,
+    "disabled_reason": "cron_topic_not_religious"
+  },
+  "render_quality_qc": {
+    "version": 1,
+    "available": true,
+    "status": "passed",
+    "quality_gate_passed": true,
+    "requires_manual_review": false,
+    "blocking": false,
+    "sample_count": 7,
+    "frame_timestamps_seconds": [
+      3.896,
+      7.791,
+      11.687,
+      15.582,
+      19.478,
+      23.374,
+      27.269
+    ],
+    "exposure": {
+      "passed": true,
+      "median_luminance": 58.0,
+      "shadow_clip_percent": 14.37,
+      "highlight_clip_percent": 1.858,
+      "dark_frame_ratio": 0.143
+    },
+    "sharpness": {
+      "passed": true,
+      "median_laplacian_variance": 2779.25,
+      "minimum": 18.0
+    },
+    "head_crop": {
+      "assessed": true,
+      "passed": true,
+      "detected_faces": 1,
+      "safe_face_ratio": 1.0
+    },
+    "subtitle_safe_area": {
+      "assessed": true,
+      "passed": true,
+      "position": "bottom",
+      "method": "renderer_geometry_contract",
+      "shorts_ui_safe": true
+    },
+    "warnings": []
+  },
+  "rhythm_insert": {
+    "version": 1,
+    "enabled": true,
+    "rendered": true,
+    "cron_only": true,
+    "source_clock_unchanged": true,
+    "captions_clock_unchanged": true,
+    "full_source_frame_visible": true,
+    "inserted_timeline_seconds": 0,
+    "source_audio_reordered": false,
+    "reference": "CxRqjbfZWxA",
+    "reason": "source_grounded_playful_payoff",
+    "style": "depth_bounce",
+    "start": 17.025,
+    "end": 18.445,
+    "beats": [
+      17.025,
+      17.425,
+      17.825
+    ],
+    "quote": "Woow, GG.",
+    "variation": 58,
+    "source_utterance_end": 16.985,
+    "timing_method": "after_complete_timed_source_utterance",
+    "one_existing_accent_replaced": true,
+    "beat_detection": "authored_short_cadence_not_claimed_music_detection",
+    "source_frame_frozen": false,
+    "bass_enabled": true,
+    "bass_source": "locally_synthesized_short_sine_hits",
+    "speech_ducked": true,
+    "borrowed_reference_audio": false,
+    "reference_assets_used": false
+  },
+  "accents": {
+    "version": 4,
+    "cron_only": true,
+    "enabled": true,
+    "required": true,
+    "rendered": true,
+    "cues": [
+      {
+        "kind": "focus_brackets",
+        "mood": "emphasis",
+        "start": 3.315,
+        "end": 5.235,
+        "quote": "Ya, Kak Yuta harus beli dua kali berarti.",
+        "statement": "Ya Kak Yuta harus beli dua kali berarti",
+        "statement_rendered": false,
+        "directed_by": "source_sentence",
+        "timing_method": "estimated_phrase_offset_within_timed_source_segment",
+        "palette": [
+          125,
+          240,
+          217
+        ],
+        "variation": 101,
+        "source_grounded": true,
+        "sound": "none",
+        "box": [
+          0.054259,
+          0.574896,
+          0.231481,
+          0.130208
+        ],
+        "radius": 119,
+        "placement_reason": "measured_motion_detail_outside_protected_regions",
+        "protected_regions": [
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.18
+          ],
+          [
+            0.82,
+            0.7,
+            0.18,
+            0.3
+          ],
+          [
+            0.08,
+            0.72,
+            0.84,
+            0.28
+          ],
+          [
+            0.28,
+            0.05,
+            0.44,
+            0.51
+          ]
+        ],
+        "face_samples": 0,
+        "statement_skip_reason": "no_clear_typography_area"
+      },
+      {
+        "kind": "rhythm_depth",
+        "mood": "humor",
+        "start": 17.025,
+        "end": 18.445,
+        "quote": "Woow, GG.",
+        "statement": "",
+        "statement_rendered": false,
+        "directed_by": "complete_source_reaction_boundary",
+        "timing_method": "after_complete_timed_source_utterance",
+        "palette": [
+          157,
+          208,
+          255
+        ],
+        "variation": 255,
+        "source_grounded": true,
+        "sound": "bounded_procedural_bass_if_audio_verified",
+        "visual_rendered": true,
+        "box": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "protected_regions": [],
+        "placement_reason": "whole_source_card_before_stable_captions"
+      }
+    ],
+    "source_clock_unchanged": true,
+    "captions_clock_unchanged": true,
+    "audio_unchanged": false,
+    "inserted_timeline_seconds": 0,
+    "reason": "source_timed_director_accents",
+    "audio_reactions": {
+      "version": 1,
+      "enabled": true,
+      "events": [],
+      "source_audio_only": true,
+      "method": "timed_vocal_dynamics_and_sustained_notes",
+      "audio_modified": false,
+      "available": true,
+      "baseline_dbfs": -16.87,
+      "baseline_pitch_hz": 280.7,
+      "reason": "no_supported_raised_voice"
+    },
+    "required_min_count": 1,
+    "cue_count": 2,
+    "sensitive_context": false,
+    "seeded_variation": true,
+    "canvas": [
+      1080,
+      1920
+    ],
+    "renderer": "procedural_rgba_accents",
+    "verification": "duration_frame_count_and_geometry_preserved"
+  }
+}

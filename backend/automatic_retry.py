@@ -34,8 +34,21 @@ def tiktok_retry_reason(error, logs, *, started=False, accepted=False):
         return 'post_button_not_ready'
     if 'input upload tiktok tidak ditemukan' in message:
         return 'upload_form_not_ready'
+    if 'daftar posting tiktok belum siap diverifikasi' in message and 'file belum dipilih' in message:
+        return 'post_baseline_not_ready'
+    if 'draft tiktok belum dapat dibuang' in message and 'belum diposting' in message:
+        return 'draft_discard_not_ready'
     if ('kontrol privasi tiktok' in message or 'pilihan privasi tiktok' in message) and 'belum diposting' in message:
         return 'privacy_control_not_ready'
+    if 'pengaturan privasi tiktok belum selesai' in message and 'post belum dikirim' in message:
+        return 'privacy_control_not_ready'
+    if ('pilihan only you/' in message or 'pilihan everyone/' in message) and 'upload tidak diterbitkan' in message:
+        return 'privacy_control_not_ready'
+    if 'locator.inner_text' in message and 'timeout' in message:
+        if any('button:has-text' in str(line).casefold() and any(
+                label in str(line).casefold() for label in ('everyone','only you','semua orang','hanya anda'))
+                for line in logs):
+            return 'privacy_control_not_ready'
     if 'kontrol tiktok tidak dapat diklik' in message and 'belum diposting' in message:
         # Older workers wrapped the Playwright error. Only an exact privacy
         # picker locator makes that legacy generic control failure retryable.

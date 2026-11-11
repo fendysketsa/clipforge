@@ -584,6 +584,12 @@ export type TikTokConfig = {
 };
 
 export type TikTokUploadJob = {
+  queued_at?: string | null;
+  auto_retry_count?: number;
+  auto_retry_at?: string | null;
+  auto_retry_reason?: string;
+  submission_started?: boolean;
+  submission_accepted?: boolean;
   id: string;
   source_job_id: string;
   clip_url: string;

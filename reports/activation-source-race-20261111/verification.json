@@ -1,0 +1,21 @@
+{
+  "checked_at": "2026-11-11T06:13:58.348349+00:00",
+  "evidence": {
+    "build_report_updated_at": "2026-11-11T06:08:05.700353+00:00",
+    "api_source_updated_at": "2026-11-11T06:08:25.241023+00:00",
+    "source_changed_after_build_seconds": 19.541
+  },
+  "api_source_sha256": "f44b4ab362d0f7395d269e45feaaae52d05a14a5dec01b99cbfa96c55be18c29",
+  "repair": "Bounded cache rebuild only when source bytes changed since build; stable mismatch and explicit skip-build still stop.",
+  "runtime_activation_verified": false,
+  "activation_blocker": "sudo requires a password",
+  "backend_health_observed": "ok",
+  "running_director_policy_observed": 3,
+  "tests": {
+    "tests": 106,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "activation_script_sha256": "9278c2ef28dd3f56e75c62d1f43f9141c0b1a374666a3e7a750c293d016a32df"
+}

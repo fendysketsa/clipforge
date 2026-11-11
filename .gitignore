@@ -38,3 +38,11 @@ reports/cron-short-presentation-*/**/*.mp4
 reports/cron-short-presentation-*/**/*.wav
 reports/cron-reaction-effects-*/**/*.mp4
 reports/cron-reaction-effects-*/**/*.wav
+reports/five-card-upload-recovery-*/*-before.json
+reports/**/.cron-director/
+reports/cron-rhythm-inserts-*/**/*.mp4
+reports/cron-rhythm-inserts-*/**/*.wav
+# Generated deployment integrity stamps; rebuilt inside each image.
+/backend/deployment-manifest.json
+/frontend/deployment-manifest.json
+/frontend/public/deployment.json

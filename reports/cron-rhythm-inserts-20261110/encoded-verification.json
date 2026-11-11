@@ -1,0 +1,20 @@
+{
+  "preview_only": true,
+  "upload_queued": false,
+  "original_unchanged": true,
+  "video": {
+    "codec_name": "h264",
+    "codec_type": "video",
+    "width": 1080,
+    "height": 1920
+  },
+  "duration": 31.165,
+  "source_audio_lag_seconds": 0.0,
+  "source_audio_correlation": 0.94471,
+  "caption_clock_unchanged": true,
+  "layout": "source_context_detail",
+  "technical_render_qc": "passed",
+  "publication_review_required": true,
+  "source_rights_verified": false,
+  "comparison": "reports/cron-rhythm-inserts-20261110/comparison.png"
+}

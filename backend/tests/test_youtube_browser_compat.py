@@ -272,7 +272,24 @@ def test_upload_page_failure_always_includes_diagnostic(monkeypatch):
     monkeypatch.setattr(youtube_uploader, "wait_for_file_input", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(youtube_uploader, "click_select_files_entry", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(youtube_uploader, "click_create_upload_by_topbar_position", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(youtube_uploader, "click_dashboard_upload_entry", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(youtube_uploader, "save_debug_artifacts", lambda *_args, **_kwargs: None)
 
     with pytest.raises(UploadError, match=r"Detail: URL https://studio\.youtube\.com/upload"):
         goto_upload_page(page, channel_id="target")
+
+
+def test_upload_navigation_opens_real_dashboard_before_legacy_upload_routes(monkeypatch):
+    page = CompatibilityPage()
+    page.reload = lambda **_kwargs: None
+    for name in ('ensure_supported_studio_browser', 'ensure_studio_page_healthy'):
+        monkeypatch.setattr(youtube_uploader, name, lambda _page: None)
+    monkeypatch.setattr(youtube_uploader, 'wait_for_upload_surface', lambda *a, **k: False)
+    monkeypatch.setattr(youtube_uploader, 'click_select_files_entry', lambda *a, **k: False)
+    opened=[]
+    monkeypatch.setattr(youtube_uploader, 'click_dashboard_upload_entry', lambda p, **k: opened.append(p.url) or True)
+    monkeypatch.setattr(youtube_uploader, 'wait_for_file_input', lambda *a, **k: bool(opened))
+    monkeypatch.setattr(youtube_uploader, 'click_create_upload_by_topbar_position', lambda *a, **k: pytest.fail('Semantic dashboard entry should work'))
+    goto_upload_page(page, channel_id='target')
+    assert opened == ['https://studio.youtube.com/channel/target']
+    assert [url for url, _kwargs in page.goto_calls] == ['https://studio.youtube.com/channel/target']

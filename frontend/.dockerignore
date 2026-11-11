@@ -1,4 +1,6 @@
-.next
+.next*
+deployment-manifest.json
+public/deployment.json
 node_modules
 .env
 bun.lock

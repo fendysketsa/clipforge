@@ -145,7 +145,24 @@ class Sync:
         scope = next(iter(scopes)) if len(scopes) == 1 else 'app'
         diff = self.git('diff', '--cached', '--no-ext-diff', '--no-color', '--unified=0', '--', *sources).decode(errors='replace') if sources else ''
         additions = '\n'.join(line[1:] for line in diff.splitlines() if line.startswith('+') and not line.startswith('+++'))
-        if 'git' in scopes:
+        production = [path for path in sources if path.startswith('backend/') and '/tests/' not in path]
+        production_diff = self.git('diff', '--cached', '--no-ext-diff', '--no-color', '--unified=0', '--',
+            *production).decode(errors='replace') if production else ''
+        functional_topics = []
+        # Actual changed functions take precedence over incidental layout
+        # markers or test fixtures in the same commit batch.
+        for marker, topic in (
+            ('start_background_page_activity', 'fokus browser upload'),
+            ('social_upload_turn', 'giliran antrean upload'),
+            ('exact_existing_tiktok_post', 'verifikasi posting TikTok'),
+            ('plan_rhythm_insert', 'efek ritmis cron'),
+            ('queue_requested_source_rescues_once', 'pemulihan sumber cron'),
+        ):
+            if re.search(r'^\+\s*def\s+' + marker + r'\(', production_diff, re.MULTILINE):
+                functional_topics.append(topic)
+        if functional_topics:
+            subject = 'fix(automation): ' + ' dan '.join(functional_topics[:2])
+        elif 'git' in scopes:
             scope = 'git'
             topics = []
             if 'quiet_gate' in additions or 'QUIET_SECONDS' in additions:
@@ -169,7 +186,10 @@ class Sync:
             verb = 'tambahkan' if only_added else 'hapus' if only_removed else 'perbarui'
             subject = f'{kind}({scope}): {verb} {label}'
         if len(subject) > 100: subject = subject[:97].rsplit(' ', 1)[0] + '...'
-        body = [subject, '', 'Ringkasan perubahan staged:']
+        body = [subject, '']
+        if functional_topics:
+            body += ['Perilaku yang diperbarui: ' + '; '.join(functional_topics), '']
+        body += ['Ringkasan perubahan staged:']
         for path, added, removed in changes[:50]:
             count = 'binary' if added == '-' else f'+{added}/-{removed} baris'
             body.append(f'- {actions.get(path, "M")} {path} ({count})')
@@ -234,7 +254,12 @@ class Sync:
         changed.update(self.paths('diff', '--cached', '--name-only', '-z'))
         eligible = sorted(path for path in changed if not protected(path))
         ignored = len(changed) - len(eligible)
-        for path in eligible:
+        # A staged deletion is no longer in the index. Re-adding its exact
+        # path fails if a new ignore rule now covers it, or if it is missing.
+        # Keep that staged deletion for the commit without passing it to add.
+        stageable = set(self.paths('ls-files', '--cached', '--others', '--exclude-standard', '-z'))
+        to_stage = [path for path in eligible if path in stageable]
+        for path in to_stage:
             file = self.repo / path
             if file.is_symlink() or not file.exists(): continue
             if not file.is_file(): return self.save('held', error=f'Nested repository or directory: {path}')
@@ -248,8 +273,9 @@ class Sync:
         committed = False
         code_changed = any(source_activity(path) for path in eligible)
         if eligible and code_changed:
-            self.git('add', '--all', '--pathspec-from-file=-', '--pathspec-file-nul',
-                     input=b''.join(b':(literal)' + os.fsencode(path) + b'\0' for path in eligible))
+            if to_stage:
+                self.git('add', '--all', '--pathspec-from-file=-', '--pathspec-file-nul',
+                         input=b''.join(b':(literal)' + os.fsencode(path) + b'\0' for path in to_stage))
             issue = self.staged_issue()
             if issue: return self.save('held', error=issue)
             if os.fsdecode(self.git('symbolic-ref', '--quiet', '--short', 'HEAD')).strip() != self.branch:

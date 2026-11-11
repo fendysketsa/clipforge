@@ -1,0 +1,101 @@
+{
+  "enabled": true,
+  "scheduler_running": true,
+  "cron_director_effects_policy_version": 3,
+  "social_upload_serialized": true,
+  "new_rhythm_model_active": false,
+  "source_rescues": [
+    {
+      "id": "782c1cdcf6c3432186a3647fd8b24aad",
+      "status": "failed",
+      "progress_percent": 59,
+      "progress_stage": "failed",
+      "source_recovery_parent_job_id": "d264a446f42e4065a7da406bfba9921e"
+    }
+  ],
+  "youtube_relevant": [
+    {
+      "id": "c142089ba39a41beb351e653bbe2e63e",
+      "source_job_id": "0084167a8da24371a65768f0297f33c3",
+      "status": "failed",
+      "upload_confirmed": false,
+      "video_url": null,
+      "profile_url": null,
+      "error": "Halaman upload YouTube Studio tidak bisa dibuka atau input file tidak ditemukan. Detail: Page.goto: Target page, context or browser has been closed"
+    },
+    {
+      "id": "e139c85321ba4c09bd61344243711902",
+      "source_job_id": "fad974d18c6b47138917d7b06e08d400",
+      "status": "failed",
+      "upload_confirmed": false,
+      "video_url": null,
+      "profile_url": null,
+      "error": "YouTube Studio gagal memuat aplikasi (Maaf, ada yang tidak beres). Session atau channel aktif perlu disegarkan lewat Login Sekali."
+    },
+    {
+      "id": "00ac6bbb0a864c14b834c94ec6bc0055",
+      "source_job_id": "0084167a8da24371a65768f0297f33c3",
+      "status": "failed",
+      "upload_confirmed": false,
+      "video_url": "https://www.youtube.com/watch?v=FjGZqDI8x0w",
+      "profile_url": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video belum ditemukan sebagai baris tersimpan di halaman Content; YouTube Studio menandai video-id ini sebagai VIDEO_STATUS_DELETED."
+    },
+    {
+      "id": "8c381436148f4e3aa04f03a740bd2067",
+      "source_job_id": "2ea6701395ef481b9c74b343d32c1194",
+      "status": "completed",
+      "upload_confirmed": true,
+      "video_url": "https://www.youtube.com/watch?v=tbAoI9h_Gis",
+      "profile_url": null,
+      "error": null
+    }
+  ],
+  "tiktok_relevant": [
+    {
+      "id": "33e5b5252c594db3845ca4868222fd57",
+      "source_job_id": "fad974d18c6b47138917d7b06e08d400",
+      "status": "failed",
+      "upload_confirmed": false,
+      "video_url": null,
+      "profile_url": null,
+      "error": "Kontrol TikTok tidak dapat diklik karena halaman belum siap. Video belum diposting; coba ulang setelah halaman Studio selesai dimuat."
+    },
+    {
+      "id": "0ea19ab252a040f5ba55daf94d8d64c7",
+      "source_job_id": "0084167a8da24371a65768f0297f33c3",
+      "status": "failed",
+      "upload_confirmed": false,
+      "video_url": null,
+      "profile_url": null,
+      "error": "Kontrol TikTok tidak dapat diklik karena halaman belum siap. Video belum diposting; coba ulang setelah halaman Studio selesai dimuat."
+    },
+    {
+      "id": "ed4f640f211644ae94ee9429d19403a8",
+      "source_job_id": "2ea6701395ef481b9c74b343d32c1194",
+      "status": "failed",
+      "upload_confirmed": false,
+      "video_url": null,
+      "profile_url": null,
+      "error": "Kolom caption TikTok belum siap setelah batas tunggu transfer/pemrosesan; video belum diposting."
+    },
+    {
+      "id": "c78db5cffa7b4dcab79db7b27163d3c1",
+      "source_job_id": "2ea6701395ef481b9c74b343d32c1194",
+      "status": "failed",
+      "upload_confirmed": false,
+      "video_url": null,
+      "profile_url": null,
+      "error": "Kontrol TikTok tidak dapat diklik karena halaman belum siap. Video belum diposting; coba ulang setelah halaman Studio selesai dimuat."
+    },
+    {
+      "id": "406bd8430a854c1786b499b0237170fe",
+      "source_job_id": "2ea6701395ef481b9c74b343d32c1194",
+      "status": "failed",
+      "upload_confirmed": false,
+      "video_url": null,
+      "profile_url": null,
+      "error": "Kolom caption TikTok belum siap setelah batas tunggu transfer/pemrosesan; video belum diposting."
+    }
+  ]
+}

@@ -8,6 +8,7 @@ import { formatDuration, jobElapsedSeconds } from "../../lib/utils";
 import type { ClipJob, JobStatus, TikTokUploadJob, YouTubeUploadJob } from "../../types/clip.type";
 import {articleText, articleFilmText, isArticlePresenterPrompt} from "../../lib/storyInput";
 import { uploadQueuePosition } from "../../lib/uploadQueue";
+import { tiktokAutomaticRetryLabel, tiktokUploadForClip } from "../../lib/tiktokRetry";
 
 function jobFormat(job: ClipJob) {
   if (job.request.clip_mode === "highlight_5m") {
@@ -78,6 +79,7 @@ function uploadSummary<T extends PlatformUpload>(
   job: ClipJob,
   uploads: T[],
   isVerified: (upload: T) => boolean,
+  tiktok = false,
 ): PlatformUploadSummary {
   const relevant = uploads
     .filter((upload) => upload.source_job_id === job.id)
@@ -90,6 +92,16 @@ function uploadSummary<T extends PlatformUpload>(
   relevant.forEach((upload) => {
     if (!latestByClip.has(upload.clip_url)) latestByClip.set(upload.clip_url, upload);
   });
+  if (tiktok) {
+    for (const clipUrl of latestByClip.keys()) {
+      const state = tiktokUploadForClip(relevant as TikTokUploadJob[], clipUrl);
+      if (state.uncertain) return {
+        state: "unverified", label: "Periksa hasil Post",
+        title: "Percobaan sebelumnya sudah mencapai Post. Hasilnya perlu diverifikasi sebelum dikirim ulang agar tidak dobel.",
+      };
+      if (state.latest) latestByClip.set(clipUrl, state.latest as T);
+    }
+  }
   const latest = [...latestByClip.values()];
   const expectedClipUrls = new Set([
     ...job.clips.map((clip) => clip.url),
@@ -123,6 +135,8 @@ function uploadSummary<T extends PlatformUpload>(
     };
   }
   if (failed) {
+    const retry = "auto_retry_at" in failed ? tiktokAutomaticRetryLabel(failed as TikTokUploadJob) : null;
+    if (retry) return { state: "queued", label: "Ulang otomatis", title: retry, queueHint: retry };
     return {
       state: "failed",
       label: verified ? `${verified}/${total} berhasil · ada gagal` : "Upload gagal",
@@ -306,7 +320,8 @@ export function HistorySection({
             ? uploadSummary(
                 item,
                 tiktokUploads,
-                (upload) => upload.status === "completed" && upload.upload_confirmed && !upload.dry_run,
+                (upload) => upload.status === "completed" && upload.upload_confirmed && !upload.dry_run && Boolean(upload.profile_url),
+                true,
               )
             : null;
 

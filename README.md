@@ -864,8 +864,39 @@ Container Toolkit has been configured once, normal rebuilds need no wrapper or
 additional Compose file:
 
 ```bash
-sudo docker-compose --env-file .env up -d --build --force-recreate backend telegram-bot frontend
+sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot
 ```
+
+This is the single update/rebuild command for the complete application. It
+replaces running separate feature activation scripts after every code change.
+Compose 2.30 or later is required; this host uses `docker-compose` v5.5.0.
+
+| Previously separate activation | Included in this command |
+| --- | --- |
+| Backend director, cron recovery, source limits, Long QC, thumbnails, upload retry and duplicate guards | All backend modules and Remotion dependencies are built into one image; startup verifies its source hashes and required libraries. |
+| History cards, queue positions, upload submission recovery and privacy status UI | A fresh production frontend is built inside Docker; startup and HTTP healthchecks verify its build ID, assets and current UI features. |
+| Telegram bot | Uses the exact backend image, waits for healthy backend and frontend, verifies their releases, then starts the bot. Its post-start check also runs for detached `up -d`. |
+
+The mounted source trees are read-only verification inputs; the applications
+execute code from the built images. If code changes while a build is running,
+startup refuses that stale image: rerun the **same command**. Build manifests
+and runtime reports distinguish built source from a verified running release.
+Backend and bot reports are written under `backend/data/deployment/`.
+
+Recreation retains persistent jobs, upload IDs, source review/QC, browser
+sessions, Long settings and the saved cron ON/OFF selection. It does not retry
+uncertain Post results or reset publication/review gates. Because this command
+uses `--force-recreate`, an active process may be interrupted; existing startup
+recovery uses its durable checkpoint. It does not promise uninterrupted uploads.
+
+Do not run all old `.sh` files in sequence: some are one-time installation,
+profile reset, cancellation or repairs for specific old media. Those actions
+are separate from rebuilding the application. GPU drivers/toolkit, host Chrome
+login and the host Git timer only need their setup commands when being installed
+or deliberately changed. Ordinary updates use the single Compose command above.
+The dependency and lifecycle behavior follows the official
+[Compose startup](https://docs.docker.com/compose/how-tos/startup-order/) and
+[lifecycle hook](https://docs.docker.com/compose/how-tos/lifecycle/) documentation.
 
 For the first-time host setup, full-stack rebuild, and GPU verification, run:
 

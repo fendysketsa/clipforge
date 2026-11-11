@@ -12,6 +12,8 @@ services:
     # Toolkit still needs to be configured once before the first `up`.
     gpus: all
     volumes:
+      # Verification only: execution always uses the immutable image source.
+      - ./backend:/opt/clipforge-source/backend:ro
       - ./backend/outputs:/app/outputs
       - ./backend/uploads:/app/uploads
       - ./backend/data:/app/data
@@ -26,6 +28,8 @@ services:
       - /sys/class/drm:/host/drm:ro
       - ${YOUTUBE_HOST_RUNTIME_DIR:-/run/user/1000}:/run/fendy-clipper-host-user:ro
     environment:
+      CLIPFORGE_SERVICE: backend
+      CLIPFORGE_VERIFY_SOURCE_DIR: /opt/clipforge-source/backend
       IN_DOCKER: "1"
       NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
       NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
@@ -63,6 +67,9 @@ services:
       TIKTOK_POST_READY_TIMEOUT_MS: ${TIKTOK_POST_READY_TIMEOUT_MS:-300000}
       TIKTOK_DRY_RUN: ${TIKTOK_DRY_RUN:-false}
       TIKTOK_DEFAULT_VISIBILITY: ${TIKTOK_DEFAULT_VISIBILITY:-only_you}
+      TIKTOK_AUTOMATIC_RETRY_ENABLED: ${TIKTOK_AUTOMATIC_RETRY_ENABLED:-true}
+      SOCIAL_UPLOAD_MIN_GAP_SECONDS: ${SOCIAL_UPLOAD_MIN_GAP_SECONDS:-45}
+      SOCIAL_UPLOAD_FAILURE_GAP_SECONDS: ${SOCIAL_UPLOAD_FAILURE_GAP_SECONDS:-90}
       TIKTOK_ALLOW_PUBLIC_AUTO_UPLOAD: ${TIKTOK_ALLOW_PUBLIC_AUTO_UPLOAD:-false}
       DISPLAY: ${YOUTUBE_DISPLAY:-:1}
       XAUTHORITY: /app/data/youtube-gui/Xauthority
@@ -452,12 +459,14 @@ services:
       DEFAULT_AI_MODEL: ${DEFAULT_AI_MODEL:-llama3.2-id:latest}
       DEFAULT_REQUIRED_HASHTAGS: ${DEFAULT_REQUIRED_HASHTAGS:-viralindonesia,trendingindonesia,kontenpilihan}
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8010/api/health"]
+      test: ["CMD", "python", "/app/deployment_runtime.py", "health"]
       interval: 10s
-      timeout: 5s
+      timeout: 15s
       retries: 12
       start_period: 30s
     restart: unless-stopped
+    init: true
+    stop_grace_period: 60s
 
   frontend:
     build:
@@ -466,17 +475,28 @@ services:
         NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8010}
     container_name: fendy-clipper-frontend
     environment:
+      CLIPFORGE_VERIFY_SOURCE_DIR: /opt/clipforge-source/frontend
       BACKEND_API_BASE: http://172.18.0.1:8010
       BACKEND_API_BASES: http://172.18.0.1:8010,http://172.17.0.1:8010,http://host.docker.internal:8010,http://127.0.0.1:8010
       NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8010}
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
+    volumes:
+      - ./frontend:/opt/clipforge-source/frontend:ro
     depends_on:
       backend:
         condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "/app/scripts/deployment-health.cjs", "health"]
+      interval: 15s
+      timeout: 30s
+      retries: 8
+      start_period: 20s
+    init: true
+    stop_grace_period: 30s
 
   telegram-bot:
     # Reuse the backend image. Building the same Dockerfile twice in parallel
@@ -486,10 +506,14 @@ services:
     command: ["python", "telegram_bot.py"]
     network_mode: host
     volumes:
+      - ./backend:/opt/clipforge-source/backend:ro
       - ./backend/outputs:/app/outputs:ro
       - ./backend/data:/app/data
       - /sys:/host/sys:ro
     environment:
+      CLIPFORGE_SERVICE: telegram-bot
+      CLIPFORGE_VERIFY_SOURCE_DIR: /opt/clipforge-source/backend
+      FRONTEND_BASE: http://127.0.0.1:${FRONTEND_PORT:-3000}
       BACKEND_API_BASE: http://127.0.0.1:8010
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_OWNER_ID: ${TELEGRAM_OWNER_ID:-}
@@ -513,6 +537,19 @@ services:
       VIRAL_CC_MAX_SOURCE_SECONDS: ${VIRAL_CC_MAX_SOURCE_SECONDS:-7200}
       VIRAL_CC_SEARCH_HTTP_TIMEOUT_SECONDS: ${VIRAL_CC_SEARCH_HTTP_TIMEOUT_SECONDS:-900}
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    # Complete startup verification even with `up -d` (Compose >= 2.30).
+    post_start:
+      - command: ["python", "/app/deployment_runtime.py", "wait-ready"]
+    healthcheck:
+      test: ["CMD", "python", "/app/deployment_runtime.py", "health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     init: true
+    stop_grace_period: 60s
     restart: unless-stopped

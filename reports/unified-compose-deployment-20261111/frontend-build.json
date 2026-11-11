@@ -1,0 +1,9 @@
+{
+  "build_id": "m84FXxPw0XsV4mCSySHSs",
+  "release_id": "4756c9cd1aa52586fded621242fb962e32eee7b2c809d0184ee99cda4ab5fbaf",
+  "production_build": true,
+  "runtime_prepare_passed": true,
+  "actual_http_health_passed": true,
+  "test_origin": "http://127.0.0.1:3309",
+  "production_port_3000_changed": false
+}
