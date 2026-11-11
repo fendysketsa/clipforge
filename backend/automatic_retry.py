@@ -1,5 +1,6 @@
 """Conservative retries for proven pre-submission failures, never unknown posts."""
 from __future__ import annotations
+from tiktok_dialogs import is_cancel_upload_confirmation
 
 MAX_RETRIES = 3
 BACKOFF_SECONDS = (60, 180, 600)
@@ -38,6 +39,11 @@ def tiktok_retry_reason(error, logs, *, started=False, accepted=False):
         return 'post_baseline_not_ready'
     if 'draft tiktok belum dapat dibuang' in message and 'belum diposting' in message:
         return 'draft_discard_not_ready'
+    prefix = 'dialog tiktok menghalangi form upload: '
+    suffix = '. video belum diposting.'
+    if message.startswith(prefix) and message.endswith(suffix):
+        if is_cancel_upload_confirmation(message[len(prefix):-len(suffix)]):
+            return 'upload_cancel_dialog_before_post'
     if ('kontrol privasi tiktok' in message or 'pilihan privasi tiktok' in message) and 'belum diposting' in message:
         return 'privacy_control_not_ready'
     if 'pengaturan privasi tiktok belum selesai' in message and 'post belum dikirim' in message:

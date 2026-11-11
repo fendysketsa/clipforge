@@ -1,0 +1,12 @@
+{
+  "checked_at": "2026-11-11T10:06:02.007406+00:00",
+  "/api/health": {
+    "status": "ok"
+  },
+  "/api/automation/viral-cc/schedule": {
+    "enabled": true,
+    "scheduler_running": true,
+    "cron_director_effects_policy_version": 4,
+    "cron_drama_lanes": null
+  }
+}

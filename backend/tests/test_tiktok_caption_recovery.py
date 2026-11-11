@@ -222,3 +222,24 @@ def test_retry_corrects_only_mismatched_religious_template_and_keeps_its_audit(f
     assert result.auto_retry_original_caption==original
     assert '#GamingIndonesia' in result.caption and '#KajianIslam' not in result.caption
     assert result.visibility==row.visibility and result.clip_sha256==row.clip_sha256
+
+
+def test_observed_cancel_dialog_failure_requeues_same_file_at_tail(failed_caption):
+    _,upload,started=failed_caption
+    upload.error=('Dialog TikTok menghalangi form upload: Sure you want to cancel your upload? '
+        'Any edits to your current upload will not be saved. No Yes. Video belum diposting.')
+    assert api.queue_retryable_tiktok_uploads_once()==1
+    live=api.tiktok_uploads[upload.id]
+    assert live.id==upload.id and live.clip_sha256==upload.clip_sha256 and live.visibility==upload.visibility
+    assert live.auto_retry_reason=='upload_cancel_dialog_before_post' and live.auto_retry_count==1
+    assert live.queued_at and [row.id for row in started]==[upload.id]
+
+
+def test_cancel_dialog_retry_never_ignores_an_older_possible_post(failed_caption):
+    _,upload,started=failed_caption
+    upload.error=('Dialog TikTok menghalangi form upload: Sure you want to cancel your upload? '
+        'Any edits to your current upload will not be saved. No Yes. Video belum diposting.')
+    api.tiktok_uploads['older']=upload.model_copy(update={'id':'older','created_at':'2020-01-01T00:00:00+00:00',
+        'submission_started':True,'submission_accepted':True})
+    assert api.queue_retryable_tiktok_uploads_once()==0
+    assert not started

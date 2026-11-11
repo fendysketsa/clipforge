@@ -12,6 +12,7 @@ import tempfile
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from tiktok_dialogs import is_cancel_upload_confirmation
 from browser_page_activity import start_background_page_activity, stop_background_page_activity
 
 
@@ -837,6 +838,47 @@ def dismiss_blocking_modal(page) -> tuple[bool, str]:
     if modal_text:
         log(f"Dialog TikTok terdeteksi: {modal_text}")
 
+    if is_cancel_upload_confirmation(modal_text):
+        # This is cancellation of the currently transferred upload, not the
+        # earlier Continue-editing/Discard draft prompt. No preserves the
+        # verified file; Yes would delete the upload we are about to submit.
+        button = modal.get_by_role('button', name=re.compile(r'^\s*No\s*$', re.I)).first
+        try:
+            button.click(timeout=3000)
+        except Exception:
+            current = visible_blocking_modal(page)
+            if current is None:
+                log('UPLOAD_CANCEL_DECLINED: Dialog sudah tertutup; tidak mengklik ulang.')
+                return True, modal_text
+            current_text = ' '.join(current.inner_text(timeout=1000).split())
+            if not is_cancel_upload_confirmation(current_text):
+                return False, current_text
+            try:
+                if not button.is_visible() or not button.is_enabled():
+                    raise ValueError('No is unavailable')
+                button.focus(timeout=2000)
+                if not button.evaluate('''el => {
+                    const r=el.getBoundingClientRect();
+                    const hit=el.ownerDocument.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+                    return el===el.ownerDocument.activeElement && !!hit && el.contains(hit);
+                }'''):
+                    raise ValueError('No is covered by another control')
+                button.press('Enter', timeout=2000)
+            except Exception:
+                log('UPLOAD_CANCEL_DECLINE_PENDING: No belum dapat dipilih; Post tetap ditahan.')
+                return False, modal_text
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            current = visible_blocking_modal(page)
+            if current is None:
+                log('UPLOAD_CANCEL_DECLINED: No dipilih; file upload dipertahankan dan Post belum dikirim.')
+                return True, modal_text
+            current_text = ' '.join(current.inner_text(timeout=1000).split())
+            if not is_cancel_upload_confirmation(current_text):
+                return False, current_text
+            page.wait_for_timeout(100)
+        return False, modal_text
+
     # Informational dialogs are commonly dismissible with Escape even when the
     # close icon has no stable aria label across Studio releases.
     try:
@@ -889,13 +931,11 @@ def dismiss_blocking_modal(page) -> tuple[bool, str]:
 def dismiss_upload_overlays(page) -> None:
     """Dismiss TikTok Studio onboarding without accepting optional checks."""
     page.wait_for_timeout(700)
+    # Never search the document for Cancel/Batal: those are also the actual
+    # upload form's destructive controls. Modal cancellation stays scoped in
+    # dismiss_blocking_modal; only harmless onboarding acknowledgements may
+    # be outside a role=dialog surface.
     for selectors in (
-        [
-            'button:has-text("Cancel")',
-            'button:has-text("Batal")',
-            'button:has-text("Not now")',
-            'button:has-text("Nanti")',
-        ],
         [
             'button:has-text("Got it")',
             'button:has-text("Mengerti")',

@@ -1,0 +1,37 @@
+{
+  "tests": {
+    "focused": {
+      "tests": 24,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "regression": {
+      "tests": 1404,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "source_sha256": {
+    "backend/api.py": "0a31d05585328014e61f8caf3a1eb6853818a1d8008b84cc63cef32a4da05c90",
+    "backend/cron_drama.py": "e2b22c3e8002713fb25ed40b692635556913922772582415a285ff108b33652f",
+    "backend/tests/test_cron_drama.py": "b4e6daef3c1327e9dfcf71440ee01eb48bccf705ac5cacc13a1071be7d6e86e2",
+    "docker-compose.yml": "1aa91fc67c9b0b44064ad30a07c9c16d0bda2bf318f927e63d1a6f68ea593633",
+    ".env.example": "8a38ca8d41ec4f65c390bf4568f8f4e25ec20df735656ff66e604a3c4a66c1e0",
+    "README.md": "c185ffc86fcb9fb6ed98f357bf6746248323c627a40dc9711eaa9cf6959d06b8"
+  },
+  "image_inputs_verified": true,
+  "drama_module_included": true,
+  "default_enabled_drama_lanes": [
+    "chinese_drama_story"
+  ],
+  "korean_lane_requires_explicit_opt_in": true,
+  "interpretation_clarification_pending": true,
+  "production_activated": false,
+  "docker_image_built": false,
+  "deployment_blocker": "sudo requires interactive password",
+  "live_cron_enabled": true,
+  "live_cron_has_drama_lanes": false,
+  "remote_mutations_performed": false
+}

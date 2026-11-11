@@ -213,3 +213,86 @@ def test_privacy_reset_during_processing_is_corrected_before_submission(studio_p
     uploader.configure_requested_privacy(studio_page,'only_you')
     assert studio_page.locator('#privacy-trigger').inner_text()=='Only you'
     assert studio_page.evaluate('window.escapes')==0
+
+
+CANCEL_UPLOAD_TEXT='Sure you want to cancel your upload? Any edits to your current upload will not be saved.'
+
+
+def cancel_upload_document(page, *, show_dialog=True, text=CANCEL_UPLOAD_TEXT):
+    page.set_content('''<style>button{display:block}</style><input type="file"><div class="public-DraftEditor-content" contenteditable="true">Caption</div>
+      <button id="cancel">Cancel</button><button id="post" onclick="window.posted++">Post</button>
+      <script>
+      window.cancelOpened=0;window.yes=0;window.no=0;window.posted=0;
+      window.openCancel=()=>{
+        window.cancelOpened++;
+        const modal=document.createElement('div');modal.role='dialog';modal.id='cancel-dialog';
+        const p=document.createElement('p');p.textContent=window.promptText;modal.appendChild(p);
+        const no=document.createElement('button');no.textContent='No';no.id='no';
+        no.onclick=()=>{window.no++;modal.remove()};modal.appendChild(no);
+        const yes=document.createElement('button');yes.textContent='Yes';yes.id='yes';
+        yes.onclick=()=>{window.yes++;document.querySelector('input').value='';modal.remove()};modal.appendChild(yes);
+        document.body.appendChild(modal);
+      };
+      document.querySelector('#cancel').onclick=window.openCancel;
+      </script>''')
+    page.evaluate('(text)=>window.promptText=text',text)
+    page.locator('input[type=file]').set_input_files({'name':'clipforge-correct.mp4','mimeType':'video/mp4','buffer':b'correct reviewed media'})
+    if show_dialog:page.evaluate('window.openCancel()')
+
+
+def test_overlay_cleanup_does_not_click_the_real_upload_cancel_control(studio_page):
+    cancel_upload_document(studio_page,show_dialog=False)
+    uploader.dismiss_upload_overlays(studio_page)
+    assert studio_page.evaluate('[window.cancelOpened,window.yes,window.no,window.posted]')==[0,0,0,0]
+    assert studio_page.locator('input').evaluate('el=>el.files[0].name')=='clipforge-correct.mp4'
+
+
+@pytest.mark.parametrize('title',[CANCEL_UPLOAD_TEXT,'Are you sure you want to cancel your upload? Any edits to your current upload will not be saved.'])
+def test_exact_cancel_upload_dialog_chooses_no_and_preserves_transferred_file(studio_page,title):
+    cancel_upload_document(studio_page,text=title)
+    uploader.dismiss_upload_overlays(studio_page)
+    assert studio_page.evaluate('[window.yes,window.no,window.posted]')==[0,1,0]
+    assert studio_page.locator('input').evaluate('el=>el.files[0].name')=='clipforge-correct.mp4'
+    assert uploader.visible_blocking_modal(studio_page) is None
+
+
+@pytest.mark.parametrize('text',['Delete this published post?', 'Content may be restricted. Continue to post?',
+                               CANCEL_UPLOAD_TEXT+' Review copyright restriction first.'])
+def test_no_yes_on_other_dialogs_never_gets_cancel_upload_semantics(studio_page,text):
+    cancel_upload_document(studio_page,text=text)
+    assert not uploader.dismiss_blocking_modal(studio_page)[0]
+    assert studio_page.evaluate('[window.yes,window.no,window.posted]')==[0,0,0]
+
+
+def test_background_no_click_timeout_uses_scoped_native_keyboard(studio_page,monkeypatch):
+    cancel_upload_document(studio_page)
+    from playwright.sync_api import Locator
+    original=Locator.click
+    def click(control,**kwargs):
+        if control.get_attribute('id')=='no':raise TimeoutError('element is not stable')
+        return original(control,**kwargs)
+    monkeypatch.setattr(Locator,'click',click)
+    assert uploader.dismiss_blocking_modal(studio_page)[0]
+    assert studio_page.evaluate('[window.yes,window.no,window.posted]')==[0,1,0]
+
+
+def test_cancel_dialog_no_fallback_never_types_through_an_overlay(studio_page):
+    cancel_upload_document(studio_page)
+    studio_page.evaluate('''()=>{const blocker=document.createElement('div');
+        blocker.style='position:fixed;inset:0;z-index:999;background:white';document.body.appendChild(blocker)}''')
+    assert not uploader.dismiss_blocking_modal(studio_page)[0]
+    assert studio_page.evaluate('[window.yes,window.no,window.posted]')==[0,0,0]
+
+
+def test_click_that_succeeded_before_timeout_does_not_press_another_no_button(studio_page,monkeypatch):
+    cancel_upload_document(studio_page)
+    from playwright.sync_api import Locator
+    original=Locator.click
+    def click_then_error(control,**kwargs):
+        target=control.inner_text()=='No'
+        result=original(control,**kwargs)
+        if target:raise TimeoutError('late click acknowledgement')
+        return result
+    monkeypatch.setattr(Locator,'click',click_then_error)
+    assert uploader.dismiss_blocking_modal(studio_page)[0]
+    assert studio_page.evaluate('[window.yes,window.no,window.posted]')==[0,1,0]

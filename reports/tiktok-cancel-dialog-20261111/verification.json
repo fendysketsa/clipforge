@@ -1,0 +1,40 @@
+{
+  "tests": {
+    "focused": {
+      "tests": 154,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    },
+    "browser": {
+      "tests": 31,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    },
+    "regression": {
+      "tests": 1412,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    }
+  },
+  "source_sha256": {
+    "backend/tiktok_uploader.py": "6577afd8b5df2ad5152313fb3a5a4c913edb3c6d98ebcba95394fbea98e351d9",
+    "backend/tiktok_dialogs.py": "b472656f840dff9c2496ad64d3f9c88410c24568aac41d5c93d51da35aedf16c",
+    "backend/automatic_retry.py": "13b2cdec7bea235325fa379bc511a158900c7fe88da7012797c4763d64bf7e55"
+  },
+  "affected_records": 4,
+  "affected_media_unchanged": true,
+  "exact_legacy_errors_classified": 4,
+  "native_dialogs_tested_offline": true,
+  "compose_image_inputs_verified": true,
+  "expected_release_id": "7646145fd517a92fead41e5cc6f124f46d1c36cda5c9c19c3f750e5d9b653293",
+  "last_runtime_release_id": "6d82118a0bde86dcc57b2095ca1b9d2f90490d4f81a021f330c1e84b8607bdab",
+  "runtime_release_matches_source": false,
+  "docker_rebuild_performed": false,
+  "activation_performed": false,
+  "activation_blocker": "sudo requires interactive password",
+  "production_upload_or_post_performed": false,
+  "post_confirmed_for_affected_records": false
+}

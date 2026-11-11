@@ -920,6 +920,32 @@ The force mode verifies that any lock holder is the ClipForge rebuild script
 before terminating it, cancels active API jobs when available, then recreates
 the backend, Telegram bot, and frontend without deleting persistent data.
 
+## Cron Drama China dan Korea
+
+Cron menambahkan `chinese_drama_story` ke rotasi tema RYUUNDY. Lane
+`korean_drama_story` disiapkan tetapi **nonaktif secara default**; hanya ikut jika
+`AUTO_VIRAL_SCHEDULE_KOREAN_DRAMA_ENABLED=true` diaktifkan secara eksplisit.
+Keduanya mempertahankan "satu momen, satu makna": konflik
+keluarga/hubungan, pilihan tokoh, konsekuensi, perubahan kepercayaan, atau bangkit.
+Penambahan tema tidak mengubah kuota harian maupun prioritas berdasarkan hasil
+channel dan cooldown yang sudah ada.
+
+Pencarian mengutamakan ulasan, analisis karakter dan narasi Bahasa Indonesia.
+Asal drama serta nilai cerita harus tampak pada metadata; berita selebritas,
+kompilasi adegan mentah dan tren di luar lane tidak dipilih. Gerbang bahasa,
+sumber/lisensi, HD, preflight, batas dua proses per sumber, QC dan upload tetap
+berlaku. Sumber yang gagal tetap mengikuti mekanisme skip/pengganti yang ada.
+
+Short mengambil satu konflik dan payoff yang tuntas. Long memakai sumber serta
+anchor Short yang sama untuk melengkapi konteks, motif tokoh dan akibat akhir.
+Narasi tidak boleh menebak terjemahan, mengarang dialog/akhir cerita, atau
+menyamakan tokoh dengan aktor. Metadata memakai `CeritaFiksi`, bukan `KisahNyata`
+atau hashtag agama yang tidak didukung sumber. Jalur manual tetap seperti semula.
+
+Status backend menyediakan `cron_drama_lanes` di
+`GET /api/automation/viral-cc/schedule`. Aktifkan perubahan kode memakai perintah
+Compose tunggal di bagian deployment; tidak ada skrip aktivasi drama tambahan.
+
 ## Automatic Git Commit And Push
 
 Automatic commit/push starts only after **30 minutes without code changes**.

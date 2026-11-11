@@ -67,6 +67,10 @@ from religious_review import reassess_casual_work_wish
 import long_video_qc
 import cron_source_policy
 import automatic_retry
+from cron_drama import (
+    DRAMA_THEME_PROFILES, DRAMA_THEME_SIGNALS, DRAMA_EDITOR_BRIEF,
+    drama_source_rejection_reason, drama_trend_query, drama_hashtags, drama_lane_enabled,
+)
 from youtube_remote_status import read_deleted_video_evidence
 from ryuundy_reference_learning import (
     RYUUNDY_REFERENCE_EDITOR_BRIEF, TREND_NOISE_WORDS, clean_topic_text, source_trend_matches,
@@ -1620,6 +1624,7 @@ CRON_TREND_TOPIC_SIGNALS = {
     "mobile legends", "free fire", "game horror", "valorant", "pubg",
     "simulator", "absurd", "nyeleneh", "parodi", "clip lucu", "momen lucu",
 }
+CRON_TREND_TOPIC_SIGNALS.update(marker for signals in DRAMA_THEME_SIGNALS.values() for marker in signals)
 CRON_TREND_UNSAFE_SIGNALS = {
     "18+", "adegan berdarah", "bunuh diri", "darah nyata", "eksploitasi",
     "gore", "judi online", "kekerasan nyata", "pelecehan", "pornografi",
@@ -1639,6 +1644,7 @@ DEFAULT_CRON_GAMING_CHANNEL_QUERY = "reaction game populer indonesia lucu cerita
 # news, sport, politics, or generic entertainment.  Humour is an interlude,
 # while faith remains available only when that is what the source discusses.
 RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
+    **DRAMA_THEME_PROFILES,
     "love_betrayal": {
         "label": "Cinta, Pengkhianatan & Sakit Hati",
         "tone": "emosional, jujur, dan hangat; humor hanya sebagai jeda alami",
@@ -1854,6 +1860,7 @@ RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
 }
 
 RYUUNDY_CRON_THEME_SIGNALS: dict[str, set[str]] = {
+    **DRAMA_THEME_SIGNALS,
     "love_betrayal": {
         "cinta", "pasangan", "selingkuh", "pengkhianatan", "dikhianati",
         "sakit hati", "gagal nikah", "berpisah", "jodoh",
@@ -2623,7 +2630,15 @@ class AutoViralRequest(BaseModel):
         self.cron_theme_key = re.sub(
             r"[^a-z0-9_]+", "", self.cron_theme_key.casefold()
         )
-        if self.cron_trend_lane:
+        if self.cron_theme_key in DRAMA_THEME_PROFILES:
+            # Query field validation may inject legacy niche seeds. Keep the
+            # drama lane stable across durable run reloads and trend toggles.
+            self.queries = merge_unique_queries(
+                [self.theme_focus] if self.theme_focus else [],
+                DRAMA_THEME_PROFILES[self.cron_theme_key]['queries'],
+                [query for query in self.queries if drama_trend_query(query, self.cron_theme_key)],
+            )[:80]
+        elif self.cron_trend_lane:
             # Preserve the scheduler-owned cross-topic order across nested
             # Pydantic validation and durable run reloads. Runtime ownership is
             # still checked against trigger="schedule" before these are used.
@@ -2689,6 +2704,9 @@ class AutoViralRun(BaseModel):
 
 
 class AutoViralScheduleStatus(BaseModel):
+    cron_drama_lanes: dict[str, str] = Field(default_factory=lambda: {
+        key: profile['label'] for key, profile in DRAMA_THEME_PROFILES.items() if drama_lane_enabled(key)
+    })
     cron_upload_recovery: dict[str, Any] = Field(default_factory=dict)
     tiktok_strategy_version: int = TIKTOK_STRATEGY_VERSION
     tiktok_automatic_retry_enabled: bool = Field(default_factory=lambda: env_bool('TIKTOK_AUTOMATIC_RETRY_ENABLED',True))
@@ -16273,6 +16291,9 @@ def viral_search_hard_filter_rejection_reason(
     View count is intentionally absent: reach is a ranking signal, never a
     proxy for informational value or clip quality.
     """
+    drama_rejection = drama_source_rejection_reason(info, getattr(request, 'cron_theme_key', ''))
+    if drama_rejection:
+        return drama_rejection
     age_days = upload_age_days(info)
     if getattr(request, "cron_theme_key", "") == NEWS_HOT_THEME:
         if age_days is None or age_days < 0 or age_days > request.max_age_days:
@@ -16835,6 +16856,9 @@ def cron_trend_candidate_rejection_reason(
     theme_key: str = "",
 ) -> str:
     """Keep cross-topic cron discovery Indonesian, recognisable, and brand-safe."""
+    drama_rejection = drama_source_rejection_reason(info, theme_key)
+    if drama_rejection:
+        return drama_rejection
     raw_text = " ".join(
         [
             str(info.get("title") or ""),
@@ -17836,6 +17860,8 @@ def ryuundy_studio_trend_query(term: str, theme_key: str) -> str:
     clean = normalize_youtube_search_term(term)
     if not clean:
         return ""
+    if theme_key in DRAMA_THEME_PROFILES:
+        return drama_trend_query(clean, theme_key)
     folded = clean.casefold()
     # RYUUNDY's faith lanes are Islamic. Cross-faith demand remains useful for
     # market awareness but must not silently redefine the channel identity.
@@ -18468,6 +18494,9 @@ def search_youtube_data_api_viral_sources(
                 run_id,
                 request.cron_theme_key,
             )
+            if request.cron_theme_key in DRAMA_THEME_PROFILES:
+                channel_term_queries = [query for query in channel_term_queries
+                    if drama_trend_query(query, request.cron_theme_key)]
             trend_tokens.update(channel_term_tokens)
             studio_trend_queries = youtube_studio_trend_reference_signals(
                 run_id,
@@ -18479,6 +18508,9 @@ def search_youtube_data_api_viral_sources(
                 run_id,
                 cron_trend=cron_trend_lane,
             )
+            if request.cron_theme_key in DRAMA_THEME_PROFILES:
+                trend_seeds = [seed for seed in trend_seeds
+                    if drama_trend_query(seed, request.cron_theme_key)]
             trend_tokens.update(live_trend_tokens)
             if cron_trend_lane:
                 api_queries = interleave_query_lanes(
@@ -19707,6 +19739,8 @@ def auto_viral_format_perspective(
         return " ".join(parts)[:4000]
     if request.cron_theme_key:
         parts.append(RYUUNDY_REFERENCE_EDITOR_BRIEF)
+    if request.cron_theme_key in DRAMA_THEME_PROFILES:
+        parts.append(DRAMA_EDITOR_BRIEF)
     if request.cron_short_role or request.cron_long_role:
         parts.append(
             "Short dan Long harus saling melengkapi dari sumber yang sama: Short memberi hook, "
@@ -19740,8 +19774,11 @@ def source_theme_hashtags(
     source: dict[str, Any],
     *,
     long_form: bool = False,
+    theme_key: str = "",
 ) -> list[str]:
     """Choose truthful hashtags from source semantics instead of a fixed religion set."""
+    if theme_key in DRAMA_THEME_PROFILES:
+        return drama_hashtags(theme_key, long_form)
     text = " ".join(
         [
             str(source.get("title") or ""),
@@ -19937,7 +19974,7 @@ def create_auto_viral_clip_job(
         ai_base_url=request.ai_base_url,
         ai_model=request.ai_model,
         ai_api_key=request.ai_api_key,
-        required_hashtags=["NewsHot", "PolitikIndonesia", "KebijakanPublik"] if news_hot else source_theme_hashtags(source),
+        required_hashtags=["NewsHot", "PolitikIndonesia", "KebijakanPublik"] if news_hot else source_theme_hashtags(source, theme_key=request.cron_theme_key if scheduled else ""),
     )
     if job_request.max_duration <= job_request.min_duration:
         raise RuntimeError("max_duration must be greater than min_duration")
@@ -20033,7 +20070,7 @@ def create_auto_viral_paired_long_job(
         ai_base_url=request.ai_base_url,
         ai_model=request.ai_model,
         ai_api_key=request.ai_api_key,
-        required_hashtags=source_theme_hashtags(source, long_form=True),
+        required_hashtags=source_theme_hashtags(source, long_form=True, theme_key=request.cron_theme_key if short_job.request.scheduled_public_source_credit else ""),
     )
     job_request = normalize_job_request(job_request)
     return queue_auto_viral_clip_job(job_request)
@@ -23508,10 +23545,10 @@ def scheduled_ryuundy_theme_profile() -> tuple[str, dict[str, Any]]:
     if animation_trial is not None:
         return animation_trial
     winner = scheduled_performance_winner_profile()
-    if winner is not None:
+    if winner is not None and drama_lane_enabled(winner[0]):
         return winner
     demand_winner = scheduled_search_term_winner_profile()
-    if demand_winner is not None:
+    if demand_winner is not None and drama_lane_enabled(demand_winner[0]):
         return demand_winner
     cooldown_days = max(
         1, min(14, env_int("AUTO_VIRAL_THEME_COOLDOWN_DAYS", 7))
@@ -23531,12 +23568,12 @@ def scheduled_ryuundy_theme_profile() -> tuple[str, dict[str, Any]]:
         )
     used = {run.request.cron_theme_key for run in recent_runs}
     choices = [
-        key for key in RYUUNDY_CRON_THEME_PROFILES if key not in used
+        key for key in RYUUNDY_CRON_THEME_PROFILES if key not in used and drama_lane_enabled(key)
     ]
     if not choices:
         most_recent = recent_runs[0].request.cron_theme_key if recent_runs else ""
-        choices = [key for key in RYUUNDY_CRON_THEME_PROFILES if key != most_recent]
-    key = random.SystemRandom().choice(choices or list(RYUUNDY_CRON_THEME_PROFILES))
+        choices = [key for key in RYUUNDY_CRON_THEME_PROFILES if key != most_recent and drama_lane_enabled(key)]
+    key = random.SystemRandom().choice(choices or [key for key in RYUUNDY_CRON_THEME_PROFILES if drama_lane_enabled(key)])
     return key, dict(RYUUNDY_CRON_THEME_PROFILES[key])
 
 
@@ -23868,7 +23905,9 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
             and not youtube_channel_recovery_mode()
         ),
     )
-    if trend_expansion_enabled:
+    if theme_key in DRAMA_THEME_PROFILES:
+        request = request.model_copy(update={'queries': merge_unique_queries([theme_focus], theme_queries)})
+    elif trend_expansion_enabled:
         request = request.model_copy(
             update={
                 "queries": merge_unique_queries(
