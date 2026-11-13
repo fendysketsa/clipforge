@@ -1,0 +1,15 @@
+{
+  "expected_backend_release": "612266a37d802a8e7bcd233a9cdfa240a35b57d4dfedacfd0e691b43fe92d114",
+  "changed_modules": {
+    "api.py": "8444857888fc0a5d126406b0b163e84c24abb1d58ced5ae1572d9766c218aa9e",
+    "automatic_output_cleanup.py": "654905bd4a628ae488494a6defc029fe89a9e4f8bc2df63dcfba6152eb98f10b",
+    "youtube_uploader.py": "8c30b86b5163110162bf9017e1d60568998ea872d67ebc3314e0b4922543eeac"
+  },
+  "activation": {
+    "attempted": true,
+    "activated": false,
+    "reason": "sudo: a password is required",
+    "attempted_command": "sudo docker-compose --env-file .env up -d --build --force-recreate backend telegram-bot",
+    "guarded_activation_command": "sudo bash scripts/activate-terminal-output-cleanup.sh"
+  }
+}

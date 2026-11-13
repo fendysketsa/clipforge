@@ -1,0 +1,18 @@
+{
+  "health": {
+    "status": "ok"
+  },
+  "jobs": [
+    {
+      "id": "f73d7456928946a79f2b8b7a40667cd6",
+      "status": "running"
+    }
+  ],
+  "long": {
+    "enabled": true,
+    "auto_qc_enabled": true,
+    "terminal_output_cleanup": null,
+    "active_jobs": []
+  },
+  "backend_release": "72a81fe51fc83ec6d118712c803fe527db2bf85d1d3631883029beb10f171ced"
+}

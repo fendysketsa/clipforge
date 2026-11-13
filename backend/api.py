@@ -67,6 +67,7 @@ from religious_review import reassess_casual_work_wish
 import long_video_qc
 import cron_source_policy
 import automatic_retry
+import automatic_output_cleanup
 from cron_drama import (
     DRAMA_THEME_PROFILES, DRAMA_THEME_SIGNALS, DRAMA_EDITOR_BRIEF,
     drama_source_rejection_reason, drama_trend_query, drama_hashtags, drama_lane_enabled,
@@ -1255,6 +1256,7 @@ class YouTubeUploadJob(BaseModel):
     dry_run: bool = False
     video_url: str | None = None
     upload_confirmed: bool = False
+    file_selection_started: bool = False
     storage_state_verification_attempted: bool = False
     draft_ui_recovery_attempted: bool = False
     clip_sha256: str | None = None
@@ -3285,7 +3287,8 @@ def youtube_upload_has_file_selection_checkpoint(upload: YouTubeUploadJob) -> bo
     """Conservatively reserve a clip once Studio accepted its local file."""
     return bool(
         not upload.dry_run
-        and any(str(line).startswith("Video dipilih:") for line in upload.logs)
+        and (upload.file_selection_started or any(str(line).startswith((
+            "Video dipilih:", "Menyerahkan file ke YouTube Studio:")) for line in upload.logs))
     )
 
 
@@ -4383,7 +4386,8 @@ def cleanup_output_work_dirs(
     }
 
     for work_dir in sorted(dirs, key=lambda item: len(item.parts), reverse=True):
-        if work_dir in protected or work_dir == root or root not in work_dir.parents:
+        if (any(work_dir == item or work_dir in item.parents for item in protected)
+                or work_dir == root or root not in work_dir.parents):
             continue
         if work_dir.is_dir():
             try:
@@ -11726,6 +11730,10 @@ def run_youtube_upload(upload_id: str) -> None:
         )
         return
 
+    if youtube_upload_has_file_selection_checkpoint(upload) or any(str(line).startswith(
+            "Menyerahkan file ke YouTube Studio:") for line in upload.logs):
+        set_youtube_upload(upload_id, file_selection_started=True)
+        upload = upload.model_copy(update={"file_selection_started": True})
     started_perf = time.perf_counter()
     set_youtube_upload(
         upload_id,
@@ -11739,6 +11747,7 @@ def run_youtube_upload(upload_id: str) -> None:
     )
 
     logs: list[str] = list(upload.logs[-20:])
+    child_started = False
     try:
         fallback_to_storage_state = False
         fallback_to_cdp = False
@@ -11802,7 +11811,12 @@ def run_youtube_upload(upload_id: str) -> None:
         stall_timeout_seconds = max(30, env_int("YOUTUBE_UPLOAD_STALL_TIMEOUT_SECONDS", 180))
         default_max_attempts = 6 if (use_cdp_for_attempt or youtube_auth_state_exists() or youtube_chromium_profile_ready()) else 1
         max_attempts = max(1, env_int("YOUTUBE_CDP_UPLOAD_MAX_ATTEMPTS", default_max_attempts))
+        if upload.cron_create_missing_playlist or youtube_upload_belongs_to_scheduled_run(upload):
+            max_attempts = min(max_attempts, automatic_output_cleanup.MAX_RECOVERY_ATTEMPTS)
+        all_attempts_before_file = True
+        file_selection_started = upload.file_selection_started
         for attempt in range(1, max_attempts + 1):
+            attempt_failed_before_file = False
             thumbnail_attached_for_attempt = False
             thumbnail_requirement_waived_for_attempt = False
             playlist_confirmed_for_attempt = False
@@ -11828,6 +11842,7 @@ def run_youtube_upload(upload_id: str) -> None:
                 use_cdp_override=use_cdp_for_attempt,
                 force_chromium_profile=force_chromium_profile_for_attempt,
             )
+            child_started = True
             process = subprocess.Popen(
                 command,
                 cwd=BASE_DIR,
@@ -11842,11 +11857,17 @@ def run_youtube_upload(upload_id: str) -> None:
                 youtube_upload_processes[upload_id] = process
 
             def record_upload_log(cleaned: str) -> None:
+                nonlocal attempt_failed_before_file
+                nonlocal file_selection_started
                 nonlocal upload
                 nonlocal playlist_confirmed_for_attempt
                 nonlocal thumbnail_attached_for_attempt
                 nonlocal thumbnail_requirement_waived_for_attempt
                 nonlocal upload_confirmed_for_attempt
+                if cleaned.startswith(automatic_output_cleanup.BEFORE_FILE_FAILURE):
+                    attempt_failed_before_file = True
+                if cleaned.startswith(("Menyerahkan file ke YouTube Studio:", "Video dipilih:")):
+                    file_selection_started = True
                 if cleaned.startswith("THUMBNAIL_ATTACHED:"):
                     thumbnail_attached_for_attempt = True
                     thumbnail_requirement_waived_for_attempt = False
@@ -11876,6 +11897,7 @@ def run_youtube_upload(upload_id: str) -> None:
                     thumbnail_attached=thumbnail_attached_for_attempt,
                     playlist_confirmed=playlist_confirmed_for_attempt,
                     upload_confirmed=upload_confirmed_for_attempt,
+                    file_selection_started=file_selection_started,
                 )
 
             code, stalled = monitor_youtube_upload_process(
@@ -11883,6 +11905,7 @@ def run_youtube_upload(upload_id: str) -> None:
                 record_upload_log,
                 stall_timeout_seconds=stall_timeout_seconds,
             )
+            all_attempts_before_file = all_attempts_before_file and attempt_failed_before_file
             command_upload_path = Path(command[3]).resolve()
             source_clip_path = output_path_from_url(upload.clip_url)
             if cleanup_youtube_staging_file(command_upload_path, source_clip_path):
@@ -12197,6 +12220,9 @@ def run_youtube_upload(upload_id: str) -> None:
                 str(line).startswith(YOUTUBE_CLAIM_ABORT_PREFIX)
                 for line in logs
             )
+            if all_attempts_before_file and not video_url and not upload.dry_run:
+                logs.append(automatic_output_cleanup.EXHAUSTED_BEFORE_FILE
+                    + " bounded browser recovery ended without selecting a file.")
             if claim_detected:
                 skipped_repairs = skip_targeted_repairs_for_claimed_clip(
                     upload.source_job_id,
@@ -12227,7 +12253,18 @@ def run_youtube_upload(upload_id: str) -> None:
             if claim_detected:
                 schedule_claimed_clip_cleanup(upload_id)
             return
+        # A fallback selected on the final iteration must not leave a row
+        # running forever after the finite recovery budget is consumed.
+        if all_attempts_before_file and not upload.dry_run:
+            logs.append(automatic_output_cleanup.EXHAUSTED_BEFORE_FILE
+                + " bounded browser recovery ended before file selection.")
+        set_youtube_upload(upload_id, status="failed", logs=logs[-160:],
+            error="Batas pemulihan upload YouTube tercapai.", finished_at=now_iso(),
+            duration_seconds=elapsed_seconds(started_perf))
     except Exception as exc:
+        if not child_started and not upload.dry_run and not upload.file_selection_started:
+            logs.append(automatic_output_cleanup.EXHAUSTED_BEFORE_FILE
+                + " browser setup failed before any upload process was started.")
         set_youtube_upload(
             upload_id,
             status="failed",
@@ -14159,6 +14196,7 @@ def completed_job_upload_sweeper_loop() -> None:
                 reconcile_deleted_youtube_reserves_once()
                 queue_youtube_draft_recoveries_once()
                 queue_tiktok_caption_recoveries_once()
+                cleanup_terminal_cron_outputs_once()
                 queue_completed_job_uploads_once()
             except Exception as exc:
                 print(f"Operator upload pulih dari error sementara: {type(exc).__name__}", flush=True)
@@ -20154,6 +20192,7 @@ def create_auto_viral_paired_long_job(
 long_production_lock = threading.RLock()
 long_qc_lock = threading.RLock()
 long_qc_active: set[str] = set()
+terminal_output_cleanup_lock = threading.Lock()
 
 
 def long_qc_path(job_id: str, clip_url: str) -> Path:
@@ -20227,6 +20266,155 @@ def sync_long_qc_decision(job_id: str, audit: dict[str, Any]) -> None:
             save_long_production_state(state)
 
 
+def terminal_output_cleanup_path() -> Path:
+    return long_production_path().with_name("terminal_output_cleanup.json")
+
+
+def mark_terminal_output_deleted(row: dict[str, Any]) -> None:
+    """Release a render reservation without inventing an upload/QC success."""
+    with jobs_lock:
+        if row["job_id"] in jobs:
+            return
+    with long_production_lock:
+        state = long_production_state()
+        changed = False
+        for attempt in state.get("attempts", []):
+            if attempt.get("job_id") == row["job_id"]:
+                attempt.update(status="completed", disposition="deleted_terminal_output",
+                    cleanup_reason=row["reason"], cleaned_at=row["updated_at"])
+                changed = True
+        if changed:
+            save_long_production_state(state)
+    with auto_viral_lock:
+        changed = False
+        for run in auto_viral_runs.values():
+            if run.trigger != "schedule":
+                continue
+            for item in run.processed:
+                if item.get("job_id") == row["job_id"]:
+                    item.update(status="upload_failed", cleanup_completed=True,
+                        cleanup="Output lokal otomatis dihapus: " + row["reason"])
+                    changed = True
+                if item.get("long_job_id") == row["job_id"]:
+                    item.update(long_upload_status="output_deleted", long_cleanup_reason=row["reason"])
+                    changed = True
+        if changed:
+            save_auto_viral_runs_unlocked()
+
+
+def cleanup_terminal_cron_outputs_once() -> int:
+    """Discard terminal cron artifacts; preserve remote posts and upload history.
+
+    Admission locks exclude concurrent manual/automatic submissions. The QC
+    lock excludes a new review while files are removed. Unknown submissions
+    and active processes keep their files, even when the source fails QC.
+    """
+    if not env_bool("AUTO_UPLOAD_TERMINAL_CLEANUP_ENABLED", True):
+        return 0
+    if not terminal_output_cleanup_lock.acquire(blocking=False):
+        return 0
+    removed = 0
+    try:
+        if not youtube_upload_creation_lock.acquire(blocking=False):
+            return 0
+        try:
+            if not tiktok_upload_creation_lock.acquire(blocking=False):
+                return 0
+            try:
+                path = terminal_output_cleanup_path()
+                history = json.loads(path.read_text()) if path.exists() else {}
+                with long_qc_lock:
+                    with jobs_lock:
+                        snapshot = list(jobs.values())
+                    # Finish a checkpoint interrupted after normal deletion.
+                    for row in history.values():
+                        if (row["status"] in {"deleting", "delete_failed"} and row["job_id"] not in {j.id for j in snapshot}
+                                and all(not Path(p).exists() for p in row["artifact_paths"])):
+                            row.update(status="deleted", updated_at=now_iso())
+                            mark_terminal_output_deleted(row)
+                            save_long_qc(path, history)
+                    for job in snapshot:
+                        if (not job.request.scheduled_public_source_credit
+                                or job.status != "completed"):
+                            continue
+                        for clip in job.clips:
+                            key = job.id + "\n" + clip.url
+                            if key in long_qc_active:
+                                continue
+                            if any(child.status in {"queued", "running"}
+                                    and child.repair_source_job_id == job.id
+                                    and child.repair_source_clip_url == clip.url for child in snapshot):
+                                continue
+                            with process_lock:
+                                if job.id in job_processes:
+                                    continue
+                            with youtube_uploads_lock:
+                                yt = [u for u in youtube_uploads.values()
+                                    if u.source_job_id == job.id and u.clip_url == clip.url]
+                            with tiktok_uploads_lock:
+                                tt = [u for u in tiktok_uploads.values()
+                                    if u.source_job_id == job.id and u.clip_url == clip.url]
+                            qc_path = long_qc_path(job.id, clip.url)
+                            qc = json.loads(qc_path.read_text()) if qc_path.exists() else {}
+                            media = output_path_from_url(clip.url)
+                            audit_key = hashlib.sha256(key.encode()).hexdigest()
+                            prior_cleanup = history.get(audit_key) or {}
+                            if (qc and media and not long_video_qc.terminal_provider_rejection(qc)
+                                    and qc.get("fingerprint") != long_video_qc.fingerprint(media, long_qc_context(job, clip))):
+                                qc = {}
+                            if (media and not media.exists()
+                                    and prior_cleanup.get("status") in {"deleting", "delete_failed"}
+                                    and prior_cleanup.get("artifact_paths") == sorted(str(p) for p in clip_artifact_paths(clip))):
+                                qc = {"cleanup_requested_reason": prior_cleanup["reason"]}
+                            reason = automatic_output_cleanup.terminal_reason(qc, yt, tt)
+                            if not reason:
+                                continue
+                            with process_lock:
+                                if any(u.id in youtube_upload_processes for u in yt) or any(
+                                        u.id in tiktok_upload_processes for u in tt):
+                                    continue
+                            artifacts = clip_artifact_paths(clip)
+                            with jobs_lock:
+                                others = [c for j in jobs.values() for c in j.clips
+                                    if (j.id, c.url) != (job.id, clip.url)]
+                                live_job = jobs.get(job.id)
+                            if live_job is None or not any(c.url == clip.url for c in live_job.clips):
+                                continue
+                            protected_paths = {p for c in others for p in clip_artifact_paths(c)}
+                            if artifacts & protected_paths:
+                                continue
+                            row = dict(job_id=job.id, clip_url=clip.url, reason=reason,
+                                status="deleting", updated_at=now_iso(),
+                                artifact_paths=sorted(str(p) for p in artifacts),
+                                retained_upload_ids=[u.id for u in [*yt, *tt]])
+                            history[audit_key] = row
+                            save_long_qc(path, history)
+                            try:
+                                # Fail before removing the card if the filesystem refuses cleanup.
+                                for artifact in artifacts:
+                                    if artifact.is_file():
+                                        artifact.unlink()
+                                if len(live_job.clips) == 1:
+                                    protected_dirs = {p for c in others if (p := clip_output_work_dir(c))}
+                                    cleanup_output_work_dirs([clip], protected_dirs, strict=True)
+                                response = delete_job_clips_by_url(job.id, {clip.url})
+                                if any(p.exists() for p in artifacts):
+                                    raise RuntimeError("Output files remain after cleanup")
+                                row.update(status="deleted", updated_at=now_iso())
+                                mark_terminal_output_deleted(row)
+                                removed += response.removed_clips
+                            except Exception as exc:
+                                row.update(status="delete_failed", error=type(exc).__name__, updated_at=now_iso())
+                            save_long_qc(path, history)
+            finally:
+                tiktok_upload_creation_lock.release()
+        finally:
+            youtube_upload_creation_lock.release()
+    finally:
+        terminal_output_cleanup_lock.release()
+    return removed
+
+
 def run_long_qc(job_id: str, clip_url: str) -> None:
     """Review one exact artifact and enqueue only Private, without human-signoff spoofing."""
     key = job_id + "\n" + clip_url
@@ -20239,13 +20427,18 @@ def run_long_qc(job_id: str, clip_url: str) -> None:
         context = long_qc_context(job, clip)
         signature = long_video_qc.fingerprint(media, context)
         record = json.loads(path.read_text()) if path.exists() else {}
+        if record.get("cleanup_requested_reason") and job.request.scheduled_public_source_credit:
+            return
         if (not long_video_qc.terminal_provider_rejection(record)
                 and (record.get("fingerprint") != signature or record.get("status") != "reviewed")):
             result = long_video_qc.audit_long(media, context)
+            if job.request.scheduled_public_source_credit:
+                result = automatic_output_cleanup.record_review_attempt(result, record)
             record = {**result, "fingerprint": signature, "source_job_id": job_id,
                       "source_clip_url": clip_url, "updated_at": now_iso()}
             if result["status"] != "reviewed":
-                record["retry_at"] = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+                record["retry_at"] = (datetime.now(timezone.utc) + timedelta(seconds=60
+                    if job.request.scheduled_public_source_credit else 600)).isoformat()
             save_long_qc(path, record)
         audit = record.get("audit") or {}
         sync_long_qc_decision(job_id, audit)
@@ -20291,7 +20484,10 @@ def run_long_qc(job_id: str, clip_url: str) -> None:
                         queue_youtube_upload_jobs([upload])
             except Exception as exc:
                 record["youtube_worker_error"] = type(exc).__name__
-                record["retry_at"] = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+                record["youtube_enqueue_failures"] = record.get("youtube_enqueue_failures", 0) + 1
+                if job.request.scheduled_public_source_credit and record["youtube_enqueue_failures"] >= automatic_output_cleanup.MAX_RECOVERY_ATTEMPTS:
+                    record["cleanup_requested_reason"] = "youtube_enqueue_recovery_exhausted"
+                record["retry_at"] = (datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat()
                 save_long_qc(path, record)
         if policy.get("auto_qc_tiktok_upload"):
             try:
@@ -20326,13 +20522,22 @@ def run_long_qc(job_id: str, clip_url: str) -> None:
                         queue_tiktok_upload_jobs([upload])
             except Exception as exc:
                 record["tiktok_worker_error"] = type(exc).__name__
-                record["retry_at"] = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+                record["tiktok_enqueue_failures"] = record.get("tiktok_enqueue_failures", 0) + 1
+                if job.request.scheduled_public_source_credit and record["tiktok_enqueue_failures"] >= automatic_output_cleanup.MAX_RECOVERY_ATTEMPTS:
+                    record["cleanup_requested_reason"] = "tiktok_enqueue_recovery_exhausted"
+                record["retry_at"] = (datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat()
                 save_long_qc(path, record)
     except Exception as exc:
         # Do not lose a completed audit or an unknown remote checkpoint.
         record = json.loads(path.read_text()) if path.exists() else {}
+        with jobs_lock:
+            failed_job = jobs.get(job_id)
+        if failed_job and failed_job.request.scheduled_public_source_credit:
+            record["worker_failures"] = record.get("worker_failures", 0) + 1
+            if record["worker_failures"] >= automatic_output_cleanup.MAX_RECOVERY_ATTEMPTS:
+                record["cleanup_requested_reason"] = "long_qc_worker_recovery_exhausted"
         record.update(worker_error=type(exc).__name__,
-            retry_at=(datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat())
+            retry_at=(datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat())
         save_long_qc(path, record)
     finally:
         with long_qc_lock:
@@ -20351,6 +20556,8 @@ def queue_review_long_qc_once() -> int:
         for clip in job.clips:
             path = long_qc_path(job.id, clip.url)
             record = json.loads(path.read_text()) if path.exists() else {}
+            if record.get("cleanup_requested_reason") and job.request.scheduled_public_source_credit:
+                continue
             if record.get("retry_at") and parse_utc_datetime(record["retry_at"]) > datetime.now(timezone.utc):
                 continue
             if long_video_qc.terminal_provider_rejection(record):
@@ -20377,6 +20584,9 @@ def queue_review_long_qc_once() -> int:
             with long_qc_lock:
                 if long_qc_active:
                     return 0
+                with jobs_lock:
+                    if job.id not in jobs or not any(c.url == clip.url for c in jobs[job.id].clips):
+                        continue
                 long_qc_active.add(key)
             threading.Thread(target=run_long_qc, args=(job.id, clip.url), daemon=True).start()
             return 1
@@ -20488,9 +20698,12 @@ def queue_review_long_once() -> dict[str, Any]:
         attempts = state["attempts"]
         today = [row for row in attempts if row["day"] == day]
         rejected_ids = {row.get("job_id") for row in attempts
-                        if row.get("qc_decision") in {"DROP_SOURCE", "REPAIR_ONCE"}}
+                        if row.get("qc_decision") in {"DROP_SOURCE", "REPAIR_ONCE"}
+                        or row.get("disposition") == "deleted_terminal_output"}
         completed_ids: set[str] = set()
         for row in today:
+            if row.get("disposition") == "deleted_terminal_output" and row.get("job_id") not in confirmed_uploads:
+                continue
             job = current_jobs.get(row.get("job_id"))
             status = job.status if job else row.get("status")
             if status in {"queued", "running"}:
@@ -25040,6 +25253,7 @@ def auto_viral_scheduler_loop() -> None:
                     print(f"Promosi cadangan Private ditunda: {exc}", flush=True)
                 reconcile_interrupted_scheduled_clip_runs()
                 try:
+                    cleanup_terminal_cron_outputs_once()
                     queue_review_long_qc_once()
                     queue_review_long_once()
                 except Exception as exc:
@@ -25248,6 +25462,13 @@ def get_long_production() -> dict[str, Any]:
     provider = long_video_qc.provider_config()
     state["qc_vision_configured"] = bool(provider["base_url"] and provider["model"])
     state["tiktok_qc_upload_supported"] = True
+    cleanup_path = terminal_output_cleanup_path()
+    cleanup_history = json.loads(cleanup_path.read_text()) if cleanup_path.exists() else {}
+    state["terminal_output_cleanup"] = {
+        "enabled": env_bool("AUTO_UPLOAD_TERMINAL_CLEANUP_ENABLED", True),
+        "max_recovery_attempts": automatic_output_cleanup.MAX_RECOVERY_ATTEMPTS,
+        "recent": sorted(cleanup_history.values(), key=lambda row: row["updated_at"], reverse=True)[:20],
+    }
     return state
 
 

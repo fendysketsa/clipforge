@@ -249,6 +249,18 @@ def test_qc_rejection_does_not_consume_daily_success_target(setup_long):
     assert api.queue_review_long_once()['status'] == 'queued'
 
 
+@pytest.mark.parametrize('attempt_count,expected', [(1, 'queued'), (3, 'daily_attempt_limit')])
+def test_deleted_unreviewable_long_releases_qc_wait_but_preserves_attempt_cap(setup_long, attempt_count, expected):
+    day = datetime.now(api.ZoneInfo('Asia/Jakarta')).date().isoformat()
+    state = api.long_production_state()
+    state.update(auto_qc_enabled=True, attempts=[dict(day=day, job_id=f'old-{index}',
+        short_job_id=f'old-short-{index}', status='completed', disposition='deleted_terminal_output',
+        cleanup_reason='long_qc_unavailable_exhausted') for index in range(attempt_count)])
+    api.save_long_production_state(state)
+    assert api.queue_review_long_once()['status'] == expected
+    assert all('qc_decision' not in row for row in api.long_production_state()['attempts'][:attempt_count])
+
+
 def test_long_full_analysis_is_not_replaced_with_short_prefix(monkeypatch):
     monkeypatch.setattr(api, 'fetch_video_duration', lambda url: 7200)
     request = api.ClipJobRequest(url='https://www.youtube.com/watch?v=MtoYogBMyII',

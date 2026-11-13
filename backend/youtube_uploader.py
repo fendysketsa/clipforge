@@ -1894,7 +1894,14 @@ def set_video_input_files(page, file_input, video_path: Path) -> bool:
         heartbeat.join(timeout=1.0)
 
 
+UPLOAD_FILE_SELECTION_STARTED = False
+
+
 def select_video_file(page, video_path: Path, timeout_ms: int = 30000) -> None:
+    global UPLOAD_FILE_SELECTION_STARTED
+    # Set before inspecting/reusing a form or handing any file to the browser.
+    # A failed process may certify a pre-file failure only while this is false.
+    UPLOAD_FILE_SELECTION_STARTED = True
     if upload_metadata_form_ready(page, timeout_ms=1500):
         log("Form detail upload sudah terbuka; tidak memilih file ulang.")
         return
@@ -8101,8 +8108,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    global UPLOAD_FILE_SELECTION_STARTED
+    UPLOAD_FILE_SELECTION_STARTED = False
     parser = build_parser()
     args = parser.parse_args()
+    def record_pre_file_failure() -> None:
+        if args.command == "upload" and not UPLOAD_FILE_SELECTION_STARTED:
+            log("UPLOAD_FAILED_BEFORE_FILE_SELECTION: browser/setup failed before file selection.")
     try:
         if args.command == "login":
             run_login(args)
@@ -8117,12 +8129,14 @@ def main() -> int:
         else:  # pragma: no cover
             parser.error("Unknown command")
     except UploadError as exc:
+        record_pre_file_failure()
         log(f"USER_ERROR: {exc}")
         return 2
     except KeyboardInterrupt:
         log("Upload dibatalkan.")
         return 130
     except Exception as exc:
+        record_pre_file_failure()
         log(f"USER_ERROR: Upload YouTube gagal: {exc}")
         return 1
     return 0

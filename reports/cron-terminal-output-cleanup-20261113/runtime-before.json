@@ -1,0 +1,26 @@
+{
+  "health": {
+    "status": "ok"
+  },
+  "jobs": [],
+  "youtube": {
+    "active": [],
+    "completed_confirmed": 594
+  },
+  "tiktok": {
+    "active": [],
+    "completed_confirmed": 36
+  },
+  "long": {
+    "enabled": true,
+    "auto_qc_enabled": true,
+    "terminal_output_cleanup": null,
+    "active_jobs": []
+  },
+  "deployment": {
+    "release_id": "72a81fe51fc83ec6d118712c803fe527db2bf85d1d3631883029beb10f171ced",
+    "verified": true,
+    "source_verified": true,
+    "prepared_at": 1794544379.3570166
+  }
+}

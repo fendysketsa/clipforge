@@ -6494,3 +6494,44 @@ def test_successful_storage_state_retry_clears_previous_cdp_error(monkeypatch, t
     assert result.status == 'completed' and result.upload_confirmed, (result.error, result.logs[-8:])
     assert result.error is None
     assert any('USER_ERROR:' in line for line in result.logs)
+
+
+@pytest.mark.parametrize('file_started', [False, True])
+def test_cron_browser_recovery_is_bounded_and_certifies_only_pre_file_failures(monkeypatch, tmp_path, file_started):
+    import api
+    import automatic_output_cleanup as cleanup
+    media = tmp_path / 'outputs/demo/clip.mp4'
+    media.parent.mkdir(parents=True)
+    media.write_bytes(b'video')
+    upload = YouTubeUploadJob(id='bounded', source_job_id='cron', clip_url='/outputs/demo/clip.mp4',
+        clip_name='clip.mp4', status='queued', created_at=api.now_iso(), updated_at=api.now_iso(),
+        title='Fixture', visibility='private', cron_create_missing_playlist=True)
+    api.youtube_uploads[upload.id] = upload
+    monkeypatch.setattr(api, 'OUTPUTS_DIR', tmp_path / 'outputs')
+    monkeypatch.setattr(api, 'youtube_upload_prefers_cdp', lambda: True)
+    monkeypatch.setattr(api, 'youtube_cdp_ready', lambda: True)
+    monkeypatch.setattr(api, 'youtube_auth_state_exists', lambda: True)
+    monkeypatch.setattr(api, 'youtube_chromium_profile_ready', lambda: False)
+    monkeypatch.setenv('YOUTUBE_CDP_UPLOAD_MAX_ATTEMPTS', '6')
+    monkeypatch.setenv('YOUTUBE_UPLOAD_FORCE_CDP', 'true')
+    monkeypatch.setattr(api, 'build_youtube_upload_command', lambda *a, **k: [sys.executable,
+        'youtube_uploader.py', 'upload', str(media)])
+    monkeypatch.setattr(api.subprocess, 'Popen', lambda *a, **k: object())
+    calls = []
+    def monitor(process, on_line, **kwargs):
+        calls.append(True)
+        if file_started:
+            on_line('Menyerahkan file ke YouTube Studio: clip.mp4')
+        else:
+            on_line(cleanup.BEFORE_FILE_FAILURE + ' fixture')
+        on_line('USER_ERROR: YouTube Studio gagal memulihkan halaman channel')
+        return 1, False
+    monkeypatch.setattr(api, 'monitor_youtube_upload_process', monitor)
+    monkeypatch.setattr(api, 'cleanup_youtube_staging_file', lambda *args: False)
+    api.run_youtube_upload(upload.id)
+    result = api.youtube_uploads[upload.id]
+    assert len(calls) == 3 and result.status == 'failed'
+    assert result.file_selection_started is file_started
+    certified = any(line.startswith(cleanup.EXHAUSTED_BEFORE_FILE) for line in result.logs)
+    assert certified is (not file_started)
+    assert media.exists()
