@@ -1,0 +1,22 @@
+{
+  "checked_at": "2026-11-13T04:41:46.071959+00:00",
+  "source_sha256": {
+    "frontend/lib/longAutomation.ts": "fb4aed4d493f63bd2aac28d1aac284117c1462c58fdb0ed89f81b84e77636a8f",
+    "frontend/app/_components/ResultsSection.tsx": "89fc1bc4984df94e3a77437402d313d4099cd3cc0c307933bfd158017cc53ea7",
+    "frontend/tests/longAutomation.test.mjs": "5ea5e193af956dacdaf03933cc2ee32638d612e9b957a16712e995d6a20854ad"
+  },
+  "frontend_test_cases_passed": 35,
+  "typescript_passed": true,
+  "production_build_passed": true,
+  "browser_preview_passed": true,
+  "backend_previous_patch_activation_confirmed": true,
+  "new_frontend_status_patch_activation_confirmed": false,
+  "expected_frontend_release_id": "032e32d6536069a10726168ca4f600b1d801da46f0584886d2364bea2b1de037",
+  "build_id": "1Vhrzn--iHdFgY6400UHN",
+  "lilang_youtube_uploaded": false,
+  "lilang_tiktok_upload_confirmed": true,
+  "lilang_tiktok_remote_url": "https://www.tiktok.com/@titikbalikislami/video/7707449979572374804",
+  "replacement_youtube_upload_confirmed": true,
+  "replacement_youtube_remote_url": "https://www.youtube.com/watch?v=2PRl4z8aSx4",
+  "provider_refusal_preserved": true
+}

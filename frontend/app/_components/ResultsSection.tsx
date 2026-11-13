@@ -234,6 +234,13 @@ function growthTargetReadiness(
   manualPrivateReviewReady = false,
 ) {
   const target = `Target ${(targetViews / 1000).toLocaleString("id-ID", { maximumFractionDigits: 1 })}K / ${targetSubscribers} sub`;
+  if (!manualPrivateReviewReady) {
+    return {
+      label: `${target} · upload ditahan`,
+      tone: "hold",
+      detail: nextAction || "Pengiriman menunggu hasil pemeriksaan klip.",
+    };
+  }
   if (status?.startsWith("revise")) {
     if (manualPrivateReviewReady) {
       return {
@@ -962,7 +969,9 @@ export function ResultsSection({
                           ? "Siap review manual · skor di bawah target"
                         : isUploadReady
                           ? "Klip siap review Private"
-                          : "Ditahan gate keamanan"}
+                          : longAutomation?.providerDeclined
+                            ? "Upload ditahan QC aplikasi"
+                            : "Ditahan gate keamanan"}
                     </span>
                     <h3>{title}</h3>
                   </div>
@@ -980,6 +989,9 @@ export function ResultsSection({
                   <div className="clipMetrics" role="status">
                     <span className={`clipMetric${longAutomation.hold ? " clipMetric--blocked" : ""}`}>{longAutomation.reason}</span>
                     {longAutomation.next ? <span className="clipMetric">{longAutomation.next}</span> : null}
+                    {longAutomation.replacementVideoUrl ? (
+                      <a className="clipMetric" href={longAutomation.replacementVideoUrl} target="_blank" rel="noreferrer">Buka video pengganti</a>
+                    ) : null}
                   </div>
                 ) : null}
                 {growthReadiness || clip.context_recut_required || (isLongForm && clip.thumbnail_url) ? (
@@ -1154,7 +1166,7 @@ export function ResultsSection({
                       <UploadCloud size={16} />
                       <span>
                         {!isUploadReady
-                          ? "Quality gate · Ditahan"
+                          ? longAutomation?.providerDeclined ? "Ditahan QC aplikasi" : "Quality gate · Ditahan"
                           : youtubeClaimWasDetected
                             ? "Menghapus · Klaim"
                           : isAlreadyUploaded
@@ -1179,13 +1191,13 @@ export function ResultsSection({
                         : isTikTokLoginActive}
                       aria-label={!tiktokEnabled
                         ? tiktokStatusMessage
+                        : isAlreadyOnTikTok
+                          ? `Sudah dikirim ke @${tiktokTargetHandle}.`
                         : !isUploadReady
                           ? clip.youtube_upload_issue || "Clip belum lolos gate keamanan/editorial."
                           : !uploadReviewConfirmed
                             ? "Centang review konteks, fakta, dan hak penggunaan."
-                            : isAlreadyOnTikTok
-                              ? `Sudah dikirim ke @${tiktokTargetHandle}.`
-                              : hasPendingTikTokPost
+                            : hasPendingTikTokPost
                                 ? "Hasil Post sebelumnya perlu diperiksa sebelum pengiriman berikutnya."
                                 : `Kirim ke @${tiktokTargetHandle} sebagai Only you.`}
                     >
@@ -1194,13 +1206,13 @@ export function ResultsSection({
                         ? isTikTokLoginActive
                           ? "Menunggu login..."
                           : "Login TikTok"
+                        : isAlreadyOnTikTok
+                          ? "Sudah TikTok"
                         : !isUploadReady
                           ? "Quality gate · Ditahan"
                           : !uploadReviewConfirmed
                             ? "Review dulu"
-                            : isAlreadyOnTikTok
-                              ? "Sudah TikTok"
-                              : hasPendingTikTokPost
+                            : hasPendingTikTokPost
                                 ? "Periksa status TikTok"
                               : latestTikTokUpload?.status === "queued"
                                 ? "Antrean TikTok"

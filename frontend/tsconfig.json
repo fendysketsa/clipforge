@@ -50,7 +50,9 @@
     ".next-cron-long/types/**/*.ts",
     ".next-cron-long/dev/types/**/*.ts",
     ".next-upload-final/types/**/*.ts",
-    ".next-upload-final/dev/types/**/*.ts"
+    ".next-upload-final/dev/types/**/*.ts",
+    ".next-lilang-status/types/**/*.ts",
+    ".next-lilang-status/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

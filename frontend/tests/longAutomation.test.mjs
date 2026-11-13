@@ -61,3 +61,22 @@ test('an upload hold or worker outage is reflected after a passing QC',()=>{
  delete state.qc_reviews[0].upload_hold;state.qc_reviews[0].youtube_worker_error='ConnectionError';
  assert.match(longAutomationForClip(url,state,[],day).next,/pemulihan worker otomatis/);
 });
+
+test('a provider refusal explains application QC without calling it a YouTube transfer failure',()=>{
+ const state=snapshot();state.qc_reviews[0].audit.evidence=['AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable.'];
+ const result=longAutomationForClip(url,state,[],day);
+ assert.equal(result.hold,true);assert.equal(result.providerDeclined,true);
+ assert.match(result.reason,/QC aplikasi.*pemeriksa AI/);
+ assert.doesNotMatch(result.reason,/YouTube menolak|koneksi/);
+});
+
+test('confirmed replacement stays visible after artifact cleanup without approving the old source',()=>{
+ const state=snapshot();state.attempts[1]={day,job_id:'new',status:'completed',confirmed_upload_id:'record',confirmed_video_url:'https://www.youtube.com/watch?v=2PRl4z8aSx4'};
+ const result=longAutomationForClip(url,state,[],day);
+ assert.equal(result.hold,true);assert.match(result.next,/sudah terunggah/);
+ assert.equal(result.replacementVideoUrl,state.attempts[1].confirmed_video_url);
+ delete state.attempts[1].confirmed_upload_id;
+ assert.equal(longAutomationForClip(url,state,[],day).replacementVideoUrl,undefined);
+ state.attempts[1].confirmed_upload_id='record';state.attempts[1].confirmed_video_url='https://example.test/other';
+ assert.equal(longAutomationForClip(url,state,[],day).replacementVideoUrl,undefined);
+});
